@@ -9,6 +9,13 @@
         "fastgltf",
         "glm",
         {
+            "name": "imgui",
+            "features": [
+                "docking-experimental",
+                "sdl3-binding"
+            ]
+        },
+        {
             "name": "sdl3",
             "features": [
                 "vulkan"

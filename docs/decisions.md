@@ -41,6 +41,10 @@ mais seulement explicitement ici : le code suit ce document, pas l'inverse.
 | Réflexion                | Enregistrement explicite (`DEVEX_REFLECT`) en attendant C++26      |
 | Identité des entités     | UUID par entité dans les fichiers, handle générationnel en mémoire |
 | Références d'assets      | `AssetId` (UUID) dès maintenant, primitives à UUID réservés        |
+| Premiers outils          | Module `Tools` + overlay (F1), réutilisable par le futur éditeur   |
+| Backend ImGui            | Officiels SDL3 + Vulkan, le backend Vulkan compilé avec volk       |
+| Multi-fenêtre ImGui      | Docking dans la fenêtre principale seulement                       |
+| Annulation               | Commandes basées sur la réflexion (UUID, composant, champ, valeurs) |
 
 ## Architecture cible
 
@@ -59,8 +63,9 @@ situé au-dessus de lui, et le graphe reste sans cycle.
 | `Asset`         | `AssetId`, données CPU (`MeshData`, primitives) ; plus tard `.dvxmeta`    | Core, Math, Reflection        |
 | `AssetImport`   | importeurs de formats sources (glTF, FBX), réservés aux outils            | Asset, fastgltf               |
 | `Render`        | façade `Renderer` / `RenderWorld` ; tout `Vk*` reste dans `src/render/vulkan` | Core, Math, Platform, Asset, Vulkan |
-| `Scene`         | entités, sparse sets, hiérarchie, composants intégrés, fichiers `.dvxscene` | Core, Math, Reflection, Serialization, Asset |
-| `Runtime`       | `Application`, boucle, `AssetRegistry`, extraction Scene → Render         | tous les modules ci-dessus    |
+| `Scene`         | entités, sparse sets, hiérarchie, composants intégrés, `.dvxscene`, sous-arbres | Core, Math, Reflection, Serialization, Asset |
+| `Tools`         | overlay ImGui : hiérarchie, inspecteur, statistiques, console, annulation | Core, Platform, Render, Scene, Serialization, ImGui |
+| `Runtime`       | `Application`, boucle, `AssetRegistry`, extraction Scene → Render, F1     | tous les modules ci-dessus    |
 
 Applications au sommet : `apps/sandbox`, `apps/editor` et la DLL gameplay d'un jeu
 dépendent de `Runtime`.
@@ -85,6 +90,7 @@ apps/sandbox/  bac à sable des jalons
 apps/editor/   éditeur ImGui (à venir)
 shaders/       sources Slang du moteur, compilées dans bin/shaders
 tests/         tests Catch2, un dossier par module, données dans tests/data
+third_party/   sources externes copiées (backend Vulkan d'ImGui), avec leur licence
 cmake/         fonctions CMake partagées
 docs/          décisions et documentation
 ```
@@ -253,6 +259,34 @@ mesh = asset("00000000-0000-0000-0000-000000000001")
 - Perdre le focus relâche toutes les touches et boutons.
 - Les actions nommées (InputMap, rebinding, manettes) viendront par-dessus plus tard.
 
+### Outils
+
+- **Module `Tools`** : panneaux Dear ImGui indépendants de Vulkan, affichés en overlay dans
+  toute application avec **F1** (`ApplicationConfig::enableTools`, actif hors Release). Le
+  futur éditeur réutilisera les mêmes panneaux avec un viewport rendu dans une texture.
+- **Panneaux** : hiérarchie (sélection, création, suppression, glisser-déposer pour changer
+  de parent), inspecteur généré par la réflexion (nom, UUID, composants, ajout et retrait),
+  statistiques (FPS, GPU, draw calls, VRAM via VMA), console (niveaux filtrables). La
+  disposition par défaut est construite au premier lancement, puis sauvegardée dans
+  `devex-tools.ini` à côté de l'exécutable ; *View > Reset layout* la restaure.
+- **Entrées** : quand ImGui utilise le clavier ou la souris, les appuis et mouvements de ce
+  périphérique n'atteignent plus `Input` (les relâchements si) ; les événements restent
+  transmis à `onEvent`. Ouvrir les outils libère la souris capturée.
+- **Annulation** : chaque modification est une `Command` qui désigne les entités par UUID et
+  les champs par leur nom enregistré ; les valeurs sont des `TextValue`. Un glissement
+  continu devient une seule étape, enregistrée au relâchement. Supprimer une entité garde
+  un instantané de son sous-arbre (`saveEntityTree`) pour la restaurer à la même place avec
+  ses UUID. Ctrl+Z / Ctrl+Y (ou Ctrl+Maj+Z) ; une commande devenue impossible (entité
+  disparue) est retirée de l'historique.
+- **Rendu d'ImGui** : backends officiels `imgui_impl_sdl3` (dans `Platform`) et
+  `imgui_impl_vulkan` (dans `Render`), sans multi-viewports. Le port vcpkg compile le
+  backend Vulkan contre `vulkan-1.lib`, dont les symboles entrent en conflit avec les
+  pointeurs de fonctions de volk : ses deux fichiers sont donc copiés dans
+  `third_party/imgui/backends` depuis la version épinglée par vcpkg et compilés avec
+  `IMGUI_IMPL_VULKAN_USE_VOLK`. **À recopier lors d'une mise à jour d'ImGui.** ImGui est
+  dessiné dans une seconde passe sur le backbuffer ; ses couleurs de style, pensées en
+  sRGB, sont converties en linéaire pour le swapchain sRGB.
+
 ### Gameplay
 
 - Premier temps : gameplay en **C++** compilé dans une DLL chargée par le runtime et
@@ -286,7 +320,7 @@ mesh = asset("00000000-0000-0000-0000-000000000001")
 | volk (+ vulkan-headers) | Vulkan             | 2 ✅     |
 | VMA                   | mémoire GPU          | 3 ✅     |
 | fastgltf              | import glTF          | 3 ✅     |
-| Dear ImGui (docking)  | outils, éditeur      | 5        |
+| Dear ImGui (docking, SDL3) | outils, éditeur | 5 ✅     |
 | Catch2                | tests (feature `tests`) | 0 ✅  |
 
 Hors vcpkg :
@@ -312,10 +346,12 @@ Chaque jalon se termine par une démo observable dans `devex-sandbox` et des tes
    primitives procédurales et import glTF.
 4. ✅ **Scène** — entités à UUID, sparse sets, hiérarchie, réflexion, format texte
    commun, lecture et écriture `.dvxscene`, rendu automatique de la scène.
-5. **Outils** — ImGui docking : statistiques du renderer, arbre de scène, inspecteur.
+5. ✅ **Outils** — overlay ImGui docking : hiérarchie, inspecteur par réflexion,
+   statistiques, console, annulation par commandes.
 
-Ensuite, sans ordre figé : PBR forward+ clustered, base d'assets et cache d'import, DLL
-gameplay rechargeable, éditeur, CI Linux.
+Ensuite, sans ordre figé : application éditeur (viewport en texture, mode Play), textures et
+matériaux PBR avec forward+ clustered, base d'assets et cache d'import, DLL gameplay
+rechargeable, CI Linux.
 
 ## Questions ouvertes
 

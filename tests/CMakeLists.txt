@@ -95,6 +95,16 @@ devex_add_tests(render
 # Selection logic is internal to the module but free of Vulkan types.
 target_include_directories(devex_render_tests PRIVATE "${PROJECT_SOURCE_DIR}/engine/src")
 
+# Command and log tests run anywhere; the overlay test is tagged [gpu].
+devex_add_tests(tools
+    SOURCES
+        tools/LogBufferTests.cpp
+        tools/SceneCommandsTests.cpp
+        tools/ToolsOverlayTests.cpp
+    LIBRARIES
+        Devex::Tools
+)
+
 # The dummy SDL video driver lets the main loop run without a display.
 devex_add_tests(runtime
     SOURCES

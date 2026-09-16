@@ -27,10 +27,12 @@ Le détail, l'architecture des modules et les jalons sont dans
 - `Devex::Render` : renderer Vulkan 1.4 (volk, VMA), shaders Slang, vertex pulling,
   profondeur reverse-Z, maillages éclairés ;
 - `Devex::Scene` : entités à UUID, composants en sparse sets, hiérarchie, `.dvxscene` ;
+- `Devex::Tools` : overlay ImGui (F1) avec hiérarchie, inspecteur, statistiques, console
+  et annulation (Ctrl+Z / Ctrl+Y) ;
 - `Devex::Runtime` : `Application`, boucle à pas fixe, rendu automatique de la scène ;
-- `devex-sandbox` : scène hiérarchique et caméra libre ; F5 sauvegarde la scène, F9 la
-  recharge ; glisser un `.gltf` ou un `.glb` sur la fenêtre l'importe en entités ;
-- prochain jalon : outils ImGui (statistiques, arbre de scène, inspecteur).
+- `devex-sandbox` : scène hiérarchique et caméra libre ; F1 affiche les outils, F5
+  sauvegarde la scène, F9 la recharge ; glisser un `.gltf` ou un `.glb` sur la fenêtre
+  l'importe en entités.
 
 Le SDK Vulkan fournit `slangc`, qui compile les shaders pendant le build.
 

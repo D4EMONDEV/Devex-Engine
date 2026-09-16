@@ -148,6 +148,27 @@ TEST_CASE("Hierarchy keeps child order and rejects cycles", "[scene][hierarchy]"
     CHECK(scene.entityCount() == 2);
 }
 
+TEST_CASE("Entities can be inserted before a sibling", "[scene][hierarchy]")
+{
+    Scene scene;
+    const Entity root = scene.createEntity("Root");
+    const Entity a = scene.createEntity("A");
+    const Entity b = scene.createEntity("B");
+    const Entity c = scene.createEntity("C");
+    REQUIRE(scene.setParent(a, root));
+    REQUIRE(scene.setParent(c, root));
+
+    REQUIRE(scene.setParent(b, root, c));
+    CHECK(childNames(scene, root) == std::vector<std::string>{"A", "B", "C"});
+
+    REQUIRE(scene.setParent(c, root, a));
+    CHECK(childNames(scene, root) == std::vector<std::string>{"C", "A", "B"});
+
+    // The position must be a child of the new parent.
+    CHECK_FALSE(scene.setParent(a, Entity{}, b).has_value());
+    CHECK_FALSE(scene.setParent(a, root, a).has_value());
+}
+
 TEST_CASE("World transforms combine the ancestors' transforms", "[scene][hierarchy]")
 {
     Scene scene;

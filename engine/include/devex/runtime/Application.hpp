@@ -32,6 +32,9 @@ struct ApplicationConfig
     render::PresentMode presentMode = render::PresentMode::Fifo;
     // Case-insensitive part of the GPU name to use; empty selects the most capable GPU.
     std::string preferredGpu;
+    // Makes the tools overlay (hierarchy, inspector, statistics, console) available with F1.
+    // Requires rendering.
+    bool enableTools = core::assertsEnabled;
 };
 
 namespace detail {

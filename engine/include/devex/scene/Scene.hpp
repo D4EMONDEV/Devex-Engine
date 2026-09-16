@@ -60,9 +60,11 @@ public:
     [[nodiscard]] const std::string& name(Entity entity) const noexcept;
     void setName(Entity entity, std::string name);
 
-    // Makes child the last child of parent, or a root when parent is invalid. The local
-    // transform is kept. Fails when parent is child itself or one of its descendants.
-    [[nodiscard]] core::Result<void> setParent(Entity child, Entity parent);
+    // Makes child a child of parent, or a root when parent is invalid, placed just before the
+    // sibling `before`, or last when `before` is invalid. The local transform is kept. Fails when
+    // parent is child itself or one of its descendants, or when `before` is not a child of
+    // parent. Keeps the current position when parent is unchanged and `before` is invalid.
+    [[nodiscard]] core::Result<void> setParent(Entity child, Entity parent, Entity before = {});
     [[nodiscard]] Entity parent(Entity entity) const noexcept;
     [[nodiscard]] Entity firstChild(Entity entity) const noexcept;
     [[nodiscard]] Entity nextSibling(Entity entity) const noexcept;
@@ -179,7 +181,7 @@ private:
 
     [[nodiscard]] EntityRecord& record(Entity entity) noexcept;
     [[nodiscard]] const EntityRecord& record(Entity entity) const noexcept;
-    void attach(Entity child, Entity parent) noexcept;
+    void attach(Entity child, Entity parent, Entity before) noexcept;
     void detach(Entity child) noexcept;
 
     std::vector<EntityRecord> m_entities;

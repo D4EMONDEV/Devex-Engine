@@ -32,6 +32,16 @@ inline constexpr std::int64_t sceneFormatVersion = 1;
 // newer version still opens. Malformed values are errors that name their line.
 [[nodiscard]] core::Result<Scene> loadScene(std::string_view text);
 
+// Writes an entity and its descendants as entity and component sections, without the [scene]
+// header and without the parent of the root. Used to copy, restore or duplicate a subtree.
+[[nodiscard]] std::string saveEntityTree(const Scene& scene, Entity root);
+
+// Recreates entities written by saveEntityTree with their original UUIDs, which must be unused in
+// the scene, and places the root under parent before the sibling `before` (see
+// Scene::setParent). Nothing is created when an error is returned.
+[[nodiscard]] core::Result<Entity> loadEntityTree(Scene& scene, std::string_view text,
+                                                  Entity parent, Entity before = {});
+
 [[nodiscard]] core::Result<void> saveSceneFile(const Scene& scene,
                                                const std::filesystem::path& path);
 [[nodiscard]] core::Result<Scene> loadSceneFile(const std::filesystem::path& path);

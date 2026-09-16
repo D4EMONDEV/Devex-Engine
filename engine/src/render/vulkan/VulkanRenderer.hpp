@@ -45,6 +45,13 @@ public:
     [[nodiscard]] RenderWorld& beginFrame() noexcept;
     [[nodiscard]] core::Result<void> endFrame();
 
+    [[nodiscard]] RendererStats stats() const noexcept;
+
+    [[nodiscard]] core::Result<void> initializeImGui();
+    void shutdownImGui() noexcept;
+    void beginImGuiFrame();
+    void queueImGuiDrawData() noexcept;
+
 private:
     // Frames recorded before the oldest one must complete, which bounds the latency added by
     // the CPU running ahead of the GPU.
@@ -83,8 +90,10 @@ private:
 
     [[nodiscard]] core::Result<void> createFrameContexts();
     [[nodiscard]] core::Result<void> recreateSwapchain(math::Extent2D windowPixelSize);
-    [[nodiscard]] core::Result<void> recordFrame(const FrameContext& frame,
-                                                 std::uint32_t imageIndex) const;
+    // Returns the number of draw calls recorded for the scene.
+    [[nodiscard]] core::Result<std::uint32_t> recordFrame(const FrameContext& frame,
+                                                          std::uint32_t imageIndex,
+                                                          bool drawImGui) const;
     void writeSceneData(const FrameContext& frame) const noexcept;
     void releaseRetiredMeshes() noexcept;
     void destroyPresentSemaphores() noexcept;
@@ -111,6 +120,11 @@ private:
     std::vector<RetiredMesh> m_retiredMeshes;
     std::uint64_t m_frameIndex = 0;
     RenderWorld m_world;
+    std::uint32_t m_lastDrawCalls = 0;
+    bool m_imguiInitialized = false;
+    bool m_imguiDrawQueued = false;
+    // ImGui's pipeline keeps a pointer to this format.
+    VkFormat m_imguiColorFormat = VK_FORMAT_UNDEFINED;
 };
 
 } // namespace devex::render::vulkan

@@ -10,6 +10,9 @@
 #include <SDL3/SDL_main.h>
 #include <SDL3/SDL_vulkan.h>
 
+#include <imgui.h>
+#include <imgui_impl_sdl3.h>
+
 #include <atomic>
 #include <optional>
 #include <utility>
@@ -71,7 +74,15 @@ bool SDLCALL watchLiveRedraw(void* /*userData*/, SDL_Event* event)
     }
 }
 
-void dispatchEvent(const SDL_Event& event, Input& input, const EventCallback& callback)
+// Devices whose presses and motion are used by ImGui instead of gameplay.
+struct InputCapture
+{
+    bool keyboard = false;
+    bool mouse = false;
+};
+
+void dispatchEvent(const SDL_Event& event, Input& input, InputCapture capture,
+                   const EventCallback& callback)
 {
     switch (event.type)
     {
@@ -111,7 +122,7 @@ void dispatchEvent(const SDL_Event& event, Input& input, const EventCallback& ca
 
     case SDL_EVENT_KEY_DOWN: {
         const Key key = toKey(event.key.scancode);
-        if (!event.key.repeat)
+        if (!event.key.repeat && !capture.keyboard)
         {
             input.setKeyDown(key, true);
         }
@@ -133,7 +144,10 @@ void dispatchEvent(const SDL_Event& event, Input& input, const EventCallback& ca
             const math::Vec2 position{event.button.x, event.button.y};
             if (event.button.down)
             {
-                input.setMouseButtonDown(*button, true);
+                if (!capture.mouse)
+                {
+                    input.setMouseButtonDown(*button, true);
+                }
                 callback(MouseButtonPressed{*button, position});
             }
             else
@@ -147,7 +161,7 @@ void dispatchEvent(const SDL_Event& event, Input& input, const EventCallback& ca
     case SDL_EVENT_MOUSE_MOTION: {
         const math::Vec2 position{event.motion.x, event.motion.y};
         const math::Vec2 delta{event.motion.xrel, event.motion.yrel};
-        input.moveMouse(position, delta);
+        input.moveMouse(position, capture.mouse ? math::Vec2{0.0f} : delta);
         callback(MouseMoved{position, delta});
         break;
     }
@@ -155,7 +169,10 @@ void dispatchEvent(const SDL_Event& event, Input& input, const EventCallback& ca
     case SDL_EVENT_MOUSE_WHEEL: {
         const float direction = event.wheel.direction == SDL_MOUSEWHEEL_FLIPPED ? -1.0f : 1.0f;
         const math::Vec2 delta{event.wheel.x * direction, event.wheel.y * direction};
-        input.scrollMouse(delta);
+        if (!capture.mouse)
+        {
+            input.scrollMouse(delta);
+        }
         callback(MouseWheelScrolled{delta});
         break;
     }
@@ -229,6 +246,7 @@ void Platform::shutdown() noexcept
 {
     if (m_initialized)
     {
+        shutdownImGui();
         SDL_RemoveEventWatch(&watchLiveRedraw, nullptr);
         liveRedrawCallback = nullptr;
         SDL_Quit();
@@ -271,11 +289,51 @@ void Platform::pollEvents(const EventCallback& callback)
     DEVEX_ASSERT(m_initialized);
 
     m_input.beginFrame();
+    const InputCapture capture{m_imguiCapturesKeyboard, m_imguiCapturesMouse};
     SDL_Event event;
     while (SDL_PollEvent(&event))
     {
-        dispatchEvent(event, m_input, callback);
+        if (m_imguiInitialized)
+        {
+            ImGui_ImplSDL3_ProcessEvent(&event);
+        }
+        dispatchEvent(event, m_input, capture, callback);
     }
+}
+
+core::Result<void> Platform::initializeImGui(Window& window)
+{
+    DEVEX_ASSERT(m_initialized && !m_imguiInitialized);
+    DEVEX_ASSERT_MSG(ImGui::GetCurrentContext() != nullptr, "create an ImGui context first");
+    if (!ImGui_ImplSDL3_InitForVulkan(detail::toSdlWindow(window.m_native)))
+    {
+        return core::makeError(core::ErrorCode::Platform, "cannot initialize ImGui for SDL3");
+    }
+    m_imguiInitialized = true;
+    return {};
+}
+
+void Platform::shutdownImGui() noexcept
+{
+    if (m_imguiInitialized)
+    {
+        ImGui_ImplSDL3_Shutdown();
+        m_imguiInitialized = false;
+        m_imguiCapturesKeyboard = false;
+        m_imguiCapturesMouse = false;
+    }
+}
+
+void Platform::beginImGuiFrame()
+{
+    DEVEX_ASSERT(m_imguiInitialized);
+    ImGui_ImplSDL3_NewFrame();
+}
+
+void Platform::setImGuiInputCapture(bool keyboard, bool mouse) noexcept
+{
+    m_imguiCapturesKeyboard = keyboard;
+    m_imguiCapturesMouse = mouse;
 }
 
 const Input& Platform::input() const noexcept

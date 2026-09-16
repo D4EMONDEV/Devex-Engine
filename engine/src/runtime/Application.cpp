@@ -6,8 +6,10 @@
 #include <devex/runtime/Application.hpp>
 #include <devex/runtime/FixedTimestep.hpp>
 #include <devex/runtime/SceneExtraction.hpp>
+#include <devex/tools/ToolsOverlay.hpp>
 
 #include <algorithm>
+#include <memory>
 #include <chrono>
 #include <cstdlib>
 #include <optional>
@@ -24,6 +26,7 @@ struct EngineServices
     render::Renderer* renderer = nullptr;
     scene::Scene& scene;
     AssetRegistry& assets;
+    tools::ToolsOverlay* tools = nullptr;
 };
 
 class ApplicationRunner
@@ -108,6 +111,12 @@ int ApplicationRunner::execute()
     m_previousFrame = Clock::now();
     while (!m_application.m_quitRequested)
     {
+        // Devices used by the tools during the previous frame do not drive gameplay.
+        if (m_services.tools != nullptr)
+        {
+            m_services.platform.setImGuiInputCapture(m_services.tools->capturesKeyboard(),
+                                                     m_services.tools->capturesMouse());
+        }
         m_services.platform.pollEvents(
             [this](const platform::Event& event) { handleEvent(event); });
         if (m_application.m_quitRequested)
@@ -125,6 +134,19 @@ int ApplicationRunner::execute()
 void ApplicationRunner::handleEvent(const platform::Event& event)
 {
     m_application.onEvent(event);
+
+    if (const auto* key = std::get_if<platform::KeyPressed>(&event);
+        key != nullptr && key->key == platform::Key::F1 && !key->repeat &&
+        m_services.tools != nullptr)
+    {
+        const bool visible = !m_services.tools->isVisible();
+        m_services.tools->setVisible(visible);
+        // The panels need the cursor.
+        if (visible && m_services.window.isMouseCaptured())
+        {
+            m_services.window.setMouseCaptured(false);
+        }
+    }
 
     if (std::holds_alternative<platform::QuitRequested>(event))
     {
@@ -161,6 +183,10 @@ void ApplicationRunner::runFrame()
     render::Renderer* const renderer = m_services.renderer;
     if (renderer != nullptr && !minimized && !m_application.m_quitRequested)
     {
+        if (m_services.tools != nullptr)
+        {
+            m_services.tools->update(scene, core::Duration(frameTime));
+        }
         render::RenderWorld& world = renderer->beginFrame();
         extractScene(scene, m_services.assets, world);
         m_application.onRender(world);
@@ -309,6 +335,23 @@ int run(Application& application, const ApplicationConfig& config)
         }
     }
 
+    // Destroyed before the renderer and the platform it is connected to.
+    std::unique_ptr<tools::ToolsOverlay> tools;
+    if (config.enableTools && renderer)
+    {
+        core::Result<std::unique_ptr<tools::ToolsOverlay>> overlay = tools::ToolsOverlay::create(
+            *platform, *window, *renderer, platform->baseDirectory() / "devex-tools.ini");
+        if (overlay)
+        {
+            tools = std::move(*overlay);
+            DEVEX_LOG_INFO("Press F1 to show the tools");
+        }
+        else
+        {
+            DEVEX_LOG_WARNING("Tools are unavailable: {}", overlay.error());
+        }
+    }
+
     scene::Scene scene;
     detail::ApplicationRunner runner(application, config,
                                      {
@@ -317,6 +360,7 @@ int run(Application& application, const ApplicationConfig& config)
                                          .renderer = renderer ? &*renderer : nullptr,
                                          .scene = scene,
                                          .assets = assets,
+                                         .tools = tools.get(),
                                      });
     return runner.execute();
 }

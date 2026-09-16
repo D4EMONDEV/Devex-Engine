@@ -6,6 +6,10 @@
 #include <devex/core/Assert.hpp>
 #include <devex/core/Log.hpp>
 
+#include <imgui.h>
+#include <imgui_impl_vulkan.h>
+
+#include <algorithm>
 #include <atomic>
 #include <bit>
 #include <cstring>
@@ -119,6 +123,7 @@ VulkanRenderer::VulkanRenderer(platform::Window& window, const RendererConfig& c
 
 VulkanRenderer::~VulkanRenderer()
 {
+    DEVEX_ASSERT_MSG(!m_imguiInitialized, "call shutdownImGui before destroying the renderer");
     const VkDevice device = m_device.handle();
     if (device != VK_NULL_HANDLE)
     {
@@ -228,6 +233,8 @@ RenderWorld& VulkanRenderer::beginFrame() noexcept
 
 core::Result<void> VulkanRenderer::endFrame()
 {
+    // A queued ImGui frame is only valid for this frame, even if it ends up skipped.
+    const bool drawImGui = std::exchange(m_imguiDrawQueued, false);
     const math::Extent2D windowPixelSize = m_window.pixelSize();
     if (windowPixelSize.width == 0 || windowPixelSize.height == 0)
     {
@@ -272,10 +279,12 @@ core::Result<void> VulkanRenderer::endFrame()
 
     DEVEX_VK_TRY(vkResetFences, device, 1, &frame.completed);
     writeSceneData(frame);
-    if (core::Result<void> recorded = recordFrame(frame, imageIndex); !recorded)
+    core::Result<std::uint32_t> recorded = recordFrame(frame, imageIndex, drawImGui);
+    if (!recorded)
     {
-        return recorded;
+        return std::unexpected(recorded.error());
     }
+    m_lastDrawCalls = *recorded;
 
     const VkSemaphore presentSemaphore = m_presentSemaphores[imageIndex];
     const VkSemaphoreSubmitInfo waitInfo{
@@ -495,8 +504,9 @@ void VulkanRenderer::writeSceneData(const FrameContext& frame) const noexcept
     std::memcpy(frame.sceneData->mappedBytes().data(), &scene, sizeof(scene));
 }
 
-core::Result<void> VulkanRenderer::recordFrame(const FrameContext& frame,
-                                               std::uint32_t imageIndex) const
+core::Result<std::uint32_t> VulkanRenderer::recordFrame(const FrameContext& frame,
+                                                        std::uint32_t imageIndex,
+                                                        bool drawImGui) const
 {
     const VkCommandBuffer commandBuffer = frame.commandBuffer;
     DEVEX_VK_TRY(vkResetCommandPool, m_device.handle(), frame.commandPool, 0);
@@ -552,6 +562,7 @@ core::Result<void> VulkanRenderer::recordFrame(const FrameContext& frame,
 
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_meshPipeline->handle());
     const VkDeviceAddress sceneData = frame.sceneData->deviceAddress();
+    std::uint32_t drawCalls = 0;
     for (const MeshInstance& instance : m_world.meshes)
     {
         const GpuMesh* const mesh = m_meshes.find(instance.mesh);
@@ -571,12 +582,125 @@ core::Result<void> VulkanRenderer::recordFrame(const FrameContext& frame,
                            sizeof(constants), &constants);
         vkCmdBindIndexBuffer(commandBuffer, mesh->indices.handle(), 0, VK_INDEX_TYPE_UINT32);
         vkCmdDrawIndexed(commandBuffer, mesh->indexCount, 1, 0, 0, 0);
+        ++drawCalls;
+    }
+    vkCmdEndRendering(commandBuffer);
+
+    // Tools are drawn over the scene, without depth.
+    if (ImDrawData* const drawData = drawImGui ? ImGui::GetDrawData() : nullptr;
+        drawData != nullptr && drawData->Valid)
+    {
+        const VkRenderingAttachmentInfo overlayAttachment{
+            .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+            .imageView = m_swapchain->imageView(imageIndex),
+            .imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+            .loadOp = VK_ATTACHMENT_LOAD_OP_LOAD,
+            .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+        };
+        const VkRenderingInfo overlayInfo{
+            .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
+            .renderArea = {.offset = {0, 0}, .extent = {extent.width, extent.height}},
+            .layerCount = 1,
+            .colorAttachmentCount = 1,
+            .pColorAttachments = &overlayAttachment,
+        };
+        vkCmdBeginRendering(commandBuffer, &overlayInfo);
+        ImGui_ImplVulkan_RenderDrawData(drawData, commandBuffer);
+        vkCmdEndRendering(commandBuffer);
     }
 
-    vkCmdEndRendering(commandBuffer);
     transitionImage(commandBuffer, backbuffer, ImageState::ColorAttachment, ImageState::Present);
     DEVEX_VK_TRY(vkEndCommandBuffer, commandBuffer);
+    return drawCalls;
+}
+
+RendererStats VulkanRenderer::stats() const noexcept
+{
+    RendererStats stats{
+        .drawCalls = m_lastDrawCalls,
+        .meshCount = m_meshes.size(),
+        .swapchainExtent = m_swapchain ? m_swapchain->extent() : math::Extent2D{},
+    };
+
+    const VkPhysicalDeviceMemoryProperties* memory = nullptr;
+    vmaGetMemoryProperties(m_allocator.handle(), &memory);
+    std::array<VmaBudget, VK_MAX_MEMORY_HEAPS> budgets{};
+    vmaGetHeapBudgets(m_allocator.handle(), budgets.data());
+    for (std::uint32_t heap = 0; heap < memory->memoryHeapCount; ++heap)
+    {
+        if ((memory->memoryHeaps[heap].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) != 0)
+        {
+            stats.gpuMemoryUsage += budgets[heap].usage;
+            stats.gpuMemoryBudget += budgets[heap].budget;
+        }
+    }
+    return stats;
+}
+
+core::Result<void> VulkanRenderer::initializeImGui()
+{
+    DEVEX_ASSERT(!m_imguiInitialized);
+    DEVEX_ASSERT_MSG(ImGui::GetCurrentContext() != nullptr, "create an ImGui context first");
+    if (!m_swapchain)
+    {
+        return core::makeError(core::ErrorCode::InvalidState,
+                               "ImGui needs a visible window to know the swapchain format");
+    }
+
+    m_imguiColorFormat = m_swapchain->format();
+    ImGui_ImplVulkan_InitInfo info{};
+    info.ApiVersion = requiredApiVersion;
+    info.Instance = m_instance.handle();
+    info.PhysicalDevice = m_device.physicalDevice();
+    info.Device = m_device.handle();
+    info.QueueFamily = m_device.queueFamily();
+    info.Queue = m_device.queue();
+    // The backend creates a small pool for the textures it binds.
+    info.DescriptorPoolSize = 16;
+    info.MinImageCount = std::max(m_swapchain->imageCount(), 2u);
+    info.ImageCount = info.MinImageCount;
+    info.UseDynamicRendering = true;
+    info.PipelineInfoMain.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
+    info.PipelineInfoMain.PipelineRenderingCreateInfo = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
+        .colorAttachmentCount = 1,
+        .pColorAttachmentFormats = &m_imguiColorFormat,
+    };
+    info.CheckVkResultFn = [](VkResult result) {
+        if (result < VK_SUCCESS)
+        {
+            DEVEX_LOG_ERROR("ImGui Vulkan backend: {}", toString(result));
+        }
+    };
+
+    if (!ImGui_ImplVulkan_Init(&info))
+    {
+        return core::makeError(core::ErrorCode::Graphics, "cannot initialize ImGui for Vulkan");
+    }
+    m_imguiInitialized = true;
     return {};
+}
+
+void VulkanRenderer::shutdownImGui() noexcept
+{
+    if (m_imguiInitialized)
+    {
+        vkDeviceWaitIdle(m_device.handle());
+        ImGui_ImplVulkan_Shutdown();
+        m_imguiInitialized = false;
+        m_imguiDrawQueued = false;
+    }
+}
+
+void VulkanRenderer::beginImGuiFrame()
+{
+    DEVEX_ASSERT(m_imguiInitialized);
+    ImGui_ImplVulkan_NewFrame();
+}
+
+void VulkanRenderer::queueImGuiDrawData() noexcept
+{
+    m_imguiDrawQueued = m_imguiInitialized;
 }
 
 void VulkanRenderer::releaseRetiredMeshes() noexcept

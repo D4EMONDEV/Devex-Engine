@@ -58,7 +58,7 @@ core::Result<Entity> Scene::createEntity(core::Uuid uuid, std::string name)
     created.name = std::move(name);
     created.alive = true;
 
-    attach(entity, Entity{});
+    attach(entity, Entity{}, Entity{});
     m_entitiesByUuid.emplace(uuid, entity);
     ++m_entityCount;
     return entity;
@@ -123,12 +123,19 @@ void Scene::setName(Entity entity, std::string name)
     record(entity).name = std::move(name);
 }
 
-core::Result<void> Scene::setParent(Entity child, Entity parent)
+core::Result<void> Scene::setParent(Entity child, Entity parent, Entity before)
 {
-    if (!isAlive(child) || (parent.isValid() && !isAlive(parent)))
+    if (!isAlive(child) || (parent.isValid() && !isAlive(parent)) ||
+        (before.isValid() && !isAlive(before)))
     {
         return core::makeError(core::ErrorCode::InvalidArgument,
                                "cannot parent destroyed entities");
+    }
+    if (before.isValid() && (before == child || record(before).parent != parent))
+    {
+        return core::makeError(core::ErrorCode::InvalidArgument,
+                               "'{}' is not a sibling position under the new parent",
+                               name(before));
     }
     for (Entity ancestor = parent; ancestor.isValid(); ancestor = record(ancestor).parent)
     {
@@ -139,12 +146,12 @@ core::Result<void> Scene::setParent(Entity child, Entity parent)
         }
     }
 
-    if (record(child).parent == parent)
+    if (record(child).parent == parent && !before.isValid())
     {
         return {};
     }
     detach(child);
-    attach(child, parent);
+    attach(child, parent, before);
     return {};
 }
 
@@ -221,25 +228,32 @@ const Scene::EntityRecord& Scene::record(Entity entity) const noexcept
     return m_entities[entity.index];
 }
 
-void Scene::attach(Entity child, Entity parent) noexcept
+void Scene::attach(Entity child, Entity parent, Entity before) noexcept
 {
     Entity& first = parent.isValid() ? record(parent).firstChild : m_firstRoot;
     Entity& last = parent.isValid() ? record(parent).lastChild : m_lastRoot;
 
     EntityRecord& attached = record(child);
     attached.parent = parent;
-    attached.previousSibling = last;
-    attached.nextSibling = Entity{};
+    attached.nextSibling = before;
+    attached.previousSibling = before.isValid() ? record(before).previousSibling : last;
 
-    if (last.isValid())
+    if (attached.previousSibling.isValid())
     {
-        record(last).nextSibling = child;
+        record(attached.previousSibling).nextSibling = child;
     }
     else
     {
         first = child;
     }
-    last = child;
+    if (before.isValid())
+    {
+        record(before).previousSibling = child;
+    }
+    else
+    {
+        last = child;
+    }
 }
 
 void Scene::detach(Entity child) noexcept

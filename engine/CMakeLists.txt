@@ -1,5 +1,6 @@
 find_package(fastgltf CONFIG REQUIRED)
 find_package(glm CONFIG REQUIRED)
+find_package(imgui CONFIG REQUIRED)
 find_package(SDL3 CONFIG REQUIRED)
 find_package(volk CONFIG REQUIRED)
 find_package(VulkanMemoryAllocator CONFIG REQUIRED)
@@ -91,6 +92,7 @@ target_link_libraries(devex_platform
         Devex::Core
         Devex::Math
     PRIVATE
+        imgui::imgui
         SDL3::SDL3
 )
 set_target_properties(devex_platform PROPERTIES
@@ -200,6 +202,24 @@ set_target_properties(devex_asset_import PROPERTIES
 )
 devex_set_warnings(devex_asset_import)
 
+# Dear ImGui's Vulkan backend, vendored from the ImGui version pinned by vcpkg and compiled with
+# volk: the vcpkg build links vulkan-1 directly, whose symbols clash with volk's function pointers.
+add_library(devex_imgui_vulkan STATIC)
+target_sources(devex_imgui_vulkan
+    PRIVATE
+        "${PROJECT_SOURCE_DIR}/third_party/imgui/backends/imgui_impl_vulkan.cpp"
+)
+target_include_directories(devex_imgui_vulkan
+    SYSTEM PUBLIC "${PROJECT_SOURCE_DIR}/third_party/imgui/backends"
+)
+target_compile_definitions(devex_imgui_vulkan PUBLIC IMGUI_IMPL_VULKAN_USE_VOLK)
+target_link_libraries(devex_imgui_vulkan
+    PUBLIC
+        imgui::imgui
+        volk::volk_headers
+)
+set_target_properties(devex_imgui_vulkan PROPERTIES FOLDER "ThirdParty")
+
 # Render: Renderer facade over Vulkan, whose types stay inside src/render/vulkan.
 add_library(devex_render STATIC)
 add_library(Devex::Render ALIAS devex_render)
@@ -244,6 +264,7 @@ target_link_libraries(devex_render
         Devex::Math
         Devex::Platform
     PRIVATE
+        devex_imgui_vulkan
         volk::volk
         volk::volk_headers
         GPUOpen::VulkanMemoryAllocator
@@ -270,6 +291,7 @@ target_sources(devex_scene
     PRIVATE
         src/scene/ComponentRegistry.cpp
         src/scene/Components.cpp
+        src/scene/FieldValue.cpp
         src/scene/Scene.cpp
         src/scene/SceneSerializer.cpp
     PUBLIC
@@ -280,6 +302,7 @@ target_sources(devex_scene
             include/devex/scene/ComponentRegistry.hpp
             include/devex/scene/Components.hpp
             include/devex/scene/Entity.hpp
+            include/devex/scene/FieldValue.hpp
             include/devex/scene/Scene.hpp
             include/devex/scene/SceneSerializer.hpp
             include/devex/scene/View.hpp
@@ -291,7 +314,6 @@ target_link_libraries(devex_scene
         Devex::Core
         Devex::Math
         Devex::Reflection
-    PRIVATE
         Devex::Serialization
 )
 set_target_properties(devex_scene PROPERTIES
@@ -299,6 +321,47 @@ set_target_properties(devex_scene PROPERTIES
     FOLDER "Engine"
 )
 devex_set_warnings(devex_scene)
+
+# Tools: docked ImGui panels over the game, with undoable scene editing.
+add_library(devex_tools STATIC)
+add_library(Devex::Tools ALIAS devex_tools)
+
+target_sources(devex_tools
+    PRIVATE
+        src/tools/CommandHistory.cpp
+        src/tools/ConsolePanel.cpp
+        src/tools/HierarchyPanel.cpp
+        src/tools/InspectorPanel.cpp
+        src/tools/LogBuffer.cpp
+        src/tools/SceneCommands.cpp
+        src/tools/StatisticsPanel.cpp
+        src/tools/ToolsOverlay.cpp
+        src/tools/ToolsState.hpp
+    PUBLIC
+        FILE_SET HEADERS
+        BASE_DIRS include
+        FILES
+            include/devex/tools/CommandHistory.hpp
+            include/devex/tools/LogBuffer.hpp
+            include/devex/tools/SceneCommands.hpp
+            include/devex/tools/ToolsOverlay.hpp
+)
+
+target_link_libraries(devex_tools
+    PUBLIC
+        Devex::Core
+        Devex::Platform
+        Devex::Render
+        Devex::Scene
+        Devex::Serialization
+    PRIVATE
+        imgui::imgui
+)
+set_target_properties(devex_tools PROPERTIES
+    EXPORT_NAME Tools
+    FOLDER "Engine"
+)
+devex_set_warnings(devex_tools)
 
 # Runtime: application lifecycle, the main loop and the scene to renderer bridge.
 add_library(devex_runtime STATIC)
@@ -326,6 +389,8 @@ target_link_libraries(devex_runtime
         Devex::Platform
         Devex::Render
         Devex::Scene
+    PRIVATE
+        Devex::Tools
 )
 set_target_properties(devex_runtime PROPERTIES
     EXPORT_NAME Runtime

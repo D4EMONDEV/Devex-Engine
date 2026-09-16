@@ -17,6 +17,7 @@ struct ComponentType
     // Adds a default-constructed component, or returns the one the entity already has.
     void* (*emplace)(Scene& scene, Entity entity) = nullptr;
     const void* (*find)(const Scene& scene, Entity entity) = nullptr;
+    void (*remove)(Scene& scene, Entity entity) = nullptr;
 
     [[nodiscard]] std::string_view name() const noexcept
     {
@@ -49,6 +50,7 @@ public:
             .find = [](const Scene& scene, Entity entity) -> const void* {
                 return scene.tryGet<T>(entity);
             },
+            .remove = [](Scene& scene, Entity entity) { scene.remove<T>(entity); },
         });
     }
 

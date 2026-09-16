@@ -148,6 +148,42 @@ mesh = asset("00000000-0000-0000-0000-000000000001")
 )");
 }
 
+TEST_CASE("Entity trees are restored with their UUIDs and position", "[scene][serializer]")
+{
+    Scene scene;
+    const Entity root = scene.createEntity("Root");
+    const Entity first = scene.createEntity("First");
+    const Entity branch = scene.createEntity("Branch");
+    const Entity leaf = scene.createEntity("Leaf");
+    const Entity last = scene.createEntity("Last");
+    REQUIRE(scene.setParent(first, root));
+    REQUIRE(scene.setParent(branch, root));
+    REQUIRE(scene.setParent(last, root));
+    REQUIRE(scene.setParent(leaf, branch));
+    scene.add<Transform>(leaf, Transform{.position = {4.0f, 5.0f, 6.0f}});
+
+    const devex::core::Uuid branchUuid = scene.uuid(branch);
+    const devex::core::Uuid leafUuid = scene.uuid(leaf);
+    const std::string snapshot = devex::scene::saveEntityTree(scene, branch);
+    scene.destroyEntity(branch);
+    REQUIRE(scene.entityCount() == 3);
+
+    const auto restored = devex::scene::loadEntityTree(scene, snapshot, root, last);
+    REQUIRE(restored.has_value());
+
+    CHECK(scene.uuid(*restored) == branchUuid);
+    CHECK(scene.nextSibling(first) == *restored);
+    CHECK(scene.nextSibling(*restored) == last);
+    const Entity restoredLeaf = scene.findEntity(leafUuid);
+    REQUIRE(restoredLeaf.isValid());
+    CHECK(scene.parent(restoredLeaf) == *restored);
+    CHECK(scene.get<Transform>(restoredLeaf).position == Vec3{4.0f, 5.0f, 6.0f});
+
+    // Loading the same tree again fails because its UUIDs are taken, and creates nothing.
+    CHECK_FALSE(devex::scene::loadEntityTree(scene, snapshot, Entity{}).has_value());
+    CHECK(scene.entityCount() == 5);
+}
+
 TEST_CASE("Unknown components and fields are skipped with warnings", "[scene][serializer]")
 {
     const WarningCapture capture;

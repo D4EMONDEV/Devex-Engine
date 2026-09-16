@@ -41,6 +41,18 @@ struct RendererConfig
     std::filesystem::path shaderDirectory;
 };
 
+struct RendererStats
+{
+    // Draw calls of the last presented frame.
+    std::uint32_t drawCalls = 0;
+    std::size_t meshCount = 0;
+    math::Extent2D swapchainExtent;
+    // Bytes of device-local memory used by the process, and how much it may use before the
+    // operating system starts evicting memory.
+    std::uint64_t gpuMemoryUsage = 0;
+    std::uint64_t gpuMemoryBudget = 0;
+};
+
 namespace vulkan {
 class VulkanRenderer;
 } // namespace vulkan
@@ -74,6 +86,16 @@ public:
     [[nodiscard]] RenderWorld& beginFrame() noexcept;
     // Draws and presents the snapshot. Skips the frame while the window has no drawable area.
     [[nodiscard]] core::Result<void> endFrame();
+
+    [[nodiscard]] RendererStats stats() const noexcept;
+
+    // Connects Dear ImGui to the renderer. An ImGui context must be current and the window must
+    // be visible; shutdownImGui must run before the context is destroyed.
+    [[nodiscard]] core::Result<void> initializeImGui();
+    void shutdownImGui() noexcept;
+    void beginImGuiFrame();
+    // Draws ImGui::GetDrawData() over the scene in the next endFrame. Call after ImGui::Render().
+    void queueImGuiDrawData() noexcept;
 
 private:
     explicit Renderer(std::unique_ptr<vulkan::VulkanRenderer> implementation) noexcept;

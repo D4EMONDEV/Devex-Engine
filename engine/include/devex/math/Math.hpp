@@ -25,6 +25,7 @@ using glm::conjugate;
 using glm::cross;
 using glm::degrees;
 using glm::dot;
+using glm::eulerAngles;
 using glm::inverse;
 using glm::length;
 using glm::mat4_cast;
@@ -43,6 +44,12 @@ struct Extent2D
 
     bool operator==(const Extent2D&) const = default;
 };
+
+// Builds a rotation from angles around X, Y and Z in radians, the inverse of eulerAngles.
+[[nodiscard]] inline Quat quatFromEulerAngles(Vec3 angles) noexcept
+{
+    return Quat(angles);
+}
 
 // Translation, rotation and scale, applied in the reverse order to a point.
 struct Trs
