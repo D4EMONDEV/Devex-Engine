@@ -1,5 +1,6 @@
 #pragma once
 
+#include <devex/core/Error.hpp>
 #include <devex/math/Math.hpp>
 
 #include <cstdint>
@@ -18,6 +19,9 @@ struct WindowConfig
     std::uint32_t width = 1280;
     std::uint32_t height = 720;
     bool resizable = true;
+    // Required to create a Vulkan surface for the window.
+    bool vulkan = false;
+    bool hidden = false;
 };
 
 namespace detail {
@@ -48,6 +52,10 @@ public:
     // A captured mouse is hidden and reports unbounded motion, as needed by first-person cameras.
     void setMouseCaptured(bool captured);
     [[nodiscard]] bool isMouseCaptured() const noexcept;
+
+    // Creates a VkSurfaceKHR for this window on the given VkInstance and returns its handle. The
+    // window must have been created with WindowConfig::vulkan, and the caller owns the surface.
+    [[nodiscard]] core::Result<std::uint64_t> createVulkanSurface(void* vulkanInstance) const;
 
 private:
     friend class Platform;

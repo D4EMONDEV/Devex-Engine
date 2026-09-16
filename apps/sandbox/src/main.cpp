@@ -2,9 +2,11 @@
 #include <devex/math/Math.hpp>
 #include <devex/platform/Event.hpp>
 #include <devex/platform/Input.hpp>
+#include <devex/render/RenderWorld.hpp>
 #include <devex/runtime/Application.hpp>
 
 #include <chrono>
+#include <cmath>
 #include <format>
 #include <variant>
 
@@ -16,8 +18,21 @@ using devex::platform::Event;
 using devex::platform::Key;
 using devex::platform::MouseButton;
 
-// Milestone 1 playground: a virtual first-person camera driven by physical WASD keys and the
-// mouse, reported in the window title.
+// Converts hue, saturation and value in [0, 1] to linear RGB.
+Vec3 hsvToRgb(float hue, float saturation, float value)
+{
+    const Vec3 offsets{0.0f, 2.0f / 3.0f, 1.0f / 3.0f};
+    Vec3 rgb{0.0f};
+    for (int channel = 0; channel < 3; ++channel)
+    {
+        const float phase = std::fabs(std::fmod(hue + offsets[channel], 1.0f) * 6.0f - 3.0f);
+        rgb[channel] = devex::math::clamp(phase - 1.0f, 0.0f, 1.0f);
+    }
+    return value * ((1.0f - saturation) + saturation * rgb);
+}
+
+// Milestone 2 playground: a virtual first-person camera driven by physical WASD keys and the
+// mouse. The background color follows the camera orientation and the title shows statistics.
 class Sandbox final : public devex::runtime::Application
 {
 public:
@@ -120,6 +135,14 @@ public:
         updateTitle(frameDelta);
     }
 
+    void onRender(devex::render::RenderWorld& world) override
+    {
+        // Hue follows the yaw, brightness follows the pitch.
+        const float hue = std::fmod(std::fmod(m_yaw, 360.0f) + 360.0f, 360.0f) / 360.0f;
+        const float brightness = 0.05f + 0.25f * (m_pitch + 89.0f) / 178.0f;
+        world.clearColor = devex::math::Vec4(hsvToRgb(hue, 0.7f, brightness), 1.0f);
+    }
+
 private:
     static constexpr float moveSpeed = 5.0f;         // meters per second
     static constexpr float mouseSensitivity = 0.1f;  // degrees per mouse unit
@@ -136,8 +159,9 @@ private:
 
         const double seconds = m_statsTime.count();
         window().setTitle(std::format(
-            "Devex Sandbox | {:.0f} FPS | {:.0f} fixed/s | position ({:.1f}, {:.1f}) | "
+            "Devex Sandbox | {} ({}) | {:.0f} FPS | {:.0f} fixed/s | position ({:.1f}, {:.1f}) | "
             "yaw {:.0f}° pitch {:.0f}°",
+            renderer().gpu().name, devex::render::toString(renderer().presentMode()),
             m_frames / seconds, m_fixedSteps / seconds, m_position.x, m_position.z, m_yaw,
             m_pitch));
 
@@ -162,6 +186,5 @@ int main()
         .title = "Devex Sandbox",
         .width = 1280,
         .height = 720,
-        .maxFrameRate = 240,
     });
 }

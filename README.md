@@ -21,10 +21,13 @@ Le détail, l'architecture des modules et les jalons sont dans
 - `Devex::Core` : `Result`/`Error`, journal `DEVEX_LOG_*`, assertions `DEVEX_ASSERT*` ;
 - `Devex::Math` : types GLM sous `devex::math` ;
 - `Devex::Platform` : fenêtre, événements et entrées clavier/souris sur SDL3 ;
-- `Devex::Runtime` : classe `Application` et boucle de jeu à pas fixe ;
+- `Devex::Render` : renderer Vulkan 1.4 (volk), sélection du GPU, swapchain, validation ;
+- `Devex::Runtime` : classe `Application`, boucle de jeu à pas fixe et rendu par frame ;
 - `devex-sandbox` : caméra virtuelle pilotée au clavier (positions physiques) et à la
-  souris, statistiques dans le titre de la fenêtre ;
-- prochain jalon : initialisation Vulkan et première image.
+  souris, couleur de fond qui suit la caméra, statistiques dans le titre ;
+- prochain jalon : shaders Slang, buffers VMA, caméra et premier maillage.
+
+Les tests marqués `[gpu]` ouvrent une fenêtre masquée et nécessitent un GPU Vulkan 1.4.
 
 ## Construire
 

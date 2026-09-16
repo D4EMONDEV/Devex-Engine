@@ -14,6 +14,7 @@ const ApplicationConfig testConfig{
     .title = "Devex tests",
     .width = 320,
     .height = 240,
+    .enableRendering = false,
 };
 
 // Counts lifecycle calls and quits after a few frames.

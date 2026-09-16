@@ -12,7 +12,8 @@
             "features": [
                 "vulkan"
             ]
-        }
+        },
+        "volk"
     ],
     "features": {
         "tests": {

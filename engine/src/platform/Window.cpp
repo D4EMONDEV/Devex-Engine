@@ -5,7 +5,9 @@
 
 #include <SDL3/SDL_error.h>
 #include <SDL3/SDL_mouse.h>
+#include <SDL3/SDL_vulkan.h>
 
+#include <bit>
 #include <string>
 #include <utility>
 
@@ -90,6 +92,21 @@ bool Window::isMouseCaptured() const noexcept
 {
     DEVEX_ASSERT(m_native != nullptr);
     return SDL_GetWindowRelativeMouseMode(detail::toSdlWindow(m_native));
+}
+
+core::Result<std::uint64_t> Window::createVulkanSurface(void* vulkanInstance) const
+{
+    DEVEX_ASSERT(m_native != nullptr);
+    DEVEX_ASSERT(vulkanInstance != nullptr);
+
+    VkSurfaceKHR surface{};
+    if (!SDL_Vulkan_CreateSurface(detail::toSdlWindow(m_native),
+                                  static_cast<VkInstance>(vulkanInstance), nullptr, &surface))
+    {
+        return core::makeError(core::ErrorCode::Platform, "cannot create a Vulkan surface: {}",
+                               SDL_GetError());
+    }
+    return std::bit_cast<std::uint64_t>(surface);
 }
 
 } // namespace devex::platform

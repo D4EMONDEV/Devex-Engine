@@ -7,6 +7,7 @@
 #define SDL_MAIN_HANDLED
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
+#include <SDL3/SDL_vulkan.h>
 
 #include <atomic>
 #include <optional>
@@ -26,6 +27,19 @@ static_assert(static_cast<int>(Key::NonUsBackslash) == SDL_SCANCODE_NONUSBACKSLA
 static_assert(static_cast<int>(Key::RightSuper) == SDL_SCANCODE_RGUI);
 
 std::atomic<bool> platformExists{false};
+
+// Only one Platform exists at a time, so its live redraw callback can be process-wide.
+std::function<void()> liveRedrawCallback;
+
+bool SDLCALL watchLiveRedraw(void* /*userData*/, SDL_Event* event)
+{
+    // SDL sends live-resize exposures from the main thread, while pollEvents is blocked.
+    if (event->type == SDL_EVENT_WINDOW_EXPOSED && event->window.data1 != 0 && liveRedrawCallback)
+    {
+        liveRedrawCallback();
+    }
+    return true;
+}
 
 [[nodiscard]] Key toKey(SDL_Scancode scancode) noexcept
 {
@@ -170,6 +184,13 @@ core::Result<Platform> Platform::create()
         platformExists.store(false);
         return core::makeError(core::ErrorCode::Platform, "SDL_Init failed: {}", SDL_GetError());
     }
+    if (!SDL_AddEventWatch(&watchLiveRedraw, nullptr))
+    {
+        SDL_Quit();
+        platformExists.store(false);
+        return core::makeError(core::ErrorCode::Platform, "cannot watch SDL events: {}",
+                               SDL_GetError());
+    }
 
     const int version = SDL_GetVersion();
     DEVEX_LOG_DEBUG("SDL {}.{}.{} initialized with the '{}' video driver",
@@ -207,6 +228,8 @@ void Platform::shutdown() noexcept
 {
     if (m_initialized)
     {
+        SDL_RemoveEventWatch(&watchLiveRedraw, nullptr);
+        liveRedrawCallback = nullptr;
         SDL_Quit();
         platformExists.store(false);
         m_initialized = false;
@@ -221,6 +244,14 @@ core::Result<Window> Platform::createWindow(const WindowConfig& config)
     if (config.resizable)
     {
         flags |= SDL_WINDOW_RESIZABLE;
+    }
+    if (config.vulkan)
+    {
+        flags |= SDL_WINDOW_VULKAN;
+    }
+    if (config.hidden)
+    {
+        flags |= SDL_WINDOW_HIDDEN;
     }
 
     SDL_Window* const window =
@@ -262,6 +293,25 @@ std::string Platform::keyLabel(Key key) const
     DEVEX_ASSERT(m_initialized);
     const SDL_Keycode keycode = SDL_GetKeyFromScancode(toScancode(key), SDL_KMOD_NONE, false);
     return SDL_GetKeyName(keycode);
+}
+
+core::Result<std::span<const char* const>> Platform::vulkanInstanceExtensions() const
+{
+    DEVEX_ASSERT(m_initialized);
+    Uint32 count = 0;
+    const char* const* const extensions = SDL_Vulkan_GetInstanceExtensions(&count);
+    if (extensions == nullptr)
+    {
+        return core::makeError(core::ErrorCode::Unsupported,
+                               "Vulkan is unavailable for SDL windows: {}", SDL_GetError());
+    }
+    return std::span<const char* const>(extensions, count);
+}
+
+void Platform::setLiveRedrawCallback(std::function<void()> callback)
+{
+    DEVEX_ASSERT(m_initialized);
+    liveRedrawCallback = std::move(callback);
 }
 
 void sleepPrecise(std::chrono::nanoseconds duration)

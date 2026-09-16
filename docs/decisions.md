@@ -29,6 +29,10 @@ mais seulement explicitement ici : le code suit ce document, pas l'inverse.
 | Point d'entrée           | Le moteur possède la boucle, le jeu dérive de `Application`        |
 | Entrées                  | État interrogeable + événements, actions nommées plus tard         |
 | Clavier                  | `Key` = position physique (WASD devient ZQSD en AZERTY)            |
+| Présentation             | VSync (FIFO) par défaut, Mailbox/Immediate en option               |
+| Thread de rendu          | Thread principal, rendu découplé par un instantané `RenderWorld`   |
+| Redimensionnement        | Rendu continu pendant le redimensionnement modal de Windows        |
+| Passes de rendu          | Manuelles jusqu'au PBR, render graph introduit à ce moment         |
 
 ## Architecture cible
 
@@ -81,7 +85,29 @@ docs/          décisions et documentation
   descriptors sans extension optionnelle. Aucun `VkRenderPass` legacy.
 - **volk** charge Vulkan, **VMA** gère la mémoire GPU, des wrappers RAII minces maison
   encapsulent les objets Vulkan.
-- Couches de validation actives en Debug.
+- Couche de validation Khronos active hors Release, **validation de synchronisation
+  comprise** ; ses erreurs passent par le journal Devex et font échouer les tests `[gpu]`.
+  Les avertissements généraux du loader (overlays tiers) sont rétrogradés en debug.
+- **Découplage** : le gameplay remplit un instantané `RenderWorld` dans `onRender`, entre
+  `Renderer::beginFrame` et `Renderer::endFrame`. Le renderer ne lit jamais l'état du jeu :
+  un thread de rendu dédié pourra consommer ces instantanés sans changer l'API.
+- **Présentation** : FIFO (VSync) par défaut ; Mailbox ou Immediate sur demande, avec
+  repli sur FIFO si l'écran ne les propose pas.
+- **GPU** : un GPU compatible (Vulkan 1.4, swapchain, dynamic rendering, synchronization2,
+  une file qui dessine et présente) est choisi par ordre discret > intégré > virtuel >
+  CPU, ou par nom via `preferredGpu`. Un seul `Renderer` existe à la fois (volk charge les
+  fonctions du device globalement).
+- **Frames** : 2 frames en vol, chacune avec son pool de commandes, sa fence et son
+  sémaphore d'acquisition ; un sémaphore de présentation par image du swapchain.
+- **Swapchain** : format sRGB (le renderer écrit des couleurs linéaires), recréé quand la
+  taille en pixels change ou quand Vulkan le signale périmé ; aucune image n'est rendue
+  tant que la fenêtre n'a pas de surface visible.
+- **Redimensionnement en direct** : pendant la boucle modale de Windows, SDL envoie des
+  `SDL_EVENT_WINDOW_EXPOSED` (live resize) sur le thread principal ; `Platform` les
+  transmet à un callback et `Runtime` y exécute une frame complète.
+- **Barrières** : pour l'instant, transitions explicites entre états du backbuffer
+  (`Acquired`, `ColorAttachment`, `Present`) avec leurs stages de synchronisation ; un
+  render graph les calculera quand les passes se multiplieront (forward+ PBR).
 - Profondeur **reverse-Z** (0..1) pour la précision sur les grandes distances ; le
   retournement de l'axe Y de Vulkan est géré par la projection, pas par la scène.
 - **Slang** : shaders compilés en SPIR-V au build par `slangc` (SDK Vulkan) ; l'API
@@ -193,7 +219,8 @@ material = asset("77ac…")
 | --------------------- | -------------------- | -------- |
 | SDL3 (feature `vulkan`) | fenêtre, entrées   | 1 ✅     |
 | GLM (header-only)     | maths                | 1 ✅     |
-| volk, VMA             | Vulkan               | 2        |
+| volk (+ vulkan-headers) | Vulkan             | 2 ✅     |
+| VMA                   | mémoire GPU          | 3        |
 | fastgltf              | import glTF          | 3        |
 | Dear ImGui (docking)  | outils, éditeur      | 5        |
 | Catch2                | tests (feature `tests`) | 0 ✅  |
@@ -215,8 +242,8 @@ Chaque jalon se termine par une démo observable dans `devex-sandbox` et des tes
 0. ✅ **Fondations** — `vcpkg.json`, Catch2, `Core` (log, assert, `Result`), dépôt Git.
 1. ✅ **Fenêtre** — `Platform` sur SDL3 : fenêtre redimensionnable, événements clavier et
    souris ; `Runtime` : `Application` et boucle à pas fixe ; `Math` sur GLM.
-2. **Vulkan** — instance 1.4, validation, choix du GPU, device, swapchain, couleur de
-   fond, redimensionnement correct.
+2. ✅ **Vulkan** — instance 1.4, validation, choix du GPU, device, swapchain, couleur de
+   fond, redimensionnement en direct.
 3. **Premier maillage** — shaders Slang, buffers VMA, caméra (Y-up, reverse-Z), triangle
    puis maillage glTF.
 4. **Scène** — `Entity`, `Transform`, `MeshRenderer`, hiérarchie, lecture et écriture

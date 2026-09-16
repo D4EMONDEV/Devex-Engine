@@ -6,6 +6,8 @@
 #include <devex/platform/Input.hpp>
 #include <devex/platform/Platform.hpp>
 #include <devex/platform/Window.hpp>
+#include <devex/render/Renderer.hpp>
+#include <devex/render/RenderWorld.hpp>
 
 #include <concepts>
 #include <cstdint>
@@ -23,6 +25,11 @@ struct ApplicationConfig
     std::uint32_t fixedUpdateRate = 60;
     // Upper bound on frames per second; 0 leaves the frame rate unlimited.
     std::uint32_t maxFrameRate = 0;
+    // Creates a Vulkan renderer for the main window. Disable it for tools and tests without GPU.
+    bool enableRendering = true;
+    render::PresentMode presentMode = render::PresentMode::Fifo;
+    // Case-insensitive part of the GPU name to use; empty selects the most capable GPU.
+    std::string preferredGpu;
 };
 
 namespace detail {
@@ -30,8 +37,8 @@ class ApplicationRunner;
 } // namespace detail
 
 // Base class of every program driven by the engine loop. Each frame polls events, runs the fixed
-// updates that are due, then runs one variable update. Engine services are available from
-// onStartup to onShutdown, not in the constructor.
+// updates that are due, runs one variable update, then renders. Engine services are available
+// from onStartup to onShutdown, not in the constructor.
 class Application
 {
 public:
@@ -67,12 +74,20 @@ public:
     {
     }
 
+    // Called once per rendered frame, after onUpdate, to fill the snapshot the renderer draws.
+    // Skipped when rendering is disabled.
+    virtual void onRender(render::RenderWorld& /*world*/)
+    {
+    }
+
 protected:
     Application() = default;
 
     [[nodiscard]] const platform::Platform& platform() const noexcept;
     [[nodiscard]] const platform::Input& input() const noexcept;
     [[nodiscard]] platform::Window& window() noexcept;
+    // Only available when ApplicationConfig::enableRendering is set.
+    [[nodiscard]] const render::Renderer& renderer() const noexcept;
 
     // Progress towards the next fixed update in [0, 1), to interpolate between simulation states.
     [[nodiscard]] double interpolationAlpha() const noexcept;
@@ -85,6 +100,7 @@ private:
 
     platform::Platform* m_platform = nullptr;
     platform::Window* m_window = nullptr;
+    render::Renderer* m_renderer = nullptr;
     double m_interpolationAlpha = 0.0;
     bool m_quitRequested = false;
 };

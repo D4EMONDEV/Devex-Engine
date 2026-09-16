@@ -1,10 +1,10 @@
 find_package(Catch2 3 CONFIG REQUIRED)
 include(Catch)
 
-# devex_add_tests(<module> SOURCES <files...> LIBRARIES <targets...>)
+# devex_add_tests(<module> SOURCES <files...> LIBRARIES <targets...> [ENVIRONMENT <VAR=value...>])
 # Builds devex_<module>_tests and registers each Catch2 test case with CTest.
 function(devex_add_tests module)
-    cmake_parse_arguments(PARSE_ARGV 1 ARG "" "" "SOURCES;LIBRARIES")
+    cmake_parse_arguments(PARSE_ARGV 1 ARG "" "" "SOURCES;LIBRARIES;ENVIRONMENT")
     set(target devex_${module}_tests)
 
     add_executable(${target} ${ARG_SOURCES})
@@ -12,11 +12,14 @@ function(devex_add_tests module)
     set_target_properties(${target} PROPERTIES FOLDER "Tests")
     devex_set_warnings(${target})
 
-    # The dummy SDL video driver lets windows be created without a display.
+    set(discovery_properties)
+    if(ARG_ENVIRONMENT)
+        set(discovery_properties PROPERTIES ENVIRONMENT "${ARG_ENVIRONMENT}")
+    endif()
     catch_discover_tests(${target}
         TEST_PREFIX "devex.${module}."
         DISCOVERY_MODE PRE_TEST
-        PROPERTIES ENVIRONMENT "SDL_VIDEO_DRIVER=dummy"
+        ${discovery_properties}
     )
 endfunction()
 
@@ -38,10 +41,24 @@ devex_add_tests(platform
         Devex::Platform
 )
 
+# Tests tagged [gpu] open a hidden window and need a Vulkan 1.4 GPU.
+devex_add_tests(render
+    SOURCES
+        render/RendererTests.cpp
+        render/SelectionTests.cpp
+    LIBRARIES
+        Devex::Render
+)
+# Selection logic is internal to the module but free of Vulkan types.
+target_include_directories(devex_render_tests PRIVATE "${PROJECT_SOURCE_DIR}/engine/src")
+
+# The dummy SDL video driver lets the main loop run without a display.
 devex_add_tests(runtime
     SOURCES
         runtime/ApplicationTests.cpp
         runtime/FixedTimestepTests.cpp
     LIBRARIES
         Devex::Runtime
+    ENVIRONMENT
+        SDL_VIDEO_DRIVER=dummy
 )

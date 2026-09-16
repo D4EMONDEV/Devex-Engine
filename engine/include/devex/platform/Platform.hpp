@@ -8,6 +8,7 @@
 
 #include <chrono>
 #include <functional>
+#include <span>
 #include <string>
 
 namespace devex::platform {
@@ -39,6 +40,14 @@ public:
     [[nodiscard]] std::string keyName(Key key) const;
     // Label of the key under the current keyboard layout ("Z" for Key::W on AZERTY).
     [[nodiscard]] std::string keyLabel(Key key) const;
+
+    // Instance extensions needed to create window surfaces. Available once a window has been
+    // created with WindowConfig::vulkan; the strings live as long as the Platform.
+    [[nodiscard]] core::Result<std::span<const char* const>> vulkanInstanceExtensions() const;
+
+    // Registers the function called when a window must be redrawn while the operating system
+    // blocks pollEvents, such as during a live resize on Windows. An empty function unregisters.
+    void setLiveRedrawCallback(std::function<void()> callback);
 
 private:
     Platform() = default;

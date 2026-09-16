@@ -1,5 +1,6 @@
 find_package(glm CONFIG REQUIRED)
 find_package(SDL3 CONFIG REQUIRED)
+find_package(volk CONFIG REQUIRED)
 
 # Core: vocabulary types, errors, logging and assertions. Depends only on the standard library.
 add_library(devex_core STATIC)
@@ -90,6 +91,51 @@ set_target_properties(devex_platform PROPERTIES
 )
 devex_set_warnings(devex_platform)
 
+# Render: Renderer facade over Vulkan, whose types stay inside src/render/vulkan.
+add_library(devex_render STATIC)
+add_library(Devex::Render ALIAS devex_render)
+
+target_sources(devex_render
+    PRIVATE
+        src/render/Renderer.cpp
+        src/render/Selection.cpp
+        src/render/Selection.hpp
+        src/render/vulkan/Commands.cpp
+        src/render/vulkan/Commands.hpp
+        src/render/vulkan/Device.cpp
+        src/render/vulkan/Device.hpp
+        src/render/vulkan/Instance.cpp
+        src/render/vulkan/Instance.hpp
+        src/render/vulkan/Swapchain.cpp
+        src/render/vulkan/Swapchain.hpp
+        src/render/vulkan/Vulkan.cpp
+        src/render/vulkan/Vulkan.hpp
+        src/render/vulkan/VulkanRenderer.cpp
+        src/render/vulkan/VulkanRenderer.hpp
+    PUBLIC
+        FILE_SET HEADERS
+        BASE_DIRS include
+        FILES
+            include/devex/render/Gpu.hpp
+            include/devex/render/Renderer.hpp
+            include/devex/render/RenderWorld.hpp
+)
+
+target_link_libraries(devex_render
+    PUBLIC
+        Devex::Core
+        Devex::Math
+        Devex::Platform
+    PRIVATE
+        volk::volk
+        volk::volk_headers
+)
+set_target_properties(devex_render PROPERTIES
+    EXPORT_NAME Render
+    FOLDER "Engine"
+)
+devex_set_warnings(devex_render)
+
 # Runtime: application lifecycle and the main loop.
 add_library(devex_runtime STATIC)
 add_library(Devex::Runtime ALIAS devex_runtime)
@@ -110,6 +156,7 @@ target_link_libraries(devex_runtime
     PUBLIC
         Devex::Core
         Devex::Platform
+        Devex::Render
 )
 set_target_properties(devex_runtime PROPERTIES
     EXPORT_NAME Runtime

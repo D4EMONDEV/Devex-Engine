@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdlib>
+#include <optional>
 #include <variant>
 
 namespace devex::runtime {
@@ -16,28 +17,15 @@ namespace detail {
 class ApplicationRunner
 {
 public:
-    ApplicationRunner(Application& application, platform::Platform& platform,
-                      platform::Window& window) noexcept
-        : m_application(application)
-        , m_platform(platform)
-        , m_window(window)
-    {
-        m_application.m_platform = &platform;
-        m_application.m_window = &window;
-        m_application.m_interpolationAlpha = 0.0;
-        m_application.m_quitRequested = false;
-    }
-
-    ~ApplicationRunner()
-    {
-        m_application.m_platform = nullptr;
-        m_application.m_window = nullptr;
-    }
+    ApplicationRunner(Application& application, const ApplicationConfig& config,
+                      platform::Platform& platform, platform::Window& window,
+                      render::Renderer* renderer) noexcept;
+    ~ApplicationRunner();
 
     ApplicationRunner(const ApplicationRunner&) = delete;
     ApplicationRunner& operator=(const ApplicationRunner&) = delete;
 
-    [[nodiscard]] int execute(const ApplicationConfig& config);
+    [[nodiscard]] int execute();
 
 private:
     using Clock = std::chrono::steady_clock;
@@ -45,14 +33,54 @@ private:
     // A minimized window shows nothing: keep simulating in real time without spinning the CPU.
     static constexpr std::chrono::milliseconds minimizedFrameTime{50};
 
-    void handleEvent(const platform::Event& event, platform::WindowId mainWindow);
+    void handleEvent(const platform::Event& event);
+    // Runs the updates and the rendering of one frame. Also called from the operating system's
+    // modal loop while the window is being resized, where events cannot be polled.
+    void runFrame();
 
     Application& m_application;
     platform::Platform& m_platform;
     platform::Window& m_window;
+    render::Renderer* m_renderer;
+    platform::WindowId m_mainWindow;
+    FixedTimestep m_timestep;
+    core::Duration m_fixedDelta;
+    std::chrono::nanoseconds m_frameBudget;
+    Clock::time_point m_previousFrame;
+    bool m_inFrame = false;
+    int m_exitCode = EXIT_SUCCESS;
 };
 
-int ApplicationRunner::execute(const ApplicationConfig& config)
+ApplicationRunner::ApplicationRunner(Application& application, const ApplicationConfig& config,
+                                     platform::Platform& platform, platform::Window& window,
+                                     render::Renderer* renderer) noexcept
+    : m_application(application)
+    , m_platform(platform)
+    , m_window(window)
+    , m_renderer(renderer)
+    , m_mainWindow(window.id())
+    , m_timestep(FixedTimestep::fromRate(config.fixedUpdateRate))
+    , m_fixedDelta(m_timestep.step())
+    , m_frameBudget(config.maxFrameRate == 0
+                        ? std::chrono::nanoseconds::zero()
+                        : std::chrono::nanoseconds(std::chrono::seconds(1)) / config.maxFrameRate)
+{
+    m_application.m_platform = &platform;
+    m_application.m_window = &window;
+    m_application.m_renderer = renderer;
+    m_application.m_interpolationAlpha = 0.0;
+    m_application.m_quitRequested = false;
+}
+
+ApplicationRunner::~ApplicationRunner()
+{
+    m_platform.setLiveRedrawCallback({});
+    m_application.m_platform = nullptr;
+    m_application.m_window = nullptr;
+    m_application.m_renderer = nullptr;
+}
+
+int ApplicationRunner::execute()
 {
     if (core::Result<void> started = m_application.onStartup(); !started)
     {
@@ -60,51 +88,30 @@ int ApplicationRunner::execute(const ApplicationConfig& config)
         return EXIT_FAILURE;
     }
 
-    FixedTimestep timestep = FixedTimestep::fromRate(config.fixedUpdateRate);
-    const core::Duration fixedDelta = timestep.step();
-    const std::chrono::nanoseconds frameBudget =
-        config.maxFrameRate == 0 ? std::chrono::nanoseconds::zero()
-                                 : std::chrono::nanoseconds(std::chrono::seconds(1)) /
-                                       config.maxFrameRate;
-    const platform::WindowId mainWindow = m_window.id();
+    m_platform.setLiveRedrawCallback([this] {
+        if (!m_inFrame && !m_application.m_quitRequested)
+        {
+            runFrame();
+        }
+    });
 
-    Clock::time_point previousFrame = Clock::now();
+    m_previousFrame = Clock::now();
     while (!m_application.m_quitRequested)
     {
-        const Clock::time_point frameStart = Clock::now();
-        const std::chrono::nanoseconds frameTime = frameStart - previousFrame;
-        previousFrame = frameStart;
-
-        m_platform.pollEvents(
-            [this, mainWindow](const platform::Event& event) { handleEvent(event, mainWindow); });
+        m_platform.pollEvents([this](const platform::Event& event) { handleEvent(event); });
         if (m_application.m_quitRequested)
         {
             break;
         }
-
-        const std::uint32_t steps = timestep.advance(frameTime);
-        for (std::uint32_t step = 0; step < steps; ++step)
-        {
-            m_application.onFixedUpdate(fixedDelta);
-        }
-        m_application.m_interpolationAlpha = timestep.alpha();
-        m_application.onUpdate(core::Duration(frameTime));
-
-        const std::chrono::nanoseconds frameLimit =
-            m_window.isMinimized()
-                ? std::max(frameBudget, std::chrono::nanoseconds(minimizedFrameTime))
-                : frameBudget;
-        if (frameLimit > std::chrono::nanoseconds::zero())
-        {
-            platform::sleepPrecise(frameLimit - (Clock::now() - frameStart));
-        }
+        runFrame();
     }
 
+    m_platform.setLiveRedrawCallback({});
     m_application.onShutdown();
-    return EXIT_SUCCESS;
+    return m_exitCode;
 }
 
-void ApplicationRunner::handleEvent(const platform::Event& event, platform::WindowId mainWindow)
+void ApplicationRunner::handleEvent(const platform::Event& event)
 {
     m_application.onEvent(event);
 
@@ -113,10 +120,49 @@ void ApplicationRunner::handleEvent(const platform::Event& event, platform::Wind
         m_application.m_quitRequested = true;
     }
     else if (const auto* closeRequest = std::get_if<platform::WindowCloseRequested>(&event);
-             closeRequest != nullptr && closeRequest->window == mainWindow)
+             closeRequest != nullptr && closeRequest->window == m_mainWindow)
     {
         m_application.m_quitRequested = true;
     }
+}
+
+void ApplicationRunner::runFrame()
+{
+    m_inFrame = true;
+
+    const Clock::time_point frameStart = Clock::now();
+    const std::chrono::nanoseconds frameTime = frameStart - m_previousFrame;
+    m_previousFrame = frameStart;
+
+    const std::uint32_t steps = m_timestep.advance(frameTime);
+    for (std::uint32_t step = 0; step < steps; ++step)
+    {
+        m_application.onFixedUpdate(m_fixedDelta);
+    }
+    m_application.m_interpolationAlpha = m_timestep.alpha();
+    m_application.onUpdate(core::Duration(frameTime));
+
+    const bool minimized = m_window.isMinimized();
+    if (m_renderer != nullptr && !minimized && !m_application.m_quitRequested)
+    {
+        m_application.onRender(m_renderer->beginFrame());
+        if (core::Result<void> rendered = m_renderer->endFrame(); !rendered)
+        {
+            DEVEX_LOG_FATAL("Rendering failed: {}", rendered.error());
+            m_application.m_quitRequested = true;
+            m_exitCode = EXIT_FAILURE;
+        }
+    }
+
+    const std::chrono::nanoseconds frameLimit =
+        minimized ? std::max(m_frameBudget, std::chrono::nanoseconds(minimizedFrameTime))
+                  : m_frameBudget;
+    if (frameLimit > std::chrono::nanoseconds::zero())
+    {
+        platform::sleepPrecise(frameLimit - (Clock::now() - frameStart));
+    }
+
+    m_inFrame = false;
 }
 
 } // namespace detail
@@ -136,6 +182,12 @@ platform::Window& Application::window() noexcept
 {
     DEVEX_ASSERT_MSG(m_window != nullptr, "engine services are unavailable outside run()");
     return *m_window;
+}
+
+const render::Renderer& Application::renderer() const noexcept
+{
+    DEVEX_ASSERT_MSG(m_renderer != nullptr, "rendering is disabled or unavailable outside run()");
+    return *m_renderer;
 }
 
 double Application::interpolationAlpha() const noexcept
@@ -164,6 +216,7 @@ int run(Application& application, const ApplicationConfig& config)
         .width = config.width,
         .height = config.height,
         .resizable = config.resizable,
+        .vulkan = config.enableRendering,
     });
     if (!window)
     {
@@ -175,8 +228,25 @@ int run(Application& application, const ApplicationConfig& config)
     DEVEX_LOG_DEBUG("Main window {}x{} ({}x{} pixels), fixed update at {} Hz", config.width,
                     config.height, pixelSize.width, pixelSize.height, config.fixedUpdateRate);
 
-    detail::ApplicationRunner runner(application, *platform, *window);
-    return runner.execute(config);
+    std::optional<render::Renderer> renderer;
+    if (config.enableRendering)
+    {
+        core::Result<render::Renderer> created = render::Renderer::create(*platform, *window, {
+            .applicationName = config.title,
+            .presentMode = config.presentMode,
+            .preferredGpu = config.preferredGpu,
+        });
+        if (!created)
+        {
+            DEVEX_LOG_FATAL("Cannot initialize rendering: {}", created.error());
+            return EXIT_FAILURE;
+        }
+        renderer.emplace(std::move(*created));
+    }
+
+    detail::ApplicationRunner runner(application, config, *platform, *window,
+                                     renderer ? &*renderer : nullptr);
+    return runner.execute();
 }
 
 } // namespace devex::runtime
