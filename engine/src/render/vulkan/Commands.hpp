@@ -15,10 +15,14 @@ enum class ImageState
     ColorAttachment,
     DepthAttachment,
     Present,
+    // Receiving data copied from a buffer.
+    TransferDestination,
+    // Sampled by fragment shaders.
+    ShaderReadOnly,
 };
 
-// Records a synchronization2 barrier between two states of an image.
-void transitionImage(VkCommandBuffer commandBuffer, VkImage image, ImageState from,
-                     ImageState to);
+// Records a synchronization2 barrier between two states of an image and its first mip levels.
+void transitionImage(VkCommandBuffer commandBuffer, VkImage image, ImageState from, ImageState to,
+                     std::uint32_t mipLevels = 1);
 
 } // namespace devex::render::vulkan

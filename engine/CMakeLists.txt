@@ -1,8 +1,11 @@
+find_package(basisu CONFIG REQUIRED)
+find_package(efsw CONFIG REQUIRED)
 find_package(fastgltf CONFIG REQUIRED)
 find_package(glm CONFIG REQUIRED)
 find_package(imgui CONFIG REQUIRED)
 find_package(SDL3 CONFIG REQUIRED)
 find_package(volk CONFIG REQUIRED)
+find_package(Stb REQUIRED)
 find_package(VulkanMemoryAllocator CONFIG REQUIRED)
 
 # Core: vocabulary types, errors, logging and assertions. Depends only on the standard library.
@@ -15,6 +18,8 @@ target_sources(devex_core
         src/core/BuildInfo.cpp
         src/core/Error.cpp
         src/core/File.cpp
+        src/core/Hash.cpp
+        src/core/JobSystem.cpp
         src/core/Log.cpp
         src/core/Uuid.cpp
     PUBLIC
@@ -25,6 +30,8 @@ target_sources(devex_core
             include/devex/core/BuildInfo.hpp
             include/devex/core/Error.hpp
             include/devex/core/File.hpp
+            include/devex/core/Hash.hpp
+            include/devex/core/JobSystem.hpp
             include/devex/core/Log.hpp
             include/devex/core/Path.hpp
             include/devex/core/SlotMap.hpp
@@ -137,6 +144,7 @@ target_sources(devex_serialization
         FILE_SET HEADERS
         BASE_DIRS include
         FILES
+            include/devex/serialization/Binary.hpp
             include/devex/serialization/Text.hpp
 )
 
@@ -147,21 +155,33 @@ set_target_properties(devex_serialization PROPERTIES
 )
 devex_set_warnings(devex_serialization)
 
-# Asset: CPU-side asset data shared by the runtime and the tools.
+# Asset: CPU-side asset data and cooked asset files, shared by the runtime and the tools.
 add_library(devex_asset STATIC)
 add_library(Devex::Asset ALIAS devex_asset)
 
 target_sources(devex_asset
     PRIVATE
+        src/asset/Artifact.cpp
+        src/asset/AssetType.cpp
+        src/asset/MaterialData.cpp
         src/asset/MeshData.cpp
+        src/asset/ModelData.cpp
         src/asset/Primitives.cpp
+        src/asset/Project.cpp
+        src/asset/TextureData.cpp
     PUBLIC
         FILE_SET HEADERS
         BASE_DIRS include
         FILES
+            include/devex/asset/Artifact.hpp
             include/devex/asset/AssetId.hpp
+            include/devex/asset/AssetType.hpp
+            include/devex/asset/MaterialData.hpp
             include/devex/asset/MeshData.hpp
+            include/devex/asset/ModelData.hpp
             include/devex/asset/Primitives.hpp
+            include/devex/asset/Project.hpp
+            include/devex/asset/TextureData.hpp
 )
 
 target_link_libraries(devex_asset
@@ -169,6 +189,8 @@ target_link_libraries(devex_asset
         Devex::Core
         Devex::Math
         Devex::Reflection
+    PRIVATE
+        Devex::Serialization
 )
 set_target_properties(devex_asset PROPERTIES
     EXPORT_NAME Asset
@@ -176,24 +198,41 @@ set_target_properties(devex_asset PROPERTIES
 )
 devex_set_warnings(devex_asset)
 
-# AssetImport: converters from source formats such as glTF. Meant for tools, not shipped games.
+# AssetImport: the asset database and the importers of source formats. Meant for tools, not
+# shipped games.
 add_library(devex_asset_import STATIC)
 add_library(Devex::AssetImport ALIAS devex_asset_import)
 
 target_sources(devex_asset_import
     PRIVATE
+        src/asset/import/AssetDatabase.cpp
         src/asset/import/GltfImporter.cpp
+        src/asset/import/Importer.cpp
+        src/asset/import/MaterialFile.cpp
+        src/asset/import/MetaFile.cpp
+        src/asset/import/StbImage.cpp
+        src/asset/import/TextureProcessing.cpp
     PUBLIC
         FILE_SET HEADERS
         BASE_DIRS include
         FILES
-            include/devex/asset/import/GltfImporter.hpp
+            include/devex/asset/import/AssetDatabase.hpp
+            include/devex/asset/import/Importer.hpp
+            include/devex/asset/import/MaterialFile.hpp
+            include/devex/asset/import/MetaFile.hpp
+            include/devex/asset/import/TextureProcessing.hpp
 )
 
+target_include_directories(devex_asset_import SYSTEM PRIVATE ${Stb_INCLUDE_DIR})
 target_link_libraries(devex_asset_import
     PUBLIC
         Devex::Asset
+        Devex::Core
+        Devex::Serialization
     PRIVATE
+        Devex::Scene
+        basisu::basisu_encoder
+        efsw::efsw
         fastgltf::fastgltf
 )
 set_target_properties(devex_asset_import PROPERTIES
@@ -229,6 +268,8 @@ target_sources(devex_render
         src/render/Renderer.cpp
         src/render/Selection.cpp
         src/render/Selection.hpp
+        src/render/vulkan/Bindless.cpp
+        src/render/vulkan/Bindless.hpp
         src/render/vulkan/Commands.cpp
         src/render/vulkan/Commands.hpp
         src/render/vulkan/Device.cpp
@@ -292,6 +333,7 @@ target_sources(devex_scene
         src/scene/ComponentRegistry.cpp
         src/scene/Components.cpp
         src/scene/FieldValue.cpp
+        src/scene/ModelInstantiation.cpp
         src/scene/Scene.cpp
         src/scene/SceneSerializer.cpp
     PUBLIC
@@ -303,6 +345,7 @@ target_sources(devex_scene
             include/devex/scene/Components.hpp
             include/devex/scene/Entity.hpp
             include/devex/scene/FieldValue.hpp
+            include/devex/scene/ModelInstantiation.hpp
             include/devex/scene/Scene.hpp
             include/devex/scene/SceneSerializer.hpp
             include/devex/scene/View.hpp
@@ -328,6 +371,7 @@ add_library(Devex::Tools ALIAS devex_tools)
 
 target_sources(devex_tools
     PRIVATE
+        src/tools/AssetsPanel.cpp
         src/tools/CommandHistory.cpp
         src/tools/ConsolePanel.cpp
         src/tools/HierarchyPanel.cpp
@@ -349,6 +393,7 @@ target_sources(devex_tools
 
 target_link_libraries(devex_tools
     PUBLIC
+        Devex::AssetImport
         Devex::Core
         Devex::Platform
         Devex::Render
@@ -370,7 +415,7 @@ add_library(Devex::Runtime ALIAS devex_runtime)
 target_sources(devex_runtime
     PRIVATE
         src/runtime/Application.cpp
-        src/runtime/AssetRegistry.cpp
+        src/runtime/AssetManager.cpp
         src/runtime/FixedTimestep.cpp
         src/runtime/SceneExtraction.cpp
     PUBLIC
@@ -378,13 +423,14 @@ target_sources(devex_runtime
         BASE_DIRS include
         FILES
             include/devex/runtime/Application.hpp
-            include/devex/runtime/AssetRegistry.hpp
+            include/devex/runtime/AssetManager.hpp
             include/devex/runtime/FixedTimestep.hpp
             include/devex/runtime/SceneExtraction.hpp
 )
 
 target_link_libraries(devex_runtime
     PUBLIC
+        Devex::AssetImport
         Devex::Core
         Devex::Platform
         Devex::Render

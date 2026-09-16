@@ -1,0 +1,12 @@
+# Devex import settings: keep this file next to its asset in version control.
+[asset format=1 uuid="fa17e48e-77a9-48d6-9cb6-3075791e73bf" importer="gltf"]
+compress_textures = true
+texture_quality = "normal"
+
+[subasset type="texture" key="crate_albedo.png" uuid="cccefb89-ad7d-4017-baee-768010b4c990"]
+
+[subasset type="texture" key="crate_normal.png (normal)" uuid="ed822e0d-191a-4270-86c5-08290d93e9d2"]
+
+[subasset type="material" key="Wood" uuid="7eb218af-8a08-4b1b-9029-bd3c909fd943"]
+
+[subasset type="mesh" key="Crate" uuid="0a4571b3-aa2e-4421-a385-09466c6dee9c"]

@@ -28,6 +28,9 @@ devex_add_tests(core
         core/AssertTests.cpp
         core/BuildInfoTests.cpp
         core/ErrorTests.cpp
+        core/FileTests.cpp
+        core/HashTests.cpp
+        core/JobSystemTests.cpp
         core/LogTests.cpp
         core/SlotMapTests.cpp
         core/UuidTests.cpp
@@ -53,6 +56,7 @@ devex_add_tests(reflection
 
 devex_add_tests(serialization
     SOURCES
+        serialization/BinaryTests.cpp
         serialization/TextTests.cpp
     LIBRARIES
         Devex::Serialization
@@ -68,8 +72,12 @@ devex_add_tests(scene
 
 devex_add_tests(asset
     SOURCES
+        asset/ArtifactTests.cpp
+        asset/AssetDatabaseTests.cpp
         asset/GltfImporterTests.cpp
         asset/MeshDataTests.cpp
+        asset/MetaFileTests.cpp
+        asset/TextureProcessingTests.cpp
     LIBRARIES
         Devex::AssetImport
 )

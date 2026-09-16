@@ -1,5 +1,5 @@
 #include <devex/asset/AssetId.hpp>
-#include <devex/asset/import/GltfImporter.hpp>
+#include <devex/asset/import/AssetDatabase.hpp>
 #include <devex/core/Log.hpp>
 #include <devex/core/Path.hpp>
 #include <devex/math/Math.hpp>
@@ -7,6 +7,7 @@
 #include <devex/platform/Input.hpp>
 #include <devex/runtime/Application.hpp>
 #include <devex/scene/Components.hpp>
+#include <devex/scene/ModelInstantiation.hpp>
 #include <devex/scene/Scene.hpp>
 #include <devex/scene/SceneSerializer.hpp>
 
@@ -15,6 +16,7 @@
 #include <filesystem>
 #include <format>
 #include <numbers>
+#include <optional>
 #include <variant>
 #include <vector>
 
@@ -22,6 +24,7 @@ namespace {
 
 using devex::asset::AssetId;
 using devex::core::Duration;
+using devex::core::Uuid;
 using devex::math::Quat;
 using devex::math::Vec3;
 using devex::platform::Key;
@@ -36,8 +39,30 @@ using devex::scene::Transform;
 const Vec3 up{0.0f, 1.0f, 0.0f};
 const Vec3 right{1.0f, 0.0f, 0.0f};
 
-// Milestone 4 playground: a scene with a hierarchy, a free camera, saving with F5 and reloading
-// with F9. Dropping a .gltf or .glb file on the window imports it as entities.
+// Identifiers from the .dvxmeta files of apps/sandbox/project/assets.
+[[nodiscard]] AssetId projectAsset(std::string_view uuid)
+{
+    return AssetId{*Uuid::parse(uuid)};
+}
+
+const AssetId groundMaterial = projectAsset("78014e97-7de2-4e27-89db-74abd840010d");
+const AssetId glowMaterial = projectAsset("ff4872a7-7bc8-4ffb-900d-0c565be864f0");
+const AssetId crateModel = projectAsset("fa17e48e-77a9-48d6-9cb6-3075791e73bf");
+const AssetId beaconModel = projectAsset("65be0348-3b58-4e34-9d7b-30ba9d12512c");
+
+// A model to place once its import is available.
+struct Placement
+{
+    AssetId model;
+    Vec3 position{0.0f};
+    // Nil for a root.
+    Uuid parent;
+};
+
+// Milestone 6 playground: a scene built from project assets imported in the background. Models
+// appear once imported, and editing a texture, a material or a model in the assets folder updates
+// the scene while it runs. F5 saves the scene, F9 reloads it, and dropping a .gltf or .glb file
+// copies it into the project and places it in front of the camera.
 class Sandbox final : public devex::runtime::Application
 {
 public:
@@ -57,7 +82,7 @@ public:
     {
         if (const auto* dropped = std::get_if<devex::platform::FileDropped>(&event))
         {
-            importModel(devex::core::pathFromUtf8(dropped->path));
+            importDroppedFile(devex::core::pathFromUtf8(dropped->path));
         }
     }
 
@@ -94,6 +119,7 @@ public:
     void onUpdate(Duration frameDelta) override
     {
         handleMouseAndKeys();
+        placeImportedModels();
 
         // Rendered states are interpolated between the last two fixed steps.
         const auto alpha = static_cast<float>(interpolationAlpha());
@@ -147,29 +173,28 @@ private:
 
         const Entity ground = world.createEntity("Ground");
         world.add<Transform>(ground, Transform{.scale = {40.0f, 1.0f, 40.0f}});
-        world.add<MeshRenderer>(ground, devex::asset::builtin::planeMesh);
+        world.add<MeshRenderer>(ground, MeshRenderer{devex::asset::builtin::planeMesh, groundMaterial});
 
         // Children orbit with the turntable because their transforms are relative to it.
         const Entity turntable = world.createEntity("Turntable");
-        world.add<Transform>(turntable, Transform{.position = {0.0f, 0.75f, 0.0f}});
+        world.add<Transform>(turntable);
         m_turntableUuid = world.uuid(turntable);
-
-        const Entity centerCube = world.createEntity("Center cube");
-        world.add<Transform>(centerCube);
-        world.add<MeshRenderer>(centerCube, devex::asset::builtin::cubeMesh);
-        attach(centerCube, turntable);
+        m_placements.push_back({crateModel, Vec3{0.0f}, m_turntableUuid});
 
         for (int index = 0; index < 4; ++index)
         {
             const float angle = static_cast<float>(index) * std::numbers::pi_v<float> * 0.5f;
             const Entity satellite = world.createEntity(std::format("Satellite {}", index + 1));
             world.add<Transform>(satellite, Transform{
-                                                .position = {2.0f * std::cos(angle), 0.0f,
+                                                .position = {2.0f * std::cos(angle), 0.3f,
                                                              2.0f * std::sin(angle)},
                                                 .scale = Vec3{0.6f},
                                             });
-            world.add<MeshRenderer>(satellite, index % 2 == 0 ? devex::asset::builtin::sphereMesh
-                                                              : devex::asset::builtin::cubeMesh);
+            const bool sphere = index % 2 == 0;
+            world.add<MeshRenderer>(
+                satellite, MeshRenderer{sphere ? devex::asset::builtin::sphereMesh
+                                               : devex::asset::builtin::cubeMesh,
+                                        sphere ? glowMaterial : AssetId{}});
             attach(satellite, turntable);
         }
 
@@ -180,9 +205,12 @@ private:
             const Entity sphere = world.createEntity(std::format("Sphere {}", index + 1));
             world.add<Transform>(sphere,
                                  Transform{.position = {-4.0f + 2.0f * static_cast<float>(index), 0.0f, 0.0f}});
-            world.add<MeshRenderer>(sphere, devex::asset::builtin::sphereMesh);
+            world.add<MeshRenderer>(sphere, MeshRenderer{devex::asset::builtin::sphereMesh});
             attach(sphere, row);
         }
+
+        m_placements.push_back({beaconModel, Vec3{-6.0f, 0.0f, -2.0f}, Uuid{}});
+        m_placements.push_back({beaconModel, Vec3{6.0f, 0.0f, -2.0f}, Uuid{}});
     }
 
     void attach(Entity child, Entity parent)
@@ -191,6 +219,59 @@ private:
         {
             DEVEX_LOG_ERROR("Cannot build the hierarchy: {}", attached.error());
         }
+    }
+
+    // Places the models whose import has finished; the others wait for a later frame.
+    void placeImportedModels()
+    {
+        devex::asset::AssetDatabase* const database = assetDatabase();
+        std::erase_if(m_placements, [&](const Placement& placement) {
+            if (database == nullptr)
+            {
+                return true;
+            }
+            if (const std::optional<devex::asset::SourceFile> source = database->sourceOf(placement.model);
+                source && source->status == devex::asset::ImportStatus::Failed)
+            {
+                DEVEX_LOG_WARNING("{} cannot be placed: {}", source->path, source->error);
+                return true;
+            }
+            const devex::asset::ModelData* const model = assets().model(placement.model);
+            const devex::asset::AssetInfo* const info = database->find(placement.model);
+            if (model == nullptr || info == nullptr)
+            {
+                return false;
+            }
+
+            Scene& world = scene();
+            const Entity parent = world.findEntity(placement.parent);
+            const Entity root = devex::scene::instantiateModel(world, *model, info->name, parent);
+            world.get<Transform>(root).position = placement.position;
+            return true;
+        });
+    }
+
+    void importDroppedFile(const std::filesystem::path& file)
+    {
+        devex::asset::AssetDatabase* const database = assetDatabase();
+        if (database == nullptr)
+        {
+            DEVEX_LOG_WARNING("Dropped files need a project");
+            return;
+        }
+        const devex::core::Result<AssetId> added = database->addFile(file, "res://assets/dropped");
+        if (!added)
+        {
+            DEVEX_LOG_ERROR("Cannot add {}: {}", devex::core::toUtf8(file.filename()), added.error());
+            return;
+        }
+        // In front of the camera, on the ground.
+        const Quat heading = devex::math::angleAxis(devex::math::radians(m_yaw), up);
+        Vec3 position = m_position + heading * Vec3{0.0f, 0.0f, -4.0f};
+        position.y = 0.0f;
+        m_placements.push_back({*added, position, Uuid{}});
+        DEVEX_LOG_INFO("Copied {} into the project; it appears once imported",
+                       devex::core::toUtf8(file.filename()));
     }
 
     void handleMouseAndKeys()
@@ -250,6 +331,8 @@ private:
             return;
         }
         scene() = std::move(*loaded);
+        // Placed models are part of the saved scene.
+        m_placements.clear();
 
         // Entities keep their UUIDs across saves, so the camera is found again.
         if (const Transform* const camera = scene().tryGet<Transform>(scene().findEntity(m_cameraUuid)))
@@ -258,44 +341,6 @@ private:
             m_previousPosition = camera->position;
         }
         DEVEX_LOG_INFO("Loaded {} entities", scene().entityCount());
-    }
-
-    void importModel(const std::filesystem::path& path)
-    {
-        devex::core::Result<devex::asset::ImportedScene> imported = devex::asset::importGltf(path);
-        if (!imported)
-        {
-            DEVEX_LOG_ERROR("Cannot import the model: {}", imported.error());
-            return;
-        }
-
-        // Imported meshes get identifiers for this session only, until the asset database exists.
-        std::vector<AssetId> meshIds;
-        for (const devex::asset::ImportedMesh& mesh : imported->meshes)
-        {
-            devex::core::Result<devex::render::MeshHandle> handle = renderer().createMesh(mesh.data);
-            if (!handle)
-            {
-                DEVEX_LOG_ERROR("Cannot upload mesh '{}': {}", mesh.name, handle.error());
-                return;
-            }
-            meshIds.push_back(AssetId::generate());
-            assets().registerMesh(meshIds.back(), *handle);
-        }
-
-        Scene& world = scene();
-        const Entity model = world.createEntity(devex::core::toUtf8(path.stem()));
-        world.add<Transform>(model, Transform{.position = {4.0f, 0.0f, 2.0f}});
-        for (const devex::asset::ImportedInstance& instance : imported->instances)
-        {
-            const devex::math::Trs trs = devex::math::decomposeTrs(instance.transform);
-            const Entity part = world.createEntity(imported->meshes[instance.mesh].name);
-            world.add<Transform>(part, Transform{trs.translation, trs.rotation, trs.scale});
-            world.add<MeshRenderer>(part, meshIds[instance.mesh]);
-            attach(part, model);
-        }
-        DEVEX_LOG_INFO("Imported {}: {} meshes, {} instances", devex::core::toUtf8(path.filename()),
-                       imported->meshes.size(), imported->instances.size());
     }
 
     void updateTitle(Duration frameDelta)
@@ -308,20 +353,24 @@ private:
         }
 
         const double seconds = m_statsTime.count();
+        const std::size_t importing =
+            assetDatabase() != nullptr ? assetDatabase()->pendingImports() : 0;
         window().setTitle(std::format(
-            "Devex Sandbox | {} ({}) | {:.0f} FPS | {:.0f} fixed/s | {} entities | position "
+            "Devex Sandbox | {} ({}) | {:.0f} FPS | {:.0f} fixed/s | {} entities{} | position "
             "({:.1f}, {:.1f}, {:.1f})",
             renderer().gpu().name, devex::render::toString(renderer().presentMode()),
-            m_frames / seconds, m_fixedSteps / seconds, scene().entityCount(), m_position.x,
-            m_position.y, m_position.z));
+            m_frames / seconds, m_fixedSteps / seconds, scene().entityCount(),
+            importing > 0 ? std::format(" | importing {}", importing) : std::string(),
+            m_position.x, m_position.y, m_position.z));
 
         m_statsTime = Duration::zero();
         m_frames = 0;
         m_fixedSteps = 0;
     }
 
-    devex::core::Uuid m_cameraUuid;
-    devex::core::Uuid m_turntableUuid;
+    Uuid m_cameraUuid;
+    Uuid m_turntableUuid;
+    std::vector<Placement> m_placements;
 
     Vec3 m_position{0.0f, 2.0f, 8.0f};
     Vec3 m_previousPosition{0.0f, 2.0f, 8.0f};
@@ -343,5 +392,6 @@ int main()
         .title = "Devex Sandbox",
         .width = 1280,
         .height = 720,
+        .project = devex::core::pathFromUtf8(DEVEX_SANDBOX_PROJECT),
     });
 }

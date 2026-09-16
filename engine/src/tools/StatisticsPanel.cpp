@@ -42,6 +42,8 @@ void drawStatisticsPanel(ToolsState& state, const scene::Scene& scene)
                 std::format("{} x {}", stats.swapchainExtent.width, stats.swapchainExtent.height));
             row("Draw calls", std::format("{}", stats.drawCalls));
             row("Meshes", std::format("{}", stats.meshCount));
+            row("Textures", std::format("{}", stats.textureCount));
+            row("Materials", std::format("{}", stats.materialCount));
             row("GPU memory", std::format("{:.1f} / {:.0f} MB",
                                           static_cast<double>(stats.gpuMemoryUsage) / bytesPerMegabyte,
                                           static_cast<double>(stats.gpuMemoryBudget) / bytesPerMegabyte));

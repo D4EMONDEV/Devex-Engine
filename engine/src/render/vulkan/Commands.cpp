@@ -32,13 +32,20 @@ struct StateUsage
     case ImageState::Present:
         // Presentation waits for the semaphore signaled once all graphics stages completed.
         return {VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT, 0};
+    case ImageState::TransferDestination:
+        return {VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+                VK_ACCESS_2_TRANSFER_WRITE_BIT};
+    case ImageState::ShaderReadOnly:
+        return {VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
+                VK_ACCESS_2_SHADER_SAMPLED_READ_BIT};
     }
     return {};
 }
 
 } // namespace
 
-void transitionImage(VkCommandBuffer commandBuffer, VkImage image, ImageState from, ImageState to)
+void transitionImage(VkCommandBuffer commandBuffer, VkImage image, ImageState from, ImageState to,
+                     std::uint32_t mipLevels)
 {
     const StateUsage source = usageOf(from);
     const StateUsage destination = usageOf(to);
@@ -60,7 +67,7 @@ void transitionImage(VkCommandBuffer commandBuffer, VkImage image, ImageState fr
                 .aspectMask =
                     static_cast<VkImageAspectFlags>(isDepth ? VK_IMAGE_ASPECT_DEPTH_BIT
                                                             : VK_IMAGE_ASPECT_COLOR_BIT),
-                .levelCount = 1,
+                .levelCount = mipLevels,
                 .layerCount = 1,
             },
     };

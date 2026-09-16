@@ -145,6 +145,7 @@ scale = vec3(1, 1, 1)
 
 [component type="MeshRenderer"]
 mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("00000000-0000-0000-0000-000000000000")
 )");
 }
 

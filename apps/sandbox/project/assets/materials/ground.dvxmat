@@ -1,0 +1,5 @@
+# Tints the checker texture of the ground.
+[material format=1]
+base_color = vec4(1, 1, 1, 1)
+base_color_texture = asset("0d958a7c-6376-440a-bd9b-4276675c6896")
+roughness = 0.9

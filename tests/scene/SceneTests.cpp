@@ -1,4 +1,5 @@
 #include <devex/scene/Components.hpp>
+#include <devex/scene/ModelInstantiation.hpp>
 #include <devex/scene/Scene.hpp>
 
 #include <catch2/catch_test_macros.hpp>
@@ -195,4 +196,33 @@ TEST_CASE("World transforms combine the ancestors' transforms", "[scene][hierarc
     CHECK_THAT(origin.x, WithinAbs(10.0, 1e-5));
     CHECK_THAT(origin.y, WithinAbs(0.0, 1e-5));
     CHECK_THAT(origin.z, WithinAbs(-2.0, 1e-5));
+}
+
+TEST_CASE("Models instantiate as entity copies under a root", "[scene][model]")
+{
+    devex::asset::ModelData model;
+    const devex::asset::AssetId mesh = devex::asset::AssetId::generate();
+    model.nodes.push_back({.name = "Body", .translation = {0.0f, 1.0f, 0.0f}});
+    model.nodes.push_back({.name = "Wheel", .parent = 0, .scale = Vec3{0.5f}, .mesh = mesh});
+    model.nodes.push_back({.name = "Antenna", .parent = 0});
+
+    Scene scene;
+    const Entity parent = scene.createEntity("Garage");
+    const Entity root = devex::scene::instantiateModel(scene, model, "Car", parent);
+
+    CHECK(scene.name(root) == "Car");
+    CHECK(scene.parent(root) == parent);
+    CHECK(scene.has<Transform>(root));
+    const Entity body = scene.firstChild(root);
+    REQUIRE(body.isValid());
+    CHECK(scene.name(body) == "Body");
+    CHECK(scene.get<Transform>(body).position == Vec3{0.0f, 1.0f, 0.0f});
+    CHECK_FALSE(scene.has<devex::scene::MeshRenderer>(body));
+
+    const Entity wheel = scene.firstChild(body);
+    REQUIRE(wheel.isValid());
+    CHECK(scene.get<devex::scene::MeshRenderer>(wheel).mesh == mesh);
+    CHECK(scene.get<Transform>(wheel).scale == Vec3{0.5f});
+    CHECK(scene.name(scene.nextSibling(wheel)) == "Antenna");
+    CHECK(scene.entityCount() == 5);
 }

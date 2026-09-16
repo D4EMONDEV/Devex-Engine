@@ -29,6 +29,10 @@ public:
     [[nodiscard]] VkQueue queue() const noexcept;
     [[nodiscard]] std::uint32_t queueFamily() const noexcept;
     [[nodiscard]] const GpuInfo& gpu() const noexcept;
+    // 1 when anisotropic filtering is unavailable.
+    [[nodiscard]] float maxSamplerAnisotropy() const noexcept;
+    // Sampled images a fragment shader may index in a descriptor set updated after binding.
+    [[nodiscard]] std::uint32_t maxBindlessTextures() const noexcept;
 
 private:
     Device() = default;
@@ -39,6 +43,8 @@ private:
     VkQueue m_queue = VK_NULL_HANDLE;
     std::uint32_t m_queueFamily = 0;
     GpuInfo m_gpu;
+    float m_maxSamplerAnisotropy = 1.0f;
+    std::uint32_t m_maxBindlessTextures = 0;
 };
 
 } // namespace devex::render::vulkan

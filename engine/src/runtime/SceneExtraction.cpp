@@ -3,7 +3,7 @@
 
 namespace devex::runtime {
 
-void extractScene(scene::Scene& scene, const AssetRegistry& assets, render::RenderWorld& world)
+void extractScene(scene::Scene& scene, AssetManager& assets, render::RenderWorld& world)
 {
     for ([[maybe_unused]] auto [entity, transform, camera] :
          scene.view<scene::WorldTransform, scene::Camera>())
@@ -28,10 +28,24 @@ void extractScene(scene::Scene& scene, const AssetRegistry& assets, render::Rend
     for ([[maybe_unused]] auto [entity, transform, renderer] :
          scene.view<scene::WorldTransform, scene::MeshRenderer>())
     {
-        const render::MeshHandle mesh = assets.findMesh(renderer.mesh);
-        if (mesh.isValid())
+        const LoadedMesh* const mesh = assets.mesh(renderer.mesh);
+        if (mesh == nullptr)
         {
-            world.meshes.push_back({mesh, transform.matrix});
+            continue;
+        }
+        const render::MaterialHandle override =
+            renderer.material.isValid() ? assets.material(renderer.material)
+                                        : render::MaterialHandle{};
+        for (std::uint32_t submesh = 0; submesh < mesh->submeshMaterials.size(); ++submesh)
+        {
+            const asset::AssetId material = mesh->submeshMaterials[submesh];
+            world.meshes.push_back({
+                .mesh = mesh->handle,
+                .submesh = submesh,
+                .material = override.isValid() || !material.isValid() ? override
+                                                                       : assets.material(material),
+                .transform = transform.matrix,
+            });
         }
     }
 }

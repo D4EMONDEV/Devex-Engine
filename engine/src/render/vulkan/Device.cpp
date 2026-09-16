@@ -139,6 +139,19 @@ struct RequiredFeatures
         missing = "no buffer device address or shader draw parameters";
         return inspection;
     }
+    if (supported.features12.runtimeDescriptorArray != VK_TRUE ||
+        supported.features12.descriptorBindingPartiallyBound != VK_TRUE ||
+        supported.features12.descriptorBindingSampledImageUpdateAfterBind != VK_TRUE ||
+        supported.features12.shaderSampledImageArrayNonUniformIndexing != VK_TRUE)
+    {
+        missing = "no descriptor indexing for bindless textures";
+        return inspection;
+    }
+    if (supported.features.features.textureCompressionBC != VK_TRUE)
+    {
+        missing = "no BC texture compression";
+        return inspection;
+    }
 
     std::uint32_t familyCount = 0;
     vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &familyCount, nullptr);
@@ -218,7 +231,31 @@ core::Result<Device> Device::create(VkInstance instance, VkSurfaceKHR surface,
     enabled.features13.synchronization2 = VK_TRUE;
     enabled.features13.dynamicRendering = VK_TRUE;
     enabled.features12.bufferDeviceAddress = VK_TRUE;
+    enabled.features12.runtimeDescriptorArray = VK_TRUE;
+    enabled.features12.descriptorBindingPartiallyBound = VK_TRUE;
+    enabled.features12.descriptorBindingSampledImageUpdateAfterBind = VK_TRUE;
+    enabled.features12.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
     enabled.features11.shaderDrawParameters = VK_TRUE;
+    enabled.features.features.textureCompressionBC = VK_TRUE;
+
+    RequiredFeatures supported;
+    vkGetPhysicalDeviceFeatures2(device.m_physicalDevice, &supported.features);
+    enabled.features.features.samplerAnisotropy = supported.features.features.samplerAnisotropy;
+
+    VkPhysicalDeviceVulkan12Properties properties12{
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_PROPERTIES,
+    };
+    VkPhysicalDeviceProperties2 properties{
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
+        .pNext = &properties12,
+    };
+    vkGetPhysicalDeviceProperties2(device.m_physicalDevice, &properties);
+    device.m_maxSamplerAnisotropy = supported.features.features.samplerAnisotropy == VK_TRUE
+                                        ? properties.properties.limits.maxSamplerAnisotropy
+                                        : 1.0f;
+    device.m_maxBindlessTextures =
+        std::min(properties12.maxDescriptorSetUpdateAfterBindSampledImages,
+                 properties12.maxPerStageDescriptorUpdateAfterBindSampledImages);
 
     const char* const extensions[] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
     const VkDeviceCreateInfo createInfo{
@@ -242,6 +279,8 @@ Device::Device(Device&& other) noexcept
     , m_queue(std::exchange(other.m_queue, VK_NULL_HANDLE))
     , m_queueFamily(other.m_queueFamily)
     , m_gpu(std::move(other.m_gpu))
+    , m_maxSamplerAnisotropy(other.m_maxSamplerAnisotropy)
+    , m_maxBindlessTextures(other.m_maxBindlessTextures)
 {
 }
 
@@ -255,6 +294,8 @@ Device& Device::operator=(Device&& other) noexcept
         m_queue = std::exchange(other.m_queue, VK_NULL_HANDLE);
         m_queueFamily = other.m_queueFamily;
         m_gpu = std::move(other.m_gpu);
+        m_maxSamplerAnisotropy = other.m_maxSamplerAnisotropy;
+        m_maxBindlessTextures = other.m_maxBindlessTextures;
     }
     return *this;
 }
@@ -296,6 +337,16 @@ std::uint32_t Device::queueFamily() const noexcept
 const GpuInfo& Device::gpu() const noexcept
 {
     return m_gpu;
+}
+
+float Device::maxSamplerAnisotropy() const noexcept
+{
+    return m_maxSamplerAnisotropy;
+}
+
+std::uint32_t Device::maxBindlessTextures() const noexcept
+{
+    return m_maxBindlessTextures;
 }
 
 } // namespace devex::render::vulkan

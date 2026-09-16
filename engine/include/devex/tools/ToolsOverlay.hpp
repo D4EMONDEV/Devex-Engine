@@ -1,5 +1,6 @@
 #pragma once
 
+#include <devex/asset/import/AssetDatabase.hpp>
 #include <devex/core/Error.hpp>
 #include <devex/core/Time.hpp>
 #include <devex/platform/Platform.hpp>
@@ -17,7 +18,8 @@ namespace detail {
 struct ToolsState;
 } // namespace detail
 
-// Docked Dear ImGui panels drawn over the game: hierarchy, inspector, statistics and console.
+// Docked Dear ImGui panels drawn over the game: hierarchy, inspector, assets, statistics and
+// console.
 // Only one overlay may exist at a time, since it owns the ImGui context.
 class ToolsOverlay
 {
@@ -43,6 +45,10 @@ public:
     // Builds this frame's panels for the scene and queues them for the renderer's next endFrame.
     // While hidden, only the frame time statistics are recorded.
     void update(scene::Scene& scene, core::Duration frameDelta);
+
+    // Lists the project assets in the panels; null when there is no project. The database must
+    // outlive the overlay or be replaced first.
+    void setAssetDatabase(asset::AssetDatabase* database) noexcept;
 
     [[nodiscard]] CommandHistory& history() noexcept;
 

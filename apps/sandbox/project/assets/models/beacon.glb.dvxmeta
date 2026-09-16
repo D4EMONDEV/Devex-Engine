@@ -1,0 +1,14 @@
+# Devex import settings: keep this file next to its asset in version control.
+[asset format=1 uuid="65be0348-3b58-4e34-9d7b-30ba9d12512c" importer="gltf"]
+compress_textures = true
+texture_quality = "normal"
+
+[subasset type="texture" key="Stripes" uuid="5a7a3118-fa5f-418e-8337-379b30326b30"]
+
+[subasset type="material" key="Stripes" uuid="e3f16b0d-52ef-4616-9c4e-86d06dda59f5"]
+
+[subasset type="material" key="Light" uuid="a2f496f7-98ae-4932-8513-c90a0cb55633"]
+
+[subasset type="mesh" key="Pillar" uuid="df5507c9-136c-42f5-9a60-69c0e0eab254"]
+
+[subasset type="mesh" key="Cap" uuid="a8581e5c-6572-499c-8d31-c3769bb31bd9"]

@@ -1,6 +1,8 @@
 #pragma once
 
+#include <devex/asset/MaterialData.hpp>
 #include <devex/asset/MeshData.hpp>
+#include <devex/asset/TextureData.hpp>
 #include <devex/core/Assert.hpp>
 #include <devex/core/Error.hpp>
 #include <devex/platform/Platform.hpp>
@@ -41,11 +43,34 @@ struct RendererConfig
     std::filesystem::path shaderDirectory;
 };
 
+// Parameters of a material, with textures already uploaded. Invalid or destroyed textures sample as
+// white, or as a flat normal for the normal texture.
+struct MaterialDesc
+{
+    // Linear RGBA.
+    math::Vec4 baseColorFactor{1.0f};
+    TextureHandle baseColorTexture;
+    float metallicFactor = 0.0f;
+    float roughnessFactor = 1.0f;
+    TextureHandle metallicRoughnessTexture;
+    TextureHandle normalTexture;
+    float normalScale = 1.0f;
+    TextureHandle occlusionTexture;
+    float occlusionStrength = 1.0f;
+    math::Vec3 emissiveFactor{0.0f};
+    TextureHandle emissiveTexture;
+    asset::AlphaMode alphaMode = asset::AlphaMode::Opaque;
+    float alphaCutoff = 0.5f;
+    bool doubleSided = false;
+};
+
 struct RendererStats
 {
     // Draw calls of the last presented frame.
     std::uint32_t drawCalls = 0;
     std::size_t meshCount = 0;
+    std::size_t textureCount = 0;
+    std::size_t materialCount = 0;
     math::Extent2D swapchainExtent;
     // Bytes of device-local memory used by the process, and how much it may use before the
     // operating system starts evicting memory.
@@ -81,6 +106,19 @@ public:
     [[nodiscard]] core::Result<MeshHandle> createMesh(const asset::MeshData& mesh);
     // Releases the mesh once no frame in flight uses it. Stale handles are ignored.
     void destroyMesh(MeshHandle mesh);
+    // Zero for a stale handle.
+    [[nodiscard]] std::uint32_t submeshCount(MeshHandle mesh) const noexcept;
+
+    // Uploads the texture with its mip levels and waits for the transfer to complete.
+    [[nodiscard]] core::Result<TextureHandle> createTexture(const asset::TextureData& texture);
+    // Releases the texture once no frame in flight uses it. Materials using it sample the
+    // default texture from the next frame on. Stale handles are ignored.
+    void destroyTexture(TextureHandle texture);
+
+    [[nodiscard]] MaterialHandle createMaterial(const MaterialDesc& material);
+    // Changes a material from the next frame on. Stale handles are ignored.
+    void updateMaterial(MaterialHandle handle, const MaterialDesc& material);
+    void destroyMaterial(MaterialHandle material);
 
     // Starts a frame with an empty snapshot to fill.
     [[nodiscard]] RenderWorld& beginFrame() noexcept;

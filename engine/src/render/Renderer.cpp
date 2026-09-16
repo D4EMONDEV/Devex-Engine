@@ -52,6 +52,42 @@ void Renderer::destroyMesh(MeshHandle mesh)
     m_implementation->destroyMesh(mesh);
 }
 
+std::uint32_t Renderer::submeshCount(MeshHandle mesh) const noexcept
+{
+    DEVEX_ASSERT(m_implementation != nullptr);
+    return m_implementation->submeshCount(mesh);
+}
+
+core::Result<TextureHandle> Renderer::createTexture(const asset::TextureData& texture)
+{
+    DEVEX_ASSERT(m_implementation != nullptr);
+    return m_implementation->createTexture(texture);
+}
+
+void Renderer::destroyTexture(TextureHandle texture)
+{
+    DEVEX_ASSERT(m_implementation != nullptr);
+    m_implementation->destroyTexture(texture);
+}
+
+MaterialHandle Renderer::createMaterial(const MaterialDesc& material)
+{
+    DEVEX_ASSERT(m_implementation != nullptr);
+    return m_implementation->createMaterial(material);
+}
+
+void Renderer::updateMaterial(MaterialHandle handle, const MaterialDesc& material)
+{
+    DEVEX_ASSERT(m_implementation != nullptr);
+    m_implementation->updateMaterial(handle, material);
+}
+
+void Renderer::destroyMaterial(MaterialHandle material)
+{
+    DEVEX_ASSERT(m_implementation != nullptr);
+    m_implementation->destroyMaterial(material);
+}
+
 RenderWorld& Renderer::beginFrame() noexcept
 {
     DEVEX_ASSERT(m_implementation != nullptr);

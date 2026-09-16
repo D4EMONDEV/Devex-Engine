@@ -167,7 +167,7 @@ core::Result<Image> Image::create(const Device& device, const Allocator& allocat
         .imageType = VK_IMAGE_TYPE_2D,
         .format = config.format,
         .extent = {config.extent.width, config.extent.height, 1},
-        .mipLevels = 1,
+        .mipLevels = config.mipLevels,
         .arrayLayers = 1,
         .samples = VK_SAMPLE_COUNT_1_BIT,
         .tiling = VK_IMAGE_TILING_OPTIMAL,
@@ -183,6 +183,7 @@ core::Result<Image> Image::create(const Device& device, const Allocator& allocat
     image.m_allocator = allocator.handle();
     image.m_format = config.format;
     image.m_extent = config.extent;
+    image.m_mipLevels = config.mipLevels;
     DEVEX_VK_TRY(vmaCreateImage, allocator.handle(), &imageInfo, &allocationInfo, &image.m_image,
                  &image.m_allocation, nullptr);
 
@@ -194,7 +195,7 @@ core::Result<Image> Image::create(const Device& device, const Allocator& allocat
         .subresourceRange =
             {
                 .aspectMask = config.aspect,
-                .levelCount = 1,
+                .levelCount = config.mipLevels,
                 .layerCount = 1,
             },
     };
@@ -210,6 +211,7 @@ Image::Image(Image&& other) noexcept
     , m_view(std::exchange(other.m_view, VK_NULL_HANDLE))
     , m_format(other.m_format)
     , m_extent(other.m_extent)
+    , m_mipLevels(other.m_mipLevels)
 {
 }
 
@@ -225,6 +227,7 @@ Image& Image::operator=(Image&& other) noexcept
         m_view = std::exchange(other.m_view, VK_NULL_HANDLE);
         m_format = other.m_format;
         m_extent = other.m_extent;
+        m_mipLevels = other.m_mipLevels;
     }
     return *this;
 }
@@ -267,6 +270,11 @@ VkFormat Image::format() const noexcept
 math::Extent2D Image::extent() const noexcept
 {
     return m_extent;
+}
+
+std::uint32_t Image::mipLevels() const noexcept
+{
+    return m_mipLevels;
 }
 
 } // namespace devex::render::vulkan

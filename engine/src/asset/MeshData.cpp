@@ -24,7 +24,28 @@ core::Result<void> validate(const MeshData& mesh)
                                "index {} refers past the {} vertices", *outOfRange,
                                mesh.vertices.size());
     }
+    for (const Submesh& submesh : mesh.submeshes)
+    {
+        const std::uint64_t end =
+            static_cast<std::uint64_t>(submesh.firstIndex) + submesh.indexCount;
+        if (submesh.indexCount == 0 || submesh.indexCount % 3 != 0 ||
+            submesh.firstIndex % 3 != 0 || end > mesh.indices.size())
+        {
+            return core::makeError(core::ErrorCode::InvalidArgument,
+                                   "submesh [{}, {}) does not select whole triangles of the {} indices",
+                                   submesh.firstIndex, end, mesh.indices.size());
+        }
+    }
     return {};
+}
+
+std::vector<Submesh> submeshesOf(const MeshData& mesh)
+{
+    if (!mesh.submeshes.empty())
+    {
+        return mesh.submeshes;
+    }
+    return {Submesh{.firstIndex = 0, .indexCount = static_cast<std::uint32_t>(mesh.indices.size())}};
 }
 
 void computeNormals(MeshData& mesh)

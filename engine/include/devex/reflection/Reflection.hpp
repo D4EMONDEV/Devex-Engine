@@ -102,10 +102,18 @@ struct ValueTraits<core::Uuid>
     static constexpr ValueKind kind = ValueKind::Uuid;
 };
 
+// Optional details about a field, for tools.
+struct FieldHints
+{
+    // For asset references: the asset type expected, such as "mesh". Empty accepts any type.
+    std::string_view assetType;
+};
+
 struct FieldInfo
 {
     std::string name;
     ValueKind kind = ValueKind::Bool;
+    std::string assetType;
     // Returns the address of the field inside an object of the reflected type.
     std::function<void*(void* object)> access;
 
@@ -150,11 +158,12 @@ public:
     }
 
     template <ReflectableValue Value>
-    TypeBuilder& field(std::string name, Value T::* member)
+    TypeBuilder& field(std::string name, Value T::* member, FieldHints hints = {})
     {
         m_info.fields.push_back({
             .name = std::move(name),
             .kind = ValueTraits<Value>::kind,
+            .assetType = std::string(hints.assetType),
             .access = [member](void* object) -> void* {
                 return &(static_cast<T*>(object)->*member);
             },

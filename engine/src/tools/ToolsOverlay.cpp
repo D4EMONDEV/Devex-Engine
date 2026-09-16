@@ -1,8 +1,11 @@
 #include "ToolsState.hpp"
 
+#include <devex/asset/Artifact.hpp>
 #include <devex/core/Assert.hpp>
 #include <devex/core/Log.hpp>
 #include <devex/core/Path.hpp>
+#include <devex/scene/ModelInstantiation.hpp>
+#include <devex/scene/SceneSerializer.hpp>
 #include <devex/tools/SceneCommands.hpp>
 #include <devex/tools/ToolsOverlay.hpp>
 
@@ -11,6 +14,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <cstring>
 #include <format>
 #include <utility>
 
@@ -56,6 +60,80 @@ int FrameTimes::count() const noexcept
 int FrameTimes::offset() const noexcept
 {
     return m_count < m_milliseconds.size() ? 0 : static_cast<int>(m_next);
+}
+
+core::Uuid uuidFromBytes(const std::array<std::uint8_t, 16>& bytes) noexcept
+{
+    std::uint64_t high = 0;
+    std::uint64_t low = 0;
+    for (std::size_t index = 0; index < 8; ++index)
+    {
+        high = high << 8 | bytes[index];
+        low = low << 8 | bytes[8 + index];
+    }
+    return core::Uuid::fromParts(high, low);
+}
+
+void dragAsset(asset::AssetId id, asset::AssetType type, const std::string& label)
+{
+    if (ImGui::BeginDragDropSource())
+    {
+        const AssetPayload payload{.uuid = id.uuid.bytes(), .type = type};
+        ImGui::SetDragDropPayload(assetPayload, &payload, sizeof(payload));
+        ImGui::Text("%s (%s)", label.c_str(), std::string(asset::toString(type)).c_str());
+        ImGui::EndDragDropSource();
+    }
+}
+
+std::optional<asset::AssetId> acceptDroppedAsset(std::optional<asset::AssetType> type)
+{
+    std::optional<asset::AssetId> dropped;
+    if (ImGui::BeginDragDropTarget())
+    {
+        // Peeked first, so that assets of another type are not highlighted as accepted.
+        const ImGuiPayload* const peeked = ImGui::GetDragDropPayload();
+        AssetPayload payload;
+        bool matches = false;
+        if (peeked != nullptr && peeked->IsDataType(assetPayload) &&
+            peeked->DataSize == sizeof(AssetPayload))
+        {
+            std::memcpy(&payload, peeked->Data, sizeof(payload));
+            matches = !type || payload.type == *type;
+        }
+        if (matches && ImGui::AcceptDragDropPayload(assetPayload) != nullptr)
+        {
+            dropped = asset::AssetId{uuidFromBytes(payload.uuid)};
+        }
+        ImGui::EndDragDropTarget();
+    }
+    return dropped;
+}
+
+void requestInstantiateModel(ToolsState& state, asset::AssetId model, core::Uuid parent)
+{
+    const asset::AssetInfo* const info =
+        state.database != nullptr ? state.database->find(model) : nullptr;
+    if (info == nullptr || info->type != asset::AssetType::Model)
+    {
+        return;
+    }
+    const core::Result<std::vector<std::byte>> bytes = state.database->loadArtifact(model);
+    const core::Result<asset::ModelData> data =
+        bytes ? asset::decodeModel(*bytes)
+              : core::Result<asset::ModelData>(std::unexpected(bytes.error()));
+    if (!data)
+    {
+        DEVEX_LOG_WARNING("Cannot place model {}: {}", info->name, data.error());
+        return;
+    }
+
+    // Built in a scratch scene, then applied as one undoable step with fixed UUIDs.
+    scene::Scene scratch;
+    const scene::Entity root = scene::instantiateModel(scratch, *data, info->name);
+    const core::Uuid rootUuid = scratch.uuid(root);
+    state.pendingCommand = makeCreateEntityTreeCommand(scene::saveEntityTree(scratch, root), rootUuid,
+                                                       parent, std::format("Place {}", info->name));
+    state.selection = rootUuid;
 }
 
 void requestCreateEntity(ToolsState& state, core::Uuid parent)
@@ -183,6 +261,7 @@ void drawMainMenu(ToolsState& state, scene::Scene& scene)
         ImGui::MenuItem(detail::inspectorWindow, nullptr, &state.showInspector);
         ImGui::MenuItem(detail::statisticsWindow, nullptr, &state.showStatistics);
         ImGui::MenuItem(detail::consoleWindow, nullptr, &state.showConsole);
+        ImGui::MenuItem(detail::assetsWindow, nullptr, &state.showAssets);
         ImGui::Separator();
         if (ImGui::MenuItem("Reset layout"))
         {
@@ -213,6 +292,7 @@ void buildDefaultLayout(ImGuiID dockspace, const ImGuiViewport& viewport)
 
     ImGui::DockBuilderDockWindow(detail::hierarchyWindow, left);
     ImGui::DockBuilderDockWindow(detail::inspectorWindow, right);
+    ImGui::DockBuilderDockWindow(detail::assetsWindow, bottom);
     ImGui::DockBuilderDockWindow(detail::consoleWindow, bottom);
     ImGui::DockBuilderDockWindow(detail::statisticsWindow, bottom);
     ImGui::DockBuilderFinish(dockspace);
@@ -221,7 +301,9 @@ void buildDefaultLayout(ImGuiID dockspace, const ImGuiViewport& viewport)
 void drawDockspace(ToolsState& state)
 {
     const ImGuiViewport* const viewport = ImGui::GetMainViewport();
-    const ImGuiID dockspace = ImHashStr("Devex tools dockspace");
+    // The name carries a version, increased when panels are added, so that saved layouts from
+    // before are rebuilt with the new panels docked.
+    const ImGuiID dockspace = ImHashStr("Devex tools dockspace 2");
     if (state.resetLayout || ImGui::DockBuilderGetNode(dockspace) == nullptr)
     {
         buildDefaultLayout(dockspace, *viewport);
@@ -346,6 +428,10 @@ void ToolsOverlay::update(scene::Scene& scene, core::Duration frameDelta)
     {
         detail::drawConsolePanel(state);
     }
+    if (state.showAssets)
+    {
+        detail::drawAssetsPanel(state, scene);
+    }
     if (state.pendingCommand != nullptr)
     {
         logFailure(state.history.execute(scene, std::exchange(state.pendingCommand, nullptr)));
@@ -357,6 +443,11 @@ void ToolsOverlay::update(scene::Scene& scene, core::Duration frameDelta)
     const ImGuiIO& io = ImGui::GetIO();
     state.capturesKeyboard = io.WantCaptureKeyboard;
     state.capturesMouse = io.WantCaptureMouse;
+}
+
+void ToolsOverlay::setAssetDatabase(asset::AssetDatabase* database) noexcept
+{
+    m_state->database = database;
 }
 
 CommandHistory& ToolsOverlay::history() noexcept

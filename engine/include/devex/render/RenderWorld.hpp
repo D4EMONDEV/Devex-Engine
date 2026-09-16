@@ -3,14 +3,21 @@
 #include <devex/core/SlotMap.hpp>
 #include <devex/math/Math.hpp>
 
+#include <cstdint>
 #include <utility>
 #include <vector>
 
 namespace devex::render {
 
 struct MeshTag;
+struct TextureTag;
+struct MaterialTag;
 // Refers to a mesh uploaded with Renderer::createMesh.
 using MeshHandle = core::Handle<MeshTag>;
+// Refers to a texture uploaded with Renderer::createTexture.
+using TextureHandle = core::Handle<TextureTag>;
+// Refers to a material created with Renderer::createMaterial.
+using MaterialHandle = core::Handle<MaterialTag>;
 
 struct RenderCamera
 {
@@ -21,9 +28,13 @@ struct RenderCamera
     float nearPlane = 0.1f;
 };
 
+// One submesh of a mesh, drawn with a material.
 struct MeshInstance
 {
     MeshHandle mesh;
+    std::uint32_t submesh = 0;
+    // An invalid or destroyed material draws with the default material.
+    MaterialHandle material;
     math::Mat4 transform{1.0f};
 };
 

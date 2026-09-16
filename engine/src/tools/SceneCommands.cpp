@@ -213,6 +213,56 @@ private:
     core::Uuid m_parent;
 };
 
+class CreateEntityTreeCommand final : public Command
+{
+public:
+    CreateEntityTreeCommand(std::string tree, core::Uuid root, core::Uuid parent,
+                            std::string description)
+        : m_tree(std::move(tree))
+        , m_root(root)
+        , m_parent(parent)
+        , m_description(std::move(description))
+    {
+    }
+
+    [[nodiscard]] std::string description() const override
+    {
+        return m_description;
+    }
+
+    [[nodiscard]] core::Result<void> apply(Scene& scene) override
+    {
+        const core::Result<Entity> parent = findOptionalEntity(scene, m_parent);
+        if (!parent)
+        {
+            return std::unexpected(parent.error());
+        }
+        core::Result<Entity> created = scene::loadEntityTree(scene, m_tree, *parent);
+        if (!created)
+        {
+            return std::unexpected(created.error());
+        }
+        return {};
+    }
+
+    [[nodiscard]] core::Result<void> revert(Scene& scene) override
+    {
+        const core::Result<Entity> root = findEntity(scene, m_root);
+        if (!root)
+        {
+            return std::unexpected(root.error());
+        }
+        scene.destroyEntity(*root);
+        return {};
+    }
+
+private:
+    std::string m_tree;
+    core::Uuid m_root;
+    core::Uuid m_parent;
+    std::string m_description;
+};
+
 class DestroyEntityCommand final : public Command
 {
 public:
@@ -456,6 +506,13 @@ std::unique_ptr<Command> makeCreateEntityCommand(core::Uuid entity, std::string 
                                                  core::Uuid parent)
 {
     return std::make_unique<CreateEntityCommand>(entity, std::move(name), parent);
+}
+
+std::unique_ptr<Command> makeCreateEntityTreeCommand(std::string tree, core::Uuid root,
+                                                     core::Uuid parent, std::string description)
+{
+    return std::make_unique<CreateEntityTreeCommand>(std::move(tree), root, parent,
+                                                     std::move(description));
 }
 
 std::unique_ptr<Command> makeDestroyEntityCommand(core::Uuid entity)

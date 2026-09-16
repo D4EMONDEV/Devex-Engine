@@ -6,6 +6,8 @@
     "license": "MIT",
     "builtin-baseline": "1577f17ee57f42a0ef6d75bbb82cb37d0b76d7e8",
     "dependencies": [
+        "basisu",
+        "efsw",
         "fastgltf",
         "glm",
         {
@@ -21,6 +23,7 @@
                 "vulkan"
             ]
         },
+        "stb",
         "volk",
         "vulkan-memory-allocator"
     ],

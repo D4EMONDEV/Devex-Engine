@@ -121,11 +121,13 @@ TEST_CASE("Meshes are drawn and destroyed without validation errors", "[render][
         {
             devex::render::RenderWorld& world = renderer->beginFrame();
             world.camera.view = devex::math::inverse(cameraTransform);
-            world.meshes.push_back({*cube, devex::math::Mat4{1.0f}});
+            world.meshes.push_back({.mesh = *cube});
             if (frame < 3)
             {
-                world.meshes.push_back(
-                    {*sphere, devex::math::translate(devex::math::Mat4{1.0f}, {1.5f, 0.0f, 0.0f})});
+                world.meshes.push_back({
+                    .mesh = *sphere,
+                    .transform = devex::math::translate(devex::math::Mat4{1.0f}, {1.5f, 0.0f, 0.0f}),
+                });
             }
 
             const devex::core::Result<void> presented = renderer->endFrame();
@@ -141,6 +143,92 @@ TEST_CASE("Meshes are drawn and destroyed without validation errors", "[render][
         }
         // Destroying a stale handle is ignored.
         renderer->destroyMesh(*sphere);
+    }
+
+    for (const std::string& error : capture.errors())
+    {
+        UNSCOPED_INFO(error);
+    }
+    CHECK(capture.errors().empty());
+}
+
+TEST_CASE("Textured materials draw submeshes and survive texture removal", "[render][gpu]")
+{
+    const ErrorCapture capture;
+    {
+        auto platform = devex::platform::Platform::create();
+        REQUIRE(platform.has_value());
+        auto window = platform->createWindow({.width = 320, .height = 240, .vulkan = true, .hidden = true});
+        REQUIRE(window.has_value());
+        auto renderer = devex::render::Renderer::create(*platform, *window, {.validation = true});
+        if (!renderer)
+        {
+            FAIL(std::format("{}", renderer.error()));
+        }
+
+        // Two submeshes: the first two faces of the cube, then the rest.
+        devex::asset::MeshData cubeData = devex::asset::makeCube();
+        cubeData.submeshes = {{.firstIndex = 0, .indexCount = 12},
+                              {.firstIndex = 12, .indexCount = 24}};
+        auto cube = renderer->createMesh(cubeData);
+        REQUIRE(cube.has_value());
+        CHECK(renderer->submeshCount(*cube) == 2);
+
+        // A 2x2 texture with its mip, and a block-compressed one with a partial block.
+        devex::asset::TextureData checker{.format = devex::asset::TextureFormat::Rgba8Srgb};
+        checker.mips.push_back({.width = 2, .height = 2, .bytes = std::vector<std::byte>(16, std::byte{200})});
+        checker.mips.push_back({.width = 1, .height = 1, .bytes = std::vector<std::byte>(4, std::byte{100})});
+        devex::asset::TextureData compressed{.format = devex::asset::TextureFormat::Bc7Srgb};
+        compressed.mips.push_back({.width = 5, .height = 3, .bytes = std::vector<std::byte>(2 * 16)});
+        auto checkerTexture = renderer->createTexture(checker);
+        auto compressedTexture = renderer->createTexture(compressed);
+        REQUIRE(checkerTexture.has_value());
+        REQUIRE(compressedTexture.has_value());
+        compressed.mips.front().bytes.pop_back();
+        CHECK_FALSE(renderer->createTexture(compressed).has_value());
+
+        const devex::render::MaterialHandle opaque = renderer->createMaterial({
+            .baseColorTexture = *checkerTexture,
+            .emissiveTexture = *compressedTexture,
+        });
+        const devex::render::MaterialHandle cutout = renderer->createMaterial({
+            .baseColorFactor = {1.0f, 0.5f, 0.2f, 0.4f},
+            .alphaMode = devex::asset::AlphaMode::Mask,
+            .doubleSided = true,
+        });
+        CHECK(renderer->stats().textureCount == 2);
+        CHECK(renderer->stats().materialCount == 2);
+
+        const devex::math::Mat4 cameraTransform =
+            devex::math::translate(devex::math::Mat4{1.0f}, {0.0f, 0.0f, 3.0f});
+        for (int frame = 0; frame < 8; ++frame)
+        {
+            devex::render::RenderWorld& world = renderer->beginFrame();
+            world.camera.view = devex::math::inverse(cameraTransform);
+            world.meshes.push_back({.mesh = *cube, .submesh = 0, .material = opaque});
+            world.meshes.push_back({.mesh = *cube, .submesh = 1, .material = cutout});
+            // Out of range submeshes and unknown materials are tolerated.
+            world.meshes.push_back({.mesh = *cube, .submesh = 7});
+
+            const devex::core::Result<void> presented = renderer->endFrame();
+            if (!presented)
+            {
+                FAIL(std::format("frame {}: {}", frame, presented.error()));
+            }
+            if (frame == 2)
+            {
+                // The material falls back to the white texture while frames still use the old one.
+                renderer->destroyTexture(*checkerTexture);
+                renderer->updateMaterial(cutout, {.baseColorFactor = {0.0f, 1.0f, 0.0f, 1.0f}});
+            }
+            if (frame == 5)
+            {
+                renderer->destroyMaterial(opaque);
+            }
+        }
+        CHECK(renderer->stats().drawCalls == 2);
+        CHECK(renderer->stats().textureCount == 1);
+        CHECK(renderer->stats().materialCount == 1);
     }
 
     for (const std::string& error : capture.errors())

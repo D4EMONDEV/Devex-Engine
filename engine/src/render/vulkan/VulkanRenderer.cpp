@@ -10,6 +10,7 @@
 #include <imgui_impl_vulkan.h>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <bit>
 #include <cstring>
@@ -23,6 +24,38 @@ namespace {
 std::atomic<bool> rendererExists{false};
 
 constexpr std::uint64_t noTimeout = std::numeric_limits<std::uint64_t>::max();
+
+[[nodiscard]] VkFormat toVulkanFormat(asset::TextureFormat format) noexcept
+{
+    switch (format)
+    {
+    case asset::TextureFormat::Rgba8Unorm:
+        return VK_FORMAT_R8G8B8A8_UNORM;
+    case asset::TextureFormat::Rgba8Srgb:
+        return VK_FORMAT_R8G8B8A8_SRGB;
+    case asset::TextureFormat::Bc5Unorm:
+        return VK_FORMAT_BC5_UNORM_BLOCK;
+    case asset::TextureFormat::Bc7Unorm:
+        return VK_FORMAT_BC7_UNORM_BLOCK;
+    case asset::TextureFormat::Bc7Srgb:
+        return VK_FORMAT_BC7_SRGB_BLOCK;
+    }
+    return VK_FORMAT_UNDEFINED;
+}
+
+// A 1x1 uncompressed texture of one color.
+[[nodiscard]] asset::TextureData solidTexture(std::array<std::uint8_t, 4> rgba)
+{
+    asset::TextureData texture{.format = asset::TextureFormat::Rgba8Unorm};
+    asset::TextureMip& mip = texture.mips.emplace_back();
+    mip.width = 1;
+    mip.height = 1;
+    for (const std::uint8_t channel : rgba)
+    {
+        mip.bytes.push_back(static_cast<std::byte>(channel));
+    }
+    return texture;
+}
 
 } // namespace
 
@@ -93,6 +126,10 @@ core::Result<std::unique_ptr<VulkanRenderer>> VulkanRenderer::create(
     if (core::Result<void> contexts = renderer->createFrameContexts(); !contexts)
     {
         return std::unexpected(contexts.error());
+    }
+    if (core::Result<void> defaults = renderer->createDefaultResources(); !defaults)
+    {
+        return std::unexpected(defaults.error());
     }
     if (const math::Extent2D pixelSize = window.pixelSize();
         pixelSize.width > 0 && pixelSize.height > 0)
@@ -210,11 +247,15 @@ core::Result<MeshHandle> VulkanRenderer::createMesh(const asset::MeshData& mesh)
         return std::unexpected(uploaded.error());
     }
 
-    return m_meshes.insert(GpuMesh{
+    GpuMesh gpuMesh{
         .vertices = std::move(*vertexBuffer),
         .indices = std::move(*indexBuffer),
-        .indexCount = static_cast<std::uint32_t>(mesh.indices.size()),
-    });
+    };
+    for (const asset::Submesh& submesh : asset::submeshesOf(mesh))
+    {
+        gpuMesh.submeshes.push_back({submesh.firstIndex, submesh.indexCount});
+    }
+    return m_meshes.insert(std::move(gpuMesh));
 }
 
 void VulkanRenderer::destroyMesh(MeshHandle mesh)
@@ -222,6 +263,81 @@ void VulkanRenderer::destroyMesh(MeshHandle mesh)
     if (std::optional<GpuMesh> removed = m_meshes.remove(mesh))
     {
         m_retiredMeshes.push_back({.mesh = std::move(*removed), .retiredAtFrame = m_frameIndex});
+    }
+}
+
+std::uint32_t VulkanRenderer::submeshCount(MeshHandle mesh) const noexcept
+{
+    const GpuMesh* const found = m_meshes.find(mesh);
+    return found != nullptr ? static_cast<std::uint32_t>(found->submeshes.size()) : 0;
+}
+
+core::Result<TextureHandle> VulkanRenderer::createTexture(const asset::TextureData& texture)
+{
+    std::uint32_t slot = 0;
+    if (!m_freeTextureSlots.empty())
+    {
+        slot = m_freeTextureSlots.back();
+    }
+    else if (m_nextTextureSlot < m_bindless->textureCapacity())
+    {
+        slot = m_nextTextureSlot;
+    }
+    else
+    {
+        return core::makeError(core::ErrorCode::OutOfMemory, "all {} texture slots are in use",
+                               m_bindless->textureCapacity());
+    }
+
+    core::Result<GpuTexture> uploaded = uploadTexture(texture, slot);
+    if (!uploaded)
+    {
+        return std::unexpected(uploaded.error());
+    }
+    if (!m_freeTextureSlots.empty())
+    {
+        m_freeTextureSlots.pop_back();
+    }
+    else
+    {
+        ++m_nextTextureSlot;
+    }
+    // Materials referring to a destroyed handle never refer to this one, but a new texture may
+    // replace one of theirs: they are resolved again.
+    m_materialsChanged = true;
+    return m_textures.insert(std::move(*uploaded));
+}
+
+void VulkanRenderer::destroyTexture(TextureHandle texture)
+{
+    if (std::optional<GpuTexture> removed = m_textures.remove(texture))
+    {
+        m_retiredTextures.push_back({.texture = std::move(*removed), .retiredAtFrame = m_frameIndex});
+        m_materialsChanged = true;
+    }
+}
+
+MaterialHandle VulkanRenderer::createMaterial(const MaterialDesc& material)
+{
+    m_materialsChanged = true;
+    return m_materials.insert(material);
+}
+
+void VulkanRenderer::updateMaterial(MaterialHandle handle, const MaterialDesc& material)
+{
+    if (MaterialDesc* const existing = m_materials.find(handle))
+    {
+        *existing = material;
+        m_materialsChanged = true;
+    }
+}
+
+void VulkanRenderer::destroyMaterial(MaterialHandle material)
+{
+    // The default material outlives every user material.
+    if (material != m_defaultMaterial && m_materials.remove(material))
+    {
+        m_materialsChanged = true;
     }
 }
 
@@ -255,9 +371,9 @@ core::Result<void> VulkanRenderer::endFrame()
     }
 
     const VkDevice device = m_device.handle();
-    const FrameContext& frame = m_frames[m_frameIndex % framesInFlight];
+    FrameContext& frame = m_frames[m_frameIndex % framesInFlight];
     DEVEX_VK_TRY(vkWaitForFences, device, 1, &frame.completed, VK_TRUE, noTimeout);
-    releaseRetiredMeshes();
+    releaseRetiredResources();
 
     std::uint32_t imageIndex = 0;
     const VkResult acquired = vkAcquireNextImageKHR(device, m_swapchain->handle(), noTimeout,
@@ -278,6 +394,10 @@ core::Result<void> VulkanRenderer::endFrame()
     }
 
     DEVEX_VK_TRY(vkResetFences, device, 1, &frame.completed);
+    if (core::Result<void> materials = updateFrameMaterials(frame); !materials)
+    {
+        return materials;
+    }
     writeSceneData(frame);
     core::Result<std::uint32_t> recorded = recordFrame(frame, imageIndex, drawImGui);
     if (!recorded)
@@ -379,6 +499,178 @@ core::Result<void> VulkanRenderer::createFrameContexts()
     return {};
 }
 
+core::Result<void> VulkanRenderer::createDefaultResources()
+{
+    core::Result<BindlessSet> bindless =
+        BindlessSet::create(m_device, std::min(m_device.maxBindlessTextures(), maxTextures));
+    if (!bindless)
+    {
+        return std::unexpected(bindless.error());
+    }
+    m_bindless = std::move(*bindless);
+
+    core::Result<GpuTexture> white = uploadTexture(solidTexture({255, 255, 255, 255}), whiteTextureSlot);
+    if (!white)
+    {
+        return std::unexpected(white.error());
+    }
+    m_whiteTexture = std::move(*white);
+
+    // A normal pointing straight out of the surface.
+    core::Result<GpuTexture> flatNormal =
+        uploadTexture(solidTexture({128, 128, 255, 255}), flatNormalTextureSlot);
+    if (!flatNormal)
+    {
+        return std::unexpected(flatNormal.error());
+    }
+    m_flatNormalTexture = std::move(*flatNormal);
+
+    m_defaultMaterial = m_materials.insert(MaterialDesc{.baseColorFactor = {0.72f, 0.74f, 0.78f, 1.0f}});
+    return {};
+}
+
+core::Result<VulkanRenderer::GpuTexture> VulkanRenderer::uploadTexture(
+    const asset::TextureData& texture, std::uint32_t slot)
+{
+    if (core::Result<void> valid = asset::validate(texture); !valid)
+    {
+        return std::unexpected(valid.error());
+    }
+
+    const asset::TextureMip& base = texture.mips.front();
+    const auto mipLevels = static_cast<std::uint32_t>(texture.mips.size());
+    core::Result<Image> image =
+        Image::create(m_device, m_allocator,
+                      {
+                          .format = toVulkanFormat(texture.format),
+                          .extent = {base.width, base.height},
+                          .usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+                          .mipLevels = mipLevels,
+                      });
+    if (!image)
+    {
+        return std::unexpected(image.error());
+    }
+
+    VkDeviceSize totalBytes = 0;
+    std::vector<VkBufferImageCopy> copies;
+    for (std::uint32_t level = 0; level < mipLevels; ++level)
+    {
+        const asset::TextureMip& mip = texture.mips[level];
+        copies.push_back({
+            .bufferOffset = totalBytes,
+            .imageSubresource =
+                {
+                    .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                    .mipLevel = level,
+                    .layerCount = 1,
+                },
+            .imageExtent = {mip.width, mip.height, 1},
+        });
+        totalBytes += mip.bytes.size();
+    }
+
+    core::Result<Buffer> staging = Buffer::create(m_allocator, {
+                                                                   .size = totalBytes,
+                                                                   .usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                                                                   .hostVisible = true,
+                                                               });
+    if (!staging)
+    {
+        return std::unexpected(staging.error());
+    }
+    const std::span<std::byte> stagingBytes = staging->mappedBytes();
+    for (std::uint32_t level = 0; level < mipLevels; ++level)
+    {
+        const std::vector<std::byte>& bytes = texture.mips[level].bytes;
+        std::memcpy(stagingBytes.data() + copies[level].bufferOffset, bytes.data(), bytes.size());
+    }
+
+    const VkImage imageHandle = image->handle();
+    const core::Result<void> uploaded = m_upload.submit([&](VkCommandBuffer commandBuffer) {
+        transitionImage(commandBuffer, imageHandle, ImageState::Undefined,
+                        ImageState::TransferDestination, mipLevels);
+        vkCmdCopyBufferToImage(commandBuffer, staging->handle(), imageHandle,
+                               VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                               static_cast<std::uint32_t>(copies.size()), copies.data());
+        transitionImage(commandBuffer, imageHandle, ImageState::TransferDestination,
+                        ImageState::ShaderReadOnly, mipLevels);
+    });
+    if (!uploaded)
+    {
+        return std::unexpected(uploaded.error());
+    }
+
+    m_bindless->setTexture(slot, image->view());
+    return GpuTexture{.image = std::move(*image), .slot = slot};
+}
+
+GpuMaterial VulkanRenderer::toGpuMaterial(const MaterialDesc& material) const noexcept
+{
+    const auto slotOf = [this](TextureHandle texture, std::uint32_t fallback) {
+        const GpuTexture* const found = m_textures.find(texture);
+        return found != nullptr ? found->slot : fallback;
+    };
+    return GpuMaterial{
+        .baseColorFactor = material.baseColorFactor,
+        .emissiveFactor = material.emissiveFactor,
+        .alphaCutoff = material.alphaCutoff,
+        .baseColorTexture = slotOf(material.baseColorTexture, whiteTextureSlot),
+        .metallicRoughnessTexture = slotOf(material.metallicRoughnessTexture, whiteTextureSlot),
+        .normalTexture = slotOf(material.normalTexture, flatNormalTextureSlot),
+        .occlusionTexture = slotOf(material.occlusionTexture, whiteTextureSlot),
+        .emissiveTexture = slotOf(material.emissiveTexture, whiteTextureSlot),
+        .metallicFactor = material.metallicFactor,
+        .roughnessFactor = material.roughnessFactor,
+        .normalScale = material.normalScale,
+        .occlusionStrength = material.occlusionStrength,
+        .alphaMode = static_cast<std::uint32_t>(material.alphaMode),
+        .doubleSided = material.doubleSided ? 1u : 0u,
+    };
+}
+
+core::Result<void> VulkanRenderer::updateFrameMaterials(FrameContext& frame)
+{
+    if (m_materialsChanged)
+    {
+        const GpuMaterial defaultMaterial = toGpuMaterial(*m_materials.find(m_defaultMaterial));
+        m_gpuMaterials.assign(m_materials.slotCount(), defaultMaterial);
+        m_materials.forEach([this](MaterialHandle handle, const MaterialDesc& material) {
+            m_gpuMaterials[handle.index] = toGpuMaterial(material);
+        });
+        ++m_materialVersion;
+        m_materialsChanged = false;
+    }
+    if (frame.materialVersion == m_materialVersion)
+    {
+        return {};
+    }
+
+    const VkDeviceSize requiredBytes = m_gpuMaterials.size() * sizeof(GpuMaterial);
+    if (!frame.materials || frame.materials->size() < requiredBytes)
+    {
+        // Grows geometrically; the fence of this frame was waited for, so no GPU work reads it.
+        const VkDeviceSize capacity =
+            std::max<VkDeviceSize>(requiredBytes * 2, 64 * sizeof(GpuMaterial));
+        frame.materials.reset();
+        core::Result<Buffer> buffer =
+            Buffer::create(m_allocator, {
+                                            .size = capacity,
+                                            .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+                                                     VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+                                            .hostVisible = true,
+                                        });
+        if (!buffer)
+        {
+            return std::unexpected(buffer.error());
+        }
+        frame.materials = std::move(*buffer);
+    }
+    std::memcpy(frame.materials->mappedBytes().data(), m_gpuMaterials.data(), requiredBytes);
+    frame.materialVersion = m_materialVersion;
+    return {};
+}
+
 core::Result<void> VulkanRenderer::recreateSwapchain(math::Extent2D windowPixelSize)
 {
     const VkDevice device = m_device.handle();
@@ -442,20 +734,30 @@ core::Result<void> VulkanRenderer::recreateSwapchain(math::Extent2D windowPixelS
         return transitioned;
     }
 
-    if (!m_meshPipeline || previousFormat != m_swapchain->format())
+    if (!m_meshPipeline || !m_doubleSidedPipeline || previousFormat != m_swapchain->format())
     {
         m_meshPipeline.reset();
-        core::Result<GraphicsPipeline> pipeline =
-            createMeshPipeline(device, {
-                                           .shaderPath = m_shaderDirectory / "mesh.spv",
-                                           .colorFormat = m_swapchain->format(),
-                                           .depthFormat = depthFormat,
-                                       });
+        m_doubleSidedPipeline.reset();
+        MeshPipelineConfig pipelineConfig{
+            .shaderPath = m_shaderDirectory / "mesh.spv",
+            .colorFormat = m_swapchain->format(),
+            .depthFormat = depthFormat,
+            .textureSetLayout = m_bindless->layout(),
+        };
+        core::Result<GraphicsPipeline> pipeline = createMeshPipeline(device, pipelineConfig);
         if (!pipeline)
         {
             return std::unexpected(pipeline.error());
         }
         m_meshPipeline = std::move(*pipeline);
+
+        pipelineConfig.cullBackFaces = false;
+        core::Result<GraphicsPipeline> doubleSided = createMeshPipeline(device, pipelineConfig);
+        if (!doubleSided)
+        {
+            return std::unexpected(doubleSided.error());
+        }
+        m_doubleSidedPipeline = std::move(*doubleSided);
     }
 
     m_swapchainWindowPixelSize = windowPixelSize;
@@ -499,6 +801,7 @@ void VulkanRenderer::writeSceneData(const FrameContext& frame) const noexcept
     scene.lightDirection = lightLength > 0.0f ? m_world.lightDirection / lightLength
                                               : math::Vec3{0.0f, -1.0f, 0.0f};
     scene.ambient = m_world.ambient;
+    scene.materials = frame.materials->deviceAddress();
 
     // The fence of this frame context has been waited for, so no GPU work reads the buffer.
     std::memcpy(frame.sceneData->mappedBytes().data(), &scene, sizeof(scene));
@@ -560,28 +863,46 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(const FrameContext& fram
     const VkRect2D scissor{.offset = {0, 0}, .extent = {extent.width, extent.height}};
     vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_meshPipeline->handle());
+    // Both pipelines share the same layout, so the textures stay bound when switching.
+    const VkDescriptorSet textureSet = m_bindless->handle();
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_meshPipeline->layout(),
+                            0, 1, &textureSet, 0, nullptr);
     const VkDeviceAddress sceneData = frame.sceneData->deviceAddress();
+    const GraphicsPipeline* boundPipeline = nullptr;
     std::uint32_t drawCalls = 0;
     for (const MeshInstance& instance : m_world.meshes)
     {
         const GpuMesh* const mesh = m_meshes.find(instance.mesh);
         DEVEX_ASSERT_MSG(mesh != nullptr, "the render world references a destroyed mesh");
-        if (mesh == nullptr)
+        if (mesh == nullptr || instance.submesh >= mesh->submeshes.size())
         {
             continue;
+        }
+
+        const MaterialDesc* const material = m_materials.find(instance.material);
+        const MaterialHandle materialHandle = material != nullptr ? instance.material
+                                                                  : m_defaultMaterial;
+        const GraphicsPipeline* const pipeline =
+            material != nullptr && material->doubleSided ? &*m_doubleSidedPipeline
+                                                         : &*m_meshPipeline;
+        if (pipeline != boundPipeline)
+        {
+            vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->handle());
+            boundPipeline = pipeline;
         }
 
         const DrawPushConstants constants{
             .scene = sceneData,
             .vertices = mesh->vertices.deviceAddress(),
             .world = instance.transform,
+            .material = materialHandle.index,
         };
-        vkCmdPushConstants(commandBuffer, m_meshPipeline->layout(),
+        vkCmdPushConstants(commandBuffer, pipeline->layout(),
                            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
                            sizeof(constants), &constants);
+        const SubmeshRange& submesh = mesh->submeshes[instance.submesh];
         vkCmdBindIndexBuffer(commandBuffer, mesh->indices.handle(), 0, VK_INDEX_TYPE_UINT32);
-        vkCmdDrawIndexed(commandBuffer, mesh->indexCount, 1, 0, 0, 0);
+        vkCmdDrawIndexed(commandBuffer, submesh.indexCount, 1, submesh.firstIndex, 0, 0);
         ++drawCalls;
     }
     vkCmdEndRendering(commandBuffer);
@@ -619,6 +940,9 @@ RendererStats VulkanRenderer::stats() const noexcept
     RendererStats stats{
         .drawCalls = m_lastDrawCalls,
         .meshCount = m_meshes.size(),
+        .textureCount = m_textures.size(),
+        // The default material is not counted.
+        .materialCount = m_materials.size() - 1,
         .swapchainExtent = m_swapchain ? m_swapchain->extent() : math::Extent2D{},
     };
 
@@ -703,12 +1027,22 @@ void VulkanRenderer::queueImGuiDrawData() noexcept
     m_imguiDrawQueued = m_imguiInitialized;
 }
 
-void VulkanRenderer::releaseRetiredMeshes() noexcept
+void VulkanRenderer::releaseRetiredResources() noexcept
 {
     // Frames before the retirement may still run on the GPU; they have all completed once as
     // many frames as can be in flight have started since.
     std::erase_if(m_retiredMeshes, [this](const RetiredMesh& retired) {
         return m_frameIndex >= retired.retiredAtFrame + framesInFlight;
+    });
+    std::erase_if(m_retiredTextures, [this](const RetiredTexture& retired) {
+        if (m_frameIndex < retired.retiredAtFrame + framesInFlight)
+        {
+            return false;
+        }
+        // The slot must not keep pointing at a destroyed view.
+        m_bindless->setTexture(retired.texture.slot, m_whiteTexture->image.view());
+        m_freeTextureSlots.push_back(retired.texture.slot);
+        return true;
     });
 }
 

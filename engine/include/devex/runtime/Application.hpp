@@ -1,6 +1,8 @@
 #pragma once
 
+#include <devex/asset/import/AssetDatabase.hpp>
 #include <devex/core/Error.hpp>
+#include <devex/core/JobSystem.hpp>
 #include <devex/core/Time.hpp>
 #include <devex/platform/Event.hpp>
 #include <devex/platform/Input.hpp>
@@ -8,11 +10,12 @@
 #include <devex/platform/Window.hpp>
 #include <devex/render/Renderer.hpp>
 #include <devex/render/RenderWorld.hpp>
-#include <devex/runtime/AssetRegistry.hpp>
+#include <devex/runtime/AssetManager.hpp>
 #include <devex/scene/Scene.hpp>
 
 #include <concepts>
 #include <cstdint>
+#include <filesystem>
 #include <string>
 
 namespace devex::runtime {
@@ -32,9 +35,15 @@ struct ApplicationConfig
     render::PresentMode presentMode = render::PresentMode::Fifo;
     // Case-insensitive part of the GPU name to use; empty selects the most capable GPU.
     std::string preferredGpu;
-    // Makes the tools overlay (hierarchy, inspector, statistics, console) available with F1.
-    // Requires rendering.
+    // Makes the tools overlay (hierarchy, inspector, assets, statistics, console) available with
+    // F1. Requires rendering.
     bool enableTools = core::assertsEnabled;
+    // The .dvxproj file whose assets folder is imported and loaded; empty runs without a project.
+    std::filesystem::path project;
+    // Imports again the assets that change on disk while the application runs.
+    bool watchAssets = true;
+    // Worker threads for imports and other jobs; 0 uses every hardware thread but one.
+    std::uint32_t workerThreads = 0;
 };
 
 namespace detail {
@@ -93,8 +102,11 @@ protected:
     [[nodiscard]] platform::Window& window() noexcept;
     // The scene rendered every frame. It can be replaced, for instance by a loaded one.
     [[nodiscard]] scene::Scene& scene() noexcept;
-    // Maps asset identifiers to loaded resources, with the built-in meshes registered.
-    [[nodiscard]] AssetRegistry& assets() noexcept;
+    // Loads assets by identifier, with the built-in meshes registered.
+    [[nodiscard]] AssetManager& assets() noexcept;
+    // The asset database of the project, or null when the application runs without one.
+    [[nodiscard]] asset::AssetDatabase* assetDatabase() noexcept;
+    [[nodiscard]] core::JobSystem& jobs() noexcept;
     // Only available when ApplicationConfig::enableRendering is set.
     [[nodiscard]] render::Renderer& renderer() noexcept;
     [[nodiscard]] const render::Renderer& renderer() const noexcept;
@@ -112,7 +124,8 @@ private:
     platform::Window* m_window = nullptr;
     render::Renderer* m_renderer = nullptr;
     scene::Scene* m_scene = nullptr;
-    AssetRegistry* m_assets = nullptr;
+    AssetManager* m_assets = nullptr;
+    core::JobSystem* m_jobs = nullptr;
     double m_interpolationAlpha = 0.0;
     bool m_quitRequested = false;
 };

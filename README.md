@@ -18,23 +18,31 @@ Le détail, l'architecture des modules et les jalons sont dans
 
 ## État actuel
 
-- `Devex::Core` : `Result`/`Error`, journal `DEVEX_LOG_*`, assertions, `SlotMap`, `Uuid` ;
+- `Devex::Core` : `Result`/`Error`, journal `DEVEX_LOG_*`, assertions, `SlotMap`, `Uuid`,
+  hachage XXH64, pool de jobs ;
 - `Devex::Math` : types GLM sous `devex::math`, projection reverse-Z infinie, TRS ;
 - `Devex::Platform` : fenêtre, événements et entrées clavier/souris sur SDL3 ;
 - `Devex::Reflection` : description des champs des composants (`DEVEX_REFLECT`) ;
-- `Devex::Serialization` : format texte commun des fichiers `.dvx*` ;
-- `Devex::Asset` / `Devex::AssetImport` : `AssetId`, maillages CPU, primitives, import glTF ;
+- `Devex::Serialization` : format texte commun des fichiers `.dvx*`, flux binaires ;
+- `Devex::Asset` : `AssetId`, maillages, textures, matériaux et modèles, fichiers `.dvxasset`,
+  projets `.dvxproj` ;
+- `Devex::AssetImport` : base d'assets (`.dvxmeta`, cache `.devex/`, imports en arrière-plan,
+  réimport à chaud), importeurs de textures (BC7/BC5), de `.dvxmat` et de glTF ;
 - `Devex::Render` : renderer Vulkan 1.4 (volk, VMA), shaders Slang, vertex pulling,
-  profondeur reverse-Z, maillages éclairés ;
-- `Devex::Scene` : entités à UUID, composants en sparse sets, hiérarchie, `.dvxscene` ;
-- `Devex::Tools` : overlay ImGui (F1) avec hiérarchie, inspecteur, statistiques, console
-  et annulation (Ctrl+Z / Ctrl+Y) ;
-- `Devex::Runtime` : `Application`, boucle à pas fixe, rendu automatique de la scène ;
-- `devex-sandbox` : scène hiérarchique et caméra libre ; F1 affiche les outils, F5
-  sauvegarde la scène, F9 la recharge ; glisser un `.gltf` ou un `.glb` sur la fenêtre
-  l'importe en entités.
+  profondeur reverse-Z, textures bindless, matériaux et sous-maillages ;
+- `Devex::Scene` : entités à UUID, composants en sparse sets, hiérarchie, `.dvxscene`,
+  instanciation de modèles ;
+- `Devex::Tools` : overlay ImGui (F1) avec hiérarchie, inspecteur, assets, statistiques,
+  console et annulation (Ctrl+Z / Ctrl+Y) ;
+- `Devex::Runtime` : `Application`, boucle à pas fixe, chargement des assets à la demande,
+  rendu automatique de la scène ;
+- `devex-sandbox` : projet `apps/sandbox/project` (caisse et balises glTF, matériaux,
+  damier) et caméra libre ; F1 affiche les outils, F5 sauvegarde la scène, F9 la recharge ;
+  modifier un fichier de `assets/` met la scène à jour, et glisser un `.gltf` ou un `.glb`
+  sur la fenêtre le copie dans le projet puis le place devant la caméra.
 
-Le SDK Vulkan fournit `slangc`, qui compile les shaders pendant le build.
+Le SDK Vulkan fournit `slangc`, qui compile les shaders pendant le build. Les assets
+d'exemple et les données de test sont produits par `scripts/generate_sample_assets.py`.
 
 Les tests marqués `[gpu]` ouvrent une fenêtre masquée et nécessitent un GPU Vulkan 1.4.
 

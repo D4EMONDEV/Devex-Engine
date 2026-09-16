@@ -85,6 +85,25 @@ public:
         return removed;
     }
 
+    // Calls function(handle, value) for every stored value, in slot order.
+    template <typename Function>
+    void forEach(Function&& function) const
+    {
+        for (std::uint32_t index = 0; index < m_slots.size(); ++index)
+        {
+            if (const Slot& slot = m_slots[index]; slot.value.has_value())
+            {
+                function(HandleType{index, slot.generation}, *slot.value);
+            }
+        }
+    }
+
+    // One past the largest slot index ever used: every handle index is below it.
+    [[nodiscard]] std::size_t slotCount() const noexcept
+    {
+        return m_slots.size();
+    }
+
     [[nodiscard]] std::size_t size() const noexcept
     {
         return m_size;

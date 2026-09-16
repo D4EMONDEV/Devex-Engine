@@ -28,9 +28,11 @@ struct WorldTransform
     math::Mat4 matrix{1.0f};
 };
 
+// Draws a mesh asset. Each submesh uses its own material unless `material` replaces them all.
 struct MeshRenderer
 {
     asset::AssetId mesh;
+    asset::AssetId material;
 };
 DEVEX_DECLARE_REFLECTION(MeshRenderer);
 

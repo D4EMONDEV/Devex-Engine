@@ -1,5 +1,7 @@
 #include <devex/asset/AssetId.hpp>
 #include <devex/asset/Primitives.hpp>
+#include <devex/asset/Project.hpp>
+#include <devex/core/Path.hpp>
 #include <devex/core/Assert.hpp>
 #include <devex/core/BuildInfo.hpp>
 #include <devex/core/Log.hpp>
@@ -25,7 +27,8 @@ struct EngineServices
     platform::Window& window;
     render::Renderer* renderer = nullptr;
     scene::Scene& scene;
-    AssetRegistry& assets;
+    AssetManager& assets;
+    core::JobSystem& jobs;
     tools::ToolsOverlay* tools = nullptr;
 };
 
@@ -79,6 +82,7 @@ ApplicationRunner::ApplicationRunner(Application& application, const Application
     m_application.m_renderer = services.renderer;
     m_application.m_scene = &services.scene;
     m_application.m_assets = &services.assets;
+    m_application.m_jobs = &services.jobs;
     m_application.m_interpolationAlpha = 0.0;
     m_application.m_quitRequested = false;
 }
@@ -91,6 +95,7 @@ ApplicationRunner::~ApplicationRunner()
     m_application.m_renderer = nullptr;
     m_application.m_scene = nullptr;
     m_application.m_assets = nullptr;
+    m_application.m_jobs = nullptr;
 }
 
 int ApplicationRunner::execute()
@@ -167,6 +172,13 @@ void ApplicationRunner::runFrame()
     const std::chrono::nanoseconds frameTime = frameStart - m_previousFrame;
     m_previousFrame = frameStart;
 
+    // Finished imports replace the assets they changed before anything uses them this frame.
+    if (asset::AssetDatabase* const database = m_services.assets.database())
+    {
+        const std::vector<asset::AssetEvent> events = database->update();
+        m_services.assets.handleEvents(events);
+    }
+
     const std::uint32_t steps = m_timestep.advance(frameTime);
     for (std::uint32_t step = 0; step < steps; ++step)
     {
@@ -211,7 +223,7 @@ void ApplicationRunner::runFrame()
 
 // Uploads the built-in meshes and registers them under their reserved asset identifiers.
 [[nodiscard]] core::Result<void> registerBuiltinMeshes(render::Renderer& renderer,
-                                                       AssetRegistry& assets)
+                                                       AssetManager& assets)
 {
     const std::pair<asset::AssetId, asset::MeshData> builtins[] = {
         {asset::builtin::cubeMesh, asset::makeCube()},
@@ -255,10 +267,21 @@ scene::Scene& Application::scene() noexcept
     return *m_scene;
 }
 
-AssetRegistry& Application::assets() noexcept
+AssetManager& Application::assets() noexcept
 {
     DEVEX_ASSERT_MSG(m_assets != nullptr, "engine services are unavailable outside run()");
     return *m_assets;
+}
+
+asset::AssetDatabase* Application::assetDatabase() noexcept
+{
+    return assets().database();
+}
+
+core::JobSystem& Application::jobs() noexcept
+{
+    DEVEX_ASSERT_MSG(m_jobs != nullptr, "engine services are unavailable outside run()");
+    return *m_jobs;
 }
 
 render::Renderer& Application::renderer() noexcept
@@ -311,7 +334,31 @@ int run(Application& application, const ApplicationConfig& config)
     DEVEX_LOG_DEBUG("Main window {}x{} ({}x{} pixels), fixed update at {} Hz", config.width,
                     config.height, pixelSize.width, pixelSize.height, config.fixedUpdateRate);
 
-    AssetRegistry assets;
+    // Destroyed last: running imports finish before the process exits.
+    core::JobSystem jobs(config.workerThreads);
+
+    std::unique_ptr<asset::AssetDatabase> database;
+    if (!config.project.empty())
+    {
+        const core::Result<asset::Project> project = asset::loadProject(config.project);
+        if (!project)
+        {
+            DEVEX_LOG_FATAL("Cannot open the project: {}", project.error());
+            return EXIT_FAILURE;
+        }
+        core::Result<std::unique_ptr<asset::AssetDatabase>> opened =
+            asset::AssetDatabase::open(*project, jobs, {.watchFiles = config.watchAssets});
+        if (!opened)
+        {
+            DEVEX_LOG_FATAL("Cannot open the assets of {}: {}", project->name, opened.error());
+            return EXIT_FAILURE;
+        }
+        database = std::move(*opened);
+        DEVEX_LOG_INFO("Project {} at {}: {} source files, {} imports queued", project->name,
+                       core::toUtf8(project->root), database->sources().size(),
+                       database->pendingImports());
+    }
+
     std::optional<render::Renderer> renderer;
     if (config.enableRendering)
     {
@@ -326,7 +373,11 @@ int run(Application& application, const ApplicationConfig& config)
             return EXIT_FAILURE;
         }
         renderer.emplace(std::move(*created));
+    }
 
+    AssetManager assets(renderer ? &*renderer : nullptr, database.get());
+    if (renderer)
+    {
         if (core::Result<void> builtins = detail::registerBuiltinMeshes(*renderer, assets);
             !builtins)
         {
@@ -344,6 +395,7 @@ int run(Application& application, const ApplicationConfig& config)
         if (overlay)
         {
             tools = std::move(*overlay);
+            tools->setAssetDatabase(database.get());
             DEVEX_LOG_INFO("Press F1 to show the tools");
         }
         else
@@ -360,6 +412,7 @@ int run(Application& application, const ApplicationConfig& config)
                                          .renderer = renderer ? &*renderer : nullptr,
                                          .scene = scene,
                                          .assets = assets,
+                                         .jobs = jobs,
                                          .tools = tools.get(),
                                      });
     return runner.execute();

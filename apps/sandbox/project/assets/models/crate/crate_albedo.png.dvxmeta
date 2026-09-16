@@ -1,0 +1,7 @@
+# Devex import settings: keep this file next to its asset in version control.
+[asset format=1 uuid="a7d0a43b-41ad-4f86-bc2b-d0b2dd58e729" importer="texture"]
+srgb = true
+normal_map = false
+mipmaps = true
+compress = true
+quality = "normal"

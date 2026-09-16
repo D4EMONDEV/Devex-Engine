@@ -82,9 +82,10 @@ struct ImageConfig
     math::Extent2D extent;
     VkImageUsageFlags usage = 0;
     VkImageAspectFlags aspect = VK_IMAGE_ASPECT_COLOR_BIT;
+    std::uint32_t mipLevels = 1;
 };
 
-// A 2D device-local image with a view on its single mip level.
+// A 2D device-local image with a view on all its mip levels.
 class Image
 {
 public:
@@ -103,6 +104,7 @@ public:
     [[nodiscard]] VkImageView view() const noexcept;
     [[nodiscard]] VkFormat format() const noexcept;
     [[nodiscard]] math::Extent2D extent() const noexcept;
+    [[nodiscard]] std::uint32_t mipLevels() const noexcept;
 
 private:
     Image() = default;
@@ -115,6 +117,7 @@ private:
     VkImageView m_view = VK_NULL_HANDLE;
     VkFormat m_format = VK_FORMAT_UNDEFINED;
     math::Extent2D m_extent;
+    std::uint32_t m_mipLevels = 1;
 };
 
 } // namespace devex::render::vulkan

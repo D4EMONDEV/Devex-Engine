@@ -145,6 +145,8 @@ core::Result<GraphicsPipeline> createMeshPipeline(VkDevice device, const MeshPip
     };
     const VkPipelineLayoutCreateInfo layoutInfo{
         .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+        .setLayoutCount = 1,
+        .pSetLayouts = &config.textureSetLayout,
         .pushConstantRangeCount = 1,
         .pPushConstantRanges = &pushConstants,
     };
@@ -182,7 +184,8 @@ core::Result<GraphicsPipeline> createMeshPipeline(VkDevice device, const MeshPip
     const VkPipelineRasterizationStateCreateInfo rasterization{
         .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
         .polygonMode = VK_POLYGON_MODE_FILL,
-        .cullMode = VK_CULL_MODE_BACK_BIT,
+        .cullMode = static_cast<VkCullModeFlags>(config.cullBackFaces ? VK_CULL_MODE_BACK_BIT
+                                                                      : VK_CULL_MODE_NONE),
         .frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE,
         .lineWidth = 1.0f,
     };

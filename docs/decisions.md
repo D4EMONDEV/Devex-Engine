@@ -36,7 +36,7 @@ mais seulement explicitement ici : le code suit ce document, pas l'inverse.
 | Compilation des shaders  | Au build par `slangc`, fichiers `.spv` à côté de l'exécutable      |
 | Accès aux données GPU    | Bindless + vertex pulling par buffer device address                |
 | Projection               | Reverse-Z, far plane infini                                        |
-| glTF (jalon 3)           | Import direct temporaire, pipeline d'assets plus tard              |
+| glTF                     | Modèle (hiérarchie de nœuds) et sous-assets importés par la base   |
 | Stockage ECS             | Sparse sets maison, un tableau contigu par type de composant       |
 | Réflexion                | Enregistrement explicite (`DEVEX_REFLECT`) en attendant C++26      |
 | Identité des entités     | UUID par entité dans les fichiers, handle générationnel en mémoire |
@@ -45,6 +45,15 @@ mais seulement explicitement ici : le code suit ce document, pas l'inverse.
 | Backend ImGui            | Officiels SDL3 + Vulkan, le backend Vulkan compilé avec volk       |
 | Multi-fenêtre ImGui      | Docking dans la fenêtre principale seulement                       |
 | Annulation               | Commandes basées sur la réflexion (UUID, composant, champ, valeurs) |
+| Base d'assets            | `.dvxmeta` versionné à côté de chaque source, cache `.devex/` local |
+| Sous-assets              | UUID listés dans le `.dvxmeta`, retrouvés par clé à la réimportation |
+| Cache d'import           | Artefacts binaires `.dvxasset` = format chargé par le jeu          |
+| Fichiers modifiés        | Dossier `assets/` surveillé (efsw), réimport et remplacement à chaud |
+| Exécution des imports    | Pool de jobs `core::JobSystem`, en arrière-plan                    |
+| Textures                 | BC7 (couleurs, données) et BC5 (normales) à l'import, via basisu   |
+| Modèles dans une scène   | Copie d'entités ; préfabs liés dans un jalon dédié                 |
+| Matériaux                | Paramètres PBR glTF ; sous-assets en lecture seule + `.dvxmat`     |
+| Textures côté GPU        | Bindless : un descriptor set global, une table de matériaux        |
 
 ## Architecture cible
 
@@ -60,12 +69,12 @@ situé au-dessus de lui, et le graphe reste sans cycle.
 | `Platform`      | fenêtre, entrées, temps, système de fichiers, chargement de DLL           | Core, SDL3                    |
 | `Reflection`    | description des champs (`TypeInfo`, `DEVEX_REFLECT`, `ValueKind`)         | Core, Math                    |
 | `Serialization` | format texte `.dvx*` (sections, valeurs) ; plus tard archives cookées     | Core                          |
-| `Asset`         | `AssetId`, données CPU (`MeshData`, primitives) ; plus tard `.dvxmeta`    | Core, Math, Reflection        |
-| `AssetImport`   | importeurs de formats sources (glTF, FBX), réservés aux outils            | Asset, fastgltf               |
+| `Asset`         | `AssetId`, données CPU (maillages, textures, matériaux, modèles), `.dvxasset`, projet | Core, Math, Reflection, Serialization |
+| `AssetImport`   | base d'assets, `.dvxmeta`, importeurs (textures, `.dvxmat`, glTF)         | Asset, Scene, fastgltf, basisu, stb, efsw |
 | `Render`        | façade `Renderer` / `RenderWorld` ; tout `Vk*` reste dans `src/render/vulkan` | Core, Math, Platform, Asset, Vulkan |
 | `Scene`         | entités, sparse sets, hiérarchie, composants intégrés, `.dvxscene`, sous-arbres | Core, Math, Reflection, Serialization, Asset |
-| `Tools`         | overlay ImGui : hiérarchie, inspecteur, statistiques, console, annulation | Core, Platform, Render, Scene, Serialization, ImGui |
-| `Runtime`       | `Application`, boucle, `AssetRegistry`, extraction Scene → Render, F1     | tous les modules ci-dessus    |
+| `Tools`         | overlay ImGui : hiérarchie, inspecteur, assets, statistiques, console, annulation | Core, Platform, Render, Scene, AssetImport, ImGui |
+| `Runtime`       | `Application`, boucle, jobs, `AssetManager`, extraction Scene → Render, F1 | tous les modules ci-dessus    |
 
 Applications au sommet : `apps/sandbox`, `apps/editor` et la DLL gameplay d'un jeu
 dépendent de `Runtime`.
@@ -76,20 +85,21 @@ Règles :
   propriétaire, et les autres modules écrivent `devex::math::Vec3`, jamais `glm::vec3` ;
 - `Scene` ne dépend pas de `Render` : `Runtime` extrait chaque frame les données de
   rendu depuis la scène vers le `RenderWorld` ;
-- les importeurs FBX/glTF vivent dans `AssetImport` et appartiennent aux outils (éditeur,
-  cooker), jamais au jeu exporté ; le bac à sable s'en sert temporairement ;
-- `Render` ne dépend d'`Asset` que pour les données CPU (`MeshData`), jamais de la base
-  d'assets ;
+- les importeurs vivent dans `AssetImport` et appartiennent aux outils (éditeur, cooker) ;
+  `Runtime` s'en sert pendant le développement, un jeu exporté ne chargera que les `.dvxasset` ;
+- `Render` ne dépend d'`Asset` que pour les données CPU (`MeshData`, `TextureData`), jamais de
+  la base d'assets : `Runtime` résout les `AssetId` en handles du renderer ;
 - un module nouveau arrive avec ses tests et une démonstration dans le bac à sable.
 
 ### Dépôt
 
 ```text
 engine/        modules du moteur (include/ + src/)
-apps/sandbox/  bac à sable des jalons
+apps/sandbox/  bac à sable des jalons et son projet (project/Sandbox.dvxproj)
 apps/editor/   éditeur ImGui (à venir)
 shaders/       sources Slang du moteur, compilées dans bin/shaders
 tests/         tests Catch2, un dossier par module, données dans tests/data
+scripts/       outils de développement (génération des assets d'exemple)
 third_party/   sources externes copiées (backend Vulkan d'ImGui), avec leur licence
 cmake/         fonctions CMake partagées
 docs/          décisions et documentation
@@ -140,11 +150,32 @@ docs/          décisions et documentation
   *buffer device addresses* passées en push constants (80 octets, sous le minimum garanti
   de 128) ; pas de vertex input state. Les dispositions mémoire C++ et Slang sont
   vérifiées par `static_assert` (`src/render/vulkan/GpuData.hpp`). Le descriptor set
-  global bindless (textures, samplers) arrivera avec les premières textures.
+  global bindless porte les textures (voir ci-dessous).
 - **Maillages** : `Renderer::createMesh` valide les données et les transfère de façon
   synchrone (buffer de staging VMA) ; il renvoie un `MeshHandle` générationnel
   (`core::SlotMap`). `destroyMesh` retarde la libération jusqu'à ce qu'aucune frame en
   vol ne puisse encore l'utiliser. Faces avant dans le sens antihoraire, back-face culling.
+  Un maillage a des **sous-maillages** (plages d'indices) ; le `RenderWorld` contient une
+  instance par sous-maillage avec son matériau.
+- **Textures** : `Renderer::createTexture` envoie tous les niveaux de mip d'un `TextureData`
+  (RGBA8, BC5, BC7) et renvoie un `TextureHandle`. Elles vivent dans **un descriptor set global
+  bindless** (tableau de `Texture2D` indexé, `PARTIALLY_BOUND` et `UPDATE_AFTER_BIND`, 8192
+  emplacements au plus) avec un sampler unique (linéaire, répétition, anisotrope x16). Les
+  emplacements 0 et 1 sont une texture blanche et une normale plate qui remplacent les textures
+  absentes. Une texture détruite garde son emplacement jusqu'à la fin des frames en vol, puis
+  l'emplacement repointe vers le blanc avant d'être réutilisé.
+- **Matériaux** : `createMaterial` / `updateMaterial` / `destroyMaterial` sur un `MaterialDesc`
+  (paramètres glTF avec des `TextureHandle`). Le renderer en tire une table `GpuMaterial` de 80
+  octets dont **chaque frame en vol garde sa copie** (buffer adressé par `SceneData`), recopiée
+  quand un matériau ou une texture change. Le shader lit couleur de base, émission, occlusion
+  ambiante et mode alpha `mask` (discard) ; `blend` est dessiné opaque en attendant la
+  transparence. Les matériaux `doubleSided` utilisent un second pipeline sans culling et éclairent
+  la face arrière avec la normale retournée. Un matériau par défaut gris clair sert aux instances
+  sans matériau.
+- **Normales** : transformées par la matrice des cofacteurs (signe du déterminant compris), juste
+  sous échelle non uniforme.
+- **GPU requis en plus** : descriptor indexing (tableaux runtime, partially bound, update after
+  bind, indexation non uniforme) et compression BC.
 - Une RHI ne sera extraite que lorsqu'un second backend (DX12, Metal) aura un besoin
   réel.
 
@@ -165,20 +196,25 @@ docs/          décisions et documentation
 - **Hiérarchie** : parent, premier et dernier enfant, frères précédent et suivant ; l'ordre
   des enfants et des racines est conservé. `setParent` refuse les cycles et garde la
   transformation locale. Détruire une entité détruit ses descendants.
+- **Modèles** : `scene::instantiateModel` crée une entité racine puis une entité par nœud du
+  modèle (`Transform`, et `MeshRenderer` si le nœud a un maillage). Ce sont des copies : maillages
+  et matériaux restent liés par `AssetId` et suivent les réimports, pas la hiérarchie.
 - **Transformations** : `Transform` (position, rotation, échelle locales) ;
   `Scene::updateTransforms` calcule `WorldTransform` parents d'abord, chaque frame, après
   `onUpdate`. Une entité sans `Transform` transmet celle de son parent.
 - **Composants intégrés** : `Transform`, `WorldTransform` (calculé, jamais sauvegardé),
-  `MeshRenderer`, `Camera` (la première `primary` est utilisée), `DirectionalLight`.
+  `MeshRenderer` (maillage et matériau qui remplace ceux des sous-maillages s'il est valide),
+  `Camera` (la première `primary` est utilisée), `DirectionalLight`.
 - **Réflexion** : chaque composant déclare ses champs avec `DEVEX_DECLARE_REFLECTION` (header)
   et `DEVEX_REFLECT` (source). Types de valeurs : bool, int32, uint32, float, string, vec2,
-  vec3, vec4, quat, UUID, `AssetId`. MSVC 19.51 ne fournit pas encore `<meta>` (réflexion
-  C++26) ; ces déclarations pourront alors être générées.
+  vec3, vec4, quat, UUID, `AssetId`. Un champ `AssetId` peut indiquer le type d'asset attendu
+  (`FieldHints::assetType`), utilisé par l'inspecteur. MSVC 19.51 ne fournit pas encore `<meta>`
+  (réflexion C++26) ; ces déclarations pourront alors être générées.
 - **Composants du jeu** : une struct, sa réflexion, puis `scene::registerComponent<T>()`.
   Seuls les composants enregistrés sont sauvegardés.
-- **Rendu de la scène** : `Runtime` extrait chaque frame la caméra, la lumière et les
-  `MeshRenderer` dont l'`AssetId` est chargé dans l'`AssetRegistry`, puis appelle
-  `onRender` pour les ajouts éventuels.
+- **Rendu de la scène** : `Runtime` extrait chaque frame la caméra, la lumière et une instance
+  par sous-maillage de chaque `MeshRenderer` dont le maillage est disponible dans
+  l'`AssetManager`, puis appelle `onRender` pour les ajouts éventuels.
 - Repère : **Y-up, main droite**, +X droite, -Z avant, mètres, angles en radians.
   glTF s'importe sans conversion ; FBX est converti à l'import.
 
@@ -188,14 +224,17 @@ Projet utilisateur :
 
 ```text
 MyGame/
-  project.dvxproj
+  MyGame.dvxproj              # [project format=1 name="MyGame"]
   assets/
     levels/level01.dvxscene
-    prefabs/hero.dvxprefab
+    prefabs/hero.dvxprefab    # à venir
     materials/rock.dvxmat
+    materials/rock.dvxmat.dvxmeta
     models/hero.glb
-    models/hero.glb.dvxmeta   # UUID + options d'import
-  .devex/                     # cache d'import, ignoré par Git
+    models/hero.glb.dvxmeta   # UUID, options d'import et sous-assets
+  .devex/                     # cache d'import local, ignoré par Git
+    imported/<uuid>.dvxasset  # données cuites, une par asset
+    sources/<uuid>.dvxsource  # dernier import de chaque fichier source
 ```
 
 Format texte commun à tous les `.dvx*` (`Devex::Serialization`) : des sections
@@ -227,10 +266,44 @@ mesh = asset("00000000-0000-0000-0000-000000000001")
   plus ancien ouvre une scène plus récente) ; une valeur invalide est une erreur.
 - Les références entre fichiers passent par **UUID**, jamais par chemin : renommer ou
   déplacer un asset ne casse rien. Les primitives intégrées ont des UUID réservés :
-  `…0001` cube, `…0002` sphère, `…0003` plan. En attendant la base d'assets, un maillage
-  importé reçoit un `AssetId` valable pour la session seulement.
-- Les chemins affichés utilisent le schéma `res://`.
-- L'export d'un jeu produit des données **binaires cookées** chargées sans parsing.
+  `…0001` cube, `…0002` sphère, `…0003` plan.
+- Les chemins affichés utilisent le schéma `res://`, relatif au dossier du `.dvxproj`
+  (`res://assets/models/hero.glb`).
+- L'export d'un jeu empaquettera les `.dvxasset` du cache : ce sont déjà les données **binaires
+  cuites** chargées sans parsing.
+
+Import (`.dvxmeta`, format 1), écrit par la base d'assets et versionné :
+
+```text
+[asset format=1 uuid="fa17e48e-77a9-48d6-9cb6-3075791e73bf" importer="gltf"]
+compress_textures = true
+texture_quality = "normal"
+
+[subasset type="material" key="Wood" uuid="7eb218af-8a08-4b1b-9029-bd3c909fd943"]
+[subasset type="mesh" key="Crate" uuid="0a4571b3-aa2e-4421-a385-09466c6dee9c"]
+```
+
+Matériau (`.dvxmat`, format 1), toutes les propriétés sont facultatives :
+
+```text
+[material format=1]
+base_color = vec4(1, 1, 1, 1)
+base_color_texture = asset("0d958a7c-6376-440a-bd9b-4276675c6896")
+metallic = 0
+roughness = 0.9
+emissive = vec3(0, 0, 0)
+alpha_mode = "opaque"        # "mask" utilise alpha_cutoff, "blend"
+double_sided = false
+```
+
+Les autres propriétés sont `metallic_roughness_texture`, `normal_texture`, `normal_scale`,
+`occlusion_texture`, `occlusion_strength`, `emissive_texture` et `alpha_cutoff`. Sans texture,
+métal 0 et rugosité 1 par défaut (un import glTF écrit ses propres valeurs).
+
+Artefact (`.dvxasset`) : en-tête `DVXA`, type d'asset, version de disposition du type, puis les
+données en little-endian (`serialization::BinaryWriter`). Changer la disposition d'un type
+augmente sa version ; changer ce que produit un importeur augmente la version de l'importeur.
+Dans les deux cas, les sources concernées sont réimportées.
 
 ### Boucle de jeu et application
 
@@ -287,6 +360,66 @@ mesh = asset("00000000-0000-0000-0000-000000000001")
   dessiné dans une seconde passe sur le backbuffer ; ses couleurs de style, pensées en
   sRGB, sont converties en linéaire pour le swapchain sRGB.
 
+### Assets
+
+- **Projet** : `ApplicationConfig::project` désigne le `.dvxproj` ; `Runtime` ouvre alors une
+  `AssetDatabase` sur son dossier `assets/`. Le bac à sable ouvre `apps/sandbox/project` depuis les
+  sources, pour que les modifications d'assets s'y voient en direct.
+- **Sources et importeurs** : chaque fichier dont l'extension a un importeur est une source ;
+  `texture` (`.png`, `.jpg`, `.tga`, `.bmp`, décodés par stb_image), `material` (`.dvxmat`) et
+  `gltf` (`.gltf`, `.glb`). Les fichiers et dossiers cachés (`.`) sont ignorés.
+- **`.dvxmeta`** : créé au premier scan avec un UUID aléatoire et les options par défaut de
+  l'importeur. Il porte l'identité de l'asset : il se versionne avec la source. Un `.dvxmeta`
+  illisible est signalé et laissé tel quel, jamais remplacé. Une source copiée avec son
+  `.dvxmeta` (UUID déjà vu) reçoit de nouveaux identifiants.
+- **Sous-assets** : les éléments d'un fichier (maillages, matériaux, textures d'un glTF) sont
+  listés dans le `.dvxmeta` par type, **clé** et UUID. La clé est le nom glTF, un nom de repli
+  (`Mesh 2`) ou le nom suivi de `#index` en cas de doublon ; une texture reçoit le suffixe de son
+  rôle (` (linear)`, ` (normal)`). Une clé connue garde son UUID ; une clé disparue reste listée,
+  pour que son UUID revienne avec elle.
+- **Cache** : chaque import écrit ses artefacts (`imported/<uuid>.dvxasset`, écriture atomique)
+  et un enregistrement texte (`sources/<uuid>.dvxsource`) : importeur et version, empreinte des
+  options, taille, date et hachage XXH64 de la source et de ses dépendances, artefacts produits,
+  erreur éventuelle. À l'ouverture, ces enregistrements rendent les assets disponibles
+  immédiatement ; les artefacts qu'aucun enregistrement ne cite sont supprimés.
+- **Détection des changements** : taille et date d'abord, contenu haché seulement si elles
+  diffèrent (un fichier touché sans changement n'est pas réimporté). Changent aussi l'import :
+  options, importeur, version, dépendances (buffers et images externes d'un `.gltf`), artefact
+  manquant. Une source déplacée avec son `.dvxmeta` garde ses assets sans réimport.
+- **Imports** : sur le `core::JobSystem` (un thread par cœur moins un), en parallèle entre fichiers
+  et à l'intérieur (lignes de blocs d'une texture, textures d'un glTF). `AssetDatabase::update`,
+  appelé au début de chaque frame, applique les imports terminés et renvoie des `AssetEvent`
+  (`Imported`, `Removed`). Un import échoué garde les assets de l'import réussi précédent et
+  n'est retenté qu'après un changement ; `reimport` force un import.
+- **Surveillance** : efsw observe `assets/` ; après 250 ms sans événement, un scan complet
+  (dates seulement) décide des réimports. Les éditeurs qui enregistrent en plusieurs étapes ne
+  provoquent donc qu'un import.
+- **Suppression** : les assets d'une source supprimée disparaissent (`Removed`) avec leurs
+  artefacts ; son `.dvxmeta` reste, et la source qui revient retrouve ses UUID.
+- **Chargement** : l'`AssetManager` de `Runtime` charge un asset la première fois qu'il sert
+  (maillage et matériaux d'un `MeshRenderer`, textures d'un matériau, modèle placé), de façon
+  synchrone depuis le cache. Sur `Imported`, un asset chargé est rechargé : maillages et textures
+  changent de handle (l'ancien est libéré après les frames en vol), un matériau garde le sien,
+  et les matériaux sont résolus à nouveau après tout changement de texture. Les maillages
+  enregistrés par l'application (primitives) ne sont jamais détruits par lui.
+- **Textures** : mipmaps complets calculés en espace linéaire pour les couleurs sRGB, normales
+  renormalisées à chaque niveau. Compression **BC7** (sRGB pour les couleurs, perceptuelle) par
+  l'encodeur bc7e de basisu, **BC5** pour les normal maps ; options `srgb`, `normal_map`,
+  `mipmaps`, `compress` et `quality` (`fast`, `normal`, `high`). Un glTF déduit le rôle de chaque
+  image de son usage : couleur de base et émission en sRGB, métal-rugosité et occlusion en
+  linéaire, normales en BC5.
+- **glTF** : l'asset principal est un **modèle** (nœuds de la scène par défaut avec transformations
+  locales). Les primitives d'un maillage deviennent ses sous-maillages, chacun avec son matériau ;
+  les matériaux reprennent tous les paramètres PBR (y compris `KHR_materials_emissive_strength`).
+  Les images référencées par un `.gltf` sont importées comme sous-assets du modèle, même si elles
+  sont aussi des textures du projet.
+- **Ajout de fichiers** : `AssetDatabase::addFile` copie un fichier extérieur dans un dossier du
+  projet, avec les buffers et images d'un `.gltf`, écrit son `.dvxmeta` et renvoie l'UUID du
+  modèle à venir. Le bac à sable l'utilise pour les fichiers déposés sur la fenêtre.
+- **Outils** : panneau *Assets* (sources, type, statut, erreur en infobulle, réimport, sous-assets
+  dépliables) ; un asset se glisse sur un champ `AssetId` de l'inspecteur, un modèle dans la
+  hiérarchie (placement annulable). L'inspecteur liste les assets du type attendu.
+
 ### Gameplay
 
 - Premier temps : gameplay en **C++** compilé dans une DLL chargée par le runtime et
@@ -321,6 +454,9 @@ mesh = asset("00000000-0000-0000-0000-000000000001")
 | VMA                   | mémoire GPU          | 3 ✅     |
 | fastgltf              | import glTF          | 3 ✅     |
 | Dear ImGui (docking, SDL3) | outils, éditeur | 5 ✅     |
+| basisu (encodeurs BC7, BC5) | compression des textures | 6 ✅ |
+| stb (stb_image)       | décodage des images  | 6 ✅     |
+| efsw                  | surveillance des fichiers | 6 ✅ |
 | Catch2                | tests (feature `tests`) | 0 ✅  |
 
 Hors vcpkg :
@@ -348,10 +484,13 @@ Chaque jalon se termine par une démo observable dans `devex-sandbox` et des tes
    commun, lecture et écriture `.dvxscene`, rendu automatique de la scène.
 5. ✅ **Outils** — overlay ImGui docking : hiérarchie, inspecteur par réflexion,
    statistiques, console, annulation par commandes.
+6. ✅ **Assets et textures** — projet `.dvxproj`, `.dvxmeta`, cache d'artefacts binaires, imports
+   en arrière-plan sur un pool de jobs, réimport à chaud, textures BC7/BC5 bindless, matériaux
+   (`.dvxmat` et glTF), modèles glTF placés en entités, panneau Assets.
 
-Ensuite, sans ordre figé : application éditeur (viewport en texture, mode Play), textures et
-matériaux PBR avec forward+ clustered, base d'assets et cache d'import, DLL gameplay
-rechargeable, CI Linux.
+Ensuite, sans ordre figé : rendu PBR forward+ clustered (normal maps avec tangentes MikkTSpace),
+application éditeur (viewport en texture, mode Play), préfabs liés, DLL gameplay rechargeable,
+export d'un jeu (paquet d'artefacts), CI Linux.
 
 ## Questions ouvertes
 
@@ -365,3 +504,10 @@ rechargeable, CI Linux.
 - **Audio** : SDL3 audio, miniaudio ou FMOD/Wwise en option.
 - **UI retenue maison** pour l'éditeur et les jeux, qui remplacera ImGui.
 - **CI** : GitHub Actions Windows, puis Linux.
+- **Chargement asynchrone** : lecture et envoi GPU des assets hors du thread principal, streaming
+  des gros niveaux (aujourd'hui, le chargement depuis le cache est synchrone).
+- **Textures partagées** : une image utilisée par un `.gltf` et présente dans le projet est
+  importée deux fois ; relier les deux demandera de connaître son rôle (couleur, normale).
+- **Autres plateformes de textures** : ASTC ou Basis Universal pour le mobile, produits à l'export.
+- **Tangentes** : calculées à l'import (MikkTSpace) avec le PBR, ce qui changera la version des
+  maillages.

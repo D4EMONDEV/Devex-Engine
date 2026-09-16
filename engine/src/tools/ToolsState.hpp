@@ -1,5 +1,8 @@
 #pragma once
 
+#include <devex/asset/AssetId.hpp>
+#include <devex/asset/AssetType.hpp>
+#include <devex/asset/import/AssetDatabase.hpp>
 #include <devex/core/Uuid.hpp>
 #include <devex/math/Math.hpp>
 #include <devex/platform/Platform.hpp>
@@ -13,7 +16,9 @@
 
 #include <array>
 #include <cstddef>
+#include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -23,9 +28,18 @@ inline constexpr const char* hierarchyWindow = "Hierarchy";
 inline constexpr const char* inspectorWindow = "Inspector";
 inline constexpr const char* statisticsWindow = "Statistics";
 inline constexpr const char* consoleWindow = "Console";
+inline constexpr const char* assetsWindow = "Assets";
 
 // Payload type of an entity dragged in the hierarchy: the 16 bytes of its UUID.
 inline constexpr const char* entityPayload = "DEVEX_ENTITY";
+// Payload type of an asset dragged from the assets panel.
+inline constexpr const char* assetPayload = "DEVEX_ASSET";
+
+struct AssetPayload
+{
+    std::array<std::uint8_t, 16> uuid{};
+    asset::AssetType type = asset::AssetType::Mesh;
+};
 
 // Recent frame times, for the statistics graph.
 class FrameTimes
@@ -67,6 +81,11 @@ struct ToolsState
     bool showInspector = true;
     bool showStatistics = true;
     bool showConsole = true;
+    bool showAssets = true;
+
+    // Null when the application runs without a project.
+    asset::AssetDatabase* database = nullptr;
+    std::string assetFilter;
 
     CommandHistory history;
     LogBuffer log;
@@ -96,6 +115,18 @@ void drawHierarchyPanel(ToolsState& state, scene::Scene& scene);
 void drawInspectorPanel(ToolsState& state, scene::Scene& scene);
 void drawStatisticsPanel(ToolsState& state, const scene::Scene& scene);
 void drawConsolePanel(ToolsState& state);
+void drawAssetsPanel(ToolsState& state, scene::Scene& scene);
+
+[[nodiscard]] core::Uuid uuidFromBytes(const std::array<std::uint8_t, 16>& bytes) noexcept;
+
+// Makes the last item a drag source for the asset.
+void dragAsset(asset::AssetId id, asset::AssetType type, const std::string& label);
+// Accepts an asset dropped on the last item, of the given type when one is given.
+[[nodiscard]] std::optional<asset::AssetId> acceptDroppedAsset(
+    std::optional<asset::AssetType> type = std::nullopt);
+
+// Queues the creation of the model's entities under parent (nil for a root) and selects them.
+void requestInstantiateModel(ToolsState& state, asset::AssetId model, core::Uuid parent);
 
 // Queues the creation of an entity under parent (nil for a root) and selects it.
 void requestCreateEntity(ToolsState& state, core::Uuid parent);

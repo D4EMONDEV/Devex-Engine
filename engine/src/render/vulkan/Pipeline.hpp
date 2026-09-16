@@ -35,10 +35,14 @@ struct MeshPipelineConfig
     std::filesystem::path shaderPath;
     VkFormat colorFormat = VK_FORMAT_UNDEFINED;
     VkFormat depthFormat = VK_FORMAT_UNDEFINED;
+    // Set 0: the bindless textures.
+    VkDescriptorSetLayout textureSetLayout = VK_NULL_HANDLE;
+    // False for double-sided materials.
+    bool cullBackFaces = true;
 };
 
-// Builds the pipeline of shaders/mesh.slang: vertex pulling, back-face culling and reversed
-// depth testing.
+// Builds the pipeline of shaders/mesh.slang: vertex pulling, bindless textures and reversed depth
+// testing.
 [[nodiscard]] core::Result<GraphicsPipeline> createMeshPipeline(VkDevice device,
                                                                const MeshPipelineConfig& config);
 

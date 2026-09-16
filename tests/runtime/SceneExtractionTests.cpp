@@ -14,9 +14,13 @@ using devex::scene::Transform;
 TEST_CASE("Extraction copies the camera, the light and the loaded meshes", "[runtime][extraction]")
 {
     Scene scene;
-    devex::runtime::AssetRegistry assets;
+    devex::runtime::AssetManager assets(nullptr, nullptr);
     const devex::render::MeshHandle cubeHandle{4, 1};
     assets.registerMesh(devex::asset::builtin::cubeMesh, cubeHandle);
+    // Two submeshes, drawn as two instances.
+    const devex::render::MeshHandle pairHandle{5, 1};
+    const devex::asset::AssetId pairMesh = devex::asset::AssetId::generate();
+    assets.registerMesh(pairMesh, pairHandle, {devex::asset::AssetId{}, devex::asset::AssetId{}});
 
     const Entity camera = scene.createEntity("Camera");
     scene.add<Transform>(camera, Transform{.position = {0.0f, 2.0f, 5.0f}});
@@ -30,6 +34,10 @@ TEST_CASE("Extraction copies the camera, the light and the loaded meshes", "[run
     const Entity cube = scene.createEntity("Cube");
     scene.add<Transform>(cube, Transform{.position = {3.0f, 0.0f, 0.0f}});
     scene.add<devex::scene::MeshRenderer>(cube, devex::asset::builtin::cubeMesh);
+
+    const Entity pair = scene.createEntity("Pair");
+    scene.add<Transform>(pair);
+    scene.add<devex::scene::MeshRenderer>(pair, pairMesh);
 
     // A mesh that is not loaded is not drawn.
     const Entity missing = scene.createEntity("Missing");
@@ -46,7 +54,11 @@ TEST_CASE("Extraction copies the camera, the light and the loaded meshes", "[run
     // The sun is pitched down by 90 degrees, so its -Z axis points to -Y.
     CHECK_THAT(world.lightDirection.y, WithinAbs(-1.0, 1e-5));
     CHECK(world.ambient == 0.4f);
-    REQUIRE(world.meshes.size() == 1);
+    REQUIRE(world.meshes.size() == 3);
     CHECK(world.meshes[0].mesh == cubeHandle);
+    CHECK(world.meshes[0].submesh == 0);
+    CHECK_FALSE(world.meshes[0].material.isValid());
     CHECK(world.meshes[0].transform[3].x == 3.0f);
+    CHECK(world.meshes[1].mesh == pairHandle);
+    CHECK(world.meshes[2].submesh == 1);
 }

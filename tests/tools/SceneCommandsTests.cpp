@@ -1,6 +1,8 @@
 #include <devex/asset/AssetId.hpp>
 #include <devex/scene/Components.hpp>
 #include <devex/scene/FieldValue.hpp>
+#include <devex/scene/ModelInstantiation.hpp>
+#include <devex/scene/SceneSerializer.hpp>
 #include <devex/tools/CommandHistory.hpp>
 #include <devex/tools/SceneCommands.hpp>
 
@@ -182,4 +184,33 @@ TEST_CASE("Commands on missing entities fail and are dropped", "[tools][commands
     CHECK(undone.error().code == devex::core::ErrorCode::NotFound);
     CHECK(history.nextUndo() == nullptr);
     CHECK(history.nextRedo() == nullptr);
+}
+
+TEST_CASE("Placed entity trees undo and redo with the same UUIDs", "[tools][commands]")
+{
+    devex::asset::ModelData model;
+    model.nodes.push_back({.name = "Part", .mesh = devex::asset::builtin::cubeMesh});
+
+    Scene scratch;
+    const Entity built = devex::scene::instantiateModel(scratch, model, "Model");
+    const Uuid root = scratch.uuid(built);
+    const Uuid part = scratch.uuid(scratch.firstChild(built));
+
+    Scene scene;
+    CommandHistory history;
+    const Entity parent = scene.createEntity("Parent");
+    REQUIRE(history.execute(scene, devex::tools::makeCreateEntityTreeCommand(
+                                       devex::scene::saveEntityTree(scratch, built), root,
+                                       scene.uuid(parent), "Place Model")));
+    CHECK(history.nextUndo()->description() == "Place Model");
+    REQUIRE(scene.findEntity(root).isValid());
+    CHECK(scene.parent(scene.findEntity(root)) == parent);
+    CHECK(scene.get<MeshRenderer>(scene.findEntity(part)).mesh == devex::asset::builtin::cubeMesh);
+
+    REQUIRE(history.undo(scene));
+    CHECK_FALSE(scene.findEntity(root).isValid());
+    CHECK(scene.entityCount() == 1);
+
+    REQUIRE(history.redo(scene));
+    CHECK(scene.findEntity(part).isValid());
 }

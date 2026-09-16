@@ -23,14 +23,7 @@ using scene::Entity;
         {
             std::array<std::uint8_t, 16> bytes{};
             std::memcpy(bytes.data(), payload->Data, bytes.size());
-            std::uint64_t high = 0;
-            std::uint64_t low = 0;
-            for (std::size_t index = 0; index < 8; ++index)
-            {
-                high = high << 8 | bytes[index];
-                low = low << 8 | bytes[8 + index];
-            }
-            dropped = core::Uuid::fromParts(high, low);
+            dropped = uuidFromBytes(bytes);
         }
         ImGui::EndDragDropTarget();
     }
@@ -70,6 +63,10 @@ void drawEntity(ToolsState& state, scene::Scene& scene, Entity entity)
     if (const std::optional<core::Uuid> dropped = acceptDroppedEntity(); dropped && *dropped != uuid)
     {
         state.pendingCommand = makeReparentCommand(*dropped, uuid);
+    }
+    if (const std::optional<asset::AssetId> model = acceptDroppedAsset(asset::AssetType::Model))
+    {
+        requestInstantiateModel(state, *model, uuid);
     }
     if (ImGui::BeginPopupContextItem("entity menu"))
     {
@@ -126,6 +123,10 @@ void drawHierarchyPanel(ToolsState& state, scene::Scene& scene)
         if (const std::optional<core::Uuid> dropped = acceptDroppedEntity())
         {
             state.pendingCommand = makeReparentCommand(*dropped, core::Uuid{});
+        }
+        if (const std::optional<asset::AssetId> model = acceptDroppedAsset(asset::AssetType::Model))
+        {
+            requestInstantiateModel(state, *model, core::Uuid{});
         }
         if (ImGui::BeginPopupContextItem("roots menu"))
         {

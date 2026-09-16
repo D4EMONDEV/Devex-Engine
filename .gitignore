@@ -1,6 +1,9 @@
 # Build products
 /out/
 /build/
+
+# Imported asset caches of Devex projects
+.devex/
 /compile_commands.json
 /CMakeUserPresets.json
 

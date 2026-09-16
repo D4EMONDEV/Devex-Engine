@@ -11,7 +11,8 @@ DEVEX_REFLECT(Transform)
 
 DEVEX_REFLECT(MeshRenderer)
 {
-    type.field("mesh", &MeshRenderer::mesh);
+    type.field("mesh", &MeshRenderer::mesh, {.assetType = "mesh"})
+        .field("material", &MeshRenderer::material, {.assetType = "material"});
 }
 
 DEVEX_REFLECT(Camera)

@@ -29,10 +29,81 @@ constexpr std::array builtinMeshes{
     BuiltinAsset{"Plane", asset::builtin::planeMesh},
 };
 
-// Draws the widget for a field value and reports whether it changed the value this frame.
-bool drawValueWidget(ToolsState& state, const char* label, ValueKind kind, void* address)
+[[nodiscard]] std::string assetLabel(const ToolsState& state, asset::AssetId id)
 {
-    switch (kind)
+    if (!id.isValid())
+    {
+        return "(none)";
+    }
+    for (const BuiltinAsset& builtin : builtinMeshes)
+    {
+        if (builtin.id == id)
+        {
+            return builtin.name;
+        }
+    }
+    if (const asset::AssetInfo* const info =
+            state.database != nullptr ? state.database->find(id) : nullptr)
+    {
+        return info->name;
+    }
+    return id.uuid.toString();
+}
+
+// A combo listing the assets of the expected type, which also accepts dropped assets.
+bool drawAssetPicker(ToolsState& state, const char* label, const reflection::FieldInfo& field,
+                     asset::AssetId& id)
+{
+    const std::optional<asset::AssetType> type =
+        field.assetType.empty() ? std::nullopt : asset::parseAssetType(field.assetType);
+    bool changed = false;
+    const auto choose = [&](const char* name, asset::AssetId candidate) {
+        ImGui::PushID(name);
+        if (ImGui::Selectable(name, candidate == id) && candidate != id)
+        {
+            id = candidate;
+            changed = true;
+        }
+        ImGui::PopID();
+    };
+
+    const std::string preview = assetLabel(state, id);
+    if (ImGui::BeginCombo(label, preview.c_str(), ImGuiComboFlags_HeightLarge))
+    {
+        choose("(none)", asset::AssetId{});
+        if (!type || *type == asset::AssetType::Mesh)
+        {
+            for (const BuiltinAsset& builtin : builtinMeshes)
+            {
+                choose(builtin.name, builtin.id);
+            }
+        }
+        if (state.database != nullptr)
+        {
+            ImGui::Separator();
+            for (const asset::AssetInfo& info : state.database->assets(type))
+            {
+                ImGui::PushID(info.id.uuid.toString().c_str());
+                choose(info.name.c_str(), info.id);
+                ImGui::PopID();
+            }
+        }
+        ImGui::EndCombo();
+    }
+    if (const std::optional<asset::AssetId> dropped = acceptDroppedAsset(type);
+        dropped && *dropped != id)
+    {
+        id = *dropped;
+        changed = true;
+    }
+    return changed;
+}
+
+// Draws the widget for a field value and reports whether it changed the value this frame.
+bool drawValueWidget(ToolsState& state, const char* label, const reflection::FieldInfo& field,
+                     void* address)
+{
+    switch (field.kind)
     {
     case ValueKind::Bool:
         return ImGui::Checkbox(label, static_cast<bool*>(address));
@@ -77,28 +148,8 @@ bool drawValueWidget(ToolsState& state, const char* label, ValueKind kind, void*
         ImGui::LabelText(label, "%s", text.c_str());
         return false;
     }
-    case ValueKind::AssetId: {
-        auto& id = *static_cast<asset::AssetId*>(address);
-        std::string preview = id.isValid() ? id.uuid.toString() : "(none)";
-        for (const BuiltinAsset& builtin : builtinMeshes)
-        {
-            preview = builtin.id == id ? builtin.name : preview;
-        }
-        bool changed = false;
-        if (ImGui::BeginCombo(label, preview.c_str()))
-        {
-            for (const BuiltinAsset& builtin : builtinMeshes)
-            {
-                if (ImGui::Selectable(builtin.name, builtin.id == id) && builtin.id != id)
-                {
-                    id = builtin.id;
-                    changed = true;
-                }
-            }
-            ImGui::EndCombo();
-        }
-        return changed;
-    }
+    case ValueKind::AssetId:
+        return drawAssetPicker(state, label, field, *static_cast<asset::AssetId*>(address));
     }
     return false;
 }
@@ -111,7 +162,7 @@ void drawField(ToolsState& state, core::Uuid entity, const scene::ComponentType&
     serialization::TextValue before = scene::writeFieldValue(field.kind, address);
 
     const std::string label = displayName(field.name);
-    const bool changed = drawValueWidget(state, label.c_str(), field.kind, address);
+    const bool changed = drawValueWidget(state, label.c_str(), field, address);
 
     if (ImGui::IsItemActivated())
     {
