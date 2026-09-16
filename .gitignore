@@ -1,0 +1,20 @@
+# Build products
+/out/
+/build/
+/compile_commands.json
+/CMakeUserPresets.json
+
+# Visual Studio and Visual Studio Code
+/.vs/
+/.vscode/
+*.sln
+*.vcxproj
+*.vcxproj.filters
+*.vcxproj.user
+
+# User and OS files
+*.user
+*.suo
+*.log
+.DS_Store
+Thumbs.db
