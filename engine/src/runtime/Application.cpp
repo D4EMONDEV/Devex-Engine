@@ -1,8 +1,11 @@
+#include <devex/asset/AssetId.hpp>
+#include <devex/asset/Primitives.hpp>
 #include <devex/core/Assert.hpp>
 #include <devex/core/BuildInfo.hpp>
 #include <devex/core/Log.hpp>
 #include <devex/runtime/Application.hpp>
 #include <devex/runtime/FixedTimestep.hpp>
+#include <devex/runtime/SceneExtraction.hpp>
 
 #include <algorithm>
 #include <chrono>
@@ -14,12 +17,20 @@ namespace devex::runtime {
 
 namespace detail {
 
+struct EngineServices
+{
+    platform::Platform& platform;
+    platform::Window& window;
+    render::Renderer* renderer = nullptr;
+    scene::Scene& scene;
+    AssetRegistry& assets;
+};
+
 class ApplicationRunner
 {
 public:
     ApplicationRunner(Application& application, const ApplicationConfig& config,
-                      platform::Platform& platform, platform::Window& window,
-                      render::Renderer* renderer) noexcept;
+                      const EngineServices& services) noexcept;
     ~ApplicationRunner();
 
     ApplicationRunner(const ApplicationRunner&) = delete;
@@ -39,9 +50,7 @@ private:
     void runFrame();
 
     Application& m_application;
-    platform::Platform& m_platform;
-    platform::Window& m_window;
-    render::Renderer* m_renderer;
+    EngineServices m_services;
     platform::WindowId m_mainWindow;
     FixedTimestep m_timestep;
     core::Duration m_fixedDelta;
@@ -52,32 +61,33 @@ private:
 };
 
 ApplicationRunner::ApplicationRunner(Application& application, const ApplicationConfig& config,
-                                     platform::Platform& platform, platform::Window& window,
-                                     render::Renderer* renderer) noexcept
+                                     const EngineServices& services) noexcept
     : m_application(application)
-    , m_platform(platform)
-    , m_window(window)
-    , m_renderer(renderer)
-    , m_mainWindow(window.id())
+    , m_services(services)
+    , m_mainWindow(services.window.id())
     , m_timestep(FixedTimestep::fromRate(config.fixedUpdateRate))
     , m_fixedDelta(m_timestep.step())
     , m_frameBudget(config.maxFrameRate == 0
                         ? std::chrono::nanoseconds::zero()
                         : std::chrono::nanoseconds(std::chrono::seconds(1)) / config.maxFrameRate)
 {
-    m_application.m_platform = &platform;
-    m_application.m_window = &window;
-    m_application.m_renderer = renderer;
+    m_application.m_platform = &services.platform;
+    m_application.m_window = &services.window;
+    m_application.m_renderer = services.renderer;
+    m_application.m_scene = &services.scene;
+    m_application.m_assets = &services.assets;
     m_application.m_interpolationAlpha = 0.0;
     m_application.m_quitRequested = false;
 }
 
 ApplicationRunner::~ApplicationRunner()
 {
-    m_platform.setLiveRedrawCallback({});
+    m_services.platform.setLiveRedrawCallback({});
     m_application.m_platform = nullptr;
     m_application.m_window = nullptr;
     m_application.m_renderer = nullptr;
+    m_application.m_scene = nullptr;
+    m_application.m_assets = nullptr;
 }
 
 int ApplicationRunner::execute()
@@ -88,7 +98,7 @@ int ApplicationRunner::execute()
         return EXIT_FAILURE;
     }
 
-    m_platform.setLiveRedrawCallback([this] {
+    m_services.platform.setLiveRedrawCallback([this] {
         if (!m_inFrame && !m_application.m_quitRequested)
         {
             runFrame();
@@ -98,7 +108,8 @@ int ApplicationRunner::execute()
     m_previousFrame = Clock::now();
     while (!m_application.m_quitRequested)
     {
-        m_platform.pollEvents([this](const platform::Event& event) { handleEvent(event); });
+        m_services.platform.pollEvents(
+            [this](const platform::Event& event) { handleEvent(event); });
         if (m_application.m_quitRequested)
         {
             break;
@@ -106,7 +117,7 @@ int ApplicationRunner::execute()
         runFrame();
     }
 
-    m_platform.setLiveRedrawCallback({});
+    m_services.platform.setLiveRedrawCallback({});
     m_application.onShutdown();
     return m_exitCode;
 }
@@ -142,11 +153,18 @@ void ApplicationRunner::runFrame()
     m_application.m_interpolationAlpha = m_timestep.alpha();
     m_application.onUpdate(core::Duration(frameTime));
 
-    const bool minimized = m_window.isMinimized();
-    if (m_renderer != nullptr && !minimized && !m_application.m_quitRequested)
+    // The application may have replaced the scene during the updates.
+    scene::Scene& scene = *m_application.m_scene;
+    scene.updateTransforms();
+
+    const bool minimized = m_services.window.isMinimized();
+    render::Renderer* const renderer = m_services.renderer;
+    if (renderer != nullptr && !minimized && !m_application.m_quitRequested)
     {
-        m_application.onRender(m_renderer->beginFrame());
-        if (core::Result<void> rendered = m_renderer->endFrame(); !rendered)
+        render::RenderWorld& world = renderer->beginFrame();
+        extractScene(scene, m_services.assets, world);
+        m_application.onRender(world);
+        if (core::Result<void> rendered = renderer->endFrame(); !rendered)
         {
             DEVEX_LOG_FATAL("Rendering failed: {}", rendered.error());
             m_application.m_quitRequested = true;
@@ -163,6 +181,27 @@ void ApplicationRunner::runFrame()
     }
 
     m_inFrame = false;
+}
+
+// Uploads the built-in meshes and registers them under their reserved asset identifiers.
+[[nodiscard]] core::Result<void> registerBuiltinMeshes(render::Renderer& renderer,
+                                                       AssetRegistry& assets)
+{
+    const std::pair<asset::AssetId, asset::MeshData> builtins[] = {
+        {asset::builtin::cubeMesh, asset::makeCube()},
+        {asset::builtin::sphereMesh, asset::makeUvSphere(0.5f, 48, 24)},
+        {asset::builtin::planeMesh, asset::makePlane()},
+    };
+    for (const auto& [id, mesh] : builtins)
+    {
+        core::Result<render::MeshHandle> handle = renderer.createMesh(mesh);
+        if (!handle)
+        {
+            return std::unexpected(handle.error());
+        }
+        assets.registerMesh(id, *handle);
+    }
+    return {};
 }
 
 } // namespace detail
@@ -182,6 +221,18 @@ platform::Window& Application::window() noexcept
 {
     DEVEX_ASSERT_MSG(m_window != nullptr, "engine services are unavailable outside run()");
     return *m_window;
+}
+
+scene::Scene& Application::scene() noexcept
+{
+    DEVEX_ASSERT_MSG(m_scene != nullptr, "engine services are unavailable outside run()");
+    return *m_scene;
+}
+
+AssetRegistry& Application::assets() noexcept
+{
+    DEVEX_ASSERT_MSG(m_assets != nullptr, "engine services are unavailable outside run()");
+    return *m_assets;
 }
 
 render::Renderer& Application::renderer() noexcept
@@ -234,6 +285,7 @@ int run(Application& application, const ApplicationConfig& config)
     DEVEX_LOG_DEBUG("Main window {}x{} ({}x{} pixels), fixed update at {} Hz", config.width,
                     config.height, pixelSize.width, pixelSize.height, config.fixedUpdateRate);
 
+    AssetRegistry assets;
     std::optional<render::Renderer> renderer;
     if (config.enableRendering)
     {
@@ -248,10 +300,24 @@ int run(Application& application, const ApplicationConfig& config)
             return EXIT_FAILURE;
         }
         renderer.emplace(std::move(*created));
+
+        if (core::Result<void> builtins = detail::registerBuiltinMeshes(*renderer, assets);
+            !builtins)
+        {
+            DEVEX_LOG_FATAL("Cannot upload the built-in meshes: {}", builtins.error());
+            return EXIT_FAILURE;
+        }
     }
 
-    detail::ApplicationRunner runner(application, config, *platform, *window,
-                                     renderer ? &*renderer : nullptr);
+    scene::Scene scene;
+    detail::ApplicationRunner runner(application, config,
+                                     {
+                                         .platform = *platform,
+                                         .window = *window,
+                                         .renderer = renderer ? &*renderer : nullptr,
+                                         .scene = scene,
+                                         .assets = assets,
+                                     });
     return runner.execute();
 }
 

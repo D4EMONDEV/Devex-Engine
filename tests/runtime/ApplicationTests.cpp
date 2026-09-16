@@ -1,4 +1,5 @@
 #include <devex/runtime/Application.hpp>
+#include <devex/scene/Components.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -71,6 +72,46 @@ public:
 };
 
 } // namespace
+
+// Checks that the runtime updates scene transforms between onUpdate calls.
+class SceneApplication final : public devex::runtime::Application
+{
+public:
+    bool worldTransformUpdated = false;
+
+    Result<void> onStartup() override
+    {
+        m_entity = scene().createEntity("Moved");
+        scene().add<devex::scene::Transform>(
+            m_entity, devex::scene::Transform{.position = {1.0f, 2.0f, 3.0f}});
+        return {};
+    }
+
+    void onUpdate(Duration /*frameDelta*/) override
+    {
+        if (const auto* world = scene().tryGet<devex::scene::WorldTransform>(m_entity))
+        {
+            worldTransformUpdated = world->matrix[3] == devex::math::Vec4{1.0f, 2.0f, 3.0f, 1.0f};
+        }
+        if (++m_updates == 2)
+        {
+            requestQuit();
+        }
+    }
+
+private:
+    devex::scene::Entity m_entity;
+    int m_updates = 0;
+};
+
+TEST_CASE("The runtime updates the scene transforms every frame", "[runtime][application]")
+{
+    SceneApplication application;
+
+    CHECK(devex::runtime::run(application, testConfig) == EXIT_SUCCESS);
+
+    CHECK(application.worldTransformUpdated);
+}
 
 TEST_CASE("run drives the lifecycle until the application quits", "[runtime][application]")
 {

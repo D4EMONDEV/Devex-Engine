@@ -21,6 +21,7 @@ using Quat = glm::quat;
 
 using glm::angleAxis;
 using glm::clamp;
+using glm::conjugate;
 using glm::cross;
 using glm::degrees;
 using glm::dot;
@@ -42,6 +43,45 @@ struct Extent2D
 
     bool operator==(const Extent2D&) const = default;
 };
+
+// Translation, rotation and scale, applied in the reverse order to a point.
+struct Trs
+{
+    Vec3 translation{0.0f};
+    Quat rotation{1.0f, 0.0f, 0.0f, 0.0f};
+    Vec3 scale{1.0f};
+};
+
+[[nodiscard]] inline Mat4 composeTrs(const Trs& trs) noexcept
+{
+    return glm::scale(glm::translate(Mat4{1.0f}, trs.translation) * glm::mat4_cast(trs.rotation),
+                      trs.scale);
+}
+
+// Splits a matrix built from translation, rotation and scale. Shear is lost, and a mirroring
+// transform is expressed as a negative X scale.
+[[nodiscard]] inline Trs decomposeTrs(const Mat4& matrix) noexcept
+{
+    Trs trs;
+    trs.translation = Vec3(matrix[3]);
+
+    Vec3 axisX = Vec3(matrix[0]);
+    const Vec3 axisY = Vec3(matrix[1]);
+    const Vec3 axisZ = Vec3(matrix[2]);
+    trs.scale = {glm::length(axisX), glm::length(axisY), glm::length(axisZ)};
+    if (glm::dot(glm::cross(axisX, axisY), axisZ) < 0.0f)
+    {
+        trs.scale.x = -trs.scale.x;
+        axisX = -axisX;
+    }
+
+    if (trs.scale.x != 0.0f && trs.scale.y != 0.0f && trs.scale.z != 0.0f)
+    {
+        const Mat3 rotation{axisX / std::abs(trs.scale.x), axisY / trs.scale.y, axisZ / trs.scale.z};
+        trs.rotation = glm::normalize(glm::quat_cast(rotation));
+    }
+    return trs;
+}
 
 // Right-handed perspective projection with reversed depth and no far plane: depth is 1 at the
 // near plane and tends to 0 at infinity, which keeps precision even for distant geometry. Clip

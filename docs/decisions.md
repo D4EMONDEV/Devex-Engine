@@ -37,6 +37,10 @@ mais seulement explicitement ici : le code suit ce document, pas l'inverse.
 | Accès aux données GPU    | Bindless + vertex pulling par buffer device address                |
 | Projection               | Reverse-Z, far plane infini                                        |
 | glTF (jalon 3)           | Import direct temporaire, pipeline d'assets plus tard              |
+| Stockage ECS             | Sparse sets maison, un tableau contigu par type de composant       |
+| Réflexion                | Enregistrement explicite (`DEVEX_REFLECT`) en attendant C++26      |
+| Identité des entités     | UUID par entité dans les fichiers, handle générationnel en mémoire |
+| Références d'assets      | `AssetId` (UUID) dès maintenant, primitives à UUID réservés        |
 
 ## Architecture cible
 
@@ -50,12 +54,13 @@ situé au-dessus de lui, et le graphe reste sans cycle.
 | `Core`          | types, `Result<T>`/`Error`, assert, log, handles, UUID, allocateurs, jobs | —                             |
 | `Math`          | alias `Vec3`, `Mat4`, `Quat`…, conventions de repère et de profondeur     | Core, GLM                     |
 | `Platform`      | fenêtre, entrées, temps, système de fichiers, chargement de DLL           | Core, SDL3                    |
-| `Serialization` | lecture/écriture du format texte `.dvx*` et des archives binaires cookées | Core, Math                    |
-| `Asset`         | données CPU (`MeshData`, primitives) ; plus tard UUID, `.dvxmeta`, cache  | Core, Math (+ Serialization)  |
+| `Reflection`    | description des champs (`TypeInfo`, `DEVEX_REFLECT`, `ValueKind`)         | Core, Math                    |
+| `Serialization` | format texte `.dvx*` (sections, valeurs) ; plus tard archives cookées     | Core                          |
+| `Asset`         | `AssetId`, données CPU (`MeshData`, primitives) ; plus tard `.dvxmeta`    | Core, Math, Reflection        |
 | `AssetImport`   | importeurs de formats sources (glTF, FBX), réservés aux outils            | Asset, fastgltf               |
 | `Render`        | façade `Renderer` / `RenderWorld` ; tout `Vk*` reste dans `src/render/vulkan` | Core, Math, Platform, Asset, Vulkan |
-| `Scene`         | entités, hiérarchie, composants, systèmes, prefabs                        | Core, Math, Serialization, Asset |
-| `Runtime`       | `Application`, boucle de jeu, extraction Scene → Render, code gameplay    | tous les modules ci-dessus    |
+| `Scene`         | entités, sparse sets, hiérarchie, composants intégrés, fichiers `.dvxscene` | Core, Math, Reflection, Serialization, Asset |
+| `Runtime`       | `Application`, boucle, `AssetRegistry`, extraction Scene → Render         | tous les modules ci-dessus    |
 
 Applications au sommet : `apps/sandbox`, `apps/editor` et la DLL gameplay d'un jeu
 dépendent de `Runtime`.
@@ -141,9 +146,33 @@ docs/          décisions et documentation
 
 - L'utilisateur manipule des `Entity` avec des composants (`Transform`, `Camera`,
   `MeshRenderer`…) organisés en hiérarchie.
-- En interne, chaque type de composant est stocké dans un tableau contigu parcouru par
-  des systèmes. Pas d'EnTT/Flecs imposé tant que le premier prototype n'en montre pas le
-  besoin.
+- **Entités** : en mémoire, un handle générationnel (`scene::Entity`) qui devient invalide
+  à la destruction ; chaque entité a aussi un **UUID** stable et un nom. Les fichiers et
+  les références durables utilisent l'UUID (`Scene::findEntity`).
+- **Stockage** : sparse sets maison. Un `ComponentPool<T>` par type garde les composants
+  contigus ; retirer un composant déplace le dernier à sa place. `scene.view<A, B>()`
+  parcourt le plus petit des pools concernés. Ajouter ou retirer des composants de ces
+  types pendant l'itération invalide la vue.
+- **Types de composants** : un index attribué au premier usage dans le processus. Il n'est
+  pas stable d'un binaire à l'autre ; le rechargement à chaud d'une DLL gameplay devra
+  identifier les types par leur nom enregistré.
+- **Hiérarchie** : parent, premier et dernier enfant, frères précédent et suivant ; l'ordre
+  des enfants et des racines est conservé. `setParent` refuse les cycles et garde la
+  transformation locale. Détruire une entité détruit ses descendants.
+- **Transformations** : `Transform` (position, rotation, échelle locales) ;
+  `Scene::updateTransforms` calcule `WorldTransform` parents d'abord, chaque frame, après
+  `onUpdate`. Une entité sans `Transform` transmet celle de son parent.
+- **Composants intégrés** : `Transform`, `WorldTransform` (calculé, jamais sauvegardé),
+  `MeshRenderer`, `Camera` (la première `primary` est utilisée), `DirectionalLight`.
+- **Réflexion** : chaque composant déclare ses champs avec `DEVEX_DECLARE_REFLECTION` (header)
+  et `DEVEX_REFLECT` (source). Types de valeurs : bool, int32, uint32, float, string, vec2,
+  vec3, vec4, quat, UUID, `AssetId`. MSVC 19.51 ne fournit pas encore `<meta>` (réflexion
+  C++26) ; ces déclarations pourront alors être générées.
+- **Composants du jeu** : une struct, sa réflexion, puis `scene::registerComponent<T>()`.
+  Seuls les composants enregistrés sont sauvegardés.
+- **Rendu de la scène** : `Runtime` extrait chaque frame la caméra, la lumière et les
+  `MeshRenderer` dont l'`AssetId` est chargé dans l'`AssetRegistry`, puis appelle
+  `onRender` pour les ajouts éventuels.
 - Repère : **Y-up, main droite**, +X droite, -Z avant, mètres, angles en radians.
   glTF s'importe sans conversion ; FBX est converti à l'import.
 
@@ -163,24 +192,37 @@ MyGame/
   .devex/                     # cache d'import, ignoré par Git
 ```
 
-Format texte source (sections + clés, diffable et fusionnable) :
+Format texte commun à tous les `.dvx*` (`Devex::Serialization`) : des sections
+`[type clé=valeur …]` suivies de lignes `clé = valeur`, commentaires `#`. Les valeurs sont
+des booléens, entiers, réels (écrits sous leur forme la plus courte qui relit la même
+valeur), chaînes avec échappements, ou appels comme `vec3(0, 1, 0)`. Une en-tête et une
+propriété tiennent chacune sur une ligne ; les erreurs donnent ligne et colonne.
+
+Scène (`.dvxscene`, format 1) :
 
 ```text
-[scene format=1 uuid="8f2c…"]
+[scene format=1]
 
-[entity id=1 name="Player"]
+[entity uuid="6f1c2a9e-3b7d-4e21-9a55-0c8d7e4f1b23" name="Player"]
+parent = "b41e7c02-9d3a-4f6e-8c11-5a2e9b7d0f44"
 
-[component entity=1 type="Transform"]
+[component type="Transform"]
 position = vec3(0, 1, 0)
 rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
 
-[component entity=1 type="MeshRenderer"]
-mesh = asset("b41e…")
-material = asset("77ac…")
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
 ```
 
+- Les sections `component` appartiennent à l'entité qui les précède. Les parents sont
+  écrits avant leurs enfants, dans l'ordre de la hiérarchie ; les quaternions en `x, y, z, w`.
+- Un type de composant ou un champ inconnu est ignoré avec un avertissement (un moteur
+  plus ancien ouvre une scène plus récente) ; une valeur invalide est une erreur.
 - Les références entre fichiers passent par **UUID**, jamais par chemin : renommer ou
-  déplacer un asset ne casse rien.
+  déplacer un asset ne casse rien. Les primitives intégrées ont des UUID réservés :
+  `…0001` cube, `…0002` sphère, `…0003` plan. En attendant la base d'assets, un maillage
+  importé reçoit un `AssetId` valable pour la session seulement.
 - Les chemins affichés utilisent le schéma `res://`.
 - L'export d'un jeu produit des données **binaires cookées** chargées sans parsing.
 
@@ -268,8 +310,8 @@ Chaque jalon se termine par une démo observable dans `devex-sandbox` et des tes
    fond, redimensionnement en direct.
 3. ✅ **Premier maillage** — shaders Slang, buffers VMA, caméra (Y-up, reverse-Z),
    primitives procédurales et import glTF.
-4. **Scène** — `Entity`, `Transform`, `MeshRenderer`, hiérarchie, lecture et écriture
-   `.dvxscene`.
+4. ✅ **Scène** — entités à UUID, sparse sets, hiérarchie, réflexion, format texte
+   commun, lecture et écriture `.dvxscene`, rendu automatique de la scène.
 5. **Outils** — ImGui docking : statistiques du renderer, arbre de scène, inspecteur.
 
 Ensuite, sans ordre figé : PBR forward+ clustered, base d'assets et cache d'import, DLL
@@ -279,8 +321,10 @@ gameplay rechargeable, éditeur, CI Linux.
 
 À trancher le moment venu, pas avant :
 
-- **Réflexion des composants** (inspecteur, sérialisation, bindings C#) : macros
-  d'enregistrement maintenant, réflexion statique C++26 quand MSVC la supportera ?
+- **Systèmes** : ordre d'exécution et planification des systèmes du jeu (aujourd'hui, le
+  gameplay itère lui-même les vues dans `onFixedUpdate` et `onUpdate`).
+- **Environnement de scène** : ciel, lumière ambiante et réglages de rendu sauvegardés avec
+  la scène (aujourd'hui, la couleur du ciel est fixée par l'application).
 - **Physique** : Jolt Physics est le candidat naturel (MIT, utilisé par Godot 4).
 - **Audio** : SDL3 audio, miniaudio ou FMOD/Wwise en option.
 - **UI retenue maison** pour l'éditeur et les jeux, qui remplacera ImGui.

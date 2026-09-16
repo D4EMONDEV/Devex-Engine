@@ -8,6 +8,8 @@
 #include <devex/platform/Window.hpp>
 #include <devex/render/Renderer.hpp>
 #include <devex/render/RenderWorld.hpp>
+#include <devex/runtime/AssetRegistry.hpp>
+#include <devex/scene/Scene.hpp>
 
 #include <concepts>
 #include <cstdint>
@@ -37,8 +39,8 @@ class ApplicationRunner;
 } // namespace detail
 
 // Base class of every program driven by the engine loop. Each frame polls events, runs the fixed
-// updates that are due, runs one variable update, then renders. Engine services are available
-// from onStartup to onShutdown, not in the constructor.
+// updates that are due, runs one variable update, updates the scene transforms, then renders the
+// scene. Engine services are available from onStartup to onShutdown, not in the constructor.
 class Application
 {
 public:
@@ -74,8 +76,8 @@ public:
     {
     }
 
-    // Called once per rendered frame, after onUpdate, to fill the snapshot the renderer draws.
-    // Skipped when rendering is disabled.
+    // Called once per rendered frame, after the scene was extracted into the snapshot, to adjust
+    // it or draw more. Skipped when rendering is disabled.
     virtual void onRender(render::RenderWorld& /*world*/)
     {
     }
@@ -86,6 +88,10 @@ protected:
     [[nodiscard]] const platform::Platform& platform() const noexcept;
     [[nodiscard]] const platform::Input& input() const noexcept;
     [[nodiscard]] platform::Window& window() noexcept;
+    // The scene rendered every frame. It can be replaced, for instance by a loaded one.
+    [[nodiscard]] scene::Scene& scene() noexcept;
+    // Maps asset identifiers to loaded resources, with the built-in meshes registered.
+    [[nodiscard]] AssetRegistry& assets() noexcept;
     // Only available when ApplicationConfig::enableRendering is set.
     [[nodiscard]] render::Renderer& renderer() noexcept;
     [[nodiscard]] const render::Renderer& renderer() const noexcept;
@@ -102,6 +108,8 @@ private:
     platform::Platform* m_platform = nullptr;
     platform::Window* m_window = nullptr;
     render::Renderer* m_renderer = nullptr;
+    scene::Scene* m_scene = nullptr;
+    AssetRegistry* m_assets = nullptr;
     double m_interpolationAlpha = 0.0;
     bool m_quitRequested = false;
 };

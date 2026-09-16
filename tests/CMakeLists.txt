@@ -30,6 +30,7 @@ devex_add_tests(core
         core/ErrorTests.cpp
         core/LogTests.cpp
         core/SlotMapTests.cpp
+        core/UuidTests.cpp
     LIBRARIES
         Devex::Core
 )
@@ -38,8 +39,31 @@ target_compile_definitions(devex_core_tests PRIVATE DEVEX_TEST_EXPECTED_VERSION=
 devex_add_tests(math
     SOURCES
         math/ProjectionTests.cpp
+        math/TransformTests.cpp
     LIBRARIES
         Devex::Math
+)
+
+devex_add_tests(reflection
+    SOURCES
+        reflection/ReflectionTests.cpp
+    LIBRARIES
+        Devex::Reflection
+)
+
+devex_add_tests(serialization
+    SOURCES
+        serialization/TextTests.cpp
+    LIBRARIES
+        Devex::Serialization
+)
+
+devex_add_tests(scene
+    SOURCES
+        scene/SceneSerializerTests.cpp
+        scene/SceneTests.cpp
+    LIBRARIES
+        Devex::Scene
 )
 
 devex_add_tests(asset
@@ -76,6 +100,7 @@ devex_add_tests(runtime
     SOURCES
         runtime/ApplicationTests.cpp
         runtime/FixedTimestepTests.cpp
+        runtime/SceneExtractionTests.cpp
     LIBRARIES
         Devex::Runtime
     ENVIRONMENT

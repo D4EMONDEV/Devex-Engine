@@ -13,7 +13,9 @@ target_sources(devex_core
         src/core/Assert.cpp
         src/core/BuildInfo.cpp
         src/core/Error.cpp
+        src/core/File.cpp
         src/core/Log.cpp
+        src/core/Uuid.cpp
     PUBLIC
         FILE_SET HEADERS
         BASE_DIRS include
@@ -21,10 +23,12 @@ target_sources(devex_core
             include/devex/core/Assert.hpp
             include/devex/core/BuildInfo.hpp
             include/devex/core/Error.hpp
+            include/devex/core/File.hpp
             include/devex/core/Log.hpp
             include/devex/core/Path.hpp
             include/devex/core/SlotMap.hpp
             include/devex/core/Time.hpp
+            include/devex/core/Uuid.hpp
 )
 
 target_compile_features(devex_core PUBLIC cxx_std_23)
@@ -95,6 +99,52 @@ set_target_properties(devex_platform PROPERTIES
 )
 devex_set_warnings(devex_platform)
 
+# Reflection: field descriptions of engine and game types, registered explicitly.
+add_library(devex_reflection STATIC)
+add_library(Devex::Reflection ALIAS devex_reflection)
+
+target_sources(devex_reflection
+    PRIVATE
+        src/reflection/Reflection.cpp
+    PUBLIC
+        FILE_SET HEADERS
+        BASE_DIRS include
+        FILES
+            include/devex/reflection/Reflection.hpp
+)
+
+target_link_libraries(devex_reflection
+    PUBLIC
+        Devex::Core
+        Devex::Math
+)
+set_target_properties(devex_reflection PROPERTIES
+    EXPORT_NAME Reflection
+    FOLDER "Engine"
+)
+devex_set_warnings(devex_reflection)
+
+# Serialization: the readable text format shared by .dvx* files.
+add_library(devex_serialization STATIC)
+add_library(Devex::Serialization ALIAS devex_serialization)
+
+target_sources(devex_serialization
+    PRIVATE
+        src/serialization/Text.cpp
+    PUBLIC
+        FILE_SET HEADERS
+        BASE_DIRS include
+        FILES
+            include/devex/serialization/Text.hpp
+)
+
+target_link_libraries(devex_serialization PUBLIC Devex::Core)
+set_target_properties(devex_serialization PROPERTIES
+    EXPORT_NAME Serialization
+    FOLDER "Engine"
+)
+devex_set_warnings(devex_serialization)
+
 # Asset: CPU-side asset data shared by the runtime and the tools.
 add_library(devex_asset STATIC)
 add_library(Devex::Asset ALIAS devex_asset)
@@ -107,6 +157,7 @@ target_sources(devex_asset
         FILE_SET HEADERS
         BASE_DIRS include
         FILES
+            include/devex/asset/AssetId.hpp
             include/devex/asset/MeshData.hpp
             include/devex/asset/Primitives.hpp
 )
@@ -115,6 +166,7 @@ target_link_libraries(devex_asset
     PUBLIC
         Devex::Core
         Devex::Math
+        Devex::Reflection
 )
 set_target_properties(devex_asset PROPERTIES
     EXPORT_NAME Asset
@@ -210,20 +262,62 @@ devex_set_warnings(devex_render)
 # The renderer loads the compiled shaders at runtime.
 add_dependencies(devex_render devex_shaders)
 
-# Runtime: application lifecycle and the main loop.
+# Scene: entities, components in sparse sets, hierarchy and .dvxscene files.
+add_library(devex_scene STATIC)
+add_library(Devex::Scene ALIAS devex_scene)
+
+target_sources(devex_scene
+    PRIVATE
+        src/scene/ComponentRegistry.cpp
+        src/scene/Components.cpp
+        src/scene/Scene.cpp
+        src/scene/SceneSerializer.cpp
+    PUBLIC
+        FILE_SET HEADERS
+        BASE_DIRS include
+        FILES
+            include/devex/scene/ComponentPool.hpp
+            include/devex/scene/ComponentRegistry.hpp
+            include/devex/scene/Components.hpp
+            include/devex/scene/Entity.hpp
+            include/devex/scene/Scene.hpp
+            include/devex/scene/SceneSerializer.hpp
+            include/devex/scene/View.hpp
+)
+
+target_link_libraries(devex_scene
+    PUBLIC
+        Devex::Asset
+        Devex::Core
+        Devex::Math
+        Devex::Reflection
+    PRIVATE
+        Devex::Serialization
+)
+set_target_properties(devex_scene PROPERTIES
+    EXPORT_NAME Scene
+    FOLDER "Engine"
+)
+devex_set_warnings(devex_scene)
+
+# Runtime: application lifecycle, the main loop and the scene to renderer bridge.
 add_library(devex_runtime STATIC)
 add_library(Devex::Runtime ALIAS devex_runtime)
 
 target_sources(devex_runtime
     PRIVATE
         src/runtime/Application.cpp
+        src/runtime/AssetRegistry.cpp
         src/runtime/FixedTimestep.cpp
+        src/runtime/SceneExtraction.cpp
     PUBLIC
         FILE_SET HEADERS
         BASE_DIRS include
         FILES
             include/devex/runtime/Application.hpp
+            include/devex/runtime/AssetRegistry.hpp
             include/devex/runtime/FixedTimestep.hpp
+            include/devex/runtime/SceneExtraction.hpp
 )
 
 target_link_libraries(devex_runtime
@@ -231,6 +325,7 @@ target_link_libraries(devex_runtime
         Devex::Core
         Devex::Platform
         Devex::Render
+        Devex::Scene
 )
 set_target_properties(devex_runtime PROPERTIES
     EXPORT_NAME Runtime
