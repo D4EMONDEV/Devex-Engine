@@ -25,6 +25,10 @@ mais seulement explicitement ici : le code suit ce document, pas l'inverse.
 | Maths                    | GLM derrière `devex::math`                                         |
 | Coordonnées              | Y-up, main droite, -Z avant, 1 unité = 1 mètre                     |
 | Tests                    | Catch2 v3 via CTest                                                |
+| Boucle de jeu            | Pas fixe (60 Hz par défaut) + mise à jour variable par frame       |
+| Point d'entrée           | Le moteur possède la boucle, le jeu dérive de `Application`        |
+| Entrées                  | État interrogeable + événements, actions nommées plus tard         |
+| Clavier                  | `Key` = position physique (WASD devient ZQSD en AZERTY)            |
 
 ## Architecture cible
 
@@ -132,6 +136,33 @@ material = asset("77ac…")
 - Les chemins affichés utilisent le schéma `res://`.
 - L'export d'un jeu produit des données **binaires cookées** chargées sans parsing.
 
+### Boucle de jeu et application
+
+- Le moteur possède la boucle : un programme dérive de `devex::runtime::Application` et
+  se lance avec `devex::runtime::run<MonApplication>(config)`. Les services (plateforme,
+  fenêtre, entrées) sont disponibles de `onStartup` à `onShutdown`, pas dans le
+  constructeur.
+- Chaque frame : événements (`onEvent`), puis zéro ou plusieurs `onFixedUpdate` au pas
+  fixe (60 Hz par défaut), puis un `onUpdate` avec le temps réel écoulé.
+- Le pas fixe accumule le temps en nanosecondes entières (aucune dérive) et borne une
+  frame à 250 ms pour éviter la spirale de rattrapage. `interpolationAlpha()` donne la
+  progression vers le pas suivant pour interpoler le rendu.
+- Fermer la fenêtre principale ou recevoir une demande de l'OS termine la boucle.
+  `maxFrameRate` limite les FPS ; une fenêtre minimisée tourne à 20 Hz au plus.
+
+### Entrées
+
+- `Input` expose un état interrogé par le gameplay : `isKeyDown`, `wasKeyPressed`,
+  `wasKeyReleased`, boutons de souris, `mouseDelta`, `mouseWheel`. Les transitions
+  durent exactement une frame : on les lit dans `onUpdate`, pas dans `onFixedUpdate`.
+- Les événements (`KeyPressed`, `WindowResized`, `FileDropped`…) forment un
+  `std::variant` reçu par `onEvent`.
+- `Key` désigne une **position physique**, nommée d'après le QWERTY US, avec les valeurs
+  des usages clavier USB HID. `Platform::keyLabel(Key::W)` renvoie « Z » sur AZERTY pour
+  l'affichage.
+- Perdre le focus relâche toutes les touches et boutons.
+- Les actions nommées (InputMap, rebinding, manettes) viendront par-dessus plus tard.
+
 ### Gameplay
 
 - Premier temps : gameplay en **C++** compilé dans une DLL chargée par le runtime et
@@ -160,9 +191,9 @@ material = asset("77ac…")
 
 | Bibliothèque          | Usage                | Jalon    |
 | --------------------- | -------------------- | -------- |
-| SDL3                  | fenêtre, entrées     | 1        |
+| SDL3 (feature `vulkan`) | fenêtre, entrées   | 1 ✅     |
+| GLM (header-only)     | maths                | 1 ✅     |
 | volk, VMA             | Vulkan               | 2        |
-| GLM                   | maths                | 3        |
 | fastgltf              | import glTF          | 3        |
 | Dear ImGui (docking)  | outils, éditeur      | 5        |
 | Catch2                | tests (feature `tests`) | 0 ✅  |
@@ -182,8 +213,8 @@ CMake trouve vcpkg via la variable `VCPKG_ROOT`, sinon via l'exécutable `vcpkg`
 Chaque jalon se termine par une démo observable dans `devex-sandbox` et des tests.
 
 0. ✅ **Fondations** — `vcpkg.json`, Catch2, `Core` (log, assert, `Result`), dépôt Git.
-1. **Fenêtre** — `Platform` sur SDL3 : fenêtre redimensionnable, événements clavier et
-   souris, boucle de jeu à pas de temps.
+1. ✅ **Fenêtre** — `Platform` sur SDL3 : fenêtre redimensionnable, événements clavier et
+   souris ; `Runtime` : `Application` et boucle à pas fixe ; `Math` sur GLM.
 2. **Vulkan** — instance 1.4, validation, choix du GPU, device, swapchain, couleur de
    fond, redimensionnement correct.
 3. **Premier maillage** — shaders Slang, buffers VMA, caméra (Y-up, reverse-Z), triangle

@@ -18,9 +18,13 @@ Le détail, l'architecture des modules et les jalons sont dans
 
 ## État actuel
 
-- jalon 0 terminé : `Devex::Core` fournit `Result`/`Error`, le journal `DEVEX_LOG_*` et
-  les assertions `DEVEX_ASSERT*`, couverts par des tests Catch2 ;
-- prochain jalon : fenêtre et entrées avec SDL3.
+- `Devex::Core` : `Result`/`Error`, journal `DEVEX_LOG_*`, assertions `DEVEX_ASSERT*` ;
+- `Devex::Math` : types GLM sous `devex::math` ;
+- `Devex::Platform` : fenêtre, événements et entrées clavier/souris sur SDL3 ;
+- `Devex::Runtime` : classe `Application` et boucle de jeu à pas fixe ;
+- `devex-sandbox` : caméra virtuelle pilotée au clavier (positions physiques) et à la
+  souris, statistiques dans le titre de la fenêtre ;
+- prochain jalon : initialisation Vulkan et première image.
 
 ## Construire
 

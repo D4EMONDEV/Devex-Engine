@@ -5,7 +5,15 @@
     "description": "Open-source 3D game engine",
     "license": "MIT",
     "builtin-baseline": "1577f17ee57f42a0ef6d75bbb82cb37d0b76d7e8",
-    "dependencies": [],
+    "dependencies": [
+        "glm",
+        {
+            "name": "sdl3",
+            "features": [
+                "vulkan"
+            ]
+        }
+    ],
     "features": {
         "tests": {
             "description": "Build Devex unit tests",
