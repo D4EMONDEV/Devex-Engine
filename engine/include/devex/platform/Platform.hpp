@@ -7,6 +7,7 @@
 #include <devex/platform/Window.hpp>
 
 #include <chrono>
+#include <filesystem>
 #include <functional>
 #include <span>
 #include <string>
@@ -35,6 +36,9 @@ public:
     void pollEvents(const EventCallback& callback);
 
     [[nodiscard]] const Input& input() const noexcept;
+
+    // Directory containing the executable, where engine data such as shaders is deployed.
+    [[nodiscard]] std::filesystem::path baseDirectory() const;
 
     // Name of the key position, independent of the layout ("W").
     [[nodiscard]] std::string keyName(Key key) const;

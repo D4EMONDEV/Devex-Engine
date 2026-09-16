@@ -40,6 +40,18 @@ PresentMode Renderer::presentMode() const noexcept
     return m_implementation->presentMode();
 }
 
+core::Result<MeshHandle> Renderer::createMesh(const asset::MeshData& mesh)
+{
+    DEVEX_ASSERT(m_implementation != nullptr);
+    return m_implementation->createMesh(mesh);
+}
+
+void Renderer::destroyMesh(MeshHandle mesh)
+{
+    DEVEX_ASSERT(m_implementation != nullptr);
+    m_implementation->destroyMesh(mesh);
+}
+
 RenderWorld& Renderer::beginFrame() noexcept
 {
     DEVEX_ASSERT(m_implementation != nullptr);

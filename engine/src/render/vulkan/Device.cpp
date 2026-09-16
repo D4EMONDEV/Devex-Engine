@@ -20,6 +20,33 @@ struct Inspection
     std::uint32_t queueFamily = 0;
 };
 
+// Feature structures chained together, used both to query and to enable the required features.
+struct RequiredFeatures
+{
+    RequiredFeatures() noexcept
+    {
+        features11.pNext = &features12;
+        features12.pNext = &features13;
+    }
+
+    RequiredFeatures(const RequiredFeatures&) = delete;
+    RequiredFeatures& operator=(const RequiredFeatures&) = delete;
+
+    VkPhysicalDeviceVulkan13Features features13{
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES,
+    };
+    VkPhysicalDeviceVulkan12Features features12{
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
+    };
+    VkPhysicalDeviceVulkan11Features features11{
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES,
+    };
+    VkPhysicalDeviceFeatures2 features{
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
+        .pNext = &features11,
+    };
+};
+
 [[nodiscard]] GpuType toGpuType(VkPhysicalDeviceType type) noexcept
 {
     switch (type)
@@ -98,17 +125,18 @@ struct Inspection
         return inspection;
     }
 
-    VkPhysicalDeviceVulkan13Features features13{
-        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES,
-    };
-    VkPhysicalDeviceFeatures2 features{
-        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
-        .pNext = &features13,
-    };
-    vkGetPhysicalDeviceFeatures2(physicalDevice, &features);
-    if (features13.dynamicRendering != VK_TRUE || features13.synchronization2 != VK_TRUE)
+    RequiredFeatures supported;
+    vkGetPhysicalDeviceFeatures2(physicalDevice, &supported.features);
+    if (supported.features13.dynamicRendering != VK_TRUE ||
+        supported.features13.synchronization2 != VK_TRUE)
     {
         missing = "no dynamic rendering or synchronization2";
+        return inspection;
+    }
+    if (supported.features12.bufferDeviceAddress != VK_TRUE ||
+        supported.features11.shaderDrawParameters != VK_TRUE)
+    {
+        missing = "no buffer device address or shader draw parameters";
         return inspection;
     }
 
@@ -186,20 +214,16 @@ core::Result<Device> Device::create(VkInstance instance, VkSurfaceKHR surface,
         .pQueuePriorities = &queuePriority,
     };
 
-    VkPhysicalDeviceVulkan13Features features13{
-        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES,
-    };
-    features13.synchronization2 = VK_TRUE;
-    features13.dynamicRendering = VK_TRUE;
-    VkPhysicalDeviceFeatures2 features{
-        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
-        .pNext = &features13,
-    };
+    RequiredFeatures enabled;
+    enabled.features13.synchronization2 = VK_TRUE;
+    enabled.features13.dynamicRendering = VK_TRUE;
+    enabled.features12.bufferDeviceAddress = VK_TRUE;
+    enabled.features11.shaderDrawParameters = VK_TRUE;
 
     const char* const extensions[] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
     const VkDeviceCreateInfo createInfo{
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
-        .pNext = &features,
+        .pNext = &enabled.features,
         .queueCreateInfoCount = 1,
         .pQueueCreateInfos = &queueInfo,
         .enabledExtensionCount = static_cast<std::uint32_t>(std::size(extensions)),

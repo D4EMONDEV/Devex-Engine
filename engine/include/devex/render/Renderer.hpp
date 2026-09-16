@@ -1,5 +1,6 @@
 #pragma once
 
+#include <devex/asset/MeshData.hpp>
 #include <devex/core/Assert.hpp>
 #include <devex/core/Error.hpp>
 #include <devex/platform/Platform.hpp>
@@ -8,6 +9,7 @@
 #include <devex/render/RenderWorld.hpp>
 
 #include <cstdint>
+#include <filesystem>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -35,6 +37,8 @@ struct RendererConfig
     std::string preferredGpu;
     // Enables the Khronos validation layer when the Vulkan SDK is installed.
     bool validation = core::assertsEnabled;
+    // Directory of the compiled .spv shaders; empty uses "shaders" next to the executable.
+    std::filesystem::path shaderDirectory;
 };
 
 namespace vulkan {
@@ -60,6 +64,11 @@ public:
     [[nodiscard]] const GpuInfo& gpu() const noexcept;
     // The present mode in use, which may differ from the requested one.
     [[nodiscard]] PresentMode presentMode() const noexcept;
+
+    // Uploads the mesh to GPU memory and waits for the transfer to complete.
+    [[nodiscard]] core::Result<MeshHandle> createMesh(const asset::MeshData& mesh);
+    // Releases the mesh once no frame in flight uses it. Stale handles are ignored.
+    void destroyMesh(MeshHandle mesh);
 
     // Starts a frame with an empty snapshot to fill.
     [[nodiscard]] RenderWorld& beginFrame() noexcept;

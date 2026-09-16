@@ -1,6 +1,8 @@
+find_package(fastgltf CONFIG REQUIRED)
 find_package(glm CONFIG REQUIRED)
 find_package(SDL3 CONFIG REQUIRED)
 find_package(volk CONFIG REQUIRED)
+find_package(VulkanMemoryAllocator CONFIG REQUIRED)
 
 # Core: vocabulary types, errors, logging and assertions. Depends only on the standard library.
 add_library(devex_core STATIC)
@@ -20,6 +22,8 @@ target_sources(devex_core
             include/devex/core/BuildInfo.hpp
             include/devex/core/Error.hpp
             include/devex/core/Log.hpp
+            include/devex/core/Path.hpp
+            include/devex/core/SlotMap.hpp
             include/devex/core/Time.hpp
 )
 
@@ -91,6 +95,59 @@ set_target_properties(devex_platform PROPERTIES
 )
 devex_set_warnings(devex_platform)
 
+# Asset: CPU-side asset data shared by the runtime and the tools.
+add_library(devex_asset STATIC)
+add_library(Devex::Asset ALIAS devex_asset)
+
+target_sources(devex_asset
+    PRIVATE
+        src/asset/MeshData.cpp
+        src/asset/Primitives.cpp
+    PUBLIC
+        FILE_SET HEADERS
+        BASE_DIRS include
+        FILES
+            include/devex/asset/MeshData.hpp
+            include/devex/asset/Primitives.hpp
+)
+
+target_link_libraries(devex_asset
+    PUBLIC
+        Devex::Core
+        Devex::Math
+)
+set_target_properties(devex_asset PROPERTIES
+    EXPORT_NAME Asset
+    FOLDER "Engine"
+)
+devex_set_warnings(devex_asset)
+
+# AssetImport: converters from source formats such as glTF. Meant for tools, not shipped games.
+add_library(devex_asset_import STATIC)
+add_library(Devex::AssetImport ALIAS devex_asset_import)
+
+target_sources(devex_asset_import
+    PRIVATE
+        src/asset/import/GltfImporter.cpp
+    PUBLIC
+        FILE_SET HEADERS
+        BASE_DIRS include
+        FILES
+            include/devex/asset/import/GltfImporter.hpp
+)
+
+target_link_libraries(devex_asset_import
+    PUBLIC
+        Devex::Asset
+    PRIVATE
+        fastgltf::fastgltf
+)
+set_target_properties(devex_asset_import PROPERTIES
+    EXPORT_NAME AssetImport
+    FOLDER "Engine"
+)
+devex_set_warnings(devex_asset_import)
+
 # Render: Renderer facade over Vulkan, whose types stay inside src/render/vulkan.
 add_library(devex_render STATIC)
 add_library(Devex::Render ALIAS devex_render)
@@ -104,10 +161,17 @@ target_sources(devex_render
         src/render/vulkan/Commands.hpp
         src/render/vulkan/Device.cpp
         src/render/vulkan/Device.hpp
+        src/render/vulkan/GpuData.hpp
         src/render/vulkan/Instance.cpp
         src/render/vulkan/Instance.hpp
+        src/render/vulkan/Memory.cpp
+        src/render/vulkan/Memory.hpp
+        src/render/vulkan/Pipeline.cpp
+        src/render/vulkan/Pipeline.hpp
         src/render/vulkan/Swapchain.cpp
         src/render/vulkan/Swapchain.hpp
+        src/render/vulkan/Upload.cpp
+        src/render/vulkan/Upload.hpp
         src/render/vulkan/Vulkan.cpp
         src/render/vulkan/Vulkan.hpp
         src/render/vulkan/VulkanRenderer.cpp
@@ -123,18 +187,28 @@ target_sources(devex_render
 
 target_link_libraries(devex_render
     PUBLIC
+        Devex::Asset
         Devex::Core
         Devex::Math
         Devex::Platform
     PRIVATE
         volk::volk
         volk::volk_headers
+        GPUOpen::VulkanMemoryAllocator
+)
+# VMA receives every Vulkan function from volk instead of linking or loading them itself.
+target_compile_definitions(devex_render
+    PRIVATE
+        VMA_STATIC_VULKAN_FUNCTIONS=0
+        VMA_DYNAMIC_VULKAN_FUNCTIONS=0
 )
 set_target_properties(devex_render PROPERTIES
     EXPORT_NAME Render
     FOLDER "Engine"
 )
 devex_set_warnings(devex_render)
+# The renderer loads the compiled shaders at runtime.
+add_dependencies(devex_render devex_shaders)
 
 # Runtime: application lifecycle and the main loop.
 add_library(devex_runtime STATIC)

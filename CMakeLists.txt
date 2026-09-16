@@ -32,8 +32,10 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib")
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib")
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
+include(DevexShaders)
 include(DevexWarnings)
 
+add_subdirectory(shaders)
 add_subdirectory(engine)
 
 if(DEVEX_BUILD_SANDBOX)

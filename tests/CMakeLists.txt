@@ -29,10 +29,29 @@ devex_add_tests(core
         core/BuildInfoTests.cpp
         core/ErrorTests.cpp
         core/LogTests.cpp
+        core/SlotMapTests.cpp
     LIBRARIES
         Devex::Core
 )
 target_compile_definitions(devex_core_tests PRIVATE DEVEX_TEST_EXPECTED_VERSION="${PROJECT_VERSION}")
+
+devex_add_tests(math
+    SOURCES
+        math/ProjectionTests.cpp
+    LIBRARIES
+        Devex::Math
+)
+
+devex_add_tests(asset
+    SOURCES
+        asset/GltfImporterTests.cpp
+        asset/MeshDataTests.cpp
+    LIBRARIES
+        Devex::AssetImport
+)
+target_compile_definitions(devex_asset_tests
+    PRIVATE DEVEX_TEST_DATA_DIRECTORY="${CMAKE_CURRENT_SOURCE_DIR}/data"
+)
 
 devex_add_tests(platform
     SOURCES

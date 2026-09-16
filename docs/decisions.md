@@ -33,6 +33,10 @@ mais seulement explicitement ici : le code suit ce document, pas l'inverse.
 | Thread de rendu          | Thread principal, rendu découplé par un instantané `RenderWorld`   |
 | Redimensionnement        | Rendu continu pendant le redimensionnement modal de Windows        |
 | Passes de rendu          | Manuelles jusqu'au PBR, render graph introduit à ce moment         |
+| Compilation des shaders  | Au build par `slangc`, fichiers `.spv` à côté de l'exécutable      |
+| Accès aux données GPU    | Bindless + vertex pulling par buffer device address                |
+| Projection               | Reverse-Z, far plane infini                                        |
+| glTF (jalon 3)           | Import direct temporaire, pipeline d'assets plus tard              |
 
 ## Architecture cible
 
@@ -47,8 +51,9 @@ situé au-dessus de lui, et le graphe reste sans cycle.
 | `Math`          | alias `Vec3`, `Mat4`, `Quat`…, conventions de repère et de profondeur     | Core, GLM                     |
 | `Platform`      | fenêtre, entrées, temps, système de fichiers, chargement de DLL           | Core, SDL3                    |
 | `Serialization` | lecture/écriture du format texte `.dvx*` et des archives binaires cookées | Core, Math                    |
-| `Asset`         | base d'assets (UUID, `.dvxmeta`), cache d'import, données de maillage     | Core, Math, Serialization     |
-| `Render`        | façade `Renderer` / `RenderWorld` ; tout `Vk*` reste dans `src/render/vulkan` | Core, Math, Platform, Vulkan |
+| `Asset`         | données CPU (`MeshData`, primitives) ; plus tard UUID, `.dvxmeta`, cache  | Core, Math (+ Serialization)  |
+| `AssetImport`   | importeurs de formats sources (glTF, FBX), réservés aux outils            | Asset, fastgltf               |
+| `Render`        | façade `Renderer` / `RenderWorld` ; tout `Vk*` reste dans `src/render/vulkan` | Core, Math, Platform, Asset, Vulkan |
 | `Scene`         | entités, hiérarchie, composants, systèmes, prefabs                        | Core, Math, Serialization, Asset |
 | `Runtime`       | `Application`, boucle de jeu, extraction Scene → Render, code gameplay    | tous les modules ci-dessus    |
 
@@ -61,8 +66,10 @@ Règles :
   propriétaire, et les autres modules écrivent `devex::math::Vec3`, jamais `glm::vec3` ;
 - `Scene` ne dépend pas de `Render` : `Runtime` extrait chaque frame les données de
   rendu depuis la scène vers le `RenderWorld` ;
-- les importeurs FBX/glTF appartiennent aux outils (éditeur, cooker), jamais au jeu
-  exporté ;
+- les importeurs FBX/glTF vivent dans `AssetImport` et appartiennent aux outils (éditeur,
+  cooker), jamais au jeu exporté ; le bac à sable s'en sert temporairement ;
+- `Render` ne dépend d'`Asset` que pour les données CPU (`MeshData`), jamais de la base
+  d'assets ;
 - un module nouveau arrive avec ses tests et une démonstration dans le bac à sable.
 
 ### Dépôt
@@ -71,8 +78,8 @@ Règles :
 engine/        modules du moteur (include/ + src/)
 apps/sandbox/  bac à sable des jalons
 apps/editor/   éditeur ImGui (à venir)
-shaders/       sources Slang du moteur
-tests/         tests Catch2, un dossier par module
+shaders/       sources Slang du moteur, compilées dans bin/shaders
+tests/         tests Catch2, un dossier par module, données dans tests/data
 cmake/         fonctions CMake partagées
 docs/          décisions et documentation
 ```
@@ -94,7 +101,7 @@ docs/          décisions et documentation
 - **Présentation** : FIFO (VSync) par défaut ; Mailbox ou Immediate sur demande, avec
   repli sur FIFO si l'écran ne les propose pas.
 - **GPU** : un GPU compatible (Vulkan 1.4, swapchain, dynamic rendering, synchronization2,
-  une file qui dessine et présente) est choisi par ordre discret > intégré > virtuel >
+  buffer device address, shader draw parameters, une file qui dessine et présente) est choisi par ordre discret > intégré > virtuel >
   CPU, ou par nom via `preferredGpu`. Un seul `Renderer` existe à la fois (volk charge les
   fonctions du device globalement).
 - **Frames** : 2 frames en vol, chacune avec son pool de commandes, sa fence et son
@@ -105,13 +112,28 @@ docs/          décisions et documentation
 - **Redimensionnement en direct** : pendant la boucle modale de Windows, SDL envoie des
   `SDL_EVENT_WINDOW_EXPOSED` (live resize) sur le thread principal ; `Platform` les
   transmet à un callback et `Runtime` y exécute une frame complète.
-- **Barrières** : pour l'instant, transitions explicites entre états du backbuffer
-  (`Acquired`, `ColorAttachment`, `Present`) avec leurs stages de synchronisation ; un
-  render graph les calculera quand les passes se multiplieront (forward+ PBR).
-- Profondeur **reverse-Z** (0..1) pour la précision sur les grandes distances ; le
-  retournement de l'axe Y de Vulkan est géré par la projection, pas par la scène.
-- **Slang** : shaders compilés en SPIR-V au build par `slangc` (SDK Vulkan) ; l'API
-  Slang servira plus tard au rechargement à chaud dans l'éditeur.
+- **Barrières** : pour l'instant, transitions explicites entre états d'image
+  (`AcquiredBackbuffer`, `ColorAttachment`, `DepthAttachment`, `Present`) avec leurs
+  stages de synchronisation ; un render graph les calculera quand les passes se
+  multiplieront (forward+ PBR).
+- **Profondeur** : reverse-Z à far plane infini (`math::perspectiveReverseZ`), image
+  `D32_SFLOAT` effacée à 0 et test `GREATER_OR_EQUAL`. L'image de profondeur reste dans
+  son layout d'attachement toute sa vie pour qu'aucune barrière ne la partage entre
+  frames en vol. La projection de `Math` garde Y vers le haut ; le renderer applique la
+  correction du clip space Vulkan (Y vers le bas).
+- **Slang** : `cmake/DevexShaders.cmake` compile chaque `shaders/*.slang` en un `.spv`
+  contenant tous ses points d'entrée (`-fvk-use-entrypoint-name`), avec des matrices
+  column-major comme GLM et un depfile pour les includes. Une erreur de shader est une
+  erreur de build. L'API Slang servira plus tard au rechargement à chaud dans l'éditeur.
+- **Données GPU** : vertex pulling. Les shaders lisent sommets et données de scène via des
+  *buffer device addresses* passées en push constants (80 octets, sous le minimum garanti
+  de 128) ; pas de vertex input state. Les dispositions mémoire C++ et Slang sont
+  vérifiées par `static_assert` (`src/render/vulkan/GpuData.hpp`). Le descriptor set
+  global bindless (textures, samplers) arrivera avec les premières textures.
+- **Maillages** : `Renderer::createMesh` valide les données et les transfère de façon
+  synchrone (buffer de staging VMA) ; il renvoie un `MeshHandle` générationnel
+  (`core::SlotMap`). `destroyMesh` retarde la libération jusqu'à ce qu'aucune frame en
+  vol ne puisse encore l'utiliser. Faces avant dans le sens antihoraire, back-face culling.
 - Une RHI ne sera extraite que lorsqu'un second backend (DX12, Metal) aura un besoin
   réel.
 
@@ -220,8 +242,8 @@ material = asset("77ac…")
 | SDL3 (feature `vulkan`) | fenêtre, entrées   | 1 ✅     |
 | GLM (header-only)     | maths                | 1 ✅     |
 | volk (+ vulkan-headers) | Vulkan             | 2 ✅     |
-| VMA                   | mémoire GPU          | 3        |
-| fastgltf              | import glTF          | 3        |
+| VMA                   | mémoire GPU          | 3 ✅     |
+| fastgltf              | import glTF          | 3 ✅     |
 | Dear ImGui (docking)  | outils, éditeur      | 5        |
 | Catch2                | tests (feature `tests`) | 0 ✅  |
 
@@ -244,8 +266,8 @@ Chaque jalon se termine par une démo observable dans `devex-sandbox` et des tes
    souris ; `Runtime` : `Application` et boucle à pas fixe ; `Math` sur GLM.
 2. ✅ **Vulkan** — instance 1.4, validation, choix du GPU, device, swapchain, couleur de
    fond, redimensionnement en direct.
-3. **Premier maillage** — shaders Slang, buffers VMA, caméra (Y-up, reverse-Z), triangle
-   puis maillage glTF.
+3. ✅ **Premier maillage** — shaders Slang, buffers VMA, caméra (Y-up, reverse-Z),
+   primitives procédurales et import glTF.
 4. **Scène** — `Entity`, `Transform`, `MeshRenderer`, hiérarchie, lecture et écriture
    `.dvxscene`.
 5. **Outils** — ImGui docking : statistiques du renderer, arbre de scène, inspecteur.

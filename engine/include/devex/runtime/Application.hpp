@@ -87,6 +87,7 @@ protected:
     [[nodiscard]] const platform::Input& input() const noexcept;
     [[nodiscard]] platform::Window& window() noexcept;
     // Only available when ApplicationConfig::enableRendering is set.
+    [[nodiscard]] render::Renderer& renderer() noexcept;
     [[nodiscard]] const render::Renderer& renderer() const noexcept;
 
     // Progress towards the next fixed update in [0, 1), to interpolate between simulation states.

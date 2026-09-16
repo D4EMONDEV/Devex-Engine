@@ -18,14 +18,18 @@ Le détail, l'architecture des modules et les jalons sont dans
 
 ## État actuel
 
-- `Devex::Core` : `Result`/`Error`, journal `DEVEX_LOG_*`, assertions `DEVEX_ASSERT*` ;
-- `Devex::Math` : types GLM sous `devex::math` ;
+- `Devex::Core` : `Result`/`Error`, journal `DEVEX_LOG_*`, assertions, `SlotMap` ;
+- `Devex::Math` : types GLM sous `devex::math`, projection reverse-Z infinie ;
 - `Devex::Platform` : fenêtre, événements et entrées clavier/souris sur SDL3 ;
-- `Devex::Render` : renderer Vulkan 1.4 (volk), sélection du GPU, swapchain, validation ;
+- `Devex::Asset` / `Devex::AssetImport` : maillages CPU, primitives, import glTF ;
+- `Devex::Render` : renderer Vulkan 1.4 (volk, VMA), shaders Slang, vertex pulling,
+  profondeur reverse-Z, maillages éclairés ;
 - `Devex::Runtime` : classe `Application`, boucle de jeu à pas fixe et rendu par frame ;
-- `devex-sandbox` : caméra virtuelle pilotée au clavier (positions physiques) et à la
-  souris, couleur de fond qui suit la caméra, statistiques dans le titre ;
-- prochain jalon : shaders Slang, buffers VMA, caméra et premier maillage.
+- `devex-sandbox` : caméra libre au-dessus d'une scène procédurale ; glisser un `.gltf` ou
+  un `.glb` sur la fenêtre l'importe ;
+- prochain jalon : scène (entités, composants, hiérarchie, format `.dvxscene`).
+
+Le SDK Vulkan fournit `slangc`, qui compile les shaders pendant le build.
 
 Les tests marqués `[gpu]` ouvrent une fenêtre masquée et nécessitent un GPU Vulkan 1.4.
 

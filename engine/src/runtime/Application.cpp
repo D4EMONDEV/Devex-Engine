@@ -184,6 +184,12 @@ platform::Window& Application::window() noexcept
     return *m_window;
 }
 
+render::Renderer& Application::renderer() noexcept
+{
+    DEVEX_ASSERT_MSG(m_renderer != nullptr, "rendering is disabled or unavailable outside run()");
+    return *m_renderer;
+}
+
 const render::Renderer& Application::renderer() const noexcept
 {
     DEVEX_ASSERT_MSG(m_renderer != nullptr, "rendering is disabled or unavailable outside run()");

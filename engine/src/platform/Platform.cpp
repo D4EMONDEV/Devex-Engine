@@ -2,6 +2,7 @@
 
 #include <devex/core/Assert.hpp>
 #include <devex/core/Log.hpp>
+#include <devex/core/Path.hpp>
 #include <devex/platform/Platform.hpp>
 
 #define SDL_MAIN_HANDLED
@@ -280,6 +281,12 @@ void Platform::pollEvents(const EventCallback& callback)
 const Input& Platform::input() const noexcept
 {
     return m_input;
+}
+
+std::filesystem::path Platform::baseDirectory() const
+{
+    const char* const basePath = SDL_GetBasePath();
+    return basePath != nullptr ? core::pathFromUtf8(basePath) : std::filesystem::current_path();
 }
 
 std::string Platform::keyName(Key key) const
