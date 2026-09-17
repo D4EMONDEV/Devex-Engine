@@ -1,0 +1,4 @@
+[material format=1]
+base_color = vec4(0.7, 0.05, 0.05, 1)
+metallic = 0
+roughness = 0.9

@@ -76,6 +76,25 @@ core::Result<ImportResult> importTextureFile(ImportContext& context)
     {
         return std::unexpected(encoded.error());
     }
+    if (isHighDynamicRange(*encoded))
+    {
+        const core::Result<FloatImage> floatImage = decodeFloatImage(*encoded);
+        if (!floatImage)
+        {
+            return std::unexpected(floatImage.error());
+        }
+        core::Result<TextureData> texture =
+            buildFloatTexture(*floatImage, context.boolOption("mipmaps", true), context.jobs);
+        if (!texture)
+        {
+            return std::unexpected(texture.error());
+        }
+        ImportResult result;
+        result.artifacts.push_back({context.mainId, AssetType::Texture, context.name,
+                                    encodeTexture(*texture)});
+        return result;
+    }
+
     const core::Result<Image> image = decodeImage(*encoded);
     if (!image)
     {
@@ -135,9 +154,10 @@ std::span<const Importer> importers()
     static const std::vector<Importer> all{
         Importer{
             .name = "texture",
-            .version = 1,
+            // 2: high dynamic range images.
+            .version = 2,
             .mainType = AssetType::Texture,
-            .extensions = {".png", ".jpg", ".jpeg", ".tga", ".bmp"},
+            .extensions = {".png", ".jpg", ".jpeg", ".tga", ".bmp", ".hdr"},
             .defaultOptions =
                 {
                     {"srgb", TextValue(true)},
@@ -157,7 +177,8 @@ std::span<const Importer> importers()
         },
         Importer{
             .name = "gltf",
-            .version = 1,
+            // 2: tangents.
+            .version = 2,
             .mainType = AssetType::Model,
             .extensions = {".gltf", ".glb"},
             .defaultOptions =

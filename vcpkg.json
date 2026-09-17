@@ -17,6 +17,7 @@
                 "sdl3-binding"
             ]
         },
+        "mikktspace",
         {
             "name": "sdl3",
             "features": [

@@ -57,7 +57,7 @@ void writeEntity(const Scene& scene, Entity entity, bool writeParent, TextDocume
         for (const reflection::FieldInfo& field : componentType.type->fields)
         {
             componentSection.properties.push_back(
-                {field.name, writeFieldValue(field.kind, field.address(component))});
+                {field.name, writeFieldValue(field, field.address(component))});
         }
         document.sections.push_back(std::move(componentSection));
     }
@@ -165,7 +165,7 @@ void writeEntity(const Scene& scene, Entity entity, bool writeParent, TextDocume
                     continue;
                 }
                 if (core::Result<void> read =
-                        readFieldValue(field->kind, property.value, field->address(component));
+                        readFieldValue(*field, property.value, field->address(component));
                     !read)
                 {
                     return fail(core::makeError(core::ErrorCode::Parse, "line {}: {}.{}: {}",

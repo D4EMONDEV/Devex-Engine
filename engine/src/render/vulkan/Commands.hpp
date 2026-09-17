@@ -19,10 +19,22 @@ enum class ImageState
     TransferDestination,
     // Sampled by fragment shaders.
     ShaderReadOnly,
+    // Sampled by compute shaders.
+    ComputeReadOnly,
+    // Written by compute shaders as a storage image.
+    ComputeStorage,
 };
 
-// Records a synchronization2 barrier between two states of an image and its first mip levels.
+// True for states that only read the image, which need no barrier between each other when their
+// layouts match.
+[[nodiscard]] bool isReadOnly(ImageState state) noexcept;
+[[nodiscard]] VkImageLayout layoutOf(ImageState state) noexcept;
+
+// Records a synchronization2 barrier between two states of every level and layer of an image.
 void transitionImage(VkCommandBuffer commandBuffer, VkImage image, ImageState from, ImageState to,
-                     std::uint32_t mipLevels = 1);
+                     VkImageAspectFlags aspect = VK_IMAGE_ASPECT_COLOR_BIT);
+
+// The aspect of images of the format: depth for depth formats, color otherwise.
+[[nodiscard]] VkImageAspectFlags aspectOf(VkFormat format) noexcept;
 
 } // namespace devex::render::vulkan

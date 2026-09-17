@@ -41,6 +41,8 @@ struct RendererConfig
     bool validation = core::assertsEnabled;
     // Directory of the compiled .spv shaders; empty uses "shaders" next to the executable.
     std::filesystem::path shaderDirectory;
+    // Multisampling of the scene, lowered to what the GPU supports; 1 disables it.
+    std::uint32_t msaaSamples = 4;
 };
 
 // Parameters of a material, with textures already uploaded. Invalid or destroyed textures sample as
@@ -71,6 +73,10 @@ struct RendererStats
     std::size_t meshCount = 0;
     std::size_t textureCount = 0;
     std::size_t materialCount = 0;
+    std::uint32_t lightCount = 0;
+    // Exposure of the last frame, including automatic exposure.
+    float ev100 = 0.0f;
+    std::uint32_t msaaSamples = 1;
     math::Extent2D swapchainExtent;
     // Bytes of device-local memory used by the process, and how much it may use before the
     // operating system starts evicting memory.

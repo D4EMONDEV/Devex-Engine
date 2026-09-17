@@ -108,7 +108,7 @@ private:
             return core::makeError(core::ErrorCode::NotFound, "{} has no field '{}'", m_component,
                                    m_field);
         }
-        return scene::readFieldValue(field->kind, value, field->address(*component));
+        return scene::readFieldValue(*field, value, field->address(*component));
     }
 
     core::Uuid m_entity;
@@ -451,7 +451,7 @@ public:
         m_values.clear();
         for (const reflection::FieldInfo& field : (*type)->type->fields)
         {
-            m_values.emplace_back(field.name, scene::writeFieldValue(field.kind,
+            m_values.emplace_back(field.name, scene::writeFieldValue(field,
                                                                      field.address(*component)));
         }
         (*type)->remove(scene, *entity);
@@ -472,7 +472,7 @@ public:
             if (const reflection::FieldInfo* const field = (*type)->type->findField(fieldName))
             {
                 if (core::Result<void> read =
-                        scene::readFieldValue(field->kind, value, field->address(component));
+                        scene::readFieldValue(*field, value, field->address(component));
                     !read)
                 {
                     return read;

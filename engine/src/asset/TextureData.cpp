@@ -19,6 +19,8 @@ std::string_view toString(TextureFormat format) noexcept
         return "bc7";
     case TextureFormat::Bc7Srgb:
         return "bc7-srgb";
+    case TextureFormat::Rgba16Float:
+        return "rgba16f";
     }
     return "unknown";
 }
@@ -43,7 +45,8 @@ std::size_t mipByteSize(TextureFormat format, std::uint32_t width, std::uint32_t
         const std::size_t blocksHigh = (static_cast<std::size_t>(height) + 3) / 4;
         return blocksWide * blocksHigh * 16;
     }
-    return static_cast<std::size_t>(width) * height * 4;
+    const std::size_t bytesPerTexel = format == TextureFormat::Rgba16Float ? 8 : 4;
+    return static_cast<std::size_t>(width) * height * bytesPerTexel;
 }
 
 core::Result<void> validate(const TextureData& texture)

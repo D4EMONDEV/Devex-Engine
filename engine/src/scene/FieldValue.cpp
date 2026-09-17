@@ -4,6 +4,7 @@
 
 #include <array>
 #include <charconv>
+#include <format>
 #include <cstdint>
 #include <limits>
 #include <optional>
@@ -122,6 +123,9 @@ TextValue writeFieldValue(reflection::ValueKind kind, const void* address)
     case ValueKind::AssetId:
         return serialization::makeCall(
             "asset", {TextValue(static_cast<const asset::AssetId*>(address)->uuid.toString())});
+    case ValueKind::Enum:
+        DEVEX_ASSERT_MSG(false, "enumerations are written through their field");
+        return TextValue(std::int64_t{0});
     }
     DEVEX_UNREACHABLE();
 }
@@ -238,8 +242,49 @@ core::Result<void> readFieldValue(reflection::ValueKind kind, const TextValue& v
         *static_cast<asset::AssetId*>(address) = asset::AssetId{*uuid};
         return {};
     }
+    case ValueKind::Enum:
+        DEVEX_ASSERT_MSG(false, "enumerations are read through their field");
+        return core::makeError(core::ErrorCode::InvalidArgument, "the enumeration names are unknown");
     }
     DEVEX_UNREACHABLE();
+}
+
+TextValue writeFieldValue(const reflection::FieldInfo& field, const void* address)
+{
+    if (field.kind != reflection::ValueKind::Enum)
+    {
+        return writeFieldValue(field.kind, address);
+    }
+    const std::uint32_t index = reflection::readEnumIndex(field, address);
+    return index < field.enumNames.size() ? TextValue(std::string(field.enumNames[index]))
+                                          : TextValue(std::int64_t{index});
+}
+
+core::Result<void> readFieldValue(const reflection::FieldInfo& field, const TextValue& value,
+                                  void* address)
+{
+    if (field.kind != reflection::ValueKind::Enum)
+    {
+        return readFieldValue(field.kind, value, address);
+    }
+    if (const std::string* const name = serialization::asString(value))
+    {
+        for (std::size_t index = 0; index < field.enumNames.size(); ++index)
+        {
+            if (field.enumNames[index] == *name)
+            {
+                reflection::writeEnumIndex(field, address, static_cast<std::uint32_t>(index));
+                return {};
+            }
+        }
+    }
+    std::string expected;
+    for (const std::string_view name : field.enumNames)
+    {
+        expected += expected.empty() ? "" : ", ";
+        expected += std::format("\"{}\"", name);
+    }
+    return core::makeError(core::ErrorCode::Parse, "expected one of {}", expected);
 }
 
 } // namespace devex::scene

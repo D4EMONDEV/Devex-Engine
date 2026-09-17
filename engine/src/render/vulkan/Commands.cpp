@@ -38,18 +38,33 @@ struct StateUsage
     case ImageState::ShaderReadOnly:
         return {VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
                 VK_ACCESS_2_SHADER_SAMPLED_READ_BIT};
+    case ImageState::ComputeReadOnly:
+        return {VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+                VK_ACCESS_2_SHADER_SAMPLED_READ_BIT};
+    case ImageState::ComputeStorage:
+        return {VK_IMAGE_LAYOUT_GENERAL, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+                VK_ACCESS_2_SHADER_STORAGE_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT};
     }
     return {};
 }
 
 } // namespace
 
+bool isReadOnly(ImageState state) noexcept
+{
+    return state == ImageState::ShaderReadOnly || state == ImageState::ComputeReadOnly;
+}
+
+VkImageLayout layoutOf(ImageState state) noexcept
+{
+    return usageOf(state).layout;
+}
+
 void transitionImage(VkCommandBuffer commandBuffer, VkImage image, ImageState from, ImageState to,
-                     std::uint32_t mipLevels)
+                     VkImageAspectFlags aspect)
 {
     const StateUsage source = usageOf(from);
     const StateUsage destination = usageOf(to);
-    const bool isDepth = from == ImageState::DepthAttachment || to == ImageState::DepthAttachment;
 
     const VkImageMemoryBarrier2 barrier{
         .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
@@ -64,11 +79,9 @@ void transitionImage(VkCommandBuffer commandBuffer, VkImage image, ImageState fr
         .image = image,
         .subresourceRange =
             {
-                .aspectMask =
-                    static_cast<VkImageAspectFlags>(isDepth ? VK_IMAGE_ASPECT_DEPTH_BIT
-                                                            : VK_IMAGE_ASPECT_COLOR_BIT),
-                .levelCount = mipLevels,
-                .layerCount = 1,
+                .aspectMask = aspect,
+                .levelCount = VK_REMAINING_MIP_LEVELS,
+                .layerCount = VK_REMAINING_ARRAY_LAYERS,
             },
     };
     const VkDependencyInfo dependencies{
@@ -77,6 +90,23 @@ void transitionImage(VkCommandBuffer commandBuffer, VkImage image, ImageState fr
         .pImageMemoryBarriers = &barrier,
     };
     vkCmdPipelineBarrier2(commandBuffer, &dependencies);
+}
+
+VkImageAspectFlags aspectOf(VkFormat format) noexcept
+{
+    switch (format)
+    {
+    case VK_FORMAT_D16_UNORM:
+    case VK_FORMAT_D32_SFLOAT:
+    case VK_FORMAT_X8_D24_UNORM_PACK32:
+        return VK_IMAGE_ASPECT_DEPTH_BIT;
+    case VK_FORMAT_D16_UNORM_S8_UINT:
+    case VK_FORMAT_D24_UNORM_S8_UINT:
+    case VK_FORMAT_D32_SFLOAT_S8_UINT:
+        return VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
+    default:
+        return VK_IMAGE_ASPECT_COLOR_BIT;
+    }
 }
 
 } // namespace devex::render::vulkan

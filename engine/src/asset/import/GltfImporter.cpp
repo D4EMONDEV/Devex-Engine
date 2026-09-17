@@ -130,6 +130,17 @@ enum class TextureRole : std::uint8_t
             });
     }
 
+    // Tangents from the file are only meaningful with the normals they were made for.
+    const fastgltf::Accessor* tangents = findAccessor(asset, primitive, "TANGENT");
+    const bool hasTangents = hasNormals && tangents != nullptr && tangents->count == positions->count;
+    if (hasTangents)
+    {
+        fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec4>(
+            asset, *tangents, [&mesh](fastgltf::math::fvec4 tangent, std::size_t index) {
+                mesh.vertices[index].tangent = {tangent[0], tangent[1], tangent[2], tangent[3]};
+            });
+    }
+
     if (primitive.indicesAccessor)
     {
         const fastgltf::Accessor& indices = asset.accessors[*primitive.indicesAccessor];
@@ -151,6 +162,10 @@ enum class TextureRole : std::uint8_t
     if (!hasNormals)
     {
         computeNormals(mesh);
+    }
+    if (!hasTangents)
+    {
+        computeTangents(mesh);
     }
     return mesh;
 }

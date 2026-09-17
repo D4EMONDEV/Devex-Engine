@@ -19,6 +19,8 @@ enum class TextureFormat : std::uint8_t
     Bc5Unorm = 3,
     Bc7Unorm = 4,
     Bc7Srgb = 5,
+    // Linear high dynamic range colors, such as environment maps.
+    Rgba16Float = 6,
 };
 
 [[nodiscard]] std::string_view toString(TextureFormat format) noexcept;

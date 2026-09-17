@@ -161,7 +161,9 @@ struct RequiredFeatures
     std::optional<std::uint32_t> queueFamily;
     for (std::uint32_t family = 0; family < familyCount && !queueFamily; ++family)
     {
-        if ((families[family].queueFlags & VK_QUEUE_GRAPHICS_BIT) == 0)
+        // Passes and environment baking use compute shaders on the same queue.
+        const VkQueueFlags required = VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT;
+        if ((families[family].queueFlags & required) != required)
         {
             continue;
         }
@@ -175,7 +177,7 @@ struct RequiredFeatures
     }
     if (!queueFamily)
     {
-        missing = "no queue that can both draw and present to the window";
+        missing = "no queue that can draw, compute and present to the window";
         return inspection;
     }
 
@@ -241,6 +243,8 @@ core::Result<Device> Device::create(VkInstance instance, VkSurfaceKHR surface,
     RequiredFeatures supported;
     vkGetPhysicalDeviceFeatures2(device.m_physicalDevice, &supported.features);
     enabled.features.features.samplerAnisotropy = supported.features.features.samplerAnisotropy;
+    enabled.features.features.depthClamp = supported.features.features.depthClamp;
+    device.m_depthClamp = supported.features.features.depthClamp == VK_TRUE;
 
     VkPhysicalDeviceVulkan12Properties properties12{
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_PROPERTIES,
@@ -256,6 +260,8 @@ core::Result<Device> Device::create(VkInstance instance, VkSurfaceKHR surface,
     device.m_maxBindlessTextures =
         std::min(properties12.maxDescriptorSetUpdateAfterBindSampledImages,
                  properties12.maxPerStageDescriptorUpdateAfterBindSampledImages);
+    device.m_sampleCounts = properties.properties.limits.framebufferColorSampleCounts &
+                            properties.properties.limits.framebufferDepthSampleCounts;
 
     const char* const extensions[] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
     const VkDeviceCreateInfo createInfo{
@@ -281,6 +287,8 @@ Device::Device(Device&& other) noexcept
     , m_gpu(std::move(other.m_gpu))
     , m_maxSamplerAnisotropy(other.m_maxSamplerAnisotropy)
     , m_maxBindlessTextures(other.m_maxBindlessTextures)
+    , m_sampleCounts(other.m_sampleCounts)
+    , m_depthClamp(other.m_depthClamp)
 {
 }
 
@@ -296,6 +304,8 @@ Device& Device::operator=(Device&& other) noexcept
         m_gpu = std::move(other.m_gpu);
         m_maxSamplerAnisotropy = other.m_maxSamplerAnisotropy;
         m_maxBindlessTextures = other.m_maxBindlessTextures;
+        m_sampleCounts = other.m_sampleCounts;
+        m_depthClamp = other.m_depthClamp;
     }
     return *this;
 }
@@ -347,6 +357,23 @@ float Device::maxSamplerAnisotropy() const noexcept
 std::uint32_t Device::maxBindlessTextures() const noexcept
 {
     return m_maxBindlessTextures;
+}
+
+VkSampleCountFlagBits Device::sampleCount(std::uint32_t requested) const noexcept
+{
+    for (std::uint32_t samples = 64; samples > 1; samples /= 2)
+    {
+        if (samples <= requested && (m_sampleCounts & samples) != 0)
+        {
+            return static_cast<VkSampleCountFlagBits>(samples);
+        }
+    }
+    return VK_SAMPLE_COUNT_1_BIT;
+}
+
+bool Device::supportsDepthClamp() const noexcept
+{
+    return m_depthClamp;
 }
 
 } // namespace devex::render::vulkan

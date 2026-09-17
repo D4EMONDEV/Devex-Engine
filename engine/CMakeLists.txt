@@ -3,6 +3,7 @@ find_package(efsw CONFIG REQUIRED)
 find_package(fastgltf CONFIG REQUIRED)
 find_package(glm CONFIG REQUIRED)
 find_package(imgui CONFIG REQUIRED)
+find_package(mikktspace CONFIG REQUIRED)
 find_package(SDL3 CONFIG REQUIRED)
 find_package(volk CONFIG REQUIRED)
 find_package(Stb REQUIRED)
@@ -191,6 +192,7 @@ target_link_libraries(devex_asset
         Devex::Reflection
     PRIVATE
         Devex::Serialization
+        mikktspace::mikktspace
 )
 set_target_properties(devex_asset PROPERTIES
     EXPORT_NAME Asset
@@ -265,15 +267,20 @@ add_library(Devex::Render ALIAS devex_render)
 
 target_sources(devex_render
     PRIVATE
+        src/render/Lighting.cpp
+        src/render/Lighting.hpp
+        src/render/Photometry.cpp
         src/render/Renderer.cpp
         src/render/Selection.cpp
         src/render/Selection.hpp
-        src/render/vulkan/Bindless.cpp
-        src/render/vulkan/Bindless.hpp
         src/render/vulkan/Commands.cpp
         src/render/vulkan/Commands.hpp
+        src/render/vulkan/DescriptorSets.cpp
+        src/render/vulkan/DescriptorSets.hpp
         src/render/vulkan/Device.cpp
         src/render/vulkan/Device.hpp
+        src/render/vulkan/EnvironmentBaker.cpp
+        src/render/vulkan/EnvironmentBaker.hpp
         src/render/vulkan/GpuData.hpp
         src/render/vulkan/Instance.cpp
         src/render/vulkan/Instance.hpp
@@ -281,6 +288,8 @@ target_sources(devex_render
         src/render/vulkan/Memory.hpp
         src/render/vulkan/Pipeline.cpp
         src/render/vulkan/Pipeline.hpp
+        src/render/vulkan/RenderGraph.cpp
+        src/render/vulkan/RenderGraph.hpp
         src/render/vulkan/Swapchain.cpp
         src/render/vulkan/Swapchain.hpp
         src/render/vulkan/Upload.cpp
@@ -294,6 +303,7 @@ target_sources(devex_render
         BASE_DIRS include
         FILES
             include/devex/render/Gpu.hpp
+            include/devex/render/Photometry.hpp
             include/devex/render/Renderer.hpp
             include/devex/render/RenderWorld.hpp
 )

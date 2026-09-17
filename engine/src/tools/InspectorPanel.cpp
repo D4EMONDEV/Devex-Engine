@@ -112,14 +112,34 @@ bool drawValueWidget(ToolsState& state, const char* label, const reflection::Fie
     case ValueKind::UInt32:
         return ImGui::DragScalar(label, ImGuiDataType_U32, address, 0.1f);
     case ValueKind::Float:
+        if (field.angle)
+        {
+            float degrees = math::degrees(*static_cast<float*>(address));
+            const bool changed = ImGui::DragFloat(label, &degrees, 0.5f, 0.0f, 0.0f, "%.1f deg");
+            if (changed)
+            {
+                *static_cast<float*>(address) = math::radians(degrees);
+            }
+            return changed;
+        }
         return ImGui::DragFloat(label, static_cast<float*>(address), 0.01f);
     case ValueKind::String:
         return ImGui::InputText(label, static_cast<std::string*>(address));
     case ValueKind::Vec2:
         return ImGui::DragFloat2(label, &(*static_cast<math::Vec2*>(address))[0], 0.01f);
     case ValueKind::Vec3:
+        if (field.color)
+        {
+            return ImGui::ColorEdit3(label, &(*static_cast<math::Vec3*>(address))[0],
+                                     ImGuiColorEditFlags_Float | ImGuiColorEditFlags_HDR);
+        }
         return ImGui::DragFloat3(label, &(*static_cast<math::Vec3*>(address))[0], 0.01f);
     case ValueKind::Vec4:
+        if (field.color)
+        {
+            return ImGui::ColorEdit4(label, &(*static_cast<math::Vec4*>(address))[0],
+                                     ImGuiColorEditFlags_Float | ImGuiColorEditFlags_HDR);
+        }
         return ImGui::DragFloat4(label, &(*static_cast<math::Vec4*>(address))[0], 0.01f);
     case ValueKind::Quat: {
         auto& rotation = *static_cast<math::Quat*>(address);
@@ -150,6 +170,27 @@ bool drawValueWidget(ToolsState& state, const char* label, const reflection::Fie
     }
     case ValueKind::AssetId:
         return drawAssetPicker(state, label, field, *static_cast<asset::AssetId*>(address));
+    case ValueKind::Enum: {
+        const std::uint32_t current = reflection::readEnumIndex(field, address);
+        bool changed = false;
+        const std::string preview = current < field.enumNames.size()
+                                        ? displayName(field.enumNames[current])
+                                        : std::to_string(current);
+        if (ImGui::BeginCombo(label, preview.c_str()))
+        {
+            for (std::uint32_t index = 0; index < field.enumNames.size(); ++index)
+            {
+                if (ImGui::Selectable(displayName(field.enumNames[index]).c_str(), index == current) &&
+                    index != current)
+                {
+                    reflection::writeEnumIndex(field, address, index);
+                    changed = true;
+                }
+            }
+            ImGui::EndCombo();
+        }
+        return changed;
+    }
     }
     return false;
 }
@@ -159,7 +200,7 @@ void drawField(ToolsState& state, core::Uuid entity, const scene::ComponentType&
 {
     void* const address = field.address(component);
     // The value before this frame's change, which becomes the start of an edit on activation.
-    serialization::TextValue before = scene::writeFieldValue(field.kind, address);
+    serialization::TextValue before = scene::writeFieldValue(field, address);
 
     const std::string label = displayName(field.name);
     const bool changed = drawValueWidget(state, label.c_str(), field, address);
@@ -169,15 +210,15 @@ void drawField(ToolsState& state, core::Uuid entity, const scene::ComponentType&
         state.fieldEditStart = before;
     }
     // Drags and text edits become one undo step when released; combos change in one click.
-    const bool finishedEdit = ImGui::IsItemDeactivatedAfterEdit() ||
-                              (changed && field.kind == ValueKind::AssetId);
+    const bool oneClickEdit = field.kind == ValueKind::AssetId || field.kind == ValueKind::Enum;
+    const bool finishedEdit = ImGui::IsItemDeactivatedAfterEdit() || (changed && oneClickEdit);
     if (finishedEdit)
     {
         serialization::TextValue start =
-            field.kind == ValueKind::AssetId ? std::move(before) : state.fieldEditStart;
+            oneClickEdit ? std::move(before) : state.fieldEditStart;
         state.history.recordApplied(makeSetFieldCommand(entity, std::string(type.name()),
                                                         field.name, std::move(start),
-                                                        scene::writeFieldValue(field.kind, address)));
+                                                        scene::writeFieldValue(field, address)));
     }
 }
 

@@ -15,6 +15,8 @@ struct Vertex
     math::Vec3 normal{0.0f, 1.0f, 0.0f};
     // Texture coordinates with the origin at the top-left corner, as in glTF.
     math::Vec2 uv{0.0f};
+    // Direction of increasing u in XYZ; W is the sign of the bitangent, cross(normal, tangent) * w.
+    math::Vec4 tangent{1.0f, 0.0f, 0.0f, 1.0f};
 };
 
 // A range of the index buffer drawn with one material.
@@ -45,5 +47,10 @@ struct MeshData
 
 // Replaces the normals with the area-weighted average of the adjacent triangle normals.
 void computeNormals(MeshData& mesh);
+
+// Computes MikkTSpace tangents, the standard that normal map bakers follow. Vertices shared by
+// triangles whose tangents differ are split, so the vertex count may grow. Indices keep their
+// order, and submeshes stay valid.
+void computeTangents(MeshData& mesh);
 
 } // namespace devex::asset

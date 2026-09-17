@@ -14,7 +14,7 @@ mais seulement explicitement ici : le code suit ce document, pas l'inverse.
 | Fenêtre / entrées        | SDL3                                                               |
 | Graphique                | Vulkan 1.4 minimum, API C + volk + VMA, sans RHI pour l'instant    |
 | Shaders                  | Slang → SPIR-V                                                     |
-| Architecture de rendu    | Forward+ clustered PBR (cible)                                     |
+| Architecture de rendu    | Forward+ clustered, PBR métal-rugosité (GGX), MSAA 4x              |
 | Gameplay                 | C++ (DLL rechargeable) d'abord, C# (.NET hosting) ensuite          |
 | Format source            | Texte maison lisible, extensions `.dvx*`, binaire cooké à l'export |
 | Import 3D                | glTF 2.0 (fastgltf) + FBX (ufbx)                                   |
@@ -32,7 +32,7 @@ mais seulement explicitement ici : le code suit ce document, pas l'inverse.
 | Présentation             | VSync (FIFO) par défaut, Mailbox/Immediate en option               |
 | Thread de rendu          | Thread principal, rendu découplé par un instantané `RenderWorld`   |
 | Redimensionnement        | Rendu continu pendant le redimensionnement modal de Windows        |
-| Passes de rendu          | Manuelles jusqu'au PBR, render graph introduit à ce moment         |
+| Passes de rendu          | Render graph léger : barrières calculées, images transitoires      |
 | Compilation des shaders  | Au build par `slangc`, fichiers `.spv` à côté de l'exécutable      |
 | Accès aux données GPU    | Bindless + vertex pulling par buffer device address                |
 | Projection               | Reverse-Z, far plane infini                                        |
@@ -54,6 +54,14 @@ mais seulement explicitement ici : le code suit ce document, pas l'inverse.
 | Modèles dans une scène   | Copie d'entités ; préfabs liés dans un jalon dédié                 |
 | Matériaux                | Paramètres PBR glTF ; sous-assets en lecture seule + `.dvxmat`     |
 | Textures côté GPU        | Bindless : un descriptor set global, une table de matériaux        |
+| Unités de lumière        | Physiques : lux, lumens, nits, exposition EV100, kelvins           |
+| Lumières                 | Directionnelle, ponctuelles et spots en clusters calculés sur CPU  |
+| Ombres                   | Cascades (CSM, 4 × 2048²) pour la lumière directionnelle           |
+| Lumière indirecte        | Ciel HDR équirectangulaire, IBL précalculée sur GPU                |
+| Exposition               | Manuelle ou automatique (mesure GPU, adaptation CPU)               |
+| Tonemapping              | AgX par défaut, Khronos PBR Neutral, ACES                          |
+| Réglages d'environnement | Composant `Environment`, exposition sur le composant `Camera`      |
+| Tangentes                | MikkTSpace à l'import, convention glTF                             |
 
 ## Architecture cible
 
@@ -133,22 +141,30 @@ docs/          décisions et documentation
 - **Redimensionnement en direct** : pendant la boucle modale de Windows, SDL envoie des
   `SDL_EVENT_WINDOW_EXPOSED` (live resize) sur le thread principal ; `Platform` les
   transmet à un callback et `Runtime` y exécute une frame complète.
-- **Barrières** : pour l'instant, transitions explicites entre états d'image
-  (`AcquiredBackbuffer`, `ColorAttachment`, `DepthAttachment`, `Present`) avec leurs
-  stages de synchronisation ; un render graph les calculera quand les passes se
-  multiplieront (forward+ PBR).
-- **Profondeur** : reverse-Z à far plane infini (`math::perspectiveReverseZ`), image
-  `D32_SFLOAT` effacée à 0 et test `GREATER_OR_EQUAL`. L'image de profondeur reste dans
-  son layout d'attachement toute sa vie pour qu'aucune barrière ne la partage entre
-  frames en vol. La projection de `Math` garde Y vers le haut ; le renderer applique la
-  correction du clip space Vulkan (Y vers le bas).
-- **Slang** : `cmake/DevexShaders.cmake` compile chaque `shaders/*.slang` en un `.spv`
-  contenant tous ses points d'entrée (`-fvk-use-entrypoint-name`), avec des matrices
-  column-major comme GLM et un depfile pour les includes. Une erreur de shader est une
-  erreur de build. L'API Slang servira plus tard au rechargement à chaud dans l'éditeur.
+- **Render graph** (`src/render/vulkan/RenderGraph`) : une frame est une suite de passes
+  qui déclarent comment elles utilisent chaque image (attachement couleur ou profondeur,
+  lecture en fragment ou en compute, écriture storage, présentation). Avant chaque passe, le
+  graphe émet les barrières synchronization2 depuis l'usage précédent de l'image, et nomme la
+  passe pour les débogueurs quand la validation est active. Les images transitoires viennent
+  d'un **pool propre à chaque contexte de frame**, gardées d'une frame à l'autre tant qu'elles
+  servent : deux frames en vol ne partagent jamais une image. Pas encore d'élimination de
+  passes ni de partage de mémoire entre images.
+- **Frame** : ombres du soleil (4 couches d'une image `D32` 2048²), scène HDR `RGBA16F`
+  multi-échantillonnée (MSAA 4x par défaut, `RendererConfig::msaaSamples`, résolue par
+  moyenne) avec les maillages puis le ciel, mesure de luminance (si exposition automatique),
+  puis tonemapping vers le swapchain sRGB, où l'overlay ImGui est dessiné.
+- **Profondeur** : reverse-Z à far plane infini (`math::perspectiveReverseZ`), `D32_SFLOAT`
+  effacée à 0 et test `GREATER_OR_EQUAL`. La projection de `Math` garde Y vers le haut ; le
+  renderer applique la correction du clip space Vulkan (Y vers le bas).
+- **Slang** : `cmake/DevexShaders.cmake` compile chaque shader d'entrée (`mesh`, `shadow`,
+  `sky`, `tonemap`, `luminance`, `ibl`) en un `.spv` contenant tous ses points d'entrée
+  (`-fvk-use-entrypoint-name`), avec des matrices column-major comme GLM ; les modules
+  importés (`common`, `pbr`) entrent dans le depfile. Une erreur de shader est une erreur de
+  build. L'API Slang servira plus tard au rechargement à chaud dans l'éditeur.
 - **Données GPU** : vertex pulling. Les shaders lisent sommets et données de scène via des
-  *buffer device addresses* passées en push constants (80 octets, sous le minimum garanti
-  de 128) ; pas de vertex input state. Les dispositions mémoire C++ et Slang sont
+  *buffer device addresses* passées en push constants (88 octets, sous le minimum garanti
+  de 128) ; pas de vertex input state. Sommets de 48 octets : position, normale, UV et
+  tangente. Les dispositions mémoire C++ et Slang sont
   vérifiées par `static_assert` (`src/render/vulkan/GpuData.hpp`). Le descriptor set
   global bindless porte les textures (voir ci-dessous).
 - **Maillages** : `Renderer::createMesh` valide les données et les transfère de façon
@@ -158,24 +174,62 @@ docs/          décisions et documentation
   Un maillage a des **sous-maillages** (plages d'indices) ; le `RenderWorld` contient une
   instance par sous-maillage avec son matériau.
 - **Textures** : `Renderer::createTexture` envoie tous les niveaux de mip d'un `TextureData`
-  (RGBA8, BC5, BC7) et renvoie un `TextureHandle`. Elles vivent dans **un descriptor set global
-  bindless** (tableau de `Texture2D` indexé, `PARTIALLY_BOUND` et `UPDATE_AFTER_BIND`, 8192
-  emplacements au plus) avec un sampler unique (linéaire, répétition, anisotrope x16). Les
+  (RGBA8, BC5, BC7, RGBA16F) et renvoie un `TextureHandle`. Elles vivent dans **un descriptor
+  set global bindless** (set 0 : tableau de `Texture2D` indexé, `PARTIALLY_BOUND` et
+  `UPDATE_AFTER_BIND`, 8192 emplacements au plus, sampler linéaire, répétition, anisotrope
+  x16), qui porte aussi l'IBL, la table BRDF et le ciel. Le set 1, un par contexte de frame,
+  porte la carte d'ombres et la couleur de scène résolue. Les
   emplacements 0 et 1 sont une texture blanche et une normale plate qui remplacent les textures
   absentes. Une texture détruite garde son emplacement jusqu'à la fin des frames en vol, puis
   l'emplacement repointe vers le blanc avant d'être réutilisé.
 - **Matériaux** : `createMaterial` / `updateMaterial` / `destroyMaterial` sur un `MaterialDesc`
   (paramètres glTF avec des `TextureHandle`). Le renderer en tire une table `GpuMaterial` de 80
   octets dont **chaque frame en vol garde sa copie** (buffer adressé par `SceneData`), recopiée
-  quand un matériau ou une texture change. Le shader lit couleur de base, émission, occlusion
-  ambiante et mode alpha `mask` (discard) ; `blend` est dessiné opaque en attendant la
-  transparence. Les matériaux `doubleSided` utilisent un second pipeline sans culling et éclairent
+  quand un matériau ou une texture change. Le shader utilise tous les paramètres : couleur de
+  base, métal et rugosité (rugosité bornée à 0,045), normal map (BC5, Z reconstruit, échelle),
+  occlusion (sur la lumière indirecte), émission et mode alpha `mask` (discard, ombres
+  comprises) ; `blend` est dessiné opaque en attendant la transparence. Les matériaux `doubleSided` utilisent un second pipeline sans culling et éclairent
   la face arrière avec la normale retournée. Un matériau par défaut gris clair sert aux instances
   sans matériau.
 - **Normales** : transformées par la matrice des cofacteurs (signe du déterminant compris), juste
-  sous échelle non uniforme.
+  sous échelle non uniforme ; la tangente suit la matrice du modèle et son signe s'inverse
+  sous un miroir.
+- **Éclairage** : BRDF GGX, visibilité de Smith corrélée en hauteur, Fresnel de Schlick,
+  diffus lambertien ; pas encore de compensation multi-diffusion.
+  - *Soleil* : illuminance en lux (couleur × température × intensité), ombré par cascades.
+  - *Lumières locales* : intensité en candelas (lumens / 4π, y compris pour les spots),
+    atténuation en carré inverse avec une fenêtre qui s'annule à la portée, cônes des spots
+    lissés entre les angles intérieur et extérieur.
+  - *Clusters* : grille de 16 × 9 tuiles et 24 tranches logarithmiques entre le plan proche et
+    500 m ; chaque frame, le CPU teste la sphère d'influence de chaque lumière contre les boîtes
+    des clusters (`src/render/Lighting`) et envoie la liste par frame.
+  - *Environnement* : un ciel équirectangulaire HDR (ou blanc uniforme) est converti en
+    cubemap 512², préfiltré pour 6 rugosités (GGX, échantillonnage d'importance filtré) et
+    intégré en irradiance 32², par des compute shaders exécutés quand la texture du ciel
+    change ; la table BRDF split-sum (128²) est calculée au démarrage. `color`, `intensity`
+    (nits) et `rotation` s'appliquent sans nouveau calcul. Le ciel est dessiné derrière la
+    scène depuis la texture elle-même.
+- **Ombres** : 4 cascades réparties entre découpage logarithmique et uniforme (λ = 0,75) jusqu'à
+  `shadowDistance`, chacune ajustée sur la sphère englobante de sa tranche et alignée sur les
+  texels pour ne pas scintiller ; biais de pente dynamique, décalage le long de la normale d'un
+  texel et demi, filtrage 3 × 3 par comparaisons bilinéaires, fondu sur le dernier dixième de
+  la distance. Depth clamp quand le GPU le permet.
+- **Exposition** : EV100 → échelle `1 / (1,2 × 2^EV100)`. Toute la lumière est **pré-exposée**
+  dans le shader, ce qui garde les valeurs dans la plage des demi-flottants. L'émission des
+  matériaux est relative à l'exposition : une couleur émissive de 1 s'affiche claire quelle que
+  soit la lumière. En automatique, un compute shader relève la luminance sur une grille de
+  64 × 36 ; le CPU la relit quand la frame est terminée, en fait la moyenne géométrique entre les
+  10e et 90e centiles, vise le gris moyen à 18 %, borne entre `minEv100` et `maxEv100` et
+  s'adapte exponentiellement (`adaptationSpeed`).
+- **Tonemapping** : AgX (sigmoïde du look par défaut de Blender), Khronos PBR Neutral, ACES
+  (approximation de Narkowicz) ou aucun, choisi sur la caméra ; sortie linéaire, encodée sRGB
+  par le swapchain.
+- **Limites actuelles** : pas de culling (tout est dessiné, y compris dans chaque cascade), pas
+  d'ombres des lumières locales, résolution MSAA par moyenne des valeurs HDR (contours très
+  contrastés parfois crénelés), pas de réflexions locales.
 - **GPU requis en plus** : descriptor indexing (tableaux runtime, partially bound, update after
-  bind, indexation non uniforme) et compression BC.
+  bind, indexation non uniforme), compression BC, et une file graphique qui fait aussi du
+  compute.
 - Une RHI ne sera extraite que lorsqu'un second backend (DX12, Metal) aura un besoin
   réel.
 
@@ -204,17 +258,23 @@ docs/          décisions et documentation
   `onUpdate`. Une entité sans `Transform` transmet celle de son parent.
 - **Composants intégrés** : `Transform`, `WorldTransform` (calculé, jamais sauvegardé),
   `MeshRenderer` (maillage et matériau qui remplace ceux des sous-maillages s'il est valide),
-  `Camera` (la première `primary` est utilisée), `DirectionalLight`.
+  `Camera` (la première `primary` est utilisée ; exposition et tonemapping), `DirectionalLight`
+  (couleur, température, illuminance en lux, ombres), `PointLight` et `SpotLight` (couleur,
+  température, puissance en lumens, portée, angles des cônes), `Environment` (ciel HDR,
+  couleur, luminance en nits, rotation ; le premier est utilisé).
 - **Réflexion** : chaque composant déclare ses champs avec `DEVEX_DECLARE_REFLECTION` (header)
   et `DEVEX_REFLECT` (source). Types de valeurs : bool, int32, uint32, float, string, vec2,
-  vec3, vec4, quat, UUID, `AssetId`. Un champ `AssetId` peut indiquer le type d'asset attendu
-  (`FieldHints::assetType`), utilisé par l'inspecteur. MSVC 19.51 ne fournit pas encore `<meta>`
+  vec3, vec4, quat, UUID, `AssetId` et énumérations (`EnumNames<T>` liste les noms, écrits
+  en texte dans les fichiers). Des indications guident l'inspecteur (`FieldHints`) : type
+  d'asset attendu, couleur, angle affiché en degrés. MSVC 19.51 ne fournit pas encore `<meta>`
   (réflexion C++26) ; ces déclarations pourront alors être générées.
 - **Composants du jeu** : une struct, sa réflexion, puis `scene::registerComponent<T>()`.
   Seuls les composants enregistrés sont sauvegardés.
-- **Rendu de la scène** : `Runtime` extrait chaque frame la caméra, la lumière et une instance
-  par sous-maillage de chaque `MeshRenderer` dont le maillage est disponible dans
-  l'`AssetManager`, puis appelle `onRender` pour les ajouts éventuels.
+- **Rendu de la scène** : `Runtime` extrait chaque frame la caméra, la première lumière
+  directionnelle, toutes les lumières locales, le premier environnement et une instance par
+  sous-maillage de chaque `MeshRenderer` dont le maillage est disponible dans l'`AssetManager`,
+  convertit les unités (`render/Photometry.hpp`), puis appelle `onRender` pour les ajouts
+  éventuels.
 - Repère : **Y-up, main droite**, +X droite, -Z avant, mètres, angles en radians.
   glTF s'importe sans conversion ; FBX est converti à l'import.
 
@@ -403,13 +463,15 @@ Dans les deux cas, les sources concernées sont réimportées.
   et les matériaux sont résolus à nouveau après tout changement de texture. Les maillages
   enregistrés par l'application (primitives) ne sont jamais détruits par lui.
 - **Textures** : mipmaps complets calculés en espace linéaire pour les couleurs sRGB, normales
-  renormalisées à chaque niveau. Compression **BC7** (sRGB pour les couleurs, perceptuelle) par
+  renormalisées à chaque niveau. Les images Radiance `.hdr` deviennent des textures `RGBA16F`
+  non compressées, pour les ciels. Compression **BC7** (sRGB pour les couleurs, perceptuelle) par
   l'encodeur bc7e de basisu, **BC5** pour les normal maps ; options `srgb`, `normal_map`,
   `mipmaps`, `compress` et `quality` (`fast`, `normal`, `high`). Un glTF déduit le rôle de chaque
   image de son usage : couleur de base et émission en sRGB, métal-rugosité et occlusion en
   linéaire, normales en BC5.
 - **glTF** : l'asset principal est un **modèle** (nœuds de la scène par défaut avec transformations
-  locales). Les primitives d'un maillage deviennent ses sous-maillages, chacun avec son matériau ;
+  locales). Les primitives d'un maillage deviennent ses sous-maillages, chacun avec son matériau,
+  et gardent les tangentes du fichier ou reçoivent des tangentes MikkTSpace ;
   les matériaux reprennent tous les paramètres PBR (y compris `KHR_materials_emissive_strength`).
   Les images référencées par un `.gltf` sont importées comme sous-assets du modèle, même si elles
   sont aussi des textures du projet.
@@ -457,6 +519,7 @@ Dans les deux cas, les sources concernées sont réimportées.
 | basisu (encodeurs BC7, BC5) | compression des textures | 6 ✅ |
 | stb (stb_image)       | décodage des images  | 6 ✅     |
 | efsw                  | surveillance des fichiers | 6 ✅ |
+| mikktspace            | tangentes            | 7 ✅     |
 | Catch2                | tests (feature `tests`) | 0 ✅  |
 
 Hors vcpkg :
@@ -487,10 +550,13 @@ Chaque jalon se termine par une démo observable dans `devex-sandbox` et des tes
 6. ✅ **Assets et textures** — projet `.dvxproj`, `.dvxmeta`, cache d'artefacts binaires, imports
    en arrière-plan sur un pool de jobs, réimport à chaud, textures BC7/BC5 bindless, matériaux
    (`.dvxmat` et glTF), modèles glTF placés en entités, panneau Assets.
+7. ✅ **Rendu PBR** — render graph, forward+ clustered, lumières en unités physiques, ombres en
+   cascades, ciel HDR et IBL, MSAA, exposition automatique, tonemapping AgX, tangentes
+   MikkTSpace, énumérations dans la réflexion.
 
-Ensuite, sans ordre figé : rendu PBR forward+ clustered (normal maps avec tangentes MikkTSpace),
-application éditeur (viewport en texture, mode Play), préfabs liés, DLL gameplay rechargeable,
-export d'un jeu (paquet d'artefacts), CI Linux.
+Ensuite, sans ordre figé : application éditeur (viewport en texture, gizmos, mode Play), préfabs
+liés, DLL gameplay rechargeable, export d'un jeu (paquet d'artefacts), post-traitements (bloom,
+TAA), transparence, CI Linux.
 
 ## Questions ouvertes
 
@@ -498,8 +564,6 @@ export d'un jeu (paquet d'artefacts), CI Linux.
 
 - **Systèmes** : ordre d'exécution et planification des systèmes du jeu (aujourd'hui, le
   gameplay itère lui-même les vues dans `onFixedUpdate` et `onUpdate`).
-- **Environnement de scène** : ciel, lumière ambiante et réglages de rendu sauvegardés avec
-  la scène (aujourd'hui, la couleur du ciel est fixée par l'application).
 - **Physique** : Jolt Physics est le candidat naturel (MIT, utilisé par Godot 4).
 - **Audio** : SDL3 audio, miniaudio ou FMOD/Wwise en option.
 - **UI retenue maison** pour l'éditeur et les jeux, qui remplacera ImGui.
@@ -509,5 +573,7 @@ export d'un jeu (paquet d'artefacts), CI Linux.
 - **Textures partagées** : une image utilisée par un `.gltf` et présente dans le projet est
   importée deux fois ; relier les deux demandera de connaître son rôle (couleur, normale).
 - **Autres plateformes de textures** : ASTC ou Basis Universal pour le mobile, produits à l'export.
-- **Tangentes** : calculées à l'import (MikkTSpace) avec le PBR, ce qui changera la version des
-  maillages.
+- **Culling** : frustum culling sur CPU, puis sur GPU avec dessin indirect.
+- **Ombres locales** : atlas d'ombres pour les spots et cubemaps pour les lumières ponctuelles.
+- **Réflexions locales** : sondes de réflexion placées dans la scène, SSR.
+- **Ciel procédural** : atmosphère physique liée à la lumière directionnelle.

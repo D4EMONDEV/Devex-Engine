@@ -44,6 +44,7 @@ MeshData makeCube(float size)
     addQuad(mesh, -y, x, z);
     addQuad(mesh, z, x, y);
     addQuad(mesh, -z, -x, y);
+    computeTangents(mesh);
     return mesh;
 }
 
@@ -52,6 +53,7 @@ MeshData makePlane(float size)
     const float half = size * 0.5f;
     MeshData mesh;
     addQuad(mesh, math::Vec3{0.0f}, {half, 0.0f, 0.0f}, {0.0f, 0.0f, -half});
+    computeTangents(mesh);
     return mesh;
 }
 
@@ -91,6 +93,7 @@ MeshData makeUvSphere(float radius, std::uint32_t segments, std::uint32_t rings)
             mesh.indices.insert(mesh.indices.end(), quad.begin(), quad.end());
         }
     }
+    computeTangents(mesh);
     return mesh;
 }
 

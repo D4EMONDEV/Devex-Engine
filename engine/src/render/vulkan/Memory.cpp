@@ -4,6 +4,8 @@
 #define VMA_IMPLEMENTATION
 #include "Memory.hpp"
 
+#include "Commands.hpp"
+
 #include <utility>
 
 namespace devex::render::vulkan {
@@ -164,12 +166,13 @@ core::Result<Image> Image::create(const Device& device, const Allocator& allocat
 {
     const VkImageCreateInfo imageInfo{
         .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+        .flags = config.cube ? VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT : VkImageCreateFlags{0},
         .imageType = VK_IMAGE_TYPE_2D,
         .format = config.format,
         .extent = {config.extent.width, config.extent.height, 1},
         .mipLevels = config.mipLevels,
-        .arrayLayers = 1,
-        .samples = VK_SAMPLE_COUNT_1_BIT,
+        .arrayLayers = config.layers,
+        .samples = config.samples,
         .tiling = VK_IMAGE_TILING_OPTIMAL,
         .usage = config.usage,
         .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
@@ -181,25 +184,18 @@ core::Result<Image> Image::create(const Device& device, const Allocator& allocat
     Image image;
     image.m_device = device.handle();
     image.m_allocator = allocator.handle();
-    image.m_format = config.format;
-    image.m_extent = config.extent;
-    image.m_mipLevels = config.mipLevels;
+    image.m_config = config;
     DEVEX_VK_TRY(vmaCreateImage, allocator.handle(), &imageInfo, &allocationInfo, &image.m_image,
                  &image.m_allocation, nullptr);
 
-    const VkImageViewCreateInfo viewInfo{
-        .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-        .image = image.m_image,
-        .viewType = VK_IMAGE_VIEW_TYPE_2D,
-        .format = config.format,
-        .subresourceRange =
-            {
-                .aspectMask = config.aspect,
-                .levelCount = config.mipLevels,
-                .layerCount = 1,
-            },
-    };
-    DEVEX_VK_TRY(vkCreateImageView, device.handle(), &viewInfo, nullptr, &image.m_view);
+    const VkImageViewType type = config.cube          ? VK_IMAGE_VIEW_TYPE_CUBE
+                                 : config.layers > 1 ? VK_IMAGE_VIEW_TYPE_2D_ARRAY
+                                                     : VK_IMAGE_VIEW_TYPE_2D;
+    image.m_view = image.createView(type, 0, config.mipLevels, 0, config.layers);
+    if (image.m_view == VK_NULL_HANDLE)
+    {
+        return core::makeError(core::ErrorCode::Graphics, "cannot create the image view");
+    }
     return image;
 }
 
@@ -209,10 +205,10 @@ Image::Image(Image&& other) noexcept
     , m_image(std::exchange(other.m_image, VK_NULL_HANDLE))
     , m_allocation(std::exchange(other.m_allocation, VK_NULL_HANDLE))
     , m_view(std::exchange(other.m_view, VK_NULL_HANDLE))
-    , m_format(other.m_format)
-    , m_extent(other.m_extent)
-    , m_mipLevels(other.m_mipLevels)
+    , m_config(other.m_config)
+    , m_subviews(std::move(other.m_subviews))
 {
+    other.m_subviews.clear();
 }
 
 Image& Image::operator=(Image&& other) noexcept
@@ -225,9 +221,9 @@ Image& Image::operator=(Image&& other) noexcept
         m_image = std::exchange(other.m_image, VK_NULL_HANDLE);
         m_allocation = std::exchange(other.m_allocation, VK_NULL_HANDLE);
         m_view = std::exchange(other.m_view, VK_NULL_HANDLE);
-        m_format = other.m_format;
-        m_extent = other.m_extent;
-        m_mipLevels = other.m_mipLevels;
+        m_config = other.m_config;
+        m_subviews = std::move(other.m_subviews);
+        other.m_subviews.clear();
     }
     return *this;
 }
@@ -239,6 +235,11 @@ Image::~Image()
 
 void Image::destroy() noexcept
 {
+    for (const Subview& subview : m_subviews)
+    {
+        vkDestroyImageView(m_device, subview.view, nullptr);
+    }
+    m_subviews.clear();
     if (m_view != VK_NULL_HANDLE)
     {
         vkDestroyImageView(m_device, m_view, nullptr);
@@ -252,6 +253,50 @@ void Image::destroy() noexcept
     }
 }
 
+VkImageView Image::createView(VkImageViewType type, std::uint32_t baseMip, std::uint32_t mipCount,
+                              std::uint32_t baseLayer, std::uint32_t layerCount) const
+{
+    const VkImageViewCreateInfo viewInfo{
+        .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+        .image = m_image,
+        .viewType = type,
+        .format = m_config.format,
+        .subresourceRange =
+            {
+                .aspectMask = aspectOf(m_config.format),
+                .baseMipLevel = baseMip,
+                .levelCount = mipCount,
+                .baseArrayLayer = baseLayer,
+                .layerCount = layerCount,
+            },
+    };
+    VkImageView view = VK_NULL_HANDLE;
+    if (vkCreateImageView(m_device, &viewInfo, nullptr, &view) < VK_SUCCESS)
+    {
+        return VK_NULL_HANDLE;
+    }
+    return view;
+}
+
+VkImageView Image::subview(VkImageViewType type, std::uint32_t baseMip, std::uint32_t mipCount,
+                           std::uint32_t baseLayer, std::uint32_t layerCount) const
+{
+    for (const Subview& subview : m_subviews)
+    {
+        if (subview.type == type && subview.baseMip == baseMip && subview.mipCount == mipCount &&
+            subview.baseLayer == baseLayer && subview.layerCount == layerCount)
+        {
+            return subview.view;
+        }
+    }
+    const VkImageView view = createView(type, baseMip, mipCount, baseLayer, layerCount);
+    if (view != VK_NULL_HANDLE)
+    {
+        m_subviews.push_back({type, baseMip, mipCount, baseLayer, layerCount, view});
+    }
+    return view;
+}
+
 VkImage Image::handle() const noexcept
 {
     return m_image;
@@ -262,19 +307,24 @@ VkImageView Image::view() const noexcept
     return m_view;
 }
 
+const ImageConfig& Image::config() const noexcept
+{
+    return m_config;
+}
+
 VkFormat Image::format() const noexcept
 {
-    return m_format;
+    return m_config.format;
 }
 
 math::Extent2D Image::extent() const noexcept
 {
-    return m_extent;
+    return m_config.extent;
 }
 
 std::uint32_t Image::mipLevels() const noexcept
 {
-    return m_mipLevels;
+    return m_config.mipLevels;
 }
 
 } // namespace devex::render::vulkan

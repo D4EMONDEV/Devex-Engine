@@ -28,6 +28,9 @@ ComponentRegistry& componentRegistry()
         builtins.add<MeshRenderer>();
         builtins.add<Camera>();
         builtins.add<DirectionalLight>();
+        builtins.add<PointLight>();
+        builtins.add<SpotLight>();
+        builtins.add<Environment>();
         return builtins;
     }();
     return registry;

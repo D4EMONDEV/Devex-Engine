@@ -19,6 +19,14 @@ using TextureHandle = core::Handle<TextureTag>;
 // Refers to a material created with Renderer::createMaterial.
 using MaterialHandle = core::Handle<MaterialTag>;
 
+enum class Tonemapper : std::uint8_t
+{
+    AgX,
+    PbrNeutral,
+    Aces,
+    None,
+};
+
 struct RenderCamera
 {
     // World to view transform: the inverse of the camera's world transform.
@@ -26,6 +34,56 @@ struct RenderCamera
     float verticalFov = math::radians(60.0f);
     // Distance of the near plane. There is no far plane: depth is reversed and infinite.
     float nearPlane = 0.1f;
+    // Exposure in photographic units: see Camera in the scene module.
+    bool autoExposure = true;
+    float ev100 = 14.0f;
+    float exposureCompensation = 0.0f;
+    float minEv100 = -2.0f;
+    float maxEv100 = 18.0f;
+    float adaptationSpeed = 1.5f;
+    Tonemapper tonemapper = Tonemapper::AgX;
+};
+
+// The directional light, which may cast shadows.
+struct RenderSun
+{
+    // Direction in which the light travels, in world space.
+    math::Vec3 direction{-0.4f, -1.0f, -0.3f};
+    // Linear RGB illuminance in lux; zero disables the sun.
+    math::Vec3 illuminance{0.0f};
+    bool castShadows = true;
+    float shadowDistance = 80.0f;
+};
+
+enum class LightType : std::uint8_t
+{
+    Point,
+    Spot,
+};
+
+struct RenderLight
+{
+    LightType type = LightType::Point;
+    math::Vec3 position{0.0f};
+    // Direction in which a spot light shines, normalized.
+    math::Vec3 direction{0.0f, 0.0f, -1.0f};
+    // Linear RGB luminous intensity in candelas.
+    math::Vec3 intensity{0.0f};
+    float range = 10.0f;
+    // Half angles of a spot light's full and fading cones, in radians.
+    float innerAngle = 0.0f;
+    float outerAngle = 0.0f;
+};
+
+struct RenderEnvironment
+{
+    // An equirectangular high dynamic range texture; invalid for a uniform sky of `color`.
+    TextureHandle sky;
+    math::Vec3 color{1.0f};
+    // Luminance of a sky texel of value 1, in nits.
+    float intensity = 8000.0f;
+    // Rotation around the vertical axis, in radians.
+    float rotation = 0.0f;
 };
 
 // One submesh of a mesh, drawn with a material.
@@ -43,22 +101,22 @@ struct MeshInstance
 // directly, so rendering can later move to its own thread without changing this contract.
 struct RenderWorld
 {
-    // Linear RGBA color of the background.
-    math::Vec4 clearColor{0.02f, 0.02f, 0.03f, 1.0f};
     RenderCamera camera;
-    // Direction in which the sunlight travels, in world space.
-    math::Vec3 lightDirection{-0.4f, -1.0f, -0.3f};
-    // Fraction of the light that reaches surfaces facing away from the sun.
-    float ambient = 0.25f;
+    RenderSun sun;
+    std::vector<RenderLight> lights;
+    RenderEnvironment environment;
     std::vector<MeshInstance> meshes;
 
     // Restores the defaults while keeping allocated storage.
     void reset() noexcept
     {
-        std::vector<MeshInstance> storage = std::move(meshes);
-        storage.clear();
+        std::vector<RenderLight> lightStorage = std::move(lights);
+        std::vector<MeshInstance> meshStorage = std::move(meshes);
+        lightStorage.clear();
+        meshStorage.clear();
         *this = RenderWorld{};
-        meshes = std::move(storage);
+        lights = std::move(lightStorage);
+        meshes = std::move(meshStorage);
     }
 };
 

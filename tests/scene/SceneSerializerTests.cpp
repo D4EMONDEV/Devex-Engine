@@ -228,3 +228,24 @@ position = vec3(1, 2))",
 parent = "b41e7c02-9d3a-4f6e-8c11-5a2e9b7d0f44")",
           "line 2: parent b41e7c02-9d3a-4f6e-8c11-5a2e9b7d0f44 does not exist");
 }
+
+TEST_CASE("Enumerations are saved by name and unknown names are errors", "[scene][serializer]")
+{
+    Scene scene;
+    const Entity camera = scene.createEntity("Camera");
+    scene.add<devex::scene::Camera>(camera, devex::scene::Camera{.tonemapper = devex::scene::Tonemapper::PbrNeutral});
+
+    const std::string text = devex::scene::saveScene(scene);
+    CHECK(text.find("tonemapper = \"pbr_neutral\"") != std::string::npos);
+
+    const auto loaded = devex::scene::loadScene(text);
+    REQUIRE(loaded.has_value());
+    const Entity loadedCamera = loaded->findEntity(scene.uuid(camera));
+    CHECK(loaded->get<devex::scene::Camera>(loadedCamera).tonemapper == devex::scene::Tonemapper::PbrNeutral);
+
+    std::string broken = text;
+    broken.replace(broken.find("pbr_neutral"), 11, "sepia");
+    const auto failed = devex::scene::loadScene(broken);
+    REQUIRE_FALSE(failed.has_value());
+    CHECK(failed.error().message.find("agx") != std::string::npos);
+}

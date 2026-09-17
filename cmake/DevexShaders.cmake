@@ -4,10 +4,12 @@ find_program(DEVEX_SLANGC slangc
     DOC "Slang shader compiler from the Vulkan SDK"
 )
 
-# devex_add_shaders(<target> OUTPUT_DIRECTORY <directory> SOURCES <files.slang...>)
-# Compiles every entry point of each Slang file into <directory>/<name>.spv at build time.
+# devex_add_shaders(<target> OUTPUT_DIRECTORY <directory> SOURCES <files.slang...>
+#                   [MODULES <files.slang...>])
+# Compiles every entry point of each source file into <directory>/<name>.spv at build time.
+# Modules are only imported by sources; the depfiles rebuild the sources that import them.
 function(devex_add_shaders target)
-    cmake_parse_arguments(PARSE_ARGV 1 ARG "" "OUTPUT_DIRECTORY" "SOURCES")
+    cmake_parse_arguments(PARSE_ARGV 1 ARG "" "OUTPUT_DIRECTORY" "SOURCES;MODULES")
 
     set(outputs)
     foreach(source IN LISTS ARG_SOURCES)
@@ -34,6 +36,6 @@ function(devex_add_shaders target)
         list(APPEND outputs "${output}")
     endforeach()
 
-    add_custom_target(${target} ALL DEPENDS ${outputs} SOURCES ${ARG_SOURCES})
+    add_custom_target(${target} ALL DEPENDS ${outputs} SOURCES ${ARG_SOURCES} ${ARG_MODULES})
     set_target_properties(${target} PROPERTIES FOLDER "Shaders")
 endfunction()

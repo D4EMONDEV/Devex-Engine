@@ -79,7 +79,9 @@ std::uint32_t artifactVersion(AssetType type) noexcept
 {
     switch (type)
     {
+    // 2: vertex tangents.
     case AssetType::Mesh:
+        return 2;
     case AssetType::Texture:
     case AssetType::Material:
     case AssetType::Model:

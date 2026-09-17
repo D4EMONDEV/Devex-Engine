@@ -5,6 +5,7 @@
 
 #include <devex/core/Assert.hpp>
 #include <devex/core/Log.hpp>
+#include <devex/render/Photometry.hpp>
 
 #include <imgui.h>
 #include <imgui_impl_vulkan.h>
@@ -13,6 +14,7 @@
 #include <array>
 #include <atomic>
 #include <bit>
+#include <cmath>
 #include <cstring>
 #include <limits>
 #include <utility>
@@ -24,6 +26,11 @@ namespace {
 std::atomic<bool> rendererExists{false};
 
 constexpr std::uint64_t noTimeout = std::numeric_limits<std::uint64_t>::max();
+
+// Local lights beyond this distance share the last cluster slice.
+constexpr float clusterFarPlane = 500.0f;
+
+static_assert(sizeof(ClusterRange) == sizeof(GpuCluster));
 
 [[nodiscard]] VkFormat toVulkanFormat(asset::TextureFormat format) noexcept
 {
@@ -39,6 +46,8 @@ constexpr std::uint64_t noTimeout = std::numeric_limits<std::uint64_t>::max();
         return VK_FORMAT_BC7_UNORM_BLOCK;
     case asset::TextureFormat::Bc7Srgb:
         return VK_FORMAT_BC7_SRGB_BLOCK;
+    case asset::TextureFormat::Rgba16Float:
+        return VK_FORMAT_R16G16B16A16_SFLOAT;
     }
     return VK_FORMAT_UNDEFINED;
 }
@@ -55,6 +64,14 @@ constexpr std::uint64_t noTimeout = std::numeric_limits<std::uint64_t>::max();
         mip.bytes.push_back(static_cast<std::byte>(channel));
     }
     return texture;
+}
+
+[[nodiscard]] math::Mat4 projectionMatrix(const RenderCamera& camera, float aspectRatio) noexcept
+{
+    // Vulkan clip space points Y down, while the engine convention points it up.
+    math::Mat4 clipCorrection{1.0f};
+    clipCorrection[1][1] = -1.0f;
+    return clipCorrection * math::perspectiveReverseZ(camera.verticalFov, aspectRatio, camera.nearPlane);
 }
 
 } // namespace
@@ -148,6 +165,7 @@ VulkanRenderer::VulkanRenderer(platform::Window& window, const RendererConfig& c
                                UploadContext upload) noexcept
     : m_window(window)
     , m_requestedPresentMode(config.presentMode)
+    , m_requestedSamples(config.msaaSamples)
     , m_shaderDirectory(std::move(shaderDirectory))
     , m_instance(std::move(instance))
     , m_surface(std::move(surface))
@@ -197,7 +215,7 @@ core::Result<MeshHandle> VulkanRenderer::createMesh(const asset::MeshData& mesh)
     vertices.reserve(mesh.vertices.size());
     for (const asset::Vertex& vertex : mesh.vertices)
     {
-        vertices.push_back({vertex.position, vertex.uv.x, vertex.normal, vertex.uv.y});
+        vertices.push_back({vertex.position, vertex.uv.x, vertex.normal, vertex.uv.y, vertex.tangent});
     }
     const VkDeviceSize vertexBytes = vertices.size() * sizeof(GpuVertex);
     const VkDeviceSize indexBytes = mesh.indices.size() * sizeof(std::uint32_t);
@@ -279,14 +297,14 @@ core::Result<TextureHandle> VulkanRenderer::createTexture(const asset::TextureDa
     {
         slot = m_freeTextureSlots.back();
     }
-    else if (m_nextTextureSlot < m_bindless->textureCapacity())
+    else if (m_nextTextureSlot < m_descriptors->textureCapacity())
     {
         slot = m_nextTextureSlot;
     }
     else
     {
         return core::makeError(core::ErrorCode::OutOfMemory, "all {} texture slots are in use",
-                               m_bindless->textureCapacity());
+                               m_descriptors->textureCapacity());
     }
 
     core::Result<GpuTexture> uploaded = uploadTexture(texture, slot);
@@ -357,8 +375,7 @@ core::Result<void> VulkanRenderer::endFrame()
         return {};
     }
 
-    if (!m_swapchain || !m_depthImage || !m_meshPipeline || m_swapchainOutdated ||
-        windowPixelSize != m_swapchainWindowPixelSize)
+    if (!m_swapchain || m_swapchainOutdated || windowPixelSize != m_swapchainWindowPixelSize)
     {
         if (core::Result<void> recreated = recreateSwapchain(windowPixelSize); !recreated)
         {
@@ -371,9 +388,15 @@ core::Result<void> VulkanRenderer::endFrame()
     }
 
     const VkDevice device = m_device.handle();
-    FrameContext& frame = m_frames[m_frameIndex % framesInFlight];
+    const auto frameSlot = static_cast<std::uint32_t>(m_frameIndex % framesInFlight);
+    FrameContext& frame = m_frames[frameSlot];
     DEVEX_VK_TRY(vkWaitForFences, device, 1, &frame.completed, VK_TRUE, noTimeout);
     releaseRetiredResources();
+    updateExposure(frame);
+    if (core::Result<void> environment = updateEnvironment(); !environment)
+    {
+        return environment;
+    }
 
     std::uint32_t imageIndex = 0;
     const VkResult acquired = vkAcquireNextImageKHR(device, m_swapchain->handle(), noTimeout,
@@ -398,13 +421,33 @@ core::Result<void> VulkanRenderer::endFrame()
     {
         return materials;
     }
-    writeSceneData(frame);
-    core::Result<std::uint32_t> recorded = recordFrame(frame, imageIndex, drawImGui);
+
+    const math::Extent2D extent = m_swapchain->extent();
+    const float aspectRatio = static_cast<float>(extent.width) / static_cast<float>(extent.height);
+    if (core::Result<void> lights = uploadLights(frame, aspectRatio); !lights)
+    {
+        return lights;
+    }
+
+    const RenderSun& sun = m_world.sun;
+    const bool sunEnabled = std::max({sun.illuminance.r, sun.illuminance.g, sun.illuminance.b}) > 0.0f;
+    const bool drawShadows = sunEnabled && sun.castShadows && sun.shadowDistance > m_world.camera.nearPlane;
+    m_cascades.reset();
+    if (drawShadows)
+    {
+        m_cascades = computeShadowCascades(math::inverse(m_world.camera.view), m_world.camera.verticalFov,
+                                           aspectRatio, m_world.camera.nearPlane, sun.shadowDistance,
+                                           sun.direction, shadowMapSize);
+    }
+    writeSceneData(frame, m_cascades);
+
+    core::Result<std::uint32_t> recorded = recordFrame(frame, frameSlot, imageIndex, drawImGui, drawShadows);
     if (!recorded)
     {
         return std::unexpected(recorded.error());
     }
     m_lastDrawCalls = *recorded;
+    m_lastLightCount = static_cast<std::uint32_t>(m_world.lights.size());
 
     const VkSemaphore presentSemaphore = m_presentSemaphores[imageIndex];
     const VkSemaphoreSubmitInfo waitInfo{
@@ -483,31 +526,39 @@ core::Result<void> VulkanRenderer::createFrameContexts()
         const VkSemaphoreCreateInfo semaphoreInfo{.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
         DEVEX_VK_TRY(vkCreateSemaphore, device, &semaphoreInfo, nullptr, &frame.imageAcquired);
 
-        core::Result<Buffer> sceneData =
-            Buffer::create(m_allocator, {
-                                            .size = sizeof(GpuSceneData),
-                                            .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
-                                                     VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-                                            .hostVisible = true,
-                                        });
-        if (!sceneData)
+        for (const auto& [buffer, bytes] :
+             {std::pair<std::optional<Buffer>*, VkDeviceSize>{&frame.sceneData, sizeof(GpuSceneData)},
+              {&frame.luminance, VkDeviceSize{luminanceGridWidth} * luminanceGridHeight * sizeof(float)}})
         {
-            return std::unexpected(sceneData.error());
+            core::Result<Buffer> created =
+                Buffer::create(m_allocator, {
+                                                .size = bytes,
+                                                .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+                                                         VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+                                                .hostVisible = true,
+                                            });
+            if (!created)
+            {
+                return std::unexpected(created.error());
+            }
+            *buffer = std::move(*created);
         }
-        frame.sceneData = std::move(*sceneData);
     }
     return {};
 }
 
 core::Result<void> VulkanRenderer::createDefaultResources()
 {
-    core::Result<BindlessSet> bindless =
-        BindlessSet::create(m_device, std::min(m_device.maxBindlessTextures(), maxTextures));
-    if (!bindless)
+    m_samples = m_device.sampleCount(m_requestedSamples);
+
+    core::Result<DescriptorSets> descriptors = DescriptorSets::create(
+        m_device, std::min(m_device.maxBindlessTextures(), maxTextures),
+        static_cast<std::uint32_t>(framesInFlight));
+    if (!descriptors)
     {
-        return std::unexpected(bindless.error());
+        return std::unexpected(descriptors.error());
     }
-    m_bindless = std::move(*bindless);
+    m_descriptors = std::move(*descriptors);
 
     core::Result<GpuTexture> white = uploadTexture(solidTexture({255, 255, 255, 255}), whiteTextureSlot);
     if (!white)
@@ -525,7 +576,189 @@ core::Result<void> VulkanRenderer::createDefaultResources()
     }
     m_flatNormalTexture = std::move(*flatNormal);
 
-    m_defaultMaterial = m_materials.insert(MaterialDesc{.baseColorFactor = {0.72f, 0.74f, 0.78f, 1.0f}});
+    m_defaultMaterial = m_materials.insert(MaterialDesc{
+        .baseColorFactor = {0.72f, 0.74f, 0.78f, 1.0f},
+        .roughnessFactor = 0.6f,
+    });
+
+    core::Result<std::unique_ptr<EnvironmentBaker>> baker =
+        EnvironmentBaker::create(m_device, m_allocator, m_upload, m_shaderDirectory);
+    if (!baker)
+    {
+        return std::unexpected(baker.error());
+    }
+    m_baker = std::move(*baker);
+
+    core::Result<Image> brdfTable = m_baker->bakeBrdfTable();
+    if (!brdfTable)
+    {
+        return std::unexpected(brdfTable.error());
+    }
+    m_brdfTable = std::move(*brdfTable);
+    m_descriptors->setBrdfLut(m_brdfTable->view());
+
+    // A white sky, tinted and scaled by the environment settings, stands in for sky textures.
+    core::Result<EnvironmentMaps> uniform = m_baker->bake(m_whiteTexture->image.view(), 1);
+    if (!uniform)
+    {
+        return std::unexpected(uniform.error());
+    }
+    m_uniformEnvironment = std::move(*uniform);
+    m_descriptors->setEnvironment(m_uniformEnvironment->specular.view(),
+                                  m_uniformEnvironment->irradiance.view(),
+                                  m_whiteTexture->image.view());
+    m_environmentBound = true;
+
+    if (m_samples != VK_SAMPLE_COUNT_1_BIT)
+    {
+        DEVEX_LOG_DEBUG("Scene rendered with {}x multisampling", static_cast<std::uint32_t>(m_samples));
+    }
+    return createScenePipelines();
+}
+
+core::Result<void> VulkanRenderer::createScenePipelines()
+{
+    const VkDevice device = m_device.handle();
+    const std::array globalOnly{m_descriptors->globalLayout()};
+    const std::array bothSets{m_descriptors->globalLayout(), m_descriptors->frameLayout()};
+
+    GraphicsPipelineConfig meshConfig{
+        .shaderPath = m_shaderDirectory / "mesh.spv",
+        .setLayouts = bothSets,
+        .pushConstantSize = sizeof(DrawPushConstants),
+        .colorFormat = sceneFormat,
+        .depthFormat = depthFormat,
+        .samples = m_samples,
+    };
+    core::Result<Pipeline> mesh = createGraphicsPipeline(device, meshConfig);
+    meshConfig.cullMode = VK_CULL_MODE_NONE;
+    core::Result<Pipeline> doubleSided = createGraphicsPipeline(device, meshConfig);
+
+    core::Result<Pipeline> shadow = createGraphicsPipeline(
+        device, {
+                    .shaderPath = m_shaderDirectory / "shadow.spv",
+                    .setLayouts = globalOnly,
+                    .pushConstantSize = sizeof(DrawPushConstants),
+                    .depthFormat = depthFormat,
+                    .cullMode = VK_CULL_MODE_NONE,
+                    .depthCompare = VK_COMPARE_OP_LESS_OR_EQUAL,
+                    .depthBias = true,
+                    .depthClamp = m_device.supportsDepthClamp(),
+                });
+
+    // The sky covers what no geometry wrote, at the infinitely far depth 0.
+    core::Result<Pipeline> sky = createGraphicsPipeline(
+        device, {
+                    .shaderPath = m_shaderDirectory / "sky.spv",
+                    .setLayouts = globalOnly,
+                    .pushConstantSize = sizeof(SkyPushConstants),
+                    .colorFormat = sceneFormat,
+                    .depthFormat = depthFormat,
+                    .samples = m_samples,
+                    .cullMode = VK_CULL_MODE_NONE,
+                    .depthWrite = false,
+                });
+
+    core::Result<Pipeline> luminance = createComputePipeline(
+        device, {
+                    .shaderPath = m_shaderDirectory / "luminance.spv",
+                    .entry = "computeMain",
+                    .setLayouts = bothSets,
+                    .pushConstantSize = sizeof(LuminancePushConstants),
+                });
+
+    for (core::Result<Pipeline>* result : {&mesh, &doubleSided, &shadow, &sky, &luminance})
+    {
+        if (!*result)
+        {
+            return std::unexpected(result->error());
+        }
+    }
+    m_meshPipeline = std::move(*mesh);
+    m_doubleSidedPipeline = std::move(*doubleSided);
+    m_shadowPipeline = std::move(*shadow);
+    m_skyPipeline = std::move(*sky);
+    m_luminancePipeline = std::move(*luminance);
+    return {};
+}
+
+core::Result<void> VulkanRenderer::recreateSwapchain(math::Extent2D windowPixelSize)
+{
+    const VkDevice device = m_device.handle();
+    DEVEX_VK_TRY(vkDeviceWaitIdle, device);
+
+    core::Result<Swapchain> swapchain =
+        Swapchain::create(m_device, m_surface.handle(),
+                          {
+                              .windowPixelSize = windowPixelSize,
+                              .presentMode = m_requestedPresentMode,
+                              .previous = m_swapchain ? m_swapchain->handle() : VK_NULL_HANDLE,
+                          });
+    if (!swapchain)
+    {
+        // The window can lose its drawable area between the size check and this point: retry on
+        // a later frame.
+        if (swapchain.error().code == core::ErrorCode::InvalidState)
+        {
+            m_swapchainOutdated = true;
+            return {};
+        }
+        return std::unexpected(swapchain.error());
+    }
+
+    const bool isFirstSwapchain = !m_swapchain.has_value();
+    const VkFormat previousFormat = m_swapchain ? m_swapchain->format() : VK_FORMAT_UNDEFINED;
+    m_swapchain = std::move(*swapchain);
+
+    destroyPresentSemaphores();
+    const VkSemaphoreCreateInfo semaphoreInfo{.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
+    for (std::uint32_t image = 0; image < m_swapchain->imageCount(); ++image)
+    {
+        VkSemaphore semaphore = VK_NULL_HANDLE;
+        DEVEX_VK_TRY(vkCreateSemaphore, device, &semaphoreInfo, nullptr, &semaphore);
+        m_presentSemaphores.push_back(semaphore);
+    }
+
+    if (!m_tonemapPipeline || previousFormat != m_swapchain->format())
+    {
+        m_tonemapPipeline.reset();
+        const std::array bothSets{m_descriptors->globalLayout(), m_descriptors->frameLayout()};
+        core::Result<Pipeline> tonemap = createGraphicsPipeline(
+            device, {
+                        .shaderPath = m_shaderDirectory / "tonemap.spv",
+                        .setLayouts = bothSets,
+                        .pushConstantSize = sizeof(TonemapPushConstants),
+                        .colorFormat = m_swapchain->format(),
+                        .cullMode = VK_CULL_MODE_NONE,
+                        .depthTest = false,
+                        .depthWrite = false,
+                    });
+        if (!tonemap)
+        {
+            return std::unexpected(tonemap.error());
+        }
+        m_tonemapPipeline = std::move(*tonemap);
+    }
+
+    m_swapchainWindowPixelSize = windowPixelSize;
+    m_swapchainOutdated = false;
+
+    const math::Extent2D extent = m_swapchain->extent();
+    if (isFirstSwapchain)
+    {
+        DEVEX_LOG_INFO("Swapchain {}x{} with {} images, {} presentation", extent.width,
+                       extent.height, m_swapchain->imageCount(),
+                       toString(m_swapchain->presentMode()));
+        if (m_swapchain->presentMode() != m_requestedPresentMode)
+        {
+            DEVEX_LOG_WARNING("The display does not support {} presentation, using FIFO",
+                              toString(m_requestedPresentMode));
+        }
+    }
+    else
+    {
+        DEVEX_LOG_TRACE("Swapchain recreated at {}x{}", extent.width, extent.height);
+    }
     return {};
 }
 
@@ -589,19 +822,19 @@ core::Result<VulkanRenderer::GpuTexture> VulkanRenderer::uploadTexture(
     const VkImage imageHandle = image->handle();
     const core::Result<void> uploaded = m_upload.submit([&](VkCommandBuffer commandBuffer) {
         transitionImage(commandBuffer, imageHandle, ImageState::Undefined,
-                        ImageState::TransferDestination, mipLevels);
+                        ImageState::TransferDestination);
         vkCmdCopyBufferToImage(commandBuffer, staging->handle(), imageHandle,
                                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                                static_cast<std::uint32_t>(copies.size()), copies.data());
         transitionImage(commandBuffer, imageHandle, ImageState::TransferDestination,
-                        ImageState::ShaderReadOnly, mipLevels);
+                        ImageState::ShaderReadOnly);
     });
     if (!uploaded)
     {
         return std::unexpected(uploaded.error());
     }
 
-    m_bindless->setTexture(slot, image->view());
+    m_descriptors->setTexture(slot, image->view());
     return GpuTexture{.image = std::move(*image), .slot = slot};
 }
 
@@ -629,6 +862,29 @@ GpuMaterial VulkanRenderer::toGpuMaterial(const MaterialDesc& material) const no
     };
 }
 
+core::Result<void> VulkanRenderer::ensureHostBuffer(std::optional<Buffer>& buffer, VkDeviceSize bytes) const
+{
+    if (buffer && buffer->size() >= bytes)
+    {
+        return {};
+    }
+    // Grows geometrically; the fence of the frame owning the buffer was waited for.
+    buffer.reset();
+    core::Result<Buffer> created =
+        Buffer::create(m_allocator, {
+                                        .size = std::max<VkDeviceSize>(bytes * 2, 4096),
+                                        .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+                                                 VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+                                        .hostVisible = true,
+                                    });
+    if (!created)
+    {
+        return std::unexpected(created.error());
+    }
+    buffer = std::move(*created);
+    return {};
+}
+
 core::Result<void> VulkanRenderer::updateFrameMaterials(FrameContext& frame)
 {
     if (m_materialsChanged)
@@ -647,228 +903,227 @@ core::Result<void> VulkanRenderer::updateFrameMaterials(FrameContext& frame)
     }
 
     const VkDeviceSize requiredBytes = m_gpuMaterials.size() * sizeof(GpuMaterial);
-    if (!frame.materials || frame.materials->size() < requiredBytes)
+    if (core::Result<void> ensured = ensureHostBuffer(frame.materials, requiredBytes); !ensured)
     {
-        // Grows geometrically; the fence of this frame was waited for, so no GPU work reads it.
-        const VkDeviceSize capacity =
-            std::max<VkDeviceSize>(requiredBytes * 2, 64 * sizeof(GpuMaterial));
-        frame.materials.reset();
-        core::Result<Buffer> buffer =
-            Buffer::create(m_allocator, {
-                                            .size = capacity,
-                                            .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
-                                                     VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-                                            .hostVisible = true,
-                                        });
-        if (!buffer)
-        {
-            return std::unexpected(buffer.error());
-        }
-        frame.materials = std::move(*buffer);
+        return ensured;
     }
     std::memcpy(frame.materials->mappedBytes().data(), m_gpuMaterials.data(), requiredBytes);
     frame.materialVersion = m_materialVersion;
     return {};
 }
 
-core::Result<void> VulkanRenderer::recreateSwapchain(math::Extent2D windowPixelSize)
+core::Result<void> VulkanRenderer::updateEnvironment()
 {
-    const VkDevice device = m_device.handle();
-    DEVEX_VK_TRY(vkDeviceWaitIdle, device);
-
-    core::Result<Swapchain> swapchain =
-        Swapchain::create(m_device, m_surface.handle(),
-                          {
-                              .windowPixelSize = windowPixelSize,
-                              .presentMode = m_requestedPresentMode,
-                              .previous = m_swapchain ? m_swapchain->handle() : VK_NULL_HANDLE,
-                          });
-    if (!swapchain)
+    const TextureHandle requested =
+        m_textures.contains(m_world.environment.sky) ? m_world.environment.sky : TextureHandle{};
+    if (m_environmentBound && requested == m_environmentSource)
     {
-        // The window can lose its drawable area between the size check and this point: retry on
-        // a later frame.
-        if (swapchain.error().code == core::ErrorCode::InvalidState)
+        return {};
+    }
+    // A texture that cannot be baked is not tried again every frame.
+    if (requested.isValid() && requested == m_failedEnvironment && m_environmentBound &&
+        !m_environmentSource.isValid())
+    {
+        return {};
+    }
+
+    if (m_textureEnvironment)
+    {
+        m_retiredEnvironments.push_back({std::move(*m_textureEnvironment), m_frameIndex});
+        m_textureEnvironment.reset();
+    }
+
+    if (requested.isValid())
+    {
+        const GpuTexture* const texture = m_textures.find(requested);
+        core::Result<EnvironmentMaps> maps =
+            m_baker->bake(texture->image.view(), texture->image.extent().width);
+        if (maps)
         {
-            m_swapchainOutdated = true;
+            m_textureEnvironment = std::move(*maps);
+            m_descriptors->setEnvironment(m_textureEnvironment->specular.view(),
+                                          m_textureEnvironment->irradiance.view(),
+                                          texture->image.view());
+            m_environmentSource = requested;
+            m_environmentBound = true;
             return {};
         }
-        return std::unexpected(swapchain.error());
+        DEVEX_LOG_ERROR("Cannot bake the environment lighting: {}", maps.error());
+        m_failedEnvironment = requested;
     }
 
-    const bool isFirstSwapchain = !m_swapchain.has_value();
-    const VkFormat previousFormat = m_swapchain ? m_swapchain->format() : VK_FORMAT_UNDEFINED;
-    m_swapchain = std::move(*swapchain);
-
-    destroyPresentSemaphores();
-    const VkSemaphoreCreateInfo semaphoreInfo{.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
-    for (std::uint32_t image = 0; image < m_swapchain->imageCount(); ++image)
-    {
-        VkSemaphore semaphore = VK_NULL_HANDLE;
-        DEVEX_VK_TRY(vkCreateSemaphore, device, &semaphoreInfo, nullptr, &semaphore);
-        m_presentSemaphores.push_back(semaphore);
-    }
-
-    m_depthImage.reset();
-    core::Result<Image> depthImage =
-        Image::create(m_device, m_allocator,
-                      {
-                          .format = depthFormat,
-                          .extent = m_swapchain->extent(),
-                          .usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
-                          .aspect = VK_IMAGE_ASPECT_DEPTH_BIT,
-                      });
-    if (!depthImage)
-    {
-        return std::unexpected(depthImage.error());
-    }
-    m_depthImage = std::move(*depthImage);
-    // The depth image stays in its attachment layout for its whole life: every frame clears it,
-    // so frames in flight never need a barrier on the image they share.
-    const VkImage depthHandle = m_depthImage->handle();
-    if (core::Result<void> transitioned = m_upload.submit([depthHandle](VkCommandBuffer commands) {
-            transitionImage(commands, depthHandle, ImageState::Undefined,
-                            ImageState::DepthAttachment);
-        });
-        !transitioned)
-    {
-        return transitioned;
-    }
-
-    if (!m_meshPipeline || !m_doubleSidedPipeline || previousFormat != m_swapchain->format())
-    {
-        m_meshPipeline.reset();
-        m_doubleSidedPipeline.reset();
-        MeshPipelineConfig pipelineConfig{
-            .shaderPath = m_shaderDirectory / "mesh.spv",
-            .colorFormat = m_swapchain->format(),
-            .depthFormat = depthFormat,
-            .textureSetLayout = m_bindless->layout(),
-        };
-        core::Result<GraphicsPipeline> pipeline = createMeshPipeline(device, pipelineConfig);
-        if (!pipeline)
-        {
-            return std::unexpected(pipeline.error());
-        }
-        m_meshPipeline = std::move(*pipeline);
-
-        pipelineConfig.cullBackFaces = false;
-        core::Result<GraphicsPipeline> doubleSided = createMeshPipeline(device, pipelineConfig);
-        if (!doubleSided)
-        {
-            return std::unexpected(doubleSided.error());
-        }
-        m_doubleSidedPipeline = std::move(*doubleSided);
-    }
-
-    m_swapchainWindowPixelSize = windowPixelSize;
-    m_swapchainOutdated = false;
-
-    const math::Extent2D extent = m_swapchain->extent();
-    if (isFirstSwapchain)
-    {
-        DEVEX_LOG_INFO("Swapchain {}x{} with {} images, {} presentation", extent.width,
-                       extent.height, m_swapchain->imageCount(),
-                       toString(m_swapchain->presentMode()));
-        if (m_swapchain->presentMode() != m_requestedPresentMode)
-        {
-            DEVEX_LOG_WARNING("The display does not support {} presentation, using FIFO",
-                              toString(m_requestedPresentMode));
-        }
-    }
-    else
-    {
-        DEVEX_LOG_TRACE("Swapchain recreated at {}x{}", extent.width, extent.height);
-    }
+    m_descriptors->setEnvironment(m_uniformEnvironment->specular.view(),
+                                  m_uniformEnvironment->irradiance.view(),
+                                  m_whiteTexture->image.view());
+    m_environmentSource = {};
+    m_environmentBound = true;
     return {};
 }
 
-void VulkanRenderer::writeSceneData(const FrameContext& frame) const noexcept
+void VulkanRenderer::updateExposure(FrameContext& frame)
+{
+    const RenderCamera& camera = m_world.camera;
+    const auto now = std::chrono::steady_clock::now();
+    const float deltaSeconds =
+        m_exposureInitialized
+            ? std::clamp(std::chrono::duration<float>(now - m_lastExposureUpdate).count(), 0.0f, 0.25f)
+            : 0.0f;
+    m_lastExposureUpdate = now;
+
+    if (!camera.autoExposure)
+    {
+        m_ev100 = camera.ev100 - camera.exposureCompensation;
+        m_targetEv100 = m_ev100;
+        m_exposureInitialized = true;
+        frame.luminanceMeasured = false;
+        return;
+    }
+    if (!m_exposureInitialized)
+    {
+        m_ev100 = camera.ev100 - camera.exposureCompensation;
+        m_targetEv100 = m_ev100;
+        m_exposureInitialized = true;
+    }
+
+    // This frame context measured the frame it recorded last time, which has now completed.
+    if (frame.luminanceMeasured && frame.exposure > 0.0f)
+    {
+        const std::span<const std::byte> bytes = frame.luminance->mappedBytes();
+        m_luminanceSamples.resize(luminanceGridWidth * luminanceGridHeight);
+        std::memcpy(m_luminanceSamples.data(), bytes.data(), m_luminanceSamples.size() * sizeof(float));
+        for (float& sample : m_luminanceSamples)
+        {
+            sample /= frame.exposure;
+        }
+        if (const float average = averageLuminance(m_luminanceSamples); average > 0.0f)
+        {
+            m_targetEv100 = std::clamp(ev100FromAverageLuminance(average) - camera.exposureCompensation,
+                                       camera.minEv100, camera.maxEv100);
+        }
+        frame.luminanceMeasured = false;
+    }
+    m_ev100 = adaptExposure(m_ev100, m_targetEv100, camera.adaptationSpeed, deltaSeconds);
+}
+
+core::Result<void> VulkanRenderer::uploadLights(FrameContext& frame, float aspectRatio)
+{
+    m_gpuLights.clear();
+    for (const RenderLight& light : m_world.lights)
+    {
+        GpuLight gpuLight{
+            .position = light.position,
+            .range = std::max(light.range, 1e-3f),
+            .direction = math::length(light.direction) > 0.0f ? math::normalize(light.direction)
+                                                              : math::Vec3{0.0f, 0.0f, -1.0f},
+            .intensity = light.intensity,
+        };
+        if (light.type == LightType::Spot)
+        {
+            const float cosOuter = std::cos(std::max(light.outerAngle, 1e-3f));
+            const float cosInner = std::cos(std::clamp(light.innerAngle, 0.0f, light.outerAngle));
+            gpuLight.spotScale = 1.0f / std::max(cosInner - cosOuter, 1e-4f);
+            gpuLight.spotOffset = -cosOuter * gpuLight.spotScale;
+        }
+        m_gpuLights.push_back(gpuLight);
+    }
+
+    const ClusterGrid grid{
+        .nearPlane = m_world.camera.nearPlane,
+        .farPlane = std::max(clusterFarPlane, m_world.camera.nearPlane * 2.0f),
+    };
+    assignLightsToClusters(grid, m_world.camera.view, m_world.camera.verticalFov, aspectRatio,
+                           m_world.lights, m_clusters);
+
+    const VkDeviceSize lightBytes = std::max<std::size_t>(m_gpuLights.size(), 1) * sizeof(GpuLight);
+    const VkDeviceSize clusterBytes = m_clusters.clusters.size() * sizeof(GpuCluster);
+    const VkDeviceSize indexBytes =
+        std::max<std::size_t>(m_clusters.lightIndices.size(), 1) * sizeof(std::uint32_t);
+    for (const auto& [buffer, bytes] :
+         {std::pair<std::optional<Buffer>*, VkDeviceSize>{&frame.lights, lightBytes},
+          {&frame.clusters, clusterBytes},
+          {&frame.clusterLights, indexBytes}})
+    {
+        if (core::Result<void> ensured = ensureHostBuffer(*buffer, bytes); !ensured)
+        {
+            return ensured;
+        }
+    }
+    std::memcpy(frame.lights->mappedBytes().data(), m_gpuLights.data(), m_gpuLights.size() * sizeof(GpuLight));
+    std::memcpy(frame.clusters->mappedBytes().data(), m_clusters.clusters.data(), clusterBytes);
+    std::memcpy(frame.clusterLights->mappedBytes().data(), m_clusters.lightIndices.data(),
+                m_clusters.lightIndices.size() * sizeof(std::uint32_t));
+    return {};
+}
+
+void VulkanRenderer::writeSceneData(FrameContext& frame,
+                                    const std::optional<ShadowCascades>& cascades) const noexcept
 {
     const math::Extent2D extent = m_swapchain->extent();
     const float aspectRatio = static_cast<float>(extent.width) / static_cast<float>(extent.height);
-
-    // Vulkan clip space points Y down, while the engine convention points it up.
-    math::Mat4 clipCorrection{1.0f};
-    clipCorrection[1][1] = -1.0f;
-
     const RenderCamera& camera = m_world.camera;
-    const float lightLength = math::length(m_world.lightDirection);
+    const math::Mat4 projection = projectionMatrix(camera, aspectRatio);
+
+    math::Mat4 rotationOnly = camera.view;
+    rotationOnly[3] = math::Vec4{0.0f, 0.0f, 0.0f, 1.0f};
 
     GpuSceneData scene;
-    scene.viewProjection =
-        clipCorrection *
-        math::perspectiveReverseZ(camera.verticalFov, aspectRatio, camera.nearPlane) * camera.view;
-    scene.lightDirection = lightLength > 0.0f ? m_world.lightDirection / lightLength
-                                              : math::Vec3{0.0f, -1.0f, 0.0f};
-    scene.ambient = m_world.ambient;
-    scene.materials = frame.materials->deviceAddress();
+    scene.viewProjection = projection * camera.view;
+    scene.view = camera.view;
+    scene.skyInverseViewProjection = math::inverse(projection * rotationOnly);
+    scene.cameraPosition = math::Vec3(math::inverse(camera.view)[3]);
+    scene.exposure = exposureFromEv100(m_ev100);
+    frame.exposure = scene.exposure;
 
-    // The fence of this frame context has been waited for, so no GPU work reads the buffer.
+    const RenderSun& sun = m_world.sun;
+    const float sunLength = math::length(sun.direction);
+    scene.sunDirection = sunLength > 0.0f ? sun.direction / sunLength : math::Vec3{0.0f, -1.0f, 0.0f};
+    scene.sunIlluminance = sun.illuminance;
+    if (std::max({sun.illuminance.r, sun.illuminance.g, sun.illuminance.b}) > 0.0f)
+    {
+        scene.sunFlags |= sunEnabledFlag;
+    }
+    if (cascades)
+    {
+        scene.sunFlags |= sunCastsShadowsFlag;
+        for (std::uint32_t cascade = 0; cascade < cascadeCount; ++cascade)
+        {
+            scene.cascadeSplits[static_cast<int>(cascade)] = cascades->splitDistances[cascade];
+            scene.cascadeTexelSizes[static_cast<int>(cascade)] = cascades->texelSizes[cascade];
+            scene.cascadeViewProjections[cascade] = cascades->viewProjections[cascade];
+        }
+        scene.shadowDistance = sun.shadowDistance;
+    }
+
+    const RenderEnvironment& environment = m_world.environment;
+    scene.environmentIntensity = environment.intensity;
+    scene.environmentColor = environment.color;
+    scene.environmentRotation = environment.rotation;
+    scene.specularMipCount = static_cast<float>(EnvironmentBaker::specularMipCount);
+
+    scene.viewportWidth = static_cast<float>(extent.width);
+    scene.viewportHeight = static_cast<float>(extent.height);
+    const ClusterGrid grid;
+    scene.clusterCountX = grid.tilesX;
+    scene.clusterCountY = grid.tilesY;
+    scene.clusterCountZ = grid.slices;
+    scene.lightCount = static_cast<std::uint32_t>(m_world.lights.size());
+    scene.clusterSliceScale = m_clusters.sliceScale;
+    scene.clusterSliceBias = m_clusters.sliceBias;
+
+    scene.materials = frame.materials->deviceAddress();
+    scene.lights = frame.lights->deviceAddress();
+    scene.clusters = frame.clusters->deviceAddress();
+    scene.clusterLights = frame.clusterLights->deviceAddress();
+
     std::memcpy(frame.sceneData->mappedBytes().data(), &scene, sizeof(scene));
 }
 
-core::Result<std::uint32_t> VulkanRenderer::recordFrame(const FrameContext& frame,
-                                                        std::uint32_t imageIndex,
-                                                        bool drawImGui) const
+std::uint32_t VulkanRenderer::drawMeshes(VkCommandBuffer commandBuffer, VkDeviceAddress sceneData,
+                                         const Pipeline* shadowPipeline, std::uint32_t cascade,
+                                         std::uint32_t frameSlot) const
 {
-    const VkCommandBuffer commandBuffer = frame.commandBuffer;
-    DEVEX_VK_TRY(vkResetCommandPool, m_device.handle(), frame.commandPool, 0);
-
-    const VkCommandBufferBeginInfo beginInfo{
-        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-        .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
-    };
-    DEVEX_VK_TRY(vkBeginCommandBuffer, commandBuffer, &beginInfo);
-
-    const VkImage backbuffer = m_swapchain->image(imageIndex);
-    transitionImage(commandBuffer, backbuffer, ImageState::AcquiredBackbuffer,
-                    ImageState::ColorAttachment);
-
-    const math::Vec4& clearColor = m_world.clearColor;
-    const VkRenderingAttachmentInfo colorAttachment{
-        .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-        .imageView = m_swapchain->imageView(imageIndex),
-        .imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-        .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
-        .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-        .clearValue = {.color = {.float32 = {clearColor.r, clearColor.g, clearColor.b,
-                                             clearColor.a}}},
-    };
-    // With reversed depth, 0 is infinitely far away.
-    const VkRenderingAttachmentInfo depthAttachment{
-        .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-        .imageView = m_depthImage->view(),
-        .imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
-        .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
-        .storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-        .clearValue = {.depthStencil = {.depth = 0.0f}},
-    };
-    const math::Extent2D extent = m_swapchain->extent();
-    const VkRenderingInfo renderingInfo{
-        .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
-        .renderArea = {.offset = {0, 0}, .extent = {extent.width, extent.height}},
-        .layerCount = 1,
-        .colorAttachmentCount = 1,
-        .pColorAttachments = &colorAttachment,
-        .pDepthAttachment = &depthAttachment,
-    };
-    vkCmdBeginRendering(commandBuffer, &renderingInfo);
-
-    const VkViewport viewport{
-        .width = static_cast<float>(extent.width),
-        .height = static_cast<float>(extent.height),
-        .maxDepth = 1.0f,
-    };
-    vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
-    const VkRect2D scissor{.offset = {0, 0}, .extent = {extent.width, extent.height}};
-    vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
-
-    // Both pipelines share the same layout, so the textures stay bound when switching.
-    const VkDescriptorSet textureSet = m_bindless->handle();
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_meshPipeline->layout(),
-                            0, 1, &textureSet, 0, nullptr);
-    const VkDeviceAddress sceneData = frame.sceneData->deviceAddress();
-    const GraphicsPipeline* boundPipeline = nullptr;
+    const std::array sets{m_descriptors->global(), m_descriptors->frame(frameSlot)};
+    const Pipeline* boundPipeline = nullptr;
     std::uint32_t drawCalls = 0;
     for (const MeshInstance& instance : m_world.meshes)
     {
@@ -880,14 +1135,17 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(const FrameContext& fram
         }
 
         const MaterialDesc* const material = m_materials.find(instance.material);
-        const MaterialHandle materialHandle = material != nullptr ? instance.material
-                                                                  : m_defaultMaterial;
-        const GraphicsPipeline* const pipeline =
-            material != nullptr && material->doubleSided ? &*m_doubleSidedPipeline
-                                                         : &*m_meshPipeline;
+        const MaterialHandle materialHandle = material != nullptr ? instance.material : m_defaultMaterial;
+        const Pipeline* const pipeline =
+            shadowPipeline != nullptr                           ? shadowPipeline
+            : material != nullptr && material->doubleSided ? &*m_doubleSidedPipeline
+                                                                : &*m_meshPipeline;
         if (pipeline != boundPipeline)
         {
             vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->handle());
+            // Shadow passes only use the global set.
+            vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->layout(), 0,
+                                    shadowPipeline != nullptr ? 1u : 2u, sets.data(), 0, nullptr);
             boundPipeline = pipeline;
         }
 
@@ -896,6 +1154,7 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(const FrameContext& fram
             .vertices = mesh->vertices.deviceAddress(),
             .world = instance.transform,
             .material = materialHandle.index,
+            .cascade = cascade,
         };
         vkCmdPushConstants(commandBuffer, pipeline->layout(),
                            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
@@ -905,32 +1164,229 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(const FrameContext& fram
         vkCmdDrawIndexed(commandBuffer, submesh.indexCount, 1, submesh.firstIndex, 0, 0);
         ++drawCalls;
     }
-    vkCmdEndRendering(commandBuffer);
+    return drawCalls;
+}
 
-    // Tools are drawn over the scene, without depth.
-    if (ImDrawData* const drawData = drawImGui ? ImGui::GetDrawData() : nullptr;
-        drawData != nullptr && drawData->Valid)
+core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std::uint32_t frameSlot,
+                                                        std::uint32_t imageIndex, bool drawImGui,
+                                                        bool drawShadows)
+{
+    const VkCommandBuffer commandBuffer = frame.commandBuffer;
+    DEVEX_VK_TRY(vkResetCommandPool, m_device.handle(), frame.commandPool, 0);
+    const VkCommandBufferBeginInfo beginInfo{
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+        .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+    };
+    DEVEX_VK_TRY(vkBeginCommandBuffer, commandBuffer, &beginInfo);
+
+    const math::Extent2D extent = m_swapchain->extent();
+    const bool multisampled = m_samples != VK_SAMPLE_COUNT_1_BIT;
+    RenderGraph graph(m_device, m_allocator, frame.images);
+
+    ImageState backbufferState = ImageState::AcquiredBackbuffer;
+    const RenderGraph::ImageId backbuffer =
+        graph.importImage(m_swapchain->image(imageIndex), m_swapchain->imageView(imageIndex),
+                          m_swapchain->format(), backbufferState);
+
+    core::Result<RenderGraph::ImageId> shadowMap = graph.createImage({
+        .format = depthFormat,
+        .extent = {shadowMapSize, shadowMapSize},
+        .usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+        .layers = cascadeCount,
+    });
+    core::Result<RenderGraph::ImageId> sceneColor = graph.createImage({
+        .format = sceneFormat,
+        .extent = extent,
+        .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+    });
+    core::Result<RenderGraph::ImageId> depth = graph.createImage({
+        .format = depthFormat,
+        .extent = extent,
+        .usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+        .samples = m_samples,
+    });
+    core::Result<RenderGraph::ImageId> multisampledColor =
+        multisampled ? graph.createImage({
+                           .format = sceneFormat,
+                           .extent = extent,
+                           .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+                           .samples = m_samples,
+                       })
+                     : sceneColor;
+    for (const core::Result<RenderGraph::ImageId>* image : {&shadowMap, &sceneColor, &depth, &multisampledColor})
     {
-        const VkRenderingAttachmentInfo overlayAttachment{
-            .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-            .imageView = m_swapchain->imageView(imageIndex),
-            .imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-            .loadOp = VK_ATTACHMENT_LOAD_OP_LOAD,
-            .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-        };
-        const VkRenderingInfo overlayInfo{
-            .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
-            .renderArea = {.offset = {0, 0}, .extent = {extent.width, extent.height}},
-            .layerCount = 1,
-            .colorAttachmentCount = 1,
-            .pColorAttachments = &overlayAttachment,
-        };
-        vkCmdBeginRendering(commandBuffer, &overlayInfo);
-        ImGui_ImplVulkan_RenderDrawData(drawData, commandBuffer);
-        vkCmdEndRendering(commandBuffer);
+        if (!*image)
+        {
+            return std::unexpected(image->error());
+        }
     }
 
-    transitionImage(commandBuffer, backbuffer, ImageState::ColorAttachment, ImageState::Present);
+    // The frame set points at this frame's transient images.
+    if (frame.boundShadowMap != graph.view(*shadowMap) || frame.boundSceneColor != graph.view(*sceneColor))
+    {
+        frame.boundShadowMap = graph.view(*shadowMap);
+        frame.boundSceneColor = graph.view(*sceneColor);
+        m_descriptors->setFrameImages(frameSlot, frame.boundShadowMap, frame.boundSceneColor);
+    }
+
+    const VkDeviceAddress sceneData = frame.sceneData->deviceAddress();
+    const std::array sets{m_descriptors->global(), m_descriptors->frame(frameSlot)};
+    std::uint32_t drawCalls = 0;
+    const auto setViewport = [](VkCommandBuffer commands, math::Extent2D size) {
+        const VkViewport viewport{
+            .width = static_cast<float>(size.width),
+            .height = static_cast<float>(size.height),
+            .maxDepth = 1.0f,
+        };
+        vkCmdSetViewport(commands, 0, 1, &viewport);
+        const VkRect2D scissor{.offset = {0, 0}, .extent = {size.width, size.height}};
+        vkCmdSetScissor(commands, 0, 1, &scissor);
+    };
+
+    if (drawShadows)
+    {
+        const Image* const shadowImage = graph.image(*shadowMap);
+        graph.addPass("Shadow cascades", {{*shadowMap, ImageAccess::DepthAttachment}},
+                      [&, shadowImage](VkCommandBuffer commands) {
+                          for (std::uint32_t cascade = 0; cascade < cascadeCount; ++cascade)
+                          {
+                              const VkRenderingAttachmentInfo depthAttachment{
+                                  .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+                                  .imageView = shadowImage->subview(VK_IMAGE_VIEW_TYPE_2D, 0, 1, cascade, 1),
+                                  .imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+                                  .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+                                  .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+                                  .clearValue = {.depthStencil = {.depth = 1.0f}},
+                              };
+                              const VkRenderingInfo renderingInfo{
+                                  .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
+                                  .renderArea = {.extent = {shadowMapSize, shadowMapSize}},
+                                  .layerCount = 1,
+                                  .pDepthAttachment = &depthAttachment,
+                              };
+                              vkCmdBeginRendering(commands, &renderingInfo);
+                              setViewport(commands, {shadowMapSize, shadowMapSize});
+                              // Steep surfaces need more bias than those facing the light.
+                              vkCmdSetDepthBias(commands, 0.0f, 0.0f, 1.5f);
+                              drawMeshes(commands, sceneData, &*m_shadowPipeline, cascade, frameSlot);
+                              vkCmdEndRendering(commands);
+                          }
+                      });
+    }
+
+    std::vector<std::pair<RenderGraph::ImageId, ImageAccess>> sceneAccesses{
+        {*multisampledColor, ImageAccess::ColorAttachment},
+        {*depth, ImageAccess::DepthAttachment},
+        {*shadowMap, ImageAccess::FragmentRead},
+    };
+    if (multisampled)
+    {
+        sceneAccesses.push_back({*sceneColor, ImageAccess::ColorAttachment});
+    }
+    graph.addPass("Scene", std::move(sceneAccesses), [&](VkCommandBuffer commands) {
+        const VkRenderingAttachmentInfo colorAttachment{
+            .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+            .imageView = graph.view(*multisampledColor),
+            .imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+            .resolveMode = multisampled ? VK_RESOLVE_MODE_AVERAGE_BIT : VK_RESOLVE_MODE_NONE,
+            .resolveImageView = multisampled ? graph.view(*sceneColor) : VK_NULL_HANDLE,
+            .resolveImageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+            .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+            .storeOp = multisampled ? VK_ATTACHMENT_STORE_OP_DONT_CARE : VK_ATTACHMENT_STORE_OP_STORE,
+            .clearValue = {.color = {.float32 = {0.0f, 0.0f, 0.0f, 1.0f}}},
+        };
+        // With reversed depth, 0 is infinitely far away.
+        const VkRenderingAttachmentInfo depthAttachment{
+            .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+            .imageView = graph.view(*depth),
+            .imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+            .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+            .storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+            .clearValue = {.depthStencil = {.depth = 0.0f}},
+        };
+        const VkRenderingInfo renderingInfo{
+            .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
+            .renderArea = {.extent = {extent.width, extent.height}},
+            .layerCount = 1,
+            .colorAttachmentCount = 1,
+            .pColorAttachments = &colorAttachment,
+            .pDepthAttachment = &depthAttachment,
+        };
+        vkCmdBeginRendering(commands, &renderingInfo);
+        setViewport(commands, extent);
+        drawCalls += drawMeshes(commands, sceneData, nullptr, 0, frameSlot);
+
+        vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, m_skyPipeline->handle());
+        vkCmdBindDescriptorSets(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, m_skyPipeline->layout(), 0, 1,
+                                sets.data(), 0, nullptr);
+        const SkyPushConstants sky{.scene = sceneData};
+        vkCmdPushConstants(commands, m_skyPipeline->layout(),
+                           VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(sky), &sky);
+        vkCmdDraw(commands, 3, 1, 0, 0);
+        vkCmdEndRendering(commands);
+    });
+
+    if (m_world.camera.autoExposure)
+    {
+        graph.addPass("Luminance", {{*sceneColor, ImageAccess::ComputeRead}}, [&](VkCommandBuffer commands) {
+            vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_COMPUTE, m_luminancePipeline->handle());
+            vkCmdBindDescriptorSets(commands, VK_PIPELINE_BIND_POINT_COMPUTE, m_luminancePipeline->layout(), 0,
+                                    2, sets.data(), 0, nullptr);
+            const LuminancePushConstants constants{
+                .output = frame.luminance->deviceAddress(),
+                .width = luminanceGridWidth,
+                .height = luminanceGridHeight,
+            };
+            vkCmdPushConstants(commands, m_luminancePipeline->layout(), VK_SHADER_STAGE_COMPUTE_BIT, 0,
+                               sizeof(constants), &constants);
+            vkCmdDispatch(commands, (luminanceGridWidth + 7) / 8, (luminanceGridHeight + 7) / 8, 1);
+        });
+        frame.luminanceMeasured = true;
+    }
+
+    graph.addPass("Tonemap and tools",
+                  {{*sceneColor, ImageAccess::FragmentRead}, {backbuffer, ImageAccess::ColorAttachment}},
+                  [&](VkCommandBuffer commands) {
+                      const VkRenderingAttachmentInfo colorAttachment{
+                          .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+                          .imageView = m_swapchain->imageView(imageIndex),
+                          .imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                          .loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+                          .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+                      };
+                      const VkRenderingInfo renderingInfo{
+                          .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
+                          .renderArea = {.extent = {extent.width, extent.height}},
+                          .layerCount = 1,
+                          .colorAttachmentCount = 1,
+                          .pColorAttachments = &colorAttachment,
+                      };
+                      vkCmdBeginRendering(commands, &renderingInfo);
+                      setViewport(commands, extent);
+                      vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, m_tonemapPipeline->handle());
+                      vkCmdBindDescriptorSets(commands, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                              m_tonemapPipeline->layout(), 0, 2, sets.data(), 0, nullptr);
+                      const TonemapPushConstants tonemap{
+                          .tonemapper = static_cast<std::uint32_t>(m_world.camera.tonemapper),
+                      };
+                      vkCmdPushConstants(commands, m_tonemapPipeline->layout(),
+                                         VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+                                         sizeof(tonemap), &tonemap);
+                      vkCmdDraw(commands, 3, 1, 0, 0);
+
+                      // Tools are drawn over the image, in display colors.
+                      if (ImDrawData* const drawData = drawImGui ? ImGui::GetDrawData() : nullptr;
+                          drawData != nullptr && drawData->Valid)
+                      {
+                          ImGui_ImplVulkan_RenderDrawData(drawData, commands);
+                      }
+                      vkCmdEndRendering(commands);
+                  });
+
+    graph.addPass("Present", {{backbuffer, ImageAccess::Present}}, {});
+    graph.execute(commandBuffer, m_instance.isValidationEnabled());
+    frame.images.endFrame();
+
     DEVEX_VK_TRY(vkEndCommandBuffer, commandBuffer);
     return drawCalls;
 }
@@ -943,6 +1399,9 @@ RendererStats VulkanRenderer::stats() const noexcept
         .textureCount = m_textures.size(),
         // The default material is not counted.
         .materialCount = m_materials.size() - 1,
+        .lightCount = m_lastLightCount,
+        .ev100 = m_ev100,
+        .msaaSamples = static_cast<std::uint32_t>(m_samples),
         .swapchainExtent = m_swapchain ? m_swapchain->extent() : math::Extent2D{},
     };
 
@@ -1031,16 +1490,19 @@ void VulkanRenderer::releaseRetiredResources() noexcept
 {
     // Frames before the retirement may still run on the GPU; they have all completed once as
     // many frames as can be in flight have started since.
-    std::erase_if(m_retiredMeshes, [this](const RetiredMesh& retired) {
-        return m_frameIndex >= retired.retiredAtFrame + framesInFlight;
-    });
-    std::erase_if(m_retiredTextures, [this](const RetiredTexture& retired) {
-        if (m_frameIndex < retired.retiredAtFrame + framesInFlight)
+    const auto expired = [this](std::uint64_t retiredAtFrame) {
+        return m_frameIndex >= retiredAtFrame + framesInFlight;
+    };
+    std::erase_if(m_retiredMeshes, [&](const RetiredMesh& retired) { return expired(retired.retiredAtFrame); });
+    std::erase_if(m_retiredEnvironments,
+                  [&](const RetiredEnvironment& retired) { return expired(retired.retiredAtFrame); });
+    std::erase_if(m_retiredTextures, [&](const RetiredTexture& retired) {
+        if (!expired(retired.retiredAtFrame))
         {
             return false;
         }
         // The slot must not keep pointing at a destroyed view.
-        m_bindless->setTexture(retired.texture.slot, m_whiteTexture->image.view());
+        m_descriptors->setTexture(retired.texture.slot, m_whiteTexture->image.view());
         m_freeTextureSlots.push_back(retired.texture.slot);
         return true;
     });

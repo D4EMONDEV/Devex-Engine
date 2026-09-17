@@ -1,7 +1,5 @@
 #include "Pipeline.hpp"
 
-#include "GpuData.hpp"
-
 #include <devex/core/Path.hpp>
 
 #include <array>
@@ -41,15 +39,38 @@ namespace {
 class ShaderModule
 {
 public:
-    ShaderModule(VkDevice device, VkShaderModule module) noexcept
-        : m_device(device)
-        , m_module(module)
+    [[nodiscard]] static core::Result<ShaderModule> load(VkDevice device,
+                                                         const std::filesystem::path& path)
+    {
+        const core::Result<std::vector<std::uint32_t>> spirv = readSpirv(path);
+        if (!spirv)
+        {
+            return std::unexpected(spirv.error());
+        }
+        const VkShaderModuleCreateInfo moduleInfo{
+            .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+            .codeSize = spirv->size() * sizeof(std::uint32_t),
+            .pCode = spirv->data(),
+        };
+        VkShaderModule module = VK_NULL_HANDLE;
+        DEVEX_VK_TRY(vkCreateShaderModule, device, &moduleInfo, nullptr, &module);
+        return ShaderModule(device, module);
+    }
+
+    ShaderModule(ShaderModule&& other) noexcept
+        : m_device(other.m_device)
+        , m_module(std::exchange(other.m_module, VK_NULL_HANDLE))
     {
     }
 
+    ShaderModule& operator=(ShaderModule&&) = delete;
+
     ~ShaderModule()
     {
-        vkDestroyShaderModule(m_device, m_module, nullptr);
+        if (m_module != VK_NULL_HANDLE)
+        {
+            vkDestroyShaderModule(m_device, m_module, nullptr);
+        }
     }
 
     ShaderModule(const ShaderModule&) = delete;
@@ -61,28 +82,55 @@ public:
     }
 
 private:
+    ShaderModule(VkDevice device, VkShaderModule module) noexcept
+        : m_device(device)
+        , m_module(module)
+    {
+    }
+
     VkDevice m_device;
     VkShaderModule m_module;
 };
 
+[[nodiscard]] core::Result<VkPipelineLayout> createLayout(VkDevice device,
+                                                          std::span<const VkDescriptorSetLayout> setLayouts,
+                                                          std::uint32_t pushConstantSize,
+                                                          VkShaderStageFlags stages)
+{
+    const VkPushConstantRange pushConstants{
+        .stageFlags = stages,
+        .offset = 0,
+        .size = pushConstantSize,
+    };
+    const VkPipelineLayoutCreateInfo layoutInfo{
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+        .setLayoutCount = static_cast<std::uint32_t>(setLayouts.size()),
+        .pSetLayouts = setLayouts.data(),
+        .pushConstantRangeCount = pushConstantSize > 0 ? 1u : 0u,
+        .pPushConstantRanges = pushConstantSize > 0 ? &pushConstants : nullptr,
+    };
+    VkPipelineLayout layout = VK_NULL_HANDLE;
+    DEVEX_VK_TRY(vkCreatePipelineLayout, device, &layoutInfo, nullptr, &layout);
+    return layout;
+}
+
 } // namespace
 
-GraphicsPipeline::GraphicsPipeline(VkDevice device, VkPipelineLayout layout,
-                                   VkPipeline pipeline) noexcept
+Pipeline::Pipeline(VkDevice device, VkPipelineLayout layout, VkPipeline pipeline) noexcept
     : m_device(device)
     , m_layout(layout)
     , m_pipeline(pipeline)
 {
 }
 
-GraphicsPipeline::GraphicsPipeline(GraphicsPipeline&& other) noexcept
+Pipeline::Pipeline(Pipeline&& other) noexcept
     : m_device(std::exchange(other.m_device, VK_NULL_HANDLE))
     , m_layout(std::exchange(other.m_layout, VK_NULL_HANDLE))
     , m_pipeline(std::exchange(other.m_pipeline, VK_NULL_HANDLE))
 {
 }
 
-GraphicsPipeline& GraphicsPipeline::operator=(GraphicsPipeline&& other) noexcept
+Pipeline& Pipeline::operator=(Pipeline&& other) noexcept
 {
     if (this != &other)
     {
@@ -94,12 +142,12 @@ GraphicsPipeline& GraphicsPipeline::operator=(GraphicsPipeline&& other) noexcept
     return *this;
 }
 
-GraphicsPipeline::~GraphicsPipeline()
+Pipeline::~Pipeline()
 {
     destroy();
 }
 
-void GraphicsPipeline::destroy() noexcept
+void Pipeline::destroy() noexcept
 {
     if (m_device != VK_NULL_HANDLE)
     {
@@ -111,64 +159,49 @@ void GraphicsPipeline::destroy() noexcept
     }
 }
 
-VkPipelineLayout GraphicsPipeline::layout() const noexcept
+VkPipelineLayout Pipeline::layout() const noexcept
 {
     return m_layout;
 }
 
-VkPipeline GraphicsPipeline::handle() const noexcept
+VkPipeline Pipeline::handle() const noexcept
 {
     return m_pipeline;
 }
 
-core::Result<GraphicsPipeline> createMeshPipeline(VkDevice device, const MeshPipelineConfig& config)
+core::Result<Pipeline> createGraphicsPipeline(VkDevice device, const GraphicsPipelineConfig& config)
 {
-    const core::Result<std::vector<std::uint32_t>> spirv = readSpirv(config.shaderPath);
-    if (!spirv)
+    const core::Result<ShaderModule> shaderModule = ShaderModule::load(device, config.shaderPath);
+    if (!shaderModule)
     {
-        return std::unexpected(spirv.error());
+        return std::unexpected(shaderModule.error());
+    }
+    const core::Result<VkPipelineLayout> layout =
+        createLayout(device, config.setLayouts, config.pushConstantSize,
+                     VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT);
+    if (!layout)
+    {
+        return std::unexpected(layout.error());
     }
 
-    const VkShaderModuleCreateInfo moduleInfo{
-        .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-        .codeSize = spirv->size() * sizeof(std::uint32_t),
-        .pCode = spirv->data(),
+    std::array<VkPipelineShaderStageCreateInfo, 2> stages{};
+    std::uint32_t stageCount = 0;
+    stages[stageCount++] = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+        .stage = VK_SHADER_STAGE_VERTEX_BIT,
+        .module = shaderModule->handle(),
+        .pName = config.vertexEntry,
     };
-    VkShaderModule moduleHandle = VK_NULL_HANDLE;
-    DEVEX_VK_TRY(vkCreateShaderModule, device, &moduleInfo, nullptr, &moduleHandle);
-    const ShaderModule shaderModule(device, moduleHandle);
-
-    const VkPushConstantRange pushConstants{
-        .stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-        .offset = 0,
-        .size = sizeof(DrawPushConstants),
-    };
-    const VkPipelineLayoutCreateInfo layoutInfo{
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-        .setLayoutCount = 1,
-        .pSetLayouts = &config.textureSetLayout,
-        .pushConstantRangeCount = 1,
-        .pPushConstantRanges = &pushConstants,
-    };
-    VkPipelineLayout layout = VK_NULL_HANDLE;
-    DEVEX_VK_TRY(vkCreatePipelineLayout, device, &layoutInfo, nullptr, &layout);
-
-    const std::array stages{
-        VkPipelineShaderStageCreateInfo{
-            .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-            .stage = VK_SHADER_STAGE_VERTEX_BIT,
-            .module = shaderModule.handle(),
-            .pName = "vertexMain",
-        },
-        VkPipelineShaderStageCreateInfo{
+    if (config.fragmentEntry != nullptr)
+    {
+        stages[stageCount++] = {
             .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
             .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
-            .module = shaderModule.handle(),
-            .pName = "fragmentMain",
-        },
-    };
+            .module = shaderModule->handle(),
+            .pName = config.fragmentEntry,
+        };
+    }
 
-    // Vertices are pulled from buffers in the shader.
     const VkPipelineVertexInputStateCreateInfo vertexInput{
         .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
     };
@@ -183,49 +216,51 @@ core::Result<GraphicsPipeline> createMeshPipeline(VkDevice device, const MeshPip
     };
     const VkPipelineRasterizationStateCreateInfo rasterization{
         .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+        .depthClampEnable = config.depthClamp ? VK_TRUE : VK_FALSE,
         .polygonMode = VK_POLYGON_MODE_FILL,
-        .cullMode = static_cast<VkCullModeFlags>(config.cullBackFaces ? VK_CULL_MODE_BACK_BIT
-                                                                      : VK_CULL_MODE_NONE),
+        .cullMode = config.cullMode,
         .frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE,
+        .depthBiasEnable = config.depthBias ? VK_TRUE : VK_FALSE,
         .lineWidth = 1.0f,
     };
     const VkPipelineMultisampleStateCreateInfo multisample{
         .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
-        .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT,
+        .rasterizationSamples = config.samples,
     };
-    // Reversed depth: nearer surfaces have greater depth values.
     const VkPipelineDepthStencilStateCreateInfo depthStencil{
         .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
-        .depthTestEnable = VK_TRUE,
-        .depthWriteEnable = VK_TRUE,
-        .depthCompareOp = VK_COMPARE_OP_GREATER_OR_EQUAL,
+        .depthTestEnable = config.depthTest ? VK_TRUE : VK_FALSE,
+        .depthWriteEnable = config.depthWrite ? VK_TRUE : VK_FALSE,
+        .depthCompareOp = config.depthCompare,
     };
     const VkPipelineColorBlendAttachmentState colorAttachment{
         .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
                           VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT,
     };
+    const bool hasColor = config.colorFormat != VK_FORMAT_UNDEFINED;
     const VkPipelineColorBlendStateCreateInfo colorBlend{
         .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
-        .attachmentCount = 1,
-        .pAttachments = &colorAttachment,
+        .attachmentCount = hasColor ? 1u : 0u,
+        .pAttachments = hasColor ? &colorAttachment : nullptr,
     };
-    const std::array dynamicStates{VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
+    std::array<VkDynamicState, 3> dynamicStates{VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR,
+                                                VK_DYNAMIC_STATE_DEPTH_BIAS};
     const VkPipelineDynamicStateCreateInfo dynamicState{
         .sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
-        .dynamicStateCount = static_cast<std::uint32_t>(dynamicStates.size()),
+        .dynamicStateCount = config.depthBias ? 3u : 2u,
         .pDynamicStates = dynamicStates.data(),
     };
     const VkPipelineRenderingCreateInfo renderingInfo{
         .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
-        .colorAttachmentCount = 1,
-        .pColorAttachmentFormats = &config.colorFormat,
+        .colorAttachmentCount = hasColor ? 1u : 0u,
+        .pColorAttachmentFormats = hasColor ? &config.colorFormat : nullptr,
         .depthAttachmentFormat = config.depthFormat,
     };
 
     const VkGraphicsPipelineCreateInfo pipelineInfo{
         .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
         .pNext = &renderingInfo,
-        .stageCount = static_cast<std::uint32_t>(stages.size()),
+        .stageCount = stageCount,
         .pStages = stages.data(),
         .pVertexInputState = &vertexInput,
         .pInputAssemblyState = &inputAssembly,
@@ -235,17 +270,53 @@ core::Result<GraphicsPipeline> createMeshPipeline(VkDevice device, const MeshPip
         .pDepthStencilState = &depthStencil,
         .pColorBlendState = &colorBlend,
         .pDynamicState = &dynamicState,
-        .layout = layout,
+        .layout = *layout,
     };
     VkPipeline pipeline = VK_NULL_HANDLE;
     if (const VkResult result = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo,
                                                           nullptr, &pipeline);
         result < VK_SUCCESS)
     {
-        vkDestroyPipelineLayout(device, layout, nullptr);
+        vkDestroyPipelineLayout(device, *layout, nullptr);
         return vulkanError("vkCreateGraphicsPipelines", result);
     }
-    return GraphicsPipeline(device, layout, pipeline);
+    return Pipeline(device, *layout, pipeline);
+}
+
+core::Result<Pipeline> createComputePipeline(VkDevice device, const ComputePipelineConfig& config)
+{
+    const core::Result<ShaderModule> shaderModule = ShaderModule::load(device, config.shaderPath);
+    if (!shaderModule)
+    {
+        return std::unexpected(shaderModule.error());
+    }
+    const core::Result<VkPipelineLayout> layout = createLayout(
+        device, config.setLayouts, config.pushConstantSize, VK_SHADER_STAGE_COMPUTE_BIT);
+    if (!layout)
+    {
+        return std::unexpected(layout.error());
+    }
+
+    const VkComputePipelineCreateInfo pipelineInfo{
+        .sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
+        .stage =
+            {
+                .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+                .stage = VK_SHADER_STAGE_COMPUTE_BIT,
+                .module = shaderModule->handle(),
+                .pName = config.entry,
+            },
+        .layout = *layout,
+    };
+    VkPipeline pipeline = VK_NULL_HANDLE;
+    if (const VkResult result =
+            vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline);
+        result < VK_SUCCESS)
+    {
+        vkDestroyPipelineLayout(device, *layout, nullptr);
+        return vulkanError("vkCreateComputePipelines", result);
+    }
+    return Pipeline(device, *layout, pipeline);
 }
 
 } // namespace devex::render::vulkan

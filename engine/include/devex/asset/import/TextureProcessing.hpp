@@ -28,6 +28,23 @@ struct Image
 // Decodes a PNG, JPEG, TGA or BMP file held in memory.
 [[nodiscard]] core::Result<Image> decodeImage(std::span<const std::byte> encoded);
 
+// Linear RGBA pixels with an unbounded range, row by row from the top-left corner.
+struct FloatImage
+{
+    std::uint32_t width = 0;
+    std::uint32_t height = 0;
+    std::vector<float> rgba;
+};
+
+// True for Radiance .hdr files.
+[[nodiscard]] bool isHighDynamicRange(std::span<const std::byte> encoded) noexcept;
+[[nodiscard]] core::Result<FloatImage> decodeFloatImage(std::span<const std::byte> encoded);
+
+// A half-float texture with box-filtered mip levels. Values beyond the half-float range are
+// clamped.
+[[nodiscard]] core::Result<TextureData> buildFloatTexture(const FloatImage& image, bool mipmaps,
+                                                          core::JobSystem* jobs = nullptr);
+
 enum class TextureQuality : std::uint8_t
 {
     Fast,

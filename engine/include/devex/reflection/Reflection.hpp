@@ -3,10 +3,12 @@
 #include <devex/core/Uuid.hpp>
 #include <devex/math/Math.hpp>
 
+#include <array>
 #include <cstdint>
 #include <functional>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -28,6 +30,8 @@ enum class ValueKind : std::uint8_t
     Uuid,
     // asset::AssetId, whose ValueTraits specialization lives in the Asset module.
     AssetId,
+    // An enumeration with EnumNames, stored in one or four bytes and written by name.
+    Enum,
 };
 
 [[nodiscard]] std::string_view toString(ValueKind kind) noexcept;
@@ -36,6 +40,24 @@ enum class ValueKind : std::uint8_t
 // value types.
 template <typename T>
 struct ValueTraits;
+
+// Specialized with the names of an enumeration's values, which must be 0, 1, 2 and so on:
+//     template <> struct EnumNames<Tonemapper> {
+//         static constexpr std::array<std::string_view, 2> names{"agx", "none"};
+//     };
+template <typename T>
+struct EnumNames;
+
+template <typename T>
+concept ReflectableEnum = std::is_enum_v<T> && (sizeof(T) == 1 || sizeof(T) == 4) && requires {
+    { EnumNames<T>::names.size() } -> std::convertible_to<std::size_t>;
+};
+
+template <ReflectableEnum T>
+struct ValueTraits<T>
+{
+    static constexpr ValueKind kind = ValueKind::Enum;
+};
 
 template <typename T>
 concept ReflectableValue = requires {
@@ -107,6 +129,10 @@ struct FieldHints
 {
     // For asset references: the asset type expected, such as "mesh". Empty accepts any type.
     std::string_view assetType;
+    // A Vec3 or Vec4 holding a linear color.
+    bool color = false;
+    // A float angle in radians, shown in degrees.
+    bool angle = false;
 };
 
 struct FieldInfo
@@ -114,6 +140,11 @@ struct FieldInfo
     std::string name;
     ValueKind kind = ValueKind::Bool;
     std::string assetType;
+    bool color = false;
+    bool angle = false;
+    // For enumerations: the name of each value, and the size of the stored value in bytes.
+    std::vector<std::string_view> enumNames;
+    std::uint8_t enumSize = 0;
     // Returns the address of the field inside an object of the reflected type.
     std::function<void*(void* object)> access;
 
@@ -160,10 +191,19 @@ public:
     template <ReflectableValue Value>
     TypeBuilder& field(std::string name, Value T::* member, FieldHints hints = {})
     {
+        std::vector<std::string_view> enumNames;
+        if constexpr (ReflectableEnum<Value>)
+        {
+            enumNames.assign(EnumNames<Value>::names.begin(), EnumNames<Value>::names.end());
+        }
         m_info.fields.push_back({
             .name = std::move(name),
             .kind = ValueTraits<Value>::kind,
             .assetType = std::string(hints.assetType),
+            .color = hints.color,
+            .angle = hints.angle,
+            .enumNames = std::move(enumNames),
+            .enumSize = static_cast<std::uint8_t>(ReflectableEnum<Value> ? sizeof(Value) : 0),
             .access = [member](void* object) -> void* {
                 return &(static_cast<T*>(object)->*member);
             },
@@ -181,6 +221,10 @@ private:
 };
 
 // Returns the description registered with DEVEX_REFLECT for T.
+// Reads or writes an enumeration field as the index of its value.
+[[nodiscard]] std::uint32_t readEnumIndex(const FieldInfo& field, const void* address) noexcept;
+void writeEnumIndex(const FieldInfo& field, void* address, std::uint32_t index) noexcept;
+
 template <typename T>
 [[nodiscard]] const TypeInfo& typeInfo()
 {

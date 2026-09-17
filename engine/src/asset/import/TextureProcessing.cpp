@@ -16,6 +16,7 @@
 
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <climits>
 #include <cmath>
 #include <cstring>
@@ -247,7 +248,122 @@ void initializeBc7Parameters(bc7e_scalar::bc7e_compress_block_params& parameters
     return mip;
 }
 
+[[nodiscard]] std::uint16_t toHalf(float value) noexcept
+{
+    // Values beyond the largest half float become the largest one, and NaN becomes zero.
+    const float clamped = std::isnan(value) ? 0.0f : std::clamp(value, -65504.0f, 65504.0f);
+    const auto bits = std::bit_cast<std::uint32_t>(clamped);
+    const auto sign = static_cast<std::uint16_t>((bits >> 16) & 0x8000u);
+    const std::int32_t exponent = static_cast<std::int32_t>((bits >> 23) & 0xFF) - 127 + 15;
+    std::uint32_t mantissa = bits & 0x007FFFFFu;
+    if (exponent <= 0)
+    {
+        if (exponent < -10)
+        {
+            return sign;
+        }
+        mantissa = (mantissa | 0x00800000u) >> (1 - exponent);
+        return static_cast<std::uint16_t>(sign | ((mantissa + 0x00002000u) >> 14));
+    }
+    const std::uint32_t half = (static_cast<std::uint32_t>(exponent) << 10) | ((mantissa + 0x00002000u) >> 13);
+    // Rounding may carry into the exponent, which stays below the infinity pattern thanks to the
+    // clamp above.
+    return static_cast<std::uint16_t>(sign | std::min(half, 0x7BFFu));
+}
+
 } // namespace
+
+bool isHighDynamicRange(std::span<const std::byte> encoded) noexcept
+{
+    return !encoded.empty() && encoded.size() <= static_cast<std::size_t>(INT_MAX) &&
+           stbi_is_hdr_from_memory(reinterpret_cast<const stbi_uc*>(encoded.data()),
+                                   static_cast<int>(encoded.size())) != 0;
+}
+
+core::Result<FloatImage> decodeFloatImage(std::span<const std::byte> encoded)
+{
+    if (!isHighDynamicRange(encoded))
+    {
+        return core::makeError(core::ErrorCode::Parse, "not a Radiance HDR image");
+    }
+    const auto* const data = reinterpret_cast<const stbi_uc*>(encoded.data());
+    const auto size = static_cast<int>(encoded.size());
+    int width = 0;
+    int height = 0;
+    int channels = 0;
+    if (stbi_info_from_memory(data, size, &width, &height, &channels) == 0 || width <= 0 ||
+        height <= 0 || static_cast<std::uint32_t>(width) > maxImageSize ||
+        static_cast<std::uint32_t>(height) > maxImageSize)
+    {
+        return core::makeError(core::ErrorCode::Unsupported, "the HDR image size is invalid");
+    }
+    float* const pixels = stbi_loadf_from_memory(data, size, &width, &height, &channels, 4);
+    if (pixels == nullptr)
+    {
+        return core::makeError(core::ErrorCode::Parse, "cannot decode the HDR image: {}",
+                               stbi_failure_reason());
+    }
+    FloatImage image{.width = static_cast<std::uint32_t>(width),
+                     .height = static_cast<std::uint32_t>(height)};
+    image.rgba.assign(pixels, pixels + static_cast<std::size_t>(width) * height * 4);
+    stbi_image_free(pixels);
+    return image;
+}
+
+core::Result<TextureData> buildFloatTexture(const FloatImage& image, bool mipmaps,
+                                            core::JobSystem* jobs)
+{
+    if (image.width == 0 || image.height == 0 ||
+        image.rgba.size() != static_cast<std::size_t>(image.width) * image.height * 4)
+    {
+        return core::makeError(core::ErrorCode::InvalidArgument, "the image is empty or truncated");
+    }
+
+    TextureData texture{.format = TextureFormat::Rgba16Float};
+    const std::uint32_t levels = mipmaps ? fullMipCount(image.width, image.height) : 1;
+    FloatImage level = image;
+    for (std::uint32_t index = 0; index < levels; ++index)
+    {
+        if (index > 0)
+        {
+            FloatImage smaller{.width = std::max(level.width / 2, 1u),
+                               .height = std::max(level.height / 2, 1u)};
+            smaller.rgba.resize(static_cast<std::size_t>(smaller.width) * smaller.height * 4);
+            forEachRow(jobs, smaller.height, [&](std::size_t y) {
+                for (std::uint32_t x = 0; x < smaller.width; ++x)
+                {
+                    for (std::size_t channel = 0; channel < 4; ++channel)
+                    {
+                        float sum = 0.0f;
+                        for (std::uint32_t dy = 0; dy < 2; ++dy)
+                        {
+                            for (std::uint32_t dx = 0; dx < 2; ++dx)
+                            {
+                                const std::size_t sx = std::min(x * 2 + dx, level.width - 1);
+                                const std::size_t sy = std::min(
+                                    static_cast<std::uint32_t>(y) * 2 + dy, level.height - 1);
+                                sum += level.rgba[(sy * level.width + sx) * 4 + channel];
+                            }
+                        }
+                        smaller.rgba[(y * smaller.width + x) * 4 + channel] = sum * 0.25f;
+                    }
+                }
+            });
+            level = std::move(smaller);
+        }
+
+        TextureMip& mip = texture.mips.emplace_back();
+        mip.width = level.width;
+        mip.height = level.height;
+        mip.bytes.resize(level.rgba.size() * sizeof(std::uint16_t));
+        for (std::size_t sample = 0; sample < level.rgba.size(); ++sample)
+        {
+            const std::uint16_t half = toHalf(level.rgba[sample]);
+            std::memcpy(mip.bytes.data() + sample * sizeof(half), &half, sizeof(half));
+        }
+    }
+    return texture;
+}
 
 core::Result<Image> decodeImage(std::span<const std::byte> encoded)
 {
@@ -386,6 +502,11 @@ core::Result<Image> decodeTextureLevel(const TextureData& texture, std::size_t l
     const TextureMip& mip = texture.mips[level];
     Image image{.width = mip.width, .height = mip.height};
     image.rgba.resize(static_cast<std::size_t>(mip.width) * mip.height * 4);
+    if (texture.format == TextureFormat::Rgba16Float)
+    {
+        return core::makeError(core::ErrorCode::Unsupported,
+                               "high dynamic range levels cannot be decoded to 8 bits");
+    }
     if (!isBlockCompressed(texture.format))
     {
         std::memcpy(image.rgba.data(), mip.bytes.data(), image.rgba.size());

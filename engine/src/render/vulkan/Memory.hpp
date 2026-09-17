@@ -9,7 +9,9 @@
 #include <vk_mem_alloc.h>
 
 #include <cstddef>
+#include <cstdint>
 #include <span>
+#include <vector>
 
 namespace devex::render::vulkan {
 
@@ -81,11 +83,16 @@ struct ImageConfig
     VkFormat format = VK_FORMAT_UNDEFINED;
     math::Extent2D extent;
     VkImageUsageFlags usage = 0;
-    VkImageAspectFlags aspect = VK_IMAGE_ASPECT_COLOR_BIT;
     std::uint32_t mipLevels = 1;
+    // Six for a cube map.
+    std::uint32_t layers = 1;
+    VkSampleCountFlagBits samples = VK_SAMPLE_COUNT_1_BIT;
+    bool cube = false;
+
+    bool operator==(const ImageConfig&) const = default;
 };
 
-// A 2D device-local image with a view on all its mip levels.
+// A device-local image with a view on all its levels and layers: 2D, 2D array or cube.
 class Image
 {
 public:
@@ -102,22 +109,41 @@ public:
 
     [[nodiscard]] VkImage handle() const noexcept;
     [[nodiscard]] VkImageView view() const noexcept;
+    [[nodiscard]] const ImageConfig& config() const noexcept;
     [[nodiscard]] VkFormat format() const noexcept;
     [[nodiscard]] math::Extent2D extent() const noexcept;
     [[nodiscard]] std::uint32_t mipLevels() const noexcept;
 
+    // A view on part of the image, created on first use and owned by the image. Returns a null
+    // handle when the view cannot be created.
+    [[nodiscard]] VkImageView subview(VkImageViewType type, std::uint32_t baseMip,
+                                      std::uint32_t mipCount, std::uint32_t baseLayer,
+                                      std::uint32_t layerCount) const;
+
 private:
+    struct Subview
+    {
+        VkImageViewType type = VK_IMAGE_VIEW_TYPE_2D;
+        std::uint32_t baseMip = 0;
+        std::uint32_t mipCount = 0;
+        std::uint32_t baseLayer = 0;
+        std::uint32_t layerCount = 0;
+        VkImageView view = VK_NULL_HANDLE;
+    };
+
     Image() = default;
     void destroy() noexcept;
+    [[nodiscard]] VkImageView createView(VkImageViewType type, std::uint32_t baseMip,
+                                         std::uint32_t mipCount, std::uint32_t baseLayer,
+                                         std::uint32_t layerCount) const;
 
     VkDevice m_device = VK_NULL_HANDLE;
     VmaAllocator m_allocator = VK_NULL_HANDLE;
     VkImage m_image = VK_NULL_HANDLE;
     VmaAllocation m_allocation = VK_NULL_HANDLE;
     VkImageView m_view = VK_NULL_HANDLE;
-    VkFormat m_format = VK_FORMAT_UNDEFINED;
-    math::Extent2D m_extent;
-    std::uint32_t m_mipLevels = 1;
+    ImageConfig m_config;
+    mutable std::vector<Subview> m_subviews;
 };
 
 } // namespace devex::render::vulkan

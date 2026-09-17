@@ -1,6 +1,11 @@
 #include <devex/asset/MeshData.hpp>
 
+#include <mikktspace.h>
+
 #include <algorithm>
+#include <cstring>
+#include <string_view>
+#include <unordered_map>
 
 namespace devex::asset {
 
@@ -72,6 +77,81 @@ void computeNormals(MeshData& mesh)
         const float length = math::length(vertex.normal);
         vertex.normal = length > 0.0f ? vertex.normal / length : math::Vec3{0.0f, 1.0f, 0.0f};
     }
+}
+
+} // namespace devex::asset
+
+namespace devex::asset {
+namespace {
+
+// One vertex per triangle corner while MikkTSpace runs.
+struct TangentJob
+{
+    std::vector<Vertex> corners;
+};
+
+[[nodiscard]] Vertex& corner(const SMikkTSpaceContext* context, int face, int vertex) noexcept
+{
+    auto* const job = static_cast<TangentJob*>(context->m_pUserData);
+    return job->corners[static_cast<std::size_t>(face) * 3 + static_cast<std::size_t>(vertex)];
+}
+
+} // namespace
+
+void computeTangents(MeshData& mesh)
+{
+    if (mesh.indices.size() < 3)
+    {
+        return;
+    }
+
+    TangentJob job;
+    job.corners.reserve(mesh.indices.size());
+    for (const std::uint32_t index : mesh.indices)
+    {
+        job.corners.push_back(mesh.vertices[index]);
+    }
+
+    SMikkTSpaceInterface callbacks{};
+    callbacks.m_getNumFaces = [](const SMikkTSpaceContext* context) {
+        return static_cast<int>(static_cast<TangentJob*>(context->m_pUserData)->corners.size() / 3);
+    };
+    callbacks.m_getNumVerticesOfFace = [](const SMikkTSpaceContext*, int) { return 3; };
+    callbacks.m_getPosition = [](const SMikkTSpaceContext* context, float position[], int face, int vertex) {
+        std::memcpy(position, &corner(context, face, vertex).position, 3 * sizeof(float));
+    };
+    callbacks.m_getNormal = [](const SMikkTSpaceContext* context, float normal[], int face, int vertex) {
+        std::memcpy(normal, &corner(context, face, vertex).normal, 3 * sizeof(float));
+    };
+    callbacks.m_getTexCoord = [](const SMikkTSpaceContext* context, float uv[], int face, int vertex) {
+        std::memcpy(uv, &corner(context, face, vertex).uv, 2 * sizeof(float));
+    };
+    callbacks.m_setTSpaceBasic = [](const SMikkTSpaceContext* context, const float tangent[],
+                                    float sign, int face, int vertex) {
+        // The texture origin is at the top-left, so the bitangent sign is the opposite of
+        // MikkTSpace's, as glTF expects.
+        corner(context, face, vertex).tangent = {tangent[0], tangent[1], tangent[2], -sign};
+    };
+    SMikkTSpaceContext context{&callbacks, &job};
+    genTangSpaceDefault(&context);
+
+    // Corners with identical attributes become one vertex again.
+    std::unordered_map<std::string_view, std::uint32_t> welded;
+    welded.reserve(job.corners.size());
+    std::vector<Vertex> vertices;
+    vertices.reserve(mesh.vertices.size());
+    for (std::size_t index = 0; index < job.corners.size(); ++index)
+    {
+        const std::string_view key(reinterpret_cast<const char*>(&job.corners[index]), sizeof(Vertex));
+        const auto [found, inserted] =
+            welded.try_emplace(key, static_cast<std::uint32_t>(vertices.size()));
+        if (inserted)
+        {
+            vertices.push_back(job.corners[index]);
+        }
+        mesh.indices[index] = found->second;
+    }
+    mesh.vertices = std::move(vertices);
 }
 
 } // namespace devex::asset

@@ -28,16 +28,18 @@ Le détail, l'architecture des modules et les jalons sont dans
   projets `.dvxproj` ;
 - `Devex::AssetImport` : base d'assets (`.dvxmeta`, cache `.devex/`, imports en arrière-plan,
   réimport à chaud), importeurs de textures (BC7/BC5), de `.dvxmat` et de glTF ;
-- `Devex::Render` : renderer Vulkan 1.4 (volk, VMA), shaders Slang, vertex pulling,
-  profondeur reverse-Z, textures bindless, matériaux et sous-maillages ;
+- `Devex::Render` : renderer Vulkan 1.4 (volk, VMA), shaders Slang, render graph, PBR
+  forward+ clustered, ombres en cascades, ciel HDR et IBL, MSAA, exposition automatique,
+  tonemapping AgX ;
 - `Devex::Scene` : entités à UUID, composants en sparse sets, hiérarchie, `.dvxscene`,
   instanciation de modèles ;
 - `Devex::Tools` : overlay ImGui (F1) avec hiérarchie, inspecteur, assets, statistiques,
   console et annulation (Ctrl+Z / Ctrl+Y) ;
 - `Devex::Runtime` : `Application`, boucle à pas fixe, chargement des assets à la demande,
   rendu automatique de la scène ;
-- `devex-sandbox` : projet `apps/sandbox/project` (caisse et balises glTF, matériaux,
-  damier) et caméra libre ; F1 affiche les outils, F5 sauvegarde la scène, F9 la recharge ;
+- `devex-sandbox` : projet `apps/sandbox/project` (caisse et balises glTF, sphères or et
+  plastique, ciel HDR, lampes) et caméra libre ; N alterne jour et nuit, F1 affiche les outils,
+  F5 sauvegarde la scène, F9 la recharge ;
   modifier un fichier de `assets/` met la scène à jour, et glisser un `.gltf` ou un `.glb`
   sur la fenêtre le copie dans le projet puis le place devant la caméra.
 
@@ -61,6 +63,13 @@ ctest --preset test-x64-debug
 ```
 
 Le programme de bac à sable est produit dans `out/build/x64-debug/bin`.
+
+Avec une installation de Visual Studio en français sans le pack de langue anglais, Ninja ne
+reconnaît pas toujours les notes `/showIncludes` du compilateur, dont l'encodage varie selon la
+façon dont il est lancé : un en-tête modifié peut alors ne pas recompiler les fichiers qui
+l'incluent. En cas de comportement incohérent après avoir modifié un en-tête, reconstruire
+entièrement (`cmake --build --preset build-x64-debug --clean-first`), ou installer le pack de
+langue anglais depuis Visual Studio Installer.
 
 ## Règle de conception
 

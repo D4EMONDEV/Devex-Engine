@@ -7,6 +7,9 @@
 #include <cmath>
 #include <cstdint>
 #include <filesystem>
+#include <span>
+#include <string>
+#include <string_view>
 
 using devex::asset::Image;
 using devex::asset::TextureBuildOptions;
@@ -132,4 +135,34 @@ TEST_CASE("Cancelled texture builds stop with an error", "[asset][texture]")
     const auto texture =
         devex::asset::buildTexture(gradient(16, 16), TextureBuildOptions{}, nullptr, &cancelled);
     CHECK_FALSE(texture.has_value());
+}
+
+TEST_CASE("Radiance HDR images build half-float textures", "[asset][texture]")
+{
+    // A 2x2 image whose pixels are all (2, 1, 0.5), in flat RGBE.
+    std::string file = "#?RADIANCE\nFORMAT=32-bit_rle_rgbe\n\n-Y 2 +X 2\n";
+    for (int pixel = 0; pixel < 4; ++pixel)
+    {
+        file += std::string{static_cast<char>(128), static_cast<char>(64), static_cast<char>(32),
+                            static_cast<char>(130)};
+    }
+    const std::span<const std::byte> bytes = std::as_bytes(std::span(file.data(), file.size()));
+    REQUIRE(devex::asset::isHighDynamicRange(bytes));
+    CHECK_FALSE(devex::asset::isHighDynamicRange(
+        std::as_bytes(std::span(std::string_view("not an image").data(), 12))));
+
+    const auto image = devex::asset::decodeFloatImage(bytes);
+    REQUIRE(image.has_value());
+    CHECK(image->width == 2);
+    CHECK(image->rgba[0] == 2.0f);
+    CHECK(image->rgba[2] == 0.5f);
+
+    const auto texture = devex::asset::buildFloatTexture(*image, true);
+    REQUIRE(texture.has_value());
+    CHECK(texture->format == TextureFormat::Rgba16Float);
+    REQUIRE(texture->mips.size() == 2);
+    CHECK(devex::asset::validate(*texture).has_value());
+    // 2.0 and 1.0 as half floats, little-endian.
+    CHECK(texture->mips[1].bytes[1] == std::byte{0x40});
+    CHECK(texture->mips[1].bytes[3] == std::byte{0x3C});
 }

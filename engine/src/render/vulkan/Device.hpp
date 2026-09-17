@@ -33,6 +33,9 @@ public:
     [[nodiscard]] float maxSamplerAnisotropy() const noexcept;
     // Sampled images a fragment shader may index in a descriptor set updated after binding.
     [[nodiscard]] std::uint32_t maxBindlessTextures() const noexcept;
+    // The largest sample count up to `requested` that color and depth attachments both support.
+    [[nodiscard]] VkSampleCountFlagBits sampleCount(std::uint32_t requested) const noexcept;
+    [[nodiscard]] bool supportsDepthClamp() const noexcept;
 
 private:
     Device() = default;
@@ -45,6 +48,8 @@ private:
     GpuInfo m_gpu;
     float m_maxSamplerAnisotropy = 1.0f;
     std::uint32_t m_maxBindlessTextures = 0;
+    VkSampleCountFlags m_sampleCounts = VK_SAMPLE_COUNT_1_BIT;
+    bool m_depthClamp = false;
 };
 
 } // namespace devex::render::vulkan

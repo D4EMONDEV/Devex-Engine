@@ -300,12 +300,98 @@ def textured_quad(path):
     finish(builder, document, path, embed_buffer=True)
 
 
+def hdr_bytes(width, height, pixel):
+    """Encodes a Radiance .hdr image without run-length compression; pixel(x, y) returns linear RGB."""
+    header = "#?RADIANCE\nFORMAT=32-bit_rle_rgbe\n\n-Y {} +X {}\n".format(height, width).encode("ascii")
+
+    def encode_channel(values):
+        # Runs of four or more equal bytes, and literal spans of at most 128 bytes otherwise.
+        out = bytearray()
+        index = 0
+        while index < len(values):
+            run = 1
+            while index + run < len(values) and run < 127 and values[index + run] == values[index]:
+                run += 1
+            if run >= 4:
+                out.extend((128 + run, values[index]))
+                index += run
+                continue
+            start = index
+            index += 1
+            while index < len(values) and index - start < 128:
+                ahead = 1
+                while index + ahead < len(values) and ahead < 4 and values[index + ahead] == values[index]:
+                    ahead += 1
+                if ahead >= 4:
+                    break
+                index += 1
+            out.append(index - start)
+            out.extend(values[start:index])
+        return out
+
+    data = bytearray()
+    for y in range(height):
+        channels = [bytearray(), bytearray(), bytearray(), bytearray()]
+        for x in range(width):
+            r, g, b = pixel(x, y)
+            brightest = max(r, g, b)
+            rgbe = (0, 0, 0, 0)
+            if brightest >= 1e-32:
+                mantissa, exponent = math.frexp(brightest)
+                scale = mantissa * 256.0 / brightest
+                rgbe = (int(r * scale), int(g * scale), int(b * scale), exponent + 128)
+            for channel, value in zip(channels, rgbe):
+                channel.append(value)
+        data.extend((2, 2, width >> 8, width & 0xFF))
+        for channel in channels:
+            data.extend(encode_channel(channel))
+    return header + bytes(data)
+
+
+def sky(width, height, sun_direction):
+    """A clear daylight sky: a gradient from the horizon to the zenith, a glow around the sun and
+    a dim ground. The sun itself is a directional light in the scene, so it is not in the image."""
+    sun = [c / math.sqrt(sum(v * v for v in sun_direction)) for c in sun_direction]
+
+    def pixel(x, y):
+        # Inverse of the engine's equirectangular mapping: the image center looks along -Z.
+        phi = (x + 0.5) / width * 2.0 * math.pi - math.pi
+        theta = (y + 0.5) / height * math.pi
+        direction = (math.sin(theta) * math.sin(phi), math.cos(theta), -math.sin(theta) * math.cos(phi))
+        up = direction[1]
+        if up < 0.0:
+            fade = min(1.0, -up * 8.0)
+            horizon = (0.55, 0.6, 0.65)
+            ground = (0.3, 0.28, 0.25)
+            return tuple(h * (1.0 - fade) + g * fade for h, g in zip(horizon, ground))
+        zenith = (0.06, 0.18, 0.7)
+        horizon = (0.6, 0.72, 0.95)
+        t = math.pow(up, 0.5)
+        color = [h * (1.0 - t) + z * t for h, z in zip(horizon, zenith)]
+        glow = max(0.0, sum(d * s for d, s in zip(direction, sun)))
+        color = [c + 0.6 * math.pow(glow, 8.0) * w for c, w in zip(color, (1.0, 0.9, 0.7))]
+        return tuple(color)
+    return pixel
+
+
+def material(path, lines):
+    write(path, "[material format=1]\n" + "".join(line + "\n" for line in lines))
+
+
 def main():
     # Sandbox project
     write(SANDBOX_ASSETS / "textures" / "checker.png",
           png_bytes(256, 256, checker_pixel(16, 256, (196, 200, 206, 255), (150, 156, 166, 255))))
     crate(SANDBOX_ASSETS / "models" / "crate" / "crate.gltf")
     beacon(SANDBOX_ASSETS / "models" / "beacon.glb")
+    # The sandbox sun travels along (-0.287, -0.866, -0.41).
+    write(SANDBOX_ASSETS / "environments" / "daylight.hdr", hdr_bytes(1024, 512, sky(1024, 512, (0.287, 0.866, 0.41))))
+    for index in range(5):
+        roughness = 0.1 + 0.2 * index
+        material(SANDBOX_ASSETS / "materials" / "pbr" / "gold_{}.dvxmat".format(index),
+                 ["base_color = vec4(1, 0.766, 0.336, 1)", "metallic = 1", "roughness = {:g}".format(roughness)])
+        material(SANDBOX_ASSETS / "materials" / "pbr" / "plastic_{}.dvxmat".format(index),
+                 ["base_color = vec4(0.7, 0.05, 0.05, 1)", "metallic = 0", "roughness = {:g}".format(roughness)])
 
     # Importer tests
     write(TEST_DATA / "checker.png",

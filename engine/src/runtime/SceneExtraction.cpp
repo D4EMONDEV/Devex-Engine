@@ -1,5 +1,8 @@
+#include <devex/render/Photometry.hpp>
 #include <devex/runtime/SceneExtraction.hpp>
 #include <devex/scene/Components.hpp>
+
+#include <cmath>
 
 namespace devex::runtime {
 
@@ -10,19 +13,76 @@ void extractScene(scene::Scene& scene, AssetManager& assets, render::RenderWorld
     {
         if (camera.primary)
         {
-            world.camera.view = math::inverse(transform.matrix);
-            world.camera.verticalFov = camera.verticalFov;
-            world.camera.nearPlane = camera.nearPlane;
+            world.camera = {
+                .view = math::inverse(transform.matrix),
+                .verticalFov = camera.verticalFov,
+                .nearPlane = camera.nearPlane,
+                .autoExposure = camera.autoExposure,
+                .ev100 = camera.ev100,
+                .exposureCompensation = camera.exposureCompensation,
+                .minEv100 = camera.minEv100,
+                .maxEv100 = camera.maxEv100,
+                .adaptationSpeed = camera.adaptationSpeed,
+                .tonemapper = static_cast<render::Tonemapper>(camera.tonemapper),
+            };
             break;
         }
     }
 
-    const auto lights = scene.view<scene::WorldTransform, scene::DirectionalLight>();
-    if (const auto first = lights.begin(); first != lights.end())
+    const auto forward = [](const math::Mat4& matrix) {
+        const math::Vec3 direction = math::Mat3(matrix) * math::Vec3{0.0f, 0.0f, -1.0f};
+        const float length = math::length(direction);
+        return length > 0.0f ? direction / length : math::Vec3{0.0f, 0.0f, -1.0f};
+    };
+
+    const auto suns = scene.view<scene::WorldTransform, scene::DirectionalLight>();
+    if (const auto first = suns.begin(); first != suns.end())
     {
         [[maybe_unused]] const auto [entity, transform, light] = *first;
-        world.lightDirection = math::Mat3(transform.matrix) * math::Vec3{0.0f, 0.0f, -1.0f};
-        world.ambient = light.ambient;
+        world.sun = {
+            .direction = forward(transform.matrix),
+            .illuminance = light.color * render::colorFromTemperature(light.temperature) * light.illuminance,
+            .castShadows = light.castShadows,
+            .shadowDistance = light.shadowDistance,
+        };
+    }
+
+    for ([[maybe_unused]] auto [entity, transform, light] :
+         scene.view<scene::WorldTransform, scene::PointLight>())
+    {
+        world.lights.push_back({
+            .type = render::LightType::Point,
+            .position = math::Vec3(transform.matrix[3]),
+            .intensity = light.color * render::colorFromTemperature(light.temperature) *
+                         render::luminousIntensityFromPower(light.intensity),
+            .range = light.range,
+        });
+    }
+    for ([[maybe_unused]] auto [entity, transform, light] :
+         scene.view<scene::WorldTransform, scene::SpotLight>())
+    {
+        world.lights.push_back({
+            .type = render::LightType::Spot,
+            .position = math::Vec3(transform.matrix[3]),
+            .direction = forward(transform.matrix),
+            .intensity = light.color * render::colorFromTemperature(light.temperature) *
+                         render::luminousIntensityFromPower(light.intensity),
+            .range = light.range,
+            .innerAngle = light.innerAngle,
+            .outerAngle = light.outerAngle,
+        });
+    }
+
+    const auto environments = scene.view<scene::Environment>();
+    if (const auto first = environments.begin(); first != environments.end())
+    {
+        [[maybe_unused]] const auto [entity, environment] = *first;
+        world.environment = {
+            .sky = assets.texture(environment.sky),
+            .color = environment.color,
+            .intensity = environment.intensity,
+            .rotation = environment.rotation,
+        };
     }
 
     for ([[maybe_unused]] auto [entity, transform, renderer] :

@@ -5,6 +5,9 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <format>
 #include <string>
 #include <vector>
@@ -76,7 +79,7 @@ TEST_CASE("The renderer presents frames without validation errors", "[render][gp
         for (int frame = 0; frame < 5; ++frame)
         {
             devex::render::RenderWorld& world = renderer->beginFrame();
-            world.clearColor = {0.1f * static_cast<float>(frame), 0.2f, 0.3f, 1.0f};
+            world.environment.color = {0.1f * static_cast<float>(frame), 0.2f, 0.3f};
 
             const devex::core::Result<void> presented = renderer->endFrame();
             if (!presented)
@@ -229,6 +232,99 @@ TEST_CASE("Textured materials draw submeshes and survive texture removal", "[ren
         CHECK(renderer->stats().drawCalls == 2);
         CHECK(renderer->stats().textureCount == 1);
         CHECK(renderer->stats().materialCount == 1);
+    }
+
+    for (const std::string& error : capture.errors())
+    {
+        UNSCOPED_INFO(error);
+    }
+    CHECK(capture.errors().empty());
+}
+
+TEST_CASE("Lit frames with shadows, local lights and a sky texture render without validation errors",
+          "[render][gpu]")
+{
+    const ErrorCapture capture;
+    {
+        auto platform = devex::platform::Platform::create();
+        REQUIRE(platform.has_value());
+        auto window = platform->createWindow({.width = 320, .height = 240, .vulkan = true, .hidden = true});
+        REQUIRE(window.has_value());
+        auto renderer = devex::render::Renderer::create(*platform, *window, {.validation = true});
+        if (!renderer)
+        {
+            FAIL(std::format("{}", renderer.error()));
+        }
+        CHECK(renderer->stats().msaaSamples >= 1);
+
+        auto ground = renderer->createMesh(devex::asset::makePlane(20.0f));
+        auto sphere = renderer->createMesh(devex::asset::makeUvSphere());
+        REQUIRE(ground.has_value());
+        REQUIRE(sphere.has_value());
+
+        // A half-float equirectangular sky of value 1, with its mip chain.
+        devex::asset::TextureData sky{.format = devex::asset::TextureFormat::Rgba16Float};
+        for (std::uint32_t width = 8, height = 4; width > 0; width /= 2, height = std::max(height / 2, 1u))
+        {
+            devex::asset::TextureMip& mip = sky.mips.emplace_back();
+            mip.width = width;
+            mip.height = height;
+            for (std::uint32_t texel = 0; texel < width * height * 4; ++texel)
+            {
+                mip.bytes.push_back(std::byte{0x00});
+                mip.bytes.push_back(std::byte{0x3C});
+            }
+        }
+        auto skyTexture = renderer->createTexture(sky);
+        REQUIRE(skyTexture.has_value());
+
+        const devex::math::Mat4 cameraTransform =
+            devex::math::translate(devex::math::Mat4{1.0f}, {0.0f, 2.0f, 6.0f});
+        float firstEv100 = 0.0f;
+        for (int frame = 0; frame < 12; ++frame)
+        {
+            devex::render::RenderWorld& world = renderer->beginFrame();
+            world.camera.view = devex::math::inverse(cameraTransform);
+            world.camera.autoExposure = frame >= 4;
+            world.camera.adaptationSpeed = 100.0f;
+            world.sun = {.direction = {-0.3f, -1.0f, -0.2f}, .illuminance = devex::math::Vec3{50000.0f}};
+            world.lights.push_back({.position = {1.0f, 1.0f, 0.0f}, .intensity = devex::math::Vec3{200.0f}, .range = 5.0f});
+            world.lights.push_back({
+                .type = devex::render::LightType::Spot,
+                .position = {0.0f, 3.0f, 0.0f},
+                .direction = {0.0f, -1.0f, 0.0f},
+                .intensity = devex::math::Vec3{500.0f},
+                .range = 8.0f,
+                .innerAngle = 0.3f,
+                .outerAngle = 0.5f,
+            });
+            // The sky texture is replaced by the uniform sky halfway, then destroyed.
+            world.environment = {.sky = frame < 6 ? *skyTexture : devex::render::TextureHandle{},
+                                 .intensity = 5000.0f};
+            world.meshes.push_back({.mesh = *ground});
+            world.meshes.push_back({
+                .mesh = *sphere,
+                .transform = devex::math::translate(devex::math::Mat4{1.0f}, {0.0f, 0.5f, 0.0f}),
+            });
+
+            const devex::core::Result<void> presented = renderer->endFrame();
+            if (!presented)
+            {
+                FAIL(std::format("frame {}: {}", frame, presented.error()));
+            }
+            if (frame == 3)
+            {
+                firstEv100 = renderer->stats().ev100;
+            }
+            if (frame == 7)
+            {
+                renderer->destroyTexture(*skyTexture);
+            }
+        }
+        CHECK(renderer->stats().lightCount == 2);
+        // Manual exposure keeps the default EV100; automatic exposure then measures the image.
+        CHECK(firstEv100 == 14.0f);
+        CHECK(renderer->stats().ev100 != 14.0f);
     }
 
     for (const std::string& error : capture.errors())

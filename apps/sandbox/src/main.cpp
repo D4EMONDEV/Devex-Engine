@@ -11,12 +11,15 @@
 #include <devex/scene/Scene.hpp>
 #include <devex/scene/SceneSerializer.hpp>
 
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <filesystem>
 #include <format>
 #include <numbers>
 #include <optional>
+#include <string_view>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -39,16 +42,6 @@ using devex::scene::Transform;
 const Vec3 up{0.0f, 1.0f, 0.0f};
 const Vec3 right{1.0f, 0.0f, 0.0f};
 
-// Identifiers from the .dvxmeta files of apps/sandbox/project/assets.
-[[nodiscard]] AssetId projectAsset(std::string_view uuid)
-{
-    return AssetId{*Uuid::parse(uuid)};
-}
-
-const AssetId groundMaterial = projectAsset("78014e97-7de2-4e27-89db-74abd840010d");
-const AssetId glowMaterial = projectAsset("ff4872a7-7bc8-4ffb-900d-0c565be864f0");
-const AssetId crateModel = projectAsset("fa17e48e-77a9-48d6-9cb6-3075791e73bf");
-const AssetId beaconModel = projectAsset("65be0348-3b58-4e34-9d7b-30ba9d12512c");
 
 // A model to place once its import is available.
 struct Placement
@@ -59,10 +52,12 @@ struct Placement
     Uuid parent;
 };
 
-// Milestone 6 playground: a scene built from project assets imported in the background. Models
-// appear once imported, and editing a texture, a material or a model in the assets folder updates
-// the scene while it runs. F5 saves the scene, F9 reloads it, and dropping a .gltf or .glb file
-// copies it into the project and places it in front of the camera.
+// Milestone 7 playground: a physically lit scene built from project assets imported in the
+// background, under a high dynamic range sky, with a shadow-casting sun and colored local lights.
+// N switches between day and night, which automatic exposure follows. Editing a texture, a
+// material or a model in the assets folder updates the scene while it runs. F5 saves the scene,
+// F9 reloads it, and dropping a .gltf or .glb file copies it into the project and places it in
+// front of the camera.
 class Sandbox final : public devex::runtime::Application
 {
 public:
@@ -75,6 +70,7 @@ public:
                        platform().keyLabel(Key::Space), platform().keyLabel(Key::LeftControl));
         DEVEX_LOG_INFO("F5 saves the scene to {}, F9 reloads it; drop a glTF file to import it",
                        devex::core::toUtf8(scenePath()));
+        DEVEX_LOG_INFO("{} switches between day and night", platform().keyLabel(Key::N));
         return {};
     }
 
@@ -140,19 +136,26 @@ public:
         updateTitle(frameDelta);
     }
 
-    void onRender(devex::render::RenderWorld& world) override
-    {
-        // The scene has no environment settings yet: the sky color is set here.
-        world.clearColor = {0.46f, 0.62f, 0.85f, 1.0f};
-    }
-
 private:
     static constexpr float mouseSensitivity = 0.1f; // degrees per mouse unit
+    static constexpr float daySkyIntensity = 25000.0f;
     static constexpr Duration statsPeriod = std::chrono::milliseconds(500);
 
     [[nodiscard]] std::filesystem::path scenePath() const
     {
         return platform().baseDirectory() / "sandbox.dvxscene";
+    }
+
+    // The main asset of a file of the project, whose identifier comes from its .dvxmeta.
+    [[nodiscard]] AssetId projectAsset(std::string_view path)
+    {
+        const devex::asset::AssetDatabase* const database = assetDatabase();
+        std::optional<AssetId> id = database != nullptr ? database->findByPath(path) : std::nullopt;
+        if (!id)
+        {
+            DEVEX_LOG_WARNING("The sandbox project has no {}", path);
+        }
+        return id.value_or(AssetId{});
     }
 
     void buildScene()
@@ -164,7 +167,15 @@ private:
                                       .rotation = devex::math::angleAxis(devex::math::radians(35.0f), up) *
                                                   devex::math::angleAxis(devex::math::radians(-60.0f), right),
                                   });
-        world.add<DirectionalLight>(sun);
+        world.add<DirectionalLight>(sun, DirectionalLight{.temperature = 5800.0f});
+        m_sunUuid = world.uuid(sun);
+
+        const Entity sky = world.createEntity("Sky");
+        world.add<devex::scene::Environment>(sky, devex::scene::Environment{
+                                                      .sky = projectAsset("res://assets/environments/daylight.hdr"),
+                                                      .intensity = daySkyIntensity,
+                                                  });
+        m_skyUuid = world.uuid(sky);
 
         const Entity camera = world.createEntity("Camera");
         world.add<Transform>(camera, Transform{.position = m_position});
@@ -173,13 +184,15 @@ private:
 
         const Entity ground = world.createEntity("Ground");
         world.add<Transform>(ground, Transform{.scale = {40.0f, 1.0f, 40.0f}});
-        world.add<MeshRenderer>(ground, MeshRenderer{devex::asset::builtin::planeMesh, groundMaterial});
+        world.add<MeshRenderer>(ground, MeshRenderer{devex::asset::builtin::planeMesh,
+                                                     projectAsset("res://assets/materials/ground.dvxmat")});
 
         // Children orbit with the turntable because their transforms are relative to it.
         const Entity turntable = world.createEntity("Turntable");
         world.add<Transform>(turntable);
         m_turntableUuid = world.uuid(turntable);
-        m_placements.push_back({crateModel, Vec3{0.0f}, m_turntableUuid});
+        m_placements.push_back({projectAsset("res://assets/models/crate/crate.gltf"), Vec3{0.0f}, m_turntableUuid});
+        const AssetId glowMaterial = projectAsset("res://assets/materials/glow.dvxmat");
 
         for (int index = 0; index < 4; ++index)
         {
@@ -198,19 +211,71 @@ private:
             attach(satellite, turntable);
         }
 
-        const Entity row = world.createEntity("Sphere row");
-        world.add<Transform>(row, Transform{.position = {0.0f, 0.5f, -5.0f}});
-        for (int index = 0; index < 5; ++index)
+        // Roughness increases from left to right, for a metal and a dielectric.
+        for (const auto& [name, depth] : {std::pair<const char*, float>{"gold", -5.0f}, {"plastic", -6.5f}})
         {
-            const Entity sphere = world.createEntity(std::format("Sphere {}", index + 1));
-            world.add<Transform>(sphere,
-                                 Transform{.position = {-4.0f + 2.0f * static_cast<float>(index), 0.0f, 0.0f}});
-            world.add<MeshRenderer>(sphere, MeshRenderer{devex::asset::builtin::sphereMesh});
-            attach(sphere, row);
+            const Entity row = world.createEntity(std::format("Spheres ({})", name));
+            world.add<Transform>(row, Transform{.position = {0.0f, 0.5f, depth}});
+            for (int index = 0; index < 5; ++index)
+            {
+                const Entity sphere = world.createEntity(std::format("Sphere {}", index + 1));
+                world.add<Transform>(sphere,
+                                     Transform{.position = {-4.0f + 2.0f * static_cast<float>(index), 0.0f, 0.0f}});
+                world.add<MeshRenderer>(
+                    sphere, MeshRenderer{devex::asset::builtin::sphereMesh,
+                                         projectAsset(std::format("res://assets/materials/pbr/{}_{}.dvxmat", name, index))});
+                attach(sphere, row);
+            }
         }
 
-        m_placements.push_back({beaconModel, Vec3{-6.0f, 0.0f, -2.0f}, Uuid{}});
-        m_placements.push_back({beaconModel, Vec3{6.0f, 0.0f, -2.0f}, Uuid{}});
+        // Local lights show at night, when automatic exposure opens up.
+        const std::array<std::pair<Vec3, Vec3>, 3> pointLights{{
+            {{-3.0f, 1.5f, 2.0f}, {1.0f, 0.55f, 0.25f}},
+            {{3.0f, 1.2f, -3.5f}, {0.2f, 0.6f, 1.0f}},
+            {{-2.0f, 1.0f, -8.5f}, {1.0f, 0.2f, 0.7f}},
+        }};
+        for (std::size_t index = 0; index < pointLights.size(); ++index)
+        {
+            const Entity light = world.createEntity(std::format("Lamp {}", index + 1));
+            world.add<Transform>(light, Transform{.position = pointLights[index].first});
+            world.add<devex::scene::PointLight>(light, devex::scene::PointLight{
+                                                           .color = pointLights[index].second,
+                                                           .intensity = 3000.0f,
+                                                           .range = 9.0f,
+                                                       });
+        }
+
+        const AssetId beacon = projectAsset("res://assets/models/beacon.glb");
+        m_placements.push_back({beacon, Vec3{-6.0f, 0.0f, -2.0f}, Uuid{}});
+        m_placements.push_back({beacon, Vec3{6.0f, 0.0f, -2.0f}, Uuid{}});
+
+        const Entity spot = world.createEntity("Beacon spot");
+        world.add<Transform>(spot, Transform{
+                                       .position = {6.0f, 4.0f, 1.0f},
+                                       .rotation = devex::math::angleAxis(devex::math::radians(-60.0f), right),
+                                   });
+        world.add<devex::scene::SpotLight>(spot, devex::scene::SpotLight{
+                                                     .color = {1.0f, 0.95f, 0.8f},
+                                                     .intensity = 6000.0f,
+                                                     .range = 12.0f,
+                                                 });
+    }
+
+    void toggleNight()
+    {
+        m_night = !m_night;
+        Scene& world = scene();
+        if (auto* const sun = world.tryGet<DirectionalLight>(world.findEntity(m_sunUuid)))
+        {
+            // Moonlight is about a third of a lux.
+            sun->illuminance = m_night ? 0.3f : 100000.0f;
+            sun->temperature = m_night ? 9000.0f : 5800.0f;
+        }
+        if (auto* const sky = world.tryGet<devex::scene::Environment>(world.findEntity(m_skyUuid)))
+        {
+            sky->intensity = m_night ? 0.03f : daySkyIntensity;
+        }
+        DEVEX_LOG_INFO("{}", m_night ? "Night" : "Day");
     }
 
     void attach(Entity child, Entity parent)
@@ -309,6 +374,10 @@ private:
         {
             reloadScene();
         }
+        if (keys.wasKeyPressed(Key::N))
+        {
+            toggleNight();
+        }
     }
 
     void saveScene()
@@ -356,10 +425,10 @@ private:
         const std::size_t importing =
             assetDatabase() != nullptr ? assetDatabase()->pendingImports() : 0;
         window().setTitle(std::format(
-            "Devex Sandbox | {} ({}) | {:.0f} FPS | {:.0f} fixed/s | {} entities{} | position "
-            "({:.1f}, {:.1f}, {:.1f})",
+            "Devex Sandbox | {} ({}) | {:.0f} FPS | {:.0f} fixed/s | {} entities | EV100 {:.1f}{} | "
+            "position ({:.1f}, {:.1f}, {:.1f})",
             renderer().gpu().name, devex::render::toString(renderer().presentMode()),
-            m_frames / seconds, m_fixedSteps / seconds, scene().entityCount(),
+            m_frames / seconds, m_fixedSteps / seconds, scene().entityCount(), renderer().stats().ev100,
             importing > 0 ? std::format(" | importing {}", importing) : std::string(),
             m_position.x, m_position.y, m_position.z));
 
@@ -370,6 +439,9 @@ private:
 
     Uuid m_cameraUuid;
     Uuid m_turntableUuid;
+    Uuid m_sunUuid;
+    Uuid m_skyUuid;
+    bool m_night = false;
     std::vector<Placement> m_placements;
 
     Vec3 m_position{0.0f, 2.0f, 8.0f};

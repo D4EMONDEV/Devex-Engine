@@ -124,3 +124,20 @@ TEST_CASE("The cube spans the requested size", "[asset][primitives]")
         CHECK_THAT(std::abs(vertex.position.z), WithinAbs(1.0, 1e-6));
     }
 }
+
+TEST_CASE("MikkTSpace tangents follow increasing u with glTF handedness", "[asset][mesh]")
+{
+    const MeshData plane = devex::asset::makePlane(2.0f);
+    for (const devex::asset::Vertex& vertex : plane.vertices)
+    {
+        CHECK_THAT(vertex.tangent.x, WithinAbs(1.0, 1e-5));
+        CHECK_THAT(vertex.tangent.y, WithinAbs(0.0, 1e-5));
+        // cross(normal, tangent) points towards decreasing v, the top of the texture.
+        CHECK(vertex.tangent.w == 1.0f);
+    }
+
+    // Faces share no vertex, and each face's corners share their tangent: nothing is split.
+    const MeshData cube = devex::asset::makeCube();
+    CHECK(cube.vertices.size() == 24);
+    CHECK(devex::asset::validate(cube).has_value());
+}
