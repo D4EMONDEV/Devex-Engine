@@ -78,6 +78,9 @@ public:
     // later pollEvents, on the thread that polls events.
     void showFileDialog(const Window& parent, const FileDialog& dialog, FileDialogCallback callback);
 
+    // Opens a folder in the system's file manager, or a file with its default application.
+    [[nodiscard]] core::Result<void> openPath(const std::filesystem::path& path) const;
+
     // Name of the key position, independent of the layout ("W").
     [[nodiscard]] std::string keyName(Key key) const;
     // Label of the key under the current keyboard layout ("Z" for Key::W on AZERTY).

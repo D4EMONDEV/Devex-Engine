@@ -6,6 +6,7 @@
 
 #include "Commands.hpp"
 
+#include <array>
 #include <utility>
 
 namespace devex::render::vulkan {
@@ -164,9 +165,18 @@ VkDeviceAddress Buffer::deviceAddress() const noexcept
 core::Result<Image> Image::create(const Device& device, const Allocator& allocator,
                                   const ImageConfig& config)
 {
+    const bool alternate = config.alternateFormat != VK_FORMAT_UNDEFINED;
+    const std::array<VkFormat, 2> formats{config.format, config.alternateFormat};
+    const VkImageFormatListCreateInfo formatList{
+        .sType = VK_STRUCTURE_TYPE_IMAGE_FORMAT_LIST_CREATE_INFO,
+        .viewFormatCount = static_cast<std::uint32_t>(formats.size()),
+        .pViewFormats = formats.data(),
+    };
     const VkImageCreateInfo imageInfo{
         .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
-        .flags = config.cube ? VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT : VkImageCreateFlags{0},
+        .pNext = alternate ? &formatList : nullptr,
+        .flags = (config.cube ? VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT : VkImageCreateFlags{0}) |
+                 (alternate ? VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT : VkImageCreateFlags{0}),
         .imageType = VK_IMAGE_TYPE_2D,
         .format = config.format,
         .extent = {config.extent.width, config.extent.height, 1},
@@ -192,7 +202,11 @@ core::Result<Image> Image::create(const Device& device, const Allocator& allocat
                                  : config.layers > 1 ? VK_IMAGE_VIEW_TYPE_2D_ARRAY
                                                      : VK_IMAGE_VIEW_TYPE_2D;
     image.m_view = image.createView(type, 0, config.mipLevels, 0, config.layers);
-    if (image.m_view == VK_NULL_HANDLE)
+    if (alternate)
+    {
+        image.m_alternateView = image.createView(type, 0, config.mipLevels, 0, config.layers, config.alternateFormat);
+    }
+    if (image.m_view == VK_NULL_HANDLE || (alternate && image.m_alternateView == VK_NULL_HANDLE))
     {
         return core::makeError(core::ErrorCode::Graphics, "cannot create the image view");
     }
@@ -205,6 +219,7 @@ Image::Image(Image&& other) noexcept
     , m_image(std::exchange(other.m_image, VK_NULL_HANDLE))
     , m_allocation(std::exchange(other.m_allocation, VK_NULL_HANDLE))
     , m_view(std::exchange(other.m_view, VK_NULL_HANDLE))
+    , m_alternateView(std::exchange(other.m_alternateView, VK_NULL_HANDLE))
     , m_config(other.m_config)
     , m_subviews(std::move(other.m_subviews))
 {
@@ -221,6 +236,7 @@ Image& Image::operator=(Image&& other) noexcept
         m_image = std::exchange(other.m_image, VK_NULL_HANDLE);
         m_allocation = std::exchange(other.m_allocation, VK_NULL_HANDLE);
         m_view = std::exchange(other.m_view, VK_NULL_HANDLE);
+        m_alternateView = std::exchange(other.m_alternateView, VK_NULL_HANDLE);
         m_config = other.m_config;
         m_subviews = std::move(other.m_subviews);
         other.m_subviews.clear();
@@ -240,10 +256,13 @@ void Image::destroy() noexcept
         vkDestroyImageView(m_device, subview.view, nullptr);
     }
     m_subviews.clear();
-    if (m_view != VK_NULL_HANDLE)
+    for (VkImageView* const view : {&m_view, &m_alternateView})
     {
-        vkDestroyImageView(m_device, m_view, nullptr);
-        m_view = VK_NULL_HANDLE;
+        if (*view != VK_NULL_HANDLE)
+        {
+            vkDestroyImageView(m_device, *view, nullptr);
+            *view = VK_NULL_HANDLE;
+        }
     }
     if (m_image != VK_NULL_HANDLE)
     {
@@ -254,13 +273,13 @@ void Image::destroy() noexcept
 }
 
 VkImageView Image::createView(VkImageViewType type, std::uint32_t baseMip, std::uint32_t mipCount,
-                              std::uint32_t baseLayer, std::uint32_t layerCount) const
+                              std::uint32_t baseLayer, std::uint32_t layerCount, VkFormat format) const
 {
     const VkImageViewCreateInfo viewInfo{
         .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
         .image = m_image,
         .viewType = type,
-        .format = m_config.format,
+        .format = format != VK_FORMAT_UNDEFINED ? format : m_config.format,
         .subresourceRange =
             {
                 .aspectMask = aspectOf(m_config.format),
@@ -305,6 +324,11 @@ VkImage Image::handle() const noexcept
 VkImageView Image::view() const noexcept
 {
     return m_view;
+}
+
+VkImageView Image::alternateView() const noexcept
+{
+    return m_alternateView;
 }
 
 const ImageConfig& Image::config() const noexcept

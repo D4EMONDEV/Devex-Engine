@@ -1,6 +1,7 @@
 #include <devex/asset/Primitives.hpp>
 #include <devex/asset/Project.hpp>
 #include <devex/asset/import/AssetDatabase.hpp>
+#include <devex/core/File.hpp>
 #include <devex/core/JobSystem.hpp>
 #include <devex/core/Log.hpp>
 #include <devex/core/Uuid.hpp>
@@ -76,7 +77,8 @@ TEST_CASE("The tools overlay renders over the scene without validation errors", 
     CHECK(errors.empty());
 }
 
-TEST_CASE("The editor opens the project's scene and renders its viewport without validation errors", "[tools][gpu]")
+TEST_CASE("The editor opens the project's scenes in tabs and renders its viewport without validation errors",
+          "[tools][gpu]")
 {
     std::vector<std::string> errors;
     const devex::core::LogSinkId sink =
@@ -89,7 +91,7 @@ TEST_CASE("The editor opens the project's scene and renders its viewport without
     const std::filesystem::path root =
         std::filesystem::temp_directory_path() / ("devex-editor-" + devex::core::Uuid::generate().toString());
     {
-        // A project with one scene: a light, a camera and a cube.
+        // A project with two scenes: a level with a light, a camera and a cube, and a menu.
         const devex::asset::Project project = *devex::asset::createProject(root, "Editor test");
         devex::scene::Scene authored;
         const devex::scene::Entity cube = authored.createEntity("Cube");
@@ -102,6 +104,15 @@ TEST_CASE("The editor opens the project's scene and renders its viewport without
         authored.add<devex::scene::Transform>(camera, devex::scene::Transform{.position = {0.0f, 1.0f, 5.0f}});
         authored.add<devex::scene::Camera>(camera);
         REQUIRE(devex::scene::saveSceneFile(authored, project.assetsDirectory() / "scenes" / "level.dvxscene"));
+        devex::scene::Scene menu;
+        static_cast<void>(menu.createEntity("Title"));
+        REQUIRE(devex::scene::saveSceneFile(menu, project.assetsDirectory() / "scenes" / "menu.dvxscene"));
+        // The editor left the project with both scenes open and the level on screen.
+        REQUIRE(devex::core::writeTextFile(project.cacheDirectory() / "editor.dvx",
+                                           "[editor format=2 active_scene=\"res://assets/scenes/level.dvxscene\"]\n"
+                                           "[scene path=\"res://assets/scenes/menu.dvxscene\"]\n"
+                                           "[scene path=\"res://assets/scenes/level.dvxscene\" x=0 y=1 z=0 yaw=-30 "
+                                           "pitch=-20 distance=8 speed=6]\n"));
 
         devex::core::JobSystem jobs(1);
         auto database = devex::asset::AssetDatabase::open(project, jobs, {.watchFiles = false});
@@ -120,7 +131,7 @@ TEST_CASE("The editor opens the project's scene and renders its viewport without
         REQUIRE(cubeMesh.has_value());
 
         auto editor = devex::tools::ToolsOverlay::create(*platform, *window, *renderer, root / "editor.ini",
-                                                         devex::tools::ToolsMode::Editor, root / "recent.dvx");
+                                                         devex::tools::ToolsMode::Editor, root / "user.dvx");
         if (!editor)
         {
             FAIL(std::format("{}", editor.error()));
@@ -128,10 +139,21 @@ TEST_CASE("The editor opens the project's scene and renders its viewport without
         CHECK((*editor)->isVisible());
         (*editor)->setVisible(false);
         CHECK((*editor)->isVisible());
-        (*editor)->setAssetDatabase(database->get());
 
+        // Without a project, the project manager is shown.
         devex::scene::Scene scene;
         using devex::tools::PlayState;
+        for (int frame = 0; frame < 2; ++frame)
+        {
+            platform->pollEvents([](const devex::platform::Event&) {});
+            (*editor)->update(scene, std::chrono::milliseconds(16), PlayState::Editing);
+            devex::render::RenderWorld& world = renderer->beginFrame();
+            (*editor)->prepareRender(scene, world, PlayState::Editing);
+            REQUIRE(renderer->endFrame());
+            CHECK_FALSE((*editor)->takeRequests().openProject.has_value());
+        }
+        (*editor)->setAssetDatabase(database->get());
+
         for (int frame = 0; frame < 8; ++frame)
         {
             // Two frames play, one is paused, then editing resumes.
@@ -169,10 +191,32 @@ TEST_CASE("The editor opens the project's scene and renders its viewport without
             CHECK_FALSE(requests.quit);
         }
 
-        // The project's only scene opened, without unsaved changes.
+        // Both scenes opened, the level on screen and the menu in a background tab, without unsaved changes.
         CHECK(scene.entityCount() == 3);
-        CHECK((*editor)->confirmClose());
+        std::size_t backgroundEntities = 0;
+        std::size_t backgroundScenes = 0;
+        (*editor)->forEachBackgroundScene([&](devex::scene::Scene& background) {
+            ++backgroundScenes;
+            backgroundEntities += background.entityCount();
+        });
+        CHECK(backgroundScenes == 1);
+        CHECK(backgroundEntities == 1);
+        CHECK((*editor)->confirmClose(scene));
         (*editor)->setAssetDatabase(nullptr);
+        backgroundScenes = 0;
+        (*editor)->forEachBackgroundScene([&](devex::scene::Scene&) { ++backgroundScenes; });
+        CHECK(backgroundScenes == 0);
+
+        // The open scenes are remembered for the next session.
+        const devex::core::Result<std::string> settings = devex::core::readTextFile(project.cacheDirectory() / "editor.dvx");
+        REQUIRE(settings.has_value());
+        CHECK(settings->find("menu.dvxscene") != std::string::npos);
+        CHECK(settings->find("active_scene=\"res://assets/scenes/level.dvxscene\"") != std::string::npos);
+        // The user's settings keep the theme and the project.
+        const devex::core::Result<std::string> user = devex::core::readTextFile(root / "user.dvx");
+        REQUIRE(user.has_value());
+        CHECK(user->find("[theme") != std::string::npos);
+        CHECK(user->find("Editor test.dvxproj") != std::string::npos);
         editor->reset();
         renderer->destroyMesh(*cubeMesh);
     }

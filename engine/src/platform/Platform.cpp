@@ -13,10 +13,12 @@
 #include <imgui.h>
 #include <imgui_impl_sdl3.h>
 
+#include <algorithm>
 #include <atomic>
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -409,6 +411,17 @@ core::Result<std::filesystem::path> Platform::userDataDirectory(std::string_view
     std::filesystem::path directory = core::pathFromUtf8(path);
     SDL_free(path);
     return directory;
+}
+
+core::Result<void> Platform::openPath(const std::filesystem::path& path) const
+{
+    std::string url = "file:///" + core::toUtf8(path.lexically_normal());
+    std::ranges::replace(url, '\\', '/');
+    if (!SDL_OpenURL(url.c_str()))
+    {
+        return core::makeError(core::ErrorCode::Platform, "cannot open '{}': {}", core::toUtf8(path), SDL_GetError());
+    }
+    return {};
 }
 
 void Platform::showFileDialog(const Window& parent, const FileDialog& dialog, FileDialogCallback callback)

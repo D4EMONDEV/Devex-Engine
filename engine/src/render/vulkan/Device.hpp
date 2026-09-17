@@ -36,6 +36,8 @@ public:
     // The largest sample count up to `requested` that color and depth attachments both support.
     [[nodiscard]] VkSampleCountFlagBits sampleCount(std::uint32_t requested) const noexcept;
     [[nodiscard]] bool supportsDepthClamp() const noexcept;
+    // Swapchain images can be viewed in another format than their own (VK_KHR_swapchain_mutable_format).
+    [[nodiscard]] bool supportsMutableSwapchainFormat() const noexcept;
 
 private:
     Device() = default;
@@ -50,6 +52,7 @@ private:
     std::uint32_t m_maxBindlessTextures = 0;
     VkSampleCountFlags m_sampleCounts = VK_SAMPLE_COUNT_1_BIT;
     bool m_depthClamp = false;
+    bool m_mutableSwapchainFormat = false;
 };
 
 } // namespace devex::render::vulkan

@@ -16,6 +16,7 @@
 
 #include <algorithm>
 #include <format>
+#include <functional>
 #include <memory>
 #include <chrono>
 #include <cstdlib>
@@ -90,6 +91,11 @@ private:
     void startPlaying();
     void stopPlaying();
     void switchProject(const std::filesystem::path& projectFile);
+    // Drops the project and everything loaded from it; the editor shows its project manager.
+    void closeProject();
+    // Calls the function with every scene the game code may have components in: the edited scene,
+    // the played copy and the scenes of the editor's background tabs.
+    void forEachScene(const std::function<void(scene::Scene&)>& function);
 
     // Game code of the project: loaded when a project opens, built by the editor, reloaded when a
     // new build appears.
@@ -266,7 +272,7 @@ void ApplicationRunner::handleEvent(const platform::Event& event)
 
 void ApplicationRunner::requestClose()
 {
-    if (!isEditor() || m_services.tools->confirmClose())
+    if (!isEditor() || m_services.tools->confirmClose(m_services.scene))
     {
         m_application.m_quitRequested = true;
     }
@@ -392,6 +398,11 @@ void ApplicationRunner::handleEditorRequests(tools::EditorRequests requests)
         switchProject(*requests.openProject);
         return;
     }
+    if (requests.closeProject)
+    {
+        closeProject();
+        return;
+    }
     if (requests.createCode && m_services.database != nullptr)
     {
         const asset::Project& project = m_services.database->project();
@@ -458,18 +469,36 @@ void ApplicationRunner::stopPlaying()
     DEVEX_LOG_INFO("Stopped playing");
 }
 
-void ApplicationRunner::switchProject(const std::filesystem::path& projectFile)
+void ApplicationRunner::closeProject()
 {
     if (m_playScene)
     {
         stopPlaying();
     }
-    // Everything loaded from the previous project goes before its database.
+    // Everything loaded from the project goes before its database.
     m_services.tools->setAssetDatabase(nullptr);
     closeGameCode();
     m_services.assets.setDatabase(nullptr);
     m_services.database.reset();
     m_services.scene = scene::Scene{};
+}
+
+void ApplicationRunner::forEachScene(const std::function<void(scene::Scene&)>& function)
+{
+    function(m_services.scene);
+    if (m_playScene)
+    {
+        function(*m_playScene);
+    }
+    if (isEditor())
+    {
+        m_services.tools->forEachBackgroundScene(function);
+    }
+}
+
+void ApplicationRunner::switchProject(const std::filesystem::path& projectFile)
+{
+    closeProject();
 
     core::Result<std::unique_ptr<asset::AssetDatabase>> opened = openProject(projectFile, m_services.jobs, m_watchAssets);
     if (!opened)
@@ -526,11 +555,8 @@ void ApplicationRunner::loadGameModule()
         return;
     }
     m_game = std::move(*module);
-    std::size_t restored = scene::restorePreservedComponents(m_services.scene);
-    if (m_playScene)
-    {
-        restored += scene::restorePreservedComponents(*m_playScene);
-    }
+    std::size_t restored = 0;
+    forEachScene([&restored](scene::Scene& scene) { restored += scene::restorePreservedComponents(scene); });
     DEVEX_LOG_INFO("Game code loaded: {} components, {} systems{}", m_game->registry().components().size(),
                    m_game->registry().systems().size(),
                    restored > 0 ? std::format(", {} components restored", restored) : std::string());
@@ -543,11 +569,7 @@ void ApplicationRunner::unloadGameModule()
         return;
     }
     // Components of the module stay in the scenes as text until it comes back.
-    static_cast<void>(m_game->release(m_services.scene));
-    if (m_playScene)
-    {
-        static_cast<void>(m_game->release(*m_playScene));
-    }
+    forEachScene([this](scene::Scene& scene) { static_cast<void>(m_game->release(scene)); });
     m_game.reset();
 }
 

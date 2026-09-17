@@ -1,11 +1,14 @@
 #include "ToolsState.hpp"
 
+#include <devex/asset/Project.hpp>
 #include <devex/core/Log.hpp>
 #include <devex/core/Path.hpp>
 #include <devex/platform/Input.hpp>
 #include <devex/scene/Components.hpp>
 #include <devex/scene/FieldValue.hpp>
 #include <devex/tools/SceneCommands.hpp>
+
+#include <imgui_internal.h>
 
 #include <algorithm>
 #include <cmath>
@@ -75,41 +78,135 @@ constexpr float clickTolerance = 4.0f;
     return state.camera.position() + state.camera.forward() * 8.0f;
 }
 
-void drawToolbar(ToolsState& state)
+// The scene tabs above the viewport, with a button to add a scene.
+void drawSceneTabs(ToolsState& state, scene::Scene& scene)
 {
-    ImGui::SetCursorPos(ImGui::GetCursorPos() + ImVec2(6.0f, 4.0f));
-    const auto modeButton = [&](const char* label, GizmoMode mode, const char* tooltip) {
-        const bool active = state.gizmo.mode == mode;
-        if (active)
-        {
-            ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
-        }
-        if (ImGui::Button(label))
-        {
-            state.gizmo.mode = mode;
-        }
-        if (active)
-        {
-            ImGui::PopStyleColor();
-        }
-        ImGui::SetItemTooltip("%s", tooltip);
-        ImGui::SameLine();
-    };
-    modeButton("Move", GizmoMode::Translate, "Move (W)");
-    modeButton("Rotate", GizmoMode::Rotate, "Rotate (E)");
-    modeButton("Scale", GizmoMode::Scale, "Scale (R)");
-    ImGui::SameLine(0.0f, 16.0f);
-    if (ImGui::Button(state.gizmo.space == GizmoSpace::World ? "Global" : "Local"))
+    const bool editing = state.playState == PlayState::Editing;
+    const ActiveDocument live = activeDocument(state, scene);
+    const ImGuiTabBarFlags flags = ImGuiTabBarFlags_Reorderable | ImGuiTabBarFlags_FittingPolicyScroll |
+                                   ImGuiTabBarFlags_NoCloseWithMiddleMouseButton;
+    if (!ImGui::BeginTabBar("scene tabs", flags))
     {
-        state.gizmo.space = state.gizmo.space == GizmoSpace::World ? GizmoSpace::Local : GizmoSpace::World;
+        return;
     }
-    ImGui::SetItemTooltip("Handles along the world or entity axes (X). Scaling is always local.");
-    ImGui::SameLine(0.0f, 16.0f);
-    ImGui::TextDisabled("Ctrl snaps  |  Right drag + WASDQE flies  |  Alt drag orbits  |  F frames");
-    ImGui::SameLine();
+    // ImGui shows the tab selected on the previous frame: the active tab is selected every frame, and
+    // only clicks change it, so that a tab opened from elsewhere is not switched back.
+    std::optional<std::size_t> clicked;
+    std::optional<std::uint64_t> closed;
+    for (std::size_t index = 0; index < state.tabs.size(); ++index)
+    {
+        const bool active = index == state.tabs.active();
+        const std::string label = std::format("{}  {}###tab{}", std::string_view(icons::Clapperboard),
+                                              tabName(state.tabs.path(index, live)), state.tabs.id(index));
+        ImGuiTabItemFlags itemFlags = ImGuiTabItemFlags_None;
+        if (state.tabs.isModified(index, live) && (editing || !active))
+        {
+            itemFlags |= ImGuiTabItemFlags_UnsavedDocument;
+        }
+        if (active)
+        {
+            itemFlags |= ImGuiTabItemFlags_SetSelected;
+        }
+        bool open = true;
+        const bool visible = ImGui::BeginTabItem(label.c_str(), editing ? &open : nullptr, itemFlags);
+        if (!active && ImGui::IsItemClicked(ImGuiMouseButton_Left))
+        {
+            clicked = index;
+        }
+        if (visible)
+        {
+            ImGui::EndTabItem();
+        }
+        if (const std::filesystem::path& path = state.tabs.path(index, live); !path.empty())
+        {
+            ImGui::SetItemTooltip("%s", core::toUtf8(path).c_str());
+        }
+        if (!open)
+        {
+            closed = state.tabs.id(index);
+        }
+    }
+    if (editing && ImGui::TabItemButton(icons::Plus.c_str(), ImGuiTabItemFlags_Trailing | ImGuiTabItemFlags_NoTooltip))
+    {
+        newSceneTab(state, scene);
+    }
+    ImGui::EndTabBar();
+
+    if (clicked && editing)
+    {
+        activateSceneTab(state, scene, *clicked);
+    }
+    if (closed)
+    {
+        requestAction(state, scene, {.kind = PendingAction::Kind::CloseTab, .tab = *closed});
+    }
+}
+
+void drawToolbar(ToolsState& state, scene::Scene& scene)
+{
+    const ThemeColors& colors = themeColors();
+    const ImGuiStyle& style = ImGui::GetStyle();
+    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + style.ItemSpacing.x);
+    const auto toolButtonFor = [&](const char* id, IconText icon, EditorTool tool, const char* tooltip) {
+        if (toolButton(id, icon, tooltip, state.tool == tool))
+        {
+            state.tool = tool;
+        }
+        ImGui::SameLine(0.0f, 2.0f);
+    };
+    toolButtonFor("select", icons::Pointer, EditorTool::Select, "Select (Q)");
+    toolButtonFor("move", icons::Move, EditorTool::Move, "Move (W)");
+    toolButtonFor("rotate", icons::Rotate, EditorTool::Rotate, "Rotate (E)");
+    toolButtonFor("scale", icons::Scale, EditorTool::Scale, "Scale (R)");
+    toolbarSeparator();
+    const bool local = state.gizmo.space == GizmoSpace::Local;
+    if (toolButton("space", local ? icons::Box : icons::Globe,
+                   local ? "Handles follow the entity's axes (X). Scaling is always local."
+                         : "Handles follow the world axes (X). Scaling is always local.",
+                   local))
+    {
+        state.gizmo.space = local ? GizmoSpace::World : GizmoSpace::Local;
+    }
+    ImGui::SameLine(0.0f, 2.0f);
+    if (toolButton("snap", icons::Magnet, "Snap by 0.5 m, 15° or 0.1 (Ctrl switches it while dragging)", state.snap))
+    {
+        state.snap = !state.snap;
+    }
+    toolbarSeparator();
+    if (toolButton("grid", icons::Grid, "Grid", state.showGrid))
+    {
+        state.showGrid = !state.showGrid;
+    }
+    ImGui::SameLine(0.0f, 2.0f);
+    if (toolButton("icons", icons::Eye, "Light and camera icons", state.showIcons))
+    {
+        state.showIcons = !state.showIcons;
+    }
+    ImGui::SameLine(0.0f, 2.0f);
+    if (toolButton("frame", icons::Crosshair, "Frame the selection (F)", false, scene.findEntity(state.selection).isValid()))
+    {
+        frameSelection(state, scene);
+    }
+
+    const std::string speed = std::format("{:.1f} m/s", state.camera.speed());
     const std::string exposure = std::format("EV {:.1f}", state.renderer.stats().ev100);
-    ImGui::SetCursorPosX(std::max(ImGui::GetCursorPosX(), ImGui::GetWindowWidth() - ImGui::CalcTextSize(exposure.c_str()).x - 10.0f));
+    const float rightWidth = ImGui::CalcTextSize(icons::Gauge.c_str()).x + ImGui::CalcTextSize(speed.c_str()).x +
+                             ImGui::CalcTextSize(exposure.c_str()).x + toolButtonWidth() + style.ItemSpacing.x * 4.0f +
+                             style.ItemInnerSpacing.x;
+    ImGui::SameLine();
+    alignRight(rightWidth);
+    ImGui::AlignTextToFramePadding();
+    iconLabel(icons::Gauge, colors.textDim);
+    ImGui::TextDisabled("%s", speed.c_str());
+    ImGui::SetItemTooltip("Flying speed: the mouse wheel changes it while flying");
+    ImGui::SameLine();
     ImGui::TextDisabled("%s", exposure.c_str());
+    ImGui::SetItemTooltip("Exposure of the editor camera");
+    ImGui::SameLine();
+    toolButton("help", icons::CircleHelp,
+               "Right drag: look, with W A S D to fly, Q E to go down and up, Shift to go faster\n"
+               "Alt + left drag: orbit    Middle drag: pan    Wheel: move forward\n"
+               "F: frame the selection    Delete: delete it    Ctrl: snap");
 }
 
 // Records the fields a drag changed, already applied, as undoable steps.
@@ -195,12 +292,18 @@ void handleCamera(ToolsState& state, bool hovered, math::Vec2 size)
 void handleGizmoAndSelection(ToolsState& state, scene::Scene& scene, const ViewportView& view, math::Vec2 mouse,
                              bool hovered)
 {
+    if (!state.gizmo.isDragging())
+    {
+        state.gizmo.mode = state.tool == EditorTool::Rotate ? GizmoMode::Rotate
+                           : state.tool == EditorTool::Scale ? GizmoMode::Scale
+                                                             : GizmoMode::Translate;
+    }
     const ImGuiIO& io = ImGui::GetIO();
     const bool navigating = state.flying || state.orbiting || state.panning;
     const scene::Entity selected = scene.findEntity(state.selection);
     scene::Transform* const local = selected.isValid() ? scene.tryGet<scene::Transform>(selected) : nullptr;
 
-    if (local != nullptr && scene.has<scene::WorldTransform>(selected) && !navigating)
+    if (local != nullptr && scene.has<scene::WorldTransform>(selected) && !navigating && state.tool != EditorTool::Select)
     {
         const math::Mat4 world = worldMatrixOf(scene, selected);
         const math::Mat4 parentWorld = worldMatrixOf(scene, scene.parent(selected));
@@ -216,7 +319,7 @@ void handleGizmoAndSelection(ToolsState& state, scene::Scene& scene, const Viewp
         {
             if (ImGui::IsMouseDown(ImGuiMouseButton_Left))
             {
-                *local = state.gizmo.drag(view, mouse, io.KeyCtrl);
+                *local = state.gizmo.drag(view, mouse, io.KeyCtrl != state.snap);
             }
             else
             {
@@ -268,17 +371,21 @@ void handleKeys(ToolsState& state, scene::Scene& scene)
     {
         return;
     }
+    if (ImGui::IsKeyPressed(ImGuiKey_Q, false))
+    {
+        state.tool = EditorTool::Select;
+    }
     if (ImGui::IsKeyPressed(ImGuiKey_W, false))
     {
-        state.gizmo.mode = GizmoMode::Translate;
+        state.tool = EditorTool::Move;
     }
     if (ImGui::IsKeyPressed(ImGuiKey_E, false))
     {
-        state.gizmo.mode = GizmoMode::Rotate;
+        state.tool = EditorTool::Rotate;
     }
     if (ImGui::IsKeyPressed(ImGuiKey_R, false))
     {
-        state.gizmo.mode = GizmoMode::Scale;
+        state.tool = EditorTool::Scale;
     }
     if (ImGui::IsKeyPressed(ImGuiKey_X, false))
     {
@@ -326,9 +433,16 @@ void drawViewportPanel(ToolsState& state, scene::Scene& scene)
     {
         ImGui::SetNextWindowFocus();
     }
+    // The scene tabs take the place of the panel's own tab.
+    ImGuiWindowClass windowClass;
+    windowClass.DockNodeFlagsOverrideSet = ImGuiDockNodeFlags_NoTabBar;
+    ImGui::SetNextWindowClass(&windowClass);
+    const ThemeColors& colors = themeColors();
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
-    const bool open = ImGui::Begin(viewportWindow, &state.showViewport,
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, uiColor(colors.outer));
+    const bool open = ImGui::Begin(viewportWindow, nullptr,
                                    ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+    ImGui::PopStyleColor();
     ImGui::PopStyleVar();
     if (!open)
     {
@@ -338,9 +452,28 @@ void drawViewportPanel(ToolsState& state, scene::Scene& scene)
     }
 
     const bool editing = state.playState == PlayState::Editing;
-    if (editing)
+    drawSceneTabs(state, scene);
+    // The toolbar sits on the panel color, under the tabs.
     {
-        drawToolbar(state);
+        const ImGuiStyle& style = ImGui::GetStyle();
+        const ImVec2 start = ImGui::GetCursorScreenPos();
+        const float height = ImGui::GetFrameHeight() + style.FramePadding.y * 2.0f;
+        ImGui::GetWindowDrawList()->AddRectFilled(start, ImVec2(start.x + ImGui::GetContentRegionAvail().x, start.y + height),
+                                                  uiColorU32(colors.panel));
+        ImGui::SetCursorScreenPos(ImVec2(start.x, start.y + style.FramePadding.y));
+        if (editing)
+        {
+            drawToolbar(state, scene);
+        }
+        else
+        {
+            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + style.ItemSpacing.x);
+            ImGui::AlignTextToFramePadding();
+            iconLabel(state.playState == PlayState::Paused ? icons::Pause : icons::Play, colors.accent);
+            ImGui::TextColored(uiColor(colors.accent), "%s",
+                               state.playState == PlayState::Paused ? "Paused" : "Playing: click the view to give the game the keyboard");
+        }
+        ImGui::SetCursorScreenPos(ImVec2(start.x, start.y + height));
     }
 
     const ImGuiIO& io = ImGui::GetIO();
@@ -362,6 +495,11 @@ void drawViewportPanel(ToolsState& state, scene::Scene& scene)
     const bool hovered = ImGui::IsItemHovered();
     state.viewportHovered = hovered;
     state.viewportFocused = ImGui::IsWindowFocused();
+    if (!editing)
+    {
+        // The game is framed in the accent color while it runs.
+        ImGui::GetWindowDrawList()->AddRect(origin, origin + available, uiColorU32(colors.accent), 0.0f, 0, 2.0f);
+    }
 
     const math::Vec2 size{static_cast<float>(width), static_cast<float>(height)};
     const math::Vec2 mouse = (math::Vec2(io.MousePos.x, io.MousePos.y) - state.viewportOrigin) * state.pixelsPerPoint;
@@ -380,7 +518,7 @@ void drawViewportPanel(ToolsState& state, scene::Scene& scene)
             if (const std::optional<std::filesystem::path> path =
                     source ? state.database->project().absolutePath(source->path) : std::nullopt)
             {
-                requestSceneChange(state, scene, {SceneChange::Kind::OpenScene, *path});
+                openSceneTab(state, scene, *path);
             }
         }
         if (hovered && (ImGui::IsMouseClicked(ImGuiMouseButton_Left) || ImGui::IsMouseClicked(ImGuiMouseButton_Middle)))

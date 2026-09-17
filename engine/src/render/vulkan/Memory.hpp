@@ -88,6 +88,8 @@ struct ImageConfig
     std::uint32_t layers = 1;
     VkSampleCountFlagBits samples = VK_SAMPLE_COUNT_1_BIT;
     bool cube = false;
+    // A second format the image is also viewed in, such as the UNORM format of an sRGB image.
+    VkFormat alternateFormat = VK_FORMAT_UNDEFINED;
 
     bool operator==(const ImageConfig&) const = default;
 };
@@ -109,6 +111,8 @@ public:
 
     [[nodiscard]] VkImage handle() const noexcept;
     [[nodiscard]] VkImageView view() const noexcept;
+    // The view in ImageConfig::alternateFormat, null without one.
+    [[nodiscard]] VkImageView alternateView() const noexcept;
     [[nodiscard]] const ImageConfig& config() const noexcept;
     [[nodiscard]] VkFormat format() const noexcept;
     [[nodiscard]] math::Extent2D extent() const noexcept;
@@ -135,13 +139,15 @@ private:
     void destroy() noexcept;
     [[nodiscard]] VkImageView createView(VkImageViewType type, std::uint32_t baseMip,
                                          std::uint32_t mipCount, std::uint32_t baseLayer,
-                                         std::uint32_t layerCount) const;
+                                         std::uint32_t layerCount,
+                                         VkFormat format = VK_FORMAT_UNDEFINED) const;
 
     VkDevice m_device = VK_NULL_HANDLE;
     VmaAllocator m_allocator = VK_NULL_HANDLE;
     VkImage m_image = VK_NULL_HANDLE;
     VmaAllocation m_allocation = VK_NULL_HANDLE;
     VkImageView m_view = VK_NULL_HANDLE;
+    VkImageView m_alternateView = VK_NULL_HANDLE;
     ImageConfig m_config;
     mutable std::vector<Subview> m_subviews;
 };

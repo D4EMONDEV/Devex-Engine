@@ -1406,11 +1406,16 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
                                                                    VK_IMAGE_USAGE_SAMPLED_BIT,
                                                       })
                                                     : 0;
+    // The tools sample the viewport image in the format they draw in.
+    const VkFormat toolsFormat = m_swapchain->toolsFormat();
     const std::size_t viewportIndex = toViewport ? create({
                                                        .format = targetFormat,
                                                        .extent = extent,
                                                        .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
                                                                 VK_IMAGE_USAGE_SAMPLED_BIT,
+                                                       .alternateFormat = toolsFormat != targetFormat
+                                                                              ? toolsFormat
+                                                                              : VK_FORMAT_UNDEFINED,
                                                    })
                                                  : 0;
     const std::size_t pickColorIndex = pick ? create({
@@ -1772,14 +1777,15 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
             toolAccesses.push_back({target, ImageAccess::FragmentRead});
             if (drawImGui)
             {
-                bindViewportTexture(frame, graph.view(target));
+                const VkImageView alternate = graph.image(target)->alternateView();
+                bindViewportTexture(frame, alternate != VK_NULL_HANDLE ? alternate : graph.view(target));
             }
         }
         graph.addPass("Tools", std::move(toolAccesses), [&](VkCommandBuffer commands) {
             // Without a viewport, the tools are drawn over the tonemapped scene.
             const VkRenderingAttachmentInfo colorAttachment{
                 .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-                .imageView = m_swapchain->imageView(imageIndex),
+                .imageView = m_swapchain->toolsImageView(imageIndex),
                 .imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
                 .loadOp = toViewport ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD,
                 .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
@@ -1930,7 +1936,7 @@ core::Result<void> VulkanRenderer::initializeImGui()
                                "ImGui needs a visible window to know the swapchain format");
     }
 
-    m_imguiColorFormat = m_swapchain->format();
+    m_imguiColorFormat = m_swapchain->toolsFormat();
     ImGui_ImplVulkan_InitInfo info{};
     info.ApiVersion = requiredApiVersion;
     info.Instance = m_instance.handle();
@@ -1985,6 +1991,12 @@ void VulkanRenderer::beginImGuiFrame()
 {
     DEVEX_ASSERT(m_imguiInitialized);
     ImGui_ImplVulkan_NewFrame();
+}
+
+bool VulkanRenderer::imGuiNeedsLinearColors() const noexcept
+{
+    const VkFormat format = m_swapchain ? m_swapchain->toolsFormat() : m_imguiColorFormat;
+    return format == VK_FORMAT_B8G8R8A8_SRGB || format == VK_FORMAT_R8G8B8A8_SRGB;
 }
 
 void VulkanRenderer::queueImGuiDrawData() noexcept

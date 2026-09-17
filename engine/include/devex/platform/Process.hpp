@@ -19,6 +19,10 @@ public:
     // current one.
     [[nodiscard]] static core::Result<Process> start(std::span<const std::string> arguments,
                                                      const std::filesystem::path& workingDirectory = {});
+    // Starts a program that runs on its own, such as a game: its output is discarded and it keeps
+    // running when the caller exits.
+    [[nodiscard]] static core::Result<void> launch(std::span<const std::string> arguments,
+                                                   const std::filesystem::path& workingDirectory = {});
 
     Process(Process&& other) noexcept;
     Process& operator=(Process&& other) noexcept;

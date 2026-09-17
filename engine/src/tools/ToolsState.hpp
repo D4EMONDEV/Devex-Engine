@@ -3,6 +3,11 @@
 #include "EditorCamera.hpp"
 #include "EditorView.hpp"
 #include "Gizmo.hpp"
+#include "Icons.hpp"
+#include "ProjectList.hpp"
+#include "SceneTabs.hpp"
+#include "Theme.hpp"
+#include "Widgets.hpp"
 
 #include <devex/asset/AssetId.hpp>
 #include <devex/asset/AssetType.hpp>
@@ -27,16 +32,19 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <vector>
 
 namespace devex::tools::detail {
 
-inline constexpr const char* hierarchyWindow = "Hierarchy";
+// Window names are also their identifiers in the saved layout.
+inline constexpr const char* hierarchyWindow = "Scene";
 inline constexpr const char* inspectorWindow = "Inspector";
 inline constexpr const char* statisticsWindow = "Statistics";
-inline constexpr const char* consoleWindow = "Console";
-inline constexpr const char* assetsWindow = "Assets";
+inline constexpr const char* consoleWindow = "Output";
+inline constexpr const char* assetsWindow = "FileSystem";
 inline constexpr const char* viewportWindow = "Viewport";
+inline constexpr const char* settingsWindow = "Editor Settings";
 
 // Payload type of an entity dragged in the hierarchy: the 16 bytes of its UUID.
 inline constexpr const char* entityPayload = "DEVEX_ENTITY";
@@ -67,18 +75,32 @@ private:
     std::size_t m_count = 0;
 };
 
-// An action that replaces the edited scene, waiting for the user to decide about unsaved changes.
-struct SceneChange
+// What a click in the viewport does: select only, or also show a gizmo.
+enum class EditorTool : std::uint8_t
+{
+    Select,
+    Move,
+    Rotate,
+    Scale,
+};
+
+// An action that drops scenes, waiting for the user to decide about their unsaved changes.
+struct PendingAction
 {
     enum class Kind : std::uint8_t
     {
-        NewScene,
-        OpenScene,
+        // Closes one scene tab.
+        CloseTab,
         OpenProject,
+        // Goes back to the project manager.
+        CloseProject,
         Quit,
     };
 
-    Kind kind = Kind::NewScene;
+    Kind kind = Kind::CloseTab;
+    // The tab to close.
+    std::uint64_t tab = 0;
+    // The project to open.
     std::filesystem::path path;
 };
 
@@ -86,10 +108,46 @@ struct SceneChange
 // answer arriving after the tools are gone is dropped.
 struct DialogAnswers
 {
-    std::optional<std::filesystem::path> openProject;
+    std::optional<std::filesystem::path> importProject;
+    std::optional<std::filesystem::path> scanFolder;
     std::optional<std::filesystem::path> newProjectLocation;
     std::optional<std::filesystem::path> openScene;
     std::optional<std::filesystem::path> saveSceneAs;
+};
+
+// What the project manager shows of a project, read from its file.
+struct ProjectInfo
+{
+    std::string name;
+    bool exists = false;
+    // When the project file last changed, in seconds since 1970.
+    std::int64_t modified = 0;
+};
+
+struct ProjectManagerState
+{
+    std::string filter;
+    ProjectSort sort = ProjectSort::LastOpened;
+    std::filesystem::path selected;
+    // Keyed by the UTF-8 path of the project file, refreshed when the list changes.
+    std::unordered_map<std::string, ProjectInfo> projects;
+    bool refresh = true;
+
+    bool openCreate = false;
+    std::string createName = "New Game Project";
+    std::string createParent;
+    bool createFolder = true;
+    bool openRename = false;
+    std::string renameBuffer;
+    bool openRemove = false;
+};
+
+// Whether the window is sized for the project manager or for the editor.
+enum class WindowLayout : std::uint8_t
+{
+    Unset,
+    ProjectManager,
+    Editor,
 };
 
 struct ToolsState
@@ -110,10 +168,22 @@ struct ToolsState
     // Kept alive for ImGuiIO::IniFilename.
     std::string settingsFile;
 
+    // Appearance.
+    IconSet icons;
+    EditorFonts fonts;
+    ThemeSettings theme;
+    // The theme changed and applies before the next frame.
+    bool themeChanged = true;
+    // The theme changed since the user's settings were last written.
+    bool themeUnsaved = false;
+    float appliedDisplayScale = 0.0f;
+
     bool visible = false;
     bool capturesKeyboard = false;
     bool capturesMouse = false;
     bool resetLayout = false;
+    // Frames before the output tab is brought to the front of a new layout, once its windows are docked.
+    int selectOutputTabFrames = 0;
 
     bool showHierarchy = true;
     bool showInspector = true;
@@ -121,10 +191,12 @@ struct ToolsState
     bool showConsole = true;
     bool showAssets = true;
     bool showViewport = true;
+    bool showSettings = false;
 
     // Null when the application runs without a project.
     asset::AssetDatabase* database = nullptr;
     std::string assetFilter;
+    std::string hierarchyFilter;
 
     // The commands of the scene on screen: while playing, those of the played copy, with the
     // commands of the edited scene set aside until play stops.
@@ -146,6 +218,7 @@ struct ToolsState
     ImGuiID eulerEditId = 0;
     math::Vec3 eulerEditDegrees{0.0f};
 
+    std::string consoleFilter;
     bool consoleShowDebug = true;
     bool consoleShowInfo = true;
     bool consoleShowWarnings = true;
@@ -158,23 +231,33 @@ struct ToolsState
     GameCodeStatus gameCode;
     std::shared_ptr<DialogAnswers> dialogAnswers = std::make_shared<DialogAnswers>();
     std::string windowTitle;
-    // Where recent projects are remembered, empty when there is no user data directory.
+    WindowLayout windowLayout = WindowLayout::Unset;
+    // The editor's settings of the user (theme, projects), empty when there is no user data directory.
     std::filesystem::path userSettingsFile;
-    std::vector<std::filesystem::path> recentProjects;
-    std::string newProjectName = "My game";
-    std::string newProjectLocation;
-    bool openNewProjectPopup = false;
+    ProjectList projects;
+    ProjectManagerState projectManager;
+    bool openAboutPopup = false;
 
-    // The project changed since the last update: its last scene opens.
+    // The project changed since the last update: its scenes open.
     bool projectChanged = false;
+    // Scene tabs. The active tab's document is made of scenePath, the edited scene, history,
+    // savedState, selection and camera.
+    SceneTabs tabs;
     // The .dvxscene file of the edited scene, empty until it is saved.
     std::filesystem::path scenePath;
     std::uint64_t savedState = 0;
-    std::optional<SceneChange> pendingChange;
+    std::optional<PendingAction> pendingAction;
     bool openUnsavedChangesPopup = false;
+    // The pending action waits for play to stop.
+    bool resumeActionAfterPlay = false;
 
     EditorCamera camera;
     Gizmo gizmo;
+    EditorTool tool = EditorTool::Move;
+    // Snapping without holding Ctrl, which then disables it.
+    bool snap = false;
+    bool showGrid = true;
+    bool showIcons = true;
     GizmoHandle hoveredHandle = GizmoHandle::None;
     // The view of the last rendered frame, which mouse interactions refer to.
     ViewportView view;
@@ -203,27 +286,54 @@ void drawAssetsPanel(ToolsState& state, scene::Scene& scene);
 
 // Editor.
 void drawViewportPanel(ToolsState& state, scene::Scene& scene);
-void drawWelcomeScreen(ToolsState& state);
+void drawProjectManager(ToolsState& state);
 void drawEditorMenus(ToolsState& state, scene::Scene& scene);
+void drawStatusBar(ToolsState& state, const scene::Scene& scene);
+void drawSettingsWindow(ToolsState& state);
 void drawEditorPopups(ToolsState& state, scene::Scene& scene);
 void handleEditorShortcuts(ToolsState& state, scene::Scene& scene);
-// Opens the project's last scene when the project changed, handles dialog answers and pick results.
+// Opens the project's scenes when the project changed, handles dialog answers and pick results.
 void updateEditorSession(ToolsState& state, scene::Scene& scene);
 void updateWindowTitle(ToolsState& state, const scene::Scene& scene);
 void addEditorOverlay(ToolsState& state, scene::Scene& scene, render::RenderWorld& world);
-// From the file, or from the user's data directory when the file is empty.
-void loadRecentProjects(ToolsState& state, const std::filesystem::path& file);
-// Runs the change now, or asks first when the scene has unsaved changes.
-void requestSceneChange(ToolsState& state, scene::Scene& scene, SceneChange change);
-[[nodiscard]] bool hasUnsavedChanges(const ToolsState& state);
+// Loads the theme and the project list from the file, or from the user's data directory when the
+// file is empty.
+void loadUserSettings(ToolsState& state, const std::filesystem::path& file);
+void saveUserSettings(const ToolsState& state);
+// Remembers the open scenes of the project and the editor camera.
+void saveEditorSettings(ToolsState& state);
+
+// Scene tabs.
+// A small lit scene to start from: a sun, a sky, a camera, a ground and a cube.
+[[nodiscard]] scene::Scene makeDefaultScene();
+[[nodiscard]] ActiveDocument activeDocument(ToolsState& state, scene::Scene& scene) noexcept;
+// The name shown for a tab: its file name, or "[unsaved]".
+[[nodiscard]] std::string tabName(const std::filesystem::path& path);
+void newSceneTab(ToolsState& state, scene::Scene& scene);
+// Opens a scene in a new tab, or shows its tab when it is already open.
+void openSceneTab(ToolsState& state, scene::Scene& scene, const std::filesystem::path& path);
+void activateSceneTab(ToolsState& state, scene::Scene& scene, std::size_t index);
+// Asks about unsaved changes first; the actions of the project and of quitting also stop play.
+void requestAction(ToolsState& state, scene::Scene& scene, PendingAction action);
+[[nodiscard]] bool hasUnsavedChanges(ToolsState& state, scene::Scene& scene);
+// The tabs whose unsaved changes the pending action would drop.
+[[nodiscard]] std::vector<std::size_t> tabsWithUnsavedChanges(ToolsState& state, scene::Scene& scene);
+// Saves the scenes the pending action would drop. An untitled scene comes to the screen with its
+// save dialog, and the action continues once it is saved. Returns whether every scene was saved.
+[[nodiscard]] bool saveForPendingAction(ToolsState& state, scene::Scene& scene);
+// Runs the pending action if nothing unsaved stands in its way anymore, or asks again.
+void continuePendingAction(ToolsState& state, scene::Scene& scene);
+void cancelPendingAction(ToolsState& state);
 [[nodiscard]] bool saveScene(ToolsState& state, scene::Scene& scene);
+void saveAllScenes(ToolsState& state, scene::Scene& scene);
 void showSaveSceneDialog(ToolsState& state);
 void showOpenSceneDialog(ToolsState& state);
-void showOpenProjectDialog(ToolsState& state);
 void frameSelection(ToolsState& state, const scene::Scene& scene);
-// Remembers the project's last scene and the editor camera.
-void saveEditorSettings(ToolsState& state);
 [[nodiscard]] core::Uuid uuidFromBytes(const std::array<std::uint8_t, 16>& bytes) noexcept;
+
+// The create menu of entities: empty, primitives, lights, camera, environment. Created entities go
+// under parent (nil for a root), at the editor camera's pivot.
+void drawCreateEntityMenu(ToolsState& state, core::Uuid parent);
 
 // Makes the last item a drag source for the asset.
 void dragAsset(asset::AssetId id, asset::AssetType type, const std::string& label);
@@ -238,9 +348,6 @@ void requestInstantiateModel(ToolsState& state, asset::AssetId model, core::Uuid
 
 // Queues the creation of an entity under parent (nil for a root) and selects it.
 void requestCreateEntity(ToolsState& state, core::Uuid parent);
-
-// Converts a color authored in sRGB, as ImGui colors are, to the linear space of the swapchain.
-[[nodiscard]] ImVec4 linearColor(ImVec4 srgb) noexcept;
 
 // "vertical_fov" becomes "Vertical fov".
 [[nodiscard]] std::string displayName(std::string_view identifier);

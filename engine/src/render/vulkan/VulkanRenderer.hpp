@@ -75,6 +75,7 @@ public:
     void shutdownImGui() noexcept;
     void beginImGuiFrame();
     void queueImGuiDrawData() noexcept;
+    [[nodiscard]] bool imGuiNeedsLinearColors() const noexcept;
 
 private:
     // Frames recorded before the oldest one must complete, which bounds the latency added by

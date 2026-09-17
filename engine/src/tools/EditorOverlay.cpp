@@ -205,8 +205,14 @@ void addEditorOverlay(ToolsState& state, scene::Scene& scene, render::RenderWorl
     };
     const scene::Entity selected = scene.findEntity(state.selection);
 
-    addGrid(state, world.sceneLines);
-    addIcons(scene, view, selected, world);
+    if (state.showGrid)
+    {
+        addGrid(state, world.sceneLines);
+    }
+    if (state.showIcons)
+    {
+        addIcons(scene, view, selected, world);
+    }
 
     if (selected.isValid())
     {
@@ -218,7 +224,7 @@ void addEditorOverlay(ToolsState& state, scene::Scene& scene, render::RenderWorl
         }
 
         if (const scene::WorldTransform* const transform = scene.tryGet<scene::WorldTransform>(selected);
-            transform != nullptr && scene.has<scene::Transform>(selected))
+            transform != nullptr && scene.has<scene::Transform>(selected) && state.tool != EditorTool::Select)
         {
             GizmoGeometry geometry;
             state.gizmo.draw(view, transform->matrix, state.hoveredHandle, geometry);

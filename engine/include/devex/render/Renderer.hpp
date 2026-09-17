@@ -148,6 +148,10 @@ public:
     void beginImGuiFrame();
     // Draws ImGui::GetDrawData() over the scene in the next endFrame. Call after ImGui::Render().
     void queueImGuiDrawData() noexcept;
+    // Whether ImGui draws into sRGB targets, where its colors, authored in sRGB, must be converted
+    // to linear values and blend in linear space. Otherwise it draws in display space, as ImGui
+    // expects, which keeps the edges of text and shapes as designed.
+    [[nodiscard]] bool imGuiNeedsLinearColors() const noexcept;
     // An ImGui texture identifier (ImTextureID) that shows the scene image of the frame it is drawn
     // in, when RenderWorld::viewport is set.
     [[nodiscard]] static std::uint64_t viewportTexture() noexcept;

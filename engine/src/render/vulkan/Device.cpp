@@ -263,14 +263,28 @@ core::Result<Device> Device::create(VkInstance instance, VkSurfaceKHR surface,
     device.m_sampleCounts = properties.properties.limits.framebufferColorSampleCounts &
                             properties.properties.limits.framebufferDepthSampleCounts;
 
-    const char* const extensions[] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
+    std::vector<const char*> extensions{VK_KHR_SWAPCHAIN_EXTENSION_NAME};
+    // Tools draw through a UNORM view of the sRGB swapchain images when the driver allows it.
+    if (auto available = enumerate<VkExtensionProperties>("vkEnumerateDeviceExtensionProperties",
+                                                          vkEnumerateDeviceExtensionProperties,
+                                                          device.m_physicalDevice, nullptr))
+    {
+        device.m_mutableSwapchainFormat =
+            std::ranges::any_of(*available, [](const VkExtensionProperties& extension) {
+                return std::string_view(extension.extensionName) == VK_KHR_SWAPCHAIN_MUTABLE_FORMAT_EXTENSION_NAME;
+            });
+        if (device.m_mutableSwapchainFormat)
+        {
+            extensions.push_back(VK_KHR_SWAPCHAIN_MUTABLE_FORMAT_EXTENSION_NAME);
+        }
+    }
     const VkDeviceCreateInfo createInfo{
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
         .pNext = &enabled.features,
         .queueCreateInfoCount = 1,
         .pQueueCreateInfos = &queueInfo,
-        .enabledExtensionCount = static_cast<std::uint32_t>(std::size(extensions)),
-        .ppEnabledExtensionNames = extensions,
+        .enabledExtensionCount = static_cast<std::uint32_t>(extensions.size()),
+        .ppEnabledExtensionNames = extensions.data(),
     };
 
     DEVEX_VK_TRY(vkCreateDevice, device.m_physicalDevice, &createInfo, nullptr, &device.m_device);
@@ -289,6 +303,7 @@ Device::Device(Device&& other) noexcept
     , m_maxBindlessTextures(other.m_maxBindlessTextures)
     , m_sampleCounts(other.m_sampleCounts)
     , m_depthClamp(other.m_depthClamp)
+    , m_mutableSwapchainFormat(other.m_mutableSwapchainFormat)
 {
 }
 
@@ -306,6 +321,7 @@ Device& Device::operator=(Device&& other) noexcept
         m_maxBindlessTextures = other.m_maxBindlessTextures;
         m_sampleCounts = other.m_sampleCounts;
         m_depthClamp = other.m_depthClamp;
+        m_mutableSwapchainFormat = other.m_mutableSwapchainFormat;
     }
     return *this;
 }
@@ -374,6 +390,11 @@ VkSampleCountFlagBits Device::sampleCount(std::uint32_t requested) const noexcep
 bool Device::supportsDepthClamp() const noexcept
 {
     return m_depthClamp;
+}
+
+bool Device::supportsMutableSwapchainFormat() const noexcept
+{
+    return m_mutableSwapchainFormat;
 }
 
 } // namespace devex::render::vulkan

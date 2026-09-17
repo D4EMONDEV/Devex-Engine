@@ -5,6 +5,7 @@
 #include <devex/core/Assert.hpp>
 
 #include <algorithm>
+#include <array>
 #include <limits>
 #include <optional>
 #include <utility>
@@ -39,6 +40,20 @@ namespace {
         return VK_PRESENT_MODE_IMMEDIATE_KHR;
     }
     return VK_PRESENT_MODE_FIFO_KHR;
+}
+
+// The UNORM format with the same layout as an sRGB format, or undefined.
+[[nodiscard]] VkFormat unormCounterpart(VkFormat format) noexcept
+{
+    switch (format)
+    {
+    case VK_FORMAT_B8G8R8A8_SRGB:
+        return VK_FORMAT_B8G8R8A8_UNORM;
+    case VK_FORMAT_R8G8B8A8_SRGB:
+        return VK_FORMAT_R8G8B8A8_UNORM;
+    default:
+        return VK_FORMAT_UNDEFINED;
+    }
 }
 
 // An sRGB format lets the hardware encode the linear colors written by the renderer.
@@ -113,9 +128,19 @@ core::Result<Swapchain> Swapchain::create(const Device& device, VkSurfaceKHR sur
 
     const VkSurfaceFormatKHR surfaceFormat = chooseSurfaceFormat(*formats);
     const PresentMode presentMode = choosePresentMode(config.presentMode, presentModes);
+    const VkFormat unormFormat = unormCounterpart(surfaceFormat.format);
+    const bool toolsView = device.supportsMutableSwapchainFormat() && unormFormat != VK_FORMAT_UNDEFINED;
+    const std::array<VkFormat, 2> viewFormats{surfaceFormat.format, unormFormat};
+    const VkImageFormatListCreateInfo formatList{
+        .sType = VK_STRUCTURE_TYPE_IMAGE_FORMAT_LIST_CREATE_INFO,
+        .viewFormatCount = static_cast<std::uint32_t>(viewFormats.size()),
+        .pViewFormats = viewFormats.data(),
+    };
 
     const VkSwapchainCreateInfoKHR createInfo{
         .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
+        .pNext = toolsView ? &formatList : nullptr,
+        .flags = toolsView ? VK_SWAPCHAIN_CREATE_MUTABLE_FORMAT_BIT_KHR : VkSwapchainCreateFlagsKHR{0},
         .surface = surface,
         .minImageCount = chooseImageCount(capabilities.minImageCount, capabilities.maxImageCount),
         .imageFormat = surfaceFormat.format,
@@ -134,6 +159,7 @@ core::Result<Swapchain> Swapchain::create(const Device& device, VkSurfaceKHR sur
     Swapchain swapchain;
     swapchain.m_device = device.handle();
     swapchain.m_format = surfaceFormat.format;
+    swapchain.m_toolsFormat = toolsView ? unormFormat : surfaceFormat.format;
     swapchain.m_extent = extent;
     swapchain.m_presentMode = presentMode;
     DEVEX_VK_TRY(vkCreateSwapchainKHR, device.handle(), &createInfo, nullptr, &swapchain.m_swapchain);
@@ -148,21 +174,28 @@ core::Result<Swapchain> Swapchain::create(const Device& device, VkSurfaceKHR sur
 
     for (const VkImage image : swapchain.m_images)
     {
-        const VkImageViewCreateInfo viewInfo{
-            .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-            .image = image,
-            .viewType = VK_IMAGE_VIEW_TYPE_2D,
-            .format = surfaceFormat.format,
-            .subresourceRange =
-                {
-                    .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-                    .levelCount = 1,
-                    .layerCount = 1,
-                },
-        };
-        VkImageView view = VK_NULL_HANDLE;
-        DEVEX_VK_TRY(vkCreateImageView, device.handle(), &viewInfo, nullptr, &view);
-        swapchain.m_imageViews.push_back(view);
+        for (const VkFormat format : {surfaceFormat.format, unormFormat})
+        {
+            if (format == unormFormat && !toolsView)
+            {
+                continue;
+            }
+            const VkImageViewCreateInfo viewInfo{
+                .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+                .image = image,
+                .viewType = VK_IMAGE_VIEW_TYPE_2D,
+                .format = format,
+                .subresourceRange =
+                    {
+                        .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                        .levelCount = 1,
+                        .layerCount = 1,
+                    },
+            };
+            VkImageView view = VK_NULL_HANDLE;
+            DEVEX_VK_TRY(vkCreateImageView, device.handle(), &viewInfo, nullptr, &view);
+            (format == surfaceFormat.format ? swapchain.m_imageViews : swapchain.m_toolsImageViews).push_back(view);
+        }
     }
     return swapchain;
 }
@@ -175,8 +208,11 @@ Swapchain::Swapchain(Swapchain&& other) noexcept
     , m_presentMode(other.m_presentMode)
     , m_images(std::move(other.m_images))
     , m_imageViews(std::move(other.m_imageViews))
+    , m_toolsFormat(other.m_toolsFormat)
+    , m_toolsImageViews(std::move(other.m_toolsImageViews))
 {
     other.m_imageViews.clear();
+    other.m_toolsImageViews.clear();
 }
 
 Swapchain& Swapchain::operator=(Swapchain&& other) noexcept
@@ -191,7 +227,10 @@ Swapchain& Swapchain::operator=(Swapchain&& other) noexcept
         m_presentMode = other.m_presentMode;
         m_images = std::move(other.m_images);
         m_imageViews = std::move(other.m_imageViews);
+        m_toolsFormat = other.m_toolsFormat;
+        m_toolsImageViews = std::move(other.m_toolsImageViews);
         other.m_imageViews.clear();
+        other.m_toolsImageViews.clear();
     }
     return *this;
 }
@@ -203,11 +242,15 @@ Swapchain::~Swapchain()
 
 void Swapchain::destroy() noexcept
 {
-    for (const VkImageView view : m_imageViews)
+    for (const std::vector<VkImageView>* const views : {&m_imageViews, &m_toolsImageViews})
     {
-        vkDestroyImageView(m_device, view, nullptr);
+        for (const VkImageView view : *views)
+        {
+            vkDestroyImageView(m_device, view, nullptr);
+        }
     }
     m_imageViews.clear();
+    m_toolsImageViews.clear();
     m_images.clear();
     if (m_swapchain != VK_NULL_HANDLE)
     {
@@ -251,6 +294,16 @@ VkImageView Swapchain::imageView(std::uint32_t index) const noexcept
 {
     DEVEX_ASSERT(index < m_imageViews.size());
     return m_imageViews[index];
+}
+
+VkFormat Swapchain::toolsFormat() const noexcept
+{
+    return m_toolsFormat;
+}
+
+VkImageView Swapchain::toolsImageView(std::uint32_t index) const noexcept
+{
+    return m_toolsImageViews.empty() ? imageView(index) : m_toolsImageViews[index];
 }
 
 } // namespace devex::render::vulkan

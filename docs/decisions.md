@@ -19,7 +19,7 @@ mais seulement explicitement ici : le code suit ce document, pas l'inverse.
 | Gameplay                 | C++ (DLL rechargeable) d'abord, C# (.NET hosting) ensuite          |
 | Format source            | Texte maison lisible, extensions `.dvx*`, binaire cooké à l'export |
 | Import 3D                | glTF 2.0 (fastgltf) + FBX (ufbx)                                   |
-| UI éditeur               | Dear ImGui (branche docking), UI retenue maison plus tard          |
+| UI éditeur               | Dear ImGui (docking) au style de Godot, UI retenue maison plus tard |
 | Modules C++              | Headers classiques                                                 |
 | Erreurs                  | `std::expected`, pas d'exceptions dans le moteur                   |
 | Dépendances              | vcpkg en mode manifeste (`vcpkg.json`)                             |
@@ -47,7 +47,7 @@ mais seulement explicitement ici : le code suit ce document, pas l'inverse.
 | Mode Play                | Copie de la scène (mêmes handles), une vue, Pause et pas à pas     |
 | Sélection à la souris    | Identifiants d'objets lus sur le GPU, icônes des lumières sur CPU  |
 | Gizmos                   | Maison : déplacement, rotation, échelle, local/global, magnétisme  |
-| Projets dans l'éditeur   | Écran d'accueil (projets récents, nouveau, ouvrir) ou argument     |
+| Projets dans l'éditeur   | Gestionnaire de projets dans une fenêtre compacte, ou argument     |
 | Scènes                   | Assets importés (`AssetId`), ouvertes et enregistrées par l'éditeur |
 | Sélection                | Simple pour l'instant                                              |
 | Code de jeu              | Composants et systèmes dans un module de jeu (DLL) par projet      |
@@ -57,6 +57,12 @@ mais seulement explicitement ici : le code suit ce document, pas l'inverse.
 | Bac à sable              | Projet d'exemple `samples/sandbox`, son gameplay dans `code/`      |
 | Backend ImGui            | Officiels SDL3 + Vulkan, le backend Vulkan compilé avec volk       |
 | Multi-fenêtre ImGui      | Docking dans la fenêtre principale seulement                       |
+| Thème de l'éditeur       | Inspiré de Godot, dérivé d'une base, d'un accent et d'un contraste |
+| Polices                  | Noto Sans (interface), JetBrains Mono (code), rendues par FreeType |
+| Icônes                   | Lucide (SVG) dessinées comme glyphes, colorées par type d'objet    |
+| Scènes ouvertes          | Onglets, chacun avec son historique, sa sélection et sa caméra     |
+| Couleurs de l'interface  | Mélangées en espace d'affichage (vue UNORM de la swapchain)        |
+| Barre de titre           | Native, sombre et à la couleur du thème sous Windows               |
 | Annulation               | Commandes basées sur la réflexion (UUID, composant, champ, valeurs) |
 | Base d'assets            | `.dvxmeta` versionné à côté de chaque source, cache `.devex/` local |
 | Sous-assets              | UUID listés dans le `.dvxmeta`, retrouvés par clé à la réimportation |
@@ -477,11 +483,18 @@ Dans les deux cas, les sources concernées sont réimportées.
 - **Module `Tools`** : panneaux Dear ImGui indépendants de Vulkan, affichés en overlay dans
   toute application avec **F1** (`ApplicationConfig::enableTools`, actif hors Release), ou
   autour du viewport de l'éditeur (`ToolsMode::Editor`).
-- **Panneaux** : hiérarchie (sélection, création, suppression, glisser-déposer pour changer
-  de parent), inspecteur généré par la réflexion (nom, UUID, composants, ajout et retrait),
-  statistiques (FPS, GPU, draw calls, VRAM via VMA), console (niveaux filtrables). La
-  disposition par défaut est construite au premier lancement, puis sauvegardée dans
-  `devex-tools.ini` à côté de l'exécutable ; *View > Reset layout* la restaure.
+- **Panneaux** (noms de Godot) : *Scene*, l'arbre des entités (icône colorée selon les
+  composants, filtre, menu *+* de création, glisser-déposer pour changer de parent, double-clic
+  pour cadrer) ; *Inspector*, généré par la réflexion (nom, UUID, une section repliable par
+  composant avec son icône et un menu pour le retirer, propriétés sur deux colonnes, vecteurs
+  aux lettres x, y, z colorées, angles en degrés, *Add Component* avec recherche) ;
+  *FileSystem*, l'arborescence `res://` des sources (icône par type, état d'import, menu :
+  ouvrir, placer, scène de démarrage, réimporter, copier le chemin, afficher dans l'explorateur)
+  ; *Output* (police à chasse fixe, recherche, compteurs par niveau qui servent de filtres) ;
+  *Statistics*. Les panneaux n'ont pas de bouton de fermeture : le menu *Editor > Panels* (ou
+  *View* sur l'overlay) les affiche. La disposition par défaut est construite au premier
+  lancement, puis sauvegardée dans `devex-tools.ini` ou `devex-editor.ini` à côté de
+  l'exécutable ; *Reset Layout* la restaure.
 - **Entrées** : quand ImGui utilise le clavier ou la souris, les appuis et mouvements de ce
   périphérique n'atteignent plus `Input` (les relâchements si) ; les événements restent
   transmis à `onEvent`. Ouvrir les outils libère la souris capturée.
@@ -497,28 +510,86 @@ Dans les deux cas, les sources concernées sont réimportées.
   pointeurs de fonctions de volk : ses deux fichiers sont donc copiés dans
   `third_party/imgui/backends` depuis la version épinglée par vcpkg et compilés avec
   `IMGUI_IMPL_VULKAN_USE_VOLK`. **À recopier lors d'une mise à jour d'ImGui.** ImGui est
-  dessiné dans une seconde passe sur le backbuffer ; ses couleurs de style, pensées en
-  sRGB, sont converties en linéaire pour le swapchain sRGB.
+  dessiné dans une seconde passe sur le backbuffer.
+- **Espace des couleurs** : ImGui pense ses couleurs et le lissage de ses glyphes en sRGB. Quand
+  le pilote le permet (`VK_KHR_swapchain_mutable_format`, présent sur les GPU de bureau), la
+  swapchain sRGB est aussi vue en UNORM : ImGui y dessine et y mélange en espace d'affichage,
+  et lit l'image du viewport par une vue UNORM de la même façon (`ImageConfig::alternateFormat`).
+  Le texte garde alors sa graisse et ses bords. Sinon, les couleurs sont converties en linéaire
+  comme avant (`Renderer::imGuiNeedsLinearColors`).
+- **Thème** (`src/tools/Theme`) : inspiré de Godot. Tout dérive d'une couleur de base, d'un accent
+  et d'un contraste : fond extérieur (barres, espaces entre panneaux, barre d'onglets) plus foncé
+  que les panneaux, champs et listes plus foncés encore (plus clairs sur fond noir ou clair),
+  boutons légèrement éclaircis, sélection et onglet actif à l'accent. Préréglages *Gray* (défaut),
+  *Blue gray* (le thème classique de Godot 4), *Black (OLED)* et *Light*. Couleurs d'icônes par
+  type comme les nœuds de Godot : entités et maillages rouges, lumières jaunes, caméras violettes,
+  environnement cyan, code du jeu vert, dossiers bleus, matériaux orange. Arrondis de 4 px,
+  séparateurs de 5 px entre panneaux, lignes d'arbre, onglet actif surligné. L'échelle suit celle
+  de l'écran (`Window::displayScale`) ou un réglage, et s'applique entre deux frames, aussi quand
+  la fenêtre change d'écran.
+- **Polices** : Noto Sans (normal et gras) et JetBrains Mono, versionnées dans `third_party/fonts`
+  (licence SIL OFL) et copiées dans `bin/resources/fonts`. FreeType les rend
+  (`imgui[freetype]`, hinting léger) aux tailles demandées grâce aux polices dynamiques d'ImGui
+  1.92. Les tailles se règlent en points comme dans Godot (14 par défaut) ; ImGui dimensionnant une
+  police par sa ligne entière, elles sont multipliées par la hauteur de ligne de la police
+  (1,362 pour Noto Sans). Une police absente est remplacée par celle d'ImGui avec un
+  avertissement.
+- **Icônes** (`src/tools/Icons`) : 88 icônes Lucide 1.47.0 (licence ISC, `third_party/lucide`) et le
+  logo Devex (`engine/resources/icons/devex.svg`), copiés dans `bin/resources/icons`. Chaque icône
+  est un caractère de la zone à usage privé (U+E000 et suivants) : un chargeur de police ImGui
+  (`ImFontLoader`) fusionné dans chaque police dessine le SVG avec plutosvg à la taille du texte.
+  Les icônes s'écrivent donc dans n'importe quel texte ImGui (menus, onglets, boutons), restent
+  nettes à toute échelle et prennent la couleur du texte ; le logo garde ses couleurs. La liste
+  `DEVEX_EDITOR_ICONS` fixe les noms et l'ordre ; un test vérifie que chaque fichier existe.
+- **Réglages de l'éditeur** : fenêtre *Editor Settings* (menu *Editor* ou bouton *Settings* du
+  gestionnaire) : préréglage, couleurs de base et d'accent, contraste, échelle de l'interface
+  (automatique ou de 75 à 250 %), tailles des polices, retour aux valeurs par défaut. Appliqués en
+  direct et enregistrés pour l'utilisateur dans `%APPDATA%/Devex/Editor/editor.dvx` (section
+  `[theme]`, avec la liste des projets). L'overlay F1 des jeux prend le thème par défaut.
 
 ### Éditeur
 
-- **Fenêtre** : barre de menus (*File*, *Edit*, *Entity*, *View*) avec les boutons Play, Pause et
-  pas à pas au centre ; panneau *Viewport* au centre de la disposition, hiérarchie à gauche,
-  inspecteur à droite, assets, console et statistiques en bas (`devex-editor.ini`). Le titre
+- **Fenêtre** : disposition de Godot. Barre du haut : logo, menus *Scene*, *Edit*, *Project*,
+  *Editor*, *Help* (avec icônes), nom du projet au centre, état du code du jeu et boutons Play,
+  Pause, Stop et pas à pas à droite. *Scene* en haut à gauche, *FileSystem* en bas à gauche,
+  *Inspector* à droite, *Output* et *Statistics* sous le viewport ; barre d'état en bas (imports
+  en cours ou nombre d'entités, avertissements et erreurs de la sortie, FPS, version). Le titre
   donne la scène, `*` si elle a des modifications non enregistrées, le projet et l'état de jeu.
-- **Écran d'accueil** : sans projet, liste des projets récents (dans le dossier de données de
-  l'utilisateur, `%APPDATA%/Devex/Editor/editor.dvx`), *Open project…* et *New project…* (nom et
-  dossier ; le projet reçoit `assets/scenes/Main.dvxscene`). Un `.dvxproj` passé en argument
-  s'ouvre directement. Les dialogues de fichiers sont ceux du système (SDL3), sans bloquer : la
-  réponse arrive par `Platform::pollEvents`.
-- **Scènes** : *New scene* crée une petite scène éclairée (soleil, ciel, caméra, sol, cube) ;
-  *Open scene…* ou un double-clic sur une scène du panneau Assets l'ouvre ; *Save* l'écrit dans
-  son fichier, *Save as…* dans le dossier du projet, puis la base d'assets la réimporte.
-  À l'ouverture d'un projet, l'éditeur rouvre la dernière scène (`.devex/editor.dvx`, avec la
-  caméra), sinon la première scène du projet, sinon une nouvelle ; une scène déjà remplie par
-  l'application est gardée. Les modifications non enregistrées sont repérées par l'identifiant
-  d'état de l'historique (`CommandHistory::stateId`) : avant de changer de scène, de projet ou
-  de quitter, l'éditeur demande de les enregistrer, de les abandonner ou d'annuler.
+  La barre de titre du système passe en sombre et prend la couleur du fond (DWM, Windows 11).
+- **Gestionnaire de projets** : sans projet, la fenêtre prend une taille compacte (1160 × 820 à
+  100 %) et montre la liste des projets de l'utilisateur, comme celui de Godot : étoile des
+  favoris (toujours en tête), logo, nom en gras, dossier, date de dernière ouverture ; filtre,
+  tri (dernière édition, nom, chemin) ; *Create* (nom, dossier parent, création du dossier,
+  vérifications en direct ; le projet reçoit `assets/scenes/Main.dvxscene` et s'ouvre), *Import*
+  (un `.dvxproj`, ouvert aussitôt), *Scan* (ajoute les projets d'un dossier et de ses
+  sous-dossiers, sans entrer dans `.git`, `.devex`, `out`...), *Edit* (ou double-clic, Entrée),
+  *Run* (lance `devex-player` à côté de l'éditeur, qui continue seul), *Rename*, *Show in
+  Folder*, *Remove* (de la liste seulement), *Remove Missing*. Ouvrir un projet agrandit la
+  fenêtre en éditeur dans le même processus ; *Project > Project Manager* ou Ctrl+Maj+Q y
+  revient. La liste (`[project path favorite last_opened]`) remplace les projets récents, dont
+  l'ancien format est relu. Un `.dvxproj` passé en argument s'ouvre directement. Les dialogues
+  de fichiers sont ceux du système (SDL3), sans bloquer : la réponse arrive par
+  `Platform::pollEvents`.
+- **Onglets de scènes** (`src/tools/SceneTabs`) : chaque scène ouverte a son onglet au-dessus du
+  viewport, avec son fichier, sa scène, son historique d'annulation, sa sélection et sa caméra.
+  L'onglet actif vit là où le reste de l'éditeur le lit (la scène de l'application, les champs
+  des outils) ; les autres attendent dans leur onglet, et changer d'onglet échange les deux
+  sans copier. *New Scene* (ou *+*) ajoute une petite scène éclairée (soleil, ciel, caméra, sol,
+  cube) ; *Open Scene…*, un double-clic sur une scène de *FileSystem* ou une scène glissée dans le
+  viewport l'ouvre dans un onglet, ou montre le sien si elle est déjà ouverte ; une scène neuve
+  intacte cède sa place. Les onglets modifiés portent un point ; fermer un onglet (croix,
+  Ctrl+W) demande d'enregistrer ses modifications, quitter, changer de projet ou revenir au
+  gestionnaire les demande pour toutes les scènes concernées (*Save*/*Save All*, *Don't Save*,
+  *Cancel* ; une scène sans fichier montre son dialogue d'enregistrement puis l'action continue).
+  Ctrl+Tab passe à l'onglet suivant ; en Play, les onglets sont figés sur la scène jouée. À
+  l'ouverture d'un projet, l'éditeur rouvre les scènes laissées ouvertes et l'onglet actif
+  (`.devex/editor.dvx`, format 2, une section `[scene]` par onglet avec sa caméra ; l'ancien
+  `last_scene` est relu), sinon la première scène du projet, sinon une nouvelle ; une scène déjà
+  remplie par l'application est gardée dans un onglet sans fichier. *Save All Scenes*
+  (Ctrl+Alt+S) enregistre toutes les scènes qui ont un fichier. Les modifications non
+  enregistrées sont repérées par l'identifiant d'état de chaque historique
+  (`CommandHistory::stateId`). Le code du jeu rechargé libère et restaure aussi les composants
+  des scènes en arrière-plan (`ToolsOverlay::forEachBackgroundScene`).
 - **Viewport** : la scène est rendue à la taille du panneau. Caméra de l'éditeur indépendante des
   caméras de la scène : clic droit maintenu pour regarder et voler (ZQSD/WASD, A/E pour
   descendre et monter, Maj accélère, molette règle la vitesse), Alt + clic gauche pour tourner
@@ -539,9 +610,18 @@ Dans les deux cas, les sources concernées sont réimportées.
   mètres de haut) qui s'estompe au loin, axes X et Z colorés ; icônes des lumières et des
   caméras, portée des lumières ponctuelles, cône des spots et pyramide de la caméra quand elles
   sont sélectionnées.
-- **Création** : *Entity > Create* place une entité vide, une primitive, une lumière, une caméra
-  ou un environnement au pivot de la caméra ; un modèle glissé dans le viewport se pose au sol
-  sous la souris. Suppr supprime la sélection.
+- **Barre d'outils du viewport** : sélection seule (Q, sans gizmo), déplacement (W), rotation (E),
+  échelle (R), axes locaux ou du monde, aimantation permanente (Ctrl l'inverse), grille, icônes
+  des lumières et caméras, cadrage ; à droite, vitesse de vol, EV de la caméra de l'éditeur et
+  aide des contrôles en infobulle. En Play, elle annonce l'état du jeu et le viewport est encadré
+  à la couleur d'accent.
+- **Création** : le menu *+* de *Scene*, *Edit > Create* ou le menu contextuel de l'arbre place une
+  entité vide, une primitive, une lumière, une caméra ou un environnement au pivot de la caméra
+  (ou comme enfant de l'entité choisie) ; un modèle glissé dans le viewport se pose au sol sous
+  la souris. Suppr supprime la sélection.
+- **Raccourcis** : Ctrl+N, Ctrl+O, Ctrl+S, Ctrl+Maj+S, Ctrl+Alt+S, Ctrl+W, Ctrl+Tab ; F5 ou Ctrl+P
+  pour jouer, F7 pause, F8 arrêt, F9 pas à pas ; Ctrl+B compile le code du jeu ; Ctrl+Maj+Q
+  revient au gestionnaire de projets, Ctrl+Q quitte.
 - **Pendant le jeu** : l'historique des modifications est mis de côté ; les modifications faites
   à la copie jouée ont leur propre historique, oublié à l'arrêt.
 
@@ -689,13 +769,18 @@ Dans les deux cas, les sources concernées sont réimportées.
 | stb (stb_image)       | décodage des images  | 6 ✅     |
 | efsw                  | surveillance des fichiers | 6 ✅ |
 | mikktspace            | tangentes            | 7 ✅     |
+| FreeType (`imgui[freetype]`) | rendu des polices de l'éditeur | 10 ✅ |
+| plutosvg              | icônes SVG de l'éditeur | 10 ✅  |
 | Catch2                | tests (feature `tests`) | 0 ✅  |
 
 Hors vcpkg :
 
 - **Slang** est fourni par le SDK Vulkan (`C:\VulkanSDK\1.4.350.0`) ;
 - **ufbx** n'existe pas dans vcpkg : ses deux fichiers (`ufbx.c`, `ufbx.h`) seront
-  intégrés dans `third_party/ufbx` lors du support FBX.
+  intégrés dans `third_party/ufbx` lors du support FBX ;
+- les **polices** Noto Sans (commit `53486ab` de `notofonts.github.io`) et JetBrains Mono (v2.304),
+  sous SIL OFL 1.1, et les **icônes** Lucide 1.47.0 (ISC) sont versionnées dans `third_party/fonts`
+  et `third_party/lucide` avec leurs licences, copiées avec elles dans `bin/resources`.
 
 CMake trouve vcpkg via la variable `VCPKG_ROOT`, sinon via l'exécutable `vcpkg` du
 `PATH` (voir `cmake/DevexVcpkg.cmake`). La version des ports est figée par
@@ -731,6 +816,11 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
    systèmes), compilation par l'éditeur à chaque modification, rechargement à chaud qui conserve
    les composants, `devex-player`, scène de démarrage, bac à sable devenu projet d'exemple.
 
+10. ✅ **Look de l'éditeur** — thème inspiré de Godot (préréglages, accent, contraste, échelle),
+    Noto Sans et JetBrains Mono rendues par FreeType, icônes Lucide colorées, gestionnaire de
+    projets, onglets de scènes, barre d'outils du viewport, barre d'état, réglages de l'éditeur,
+    barre de titre sombre, interface mélangée en espace d'affichage.
+
 Ensuite, sans ordre figé : physique, préfabs liés, export d'un jeu (paquet d'artefacts),
 post-traitements (bloom, TAA), transparence, CI Linux.
 
@@ -757,4 +847,7 @@ post-traitements (bloom, TAA), transparence, CI Linux.
 - **Ciel procédural** : atmosphère physique liée à la lumière directionnelle.
 - **Éditeur** : multi-sélection et rectangle de sélection, copier-coller et duplication, vues
   Scène et Jeu simultanées (plusieurs vues par frame dans le renderer), jeu dans un processus
-  séparé, glisser des matériaux sur les objets du viewport, lignes épaisses.
+  séparé, glisser des matériaux sur les objets du viewport, lignes épaisses, visibilité des
+  entités (l'œil de Godot), renommage dans l'arbre.
+- **Apparence** : thèmes enregistrables en fichiers, icône de projet choisie par projet, polices
+  pour le chinois, le japonais et le coréen (Noto CJK), barre de titre intégrée à l'éditeur.

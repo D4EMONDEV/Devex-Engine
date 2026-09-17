@@ -1,4 +1,5 @@
 find_package(Catch2 3 CONFIG REQUIRED)
+find_package(imgui CONFIG REQUIRED)
 include(Catch)
 
 # devex_add_tests(<module> SOURCES <files...> LIBRARIES <targets...> [ENVIRONMENT <VAR=value...>])
@@ -110,13 +111,24 @@ target_include_directories(devex_render_tests PRIVATE "${PROJECT_SOURCE_DIR}/eng
 devex_add_tests(tools
     SOURCES
         tools/EditorMathTests.cpp
+        tools/IconsTests.cpp
         tools/LogBufferTests.cpp
+        tools/ProjectListTests.cpp
         tools/SceneCommandsTests.cpp
+        tools/SceneTabsTests.cpp
+        tools/ThemeTests.cpp
         tools/ToolsOverlayTests.cpp
     LIBRARIES
         Devex::Engine
 )
-target_include_directories(devex_tools_tests PRIVATE "${PROJECT_SOURCE_DIR}/engine/src")
+# The editor's internals are tested directly; their headers use ImGui's types.
+target_include_directories(devex_tools_tests PRIVATE
+    "${PROJECT_SOURCE_DIR}/engine/src"
+    $<TARGET_PROPERTY:imgui::imgui,INTERFACE_INCLUDE_DIRECTORIES>
+)
+target_compile_definitions(devex_tools_tests PRIVATE
+    DEVEX_TEST_RESOURCES_DIRECTORY="${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/resources"
+)
 
 # A game module loaded by the runtime tests.
 add_library(devex_test_game_module SHARED runtime/TestGameModule.cpp)

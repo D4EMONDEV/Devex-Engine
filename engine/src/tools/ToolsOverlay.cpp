@@ -95,8 +95,7 @@ std::optional<asset::AssetId> acceptDroppedAsset(std::optional<asset::AssetType>
         const ImGuiPayload* const peeked = ImGui::GetDragDropPayload();
         AssetPayload payload;
         bool matches = false;
-        if (peeked != nullptr && peeked->IsDataType(assetPayload) &&
-            peeked->DataSize == sizeof(AssetPayload))
+        if (peeked != nullptr && peeked->IsDataType(assetPayload) && peeked->DataSize == sizeof(AssetPayload))
         {
             std::memcpy(&payload, peeked->Data, sizeof(payload));
             matches = !type || payload.type == *type;
@@ -113,16 +112,14 @@ std::optional<asset::AssetId> acceptDroppedAsset(std::optional<asset::AssetType>
 void requestInstantiateModel(ToolsState& state, asset::AssetId model, core::Uuid parent,
                              std::optional<math::Vec3> position)
 {
-    const asset::AssetInfo* const info =
-        state.database != nullptr ? state.database->find(model) : nullptr;
+    const asset::AssetInfo* const info = state.database != nullptr ? state.database->find(model) : nullptr;
     if (info == nullptr || info->type != asset::AssetType::Model)
     {
         return;
     }
     const core::Result<std::vector<std::byte>> bytes = state.database->loadArtifact(model);
     const core::Result<asset::ModelData> data =
-        bytes ? asset::decodeModel(*bytes)
-              : core::Result<asset::ModelData>(std::unexpected(bytes.error()));
+        bytes ? asset::decodeModel(*bytes) : core::Result<asset::ModelData>(std::unexpected(bytes.error()));
     if (!data)
     {
         DEVEX_LOG_WARNING("Cannot place model {}: {}", info->name, data.error());
@@ -137,8 +134,8 @@ void requestInstantiateModel(ToolsState& state, asset::AssetId model, core::Uuid
         transform->position = *position;
     }
     const core::Uuid rootUuid = scratch.uuid(root);
-    state.pendingCommand = makeCreateEntityTreeCommand(scene::saveEntityTree(scratch, root), rootUuid,
-                                                       parent, std::format("Place {}", info->name));
+    state.pendingCommand = makeCreateEntityTreeCommand(scene::saveEntityTree(scratch, root), rootUuid, parent,
+                                                       std::format("Place {}", info->name));
     state.selection = rootUuid;
 }
 
@@ -147,15 +144,6 @@ void requestCreateEntity(ToolsState& state, core::Uuid parent)
     const core::Uuid entity = core::Uuid::generate();
     state.pendingCommand = makeCreateEntityCommand(entity, "Entity", parent);
     state.selection = entity;
-}
-
-ImVec4 linearColor(ImVec4 srgb) noexcept
-{
-    const auto toLinear = [](float channel) {
-        return channel <= 0.04045f ? channel / 12.92f
-                                   : std::pow((channel + 0.055f) / 1.055f, 2.4f);
-    };
-    return {toLinear(srgb.x), toLinear(srgb.y), toLinear(srgb.z), srgb.w};
 }
 
 std::string displayName(std::string_view identifier)
@@ -174,24 +162,6 @@ std::string displayName(std::string_view identifier)
 namespace {
 
 using detail::ToolsState;
-
-void applyStyle()
-{
-    ImGui::StyleColorsDark();
-    ImGuiStyle& style = ImGui::GetStyle();
-    style.WindowRounding = 4.0f;
-    style.FrameRounding = 3.0f;
-    style.TabRounding = 3.0f;
-    style.GrabRounding = 3.0f;
-    style.WindowBorderSize = 1.0f;
-    style.Colors[ImGuiCol_WindowBg].w = 0.94f;
-
-    // ImGui colors are authored in sRGB, but the swapchain encodes linear values.
-    for (ImVec4& color : style.Colors)
-    {
-        color = detail::linearColor(color);
-    }
-}
 
 void logFailure(const core::Result<void>& result)
 {
@@ -217,59 +187,90 @@ void redo(ToolsState& state, scene::Scene& scene)
     }
 }
 
-void drawMainMenu(ToolsState& state, scene::Scene& scene)
+// The theme applies between frames, when it changed or the window moved to a display of another scale.
+void refreshTheme(ToolsState& state)
+{
+    const float displayScale = state.window.displayScale();
+    if (!state.themeChanged && displayScale == state.appliedDisplayScale)
+    {
+        return;
+    }
+    state.themeChanged = false;
+    state.appliedDisplayScale = displayScale;
+    detail::applyTheme(state.theme, displayScale, state.renderer.imGuiNeedsLinearColors());
+    const detail::ThemeColors& colors = detail::themeColors();
+    state.window.setTitleBarColors(colors.dark, math::Vec3(colors.outer.x, colors.outer.y, colors.outer.z));
+}
+
+// The project manager takes a compact window; the editor takes the whole screen.
+void applyWindowLayout(ToolsState& state, detail::WindowLayout layout)
+{
+    if (state.windowLayout == layout)
+    {
+        return;
+    }
+    const bool first = state.windowLayout == detail::WindowLayout::Unset;
+    state.windowLayout = layout;
+    // Hidden windows, as in tests, keep their size.
+    if (state.window.isHidden())
+    {
+        return;
+    }
+    if (layout == detail::WindowLayout::Editor)
+    {
+        state.window.maximize();
+    }
+    else if (!first || !state.window.isMaximized())
+    {
+        const float scale = state.window.displayScale();
+        state.window.setSize({static_cast<std::uint32_t>(1160.0f * scale), static_cast<std::uint32_t>(820.0f * scale)});
+        state.window.center();
+    }
+}
+
+void drawOverlayMenu(ToolsState& state, scene::Scene& scene)
 {
     if (!ImGui::BeginMainMenuBar())
     {
         return;
     }
-
+    ImGui::TextUnformatted(detail::icons::Logo.c_str());
     if (ImGui::BeginMenu("Edit"))
     {
         const Command* const nextUndo = state.history.nextUndo();
-        const std::string undoLabel =
-            nextUndo != nullptr ? std::format("Undo {}", nextUndo->description()) : "Undo";
-        if (ImGui::MenuItem(undoLabel.c_str(), "Ctrl+Z", false, nextUndo != nullptr))
+        const std::string undoLabel = nextUndo != nullptr ? std::format("Undo {}", nextUndo->description()) : "Undo";
+        if (ImGui::MenuItemEx(undoLabel.c_str(), detail::icons::Undo.c_str(), "Ctrl+Z", false, nextUndo != nullptr))
         {
             undo(state, scene);
         }
         const Command* const nextRedo = state.history.nextRedo();
-        const std::string redoLabel =
-            nextRedo != nullptr ? std::format("Redo {}", nextRedo->description()) : "Redo";
-        if (ImGui::MenuItem(redoLabel.c_str(), "Ctrl+Y", false, nextRedo != nullptr))
+        const std::string redoLabel = nextRedo != nullptr ? std::format("Redo {}", nextRedo->description()) : "Redo";
+        if (ImGui::MenuItemEx(redoLabel.c_str(), detail::icons::Redo.c_str(), "Ctrl+Y", false, nextRedo != nullptr))
         {
             redo(state, scene);
         }
-        ImGui::EndMenu();
-    }
-
-    if (ImGui::BeginMenu("Entity"))
-    {
+        ImGui::Separator();
         const bool hasSelection = scene.findEntity(state.selection).isValid();
-        if (ImGui::MenuItem("Create entity"))
+        if (ImGui::BeginMenuEx("Create", detail::icons::Plus.c_str()))
         {
-            detail::requestCreateEntity(state, core::Uuid{});
+            detail::drawCreateEntityMenu(state, core::Uuid{});
+            ImGui::EndMenu();
         }
-        if (ImGui::MenuItem("Create child", nullptr, false, hasSelection))
-        {
-            detail::requestCreateEntity(state, state.selection);
-        }
-        if (ImGui::MenuItem("Delete", "Delete", false, hasSelection))
+        if (ImGui::MenuItemEx("Delete", detail::icons::Trash.c_str(), "Delete", false, hasSelection))
         {
             state.pendingCommand = makeDestroyEntityCommand(state.selection);
         }
         ImGui::EndMenu();
     }
-
     if (ImGui::BeginMenu("View"))
     {
         ImGui::MenuItem(detail::hierarchyWindow, nullptr, &state.showHierarchy);
         ImGui::MenuItem(detail::inspectorWindow, nullptr, &state.showInspector);
-        ImGui::MenuItem(detail::statisticsWindow, nullptr, &state.showStatistics);
-        ImGui::MenuItem(detail::consoleWindow, nullptr, &state.showConsole);
         ImGui::MenuItem(detail::assetsWindow, nullptr, &state.showAssets);
+        ImGui::MenuItem(detail::consoleWindow, nullptr, &state.showConsole);
+        ImGui::MenuItem(detail::statisticsWindow, nullptr, &state.showStatistics);
         ImGui::Separator();
-        if (ImGui::MenuItem("Reset layout"))
+        if (ImGui::MenuItem("Reset Layout"))
         {
             state.resetLayout = true;
         }
@@ -277,12 +278,12 @@ void drawMainMenu(ToolsState& state, scene::Scene& scene)
     }
 
     const char* const hint = "F1 hides the tools";
-    ImGui::SameLine(ImGui::GetWindowWidth() - ImGui::CalcTextSize(hint).x -
-                    ImGui::GetStyle().ItemSpacing.x * 2.0f);
+    ImGui::SameLine(ImGui::GetWindowWidth() - ImGui::CalcTextSize(hint).x - ImGui::GetStyle().ItemSpacing.x * 2.0f);
     ImGui::TextDisabled("%s", hint);
     ImGui::EndMainMenuBar();
 }
 
+// Scene tree and file system on the left, inspector on the right, output and statistics under the view.
 void buildDefaultLayout(ImGuiID dockspace, const ImGuiViewport& viewport, ToolsMode mode)
 {
     ImGui::DockBuilderRemoveNode(dockspace);
@@ -290,15 +291,14 @@ void buildDefaultLayout(ImGuiID dockspace, const ImGuiViewport& viewport, ToolsM
     ImGui::DockBuilderSetNodeSize(dockspace, viewport.WorkSize);
 
     ImGuiID center = dockspace;
-    const ImGuiID left = ImGui::DockBuilderSplitNode(center, ImGuiDir_Left, 0.2f, nullptr, &center);
-    const ImGuiID right =
-        ImGui::DockBuilderSplitNode(center, ImGuiDir_Right, 0.3f, nullptr, &center);
-    const ImGuiID bottom =
-        ImGui::DockBuilderSplitNode(center, ImGuiDir_Down, 0.28f, nullptr, &center);
+    ImGuiID leftTop = ImGui::DockBuilderSplitNode(center, ImGuiDir_Left, 0.19f, nullptr, &center);
+    const ImGuiID leftBottom = ImGui::DockBuilderSplitNode(leftTop, ImGuiDir_Down, 0.5f, nullptr, &leftTop);
+    const ImGuiID right = ImGui::DockBuilderSplitNode(center, ImGuiDir_Right, 0.27f, nullptr, &center);
+    const ImGuiID bottom = ImGui::DockBuilderSplitNode(center, ImGuiDir_Down, 0.26f, nullptr, &center);
 
-    ImGui::DockBuilderDockWindow(detail::hierarchyWindow, left);
+    ImGui::DockBuilderDockWindow(detail::hierarchyWindow, leftTop);
+    ImGui::DockBuilderDockWindow(detail::assetsWindow, leftBottom);
     ImGui::DockBuilderDockWindow(detail::inspectorWindow, right);
-    ImGui::DockBuilderDockWindow(detail::assetsWindow, bottom);
     ImGui::DockBuilderDockWindow(detail::consoleWindow, bottom);
     ImGui::DockBuilderDockWindow(detail::statisticsWindow, bottom);
     if (mode == ToolsMode::Editor)
@@ -311,18 +311,22 @@ void buildDefaultLayout(ImGuiID dockspace, const ImGuiViewport& viewport, ToolsM
 void drawDockspace(ToolsState& state)
 {
     const ImGuiViewport* const viewport = ImGui::GetMainViewport();
-    // The name carries a version, increased when panels are added, so that saved layouts from
-    // before are rebuilt with the new panels docked.
+    // The name carries a version, increased when panels change, so that saved layouts from before
+    // are rebuilt with the new panels docked.
     const bool editor = state.mode == ToolsMode::Editor;
-    const ImGuiID dockspace = ImHashStr(editor ? "Devex editor dockspace 1" : "Devex tools dockspace 2");
+    const ImGuiID dockspace = ImHashStr(editor ? "Devex editor dockspace 2" : "Devex tools dockspace 3");
     if (state.resetLayout || ImGui::DockBuilderGetNode(dockspace) == nullptr)
     {
         buildDefaultLayout(dockspace, *viewport, state.mode);
         state.resetLayout = false;
+        state.selectOutputTabFrames = 2;
     }
     // Over the game, the central node stays empty and transparent, showing the game behind the
-    // panels; the editor shows the game in its viewport panel instead.
+    // panels; the editor shows the game in its viewport panel instead. The gaps between panels
+    // show the outer color, as in Godot.
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, detail::uiColor(detail::themeColors().outer));
     ImGui::DockSpaceOverViewport(dockspace, viewport, editor ? ImGuiDockNodeFlags_None : ImGuiDockNodeFlags_PassthruCentralNode);
+    ImGui::PopStyleColor();
 }
 
 void finishFrame(ToolsState& state)
@@ -331,7 +335,19 @@ void finishFrame(ToolsState& state)
     state.renderer.queueImGuiDrawData();
 }
 
-void handleShortcuts(ToolsState& state, scene::Scene& scene);
+void handleShortcuts(ToolsState& state, scene::Scene& scene)
+{
+    // Text fields route these chords to their own undo first.
+    if (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_Z, ImGuiInputFlags_RouteGlobal))
+    {
+        undo(state, scene);
+    }
+    if (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_Y, ImGuiInputFlags_RouteGlobal) ||
+        ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiMod_Shift | ImGuiKey_Z, ImGuiInputFlags_RouteGlobal))
+    {
+        redo(state, scene);
+    }
+}
 
 void updateEditor(ToolsState& state, scene::Scene& scene, PlayState playState)
 {
@@ -361,8 +377,9 @@ void updateEditor(ToolsState& state, scene::Scene& scene, PlayState playState)
     detail::updateEditorSession(state, scene);
     if (state.database == nullptr)
     {
-        detail::drawWelcomeScreen(state);
-        detail::drawEditorPopups(state, scene);
+        applyWindowLayout(state, detail::WindowLayout::ProjectManager);
+        detail::drawProjectManager(state);
+        detail::drawSettingsWindow(state);
         state.viewportPixels = {};
         detail::updateWindowTitle(state, scene);
         finishFrame(state);
@@ -372,7 +389,9 @@ void updateEditor(ToolsState& state, scene::Scene& scene, PlayState playState)
         return;
     }
 
+    applyWindowLayout(state, detail::WindowLayout::Editor);
     detail::drawEditorMenus(state, scene);
+    detail::drawStatusBar(state, scene);
     drawDockspace(state);
     handleShortcuts(state, scene);
     detail::handleEditorShortcuts(state, scene);
@@ -397,6 +416,7 @@ void updateEditor(ToolsState& state, scene::Scene& scene, PlayState playState)
     {
         detail::drawAssetsPanel(state, scene);
     }
+    detail::drawSettingsWindow(state);
     detail::drawEditorPopups(state, scene);
     if (state.pendingCommand != nullptr)
     {
@@ -412,17 +432,14 @@ void updateEditor(ToolsState& state, scene::Scene& scene, PlayState playState)
     state.capturesMouse = io.WantCaptureMouse && !state.flying && !(playing && state.viewportHovered);
 }
 
-void handleShortcuts(ToolsState& state, scene::Scene& scene)
+// The Devex logo as the icon of the window and its taskbar button.
+void setWindowIcon(ToolsState& state)
 {
-    // Text fields route these chords to their own undo first.
-    if (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_Z, ImGuiInputFlags_RouteGlobal))
+    constexpr std::uint32_t size = 64;
+    const core::Result<detail::SvgImage> image = detail::renderSvg(state.icons.svg(detail::Icon::Logo), size, size);
+    if (image)
     {
-        undo(state, scene);
-    }
-    if (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_Y, ImGuiInputFlags_RouteGlobal) ||
-        ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiMod_Shift | ImGuiKey_Z, ImGuiInputFlags_RouteGlobal))
-    {
-        redo(state, scene);
+        state.window.setIcon(image->rgba, image->width, image->height);
     }
 }
 
@@ -430,24 +447,31 @@ void handleShortcuts(ToolsState& state, scene::Scene& scene)
 
 core::Result<std::unique_ptr<ToolsOverlay>> ToolsOverlay::create(
     platform::Platform& platform, platform::Window& window, render::Renderer& renderer,
-    const std::filesystem::path& settingsFile, ToolsMode mode, const std::filesystem::path& recentProjectsFile)
+    const std::filesystem::path& settingsFile, ToolsMode mode, const std::filesystem::path& userSettingsFile)
 {
     DEVEX_ASSERT_MSG(ImGui::GetCurrentContext() == nullptr, "only one ToolsOverlay may exist");
     IMGUI_CHECKVERSION();
 
     auto state = std::make_unique<detail::ToolsState>(platform, window, renderer, mode);
     state->settingsFile = core::toUtf8(settingsFile);
+    const std::filesystem::path resources = platform.baseDirectory() / "resources";
+    state->icons = detail::IconSet::load(resources / "icons");
     if (mode == ToolsMode::Editor)
     {
         state->visible = true;
-        detail::loadRecentProjects(*state, recentProjectsFile);
+        detail::loadUserSettings(*state, userSettingsFile);
+        setWindowIcon(*state);
     }
 
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable | ImGuiConfigFlags_NavEnableKeyboard;
     io.IniFilename = state->settingsFile.c_str();
-    applyStyle();
+    // Ctrl+Tab goes through scene tabs rather than ImGui's windows.
+    ImGui::GetCurrentContext()->ConfigNavWindowingKeyNext = 0;
+    ImGui::GetCurrentContext()->ConfigNavWindowingKeyPrev = 0;
+    state->fonts = detail::loadEditorFonts(resources / "fonts", state->icons);
+    detail::setEditorFonts(state->fonts);
 
     if (core::Result<void> connected = platform.initializeImGui(window); !connected)
     {
@@ -460,6 +484,7 @@ core::Result<std::unique_ptr<ToolsOverlay>> ToolsOverlay::create(
         ImGui::DestroyContext();
         return std::unexpected(connected.error());
     }
+    refreshTheme(*state);
     return std::unique_ptr<ToolsOverlay>(new ToolsOverlay(std::move(state)));
 }
 
@@ -526,6 +551,7 @@ void ToolsOverlay::update(scene::Scene& scene, core::Duration frameDelta, PlaySt
         return;
     }
 
+    refreshTheme(state);
     state.platform.beginImGuiFrame();
     state.renderer.beginImGuiFrame();
     ImGui::NewFrame();
@@ -536,7 +562,7 @@ void ToolsOverlay::update(scene::Scene& scene, core::Duration frameDelta, PlaySt
         return;
     }
 
-    drawMainMenu(state, scene);
+    drawOverlayMenu(state, scene);
     drawDockspace(state);
     handleShortcuts(state, scene);
     if (state.showHierarchy)
@@ -603,34 +629,46 @@ void ToolsOverlay::setGameCodeStatus(GameCodeStatus status)
     m_state->gameCode = std::move(status);
 }
 
-bool ToolsOverlay::confirmClose()
+bool ToolsOverlay::confirmClose(scene::Scene& editedScene)
 {
     ToolsState& state = *m_state;
-    if (state.mode != ToolsMode::Editor || state.database == nullptr || !detail::hasUnsavedChanges(state))
+    if (state.mode != ToolsMode::Editor || state.database == nullptr)
     {
         return true;
     }
-    state.pendingChange = detail::SceneChange{detail::SceneChange::Kind::Quit, {}};
-    state.openUnsavedChangesPopup = true;
-    // The question comes once play has stopped, when the edited scene can be saved.
-    state.requests.stop = state.playState != PlayState::Editing;
+    if (state.playState == PlayState::Editing && !detail::hasUnsavedChanges(state, editedScene))
+    {
+        return true;
+    }
+    detail::requestAction(state, editedScene, {.kind = detail::PendingAction::Kind::Quit});
     return false;
+}
+
+void ToolsOverlay::forEachBackgroundScene(const std::function<void(scene::Scene&)>& function)
+{
+    m_state->tabs.forEachBackgroundScene(function);
 }
 
 void ToolsOverlay::setAssetDatabase(asset::AssetDatabase* database) noexcept
 {
-    if (m_state->database == database)
+    ToolsState& state = *m_state;
+    if (state.database == database)
     {
         return;
     }
-    if (m_state->mode == ToolsMode::Editor && m_state->database != nullptr)
+    if (state.mode == ToolsMode::Editor && state.database != nullptr)
     {
-        detail::saveEditorSettings(*m_state);
+        detail::saveEditorSettings(state);
     }
-    m_state->database = database;
-    m_state->projectChanged = database != nullptr;
-    m_state->selection = core::Uuid{};
-    m_state->history.clear();
+    // The scenes of the previous project go with it; the application empties the edited scene.
+    scene::Scene dropped;
+    state.tabs.clear(detail::ActiveDocument{state.scenePath, dropped, state.history, state.savedState, state.selection,
+                                            state.camera});
+    state.pendingAction.reset();
+    state.resumeActionAfterPlay = false;
+    state.database = database;
+    state.projectChanged = database != nullptr;
+    state.projectManager.refresh = true;
 }
 
 CommandHistory& ToolsOverlay::history() noexcept

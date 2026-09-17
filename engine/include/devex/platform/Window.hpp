@@ -4,6 +4,7 @@
 #include <devex/math/Math.hpp>
 
 #include <cstdint>
+#include <span>
 #include <string>
 #include <string_view>
 
@@ -46,8 +47,24 @@ public:
     // Size of the drawable area in pixels, as used by a swapchain.
     [[nodiscard]] math::Extent2D pixelSize() const noexcept;
     [[nodiscard]] bool isMinimized() const noexcept;
+    [[nodiscard]] bool isMaximized() const noexcept;
+    [[nodiscard]] bool isHidden() const noexcept;
+    // Content scale of the display the window is on: 1.5 when the system scales it to 150 %.
+    [[nodiscard]] float displayScale() const noexcept;
 
     void setTitle(std::string_view title);
+    // Resizes the window, in window coordinates, and puts it back to its normal state first.
+    void setSize(math::Extent2D size);
+    // Centers the window on its display.
+    void center();
+    void maximize();
+    // Leaves the maximized or minimized state.
+    void restore();
+    // Matches the title bar drawn by the system to the application's colors, where the system
+    // allows it (Windows): dark or light, and a caption color given in sRGB from 0 to 1.
+    void setTitleBarColors(bool dark, math::Vec3 caption);
+    // The icon of the window and its taskbar button, from 8-bit RGBA pixels.
+    void setIcon(std::span<const std::uint8_t> rgba, std::uint32_t width, std::uint32_t height);
 
     // A captured mouse is hidden and reports unbounded motion, as needed by first-person cameras.
     void setMouseCaptured(bool captured);

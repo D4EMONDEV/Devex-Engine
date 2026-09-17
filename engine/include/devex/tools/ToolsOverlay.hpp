@@ -12,6 +12,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -26,8 +27,9 @@ enum class ToolsMode : std::uint8_t
 {
     // Panels drawn over the running game, shown and hidden with F1.
     Overlay,
-    // The editor: the scene is shown in a viewport panel, where it is edited with the mouse and
-    // gizmos, saved as project scenes, and played on request. A welcome screen opens projects.
+    // The editor: scenes open in tabs and are shown in a viewport panel, where they are edited with
+    // the mouse and gizmos, saved as project scenes, and played on request. Without a project, a
+    // project manager lists, creates and opens projects.
     Editor,
 };
 
@@ -69,6 +71,8 @@ struct EditorRequests
     bool step = false;
     // A .dvxproj file to open in place of the current project.
     std::optional<std::filesystem::path> openProject;
+    // Closes the project and goes back to the project manager.
+    bool closeProject = false;
     bool quit = false;
     // Builds the game code now.
     bool buildCode = false;
@@ -76,19 +80,20 @@ struct EditorRequests
     bool createCode = false;
 };
 
-// Docked Dear ImGui panels: hierarchy, inspector, assets, statistics and console, over the game or
-// around the editor's viewport. Only one instance may exist at a time, since it owns the ImGui
-// context.
+// Docked Dear ImGui panels in a Godot-like theme: scene tree, inspector, file system, output and
+// statistics, over the game or around the editor's viewport. Only one instance may exist at a time,
+// since it owns the ImGui context.
 class ToolsOverlay
 {
 public:
     // Creates the ImGui context and connects it to the platform and the renderer, which must
-    // outlive the overlay. The panel layout is saved to settingsFile. The editor remembers recent
-    // projects in recentProjectsFile, by default in the user's data directory.
+    // outlive the overlay. Fonts and icons come from resources/ next to the executable. The panel
+    // layout is saved to settingsFile. The editor keeps the theme and the projects of the user in
+    // userSettingsFile, by default in the user's data directory.
     [[nodiscard]] static core::Result<std::unique_ptr<ToolsOverlay>> create(
         platform::Platform& platform, platform::Window& window, render::Renderer& renderer,
         const std::filesystem::path& settingsFile, ToolsMode mode = ToolsMode::Overlay,
-        const std::filesystem::path& recentProjectsFile = {});
+        const std::filesystem::path& userSettingsFile = {});
 
     ~ToolsOverlay();
 
@@ -121,9 +126,14 @@ public:
     // Editor only: the state of the game code, shown in the menu bar.
     void setGameCodeStatus(GameCodeStatus status);
 
-    // Editor only: whether the application may close now. When the scene has unsaved changes, the
+    // Editor only: whether the application may close now. When scenes have unsaved changes, the
     // editor asks what to do with them first, and requests to quit once they are saved or dropped.
-    [[nodiscard]] bool confirmClose();
+    // The scene is the edited one, not a copy being played.
+    [[nodiscard]] bool confirmClose(scene::Scene& editedScene);
+
+    // Editor only: calls the function with the scenes of the tabs in the background, which live in
+    // the editor rather than in the application.
+    void forEachBackgroundScene(const std::function<void(scene::Scene&)>& function);
 
     // Lists the project assets in the panels; null when there is no project. The database must
     // outlive the overlay or be replaced first. In the editor, a new project opens its last scene

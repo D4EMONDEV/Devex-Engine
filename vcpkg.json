@@ -14,10 +14,12 @@
             "name": "imgui",
             "features": [
                 "docking-experimental",
+                "freetype",
                 "sdl3-binding"
             ]
         },
         "mikktspace",
+        "plutosvg",
         {
             "name": "sdl3",
             "features": [

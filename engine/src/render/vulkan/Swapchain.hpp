@@ -40,6 +40,11 @@ public:
     [[nodiscard]] std::uint32_t imageCount() const noexcept;
     [[nodiscard]] VkImage image(std::uint32_t index) const noexcept;
     [[nodiscard]] VkImageView imageView(std::uint32_t index) const noexcept;
+    // The format and views the tools draw through: the UNORM counterpart of an sRGB format when the
+    // device can view swapchain images in both, so that ImGui blends in display space as it
+    // expects. Otherwise the swapchain's own format and views.
+    [[nodiscard]] VkFormat toolsFormat() const noexcept;
+    [[nodiscard]] VkImageView toolsImageView(std::uint32_t index) const noexcept;
 
 private:
     Swapchain() = default;
@@ -52,6 +57,9 @@ private:
     PresentMode m_presentMode = PresentMode::Fifo;
     std::vector<VkImage> m_images;
     std::vector<VkImageView> m_imageViews;
+    VkFormat m_toolsFormat = VK_FORMAT_UNDEFINED;
+    // Empty when the tools draw through the image views.
+    std::vector<VkImageView> m_toolsImageViews;
 };
 
 } // namespace devex::render::vulkan

@@ -12,7 +12,8 @@ et rendu avec Vulkan. Il est distribué sous licence [MIT](LICENSE).
 - repère Y-up main droite, formats de projet texte `.dvx*` ;
 - gameplay en C++ (composants et systèmes) compilé et rechargé à chaud par l'éditeur, C# prévu
   ensuite ;
-- éditeur Dear ImGui (docking) avec viewport, gizmos et mode Play, puis UI maison.
+- éditeur Dear ImGui (docking) au style inspiré de Godot : gestionnaire de projets, onglets de
+  scènes, viewport, gizmos et mode Play ; UI maison plus tard.
 
 Le détail, l'architecture des modules et les jalons sont dans
 [docs/decisions.md](docs/decisions.md).
@@ -35,9 +36,10 @@ Le détail, l'architecture des modules et les jalons sont dans
   tonemapping AgX, rendu dans une texture, sélection sur le GPU, contours et lignes d'outils ;
 - `Devex::Scene` : entités à UUID, composants en sparse sets, hiérarchie, `.dvxscene`,
   instanciation de modèles ;
-- `Devex::Tools` : panneaux ImGui (hiérarchie, inspecteur, assets, statistiques, console,
-  annulation), en overlay (F1) ou dans l'éditeur : viewport, caméra libre, sélection à la
-  souris, gizmos, scènes, écran d'accueil ;
+- `Devex::Tools` : interface ImGui au thème réglable inspiré de Godot (Noto Sans, JetBrains Mono,
+  icônes Lucide) : arbre de la scène, inspecteur, FileSystem, sortie, statistiques, annulation, en
+  overlay (F1) ou dans l'éditeur : gestionnaire de projets, onglets de scènes, viewport et sa
+  barre d'outils, caméra libre, sélection à la souris, gizmos, réglages de l'éditeur ;
 - `Devex::Runtime` : `Application`, boucle à pas fixe, mode éditeur et mode Play, modules de jeu
   (composants et systèmes rechargeables à chaud), chargement des assets à la demande, rendu
   automatique de la scène ;
@@ -70,7 +72,7 @@ ctest --preset test-x64-debug
 Les programmes sont produits dans `out/build/x64-debug/bin` :
 
 ```powershell
-out/build/x64-debug/bin/devex-editor.exe                                # écran d'accueil
+out/build/x64-debug/bin/devex-editor.exe                                # gestionnaire de projets
 out/build/x64-debug/bin/devex-editor.exe samples/sandbox/Sandbox.dvxproj
 out/build/x64-debug/bin/devex-player.exe samples/sandbox/Sandbox.dvxproj
 ```
@@ -101,9 +103,14 @@ DEVEX_GAME_MODULE(game)
 }
 ```
 
-Dans l'éditeur : clic gauche pour sélectionner, W / E / R pour déplacer, tourner ou mettre à
-l'échelle (Ctrl aimante), clic droit maintenu + ZQSD pour voler, Alt + clic gauche pour tourner
-autour, F pour cadrer, Ctrl+S pour enregistrer la scène et Ctrl+P pour jouer ou arrêter.
+Dans l'éditeur : clic gauche pour sélectionner, Q / W / E / R pour sélectionner, déplacer, tourner
+ou mettre à l'échelle (Ctrl aimante), clic droit maintenu + ZQSD pour voler, Alt + clic gauche pour
+tourner autour, F pour cadrer, Ctrl+S pour enregistrer la scène, Ctrl+N / Ctrl+W pour ouvrir ou
+fermer un onglet de scène et F5 pour jouer (F8 arrête). Le thème, l'échelle et les polices se
+règlent dans *Editor > Editor Settings*.
+
+Les polices (Noto Sans, JetBrains Mono : SIL OFL 1.1) et les icônes (Lucide : ISC) de l'éditeur sont
+dans `third_party` avec leurs licences.
 
 Avec Visual Studio en français sans le pack de langue anglais, la configuration fait passer le
 compilateur par un petit lanceur qui traduit ses notes `/showIncludes` pour Ninja (voir

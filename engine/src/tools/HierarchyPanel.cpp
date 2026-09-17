@@ -2,8 +2,11 @@
 
 #include <devex/tools/SceneCommands.hpp>
 
+#include <imgui_internal.h>
+
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <cstdint>
 #include <cstring>
 #include <optional>
@@ -30,13 +33,44 @@ using scene::Entity;
     return dropped;
 }
 
+[[nodiscard]] bool containsIgnoringCase(std::string_view text, std::string_view part)
+{
+    return part.empty() || !std::ranges::search(text, part, [](char left, char right) {
+                                return std::tolower(static_cast<unsigned char>(left)) ==
+                                       std::tolower(static_cast<unsigned char>(right));
+                            }).empty();
+}
+
+// Whether the entity or one of its descendants matches the filter.
+[[nodiscard]] bool matchesFilter(const scene::Scene& scene, Entity entity, std::string_view filter)
+{
+    if (containsIgnoringCase(scene.name(entity), filter))
+    {
+        return true;
+    }
+    for (Entity child = scene.firstChild(entity); child.isValid(); child = scene.nextSibling(child))
+    {
+        if (matchesFilter(scene, child, filter))
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
 void drawEntity(ToolsState& state, scene::Scene& scene, Entity entity)
 {
+    const std::string_view filter = state.hierarchyFilter;
+    if (!filter.empty() && !matchesFilter(scene, entity, filter))
+    {
+        return;
+    }
     const core::Uuid uuid = scene.uuid(entity);
     const std::string& name = scene.name(entity);
 
-    ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_OpenOnDoubleClick |
-                               ImGuiTreeNodeFlags_SpanAvailWidth;
+    ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow |
+                               ImGuiTreeNodeFlags_SpanFullWidth | ImGuiTreeNodeFlags_FramePadding |
+                               ImGuiTreeNodeFlags_DefaultOpen;
     if (!scene.firstChild(entity).isValid())
     {
         flags |= ImGuiTreeNodeFlags_Leaf;
@@ -45,18 +79,30 @@ void drawEntity(ToolsState& state, scene::Scene& scene, Entity entity)
     {
         flags |= ImGuiTreeNodeFlags_Selected;
     }
+    if (!filter.empty())
+    {
+        ImGui::SetNextItemOpen(true);
+    }
 
     ImGui::PushID(static_cast<int>(entity.index));
-    const bool open =
-        ImGui::TreeNodeEx("entity", flags, "%s", name.empty() ? "(unnamed)" : name.c_str());
+    const float nodeX = ImGui::GetCursorScreenPos().x;
+    const bool open = ImGui::TreeNodeEx("##entity", flags);
+    const ImVec2 rowMin = ImGui::GetItemRectMin();
+    const float rowHeight = ImGui::GetItemRectSize().y;
 
     if (ImGui::IsItemClicked(ImGuiMouseButton_Left) && !ImGui::IsItemToggledOpen())
     {
         state.selection = uuid;
     }
+    if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) && state.mode == ToolsMode::Editor)
+    {
+        frameSelection(state, scene);
+    }
     if (ImGui::BeginDragDropSource())
     {
         ImGui::SetDragDropPayload(entityPayload, uuid.bytes().data(), uuid.bytes().size());
+        const EntityIcon icon = entityIcon(scene, entity);
+        iconLabel(icon.icon, icon.color);
         ImGui::TextUnformatted(name.c_str());
         ImGui::EndDragDropSource();
     }
@@ -71,16 +117,32 @@ void drawEntity(ToolsState& state, scene::Scene& scene, Entity entity)
     if (ImGui::BeginPopupContextItem("entity menu"))
     {
         state.selection = uuid;
-        if (ImGui::MenuItem("Create child"))
+        if (ImGui::BeginMenuEx("Create Child", icons::Plus.c_str()))
         {
-            requestCreateEntity(state, uuid);
+            drawCreateEntityMenu(state, uuid);
+            ImGui::EndMenu();
         }
-        if (ImGui::MenuItem("Delete"))
+        if (state.mode == ToolsMode::Editor && ImGui::MenuItemEx("Frame", icons::Crosshair.c_str(), "F"))
+        {
+            frameSelection(state, scene);
+        }
+        ImGui::Separator();
+        if (ImGui::MenuItemEx("Delete", icons::Trash.c_str(), "Delete"))
         {
             state.pendingCommand = makeDestroyEntityCommand(uuid);
         }
         ImGui::EndPopup();
     }
+
+    // The icon and the name, drawn over the node so that it stays the item for clicks and drags.
+    const EntityIcon icon = entityIcon(scene, entity);
+    const float textY = rowMin.y + (rowHeight - ImGui::GetFontSize()) * 0.5f;
+    const float iconX = nodeX + ImGui::GetTreeNodeToLabelSpacing();
+    ImDrawList* const draw = ImGui::GetWindowDrawList();
+    draw->AddText(ImVec2(iconX, textY), uiColorU32(icon.color), icon.icon.c_str());
+    const float nameX = iconX + ImGui::CalcTextSize(icon.icon.c_str()).x + ImGui::GetStyle().ItemInnerSpacing.x;
+    draw->AddText(ImVec2(nameX, textY), ImGui::GetColorU32(name.empty() ? ImGuiCol_TextDisabled : ImGuiCol_Text),
+                  name.empty() ? "(unnamed)" : name.c_str());
 
     if (open)
     {
@@ -97,48 +159,61 @@ void drawEntity(ToolsState& state, scene::Scene& scene, Entity entity)
 
 void drawHierarchyPanel(ToolsState& state, scene::Scene& scene)
 {
-    if (ImGui::Begin(hierarchyWindow, &state.showHierarchy))
+    if (ImGui::Begin(hierarchyWindow))
     {
-        if (ImGui::Button("+ Entity"))
+        if (toolButton("add", icons::Plus, "Create an entity"))
         {
-            requestCreateEntity(state, core::Uuid{});
+            ImGui::OpenPopup("create entity");
         }
-        ImGui::SameLine();
-        ImGui::TextDisabled("%zu entities", scene.entityCount());
-        ImGui::Separator();
-
-        for (Entity root = scene.firstRoot(); root.isValid(); root = scene.nextSibling(root))
+        if (ImGui::BeginPopup("create entity"))
         {
-            drawEntity(state, scene, root);
-        }
-
-        // The empty space below the tree accepts entities to make them roots.
-        ImVec2 remaining = ImGui::GetContentRegionAvail();
-        remaining.y = std::max(remaining.y, ImGui::GetTextLineHeight());
-        ImGui::InvisibleButton("roots", remaining);
-        if (ImGui::IsItemClicked(ImGuiMouseButton_Left))
-        {
-            state.selection = core::Uuid{};
-        }
-        if (const std::optional<core::Uuid> dropped = acceptDroppedEntity())
-        {
-            state.pendingCommand = makeReparentCommand(*dropped, core::Uuid{});
-        }
-        if (const std::optional<asset::AssetId> model = acceptDroppedAsset(asset::AssetType::Model))
-        {
-            requestInstantiateModel(state, *model, core::Uuid{});
-        }
-        if (ImGui::BeginPopupContextItem("roots menu"))
-        {
-            if (ImGui::MenuItem("Create entity"))
-            {
-                requestCreateEntity(state, core::Uuid{});
-            }
+            drawCreateEntityMenu(state, core::Uuid{});
             ImGui::EndPopup();
         }
+        ImGui::SameLine();
+        searchField("##filter", state.hierarchyFilter, "Filter Entities");
+
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, uiColor(themeColors().field));
+        ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, ImGui::GetStyle().FrameRounding);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(4.0f, 4.0f));
+        if (ImGui::BeginChild("tree", ImVec2(0.0f, 0.0f), ImGuiChildFlags_AlwaysUseWindowPadding))
+        {
+            ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(ImGui::GetStyle().ItemSpacing.x, 0.0f));
+            for (Entity root = scene.firstRoot(); root.isValid(); root = scene.nextSibling(root))
+            {
+                drawEntity(state, scene, root);
+            }
+            ImGui::PopStyleVar();
+
+            // The empty space below the tree accepts entities to make them roots.
+            ImVec2 remaining = ImGui::GetContentRegionAvail();
+            remaining.y = std::max(remaining.y, ImGui::GetTextLineHeight());
+            ImGui::InvisibleButton("roots", remaining);
+            if (ImGui::IsItemClicked(ImGuiMouseButton_Left))
+            {
+                state.selection = core::Uuid{};
+            }
+            if (const std::optional<core::Uuid> dropped = acceptDroppedEntity())
+            {
+                state.pendingCommand = makeReparentCommand(*dropped, core::Uuid{});
+            }
+            if (const std::optional<asset::AssetId> model = acceptDroppedAsset(asset::AssetType::Model))
+            {
+                requestInstantiateModel(state, *model, core::Uuid{});
+            }
+            if (ImGui::BeginPopupContextItem("roots menu"))
+            {
+                drawCreateEntityMenu(state, core::Uuid{});
+                ImGui::EndPopup();
+            }
+        }
+        ImGui::EndChild();
+        ImGui::PopStyleVar(2);
+        ImGui::PopStyleColor();
 
         if (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) &&
-            ImGui::IsKeyPressed(ImGuiKey_Delete) && scene.findEntity(state.selection).isValid())
+            ImGui::IsKeyPressed(ImGuiKey_Delete) && !ImGui::GetIO().WantTextInput &&
+            scene.findEntity(state.selection).isValid())
         {
             state.pendingCommand = makeDestroyEntityCommand(state.selection);
         }

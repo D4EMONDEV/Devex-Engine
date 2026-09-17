@@ -4,6 +4,7 @@ find_package(fastgltf CONFIG REQUIRED)
 find_package(glm CONFIG REQUIRED)
 find_package(imgui CONFIG REQUIRED)
 find_package(mikktspace CONFIG REQUIRED)
+find_package(plutosvg CONFIG REQUIRED)
 find_package(SDL3 CONFIG REQUIRED)
 find_package(volk CONFIG REQUIRED)
 find_package(Stb REQUIRED)
@@ -110,6 +111,7 @@ target_link_libraries(devex_platform
     PRIVATE
         imgui::imgui
         SDL3::SDL3
+        $<$<PLATFORM_ID:Windows>:dwmapi>
 )
 set_target_properties(devex_platform PROPERTIES
     EXPORT_NAME Platform
@@ -383,6 +385,35 @@ set_target_properties(devex_scene PROPERTIES
 )
 devex_set_warnings(devex_scene)
 
+# Resources of the tools: Noto Sans and JetBrains Mono (SIL Open Font License), Lucide icons (ISC)
+# and the Devex logo, with their licenses.
+file(GLOB DEVEX_FONT_FILES CONFIGURE_DEPENDS "${PROJECT_SOURCE_DIR}/third_party/fonts/*.ttf")
+file(GLOB DEVEX_ICON_FILES CONFIGURE_DEPENDS
+    "${PROJECT_SOURCE_DIR}/third_party/lucide/icons/*.svg"
+    "${CMAKE_CURRENT_SOURCE_DIR}/resources/icons/*.svg"
+)
+set(DEVEX_RESOURCES_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/resources")
+set(DEVEX_RESOURCES_STAMP "${CMAKE_CURRENT_BINARY_DIR}/resources.stamp")
+add_custom_command(
+    OUTPUT "${DEVEX_RESOURCES_STAMP}"
+    COMMAND "${CMAKE_COMMAND}" -E make_directory "${DEVEX_RESOURCES_DIRECTORY}/fonts" "${DEVEX_RESOURCES_DIRECTORY}/icons"
+            "${DEVEX_RESOURCES_DIRECTORY}/licenses"
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different ${DEVEX_FONT_FILES} "${DEVEX_RESOURCES_DIRECTORY}/fonts"
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different ${DEVEX_ICON_FILES} "${DEVEX_RESOURCES_DIRECTORY}/icons"
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+            "${PROJECT_SOURCE_DIR}/third_party/fonts/NotoSans-OFL.txt"
+            "${PROJECT_SOURCE_DIR}/third_party/fonts/JetBrainsMono-OFL.txt"
+            "${DEVEX_RESOURCES_DIRECTORY}/licenses"
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${PROJECT_SOURCE_DIR}/third_party/lucide/LICENSE"
+            "${DEVEX_RESOURCES_DIRECTORY}/licenses/Lucide-LICENSE.txt"
+    COMMAND "${CMAKE_COMMAND}" -E touch "${DEVEX_RESOURCES_STAMP}"
+    DEPENDS ${DEVEX_FONT_FILES} ${DEVEX_ICON_FILES}
+    COMMENT "Copying the fonts and icons of the tools"
+    VERBATIM
+)
+add_custom_target(devex_resources DEPENDS "${DEVEX_RESOURCES_STAMP}")
+set_target_properties(devex_resources PROPERTIES FOLDER "Engine")
+
 # Tools: docked ImGui panels over the game, with undoable scene editing.
 add_library(devex_tools OBJECT)
 add_library(Devex::Tools ALIAS devex_tools)
@@ -394,6 +425,7 @@ target_sources(devex_tools
         src/tools/ConsolePanel.cpp
         src/tools/EditorCamera.cpp
         src/tools/EditorCamera.hpp
+        src/tools/EditorMenus.cpp
         src/tools/EditorOverlay.cpp
         src/tools/EditorSession.cpp
         src/tools/EditorView.cpp
@@ -401,13 +433,24 @@ target_sources(devex_tools
         src/tools/Gizmo.cpp
         src/tools/Gizmo.hpp
         src/tools/HierarchyPanel.cpp
+        src/tools/Icons.cpp
+        src/tools/Icons.hpp
         src/tools/InspectorPanel.cpp
         src/tools/LogBuffer.cpp
+        src/tools/ProjectList.cpp
+        src/tools/ProjectList.hpp
+        src/tools/ProjectManager.cpp
         src/tools/SceneCommands.cpp
+        src/tools/SceneTabs.cpp
+        src/tools/SceneTabs.hpp
         src/tools/StatisticsPanel.cpp
+        src/tools/Theme.cpp
+        src/tools/Theme.hpp
         src/tools/ToolsOverlay.cpp
         src/tools/ToolsState.hpp
         src/tools/ViewportPanel.cpp
+        src/tools/Widgets.cpp
+        src/tools/Widgets.hpp
     PUBLIC
         FILE_SET HEADERS
         BASE_DIRS include
@@ -428,8 +471,11 @@ target_link_libraries(devex_tools
         Devex::Serialization
     PRIVATE
         imgui::imgui
+        plutosvg::plutosvg
 )
 target_compile_definitions(devex_tools PRIVATE IMGUI_DEFINE_MATH_OPERATORS)
+# The fonts and icons of the tools, loaded at runtime from resources/ next to the executables.
+add_dependencies(devex_tools devex_resources)
 set_target_properties(devex_tools PROPERTIES
     EXPORT_NAME Tools
     FOLDER "Engine"

@@ -136,6 +136,12 @@ void Renderer::queueImGuiDrawData() noexcept
     m_implementation->queueImGuiDrawData();
 }
 
+bool Renderer::imGuiNeedsLinearColors() const noexcept
+{
+    DEVEX_ASSERT(m_implementation != nullptr);
+    return m_implementation->imGuiNeedsLinearColors();
+}
+
 std::uint64_t Renderer::viewportTexture() noexcept
 {
     return vulkan::VulkanRenderer::viewportTextureId;

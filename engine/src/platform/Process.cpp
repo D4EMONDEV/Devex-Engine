@@ -58,9 +58,8 @@ namespace {
     return line;
 }
 
-} // namespace
-
-core::Result<Process> Process::start(std::span<const std::string> arguments, const std::filesystem::path& workingDirectory)
+[[nodiscard]] core::Result<SDL_Process*> createProcess(std::span<const std::string> arguments,
+                                                     const std::filesystem::path& workingDirectory, bool captureOutput)
 {
     if (arguments.empty())
     {
@@ -75,7 +74,8 @@ core::Result<Process> Process::start(std::span<const std::string> arguments, con
 
     const SDL_PropertiesID properties = SDL_CreateProperties();
     SDL_SetPointerProperty(properties, SDL_PROP_PROCESS_CREATE_ARGS_POINTER, argv.data());
-    SDL_SetNumberProperty(properties, SDL_PROP_PROCESS_CREATE_STDOUT_NUMBER, SDL_PROCESS_STDIO_APP);
+    SDL_SetNumberProperty(properties, SDL_PROP_PROCESS_CREATE_STDOUT_NUMBER,
+                          captureOutput ? SDL_PROCESS_STDIO_APP : SDL_PROCESS_STDIO_NULL);
     SDL_SetBooleanProperty(properties, SDL_PROP_PROCESS_CREATE_STDERR_TO_STDOUT_BOOLEAN, true);
     const std::string directory = core::toUtf8(workingDirectory);
     if (!directory.empty())
@@ -88,7 +88,31 @@ core::Result<Process> Process::start(std::span<const std::string> arguments, con
     {
         return core::makeError(core::ErrorCode::Platform, "cannot run '{}': {}", arguments.front(), SDL_GetError());
     }
-    return Process(process);
+    return process;
+}
+
+} // namespace
+
+core::Result<Process> Process::start(std::span<const std::string> arguments, const std::filesystem::path& workingDirectory)
+{
+    core::Result<SDL_Process*> process = createProcess(arguments, workingDirectory, true);
+    if (!process)
+    {
+        return std::unexpected(process.error());
+    }
+    return Process(*process);
+}
+
+core::Result<void> Process::launch(std::span<const std::string> arguments, const std::filesystem::path& workingDirectory)
+{
+    core::Result<SDL_Process*> process = createProcess(arguments, workingDirectory, false);
+    if (!process)
+    {
+        return std::unexpected(process.error());
+    }
+    // Destroying the object that tracks the process leaves the process running.
+    SDL_DestroyProcess(*process);
+    return {};
 }
 
 Process::Process(void* process) noexcept
