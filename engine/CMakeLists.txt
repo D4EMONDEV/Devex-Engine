@@ -9,8 +9,12 @@ find_package(volk CONFIG REQUIRED)
 find_package(Stb REQUIRED)
 find_package(VulkanMemoryAllocator CONFIG REQUIRED)
 
+# Every module is an object library, compiled into the single devex-engine shared library at the
+# end of this file. Programs, tests and game modules link Devex::Engine, never a module directly,
+# so that they all share one engine state: registries, logging, the renderer.
+
 # Core: vocabulary types, errors, logging and assertions. Depends only on the standard library.
-add_library(devex_core STATIC)
+add_library(devex_core OBJECT)
 add_library(Devex::Core ALIAS devex_core)
 
 target_sources(devex_core
@@ -47,7 +51,7 @@ target_compile_definitions(devex_core
         $<$<NOT:$<CONFIG:Release,MinSizeRel>>:DEVEX_ENABLE_ASSERTS>
 )
 set_source_files_properties(src/core/BuildInfo.cpp
-    PROPERTIES COMPILE_DEFINITIONS "DEVEX_VERSION_STRING=\"${PROJECT_VERSION}\""
+    PROPERTIES COMPILE_DEFINITIONS "DEVEX_VERSION_STRING=\"${PROJECT_VERSION}\";DEVEX_BUILD_TYPE=\"$<CONFIG>\""
 )
 set_target_properties(devex_core PROPERTIES
     EXPORT_NAME Core
@@ -75,14 +79,16 @@ set_target_properties(devex_math PROPERTIES
 )
 
 # Platform: windows, events and input on top of SDL3, which never appears in public headers.
-add_library(devex_platform STATIC)
+add_library(devex_platform OBJECT)
 add_library(Devex::Platform ALIAS devex_platform)
 
 target_sources(devex_platform
     PRIVATE
         src/platform/Input.cpp
         src/platform/Platform.cpp
+        src/platform/Process.cpp
         src/platform/SdlWindow.hpp
+        src/platform/SharedLibrary.cpp
         src/platform/Window.cpp
     PUBLIC
         FILE_SET HEADERS
@@ -92,6 +98,8 @@ target_sources(devex_platform
             include/devex/platform/Input.hpp
             include/devex/platform/Key.hpp
             include/devex/platform/Platform.hpp
+            include/devex/platform/Process.hpp
+            include/devex/platform/SharedLibrary.hpp
             include/devex/platform/Window.hpp
 )
 
@@ -110,7 +118,7 @@ set_target_properties(devex_platform PROPERTIES
 devex_set_warnings(devex_platform)
 
 # Reflection: field descriptions of engine and game types, registered explicitly.
-add_library(devex_reflection STATIC)
+add_library(devex_reflection OBJECT)
 add_library(Devex::Reflection ALIAS devex_reflection)
 
 target_sources(devex_reflection
@@ -135,7 +143,7 @@ set_target_properties(devex_reflection PROPERTIES
 devex_set_warnings(devex_reflection)
 
 # Serialization: the readable text format shared by .dvx* files.
-add_library(devex_serialization STATIC)
+add_library(devex_serialization OBJECT)
 add_library(Devex::Serialization ALIAS devex_serialization)
 
 target_sources(devex_serialization
@@ -157,7 +165,7 @@ set_target_properties(devex_serialization PROPERTIES
 devex_set_warnings(devex_serialization)
 
 # Asset: CPU-side asset data and cooked asset files, shared by the runtime and the tools.
-add_library(devex_asset STATIC)
+add_library(devex_asset OBJECT)
 add_library(Devex::Asset ALIAS devex_asset)
 
 target_sources(devex_asset
@@ -202,7 +210,7 @@ devex_set_warnings(devex_asset)
 
 # AssetImport: the asset database and the importers of source formats. Meant for tools, not
 # shipped games.
-add_library(devex_asset_import STATIC)
+add_library(devex_asset_import OBJECT)
 add_library(Devex::AssetImport ALIAS devex_asset_import)
 
 target_sources(devex_asset_import
@@ -262,7 +270,7 @@ target_link_libraries(devex_imgui_vulkan
 set_target_properties(devex_imgui_vulkan PROPERTIES FOLDER "ThirdParty")
 
 # Render: Renderer facade over Vulkan, whose types stay inside src/render/vulkan.
-add_library(devex_render STATIC)
+add_library(devex_render OBJECT)
 add_library(Devex::Render ALIAS devex_render)
 
 target_sources(devex_render
@@ -335,7 +343,7 @@ devex_set_warnings(devex_render)
 add_dependencies(devex_render devex_shaders)
 
 # Scene: entities, components in sparse sets, hierarchy and .dvxscene files.
-add_library(devex_scene STATIC)
+add_library(devex_scene OBJECT)
 add_library(Devex::Scene ALIAS devex_scene)
 
 target_sources(devex_scene
@@ -376,7 +384,7 @@ set_target_properties(devex_scene PROPERTIES
 devex_set_warnings(devex_scene)
 
 # Tools: docked ImGui panels over the game, with undoable scene editing.
-add_library(devex_tools STATIC)
+add_library(devex_tools OBJECT)
 add_library(Devex::Tools ALIAS devex_tools)
 
 target_sources(devex_tools
@@ -429,7 +437,7 @@ set_target_properties(devex_tools PROPERTIES
 devex_set_warnings(devex_tools)
 
 # Runtime: application lifecycle, the main loop and the scene to renderer bridge.
-add_library(devex_runtime STATIC)
+add_library(devex_runtime OBJECT)
 add_library(Devex::Runtime ALIAS devex_runtime)
 
 target_sources(devex_runtime
@@ -437,6 +445,10 @@ target_sources(devex_runtime
         src/runtime/Application.cpp
         src/runtime/AssetManager.cpp
         src/runtime/FixedTimestep.cpp
+        src/runtime/Game.cpp
+        src/runtime/GameCodeBuilder.cpp
+        src/runtime/GameCodeBuilder.hpp
+        src/runtime/GameModule.cpp
         src/runtime/SceneExtraction.cpp
     PUBLIC
         FILE_SET HEADERS
@@ -445,6 +457,8 @@ target_sources(devex_runtime
             include/devex/runtime/Application.hpp
             include/devex/runtime/AssetManager.hpp
             include/devex/runtime/FixedTimestep.hpp
+            include/devex/runtime/Game.hpp
+            include/devex/runtime/GameModule.hpp
             include/devex/runtime/SceneExtraction.hpp
 )
 
@@ -463,3 +477,37 @@ set_target_properties(devex_runtime PROPERTIES
     FOLDER "Engine"
 )
 devex_set_warnings(devex_runtime)
+
+# Engine: every module in one shared library. Its symbols are all exported, so that game modules
+# use the same C++ API as the editor. They must be built with the same compiler and options.
+add_library(devex_engine SHARED src/EngineLibrary.cpp)
+add_library(Devex::Engine ALIAS devex_engine)
+target_link_libraries(devex_engine
+    PUBLIC
+        devex_asset
+        devex_asset_import
+        devex_core
+        devex_math
+        devex_platform
+        devex_reflection
+        devex_render
+        devex_runtime
+        devex_scene
+        devex_serialization
+        devex_tools
+)
+set_target_properties(devex_engine PROPERTIES
+    OUTPUT_NAME "devex-engine"
+    WINDOWS_EXPORT_ALL_SYMBOLS ON
+    EXPORT_NAME Engine
+    FOLDER "Engine"
+)
+devex_set_warnings(devex_engine)
+
+# The package that game modules find: cmake/DevexConfig.cmake in the build folder, next to bin/.
+configure_file("${PROJECT_SOURCE_DIR}/cmake/DevexGameConfig.cmake.in"
+    "${CMAKE_BINARY_DIR}/cmake/DevexConfig.cmake.in" @ONLY)
+file(GENERATE
+    OUTPUT "${CMAKE_BINARY_DIR}/cmake/DevexConfig.cmake"
+    INPUT "${CMAKE_BINARY_DIR}/cmake/DevexConfig.cmake.in"
+)

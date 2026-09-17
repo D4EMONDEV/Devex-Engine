@@ -1,17 +1,22 @@
 #include <devex/scene/Components.hpp>
 #include <devex/scene/Scene.hpp>
 
-#include <atomic>
+#include <mutex>
+#include <string>
+#include <unordered_map>
 #include <utility>
 
 namespace devex::scene {
 
 namespace detail {
 
-std::size_t nextComponentTypeIndex() noexcept
+std::size_t componentTypeIndex(std::string_view typeKey)
 {
-    static std::atomic<std::size_t> next{0};
-    return next.fetch_add(1);
+    static std::mutex mutex;
+    static std::unordered_map<std::string, std::size_t> indices;
+    const std::scoped_lock lock(mutex);
+    const auto [found, inserted] = indices.try_emplace(std::string(typeKey), indices.size());
+    return found->second;
 }
 
 } // namespace detail
@@ -123,6 +128,24 @@ Entity Scene::findEntity(core::Uuid uuid) const noexcept
 {
     const auto found = m_entitiesByUuid.find(uuid);
     return found == m_entitiesByUuid.end() ? Entity{} : found->second;
+}
+
+std::size_t Scene::componentPoolCount() const noexcept
+{
+    return m_pools.size();
+}
+
+const ComponentPoolBase* Scene::componentPool(std::size_t typeIndex) const noexcept
+{
+    return typeIndex < m_pools.size() ? m_pools[typeIndex].get() : nullptr;
+}
+
+void Scene::destroyComponentPool(std::size_t typeIndex) noexcept
+{
+    if (typeIndex < m_pools.size())
+    {
+        m_pools[typeIndex].reset();
+    }
 }
 
 Entity Scene::entityAtIndex(std::uint32_t index) const noexcept

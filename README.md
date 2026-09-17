@@ -10,7 +10,8 @@ et rendu avec Vulkan. Il est distribué sous licence [MIT](LICENSE).
 - SDL3 pour la fenêtre et les entrées, Windows d'abord avec un code portable ;
 - scènes en entités + composants, stockées de façon data-oriented ;
 - repère Y-up main droite, formats de projet texte `.dvx*` ;
-- gameplay en C++ rechargeable à chaud, C# prévu ensuite ;
+- gameplay en C++ (composants et systèmes) compilé et rechargé à chaud par l'éditeur, C# prévu
+  ensuite ;
 - éditeur Dear ImGui (docking) avec viewport, gizmos et mode Play, puis UI maison.
 
 Le détail, l'architecture des modules et les jalons sont dans
@@ -21,7 +22,8 @@ Le détail, l'architecture des modules et les jalons sont dans
 - `Devex::Core` : `Result`/`Error`, journal `DEVEX_LOG_*`, assertions, `SlotMap`, `Uuid`,
   hachage XXH64, pool de jobs ;
 - `Devex::Math` : types GLM sous `devex::math`, projection reverse-Z infinie, TRS ;
-- `Devex::Platform` : fenêtre, événements et entrées clavier/souris sur SDL3 ;
+- `Devex::Platform` : fenêtre, événements et entrées clavier/souris, dialogues de fichiers,
+  bibliothèques partagées et processus sur SDL3 ;
 - `Devex::Reflection` : description des champs des composants (`DEVEX_REFLECT`) ;
 - `Devex::Serialization` : format texte commun des fichiers `.dvx*`, flux binaires ;
 - `Devex::Asset` : `AssetId`, maillages, textures, matériaux et modèles, fichiers `.dvxasset`,
@@ -36,15 +38,15 @@ Le détail, l'architecture des modules et les jalons sont dans
 - `Devex::Tools` : panneaux ImGui (hiérarchie, inspecteur, assets, statistiques, console,
   annulation), en overlay (F1) ou dans l'éditeur : viewport, caméra libre, sélection à la
   souris, gizmos, scènes, écran d'accueil ;
-- `Devex::Runtime` : `Application`, boucle à pas fixe, mode éditeur et mode Play, chargement
-  des assets à la demande, rendu automatique de la scène ;
-- `devex-editor` : l'éditeur, sans code de jeu ;
-- `devex-sandbox` : projet `apps/sandbox/project` (caisse et balises glTF, sphères or et
-  plastique, ciel HDR, lampes) et caméra libre ; N alterne jour et nuit, F1 affiche les outils,
-  F5 sauvegarde la scène, F9 la recharge ;
-  modifier un fichier de `assets/` met la scène à jour, et glisser un `.gltf` ou un `.glb`
-  sur la fenêtre le copie dans le projet puis le place devant la caméra. `--editor` l'ouvre
-  dans l'éditeur, où son gameplay tourne en mode Play.
+- `Devex::Runtime` : `Application`, boucle à pas fixe, mode éditeur et mode Play, modules de jeu
+  (composants et systèmes rechargeables à chaud), chargement des assets à la demande, rendu
+  automatique de la scène ;
+- `Devex::Engine` : tous les modules dans une bibliothèque partagée, `devex-engine.dll` ;
+- `devex-editor` : l'éditeur, qui compile et recharge à chaud le code des projets ;
+- `devex-player` : lance un projet hors de l'éditeur (scène de démarrage et code du jeu) ;
+- `samples/sandbox` : le bac à sable, un projet avec caisse et balises glTF, sphères or et
+  plastique, ciel HDR et lampes, dont le gameplay (caméra libre, plateau tournant, jour et nuit
+  avec N) est un module de jeu dans `code/`.
 
 Le SDK Vulkan fournit `slangc`, qui compile les shaders pendant le build. Les assets
 d'exemple et les données de test sont produits par `scripts/generate_sample_assets.py`.
@@ -68,9 +70,35 @@ ctest --preset test-x64-debug
 Les programmes sont produits dans `out/build/x64-debug/bin` :
 
 ```powershell
-out/build/x64-debug/bin/devex-editor.exe                      # écran d'accueil
-out/build/x64-debug/bin/devex-editor.exe chemin/Projet.dvxproj
-out/build/x64-debug/bin/devex-sandbox.exe --editor            # le bac à sable dans l'éditeur
+out/build/x64-debug/bin/devex-editor.exe                                # écran d'accueil
+out/build/x64-debug/bin/devex-editor.exe samples/sandbox/Sandbox.dvxproj
+out/build/x64-debug/bin/devex-player.exe samples/sandbox/Sandbox.dvxproj
+```
+
+À l'ouverture d'un projet qui a un dossier `code/`, l'éditeur le compile en arrière-plan (Visual
+Studio avec ses outils C++ est nécessaire, trouvé automatiquement), puis le recompile et le
+recharge à chaque fichier enregistré, même pendant une partie. Le code d'un jeu déclare des
+composants et des systèmes :
+
+```cpp
+struct Spinner { float speed = 1.0f; };
+DEVEX_DECLARE_REFLECTION(Spinner);
+DEVEX_REFLECT(Spinner) { type.field("speed", &Spinner::speed); }
+
+void spin(devex::runtime::SystemContext& context)
+{
+    for (auto [entity, spinner, transform] : context.scene.view<Spinner, devex::scene::Transform>())
+    {
+        transform.rotation = devex::math::angleAxis(spinner.speed * float(context.delta.count()),
+                                                    devex::math::Vec3{0, 1, 0}) * transform.rotation;
+    }
+}
+
+DEVEX_GAME_MODULE(game)
+{
+    game.component<Spinner>();
+    game.system("Spin", devex::runtime::SystemPhase::Update, &spin);
+}
 ```
 
 Dans l'éditeur : clic gauche pour sélectionner, W / E / R pour déplacer, tourner ou mettre à
@@ -84,7 +112,8 @@ correction doit être reconfiguré puis reconstruit une fois entièrement.
 
 ## Règle de conception
 
-Chaque système est une cible CMake explicite `Devex::<Module>` avec son API publique sous
-`engine/include/devex/<module>/` et son implémentation privée sous `engine/src/<module>/`.
-Le bac à sable sert à intégrer et observer le système ; les tests protègent son
-comportement indépendamment du rendu.
+Chaque système est un module CMake (`Devex::<Module>`, une bibliothèque d'objets) avec son API
+publique sous `engine/include/devex/<module>/` et son implémentation privée sous
+`engine/src/<module>/` ; tous forment la bibliothèque partagée `Devex::Engine`, que lient les
+programmes, les tests et les jeux. Le projet `samples/sandbox` sert à intégrer et observer le
+système ; les tests protègent son comportement indépendamment du rendu.

@@ -1,5 +1,9 @@
 #include "ToolsState.hpp"
 
+#include <devex/scene/SceneSerializer.hpp>
+
+#include <format>
+
 #include <devex/asset/AssetId.hpp>
 #include <devex/scene/ComponentRegistry.hpp>
 #include <devex/scene/FieldValue.hpp>
@@ -285,6 +289,24 @@ void drawInspectorPanel(ToolsState& state, scene::Scene& scene)
                 state.pendingCommand = makeRemoveComponentCommand(uuid, name);
             }
             ImGui::PopID();
+        }
+
+        // Components whose type is not registered, such as those of game code that is not loaded.
+        if (const scene::PreservedComponents* const preserved = scene.tryGet<scene::PreservedComponents>(entity))
+        {
+            for (const serialization::TextSection& section : preserved->sections)
+            {
+                const serialization::TextValue* const typeValue = section.findAttribute("type");
+                const std::string* const typeName = typeValue != nullptr ? serialization::asString(*typeValue) : nullptr;
+                ImGui::BeginDisabled();
+                ImGui::CollapsingHeader(std::format("{} (unavailable)##preserved{}", typeName != nullptr ? *typeName : "?",
+                                                    static_cast<const void*>(&section))
+                                            .c_str(),
+                                        ImGuiTreeNodeFlags_Leaf);
+                ImGui::EndDisabled();
+                ImGui::SetItemTooltip("The game code that defines this component is not loaded. It is kept in the "
+                                      "scene and comes back with the code.");
+            }
         }
 
         ImGui::Spacing();

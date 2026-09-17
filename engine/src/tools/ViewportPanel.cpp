@@ -11,6 +11,7 @@
 #include <cmath>
 #include <format>
 #include <limits>
+#include <utility>
 
 namespace devex::tools::detail {
 namespace {
@@ -321,6 +322,10 @@ void drawViewportPanel(ToolsState& state, scene::Scene& scene)
         return;
     }
 
+    if (std::exchange(state.focusViewport, false))
+    {
+        ImGui::SetNextWindowFocus();
+    }
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
     const bool open = ImGui::Begin(viewportWindow, &state.showViewport,
                                    ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);

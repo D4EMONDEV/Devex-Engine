@@ -353,6 +353,8 @@ void updateEditor(ToolsState& state, scene::Scene& scene, PlayState playState)
         }
         state.orbiting = false;
         state.panning = false;
+        // The game receives the keyboard right away.
+        state.focusViewport = playState != PlayState::Editing;
     }
     state.playState = playState;
 
@@ -594,6 +596,11 @@ void ToolsOverlay::prepareRender(scene::Scene& scene, render::RenderWorld& world
 EditorRequests ToolsOverlay::takeRequests() noexcept
 {
     return std::exchange(m_state->requests, EditorRequests{});
+}
+
+void ToolsOverlay::setGameCodeStatus(GameCodeStatus status)
+{
+    m_state->gameCode = std::move(status);
 }
 
 bool ToolsOverlay::confirmClose()

@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.25)
 
-option(DEVEX_BUILD_SANDBOX "Build the executable used to exercise engine systems" ON)
 option(DEVEX_BUILD_EDITOR "Build the Devex editor" ON)
+option(DEVEX_BUILD_PLAYER "Build the Devex player, which runs projects outside the editor" ON)
 option(DEVEX_BUILD_TESTS "Build Devex unit tests" ON)
 option(DEVEX_WARNINGS_AS_ERRORS "Treat compiler warnings as errors for Devex targets" OFF)
 
@@ -44,8 +44,8 @@ if(DEVEX_BUILD_EDITOR)
     add_subdirectory(apps/editor)
 endif()
 
-if(DEVEX_BUILD_SANDBOX)
-    add_subdirectory(apps/sandbox)
+if(DEVEX_BUILD_PLAYER)
+    add_subdirectory(apps/player)
 endif()
 
 if(DEVEX_BUILD_TESTS)

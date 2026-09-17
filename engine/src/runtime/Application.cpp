@@ -5,12 +5,17 @@
 #include <devex/core/Assert.hpp>
 #include <devex/core/BuildInfo.hpp>
 #include <devex/core/Log.hpp>
+#include "GameCodeBuilder.hpp"
+
 #include <devex/runtime/Application.hpp>
 #include <devex/runtime/FixedTimestep.hpp>
+#include <devex/runtime/GameModule.hpp>
+#include <devex/scene/SceneSerializer.hpp>
 #include <devex/runtime/SceneExtraction.hpp>
 #include <devex/tools/ToolsOverlay.hpp>
 
 #include <algorithm>
+#include <format>
 #include <memory>
 #include <chrono>
 #include <cstdlib>
@@ -86,6 +91,16 @@ private:
     void stopPlaying();
     void switchProject(const std::filesystem::path& projectFile);
 
+    // Game code of the project: loaded when a project opens, built by the editor, reloaded when a
+    // new build appears.
+    void openGameCode();
+    void closeGameCode();
+    void loadGameModule();
+    void unloadGameModule();
+    void updateGameCode();
+    void runSystems(SystemPhase phase, core::Duration delta);
+    [[nodiscard]] tools::GameCodeStatus gameCodeStatus() const;
+
     Application& m_application;
     EngineServices m_services;
     std::uint32_t m_fixedUpdateRate;
@@ -101,6 +116,12 @@ private:
     // The copy of the scene that plays in the editor.
     std::optional<scene::Scene> m_playScene;
     bool m_stepRequested = false;
+    bool m_loadGameCode;
+    std::unique_ptr<GameModule> m_game;
+    std::optional<GameCodeBuilder> m_gameBuilder;
+    // The build of the library that is loaded, and when to look for a newer one.
+    std::filesystem::file_time_type m_gameLibraryTime{};
+    Clock::time_point m_nextLibraryCheck{};
 };
 
 ApplicationRunner::ApplicationRunner(Application& application, const ApplicationConfig& config,
@@ -115,6 +136,7 @@ ApplicationRunner::ApplicationRunner(Application& application, const Application
     , m_frameBudget(config.maxFrameRate == 0
                         ? std::chrono::nanoseconds::zero()
                         : std::chrono::nanoseconds(std::chrono::seconds(1)) / config.maxFrameRate)
+    , m_loadGameCode(config.loadGameCode || config.editor)
 {
     m_application.m_platform = &services.platform;
     m_application.m_window = &services.window;
@@ -131,6 +153,8 @@ ApplicationRunner::ApplicationRunner(Application& application, const Application
 
 ApplicationRunner::~ApplicationRunner()
 {
+    // The scenes outlive the runner: they must not keep components of an unloaded module.
+    closeGameCode();
     m_services.platform.setLiveRedrawCallback({});
     m_application.m_platform = nullptr;
     m_application.m_window = nullptr;
@@ -147,10 +171,16 @@ bool ApplicationRunner::isEditor() const noexcept
 
 int ApplicationRunner::execute()
 {
+    // Game components are registered before the application or the editor opens a scene.
+    openGameCode();
     if (core::Result<void> started = m_application.onStartup(); !started)
     {
         DEVEX_LOG_FATAL("Application startup failed: {}", started.error());
         return EXIT_FAILURE;
+    }
+    if (!isEditor())
+    {
+        runSystems(SystemPhase::Start, core::Duration::zero());
     }
 
     m_services.platform.setLiveRedrawCallback([this] {
@@ -257,11 +287,14 @@ void ApplicationRunner::runFrame()
         m_services.assets.handleEvents(events);
     }
 
+    updateGameCode();
+
     const bool minimized = m_services.window.isMinimized();
     const bool canRender = m_services.renderer != nullptr && !minimized;
     if (isEditor())
     {
         // The editor goes first, so that Play and Stop take effect this frame.
+        m_services.tools->setGameCodeStatus(gameCodeStatus());
         if (canRender)
         {
             m_services.tools->update(*m_application.m_scene, core::Duration(frameTime), m_playState);
@@ -312,10 +345,12 @@ void ApplicationRunner::runGameplay(std::chrono::nanoseconds frameTime)
     for (std::uint32_t step = 0; step < steps; ++step)
     {
         m_application.onFixedUpdate(m_fixedDelta);
+        runSystems(SystemPhase::FixedUpdate, m_fixedDelta);
     }
     m_application.m_interpolationAlpha = m_timestep.alpha();
     // The application may replace the scene during its updates.
     m_application.onUpdate(core::Duration(frameTime));
+    runSystems(SystemPhase::Update, core::Duration(frameTime));
 
     if (std::exchange(m_application.m_stopRequested, false) && m_playScene)
     {
@@ -357,6 +392,24 @@ void ApplicationRunner::handleEditorRequests(tools::EditorRequests requests)
         switchProject(*requests.openProject);
         return;
     }
+    if (requests.createCode && m_services.database != nullptr)
+    {
+        const asset::Project& project = m_services.database->project();
+        if (core::Result<void> created = GameCodeBuilder::createCode(project); !created)
+        {
+            DEVEX_LOG_ERROR("Cannot create the game code: {}", created.error());
+        }
+        else
+        {
+            DEVEX_LOG_INFO("Created {}: the editor builds it now", core::toUtf8(project.codeDirectory()));
+            closeGameCode();
+            openGameCode();
+        }
+    }
+    if (requests.buildCode && m_gameBuilder)
+    {
+        m_gameBuilder->requestBuild();
+    }
     if (requests.play && !m_playScene && m_services.database != nullptr)
     {
         startPlaying();
@@ -386,6 +439,7 @@ void ApplicationRunner::startPlaying()
     m_timestep = FixedTimestep::fromRate(m_fixedUpdateRate);
     DEVEX_LOG_INFO("Playing");
     m_application.onPlayStarted();
+    runSystems(SystemPhase::Start, core::Duration::zero());
 }
 
 void ApplicationRunner::stopPlaying()
@@ -412,6 +466,7 @@ void ApplicationRunner::switchProject(const std::filesystem::path& projectFile)
     }
     // Everything loaded from the previous project goes before its database.
     m_services.tools->setAssetDatabase(nullptr);
+    closeGameCode();
     m_services.assets.setDatabase(nullptr);
     m_services.database.reset();
     m_services.scene = scene::Scene{};
@@ -424,7 +479,146 @@ void ApplicationRunner::switchProject(const std::filesystem::path& projectFile)
     }
     m_services.database = std::move(*opened);
     m_services.assets.setDatabase(m_services.database.get());
+    openGameCode();
     m_services.tools->setAssetDatabase(m_services.database.get());
+}
+
+void ApplicationRunner::openGameCode()
+{
+    if (!m_loadGameCode || m_services.database == nullptr)
+    {
+        return;
+    }
+    const asset::Project& project = m_services.database->project();
+    if (isEditor() && GameCodeBuilder::hasCode(project))
+    {
+        m_gameBuilder.emplace(project, (m_services.platform.baseDirectory() / ".." / "cmake").lexically_normal());
+    }
+    loadGameModule();
+}
+
+void ApplicationRunner::closeGameCode()
+{
+    m_gameBuilder.reset();
+    unloadGameModule();
+}
+
+void ApplicationRunner::loadGameModule()
+{
+    const asset::Project& project = m_services.database->project();
+    const std::filesystem::path library = GameCodeBuilder::libraryPath(project);
+    std::error_code error;
+    const std::filesystem::file_time_type built = std::filesystem::last_write_time(library, error);
+    if (error)
+    {
+        if (GameCodeBuilder::hasCode(project) && !isEditor())
+        {
+            DEVEX_LOG_WARNING("The game code of {} is not built: open the project in devex-editor to build it",
+                              project.name);
+        }
+        return;
+    }
+    m_gameLibraryTime = built;
+    core::Result<std::unique_ptr<GameModule>> module = GameModule::load(library, project.cacheDirectory() / "code" / "modules");
+    if (!module)
+    {
+        DEVEX_LOG_ERROR("Cannot load the game code: {}", module.error());
+        return;
+    }
+    m_game = std::move(*module);
+    std::size_t restored = scene::restorePreservedComponents(m_services.scene);
+    if (m_playScene)
+    {
+        restored += scene::restorePreservedComponents(*m_playScene);
+    }
+    DEVEX_LOG_INFO("Game code loaded: {} components, {} systems{}", m_game->registry().components().size(),
+                   m_game->registry().systems().size(),
+                   restored > 0 ? std::format(", {} components restored", restored) : std::string());
+}
+
+void ApplicationRunner::unloadGameModule()
+{
+    if (!m_game)
+    {
+        return;
+    }
+    // Components of the module stay in the scenes as text until it comes back.
+    static_cast<void>(m_game->release(m_services.scene));
+    if (m_playScene)
+    {
+        static_cast<void>(m_game->release(*m_playScene));
+    }
+    m_game.reset();
+}
+
+void ApplicationRunner::updateGameCode()
+{
+    if (m_services.database == nullptr)
+    {
+        return;
+    }
+    bool reload = m_gameBuilder && m_gameBuilder->update();
+    const Clock::time_point now = Clock::now();
+    if (!reload && m_loadGameCode && now >= m_nextLibraryCheck &&
+        (!m_gameBuilder || m_gameBuilder->state() != GameCodeBuilder::State::Building))
+    {
+        // A build made outside the editor, such as from an IDE, is loaded too.
+        m_nextLibraryCheck = now + std::chrono::milliseconds(500);
+        std::error_code error;
+        const std::filesystem::file_time_type built =
+            std::filesystem::last_write_time(GameCodeBuilder::libraryPath(m_services.database->project()), error);
+        reload = !error && built != m_gameLibraryTime;
+    }
+    if (reload)
+    {
+        unloadGameModule();
+        loadGameModule();
+    }
+}
+
+void ApplicationRunner::runSystems(SystemPhase phase, core::Duration delta)
+{
+    if (!m_game)
+    {
+        return;
+    }
+    SystemContext context{
+        .scene = *m_application.m_scene,
+        .input = m_services.platform.input(),
+        .window = m_services.window,
+        .assets = m_services.assets,
+        .delta = delta,
+        .interpolationAlpha = m_timestep.alpha(),
+    };
+    m_game->registry().run(phase, context);
+    if (context.quitRequested)
+    {
+        m_application.requestQuit();
+    }
+}
+
+tools::GameCodeStatus ApplicationRunner::gameCodeStatus() const
+{
+    using State = tools::GameCodeStatus::State;
+    if (m_services.database == nullptr || !GameCodeBuilder::hasCode(m_services.database->project()))
+    {
+        return {.state = State::None};
+    }
+    if (m_gameBuilder && m_gameBuilder->state() == GameCodeBuilder::State::Building)
+    {
+        return {.state = State::Building, .message = "Compiling the game code..."};
+    }
+    if (m_gameBuilder && m_gameBuilder->state() == GameCodeBuilder::State::Failed)
+    {
+        return {.state = State::Failed, .message = m_gameBuilder->message()};
+    }
+    if (!m_game)
+    {
+        return {.state = State::Failed, .message = "The game code is not loaded"};
+    }
+    return {.state = State::Ready,
+            .message = std::format("{} components, {} systems", m_game->registry().components().size(),
+                                   m_game->registry().systems().size())};
 }
 
 // Uploads the built-in meshes and registers them under their reserved asset identifiers.

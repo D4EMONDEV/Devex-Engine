@@ -344,6 +344,37 @@ void drawPlayControls(ToolsState& state)
     ImGui::SetItemTooltip("Step (Ctrl+Alt+P)");
 }
 
+// The state of the game code, at the right of the menu bar.
+void drawGameCodeStatus(const ToolsState& state)
+{
+    const GameCodeStatus& status = state.gameCode;
+    const char* label = nullptr;
+    ImVec4 color;
+    switch (status.state)
+    {
+    case GameCodeStatus::State::None:
+        return;
+    case GameCodeStatus::State::Building:
+        label = "Code: compiling...";
+        color = linearColor({0.95f, 0.75f, 0.30f, 1.0f});
+        break;
+    case GameCodeStatus::State::Ready:
+        label = "Code: ready";
+        color = linearColor({0.55f, 0.80f, 0.55f, 1.0f});
+        break;
+    case GameCodeStatus::State::Failed:
+        label = "Code: failed";
+        color = linearColor({0.95f, 0.40f, 0.35f, 1.0f});
+        break;
+    }
+    ImGui::SameLine(ImGui::GetWindowWidth() - ImGui::CalcTextSize(label).x - ImGui::GetStyle().ItemSpacing.x * 2.0f);
+    ImGui::TextColored(color, "%s", label);
+    if (!status.message.empty())
+    {
+        ImGui::SetItemTooltip("%s", status.message.c_str());
+    }
+}
+
 // Adds an entity built in a scratch scene as one undoable step, in front of the editor camera.
 void requestCreatePreset(ToolsState& state, const char* name, const std::function<void(scene::Scene&, scene::Entity)>& build)
 {
@@ -745,6 +776,23 @@ void drawEditorMenus(ToolsState& state, scene::Scene& scene)
         ImGui::EndMenu();
     }
 
+    if (ImGui::BeginMenu("Code"))
+    {
+        const bool hasCode = state.gameCode.state != GameCodeStatus::State::None;
+        if (ImGui::MenuItem("Build game code", "Ctrl+B", false, hasProject && hasCode &&
+                                                               state.gameCode.state != GameCodeStatus::State::Building))
+        {
+            state.requests.buildCode = true;
+        }
+        if (ImGui::MenuItem("Create game code", nullptr, false, hasProject && !hasCode))
+        {
+            state.requests.createCode = true;
+        }
+        ImGui::Separator();
+        ImGui::TextDisabled("Sources: code/ in the project folder");
+        ImGui::EndMenu();
+    }
+
     if (ImGui::BeginMenu("View"))
     {
         ImGui::MenuItem(viewportWindow, nullptr, &state.showViewport);
@@ -762,6 +810,7 @@ void drawEditorMenus(ToolsState& state, scene::Scene& scene)
     }
 
     drawPlayControls(state);
+    drawGameCodeStatus(state);
     ImGui::EndMainMenuBar();
 }
 
@@ -874,6 +923,10 @@ void handleEditorShortcuts(ToolsState& state, scene::Scene& scene)
     if (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiMod_Alt | ImGuiKey_P, global) && state.playState == PlayState::Paused)
     {
         state.requests.step = true;
+    }
+    if (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_B, global) && state.gameCode.state != GameCodeStatus::State::None)
+    {
+        state.requests.buildCode = true;
     }
     if (!editing)
     {

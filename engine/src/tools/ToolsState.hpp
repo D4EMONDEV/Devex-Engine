@@ -155,6 +155,7 @@ struct ToolsState
     // Editor.
     PlayState playState = PlayState::Editing;
     EditorRequests requests;
+    GameCodeStatus gameCode;
     std::shared_ptr<DialogAnswers> dialogAnswers = std::make_shared<DialogAnswers>();
     std::string windowTitle;
     // Where recent projects are remembered, empty when there is no user data directory.
@@ -183,6 +184,8 @@ struct ToolsState
     float pixelsPerPoint = 1.0f;
     bool viewportHovered = false;
     bool viewportFocused = false;
+    // Gives the viewport the keyboard on its next frame, as when play starts.
+    bool focusViewport = false;
     bool flying = false;
     bool orbiting = false;
     bool panning = false;

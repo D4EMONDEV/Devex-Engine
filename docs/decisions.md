@@ -8,6 +8,7 @@ mais seulement explicitement ici : le code suit ce document, pas l'inverse.
 | Sujet                    | Décision                                                           |
 | ------------------------ | ------------------------------------------------------------------ |
 | Priorité                 | Runtime d'abord, le bac à sable est le premier « jeu »             |
+| Liaison du moteur        | Une DLL `devex-engine` partagée par programmes, tests et jeux      |
 | Plateformes              | Windows x64 d'abord, code portable (aucun Win32 hors `platform`)   |
 | Licence                  | MIT                                                                |
 | Modèle de scène          | Hybride : entités + composants visibles, stockage ECS contigu      |
@@ -49,6 +50,11 @@ mais seulement explicitement ici : le code suit ce document, pas l'inverse.
 | Projets dans l'éditeur   | Écran d'accueil (projets récents, nouveau, ouvrir) ou argument     |
 | Scènes                   | Assets importés (`AssetId`), ouvertes et enregistrées par l'éditeur |
 | Sélection                | Simple pour l'instant                                              |
+| Code de jeu              | Composants et systèmes dans un module de jeu (DLL) par projet      |
+| Compilation du jeu       | Par l'éditeur (CMake, en arrière-plan) à chaque modification       |
+| Rechargement du jeu      | Composants conservés en texte, en édition comme en Play            |
+| Lancement autonome       | `devex-player Projet.dvxproj` : scène de démarrage et code du jeu  |
+| Bac à sable              | Projet d'exemple `samples/sandbox`, son gameplay dans `code/`      |
 | Backend ImGui            | Officiels SDL3 + Vulkan, le backend Vulkan compilé avec volk       |
 | Multi-fenêtre ImGui      | Docking dans la fenêtre principale seulement                       |
 | Annulation               | Commandes basées sur la réflexion (UUID, composant, champ, valeurs) |
@@ -72,8 +78,13 @@ mais seulement explicitement ici : le code suit ce document, pas l'inverse.
 
 ## Architecture cible
 
-Chaque module est une cible CMake `Devex::<Module>` avec son API publique dans
-`engine/include/devex/<module>/` et son implémentation dans `engine/src/<module>/`.
+Chaque module est une bibliothèque d'objets CMake avec son API publique dans
+`engine/include/devex/<module>/` et son implémentation dans `engine/src/<module>/`. Tous les
+modules forment **une seule bibliothèque partagée**, `devex-engine` (`Devex::Engine`), que lient
+les programmes, les tests et les modules de jeu : ils partagent ainsi un seul état du moteur
+(registres, journal, renderer), et un jeu voit la même API C++ que l'éditeur. Tous ses symboles
+sont exportés (`WINDOWS_EXPORT_ALL_SYMBOLS`) ; en contrepartie, un module de jeu doit être
+compilé avec le même compilateur et la même configuration que le moteur.
 Les dépendances sont strictement descendantes : un module ne connaît jamais un module
 situé au-dessus de lui, et le graphe reste sans cycle.
 
@@ -81,7 +92,7 @@ situé au-dessus de lui, et le graphe reste sans cycle.
 | --------------- | ------------------------------------------------------------------------- | ----------------------------- |
 | `Core`          | types, `Result<T>`/`Error`, assert, log, handles, UUID, allocateurs, jobs | —                             |
 | `Math`          | alias `Vec3`, `Mat4`, `Quat`…, conventions de repère et de profondeur     | Core, GLM                     |
-| `Platform`      | fenêtre, entrées, temps, système de fichiers, chargement de DLL           | Core, SDL3                    |
+| `Platform`      | fenêtre, entrées, temps, dialogues, bibliothèques partagées, processus    | Core, SDL3                    |
 | `Reflection`    | description des champs (`TypeInfo`, `DEVEX_REFLECT`, `ValueKind`)         | Core, Math                    |
 | `Serialization` | format texte `.dvx*` (sections, valeurs) ; plus tard archives cookées     | Core                          |
 | `Asset`         | `AssetId`, données CPU (maillages, textures, matériaux, modèles), `.dvxasset`, projet | Core, Math, Reflection, Serialization |
@@ -89,10 +100,9 @@ situé au-dessus de lui, et le graphe reste sans cycle.
 | `Render`        | façade `Renderer` / `RenderWorld` ; tout `Vk*` reste dans `src/render/vulkan` | Core, Math, Platform, Asset, Vulkan |
 | `Scene`         | entités, sparse sets, hiérarchie, composants intégrés, `.dvxscene`, sous-arbres | Core, Math, Reflection, Serialization, Asset |
 | `Tools`         | panneaux ImGui, annulation, éditeur (viewport, gizmos, scènes, accueil)   | Core, Platform, Render, Scene, AssetImport, ImGui |
-| `Runtime`       | `Application`, boucle, mode éditeur et Play, `AssetManager`, extraction   | tous les modules ci-dessus    |
+| `Runtime`       | `Application`, boucle, mode éditeur et Play, modules de jeu, `AssetManager`, extraction | tous les modules ci-dessus |
 
-Applications au sommet : `apps/sandbox`, `apps/editor` et la DLL gameplay d'un jeu
-dépendent de `Runtime`.
+Au sommet : `devex-editor`, `devex-player` et les modules de jeu des projets.
 
 Règles :
 
@@ -105,13 +115,17 @@ Règles :
 - `Render` ne dépend d'`Asset` que pour les données CPU (`MeshData`, `TextureData`), jamais de
   la base d'assets : `Runtime` résout les `AssetId` en handles du renderer ;
 - un module nouveau arrive avec ses tests et une démonstration dans le bac à sable.
+- aucune variable globale n'est partagée par un en-tête : chaque bibliothèque aurait sa copie.
+  Ce qui doit être unique passe par une fonction du moteur, comme l'index des types de
+  composants.
 
 ### Dépôt
 
 ```text
 engine/        modules du moteur (include/ + src/)
-apps/sandbox/  bac à sable des jalons et son projet (project/Sandbox.dvxproj)
-apps/editor/   devex-editor, l'éditeur sans code de jeu
+apps/editor/   devex-editor, l'éditeur
+apps/player/   devex-player, qui lance un projet hors de l'éditeur
+samples/       projets d'exemple : sandbox, le bac à sable des jalons, avec son code
 shaders/       sources Slang du moteur, compilées dans bin/shaders
 tests/         tests Catch2, un dossier par module, données dans tests/data
 scripts/       outils de développement (génération des assets d'exemple)
@@ -274,9 +288,11 @@ docs/          décisions et documentation
   contigus ; retirer un composant déplace le dernier à sa place. `scene.view<A, B>()`
   parcourt le plus petit des pools concernés. Ajouter ou retirer des composants de ces
   types pendant l'itération invalide la vue.
-- **Types de composants** : un index attribué au premier usage dans le processus. Il n'est
-  pas stable d'un binaire à l'autre ; le rechargement à chaud d'une DLL gameplay devra
-  identifier les types par leur nom enregistré.
+- **Types de composants** : un index attribué au premier usage, par le moteur, à partir du nom
+  décoré du type (`typeid(T).raw_name()`, qui distingue les espaces de noms anonymes) : l'éditeur
+  et les modules de jeu s'accordent sur les index, qui ne sont pas stables d'une exécution à
+  l'autre. Chaque pool retient la bibliothèque dont le code le gère (`moduleAnchor`), pour être
+  détruit avant qu'elle ne soit déchargée.
 - **Copie** : `Scene::clone` copie entités, noms, hiérarchie et composants **avec les mêmes
   handles** : un handle obtenu dans la scène éditée désigne la même entité dans la copie jouée.
   Les composants doivent être copiables. `Scene::entityAtIndex` retrouve l'entité vivante d'un
@@ -302,8 +318,14 @@ docs/          décisions et documentation
   en texte dans les fichiers). Des indications guident l'inspecteur (`FieldHints`) : type
   d'asset attendu, couleur, angle affiché en degrés. MSVC 19.51 ne fournit pas encore `<meta>`
   (réflexion C++26) ; ces déclarations pourront alors être générées.
-- **Composants du jeu** : une struct, sa réflexion, puis `scene::registerComponent<T>()`.
-  Seuls les composants enregistrés sont sauvegardés.
+- **Composants du jeu** : une struct, sa réflexion, puis `scene::registerComponent<T>()` (ou
+  `GameRegistry::component<T>()` dans un module de jeu). La déclaration de réflexion doit être dans
+  l'espace de noms du type, où la recherche dépendante des arguments la trouve.
+- **Composants conservés** : un composant d'un type non enregistré, comme celui d'un module de
+  jeu absent ou en cours de rechargement, est gardé tel qu'il a été lu (`PreservedComponents`,
+  ses sections de fichier) : il est réécrit à l'enregistrement, copié avec la scène, affiché grisé
+  par l'inspecteur, et recréé par `restorePreservedComponents` dès que son type est enregistré.
+  `preserveComponentPool` fait l'inverse pour un pool entier.
 - **Rendu de la scène** : `Runtime` extrait chaque frame la caméra, la première lumière
   directionnelle, toutes les lumières locales, le premier environnement et une instance par
   sous-maillage de chaque `MeshRenderer` dont le maillage est disponible dans l'`AssetManager`,
@@ -318,7 +340,10 @@ Projet utilisateur :
 
 ```text
 MyGame/
-  MyGame.dvxproj              # [project format=1 name="MyGame"]
+  MyGame.dvxproj              # [project format=1 name="MyGame" startup_scene="res://…"]
+  code/                       # module de jeu, facultatif
+    CMakeLists.txt            # find_package(Devex) puis devex_add_game_module
+    Game.cpp
   assets/
     scenes/Main.dvxscene
     scenes/Main.dvxscene.dvxmeta
@@ -331,6 +356,8 @@ MyGame/
     imported/<uuid>.dvxasset  # données cuites, une par asset
     sources/<uuid>.dvxsource  # dernier import de chaque fichier source
     editor.dvx                # dernière scène ouverte et caméra de l'éditeur
+    code/<configuration>/     # build du module de jeu (bin/Game.dll)
+    code/modules/             # copies chargées du module
 ```
 
 Format texte commun à tous les `.dvx*` (`Devex::Serialization`) : des sections
@@ -418,12 +445,12 @@ Dans les deux cas, les sources concernées sont réimportées.
 - Fermer la fenêtre principale ou recevoir une demande de l'OS termine la boucle.
   `maxFrameRate` limite les FPS ; une fenêtre minimisée tourne à 20 Hz au plus.
 - **Éditeur** (`ApplicationConfig::editor`) : l'éditeur est un mode de `Application`, pas un
-  programme à part. `devex-editor` est une application vide lancée dans ce mode ; un jeu y entre
-  de la même façon (`devex-sandbox --editor`) et joue alors son propre code. Dans l'éditeur,
-  `onStartup` et `onShutdown` s'exécutent normalement, mais `onEvent`, les mises à jour et
-  `onRender` seulement **en mode Play**, entre `onPlayStarted` et `onPlayStopped`.
-  `isEditor()` et `isPlaying()` le disent au jeu ; `requestQuit()` arrête alors le mode Play.
-  La DLL gameplay rejoindra ce mode quand elle existera.
+  programme à part. `devex-editor` est une application vide lancée dans ce mode ; le code d'un
+  jeu y arrive par son module de jeu. Une `Application` compilée avec son propre code peut aussi
+  y entrer. Dans l'éditeur, `onStartup` et `onShutdown` s'exécutent normalement, mais `onEvent`,
+  les mises à jour, les systèmes et `onRender` seulement **en mode Play**, entre
+  `onPlayStarted` et `onPlayStopped`. `isEditor()` et `isPlaying()` le disent au jeu ;
+  `requestQuit()` arrête alors le mode Play.
 - **Mode Play** : Play copie la scène éditée (`Scene::clone`) et joue la copie, vue par sa caméra
   principale ; Stop la jette et retrouve la scène éditée intacte. Pause suspend les mises à jour,
   le pas à pas exécute un pas fixe. Le pas fixe repart de zéro à chaque Play.
@@ -521,8 +548,8 @@ Dans les deux cas, les sources concernées sont réimportées.
 ### Assets
 
 - **Projet** : `ApplicationConfig::project` désigne le `.dvxproj` (ou l'éditeur l'ouvre) ; `Runtime` ouvre alors une
-  `AssetDatabase` sur son dossier `assets/`. Le bac à sable ouvre `apps/sandbox/project` depuis les
-  sources, pour que les modifications d'assets s'y voient en direct.
+  `AssetDatabase` sur son dossier `assets/`. Le bac à sable est le projet `samples/sandbox`,
+  ouvert depuis les sources pour que les modifications d'assets s'y voient en direct.
 - **Sources et importeurs** : chaque fichier dont l'extension a un importeur est une source ;
   `texture` (`.png`, `.jpg`, `.tga`, `.bmp`, `.hdr`, décodés par stb_image), `material`
   (`.dvxmat`), `gltf` (`.gltf`, `.glb`) et `scene` (`.dvxscene`). Les fichiers et dossiers cachés (`.`) sont ignorés.
@@ -575,15 +602,51 @@ Dans les deux cas, les sources concernées sont réimportées.
   sont aussi des textures du projet.
 - **Ajout de fichiers** : `AssetDatabase::addFile` copie un fichier extérieur dans un dossier du
   projet, avec les buffers et images d'un `.gltf`, écrit son `.dvxmeta` et renvoie l'UUID du
-  modèle à venir. Le bac à sable et l'éditeur l'utilisent pour les fichiers déposés sur la fenêtre.
+  modèle à venir. L'éditeur l'utilise pour les fichiers déposés sur la fenêtre.
 - **Outils** : panneau *Assets* (sources, type, statut, erreur en infobulle, réimport, sous-assets
   dépliables) ; un asset se glisse sur un champ `AssetId` de l'inspecteur, un modèle dans la
   hiérarchie (placement annulable). L'inspecteur liste les assets du type attendu.
 
 ### Gameplay
 
-- Premier temps : gameplay en **C++** compilé dans une DLL chargée par le runtime et
-  rechargeable à chaud par l'éditeur.
+- **Modèle** : les données du jeu sont des **composants** réfléchis (sauvegardés, éditables dans
+  l'inspecteur), sa logique des **systèmes** : des fonctions `void (SystemContext&)` qui
+  parcourent la scène. Tout l'état vit dans la scène, si bien que la copie jouée et le
+  rechargement ne perdent rien ; un système ne garde pas d'état dans des variables.
+- **Module de jeu** : une bibliothèque partagée, écrite en C++ contre `devex/runtime/Game.hpp`, dont
+  le point d'entrée `DEVEX_GAME_MODULE(game)` enregistre composants et systèmes. Il exporte aussi
+  la version de l'API (`gameApiVersion`) : un module compilé pour une autre version est refusé.
+- **Systèmes** : trois phases, `Start` (au lancement du jeu : Play dans l'éditeur, démarrage du
+  lecteur), `FixedUpdate` (au pas fixe) et `Update` (à chaque frame). Dans une phase, les systèmes
+  s'exécutent par `order` croissant puis dans l'ordre d'enregistrement, après les fonctions
+  virtuelles de l'`Application`. `SystemContext` donne la scène, les entrées, la fenêtre, les
+  assets, la durée du pas ou de la frame ; `quitRequested` termine le jeu (arrête Play dans
+  l'éditeur).
+- **Projet** : le dossier `code/` d'un projet est un projet CMake (`find_package(Devex CONFIG)`,
+  `devex_add_game_module(SOURCES …)`) ; *Code > Create game code* en crée un avec un composant
+  et un système d'exemple. `Devex_DIR` désigne `cmake/` du dossier de build du moteur, où
+  `DevexConfig.cmake` décrit `Devex::Engine` (bibliothèque, en-têtes, GLM, définitions) et
+  impose la configuration du moteur. Le module est produit dans
+  `.devex/code/<configuration>/bin/Game.dll`.
+- **Compilation par l'éditeur** : l'éditeur surveille `code/` (toutes les 500 ms) et, 300 ms
+  après la dernière modification, compile en arrière-plan : un script lance `vcvars64` trouvé
+  par vswhere (sauf si l'environnement a déjà le compilateur), configure le dossier de build si
+  besoin, puis `cmake --build`. Erreurs et avertissements du compilateur vont dans la console ;
+  *Code > Build game code* (Ctrl+B) relance une compilation, et la barre de menus indique
+  l'état (compilation, prêt, échec avec la première erreur en infobulle).
+- **Chargement et rechargement** : le runtime charge le module d'un projet à son ouverture, avant
+  la première scène, depuis une **copie** (`.devex/code/modules`) pour que l'original puisse être
+  recompilé. Quand une nouvelle build apparaît (compilée par l'éditeur ou par un IDE), il
+  **libère** chaque scène (édition et copie jouée) : les composants des types du module y sont
+  conservés en texte et les pools créés par son code détruits (ceux des types du moteur sont
+  recréés aussitôt) ; puis il décharge le module, charge la nouvelle build et **restaure** les
+  composants, champs ajoutés ou retirés compris. Une partie en cours continue.
+- **Lecteur** : `devex-player Projet.dvxproj` ouvre la scène de démarrage du projet (*Set as
+  startup scene* dans le panneau Assets, sinon la première scène) avec son module de jeu, sans
+  éditeur ; il ne compile pas le code.
+- **Limites** : un plantage du code du jeu arrête l'éditeur ; les variables globales d'un module
+  sont perdues au rechargement ; la compilation du code ne fonctionne que sous Windows pour
+  l'instant.
 - L'API moteur est conçue pour être exposée plus tard en **C#** (hébergement .NET via
   `hostfxr`) : handles plutôt que pointeurs bruts, durées de vie explicites.
 
@@ -640,7 +703,7 @@ CMake trouve vcpkg via la variable `VCPKG_ROOT`, sinon via l'exécutable `vcpkg`
 
 ## Jalons
 
-Chaque jalon se termine par une démo observable dans `devex-sandbox` et des tests.
+Chaque jalon se termine par une démo observable dans le projet `samples/sandbox` et des tests.
 
 0. ✅ **Fondations** — `vcpkg.json`, Catch2, `Core` (log, assert, `Result`), dépôt Git.
 1. ✅ **Fenêtre** — `Platform` sur SDL3 : fenêtre redimensionnable, événements clavier et
@@ -664,15 +727,21 @@ Chaque jalon se termine par une démo observable dans `devex-sandbox` et des tes
    rendu dans une texture, caméra d'éditeur, sélection sur le GPU et contours, gizmos maison,
    grille et icônes, mode Play sur une copie de la scène avec pause et pas à pas.
 
-Ensuite, sans ordre figé : physique, préfabs liés, DLL gameplay rechargeable, export d'un jeu
-(paquet d'artefacts), post-traitements (bloom, TAA), transparence, CI Linux.
+9. ✅ **Gameplay en DLL** — moteur en bibliothèque partagée, modules de jeu (composants et
+   systèmes), compilation par l'éditeur à chaque modification, rechargement à chaud qui conserve
+   les composants, `devex-player`, scène de démarrage, bac à sable devenu projet d'exemple.
+
+Ensuite, sans ordre figé : physique, préfabs liés, export d'un jeu (paquet d'artefacts),
+post-traitements (bloom, TAA), transparence, CI Linux.
 
 ## Questions ouvertes
 
 À trancher le moment venu, pas avant :
 
-- **Systèmes** : ordre d'exécution et planification des systèmes du jeu (aujourd'hui, le
-  gameplay itère lui-même les vues dans `onFixedUpdate` et `onUpdate`).
+- **Systèmes** : exécution en parallèle, dépendances déclarées entre systèmes, systèmes actifs
+  aussi en édition, ressources globales du jeu.
+- **Isolation du code du jeu** : protéger l'éditeur d'un plantage du module (processus séparé,
+  gestion structurée des exceptions).
 - **Physique** : Jolt Physics est le candidat naturel (MIT, utilisé par Godot 4).
 - **Audio** : SDL3 audio, miniaudio ou FMOD/Wwise en option.
 - **UI retenue maison** pour l'éditeur et les jeux, qui remplacera ImGui.

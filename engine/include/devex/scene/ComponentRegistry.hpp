@@ -14,6 +14,8 @@ namespace devex::scene {
 struct ComponentType
 {
     const reflection::TypeInfo* type = nullptr;
+    // The componentTypeIndex of the type.
+    std::size_t index = 0;
     // Adds a default-constructed component, or returns the one the entity already has.
     void* (*emplace)(Scene& scene, Entity entity) = nullptr;
     const void* (*find)(const Scene& scene, Entity entity) = nullptr;
@@ -40,6 +42,7 @@ public:
         }
         m_types.push_back({
             .type = &info,
+            .index = componentTypeIndex<T>(),
             .emplace = [](Scene& scene, Entity entity) -> void* {
                 if (T* const existing = scene.tryGet<T>(entity))
                 {
@@ -54,8 +57,13 @@ public:
         });
     }
 
-    // The pointer stays valid until the next registration.
+    // Forgets a type, as when the game module that registered it is unloaded. Returns whether the
+    // type was registered.
+    bool remove(std::string_view name);
+
+    // The pointer stays valid until the next registration or removal.
     [[nodiscard]] const ComponentType* find(std::string_view name) const noexcept;
+    [[nodiscard]] const ComponentType* findByIndex(std::size_t index) const noexcept;
 
     // In registration order, which is the order of components in saved files.
     [[nodiscard]] std::span<const ComponentType> types() const noexcept;

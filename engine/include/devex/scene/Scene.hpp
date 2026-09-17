@@ -11,7 +11,9 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <tuple>
+#include <typeinfo>
 #include <type_traits>
 #include <unordered_map>
 #include <utility>
@@ -20,14 +22,27 @@
 namespace devex::scene {
 
 namespace detail {
-[[nodiscard]] std::size_t nextComponentTypeIndex() noexcept;
+// The index of a component type identified by its decorated name, assigned on first use. The
+// engine keeps these indices, so that the editor and game modules agree on them.
+[[nodiscard]] std::size_t componentTypeIndex(std::string_view typeKey);
+
+template <typename T>
+[[nodiscard]] const char* typeKey() noexcept
+{
+#ifdef _MSC_VER
+    // Decorated names tell apart types of unnamed namespaces in different source files.
+    return typeid(T).raw_name();
+#else
+    return typeid(T).name();
+#endif
+}
 } // namespace detail
 
 // Position of the pool of T in every scene, assigned the first time the type is used.
 template <typename T>
-[[nodiscard]] std::size_t componentTypeIndex() noexcept
+[[nodiscard]] std::size_t componentTypeIndex()
 {
-    static const std::size_t index = detail::nextComponentTypeIndex();
+    static const std::size_t index = detail::componentTypeIndex(detail::typeKey<T>());
     return index;
 }
 
@@ -141,6 +156,12 @@ public:
     // Computes the WorldTransform of every entity that has a Transform, parents first. Entities
     // without a Transform pass their parent's transform down to their children.
     void updateTransforms();
+
+    // The pools of component types, by componentTypeIndex; null where a type has no pool yet.
+    [[nodiscard]] std::size_t componentPoolCount() const noexcept;
+    [[nodiscard]] const ComponentPoolBase* componentPool(std::size_t typeIndex) const noexcept;
+    // Destroys a pool with all its components, as before unloading the module that created it.
+    void destroyComponentPool(std::size_t typeIndex) noexcept;
 
 private:
     struct EntityRecord

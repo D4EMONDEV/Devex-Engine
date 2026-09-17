@@ -2,11 +2,14 @@
 
 #include <devex/core/Error.hpp>
 #include <devex/scene/Scene.hpp>
+#include <devex/serialization/Text.hpp>
 
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 // The .dvxscene format:
 //
@@ -21,16 +24,35 @@
 //     scale = vec3(1, 1, 1)
 //
 // Component sections belong to the entity above them. Parents are written before their children,
-// in hierarchy order, and only registered components are saved.
+// in hierarchy order. Components of types that are not registered, such as those of game code that
+// is not loaded, are kept as they were read and written back.
 namespace devex::scene {
+
+// The sections of an entity's components whose type is not registered, kept so that saving the
+// scene loses nothing, until restorePreservedComponents recreates them.
+struct PreservedComponents
+{
+    std::vector<serialization::TextSection> sections;
+};
+
+// Turns the components of the pool at the type index into preserved sections, when their type is
+// registered, then destroys the pool. Used before unloading the module that defines the type or
+// that created the pool. Returns the number of components preserved.
+std::size_t preserveComponentPool(Scene& scene, std::size_t typeIndex);
+
+// Recreates the preserved components whose type is registered now, as after loading a game module,
+// optionally only those whose type name the filter accepts. Fields that no longer exist are skipped
+// with a warning. Returns the number of components restored.
+std::size_t restorePreservedComponents(Scene& scene, const std::function<bool(std::string_view typeName)>& filter = {});
 
 inline constexpr std::int64_t sceneFormatVersion = 1;
 inline constexpr std::string_view sceneExtension = ".dvxscene";
 
 [[nodiscard]] std::string saveScene(const Scene& scene);
 
-// Unknown component types and fields are skipped with a warning, so that a scene written by a
-// newer version still opens. Malformed values are errors that name their line.
+// Unknown component types are preserved, and unknown fields skipped with a warning, so that a scene
+// written by a newer version or with game code that is not loaded still opens. Malformed values are
+// errors that name their line.
 [[nodiscard]] core::Result<Scene> loadScene(std::string_view text);
 
 // Writes an entity and its descendants as entity and component sections, without the [scene]

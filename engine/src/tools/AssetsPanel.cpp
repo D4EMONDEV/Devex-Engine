@@ -43,6 +43,20 @@ void drawSourceMenu(ToolsState& state, const asset::SourceFile& source,
     {
         return;
     }
+    const bool isScene = mainAsset != nullptr && mainAsset->type == asset::AssetType::Scene;
+    if (isScene && ImGui::MenuItem("Set as startup scene", nullptr, state.database->project().startupScene == source.path))
+    {
+        asset::Project project = state.database->project();
+        project.startupScene = source.path;
+        if (core::Result<void> saved = state.database->updateProject(project); !saved)
+        {
+            DEVEX_LOG_ERROR("Cannot save the project: {}", saved.error());
+        }
+        else
+        {
+            DEVEX_LOG_INFO("{} is the startup scene", source.path);
+        }
+    }
     if (ImGui::MenuItem("Reimport"))
     {
         if (core::Result<void> queued = state.database->reimport(source.id); !queued)
@@ -77,7 +91,11 @@ void drawSource(ToolsState& state, scene::Scene& scene, const asset::SourceFile&
     {
         flags |= ImGuiTreeNodeFlags_Leaf;
     }
-    const std::string text(label);
+    std::string text(label);
+    if (mainAsset != nullptr && mainAsset->type == asset::AssetType::Scene && database.project().startupScene == source.path)
+    {
+        text += "  (startup)";
+    }
     const bool open = ImGui::TreeNodeEx("source", flags, "%s", text.c_str());
     if (mainAsset != nullptr)
     {

@@ -43,6 +43,10 @@ struct ApplicationConfig
     // that Stop throws away. Without a project, the editor opens on its welcome screen. Requires
     // rendering; the tools come with it.
     bool editor = false;
+    // Loads the game module of the project (its code/ folder, built into .devex/code/<configuration>/bin),
+    // runs its systems while the game plays, and loads new builds as they appear. The editor
+    // always does, and also builds the module whenever its sources change.
+    bool loadGameCode = false;
     // The .dvxproj file whose assets folder is imported and loaded; empty runs without a project.
     std::filesystem::path project;
     // Imports again the assets that change on disk while the application runs.

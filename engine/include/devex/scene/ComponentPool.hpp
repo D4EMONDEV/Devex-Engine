@@ -23,6 +23,10 @@ public:
     // A pool holding copies of the components, for the same entities in the same order.
     [[nodiscard]] virtual std::unique_ptr<ComponentPoolBase> clone() const = 0;
 
+    // An address inside the module (executable or library) whose code manages this pool. A pool
+    // created by a game module must be destroyed before that module is unloaded.
+    [[nodiscard]] virtual const void* moduleAnchor() const noexcept = 0;
+
     [[nodiscard]] bool contains(Entity entity) const noexcept
     {
         return denseIndexOf(entity) != absent;
@@ -116,6 +120,13 @@ public:
     [[nodiscard]] std::unique_ptr<ComponentPoolBase> clone() const override
     {
         return std::make_unique<ComponentPool<T>>(*this);
+    }
+
+    [[nodiscard]] const void* moduleAnchor() const noexcept override
+    {
+        // Each module instantiating the pool gets its own copy of this variable.
+        static const char anchor = 0;
+        return &anchor;
     }
 
     void remove(Entity entity) override

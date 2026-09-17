@@ -33,6 +33,45 @@ using serialization::TextValue;
     return *uuid;
 }
 
+[[nodiscard]] TextSection writeComponent(const ComponentType& componentType, const void* component)
+{
+    TextSection componentSection{.type = "component"};
+    componentSection.attributes.push_back({"type", TextValue(std::string(componentType.name()))});
+    for (const reflection::FieldInfo& field : componentType.type->fields)
+    {
+        componentSection.properties.push_back({field.name, writeFieldValue(field, field.address(component))});
+    }
+    return componentSection;
+}
+
+[[nodiscard]] const std::string* componentTypeName(const TextSection& section)
+{
+    const TextValue* const typeValue = section.findAttribute("type");
+    return typeValue != nullptr ? serialization::asString(*typeValue) : nullptr;
+}
+
+// Reads the fields of a component section into a component. Unknown fields are skipped.
+[[nodiscard]] core::Result<void> readComponent(const ComponentType& componentType, const TextSection& section,
+                                               void* component)
+{
+    for (const TextProperty& property : section.properties)
+    {
+        const reflection::FieldInfo* const field = componentType.type->findField(property.key);
+        if (field == nullptr)
+        {
+            DEVEX_LOG_WARNING("Scene line {}: skipping unknown field '{}' of {}", property.line, property.key,
+                              componentType.name());
+            continue;
+        }
+        if (core::Result<void> read = readFieldValue(*field, property.value, field->address(component)); !read)
+        {
+            return core::makeError(core::ErrorCode::Parse, "line {}: {}.{}: {}", property.line, componentType.name(),
+                                   property.key, read.error().message);
+        }
+    }
+    return {};
+}
+
 void writeEntity(const Scene& scene, Entity entity, bool writeParent, TextDocument& document)
 {
     TextSection entitySection{.type = "entity"};
@@ -51,15 +90,26 @@ void writeEntity(const Scene& scene, Entity entity, bool writeParent, TextDocume
         {
             continue;
         }
-        TextSection componentSection{.type = "component"};
-        componentSection.attributes.push_back(
-            {"type", TextValue(std::string(componentType.name()))});
-        for (const reflection::FieldInfo& field : componentType.type->fields)
+        document.sections.push_back(writeComponent(componentType, component));
+    }
+    if (const PreservedComponents* const preserved = scene.tryGet<PreservedComponents>(entity))
+    {
+        for (const TextSection& section : preserved->sections)
         {
-            componentSection.properties.push_back(
-                {field.name, writeFieldValue(field, field.address(component))});
+            // A type registered again is written from its component, when the entity has one.
+            const std::string* const typeName = componentTypeName(section);
+            const ComponentType* const registered = typeName != nullptr ? componentRegistry().find(*typeName) : nullptr;
+            if (registered == nullptr || registered->find(scene, entity) == nullptr)
+            {
+                TextSection copy = section;
+                for (TextProperty& property : copy.properties)
+                {
+                    property.line = 0;
+                }
+                copy.line = 0;
+                document.sections.push_back(std::move(copy));
+            }
         }
-        document.sections.push_back(std::move(componentSection));
     }
 
     for (Entity child = scene.firstChild(entity); child.isValid(); child = scene.nextSibling(child))
@@ -136,9 +186,7 @@ void writeEntity(const Scene& scene, Entity entity, bool writeParent, TextDocume
                                             "line {}: a component must follow an entity",
                                             section.line));
             }
-            const TextValue* const typeValue = section.findAttribute("type");
-            const std::string* const typeName =
-                typeValue != nullptr ? serialization::asString(*typeValue) : nullptr;
+            const std::string* const typeName = componentTypeName(section);
             if (typeName == nullptr)
             {
                 return fail(core::makeError(core::ErrorCode::Parse,
@@ -148,30 +196,19 @@ void writeEntity(const Scene& scene, Entity entity, bool writeParent, TextDocume
             const ComponentType* const componentType = componentRegistry().find(*typeName);
             if (componentType == nullptr)
             {
-                DEVEX_LOG_WARNING("Scene line {}: skipping unknown component type '{}'",
-                                  section.line, *typeName);
+                DEVEX_LOG_DEBUG("Scene line {}: keeping component of unknown type '{}'", section.line, *typeName);
+                if (!scene.has<PreservedComponents>(created.back()))
+                {
+                    scene.add<PreservedComponents>(created.back());
+                }
+                scene.get<PreservedComponents>(created.back()).sections.push_back(section);
                 continue;
             }
 
             void* const component = componentType->emplace(scene, created.back());
-            for (const TextProperty& property : section.properties)
+            if (core::Result<void> read = readComponent(*componentType, section, component); !read)
             {
-                const reflection::FieldInfo* const field =
-                    componentType->type->findField(property.key);
-                if (field == nullptr)
-                {
-                    DEVEX_LOG_WARNING("Scene line {}: skipping unknown field '{}' of {}",
-                                      property.line, property.key, *typeName);
-                    continue;
-                }
-                if (core::Result<void> read =
-                        readFieldValue(*field, property.value, field->address(component));
-                    !read)
-                {
-                    return fail(core::makeError(core::ErrorCode::Parse, "line {}: {}.{}: {}",
-                                                property.line, *typeName, property.key,
-                                                read.error().message));
-                }
+                return fail(std::unexpected(read.error()));
             }
         }
         else
@@ -275,6 +312,71 @@ core::Result<Entity> loadEntityTree(Scene& scene, std::string_view text, Entity 
         return std::unexpected(placed.error());
     }
     return root;
+}
+
+std::size_t preserveComponentPool(Scene& scene, std::size_t typeIndex)
+{
+    const ComponentPoolBase* const pool = scene.componentPool(typeIndex);
+    if (pool == nullptr)
+    {
+        return 0;
+    }
+    std::size_t preserved = 0;
+    if (const ComponentType* const componentType = componentRegistry().findByIndex(typeIndex))
+    {
+        const std::vector<Entity> entities(pool->entities().begin(), pool->entities().end());
+        for (const Entity entity : entities)
+        {
+            TextSection section = writeComponent(*componentType, componentType->find(scene, entity));
+            if (!scene.has<PreservedComponents>(entity))
+            {
+                scene.add<PreservedComponents>(entity);
+            }
+            scene.get<PreservedComponents>(entity).sections.push_back(std::move(section));
+            ++preserved;
+        }
+    }
+    else if (pool->size() > 0)
+    {
+        DEVEX_LOG_WARNING("Dropping {} components of a type that is not registered", pool->size());
+    }
+    scene.destroyComponentPool(typeIndex);
+    return preserved;
+}
+
+std::size_t restorePreservedComponents(Scene& scene, const std::function<bool(std::string_view typeName)>& filter)
+{
+    const ComponentPoolBase* const pool = scene.componentPool(componentTypeIndex<PreservedComponents>());
+    if (pool == nullptr)
+    {
+        return 0;
+    }
+    std::size_t restored = 0;
+    const std::vector<Entity> entities(pool->entities().begin(), pool->entities().end());
+    for (const Entity entity : entities)
+    {
+        std::vector<TextSection>& sections = scene.get<PreservedComponents>(entity).sections;
+        std::erase_if(sections, [&](const TextSection& section) {
+            const std::string* const typeName = componentTypeName(section);
+            const ComponentType* const componentType = typeName != nullptr ? componentRegistry().find(*typeName) : nullptr;
+            if (componentType == nullptr || (filter && !filter(*typeName)))
+            {
+                return false;
+            }
+            void* const component = componentType->emplace(scene, entity);
+            if (core::Result<void> read = readComponent(*componentType, section, component); !read)
+            {
+                DEVEX_LOG_WARNING("Cannot restore a {} of {}: {}", *typeName, scene.name(entity), read.error());
+            }
+            ++restored;
+            return true;
+        });
+        if (sections.empty())
+        {
+            scene.remove<PreservedComponents>(entity);
+        }
+    }
+    return restored;
 }
 
 core::Result<void> saveSceneFile(const Scene& scene, const std::filesystem::path& path)

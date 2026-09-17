@@ -22,6 +22,15 @@ color = vec3(1, 1, 1)
 intensity = 25000
 rotation = 0
 
+[component type="DayNight"]
+night = false
+day_illuminance = 1e+05
+night_illuminance = 0.3
+day_temperature = 5800
+night_temperature = 9000
+day_sky_intensity = 25000
+night_sky_intensity = 0.03
+
 [entity uuid="7e5d2a38-24f5-4ce6-ba20-babe3be08de4" name="Camera"]
 
 [component type="Transform"]
@@ -41,6 +50,13 @@ max_ev100 = 18
 adaptation_speed = 1.5
 tonemapper = "agx"
 
+[component type="FlyCamera"]
+speed = 4
+fast_speed = 12
+sensitivity = 0.0017453292
+yaw = 0
+pitch = -0.20943952
+
 [entity uuid="1a2251b7-d7df-44c4-924e-5705872a85b8" name="Ground"]
 
 [component type="Transform"]
@@ -58,6 +74,9 @@ material = asset("78014e97-7de2-4e27-89db-74abd840010d")
 position = vec3(0, 0, 0)
 rotation = quat(0, 0, 0, 1)
 scale = vec3(1, 1, 1)
+
+[component type="Turntable"]
+speed = 0.6
 
 [entity uuid="fcc5ef7e-61f4-4b6e-8af3-f67a15869e82" name="Satellite 1"]
 parent = "1494932d-55a4-4b16-bb01-2e35b5410ba0"

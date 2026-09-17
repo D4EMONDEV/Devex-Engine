@@ -82,26 +82,39 @@ core::Result<Project> loadProject(const std::filesystem::path& projectFile)
     }
 
     Project project;
-    project.root = absoluteNormal(projectFile).parent_path();
+    project.file = absoluteNormal(projectFile);
+    project.root = project.file.parent_path();
     const serialization::TextValue* const name = section->findAttribute("name");
     const std::string* const nameText = name != nullptr ? serialization::asString(*name) : nullptr;
     project.name = nameText != nullptr ? *nameText : core::toUtf8(projectFile.stem());
+    const serialization::TextValue* const startup = section->findAttribute("startup_scene");
+    if (const std::string* const startupText = startup != nullptr ? serialization::asString(*startup) : nullptr)
+    {
+        project.startupScene = *startupText;
+    }
     return project;
 }
 
-core::Result<Project> createProject(const std::filesystem::path& directory, std::string_view name)
+core::Result<void> saveProject(const Project& project)
 {
     serialization::TextDocument document;
     serialization::TextSection& section = document.sections.emplace_back();
     section.type = "project";
     section.attributes.push_back({"format", serialization::TextValue(projectFormatVersion)});
-    section.attributes.push_back({"name", serialization::TextValue(std::string(name))});
+    section.attributes.push_back({"name", serialization::TextValue(project.name)});
+    if (!project.startupScene.empty())
+    {
+        section.attributes.push_back({"startup_scene", serialization::TextValue(project.startupScene)});
+    }
+    return core::writeTextFile(project.file, serialization::writeText(document));
+}
 
+core::Result<Project> createProject(const std::filesystem::path& directory, std::string_view name)
+{
     const std::filesystem::path projectFile =
         directory / core::pathFromUtf8(std::string(name) + std::string(projectExtension));
-    if (core::Result<void> written =
-            core::writeTextFile(projectFile, serialization::writeText(document));
-        !written)
+    Project created{.name = std::string(name), .root = absoluteNormal(directory), .file = absoluteNormal(projectFile)};
+    if (core::Result<void> written = saveProject(created); !written)
     {
         return std::unexpected(written.error());
     }

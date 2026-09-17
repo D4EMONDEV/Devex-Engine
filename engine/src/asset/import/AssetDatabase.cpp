@@ -526,6 +526,20 @@ public:
         return m_project;
     }
 
+    [[nodiscard]] core::Result<void> updateProject(const Project& project)
+    {
+        // The folders stay those the database watches.
+        Project updated = m_project;
+        updated.name = project.name;
+        updated.startupScene = project.startupScene;
+        if (core::Result<void> saved = saveProject(updated); !saved)
+        {
+            return saved;
+        }
+        m_project = std::move(updated);
+        return {};
+    }
+
     void refresh()
     {
         for (auto& [id, source] : m_sources)
@@ -1205,6 +1219,11 @@ AssetDatabase::~AssetDatabase() = default;
 const Project& AssetDatabase::project() const noexcept
 {
     return m_impl->project();
+}
+
+core::Result<void> AssetDatabase::updateProject(const Project& project)
+{
+    return m_impl->updateProject(project);
 }
 
 void AssetDatabase::refresh()

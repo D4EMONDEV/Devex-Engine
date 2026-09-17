@@ -185,10 +185,10 @@ TEST_CASE("Entity trees are restored with their UUIDs and position", "[scene][se
     CHECK(scene.entityCount() == 5);
 }
 
-TEST_CASE("Unknown components and fields are skipped with warnings", "[scene][serializer]")
+TEST_CASE("Unknown components are preserved and unknown fields skipped with warnings", "[scene][serializer]")
 {
     const WarningCapture capture;
-    const auto scene = devex::scene::loadScene(R"([scene format=1]
+    auto scene = devex::scene::loadScene(R"([scene format=1]
 [entity uuid="6f1c2a9e-3b7d-4e21-9a55-0c8d7e4f1b23" name="Future"]
 [component type="Hologram"]
 brightness = 3
@@ -200,9 +200,59 @@ wobble = 0.5
 
     const Entity entity = scene->firstRoot();
     CHECK(scene->get<Transform>(entity).position == Vec3{1.0f, 2.0f, 3.0f});
-    REQUIRE(capture.warnings().size() == 2);
-    CHECK(capture.warnings()[0] == "Scene line 3: skipping unknown component type 'Hologram'");
-    CHECK(capture.warnings()[1] == "Scene line 7: skipping unknown field 'wobble' of Transform");
+    REQUIRE(capture.warnings().size() == 1);
+    CHECK(capture.warnings()[0] == "Scene line 7: skipping unknown field 'wobble' of Transform");
+
+    // The unknown component is written back as it was read.
+    const std::string saved = devex::scene::saveScene(*scene);
+    CHECK(saved.find("[component type=\"Hologram\"]\nbrightness = 3\n") != std::string::npos);
+    CHECK(devex::scene::restorePreservedComponents(*scene) == 0);
+}
+
+namespace test {
+
+struct Hologram
+{
+    float brightness = 1.0f;
+};
+DEVEX_DECLARE_REFLECTION(Hologram);
+DEVEX_REFLECT(Hologram)
+{
+    type.field("brightness", &Hologram::brightness);
+}
+
+} // namespace test
+
+TEST_CASE("Components are preserved while their type is unregistered, then restored", "[scene][serializer]")
+{
+    Scene scene;
+    const Entity entity = scene.createEntity("Hologram");
+    scene.add<Transform>(entity);
+    devex::scene::registerComponent<test::Hologram>();
+    scene.add<test::Hologram>(entity).brightness = 7.0f;
+
+    // Unloading the module that defines the type preserves its components and destroys the pool.
+    const std::size_t index = devex::scene::componentTypeIndex<test::Hologram>();
+    CHECK(devex::scene::preserveComponentPool(scene, index) == 1);
+    CHECK(scene.componentPool(index) == nullptr);
+    CHECK(devex::scene::componentRegistry().remove("Hologram"));
+    CHECK_FALSE(devex::scene::componentRegistry().remove("Hologram"));
+    CHECK(scene.has<devex::scene::PreservedComponents>(entity));
+
+    // Copies and saved files keep the preserved component.
+    Scene copy = scene.clone();
+    auto reloaded = devex::scene::loadScene(devex::scene::saveScene(copy));
+    REQUIRE(reloaded.has_value());
+
+    // Once the type is registered again, the components come back.
+    devex::scene::registerComponent<test::Hologram>();
+    CHECK(devex::scene::restorePreservedComponents(scene) == 1);
+    CHECK(scene.get<test::Hologram>(entity).brightness == 7.0f);
+    CHECK_FALSE(scene.has<devex::scene::PreservedComponents>(entity));
+    CHECK(scene.has<Transform>(entity));
+    CHECK(devex::scene::restorePreservedComponents(*reloaded) == 1);
+    CHECK(reloaded->get<test::Hologram>(reloaded->firstRoot()).brightness == 7.0f);
+    CHECK(devex::scene::componentRegistry().remove("Hologram"));
 }
 
 TEST_CASE("Malformed scenes report the faulty line", "[scene][serializer]")

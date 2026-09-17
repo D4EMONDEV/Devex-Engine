@@ -14,6 +14,7 @@
 #include <filesystem>
 #include <memory>
 #include <optional>
+#include <string>
 
 namespace devex::tools {
 
@@ -40,6 +41,24 @@ enum class PlayState : std::uint8_t
     Paused,
 };
 
+// The state of the project's game code, shown by the editor.
+struct GameCodeStatus
+{
+    enum class State : std::uint8_t
+    {
+        // The project has no code/ folder.
+        None,
+        Building,
+        // The module is loaded, from the latest successful build.
+        Ready,
+        Failed,
+    };
+
+    State state = State::None;
+    // Details, such as the first compilation error.
+    std::string message;
+};
+
 // What the editor asks of the application, collected while its panels are drawn.
 struct EditorRequests
 {
@@ -51,6 +70,10 @@ struct EditorRequests
     // A .dvxproj file to open in place of the current project.
     std::optional<std::filesystem::path> openProject;
     bool quit = false;
+    // Builds the game code now.
+    bool buildCode = false;
+    // Creates the code/ folder of a project that has none.
+    bool createCode = false;
 };
 
 // Docked Dear ImGui panels: hierarchy, inspector, assets, statistics and console, over the game or
@@ -94,6 +117,9 @@ public:
 
     // Editor only: the requests made since the last call.
     [[nodiscard]] EditorRequests takeRequests() noexcept;
+
+    // Editor only: the state of the game code, shown in the menu bar.
+    void setGameCodeStatus(GameCodeStatus status);
 
     // Editor only: whether the application may close now. When the scene has unsaved changes, the
     // editor asks what to do with them first, and requests to quit once they are saved or dropped.

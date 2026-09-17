@@ -17,7 +17,7 @@ import zlib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-SANDBOX_ASSETS = ROOT / "apps" / "sandbox" / "project" / "assets"
+SANDBOX_ASSETS = ROOT / "samples" / "sandbox" / "assets"
 TEST_DATA = ROOT / "tests" / "data"
 
 

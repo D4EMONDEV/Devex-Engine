@@ -94,6 +94,8 @@ public:
     AssetDatabase& operator=(const AssetDatabase&) = delete;
 
     [[nodiscard]] const Project& project() const noexcept;
+    // Changes the settings of the project and writes them to its file.
+    [[nodiscard]] core::Result<void> updateProject(const Project& project);
 
     // Scans the assets folder: writes missing .dvxmeta files, forgets deleted sources and queues
     // the import of new and changed ones.

@@ -3,7 +3,7 @@ add_executable(devex_editor
 )
 add_executable(Devex::Editor ALIAS devex_editor)
 
-target_link_libraries(devex_editor PRIVATE Devex::Runtime)
+target_link_libraries(devex_editor PRIVATE Devex::Engine)
 set_target_properties(devex_editor PROPERTIES
     OUTPUT_NAME "devex-editor"
     FOLDER "Applications"

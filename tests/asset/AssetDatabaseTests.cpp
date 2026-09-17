@@ -213,6 +213,27 @@ TEST_CASE("A file copied with its .dvxmeta receives new identifiers", "[asset][d
     CHECK((*database)->findByPath("res://assets/a.dvxmat") == original);
 }
 
+TEST_CASE("Project settings are saved and read back", "[asset][project]")
+{
+    TemporaryProject project;
+    CHECK(project.project.startupScene.empty());
+    CHECK(project.project.file.filename() == "Test.dvxproj");
+    CHECK(project.project.codeDirectory() == project.project.root / "code");
+
+    devex::core::JobSystem jobs(1);
+    auto database = AssetDatabase::open(project.project, jobs, {.watchFiles = false});
+    REQUIRE(database.has_value());
+    devex::asset::Project changed = (*database)->project();
+    changed.startupScene = "res://assets/scenes/Main.dvxscene";
+    REQUIRE((*database)->updateProject(changed));
+    CHECK((*database)->project().startupScene == "res://assets/scenes/Main.dvxscene");
+
+    const auto reloaded = devex::asset::loadProject(project.project.file);
+    REQUIRE(reloaded.has_value());
+    CHECK(reloaded->name == "Test");
+    CHECK(reloaded->startupScene == "res://assets/scenes/Main.dvxscene");
+}
+
 TEST_CASE("Scene files import as scene assets holding their text", "[asset][database]")
 {
     TemporaryProject project;

@@ -35,7 +35,7 @@ devex_add_tests(core
         core/SlotMapTests.cpp
         core/UuidTests.cpp
     LIBRARIES
-        Devex::Core
+        Devex::Engine
 )
 target_compile_definitions(devex_core_tests PRIVATE DEVEX_TEST_EXPECTED_VERSION="${PROJECT_VERSION}")
 
@@ -44,14 +44,14 @@ devex_add_tests(math
         math/ProjectionTests.cpp
         math/TransformTests.cpp
     LIBRARIES
-        Devex::Math
+        Devex::Engine
 )
 
 devex_add_tests(reflection
     SOURCES
         reflection/ReflectionTests.cpp
     LIBRARIES
-        Devex::Reflection
+        Devex::Engine
 )
 
 devex_add_tests(serialization
@@ -59,7 +59,7 @@ devex_add_tests(serialization
         serialization/BinaryTests.cpp
         serialization/TextTests.cpp
     LIBRARIES
-        Devex::Serialization
+        Devex::Engine
 )
 
 devex_add_tests(scene
@@ -67,7 +67,7 @@ devex_add_tests(scene
         scene/SceneSerializerTests.cpp
         scene/SceneTests.cpp
     LIBRARIES
-        Devex::Scene
+        Devex::Engine
 )
 
 devex_add_tests(asset
@@ -79,7 +79,7 @@ devex_add_tests(asset
         asset/MetaFileTests.cpp
         asset/TextureProcessingTests.cpp
     LIBRARIES
-        Devex::AssetImport
+        Devex::Engine
 )
 target_compile_definitions(devex_asset_tests
     PRIVATE DEVEX_TEST_DATA_DIRECTORY="${CMAKE_CURRENT_SOURCE_DIR}/data"
@@ -88,8 +88,9 @@ target_compile_definitions(devex_asset_tests
 devex_add_tests(platform
     SOURCES
         platform/InputTests.cpp
+        platform/ProcessTests.cpp
     LIBRARIES
-        Devex::Platform
+        Devex::Engine
 )
 
 # Tests tagged [gpu] open a hidden window and need a Vulkan 1.4 GPU.
@@ -100,7 +101,7 @@ devex_add_tests(render
         render/RendererTests.cpp
         render/SelectionTests.cpp
     LIBRARIES
-        Devex::Render
+        Devex::Engine
 )
 # Selection logic is internal to the module but free of Vulkan types.
 target_include_directories(devex_render_tests PRIVATE "${PROJECT_SOURCE_DIR}/engine/src")
@@ -113,18 +114,31 @@ devex_add_tests(tools
         tools/SceneCommandsTests.cpp
         tools/ToolsOverlayTests.cpp
     LIBRARIES
-        Devex::Tools
+        Devex::Engine
 )
 target_include_directories(devex_tools_tests PRIVATE "${PROJECT_SOURCE_DIR}/engine/src")
+
+# A game module loaded by the runtime tests.
+add_library(devex_test_game_module SHARED runtime/TestGameModule.cpp)
+target_link_libraries(devex_test_game_module PRIVATE Devex::Engine)
+set_target_properties(devex_test_game_module PROPERTIES FOLDER "Tests")
+devex_set_warnings(devex_test_game_module)
 
 # The dummy SDL video driver lets the main loop run without a display.
 devex_add_tests(runtime
     SOURCES
         runtime/ApplicationTests.cpp
         runtime/FixedTimestepTests.cpp
+        runtime/GameCodeBuilderTests.cpp
+        runtime/GameModuleTests.cpp
         runtime/SceneExtractionTests.cpp
     LIBRARIES
-        Devex::Runtime
+        Devex::Engine
     ENVIRONMENT
         SDL_VIDEO_DRIVER=dummy
+)
+add_dependencies(devex_runtime_tests devex_test_game_module)
+target_include_directories(devex_runtime_tests PRIVATE "${PROJECT_SOURCE_DIR}/engine/src")
+target_compile_definitions(devex_runtime_tests
+    PRIVATE DEVEX_TEST_GAME_MODULE="$<TARGET_FILE:devex_test_game_module>"
 )
