@@ -35,7 +35,9 @@ Le détail, l'architecture des modules et les jalons sont dans
   forward+ clustered, ombres en cascades, ciel HDR et IBL, MSAA, exposition automatique,
   tonemapping AgX, rendu dans une texture, sélection sur le GPU, contours et lignes d'outils ;
 - `Devex::Scene` : entités à UUID, composants en sparse sets, hiérarchie, `.dvxscene`,
-  instanciation de modèles ;
+  instanciation de modèles, composants de physique ;
+- `Devex::Physics` : simulation Jolt Physics des corps rigides, colliders (primitives, maillages,
+  déclencheurs) et personnages, couches de collision, requêtes, forces, contacts, interpolation ;
 - `Devex::Tools` : interface ImGui au thème réglable inspiré de Godot (Noto Sans, JetBrains Mono,
   icônes Lucide) : arbre de la scène, inspecteur, FileSystem, sortie, statistiques, annulation, en
   overlay (F1) ou dans l'éditeur : gestionnaire de projets, onglets de scènes, viewport et sa
@@ -46,9 +48,11 @@ Le détail, l'architecture des modules et les jalons sont dans
 - `Devex::Engine` : tous les modules dans une bibliothèque partagée, `devex-engine.dll` ;
 - `devex-editor` : l'éditeur, qui compile et recharge à chaud le code des projets ;
 - `devex-player` : lance un projet hors de l'éditeur (scène de démarrage et code du jeu) ;
-- `samples/sandbox` : le bac à sable, un projet avec caisse et balises glTF, sphères or et
-  plastique, ciel HDR et lampes, dont le gameplay (caméra libre, plateau tournant, jour et nuit
-  avec N) est un module de jeu dans `code/`.
+- `samples/sandbox` : le bac à sable, un projet dont le gameplay est un module de jeu dans `code/` :
+  la scène `arena` (scène de démarrage), où un personnage marche, saute, lance des balles et
+  renverse des caisses entre rampe, marches, plateforme mobile et zone qui allume une lampe ; et la
+  scène `sandbox` (caisse et balises glTF, sphères or et plastique, ciel HDR, plateau tournant, jour
+  et nuit avec N).
 
 Le SDK Vulkan fournit `slangc`, qui compile les shaders pendant le build. Les assets
 d'exemple et les données de test sont produits par `scripts/generate_sample_assets.py`.
@@ -69,7 +73,9 @@ cmake --build --preset build-x64-debug
 ctest --preset test-x64-debug
 ```
 
-Les programmes sont produits dans `out/build/x64-debug/bin` :
+Les programmes sont produits dans `out/build/x64-debug/bin` ; dans l'arène du bac à sable, un clic
+capture la souris, ZQSD (WASD) marchent, Maj court, Espace saute, un clic lance une balle, C passe à
+la caméra libre et Échap libère la souris :
 
 ```powershell
 out/build/x64-debug/bin/devex-editor.exe                                # gestionnaire de projets

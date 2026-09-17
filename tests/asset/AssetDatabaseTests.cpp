@@ -232,6 +232,30 @@ TEST_CASE("Project settings are saved and read back", "[asset][project]")
     REQUIRE(reloaded.has_value());
     CHECK(reloaded->name == "Test");
     CHECK(reloaded->startupScene == "res://assets/scenes/Main.dvxscene");
+    // Default physics settings leave the file as it was.
+    CHECK(reloaded->physics == devex::asset::PhysicsSettings{});
+    CHECK(devex::core::readTextFile(project.project.file)->find("physics") == std::string::npos);
+}
+
+TEST_CASE("Physics settings of projects keep gravity, layer names and collisions", "[asset][project]")
+{
+    TemporaryProject project;
+    devex::asset::Project changed = project.project;
+    changed.physics.gravity = {0.0f, -3.5f, 1.0f};
+    changed.physics.layerNames[1] = "Player";
+    changed.physics.layerNames[2] = "Debris";
+    changed.physics.setCollides(1, 2, false);
+    changed.physics.setCollides(2, 2, false);
+    REQUIRE(devex::asset::saveProject(changed));
+
+    const auto reloaded = devex::asset::loadProject(project.project.file);
+    REQUIRE(reloaded.has_value());
+    CHECK(reloaded->physics == changed.physics);
+    CHECK_FALSE(reloaded->physics.collides(2, 1));
+    CHECK_FALSE(reloaded->physics.collides(2, 2));
+    CHECK(reloaded->physics.collides(1, 1));
+    CHECK(reloaded->physics.collides(0, 2));
+    CHECK(reloaded->physics.layerNames[0] == "Default");
 }
 
 TEST_CASE("Scene files import as scene assets holding their text", "[asset][database]")

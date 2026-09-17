@@ -233,7 +233,7 @@ set "vswhere=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe"
 if not exist "%vswhere%" goto missing
 for /f "usebackq delims=" %%i in (`"%vswhere%" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "vs=%%i"
 if not defined vs goto missing
-call "%vs%\VC\Auxiliary\Build\vcvars64.bat" >nul
+call "%vs%\VC\Auxiliary\Build\vcvars64.bat" >nul 2>&1
 if errorlevel 1 exit /b 1
 :build
 if "{4}" == "configure" (

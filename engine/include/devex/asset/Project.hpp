@@ -1,7 +1,10 @@
 #pragma once
 
 #include <devex/core/Error.hpp>
+#include <devex/math/Math.hpp>
 
+#include <array>
+#include <cstdint>
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -11,6 +14,28 @@ namespace devex::asset {
 
 inline constexpr std::string_view projectExtension = ".dvxproj";
 inline constexpr std::string_view resourceScheme = "res://";
+
+inline constexpr std::size_t physicsLayerCount = 16;
+
+// The physics of a project: gravity, and the collision layers that bodies belong to.
+struct PhysicsSettings
+{
+    math::Vec3 gravity{0.0f, -9.81f, 0.0f};
+    // The name of each layer; layers with an empty name are unused, except the first one.
+    std::array<std::string, physicsLayerCount> layerNames{"Default"};
+    // Bit b of layerCollisions[a] is set when layer a collides with layer b.
+    std::array<std::uint16_t, physicsLayerCount> layerCollisions = [] {
+        std::array<std::uint16_t, physicsLayerCount> all{};
+        all.fill(0xFFFF);
+        return all;
+    }();
+
+    [[nodiscard]] bool collides(std::uint32_t a, std::uint32_t b) const noexcept;
+    // Keeps the matrix symmetric.
+    void setCollides(std::uint32_t a, std::uint32_t b, bool collide) noexcept;
+
+    bool operator==(const PhysicsSettings&) const = default;
+};
 
 // A game project: a .dvxproj file whose directory holds the assets/ folder, the code/ folder of its
 // game module when it has one, and the .devex/ cache of imported data and builds, which is never
@@ -24,6 +49,7 @@ struct Project
     std::filesystem::path file;
     // The res:// path of the scene the player opens; empty for the first scene of the project.
     std::string startupScene;
+    PhysicsSettings physics;
 
     [[nodiscard]] std::filesystem::path assetsDirectory() const
     {
@@ -48,7 +74,7 @@ struct Project
 };
 
 // Reads "[project format=1 name="My game" startup_scene="res://assets/scenes/Main.dvxscene"]" from
-// the .dvxproj file.
+// the .dvxproj file, followed by optional [physics] and [physics_layer] sections.
 [[nodiscard]] core::Result<Project> loadProject(const std::filesystem::path& projectFile);
 
 // Writes the project's settings to its .dvxproj file.

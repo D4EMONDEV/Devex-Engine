@@ -4,6 +4,7 @@
 #include <devex/core/Path.hpp>
 #include <devex/scene/ComponentRegistry.hpp>
 #include <devex/scene/Components.hpp>
+#include <devex/scene/PhysicsComponents.hpp>
 #include <devex/scene/Scene.hpp>
 #include <devex/scene/SceneSerializer.hpp>
 
@@ -109,8 +110,10 @@ bool g_linearColors = true;
 
 [[nodiscard]] bool isEngineComponent(std::string_view name) noexcept
 {
-    constexpr std::array<std::string_view, 7> engineComponents{"Transform", "MeshRenderer", "Camera", "DirectionalLight",
-                                                                "PointLight", "SpotLight", "Environment"};
+    constexpr std::array<std::string_view, 14> engineComponents{
+        "Transform",      "MeshRenderer",     "Camera",       "DirectionalLight", "PointLight",
+        "SpotLight",      "Environment",      "RigidBody",    "BoxCollider",      "SphereCollider",
+        "CapsuleCollider", "CylinderCollider", "MeshCollider", "CharacterController"};
     return std::ranges::find(engineComponents, name) != engineComponents.end();
 }
 
@@ -266,7 +269,8 @@ ThemeColors deriveThemeColors(const ThemeSettings& settings)
     colors.axisY = hex(0x7ccf48);
     colors.axisZ = hex(0x4f8ff0);
 
-    const std::array<std::pair<ImVec4*, std::uint32_t>, 11> icons{{
+    const std::array<std::pair<ImVec4*, std::uint32_t>, 12> icons{{
+        {&colors.physics, 0x72d6c6},
         {&colors.entity, 0xfc7f7f},
         {&colors.light, 0xffd166},
         {&colors.camera, 0xc49af2},
@@ -492,9 +496,23 @@ EntityIcon entityIcon(const scene::Scene& scene, scene::Entity entity)
     {
         return {icons::CloudSun, colors.environment};
     }
+    if (scene.has<scene::CharacterController>(entity))
+    {
+        return {icons::PersonStanding, colors.physics};
+    }
     if (scene.has<scene::MeshRenderer>(entity))
     {
         return {icons::Box, colors.entity};
+    }
+    if (scene.has<scene::RigidBody>(entity))
+    {
+        return {icons::Weight, colors.physics};
+    }
+    if (scene.has<scene::BoxCollider>(entity) || scene.has<scene::SphereCollider>(entity) ||
+        scene.has<scene::CapsuleCollider>(entity) || scene.has<scene::CylinderCollider>(entity) ||
+        scene.has<scene::MeshCollider>(entity))
+    {
+        return {icons::SquareDashed, colors.physics};
     }
     // Components of game code, loaded or kept as text.
     if (scene.has<scene::PreservedComponents>(entity))
@@ -549,6 +567,30 @@ EntityIcon componentIcon(std::string_view componentName)
     if (componentName == "Environment")
     {
         return {icons::CloudSun, colors.environment};
+    }
+    if (componentName == "RigidBody")
+    {
+        return {icons::Weight, colors.physics};
+    }
+    if (componentName == "BoxCollider")
+    {
+        return {icons::SquareDashed, colors.physics};
+    }
+    if (componentName == "SphereCollider")
+    {
+        return {icons::CircleDashed, colors.physics};
+    }
+    if (componentName == "CapsuleCollider" || componentName == "CylinderCollider")
+    {
+        return {icons::Cylinder, colors.physics};
+    }
+    if (componentName == "MeshCollider")
+    {
+        return {icons::Shapes, colors.physics};
+    }
+    if (componentName == "CharacterController")
+    {
+        return {icons::PersonStanding, colors.physics};
     }
     return {icons::Puzzle, colors.gameCode};
 }

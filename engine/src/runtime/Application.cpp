@@ -105,6 +105,9 @@ private:
     void unloadGameModule();
     void updateGameCode();
     void runSystems(SystemPhase phase, core::Duration delta);
+    // The physics world lives while gameplay runs: from startup outside the editor, during Play in it.
+    void createPhysics();
+    void destroyPhysics();
     [[nodiscard]] tools::GameCodeStatus gameCodeStatus() const;
 
     Application& m_application;
@@ -124,6 +127,8 @@ private:
     bool m_stepRequested = false;
     bool m_loadGameCode;
     std::unique_ptr<GameModule> m_game;
+    bool m_enablePhysics;
+    std::unique_ptr<physics::PhysicsWorld> m_physics;
     std::optional<GameCodeBuilder> m_gameBuilder;
     // The build of the library that is loaded, and when to look for a newer one.
     std::filesystem::file_time_type m_gameLibraryTime{};
@@ -143,6 +148,7 @@ ApplicationRunner::ApplicationRunner(Application& application, const Application
                         ? std::chrono::nanoseconds::zero()
                         : std::chrono::nanoseconds(std::chrono::seconds(1)) / config.maxFrameRate)
     , m_loadGameCode(config.loadGameCode || config.editor)
+    , m_enablePhysics(config.enablePhysics)
 {
     m_application.m_platform = &services.platform;
     m_application.m_window = &services.window;
@@ -186,6 +192,7 @@ int ApplicationRunner::execute()
     }
     if (!isEditor())
     {
+        createPhysics();
         runSystems(SystemPhase::Start, core::Duration::zero());
     }
 
@@ -220,6 +227,7 @@ int ApplicationRunner::execute()
     }
     m_services.platform.setLiveRedrawCallback({});
     m_application.onShutdown();
+    destroyPhysics();
     return m_exitCode;
 }
 
@@ -315,6 +323,10 @@ void ApplicationRunner::runFrame()
             runGameplay(m_timestep.step());
         }
         m_application.m_scene->updateTransforms();
+        if (m_physics && m_playScene)
+        {
+            m_physics->interpolate(*m_application.m_scene, static_cast<float>(m_timestep.alpha()));
+        }
         if (canRender && !m_application.m_quitRequested)
         {
             render(m_playScene.has_value());
@@ -324,6 +336,10 @@ void ApplicationRunner::runFrame()
     {
         runGameplay(frameTime);
         m_application.m_scene->updateTransforms();
+        if (m_physics)
+        {
+            m_physics->interpolate(*m_application.m_scene, static_cast<float>(m_timestep.alpha()));
+        }
         if (canRender && !m_application.m_quitRequested)
         {
             if (m_services.tools != nullptr)
@@ -352,11 +368,21 @@ void ApplicationRunner::runGameplay(std::chrono::nanoseconds frameTime)
     {
         m_application.onFixedUpdate(m_fixedDelta);
         runSystems(SystemPhase::FixedUpdate, m_fixedDelta);
+        if (m_physics)
+        {
+            m_application.m_scene->updateTransforms();
+            m_physics->step(*m_application.m_scene, m_fixedDelta);
+        }
     }
     m_application.m_interpolationAlpha = m_timestep.alpha();
     // The application may replace the scene during its updates.
     m_application.onUpdate(core::Duration(frameTime));
     runSystems(SystemPhase::Update, core::Duration(frameTime));
+    // The contacts of this frame's steps have been seen by the updates.
+    if (m_physics)
+    {
+        m_physics->clearContacts();
+    }
 
     if (std::exchange(m_application.m_stopRequested, false) && m_playScene)
     {
@@ -448,6 +474,7 @@ void ApplicationRunner::startPlaying()
     m_playState = tools::PlayState::Playing;
     // The simulation starts from a whole step, without the time spent editing.
     m_timestep = FixedTimestep::fromRate(m_fixedUpdateRate);
+    createPhysics();
     DEVEX_LOG_INFO("Playing");
     m_application.onPlayStarted();
     runSystems(SystemPhase::Start, core::Duration::zero());
@@ -456,6 +483,7 @@ void ApplicationRunner::startPlaying()
 void ApplicationRunner::stopPlaying()
 {
     m_application.onPlayStopped();
+    destroyPhysics();
     m_application.m_scene = &m_services.scene;
     m_application.m_playing = false;
     m_application.m_stopRequested = false;
@@ -609,6 +637,7 @@ void ApplicationRunner::runSystems(SystemPhase phase, core::Duration delta)
         .input = m_services.platform.input(),
         .window = m_services.window,
         .assets = m_services.assets,
+        .physics = m_physics.get(),
         .delta = delta,
         .interpolationAlpha = m_timestep.alpha(),
     };
@@ -617,6 +646,31 @@ void ApplicationRunner::runSystems(SystemPhase phase, core::Duration delta)
     {
         m_application.requestQuit();
     }
+}
+
+void ApplicationRunner::createPhysics()
+{
+    if (!m_enablePhysics || m_physics)
+    {
+        return;
+    }
+    core::Result<std::unique_ptr<physics::PhysicsWorld>> world = physics::PhysicsWorld::create({
+        .settings = m_services.database != nullptr ? m_services.database->project().physics : asset::PhysicsSettings{},
+        .meshes = [this](asset::AssetId mesh) { return m_services.assets.meshData(mesh); },
+    });
+    if (!world)
+    {
+        DEVEX_LOG_ERROR("The game runs without physics: {}", world.error());
+        return;
+    }
+    m_physics = std::move(*world);
+    m_application.m_physics = m_physics.get();
+}
+
+void ApplicationRunner::destroyPhysics()
+{
+    m_application.m_physics = nullptr;
+    m_physics.reset();
 }
 
 tools::GameCodeStatus ApplicationRunner::gameCodeStatus() const
@@ -647,14 +701,9 @@ tools::GameCodeStatus ApplicationRunner::gameCodeStatus() const
 [[nodiscard]] core::Result<void> registerBuiltinMeshes(render::Renderer& renderer,
                                                        AssetManager& assets)
 {
-    const std::pair<asset::AssetId, asset::MeshData> builtins[] = {
-        {asset::builtin::cubeMesh, asset::makeCube()},
-        {asset::builtin::sphereMesh, asset::makeUvSphere(0.5f, 48, 24)},
-        {asset::builtin::planeMesh, asset::makePlane()},
-    };
-    for (const auto& [id, mesh] : builtins)
+    for (const asset::AssetId id : {asset::builtin::cubeMesh, asset::builtin::sphereMesh, asset::builtin::planeMesh})
     {
-        core::Result<render::MeshHandle> handle = renderer.createMesh(mesh);
+        core::Result<render::MeshHandle> handle = renderer.createMesh(*asset::makeBuiltinMesh(id));
         if (!handle)
         {
             return std::unexpected(handle.error());
@@ -721,6 +770,11 @@ const render::Renderer& Application::renderer() const noexcept
 double Application::interpolationAlpha() const noexcept
 {
     return m_interpolationAlpha;
+}
+
+physics::PhysicsWorld* Application::physics() noexcept
+{
+    return m_physics;
 }
 
 bool Application::isEditor() const noexcept

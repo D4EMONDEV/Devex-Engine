@@ -133,6 +133,8 @@ struct FieldHints
     bool color = false;
     // A float angle in radians, shown in degrees.
     bool angle = false;
+    // A std::uint32_t index into the collision layers of the project, shown by name.
+    bool physicsLayer = false;
 };
 
 struct FieldInfo
@@ -142,6 +144,7 @@ struct FieldInfo
     std::string assetType;
     bool color = false;
     bool angle = false;
+    bool physicsLayer = false;
     // For enumerations: the name of each value, and the size of the stored value in bytes.
     std::vector<std::string_view> enumNames;
     std::uint8_t enumSize = 0;
@@ -202,6 +205,7 @@ public:
             .assetType = std::string(hints.assetType),
             .color = hints.color,
             .angle = hints.angle,
+            .physicsLayer = hints.physicsLayer,
             .enumNames = std::move(enumNames),
             .enumSize = static_cast<std::uint8_t>(ReflectableEnum<Value> ? sizeof(Value) : 0),
             .access = [member](void* object) -> void* {

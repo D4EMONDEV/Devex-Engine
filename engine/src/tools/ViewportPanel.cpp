@@ -183,6 +183,12 @@ void drawToolbar(ToolsState& state, scene::Scene& scene)
         state.showIcons = !state.showIcons;
     }
     ImGui::SameLine(0.0f, 2.0f);
+    if (toolButton("colliders", icons::Scan, "Collision shapes of every entity (the selection always shows its own)",
+                   state.showColliders))
+    {
+        state.showColliders = !state.showColliders;
+    }
+    ImGui::SameLine(0.0f, 2.0f);
     if (toolButton("frame", icons::Crosshair, "Frame the selection (F)", false, scene.findEntity(state.selection).isValid()))
     {
         frameSelection(state, scene);

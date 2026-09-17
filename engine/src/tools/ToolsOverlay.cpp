@@ -417,6 +417,7 @@ void updateEditor(ToolsState& state, scene::Scene& scene, PlayState playState)
         detail::drawAssetsPanel(state, scene);
     }
     detail::drawSettingsWindow(state);
+    detail::drawProjectSettingsWindow(state);
     detail::drawEditorPopups(state, scene);
     if (state.pendingCommand != nullptr)
     {

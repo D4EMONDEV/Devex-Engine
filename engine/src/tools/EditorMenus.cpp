@@ -7,9 +7,11 @@
 #include <devex/tools/SceneCommands.hpp>
 
 #include <imgui_internal.h>
+#include <imgui_stdlib.h>
 
 #include <algorithm>
 #include <array>
+#include <cfloat>
 #include <format>
 #include <utility>
 
@@ -143,6 +145,11 @@ void drawProjectMenu(ToolsState& state, scene::Scene& scene)
         {
             DEVEX_LOG_INFO("{} is the startup scene", sceneResource);
         }
+    }
+    if (menuItem(icons::Sliders, "Project Settings..."))
+    {
+        state.showProjectSettings = true;
+        ImGui::SetWindowFocus("Project Settings");
     }
     ImGui::Separator();
     if (menuItem(icons::FolderOpen, "Open Project Folder"))
@@ -500,6 +507,137 @@ void drawSettingsWindow(ToolsState& state)
     {
         state.themeUnsaved = false;
         saveUserSettings(state);
+    }
+}
+
+void drawProjectSettingsWindow(ToolsState& state)
+{
+    if (!state.showProjectSettings || state.database == nullptr)
+    {
+        return;
+    }
+    const ImGuiViewport* const viewport = ImGui::GetMainViewport();
+    ImGui::SetNextWindowPos(viewport->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSize(ImVec2(ImGui::GetFontSize() * 36.0f, ImGui::GetFontSize() * 34.0f), ImGuiCond_Appearing);
+    if (!ImGui::Begin("Project Settings", &state.showProjectSettings, ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoCollapse))
+    {
+        ImGui::End();
+        return;
+    }
+
+    const asset::Project& saved = state.database->project();
+    asset::Project project = saved;
+    ImGui::PushFont(editorFonts().bold, 0.0f);
+    ImGui::SeparatorText("General");
+    ImGui::PopFont();
+    if (beginProperties("general"))
+    {
+        propertyName("Name");
+        ImGui::InputText("##name", &project.name);
+        propertyName("Startup scene");
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextDisabled("%s", project.startupScene.empty() ? "(the first scene)" : project.startupScene.c_str());
+        endProperties();
+    }
+
+    ImGui::Spacing();
+    ImGui::PushFont(editorFonts().bold, 0.0f);
+    ImGui::SeparatorText("Physics");
+    ImGui::PopFont();
+    asset::PhysicsSettings& physics = project.physics;
+    if (beginProperties("physics"))
+    {
+        propertyName("Gravity");
+        dragVector("##gravity", &physics.gravity[0], 3, 0.05f, "%.2f");
+        endProperties();
+    }
+
+    ImGui::Spacing();
+    ImGui::TextDisabled("Collision layers: name the layers bodies use, then choose which ones touch.");
+    if (ImGui::BeginTable("layers", 2, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_PadOuterX))
+    {
+        ImGui::TableSetupColumn("index", ImGuiTableColumnFlags_WidthFixed, ImGui::GetFontSize() * 2.0f);
+        ImGui::TableSetupColumn("name", ImGuiTableColumnFlags_WidthStretch);
+        for (std::size_t index = 0; index < asset::physicsLayerCount; ++index)
+        {
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextDisabled("%zu", index);
+            ImGui::TableSetColumnIndex(1);
+            ImGui::PushID(static_cast<int>(index));
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            ImGui::InputTextWithHint("##layer", index == 0 ? "Default" : "unused", &physics.layerNames[index]);
+            ImGui::PopID();
+        }
+        ImGui::EndTable();
+    }
+
+    // The collision matrix of the named layers, as a triangle.
+    std::vector<std::uint32_t> named;
+    for (std::uint32_t index = 0; index < asset::physicsLayerCount; ++index)
+    {
+        if (index == 0 || !physics.layerNames[index].empty())
+        {
+            named.push_back(index);
+        }
+    }
+    ImGui::Spacing();
+    const ImGuiTableFlags matrixFlags = ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_BordersInnerV |
+                                        ImGuiTableFlags_HighlightHoveredColumn | ImGuiTableFlags_NoHostExtendX;
+    if (ImGui::BeginTable("collisions", static_cast<int>(named.size()) + 1, matrixFlags))
+    {
+        ImGui::TableSetupColumn("##rows", ImGuiTableColumnFlags_WidthFixed, ImGui::GetFontSize() * 8.0f);
+        for (auto column = named.rbegin(); column != named.rend(); ++column)
+        {
+            const std::string& name = physics.layerNames[*column];
+            ImGui::TableSetupColumn(name.empty() ? "Default" : name.c_str(),
+                                    ImGuiTableColumnFlags_AngledHeader | ImGuiTableColumnFlags_WidthFixed);
+        }
+        ImGui::TableAngledHeadersRow();
+        for (std::size_t row = 0; row < named.size(); ++row)
+        {
+            const std::uint32_t layer = named[row];
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextUnformatted(physics.layerNames[layer].empty() ? "Default" : physics.layerNames[layer].c_str());
+            for (std::size_t column = 0; column < named.size() - row; ++column)
+            {
+                const std::uint32_t other = named[named.size() - 1 - column];
+                ImGui::TableSetColumnIndex(static_cast<int>(column) + 1);
+                ImGui::PushID(static_cast<int>(layer * asset::physicsLayerCount + other));
+                bool collides = physics.collides(layer, other);
+                if (ImGui::Checkbox("##collides", &collides))
+                {
+                    physics.setCollides(layer, other, collides);
+                }
+                ImGui::SetItemTooltip("%s and %s", physics.layerNames[layer].empty() ? "Default" : physics.layerNames[layer].c_str(),
+                                      physics.layerNames[other].empty() ? "Default" : physics.layerNames[other].c_str());
+                ImGui::PopID();
+            }
+        }
+        ImGui::EndTable();
+    }
+    ImGui::Spacing();
+    ImGui::TextDisabled("Changes apply the next time the game starts.");
+    ImGui::End();
+
+    // Saved once an edit ends, so that typing a name does not rewrite the project at every key.
+    if (project.name != saved.name || project.physics != saved.physics)
+    {
+        state.pendingProject = std::move(project);
+    }
+    if (state.pendingProject && !ImGui::IsAnyItemActive())
+    {
+        if (state.pendingProject->name.empty())
+        {
+            state.pendingProject->name = saved.name;
+        }
+        if (core::Result<void> written = state.database->updateProject(*std::exchange(state.pendingProject, std::nullopt)); !written)
+        {
+            DEVEX_LOG_ERROR("Cannot save the project: {}", written.error());
+        }
     }
 }
 

@@ -1,0 +1,5 @@
+# Warm yellow platforms and steps.
+[material format=1]
+base_color = vec4(0.85, 0.62, 0.15, 1)
+metallic = 0
+roughness = 0.45

@@ -1,6 +1,7 @@
 #include "ToolsState.hpp"
 
 #include <devex/asset/AssetId.hpp>
+#include <devex/asset/Project.hpp>
 #include <devex/scene/ComponentRegistry.hpp>
 #include <devex/scene/FieldValue.hpp>
 #include <devex/scene/SceneSerializer.hpp>
@@ -100,6 +101,36 @@ bool drawAssetPicker(ToolsState& state, const char* id, const reflection::FieldI
     return changed;
 }
 
+// A combo of the named collision layers of the project.
+bool drawLayerPicker(const ToolsState& state, const char* id, std::uint32_t& layer)
+{
+    const asset::PhysicsSettings settings = state.database != nullptr ? state.database->project().physics : asset::PhysicsSettings{};
+    const auto label = [&](std::uint32_t index) {
+        const std::string& name = index < settings.layerNames.size() ? settings.layerNames[index] : std::string();
+        return name.empty() ? std::format("{}: (unused)", index) : std::format("{}: {}", index, name);
+    };
+    bool changed = false;
+    if (beginCombo(id, label(layer).c_str()))
+    {
+        for (std::uint32_t index = 0; index < settings.layerNames.size(); ++index)
+        {
+            if (index != layer && index != 0 && settings.layerNames[index].empty())
+            {
+                continue;
+            }
+            if (ImGui::Selectable(label(index).c_str(), index == layer) && index != layer)
+            {
+                layer = index;
+                changed = true;
+            }
+        }
+        ImGui::Separator();
+        ImGui::TextDisabled("Name layers in Project > Project Settings");
+        ImGui::EndCombo();
+    }
+    return changed;
+}
+
 // Draws the widget for a field value and reports whether it changed the value this frame.
 bool drawValueWidget(ToolsState& state, const char* id, const reflection::FieldInfo& field, void* address)
 {
@@ -110,6 +141,10 @@ bool drawValueWidget(ToolsState& state, const char* id, const reflection::FieldI
     case ValueKind::Int32:
         return ImGui::DragScalar(id, ImGuiDataType_S32, address, 0.1f);
     case ValueKind::UInt32:
+        if (field.physicsLayer)
+        {
+            return drawLayerPicker(state, id, *static_cast<std::uint32_t*>(address));
+        }
         return ImGui::DragScalar(id, ImGuiDataType_U32, address, 0.1f);
     case ValueKind::Float:
         if (field.angle)
@@ -209,7 +244,7 @@ void drawField(ToolsState& state, core::Uuid entity, const scene::ComponentType&
         state.fieldEditStart = before;
     }
     // Drags and text edits become one undo step when released; combos change in one click.
-    const bool oneClickEdit = field.kind == ValueKind::AssetId || field.kind == ValueKind::Enum;
+    const bool oneClickEdit = field.kind == ValueKind::AssetId || field.kind == ValueKind::Enum || field.physicsLayer;
     const bool finishedEdit = ImGui::IsItemDeactivatedAfterEdit() || (changed && oneClickEdit);
     if (finishedEdit)
     {

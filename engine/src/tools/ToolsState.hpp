@@ -11,6 +11,7 @@
 
 #include <devex/asset/AssetId.hpp>
 #include <devex/asset/AssetType.hpp>
+#include <devex/asset/Project.hpp>
 #include <devex/asset/import/AssetDatabase.hpp>
 #include <devex/core/Uuid.hpp>
 #include <devex/math/Math.hpp>
@@ -258,6 +259,11 @@ struct ToolsState
     bool snap = false;
     bool showGrid = true;
     bool showIcons = true;
+    // The collision shapes of every entity, rather than only those of the selection.
+    bool showColliders = false;
+    bool showProjectSettings = false;
+    // Edits of the project settings, saved once the edited field is released.
+    std::optional<asset::Project> pendingProject;
     GizmoHandle hoveredHandle = GizmoHandle::None;
     // The view of the last rendered frame, which mouse interactions refer to.
     ViewportView view;
@@ -290,6 +296,7 @@ void drawProjectManager(ToolsState& state);
 void drawEditorMenus(ToolsState& state, scene::Scene& scene);
 void drawStatusBar(ToolsState& state, const scene::Scene& scene);
 void drawSettingsWindow(ToolsState& state);
+void drawProjectSettingsWindow(ToolsState& state);
 void drawEditorPopups(ToolsState& state, scene::Scene& scene);
 void handleEditorShortcuts(ToolsState& state, scene::Scene& scene);
 // Opens the project's scenes when the project changed, handles dialog answers and pick results.

@@ -97,4 +97,21 @@ MeshData makeUvSphere(float radius, std::uint32_t segments, std::uint32_t rings)
     return mesh;
 }
 
+std::optional<MeshData> makeBuiltinMesh(AssetId id)
+{
+    if (id == builtin::cubeMesh)
+    {
+        return makeCube();
+    }
+    if (id == builtin::sphereMesh)
+    {
+        return makeUvSphere(0.5f, 48, 24);
+    }
+    if (id == builtin::planeMesh)
+    {
+        return makePlane();
+    }
+    return std::nullopt;
+}
+
 } // namespace devex::asset

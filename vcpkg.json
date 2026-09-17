@@ -18,6 +18,7 @@
                 "sdl3-binding"
             ]
         },
+        "joltphysics",
         "mikktspace",
         "plutosvg",
         {

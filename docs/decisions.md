@@ -81,6 +81,13 @@ mais seulement explicitement ici : le code suit ce document, pas l'inverse.
 | Tonemapping              | AgX par défaut, Khronos PBR Neutral, ACES                          |
 | Réglages d'environnement | Composant `Environment`, exposition sur le composant `Camera`      |
 | Tangentes                | MikkTSpace à l'import, convention glTF                             |
+| Physique                 | Jolt Physics 5.6 (MIT), module `Physics`, simulée pendant le jeu   |
+| Corps physiques          | Composants `RigidBody` + colliders, comme Unity ; composés par enfants |
+| Formes de collision      | Boîte, sphère, capsule, cylindre, maillage (triangles ou convexe)  |
+| Personnages              | `CharacterController` sur le personnage virtuel de Jolt            |
+| Physique et jeu          | Requêtes, forces et contacts listés dans `SystemContext::physics`  |
+| Couches de collision     | 16 couches nommées par projet, matrice de collisions               |
+| Pas de simulation        | Pas fixe (60 Hz), poses interpolées pour l'affichage               |
 
 ## Architecture cible
 
@@ -534,7 +541,7 @@ Dans les deux cas, les sources concernées sont réimportées.
   police par sa ligne entière, elles sont multipliées par la hauteur de ligne de la police
   (1,362 pour Noto Sans). Une police absente est remplacée par celle d'ImGui avec un
   avertissement.
-- **Icônes** (`src/tools/Icons`) : 88 icônes Lucide 1.47.0 (licence ISC, `third_party/lucide`) et le
+- **Icônes** (`src/tools/Icons`) : 98 icônes Lucide 1.47.0 (licence ISC, `third_party/lucide`) et le
   logo Devex (`engine/resources/icons/devex.svg`), copiés dans `bin/resources/icons`. Chaque icône
   est un caractère de la zone à usage privé (U+E000 et suivants) : un chargeur de police ImGui
   (`ImFontLoader`) fusionné dans chaque police dessine le SVG avec plutosvg à la taille du texte.
@@ -687,6 +694,70 @@ Dans les deux cas, les sources concernées sont réimportées.
   dépliables) ; un asset se glisse sur un champ `AssetId` de l'inspecteur, un modèle dans la
   hiérarchie (placement annulable). L'inspecteur liste les assets du type attendu.
 
+### Physique
+
+- **Moteur** : Jolt Physics 5.6 (MIT, le moteur physique de Godot 4), en DLL par vcpkg (`joltphysics`),
+  derrière le module `Physics` : son API publique (`devex/physics/PhysicsWorld.hpp`) ne montre aucun
+  type de Jolt, que les jeux n'ont pas besoin d'inclure. Jolt est initialisé tant qu'un monde existe
+  (allocateur, fabrique, types), et `VerifyJoltVersionID` refuse une DLL compilée avec d'autres
+  réglages.
+- **Composants** (module `Scene`, sauvegardés et édités comme les autres) : `RigidBody` (type
+  `static`, `kinematic` ou `dynamic`, masse en kg, frottement, rebond, amortissements, échelle de
+  gravité, couche, rotations verrouillées, collision continue, vitesses) ; `BoxCollider`,
+  `SphereCollider`, `CapsuleCollider`, `CylinderCollider` (taille et centre dans l'espace de leur
+  entité, dont ils suivent l'échelle, drapeau `trigger`) ; `MeshCollider` (un maillage, celui du
+  `MeshRenderer` par défaut ; triangles pour le décor, enveloppe convexe pour ce qui bouge) ;
+  `CharacterController` (rayon, hauteur, pente et marche maximales, masse, force de poussée,
+  couche ; `velocity`, `grounded` et `groundNormal` sont l'état du jeu, non sauvegardé).
+- **Corps** : une entité avec `RigidBody` forme un corps avec ses colliders et ceux de ses
+  descendants qui n'ont pas de `RigidBody` à eux (forme composée statique de Jolt) ; des colliders
+  sans `RigidBody` au-dessus d'eux forment un corps statique. Les colliders `trigger` forment un
+  capteur à part qui suit le corps (cinématique s'il bouge) et remarque aussi les corps
+  cinématiques et les personnages. Un `RigidBody` dynamique avec un maillage non convexe prend son
+  enveloppe convexe (avertissement). Le corps est placé à la position et à la rotation du monde de
+  son entité ; les échelles sont intégrées aux formes (enveloppes et triangles mis à l'échelle,
+  primitives redimensionnées, la plus grande échelle pour les sphères).
+- **Synchronisation** : à chaque pas, le monde décrit les corps attendus par la scène et les
+  compare à ceux qu'il a, par une signature des réglages et des formes : un corps apparaît avec ses
+  composants, est reconstruit quand ils changent et disparaît avec eux ou avec son entité. Un corps
+  dynamique ou statique dont l'entité a été déplacée par le jeu est téléporté ; un corps cinématique
+  suit son entité (`MoveKinematic`) ; une vitesse modifiée dans `RigidBody` est appliquée. Après le
+  pas, les corps dynamiques écrivent leur `Transform` (relative au parent), leur transformée du
+  monde et leurs vitesses. Le coût est linéaire en nombre de corps ; des milliers de corps
+  demanderont des marqueurs de modification plutôt que des signatures.
+- **Personnages** : un `CharacterVirtual` de Jolt par `CharacterController`, une capsule posée sur
+  la position de l'entité, avec un corps intérieur pour être touché par les requêtes, les
+  déclencheurs et les corps. À chaque pas, le jeu a mis sa vitesse ; debout, la vitesse verticale
+  est remplacée par celle du sol (plateformes mobiles), sinon la gravité s'ajoute ; `ExtendedUpdate`
+  marche sur les pentes, monte les marches (`step_height`) et colle au sol. La vitesse écrite en
+  retour est relative au sol. Les personnages se bloquent entre eux.
+- **Couches** : 16 couches nommées dans les réglages du projet, avec une matrice symétrique de qui
+  touche qui (`[physics]` et `[physics_layer]` du `.dvxproj`, écrits seulement s'ils diffèrent des
+  valeurs par défaut). Pour Jolt, une couche d'objet combine la couche du projet et le fait de bouger :
+  deux corps statiques ne sont jamais testés, et la phase large n'a que deux couches (statique,
+  mobile). *Project > Project Settings* nomme les couches, règle la gravité et la matrice ; les
+  changements valent au prochain lancement du jeu.
+- **Boucle** : le runtime crée un monde quand le jeu commence (démarrage hors de l'éditeur, Play dans
+  l'éditeur, avec les réglages du projet) et le détruit à la fin (`ApplicationConfig::enablePhysics`).
+  Chaque pas fixe : `onFixedUpdate`, systèmes `FixedUpdate`, transformées, pas de physique. Avant le
+  rendu, les corps dynamiques, les personnages et leurs descendants sont placés entre leurs deux
+  derniers pas selon l'avancement vers le prochain (transformées du monde seulement), pour un
+  mouvement fluide à plus de 60 images par seconde. Les maillages des colliders viennent de
+  `AssetManager::meshData` (données du CPU, maillages intégrés compris).
+- **Jeu** : `SystemContext::physics` (nul sans physique) donne `raycast`, `sphereCast` et
+  `overlapSphere` (masque de couches, entité ignorée), `addForce`, `addTorque`, `addImpulse` et
+  `addImpulseAt`, et les **contacts** (`Begin`, `End`, entités, déclencheur ou non) des pas de la
+  frame, que les systèmes `Update` voient une fois. Un contact est compté par paire de corps, pas
+  par paire de sous-formes. La version de l'API des jeux passe à 2.
+- **Éditeur** : les formes des colliders et des personnages sont dessinées en fil de fer, vertes
+  (bleues pour les déclencheurs) : celles de la sélection et de ses descendants, ou toutes avec le
+  bouton de la barre d'outils du viewport ; les maillages ne sont pas dessinés. La simulation ne
+  tourne qu'en Play. Le menu de création ajoute boîte statique, boîte et sphère rigides, personnage
+  et zone de déclenchement ; l'inspecteur choisit la couche par son nom.
+- **Réglages de Jolt** : pool de threads de Jolt (jusqu'à 8), 65 536 corps, 65 536 paires, 16 384
+  contraintes de contact, 32 Mo de mémoire temporaire. Les corps au repos s'enfoncent de 2 cm au
+  plus (tolérance de pénétration de Jolt).
+
 ### Gameplay
 
 - **Modèle** : les données du jeu sont des **composants** réfléchis (sauvegardés, éditables dans
@@ -700,8 +771,8 @@ Dans les deux cas, les sources concernées sont réimportées.
   lecteur), `FixedUpdate` (au pas fixe) et `Update` (à chaque frame). Dans une phase, les systèmes
   s'exécutent par `order` croissant puis dans l'ordre d'enregistrement, après les fonctions
   virtuelles de l'`Application`. `SystemContext` donne la scène, les entrées, la fenêtre, les
-  assets, la durée du pas ou de la frame ; `quitRequested` termine le jeu (arrête Play dans
-  l'éditeur).
+  assets, la physique, la durée du pas ou de la frame ; `quitRequested` termine le jeu (arrête Play
+  dans l'éditeur). Chaque pas `FixedUpdate` est suivi d'un pas de physique.
 - **Projet** : le dossier `code/` d'un projet est un projet CMake (`find_package(Devex CONFIG)`,
   `devex_add_game_module(SOURCES …)`) ; *Code > Create game code* en crée un avec un composant
   et un système d'exemple. `Devex_DIR` désigne `cmake/` du dossier de build du moteur, où
@@ -769,6 +840,7 @@ Dans les deux cas, les sources concernées sont réimportées.
 | stb (stb_image)       | décodage des images  | 6 ✅     |
 | efsw                  | surveillance des fichiers | 6 ✅ |
 | mikktspace            | tangentes            | 7 ✅     |
+| joltphysics           | physique             | 11 ✅    |
 | FreeType (`imgui[freetype]`) | rendu des polices de l'éditeur | 10 ✅ |
 | plutosvg              | icônes SVG de l'éditeur | 10 ✅  |
 | Catch2                | tests (feature `tests`) | 0 ✅  |
@@ -821,8 +893,13 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     projets, onglets de scènes, barre d'outils du viewport, barre d'état, réglages de l'éditeur,
     barre de titre sombre, interface mélangée en espace d'affichage.
 
-Ensuite, sans ordre figé : physique, préfabs liés, export d'un jeu (paquet d'artefacts),
-post-traitements (bloom, TAA), transparence, CI Linux.
+11. ✅ **Physique** — Jolt Physics : corps rigides statiques, cinématiques et dynamiques, colliders
+    (primitives, maillages, déclencheurs), corps composés, personnages, couches de collision du
+    projet, requêtes, forces et contacts pour le code du jeu, interpolation, formes dans l'éditeur,
+    arène jouable dans le bac à sable.
+
+Ensuite, sans ordre figé : préfabs liés, export d'un jeu (paquet d'artefacts), post-traitements
+(bloom, TAA), transparence, audio, CI Linux.
 
 ## Questions ouvertes
 
@@ -832,7 +909,9 @@ post-traitements (bloom, TAA), transparence, CI Linux.
   aussi en édition, ressources globales du jeu.
 - **Isolation du code du jeu** : protéger l'éditeur d'un plantage du module (processus séparé,
   gestion structurée des exceptions).
-- **Physique** : Jolt Physics est le candidat naturel (MIT, utilisé par Godot 4).
+- **Physique** : articulations (charnières, ressorts), véhicules, ragdolls, matériaux physiques par
+  collider, marqueurs de modification pour les grandes scènes, simulation dans l'éditeur (mode
+  Simulate), débogage visuel des contacts, pool de jobs de Jolt fusionné avec `core::JobSystem`.
 - **Audio** : SDL3 audio, miniaudio ou FMOD/Wwise en option.
 - **UI retenue maison** pour l'éditeur et les jeux, qui remplacera ImGui.
 - **CI** : GitHub Actions Windows, puis Linux.

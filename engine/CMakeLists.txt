@@ -3,6 +3,7 @@ find_package(efsw CONFIG REQUIRED)
 find_package(fastgltf CONFIG REQUIRED)
 find_package(glm CONFIG REQUIRED)
 find_package(imgui CONFIG REQUIRED)
+find_package(Jolt CONFIG REQUIRED)
 find_package(mikktspace CONFIG REQUIRED)
 find_package(plutosvg CONFIG REQUIRED)
 find_package(SDL3 CONFIG REQUIRED)
@@ -354,6 +355,7 @@ target_sources(devex_scene
         src/scene/Components.cpp
         src/scene/FieldValue.cpp
         src/scene/ModelInstantiation.cpp
+        src/scene/PhysicsComponents.cpp
         src/scene/Scene.cpp
         src/scene/SceneSerializer.cpp
     PUBLIC
@@ -366,6 +368,7 @@ target_sources(devex_scene
             include/devex/scene/Entity.hpp
             include/devex/scene/FieldValue.hpp
             include/devex/scene/ModelInstantiation.hpp
+            include/devex/scene/PhysicsComponents.hpp
             include/devex/scene/Scene.hpp
             include/devex/scene/SceneSerializer.hpp
             include/devex/scene/View.hpp
@@ -384,6 +387,35 @@ set_target_properties(devex_scene PROPERTIES
     FOLDER "Engine"
 )
 devex_set_warnings(devex_scene)
+
+# Physics: rigid bodies, colliders and characters simulated with Jolt Physics from scene components.
+add_library(devex_physics OBJECT)
+add_library(Devex::Physics ALIAS devex_physics)
+
+target_sources(devex_physics
+    PRIVATE
+        src/physics/PhysicsWorld.cpp
+    PUBLIC
+        FILE_SET HEADERS
+        BASE_DIRS include
+        FILES
+            include/devex/physics/PhysicsWorld.hpp
+)
+
+target_link_libraries(devex_physics
+    PUBLIC
+        Devex::Asset
+        Devex::Core
+        Devex::Math
+        Devex::Scene
+    PRIVATE
+        Jolt::Jolt
+)
+set_target_properties(devex_physics PROPERTIES
+    EXPORT_NAME Physics
+    FOLDER "Engine"
+)
+devex_set_warnings(devex_physics)
 
 # Resources of the tools: Noto Sans and JetBrains Mono (SIL Open Font License), Lucide icons (ISC)
 # and the Devex logo, with their licenses.
@@ -512,6 +544,7 @@ target_link_libraries(devex_runtime
     PUBLIC
         Devex::AssetImport
         Devex::Core
+        Devex::Physics
         Devex::Platform
         Devex::Render
         Devex::Scene
@@ -534,6 +567,7 @@ target_link_libraries(devex_engine
         devex_asset_import
         devex_core
         devex_math
+        devex_physics
         devex_platform
         devex_reflection
         devex_render

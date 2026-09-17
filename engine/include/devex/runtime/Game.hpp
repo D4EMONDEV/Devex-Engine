@@ -1,6 +1,7 @@
 #pragma once
 
 #include <devex/core/Time.hpp>
+#include <devex/physics/PhysicsWorld.hpp>
 #include <devex/platform/Input.hpp>
 #include <devex/platform/Window.hpp>
 #include <devex/reflection/Reflection.hpp>
@@ -21,13 +22,13 @@ namespace devex::runtime {
 
 // Changes whenever game modules must be rebuilt to load: modules built for another version are
 // refused.
-inline constexpr std::uint32_t gameApiVersion = 1;
+inline constexpr std::uint32_t gameApiVersion = 2;
 
 enum class SystemPhase : std::uint8_t
 {
     // Once when the game starts: when Play starts in the editor, or at launch in the player.
     Start,
-    // At the fixed update rate, for simulation.
+    // At the fixed update rate, for simulation, before each physics step.
     FixedUpdate,
     // Once per frame, for input, cameras and anything that follows the display.
     Update,
@@ -40,6 +41,9 @@ struct SystemContext
     const platform::Input& input;
     platform::Window& window;
     AssetManager& assets;
+    // The simulation of the scene: queries, forces, and the contacts of the steps of this frame,
+    // which Update systems see once. Null when the application runs without physics.
+    physics::PhysicsWorld* physics = nullptr;
     // The fixed step during FixedUpdate, the time since the previous frame during Update, zero
     // during Start.
     core::Duration delta{0.0};

@@ -19,6 +19,7 @@ namespace devex::tools::detail {
 // in any ImGui text and follows the size of the font.
 #define DEVEX_EDITOR_ICONS(ICON)                     \
     ICON(Activity, "activity")                       \
+    ICON(Anchor, "anchor")                           \
     ICON(ArrowDownToLine, "arrow-down-to-line")      \
     ICON(ArrowUpDown, "arrow-up-down")               \
     ICON(Axis, "axis-3d")                            \
@@ -31,14 +32,18 @@ namespace devex::tools::detail {
     ICON(ChevronRight, "chevron-right")              \
     ICON(Circle, "circle")                           \
     ICON(CircleCheck, "circle-check")                \
+    ICON(CircleDashed, "circle-dashed")              \
     ICON(CircleHelp, "circle-question-mark")         \
     ICON(CircleX, "circle-x")                        \
     ICON(Clapperboard, "clapperboard")               \
     ICON(Clock, "clock")                             \
+    ICON(Close, "x")                                 \
     ICON(CloudSun, "cloud-sun")                      \
     ICON(Code, "code")                               \
     ICON(Copy, "copy")                               \
     ICON(Crosshair, "crosshair")                     \
+    ICON(Cuboid, "cuboid")                           \
+    ICON(Cylinder, "cylinder")                       \
     ICON(Ellipsis, "ellipsis-vertical")              \
     ICON(ExternalLink, "external-link")              \
     ICON(Eye, "eye")                                 \
@@ -56,6 +61,7 @@ namespace devex::tools::detail {
     ICON(Gauge, "gauge")                             \
     ICON(Globe, "globe")                             \
     ICON(Grid, "grid-3x3")                           \
+    ICON(GridCheck, "grid-2x2-check")                \
     ICON(Hammer, "hammer")                           \
     ICON(House, "house")                             \
     ICON(Image, "image")                             \
@@ -79,6 +85,7 @@ namespace devex::tools::detail {
     ICON(Palette, "palette")                         \
     ICON(Pause, "pause")                             \
     ICON(Pencil, "pencil")                           \
+    ICON(PersonStanding, "person-standing")          \
     ICON(Play, "play")                               \
     ICON(Plus, "plus")                               \
     ICON(Pointer, "mouse-pointer-2")                 \
@@ -88,12 +95,15 @@ namespace devex::tools::detail {
     ICON(Rotate, "rotate-3d")                        \
     ICON(Save, "save")                               \
     ICON(Scale, "scale-3d")                          \
+    ICON(Scan, "scan")                               \
     ICON(ScrollText, "scroll-text")                  \
     ICON(Search, "search")                           \
     ICON(Settings, "settings")                       \
+    ICON(Shapes, "shapes")                           \
     ICON(Sliders, "sliders-horizontal")              \
     ICON(Sparkles, "sparkles")                       \
     ICON(Square, "square")                           \
+    ICON(SquareDashed, "square-dashed")              \
     ICON(Star, "star")                               \
     ICON(StepForward, "step-forward")                \
     ICON(Sun, "sun")                                 \
@@ -104,7 +114,7 @@ namespace devex::tools::detail {
     ICON(Type, "type")                               \
     ICON(Undo, "undo-2")                             \
     ICON(Video, "video")                             \
-    ICON(Close, "x")                                 \
+    ICON(Weight, "weight")                           \
     ICON(ZoomIn, "zoom-in")                          \
     ICON(Logo, "devex")
 

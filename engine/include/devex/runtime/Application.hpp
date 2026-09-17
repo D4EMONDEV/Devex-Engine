@@ -8,6 +8,7 @@
 #include <devex/platform/Input.hpp>
 #include <devex/platform/Platform.hpp>
 #include <devex/platform/Window.hpp>
+#include <devex/physics/PhysicsWorld.hpp>
 #include <devex/render/Renderer.hpp>
 #include <devex/render/RenderWorld.hpp>
 #include <devex/runtime/AssetManager.hpp>
@@ -51,6 +52,9 @@ struct ApplicationConfig
     std::filesystem::path project;
     // Imports again the assets that change on disk while the application runs.
     bool watchAssets = true;
+    // Simulates the physics components of the scene while gameplay runs, after the fixed updates,
+    // with the physics settings of the project.
+    bool enablePhysics = true;
     // Worker threads for imports and other jobs; 0 uses every hardware thread but one.
     std::uint32_t workerThreads = 0;
 };
@@ -60,8 +64,8 @@ class ApplicationRunner;
 } // namespace detail
 
 // Base class of every program driven by the engine loop. Each frame polls events, runs the fixed
-// updates that are due, runs one variable update, updates the scene transforms, then renders the
-// scene. Engine services are available from onStartup to onShutdown, not in the constructor.
+// updates that are due (each followed by a physics step), runs one variable update, updates the
+// scene transforms, then renders the scene. Engine services are available from onStartup to onShutdown, not in the constructor.
 //
 // Inside the editor, onStartup and onShutdown run as usual, but the updates and onRender only run
 // in Play mode, between onPlayStarted and onPlayStopped, and scene() then returns the copy of the
@@ -136,6 +140,8 @@ protected:
 
     // Progress towards the next fixed update in [0, 1), to interpolate between simulation states.
     [[nodiscard]] double interpolationAlpha() const noexcept;
+    // The physics world of the scene while gameplay runs; null otherwise, or without physics.
+    [[nodiscard]] physics::PhysicsWorld* physics() noexcept;
 
     // True when the application runs inside the editor.
     [[nodiscard]] bool isEditor() const noexcept;
@@ -154,6 +160,7 @@ private:
     scene::Scene* m_scene = nullptr;
     AssetManager* m_assets = nullptr;
     core::JobSystem* m_jobs = nullptr;
+    physics::PhysicsWorld* m_physics = nullptr;
     double m_interpolationAlpha = 0.0;
     bool m_quitRequested = false;
     bool m_editor = false;

@@ -94,6 +94,13 @@ devex_add_tests(platform
         Devex::Engine
 )
 
+devex_add_tests(physics
+    SOURCES
+        physics/PhysicsWorldTests.cpp
+    LIBRARIES
+        Devex::Engine
+)
+
 # Tests tagged [gpu] open a hidden window and need a Vulkan 1.4 GPU.
 devex_add_tests(render
     SOURCES

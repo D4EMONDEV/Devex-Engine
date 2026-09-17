@@ -1,0 +1,624 @@
+[scene format=1]
+
+[entity uuid="5bcd5b05-f9a8-56d8-8959-6c1fd47f22c4" name="Sun"]
+
+[component type="Transform"]
+position = vec3(0, 0, 0)
+rotation = quat(-0.44037748, 0.2667293, 0.13885049, 0.84595727)
+scale = vec3(1, 1, 1)
+
+[component type="DirectionalLight"]
+color = vec3(1, 1, 1)
+temperature = 5800
+illuminance = 1e+05
+cast_shadows = true
+shadow_distance = 60
+
+[entity uuid="63466931-a705-5b0f-89f4-e61ca7497d4e" name="Sky"]
+
+[component type="Environment"]
+sky = asset("060d85bd-f1c5-45bb-ad48-8c1e3e659f71")
+color = vec3(1, 1, 1)
+intensity = 25000
+rotation = 0
+
+[entity uuid="28731b8a-099b-5570-a313-8c1297a52194" name="Ground"]
+
+[component type="Transform"]
+position = vec3(0, 0, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(40, 1, 40)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000003")
+material = asset("78014e97-7de2-4e27-89db-74abd840010d")
+
+[component type="BoxCollider"]
+size = vec3(1, 1, 1)
+center = vec3(0, -0.5, 0)
+
+[entity uuid="cb2a8549-acd6-508b-8a91-50498fc70d60" name="Walls"]
+
+[component type="Transform"]
+position = vec3(0, 0, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="185cb643-9578-5b17-9c54-ca5e61581f07" name="North wall"]
+parent = "cb2a8549-acd6-508b-8a91-50498fc70d60"
+
+[component type="Transform"]
+position = vec3(0, 0.75, -20.25)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(41, 1.5, 0.5)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("576ad271-2890-5687-907e-a283236fea5d")
+
+[component type="BoxCollider"]
+size = vec3(1, 1, 1)
+
+[entity uuid="51785fcf-135f-52db-b022-0ed8ac14a897" name="South wall"]
+parent = "cb2a8549-acd6-508b-8a91-50498fc70d60"
+
+[component type="Transform"]
+position = vec3(0, 0.75, 20.25)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(41, 1.5, 0.5)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("576ad271-2890-5687-907e-a283236fea5d")
+
+[component type="BoxCollider"]
+size = vec3(1, 1, 1)
+
+[entity uuid="93527806-e6b2-50ab-96ca-fe25754e99c7" name="East wall"]
+parent = "cb2a8549-acd6-508b-8a91-50498fc70d60"
+
+[component type="Transform"]
+position = vec3(20.25, 0.75, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(0.5, 1.5, 40)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("576ad271-2890-5687-907e-a283236fea5d")
+
+[component type="BoxCollider"]
+size = vec3(1, 1, 1)
+
+[entity uuid="11fed01c-ede7-5390-aaf1-ff20067aa28a" name="West wall"]
+parent = "cb2a8549-acd6-508b-8a91-50498fc70d60"
+
+[component type="Transform"]
+position = vec3(-20.25, 0.75, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(0.5, 1.5, 40)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("576ad271-2890-5687-907e-a283236fea5d")
+
+[component type="BoxCollider"]
+size = vec3(1, 1, 1)
+
+[entity uuid="676e924f-c76c-50fc-bcd7-65b77292b44a" name="Player"]
+
+[component type="Transform"]
+position = vec3(0, 0, 9)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="CharacterController"]
+radius = 0.35
+height = 1.8
+max_slope = 0.78539816
+step_height = 0.35
+mass = 70
+push_force = 400
+gravity_scale = 1
+layer = 0
+
+[component type="Player"]
+walk_speed = 4.5
+run_speed = 8
+jump_speed = 5.5
+sensitivity = 0.0017453293
+yaw = 0
+pitch = 0
+
+[component type="BallLauncher"]
+speed = 16
+radius = 0.2
+material = asset("91bc3d4f-942c-40be-9398-51eeb3e7cc77")
+lifetime = 20
+max_balls = 40
+
+[entity uuid="67ef066f-48d5-5c23-b6fc-b708bb4336ac" name="Eyes"]
+parent = "676e924f-c76c-50fc-bcd7-65b77292b44a"
+
+[component type="Transform"]
+position = vec3(0, 1.6, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="Camera"]
+vertical_fov = 1.2217305
+near_plane = 0.05
+primary = true
+auto_exposure = true
+ev100 = 14
+exposure_compensation = 0
+min_ev100 = -2
+max_ev100 = 18
+adaptation_speed = 1.5
+tonemapper = "agx"
+
+[entity uuid="4a44b2a7-7e74-5496-9352-e5b1593a5c9e" name="Overview camera"]
+
+[component type="Transform"]
+position = vec3(13, 10, 17)
+rotation = quat(-0.23072501, 0.29177355, 0.072747317, 0.92538748)
+scale = vec3(1, 1, 1)
+
+[component type="Camera"]
+vertical_fov = 1.0471976
+near_plane = 0.1
+primary = false
+auto_exposure = true
+ev100 = 14
+exposure_compensation = 0
+min_ev100 = -2
+max_ev100 = 18
+adaptation_speed = 1.5
+tonemapper = "agx"
+
+[component type="FlyCamera"]
+speed = 6
+fast_speed = 16
+sensitivity = 0.0017453293
+yaw = 0.61086524
+pitch = -0.48869219
+
+[entity uuid="76144337-fd83-5c9f-9794-ba7db7ef4a8d" name="Crates"]
+
+[component type="Transform"]
+position = vec3(0, 0, -3)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="5d0b5998-4466-5688-b81e-317b7021ee36" name="Crate 1"]
+parent = "76144337-fd83-5c9f-9794-ba7db7ef4a8d"
+
+[component type="Transform"]
+position = vec3(-1.53, 0.5, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="MeshRenderer"]
+mesh = asset("0a4571b3-aa2e-4421-a385-09466c6dee9c")
+
+[component type="RigidBody"]
+type = "dynamic"
+mass = 8
+friction = 0.7
+
+[component type="BoxCollider"]
+size = vec3(1, 1, 1)
+
+[entity uuid="856826b1-063a-540e-b702-5ad04f5c6304" name="Crate 2"]
+parent = "76144337-fd83-5c9f-9794-ba7db7ef4a8d"
+
+[component type="Transform"]
+position = vec3(-0.51, 0.5, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="MeshRenderer"]
+mesh = asset("0a4571b3-aa2e-4421-a385-09466c6dee9c")
+
+[component type="RigidBody"]
+type = "dynamic"
+mass = 8
+friction = 0.7
+
+[component type="BoxCollider"]
+size = vec3(1, 1, 1)
+
+[entity uuid="834eab99-1049-56b6-b703-fb2b5ad55fd0" name="Crate 3"]
+parent = "76144337-fd83-5c9f-9794-ba7db7ef4a8d"
+
+[component type="Transform"]
+position = vec3(0.51, 0.5, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="MeshRenderer"]
+mesh = asset("0a4571b3-aa2e-4421-a385-09466c6dee9c")
+
+[component type="RigidBody"]
+type = "dynamic"
+mass = 8
+friction = 0.7
+
+[component type="BoxCollider"]
+size = vec3(1, 1, 1)
+
+[entity uuid="b0a32a90-67f6-5c2f-b308-7e171997aa9a" name="Crate 4"]
+parent = "76144337-fd83-5c9f-9794-ba7db7ef4a8d"
+
+[component type="Transform"]
+position = vec3(1.53, 0.5, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="MeshRenderer"]
+mesh = asset("0a4571b3-aa2e-4421-a385-09466c6dee9c")
+
+[component type="RigidBody"]
+type = "dynamic"
+mass = 8
+friction = 0.7
+
+[component type="BoxCollider"]
+size = vec3(1, 1, 1)
+
+[entity uuid="06e3547b-5730-5dd5-a98e-4e08c53fb463" name="Crate 5"]
+parent = "76144337-fd83-5c9f-9794-ba7db7ef4a8d"
+
+[component type="Transform"]
+position = vec3(-1.02, 1.5, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="MeshRenderer"]
+mesh = asset("0a4571b3-aa2e-4421-a385-09466c6dee9c")
+
+[component type="RigidBody"]
+type = "dynamic"
+mass = 8
+friction = 0.7
+
+[component type="BoxCollider"]
+size = vec3(1, 1, 1)
+
+[entity uuid="66b5d312-7e10-5d61-9b31-cb8dcf7e3366" name="Crate 6"]
+parent = "76144337-fd83-5c9f-9794-ba7db7ef4a8d"
+
+[component type="Transform"]
+position = vec3(0, 1.5, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="MeshRenderer"]
+mesh = asset("0a4571b3-aa2e-4421-a385-09466c6dee9c")
+
+[component type="RigidBody"]
+type = "dynamic"
+mass = 8
+friction = 0.7
+
+[component type="BoxCollider"]
+size = vec3(1, 1, 1)
+
+[entity uuid="4d5f30ba-6595-5578-b3e3-83c4a88c371d" name="Crate 7"]
+parent = "76144337-fd83-5c9f-9794-ba7db7ef4a8d"
+
+[component type="Transform"]
+position = vec3(1.02, 1.5, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="MeshRenderer"]
+mesh = asset("0a4571b3-aa2e-4421-a385-09466c6dee9c")
+
+[component type="RigidBody"]
+type = "dynamic"
+mass = 8
+friction = 0.7
+
+[component type="BoxCollider"]
+size = vec3(1, 1, 1)
+
+[entity uuid="2bc2e216-7f85-5b93-9711-6140848b0483" name="Crate 8"]
+parent = "76144337-fd83-5c9f-9794-ba7db7ef4a8d"
+
+[component type="Transform"]
+position = vec3(-0.51, 2.5, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="MeshRenderer"]
+mesh = asset("0a4571b3-aa2e-4421-a385-09466c6dee9c")
+
+[component type="RigidBody"]
+type = "dynamic"
+mass = 8
+friction = 0.7
+
+[component type="BoxCollider"]
+size = vec3(1, 1, 1)
+
+[entity uuid="38494f51-2b8d-5fb3-b09f-b2c4663ed729" name="Crate 9"]
+parent = "76144337-fd83-5c9f-9794-ba7db7ef4a8d"
+
+[component type="Transform"]
+position = vec3(0.51, 2.5, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="MeshRenderer"]
+mesh = asset("0a4571b3-aa2e-4421-a385-09466c6dee9c")
+
+[component type="RigidBody"]
+type = "dynamic"
+mass = 8
+friction = 0.7
+
+[component type="BoxCollider"]
+size = vec3(1, 1, 1)
+
+[entity uuid="c42d9193-be42-5afd-b083-4c25b08bead9" name="Crate 10"]
+parent = "76144337-fd83-5c9f-9794-ba7db7ef4a8d"
+
+[component type="Transform"]
+position = vec3(0, 3.5, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="MeshRenderer"]
+mesh = asset("0a4571b3-aa2e-4421-a385-09466c6dee9c")
+
+[component type="RigidBody"]
+type = "dynamic"
+mass = 8
+friction = 0.7
+
+[component type="BoxCollider"]
+size = vec3(1, 1, 1)
+
+[entity uuid="ef1f6409-03bd-59b4-ab40-ff77d0e95582" name="Ball 1"]
+
+[component type="Transform"]
+position = vec3(4, 0.5, 3)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000002")
+material = asset("91bc3d4f-942c-40be-9398-51eeb3e7cc77")
+
+[component type="RigidBody"]
+type = "dynamic"
+mass = 3
+restitution = 0.5
+friction = 0.4
+linear_damping = 0.2
+angular_damping = 0.4
+
+[component type="SphereCollider"]
+radius = 0.5
+
+[entity uuid="a953ade9-bb66-5bce-889a-4a3eadb2e4d4" name="Ball 2"]
+
+[component type="Transform"]
+position = vec3(5.5, 0.5, 1.5)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000002")
+material = asset("eaed66d2-2c81-4ebf-a670-e2965998856a")
+
+[component type="RigidBody"]
+type = "dynamic"
+mass = 3
+restitution = 0.5
+friction = 0.4
+linear_damping = 0.2
+angular_damping = 0.4
+
+[component type="SphereCollider"]
+radius = 0.5
+
+[entity uuid="eda0d33a-65aa-5da0-b894-1cb720ee77d9" name="Ball 3"]
+
+[component type="Transform"]
+position = vec3(3, 0.5, 0.5)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000002")
+material = asset("91bc3d4f-942c-40be-9398-51eeb3e7cc77")
+
+[component type="RigidBody"]
+type = "dynamic"
+mass = 3
+restitution = 0.5
+friction = 0.4
+linear_damping = 0.2
+angular_damping = 0.4
+
+[component type="SphereCollider"]
+radius = 0.5
+
+[entity uuid="82a7f2d4-392f-5c19-bae2-d2938d54d0c2" name="Ramp"]
+
+[component type="Transform"]
+position = vec3(-8, 1.1, 0)
+rotation = quat(0.13052619, 0, 0, 0.99144486)
+scale = vec3(3, 0.3, 8)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("bc2c9cd8-2818-5f6c-853c-675911b628d0")
+
+[component type="BoxCollider"]
+size = vec3(1, 1, 1)
+
+[entity uuid="a5f8a5d8-b9e3-5f5c-825e-d132c232c59c" name="Lookout"]
+
+[component type="Transform"]
+position = vec3(-8, 1.1, -5.9)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(4, 2.2, 4)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("1d33c123-a5ff-50a6-9192-d19568c5f130")
+
+[component type="BoxCollider"]
+size = vec3(1, 1, 1)
+
+[entity uuid="0102b639-4662-5b28-bb5b-e2fdddc066f8" name="Lamp zone"]
+
+[component type="Transform"]
+position = vec3(-8, 3.2, -6)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="BoxCollider"]
+size = vec3(3, 2, 3)
+trigger = true
+
+[component type="LampSwitch"]
+intensity = 3000
+
+[entity uuid="63d3922a-2f32-545c-8dc1-e1ab04df5f3a" name="Lamp"]
+parent = "0102b639-4662-5b28-bb5b-e2fdddc066f8"
+
+[component type="Transform"]
+position = vec3(0, 1.6, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(0.3, 0.3, 0.3)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000002")
+material = asset("ff4872a7-7bc8-4ffb-900d-0c565be864f0")
+
+[component type="PointLight"]
+color = vec3(1, 0.8, 0.5)
+temperature = 3200
+intensity = 0
+range = 10
+
+[entity uuid="1eb4295a-367d-5ccd-912d-b2e78c8f91d4" name="Stairs"]
+
+[component type="Transform"]
+position = vec3(8, 0, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="8c603604-0075-5070-ab2c-4029e73c0df9" name="Step 1"]
+parent = "1eb4295a-367d-5ccd-912d-b2e78c8f91d4"
+
+[component type="Transform"]
+position = vec3(0, 0.125, 2)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(3, 0.25, 1)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("1d33c123-a5ff-50a6-9192-d19568c5f130")
+
+[component type="BoxCollider"]
+size = vec3(1, 1, 1)
+
+[entity uuid="8f5a9381-5dc0-556e-8a15-c2ec9c21ead4" name="Step 2"]
+parent = "1eb4295a-367d-5ccd-912d-b2e78c8f91d4"
+
+[component type="Transform"]
+position = vec3(0, 0.25, 1)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(3, 0.5, 1)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("1d33c123-a5ff-50a6-9192-d19568c5f130")
+
+[component type="BoxCollider"]
+size = vec3(1, 1, 1)
+
+[entity uuid="825b936d-18a8-51a3-8e15-c0220928eb5a" name="Step 3"]
+parent = "1eb4295a-367d-5ccd-912d-b2e78c8f91d4"
+
+[component type="Transform"]
+position = vec3(0, 0.375, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(3, 0.75, 1)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("1d33c123-a5ff-50a6-9192-d19568c5f130")
+
+[component type="BoxCollider"]
+size = vec3(1, 1, 1)
+
+[entity uuid="f8f44fbc-484e-50a9-bbba-ec0c07b38a0a" name="Step 4"]
+parent = "1eb4295a-367d-5ccd-912d-b2e78c8f91d4"
+
+[component type="Transform"]
+position = vec3(0, 0.5, -1)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(3, 1, 1)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("1d33c123-a5ff-50a6-9192-d19568c5f130")
+
+[component type="BoxCollider"]
+size = vec3(1, 1, 1)
+
+[entity uuid="a922ccdc-3cfd-5b5a-bcdb-b1a87dbb2e69" name="Step 5"]
+parent = "1eb4295a-367d-5ccd-912d-b2e78c8f91d4"
+
+[component type="Transform"]
+position = vec3(0, 0.625, -2)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(3, 1.25, 1)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("1d33c123-a5ff-50a6-9192-d19568c5f130")
+
+[component type="BoxCollider"]
+size = vec3(1, 1, 1)
+
+[entity uuid="263e5ba6-94be-5f7c-ac94-95576bdfb03a" name="Landing"]
+parent = "1eb4295a-367d-5ccd-912d-b2e78c8f91d4"
+
+[component type="Transform"]
+position = vec3(0, 0.625, -4)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(3, 1.25, 3)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("1d33c123-a5ff-50a6-9192-d19568c5f130")
+
+[component type="BoxCollider"]
+size = vec3(1, 1, 1)
+
+[entity uuid="e08c289a-ee05-5505-9a3f-cd7d45479d76" name="Moving platform"]
+
+[component type="Transform"]
+position = vec3(0, 0.15, -12)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(3, 0.3, 3)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("ff4872a7-7bc8-4ffb-900d-0c565be864f0")
+
+[component type="RigidBody"]
+type = "kinematic"
+
+[component type="BoxCollider"]
+size = vec3(1, 1, 1)
+
+[component type="Oscillator"]
+offset = vec3(6, 0, 0)
+period = 6

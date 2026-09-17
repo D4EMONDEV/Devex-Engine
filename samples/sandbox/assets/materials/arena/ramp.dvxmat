@@ -1,0 +1,5 @@
+# A teal ramp.
+[material format=1]
+base_color = vec4(0.1, 0.55, 0.5, 1)
+metallic = 0
+roughness = 0.5

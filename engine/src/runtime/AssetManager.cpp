@@ -1,5 +1,6 @@
 #include <devex/asset/Artifact.hpp>
 #include <devex/core/Log.hpp>
+#include <devex/asset/Primitives.hpp>
 #include <devex/runtime/AssetManager.hpp>
 
 #include <utility>
@@ -65,8 +66,37 @@ const asset::ModelData* AssetManager::model(asset::AssetId id)
     return found != m_models.end() ? &found->second : nullptr;
 }
 
+const asset::MeshData* AssetManager::meshData(asset::AssetId id)
+{
+    if (const auto found = m_meshData.find(id); found != m_meshData.end())
+    {
+        return &found->second;
+    }
+    if (std::optional<asset::MeshData> builtin = asset::makeBuiltinMesh(id))
+    {
+        return &m_meshData.emplace(id, std::move(*builtin)).first->second;
+    }
+    if (m_database == nullptr || m_database->find(id) == nullptr)
+    {
+        return nullptr;
+    }
+    const core::Result<std::vector<std::byte>> bytes = m_database->loadArtifact(id);
+    core::Result<asset::MeshData> data =
+        bytes ? asset::decodeMesh(*bytes) : core::Result<asset::MeshData>(std::unexpected(bytes.error()));
+    if (!data)
+    {
+        DEVEX_LOG_ERROR("Cannot load the triangles of mesh {}: {}", id.uuid, data.error());
+        return nullptr;
+    }
+    return &m_meshData.emplace(id, std::move(*data)).first->second;
+}
+
 void AssetManager::handleEvents(std::span<const asset::AssetEvent> events)
 {
+    for (const asset::AssetEvent& event : events)
+    {
+        m_meshData.erase(event.id);
+    }
     bool texturesChanged = false;
     for (const asset::AssetEvent& event : events)
     {
@@ -152,6 +182,7 @@ void AssetManager::setDatabase(asset::AssetDatabase* database)
         releaseTexture(m_textures.begin()->first);
     }
     m_models.clear();
+    m_meshData.clear();
     m_failed.clear();
     m_database = database;
 }

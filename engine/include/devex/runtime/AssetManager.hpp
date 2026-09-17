@@ -46,6 +46,9 @@ public:
     [[nodiscard]] render::TextureHandle texture(asset::AssetId id);
     // CPU data only; null when the model cannot be loaded.
     [[nodiscard]] const asset::ModelData* model(asset::AssetId id);
+    // The vertices and triangles of a mesh on the CPU, for physics, including the built-in meshes;
+    // null when the mesh cannot be loaded.
+    [[nodiscard]] const asset::MeshData* meshData(asset::AssetId id);
 
     // Reloads the loaded assets that an import changed and releases removed ones.
     void handleEvents(std::span<const asset::AssetEvent> events);
@@ -87,6 +90,7 @@ private:
     std::unordered_map<asset::AssetId, render::TextureHandle> m_textures;
     std::unordered_map<asset::AssetId, LoadedMaterial> m_materials;
     std::unordered_map<asset::AssetId, asset::ModelData> m_models;
+    std::unordered_map<asset::AssetId, asset::MeshData> m_meshData;
     // Assets whose loading failed, retried once an import changes them.
     std::unordered_set<asset::AssetId> m_failed;
 };

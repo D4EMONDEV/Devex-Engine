@@ -1,0 +1,5 @@
+# Blue-gray walls of the arena.
+[material format=1]
+base_color = vec4(0.32, 0.38, 0.46, 1)
+metallic = 0
+roughness = 0.7

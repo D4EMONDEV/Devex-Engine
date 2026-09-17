@@ -6,6 +6,7 @@
 #include <devex/core/Log.hpp>
 #include <devex/core/Path.hpp>
 #include <devex/scene/Components.hpp>
+#include <devex/scene/PhysicsComponents.hpp>
 #include <devex/scene/SceneSerializer.hpp>
 #include <devex/serialization/Text.hpp>
 #include <devex/tools/SceneCommands.hpp>
@@ -850,6 +851,42 @@ void drawCreateEntityMenu(ToolsState& state, core::Uuid parent)
         requestCreatePreset(state, parent, "Environment", [](scene::Scene& scratch, scene::Entity entity) {
             scratch.remove<scene::Transform>(entity);
             scratch.add<scene::Environment>(entity);
+        });
+    }
+    ImGui::Separator();
+    if (item(icons::SquareDashed, colors.physics, "Static box"))
+    {
+        requestCreatePreset(state, parent, "Static box", [](scene::Scene& scratch, scene::Entity entity) {
+            scratch.add<scene::MeshRenderer>(entity, scene::MeshRenderer{.mesh = asset::builtin::cubeMesh});
+            scratch.add<scene::BoxCollider>(entity);
+        });
+    }
+    if (item(icons::Weight, colors.physics, "Rigid box"))
+    {
+        requestCreatePreset(state, parent, "Rigid box", [](scene::Scene& scratch, scene::Entity entity) {
+            scratch.add<scene::MeshRenderer>(entity, scene::MeshRenderer{.mesh = asset::builtin::cubeMesh});
+            scratch.add<scene::RigidBody>(entity);
+            scratch.add<scene::BoxCollider>(entity);
+        });
+    }
+    if (item(icons::CircleDashed, colors.physics, "Rigid sphere"))
+    {
+        requestCreatePreset(state, parent, "Rigid sphere", [](scene::Scene& scratch, scene::Entity entity) {
+            scratch.add<scene::MeshRenderer>(entity, scene::MeshRenderer{.mesh = asset::builtin::sphereMesh});
+            scratch.add<scene::RigidBody>(entity);
+            scratch.add<scene::SphereCollider>(entity);
+        });
+    }
+    if (item(icons::PersonStanding, colors.physics, "Character"))
+    {
+        requestCreatePreset(state, parent, "Character", [](scene::Scene& scratch, scene::Entity entity) {
+            scratch.add<scene::CharacterController>(entity);
+        });
+    }
+    if (item(icons::Scan, colors.physics, "Trigger zone"))
+    {
+        requestCreatePreset(state, parent, "Trigger zone", [](scene::Scene& scratch, scene::Entity entity) {
+            scratch.add<scene::BoxCollider>(entity, scene::BoxCollider{.size = {2.0f, 2.0f, 2.0f}, .trigger = true});
         });
     }
 }

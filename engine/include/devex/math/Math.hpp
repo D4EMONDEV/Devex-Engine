@@ -19,6 +19,7 @@ using Mat3 = glm::mat3;
 using Mat4 = glm::mat4;
 using Quat = glm::quat;
 
+using glm::abs;
 using glm::angleAxis;
 using glm::clamp;
 using glm::conjugate;
@@ -29,6 +30,8 @@ using glm::eulerAngles;
 using glm::inverse;
 using glm::length;
 using glm::lookAt;
+using glm::max;
+using glm::min;
 using glm::mat4_cast;
 using glm::mix;
 using glm::normalize;
@@ -36,6 +39,7 @@ using glm::ortho;
 using glm::radians;
 using glm::rotate;
 using glm::scale;
+using glm::slerp;
 using glm::translate;
 
 // Size of a surface in whole units, such as a window or a framebuffer.

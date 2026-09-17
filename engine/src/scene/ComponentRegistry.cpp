@@ -1,5 +1,6 @@
 #include <devex/scene/ComponentRegistry.hpp>
 #include <devex/scene/Components.hpp>
+#include <devex/scene/PhysicsComponents.hpp>
 
 #include <vector>
 
@@ -50,6 +51,13 @@ ComponentRegistry& componentRegistry()
         builtins.add<PointLight>();
         builtins.add<SpotLight>();
         builtins.add<Environment>();
+        builtins.add<RigidBody>();
+        builtins.add<BoxCollider>();
+        builtins.add<SphereCollider>();
+        builtins.add<CapsuleCollider>();
+        builtins.add<CylinderCollider>();
+        builtins.add<MeshCollider>();
+        builtins.add<CharacterController>();
         return builtins;
     }();
     return registry;

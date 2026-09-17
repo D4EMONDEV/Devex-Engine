@@ -1,6 +1,7 @@
 #include "ToolsState.hpp"
 
 #include <devex/scene/Components.hpp>
+#include <devex/scene/PhysicsComponents.hpp>
 
 #include <algorithm>
 #include <array>
@@ -22,6 +23,9 @@ constexpr math::Vec4 xAxisColor{0.6f, 0.08f, 0.08f, 0.9f};
 constexpr math::Vec4 zAxisColor{0.06f, 0.14f, 0.6f, 0.9f};
 constexpr math::Vec4 lightIconColor{1.0f, 0.8f, 0.3f, 0.95f};
 constexpr math::Vec4 cameraIconColor{0.85f, 0.85f, 0.85f, 0.95f};
+// Collision shapes, as in Godot: solid ones in green, triggers in blue.
+constexpr math::Vec4 colliderColor{0.35f, 0.95f, 0.5f, 0.95f};
+constexpr math::Vec4 triggerColor{0.35f, 0.7f, 1.0f, 0.95f};
 
 void addLine(std::vector<OverlayVertex>& lines, math::Vec3 start, math::Vec3 end, math::Vec4 color)
 {
@@ -38,6 +42,152 @@ void addCircle(std::vector<OverlayVertex>& lines, math::Vec3 center, math::Vec3 
         const float angle1 = twoPi * static_cast<float>(segment + 1) / static_cast<float>(segments);
         addLine(lines, center + (u * std::cos(angle0) + v * std::sin(angle0)) * radius,
                 center + (u * std::cos(angle1) + v * std::sin(angle1)) * radius, color);
+    }
+}
+
+void addArc(std::vector<OverlayVertex>& lines, math::Vec3 center, math::Vec3 u, math::Vec3 v, float radius, float from,
+            float to, math::Vec4 color, int segments = 16)
+{
+    for (int segment = 0; segment < segments; ++segment)
+    {
+        const float angle0 = from + (to - from) * static_cast<float>(segment) / static_cast<float>(segments);
+        const float angle1 = from + (to - from) * static_cast<float>(segment + 1) / static_cast<float>(segments);
+        addLine(lines, center + (u * std::cos(angle0) + v * std::sin(angle0)) * radius,
+                center + (u * std::cos(angle1) + v * std::sin(angle1)) * radius, color);
+    }
+}
+
+// The axes of a world transform, normalized, and its scale.
+struct Frame
+{
+    math::Vec3 origin{0.0f};
+    math::Vec3 x{1.0f, 0.0f, 0.0f};
+    math::Vec3 y{0.0f, 1.0f, 0.0f};
+    math::Vec3 z{0.0f, 0.0f, 1.0f};
+    math::Vec3 scale{1.0f};
+};
+
+[[nodiscard]] Frame frameOf(const math::Mat4& world)
+{
+    const auto axis = [&](int column) {
+        const math::Vec3 value(world[column]);
+        const float length = math::length(value);
+        return std::pair{length > 0.0f ? value / length : math::Vec3{0.0f}, length};
+    };
+    const auto [x, sx] = axis(0);
+    const auto [y, sy] = axis(1);
+    const auto [z, sz] = axis(2);
+    return {.origin = math::Vec3(world[3]), .x = x, .y = y, .z = z, .scale = {sx, sy, sz}};
+}
+
+// A capsule or a cylinder along an axis, from the centers of its two end circles.
+void addRoundShape(std::vector<OverlayVertex>& lines, math::Vec3 bottom, math::Vec3 top, math::Vec3 axis, math::Vec3 u,
+                   math::Vec3 v, float radius, bool capsule, math::Vec4 color)
+{
+    constexpr float halfPi = twoPi * 0.25f;
+    addCircle(lines, bottom, u, v, radius, color, 32);
+    addCircle(lines, top, u, v, radius, color, 32);
+    for (const math::Vec3 side : {u, -u, v, -v})
+    {
+        addLine(lines, bottom + side * radius, top + side * radius, color);
+    }
+    if (capsule)
+    {
+        for (const math::Vec3 side : {u, v})
+        {
+            addArc(lines, top, side, axis, radius, 0.0f, 2.0f * halfPi, color);
+            addArc(lines, bottom, side, -axis, radius, 0.0f, 2.0f * halfPi, color);
+        }
+    }
+}
+
+// The collision shapes of the colliders and characters of the selected entity and its descendants,
+// or of every entity when they are all shown.
+void addColliders(const ToolsState& state, scene::Scene& scene, const std::unordered_set<std::uint32_t>& selection,
+                  std::vector<OverlayVertex>& lines)
+{
+    const auto shown = [&](scene::Entity entity) { return state.showColliders || selection.contains(entity.index); };
+    const auto colorOf = [&](scene::Entity entity, bool trigger) {
+        math::Vec4 color = trigger ? triggerColor : colliderColor;
+        color.a = selection.contains(entity.index) ? 1.0f : 0.55f;
+        return color;
+    };
+
+    for ([[maybe_unused]] auto [entity, world, collider] : scene.view<scene::WorldTransform, scene::BoxCollider>())
+    {
+        if (!shown(entity))
+        {
+            continue;
+        }
+        std::array<math::Vec3, 8> corners;
+        for (std::size_t index = 0; index < corners.size(); ++index)
+        {
+            const math::Vec3 sign{(index & 1) != 0 ? 1.0f : -1.0f, (index & 2) != 0 ? 1.0f : -1.0f, (index & 4) != 0 ? 1.0f : -1.0f};
+            corners[index] = math::Vec3(world.matrix * math::Vec4(collider.center + sign * collider.size * 0.5f, 1.0f));
+        }
+        const math::Vec4 color = colorOf(entity, collider.trigger);
+        for (std::size_t index = 0; index < corners.size(); ++index)
+        {
+            for (const std::size_t bit : {1u, 2u, 4u})
+            {
+                if ((index & bit) == 0)
+                {
+                    addLine(lines, corners[index], corners[index | bit], color);
+                }
+            }
+        }
+    }
+
+    for ([[maybe_unused]] auto [entity, world, collider] : scene.view<scene::WorldTransform, scene::SphereCollider>())
+    {
+        if (!shown(entity))
+        {
+            continue;
+        }
+        const Frame frame = frameOf(world.matrix);
+        const math::Vec3 center(world.matrix * math::Vec4(collider.center, 1.0f));
+        const float radius = collider.radius * std::max({frame.scale.x, frame.scale.y, frame.scale.z});
+        const math::Vec4 color = colorOf(entity, collider.trigger);
+        addCircle(lines, center, frame.x, frame.y, radius, color, 48);
+        addCircle(lines, center, frame.y, frame.z, radius, color, 48);
+        addCircle(lines, center, frame.z, frame.x, radius, color, 48);
+    }
+
+    const auto roundCollider = [&](scene::Entity entity, const scene::WorldTransform& world, float radius, float height,
+                                   math::Vec3 center, bool trigger, bool capsule) {
+        if (!shown(entity))
+        {
+            return;
+        }
+        const Frame frame = frameOf(world.matrix);
+        const math::Vec3 middle(world.matrix * math::Vec4(center, 1.0f));
+        const float worldRadius = radius * std::max(frame.scale.x, frame.scale.z);
+        const float half = std::max(height * frame.scale.y * 0.5f - (capsule ? worldRadius : 0.0f), 0.0f);
+        addRoundShape(lines, middle - frame.y * half, middle + frame.y * half, frame.y, frame.x, frame.z, worldRadius, capsule,
+                      colorOf(entity, trigger));
+    };
+    for ([[maybe_unused]] auto [entity, world, collider] : scene.view<scene::WorldTransform, scene::CapsuleCollider>())
+    {
+        roundCollider(entity, world, collider.radius, collider.height, collider.center, collider.trigger, true);
+    }
+    for ([[maybe_unused]] auto [entity, world, collider] : scene.view<scene::WorldTransform, scene::CylinderCollider>())
+    {
+        roundCollider(entity, world, collider.radius, collider.height, collider.center, collider.trigger, false);
+    }
+
+    // Characters stand upright on their position, whatever the rotation of their entity.
+    for ([[maybe_unused]] auto [entity, world, controller] : scene.view<scene::WorldTransform, scene::CharacterController>())
+    {
+        if (!shown(entity))
+        {
+            continue;
+        }
+        const math::Vec3 position(world.matrix[3]);
+        const math::Vec3 up{0.0f, 1.0f, 0.0f};
+        const float half = std::max(controller.height * 0.5f - controller.radius, 0.0f);
+        const math::Vec3 middle = position + up * controller.height * 0.5f;
+        addRoundShape(lines, middle - up * half, middle + up * half, up, math::Vec3{1.0f, 0.0f, 0.0f},
+                      math::Vec3{0.0f, 0.0f, 1.0f}, controller.radius, true, colorOf(entity, false));
     }
 }
 
@@ -214,10 +364,16 @@ void addEditorOverlay(ToolsState& state, scene::Scene& scene, render::RenderWorl
         addIcons(scene, view, selected, world);
     }
 
+    std::unordered_set<std::uint32_t> selection;
     if (selected.isValid())
     {
-        std::unordered_set<std::uint32_t> outlined;
-        collectSubtree(scene, selected, outlined);
+        collectSubtree(scene, selected, selection);
+    }
+    addColliders(state, scene, selection, world.overlayLines);
+
+    if (selected.isValid())
+    {
+        const std::unordered_set<std::uint32_t>& outlined = selection;
         for (render::MeshInstance& mesh : world.meshes)
         {
             mesh.outlined = mesh.objectId > 0 && outlined.contains(mesh.objectId - 1);
