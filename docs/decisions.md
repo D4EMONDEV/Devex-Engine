@@ -88,6 +88,9 @@ mais seulement explicitement ici : le code suit ce document, pas l'inverse.
 | Physique et jeu          | Requêtes, forces et contacts listés dans `SystemContext::physics`  |
 | Couches de collision     | 16 couches nommées par projet, matrice de collisions               |
 | Pas de simulation        | Pas fixe (60 Hz), poses interpolées pour l'affichage               |
+| Préfabs                  | Scènes imbriquées liées à leur fichier, comme Godot                |
+| Modifications d'instance | Champs, noms, composants et entités ajoutés ; le reste suit le préfab |
+| Préfabs dans l'éditeur   | Onglet du préfab, instances mises à jour en direct, Revert, Make Local |
 
 ## Architecture cible
 
@@ -111,7 +114,7 @@ situé au-dessus de lui, et le graphe reste sans cycle.
 | `Asset`         | `AssetId`, données CPU (maillages, textures, matériaux, modèles), `.dvxasset`, projet | Core, Math, Reflection, Serialization |
 | `AssetImport`   | base d'assets, `.dvxmeta`, importeurs (textures, `.dvxmat`, glTF)         | Asset, Scene, fastgltf, basisu, stb, efsw |
 | `Render`        | façade `Renderer` / `RenderWorld` ; tout `Vk*` reste dans `src/render/vulkan` | Core, Math, Platform, Asset, Vulkan |
-| `Scene`         | entités, sparse sets, hiérarchie, composants intégrés, `.dvxscene`, sous-arbres | Core, Math, Reflection, Serialization, Asset |
+| `Scene`         | entités, sparse sets, hiérarchie, composants intégrés, `.dvxscene`, sous-arbres, préfabs | Core, Math, Reflection, Serialization, Asset |
 | `Tools`         | panneaux ImGui, annulation, éditeur (viewport, gizmos, scènes, accueil)   | Core, Platform, Render, Scene, AssetImport, ImGui |
 | `Runtime`       | `Application`, boucle, mode éditeur et Play, modules de jeu, `AssetManager`, extraction | tous les modules ci-dessus |
 
@@ -316,6 +319,7 @@ docs/          décisions et documentation
 - **Modèles** : `scene::instantiateModel` crée une entité racine puis une entité par nœud du
   modèle (`Transform`, et `MeshRenderer` si le nœud a un maillage). Ce sont des copies : maillages
   et matériaux restent liés par `AssetId` et suivent les réimports, pas la hiérarchie.
+- **Préfabs** : voir la section *Préfabs*.
 - **Transformations** : `Transform` (position, rotation, échelle locales) ;
   `Scene::updateTransforms` calcule `WorldTransform` parents d'abord, chaque frame, après
   `onUpdate`. Une entité sans `Transform` transmet celle de son parent.
@@ -408,8 +412,11 @@ mesh = asset("00000000-0000-0000-0000-000000000001")
 - L'export d'un jeu empaquettera les `.dvxasset` du cache : ce sont déjà les données **binaires
   cuites** chargées sans parsing.
 - Une scène est un **asset** : son `.dvxmeta` lui donne un `AssetId`, son import vérifie qu'elle
-  se charge et range son texte dans un artefact `scene`, pour qu'un jeu charge un niveau par
-  identifiant.
+  se charge (sans charger ses préfabs, importés à part) et range son texte dans un artefact
+  `scene`, pour qu'un jeu charge un niveau par identifiant.
+- Une **instance de préfab** est une section `entity` avec `prefab = asset("…")`, suivie de ses
+  sections `override` (voir *Préfabs*). Le format reste 1 : un moteur plus ancien ignore
+  `override` avec un avertissement et charge l'instance vide.
 
 Import (`.dvxmeta`, format 1), écrit par la base d'assets et versionné :
 
@@ -582,9 +589,9 @@ Dans les deux cas, les sources concernées sont réimportées.
   L'onglet actif vit là où le reste de l'éditeur le lit (la scène de l'application, les champs
   des outils) ; les autres attendent dans leur onglet, et changer d'onglet échange les deux
   sans copier. *New Scene* (ou *+*) ajoute une petite scène éclairée (soleil, ciel, caméra, sol,
-  cube) ; *Open Scene…*, un double-clic sur une scène de *FileSystem* ou une scène glissée dans le
-  viewport l'ouvre dans un onglet, ou montre le sien si elle est déjà ouverte ; une scène neuve
-  intacte cède sa place. Les onglets modifiés portent un point ; fermer un onglet (croix,
+  cube) ; *Open Scene…*, un double-clic sur une scène de *FileSystem* ou *Open Prefab* l'ouvre dans
+  un onglet, ou montre le sien si elle est déjà ouverte ; une scène glissée dans le viewport y
+  place une instance (voir *Préfabs*) ; une scène neuve intacte cède sa place. Les onglets modifiés portent un point ; fermer un onglet (croix,
   Ctrl+W) demande d'enregistrer ses modifications, quitter, changer de projet ou revenir au
   gestionnaire les demande pour toutes les scènes concernées (*Save*/*Save All*, *Don't Save*,
   *Cancel* ; une scène sans fichier montre son dialogue d'enregistrement puis l'action continue).
@@ -693,6 +700,92 @@ Dans les deux cas, les sources concernées sont réimportées.
 - **Outils** : panneau *Assets* (sources, type, statut, erreur en infobulle, réimport, sous-assets
   dépliables) ; un asset se glisse sur un champ `AssetId` de l'inspecteur, un modèle dans la
   hiérarchie (placement annulable). L'inspecteur liste les assets du type attendu.
+
+### Préfabs
+
+- **Modèle** : comme Godot, un préfab est une **scène** ordinaire (`.dvxscene`), placée dans d'autres
+  scènes où elle reste liée à son fichier. Les préfabs s'imbriquent à tous les niveaux : un préfab
+  contient des instances d'autres préfabs, avec leurs propres modifications. Pas de type d'asset à
+  part : toute scène peut servir de préfab (le bac à sable les range dans `assets/prefabs`).
+- **Fichier** : une instance est une section d'entité qui nomme son préfab, suivie de ses
+  modifications :
+
+  ```text
+  [entity uuid="2c1f5e0a-7d4b-4c9e-8f3a-6b5d2e1c0f47" name="Lamp zone"]
+  parent = "b41e7c02-9d3a-4f6e-8c11-5a2e9b7d0f44"
+  prefab = asset("9a3e4f21-5c6d-4b7a-8e9f-0a1b2c3d4e5f")
+
+  [override type="Transform"]
+  position = vec3(-8, 3.2, -6)
+
+  [override target="7e2d9c4b-1a3f-4e5d-9b8c-2f6a0d1e3c57" type="PointLight"]
+  color = vec3(0.55, 0.75, 1)
+
+  [override target="7e2d9c4b-1a3f-4e5d-9b8c-2f6a0d1e3c57" name="Bulb"]
+  ```
+
+  `target` est l'UUID d'une entité dans le préfab (la racine quand il manque) ; `type` change des
+  champs d'un composant, ou **ajoute** le composant avec ces champs si l'entité du préfab ne l'a
+  pas ; `name` renomme. Les entités ajoutées sous celles de l'instance sont des sections
+  ordinaires dont le parent est un UUID dérivé. Seules les **différences** sont écrites : un
+  champ changé dans le préfab atteint toutes les instances qui ne l'ont pas modifié. Retirer un
+  composant ou une entité du préfab dans une instance n'est pas possible (il faut *Make Local*).
+- **UUID** : les entités d'une instance ont des UUID **dérivés** de celui de l'instance et du leur
+  dans le préfab (`derivePrefabUuid`, un hachage 128 bits marqué version 8, jamais produit par
+  `Uuid::generate`). Ils sont stables d'un chargement à l'autre : sélection, annulation et
+  entités ajoutées y font référence. Un préfab à une seule racine donne sa racine à l'entité de
+  l'instance ; avec plusieurs racines, l'entité de l'instance les regroupe (avec un `Transform`).
+- **Chargement** : les sections deviennent une liste plate d'entités (`FlatScene`) où chaque
+  instance est remplacée par les entités de son préfab, chargées récursivement, auxquelles les
+  modifications s'appliquent au niveau du texte ; les entités sont ensuite créées d'un coup.
+  Les entités d'une instance reçoivent `PrefabEntity` (la racine de l'instance extérieure qui les
+  enregistre, et leur UUID dans le préfab), les racines d'instances (imbriquées comprises)
+  `PrefabInstance`. Ces composants ne sont jamais écrits comme les autres.
+- **Enregistrement** : l'instance est comparée à sa **base**, le préfab chargé seul avec les mêmes
+  UUID (`prefabBase`, mise en cache), champ par champ sur les valeurs écrites par la réflexion,
+  pour que les flottants se comparent à l'identique. Les entités ajoutées sont écrites après les
+  modifications. Copier une entité intérieure à une instance l'écrit en entités ordinaires.
+- **Sources des préfabs** : `setPrefabSourceLoader` donne au module le moyen de lire une scène par
+  `AssetId`, pour tout le processus ; le runtime passe par `AssetManager::sceneText` (fichier
+  source, sinon artefact importé), qui garde le texte jusqu'à l'événement d'import suivant. Les
+  préfabs lus sont gardés, avec leurs dépendances, et relus quand leur texte ou celui d'un préfab
+  qu'ils contiennent change.
+- **Robustesse** : un préfab absent ou illisible laisse l'instance **non résolue** : une entité
+  vide qui garde ses sections `override` telles quelles et les réécrit (avertissement). Un préfab
+  qui se contient lui-même, directement ou non, est détecté (pile de chargement) et son instance
+  intérieure reste non résolue. Une modification dont la cible a quitté le préfab est abandonnée
+  (information) ; une entité ajoutée dont le parent a disparu passe sous l'instance. L'import d'une
+  scène vérifie sa syntaxe sans charger ses préfabs (`PrefabLoading::KeepUnresolved`), les imports
+  tournant hors du thread principal.
+- **Mise à jour en direct** : quand un import change des scènes, l'éditeur enregistre, dans la scène
+  éditée et celles des onglets en arrière-plan, les instances qui les utilisent (directement ou
+  par un préfab intermédiaire) **avec les anciens textes** encore dans l'`AssetManager`
+  (`snapshotPrefabInstances`), oublie ces textes, puis recharge les instances à leur place
+  (`rebuildPrefabInstances`) : les modifications sont conservées, la scène n'est pas marquée
+  modifiée. Une instance que le nouveau préfab ne permet plus de charger reste telle quelle, avec
+  une erreur. Le jeu en cours (Play, `devex-player`) garde ses instances.
+- **Code du jeu** : `scene::instantiatePrefab(scene, prefab, parent)` crée une instance avec un
+  nouvel UUID ; un champ `AssetId` avec `.assetType = "scene"` choisit le préfab dans
+  l'inspecteur.
+- **Éditeur** :
+  - une scène glissée depuis *FileSystem* dans le viewport (au sol sous la souris) ou sur l'arbre
+    (comme enfant) crée une instance, en une étape annulable ; une scène ne peut pas se contenir
+    elle-même. Le double-clic ouvre toujours la scène dans un onglet ;
+  - l'arbre montre les racines d'instances avec l'icône de paquet et les entités venues de préfabs
+    en bleu (en rouge si le préfab manque) ; ces entités ne se suppriment ni ne se déplacent
+    (les commandes le refusent aussi), mais acceptent des enfants et des composants ;
+  - le menu contextuel donne *Open Prefab*, *Make Local* et *Save as Prefab…* ; l'inspecteur,
+    une ligne « Instance of » avec *Open*, *Revert All* et *Make Local* ;
+  - les valeurs qui diffèrent du préfab ont une barre à la couleur d'accent et un nom en gras ; un
+    clic droit propose *Revert to Prefab Value* (ou *Revert to Prefab Name*). Un composant ajouté
+    est marqué ; les composants venus du préfab ne se retirent pas ;
+  - *Revert All* retire toutes les modifications sauf la place de la racine (`Transform`, nom) et
+    garde les entités ajoutées ; *Make Local* transforme l'instance, préfabs imbriqués compris, en
+    entités ordinaires ;
+  - *Save as Prefab…* écrit l'entité et ses descendants dans un **nouveau** fichier (dans
+    `assets/prefabs` par défaut), racine ramenée à l'origine, puis remplace l'entité par une
+    instance au même endroit, qui garde son UUID ; les deux étapes de la scène s'annulent en une
+    (`makeReplaceEntityTreeCommand`), le fichier reste. Écraser un préfab existant est refusé.
 
 ### Physique
 
@@ -898,8 +991,13 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     projet, requêtes, forces et contacts pour le code du jeu, interpolation, formes dans l'éditeur,
     arène jouable dans le bac à sable.
 
-Ensuite, sans ordre figé : préfabs liés, export d'un jeu (paquet d'artefacts), post-traitements
-(bloom, TAA), transparence, audio, CI Linux.
+12. ✅ **Préfabs liés** — scènes imbriquées à tous les niveaux, modifications de champs, de noms,
+    composants et entités ajoutés, UUID dérivés, instances non résolues conservées, mise à jour
+    en direct des instances, marques et Revert dans l'inspecteur, Make Local, Save as Prefab,
+    glisser-déposer, instanciation par le code du jeu, préfabs de l'arène.
+
+Ensuite, sans ordre figé : export d'un jeu (paquet d'artefacts), post-traitements (bloom, TAA),
+transparence, audio, CI Linux.
 
 ## Questions ouvertes
 
@@ -912,6 +1010,11 @@ Ensuite, sans ordre figé : préfabs liés, export d'un jeu (paquet d'artefacts)
 - **Physique** : articulations (charnières, ressorts), véhicules, ragdolls, matériaux physiques par
   collider, marqueurs de modification pour les grandes scènes, simulation dans l'éditeur (mode
   Simulate), débogage visuel des contacts, pool de jobs de Jolt fusionné avec `core::JobSystem`.
+- **Préfabs** : retirer un composant ou une entité du préfab dans une instance, variantes
+  explicites (une instance à la racine d'un préfab en fait déjà une), onglet ouvert sur le préfab
+  d'une instance avec son contexte, édition des entités d'une instance sur place (Godot *Editable
+  Children*), sélection de la racine d'une instance au premier clic, mise à jour des instances
+  pendant le jeu, modifications vers des entités retirées gardées au lieu d'être abandonnées.
 - **Audio** : SDL3 audio, miniaudio ou FMOD/Wwise en option.
 - **UI retenue maison** pour l'éditeur et les jeux, qui remplacera ImGui.
 - **CI** : GitHub Actions Windows, puis Linux.

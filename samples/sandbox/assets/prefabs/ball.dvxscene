@@ -1,0 +1,22 @@
+[scene format=1]
+
+[entity uuid="d5e170c4-ff74-57fb-9e80-6d203f5889b9" name="Ball"]
+
+[component type="Transform"]
+position = vec3(0, 0, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(0.4, 0.4, 0.4)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000002")
+material = asset("91bc3d4f-942c-40be-9398-51eeb3e7cc77")
+
+[component type="RigidBody"]
+type = "dynamic"
+mass = 2
+friction = 0.6
+restitution = 0.35
+continuous_collision = true
+
+[component type="SphereCollider"]
+radius = 0.5

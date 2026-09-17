@@ -4,14 +4,19 @@
 #include <devex/asset/Project.hpp>
 #include <devex/scene/ComponentRegistry.hpp>
 #include <devex/scene/FieldValue.hpp>
+#include <devex/scene/Prefab.hpp>
 #include <devex/scene/SceneSerializer.hpp>
 #include <devex/tools/SceneCommands.hpp>
 
 #include <imgui_internal.h>
 #include <imgui_stdlib.h>
 
+#include <algorithm>
 #include <array>
 #include <cctype>
+#include <cmath>
+#include <memory>
+#include <optional>
 #include <cfloat>
 #include <cstdint>
 #include <format>
@@ -227,17 +232,40 @@ bool drawValueWidget(ToolsState& state, const char* id, const reflection::FieldI
     return false;
 }
 
+// Draws a field, marked when its value differs from the one of the prefab's component, if any.
 void drawField(ToolsState& state, core::Uuid entity, const scene::ComponentType& type,
-               const reflection::FieldInfo& field, void* component)
+               const reflection::FieldInfo& field, void* component, const void* prefabComponent)
 {
     void* const address = field.address(component);
     // The value before this frame's change, which becomes the start of an edit on activation.
     serialization::TextValue before = scene::writeFieldValue(field, address);
+    std::optional<serialization::TextValue> prefabValue;
+    if (prefabComponent != nullptr)
+    {
+        if (serialization::TextValue value = scene::writeFieldValue(field, field.address(prefabComponent)); value != before)
+        {
+            prefabValue = std::move(value);
+        }
+    }
 
     const std::string label = displayName(field.name);
-    propertyName(label.c_str());
+    propertyName(label.c_str(), prefabValue.has_value());
     const std::string id = "##" + std::string(field.name);
     const bool changed = drawValueWidget(state, id.c_str(), field, address);
+    if (prefabValue && state.playState == PlayState::Editing)
+    {
+        ImGui::PushID(id.c_str());
+        if (ImGui::BeginPopupContextItem("override menu"))
+        {
+            if (ImGui::MenuItemEx("Revert to Prefab Value", icons::Undo.c_str()))
+            {
+                state.pendingCommand =
+                    makeSetFieldCommand(entity, std::string(type.name()), field.name, before, *prefabValue);
+            }
+            ImGui::EndPopup();
+        }
+        ImGui::PopID();
+    }
 
     if (ImGui::IsItemActivated())
     {
@@ -254,7 +282,9 @@ void drawField(ToolsState& state, core::Uuid entity, const scene::ComponentType&
     }
 }
 
-void drawNameField(ToolsState& state, scene::Scene& scene, scene::Entity entity, core::Uuid uuid)
+// The name field; prefabName is the name the entity has in its prefab, when it may differ.
+void drawNameField(ToolsState& state, scene::Scene& scene, scene::Entity entity, core::Uuid uuid,
+                   const std::string* prefabName)
 {
     // The buffer follows the scene except while the user is typing in it.
     const ImGuiID nameId = ImGui::GetID("##name");
@@ -273,11 +303,79 @@ void drawNameField(ToolsState& state, scene::Scene& scene, scene::Entity entity,
     {
         state.pendingCommand = makeRenameCommand(uuid, state.nameEditStart, state.nameBuffer);
     }
+    if (prefabName != nullptr && *prefabName != scene.name(entity))
+    {
+        const ImVec2 min = ImGui::GetItemRectMin();
+        const float barWidth = std::max(2.0f, std::round(ImGui::GetFontSize() * 0.16f));
+        ImGui::GetWindowDrawList()->AddRectFilled(ImVec2(min.x - barWidth * 2.0f, min.y),
+                                                  ImVec2(min.x - barWidth, ImGui::GetItemRectMax().y),
+                                                  uiColorU32(themeColors().accent));
+        if (state.playState == PlayState::Editing && ImGui::BeginPopupContextItem("name override"))
+        {
+            if (ImGui::MenuItemEx("Revert to Prefab Name", icons::Undo.c_str()))
+            {
+                state.pendingCommand = makeRenameCommand(uuid, scene.name(entity), *prefabName);
+            }
+            ImGui::EndPopup();
+        }
+    }
+}
+
+// What the entity has from a prefab: the instance, its prefab, and buttons for the instance.
+void drawPrefabSection(ToolsState& state, scene::Scene& scene, scene::Entity entity, scene::Entity instance)
+{
+    const ThemeColors& colors = themeColors();
+    const scene::PrefabInstance& prefab = scene.get<scene::PrefabInstance>(instance);
+    const std::string prefabName = sceneAssetName(state, prefab.prefab);
+    ImGui::AlignTextToFramePadding();
+    iconLabel(icons::Package, prefab.resolved ? colors.prefab : colors.error);
+    if (!prefab.resolved)
+    {
+        ImGui::TextColored(uiColor(colors.error), "Missing prefab %s", prefabName.c_str());
+        ImGui::SetItemTooltip("The prefab cannot be loaded. The instance keeps its overrides until it comes back.");
+    }
+    else
+    {
+        ImGui::TextDisabled(entity == instance ? "Instance of" : "From");
+        ImGui::SameLine();
+        boldText(prefabName.c_str());
+        if (entity != instance)
+        {
+            ImGui::SameLine();
+            ImGui::TextDisabled("in %s", scene.name(instance).c_str());
+        }
+    }
+
+    const bool editing = state.playState == PlayState::Editing && state.mode == ToolsMode::Editor;
+    if (labelButton(icons::ExternalLink, "Open", 0.0f, editing))
+    {
+        state.prefabToOpen = prefab.prefab;
+    }
+    ImGui::SetItemTooltip("Opens the prefab in a tab; its changes reach every instance once saved");
+    ImGui::SameLine();
+    if (labelButton(icons::Undo, "Revert All", 0.0f, editing && prefab.resolved))
+    {
+        state.pendingCommand = makeReplaceEntityTreeCommand(
+            scene.uuid(instance), scene::saveRevertedPrefabInstance(scene, instance), "Revert instance");
+    }
+    ImGui::SetItemTooltip("Reverts every override of the instance except the placement of its root; added "
+                          "entities stay");
+    ImGui::SameLine();
+    if (labelButton(icons::Unlink, "Make Local", 0.0f, editing && prefab.resolved))
+    {
+        state.pendingCommand = makeReplaceEntityTreeCommand(
+            scene.uuid(instance), scene::saveUnpackedEntityTree(scene, instance), "Make instance local");
+    }
+    ImGui::SetItemTooltip("Turns the instance into ordinary entities, no longer linked to the prefab");
+    ImGui::Spacing();
 }
 
 // A section header: the component's icon and name, folding its properties, with a menu on the right.
-// Returns whether the section is open; removed tells that its menu asked to remove the component.
-[[nodiscard]] bool componentHeader(const char* name, EntityIcon icon, bool enabled, bool* removed)
+// Returns whether the section is open; removed tells that its menu asked to remove the component,
+// which a component from a prefab cannot be. An added component, which its prefab does not have, is
+// marked.
+[[nodiscard]] bool componentHeader(const char* name, EntityIcon icon, bool enabled, bool* removed,
+                                   bool fromPrefab = false, bool added = false)
 {
     const ThemeColors& colors = themeColors();
     const ImGuiStyle& style = ImGui::GetStyle();
@@ -298,6 +396,11 @@ void drawNameField(ToolsState& state, scene::Scene& scene, scene::Entity entity,
     draw->AddText(editorFonts().bold, ImGui::GetFontSize(),
                   ImVec2(iconX + ImGui::CalcTextSize(icon.icon.c_str()).x + style.ItemInnerSpacing.x * 1.5f, textY),
                   ImGui::GetColorU32(enabled ? ImGuiCol_Text : ImGuiCol_TextDisabled), name);
+    if (added)
+    {
+        const float barWidth = std::max(2.0f, std::round(ImGui::GetFontSize() * 0.16f));
+        draw->AddRectFilled(start, ImVec2(start.x + barWidth, start.y + height), uiColorU32(colors.accent));
+    }
 
     if (removed != nullptr)
     {
@@ -309,9 +412,17 @@ void drawNameField(ToolsState& state, scene::Scene& scene, scene::Entity entity,
         }
         if (ImGui::BeginPopup("component menu"))
         {
-            if (ImGui::MenuItemEx("Remove Component", icons::Trash.c_str()))
+            if (ImGui::MenuItemEx("Remove Component", icons::Trash.c_str(), nullptr, false, !fromPrefab))
             {
                 *removed = true;
+            }
+            if (fromPrefab)
+            {
+                ImGui::SetItemTooltip("The component comes from the prefab");
+            }
+            else if (added)
+            {
+                ImGui::SetItemTooltip("The prefab does not have this component: removing it reverts the override");
             }
             ImGui::EndPopup();
         }
@@ -390,14 +501,30 @@ void drawInspectorPanel(ToolsState& state, scene::Scene& scene)
         }
 
         const core::Uuid uuid = state.selection;
+
+        // The entity as its prefab makes it, which overridden values differ from.
+        const scene::Entity instance = scene::owningPrefabInstance(scene, entity);
+        std::shared_ptr<const scene::Scene> prefabBase;
+        scene::Entity prefabEntity;
+        if (instance.isValid() && scene.has<scene::PrefabEntity>(entity) && scene.get<scene::PrefabInstance>(instance).resolved)
+        {
+            prefabBase = scene::prefabBase(scene.get<scene::PrefabInstance>(instance).prefab, scene.uuid(instance));
+            prefabEntity = prefabBase != nullptr ? prefabBase->findEntity(uuid) : scene::Entity{};
+        }
+
         const EntityIcon icon = entityIcon(scene, entity);
         ImGui::AlignTextToFramePadding();
         iconLabel(icon.icon, icon.color);
-        drawNameField(state, scene, entity, uuid);
+        drawNameField(state, scene, entity, uuid,
+                      prefabEntity.isValid() && entity != instance ? &prefabBase->name(prefabEntity) : nullptr);
         const std::string uuidText = uuid.toString();
         ImGui::TextDisabled("%s", uuidText.c_str());
         ImGui::SetItemTooltip("The UUID of the entity, which scenes and undo steps refer to");
         ImGui::Spacing();
+        if (instance.isValid())
+        {
+            drawPrefabSection(state, scene, entity, instance);
+        }
 
         for (const scene::ComponentType& type : scene::componentRegistry().types())
         {
@@ -409,11 +536,14 @@ void drawInspectorPanel(ToolsState& state, scene::Scene& scene)
             const std::string name(type.name());
             ImGui::PushID(name.c_str());
             bool removed = false;
-            if (componentHeader(name.c_str(), componentIcon(name), true, &removed) && beginProperties("fields"))
+            const void* const prefabComponent = prefabEntity.isValid() ? type.find(*prefabBase, prefabEntity) : nullptr;
+            if (componentHeader(name.c_str(), componentIcon(name), true, &removed, prefabComponent != nullptr,
+                                prefabEntity.isValid() && prefabComponent == nullptr) &&
+                beginProperties("fields"))
             {
                 for (const reflection::FieldInfo& field : type.type->fields)
                 {
-                    drawField(state, uuid, type, field, const_cast<void*>(component));
+                    drawField(state, uuid, type, field, const_cast<void*>(component), prefabComponent);
                 }
                 endProperties();
             }

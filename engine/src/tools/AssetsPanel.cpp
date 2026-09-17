@@ -31,10 +31,11 @@ struct Folder
                             }).empty();
 }
 
-[[nodiscard]] Folder buildTree(const asset::AssetDatabase& database)
+// The folder tree points into the sources, which must outlive it.
+[[nodiscard]] Folder buildTree(const std::vector<asset::SourceFile>& sources)
 {
     Folder root;
-    for (const asset::SourceFile& source : database.sources())
+    for (const asset::SourceFile& source : sources)
     {
         std::string_view path = source.path;
         if (path.starts_with(asset::resourceScheme))
@@ -306,14 +307,15 @@ void drawAssetsPanel(ToolsState& state, scene::Scene& scene)
         if (ImGui::BeginChild("files", ImVec2(0.0f, 0.0f), ImGuiChildFlags_AlwaysUseWindowPadding))
         {
             ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(ImGui::GetStyle().ItemSpacing.x, 0.0f));
+            const std::vector<asset::SourceFile> sources = database.sources();
             if (state.assetFilter.empty())
             {
-                drawFolder(state, scene, "res://", buildTree(database), 0);
+                drawFolder(state, scene, "res://", buildTree(sources), 0);
             }
             else
             {
                 // A filter lists the matching files with their whole path.
-                for (const asset::SourceFile& source : database.sources())
+                for (const asset::SourceFile& source : sources)
                 {
                     if (containsIgnoringCase(source.path, state.assetFilter))
                     {

@@ -1,6 +1,7 @@
 #include <devex/scene/ComponentRegistry.hpp>
 #include <devex/scene/Components.hpp>
 #include <devex/scene/FieldValue.hpp>
+#include <devex/scene/Prefab.hpp>
 #include <devex/scene/SceneSerializer.hpp>
 #include <devex/tools/SceneCommands.hpp>
 
@@ -54,6 +55,20 @@ using serialization::TextValue;
                                scene.name(entity), type.name());
     }
     return const_cast<void*>(component);
+}
+
+// Entities of prefab instances come from their prefab, apart from the root of each instance.
+[[nodiscard]] core::Result<void> checkOutsidePrefab(const Scene& scene, Entity entity, std::string_view action)
+{
+    if (!scene::isInsidePrefabInstance(scene, entity))
+    {
+        return {};
+    }
+    const Entity instance = scene::owningPrefabInstance(scene, entity);
+    return core::makeError(core::ErrorCode::InvalidState,
+                           "cannot {} '{}', which comes from the prefab of '{}': change the prefab, or make the "
+                           "instance local",
+                           action, scene.name(entity), instance.isValid() ? scene.name(instance) : std::string());
 }
 
 class SetFieldCommand final : public Command
@@ -283,6 +298,10 @@ public:
         {
             return std::unexpected(entity.error());
         }
+        if (core::Result<void> allowed = checkOutsidePrefab(scene, *entity, "delete"); !allowed)
+        {
+            return allowed;
+        }
         // Remember the subtree and its place, so that undo puts it back identically.
         m_snapshot = scene::saveEntityTree(scene, *entity);
         const Entity parent = scene.parent(*entity);
@@ -319,6 +338,65 @@ private:
     core::Uuid m_nextSibling;
 };
 
+class ReplaceEntityTreeCommand final : public Command
+{
+public:
+    ReplaceEntityTreeCommand(core::Uuid root, std::string tree, std::string description)
+        : m_root(root)
+        , m_after(std::move(tree))
+        , m_description(std::move(description))
+    {
+    }
+
+    [[nodiscard]] std::string description() const override
+    {
+        return m_description;
+    }
+
+    [[nodiscard]] core::Result<void> apply(Scene& scene) override
+    {
+        const core::Result<Entity> root = findEntity(scene, m_root);
+        if (!root)
+        {
+            return std::unexpected(root.error());
+        }
+        m_before = scene::saveEntityTree(scene, *root);
+        return replace(scene, *root, m_before, m_after);
+    }
+
+    [[nodiscard]] core::Result<void> revert(Scene& scene) override
+    {
+        const core::Result<Entity> root = findEntity(scene, m_root);
+        if (!root)
+        {
+            return std::unexpected(root.error());
+        }
+        return replace(scene, *root, m_after, m_before);
+    }
+
+private:
+    [[nodiscard]] static core::Result<void> replace(Scene& scene, Entity root, const std::string& current,
+                                                    const std::string& replacement)
+    {
+        const Entity parent = scene.parent(root);
+        const Entity next = scene.nextSibling(root);
+        scene.destroyEntity(root);
+        core::Result<Entity> replaced = scene::loadEntityTree(scene, replacement, parent, next);
+        if (!replaced)
+        {
+            // The entities come back as they were.
+            static_cast<void>(scene::loadEntityTree(scene, current, parent, next));
+            return std::unexpected(replaced.error());
+        }
+        return {};
+    }
+
+    core::Uuid m_root;
+    std::string m_before;
+    std::string m_after;
+    std::string m_description;
+};
+
 class ReparentCommand final : public Command
 {
 public:
@@ -340,6 +418,10 @@ public:
         if (!entity || !newParent)
         {
             return std::unexpected(!entity ? entity.error() : newParent.error());
+        }
+        if (core::Result<void> allowed = checkOutsidePrefab(scene, *entity, "move"); !allowed)
+        {
+            return allowed;
         }
         const Entity oldParent = scene.parent(*entity);
         const Entity oldNext = scene.nextSibling(*entity);
@@ -447,6 +529,20 @@ public:
         {
             return std::unexpected(component.error());
         }
+        if (const scene::PrefabEntity* const fromPrefab = scene.tryGet<scene::PrefabEntity>(*entity))
+        {
+            const scene::PrefabInstance* const instance =
+                scene.isAlive(fromPrefab->instance) ? scene.tryGet<scene::PrefabInstance>(fromPrefab->instance) : nullptr;
+            const std::shared_ptr<const Scene> base =
+                instance != nullptr ? scene::prefabBase(instance->prefab, scene.uuid(fromPrefab->instance)) : nullptr;
+            const Entity baseEntity = base != nullptr ? base->findEntity(m_entity) : Entity{};
+            if (baseEntity.isValid() && (*type)->find(*base, baseEntity) != nullptr)
+            {
+                return core::makeError(core::ErrorCode::InvalidState,
+                                       "cannot remove {} from '{}', which has it from its prefab", m_component,
+                                       scene.name(*entity));
+            }
+        }
 
         m_values.clear();
         for (const reflection::FieldInfo& field : (*type)->type->fields)
@@ -513,6 +609,11 @@ std::unique_ptr<Command> makeCreateEntityTreeCommand(std::string tree, core::Uui
 {
     return std::make_unique<CreateEntityTreeCommand>(std::move(tree), root, parent,
                                                      std::move(description));
+}
+
+std::unique_ptr<Command> makeReplaceEntityTreeCommand(core::Uuid root, std::string tree, std::string description)
+{
+    return std::make_unique<ReplaceEntityTreeCommand>(root, std::move(tree), std::move(description));
 }
 
 std::unique_ptr<Command> makeDestroyEntityCommand(core::Uuid entity)

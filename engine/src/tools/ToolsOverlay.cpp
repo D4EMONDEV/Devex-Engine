@@ -6,6 +6,7 @@
 #include <devex/core/Path.hpp>
 #include <devex/scene/Components.hpp>
 #include <devex/scene/ModelInstantiation.hpp>
+#include <devex/scene/Prefab.hpp>
 #include <devex/scene/SceneSerializer.hpp>
 #include <devex/tools/SceneCommands.hpp>
 #include <devex/tools/ToolsOverlay.hpp>
@@ -136,6 +137,47 @@ void requestInstantiateModel(ToolsState& state, asset::AssetId model, core::Uuid
     const core::Uuid rootUuid = scratch.uuid(root);
     state.pendingCommand = makeCreateEntityTreeCommand(scene::saveEntityTree(scratch, root), rootUuid, parent,
                                                        std::format("Place {}", info->name));
+    state.selection = rootUuid;
+}
+
+std::string sceneAssetName(const ToolsState& state, asset::AssetId sceneAsset)
+{
+    const std::optional<asset::SourceFile> source =
+        state.database != nullptr ? state.database->sourceOf(sceneAsset) : std::nullopt;
+    return source ? core::toUtf8(core::pathFromUtf8(source->path).stem()) : sceneAsset.uuid.toString();
+}
+
+void requestInstantiatePrefab(ToolsState& state, asset::AssetId prefab, core::Uuid parent,
+                              std::optional<math::Vec3> position)
+{
+    if (state.database == nullptr)
+    {
+        return;
+    }
+    const std::string name = sceneAssetName(state, prefab);
+    const std::string edited = state.scenePath.empty() ? std::string() : state.database->project().resourcePath(state.scenePath);
+    if (const std::optional<asset::AssetId> current = edited.empty() ? std::nullopt : state.database->findByPath(edited);
+        current && scene::prefabUses(prefab, *current))
+    {
+        DEVEX_LOG_WARNING("Cannot place {} here: a scene cannot contain itself", name);
+        return;
+    }
+
+    // Built in a scratch scene, then applied as one undoable step with fixed UUIDs.
+    scene::Scene scratch;
+    const core::Result<scene::Entity> root = scene::instantiatePrefab(scratch, prefab);
+    if (!root)
+    {
+        DEVEX_LOG_WARNING("Cannot place {}: {}", name, root.error());
+        return;
+    }
+    if (scene::Transform* const transform = scratch.tryGet<scene::Transform>(*root); transform != nullptr && position)
+    {
+        transform->position = *position;
+    }
+    const core::Uuid rootUuid = scratch.uuid(*root);
+    state.pendingCommand = makeCreateEntityTreeCommand(scene::saveEntityTree(scratch, *root), rootUuid, parent,
+                                                       std::format("Place {}", name));
     state.selection = rootUuid;
 }
 

@@ -10,6 +10,7 @@
 #include <devex/runtime/Application.hpp>
 #include <devex/runtime/FixedTimestep.hpp>
 #include <devex/runtime/GameModule.hpp>
+#include <devex/scene/Prefab.hpp>
 #include <devex/scene/SceneSerializer.hpp>
 #include <devex/runtime/SceneExtraction.hpp>
 #include <devex/tools/ToolsOverlay.hpp>
@@ -96,6 +97,10 @@ private:
     // Calls the function with every scene the game code may have components in: the edited scene,
     // the played copy and the scenes of the editor's background tabs.
     void forEachScene(const std::function<void(scene::Scene&)>& function);
+    // Applies finished imports. In the editor, prefab instances in the edited scenes follow their
+    // changed prefabs: they are saved against the previous prefabs, whose texts the asset manager
+    // still has, then loaded again with the new ones. A game that plays keeps its instances.
+    void handleAssetEvents(asset::AssetDatabase& database);
 
     // Game code of the project: loaded when a project opens, built by the editor, reloaded when a
     // new build appears.
@@ -161,12 +166,15 @@ ApplicationRunner::ApplicationRunner(Application& application, const Application
     m_application.m_editor = isEditor();
     m_application.m_playing = !isEditor();
     m_application.m_stopRequested = false;
+    AssetManager& assets = services.assets;
+    scene::setPrefabSourceLoader([&assets](asset::AssetId prefab) { return assets.sceneText(prefab); });
 }
 
 ApplicationRunner::~ApplicationRunner()
 {
     // The scenes outlive the runner: they must not keep components of an unloaded module.
     closeGameCode();
+    scene::setPrefabSourceLoader({});
     m_services.platform.setLiveRedrawCallback({});
     m_application.m_platform = nullptr;
     m_application.m_window = nullptr;
@@ -297,8 +305,7 @@ void ApplicationRunner::runFrame()
     // Finished imports replace the assets they changed before anything uses them this frame.
     if (asset::AssetDatabase* const database = m_services.assets.database())
     {
-        const std::vector<asset::AssetEvent> events = database->update();
-        m_services.assets.handleEvents(events);
+        handleAssetEvents(*database);
     }
 
     updateGameCode();
@@ -521,6 +528,50 @@ void ApplicationRunner::forEachScene(const std::function<void(scene::Scene&)>& f
     if (isEditor())
     {
         m_services.tools->forEachBackgroundScene(function);
+    }
+}
+
+void ApplicationRunner::handleAssetEvents(asset::AssetDatabase& database)
+{
+    const std::vector<asset::AssetEvent> events = database.update();
+    std::vector<asset::AssetId> scenes;
+    for (const asset::AssetEvent& event : events)
+    {
+        if (event.type == asset::AssetType::Scene)
+        {
+            scenes.push_back(event.id);
+        }
+    }
+
+    struct EditedScene
+    {
+        scene::Scene* scene;
+        std::vector<scene::PrefabInstanceSnapshot> snapshots;
+    };
+    std::vector<EditedScene> edited;
+    if (!scenes.empty() && isEditor())
+    {
+        const auto snapshot = [&](scene::Scene& scene) {
+            if (std::vector<scene::PrefabInstanceSnapshot> snapshots = scene::snapshotPrefabInstances(scene, scenes);
+                !snapshots.empty())
+            {
+                edited.push_back({&scene, std::move(snapshots)});
+            }
+        };
+        snapshot(m_services.scene);
+        m_services.tools->forEachBackgroundScene(snapshot);
+    }
+
+    m_services.assets.handleEvents(events);
+
+    std::size_t rebuilt = 0;
+    for (EditedScene& scene : edited)
+    {
+        rebuilt += scene::rebuildPrefabInstances(*scene.scene, scene.snapshots);
+    }
+    if (rebuilt > 0)
+    {
+        DEVEX_LOG_INFO("Updated {} prefab instance{}", rebuilt, rebuilt == 1 ? "" : "s");
     }
 }
 

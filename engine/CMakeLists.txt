@@ -345,7 +345,7 @@ devex_set_warnings(devex_render)
 # The renderer loads the compiled shaders at runtime.
 add_dependencies(devex_render devex_shaders)
 
-# Scene: entities, components in sparse sets, hierarchy and .dvxscene files.
+# Scene: entities, components in sparse sets, hierarchy, .dvxscene files and prefabs.
 add_library(devex_scene OBJECT)
 add_library(Devex::Scene ALIAS devex_scene)
 
@@ -356,8 +356,10 @@ target_sources(devex_scene
         src/scene/FieldValue.cpp
         src/scene/ModelInstantiation.cpp
         src/scene/PhysicsComponents.cpp
+        src/scene/Prefab.cpp
         src/scene/Scene.cpp
         src/scene/SceneSerializer.cpp
+        src/scene/SceneText.hpp
     PUBLIC
         FILE_SET HEADERS
         BASE_DIRS include
@@ -369,6 +371,7 @@ target_sources(devex_scene
             include/devex/scene/FieldValue.hpp
             include/devex/scene/ModelInstantiation.hpp
             include/devex/scene/PhysicsComponents.hpp
+            include/devex/scene/Prefab.hpp
             include/devex/scene/Scene.hpp
             include/devex/scene/SceneSerializer.hpp
             include/devex/scene/View.hpp

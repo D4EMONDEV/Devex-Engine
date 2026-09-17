@@ -1,0 +1,19 @@
+[scene format=1]
+
+[entity uuid="e3d13bf5-f82b-52d8-b067-e917134f9a3c" name="Crate"]
+
+[component type="Transform"]
+position = vec3(0, 0, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="MeshRenderer"]
+mesh = asset("0a4571b3-aa2e-4421-a385-09466c6dee9c")
+
+[component type="RigidBody"]
+type = "dynamic"
+mass = 8
+friction = 0.7
+
+[component type="BoxCollider"]
+size = vec3(1, 1, 1)

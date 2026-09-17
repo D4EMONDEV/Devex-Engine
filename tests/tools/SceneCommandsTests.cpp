@@ -2,6 +2,7 @@
 #include <devex/scene/Components.hpp>
 #include <devex/scene/FieldValue.hpp>
 #include <devex/scene/ModelInstantiation.hpp>
+#include <devex/scene/Prefab.hpp>
 #include <devex/scene/SceneSerializer.hpp>
 #include <devex/tools/CommandHistory.hpp>
 #include <devex/tools/SceneCommands.hpp>
@@ -9,6 +10,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <cstdint>
+#include <format>
 #include <string>
 #include <vector>
 
@@ -249,4 +251,66 @@ TEST_CASE("Placed entity trees undo and redo with the same UUIDs", "[tools][comm
 
     REQUIRE(history.redo(scene));
     CHECK(scene.findEntity(part).isValid());
+}
+
+TEST_CASE("Prefab instances are protected, reverted and made local as undoable steps", "[tools][commands][prefab]")
+{
+    const devex::asset::AssetId lamp{*Uuid::parse("a0000000-0000-4000-8000-0000000000aa")};
+    const Uuid lampRoot = *Uuid::parse("b0000000-0000-4000-8000-0000000000aa");
+    const Uuid lampBulb = *Uuid::parse("b0000000-0000-4000-8000-0000000000bb");
+    const std::string lampText = std::format("[scene format=1]\n\n[entity uuid=\"{}\" name=\"Lamp\"]\n\n"
+                                             "[component type=\"Transform\"]\n\n"
+                                             "[entity uuid=\"{}\" name=\"Bulb\"]\nparent = \"{}\"\n\n"
+                                             "[component type=\"Transform\"]\n\n[component type=\"MeshRenderer\"]\n",
+                                             lampRoot, lampBulb, lampRoot);
+    devex::scene::setPrefabSourceLoader([&](devex::asset::AssetId id) -> devex::core::Result<std::string> {
+        if (id != lamp)
+        {
+            return devex::core::makeError(devex::core::ErrorCode::NotFound, "unknown prefab");
+        }
+        return lampText;
+    });
+
+    Scene scene;
+    CommandHistory history;
+    const devex::core::Result<Entity> created = devex::scene::instantiatePrefab(scene, lamp);
+    REQUIRE(created.has_value());
+    const Uuid instance = scene.uuid(*created);
+    const Uuid bulb = devex::scene::derivePrefabUuid(instance, lampBulb);
+    const Entity other = scene.createEntity("Other");
+    scene.get<Transform>(*created).position = Vec3{3.0f, 0.0f, 0.0f};
+
+    // The entities of the prefab stay in the instance, with the components the prefab gives them.
+    CHECK_FALSE(history.execute(scene, devex::tools::makeDestroyEntityCommand(bulb)).has_value());
+    CHECK_FALSE(history.execute(scene, devex::tools::makeReparentCommand(bulb, scene.uuid(other))).has_value());
+    CHECK_FALSE(history.execute(scene, devex::tools::makeRemoveComponentCommand(bulb, "MeshRenderer")).has_value());
+    REQUIRE(history.execute(scene, devex::tools::makeAddComponentCommand(bulb, "PointLight")));
+    REQUIRE(history.execute(scene, devex::tools::makeRemoveComponentCommand(bulb, "PointLight")));
+    REQUIRE(history.execute(scene, devex::tools::makeReparentCommand(instance, scene.uuid(other))));
+    REQUIRE(history.undo(scene));
+
+    SECTION("Revert all keeps the placement of the root")
+    {
+        scene.setName(scene.findEntity(bulb), "Renamed");
+        const std::string reverted = devex::scene::saveRevertedPrefabInstance(scene, scene.findEntity(instance));
+        REQUIRE(history.execute(scene, devex::tools::makeReplaceEntityTreeCommand(instance, reverted, "Revert instance")));
+        CHECK(scene.name(scene.findEntity(bulb)) == "Bulb");
+        CHECK(scene.get<Transform>(scene.findEntity(instance)).position.x == 3.0f);
+        REQUIRE(history.undo(scene));
+        CHECK(scene.name(scene.findEntity(bulb)) == "Renamed");
+        CHECK(childNames(scene, Entity{}) == std::vector<std::string>{"Lamp", "Other"});
+    }
+    SECTION("Make local")
+    {
+        const std::string local = devex::scene::saveUnpackedEntityTree(scene, scene.findEntity(instance));
+        REQUIRE(history.execute(scene, devex::tools::makeReplaceEntityTreeCommand(instance, local, "Make instance local")));
+        CHECK_FALSE(scene.has<devex::scene::PrefabInstance>(scene.findEntity(instance)));
+        REQUIRE(history.execute(scene, devex::tools::makeDestroyEntityCommand(bulb)));
+        REQUIRE(history.undo(scene));
+        REQUIRE(history.undo(scene));
+        CHECK(devex::scene::isInsidePrefabInstance(scene, scene.findEntity(bulb)));
+        CHECK(childNames(scene, Entity{}) == std::vector<std::string>{"Lamp", "Other"});
+    }
+
+    devex::scene::setPrefabSourceLoader({});
 }

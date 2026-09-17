@@ -146,19 +146,32 @@ bool beginProperties(const char* id)
     return true;
 }
 
-void propertyName(const char* name)
+void propertyName(const char* name, bool highlighted)
 {
     ImGui::TableNextRow();
     ImGui::TableSetColumnIndex(0);
     ImGui::AlignTextToFramePadding();
-    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
     const float available = ImGui::GetContentRegionAvail().x;
     const ImVec2 position = ImGui::GetCursorScreenPos();
+    if (highlighted)
+    {
+        const float padding = ImGui::GetStyle().CellPadding.x;
+        const float barWidth = std::max(2.0f, std::round(ImGui::GetFontSize() * 0.16f));
+        ImGui::GetWindowDrawList()->AddRectFilled(ImVec2(position.x - padding, position.y),
+                                                  ImVec2(position.x - padding + barWidth, position.y + ImGui::GetFrameHeight()),
+                                                  uiColorU32(themeColors().accent));
+        ImGui::PushFont(g_fonts.bold, 0.0f);
+    }
+    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(highlighted ? ImGuiCol_Text : ImGuiCol_TextDisabled));
     ImGui::RenderTextEllipsis(ImGui::GetWindowDrawList(), position,
                               ImVec2(position.x + available, position.y + ImGui::GetFrameHeight()),
                               position.x + available, name, nullptr, nullptr);
     ImGui::Dummy(ImVec2(available, ImGui::GetTextLineHeight()));
     ImGui::PopStyleColor();
+    if (highlighted)
+    {
+        ImGui::PopFont();
+    }
     if (ImGui::CalcTextSize(name).x > available)
     {
         ImGui::SetItemTooltip("%s", name);

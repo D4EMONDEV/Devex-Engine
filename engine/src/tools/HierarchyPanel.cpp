@@ -1,5 +1,7 @@
 #include "ToolsState.hpp"
 
+#include <devex/scene/Prefab.hpp>
+#include <devex/scene/SceneSerializer.hpp>
 #include <devex/tools/SceneCommands.hpp>
 
 #include <imgui_internal.h>
@@ -98,7 +100,9 @@ void drawEntity(ToolsState& state, scene::Scene& scene, Entity entity)
     {
         frameSelection(state, scene);
     }
-    if (ImGui::BeginDragDropSource())
+    // The entities of a prefab instance stay where their prefab puts them.
+    const bool fromPrefab = scene::isInsidePrefabInstance(scene, entity);
+    if (!fromPrefab && ImGui::BeginDragDropSource())
     {
         ImGui::SetDragDropPayload(entityPayload, uuid.bytes().data(), uuid.bytes().size());
         const EntityIcon icon = entityIcon(scene, entity);
@@ -114,6 +118,10 @@ void drawEntity(ToolsState& state, scene::Scene& scene, Entity entity)
     {
         requestInstantiateModel(state, *model, uuid);
     }
+    if (const std::optional<asset::AssetId> prefab = acceptDroppedAsset(asset::AssetType::Scene))
+    {
+        requestInstantiatePrefab(state, *prefab, uuid);
+    }
     if (ImGui::BeginPopupContextItem("entity menu"))
     {
         state.selection = uuid;
@@ -126,8 +134,32 @@ void drawEntity(ToolsState& state, scene::Scene& scene, Entity entity)
         {
             frameSelection(state, scene);
         }
+        if (state.mode == ToolsMode::Editor)
+        {
+            const bool editing = state.playState == PlayState::Editing;
+            ImGui::Separator();
+            const Entity instance = scene::owningPrefabInstance(scene, entity);
+            if (instance.isValid())
+            {
+                const scene::PrefabInstance& prefab = scene.get<scene::PrefabInstance>(instance);
+                if (ImGui::MenuItemEx("Open Prefab", icons::ExternalLink.c_str(), nullptr, false, editing))
+                {
+                    state.prefabToOpen = prefab.prefab;
+                }
+                if (ImGui::MenuItemEx("Make Local", icons::Unlink.c_str(), nullptr, false, editing && prefab.resolved))
+                {
+                    state.pendingCommand = makeReplaceEntityTreeCommand(
+                        scene.uuid(instance), scene::saveUnpackedEntityTree(scene, instance), "Make instance local");
+                }
+            }
+            if (ImGui::MenuItemEx("Save as Prefab...", icons::Package.c_str(), nullptr, false,
+                                  editing && !fromPrefab && state.database != nullptr))
+            {
+                showSaveAsPrefabDialog(state, scene, uuid);
+            }
+        }
         ImGui::Separator();
-        if (ImGui::MenuItemEx("Delete", icons::Trash.c_str(), "Delete"))
+        if (ImGui::MenuItemEx("Delete", icons::Trash.c_str(), "Delete", false, !fromPrefab))
         {
             state.pendingCommand = makeDestroyEntityCommand(uuid);
         }
@@ -141,8 +173,22 @@ void drawEntity(ToolsState& state, scene::Scene& scene, Entity entity)
     ImDrawList* const draw = ImGui::GetWindowDrawList();
     draw->AddText(ImVec2(iconX, textY), uiColorU32(icon.color), icon.icon.c_str());
     const float nameX = iconX + ImGui::CalcTextSize(icon.icon.c_str()).x + ImGui::GetStyle().ItemInnerSpacing.x;
-    draw->AddText(ImVec2(nameX, textY), ImGui::GetColorU32(name.empty() ? ImGuiCol_TextDisabled : ImGuiCol_Text),
-                  name.empty() ? "(unnamed)" : name.c_str());
+    // Entities from prefabs are named in the prefab color, and instances whose prefab is missing in red.
+    ImU32 nameColor = ImGui::GetColorU32(name.empty() ? ImGuiCol_TextDisabled : ImGuiCol_Text);
+    if (const scene::PrefabInstance* const instance = scene.tryGet<scene::PrefabInstance>(entity);
+        instance != nullptr && !instance->resolved)
+    {
+        nameColor = uiColorU32(themeColors().error);
+        if (ImGui::IsItemHovered())
+        {
+            ImGui::SetTooltip("The prefab of this instance is missing");
+        }
+    }
+    else if (scene.has<scene::PrefabEntity>(entity))
+    {
+        nameColor = uiColorU32(themeColors().prefab);
+    }
+    draw->AddText(ImVec2(nameX, textY), nameColor, name.empty() ? "(unnamed)" : name.c_str());
 
     if (open)
     {
@@ -201,6 +247,10 @@ void drawHierarchyPanel(ToolsState& state, scene::Scene& scene)
             {
                 requestInstantiateModel(state, *model, core::Uuid{});
             }
+            if (const std::optional<asset::AssetId> prefab = acceptDroppedAsset(asset::AssetType::Scene))
+            {
+                requestInstantiatePrefab(state, *prefab, core::Uuid{});
+            }
             if (ImGui::BeginPopupContextItem("roots menu"))
             {
                 drawCreateEntityMenu(state, core::Uuid{});
@@ -213,7 +263,8 @@ void drawHierarchyPanel(ToolsState& state, scene::Scene& scene)
 
         if (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) &&
             ImGui::IsKeyPressed(ImGuiKey_Delete) && !ImGui::GetIO().WantTextInput &&
-            scene.findEntity(state.selection).isValid())
+            scene.findEntity(state.selection).isValid() &&
+            !scene::isInsidePrefabInstance(scene, scene.findEntity(state.selection)))
         {
             state.pendingCommand = makeDestroyEntityCommand(state.selection);
         }

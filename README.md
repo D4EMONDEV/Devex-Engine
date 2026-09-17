@@ -35,13 +35,15 @@ Le détail, l'architecture des modules et les jalons sont dans
   forward+ clustered, ombres en cascades, ciel HDR et IBL, MSAA, exposition automatique,
   tonemapping AgX, rendu dans une texture, sélection sur le GPU, contours et lignes d'outils ;
 - `Devex::Scene` : entités à UUID, composants en sparse sets, hiérarchie, `.dvxscene`,
-  instanciation de modèles, composants de physique ;
+  instanciation de modèles, composants de physique, préfabs liés (scènes imbriquées avec leurs
+  modifications) ;
 - `Devex::Physics` : simulation Jolt Physics des corps rigides, colliders (primitives, maillages,
   déclencheurs) et personnages, couches de collision, requêtes, forces, contacts, interpolation ;
 - `Devex::Tools` : interface ImGui au thème réglable inspiré de Godot (Noto Sans, JetBrains Mono,
   icônes Lucide) : arbre de la scène, inspecteur, FileSystem, sortie, statistiques, annulation, en
   overlay (F1) ou dans l'éditeur : gestionnaire de projets, onglets de scènes, viewport et sa
-  barre d'outils, caméra libre, sélection à la souris, gizmos, réglages de l'éditeur ;
+  barre d'outils, caméra libre, sélection à la souris, gizmos, préfabs (glisser-déposer, valeurs
+  modifiées, Revert, Make Local, Save as Prefab, mise à jour en direct), réglages de l'éditeur ;
 - `Devex::Runtime` : `Application`, boucle à pas fixe, mode éditeur et mode Play, modules de jeu
   (composants et systèmes rechargeables à chaud), chargement des assets à la demande, rendu
   automatique de la scène ;
@@ -50,7 +52,9 @@ Le détail, l'architecture des modules et les jalons sont dans
 - `devex-player` : lance un projet hors de l'éditeur (scène de démarrage et code du jeu) ;
 - `samples/sandbox` : le bac à sable, un projet dont le gameplay est un module de jeu dans `code/` :
   la scène `arena` (scène de démarrage), où un personnage marche, saute, lance des balles et
-  renverse des caisses entre rampe, marches, plateforme mobile et zone qui allume une lampe ; et la
+  renverse des caisses entre rampe, marches, plateforme mobile et zones qui allument des lampes,
+  faite en partie de préfabs (`assets/prefabs` : caisse, pyramide de caisses, balle, zone de
+  lampe) ; et la
   scène `sandbox` (caisse et balises glTF, sphères or et plastique, ciel HDR, plateau tournant, jour
   et nuit avec N).
 

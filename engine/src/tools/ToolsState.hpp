@@ -114,6 +114,7 @@ struct DialogAnswers
     std::optional<std::filesystem::path> newProjectLocation;
     std::optional<std::filesystem::path> openScene;
     std::optional<std::filesystem::path> saveSceneAs;
+    std::optional<std::filesystem::path> saveAsPrefab;
 };
 
 // What the project manager shows of a project, read from its file.
@@ -209,6 +210,10 @@ struct ToolsState
 
     // A structural change requested while walking the scene, applied once the panels are drawn.
     std::unique_ptr<Command> pendingCommand;
+    // A prefab to open in a tab, which replaces the edited scene: done before the next frame's panels.
+    std::optional<asset::AssetId> prefabToOpen;
+    // The entity that Save as Prefab turns into a prefab once its file is chosen.
+    core::Uuid prefabEntity;
 
     // Value of the field being edited when the edit began, recorded as one undo step at the end.
     serialization::TextValue fieldEditStart;
@@ -352,6 +357,18 @@ void dragAsset(asset::AssetId id, asset::AssetType type, const std::string& labe
 // to it when one is given, and selects them.
 void requestInstantiateModel(ToolsState& state, asset::AssetId model, core::Uuid parent,
                              std::optional<math::Vec3> position = std::nullopt);
+
+// Queues the creation of an instance of the prefab under parent (nil for a root), at a position
+// relative to it when one is given, and selects it. A scene cannot contain itself.
+void requestInstantiatePrefab(ToolsState& state, asset::AssetId prefab, core::Uuid parent,
+                              std::optional<math::Vec3> position = std::nullopt);
+
+// Asks where to save the entity and its descendants as a prefab, which then replaces them with an
+// instance of it.
+void showSaveAsPrefabDialog(ToolsState& state, const scene::Scene& scene, core::Uuid entity);
+
+// The name of a scene asset: its file name without its extension.
+[[nodiscard]] std::string sceneAssetName(const ToolsState& state, asset::AssetId sceneAsset);
 
 // Queues the creation of an entity under parent (nil for a root) and selects it.
 void requestCreateEntity(ToolsState& state, core::Uuid parent);

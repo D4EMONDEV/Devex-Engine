@@ -5,6 +5,7 @@
 #include <devex/scene/ComponentRegistry.hpp>
 #include <devex/scene/Components.hpp>
 #include <devex/scene/PhysicsComponents.hpp>
+#include <devex/scene/Prefab.hpp>
 #include <devex/scene/Scene.hpp>
 #include <devex/scene/SceneSerializer.hpp>
 
@@ -269,7 +270,7 @@ ThemeColors deriveThemeColors(const ThemeSettings& settings)
     colors.axisY = hex(0x7ccf48);
     colors.axisZ = hex(0x4f8ff0);
 
-    const std::array<std::pair<ImVec4*, std::uint32_t>, 12> icons{{
+    const std::array<std::pair<ImVec4*, std::uint32_t>, 13> icons{{
         {&colors.physics, 0x72d6c6},
         {&colors.entity, 0xfc7f7f},
         {&colors.light, 0xffd166},
@@ -278,6 +279,7 @@ ThemeColors deriveThemeColors(const ThemeSettings& settings)
         {&colors.gameCode, 0x8eef97},
         {&colors.folder, 0x7fb5f5},
         {&colors.scene, 0xe6e6e6},
+        {&colors.prefab, 0x72b4ff},
         {&colors.material, 0xffa86b},
         {&colors.texture, 0xa5efac},
         {&colors.neutral, 0xbdbdbd},
@@ -476,6 +478,10 @@ EditorFonts loadEditorFonts(const std::filesystem::path& fontsDirectory, IconSet
 EntityIcon entityIcon(const scene::Scene& scene, scene::Entity entity)
 {
     const ThemeColors& colors = themeColors();
+    if (const scene::PrefabInstance* const instance = scene.tryGet<scene::PrefabInstance>(entity))
+    {
+        return {icons::Package, instance->resolved ? colors.prefab : colors.error};
+    }
     if (scene.has<scene::Camera>(entity))
     {
         return {icons::Video, colors.camera};

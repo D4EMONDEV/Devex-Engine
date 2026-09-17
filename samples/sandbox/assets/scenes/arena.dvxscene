@@ -130,9 +130,8 @@ yaw = 0
 pitch = 0
 
 [component type="BallLauncher"]
+ball = asset("0f588580-9907-55be-b4e8-182562c086cc")
 speed = 16
-radius = 0.2
-material = asset("91bc3d4f-942c-40be-9398-51eeb3e7cc77")
 lifetime = 20
 max_balls = 40
 
@@ -183,267 +182,61 @@ yaw = 0.61086524
 pitch = -0.48869219
 
 [entity uuid="76144337-fd83-5c9f-9794-ba7db7ef4a8d" name="Crates"]
+prefab = asset("f693c373-1c92-5e13-86ef-8f9123b8d347")
 
-[component type="Transform"]
+[override type="Transform"]
 position = vec3(0, 0, -3)
-rotation = quat(0, 0, 0, 1)
-scale = vec3(1, 1, 1)
 
-[entity uuid="5d0b5998-4466-5688-b81e-317b7021ee36" name="Crate 1"]
-parent = "76144337-fd83-5c9f-9794-ba7db7ef4a8d"
-
-[component type="Transform"]
-position = vec3(-1.53, 0.5, 0)
-rotation = quat(0, 0, 0, 1)
-scale = vec3(1, 1, 1)
-
-[component type="MeshRenderer"]
-mesh = asset("0a4571b3-aa2e-4421-a385-09466c6dee9c")
-
-[component type="RigidBody"]
-type = "dynamic"
-mass = 8
-friction = 0.7
-
-[component type="BoxCollider"]
-size = vec3(1, 1, 1)
-
-[entity uuid="856826b1-063a-540e-b702-5ad04f5c6304" name="Crate 2"]
-parent = "76144337-fd83-5c9f-9794-ba7db7ef4a8d"
-
-[component type="Transform"]
-position = vec3(-0.51, 0.5, 0)
-rotation = quat(0, 0, 0, 1)
-scale = vec3(1, 1, 1)
-
-[component type="MeshRenderer"]
-mesh = asset("0a4571b3-aa2e-4421-a385-09466c6dee9c")
-
-[component type="RigidBody"]
-type = "dynamic"
-mass = 8
-friction = 0.7
-
-[component type="BoxCollider"]
-size = vec3(1, 1, 1)
-
-[entity uuid="834eab99-1049-56b6-b703-fb2b5ad55fd0" name="Crate 3"]
-parent = "76144337-fd83-5c9f-9794-ba7db7ef4a8d"
-
-[component type="Transform"]
-position = vec3(0.51, 0.5, 0)
-rotation = quat(0, 0, 0, 1)
-scale = vec3(1, 1, 1)
-
-[component type="MeshRenderer"]
-mesh = asset("0a4571b3-aa2e-4421-a385-09466c6dee9c")
-
-[component type="RigidBody"]
-type = "dynamic"
-mass = 8
-friction = 0.7
-
-[component type="BoxCollider"]
-size = vec3(1, 1, 1)
-
-[entity uuid="b0a32a90-67f6-5c2f-b308-7e171997aa9a" name="Crate 4"]
-parent = "76144337-fd83-5c9f-9794-ba7db7ef4a8d"
-
-[component type="Transform"]
-position = vec3(1.53, 0.5, 0)
-rotation = quat(0, 0, 0, 1)
-scale = vec3(1, 1, 1)
-
-[component type="MeshRenderer"]
-mesh = asset("0a4571b3-aa2e-4421-a385-09466c6dee9c")
-
-[component type="RigidBody"]
-type = "dynamic"
-mass = 8
-friction = 0.7
-
-[component type="BoxCollider"]
-size = vec3(1, 1, 1)
-
-[entity uuid="06e3547b-5730-5dd5-a98e-4e08c53fb463" name="Crate 5"]
-parent = "76144337-fd83-5c9f-9794-ba7db7ef4a8d"
-
-[component type="Transform"]
-position = vec3(-1.02, 1.5, 0)
-rotation = quat(0, 0, 0, 1)
-scale = vec3(1, 1, 1)
-
-[component type="MeshRenderer"]
-mesh = asset("0a4571b3-aa2e-4421-a385-09466c6dee9c")
-
-[component type="RigidBody"]
-type = "dynamic"
-mass = 8
-friction = 0.7
-
-[component type="BoxCollider"]
-size = vec3(1, 1, 1)
-
-[entity uuid="66b5d312-7e10-5d61-9b31-cb8dcf7e3366" name="Crate 6"]
-parent = "76144337-fd83-5c9f-9794-ba7db7ef4a8d"
-
-[component type="Transform"]
-position = vec3(0, 1.5, 0)
-rotation = quat(0, 0, 0, 1)
-scale = vec3(1, 1, 1)
-
-[component type="MeshRenderer"]
-mesh = asset("0a4571b3-aa2e-4421-a385-09466c6dee9c")
-
-[component type="RigidBody"]
-type = "dynamic"
-mass = 8
-friction = 0.7
-
-[component type="BoxCollider"]
-size = vec3(1, 1, 1)
-
-[entity uuid="4d5f30ba-6595-5578-b3e3-83c4a88c371d" name="Crate 7"]
-parent = "76144337-fd83-5c9f-9794-ba7db7ef4a8d"
-
-[component type="Transform"]
-position = vec3(1.02, 1.5, 0)
-rotation = quat(0, 0, 0, 1)
-scale = vec3(1, 1, 1)
-
-[component type="MeshRenderer"]
-mesh = asset("0a4571b3-aa2e-4421-a385-09466c6dee9c")
-
-[component type="RigidBody"]
-type = "dynamic"
-mass = 8
-friction = 0.7
-
-[component type="BoxCollider"]
-size = vec3(1, 1, 1)
-
-[entity uuid="2bc2e216-7f85-5b93-9711-6140848b0483" name="Crate 8"]
-parent = "76144337-fd83-5c9f-9794-ba7db7ef4a8d"
-
-[component type="Transform"]
-position = vec3(-0.51, 2.5, 0)
-rotation = quat(0, 0, 0, 1)
-scale = vec3(1, 1, 1)
-
-[component type="MeshRenderer"]
-mesh = asset("0a4571b3-aa2e-4421-a385-09466c6dee9c")
-
-[component type="RigidBody"]
-type = "dynamic"
-mass = 8
-friction = 0.7
-
-[component type="BoxCollider"]
-size = vec3(1, 1, 1)
-
-[entity uuid="38494f51-2b8d-5fb3-b09f-b2c4663ed729" name="Crate 9"]
-parent = "76144337-fd83-5c9f-9794-ba7db7ef4a8d"
-
-[component type="Transform"]
-position = vec3(0.51, 2.5, 0)
-rotation = quat(0, 0, 0, 1)
-scale = vec3(1, 1, 1)
-
-[component type="MeshRenderer"]
-mesh = asset("0a4571b3-aa2e-4421-a385-09466c6dee9c")
-
-[component type="RigidBody"]
-type = "dynamic"
-mass = 8
-friction = 0.7
-
-[component type="BoxCollider"]
-size = vec3(1, 1, 1)
-
-[entity uuid="c42d9193-be42-5afd-b083-4c25b08bead9" name="Crate 10"]
-parent = "76144337-fd83-5c9f-9794-ba7db7ef4a8d"
-
-[component type="Transform"]
-position = vec3(0, 3.5, 0)
-rotation = quat(0, 0, 0, 1)
-scale = vec3(1, 1, 1)
-
-[component type="MeshRenderer"]
-mesh = asset("0a4571b3-aa2e-4421-a385-09466c6dee9c")
-
-[component type="RigidBody"]
-type = "dynamic"
-mass = 8
-friction = 0.7
-
-[component type="BoxCollider"]
-size = vec3(1, 1, 1)
+[override target="65084584-ca3b-5ee7-93a2-6504205da24c" type="MeshRenderer"]
+material = asset("91bc3d4f-942c-40be-9398-51eeb3e7cc77")
 
 [entity uuid="ef1f6409-03bd-59b4-ab40-ff77d0e95582" name="Ball 1"]
+prefab = asset("0f588580-9907-55be-b4e8-182562c086cc")
 
-[component type="Transform"]
+[override type="Transform"]
 position = vec3(4, 0.5, 3)
-rotation = quat(0, 0, 0, 1)
 scale = vec3(1, 1, 1)
 
-[component type="MeshRenderer"]
-mesh = asset("00000000-0000-0000-0000-000000000002")
-material = asset("91bc3d4f-942c-40be-9398-51eeb3e7cc77")
-
-[component type="RigidBody"]
-type = "dynamic"
+[override type="RigidBody"]
 mass = 3
-restitution = 0.5
 friction = 0.4
+restitution = 0.5
 linear_damping = 0.2
 angular_damping = 0.4
-
-[component type="SphereCollider"]
-radius = 0.5
+continuous_collision = false
 
 [entity uuid="a953ade9-bb66-5bce-889a-4a3eadb2e4d4" name="Ball 2"]
+prefab = asset("0f588580-9907-55be-b4e8-182562c086cc")
 
-[component type="Transform"]
+[override type="Transform"]
 position = vec3(5.5, 0.5, 1.5)
-rotation = quat(0, 0, 0, 1)
 scale = vec3(1, 1, 1)
 
-[component type="MeshRenderer"]
-mesh = asset("00000000-0000-0000-0000-000000000002")
+[override type="MeshRenderer"]
 material = asset("eaed66d2-2c81-4ebf-a670-e2965998856a")
 
-[component type="RigidBody"]
-type = "dynamic"
+[override type="RigidBody"]
 mass = 3
-restitution = 0.5
 friction = 0.4
+restitution = 0.5
 linear_damping = 0.2
 angular_damping = 0.4
-
-[component type="SphereCollider"]
-radius = 0.5
+continuous_collision = false
 
 [entity uuid="eda0d33a-65aa-5da0-b894-1cb720ee77d9" name="Ball 3"]
+prefab = asset("0f588580-9907-55be-b4e8-182562c086cc")
 
-[component type="Transform"]
+[override type="Transform"]
 position = vec3(3, 0.5, 0.5)
-rotation = quat(0, 0, 0, 1)
 scale = vec3(1, 1, 1)
 
-[component type="MeshRenderer"]
-mesh = asset("00000000-0000-0000-0000-000000000002")
-material = asset("91bc3d4f-942c-40be-9398-51eeb3e7cc77")
-
-[component type="RigidBody"]
-type = "dynamic"
+[override type="RigidBody"]
 mass = 3
-restitution = 0.5
 friction = 0.4
+restitution = 0.5
 linear_damping = 0.2
 angular_damping = 0.4
-
-[component type="SphereCollider"]
-radius = 0.5
+continuous_collision = false
 
 [entity uuid="82a7f2d4-392f-5c19-bae2-d2938d54d0c2" name="Ramp"]
 
@@ -474,36 +267,10 @@ material = asset("1d33c123-a5ff-50a6-9192-d19568c5f130")
 size = vec3(1, 1, 1)
 
 [entity uuid="0102b639-4662-5b28-bb5b-e2fdddc066f8" name="Lamp zone"]
+prefab = asset("2d890df6-dadc-5763-a660-b73e5522ef89")
 
-[component type="Transform"]
+[override type="Transform"]
 position = vec3(-8, 3.2, -6)
-rotation = quat(0, 0, 0, 1)
-scale = vec3(1, 1, 1)
-
-[component type="BoxCollider"]
-size = vec3(3, 2, 3)
-trigger = true
-
-[component type="LampSwitch"]
-intensity = 3000
-
-[entity uuid="63d3922a-2f32-545c-8dc1-e1ab04df5f3a" name="Lamp"]
-parent = "0102b639-4662-5b28-bb5b-e2fdddc066f8"
-
-[component type="Transform"]
-position = vec3(0, 1.6, 0)
-rotation = quat(0, 0, 0, 1)
-scale = vec3(0.3, 0.3, 0.3)
-
-[component type="MeshRenderer"]
-mesh = asset("00000000-0000-0000-0000-000000000002")
-material = asset("ff4872a7-7bc8-4ffb-900d-0c565be864f0")
-
-[component type="PointLight"]
-color = vec3(1, 0.8, 0.5)
-temperature = 3200
-intensity = 0
-range = 10
 
 [entity uuid="1eb4295a-367d-5ccd-912d-b2e78c8f91d4" name="Stairs"]
 
@@ -601,6 +368,19 @@ material = asset("1d33c123-a5ff-50a6-9192-d19568c5f130")
 
 [component type="BoxCollider"]
 size = vec3(1, 1, 1)
+
+[entity uuid="11e6292e-743f-5dc8-8c70-9de67a4fc919" name="Landing lamp zone"]
+parent = "1eb4295a-367d-5ccd-912d-b2e78c8f91d4"
+prefab = asset("2d890df6-dadc-5763-a660-b73e5522ef89")
+
+[override type="Transform"]
+position = vec3(0, 2.25, -4)
+
+[override type="LampSwitch"]
+intensity = 6000
+
+[override target="0254301e-6adb-5964-a5e7-e0315b9d1c0b" type="PointLight"]
+color = vec3(0.55, 0.75, 1)
 
 [entity uuid="e08c289a-ee05-5505-9a3f-cd7d45479d76" name="Moving platform"]
 

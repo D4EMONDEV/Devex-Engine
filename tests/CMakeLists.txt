@@ -65,6 +65,7 @@ devex_add_tests(serialization
 
 devex_add_tests(scene
     SOURCES
+        scene/PrefabTests.cpp
         scene/SceneSerializerTests.cpp
         scene/SceneTests.cpp
     LIBRARIES

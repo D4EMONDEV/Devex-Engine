@@ -1,4 +1,5 @@
 #include <devex/asset/Artifact.hpp>
+#include <devex/core/File.hpp>
 #include <devex/core/Log.hpp>
 #include <devex/asset/Primitives.hpp>
 #include <devex/runtime/AssetManager.hpp>
@@ -91,6 +92,41 @@ const asset::MeshData* AssetManager::meshData(asset::AssetId id)
     return &m_meshData.emplace(id, std::move(*data)).first->second;
 }
 
+core::Result<std::string> AssetManager::sceneText(asset::AssetId id)
+{
+    if (const auto found = m_sceneTexts.find(id); found != m_sceneTexts.end())
+    {
+        return found->second;
+    }
+    if (m_database == nullptr)
+    {
+        return core::makeError(core::ErrorCode::NotFound, "scene {} is not part of a project", id.uuid);
+    }
+    const std::optional<asset::SourceFile> source = m_database->sourceOf(id);
+    const std::optional<std::filesystem::path> path =
+        source && source->importer == "scene" ? m_database->project().absolutePath(source->path) : std::nullopt;
+    if (!path)
+    {
+        return core::makeError(core::ErrorCode::NotFound, "scene {} does not exist", id.uuid);
+    }
+    core::Result<std::string> text = core::readTextFile(*path);
+    if (!text)
+    {
+        const core::Result<std::vector<std::byte>> bytes = m_database->loadArtifact(id);
+        if (!bytes)
+        {
+            return core::makeError(text.error().code, "cannot read {}: {}", source->path, text.error().message);
+        }
+        text = asset::decodeScene(*bytes);
+        if (!text)
+        {
+            return std::unexpected(text.error());
+        }
+    }
+    m_sceneTexts.emplace(id, *text);
+    return text;
+}
+
 void AssetManager::handleEvents(std::span<const asset::AssetEvent> events)
 {
     for (const asset::AssetEvent& event : events)
@@ -144,7 +180,8 @@ void AssetManager::handleEvents(std::span<const asset::AssetEvent> events)
             }
             break;
         case asset::AssetType::Scene:
-            // Scenes are read when opened, never kept.
+            // Read again when needed. Instances of the scene are rebuilt by the application.
+            m_sceneTexts.erase(event.id);
             break;
         }
     }
@@ -183,6 +220,7 @@ void AssetManager::setDatabase(asset::AssetDatabase* database)
     }
     m_models.clear();
     m_meshData.clear();
+    m_sceneTexts.clear();
     m_failed.clear();
     m_database = database;
 }

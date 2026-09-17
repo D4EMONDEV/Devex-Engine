@@ -7,6 +7,7 @@
 #include <devex/core/Path.hpp>
 #include <devex/scene/Components.hpp>
 #include <devex/scene/PhysicsComponents.hpp>
+#include <devex/scene/Prefab.hpp>
 #include <devex/scene/SceneSerializer.hpp>
 #include <devex/serialization/Text.hpp>
 #include <devex/tools/SceneCommands.hpp>
@@ -363,6 +364,84 @@ void requestCreatePreset(ToolsState& state, core::Uuid parent, const char* name,
     state.selection = uuid;
 }
 
+// Writes the entity chosen for Save as Prefab and its descendants to a new scene file, then replaces
+// them with an instance of it, as one undoable step.
+void saveAsPrefab(ToolsState& state, scene::Scene& scene, std::filesystem::path path)
+{
+    const scene::Entity entity = scene.findEntity(state.prefabEntity);
+    if (state.database == nullptr || !entity.isValid() || state.playState != PlayState::Editing ||
+        scene::isInsidePrefabInstance(scene, entity))
+    {
+        return;
+    }
+    if (path.extension() != scene::sceneExtension)
+    {
+        path += scene::sceneExtension;
+    }
+    const std::string resource = state.database->project().resourcePath(path);
+    std::error_code error;
+    if (resource.empty())
+    {
+        DEVEX_LOG_ERROR("Prefabs are saved inside the project folder, not in '{}'", core::toUtf8(path));
+        return;
+    }
+    // Instances of an existing file would still show its previous version.
+    if (std::filesystem::exists(path, error))
+    {
+        DEVEX_LOG_ERROR("{} already exists: save the prefab to a new file", resource);
+        return;
+    }
+
+    // The prefab: the entity and its descendants, with the root at the origin.
+    scene::Scene prefab;
+    const core::Result<scene::Entity> root = scene::loadEntityTree(prefab, scene::saveEntityTree(scene, entity), {});
+    if (!root)
+    {
+        DEVEX_LOG_ERROR("Cannot save {} as a prefab: {}", scene.name(entity), root.error());
+        return;
+    }
+    math::Vec3 position{0.0f};
+    if (scene::Transform* const transform = prefab.tryGet<scene::Transform>(*root))
+    {
+        position = std::exchange(transform->position, math::Vec3{0.0f});
+    }
+    if (core::Result<void> saved = scene::saveSceneFile(prefab, path); !saved)
+    {
+        DEVEX_LOG_ERROR("Cannot save {}: {}", resource, saved.error());
+        return;
+    }
+    state.database->refresh();
+    const std::optional<asset::AssetId> id = state.database->findByPath(resource);
+    if (!id)
+    {
+        DEVEX_LOG_ERROR("{} was saved but is not an asset of the project", resource);
+        return;
+    }
+
+    // The instance keeps the UUID, the name and the position of the entity.
+    serialization::TextSection header{.type = "entity"};
+    header.attributes.push_back({"uuid", TextValue(state.prefabEntity.toString())});
+    header.attributes.push_back({"name", TextValue(scene.name(entity))});
+    header.properties.push_back({"prefab", serialization::makeCall("asset", {TextValue(id->uuid.toString())})});
+    serialization::TextDocument document;
+    document.sections.push_back(std::move(header));
+    scene::Scene scratch;
+    const core::Result<scene::Entity> instance = scene::loadEntityTree(scratch, serialization::writeText(document), {});
+    if (!instance)
+    {
+        DEVEX_LOG_ERROR("Cannot place the prefab {}: {}", resource, instance.error());
+        return;
+    }
+    if (scene::Transform* const transform = scratch.tryGet<scene::Transform>(*instance))
+    {
+        transform->position = position;
+    }
+    state.pendingCommand = makeReplaceEntityTreeCommand(state.prefabEntity, scene::saveEntityTree(scratch, *instance),
+                                                        std::format("Save {} as prefab", scene.name(entity)));
+    state.selection = state.prefabEntity;
+    DEVEX_LOG_INFO("Saved {} as {}", scene.name(entity), resource);
+}
+
 } // namespace
 
 scene::Scene makeDefaultScene()
@@ -614,6 +693,34 @@ void showSaveSceneDialog(ToolsState& state)
                                   });
 }
 
+void showSaveAsPrefabDialog(ToolsState& state, const scene::Scene& scene, core::Uuid entity)
+{
+    const scene::Entity found = scene.findEntity(entity);
+    if (state.database == nullptr || !found.isValid())
+    {
+        return;
+    }
+    state.prefabEntity = entity;
+    const std::filesystem::path folder = state.database->project().assetsDirectory() / "prefabs";
+    std::error_code error;
+    std::filesystem::create_directories(folder, error);
+    std::string name = scene.name(found).empty() ? std::string("prefab") : scene.name(found);
+    std::ranges::replace_if(name, [](char character) { return std::string_view("<>:\"/\\|?*").contains(character); }, '_');
+    std::weak_ptr<DialogAnswers> answers = state.dialogAnswers;
+    state.platform.showFileDialog(state.window,
+                                  {
+                                      .type = platform::FileDialogType::SaveFile,
+                                      .filters = {{"Scenes", "dvxscene"}},
+                                      .defaultLocation = folder / core::pathFromUtf8(name + ".dvxscene"),
+                                  },
+                                  [answers](std::optional<std::filesystem::path> chosen) {
+                                      if (const std::shared_ptr<DialogAnswers> inbox = answers.lock())
+                                      {
+                                          inbox->saveAsPrefab = chosen.value_or(std::filesystem::path());
+                                      }
+                                  });
+}
+
 void showOpenSceneDialog(ToolsState& state)
 {
     if (state.database == nullptr)
@@ -745,6 +852,25 @@ void updateEditorSession(ToolsState& state, scene::Scene& scene)
             {
                 continuePendingAction(state, scene);
             }
+        }
+    }
+
+    if (std::optional<std::filesystem::path> path = std::exchange(answers.saveAsPrefab, std::nullopt); path && !path->empty())
+    {
+        saveAsPrefab(state, scene, std::move(*path));
+    }
+    if (const std::optional<asset::AssetId> prefab = std::exchange(state.prefabToOpen, std::nullopt);
+        prefab && state.database != nullptr)
+    {
+        const std::optional<asset::SourceFile> source = state.database->sourceOf(*prefab);
+        if (const std::optional<std::filesystem::path> path =
+                source ? state.database->project().absolutePath(source->path) : std::nullopt)
+        {
+            openSceneTab(state, scene, *path);
+        }
+        else
+        {
+            DEVEX_LOG_WARNING("Prefab {} is not in the project", prefab->uuid);
         }
     }
 

@@ -113,6 +113,7 @@ namespace devex::tools::detail {
     ICON(TriangleAlert, "triangle-alert")            \
     ICON(Type, "type")                               \
     ICON(Undo, "undo-2")                             \
+    ICON(Unlink, "unlink")                           \
     ICON(Video, "video")                             \
     ICON(Weight, "weight")                           \
     ICON(ZoomIn, "zoom-in")                          \

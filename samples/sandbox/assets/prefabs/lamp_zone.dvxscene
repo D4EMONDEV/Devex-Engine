@@ -1,0 +1,33 @@
+[scene format=1]
+
+[entity uuid="7daae435-06f5-54aa-b285-e3278b16f58f" name="Lamp zone"]
+
+[component type="Transform"]
+position = vec3(0, 0, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="BoxCollider"]
+size = vec3(3, 2, 3)
+trigger = true
+
+[component type="LampSwitch"]
+intensity = 3000
+
+[entity uuid="0254301e-6adb-5964-a5e7-e0315b9d1c0b" name="Lamp"]
+parent = "7daae435-06f5-54aa-b285-e3278b16f58f"
+
+[component type="Transform"]
+position = vec3(0, 1.6, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(0.3, 0.3, 0.3)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000002")
+material = asset("ff4872a7-7bc8-4ffb-900d-0c565be864f0")
+
+[component type="PointLight"]
+color = vec3(1, 0.8, 0.5)
+temperature = 3200
+intensity = 0
+range = 10

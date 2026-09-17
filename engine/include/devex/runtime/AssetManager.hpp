@@ -8,6 +8,7 @@
 #include <devex/render/RenderWorld.hpp>
 
 #include <span>
+#include <string>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -49,6 +50,10 @@ public:
     // The vertices and triangles of a mesh on the CPU, for physics, including the built-in meshes;
     // null when the mesh cannot be loaded.
     [[nodiscard]] const asset::MeshData* meshData(asset::AssetId id);
+    // The text of a scene: its source file, or its imported artifact when the source cannot be read.
+    // It is kept until an import changes the scene, so that prefab instances can still be compared
+    // with the previous version of their prefab once it changed on disk.
+    [[nodiscard]] core::Result<std::string> sceneText(asset::AssetId id);
 
     // Reloads the loaded assets that an import changed and releases removed ones.
     void handleEvents(std::span<const asset::AssetEvent> events);
@@ -91,6 +96,7 @@ private:
     std::unordered_map<asset::AssetId, LoadedMaterial> m_materials;
     std::unordered_map<asset::AssetId, asset::ModelData> m_models;
     std::unordered_map<asset::AssetId, asset::MeshData> m_meshData;
+    std::unordered_map<asset::AssetId, std::string> m_sceneTexts;
     // Assets whose loading failed, retried once an import changes them.
     std::unordered_set<asset::AssetId> m_failed;
 };

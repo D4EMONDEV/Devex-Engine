@@ -31,16 +31,24 @@ namespace devex::tools {
                                                                    core::Uuid parent,
                                                                    std::string description);
 
-// Destroys an entity and its descendants; undo restores them with their UUIDs and position.
+// Replaces an entity and its descendants with the entities written by scene::saveEntityTree, whose
+// root has the same UUID, at the same place. Used to turn entities into a prefab instance and back.
+[[nodiscard]] std::unique_ptr<Command> makeReplaceEntityTreeCommand(core::Uuid root, std::string tree,
+                                                                    std::string description);
+
+// Destroys an entity and its descendants; undo restores them with their UUIDs and position. The
+// entities of a prefab instance other than its root cannot be destroyed.
 [[nodiscard]] std::unique_ptr<Command> makeDestroyEntityCommand(core::Uuid entity);
 
-// Moves an entity last under a new parent, or to the roots when newParent is nil.
+// Moves an entity last under a new parent, or to the roots when newParent is nil. The entities of a
+// prefab instance other than its root cannot be moved.
 [[nodiscard]] std::unique_ptr<Command> makeReparentCommand(core::Uuid entity, core::Uuid newParent);
 
 [[nodiscard]] std::unique_ptr<Command> makeAddComponentCommand(core::Uuid entity,
                                                                std::string component);
 
-// Undo restores the values the component had when it was removed.
+// Undo restores the values the component had when it was removed. Components that an entity of a
+// prefab instance has from its prefab cannot be removed.
 [[nodiscard]] std::unique_ptr<Command> makeRemoveComponentCommand(core::Uuid entity,
                                                                   std::string component);
 

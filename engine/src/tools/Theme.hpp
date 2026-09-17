@@ -97,6 +97,8 @@ struct ThemeColors
     ImVec4 physics;
     ImVec4 folder;
     ImVec4 scene;
+    // Entities from prefabs, as in Unity.
+    ImVec4 prefab;
     ImVec4 material;
     ImVec4 texture;
     ImVec4 neutral;

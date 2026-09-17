@@ -7,6 +7,7 @@
 #include <devex/runtime/Game.hpp>
 #include <devex/scene/Components.hpp>
 #include <devex/scene/PhysicsComponents.hpp>
+#include <devex/scene/Prefab.hpp>
 
 #include <cmath>
 #include <numbers>
@@ -111,10 +112,10 @@ DEVEX_REFLECT(Player)
 // Launches a ball where the player looks at each click while the mouse is captured.
 struct BallLauncher
 {
+    // The prefab of the balls, a scene with a rigid body at its root.
+    devex::asset::AssetId ball;
     // In meters per second.
     float speed = 16.0f;
-    float radius = 0.2f;
-    devex::asset::AssetId material;
     // Seconds before a ball disappears.
     float lifetime = 20.0f;
     // The oldest balls disappear beyond this count.
@@ -123,9 +124,8 @@ struct BallLauncher
 DEVEX_DECLARE_REFLECTION(BallLauncher);
 DEVEX_REFLECT(BallLauncher)
 {
+    type.field("ball", &BallLauncher::ball, {.assetType = "scene"});
     type.field("speed", &BallLauncher::speed);
-    type.field("radius", &BallLauncher::radius);
-    type.field("material", &BallLauncher::material, {.assetType = "material"});
     type.field("lifetime", &BallLauncher::lifetime);
     type.field("max_balls", &BallLauncher::maxBalls);
 }
@@ -323,18 +323,25 @@ void launchBalls(SystemContext& context)
 
     for (const Launch& launch : launches)
     {
-        const Entity ball = scene.createEntity("Launched ball");
-        scene.add<devex::scene::Transform>(ball, devex::scene::Transform{.position = launch.position,
-                                                                         .scale = Vec3{launch.launcher.radius * 2.0f}});
-        scene.add<devex::scene::MeshRenderer>(ball, devex::scene::MeshRenderer{.mesh = devex::asset::builtin::sphereMesh,
-                                                                               .material = launch.launcher.material});
-        scene.add<devex::scene::RigidBody>(ball, devex::scene::RigidBody{.mass = 2.0f,
-                                                                         .friction = 0.6f,
-                                                                         .restitution = 0.35f,
-                                                                         .continuousCollision = true,
-                                                                         .linearVelocity = launch.velocity});
-        scene.add<devex::scene::SphereCollider>(ball);
-        scene.add<Ball>(ball, Ball{.lifetime = launch.launcher.lifetime});
+        const devex::core::Result<Entity> ball = devex::scene::instantiatePrefab(scene, launch.launcher.ball);
+        if (!ball)
+        {
+            DEVEX_LOG_WARNING("Cannot launch a ball: {}", ball.error());
+            continue;
+        }
+        if (devex::scene::Transform* const transform = scene.tryGet<devex::scene::Transform>(*ball))
+        {
+            transform->position = launch.position;
+        }
+        if (devex::scene::RigidBody* const body = scene.tryGet<devex::scene::RigidBody>(*ball))
+        {
+            body->linearVelocity = launch.velocity;
+        }
+        if (!scene.has<Ball>(*ball))
+        {
+            scene.add<Ball>(*ball);
+        }
+        scene.get<Ball>(*ball).lifetime = launch.launcher.lifetime;
 
         // Too many balls: the oldest one goes.
         std::size_t count = 0;

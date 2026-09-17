@@ -517,15 +517,9 @@ void drawViewportPanel(ToolsState& state, scene::Scene& scene)
         {
             requestInstantiateModel(state, *model, core::Uuid{}, dropPosition(state, view, mouse));
         }
-        if (const std::optional<asset::AssetId> dropped = acceptDroppedAsset(asset::AssetType::Scene);
-            dropped && state.database != nullptr)
+        if (const std::optional<asset::AssetId> prefab = acceptDroppedAsset(asset::AssetType::Scene))
         {
-            const std::optional<asset::SourceFile> source = state.database->sourceOf(*dropped);
-            if (const std::optional<std::filesystem::path> path =
-                    source ? state.database->project().absolutePath(source->path) : std::nullopt)
-            {
-                openSceneTab(state, scene, *path);
-            }
+            requestInstantiatePrefab(state, *prefab, core::Uuid{}, dropPosition(state, view, mouse));
         }
         if (hovered && (ImGui::IsMouseClicked(ImGuiMouseButton_Left) || ImGui::IsMouseClicked(ImGuiMouseButton_Middle)))
         {

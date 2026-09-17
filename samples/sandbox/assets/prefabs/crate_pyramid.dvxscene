@@ -1,0 +1,78 @@
+[scene format=1]
+
+[entity uuid="b8a9258d-db51-570f-a1c6-00272836cae8" name="Crate pyramid"]
+
+[component type="Transform"]
+position = vec3(0, 0, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="cedbd3a1-6396-5b30-a1f0-c37c852d5137" name="Crate 1"]
+parent = "b8a9258d-db51-570f-a1c6-00272836cae8"
+prefab = asset("4be171c6-e068-5d15-af8c-49e6ba6a0aec")
+
+[override type="Transform"]
+position = vec3(-1.53, 0.5, 0)
+
+[entity uuid="5c9f13e4-07e8-5027-8d24-9efcb7cf1135" name="Crate 2"]
+parent = "b8a9258d-db51-570f-a1c6-00272836cae8"
+prefab = asset("4be171c6-e068-5d15-af8c-49e6ba6a0aec")
+
+[override type="Transform"]
+position = vec3(-0.51, 0.5, 0)
+
+[entity uuid="ffb796ba-0d04-5189-92b1-bc3a3547235e" name="Crate 3"]
+parent = "b8a9258d-db51-570f-a1c6-00272836cae8"
+prefab = asset("4be171c6-e068-5d15-af8c-49e6ba6a0aec")
+
+[override type="Transform"]
+position = vec3(0.51, 0.5, 0)
+
+[entity uuid="d5bf0fd4-ec37-5c85-9a08-cd8899a5b9de" name="Crate 4"]
+parent = "b8a9258d-db51-570f-a1c6-00272836cae8"
+prefab = asset("4be171c6-e068-5d15-af8c-49e6ba6a0aec")
+
+[override type="Transform"]
+position = vec3(1.53, 0.5, 0)
+
+[entity uuid="6a98b88d-765d-5311-a469-9d9a5506b508" name="Crate 5"]
+parent = "b8a9258d-db51-570f-a1c6-00272836cae8"
+prefab = asset("4be171c6-e068-5d15-af8c-49e6ba6a0aec")
+
+[override type="Transform"]
+position = vec3(-1.02, 1.5, 0)
+
+[entity uuid="fc5353ad-ff2c-5c0f-be6d-4bf1c126da96" name="Crate 6"]
+parent = "b8a9258d-db51-570f-a1c6-00272836cae8"
+prefab = asset("4be171c6-e068-5d15-af8c-49e6ba6a0aec")
+
+[override type="Transform"]
+position = vec3(0, 1.5, 0)
+
+[entity uuid="4036f978-a9ee-5e4b-b393-4703cced411a" name="Crate 7"]
+parent = "b8a9258d-db51-570f-a1c6-00272836cae8"
+prefab = asset("4be171c6-e068-5d15-af8c-49e6ba6a0aec")
+
+[override type="Transform"]
+position = vec3(1.02, 1.5, 0)
+
+[entity uuid="0e093b27-508c-5888-b818-172af8a958b6" name="Crate 8"]
+parent = "b8a9258d-db51-570f-a1c6-00272836cae8"
+prefab = asset("4be171c6-e068-5d15-af8c-49e6ba6a0aec")
+
+[override type="Transform"]
+position = vec3(-0.51, 2.5, 0)
+
+[entity uuid="5994870a-e405-5ce1-a0ce-53ebd0006c4e" name="Crate 9"]
+parent = "b8a9258d-db51-570f-a1c6-00272836cae8"
+prefab = asset("4be171c6-e068-5d15-af8c-49e6ba6a0aec")
+
+[override type="Transform"]
+position = vec3(0.51, 2.5, 0)
+
+[entity uuid="65084584-ca3b-5ee7-93a2-6504205da24c" name="Crate 10"]
+parent = "b8a9258d-db51-570f-a1c6-00272836cae8"
+prefab = asset("4be171c6-e068-5d15-af8c-49e6ba6a0aec")
+
+[override type="Transform"]
+position = vec3(0, 3.5, 0)

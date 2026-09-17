@@ -25,7 +25,8 @@
 //
 // Component sections belong to the entity above them. Parents are written before their children,
 // in hierarchy order. Components of types that are not registered, such as those of game code that
-// is not loaded, are kept as they were read and written back.
+// is not loaded, are kept as they were read and written back. Prefab instances are entity sections
+// with overrides, described in Prefab.hpp.
 namespace devex::scene {
 
 // The sections of an entity's components whose type is not registered, kept so that saving the
@@ -48,20 +49,30 @@ std::size_t restorePreservedComponents(Scene& scene, const std::function<bool(st
 inline constexpr std::int64_t sceneFormatVersion = 1;
 inline constexpr std::string_view sceneExtension = ".dvxscene";
 
+// Whether loading a scene loads the prefabs of its instances (see Prefab.hpp).
+enum class PrefabLoading : std::uint8_t
+{
+    Resolve,
+    // Leaves every instance unresolved, as when only the syntax of a scene is checked.
+    KeepUnresolved,
+};
+
 [[nodiscard]] std::string saveScene(const Scene& scene);
 
 // Unknown component types are preserved, and unknown fields skipped with a warning, so that a scene
 // written by a newer version or with game code that is not loaded still opens. Malformed values are
-// errors that name their line.
-[[nodiscard]] core::Result<Scene> loadScene(std::string_view text);
+// errors that name their line. A prefab that cannot be loaded leaves its instance unresolved, with
+// a warning.
+[[nodiscard]] core::Result<Scene> loadScene(std::string_view text, PrefabLoading prefabs = PrefabLoading::Resolve);
 
 // Writes an entity and its descendants as entity and component sections, without the [scene]
-// header and without the parent of the root. Used to copy, restore or duplicate a subtree.
+// header and without the parent of the root. Used to copy, restore or duplicate a subtree. An
+// entity inside a prefab instance is written with its descendants as ordinary entities.
 [[nodiscard]] std::string saveEntityTree(const Scene& scene, Entity root);
 
 // Recreates entities written by saveEntityTree with their original UUIDs, which must be unused in
 // the scene, and places the root under parent before the sibling `before` (see
-// Scene::setParent). Nothing is created when an error is returned.
+// Scene::setParent). Prefab instances are loaded. Nothing is created when an error is returned.
 [[nodiscard]] core::Result<Entity> loadEntityTree(Scene& scene, std::string_view text,
                                                   Entity parent, Entity before = {});
 

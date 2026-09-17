@@ -43,9 +43,10 @@ void alignRight(float width);
 [[nodiscard]] float toolButtonWidth() noexcept;
 
 // Properties in two columns, names on the left and their editors filling the right. Each property
-// starts with propertyName; the editor that follows fills the value column.
+// starts with propertyName; the editor that follows fills the value column. A highlighted property,
+// such as a value that differs from its prefab, has a bar in the accent color and its name in bold.
 [[nodiscard]] bool beginProperties(const char* id);
-void propertyName(const char* name);
+void propertyName(const char* name, bool highlighted = false);
 void endProperties();
 
 // Edits the components of a vector, each labelled with its axis letter in the axis color. Acts as one

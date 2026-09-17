@@ -156,8 +156,9 @@ core::Result<ImportResult> importSceneFile(ImportContext& context)
     {
         return std::unexpected(text.error());
     }
-    // A scene that does not load is reported now rather than when it is opened.
-    if (core::Result<scene::Scene> loaded = scene::loadScene(*text); !loaded)
+    // A scene that does not load is reported now rather than when it is opened. Its prefabs are other
+    // assets, which are checked when they are imported themselves.
+    if (core::Result<scene::Scene> loaded = scene::loadScene(*text, scene::PrefabLoading::KeepUnresolved); !loaded)
     {
         return std::unexpected(loaded.error());
     }
