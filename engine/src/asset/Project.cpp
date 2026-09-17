@@ -1,6 +1,7 @@
 #include <devex/asset/Project.hpp>
 #include <devex/core/File.hpp>
 #include <devex/core/Path.hpp>
+#include <devex/core/Uuid.hpp>
 #include <devex/serialization/Text.hpp>
 
 #include <algorithm>
@@ -90,6 +91,76 @@ void readPhysics(const serialization::TextDocument& document, PhysicsSettings& p
     }
 }
 
+[[nodiscard]] const std::string* stringAttribute(const serialization::TextSection& section, std::string_view key)
+{
+    const serialization::TextValue* const value = section.findAttribute(key);
+    return value != nullptr ? serialization::asString(*value) : nullptr;
+}
+
+void readUnsigned(const serialization::TextSection& section, std::string_view key, std::uint32_t& value)
+{
+    const serialization::TextValue* const text = section.findAttribute(key);
+    if (const std::optional<std::int64_t> number = text != nullptr ? serialization::asInteger(*text) : std::nullopt;
+        number && *number >= 0 && *number <= 0xFFFFFFFF)
+    {
+        value = static_cast<std::uint32_t>(*number);
+    }
+}
+
+void readBool(const serialization::TextSection& section, std::string_view key, bool& value)
+{
+    const serialization::TextValue* const text = section.findAttribute(key);
+    if (const std::optional<bool> flag = text != nullptr ? serialization::asBool(*text) : std::nullopt)
+    {
+        value = *flag;
+    }
+}
+
+void readWindowAndExport(const serialization::TextDocument& document, Project& project)
+{
+    for (const serialization::TextSection& section : document.sections)
+    {
+        if (section.type == "window")
+        {
+            WindowSettings& window = project.window;
+            readUnsigned(section, "width", window.width);
+            readUnsigned(section, "height", window.height);
+            readBool(section, "fullscreen", window.fullscreen);
+            readBool(section, "vsync", window.vsync);
+            readUnsigned(section, "max_frame_rate", window.maxFrameRate);
+            const serialization::TextValue* const icon = section.findAttribute("icon");
+            const serialization::TextCall* const call = icon != nullptr ? serialization::asCall(*icon, "asset") : nullptr;
+            const std::string* const uuid =
+                call != nullptr && call->arguments.size() == 1 ? serialization::asString(call->arguments.front()) : nullptr;
+            if (const std::optional<core::Uuid> parsed = uuid != nullptr ? core::Uuid::parse(*uuid) : std::nullopt)
+            {
+                window.icon = AssetId{*parsed};
+            }
+            window.width = std::max<std::uint32_t>(window.width, 64);
+            window.height = std::max<std::uint32_t>(window.height, 64);
+        }
+        else if (section.type == "export")
+        {
+            if (const std::string* const output = stringAttribute(section, "output"))
+            {
+                project.exportSettings.output = *output;
+            }
+            if (const std::string* const configuration = stringAttribute(section, "configuration"))
+            {
+                project.exportSettings.configuration = *configuration;
+            }
+        }
+        else if (section.type == "export_scene" || section.type == "export_folder")
+        {
+            if (const std::string* const path = stringAttribute(section, "path"); path != nullptr && !path->empty())
+            {
+                (section.type == "export_scene" ? project.exportSettings.scenes : project.exportSettings.includeFolders)
+                    .push_back(*path);
+            }
+        }
+    }
+}
+
 } // namespace
 
 bool PhysicsSettings::collides(std::uint32_t a, std::uint32_t b) const noexcept
@@ -147,7 +218,12 @@ core::Result<Project> loadProject(const std::filesystem::path& projectFile)
     {
         return std::unexpected(text.error());
     }
-    const core::Result<serialization::TextDocument> document = serialization::parseText(*text);
+    return parseProject(*text, projectFile);
+}
+
+core::Result<Project> parseProject(std::string_view text, const std::filesystem::path& projectFile)
+{
+    const core::Result<serialization::TextDocument> document = serialization::parseText(text);
     if (!document)
     {
         return core::makeError(document.error().code, "'{}': {}", core::toUtf8(projectFile),
@@ -182,10 +258,16 @@ core::Result<Project> loadProject(const std::filesystem::path& projectFile)
         project.startupScene = *startupText;
     }
     readPhysics(*document, project.physics);
+    readWindowAndExport(*document, project);
     return project;
 }
 
 core::Result<void> saveProject(const Project& project)
+{
+    return core::writeTextFile(project.file, writeProjectText(project));
+}
+
+std::string writeProjectText(const Project& project)
 {
     serialization::TextDocument document;
     serialization::TextSection& section = document.sections.emplace_back();
@@ -221,7 +303,45 @@ core::Result<void> saveProject(const Project& project)
         layer.attributes.push_back({"name", serialization::TextValue(project.physics.layerNames[index])});
         layer.properties.push_back({"collides", serialization::TextValue(static_cast<std::int64_t>(project.physics.layerCollisions[index]))});
     }
-    return core::writeTextFile(project.file, serialization::writeText(document));
+
+    if (project.window != WindowSettings{})
+    {
+        serialization::TextSection& window = document.sections.emplace_back();
+        window.type = "window";
+        const WindowSettings& settings = project.window;
+        window.attributes.push_back({"width", serialization::TextValue(static_cast<std::int64_t>(settings.width))});
+        window.attributes.push_back({"height", serialization::TextValue(static_cast<std::int64_t>(settings.height))});
+        window.attributes.push_back({"fullscreen", serialization::TextValue(settings.fullscreen)});
+        window.attributes.push_back({"vsync", serialization::TextValue(settings.vsync)});
+        window.attributes.push_back({"max_frame_rate", serialization::TextValue(static_cast<std::int64_t>(settings.maxFrameRate))});
+        if (settings.icon.isValid())
+        {
+            window.attributes.push_back({"icon", serialization::makeCall("asset", {serialization::TextValue(settings.icon.uuid.toString())})});
+        }
+    }
+
+    const ExportSettings exportDefaults;
+    const ExportSettings& exportSettings = project.exportSettings;
+    if (exportSettings.output != exportDefaults.output || exportSettings.configuration != exportDefaults.configuration)
+    {
+        serialization::TextSection& exportSection = document.sections.emplace_back();
+        exportSection.type = "export";
+        exportSection.attributes.push_back({"output", serialization::TextValue(exportSettings.output)});
+        exportSection.attributes.push_back({"configuration", serialization::TextValue(exportSettings.configuration)});
+    }
+    for (const std::string& scene : exportSettings.scenes)
+    {
+        serialization::TextSection& sceneSection = document.sections.emplace_back();
+        sceneSection.type = "export_scene";
+        sceneSection.attributes.push_back({"path", serialization::TextValue(scene)});
+    }
+    for (const std::string& folder : exportSettings.includeFolders)
+    {
+        serialization::TextSection& folderSection = document.sections.emplace_back();
+        folderSection.type = "export_folder";
+        folderSection.attributes.push_back({"path", serialization::TextValue(folder)});
+    }
+    return serialization::writeText(document);
 }
 
 core::Result<Project> createProject(const std::filesystem::path& directory, std::string_view name)

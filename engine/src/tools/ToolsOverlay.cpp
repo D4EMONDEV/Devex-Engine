@@ -460,6 +460,7 @@ void updateEditor(ToolsState& state, scene::Scene& scene, PlayState playState)
     }
     detail::drawSettingsWindow(state);
     detail::drawProjectSettingsWindow(state);
+    detail::drawExportWindow(state);
     detail::drawEditorPopups(state, scene);
     if (state.pendingCommand != nullptr)
     {
@@ -670,6 +671,16 @@ EditorRequests ToolsOverlay::takeRequests() noexcept
 void ToolsOverlay::setGameCodeStatus(GameCodeStatus status)
 {
     m_state->gameCode = std::move(status);
+}
+
+void ToolsOverlay::setEngineBuilds(std::vector<EngineBuildChoice> builds)
+{
+    m_state->engineBuilds = std::move(builds);
+}
+
+void ToolsOverlay::setExportStatus(ExportStatus status)
+{
+    m_state->exportStatus = std::move(status);
 }
 
 bool ToolsOverlay::confirmClose(scene::Scene& editedScene)

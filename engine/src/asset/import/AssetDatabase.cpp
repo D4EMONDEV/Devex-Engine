@@ -529,9 +529,9 @@ public:
     [[nodiscard]] core::Result<void> updateProject(const Project& project)
     {
         // The folders stay those the database watches.
-        Project updated = m_project;
-        updated.name = project.name;
-        updated.startupScene = project.startupScene;
+        Project updated = project;
+        updated.root = m_project.root;
+        updated.file = m_project.file;
         if (core::Result<void> saved = saveProject(updated); !saved)
         {
             return saved;
@@ -1284,6 +1284,28 @@ std::filesystem::path AssetDatabase::artifactPath(AssetId id) const
 core::Result<std::vector<std::byte>> AssetDatabase::loadArtifact(AssetId id) const
 {
     return m_impl->loadArtifact(id);
+}
+
+core::Result<std::string> AssetDatabase::sceneText(AssetId id) const
+{
+    const std::optional<SourceFile> source = sourceOf(id);
+    const std::optional<std::filesystem::path> path =
+        source && source->importer == "scene" ? project().absolutePath(source->path) : std::nullopt;
+    if (!path)
+    {
+        return core::makeError(core::ErrorCode::NotFound, "scene {} does not exist", id.uuid);
+    }
+    core::Result<std::string> text = core::readTextFile(*path);
+    if (text)
+    {
+        return text;
+    }
+    const core::Result<std::vector<std::byte>> bytes = loadArtifact(id);
+    if (!bytes)
+    {
+        return core::makeError(text.error().code, "cannot read {}: {}", source->path, text.error().message);
+    }
+    return decodeScene(*bytes);
 }
 
 core::Result<AssetId> AssetDatabase::addFile(const std::filesystem::path& file,

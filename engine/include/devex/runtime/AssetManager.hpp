@@ -3,6 +3,7 @@
 #include <devex/asset/AssetId.hpp>
 #include <devex/asset/MaterialData.hpp>
 #include <devex/asset/ModelData.hpp>
+#include <devex/asset/AssetSource.hpp>
 #include <devex/asset/import/AssetDatabase.hpp>
 #include <devex/render/Renderer.hpp>
 #include <devex/render/RenderWorld.hpp>
@@ -22,15 +23,16 @@ struct LoadedMesh
     std::vector<asset::AssetId> submeshMaterials;
 };
 
-// Resolves asset identifiers to loaded resources. Assets of the project are loaded from the cache
-// of the asset database the first time they are needed, and loaded again when an import changes
+// Resolves asset identifiers to loaded resources. Assets are loaded from their source, the asset
+// database of a project or the package of an exported game, the first time they are needed, and
+// loaded again when an import changes
 // them. Applications can also register resources they create, such as the built-in meshes.
 class AssetManager
 {
 public:
-    // Both may be null: without a renderer nothing reaches the GPU, and without a database only
-    // registered resources are known. The renderer and the database must outlive the manager.
-    AssetManager(render::Renderer* renderer, asset::AssetDatabase* database) noexcept;
+    // Both may be null: without a renderer nothing reaches the GPU, and without a source only
+    // registered resources are known. The renderer and the source must outlive the manager.
+    AssetManager(render::Renderer* renderer, asset::AssetSource* source) noexcept;
 
     AssetManager(const AssetManager&) = delete;
     AssetManager& operator=(const AssetManager&) = delete;
@@ -58,10 +60,10 @@ public:
     // Reloads the loaded assets that an import changed and releases removed ones.
     void handleEvents(std::span<const asset::AssetEvent> events);
 
-    [[nodiscard]] asset::AssetDatabase* database() const noexcept;
-    // Releases every asset loaded from the current database, keeping registered meshes, then
-    // loads from the new one, which may be null. Used when the editor opens another project.
-    void setDatabase(asset::AssetDatabase* database);
+    [[nodiscard]] asset::AssetSource* source() const noexcept;
+    // Releases every asset loaded from the current source, keeping registered meshes, then loads
+    // from the new one, which may be null. Used when the editor opens another project.
+    void setSource(asset::AssetSource* source);
 
 private:
     struct OwnedMesh
@@ -90,7 +92,7 @@ private:
     void refreshMaterials();
 
     render::Renderer* m_renderer;
-    asset::AssetDatabase* m_database;
+    asset::AssetSource* m_source;
     std::unordered_map<asset::AssetId, OwnedMesh> m_meshes;
     std::unordered_map<asset::AssetId, render::TextureHandle> m_textures;
     std::unordered_map<asset::AssetId, LoadedMaterial> m_materials;

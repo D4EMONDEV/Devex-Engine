@@ -59,11 +59,10 @@ constexpr std::array builtinMeshes{
     return id.uuid.toString();
 }
 
-// A combo listing the assets of the expected type, which also accepts dropped assets.
-bool drawAssetPicker(ToolsState& state, const char* id, const reflection::FieldInfo& field, asset::AssetId& value)
+} // namespace
+
+bool drawAssetPicker(ToolsState& state, const char* id, std::optional<asset::AssetType> type, asset::AssetId& value)
 {
-    const std::optional<asset::AssetType> type =
-        field.assetType.empty() ? std::nullopt : asset::parseAssetType(field.assetType);
     bool changed = false;
     const auto choose = [&](const char* name, asset::AssetId candidate) {
         ImGui::PushID(name);
@@ -105,6 +104,8 @@ bool drawAssetPicker(ToolsState& state, const char* id, const reflection::FieldI
     }
     return changed;
 }
+
+namespace {
 
 // A combo of the named collision layers of the project.
 bool drawLayerPicker(const ToolsState& state, const char* id, std::uint32_t& layer)
@@ -208,7 +209,8 @@ bool drawValueWidget(ToolsState& state, const char* id, const reflection::FieldI
         return false;
     }
     case ValueKind::AssetId:
-        return drawAssetPicker(state, id, field, *static_cast<asset::AssetId*>(address));
+        return drawAssetPicker(state, id, field.assetType.empty() ? std::nullopt : asset::parseAssetType(field.assetType),
+                               *static_cast<asset::AssetId*>(address));
     case ValueKind::Enum: {
         const std::uint32_t current = reflection::readEnumIndex(field, address);
         bool changed = false;

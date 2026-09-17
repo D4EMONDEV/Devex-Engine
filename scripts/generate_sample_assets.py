@@ -378,10 +378,53 @@ def material(path, lines):
     write(path, "[material format=1]\n" + "".join(line + "\n" for line in lines))
 
 
+def devex_icon_pixel(size):
+    """The Devex logo: a rounded square in a blue gradient with a white cube drawn in lines."""
+    scale = size / 24.0
+    top, bottom = (0x5e, 0xa8, 0xff), (0x3f, 0x5f, 0xe0)
+    hexagon = [(12, 5.3), (17.8, 8.65), (17.8, 15.35), (12, 18.7), (6.2, 15.35), (6.2, 8.65)]
+    outline = [(hexagon[i], hexagon[(i + 1) % 6], 1.0) for i in range(6)]
+    inner = [((6.2, 8.65), (12, 12), 0.8), ((12, 12), (17.8, 8.65), 0.8), ((12, 12), (12, 18.7), 0.8)]
+    segments = outline + inner
+    half_width = 0.8
+
+    def coverage(distance):
+        return max(0.0, min(1.0, 0.5 - distance * scale))
+
+    def rounded_square_distance(x, y):
+        # Signed distance to the rect from 1 to 23 with corners of radius 5.5.
+        cx, cy = abs(x - 12) - (11 - 5.5), abs(y - 12) - (11 - 5.5)
+        outside = math.hypot(max(cx, 0.0), max(cy, 0.0))
+        return outside + min(max(cx, cy), 0.0) - 5.5
+
+    def segment_distance(x, y, a, b):
+        ax, ay = a
+        bx, by = b
+        dx, dy = bx - ax, by - ay
+        t = max(0.0, min(1.0, ((x - ax) * dx + (y - ay) * dy) / (dx * dx + dy * dy)))
+        return math.hypot(x - ax - t * dx, y - ay - t * dy)
+
+    def pixel(px, py):
+        x, y = (px + 0.5) / scale, (py + 0.5) / scale
+        alpha = coverage(rounded_square_distance(x, y))
+        if alpha <= 0.0:
+            return (0, 0, 0, 0)
+        mix = max(0.0, min(1.0, ((x - 2) + (y - 2)) / 40.0))
+        color = [top[i] + (bottom[i] - top[i]) * mix for i in range(3)]
+        for a, b, opacity in segments:
+            stroke = coverage(segment_distance(x, y, a, b) - half_width) * opacity
+            color = [c + (255 - c) * stroke for c in color]
+        return (clamp_byte(color[0]), clamp_byte(color[1]), clamp_byte(color[2]), clamp_byte(alpha * 255))
+
+    return pixel
+
+
 def main():
     # Sandbox project
     write(SANDBOX_ASSETS / "textures" / "checker.png",
           png_bytes(256, 256, checker_pixel(16, 256, (196, 200, 206, 255), (150, 156, 166, 255))))
+    # The icon of the exported game and of its window.
+    write(SANDBOX_ASSETS / "textures" / "icon.png", png_bytes(256, 256, devex_icon_pixel(256)))
     crate(SANDBOX_ASSETS / "models" / "crate" / "crate.gltf")
     beacon(SANDBOX_ASSETS / "models" / "beacon.glb")
     # The sandbox sun travels along (-0.287, -0.866, -0.41).

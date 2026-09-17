@@ -28,7 +28,7 @@ Le détail, l'architecture des modules et les jalons sont dans
 - `Devex::Reflection` : description des champs des composants (`DEVEX_REFLECT`) ;
 - `Devex::Serialization` : format texte commun des fichiers `.dvx*`, flux binaires ;
 - `Devex::Asset` : `AssetId`, maillages, textures, matériaux et modèles, fichiers `.dvxasset`,
-  projets `.dvxproj` ;
+  projets `.dvxproj`, paquets de jeux exportés `.dvxpak` ;
 - `Devex::AssetImport` : base d'assets (`.dvxmeta`, cache `.devex/`, imports en arrière-plan,
   réimport à chaud), importeurs de textures (BC7/BC5), de `.dvxmat`, de glTF et de scènes ;
 - `Devex::Render` : renderer Vulkan 1.4 (volk, VMA), shaders Slang, render graph, PBR
@@ -45,16 +45,17 @@ Le détail, l'architecture des modules et les jalons sont dans
   barre d'outils, caméra libre, sélection à la souris, gizmos, préfabs (glisser-déposer, valeurs
   modifiées, Revert, Make Local, Save as Prefab, mise à jour en direct), réglages de l'éditeur ;
 - `Devex::Runtime` : `Application`, boucle à pas fixe, mode éditeur et mode Play, modules de jeu
-  (composants et systèmes rechargeables à chaud), chargement des assets à la demande, rendu
-  automatique de la scène ;
+  (composants et systèmes rechargeables à chaud), chargement des assets à la demande, changement de
+  scène, rendu automatique de la scène, export d'un jeu ;
 - `Devex::Engine` : tous les modules dans une bibliothèque partagée, `devex-engine.dll` ;
 - `devex-editor` : l'éditeur, qui compile et recharge à chaud le code des projets ;
-- `devex-player` : lance un projet hors de l'éditeur (scène de démarrage et code du jeu) ;
+- `devex-player` : lance un projet hors de l'éditeur, ou le paquet d'un jeu exporté (scène de
+  démarrage, réglages de fenêtre et code du jeu) ;
 - `samples/sandbox` : le bac à sable, un projet dont le gameplay est un module de jeu dans `code/` :
   la scène `arena` (scène de démarrage), où un personnage marche, saute, lance des balles et
   renverse des caisses entre rampe, marches, plateforme mobile et zones qui allument des lampes,
   faite en partie de préfabs (`assets/prefabs` : caisse, pyramide de caisses, balle, zone de
-  lampe) ; et la
+  lampe), où Tab passe à l'autre scène ; et la
   scène `sandbox` (caisse et balises glTF, sphères or et plastique, ciel HDR, plateau tournant, jour
   et nuit avec N).
 
@@ -85,6 +86,15 @@ la caméra libre et Échap libère la souris :
 out/build/x64-debug/bin/devex-editor.exe                                # gestionnaire de projets
 out/build/x64-debug/bin/devex-editor.exe samples/sandbox/Sandbox.dvxproj
 out/build/x64-debug/bin/devex-player.exe samples/sandbox/Sandbox.dvxproj
+```
+
+*Project > Export Game…* produit un dossier qui tourne seul : l'exécutable du jeu, son paquet
+d'assets, son code et les bibliothèques du moteur. Un export en Release demande un build Release du
+moteur (`cmake --build --preset build-x64-release`). La même chose sans fenêtre :
+
+```powershell
+out/build/x64-debug/bin/devex-editor.exe --export samples/sandbox/Sandbox.dvxproj
+samples/sandbox/export/windows/Sandbox.exe
 ```
 
 À l'ouverture d'un projet qui a un dossier `code/`, l'éditeur le compile en arrière-plan (Visual

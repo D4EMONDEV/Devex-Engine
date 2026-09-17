@@ -10,6 +10,7 @@ find_package(SDL3 CONFIG REQUIRED)
 find_package(volk CONFIG REQUIRED)
 find_package(Stb REQUIRED)
 find_package(VulkanMemoryAllocator CONFIG REQUIRED)
+find_package(zstd CONFIG REQUIRED)
 
 # Every module is an object library, compiled into the single devex-engine shared library at the
 # end of this file. Programs, tests and game modules link Devex::Engine, never a module directly,
@@ -28,6 +29,7 @@ target_sources(devex_core
         src/core/Hash.cpp
         src/core/JobSystem.cpp
         src/core/Log.cpp
+        src/core/MappedFile.cpp
         src/core/Uuid.cpp
     PUBLIC
         FILE_SET HEADERS
@@ -40,6 +42,7 @@ target_sources(devex_core
             include/devex/core/Hash.hpp
             include/devex/core/JobSystem.hpp
             include/devex/core/Log.hpp
+            include/devex/core/MappedFile.hpp
             include/devex/core/Path.hpp
             include/devex/core/SlotMap.hpp
             include/devex/core/Time.hpp
@@ -86,6 +89,7 @@ add_library(Devex::Platform ALIAS devex_platform)
 
 target_sources(devex_platform
     PRIVATE
+        src/platform/Executable.cpp
         src/platform/Input.cpp
         src/platform/Platform.cpp
         src/platform/Process.cpp
@@ -97,6 +101,7 @@ target_sources(devex_platform
         BASE_DIRS include
         FILES
             include/devex/platform/Event.hpp
+            include/devex/platform/Executable.hpp
             include/devex/platform/Input.hpp
             include/devex/platform/Key.hpp
             include/devex/platform/Platform.hpp
@@ -178,6 +183,7 @@ target_sources(devex_asset
         src/asset/MaterialData.cpp
         src/asset/MeshData.cpp
         src/asset/ModelData.cpp
+        src/asset/Package.cpp
         src/asset/Primitives.cpp
         src/asset/Project.cpp
         src/asset/TextureData.cpp
@@ -187,10 +193,12 @@ target_sources(devex_asset
         FILES
             include/devex/asset/Artifact.hpp
             include/devex/asset/AssetId.hpp
+            include/devex/asset/AssetSource.hpp
             include/devex/asset/AssetType.hpp
             include/devex/asset/MaterialData.hpp
             include/devex/asset/MeshData.hpp
             include/devex/asset/ModelData.hpp
+            include/devex/asset/Package.hpp
             include/devex/asset/Primitives.hpp
             include/devex/asset/Project.hpp
             include/devex/asset/TextureData.hpp
@@ -204,6 +212,7 @@ target_link_libraries(devex_asset
     PRIVATE
         Devex::Serialization
         mikktspace::mikktspace
+        zstd::libzstd
 )
 set_target_properties(devex_asset PROPERTIES
     EXPORT_NAME Asset
@@ -465,6 +474,7 @@ target_sources(devex_tools
         src/tools/EditorSession.cpp
         src/tools/EditorView.cpp
         src/tools/EditorView.hpp
+        src/tools/ExportWindow.cpp
         src/tools/Gizmo.cpp
         src/tools/Gizmo.hpp
         src/tools/HierarchyPanel.cpp
@@ -529,6 +539,7 @@ target_sources(devex_runtime
         src/runtime/Game.cpp
         src/runtime/GameCodeBuilder.cpp
         src/runtime/GameCodeBuilder.hpp
+        src/runtime/GameExport.cpp
         src/runtime/GameModule.cpp
         src/runtime/SceneExtraction.cpp
     PUBLIC
@@ -539,6 +550,7 @@ target_sources(devex_runtime
             include/devex/runtime/AssetManager.hpp
             include/devex/runtime/FixedTimestep.hpp
             include/devex/runtime/Game.hpp
+            include/devex/runtime/GameExport.hpp
             include/devex/runtime/GameModule.hpp
             include/devex/runtime/SceneExtraction.hpp
 )

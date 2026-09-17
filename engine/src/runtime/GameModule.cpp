@@ -43,6 +43,10 @@ core::Result<std::unique_ptr<GameModule>> GameModule::load(const std::filesystem
     {
         return core::makeError(core::ErrorCode::NotFound, "'{}' does not exist", core::toUtf8(library));
     }
+    if (copyDirectory.empty())
+    {
+        return loadLibrary(library, library);
+    }
     std::filesystem::create_directories(copyDirectory, error);
     removeStaleCopies(library, copyDirectory);
 
@@ -59,7 +63,13 @@ core::Result<std::unique_ptr<GameModule>> GameModule::load(const std::filesystem
         return core::makeError(core::ErrorCode::Io, "cannot copy '{}': {}", core::toUtf8(library), error.message());
     }
 
-    core::Result<platform::SharedLibrary> loaded = platform::SharedLibrary::load(copy);
+    return loadLibrary(library, copy);
+}
+
+core::Result<std::unique_ptr<GameModule>> GameModule::loadLibrary(const std::filesystem::path& library,
+                                                                  const std::filesystem::path& file)
+{
+    core::Result<platform::SharedLibrary> loaded = platform::SharedLibrary::load(file);
     if (!loaded)
     {
         return std::unexpected(loaded.error());

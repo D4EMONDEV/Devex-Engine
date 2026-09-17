@@ -2,8 +2,9 @@
 /out/
 /build/
 
-# Imported asset caches of Devex projects
+# Imported asset caches and exported games of Devex projects
 .devex/
+/samples/*/export/
 /compile_commands.json
 /CMakeUserPresets.json
 
@@ -14,6 +15,9 @@
 *.vcxproj
 *.vcxproj.filters
 *.vcxproj.user
+
+# Python caches of the scripts
+__pycache__/
 
 # User and OS files
 *.user

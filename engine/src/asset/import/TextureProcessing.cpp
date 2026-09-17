@@ -6,6 +6,8 @@
 #if defined(_MSC_VER)
 #pragma warning(push, 0)
 #endif
+#include <stb_image_resize2.h>
+#include <stb_image_write.h>
 #include <basisu/encoder/basisu_bc15_spmd.h>
 #include <basisu/encoder/basisu_bc7e_scalar.h>
 #include <basisu/encoder/basisu_enc.h>
@@ -363,6 +365,35 @@ core::Result<TextureData> buildFloatTexture(const FloatImage& image, bool mipmap
         }
     }
     return texture;
+}
+
+Image resizeImage(const Image& image, std::uint32_t width, std::uint32_t height)
+{
+    Image resized{.width = width, .height = height};
+    resized.rgba.resize(static_cast<std::size_t>(width) * height * 4);
+    if (image.width == 0 || image.height == 0 || width == 0 || height == 0)
+    {
+        return resized;
+    }
+    stbir_resize_uint8_srgb(image.rgba.data(), static_cast<int>(image.width), static_cast<int>(image.height), 0,
+                            resized.rgba.data(), static_cast<int>(width), static_cast<int>(height), 0, STBIR_RGBA);
+    return resized;
+}
+
+std::vector<std::byte> encodePng(const Image& image)
+{
+    std::vector<std::byte> bytes;
+    const auto write = [](void* context, void* data, int size) {
+        const auto* const begin = static_cast<const std::byte*>(data);
+        static_cast<std::vector<std::byte>*>(context)->insert(static_cast<std::vector<std::byte>*>(context)->end(), begin,
+                                                               begin + size);
+    };
+    if (stbi_write_png_to_func(write, &bytes, static_cast<int>(image.width), static_cast<int>(image.height), 4,
+                               image.rgba.data(), static_cast<int>(image.width) * 4) == 0)
+    {
+        bytes.clear();
+    }
+    return bytes;
 }
 
 core::Result<Image> decodeImage(std::span<const std::byte> encoded)

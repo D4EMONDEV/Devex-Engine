@@ -1,1 +1,3 @@
 [project format=1 name="Sandbox" startup_scene="res://assets/scenes/arena.dvxscene"]
+
+[window width=1600 height=900 fullscreen=false vsync=true max_frame_rate=0 icon=asset("a0b10371-4bc1-4dc2-8fd8-ba5676e805fb")]

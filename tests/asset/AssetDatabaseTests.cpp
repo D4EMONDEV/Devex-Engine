@@ -228,6 +228,24 @@ TEST_CASE("Project settings are saved and read back", "[asset][project]")
     REQUIRE((*database)->updateProject(changed));
     CHECK((*database)->project().startupScene == "res://assets/scenes/Main.dvxscene");
 
+    // Every setting is saved, but the project stays where the database found it.
+    devex::asset::Project edited = (*database)->project();
+    edited.physics.gravity = {0.0f, -1.0f, 0.0f};
+    edited.window.maxFrameRate = 30;
+    edited.exportSettings.configuration = "Debug";
+    edited.root = project.project.root / "elsewhere";
+    REQUIRE((*database)->updateProject(edited));
+    CHECK((*database)->project().root == project.project.root);
+    const auto saved = devex::asset::loadProject(project.project.file);
+    REQUIRE(saved.has_value());
+    CHECK(saved->physics.gravity.y == -1.0f);
+    CHECK(saved->window.maxFrameRate == 30);
+    CHECK(saved->exportSettings.configuration == "Debug");
+    edited.physics = {};
+    edited.window = {};
+    edited.exportSettings = {};
+    REQUIRE((*database)->updateProject(edited));
+
     const auto reloaded = devex::asset::loadProject(project.project.file);
     REQUIRE(reloaded.has_value());
     CHECK(reloaded->name == "Test");
@@ -235,6 +253,31 @@ TEST_CASE("Project settings are saved and read back", "[asset][project]")
     // Default physics settings leave the file as it was.
     CHECK(reloaded->physics == devex::asset::PhysicsSettings{});
     CHECK(devex::core::readTextFile(project.project.file)->find("physics") == std::string::npos);
+}
+
+TEST_CASE("Window and export settings of projects are saved and read back", "[asset][project]")
+{
+    TemporaryProject temporary;
+    devex::asset::Project project = temporary.project;
+    CHECK(devex::asset::writeProjectText(project).find("[window") == std::string::npos);
+    CHECK(devex::asset::writeProjectText(project).find("[export") == std::string::npos);
+
+    project.window = {.width = 1920, .height = 1080, .fullscreen = true, .vsync = false, .maxFrameRate = 144,
+                      .icon = AssetId::generate()};
+    project.exportSettings = {.scenes = {"res://assets/scenes/a.dvxscene", "res://assets/scenes/b.dvxscene"},
+                              .includeFolders = {"res://assets/data"},
+                              .output = "builds/game",
+                              .configuration = "Debug"};
+    REQUIRE(devex::asset::saveProject(project));
+    const auto loaded = devex::asset::loadProject(project.file);
+    REQUIRE(loaded.has_value());
+    CHECK(loaded->window == project.window);
+    CHECK(loaded->exportSettings == project.exportSettings);
+
+    const auto parsed = devex::asset::parseProject(devex::asset::writeProjectText(project), project.file);
+    REQUIRE(parsed.has_value());
+    CHECK(parsed->window == project.window);
+    CHECK(parsed->root == project.root);
 }
 
 TEST_CASE("Physics settings of projects keep gravity, layer names and collisions", "[asset][project]")

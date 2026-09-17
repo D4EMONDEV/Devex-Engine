@@ -9,6 +9,7 @@
 #include <array>
 #include <format>
 #include <system_error>
+#include <thread>
 #include <utility>
 
 namespace devex::runtime::detail {
@@ -69,9 +70,9 @@ DEVEX_GAME_MODULE(game)
 )";
 
 // One folder per engine configuration: a module only loads into an engine built like it.
-[[nodiscard]] std::filesystem::path buildDirectory(const asset::Project& project)
+[[nodiscard]] std::filesystem::path buildDirectory(const asset::Project& project, std::string_view configuration)
 {
-    return project.cacheDirectory() / "code" / core::pathFromUtf8(std::string(core::buildType()));
+    return project.cacheDirectory() / "code" / core::pathFromUtf8(std::string(configuration));
 }
 
 [[nodiscard]] bool contains(std::string_view text, std::string_view part)
@@ -81,12 +82,17 @@ DEVEX_GAME_MODULE(game)
 
 } // namespace
 
-std::filesystem::path GameCodeBuilder::libraryPath(const asset::Project& project)
+std::filesystem::path GameCodeBuilder::libraryPath(const asset::Project& project, std::string_view configuration)
+{
+    return buildDirectory(project, configuration) / "bin" / libraryFileName();
+}
+
+std::filesystem::path GameCodeBuilder::libraryFileName()
 {
 #ifdef _WIN32
-    return buildDirectory(project) / "bin" / "Game.dll";
+    return "Game.dll";
 #else
-    return buildDirectory(project) / "bin" / "libGame.so";
+    return "libGame.so";
 #endif
 }
 
@@ -110,14 +116,17 @@ core::Result<void> GameCodeBuilder::createCode(const asset::Project& project)
     return core::writeTextFile(project.codeDirectory() / "Game.cpp", gameTemplate);
 }
 
-GameCodeBuilder::GameCodeBuilder(asset::Project project, std::filesystem::path devexConfigDirectory)
+GameCodeBuilder::GameCodeBuilder(asset::Project project, std::filesystem::path devexConfigDirectory,
+                                 std::string configuration)
     : m_project(std::move(project))
     , m_devexConfigDirectory(std::move(devexConfigDirectory))
+    , m_configuration(std::move(configuration))
 {
     m_sources = snapshotSources();
     // Sources newer than the library, or no library at all, need a build right away.
     std::error_code error;
-    const std::filesystem::file_time_type built = std::filesystem::last_write_time(libraryPath(m_project), error);
+    const std::filesystem::file_time_type built =
+        std::filesystem::last_write_time(libraryPath(m_project, m_configuration), error);
     m_buildRequested = error || built < m_sources.newest;
 }
 
@@ -140,6 +149,23 @@ GameCodeBuilder::Snapshot GameCodeBuilder::snapshotSources() const
 void GameCodeBuilder::requestBuild() noexcept
 {
     m_buildRequested = true;
+}
+
+core::Result<void> GameCodeBuilder::buildAndWait()
+{
+    m_buildRequested = false;
+    m_changedAt.reset();
+    startBuild();
+    while (m_process)
+    {
+        static_cast<void>(update());
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    }
+    if (m_state != State::Succeeded)
+    {
+        return core::makeError(core::ErrorCode::InvalidState, "the game code does not build: {}", m_message);
+    }
+    return {};
 }
 
 GameCodeBuilder::State GameCodeBuilder::state() const noexcept
@@ -217,7 +243,7 @@ bool GameCodeBuilder::update()
 void GameCodeBuilder::startBuild()
 {
 #ifdef _WIN32
-    const std::filesystem::path build = buildDirectory(m_project);
+    const std::filesystem::path build = buildDirectory(m_project, m_configuration);
     // The folder is configured again when the engine it was configured for changes.
     const std::filesystem::path engineStamp = build / "devex-engine.txt";
     const std::string engine = m_devexConfigDirectory.generic_string();
@@ -247,8 +273,8 @@ echo error: building game code needs Visual Studio with its C++ tools
 exit /b 1
 )",
                                            core::toUtf8(build), core::toUtf8(m_project.codeDirectory()),
-                                           core::buildType(), engine, configure ? "configure" : "build");
-    const std::filesystem::path scriptPath = m_project.cacheDirectory() / "code" / "build.cmd";
+                                           m_configuration, engine, configure ? "configure" : "build");
+    const std::filesystem::path scriptPath = m_project.cacheDirectory() / "code" / core::pathFromUtf8(std::format("build-{}.cmd", m_configuration));
     if (core::Result<void> written = core::writeTextFile(scriptPath, script); !written)
     {
         m_state = State::Failed;

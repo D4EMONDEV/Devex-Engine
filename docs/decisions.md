@@ -91,6 +91,10 @@ mais seulement explicitement ici : le code suit ce document, pas l'inverse.
 | Préfabs                  | Scènes imbriquées liées à leur fichier, comme Godot                |
 | Modifications d'instance | Champs, noms, composants et entités ajoutés ; le reste suit le préfab |
 | Préfabs dans l'éditeur   | Onglet du préfab, instances mises à jour en direct, Revert, Make Local |
+| Export d'un jeu          | Dossier prêt à distribuer : lecteur renommé, DLL, paquet d'assets  |
+| Paquet d'un jeu          | Un fichier `.dvxpak` indexé, artefacts compressés zstd, mappé en mémoire |
+| Source des assets        | `AssetSource` : base d'assets en développement, paquet une fois exporté |
+| Réglages de lancement    | Fenêtre, plein écran, vsync, images, icône dans le `.dvxproj`      |
 
 ## Architecture cible
 
@@ -111,7 +115,7 @@ situé au-dessus de lui, et le graphe reste sans cycle.
 | `Platform`      | fenêtre, entrées, temps, dialogues, bibliothèques partagées, processus    | Core, SDL3                    |
 | `Reflection`    | description des champs (`TypeInfo`, `DEVEX_REFLECT`, `ValueKind`)         | Core, Math                    |
 | `Serialization` | format texte `.dvx*` (sections, valeurs) ; plus tard archives cookées     | Core                          |
-| `Asset`         | `AssetId`, données CPU (maillages, textures, matériaux, modèles), `.dvxasset`, projet | Core, Math, Reflection, Serialization |
+| `Asset`         | `AssetId`, données CPU (maillages, textures, matériaux, modèles), `.dvxasset`, projet, paquet `.dvxpak` | Core, Math, Reflection, Serialization, zstd |
 | `AssetImport`   | base d'assets, `.dvxmeta`, importeurs (textures, `.dvxmat`, glTF)         | Asset, Scene, fastgltf, basisu, stb, efsw |
 | `Render`        | façade `Renderer` / `RenderWorld` ; tout `Vk*` reste dans `src/render/vulkan` | Core, Math, Platform, Asset, Vulkan |
 | `Scene`         | entités, sparse sets, hiérarchie, composants intégrés, `.dvxscene`, sous-arbres, préfabs | Core, Math, Reflection, Serialization, Asset |
@@ -450,6 +454,56 @@ Artefact (`.dvxasset`) : en-tête `DVXA`, type d'asset, version de disposition d
 données en little-endian (`serialization::BinaryWriter`). Changer la disposition d'un type
 augmente sa version ; changer ce que produit un importeur augmente la version de l'importeur.
 Dans les deux cas, les sources concernées sont réimportées.
+
+Paquet d'un jeu exporté (`.dvxpak`, format 1) : en-tête `DVXPAK` avec la position de l'index, les
+artefacts les uns après les autres, puis l'index. L'index donne le texte du `.dvxproj` du jeu,
+son icône, puis un enregistrement par asset : identifiant, type, nom, chemin `res://` du fichier
+source pour les assets principaux, asset source, et où sont ses octets. Un artefact est compressé
+avec zstd quand cela lui fait gagner au moins un dixième. L'index est écrit en dernier, pour que
+les assets s'écrivent au fil de leur lecture.
+
+### Export d'un jeu
+
+- **Résultat** : un dossier qui tourne sans l'éditeur, sans le projet et sans les sources :
+  `<Jeu>.exe` (le lecteur `devex-player` renommé et son icône remplacée), `<Jeu>.dvxpak`,
+  `Game.dll`, `devex-engine.dll` et les autres bibliothèques du build du moteur, les shaders, le
+  runtime C++ quand le build du moteur le fournit (`bin/redist`, copié par CMake en Release), et
+  `devex-export.txt` qui marque le dossier comme un export. Un export Debug emporte aussi
+  `resources/` pour la surcouche d'outils (F1).
+- **Source des assets** : `asset::AssetSource` est l'interface que le jeu voit (réglages du projet,
+  `find`, `assets`, `findByPath`, `loadArtifact`, `sceneText`). La base d'assets l'implémente
+  pendant le développement, `asset::PackageReader` une fois le jeu exporté. Le lecteur mappe le
+  paquet en mémoire (`core::MappedFile`) et décompresse un asset au chargement ; rien n'est
+  importé au lancement du jeu.
+- **Ce qui est exporté** : la scène de démarrage, les scènes cochées, et tout ce qu'elles
+  référencent, de proche en proche (préfabs, maillages, matériaux, textures, autres scènes) en
+  suivant les `asset(...)` des scènes et les références des données cuites ; plus les dossiers
+  marqués « toujours inclus », pour les assets que le code charge lui-même. Un asset référencé mais
+  absent est signalé par un avertissement, les assets intégrés (primitives) viennent du moteur.
+- **Étapes** (`runtime/GameExport.hpp`) : le plan est fait sur le thread de la base d'assets
+  (`planExport` : réglages, liste des assets et de leurs artefacts, scènes, dossiers, icône), puis
+  l'export lui-même (`exportGame`) peut tourner ailleurs : compilation du code du jeu pour le build
+  choisi, collecte des dépendances, écriture du paquet, copie du moteur, icône de l'exécutable. Le
+  dossier de sortie doit être vide, absent ou un export précédent, qui est remplacé.
+- **Builds du moteur** : un jeu exporté embarque les binaires d'un build du moteur ; son code est
+  compilé contre le même (`DevexConfig.cmake` donne sa configuration). L'éditeur liste les builds
+  trouvés à côté du sien (`out/build/x64-debug`, `x64-release`...) ; l'export se fait en Release par
+  défaut, dans un dossier de build à part du code (`.devex/code/<configuration>`).
+- **Réglages du jeu** : `[window]` du `.dvxproj` (taille, plein écran, vsync, limite d'images,
+  icône) ouvre la fenêtre du lecteur et du jeu exporté ; `[export]`, `[export_scene]` et
+  `[export_folder]` gardent le dossier de sortie, la configuration, les scènes et les dossiers
+  inclus, pour que l'éditeur et la ligne de commande exportent la même chose.
+- **Interface** : *Project > Export Game…* montre l'exécutable, le dossier, la configuration, les
+  scènes, les dossiers inclus, la progression puis le résultat, avec *Open Folder* et *Run Game*.
+  L'export tourne sur son propre thread, après les imports et les compilations en cours.
+  `devex-editor --export <projet.dvxproj> [--output <dossier>] [--configuration <Release|Debug>]`
+  fait la même chose sans fenêtre, pour les scripts et l'intégration continue.
+- **Icône** : une texture du projet ; l'export la redimensionne en 256 pixels pour la fenêtre (dans
+  le paquet) et écrit les tailles 16 à 256 dans les ressources de l'exécutable
+  (`platform::setExecutableIcon`, `UpdateResource` sur Windows).
+- **Scènes du jeu** : `SystemContext::sceneToLoad` demande une scène depuis un système, chargée à la
+  fin de la frame (physique recréée, systèmes `Start` rejoués) ; `Application::loadScene` la charge
+  tout de suite. La version de l'API des jeux passe à 3.
 
 ### Boucle de jeu et application
 
@@ -934,6 +988,7 @@ Dans les deux cas, les sources concernées sont réimportées.
 | efsw                  | surveillance des fichiers | 6 ✅ |
 | mikktspace            | tangentes            | 7 ✅     |
 | joltphysics           | physique             | 11 ✅    |
+| zstd                  | paquets de jeux      | 13 ✅    |
 | FreeType (`imgui[freetype]`) | rendu des polices de l'éditeur | 10 ✅ |
 | plutosvg              | icônes SVG de l'éditeur | 10 ✅  |
 | Catch2                | tests (feature `tests`) | 0 ✅  |
@@ -996,8 +1051,14 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     en direct des instances, marques et Revert dans l'inspecteur, Make Local, Save as Prefab,
     glisser-déposer, instanciation par le code du jeu, préfabs de l'arène.
 
-Ensuite, sans ordre figé : export d'un jeu (paquet d'artefacts), post-traitements (bloom, TAA),
-transparence, audio, CI Linux.
+13. ✅ **Export d'un jeu** — paquet `.dvxpak` (index, compression zstd, mappage mémoire), source
+    d'assets abstraite, dépendances suivies depuis les scènes, dossiers toujours inclus, copie du
+    moteur et du code du jeu compilé pour le build choisi, icône de l'exécutable, réglages de
+    fenêtre du projet, changement de scène pour le code du jeu, fenêtre *Export Game* et
+    `devex-editor --export`.
+
+Ensuite, sans ordre figé : post-traitements (bloom, TAA), transparence, audio, animation
+squelettique, CI Linux.
 
 ## Questions ouvertes
 
@@ -1015,6 +1076,10 @@ transparence, audio, CI Linux.
   d'une instance avec son contexte, édition des entités d'une instance sur place (Godot *Editable
   Children*), sélection de la racine d'une instance au premier clic, mise à jour des instances
   pendant le jeu, modifications vers des entités retirées gardées au lieu d'être abandonnées.
+- **Export** : autres plateformes (Linux, macOS), export incrémental et paquets de mise à jour ou de
+  contenu additionnel, signature de l'exécutable et installeur, retrait des bibliothèques qu'un jeu
+  n'utilise pas, cuisson des textures par plateforme, chargement asynchrone depuis le paquet,
+  export sans build Release du moteur (paquet d'un moteur distribué).
 - **Audio** : SDL3 audio, miniaudio ou FMOD/Wwise en option.
 - **UI retenue maison** pour l'éditeur et les jeux, qui remplacera ImGui.
 - **CI** : GitHub Actions Windows, puis Linux.

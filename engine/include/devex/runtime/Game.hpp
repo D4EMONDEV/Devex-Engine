@@ -22,7 +22,7 @@ namespace devex::runtime {
 
 // Changes whenever game modules must be rebuilt to load: modules built for another version are
 // refused.
-inline constexpr std::uint32_t gameApiVersion = 2;
+inline constexpr std::uint32_t gameApiVersion = 3;
 
 enum class SystemPhase : std::uint8_t
 {
@@ -51,6 +51,9 @@ struct SystemContext
     double interpolationAlpha = 0.0;
     // Set to end the game: the player quits, and the editor stops playing.
     bool quitRequested = false;
+    // Set to replace the scene with a scene asset once the updates of the frame are done. The
+    // physics starts over and the Start systems run for the new scene.
+    asset::AssetId sceneToLoad;
 };
 
 using SystemFunction = void (*)(SystemContext& context);

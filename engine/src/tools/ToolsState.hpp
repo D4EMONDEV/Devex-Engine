@@ -115,6 +115,7 @@ struct DialogAnswers
     std::optional<std::filesystem::path> openScene;
     std::optional<std::filesystem::path> saveSceneAs;
     std::optional<std::filesystem::path> saveAsPrefab;
+    std::optional<std::filesystem::path> exportFolder;
 };
 
 // What the project manager shows of a project, read from its file.
@@ -269,6 +270,11 @@ struct ToolsState
     bool showProjectSettings = false;
     // Edits of the project settings, saved once the edited field is released.
     std::optional<asset::Project> pendingProject;
+    // Export.
+    bool showExport = false;
+    std::optional<asset::ExportSettings> pendingExport;
+    std::vector<EngineBuildChoice> engineBuilds;
+    ExportStatus exportStatus;
     GizmoHandle hoveredHandle = GizmoHandle::None;
     // The view of the last rendered frame, which mouse interactions refer to.
     ViewportView view;
@@ -302,6 +308,7 @@ void drawEditorMenus(ToolsState& state, scene::Scene& scene);
 void drawStatusBar(ToolsState& state, const scene::Scene& scene);
 void drawSettingsWindow(ToolsState& state);
 void drawProjectSettingsWindow(ToolsState& state);
+void drawExportWindow(ToolsState& state);
 void drawEditorPopups(ToolsState& state, scene::Scene& scene);
 void handleEditorShortcuts(ToolsState& state, scene::Scene& scene);
 // Opens the project's scenes when the project changed, handles dialog answers and pick results.
@@ -346,6 +353,10 @@ void frameSelection(ToolsState& state, const scene::Scene& scene);
 // The create menu of entities: empty, primitives, lights, camera, environment. Created entities go
 // under parent (nil for a root), at the editor camera's pivot.
 void drawCreateEntityMenu(ToolsState& state, core::Uuid parent);
+
+// A combo listing the assets of a type (any type without one), which also accepts dropped assets.
+// Returns whether the value changed.
+bool drawAssetPicker(ToolsState& state, const char* id, std::optional<asset::AssetType> type, asset::AssetId& value);
 
 // Makes the last item a drag source for the asset.
 void dragAsset(asset::AssetId id, asset::AssetType type, const std::string& label);

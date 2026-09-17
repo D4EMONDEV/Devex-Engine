@@ -29,7 +29,8 @@
         },
         "stb",
         "volk",
-        "vulkan-memory-allocator"
+        "vulkan-memory-allocator",
+        "zstd"
     ],
     "features": {
         "tests": {

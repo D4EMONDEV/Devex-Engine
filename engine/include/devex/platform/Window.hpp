@@ -23,6 +23,8 @@ struct WindowConfig
     // Required to create a Vulkan surface for the window.
     bool vulkan = false;
     bool hidden = false;
+    // Borderless over the whole display, at the resolution of the desktop.
+    bool fullscreen = false;
 };
 
 namespace detail {
@@ -60,6 +62,9 @@ public:
     void maximize();
     // Leaves the maximized or minimized state.
     void restore();
+    // Borderless over the whole display, at the resolution of the desktop.
+    void setFullscreen(bool fullscreen);
+    [[nodiscard]] bool isFullscreen() const noexcept;
     // Matches the title bar drawn by the system to the application's colors, where the system
     // allows it (Windows): dark or light, and a caption color given in sRGB from 0 to 1.
     void setTitleBarColors(bool dark, math::Vec3 caption);

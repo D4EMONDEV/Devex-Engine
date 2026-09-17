@@ -151,6 +151,11 @@ void drawProjectMenu(ToolsState& state, scene::Scene& scene)
         state.showProjectSettings = true;
         ImGui::SetWindowFocus("Project Settings");
     }
+    if (menuItem(icons::Package, "Export Game..."))
+    {
+        state.showExport = true;
+        ImGui::SetWindowFocus("Export Game");
+    }
     ImGui::Separator();
     if (menuItem(icons::FolderOpen, "Open Project Folder"))
     {
@@ -542,6 +547,39 @@ void drawProjectSettingsWindow(ToolsState& state)
 
     ImGui::Spacing();
     ImGui::PushFont(editorFonts().bold, 0.0f);
+    ImGui::SeparatorText("Window");
+    ImGui::PopFont();
+    asset::WindowSettings& window = project.window;
+    if (beginProperties("window"))
+    {
+        propertyName("Size");
+        std::array<std::uint32_t, 2> size{window.width, window.height};
+        const std::uint32_t minimumSize = 64;
+        const std::uint32_t maximumSize = 16384;
+        if (ImGui::DragScalarN("##size", ImGuiDataType_U32, size.data(), 2, 1.0f, &minimumSize, &maximumSize, "%u"))
+        {
+            window.width = size[0];
+            window.height = size[1];
+        }
+        ImGui::SetItemTooltip("The size of the window, in points: the system scales it on high-density displays");
+        propertyName("Fullscreen");
+        ImGui::Checkbox("##fullscreen", &window.fullscreen);
+        propertyName("VSync");
+        ImGui::Checkbox("##vsync", &window.vsync);
+        ImGui::SetItemTooltip("Waits for the display refresh: no tearing, lower power");
+        propertyName("Frame rate limit");
+        const std::uint32_t noLimit = 0;
+        const std::uint32_t highestLimit = 1000;
+        ImGui::DragScalar("##frame rate", ImGuiDataType_U32, &window.maxFrameRate, 0.5f, &noLimit, &highestLimit,
+                          window.maxFrameRate == 0 ? "unlimited" : "%u fps");
+        propertyName("Icon");
+        static_cast<void>(drawAssetPicker(state, "##icon", asset::AssetType::Texture, window.icon));
+        ImGui::SetItemTooltip("An image of the project, square and 256 pixels or more");
+        endProperties();
+    }
+
+    ImGui::Spacing();
+    ImGui::PushFont(editorFonts().bold, 0.0f);
     ImGui::SeparatorText("Physics");
     ImGui::PopFont();
     asset::PhysicsSettings& physics = project.physics;
@@ -624,7 +662,7 @@ void drawProjectSettingsWindow(ToolsState& state)
     ImGui::End();
 
     // Saved once an edit ends, so that typing a name does not rewrite the project at every key.
-    if (project.name != saved.name || project.physics != saved.physics)
+    if (project.name != saved.name || project.physics != saved.physics || project.window != saved.window)
     {
         state.pendingProject = std::move(project);
     }

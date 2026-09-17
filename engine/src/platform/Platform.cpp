@@ -312,6 +312,10 @@ core::Result<Window> Platform::createWindow(const WindowConfig& config)
     {
         flags |= SDL_WINDOW_HIDDEN;
     }
+    if (config.fullscreen)
+    {
+        flags |= SDL_WINDOW_FULLSCREEN;
+    }
 
     SDL_Window* const window =
         SDL_CreateWindow(config.title.c_str(), static_cast<int>(config.width),
@@ -395,6 +399,11 @@ const Input& Platform::input() const noexcept
 }
 
 std::filesystem::path Platform::baseDirectory() const
+{
+    return executableDirectory();
+}
+
+std::filesystem::path executableDirectory()
 {
     const char* const basePath = SDL_GetBasePath();
     return basePath != nullptr ? core::pathFromUtf8(basePath) : std::filesystem::current_path();

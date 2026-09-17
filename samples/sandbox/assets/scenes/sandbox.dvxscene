@@ -395,3 +395,8 @@ scale = vec3(0.6, 0.15, 0.6)
 [component type="MeshRenderer"]
 mesh = asset("a8581e5c-6572-499c-8d31-c3769bb31bd9")
 material = asset("00000000-0000-0000-0000-000000000000")
+
+[entity uuid="9d3c1f0e-5b2a-4c7e-8f61-2a4b6c8d0e13" name="Scene switch"]
+
+[component type="SceneSwitch"]
+scene = asset("fe6829dd-6137-4a9c-82e3-9fa4579868fe")

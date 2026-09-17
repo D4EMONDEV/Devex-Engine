@@ -33,6 +33,7 @@ devex_add_tests(core
         core/HashTests.cpp
         core/JobSystemTests.cpp
         core/LogTests.cpp
+        core/MappedFileTests.cpp
         core/SlotMapTests.cpp
         core/UuidTests.cpp
     LIBRARIES
@@ -79,6 +80,7 @@ devex_add_tests(asset
         asset/GltfImporterTests.cpp
         asset/MeshDataTests.cpp
         asset/MetaFileTests.cpp
+        asset/PackageTests.cpp
         asset/TextureProcessingTests.cpp
     LIBRARIES
         Devex::Engine
@@ -150,6 +152,7 @@ devex_add_tests(runtime
         runtime/ApplicationTests.cpp
         runtime/FixedTimestepTests.cpp
         runtime/GameCodeBuilderTests.cpp
+        runtime/GameExportTests.cpp
         runtime/GameModuleTests.cpp
         runtime/SceneExtractionTests.cpp
     LIBRARIES

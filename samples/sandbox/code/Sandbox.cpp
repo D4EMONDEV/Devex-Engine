@@ -176,6 +176,17 @@ DEVEX_REFLECT(Oscillator)
     type.field("period", &Oscillator::period);
 }
 
+// Tab loads another scene of the game.
+struct SceneSwitch
+{
+    devex::asset::AssetId scene;
+};
+DEVEX_DECLARE_REFLECTION(SceneSwitch);
+DEVEX_REFLECT(SceneSwitch)
+{
+    type.field("scene", &SceneSwitch::scene, {.assetType = "scene"});
+}
+
 [[nodiscard]] bool isPrimaryCamera(const Scene& scene, Entity entity)
 {
     const devex::scene::Camera* const camera = scene.tryGet<devex::scene::Camera>(entity);
@@ -432,6 +443,22 @@ void oscillate(SystemContext& context)
 }
 
 // C switches between the player's view and the flying cameras.
+void switchScenes(SystemContext& context)
+{
+    if (!context.input.wasKeyPressed(Key::Tab))
+    {
+        return;
+    }
+    for ([[maybe_unused]] auto [entity, switcher] : context.scene.view<SceneSwitch>())
+    {
+        if (switcher.scene.isValid())
+        {
+            context.sceneToLoad = switcher.scene;
+            return;
+        }
+    }
+}
+
 void switchCameras(SystemContext& context)
 {
     Scene& scene = context.scene;
@@ -510,6 +537,7 @@ DEVEX_GAME_MODULE(game)
     game.component<Ball>();
     game.component<LampSwitch>();
     game.component<Oscillator>();
+    game.component<SceneSwitch>();
     game.system("Move platforms", SystemPhase::FixedUpdate, &oscillate);
     game.system("Switch cameras", SystemPhase::Update, &switchCameras, -2);
     game.system("Launch balls", SystemPhase::Update, &launchBalls, -1);
@@ -519,4 +547,5 @@ DEVEX_GAME_MODULE(game)
     game.system("Switch lamps", SystemPhase::Update, &switchLamps);
     game.system("Turn turntables", SystemPhase::Update, &turnTurntables);
     game.system("Switch day and night", SystemPhase::Update, &switchDayAndNight);
+    game.system("Switch scenes", SystemPhase::Update, &switchScenes);
 }

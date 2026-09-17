@@ -126,6 +126,18 @@ void Window::restore()
     SDL_RestoreWindow(detail::toSdlWindow(m_native));
 }
 
+void Window::setFullscreen(bool fullscreen)
+{
+    DEVEX_ASSERT(m_native != nullptr);
+    SDL_SetWindowFullscreen(detail::toSdlWindow(m_native), fullscreen);
+}
+
+bool Window::isFullscreen() const noexcept
+{
+    DEVEX_ASSERT(m_native != nullptr);
+    return (SDL_GetWindowFlags(detail::toSdlWindow(m_native)) & SDL_WINDOW_FULLSCREEN) != 0;
+}
+
 void Window::setTitleBarColors([[maybe_unused]] bool dark, [[maybe_unused]] math::Vec3 caption)
 {
     DEVEX_ASSERT(m_native != nullptr);

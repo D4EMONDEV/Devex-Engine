@@ -16,6 +16,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace devex::tools {
 
@@ -61,6 +62,35 @@ struct GameCodeStatus
     std::string message;
 };
 
+// A build of the engine that games can be exported with, found next to the editor.
+struct EngineBuildChoice
+{
+    // The name of its folder, such as "x64-release".
+    std::string name;
+    // "Debug" or "Release".
+    std::string configuration;
+};
+
+// The progress or the outcome of the last export of the game.
+struct ExportStatus
+{
+    enum class State : std::uint8_t
+    {
+        Idle,
+        Running,
+        Succeeded,
+        Failed,
+    };
+
+    State state = State::Idle;
+    // The current step, a summary of the result, or the error.
+    std::string message;
+    // From 0 to 1 while running.
+    float fraction = 0.0f;
+    std::filesystem::path output;
+    std::filesystem::path executable;
+};
+
 // What the editor asks of the application, collected while its panels are drawn.
 struct EditorRequests
 {
@@ -78,6 +108,8 @@ struct EditorRequests
     bool buildCode = false;
     // Creates the code/ folder of a project that has none.
     bool createCode = false;
+    // Exports the game as the export settings of the project say.
+    bool exportGame = false;
 };
 
 // Docked Dear ImGui panels in a Godot-like theme: scene tree, inspector, file system, output and
@@ -125,6 +157,10 @@ public:
 
     // Editor only: the state of the game code, shown in the menu bar.
     void setGameCodeStatus(GameCodeStatus status);
+
+    // Editor only: the engine builds that games can be exported with, and the state of the export.
+    void setEngineBuilds(std::vector<EngineBuildChoice> builds);
+    void setExportStatus(ExportStatus status);
 
     // Editor only: whether the application may close now. When scenes have unsaved changes, the
     // editor asks what to do with them first, and requests to quit once they are saved or dropped.

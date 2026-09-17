@@ -1,6 +1,9 @@
 #include <devex/asset/AssetId.hpp>
+#include <devex/asset/Package.hpp>
 #include <devex/asset/Primitives.hpp>
 #include <devex/asset/Project.hpp>
+#include <devex/asset/import/TextureProcessing.hpp>
+#include <devex/core/File.hpp>
 #include <devex/core/Path.hpp>
 #include <devex/core/Assert.hpp>
 #include <devex/core/BuildInfo.hpp>
@@ -9,6 +12,7 @@
 
 #include <devex/runtime/Application.hpp>
 #include <devex/runtime/FixedTimestep.hpp>
+#include <devex/runtime/GameExport.hpp>
 #include <devex/runtime/GameModule.hpp>
 #include <devex/scene/Prefab.hpp>
 #include <devex/scene/SceneSerializer.hpp>
@@ -16,12 +20,15 @@
 #include <devex/tools/ToolsOverlay.hpp>
 
 #include <algorithm>
+#include <atomic>
 #include <format>
 #include <functional>
 #include <memory>
 #include <chrono>
 #include <cstdlib>
+#include <mutex>
 #include <optional>
+#include <thread>
 #include <variant>
 
 namespace devex::runtime {
@@ -39,7 +46,45 @@ struct EngineServices
     tools::ToolsOverlay* tools = nullptr;
     // The project opened, replaced when the editor opens another one.
     std::unique_ptr<asset::AssetDatabase>& database;
+    // The package of an exported game, played instead of a project.
+    std::unique_ptr<asset::PackageReader>& package;
 };
+
+// Sets the icon of the window from the game's settings: the pixels kept in its package, or the
+// source image of the icon texture in a project.
+void applyWindowIcon(platform::Window& window, const asset::AssetDatabase* database, const asset::PackageReader* package)
+{
+    if (package != nullptr)
+    {
+        const core::Result<std::optional<asset::PackageIcon>> icon = package->icon();
+        if (!icon)
+        {
+            DEVEX_LOG_WARNING("The game has no icon: {}", icon.error());
+        }
+        else if (*icon)
+        {
+            window.setIcon((*icon)->rgba, (*icon)->width, (*icon)->height);
+        }
+        return;
+    }
+    if (database == nullptr || !database->project().window.icon.isValid())
+    {
+        return;
+    }
+    const std::optional<asset::SourceFile> source = database->sourceOf(database->project().window.icon);
+    const std::optional<std::filesystem::path> path =
+        source ? database->project().absolutePath(source->path) : std::nullopt;
+    const core::Result<std::vector<std::byte>> bytes =
+        path ? core::readBinaryFile(*path) : core::makeError(core::ErrorCode::NotFound, "the icon texture is missing");
+    const core::Result<asset::Image> image =
+        bytes ? asset::decodeImage(*bytes) : core::Result<asset::Image>(std::unexpected(bytes.error()));
+    if (!image)
+    {
+        DEVEX_LOG_WARNING("The game has no icon: {}", image.error());
+        return;
+    }
+    window.setIcon(image->rgba, image->width, image->height);
+}
 
 [[nodiscard]] core::Result<std::unique_ptr<asset::AssetDatabase>> openProject(const std::filesystem::path& projectFile,
                                                                              core::JobSystem& jobs, bool watchAssets)
@@ -61,6 +106,82 @@ struct EngineServices
     return opened;
 }
 
+// An export of the game running on its own thread, for the editor.
+class ExportJob
+{
+public:
+    explicit ExportJob(ExportPlan plan)
+        : m_thread([this, plan = std::move(plan)] { run(plan); })
+    {
+    }
+
+    // Asks the export to stop, and waits for it.
+    ~ExportJob()
+    {
+        m_cancel = true;
+        if (m_thread.joinable())
+        {
+            m_thread.join();
+        }
+    }
+
+    ExportJob(const ExportJob&) = delete;
+    ExportJob& operator=(const ExportJob&) = delete;
+
+    [[nodiscard]] tools::ExportStatus status() const
+    {
+        const std::scoped_lock lock(m_mutex);
+        return m_status;
+    }
+
+    [[nodiscard]] bool finished() const noexcept
+    {
+        return m_finished;
+    }
+
+private:
+    void run(const ExportPlan& plan)
+    {
+        const core::Result<ExportResult> result = exportGame(
+            plan,
+            [this](const ExportProgress& progress) {
+                const std::scoped_lock lock(m_mutex);
+                m_status.message = progress.step;
+                m_status.fraction = progress.fraction;
+            },
+            &m_cancel);
+        {
+            const std::scoped_lock lock(m_mutex);
+            if (result)
+            {
+                m_status = {
+                    .state = tools::ExportStatus::State::Succeeded,
+                    .message = std::format("Exported in {:.1f} s: {} assets, {:.1f} MB of package", result->seconds,
+                                           result->assets, static_cast<double>(result->packageBytes) / (1024.0 * 1024.0)),
+                    .fraction = 1.0f,
+                    .output = result->output,
+                    .executable = result->executable,
+                };
+                DEVEX_LOG_INFO("Exported {} to {} in {:.1f} s", plan.project.name, core::toUtf8(result->output),
+                               result->seconds);
+            }
+            else
+            {
+                m_status = {.state = tools::ExportStatus::State::Failed, .message = result.error().message};
+                DEVEX_LOG_ERROR("The export failed: {}", result.error());
+            }
+        }
+        m_finished = true;
+    }
+
+    mutable std::mutex m_mutex;
+    tools::ExportStatus m_status{.state = tools::ExportStatus::State::Running, .message = "Starting the export"};
+    std::atomic<bool> m_cancel{false};
+    std::atomic<bool> m_finished{false};
+    // Last, so that it starts once the rest exists.
+    std::thread m_thread;
+};
+
 class ApplicationRunner
 {
 public:
@@ -72,6 +193,11 @@ public:
     ApplicationRunner& operator=(const ApplicationRunner&) = delete;
 
     [[nodiscard]] int execute();
+
+    [[nodiscard]] asset::AssetDatabase* database() const noexcept;
+    [[nodiscard]] asset::AssetSource* assetSource() const noexcept;
+    // Replaces the scene the application sees with a scene asset, restarting the game when it runs.
+    [[nodiscard]] core::Result<void> loadScene(asset::AssetId sceneAsset);
 
 private:
     using Clock = std::chrono::steady_clock;
@@ -87,6 +213,8 @@ private:
     // modal loop while the window is being resized, where events cannot be polled.
     void runFrame();
     void runGameplay(std::chrono::nanoseconds frameTime);
+    // Loads the scene that game systems asked for, if any.
+    void loadRequestedScene();
     void render(bool gameplay);
     void handleEditorRequests(tools::EditorRequests requests);
     void startPlaying();
@@ -114,6 +242,9 @@ private:
     void createPhysics();
     void destroyPhysics();
     [[nodiscard]] tools::GameCodeStatus gameCodeStatus() const;
+    // Starts a requested export once imports and builds are done, and shows its progress.
+    void updateExport();
+    void startExport();
 
     Application& m_application;
     EngineServices m_services;
@@ -134,7 +265,13 @@ private:
     std::unique_ptr<GameModule> m_game;
     bool m_enablePhysics;
     std::unique_ptr<physics::PhysicsWorld> m_physics;
+    // The Start systems ran for the scene that plays.
+    bool m_gameStarted = false;
+    // A scene asked for by game systems, loaded once the updates of the frame are done.
+    std::optional<asset::AssetId> m_sceneToLoad;
     std::optional<GameCodeBuilder> m_gameBuilder;
+    std::unique_ptr<ExportJob> m_export;
+    bool m_exportWaiting = false;
     // The build of the library that is loaded, and when to look for a newer one.
     std::filesystem::file_time_type m_gameLibraryTime{};
     Clock::time_point m_nextLibraryCheck{};
@@ -155,6 +292,7 @@ ApplicationRunner::ApplicationRunner(Application& application, const Application
     , m_loadGameCode(config.loadGameCode || config.editor)
     , m_enablePhysics(config.enablePhysics)
 {
+    m_application.m_runner = this;
     m_application.m_platform = &services.platform;
     m_application.m_window = &services.window;
     m_application.m_renderer = services.renderer;
@@ -168,6 +306,15 @@ ApplicationRunner::ApplicationRunner(Application& application, const Application
     m_application.m_stopRequested = false;
     AssetManager& assets = services.assets;
     scene::setPrefabSourceLoader([&assets](asset::AssetId prefab) { return assets.sceneText(prefab); });
+    if (isEditor())
+    {
+        std::vector<tools::EngineBuildChoice> choices;
+        for (const EngineBuild& build : findEngineBuilds(services.platform.baseDirectory()))
+        {
+            choices.push_back({.name = build.name, .configuration = build.configuration});
+        }
+        services.tools->setEngineBuilds(std::move(choices));
+    }
 }
 
 ApplicationRunner::~ApplicationRunner()
@@ -176,12 +323,57 @@ ApplicationRunner::~ApplicationRunner()
     closeGameCode();
     scene::setPrefabSourceLoader({});
     m_services.platform.setLiveRedrawCallback({});
+    m_application.m_runner = nullptr;
     m_application.m_platform = nullptr;
     m_application.m_window = nullptr;
     m_application.m_renderer = nullptr;
     m_application.m_scene = nullptr;
     m_application.m_assets = nullptr;
     m_application.m_jobs = nullptr;
+}
+
+asset::AssetDatabase* ApplicationRunner::database() const noexcept
+{
+    return m_services.database.get();
+}
+
+asset::AssetSource* ApplicationRunner::assetSource() const noexcept
+{
+    if (m_services.database != nullptr)
+    {
+        return m_services.database.get();
+    }
+    return m_services.package.get();
+}
+
+core::Result<void> ApplicationRunner::loadScene(asset::AssetId sceneAsset)
+{
+    const core::Result<std::string> text = m_services.assets.sceneText(sceneAsset);
+    if (!text)
+    {
+        return std::unexpected(text.error());
+    }
+    core::Result<scene::Scene> loaded = scene::loadScene(*text);
+    if (!loaded)
+    {
+        return std::unexpected(loaded.error());
+    }
+    const bool restart = m_gameStarted;
+    if (restart)
+    {
+        destroyPhysics();
+    }
+    *m_application.m_scene = std::move(*loaded);
+    m_sceneToLoad.reset();
+    const asset::AssetSource* const source = assetSource();
+    const asset::AssetInfo* const info = source != nullptr ? source->find(sceneAsset) : nullptr;
+    DEVEX_LOG_INFO("Loaded scene {}", info != nullptr ? info->name : sceneAsset.uuid.toString());
+    if (restart)
+    {
+        createPhysics();
+        runSystems(SystemPhase::Start, core::Duration::zero());
+    }
+    return {};
 }
 
 bool ApplicationRunner::isEditor() const noexcept
@@ -201,7 +393,9 @@ int ApplicationRunner::execute()
     if (!isEditor())
     {
         createPhysics();
+        m_gameStarted = true;
         runSystems(SystemPhase::Start, core::Duration::zero());
+        loadRequestedScene();
     }
 
     m_services.platform.setLiveRedrawCallback([this] {
@@ -303,9 +497,9 @@ void ApplicationRunner::runFrame()
     m_previousFrame = frameStart;
 
     // Finished imports replace the assets they changed before anything uses them this frame.
-    if (asset::AssetDatabase* const database = m_services.assets.database())
+    if (m_services.database != nullptr)
     {
-        handleAssetEvents(*database);
+        handleAssetEvents(*m_services.database);
     }
 
     updateGameCode();
@@ -316,6 +510,7 @@ void ApplicationRunner::runFrame()
     {
         // The editor goes first, so that Play and Stop take effect this frame.
         m_services.tools->setGameCodeStatus(gameCodeStatus());
+        updateExport();
         if (canRender)
         {
             m_services.tools->update(*m_application.m_scene, core::Duration(frameTime), m_playState);
@@ -394,6 +589,19 @@ void ApplicationRunner::runGameplay(std::chrono::nanoseconds frameTime)
     if (std::exchange(m_application.m_stopRequested, false) && m_playScene)
     {
         stopPlaying();
+        return;
+    }
+    loadRequestedScene();
+}
+
+void ApplicationRunner::loadRequestedScene()
+{
+    if (const std::optional<asset::AssetId> sceneAsset = std::exchange(m_sceneToLoad, std::nullopt))
+    {
+        if (core::Result<void> loaded = loadScene(*sceneAsset); !loaded)
+        {
+            DEVEX_LOG_ERROR("Cannot load scene {}: {}", sceneAsset->uuid, loaded.error());
+        }
     }
 }
 
@@ -454,6 +662,10 @@ void ApplicationRunner::handleEditorRequests(tools::EditorRequests requests)
     {
         m_gameBuilder->requestBuild();
     }
+    if (requests.exportGame && m_services.database != nullptr && !m_export)
+    {
+        m_exportWaiting = true;
+    }
     if (requests.play && !m_playScene && m_services.database != nullptr)
     {
         startPlaying();
@@ -484,13 +696,17 @@ void ApplicationRunner::startPlaying()
     createPhysics();
     DEVEX_LOG_INFO("Playing");
     m_application.onPlayStarted();
+    m_gameStarted = true;
     runSystems(SystemPhase::Start, core::Duration::zero());
+    loadRequestedScene();
 }
 
 void ApplicationRunner::stopPlaying()
 {
     m_application.onPlayStopped();
     destroyPhysics();
+    m_gameStarted = false;
+    m_sceneToLoad.reset();
     m_application.m_scene = &m_services.scene;
     m_application.m_playing = false;
     m_application.m_stopRequested = false;
@@ -511,9 +727,12 @@ void ApplicationRunner::closeProject()
         stopPlaying();
     }
     // Everything loaded from the project goes before its database.
+    m_export.reset();
+    m_exportWaiting = false;
+    m_services.tools->setExportStatus({});
     m_services.tools->setAssetDatabase(nullptr);
     closeGameCode();
-    m_services.assets.setDatabase(nullptr);
+    m_services.assets.setSource(nullptr);
     m_services.database.reset();
     m_services.scene = scene::Scene{};
 }
@@ -586,15 +805,21 @@ void ApplicationRunner::switchProject(const std::filesystem::path& projectFile)
         return;
     }
     m_services.database = std::move(*opened);
-    m_services.assets.setDatabase(m_services.database.get());
+    m_services.assets.setSource(m_services.database.get());
     openGameCode();
     m_services.tools->setAssetDatabase(m_services.database.get());
 }
 
 void ApplicationRunner::openGameCode()
 {
-    if (!m_loadGameCode || m_services.database == nullptr)
+    if (!m_loadGameCode || assetSource() == nullptr)
     {
+        return;
+    }
+    if (m_services.database == nullptr)
+    {
+        // An exported game ships its module next to the executable.
+        loadGameModule();
         return;
     }
     const asset::Project& project = m_services.database->project();
@@ -613,13 +838,17 @@ void ApplicationRunner::closeGameCode()
 
 void ApplicationRunner::loadGameModule()
 {
-    const asset::Project& project = m_services.database->project();
-    const std::filesystem::path library = GameCodeBuilder::libraryPath(project);
+    const bool packaged = m_services.database == nullptr;
+    const asset::Project& project = assetSource()->project();
+    // An exported game loads its module in place, since it is never rebuilt while the game runs.
+    const std::filesystem::path library = packaged
+                                              ? m_services.platform.baseDirectory() / GameCodeBuilder::libraryFileName()
+                                              : GameCodeBuilder::libraryPath(project);
     std::error_code error;
     const std::filesystem::file_time_type built = std::filesystem::last_write_time(library, error);
     if (error)
     {
-        if (GameCodeBuilder::hasCode(project) && !isEditor())
+        if (!packaged && GameCodeBuilder::hasCode(project) && !isEditor())
         {
             DEVEX_LOG_WARNING("The game code of {} is not built: open the project in devex-editor to build it",
                               project.name);
@@ -627,7 +856,8 @@ void ApplicationRunner::loadGameModule()
         return;
     }
     m_gameLibraryTime = built;
-    core::Result<std::unique_ptr<GameModule>> module = GameModule::load(library, project.cacheDirectory() / "code" / "modules");
+    core::Result<std::unique_ptr<GameModule>> module =
+        GameModule::load(library, packaged ? std::filesystem::path() : project.cacheDirectory() / "code" / "modules");
     if (!module)
     {
         DEVEX_LOG_ERROR("Cannot load the game code: {}", module.error());
@@ -697,6 +927,10 @@ void ApplicationRunner::runSystems(SystemPhase phase, core::Duration delta)
     {
         m_application.requestQuit();
     }
+    if (context.sceneToLoad.isValid())
+    {
+        m_sceneToLoad = context.sceneToLoad;
+    }
 }
 
 void ApplicationRunner::createPhysics()
@@ -706,7 +940,7 @@ void ApplicationRunner::createPhysics()
         return;
     }
     core::Result<std::unique_ptr<physics::PhysicsWorld>> world = physics::PhysicsWorld::create({
-        .settings = m_services.database != nullptr ? m_services.database->project().physics : asset::PhysicsSettings{},
+        .settings = assetSource() != nullptr ? assetSource()->project().physics : asset::PhysicsSettings{},
         .meshes = [this](asset::AssetId mesh) { return m_services.assets.meshData(mesh); },
     });
     if (!world)
@@ -746,6 +980,58 @@ tools::GameCodeStatus ApplicationRunner::gameCodeStatus() const
     return {.state = State::Ready,
             .message = std::format("{} components, {} systems", m_game->registry().components().size(),
                                    m_game->registry().systems().size())};
+}
+
+void ApplicationRunner::updateExport()
+{
+    if (m_exportWaiting && m_services.database != nullptr)
+    {
+        const bool building = m_gameBuilder && m_gameBuilder->state() == GameCodeBuilder::State::Building;
+        if (m_services.database->pendingImports() > 0 || building)
+        {
+            m_services.tools->setExportStatus(
+                {.state = tools::ExportStatus::State::Running, .message = "Waiting for imports and builds to finish"});
+        }
+        else
+        {
+            m_exportWaiting = false;
+            startExport();
+        }
+    }
+    if (m_export)
+    {
+        m_services.tools->setExportStatus(m_export->status());
+        if (m_export->finished())
+        {
+            m_export.reset();
+        }
+    }
+}
+
+void ApplicationRunner::startExport()
+{
+    const asset::Project& project = m_services.database->project();
+    const std::vector<EngineBuild> builds = findEngineBuilds(m_services.platform.baseDirectory());
+    const std::optional<EngineBuild> engine = findEngineBuild(builds, project.exportSettings.configuration);
+    if (!engine)
+    {
+        const std::string message =
+            std::format("there is no {} build of the engine next to the editor", project.exportSettings.configuration);
+        DEVEX_LOG_ERROR("Cannot export {}: {}", project.name, message);
+        m_services.tools->setExportStatus({.state = tools::ExportStatus::State::Failed, .message = message});
+        return;
+    }
+    core::Result<ExportPlan> plan = planExport(*m_services.database, *engine);
+    if (!plan)
+    {
+        DEVEX_LOG_ERROR("Cannot export {}: {}", project.name, plan.error());
+        m_services.tools->setExportStatus({.state = tools::ExportStatus::State::Failed, .message = plan.error().message});
+        return;
+    }
+    DEVEX_LOG_INFO("Exporting {} with the {} engine build to {}", project.name, engine->configuration,
+                   core::toUtf8(plan->output));
+    m_export = std::make_unique<ExportJob>(std::move(*plan));
+    m_services.tools->setExportStatus(m_export->status());
 }
 
 // Uploads the built-in meshes and registers them under their reserved asset identifiers.
@@ -797,7 +1083,26 @@ AssetManager& Application::assets() noexcept
 
 asset::AssetDatabase* Application::assetDatabase() noexcept
 {
-    return assets().database();
+    DEVEX_ASSERT_MSG(m_runner != nullptr, "engine services are unavailable outside run()");
+    return m_runner->database();
+}
+
+asset::AssetSource* Application::assetSource() noexcept
+{
+    DEVEX_ASSERT_MSG(m_runner != nullptr, "engine services are unavailable outside run()");
+    return m_runner->assetSource();
+}
+
+const asset::Project* Application::project() noexcept
+{
+    const asset::AssetSource* const source = assetSource();
+    return source != nullptr ? &source->project() : nullptr;
+}
+
+core::Result<void> Application::loadScene(asset::AssetId sceneAsset)
+{
+    DEVEX_ASSERT_MSG(m_runner != nullptr, "engine services are unavailable outside run()");
+    return m_runner->loadScene(sceneAsset);
 }
 
 core::JobSystem& Application::jobs() noexcept
@@ -864,12 +1169,48 @@ int run(Application& application, const ApplicationConfig& config)
         return EXIT_FAILURE;
     }
 
+    // An exported game comes with its package, whose settings open the window.
+    std::unique_ptr<asset::PackageReader> package;
+    std::optional<asset::Project> launchSettings;
+    if (!config.package.empty())
+    {
+        const std::filesystem::path packagePath =
+            config.package.is_absolute() ? config.package : platform->baseDirectory() / config.package;
+        core::Result<std::unique_ptr<asset::PackageReader>> opened = asset::PackageReader::open(packagePath);
+        if (!opened)
+        {
+            DEVEX_LOG_FATAL("Cannot open the game: {}", opened.error());
+            return EXIT_FAILURE;
+        }
+        package = std::move(*opened);
+        launchSettings = package->project();
+        DEVEX_LOG_INFO("Game {}: {} assets", launchSettings->name, package->assetCount());
+    }
+    else if (!config.project.empty())
+    {
+        if (core::Result<asset::Project> project = asset::loadProject(config.project))
+        {
+            launchSettings = std::move(*project);
+        }
+    }
+    ApplicationConfig effective = config;
+    if (config.useProjectWindowSettings && launchSettings)
+    {
+        const asset::WindowSettings& settings = launchSettings->window;
+        effective.title = launchSettings->name;
+        effective.width = settings.width;
+        effective.height = settings.height;
+        effective.maxFrameRate = settings.maxFrameRate;
+        effective.presentMode = settings.vsync ? render::PresentMode::Fifo : render::PresentMode::Immediate;
+    }
+
     core::Result<platform::Window> window = platform->createWindow({
-        .title = config.title,
-        .width = config.width,
-        .height = config.height,
-        .resizable = config.resizable,
-        .vulkan = config.enableRendering,
+        .title = effective.title,
+        .width = effective.width,
+        .height = effective.height,
+        .resizable = effective.resizable,
+        .vulkan = effective.enableRendering,
+        .fullscreen = config.useProjectWindowSettings && launchSettings && launchSettings->window.fullscreen,
     });
     if (!window)
     {
@@ -878,8 +1219,8 @@ int run(Application& application, const ApplicationConfig& config)
     }
 
     const math::Extent2D pixelSize = window->pixelSize();
-    DEVEX_LOG_DEBUG("Main window {}x{} ({}x{} pixels), fixed update at {} Hz", config.width,
-                    config.height, pixelSize.width, pixelSize.height, config.fixedUpdateRate);
+    DEVEX_LOG_DEBUG("Main window {}x{} ({}x{} pixels), fixed update at {} Hz", effective.width,
+                    effective.height, pixelSize.width, pixelSize.height, config.fixedUpdateRate);
 
     // Destroyed last: running imports finish before the process exits.
     core::JobSystem jobs(config.workerThreads);
@@ -896,13 +1237,17 @@ int run(Application& application, const ApplicationConfig& config)
         }
         database = std::move(*opened);
     }
+    if (config.useProjectWindowSettings)
+    {
+        detail::applyWindowIcon(*window, database.get(), package.get());
+    }
 
     std::optional<render::Renderer> renderer;
     if (config.enableRendering)
     {
         core::Result<render::Renderer> created = render::Renderer::create(*platform, *window, {
-            .applicationName = config.title,
-            .presentMode = config.presentMode,
+            .applicationName = effective.title,
+            .presentMode = effective.presentMode,
             .preferredGpu = config.preferredGpu,
         });
         if (!created)
@@ -913,7 +1258,8 @@ int run(Application& application, const ApplicationConfig& config)
         renderer.emplace(std::move(*created));
     }
 
-    AssetManager assets(renderer ? &*renderer : nullptr, database.get());
+    AssetManager assets(renderer ? &*renderer : nullptr,
+                        database != nullptr ? static_cast<asset::AssetSource*>(database.get()) : package.get());
     if (renderer)
     {
         if (core::Result<void> builtins = detail::registerBuiltinMeshes(*renderer, assets);
@@ -953,7 +1299,7 @@ int run(Application& application, const ApplicationConfig& config)
     }
 
     scene::Scene scene;
-    detail::ApplicationRunner runner(application, config,
+    detail::ApplicationRunner runner(application, effective,
                                      {
                                          .platform = *platform,
                                          .window = *window,
@@ -963,6 +1309,7 @@ int run(Application& application, const ApplicationConfig& config)
                                          .jobs = jobs,
                                          .tools = tools.get(),
                                          .database = database,
+                                         .package = package,
                                      });
     return runner.execute();
 }

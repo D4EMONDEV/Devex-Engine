@@ -118,4 +118,7 @@ private:
 // Sleeps for the given duration with sub-millisecond precision.
 void sleepPrecise(std::chrono::nanoseconds duration);
 
+// Directory containing the executable, available without a Platform, as for command-line tools.
+[[nodiscard]] std::filesystem::path executableDirectory();
+
 } // namespace devex::platform

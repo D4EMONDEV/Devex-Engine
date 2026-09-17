@@ -1,6 +1,7 @@
 #pragma once
 
 #include <devex/asset/Project.hpp>
+#include <devex/core/BuildInfo.hpp>
 #include <devex/core/Error.hpp>
 #include <devex/platform/Process.hpp>
 
@@ -26,19 +27,27 @@ public:
         Failed,
     };
 
-    // The library the code of a project builds to, for the configuration of the engine.
-    [[nodiscard]] static std::filesystem::path libraryPath(const asset::Project& project);
+    // The library the code of a project builds to, for a configuration of the engine: by default,
+    // that of the running engine.
+    [[nodiscard]] static std::filesystem::path libraryPath(const asset::Project& project,
+                                                           std::string_view configuration = core::buildType());
+    // The file name of game modules: Game.dll on Windows.
+    [[nodiscard]] static std::filesystem::path libraryFileName();
     [[nodiscard]] static bool hasCode(const asset::Project& project);
     // Writes code/CMakeLists.txt and a first source file with an example component and system.
     [[nodiscard]] static core::Result<void> createCode(const asset::Project& project);
 
-    // devexConfigDirectory holds the DevexConfig.cmake of the engine build.
-    GameCodeBuilder(asset::Project project, std::filesystem::path devexConfigDirectory);
+    // devexConfigDirectory holds the DevexConfig.cmake of the engine build, whose configuration
+    // ("Debug", "Release") the module is built in.
+    GameCodeBuilder(asset::Project project, std::filesystem::path devexConfigDirectory,
+                    std::string configuration = std::string(core::buildType()));
 
     // Checks the sources for changes, starts builds, and forwards the output of a running build to
     // the log. Returns true once when a build has just succeeded.
     [[nodiscard]] bool update();
     void requestBuild() noexcept;
+    // Builds now, whether sources changed or not, and returns once the build is over.
+    [[nodiscard]] core::Result<void> buildAndWait();
 
     [[nodiscard]] State state() const noexcept;
     // The first error of the last failed build, or a summary.
@@ -61,6 +70,7 @@ private:
 
     asset::Project m_project;
     std::filesystem::path m_devexConfigDirectory;
+    std::string m_configuration;
     std::optional<platform::Process> m_process;
     State m_state = State::Idle;
     std::string m_message;

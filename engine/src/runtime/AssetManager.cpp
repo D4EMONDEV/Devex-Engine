@@ -1,5 +1,4 @@
 #include <devex/asset/Artifact.hpp>
-#include <devex/core/File.hpp>
 #include <devex/core/Log.hpp>
 #include <devex/asset/Primitives.hpp>
 #include <devex/runtime/AssetManager.hpp>
@@ -8,9 +7,9 @@
 
 namespace devex::runtime {
 
-AssetManager::AssetManager(render::Renderer* renderer, asset::AssetDatabase* database) noexcept
+AssetManager::AssetManager(render::Renderer* renderer, asset::AssetSource* source) noexcept
     : m_renderer(renderer)
-    , m_database(database)
+    , m_source(source)
 {
 }
 
@@ -59,8 +58,8 @@ render::TextureHandle AssetManager::texture(asset::AssetId id)
 const asset::ModelData* AssetManager::model(asset::AssetId id)
 {
     auto found = m_models.find(id);
-    if (found == m_models.end() && id.isValid() && m_database != nullptr &&
-        !m_failed.contains(id) && m_database->find(id) != nullptr && loadModel(id))
+    if (found == m_models.end() && id.isValid() && m_source != nullptr &&
+        !m_failed.contains(id) && m_source->find(id) != nullptr && loadModel(id))
     {
         found = m_models.find(id);
     }
@@ -77,11 +76,11 @@ const asset::MeshData* AssetManager::meshData(asset::AssetId id)
     {
         return &m_meshData.emplace(id, std::move(*builtin)).first->second;
     }
-    if (m_database == nullptr || m_database->find(id) == nullptr)
+    if (m_source == nullptr || m_source->find(id) == nullptr)
     {
         return nullptr;
     }
-    const core::Result<std::vector<std::byte>> bytes = m_database->loadArtifact(id);
+    const core::Result<std::vector<std::byte>> bytes = m_source->loadArtifact(id);
     core::Result<asset::MeshData> data =
         bytes ? asset::decodeMesh(*bytes) : core::Result<asset::MeshData>(std::unexpected(bytes.error()));
     if (!data)
@@ -98,32 +97,15 @@ core::Result<std::string> AssetManager::sceneText(asset::AssetId id)
     {
         return found->second;
     }
-    if (m_database == nullptr)
+    if (m_source == nullptr)
     {
         return core::makeError(core::ErrorCode::NotFound, "scene {} is not part of a project", id.uuid);
     }
-    const std::optional<asset::SourceFile> source = m_database->sourceOf(id);
-    const std::optional<std::filesystem::path> path =
-        source && source->importer == "scene" ? m_database->project().absolutePath(source->path) : std::nullopt;
-    if (!path)
+    core::Result<std::string> text = m_source->sceneText(id);
+    if (text)
     {
-        return core::makeError(core::ErrorCode::NotFound, "scene {} does not exist", id.uuid);
+        m_sceneTexts.emplace(id, *text);
     }
-    core::Result<std::string> text = core::readTextFile(*path);
-    if (!text)
-    {
-        const core::Result<std::vector<std::byte>> bytes = m_database->loadArtifact(id);
-        if (!bytes)
-        {
-            return core::makeError(text.error().code, "cannot read {}: {}", source->path, text.error().message);
-        }
-        text = asset::decodeScene(*bytes);
-        if (!text)
-        {
-            return std::unexpected(text.error());
-        }
-    }
-    m_sceneTexts.emplace(id, *text);
     return text;
 }
 
@@ -191,12 +173,12 @@ void AssetManager::handleEvents(std::span<const asset::AssetEvent> events)
     }
 }
 
-asset::AssetDatabase* AssetManager::database() const noexcept
+asset::AssetSource* AssetManager::source() const noexcept
 {
-    return m_database;
+    return m_source;
 }
 
-void AssetManager::setDatabase(asset::AssetDatabase* database)
+void AssetManager::setSource(asset::AssetSource* source)
 {
     std::vector<asset::AssetId> loaded;
     for (const auto& [id, mesh] : m_meshes)
@@ -222,19 +204,19 @@ void AssetManager::setDatabase(asset::AssetDatabase* database)
     m_meshData.clear();
     m_sceneTexts.clear();
     m_failed.clear();
-    m_database = database;
+    m_source = source;
 }
 
 bool AssetManager::canLoad(asset::AssetId id) const
 {
     // Assets still importing are not in the database yet; their import event triggers a retry.
-    return id.isValid() && m_renderer != nullptr && m_database != nullptr &&
-           !m_failed.contains(id) && m_database->find(id) != nullptr;
+    return id.isValid() && m_renderer != nullptr && m_source != nullptr &&
+           !m_failed.contains(id) && m_source->find(id) != nullptr;
 }
 
 bool AssetManager::loadMesh(asset::AssetId id)
 {
-    const core::Result<std::vector<std::byte>> bytes = m_database->loadArtifact(id);
+    const core::Result<std::vector<std::byte>> bytes = m_source->loadArtifact(id);
     core::Result<asset::MeshData> data = bytes ? asset::decodeMesh(*bytes)
                                                : core::Result<asset::MeshData>(std::unexpected(bytes.error()));
     core::Result<render::MeshHandle> handle =
@@ -258,7 +240,7 @@ bool AssetManager::loadMesh(asset::AssetId id)
 
 bool AssetManager::loadTexture(asset::AssetId id)
 {
-    const core::Result<std::vector<std::byte>> bytes = m_database->loadArtifact(id);
+    const core::Result<std::vector<std::byte>> bytes = m_source->loadArtifact(id);
     core::Result<asset::TextureData> data =
         bytes ? asset::decodeTexture(*bytes)
               : core::Result<asset::TextureData>(std::unexpected(bytes.error()));
@@ -277,7 +259,7 @@ bool AssetManager::loadTexture(asset::AssetId id)
 
 bool AssetManager::loadMaterial(asset::AssetId id)
 {
-    const core::Result<std::vector<std::byte>> bytes = m_database->loadArtifact(id);
+    const core::Result<std::vector<std::byte>> bytes = m_source->loadArtifact(id);
     core::Result<asset::MaterialData> data =
         bytes ? asset::decodeMaterial(*bytes)
               : core::Result<asset::MaterialData>(std::unexpected(bytes.error()));
@@ -304,7 +286,7 @@ bool AssetManager::loadMaterial(asset::AssetId id)
 
 bool AssetManager::loadModel(asset::AssetId id)
 {
-    const core::Result<std::vector<std::byte>> bytes = m_database->loadArtifact(id);
+    const core::Result<std::vector<std::byte>> bytes = m_source->loadArtifact(id);
     core::Result<asset::ModelData> data =
         bytes ? asset::decodeModel(*bytes)
               : core::Result<asset::ModelData>(std::unexpected(bytes.error()));

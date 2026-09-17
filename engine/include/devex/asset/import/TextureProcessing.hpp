@@ -28,6 +28,12 @@ struct Image
 // Decodes a PNG, JPEG, TGA or BMP file held in memory.
 [[nodiscard]] core::Result<Image> decodeImage(std::span<const std::byte> encoded);
 
+// Resamples an image whose colors are in sRGB, with premultiplied alpha during filtering.
+[[nodiscard]] Image resizeImage(const Image& image, std::uint32_t width, std::uint32_t height);
+
+// Encodes the image as a PNG file.
+[[nodiscard]] std::vector<std::byte> encodePng(const Image& image);
+
 // Linear RGBA pixels with an unbounded range, row by row from the top-left corner.
 struct FloatImage
 {

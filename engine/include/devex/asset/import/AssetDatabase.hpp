@@ -1,6 +1,7 @@
 #pragma once
 
 #include <devex/asset/AssetId.hpp>
+#include <devex/asset/AssetSource.hpp>
 #include <devex/asset/AssetType.hpp>
 #include <devex/asset/Project.hpp>
 #include <devex/core/Error.hpp>
@@ -28,16 +29,6 @@ enum class ImportStatus : std::uint8_t
 };
 
 [[nodiscard]] std::string_view toString(ImportStatus status) noexcept;
-
-// An asset whose cooked data is in the cache.
-struct AssetInfo
-{
-    AssetId id;
-    AssetType type = AssetType::Mesh;
-    std::string name;
-    // Main asset of the source file that produced it: its own identifier for a main asset.
-    AssetId source;
-};
 
 // A file of the assets folder that an importer handles.
 struct SourceFile
@@ -80,7 +71,7 @@ struct AssetDatabaseConfig
 // identifiers and import options; imports run on the jobs and write cooked .dvxasset files and an
 // import record into the .devex cache, so that unchanged files are never imported twice. Every
 // member function must be called from the same thread, normally the main thread.
-class AssetDatabase
+class AssetDatabase final : public AssetSource
 {
 public:
     // Reads the cache, then scans the folder and queues the imports it needs.
@@ -88,12 +79,12 @@ public:
         const Project& project, core::JobSystem& jobs, const AssetDatabaseConfig& config = {});
 
     // Cancels the imports in progress; their results are discarded.
-    ~AssetDatabase();
+    ~AssetDatabase() override;
 
     AssetDatabase(const AssetDatabase&) = delete;
     AssetDatabase& operator=(const AssetDatabase&) = delete;
 
-    [[nodiscard]] const Project& project() const noexcept;
+    [[nodiscard]] const Project& project() const noexcept override;
     // Changes the settings of the project and writes them to its file.
     [[nodiscard]] core::Result<void> updateProject(const Project& project);
 
@@ -112,18 +103,20 @@ public:
     // Imports again the source file that produced the asset, even when nothing changed.
     [[nodiscard]] core::Result<void> reimport(AssetId id);
 
-    [[nodiscard]] const AssetInfo* find(AssetId id) const;
+    [[nodiscard]] const AssetInfo* find(AssetId id) const override;
     // Sorted by name, optionally of one type.
-    [[nodiscard]] std::vector<AssetInfo> assets(std::optional<AssetType> type = std::nullopt) const;
+    [[nodiscard]] std::vector<AssetInfo> assets(std::optional<AssetType> type = std::nullopt) const override;
     // Sorted by path.
     [[nodiscard]] std::vector<SourceFile> sources() const;
     // The source file of any asset it produced.
     [[nodiscard]] std::optional<SourceFile> sourceOf(AssetId id) const;
     // The main asset of a source file, by res:// path.
-    [[nodiscard]] std::optional<AssetId> findByPath(std::string_view resourcePath) const;
+    [[nodiscard]] std::optional<AssetId> findByPath(std::string_view resourcePath) const override;
 
     [[nodiscard]] std::filesystem::path artifactPath(AssetId id) const;
-    [[nodiscard]] core::Result<std::vector<std::byte>> loadArtifact(AssetId id) const;
+    [[nodiscard]] core::Result<std::vector<std::byte>> loadArtifact(AssetId id) const override;
+    // The source file of the scene when it can be read, otherwise its import.
+    [[nodiscard]] core::Result<std::string> sceneText(AssetId id) const override;
 
     // Copies a file from outside the project into a folder of it, given as a res:// path, together
     // with the files a .gltf refers to. Returns the identifier of the main asset, which becomes

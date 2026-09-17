@@ -382,6 +382,11 @@ intensity = 6000
 [override target="0254301e-6adb-5964-a5e7-e0315b9d1c0b" type="PointLight"]
 color = vec3(0.55, 0.75, 1)
 
+[entity uuid="493fccc4-0e66-5cbb-ba15-0a43f3f069a3" name="Scene switch"]
+
+[component type="SceneSwitch"]
+scene = asset("4bd5feef-9c35-4dfe-88fe-a66b488e9f9e")
+
 [entity uuid="e08c289a-ee05-5505-9a3f-cd7d45479d76" name="Moving platform"]
 
 [component type="Transform"]

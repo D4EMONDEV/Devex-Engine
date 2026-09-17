@@ -1,5 +1,6 @@
 #pragma once
 
+#include <devex/asset/AssetSource.hpp>
 #include <devex/asset/import/AssetDatabase.hpp>
 #include <devex/core/Error.hpp>
 #include <devex/core/JobSystem.hpp>
@@ -50,6 +51,13 @@ struct ApplicationConfig
     bool loadGameCode = false;
     // The .dvxproj file whose assets folder is imported and loaded; empty runs without a project.
     std::filesystem::path project;
+    // The package of an exported game (.dvxpak), played instead of a project: its assets and
+    // settings come from it, and its game module from Game.dll next to the executable. A relative
+    // path is relative to the executable.
+    std::filesystem::path package;
+    // Opens the main window as the settings of the project or package say (name, size, fullscreen,
+    // vsync, frame rate limit, icon) instead of the fields above, as the player does.
+    bool useProjectWindowSettings = false;
     // Imports again the assets that change on disk while the application runs.
     bool watchAssets = true;
     // Simulates the physics components of the scene while gameplay runs, after the fixed updates,
@@ -131,8 +139,17 @@ protected:
     [[nodiscard]] scene::Scene& scene() noexcept;
     // Loads assets by identifier, with the built-in meshes registered.
     [[nodiscard]] AssetManager& assets() noexcept;
-    // The asset database of the project, or null when the application runs without one.
+    // The asset database of the project, or null when the application runs without one, as an
+    // exported game does.
     [[nodiscard]] asset::AssetDatabase* assetDatabase() noexcept;
+    // Where assets come from: the asset database of the project or the package of the game; null
+    // without either.
+    [[nodiscard]] asset::AssetSource* assetSource() noexcept;
+    // The settings of the project or of the exported game; null without either.
+    [[nodiscard]] const asset::Project* project() noexcept;
+    // Replaces scene() with a scene asset now. While the game runs, the physics starts over and the
+    // Start systems run for the new scene. Game systems ask for it with SystemContext::sceneToLoad.
+    [[nodiscard]] core::Result<void> loadScene(asset::AssetId scene);
     [[nodiscard]] core::JobSystem& jobs() noexcept;
     // Only available when ApplicationConfig::enableRendering is set.
     [[nodiscard]] render::Renderer& renderer() noexcept;
@@ -154,6 +171,7 @@ protected:
 private:
     friend class detail::ApplicationRunner;
 
+    detail::ApplicationRunner* m_runner = nullptr;
     platform::Platform* m_platform = nullptr;
     platform::Window* m_window = nullptr;
     render::Renderer* m_renderer = nullptr;

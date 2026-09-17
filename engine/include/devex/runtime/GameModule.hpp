@@ -21,7 +21,8 @@ class GameModule
 {
 public:
     // Copies the library into copyDirectory under a new name, loads the copy, checks its API version,
-    // then registers its components and systems. Copies left by earlier runs are removed.
+    // then registers its components and systems. Copies left by earlier runs are removed. An empty
+    // copyDirectory loads the library in place, as exported games do.
     [[nodiscard]] static core::Result<std::unique_ptr<GameModule>> load(const std::filesystem::path& library,
                                                                         const std::filesystem::path& copyDirectory);
 
@@ -42,6 +43,9 @@ public:
 
 private:
     GameModule(std::filesystem::path source, platform::SharedLibrary library) noexcept;
+    // Loads file, the library itself or its copy, as the module of library.
+    [[nodiscard]] static core::Result<std::unique_ptr<GameModule>> loadLibrary(const std::filesystem::path& library,
+                                                                               const std::filesystem::path& file);
 
     std::filesystem::path m_source;
     // Unloaded last, once nothing refers to its code anymore.

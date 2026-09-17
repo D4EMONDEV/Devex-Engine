@@ -1,9 +1,14 @@
+#include <devex/asset/Artifact.hpp>
+#include <devex/asset/Package.hpp>
+#include <devex/core/Uuid.hpp>
 #include <devex/runtime/Application.hpp>
 #include <devex/scene/Components.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <cstdlib>
+#include <filesystem>
+#include <format>
 
 using devex::core::Duration;
 using devex::core::Result;
@@ -133,6 +138,101 @@ TEST_CASE("A failed startup stops before the first frame", "[runtime][applicatio
 
     CHECK(application.updates == 0);
     CHECK(application.shutdowns == 0);
+}
+
+namespace {
+
+// Plays the scenes of a package: the first one at startup, the second one after a frame.
+class PackagedApplication final : public devex::runtime::Application
+{
+public:
+    devex::asset::AssetId first;
+    devex::asset::AssetId second;
+    std::string gameName;
+    bool windowFollowedSettings = false;
+    std::string startupEntity;
+    std::string loadedEntity;
+
+    Result<void> onStartup() override
+    {
+        const devex::asset::AssetSource* const source = assetSource();
+        if (source == nullptr || project() == nullptr || assetDatabase() != nullptr)
+        {
+            return devex::core::makeError(devex::core::ErrorCode::InvalidState, "the package is not the asset source");
+        }
+        gameName = project()->name;
+        windowFollowedSettings = window().size() == devex::math::Extent2D{400, 300};
+        if (Result<void> loaded = loadScene(first); !loaded)
+        {
+            return loaded;
+        }
+        startupEntity = scene().name(scene().firstRoot());
+        return {};
+    }
+
+    void onUpdate(Duration /*frameDelta*/) override
+    {
+        if (++m_updates == 1)
+        {
+            if (loadScene(second))
+            {
+                loadedEntity = scene().name(scene().firstRoot());
+            }
+            CHECK_FALSE(loadScene(devex::asset::AssetId::generate()).has_value());
+        }
+        else
+        {
+            requestQuit();
+        }
+    }
+
+private:
+    int m_updates = 0;
+};
+
+[[nodiscard]] std::string sceneWithEntity(std::string_view name)
+{
+    return std::format("[scene format=1]\n\n[entity uuid=\"{}\" name=\"{}\"]\n", devex::core::Uuid::generate(), name);
+}
+
+} // namespace
+
+TEST_CASE("Exported games play the scenes of their package", "[runtime][application]")
+{
+    const std::filesystem::path directory =
+        std::filesystem::temp_directory_path() / ("devex-packaged-" + devex::core::Uuid::generate().toString());
+    PackagedApplication application;
+    application.first = devex::asset::AssetId::generate();
+    application.second = devex::asset::AssetId::generate();
+    {
+        devex::core::Result<devex::asset::PackageWriter> writer = devex::asset::PackageWriter::create(directory / "Game.dvxpak");
+        REQUIRE(writer.has_value());
+        devex::asset::Project settings{.name = "Packaged game"};
+        settings.window.width = 400;
+        settings.window.height = 300;
+        writer->setProject(settings);
+        REQUIRE(writer->add({.id = application.first, .type = devex::asset::AssetType::Scene, .name = "first",
+                             .source = application.first},
+                            "res://assets/first.dvxscene", devex::asset::encodeScene(sceneWithEntity("Start"))));
+        REQUIRE(writer->add({.id = application.second, .type = devex::asset::AssetType::Scene, .name = "second",
+                             .source = application.second},
+                            "res://assets/second.dvxscene", devex::asset::encodeScene(sceneWithEntity("Next"))));
+        REQUIRE(writer->finish());
+    }
+
+    ApplicationConfig config = testConfig;
+    config.package = directory / "Game.dvxpak";
+    config.useProjectWindowSettings = true;
+    CHECK(devex::runtime::run(application, config) == EXIT_SUCCESS);
+    CHECK(application.gameName == "Packaged game");
+    CHECK(application.windowFollowedSettings);
+    CHECK(application.startupEntity == "Start");
+    CHECK(application.loadedEntity == "Next");
+
+    config.package = directory / "Missing.dvxpak";
+    PackagedApplication missing;
+    CHECK(devex::runtime::run(missing, config) == EXIT_FAILURE);
+    std::filesystem::remove_all(directory);
 }
 
 TEST_CASE("An application can run again after a previous run", "[runtime][application]")
