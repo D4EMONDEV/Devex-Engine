@@ -4,6 +4,7 @@
 #include <devex/scene/Scene.hpp>
 
 #include <cstddef>
+#include <cstdint>
 #include <deque>
 #include <memory>
 #include <string>
@@ -43,12 +44,28 @@ public:
     [[nodiscard]] const Command* nextUndo() const noexcept;
     [[nodiscard]] const Command* nextRedo() const noexcept;
     [[nodiscard]] std::size_t undoCount() const noexcept;
+    // Forgets every command. The state that follows gets a new identifier.
     void clear() noexcept;
 
+    // Identifies the state reached by the commands done so far: undoing then redoing a command
+    // comes back to the same identifier, and a new command never reuses one. Comparing it with the
+    // identifier recorded when a scene was saved tells whether the scene has unsaved changes.
+    [[nodiscard]] std::uint64_t stateId() const noexcept;
+
 private:
+    struct Entry
+    {
+        std::unique_ptr<Command> command;
+        // The state identifier once the command is done.
+        std::uint64_t state = 0;
+    };
+
     std::size_t m_capacity;
-    std::deque<std::unique_ptr<Command>> m_done;
-    std::vector<std::unique_ptr<Command>> m_undone;
+    std::deque<Entry> m_done;
+    std::vector<Entry> m_undone;
+    // The state before the oldest remembered command.
+    std::uint64_t m_baseState = 0;
+    std::uint64_t m_lastState = 0;
 };
 
 } // namespace devex::tools

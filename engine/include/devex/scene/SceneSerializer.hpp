@@ -25,6 +25,7 @@
 namespace devex::scene {
 
 inline constexpr std::int64_t sceneFormatVersion = 1;
+inline constexpr std::string_view sceneExtension = ".dvxscene";
 
 [[nodiscard]] std::string saveScene(const Scene& scene);
 

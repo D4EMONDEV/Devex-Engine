@@ -93,6 +93,8 @@ struct GpuSceneData
     VkDeviceAddress lights = 0;
     VkDeviceAddress clusters = 0;
     VkDeviceAddress clusterLights = 0;
+    // Maps the pixel requested for picking to the whole 1x1 pick target.
+    math::Mat4 pickViewProjection{1.0f};
 };
 
 struct DrawPushConstants
@@ -102,6 +104,27 @@ struct DrawPushConstants
     math::Mat4 world{1.0f};
     std::uint32_t material = 0;
     std::uint32_t cascade = 0;
+    // Written by the pick pass.
+    std::uint32_t objectId = 0;
+    std::uint32_t padding = 0;
+};
+
+struct GpuOverlayVertex
+{
+    math::Vec3 position{0.0f};
+    float padding = 0.0f;
+    math::Vec4 color{1.0f};
+};
+
+struct OverlayPushConstants
+{
+    VkDeviceAddress scene = 0;
+    VkDeviceAddress vertices = 0;
+    math::Vec4 outlineColor{1.0f};
+    float depthScale = 1.0f;
+    float padding0 = 0.0f;
+    float padding1 = 0.0f;
+    float padding2 = 0.0f;
 };
 
 struct SkyPushConstants
@@ -155,12 +178,17 @@ static_assert(offsetof(GpuSceneData, shadowDistance) == 544);
 static_assert(offsetof(GpuSceneData, clusterCountX) == 560);
 static_assert(offsetof(GpuSceneData, clusterSliceScale) == 576);
 static_assert(offsetof(GpuSceneData, materials) == 592);
-static_assert(sizeof(GpuSceneData) == 624);
+static_assert(offsetof(GpuSceneData, pickViewProjection) == 624);
+static_assert(sizeof(GpuSceneData) == 688);
 
 // Vulkan guarantees 128 bytes of push constants on every device.
-static_assert(sizeof(DrawPushConstants) == 88);
+static_assert(sizeof(DrawPushConstants) == 96);
 static_assert(offsetof(DrawPushConstants, world) == 16);
 static_assert(offsetof(DrawPushConstants, material) == 80);
+static_assert(offsetof(DrawPushConstants, objectId) == 88);
+static_assert(sizeof(GpuOverlayVertex) == 32);
+static_assert(offsetof(OverlayPushConstants, depthScale) == 32);
+static_assert(sizeof(OverlayPushConstants) == 48);
 static_assert(sizeof(LuminancePushConstants) == 16);
 static_assert(sizeof(BakePushConstants) == 24);
 

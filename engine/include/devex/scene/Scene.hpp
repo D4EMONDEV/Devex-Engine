@@ -44,6 +44,11 @@ public:
     Scene(const Scene&) = delete;
     Scene& operator=(const Scene&) = delete;
 
+    // A copy with the same entities, handles, UUIDs, names, hierarchy and components, so that
+    // handles of this scene also refer to the copy, as when the editor plays a scene. Every
+    // component type must be copyable.
+    [[nodiscard]] Scene clone() const;
+
     // Creates a root entity with a new UUID.
     [[nodiscard]] Entity createEntity(std::string name = {});
     // Creates a root entity with a known UUID, which must be valid and unused in this scene.
@@ -55,6 +60,9 @@ public:
     [[nodiscard]] std::size_t entityCount() const noexcept;
     // Returns an invalid entity when no entity has this UUID.
     [[nodiscard]] Entity findEntity(core::Uuid uuid) const noexcept;
+    // The live entity stored at this index, or an invalid entity. Rendering identifies the entity
+    // of each pixel by index, for picking.
+    [[nodiscard]] Entity entityAtIndex(std::uint32_t index) const noexcept;
 
     [[nodiscard]] core::Uuid uuid(Entity entity) const noexcept;
     [[nodiscard]] const std::string& name(Entity entity) const noexcept;

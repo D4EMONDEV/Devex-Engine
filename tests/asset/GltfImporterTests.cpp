@@ -136,5 +136,6 @@ TEST_CASE("Importers are found by extension regardless of case", "[asset][import
     CHECK(devex::asset::findImporterForExtension(".PNG")->name == "texture");
     CHECK(devex::asset::findImporterForExtension(".glb")->mainType == AssetType::Model);
     CHECK(devex::asset::findImporterForExtension(".dvxmat")->name == "material");
-    CHECK(devex::asset::findImporterForExtension(".dvxscene") == nullptr);
+    CHECK(devex::asset::findImporterForExtension(".DvxScene")->mainType == AssetType::Scene);
+    CHECK(devex::asset::findImporterForExtension(".txt") == nullptr);
 }

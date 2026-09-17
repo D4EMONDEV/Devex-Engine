@@ -108,12 +108,14 @@ target_include_directories(devex_render_tests PRIVATE "${PROJECT_SOURCE_DIR}/eng
 # Command and log tests run anywhere; the overlay test is tagged [gpu].
 devex_add_tests(tools
     SOURCES
+        tools/EditorMathTests.cpp
         tools/LogBufferTests.cpp
         tools/SceneCommandsTests.cpp
         tools/ToolsOverlayTests.cpp
     LIBRARIES
         Devex::Tools
 )
+target_include_directories(devex_tools_tests PRIVATE "${PROJECT_SOURCE_DIR}/engine/src")
 
 # The dummy SDL video driver lets the main loop run without a display.
 devex_add_tests(runtime

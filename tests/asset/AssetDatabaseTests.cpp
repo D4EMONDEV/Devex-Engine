@@ -213,6 +213,33 @@ TEST_CASE("A file copied with its .dvxmeta receives new identifiers", "[asset][d
     CHECK((*database)->findByPath("res://assets/a.dvxmat") == original);
 }
 
+TEST_CASE("Scene files import as scene assets holding their text", "[asset][database]")
+{
+    TemporaryProject project;
+    const std::string sceneText = "[scene format=1]\n\n[entity uuid=\"6f1c2a9e-3b7d-4e21-9a55-0c8d7e4f1b23\" "
+                                  "name=\"Player\"]\n";
+    project.write("scenes/level.dvxscene", sceneText);
+    project.write("scenes/broken.dvxscene", "[scene format=1]\n[entity name=\"No UUID\"]\n");
+    devex::core::JobSystem jobs(1);
+    auto database = AssetDatabase::open(project.project, jobs, {.watchFiles = false});
+    REQUIRE(database.has_value());
+    static_cast<void>(settle(**database));
+
+    const auto level = (*database)->findByPath("res://assets/scenes/level.dvxscene");
+    REQUIRE(level.has_value());
+    const devex::asset::AssetInfo* const info = (*database)->find(*level);
+    REQUIRE(info != nullptr);
+    CHECK(info->type == AssetType::Scene);
+    CHECK(info->name == "level");
+    CHECK(devex::asset::decodeScene(*(*database)->loadArtifact(*level)) == sceneText);
+
+    // A scene that does not load fails its import instead of failing when it is opened.
+    const auto broken = (*database)->findByPath("res://assets/scenes/broken.dvxscene");
+    REQUIRE(broken.has_value());
+    CHECK((*database)->sourceOf(*broken)->status == ImportStatus::Failed);
+    CHECK_FALSE(devex::asset::decodeScene(devex::asset::encodeMaterial({})).has_value());
+}
+
 TEST_CASE("Failed imports keep the previous assets and report the error", "[asset][database]")
 {
     TemporaryProject project;

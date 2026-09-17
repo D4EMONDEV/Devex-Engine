@@ -51,6 +51,9 @@ public:
     void handleEvents(std::span<const asset::AssetEvent> events);
 
     [[nodiscard]] asset::AssetDatabase* database() const noexcept;
+    // Releases every asset loaded from the current database, keeping registered meshes, then
+    // loads from the new one, which may be null. Used when the editor opens another project.
+    void setDatabase(asset::AssetDatabase* database);
 
 private:
     struct OwnedMesh

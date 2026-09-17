@@ -34,10 +34,15 @@ namespace devex::render::vulkan {
 //
 // Each frame is recorded as render graph passes: the sun's shadow cascades, the multisampled
 // high dynamic range scene (forward+ lighting, then the sky), the luminance measure for automatic
-// exposure, and tonemapping to the swapchain with the tools drawn over it.
+// exposure, picking and the selection mask when the tools ask for them, tonemapping to the
+// swapchain or to the viewport image of the tools, the tools' overlay, and ImGui.
 class VulkanRenderer
 {
 public:
+    // Stands for the viewport image in ImGui draw data. It is replaced while drawing by the ImGui
+    // descriptor set of the frame's image, and cannot collide with a real set, which is a pointer.
+    static constexpr std::uint64_t viewportTextureId = 0xFFFF'FFFF'DE7E'0001ull;
+
     [[nodiscard]] static core::Result<std::unique_ptr<VulkanRenderer>> create(
         const platform::Platform& platform, platform::Window& window, const RendererConfig& config);
 
@@ -62,6 +67,7 @@ public:
 
     [[nodiscard]] RenderWorld& beginFrame() noexcept;
     [[nodiscard]] core::Result<void> endFrame();
+    [[nodiscard]] std::vector<PickResult> takePickResults();
 
     [[nodiscard]] RendererStats stats() const noexcept;
 
@@ -84,6 +90,27 @@ private:
     static constexpr std::uint32_t shadowMapSize = 2048;
     static constexpr std::uint32_t luminanceGridWidth = 64;
     static constexpr std::uint32_t luminanceGridHeight = 36;
+    static constexpr VkFormat pickFormat = VK_FORMAT_R32_UINT;
+    static constexpr VkFormat selectionMaskFormat = VK_FORMAT_R8_UNORM;
+    // Larger viewports are clamped, since images this large would exhaust memory.
+    static constexpr std::uint32_t maxViewportSize = 8192;
+
+    enum class MeshPass : std::uint8_t
+    {
+        Scene,
+        Shadow,
+        Pick,
+        // Only the outlined instances.
+        SelectionMask,
+    };
+
+    // Where each list of the overlay starts in the frame's overlay vertex buffer.
+    struct OverlayRanges
+    {
+        std::uint32_t sceneLines = 0;
+        std::uint32_t overlayLines = 0;
+        std::uint32_t overlayTriangles = 0;
+    };
 
     struct FrameContext
     {
@@ -109,6 +136,14 @@ private:
         TransientImagePool images;
         VkImageView boundShadowMap = VK_NULL_HANDLE;
         VkImageView boundSceneColor = VK_NULL_HANDLE;
+        VkImageView boundSelectionMask = VK_NULL_HANDLE;
+        std::optional<Buffer> overlayVertices;
+        // The object identifier the frame read under the requested pixel.
+        std::optional<Buffer> pickReadback;
+        std::optional<std::uint64_t> pickRequest;
+        // ImGui's descriptor set for the viewport image of this frame context.
+        VkDescriptorSet imguiViewport = VK_NULL_HANDLE;
+        VkImageView imguiViewportView = VK_NULL_HANDLE;
     };
 
     struct SubmeshRange
@@ -156,6 +191,8 @@ private:
     [[nodiscard]] core::Result<void> createFrameContexts();
     [[nodiscard]] core::Result<void> createDefaultResources();
     [[nodiscard]] core::Result<void> createScenePipelines();
+    // Pipelines drawing into the swapchain or the viewport image, which share its format.
+    [[nodiscard]] core::Result<void> createTargetPipelines(VkFormat format);
     [[nodiscard]] core::Result<void> recreateSwapchain(math::Extent2D windowPixelSize);
     [[nodiscard]] core::Result<GpuTexture> uploadTexture(const asset::TextureData& texture,
                                                          std::uint32_t slot);
@@ -167,14 +204,18 @@ private:
     void updateExposure(FrameContext& frame);
     [[nodiscard]] core::Result<void> uploadLights(FrameContext& frame, float aspectRatio);
     void writeSceneData(FrameContext& frame, const std::optional<ShadowCascades>& cascades) const noexcept;
+    [[nodiscard]] core::Result<OverlayRanges> uploadOverlay(FrameContext& frame);
+    // Keeps the answer of the pick request the frame recorded, now that it completed.
+    void readPickResult(FrameContext& frame);
     // Returns the number of draw calls recorded.
     [[nodiscard]] core::Result<std::uint32_t> recordFrame(FrameContext& frame, std::uint32_t frameSlot,
                                                           std::uint32_t imageIndex, bool drawImGui,
                                                           bool drawShadows);
-    std::uint32_t drawMeshes(VkCommandBuffer commandBuffer, VkDeviceAddress sceneData,
-                             const Pipeline* shadowPipeline, std::uint32_t cascade,
-                             std::uint32_t frameSlot) const;
+    std::uint32_t drawMeshes(VkCommandBuffer commandBuffer, VkDeviceAddress sceneData, MeshPass pass,
+                             std::uint32_t cascade, std::uint32_t frameSlot) const;
     [[nodiscard]] core::Result<void> ensureHostBuffer(std::optional<Buffer>& buffer, VkDeviceSize bytes) const;
+    // Replaces the viewport placeholder of the ImGui draw data with the frame's viewport image.
+    void bindViewportTexture(FrameContext& frame, VkImageView viewport);
     void releaseRetiredResources() noexcept;
     void destroyPresentSemaphores() noexcept;
 
@@ -199,8 +240,18 @@ private:
     std::optional<Pipeline> m_shadowPipeline;
     std::optional<Pipeline> m_skyPipeline;
     std::optional<Pipeline> m_luminancePipeline;
+    std::optional<Pipeline> m_pickPipeline;
+    std::optional<Pipeline> m_selectionMaskPipeline;
     std::optional<Pipeline> m_tonemapPipeline;
+    std::optional<Pipeline> m_sceneLinePipeline;
+    std::optional<Pipeline> m_outlinePipeline;
+    std::optional<Pipeline> m_overlayLinePipeline;
+    std::optional<Pipeline> m_overlayTrianglePipeline;
+    // Bound as the selection mask of frames that outline nothing.
+    std::optional<Image> m_emptySelectionMask;
     math::Extent2D m_swapchainWindowPixelSize;
+    // The size of the scene image of the frame being recorded.
+    math::Extent2D m_sceneExtent;
     bool m_swapchainOutdated = false;
     std::array<FrameContext, framesInFlight> m_frames{};
     // One per swapchain image: a presented image keeps its semaphore busy until it is replaced.
@@ -240,6 +291,7 @@ private:
     float m_targetEv100 = 14.0f;
     bool m_exposureInitialized = false;
     std::chrono::steady_clock::time_point m_lastExposureUpdate;
+    std::vector<PickResult> m_pickResults;
     std::uint32_t m_lastDrawCalls = 0;
     std::uint32_t m_lastLightCount = 0;
     bool m_imguiInitialized = false;

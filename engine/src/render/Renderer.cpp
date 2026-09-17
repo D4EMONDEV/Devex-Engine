@@ -100,6 +100,12 @@ core::Result<void> Renderer::endFrame()
     return m_implementation->endFrame();
 }
 
+std::vector<PickResult> Renderer::takePickResults()
+{
+    DEVEX_ASSERT(m_implementation != nullptr);
+    return m_implementation->takePickResults();
+}
+
 RendererStats Renderer::stats() const noexcept
 {
     DEVEX_ASSERT(m_implementation != nullptr);
@@ -128,6 +134,11 @@ void Renderer::queueImGuiDrawData() noexcept
 {
     DEVEX_ASSERT(m_implementation != nullptr);
     m_implementation->queueImGuiDrawData();
+}
+
+std::uint64_t Renderer::viewportTexture() noexcept
+{
+    return vulkan::VulkanRenderer::viewportTextureId;
 }
 
 } // namespace devex::render

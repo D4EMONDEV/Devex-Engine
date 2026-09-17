@@ -4,6 +4,7 @@
 #include <devex/core/Assert.hpp>
 #include <devex/core/Log.hpp>
 #include <devex/core/Path.hpp>
+#include <devex/scene/Components.hpp>
 #include <devex/scene/ModelInstantiation.hpp>
 #include <devex/scene/SceneSerializer.hpp>
 #include <devex/tools/SceneCommands.hpp>
@@ -109,7 +110,8 @@ std::optional<asset::AssetId> acceptDroppedAsset(std::optional<asset::AssetType>
     return dropped;
 }
 
-void requestInstantiateModel(ToolsState& state, asset::AssetId model, core::Uuid parent)
+void requestInstantiateModel(ToolsState& state, asset::AssetId model, core::Uuid parent,
+                             std::optional<math::Vec3> position)
 {
     const asset::AssetInfo* const info =
         state.database != nullptr ? state.database->find(model) : nullptr;
@@ -130,6 +132,10 @@ void requestInstantiateModel(ToolsState& state, asset::AssetId model, core::Uuid
     // Built in a scratch scene, then applied as one undoable step with fixed UUIDs.
     scene::Scene scratch;
     const scene::Entity root = scene::instantiateModel(scratch, *data, info->name);
+    if (scene::Transform* const transform = scratch.tryGet<scene::Transform>(root); transform != nullptr && position)
+    {
+        transform->position = *position;
+    }
     const core::Uuid rootUuid = scratch.uuid(root);
     state.pendingCommand = makeCreateEntityTreeCommand(scene::saveEntityTree(scratch, root), rootUuid,
                                                        parent, std::format("Place {}", info->name));
@@ -277,7 +283,7 @@ void drawMainMenu(ToolsState& state, scene::Scene& scene)
     ImGui::EndMainMenuBar();
 }
 
-void buildDefaultLayout(ImGuiID dockspace, const ImGuiViewport& viewport)
+void buildDefaultLayout(ImGuiID dockspace, const ImGuiViewport& viewport, ToolsMode mode)
 {
     ImGui::DockBuilderRemoveNode(dockspace);
     ImGui::DockBuilderAddNode(dockspace, ImGuiDockNodeFlags_DockSpace);
@@ -295,6 +301,10 @@ void buildDefaultLayout(ImGuiID dockspace, const ImGuiViewport& viewport)
     ImGui::DockBuilderDockWindow(detail::assetsWindow, bottom);
     ImGui::DockBuilderDockWindow(detail::consoleWindow, bottom);
     ImGui::DockBuilderDockWindow(detail::statisticsWindow, bottom);
+    if (mode == ToolsMode::Editor)
+    {
+        ImGui::DockBuilderDockWindow(detail::viewportWindow, center);
+    }
     ImGui::DockBuilderFinish(dockspace);
 }
 
@@ -303,14 +313,101 @@ void drawDockspace(ToolsState& state)
     const ImGuiViewport* const viewport = ImGui::GetMainViewport();
     // The name carries a version, increased when panels are added, so that saved layouts from
     // before are rebuilt with the new panels docked.
-    const ImGuiID dockspace = ImHashStr("Devex tools dockspace 2");
+    const bool editor = state.mode == ToolsMode::Editor;
+    const ImGuiID dockspace = ImHashStr(editor ? "Devex editor dockspace 1" : "Devex tools dockspace 2");
     if (state.resetLayout || ImGui::DockBuilderGetNode(dockspace) == nullptr)
     {
-        buildDefaultLayout(dockspace, *viewport);
+        buildDefaultLayout(dockspace, *viewport, state.mode);
         state.resetLayout = false;
     }
-    // The central node stays empty and transparent, showing the game behind the panels.
-    ImGui::DockSpaceOverViewport(dockspace, viewport, ImGuiDockNodeFlags_PassthruCentralNode);
+    // Over the game, the central node stays empty and transparent, showing the game behind the
+    // panels; the editor shows the game in its viewport panel instead.
+    ImGui::DockSpaceOverViewport(dockspace, viewport, editor ? ImGuiDockNodeFlags_None : ImGuiDockNodeFlags_PassthruCentralNode);
+}
+
+void finishFrame(ToolsState& state)
+{
+    ImGui::Render();
+    state.renderer.queueImGuiDrawData();
+}
+
+void handleShortcuts(ToolsState& state, scene::Scene& scene);
+
+void updateEditor(ToolsState& state, scene::Scene& scene, PlayState playState)
+{
+    // Edits made while playing apply to the played copy and have their own history, dropped when
+    // play stops.
+    if ((state.playState == PlayState::Editing) != (playState == PlayState::Editing))
+    {
+        std::swap(state.history, state.suspendedHistory);
+        // Starting to play sets the edit history aside; stopping brings it back and forgets the
+        // edits of the session.
+        (playState == PlayState::Editing ? state.suspendedHistory : state.history).clear();
+        state.gizmo.end();
+        state.clickStart.reset();
+        state.awaitedPick = 0;
+        if (state.flying)
+        {
+            state.flying = false;
+            state.window.setMouseCaptured(false);
+        }
+        state.orbiting = false;
+        state.panning = false;
+    }
+    state.playState = playState;
+
+    detail::updateEditorSession(state, scene);
+    if (state.database == nullptr)
+    {
+        detail::drawWelcomeScreen(state);
+        detail::drawEditorPopups(state, scene);
+        state.viewportPixels = {};
+        detail::updateWindowTitle(state, scene);
+        finishFrame(state);
+        const ImGuiIO& io = ImGui::GetIO();
+        state.capturesKeyboard = io.WantCaptureKeyboard;
+        state.capturesMouse = io.WantCaptureMouse;
+        return;
+    }
+
+    detail::drawEditorMenus(state, scene);
+    drawDockspace(state);
+    handleShortcuts(state, scene);
+    detail::handleEditorShortcuts(state, scene);
+    detail::drawViewportPanel(state, scene);
+    if (state.showHierarchy)
+    {
+        detail::drawHierarchyPanel(state, scene);
+    }
+    if (state.showInspector)
+    {
+        detail::drawInspectorPanel(state, scene);
+    }
+    if (state.showStatistics)
+    {
+        detail::drawStatisticsPanel(state, scene);
+    }
+    if (state.showConsole)
+    {
+        detail::drawConsolePanel(state);
+    }
+    if (state.showAssets)
+    {
+        detail::drawAssetsPanel(state, scene);
+    }
+    detail::drawEditorPopups(state, scene);
+    if (state.pendingCommand != nullptr)
+    {
+        logFailure(state.history.execute(scene, std::exchange(state.pendingCommand, nullptr)));
+    }
+    detail::updateWindowTitle(state, scene);
+    finishFrame(state);
+
+    // Gameplay receives the devices the game view uses, and the editor camera flies with them.
+    const ImGuiIO& io = ImGui::GetIO();
+    const bool playing = playState != PlayState::Editing;
+    state.capturesKeyboard = io.WantCaptureKeyboard && !state.flying && !(playing && state.viewportFocused);
+    state.capturesMouse = io.WantCaptureMouse && !state.flying && !(playing && state.viewportHovered);
 }
 
 void handleShortcuts(ToolsState& state, scene::Scene& scene)
@@ -331,13 +428,18 @@ void handleShortcuts(ToolsState& state, scene::Scene& scene)
 
 core::Result<std::unique_ptr<ToolsOverlay>> ToolsOverlay::create(
     platform::Platform& platform, platform::Window& window, render::Renderer& renderer,
-    const std::filesystem::path& settingsFile)
+    const std::filesystem::path& settingsFile, ToolsMode mode, const std::filesystem::path& recentProjectsFile)
 {
     DEVEX_ASSERT_MSG(ImGui::GetCurrentContext() == nullptr, "only one ToolsOverlay may exist");
     IMGUI_CHECKVERSION();
 
-    auto state = std::make_unique<detail::ToolsState>(platform, renderer);
+    auto state = std::make_unique<detail::ToolsState>(platform, window, renderer, mode);
     state->settingsFile = core::toUtf8(settingsFile);
+    if (mode == ToolsMode::Editor)
+    {
+        state->visible = true;
+        detail::loadRecentProjects(*state, recentProjectsFile);
+    }
 
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
@@ -366,9 +468,22 @@ ToolsOverlay::ToolsOverlay(std::unique_ptr<detail::ToolsState> state) noexcept
 
 ToolsOverlay::~ToolsOverlay()
 {
+    if (m_state->mode == ToolsMode::Editor)
+    {
+        detail::saveEditorSettings(*m_state);
+        if (m_state->flying)
+        {
+            m_state->window.setMouseCaptured(false);
+        }
+    }
     m_state->renderer.shutdownImGui();
     m_state->platform.shutdownImGui();
     ImGui::DestroyContext();
+}
+
+ToolsMode ToolsOverlay::mode() const noexcept
+{
+    return m_state->mode;
 }
 
 bool ToolsOverlay::isVisible() const noexcept
@@ -378,6 +493,10 @@ bool ToolsOverlay::isVisible() const noexcept
 
 void ToolsOverlay::setVisible(bool visible) noexcept
 {
+    if (m_state->mode == ToolsMode::Editor)
+    {
+        return;
+    }
     m_state->visible = visible;
     if (!visible)
     {
@@ -396,7 +515,7 @@ bool ToolsOverlay::capturesMouse() const noexcept
     return m_state->capturesMouse;
 }
 
-void ToolsOverlay::update(scene::Scene& scene, core::Duration frameDelta)
+void ToolsOverlay::update(scene::Scene& scene, core::Duration frameDelta, PlayState playState)
 {
     ToolsState& state = *m_state;
     state.frameTimes.record(static_cast<float>(frameDelta.count() * 1000.0));
@@ -408,6 +527,12 @@ void ToolsOverlay::update(scene::Scene& scene, core::Duration frameDelta)
     state.platform.beginImGuiFrame();
     state.renderer.beginImGuiFrame();
     ImGui::NewFrame();
+
+    if (state.mode == ToolsMode::Editor)
+    {
+        updateEditor(state, scene, playState);
+        return;
+    }
 
     drawMainMenu(state, scene);
     drawDockspace(state);
@@ -445,9 +570,60 @@ void ToolsOverlay::update(scene::Scene& scene, core::Duration frameDelta)
     state.capturesMouse = io.WantCaptureMouse;
 }
 
+void ToolsOverlay::prepareRender(scene::Scene& scene, render::RenderWorld& world, PlayState playState)
+{
+    ToolsState& state = *m_state;
+    if (state.mode != ToolsMode::Editor)
+    {
+        return;
+    }
+    // A hidden viewport still renders, at a size too small to cost anything.
+    world.viewport = state.viewportPixels.width > 0 ? state.viewportPixels : math::Extent2D{16, 16};
+    if (playState == PlayState::Editing)
+    {
+        world.camera.view = state.camera.view();
+        world.camera.verticalFov = detail::EditorCamera::verticalFov;
+        world.camera.nearPlane = detail::EditorCamera::nearPlane;
+        if (state.database != nullptr)
+        {
+            detail::addEditorOverlay(state, scene, world);
+        }
+    }
+}
+
+EditorRequests ToolsOverlay::takeRequests() noexcept
+{
+    return std::exchange(m_state->requests, EditorRequests{});
+}
+
+bool ToolsOverlay::confirmClose()
+{
+    ToolsState& state = *m_state;
+    if (state.mode != ToolsMode::Editor || state.database == nullptr || !detail::hasUnsavedChanges(state))
+    {
+        return true;
+    }
+    state.pendingChange = detail::SceneChange{detail::SceneChange::Kind::Quit, {}};
+    state.openUnsavedChangesPopup = true;
+    // The question comes once play has stopped, when the edited scene can be saved.
+    state.requests.stop = state.playState != PlayState::Editing;
+    return false;
+}
+
 void ToolsOverlay::setAssetDatabase(asset::AssetDatabase* database) noexcept
 {
+    if (m_state->database == database)
+    {
+        return;
+    }
+    if (m_state->mode == ToolsMode::Editor && m_state->database != nullptr)
+    {
+        detail::saveEditorSettings(*m_state);
+    }
     m_state->database = database;
+    m_state->projectChanged = database != nullptr;
+    m_state->selection = core::Uuid{};
+    m_state->history.clear();
 }
 
 CommandHistory& ToolsOverlay::history() noexcept

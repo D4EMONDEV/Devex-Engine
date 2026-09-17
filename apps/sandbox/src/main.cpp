@@ -11,6 +11,7 @@
 #include <devex/scene/Scene.hpp>
 #include <devex/scene/SceneSerializer.hpp>
 
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <cmath>
@@ -52,18 +53,36 @@ struct Placement
     Uuid parent;
 };
 
-// Milestone 7 playground: a physically lit scene built from project assets imported in the
-// background, under a high dynamic range sky, with a shadow-casting sun and colored local lights.
-// N switches between day and night, which automatic exposure follows. Editing a texture, a
-// material or a model in the assets folder updates the scene while it runs. F5 saves the scene,
-// F9 reloads it, and dropping a .gltf or .glb file copies it into the project and places it in
-// front of the camera.
+// Rebuilds assets/scenes/sandbox.dvxscene from code once the models are placed, then quits.
+bool buildSceneOnly = false;
+
+// Milestone 8 playground: a physically lit scene of project assets under a high dynamic range sky,
+// with a shadow-casting sun and colored local lights. N switches between day and night, which
+// automatic exposure follows. Editing a texture, a material or a model in the assets folder updates
+// the scene while it runs. The scene comes from assets/scenes/sandbox.dvxscene, or is built in code
+// when that file is missing. F5 saves the scene, F9 reloads it, and dropping a .gltf or .glb file
+// copies it into the project and places it in front of the camera.
+//
+// With --editor, the sandbox opens in the editor, and its gameplay runs in Play mode.
 class Sandbox final : public devex::runtime::Application
 {
 public:
     devex::core::Result<void> onStartup() override
     {
-        buildScene();
+        if (isEditor())
+        {
+            // The editor opens the project's scene; gameplay finds its entities when Play starts.
+            DEVEX_LOG_INFO("Press Ctrl+P or the Play button to fly around the sandbox");
+            return {};
+        }
+        if (!buildSceneOnly && std::filesystem::exists(scenePath()))
+        {
+            reloadScene();
+        }
+        else
+        {
+            buildScene();
+        }
         DEVEX_LOG_INFO("Fly with {}{}{}{}, {} and {} to go up and down, click to capture the mouse",
                        platform().keyLabel(Key::W), platform().keyLabel(Key::A),
                        platform().keyLabel(Key::S), platform().keyLabel(Key::D),
@@ -80,6 +99,13 @@ public:
         {
             importDroppedFile(devex::core::pathFromUtf8(dropped->path));
         }
+    }
+
+    void onPlayStarted() override
+    {
+        bindEntities();
+        m_placements.clear();
+        m_night = false;
     }
 
     void onFixedUpdate(Duration fixedDelta) override
@@ -134,6 +160,13 @@ public:
         }
 
         updateTitle(frameDelta);
+
+        if (buildSceneOnly && m_placements.empty() && assetDatabase() != nullptr &&
+            assetDatabase()->pendingImports() == 0)
+        {
+            saveScene();
+            requestQuit();
+        }
     }
 
 private:
@@ -141,9 +174,58 @@ private:
     static constexpr float daySkyIntensity = 25000.0f;
     static constexpr Duration statsPeriod = std::chrono::milliseconds(500);
 
-    [[nodiscard]] std::filesystem::path scenePath() const
+    [[nodiscard]] std::filesystem::path scenePath()
     {
-        return platform().baseDirectory() / "sandbox.dvxscene";
+        const devex::asset::AssetDatabase* const database = assetDatabase();
+        return database != nullptr ? database->project().assetsDirectory() / "scenes" / "sandbox.dvxscene"
+                                   : platform().baseDirectory() / "sandbox.dvxscene";
+    }
+
+    // The first entity with this name, in hierarchy order.
+    [[nodiscard]] static Entity findByName(const Scene& world, Entity first, std::string_view name)
+    {
+        for (Entity entity = first; entity.isValid(); entity = world.nextSibling(entity))
+        {
+            if (world.name(entity) == name)
+            {
+                return entity;
+            }
+            if (const Entity found = findByName(world, world.firstChild(entity), name); found.isValid())
+            {
+                return found;
+            }
+        }
+        return {};
+    }
+
+    // Finds the entities gameplay drives in a scene that was loaded rather than built, and places
+    // the flying camera where the scene's camera is.
+    void bindEntities()
+    {
+        Scene& world = scene();
+        const auto uuidOf = [&](std::string_view name) {
+            const Entity entity = findByName(world, world.firstRoot(), name);
+            return entity.isValid() ? world.uuid(entity) : Uuid{};
+        };
+        m_cameraUuid = uuidOf("Camera");
+        m_turntableUuid = uuidOf("Turntable");
+        m_sunUuid = uuidOf("Sun");
+        m_skyUuid = uuidOf("Sky");
+
+        if (const Transform* const camera = world.tryGet<Transform>(world.findEntity(m_cameraUuid)))
+        {
+            m_position = camera->position;
+            m_previousPosition = camera->position;
+            const Vec3 forward = camera->rotation * Vec3{0.0f, 0.0f, -1.0f};
+            m_yaw = devex::math::degrees(std::atan2(-forward.x, -forward.z));
+            m_pitch = devex::math::degrees(std::asin(std::clamp(forward.y, -1.0f, 1.0f)));
+        }
+        if (const Transform* const turntable = world.tryGet<Transform>(world.findEntity(m_turntableUuid)))
+        {
+            const Vec3 facing = turntable->rotation * Vec3{0.0f, 0.0f, -1.0f};
+            m_turntableAngle = std::atan2(-facing.x, -facing.z);
+            m_previousTurntableAngle = m_turntableAngle;
+        }
     }
 
     // The main asset of a file of the project, whose identifier comes from its .dvxmeta.
@@ -366,11 +448,12 @@ private:
                                          -89.0f, 89.0f);
         }
 
-        if (keys.wasKeyPressed(Key::F5))
+        // Inside the editor, the editor saves and opens scenes.
+        if (keys.wasKeyPressed(Key::F5) && !isEditor())
         {
             saveScene();
         }
-        if (keys.wasKeyPressed(Key::F9))
+        if (keys.wasKeyPressed(Key::F9) && !isEditor())
         {
             reloadScene();
         }
@@ -388,7 +471,7 @@ private:
             DEVEX_LOG_ERROR("Cannot save the scene: {}", saved.error());
             return;
         }
-        DEVEX_LOG_INFO("Saved {} entities", scene().entityCount());
+        DEVEX_LOG_INFO("Saved {} entities to {}", scene().entityCount(), devex::core::toUtf8(scenePath()));
     }
 
     void reloadScene()
@@ -402,14 +485,8 @@ private:
         scene() = std::move(*loaded);
         // Placed models are part of the saved scene.
         m_placements.clear();
-
-        // Entities keep their UUIDs across saves, so the camera is found again.
-        if (const Transform* const camera = scene().tryGet<Transform>(scene().findEntity(m_cameraUuid)))
-        {
-            m_position = camera->position;
-            m_previousPosition = camera->position;
-        }
-        DEVEX_LOG_INFO("Loaded {} entities", scene().entityCount());
+        bindEntities();
+        DEVEX_LOG_INFO("Loaded {} entities from {}", scene().entityCount(), devex::core::toUtf8(scenePath().filename()));
     }
 
     void updateTitle(Duration frameDelta)
@@ -458,12 +535,21 @@ private:
 
 } // namespace
 
-int main()
+// devex-sandbox [--editor] [--build-scene]
+int main(int argc, char** argv)
 {
+    bool editor = false;
+    for (int index = 1; index < argc; ++index)
+    {
+        const std::string_view argument = argv[index];
+        editor = editor || argument == "--editor";
+        buildSceneOnly = buildSceneOnly || argument == "--build-scene";
+    }
     return devex::runtime::run<Sandbox>({
-        .title = "Devex Sandbox",
-        .width = 1280,
-        .height = 720,
+        .title = editor ? "Devex Editor" : "Devex Sandbox",
+        .width = editor ? 1600u : 1280u,
+        .height = editor ? 900u : 720u,
+        .editor = editor && !buildSceneOnly,
         .project = devex::core::pathFromUtf8(DEVEX_SANDBOX_PROJECT),
     });
 }

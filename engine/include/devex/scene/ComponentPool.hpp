@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <memory>
 #include <span>
 #include <utility>
 #include <vector>
@@ -18,6 +19,9 @@ class ComponentPoolBase
 {
 public:
     virtual ~ComponentPoolBase() = default;
+
+    // A pool holding copies of the components, for the same entities in the same order.
+    [[nodiscard]] virtual std::unique_ptr<ComponentPoolBase> clone() const = 0;
 
     [[nodiscard]] bool contains(Entity entity) const noexcept
     {
@@ -38,6 +42,10 @@ public:
     virtual void remove(Entity entity) = 0;
 
 protected:
+    ComponentPoolBase() = default;
+    ComponentPoolBase(const ComponentPoolBase&) = default;
+    ComponentPoolBase& operator=(const ComponentPoolBase&) = default;
+
     static constexpr std::uint32_t absent = std::numeric_limits<std::uint32_t>::max();
 
     [[nodiscard]] std::uint32_t denseIndexOf(Entity entity) const noexcept
@@ -103,6 +111,11 @@ public:
     {
         const std::uint32_t dense = denseIndexOf(entity);
         return dense == absent ? nullptr : &m_components[dense];
+    }
+
+    [[nodiscard]] std::unique_ptr<ComponentPoolBase> clone() const override
+    {
+        return std::make_unique<ComponentPool<T>>(*this);
     }
 
     void remove(Entity entity) override

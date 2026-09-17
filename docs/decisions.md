@@ -42,6 +42,13 @@ mais seulement explicitement ici : le code suit ce document, pas l'inverse.
 | Identité des entités     | UUID par entité dans les fichiers, handle générationnel en mémoire |
 | Références d'assets      | `AssetId` (UUID) dès maintenant, primitives à UUID réservés        |
 | Premiers outils          | Module `Tools` + overlay (F1), réutilisable par le futur éditeur   |
+| Éditeur                  | Mode du runtime : `devex-editor`, ou un jeu lancé dans l'éditeur   |
+| Mode Play                | Copie de la scène (mêmes handles), une vue, Pause et pas à pas     |
+| Sélection à la souris    | Identifiants d'objets lus sur le GPU, icônes des lumières sur CPU  |
+| Gizmos                   | Maison : déplacement, rotation, échelle, local/global, magnétisme  |
+| Projets dans l'éditeur   | Écran d'accueil (projets récents, nouveau, ouvrir) ou argument     |
+| Scènes                   | Assets importés (`AssetId`), ouvertes et enregistrées par l'éditeur |
+| Sélection                | Simple pour l'instant                                              |
 | Backend ImGui            | Officiels SDL3 + Vulkan, le backend Vulkan compilé avec volk       |
 | Multi-fenêtre ImGui      | Docking dans la fenêtre principale seulement                       |
 | Annulation               | Commandes basées sur la réflexion (UUID, composant, champ, valeurs) |
@@ -81,8 +88,8 @@ situé au-dessus de lui, et le graphe reste sans cycle.
 | `AssetImport`   | base d'assets, `.dvxmeta`, importeurs (textures, `.dvxmat`, glTF)         | Asset, Scene, fastgltf, basisu, stb, efsw |
 | `Render`        | façade `Renderer` / `RenderWorld` ; tout `Vk*` reste dans `src/render/vulkan` | Core, Math, Platform, Asset, Vulkan |
 | `Scene`         | entités, sparse sets, hiérarchie, composants intégrés, `.dvxscene`, sous-arbres | Core, Math, Reflection, Serialization, Asset |
-| `Tools`         | overlay ImGui : hiérarchie, inspecteur, assets, statistiques, console, annulation | Core, Platform, Render, Scene, AssetImport, ImGui |
-| `Runtime`       | `Application`, boucle, jobs, `AssetManager`, extraction Scene → Render, F1 | tous les modules ci-dessus    |
+| `Tools`         | panneaux ImGui, annulation, éditeur (viewport, gizmos, scènes, accueil)   | Core, Platform, Render, Scene, AssetImport, ImGui |
+| `Runtime`       | `Application`, boucle, mode éditeur et Play, `AssetManager`, extraction   | tous les modules ci-dessus    |
 
 Applications au sommet : `apps/sandbox`, `apps/editor` et la DLL gameplay d'un jeu
 dépendent de `Runtime`.
@@ -104,12 +111,12 @@ Règles :
 ```text
 engine/        modules du moteur (include/ + src/)
 apps/sandbox/  bac à sable des jalons et son projet (project/Sandbox.dvxproj)
-apps/editor/   éditeur ImGui (à venir)
+apps/editor/   devex-editor, l'éditeur sans code de jeu
 shaders/       sources Slang du moteur, compilées dans bin/shaders
 tests/         tests Catch2, un dossier par module, données dans tests/data
 scripts/       outils de développement (génération des assets d'exemple)
 third_party/   sources externes copiées (backend Vulkan d'ImGui), avec leur licence
-cmake/         fonctions CMake partagées
+cmake/         fonctions CMake partagées, outils de build (cmake/tools)
 docs/          décisions et documentation
 ```
 
@@ -152,17 +159,40 @@ docs/          décisions et documentation
 - **Frame** : ombres du soleil (4 couches d'une image `D32` 2048²), scène HDR `RGBA16F`
   multi-échantillonnée (MSAA 4x par défaut, `RendererConfig::msaaSamples`, résolue par
   moyenne) avec les maillages puis le ciel, mesure de luminance (si exposition automatique),
-  puis tonemapping vers le swapchain sRGB, où l'overlay ImGui est dessiné.
+  sélection (si demandée), masque des objets entourés (s'il y en a), tonemapping vers la
+  cible, overlay des outils, puis ImGui sur le swapchain.
+- **Cible** : sans `RenderWorld::viewport`, la scène est dessinée sur tout le swapchain.
+  Avec, elle l'est dans une image de cette taille (format du swapchain, au plus 8192²) que les
+  outils affichent dans un panneau : `Renderer::viewportTexture()` est un identifiant de
+  texture ImGui fixe, remplacé pendant le dessin par le descriptor set ImGui de l'image de la
+  frame (un par contexte de frame, recréé quand l'image change).
+- **Sélection à la souris** (*picking*) : `RenderWorld::pick` demande l'objet visible sous un
+  pixel. Une passe dessine tous les maillages dans une cible `R32_UINT` de 1 × 1 avec une
+  projection qui étire ce pixel sur toute la cible, en écrivant `MeshInstance::objectId`
+  (0 = rien) et en respectant le mode alpha `mask` ; la valeur est copiée dans un buffer
+  visible par le CPU et lue quand la frame est terminée, en général deux frames plus tard
+  (`Renderer::takePickResults`). `Runtime` identifie chaque instance par l'index de son entité
+  plus un.
+- **Overlay des outils** : lignes et triangles colorés (`RenderWorld::sceneLines`,
+  `overlayLines`, `overlayTriangles`) dessinés en mélange alpha après le tonemapping. Les
+  lignes de scène sont cachées par les surfaces plus proches : la profondeur MSAA est résolue
+  (échantillon 0) dans une image simple, et leur profondeur est légèrement avancée pour rester
+  visibles sur les surfaces où elles reposent. Les autres passent devant tout. Les instances
+  `outlined` sont dessinées dans un masque `R8`, puis un plein écran trace le contour orange des
+  pixels hors masque à moins de deux pixels de lui. Lignes d'un pixel de large : pas encore de
+  lignes épaisses ni anticrénelées.
 - **Profondeur** : reverse-Z à far plane infini (`math::perspectiveReverseZ`), `D32_SFLOAT`
   effacée à 0 et test `GREATER_OR_EQUAL`. La projection de `Math` garde Y vers le haut ; le
   renderer applique la correction du clip space Vulkan (Y vers le bas).
 - **Slang** : `cmake/DevexShaders.cmake` compile chaque shader d'entrée (`mesh`, `shadow`,
-  `sky`, `tonemap`, `luminance`, `ibl`) en un `.spv` contenant tous ses points d'entrée
+  `sky`, `tonemap`, `luminance`, `ibl`, `pick`, `overlay`) en un `.spv` contenant tous ses points d'entrée
   (`-fvk-use-entrypoint-name`), avec des matrices column-major comme GLM ; les modules
   importés (`common`, `pbr`) entrent dans le depfile. Une erreur de shader est une erreur de
-  build. L'API Slang servira plus tard au rechargement à chaud dans l'éditeur.
+  build. L'API Slang servira plus tard au rechargement à chaud dans l'éditeur. En Vulkan,
+  `SV_VertexID` ne compte pas le premier sommet du dessin : un dessin qui commence au milieu
+  d'un buffer reçoit l'adresse de ce premier sommet.
 - **Données GPU** : vertex pulling. Les shaders lisent sommets et données de scène via des
-  *buffer device addresses* passées en push constants (88 octets, sous le minimum garanti
+  *buffer device addresses* passées en push constants (96 octets, sous le minimum garanti
   de 128) ; pas de vertex input state. Sommets de 48 octets : position, normale, UV et
   tangente. Les dispositions mémoire C++ et Slang sont
   vérifiées par `static_assert` (`src/render/vulkan/GpuData.hpp`). Le descriptor set
@@ -178,7 +208,7 @@ docs/          décisions et documentation
   set global bindless** (set 0 : tableau de `Texture2D` indexé, `PARTIALLY_BOUND` et
   `UPDATE_AFTER_BIND`, 8192 emplacements au plus, sampler linéaire, répétition, anisotrope
   x16), qui porte aussi l'IBL, la table BRDF et le ciel. Le set 1, un par contexte de frame,
-  porte la carte d'ombres et la couleur de scène résolue. Les
+  porte la carte d'ombres, la couleur de scène résolue et le masque de sélection. Les
   emplacements 0 et 1 sont une texture blanche et une normale plate qui remplacent les textures
   absentes. Une texture détruite garde son emplacement jusqu'à la fin des frames en vol, puis
   l'emplacement repointe vers le blanc avant d'être réutilisé.
@@ -247,6 +277,10 @@ docs/          décisions et documentation
 - **Types de composants** : un index attribué au premier usage dans le processus. Il n'est
   pas stable d'un binaire à l'autre ; le rechargement à chaud d'une DLL gameplay devra
   identifier les types par leur nom enregistré.
+- **Copie** : `Scene::clone` copie entités, noms, hiérarchie et composants **avec les mêmes
+  handles** : un handle obtenu dans la scène éditée désigne la même entité dans la copie jouée.
+  Les composants doivent être copiables. `Scene::entityAtIndex` retrouve l'entité vivante d'un
+  index, comme ceux que renvoie la sélection sur le GPU.
 - **Hiérarchie** : parent, premier et dernier enfant, frères précédent et suivant ; l'ordre
   des enfants et des racines est conservé. `setParent` refuse les cycles et garde la
   transformation locale. Détruire une entité détruit ses descendants.
@@ -286,7 +320,8 @@ Projet utilisateur :
 MyGame/
   MyGame.dvxproj              # [project format=1 name="MyGame"]
   assets/
-    levels/level01.dvxscene
+    scenes/Main.dvxscene
+    scenes/Main.dvxscene.dvxmeta
     prefabs/hero.dvxprefab    # à venir
     materials/rock.dvxmat
     materials/rock.dvxmat.dvxmeta
@@ -295,6 +330,7 @@ MyGame/
   .devex/                     # cache d'import local, ignoré par Git
     imported/<uuid>.dvxasset  # données cuites, une par asset
     sources/<uuid>.dvxsource  # dernier import de chaque fichier source
+    editor.dvx                # dernière scène ouverte et caméra de l'éditeur
 ```
 
 Format texte commun à tous les `.dvx*` (`Devex::Serialization`) : des sections
@@ -331,6 +367,9 @@ mesh = asset("00000000-0000-0000-0000-000000000001")
   (`res://assets/models/hero.glb`).
 - L'export d'un jeu empaquettera les `.dvxasset` du cache : ce sont déjà les données **binaires
   cuites** chargées sans parsing.
+- Une scène est un **asset** : son `.dvxmeta` lui donne un `AssetId`, son import vérifie qu'elle
+  se charge et range son texte dans un artefact `scene`, pour qu'un jeu charge un niveau par
+  identifiant.
 
 Import (`.dvxmeta`, format 1), écrit par la base d'assets et versionné :
 
@@ -378,6 +417,20 @@ Dans les deux cas, les sources concernées sont réimportées.
   progression vers le pas suivant pour interpoler le rendu.
 - Fermer la fenêtre principale ou recevoir une demande de l'OS termine la boucle.
   `maxFrameRate` limite les FPS ; une fenêtre minimisée tourne à 20 Hz au plus.
+- **Éditeur** (`ApplicationConfig::editor`) : l'éditeur est un mode de `Application`, pas un
+  programme à part. `devex-editor` est une application vide lancée dans ce mode ; un jeu y entre
+  de la même façon (`devex-sandbox --editor`) et joue alors son propre code. Dans l'éditeur,
+  `onStartup` et `onShutdown` s'exécutent normalement, mais `onEvent`, les mises à jour et
+  `onRender` seulement **en mode Play**, entre `onPlayStarted` et `onPlayStopped`.
+  `isEditor()` et `isPlaying()` le disent au jeu ; `requestQuit()` arrête alors le mode Play.
+  La DLL gameplay rejoindra ce mode quand elle existera.
+- **Mode Play** : Play copie la scène éditée (`Scene::clone`) et joue la copie, vue par sa caméra
+  principale ; Stop la jette et retrouve la scène éditée intacte. Pause suspend les mises à jour,
+  le pas à pas exécute un pas fixe. Le pas fixe repart de zéro à chaque Play.
+- **Projets** : `Runtime` possède la base d'assets et en change quand l'éditeur ouvre un autre
+  projet : les assets chargés sont libérés (`AssetManager::setDatabase`), la scène est vidée,
+  puis la nouvelle base est ouverte. Un fichier déposé sur l'éditeur est copié dans
+  `assets/imported`.
 
 ### Entrées
 
@@ -395,8 +448,8 @@ Dans les deux cas, les sources concernées sont réimportées.
 ### Outils
 
 - **Module `Tools`** : panneaux Dear ImGui indépendants de Vulkan, affichés en overlay dans
-  toute application avec **F1** (`ApplicationConfig::enableTools`, actif hors Release). Le
-  futur éditeur réutilisera les mêmes panneaux avec un viewport rendu dans une texture.
+  toute application avec **F1** (`ApplicationConfig::enableTools`, actif hors Release), ou
+  autour du viewport de l'éditeur (`ToolsMode::Editor`).
 - **Panneaux** : hiérarchie (sélection, création, suppression, glisser-déposer pour changer
   de parent), inspecteur généré par la réflexion (nom, UUID, composants, ajout et retrait),
   statistiques (FPS, GPU, draw calls, VRAM via VMA), console (niveaux filtrables). La
@@ -420,14 +473,59 @@ Dans les deux cas, les sources concernées sont réimportées.
   dessiné dans une seconde passe sur le backbuffer ; ses couleurs de style, pensées en
   sRGB, sont converties en linéaire pour le swapchain sRGB.
 
+### Éditeur
+
+- **Fenêtre** : barre de menus (*File*, *Edit*, *Entity*, *View*) avec les boutons Play, Pause et
+  pas à pas au centre ; panneau *Viewport* au centre de la disposition, hiérarchie à gauche,
+  inspecteur à droite, assets, console et statistiques en bas (`devex-editor.ini`). Le titre
+  donne la scène, `*` si elle a des modifications non enregistrées, le projet et l'état de jeu.
+- **Écran d'accueil** : sans projet, liste des projets récents (dans le dossier de données de
+  l'utilisateur, `%APPDATA%/Devex/Editor/editor.dvx`), *Open project…* et *New project…* (nom et
+  dossier ; le projet reçoit `assets/scenes/Main.dvxscene`). Un `.dvxproj` passé en argument
+  s'ouvre directement. Les dialogues de fichiers sont ceux du système (SDL3), sans bloquer : la
+  réponse arrive par `Platform::pollEvents`.
+- **Scènes** : *New scene* crée une petite scène éclairée (soleil, ciel, caméra, sol, cube) ;
+  *Open scene…* ou un double-clic sur une scène du panneau Assets l'ouvre ; *Save* l'écrit dans
+  son fichier, *Save as…* dans le dossier du projet, puis la base d'assets la réimporte.
+  À l'ouverture d'un projet, l'éditeur rouvre la dernière scène (`.devex/editor.dvx`, avec la
+  caméra), sinon la première scène du projet, sinon une nouvelle ; une scène déjà remplie par
+  l'application est gardée. Les modifications non enregistrées sont repérées par l'identifiant
+  d'état de l'historique (`CommandHistory::stateId`) : avant de changer de scène, de projet ou
+  de quitter, l'éditeur demande de les enregistrer, de les abandonner ou d'annuler.
+- **Viewport** : la scène est rendue à la taille du panneau. Caméra de l'éditeur indépendante des
+  caméras de la scène : clic droit maintenu pour regarder et voler (ZQSD/WASD, A/E pour
+  descendre et monter, Maj accélère, molette règle la vitesse), Alt + clic gauche pour tourner
+  autour du pivot, clic milieu pour se déplacer, molette pour avancer, F pour cadrer la
+  sélection. En Play, le viewport montre la caméra du jeu, qui reçoit clavier et souris quand
+  le panneau a le focus ; grille, icônes et gizmos disparaissent.
+- **Sélection** : un clic choisit la lumière ou la caméra dont l'icône est sous la souris (sur
+  le CPU), sinon demande au GPU l'objet visible sous le pixel ; l'entité sélectionnée et ses
+  descendants sont entourés. Une seule entité à la fois.
+- **Gizmos** (maison, `src/tools/Gizmo`) : W déplacement (axes, plans, plan de la vue), E
+  rotation (anneaux par axe, anneau de la vue), R échelle (axes, uniforme au centre) ; X alterne
+  axes du monde et de l'entité (l'échelle est toujours locale). Taille constante à l'écran,
+  poignées testées en pixels, poignée survolée ou active en jaune. Ctrl aimante par 0,5 m, 15°
+  ou 0,1. Glisser modifie `Transform` en direct ; le relâchement enregistre une étape
+  annulable par champ modifié. Parent quelconque : le déplacement passe par l'inverse de sa
+  matrice monde.
+- **Icônes et repères** : grille au sol autour de la caméra (tous les mètres, tous les dix
+  mètres de haut) qui s'estompe au loin, axes X et Z colorés ; icônes des lumières et des
+  caméras, portée des lumières ponctuelles, cône des spots et pyramide de la caméra quand elles
+  sont sélectionnées.
+- **Création** : *Entity > Create* place une entité vide, une primitive, une lumière, une caméra
+  ou un environnement au pivot de la caméra ; un modèle glissé dans le viewport se pose au sol
+  sous la souris. Suppr supprime la sélection.
+- **Pendant le jeu** : l'historique des modifications est mis de côté ; les modifications faites
+  à la copie jouée ont leur propre historique, oublié à l'arrêt.
+
 ### Assets
 
-- **Projet** : `ApplicationConfig::project` désigne le `.dvxproj` ; `Runtime` ouvre alors une
+- **Projet** : `ApplicationConfig::project` désigne le `.dvxproj` (ou l'éditeur l'ouvre) ; `Runtime` ouvre alors une
   `AssetDatabase` sur son dossier `assets/`. Le bac à sable ouvre `apps/sandbox/project` depuis les
   sources, pour que les modifications d'assets s'y voient en direct.
 - **Sources et importeurs** : chaque fichier dont l'extension a un importeur est une source ;
-  `texture` (`.png`, `.jpg`, `.tga`, `.bmp`, décodés par stb_image), `material` (`.dvxmat`) et
-  `gltf` (`.gltf`, `.glb`). Les fichiers et dossiers cachés (`.`) sont ignorés.
+  `texture` (`.png`, `.jpg`, `.tga`, `.bmp`, `.hdr`, décodés par stb_image), `material`
+  (`.dvxmat`), `gltf` (`.gltf`, `.glb`) et `scene` (`.dvxscene`). Les fichiers et dossiers cachés (`.`) sont ignorés.
 - **`.dvxmeta`** : créé au premier scan avec un UUID aléatoire et les options par défaut de
   l'importeur. Il porte l'identité de l'asset : il se versionne avec la source. Un `.dvxmeta`
   illisible est signalé et laissé tel quel, jamais remplacé. Une source copiée avec son
@@ -477,7 +575,7 @@ Dans les deux cas, les sources concernées sont réimportées.
   sont aussi des textures du projet.
 - **Ajout de fichiers** : `AssetDatabase::addFile` copie un fichier extérieur dans un dossier du
   projet, avec les buffers et images d'un `.gltf`, écrit son `.dvxmeta` et renvoie l'UUID du
-  modèle à venir. Le bac à sable l'utilise pour les fichiers déposés sur la fenêtre.
+  modèle à venir. Le bac à sable et l'éditeur l'utilisent pour les fichiers déposés sur la fenêtre.
 - **Outils** : panneau *Assets* (sources, type, statut, erreur en infobulle, réimport, sous-assets
   dépliables) ; un asset se glisse sur un champ `AssetId` de l'inspecteur, un modèle dans la
   hiérarchie (placement annulable). L'inspecteur liste les assets du type attendu.
@@ -505,6 +603,14 @@ Dans les deux cas, les sources concernées sont réimportées.
 - Le moteur ne lance pas d'exceptions ; elles restent activées au compilateur pour la STL
   MSVC et Catch2.
 - MSVC compile en `/utf-8` : sources et messages sont en UTF-8.
+- **Dépendances des en-têtes avec un MSVC localisé** : Ninja lit les en-têtes inclus dans les
+  notes `/showIncludes`, reconnues par un préfixe. Sans le pack de langue anglais, ce préfixe est
+  traduit (« Remarque : inclusion du fichier : » avec des espaces insécables) dans la page de
+  code de la console, que `slangc`, CMake ou vcpkg passent en UTF-8 en cours de build ; et CMake
+  n'écrit pas ses règles Ninja avec un préfixe qui n'est pas de l'UTF-8 valide. Sans correction,
+  modifier un en-tête ne recompilait rien. `cmake/DevexShowIncludes.cmake` détecte ce cas et fait
+  passer le compilateur par un petit lanceur (`cmake/tools/ShowIncludesLauncher.cpp`, compilé à
+  la configuration) qui réécrit ces notes avec le préfixe anglais.
 
 ### Dépendances prévues (vcpkg)
 
@@ -553,10 +659,13 @@ Chaque jalon se termine par une démo observable dans `devex-sandbox` et des tes
 7. ✅ **Rendu PBR** — render graph, forward+ clustered, lumières en unités physiques, ombres en
    cascades, ciel HDR et IBL, MSAA, exposition automatique, tonemapping AgX, tangentes
    MikkTSpace, énumérations dans la réflexion.
+8. ✅ **Éditeur** — mode éditeur du runtime et `devex-editor`, écran d'accueil et projets
+   récents, scènes en assets (ouvrir, enregistrer, modifications non enregistrées), viewport
+   rendu dans une texture, caméra d'éditeur, sélection sur le GPU et contours, gizmos maison,
+   grille et icônes, mode Play sur une copie de la scène avec pause et pas à pas.
 
-Ensuite, sans ordre figé : application éditeur (viewport en texture, gizmos, mode Play), préfabs
-liés, DLL gameplay rechargeable, export d'un jeu (paquet d'artefacts), post-traitements (bloom,
-TAA), transparence, CI Linux.
+Ensuite, sans ordre figé : physique, préfabs liés, DLL gameplay rechargeable, export d'un jeu
+(paquet d'artefacts), post-traitements (bloom, TAA), transparence, CI Linux.
 
 ## Questions ouvertes
 
@@ -577,3 +686,6 @@ TAA), transparence, CI Linux.
 - **Ombres locales** : atlas d'ombres pour les spots et cubemaps pour les lumières ponctuelles.
 - **Réflexions locales** : sondes de réflexion placées dans la scène, SSR.
 - **Ciel procédural** : atmosphère physique liée à la lumière directionnelle.
+- **Éditeur** : multi-sélection et rectangle de sélection, copier-coller et duplication, vues
+  Scène et Jeu simultanées (plusieurs vues par frame dans le renderer), jeu dans un processus
+  séparé, glisser des matériaux sur les objets du viewport, lignes épaisses.

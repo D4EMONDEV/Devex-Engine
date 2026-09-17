@@ -50,9 +50,12 @@ enum class ImageAccess : std::uint8_t
 {
     ColorAttachment,
     DepthAttachment,
+    DepthResolveAttachment,
     FragmentRead,
     ComputeRead,
     ComputeWrite,
+    // Copied to a buffer.
+    TransferRead,
     Present,
 };
 

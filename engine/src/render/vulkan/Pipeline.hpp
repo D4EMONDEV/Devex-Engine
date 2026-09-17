@@ -46,6 +46,9 @@ struct GraphicsPipelineConfig
     VkFormat colorFormat = VK_FORMAT_UNDEFINED;
     VkFormat depthFormat = VK_FORMAT_UNDEFINED;
     VkSampleCountFlagBits samples = VK_SAMPLE_COUNT_1_BIT;
+    VkPrimitiveTopology topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    // Blends straight alpha over the target.
+    bool alphaBlend = false;
     VkCullModeFlags cullMode = VK_CULL_MODE_BACK_BIT;
     bool depthTest = true;
     bool depthWrite = true;
@@ -56,8 +59,8 @@ struct GraphicsPipelineConfig
     bool depthClamp = false;
 };
 
-// Pipelines draw triangle lists without vertex input: shaders pull vertices from buffers, or
-// generate them, as fullscreen passes do. Viewport and scissor are dynamic.
+// Pipelines draw without vertex input: shaders pull vertices from buffers, or generate them, as
+// fullscreen passes do. Viewport and scissor are dynamic.
 [[nodiscard]] core::Result<Pipeline> createGraphicsPipeline(VkDevice device,
                                                             const GraphicsPipelineConfig& config);
 

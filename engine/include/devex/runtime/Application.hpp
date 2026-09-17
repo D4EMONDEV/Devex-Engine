@@ -38,6 +38,11 @@ struct ApplicationConfig
     // Makes the tools overlay (hierarchy, inspector, assets, statistics, console) available with
     // F1. Requires rendering.
     bool enableTools = core::assertsEnabled;
+    // Runs the application inside the editor: the scene is edited in a viewport and saved as
+    // project scenes, and the application's updates only run in Play mode, on a copy of the scene
+    // that Stop throws away. Without a project, the editor opens on its welcome screen. Requires
+    // rendering; the tools come with it.
+    bool editor = false;
     // The .dvxproj file whose assets folder is imported and loaded; empty runs without a project.
     std::filesystem::path project;
     // Imports again the assets that change on disk while the application runs.
@@ -53,6 +58,10 @@ class ApplicationRunner;
 // Base class of every program driven by the engine loop. Each frame polls events, runs the fixed
 // updates that are due, runs one variable update, updates the scene transforms, then renders the
 // scene. Engine services are available from onStartup to onShutdown, not in the constructor.
+//
+// Inside the editor, onStartup and onShutdown run as usual, but the updates and onRender only run
+// in Play mode, between onPlayStarted and onPlayStopped, and scene() then returns the copy of the
+// edited scene that plays. Entities keep their handles in the copy.
 class Application
 {
 public:
@@ -94,6 +103,16 @@ public:
     {
     }
 
+    // Editor only: called when Play starts, once scene() returns the copy that plays.
+    virtual void onPlayStarted()
+    {
+    }
+
+    // Editor only: called when Play stops, while scene() still returns the copy that played.
+    virtual void onPlayStopped()
+    {
+    }
+
 protected:
     Application() = default;
 
@@ -114,7 +133,12 @@ protected:
     // Progress towards the next fixed update in [0, 1), to interpolate between simulation states.
     [[nodiscard]] double interpolationAlpha() const noexcept;
 
-    // Ends the loop after the current frame.
+    // True when the application runs inside the editor.
+    [[nodiscard]] bool isEditor() const noexcept;
+    // True while gameplay runs: always outside the editor, and in Play mode inside it.
+    [[nodiscard]] bool isPlaying() const noexcept;
+
+    // Ends the loop after the current frame. Inside the editor, stops playing instead.
     void requestQuit() noexcept;
 
 private:
@@ -128,6 +152,9 @@ private:
     core::JobSystem* m_jobs = nullptr;
     double m_interpolationAlpha = 0.0;
     bool m_quitRequested = false;
+    bool m_editor = false;
+    bool m_playing = true;
+    bool m_stopRequested = false;
 };
 
 // Runs the application until it requests to quit or its main window is closed. Returns a process

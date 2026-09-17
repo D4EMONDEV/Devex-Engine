@@ -58,7 +58,7 @@ void drawSourceMenu(ToolsState& state, const asset::SourceFile& source,
     ImGui::EndPopup();
 }
 
-void drawSource(ToolsState& state, const asset::SourceFile& source)
+void drawSource(ToolsState& state, scene::Scene& scene, const asset::SourceFile& source)
 {
     const asset::AssetDatabase& database = *state.database;
     const asset::AssetInfo* const mainAsset = database.find(source.id);
@@ -86,6 +86,14 @@ void drawSource(ToolsState& state, const asset::SourceFile& source)
             ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
         {
             requestInstantiateModel(state, mainAsset->id, core::Uuid{});
+        }
+        if (mainAsset->type == asset::AssetType::Scene && state.mode == ToolsMode::Editor && ImGui::IsItemHovered() &&
+            ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
+        {
+            if (const std::optional<std::filesystem::path> path = database.project().absolutePath(source.path))
+            {
+                requestSceneChange(state, scene, {SceneChange::Kind::OpenScene, *path});
+            }
         }
     }
     drawSourceMenu(state, source, mainAsset);
@@ -129,7 +137,7 @@ void drawSource(ToolsState& state, const asset::SourceFile& source)
 
 } // namespace
 
-void drawAssetsPanel(ToolsState& state, scene::Scene& /*scene*/)
+void drawAssetsPanel(ToolsState& state, scene::Scene& scene)
 {
     if (ImGui::Begin(assetsWindow, &state.showAssets))
     {
@@ -151,7 +159,10 @@ void drawAssetsPanel(ToolsState& state, scene::Scene& /*scene*/)
         ImGui::SameLine();
         ImGui::SetNextItemWidth(-1.0f);
         ImGui::InputTextWithHint("##filter", "Filter", &state.assetFilter);
-        ImGui::SetItemTooltip("Drag a model into the hierarchy, or an asset onto an inspector field.");
+        ImGui::SetItemTooltip(state.mode == ToolsMode::Editor
+                                  ? "Drag a model into the viewport or the hierarchy, or an asset onto an inspector "
+                                    "field. Double-click a scene to open it."
+                                  : "Drag a model into the hierarchy, or an asset onto an inspector field.");
 
         const ImGuiTableFlags tableFlags = ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY |
                                            ImGuiTableFlags_BordersInnerV |
@@ -167,7 +178,7 @@ void drawAssetsPanel(ToolsState& state, scene::Scene& /*scene*/)
             {
                 if (containsIgnoringCase(source.path, state.assetFilter))
                 {
-                    drawSource(state, source);
+                    drawSource(state, scene, source);
                 }
             }
             ImGui::EndTable();

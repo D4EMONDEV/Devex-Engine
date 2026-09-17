@@ -11,7 +11,7 @@ et rendu avec Vulkan. Il est distribué sous licence [MIT](LICENSE).
 - scènes en entités + composants, stockées de façon data-oriented ;
 - repère Y-up main droite, formats de projet texte `.dvx*` ;
 - gameplay en C++ rechargeable à chaud, C# prévu ensuite ;
-- éditeur Dear ImGui (docking) puis UI maison.
+- éditeur Dear ImGui (docking) avec viewport, gizmos et mode Play, puis UI maison.
 
 Le détail, l'architecture des modules et les jalons sont dans
 [docs/decisions.md](docs/decisions.md).
@@ -27,21 +27,24 @@ Le détail, l'architecture des modules et les jalons sont dans
 - `Devex::Asset` : `AssetId`, maillages, textures, matériaux et modèles, fichiers `.dvxasset`,
   projets `.dvxproj` ;
 - `Devex::AssetImport` : base d'assets (`.dvxmeta`, cache `.devex/`, imports en arrière-plan,
-  réimport à chaud), importeurs de textures (BC7/BC5), de `.dvxmat` et de glTF ;
+  réimport à chaud), importeurs de textures (BC7/BC5), de `.dvxmat`, de glTF et de scènes ;
 - `Devex::Render` : renderer Vulkan 1.4 (volk, VMA), shaders Slang, render graph, PBR
   forward+ clustered, ombres en cascades, ciel HDR et IBL, MSAA, exposition automatique,
-  tonemapping AgX ;
+  tonemapping AgX, rendu dans une texture, sélection sur le GPU, contours et lignes d'outils ;
 - `Devex::Scene` : entités à UUID, composants en sparse sets, hiérarchie, `.dvxscene`,
   instanciation de modèles ;
-- `Devex::Tools` : overlay ImGui (F1) avec hiérarchie, inspecteur, assets, statistiques,
-  console et annulation (Ctrl+Z / Ctrl+Y) ;
-- `Devex::Runtime` : `Application`, boucle à pas fixe, chargement des assets à la demande,
-  rendu automatique de la scène ;
+- `Devex::Tools` : panneaux ImGui (hiérarchie, inspecteur, assets, statistiques, console,
+  annulation), en overlay (F1) ou dans l'éditeur : viewport, caméra libre, sélection à la
+  souris, gizmos, scènes, écran d'accueil ;
+- `Devex::Runtime` : `Application`, boucle à pas fixe, mode éditeur et mode Play, chargement
+  des assets à la demande, rendu automatique de la scène ;
+- `devex-editor` : l'éditeur, sans code de jeu ;
 - `devex-sandbox` : projet `apps/sandbox/project` (caisse et balises glTF, sphères or et
   plastique, ciel HDR, lampes) et caméra libre ; N alterne jour et nuit, F1 affiche les outils,
   F5 sauvegarde la scène, F9 la recharge ;
   modifier un fichier de `assets/` met la scène à jour, et glisser un `.gltf` ou un `.glb`
-  sur la fenêtre le copie dans le projet puis le place devant la caméra.
+  sur la fenêtre le copie dans le projet puis le place devant la caméra. `--editor` l'ouvre
+  dans l'éditeur, où son gameplay tourne en mode Play.
 
 Le SDK Vulkan fournit `slangc`, qui compile les shaders pendant le build. Les assets
 d'exemple et les données de test sont produits par `scripts/generate_sample_assets.py`.
@@ -62,14 +65,22 @@ cmake --build --preset build-x64-debug
 ctest --preset test-x64-debug
 ```
 
-Le programme de bac à sable est produit dans `out/build/x64-debug/bin`.
+Les programmes sont produits dans `out/build/x64-debug/bin` :
 
-Avec une installation de Visual Studio en français sans le pack de langue anglais, Ninja ne
-reconnaît pas toujours les notes `/showIncludes` du compilateur, dont l'encodage varie selon la
-façon dont il est lancé : un en-tête modifié peut alors ne pas recompiler les fichiers qui
-l'incluent. En cas de comportement incohérent après avoir modifié un en-tête, reconstruire
-entièrement (`cmake --build --preset build-x64-debug --clean-first`), ou installer le pack de
-langue anglais depuis Visual Studio Installer.
+```powershell
+out/build/x64-debug/bin/devex-editor.exe                      # écran d'accueil
+out/build/x64-debug/bin/devex-editor.exe chemin/Projet.dvxproj
+out/build/x64-debug/bin/devex-sandbox.exe --editor            # le bac à sable dans l'éditeur
+```
+
+Dans l'éditeur : clic gauche pour sélectionner, W / E / R pour déplacer, tourner ou mettre à
+l'échelle (Ctrl aimante), clic droit maintenu + ZQSD pour voler, Alt + clic gauche pour tourner
+autour, F pour cadrer, Ctrl+S pour enregistrer la scène et Ctrl+P pour jouer ou arrêter.
+
+Avec Visual Studio en français sans le pack de langue anglais, la configuration fait passer le
+compilateur par un petit lanceur qui traduit ses notes `/showIncludes` pour Ninja (voir
+[docs/decisions.md](docs/decisions.md), section *Code C++*) ; un build configuré avant cette
+correction doit être reconfiguré puis reconstruit une fois entièrement.
 
 ## Règle de conception
 

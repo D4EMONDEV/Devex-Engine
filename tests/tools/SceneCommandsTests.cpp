@@ -8,6 +8,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -58,6 +59,41 @@ TEST_CASE("Field edits undo and redo through reflection", "[tools][commands]")
     CHECK(scene.get<Transform>(entity).position == Vec3{0.0f});
     REQUIRE(history.redo(scene));
     CHECK(scene.get<Transform>(entity).position == Vec3{1.0f, 2.0f, 3.0f});
+}
+
+TEST_CASE("History state identifiers tell whether a scene changed since it was saved", "[tools][commands]")
+{
+    Scene scene;
+    CommandHistory history(2);
+    const Entity entity = scene.createEntity("A");
+    const Uuid uuid = scene.uuid(entity);
+
+    const std::uint64_t saved = history.stateId();
+    REQUIRE(history.execute(scene, devex::tools::makeRenameCommand(uuid, "A", "B")));
+    const std::uint64_t renamed = history.stateId();
+    CHECK(renamed != saved);
+    REQUIRE(history.undo(scene));
+    CHECK(history.stateId() == saved);
+    REQUIRE(history.redo(scene));
+    CHECK(history.stateId() == renamed);
+
+    // A different change after an undo is a different state.
+    REQUIRE(history.undo(scene));
+    REQUIRE(history.execute(scene, devex::tools::makeRenameCommand(uuid, "A", "C")));
+    CHECK(history.stateId() != renamed);
+    CHECK(history.stateId() != saved);
+
+    // Commands dropped beyond the capacity leave a base state that is not the saved one.
+    REQUIRE(history.execute(scene, devex::tools::makeRenameCommand(uuid, "C", "D")));
+    REQUIRE(history.execute(scene, devex::tools::makeRenameCommand(uuid, "D", "E")));
+    REQUIRE(history.undo(scene));
+    REQUIRE(history.undo(scene));
+    CHECK(history.nextUndo() == nullptr);
+    CHECK(history.stateId() != saved);
+
+    const std::uint64_t beforeClear = history.stateId();
+    history.clear();
+    CHECK(history.stateId() != beforeClear);
 }
 
 TEST_CASE("Recording a new command clears the redo stack", "[tools][commands]")

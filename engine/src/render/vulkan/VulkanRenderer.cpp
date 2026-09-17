@@ -30,6 +30,12 @@ constexpr std::uint64_t noTimeout = std::numeric_limits<std::uint64_t>::max();
 // Local lights beyond this distance share the last cluster slice.
 constexpr float clusterFarPlane = 500.0f;
 
+// Scene lines are drawn this much closer in depth, so that lines lying on a surface stay visible.
+constexpr float sceneLineDepthScale = 1.002f;
+
+// Linear orange, like the selection of most editors.
+constexpr math::Vec4 outlineColor{1.0f, 0.42f, 0.05f, 1.0f};
+
 static_assert(sizeof(ClusterRange) == sizeof(GpuCluster));
 
 [[nodiscard]] VkFormat toVulkanFormat(asset::TextureFormat format) noexcept
@@ -64,6 +70,22 @@ static_assert(sizeof(ClusterRange) == sizeof(GpuCluster));
         mip.bytes.push_back(static_cast<std::byte>(channel));
     }
     return texture;
+}
+
+// Scales and moves clip space so that one pixel of an image covers the whole viewport.
+[[nodiscard]] math::Mat4 pixelSelectionMatrix(math::Extent2D extent, std::uint32_t x, std::uint32_t y) noexcept
+{
+    const auto width = static_cast<float>(extent.width);
+    const auto height = static_cast<float>(extent.height);
+    // Vulkan normalized device coordinates put -1 at the top.
+    const float centerX = (static_cast<float>(x) + 0.5f) / width * 2.0f - 1.0f;
+    const float centerY = (static_cast<float>(y) + 0.5f) / height * 2.0f - 1.0f;
+    math::Mat4 matrix{1.0f};
+    matrix[0][0] = width;
+    matrix[1][1] = height;
+    matrix[3][0] = -centerX * width;
+    matrix[3][1] = -centerY * height;
+    return matrix;
 }
 
 [[nodiscard]] math::Mat4 projectionMatrix(const RenderCamera& camera, float aspectRatio) noexcept
@@ -391,6 +413,7 @@ core::Result<void> VulkanRenderer::endFrame()
     const auto frameSlot = static_cast<std::uint32_t>(m_frameIndex % framesInFlight);
     FrameContext& frame = m_frames[frameSlot];
     DEVEX_VK_TRY(vkWaitForFences, device, 1, &frame.completed, VK_TRUE, noTimeout);
+    readPickResult(frame);
     releaseRetiredResources();
     updateExposure(frame);
     if (core::Result<void> environment = updateEnvironment(); !environment)
@@ -422,11 +445,27 @@ core::Result<void> VulkanRenderer::endFrame()
         return materials;
     }
 
-    const math::Extent2D extent = m_swapchain->extent();
-    const float aspectRatio = static_cast<float>(extent.width) / static_cast<float>(extent.height);
+    const math::Extent2D viewport = m_world.viewport;
+    m_sceneExtent = viewport.width > 0 && viewport.height > 0
+                        ? math::Extent2D{std::min(viewport.width, maxViewportSize),
+                                         std::min(viewport.height, maxViewportSize)}
+                        : m_swapchain->extent();
+    const float aspectRatio = static_cast<float>(m_sceneExtent.width) / static_cast<float>(m_sceneExtent.height);
     if (core::Result<void> lights = uploadLights(frame, aspectRatio); !lights)
     {
         return lights;
+    }
+    if (const std::optional<PickRequest>& pick = m_world.pick; pick)
+    {
+        // A pixel outside the image shows nothing, which needs no GPU work.
+        if (pick->x < m_sceneExtent.width && pick->y < m_sceneExtent.height)
+        {
+            frame.pickRequest = pick->id;
+        }
+        else
+        {
+            m_pickResults.push_back({.request = pick->id});
+        }
     }
 
     const RenderSun& sun = m_world.sun;
@@ -526,6 +565,17 @@ core::Result<void> VulkanRenderer::createFrameContexts()
         const VkSemaphoreCreateInfo semaphoreInfo{.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
         DEVEX_VK_TRY(vkCreateSemaphore, device, &semaphoreInfo, nullptr, &frame.imageAcquired);
 
+        core::Result<Buffer> pickReadback = Buffer::create(m_allocator, {
+                                                                             .size = sizeof(std::uint32_t),
+                                                                             .usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                                                                             .hostVisible = true,
+                                                                         });
+        if (!pickReadback)
+        {
+            return std::unexpected(pickReadback.error());
+        }
+        frame.pickReadback = std::move(*pickReadback);
+
         for (const auto& [buffer, bytes] :
              {std::pair<std::optional<Buffer>*, VkDeviceSize>{&frame.sceneData, sizeof(GpuSceneData)},
               {&frame.luminance, VkDeviceSize{luminanceGridWidth} * luminanceGridHeight * sizeof(float)}})
@@ -575,6 +625,31 @@ core::Result<void> VulkanRenderer::createDefaultResources()
         return std::unexpected(flatNormal.error());
     }
     m_flatNormalTexture = std::move(*flatNormal);
+
+    core::Result<Image> emptyMask = Image::create(m_device, m_allocator,
+                                                  {
+                                                      .format = selectionMaskFormat,
+                                                      .extent = {1, 1},
+                                                      .usage = VK_IMAGE_USAGE_SAMPLED_BIT |
+                                                               VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+                                                  });
+    if (!emptyMask)
+    {
+        return std::unexpected(emptyMask.error());
+    }
+    const VkImage emptyMaskHandle = emptyMask->handle();
+    if (core::Result<void> cleared = m_upload.submit([&](VkCommandBuffer commandBuffer) {
+            transitionImage(commandBuffer, emptyMaskHandle, ImageState::Undefined, ImageState::TransferDestination);
+            const VkClearColorValue black{};
+            const VkImageSubresourceRange range{.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .levelCount = 1, .layerCount = 1};
+            vkCmdClearColorImage(commandBuffer, emptyMaskHandle, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &black, 1, &range);
+            transitionImage(commandBuffer, emptyMaskHandle, ImageState::TransferDestination, ImageState::ShaderReadOnly);
+        });
+        !cleared)
+    {
+        return cleared;
+    }
+    m_emptySelectionMask = std::move(*emptyMask);
 
     m_defaultMaterial = m_materials.insert(MaterialDesc{
         .baseColorFactor = {0.72f, 0.74f, 0.78f, 1.0f},
@@ -667,7 +742,32 @@ core::Result<void> VulkanRenderer::createScenePipelines()
                     .pushConstantSize = sizeof(LuminancePushConstants),
                 });
 
-    for (core::Result<Pipeline>* result : {&mesh, &doubleSided, &shadow, &sky, &luminance})
+    // Both sides are picked and outlined, so that thin objects can be selected from anywhere.
+    core::Result<Pipeline> pick = createGraphicsPipeline(
+        device, {
+                    .shaderPath = m_shaderDirectory / "pick.spv",
+                    .vertexEntry = "pickVertex",
+                    .fragmentEntry = "pickFragment",
+                    .setLayouts = globalOnly,
+                    .pushConstantSize = sizeof(DrawPushConstants),
+                    .colorFormat = pickFormat,
+                    .depthFormat = depthFormat,
+                    .cullMode = VK_CULL_MODE_NONE,
+                });
+    core::Result<Pipeline> selectionMask = createGraphicsPipeline(
+        device, {
+                    .shaderPath = m_shaderDirectory / "pick.spv",
+                    .vertexEntry = "maskVertex",
+                    .fragmentEntry = "maskFragment",
+                    .setLayouts = globalOnly,
+                    .pushConstantSize = sizeof(DrawPushConstants),
+                    .colorFormat = selectionMaskFormat,
+                    .cullMode = VK_CULL_MODE_NONE,
+                    .depthTest = false,
+                    .depthWrite = false,
+                });
+
+    for (core::Result<Pipeline>* result : {&mesh, &doubleSided, &shadow, &sky, &luminance, &pick, &selectionMask})
     {
         if (!*result)
         {
@@ -679,6 +779,65 @@ core::Result<void> VulkanRenderer::createScenePipelines()
     m_shadowPipeline = std::move(*shadow);
     m_skyPipeline = std::move(*sky);
     m_luminancePipeline = std::move(*luminance);
+    m_pickPipeline = std::move(*pick);
+    m_selectionMaskPipeline = std::move(*selectionMask);
+    return {};
+}
+
+core::Result<void> VulkanRenderer::createTargetPipelines(VkFormat format)
+{
+    const VkDevice device = m_device.handle();
+    const std::array bothSets{m_descriptors->globalLayout(), m_descriptors->frameLayout()};
+    core::Result<Pipeline> tonemap = createGraphicsPipeline(
+        device, {
+                    .shaderPath = m_shaderDirectory / "tonemap.spv",
+                    .setLayouts = bothSets,
+                    .pushConstantSize = sizeof(TonemapPushConstants),
+                    .colorFormat = format,
+                    .cullMode = VK_CULL_MODE_NONE,
+                    .depthTest = false,
+                    .depthWrite = false,
+                });
+
+    // The overlay pass binds the scene depth, which only scene lines test against.
+    const GraphicsPipelineConfig overlay{
+        .shaderPath = m_shaderDirectory / "overlay.spv",
+        .vertexEntry = "colorVertex",
+        .fragmentEntry = "colorFragment",
+        .pushConstantSize = sizeof(OverlayPushConstants),
+        .colorFormat = format,
+        .depthFormat = depthFormat,
+        .topology = VK_PRIMITIVE_TOPOLOGY_LINE_LIST,
+        .alphaBlend = true,
+        .cullMode = VK_CULL_MODE_NONE,
+        .depthTest = false,
+        .depthWrite = false,
+    };
+    GraphicsPipelineConfig sceneLineConfig = overlay;
+    sceneLineConfig.depthTest = true;
+    core::Result<Pipeline> sceneLines = createGraphicsPipeline(device, sceneLineConfig);
+    core::Result<Pipeline> overlayLines = createGraphicsPipeline(device, overlay);
+    GraphicsPipelineConfig triangleConfig = overlay;
+    triangleConfig.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    core::Result<Pipeline> overlayTriangles = createGraphicsPipeline(device, triangleConfig);
+    GraphicsPipelineConfig outlineConfig = triangleConfig;
+    outlineConfig.vertexEntry = "outlineVertex";
+    outlineConfig.fragmentEntry = "outlineFragment";
+    outlineConfig.setLayouts = bothSets;
+    core::Result<Pipeline> outline = createGraphicsPipeline(device, outlineConfig);
+
+    for (core::Result<Pipeline>* result : {&tonemap, &sceneLines, &overlayLines, &overlayTriangles, &outline})
+    {
+        if (!*result)
+        {
+            return std::unexpected(result->error());
+        }
+    }
+    m_tonemapPipeline = std::move(*tonemap);
+    m_sceneLinePipeline = std::move(*sceneLines);
+    m_overlayLinePipeline = std::move(*overlayLines);
+    m_overlayTrianglePipeline = std::move(*overlayTriangles);
+    m_outlinePipeline = std::move(*outline);
     return {};
 }
 
@@ -721,23 +880,10 @@ core::Result<void> VulkanRenderer::recreateSwapchain(math::Extent2D windowPixelS
 
     if (!m_tonemapPipeline || previousFormat != m_swapchain->format())
     {
-        m_tonemapPipeline.reset();
-        const std::array bothSets{m_descriptors->globalLayout(), m_descriptors->frameLayout()};
-        core::Result<Pipeline> tonemap = createGraphicsPipeline(
-            device, {
-                        .shaderPath = m_shaderDirectory / "tonemap.spv",
-                        .setLayouts = bothSets,
-                        .pushConstantSize = sizeof(TonemapPushConstants),
-                        .colorFormat = m_swapchain->format(),
-                        .cullMode = VK_CULL_MODE_NONE,
-                        .depthTest = false,
-                        .depthWrite = false,
-                    });
-        if (!tonemap)
+        if (core::Result<void> pipelines = createTargetPipelines(m_swapchain->format()); !pipelines)
         {
-            return std::unexpected(tonemap.error());
+            return pipelines;
         }
-        m_tonemapPipeline = std::move(*tonemap);
     }
 
     m_swapchainWindowPixelSize = windowPixelSize;
@@ -1058,7 +1204,7 @@ core::Result<void> VulkanRenderer::uploadLights(FrameContext& frame, float aspec
 void VulkanRenderer::writeSceneData(FrameContext& frame,
                                     const std::optional<ShadowCascades>& cascades) const noexcept
 {
-    const math::Extent2D extent = m_swapchain->extent();
+    const math::Extent2D extent = m_sceneExtent;
     const float aspectRatio = static_cast<float>(extent.width) / static_cast<float>(extent.height);
     const RenderCamera& camera = m_world.camera;
     const math::Mat4 projection = projectionMatrix(camera, aspectRatio);
@@ -1114,19 +1260,27 @@ void VulkanRenderer::writeSceneData(FrameContext& frame,
     scene.lights = frame.lights->deviceAddress();
     scene.clusters = frame.clusters->deviceAddress();
     scene.clusterLights = frame.clusterLights->deviceAddress();
+    if (m_world.pick)
+    {
+        scene.pickViewProjection =
+            pixelSelectionMatrix(extent, m_world.pick->x, m_world.pick->y) * scene.viewProjection;
+    }
 
     std::memcpy(frame.sceneData->mappedBytes().data(), &scene, sizeof(scene));
 }
 
-std::uint32_t VulkanRenderer::drawMeshes(VkCommandBuffer commandBuffer, VkDeviceAddress sceneData,
-                                         const Pipeline* shadowPipeline, std::uint32_t cascade,
-                                         std::uint32_t frameSlot) const
+std::uint32_t VulkanRenderer::drawMeshes(VkCommandBuffer commandBuffer, VkDeviceAddress sceneData, MeshPass pass,
+                                         std::uint32_t cascade, std::uint32_t frameSlot) const
 {
     const std::array sets{m_descriptors->global(), m_descriptors->frame(frameSlot)};
     const Pipeline* boundPipeline = nullptr;
     std::uint32_t drawCalls = 0;
     for (const MeshInstance& instance : m_world.meshes)
     {
+        if (pass == MeshPass::SelectionMask && !instance.outlined)
+        {
+            continue;
+        }
         const GpuMesh* const mesh = m_meshes.find(instance.mesh);
         DEVEX_ASSERT_MSG(mesh != nullptr, "the render world references a destroyed mesh");
         if (mesh == nullptr || instance.submesh >= mesh->submeshes.size())
@@ -1136,16 +1290,28 @@ std::uint32_t VulkanRenderer::drawMeshes(VkCommandBuffer commandBuffer, VkDevice
 
         const MaterialDesc* const material = m_materials.find(instance.material);
         const MaterialHandle materialHandle = material != nullptr ? instance.material : m_defaultMaterial;
-        const Pipeline* const pipeline =
-            shadowPipeline != nullptr                           ? shadowPipeline
-            : material != nullptr && material->doubleSided ? &*m_doubleSidedPipeline
-                                                                : &*m_meshPipeline;
+        const Pipeline* pipeline = nullptr;
+        switch (pass)
+        {
+        case MeshPass::Scene:
+            pipeline = material != nullptr && material->doubleSided ? &*m_doubleSidedPipeline : &*m_meshPipeline;
+            break;
+        case MeshPass::Shadow:
+            pipeline = &*m_shadowPipeline;
+            break;
+        case MeshPass::Pick:
+            pipeline = &*m_pickPipeline;
+            break;
+        case MeshPass::SelectionMask:
+            pipeline = &*m_selectionMaskPipeline;
+            break;
+        }
         if (pipeline != boundPipeline)
         {
             vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->handle());
-            // Shadow passes only use the global set.
+            // Only the scene pass reads the images of the frame set.
             vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->layout(), 0,
-                                    shadowPipeline != nullptr ? 1u : 2u, sets.data(), 0, nullptr);
+                                    pass == MeshPass::Scene ? 2u : 1u, sets.data(), 0, nullptr);
             boundPipeline = pipeline;
         }
 
@@ -1155,6 +1321,7 @@ std::uint32_t VulkanRenderer::drawMeshes(VkCommandBuffer commandBuffer, VkDevice
             .world = instance.transform,
             .material = materialHandle.index,
             .cascade = cascade,
+            .objectId = instance.objectId,
         };
         vkCmdPushConstants(commandBuffer, pipeline->layout(),
                            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
@@ -1179,54 +1346,121 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
     };
     DEVEX_VK_TRY(vkBeginCommandBuffer, commandBuffer, &beginInfo);
 
-    const math::Extent2D extent = m_swapchain->extent();
+    const math::Extent2D extent = m_sceneExtent;
+    const math::Extent2D windowExtent = m_swapchain->extent();
+    const VkFormat targetFormat = m_swapchain->format();
     const bool multisampled = m_samples != VK_SAMPLE_COUNT_1_BIT;
+    const bool toViewport = m_world.viewport.width > 0 && m_world.viewport.height > 0;
+    const bool outlines = std::ranges::any_of(m_world.meshes, &MeshInstance::outlined);
+    const bool drawOverlay = outlines || !m_world.sceneLines.empty() || !m_world.overlayLines.empty() ||
+                             !m_world.overlayTriangles.empty();
+    const bool pick = frame.pickRequest.has_value();
     RenderGraph graph(m_device, m_allocator, frame.images);
 
     ImageState backbufferState = ImageState::AcquiredBackbuffer;
     const RenderGraph::ImageId backbuffer =
         graph.importImage(m_swapchain->image(imageIndex), m_swapchain->imageView(imageIndex),
-                          m_swapchain->format(), backbufferState);
+                          targetFormat, backbufferState);
 
-    core::Result<RenderGraph::ImageId> shadowMap = graph.createImage({
+    std::vector<core::Result<RenderGraph::ImageId>> created;
+    const auto create = [&](const ImageConfig& config) -> std::size_t {
+        created.push_back(graph.createImage(config));
+        return created.size() - 1;
+    };
+    const std::size_t shadowMapIndex = create({
         .format = depthFormat,
         .extent = {shadowMapSize, shadowMapSize},
         .usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
         .layers = cascadeCount,
     });
-    core::Result<RenderGraph::ImageId> sceneColor = graph.createImage({
+    const std::size_t sceneColorIndex = create({
         .format = sceneFormat,
         .extent = extent,
         .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
     });
-    core::Result<RenderGraph::ImageId> depth = graph.createImage({
+    const std::size_t depthIndex = create({
         .format = depthFormat,
         .extent = extent,
         .usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
         .samples = m_samples,
     });
-    core::Result<RenderGraph::ImageId> multisampledColor =
-        multisampled ? graph.createImage({
-                           .format = sceneFormat,
-                           .extent = extent,
-                           .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
-                           .samples = m_samples,
-                       })
-                     : sceneColor;
-    for (const core::Result<RenderGraph::ImageId>* image : {&shadowMap, &sceneColor, &depth, &multisampledColor})
+    const std::size_t multisampledColorIndex = multisampled ? create({
+                                                                  .format = sceneFormat,
+                                                                  .extent = extent,
+                                                                  .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+                                                                  .samples = m_samples,
+                                                              })
+                                                            : sceneColorIndex;
+    // The overlay tests lines against single-sampled depth: sample zero of the scene depth.
+    const bool resolveDepth = drawOverlay && multisampled;
+    const std::size_t resolvedDepthIndex = resolveDepth ? create({
+                                                              .format = depthFormat,
+                                                              .extent = extent,
+                                                              .usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+                                                          })
+                                                        : depthIndex;
+    const std::size_t selectionMaskIndex = outlines ? create({
+                                                          .format = selectionMaskFormat,
+                                                          .extent = extent,
+                                                          .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+                                                                   VK_IMAGE_USAGE_SAMPLED_BIT,
+                                                      })
+                                                    : 0;
+    const std::size_t viewportIndex = toViewport ? create({
+                                                       .format = targetFormat,
+                                                       .extent = extent,
+                                                       .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+                                                                VK_IMAGE_USAGE_SAMPLED_BIT,
+                                                   })
+                                                 : 0;
+    const std::size_t pickColorIndex = pick ? create({
+                                                  .format = pickFormat,
+                                                  .extent = {1, 1},
+                                                  .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+                                                           VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
+                                              })
+                                            : 0;
+    const std::size_t pickDepthIndex = pick ? create({
+                                                  .format = depthFormat,
+                                                  .extent = {1, 1},
+                                                  .usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+                                              })
+                                            : 0;
+    for (const core::Result<RenderGraph::ImageId>& image : created)
     {
-        if (!*image)
+        if (!image)
         {
-            return std::unexpected(image->error());
+            return std::unexpected(image.error());
+        }
+    }
+    const RenderGraph::ImageId shadowMap = *created[shadowMapIndex];
+    const RenderGraph::ImageId sceneColor = *created[sceneColorIndex];
+    const RenderGraph::ImageId depth = *created[depthIndex];
+    const RenderGraph::ImageId multisampledColor = *created[multisampledColorIndex];
+    const RenderGraph::ImageId sceneDepth = *created[resolvedDepthIndex];
+    const RenderGraph::ImageId target = toViewport ? *created[viewportIndex] : backbuffer;
+
+    core::Result<OverlayRanges> overlayRanges = OverlayRanges{};
+    if (drawOverlay)
+    {
+        overlayRanges = uploadOverlay(frame);
+        if (!overlayRanges)
+        {
+            return std::unexpected(overlayRanges.error());
         }
     }
 
     // The frame set points at this frame's transient images.
-    if (frame.boundShadowMap != graph.view(*shadowMap) || frame.boundSceneColor != graph.view(*sceneColor))
+    const VkImageView selectionMaskView =
+        outlines ? graph.view(*created[selectionMaskIndex]) : m_emptySelectionMask->view();
+    if (frame.boundShadowMap != graph.view(shadowMap) || frame.boundSceneColor != graph.view(sceneColor) ||
+        frame.boundSelectionMask != selectionMaskView)
     {
-        frame.boundShadowMap = graph.view(*shadowMap);
-        frame.boundSceneColor = graph.view(*sceneColor);
-        m_descriptors->setFrameImages(frameSlot, frame.boundShadowMap, frame.boundSceneColor);
+        frame.boundShadowMap = graph.view(shadowMap);
+        frame.boundSceneColor = graph.view(sceneColor);
+        frame.boundSelectionMask = selectionMaskView;
+        m_descriptors->setFrameImages(frameSlot, frame.boundShadowMap, frame.boundSceneColor,
+                                      frame.boundSelectionMask);
     }
 
     const VkDeviceAddress sceneData = frame.sceneData->deviceAddress();
@@ -1245,8 +1479,8 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
 
     if (drawShadows)
     {
-        const Image* const shadowImage = graph.image(*shadowMap);
-        graph.addPass("Shadow cascades", {{*shadowMap, ImageAccess::DepthAttachment}},
+        const Image* const shadowImage = graph.image(shadowMap);
+        graph.addPass("Shadow cascades", {{shadowMap, ImageAccess::DepthAttachment}},
                       [&, shadowImage](VkCommandBuffer commands) {
                           for (std::uint32_t cascade = 0; cascade < cascadeCount; ++cascade)
                           {
@@ -1268,28 +1502,32 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
                               setViewport(commands, {shadowMapSize, shadowMapSize});
                               // Steep surfaces need more bias than those facing the light.
                               vkCmdSetDepthBias(commands, 0.0f, 0.0f, 1.5f);
-                              drawMeshes(commands, sceneData, &*m_shadowPipeline, cascade, frameSlot);
+                              drawMeshes(commands, sceneData, MeshPass::Shadow, cascade, frameSlot);
                               vkCmdEndRendering(commands);
                           }
                       });
     }
 
     std::vector<std::pair<RenderGraph::ImageId, ImageAccess>> sceneAccesses{
-        {*multisampledColor, ImageAccess::ColorAttachment},
-        {*depth, ImageAccess::DepthAttachment},
-        {*shadowMap, ImageAccess::FragmentRead},
+        {multisampledColor, ImageAccess::ColorAttachment},
+        {depth, ImageAccess::DepthAttachment},
+        {shadowMap, ImageAccess::FragmentRead},
     };
     if (multisampled)
     {
-        sceneAccesses.push_back({*sceneColor, ImageAccess::ColorAttachment});
+        sceneAccesses.push_back({sceneColor, ImageAccess::ColorAttachment});
+    }
+    if (resolveDepth)
+    {
+        sceneAccesses.push_back({sceneDepth, ImageAccess::DepthResolveAttachment});
     }
     graph.addPass("Scene", std::move(sceneAccesses), [&](VkCommandBuffer commands) {
         const VkRenderingAttachmentInfo colorAttachment{
             .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-            .imageView = graph.view(*multisampledColor),
+            .imageView = graph.view(multisampledColor),
             .imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
             .resolveMode = multisampled ? VK_RESOLVE_MODE_AVERAGE_BIT : VK_RESOLVE_MODE_NONE,
-            .resolveImageView = multisampled ? graph.view(*sceneColor) : VK_NULL_HANDLE,
+            .resolveImageView = multisampled ? graph.view(sceneColor) : VK_NULL_HANDLE,
             .resolveImageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
             .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
             .storeOp = multisampled ? VK_ATTACHMENT_STORE_OP_DONT_CARE : VK_ATTACHMENT_STORE_OP_STORE,
@@ -1298,10 +1536,13 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
         // With reversed depth, 0 is infinitely far away.
         const VkRenderingAttachmentInfo depthAttachment{
             .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-            .imageView = graph.view(*depth),
+            .imageView = graph.view(depth),
             .imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+            .resolveMode = resolveDepth ? VK_RESOLVE_MODE_SAMPLE_ZERO_BIT : VK_RESOLVE_MODE_NONE,
+            .resolveImageView = resolveDepth ? graph.view(sceneDepth) : VK_NULL_HANDLE,
+            .resolveImageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
             .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
-            .storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+            .storeOp = drawOverlay && !multisampled ? VK_ATTACHMENT_STORE_OP_STORE : VK_ATTACHMENT_STORE_OP_DONT_CARE,
             .clearValue = {.depthStencil = {.depth = 0.0f}},
         };
         const VkRenderingInfo renderingInfo{
@@ -1314,7 +1555,7 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
         };
         vkCmdBeginRendering(commands, &renderingInfo);
         setViewport(commands, extent);
-        drawCalls += drawMeshes(commands, sceneData, nullptr, 0, frameSlot);
+        drawCalls += drawMeshes(commands, sceneData, MeshPass::Scene, 0, frameSlot);
 
         vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, m_skyPipeline->handle());
         vkCmdBindDescriptorSets(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, m_skyPipeline->layout(), 0, 1,
@@ -1328,7 +1569,7 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
 
     if (m_world.camera.autoExposure)
     {
-        graph.addPass("Luminance", {{*sceneColor, ImageAccess::ComputeRead}}, [&](VkCommandBuffer commands) {
+        graph.addPass("Luminance", {{sceneColor, ImageAccess::ComputeRead}}, [&](VkCommandBuffer commands) {
             vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_COMPUTE, m_luminancePipeline->handle());
             vkCmdBindDescriptorSets(commands, VK_PIPELINE_BIND_POINT_COMPUTE, m_luminancePipeline->layout(), 0,
                                     2, sets.data(), 0, nullptr);
@@ -1344,12 +1585,84 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
         frame.luminanceMeasured = true;
     }
 
-    graph.addPass("Tonemap and tools",
-                  {{*sceneColor, ImageAccess::FragmentRead}, {backbuffer, ImageAccess::ColorAttachment}},
+    if (pick)
+    {
+        const RenderGraph::ImageId pickColor = *created[pickColorIndex];
+        const RenderGraph::ImageId pickDepth = *created[pickDepthIndex];
+        graph.addPass("Pick", {{pickColor, ImageAccess::ColorAttachment}, {pickDepth, ImageAccess::DepthAttachment}},
+                      [&, pickColor, pickDepth](VkCommandBuffer commands) {
+                          const VkRenderingAttachmentInfo colorAttachment{
+                              .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+                              .imageView = graph.view(pickColor),
+                              .imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                              .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+                              .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+                              .clearValue = {.color = {.uint32 = {0, 0, 0, 0}}},
+                          };
+                          const VkRenderingAttachmentInfo depthAttachment{
+                              .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+                              .imageView = graph.view(pickDepth),
+                              .imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+                              .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+                              .storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+                              .clearValue = {.depthStencil = {.depth = 0.0f}},
+                          };
+                          const VkRenderingInfo renderingInfo{
+                              .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
+                              .renderArea = {.extent = {1, 1}},
+                              .layerCount = 1,
+                              .colorAttachmentCount = 1,
+                              .pColorAttachments = &colorAttachment,
+                              .pDepthAttachment = &depthAttachment,
+                          };
+                          vkCmdBeginRendering(commands, &renderingInfo);
+                          setViewport(commands, {1, 1});
+                          drawMeshes(commands, sceneData, MeshPass::Pick, 0, frameSlot);
+                          vkCmdEndRendering(commands);
+                      });
+        graph.addPass("Pick readback", {{pickColor, ImageAccess::TransferRead}},
+                      [&, pickColor](VkCommandBuffer commands) {
+                          const VkBufferImageCopy copy{
+                              .imageSubresource = {.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .layerCount = 1},
+                              .imageExtent = {1, 1, 1},
+                          };
+                          vkCmdCopyImageToBuffer(commands, graph.handle(pickColor), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                                                 frame.pickReadback->handle(), 1, &copy);
+                      });
+    }
+
+    if (outlines)
+    {
+        const RenderGraph::ImageId selectionMask = *created[selectionMaskIndex];
+        graph.addPass("Selection mask", {{selectionMask, ImageAccess::ColorAttachment}},
+                      [&, selectionMask](VkCommandBuffer commands) {
+                          const VkRenderingAttachmentInfo colorAttachment{
+                              .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+                              .imageView = graph.view(selectionMask),
+                              .imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                              .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+                              .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+                              .clearValue = {.color = {.float32 = {0.0f, 0.0f, 0.0f, 0.0f}}},
+                          };
+                          const VkRenderingInfo renderingInfo{
+                              .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
+                              .renderArea = {.extent = {extent.width, extent.height}},
+                              .layerCount = 1,
+                              .colorAttachmentCount = 1,
+                              .pColorAttachments = &colorAttachment,
+                          };
+                          vkCmdBeginRendering(commands, &renderingInfo);
+                          setViewport(commands, extent);
+                          drawMeshes(commands, sceneData, MeshPass::SelectionMask, 0, frameSlot);
+                          vkCmdEndRendering(commands);
+                      });
+    }
+
+    graph.addPass("Tonemap", {{sceneColor, ImageAccess::FragmentRead}, {target, ImageAccess::ColorAttachment}},
                   [&](VkCommandBuffer commands) {
                       const VkRenderingAttachmentInfo colorAttachment{
                           .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-                          .imageView = m_swapchain->imageView(imageIndex),
+                          .imageView = graph.view(target),
                           .imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
                           .loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
                           .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
@@ -1373,15 +1686,123 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
                                          VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
                                          sizeof(tonemap), &tonemap);
                       vkCmdDraw(commands, 3, 1, 0, 0);
-
-                      // Tools are drawn over the image, in display colors.
-                      if (ImDrawData* const drawData = drawImGui ? ImGui::GetDrawData() : nullptr;
-                          drawData != nullptr && drawData->Valid)
-                      {
-                          ImGui_ImplVulkan_RenderDrawData(drawData, commands);
-                      }
                       vkCmdEndRendering(commands);
                   });
+
+    if (drawOverlay)
+    {
+        std::vector<std::pair<RenderGraph::ImageId, ImageAccess>> overlayAccesses{
+            {target, ImageAccess::ColorAttachment},
+            {sceneDepth, ImageAccess::DepthAttachment},
+        };
+        if (outlines)
+        {
+            overlayAccesses.push_back({*created[selectionMaskIndex], ImageAccess::FragmentRead});
+        }
+        const OverlayRanges ranges = *overlayRanges;
+        graph.addPass("Overlay", std::move(overlayAccesses), [&, ranges](VkCommandBuffer commands) {
+            const VkRenderingAttachmentInfo colorAttachment{
+                .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+                .imageView = graph.view(target),
+                .imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                .loadOp = VK_ATTACHMENT_LOAD_OP_LOAD,
+                .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+            };
+            const VkRenderingAttachmentInfo depthAttachment{
+                .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+                .imageView = graph.view(sceneDepth),
+                .imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+                .loadOp = VK_ATTACHMENT_LOAD_OP_LOAD,
+                .storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+            };
+            const VkRenderingInfo renderingInfo{
+                .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
+                .renderArea = {.extent = {extent.width, extent.height}},
+                .layerCount = 1,
+                .colorAttachmentCount = 1,
+                .pColorAttachments = &colorAttachment,
+                .pDepthAttachment = &depthAttachment,
+            };
+            vkCmdBeginRendering(commands, &renderingInfo);
+            setViewport(commands, extent);
+
+            OverlayPushConstants constants{
+                .scene = sceneData,
+                .vertices = frame.overlayVertices->deviceAddress(),
+                .outlineColor = outlineColor,
+            };
+            // Slang's SV_VertexID does not include the first vertex of a draw: each list gets the
+            // address of its own first vertex instead.
+            const auto draw = [&](const Pipeline& pipeline, std::uint32_t first, std::size_t count, float depthScale) {
+                if (count == 0)
+                {
+                    return;
+                }
+                vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.handle());
+                constants.vertices = frame.overlayVertices->deviceAddress() + VkDeviceSize{first} * sizeof(GpuOverlayVertex);
+                constants.depthScale = depthScale;
+                vkCmdPushConstants(commands, pipeline.layout(), VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                                   0, sizeof(constants), &constants);
+                vkCmdDraw(commands, static_cast<std::uint32_t>(count), 1, 0, 0);
+            };
+            draw(*m_sceneLinePipeline, ranges.sceneLines, m_world.sceneLines.size(), sceneLineDepthScale);
+            if (outlines)
+            {
+                vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, m_outlinePipeline->handle());
+                vkCmdBindDescriptorSets(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, m_outlinePipeline->layout(), 0, 2,
+                                        sets.data(), 0, nullptr);
+                vkCmdPushConstants(commands, m_outlinePipeline->layout(),
+                                   VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(constants),
+                                   &constants);
+                vkCmdDraw(commands, 3, 1, 0, 0);
+            }
+            draw(*m_overlayLinePipeline, ranges.overlayLines, m_world.overlayLines.size(), 1.0f);
+            draw(*m_overlayTrianglePipeline, ranges.overlayTriangles, m_world.overlayTriangles.size(), 1.0f);
+            vkCmdEndRendering(commands);
+        });
+    }
+
+    if (toViewport || drawImGui)
+    {
+        std::vector<std::pair<RenderGraph::ImageId, ImageAccess>> toolAccesses{
+            {backbuffer, ImageAccess::ColorAttachment},
+        };
+        if (toViewport)
+        {
+            toolAccesses.push_back({target, ImageAccess::FragmentRead});
+            if (drawImGui)
+            {
+                bindViewportTexture(frame, graph.view(target));
+            }
+        }
+        graph.addPass("Tools", std::move(toolAccesses), [&](VkCommandBuffer commands) {
+            // Without a viewport, the tools are drawn over the tonemapped scene.
+            const VkRenderingAttachmentInfo colorAttachment{
+                .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+                .imageView = m_swapchain->imageView(imageIndex),
+                .imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                .loadOp = toViewport ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD,
+                .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+                .clearValue = {.color = {.float32 = {0.0f, 0.0f, 0.0f, 1.0f}}},
+            };
+            const VkRenderingInfo renderingInfo{
+                .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
+                .renderArea = {.extent = {windowExtent.width, windowExtent.height}},
+                .layerCount = 1,
+                .colorAttachmentCount = 1,
+                .pColorAttachments = &colorAttachment,
+            };
+            vkCmdBeginRendering(commands, &renderingInfo);
+            setViewport(commands, windowExtent);
+            // Tools are drawn in display colors.
+            if (ImDrawData* const drawData = drawImGui ? ImGui::GetDrawData() : nullptr;
+                drawData != nullptr && drawData->Valid)
+            {
+                ImGui_ImplVulkan_RenderDrawData(drawData, commands);
+            }
+            vkCmdEndRendering(commands);
+        });
+    }
 
     graph.addPass("Present", {{backbuffer, ImageAccess::Present}}, {});
     graph.execute(commandBuffer, m_instance.isValidationEnabled());
@@ -1389,6 +1810,84 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
 
     DEVEX_VK_TRY(vkEndCommandBuffer, commandBuffer);
     return drawCalls;
+}
+
+std::vector<PickResult> VulkanRenderer::takePickResults()
+{
+    return std::exchange(m_pickResults, {});
+}
+
+void VulkanRenderer::readPickResult(FrameContext& frame)
+{
+    if (!frame.pickRequest)
+    {
+        return;
+    }
+    std::uint32_t objectId = 0;
+    std::memcpy(&objectId, frame.pickReadback->mappedBytes().data(), sizeof(objectId));
+    m_pickResults.push_back({.request = *frame.pickRequest, .objectId = objectId});
+    frame.pickRequest.reset();
+}
+
+core::Result<VulkanRenderer::OverlayRanges> VulkanRenderer::uploadOverlay(FrameContext& frame)
+{
+    const std::size_t count = m_world.sceneLines.size() + m_world.overlayLines.size() + m_world.overlayTriangles.size();
+    if (core::Result<void> ensured = ensureHostBuffer(frame.overlayVertices, std::max<std::size_t>(count, 1) * sizeof(GpuOverlayVertex));
+        !ensured)
+    {
+        return std::unexpected(ensured.error());
+    }
+    const std::span<std::byte> bytes = frame.overlayVertices->mappedBytes();
+    std::uint32_t next = 0;
+    const auto append = [&](const std::vector<OverlayVertex>& vertices) {
+        const std::uint32_t first = next;
+        for (const OverlayVertex& vertex : vertices)
+        {
+            const GpuOverlayVertex gpuVertex{.position = vertex.position, .color = vertex.color};
+            std::memcpy(bytes.data() + std::size_t{next} * sizeof(GpuOverlayVertex), &gpuVertex, sizeof(gpuVertex));
+            ++next;
+        }
+        return first;
+    };
+    OverlayRanges ranges;
+    ranges.sceneLines = append(m_world.sceneLines);
+    ranges.overlayLines = append(m_world.overlayLines);
+    ranges.overlayTriangles = append(m_world.overlayTriangles);
+    return ranges;
+}
+
+void VulkanRenderer::bindViewportTexture(FrameContext& frame, VkImageView viewport)
+{
+    if (!m_imguiInitialized)
+    {
+        return;
+    }
+    if (frame.imguiViewportView != viewport)
+    {
+        // The previous set was last used by this context's previous frame, which has completed.
+        if (frame.imguiViewport != VK_NULL_HANDLE)
+        {
+            ImGui_ImplVulkan_RemoveTexture(frame.imguiViewport);
+        }
+        frame.imguiViewport = ImGui_ImplVulkan_AddTexture(viewport, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        frame.imguiViewportView = viewport;
+    }
+    ImDrawData* const drawData = ImGui::GetDrawData();
+    if (drawData == nullptr)
+    {
+        return;
+    }
+    const auto descriptorSet = static_cast<ImTextureID>(std::bit_cast<std::uintptr_t>(frame.imguiViewport));
+    for (ImDrawList* const list : drawData->CmdLists)
+    {
+        for (ImDrawCmd& command : list->CmdBuffer)
+        {
+            if (command.TexRef._TexData == nullptr && command.TexRef._TexID == viewportTextureId)
+            {
+                command.TexRef._TexID = descriptorSet;
+            }
+        }
+    }
 }
 
 RendererStats VulkanRenderer::stats() const noexcept
@@ -1403,6 +1902,7 @@ RendererStats VulkanRenderer::stats() const noexcept
         .ev100 = m_ev100,
         .msaaSamples = static_cast<std::uint32_t>(m_samples),
         .swapchainExtent = m_swapchain ? m_swapchain->extent() : math::Extent2D{},
+        .sceneExtent = m_sceneExtent,
     };
 
     const VkPhysicalDeviceMemoryProperties* memory = nullptr;
@@ -1469,6 +1969,12 @@ void VulkanRenderer::shutdownImGui() noexcept
     if (m_imguiInitialized)
     {
         vkDeviceWaitIdle(m_device.handle());
+        // The backend's descriptor pool holds the viewport sets.
+        for (FrameContext& frame : m_frames)
+        {
+            frame.imguiViewport = VK_NULL_HANDLE;
+            frame.imguiViewportView = VK_NULL_HANDLE;
+        }
         ImGui_ImplVulkan_Shutdown();
         m_imguiInitialized = false;
         m_imguiDrawQueued = false;

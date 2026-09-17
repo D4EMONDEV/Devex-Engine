@@ -13,7 +13,7 @@ namespace devex::render::vulkan {
 // Set 0, global and updated while frames using it are in flight: every texture in one array
 // indexed by materials, the image based lighting maps, the sky, and their samplers.
 // Set 1, one per frame context: the images produced earlier in the same frame, namely the shadow
-// map and the resolved scene color.
+// map, the resolved scene color and the mask of the selected objects.
 class DescriptorSets
 {
 public:
@@ -30,6 +30,7 @@ public:
     static constexpr std::uint32_t shadowMapBinding = 0;
     static constexpr std::uint32_t shadowSamplerBinding = 1;
     static constexpr std::uint32_t sceneColorBinding = 2;
+    static constexpr std::uint32_t selectionMaskBinding = 3;
 
     [[nodiscard]] static core::Result<DescriptorSets> create(const Device& device,
                                                              std::uint32_t textureCapacity,
@@ -53,7 +54,8 @@ public:
     void setEnvironment(VkImageView specular, VkImageView irradiance, VkImageView sky) noexcept;
     void setBrdfLut(VkImageView view) noexcept;
     // Only while no frame using the set is in flight.
-    void setFrameImages(std::uint32_t frame, VkImageView shadowMap, VkImageView sceneColor) noexcept;
+    void setFrameImages(std::uint32_t frame, VkImageView shadowMap, VkImageView sceneColor,
+                        VkImageView selectionMask) noexcept;
 
 private:
     DescriptorSets() = default;

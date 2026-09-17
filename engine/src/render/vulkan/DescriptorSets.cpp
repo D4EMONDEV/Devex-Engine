@@ -107,6 +107,7 @@ core::Result<DescriptorSets> DescriptorSets::create(const Device& device,
         image(shadowMapBinding),
         sampler(shadowSamplerBinding, &sets.m_shadowSampler),
         image(sceneColorBinding),
+        image(selectionMaskBinding),
     };
     const VkDescriptorSetLayoutCreateInfo frameLayoutInfo{
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
@@ -130,7 +131,7 @@ core::Result<DescriptorSets> DescriptorSets::create(const Device& device,
     DEVEX_VK_TRY(vkCreateDescriptorPool, sets.m_device, &globalPoolInfo, nullptr, &sets.m_globalPool);
 
     const std::array framePoolSizes{
-        VkDescriptorPoolSize{.type = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, .descriptorCount = 2 * frameCount},
+        VkDescriptorPoolSize{.type = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, .descriptorCount = 3 * frameCount},
         VkDescriptorPoolSize{.type = VK_DESCRIPTOR_TYPE_SAMPLER, .descriptorCount = frameCount},
     };
     const VkDescriptorPoolCreateInfo framePoolInfo{
@@ -284,11 +285,12 @@ void DescriptorSets::setBrdfLut(VkImageView view) noexcept
     writeImage(m_global, brdfBinding, 0, view);
 }
 
-void DescriptorSets::setFrameImages(std::uint32_t frame, VkImageView shadowMap,
-                                    VkImageView sceneColor) noexcept
+void DescriptorSets::setFrameImages(std::uint32_t frame, VkImageView shadowMap, VkImageView sceneColor,
+                                    VkImageView selectionMask) noexcept
 {
     writeImage(m_frames[frame], shadowMapBinding, 0, shadowMap);
     writeImage(m_frames[frame], sceneColorBinding, 0, sceneColor);
+    writeImage(m_frames[frame], selectionMaskBinding, 0, selectionMask);
 }
 
 } // namespace devex::render::vulkan

@@ -4,6 +4,7 @@
 #include <devex/math/Math.hpp>
 
 #include <cstdint>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -94,6 +95,35 @@ struct MeshInstance
     // An invalid or destroyed material draws with the default material.
     MaterialHandle material;
     math::Mat4 transform{1.0f};
+    // Reported by picking where the instance is visible; 0 for none.
+    std::uint32_t objectId = 0;
+    // Draws an outline around the instance, as the editor does for the selection.
+    bool outlined = false;
+};
+
+// A vertex of the lines and triangles the tools draw over the scene, such as grids and gizmos.
+struct OverlayVertex
+{
+    math::Vec3 position{0.0f};
+    // Linear RGB and straight alpha, blended over the displayed image.
+    math::Vec4 color{1.0f};
+};
+
+// Asks which object is visible at a pixel of the scene image.
+struct PickRequest
+{
+    // From the top-left corner of the scene image.
+    std::uint32_t x = 0;
+    std::uint32_t y = 0;
+    // Returned with the result, to match it with its request.
+    std::uint64_t id = 0;
+};
+
+struct PickResult
+{
+    std::uint64_t request = 0;
+    // MeshInstance::objectId of the surface at the pixel, 0 when none is there.
+    std::uint32_t objectId = 0;
 };
 
 // Snapshot of everything the renderer draws in one frame. Gameplay fills it between
@@ -107,16 +137,37 @@ struct RenderWorld
     RenderEnvironment environment;
     std::vector<MeshInstance> meshes;
 
+    // Size in pixels of the image the scene is drawn into for the tools, which show it with
+    // Renderer::viewportTexture. Zero draws the scene over the whole window.
+    math::Extent2D viewport;
+    // Pairs of vertices drawn as lines over the scene, hidden behind nearer surfaces.
+    std::vector<OverlayVertex> sceneLines;
+    // Pairs of vertices drawn as lines over everything.
+    std::vector<OverlayVertex> overlayLines;
+    // Triples of vertices drawn as triangles over everything, after the lines.
+    std::vector<OverlayVertex> overlayTriangles;
+    // Answered some frames later by Renderer::takePickResults.
+    std::optional<PickRequest> pick;
+
     // Restores the defaults while keeping allocated storage.
     void reset() noexcept
     {
         std::vector<RenderLight> lightStorage = std::move(lights);
         std::vector<MeshInstance> meshStorage = std::move(meshes);
+        std::vector<OverlayVertex> sceneLineStorage = std::move(sceneLines);
+        std::vector<OverlayVertex> overlayLineStorage = std::move(overlayLines);
+        std::vector<OverlayVertex> overlayTriangleStorage = std::move(overlayTriangles);
         lightStorage.clear();
         meshStorage.clear();
+        sceneLineStorage.clear();
+        overlayLineStorage.clear();
+        overlayTriangleStorage.clear();
         *this = RenderWorld{};
         lights = std::move(lightStorage);
         meshes = std::move(meshStorage);
+        sceneLines = std::move(sceneLineStorage);
+        overlayLines = std::move(overlayLineStorage);
+        overlayTriangles = std::move(overlayTriangleStorage);
     }
 };
 

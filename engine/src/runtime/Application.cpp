@@ -30,7 +30,29 @@ struct EngineServices
     AssetManager& assets;
     core::JobSystem& jobs;
     tools::ToolsOverlay* tools = nullptr;
+    // The project opened, replaced when the editor opens another one.
+    std::unique_ptr<asset::AssetDatabase>& database;
 };
+
+[[nodiscard]] core::Result<std::unique_ptr<asset::AssetDatabase>> openProject(const std::filesystem::path& projectFile,
+                                                                             core::JobSystem& jobs, bool watchAssets)
+{
+    const core::Result<asset::Project> project = asset::loadProject(projectFile);
+    if (!project)
+    {
+        return std::unexpected(project.error());
+    }
+    core::Result<std::unique_ptr<asset::AssetDatabase>> opened =
+        asset::AssetDatabase::open(*project, jobs, {.watchFiles = watchAssets});
+    if (!opened)
+    {
+        return core::makeError(opened.error().code, "cannot open the assets of {}: {}", project->name,
+                               opened.error().message);
+    }
+    DEVEX_LOG_INFO("Project {} at {}: {} source files, {} imports queued", project->name,
+                   core::toUtf8(project->root), (*opened)->sources().size(), (*opened)->pendingImports());
+    return opened;
+}
 
 class ApplicationRunner
 {
@@ -50,13 +72,24 @@ private:
     // A minimized window shows nothing: keep simulating in real time without spinning the CPU.
     static constexpr std::chrono::milliseconds minimizedFrameTime{50};
 
+    [[nodiscard]] bool isEditor() const noexcept;
     void handleEvent(const platform::Event& event);
+    // Asks to quit, which the editor may postpone to ask about unsaved changes.
+    void requestClose();
     // Runs the updates and the rendering of one frame. Also called from the operating system's
     // modal loop while the window is being resized, where events cannot be polled.
     void runFrame();
+    void runGameplay(std::chrono::nanoseconds frameTime);
+    void render(bool gameplay);
+    void handleEditorRequests(tools::EditorRequests requests);
+    void startPlaying();
+    void stopPlaying();
+    void switchProject(const std::filesystem::path& projectFile);
 
     Application& m_application;
     EngineServices m_services;
+    std::uint32_t m_fixedUpdateRate;
+    bool m_watchAssets;
     platform::WindowId m_mainWindow;
     FixedTimestep m_timestep;
     core::Duration m_fixedDelta;
@@ -64,12 +97,18 @@ private:
     Clock::time_point m_previousFrame;
     bool m_inFrame = false;
     int m_exitCode = EXIT_SUCCESS;
+    tools::PlayState m_playState = tools::PlayState::Editing;
+    // The copy of the scene that plays in the editor.
+    std::optional<scene::Scene> m_playScene;
+    bool m_stepRequested = false;
 };
 
 ApplicationRunner::ApplicationRunner(Application& application, const ApplicationConfig& config,
                                      const EngineServices& services) noexcept
     : m_application(application)
     , m_services(services)
+    , m_fixedUpdateRate(config.fixedUpdateRate)
+    , m_watchAssets(config.watchAssets)
     , m_mainWindow(services.window.id())
     , m_timestep(FixedTimestep::fromRate(config.fixedUpdateRate))
     , m_fixedDelta(m_timestep.step())
@@ -85,6 +124,9 @@ ApplicationRunner::ApplicationRunner(Application& application, const Application
     m_application.m_jobs = &services.jobs;
     m_application.m_interpolationAlpha = 0.0;
     m_application.m_quitRequested = false;
+    m_application.m_editor = isEditor();
+    m_application.m_playing = !isEditor();
+    m_application.m_stopRequested = false;
 }
 
 ApplicationRunner::~ApplicationRunner()
@@ -96,6 +138,11 @@ ApplicationRunner::~ApplicationRunner()
     m_application.m_scene = nullptr;
     m_application.m_assets = nullptr;
     m_application.m_jobs = nullptr;
+}
+
+bool ApplicationRunner::isEditor() const noexcept
+{
+    return m_services.tools != nullptr && m_services.tools->mode() == tools::ToolsMode::Editor;
 }
 
 int ApplicationRunner::execute()
@@ -131,6 +178,10 @@ int ApplicationRunner::execute()
         runFrame();
     }
 
+    if (m_playScene)
+    {
+        stopPlaying();
+    }
     m_services.platform.setLiveRedrawCallback({});
     m_application.onShutdown();
     return m_exitCode;
@@ -138,11 +189,30 @@ int ApplicationRunner::execute()
 
 void ApplicationRunner::handleEvent(const platform::Event& event)
 {
-    m_application.onEvent(event);
+    // Inside the editor, the application only sees events while it plays.
+    if (!isEditor() || m_playScene)
+    {
+        m_application.onEvent(event);
+    }
+    else if (const auto* dropped = std::get_if<platform::FileDropped>(&event);
+             dropped != nullptr && m_services.database != nullptr)
+    {
+        // Files dropped on the editor are copied into the project, where they are imported.
+        const core::Result<asset::AssetId> added =
+            m_services.database->addFile(core::pathFromUtf8(dropped->path), "res://assets/imported");
+        if (added)
+        {
+            DEVEX_LOG_INFO("Copied {} into assets/imported", dropped->path);
+        }
+        else
+        {
+            DEVEX_LOG_ERROR("Cannot add {}: {}", dropped->path, added.error());
+        }
+    }
 
     if (const auto* key = std::get_if<platform::KeyPressed>(&event);
         key != nullptr && key->key == platform::Key::F1 && !key->repeat &&
-        m_services.tools != nullptr)
+        m_services.tools != nullptr && !isEditor())
     {
         const bool visible = !m_services.tools->isVisible();
         m_services.tools->setVisible(visible);
@@ -155,10 +225,18 @@ void ApplicationRunner::handleEvent(const platform::Event& event)
 
     if (std::holds_alternative<platform::QuitRequested>(event))
     {
-        m_application.m_quitRequested = true;
+        requestClose();
     }
     else if (const auto* closeRequest = std::get_if<platform::WindowCloseRequested>(&event);
              closeRequest != nullptr && closeRequest->window == m_mainWindow)
+    {
+        requestClose();
+    }
+}
+
+void ApplicationRunner::requestClose()
+{
+    if (!isEditor() || m_services.tools->confirmClose())
     {
         m_application.m_quitRequested = true;
     }
@@ -179,34 +257,41 @@ void ApplicationRunner::runFrame()
         m_services.assets.handleEvents(events);
     }
 
-    const std::uint32_t steps = m_timestep.advance(frameTime);
-    for (std::uint32_t step = 0; step < steps; ++step)
-    {
-        m_application.onFixedUpdate(m_fixedDelta);
-    }
-    m_application.m_interpolationAlpha = m_timestep.alpha();
-    m_application.onUpdate(core::Duration(frameTime));
-
-    // The application may have replaced the scene during the updates.
-    scene::Scene& scene = *m_application.m_scene;
-    scene.updateTransforms();
-
     const bool minimized = m_services.window.isMinimized();
-    render::Renderer* const renderer = m_services.renderer;
-    if (renderer != nullptr && !minimized && !m_application.m_quitRequested)
+    const bool canRender = m_services.renderer != nullptr && !minimized;
+    if (isEditor())
     {
-        if (m_services.tools != nullptr)
+        // The editor goes first, so that Play and Stop take effect this frame.
+        if (canRender)
         {
-            m_services.tools->update(scene, core::Duration(frameTime));
+            m_services.tools->update(*m_application.m_scene, core::Duration(frameTime), m_playState);
         }
-        render::RenderWorld& world = renderer->beginFrame();
-        extractScene(scene, m_services.assets, world);
-        m_application.onRender(world);
-        if (core::Result<void> rendered = renderer->endFrame(); !rendered)
+        handleEditorRequests(m_services.tools->takeRequests());
+        if (m_playState == tools::PlayState::Playing)
         {
-            DEVEX_LOG_FATAL("Rendering failed: {}", rendered.error());
-            m_application.m_quitRequested = true;
-            m_exitCode = EXIT_FAILURE;
+            runGameplay(frameTime);
+        }
+        else if (m_playState == tools::PlayState::Paused && std::exchange(m_stepRequested, false))
+        {
+            runGameplay(m_timestep.step());
+        }
+        m_application.m_scene->updateTransforms();
+        if (canRender && !m_application.m_quitRequested)
+        {
+            render(m_playScene.has_value());
+        }
+    }
+    else
+    {
+        runGameplay(frameTime);
+        m_application.m_scene->updateTransforms();
+        if (canRender && !m_application.m_quitRequested)
+        {
+            if (m_services.tools != nullptr)
+            {
+                m_services.tools->update(*m_application.m_scene, core::Duration(frameTime));
+            }
+            render(true);
         }
     }
 
@@ -219,6 +304,127 @@ void ApplicationRunner::runFrame()
     }
 
     m_inFrame = false;
+}
+
+void ApplicationRunner::runGameplay(std::chrono::nanoseconds frameTime)
+{
+    const std::uint32_t steps = m_timestep.advance(frameTime);
+    for (std::uint32_t step = 0; step < steps; ++step)
+    {
+        m_application.onFixedUpdate(m_fixedDelta);
+    }
+    m_application.m_interpolationAlpha = m_timestep.alpha();
+    // The application may replace the scene during its updates.
+    m_application.onUpdate(core::Duration(frameTime));
+
+    if (std::exchange(m_application.m_stopRequested, false) && m_playScene)
+    {
+        stopPlaying();
+    }
+}
+
+void ApplicationRunner::render(bool gameplay)
+{
+    render::Renderer* const renderer = m_services.renderer;
+    scene::Scene& scene = *m_application.m_scene;
+    render::RenderWorld& world = renderer->beginFrame();
+    extractScene(scene, m_services.assets, world);
+    if (gameplay)
+    {
+        m_application.onRender(world);
+    }
+    if (isEditor())
+    {
+        m_services.tools->prepareRender(scene, world, m_playState);
+    }
+    if (core::Result<void> rendered = renderer->endFrame(); !rendered)
+    {
+        DEVEX_LOG_FATAL("Rendering failed: {}", rendered.error());
+        m_application.m_quitRequested = true;
+        m_exitCode = EXIT_FAILURE;
+    }
+}
+
+void ApplicationRunner::handleEditorRequests(tools::EditorRequests requests)
+{
+    if (requests.quit)
+    {
+        m_application.m_quitRequested = true;
+        return;
+    }
+    if (requests.openProject)
+    {
+        switchProject(*requests.openProject);
+        return;
+    }
+    if (requests.play && !m_playScene && m_services.database != nullptr)
+    {
+        startPlaying();
+    }
+    else if (requests.stop && m_playScene)
+    {
+        stopPlaying();
+    }
+    if (requests.togglePause && m_playScene)
+    {
+        m_playState = m_playState == tools::PlayState::Paused ? tools::PlayState::Playing : tools::PlayState::Paused;
+    }
+    if (requests.step && m_playState == tools::PlayState::Paused)
+    {
+        m_stepRequested = true;
+    }
+}
+
+void ApplicationRunner::startPlaying()
+{
+    m_playScene.emplace(m_services.scene.clone());
+    m_application.m_scene = &*m_playScene;
+    m_application.m_playing = true;
+    m_application.m_stopRequested = false;
+    m_playState = tools::PlayState::Playing;
+    // The simulation starts from a whole step, without the time spent editing.
+    m_timestep = FixedTimestep::fromRate(m_fixedUpdateRate);
+    DEVEX_LOG_INFO("Playing");
+    m_application.onPlayStarted();
+}
+
+void ApplicationRunner::stopPlaying()
+{
+    m_application.onPlayStopped();
+    m_application.m_scene = &m_services.scene;
+    m_application.m_playing = false;
+    m_application.m_stopRequested = false;
+    m_playState = tools::PlayState::Editing;
+    m_playScene.reset();
+    m_stepRequested = false;
+    if (m_services.window.isMouseCaptured())
+    {
+        m_services.window.setMouseCaptured(false);
+    }
+    DEVEX_LOG_INFO("Stopped playing");
+}
+
+void ApplicationRunner::switchProject(const std::filesystem::path& projectFile)
+{
+    if (m_playScene)
+    {
+        stopPlaying();
+    }
+    // Everything loaded from the previous project goes before its database.
+    m_services.tools->setAssetDatabase(nullptr);
+    m_services.assets.setDatabase(nullptr);
+    m_services.database.reset();
+    m_services.scene = scene::Scene{};
+
+    core::Result<std::unique_ptr<asset::AssetDatabase>> opened = openProject(projectFile, m_services.jobs, m_watchAssets);
+    if (!opened)
+    {
+        DEVEX_LOG_ERROR("Cannot open the project: {}", opened.error());
+        return;
+    }
+    m_services.database = std::move(*opened);
+    m_services.assets.setDatabase(m_services.database.get());
+    m_services.tools->setAssetDatabase(m_services.database.get());
 }
 
 // Uploads the built-in meshes and registers them under their reserved asset identifiers.
@@ -301,14 +507,34 @@ double Application::interpolationAlpha() const noexcept
     return m_interpolationAlpha;
 }
 
+bool Application::isEditor() const noexcept
+{
+    return m_editor;
+}
+
+bool Application::isPlaying() const noexcept
+{
+    return m_playing;
+}
+
 void Application::requestQuit() noexcept
 {
+    if (m_editor)
+    {
+        m_stopRequested = true;
+        return;
+    }
     m_quitRequested = true;
 }
 
 int run(Application& application, const ApplicationConfig& config)
 {
     DEVEX_LOG_INFO("Devex Engine {}", core::version());
+    if (config.editor && !config.enableRendering)
+    {
+        DEVEX_LOG_FATAL("The editor needs rendering");
+        return EXIT_FAILURE;
+    }
 
     core::Result<platform::Platform> platform = platform::Platform::create();
     if (!platform)
@@ -340,23 +566,14 @@ int run(Application& application, const ApplicationConfig& config)
     std::unique_ptr<asset::AssetDatabase> database;
     if (!config.project.empty())
     {
-        const core::Result<asset::Project> project = asset::loadProject(config.project);
-        if (!project)
-        {
-            DEVEX_LOG_FATAL("Cannot open the project: {}", project.error());
-            return EXIT_FAILURE;
-        }
         core::Result<std::unique_ptr<asset::AssetDatabase>> opened =
-            asset::AssetDatabase::open(*project, jobs, {.watchFiles = config.watchAssets});
+            detail::openProject(config.project, jobs, config.watchAssets);
         if (!opened)
         {
-            DEVEX_LOG_FATAL("Cannot open the assets of {}: {}", project->name, opened.error());
+            DEVEX_LOG_FATAL("Cannot open the project: {}", opened.error());
             return EXIT_FAILURE;
         }
         database = std::move(*opened);
-        DEVEX_LOG_INFO("Project {} at {}: {} source files, {} imports queued", project->name,
-                       core::toUtf8(project->root), database->sources().size(),
-                       database->pendingImports());
     }
 
     std::optional<render::Renderer> renderer;
@@ -388,15 +605,25 @@ int run(Application& application, const ApplicationConfig& config)
 
     // Destroyed before the renderer and the platform it is connected to.
     std::unique_ptr<tools::ToolsOverlay> tools;
-    if (config.enableTools && renderer)
+    if ((config.enableTools || config.editor) && renderer)
     {
+        const tools::ToolsMode mode = config.editor ? tools::ToolsMode::Editor : tools::ToolsMode::Overlay;
         core::Result<std::unique_ptr<tools::ToolsOverlay>> overlay = tools::ToolsOverlay::create(
-            *platform, *window, *renderer, platform->baseDirectory() / "devex-tools.ini");
+            *platform, *window, *renderer,
+            platform->baseDirectory() / (config.editor ? "devex-editor.ini" : "devex-tools.ini"), mode);
         if (overlay)
         {
             tools = std::move(*overlay);
             tools->setAssetDatabase(database.get());
-            DEVEX_LOG_INFO("Press F1 to show the tools");
+            if (!config.editor)
+            {
+                DEVEX_LOG_INFO("Press F1 to show the tools");
+            }
+        }
+        else if (config.editor)
+        {
+            DEVEX_LOG_FATAL("Cannot start the editor: {}", overlay.error());
+            return EXIT_FAILURE;
         }
         else
         {
@@ -414,6 +641,7 @@ int run(Application& application, const ApplicationConfig& config)
                                          .assets = assets,
                                          .jobs = jobs,
                                          .tools = tools.get(),
+                                         .database = database,
                                      });
     return runner.execute();
 }

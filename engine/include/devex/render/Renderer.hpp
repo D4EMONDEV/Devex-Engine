@@ -15,6 +15,7 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace devex::render {
 
@@ -78,6 +79,8 @@ struct RendererStats
     float ev100 = 0.0f;
     std::uint32_t msaaSamples = 1;
     math::Extent2D swapchainExtent;
+    // The size the scene was drawn at: the viewport, or the swapchain.
+    math::Extent2D sceneExtent;
     // Bytes of device-local memory used by the process, and how much it may use before the
     // operating system starts evicting memory.
     std::uint64_t gpuMemoryUsage = 0;
@@ -131,6 +134,11 @@ public:
     // Draws and presents the snapshot. Skips the frame while the window has no drawable area.
     [[nodiscard]] core::Result<void> endFrame();
 
+    // The answers to RenderWorld::pick received since the last call, oldest first. A request is
+    // answered once the GPU has completed its frame, usually two frames later; a frame skipped
+    // while the window has no drawable area drops its request.
+    [[nodiscard]] std::vector<PickResult> takePickResults();
+
     [[nodiscard]] RendererStats stats() const noexcept;
 
     // Connects Dear ImGui to the renderer. An ImGui context must be current and the window must
@@ -140,6 +148,9 @@ public:
     void beginImGuiFrame();
     // Draws ImGui::GetDrawData() over the scene in the next endFrame. Call after ImGui::Render().
     void queueImGuiDrawData() noexcept;
+    // An ImGui texture identifier (ImTextureID) that shows the scene image of the frame it is drawn
+    // in, when RenderWorld::viewport is set.
+    [[nodiscard]] static std::uint64_t viewportTexture() noexcept;
 
 private:
     explicit Renderer(std::unique_ptr<vulkan::VulkanRenderer> implementation) noexcept;

@@ -85,6 +85,7 @@ std::uint32_t artifactVersion(AssetType type) noexcept
     case AssetType::Texture:
     case AssetType::Material:
     case AssetType::Model:
+    case AssetType::Scene:
         return 1;
     }
     return 0;
@@ -300,6 +301,28 @@ core::Result<ModelData> decodeModel(std::span<const std::byte> bytes)
         return std::unexpected(valid.error());
     }
     return model;
+}
+
+std::vector<std::byte> encodeScene(std::string_view text)
+{
+    BinaryWriter writer = beginArtifact(AssetType::Scene);
+    writer.writeString(text);
+    return writer.take();
+}
+
+core::Result<std::string> decodeScene(std::span<const std::byte> bytes)
+{
+    BinaryReader reader(bytes);
+    if (core::Result<void> header = readHeader(reader, AssetType::Scene); !header)
+    {
+        return std::unexpected(header.error());
+    }
+    std::string text = reader.readString();
+    if (reader.failed())
+    {
+        return std::unexpected(truncated(AssetType::Scene));
+    }
+    return text;
 }
 
 } // namespace devex::asset

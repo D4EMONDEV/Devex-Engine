@@ -4,6 +4,7 @@
 #include <devex/asset/import/TextureProcessing.hpp>
 #include <devex/core/File.hpp>
 #include <devex/core/Path.hpp>
+#include <devex/scene/SceneSerializer.hpp>
 
 #include <algorithm>
 #include <cctype>
@@ -148,6 +149,24 @@ core::Result<ImportResult> importMaterialFile(ImportContext& context)
     return result;
 }
 
+core::Result<ImportResult> importSceneFile(ImportContext& context)
+{
+    const core::Result<std::string> text = core::readTextFile(context.source);
+    if (!text)
+    {
+        return std::unexpected(text.error());
+    }
+    // A scene that does not load is reported now rather than when it is opened.
+    if (core::Result<scene::Scene> loaded = scene::loadScene(*text); !loaded)
+    {
+        return std::unexpected(loaded.error());
+    }
+
+    ImportResult result;
+    result.artifacts.push_back({context.mainId, AssetType::Scene, context.name, encodeScene(*text)});
+    return result;
+}
+
 std::span<const Importer> importers()
 {
     using serialization::TextValue;
@@ -187,6 +206,13 @@ std::span<const Importer> importers()
                     {"texture_quality", TextValue(std::string("normal"))},
                 },
             .run = &importGltfFile,
+        },
+        Importer{
+            .name = "scene",
+            .version = 1,
+            .mainType = AssetType::Scene,
+            .extensions = {scene::sceneExtension},
+            .run = &importSceneFile,
         },
     };
     return all;

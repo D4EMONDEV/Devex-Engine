@@ -35,6 +35,55 @@ std::vector<std::string> childNames(const Scene& scene, Entity parent)
 
 } // namespace
 
+TEST_CASE("Cloned scenes share handles but not state", "[scene]")
+{
+    Scene scene;
+    const Entity parent = scene.createEntity("Parent");
+    const Entity child = scene.createEntity("Child");
+    const Entity destroyed = scene.createEntity("Destroyed");
+    REQUIRE(scene.setParent(child, parent));
+    scene.add<Transform>(child, Transform{.position = {1.0f, 2.0f, 3.0f}});
+    scene.add<Velocity>(parent, Velocity{{0.0f, 1.0f, 0.0f}});
+    scene.destroyEntity(destroyed);
+
+    Scene copy = scene.clone();
+    CHECK(copy.entityCount() == 2);
+    CHECK(copy.isAlive(child));
+    CHECK_FALSE(copy.isAlive(destroyed));
+    CHECK(copy.uuid(child) == scene.uuid(child));
+    CHECK(copy.findEntity(scene.uuid(parent)) == parent);
+    CHECK(copy.parent(child) == parent);
+    CHECK(childNames(copy, parent) == std::vector<std::string>{"Child"});
+    CHECK(copy.get<Transform>(child).position == Vec3{1.0f, 2.0f, 3.0f});
+    CHECK(copy.get<Velocity>(parent).value == Vec3{0.0f, 1.0f, 0.0f});
+
+    // Changes to one scene leave the other untouched, including reused entity slots.
+    copy.get<Transform>(child).position.x = 10.0f;
+    copy.destroyEntity(child);
+    const Entity added = copy.createEntity("Added");
+    CHECK(scene.isAlive(child));
+    CHECK(scene.get<Transform>(child).position.x == 1.0f);
+    CHECK(scene.entityCount() == 2);
+    CHECK_FALSE(scene.isAlive(added));
+    CHECK(copy.isAlive(added));
+}
+
+TEST_CASE("Entities are found by index while alive", "[scene]")
+{
+    Scene scene;
+    const Entity first = scene.createEntity("First");
+    const Entity second = scene.createEntity("Second");
+    CHECK(scene.entityAtIndex(first.index) == first);
+    CHECK(scene.entityAtIndex(second.index) == second);
+    CHECK_FALSE(scene.entityAtIndex(1000).isValid());
+
+    scene.destroyEntity(first);
+    CHECK_FALSE(scene.entityAtIndex(first.index).isValid());
+    const Entity reused = scene.createEntity("Reused");
+    REQUIRE(reused.index == first.index);
+    CHECK(scene.entityAtIndex(first.index) == reused);
+}
+
 TEST_CASE("Entities have unique UUIDs and stale handles after destruction", "[scene]")
 {
     Scene scene;

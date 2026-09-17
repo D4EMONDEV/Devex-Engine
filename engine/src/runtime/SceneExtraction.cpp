@@ -105,6 +105,7 @@ void extractScene(scene::Scene& scene, AssetManager& assets, render::RenderWorld
                 .material = override.isValid() || !material.isValid() ? override
                                                                        : assets.material(material),
                 .transform = transform.matrix,
+                .objectId = entity.index + 1,
             });
         }
     }

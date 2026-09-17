@@ -4,6 +4,8 @@ devex_add_shaders(devex_shaders
         ibl.slang
         luminance.slang
         mesh.slang
+        overlay.slang
+        pick.slang
         shadow.slang
         sky.slang
         tonemap.slang

@@ -7,14 +7,45 @@
 #include <devex/platform/Window.hpp>
 
 #include <chrono>
+#include <cstdint>
 #include <filesystem>
 #include <functional>
+#include <optional>
 #include <span>
 #include <string>
+#include <string_view>
+#include <vector>
 
 namespace devex::platform {
 
 using EventCallback = std::function<void(const Event& event)>;
+
+enum class FileDialogType : std::uint8_t
+{
+    OpenFile,
+    SaveFile,
+    OpenFolder,
+};
+
+struct FileFilter
+{
+    // Shown to the user, such as "Scenes".
+    std::string name;
+    // Extensions without dots, separated by semicolons: "png;jpg".
+    std::string extensions;
+};
+
+struct FileDialog
+{
+    FileDialogType type = FileDialogType::OpenFile;
+    // Ignored by folder dialogs.
+    std::vector<FileFilter> filters;
+    // A folder, or a file name for save dialogs; empty lets the system choose.
+    std::filesystem::path defaultLocation;
+};
+
+// Receives the chosen path, or nothing when the dialog was cancelled or failed.
+using FileDialogCallback = std::function<void(std::optional<std::filesystem::path> chosen)>;
 
 // Owns the operating system layer: windows, events and input. Only one instance may exist at a
 // time, and it must outlive every window it creates.
@@ -39,6 +70,13 @@ public:
 
     // Directory containing the executable, where engine data such as shaders is deployed.
     [[nodiscard]] std::filesystem::path baseDirectory() const;
+    // A writable directory for the settings of an application of the user, created if needed:
+    // %APPDATA%/Devex/<application> on Windows.
+    [[nodiscard]] core::Result<std::filesystem::path> userDataDirectory(std::string_view application) const;
+
+    // Shows a native file dialog without blocking, modal to the window. The callback runs during a
+    // later pollEvents, on the thread that polls events.
+    void showFileDialog(const Window& parent, const FileDialog& dialog, FileDialogCallback callback);
 
     // Name of the key position, independent of the layout ("W").
     [[nodiscard]] std::string keyName(Key key) const;

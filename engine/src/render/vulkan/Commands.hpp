@@ -14,9 +14,13 @@ enum class ImageState
     AcquiredBackbuffer,
     ColorAttachment,
     DepthAttachment,
+    // Receiving the depth resolved from a multisampled depth attachment when rendering ends.
+    DepthResolveAttachment,
     Present,
     // Receiving data copied from a buffer.
     TransferDestination,
+    // Copied to a buffer.
+    TransferSource,
     // Sampled by fragment shaders.
     ShaderReadOnly,
     // Sampled by compute shaders.

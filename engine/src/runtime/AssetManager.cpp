@@ -113,6 +113,9 @@ void AssetManager::handleEvents(std::span<const asset::AssetEvent> events)
                 static_cast<void>(loadModel(event.id));
             }
             break;
+        case asset::AssetType::Scene:
+            // Scenes are read when opened, never kept.
+            break;
         }
     }
     if (texturesChanged)
@@ -124,6 +127,33 @@ void AssetManager::handleEvents(std::span<const asset::AssetEvent> events)
 asset::AssetDatabase* AssetManager::database() const noexcept
 {
     return m_database;
+}
+
+void AssetManager::setDatabase(asset::AssetDatabase* database)
+{
+    std::vector<asset::AssetId> loaded;
+    for (const auto& [id, mesh] : m_meshes)
+    {
+        if (mesh.owned)
+        {
+            loaded.push_back(id);
+        }
+    }
+    for (const asset::AssetId id : loaded)
+    {
+        releaseMesh(id);
+    }
+    while (!m_materials.empty())
+    {
+        releaseMaterial(m_materials.begin()->first);
+    }
+    while (!m_textures.empty())
+    {
+        releaseTexture(m_textures.begin()->first);
+    }
+    m_models.clear();
+    m_failed.clear();
+    m_database = database;
 }
 
 bool AssetManager::canLoad(asset::AssetId id) const

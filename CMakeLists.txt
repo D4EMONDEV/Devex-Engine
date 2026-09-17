@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 3.25)
 
 option(DEVEX_BUILD_SANDBOX "Build the executable used to exercise engine systems" ON)
+option(DEVEX_BUILD_EDITOR "Build the Devex editor" ON)
 option(DEVEX_BUILD_TESTS "Build Devex unit tests" ON)
 option(DEVEX_WARNINGS_AS_ERRORS "Treat compiler warnings as errors for Devex targets" OFF)
 
@@ -32,11 +33,16 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib")
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib")
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
+include(DevexShowIncludes)
 include(DevexShaders)
 include(DevexWarnings)
 
 add_subdirectory(shaders)
 add_subdirectory(engine)
+
+if(DEVEX_BUILD_EDITOR)
+    add_subdirectory(apps/editor)
+endif()
 
 if(DEVEX_BUILD_SANDBOX)
     add_subdirectory(apps/sandbox)

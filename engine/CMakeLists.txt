@@ -384,6 +384,14 @@ target_sources(devex_tools
         src/tools/AssetsPanel.cpp
         src/tools/CommandHistory.cpp
         src/tools/ConsolePanel.cpp
+        src/tools/EditorCamera.cpp
+        src/tools/EditorCamera.hpp
+        src/tools/EditorOverlay.cpp
+        src/tools/EditorSession.cpp
+        src/tools/EditorView.cpp
+        src/tools/EditorView.hpp
+        src/tools/Gizmo.cpp
+        src/tools/Gizmo.hpp
         src/tools/HierarchyPanel.cpp
         src/tools/InspectorPanel.cpp
         src/tools/LogBuffer.cpp
@@ -391,6 +399,7 @@ target_sources(devex_tools
         src/tools/StatisticsPanel.cpp
         src/tools/ToolsOverlay.cpp
         src/tools/ToolsState.hpp
+        src/tools/ViewportPanel.cpp
     PUBLIC
         FILE_SET HEADERS
         BASE_DIRS include
@@ -412,6 +421,7 @@ target_link_libraries(devex_tools
     PRIVATE
         imgui::imgui
 )
+target_compile_definitions(devex_tools PRIVATE IMGUI_DEFINE_MATH_OPERATORS)
 set_target_properties(devex_tools PROPERTIES
     EXPORT_NAME Tools
     FOLDER "Engine"

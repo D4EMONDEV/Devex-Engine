@@ -13,12 +13,16 @@ namespace {
         return ImageState::ColorAttachment;
     case ImageAccess::DepthAttachment:
         return ImageState::DepthAttachment;
+    case ImageAccess::DepthResolveAttachment:
+        return ImageState::DepthResolveAttachment;
     case ImageAccess::FragmentRead:
         return ImageState::ShaderReadOnly;
     case ImageAccess::ComputeRead:
         return ImageState::ComputeReadOnly;
     case ImageAccess::ComputeWrite:
         return ImageState::ComputeStorage;
+    case ImageAccess::TransferRead:
+        return ImageState::TransferSource;
     case ImageAccess::Present:
         return ImageState::Present;
     }

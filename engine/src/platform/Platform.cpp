@@ -14,8 +14,11 @@
 #include <imgui_impl_sdl3.h>
 
 #include <atomic>
+#include <memory>
+#include <mutex>
 #include <optional>
 #include <utility>
+#include <vector>
 
 namespace devex::platform {
 namespace {
@@ -34,6 +37,36 @@ std::atomic<bool> platformExists{false};
 
 // Only one Platform exists at a time, so its live redraw callback can be process-wide.
 std::function<void()> liveRedrawCallback;
+
+// A file dialog waiting for its answer. SDL requires the filters to outlive the dialog.
+struct PendingDialog
+{
+    std::vector<std::string> names;
+    std::vector<std::string> patterns;
+    std::vector<SDL_DialogFileFilter> filters;
+    std::string location;
+    FileDialogCallback callback;
+    std::optional<std::filesystem::path> chosen;
+};
+
+// Dialogs answer on any thread; their callbacks run on the polling thread.
+std::mutex answeredDialogsMutex;
+std::vector<std::unique_ptr<PendingDialog>> answeredDialogs;
+
+void SDLCALL answerDialog(void* userData, const char* const* files, int /*filter*/)
+{
+    std::unique_ptr<PendingDialog> dialog(static_cast<PendingDialog*>(userData));
+    if (files == nullptr)
+    {
+        DEVEX_LOG_WARNING("The file dialog failed: {}", SDL_GetError());
+    }
+    else if (files[0] != nullptr)
+    {
+        dialog->chosen = core::pathFromUtf8(files[0]);
+    }
+    const std::scoped_lock lock(answeredDialogsMutex);
+    answeredDialogs.push_back(std::move(dialog));
+}
 
 bool SDLCALL watchLiveRedraw(void* /*userData*/, SDL_Event* event)
 {
@@ -249,6 +282,11 @@ void Platform::shutdown() noexcept
         shutdownImGui();
         SDL_RemoveEventWatch(&watchLiveRedraw, nullptr);
         liveRedrawCallback = nullptr;
+        {
+            // Answers never delivered must not call into an application that is shutting down.
+            const std::scoped_lock lock(answeredDialogsMutex);
+            answeredDialogs.clear();
+        }
         SDL_Quit();
         platformExists.store(false);
         m_initialized = false;
@@ -299,6 +337,19 @@ void Platform::pollEvents(const EventCallback& callback)
         }
         dispatchEvent(event, m_input, capture, callback);
     }
+
+    std::vector<std::unique_ptr<PendingDialog>> answered;
+    {
+        const std::scoped_lock lock(answeredDialogsMutex);
+        answered.swap(answeredDialogs);
+    }
+    for (const std::unique_ptr<PendingDialog>& dialog : answered)
+    {
+        if (dialog->callback)
+        {
+            dialog->callback(std::move(dialog->chosen));
+        }
+    }
 }
 
 core::Result<void> Platform::initializeImGui(Window& window)
@@ -345,6 +396,55 @@ std::filesystem::path Platform::baseDirectory() const
 {
     const char* const basePath = SDL_GetBasePath();
     return basePath != nullptr ? core::pathFromUtf8(basePath) : std::filesystem::current_path();
+}
+
+core::Result<std::filesystem::path> Platform::userDataDirectory(std::string_view application) const
+{
+    const std::string name(application);
+    char* const path = SDL_GetPrefPath("Devex", name.c_str());
+    if (path == nullptr)
+    {
+        return core::makeError(core::ErrorCode::Platform, "no user data directory: {}", SDL_GetError());
+    }
+    std::filesystem::path directory = core::pathFromUtf8(path);
+    SDL_free(path);
+    return directory;
+}
+
+void Platform::showFileDialog(const Window& parent, const FileDialog& dialog, FileDialogCallback callback)
+{
+    DEVEX_ASSERT(m_initialized);
+    auto pending = std::make_unique<PendingDialog>();
+    for (const FileFilter& filter : dialog.filters)
+    {
+        pending->names.push_back(filter.name);
+        pending->patterns.push_back(filter.extensions);
+    }
+    for (std::size_t index = 0; index < pending->names.size(); ++index)
+    {
+        pending->filters.push_back({pending->names[index].c_str(), pending->patterns[index].c_str()});
+    }
+    pending->location = core::toUtf8(dialog.defaultLocation);
+    pending->callback = std::move(callback);
+
+    SDL_Window* const window = detail::toSdlWindow(parent.m_native);
+    const char* const location = pending->location.empty() ? nullptr : pending->location.c_str();
+    const auto filterCount = static_cast<int>(pending->filters.size());
+    const SDL_DialogFileFilter* const filters = pending->filters.empty() ? nullptr : pending->filters.data();
+    // Owned by answerDialog from here on.
+    PendingDialog* const userData = pending.release();
+    switch (dialog.type)
+    {
+    case FileDialogType::OpenFile:
+        SDL_ShowOpenFileDialog(&answerDialog, userData, window, filters, filterCount, location, false);
+        break;
+    case FileDialogType::SaveFile:
+        SDL_ShowSaveFileDialog(&answerDialog, userData, window, filters, filterCount, location);
+        break;
+    case FileDialogType::OpenFolder:
+        SDL_ShowOpenFolderDialog(&answerDialog, userData, window, location, false);
+        break;
+    }
 }
 
 std::string Platform::keyName(Key key) const

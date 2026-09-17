@@ -21,6 +21,23 @@ Scene::Scene(Scene&& other) noexcept = default;
 Scene& Scene::operator=(Scene&& other) noexcept = default;
 Scene::~Scene() = default;
 
+Scene Scene::clone() const
+{
+    Scene copy;
+    copy.m_entities = m_entities;
+    copy.m_freeIndices = m_freeIndices;
+    copy.m_pools.reserve(m_pools.size());
+    for (const std::unique_ptr<ComponentPoolBase>& components : m_pools)
+    {
+        copy.m_pools.push_back(components != nullptr ? components->clone() : nullptr);
+    }
+    copy.m_entitiesByUuid = m_entitiesByUuid;
+    copy.m_firstRoot = m_firstRoot;
+    copy.m_lastRoot = m_lastRoot;
+    copy.m_entityCount = m_entityCount;
+    return copy;
+}
+
 Entity Scene::createEntity(std::string name)
 {
     // A generated UUID cannot collide in practice, so creation cannot fail.
@@ -106,6 +123,18 @@ Entity Scene::findEntity(core::Uuid uuid) const noexcept
 {
     const auto found = m_entitiesByUuid.find(uuid);
     return found == m_entitiesByUuid.end() ? Entity{} : found->second;
+}
+
+Entity Scene::entityAtIndex(std::uint32_t index) const noexcept
+{
+    if (index >= m_entities.size() || !m_entities[index].alive)
+    {
+        return {};
+    }
+    Entity entity;
+    entity.index = index;
+    entity.generation = m_entities[index].generation;
+    return entity;
 }
 
 core::Uuid Scene::uuid(Entity entity) const noexcept

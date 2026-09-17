@@ -9,6 +9,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <format>
+#include <iterator>
 #include <string>
 #include <vector>
 
@@ -325,6 +326,84 @@ TEST_CASE("Lit frames with shadows, local lights and a sky texture render withou
         // Manual exposure keeps the default EV100; automatic exposure then measures the image.
         CHECK(firstEv100 == 14.0f);
         CHECK(renderer->stats().ev100 != 14.0f);
+    }
+
+    for (const std::string& error : capture.errors())
+    {
+        UNSCOPED_INFO(error);
+    }
+    CHECK(capture.errors().empty());
+}
+
+TEST_CASE("The scene renders into a viewport image with picking, outlines and overlay", "[render][gpu]")
+{
+    using devex::math::Vec3;
+    using devex::math::Vec4;
+    using devex::render::OverlayVertex;
+
+    const ErrorCapture capture;
+    {
+        auto platform = devex::platform::Platform::create();
+        REQUIRE(platform.has_value());
+        auto window = platform->createWindow({.width = 320, .height = 240, .vulkan = true, .hidden = true});
+        REQUIRE(window.has_value());
+        auto renderer = devex::render::Renderer::create(*platform, *window, {.validation = true});
+        if (!renderer)
+        {
+            FAIL(std::format("{}", renderer.error()));
+        }
+        auto cube = renderer->createMesh(devex::asset::makeCube());
+        REQUIRE(cube.has_value());
+
+        // A cube 3 m in front of the camera covers the center of the image; the corner shows sky.
+        const devex::math::Mat4 cubeTransform = devex::math::translate(devex::math::Mat4{1.0f}, Vec3{0.0f, 0.0f, -3.0f});
+        std::vector<devex::render::PickResult> results;
+        for (std::uint64_t frame = 0; frame < 12; ++frame)
+        {
+            devex::render::RenderWorld& world = renderer->beginFrame();
+            // The viewport changes size once, which replaces its image.
+            world.viewport = frame < 6 ? devex::math::Extent2D{200, 150} : devex::math::Extent2D{160, 120};
+            world.meshes.push_back({.mesh = *cube, .transform = cubeTransform, .objectId = 42, .outlined = true});
+            world.sceneLines = {OverlayVertex{Vec3{-5.0f, -0.5f, -3.0f}, Vec4{1.0f}},
+                                OverlayVertex{Vec3{5.0f, -0.5f, -3.0f}, Vec4{1.0f}}};
+            world.overlayLines = {OverlayVertex{Vec3{0.0f}, Vec4{1.0f, 0.0f, 0.0f, 1.0f}},
+                                  OverlayVertex{Vec3{0.0f, 1.0f, -3.0f}, Vec4{1.0f, 0.0f, 0.0f, 1.0f}}};
+            world.overlayTriangles = {OverlayVertex{Vec3{0.0f, 0.0f, -2.0f}, Vec4{0.0f, 1.0f, 0.0f, 0.5f}},
+                                      OverlayVertex{Vec3{0.2f, 0.0f, -2.0f}, Vec4{0.0f, 1.0f, 0.0f, 0.5f}},
+                                      OverlayVertex{Vec3{0.0f, 0.2f, -2.0f}, Vec4{0.0f, 1.0f, 0.0f, 0.5f}}};
+            if (frame == 1)
+            {
+                world.pick = devex::render::PickRequest{.x = 100, .y = 75, .id = 1};
+            }
+            else if (frame == 2)
+            {
+                world.pick = devex::render::PickRequest{.x = 2, .y = 2, .id = 2};
+            }
+            else if (frame == 3)
+            {
+                // Outside the image: answered without drawing.
+                world.pick = devex::render::PickRequest{.x = 500, .y = 2, .id = 3};
+            }
+
+            const devex::core::Result<void> presented = renderer->endFrame();
+            if (!presented)
+            {
+                FAIL(std::format("frame {}: {}", frame, presented.error()));
+            }
+            std::ranges::copy(renderer->takePickResults(), std::back_inserter(results));
+        }
+
+        CHECK(renderer->stats().sceneExtent == devex::math::Extent2D{160, 120});
+        std::ranges::sort(results, {}, &devex::render::PickResult::request);
+        REQUIRE(results.size() == 3);
+        CHECK(results[0].request == 1);
+        CHECK(results[0].objectId == 42);
+        CHECK(results[1].request == 2);
+        CHECK(results[1].objectId == 0);
+        CHECK(results[2].request == 3);
+        CHECK(results[2].objectId == 0);
+        CHECK(devex::render::Renderer::viewportTexture() != 0);
+        renderer->destroyMesh(*cube);
     }
 
     for (const std::string& error : capture.errors())

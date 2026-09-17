@@ -1,0 +1,378 @@
+[scene format=1]
+
+[entity uuid="ca4064e7-ec2c-4207-bbf0-b1ab3b9d32b0" name="Sun"]
+
+[component type="Transform"]
+position = vec3(0, 0, 0)
+rotation = quat(-0.47685847, 0.26041886, 0.1503529, 0.82594305)
+scale = vec3(1, 1, 1)
+
+[component type="DirectionalLight"]
+color = vec3(1, 1, 1)
+temperature = 5800
+illuminance = 1e+05
+cast_shadows = true
+shadow_distance = 80
+
+[entity uuid="d3d1efac-8904-4aa6-bba7-0400d59d1fa2" name="Sky"]
+
+[component type="Environment"]
+sky = asset("060d85bd-f1c5-45bb-ad48-8c1e3e659f71")
+color = vec3(1, 1, 1)
+intensity = 25000
+rotation = 0
+
+[entity uuid="7e5d2a38-24f5-4ce6-ba20-babe3be08de4" name="Camera"]
+
+[component type="Transform"]
+position = vec3(0, 2, 8)
+rotation = quat(-0.104528464, 0, 0, 0.9945219)
+scale = vec3(1, 1, 1)
+
+[component type="Camera"]
+vertical_fov = 1.0471976
+near_plane = 0.1
+primary = true
+auto_exposure = true
+ev100 = 14
+exposure_compensation = 0
+min_ev100 = -2
+max_ev100 = 18
+adaptation_speed = 1.5
+tonemapper = "agx"
+
+[entity uuid="1a2251b7-d7df-44c4-924e-5705872a85b8" name="Ground"]
+
+[component type="Transform"]
+position = vec3(0, 0, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(40, 1, 40)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000003")
+material = asset("78014e97-7de2-4e27-89db-74abd840010d")
+
+[entity uuid="1494932d-55a4-4b16-bb01-2e35b5410ba0" name="Turntable"]
+
+[component type="Transform"]
+position = vec3(0, 0, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="fcc5ef7e-61f4-4b6e-8af3-f67a15869e82" name="Satellite 1"]
+parent = "1494932d-55a4-4b16-bb01-2e35b5410ba0"
+
+[component type="Transform"]
+position = vec3(2, 0.3, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(0.6, 0.6, 0.6)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000002")
+material = asset("ff4872a7-7bc8-4ffb-900d-0c565be864f0")
+
+[entity uuid="df5347e7-099f-40cb-a451-bd1905bc5128" name="Satellite 2"]
+parent = "1494932d-55a4-4b16-bb01-2e35b5410ba0"
+
+[component type="Transform"]
+position = vec3(-8.742278e-08, 0.3, 2)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(0.6, 0.6, 0.6)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("00000000-0000-0000-0000-000000000000")
+
+[entity uuid="8de73457-0729-4ca1-b2ef-62b85479e651" name="Satellite 3"]
+parent = "1494932d-55a4-4b16-bb01-2e35b5410ba0"
+
+[component type="Transform"]
+position = vec3(-2, 0.3, -1.7484555e-07)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(0.6, 0.6, 0.6)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000002")
+material = asset("ff4872a7-7bc8-4ffb-900d-0c565be864f0")
+
+[entity uuid="281e629d-de8d-44c8-b527-e74d443fbd42" name="Satellite 4"]
+parent = "1494932d-55a4-4b16-bb01-2e35b5410ba0"
+
+[component type="Transform"]
+position = vec3(2.3849761e-08, 0.3, -2)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(0.6, 0.6, 0.6)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("00000000-0000-0000-0000-000000000000")
+
+[entity uuid="727cd642-65df-4533-876e-aeca6ade5ea4" name="crate"]
+parent = "1494932d-55a4-4b16-bb01-2e35b5410ba0"
+
+[component type="Transform"]
+position = vec3(0, 0, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="ee15a1bd-c481-4706-9e05-4ef42e8bf41b" name="Crate"]
+parent = "727cd642-65df-4533-876e-aeca6ade5ea4"
+
+[component type="Transform"]
+position = vec3(0, 0.5, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="MeshRenderer"]
+mesh = asset("0a4571b3-aa2e-4421-a385-09466c6dee9c")
+material = asset("00000000-0000-0000-0000-000000000000")
+
+[entity uuid="ca186ba4-1649-4233-8a96-2d1799b8984f" name="Spheres (gold)"]
+
+[component type="Transform"]
+position = vec3(0, 0.5, -5)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="2706e1b1-70a2-45e3-85a9-2804b9090143" name="Sphere 1"]
+parent = "ca186ba4-1649-4233-8a96-2d1799b8984f"
+
+[component type="Transform"]
+position = vec3(-4, 0, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000002")
+material = asset("54d61445-4b2a-4c79-8a8e-b9853aa2527d")
+
+[entity uuid="6d1c3c64-3696-4dd0-92b4-80bd8b11cf81" name="Sphere 2"]
+parent = "ca186ba4-1649-4233-8a96-2d1799b8984f"
+
+[component type="Transform"]
+position = vec3(-2, 0, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000002")
+material = asset("4ec69fc2-35d4-4339-b426-0401d34b98df")
+
+[entity uuid="dc60d4ed-640e-4e13-84d6-f750702bef99" name="Sphere 3"]
+parent = "ca186ba4-1649-4233-8a96-2d1799b8984f"
+
+[component type="Transform"]
+position = vec3(0, 0, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000002")
+material = asset("91bc3d4f-942c-40be-9398-51eeb3e7cc77")
+
+[entity uuid="2ac518fb-5030-4e7f-9dec-d12090cc5f53" name="Sphere 4"]
+parent = "ca186ba4-1649-4233-8a96-2d1799b8984f"
+
+[component type="Transform"]
+position = vec3(2, 0, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000002")
+material = asset("e4a79dfc-373e-424d-ac52-3f7208dd6a1f")
+
+[entity uuid="95796283-ac01-42a8-b97e-52a793130528" name="Sphere 5"]
+parent = "ca186ba4-1649-4233-8a96-2d1799b8984f"
+
+[component type="Transform"]
+position = vec3(4, 0, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000002")
+material = asset("978eb785-7efc-4620-93e7-cd666e792684")
+
+[entity uuid="e10c3aa0-f0a0-4912-aba1-046b0d7b1d71" name="Spheres (plastic)"]
+
+[component type="Transform"]
+position = vec3(0, 0.5, -6.5)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="d1c74b87-0c77-4057-b4c5-bc52e089a0c5" name="Sphere 1"]
+parent = "e10c3aa0-f0a0-4912-aba1-046b0d7b1d71"
+
+[component type="Transform"]
+position = vec3(-4, 0, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000002")
+material = asset("64b784c7-4b02-4054-b3ed-d212fc17e96b")
+
+[entity uuid="91049451-1836-4eb4-a301-e0f32a099757" name="Sphere 2"]
+parent = "e10c3aa0-f0a0-4912-aba1-046b0d7b1d71"
+
+[component type="Transform"]
+position = vec3(-2, 0, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000002")
+material = asset("eaed66d2-2c81-4ebf-a670-e2965998856a")
+
+[entity uuid="29bba73d-c1e6-4902-aa9b-c7375dbf0808" name="Sphere 3"]
+parent = "e10c3aa0-f0a0-4912-aba1-046b0d7b1d71"
+
+[component type="Transform"]
+position = vec3(0, 0, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000002")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="06d1dbc5-996a-4c2e-8c7d-0f142b8e0134" name="Sphere 4"]
+parent = "e10c3aa0-f0a0-4912-aba1-046b0d7b1d71"
+
+[component type="Transform"]
+position = vec3(2, 0, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000002")
+material = asset("a6cb54ad-c94b-4579-91cc-4ded78b7a183")
+
+[entity uuid="cbe19ec4-a846-4245-a8b3-be956bad5e5b" name="Sphere 5"]
+parent = "e10c3aa0-f0a0-4912-aba1-046b0d7b1d71"
+
+[component type="Transform"]
+position = vec3(4, 0, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000002")
+material = asset("3656673e-05c3-4085-b414-2ff735d6a9a6")
+
+[entity uuid="7d805e84-cac4-4483-98e0-66283595b3b1" name="Lamp 1"]
+
+[component type="Transform"]
+position = vec3(-3, 1.5, 2)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="PointLight"]
+color = vec3(1, 0.55, 0.25)
+temperature = 6500
+intensity = 3000
+range = 9
+
+[entity uuid="f0c3ef42-5a92-48e0-80aa-5af645cbaa66" name="Lamp 2"]
+
+[component type="Transform"]
+position = vec3(3, 1.2, -3.5)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="PointLight"]
+color = vec3(0.2, 0.6, 1)
+temperature = 6500
+intensity = 3000
+range = 9
+
+[entity uuid="9de993d6-0434-4dd7-82a8-2b8c6665efd4" name="Lamp 3"]
+
+[component type="Transform"]
+position = vec3(-2, 1, -8.5)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="PointLight"]
+color = vec3(1, 0.2, 0.7)
+temperature = 6500
+intensity = 3000
+range = 9
+
+[entity uuid="55172114-d86b-4884-b3de-3fa40e180097" name="Beacon spot"]
+
+[component type="Transform"]
+position = vec3(6, 4, 1)
+rotation = quat(-0.5, -0, -0, 0.8660254)
+scale = vec3(1, 1, 1)
+
+[component type="SpotLight"]
+color = vec3(1, 0.95, 0.8)
+temperature = 6500
+intensity = 6000
+range = 12
+inner_angle = 0.34906584
+outer_angle = 0.5235988
+
+[entity uuid="57dacbd7-3373-4a28-a274-3c38636c9389" name="beacon"]
+
+[component type="Transform"]
+position = vec3(-6, 0, -2)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="b171a876-dfeb-46d7-92b0-48a0f810ef93" name="Beacon"]
+parent = "57dacbd7-3373-4a28-a274-3c38636c9389"
+
+[component type="Transform"]
+position = vec3(0, 0, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="MeshRenderer"]
+mesh = asset("df5507c9-136c-42f5-9a60-69c0e0eab254")
+material = asset("00000000-0000-0000-0000-000000000000")
+
+[entity uuid="22463c5d-440c-457e-859f-fa4cce9f1c45" name="Cap"]
+parent = "b171a876-dfeb-46d7-92b0-48a0f810ef93"
+
+[component type="Transform"]
+position = vec3(0, 1.6, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(0.6, 0.15, 0.6)
+
+[component type="MeshRenderer"]
+mesh = asset("a8581e5c-6572-499c-8d31-c3769bb31bd9")
+material = asset("00000000-0000-0000-0000-000000000000")
+
+[entity uuid="fba9071e-53ba-4c20-ad77-202630b826cb" name="beacon"]
+
+[component type="Transform"]
+position = vec3(6, 0, -2)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="00474f7b-f240-4579-81ab-dd78c8a13af7" name="Beacon"]
+parent = "fba9071e-53ba-4c20-ad77-202630b826cb"
+
+[component type="Transform"]
+position = vec3(0, 0, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="MeshRenderer"]
+mesh = asset("df5507c9-136c-42f5-9a60-69c0e0eab254")
+material = asset("00000000-0000-0000-0000-000000000000")
+
+[entity uuid="d2a92f04-f802-4b29-a8bf-1e38f885052d" name="Cap"]
+parent = "00474f7b-f240-4579-81ab-dd78c8a13af7"
+
+[component type="Transform"]
+position = vec3(0, 1.6, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(0.6, 0.15, 0.6)
+
+[component type="MeshRenderer"]
+mesh = asset("a8581e5c-6572-499c-8d31-c3769bb31bd9")
+material = asset("00000000-0000-0000-0000-000000000000")

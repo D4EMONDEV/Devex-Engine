@@ -92,6 +92,8 @@ public struct SceneData
     public Light* lights;
     public Cluster* clusters;
     public uint* clusterLights;
+    // Maps the pixel requested for picking to the whole 1x1 pick target.
+    public float4x4 pickViewProjection;
 };
 
 public struct DrawData
@@ -101,6 +103,8 @@ public struct DrawData
     public float4x4 world;
     public uint material;
     public uint cascade;
+    public uint objectId;
+    public uint padding;
 };
 
 // Set 0: textures and image based lighting, shared by every frame.
@@ -128,6 +132,9 @@ public Texture2DArray shadowMap;
 public SamplerComparisonState shadowSampler;
 [[vk::binding(2, 1)]]
 public Texture2D sceneColor;
+// Coverage of the selected objects, outlined by the overlay.
+[[vk::binding(3, 1)]]
+public Texture2D selectionMask;
 
 public float4 sampleTexture(uint index, float2 uv)
 {
