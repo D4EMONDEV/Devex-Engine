@@ -423,3 +423,209 @@ size = vec3(1, 1, 1)
 [component type="Oscillator"]
 offset = vec3(6, 0, 0)
 period = 6
+
+[entity uuid="d0cfd4c9-118f-5fb2-9ed7-7f3c483a2526" name="Target range"]
+
+[component type="Transform"]
+position = vec3(16, 0, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="3488ebb5-e2af-5710-9b30-2a1dce1b66b6" name="Target 1"]
+parent = "d0cfd4c9-118f-5fb2-9ed7-7f3c483a2526"
+
+[component type="Transform"]
+position = vec3(0, 1.5, -4)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(0.3, 2.2, 2.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("7c1e5a90-3b2d-4f68-9a41-5e0d2c7b8a13")
+
+[component type="BoxCollider"]
+size = vec3(1, 1, 1)
+
+[component type="Target"]
+lamp = entity("ee1909d0-7530-5c09-b3dc-fb1c991c1e42")
+
+[entity uuid="ee1909d0-7530-5c09-b3dc-fb1c991c1e42" name="Target 1 lamp"]
+parent = "d0cfd4c9-118f-5fb2-9ed7-7f3c483a2526"
+
+[component type="Transform"]
+position = vec3(-0.4, 3.2, -4)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(0.3, 0.3, 0.3)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000002")
+material = asset("ff4872a7-7bc8-4ffb-900d-0c565be864f0")
+
+[component type="PointLight"]
+color = vec3(1, 0.35, 0.2)
+temperature = 6500
+intensity = 0
+range = 8
+
+[entity uuid="4d71a6bd-475f-55c1-a940-acf630011eef" name="Target 2"]
+parent = "d0cfd4c9-118f-5fb2-9ed7-7f3c483a2526"
+
+[component type="Transform"]
+position = vec3(0, 1.5, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(0.3, 2.2, 2.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("7c1e5a90-3b2d-4f68-9a41-5e0d2c7b8a13")
+
+[component type="BoxCollider"]
+size = vec3(1, 1, 1)
+
+[component type="Target"]
+lamp = entity("7cd21d8e-5d8d-520b-bb21-b5a602aa6b2d")
+
+[entity uuid="7cd21d8e-5d8d-520b-bb21-b5a602aa6b2d" name="Target 2 lamp"]
+parent = "d0cfd4c9-118f-5fb2-9ed7-7f3c483a2526"
+
+[component type="Transform"]
+position = vec3(-0.4, 3.2, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(0.3, 0.3, 0.3)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000002")
+material = asset("ff4872a7-7bc8-4ffb-900d-0c565be864f0")
+
+[component type="PointLight"]
+color = vec3(1, 0.35, 0.2)
+temperature = 6500
+intensity = 0
+range = 8
+
+[entity uuid="70bae702-088d-572d-9d0f-a000123d8768" name="Target 3"]
+parent = "d0cfd4c9-118f-5fb2-9ed7-7f3c483a2526"
+
+[component type="Transform"]
+position = vec3(0, 1.5, 4)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(0.3, 2.2, 2.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("7c1e5a90-3b2d-4f68-9a41-5e0d2c7b8a13")
+
+[component type="BoxCollider"]
+size = vec3(1, 1, 1)
+
+[component type="Target"]
+lamp = entity("772f2fa4-0bcc-5ba2-a351-7a566ec7cd1f")
+
+[entity uuid="772f2fa4-0bcc-5ba2-a351-7a566ec7cd1f" name="Target 3 lamp"]
+parent = "d0cfd4c9-118f-5fb2-9ed7-7f3c483a2526"
+
+[component type="Transform"]
+position = vec3(-0.4, 3.2, 4)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(0.3, 0.3, 0.3)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000002")
+material = asset("ff4872a7-7bc8-4ffb-900d-0c565be864f0")
+
+[component type="PointLight"]
+color = vec3(1, 0.35, 0.2)
+temperature = 6500
+intensity = 0
+range = 8
+
+[entity uuid="2ab11a81-f608-5958-88e9-4fd8cc1be643" name="Gate"]
+
+[component type="Transform"]
+position = vec3(-16, 0, 12)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="08958c78-8c6a-515b-a9f6-d29c87b3a550" name="Gate left post"]
+parent = "2ab11a81-f608-5958-88e9-4fd8cc1be643"
+
+[component type="Transform"]
+position = vec3(0, 2, -2.25)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(0.5, 4, 0.5)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("576ad271-2890-5687-907e-a283236fea5d")
+
+[component type="BoxCollider"]
+size = vec3(1, 1, 1)
+
+[entity uuid="0c37635e-610c-5fdc-882c-59e13e575055" name="Gate right post"]
+parent = "2ab11a81-f608-5958-88e9-4fd8cc1be643"
+
+[component type="Transform"]
+position = vec3(0, 2, 2.25)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(0.5, 4, 0.5)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("576ad271-2890-5687-907e-a283236fea5d")
+
+[component type="BoxCollider"]
+size = vec3(1, 1, 1)
+
+[entity uuid="3930e3ce-b49e-5259-8693-a1ccf487df23" name="Door"]
+parent = "2ab11a81-f608-5958-88e9-4fd8cc1be643"
+
+[component type="Transform"]
+position = vec3(0, 1.5, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(0.3, 3, 4)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("4b8f2d61-9c0e-4a7b-b3d5-18e6f0a9c247")
+
+[component type="RigidBody"]
+type = "kinematic"
+
+[component type="BoxCollider"]
+size = vec3(1, 1, 1)
+
+[component type="SlidingDoor"]
+open_offset = vec3(0, 2.8, 0)
+speed = 3
+
+[entity uuid="02ad646d-3822-57dd-acfe-42ff6f5f23ef" name="Door zone"]
+parent = "2ab11a81-f608-5958-88e9-4fd8cc1be643"
+
+[component type="Transform"]
+position = vec3(3, 1, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="BoxCollider"]
+size = vec3(4, 2, 5)
+trigger = true
+
+[component type="DoorZone"]
+door = entity("3930e3ce-b49e-5259-8693-a1ccf487df23")
+
+[entity uuid="0954a77d-1849-5e8d-8bc7-013425c12827" name="Crate dispenser"]
+
+[component type="Transform"]
+position = vec3(13, 6, 14)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(0.5, 0.5, 0.5)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000002")
+material = asset("ff4872a7-7bc8-4ffb-900d-0c565be864f0")
+
+[component type="Dispenser"]
+prefab = asset("4be171c6-e068-5d15-af8c-49e6ba6a0aec")
+points = list(vec3(11, 5, 14), vec3(13, 5, 14), vec3(15, 5, 14))
+interval = 2.5
+max_drops = 6

@@ -130,6 +130,11 @@ void drawProjectMenu(ToolsState& state, scene::Scene& scene)
     {
         state.requests.createCode = true;
     }
+    if (menuItem(icons::Bug, "C# Debugging...", nullptr, state.debugger.available))
+    {
+        state.showDebugging = true;
+        ImGui::SetWindowFocus(debuggingWindow);
+    }
     ImGui::Separator();
     const std::string sceneResource = project.resourcePath(state.scenePath);
     if (menuItem(icons::House, "Set Scene as Startup", nullptr, !sceneResource.empty(),

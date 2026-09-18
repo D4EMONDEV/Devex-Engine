@@ -15,6 +15,20 @@
 namespace devex::runtime::detail {
 namespace {
 
+// A file whose change calls for a build of the C++ code: sources, headers and CMake files.
+[[nodiscard]] bool isCppBuildFile(const std::filesystem::path& path)
+{
+    const std::string extension = path.extension().string();
+    for (const char* const known : {".cpp", ".cc", ".cxx", ".c", ".hpp", ".h", ".hh", ".hxx", ".inl", ".ixx", ".cmake"})
+    {
+        if (extension == known)
+        {
+            return true;
+        }
+    }
+    return path.filename() == "CMakeLists.txt";
+}
+
 using namespace std::chrono_literals;
 
 constexpr auto checkInterval = 500ms;
@@ -171,7 +185,8 @@ GameCodeBuilder::Snapshot GameCodeBuilder::snapshotSources() const
     for (std::filesystem::recursive_directory_iterator entry(m_project.codeDirectory(), error), end;
          !error && entry != end; entry.increment(error))
     {
-        if (entry->is_regular_file(error))
+        // The C# files of the folder have their own build.
+        if (entry->is_regular_file(error) && isCppBuildFile(entry->path()))
         {
             snapshot.newest = std::max(snapshot.newest, entry->last_write_time(error));
             ++snapshot.files;

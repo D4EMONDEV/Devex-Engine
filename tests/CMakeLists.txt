@@ -67,6 +67,7 @@ devex_add_tests(serialization
 devex_add_tests(scene
     SOURCES
         scene/DynamicComponentTests.cpp
+        scene/EntityRefAndListTests.cpp
         scene/PrefabTests.cpp
         scene/SceneSerializerTests.cpp
         scene/SceneTests.cpp

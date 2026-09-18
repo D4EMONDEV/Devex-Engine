@@ -130,6 +130,16 @@ Entity Scene::findEntity(core::Uuid uuid) const noexcept
     return found == m_entitiesByUuid.end() ? Entity{} : found->second;
 }
 
+Entity Scene::resolve(EntityRef reference) const noexcept
+{
+    return reference.isNil() ? Entity{} : findEntity(reference.uuid);
+}
+
+EntityRef Scene::reference(Entity entity) const noexcept
+{
+    return isAlive(entity) ? EntityRef{uuid(entity)} : EntityRef{};
+}
+
 DynamicComponentPool& Scene::dynamicPool(std::size_t typeIndex,
                                          const std::shared_ptr<const DynamicComponentLayout>& layout)
 {
@@ -146,12 +156,13 @@ DynamicComponentPool& Scene::dynamicPool(std::size_t typeIndex,
 
 DynamicComponentPool* Scene::dynamicPool(std::size_t typeIndex) noexcept
 {
-    return typeIndex < m_pools.size() ? static_cast<DynamicComponentPool*>(m_pools[typeIndex].get()) : nullptr;
+    // Null as well for the pool of a type declared in C++.
+    return typeIndex < m_pools.size() ? dynamic_cast<DynamicComponentPool*>(m_pools[typeIndex].get()) : nullptr;
 }
 
 const DynamicComponentPool* Scene::dynamicPool(std::size_t typeIndex) const noexcept
 {
-    return typeIndex < m_pools.size() ? static_cast<const DynamicComponentPool*>(m_pools[typeIndex].get()) : nullptr;
+    return typeIndex < m_pools.size() ? dynamic_cast<const DynamicComponentPool*>(m_pools[typeIndex].get()) : nullptr;
 }
 
 std::size_t Scene::componentPoolCount() const noexcept

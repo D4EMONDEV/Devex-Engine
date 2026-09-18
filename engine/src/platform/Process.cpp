@@ -10,6 +10,8 @@
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <windows.h>
+#else
+#include <unistd.h>
 #endif
 
 #include <utility>
@@ -214,6 +216,15 @@ void Process::kill() noexcept
     {
         SDL_KillProcess(static_cast<SDL_Process*>(m_process), true);
     }
+}
+
+std::uint32_t currentProcessId() noexcept
+{
+#ifdef _WIN32
+    return static_cast<std::uint32_t>(GetCurrentProcessId());
+#else
+    return static_cast<std::uint32_t>(getpid());
+#endif
 }
 
 } // namespace devex::platform

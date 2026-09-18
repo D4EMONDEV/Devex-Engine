@@ -8,9 +8,11 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <EnableDynamicLoading>true</EnableDynamicLoading>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="*.cs" />
     <Reference Include="Devex.Managed">
       <HintPath>$(DevexManagedDirectory)/Devex.Managed.dll</HintPath>
       <Private>false</Private>

@@ -1,0 +1,5 @@
+# Red and white target boards, which C# code counts the hits of.
+[material format=1]
+base_color = vec4(0.8, 0.1, 0.08, 1)
+metallic = 0
+roughness = 0.35

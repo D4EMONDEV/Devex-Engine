@@ -171,6 +171,42 @@ void collectAssetIds(const serialization::TextValue& value, std::vector<asset::A
     return {};
 }
 
+// Runs a program and waits for it, its output going to the log.
+[[nodiscard]] core::Result<void> runAndWait(const std::vector<std::string>& arguments,
+                                            const std::filesystem::path& directory, std::string_view failure)
+{
+    core::Result<platform::Process> process = platform::Process::start(arguments, directory);
+    if (!process)
+    {
+        return core::makeError(process.error().code, "{}: {}", failure, process.error().message);
+    }
+    std::optional<int> exitCode;
+    while (!exitCode)
+    {
+        for (const std::string& line : process->readLines())
+        {
+            if (!line.empty())
+            {
+                DEVEX_LOG_INFO("{}", line);
+            }
+        }
+        exitCode = process->exitCode();
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    }
+    for (const std::string& line : process->readLines())
+    {
+        if (!line.empty())
+        {
+            DEVEX_LOG_INFO("{}", line);
+        }
+    }
+    if (*exitCode != 0)
+    {
+        return core::makeError(core::ErrorCode::InvalidState, "{} (code {})", failure, *exitCode);
+    }
+    return {};
+}
+
 // Publishes .NET next to the game: the runtime, the engine's C# assembly and nothing to install.
 [[nodiscard]] core::Result<void> copyDotnet(const ExportPlan& plan, const std::filesystem::path& scripts)
 {
@@ -638,12 +674,34 @@ core::Result<ExportResult> exportGame(const ExportPlan& plan, const std::functio
     if (!plan.packageOnly && plan.managed)
     {
         report("Building the C# code", 0.2f);
-        detail::ManagedCodeBuilder builder(project, plan.engine.binDirectory() / "managed");
+        // Built apart from the editor's, against the engine build of the export, with views of the C++
+        // components made from the module built for it: layouts differ between builds.
+        const std::filesystem::path managedBuild = project.cacheDirectory() / "export" / "csharp";
+        const std::filesystem::path generated = managedBuild / "generated";
+        std::error_code error;
+        std::filesystem::remove_all(generated, error);
+        std::filesystem::create_directories(generated, error);
+        if (library)
+        {
+            std::filesystem::path bindgen = plan.engine.binDirectory() / "devex-bindgen";
+            bindgen += executableSuffix;
+            if (core::Result<void> generatedViews =
+                    runAndWait({core::toUtf8(bindgen), "--game", core::toUtf8(*library),
+                                core::toUtf8(generated / "GameComponents.g.cs")},
+                               project.root, "cannot generate the C# views of the C++ components");
+                !generatedViews)
+            {
+                return std::unexpected(generatedViews.error());
+            }
+        }
+        detail::ManagedCodeBuilder builder(project, plan.engine.binDirectory() / "managed",
+                                           detail::ManagedCodeBuilder::Target{.buildDirectory = managedBuild,
+                                                                              .generatedDirectory = generated});
         if (core::Result<void> built = builder.buildAndWait(); !built)
         {
             return std::unexpected(built.error());
         }
-        scripts = detail::ManagedCodeBuilder::assemblyPath(project);
+        scripts = builder.builtAssembly();
     }
     if (core::Result<void> running = checkCancelled(cancel); !running)
     {

@@ -102,21 +102,76 @@ public struct Quat(float x, float y, float z, float w)
     public override readonly string ToString() => $"({X}, {Y}, {Z}, {W})";
 }
 
-/// <summary>Refers to an asset of the project, such as a mesh or a scene.</summary>
+/// <summary>A 128-bit identifier, written as "6f1c2a9e-3b7d-4e21-9a55-0c8d7e4f1b23", as the engine names entities and assets.</summary>
 [StructLayout(LayoutKind.Sequential)]
-public readonly struct AssetId(ulong first, ulong second) : IEquatable<AssetId>
+public readonly struct Uuid(ulong first, ulong second) : IEquatable<Uuid>
 {
     // The 16 bytes of the identifier, in the order the engine stores them.
     private readonly ulong _first = first;
     private readonly ulong _second = second;
 
-    public bool IsValid => _first != 0 || _second != 0;
+    public static Uuid Nil => default;
 
-    public bool Equals(AssetId other) => _first == other._first && _second == other._second;
+    public bool IsNil => _first == 0 && _second == 0;
+
+    /// <summary>Reads the canonical 36-character form; null when the text is not one.</summary>
+    public static Uuid? Parse(string text)
+    {
+        if (text.Length != 36 || text[8] != '-' || text[13] != '-' || text[18] != '-' || text[23] != '-')
+        {
+            return null;
+        }
+        Span<byte> bytes = stackalloc byte[16];
+        int written = 0;
+        for (int index = 0; index < text.Length; index += 2)
+        {
+            if (text[index] == '-')
+            {
+                --index;
+                continue;
+            }
+            if (!byte.TryParse(text.AsSpan(index, 2), System.Globalization.NumberStyles.HexNumber, null, out bytes[written++]))
+            {
+                return null;
+            }
+        }
+        return MemoryMarshal.Read<Uuid>(bytes);
+    }
+
+    public override string ToString()
+    {
+        Uuid copy = this;
+        ReadOnlySpan<byte> bytes = MemoryMarshal.AsBytes(new ReadOnlySpan<Uuid>(in copy));
+        string hex = Convert.ToHexStringLower(bytes);
+        return $"{hex[..8]}-{hex[8..12]}-{hex[12..16]}-{hex[16..20]}-{hex[20..]}";
+    }
+
+    public bool Equals(Uuid other) => _first == other._first && _second == other._second;
+
+    public override bool Equals(object? other) => other is Uuid uuid && Equals(uuid);
+
+    public override int GetHashCode() => HashCode.Combine(_first, _second);
+
+    public static bool operator ==(Uuid left, Uuid right) => left.Equals(right);
+
+    public static bool operator !=(Uuid left, Uuid right) => !left.Equals(right);
+}
+
+/// <summary>Refers to an asset of the project, such as a mesh, a prefab or a scene.</summary>
+[StructLayout(LayoutKind.Sequential)]
+public readonly struct AssetId(Uuid uuid) : IEquatable<AssetId>
+{
+    public Uuid Uuid { get; } = uuid;
+
+    public bool IsValid => !Uuid.IsNil;
+
+    public override string ToString() => $"asset({Uuid})";
+
+    public bool Equals(AssetId other) => Uuid == other.Uuid;
 
     public override bool Equals(object? other) => other is AssetId id && Equals(id);
 
-    public override int GetHashCode() => HashCode.Combine(_first, _second);
+    public override int GetHashCode() => Uuid.GetHashCode();
 
     public static bool operator ==(AssetId left, AssetId right) => left.Equals(right);
 

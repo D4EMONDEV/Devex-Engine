@@ -1,0 +1,5 @@
+# The dark door that C# code opens when the player comes near.
+[material format=1]
+base_color = vec4(0.12, 0.16, 0.22, 1)
+metallic = 0.6
+roughness = 0.4

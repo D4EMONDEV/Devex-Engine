@@ -461,6 +461,7 @@ void updateEditor(ToolsState& state, scene::Scene& scene, PlayState playState)
     detail::drawSettingsWindow(state);
     detail::drawProjectSettingsWindow(state);
     detail::drawExportWindow(state);
+    detail::drawDebuggingWindow(state);
     detail::drawNewScriptPopup(state);
     detail::updatePendingScript(state, scene);
     detail::drawEditorPopups(state, scene);
@@ -667,12 +668,24 @@ void ToolsOverlay::prepareRender(scene::Scene& scene, render::RenderWorld& world
 
 EditorRequests ToolsOverlay::takeRequests() noexcept
 {
-    return std::exchange(m_state->requests, EditorRequests{});
+    EditorRequests requests = std::exchange(m_state->requests, EditorRequests{});
+    requests.waitForDebugger = requests.play && m_state->waitForDebugger && m_state->debugger.available;
+    return requests;
 }
 
 void ToolsOverlay::setGameCodeStatus(GameCodeStatus status)
 {
     m_state->gameCode = std::move(status);
+}
+
+void ToolsOverlay::setDebuggerStatus(DebuggerStatus status)
+{
+    if (status.waiting && !m_state->debugger.waiting)
+    {
+        // Waiting shows how to attach.
+        m_state->showDebugging = true;
+    }
+    m_state->debugger = status;
 }
 
 void ToolsOverlay::setEngineBuilds(std::vector<EngineBuildChoice> builds)

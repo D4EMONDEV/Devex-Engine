@@ -1,5 +1,6 @@
 #include <devex/asset/AssetId.hpp>
 #include <devex/core/Assert.hpp>
+#include <devex/scene/EntityRef.hpp>
 #include <devex/scene/FieldValue.hpp>
 
 #include <array>
@@ -126,6 +127,12 @@ TextValue writeFieldValue(reflection::ValueKind kind, const void* address)
     case ValueKind::Enum:
         DEVEX_ASSERT_MSG(false, "enumerations are written through their field");
         return TextValue(std::int64_t{0});
+    case ValueKind::Entity: {
+        // entity() for an empty reference.
+        const EntityRef& reference = *static_cast<const EntityRef*>(address);
+        return reference.isNil() ? serialization::makeCall("entity", {})
+                                 : serialization::makeCall("entity", {TextValue(reference.uuid.toString())});
+    }
     }
     DEVEX_UNREACHABLE();
 }
@@ -245,11 +252,33 @@ core::Result<void> readFieldValue(reflection::ValueKind kind, const TextValue& v
     case ValueKind::Enum:
         DEVEX_ASSERT_MSG(false, "enumerations are read through their field");
         return core::makeError(core::ErrorCode::InvalidArgument, "the enumeration names are unknown");
+    case ValueKind::Entity: {
+        const TextCall* const call = serialization::asCall(value, "entity");
+        if (call == nullptr || call->arguments.size() > 1)
+        {
+            return core::makeError(core::ErrorCode::Parse, "expected entity(\"<uuid>\") or entity()");
+        }
+        if (call->arguments.empty())
+        {
+            *static_cast<EntityRef*>(address) = EntityRef{};
+            return {};
+        }
+        const core::Result<core::Uuid> uuid = readUuid(call->arguments.front());
+        if (!uuid)
+        {
+            return core::makeError(core::ErrorCode::Parse, "expected entity(\"<uuid>\") or entity()");
+        }
+        *static_cast<EntityRef*>(address) = EntityRef{*uuid};
+        return {};
+    }
     }
     DEVEX_UNREACHABLE();
 }
 
-TextValue writeFieldValue(const reflection::FieldInfo& field, const void* address)
+namespace {
+
+// A value of the field, or an element of it when the field is a list.
+[[nodiscard]] TextValue writeElement(const reflection::FieldInfo& field, const void* address)
 {
     if (field.kind != reflection::ValueKind::Enum)
     {
@@ -260,8 +289,60 @@ TextValue writeFieldValue(const reflection::FieldInfo& field, const void* addres
                                           : TextValue(std::int64_t{index});
 }
 
+[[nodiscard]] core::Result<void> readElement(const reflection::FieldInfo& field, const TextValue& value,
+                                             void* address);
+
+// list(a, b, c): the list takes the number of values given, and keeps its previous value when one
+// of them is wrong.
+[[nodiscard]] core::Result<void> readList(const reflection::FieldInfo& field, const TextValue& value, void* list)
+{
+    const TextCall* const call = serialization::asCall(value, "list");
+    if (call == nullptr)
+    {
+        return core::makeError(core::ErrorCode::Parse, "expected list(...)");
+    }
+    const TextValue previous = writeFieldValue(field, list);
+    field.list->resize(list, call->arguments.size());
+    for (std::size_t index = 0; index < call->arguments.size(); ++index)
+    {
+        if (core::Result<void> read = readElement(field, call->arguments[index], field.list->element(list, index));
+            !read)
+        {
+            static_cast<void>(readList(field, previous, list));
+            return core::makeError(read.error().code, "element {}: {}", index, read.error().message);
+        }
+    }
+    return {};
+}
+
+} // namespace
+
+TextValue writeFieldValue(const reflection::FieldInfo& field, const void* address)
+{
+    if (field.list == nullptr)
+    {
+        return writeElement(field, address);
+    }
+    void* const list = const_cast<void*>(address);
+    const std::size_t count = field.list->size(list);
+    std::vector<TextValue> elements;
+    elements.reserve(count);
+    for (std::size_t index = 0; index < count; ++index)
+    {
+        elements.push_back(writeElement(field, field.list->element(list, index)));
+    }
+    return serialization::makeCall("list", std::move(elements));
+}
+
 core::Result<void> readFieldValue(const reflection::FieldInfo& field, const TextValue& value,
                                   void* address)
+{
+    return field.list != nullptr ? readList(field, value, address) : readElement(field, value, address);
+}
+
+namespace {
+
+core::Result<void> readElement(const reflection::FieldInfo& field, const TextValue& value, void* address)
 {
     if (field.kind != reflection::ValueKind::Enum)
     {
@@ -286,5 +367,7 @@ core::Result<void> readFieldValue(const reflection::FieldInfo& field, const Text
     }
     return core::makeError(core::ErrorCode::Parse, "expected one of {}", expected);
 }
+
+} // namespace
 
 } // namespace devex::scene

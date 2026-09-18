@@ -5,9 +5,12 @@
 #include <devex/core/Log.hpp>
 #include <devex/core/Path.hpp>
 #include <devex/platform/SharedLibrary.hpp>
+#include <devex/runtime/ComponentViews.hpp>
 #include <devex/scene/ComponentRegistry.hpp>
 #include <devex/scene/Components.hpp>
 #include <devex/scene/DynamicComponent.hpp>
+#include <devex/scene/EntityRef.hpp>
+#include <devex/scene/Prefab.hpp>
 #include <devex/scene/SceneSerializer.hpp>
 #include <devex/serialization/Text.hpp>
 
@@ -15,6 +18,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <optional>
+#include <source_location>
 #include <system_error>
 #include <utility>
 
@@ -22,6 +26,12 @@ namespace devex::runtime::detail {
 namespace {
 
 using scene::Entity;
+
+// A UUID as C# passes it: its 16 bytes.
+struct UuidBytes
+{
+    std::uint8_t bytes[16];
+};
 
 // The functions the C# runtime calls, in the order of Devex.Managed's NativeApi.
 struct NativeApi
@@ -32,8 +42,18 @@ struct NativeApi
     void* (*findComponent)(void* scene, std::size_t typeIndex, Entity entity);
     void* (*addComponent)(void* scene, std::size_t typeIndex, Entity entity);
     void (*removeComponent)(void* scene, std::size_t typeIndex, Entity entity);
-    const char* (*readStringField)(void* component, std::size_t offset);
-    void (*writeStringField)(void* component, std::size_t offset, const char* value);
+    std::int64_t (*componentIndex)(const char* name);
+    std::uint64_t (*registryGeneration)();
+    std::uint64_t (*componentLayoutHash)(std::size_t typeIndex);
+    const char* (*readString)(void* address);
+    void (*writeString)(void* address, const char* value);
+    std::size_t (*listSize)(std::size_t typeIndex, int field, void* component);
+    void* (*listElement)(std::size_t typeIndex, int field, void* component, std::size_t index);
+    void (*listResize)(std::size_t typeIndex, int field, void* component, std::size_t size);
+    void (*listInsert)(std::size_t typeIndex, int field, void* component, std::size_t index);
+    void (*listErase)(std::size_t typeIndex, int field, void* component, std::size_t index);
+    Entity (*resolveEntity)(void* scene, const UuidBytes* uuid);
+    void (*entityUuid)(void* scene, Entity entity, UuidBytes* uuid);
 
     Entity (*createEntity)(void* scene, const char* name);
     void (*destroyEntity)(void* scene, Entity entity);
@@ -56,7 +76,24 @@ struct NativeApi
     void (*mousePosition)(float* values);
     int (*isMouseCaptured)();
     void (*setMouseCaptured)(int captured);
+
     void (*requestQuit)();
+    void (*loadScene)(const UuidBytes* scene);
+    Entity (*instantiatePrefab)(void* scene, const UuidBytes* prefab, Entity parent);
+    int (*findAsset)(const char* path, UuidBytes* asset);
+    void (*windowSize)(float* values);
+
+    int (*raycast)(const math::Vec3* origin, const math::Vec3* direction, float maxDistance, std::uint32_t layers,
+                   Entity ignore, physics::RayHit* hit);
+    int (*sphereCast)(const math::Vec3* origin, float radius, const math::Vec3* direction, float maxDistance,
+                      std::uint32_t layers, Entity ignore, physics::RayHit* hit);
+    int (*overlapSphere)(const math::Vec3* center, float radius, std::uint32_t layers, Entity ignore,
+                         const Entity** entities);
+    void (*addForce)(Entity entity, const math::Vec3* force);
+    void (*addTorque)(Entity entity, const math::Vec3* torque);
+    void (*addImpulse)(Entity entity, const math::Vec3* impulse);
+    void (*addImpulseAt)(Entity entity, const math::Vec3* impulse, const math::Vec3* point);
+    int (*contacts)(const physics::Contact** contacts);
 };
 
 // The functions the engine calls, in the order of Devex.Managed's ManagedApi.
@@ -67,19 +104,24 @@ struct ManagedApi
     void (*setTypeLayout)(const char* typeName, std::size_t typeIndex, const std::size_t* offsets, int count);
     void (*runPhase)(void* scene, int phase, float delta);
     void (*applyDefaults)(const char* typeName, void* component);
+    int (*isDebuggerAttached)();
 };
+
+// Devex.Managed's Bootstrap.Version: both sides change it with the function tables.
+constexpr int bootstrapVersion = 2;
 
 struct BootstrapArguments
 {
+    int version;
     const NativeApi* native;
     ManagedApi* managed;
 };
 
-// The engine services the C# API reaches, set while a managed game exists.
-[[nodiscard]] ManagedGame::Services& services() noexcept
+// The phase being run, which the C# API works on; null outside the phases.
+[[nodiscard]] ManagedGame::Frame*& currentFrame() noexcept
 {
-    static ManagedGame::Services current;
-    return current;
+    static ManagedGame::Frame* frame = nullptr;
+    return frame;
 }
 
 [[nodiscard]] scene::Scene* toScene(void* scene) noexcept
@@ -87,23 +129,62 @@ struct BootstrapArguments
     return static_cast<scene::Scene*>(scene);
 }
 
-// Layouts of the Transform and of the entity handle must match the C# structures.
+// C#'s Entity.None is all zeros, which C++ reads as a stale handle rather than as no entity.
+[[nodiscard]] Entity optionalEntity(void* scene, Entity entity) noexcept
+{
+    return scene != nullptr && static_cast<scene::Scene*>(scene)->isAlive(entity) ? entity : Entity{};
+}
+
+[[nodiscard]] Entity optionalEntity(Entity entity) noexcept
+{
+    return entity.generation != 0 ? entity : Entity{};
+}
+
+[[nodiscard]] core::Uuid toUuid(const UuidBytes* bytes) noexcept
+{
+    core::Uuid uuid;
+    if (bytes != nullptr)
+    {
+        std::memcpy(&uuid, bytes, sizeof(uuid));
+    }
+    return uuid;
+}
+
+void writeUuid(core::Uuid uuid, UuidBytes* bytes) noexcept
+{
+    if (bytes != nullptr)
+    {
+        std::memcpy(bytes, &uuid, sizeof(uuid));
+    }
+}
+
+// Layouts shared with the C# structures.
 static_assert(sizeof(scene::Transform) == 40);
 static_assert(offsetof(scene::Transform, position) == 0);
 static_assert(offsetof(scene::Transform, rotation) == 12);
 static_assert(offsetof(scene::Transform, scale) == 28);
 static_assert(sizeof(Entity) == 8);
 static_assert(sizeof(math::Quat) == 16);
+static_assert(sizeof(core::Uuid) == 16 && std::is_trivially_copyable_v<core::Uuid>);
+static_assert(sizeof(scene::EntityRef) == 16);
+static_assert(sizeof(asset::AssetId) == 16);
+static_assert(sizeof(physics::RayHit) == 36);
+static_assert(offsetof(physics::RayHit, point) == 8 && offsetof(physics::RayHit, normal) == 20 &&
+              offsetof(physics::RayHit, distance) == 32);
+static_assert(sizeof(physics::Contact) == 24);
+static_assert(offsetof(physics::Contact, first) == 4 && offsetof(physics::Contact, second) == 12 &&
+              offsetof(physics::Contact, trigger) == 20);
 
 void apiLog(int level, const char* message)
 {
     const auto logLevel = static_cast<core::LogLevel>(std::clamp(level, 0, 5));
-    core::logMessage(logLevel, message != nullptr ? message : "");
+    // The C# side names its own place, in the stack of its exceptions.
+    core::logMessage(logLevel, message != nullptr ? message : "", std::source_location{});
 }
 
 int apiComponentEntities(void* scene, std::size_t typeIndex, const Entity** entities)
 {
-    const scene::ComponentPoolBase* const pool = toScene(scene)->componentPool(typeIndex);
+    const scene::ComponentPoolBase* const pool = scene != nullptr ? toScene(scene)->componentPool(typeIndex) : nullptr;
     if (pool == nullptr || pool->entities().empty())
     {
         *entities = nullptr;
@@ -115,61 +196,152 @@ int apiComponentEntities(void* scene, std::size_t typeIndex, const Entity** enti
 
 void* apiFindComponent(void* scene, std::size_t typeIndex, Entity entity)
 {
-    scene::DynamicComponentPool* const pool = toScene(scene)->dynamicPool(typeIndex);
-    return pool != nullptr ? pool->find(entity) : nullptr;
+    if (scene == nullptr || !toScene(scene)->isAlive(entity))
+    {
+        return nullptr;
+    }
+    // The pools of C# components first, which are reached most often.
+    if (scene::DynamicComponentPool* const pool = toScene(scene)->dynamicPool(typeIndex))
+    {
+        return pool->find(entity);
+    }
+    const scene::ComponentType* const type = scene::componentRegistry().findByIndex(typeIndex);
+    return type != nullptr ? const_cast<void*>(type->find(*toScene(scene), entity)) : nullptr;
 }
 
 void* apiAddComponent(void* scene, std::size_t typeIndex, Entity entity)
 {
     const scene::ComponentType* const type = scene::componentRegistry().findByIndex(typeIndex);
-    return type != nullptr && toScene(scene)->isAlive(entity) ? type->emplace(*toScene(scene), entity) : nullptr;
+    return type != nullptr && scene != nullptr && toScene(scene)->isAlive(entity) ? type->emplace(*toScene(scene), entity)
+                                                                                    : nullptr;
 }
 
 void apiRemoveComponent(void* scene, std::size_t typeIndex, Entity entity)
 {
-    if (const scene::ComponentType* const type = scene::componentRegistry().findByIndex(typeIndex))
+    const scene::ComponentType* const type = scene::componentRegistry().findByIndex(typeIndex);
+    if (type != nullptr && scene != nullptr && toScene(scene)->isAlive(entity))
     {
         type->remove(*toScene(scene), entity);
     }
 }
 
-const char* apiReadStringField(void* component, std::size_t offset)
+std::int64_t apiComponentIndex(const char* name)
 {
-    const auto* const field =
-        static_cast<const std::string*>(static_cast<const void*>(static_cast<const std::byte*>(component) + offset));
-    return field->c_str();
+    const scene::ComponentType* const type = scene::componentRegistry().find(name != nullptr ? name : "");
+    return type != nullptr ? static_cast<std::int64_t>(type->index) : -1;
 }
 
-void apiWriteStringField(void* component, std::size_t offset, const char* value)
+std::uint64_t apiRegistryGeneration()
 {
-    auto* const field = static_cast<std::string*>(static_cast<void*>(static_cast<std::byte*>(component) + offset));
-    *field = value != nullptr ? value : "";
+    return scene::componentRegistry().generation();
+}
+
+std::uint64_t apiComponentLayoutHash(std::size_t typeIndex)
+{
+    const scene::ComponentType* const type = scene::componentRegistry().findByIndex(typeIndex);
+    return type != nullptr ? componentLayoutHash(*type->type) : 0;
+}
+
+const char* apiReadString(void* address)
+{
+    return static_cast<const std::string*>(address)->c_str();
+}
+
+void apiWriteString(void* address, const char* value)
+{
+    *static_cast<std::string*>(address) = value != nullptr ? value : "";
+}
+
+// The list field of a component type, or null.
+[[nodiscard]] const reflection::FieldInfo* listField(std::size_t typeIndex, int field)
+{
+    const scene::ComponentType* const type = scene::componentRegistry().findByIndex(typeIndex);
+    if (type == nullptr || field < 0 || static_cast<std::size_t>(field) >= type->type->fields.size())
+    {
+        return nullptr;
+    }
+    const reflection::FieldInfo& info = type->type->fields[static_cast<std::size_t>(field)];
+    return info.list != nullptr ? &info : nullptr;
+}
+
+std::size_t apiListSize(std::size_t typeIndex, int field, void* component)
+{
+    const reflection::FieldInfo* const info = listField(typeIndex, field);
+    return info != nullptr ? info->list->size(info->address(component)) : 0;
+}
+
+void* apiListElement(std::size_t typeIndex, int field, void* component, std::size_t index)
+{
+    const reflection::FieldInfo* const info = listField(typeIndex, field);
+    return info != nullptr ? info->list->element(info->address(component), index) : nullptr;
+}
+
+void apiListResize(std::size_t typeIndex, int field, void* component, std::size_t size)
+{
+    if (const reflection::FieldInfo* const info = listField(typeIndex, field))
+    {
+        info->list->resize(info->address(component), size);
+    }
+}
+
+void apiListInsert(std::size_t typeIndex, int field, void* component, std::size_t index)
+{
+    const reflection::FieldInfo* const info = listField(typeIndex, field);
+    if (info != nullptr && index <= info->list->size(info->address(component)))
+    {
+        info->list->insert(info->address(component), index);
+    }
+}
+
+void apiListErase(std::size_t typeIndex, int field, void* component, std::size_t index)
+{
+    const reflection::FieldInfo* const info = listField(typeIndex, field);
+    if (info != nullptr && index < info->list->size(info->address(component)))
+    {
+        info->list->erase(info->address(component), index);
+    }
+}
+
+Entity apiResolveEntity(void* scene, const UuidBytes* uuid)
+{
+    return scene != nullptr ? toScene(scene)->resolve(scene::EntityRef{toUuid(uuid)}) : Entity{};
+}
+
+void apiEntityUuid(void* scene, Entity entity, UuidBytes* uuid)
+{
+    writeUuid(scene != nullptr ? toScene(scene)->reference(entity).uuid : core::Uuid{}, uuid);
 }
 
 Entity apiCreateEntity(void* scene, const char* name)
 {
-    return toScene(scene)->createEntity(name != nullptr ? name : "");
+    return scene != nullptr ? toScene(scene)->createEntity(name != nullptr ? name : "") : Entity{};
 }
 
 void apiDestroyEntity(void* scene, Entity entity)
 {
-    toScene(scene)->destroyEntity(entity);
+    if (scene != nullptr && toScene(scene)->isAlive(entity))
+    {
+        toScene(scene)->destroyEntity(entity);
+    }
 }
 
 int apiIsAlive(void* scene, Entity entity)
 {
-    return toScene(scene)->isAlive(entity) ? 1 : 0;
+    return scene != nullptr && toScene(scene)->isAlive(entity) ? 1 : 0;
 }
 
 const char* apiEntityName(void* scene, Entity entity)
 {
-    const scene::Scene& current = *toScene(scene);
-    return current.isAlive(entity) ? current.name(entity).c_str() : "";
+    if (scene == nullptr || !toScene(scene)->isAlive(entity))
+    {
+        return "";
+    }
+    return toScene(scene)->name(entity).c_str();
 }
 
 void apiSetEntityName(void* scene, Entity entity, const char* name)
 {
-    if (toScene(scene)->isAlive(entity))
+    if (scene != nullptr && toScene(scene)->isAlive(entity))
     {
         toScene(scene)->setName(entity, name != nullptr ? name : "");
     }
@@ -177,6 +349,10 @@ void apiSetEntityName(void* scene, Entity entity, const char* name)
 
 Entity apiFindEntity(void* scene, const char* name)
 {
+    if (scene == nullptr)
+    {
+        return {};
+    }
     const scene::Scene& current = *toScene(scene);
     const std::string_view wanted = name != nullptr ? name : "";
     for (Entity entity = current.firstRoot(); entity.isValid(); entity = current.nextSibling(entity))
@@ -202,22 +378,26 @@ Entity apiFindEntity(void* scene, const char* name)
 
 Entity apiParent(void* scene, Entity entity)
 {
-    return toScene(scene)->isAlive(entity) ? toScene(scene)->parent(entity) : Entity{};
+    return scene != nullptr && toScene(scene)->isAlive(entity) ? toScene(scene)->parent(entity) : Entity{};
 }
 
 Entity apiFirstChild(void* scene, Entity entity)
 {
-    return toScene(scene)->isAlive(entity) ? toScene(scene)->firstChild(entity) : Entity{};
+    return scene != nullptr && toScene(scene)->isAlive(entity) ? toScene(scene)->firstChild(entity) : Entity{};
 }
 
 Entity apiNextSibling(void* scene, Entity entity)
 {
-    return toScene(scene)->isAlive(entity) ? toScene(scene)->nextSibling(entity) : Entity{};
+    return scene != nullptr && toScene(scene)->isAlive(entity) ? toScene(scene)->nextSibling(entity) : Entity{};
 }
 
 void apiSetParent(void* scene, Entity child, Entity parent)
 {
-    if (core::Result<void> moved = toScene(scene)->setParent(child, parent); !moved)
+    if (scene == nullptr || !toScene(scene)->isAlive(child))
+    {
+        return;
+    }
+    if (core::Result<void> moved = toScene(scene)->setParent(child, optionalEntity(scene, parent)); !moved)
     {
         DEVEX_LOG_WARNING("C#: {}", moved.error());
     }
@@ -225,76 +405,217 @@ void apiSetParent(void* scene, Entity child, Entity parent)
 
 void* apiTransformOf(void* scene, Entity entity)
 {
-    scene::Scene& current = *toScene(scene);
-    return current.isAlive(entity) ? current.tryGet<scene::Transform>(entity) : nullptr;
+    if (scene == nullptr || !toScene(scene)->isAlive(entity))
+    {
+        return nullptr;
+    }
+    return toScene(scene)->tryGet<scene::Transform>(entity);
 }
 
 const float* apiWorldPositionOf(void* scene, Entity entity)
 {
-    scene::Scene& current = *toScene(scene);
-    const scene::WorldTransform* const world =
-        current.isAlive(entity) ? current.tryGet<scene::WorldTransform>(entity) : nullptr;
+    if (scene == nullptr || !toScene(scene)->isAlive(entity))
+    {
+        return nullptr;
+    }
+    const scene::WorldTransform* const world = toScene(scene)->tryGet<scene::WorldTransform>(entity);
     return world != nullptr ? &world->matrix[3][0] : nullptr;
+}
+
+[[nodiscard]] const platform::Input* input() noexcept
+{
+    return currentFrame() != nullptr ? currentFrame()->input : nullptr;
 }
 
 int apiIsKeyDown(int key)
 {
-    return services().input != nullptr && services().input->isKeyDown(static_cast<platform::Key>(key)) ? 1 : 0;
+    return input() != nullptr && input()->isKeyDown(static_cast<platform::Key>(key)) ? 1 : 0;
 }
 
 int apiWasKeyPressed(int key)
 {
-    return services().input != nullptr && services().input->wasKeyPressed(static_cast<platform::Key>(key)) ? 1 : 0;
+    return input() != nullptr && input()->wasKeyPressed(static_cast<platform::Key>(key)) ? 1 : 0;
 }
 
 int apiIsMouseButtonDown(int button)
 {
-    return services().input != nullptr && services().input->isMouseButtonDown(static_cast<platform::MouseButton>(button))
-               ? 1
-               : 0;
+    return input() != nullptr && input()->isMouseButtonDown(static_cast<platform::MouseButton>(button)) ? 1 : 0;
 }
 
 int apiWasMouseButtonPressed(int button)
 {
-    return services().input != nullptr &&
-                   services().input->wasMouseButtonPressed(static_cast<platform::MouseButton>(button))
-               ? 1
-               : 0;
+    return input() != nullptr && input()->wasMouseButtonPressed(static_cast<platform::MouseButton>(button)) ? 1 : 0;
 }
 
 void apiMouseDelta(float* values)
 {
-    const math::Vec2 delta = services().input != nullptr ? services().input->mouseDelta() : math::Vec2{0.0f};
+    const math::Vec2 delta = input() != nullptr ? input()->mouseDelta() : math::Vec2{0.0f};
     values[0] = delta.x;
     values[1] = delta.y;
 }
 
 void apiMousePosition(float* values)
 {
-    const math::Vec2 position = services().input != nullptr ? services().input->mousePosition() : math::Vec2{0.0f};
+    const math::Vec2 position = input() != nullptr ? input()->mousePosition() : math::Vec2{0.0f};
     values[0] = position.x;
     values[1] = position.y;
 }
 
+[[nodiscard]] platform::Window* window() noexcept
+{
+    return currentFrame() != nullptr ? currentFrame()->window : nullptr;
+}
+
 int apiIsMouseCaptured()
 {
-    return services().window != nullptr && services().window->isMouseCaptured() ? 1 : 0;
+    return window() != nullptr && window()->isMouseCaptured() ? 1 : 0;
 }
 
 void apiSetMouseCaptured(int captured)
 {
-    if (services().window != nullptr)
+    if (window() != nullptr)
     {
-        services().window->setMouseCaptured(captured != 0);
+        window()->setMouseCaptured(captured != 0);
     }
 }
 
 void apiRequestQuit()
 {
-    if (services().quitRequested != nullptr)
+    if (currentFrame() != nullptr)
     {
-        *services().quitRequested = true;
+        currentFrame()->quitRequested = true;
     }
+}
+
+void apiLoadScene(const UuidBytes* scene)
+{
+    if (currentFrame() != nullptr)
+    {
+        currentFrame()->sceneToLoad = asset::AssetId{toUuid(scene)};
+    }
+}
+
+Entity apiInstantiatePrefab(void* scene, const UuidBytes* prefab, Entity parent)
+{
+    if (scene == nullptr)
+    {
+        return {};
+    }
+    const asset::AssetId id{toUuid(prefab)};
+    core::Result<Entity> instance = scene::instantiatePrefab(*toScene(scene), id, optionalEntity(scene, parent));
+    if (!instance)
+    {
+        DEVEX_LOG_ERROR("C#: cannot instantiate prefab {}: {}", id.uuid, instance.error());
+        return {};
+    }
+    return *instance;
+}
+
+int apiFindAsset(const char* path, UuidBytes* asset)
+{
+    const asset::AssetSource* const assets = currentFrame() != nullptr ? currentFrame()->assets : nullptr;
+    const std::optional<asset::AssetId> found =
+        assets != nullptr && path != nullptr ? assets->findByPath(path) : std::nullopt;
+    writeUuid(found ? found->uuid : core::Uuid{}, asset);
+    return found ? 1 : 0;
+}
+
+void apiWindowSize(float* values)
+{
+    const math::Extent2D size = window() != nullptr ? window()->pixelSize() : math::Extent2D{};
+    values[0] = static_cast<float>(size.width);
+    values[1] = static_cast<float>(size.height);
+}
+
+[[nodiscard]] physics::PhysicsWorld* physicsWorld() noexcept
+{
+    return currentFrame() != nullptr ? currentFrame()->physics : nullptr;
+}
+
+[[nodiscard]] std::uint16_t layerMask(std::uint32_t layers) noexcept
+{
+    return static_cast<std::uint16_t>(layers & physics::allLayers);
+}
+
+int apiRaycast(const math::Vec3* origin, const math::Vec3* direction, float maxDistance, std::uint32_t layers,
+               Entity ignore, physics::RayHit* hit)
+{
+    const std::optional<physics::RayHit> found =
+        physicsWorld() != nullptr
+            ? physicsWorld()->raycast(*origin, *direction, maxDistance, layerMask(layers), optionalEntity(ignore))
+            : std::nullopt;
+    if (found)
+    {
+        *hit = *found;
+    }
+    return found ? 1 : 0;
+}
+
+int apiSphereCast(const math::Vec3* origin, float radius, const math::Vec3* direction, float maxDistance,
+                  std::uint32_t layers, Entity ignore, physics::RayHit* hit)
+{
+    const std::optional<physics::RayHit> found =
+        physicsWorld() != nullptr
+            ? physicsWorld()->sphereCast(*origin, radius, *direction, maxDistance, layerMask(layers),
+                                         optionalEntity(ignore))
+            : std::nullopt;
+    if (found)
+    {
+        *hit = *found;
+    }
+    return found ? 1 : 0;
+}
+
+int apiOverlapSphere(const math::Vec3* center, float radius, std::uint32_t layers, Entity ignore,
+                     const Entity** entities)
+{
+    // Kept until the next query, while C# copies it.
+    static std::vector<Entity> found;
+    found = physicsWorld() != nullptr
+                ? physicsWorld()->overlapSphere(*center, radius, layerMask(layers), optionalEntity(ignore))
+                : std::vector<Entity>{};
+    *entities = found.data();
+    return static_cast<int>(found.size());
+}
+
+void apiAddForce(Entity entity, const math::Vec3* force)
+{
+    if (physicsWorld() != nullptr)
+    {
+        physicsWorld()->addForce(entity, *force);
+    }
+}
+
+void apiAddTorque(Entity entity, const math::Vec3* torque)
+{
+    if (physicsWorld() != nullptr)
+    {
+        physicsWorld()->addTorque(entity, *torque);
+    }
+}
+
+void apiAddImpulse(Entity entity, const math::Vec3* impulse)
+{
+    if (physicsWorld() != nullptr)
+    {
+        physicsWorld()->addImpulse(entity, *impulse);
+    }
+}
+
+void apiAddImpulseAt(Entity entity, const math::Vec3* impulse, const math::Vec3* point)
+{
+    if (physicsWorld() != nullptr)
+    {
+        physicsWorld()->addImpulseAt(entity, *impulse, *point);
+    }
+}
+
+int apiContacts(const physics::Contact** contacts)
+{
+    const std::span<const physics::Contact> all =
+        physicsWorld() != nullptr ? physicsWorld()->contacts() : std::span<const physics::Contact>{};
+    *contacts = all.data();
+    return static_cast<int>(all.size());
 }
 
 [[nodiscard]] NativeApi makeNativeApi() noexcept
@@ -305,8 +626,18 @@ void apiRequestQuit()
         .findComponent = &apiFindComponent,
         .addComponent = &apiAddComponent,
         .removeComponent = &apiRemoveComponent,
-        .readStringField = &apiReadStringField,
-        .writeStringField = &apiWriteStringField,
+        .componentIndex = &apiComponentIndex,
+        .registryGeneration = &apiRegistryGeneration,
+        .componentLayoutHash = &apiComponentLayoutHash,
+        .readString = &apiReadString,
+        .writeString = &apiWriteString,
+        .listSize = &apiListSize,
+        .listElement = &apiListElement,
+        .listResize = &apiListResize,
+        .listInsert = &apiListInsert,
+        .listErase = &apiListErase,
+        .resolveEntity = &apiResolveEntity,
+        .entityUuid = &apiEntityUuid,
         .createEntity = &apiCreateEntity,
         .destroyEntity = &apiDestroyEntity,
         .isAlive = &apiIsAlive,
@@ -328,6 +659,18 @@ void apiRequestQuit()
         .isMouseCaptured = &apiIsMouseCaptured,
         .setMouseCaptured = &apiSetMouseCaptured,
         .requestQuit = &apiRequestQuit,
+        .loadScene = &apiLoadScene,
+        .instantiatePrefab = &apiInstantiatePrefab,
+        .findAsset = &apiFindAsset,
+        .windowSize = &apiWindowSize,
+        .raycast = &apiRaycast,
+        .sphereCast = &apiSphereCast,
+        .overlapSphere = &apiOverlapSphere,
+        .addForce = &apiAddForce,
+        .addTorque = &apiAddTorque,
+        .addImpulse = &apiAddImpulse,
+        .addImpulseAt = &apiAddImpulseAt,
+        .contacts = &apiContacts,
     };
 }
 
@@ -347,6 +690,7 @@ void apiRequestQuit()
     if (kind == "uuid") return ValueKind::Uuid;
     if (kind == "asset") return ValueKind::AssetId;
     if (kind == "enum") return ValueKind::Enum;
+    if (kind == "entity") return ValueKind::Entity;
     return std::nullopt;
 }
 
@@ -380,27 +724,16 @@ void apiRequestQuit()
 
 } // namespace
 
-// Hosts .NET and keeps the two function tables.
+// Keeps the two function tables of a runtime.
 class ManagedGame::Impl
 {
 public:
-    std::optional<platform::SharedLibrary> hostfxr;
-    void* hostContext = nullptr;
-    int (*closeHost)(void*) = nullptr;
     NativeApi native{};
     ManagedApi managed{};
     std::vector<std::string> types;
     bool assemblyLoaded = false;
-    // A component type outliving this host must not call into .NET any more.
+    // A component type outliving this runtime must not call into .NET any more.
     std::shared_ptr<const bool> alive = std::make_shared<const bool>(true);
-
-    ~Impl()
-    {
-        if (closeHost != nullptr && hostContext != nullptr)
-        {
-            closeHost(hostContext);
-        }
-    }
 };
 
 namespace {
@@ -422,7 +755,6 @@ using HostChar = char;
 using InitializeForConfig = int (*)(const HostChar* runtimeConfig, const void* parameters, void** context);
 using InitializeForCommandLine = int (*)(int argc, const HostChar** argv, const void* parameters, void** context);
 using GetRuntimeDelegate = int (*)(void* context, int type, void** result);
-using CloseHost = int (*)(void* context);
 using LoadAssemblyAndGetFunctionPointer = int (*)(const HostChar* assemblyPath, const HostChar* typeName,
                                                   const HostChar* methodName, const HostChar* delegateType,
                                                   void* reserved, void** result);
@@ -527,22 +859,17 @@ constexpr int loadAssemblyDelegate = 5;
 #endif
 }
 
-} // namespace
-
-ManagedGame::ManagedGame(std::unique_ptr<Impl> impl) noexcept
-    : m_impl(std::move(impl))
+// .NET, which starts once per process and stays: the runtime cannot be unloaded. Returns the entry
+// point of Devex.Managed, which each ManagedGame calls with its function tables.
+[[nodiscard]] core::Result<void*> startDotnet(const std::filesystem::path& managedDirectory)
 {
-}
+    static std::optional<platform::SharedLibrary> hostfxr;
+    static void* entryPoint = nullptr;
+    if (entryPoint != nullptr)
+    {
+        return entryPoint;
+    }
 
-ManagedGame::~ManagedGame()
-{
-    unloadAssembly();
-    services() = {};
-}
-
-core::Result<std::unique_ptr<ManagedGame>> ManagedGame::create(const std::filesystem::path& managedDirectory,
-                                                               Services servicesToUse)
-{
     const std::filesystem::path runtimeAssembly = managedDirectory / "Devex.Managed.dll";
     std::error_code error;
     if (!std::filesystem::exists(runtimeAssembly, error))
@@ -568,26 +895,24 @@ core::Result<std::unique_ptr<ManagedGame>> ManagedGame::create(const std::filesy
         return core::makeError(core::ErrorCode::NotFound, "no .NET configuration in '{}'", core::toUtf8(managedDirectory));
     }
     const core::Result<std::filesystem::path> hostfxrPath = findHostfxr(managedDirectory);
-    const bool shippedRuntime = hostfxrPath && hostfxrPath->parent_path() == managedDirectory;
     if (!hostfxrPath)
     {
         return std::unexpected(hostfxrPath.error());
     }
+    const bool shippedRuntime = hostfxrPath->parent_path() == managedDirectory;
 
-    auto impl = std::make_unique<Impl>();
     core::Result<platform::SharedLibrary> library = platform::SharedLibrary::load(*hostfxrPath);
     if (!library)
     {
         return std::unexpected(library.error());
     }
-    impl->hostfxr.emplace(std::move(*library));
+    hostfxr.emplace(std::move(*library));
     const auto initialize =
-        reinterpret_cast<InitializeForConfig>(impl->hostfxr->function("hostfxr_initialize_for_runtime_config"));
+        reinterpret_cast<InitializeForConfig>(hostfxr->function("hostfxr_initialize_for_runtime_config"));
     const auto initializeApp =
-        reinterpret_cast<InitializeForCommandLine>(impl->hostfxr->function("hostfxr_initialize_for_dotnet_command_line"));
-    const auto getDelegate = reinterpret_cast<GetRuntimeDelegate>(impl->hostfxr->function("hostfxr_get_runtime_delegate"));
-    impl->closeHost = reinterpret_cast<CloseHost>(impl->hostfxr->function("hostfxr_close"));
-    if (initialize == nullptr || getDelegate == nullptr || impl->closeHost == nullptr)
+        reinterpret_cast<InitializeForCommandLine>(hostfxr->function("hostfxr_initialize_for_dotnet_command_line"));
+    const auto getDelegate = reinterpret_cast<GetRuntimeDelegate>(hostfxr->function("hostfxr_get_runtime_delegate"));
+    if (initialize == nullptr || getDelegate == nullptr)
     {
         return core::makeError(core::ErrorCode::Unsupported, "'{}' is not a usable .NET host",
                                core::toUtf8(*hostfxrPath));
@@ -595,6 +920,7 @@ core::Result<std::unique_ptr<ManagedGame>> ManagedGame::create(const std::filesy
 
     // A .NET shipped with a game holds the whole runtime, which starts from its application; the
     // .NET installed on the machine starts from the configuration of the engine's own assembly.
+    void* context = nullptr;
     int status = 0;
     if (shippedRuntime)
     {
@@ -603,20 +929,21 @@ core::Result<std::unique_ptr<ManagedGame>> ManagedGame::create(const std::filesy
         application.replace_extension(".dll");
         const auto path = hostString(application);
         const HostChar* argv[]{path.c_str()};
-        status = initializeApp != nullptr ? initializeApp(1, argv, nullptr, &impl->hostContext) : -1;
+        status = initializeApp != nullptr ? initializeApp(1, argv, nullptr, &context) : -1;
     }
     else
     {
         const auto config = hostString(runtimeConfig);
-        status = initialize(config.c_str(), nullptr, &impl->hostContext);
+        status = initialize(config.c_str(), nullptr, &context);
     }
-    if (status != 0 || impl->hostContext == nullptr)
+    if (status != 0 || context == nullptr)
     {
         return core::makeError(core::ErrorCode::Platform, "cannot start .NET for '{}' (status 0x{:x})",
                                core::toUtf8(runtimeConfig), static_cast<unsigned>(status));
     }
+    // The context stays open with the runtime.
     void* loader = nullptr;
-    if (const int delegateStatus = getDelegate(impl->hostContext, loadAssemblyDelegate, &loader);
+    if (const int delegateStatus = getDelegate(context, loadAssemblyDelegate, &loader);
         delegateStatus != 0 || loader == nullptr)
     {
         return core::makeError(core::ErrorCode::Platform, "cannot reach the .NET loader (status 0x{:x})",
@@ -625,33 +952,59 @@ core::Result<std::unique_ptr<ManagedGame>> ManagedGame::create(const std::filesy
 
     const auto assembly = hostString(runtimeAssembly);
     const auto* const unmanagedOnly = reinterpret_cast<const HostChar*>(-1);
-    void* entryPoint = nullptr;
+    void* found = nullptr;
 #ifdef _WIN32
     const int loaded = reinterpret_cast<LoadAssemblyAndGetFunctionPointer>(loader)(
-        assembly.c_str(), L"Devex.Bootstrap, Devex.Managed", L"Initialize", unmanagedOnly, nullptr, &entryPoint);
+        assembly.c_str(), L"Devex.Bootstrap, Devex.Managed", L"Initialize", unmanagedOnly, nullptr, &found);
 #else
     const int loaded = reinterpret_cast<LoadAssemblyAndGetFunctionPointer>(loader)(
-        assembly.c_str(), "Devex.Bootstrap, Devex.Managed", "Initialize", unmanagedOnly, nullptr, &entryPoint);
+        assembly.c_str(), "Devex.Bootstrap, Devex.Managed", "Initialize", unmanagedOnly, nullptr, &found);
 #endif
-    if (loaded != 0 || entryPoint == nullptr)
+    if (loaded != 0 || found == nullptr)
     {
         return core::makeError(core::ErrorCode::Platform, "cannot start the C# runtime (status 0x{:x})",
                                static_cast<unsigned>(loaded));
     }
+    DEVEX_LOG_DEBUG("C# runtime started from {}", core::toUtf8(runtimeAssembly));
+    entryPoint = found;
+    return entryPoint;
+}
 
-    services() = servicesToUse;
+} // namespace
+
+ManagedGame::ManagedGame(std::unique_ptr<Impl> impl) noexcept
+    : m_impl(std::move(impl))
+{
+}
+
+ManagedGame::~ManagedGame()
+{
+    unloadAssembly();
+}
+
+core::Result<std::unique_ptr<ManagedGame>> ManagedGame::create(const std::filesystem::path& managedDirectory)
+{
+    const core::Result<void*> entryPoint = startDotnet(managedDirectory);
+    if (!entryPoint)
+    {
+        return std::unexpected(entryPoint.error());
+    }
+    auto impl = std::make_unique<Impl>();
     impl->native = makeNativeApi();
-    BootstrapArguments arguments{.native = &impl->native, .managed = &impl->managed};
-    const auto bootstrap = reinterpret_cast<int (*)(void*, int)>(entryPoint);
+    BootstrapArguments arguments{.version = bootstrapVersion, .native = &impl->native, .managed = &impl->managed};
+    const auto bootstrap = reinterpret_cast<int (*)(void*, int)>(*entryPoint);
     if (const int started = bootstrap(&arguments, static_cast<int>(sizeof(arguments))); started != 0)
     {
+        if (started == -2)
+        {
+            return core::makeError(core::ErrorCode::Platform, "Devex.Managed.dll belongs to another build of the engine");
+        }
         return core::makeError(core::ErrorCode::Platform, "the C# runtime refused to start (status {})", started);
     }
     if (impl->managed.loadGame == nullptr || impl->managed.runPhase == nullptr)
     {
         return core::makeError(core::ErrorCode::Platform, "the C# runtime did not fill its functions");
     }
-    DEVEX_LOG_DEBUG("C# runtime started from {}", core::toUtf8(runtimeAssembly));
     return std::unique_ptr<ManagedGame>(new ManagedGame(std::move(impl)));
 }
 
@@ -730,15 +1083,16 @@ core::Result<void> ManagedGame::loadAssembly(const std::filesystem::path& assemb
                 continue;
             }
             const std::string* const values = stringAttribute(section, "values");
+            const std::string* const assetType = stringAttribute(section, "asset_type");
             fields.push_back({
                 .name = *name,
                 .kind = *valueKind,
-                .assetType = stringAttribute(section, "asset_type") != nullptr ? *stringAttribute(section, "asset_type")
-                                                                              : std::string(),
+                .assetType = assetType != nullptr ? *assetType : std::string(),
                 .color = boolAttribute(section, "color"),
                 .angle = boolAttribute(section, "angle"),
                 .physicsLayer = boolAttribute(section, "physics_layer"),
                 .enumNames = values != nullptr ? splitValues(*values) : std::vector<std::string>{},
+                .list = boolAttribute(section, "list"),
             });
         }
     }
@@ -771,12 +1125,15 @@ std::span<const std::string> ManagedGame::componentTypes() const noexcept
     return m_impl->types;
 }
 
-void ManagedGame::runPhase(scene::Scene& scene, SystemPhase phase, core::Duration delta)
+void ManagedGame::runPhase(Frame& frame, SystemPhase phase)
 {
-    if (m_impl->assemblyLoaded)
+    if (!m_impl->assemblyLoaded || frame.scene == nullptr)
     {
-        m_impl->managed.runPhase(&scene, static_cast<int>(phase), static_cast<float>(delta.count()));
+        return;
     }
+    currentFrame() = &frame;
+    m_impl->managed.runPhase(frame.scene, static_cast<int>(phase), static_cast<float>(frame.delta.count()));
+    currentFrame() = nullptr;
 }
 
 std::size_t ManagedGame::release(scene::Scene& scene) const
@@ -790,6 +1147,11 @@ std::size_t ManagedGame::release(scene::Scene& scene) const
         }
     }
     return preserved;
+}
+
+bool ManagedGame::isDebuggerAttached() const
+{
+    return m_impl->managed.isDebuggerAttached != nullptr && m_impl->managed.isDebuggerAttached() != 0;
 }
 
 } // namespace devex::runtime::detail

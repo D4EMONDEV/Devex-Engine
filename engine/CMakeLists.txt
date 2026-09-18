@@ -431,24 +431,10 @@ set_target_properties(devex_physics PROPERTIES
 )
 devex_set_warnings(devex_physics)
 
-# The C# side of the engine, built with the .NET SDK when it is installed. Without it, the engine
-# runs games written in C++ only.
+# The C# side of the engine is built with the .NET SDK when it is installed (see managed/). Without
+# it, the engine runs games written in C++ only.
 find_program(DEVEX_DOTNET NAMES dotnet)
-if(DEVEX_DOTNET)
-    set(DEVEX_MANAGED_PROJECT "${PROJECT_SOURCE_DIR}/managed/Devex.Managed/Devex.Managed.csproj")
-    file(GLOB_RECURSE DEVEX_MANAGED_SOURCES CONFIGURE_DEPENDS "${PROJECT_SOURCE_DIR}/managed/Devex.Managed/*.cs")
-    set(DEVEX_MANAGED_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/managed")
-    add_custom_command(
-        OUTPUT "${DEVEX_MANAGED_DIRECTORY}/Devex.Managed.dll"
-        COMMAND "${DEVEX_DOTNET}" build "${DEVEX_MANAGED_PROJECT}" -c Release -o "${DEVEX_MANAGED_DIRECTORY}"
-                --nologo -v quiet
-        DEPENDS ${DEVEX_MANAGED_SOURCES} "${DEVEX_MANAGED_PROJECT}"
-        COMMENT "Building the C# runtime of the engine"
-        VERBATIM
-    )
-    add_custom_target(devex_managed DEPENDS "${DEVEX_MANAGED_DIRECTORY}/Devex.Managed.dll")
-    set_target_properties(devex_managed PROPERTIES FOLDER "Engine")
-else()
+if(NOT DEVEX_DOTNET)
     message(STATUS "The .NET SDK was not found: games of this build can only be written in C++")
 endif()
 
@@ -565,6 +551,7 @@ target_sources(devex_runtime
         src/runtime/GameCodeBuilder.hpp
         src/runtime/GameExport.cpp
         src/runtime/GameModule.cpp
+        src/runtime/ComponentViews.cpp
         src/runtime/ManagedCodeBuilder.cpp
         src/runtime/ManagedCodeBuilder.hpp
         src/runtime/ManagedGame.cpp
@@ -626,9 +613,6 @@ set_target_properties(devex_engine PROPERTIES
     FOLDER "Engine"
 )
 devex_set_warnings(devex_engine)
-if(DEVEX_DOTNET)
-    add_dependencies(devex_engine devex_managed)
-endif()
 
 # The package that game modules find: cmake/DevexConfig.cmake in the build folder, next to bin/.
 configure_file("${PROJECT_SOURCE_DIR}/cmake/DevexGameConfig.cmake.in"

@@ -14,7 +14,8 @@ public struct Transform
 
 /// <summary>
 /// A component of an entity, written in C#: its public fields are saved in scenes and edited in the
-/// inspector, and Start, Update and FixedUpdate run for every entity that has it.
+/// inspector, and Start, Update and FixedUpdate run for every entity that has it. Its other fields
+/// last as long as the component, reloads of the code included.
 /// </summary>
 public abstract class Component
 {
@@ -39,14 +40,34 @@ public abstract class Component
     {
     }
 
+    /// <summary>Called, before Update, when the body of the entity started touching another one.</summary>
+    public virtual void OnCollisionEnter(Entity other)
+    {
+    }
+
+    /// <summary>Called, before Update, when the body of the entity stopped touching another one.</summary>
+    public virtual void OnCollisionExit(Entity other)
+    {
+    }
+
+    /// <summary>Called, before Update, when another body entered a trigger of the entity, or the entity entered a trigger.</summary>
+    public virtual void OnTriggerEnter(Entity other)
+    {
+    }
+
+    /// <summary>Called, before Update, when another body left a trigger of the entity, or the entity left a trigger.</summary>
+    public virtual void OnTriggerExit(Entity other)
+    {
+    }
+
     /// <summary>The Transform of the entity, changed in place.</summary>
-    public ref Transform Transform => ref Scene.TransformOf(Entity);
+    public ref Transform Transform => ref Entity.Transform;
 
-    /// <summary>The C# component of the entity, or null when it has none.</summary>
-    public T? Get<T>() where T : Component => Scene.GetComponent<T>(Entity);
+    /// <summary>Destroys the entity and its children.</summary>
+    public void DestroyEntity() => Entity.Destroy();
 
-    /// <summary>Destroys the entity and its children at the end of the frame's updates.</summary>
-    public void DestroyEntity() => Scene.Destroy(Entity);
+    // Whether Start ran, or the component came back from a reload of the code.
+    internal bool Started;
 }
 
 /// <summary>A float field shown in degrees, whose value is in radians.</summary>
@@ -95,7 +116,12 @@ public sealed unsafe class Scene
         _scene = scene;
     }
 
+    /// <summary>The scene that plays, which entities and components refer to.</summary>
+    public static Scene Current => GameRuntime.CurrentScene;
+
     internal void Bind(void* scene) => _scene = scene;
+
+    internal void* Pointer => _scene;
 
     /// <summary>Creates an entity without a parent.</summary>
     public Entity CreateEntity(string name)
@@ -117,11 +143,22 @@ public sealed unsafe class Scene
         Bootstrap.Native.SetEntityName(_scene, entity, text.Pointer);
     }
 
-    /// <summary>The first entity with this name, or an invalid entity.</summary>
+    /// <summary>The first entity with this name, or None.</summary>
     public Entity Find(string name)
     {
         using var text = new Utf8Buffer(name);
         return Bootstrap.Native.FindEntity(_scene, text.Pointer);
+    }
+
+    /// <summary>The entity with this UUID, or None.</summary>
+    public Entity Resolve(Uuid uuid) => Bootstrap.Native.ResolveEntity(_scene, &uuid);
+
+    /// <summary>The UUID of an entity; nil when it is not alive.</summary>
+    public Uuid UuidOf(Entity entity)
+    {
+        Uuid uuid;
+        Bootstrap.Native.EntityUuid(_scene, entity, &uuid);
+        return uuid;
     }
 
     public Entity Parent(Entity entity) => Bootstrap.Native.Parent(_scene, entity);
@@ -139,7 +176,7 @@ public sealed unsafe class Scene
         }
     }
 
-    /// <summary>Moves an entity under a new parent, or to the roots when the parent is invalid.</summary>
+    /// <summary>Moves an entity under a new parent, or to the roots when the parent is None.</summary>
     public void SetParent(Entity child, Entity parent) => Bootstrap.Native.SetParent(_scene, child, parent);
 
     /// <summary>The Transform of an entity, changed in place. The entity must have one.</summary>
@@ -163,23 +200,13 @@ public sealed unsafe class Scene
     }
 
     /// <summary>The C# component of an entity, or null.</summary>
-    public T? GetComponent<T>(Entity entity) where T : Component => GameRuntime.FindInstance(typeof(T), entity) as T;
+    public T? GetComponent<T>(Entity entity) where T : Component => GameRuntime.GetInstance(typeof(T), entity) as T;
 
     /// <summary>Adds a C# component to an entity, or returns the one it already has.</summary>
-    public T AddComponent<T>(Entity entity) where T : Component
-    {
-        if (GameRuntime.FindInstance(typeof(T), entity) is T existing)
-        {
-            return existing;
-        }
-        return (T)GameRuntime.AddComponent(this, _scene, typeof(T), entity);
-    }
+    public T AddComponent<T>(Entity entity) where T : Component => (T)GameRuntime.AddComponent(typeof(T), entity);
 
-    public void RemoveComponent<T>(Entity entity) where T : Component
-        => GameRuntime.RemoveComponent(_scene, typeof(T), entity);
+    public void RemoveComponent<T>(Entity entity) where T : Component => GameRuntime.RemoveComponent(typeof(T), entity);
 
-    /// <summary>Every entity of the scene that has this C# component.</summary>
+    /// <summary>Every C# component of this type in the scene.</summary>
     public IEnumerable<T> Components<T>() where T : Component => GameRuntime.Instances<T>();
-
-    internal void* Pointer => _scene;
 }

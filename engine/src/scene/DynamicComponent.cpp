@@ -1,6 +1,7 @@
 #include <devex/asset/AssetId.hpp>
 #include <devex/core/Assert.hpp>
 #include <devex/scene/DynamicComponent.hpp>
+#include <devex/scene/EntityRef.hpp>
 
 #include <algorithm>
 #include <cstring>
@@ -8,9 +9,78 @@
 #include <utility>
 
 namespace devex::scene {
+
+namespace detail {
+
+// How a list field of one element type is built, destroyed, copied and edited.
+struct DynamicListStorage
+{
+    std::size_t size = 0;
+    std::size_t alignment = 1;
+    const reflection::ListOps* operations = nullptr;
+    void (*construct)(void* list) = nullptr;
+    void (*destroy)(void* list) noexcept = nullptr;
+    void (*copy)(void* destination, const void* source) = nullptr;
+};
+
+} // namespace detail
+
 namespace {
 
 using reflection::ValueKind;
+
+template <typename Element>
+[[nodiscard]] const detail::DynamicListStorage& listStorage() noexcept
+{
+    using List = std::vector<Element>;
+    static const detail::DynamicListStorage storage{
+        .size = sizeof(List),
+        .alignment = alignof(List),
+        .operations = &reflection::listOps<Element>(),
+        .construct = [](void* list) { new (list) List(); },
+        .destroy = [](void* list) noexcept { static_cast<List*>(list)->~List(); },
+        .copy = [](void* destination, const void* source) {
+            *static_cast<List*>(destination) = *static_cast<const List*>(source);
+        },
+    };
+    return storage;
+}
+
+// The storage of a list of values of the kind; null for kinds that cannot be listed.
+[[nodiscard]] const detail::DynamicListStorage* listStorageOf(ValueKind kind) noexcept
+{
+    switch (kind)
+    {
+    case ValueKind::Bool:
+        return nullptr;
+    case ValueKind::Int32:
+        return &listStorage<std::int32_t>();
+    case ValueKind::UInt32:
+        return &listStorage<std::uint32_t>();
+    case ValueKind::Float:
+        return &listStorage<float>();
+    case ValueKind::String:
+        return &listStorage<std::string>();
+    case ValueKind::Vec2:
+        return &listStorage<math::Vec2>();
+    case ValueKind::Vec3:
+        return &listStorage<math::Vec3>();
+    case ValueKind::Vec4:
+        return &listStorage<math::Vec4>();
+    case ValueKind::Quat:
+        return &listStorage<math::Quat>();
+    case ValueKind::Uuid:
+        return &listStorage<core::Uuid>();
+    case ValueKind::AssetId:
+        return &listStorage<asset::AssetId>();
+    case ValueKind::Enum:
+        // Enumerations described at runtime are stored in four bytes.
+        return &listStorage<std::uint32_t>();
+    case ValueKind::Entity:
+        return &listStorage<EntityRef>();
+    }
+    return nullptr;
+}
 
 struct KindTraits
 {
@@ -46,6 +116,8 @@ struct KindTraits
         return {sizeof(asset::AssetId), alignof(asset::AssetId)};
     case ValueKind::Enum:
         return {enumSize, enumSize};
+    case ValueKind::Entity:
+        return {sizeof(EntityRef), alignof(EntityRef)};
     }
     return {};
 }
@@ -107,7 +179,14 @@ core::Result<std::shared_ptr<const DynamicComponentLayout>> DynamicComponentLayo
                                    field.name);
         }
         const auto enumSize = static_cast<std::uint8_t>(field.kind == ValueKind::Enum ? 4 : 0);
-        const KindTraits traits = traitsOf(field.kind, enumSize);
+        const detail::DynamicListStorage* const list = field.list ? listStorageOf(field.kind) : nullptr;
+        if (field.list && list == nullptr)
+        {
+            return core::makeError(core::ErrorCode::Unsupported, "{}.{} is a list of an unsupported type",
+                                   layout->m_type.name, field.name);
+        }
+        const KindTraits traits = list != nullptr ? KindTraits{list->size, list->alignment}
+                                                  : traitsOf(field.kind, enumSize);
         if (traits.size == 0)
         {
             return core::makeError(core::ErrorCode::Unsupported, "{}.{} has an unsupported type", layout->m_type.name,
@@ -124,6 +203,7 @@ core::Result<std::shared_ptr<const DynamicComponentLayout>> DynamicComponentLayo
         layout->m_alignment = std::max(layout->m_alignment, traits.alignment);
         layout->m_offsets.push_back(offset);
         layout->m_kinds.push_back(field.kind);
+        layout->m_lists.push_back(list);
 
         reflection::FieldInfo info{
             .name = field.name,
@@ -134,6 +214,8 @@ core::Result<std::shared_ptr<const DynamicComponentLayout>> DynamicComponentLayo
             .physicsLayer = field.physicsLayer,
             .enumSize = enumSize,
             .access = [offset](void* component) -> void* { return static_cast<std::byte*>(component) + offset; },
+            .list = list != nullptr ? list->operations : nullptr,
+            .offset = offset,
         };
         // The names outlive the layout, which owns them.
         layout->m_type.fields.push_back(std::move(info));
@@ -149,6 +231,8 @@ core::Result<std::shared_ptr<const DynamicComponentLayout>> DynamicComponentLayo
         }
     }
     layout->m_size = (layout->m_size + layout->m_alignment - 1) / layout->m_alignment * layout->m_alignment;
+    layout->m_type.size = layout->m_size;
+    layout->m_type.alignment = layout->m_alignment;
     return layout;
 }
 
@@ -157,8 +241,20 @@ void DynamicComponentLayout::construct(void* component) const
     std::memset(component, 0, m_size);
     for (std::size_t index = 0; index < m_kinds.size(); ++index)
     {
-        constructField(m_kinds[index], static_cast<std::byte*>(component) + m_offsets[index]);
+        void* const field = static_cast<std::byte*>(component) + m_offsets[index];
+        if (m_lists[index] != nullptr)
+        {
+            m_lists[index]->construct(field);
+        }
+        else
+        {
+            constructField(m_kinds[index], field);
+        }
     }
+}
+
+void DynamicComponentLayout::initialize(void* component) const
+{
     if (m_initialize)
     {
         m_initialize(component);
@@ -169,7 +265,15 @@ void DynamicComponentLayout::destroy(void* component) const noexcept
 {
     for (std::size_t index = 0; index < m_kinds.size(); ++index)
     {
-        destroyField(m_kinds[index], static_cast<std::byte*>(component) + m_offsets[index]);
+        void* const field = static_cast<std::byte*>(component) + m_offsets[index];
+        if (m_lists[index] != nullptr)
+        {
+            m_lists[index]->destroy(field);
+        }
+        else
+        {
+            destroyField(m_kinds[index], field);
+        }
     }
 }
 
@@ -178,9 +282,15 @@ void DynamicComponentLayout::copy(void* destination, const void* source) const
     for (std::size_t index = 0; index < m_kinds.size(); ++index)
     {
         const std::size_t offset = m_offsets[index];
-        const std::size_t next = index + 1 < m_offsets.size() ? m_offsets[index + 1] : m_size;
-        copyField(m_kinds[index], static_cast<std::byte*>(destination) + offset,
-                  static_cast<const std::byte*>(source) + offset, next - offset);
+        void* const to = static_cast<std::byte*>(destination) + offset;
+        const void* const from = static_cast<const std::byte*>(source) + offset;
+        if (m_lists[index] != nullptr)
+        {
+            m_lists[index]->copy(to, from);
+            continue;
+        }
+        const std::size_t size = traitsOf(m_kinds[index], m_type.fields[index].enumSize).size;
+        copyField(m_kinds[index], to, from, size);
     }
 }
 
@@ -253,6 +363,7 @@ void* DynamicComponentPool::emplace(Entity entity)
     void* const component = at(m_count);
     m_layout->construct(component);
     ++m_count;
+    m_layout->initialize(component);
     return component;
 }
 

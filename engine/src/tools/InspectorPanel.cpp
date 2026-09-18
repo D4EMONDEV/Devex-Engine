@@ -19,6 +19,7 @@
 #include <optional>
 #include <cfloat>
 #include <cstdint>
+#include <cstring>
 #include <format>
 #include <string_view>
 
@@ -137,8 +138,69 @@ bool drawLayerPicker(const ToolsState& state, const char* id, std::uint32_t& lay
     return changed;
 }
 
+// Adds the entities of a subtree to the menu of an entity picker, indented by depth.
+bool chooseEntities(const scene::Scene& scene, scene::Entity entity, int depth, scene::EntityRef& value)
+{
+    bool changed = false;
+    for (; entity.isValid(); entity = scene.nextSibling(entity))
+    {
+        const scene::EntityRef candidate = scene.reference(entity);
+        const std::string label = std::string(static_cast<std::size_t>(depth) * 2, ' ') + scene.name(entity);
+        ImGui::PushID(candidate.uuid.toString().c_str());
+        if (ImGui::Selectable(label.c_str(), candidate == value) && candidate != value)
+        {
+            value = candidate;
+            changed = true;
+        }
+        ImGui::PopID();
+        changed |= chooseEntities(scene, scene.firstChild(entity), depth + 1, value);
+    }
+    return changed;
+}
+
+// An entity of the scene, chosen from a menu or dropped from the scene tree.
+bool drawEntityPicker(const scene::Scene& scene, const char* id, scene::EntityRef& value)
+{
+    const scene::Entity target = scene.resolve(value);
+    const std::string preview = value.isNil() ? "(none)" : target.isValid() ? scene.name(target) : "(missing)";
+    bool changed = false;
+    if (beginCombo(id, preview.c_str(), ImGuiComboFlags_HeightLarge))
+    {
+        if (ImGui::Selectable("(none)", value.isNil()) && !value.isNil())
+        {
+            value = {};
+            changed = true;
+        }
+        ImGui::Separator();
+        changed |= chooseEntities(scene, scene.firstRoot(), 0, value);
+        ImGui::EndCombo();
+    }
+    if (!value.isNil())
+    {
+        ImGui::SetItemTooltip("%s", value.uuid.toString().c_str());
+    }
+    if (ImGui::BeginDragDropTarget())
+    {
+        if (const ImGuiPayload* const payload = ImGui::AcceptDragDropPayload(entityPayload);
+            payload != nullptr && payload->DataSize == 16)
+        {
+            std::array<std::uint8_t, 16> bytes{};
+            std::memcpy(bytes.data(), payload->Data, bytes.size());
+            const scene::EntityRef dropped{uuidFromBytes(bytes)};
+            if (dropped != value)
+            {
+                value = dropped;
+                changed = true;
+            }
+        }
+        ImGui::EndDragDropTarget();
+    }
+    return changed;
+}
+
 // Draws the widget for a field value and reports whether it changed the value this frame.
-bool drawValueWidget(ToolsState& state, const char* id, const reflection::FieldInfo& field, void* address)
+bool drawValueWidget(ToolsState& state, const scene::Scene& scene, const char* id, const reflection::FieldInfo& field,
+                     void* address)
 {
     switch (field.kind)
     {
@@ -230,12 +292,77 @@ bool drawValueWidget(ToolsState& state, const char* id, const reflection::FieldI
         }
         return changed;
     }
+    case ValueKind::Entity:
+        return drawEntityPicker(scene, id, *static_cast<scene::EntityRef*>(address));
     }
     return false;
 }
 
+// Whether a change to a value of the field is complete in one click, rather than at the end of a
+// drag or of typing.
+[[nodiscard]] bool isOneClickEdit(const reflection::FieldInfo& field) noexcept
+{
+    return field.kind == ValueKind::AssetId || field.kind == ValueKind::Enum || field.kind == ValueKind::Entity ||
+           field.physicsLayer;
+}
+
+// A list: its size and a button to add an element, then a row per element with a button to
+// remove it. Every change is one undo step of the whole list.
+void drawListField(ToolsState& state, const scene::Scene& scene, core::Uuid entity, const scene::ComponentType& type,
+                   const reflection::FieldInfo& field, void* address, serialization::TextValue before, bool highlighted)
+{
+    const std::string label = displayName(field.name);
+    const std::size_t count = field.list->size(address);
+    propertyName(label.c_str(), highlighted);
+    ImGui::PushID(field.name.c_str());
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextDisabled("%zu %s", count, count == 1 ? "element" : "elements");
+    ImGui::SameLine();
+    alignRight(toolButtonWidth());
+    bool structural = false;
+    if (toolButton("add", icons::Plus, "Add an element"))
+    {
+        field.list->resize(address, count + 1);
+        structural = true;
+    }
+
+    bool activated = false;
+    bool finished = false;
+    bool oneClick = false;
+    for (std::size_t index = 0; index < count && !structural; ++index)
+    {
+        ImGui::PushID(static_cast<int>(index));
+        const std::string elementName = "    " + std::to_string(index);
+        propertyName(elementName.c_str());
+        ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - toolButtonWidth() - ImGui::GetStyle().ItemSpacing.x);
+        const bool changed = drawValueWidget(state, scene, "##element", field, field.list->element(address, index));
+        activated |= ImGui::IsItemActivated();
+        finished |= ImGui::IsItemDeactivatedAfterEdit();
+        oneClick |= changed && isOneClickEdit(field);
+        ImGui::SameLine();
+        if (toolButton("remove", icons::Minus, "Remove this element"))
+        {
+            field.list->erase(address, index);
+            structural = true;
+        }
+        ImGui::PopID();
+    }
+    ImGui::PopID();
+
+    if (activated)
+    {
+        state.fieldEditStart = before;
+    }
+    if (structural || oneClick || finished)
+    {
+        serialization::TextValue start = structural || oneClick ? std::move(before) : state.fieldEditStart;
+        state.history.recordApplied(makeSetFieldCommand(entity, std::string(type.name()), field.name, std::move(start),
+                                                        scene::writeFieldValue(field, address)));
+    }
+}
+
 // Draws a field, marked when its value differs from the one of the prefab's component, if any.
-void drawField(ToolsState& state, core::Uuid entity, const scene::ComponentType& type,
+void drawField(ToolsState& state, const scene::Scene& scene, core::Uuid entity, const scene::ComponentType& type,
                const reflection::FieldInfo& field, void* component, const void* prefabComponent)
 {
     void* const address = field.address(component);
@@ -250,10 +377,15 @@ void drawField(ToolsState& state, core::Uuid entity, const scene::ComponentType&
         }
     }
 
+    if (field.list != nullptr)
+    {
+        drawListField(state, scene, entity, type, field, address, std::move(before), prefabValue.has_value());
+        return;
+    }
     const std::string label = displayName(field.name);
     propertyName(label.c_str(), prefabValue.has_value());
     const std::string id = "##" + std::string(field.name);
-    const bool changed = drawValueWidget(state, id.c_str(), field, address);
+    const bool changed = drawValueWidget(state, scene, id.c_str(), field, address);
     if (prefabValue && state.playState == PlayState::Editing)
     {
         ImGui::PushID(id.c_str());
@@ -274,7 +406,7 @@ void drawField(ToolsState& state, core::Uuid entity, const scene::ComponentType&
         state.fieldEditStart = before;
     }
     // Drags and text edits become one undo step when released; combos change in one click.
-    const bool oneClickEdit = field.kind == ValueKind::AssetId || field.kind == ValueKind::Enum || field.physicsLayer;
+    const bool oneClickEdit = isOneClickEdit(field);
     const bool finishedEdit = ImGui::IsItemDeactivatedAfterEdit() || (changed && oneClickEdit);
     if (finishedEdit)
     {
@@ -566,7 +698,7 @@ void drawInspectorPanel(ToolsState& state, scene::Scene& scene)
             {
                 for (const reflection::FieldInfo& field : type.type->fields)
                 {
-                    drawField(state, uuid, type, field, const_cast<void*>(component), prefabComponent);
+                    drawField(state, scene, uuid, type, field, const_cast<void*>(component), prefabComponent);
                 }
                 endProperties();
             }

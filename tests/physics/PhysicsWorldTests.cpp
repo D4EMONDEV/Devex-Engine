@@ -113,6 +113,40 @@ TEST_CASE("A dynamic body falls onto static colliders and rests on them", "[phys
     CHECK(world->bodyCount() == 2);
 }
 
+TEST_CASE("Spinning bodies stay the same bodies, even beyond the speed limits of Jolt", "[physics]")
+{
+    // A crate turned on two axes, spinning on the ground faster than Jolt allows: the rounding of its
+    // world matrices changes at every step, which must not rebuild its body, and its velocity must
+    // not stop Jolt, whose limits it exceeds.
+    Scene scene;
+    const Entity ground = addGround(scene);
+    const Entity crate = scene.createEntity("Crate");
+    scene.add<devex::scene::Transform>(
+        crate, devex::scene::Transform{.position = {0.0f, 0.55f, 0.0f},
+                                       .rotation = devex::math::quatFromEulerAngles(devex::math::Vec3{0.3f, 0.7f, 0.0f}),
+                                       .scale = {1.3f, 0.7f, 0.9f}});
+    scene.add<devex::scene::RigidBody>(crate, devex::scene::RigidBody{.angularVelocity = {5.0f, 90.0f, 7.0f}});
+    scene.add<devex::scene::BoxCollider>(crate);
+    const auto world = makeWorld();
+
+    std::vector<devex::physics::Contact> contacts;
+    simulate(*world, scene, 2.0, &contacts);
+    const auto begins = std::ranges::count_if(contacts, [&](const devex::physics::Contact& contact) {
+        return contact.phase == ContactPhase::Begin && contact.involves(crate) && contact.other(crate) == ground;
+    });
+    // It may bounce, but a body rebuilt at every step would touch the ground anew each time.
+    CHECK(begins >= 1);
+    CHECK(begins <= 3);
+    CHECK(world->bodyCount() == 2);
+    // Jolt clamped the spin, which the component reads back below its limit.
+    CHECK(devex::math::length(scene.get<devex::scene::RigidBody>(crate).angularVelocity) < 47.13f);
+
+    // Game code asking for too much again is held to the limit too.
+    scene.get<devex::scene::RigidBody>(crate).angularVelocity = {0.0f, 200.0f, 0.0f};
+    simulate(*world, scene, 0.1);
+    CHECK(devex::math::length(scene.get<devex::scene::RigidBody>(crate).angularVelocity) < 47.13f);
+}
+
 TEST_CASE("Kinematic bodies follow their entity and push dynamic bodies", "[physics]")
 {
     Scene scene;

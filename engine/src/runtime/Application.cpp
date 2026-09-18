@@ -12,10 +12,13 @@
 #include "ManagedCodeBuilder.hpp"
 #include "ManagedGame.hpp"
 
+#include <devex/platform/Process.hpp>
 #include <devex/runtime/Application.hpp>
+#include <devex/runtime/ComponentViews.hpp>
 #include <devex/runtime/FixedTimestep.hpp>
 #include <devex/runtime/GameExport.hpp>
 #include <devex/runtime/GameModule.hpp>
+#include <devex/scene/ComponentRegistry.hpp>
 #include <devex/scene/Prefab.hpp>
 #include <devex/scene/SceneSerializer.hpp>
 #include <devex/runtime/SceneExtraction.hpp>
@@ -220,6 +223,8 @@ private:
     void render(bool gameplay);
     void handleEditorRequests(tools::EditorRequests requests);
     void startPlaying();
+    // Starts Play once a C# debugger attaches, and tells the editor about the debugger.
+    void updateDebugger();
     void stopPlaying();
     void switchProject(const std::filesystem::path& projectFile);
     // Drops the project and everything loaded from it; the editor shows its project manager.
@@ -241,6 +246,8 @@ private:
     void updateGameCode();
     // C#: the runtime of the process, then the assembly a project builds from its C# files.
     void openManagedCode();
+    // Gives the C# code of the project views of its C++ components, and builds it again when they change.
+    void writeGameComponentViews();
     void loadManagedAssembly();
     void unloadManagedAssembly();
     void updateManagedCode();
@@ -276,11 +283,11 @@ private:
     std::optional<ManagedCodeBuilder> m_managedBuilder;
     std::filesystem::file_time_type m_managedAssemblyTime{};
     // Set when C# code asks the game to end.
-    bool m_managedQuitRequested = false;
     bool m_enablePhysics;
     std::unique_ptr<physics::PhysicsWorld> m_physics;
     // The Start systems ran for the scene that plays.
     bool m_gameStarted = false;
+    bool m_waitingForDebugger = false;
     // A scene asked for by game systems, loaded once the updates of the frame are done.
     std::optional<asset::AssetId> m_sceneToLoad;
     std::optional<GameCodeBuilder> m_gameBuilder;
@@ -524,6 +531,7 @@ void ApplicationRunner::runFrame()
     {
         // The editor goes first, so that Play and Stop take effect this frame.
         m_services.tools->setGameCodeStatus(gameCodeStatus());
+        updateDebugger();
         updateExport();
         if (canRender)
         {
@@ -686,7 +694,21 @@ void ApplicationRunner::handleEditorRequests(tools::EditorRequests requests)
     }
     if (requests.play && !m_playScene && m_services.database != nullptr)
     {
-        startPlaying();
+        if (requests.waitForDebugger && m_managed && m_managed->hasAssembly() && !m_managed->isDebuggerAttached())
+        {
+            m_waitingForDebugger = true;
+            DEVEX_LOG_INFO("Waiting for a C# debugger to attach to process {} before playing",
+                           platform::currentProcessId());
+        }
+        else
+        {
+            startPlaying();
+        }
+    }
+    else if (requests.stop && m_waitingForDebugger)
+    {
+        m_waitingForDebugger = false;
+        DEVEX_LOG_INFO("No longer waiting for a debugger");
     }
     else if (requests.stop && m_playScene)
     {
@@ -700,6 +722,27 @@ void ApplicationRunner::handleEditorRequests(tools::EditorRequests requests)
     {
         m_stepRequested = true;
     }
+}
+
+void ApplicationRunner::updateDebugger()
+{
+    const bool available = m_managed && m_managed->hasAssembly();
+    const bool attached = available && m_managed->isDebuggerAttached();
+    if (m_waitingForDebugger && (!available || attached || m_playScene))
+    {
+        m_waitingForDebugger = false;
+        if (attached && !m_playScene && m_services.database != nullptr)
+        {
+            DEVEX_LOG_INFO("A C# debugger is attached");
+            startPlaying();
+        }
+    }
+    m_services.tools->setDebuggerStatus({
+        .available = available,
+        .attached = attached,
+        .waiting = m_waitingForDebugger,
+        .processId = platform::currentProcessId(),
+    });
 }
 
 void ApplicationRunner::startPlaying()
@@ -834,10 +877,7 @@ void ApplicationRunner::openManagedCode()
     if (!m_managed)
     {
         core::Result<std::unique_ptr<ManagedGame>> managed =
-            ManagedGame::create(m_services.platform.baseDirectory() / "managed",
-                                {.input = &m_services.platform.input(),
-                                 .window = &m_services.window,
-                                 .quitRequested = &m_managedQuitRequested});
+            ManagedGame::create(m_services.platform.baseDirectory() / "managed");
         if (!managed)
         {
             // Games written in C++ do not need any of this.
@@ -899,7 +939,9 @@ void ApplicationRunner::updateManagedCode()
         return;
     }
     bool reload = m_managedBuilder && m_managedBuilder->update();
-    if (!reload && m_services.database != nullptr)
+    // A build made outside the editor is loaded too, but not the editor's own before it is over.
+    const bool building = m_managedBuilder && m_managedBuilder->state() == ManagedCodeBuilder::State::Building;
+    if (!reload && !building && m_services.database != nullptr)
     {
         std::error_code error;
         const std::filesystem::file_time_type built =
@@ -975,6 +1017,45 @@ void ApplicationRunner::loadGameModule()
     DEVEX_LOG_INFO("Game code loaded: {} components, {} systems{}", m_game->registry().components().size(),
                    m_game->registry().systems().size(),
                    restored > 0 ? std::format(", {} components restored", restored) : std::string());
+    writeGameComponentViews();
+}
+
+void ApplicationRunner::writeGameComponentViews()
+{
+    if (!isEditor() || m_services.database == nullptr || !m_game)
+    {
+        return;
+    }
+    const asset::Project& project = m_services.database->project();
+    if (!ManagedCodeBuilder::hasCode(project))
+    {
+        return;
+    }
+    std::vector<const reflection::TypeInfo*> types;
+    for (const std::string& name : m_game->registry().components())
+    {
+        if (const scene::ComponentType* const type = scene::componentRegistry().find(name))
+        {
+            types.push_back(type->type);
+        }
+    }
+    const std::string text = generateComponentViews(types, {}, std::format("the C++ code of {}", project.name));
+    const std::filesystem::path file = ManagedCodeBuilder::generatedDirectory(project) / "GameComponents.g.cs";
+    if (const core::Result<std::string> existing = core::readTextFile(file); existing && *existing == text)
+    {
+        return;
+    }
+    if (core::Result<void> written = core::writeTextFile(file, text); !written)
+    {
+        DEVEX_LOG_WARNING("Cannot write the C# views of the C++ components: {}", written.error());
+        return;
+    }
+    // The C# code sees the C++ components as they are now.
+    DEVEX_LOG_DEBUG("C# views of {} C++ components written", types.size());
+    if (m_managedBuilder)
+    {
+        m_managedBuilder->requestBuild();
+    }
 }
 
 void ApplicationRunner::unloadGameModule()
@@ -1035,10 +1116,19 @@ void ApplicationRunner::runSystems(SystemPhase phase, core::Duration delta)
     }
     if (m_managed)
     {
-        m_managed->runPhase(*m_application.m_scene, phase, delta);
-        if (std::exchange(m_managedQuitRequested, false))
+        ManagedGame::Frame frame{
+            .scene = m_application.m_scene,
+            .delta = delta,
+            .input = &m_services.platform.input(),
+            .window = &m_services.window,
+            .physics = m_physics.get(),
+            .assets = m_services.assets.source(),
+        };
+        m_managed->runPhase(frame, phase);
+        context.quitRequested = context.quitRequested || frame.quitRequested;
+        if (frame.sceneToLoad.isValid())
         {
-            context.quitRequested = true;
+            context.sceneToLoad = frame.sceneToLoad;
         }
     }
     if (context.quitRequested)

@@ -10,6 +10,7 @@
 #include <mutex>
 #include <optional>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 
 namespace devex::scene {
@@ -177,6 +178,34 @@ void addPrefab(std::vector<asset::AssetId>& prefabs, asset::AssetId prefab)
     }
 }
 
+// Makes the entity("<uuid>") values that name an entity of the prefab name it in the instance.
+// References to other entities stay as they are: they resolve to nothing.
+template <typename Map>
+void remapEntityReferences(TextValue& value, const std::unordered_set<core::Uuid>& prefabEntities, const Map& map)
+{
+    auto* const call = std::get_if<serialization::TextCall>(&value);
+    if (call == nullptr)
+    {
+        return;
+    }
+    if (call->name == "entity")
+    {
+        if (call->arguments.size() == 1)
+        {
+            const core::Result<core::Uuid> uuid = detail::readUuid(call->arguments.front());
+            if (uuid && prefabEntities.contains(*uuid))
+            {
+                call->arguments.front() = TextValue(map(*uuid).toString());
+            }
+        }
+        return;
+    }
+    for (TextValue& argument : call->arguments)
+    {
+        remapEntityReferences(argument, prefabEntities, map);
+    }
+}
+
 // The entities of a loaded prefab for an instance, without overrides.
 [[nodiscard]] detail::FlatScene expandLoadedPrefab(const detail::FlatScene& source, asset::AssetId prefab,
                                                    core::Uuid instance)
@@ -204,6 +233,11 @@ void addPrefab(std::vector<asset::AssetId>& prefabs, asset::AssetId prefab)
         }
         result.entities.push_back(std::move(group));
     }
+    std::unordered_set<core::Uuid> prefabEntities;
+    for (const detail::FlatEntity& entity : source.entities)
+    {
+        prefabEntities.insert(entity.uuid);
+    }
     for (const detail::FlatEntity& entity : source.entities)
     {
         detail::FlatEntity copy{
@@ -222,6 +256,13 @@ void addPrefab(std::vector<asset::AssetId>& prefabs, asset::AssetId prefab)
         {
             copy.prefab = prefab;
             copy.unresolved = false;
+        }
+        for (TextSection& component : copy.components)
+        {
+            for (TextProperty& property : component.properties)
+            {
+                remapEntityReferences(property.value, prefabEntities, map);
+            }
         }
         result.entities.push_back(std::move(copy));
     }

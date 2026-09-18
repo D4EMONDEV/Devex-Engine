@@ -62,6 +62,17 @@ struct GameCodeStatus
     std::string message;
 };
 
+// The C# debugger, as the editor shows it.
+struct DebuggerStatus
+{
+    // The project has C# code, loaded in .NET.
+    bool available = false;
+    bool attached = false;
+    // Play waits for a debugger to attach before it starts.
+    bool waiting = false;
+    std::uint32_t processId = 0;
+};
+
 // A build of the engine that games can be exported with, found next to the editor.
 struct EngineBuildChoice
 {
@@ -102,6 +113,8 @@ struct NewScript
 struct EditorRequests
 {
     bool play = false;
+    // With play: start once a C# debugger is attached. Stop gives up waiting.
+    bool waitForDebugger = false;
     bool stop = false;
     bool togglePause = false;
     // Advances one fixed update while paused.
@@ -166,6 +179,8 @@ public:
 
     // Editor only: the state of the game code, shown in the menu bar.
     void setGameCodeStatus(GameCodeStatus status);
+    // Editor only: whether a C# debugger is attached, or awaited.
+    void setDebuggerStatus(DebuggerStatus status);
 
     // Editor only: the engine builds that games can be exported with, and the state of the export.
     void setEngineBuilds(std::vector<EngineBuildChoice> builds);

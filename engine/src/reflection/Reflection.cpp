@@ -32,6 +32,8 @@ std::string_view toString(ValueKind kind) noexcept
         return "asset";
     case ValueKind::Enum:
         return "enum";
+    case ValueKind::Entity:
+        return "entity";
     }
     return "unknown";
 }

@@ -1,32 +1,12 @@
-using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
 
 namespace Devex;
 
-/// <summary>An entity of a scene: the same handle the engine uses.</summary>
-[StructLayout(LayoutKind.Sequential)]
-public readonly struct Entity(uint index, uint generation) : IEquatable<Entity>
-{
-    public readonly uint Index = index;
-    public readonly uint Generation = generation;
-
-    public bool IsValid => Generation != 0;
-
-    public bool Equals(Entity other) => Index == other.Index && Generation == other.Generation;
-
-    public override bool Equals(object? other) => other is Entity entity && Equals(entity);
-
-    public override int GetHashCode() => HashCode.Combine(Index, Generation);
-
-    public static bool operator ==(Entity left, Entity right) => left.Equals(right);
-
-    public static bool operator !=(Entity left, Entity right) => !left.Equals(right);
-
-    internal ulong Key => Index | ((ulong)Generation << 32);
-}
-
-/// <summary>The engine functions the C# side calls. Filled by the engine when it starts the runtime.</summary>
+/// <summary>
+/// The engine functions the C# side calls, in the order of NativeApi in the engine's ManagedGame.cpp.
+/// Filled by the engine when it starts the runtime.
+/// </summary>
 [StructLayout(LayoutKind.Sequential)]
 internal unsafe struct NativeApi
 {
@@ -36,8 +16,18 @@ internal unsafe struct NativeApi
     public delegate* unmanaged<void*, nuint, Entity, void*> FindComponent;
     public delegate* unmanaged<void*, nuint, Entity, void*> AddComponent;
     public delegate* unmanaged<void*, nuint, Entity, void> RemoveComponent;
-    public delegate* unmanaged<void*, nuint, byte*> ReadStringField;
-    public delegate* unmanaged<void*, nuint, byte*, void> WriteStringField;
+    public delegate* unmanaged<byte*, long> ComponentIndex;
+    public delegate* unmanaged<ulong> RegistryGeneration;
+    public delegate* unmanaged<nuint, ulong> ComponentLayoutHash;
+    public delegate* unmanaged<void*, byte*> ReadString;
+    public delegate* unmanaged<void*, byte*, void> WriteString;
+    public delegate* unmanaged<nuint, int, void*, nuint> ListSize;
+    public delegate* unmanaged<nuint, int, void*, nuint, void*> ListElement;
+    public delegate* unmanaged<nuint, int, void*, nuint, void> ListResize;
+    public delegate* unmanaged<nuint, int, void*, nuint, void> ListInsert;
+    public delegate* unmanaged<nuint, int, void*, nuint, void> ListErase;
+    public delegate* unmanaged<void*, Uuid*, Entity> ResolveEntity;
+    public delegate* unmanaged<void*, Entity, Uuid*, void> EntityUuid;
 
     public delegate* unmanaged<void*, byte*, Entity> CreateEntity;
     public delegate* unmanaged<void*, Entity, void> DestroyEntity;
@@ -60,7 +50,21 @@ internal unsafe struct NativeApi
     public delegate* unmanaged<float*, void> MousePosition;
     public delegate* unmanaged<int> IsMouseCaptured;
     public delegate* unmanaged<int, void> SetMouseCaptured;
+
     public delegate* unmanaged<void> RequestQuit;
+    public delegate* unmanaged<Uuid*, void> LoadScene;
+    public delegate* unmanaged<void*, Uuid*, Entity, Entity> InstantiatePrefab;
+    public delegate* unmanaged<byte*, Uuid*, int> FindAsset;
+    public delegate* unmanaged<float*, void> WindowSize;
+
+    public delegate* unmanaged<Vec3*, Vec3*, float, uint, Entity, RayHit*, int> Raycast;
+    public delegate* unmanaged<Vec3*, float, Vec3*, float, uint, Entity, RayHit*, int> SphereCast;
+    public delegate* unmanaged<Vec3*, float, uint, Entity, Entity**, int> OverlapSphere;
+    public delegate* unmanaged<Entity, Vec3*, void> AddForce;
+    public delegate* unmanaged<Entity, Vec3*, void> AddTorque;
+    public delegate* unmanaged<Entity, Vec3*, void> AddImpulse;
+    public delegate* unmanaged<Entity, Vec3*, Vec3*, void> AddImpulseAt;
+    public delegate* unmanaged<Contact**, int> Contacts;
 }
 
 /// <summary>The C# functions the engine calls. Filled by the runtime when it starts.</summary>
@@ -72,11 +76,15 @@ internal unsafe struct ManagedApi
     public delegate* unmanaged<byte*, nuint, nuint*, int, void> SetTypeLayout;
     public delegate* unmanaged<void*, int, float, void> RunPhase;
     public delegate* unmanaged<byte*, void*, void> ApplyDefaults;
+    public delegate* unmanaged<int> IsDebuggerAttached;
 }
 
 [StructLayout(LayoutKind.Sequential)]
 internal unsafe struct BootstrapArguments
 {
+    // Changes with the function tables, so that an engine and a runtime of different builds refuse
+    // each other.
+    public int Version;
     public NativeApi* Native;
     public ManagedApi* Managed;
 }
@@ -84,6 +92,8 @@ internal unsafe struct BootstrapArguments
 /// <summary>What the engine calls into: filling the function tables, then the game itself.</summary>
 public static unsafe class Bootstrap
 {
+    internal const int Version = 2;
+
     internal static NativeApi Native;
     private static byte[]? _description;
     private static GCHandle _descriptionHandle;
@@ -97,12 +107,17 @@ public static unsafe class Bootstrap
             return -1;
         }
         var bootstrap = (BootstrapArguments*)arguments;
+        if (bootstrap->Version != Version)
+        {
+            return -2;
+        }
         Native = *bootstrap->Native;
         bootstrap->Managed->LoadGame = &LoadGame;
         bootstrap->Managed->UnloadGame = &UnloadGame;
         bootstrap->Managed->SetTypeLayout = &SetTypeLayout;
         bootstrap->Managed->RunPhase = &RunPhase;
         bootstrap->Managed->ApplyDefaults = &ApplyDefaults;
+        bootstrap->Managed->IsDebuggerAttached = &IsDebuggerAttached;
         return 0;
     }
 
@@ -122,7 +137,7 @@ public static unsafe class Bootstrap
         }
         catch (Exception exception)
         {
-            Log.Error($"Cannot load the game code: {exception.Message}");
+            Log.Error($"Cannot load the game code: {exception}");
             return -1;
         }
     }
@@ -137,7 +152,7 @@ public static unsafe class Bootstrap
         }
         catch (Exception exception)
         {
-            Log.Error($"Cannot unload the game code: {exception.Message}");
+            Log.Error($"Cannot unload the game code: {exception}");
         }
     }
 
@@ -153,25 +168,50 @@ public static unsafe class Bootstrap
     [UnmanagedCallersOnly]
     private static void SetTypeLayout(byte* typeName, nuint typeIndex, nuint* offsets, int count)
     {
-        var fieldOffsets = new int[count];
-        for (int index = 0; index < count; ++index)
+        try
         {
-            fieldOffsets[index] = (int)offsets[index];
+            var fieldOffsets = new int[count];
+            for (int index = 0; index < count; ++index)
+            {
+                fieldOffsets[index] = (int)offsets[index];
+            }
+            GameRuntime.SetTypeLayout(Utf8.ToString(typeName) ?? string.Empty, typeIndex, fieldOffsets);
         }
-        GameRuntime.SetTypeLayout(Utf8.ToString(typeName) ?? string.Empty, typeIndex, fieldOffsets);
+        catch (Exception exception)
+        {
+            Log.Error($"Cannot bind the fields of a component: {exception}");
+        }
     }
 
     [UnmanagedCallersOnly]
     private static void RunPhase(void* scene, int phase, float delta)
     {
-        GameRuntime.RunPhase(scene, (SystemPhase)phase, delta);
+        try
+        {
+            GameRuntime.RunPhase(scene, (SystemPhase)phase, delta);
+        }
+        catch (Exception exception)
+        {
+            // The runtime catches the errors of the game; this is one of the runtime itself.
+            Log.Error($"The C# runtime failed: {exception}");
+        }
     }
 
     [UnmanagedCallersOnly]
     private static void ApplyDefaults(byte* typeName, void* component)
     {
-        GameRuntime.ApplyDefaults(Utf8.ToString(typeName) ?? string.Empty, component);
+        try
+        {
+            GameRuntime.ApplyDefaults(Utf8.ToString(typeName) ?? string.Empty, component);
+        }
+        catch (Exception exception)
+        {
+            Log.Error($"Cannot give a component its default values: {exception}");
+        }
     }
+
+    [UnmanagedCallersOnly]
+    private static int IsDebuggerAttached() => System.Diagnostics.Debugger.IsAttached ? 1 : 0;
 }
 
 /// <summary>UTF-8 strings, as the engine passes them.</summary>
@@ -190,7 +230,6 @@ internal static unsafe class Utf8
         bytes[count] = 0;
         return bytes;
     }
-
 }
 
 /// <summary>A string as the engine reads it: zero-terminated UTF-8, freed at the end of the call.</summary>

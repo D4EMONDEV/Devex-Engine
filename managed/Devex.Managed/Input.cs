@@ -50,8 +50,3 @@ public static unsafe class Input
     }
 }
 
-/// <summary>Ends the game: the player quits, and the editor stops playing.</summary>
-public static unsafe class Game
-{
-    public static void Quit() => Bootstrap.Native.RequestQuit();
-}

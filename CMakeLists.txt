@@ -50,13 +50,23 @@ include(DevexWarnings)
 
 add_subdirectory(shaders)
 add_subdirectory(engine)
+add_subdirectory(tools/bindgen)
+if(DEVEX_DOTNET)
+    add_subdirectory(managed)
+endif()
 
 if(DEVEX_BUILD_EDITOR)
     add_subdirectory(apps/editor)
+    if(TARGET devex_managed)
+        add_dependencies(devex_editor devex_managed)
+    endif()
 endif()
 
 if(DEVEX_BUILD_PLAYER)
     add_subdirectory(apps/player)
+    if(TARGET devex_managed)
+        add_dependencies(devex_player devex_managed)
+    endif()
 endif()
 
 if(DEVEX_BUILD_TESTS)

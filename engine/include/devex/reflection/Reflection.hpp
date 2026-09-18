@@ -4,8 +4,10 @@
 #include <devex/math/Math.hpp>
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <limits>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -32,6 +34,9 @@ enum class ValueKind : std::uint8_t
     AssetId,
     // An enumeration with EnumNames, stored in one or four bytes and written by name.
     Enum,
+    // scene::EntityRef, an entity of the same scene by UUID, whose ValueTraits specialization lives
+    // in the Scene module.
+    Entity,
 };
 
 [[nodiscard]] std::string_view toString(ValueKind kind) noexcept;
@@ -124,6 +129,56 @@ struct ValueTraits<core::Uuid>
     static constexpr ValueKind kind = ValueKind::Uuid;
 };
 
+// What generic code does with a std::vector field without knowing its element type.
+struct ListOps
+{
+    std::size_t (*size)(const void* list) noexcept;
+    // New elements have the default value of their kind: zero, empty, or the identity rotation.
+    void (*resize)(void* list, std::size_t size);
+    void* (*element)(void* list, std::size_t index) noexcept;
+    void (*insert)(void* list, std::size_t index);
+    void (*erase)(void* list, std::size_t index);
+};
+
+// The value a new element of a list starts with.
+template <typename Element>
+[[nodiscard]] Element defaultElement()
+{
+    if constexpr (std::is_same_v<Element, math::Quat>)
+    {
+        return math::Quat(1.0f, 0.0f, 0.0f, 0.0f);
+    }
+    else
+    {
+        return Element{};
+    }
+}
+
+// The operations of std::vector<Element>.
+template <typename Element>
+[[nodiscard]] const ListOps& listOps() noexcept
+{
+    using List = std::vector<Element>;
+    static constexpr ListOps operations{
+        .size = [](const void* list) noexcept { return static_cast<const List*>(list)->size(); },
+        .resize = [](void* list, std::size_t size) { static_cast<List*>(list)->resize(size, defaultElement<Element>()); },
+        .element = [](void* list, std::size_t index) noexcept -> void* {
+            return static_cast<List*>(list)->data() + index;
+        },
+        .insert =
+            [](void* list, std::size_t index) {
+                auto& elements = *static_cast<List*>(list);
+                elements.insert(elements.begin() + static_cast<std::ptrdiff_t>(index), defaultElement<Element>());
+            },
+        .erase =
+            [](void* list, std::size_t index) {
+                auto& elements = *static_cast<List*>(list);
+                elements.erase(elements.begin() + static_cast<std::ptrdiff_t>(index));
+            },
+    };
+    return operations;
+}
+
 // Optional details about a field, for tools.
 struct FieldHints
 {
@@ -150,6 +205,12 @@ struct FieldInfo
     std::uint8_t enumSize = 0;
     // Returns the address of the field inside an object of the reflected type.
     std::function<void*(void* object)> access;
+    // Set for a std::vector of values: the other members then describe its elements.
+    const ListOps* list = nullptr;
+    // Where the field is in its type, when the type can be built to find out.
+    std::size_t offset = unknownOffset;
+
+    static constexpr std::size_t unknownOffset = std::numeric_limits<std::size_t>::max();
 
     // The field has the C++ type associated with its kind, such as math::Vec3 for Vec3.
     [[nodiscard]] void* address(void* object) const
@@ -167,6 +228,9 @@ struct TypeInfo
 {
     std::string name;
     std::vector<FieldInfo> fields;
+    // The size and alignment of the type in bytes.
+    std::size_t size = 0;
+    std::size_t alignment = 0;
 
     [[nodiscard]] const FieldInfo* findField(std::string_view fieldName) const noexcept
     {
@@ -215,8 +279,48 @@ public:
         return *this;
     }
 
+    // A list of values, edited element by element. Lists of bool are not supported, since
+    // std::vector<bool> has no elements to point to.
+    template <ReflectableValue Element>
+        requires(!std::is_same_v<Element, bool>)
+    TypeBuilder& field(std::string name, std::vector<Element> T::* member, FieldHints hints = {})
+    {
+        std::vector<std::string_view> enumNames;
+        if constexpr (ReflectableEnum<Element>)
+        {
+            enumNames.assign(EnumNames<Element>::names.begin(), EnumNames<Element>::names.end());
+        }
+        m_info.fields.push_back({
+            .name = std::move(name),
+            .kind = ValueTraits<Element>::kind,
+            .assetType = std::string(hints.assetType),
+            .color = hints.color,
+            .angle = hints.angle,
+            .physicsLayer = hints.physicsLayer,
+            .enumNames = std::move(enumNames),
+            .enumSize = static_cast<std::uint8_t>(ReflectableEnum<Element> ? sizeof(Element) : 0),
+            .access = [member](void* object) -> void* {
+                return &(static_cast<T*>(object)->*member);
+            },
+            .list = &listOps<Element>(),
+        });
+        return *this;
+    }
+
     [[nodiscard]] TypeInfo build() &&
     {
+        m_info.size = sizeof(T);
+        m_info.alignment = alignof(T);
+        // A default object tells where the fields are, for bindings that reach them directly.
+        if constexpr (std::is_default_constructible_v<T>)
+        {
+            const T sample{};
+            const auto* const base = reinterpret_cast<const std::byte*>(&sample);
+            for (FieldInfo& field : m_info.fields)
+            {
+                field.offset = static_cast<std::size_t>(static_cast<const std::byte*>(field.address(&sample)) - base);
+            }
+        }
         return std::move(m_info);
     }
 

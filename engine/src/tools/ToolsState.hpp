@@ -46,6 +46,7 @@ inline constexpr const char* consoleWindow = "Output";
 inline constexpr const char* assetsWindow = "FileSystem";
 inline constexpr const char* viewportWindow = "Viewport";
 inline constexpr const char* settingsWindow = "Editor Settings";
+inline constexpr const char* debuggingWindow = "C# Debugging";
 
 // Payload type of an entity dragged in the hierarchy: the 16 bytes of its UUID.
 inline constexpr const char* entityPayload = "DEVEX_ENTITY";
@@ -236,6 +237,10 @@ struct ToolsState
     PlayState playState = PlayState::Editing;
     EditorRequests requests;
     GameCodeStatus gameCode;
+    DebuggerStatus debugger;
+    // The C# Debugging window, and whether Play waits for a debugger.
+    bool showDebugging = false;
+    bool waitForDebugger = false;
     std::shared_ptr<DialogAnswers> dialogAnswers = std::make_shared<DialogAnswers>();
     std::string windowTitle;
     WindowLayout windowLayout = WindowLayout::Unset;
@@ -315,6 +320,8 @@ void drawCodeInspector(ToolsState& state);
 // Asks for a new component file and, once it is compiled, adds it to the entity.
 void drawNewScriptPopup(ToolsState& state);
 void updatePendingScript(ToolsState& state, scene::Scene& scene);
+// How to attach a debugger to the C# code, and whether Play waits for one.
+void drawDebuggingWindow(ToolsState& state);
 // Opens a file in the code editor of the system.
 void openInCodeEditor(ToolsState& state, const std::filesystem::path& file);
 void drawStatisticsPanel(ToolsState& state, const scene::Scene& scene);

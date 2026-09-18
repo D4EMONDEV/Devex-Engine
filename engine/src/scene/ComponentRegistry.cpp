@@ -20,7 +20,12 @@ const ComponentType* ComponentRegistry::find(std::string_view name) const noexce
 
 bool ComponentRegistry::remove(std::string_view name)
 {
-    return std::erase_if(m_types, [name](const ComponentType& type) { return type.name() == name; }) > 0;
+    if (std::erase_if(m_types, [name](const ComponentType& type) { return type.name() == name; }) == 0)
+    {
+        return false;
+    }
+    ++m_generation;
+    return true;
 }
 
 const ComponentType* ComponentRegistry::findByIndex(std::size_t index) const noexcept
@@ -68,6 +73,7 @@ bool ComponentRegistry::addDynamic(std::shared_ptr<const DynamicComponentLayout>
         },
         .layout = std::move(layout),
     });
+    ++m_generation;
     return true;
 }
 

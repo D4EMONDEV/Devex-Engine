@@ -5,6 +5,7 @@
 #include <devex/scene/Entity.hpp>
 #include <devex/scene/Scene.hpp>
 
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <span>
@@ -61,6 +62,7 @@ public:
             },
             .remove = [](Scene& scene, Entity entity) { scene.remove<T>(entity); },
         });
+        ++m_generation;
     }
 
     // Registers a component type described while the engine runs, with the memory the engine gives
@@ -78,8 +80,16 @@ public:
     // In registration order, which is the order of components in saved files.
     [[nodiscard]] std::span<const ComponentType> types() const noexcept;
 
+    // Changes with every registration and removal, so that code caching types by name, such as C#
+    // views, knows when to look them up again.
+    [[nodiscard]] std::uint64_t generation() const noexcept
+    {
+        return m_generation;
+    }
+
 private:
     std::vector<ComponentType> m_types;
+    std::uint64_t m_generation = 0;
 };
 
 // The process-wide registry, which already contains the built-in components.

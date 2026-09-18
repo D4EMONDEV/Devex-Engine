@@ -32,9 +32,12 @@
 #include <devex/scene/Scene.hpp>
 
 #include <algorithm>
+#include <cmath>
 #include <cstdarg>
 #include <cstdio>
+#include <format>
 #include <mutex>
+#include <source_location>
 #include <string>
 #include <thread>
 #include <unordered_map>
@@ -122,6 +125,19 @@ void trace(const char* format, ...)
     DEVEX_LOG_DEBUG("Jolt: {}", buffer.data());
 }
 
+#ifdef JPH_ENABLE_ASSERTS
+// A failed check of Jolt is reported like the engine's own: written to the error output, which is
+// not buffered, then a break for the debugger.
+bool assertFailed(const char* expression, const char* message, const char* file, JPH::uint line)
+{
+    core::logMessage(core::LogLevel::Fatal,
+                     std::format("Jolt: assertion failed: {}{}{}{} ({}:{})", expression, message != nullptr ? " (" : "",
+                                 message != nullptr ? message : "", message != nullptr ? ")" : "", file, line),
+                     std::source_location{});
+    return true;
+}
+#endif
+
 // Jolt's allocator, factory and types are global: they exist while any world does.
 class JoltLibrary
 {
@@ -133,6 +149,7 @@ public:
         {
             JPH::RegisterDefaultAllocator();
             JPH::Trace = &trace;
+            JPH_IF_ENABLE_ASSERTS(JPH::AssertFailed = &assertFailed;)
             JPH::Factory::sInstance = new JPH::Factory();
             JPH::RegisterTypes();
         }
@@ -357,12 +374,36 @@ public:
         m_value = core::hash64(std::as_bytes(std::span(&value, 1)), m_value);
     }
 
+    // Placements are computed from world matrices, whose rounding changes as a body turns: they
+    // count to a tenth of a millimeter, so that only real changes rebuild the body.
+    void addPlacement(math::Vec3 value) noexcept
+    {
+        for (int axis = 0; axis < 3; ++axis)
+        {
+            add(static_cast<std::int64_t>(std::lround(value[axis] * placementSteps)));
+        }
+    }
+
+    void addPlacement(math::Quat rotation) noexcept
+    {
+        // q and -q are the same rotation.
+        if (rotation.w < 0.0f || (rotation.w == 0.0f && (rotation.x < 0.0f || (rotation.x == 0.0f && (rotation.y < 0.0f ||
+                                                                                                    (rotation.y == 0.0f && rotation.z < 0.0f))))))
+        {
+            rotation = -rotation;
+        }
+        addPlacement(math::Vec3(rotation.x, rotation.y, rotation.z));
+        add(static_cast<std::int64_t>(std::lround(rotation.w * placementSteps)));
+    }
+
     [[nodiscard]] std::uint64_t value() const noexcept
     {
         return m_value;
     }
 
 private:
+    static constexpr float placementSteps = 10000.0f;
+
     std::uint64_t m_value = 0x9E3779B97F4A7C15ull;
 };
 
@@ -390,9 +431,9 @@ private:
         signature.add(part.dimensions);
         signature.add(part.mesh.uuid);
         signature.add(part.convex);
-        signature.add(part.position);
-        signature.add(part.rotation);
-        signature.add(part.scale);
+        signature.addPlacement(part.position);
+        signature.addPlacement(part.rotation);
+        signature.addPlacement(part.scale);
     }
     return signature.value();
 }
@@ -420,6 +461,15 @@ private:
         }
     }
     return collider;
+}
+
+// Jolt refuses velocities above the limits of a body, which the velocities it wrote back can reach
+// once rounded: they stay just below.
+[[nodiscard]] math::Vec3 limitVelocity(math::Vec3 velocity, float limit) noexcept
+{
+    const float length = math::length(velocity);
+    const float allowed = limit * 0.999f;
+    return length > allowed ? velocity * (allowed / length) : velocity;
 }
 
 [[nodiscard]] bool rotationsDiffer(math::Quat first, math::Quat second) noexcept
@@ -795,6 +845,8 @@ struct PhysicsWorld::Implementation
         }
         for (auto& [key, description] : descriptions)
         {
+            // Pools change order as components come and go: the colliders of a body keep theirs.
+            std::ranges::sort(description.parts, {}, [](const ShapePart& part) { return keyOf(part.entity); });
             description.signature = signatureOf(description);
         }
         return descriptions;
@@ -837,8 +889,8 @@ struct PhysicsWorld::Implementation
             settings.mAllowedDOFs = static_cast<JPH::EAllowedDOFs>(degrees);
             settings.mOverrideMassProperties = JPH::EOverrideMassProperties::CalculateInertia;
             settings.mMassPropertiesOverride.mMass = std::max(rigidBody.mass, 0.001f);
-            settings.mLinearVelocity = toJolt(rigidBody.linearVelocity);
-            settings.mAngularVelocity = toJolt(rigidBody.angularVelocity);
+            settings.mLinearVelocity = toJolt(limitVelocity(rigidBody.linearVelocity, settings.mMaxLinearVelocity));
+            settings.mAngularVelocity = toJolt(limitVelocity(rigidBody.angularVelocity, settings.mMaxAngularVelocity));
         }
 
         const JPH::BodyID id = bodyInterface().CreateAndAddBody(
@@ -924,7 +976,11 @@ struct PhysicsWorld::Implementation
                 if (math::length(rigidBody.linearVelocity - body.linearVelocity) > positionTolerance ||
                     math::length(rigidBody.angularVelocity - body.angularVelocity) > positionTolerance)
                 {
-                    interface.SetLinearAndAngularVelocity(body.body, toJolt(rigidBody.linearVelocity), toJolt(rigidBody.angularVelocity));
+                    // Bodies keep the limits of Jolt's default settings.
+                    static const JPH::BodyCreationSettings defaults;
+                    interface.SetLinearAndAngularVelocity(
+                        body.body, toJolt(limitVelocity(rigidBody.linearVelocity, defaults.mMaxLinearVelocity)),
+                        toJolt(limitVelocity(rigidBody.angularVelocity, defaults.mMaxAngularVelocity)));
                     body.linearVelocity = rigidBody.linearVelocity;
                     body.angularVelocity = rigidBody.angularVelocity;
                 }

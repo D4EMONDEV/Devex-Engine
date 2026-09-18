@@ -50,4 +50,7 @@ private:
     std::optional<int> m_exitCode;
 };
 
+// The identifier of the running process, which debuggers attach to.
+[[nodiscard]] std::uint32_t currentProcessId() noexcept;
+
 } // namespace devex::platform

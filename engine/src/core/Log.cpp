@@ -82,7 +82,8 @@ private:
             std::fflush(stdout);
         }
 
-        if (record.level >= LogLevel::Error)
+        // Messages from other languages, such as C#, come without a C++ location.
+        if (record.level >= LogLevel::Error && record.location.line() != 0)
         {
             std::println(stream, "[{:9.3f}] {:<7} {} ({}:{})", elapsed.count(),
                          toString(record.level), record.message,

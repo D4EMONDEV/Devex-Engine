@@ -28,7 +28,13 @@ struct DynamicField
     bool physicsLayer = false;
     // For enumerations: the name of each value, in order.
     std::vector<std::string> enumNames;
+    // A list of values of the kind, stored as the std::vector a C++ component would use.
+    bool list = false;
 };
+
+namespace detail {
+struct DynamicListStorage;
+}
 
 // Where the fields of such a component live in the block of memory the engine allocates for it.
 class DynamicComponentLayout
@@ -62,7 +68,10 @@ public:
         return m_offsets;
     }
 
+    // Builds every field with the default value of its kind.
     void construct(void* component) const;
+    // Gives a component that has just been added the values its language calls default.
+    void initialize(void* component) const;
     void destroy(void* component) const noexcept;
     void copy(void* destination, const void* source) const;
 
@@ -74,6 +83,8 @@ private:
     std::vector<std::unique_ptr<std::string>> m_enumNames;
     std::vector<std::size_t> m_offsets;
     std::vector<reflection::ValueKind> m_kinds;
+    // The storage of each list field, null for the other fields.
+    std::vector<const detail::DynamicListStorage*> m_lists;
     Initializer m_initialize;
     std::size_t m_size = 0;
     std::size_t m_alignment = 1;

@@ -6,6 +6,7 @@
 #include <devex/scene/ComponentPool.hpp>
 #include <devex/scene/DynamicComponent.hpp>
 #include <devex/scene/Entity.hpp>
+#include <devex/scene/EntityRef.hpp>
 #include <devex/scene/View.hpp>
 
 #include <cstddef>
@@ -81,6 +82,10 @@ public:
     [[nodiscard]] Entity entityAtIndex(std::uint32_t index) const noexcept;
 
     [[nodiscard]] core::Uuid uuid(Entity entity) const noexcept;
+    // The entity a reference names, or an invalid entity when it is empty or names no entity.
+    [[nodiscard]] Entity resolve(EntityRef reference) const noexcept;
+    // A reference to the entity, empty when the entity is not alive.
+    [[nodiscard]] EntityRef reference(Entity entity) const noexcept;
     [[nodiscard]] const std::string& name(Entity entity) const noexcept;
     void setName(Entity entity, std::string name);
 
@@ -177,7 +182,8 @@ private:
     {
         core::Uuid uuid;
         std::string name;
-        std::uint32_t generation = 0;
+        // From 1, so that a live entity never has the null handle of C#, all zeros.
+        std::uint32_t generation = 1;
         bool alive = false;
         Entity parent;
         Entity firstChild;

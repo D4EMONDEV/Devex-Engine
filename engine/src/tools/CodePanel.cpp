@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cfloat>
+#include <format>
 #include <string>
 #include <system_error>
 #include <utility>
@@ -273,6 +274,76 @@ void drawNewScriptPopup(ToolsState& state)
         ImGui::CloseCurrentPopup();
     }
     ImGui::EndPopup();
+}
+
+void drawDebuggingWindow(ToolsState& state)
+{
+    if (!state.showDebugging)
+    {
+        return;
+    }
+    const DebuggerStatus& debugger = state.debugger;
+    const ImGuiViewport* const viewport = ImGui::GetMainViewport();
+    ImGui::SetNextWindowPos(viewport->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSize(ImVec2(ImGui::GetFontSize() * 34.0f, 0.0f), ImGuiCond_Appearing);
+    if (!ImGui::Begin(debuggingWindow, &state.showDebugging,
+                      ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_AlwaysAutoResize))
+    {
+        ImGui::End();
+        return;
+    }
+    const ThemeColors& colors = themeColors();
+    ImGui::AlignTextToFramePadding();
+    if (!debugger.available)
+    {
+        iconLabel(icons::Info, colors.warning);
+        ImGui::TextUnformatted("The project has no C# code loaded.");
+    }
+    else if (debugger.attached)
+    {
+        iconLabel(icons::CircleCheck, colors.success);
+        ImGui::TextUnformatted("A debugger is attached: breakpoints in the C# code stop the game.");
+    }
+    else if (debugger.waiting)
+    {
+        iconLabel(icons::Loader, colors.accent);
+        ImGui::TextUnformatted("Play starts as soon as a debugger attaches.");
+    }
+    else
+    {
+        iconLabel(icons::Bug, colors.warning);
+        ImGui::TextUnformatted("No debugger is attached.");
+    }
+
+    ImGui::Spacing();
+    const std::string process = std::format("devex-editor, process {}", debugger.processId);
+    ImGui::AlignTextToFramePadding();
+    boldText(process.c_str());
+    ImGui::SameLine();
+    if (labelButton(icons::Copy, "Copy Process Id"))
+    {
+        ImGui::SetClipboardText(std::to_string(debugger.processId).c_str());
+    }
+    ImGui::Spacing();
+    ImGui::PushTextWrapPos(ImGui::GetFontSize() * 33.0f);
+    ImGui::TextDisabled("Attach the debugger of your code editor to this process, for .NET code:");
+    ImGui::BulletText("Visual Studio: Debug > Attach to Process (Ctrl+Alt+P), devex-editor.exe, "
+                      "code type Managed (.NET Core, .NET 5+).");
+    ImGui::BulletText("Rider: Run > Attach to Process, devex-editor.");
+    ImGui::BulletText("VS Code with C# Dev Kit: .NET: Attach to a .NET 5+ or .NET Core process.");
+    ImGui::TextDisabled("Breakpoints follow the code as the editor builds and reloads it.");
+    ImGui::PopTextWrapPos();
+    ImGui::Spacing();
+    ImGui::Checkbox("Wait for a debugger when Play starts", &state.waitForDebugger);
+    if (debugger.waiting)
+    {
+        ImGui::SameLine();
+        if (labelButton(icons::Close, "Stop Waiting"))
+        {
+            state.requests.stop = true;
+        }
+    }
+    ImGui::End();
 }
 
 void updatePendingScript(ToolsState& state, scene::Scene& scene)

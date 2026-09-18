@@ -101,6 +101,13 @@ mais seulement explicitement ici : le code suit ce document, pas l'inverse.
 | Fichiers de code         | Dossier `code/` dans FileSystem, aperçu, ouverture dans l'IDE      |
 | Nouveau script           | *Add Component > New Script…*, en C# ou en C++                     |
 | .NET des jeux exportés   | Runtime .NET embarqué dans `managed/`, rien à installer            |
+| Références d'entités     | `EntityRef` : UUID en mémoire, suivi dans les préfabs, `resolve`   |
+| Listes                   | `std::vector` de valeurs réfléchies, `list(...)` dans les fichiers |
+| C++ vu du C#             | Vues `ref struct` générées de la réflexion, empreinte vérifiée     |
+| Collisions en C#         | `OnCollisionEnter`, `OnTriggerEnter`... et `Physics.Contacts`      |
+| Champs des composants C# | Chargés au début de chaque phase, écrits à sa fin                  |
+| Rechargement du C#       | Champs non enregistrés conservés par nom, Start non rappelé        |
+| Débogage du C#           | Attache depuis l'IDE, Play qui attend, symboles chargés            |
 
 ## Architecture cible
 
@@ -152,6 +159,7 @@ engine/        modules du moteur (include/ + src/)
 managed/       Devex.Managed, l'API C# du moteur, compilée dans bin/managed
 apps/editor/   devex-editor, l'éditeur
 apps/player/   devex-player, qui lance un projet hors de l'éditeur
+tools/         outils de build : devex-bindgen, qui génère les vues C# des composants C++
 samples/       projets d'exemple : sandbox, le bac à sable des jalons, avec son code
 shaders/       sources Slang du moteur, compilées dans bin/shaders
 tests/         tests Catch2, un dossier par module, données dans tests/data
@@ -342,10 +350,25 @@ docs/          décisions et documentation
   couleur, luminance en nits, rotation ; le premier est utilisé).
 - **Réflexion** : chaque composant déclare ses champs avec `DEVEX_DECLARE_REFLECTION` (header)
   et `DEVEX_REFLECT` (source). Types de valeurs : bool, int32, uint32, float, string, vec2,
-  vec3, vec4, quat, UUID, `AssetId` et énumérations (`EnumNames<T>` liste les noms, écrits
-  en texte dans les fichiers). Des indications guident l'inspecteur (`FieldHints`) : type
-  d'asset attendu, couleur, angle affiché en degrés. MSVC 19.51 ne fournit pas encore `<meta>`
-  (réflexion C++26) ; ces déclarations pourront alors être générées.
+  vec3, vec4, quat, UUID, `AssetId`, énumérations (`EnumNames<T>` liste les noms, écrits
+  en texte dans les fichiers) et références d'entités ; et des listes de toutes ces valeurs sauf
+  bool (`std::vector<T>`, décrit par `ListOps` : taille, élément, insertion, suppression). Des
+  indications guident l'inspecteur (`FieldHints`) : type d'asset attendu, couleur, angle affiché
+  en degrés. La réflexion connaît aussi la taille des types et l'emplacement de chaque champ,
+  que les vues C# utilisent. MSVC 19.51 ne fournit pas encore `<meta>` (réflexion C++26) ; ces
+  déclarations pourront alors être générées.
+- **Références d'entités** : un champ `scene::EntityRef` désigne une autre entité de la même scène
+  par son **UUID**, pas par son handle, si bien qu'il survit à l'enregistrement, à la copie jouée, à
+  l'annulation et aux préfabs : en chargeant une instance, les références entre les entités du
+  préfab sont remplacées par les UUID dérivés de l'instance (sur le texte, avant les
+  modifications), celles qui sortent du préfab restent telles quelles et ne désignent rien.
+  `Scene::resolve` donne l'entité (invalide quand la référence est vide ou l'entité détruite),
+  `Scene::reference` la référence. Fichiers : `entity("<uuid>")`, ou `entity()`. L'inspecteur les
+  choisit dans un menu de la scène ou par glisser-déposer depuis l'arbre.
+- **Listes** : écrites `list(a, b, c)` ; une valeur invalide laisse la liste inchangée.
+  L'inspecteur montre leur taille, un bouton pour ajouter un élément et un pour retirer chacun ;
+  chaque changement est une étape d'annulation de toute la liste, et une instance de préfab
+  remplace la liste entière quand elle la modifie.
 - **Composants du jeu** : une struct, sa réflexion, puis `scene::registerComponent<T>()` (ou
   `GameRegistry::component<T>()` dans un module de jeu). La déclaration de réflexion doit être dans
   l'espace de noms du type, où la recherche dépendante des arguments la trouve.
@@ -878,7 +901,10 @@ les assets s'écrivent au fil de leur lecture.
   suit son entité (`MoveKinematic`) ; une vitesse modifiée dans `RigidBody` est appliquée. Après le
   pas, les corps dynamiques écrivent leur `Transform` (relative au parent), leur transformée du
   monde et leurs vitesses. Le coût est linéaire en nombre de corps ; des milliers de corps
-  demanderont des marqueurs de modification plutôt que des signatures.
+  demanderont des marqueurs de modification plutôt que des signatures. La signature compte la
+  place des formes au dixième de millimètre (et une rotation `q` comme `-q`), et range les formes
+  d'un corps par entité : sans cela, l'arrondi des matrices du monde d'un corps qui tourne
+  changeait à chaque pas et le reconstruisait (jusqu'au jalon 15).
 - **Personnages** : un `CharacterVirtual` de Jolt par `CharacterController`, une capsule posée sur
   la position de l'entité, avec un corps intérieur pour être touché par les requêtes, les
   déclencheurs et les corps. À chaque pas, le jeu a mis sa vitesse ; debout, la vitesse verticale
@@ -910,7 +936,9 @@ les assets s'écrivent au fil de leur lecture.
   et zone de déclenchement ; l'inspecteur choisit la couche par son nom.
 - **Réglages de Jolt** : pool de threads de Jolt (jusqu'à 8), 65 536 corps, 65 536 paires, 16 384
   contraintes de contact, 32 Mo de mémoire temporaire. Les corps au repos s'enfoncent de 2 cm au
-  plus (tolérance de pénétration de Jolt).
+  plus (tolérance de pénétration de Jolt). Les vitesses données à Jolt restent juste sous ses
+  limites (500 m/s, 15π rad/s), que les vitesses relues, une fois arrondies, pouvaient dépasser.
+  En Debug, une vérification de Jolt qui échoue est écrite en erreur fatale avant l'arrêt.
 
 ### Gameplay
 
@@ -968,19 +996,45 @@ les assets s'écrivent au fil de leur lecture.
   (`scene::DynamicComponentLayout`) — nom, champs, décalages calculés comme ceux d'un composant
   C++. Les valeurs vivent donc dans la scène, pas dans l'objet C#, si bien que les scènes, les
   préfabs, l'annulation, l'inspecteur et la copie jouée les traitent exactement comme les
-  composants C++. Avant qu'un comportement tourne, le runtime copie les champs dans l'objet C#, et
-  les recopie ensuite (délégués compilés une fois par champ, arbres d'expression). Un composant
-  neuf part des valeurs que la classe C# donne à ses champs (`public float Speed = 1.0f;`) : le
-  moteur les demande au runtime juste après avoir construit le composant.
+  composants C++. Au **début de chaque phase**, le runtime copie les champs de tous les composants
+  dans leurs objets C# (délégués compilés une fois par champ, arbres d'expression) ; le code du jeu
+  change ensuite librement ses objets et ceux des autres composants (`entity.Get<Door>().Open =
+  true`) ; à la **fin de la phase**, tout est recopié dans la scène. Un composant neuf part des
+  valeurs que la classe C# donne à ses champs (`public float Speed = 1.0f;`) : le moteur les
+  demande au runtime quand il ajoute le composant, pas quand il le copie.
+- **Objets C#** : un par composant, créé quand la phase le rencontre et gardé tant qu'il existe ;
+  ses champs non enregistrés (privés, `[Hidden]`) durent donc d'une frame à l'autre. Une nouvelle
+  partie (Play, changement de scène) les recrée tous. `Start` est appelé une fois, avant tout le
+  reste pour ce composant.
 - **Types de champs** : `bool`, `int`, `uint`, `float`, `string`, `Vec2`, `Vec3`, `Vec4`, `Quat`,
-  `AssetId` et les énumérations à valeurs `int`. Les attributs `[Angle]` (degrés dans l'inspecteur,
+  `Uuid`, `AssetId`, `Entity` (enregistré comme référence d'entité) et les énumérations à valeurs
+  `int`, ainsi que des `List<T>` de ces types sauf `bool`. Un champ public d'un autre type est
+  signalé et n'est pas enregistré. Les attributs `[Angle]` (degrés dans l'inspecteur,
   radians dans le code), `[Color]`, `[PhysicsLayer]`, `[AssetType("mesh")]` et `[Hidden]` donnent
   les mêmes indications que la réflexion C++. `WalkSpeed` est enregistré `walk_speed`, comme un
   champ C++.
-- **API de base** : `Scene` (créer, détruire, nommer, chercher, hiérarchie, `Transform` par
-  référence, ajouter et retirer un composant C#, parcourir les composants d'un type), `Input`
-  (clavier par position physique, souris, capture), `Time.Delta`, `Log`, `Game.Quit()`. La
-  physique, les assets et les autres services restent en C++ pour l'instant.
+- **API** : `Entity` (nom, vie, `Transform` par référence, hiérarchie, destruction, `Get`, `Has`,
+  `Add`, `Remove`), `Scene` (dont `Scene.Current`), `Input` (clavier par position physique,
+  souris, capture), `Time` (`Delta`, `Elapsed`, `Frame`), `Screen`, `Log`, `Game` (`Quit`,
+  `LoadScene`), `Assets.Find("res://...")`, `Prefabs.Instantiate`, `Physics` (`Raycast`,
+  `SphereCast`, `OverlapSphere`, forces, couples et impulsions, `Contacts`).
+- **Composants C++ vus du C#** : ceux du moteur comme ceux du module C++ du jeu sont atteints par
+  des **vues** générées de leur réflexion : `ref var light = ref ...` n'est pas nécessaire, la vue
+  est une `ref struct` sur la mémoire du composant dont les propriétés lisent et écrivent les
+  champs sur place (`entity.Get<PointLight>().Intensity = 900;`), chaînes, entités et listes
+  compris (`NativeList<T>`, `NativeStringList`, `NativeEntityList`). Une vue ne se garde pas au-delà
+  de l'appel : c'est une `ref struct`, le compilateur l'interdit dans un champ. `Get`, `Has`, `Add`
+  et `Remove` servent aux deux sortes de composants, choisies par les contraintes génériques.
+  Les vues du moteur sont générées **au build du moteur** par `devex-bindgen` et compilées dans
+  `Devex.Managed` ; celles du jeu **par l'éditeur** à chaque chargement du module C++, dans
+  `.devex/code/csharp/generated`, que le projet C# compile, et le C# est alors recompilé. Chaque vue
+  porte l'empreinte de la disposition de son type (nom, taille, champs, décalages), comparée à
+  celle du moteur qui tourne au premier accès : une vue périmée lève une exception au lieu
+  d'écrire au mauvais endroit.
+- **Collisions** : juste avant `Update`, le runtime appelle `OnCollisionEnter`,
+  `OnCollisionExit`, `OnTriggerEnter` et `OnTriggerExit(Entity other)` sur les composants C# des
+  deux entités d'un contact (l'entité du corps : celle du `RigidBody` ou du collider), pour les
+  contacts des pas de physique de la frame. `Physics.Contacts` les donne tous aux systèmes.
 - **Hébergement de .NET** : le moteur charge `hostfxr` à l'exécution et démarre `Devex.Managed.dll`
   (à côté de l'exécutable, dans `bin/managed`), sans dépendance de compilation vers .NET. Les
   tables de fonctions sont échangées une fois (`[UnmanagedCallersOnly]` côté C#, pointeurs de
@@ -991,9 +1045,20 @@ les assets s'écrivent au fil de leur lecture.
   en arrière-plan 300 ms après la dernière modification, comme pour le C++. Les erreurs vont dans
   la console et l'état apparaît dans la barre de menus.
 - **Rechargement à chaud** : l'assembly du jeu est chargée dans un `AssemblyLoadContext`
-  *collectible*, **depuis la mémoire** pour que le SDK puisse réécrire le fichier. À chaque nouvelle
-  build, les composants sont conservés en texte dans les scènes, les types désenregistrés, le
-  contexte déchargé, puis tout est restauré — même mécanique que le C++, partie en cours comprise.
+  *collectible*, depuis une **copie** (dossier temporaire par processus et par chargement, avec ses
+  symboles), pour que le SDK puisse réécrire le fichier et que les débogueurs trouvent le `.pdb`.
+  À chaque nouvelle build, les composants sont conservés en texte dans les scènes, les types
+  désenregistrés, le contexte déchargé, puis tout est restauré — même mécanique que le C++, partie
+  en cours comprise. Les **champs non enregistrés** des objets C# sont conservés par nom quand
+  leur type ne vient pas de l'assembly du jeu (nombres, `Vec3`, `List<Entity>`...), et `Start`
+  n'est pas rappelé : une partie continue sans à-coup. Les champs statiques sont perdus.
+- **Erreurs** : une exception d'un composant ou d'un système est attrapée et écrite une fois avec
+  sa pile, fichier et ligne compris ; ses répétitions sont comptées (un message toutes les 100).
+  Les autres composants continuent.
+- **Débogage** : *Project > C# Debugging...* donne le numéro du processus et la marche à suivre
+  pour s'attacher depuis Visual Studio, Rider ou VS Code (code .NET) ; les points d'arrêt suivent
+  le code à chaque rechargement. Avec *Wait for a debugger when Play starts*, Play attend qu'un
+  débogueur soit attaché avant de lancer le jeu (Stop annule).
 - **Fichiers de code dans l'éditeur** : le panneau FileSystem montre le dossier `code/` (les
   dossiers de build sont masqués) ; un fichier sélectionné s'affiche en lecture seule dans
   l'inspecteur, numéroté, en police mono, avec *Open in Code Editor* (l'IDE associé aux `.cs` ou
@@ -1007,12 +1072,20 @@ les assets s'écrivent au fil de leur lecture.
   `managed/` en autonome (`dotnet publish --self-contained`, environ 80 Mo) avec
   `Devex.Managed.dll` et `Game.Scripts.dll` ; le moteur préfère alors le `hostfxr` livré à côté du
   jeu et démarre par ligne de commande (`hostfxr_initialize_for_dotnet_command_line`). Rien n'est à
-  installer sur la machine du joueur ; un jeu en C++ seul n'emporte rien de tout cela.
-- **Limites** : les erreurs d'un comportement C# sont attrapées et écrites dans la console (une
-  exception n'arrête pas le jeu, mais le composant finit sa frame dans un état partiel) ; les
-  champs de type liste, tableau ou référence d'entité ne sont pas encore décrits ; le C# ne touche
-  ni la physique ni les assets ; la compilation demande le **SDK .NET 10** et ne
-  tourne, comme le C++, que sous Windows.
+  installer sur la machine du joueur ; un jeu en C++ seul n'emporte rien de tout cela. Le C# de
+  l'export est compilé à part (`.devex/export/csharp`) contre le `Devex.Managed` de la build du
+  moteur choisie, avec des vues des composants C++ générées par le `devex-bindgen` de cette build
+  à partir du module compilé pour elle : les dispositions diffèrent entre Debug et Release
+  (`std::string`, `std::vector` avec MSVC).
+- **Un seul .NET par processus** : le runtime .NET ne se décharge pas ; l'hôte démarre une fois et
+  chaque `ManagedGame` s'y branche avec ses tables de fonctions, versionnées pour qu'un
+  `Devex.Managed.dll` d'une autre build soit refusé.
+- **Limites** : un composant qui lève une exception finit sa phase dans un état partiel ; pas de
+  listes de structures ni de dictionnaires dans les champs ; les vues C++ ne connaissent que les
+  champs réfléchis ; le changement de phase copie tous les champs de tous les composants C# (à
+  surveiller pour des milliers de composants) ; la compilation demande le **SDK .NET 10** et ne
+  tourne, comme le C++, que sous Windows. `Devex.Environment` (le composant `Environment`) masque
+  `System.Environment` dans le code qui importe les deux espaces de noms.
 
 ### Code C++
 
@@ -1135,6 +1208,15 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     Script…* en C# ou C++, runtime .NET embarqué dans les jeux exportés, composant `Bobber` et
     système `BobberReport` du bac à sable.
 
+15. ✅ **C# complet** — références d'entités (UUID, suivies dans les préfabs) et listes dans la
+    réflexion, l'inspecteur et les fichiers, en C++ comme en C# ; vues C# générées des composants
+    du moteur (au build) et du module C++ du jeu (par l'éditeur), vérifiées par empreinte ;
+    physique, préfabs, assets, scènes, temps et écran en C# ; `OnCollisionEnter`,
+    `OnTriggerEnter`... ; données synchronisées par phase ; état privé conservé au rechargement ;
+    erreurs dédoublonnées avec leurs lignes ; fenêtre *C# Debugging* et Play qui attend un
+    débogueur ; export qui génère ses vues pour sa build ; cibles, porte et distributeur de
+    caisses en C# dans l'arène ; corps en rotation qui ne sont plus reconstruits à chaque pas.
+
 Ensuite, sans ordre figé : post-traitements (bloom, TAA), transparence, audio, animation
 squelettique, CI Linux.
 
@@ -1144,10 +1226,10 @@ squelettique, CI Linux.
 
 - **Systèmes** : exécution en parallèle, dépendances déclarées entre systèmes, systèmes actifs
   aussi en édition, ressources globales du jeu.
-- **C#** : physique, assets, instanciation de préfabs et fenêtre exposés au C# ; champs liste,
-  tableau et référence d'entité ; appeler du C++ depuis le C# et l'inverse ; débogueur attaché
-  depuis l'éditeur ; `dotnet` embarqué pour les machines sans SDK ; corps du composant écrit dans
-  l'éditeur (édition en place) ; export vers d'autres plateformes du runtime .NET.
+- **C#** : listes de structures et dictionnaires, champs de type composant (`public Door Door;`),
+  systèmes C++ appelant du code C#, bouton Debug qui lance l'IDE, `dotnet` embarqué pour les
+  machines sans SDK, édition du code dans l'éditeur, copie limitée aux champs changés entre les
+  phases, export vers d'autres plateformes du runtime .NET.
 - **Isolation du code du jeu** : protéger l'éditeur d'un plantage du module (processus séparé,
   gestion structurée des exceptions).
 - **Physique** : articulations (charnières, ressorts), véhicules, ragdolls, matériaux physiques par

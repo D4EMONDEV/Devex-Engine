@@ -25,7 +25,8 @@ Le détail, l'architecture des modules et les jalons sont dans
 - `Devex::Math` : types GLM sous `devex::math`, projection reverse-Z infinie, TRS ;
 - `Devex::Platform` : fenêtre, événements et entrées clavier/souris, dialogues de fichiers,
   bibliothèques partagées et processus sur SDL3 ;
-- `Devex::Reflection` : description des champs des composants (`DEVEX_REFLECT`) ;
+- `Devex::Reflection` : description des champs des composants (`DEVEX_REFLECT`), listes et
+  références d'entités comprises ;
 - `Devex::Serialization` : format texte commun des fichiers `.dvx*`, flux binaires ;
 - `Devex::Asset` : `AssetId`, maillages, textures, matériaux et modèles, fichiers `.dvxasset`,
   projets `.dvxproj`, paquets de jeux exportés `.dvxpak` ;
@@ -49,19 +50,23 @@ Le détail, l'architecture des modules et les jalons sont dans
   (composants et systèmes rechargeables à chaud), code C# sur .NET hébergé (composants, systèmes,
   compilation et rechargement à chaud), chargement des assets à la demande, changement de
   scène, rendu automatique de la scène, export d'un jeu ;
-- `Devex.Managed` : l'API C# du moteur (`Component`, `Scene`, `Input`, `Time`, `Log`, maths),
-  compilée dans `bin/managed` quand le SDK .NET est installé ;
+- `Devex.Managed` : l'API C# du moteur (`Component`, `Entity`, `Scene`, `Input`, `Physics`,
+  `Prefabs`, `Assets`, `Time`, `Log`, maths) et les vues des composants du moteur, compilée dans
+  `bin/managed` quand le SDK .NET est installé ;
 - `Devex::Engine` : tous les modules dans une bibliothèque partagée, `devex-engine.dll` ;
 - `devex-editor` : l'éditeur, qui compile et recharge à chaud le code des projets ;
 - `devex-player` : lance un projet hors de l'éditeur, ou le paquet d'un jeu exporté (scène de
   démarrage, réglages de fenêtre et code du jeu) ;
-- `samples/sandbox` : le bac à sable, un projet dont le gameplay est un module C++ et un composant
-  C# dans `code/` :
+- `devex-bindgen` : outil de build qui génère les vues C# des composants C++ ;
+- `samples/sandbox` : le bac à sable, un projet dont le gameplay mêle un module C++ et du C# dans
+  `code/` :
   la scène `arena` (scène de démarrage), où un personnage marche, saute, lance des balles et
   renverse des caisses entre rampe, marches, plateforme mobile et zones qui allument des lampes,
   faite en partie de préfabs (`assets/prefabs` : caisse, pyramide de caisses, balle, zone de
-  lampe), où un cube monte et descend sous le contrôle d'un composant C# (`code/Bobber.cs`, avec un
-  système C# à côté) et où Tab passe à l'autre scène ; et la
+  lampe) ; le C# y ajoute des cibles qui comptent les balles reçues et font clignoter leur lampe
+  (`code/Target.cs`, avec le score), une porte qui s'ouvre quand le joueur approche
+  (`code/Door.cs`), un distributeur de caisses (`code/Dispenser.cs`) et un cube qui flotte
+  (`code/Bobber.cs`) ; Tab passe à l'autre scène ; et la
   scène `sandbox` (caisse et balises glTF, sphères or et plastique, ciel HDR, plateau tournant, jour
   et nuit avec N).
 
@@ -152,8 +157,31 @@ public class Spinner : Component
 }
 ```
 
-Un projet peut mélanger les deux : le C++ et le C# tournent dans la même frame, sur la même scène.
-Un jeu exporté qui contient du C# emporte son runtime .NET, sans rien à installer chez le joueur.
+Un projet peut mélanger les deux : le C++ et le C# tournent dans la même frame, sur la même scène,
+et le C# voit les composants C++, ceux du moteur comme ceux du jeu, par des vues générées :
+
+```csharp
+public class Target : Component
+{
+    public Entity Lamp;          // une autre entité, choisie dans l'inspecteur
+    public List<Vec3> Spots = []; // une liste, éditée dans l'inspecteur
+    public int Hits;
+
+    public override void OnCollisionEnter(Entity other)
+    {
+        if (other.Has<Ball>())   // Ball est un composant C++ du jeu
+        {
+            ++Hits;
+            Lamp.Get<PointLight>().Intensity = 6000.0f;   // un composant du moteur, changé sur place
+            Prefabs.Instantiate(Assets.Find("res://assets/prefabs/crate.dvxscene")!.Value, Spots[0]);
+        }
+    }
+}
+```
+
+Pour déboguer le C#, *Project > C# Debugging...* donne le processus auquel attacher Visual Studio,
+Rider ou VS Code, et peut faire attendre Play jusqu'à ce qu'un débogueur soit attaché. Un jeu exporté
+qui contient du C# emporte son runtime .NET, sans rien à installer chez le joueur.
 
 Dans l'éditeur : clic gauche pour sélectionner, Q / W / E / R pour sélectionner, déplacer, tourner
 ou mettre à l'échelle (Ctrl aimante), clic droit maintenu + ZQSD pour voler, Alt + clic gauche pour
