@@ -1,0 +1,296 @@
+#include "ToolsState.hpp"
+
+#include <devex/core/File.hpp>
+#include <devex/core/Log.hpp>
+#include <devex/core/Path.hpp>
+#include <devex/scene/ComponentRegistry.hpp>
+#include <devex/tools/SceneCommands.hpp>
+
+#include <imgui_internal.h>
+#include <imgui_stdlib.h>
+
+#include <algorithm>
+#include <cctype>
+#include <cfloat>
+#include <string>
+#include <system_error>
+#include <utility>
+#include <vector>
+
+// The code of the game in the editor: its files next to the assets, a read-only view of the one
+// selected, and new components created from the inspector. Editing happens in the code editor of
+// the system, which the editor opens on the file.
+namespace devex::tools::detail {
+namespace {
+
+inline constexpr const char* newScriptPopup = "New Script";
+
+[[nodiscard]] bool isCodeFile(const std::filesystem::path& path)
+{
+    const std::filesystem::path extension = path.extension();
+    return extension == ".cs" || extension == ".cpp" || extension == ".hpp" || extension == ".h" ||
+           extension == ".txt" || extension == ".csproj";
+}
+
+[[nodiscard]] EntityIcon codeIcon(const std::filesystem::path& path)
+{
+    const ThemeColors& colors = themeColors();
+    if (path.extension() == ".cs")
+    {
+        return {icons::FileCode, colors.gameCode};
+    }
+    if (path.extension() == ".cpp" || path.extension() == ".hpp" || path.extension() == ".h")
+    {
+        return {icons::Code, colors.entity};
+    }
+    return {icons::FileText, colors.neutral};
+}
+
+// A row of the tree, like the assets panel draws them.
+[[nodiscard]] bool codeRow(const char* id, ImGuiTreeNodeFlags flags, EntityIcon icon, std::string_view label)
+{
+    const float nodeX = ImGui::GetCursorScreenPos().x;
+    const bool open = ImGui::TreeNodeEx(id, flags | ImGuiTreeNodeFlags_SpanFullWidth | ImGuiTreeNodeFlags_FramePadding);
+    const ImVec2 min = ImGui::GetItemRectMin();
+    const float textY = min.y + (ImGui::GetItemRectSize().y - ImGui::GetFontSize()) * 0.5f;
+    const float iconX = nodeX + ImGui::GetTreeNodeToLabelSpacing();
+    ImDrawList* const draw = ImGui::GetWindowDrawList();
+    draw->AddText(ImVec2(iconX, textY), uiColorU32(icon.color), icon.icon.c_str());
+    draw->AddText(ImVec2(iconX + ImGui::CalcTextSize(icon.icon.c_str()).x + ImGui::GetStyle().ItemInnerSpacing.x, textY),
+                  ImGui::GetColorU32(ImGuiCol_Text), label.data(), label.data() + label.size());
+    return open;
+}
+
+void selectCodeFile(ToolsState& state, const std::filesystem::path& file)
+{
+    state.selectedCode = file;
+    state.selectedCodeText = core::readTextFile(file).value_or(std::string("(the file cannot be read)"));
+    // The inspector shows one or the other.
+    state.selection = core::Uuid{};
+}
+
+void drawCodeEntry(ToolsState& state, const std::filesystem::path& path, bool directory)
+{
+    const std::string name = core::toUtf8(path.filename());
+    ImGui::PushID(name.c_str());
+    if (directory)
+    {
+        const ThemeColors& colors = themeColors();
+        const bool open = codeRow("##folder", ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_OpenOnDoubleClick,
+                                  {icons::Folder, colors.folder}, name);
+        if (open)
+        {
+            std::error_code error;
+            std::vector<std::filesystem::path> entries;
+            for (const std::filesystem::directory_entry& entry : std::filesystem::directory_iterator(path, error))
+            {
+                entries.push_back(entry.path());
+            }
+            std::ranges::sort(entries);
+            for (const std::filesystem::path& entry : entries)
+            {
+                // Build folders hold no code of the game.
+                const std::string entryName = core::toUtf8(entry.filename());
+                if (entryName == "obj" || entryName == "bin" || entryName.starts_with('.'))
+                {
+                    continue;
+                }
+                const bool isDirectory = std::filesystem::is_directory(entry, error);
+                if (isDirectory || isCodeFile(entry))
+                {
+                    drawCodeEntry(state, entry, isDirectory);
+                }
+            }
+            ImGui::TreePop();
+        }
+        ImGui::PopID();
+        return;
+    }
+
+    ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
+    if (state.selectedCode == path)
+    {
+        flags |= ImGuiTreeNodeFlags_Selected;
+    }
+    static_cast<void>(codeRow("##file", flags, codeIcon(path), name));
+    if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
+    {
+        selectCodeFile(state, path);
+    }
+    if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
+    {
+        openInCodeEditor(state, path);
+    }
+    if (ImGui::BeginPopupContextItem("code menu"))
+    {
+        selectCodeFile(state, path);
+        if (ImGui::MenuItemEx("Open in Code Editor", icons::ExternalLink.c_str()))
+        {
+            openInCodeEditor(state, path);
+        }
+        if (ImGui::MenuItemEx("Show in File Manager", icons::FolderOpen.c_str()))
+        {
+            if (core::Result<void> opened = state.platform.openPath(path.parent_path()); !opened)
+            {
+                DEVEX_LOG_WARNING("{}", opened.error());
+            }
+        }
+        ImGui::EndPopup();
+    }
+    ImGui::PopID();
+}
+
+} // namespace
+
+void openInCodeEditor(ToolsState& state, const std::filesystem::path& file)
+{
+    if (core::Result<void> opened = state.platform.openPath(file); !opened)
+    {
+        DEVEX_LOG_WARNING("Cannot open {}: {}", core::toUtf8(file.filename()), opened.error());
+    }
+}
+
+void drawCodeFiles(ToolsState& state)
+{
+    if (state.database == nullptr)
+    {
+        return;
+    }
+    const std::filesystem::path code = state.database->project().codeDirectory();
+    std::error_code error;
+    if (!std::filesystem::is_directory(code, error))
+    {
+        return;
+    }
+    drawCodeEntry(state, code, true);
+}
+
+void drawCodeInspector(ToolsState& state)
+{
+    const ThemeColors& colors = themeColors();
+    const std::string name = core::toUtf8(state.selectedCode.filename());
+    ImGui::AlignTextToFramePadding();
+    iconLabel(codeIcon(state.selectedCode).icon, codeIcon(state.selectedCode).color);
+    boldText(name.c_str());
+    if (labelButton(icons::ExternalLink, "Open in Code Editor"))
+    {
+        openInCodeEditor(state, state.selectedCode);
+    }
+    ImGui::SameLine();
+    if (labelButton(icons::Refresh, "Reload"))
+    {
+        state.selectedCodeText = core::readTextFile(state.selectedCode).value_or(std::string("(the file cannot be read)"));
+    }
+    ImGui::TextDisabled("Read only: the editor compiles the file when it is saved.");
+    ImGui::Spacing();
+
+    // The file with its line numbers, in the code font.
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, uiColor(colors.field));
+    if (ImGui::BeginChild("code", ImVec2(0.0f, 0.0f), ImGuiChildFlags_Borders, ImGuiWindowFlags_HorizontalScrollbar))
+    {
+        ImGui::PushFont(editorFonts().mono, 0.0f);
+        std::string_view text = state.selectedCodeText;
+        int line = 1;
+        while (!text.empty())
+        {
+            const std::size_t end = text.find('\n');
+            std::string_view current = text.substr(0, end);
+            if (current.ends_with('\r'))
+            {
+                current.remove_suffix(1);
+            }
+            ImGui::TextDisabled("%4d", line);
+            ImGui::SameLine();
+            ImGui::TextUnformatted(current.data(), current.data() + current.size());
+            ++line;
+            if (end == std::string_view::npos)
+            {
+                break;
+            }
+            text.remove_prefix(end + 1);
+        }
+        ImGui::PopFont();
+    }
+    ImGui::EndChild();
+    ImGui::PopStyleColor();
+}
+
+void drawNewScriptPopup(ToolsState& state)
+{
+    if (std::exchange(state.openNewScriptPopup, false))
+    {
+        ImGui::OpenPopup(newScriptPopup);
+    }
+    ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    if (!ImGui::BeginPopupModal(newScriptPopup, nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings))
+    {
+        return;
+    }
+
+    ImGui::TextDisabled("A component with fields shown in the inspector, written to the code folder.");
+    ImGui::Spacing();
+    if (ImGui::IsWindowAppearing())
+    {
+        ImGui::SetKeyboardFocusHere();
+    }
+    ImGui::SetNextItemWidth(ImGui::GetFontSize() * 16.0f);
+    ImGui::InputTextWithHint("##name", "Component name", &state.newScriptName);
+    ImGui::SameLine();
+    if (ImGui::RadioButton("C#", state.newScriptCSharp))
+    {
+        state.newScriptCSharp = true;
+    }
+    ImGui::SameLine();
+    if (ImGui::RadioButton("C++", !state.newScriptCSharp))
+    {
+        state.newScriptCSharp = false;
+    }
+
+    // A component name is a C# or C++ identifier.
+    const std::string& name = state.newScriptName;
+    const bool valid = !name.empty() && (std::isalpha(static_cast<unsigned char>(name.front())) != 0 || name.front() == '_') &&
+                       std::ranges::all_of(name, [](char character) {
+                           return std::isalnum(static_cast<unsigned char>(character)) != 0 || character == '_';
+                       }) &&
+                       scene::componentRegistry().find(name) == nullptr;
+    if (!valid)
+    {
+        iconLabel(icons::TriangleAlert, themeColors().warning);
+        ImGui::TextUnformatted(name.empty() ? "The component needs a name."
+                                            : "Use a name that no component has yet, made of letters, digits and _.");
+    }
+    ImGui::Spacing();
+    if (primaryButton(icons::FilePlus, "Create", ImGui::GetFontSize() * 8.0f, valid))
+    {
+        state.requests.newScript = NewScript{.name = name, .csharp = state.newScriptCSharp};
+        state.pendingScript = name;
+        state.pendingScriptEntity = state.selection;
+        ImGui::CloseCurrentPopup();
+    }
+    ImGui::SameLine();
+    if (labelButton(icons::Close, "Cancel", ImGui::GetFontSize() * 8.0f))
+    {
+        ImGui::CloseCurrentPopup();
+    }
+    ImGui::EndPopup();
+}
+
+void updatePendingScript(ToolsState& state, scene::Scene& scene)
+{
+    if (state.pendingScript.empty())
+    {
+        return;
+    }
+    if (!scene.findEntity(state.pendingScriptEntity).isValid())
+    {
+        state.pendingScript.clear();
+        return;
+    }
+    // The component appears once its file is compiled and its code loaded.
+    if (scene::componentRegistry().find(state.pendingScript) != nullptr)
+    {
+        state.pendingCommand = makeAddComponentCommand(state.pendingScriptEntity, std::exchange(state.pendingScript, {}));
+    }
+}
+
+} // namespace devex::tools::detail

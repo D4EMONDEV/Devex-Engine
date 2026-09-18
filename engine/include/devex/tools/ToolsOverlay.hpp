@@ -91,6 +91,13 @@ struct ExportStatus
     std::filesystem::path executable;
 };
 
+// A component the editor is asked to create, in C# or in C++.
+struct NewScript
+{
+    std::string name;
+    bool csharp = true;
+};
+
 // What the editor asks of the application, collected while its panels are drawn.
 struct EditorRequests
 {
@@ -110,6 +117,8 @@ struct EditorRequests
     bool createCode = false;
     // Exports the game as the export settings of the project say.
     bool exportGame = false;
+    // Creates a component in a new file of the code folder and opens it in the code editor.
+    std::optional<NewScript> newScript;
 };
 
 // Docked Dear ImGui panels in a Godot-like theme: scene tree, inspector, file system, output and

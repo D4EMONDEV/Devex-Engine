@@ -21,6 +21,7 @@
 //     <Game>.exe          devex-player, renamed after the game, with its icon
 //     <Game>.dvxpak       the settings, scenes and cooked assets of the game (asset::PackageWriter)
 //     Game.dll            the game module, built for the engine build
+//     Game.Scripts.dll    the C# code of the game, with .NET in managed/ when the game uses C#
 //     devex-engine.dll    and the other libraries of the engine build, with the C++ runtime when
 //                         the engine build provides it (bin/redist)
 //     shaders/            the compiled shaders; resources/ too for Debug builds, for the tools overlay
@@ -82,6 +83,8 @@ struct ExportPlan
     std::vector<asset::AssetId> includedAssets;
     // The source image of the icon of the game.
     std::optional<std::filesystem::path> icon;
+    // The project has C# code: its assembly and the .NET runtime go with the game.
+    bool managed = false;
     // Writes the package only, without building the code or copying the engine, as tests do.
     bool packageOnly = false;
 };

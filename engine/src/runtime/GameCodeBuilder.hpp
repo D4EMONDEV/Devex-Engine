@@ -36,6 +36,9 @@ public:
     [[nodiscard]] static bool hasCode(const asset::Project& project);
     // Writes code/CMakeLists.txt and a first source file with an example component and system.
     [[nodiscard]] static core::Result<void> createCode(const asset::Project& project);
+    // Writes a component in its own file of the code folder, which the module must register.
+    [[nodiscard]] static core::Result<std::filesystem::path> createComponent(const asset::Project& project,
+                                                                             std::string_view componentName);
 
     // devexConfigDirectory holds the DevexConfig.cmake of the engine build, whose configuration
     // ("Debug", "Release") the module is built in.

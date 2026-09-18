@@ -22,7 +22,7 @@ namespace devex::runtime {
 
 // Changes whenever game modules must be rebuilt to load: modules built for another version are
 // refused.
-inline constexpr std::uint32_t gameApiVersion = 3;
+inline constexpr std::uint32_t gameApiVersion = 4;
 
 enum class SystemPhase : std::uint8_t
 {

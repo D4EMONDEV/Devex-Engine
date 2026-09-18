@@ -10,8 +10,8 @@ et rendu avec Vulkan. Il est distribué sous licence [MIT](LICENSE).
 - SDL3 pour la fenêtre et les entrées, Windows d'abord avec un code portable ;
 - scènes en entités + composants, stockées de façon data-oriented ;
 - repère Y-up main droite, formats de projet texte `.dvx*` ;
-- gameplay en C++ (composants et systèmes) compilé et rechargé à chaud par l'éditeur, C# prévu
-  ensuite ;
+- gameplay en C++ (composants et systèmes) **ou en C#** (.NET hébergé), compilé et rechargé à
+  chaud par l'éditeur ;
 - éditeur Dear ImGui (docking) au style inspiré de Godot : gestionnaire de projets, onglets de
   scènes, viewport, gizmos et mode Play ; UI maison plus tard.
 
@@ -43,19 +43,25 @@ Le détail, l'architecture des modules et les jalons sont dans
   icônes Lucide) : arbre de la scène, inspecteur, FileSystem, sortie, statistiques, annulation, en
   overlay (F1) ou dans l'éditeur : gestionnaire de projets, onglets de scènes, viewport et sa
   barre d'outils, caméra libre, sélection à la souris, gizmos, préfabs (glisser-déposer, valeurs
-  modifiées, Revert, Make Local, Save as Prefab, mise à jour en direct), réglages de l'éditeur ;
+  modifiées, Revert, Make Local, Save as Prefab, mise à jour en direct), fichiers de code du projet
+  avec aperçu et ouverture dans l'IDE, *New Script…*, réglages de l'éditeur ;
 - `Devex::Runtime` : `Application`, boucle à pas fixe, mode éditeur et mode Play, modules de jeu
-  (composants et systèmes rechargeables à chaud), chargement des assets à la demande, changement de
+  (composants et systèmes rechargeables à chaud), code C# sur .NET hébergé (composants, systèmes,
+  compilation et rechargement à chaud), chargement des assets à la demande, changement de
   scène, rendu automatique de la scène, export d'un jeu ;
+- `Devex.Managed` : l'API C# du moteur (`Component`, `Scene`, `Input`, `Time`, `Log`, maths),
+  compilée dans `bin/managed` quand le SDK .NET est installé ;
 - `Devex::Engine` : tous les modules dans une bibliothèque partagée, `devex-engine.dll` ;
 - `devex-editor` : l'éditeur, qui compile et recharge à chaud le code des projets ;
 - `devex-player` : lance un projet hors de l'éditeur, ou le paquet d'un jeu exporté (scène de
   démarrage, réglages de fenêtre et code du jeu) ;
-- `samples/sandbox` : le bac à sable, un projet dont le gameplay est un module de jeu dans `code/` :
+- `samples/sandbox` : le bac à sable, un projet dont le gameplay est un module C++ et un composant
+  C# dans `code/` :
   la scène `arena` (scène de démarrage), où un personnage marche, saute, lance des balles et
   renverse des caisses entre rampe, marches, plateforme mobile et zones qui allument des lampes,
   faite en partie de préfabs (`assets/prefabs` : caisse, pyramide de caisses, balle, zone de
-  lampe), où Tab passe à l'autre scène ; et la
+  lampe), où un cube monte et descend sous le contrôle d'un composant C# (`code/Bobber.cs`, avec un
+  système C# à côté) et où Tab passe à l'autre scène ; et la
   scène `sandbox` (caisse et balises glTF, sphères or et plastique, ciel HDR, plateau tournant, jour
   et nuit avec N).
 
@@ -68,7 +74,9 @@ Les tests marqués `[gpu]` ouvrent une fenêtre masquée et nécessitent un GPU 
 
 Prérequis : Visual Studio 2026 (C++), CMake 4, Ninja, [vcpkg](https://vcpkg.io) et le
 SDK Vulkan. CMake utilise `VCPKG_ROOT` s'il est défini, sinon le `vcpkg` trouvé dans le
-`PATH` ; les dépendances sont installées automatiquement au premier `cmake --preset`.
+`PATH` ; les dépendances sont installées automatiquement au premier `cmake --preset`. Le
+[SDK .NET 10](https://dotnet.microsoft.com/download) est facultatif : il n'est nécessaire que pour
+écrire du gameplay en C#, et sans lui le moteur se construit et tourne normalement.
 
 Depuis un terminal développeur Visual Studio :
 
@@ -122,6 +130,30 @@ DEVEX_GAME_MODULE(game)
     game.system("Spin", devex::runtime::SystemPhase::Update, &spin);
 }
 ```
+
+Le même composant en C# : un fichier `.cs` dans `code/` suffit, l'éditeur écrit le projet .NET,
+compile avec le SDK .NET 10 et recharge à chaud. Les champs publics sont enregistrés dans la scène
+et édités dans l'inspecteur, comme ceux d'un composant C++ ; *Add Component > New Script…* crée le
+fichier, l'ouvre dans l'IDE et ajoute le composant dès qu'il compile :
+
+```csharp
+using Devex;
+
+public class Spinner : Component
+{
+    // En radians par seconde, affiché en degrés dans l'inspecteur.
+    [Angle]
+    public float Speed = 1.0f;
+
+    public override void Update(float delta)
+    {
+        Transform.Rotation = Quat.AngleAxis(Speed * delta, Vec3.Up) * Transform.Rotation;
+    }
+}
+```
+
+Un projet peut mélanger les deux : le C++ et le C# tournent dans la même frame, sur la même scène.
+Un jeu exporté qui contient du C# emporte son runtime .NET, sans rien à installer chez le joueur.
 
 Dans l'éditeur : clic gauche pour sélectionner, Q / W / E / R pour sélectionner, déplacer, tourner
 ou mettre à l'échelle (Ctrl aimante), clic droit maintenu + ZQSD pour voler, Alt + clic gauche pour

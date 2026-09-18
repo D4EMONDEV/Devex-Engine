@@ -245,6 +245,17 @@ struct ToolsState
     ProjectManagerState projectManager;
     bool openAboutPopup = false;
 
+    // Code.
+    // The file of the code folder shown in the inspector, empty when an entity is selected.
+    std::filesystem::path selectedCode;
+    std::string selectedCodeText;
+    // A component the editor asked for, added to this entity once its code is compiled and loaded.
+    std::string pendingScript;
+    core::Uuid pendingScriptEntity;
+    bool openNewScriptPopup = false;
+    std::string newScriptName = "NewComponent";
+    bool newScriptCSharp = true;
+
     // The project changed since the last update: its scenes open.
     bool projectChanged = false;
     // Scene tabs. The active tab's document is made of scenePath, the edited scene, history,
@@ -297,6 +308,15 @@ struct ToolsState
 
 void drawHierarchyPanel(ToolsState& state, scene::Scene& scene);
 void drawInspectorPanel(ToolsState& state, scene::Scene& scene);
+// The files of the code folder of the project, under the assets.
+void drawCodeFiles(ToolsState& state);
+// The file selected in the code folder, shown read-only in the inspector.
+void drawCodeInspector(ToolsState& state);
+// Asks for a new component file and, once it is compiled, adds it to the entity.
+void drawNewScriptPopup(ToolsState& state);
+void updatePendingScript(ToolsState& state, scene::Scene& scene);
+// Opens a file in the code editor of the system.
+void openInCodeEditor(ToolsState& state, const std::filesystem::path& file);
 void drawStatisticsPanel(ToolsState& state, const scene::Scene& scene);
 void drawConsolePanel(ToolsState& state);
 void drawAssetsPanel(ToolsState& state, scene::Scene& scene);

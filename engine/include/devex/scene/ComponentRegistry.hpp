@@ -1,9 +1,12 @@
 #pragma once
 
 #include <devex/reflection/Reflection.hpp>
+#include <devex/scene/DynamicComponent.hpp>
 #include <devex/scene/Entity.hpp>
 #include <devex/scene/Scene.hpp>
 
+#include <functional>
+#include <memory>
 #include <span>
 #include <string_view>
 #include <vector>
@@ -17,9 +20,12 @@ struct ComponentType
     // The componentTypeIndex of the type.
     std::size_t index = 0;
     // Adds a default-constructed component, or returns the one the entity already has.
-    void* (*emplace)(Scene& scene, Entity entity) = nullptr;
-    const void* (*find)(const Scene& scene, Entity entity) = nullptr;
-    void (*remove)(Scene& scene, Entity entity) = nullptr;
+    std::function<void*(Scene& scene, Entity entity)> emplace;
+    std::function<const void*(const Scene& scene, Entity entity)> find;
+    std::function<void(Scene& scene, Entity entity)> remove;
+    // The layout of a type described while the engine runs, such as a C# component; null for the
+    // types declared in C++.
+    std::shared_ptr<const DynamicComponentLayout> layout;
 
     [[nodiscard]] std::string_view name() const noexcept
     {
@@ -56,6 +62,10 @@ public:
             .remove = [](Scene& scene, Entity entity) { scene.remove<T>(entity); },
         });
     }
+
+    // Registers a component type described while the engine runs, with the memory the engine gives
+    // it. Registering a name twice has no effect and returns false.
+    bool addDynamic(std::shared_ptr<const DynamicComponentLayout> layout);
 
     // Forgets a type, as when the game module that registered it is unloaded. Returns whether the
     // type was registered.

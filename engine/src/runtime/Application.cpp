@@ -9,6 +9,8 @@
 #include <devex/core/BuildInfo.hpp>
 #include <devex/core/Log.hpp>
 #include "GameCodeBuilder.hpp"
+#include "ManagedCodeBuilder.hpp"
+#include "ManagedGame.hpp"
 
 #include <devex/runtime/Application.hpp>
 #include <devex/runtime/FixedTimestep.hpp>
@@ -237,11 +239,18 @@ private:
     void loadGameModule();
     void unloadGameModule();
     void updateGameCode();
+    // C#: the runtime of the process, then the assembly a project builds from its C# files.
+    void openManagedCode();
+    void loadManagedAssembly();
+    void unloadManagedAssembly();
+    void updateManagedCode();
     void runSystems(SystemPhase phase, core::Duration delta);
     // The physics world lives while gameplay runs: from startup outside the editor, during Play in it.
     void createPhysics();
     void destroyPhysics();
     [[nodiscard]] tools::GameCodeStatus gameCodeStatus() const;
+    // Writes the file of a new component and opens it in the code editor of the system.
+    void createScript(const tools::NewScript& script);
     // Starts a requested export once imports and builds are done, and shows its progress.
     void updateExport();
     void startExport();
@@ -263,6 +272,11 @@ private:
     bool m_stepRequested = false;
     bool m_loadGameCode;
     std::unique_ptr<GameModule> m_game;
+    std::unique_ptr<ManagedGame> m_managed;
+    std::optional<ManagedCodeBuilder> m_managedBuilder;
+    std::filesystem::file_time_type m_managedAssemblyTime{};
+    // Set when C# code asks the game to end.
+    bool m_managedQuitRequested = false;
     bool m_enablePhysics;
     std::unique_ptr<physics::PhysicsWorld> m_physics;
     // The Start systems ran for the scene that plays.
@@ -666,6 +680,10 @@ void ApplicationRunner::handleEditorRequests(tools::EditorRequests requests)
     {
         m_exportWaiting = true;
     }
+    if (requests.newScript && m_services.database != nullptr)
+    {
+        createScript(*requests.newScript);
+    }
     if (requests.play && !m_playScene && m_services.database != nullptr)
     {
         startPlaying();
@@ -810,12 +828,98 @@ void ApplicationRunner::switchProject(const std::filesystem::path& projectFile)
     m_services.tools->setAssetDatabase(m_services.database.get());
 }
 
+void ApplicationRunner::openManagedCode()
+{
+    const asset::Project& project = assetSource()->project();
+    if (!m_managed)
+    {
+        core::Result<std::unique_ptr<ManagedGame>> managed =
+            ManagedGame::create(m_services.platform.baseDirectory() / "managed",
+                                {.input = &m_services.platform.input(),
+                                 .window = &m_services.window,
+                                 .quitRequested = &m_managedQuitRequested});
+        if (!managed)
+        {
+            // Games written in C++ do not need any of this.
+            DEVEX_LOG_DEBUG("C# is unavailable: {}", managed.error());
+            return;
+        }
+        m_managed = std::move(*managed);
+    }
+    if (isEditor() && m_services.database != nullptr && ManagedCodeBuilder::hasCode(project))
+    {
+        m_managedBuilder.emplace(project, m_services.platform.baseDirectory() / "managed");
+    }
+    loadManagedAssembly();
+}
+
+void ApplicationRunner::loadManagedAssembly()
+{
+    if (!m_managed)
+    {
+        return;
+    }
+    const bool packaged = m_services.database == nullptr;
+    const std::filesystem::path assembly = packaged
+                                               ? m_services.platform.baseDirectory() / "Game.Scripts.dll"
+                                               : ManagedCodeBuilder::assemblyPath(assetSource()->project());
+    std::error_code error;
+    const std::filesystem::file_time_type built = std::filesystem::last_write_time(assembly, error);
+    if (error)
+    {
+        return;
+    }
+    m_managedAssemblyTime = built;
+    if (core::Result<void> loaded = m_managed->loadAssembly(assembly); !loaded)
+    {
+        DEVEX_LOG_ERROR("Cannot load the C# code: {}", loaded.error());
+        return;
+    }
+    std::size_t restored = 0;
+    forEachScene([&restored](scene::Scene& scene) { restored += scene::restorePreservedComponents(scene); });
+    DEVEX_LOG_INFO("C# code loaded: {} components{}", m_managed->componentTypes().size(),
+                   restored > 0 ? std::format(", {} components restored", restored) : std::string());
+}
+
+void ApplicationRunner::unloadManagedAssembly()
+{
+    if (!m_managed || !m_managed->hasAssembly())
+    {
+        return;
+    }
+    // The components stay in the scenes as text until the code comes back.
+    forEachScene([this](scene::Scene& scene) { static_cast<void>(m_managed->release(scene)); });
+    m_managed->unloadAssembly();
+}
+
+void ApplicationRunner::updateManagedCode()
+{
+    if (!m_managed)
+    {
+        return;
+    }
+    bool reload = m_managedBuilder && m_managedBuilder->update();
+    if (!reload && m_services.database != nullptr)
+    {
+        std::error_code error;
+        const std::filesystem::file_time_type built =
+            std::filesystem::last_write_time(ManagedCodeBuilder::assemblyPath(assetSource()->project()), error);
+        reload = !error && built != m_managedAssemblyTime;
+    }
+    if (reload)
+    {
+        unloadManagedAssembly();
+        loadManagedAssembly();
+    }
+}
+
 void ApplicationRunner::openGameCode()
 {
     if (!m_loadGameCode || assetSource() == nullptr)
     {
         return;
     }
+    openManagedCode();
     if (m_services.database == nullptr)
     {
         // An exported game ships its module next to the executable.
@@ -834,6 +938,8 @@ void ApplicationRunner::closeGameCode()
 {
     m_gameBuilder.reset();
     unloadGameModule();
+    m_managedBuilder.reset();
+    unloadManagedAssembly();
 }
 
 void ApplicationRunner::loadGameModule()
@@ -888,6 +994,7 @@ void ApplicationRunner::updateGameCode()
     {
         return;
     }
+    updateManagedCode();
     bool reload = m_gameBuilder && m_gameBuilder->update();
     const Clock::time_point now = Clock::now();
     if (!reload && m_loadGameCode && now >= m_nextLibraryCheck &&
@@ -909,7 +1016,7 @@ void ApplicationRunner::updateGameCode()
 
 void ApplicationRunner::runSystems(SystemPhase phase, core::Duration delta)
 {
-    if (!m_game)
+    if (!m_game && (!m_managed || !m_managed->hasAssembly()))
     {
         return;
     }
@@ -922,7 +1029,18 @@ void ApplicationRunner::runSystems(SystemPhase phase, core::Duration delta)
         .delta = delta,
         .interpolationAlpha = m_timestep.alpha(),
     };
-    m_game->registry().run(phase, context);
+    if (m_game)
+    {
+        m_game->registry().run(phase, context);
+    }
+    if (m_managed)
+    {
+        m_managed->runPhase(*m_application.m_scene, phase, delta);
+        if (std::exchange(m_managedQuitRequested, false))
+        {
+            context.quitRequested = true;
+        }
+    }
     if (context.quitRequested)
     {
         m_application.requestQuit();
@@ -961,11 +1079,15 @@ void ApplicationRunner::destroyPhysics()
 tools::GameCodeStatus ApplicationRunner::gameCodeStatus() const
 {
     using State = tools::GameCodeStatus::State;
-    if (m_services.database == nullptr || !GameCodeBuilder::hasCode(m_services.database->project()))
+    const asset::Project* const project = m_services.database != nullptr ? &m_services.database->project() : nullptr;
+    const bool cpp = project != nullptr && GameCodeBuilder::hasCode(*project);
+    const bool csharp = project != nullptr && ManagedCodeBuilder::hasCode(*project);
+    if (!cpp && !csharp)
     {
         return {.state = State::None};
     }
-    if (m_gameBuilder && m_gameBuilder->state() == GameCodeBuilder::State::Building)
+    if ((m_gameBuilder && m_gameBuilder->state() == GameCodeBuilder::State::Building) ||
+        (m_managedBuilder && m_managedBuilder->state() == ManagedCodeBuilder::State::Building))
     {
         return {.state = State::Building, .message = "Compiling the game code..."};
     }
@@ -973,13 +1095,56 @@ tools::GameCodeStatus ApplicationRunner::gameCodeStatus() const
     {
         return {.state = State::Failed, .message = m_gameBuilder->message()};
     }
-    if (!m_game)
+    if (m_managedBuilder && m_managedBuilder->state() == ManagedCodeBuilder::State::Failed)
+    {
+        return {.state = State::Failed, .message = m_managedBuilder->message()};
+    }
+    if (cpp && !m_game)
     {
         return {.state = State::Failed, .message = "The game code is not loaded"};
     }
-    return {.state = State::Ready,
-            .message = std::format("{} components, {} systems", m_game->registry().components().size(),
-                                   m_game->registry().systems().size())};
+    if (csharp && (!m_managed || !m_managed->hasAssembly()))
+    {
+        return {.state = State::Failed, .message = "The C# code is not loaded"};
+    }
+    std::string message;
+    if (m_game)
+    {
+        message = std::format("{} components, {} systems", m_game->registry().components().size(),
+                              m_game->registry().systems().size());
+    }
+    if (m_managed && m_managed->hasAssembly())
+    {
+        message += std::format("{}{} C# components", message.empty() ? "" : ", ", m_managed->componentTypes().size());
+    }
+    return {.state = State::Ready, .message = std::move(message)};
+}
+
+void ApplicationRunner::createScript(const tools::NewScript& script)
+{
+    const asset::Project& project = m_services.database->project();
+    const core::Result<std::filesystem::path> file =
+        script.csharp ? ManagedCodeBuilder::createScript(project, script.name)
+                      : GameCodeBuilder::createComponent(project, script.name);
+    if (!file)
+    {
+        DEVEX_LOG_ERROR("Cannot create {}: {}", script.name, file.error());
+        return;
+    }
+    DEVEX_LOG_INFO("Created {}", core::toUtf8(*file));
+    if (!script.csharp)
+    {
+        DEVEX_LOG_INFO("Add game.component<{}>(); to the module of the game to use it", script.name);
+    }
+    else if (!m_managedBuilder)
+    {
+        // The first C# file of a project starts its builder.
+        openManagedCode();
+    }
+    if (core::Result<void> opened = m_services.platform.openPath(*file); !opened)
+    {
+        DEVEX_LOG_WARNING("{}", opened.error());
+    }
 }
 
 void ApplicationRunner::updateExport()

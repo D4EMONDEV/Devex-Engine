@@ -323,6 +323,10 @@ void drawAssetsPanel(ToolsState& state, scene::Scene& scene)
                     }
                 }
             }
+            if (state.assetFilter.empty())
+            {
+                drawCodeFiles(state);
+            }
             ImGui::PopStyleVar();
         }
         ImGui::EndChild();

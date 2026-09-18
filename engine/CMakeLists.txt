@@ -362,6 +362,7 @@ target_sources(devex_scene
     PRIVATE
         src/scene/ComponentRegistry.cpp
         src/scene/Components.cpp
+        src/scene/DynamicComponent.cpp
         src/scene/FieldValue.cpp
         src/scene/ModelInstantiation.cpp
         src/scene/PhysicsComponents.cpp
@@ -376,6 +377,7 @@ target_sources(devex_scene
             include/devex/scene/ComponentPool.hpp
             include/devex/scene/ComponentRegistry.hpp
             include/devex/scene/Components.hpp
+            include/devex/scene/DynamicComponent.hpp
             include/devex/scene/Entity.hpp
             include/devex/scene/FieldValue.hpp
             include/devex/scene/ModelInstantiation.hpp
@@ -429,6 +431,27 @@ set_target_properties(devex_physics PROPERTIES
 )
 devex_set_warnings(devex_physics)
 
+# The C# side of the engine, built with the .NET SDK when it is installed. Without it, the engine
+# runs games written in C++ only.
+find_program(DEVEX_DOTNET NAMES dotnet)
+if(DEVEX_DOTNET)
+    set(DEVEX_MANAGED_PROJECT "${PROJECT_SOURCE_DIR}/managed/Devex.Managed/Devex.Managed.csproj")
+    file(GLOB_RECURSE DEVEX_MANAGED_SOURCES CONFIGURE_DEPENDS "${PROJECT_SOURCE_DIR}/managed/Devex.Managed/*.cs")
+    set(DEVEX_MANAGED_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/managed")
+    add_custom_command(
+        OUTPUT "${DEVEX_MANAGED_DIRECTORY}/Devex.Managed.dll"
+        COMMAND "${DEVEX_DOTNET}" build "${DEVEX_MANAGED_PROJECT}" -c Release -o "${DEVEX_MANAGED_DIRECTORY}"
+                --nologo -v quiet
+        DEPENDS ${DEVEX_MANAGED_SOURCES} "${DEVEX_MANAGED_PROJECT}"
+        COMMENT "Building the C# runtime of the engine"
+        VERBATIM
+    )
+    add_custom_target(devex_managed DEPENDS "${DEVEX_MANAGED_DIRECTORY}/Devex.Managed.dll")
+    set_target_properties(devex_managed PROPERTIES FOLDER "Engine")
+else()
+    message(STATUS "The .NET SDK was not found: games of this build can only be written in C++")
+endif()
+
 # Resources of the tools: Noto Sans and JetBrains Mono (SIL Open Font License), Lucide icons (ISC)
 # and the Devex logo, with their licenses.
 file(GLOB DEVEX_FONT_FILES CONFIGURE_DEPENDS "${PROJECT_SOURCE_DIR}/third_party/fonts/*.ttf")
@@ -466,6 +489,7 @@ target_sources(devex_tools
     PRIVATE
         src/tools/AssetsPanel.cpp
         src/tools/CommandHistory.cpp
+        src/tools/CodePanel.cpp
         src/tools/ConsolePanel.cpp
         src/tools/EditorCamera.cpp
         src/tools/EditorCamera.hpp
@@ -541,6 +565,10 @@ target_sources(devex_runtime
         src/runtime/GameCodeBuilder.hpp
         src/runtime/GameExport.cpp
         src/runtime/GameModule.cpp
+        src/runtime/ManagedCodeBuilder.cpp
+        src/runtime/ManagedCodeBuilder.hpp
+        src/runtime/ManagedGame.cpp
+        src/runtime/ManagedGame.hpp
         src/runtime/SceneExtraction.cpp
     PUBLIC
         FILE_SET HEADERS
@@ -598,6 +626,9 @@ set_target_properties(devex_engine PROPERTIES
     FOLDER "Engine"
 )
 devex_set_warnings(devex_engine)
+if(DEVEX_DOTNET)
+    add_dependencies(devex_engine devex_managed)
+endif()
 
 # The package that game modules find: cmake/DevexConfig.cmake in the build folder, next to bin/.
 configure_file("${PROJECT_SOURCE_DIR}/cmake/DevexGameConfig.cmake.in"

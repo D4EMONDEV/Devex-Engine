@@ -66,6 +66,7 @@ devex_add_tests(serialization
 
 devex_add_tests(scene
     SOURCES
+        scene/DynamicComponentTests.cpp
         scene/PrefabTests.cpp
         scene/SceneSerializerTests.cpp
         scene/SceneTests.cpp
@@ -153,6 +154,7 @@ devex_add_tests(runtime
         runtime/FixedTimestepTests.cpp
         runtime/GameCodeBuilderTests.cpp
         runtime/GameExportTests.cpp
+        runtime/ManagedGameTests.cpp
         runtime/GameModuleTests.cpp
         runtime/SceneExtractionTests.cpp
     LIBRARIES
@@ -161,6 +163,26 @@ devex_add_tests(runtime
         SDL_VIDEO_DRIVER=dummy
 )
 add_dependencies(devex_runtime_tests devex_test_game_module)
+
+# A C# game assembly for the tests of the managed runtime, built when the .NET SDK is installed.
+if(DEVEX_DOTNET)
+    set(DEVEX_TEST_GAME_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/managed-tests")
+    file(GLOB DEVEX_TEST_GAME_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/managed/TestGame/*.cs")
+    add_custom_command(
+        OUTPUT "${DEVEX_TEST_GAME_DIRECTORY}/TestGame.dll"
+        COMMAND "${DEVEX_DOTNET}" build "${CMAKE_CURRENT_SOURCE_DIR}/managed/TestGame/TestGame.csproj"
+                -c Release -o "${DEVEX_TEST_GAME_DIRECTORY}" --nologo -v quiet
+                "-p:DevexManagedDirectory=${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/managed"
+                "-p:BaseIntermediateOutputPath=${CMAKE_CURRENT_BINARY_DIR}/managed-tests/obj/"
+        DEPENDS ${DEVEX_TEST_GAME_SOURCES} "${CMAKE_CURRENT_SOURCE_DIR}/managed/TestGame/TestGame.csproj" devex_managed
+        COMMENT "Building the C# game of the tests"
+        VERBATIM
+    )
+    add_custom_target(devex_test_managed_game DEPENDS "${DEVEX_TEST_GAME_DIRECTORY}/TestGame.dll")
+    set_target_properties(devex_test_managed_game PROPERTIES FOLDER "Tests")
+    add_dependencies(devex_runtime_tests devex_test_managed_game)
+    target_compile_definitions(devex_runtime_tests PRIVATE DEVEX_TEST_MANAGED_GAME="${DEVEX_TEST_GAME_DIRECTORY}/TestGame.dll")
+endif()
 target_include_directories(devex_runtime_tests PRIVATE "${PROJECT_SOURCE_DIR}/engine/src")
 target_compile_definitions(devex_runtime_tests
     PRIVATE DEVEX_TEST_GAME_MODULE="$<TARGET_FILE:devex_test_game_module>"

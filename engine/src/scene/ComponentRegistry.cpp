@@ -40,6 +40,37 @@ std::span<const ComponentType> ComponentRegistry::types() const noexcept
     return m_types;
 }
 
+bool ComponentRegistry::addDynamic(std::shared_ptr<const DynamicComponentLayout> layout)
+{
+    const std::string_view name = layout->type().name;
+    if (find(name) != nullptr)
+    {
+        return false;
+    }
+    // Types described at runtime get their index from their name, so that a scene loaded before the
+    // type came back finds the same pool.
+    const std::size_t index = detail::componentTypeIndex(std::string("dynamic:") + std::string(name));
+    m_types.push_back({
+        .type = &layout->type(),
+        .index = index,
+        .emplace = [index, layout](Scene& scene, Entity entity) -> void* {
+            return scene.dynamicPool(index, layout).emplace(entity);
+        },
+        .find = [index](const Scene& scene, Entity entity) -> const void* {
+            const DynamicComponentPool* const pool = scene.dynamicPool(index);
+            return pool != nullptr ? pool->find(entity) : nullptr;
+        },
+        .remove = [index](Scene& scene, Entity entity) {
+            if (DynamicComponentPool* const pool = scene.dynamicPool(index))
+            {
+                pool->remove(entity);
+            }
+        },
+        .layout = std::move(layout),
+    });
+    return true;
+}
+
 ComponentRegistry& componentRegistry()
 {
     static ComponentRegistry registry = [] {

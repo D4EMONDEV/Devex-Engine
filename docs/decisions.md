@@ -16,8 +16,8 @@ mais seulement explicitement ici : le code suit ce document, pas l'inverse.
 | Graphique                | Vulkan 1.4 minimum, API C + volk + VMA, sans RHI pour l'instant    |
 | Shaders                  | Slang → SPIR-V                                                     |
 | Architecture de rendu    | Forward+ clustered, PBR métal-rugosité (GGX), MSAA 4x              |
-| Gameplay                 | C++ (DLL rechargeable) d'abord, C# (.NET hosting) ensuite          |
-| Format source            | Texte maison lisible, extensions `.dvx*`, binaire cooké à l'export |
+| Gameplay                 | C++ (DLL rechargeable) et C# (.NET hébergé), au choix, ensemble    |
+| Format source            |  Texte maison lisible, extensions `.dvx*`, binaire cooké à l'export|
 | Import 3D                | glTF 2.0 (fastgltf) + FBX (ufbx)                                   |
 | UI éditeur               | Dear ImGui (docking) au style de Godot, UI retenue maison plus tard |
 | Modules C++              | Headers classiques                                                 |
@@ -95,6 +95,12 @@ mais seulement explicitement ici : le code suit ce document, pas l'inverse.
 | Paquet d'un jeu          | Un fichier `.dvxpak` indexé, artefacts compressés zstd, mappé en mémoire |
 | Source des assets        | `AssetSource` : base d'assets en développement, paquet une fois exporté |
 | Réglages de lancement    | Fenêtre, plein écran, vsync, images, icône dans le `.dvxproj`      |
+| Gameplay en C#           | Composants `Component` (Start/Update) et systèmes, .NET hébergé    |
+| Composants C#            | Types décrits à l'exécution : la scène possède leurs données       |
+| Compilation du C#        | SDK .NET (`dotnet build`) lancé par l'éditeur, rechargement à chaud |
+| Fichiers de code         | Dossier `code/` dans FileSystem, aperçu, ouverture dans l'IDE      |
+| Nouveau script           | *Add Component > New Script…*, en C# ou en C++                     |
+| .NET des jeux exportés   | Runtime .NET embarqué dans `managed/`, rien à installer            |
 
 ## Architecture cible
 
@@ -143,12 +149,13 @@ Règles :
 
 ```text
 engine/        modules du moteur (include/ + src/)
+managed/       Devex.Managed, l'API C# du moteur, compilée dans bin/managed
 apps/editor/   devex-editor, l'éditeur
 apps/player/   devex-player, qui lance un projet hors de l'éditeur
 samples/       projets d'exemple : sandbox, le bac à sable des jalons, avec son code
 shaders/       sources Slang du moteur, compilées dans bin/shaders
 tests/         tests Catch2, un dossier par module, données dans tests/data
-scripts/       outils de développement (génération des assets d'exemple)
+scripts/       outils de développement (assets d'exemple, liaisons C# générées)
 third_party/   sources externes copiées (backend Vulkan d'ImGui), avec leur licence
 cmake/         fonctions CMake partagées, outils de build (cmake/tools)
 docs/          décisions et documentation
@@ -945,8 +952,67 @@ les assets s'écrivent au fil de leur lecture.
 - **Limites** : un plantage du code du jeu arrête l'éditeur ; les variables globales d'un module
   sont perdues au rechargement ; la compilation du code ne fonctionne que sous Windows pour
   l'instant.
-- L'API moteur est conçue pour être exposée plus tard en **C#** (hébergement .NET via
-  `hostfxr`) : handles plutôt que pointeurs bruts, durées de vie explicites.
+
+### Gameplay en C#
+
+- **Deux langages, un seul moteur** : un projet peut être écrit en C++, en C#, ou dans les deux à
+  la fois. Le C++ n'a rien perdu : les composants et systèmes d'un module de jeu fonctionnent comme
+  avant, et le C# s'ajoute à côté. Dans une frame, les phases s'exécutent d'abord pour le module
+  C++, ensuite pour le code C#.
+- **Modèle** : une classe qui dérive de `Devex.Component` est un composant du moteur. Ses champs
+  publics sont sauvegardés dans les scènes et édités dans l'inspecteur ; `Start`, `Update(delta)`
+  et `FixedUpdate(delta)` sont ses comportements. Un **système** est une méthode statique marquée
+  `[GameSystem(SystemPhase.Update)]`, qui prend la scène (ou rien) et voit toutes les entités ;
+  les systèmes d'une phase tournent après les composants de cette phase, par `Order` croissant.
+- **Le moteur possède les données** : chaque composant C# devient un *type décrit à l'exécution*
+  (`scene::DynamicComponentLayout`) — nom, champs, décalages calculés comme ceux d'un composant
+  C++. Les valeurs vivent donc dans la scène, pas dans l'objet C#, si bien que les scènes, les
+  préfabs, l'annulation, l'inspecteur et la copie jouée les traitent exactement comme les
+  composants C++. Avant qu'un comportement tourne, le runtime copie les champs dans l'objet C#, et
+  les recopie ensuite (délégués compilés une fois par champ, arbres d'expression). Un composant
+  neuf part des valeurs que la classe C# donne à ses champs (`public float Speed = 1.0f;`) : le
+  moteur les demande au runtime juste après avoir construit le composant.
+- **Types de champs** : `bool`, `int`, `uint`, `float`, `string`, `Vec2`, `Vec3`, `Vec4`, `Quat`,
+  `AssetId` et les énumérations à valeurs `int`. Les attributs `[Angle]` (degrés dans l'inspecteur,
+  radians dans le code), `[Color]`, `[PhysicsLayer]`, `[AssetType("mesh")]` et `[Hidden]` donnent
+  les mêmes indications que la réflexion C++. `WalkSpeed` est enregistré `walk_speed`, comme un
+  champ C++.
+- **API de base** : `Scene` (créer, détruire, nommer, chercher, hiérarchie, `Transform` par
+  référence, ajouter et retirer un composant C#, parcourir les composants d'un type), `Input`
+  (clavier par position physique, souris, capture), `Time.Delta`, `Log`, `Game.Quit()`. La
+  physique, les assets et les autres services restent en C++ pour l'instant.
+- **Hébergement de .NET** : le moteur charge `hostfxr` à l'exécution et démarre `Devex.Managed.dll`
+  (à côté de l'exécutable, dans `bin/managed`), sans dépendance de compilation vers .NET. Les
+  tables de fonctions sont échangées une fois (`[UnmanagedCallersOnly]` côté C#, pointeurs de
+  fonctions côté moteur) : aucun marshalling, les chaînes passent en UTF-8. Sans .NET installé, le
+  moteur démarre normalement et signale simplement que le C# est indisponible.
+- **Compilation** : le dossier `code/` d'un projet accueille les `.cs` ; l'éditeur écrit lui-même
+  le `Game.csproj` (assembly `Game.Scripts`, référence à `Devex.Managed`) et lance `dotnet build`
+  en arrière-plan 300 ms après la dernière modification, comme pour le C++. Les erreurs vont dans
+  la console et l'état apparaît dans la barre de menus.
+- **Rechargement à chaud** : l'assembly du jeu est chargée dans un `AssemblyLoadContext`
+  *collectible*, **depuis la mémoire** pour que le SDK puisse réécrire le fichier. À chaque nouvelle
+  build, les composants sont conservés en texte dans les scènes, les types désenregistrés, le
+  contexte déchargé, puis tout est restauré — même mécanique que le C++, partie en cours comprise.
+- **Fichiers de code dans l'éditeur** : le panneau FileSystem montre le dossier `code/` (les
+  dossiers de build sont masqués) ; un fichier sélectionné s'affiche en lecture seule dans
+  l'inspecteur, numéroté, en police mono, avec *Open in Code Editor* (l'IDE associé aux `.cs` ou
+  `.cpp`) et *Show in File Manager*. L'édition se fait dans l'IDE : l'éditeur recompile à
+  l'enregistrement.
+- **Créer un script** : *Add Component > New Script…* demande un nom et le langage (C# par défaut),
+  écrit le fichier dans `code/`, l'ouvre dans l'IDE et, dès que la compilation aboutit, ajoute le
+  composant à l'entité sélectionnée (une commande annulable). Un composant C++ créé ainsi doit
+  encore être enregistré à la main dans le module (`game.component<T>();`).
+- **Jeux exportés** : un projet qui contient du C# emporte son runtime .NET. L'export publie
+  `managed/` en autonome (`dotnet publish --self-contained`, environ 80 Mo) avec
+  `Devex.Managed.dll` et `Game.Scripts.dll` ; le moteur préfère alors le `hostfxr` livré à côté du
+  jeu et démarre par ligne de commande (`hostfxr_initialize_for_dotnet_command_line`). Rien n'est à
+  installer sur la machine du joueur ; un jeu en C++ seul n'emporte rien de tout cela.
+- **Limites** : les erreurs d'un comportement C# sont attrapées et écrites dans la console (une
+  exception n'arrête pas le jeu, mais le composant finit sa frame dans un état partiel) ; les
+  champs de type liste, tableau ou référence d'entité ne sont pas encore décrits ; le C# ne touche
+  ni la physique ni les assets ; la compilation demande le **SDK .NET 10** et ne
+  tourne, comme le C++, que sous Windows.
 
 ### Code C++
 
@@ -995,6 +1061,9 @@ les assets s'écrivent au fil de leur lecture.
 
 Hors vcpkg :
 
+- **.NET 10** : le SDK compile le code C# des projets et l'assembly `Devex.Managed` du moteur
+  (`dotnet` cherché à la configuration, facultatif : sans lui, le moteur se construit et tourne
+  sans C#) ; le runtime est chargé à l'exécution par `hostfxr`, jamais lié au moteur ;
 - **Slang** est fourni par le SDK Vulkan (`C:\VulkanSDK\1.4.350.0`) ;
 - **ufbx** n'existe pas dans vcpkg : ses deux fichiers (`ufbx.c`, `ufbx.h`) seront
   intégrés dans `third_party/ufbx` lors du support FBX ;
@@ -1057,6 +1126,15 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     fenêtre du projet, changement de scène pour le code du jeu, fenêtre *Export Game* et
     `devex-editor --export`.
 
+14. ✅ **Gameplay en C#** — .NET hébergé dans le moteur (`hostfxr`, tables de fonctions sans
+    marshalling), composants C# devenus des types décrits à l'exécution dont la scène possède les
+    données, systèmes `[GameSystem]`, API de base (scène, entités, `Transform`, entrées, temps,
+    journal), attributs `[Angle]`, `[Color]`, `[PhysicsLayer]`, `[AssetType]`, `[Hidden]`,
+    compilation par le SDK .NET à chaque modification et rechargement à chaud, fichiers de code
+    visibles et prévisualisés dans FileSystem avec ouverture dans l'IDE, *Add Component > New
+    Script…* en C# ou C++, runtime .NET embarqué dans les jeux exportés, composant `Bobber` et
+    système `BobberReport` du bac à sable.
+
 Ensuite, sans ordre figé : post-traitements (bloom, TAA), transparence, audio, animation
 squelettique, CI Linux.
 
@@ -1066,6 +1144,10 @@ squelettique, CI Linux.
 
 - **Systèmes** : exécution en parallèle, dépendances déclarées entre systèmes, systèmes actifs
   aussi en édition, ressources globales du jeu.
+- **C#** : physique, assets, instanciation de préfabs et fenêtre exposés au C# ; champs liste,
+  tableau et référence d'entité ; appeler du C++ depuis le C# et l'inverse ; débogueur attaché
+  depuis l'éditeur ; `dotnet` embarqué pour les machines sans SDK ; corps du composant écrit dans
+  l'éditeur (édition en place) ; export vers d'autres plateformes du runtime .NET.
 - **Isolation du code du jeu** : protéger l'éditeur d'un plantage du module (processus séparé,
   gestion structurée des exceptions).
 - **Physique** : articulations (charnières, ressorts), véhicules, ragdolls, matériaux physiques par

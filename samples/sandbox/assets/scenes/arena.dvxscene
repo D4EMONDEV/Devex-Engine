@@ -382,6 +382,22 @@ intensity = 6000
 [override target="0254301e-6adb-5964-a5e7-e0315b9d1c0b" type="PointLight"]
 color = vec3(0.55, 0.75, 1)
 
+[entity uuid="db9a9a6c-43b2-5e84-9031-8da43069c5f3" name="Bobbing cube"]
+
+[component type="Transform"]
+position = vec3(4, 2.5, -6)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(0.6, 0.6, 0.6)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("ff4872a7-7bc8-4ffb-900d-0c565be864f0")
+
+[component type="Bobber"]
+height = 0.6
+period = 2.5
+spin = 1.0471976
+
 [entity uuid="493fccc4-0e66-5cbb-ba15-0a43f3f069a3" name="Scene switch"]
 
 [component type="SceneSwitch"]

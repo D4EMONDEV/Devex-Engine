@@ -130,6 +130,30 @@ Entity Scene::findEntity(core::Uuid uuid) const noexcept
     return found == m_entitiesByUuid.end() ? Entity{} : found->second;
 }
 
+DynamicComponentPool& Scene::dynamicPool(std::size_t typeIndex,
+                                         const std::shared_ptr<const DynamicComponentLayout>& layout)
+{
+    if (typeIndex >= m_pools.size())
+    {
+        m_pools.resize(typeIndex + 1);
+    }
+    if (m_pools[typeIndex] == nullptr)
+    {
+        m_pools[typeIndex] = std::make_unique<DynamicComponentPool>(layout);
+    }
+    return static_cast<DynamicComponentPool&>(*m_pools[typeIndex]);
+}
+
+DynamicComponentPool* Scene::dynamicPool(std::size_t typeIndex) noexcept
+{
+    return typeIndex < m_pools.size() ? static_cast<DynamicComponentPool*>(m_pools[typeIndex].get()) : nullptr;
+}
+
+const DynamicComponentPool* Scene::dynamicPool(std::size_t typeIndex) const noexcept
+{
+    return typeIndex < m_pools.size() ? static_cast<const DynamicComponentPool*>(m_pools[typeIndex].get()) : nullptr;
+}
+
 std::size_t Scene::componentPoolCount() const noexcept
 {
     return m_pools.size();

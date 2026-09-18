@@ -4,6 +4,7 @@
 #include <devex/core/Error.hpp>
 #include <devex/core/Uuid.hpp>
 #include <devex/scene/ComponentPool.hpp>
+#include <devex/scene/DynamicComponent.hpp>
 #include <devex/scene/Entity.hpp>
 #include <devex/scene/View.hpp>
 
@@ -156,6 +157,14 @@ public:
     // Computes the WorldTransform of every entity that has a Transform, parents first. Entities
     // without a Transform pass their parent's transform down to their children.
     void updateTransforms();
+
+    // The pool of a component type described while the engine runs, such as a C# component,
+    // created with the layout when the scene has none yet.
+    [[nodiscard]] DynamicComponentPool& dynamicPool(std::size_t typeIndex,
+                                                    const std::shared_ptr<const DynamicComponentLayout>& layout);
+    // Null when the scene has no component of the type.
+    [[nodiscard]] DynamicComponentPool* dynamicPool(std::size_t typeIndex) noexcept;
+    [[nodiscard]] const DynamicComponentPool* dynamicPool(std::size_t typeIndex) const noexcept;
 
     // The pools of component types, by componentTypeIndex; null where a type has no pool yet.
     [[nodiscard]] std::size_t componentPoolCount() const noexcept;

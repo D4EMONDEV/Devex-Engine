@@ -461,6 +461,8 @@ void updateEditor(ToolsState& state, scene::Scene& scene, PlayState playState)
     detail::drawSettingsWindow(state);
     detail::drawProjectSettingsWindow(state);
     detail::drawExportWindow(state);
+    detail::drawNewScriptPopup(state);
+    detail::updatePendingScript(state, scene);
     detail::drawEditorPopups(state, scene);
     if (state.pendingCommand != nullptr)
     {

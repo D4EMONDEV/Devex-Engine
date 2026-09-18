@@ -459,6 +459,17 @@ void drawAddComponent(ToolsState& state, scene::Scene& scene, scene::Entity enti
             ImGui::SetKeyboardFocusHere();
         }
         searchField("##filter", filter, "Search Components");
+        if (state.mode == ToolsMode::Editor && state.database != nullptr)
+        {
+            const ImVec2 position = ImGui::GetCursorScreenPos();
+            if (ImGui::Selectable("      New Script..."))
+            {
+                state.openNewScriptPopup = true;
+            }
+            ImGui::SetItemTooltip("Writes a component in a new file of the code folder and adds it here");
+            ImGui::GetWindowDrawList()->AddText(position, uiColorU32(themeColors().gameCode), icons::FilePlus.c_str());
+            ImGui::Separator();
+        }
         std::size_t shown = 0;
         for (const scene::ComponentType& type : scene::componentRegistry().types())
         {
@@ -492,6 +503,16 @@ void drawInspectorPanel(ToolsState& state, scene::Scene& scene)
     if (ImGui::Begin(inspectorWindow))
     {
         const scene::Entity entity = scene.findEntity(state.selection);
+        if (entity.isValid())
+        {
+            state.selectedCode.clear();
+        }
+        else if (!state.selectedCode.empty())
+        {
+            drawCodeInspector(state);
+            ImGui::End();
+            return;
+        }
         if (!entity.isValid())
         {
             const char* const hint = "Select an entity to inspect it.";
