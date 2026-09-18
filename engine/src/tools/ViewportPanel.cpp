@@ -490,6 +490,8 @@ void drawViewportPanel(ToolsState& state, scene::Scene& scene)
     if (width < 8 || height < 8)
     {
         state.viewportPixels = {};
+        // The toolbar moved the cursor below itself, which ImGui wants an item to follow.
+        ImGui::Dummy(ImVec2(0.0f, 0.0f));
         ImGui::End();
         return;
     }
