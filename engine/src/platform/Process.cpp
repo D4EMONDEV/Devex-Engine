@@ -4,6 +4,7 @@
 #include <SDL3/SDL_error.h>
 #include <SDL3/SDL_iostream.h>
 #include <SDL3/SDL_process.h>
+#include <SDL3/SDL_stdinc.h>
 #include <SDL3/SDL_properties.h>
 
 #ifdef _WIN32
@@ -17,6 +18,21 @@
 #include <utility>
 
 namespace devex::platform {
+
+void setEnvironmentVariable(std::string_view name, std::string_view value)
+{
+    // The environment SDL keeps is the one the programs started below inherit, so it is the one
+    // to change rather than the environment of the C runtime.
+    const std::string variable(name);
+    const std::string contents(value);
+    if (contents.empty())
+    {
+        static_cast<void>(SDL_UnsetEnvironmentVariable(SDL_GetEnvironment(), variable.c_str()));
+        return;
+    }
+    static_cast<void>(
+        SDL_SetEnvironmentVariable(SDL_GetEnvironment(), variable.c_str(), contents.c_str(), true));
+}
 namespace {
 
 [[nodiscard]] bool isValidUtf8(std::string_view text) noexcept

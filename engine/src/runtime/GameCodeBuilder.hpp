@@ -16,6 +16,10 @@ namespace devex::runtime::detail {
 // Builds the code/ folder of a project into its game module with CMake, in the background, whenever
 // a file of the folder changes. Visual Studio is found with vswhere when the environment does not
 // already have the compiler.
+// Asks the compilers for English diagnostics, whatever the language of the system, so that the
+// editor reads them the same way everywhere.
+void useEnglishDiagnostics();
+
 class GameCodeBuilder
 {
 public:
@@ -34,6 +38,22 @@ public:
     // The file name of game modules: Game.dll on Windows.
     [[nodiscard]] static std::filesystem::path libraryFileName();
     [[nodiscard]] static bool hasCode(const asset::Project& project);
+
+    // One error or warning of a build, at the place the compiler named.
+    struct Diagnostic
+    {
+        std::filesystem::path path;
+        int line = 1;
+        int column = 1;
+        std::string message;
+        bool error = true;
+    };
+
+    // Reads "file(line,col): error C1234: message" and the clang and MSBuild spellings of it.
+    // Localized compilers name the severity in their own language, which is also recognized.
+    [[nodiscard]] static std::optional<Diagnostic> parseDiagnostic(const std::string& line);
+    // Whether a line of build output reports an error (true) or a warning (false).
+    [[nodiscard]] static std::optional<bool> severityOf(const std::string& line);
 
     struct BuildStatus
     {
@@ -64,6 +84,11 @@ public:
     // Rebuilds in a fresh generated folder, without touching sources or the last successful build.
     void requestRebuild() noexcept;
     [[nodiscard]] bool pending() const noexcept;
+    // What the last build reported, in the order the compiler printed it.
+    [[nodiscard]] const std::vector<Diagnostic>& diagnostics() const noexcept
+    {
+        return m_diagnostics;
+    }
     // Builds now, whether sources changed or not, and returns once the build is over.
     [[nodiscard]] core::Result<void> buildAndWait();
 
@@ -103,6 +128,7 @@ private:
     bool m_freshBuildRequested = false;
     bool m_symbolFailure = false;
     bool m_retriedSymbols = false;
+    std::vector<Diagnostic> m_diagnostics;
 };
 
 } // namespace devex::runtime::detail

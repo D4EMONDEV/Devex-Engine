@@ -777,6 +777,11 @@ void ToolsOverlay::setAudio(audio::AudioEngine* engine,
     m_state->audioClips = std::move(clips);
 }
 
+void ToolsOverlay::setCodeDiagnostics(std::vector<CodeDiagnostic> diagnostics)
+{
+    m_state->codeDiagnostics = std::move(diagnostics);
+}
+
 void ToolsOverlay::setAnimationClips(std::function<std::shared_ptr<const animation::Clip>(asset::AssetId)> clips)
 {
     m_state->animationClips = std::move(clips);

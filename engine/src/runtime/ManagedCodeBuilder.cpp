@@ -231,7 +231,12 @@ bool ManagedCodeBuilder::update()
     {
         for (const std::string& line : m_process->readLines())
         {
-            if (contains(line, ": error") || line.starts_with("error"))
+            if (std::optional<GameCodeBuilder::Diagnostic> diagnostic = GameCodeBuilder::parseDiagnostic(line))
+            {
+                m_diagnostics.push_back(std::move(*diagnostic));
+            }
+            const std::optional<bool> severity = GameCodeBuilder::severityOf(line);
+            if (severity.value_or(false) || line.starts_with("error"))
             {
                 DEVEX_LOG_ERROR("{}", line);
                 if (m_message.empty())
@@ -239,7 +244,7 @@ bool ManagedCodeBuilder::update()
                     m_message = line;
                 }
             }
-            else if (contains(line, ": warning"))
+            else if (severity == false)
             {
                 DEVEX_LOG_WARNING("{}", line);
             }
@@ -288,6 +293,7 @@ core::Result<void> ManagedCodeBuilder::buildAndWait()
 
 void ManagedCodeBuilder::startBuild()
 {
+    useEnglishDiagnostics();
     // The project file is the editor's: other builds only write it when it is missing.
     std::error_code error;
     if (m_editorTarget || !std::filesystem::exists(m_project.codeDirectory() / "Game.csproj", error))
@@ -325,6 +331,7 @@ void ManagedCodeBuilder::startBuild()
     m_process = std::move(*process);
     m_state = State::Building;
     m_message.clear();
+    m_diagnostics.clear();
     m_buildStart = Clock::now();
     DEVEX_LOG_INFO("Building the C# code...");
 }

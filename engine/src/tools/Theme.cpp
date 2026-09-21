@@ -295,6 +295,21 @@ ThemeColors deriveThemeColors(const ThemeSettings& settings)
         // Pale colors read on dark backgrounds only.
         *color = colors.dark ? hex(rgb) : mix(hex(rgb), black, 0.4f);
     }
+
+    // Syntax colors, in the spirit of the icon colors: pale on dark, deepened on light.
+    const std::array<std::pair<ImVec4*, std::uint32_t>, 7> code{{
+        {&colors.codeKeyword, 0x88b9f2},
+        {&colors.codeType, 0x6fd1c0},
+        {&colors.codeComment, 0x7f9163},
+        {&colors.codeString, 0xd99a6c},
+        {&colors.codeNumber, 0xb5cea8},
+        {&colors.codeDirective, 0xc9a0e0},
+        {&colors.codePunctuation, 0xb8b8b8},
+    }};
+    for (const auto& [color, rgb] : code)
+    {
+        *color = colors.dark ? hex(rgb) : mix(hex(rgb), black, 0.45f);
+    }
     return colors;
 }
 

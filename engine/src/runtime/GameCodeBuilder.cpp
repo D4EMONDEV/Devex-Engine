@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <format>
 #include <system_error>
 #include <thread>
@@ -346,8 +347,17 @@ bool GameCodeBuilder::update()
     return false;
 }
 
+// Compilers speak the language of the system by default; the editor reads and shows English.
+void useEnglishDiagnostics()
+{
+    // Visual C++ and MSBuild, then the .NET SDK.
+    platform::setEnvironmentVariable("VSLANG", "1033");
+    platform::setEnvironmentVariable("DOTNET_CLI_UI_LANGUAGE", "en");
+}
+
 void GameCodeBuilder::startBuild()
 {
+    useEnglishDiagnostics();
 #ifdef _WIN32
     m_engineStamp = engineStamp(m_devexConfigDirectory);
     const auto previous = core::readTextFile(m_buildDirectory / "devex-engine.txt");
@@ -409,16 +419,118 @@ exit /b 1
     m_state = State::Building;
     m_message.clear();
     m_symbolFailure = false;
+    m_diagnostics.clear();
     m_buildStart = Clock::now();
     DEVEX_LOG_INFO("Building the game code...");
 }
 
+std::optional<bool> GameCodeBuilder::severityOf(const std::string& line)
+{
+    // "file(12,5): error CS1026: message", and the words localized compilers use instead.
+    static constexpr std::array errors{"error", "erreur", "fatal", "Fehler", "errore"};
+    static constexpr std::array warnings{"warning", "avertissement", "Warnung", "avviso"};
+    for (std::size_t colon = line.find(": "); colon != std::string::npos; colon = line.find(": ", colon + 1))
+    {
+        std::string_view rest(line);
+        rest.remove_prefix(colon + 2);
+        const std::size_t space = rest.find(' ');
+        if (space == std::string_view::npos)
+        {
+            continue;
+        }
+        const std::string_view word = rest.substr(0, space);
+        // The code that follows, such as CS1026 or LNK2019, tells a diagnostic from prose.
+        std::string_view code = rest.substr(space + 1);
+        code = code.substr(0, code.find(':'));
+        const bool looksLikeCode =
+            code.size() >= 4 && code.size() <= 10 &&
+            std::isalpha(static_cast<unsigned char>(code.front())) != 0 &&
+            std::isdigit(static_cast<unsigned char>(code.back())) != 0;
+        if (!looksLikeCode)
+        {
+            continue;
+        }
+        if (std::ranges::find(errors, word) != errors.end())
+        {
+            return true;
+        }
+        if (std::ranges::find(warnings, word) != warnings.end())
+        {
+            return false;
+        }
+    }
+    return std::nullopt;
+}
+
+std::optional<GameCodeBuilder::Diagnostic> GameCodeBuilder::parseDiagnostic(const std::string& line)
+{
+    const std::optional<bool> reported = severityOf(line);
+    if (!reported)
+    {
+        return std::nullopt;
+    }
+    const bool error = *reported;
+    const std::size_t severity = line.find(": ");
+    const std::string_view place(line.data(), severity);
+    // MSVC and MSBuild write file(line,col); clang and gcc write file:line:col.
+    std::size_t numbers = place.rfind('(');
+    char separator = ',';
+    if (numbers == std::string_view::npos || place.back() != ')')
+    {
+        // The last two colons of the place, skipping the one of a drive letter.
+        const std::size_t column = place.rfind(':');
+        numbers = column == std::string_view::npos ? std::string_view::npos : place.rfind(':', column - 1);
+        separator = ':';
+    }
+    if (numbers == std::string_view::npos || numbers == 0)
+    {
+        return std::nullopt;
+    }
+    std::string_view digits = place.substr(numbers + 1);
+    if (separator == ',' && !digits.empty() && digits.back() == ')')
+    {
+        digits.remove_suffix(1);
+    }
+    const std::size_t comma = digits.find(separator);
+    const auto number = [](std::string_view text) {
+        int value = 0;
+        for (const char digit : text)
+        {
+            if (std::isdigit(static_cast<unsigned char>(digit)) == 0)
+            {
+                return 0;
+            }
+            value = value * 10 + (digit - '0');
+        }
+        return text.empty() ? 0 : value;
+    };
+    const int lineNumber = number(comma == std::string_view::npos ? digits : digits.substr(0, comma));
+    const int column = comma == std::string_view::npos ? 1 : number(digits.substr(comma + 1));
+    if (lineNumber <= 0)
+    {
+        return std::nullopt;
+    }
+    std::string message = line.substr(severity + 2);
+    return Diagnostic{
+        .path = core::pathFromUtf8(std::string(place.substr(0, numbers))),
+        .line = lineNumber,
+        .column = std::max(column, 1),
+        .message = std::move(message),
+        .error = error,
+    };
+}
+
 void GameCodeBuilder::readBuildLine(const std::string& line)
 {
+    if (std::optional<Diagnostic> diagnostic = parseDiagnostic(line))
+    {
+        m_diagnostics.push_back(std::move(*diagnostic));
+    }
     // The diagnostic number is stable in localized Visual Studio installations too.
     m_symbolFailure = m_symbolFailure || contains(line, "LNK1201");
-    if (contains(line, ": error") || contains(line, "error C") || contains(line, "error LNK") ||
-        contains(line, "LNK1201") || contains(line, "CMake Error") || line.starts_with("FAILED:") || line.starts_with("error:"))
+    const std::optional<bool> severity = severityOf(line);
+    if (severity.value_or(false) || contains(line, "CMake Error") || line.starts_with("FAILED:") ||
+        line.starts_with("error:"))
     {
         DEVEX_LOG_ERROR("{}", line);
         if (m_message.empty() || contains(line, "LNK1201"))
@@ -426,7 +538,7 @@ void GameCodeBuilder::readBuildLine(const std::string& line)
             m_message = line;
         }
     }
-    else if (contains(line, ": warning") || contains(line, "CMake Warning"))
+    else if (severity == false || contains(line, "CMake Warning"))
     {
         DEVEX_LOG_WARNING("{}", line);
     }

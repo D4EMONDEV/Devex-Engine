@@ -275,6 +275,8 @@ private:
     // the game in the editor.
     void updateAudio(std::chrono::nanoseconds frameTime);
     [[nodiscard]] tools::GameCodeStatus gameCodeStatus() const;
+    // The errors and warnings of the last builds of the C++ and C# code, for the text editor.
+    [[nodiscard]] std::vector<tools::CodeDiagnostic> codeDiagnostics() const;
     // Writes the file of a new component and opens it in the code editor of the system.
     void createScript(const tools::NewScript& script);
     // Starts a requested export once imports and builds are done, and shows its progress.
@@ -565,6 +567,7 @@ void ApplicationRunner::runFrame()
     {
         // The editor goes first, so that Play and Stop take effect this frame.
         m_services.tools->setGameCodeStatus(gameCodeStatus());
+        m_services.tools->setCodeDiagnostics(codeDiagnostics());
         updateDebugger();
         updateExport();
         if (canRender)
@@ -1341,6 +1344,45 @@ void ApplicationRunner::updateAudio(std::chrono::nanoseconds frameTime)
     {
         m_audio->update(*m_application.m_scene, core::Duration(frameTime));
     }
+}
+
+std::vector<tools::CodeDiagnostic> ApplicationRunner::codeDiagnostics() const
+{
+    std::vector<tools::CodeDiagnostic> diagnostics;
+    const auto collect = [&diagnostics](const auto& builder) {
+        for (const GameCodeBuilder::Diagnostic& reported : builder.diagnostics())
+        {
+            diagnostics.push_back({
+                .path = reported.path,
+                .line = reported.line,
+                .column = reported.column,
+                .message = reported.message,
+                .error = reported.error,
+            });
+        }
+    };
+    if (m_gameBuilder)
+    {
+        collect(*m_gameBuilder);
+    }
+    if (m_managedBuilder)
+    {
+        collect(*m_managedBuilder);
+    }
+    // MSBuild prints each diagnostic twice: once where it happens, once in its summary.
+    std::vector<tools::CodeDiagnostic> unique;
+    for (tools::CodeDiagnostic& diagnostic : diagnostics)
+    {
+        const bool seen = std::ranges::any_of(unique, [&diagnostic](const tools::CodeDiagnostic& other) {
+            return other.line == diagnostic.line && other.column == diagnostic.column &&
+                   other.path == diagnostic.path && other.message == diagnostic.message;
+        });
+        if (!seen)
+        {
+            unique.push_back(std::move(diagnostic));
+        }
+    }
+    return unique;
 }
 
 tools::GameCodeStatus ApplicationRunner::gameCodeStatus() const

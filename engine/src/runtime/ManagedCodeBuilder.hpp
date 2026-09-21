@@ -1,5 +1,7 @@
 #pragma once
 
+#include "GameCodeBuilder.hpp"
+
 #include <devex/asset/Project.hpp>
 #include <devex/core/Error.hpp>
 #include <devex/platform/Process.hpp>
@@ -9,6 +11,7 @@
 #include <filesystem>
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace devex::runtime::detail {
 
@@ -18,6 +21,12 @@ namespace devex::runtime::detail {
 class ManagedCodeBuilder
 {
 public:
+    // What the last build reported, parsed like the C++ one.
+    [[nodiscard]] const std::vector<GameCodeBuilder::Diagnostic>& diagnostics() const noexcept
+    {
+        return m_diagnostics;
+    }
+
     enum class State : std::uint8_t
     {
         Idle,
@@ -91,6 +100,7 @@ private:
     std::optional<Clock::time_point> m_changedAt;
     Clock::time_point m_buildStart{};
     bool m_buildRequested = false;
+    std::vector<GameCodeBuilder::Diagnostic> m_diagnostics;
 };
 
 } // namespace devex::runtime::detail

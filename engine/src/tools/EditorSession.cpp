@@ -655,6 +655,16 @@ bool saveTextFile(ToolsState& state, scene::Scene& scene, TextDocument& document
             return fail(parsed.error().message);
         }
     }
+    // Saved lines keep no trailing spaces. The text field owns the characters while it is being
+    // edited, so the change is queued for it as well.
+    if (std::string trimmed = document.text; trimTrailingSpaces(trimmed) > 0)
+    {
+        if (state.textEdit.path == core::toUtf8(document.path))
+        {
+            state.textEdit.edits.push_back({0, static_cast<int>(document.text.size()), trimmed});
+        }
+        document.text = std::move(trimmed);
+    }
     if (auto saved = document.save(); !saved)
     {
         return fail(saved.error().message);

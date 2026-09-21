@@ -1,5 +1,6 @@
 #pragma once
 
+#include "CodeArea.hpp"
 #include "EditorCamera.hpp"
 #include "EditorView.hpp"
 #include "Gizmo.hpp"
@@ -219,6 +220,10 @@ struct ToolsState
     bool focusTextEditor = false;
     bool selectTextTab = false;
     std::vector<TextDocument> textDocuments;
+    // What the editor keeps for the document it shows: cursor, search, completions.
+    TextEditState textEdit;
+    // The errors and warnings of the last build of the game code, shown in the margin.
+    std::vector<CodeDiagnostic> codeDiagnostics;
     std::filesystem::path activeText;
     std::string textOpenError;
 
@@ -370,6 +375,10 @@ void drawTextEditorPanel(ToolsState& state, scene::Scene& scene);
 void discardPendingAction(ToolsState& state, scene::Scene& scene);
 // The file selected in the code folder, shown read-only in the inspector.
 void drawCodeInspector(ToolsState& state);
+// The text of the open document: line numbers, colors, margin markers and the completion popup.
+void drawCodeArea(ToolsState& state, TextDocument& document);
+void drawFindBar(ToolsState& state, TextDocument& document);
+void drawGoToLinePopup(ToolsState& state, TextDocument& document);
 // Asks for a new component file and, once it is compiled, adds it to the entity.
 void drawNewScriptPopup(ToolsState& state);
 void updatePendingScript(ToolsState& state, scene::Scene& scene);

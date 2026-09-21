@@ -105,6 +105,15 @@ struct ThemeColors
     ImVec4 texture;
     ImVec4 neutral;
     ImVec4 favorite;
+
+    // Syntax colors of the text editor, by TokenKind.
+    ImVec4 codeKeyword;
+    ImVec4 codeType;
+    ImVec4 codeComment;
+    ImVec4 codeString;
+    ImVec4 codeNumber;
+    ImVec4 codeDirective;
+    ImVec4 codePunctuation;
 };
 
 [[nodiscard]] ThemeColors deriveThemeColors(const ThemeSettings& settings);

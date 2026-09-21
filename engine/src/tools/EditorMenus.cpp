@@ -893,6 +893,25 @@ void handleEditorShortcuts(ToolsState& state, scene::Scene& scene)
         {
             requestAction(state, scene, {.kind = PendingAction::Kind::CloseText, .path = state.activeText});
         }
+        TextDocument* const document = findTextDocument(state, state.activeText);
+        if (pressed(ImGuiMod_Ctrl | ImGuiKey_F) || pressed(ImGuiMod_Ctrl | ImGuiKey_H))
+        {
+            state.textEdit.showFind = true;
+            state.textEdit.showReplace = state.textEdit.showReplace || ImGui::IsKeyDown(ImGuiKey_H);
+            state.textEdit.focusFind = true;
+        }
+        if (pressed(ImGuiMod_Ctrl | ImGuiKey_G))
+        {
+            state.textEdit.openGoTo = true;
+        }
+        if (pressed(ImGuiMod_Ctrl | ImGuiKey_Slash) && document != nullptr)
+        {
+            commentSelection(state.textEdit, *document, languageOf(document->path));
+        }
+        if (pressed(ImGuiKey_F3) && document != nullptr)
+        {
+            selectMatch(state.textEdit, *document, ImGui::GetIO().KeyShift ? -1 : 1);
+        }
         return;
     }
     if (!editing)

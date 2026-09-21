@@ -142,6 +142,7 @@ target_include_directories(devex_render_tests PRIVATE "${PROJECT_SOURCE_DIR}/eng
 # Command and log tests run anywhere; the overlay test is tagged [gpu].
 devex_add_tests(tools
     SOURCES
+        tools/CodeEditingTests.cpp
         tools/EditorMathTests.cpp
         tools/IconsTests.cpp
         tools/LogBufferTests.cpp

@@ -126,6 +126,16 @@ struct NewScript
     bool csharp = true;
 };
 
+// One error or warning of the last build of the game code, shown in the margin of its file.
+struct CodeDiagnostic
+{
+    std::filesystem::path path;
+    int line = 1;
+    int column = 1;
+    std::string message;
+    bool error = true;
+};
+
 // What the editor asks of the application, collected while its panels are drawn.
 struct EditorRequests
 {
@@ -230,6 +240,10 @@ public:
     // (null outside Play).
     void setAnimationClips(std::function<std::shared_ptr<const animation::Clip>(asset::AssetId)> clips);
     void setAnimationWorld(animation::AnimationWorld* world) noexcept;
+
+    // Editor only: what the last build of the game code reported, shown in the margin of the text
+    // editor on the lines the compiler named.
+    void setCodeDiagnostics(std::vector<CodeDiagnostic> diagnostics);
 
     [[nodiscard]] CommandHistory& history() noexcept;
 

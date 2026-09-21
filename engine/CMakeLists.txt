@@ -552,6 +552,12 @@ target_sources(devex_tools
         src/tools/AssetsPanel.cpp
         src/tools/AudioInspector.cpp
         src/tools/CommandHistory.cpp
+        src/tools/CodeArea.cpp
+        src/tools/CodeArea.hpp
+        src/tools/CodeCompletion.cpp
+        src/tools/CodeCompletion.hpp
+        src/tools/CodeHighlight.cpp
+        src/tools/CodeHighlight.hpp
         src/tools/CodePanel.cpp
         src/tools/TextDocument.cpp
         src/tools/TextDocument.hpp

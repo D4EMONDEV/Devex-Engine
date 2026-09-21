@@ -116,6 +116,8 @@ mais seulement explicitement ici : le code suit ce document, pas l'inverse.
 | Os                       | Une entité par os, pilotée par nom                                |
 | Lecture                  | Composant `Animator` : un clip, fondu croisé, root motion en option |
 | Skinning                 | Dans le vertex shader, matrices d'os en buffer par frame          |
+| Éditeur de texte         | Coloration dessinée par-dessus le champ ImGui                     |
+| Autocomplétion           | Mots-clés, noms du moteur et identifiants du fichier              |
 
 ## Architecture cible
 
@@ -1182,10 +1184,38 @@ les assets s'écrivent au fil de leur lecture.
 - **Fichiers de code dans l'éditeur** : le panneau FileSystem montre le dossier `code/` (les
   dossiers de build sont masqués) ; cliquer un fichier ouvre le panneau **Text Editor**, à
   onglets, ancrable ou flottant dans la fenêtre principale. Police mono, sélection, copier-coller,
-  tabulations, annulation/rétablissement du champ actif, position ligne/colonne, **Ctrl+S**, Save All,
+  annulation/rétablissement du champ actif, position ligne/colonne, **Ctrl+S**, Save All,
   Reload et ouverture dans l'IDE externe. Les scripts enregistrés sont recompilés automatiquement.
   **Editor > Panels > Text Editor** rouvre le panneau ; le masquer conserve les fichiers ouverts.
   **Ctrl+O** ouvre un fichier texte et **Ctrl+W** ferme l'onglet lorsque ce panneau a le focus.
+- **Coloration syntaxique** : `InputTextMultiline` ne colore pas son texte. Le champ est donc rendu
+  avec une couleur de texte transparente, et le panneau **dessine lui-même** les jetons colorés et
+  le curseur par-dessus, en mesurant les positions avec la police du champ ; la sélection reste
+  celle d'ImGui. Le champ a la taille de tout le fichier et c'est le panneau qui défile, si bien
+  que les marges et les marqueurs se placent sans suivre un défilement interne. Seules les lignes
+  visibles sont analysées, à partir d'un index des débuts de ligne reconstruit à chaque édition.
+  L'analyseur (`CodeHighlight`) reconnaît C++, C#, CMake, JSON et le format texte `.dvx*`, avec
+  mots-clés, types, chaînes, nombres, directives et commentaires, y compris les blocs `/* */` qui
+  traversent les lignes. Les couleurs viennent du thème et suivent le mode clair ou sombre.
+- **Confort d'édition** : marge des numéros de ligne, surlignage de la ligne courante, **Ctrl+F**
+  (recherche, compte des occurrences, sensibilité à la casse, F3 pour la suivante), **Ctrl+H**
+  (remplacement, un par un ou tous), **Ctrl+G** (aller à la ligne), **Ctrl+/** (commenter ou
+  décommenter les lignes de la sélection), indentation conservée à la nouvelle ligne (et augmentée
+  après `{`, `(` ou `:`), **Tab** qui insère quatre espaces, et retrait des espaces en fin de ligne
+  à l'enregistrement. Comme ImGui possède les caractères pendant l'édition, ces changements passent
+  par une file d'éditions appliquées dans le rappel du champ.
+- **Autocomplétion** : à partir de deux caractères, une liste propose les mots-clés du langage, les
+  **noms que le moteur connaît** (composants et champs de la réflexion, types de l'API C# ou C++) et
+  les identifiants déjà écrits dans le fichier, chacun avec son origine. Les flèches choisissent,
+  **Tab** ou **Entrée** insèrent, **Échap** ferme, et un clic prend l'entrée. Le popup s'approprie
+  ces touches le temps qu'il est ouvert, pour ne pas déplacer le curseur en même temps. Il n'y a
+  pas d'analyse sémantique : c'est une aide à la frappe, pas un service de langage.
+- **Erreurs de compilation** : les sorties des compilateurs C++ et C# sont analysées
+  (`file(ligne,colonne): error CODE: message`, ainsi que la forme `fichier:ligne:colonne:` de
+  clang) et remontées à l'éditeur, qui marque la ligne dans la marge, souligne le code fautif et
+  montre le message au survol. Les compilateurs sont lancés avec `VSLANG=1033` et
+  `DOTNET_CLI_UI_LANGUAGE=en` : sans cela, une installation localisée écrit ses diagnostics dans la
+  langue du système et ni la console ni la marge ne les reconnaissent.
 - **Racine du projet** : `res://` représente le dossier contenant le `.dvxproj`, sans dossier
   physique `res`. FileSystem regroupe le fichier de projet, `assets/` et `code/` sous cette racine.
   Un nouveau projet crée `assets/` et `code/` ; ce dernier reste vide jusqu'à la création du code.
@@ -1370,6 +1400,12 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     `Transform` ou le `CharacterController`, API C++ et C#, panneau Animation avec piste temporelle
     et images clés, robot rigué qui patrouille et salue dans l'arène.
 
+18. ✅ **Éditeur de texte** — coloration syntaxique dessinée par-dessus le champ (C++, C#, CMake,
+    JSON, `.dvx*`), numéros de ligne et ligne courante, recherche et remplacement, aller à la
+    ligne, commentaire par raccourci, indentation automatique, espaces de fin retirés à
+    l'enregistrement, autocomplétion des mots-clés et des noms du moteur, et erreurs de
+    compilation marquées dans la marge.
+
 Ensuite, sans ordre figé : post-traitements (bloom, TAA), transparence, CI Linux.
 
 ## Questions ouvertes
@@ -1398,6 +1434,9 @@ Ensuite, sans ordre figé : post-traitements (bloom, TAA), transparence, CI Linu
   export sans build Release du moteur (paquet d'un moteur distribué).
 - **Audio** : streaming depuis le disque, occlusion, réverbération, effets et routage des groupes,
   budget de voix, plusieurs écouteurs, intégration optionnelle de FMOD/Wwise.
+- **Éditeur de texte** : client LSP (clangd, Roslyn) pour une vraie complétion, les diagnostics en
+  direct et l'aller à la définition ; repli de code, multi-curseur, sélection par colonnes,
+  recherche dans tout le projet, et un rendu propre des tabulations.
 - **Animation** : machine à états et blend trees dans l'éditeur, couches et masques d'os,
   événements de clip, cinématique inverse, morph targets, pré-skinning en compute (colliders et
   rayons suivant la pose), réutilisation d'un clip entre squelettes différents (retargeting),

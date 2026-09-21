@@ -52,7 +52,8 @@ Le détail, l'architecture des modules et les jalons sont dans
   overlay (F1) ou dans l'éditeur : gestionnaire de projets, onglets de scènes, viewport et sa
   barre d'outils, caméra libre, sélection à la souris, gizmos, préfabs (glisser-déposer, valeurs
   modifiées, Revert, Make Local, Save as Prefab, mise à jour en direct), fichiers de code du projet
-  avec éditeur de texte intégré à onglets (panneau ancrable ou flottant), ouverture dans l'IDE,
+  avec éditeur de texte intégré à onglets (coloration syntaxique, numéros de ligne, recherche et
+  remplacement, autocomplétion, erreurs de compilation dans la marge), ouverture dans l'IDE,
   *New Script…*, réglages de l'éditeur, aperçu sonore et forme
   d'onde des clips, volumes du projet, icônes et distances des sources audio, panneau Animation
   avec piste temporelle et images clés ;
