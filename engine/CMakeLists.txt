@@ -558,6 +558,8 @@ target_sources(devex_tools
         src/tools/CodeCompletion.hpp
         src/tools/CodeHighlight.cpp
         src/tools/CodeHighlight.hpp
+        src/tools/CodeOutline.cpp
+        src/tools/CodeOutline.hpp
         src/tools/CodePanel.cpp
         src/tools/TextDocument.cpp
         src/tools/TextDocument.hpp

@@ -1,6 +1,7 @@
 #include "tools/CodeArea.hpp"
 #include "tools/CodeCompletion.hpp"
 #include "tools/CodeHighlight.hpp"
+#include "tools/CodeOutline.hpp"
 #include "tools/TextDocument.hpp"
 
 #include <devex/core/File.hpp>
@@ -280,4 +281,49 @@ TEST_CASE("Saving removes the spaces at the end of lines", "[tools][code]")
     std::string clean = "nothing to trim\n";
     CHECK(trimTrailingSpaces(clean) == 0);
     CHECK(clean == "nothing to trim\n");
+}
+
+
+TEST_CASE("The outline lists what a file declares", "[tools][code]")
+{
+    using devex::tools::detail::CodeSymbol;
+    using devex::tools::detail::outlineOf;
+
+    const std::string csharp =
+        "using Devex;\n\n// A comment with class in it\npublic class RobotGuide : Component\n{\n"
+        "    public float Speed = 1.6f;\n\n    public override void Start()\n    {\n"
+        "        PlayClip(Idle);\n    }\n\n    private void Face(Vec3 direction, float delta)\n"
+        "    {\n    }\n}\n";
+    const std::vector<CodeSymbol> symbols = outlineOf(csharp, CodeLanguage::CSharp);
+    const auto find = [&symbols](std::string_view name) {
+        return std::ranges::find(symbols, name, &CodeSymbol::name);
+    };
+    REQUIRE(find("RobotGuide") != symbols.end());
+    CHECK(find("RobotGuide")->line == 4);
+    CHECK(find("RobotGuide")->type);
+    REQUIRE(find("Start") != symbols.end());
+    CHECK(find("Start")->line == 8);
+    CHECK_FALSE(find("Start")->type);
+    CHECK(find("Face") != symbols.end());
+    // Calls and comments are not declarations.
+    CHECK(find("PlayClip") == symbols.end());
+
+    const std::string cpp =
+        "#include <devex/core/Log.hpp>\n\nstruct Player\n{\n    float speed = 1.0f;\n};\n\n"
+        "void movePlayers(SystemContext& context)\n{\n    if (context.physics == nullptr)\n"
+        "    {\n        return;\n    }\n}\n";
+    const std::vector<CodeSymbol> cppSymbols = outlineOf(cpp, CodeLanguage::Cpp);
+    CHECK(std::ranges::find(cppSymbols, "Player", &CodeSymbol::name) != cppSymbols.end());
+    CHECK(std::ranges::find(cppSymbols, "movePlayers", &CodeSymbol::name) != cppSymbols.end());
+    CHECK(std::ranges::find(cppSymbols, "if", &CodeSymbol::name) == cppSymbols.end());
+
+    // Devex files list their sections, named when they carry a name.
+    const std::string devex =
+        "[scene format=1]\n\n[entity uuid=\"1\" name=\"Robot\"]\n\n[component type=\"Animator\"]\n";
+    const std::vector<CodeSymbol> sections = outlineOf(devex, CodeLanguage::DevexText);
+    CHECK(std::ranges::find(sections, "Robot", &CodeSymbol::name) != sections.end());
+    CHECK(std::ranges::find(sections, "component", &CodeSymbol::name) != sections.end());
+
+    // A language the reader does not know lists nothing.
+    CHECK(outlineOf("anything at all", CodeLanguage::PlainText).empty());
 }

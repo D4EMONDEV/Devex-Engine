@@ -31,19 +31,6 @@ inline constexpr const char* newScriptPopup = "New Script";
            extension == ".txt" || extension == ".csproj";
 }
 
-[[nodiscard]] EntityIcon codeIcon(const std::filesystem::path& path)
-{
-    const ThemeColors& colors = themeColors();
-    if (path.extension() == ".cs")
-    {
-        return {icons::FileCode, colors.gameCode};
-    }
-    if (path.extension() == ".cpp" || path.extension() == ".hpp" || path.extension() == ".h")
-    {
-        return {icons::Code, colors.entity};
-    }
-    return {icons::FileText, colors.neutral};
-}
 
 // A row of the tree, like the assets panel draws them.
 [[nodiscard]] bool codeRow(const char* id, ImGuiTreeNodeFlags flags, EntityIcon icon, std::string_view label)
@@ -148,6 +135,20 @@ void drawCodeEntry(ToolsState& state, const std::filesystem::path& path, bool di
 }
 
 } // namespace
+
+EntityIcon codeIcon(const std::filesystem::path& path)
+{
+    const ThemeColors& colors = themeColors();
+    if (path.extension() == ".cs")
+    {
+        return {icons::FileCode, colors.gameCode};
+    }
+    if (path.extension() == ".cpp" || path.extension() == ".hpp" || path.extension() == ".h")
+    {
+        return {icons::Code, colors.entity};
+    }
+    return {icons::FileText, colors.neutral};
+}
 
 void openInCodeEditor(ToolsState& state, const std::filesystem::path& file)
 {

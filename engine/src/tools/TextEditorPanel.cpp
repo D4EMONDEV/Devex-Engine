@@ -3,6 +3,7 @@
 #include "CodeArea.hpp"
 #include "CodeCompletion.hpp"
 #include "CodeHighlight.hpp"
+#include "CodeOutline.hpp"
 
 #include <devex/core/Log.hpp>
 #include <devex/core/Path.hpp>
@@ -57,7 +58,7 @@ void openTextFile(ToolsState& state, const std::filesystem::path& path)
         openInCodeEditor(state, path);
         return;
     }
-    state.showTextEditor = true;
+    setMainScreen(state, MainScreen::Script);
     state.focusTextEditor = true;
     state.textOpenError.clear();
     TextDocument* document = findTextDocument(state, path);
@@ -172,6 +173,7 @@ void indexLines(TextEditState& edit, const TextDocument& document)
         index = stop + 1;
     }
     edit.indexedLength = static_cast<int>(text.size());
+    edit.outline = outlineOf(document.text, languageOf(document.path));
 }
 
 // The widest line of the file, in characters: how far the view scrolls sideways.
@@ -589,6 +591,116 @@ void drawGoToLinePopup(ToolsState& state, TextDocument& document)
     ImGui::EndPopup();
 }
 
+namespace {
+
+// The code files of the project, read again from time to time rather than at every frame.
+void scanScripts(ToolsState& state)
+{
+    const double now = ImGui::GetTime();
+    if (state.database == nullptr || (state.scriptsScanned >= 0.0 && now - state.scriptsScanned < 2.0))
+    {
+        return;
+    }
+    state.scriptsScanned = now;
+    state.scriptFiles.clear();
+    state.scriptFiles.push_back(state.database->project().file);
+    std::error_code error;
+    for (const std::filesystem::directory_entry& entry :
+         std::filesystem::recursive_directory_iterator(state.database->project().codeDirectory(), error))
+    {
+        const std::string name = core::toUtf8(entry.path().filename());
+        // Build folders hold no code of the game.
+        if (entry.is_directory(error) && (name == "obj" || name == "bin" || name.starts_with('.')))
+        {
+            continue;
+        }
+        if (entry.is_regular_file(error) && languageOf(entry.path()) != CodeLanguage::PlainText)
+        {
+            state.scriptFiles.push_back(entry.path());
+        }
+    }
+    std::ranges::sort(state.scriptFiles, [](const std::filesystem::path& left, const std::filesystem::path& right) {
+        return left.filename() < right.filename();
+    });
+}
+
+void drawScriptSidebar(ToolsState& state, scene::Scene& scene)
+{
+    const ThemeColors& colors = themeColors();
+    scanScripts(state);
+    const float width = ImGui::GetFontSize() * 11.0f;
+    // Opening a document grows the vector that holds them, so the lists work on a copy of the
+    // path of the open one and act once they are drawn.
+    const std::filesystem::path active = state.activeText;
+    std::optional<std::filesystem::path> chosen;
+    std::optional<int> line;
+
+    // One column holding both lists, so that the text beside it starts at the top.
+    ImGui::BeginChild("sidebar", ImVec2(width, 0.0f));
+    ImGui::BeginChild("scripts", ImVec2(0.0f, ImGui::GetContentRegionAvail().y * 0.55f),
+                      ImGuiChildFlags_Borders);
+    searchField("##scripts", state.scriptFilter, "Filter Scripts");
+    for (const std::filesystem::path& path : state.scriptFiles)
+    {
+        const std::string name = core::toUtf8(path.filename());
+        if (!containsIgnoringCase(name, state.scriptFilter))
+        {
+            continue;
+        }
+        const EntityIcon icon = codeIcon(path);
+        const ImVec2 position = ImGui::GetCursorScreenPos();
+        if (ImGui::Selectable(("      " + name).c_str(), sameTextPath(active, path)))
+        {
+            chosen = path;
+        }
+        ImGui::SetItemTooltip("%s", core::toUtf8(path).c_str());
+        ImGui::GetWindowDrawList()->AddText(position, uiColorU32(icon.color), icon.icon.c_str());
+    }
+    ImGui::EndChild();
+
+    ImGui::BeginChild("symbols", ImVec2(0.0f, 0.0f), ImGuiChildFlags_Borders);
+    searchField("##symbols", state.symbolFilter, "Filter Methods");
+    if (active.empty())
+    {
+        ImGui::TextDisabled("No file open.");
+    }
+    for (const CodeSymbol& symbol : state.textEdit.outline)
+    {
+        if (!containsIgnoringCase(symbol.name, state.symbolFilter))
+        {
+            continue;
+        }
+        const ImVec2 position = ImGui::GetCursorScreenPos();
+        ImGui::PushID(symbol.line);
+        if (ImGui::Selectable(("      " + symbol.name).c_str()))
+        {
+            line = symbol.line;
+        }
+        ImGui::SetItemTooltip("Line %d", symbol.line);
+        ImGui::PopID();
+        ImGui::GetWindowDrawList()->AddText(position,
+                                            uiColorU32(symbol.type ? colors.codeType : colors.codeKeyword),
+                                            symbol.type ? icons::Package.c_str() : icons::Code.c_str());
+    }
+    ImGui::EndChild();
+    ImGui::EndChild();
+
+    if (chosen)
+    {
+        openTextFile(state, *chosen);
+    }
+    else if (line)
+    {
+        if (const TextDocument* const document = findTextDocument(state, active))
+        {
+            goToLine(state.textEdit, *document, *line);
+        }
+    }
+    static_cast<void>(scene);
+}
+
+} // namespace
+
 void drawTextEditorPanel(ToolsState& state, scene::Scene& scene)
 {
     if (auto path = std::exchange(state.dialogAnswers->openText, std::nullopt))
@@ -604,7 +716,7 @@ void drawTextEditorPanel(ToolsState& state, scene::Scene& scene)
     {
         ImGui::SetNextWindowFocus();
     }
-    if (!ImGui::Begin(textEditorWindow, &state.showTextEditor))
+    if (!ImGui::Begin(textEditorWindow, nullptr))
     {
         ImGui::End();
         return;
@@ -631,11 +743,14 @@ void drawTextEditorPanel(ToolsState& state, scene::Scene& scene)
         ImGui::TextWrapped("%s", state.textOpenError.c_str());
     }
 
+    drawScriptSidebar(state, scene);
+    ImGui::SameLine();
+    ImGui::BeginChild("editor", ImVec2(0.0f, 0.0f));
     if (state.textDocuments.empty())
     {
         ImGui::Spacing();
-        ImGui::TextWrapped("Open a code file from FileSystem, or use Edit as Text on a Devex asset.");
-        ImGui::TextDisabled("Drag this panel's title to dock or detach it.");
+        ImGui::TextWrapped("Choose a script beside this text, open a file from FileSystem, or use "
+                           "Edit as Text on a Devex asset.");
     }
     if (ImGui::BeginTabBar("Text files", ImGuiTabBarFlags_Reorderable | ImGuiTabBarFlags_AutoSelectNewTabs |
                                          ImGuiTabBarFlags_FittingPolicyScroll | ImGuiTabBarFlags_TabListPopupButton))
@@ -703,6 +818,7 @@ void drawTextEditorPanel(ToolsState& state, scene::Scene& scene)
         }
         ImGui::EndTabBar();
     }
+    ImGui::EndChild();
     ImGui::End();
     // Closing/reloading may invalidate a document: do this after all widgets have used it.
     if (action)

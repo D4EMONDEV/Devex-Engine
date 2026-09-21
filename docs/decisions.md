@@ -116,6 +116,7 @@ mais seulement explicitement ici : le code suit ce document, pas l'inverse.
 | Os                       | Une entité par os, pilotée par nom                                |
 | Lecture                  | Composant `Animator` : un clip, fondu croisé, root motion en option |
 | Skinning                 | Dans le vertex shader, matrices d'os en buffer par frame          |
+| Écrans de l'éditeur      | 2D, 3D et Script au centre de la barre de menus                    |
 | Éditeur de texte         | Coloration dessinée par-dessus le champ ImGui                     |
 | Autocomplétion           | Mots-clés, noms du moteur et identifiants du fichier              |
 
@@ -1188,6 +1189,13 @@ les assets s'écrivent au fil de leur lecture.
   Reload et ouverture dans l'IDE externe. Les scripts enregistrés sont recompilés automatiquement.
   **Editor > Panels > Text Editor** rouvre le panneau ; le masquer conserve les fichiers ouverts.
   **Ctrl+O** ouvre un fichier texte et **Ctrl+W** ferme l'onglet lorsque ce panneau a le focus.
+- **Écrans principaux** : le centre de la fenêtre montre un **écran** à la fois, choisi au milieu
+  de la barre de menus comme dans Godot : **3D** (le viewport) et **Script** (l'éditeur de texte)
+  partagent le nœud central du dock, sans barre d'onglets — l'écran choisi est le seul ouvert, si
+  bien qu'il remplit le centre. **Ctrl+F2** et **Ctrl+F3** les appellent. L'éditeur suit ce
+  qu'on ouvre : un fichier montre Script, une scène ou le lancement du jeu montre 3D. Le bouton
+  **2D** est présent mais désactivé : il attend le système d'interface. Les panneaux autour
+  (hiérarchie, inspecteur, FileSystem, sortie) ne bougent pas d'un écran à l'autre.
 - **Coloration syntaxique** : `InputTextMultiline` ne colore pas son texte. Le champ est donc rendu
   avec une couleur de texte transparente, et le panneau **dessine lui-même** les jetons colorés et
   le curseur par-dessus, en mesurant les positions avec la police du champ ; la sélection reste
@@ -1197,6 +1205,11 @@ les assets s'écrivent au fil de leur lecture.
   L'analyseur (`CodeHighlight`) reconnaît C++, C#, CMake, JSON et le format texte `.dvx*`, avec
   mots-clés, types, chaînes, nombres, directives et commentaires, y compris les blocs `/* */` qui
   traversent les lignes. Les couleurs viennent du thème et suivent le mode clair ou sombre.
+- **Écran Script** : à gauche du texte, la liste des fichiers de code du projet (filtrable, un clic
+  les ouvre) et, en dessous, ce que le fichier ouvert déclare — types, fonctions, ou sections pour
+  un fichier `.dvx*` — qui amène à la ligne d'un clic. La lecture des symboles se fait par la forme
+  des lignes (mots-clés, parenthèses, fins de ligne) : elle suffit pour naviguer et se trompe sur
+  les mises en forme inhabituelles.
 - **Confort d'édition** : marge des numéros de ligne, surlignage de la ligne courante, **Ctrl+F**
   (recherche, compte des occurrences, sensibilité à la casse, F3 pour la suivante), **Ctrl+H**
   (remplacement, un par un ou tous), **Ctrl+G** (aller à la ligne), **Ctrl+/** (commenter ou
@@ -1441,7 +1454,13 @@ Ensuite, sans ordre figé : post-traitements (bloom, TAA), transparence, CI Linu
   événements de clip, cinématique inverse, morph targets, pré-skinning en compute (colliders et
   rayons suivant la pose), réutilisation d'un clip entre squelettes différents (retargeting),
   compression des courbes.
-- **UI retenue maison** pour l'éditeur et les jeux, qui remplacera ImGui.
+- **UI des jeux** : c'est le prochain grand morceau, et l'écran **2D** de la barre de menus lui est
+  réservé. Il faut un système d'interface à l'exécution — canevas, ancrages et marges, rectangles,
+  texte, images, boutons et champs, thèmes, événements souris, clavier et manette, mise à l'échelle
+  selon la résolution — puis l'éditeur qui pose ces éléments dans un canevas 2D. Ensuite seulement
+  viendraient les jeux 2D eux-mêmes : sprites, atlas, tuiles, caméra et physique 2D, qui partagent
+  la même vue mais pas le même modèle.
+- **UI retenue maison** pour l'éditeur, qui remplacera ImGui dans les outils.
 - **CI** : GitHub Actions Windows, puis Linux.
 - **Chargement asynchrone** : lecture et envoi GPU des assets hors du thread principal, streaming
   des gros niveaux (aujourd'hui, le chargement depuis le cache est synchrone).

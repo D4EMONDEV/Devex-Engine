@@ -507,6 +507,7 @@ std::string tabName(const std::filesystem::path& path)
 
 void activateSceneTab(ToolsState& state, scene::Scene& scene, std::size_t index)
 {
+    setMainScreen(state, MainScreen::ThreeD);
     if (state.playState != PlayState::Editing || index >= state.tabs.size() || index == state.tabs.active())
     {
         return;
@@ -526,6 +527,8 @@ void newSceneTab(ToolsState& state, scene::Scene& scene)
 
 void openSceneTab(ToolsState& state, scene::Scene& scene, const std::filesystem::path& path)
 {
+    // A scene belongs to the viewport, as a file belongs to the text editor.
+    setMainScreen(state, MainScreen::ThreeD);
     if (state.playState != PlayState::Editing)
     {
         return;

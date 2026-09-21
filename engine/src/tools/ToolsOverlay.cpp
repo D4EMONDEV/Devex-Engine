@@ -344,11 +344,22 @@ void buildDefaultLayout(ImGuiID dockspace, const ImGuiViewport& viewport, ToolsM
     ImGui::DockBuilderDockWindow(detail::inspectorWindow, right);
     ImGui::DockBuilderDockWindow(detail::consoleWindow, bottom);
     ImGui::DockBuilderDockWindow(detail::statisticsWindow, bottom);
-    ImGui::DockBuilderDockWindow(detail::textEditorWindow, bottom);
     ImGui::DockBuilderDockWindow(detail::animationWindow, bottom);
     if (mode == ToolsMode::Editor)
     {
+        // The screens of the menu bar share the middle: the switch brings one to the front, and
+        // the node shows no tab bar, so that the screen fills it as in Godot.
         ImGui::DockBuilderDockWindow(detail::viewportWindow, center);
+        ImGui::DockBuilderDockWindow(detail::textEditorWindow, center);
+        if (ImGuiDockNode* const node = ImGui::DockBuilderGetNode(center))
+        {
+            node->SetLocalFlags(node->LocalFlags | ImGuiDockNodeFlags_NoTabBar |
+                                ImGuiDockNodeFlags_NoWindowMenuButton | ImGuiDockNodeFlags_NoCloseButton);
+        }
+    }
+    else
+    {
+        ImGui::DockBuilderDockWindow(detail::textEditorWindow, bottom);
     }
     ImGui::DockBuilderFinish(dockspace);
 }
@@ -359,7 +370,7 @@ void drawDockspace(ToolsState& state)
     // The name carries a version, increased when panels change, so that saved layouts from before
     // are rebuilt with the new panels docked.
     const bool editor = state.mode == ToolsMode::Editor;
-    const ImGuiID dockspace = ImHashStr(editor ? "Devex editor dockspace 3" : "Devex tools dockspace 4");
+    const ImGuiID dockspace = ImHashStr(editor ? "Devex editor dockspace 5" : "Devex tools dockspace 6");
     if (state.resetLayout || ImGui::DockBuilderGetNode(dockspace) == nullptr)
     {
         buildDefaultLayout(dockspace, *viewport, state.mode);
@@ -440,6 +451,10 @@ void updateEditor(ToolsState& state, scene::Scene& scene, PlayState playState)
 
     applyWindowLayout(state, detail::WindowLayout::Editor);
     detail::drawEditorMenus(state, scene);
+    if (std::exchange(state.mainScreenChanged, false))
+    {
+        ImGui::SetWindowFocus(detail::windowOf(state.mainScreen));
+    }
     detail::drawStatusBar(state, scene);
     drawDockspace(state);
     handleShortcuts(state, scene);

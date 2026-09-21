@@ -166,6 +166,17 @@ struct ProjectManagerState
     bool openRemove = false;
 };
 
+// What the middle of the window shows. The panels around it stay where they are.
+enum class MainScreen : std::uint8_t
+{
+    // Interfaces, and later the 2D games the engine will also make.
+    TwoD,
+    ThreeD,
+    Script,
+};
+
+[[nodiscard]] std::string_view toString(MainScreen screen) noexcept;
+
 // Whether the window is sized for the project manager or for the editor.
 enum class WindowLayout : std::uint8_t
 {
@@ -216,14 +227,26 @@ struct ToolsState
     bool showAssets = true;
     bool showViewport = true;
     bool showSettings = false;
+    // The screen the middle of the window shows, chosen in the menu bar or by what the editor
+    // opens: a scene shows the viewport, a file shows the text editor.
+    MainScreen mainScreen = MainScreen::ThreeD;
+    // The screen was chosen this frame: its window takes the focus of the middle.
+    bool mainScreenChanged = false;
     bool showTextEditor = false;
     bool focusTextEditor = false;
     bool selectTextTab = false;
+    // Opening a document moves the others in memory: hold the path of a document across a frame,
+    // never a pointer or a reference to it.
     std::vector<TextDocument> textDocuments;
     // What the editor keeps for the document it shows: cursor, search, completions.
     TextEditState textEdit;
     // The errors and warnings of the last build of the game code, shown in the margin.
     std::vector<CodeDiagnostic> codeDiagnostics;
+    // The script screen: the files of the project's code, listed beside the text.
+    std::vector<std::filesystem::path> scriptFiles;
+    double scriptsScanned = -1.0;
+    std::string scriptFilter;
+    std::string symbolFilter;
     std::filesystem::path activeText;
     std::string textOpenError;
 
@@ -363,6 +386,10 @@ struct ToolsState
 
 void drawHierarchyPanel(ToolsState& state, scene::Scene& scene);
 void drawInspectorPanel(ToolsState& state, scene::Scene& scene);
+// Whether a text holds a part, ignoring the case; an empty part matches everything.
+[[nodiscard]] bool containsIgnoringCase(std::string_view text, std::string_view part);
+// The icon of a code file, by its extension.
+[[nodiscard]] EntityIcon codeIcon(const std::filesystem::path& path);
 // The files of the code folder of the project, under the assets.
 void drawCodeFiles(ToolsState& state);
 void openTextFile(ToolsState& state, const std::filesystem::path& path);
@@ -403,6 +430,10 @@ void stopAudioPreview(ToolsState& state);
 void drawViewportPanel(ToolsState& state, scene::Scene& scene);
 void drawProjectManager(ToolsState& state);
 void drawEditorMenus(ToolsState& state, scene::Scene& scene);
+// Shows a screen in the middle of the window: the panel it needs opens and takes the focus.
+void setMainScreen(ToolsState& state, MainScreen screen);
+// The window of a screen, as the dock builder and the focus use it.
+[[nodiscard]] const char* windowOf(MainScreen screen) noexcept;
 void drawStatusBar(ToolsState& state, const scene::Scene& scene);
 void drawSettingsWindow(ToolsState& state);
 void drawProjectSettingsWindow(ToolsState& state);

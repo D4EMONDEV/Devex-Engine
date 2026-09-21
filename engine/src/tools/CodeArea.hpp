@@ -2,6 +2,7 @@
 
 #include "CodeCompletion.hpp"
 #include "CodeHighlight.hpp"
+#include "CodeOutline.hpp"
 
 #include <devex/tools/ToolsOverlay.hpp>
 
@@ -75,6 +76,8 @@ struct TextEditState
     std::vector<bool> lineInComment;
     int indexedLength = -1;
     bool textChanged = false;
+    // The types and functions of the document, read with its lines.
+    std::vector<CodeSymbol> outline;
     // The cursor blinks from the last time it moved.
     int previousCursor = -1;
     double cursorTime = 0.0;

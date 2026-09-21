@@ -51,14 +51,6 @@ enum class Severity : std::uint8_t
     return state.consoleShowInfo;
 }
 
-[[nodiscard]] bool containsIgnoringCase(std::string_view text, std::string_view part)
-{
-    return part.empty() || !std::ranges::search(text, part, [](char left, char right) {
-                                return std::tolower(static_cast<unsigned char>(left)) ==
-                                       std::tolower(static_cast<unsigned char>(right));
-                            }).empty();
-}
-
 } // namespace
 
 void drawConsolePanel(ToolsState& state)

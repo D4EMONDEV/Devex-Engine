@@ -23,14 +23,6 @@ struct Folder
     std::vector<const asset::SourceFile*> files;
 };
 
-[[nodiscard]] bool containsIgnoringCase(std::string_view text, std::string_view part)
-{
-    return part.empty() || !std::ranges::search(text, part, [](char left, char right) {
-                                return std::tolower(static_cast<unsigned char>(left)) ==
-                                       std::tolower(static_cast<unsigned char>(right));
-                            }).empty();
-}
-
 // The folder tree points into the sources, which must outlive it.
 [[nodiscard]] Folder buildTree(const std::vector<asset::SourceFile>& sources)
 {
@@ -323,6 +315,14 @@ void drawFolder(ToolsState& state, scene::Scene& scene, const std::string& name,
 }
 
 } // namespace
+
+bool containsIgnoringCase(std::string_view text, std::string_view part)
+{
+    return part.empty() || !std::ranges::search(text, part, [](char left, char right) {
+                                return std::tolower(static_cast<unsigned char>(left)) ==
+                                       std::tolower(static_cast<unsigned char>(right));
+                            }).empty();
+}
 
 void drawAssetsPanel(ToolsState& state, scene::Scene& scene)
 {

@@ -187,11 +187,9 @@ void drawEditorMenu(ToolsState& state)
     ImGui::Separator();
     if (ImGui::BeginMenuEx("Panels", icons::LayoutDashboard.c_str()))
     {
-        ImGui::MenuItem(viewportWindow, nullptr, &state.showViewport);
         ImGui::MenuItem(hierarchyWindow, nullptr, &state.showHierarchy);
         ImGui::MenuItem(inspectorWindow, nullptr, &state.showInspector);
         ImGui::MenuItem(assetsWindow, nullptr, &state.showAssets);
-        ImGui::MenuItem(textEditorWindow, nullptr, &state.showTextEditor);
         ImGui::MenuItem(animationWindow, nullptr, &state.showAnimation);
         ImGui::MenuItem(consoleWindow, nullptr, &state.showConsole);
         ImGui::MenuItem(statisticsWindow, nullptr, &state.showStatistics);
@@ -251,6 +249,7 @@ void drawPlayControls(ToolsState& state)
                    editing ? std::optional(colors.text) : std::optional(colors.accent)))
     {
         state.requests.play = true;
+        setMainScreen(state, MainScreen::ThreeD);
     }
     ImGui::SameLine(0.0f, 2.0f);
     if (toolButton("pause", icons::Pause, "Pause (F7)", state.playState == PlayState::Paused, !editing))
@@ -302,6 +301,96 @@ struct LogCounts
 
 } // namespace
 
+const char* windowOf(MainScreen screen) noexcept
+{
+    switch (screen)
+    {
+    case MainScreen::Script:
+        return textEditorWindow;
+    case MainScreen::TwoD:
+    case MainScreen::ThreeD:
+        break;
+    }
+    return viewportWindow;
+}
+
+std::string_view toString(MainScreen screen) noexcept
+{
+    switch (screen)
+    {
+    case MainScreen::TwoD:
+        return "2D";
+    case MainScreen::Script:
+        return "Script";
+    case MainScreen::ThreeD:
+        break;
+    }
+    return "3D";
+}
+
+void setMainScreen(ToolsState& state, MainScreen screen)
+{
+    if (screen == MainScreen::TwoD)
+    {
+        // Interfaces come with the UI system; until then the button only shows what is planned.
+        return;
+    }
+    state.mainScreen = screen;
+    state.mainScreenChanged = true;
+    // The middle holds one screen at a time: the others close, so that none of them shows a tab.
+    state.showViewport = screen == MainScreen::ThreeD;
+    state.showTextEditor = screen == MainScreen::Script;
+}
+
+namespace {
+
+// 2D, 3D and Script in the middle of the menu bar: what the middle of the window shows.
+void drawMainScreenSwitch(ToolsState& state)
+{
+    struct Choice
+    {
+        MainScreen screen;
+        IconText icon;
+        const char* label;
+        const char* tooltip;
+    };
+    const std::array<Choice, 3> choices{{
+        {MainScreen::TwoD, icons::Square, "2D", "Interfaces: coming with the UI system"},
+        {MainScreen::ThreeD, icons::Cuboid, "3D", "The scene in the viewport"},
+        {MainScreen::Script, icons::Code, "Script", "The files of the project in the text editor"},
+    }};
+
+    const ImGuiStyle& style = ImGui::GetStyle();
+    float width = 0.0f;
+    for (const Choice& choice : choices)
+    {
+        width += ImGui::CalcTextSize(withIcon(choice.icon, choice.label).c_str()).x +
+                 style.FramePadding.x * 2.0f + style.ItemSpacing.x;
+    }
+    ImGui::SetCursorPosX(std::max((ImGui::GetWindowWidth() - width) * 0.5f, ImGui::GetCursorPosX()));
+
+    const ThemeColors& colors = themeColors();
+    for (const Choice& choice : choices)
+    {
+        const bool selected = state.mainScreen == choice.screen;
+        const bool available = choice.screen != MainScreen::TwoD;
+        ImGui::PushStyleColor(ImGuiCol_Button, selected ? uiColor(colors.accent) : ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+        ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(selected    ? ImGuiCol_Text
+                                                                     : available ? ImGuiCol_Text
+                                                                                 : ImGuiCol_TextDisabled));
+        ImGui::BeginDisabled(!available);
+        if (ImGui::Button(withIcon(choice.icon, choice.label).c_str()))
+        {
+            setMainScreen(state, choice.screen);
+        }
+        ImGui::EndDisabled();
+        ImGui::PopStyleColor(2);
+        ImGui::SetItemTooltip("%s", choice.tooltip);
+    }
+}
+
+} // namespace
+
 void drawEditorMenus(ToolsState& state, scene::Scene& scene)
 {
     const ImGuiStyle& style = ImGui::GetStyle();
@@ -343,11 +432,10 @@ void drawEditorMenus(ToolsState& state, scene::Scene& scene)
         ImGui::EndMenu();
     }
 
-    // The project in the middle, the game code and the play controls on the right.
-    const std::string& projectName = state.database->project().name;
-    const float nameWidth = ImGui::CalcTextSize(projectName.c_str()).x;
-    ImGui::SameLine(std::max(ImGui::GetCursorPosX(), (ImGui::GetWindowWidth() - nameWidth) * 0.5f));
-    ImGui::TextDisabled("%s", projectName.c_str());
+    // The project after the menus, the screens in the middle, the game code and the play controls
+    // on the right.
+    ImGui::TextDisabled("%s", state.database->project().name.c_str());
+    drawMainScreenSwitch(state);
 
     const float playWidth = toolButtonWidth() * 4.0f + 6.0f;
     std::string codeLabel;
@@ -850,6 +938,7 @@ void handleEditorShortcuts(ToolsState& state, scene::Scene& scene)
     if (pressed(ImGuiKey_F5) && editing)
     {
         state.requests.play = true;
+        setMainScreen(state, MainScreen::ThreeD);
     }
     if ((pressed(ImGuiMod_Ctrl | ImGuiMod_Shift | ImGuiKey_P) || pressed(ImGuiKey_F7)) && !editing)
     {
@@ -875,6 +964,15 @@ void handleEditorShortcuts(ToolsState& state, scene::Scene& scene)
     if (pressed(ImGuiMod_Ctrl | ImGuiKey_Q))
     {
         requestAction(state, scene, {.kind = PendingAction::Kind::Quit});
+    }
+    // The screens of the menu bar, numbered as Godot numbers them.
+    if (pressed(ImGuiMod_Ctrl | ImGuiKey_F2))
+    {
+        setMainScreen(state, MainScreen::ThreeD);
+    }
+    if (pressed(ImGuiMod_Ctrl | ImGuiKey_F3))
+    {
+        setMainScreen(state, MainScreen::Script);
     }
     if (textEditorFocused())
     {
