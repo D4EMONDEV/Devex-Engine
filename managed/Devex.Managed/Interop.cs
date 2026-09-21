@@ -74,6 +74,14 @@ internal unsafe struct NativeApi
     public delegate* unmanaged<Uuid*, Vec3*, float, uint, int, void> PlayOneShot;
     public delegate* unmanaged<byte*, float> GroupVolume;
     public delegate* unmanaged<byte*, float, int> SetGroupVolume;
+
+    public delegate* unmanaged<void*, Entity, Uuid*, float, void> PlayAnimation;
+    public delegate* unmanaged<Entity, void> StopAnimation;
+    public delegate* unmanaged<Entity, void> PauseAnimation;
+    public delegate* unmanaged<Entity, void> ResumeAnimation;
+    public delegate* unmanaged<Entity, int> IsAnimationPlaying;
+    public delegate* unmanaged<Entity, float> AnimationTime;
+    public delegate* unmanaged<void*, Entity, float, void> SetAnimationTime;
 }
 
 /// <summary>The C# functions the engine calls. Filled by the runtime when it starts.</summary>
@@ -101,7 +109,7 @@ internal unsafe struct BootstrapArguments
 /// <summary>What the engine calls into: filling the function tables, then the game itself.</summary>
 public static unsafe class Bootstrap
 {
-    internal const int Version = 3;
+    internal const int Version = 4;
 
     internal static NativeApi Native;
     private static byte[]? _description;

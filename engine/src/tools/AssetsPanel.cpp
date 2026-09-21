@@ -87,6 +87,8 @@ struct Folder
                                              : EntityIcon{icons::Image, colors.texture};
     case asset::AssetType::AudioClip:
         return {icons::AudioWaveform, colors.audio};
+    case asset::AssetType::AnimationClip:
+        return {icons::Film, colors.animation};
     }
     return {icons::File, colors.neutral};
 }
@@ -271,10 +273,12 @@ void drawSource(ToolsState& state, scene::Scene& scene, const asset::SourceFile&
                 continue;
             }
             ImGui::PushID(id.uuid.toString().c_str());
-            const EntityIcon icon = info->type == asset::AssetType::Mesh       ? EntityIcon{icons::Box, colors.entity}
-                                    : info->type == asset::AssetType::Material ? EntityIcon{icons::Palette, colors.material}
-                                    : info->type == asset::AssetType::Texture  ? EntityIcon{icons::Image, colors.texture}
-                                                                               : EntityIcon{icons::File, colors.neutral};
+            const EntityIcon icon =
+                info->type == asset::AssetType::Mesh            ? EntityIcon{icons::Box, colors.entity}
+                : info->type == asset::AssetType::Material      ? EntityIcon{icons::Palette, colors.material}
+                : info->type == asset::AssetType::Texture       ? EntityIcon{icons::Image, colors.texture}
+                : info->type == asset::AssetType::AnimationClip ? EntityIcon{icons::Film, colors.animation}
+                                                                : EntityIcon{icons::File, colors.neutral};
             static_cast<void>(treeRow("##asset", ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen, icon,
                                       info->name));
             dragAsset(info->id, info->type, info->name);

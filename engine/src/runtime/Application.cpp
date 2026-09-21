@@ -2,6 +2,7 @@
 #include <devex/asset/Package.hpp>
 #include <devex/asset/Primitives.hpp>
 #include <devex/asset/Project.hpp>
+#include <devex/animation/AnimationWorld.hpp>
 #include <devex/asset/import/TextureProcessing.hpp>
 #include <devex/audio/AudioEngine.hpp>
 #include <devex/core/File.hpp>
@@ -263,6 +264,12 @@ private:
     // the project changes.
     void createAudio();
     void destroyAudio();
+    // The animations of the game live alongside its sounds; the editor also poses skeletons
+    // outside Play, which the Animation panel drives.
+    void createAnimation();
+    void destroyAnimation();
+    // Before the transforms of the frame: clips advance and pose the bones they drive.
+    void updateAnimation(std::chrono::nanoseconds frameTime);
     void applyAudioSettings();
     // After the transforms of the frame are final: sounds follow their entities, and pause with
     // the game in the editor.
@@ -298,6 +305,7 @@ private:
     bool m_enablePhysics;
     std::unique_ptr<physics::PhysicsWorld> m_physics;
     std::unique_ptr<audio::AudioWorld> m_audio;
+    std::unique_ptr<animation::AnimationWorld> m_animation;
     // The audio settings the mixer has, to follow changes to the project.
     std::optional<asset::AudioSettings> m_audioSettings;
     // The Start systems ran for the scene that plays.
@@ -400,6 +408,7 @@ core::Result<void> ApplicationRunner::loadScene(asset::AssetId sceneAsset)
     const bool restart = m_gameStarted;
     if (restart)
     {
+        destroyAnimation();
         destroyAudio();
         destroyPhysics();
     }
@@ -412,6 +421,7 @@ core::Result<void> ApplicationRunner::loadScene(asset::AssetId sceneAsset)
     {
         createPhysics();
         createAudio();
+        createAnimation();
         runSystems(SystemPhase::Start, core::Duration::zero());
     }
     return {};
@@ -435,6 +445,7 @@ int ApplicationRunner::execute()
     {
         createPhysics();
         createAudio();
+        createAnimation();
         m_gameStarted = true;
         runSystems(SystemPhase::Start, core::Duration::zero());
         loadRequestedScene();
@@ -471,6 +482,7 @@ int ApplicationRunner::execute()
     }
     m_services.platform.setLiveRedrawCallback({});
     m_application.onShutdown();
+    destroyAnimation();
     destroyAudio();
     destroyPhysics();
     return m_exitCode;
@@ -568,6 +580,7 @@ void ApplicationRunner::runFrame()
         {
             runGameplay(m_timestep.step());
         }
+        updateAnimation(frameTime);
         m_application.m_scene->updateTransforms();
         if (m_physics && m_playScene)
         {
@@ -582,6 +595,7 @@ void ApplicationRunner::runFrame()
     else
     {
         runGameplay(frameTime);
+        updateAnimation(frameTime);
         m_application.m_scene->updateTransforms();
         if (m_physics)
         {
@@ -786,6 +800,7 @@ void ApplicationRunner::startPlaying()
     m_timestep = FixedTimestep::fromRate(m_fixedUpdateRate);
     createPhysics();
     createAudio();
+    createAnimation();
     DEVEX_LOG_INFO("Playing");
     m_application.onPlayStarted();
     m_gameStarted = true;
@@ -796,6 +811,7 @@ void ApplicationRunner::startPlaying()
 void ApplicationRunner::stopPlaying()
 {
     m_application.onPlayStopped();
+    destroyAnimation();
     destroyAudio();
     destroyPhysics();
     m_gameStarted = false;
@@ -1179,6 +1195,7 @@ void ApplicationRunner::runSystems(SystemPhase phase, core::Duration delta)
         .assets = m_services.assets,
         .physics = m_physics.get(),
         .audio = m_audio.get(),
+        .animation = m_animation.get(),
         .delta = delta,
         .interpolationAlpha = m_timestep.alpha(),
     };
@@ -1195,6 +1212,7 @@ void ApplicationRunner::runSystems(SystemPhase phase, core::Duration delta)
             .window = &m_services.window,
             .physics = m_physics.get(),
             .audio = m_audio.get(),
+            .animation = m_animation.get(),
             .assets = m_services.assets.source(),
         };
         m_managed->runPhase(frame, phase);
@@ -1257,6 +1275,42 @@ void ApplicationRunner::destroyAudio()
 {
     m_application.m_audio = nullptr;
     m_audio.reset();
+}
+
+void ApplicationRunner::createAnimation()
+{
+    if (m_animation)
+    {
+        return;
+    }
+    m_animation = std::make_unique<animation::AnimationWorld>(
+        [this](asset::AssetId clip) { return m_services.assets.animationClip(clip); });
+    m_application.m_animation = m_animation.get();
+    if (m_services.tools != nullptr)
+    {
+        m_services.tools->setAnimationWorld(m_animation.get());
+    }
+}
+
+void ApplicationRunner::destroyAnimation()
+{
+    if (m_services.tools != nullptr)
+    {
+        m_services.tools->setAnimationWorld(nullptr);
+    }
+    m_application.m_animation = nullptr;
+    m_animation.reset();
+}
+
+void ApplicationRunner::updateAnimation(std::chrono::nanoseconds frameTime)
+{
+    if (!m_animation)
+    {
+        return;
+    }
+    const bool paused = isEditor() && m_playState != tools::PlayState::Playing;
+    m_animation->setPaused(paused);
+    m_animation->update(*m_application.m_scene, core::Duration(frameTime));
 }
 
 void ApplicationRunner::applyAudioSettings()
@@ -1513,6 +1567,11 @@ audio::AudioWorld* Application::audio() noexcept
     return m_audio;
 }
 
+animation::AnimationWorld* Application::animation() noexcept
+{
+    return m_animation;
+}
+
 bool Application::isEditor() const noexcept
 {
     return m_editor;
@@ -1680,6 +1739,7 @@ int run(Application& application, const ApplicationConfig& config)
             tools->setAssetDatabase(database.get());
             tools->setAudio(audioEngine.get(),
                             [&assets](asset::AssetId clip) { return assets.audioClip(clip); });
+            tools->setAnimationClips([&assets](asset::AssetId clip) { return assets.animationClip(clip); });
             const std::filesystem::path engineConfig = (platform->baseDirectory() / ".." / "cmake").lexically_normal();
             tools->setProjectCodeStatusProvider([engineConfig](const asset::Project& project) {
                 const auto status = detail::GameCodeBuilder::buildStatus(project, engineConfig);

@@ -516,10 +516,13 @@ core::Result<std::vector<asset::AssetId>> assetReferences(asset::AssetType type,
         {
             ids.push_back(node.mesh);
         }
+        // The animations imported with the model ship with it, even when no scene plays them yet.
+        ids.insert(ids.end(), model->animations.begin(), model->animations.end());
         break;
     }
     case asset::AssetType::Texture:
     case asset::AssetType::AudioClip:
+    case asset::AssetType::AnimationClip:
         break;
     }
     std::erase_if(ids, [](asset::AssetId id) { return !id.isValid(); });

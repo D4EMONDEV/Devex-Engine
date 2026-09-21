@@ -21,11 +21,12 @@ struct VertexOutput
 VertexOutput vertexMain(uint vertexIndex : SV_VertexID)
 {
     const Vertex vertex = draw.vertices[vertexIndex];
-    const float4 worldPosition = mul(draw.world, float4(vertex.position, 1.0));
+    const float4x4 world = vertexTransform(draw, vertexIndex);
+    const float4 worldPosition = mul(world, float4(vertex.position, 1.0));
 
     // Normals transform with the cofactor matrix, which stays correct under non-uniform scales.
     // Its sign follows the determinant so that mirrored transforms keep outward normals.
-    const float3x3 linear = float3x3(draw.world);
+    const float3x3 linear = float3x3(world);
     const float3x3 columns = transpose(linear);
     const float3 normal = cross(columns[1], columns[2]) * vertex.normal.x +
                           cross(columns[2], columns[0]) * vertex.normal.y +

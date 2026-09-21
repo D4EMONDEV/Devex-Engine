@@ -40,6 +40,7 @@ public:
         physics::PhysicsWorld* physics = nullptr;
         // Null without audio.
         audio::AudioWorld* audio = nullptr;
+        animation::AnimationWorld* animation = nullptr;
         // Where assets are found by path; null without a project or package.
         const asset::AssetSource* assets = nullptr;
         // Set by the game.

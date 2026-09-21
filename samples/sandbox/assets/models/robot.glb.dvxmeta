@@ -1,0 +1,16 @@
+# Devex import settings: keep this file next to its asset in version control.
+[asset format=1 uuid="db0b355f-e51b-476e-acc1-c41327d369e1" importer="gltf"]
+compress_textures = true
+texture_quality = "normal"
+
+[subasset type="material" key="Robot paint" uuid="8d26543c-0394-49bd-95c4-a6ab39cb7d25"]
+
+[subasset type="material" key="Robot trim" uuid="9231a406-55ec-4f65-8fe0-f7eaa34d040f"]
+
+[subasset type="mesh" key="Robot" uuid="6666e9b6-13db-41d2-84f0-503c34c1760a"]
+
+[subasset type="animation" key="Idle" uuid="b0742248-4cbb-4d75-9e8d-f9ff4c9efa5c"]
+
+[subasset type="animation" key="Walk" uuid="905859b5-6eb4-4bd7-9280-c73e4dee07f2"]
+
+[subasset type="animation" key="Wave" uuid="c89b91c7-df3b-49f2-ba28-ead218f0b781"]

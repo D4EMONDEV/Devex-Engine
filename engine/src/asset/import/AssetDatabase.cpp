@@ -113,6 +113,8 @@ struct ImportRecord
     std::string path;
     std::string importer;
     std::uint32_t importerVersion = 0;
+    // The artifact layouts the cooked files follow, as artifactLayouts() numbers them.
+    std::uint32_t layouts = 0;
     std::uint64_t settingsHash = 0;
     FileStamp source;
     std::vector<Dependency> dependencies;
@@ -139,6 +141,7 @@ void addStamp(std::vector<serialization::TextProperty>& properties, const FileSt
     header.attributes.push_back({"importer", TextValue(record.importer)});
     header.attributes.push_back(
         {"version", TextValue(static_cast<std::int64_t>(record.importerVersion))});
+    header.attributes.push_back({"layouts", TextValue(static_cast<std::int64_t>(record.layouts))});
     header.attributes.push_back({"settings", TextValue(core::toHex(record.settingsHash))});
     addStamp(header.properties, record.source);
     if (!record.error.empty())
@@ -238,6 +241,10 @@ void addStamp(std::vector<serialization::TextProperty>& properties, const FileSt
     record.path = *path;
     record.importer = *importer;
     record.importerVersion = static_cast<std::uint32_t>(*serialization::asInteger(*version));
+    if (const TextValue* const layouts = header.findAttribute("layouts"))
+    {
+        record.layouts = static_cast<std::uint32_t>(serialization::asInteger(*layouts).value_or(0));
+    }
     record.settingsHash = *settings;
     record.source = *source;
     if (const TextValue* const error = header.findProperty("error"))
@@ -389,6 +396,7 @@ void runImport(const ImportJob& job, const std::shared_ptr<SharedState>& shared)
     record.path = job.path;
     record.importer = std::string(job.importer->name);
     record.importerVersion = job.importer->version;
+    record.layouts = artifactLayouts();
     record.settingsHash = importSettingsHash(job.meta);
     // Stamped before reading, so that a change during the import is seen by the next scan.
     record.source = fullStamp(job.file);
@@ -1048,6 +1056,7 @@ private:
         ImportRecord& record = *source.record;
         if (record.importer != source.importer->name ||
             record.importerVersion != source.importer->version ||
+            record.layouts != artifactLayouts() ||
             record.settingsHash != importSettingsHash(source.meta))
         {
             return true;

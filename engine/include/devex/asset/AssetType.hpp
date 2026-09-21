@@ -18,15 +18,19 @@ enum class AssetType : std::uint8_t
     Scene = 5,
     // A sound: .wav, .ogg, .mp3 or .flac.
     AudioClip = 6,
+    // An animation of a skeleton, imported from a model file.
+    AnimationClip = 7,
 };
 
 // Whether a stored value is one of the types above: update it with them.
 [[nodiscard]] constexpr bool isAssetType(std::uint8_t value) noexcept
 {
-    return value >= static_cast<std::uint8_t>(AssetType::Mesh) && value <= static_cast<std::uint8_t>(AssetType::AudioClip);
+    return value >= static_cast<std::uint8_t>(AssetType::Mesh) &&
+           value <= static_cast<std::uint8_t>(AssetType::AnimationClip);
 }
 
-// "mesh", "texture", "material", "model", "scene" or "audio", as written in .dvxmeta files.
+// "mesh", "texture", "material", "model", "scene", "audio" or "animation", as written in .dvxmeta
+// files.
 [[nodiscard]] std::string_view toString(AssetType type) noexcept;
 [[nodiscard]] std::optional<AssetType> parseAssetType(std::string_view text) noexcept;
 

@@ -15,7 +15,7 @@ struct VertexOutput
 VertexOutput vertexMain(uint vertexIndex : SV_VertexID)
 {
     const Vertex vertex = draw.vertices[vertexIndex];
-    const float4 worldPosition = mul(draw.world, float4(vertex.position, 1.0));
+    const float4 worldPosition = mul(vertexTransform(draw, vertexIndex), float4(vertex.position, 1.0));
 
     VertexOutput output;
     output.position = mul(draw.scene->cascadeViewProjections[draw.cascade], worldPosition);

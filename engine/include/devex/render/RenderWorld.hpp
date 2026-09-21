@@ -95,6 +95,10 @@ struct MeshInstance
     // An invalid or destroyed material draws with the default material.
     MaterialHandle material;
     math::Mat4 transform{1.0f};
+    // Bones of a skinned mesh, in RenderWorld::boneMatrices. The transform is then the one of the
+    // space the bones are given in, usually the identity of the world.
+    std::uint32_t firstBone = 0;
+    std::uint32_t boneCount = 0;
     // Reported by picking where the instance is visible; 0 for none.
     std::uint32_t objectId = 0;
     // Draws an outline around the instance, as the editor does for the selection.
@@ -136,6 +140,9 @@ struct RenderWorld
     std::vector<RenderLight> lights;
     RenderEnvironment environment;
     std::vector<MeshInstance> meshes;
+    // The bones of the skinned instances of the frame, each already holding the transform from the
+    // space of its mesh to the world.
+    std::vector<math::Mat4> boneMatrices;
 
     // Size in pixels of the image the scene is drawn into for the tools, which show it with
     // Renderer::viewportTexture. Zero draws the scene over the whole window.
@@ -154,17 +161,20 @@ struct RenderWorld
     {
         std::vector<RenderLight> lightStorage = std::move(lights);
         std::vector<MeshInstance> meshStorage = std::move(meshes);
+        std::vector<math::Mat4> boneStorage = std::move(boneMatrices);
         std::vector<OverlayVertex> sceneLineStorage = std::move(sceneLines);
         std::vector<OverlayVertex> overlayLineStorage = std::move(overlayLines);
         std::vector<OverlayVertex> overlayTriangleStorage = std::move(overlayTriangles);
         lightStorage.clear();
         meshStorage.clear();
+        boneStorage.clear();
         sceneLineStorage.clear();
         overlayLineStorage.clear();
         overlayTriangleStorage.clear();
         *this = RenderWorld{};
         lights = std::move(lightStorage);
         meshes = std::move(meshStorage);
+        boneMatrices = std::move(boneStorage);
         sceneLines = std::move(sceneLineStorage);
         overlayLines = std::move(overlayLineStorage);
         overlayTriangles = std::move(overlayTriangleStorage);

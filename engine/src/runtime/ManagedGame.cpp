@@ -105,6 +105,14 @@ struct NativeApi
                         int spatial);
     float (*groupVolume)(const char* group);
     int (*setGroupVolume)(const char* group, float volume);
+
+    void (*playAnimation)(void* scene, Entity entity, const UuidBytes* clip, float fade);
+    void (*stopAnimation)(Entity entity);
+    void (*pauseAnimation)(Entity entity);
+    void (*resumeAnimation)(Entity entity);
+    int (*isAnimationPlaying)(Entity entity);
+    float (*animationTime)(Entity entity);
+    void (*setAnimationTime)(void* scene, Entity entity, float seconds);
 };
 
 // The functions the engine calls, in the order of Devex.Managed's ManagedApi.
@@ -119,7 +127,7 @@ struct ManagedApi
 };
 
 // Devex.Managed's Bootstrap.Version: both sides change it with the function tables.
-constexpr int bootstrapVersion = 3;
+constexpr int bootstrapVersion = 4;
 
 struct BootstrapArguments
 {
@@ -720,6 +728,61 @@ int apiSetGroupVolume(const char* group, float volume)
     return index ? 1 : 0;
 }
 
+[[nodiscard]] animation::AnimationWorld* animationWorld() noexcept
+{
+    return currentFrame() != nullptr ? currentFrame()->animation : nullptr;
+}
+
+void apiPlayAnimation(void* scene, Entity entity, const UuidBytes* clip, float fade)
+{
+    if (animationWorld() != nullptr && scene != nullptr)
+    {
+        animationWorld()->play(*toScene(scene), entity, asset::AssetId{toUuid(clip)}, fade);
+    }
+}
+
+void apiStopAnimation(Entity entity)
+{
+    if (animationWorld() != nullptr)
+    {
+        animationWorld()->stop(entity);
+    }
+}
+
+void apiPauseAnimation(Entity entity)
+{
+    if (animationWorld() != nullptr)
+    {
+        animationWorld()->pause(entity);
+    }
+}
+
+void apiResumeAnimation(Entity entity)
+{
+    if (animationWorld() != nullptr)
+    {
+        animationWorld()->resume(entity);
+    }
+}
+
+int apiIsAnimationPlaying(Entity entity)
+{
+    return animationWorld() != nullptr && animationWorld()->isPlaying(entity) ? 1 : 0;
+}
+
+float apiAnimationTime(Entity entity)
+{
+    return animationWorld() != nullptr ? animationWorld()->time(entity) : 0.0f;
+}
+
+void apiSetAnimationTime(void* scene, Entity entity, float seconds)
+{
+    if (animationWorld() != nullptr && scene != nullptr)
+    {
+        animationWorld()->setTime(*toScene(scene), entity, seconds);
+    }
+}
+
 [[nodiscard]] NativeApi makeNativeApi() noexcept
 {
     return NativeApi{
@@ -781,6 +844,13 @@ int apiSetGroupVolume(const char* group, float volume)
         .playOneShot = &apiPlayOneShot,
         .groupVolume = &apiGroupVolume,
         .setGroupVolume = &apiSetGroupVolume,
+        .playAnimation = &apiPlayAnimation,
+        .stopAnimation = &apiStopAnimation,
+        .pauseAnimation = &apiPauseAnimation,
+        .resumeAnimation = &apiResumeAnimation,
+        .isAnimationPlaying = &apiIsAnimationPlaying,
+        .animationTime = &apiAnimationTime,
+        .setAnimationTime = &apiSetAnimationTime,
     };
 }
 

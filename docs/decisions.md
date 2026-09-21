@@ -112,6 +112,10 @@ mais seulement explicitement ici : le code suit ce document, pas l'inverse.
 | Clips audio              | WAV, FLAC, MP3, Ogg Vorbis ; décodés au chargement ou à la lecture |
 | Écouteur                 | `AudioListener`, sinon caméra principale                         |
 | Mixage                   | Volume Master et 8 groupes nommés par projet                      |
+| Animation                | Squelettes glTF, clips en sous-assets du modèle                   |
+| Os                       | Une entité par os, pilotée par nom                                |
+| Lecture                  | Composant `Animator` : un clip, fondu croisé, root motion en option |
+| Skinning                 | Dans le vertex shader, matrices d'os en buffer par frame          |
 
 ## Architecture cible
 
@@ -132,12 +136,13 @@ situé au-dessus de lui, et le graphe reste sans cycle.
 | `Platform`      | fenêtre, entrées, temps, dialogues, bibliothèques partagées, processus    | Core, SDL3                    |
 | `Reflection`    | description des champs (`TypeInfo`, `DEVEX_REFLECT`, `ValueKind`)         | Core, Math                    |
 | `Serialization` | format texte `.dvx*` (sections, valeurs) ; plus tard archives cookées     | Core                          |
-| `Asset`         | `AssetId`, données CPU (maillages, textures, matériaux, modèles, clips audio), `.dvxasset`, projet, paquet `.dvxpak` | Core, Math, Reflection, Serialization, zstd |
+| `Asset`         | `AssetId`, données CPU (maillages, textures, matériaux, modèles, clips audio et d'animation), `.dvxasset`, projet, paquet `.dvxpak` | Core, Math, Reflection, Serialization, zstd |
 | `AssetImport`   | base d'assets, `.dvxmeta`, importeurs (textures, `.dvxmat`, glTF, sons)   | Asset, Scene, Audio, fastgltf, basisu, stb, efsw |
 | `Render`        | façade `Renderer` / `RenderWorld` ; tout `Vk*` reste dans `src/render/vulkan` | Core, Math, Platform, Asset, Vulkan |
 | `Scene`         | entités, sparse sets, hiérarchie, composants intégrés, `.dvxscene`, sous-arbres, préfabs | Core, Math, Reflection, Serialization, Asset |
 | `Audio`         | clips, mixage et groupes, sources et écouteur de la scène                | Core, Math, Asset, Scene, miniaudio, stb |
-| `Tools`         | panneaux ImGui, annulation, éditeur (viewport, gizmos, scènes, accueil)   | Core, Platform, Render, Scene, Audio, AssetImport, ImGui |
+| `Animation`     | clips d'animation, échantillonnage, fondus, squelettes des `Animator`    | Core, Math, Asset, Scene             |
+| `Tools`         | panneaux ImGui, annulation, éditeur (viewport, gizmos, scènes, accueil)   | Core, Platform, Render, Scene, Audio, Animation, AssetImport, ImGui |
 | `Runtime`       | `Application`, boucle, mode éditeur et Play, modules de jeu, `AssetManager`, extraction | tous les modules ci-dessus |
 
 Au sommet : `devex-editor`, `devex-player` et les modules de jeu des projets.
@@ -995,6 +1000,55 @@ les assets s'écrivent au fil de leur lecture.
   Les sons sont synthétisés par `scripts/generate_sample_assets.py --audio-only` (encodage Ogg,
   MP3 et FLAC par `ffmpeg`), avec des clips de test dans les quatre formats.
 
+### Animation squelettique
+
+- **Import** : un fichier glTF rigué produit, à côté de ses maillages et matériaux, un squelette et
+  un asset `AnimationClip` par animation (`animation` dans la réflexion). Le maillage emporte les
+  joints et poids de ses sommets (quatre par sommet, normalisés à l'import) et sa **pose de
+  référence** (`inverseBind`) ; le modèle emporte la liste des joints de chaque skin et les clips du
+  fichier. Les tangentes MikkTSpace, qui peuvent dédoubler des sommets, recopient le skinning.
+- **Squelette** : instancier un modèle crée **une entité par os**, avec sa `Transform`, sous la
+  racine du modèle ; le maillage skinné reçoit un `SkinnedMeshRenderer` dont la liste `bones` pointe
+  ces entités dans l'ordre des joints. Les os sont donc visibles dans l'arbre, déplaçables, et on
+  peut attacher un objet à une main en le mettant enfant de l'os.
+- **Clips** : un clip décrit ses joints **par nom** et, pour chacun, des pistes de translation, de
+  rotation ou d'échelle (interpolation `linear`, `step` ou `cubic spline`, comme glTF). Un clip joue
+  donc sur n'importe quel squelette dont les os portent les mêmes noms ; un os absent est ignoré.
+  Les morph targets ne sont pas importés.
+- **Lecture** : le composant `Animator` porte le clip courant, la vitesse, la boucle, le démarrage
+  automatique, la durée de fondu et le root motion. L'`AnimationWorld` avance les animateurs juste
+  avant le calcul des transformations du monde, échantillonne le clip, **fond** avec le clip
+  précédent pendant `blend_time` et écrit les transformations locales des os. Changer `clip` depuis
+  l'inspecteur ou depuis le code lance le nouveau clip avec un fondu.
+- **Root motion** : par défaut les clips animent sur place et le code déplace l'entité. Avec
+  *Apply root motion*, le déplacement de l'os racine est retiré de la pose et donné à l'entité : à
+  sa `Transform`, ou à la vitesse horizontale de son `CharacterController` quand elle en a un. Le
+  retour au début d'une boucle n'est pas compté comme un déplacement.
+- **Jeu** : `SystemContext::animation` et `Application::animation()` donnent l'`AnimationWorld` :
+  `play(scene, entity, clip, fondu)`, `stop`, `pause`, `resume`, `isPlaying`, `time` et `setTime`.
+  En C#, la classe `Animation` expose les mêmes appels, et `[AssetType("animation")]` limite un
+  champ `AssetId` aux clips.
+- **Skinning** : le rendu déforme les sommets **dans le vertex shader**. Chaque instance skinnée
+  publie ses matrices d'os (transformation mondiale de l'os fois sa pose de référence) dans un
+  buffer de la frame, dont l'adresse et l'offset voyagent dans les push constants avec les
+  attributs de skinning du maillage. Les passes couleur, ombres, sélection et picking partagent la
+  même fonction `vertexTransform`, si bien qu'un personnage projette son ombre et se sélectionne
+  dans sa pose. Le calcul est donc refait par passe : pas de pré-skinning en compute pour l'instant,
+  et les colliders ne suivent pas la pose.
+- **Éditeur** : le panneau **Animation** (ancrable, *Editor > Panels > Animation*) montre
+  l'`Animator` de l'entité sélectionnée ou de son ancêtre : choix du clip, Play/Pause/Stop, boucle,
+  vitesse, et une piste par os avec ses images clés. Hors mode Play, le panneau pose lui-même le
+  squelette de la scène éditée — les os restent donc dans la dernière pose prévisualisée ; pendant
+  Play, il suit le jeu et permet de mettre en pause et de se déplacer dans le clip. Il n'y a pas
+  encore de marqueurs d'événements, ni d'édition des courbes.
+- **Cache d'import** : le cache mémorise désormais la version des formats cuits
+  (`artifactLayouts`). Changer la disposition d'un `.dvxasset` réimporte les assets concernés à
+  l'ouverture du projet au lieu de les faire échouer au chargement.
+- **Bac à sable** : `scripts/generate_sample_assets.py` fabrique `robot.glb`, un robot rigué à onze
+  os avec les clips *Idle*, *Walk* et *Wave*. Dans l'arène, le composant C# `RobotGuide` le fait
+  patrouiller, attendre à chaque extrémité et saluer le joueur qui s'approche, en changeant de clip
+  avec un fondu de 0,25 s.
+
 ### Gameplay
 
 - **Modèle** : les données du jeu sont des **composants** réfléchis (sauvegardés, éditables dans
@@ -1082,7 +1136,8 @@ les assets s'écrivent au fil de leur lecture.
   souris, capture), `Time` (`Delta`, `Elapsed`, `Frame`), `Screen`, `Log`, `Game` (`Quit`,
   `LoadScene`), `Assets.Find("res://...")`, `Prefabs.Instantiate`, `Physics` (`Raycast`,
   `SphereCast`, `OverlapSphere`, forces, couples et impulsions, `Contacts`), `Audio` (sources,
-  lectures ponctuelles 2D ou spatialisées, volumes des groupes).
+  lectures ponctuelles 2D ou spatialisées, volumes des groupes), `Animation` (lecture des clips,
+  fondu, pause, position dans le clip).
 - **Composants C++ vus du C#** : ceux du moteur comme ceux du module C++ du jeu sont atteints par
   des **vues** générées de leur réflexion : `ref var light = ref ...` n'est pas nécessaire, la vue
   est une `ref struct` sur la mémoire du composant dont les propriétés lisent et écrivent les
@@ -1309,8 +1364,13 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     icônes et distances dans le viewport, clips dans les jeux exportés, sons du lanceur, des cibles
     et de la porte, bourdonnement mobile et ambiance en boucle dans l'arène.
 
-Ensuite, sans ordre figé : post-traitements (bloom, TAA), transparence, animation
-squelettique, CI Linux.
+17. ✅ **Animation squelettique** — import des squelettes et des animations glTF en sous-assets du
+    modèle, une entité par os, `SkinnedMeshRenderer` et `Animator`, skinning dans le vertex shader
+    (couleur, ombres, sélection, picking), fondu croisé entre clips, root motion optionnel vers la
+    `Transform` ou le `CharacterController`, API C++ et C#, panneau Animation avec piste temporelle
+    et images clés, robot rigué qui patrouille et salue dans l'arène.
+
+Ensuite, sans ordre figé : post-traitements (bloom, TAA), transparence, CI Linux.
 
 ## Questions ouvertes
 
@@ -1338,6 +1398,10 @@ squelettique, CI Linux.
   export sans build Release du moteur (paquet d'un moteur distribué).
 - **Audio** : streaming depuis le disque, occlusion, réverbération, effets et routage des groupes,
   budget de voix, plusieurs écouteurs, intégration optionnelle de FMOD/Wwise.
+- **Animation** : machine à états et blend trees dans l'éditeur, couches et masques d'os,
+  événements de clip, cinématique inverse, morph targets, pré-skinning en compute (colliders et
+  rayons suivant la pose), réutilisation d'un clip entre squelettes différents (retargeting),
+  compression des courbes.
 - **UI retenue maison** pour l'éditeur et les jeux, qui remplacera ImGui.
 - **CI** : GitHub Actions Windows, puis Linux.
 - **Chargement asynchrone** : lecture et envoi GPU des assets hors du thread principal, streaming

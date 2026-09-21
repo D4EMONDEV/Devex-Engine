@@ -39,6 +39,11 @@
 #include <unordered_map>
 #include <vector>
 
+namespace devex::animation {
+class AnimationWorld;
+class Clip;
+} // namespace devex::animation
+
 namespace devex::audio {
 class AudioEngine;
 class Clip;
@@ -55,6 +60,7 @@ inline constexpr const char* assetsWindow = "FileSystem";
 inline constexpr const char* viewportWindow = "Viewport";
 inline constexpr const char* settingsWindow = "Editor Settings";
 inline constexpr const char* debuggingWindow = "C# Debugging";
+inline constexpr const char* animationWindow = "Animation";
 inline constexpr const char* textEditorWindow = "Text Editor";
 
 // Payload type of an entity dragged in the hierarchy: the 16 bytes of its UUID.
@@ -230,6 +236,14 @@ struct ToolsState
     bool selectedClipStale = true;
     // The clip playing in the editor, whose playhead the inspector shows.
     asset::AssetId previewedClip;
+    // Animations: where clips come from, and the animations of the game while it plays.
+    std::function<std::shared_ptr<const animation::Clip>(asset::AssetId)> animationClips;
+    animation::AnimationWorld* animationWorld = nullptr;
+    bool showAnimation = false;
+    // What the Animation panel shows: the clip it last posed, and where its playhead stands.
+    asset::AssetId previewedAnimation;
+    float animationPreviewTime = 0.0f;
+    bool animationPreviewPlaying = false;
     std::string assetFilter;
     std::string hierarchyFilter;
 
@@ -366,6 +380,9 @@ void openInCodeEditor(ToolsState& state, const std::filesystem::path& file);
 void drawStatisticsPanel(ToolsState& state, const scene::Scene& scene);
 void drawConsolePanel(ToolsState& state);
 void drawAssetsPanel(ToolsState& state, scene::Scene& scene);
+// The clips of the selected Animator: a timeline of their keys, played or scrubbed. Outside Play
+// the panel poses the skeleton itself; during Play it follows the game.
+void drawAnimationPanel(ToolsState& state, scene::Scene& scene);
 // Shows an asset of the FileSystem in the inspector, in place of the selected entity or code file.
 void selectAsset(ToolsState& state, asset::AssetId id);
 // The selected audio clip: its format, its waveform, how it loads, and a preview.

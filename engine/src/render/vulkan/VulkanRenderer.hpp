@@ -127,6 +127,8 @@ private:
         std::optional<Buffer> materials;
         std::uint64_t materialVersion = 0;
         std::optional<Buffer> lights;
+        // The bone matrices of every skinned instance of the frame.
+        std::optional<Buffer> bones;
         std::optional<Buffer> clusters;
         std::optional<Buffer> clusterLights;
         // Exposed luminance measured on a grid by the last frame recorded with this context.
@@ -158,6 +160,8 @@ private:
         Buffer vertices;
         Buffer indices;
         std::vector<SubmeshRange> submeshes;
+        // Only for a skinned mesh: the joints and weights of its vertices.
+        std::optional<Buffer> skin;
     };
 
     // A destroyed mesh waiting for the frames that may still reference it.
@@ -212,8 +216,11 @@ private:
     [[nodiscard]] core::Result<std::uint32_t> recordFrame(FrameContext& frame, std::uint32_t frameSlot,
                                                           std::uint32_t imageIndex, bool drawImGui,
                                                           bool drawShadows);
-    std::uint32_t drawMeshes(VkCommandBuffer commandBuffer, VkDeviceAddress sceneData, MeshPass pass,
-                             std::uint32_t cascade, std::uint32_t frameSlot) const;
+    std::uint32_t drawMeshes(VkCommandBuffer commandBuffer, VkDeviceAddress sceneData,
+                             VkDeviceAddress boneMatrices, MeshPass pass, std::uint32_t cascade,
+                             std::uint32_t frameSlot) const;
+    // Copies the bone matrices of the frame's skinned instances into its buffer.
+    [[nodiscard]] core::Result<void> uploadBones(FrameContext& frame) const;
     [[nodiscard]] core::Result<void> ensureHostBuffer(std::optional<Buffer>& buffer, VkDeviceSize bytes) const;
     // Replaces the viewport placeholder of the ImGui draw data with the frame's viewport image.
     void bindViewportTexture(FrameContext& frame, VkImageView viewport);

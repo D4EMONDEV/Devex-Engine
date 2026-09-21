@@ -1,8 +1,10 @@
 #include <devex/render/Photometry.hpp>
 #include <devex/runtime/SceneExtraction.hpp>
+#include <devex/scene/AnimationComponents.hpp>
 #include <devex/scene/Components.hpp>
 
 #include <cmath>
+#include <cstdint>
 
 namespace devex::runtime {
 
@@ -105,6 +107,48 @@ void extractScene(scene::Scene& scene, AssetManager& assets, render::RenderWorld
                 .material = override.isValid() || !material.isValid() ? override
                                                                        : assets.material(material),
                 .transform = transform.matrix,
+                .objectId = entity.index + 1,
+            });
+        }
+    }
+
+    for ([[maybe_unused]] auto [entity, transform, renderer] :
+         scene.view<scene::WorldTransform, scene::SkinnedMeshRenderer>())
+    {
+        const LoadedMesh* const mesh = assets.mesh(renderer.mesh);
+        const asset::MeshData* const data = mesh != nullptr ? assets.meshData(renderer.mesh) : nullptr;
+        if (mesh == nullptr || data == nullptr || data->inverseBind.empty())
+        {
+            continue;
+        }
+        // A bone matrix takes a vertex from the bind pose of the mesh to where its bone stands now.
+        const auto firstBone = static_cast<std::uint32_t>(world.boneMatrices.size());
+        for (std::size_t joint = 0; joint < data->inverseBind.size(); ++joint)
+        {
+            const scene::Entity bone =
+                joint < renderer.bones.size() ? scene.resolve(renderer.bones[joint]) : scene::Entity{};
+            const scene::WorldTransform* const boneTransform =
+                bone.isValid() ? scene.tryGet<scene::WorldTransform>(bone) : nullptr;
+            // A missing bone leaves its vertices where the entity stands.
+            world.boneMatrices.push_back(boneTransform != nullptr
+                                             ? boneTransform->matrix * data->inverseBind[joint]
+                                             : transform.matrix);
+        }
+
+        const render::MaterialHandle override =
+            renderer.material.isValid() ? assets.material(renderer.material) : render::MaterialHandle{};
+        for (std::uint32_t submesh = 0; submesh < mesh->submeshMaterials.size(); ++submesh)
+        {
+            const asset::AssetId material = mesh->submeshMaterials[submesh];
+            world.meshes.push_back({
+                .mesh = mesh->handle,
+                .submesh = submesh,
+                .material = override.isValid() || !material.isValid() ? override
+                                                                       : assets.material(material),
+                // Bones reach the world on their own; vertices without weights follow the entity.
+                .transform = transform.matrix,
+                .firstBone = firstBone,
+                .boneCount = static_cast<std::uint32_t>(data->inverseBind.size()),
                 .objectId = entity.index + 1,
             });
         }

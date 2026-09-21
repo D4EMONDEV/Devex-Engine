@@ -9,6 +9,7 @@
 #include <fastgltf/tools.hpp>
 #include <fastgltf/types.hpp>
 
+#include <algorithm>
 #include <format>
 #include <map>
 #include <mutex>
@@ -69,6 +70,37 @@ enum class TextureRole : std::uint8_t
     return names;
 }
 
+[[nodiscard]] std::optional<AnimationPath> toAnimationPath(fastgltf::AnimationPath path) noexcept
+{
+    switch (path)
+    {
+    case fastgltf::AnimationPath::Translation:
+        return AnimationPath::Translation;
+    case fastgltf::AnimationPath::Rotation:
+        return AnimationPath::Rotation;
+    case fastgltf::AnimationPath::Scale:
+        return AnimationPath::Scale;
+    case fastgltf::AnimationPath::Weights:
+        // Morph targets are not supported yet.
+        break;
+    }
+    return std::nullopt;
+}
+
+[[nodiscard]] AnimationInterpolation toInterpolation(fastgltf::AnimationInterpolation interpolation) noexcept
+{
+    switch (interpolation)
+    {
+    case fastgltf::AnimationInterpolation::Step:
+        return AnimationInterpolation::Step;
+    case fastgltf::AnimationInterpolation::CubicSpline:
+        return AnimationInterpolation::CubicSpline;
+    case fastgltf::AnimationInterpolation::Linear:
+        break;
+    }
+    return AnimationInterpolation::Linear;
+}
+
 [[nodiscard]] math::Mat4 toMat4(const fastgltf::math::fmat4x4& matrix) noexcept
 {
     math::Mat4 result{1.0f};
@@ -90,8 +122,11 @@ enum class TextureRole : std::uint8_t
     return found == primitive.attributes.end() ? nullptr : &asset.accessors[found->accessorIndex];
 }
 
+// Imports one primitive. A skinned mesh passes the inverse bind matrices of its skin, which the
+// joints of its vertices refer to.
 [[nodiscard]] core::Result<MeshData> importPrimitive(const fastgltf::Asset& asset,
-                                                     const fastgltf::Primitive& primitive)
+                                                     const fastgltf::Primitive& primitive,
+                                                     const std::vector<math::Mat4>& inverseBind)
 {
     if (primitive.type != fastgltf::PrimitiveType::Triangles)
     {
@@ -139,6 +174,37 @@ enum class TextureRole : std::uint8_t
             asset, *tangents, [&mesh](fastgltf::math::fvec4 tangent, std::size_t index) {
                 mesh.vertices[index].tangent = {tangent[0], tangent[1], tangent[2], tangent[3]};
             });
+    }
+
+    const fastgltf::Accessor* joints = findAccessor(asset, primitive, "JOINTS_0");
+    const fastgltf::Accessor* weights = findAccessor(asset, primitive, "WEIGHTS_0");
+    if (!inverseBind.empty() && joints != nullptr && weights != nullptr &&
+        joints->count == positions->count && weights->count == positions->count)
+    {
+        mesh.inverseBind = inverseBind;
+        mesh.skin.resize(positions->count);
+        fastgltf::iterateAccessorWithIndex<fastgltf::math::uvec4>(
+            asset, *joints, [&mesh](fastgltf::math::uvec4 joint, std::size_t index) {
+                for (std::size_t slot = 0; slot < 4; ++slot)
+                {
+                    mesh.skin[index].joints[slot] = static_cast<std::uint16_t>(joint[slot]);
+                }
+            });
+        fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec4>(
+            asset, *weights, [&mesh](fastgltf::math::fvec4 weight, std::size_t index) {
+                mesh.skin[index].weights = {weight[0], weight[1], weight[2], weight[3]};
+            });
+        // Weights are normalized here rather than in every shader that skins the mesh.
+        for (VertexSkin& skin : mesh.skin)
+        {
+            const float sum = skin.weights.x + skin.weights.y + skin.weights.z + skin.weights.w;
+            skin.weights = sum > 0.0f ? skin.weights / sum : math::Vec4{1.0f, 0.0f, 0.0f, 0.0f};
+            // A joint past the bind pose would read another skeleton's bone.
+            for (std::uint16_t& joint : skin.joints)
+            {
+                joint = joint < inverseBind.size() ? joint : 0;
+            }
+        }
     }
 
     if (primitive.indicesAccessor)
@@ -463,8 +529,43 @@ private:
         }
     }
 
+    // The skin of each glTF mesh, taken from the first node that draws it with one.
+    void findMeshSkins()
+    {
+        m_meshSkins.assign(m_asset.meshes.size(), -1);
+        for (const fastgltf::Node& node : m_asset.nodes)
+        {
+            if (node.meshIndex && node.skinIndex && *node.meshIndex < m_meshSkins.size() &&
+                m_meshSkins[*node.meshIndex] < 0)
+            {
+                m_meshSkins[*node.meshIndex] = static_cast<std::int32_t>(*node.skinIndex);
+            }
+        }
+
+        m_inverseBinds.resize(m_asset.skins.size());
+        for (std::size_t index = 0; index < m_asset.skins.size(); ++index)
+        {
+            const fastgltf::Skin& skin = m_asset.skins[index];
+            std::vector<math::Mat4>& matrices = m_inverseBinds[index];
+            matrices.assign(skin.joints.size(), math::Mat4{1.0f});
+            if (!skin.inverseBindMatrices)
+            {
+                continue;
+            }
+            const fastgltf::Accessor& accessor = m_asset.accessors[*skin.inverseBindMatrices];
+            fastgltf::iterateAccessorWithIndex<fastgltf::math::fmat4x4>(
+                m_asset, accessor, [&matrices](fastgltf::math::fmat4x4 matrix, std::size_t joint) {
+                    if (joint < matrices.size())
+                    {
+                        matrices[joint] = toMat4(matrix);
+                    }
+                });
+        }
+    }
+
     void importMeshes()
     {
+        findMeshSkins();
         std::vector<std::string> names;
         for (std::size_t index = 0; index < m_asset.meshes.size(); ++index)
         {
@@ -479,10 +580,13 @@ private:
         {
             MeshData mesh;
             const fastgltf::Mesh& source = m_asset.meshes[index];
+            const std::int32_t skin = m_meshSkins[index];
+            const std::vector<math::Mat4>& inverseBind =
+                skin >= 0 ? m_inverseBinds[static_cast<std::size_t>(skin)] : m_noBindPose;
             for (std::size_t primitive = 0; primitive < source.primitives.size(); ++primitive)
             {
                 const fastgltf::Primitive& part = source.primitives[primitive];
-                core::Result<MeshData> imported = importPrimitive(m_asset, part);
+                core::Result<MeshData> imported = importPrimitive(m_asset, part, inverseBind);
                 if (!imported)
                 {
                     DEVEX_LOG_WARNING("Skipping primitive {} of mesh '{}' in '{}': {}", primitive,
@@ -500,6 +604,16 @@ private:
                 };
                 mesh.vertices.insert(mesh.vertices.end(), imported->vertices.begin(),
                                      imported->vertices.end());
+                if (!inverseBind.empty())
+                {
+                    // Parts of a skinned mesh without joints follow its first one.
+                    mesh.inverseBind = inverseBind;
+                    mesh.skin.resize(mesh.vertices.size(), VertexSkin{.weights = {1.0f, 0.0f, 0.0f, 0.0f}});
+                    for (std::size_t vertex = 0; vertex < imported->skin.size(); ++vertex)
+                    {
+                        mesh.skin[baseVertex + vertex] = imported->skin[vertex];
+                    }
+                }
                 for (const std::uint32_t vertex : imported->indices)
                 {
                     mesh.indices.push_back(baseVertex + vertex);
@@ -531,6 +645,10 @@ private:
         ModelNode node;
         node.parent = parent;
         node.name = std::string(source.name);
+        if (source.skinIndex)
+        {
+            node.skin = static_cast<std::int32_t>(*source.skinIndex);
+        }
         if (source.meshIndex && *source.meshIndex < m_meshIds.size())
         {
             node.mesh = m_meshIds[*source.meshIndex];
@@ -561,6 +679,7 @@ private:
         }
 
         const auto index = static_cast<std::int32_t>(model.nodes.size());
+        m_nodeToModel[nodeIndex] = index;
         model.nodes.push_back(std::move(node));
         for (const std::size_t child : source.children)
         {
@@ -568,9 +687,131 @@ private:
         }
     }
 
+    // Turns the skin of every node into a skin of the model, whose joints are model nodes.
+    void resolveSkins(ModelData& model)
+    {
+        std::vector<std::int32_t> modelSkins(m_asset.skins.size(), -1);
+        for (ModelNode& node : model.nodes)
+        {
+            if (node.skin < 0)
+            {
+                continue;
+            }
+            const auto gltfSkin = static_cast<std::size_t>(node.skin);
+            node.skin = -1;
+            if (gltfSkin >= m_asset.skins.size() || !node.mesh.isValid())
+            {
+                continue;
+            }
+            if (modelSkins[gltfSkin] < 0)
+            {
+                ModelSkin skin;
+                for (const std::size_t joint : m_asset.skins[gltfSkin].joints)
+                {
+                    // A joint outside the imported scene leaves the bone at its bind pose.
+                    skin.joints.push_back(joint < m_nodeToModel.size() ? m_nodeToModel[joint] : -1);
+                }
+                modelSkins[gltfSkin] = static_cast<std::int32_t>(model.skins.size());
+                model.skins.push_back(std::move(skin));
+            }
+            node.skin = modelSkins[gltfSkin];
+        }
+    }
+
+    // One AnimationClip asset per animation of the file. Channels target the nodes by name, so a
+    // clip plays on any skeleton whose bones carry the same names.
+    void importAnimations(ModelData& model)
+    {
+        std::vector<std::string> names;
+        for (std::size_t index = 0; index < m_asset.animations.size(); ++index)
+        {
+            const std::string name(m_asset.animations[index].name);
+            names.push_back(name.empty() ? std::format("Animation {}", index) : name);
+        }
+        const std::vector<std::string> keys = uniqueKeys(std::move(names));
+        const std::string fileName = core::toUtf8(m_context.source.filename());
+
+        for (std::size_t index = 0; index < m_asset.animations.size(); ++index)
+        {
+            const fastgltf::Animation& source = m_asset.animations[index];
+            AnimationClipData clip;
+            clip.name = keys[index];
+            // The joints of the clip, by name, and where each node lands among them.
+            std::unordered_map<std::size_t, std::uint32_t> clipJoints;
+            for (const fastgltf::AnimationChannel& channel : source.channels)
+            {
+                const std::optional<AnimationPath> path = toAnimationPath(channel.path);
+                const std::int32_t node = channel.nodeIndex && *channel.nodeIndex < m_nodeToModel.size()
+                                              ? m_nodeToModel[*channel.nodeIndex]
+                                              : -1;
+                if (!path || node < 0 || channel.samplerIndex >= source.samplers.size())
+                {
+                    continue;
+                }
+                const fastgltf::AnimationSampler& sampler = source.samplers[channel.samplerIndex];
+                if (sampler.inputAccessor >= m_asset.accessors.size() ||
+                    sampler.outputAccessor >= m_asset.accessors.size())
+                {
+                    continue;
+                }
+
+                AnimationChannel imported;
+                imported.path = *path;
+                imported.interpolation = toInterpolation(sampler.interpolation);
+                const fastgltf::Accessor& times = m_asset.accessors[sampler.inputAccessor];
+                imported.times.reserve(times.count);
+                fastgltf::iterateAccessor<float>(m_asset, times, [&imported](float time) {
+                    imported.times.push_back(time);
+                });
+                const fastgltf::Accessor& values = m_asset.accessors[sampler.outputAccessor];
+                if (*path == AnimationPath::Rotation)
+                {
+                    fastgltf::iterateAccessor<fastgltf::math::fvec4>(
+                        m_asset, values, [&imported](fastgltf::math::fvec4 value) {
+                            for (const float component : {value[0], value[1], value[2], value[3]})
+                            {
+                                imported.values.push_back(component);
+                            }
+                        });
+                }
+                else
+                {
+                    fastgltf::iterateAccessor<fastgltf::math::fvec3>(
+                        m_asset, values, [&imported](fastgltf::math::fvec3 value) {
+                            for (const float component : {value[0], value[1], value[2]})
+                            {
+                                imported.values.push_back(component);
+                            }
+                        });
+                }
+
+                const auto [joint, inserted] = clipJoints.try_emplace(
+                    static_cast<std::size_t>(node), static_cast<std::uint32_t>(clip.joints.size()));
+                if (inserted)
+                {
+                    clip.joints.push_back(model.nodes[static_cast<std::size_t>(node)].name);
+                }
+                imported.joint = joint->second;
+                clip.duration = std::max(clip.duration, imported.times.empty() ? 0.0f : imported.times.back());
+                clip.channels.push_back(std::move(imported));
+            }
+
+            if (core::Result<void> valid = validate(clip); !valid)
+            {
+                DEVEX_LOG_WARNING("Skipping animation '{}' of '{}': {}", keys[index], fileName,
+                                  valid.error());
+                continue;
+            }
+            const AssetId id = m_context.subAssets.acquire(AssetType::AnimationClip, keys[index]);
+            model.animations.push_back(id);
+            m_artifacts.push_back({id, AssetType::AnimationClip, keys[index], encodeAnimation(clip)});
+        }
+    }
+
     void importModel()
     {
         ModelData model;
+        m_nodeToModel.assign(m_asset.nodes.size(), -1);
         std::vector<bool> visited(m_asset.nodes.size(), false);
         const std::size_t sceneIndex = m_asset.defaultScene ? *m_asset.defaultScene : 0;
         if (sceneIndex < m_asset.scenes.size())
@@ -602,6 +843,8 @@ private:
                 }
             }
         }
+        resolveSkins(model);
+        importAnimations(model);
         m_artifacts.push_back({m_context.mainId, AssetType::Model, m_context.name, encodeModel(model)});
     }
 
@@ -611,6 +854,12 @@ private:
     std::map<TextureUse, AssetId> m_textureIds;
     std::vector<AssetId> m_materialIds;
     std::vector<AssetId> m_meshIds;
+    // The skin of each glTF mesh, and the bind pose of each glTF skin.
+    std::vector<std::int32_t> m_meshSkins;
+    std::vector<std::vector<math::Mat4>> m_inverseBinds;
+    const std::vector<math::Mat4> m_noBindPose;
+    // Where each glTF node landed among the nodes of the model, or -1.
+    std::vector<std::int32_t> m_nodeToModel;
     std::vector<ImportedArtifact> m_artifacts;
 };
 

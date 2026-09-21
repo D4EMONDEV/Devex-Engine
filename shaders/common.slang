@@ -17,6 +17,13 @@ public struct Vertex
     public float4 tangent;
 };
 
+// How a vertex of a skinned mesh follows its bones.
+public struct VertexSkin
+{
+    public uint4 joints;
+    public float4 weights;
+};
+
 public struct Material
 {
     public float4 baseColorFactor;
@@ -104,8 +111,30 @@ public struct DrawData
     public uint material;
     public uint cascade;
     public uint objectId;
-    public uint padding;
+    // Zero for a static mesh; otherwise the vertices follow the bones below, which already hold
+    // the transform from the space of the mesh to the world.
+    public uint skinned;
+    public VertexSkin* skin;
+    public float4x4* bones;
 };
+
+// The transform a vertex follows: the world matrix of the instance, or the blend of the bones of a
+// skinned mesh, which already reach the world.
+public float4x4 vertexTransform(DrawData draw, uint vertexIndex)
+{
+    if (draw.skinned == 0)
+    {
+        return draw.world;
+    }
+    const VertexSkin skin = draw.skin[vertexIndex];
+    float4x4 blended = draw.bones[skin.joints.x] * skin.weights.x;
+    blended += draw.bones[skin.joints.y] * skin.weights.y;
+    blended += draw.bones[skin.joints.z] * skin.weights.z;
+    blended += draw.bones[skin.joints.w] * skin.weights.w;
+    // Vertices left without weights stay where the instance is.
+    const float total = skin.weights.x + skin.weights.y + skin.weights.z + skin.weights.w;
+    return total > 0.0001 ? blended : draw.world;
+}
 
 // Set 0: textures and image based lighting, shared by every frame.
 [[vk::binding(0, 0)]]

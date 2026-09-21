@@ -179,6 +179,7 @@ add_library(Devex::Asset ALIAS devex_asset)
 
 target_sources(devex_asset
     PRIVATE
+        src/asset/AnimationData.cpp
         src/asset/Artifact.cpp
         src/asset/AssetType.cpp
         src/asset/MaterialData.cpp
@@ -192,6 +193,7 @@ target_sources(devex_asset
         FILE_SET HEADERS
         BASE_DIRS include
         FILES
+            include/devex/asset/AnimationData.hpp
             include/devex/asset/Artifact.hpp
             include/devex/asset/AssetId.hpp
             include/devex/asset/AssetSource.hpp
@@ -370,6 +372,7 @@ target_sources(devex_scene
         src/scene/FieldValue.cpp
         src/scene/ModelInstantiation.cpp
         src/scene/PhysicsComponents.cpp
+        src/scene/AnimationComponents.cpp
         src/scene/AudioComponents.cpp
         src/scene/Prefab.cpp
         src/scene/Scene.cpp
@@ -387,6 +390,7 @@ target_sources(devex_scene
             include/devex/scene/FieldValue.hpp
             include/devex/scene/ModelInstantiation.hpp
             include/devex/scene/PhysicsComponents.hpp
+            include/devex/scene/AnimationComponents.hpp
             include/devex/scene/AudioComponents.hpp
             include/devex/scene/Prefab.hpp
             include/devex/scene/Scene.hpp
@@ -436,6 +440,36 @@ set_target_properties(devex_physics PROPERTIES
     FOLDER "Engine"
 )
 devex_set_warnings(devex_physics)
+
+# Animation: animation clips, their sampling and blending, and the skeletons of the Animator
+# components of a game.
+add_library(devex_animation OBJECT)
+add_library(Devex::Animation ALIAS devex_animation)
+
+target_sources(devex_animation
+    PRIVATE
+        src/animation/AnimationWorld.cpp
+        src/animation/Clip.cpp
+    PUBLIC
+        FILE_SET HEADERS
+        BASE_DIRS include
+        FILES
+            include/devex/animation/AnimationWorld.hpp
+            include/devex/animation/Clip.hpp
+)
+
+target_link_libraries(devex_animation
+    PUBLIC
+        Devex::Asset
+        Devex::Core
+        Devex::Math
+        Devex::Scene
+)
+set_target_properties(devex_animation PROPERTIES
+    EXPORT_NAME Animation
+    FOLDER "Engine"
+)
+devex_set_warnings(devex_animation)
 
 # Audio: clips, the mixer and its groups, and the sounds of the AudioSource components of a game,
 # played with miniaudio (Ogg Vorbis decoded by stb_vorbis).
@@ -514,6 +548,7 @@ add_library(Devex::Tools ALIAS devex_tools)
 
 target_sources(devex_tools
     PRIVATE
+        src/tools/AnimationPanel.cpp
         src/tools/AssetsPanel.cpp
         src/tools/AudioInspector.cpp
         src/tools/CommandHistory.cpp
@@ -563,6 +598,7 @@ target_sources(devex_tools
 
 target_link_libraries(devex_tools
     PUBLIC
+        Devex::Animation
         Devex::AssetImport
         Devex::Audio
         Devex::Core
@@ -618,6 +654,7 @@ target_sources(devex_runtime
 
 target_link_libraries(devex_runtime
     PUBLIC
+        Devex::Animation
         Devex::AssetImport
         Devex::Audio
         Devex::Core
@@ -640,6 +677,7 @@ add_library(devex_engine SHARED src/EngineLibrary.cpp)
 add_library(Devex::Engine ALIAS devex_engine)
 target_link_libraries(devex_engine
     PUBLIC
+        devex_animation
         devex_asset
         devex_asset_import
         devex_audio

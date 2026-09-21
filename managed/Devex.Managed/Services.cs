@@ -233,3 +233,45 @@ public static unsafe class Audio
         }
     }
 }
+
+/// <summary>
+/// The animations of the game: the clips the Animator components play on the bones of their entity.
+/// </summary>
+public static unsafe class Animation
+{
+    /// <summary>
+    /// Plays a clip on the animator of the entity, crossfading over fade seconds; a negative fade
+    /// takes the blend time of the Animator. The clip becomes the one the Animator holds.
+    /// </summary>
+    public static void Play(Entity entity, AssetId clip, float fade = -1.0f)
+    {
+        Uuid uuid = clip.Uuid;
+        Bootstrap.Native.PlayAnimation(Scene.Current.Pointer, entity, &uuid, fade);
+    }
+
+    /// <summary>Plays the clip the Animator already holds, from its start.</summary>
+    public static void Play(Entity entity)
+    {
+        if (entity.TryGet(out Animator animator))
+        {
+            Uuid uuid = animator.Clip.Uuid;
+            Bootstrap.Native.PlayAnimation(Scene.Current.Pointer, entity, &uuid, 0.0f);
+        }
+    }
+
+    public static void Stop(Entity entity) => Bootstrap.Native.StopAnimation(entity);
+
+    public static void Pause(Entity entity) => Bootstrap.Native.PauseAnimation(entity);
+
+    /// <summary>Goes on from where Pause stopped.</summary>
+    public static void Resume(Entity entity) => Bootstrap.Native.ResumeAnimation(entity);
+
+    public static bool IsPlaying(Entity entity) => Bootstrap.Native.IsAnimationPlaying(entity) != 0;
+
+    /// <summary>Seconds into the clip that plays.</summary>
+    public static float GetTime(Entity entity) => Bootstrap.Native.AnimationTime(entity);
+
+    /// <summary>Jumps to a time of the clip and poses the bones there.</summary>
+    public static void SetTime(Entity entity, float seconds)
+        => Bootstrap.Native.SetAnimationTime(Scene.Current.Pointer, entity, seconds);
+}

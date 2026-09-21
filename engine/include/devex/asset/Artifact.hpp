@@ -1,5 +1,6 @@
 #pragma once
 
+#include <devex/asset/AnimationData.hpp>
 #include <devex/asset/AssetType.hpp>
 #include <devex/asset/AudioClipData.hpp>
 #include <devex/asset/MaterialData.hpp>
@@ -24,6 +25,10 @@ inline constexpr std::string_view artifactExtension = ".dvxasset";
 // Bumped whenever the layout of a type changes: older files are then imported again.
 [[nodiscard]] std::uint32_t artifactVersion(AssetType type) noexcept;
 
+// The versions of every layout together. The import cache stores it, so that assets cooked by an
+// engine with older layouts are imported again instead of failing to load.
+[[nodiscard]] std::uint32_t artifactLayouts() noexcept;
+
 // Reads the header only.
 [[nodiscard]] core::Result<AssetType> artifactType(std::span<const std::byte> bytes);
 
@@ -34,6 +39,7 @@ inline constexpr std::string_view artifactExtension = ".dvxasset";
 // Scenes keep the text of their .dvxscene file, validated by the import.
 [[nodiscard]] std::vector<std::byte> encodeScene(std::string_view text);
 [[nodiscard]] std::vector<std::byte> encodeAudioClip(const AudioClipData& clip);
+[[nodiscard]] std::vector<std::byte> encodeAnimation(const AnimationClipData& clip);
 
 // Decoding validates the header, the version and the data itself.
 [[nodiscard]] core::Result<MeshData> decodeMesh(std::span<const std::byte> bytes);
@@ -44,5 +50,6 @@ inline constexpr std::string_view artifactExtension = ".dvxasset";
 [[nodiscard]] core::Result<AudioClipData> decodeAudioClip(std::span<const std::byte> bytes);
 // The description of a clip, without the bytes of its file, as the editor shows it.
 [[nodiscard]] core::Result<AudioClipData> decodeAudioClipInfo(std::span<const std::byte> bytes);
+[[nodiscard]] core::Result<AnimationClipData> decodeAnimation(std::span<const std::byte> bytes);
 
 } // namespace devex::asset

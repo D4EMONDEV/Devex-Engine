@@ -309,6 +309,7 @@ void drawOverlayMenu(ToolsState& state, scene::Scene& scene)
         ImGui::MenuItem(detail::hierarchyWindow, nullptr, &state.showHierarchy);
         ImGui::MenuItem(detail::inspectorWindow, nullptr, &state.showInspector);
         ImGui::MenuItem(detail::assetsWindow, nullptr, &state.showAssets);
+        ImGui::MenuItem(detail::animationWindow, nullptr, &state.showAnimation);
         ImGui::MenuItem(detail::consoleWindow, nullptr, &state.showConsole);
         ImGui::MenuItem(detail::statisticsWindow, nullptr, &state.showStatistics);
         ImGui::Separator();
@@ -344,6 +345,7 @@ void buildDefaultLayout(ImGuiID dockspace, const ImGuiViewport& viewport, ToolsM
     ImGui::DockBuilderDockWindow(detail::consoleWindow, bottom);
     ImGui::DockBuilderDockWindow(detail::statisticsWindow, bottom);
     ImGui::DockBuilderDockWindow(detail::textEditorWindow, bottom);
+    ImGui::DockBuilderDockWindow(detail::animationWindow, bottom);
     if (mode == ToolsMode::Editor)
     {
         ImGui::DockBuilderDockWindow(detail::viewportWindow, center);
@@ -357,7 +359,7 @@ void drawDockspace(ToolsState& state)
     // The name carries a version, increased when panels change, so that saved layouts from before
     // are rebuilt with the new panels docked.
     const bool editor = state.mode == ToolsMode::Editor;
-    const ImGuiID dockspace = ImHashStr(editor ? "Devex editor dockspace 2" : "Devex tools dockspace 3");
+    const ImGuiID dockspace = ImHashStr(editor ? "Devex editor dockspace 3" : "Devex tools dockspace 4");
     if (state.resetLayout || ImGui::DockBuilderGetNode(dockspace) == nullptr)
     {
         buildDefaultLayout(dockspace, *viewport, state.mode);
@@ -470,6 +472,7 @@ void updateEditor(ToolsState& state, scene::Scene& scene, PlayState playState)
     detail::drawNewScriptPopup(state);
     detail::updatePendingScript(state, scene);
     detail::drawTextEditorPanel(state, scene);
+    detail::drawAnimationPanel(state, scene);
     detail::drawEditorPopups(state, scene);
     if (state.pendingCommand != nullptr)
     {
@@ -772,6 +775,17 @@ void ToolsOverlay::setAudio(audio::AudioEngine* engine,
     detail::stopAudioPreview(*m_state);
     m_state->audio = engine;
     m_state->audioClips = std::move(clips);
+}
+
+void ToolsOverlay::setAnimationClips(std::function<std::shared_ptr<const animation::Clip>(asset::AssetId)> clips)
+{
+    m_state->animationClips = std::move(clips);
+}
+
+void ToolsOverlay::setAnimationWorld(animation::AnimationWorld* world) noexcept
+{
+    m_state->animationWorld = world;
+    m_state->animationPreviewPlaying = false;
 }
 
 CommandHistory& ToolsOverlay::history() noexcept

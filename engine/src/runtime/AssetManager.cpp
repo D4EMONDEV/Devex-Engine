@@ -135,6 +135,34 @@ std::shared_ptr<const audio::Clip> AssetManager::audioClip(asset::AssetId id)
     return *clip;
 }
 
+std::shared_ptr<const animation::Clip> AssetManager::animationClip(asset::AssetId id)
+{
+    if (const auto found = m_animationClips.find(id); found != m_animationClips.end())
+    {
+        return found->second;
+    }
+    // Animations need no renderer.
+    if (!id.isValid() || m_source == nullptr || m_failed.contains(id) || m_source->find(id) == nullptr)
+    {
+        return nullptr;
+    }
+    const core::Result<std::vector<std::byte>> bytes = m_source->loadArtifact(id);
+    core::Result<asset::AnimationClipData> data =
+        bytes ? asset::decodeAnimation(*bytes)
+              : core::Result<asset::AnimationClipData>(std::unexpected(bytes.error()));
+    core::Result<std::shared_ptr<const animation::Clip>> clip =
+        data ? animation::Clip::create(std::move(*data))
+             : core::Result<std::shared_ptr<const animation::Clip>>(std::unexpected(data.error()));
+    if (!clip)
+    {
+        DEVEX_LOG_ERROR("Cannot load animation {}: {}", id.uuid, clip.error());
+        m_failed.insert(id);
+        return nullptr;
+    }
+    m_animationClips.emplace(id, *clip);
+    return *clip;
+}
+
 void AssetManager::handleEvents(std::span<const asset::AssetEvent> events)
 {
     for (const asset::AssetEvent& event : events)
@@ -142,6 +170,7 @@ void AssetManager::handleEvents(std::span<const asset::AssetEvent> events)
         m_meshData.erase(event.id);
         // Sounds playing keep the clip they had; the next ones play the new one.
         m_audioClips.erase(event.id);
+        m_animationClips.erase(event.id);
     }
     bool texturesChanged = false;
     for (const asset::AssetEvent& event : events)
@@ -194,6 +223,7 @@ void AssetManager::handleEvents(std::span<const asset::AssetEvent> events)
             m_sceneTexts.erase(event.id);
             break;
         case asset::AssetType::AudioClip:
+        case asset::AssetType::AnimationClip:
             break;
         }
     }
@@ -234,6 +264,7 @@ void AssetManager::setSource(asset::AssetSource* source)
     m_meshData.clear();
     m_sceneTexts.clear();
     m_audioClips.clear();
+    m_animationClips.clear();
     m_failed.clear();
     m_source = source;
 }

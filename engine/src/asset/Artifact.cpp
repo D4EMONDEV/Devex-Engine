@@ -79,17 +79,31 @@ std::uint32_t artifactVersion(AssetType type) noexcept
 {
     switch (type)
     {
-    // 2: vertex tangents.
+    // 2: vertex tangents. 3: skinning weights and bind pose.
     case AssetType::Mesh:
+        return 3;
+    // 2: skins and animations.
+    case AssetType::Model:
         return 2;
     case AssetType::Texture:
     case AssetType::Material:
-    case AssetType::Model:
     case AssetType::Scene:
     case AssetType::AudioClip:
+    case AssetType::AnimationClip:
         return 1;
     }
     return 0;
+}
+
+std::uint32_t artifactLayouts() noexcept
+{
+    std::uint32_t combined = 0;
+    for (std::uint8_t value = static_cast<std::uint8_t>(AssetType::Mesh);
+         value <= static_cast<std::uint8_t>(AssetType::AnimationClip); ++value)
+    {
+        combined = combined * 31 + artifactVersion(static_cast<AssetType>(value));
+    }
+    return combined;
 }
 
 core::Result<AssetType> artifactType(std::span<const std::byte> bytes)
@@ -115,6 +129,8 @@ std::vector<std::byte> encodeMesh(const MeshData& mesh)
         writer.write(submesh.indexCount);
         writer.write(submesh.material);
     }
+    writer.writeArray(std::span<const VertexSkin>(mesh.skin));
+    writer.writeArray(std::span<const math::Mat4>(mesh.inverseBind));
     return writer.take();
 }
 
@@ -141,6 +157,8 @@ core::Result<MeshData> decodeMesh(std::span<const std::byte> bytes)
         submesh.indexCount = reader.read<std::uint32_t>();
         submesh.material = reader.read<AssetId>();
     }
+    mesh.skin = reader.readArray<VertexSkin>();
+    mesh.inverseBind = reader.readArray<math::Mat4>();
     if (reader.failed())
     {
         return std::unexpected(truncated(AssetType::Mesh));
@@ -264,7 +282,14 @@ std::vector<std::byte> encodeModel(const ModelData& model)
         writeQuat(writer, node.rotation);
         writer.write(node.scale);
         writer.write(node.mesh);
+        writer.write(node.skin);
     }
+    writer.write(static_cast<std::uint32_t>(model.skins.size()));
+    for (const ModelSkin& skin : model.skins)
+    {
+        writer.writeArray(std::span<const std::int32_t>(skin.joints));
+    }
+    writer.writeArray(std::span<const AssetId>(model.animations));
     return writer.take();
 }
 
@@ -292,7 +317,18 @@ core::Result<ModelData> decodeModel(std::span<const std::byte> bytes)
         node.rotation = readQuat(reader);
         node.scale = reader.read<math::Vec3>();
         node.mesh = reader.read<AssetId>();
+        node.skin = reader.read<std::int32_t>();
     }
+    const auto skinCount = reader.read<std::uint32_t>();
+    if (skinCount > reader.remaining() / sizeof(std::uint32_t))
+    {
+        reader.fail();
+    }
+    for (std::uint32_t index = 0; index < skinCount && !reader.failed(); ++index)
+    {
+        model.skins.emplace_back().joints = reader.readArray<std::int32_t>();
+    }
+    model.animations = reader.readArray<AssetId>();
     if (reader.failed())
     {
         return std::unexpected(truncated(AssetType::Model));
@@ -400,6 +436,74 @@ core::Result<std::string> decodeScene(std::span<const std::byte> bytes)
         return std::unexpected(truncated(AssetType::Scene));
     }
     return text;
+}
+
+std::vector<std::byte> encodeAnimation(const AnimationClipData& clip)
+{
+    BinaryWriter writer = beginArtifact(AssetType::AnimationClip);
+    writer.writeString(clip.name);
+    writer.write(clip.duration);
+    writer.write(static_cast<std::uint32_t>(clip.joints.size()));
+    for (const std::string& joint : clip.joints)
+    {
+        writer.writeString(joint);
+    }
+    writer.write(static_cast<std::uint32_t>(clip.channels.size()));
+    for (const AnimationChannel& channel : clip.channels)
+    {
+        writer.write(channel.joint);
+        writer.write(static_cast<std::uint8_t>(channel.path));
+        writer.write(static_cast<std::uint8_t>(channel.interpolation));
+        writer.writeArray(std::span<const float>(channel.times));
+        writer.writeArray(std::span<const float>(channel.values));
+    }
+    return writer.take();
+}
+
+core::Result<AnimationClipData> decodeAnimation(std::span<const std::byte> bytes)
+{
+    BinaryReader reader(bytes);
+    if (core::Result<void> header = readHeader(reader, AssetType::AnimationClip); !header)
+    {
+        return std::unexpected(header.error());
+    }
+
+    AnimationClipData clip;
+    clip.name = reader.readString();
+    clip.duration = reader.read<float>();
+    const auto jointCount = reader.read<std::uint32_t>();
+    if (jointCount > reader.remaining() / sizeof(std::uint32_t))
+    {
+        reader.fail();
+    }
+    for (std::uint32_t index = 0; index < jointCount && !reader.failed(); ++index)
+    {
+        clip.joints.push_back(reader.readString());
+    }
+    const auto channelCount = reader.read<std::uint32_t>();
+    // Each channel takes at least its fixed-size fields and two empty arrays.
+    if (channelCount > reader.remaining() / 14)
+    {
+        reader.fail();
+    }
+    for (std::uint32_t index = 0; index < channelCount && !reader.failed(); ++index)
+    {
+        AnimationChannel& channel = clip.channels.emplace_back();
+        channel.joint = reader.read<std::uint32_t>();
+        channel.path = static_cast<AnimationPath>(reader.read<std::uint8_t>());
+        channel.interpolation = static_cast<AnimationInterpolation>(reader.read<std::uint8_t>());
+        channel.times = reader.readArray<float>();
+        channel.values = reader.readArray<float>();
+    }
+    if (reader.failed())
+    {
+        return std::unexpected(truncated(AssetType::AnimationClip));
+    }
+    if (core::Result<void> valid = validate(clip); !valid)
+    {
+        return std::unexpected(valid.error());
+    }
+    return clip;
 }
 
 } // namespace devex::asset

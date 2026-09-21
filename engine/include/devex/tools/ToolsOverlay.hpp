@@ -18,6 +18,11 @@
 #include <string>
 #include <vector>
 
+namespace devex::animation {
+class AnimationWorld;
+class Clip;
+} // namespace devex::animation
+
 namespace devex::audio {
 class AudioEngine;
 class Clip;
@@ -220,6 +225,11 @@ public:
     // Lets the panels preview audio clips on the mixer, which must outlive the overlay, with the
     // clips the function loads. Without it, clips show but cannot be heard.
     void setAudio(audio::AudioEngine* engine, std::function<std::shared_ptr<const audio::Clip>(asset::AssetId)> clips);
+
+    // Lets the Animation panel load clips, and follow the animations of the game while it plays
+    // (null outside Play).
+    void setAnimationClips(std::function<std::shared_ptr<const animation::Clip>(asset::AssetId)> clips);
+    void setAnimationWorld(animation::AnimationWorld* world) noexcept;
 
     [[nodiscard]] CommandHistory& history() noexcept;
 

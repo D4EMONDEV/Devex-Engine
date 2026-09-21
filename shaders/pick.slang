@@ -16,7 +16,8 @@ VertexOutput transformVertex(float4x4 viewProjection, uint vertexIndex)
 {
     const Vertex vertex = draw.vertices[vertexIndex];
     VertexOutput output;
-    output.position = mul(viewProjection, mul(draw.world, float4(vertex.position, 1.0)));
+    output.position =
+        mul(viewProjection, mul(vertexTransform(draw, vertexIndex), float4(vertex.position, 1.0)));
     output.uv = float2(vertex.u, vertex.v);
     return output;
 }

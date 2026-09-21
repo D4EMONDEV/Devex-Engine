@@ -2,6 +2,7 @@
 
 #include <devex/core/Log.hpp>
 #include <devex/core/Path.hpp>
+#include <devex/scene/AnimationComponents.hpp>
 #include <devex/scene/AudioComponents.hpp>
 #include <devex/scene/ComponentRegistry.hpp>
 #include <devex/scene/Components.hpp>
@@ -112,11 +113,11 @@ bool g_linearColors = true;
 
 [[nodiscard]] bool isEngineComponent(std::string_view name) noexcept
 {
-    constexpr std::array<std::string_view, 16> engineComponents{
+    constexpr std::array<std::string_view, 18> engineComponents{
         "Transform",       "MeshRenderer",     "Camera",       "DirectionalLight",    "PointLight",
         "SpotLight",       "Environment",      "RigidBody",    "BoxCollider",         "SphereCollider",
         "CapsuleCollider", "CylinderCollider", "MeshCollider", "CharacterController", "AudioSource",
-        "AudioListener"};
+        "AudioListener",   "SkinnedMeshRenderer", "Animator"};
     return std::ranges::find(engineComponents, name) != engineComponents.end();
 }
 
@@ -272,9 +273,10 @@ ThemeColors deriveThemeColors(const ThemeSettings& settings)
     colors.axisY = hex(0x7ccf48);
     colors.axisZ = hex(0x4f8ff0);
 
-    const std::array<std::pair<ImVec4*, std::uint32_t>, 14> icons{{
+    const std::array<std::pair<ImVec4*, std::uint32_t>, 15> icons{{
         {&colors.physics, 0x72d6c6},
         {&colors.audio, 0xf49ac1},
+        {&colors.animation, 0xc3a6f5},
         {&colors.entity, 0xfc7f7f},
         {&colors.light, 0xffd166},
         {&colors.camera, 0xc49af2},
@@ -505,6 +507,14 @@ EntityIcon entityIcon(const scene::Scene& scene, scene::Entity entity)
     {
         return {icons::CloudSun, colors.environment};
     }
+    if (scene.has<scene::Animator>(entity))
+    {
+        return {icons::Film, colors.animation};
+    }
+    if (scene.has<scene::SkinnedMeshRenderer>(entity))
+    {
+        return {icons::Bone, colors.animation};
+    }
     if (scene.has<scene::AudioSource>(entity) && !scene.has<scene::MeshRenderer>(entity))
     {
         return {icons::Volume, colors.audio};
@@ -608,6 +618,14 @@ EntityIcon componentIcon(std::string_view componentName)
     if (componentName == "CharacterController")
     {
         return {icons::PersonStanding, colors.physics};
+    }
+    if (componentName == "Animator")
+    {
+        return {icons::Film, colors.animation};
+    }
+    if (componentName == "SkinnedMeshRenderer")
+    {
+        return {icons::Bone, colors.animation};
     }
     if (componentName == "AudioSource")
     {

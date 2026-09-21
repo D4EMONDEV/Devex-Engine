@@ -28,7 +28,7 @@ Le détail, l'architecture des modules et les jalons sont dans
 - `Devex::Reflection` : description des champs des composants (`DEVEX_REFLECT`), listes et
   références d'entités comprises ;
 - `Devex::Serialization` : format texte commun des fichiers `.dvx*`, flux binaires ;
-- `Devex::Asset` : `AssetId`, maillages, textures, matériaux, modèles et clips audio, fichiers `.dvxasset`,
+- `Devex::Asset` : `AssetId`, maillages, textures, matériaux, modèles, clips audio et animations, fichiers `.dvxasset`,
   projets `.dvxproj`, paquets de jeux exportés `.dvxpak` ;
 - `Devex::AssetImport` : base d'assets (`.dvxmeta`, cache `.devex/`, imports en arrière-plan,
   réimport à chaud), importeurs de textures (BC7/BC5), de `.dvxmat`, de glTF, de scènes et de sons
@@ -44,6 +44,9 @@ Le détail, l'architecture des modules et les jalons sont dans
 - `Devex::Audio` : miniaudio, sons spatialisés ou 2D, sources et écouteur dans la scène (sinon la
   caméra principale), lecture ponctuelle par le code, groupes de volume, clips décodés au
   chargement ou pendant la lecture ;
+- `Devex::Animation` : clips d'animation importés des modèles glTF, squelettes faits d'entités,
+  `Animator` qui joue un clip avec fondu croisé, root motion optionnel, skinning des maillages
+  dans le vertex shader ;
 - `Devex::Tools` : interface ImGui au thème réglable inspiré de Godot (Noto Sans, JetBrains Mono,
   icônes Lucide) : arbre de la scène, inspecteur, FileSystem, sortie, statistiques, annulation, en
   overlay (F1) ou dans l'éditeur : gestionnaire de projets, onglets de scènes, viewport et sa
@@ -51,12 +54,13 @@ Le détail, l'architecture des modules et les jalons sont dans
   modifiées, Revert, Make Local, Save as Prefab, mise à jour en direct), fichiers de code du projet
   avec éditeur de texte intégré à onglets (panneau ancrable ou flottant), ouverture dans l'IDE,
   *New Script…*, réglages de l'éditeur, aperçu sonore et forme
-  d'onde des clips, volumes du projet, icônes et distances des sources audio ;
+  d'onde des clips, volumes du projet, icônes et distances des sources audio, panneau Animation
+  avec piste temporelle et images clés ;
 - `Devex::Runtime` : `Application`, boucle à pas fixe, mode éditeur et mode Play, modules de jeu
   (composants et systèmes rechargeables à chaud), code C# sur .NET hébergé (composants, systèmes,
   compilation et rechargement à chaud), chargement des assets à la demande, changement de
   scène, rendu automatique de la scène, export d'un jeu ;
-- `Devex.Managed` : l'API C# du moteur (`Component`, `Entity`, `Scene`, `Input`, `Physics`, `Audio`,
+- `Devex.Managed` : l'API C# du moteur (`Component`, `Entity`, `Scene`, `Input`, `Physics`, `Audio`, `Animation`,
   `Prefabs`, `Assets`, `Time`, `Log`, maths) et les vues des composants du moteur, compilée dans
   `bin/managed` quand le SDK .NET est installé ;
 - `Devex::Engine` : tous les modules dans une bibliothèque partagée, `devex-engine.dll` ;
@@ -74,7 +78,8 @@ Le détail, l'architecture des modules et les jalons sont dans
   (`code/Door.cs`), un distributeur de caisses (`code/Dispenser.cs`) et un cube qui flotte
   (`code/Bobber.cs`) ; le lanceur C++ et les cibles C# jouent leurs sons, la porte sa source audio,
   le cube flottant émet un bourdonnement spatialisé et une ambiance Ogg tourne en boucle dans le
-  groupe Music ; Tab passe à l'autre scène ; et la
+  groupe Music ; un robot rigué patrouille, attend et salue le joueur (`code/Robot.cs`) ;
+  Tab passe à l'autre scène ; et la
   scène `sandbox` (caisse et balises glTF, sphères or et plastique, ciel HDR, plateau tournant, jour
   et nuit avec N).
 

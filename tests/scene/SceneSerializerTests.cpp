@@ -1,5 +1,6 @@
 #include <devex/asset/AssetId.hpp>
 #include <devex/core/Log.hpp>
+#include <devex/scene/AnimationComponents.hpp>
 #include <devex/scene/AudioComponents.hpp>
 #include <devex/scene/ComponentRegistry.hpp>
 #include <devex/scene/Components.hpp>
@@ -346,4 +347,55 @@ TEST_CASE("Sound sources and listeners are saved with their settings", "[scene][
     REQUIRE(type != nullptr);
     CHECK(type->type->findField("clip")->assetType == "audio");
     CHECK(type->type->findField("group")->audioGroup);
+}
+
+TEST_CASE("Skinned meshes and animators are saved with their bones", "[scene][serializer][animation]")
+{
+    Scene scene;
+    const devex::asset::AssetId mesh = devex::asset::AssetId::generate();
+    const devex::asset::AssetId clip = devex::asset::AssetId::generate();
+    const Entity character = scene.createEntity("Robot");
+    scene.add<devex::scene::Animator>(character, devex::scene::Animator{
+                                                     .clip = clip,
+                                                     .speed = 1.5f,
+                                                     .loop = false,
+                                                     .playOnStart = false,
+                                                     .blendTime = 0.4f,
+                                                     .applyRootMotion = true,
+                                                 });
+    const Entity hips = scene.createEntity("Hips");
+    REQUIRE(scene.setParent(hips, character).has_value());
+    const Entity spine = scene.createEntity("Spine");
+    REQUIRE(scene.setParent(spine, hips).has_value());
+    scene.add<devex::scene::SkinnedMeshRenderer>(
+        character, devex::scene::SkinnedMeshRenderer{
+                       .mesh = mesh,
+                       .bones = {devex::scene::EntityRef{scene.uuid(hips)},
+                                 devex::scene::EntityRef{scene.uuid(spine)}},
+                   });
+
+    const std::string text = devex::scene::saveScene(scene);
+    CHECK(text.find("bones = list(entity(") != std::string::npos);
+    const auto loaded = devex::scene::loadScene(text);
+    REQUIRE(loaded.has_value());
+    const Entity reloaded = loaded->findEntity(scene.uuid(character));
+    const devex::scene::Animator& animator = loaded->get<devex::scene::Animator>(reloaded);
+    CHECK(animator.clip == clip);
+    CHECK(animator.speed == 1.5f);
+    CHECK_FALSE(animator.loop);
+    CHECK_FALSE(animator.playOnStart);
+    CHECK(animator.blendTime == 0.4f);
+    CHECK(animator.applyRootMotion);
+
+    const devex::scene::SkinnedMeshRenderer& renderer =
+        loaded->get<devex::scene::SkinnedMeshRenderer>(reloaded);
+    CHECK(renderer.mesh == mesh);
+    REQUIRE(renderer.bones.size() == 2);
+    CHECK(loaded->name(loaded->resolve(renderer.bones[0])) == "Hips");
+    CHECK(loaded->name(loaded->resolve(renderer.bones[1])) == "Spine");
+
+    // The inspector knows which field holds an animation.
+    const devex::scene::ComponentType* const type = devex::scene::componentRegistry().find("Animator");
+    REQUIRE(type != nullptr);
+    CHECK(type->type->findField("clip")->assetType == "animation");
 }

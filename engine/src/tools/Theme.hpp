@@ -96,6 +96,7 @@ struct ThemeColors
     ImVec4 gameCode;
     ImVec4 physics;
     ImVec4 audio;
+    ImVec4 animation;
     ImVec4 folder;
     ImVec4 scene;
     // Entities from prefabs, as in Unity.

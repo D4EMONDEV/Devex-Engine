@@ -144,6 +144,21 @@ class GltfBuilder:
         self.accessors.append(accessor)
         return len(self.accessors) - 1
 
+    def values(self, items, kind, component_type=5126, target=None, bounds=False):
+        """Any other accessor: skinning attributes, inverse bind matrices, animation keys."""
+        formats = {5126: "<f", 5123: "<H"}
+        data = b"".join(struct.pack(formats[component_type], v) for item in items for v in item)
+        accessor = {"bufferView": self._view(data, target), "componentType": component_type,
+                    "count": len(items), "type": kind}
+        if bounds:
+            accessor["min"] = [min(item[i] for item in items) for i in range(len(items[0]))]
+            accessor["max"] = [max(item[i] for item in items) for i in range(len(items[0]))]
+        self.accessors.append(accessor)
+        return len(self.accessors) - 1
+
+    def times(self, seconds):
+        return self.values([(value,) for value in seconds], "SCALAR", bounds=True)
+
     def indices(self, values):
         data = b"".join(struct.pack("<I", v) for v in values)
         self.accessors.append({"bufferView": self._view(data, 34963), "componentType": 5125,
@@ -514,6 +529,203 @@ def audio_assets():
     encode(tone_wav, TEST_DATA / "audio" / "tone.flac", ["-c:a", "flac"])
 
 
+# ---------------------------------------------------------------------------------------------
+# A rigged character
+
+# Joints of the robot: name, parent, translation from the parent, and the box of its body part,
+# given as the half extents and the center, both in the space of the joint at bind time.
+ROBOT_JOINTS = [
+    ("Hips", None, (0.0, 0.95, 0.0), (0.16, 0.1, 0.11), (0.0, 0.0, 0.0)),
+    ("Spine", "Hips", (0.0, 0.1, 0.0), (0.19, 0.24, 0.13), (0.0, 0.24, 0.0)),
+    ("Head", "Spine", (0.0, 0.52, 0.0), (0.13, 0.13, 0.13), (0.0, 0.08, 0.0)),
+    ("ArmLeft", "Spine", (0.25, 0.4, 0.0), (0.06, 0.17, 0.06), (0.0, -0.15, 0.0)),
+    ("ForearmLeft", "ArmLeft", (0.0, -0.32, 0.0), (0.05, 0.16, 0.05), (0.0, -0.14, 0.0)),
+    ("ArmRight", "Spine", (-0.25, 0.4, 0.0), (0.06, 0.17, 0.06), (0.0, -0.15, 0.0)),
+    ("ForearmRight", "ArmRight", (0.0, -0.32, 0.0), (0.05, 0.16, 0.05), (0.0, -0.14, 0.0)),
+    ("LegLeft", "Hips", (0.1, -0.12, 0.0), (0.07, 0.21, 0.07), (0.0, -0.19, 0.0)),
+    ("ShinLeft", "LegLeft", (0.0, -0.42, 0.0), (0.06, 0.21, 0.09), (0.0, -0.19, 0.02)),
+    ("LegRight", "Hips", (-0.1, -0.12, 0.0), (0.07, 0.21, 0.07), (0.0, -0.19, 0.0)),
+    ("ShinRight", "LegRight", (0.0, -0.42, 0.0), (0.06, 0.21, 0.09), (0.0, -0.19, 0.02)),
+]
+
+# The parts drawn with the dark material; the others take the painted one.
+ROBOT_TRIM = {"ForearmLeft", "ForearmRight", "ShinLeft", "ShinRight", "Hips"}
+
+
+def robot_bind_positions():
+    """Where each joint stands in the model when nothing is animated."""
+    positions = {}
+    for name, parent, translation, _half, _center in ROBOT_JOINTS:
+        base = positions[parent] if parent else (0.0, 0.0, 0.0)
+        positions[name] = tuple(base[axis] + translation[axis] for axis in range(3))
+    return positions
+
+
+def quaternion(axis, angle):
+    """x, y, z, w, as glTF stores rotations."""
+    half = angle / 2
+    sine = math.sin(half)
+    return (axis[0] * sine, axis[1] * sine, axis[2] * sine, math.cos(half))
+
+
+def robot_skin_parts(positions):
+    """The boxes of the body, split by material, with the joint each vertex follows."""
+    parts = {False: ([], [], [], [], [], []), True: ([], [], [], [], [], [])}
+    for index, (name, _parent, _translation, half, center) in enumerate(ROBOT_JOINTS):
+        origin = positions[name]
+        box_positions, box_normals, box_uvs, box_indices = box(*half)
+        target = parts[name in ROBOT_TRIM]
+        offset = len(target[0])
+        for vertex in box_positions:
+            target[0].append(tuple(origin[axis] + center[axis] + vertex[axis] for axis in range(3)))
+        target[1].extend(box_normals)
+        target[2].extend(box_uvs)
+        target[3].extend(offset + value for value in box_indices)
+        target[4].extend([(index, 0, 0, 0)] * len(box_positions))
+        target[5].extend([(1.0, 0.0, 0.0, 0.0)] * len(box_positions))
+    return parts
+
+
+def robot_animation(name, duration, tracks, builder):
+    """One animation: tracks map a joint to its rotation or translation keys."""
+    channels, samplers = [], []
+    for joint, path, keys in tracks:
+        times = [time for time, _value in keys]
+        values = [value for _time, value in keys]
+        kind = "VEC4" if path == "rotation" else "VEC3"
+        samplers.append({"input": builder.times(times),
+                         "output": builder.values(values, kind),
+                         "interpolation": "LINEAR"})
+        channels.append({"sampler": len(samplers) - 1,
+                         "target": {"node": 1 + [j[0] for j in ROBOT_JOINTS].index(joint),
+                                    "path": path}})
+    return {"name": name, "duration": duration, "channels": channels, "samplers": samplers}
+
+
+def robot_idle():
+    """Breathing on the spot: the hips rise and fall, the arms sway a little."""
+    keys = [0.0, 0.5, 1.0, 1.5, 2.0]
+    hips = [(time, (0.0, 0.95 + 0.02 * math.sin(2 * math.pi * time / 2.0), 0.0)) for time in keys]
+    sway = []
+    for time in keys:
+        angle = math.radians(5.0) * math.sin(2 * math.pi * time / 2.0)
+        sway.append((time, quaternion((1.0, 0.0, 0.0), angle)))
+    head = [(time, quaternion((0.0, 1.0, 0.0), math.radians(6.0) * math.sin(math.pi * time / 2.0)))
+            for time in keys]
+    return [("Hips", "translation", hips), ("ArmLeft", "rotation", sway),
+            ("ArmRight", "rotation", sway), ("Head", "rotation", head)]
+
+
+def robot_walk():
+    """A one-second stride: legs and arms swing in opposition, the hips bob twice."""
+    steps = 8
+    keys = [step / steps for step in range(steps + 1)]
+    tracks = []
+
+    def swing(amplitude, phase, axis=(1.0, 0.0, 0.0)):
+        return [(time, quaternion(axis, math.radians(amplitude) * math.sin(2 * math.pi * (time + phase))))
+                for time in keys]
+
+    def bend(amplitude, phase):
+        # Knees only bend one way, so the sine is folded to stay negative.
+        return [(time, quaternion((1.0, 0.0, 0.0),
+                                  -math.radians(amplitude) * max(0.0, math.sin(2 * math.pi * (time + phase)))))
+                for time in keys]
+
+    tracks.append(("LegLeft", "rotation", swing(28.0, 0.0)))
+    tracks.append(("LegRight", "rotation", swing(28.0, 0.5)))
+    tracks.append(("ShinLeft", "rotation", bend(35.0, 0.25)))
+    tracks.append(("ShinRight", "rotation", bend(35.0, 0.75)))
+    tracks.append(("ArmLeft", "rotation", swing(22.0, 0.5)))
+    tracks.append(("ArmRight", "rotation", swing(22.0, 0.0)))
+    tracks.append(("ForearmLeft", "rotation", bend(18.0, 0.5)))
+    tracks.append(("ForearmRight", "rotation", bend(18.0, 0.0)))
+    hips = [(time, (0.0, 0.95 + 0.03 * abs(math.sin(2 * math.pi * time)), 0.0)) for time in keys]
+    tracks.append(("Hips", "translation", hips))
+    tracks.append(("Spine", "rotation", swing(4.0, 0.25, (0.0, 1.0, 0.0))))
+    return tracks
+
+
+def robot_wave():
+    """The right arm rises and the forearm waves."""
+    keys = [step / 8 for step in range(13)]
+    arm, forearm = [], []
+    for time in keys:
+        rise = min(1.0, time / 0.3) * (1.0 if time < 1.2 else max(0.0, (1.5 - time) / 0.3))
+        arm.append((time, quaternion((0.0, 0.0, 1.0), math.radians(-140.0) * rise)))
+        wave = math.radians(22.0) * math.sin(2 * math.pi * 2.0 * time) * rise
+        forearm.append((time, quaternion((0.0, 0.0, 1.0), wave)))
+    head = [(time, quaternion((0.0, 1.0, 0.0), math.radians(-10.0) * min(1.0, time / 0.4)))
+            for time in keys]
+    return [("ArmRight", "rotation", arm), ("ForearmRight", "rotation", forearm),
+            ("Head", "rotation", head)]
+
+
+def robot(path):
+    """A rigged robot as a .glb: boxes bound to eleven joints, with idle, walk and wave."""
+    builder = GltfBuilder()
+    positions = robot_bind_positions()
+    parts = robot_skin_parts(positions)
+
+    primitives = []
+    for trim, (vertices, normals, uvs, indices, joints, weights) in sorted(parts.items()):
+        primitives.append({
+            "attributes": {
+                "POSITION": builder.floats(vertices, "VEC3"),
+                "NORMAL": builder.floats(normals, "VEC3"),
+                "TEXCOORD_0": builder.floats(uvs, "VEC2"),
+                "JOINTS_0": builder.values(joints, "VEC4", component_type=5123, target=34962),
+                "WEIGHTS_0": builder.values(weights, "VEC4", target=34962),
+            },
+            "indices": builder.indices(indices),
+            "material": 1 if trim else 0,
+        })
+
+    # A bind pose without rotations: the inverse is a translation back to the model origin.
+    inverse_bind = []
+    for name, _parent, _translation, _half, _center in ROBOT_JOINTS:
+        origin = positions[name]
+        inverse_bind.append((1.0, 0.0, 0.0, 0.0,
+                             0.0, 1.0, 0.0, 0.0,
+                             0.0, 0.0, 1.0, 0.0,
+                             -origin[0], -origin[1], -origin[2], 1.0))
+
+    nodes = [{"name": "Robot", "children": [1, 1 + len(ROBOT_JOINTS)]}]
+    names = [joint[0] for joint in ROBOT_JOINTS]
+    for index, (name, parent, translation, _half, _center) in enumerate(ROBOT_JOINTS):
+        node = {"name": name, "translation": list(translation)}
+        children = [1 + other for other, joint in enumerate(ROBOT_JOINTS) if joint[1] == name]
+        if children:
+            node["children"] = children
+        nodes.append(node)
+    nodes.append({"name": "Body", "mesh": 0, "skin": 0})
+
+    animations = [robot_animation("Idle", 2.0, robot_idle(), builder),
+                  robot_animation("Walk", 1.0, robot_walk(), builder),
+                  robot_animation("Wave", 1.5, robot_wave(), builder)]
+    for animation in animations:
+        animation.pop("duration")
+
+    document = {
+        "scene": 0,
+        "scenes": [{"nodes": [0]}],
+        "nodes": nodes,
+        "meshes": [{"name": "Robot", "primitives": primitives}],
+        "skins": [{"name": "Robot", "skeleton": 1, "joints": list(range(1, 1 + len(ROBOT_JOINTS))),
+                   "inverseBindMatrices": builder.values(inverse_bind, "MAT4")}],
+        "materials": [
+            {"name": "Robot paint",
+             "pbrMetallicRoughness": {"baseColorFactor": [0.32, 0.55, 0.78, 1.0],
+                                      "metallicFactor": 0.1, "roughnessFactor": 0.45}},
+            {"name": "Robot trim",
+             "pbrMetallicRoughness": {"baseColorFactor": [0.16, 0.17, 0.2, 1.0],
+                                      "metallicFactor": 0.6, "roughnessFactor": 0.35}},
+        ],
+        "animations": animations,
+    }
+    glb(document, builder, path)
+
+
 def material(path, lines):
     write(path, "[material format=1]\n" + "".join(line + "\n" for line in lines))
 
@@ -583,6 +795,8 @@ def main():
     write(TEST_DATA / "checker.png",
           png_bytes(64, 32, checker_pixel(4, 64, (255, 255, 255, 255), (0, 0, 0, 255))))
     textured_quad(TEST_DATA / "textured" / "quad.gltf")
+    robot(SANDBOX_ASSETS / "models" / "robot.glb")
+    robot(TEST_DATA / "animated" / "robot.glb")
     audio_assets()
 
 

@@ -756,3 +756,127 @@ attenuation = "inverse"
 rolloff = 1
 doppler = 1
 group = 1
+
+[entity uuid="70176674-bbb5-5fa2-9885-0442304385ab" name="Robot"]
+
+[component type="Transform"]
+position = vec3(-9, 0, 6)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="Animator"]
+clip = asset("b0742248-4cbb-4d75-9e8d-f9ff4c9efa5c")
+speed = 1
+loop = true
+play_on_start = true
+blend_time = 0.25
+apply_root_motion = false
+
+[component type="RobotGuide"]
+idle = asset("b0742248-4cbb-4d75-9e8d-f9ff4c9efa5c")
+walk = asset("905859b5-6eb4-4bd7-9280-c73e4dee07f2")
+wave = asset("c89b91c7-df3b-49f2-ba28-ead218f0b781")
+patrol = vec3(0, 0, -11)
+speed = 1.6
+wait_time = 1.5
+greet_distance = 4.5
+
+[entity uuid="0fc39f7f-23fa-5a3f-b187-69da16b5c43f" name="Hips"]
+parent = "70176674-bbb5-5fa2-9885-0442304385ab"
+
+[component type="Transform"]
+position = vec3(0, 0.95, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="784f64df-47e9-5f6e-a85b-9ae60436c013" name="Spine"]
+parent = "0fc39f7f-23fa-5a3f-b187-69da16b5c43f"
+
+[component type="Transform"]
+position = vec3(0, 0.1, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="fade1901-4e0e-5df2-a8e2-b11844bc42ba" name="Head"]
+parent = "784f64df-47e9-5f6e-a85b-9ae60436c013"
+
+[component type="Transform"]
+position = vec3(0, 0.52, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="7723bbbc-2bdc-59ee-b591-f7c10c01e4d0" name="ArmLeft"]
+parent = "784f64df-47e9-5f6e-a85b-9ae60436c013"
+
+[component type="Transform"]
+position = vec3(0.25, 0.4, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="d12458ab-0790-55da-b5c8-875f94366d5e" name="ForearmLeft"]
+parent = "7723bbbc-2bdc-59ee-b591-f7c10c01e4d0"
+
+[component type="Transform"]
+position = vec3(0, -0.32, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="a2521bcf-20ad-57c0-b02f-3b4889e248c1" name="ArmRight"]
+parent = "784f64df-47e9-5f6e-a85b-9ae60436c013"
+
+[component type="Transform"]
+position = vec3(-0.25, 0.4, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="787044a7-8576-5bd4-ab7e-6690833de44f" name="ForearmRight"]
+parent = "a2521bcf-20ad-57c0-b02f-3b4889e248c1"
+
+[component type="Transform"]
+position = vec3(0, -0.32, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="b952e15f-d457-5fd3-a2c1-e4d70a88c836" name="LegLeft"]
+parent = "0fc39f7f-23fa-5a3f-b187-69da16b5c43f"
+
+[component type="Transform"]
+position = vec3(0.1, -0.12, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="df43d481-6eba-562b-b40a-456417597f45" name="ShinLeft"]
+parent = "b952e15f-d457-5fd3-a2c1-e4d70a88c836"
+
+[component type="Transform"]
+position = vec3(0, -0.42, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="c65d2aa9-73e1-5c78-92e4-bffbf2cd2b83" name="LegRight"]
+parent = "0fc39f7f-23fa-5a3f-b187-69da16b5c43f"
+
+[component type="Transform"]
+position = vec3(-0.1, -0.12, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="3753dd05-46eb-5991-bea9-2554dd17aaa3" name="ShinRight"]
+parent = "c65d2aa9-73e1-5c78-92e4-bffbf2cd2b83"
+
+[component type="Transform"]
+position = vec3(0, -0.42, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="1afcef1f-0124-5731-baf5-93b3d45efe0b" name="Robot body"]
+parent = "70176674-bbb5-5fa2-9885-0442304385ab"
+
+[component type="Transform"]
+position = vec3(0, 0, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="SkinnedMeshRenderer"]
+mesh = asset("6666e9b6-13db-41d2-84f0-503c34c1760a")
+bones = list(entity("0fc39f7f-23fa-5a3f-b187-69da16b5c43f"), entity("784f64df-47e9-5f6e-a85b-9ae60436c013"), entity("fade1901-4e0e-5df2-a8e2-b11844bc42ba"), entity("7723bbbc-2bdc-59ee-b591-f7c10c01e4d0"), entity("d12458ab-0790-55da-b5c8-875f94366d5e"), entity("a2521bcf-20ad-57c0-b02f-3b4889e248c1"), entity("787044a7-8576-5bd4-ab7e-6690833de44f"), entity("b952e15f-d457-5fd3-a2c1-e4d70a88c836"), entity("df43d481-6eba-562b-b40a-456417597f45"), entity("c65d2aa9-73e1-5c78-92e4-bffbf2cd2b83"), entity("3753dd05-46eb-5991-bea9-2554dd17aaa3"))

@@ -1,3 +1,4 @@
+#include <devex/scene/AnimationComponents.hpp>
 #include <devex/scene/AudioComponents.hpp>
 #include <devex/scene/ComponentRegistry.hpp>
 #include <devex/scene/Components.hpp>
@@ -84,6 +85,8 @@ ComponentRegistry& componentRegistry()
         ComponentRegistry builtins;
         builtins.add<Transform>();
         builtins.add<MeshRenderer>();
+        builtins.add<SkinnedMeshRenderer>();
+        builtins.add<Animator>();
         builtins.add<Camera>();
         builtins.add<DirectionalLight>();
         builtins.add<PointLight>();

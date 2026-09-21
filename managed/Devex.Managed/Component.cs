@@ -87,7 +87,8 @@ public sealed class PhysicsLayerAttribute : Attribute;
 public sealed class AudioGroupAttribute : Attribute;
 
 /// <summary>
-/// An AssetId field limited to one kind of asset: "mesh", "material", "texture", "model", "scene" or "audio".
+/// An AssetId field limited to one kind of asset: "mesh", "material", "texture", "model", "scene",
+/// "audio" or "animation".
 /// </summary>
 [AttributeUsage(AttributeTargets.Field)]
 public sealed class AssetTypeAttribute(string type) : Attribute

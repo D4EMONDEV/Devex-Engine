@@ -1,5 +1,6 @@
 #pragma once
 
+#include <devex/animation/Clip.hpp>
 #include <devex/audio/Clip.hpp>
 #include <devex/asset/AssetId.hpp>
 #include <devex/asset/MaterialData.hpp>
@@ -63,6 +64,10 @@ public:
     // null when it cannot be loaded.
     [[nodiscard]] std::shared_ptr<const audio::Clip> audioClip(asset::AssetId id);
 
+    // An animation, decoded once and shared by every animator that plays it; null when it cannot
+    // be loaded.
+    [[nodiscard]] std::shared_ptr<const animation::Clip> animationClip(asset::AssetId id);
+
     // Reloads the loaded assets that an import changed and releases removed ones.
     void handleEvents(std::span<const asset::AssetEvent> events);
 
@@ -106,6 +111,7 @@ private:
     std::unordered_map<asset::AssetId, asset::MeshData> m_meshData;
     std::unordered_map<asset::AssetId, std::string> m_sceneTexts;
     std::unordered_map<asset::AssetId, std::shared_ptr<const audio::Clip>> m_audioClips;
+    std::unordered_map<asset::AssetId, std::shared_ptr<const animation::Clip>> m_animationClips;
     // Assets whose loading failed, retried once an import changes them.
     std::unordered_set<asset::AssetId> m_failed;
 };

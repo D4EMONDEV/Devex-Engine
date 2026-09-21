@@ -239,8 +239,20 @@ core::Result<MeshHandle> VulkanRenderer::createMesh(const asset::MeshData& mesh)
     {
         vertices.push_back({vertex.position, vertex.uv.x, vertex.normal, vertex.uv.y, vertex.tangent});
     }
+    std::vector<GpuVertexSkin> skin;
+    skin.reserve(mesh.skin.size());
+    for (const asset::VertexSkin& vertex : mesh.skin)
+    {
+        GpuVertexSkin& entry = skin.emplace_back();
+        for (std::size_t slot = 0; slot < entry.joints.size(); ++slot)
+        {
+            entry.joints[slot] = vertex.joints[slot];
+        }
+        entry.weights = vertex.weights;
+    }
     const VkDeviceSize vertexBytes = vertices.size() * sizeof(GpuVertex);
     const VkDeviceSize indexBytes = mesh.indices.size() * sizeof(std::uint32_t);
+    const VkDeviceSize skinBytes = skin.size() * sizeof(GpuVertexSkin);
 
     core::Result<Buffer> vertexBuffer = Buffer::create(
         m_allocator, {
@@ -262,8 +274,24 @@ core::Result<MeshHandle> VulkanRenderer::createMesh(const asset::MeshData& mesh)
     {
         return std::unexpected(indexBuffer.error());
     }
+    std::optional<Buffer> skinBuffer;
+    if (skinBytes > 0)
+    {
+        core::Result<Buffer> created = Buffer::create(
+            m_allocator, {
+                             .size = skinBytes,
+                             .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+                                      VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
+                                      VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                         });
+        if (!created)
+        {
+            return std::unexpected(created.error());
+        }
+        skinBuffer = std::move(*created);
+    }
     core::Result<Buffer> staging = Buffer::create(m_allocator, {
-                                                                   .size = vertexBytes + indexBytes,
+                                                                   .size = vertexBytes + indexBytes + skinBytes,
                                                                    .usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
                                                                    .hostVisible = true,
                                                                });
@@ -275,12 +303,22 @@ core::Result<MeshHandle> VulkanRenderer::createMesh(const asset::MeshData& mesh)
     const std::span<std::byte> stagingBytes = staging->mappedBytes();
     std::memcpy(stagingBytes.data(), vertices.data(), vertexBytes);
     std::memcpy(stagingBytes.data() + vertexBytes, mesh.indices.data(), indexBytes);
+    if (skinBytes > 0)
+    {
+        std::memcpy(stagingBytes.data() + vertexBytes + indexBytes, skin.data(), skinBytes);
+    }
 
     const core::Result<void> uploaded = m_upload.submit([&](VkCommandBuffer commandBuffer) {
         const VkBufferCopy vertexCopy{.srcOffset = 0, .dstOffset = 0, .size = vertexBytes};
         vkCmdCopyBuffer(commandBuffer, staging->handle(), vertexBuffer->handle(), 1, &vertexCopy);
         const VkBufferCopy indexCopy{.srcOffset = vertexBytes, .dstOffset = 0, .size = indexBytes};
         vkCmdCopyBuffer(commandBuffer, staging->handle(), indexBuffer->handle(), 1, &indexCopy);
+        if (skinBytes > 0)
+        {
+            const VkBufferCopy skinCopy{
+                .srcOffset = vertexBytes + indexBytes, .dstOffset = 0, .size = skinBytes};
+            vkCmdCopyBuffer(commandBuffer, staging->handle(), skinBuffer->handle(), 1, &skinCopy);
+        }
     });
     if (!uploaded)
     {
@@ -290,6 +328,7 @@ core::Result<MeshHandle> VulkanRenderer::createMesh(const asset::MeshData& mesh)
     GpuMesh gpuMesh{
         .vertices = std::move(*vertexBuffer),
         .indices = std::move(*indexBuffer),
+        .skin = std::move(skinBuffer),
     };
     for (const asset::Submesh& submesh : asset::submeshesOf(mesh))
     {
@@ -454,6 +493,10 @@ core::Result<void> VulkanRenderer::endFrame()
     if (core::Result<void> lights = uploadLights(frame, aspectRatio); !lights)
     {
         return lights;
+    }
+    if (core::Result<void> bones = uploadBones(frame); !bones)
+    {
+        return bones;
     }
     if (const std::optional<PickRequest>& pick = m_world.pick; pick)
     {
@@ -1008,6 +1051,21 @@ GpuMaterial VulkanRenderer::toGpuMaterial(const MaterialDesc& material) const no
     };
 }
 
+core::Result<void> VulkanRenderer::uploadBones(FrameContext& frame) const
+{
+    const VkDeviceSize bytes = std::max<std::size_t>(m_world.boneMatrices.size(), 1) * sizeof(math::Mat4);
+    if (core::Result<void> ensured = ensureHostBuffer(frame.bones, bytes); !ensured)
+    {
+        return ensured;
+    }
+    if (!m_world.boneMatrices.empty())
+    {
+        std::memcpy(frame.bones->mappedBytes().data(), m_world.boneMatrices.data(),
+                    m_world.boneMatrices.size() * sizeof(math::Mat4));
+    }
+    return {};
+}
+
 core::Result<void> VulkanRenderer::ensureHostBuffer(std::optional<Buffer>& buffer, VkDeviceSize bytes) const
 {
     if (buffer && buffer->size() >= bytes)
@@ -1269,7 +1327,8 @@ void VulkanRenderer::writeSceneData(FrameContext& frame,
     std::memcpy(frame.sceneData->mappedBytes().data(), &scene, sizeof(scene));
 }
 
-std::uint32_t VulkanRenderer::drawMeshes(VkCommandBuffer commandBuffer, VkDeviceAddress sceneData, MeshPass pass,
+std::uint32_t VulkanRenderer::drawMeshes(VkCommandBuffer commandBuffer, VkDeviceAddress sceneData,
+                                         VkDeviceAddress boneMatrices, MeshPass pass,
                                          std::uint32_t cascade, std::uint32_t frameSlot) const
 {
     const std::array sets{m_descriptors->global(), m_descriptors->frame(frameSlot)};
@@ -1315,6 +1374,8 @@ std::uint32_t VulkanRenderer::drawMeshes(VkCommandBuffer commandBuffer, VkDevice
             boundPipeline = pipeline;
         }
 
+        // A skinned instance reads its own bones, which already hold the transform to the world.
+        const bool skinned = mesh->skin.has_value() && instance.boneCount > 0 && boneMatrices != 0;
         const DrawPushConstants constants{
             .scene = sceneData,
             .vertices = mesh->vertices.deviceAddress(),
@@ -1322,6 +1383,9 @@ std::uint32_t VulkanRenderer::drawMeshes(VkCommandBuffer commandBuffer, VkDevice
             .material = materialHandle.index,
             .cascade = cascade,
             .objectId = instance.objectId,
+            .skinned = skinned ? 1u : 0u,
+            .skin = skinned ? mesh->skin->deviceAddress() : 0,
+            .bones = skinned ? boneMatrices + instance.firstBone * sizeof(math::Mat4) : 0,
         };
         vkCmdPushConstants(commandBuffer, pipeline->layout(),
                            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
@@ -1469,6 +1533,7 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
     }
 
     const VkDeviceAddress sceneData = frame.sceneData->deviceAddress();
+    const VkDeviceAddress boneMatrices = frame.bones ? frame.bones->deviceAddress() : 0;
     const std::array sets{m_descriptors->global(), m_descriptors->frame(frameSlot)};
     std::uint32_t drawCalls = 0;
     const auto setViewport = [](VkCommandBuffer commands, math::Extent2D size) {
@@ -1507,7 +1572,7 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
                               setViewport(commands, {shadowMapSize, shadowMapSize});
                               // Steep surfaces need more bias than those facing the light.
                               vkCmdSetDepthBias(commands, 0.0f, 0.0f, 1.5f);
-                              drawMeshes(commands, sceneData, MeshPass::Shadow, cascade, frameSlot);
+                              drawMeshes(commands, sceneData, boneMatrices, MeshPass::Shadow, cascade, frameSlot);
                               vkCmdEndRendering(commands);
                           }
                       });
@@ -1560,7 +1625,7 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
         };
         vkCmdBeginRendering(commands, &renderingInfo);
         setViewport(commands, extent);
-        drawCalls += drawMeshes(commands, sceneData, MeshPass::Scene, 0, frameSlot);
+        drawCalls += drawMeshes(commands, sceneData, boneMatrices, MeshPass::Scene, 0, frameSlot);
 
         vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, m_skyPipeline->handle());
         vkCmdBindDescriptorSets(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, m_skyPipeline->layout(), 0, 1,
@@ -1622,7 +1687,7 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
                           };
                           vkCmdBeginRendering(commands, &renderingInfo);
                           setViewport(commands, {1, 1});
-                          drawMeshes(commands, sceneData, MeshPass::Pick, 0, frameSlot);
+                          drawMeshes(commands, sceneData, boneMatrices, MeshPass::Pick, 0, frameSlot);
                           vkCmdEndRendering(commands);
                       });
         graph.addPass("Pick readback", {{pickColor, ImageAccess::TransferRead}},
@@ -1658,7 +1723,7 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
                           };
                           vkCmdBeginRendering(commands, &renderingInfo);
                           setViewport(commands, extent);
-                          drawMeshes(commands, sceneData, MeshPass::SelectionMask, 0, frameSlot);
+                          drawMeshes(commands, sceneData, boneMatrices, MeshPass::SelectionMask, 0, frameSlot);
                           vkCmdEndRendering(commands);
                       });
     }

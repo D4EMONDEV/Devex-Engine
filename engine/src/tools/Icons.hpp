@@ -25,6 +25,7 @@ namespace devex::tools::detail {
     ICON(AudioWaveform, "audio-waveform")            \
     ICON(Axis, "axis-3d")                            \
     ICON(BookOpen, "book-open")                      \
+    ICON(Bone, "bone")                               \
     ICON(Box, "box")                                 \
     ICON(BrushCleaning, "brush-cleaning")            \
     ICON(Bug, "bug")                                 \
@@ -53,6 +54,7 @@ namespace devex::tools::detail {
     ICON(File, "file")                               \
     ICON(FileCode, "file-code")                      \
     ICON(FilePlus, "file-plus")                      \
+    ICON(Film, "film")                               \
     ICON(FileText, "file-text")                      \
     ICON(Flashlight, "flashlight")                   \
     ICON(Folder, "folder")                           \

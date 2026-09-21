@@ -20,6 +20,15 @@ struct ModelNode
     math::Vec3 scale{1.0f};
     // Invalid when the node only groups or places its children.
     AssetId mesh;
+    // Index of the skin the mesh follows, or -1 when the mesh is static.
+    std::int32_t skin = -1;
+};
+
+// The joints a skinned mesh follows, in the order its vertices and its inverse bind matrices use.
+struct ModelSkin
+{
+    // Node indices; every joint is a node of the model.
+    std::vector<std::int32_t> joints;
 };
 
 // The node hierarchy of an imported scene file, such as the default scene of a glTF file.
@@ -27,6 +36,9 @@ struct ModelData
 {
     // Every parent comes before its children.
     std::vector<ModelNode> nodes;
+    std::vector<ModelSkin> skins;
+    // The animations imported from the same file, which its skeletons can play.
+    std::vector<AssetId> animations;
 };
 
 [[nodiscard]] core::Result<void> validate(const ModelData& model);

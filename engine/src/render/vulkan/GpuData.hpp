@@ -97,6 +97,13 @@ struct GpuSceneData
     math::Mat4 pickViewProjection{1.0f};
 };
 
+// How a vertex of a skinned mesh follows its bones, beside the vertex itself.
+struct GpuVertexSkin
+{
+    std::array<std::uint32_t, 4> joints{};
+    math::Vec4 weights{0.0f};
+};
+
 struct DrawPushConstants
 {
     VkDeviceAddress scene = 0;
@@ -106,7 +113,11 @@ struct DrawPushConstants
     std::uint32_t cascade = 0;
     // Written by the pick pass.
     std::uint32_t objectId = 0;
-    std::uint32_t padding = 0;
+    // Whether the vertices follow the bones below rather than the world matrix. Shaders read the
+    // flag instead of comparing the addresses, which would need 64-bit integers in SPIR-V.
+    std::uint32_t skinned = 0;
+    VkDeviceAddress skin = 0;
+    VkDeviceAddress bones = 0;
 };
 
 struct GpuOverlayVertex
@@ -182,10 +193,13 @@ static_assert(offsetof(GpuSceneData, pickViewProjection) == 624);
 static_assert(sizeof(GpuSceneData) == 688);
 
 // Vulkan guarantees 128 bytes of push constants on every device.
-static_assert(sizeof(DrawPushConstants) == 96);
+static_assert(sizeof(DrawPushConstants) == 112);
 static_assert(offsetof(DrawPushConstants, world) == 16);
 static_assert(offsetof(DrawPushConstants, material) == 80);
 static_assert(offsetof(DrawPushConstants, objectId) == 88);
+static_assert(offsetof(DrawPushConstants, skin) == 96);
+static_assert(offsetof(DrawPushConstants, bones) == 104);
+static_assert(sizeof(GpuVertexSkin) == 32);
 static_assert(sizeof(GpuOverlayVertex) == 32);
 static_assert(offsetof(OverlayPushConstants, depthScale) == 32);
 static_assert(sizeof(OverlayPushConstants) == 48);

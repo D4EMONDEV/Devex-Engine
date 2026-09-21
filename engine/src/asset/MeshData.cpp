@@ -9,6 +9,11 @@
 
 namespace devex::asset {
 
+bool isSkinned(const MeshData& mesh) noexcept
+{
+    return !mesh.skin.empty();
+}
+
 core::Result<void> validate(const MeshData& mesh)
 {
     if (mesh.vertices.empty() || mesh.indices.empty())
@@ -39,6 +44,29 @@ core::Result<void> validate(const MeshData& mesh)
             return core::makeError(core::ErrorCode::InvalidArgument,
                                    "submesh [{}, {}) does not select whole triangles of the {} indices",
                                    submesh.firstIndex, end, mesh.indices.size());
+        }
+    }
+    if (!mesh.skin.empty() && mesh.skin.size() != mesh.vertices.size())
+    {
+        return core::makeError(core::ErrorCode::InvalidArgument,
+                               "{} skinned vertices for {} vertices", mesh.skin.size(),
+                               mesh.vertices.size());
+    }
+    if (!mesh.skin.empty() && mesh.inverseBind.empty())
+    {
+        return core::makeError(core::ErrorCode::InvalidArgument,
+                               "the skinned mesh has no bind pose");
+    }
+    for (const VertexSkin& skin : mesh.skin)
+    {
+        const auto missing = std::ranges::find_if(skin.joints, [&mesh](std::uint16_t joint) {
+            return joint >= mesh.inverseBind.size();
+        });
+        if (missing != skin.joints.end())
+        {
+            return core::makeError(core::ErrorCode::InvalidArgument,
+                                   "joint {} refers past the {} joints of the bind pose", *missing,
+                                   mesh.inverseBind.size());
         }
     }
     return {};
@@ -135,23 +163,37 @@ void computeTangents(MeshData& mesh)
     SMikkTSpaceContext context{&callbacks, &job};
     genTangSpaceDefault(&context);
 
-    // Corners with identical attributes become one vertex again.
-    std::unordered_map<std::string_view, std::uint32_t> welded;
+    // Corners with identical attributes become one vertex again. A skinned mesh also keeps
+    // corners apart when they follow different joints.
+    const bool skinned = isSkinned(mesh);
+    std::unordered_map<std::string, std::uint32_t> welded;
     welded.reserve(job.corners.size());
     std::vector<Vertex> vertices;
+    std::vector<VertexSkin> skin;
     vertices.reserve(mesh.vertices.size());
     for (std::size_t index = 0; index < job.corners.size(); ++index)
     {
-        const std::string_view key(reinterpret_cast<const char*>(&job.corners[index]), sizeof(Vertex));
+        // The index still refers to the vertex this corner came from: it is replaced below.
+        const VertexSkin corner = skinned ? mesh.skin[mesh.indices[index]] : VertexSkin{};
+        std::string key(reinterpret_cast<const char*>(&job.corners[index]), sizeof(Vertex));
+        if (skinned)
+        {
+            key.append(reinterpret_cast<const char*>(&corner), sizeof(VertexSkin));
+        }
         const auto [found, inserted] =
-            welded.try_emplace(key, static_cast<std::uint32_t>(vertices.size()));
+            welded.try_emplace(std::move(key), static_cast<std::uint32_t>(vertices.size()));
         if (inserted)
         {
             vertices.push_back(job.corners[index]);
+            if (skinned)
+            {
+                skin.push_back(corner);
+            }
         }
         mesh.indices[index] = found->second;
     }
     mesh.vertices = std::move(vertices);
+    mesh.skin = std::move(skin);
 }
 
 } // namespace devex::asset
