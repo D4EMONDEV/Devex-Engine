@@ -878,12 +878,20 @@ void handleEditorShortcuts(ToolsState& state, scene::Scene& scene)
     if (textEditorFocused())
     {
         if (pressed(ImGuiMod_Ctrl | ImGuiKey_S))
+        {
             if (TextDocument* document = findTextDocument(state, state.activeText))
+            {
                 static_cast<void>(saveTextFile(state, scene, *document));
+            }
+        }
         if (pressed(ImGuiMod_Ctrl | ImGuiKey_O))
+        {
             showOpenTextDialog(state);
+        }
         if (pressed(ImGuiMod_Ctrl | ImGuiKey_W) && !state.activeText.empty())
+        {
             requestAction(state, scene, {.kind = PendingAction::Kind::CloseText, .path = state.activeText});
+        }
         return;
     }
     if (!editing)

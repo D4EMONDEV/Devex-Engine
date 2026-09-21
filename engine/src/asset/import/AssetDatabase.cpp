@@ -530,7 +530,9 @@ public:
     {
         auto loaded = loadProject(m_project.file);
         if (!loaded)
+        {
             return std::unexpected(loaded.error());
+        }
         m_project = std::move(*loaded);
         return {};
     }

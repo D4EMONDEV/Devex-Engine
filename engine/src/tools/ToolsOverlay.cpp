@@ -381,7 +381,9 @@ void finishFrame(ToolsState& state)
 void handleShortcuts(ToolsState& state, scene::Scene& scene)
 {
     if (detail::textEditorFocused())
+    {
         return;
+    }
     // Text fields route these chords to their own undo first.
     if (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_Z, ImGuiInputFlags_RouteGlobal))
     {

@@ -116,7 +116,9 @@ void drawCodeEntry(ToolsState& state, const std::filesystem::path& path, bool di
     {
         selectCodeFile(state, path);
         if (state.mode == ToolsMode::Editor)
+        {
             openTextFile(state, path);
+        }
     }
     if (state.mode != ToolsMode::Editor && ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
     {
@@ -165,7 +167,9 @@ void drawCodeFiles(ToolsState& state)
     static_cast<void>(codeRow("##project-file", ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen,
                              {icons::FileText, themeColors().neutral}, core::toUtf8(projectFile.filename())));
     if (ImGui::IsItemClicked())
+    {
         openTextFile(state, projectFile);
+    }
     const std::filesystem::path code = state.database->project().codeDirectory();
     std::error_code error;
     if (!std::filesystem::is_directory(code, error))

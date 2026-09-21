@@ -297,7 +297,9 @@ void applyAction(ToolsState& state, scene::Scene& scene, const PendingAction& ac
         if (TextDocument* document = findTextDocument(state, action.path))
         {
             if (auto reloaded = document->reload(); !reloaded)
+            {
                 document->error = reloaded.error().message;
+            }
         }
         break;
     case PendingAction::Kind::CloseTab:
@@ -594,7 +596,9 @@ void requestAction(ToolsState& state, scene::Scene& scene, PendingAction action)
 void discardPendingAction(ToolsState& state, scene::Scene& scene)
 {
     if (auto action = std::exchange(state.pendingAction, std::nullopt))
+    {
         applyAction(state, scene, *action);
+    }
 }
 
 bool saveTextFile(ToolsState& state, scene::Scene& scene, TextDocument& document)
@@ -609,7 +613,9 @@ bool saveTextFile(ToolsState& state, scene::Scene& scene, TextDocument& document
         return false;
     };
     if (!document.modified())
+    {
         return true;
+    }
 
     std::string extension = core::toUtf8(document.path.extension());
     std::ranges::transform(extension, extension.begin(), [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
@@ -620,25 +626,39 @@ bool saveTextFile(ToolsState& state, scene::Scene& scene, TextDocument& document
     if (sceneFile)
     {
         if (state.playState != PlayState::Editing)
+        {
             return fail("Stop Play before saving a scene as text.");
+        }
         const ActiveDocument live = activeDocument(state, scene);
         for (std::size_t i = 0; i < state.tabs.size(); ++i)
+        {
             if (sameTextPath(state.tabs.path(i, live), document.path))
+            {
                 sceneTab = i;
+            }
+        }
         if (sceneTab && state.tabs.isModified(*sceneTab, live))
+        {
             return fail("This scene has unsaved viewport changes. Save or close its scene tab, then Reload the text file.");
+        }
         auto parsed = scene::loadScene(document.text);
         if (!parsed)
+        {
             return fail(parsed.error().message);
+        }
         loadedScene = std::move(*parsed);
     }
     if (extension == asset::projectExtension)
     {
         if (auto parsed = asset::parseProject(document.text, document.path); !parsed)
+        {
             return fail(parsed.error().message);
+        }
     }
     if (auto saved = document.save(); !saved)
+    {
         return fail(saved.error().message);
+    }
     document.error.clear();
     if (sceneTab)
     {
@@ -660,10 +680,16 @@ bool saveTextFile(ToolsState& state, scene::Scene& scene, TextDocument& document
         }
     }
     if (projectFile)
+    {
         if (auto reloaded = state.database->reloadProject(); !reloaded)
+        {
             return fail(reloaded.error().message);
+        }
+    }
     if (state.database != nullptr)
+    {
         state.database->refresh();
+    }
     DEVEX_LOG_INFO("Saved {}", core::toUtf8(document.path.filename()));
     return true;
 }
@@ -676,11 +702,13 @@ bool saveForPendingAction(ToolsState& state, scene::Scene& scene)
     }
     // Resolve text/viewport conflicts before saving other documents.
     for (TextDocument* document : affectedTextDocuments(state, *state.pendingAction))
+    {
         if (!saveTextFile(state, scene, *document))
         {
             state.pendingAction.reset();
             return false;
         }
+    }
     for (const std::size_t index : affectedTabs(state, scene, *state.pendingAction))
     {
         if (index == state.tabs.active())

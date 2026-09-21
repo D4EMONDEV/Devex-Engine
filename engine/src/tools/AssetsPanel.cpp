@@ -101,7 +101,9 @@ void drawSourceMenu(ToolsState& state, scene::Scene& scene, const asset::SourceF
     const bool isScene = mainAsset != nullptr && mainAsset->type == asset::AssetType::Scene;
     const std::optional<std::filesystem::path> path = database.project().absolutePath(source.path);
     if (path && ImGui::MenuItemEx("Edit as Text", icons::FileText.c_str()))
+    {
         openTextFile(state, *path);
+    }
     if (path && ImGui::MenuItemEx("Edit Import Metadata", icons::FileText.c_str()))
     {
         std::filesystem::path meta = *path;
@@ -215,8 +217,12 @@ void drawSource(ToolsState& state, scene::Scene& scene, const asset::SourceFile&
         dragAsset(mainAsset->id, mainAsset->type, mainAsset->name);
         const bool doubleClicked = ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left);
         if (mainAsset->type == asset::AssetType::Material && doubleClicked)
+        {
             if (const auto path = database.project().absolutePath(source.path); path && path->extension() == ".dvxmat")
+            {
                 openTextFile(state, *path);
+            }
+        }
         if (mainAsset->type == asset::AssetType::Model && doubleClicked)
         {
             requestInstantiateModel(state, mainAsset->id, core::Uuid{});

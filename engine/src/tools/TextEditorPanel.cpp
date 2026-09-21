@@ -14,8 +14,12 @@ namespace devex::tools::detail {
 TextDocument* findTextDocument(ToolsState& state, const std::filesystem::path& path)
 {
     for (TextDocument& document : state.textDocuments)
+    {
         if (sameTextPath(document.path, path))
+        {
             return &document;
+        }
+    }
     return nullptr;
 }
 
@@ -23,13 +27,17 @@ std::vector<TextDocument*> affectedTextDocuments(ToolsState& state, const Pendin
 {
     std::vector<TextDocument*> documents;
     if (action.kind == PendingAction::Kind::CloseTab)
+    {
         return documents;
+    }
     for (TextDocument& document : state.textDocuments)
     {
         const bool concerned = (action.kind != PendingAction::Kind::CloseText && action.kind != PendingAction::Kind::ReloadText) ||
                                sameTextPath(document.path, action.path);
         if (concerned && document.modified())
+        {
             documents.push_back(&document);
+        }
     }
     return documents;
 }
@@ -71,7 +79,9 @@ void showOpenTextDialog(ToolsState& state)
          .defaultLocation = state.database != nullptr ? state.database->project().root : std::filesystem::path{}},
         [answers](std::optional<std::filesystem::path> chosen) {
             if (const auto inbox = answers.lock(); inbox && chosen)
+            {
                 inbox->openText = std::move(*chosen);
+            }
         });
 }
 
@@ -97,7 +107,9 @@ int trackCursor(ImGuiInputTextCallbackData* data)
             document.column = 1;
         }
         else if ((static_cast<unsigned char>(data->Buf[i]) & 0xC0) != 0x80)
+        {
             ++document.column;
+        }
     }
     return 0;
 }
@@ -107,12 +119,18 @@ int trackCursor(ImGuiInputTextCallbackData* data)
 void drawTextEditorPanel(ToolsState& state, scene::Scene& scene)
 {
     if (auto path = std::exchange(state.dialogAnswers->openText, std::nullopt))
+    {
         openTextFile(state, *path);
+    }
     if (!state.showTextEditor)
+    {
         return;
+    }
     ImGui::SetNextWindowSize(ImVec2(900.0f, 620.0f), ImGuiCond_FirstUseEver);
     if (std::exchange(state.focusTextEditor, false))
+    {
         ImGui::SetNextWindowFocus();
+    }
     if (!ImGui::Begin(textEditorWindow, &state.showTextEditor))
     {
         ImGui::End();
@@ -121,14 +139,24 @@ void drawTextEditorPanel(ToolsState& state, scene::Scene& scene)
 
     std::optional<PendingAction> action;
     if (labelButton(icons::FolderOpen, "Open..."))
+    {
         showOpenTextDialog(state);
+    }
     ImGui::SameLine();
     if (labelButton(icons::Save, "Save All"))
+    {
         for (TextDocument& document : state.textDocuments)
+        {
             if (document.modified())
+            {
                 static_cast<void>(saveTextFile(state, scene, document));
+            }
+        }
+    }
     if (!state.textOpenError.empty())
+    {
         ImGui::TextWrapped("%s", state.textOpenError.c_str());
+    }
 
     if (state.textDocuments.empty())
     {
@@ -153,23 +181,35 @@ void drawTextEditorPanel(ToolsState& state, scene::Scene& scene)
             bool open = true;
             const bool selected = ImGui::BeginTabItem(label.c_str(), &open, flags);
             if (ImGui::IsItemHovered())
+            {
                 ImGui::SetTooltip("%s", path.c_str());
+            }
             if (!open)
+            {
                 action = PendingAction{.kind = PendingAction::Kind::CloseText, .path = document.path};
+            }
             if (!selected)
+            {
                 continue;
+            }
             state.activeText = document.path;
             ImGui::PushID(path.c_str());
             ImGui::BeginDisabled(!document.modified());
             if (labelButton(icons::Save, "Save"))
+            {
                 static_cast<void>(saveTextFile(state, scene, document));
+            }
             ImGui::EndDisabled();
             ImGui::SameLine();
             if (labelButton(icons::Refresh, "Reload"))
+            {
                 action = PendingAction{.kind = PendingAction::Kind::ReloadText, .path = document.path};
+            }
             ImGui::SameLine();
             if (labelButton(icons::ExternalLink, "External Editor"))
+            {
                 openInCodeEditor(state, document.path);
+            }
             ImGui::TextDisabled("%s", path.c_str());
             if (!document.error.empty())
             {
@@ -198,7 +238,9 @@ void drawTextEditorPanel(ToolsState& state, scene::Scene& scene)
     ImGui::End();
     // Closing/reloading may invalidate a document: do this after all widgets have used it.
     if (action)
+    {
         requestAction(state, scene, std::move(*action));
+    }
 }
 
 } // namespace devex::tools::detail
