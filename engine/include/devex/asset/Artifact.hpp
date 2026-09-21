@@ -1,6 +1,7 @@
 #pragma once
 
 #include <devex/asset/AssetType.hpp>
+#include <devex/asset/AudioClipData.hpp>
 #include <devex/asset/MaterialData.hpp>
 #include <devex/asset/MeshData.hpp>
 #include <devex/asset/ModelData.hpp>
@@ -32,6 +33,7 @@ inline constexpr std::string_view artifactExtension = ".dvxasset";
 [[nodiscard]] std::vector<std::byte> encodeModel(const ModelData& model);
 // Scenes keep the text of their .dvxscene file, validated by the import.
 [[nodiscard]] std::vector<std::byte> encodeScene(std::string_view text);
+[[nodiscard]] std::vector<std::byte> encodeAudioClip(const AudioClipData& clip);
 
 // Decoding validates the header, the version and the data itself.
 [[nodiscard]] core::Result<MeshData> decodeMesh(std::span<const std::byte> bytes);
@@ -39,5 +41,8 @@ inline constexpr std::string_view artifactExtension = ".dvxasset";
 [[nodiscard]] core::Result<MaterialData> decodeMaterial(std::span<const std::byte> bytes);
 [[nodiscard]] core::Result<ModelData> decodeModel(std::span<const std::byte> bytes);
 [[nodiscard]] core::Result<std::string> decodeScene(std::span<const std::byte> bytes);
+[[nodiscard]] core::Result<AudioClipData> decodeAudioClip(std::span<const std::byte> bytes);
+// The description of a clip, without the bytes of its file, as the editor shows it.
+[[nodiscard]] core::Result<AudioClipData> decodeAudioClipInfo(std::span<const std::byte> bytes);
 
 } // namespace devex::asset

@@ -1,14 +1,22 @@
 #include <devex/asset/Artifact.hpp>
 #include <devex/asset/Package.hpp>
+#include <devex/audio/Clip.hpp>
 #include <devex/core/Uuid.hpp>
 #include <devex/runtime/Application.hpp>
+#include <devex/scene/AudioComponents.hpp>
 #include <devex/scene/Components.hpp>
 
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include <cmath>
+#include <cstdint>
 #include <cstdlib>
 #include <filesystem>
 #include <format>
+#include <numbers>
+#include <optional>
+#include <vector>
 
 using devex::core::Duration;
 using devex::core::Result;
@@ -21,6 +29,8 @@ const ApplicationConfig testConfig{
     .width = 320,
     .height = 240,
     .enableRendering = false,
+    // Sounds are mixed without being heard.
+    .audioOutput = false,
 };
 
 // Counts lifecycle calls and quits after a few frames.
@@ -243,4 +253,137 @@ TEST_CASE("An application can run again after a previous run", "[runtime][applic
     CHECK(devex::runtime::run(first, testConfig) == EXIT_SUCCESS);
     CHECK(devex::runtime::run(second, testConfig) == EXIT_SUCCESS);
     CHECK(second.updates == 3);
+}
+
+namespace {
+
+// Half a second of a 440 Hz sine, as a 16-bit mono WAV file.
+[[nodiscard]] std::vector<std::byte> sineWav()
+{
+    constexpr std::uint32_t rate = 22050;
+    constexpr std::uint32_t frames = rate / 2;
+    std::vector<std::byte> file;
+    const auto put = [&](const void* data, std::size_t size) {
+        const auto* const bytes = static_cast<const std::byte*>(data);
+        file.insert(file.end(), bytes, bytes + size);
+    };
+    const auto put16 = [&](std::uint16_t value) { put(&value, sizeof(value)); };
+    const auto put32 = [&](std::uint32_t value) { put(&value, sizeof(value)); };
+    put("RIFF", 4);
+    put32(36 + frames * 2);
+    put("WAVEfmt ", 8);
+    put32(16);
+    put16(1);
+    put16(1);
+    put32(rate);
+    put32(rate * 2);
+    put16(2);
+    put16(16);
+    put("data", 4);
+    put32(frames * 2);
+    for (std::uint32_t frame = 0; frame < frames; ++frame)
+    {
+        const double value = 8000.0 * std::sin(2.0 * std::numbers::pi * 440.0 * frame / rate);
+        put16(static_cast<std::uint16_t>(static_cast<std::int16_t>(std::lround(value))));
+    }
+    return file;
+}
+
+// Plays a looping sound from startup, then looks at the sounds of the game.
+class SoundApplication final : public devex::runtime::Application
+{
+public:
+    devex::asset::AssetId clip;
+    bool hadAudio = false;
+    bool playing = false;
+    std::size_t sounds = 0;
+    std::optional<std::uint32_t> musicGroup;
+    float musicVolume = 0.0f;
+    float masterVolume = 0.0f;
+
+    Result<void> onStartup() override
+    {
+        m_speaker = scene().createEntity("Speaker");
+        scene().add<devex::scene::Transform>(m_speaker);
+        scene().add<devex::scene::AudioSource>(
+            m_speaker, devex::scene::AudioSource{.clip = clip, .loop = true, .spatial = false, .group = 1});
+        return {};
+    }
+
+    void onUpdate(Duration /*frameDelta*/) override
+    {
+        // Sources start at the end of the frame they appear in.
+        if (++m_updates < 3)
+        {
+            return;
+        }
+        devex::audio::AudioWorld* const world = audio();
+        hadAudio = world != nullptr;
+        if (world != nullptr)
+        {
+            playing = world->isPlaying(m_speaker);
+            sounds = world->soundCount();
+            musicGroup = world->engine().findGroup("Music");
+            musicVolume = world->engine().groupVolume(1);
+            masterVolume = world->engine().masterVolume();
+        }
+        requestQuit();
+    }
+
+private:
+    devex::scene::Entity m_speaker;
+    int m_updates = 0;
+};
+
+} // namespace
+
+TEST_CASE("Games play the sounds of their scene with the audio settings of the project", "[runtime][application][audio]")
+{
+    const std::filesystem::path directory =
+        std::filesystem::temp_directory_path() / ("devex-sound-" + devex::core::Uuid::generate().toString());
+    SoundApplication application;
+    application.clip = devex::asset::AssetId::generate();
+    {
+        devex::core::Result<devex::asset::PackageWriter> writer = devex::asset::PackageWriter::create(directory / "Game.dvxpak");
+        REQUIRE(writer.has_value());
+        devex::asset::Project settings{.name = "Sound game"};
+        settings.audio.masterVolume = 0.8f;
+        settings.audio.groupNames[1] = "Music";
+        settings.audio.groupVolumes[1] = 0.5f;
+        writer->setProject(settings);
+        std::vector<std::byte> wav = sineWav();
+        const devex::core::Result<devex::audio::ClipInfo> info = devex::audio::probeClip(wav);
+        REQUIRE(info.has_value());
+        const devex::asset::AudioClipData clip{
+            .encoding = info->encoding,
+            .loading = devex::asset::AudioLoading::Decoded,
+            .channels = info->channels,
+            .sampleRate = info->sampleRate,
+            .frames = info->frames,
+            .waveform = info->waveform,
+            .encoded = std::move(wav),
+        };
+        REQUIRE(writer->add({.id = application.clip, .type = devex::asset::AssetType::AudioClip, .name = "tone",
+                             .source = application.clip},
+                            "res://assets/tone.wav", devex::asset::encodeAudioClip(clip)));
+        REQUIRE(writer->finish());
+    }
+
+    ApplicationConfig config = testConfig;
+    config.package = directory / "Game.dvxpak";
+    CHECK(devex::runtime::run(application, config) == EXIT_SUCCESS);
+    CHECK(application.hadAudio);
+    CHECK(application.playing);
+    CHECK(application.sounds == 1);
+    CHECK(application.musicGroup == 1u);
+    CHECK(application.musicVolume == Catch::Approx(0.5f));
+    CHECK(application.masterVolume == Catch::Approx(0.8f));
+
+    // Without audio, a game has no sounds but runs the same.
+    config.enableAudio = false;
+    SoundApplication silent;
+    silent.clip = application.clip;
+    CHECK(devex::runtime::run(silent, config) == EXIT_SUCCESS);
+    CHECK_FALSE(silent.hadAudio);
+    std::filesystem::remove_all(directory);
 }

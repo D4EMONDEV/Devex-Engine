@@ -88,7 +88,7 @@ struct Importer
     core::Result<ImportResult> (*run)(ImportContext& context) = nullptr;
 };
 
-// Texture images, .dvxmat materials, glTF models and .dvxscene scenes.
+// Texture images, .dvxmat materials, glTF models, sounds and .dvxscene scenes.
 [[nodiscard]] std::span<const Importer> importers();
 // The extension is compared without regard to case.
 [[nodiscard]] const Importer* findImporterForExtension(std::string_view extension);
@@ -99,6 +99,8 @@ struct Importer
 [[nodiscard]] core::Result<ImportResult> importMaterialFile(ImportContext& context);
 [[nodiscard]] core::Result<ImportResult> importGltfFile(ImportContext& context);
 [[nodiscard]] core::Result<ImportResult> importSceneFile(ImportContext& context);
+// Sounds keep their file; the "loading" option chooses "decoded", "streamed" or "auto".
+[[nodiscard]] core::Result<ImportResult> importAudioFile(ImportContext& context);
 
 // Local files that a .gltf or .glb file refers to, such as external buffers and images.
 [[nodiscard]] core::Result<std::vector<std::filesystem::path>> findGltfDependencies(

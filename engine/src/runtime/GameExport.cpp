@@ -519,6 +519,7 @@ core::Result<std::vector<asset::AssetId>> assetReferences(asset::AssetType type,
         break;
     }
     case asset::AssetType::Texture:
+    case asset::AssetType::AudioClip:
         break;
     }
     std::erase_if(ids, [](asset::AssetId id) { return !id.isValid(); });

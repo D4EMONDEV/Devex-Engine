@@ -1,8 +1,12 @@
 """Generates the sample assets of the sandbox project and the test data of the importers.
 
-Everything is procedural, so the repository needs no third-party art. Run from any directory:
+Everything is procedural, so the repository needs no third-party art or sound. Run from any
+directory:
 
-    python scripts/generate_sample_assets.py
+    python scripts/generate_sample_assets.py [--audio-only]
+
+Sounds are synthesized as WAV files; the compressed ones (Ogg Vorbis, MP3, FLAC) are encoded with
+ffmpeg when it is on the PATH, and left as they are otherwise.
 
 The .dvxmeta files next to the sandbox assets are not written here: the asset database creates
 them on the first import, and they are versioned so that identifiers stay stable.
@@ -12,7 +16,11 @@ import base64
 import json
 import math
 import random
+import shutil
 import struct
+import subprocess
+import sys
+import tempfile
 import zlib
 from pathlib import Path
 
@@ -374,6 +382,138 @@ def sky(width, height, sun_direction):
     return pixel
 
 
+# ---------------------------------------------------------------------------------------------
+# Sounds
+
+def wav_bytes(channels, rate):
+    """Encodes 16-bit PCM; channels holds one list of samples in [-1, 1] per channel."""
+    frames = len(channels[0])
+    data = bytearray()
+    for frame in range(frames):
+        for channel in channels:
+            data += struct.pack("<h", max(-32767, min(32767, int(round(channel[frame] * 32767)))))
+    header = b"RIFF" + struct.pack("<I", 36 + len(data)) + b"WAVE"
+    header += b"fmt " + struct.pack("<IHHIIHH", 16, 1, len(channels), rate, rate * 2 * len(channels), 2 * len(channels), 16)
+    return header + b"data" + struct.pack("<I", len(data)) + bytes(data)
+
+
+def envelope(t, attack, length):
+    """Rises over the attack, then falls to zero at the end."""
+    if t < attack:
+        return t / attack
+    return max(0.0, 1.0 - (t - attack) / max(length - attack, 1e-6))
+
+
+def whoosh(rate=44100, length=0.35):
+    """A throw: noise whose brightness rises and falls."""
+    rng = random.Random(11)
+    samples, low = [], 0.0
+    for index in range(int(rate * length)):
+        t = index / rate
+        brightness = 0.02 + 0.25 * math.sin(math.pi * t / length)
+        low += (rng.uniform(-1.0, 1.0) - low) * brightness
+        samples.append(low * 1.3 * envelope(t, 0.06, length))
+    return samples
+
+
+def ding(rate=44100, length=0.9):
+    """A target hit: a bell, partials decaying at their own speed."""
+    partials = [(880.0, 0.5, 5.0), (1320.0, 0.25, 7.0), (2217.0, 0.12, 11.0), (3520.0, 0.05, 16.0)]
+    samples = []
+    for index in range(int(rate * length)):
+        t = index / rate
+        value = sum(amplitude * math.exp(-decay * t) * math.sin(2 * math.pi * frequency * t)
+                    for frequency, amplitude, decay in partials)
+        samples.append(value * min(1.0, t / 0.002))
+    return samples
+
+
+def slide(rate=44100, length=1.1):
+    """A sliding door: a low rumble with a motor hum."""
+    rng = random.Random(23)
+    samples, brown = [], 0.0
+    for index in range(int(rate * length)):
+        t = index / rate
+        brown = max(-1.0, min(1.0, brown + rng.uniform(-1.0, 1.0) * 0.04)) * 0.995
+        hum = 0.25 * math.sin(2 * math.pi * 55 * t) + 0.12 * math.sin(2 * math.pi * 110 * t)
+        fade = min(1.0, t / 0.08, (length - t) / 0.25)
+        samples.append((brown * 0.6 + hum) * max(fade, 0.0) * 0.8)
+    return samples
+
+
+def hum(rate=44100, length=2.0):
+    """A loop: whole periods of every partial and of the tremolo, so that it joins seamlessly."""
+    samples = []
+    for index in range(int(rate * length)):
+        t = index / rate
+        tremolo = 0.75 + 0.25 * math.sin(2 * math.pi * 1.0 * t)
+        value = 0.35 * math.sin(2 * math.pi * 110 * t) + 0.18 * math.sin(2 * math.pi * 220 * t) + \
+            0.06 * math.sin(2 * math.pi * 330 * t)
+        samples.append(value * tremolo)
+    return samples
+
+
+def ambience(rate=22050, length=16.0):
+    """Stereo music that loops: pads of four chords, crossfaded around the loop, and soft plucks."""
+    chords = [(261.63, 329.63, 392.00), (220.00, 261.63, 329.63), (174.61, 220.00, 261.63), (196.00, 246.94, 293.66)]
+    arpeggio = [0, 1, 2, 1]
+    span = length / len(chords)
+    left, right = [], []
+    for index in range(int(rate * length)):
+        t = index / rate
+        pad_left = pad_right = 0.0
+        for number, chord in enumerate(chords):
+            # A raised cosine centered on its chord, wrapping around the loop.
+            distance = (t - (number + 0.5) * span + length / 2) % length - length / 2
+            weight = math.cos(math.pi * distance / (2 * span)) ** 2 if abs(distance) < span else 0.0
+            for frequency in chord:
+                pad_left += weight * math.sin(2 * math.pi * frequency * t)
+                pad_right += weight * math.sin(2 * math.pi * frequency * 1.003 * t)
+        chord = chords[int(t // span) % len(chords)]
+        step = t % 0.5
+        note = chord[arpeggio[int(t / 0.5) % len(arpeggio)]] * 2
+        pluck = 0.22 * math.exp(-6.0 * step) * math.sin(2 * math.pi * note * step) * min(1.0, step / 0.004)
+        left.append(0.09 * pad_left + pluck * 0.8)
+        right.append(0.09 * pad_right + pluck * 1.0)
+    return [left, right]
+
+
+def tone(rate=22050, length=0.25, frequency=440.0):
+    """A sine at half amplitude, as the tests expect it."""
+    return [0.5 * math.sin(2 * math.pi * frequency * index / rate) for index in range(int(rate * length))]
+
+
+def encode(wav, path, codec_arguments):
+    """Encodes WAV bytes with ffmpeg, when it is available."""
+    ffmpeg = shutil.which("ffmpeg")
+    if ffmpeg is None:
+        print("ffmpeg is not on the PATH:", path.relative_to(ROOT), "is left as it is")
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory() as directory:
+        source = Path(directory) / "source.wav"
+        source.write_bytes(wav)
+        subprocess.run([ffmpeg, "-y", "-loglevel", "error", "-i", str(source), *codec_arguments,
+                        "-map_metadata", "-1", str(path)], check=True)
+    print("wrote", path.relative_to(ROOT))
+
+
+def audio_assets():
+    sounds = SANDBOX_ASSETS / "audio"
+    write(sounds / "throw.wav", wav_bytes([whoosh()], 44100))
+    write(sounds / "hit.wav", wav_bytes([ding()], 44100))
+    write(sounds / "door.wav", wav_bytes([slide()], 44100))
+    write(sounds / "hum.wav", wav_bytes([hum()], 44100))
+    encode(wav_bytes(ambience(), 22050), sounds / "ambience.ogg", ["-c:a", "libvorbis", "-q:a", "3"])
+
+    # Importer tests: one tone in every format.
+    tone_wav = wav_bytes([tone()], 22050)
+    write(TEST_DATA / "audio" / "tone.wav", tone_wav)
+    encode(tone_wav, TEST_DATA / "audio" / "tone.ogg", ["-c:a", "libvorbis", "-q:a", "3"])
+    encode(tone_wav, TEST_DATA / "audio" / "tone.mp3", ["-c:a", "libmp3lame", "-b:a", "64k"])
+    encode(tone_wav, TEST_DATA / "audio" / "tone.flac", ["-c:a", "flac"])
+
+
 def material(path, lines):
     write(path, "[material format=1]\n" + "".join(line + "\n" for line in lines))
 
@@ -420,6 +560,9 @@ def devex_icon_pixel(size):
 
 
 def main():
+    if "--audio-only" in sys.argv:
+        audio_assets()
+        return
     # Sandbox project
     write(SANDBOX_ASSETS / "textures" / "checker.png",
           png_bytes(256, 256, checker_pixel(16, 256, (196, 200, 206, 255), (150, 156, 166, 255))))
@@ -440,6 +583,7 @@ def main():
     write(TEST_DATA / "checker.png",
           png_bytes(64, 32, checker_pixel(4, 64, (255, 255, 255, 255), (0, 0, 0, 255))))
     textured_quad(TEST_DATA / "textured" / "quad.gltf")
+    audio_assets()
 
 
 if __name__ == "__main__":

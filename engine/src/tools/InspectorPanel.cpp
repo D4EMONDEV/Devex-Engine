@@ -138,6 +138,35 @@ bool drawLayerPicker(const ToolsState& state, const char* id, std::uint32_t& lay
     return changed;
 }
 
+bool drawAudioGroupPicker(const ToolsState& state, const char* id, std::uint32_t& group)
+{
+    const asset::AudioSettings settings = state.database != nullptr ? state.database->project().audio : asset::AudioSettings{};
+    const auto label = [&](std::uint32_t index) {
+        const std::string& name = index < settings.groupNames.size() ? settings.groupNames[index] : std::string();
+        return name.empty() ? std::format("{}: (unused)", index) : std::format("{}: {}", index, name);
+    };
+    bool changed = false;
+    if (beginCombo(id, label(group).c_str()))
+    {
+        for (std::uint32_t index = 0; index < settings.groupNames.size(); ++index)
+        {
+            if (index != group && settings.groupNames[index].empty())
+            {
+                continue;
+            }
+            if (ImGui::Selectable(label(index).c_str(), index == group) && index != group)
+            {
+                group = index;
+                changed = true;
+            }
+        }
+        ImGui::Separator();
+        ImGui::TextDisabled("Name groups in Project > Project Settings");
+        ImGui::EndCombo();
+    }
+    return changed;
+}
+
 // Adds the entities of a subtree to the menu of an entity picker, indented by depth.
 bool chooseEntities(const scene::Scene& scene, scene::Entity entity, int depth, scene::EntityRef& value)
 {
@@ -212,6 +241,10 @@ bool drawValueWidget(ToolsState& state, const scene::Scene& scene, const char* i
         if (field.physicsLayer)
         {
             return drawLayerPicker(state, id, *static_cast<std::uint32_t*>(address));
+        }
+        if (field.audioGroup)
+        {
+            return drawAudioGroupPicker(state, id, *static_cast<std::uint32_t*>(address));
         }
         return ImGui::DragScalar(id, ImGuiDataType_U32, address, 0.1f);
     case ValueKind::Float:
@@ -303,7 +336,7 @@ bool drawValueWidget(ToolsState& state, const scene::Scene& scene, const char* i
 [[nodiscard]] bool isOneClickEdit(const reflection::FieldInfo& field) noexcept
 {
     return field.kind == ValueKind::AssetId || field.kind == ValueKind::Enum || field.kind == ValueKind::Entity ||
-           field.physicsLayer;
+           field.physicsLayer || field.audioGroup;
 }
 
 // A list: its size and a button to add an element, then a row per element with a button to
@@ -638,10 +671,22 @@ void drawInspectorPanel(ToolsState& state, scene::Scene& scene)
         if (entity.isValid())
         {
             state.selectedCode.clear();
+            state.selectedAsset = {};
         }
-        else if (!state.selectedCode.empty())
+        // A clip plays while its inspector shows.
+        if (state.previewedClip.isValid() && state.previewedClip != state.selectedAsset)
+        {
+            stopAudioPreview(state);
+        }
+        if (!entity.isValid() && !state.selectedCode.empty())
         {
             drawCodeInspector(state);
+            ImGui::End();
+            return;
+        }
+        if (!entity.isValid() && state.selectedAsset.isValid())
+        {
+            drawAudioClipInspector(state);
             ImGui::End();
             return;
         }

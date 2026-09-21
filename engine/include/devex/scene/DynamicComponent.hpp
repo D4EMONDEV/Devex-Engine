@@ -26,6 +26,7 @@ struct DynamicField
     bool color = false;
     bool angle = false;
     bool physicsLayer = false;
+    bool audioGroup = false;
     // For enumerations: the name of each value, in order.
     std::vector<std::string> enumNames;
     // A list of values of the kind, stored as the std::vector a C++ component would use.

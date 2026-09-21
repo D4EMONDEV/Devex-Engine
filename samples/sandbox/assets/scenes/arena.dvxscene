@@ -4,7 +4,7 @@
 
 [component type="Transform"]
 position = vec3(0, 0, 0)
-rotation = quat(-0.44037748, 0.2667293, 0.13885049, 0.84595727)
+rotation = quat(-0.44037747, 0.2667293, 0.1388505, 0.8459573)
 scale = vec3(1, 1, 1)
 
 [component type="DirectionalLight"]
@@ -36,6 +36,7 @@ material = asset("78014e97-7de2-4e27-89db-74abd840010d")
 [component type="BoxCollider"]
 size = vec3(1, 1, 1)
 center = vec3(0, -0.5, 0)
+trigger = false
 
 [entity uuid="cb2a8549-acd6-508b-8a91-50498fc70d60" name="Walls"]
 
@@ -58,6 +59,8 @@ material = asset("576ad271-2890-5687-907e-a283236fea5d")
 
 [component type="BoxCollider"]
 size = vec3(1, 1, 1)
+center = vec3(0, 0, 0)
+trigger = false
 
 [entity uuid="51785fcf-135f-52db-b022-0ed8ac14a897" name="South wall"]
 parent = "cb2a8549-acd6-508b-8a91-50498fc70d60"
@@ -73,6 +76,8 @@ material = asset("576ad271-2890-5687-907e-a283236fea5d")
 
 [component type="BoxCollider"]
 size = vec3(1, 1, 1)
+center = vec3(0, 0, 0)
+trigger = false
 
 [entity uuid="93527806-e6b2-50ab-96ca-fe25754e99c7" name="East wall"]
 parent = "cb2a8549-acd6-508b-8a91-50498fc70d60"
@@ -88,6 +93,8 @@ material = asset("576ad271-2890-5687-907e-a283236fea5d")
 
 [component type="BoxCollider"]
 size = vec3(1, 1, 1)
+center = vec3(0, 0, 0)
+trigger = false
 
 [entity uuid="11fed01c-ede7-5390-aaf1-ff20067aa28a" name="West wall"]
 parent = "cb2a8549-acd6-508b-8a91-50498fc70d60"
@@ -103,6 +110,8 @@ material = asset("576ad271-2890-5687-907e-a283236fea5d")
 
 [component type="BoxCollider"]
 size = vec3(1, 1, 1)
+center = vec3(0, 0, 0)
+trigger = false
 
 [entity uuid="676e924f-c76c-50fc-bcd7-65b77292b44a" name="Player"]
 
@@ -114,7 +123,7 @@ scale = vec3(1, 1, 1)
 [component type="CharacterController"]
 radius = 0.35
 height = 1.8
-max_slope = 0.78539816
+max_slope = 0.7853982
 step_height = 0.35
 mass = 70
 push_force = 400
@@ -125,7 +134,7 @@ layer = 0
 walk_speed = 4.5
 run_speed = 8
 jump_speed = 5.5
-sensitivity = 0.0017453293
+sensitivity = 0.0017453294
 yaw = 0
 pitch = 0
 
@@ -134,6 +143,7 @@ ball = asset("0f588580-9907-55be-b4e8-182562c086cc")
 speed = 16
 lifetime = 20
 max_balls = 40
+throw_sound = asset("5d3c8e21-7a4f-4b09-9e6d-2f1a8c3b7e40")
 
 [entity uuid="67ef066f-48d5-5c23-b6fc-b708bb4336ac" name="Eyes"]
 parent = "676e924f-c76c-50fc-bcd7-65b77292b44a"
@@ -159,7 +169,7 @@ tonemapper = "agx"
 
 [component type="Transform"]
 position = vec3(13, 10, 17)
-rotation = quat(-0.23072501, 0.29177355, 0.072747317, 0.92538748)
+rotation = quat(-0.230725, 0.29177356, 0.07274732, 0.9253875)
 scale = vec3(1, 1, 1)
 
 [component type="Camera"]
@@ -177,15 +187,18 @@ tonemapper = "agx"
 [component type="FlyCamera"]
 speed = 6
 fast_speed = 16
-sensitivity = 0.0017453293
+sensitivity = 0.0017453294
 yaw = 0.61086524
-pitch = -0.48869219
+pitch = -0.4886922
 
 [entity uuid="76144337-fd83-5c9f-9794-ba7db7ef4a8d" name="Crates"]
 prefab = asset("f693c373-1c92-5e13-86ef-8f9123b8d347")
 
 [override type="Transform"]
 position = vec3(0, 0, -3)
+
+[override target="5c9f13e4-07e8-5027-8d24-9efcb7cf1135" type="Transform"]
+position = vec3(-1.397104, 3.7244778, 3.9857194)
 
 [override target="65084584-ca3b-5ee7-93a2-6504205da24c" type="MeshRenderer"]
 material = asset("91bc3d4f-942c-40be-9398-51eeb3e7cc77")
@@ -242,7 +255,7 @@ continuous_collision = false
 
 [component type="Transform"]
 position = vec3(-8, 1.1, 0)
-rotation = quat(0.13052619, 0, 0, 0.99144486)
+rotation = quat(0.13052619, 0, 0, 0.9914449)
 scale = vec3(3, 0.3, 8)
 
 [component type="MeshRenderer"]
@@ -251,6 +264,8 @@ material = asset("bc2c9cd8-2818-5f6c-853c-675911b628d0")
 
 [component type="BoxCollider"]
 size = vec3(1, 1, 1)
+center = vec3(0, 0, 0)
+trigger = false
 
 [entity uuid="a5f8a5d8-b9e3-5f5c-825e-d132c232c59c" name="Lookout"]
 
@@ -265,6 +280,8 @@ material = asset("1d33c123-a5ff-50a6-9192-d19568c5f130")
 
 [component type="BoxCollider"]
 size = vec3(1, 1, 1)
+center = vec3(0, 0, 0)
+trigger = false
 
 [entity uuid="0102b639-4662-5b28-bb5b-e2fdddc066f8" name="Lamp zone"]
 prefab = asset("2d890df6-dadc-5763-a660-b73e5522ef89")
@@ -293,6 +310,8 @@ material = asset("1d33c123-a5ff-50a6-9192-d19568c5f130")
 
 [component type="BoxCollider"]
 size = vec3(1, 1, 1)
+center = vec3(0, 0, 0)
+trigger = false
 
 [entity uuid="8f5a9381-5dc0-556e-8a15-c2ec9c21ead4" name="Step 2"]
 parent = "1eb4295a-367d-5ccd-912d-b2e78c8f91d4"
@@ -308,6 +327,8 @@ material = asset("1d33c123-a5ff-50a6-9192-d19568c5f130")
 
 [component type="BoxCollider"]
 size = vec3(1, 1, 1)
+center = vec3(0, 0, 0)
+trigger = false
 
 [entity uuid="825b936d-18a8-51a3-8e15-c0220928eb5a" name="Step 3"]
 parent = "1eb4295a-367d-5ccd-912d-b2e78c8f91d4"
@@ -323,6 +344,8 @@ material = asset("1d33c123-a5ff-50a6-9192-d19568c5f130")
 
 [component type="BoxCollider"]
 size = vec3(1, 1, 1)
+center = vec3(0, 0, 0)
+trigger = false
 
 [entity uuid="f8f44fbc-484e-50a9-bbba-ec0c07b38a0a" name="Step 4"]
 parent = "1eb4295a-367d-5ccd-912d-b2e78c8f91d4"
@@ -338,6 +361,8 @@ material = asset("1d33c123-a5ff-50a6-9192-d19568c5f130")
 
 [component type="BoxCollider"]
 size = vec3(1, 1, 1)
+center = vec3(0, 0, 0)
+trigger = false
 
 [entity uuid="a922ccdc-3cfd-5b5a-bcdb-b1a87dbb2e69" name="Step 5"]
 parent = "1eb4295a-367d-5ccd-912d-b2e78c8f91d4"
@@ -353,6 +378,8 @@ material = asset("1d33c123-a5ff-50a6-9192-d19568c5f130")
 
 [component type="BoxCollider"]
 size = vec3(1, 1, 1)
+center = vec3(0, 0, 0)
+trigger = false
 
 [entity uuid="263e5ba6-94be-5f7c-ac94-95576bdfb03a" name="Landing"]
 parent = "1eb4295a-367d-5ccd-912d-b2e78c8f91d4"
@@ -368,6 +395,8 @@ material = asset("1d33c123-a5ff-50a6-9192-d19568c5f130")
 
 [component type="BoxCollider"]
 size = vec3(1, 1, 1)
+center = vec3(0, 0, 0)
+trigger = false
 
 [entity uuid="11e6292e-743f-5dc8-8c70-9de67a4fc919" name="Landing lamp zone"]
 parent = "1eb4295a-367d-5ccd-912d-b2e78c8f91d4"
@@ -393,6 +422,20 @@ scale = vec3(0.6, 0.6, 0.6)
 mesh = asset("00000000-0000-0000-0000-000000000001")
 material = asset("ff4872a7-7bc8-4ffb-900d-0c565be864f0")
 
+[component type="AudioSource"]
+clip = asset("e8d15a3b-9c47-4f20-a6e1-5b3f8d0c2a79")
+volume = 0.6
+pitch = 1
+loop = true
+play_on_start = true
+spatial = true
+min_distance = 1.5
+max_distance = 14
+attenuation = "inverse"
+rolloff = 1
+doppler = 1
+group = 0
+
 [component type="Bobber"]
 height = 0.6
 period = 2.5
@@ -416,9 +459,24 @@ material = asset("ff4872a7-7bc8-4ffb-900d-0c565be864f0")
 
 [component type="RigidBody"]
 type = "kinematic"
+mass = 1
+friction = 0.5
+restitution = 0
+linear_damping = 0.05
+angular_damping = 0.05
+gravity_scale = 1
+layer = 0
+lock_rotation_x = false
+lock_rotation_y = false
+lock_rotation_z = false
+continuous_collision = false
+linear_velocity = vec3(0, 0, 0)
+angular_velocity = vec3(0, 0, 0)
 
 [component type="BoxCollider"]
 size = vec3(1, 1, 1)
+center = vec3(0, 0, 0)
+trigger = false
 
 [component type="Oscillator"]
 offset = vec3(6, 0, 0)
@@ -445,9 +503,15 @@ material = asset("7c1e5a90-3b2d-4f68-9a41-5e0d2c7b8a13")
 
 [component type="BoxCollider"]
 size = vec3(1, 1, 1)
+center = vec3(0, 0, 0)
+trigger = false
 
 [component type="Target"]
 lamp = entity("ee1909d0-7530-5c09-b3dc-fb1c991c1e42")
+flash_intensity = 6000
+flash_time = 0.5
+hit_sound = asset("a19e4f7c-3d52-4c8b-b0e6-7f2d9a1c5b83")
+hits = 0
 
 [entity uuid="ee1909d0-7530-5c09-b3dc-fb1c991c1e42" name="Target 1 lamp"]
 parent = "d0cfd4c9-118f-5fb2-9ed7-7f3c483a2526"
@@ -481,9 +545,15 @@ material = asset("7c1e5a90-3b2d-4f68-9a41-5e0d2c7b8a13")
 
 [component type="BoxCollider"]
 size = vec3(1, 1, 1)
+center = vec3(0, 0, 0)
+trigger = false
 
 [component type="Target"]
 lamp = entity("7cd21d8e-5d8d-520b-bb21-b5a602aa6b2d")
+flash_intensity = 6000
+flash_time = 0.5
+hit_sound = asset("a19e4f7c-3d52-4c8b-b0e6-7f2d9a1c5b83")
+hits = 0
 
 [entity uuid="7cd21d8e-5d8d-520b-bb21-b5a602aa6b2d" name="Target 2 lamp"]
 parent = "d0cfd4c9-118f-5fb2-9ed7-7f3c483a2526"
@@ -517,9 +587,15 @@ material = asset("7c1e5a90-3b2d-4f68-9a41-5e0d2c7b8a13")
 
 [component type="BoxCollider"]
 size = vec3(1, 1, 1)
+center = vec3(0, 0, 0)
+trigger = false
 
 [component type="Target"]
 lamp = entity("772f2fa4-0bcc-5ba2-a351-7a566ec7cd1f")
+flash_intensity = 6000
+flash_time = 0.5
+hit_sound = asset("a19e4f7c-3d52-4c8b-b0e6-7f2d9a1c5b83")
+hits = 0
 
 [entity uuid="772f2fa4-0bcc-5ba2-a351-7a566ec7cd1f" name="Target 3 lamp"]
 parent = "d0cfd4c9-118f-5fb2-9ed7-7f3c483a2526"
@@ -560,6 +636,8 @@ material = asset("576ad271-2890-5687-907e-a283236fea5d")
 
 [component type="BoxCollider"]
 size = vec3(1, 1, 1)
+center = vec3(0, 0, 0)
+trigger = false
 
 [entity uuid="0c37635e-610c-5fdc-882c-59e13e575055" name="Gate right post"]
 parent = "2ab11a81-f608-5958-88e9-4fd8cc1be643"
@@ -575,6 +653,8 @@ material = asset("576ad271-2890-5687-907e-a283236fea5d")
 
 [component type="BoxCollider"]
 size = vec3(1, 1, 1)
+center = vec3(0, 0, 0)
+trigger = false
 
 [entity uuid="3930e3ce-b49e-5259-8693-a1ccf487df23" name="Door"]
 parent = "2ab11a81-f608-5958-88e9-4fd8cc1be643"
@@ -590,24 +670,55 @@ material = asset("4b8f2d61-9c0e-4a7b-b3d5-18e6f0a9c247")
 
 [component type="RigidBody"]
 type = "kinematic"
+mass = 1
+friction = 0.5
+restitution = 0
+linear_damping = 0.05
+angular_damping = 0.05
+gravity_scale = 1
+layer = 0
+lock_rotation_x = false
+lock_rotation_y = false
+lock_rotation_z = false
+continuous_collision = false
+linear_velocity = vec3(0, 0, 0)
+angular_velocity = vec3(0, 0, 0)
 
 [component type="BoxCollider"]
 size = vec3(1, 1, 1)
+center = vec3(0, 0, 0)
+trigger = false
+
+[component type="AudioSource"]
+clip = asset("c47b2e90-1f6a-4d3e-8b95-3a0c7e2d9f14")
+volume = 0.9
+pitch = 1
+loop = false
+play_on_start = false
+spatial = true
+min_distance = 2
+max_distance = 25
+attenuation = "inverse"
+rolloff = 1
+doppler = 1
+group = 0
 
 [component type="SlidingDoor"]
 open_offset = vec3(0, 2.8, 0)
 speed = 3
+open = false
 
 [entity uuid="02ad646d-3822-57dd-acfe-42ff6f5f23ef" name="Door zone"]
 parent = "2ab11a81-f608-5958-88e9-4fd8cc1be643"
 
 [component type="Transform"]
-position = vec3(3, 1, 0)
+position = vec3(0.025424957, 1, 0)
 rotation = quat(0, 0, 0, 1)
 scale = vec3(1, 1, 1)
 
 [component type="BoxCollider"]
 size = vec3(4, 2, 5)
+center = vec3(0, 0, 0)
 trigger = true
 
 [component type="DoorZone"]
@@ -629,3 +740,19 @@ prefab = asset("4be171c6-e068-5d15-af8c-49e6ba6a0aec")
 points = list(vec3(11, 5, 14), vec3(13, 5, 14), vec3(15, 5, 14))
 interval = 2.5
 max_drops = 6
+
+[entity uuid="9d2e7b41-6c3a-4f58-8e19-0a5b3c7d2f64" name="Music"]
+
+[component type="AudioSource"]
+clip = asset("2f6a9d14-8e3b-4c75-9a02-d1e7b4c6f835")
+volume = 0.45
+pitch = 1
+loop = true
+play_on_start = true
+spatial = false
+min_distance = 1
+max_distance = 30
+attenuation = "inverse"
+rolloff = 1
+doppler = 1
+group = 1

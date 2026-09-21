@@ -18,6 +18,11 @@
 #include <string>
 #include <vector>
 
+namespace devex::audio {
+class AudioEngine;
+class Clip;
+} // namespace devex::audio
+
 namespace devex::tools {
 
 namespace detail {
@@ -59,6 +64,13 @@ struct GameCodeStatus
 
     State state = State::None;
     // Details, such as the first compilation error.
+    std::string message;
+};
+
+// Whether an unopened project's game code needs to be rebuilt for this engine.
+struct ProjectCodeStatus
+{
+    bool needsUpdate = false;
     std::string message;
 };
 
@@ -179,6 +191,9 @@ public:
 
     // Editor only: the state of the game code, shown in the menu bar.
     void setGameCodeStatus(GameCodeStatus status);
+    // Editor only: checks projects when the project manager refreshes its list. The application
+    // supplies the check so that the tools do not load game code or depend on the runtime.
+    void setProjectCodeStatusProvider(std::function<ProjectCodeStatus(const asset::Project&)> provider);
     // Editor only: whether a C# debugger is attached, or awaited.
     void setDebuggerStatus(DebuggerStatus status);
 
@@ -199,6 +214,12 @@ public:
     // outlive the overlay or be replaced first. In the editor, a new project opens its last scene
     // on the next update, unless the application already filled the scene.
     void setAssetDatabase(asset::AssetDatabase* database) noexcept;
+    // Opens an existing UTF-8 file in the dockable text editor.
+    void openTextFile(const std::filesystem::path& file);
+
+    // Lets the panels preview audio clips on the mixer, which must outlive the overlay, with the
+    // clips the function loads. Without it, clips show but cannot be heard.
+    void setAudio(audio::AudioEngine* engine, std::function<std::shared_ptr<const audio::Clip>(asset::AssetId)> clips);
 
     [[nodiscard]] CommandHistory& history() noexcept;
 

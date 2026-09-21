@@ -12,6 +12,10 @@ public class Target : Component
     // Seconds of the flash.
     public float FlashTime = 0.5f;
 
+    // Played once where the target is, at each hit.
+    [AssetType("audio")]
+    public AssetId HitSound;
+
     public int Hits;
 
     private float _flash;
@@ -25,6 +29,10 @@ public class Target : Component
         }
         ++Hits;
         _flash = FlashTime;
+        if (HitSound.IsValid)
+        {
+            Audio.PlayOneShot(HitSound, Entity.WorldPosition);
+        }
         Log.Info($"{Entity.Name} hit ({Hits})");
     }
 

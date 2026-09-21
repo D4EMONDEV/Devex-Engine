@@ -209,6 +209,15 @@ std::span<const Importer> importers()
             .run = &importGltfFile,
         },
         Importer{
+            .name = "audio",
+            .version = 1,
+            .mainType = AssetType::AudioClip,
+            .extensions = {".wav", ".ogg", ".mp3", ".flac"},
+            // "auto" decodes short clips once and streams the long ones.
+            .defaultOptions = {{"loading", TextValue(std::string("auto"))}},
+            .run = &importAudioFile,
+        },
+        Importer{
             .name = "scene",
             .version = 1,
             .mainType = AssetType::Scene,

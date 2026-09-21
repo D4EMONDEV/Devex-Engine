@@ -1,5 +1,6 @@
 #pragma once
 
+#include <devex/audio/Clip.hpp>
 #include <devex/asset/AssetId.hpp>
 #include <devex/asset/MaterialData.hpp>
 #include <devex/asset/ModelData.hpp>
@@ -8,6 +9,7 @@
 #include <devex/render/Renderer.hpp>
 #include <devex/render/RenderWorld.hpp>
 
+#include <memory>
 #include <span>
 #include <string>
 #include <unordered_map>
@@ -57,6 +59,10 @@ public:
     // with the previous version of their prefab once it changed on disk.
     [[nodiscard]] core::Result<std::string> sceneText(asset::AssetId id);
 
+    // A sound, loaded (and decoded, for a clip that is) once and shared by every sound that plays it;
+    // null when it cannot be loaded.
+    [[nodiscard]] std::shared_ptr<const audio::Clip> audioClip(asset::AssetId id);
+
     // Reloads the loaded assets that an import changed and releases removed ones.
     void handleEvents(std::span<const asset::AssetEvent> events);
 
@@ -99,6 +105,7 @@ private:
     std::unordered_map<asset::AssetId, asset::ModelData> m_models;
     std::unordered_map<asset::AssetId, asset::MeshData> m_meshData;
     std::unordered_map<asset::AssetId, std::string> m_sceneTexts;
+    std::unordered_map<asset::AssetId, std::shared_ptr<const audio::Clip>> m_audioClips;
     // Assets whose loading failed, retried once an import changes them.
     std::unordered_set<asset::AssetId> m_failed;
 };

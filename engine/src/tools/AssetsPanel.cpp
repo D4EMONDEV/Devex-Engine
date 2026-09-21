@@ -85,6 +85,8 @@ struct Folder
     case asset::AssetType::Texture:
         return source.path.ends_with(".hdr") ? EntityIcon{icons::Mountain, colors.environment}
                                              : EntityIcon{icons::Image, colors.texture};
+    case asset::AssetType::AudioClip:
+        return {icons::AudioWaveform, colors.audio};
     }
     return {icons::File, colors.neutral};
 }
@@ -98,6 +100,14 @@ void drawSourceMenu(ToolsState& state, scene::Scene& scene, const asset::SourceF
     const asset::AssetDatabase& database = *state.database;
     const bool isScene = mainAsset != nullptr && mainAsset->type == asset::AssetType::Scene;
     const std::optional<std::filesystem::path> path = database.project().absolutePath(source.path);
+    if (path && ImGui::MenuItemEx("Edit as Text", icons::FileText.c_str()))
+        openTextFile(state, *path);
+    if (path && ImGui::MenuItemEx("Edit Import Metadata", icons::FileText.c_str()))
+    {
+        std::filesystem::path meta = *path;
+        meta += ".dvxmeta";
+        openTextFile(state, meta);
+    }
     if (isScene && state.mode == ToolsMode::Editor && ImGui::MenuItemEx("Open Scene", icons::FolderOpen.c_str()) && path)
     {
         openSceneTab(state, scene, *path);
@@ -148,7 +158,7 @@ void drawSourceMenu(ToolsState& state, scene::Scene& scene, const asset::SourceF
                            const char* detail = nullptr)
 {
     const float nodeX = ImGui::GetCursorScreenPos().x;
-    const bool open = ImGui::TreeNodeEx(id, flags | ImGuiTreeNodeFlags_SpanFullWidth | ImGuiTreeNodeFlags_FramePadding);
+    const bool open = iconTreeNode(id, flags | ImGuiTreeNodeFlags_SpanFullWidth | ImGuiTreeNodeFlags_FramePadding);
     const ImVec2 min = ImGui::GetItemRectMin();
     const float height = ImGui::GetItemRectSize().y;
     const float textY = min.y + (height - ImGui::GetFontSize()) * 0.5f;
@@ -174,6 +184,10 @@ void drawSource(ToolsState& state, scene::Scene& scene, const asset::SourceFile&
     ImGui::PushID(source.id.uuid.toString().c_str());
 
     ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow;
+    if (mainAsset != nullptr && mainAsset->id == state.selectedAsset)
+    {
+        flags |= ImGuiTreeNodeFlags_Selected;
+    }
     std::size_t children = 0;
     for (const asset::AssetId id : source.assets)
     {
@@ -200,9 +214,21 @@ void drawSource(ToolsState& state, scene::Scene& scene, const asset::SourceFile&
     {
         dragAsset(mainAsset->id, mainAsset->type, mainAsset->name);
         const bool doubleClicked = ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left);
+        if (mainAsset->type == asset::AssetType::Material && doubleClicked)
+            if (const auto path = database.project().absolutePath(source.path); path && path->extension() == ".dvxmat")
+                openTextFile(state, *path);
         if (mainAsset->type == asset::AssetType::Model && doubleClicked)
         {
             requestInstantiateModel(state, mainAsset->id, core::Uuid{});
+        }
+        // Clips show in the inspector, and play when double-clicked.
+        if (mainAsset->type == asset::AssetType::AudioClip && (ImGui::IsItemClicked(ImGuiMouseButton_Left) || doubleClicked))
+        {
+            selectAsset(state, mainAsset->id);
+            if (doubleClicked)
+            {
+                previewAudioClip(state, mainAsset->id);
+            }
         }
         if (mainAsset->type == asset::AssetType::Scene && state.mode == ToolsMode::Editor && doubleClicked)
         {
@@ -276,6 +302,11 @@ void drawFolder(ToolsState& state, scene::Scene& scene, const std::string& name,
         {
             drawSource(state, scene, *source, false);
         }
+        // res:// is the project root: its project file and code belong inside the same tree.
+        if (depth == 0)
+        {
+            drawCodeFiles(state);
+        }
         ImGui::TreePop();
     }
     ImGui::PopID();
@@ -322,10 +353,6 @@ void drawAssetsPanel(ToolsState& state, scene::Scene& scene)
                         drawSource(state, scene, source, true);
                     }
                 }
-            }
-            if (state.assetFilter.empty())
-            {
-                drawCodeFiles(state);
             }
             ImGui::PopStyleVar();
         }

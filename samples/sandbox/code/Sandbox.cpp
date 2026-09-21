@@ -120,6 +120,8 @@ struct BallLauncher
     float lifetime = 20.0f;
     // The oldest balls disappear beyond this count.
     std::uint32_t maxBalls = 40;
+    // Played once where each ball leaves.
+    devex::asset::AssetId throwSound;
 };
 DEVEX_DECLARE_REFLECTION(BallLauncher);
 DEVEX_REFLECT(BallLauncher)
@@ -128,6 +130,7 @@ DEVEX_REFLECT(BallLauncher)
     type.field("speed", &BallLauncher::speed);
     type.field("lifetime", &BallLauncher::lifetime);
     type.field("max_balls", &BallLauncher::maxBalls);
+    type.field("throw_sound", &BallLauncher::throwSound, {.assetType = "audio"});
 }
 
 // A launched ball.
@@ -353,6 +356,10 @@ void launchBalls(SystemContext& context)
             scene.add<Ball>(*ball);
         }
         scene.get<Ball>(*ball).lifetime = launch.launcher.lifetime;
+        if (context.audio != nullptr && launch.launcher.throwSound.isValid())
+        {
+            context.audio->playOneShot(launch.launcher.throwSound, launch.position, 0.8f);
+        }
 
         // Too many balls: the oldest one goes.
         std::size_t count = 0;

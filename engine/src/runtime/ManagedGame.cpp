@@ -19,6 +19,7 @@
 #include <cstring>
 #include <optional>
 #include <source_location>
+#include <string_view>
 #include <system_error>
 #include <utility>
 
@@ -94,6 +95,16 @@ struct NativeApi
     void (*addImpulse)(Entity entity, const math::Vec3* impulse);
     void (*addImpulseAt)(Entity entity, const math::Vec3* impulse, const math::Vec3* point);
     int (*contacts)(const physics::Contact** contacts);
+
+    void (*playSound)(void* scene, Entity entity);
+    void (*stopSound)(Entity entity);
+    void (*pauseSound)(Entity entity);
+    void (*resumeSound)(Entity entity);
+    int (*isSoundPlaying)(Entity entity);
+    void (*playOneShot)(const UuidBytes* clip, const math::Vec3* position, float volume, std::uint32_t group,
+                        int spatial);
+    float (*groupVolume)(const char* group);
+    int (*setGroupVolume)(const char* group, float volume);
 };
 
 // The functions the engine calls, in the order of Devex.Managed's ManagedApi.
@@ -108,7 +119,7 @@ struct ManagedApi
 };
 
 // Devex.Managed's Bootstrap.Version: both sides change it with the function tables.
-constexpr int bootstrapVersion = 2;
+constexpr int bootstrapVersion = 3;
 
 struct BootstrapArguments
 {
@@ -618,6 +629,97 @@ int apiContacts(const physics::Contact** contacts)
     return static_cast<int>(all.size());
 }
 
+[[nodiscard]] audio::AudioWorld* audioWorld() noexcept
+{
+    return currentFrame() != nullptr ? currentFrame()->audio : nullptr;
+}
+
+void apiPlaySound(void* scene, Entity entity)
+{
+    if (audioWorld() != nullptr && scene != nullptr)
+    {
+        audioWorld()->play(*toScene(scene), entity);
+    }
+}
+
+void apiStopSound(Entity entity)
+{
+    if (audioWorld() != nullptr)
+    {
+        audioWorld()->stop(entity);
+    }
+}
+
+void apiPauseSound(Entity entity)
+{
+    if (audioWorld() != nullptr)
+    {
+        audioWorld()->pause(entity);
+    }
+}
+
+void apiResumeSound(Entity entity)
+{
+    if (audioWorld() != nullptr)
+    {
+        audioWorld()->resume(entity);
+    }
+}
+
+int apiIsSoundPlaying(Entity entity)
+{
+    return audioWorld() != nullptr && audioWorld()->isPlaying(entity) ? 1 : 0;
+}
+
+void apiPlayOneShot(const UuidBytes* clip, const math::Vec3* position, float volume, std::uint32_t group, int spatial)
+{
+    if (audioWorld() != nullptr)
+    {
+        audioWorld()->playOneShot(asset::AssetId{toUuid(clip)}, *position, volume, group, spatial != 0);
+    }
+}
+
+// "Master" is the volume of every group together.
+[[nodiscard]] bool isMaster(std::string_view group) noexcept
+{
+    return group == "Master";
+}
+
+float apiGroupVolume(const char* group)
+{
+    if (audioWorld() == nullptr || group == nullptr)
+    {
+        return 1.0f;
+    }
+    audio::AudioEngine& engine = audioWorld()->engine();
+    if (isMaster(group))
+    {
+        return engine.masterVolume();
+    }
+    const std::optional<std::uint32_t> index = engine.findGroup(group);
+    return index ? engine.groupVolume(*index) : -1.0f;
+}
+
+int apiSetGroupVolume(const char* group, float volume)
+{
+    if (audioWorld() == nullptr || group == nullptr)
+    {
+        return 1;
+    }
+    audio::AudioEngine& engine = audioWorld()->engine();
+    if (isMaster(group))
+    {
+        engine.setMasterVolume(volume);
+        return 1;
+    }
+    const std::optional<std::uint32_t> index = engine.findGroup(group);
+    if (index)
+    {
+        engine.setGroupVolume(*index, volume);
+    }
+    return index ? 1 : 0;
+}
+
 [[nodiscard]] NativeApi makeNativeApi() noexcept
 {
     return NativeApi{
@@ -671,6 +773,14 @@ int apiContacts(const physics::Contact** contacts)
         .addImpulse = &apiAddImpulse,
         .addImpulseAt = &apiAddImpulseAt,
         .contacts = &apiContacts,
+        .playSound = &apiPlaySound,
+        .stopSound = &apiStopSound,
+        .pauseSound = &apiPauseSound,
+        .resumeSound = &apiResumeSound,
+        .isSoundPlaying = &apiIsSoundPlaying,
+        .playOneShot = &apiPlayOneShot,
+        .groupVolume = &apiGroupVolume,
+        .setGroupVolume = &apiSetGroupVolume,
     };
 }
 
@@ -1091,6 +1201,7 @@ core::Result<void> ManagedGame::loadAssembly(const std::filesystem::path& assemb
                 .color = boolAttribute(section, "color"),
                 .angle = boolAttribute(section, "angle"),
                 .physicsLayer = boolAttribute(section, "physics_layer"),
+                .audioGroup = boolAttribute(section, "audio_group"),
                 .enumNames = values != nullptr ? splitValues(*values) : std::vector<std::string>{},
                 .list = boolAttribute(section, "list"),
             });

@@ -1,14 +1,19 @@
 #include "runtime/ManagedGame.hpp"
 
 #include <devex/asset/Primitives.hpp>
+#include <devex/audio/AudioWorld.hpp>
+#include <devex/audio/Clip.hpp>
+#include <devex/core/File.hpp>
 #include <devex/core/Log.hpp>
 #include <devex/physics/PhysicsWorld.hpp>
 #include <devex/platform/Platform.hpp>
+#include <devex/scene/AudioComponents.hpp>
 #include <devex/scene/ComponentRegistry.hpp>
 #include <devex/scene/Components.hpp>
 #include <devex/scene/PhysicsComponents.hpp>
 #include <devex/scene/SceneSerializer.hpp>
 
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include <filesystem>
@@ -60,7 +65,7 @@ void run(ManagedGame& game, Scene& scene, SystemPhase phase, double seconds = 0.
 TEST_CASE("The C# runtime registers components and runs them", "[runtime][managed]")
 {
     const std::unique_ptr<ManagedGame> game = startRuntime();
-    CHECK(game->componentTypes().size() == 5);
+    CHECK(game->componentTypes().size() == 6);
 
     devex::scene::ComponentRegistry& registry = devex::scene::componentRegistry();
     const devex::scene::ComponentType* const mover = registry.find("Mover");
@@ -262,6 +267,70 @@ TEST_CASE("C# components hear collisions and triggers and query the physics", "[
     CHECK(field<int>(*bumper, bumperOf(zone), "hits") == 0);
     // The ray from above the block finds the ball resting on it.
     CHECK(field<std::string>(*bumper, bumperOf(block), "below") == "Ball");
+    game->unloadAssembly();
+}
+
+TEST_CASE("C# components play sounds and change the volumes of the groups", "[runtime][managed][audio]")
+{
+    const std::unique_ptr<ManagedGame> game = startRuntime();
+    const devex::scene::ComponentType* const jukebox = devex::scene::componentRegistry().find("Jukebox");
+    REQUIRE(jukebox != nullptr);
+    const devex::reflection::FieldInfo* const group = jukebox->type->findField("group");
+    REQUIRE(group != nullptr);
+    CHECK(group->audioGroup);
+    CHECK(jukebox->type->findField("clip")->assetType == "audio");
+
+    // A tone mixed without a sound output.
+    std::vector<std::byte> bytes =
+        devex::core::readBinaryFile(std::filesystem::path(DEVEX_TEST_DATA_DIRECTORY) / "audio" / "tone.wav").value();
+    const devex::core::Result<devex::audio::ClipInfo> info = devex::audio::probeClip(bytes);
+    REQUIRE(info.has_value());
+    const std::shared_ptr<const devex::audio::Clip> clip = devex::audio::Clip::create({
+        .encoding = info->encoding,
+        .loading = devex::asset::AudioLoading::Decoded,
+        .channels = info->channels,
+        .sampleRate = info->sampleRate,
+        .frames = info->frames,
+        .waveform = info->waveform,
+        .encoded = std::move(bytes),
+    }).value();
+    std::unique_ptr<devex::audio::AudioEngine> engine = devex::audio::AudioEngine::create({.device = false}).value();
+    devex::asset::AudioSettings settings;
+    settings.groupNames[1] = "Music";
+    engine->configure(settings);
+    devex::audio::AudioWorld audio(*engine, [&](devex::asset::AssetId) { return clip; });
+
+    const devex::asset::AssetId clipId = devex::asset::AssetId::generate();
+    Scene scene;
+    const Entity speaker = scene.createEntity("Speaker");
+    scene.add<devex::scene::Transform>(speaker);
+    scene.add<devex::scene::AudioSource>(speaker,
+                                         devex::scene::AudioSource{.clip = clipId, .loop = true, .playOnStart = false});
+    void* const component = jukebox->emplace(scene, speaker);
+    field<devex::asset::AssetId>(*jukebox, component, "clip") = clipId;
+
+    ManagedGame::Frame frame{.scene = &scene, .audio = &audio};
+    game->runPhase(frame, SystemPhase::Start);
+    const auto state = [&]() { return const_cast<void*>(jukebox->find(scene, speaker)); };
+    // The source and the one-shot play.
+    CHECK(audio.isPlaying(speaker));
+    CHECK(audio.soundCount() == 2);
+    CHECK(engine->groupVolume(1) == Catch::Approx(0.25f));
+    CHECK(engine->masterVolume() == Catch::Approx(0.5f));
+    CHECK(field<float>(*jukebox, state(), "music_volume") == Catch::Approx(0.25f));
+    CHECK(field<float>(*jukebox, state(), "master_volume") == Catch::Approx(0.5f));
+    CHECK(field<std::string>(*jukebox, state(), "error").find("Nothing") != std::string::npos);
+
+    frame.delta = devex::core::Duration(1.0 / 60.0);
+    game->runPhase(frame, SystemPhase::Update);
+    CHECK(field<bool>(*jukebox, state(), "was_playing"));
+    CHECK(field<bool>(*jukebox, state(), "stopped"));
+    CHECK_FALSE(audio.isPlaying(speaker));
+
+    // Without audio, the calls do nothing.
+    ManagedGame::Frame silent{.scene = &scene};
+    game->runPhase(silent, SystemPhase::Update);
+    CHECK_FALSE(field<bool>(*jukebox, state(), "was_playing"));
     game->unloadAssembly();
 }
 #endif

@@ -9,6 +9,7 @@ find_package(plutosvg CONFIG REQUIRED)
 find_package(SDL3 CONFIG REQUIRED)
 find_package(volk CONFIG REQUIRED)
 find_package(Stb REQUIRED)
+find_path(DEVEX_MINIAUDIO_INCLUDE_DIR miniaudio.h REQUIRED)
 find_package(VulkanMemoryAllocator CONFIG REQUIRED)
 find_package(zstd CONFIG REQUIRED)
 
@@ -195,6 +196,7 @@ target_sources(devex_asset
             include/devex/asset/AssetId.hpp
             include/devex/asset/AssetSource.hpp
             include/devex/asset/AssetType.hpp
+            include/devex/asset/AudioClipData.hpp
             include/devex/asset/MaterialData.hpp
             include/devex/asset/MeshData.hpp
             include/devex/asset/ModelData.hpp
@@ -228,6 +230,7 @@ add_library(Devex::AssetImport ALIAS devex_asset_import)
 target_sources(devex_asset_import
     PRIVATE
         src/asset/import/AssetDatabase.cpp
+        src/asset/import/AudioImporter.cpp
         src/asset/import/GltfImporter.cpp
         src/asset/import/Importer.cpp
         src/asset/import/MaterialFile.cpp
@@ -252,6 +255,7 @@ target_link_libraries(devex_asset_import
         Devex::Core
         Devex::Serialization
     PRIVATE
+        Devex::Audio
         Devex::Scene
         basisu::basisu_encoder
         efsw::efsw
@@ -366,6 +370,7 @@ target_sources(devex_scene
         src/scene/FieldValue.cpp
         src/scene/ModelInstantiation.cpp
         src/scene/PhysicsComponents.cpp
+        src/scene/AudioComponents.cpp
         src/scene/Prefab.cpp
         src/scene/Scene.cpp
         src/scene/SceneSerializer.cpp
@@ -382,6 +387,7 @@ target_sources(devex_scene
             include/devex/scene/FieldValue.hpp
             include/devex/scene/ModelInstantiation.hpp
             include/devex/scene/PhysicsComponents.hpp
+            include/devex/scene/AudioComponents.hpp
             include/devex/scene/Prefab.hpp
             include/devex/scene/Scene.hpp
             include/devex/scene/SceneSerializer.hpp
@@ -431,6 +437,41 @@ set_target_properties(devex_physics PROPERTIES
 )
 devex_set_warnings(devex_physics)
 
+# Audio: clips, the mixer and its groups, and the sounds of the AudioSource components of a game,
+# played with miniaudio (Ogg Vorbis decoded by stb_vorbis).
+add_library(devex_audio OBJECT)
+add_library(Devex::Audio ALIAS devex_audio)
+
+target_sources(devex_audio
+    PRIVATE
+        src/audio/AudioEngine.cpp
+        src/audio/AudioWorld.cpp
+        src/audio/Clip.cpp
+        src/audio/Miniaudio.cpp
+        src/audio/Voice.hpp
+    PUBLIC
+        FILE_SET HEADERS
+        BASE_DIRS include
+        FILES
+            include/devex/audio/AudioEngine.hpp
+            include/devex/audio/AudioWorld.hpp
+            include/devex/audio/Clip.hpp
+)
+
+target_include_directories(devex_audio SYSTEM PRIVATE ${DEVEX_MINIAUDIO_INCLUDE_DIR} ${Stb_INCLUDE_DIR})
+target_link_libraries(devex_audio
+    PUBLIC
+        Devex::Asset
+        Devex::Core
+        Devex::Math
+        Devex::Scene
+)
+set_target_properties(devex_audio PROPERTIES
+    EXPORT_NAME Audio
+    FOLDER "Engine"
+)
+devex_set_warnings(devex_audio)
+
 # The C# side of the engine is built with the .NET SDK when it is installed (see managed/). Without
 # it, the engine runs games written in C++ only.
 find_program(DEVEX_DOTNET NAMES dotnet)
@@ -474,8 +515,12 @@ add_library(Devex::Tools ALIAS devex_tools)
 target_sources(devex_tools
     PRIVATE
         src/tools/AssetsPanel.cpp
+        src/tools/AudioInspector.cpp
         src/tools/CommandHistory.cpp
         src/tools/CodePanel.cpp
+        src/tools/TextDocument.cpp
+        src/tools/TextDocument.hpp
+        src/tools/TextEditorPanel.cpp
         src/tools/ConsolePanel.cpp
         src/tools/EditorCamera.cpp
         src/tools/EditorCamera.hpp
@@ -519,6 +564,7 @@ target_sources(devex_tools
 target_link_libraries(devex_tools
     PUBLIC
         Devex::AssetImport
+        Devex::Audio
         Devex::Core
         Devex::Platform
         Devex::Render
@@ -573,6 +619,7 @@ target_sources(devex_runtime
 target_link_libraries(devex_runtime
     PUBLIC
         Devex::AssetImport
+        Devex::Audio
         Devex::Core
         Devex::Physics
         Devex::Platform
@@ -595,6 +642,7 @@ target_link_libraries(devex_engine
     PUBLIC
         devex_asset
         devex_asset_import
+        devex_audio
         devex_core
         devex_math
         devex_physics

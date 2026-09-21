@@ -441,7 +441,7 @@ void drawViewportPanel(ToolsState& state, scene::Scene& scene)
     }
     // The scene tabs take the place of the panel's own tab.
     ImGuiWindowClass windowClass;
-    windowClass.DockNodeFlagsOverrideSet = ImGuiDockNodeFlags_NoTabBar;
+    windowClass.DockNodeFlagsOverrideSet = ImGuiDockNodeFlags_AutoHideTabBar;
     ImGui::SetNextWindowClass(&windowClass);
     const ThemeColors& colors = themeColors();
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));

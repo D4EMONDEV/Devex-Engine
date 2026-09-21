@@ -18,9 +18,7 @@
 #include <utility>
 #include <vector>
 
-// The code of the game in the editor: its files next to the assets, a read-only view of the one
-// selected, and new components created from the inspector. Editing happens in the code editor of
-// the system, which the editor opens on the file.
+// The code of the game in FileSystem, and new components created from the inspector.
 namespace devex::tools::detail {
 namespace {
 
@@ -51,7 +49,7 @@ inline constexpr const char* newScriptPopup = "New Script";
 [[nodiscard]] bool codeRow(const char* id, ImGuiTreeNodeFlags flags, EntityIcon icon, std::string_view label)
 {
     const float nodeX = ImGui::GetCursorScreenPos().x;
-    const bool open = ImGui::TreeNodeEx(id, flags | ImGuiTreeNodeFlags_SpanFullWidth | ImGuiTreeNodeFlags_FramePadding);
+    const bool open = iconTreeNode(id, flags | ImGuiTreeNodeFlags_SpanFullWidth | ImGuiTreeNodeFlags_FramePadding);
     const ImVec2 min = ImGui::GetItemRectMin();
     const float textY = min.y + (ImGui::GetItemRectSize().y - ImGui::GetFontSize()) * 0.5f;
     const float iconX = nodeX + ImGui::GetTreeNodeToLabelSpacing();
@@ -65,9 +63,9 @@ inline constexpr const char* newScriptPopup = "New Script";
 void selectCodeFile(ToolsState& state, const std::filesystem::path& file)
 {
     state.selectedCode = file;
-    state.selectedCodeText = core::readTextFile(file).value_or(std::string("(the file cannot be read)"));
-    // The inspector shows one or the other.
+    // The inspector shows one thing at a time.
     state.selection = core::Uuid{};
+    state.selectedAsset = {};
 }
 
 void drawCodeEntry(ToolsState& state, const std::filesystem::path& path, bool directory)
@@ -117,15 +115,21 @@ void drawCodeEntry(ToolsState& state, const std::filesystem::path& path, bool di
     if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
     {
         selectCodeFile(state, path);
+        if (state.mode == ToolsMode::Editor)
+            openTextFile(state, path);
     }
-    if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
+    if (state.mode != ToolsMode::Editor && ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
     {
-        openInCodeEditor(state, path);
+        openTextFile(state, path);
     }
     if (ImGui::BeginPopupContextItem("code menu"))
     {
         selectCodeFile(state, path);
-        if (ImGui::MenuItemEx("Open in Code Editor", icons::ExternalLink.c_str()))
+        if (state.mode == ToolsMode::Editor && ImGui::MenuItemEx("Edit as Text", icons::FileText.c_str()))
+        {
+            openTextFile(state, path);
+        }
+        if (ImGui::MenuItemEx("Open in External Editor", icons::ExternalLink.c_str()))
         {
             openInCodeEditor(state, path);
         }
@@ -157,6 +161,11 @@ void drawCodeFiles(ToolsState& state)
     {
         return;
     }
+    const std::filesystem::path projectFile = state.database->project().file;
+    static_cast<void>(codeRow("##project-file", ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen,
+                             {icons::FileText, themeColors().neutral}, core::toUtf8(projectFile.filename())));
+    if (ImGui::IsItemClicked())
+        openTextFile(state, projectFile);
     const std::filesystem::path code = state.database->project().codeDirectory();
     std::error_code error;
     if (!std::filesystem::is_directory(code, error))
@@ -168,52 +177,19 @@ void drawCodeFiles(ToolsState& state)
 
 void drawCodeInspector(ToolsState& state)
 {
-    const ThemeColors& colors = themeColors();
     const std::string name = core::toUtf8(state.selectedCode.filename());
     ImGui::AlignTextToFramePadding();
     iconLabel(codeIcon(state.selectedCode).icon, codeIcon(state.selectedCode).color);
     boldText(name.c_str());
-    if (labelButton(icons::ExternalLink, "Open in Code Editor"))
+    if (state.mode == ToolsMode::Editor && labelButton(icons::FileText, "Edit as Text"))
+    {
+        openTextFile(state, state.selectedCode);
+    }
+    if (labelButton(icons::ExternalLink, "Open in External Editor"))
     {
         openInCodeEditor(state, state.selectedCode);
     }
-    ImGui::SameLine();
-    if (labelButton(icons::Refresh, "Reload"))
-    {
-        state.selectedCodeText = core::readTextFile(state.selectedCode).value_or(std::string("(the file cannot be read)"));
-    }
-    ImGui::TextDisabled("Read only: the editor compiles the file when it is saved.");
-    ImGui::Spacing();
-
-    // The file with its line numbers, in the code font.
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, uiColor(colors.field));
-    if (ImGui::BeginChild("code", ImVec2(0.0f, 0.0f), ImGuiChildFlags_Borders, ImGuiWindowFlags_HorizontalScrollbar))
-    {
-        ImGui::PushFont(editorFonts().mono, 0.0f);
-        std::string_view text = state.selectedCodeText;
-        int line = 1;
-        while (!text.empty())
-        {
-            const std::size_t end = text.find('\n');
-            std::string_view current = text.substr(0, end);
-            if (current.ends_with('\r'))
-            {
-                current.remove_suffix(1);
-            }
-            ImGui::TextDisabled("%4d", line);
-            ImGui::SameLine();
-            ImGui::TextUnformatted(current.data(), current.data() + current.size());
-            ++line;
-            if (end == std::string_view::npos)
-            {
-                break;
-            }
-            text.remove_prefix(end + 1);
-        }
-        ImGui::PopFont();
-    }
-    ImGui::EndChild();
-    ImGui::PopStyleColor();
+    ImGui::TextWrapped("Edit this file in the Text Editor panel. Saved scripts are compiled automatically.");
 }
 
 void drawNewScriptPopup(ToolsState& state)

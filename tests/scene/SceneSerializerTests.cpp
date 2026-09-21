@@ -1,5 +1,6 @@
 #include <devex/asset/AssetId.hpp>
 #include <devex/core/Log.hpp>
+#include <devex/scene/AudioComponents.hpp>
 #include <devex/scene/ComponentRegistry.hpp>
 #include <devex/scene/Components.hpp>
 #include <devex/scene/SceneSerializer.hpp>
@@ -298,4 +299,51 @@ TEST_CASE("Enumerations are saved by name and unknown names are errors", "[scene
     const auto failed = devex::scene::loadScene(broken);
     REQUIRE_FALSE(failed.has_value());
     CHECK(failed.error().message.find("agx") != std::string::npos);
+}
+
+TEST_CASE("Sound sources and listeners are saved with their settings", "[scene][serializer][audio]")
+{
+    Scene scene;
+    const devex::asset::AssetId clip = devex::asset::AssetId::generate();
+    const Entity speaker = scene.createEntity("Speaker");
+    scene.add<devex::scene::AudioSource>(speaker, devex::scene::AudioSource{
+                                                      .clip = clip,
+                                                      .volume = 0.5f,
+                                                      .pitch = 1.25f,
+                                                      .loop = true,
+                                                      .playOnStart = false,
+                                                      .spatial = true,
+                                                      .minDistance = 2.0f,
+                                                      .maxDistance = 12.0f,
+                                                      .attenuation = devex::scene::AudioAttenuation::Linear,
+                                                      .rolloff = 0.5f,
+                                                      .doppler = 0.0f,
+                                                      .group = 2,
+                                                  });
+    const Entity listener = scene.createEntity("Ears");
+    scene.add<devex::scene::AudioListener>(listener);
+
+    const std::string text = devex::scene::saveScene(scene);
+    CHECK(text.find("attenuation = \"linear\"") != std::string::npos);
+    const auto loaded = devex::scene::loadScene(text);
+    REQUIRE(loaded.has_value());
+    const devex::scene::AudioSource& source = loaded->get<devex::scene::AudioSource>(loaded->findEntity(scene.uuid(speaker)));
+    CHECK(source.clip == clip);
+    CHECK(source.volume == 0.5f);
+    CHECK(source.pitch == 1.25f);
+    CHECK(source.loop);
+    CHECK_FALSE(source.playOnStart);
+    CHECK(source.minDistance == 2.0f);
+    CHECK(source.maxDistance == 12.0f);
+    CHECK(source.attenuation == devex::scene::AudioAttenuation::Linear);
+    CHECK(source.rolloff == 0.5f);
+    CHECK(source.doppler == 0.0f);
+    CHECK(source.group == 2);
+    CHECK(loaded->has<devex::scene::AudioListener>(loaded->findEntity(scene.uuid(listener))));
+
+    // The inspector knows which fields are clips and groups.
+    const devex::scene::ComponentType* const type = devex::scene::componentRegistry().find("AudioSource");
+    REQUIRE(type != nullptr);
+    CHECK(type->type->findField("clip")->assetType == "audio");
+    CHECK(type->type->findField("group")->audioGroup);
 }

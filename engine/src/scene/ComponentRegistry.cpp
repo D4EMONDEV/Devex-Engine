@@ -1,3 +1,4 @@
+#include <devex/scene/AudioComponents.hpp>
 #include <devex/scene/ComponentRegistry.hpp>
 #include <devex/scene/Components.hpp>
 #include <devex/scene/PhysicsComponents.hpp>
@@ -95,6 +96,8 @@ ComponentRegistry& componentRegistry()
         builtins.add<CylinderCollider>();
         builtins.add<MeshCollider>();
         builtins.add<CharacterController>();
+        builtins.add<AudioSource>();
+        builtins.add<AudioListener>();
         return builtins;
     }();
     return registry;

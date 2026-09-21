@@ -190,6 +190,8 @@ struct FieldHints
     bool angle = false;
     // A std::uint32_t index into the collision layers of the project, shown by name.
     bool physicsLayer = false;
+    // A std::uint32_t index into the audio groups of the project, shown by name.
+    bool audioGroup = false;
 };
 
 struct FieldInfo
@@ -200,6 +202,7 @@ struct FieldInfo
     bool color = false;
     bool angle = false;
     bool physicsLayer = false;
+    bool audioGroup = false;
     // For enumerations: the name of each value, and the size of the stored value in bytes.
     std::vector<std::string_view> enumNames;
     std::uint8_t enumSize = 0;
@@ -270,6 +273,7 @@ public:
             .color = hints.color,
             .angle = hints.angle,
             .physicsLayer = hints.physicsLayer,
+            .audioGroup = hints.audioGroup,
             .enumNames = std::move(enumNames),
             .enumSize = static_cast<std::uint8_t>(ReflectableEnum<Value> ? sizeof(Value) : 0),
             .access = [member](void* object) -> void* {
@@ -297,6 +301,7 @@ public:
             .color = hints.color,
             .angle = hints.angle,
             .physicsLayer = hints.physicsLayer,
+            .audioGroup = hints.audioGroup,
             .enumNames = std::move(enumNames),
             .enumSize = static_cast<std::uint8_t>(ReflectableEnum<Element> ? sizeof(Element) : 0),
             .access = [member](void* object) -> void* {

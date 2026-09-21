@@ -3,6 +3,7 @@
 #include <devex/asset/Primitives.hpp>
 #include <devex/asset/Project.hpp>
 #include <devex/asset/import/TextureProcessing.hpp>
+#include <devex/audio/AudioEngine.hpp>
 #include <devex/core/File.hpp>
 #include <devex/core/Path.hpp>
 #include <devex/core/Assert.hpp>
@@ -49,6 +50,8 @@ struct EngineServices
     AssetManager& assets;
     core::JobSystem& jobs;
     tools::ToolsOverlay* tools = nullptr;
+    // The mixer of the process; null without audio.
+    audio::AudioEngine* audio = nullptr;
     // The project opened, replaced when the editor opens another one.
     std::unique_ptr<asset::AssetDatabase>& database;
     // The package of an exported game, played instead of a project.
@@ -255,6 +258,15 @@ private:
     // The physics world lives while gameplay runs: from startup outside the editor, during Play in it.
     void createPhysics();
     void destroyPhysics();
+    // The sounds of the game live alongside the physics. Game code may change the volumes of the
+    // groups: they start from the project's settings when the game starts, and follow them when
+    // the project changes.
+    void createAudio();
+    void destroyAudio();
+    void applyAudioSettings();
+    // After the transforms of the frame are final: sounds follow their entities, and pause with
+    // the game in the editor.
+    void updateAudio(std::chrono::nanoseconds frameTime);
     [[nodiscard]] tools::GameCodeStatus gameCodeStatus() const;
     // Writes the file of a new component and opens it in the code editor of the system.
     void createScript(const tools::NewScript& script);
@@ -285,12 +297,18 @@ private:
     // Set when C# code asks the game to end.
     bool m_enablePhysics;
     std::unique_ptr<physics::PhysicsWorld> m_physics;
+    std::unique_ptr<audio::AudioWorld> m_audio;
+    // The audio settings the mixer has, to follow changes to the project.
+    std::optional<asset::AudioSettings> m_audioSettings;
     // The Start systems ran for the scene that plays.
     bool m_gameStarted = false;
     bool m_waitingForDebugger = false;
     // A scene asked for by game systems, loaded once the updates of the frame are done.
     std::optional<asset::AssetId> m_sceneToLoad;
     std::optional<GameCodeBuilder> m_gameBuilder;
+    bool m_apiRebuildAttempted = false;
+    bool m_openManagedAfterBuild = false;
+    std::string m_gameLoadError;
     std::unique_ptr<ExportJob> m_export;
     bool m_exportWaiting = false;
     // The build of the library that is loaded, and when to look for a newer one.
@@ -382,6 +400,7 @@ core::Result<void> ApplicationRunner::loadScene(asset::AssetId sceneAsset)
     const bool restart = m_gameStarted;
     if (restart)
     {
+        destroyAudio();
         destroyPhysics();
     }
     *m_application.m_scene = std::move(*loaded);
@@ -392,6 +411,7 @@ core::Result<void> ApplicationRunner::loadScene(asset::AssetId sceneAsset)
     if (restart)
     {
         createPhysics();
+        createAudio();
         runSystems(SystemPhase::Start, core::Duration::zero());
     }
     return {};
@@ -414,6 +434,7 @@ int ApplicationRunner::execute()
     if (!isEditor())
     {
         createPhysics();
+        createAudio();
         m_gameStarted = true;
         runSystems(SystemPhase::Start, core::Duration::zero());
         loadRequestedScene();
@@ -450,6 +471,7 @@ int ApplicationRunner::execute()
     }
     m_services.platform.setLiveRedrawCallback({});
     m_application.onShutdown();
+    destroyAudio();
     destroyPhysics();
     return m_exitCode;
 }
@@ -551,6 +573,7 @@ void ApplicationRunner::runFrame()
         {
             m_physics->interpolate(*m_application.m_scene, static_cast<float>(m_timestep.alpha()));
         }
+        updateAudio(frameTime);
         if (canRender && !m_application.m_quitRequested)
         {
             render(m_playScene.has_value());
@@ -564,6 +587,7 @@ void ApplicationRunner::runFrame()
         {
             m_physics->interpolate(*m_application.m_scene, static_cast<float>(m_timestep.alpha()));
         }
+        updateAudio(frameTime);
         if (canRender && !m_application.m_quitRequested)
         {
             if (m_services.tools != nullptr)
@@ -747,6 +771,12 @@ void ApplicationRunner::updateDebugger()
 
 void ApplicationRunner::startPlaying()
 {
+    const tools::GameCodeStatus status = gameCodeStatus();
+    if (status.state == tools::GameCodeStatus::State::Building || status.state == tools::GameCodeStatus::State::Failed)
+    {
+        DEVEX_LOG_WARNING("Cannot play yet: {}", status.message);
+        return;
+    }
     m_playScene.emplace(m_services.scene.clone());
     m_application.m_scene = &*m_playScene;
     m_application.m_playing = true;
@@ -755,6 +785,7 @@ void ApplicationRunner::startPlaying()
     // The simulation starts from a whole step, without the time spent editing.
     m_timestep = FixedTimestep::fromRate(m_fixedUpdateRate);
     createPhysics();
+    createAudio();
     DEVEX_LOG_INFO("Playing");
     m_application.onPlayStarted();
     m_gameStarted = true;
@@ -765,6 +796,7 @@ void ApplicationRunner::startPlaying()
 void ApplicationRunner::stopPlaying()
 {
     m_application.onPlayStopped();
+    destroyAudio();
     destroyPhysics();
     m_gameStarted = false;
     m_sceneToLoad.reset();
@@ -961,10 +993,10 @@ void ApplicationRunner::openGameCode()
     {
         return;
     }
-    openManagedCode();
     if (m_services.database == nullptr)
     {
         // An exported game ships its module next to the executable.
+        openManagedCode();
         loadGameModule();
         return;
     }
@@ -973,12 +1005,27 @@ void ApplicationRunner::openGameCode()
     {
         m_gameBuilder.emplace(project, (m_services.platform.baseDirectory() / ".." / "cmake").lexically_normal());
     }
+    if (m_gameBuilder && m_gameBuilder->pending())
+    {
+        DEVEX_LOG_INFO("{}", m_gameBuilder->message());
+        // Components remain preserved as scene data until the new module is ready.
+        // Start the rebuild before attempting to load an old ABI or its C# component views.
+        std::error_code error;
+        m_gameLibraryTime = std::filesystem::last_write_time(GameCodeBuilder::libraryPath(project), error);
+        m_openManagedAfterBuild = true;
+        static_cast<void>(m_gameBuilder->update());
+        return;
+    }
+    openManagedCode();
     loadGameModule();
 }
 
 void ApplicationRunner::closeGameCode()
 {
     m_gameBuilder.reset();
+    m_apiRebuildAttempted = false;
+    m_openManagedAfterBuild = false;
+    m_gameLoadError.clear();
     unloadGameModule();
     m_managedBuilder.reset();
     unloadManagedAssembly();
@@ -1008,9 +1055,19 @@ void ApplicationRunner::loadGameModule()
         GameModule::load(library, packaged ? std::filesystem::path() : project.cacheDirectory() / "code" / "modules");
     if (!module)
     {
+        m_gameLoadError = module.error().message;
+        if (m_gameBuilder && !m_apiRebuildAttempted &&
+            (module.error().code == core::ErrorCode::Unsupported || module.error().code == core::ErrorCode::Platform))
+        {
+            m_apiRebuildAttempted = true;
+            m_gameBuilder->requestRebuild();
+            DEVEX_LOG_WARNING("The cached game code cannot load into this engine; rebuilding it automatically: {}", module.error());
+            return;
+        }
         DEVEX_LOG_ERROR("Cannot load the game code: {}", module.error());
         return;
     }
+    m_gameLoadError.clear();
     m_game = std::move(*module);
     std::size_t restored = 0;
     forEachScene([&restored](scene::Scene& scene) { restored += scene::restorePreservedComponents(scene); });
@@ -1075,11 +1132,10 @@ void ApplicationRunner::updateGameCode()
     {
         return;
     }
-    updateManagedCode();
     bool reload = m_gameBuilder && m_gameBuilder->update();
     const Clock::time_point now = Clock::now();
     if (!reload && m_loadGameCode && now >= m_nextLibraryCheck &&
-        (!m_gameBuilder || m_gameBuilder->state() != GameCodeBuilder::State::Building))
+        (!m_gameBuilder || !m_gameBuilder->pending()))
     {
         // A build made outside the editor, such as from an IDE, is loaded too.
         m_nextLibraryCheck = now + std::chrono::milliseconds(500);
@@ -1092,6 +1148,21 @@ void ApplicationRunner::updateGameCode()
     {
         unloadGameModule();
         loadGameModule();
+        if (m_game && m_openManagedAfterBuild)
+        {
+            m_openManagedAfterBuild = false;
+            openManagedCode();
+            writeGameComponentViews();
+            if (m_managedBuilder)
+            {
+                // The engine and the native views may have changed even when no .cs file did.
+                m_managedBuilder->requestBuild();
+            }
+        }
+    }
+    if (!m_gameBuilder || (!m_gameBuilder->pending() && m_game))
+    {
+        updateManagedCode();
     }
 }
 
@@ -1107,6 +1178,7 @@ void ApplicationRunner::runSystems(SystemPhase phase, core::Duration delta)
         .window = m_services.window,
         .assets = m_services.assets,
         .physics = m_physics.get(),
+        .audio = m_audio.get(),
         .delta = delta,
         .interpolationAlpha = m_timestep.alpha(),
     };
@@ -1122,6 +1194,7 @@ void ApplicationRunner::runSystems(SystemPhase phase, core::Duration delta)
             .input = &m_services.platform.input(),
             .window = &m_services.window,
             .physics = m_physics.get(),
+            .audio = m_audio.get(),
             .assets = m_services.assets.source(),
         };
         m_managed->runPhase(frame, phase);
@@ -1166,6 +1239,56 @@ void ApplicationRunner::destroyPhysics()
     m_physics.reset();
 }
 
+void ApplicationRunner::createAudio()
+{
+    if (m_services.audio == nullptr || m_audio)
+    {
+        return;
+    }
+    // Volumes changed by the game that played before do not carry over.
+    m_audioSettings.reset();
+    applyAudioSettings();
+    m_audio = std::make_unique<audio::AudioWorld>(
+        *m_services.audio, [this](asset::AssetId clip) { return m_services.assets.audioClip(clip); });
+    m_application.m_audio = m_audio.get();
+}
+
+void ApplicationRunner::destroyAudio()
+{
+    m_application.m_audio = nullptr;
+    m_audio.reset();
+}
+
+void ApplicationRunner::applyAudioSettings()
+{
+    if (m_services.audio == nullptr)
+    {
+        return;
+    }
+    const asset::AssetSource* const source = assetSource();
+    asset::AudioSettings settings = source != nullptr ? source->project().audio : asset::AudioSettings{};
+    if (settings != m_audioSettings)
+    {
+        m_services.audio->configure(settings);
+        m_audioSettings = std::move(settings);
+    }
+}
+
+void ApplicationRunner::updateAudio(std::chrono::nanoseconds frameTime)
+{
+    applyAudioSettings();
+    if (!m_audio)
+    {
+        return;
+    }
+    const bool paused = isEditor() && m_playState != tools::PlayState::Playing;
+    m_audio->setPaused(paused);
+    if (!paused)
+    {
+        m_audio->update(*m_application.m_scene, core::Duration(frameTime));
+    }
+}
+
 tools::GameCodeStatus ApplicationRunner::gameCodeStatus() const
 {
     using State = tools::GameCodeStatus::State;
@@ -1176,7 +1299,7 @@ tools::GameCodeStatus ApplicationRunner::gameCodeStatus() const
     {
         return {.state = State::None};
     }
-    if ((m_gameBuilder && m_gameBuilder->state() == GameCodeBuilder::State::Building) ||
+    if ((m_gameBuilder && m_gameBuilder->pending()) ||
         (m_managedBuilder && m_managedBuilder->state() == ManagedCodeBuilder::State::Building))
     {
         return {.state = State::Building, .message = "Compiling the game code..."};
@@ -1191,7 +1314,7 @@ tools::GameCodeStatus ApplicationRunner::gameCodeStatus() const
     }
     if (cpp && !m_game)
     {
-        return {.state = State::Failed, .message = "The game code is not loaded"};
+        return {.state = State::Failed, .message = m_gameLoadError.empty() ? "The game code is not loaded" : m_gameLoadError};
     }
     if (csharp && (!m_managed || !m_managed->hasAssembly()))
     {
@@ -1231,10 +1354,7 @@ void ApplicationRunner::createScript(const tools::NewScript& script)
         // The first C# file of a project starts its builder.
         openManagedCode();
     }
-    if (core::Result<void> opened = m_services.platform.openPath(*file); !opened)
-    {
-        DEVEX_LOG_WARNING("{}", opened.error());
-    }
+    m_services.tools->openTextFile(*file);
 }
 
 void ApplicationRunner::updateExport()
@@ -1388,6 +1508,11 @@ physics::PhysicsWorld* Application::physics() noexcept
     return m_physics;
 }
 
+audio::AudioWorld* Application::audio() noexcept
+{
+    return m_audio;
+}
+
 bool Application::isEditor() const noexcept
 {
     return m_editor;
@@ -1513,6 +1638,22 @@ int run(Application& application, const ApplicationConfig& config)
         renderer.emplace(std::move(*created));
     }
 
+    // Sounds that play stop before the mixer goes: the runner, which owns them, is destroyed first.
+    std::unique_ptr<audio::AudioEngine> audioEngine;
+    if (config.enableAudio)
+    {
+        core::Result<std::unique_ptr<audio::AudioEngine>> created =
+            audio::AudioEngine::create({.device = config.audioOutput});
+        if (created)
+        {
+            audioEngine = std::move(*created);
+        }
+        else
+        {
+            DEVEX_LOG_ERROR("The game runs without sound: {}", created.error());
+        }
+    }
+
     AssetManager assets(renderer ? &*renderer : nullptr,
                         database != nullptr ? static_cast<asset::AssetSource*>(database.get()) : package.get());
     if (renderer)
@@ -1537,6 +1678,13 @@ int run(Application& application, const ApplicationConfig& config)
         {
             tools = std::move(*overlay);
             tools->setAssetDatabase(database.get());
+            tools->setAudio(audioEngine.get(),
+                            [&assets](asset::AssetId clip) { return assets.audioClip(clip); });
+            const std::filesystem::path engineConfig = (platform->baseDirectory() / ".." / "cmake").lexically_normal();
+            tools->setProjectCodeStatusProvider([engineConfig](const asset::Project& project) {
+                const auto status = detail::GameCodeBuilder::buildStatus(project, engineConfig);
+                return tools::ProjectCodeStatus{.needsUpdate = status.needsBuild, .message = status.message};
+            });
             if (!config.editor)
             {
                 DEVEX_LOG_INFO("Press F1 to show the tools");
@@ -1563,6 +1711,7 @@ int run(Application& application, const ApplicationConfig& config)
                                          .assets = assets,
                                          .jobs = jobs,
                                          .tools = tools.get(),
+                                         .audio = audioEngine.get(),
                                          .database = database,
                                          .package = package,
                                      });

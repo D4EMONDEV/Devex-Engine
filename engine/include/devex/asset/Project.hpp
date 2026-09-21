@@ -18,6 +18,7 @@ inline constexpr std::string_view projectExtension = ".dvxproj";
 inline constexpr std::string_view resourceScheme = "res://";
 
 inline constexpr std::size_t physicsLayerCount = 16;
+inline constexpr std::size_t audioGroupCount = 8;
 
 // The physics of a project: gravity, and the collision layers that bodies belong to.
 struct PhysicsSettings
@@ -37,6 +38,22 @@ struct PhysicsSettings
     void setCollides(std::uint32_t a, std::uint32_t b, bool collide) noexcept;
 
     bool operator==(const PhysicsSettings&) const = default;
+};
+
+// The mixer of a project: the master volume, and the groups that sounds play in, such as Music, each
+// with its volume, which game code changes (an options menu).
+struct AudioSettings
+{
+    float masterVolume = 1.0f;
+    // Groups with an empty name are unused, except the first one.
+    std::array<std::string, audioGroupCount> groupNames{"Effects", "Music", "Voice"};
+    std::array<float, audioGroupCount> groupVolumes = [] {
+        std::array<float, audioGroupCount> volumes{};
+        volumes.fill(1.0f);
+        return volumes;
+    }();
+
+    bool operator==(const AudioSettings&) const = default;
 };
 
 // How the window of the game starts, in the player and in exported games.
@@ -86,6 +103,7 @@ struct Project
     // The res:// path of the scene the player opens; empty for the first scene of the project.
     std::string startupScene;
     PhysicsSettings physics;
+    AudioSettings audio;
     WindowSettings window;
     ExportSettings exportSettings;
 
@@ -112,8 +130,8 @@ struct Project
 };
 
 // Reads "[project format=1 name="My game" startup_scene="res://assets/scenes/Main.dvxscene"]" from
-// the .dvxproj file, followed by optional [physics], [physics_layer], [window], [export],
-// [export_scene] and [export_folder] sections.
+// the .dvxproj file, followed by optional [physics], [physics_layer], [audio], [audio_group],
+// [window], [export], [export_scene] and [export_folder] sections.
 [[nodiscard]] core::Result<Project> loadProject(const std::filesystem::path& projectFile);
 // The same from the text of a project file, as exported games keep it; projectFile gives the
 // project its root.
@@ -124,7 +142,7 @@ struct Project
 [[nodiscard]] core::Result<void> saveProject(const Project& project);
 [[nodiscard]] std::string writeProjectText(const Project& project);
 
-// Writes a .dvxproj file into the directory and creates its assets/ folder.
+// Writes a .dvxproj file into the directory and creates its assets/ and empty code/ folders.
 [[nodiscard]] core::Result<Project> createProject(const std::filesystem::path& directory,
                                                   std::string_view name);
 

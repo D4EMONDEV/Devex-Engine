@@ -82,7 +82,13 @@ public sealed class ColorAttribute : Attribute;
 [AttributeUsage(AttributeTargets.Field)]
 public sealed class PhysicsLayerAttribute : Attribute;
 
-/// <summary>An AssetId field limited to one kind of asset: "mesh", "material", "texture", "model" or "scene".</summary>
+/// <summary>A uint field that chooses one of the audio groups of the project.</summary>
+[AttributeUsage(AttributeTargets.Field)]
+public sealed class AudioGroupAttribute : Attribute;
+
+/// <summary>
+/// An AssetId field limited to one kind of asset: "mesh", "material", "texture", "model", "scene" or "audio".
+/// </summary>
 [AttributeUsage(AttributeTargets.Field)]
 public sealed class AssetTypeAttribute(string type) : Attribute
 {

@@ -140,6 +140,14 @@ TEST_CASE("The editor opens the project's scenes in tabs and renders its viewpor
         (*editor)->setVisible(false);
         CHECK((*editor)->isVisible());
 
+        int projectCodeChecks = 0;
+        (*editor)->setProjectCodeStatusProvider([&](const devex::asset::Project& inspected) {
+            CHECK(inspected.file == project.file);
+            ++projectCodeChecks;
+            return devex::tools::ProjectCodeStatus{.needsUpdate = true,
+                                                   .message = "Game code was built for an older engine API."};
+        });
+
         // Without a project, the project manager is shown.
         devex::scene::Scene scene;
         using devex::tools::PlayState;
@@ -152,7 +160,10 @@ TEST_CASE("The editor opens the project's scenes in tabs and renders its viewpor
             REQUIRE(renderer->endFrame());
             CHECK_FALSE((*editor)->takeRequests().openProject.has_value());
         }
+        CHECK(projectCodeChecks == 0);
         (*editor)->setAssetDatabase(database->get());
+        // The text panel participates in docking and renders alongside the scene, including Play.
+        (*editor)->openTextFile(project.file);
 
         for (int frame = 0; frame < 8; ++frame)
         {
@@ -206,6 +217,27 @@ TEST_CASE("The editor opens the project's scenes in tabs and renders its viewpor
         backgroundScenes = 0;
         (*editor)->forEachBackgroundScene([&](devex::scene::Scene&) { ++backgroundScenes; });
         CHECK(backgroundScenes == 0);
+
+        // Returning home checks the project once, and the warning stays cached while drawing.
+        for (int frame = 0; frame < 3; ++frame)
+        {
+            platform->pollEvents([](const devex::platform::Event&) {});
+            (*editor)->update(scene, std::chrono::milliseconds(16), PlayState::Editing);
+            static_cast<void>(renderer->beginFrame());
+            REQUIRE(renderer->endFrame());
+        }
+        CHECK(projectCodeChecks == 1);
+        // Replacing the provider invalidates the cached warning, for example after a rebuild.
+        (*editor)->setProjectCodeStatusProvider([&](const devex::asset::Project& inspected) {
+            CHECK(inspected.file == project.file);
+            ++projectCodeChecks;
+            return devex::tools::ProjectCodeStatus{};
+        });
+        platform->pollEvents([](const devex::platform::Event&) {});
+        (*editor)->update(scene, std::chrono::milliseconds(16), PlayState::Editing);
+        static_cast<void>(renderer->beginFrame());
+        REQUIRE(renderer->endFrame());
+        CHECK(projectCodeChecks == 2);
 
         // The open scenes are remembered for the next session.
         const devex::core::Result<std::string> settings = devex::core::readTextFile(project.cacheDirectory() / "editor.dvx");

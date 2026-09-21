@@ -88,7 +88,7 @@ void drawEntity(ToolsState& state, scene::Scene& scene, Entity entity)
 
     ImGui::PushID(static_cast<int>(entity.index));
     const float nodeX = ImGui::GetCursorScreenPos().x;
-    const bool open = ImGui::TreeNodeEx("##entity", flags);
+    const bool open = iconTreeNode("##entity", flags);
     const ImVec2 rowMin = ImGui::GetItemRectMin();
     const float rowHeight = ImGui::GetItemRectSize().y;
 

@@ -526,6 +526,15 @@ public:
         return m_project;
     }
 
+    [[nodiscard]] core::Result<void> reloadProject()
+    {
+        auto loaded = loadProject(m_project.file);
+        if (!loaded)
+            return std::unexpected(loaded.error());
+        m_project = std::move(*loaded);
+        return {};
+    }
+
     [[nodiscard]] core::Result<void> updateProject(const Project& project)
     {
         // The folders stay those the database watches.
@@ -659,6 +668,50 @@ public:
             queueImport(source);
         }
         return {};
+    }
+
+    [[nodiscard]] core::Result<void> setImportOption(AssetId id, std::string_view key, serialization::TextValue value)
+    {
+        const AssetInfo* const info = find(id);
+        const auto found = m_sources.find(info != nullptr ? info->source : id);
+        if (found == m_sources.end())
+        {
+            return core::makeError(core::ErrorCode::NotFound, "no source file produces asset {}", id.uuid);
+        }
+        Source& source = found->second;
+        const auto option = std::ranges::find_if(source.meta.options,
+                                                 [&](const serialization::TextProperty& property) { return property.key == key; });
+        if (option != source.meta.options.end())
+        {
+            if (option->value == value)
+            {
+                return {};
+            }
+            option->value = std::move(value);
+        }
+        else
+        {
+            source.meta.options.push_back({std::string(key), std::move(value)});
+        }
+        if (core::Result<void> written = writeText(metaFileOf(source.file), writeMetaFile(source.meta)); !written)
+        {
+            return written;
+        }
+        return reimport(id);
+    }
+
+    [[nodiscard]] std::optional<serialization::TextValue> importOption(AssetId id, std::string_view key) const
+    {
+        const AssetInfo* const info = find(id);
+        const auto found = m_sources.find(info != nullptr ? info->source : id);
+        if (found == m_sources.end())
+        {
+            return std::nullopt;
+        }
+        const std::vector<serialization::TextProperty>& options = found->second.meta.options;
+        const auto option =
+            std::ranges::find_if(options, [&](const serialization::TextProperty& property) { return property.key == key; });
+        return option != options.end() ? std::optional(option->value) : std::nullopt;
     }
 
     [[nodiscard]] const AssetInfo* find(AssetId id) const
@@ -1226,6 +1279,11 @@ core::Result<void> AssetDatabase::updateProject(const Project& project)
     return m_impl->updateProject(project);
 }
 
+core::Result<void> AssetDatabase::reloadProject()
+{
+    return m_impl->reloadProject();
+}
+
 void AssetDatabase::refresh()
 {
     m_impl->refresh();
@@ -1249,6 +1307,16 @@ std::size_t AssetDatabase::pendingImports() const noexcept
 core::Result<void> AssetDatabase::reimport(AssetId id)
 {
     return m_impl->reimport(id);
+}
+
+core::Result<void> AssetDatabase::setImportOption(AssetId id, std::string_view key, serialization::TextValue value)
+{
+    return m_impl->setImportOption(id, key, std::move(value));
+}
+
+std::optional<serialization::TextValue> AssetDatabase::importOption(AssetId id, std::string_view key) const
+{
+    return m_impl->importOption(id, key);
 }
 
 const AssetInfo* AssetDatabase::find(AssetId id) const

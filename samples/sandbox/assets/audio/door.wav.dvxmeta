@@ -1,0 +1,3 @@
+# Devex import settings: keep this file next to its asset in version control.
+[asset format=1 uuid="c47b2e90-1f6a-4d3e-8b95-3a0c7e2d9f14" importer="audio"]
+loading = "auto"

@@ -175,3 +175,61 @@ public static unsafe class Physics
         }
     }
 }
+
+/// <summary>
+/// The sounds of the game: those of the AudioSource components of entities, sounds played once, and
+/// the volumes of the audio groups of the project.
+/// </summary>
+public static unsafe class Audio
+{
+    /// <summary>The name of the volume of every group together.</summary>
+    public const string Master = "Master";
+
+    /// <summary>Plays the clip of the AudioSource of the entity from its start.</summary>
+    public static void Play(Entity entity) => Bootstrap.Native.PlaySound(Scene.Current.Pointer, entity);
+
+    public static void Stop(Entity entity) => Bootstrap.Native.StopSound(entity);
+
+    public static void Pause(Entity entity) => Bootstrap.Native.PauseSound(entity);
+
+    /// <summary>Goes on from where Pause stopped.</summary>
+    public static void Resume(Entity entity) => Bootstrap.Native.ResumeSound(entity);
+
+    public static bool IsPlaying(Entity entity) => Bootstrap.Native.IsSoundPlaying(entity) != 0;
+
+    /// <summary>Plays a clip once at a position of the world, in an audio group.</summary>
+    public static void PlayOneShot(AssetId clip, Vec3 position, float volume = 1.0f, uint group = 0)
+    {
+        Uuid uuid = clip.Uuid;
+        Bootstrap.Native.PlayOneShot(&uuid, &position, volume, group, 1);
+    }
+
+    /// <summary>Plays a clip once, everywhere at the same volume, as music or the sounds of an interface.</summary>
+    public static void PlayOneShot(AssetId clip, float volume = 1.0f, uint group = 0)
+    {
+        Uuid uuid = clip.Uuid;
+        Vec3 position = default;
+        Bootstrap.Native.PlayOneShot(&uuid, &position, volume, group, 0);
+    }
+
+    /// <summary>The volume of an audio group of the project, or of all of them with <see cref="Master"/>.</summary>
+    public static float GetGroupVolume(string group)
+    {
+        using var text = new Utf8Buffer(group);
+        float volume = Bootstrap.Native.GroupVolume(text.Pointer);
+        return volume >= 0.0f ? volume : throw new ArgumentException($"no audio group {group}");
+    }
+
+    /// <summary>
+    /// Changes the volume of an audio group until the game ends, as a settings menu does: 1 leaves the
+    /// sounds as they are, 0 silences them.
+    /// </summary>
+    public static void SetGroupVolume(string group, float volume)
+    {
+        using var text = new Utf8Buffer(group);
+        if (Bootstrap.Native.SetGroupVolume(text.Pointer, volume) == 0)
+        {
+            throw new ArgumentException($"no audio group {group}");
+        }
+    }
+}

@@ -2,8 +2,11 @@
 
 #include <devex/core/BuildInfo.hpp>
 #include <devex/core/File.hpp>
+#include <devex/core/Hash.hpp>
 #include <devex/core/Log.hpp>
 #include <devex/core/Path.hpp>
+#include <devex/core/Uuid.hpp>
+#include <devex/runtime/Game.hpp>
 
 #include <algorithm>
 #include <array>
@@ -84,9 +87,39 @@ DEVEX_GAME_MODULE(game)
 )";
 
 // One folder per engine configuration: a module only loads into an engine built like it.
-[[nodiscard]] std::filesystem::path buildDirectory(const asset::Project& project, std::string_view configuration)
+[[nodiscard]] std::filesystem::path buildRoot(const asset::Project& project, std::string_view configuration)
 {
     return project.cacheDirectory() / "code" / core::pathFromUtf8(std::string(configuration));
+}
+
+[[nodiscard]] std::filesystem::path buildDirectory(const asset::Project& project, std::string_view configuration)
+{
+    const std::filesystem::path root = buildRoot(project, configuration);
+    const core::Result<std::string> active = core::readTextFile(root / "active-build.txt");
+    // A generated UUID, never an arbitrary path supplied by a project's cache.
+    if (active && core::Uuid::parse(*active))
+    {
+        return root / "builds" / core::pathFromUtf8(*active);
+    }
+    return root;
+}
+
+[[nodiscard]] std::string engineStamp(const std::filesystem::path& configDirectory)
+{
+    const core::Result<std::string> config = core::readTextFile(configDirectory / "DevexConfig.cmake");
+#ifdef _WIN32
+    const std::filesystem::path engine = configDirectory / ".." / "bin" / "devex-engine.dll";
+#else
+    const std::filesystem::path engine = configDirectory / ".." / "lib" / "libdevex-engine.so";
+#endif
+    std::error_code error;
+    const auto modified = std::filesystem::last_write_time(engine, error);
+    // The package describes compiler settings and headers; the engine timestamp also catches a
+    // rebuilt engine at the same location, even when the game sources did not change.
+    return std::format("Devex game build 1\n{}\nAPI {}\n{}\n{}\n",
+                       core::toUtf8(configDirectory.lexically_normal()), gameApiVersion,
+                       config ? core::toHex(core::hash64(*config)) : "missing",
+                       error ? 0 : modified.time_since_epoch().count());
 }
 
 [[nodiscard]] bool contains(std::string_view text, std::string_view part)
@@ -114,6 +147,32 @@ bool GameCodeBuilder::hasCode(const asset::Project& project)
 {
     std::error_code error;
     return std::filesystem::exists(project.codeDirectory() / "CMakeLists.txt", error);
+}
+
+GameCodeBuilder::BuildStatus GameCodeBuilder::buildStatus(const asset::Project& project,
+                                                         const std::filesystem::path& devexConfigDirectory,
+                                                         std::string_view configuration)
+{
+    if (!hasCode(project))
+    {
+        return {};
+    }
+    std::error_code error;
+    const auto built = std::filesystem::last_write_time(libraryPath(project, configuration), error);
+    if (error)
+    {
+        return {true, false, "The game code needs to be built. Open the project to build it automatically."};
+    }
+    const auto stamp = core::readTextFile(buildDirectory(project, configuration) / "devex-engine.txt");
+    if (!stamp || *stamp != engineStamp(devexConfigDirectory))
+    {
+        return {true, true, "The game code needs updating for this engine. Open the project to rebuild it automatically; your sources and scenes are kept."};
+    }
+    if (built < snapshotSources(project).newest)
+    {
+        return {true, false, "The game sources have changed. Open the project to rebuild them automatically."};
+    }
+    return {};
 }
 
 core::Result<void> GameCodeBuilder::createCode(const asset::Project& project)
@@ -170,19 +229,21 @@ GameCodeBuilder::GameCodeBuilder(asset::Project project, std::filesystem::path d
     , m_devexConfigDirectory(std::move(devexConfigDirectory))
     , m_configuration(std::move(configuration))
 {
-    m_sources = snapshotSources();
-    // Sources newer than the library, or no library at all, need a build right away.
+    m_sources = snapshotSources(m_project);
+    m_buildDirectory = buildDirectory(m_project, m_configuration);
+    const BuildStatus status = buildStatus(m_project, m_devexConfigDirectory, m_configuration);
+    m_buildRequested = status.needsBuild;
     std::error_code error;
-    const std::filesystem::file_time_type built =
-        std::filesystem::last_write_time(libraryPath(m_project, m_configuration), error);
-    m_buildRequested = error || built < m_sources.newest;
+    m_freshBuildRequested = status.needsUpdate ||
+                            (status.needsBuild && !std::filesystem::is_regular_file(libraryPath(m_project, m_configuration), error));
+    m_message = status.message;
 }
 
-GameCodeBuilder::Snapshot GameCodeBuilder::snapshotSources() const
+GameCodeBuilder::Snapshot GameCodeBuilder::snapshotSources(const asset::Project& project)
 {
     Snapshot snapshot;
     std::error_code error;
-    for (std::filesystem::recursive_directory_iterator entry(m_project.codeDirectory(), error), end;
+    for (std::filesystem::recursive_directory_iterator entry(project.codeDirectory(), error), end;
          !error && entry != end; entry.increment(error))
     {
         // The C# files of the folder have their own build.
@@ -198,6 +259,18 @@ GameCodeBuilder::Snapshot GameCodeBuilder::snapshotSources() const
 void GameCodeBuilder::requestBuild() noexcept
 {
     m_buildRequested = true;
+    m_retriedSymbols = false;
+}
+
+void GameCodeBuilder::requestRebuild() noexcept
+{
+    requestBuild();
+    m_freshBuildRequested = true;
+}
+
+bool GameCodeBuilder::pending() const noexcept
+{
+    return m_buildRequested || m_state == State::Building;
 }
 
 core::Result<void> GameCodeBuilder::buildAndWait()
@@ -233,7 +306,7 @@ bool GameCodeBuilder::update()
     if (now >= m_nextCheck)
     {
         m_nextCheck = now + checkInterval;
-        if (Snapshot sources = snapshotSources(); sources != m_sources)
+        if (Snapshot sources = snapshotSources(m_project); sources != m_sources)
         {
             m_sources = sources;
             m_changedAt = now;
@@ -242,37 +315,21 @@ bool GameCodeBuilder::update()
     if (m_changedAt && now - *m_changedAt >= settleTime)
     {
         m_changedAt.reset();
-        m_buildRequested = true;
+        requestBuild();
     }
 
     if (m_process)
     {
         for (const std::string& line : m_process->readLines())
         {
-            if (contains(line, ": error") || contains(line, "error C") || contains(line, "error LNK") ||
-                contains(line, "CMake Error") || line.starts_with("FAILED:") || line.starts_with("error:"))
-            {
-                DEVEX_LOG_ERROR("{}", line);
-                if (m_message.empty())
-                {
-                    m_message = line;
-                }
-            }
-            else if (contains(line, ": warning") || contains(line, "CMake Warning"))
-            {
-                DEVEX_LOG_WARNING("{}", line);
-            }
-            else if (!line.empty())
-            {
-                DEVEX_LOG_DEBUG("{}", line);
-            }
+            readBuildLine(line);
         }
         if (const std::optional<int> exitCode = m_process->exitCode())
         {
             // The last lines may arrive with the exit.
             for (const std::string& line : m_process->readLines())
             {
-                DEVEX_LOG_DEBUG("{}", line);
+                readBuildLine(line);
             }
             m_process.reset();
             finishBuild(*exitCode);
@@ -292,15 +349,19 @@ bool GameCodeBuilder::update()
 void GameCodeBuilder::startBuild()
 {
 #ifdef _WIN32
-    const std::filesystem::path build = buildDirectory(m_project, m_configuration);
-    // The folder is configured again when the engine it was configured for changes.
-    const std::filesystem::path engineStamp = build / "devex-engine.txt";
+    m_engineStamp = engineStamp(m_devexConfigDirectory);
+    const auto previous = core::readTextFile(m_buildDirectory / "devex-engine.txt");
+    if (m_freshBuildRequested || (previous && *previous != m_engineStamp))
+    {
+        m_buildDirectory = buildRoot(m_project, m_configuration) / "builds" / core::Uuid::generate().toString();
+        m_freshBuildRequested = false;
+        DEVEX_LOG_INFO("Rebuilding the game code in a fresh cache for this engine; project sources are unchanged");
+    }
+    const std::filesystem::path& build = m_buildDirectory;
     const std::string engine = m_devexConfigDirectory.generic_string();
     std::error_code error;
-    const core::Result<std::string> configuredFor = core::readTextFile(engineStamp);
-    const bool configure = !std::filesystem::exists(build / "CMakeCache.txt", error) || !configuredFor ||
-                           *configuredFor != engine;
-    static_cast<void>(core::writeTextFile(engineStamp, engine));
+    const bool configure = !std::filesystem::exists(build / "CMakeCache.txt", error) || !previous ||
+                           *previous != m_engineStamp;
     const std::string script = std::format(R"(@echo off
 setlocal
 if defined VCToolsInstallDir goto build
@@ -323,7 +384,7 @@ exit /b 1
 )",
                                            core::toUtf8(build), core::toUtf8(m_project.codeDirectory()),
                                            m_configuration, engine, configure ? "configure" : "build");
-    const std::filesystem::path scriptPath = m_project.cacheDirectory() / "code" / core::pathFromUtf8(std::format("build-{}.cmd", m_configuration));
+    const std::filesystem::path scriptPath = build / "devex-build.cmd";
     if (core::Result<void> written = core::writeTextFile(scriptPath, script); !written)
     {
         m_state = State::Failed;
@@ -347,8 +408,32 @@ exit /b 1
     m_process = std::move(*process);
     m_state = State::Building;
     m_message.clear();
+    m_symbolFailure = false;
     m_buildStart = Clock::now();
     DEVEX_LOG_INFO("Building the game code...");
+}
+
+void GameCodeBuilder::readBuildLine(const std::string& line)
+{
+    // The diagnostic number is stable in localized Visual Studio installations too.
+    m_symbolFailure = m_symbolFailure || contains(line, "LNK1201");
+    if (contains(line, ": error") || contains(line, "error C") || contains(line, "error LNK") ||
+        contains(line, "LNK1201") || contains(line, "CMake Error") || line.starts_with("FAILED:") || line.starts_with("error:"))
+    {
+        DEVEX_LOG_ERROR("{}", line);
+        if (m_message.empty() || contains(line, "LNK1201"))
+        {
+            m_message = line;
+        }
+    }
+    else if (contains(line, ": warning") || contains(line, "CMake Warning"))
+    {
+        DEVEX_LOG_WARNING("{}", line);
+    }
+    else if (!line.empty())
+    {
+        DEVEX_LOG_DEBUG("{}", line);
+    }
 }
 
 void GameCodeBuilder::finishBuild(int exitCode)
@@ -356,9 +441,42 @@ void GameCodeBuilder::finishBuild(int exitCode)
     const double seconds = std::chrono::duration<double>(Clock::now() - m_buildStart).count();
     if (exitCode == 0)
     {
+        std::error_code error;
+        if (!std::filesystem::is_regular_file(m_buildDirectory / "bin" / libraryFileName(), error))
+        {
+            m_state = State::Failed;
+            m_message = "The build did not produce the game module";
+            DEVEX_LOG_ERROR("{}", m_message);
+            return;
+        }
+        // Publish only a successful build. Failed configuration/linking must not mark an old DLL
+        // compatible, nor replace the last working module.
+        auto saved = core::writeFileAtomically(m_buildDirectory / "devex-engine.txt",
+                                               std::as_bytes(std::span(m_engineStamp)));
+        if (saved && m_buildDirectory != buildRoot(m_project, m_configuration))
+        {
+            const std::string active = core::toUtf8(m_buildDirectory.filename());
+            saved = core::writeFileAtomically(buildRoot(m_project, m_configuration) / "active-build.txt",
+                                              std::as_bytes(std::span(active)));
+        }
+        if (!saved)
+        {
+            m_state = State::Failed;
+            m_message = saved.error().message;
+            DEVEX_LOG_ERROR("Cannot record the game build: {}", saved.error());
+            return;
+        }
         m_state = State::Succeeded;
         m_message = std::format("built in {:.1f} s", seconds);
         DEVEX_LOG_INFO("Game code built in {:.1f} s", seconds);
+        return;
+    }
+    if (m_symbolFailure && !m_retriedSymbols)
+    {
+        m_retriedSymbols = true;
+        m_freshBuildRequested = true;
+        DEVEX_LOG_WARNING("The debug-symbol file could not be written (LNK1201); retrying once in a fresh build folder");
+        startBuild();
         return;
     }
     m_state = State::Failed;

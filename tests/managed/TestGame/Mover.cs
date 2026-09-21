@@ -123,3 +123,44 @@ public class Faulty : Component
         throw new InvalidOperationException("broken on purpose");
     }
 }
+
+// Plays its sound and a one-shot, and changes the volumes of the audio groups.
+public class Jukebox : Component
+{
+    [AssetType("audio")]
+    public AssetId Clip;
+
+    [AudioGroup]
+    public uint Group;
+
+    public bool WasPlaying;
+    public bool Stopped;
+    public float MusicVolume;
+    public float MasterVolume;
+    public string Error = "";
+
+    public override void Start()
+    {
+        Audio.Play(Entity);
+        Audio.PlayOneShot(Clip, Transform.Position, 0.5f, Group);
+        Audio.SetGroupVolume("Music", 0.25f);
+        Audio.SetGroupVolume(Audio.Master, 0.5f);
+        MusicVolume = Audio.GetGroupVolume("Music");
+        MasterVolume = Audio.GetGroupVolume(Audio.Master);
+        try
+        {
+            Audio.SetGroupVolume("Nothing", 1.0f);
+        }
+        catch (ArgumentException exception)
+        {
+            Error = exception.Message;
+        }
+    }
+
+    public override void Update(float delta)
+    {
+        WasPlaying = Audio.IsPlaying(Entity);
+        Audio.Stop(Entity);
+        Stopped = !Audio.IsPlaying(Entity);
+    }
+}

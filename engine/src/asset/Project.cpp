@@ -91,6 +91,46 @@ void readPhysics(const serialization::TextDocument& document, PhysicsSettings& p
     }
 }
 
+[[nodiscard]] std::optional<float> numberAttribute(const serialization::TextSection& section, std::string_view key)
+{
+    const serialization::TextValue* const value = section.findAttribute(key);
+    const std::optional<double> number = value != nullptr ? serialization::asNumber(*value) : std::nullopt;
+    return number ? std::optional(static_cast<float>(*number)) : std::nullopt;
+}
+
+void readAudio(const serialization::TextDocument& document, AudioSettings& audio)
+{
+    for (const serialization::TextSection& section : document.sections)
+    {
+        if (section.type == "audio")
+        {
+            audio.masterVolume = std::max(0.0f, numberAttribute(section, "master_volume").value_or(audio.masterVolume));
+        }
+        else if (section.type == "audio_group")
+        {
+            const serialization::TextValue* const indexValue = section.findAttribute("index");
+            const std::optional<std::int64_t> index = indexValue != nullptr ? serialization::asInteger(*indexValue) : std::nullopt;
+            if (!index || *index < 0 || *index >= static_cast<std::int64_t>(audioGroupCount))
+            {
+                continue;
+            }
+            const auto group = static_cast<std::size_t>(*index);
+            if (const serialization::TextValue* const name = section.findAttribute("name"))
+            {
+                if (const std::string* const text = serialization::asString(*name))
+                {
+                    audio.groupNames[group] = *text;
+                }
+            }
+            audio.groupVolumes[group] = std::max(0.0f, numberAttribute(section, "volume").value_or(audio.groupVolumes[group]));
+        }
+    }
+    if (audio.groupNames[0].empty())
+    {
+        audio.groupNames[0] = "Effects";
+    }
+}
+
 [[nodiscard]] const std::string* stringAttribute(const serialization::TextSection& section, std::string_view key)
 {
     const serialization::TextValue* const value = section.findAttribute(key);
@@ -258,6 +298,7 @@ core::Result<Project> parseProject(std::string_view text, const std::filesystem:
         project.startupScene = *startupText;
     }
     readPhysics(*document, project.physics);
+    readAudio(*document, project.audio);
     readWindowAndExport(*document, project);
     return project;
 }
@@ -302,6 +343,28 @@ std::string writeProjectText(const Project& project)
         layer.attributes.push_back({"index", serialization::TextValue(static_cast<std::int64_t>(index))});
         layer.attributes.push_back({"name", serialization::TextValue(project.physics.layerNames[index])});
         layer.properties.push_back({"collides", serialization::TextValue(static_cast<std::int64_t>(project.physics.layerCollisions[index]))});
+    }
+
+    // Audio settings too.
+    const AudioSettings audioDefaults;
+    if (project.audio.masterVolume != audioDefaults.masterVolume)
+    {
+        serialization::TextSection& audio = document.sections.emplace_back();
+        audio.type = "audio";
+        audio.attributes.push_back({"master_volume", serialization::TextValue(static_cast<double>(project.audio.masterVolume))});
+    }
+    for (std::size_t index = 0; index < audioGroupCount; ++index)
+    {
+        if (project.audio.groupNames[index] == audioDefaults.groupNames[index] &&
+            project.audio.groupVolumes[index] == audioDefaults.groupVolumes[index])
+        {
+            continue;
+        }
+        serialization::TextSection& group = document.sections.emplace_back();
+        group.type = "audio_group";
+        group.attributes.push_back({"index", serialization::TextValue(static_cast<std::int64_t>(index))});
+        group.attributes.push_back({"name", serialization::TextValue(project.audio.groupNames[index])});
+        group.attributes.push_back({"volume", serialization::TextValue(static_cast<double>(project.audio.groupVolumes[index]))});
     }
 
     if (project.window != WindowSettings{})
@@ -360,11 +423,14 @@ core::Result<Project> createProject(const std::filesystem::path& directory, std:
         return project;
     }
     std::error_code error;
-    std::filesystem::create_directories(project->assetsDirectory(), error);
-    if (error)
+    for (const std::filesystem::path& folder : {project->assetsDirectory(), project->codeDirectory()})
     {
-        return core::makeError(core::ErrorCode::Io, "cannot create '{}': {}",
-                               core::toUtf8(project->assetsDirectory()), error.message());
+        std::filesystem::create_directories(folder, error);
+        if (error)
+        {
+            return core::makeError(core::ErrorCode::Io, "cannot create '{}': {}",
+                                   core::toUtf8(folder), error.message());
+        }
     }
     return project;
 }

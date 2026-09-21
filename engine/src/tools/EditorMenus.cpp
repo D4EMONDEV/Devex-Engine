@@ -191,6 +191,7 @@ void drawEditorMenu(ToolsState& state)
         ImGui::MenuItem(hierarchyWindow, nullptr, &state.showHierarchy);
         ImGui::MenuItem(inspectorWindow, nullptr, &state.showInspector);
         ImGui::MenuItem(assetsWindow, nullptr, &state.showAssets);
+        ImGui::MenuItem(textEditorWindow, nullptr, &state.showTextEditor);
         ImGui::MenuItem(consoleWindow, nullptr, &state.showConsole);
         ImGui::MenuItem(statisticsWindow, nullptr, &state.showStatistics);
         ImGui::EndMenu();
@@ -242,7 +243,10 @@ void drawPlayControls(ToolsState& state)
 {
     const ThemeColors& colors = themeColors();
     const bool editing = state.playState == PlayState::Editing;
-    if (toolButton("play", icons::Play, "Play the scene (F5)", !editing, editing,
+    const bool codeReady = state.gameCode.state == GameCodeStatus::State::None ||
+                           state.gameCode.state == GameCodeStatus::State::Ready;
+    const char* const playHint = codeReady ? "Play the scene (F5)" : "Wait for the game code to build successfully before playing";
+    if (toolButton("play", icons::Play, playHint, !editing, editing && codeReady,
                    editing ? std::optional(colors.text) : std::optional(colors.accent)))
     {
         state.requests.play = true;
@@ -536,7 +540,8 @@ void drawProjectSettingsWindow(ToolsState& state)
     }
 
     const asset::Project& saved = state.database->project();
-    asset::Project project = saved;
+    // Edits build on those not saved yet, so that a drag keeps its progress from frame to frame.
+    asset::Project project = state.pendingProject.value_or(saved);
     ImGui::PushFont(editorFonts().bold, 0.0f);
     ImGui::SeparatorText("General");
     ImGui::PopFont();
@@ -664,12 +669,55 @@ void drawProjectSettingsWindow(ToolsState& state)
     }
     ImGui::Spacing();
     ImGui::TextDisabled("Changes apply the next time the game starts.");
+
+    ImGui::Spacing();
+    ImGui::PushFont(editorFonts().bold, 0.0f);
+    ImGui::SeparatorText("Audio");
+    ImGui::PopFont();
+    asset::AudioSettings& audio = project.audio;
+    if (beginProperties("audio"))
+    {
+        propertyName("Master volume");
+        ImGui::SliderFloat("##master", &audio.masterVolume, 0.0f, 1.0f, "%.2f");
+        ImGui::SetItemTooltip("The volume of every sound of the game");
+        endProperties();
+    }
+    ImGui::Spacing();
+    ImGui::TextDisabled("Groups: AudioSource components and one-shot sounds play in one, whose volume code can change.");
+    if (ImGui::BeginTable("audio groups", 3, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_PadOuterX))
+    {
+        ImGui::TableSetupColumn("index", ImGuiTableColumnFlags_WidthFixed, ImGui::GetFontSize() * 2.0f);
+        ImGui::TableSetupColumn("name", ImGuiTableColumnFlags_WidthStretch, 1.0f);
+        ImGui::TableSetupColumn("volume", ImGuiTableColumnFlags_WidthStretch, 1.0f);
+        for (std::size_t index = 0; index < asset::audioGroupCount; ++index)
+        {
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextDisabled("%zu", index);
+            ImGui::PushID(static_cast<int>(index));
+            ImGui::TableSetColumnIndex(1);
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            ImGui::InputTextWithHint("##group", "unused", &audio.groupNames[index]);
+            ImGui::TableSetColumnIndex(2);
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            ImGui::SliderFloat("##volume", &audio.groupVolumes[index], 0.0f, 1.0f, "%.2f");
+            ImGui::PopID();
+        }
+        ImGui::EndTable();
+    }
+    ImGui::TextDisabled("Volumes apply at once, and each time the game starts.");
     ImGui::End();
 
     // Saved once an edit ends, so that typing a name does not rewrite the project at every key.
-    if (project.name != saved.name || project.physics != saved.physics || project.window != saved.window)
+    if (project.name != saved.name || project.physics != saved.physics || project.window != saved.window ||
+        project.audio != saved.audio)
     {
         state.pendingProject = std::move(project);
+    }
+    else
+    {
+        state.pendingProject.reset();
     }
     if (state.pendingProject && !ImGui::IsAnyItemActive())
     {
@@ -703,14 +751,20 @@ void drawEditorPopups(ToolsState& state, scene::Scene& scene)
     if (ImGui::BeginPopupModal(unsavedChangesPopup, nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings))
     {
         const std::vector<std::size_t> tabs = tabsWithUnsavedChanges(state, scene);
+        const auto textFiles = state.pendingAction ? affectedTextDocuments(state, *state.pendingAction) : std::vector<TextDocument*>{};
         const ActiveDocument live = activeDocument(state, scene);
         iconLabel(icons::TriangleAlert, colors.warning);
-        ImGui::TextUnformatted(tabs.size() == 1 ? "Save the changes to this scene?" : "Save the changes to these scenes?");
+        ImGui::TextUnformatted("Save changes before continuing?");
         ImGui::Indent(ImGui::GetFontSize() * 1.6f);
         for (const std::size_t index : tabs)
         {
             iconLabel(icons::Clapperboard, colors.scene);
             boldText(tabName(state.tabs.path(index, live)).c_str());
+        }
+        for (const TextDocument* document : textFiles)
+        {
+            iconLabel(icons::FileText, colors.neutral);
+            ImGui::TextUnformatted(core::toUtf8(document->path).c_str());
         }
         ImGui::Unindent(ImGui::GetFontSize() * 1.6f);
         ImGui::TextDisabled("Changes that are not saved are lost.");
@@ -718,7 +772,7 @@ void drawEditorPopups(ToolsState& state, scene::Scene& scene)
 
         const float width = buttonWidth * 3.0f + style.ItemSpacing.x * 2.0f;
         alignRight(width);
-        if (primaryButton(icons::Save, tabs.size() > 1 ? "Save All" : "Save", buttonWidth))
+        if (primaryButton(icons::Save, tabs.size() + textFiles.size() > 1 ? "Save All" : "Save", buttonWidth))
         {
             ImGui::CloseCurrentPopup();
             if (saveForPendingAction(state, scene))
@@ -730,23 +784,7 @@ void drawEditorPopups(ToolsState& state, scene::Scene& scene)
         if (ImGui::Button("Don't Save", ImVec2(buttonWidth, 0.0f)))
         {
             ImGui::CloseCurrentPopup();
-            if (std::optional<PendingAction> action = std::exchange(state.pendingAction, std::nullopt))
-            {
-                // Dropping the changes: the action runs as if they were saved.
-                const ActiveDocument document = activeDocument(state, scene);
-                for (const std::size_t index : tabs)
-                {
-                    if (index == state.tabs.active())
-                    {
-                        document.savedState = document.history.stateId();
-                    }
-                    else
-                    {
-                        state.tabs.background(index).savedState = state.tabs.background(index).history.stateId();
-                    }
-                }
-                requestAction(state, scene, std::move(*action));
-            }
+            discardPendingAction(state, scene);
         }
         ImGui::SameLine();
         if (ImGui::Button("Cancel", ImVec2(buttonWidth, 0.0f)) || ImGui::IsKeyPressed(ImGuiKey_Escape))
@@ -836,6 +874,17 @@ void handleEditorShortcuts(ToolsState& state, scene::Scene& scene)
     if (pressed(ImGuiMod_Ctrl | ImGuiKey_Q))
     {
         requestAction(state, scene, {.kind = PendingAction::Kind::Quit});
+    }
+    if (textEditorFocused())
+    {
+        if (pressed(ImGuiMod_Ctrl | ImGuiKey_S))
+            if (TextDocument* document = findTextDocument(state, state.activeText))
+                static_cast<void>(saveTextFile(state, scene, *document));
+        if (pressed(ImGuiMod_Ctrl | ImGuiKey_O))
+            showOpenTextDialog(state);
+        if (pressed(ImGuiMod_Ctrl | ImGuiKey_W) && !state.activeText.empty())
+            requestAction(state, scene, {.kind = PendingAction::Kind::CloseText, .path = state.activeText});
+        return;
     }
     if (!editing)
     {

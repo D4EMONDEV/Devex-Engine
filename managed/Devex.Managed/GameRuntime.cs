@@ -931,6 +931,10 @@ internal static unsafe class GameRuntime
                 {
                     text.Append(" physics_layer=true");
                 }
+                if (field.GetCustomAttribute<AudioGroupAttribute>() != null)
+                {
+                    text.Append(" audio_group=true");
+                }
                 if (field.GetCustomAttribute<AssetTypeAttribute>() is { } asset)
                 {
                     text.Append($" asset_type=\"{asset.Type}\"");

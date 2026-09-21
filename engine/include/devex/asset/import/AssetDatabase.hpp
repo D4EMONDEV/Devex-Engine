@@ -6,6 +6,7 @@
 #include <devex/asset/Project.hpp>
 #include <devex/core/Error.hpp>
 #include <devex/core/JobSystem.hpp>
+#include <devex/serialization/Text.hpp>
 
 #include <chrono>
 #include <cstddef>
@@ -87,6 +88,8 @@ public:
     [[nodiscard]] const Project& project() const noexcept override;
     // Changes the settings of the project and writes them to its file.
     [[nodiscard]] core::Result<void> updateProject(const Project& project);
+    // Accept settings edited on disk without rewriting the project file.
+    [[nodiscard]] core::Result<void> reloadProject();
 
     // Scans the assets folder: writes missing .dvxmeta files, forgets deleted sources and queues
     // the import of new and changed ones.
@@ -102,6 +105,10 @@ public:
 
     // Imports again the source file that produced the asset, even when nothing changed.
     [[nodiscard]] core::Result<void> reimport(AssetId id);
+    // Sets an import option in the .dvxmeta of the source file of the asset, and imports it again.
+    [[nodiscard]] core::Result<void> setImportOption(AssetId id, std::string_view key, serialization::TextValue value);
+    // An import option in the .dvxmeta of the source file of the asset; nullopt when it is not set.
+    [[nodiscard]] std::optional<serialization::TextValue> importOption(AssetId id, std::string_view key) const;
 
     [[nodiscard]] const AssetInfo* find(AssetId id) const override;
     // Sorted by name, optionally of one type.

@@ -48,11 +48,6 @@ void writeUuid(serialization::BinaryWriter& writer, core::Uuid uuid)
     return core::Uuid::fromParts(high, low);
 }
 
-[[nodiscard]] bool isAssetType(std::uint8_t value) noexcept
-{
-    return value >= static_cast<std::uint8_t>(AssetType::Mesh) && value <= static_cast<std::uint8_t>(AssetType::Scene);
-}
-
 [[nodiscard]] std::vector<AssetInfo> sortedAssets(std::vector<AssetInfo> assets)
 {
     std::ranges::sort(assets, [](const AssetInfo& left, const AssetInfo& right) { return left.name < right.name; });

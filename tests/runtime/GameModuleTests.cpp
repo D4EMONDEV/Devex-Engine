@@ -172,3 +172,42 @@ TEST_CASE("Libraries that are not game modules are refused", "[runtime][game]")
     REQUIRE_FALSE(module.has_value());
     CHECK(module.error().message.find("not a game module") != std::string::npos);
 }
+
+TEST_CASE("Incompatible game modules are refused and released before registration", "[runtime][game]")
+{
+    const TemporaryDirectory temporary;
+    std::filesystem::create_directories(temporary.path);
+    const std::filesystem::path source = temporary.path / testModule.filename();
+    REQUIRE(std::filesystem::copy_file(DEVEX_TEST_INCOMPATIBLE_GAME_MODULE, source));
+    std::filesystem::path copies;
+    SECTION("A player loads the module in place")
+    {
+    }
+    SECTION("The editor loads a disposable copy")
+    {
+        copies = temporary.path / "copies";
+    }
+
+    CHECK(devex::scene::componentRegistry().find("IncompatibleGameComponent") == nullptr);
+    const auto module = GameModule::load(source, copies);
+    REQUIRE_FALSE(module.has_value());
+    CHECK(module.error().code == devex::core::ErrorCode::Unsupported);
+    CHECK(devex::scene::componentRegistry().find("IncompatibleGameComponent") == nullptr);
+
+    // On Windows a DLL still loaded by the failed attempt cannot be replaced or deleted.
+    // Both the original and the editor's copy must be released for the automatic rebuild.
+    std::error_code error;
+    CHECK(std::filesystem::remove(source, error));
+    CHECK_FALSE(error);
+    if (!copies.empty())
+    {
+        std::size_t removed = 0;
+        for (const auto& entry : std::filesystem::directory_iterator(copies))
+        {
+            CHECK(std::filesystem::remove(entry.path(), error));
+            CHECK_FALSE(error);
+            ++removed;
+        }
+        CHECK(removed == 1);
+    }
+}

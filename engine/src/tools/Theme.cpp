@@ -2,6 +2,7 @@
 
 #include <devex/core/Log.hpp>
 #include <devex/core/Path.hpp>
+#include <devex/scene/AudioComponents.hpp>
 #include <devex/scene/ComponentRegistry.hpp>
 #include <devex/scene/Components.hpp>
 #include <devex/scene/PhysicsComponents.hpp>
@@ -111,10 +112,11 @@ bool g_linearColors = true;
 
 [[nodiscard]] bool isEngineComponent(std::string_view name) noexcept
 {
-    constexpr std::array<std::string_view, 14> engineComponents{
-        "Transform",      "MeshRenderer",     "Camera",       "DirectionalLight", "PointLight",
-        "SpotLight",      "Environment",      "RigidBody",    "BoxCollider",      "SphereCollider",
-        "CapsuleCollider", "CylinderCollider", "MeshCollider", "CharacterController"};
+    constexpr std::array<std::string_view, 16> engineComponents{
+        "Transform",       "MeshRenderer",     "Camera",       "DirectionalLight",    "PointLight",
+        "SpotLight",       "Environment",      "RigidBody",    "BoxCollider",         "SphereCollider",
+        "CapsuleCollider", "CylinderCollider", "MeshCollider", "CharacterController", "AudioSource",
+        "AudioListener"};
     return std::ranges::find(engineComponents, name) != engineComponents.end();
 }
 
@@ -270,8 +272,9 @@ ThemeColors deriveThemeColors(const ThemeSettings& settings)
     colors.axisY = hex(0x7ccf48);
     colors.axisZ = hex(0x4f8ff0);
 
-    const std::array<std::pair<ImVec4*, std::uint32_t>, 13> icons{{
+    const std::array<std::pair<ImVec4*, std::uint32_t>, 14> icons{{
         {&colors.physics, 0x72d6c6},
+        {&colors.audio, 0xf49ac1},
         {&colors.entity, 0xfc7f7f},
         {&colors.light, 0xffd166},
         {&colors.camera, 0xc49af2},
@@ -309,7 +312,7 @@ void applyTheme(const ThemeSettings& settings, float displayScale, bool linearCo
     style.CellPadding = {6.0f, 3.0f};
     style.ItemSpacing = {7.0f, 5.0f};
     style.ItemInnerSpacing = {5.0f, 4.0f};
-    style.IndentSpacing = 18.0f;
+    style.IndentSpacing = 24.0f;
     style.ScrollbarSize = 11.0f;
     style.ScrollbarRounding = 6.0f;
     style.GrabMinSize = 10.0f;
@@ -502,6 +505,14 @@ EntityIcon entityIcon(const scene::Scene& scene, scene::Entity entity)
     {
         return {icons::CloudSun, colors.environment};
     }
+    if (scene.has<scene::AudioSource>(entity) && !scene.has<scene::MeshRenderer>(entity))
+    {
+        return {icons::Volume, colors.audio};
+    }
+    if (scene.has<scene::AudioListener>(entity))
+    {
+        return {icons::Ear, colors.audio};
+    }
     if (scene.has<scene::CharacterController>(entity))
     {
         return {icons::PersonStanding, colors.physics};
@@ -597,6 +608,14 @@ EntityIcon componentIcon(std::string_view componentName)
     if (componentName == "CharacterController")
     {
         return {icons::PersonStanding, colors.physics};
+    }
+    if (componentName == "AudioSource")
+    {
+        return {icons::Volume, colors.audio};
+    }
+    if (componentName == "AudioListener")
+    {
+        return {icons::Ear, colors.audio};
     }
     return {icons::Puzzle, colors.gameCode};
 }

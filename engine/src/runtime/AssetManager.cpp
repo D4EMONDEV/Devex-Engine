@@ -109,11 +109,39 @@ core::Result<std::string> AssetManager::sceneText(asset::AssetId id)
     return text;
 }
 
+std::shared_ptr<const audio::Clip> AssetManager::audioClip(asset::AssetId id)
+{
+    if (const auto found = m_audioClips.find(id); found != m_audioClips.end())
+    {
+        return found->second;
+    }
+    // Sounds need no renderer.
+    if (!id.isValid() || m_source == nullptr || m_failed.contains(id) || m_source->find(id) == nullptr)
+    {
+        return nullptr;
+    }
+    const core::Result<std::vector<std::byte>> bytes = m_source->loadArtifact(id);
+    core::Result<asset::AudioClipData> data = bytes ? asset::decodeAudioClip(*bytes)
+                                                    : core::Result<asset::AudioClipData>(std::unexpected(bytes.error()));
+    core::Result<std::shared_ptr<const audio::Clip>> clip =
+        data ? audio::Clip::create(std::move(*data)) : core::Result<std::shared_ptr<const audio::Clip>>(std::unexpected(data.error()));
+    if (!clip)
+    {
+        DEVEX_LOG_ERROR("Cannot load audio clip {}: {}", id.uuid, clip.error());
+        m_failed.insert(id);
+        return nullptr;
+    }
+    m_audioClips.emplace(id, *clip);
+    return *clip;
+}
+
 void AssetManager::handleEvents(std::span<const asset::AssetEvent> events)
 {
     for (const asset::AssetEvent& event : events)
     {
         m_meshData.erase(event.id);
+        // Sounds playing keep the clip they had; the next ones play the new one.
+        m_audioClips.erase(event.id);
     }
     bool texturesChanged = false;
     for (const asset::AssetEvent& event : events)
@@ -165,6 +193,8 @@ void AssetManager::handleEvents(std::span<const asset::AssetEvent> events)
             // Read again when needed. Instances of the scene are rebuilt by the application.
             m_sceneTexts.erase(event.id);
             break;
+        case asset::AssetType::AudioClip:
+            break;
         }
     }
     if (texturesChanged)
@@ -203,6 +233,7 @@ void AssetManager::setSource(asset::AssetSource* source)
     m_models.clear();
     m_meshData.clear();
     m_sceneTexts.clear();
+    m_audioClips.clear();
     m_failed.clear();
     m_source = source;
 }

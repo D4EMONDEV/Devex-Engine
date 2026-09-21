@@ -20,6 +20,36 @@ float toolButtonWidth() noexcept
     return ImGui::GetFrameHeight();
 }
 
+bool iconTreeNode(const char* id, ImGuiTreeNodeFlags flags)
+{
+    ImGuiContext& context = *ImGui::GetCurrentContext();
+    ImGuiWindow* const window = ImGui::GetCurrentWindow();
+    const ImGuiStyle& style = ImGui::GetStyle();
+    const float nodeX = ImGui::GetCursorScreenPos().x;
+    float parentX = FLT_MAX;
+    // Capture the parent before TreeNodeEx potentially pushes the leaf itself.
+    if (window->DC.TreeDepth > 0 &&
+        (window->DC.TreeHasStackDataDepthMask & (1u << (window->DC.TreeDepth - 1))) != 0)
+    {
+        parentX = context.TreeNodeStack.back().DrawLinesX1;
+    }
+    const bool open = ImGui::TreeNodeEx(id, flags);
+    const ImGuiTreeNodeFlags lines = (flags & ImGuiTreeNodeFlags_DrawLinesMask_) != 0
+                                        ? flags : style.TreeLinesFlags;
+    if ((flags & ImGuiTreeNodeFlags_Leaf) != 0 && parentX != FLT_MAX &&
+        (lines & (ImGuiTreeNodeFlags_DrawLinesFull | ImGuiTreeNodeFlags_DrawLinesToNodes)) != 0 &&
+        style.TreeLinesSize > 0.0f && ImGui::IsItemVisible())
+    {
+        // ImGui already draws the branch up to the arrow slot and tracks the last
+        // child for its vertical guide. Only fill the remaining gap on leaf rows.
+        const float x1 = ImTrunc(std::max(parentX, nodeX + style.FramePadding.x - style.ItemInnerSpacing.x));
+        const float x2 = ImTrunc(nodeX + ImGui::GetTreeNodeToLabelSpacing() - style.ItemInnerSpacing.x);
+        const float y = ImTrunc((ImGui::GetItemRectMin().y + ImGui::GetItemRectMax().y) * 0.5f);
+        window->DrawList->AddLineH(x1, x2, y, ImGui::GetColorU32(ImGuiCol_TreeLines), style.TreeLinesSize);
+    }
+    return open;
+}
+
 bool toolButton(const char* id, IconText icon, const char* tooltip, bool selected, bool enabled,
                 std::optional<ImVec4> iconColor)
 {

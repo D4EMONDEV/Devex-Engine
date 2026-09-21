@@ -1,6 +1,7 @@
 #pragma once
 
 #include <devex/asset/AssetSource.hpp>
+#include <devex/audio/AudioWorld.hpp>
 #include <devex/asset/import/AssetDatabase.hpp>
 #include <devex/core/Error.hpp>
 #include <devex/core/JobSystem.hpp>
@@ -63,6 +64,12 @@ struct ApplicationConfig
     // Simulates the physics components of the scene while gameplay runs, after the fixed updates,
     // with the physics settings of the project.
     bool enablePhysics = true;
+    // Plays the sounds of the scene while gameplay runs, with the audio settings of the project,
+    // and lets the editor preview sounds.
+    bool enableAudio = true;
+    // Sends the sounds to the default output of the system. Without it, or without an output, they
+    // are mixed but not heard, as tests need.
+    bool audioOutput = true;
     // Worker threads for imports and other jobs; 0 uses every hardware thread but one.
     std::uint32_t workerThreads = 0;
 };
@@ -159,6 +166,8 @@ protected:
     [[nodiscard]] double interpolationAlpha() const noexcept;
     // The physics world of the scene while gameplay runs; null otherwise, or without physics.
     [[nodiscard]] physics::PhysicsWorld* physics() noexcept;
+    // The sounds of the scene while gameplay runs; null otherwise, or without audio.
+    [[nodiscard]] audio::AudioWorld* audio() noexcept;
 
     // True when the application runs inside the editor.
     [[nodiscard]] bool isEditor() const noexcept;
@@ -179,6 +188,7 @@ private:
     AssetManager* m_assets = nullptr;
     core::JobSystem* m_jobs = nullptr;
     physics::PhysicsWorld* m_physics = nullptr;
+    audio::AudioWorld* m_audio = nullptr;
     double m_interpolationAlpha = 0.0;
     bool m_quitRequested = false;
     bool m_editor = false;

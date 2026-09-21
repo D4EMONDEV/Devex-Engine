@@ -1,5 +1,6 @@
 #pragma once
 
+#include <devex/audio/AudioWorld.hpp>
 #include <devex/core/Time.hpp>
 #include <devex/physics/PhysicsWorld.hpp>
 #include <devex/platform/Input.hpp>
@@ -22,7 +23,7 @@ namespace devex::runtime {
 
 // Changes whenever game modules must be rebuilt to load: modules built for another version are
 // refused.
-inline constexpr std::uint32_t gameApiVersion = 5;
+inline constexpr std::uint32_t gameApiVersion = 6;
 
 enum class SystemPhase : std::uint8_t
 {
@@ -44,6 +45,9 @@ struct SystemContext
     // The simulation of the scene: queries, forces, and the contacts of the steps of this frame,
     // which Update systems see once. Null when the application runs without physics.
     physics::PhysicsWorld* physics = nullptr;
+    // The sounds of the scene: its AudioSource components, one-shot sounds and the volumes of the
+    // groups. Null when the application runs without audio.
+    audio::AudioWorld* audio = nullptr;
     // The fixed step during FixedUpdate, the time since the previous frame during Update, zero
     // during Start.
     core::Duration delta{0.0};

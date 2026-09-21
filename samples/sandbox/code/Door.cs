@@ -1,6 +1,6 @@
 using Devex;
 
-// A door that slides open while its zone says so.
+// A door that slides open while its zone says so, playing the sound of its AudioSource as it moves.
 public class SlidingDoor : Component
 {
     // Where the door goes when open, from where it stands closed.
@@ -12,6 +12,7 @@ public class SlidingDoor : Component
     public bool Open;
 
     private Vec3 _closed;
+    private bool _wasOpen;
 
     public override void Start()
     {
@@ -20,6 +21,15 @@ public class SlidingDoor : Component
 
     public override void Update(float delta)
     {
+        if (Open != _wasOpen)
+        {
+            _wasOpen = Open;
+            if (Entity.Has<AudioSource>())
+            {
+                Audio.Play(Entity);
+            }
+        }
+
         Vec3 target = Open ? _closed + OpenOffset : _closed;
         Vec3 position = Transform.Position;
         Vec3 remaining = target - position;

@@ -65,6 +65,10 @@ void refreshProjects(ToolsState& state)
         info.exists = project.has_value();
         info.name = project ? project->name : core::toUtf8(entry.file.stem());
         info.modified = fileTime(entry.file);
+        if (project && state.projectCodeStatus)
+        {
+            info.code = state.projectCodeStatus(*project);
+        }
         manager.projects[core::toUtf8(entry.file)] = std::move(info);
     }
 }
@@ -335,6 +339,7 @@ void drawProjectRow(ToolsState& state, const ProjectEntry& entry, bool& open)
     const ImGuiStyle& style = ImGui::GetStyle();
     const ProjectInfo* const info = infoOf(state, entry.file);
     const bool exists = info != nullptr && info->exists;
+    const bool needsUpdate = exists && info->code.needsUpdate;
     const std::string path = core::toUtf8(entry.file.parent_path());
     const float lineHeight = ImGui::GetTextLineHeight();
     const float rowHeight = lineHeight * 2.0f + style.FramePadding.y * 4.0f;
@@ -356,13 +361,17 @@ void drawProjectRow(ToolsState& state, const ProjectEntry& entry, bool& open)
     if (ImGui::BeginPopupContextItem("project menu"))
     {
         manager.selected = entry.file;
-        if (ImGui::MenuItemEx("Edit", icons::Pencil.c_str(), nullptr, false, exists))
+        if (ImGui::MenuItemEx(needsUpdate ? "Update & Edit" : "Edit", icons::Pencil.c_str(), nullptr, false, exists))
         {
             open = true;
         }
-        if (ImGui::MenuItemEx("Run", icons::Play.c_str(), nullptr, false, exists))
+        if (ImGui::MenuItemEx("Run", icons::Play.c_str(), nullptr, false, exists && !needsUpdate))
         {
             runProject(state, entry.file);
+        }
+        if (needsUpdate && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+        {
+            ImGui::SetTooltip("Open with Update & Edit to rebuild the game code before running.");
         }
         if (ImGui::MenuItemEx("Show in File Manager", icons::FolderOpen.c_str(), nullptr, false, exists))
         {
@@ -400,8 +409,21 @@ void drawProjectRow(ToolsState& state, const ProjectEntry& entry, bool& open)
     const float textX = iconX + iconSize + style.ItemSpacing.x * 2.0f;
     const float nameY = rowStart.y + style.FramePadding.y * 1.5f;
     const std::string name = info != nullptr ? info->name : core::toUtf8(entry.file.stem());
+    const char* const updateLabel = "Code update required";
+    const float rowRight = rowStart.x + rowWidth - style.FramePadding.x * 3.0f;
+    const float updateWidth = needsUpdate ? ImGui::CalcTextSize(updateLabel).x : 0.0f;
+    const ImVec4 nameClip(textX, nameY, rowRight - updateWidth - style.ItemSpacing.x, nameY + lineHeight);
     draw->AddText(editorFonts().bold, ImGui::GetFontSize(), ImVec2(textX, nameY),
-                  exists ? ImGui::GetColorU32(ImGuiCol_Text) : ImGui::GetColorU32(ImGuiCol_TextDisabled), name.c_str());
+                  exists ? ImGui::GetColorU32(ImGuiCol_Text) : ImGui::GetColorU32(ImGuiCol_TextDisabled), name.c_str(),
+                  nullptr, 0.0f, &nameClip);
+    if (needsUpdate)
+    {
+        draw->AddText(ImVec2(rowRight - updateWidth, nameY), uiColorU32(colors.warning), updateLabel);
+        if (ImGui::IsMouseHoveringRect(ImVec2(rowRight - updateWidth, nameY), ImVec2(rowRight, nameY + lineHeight)))
+        {
+            ImGui::SetTooltip("%s\nOpening this project will rebuild its game code.", info->code.message.c_str());
+        }
+    }
     const float pathY = nameY + lineHeight + style.FramePadding.y;
     const ImU32 dim = ImGui::GetColorU32(ImGuiCol_TextDisabled);
     if (exists)
@@ -581,15 +603,20 @@ void drawProjectManager(ToolsState& state)
     ImGui::BeginGroup();
     const ProjectInfo* const selected = manager.selected.empty() ? nullptr : infoOf(state, manager.selected);
     const bool canEdit = selected != nullptr && selected->exists;
-    if (labelButton(icons::Pencil, "Edit", sideWidth, canEdit))
+    const bool needsUpdate = canEdit && selected->code.needsUpdate;
+    if (labelButton(icons::Pencil, needsUpdate ? "Update & Edit" : "Edit", sideWidth, canEdit))
     {
         opened = manager.selected;
     }
-    if (labelButton(icons::Play, "Run", sideWidth, canEdit))
+    if (labelButton(icons::Play, "Run", sideWidth, canEdit && !needsUpdate))
     {
         runProject(state, manager.selected);
     }
-    ImGui::SetItemTooltip("Runs the startup scene in devex-player");
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+    {
+        ImGui::SetTooltip(needsUpdate ? "Open with Update & Edit to rebuild the game code before running."
+                                     : "Runs the startup scene in devex-player");
+    }
     if (labelButton(icons::TextCursor, "Rename", sideWidth, canEdit))
     {
         manager.renameBuffer = selected->name;
@@ -612,6 +639,18 @@ void drawProjectManager(ToolsState& state)
             manager.refresh = true;
             saveUserSettings(state);
         }
+    }
+    if (needsUpdate)
+    {
+        ImGui::Spacing();
+        ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + sideWidth);
+        ImGui::TextColored(uiColor(colors.warning), "Code update required");
+        if (!selected->code.message.empty())
+        {
+            ImGui::TextWrapped("%s", selected->code.message.c_str());
+        }
+        ImGui::TextDisabled("Opening this project will rebuild its game code.");
+        ImGui::PopTextWrapPos();
     }
     ImGui::EndGroup();
 

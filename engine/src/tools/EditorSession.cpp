@@ -14,6 +14,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cctype>
 #include <format>
 #include <functional>
 #include <utility>
@@ -264,7 +265,7 @@ void openProjectScenes(ToolsState& state, scene::Scene& scene)
 [[nodiscard]] std::vector<std::size_t> affectedTabs(ToolsState& state, scene::Scene& scene, const PendingAction& action)
 {
     std::vector<std::size_t> tabs;
-    if (state.database == nullptr)
+    if (state.database == nullptr || action.kind == PendingAction::Kind::CloseText || action.kind == PendingAction::Kind::ReloadText)
     {
         return tabs;
     }
@@ -284,6 +285,21 @@ void applyAction(ToolsState& state, scene::Scene& scene, const PendingAction& ac
 {
     switch (action.kind)
     {
+    case PendingAction::Kind::CloseText:
+        std::erase_if(state.textDocuments, [&](const TextDocument& document) { return sameTextPath(document.path, action.path); });
+        if (sameTextPath(state.activeText, action.path))
+        {
+            state.activeText = state.textDocuments.empty() ? std::filesystem::path{} : state.textDocuments.back().path;
+            state.selectTextTab = true;
+        }
+        break;
+    case PendingAction::Kind::ReloadText:
+        if (TextDocument* document = findTextDocument(state, action.path))
+        {
+            if (auto reloaded = document->reload(); !reloaded)
+                document->error = reloaded.error().message;
+        }
+        break;
     case PendingAction::Kind::CloseTab:
         if (const std::optional<std::size_t> index = state.tabs.findById(action.tab))
         {
@@ -547,12 +563,14 @@ void cancelPendingAction(ToolsState& state)
 
 bool hasUnsavedChanges(ToolsState& state, scene::Scene& scene)
 {
-    return !affectedTabs(state, scene, {.kind = PendingAction::Kind::Quit}).empty();
+    const PendingAction quit{.kind = PendingAction::Kind::Quit};
+    return !affectedTabs(state, scene, quit).empty() || !affectedTextDocuments(state, quit).empty();
 }
 
 void requestAction(ToolsState& state, scene::Scene& scene, PendingAction action)
 {
-    if (state.playState != PlayState::Editing)
+    if (state.playState != PlayState::Editing && action.kind != PendingAction::Kind::CloseText &&
+        action.kind != PendingAction::Kind::ReloadText)
     {
         if (action.kind != PendingAction::Kind::CloseTab)
         {
@@ -563,7 +581,7 @@ void requestAction(ToolsState& state, scene::Scene& scene, PendingAction action)
         }
         return;
     }
-    if (!affectedTabs(state, scene, action).empty())
+    if (!affectedTabs(state, scene, action).empty() || !affectedTextDocuments(state, action).empty())
     {
         state.pendingAction = std::move(action);
         state.openUnsavedChangesPopup = true;
@@ -573,12 +591,96 @@ void requestAction(ToolsState& state, scene::Scene& scene, PendingAction action)
     applyAction(state, scene, action);
 }
 
+void discardPendingAction(ToolsState& state, scene::Scene& scene)
+{
+    if (auto action = std::exchange(state.pendingAction, std::nullopt))
+        applyAction(state, scene, *action);
+}
+
+bool saveTextFile(ToolsState& state, scene::Scene& scene, TextDocument& document)
+{
+    const auto fail = [&](std::string message) {
+        document.error = std::move(message);
+        state.showTextEditor = true;
+        state.focusTextEditor = true;
+        state.activeText = document.path;
+        state.selectTextTab = true;
+        DEVEX_LOG_WARNING("Cannot save {}: {}", core::toUtf8(document.path), document.error);
+        return false;
+    };
+    if (!document.modified())
+        return true;
+
+    std::string extension = core::toUtf8(document.path.extension());
+    std::ranges::transform(extension, extension.begin(), [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+    const bool sceneFile = extension == scene::sceneExtension;
+    const bool projectFile = state.database != nullptr && sameTextPath(document.path, state.database->project().file);
+    std::optional<std::size_t> sceneTab;
+    std::optional<scene::Scene> loadedScene;
+    if (sceneFile)
+    {
+        if (state.playState != PlayState::Editing)
+            return fail("Stop Play before saving a scene as text.");
+        const ActiveDocument live = activeDocument(state, scene);
+        for (std::size_t i = 0; i < state.tabs.size(); ++i)
+            if (sameTextPath(state.tabs.path(i, live), document.path))
+                sceneTab = i;
+        if (sceneTab && state.tabs.isModified(*sceneTab, live))
+            return fail("This scene has unsaved viewport changes. Save or close its scene tab, then Reload the text file.");
+        auto parsed = scene::loadScene(document.text);
+        if (!parsed)
+            return fail(parsed.error().message);
+        loadedScene = std::move(*parsed);
+    }
+    if (extension == asset::projectExtension)
+    {
+        if (auto parsed = asset::parseProject(document.text, document.path); !parsed)
+            return fail(parsed.error().message);
+    }
+    if (auto saved = document.save(); !saved)
+        return fail(saved.error().message);
+    document.error.clear();
+    if (sceneTab)
+    {
+        if (*sceneTab == state.tabs.active())
+        {
+            resetTransientEdits(state);
+            scene = std::move(*loadedScene);
+            state.history.clear();
+            state.savedState = state.history.stateId();
+            state.selection = {};
+        }
+        else
+        {
+            SceneDocument& background = state.tabs.background(*sceneTab);
+            background.scene = std::move(*loadedScene);
+            background.history.clear();
+            background.savedState = background.history.stateId();
+            background.selection = {};
+        }
+    }
+    if (projectFile)
+        if (auto reloaded = state.database->reloadProject(); !reloaded)
+            return fail(reloaded.error().message);
+    if (state.database != nullptr)
+        state.database->refresh();
+    DEVEX_LOG_INFO("Saved {}", core::toUtf8(document.path.filename()));
+    return true;
+}
+
 bool saveForPendingAction(ToolsState& state, scene::Scene& scene)
 {
     if (!state.pendingAction)
     {
         return false;
     }
+    // Resolve text/viewport conflicts before saving other documents.
+    for (TextDocument* document : affectedTextDocuments(state, *state.pendingAction))
+        if (!saveTextFile(state, scene, *document))
+        {
+            state.pendingAction.reset();
+            return false;
+        }
     for (const std::size_t index : affectedTabs(state, scene, *state.pendingAction))
     {
         if (index == state.tabs.active())

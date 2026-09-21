@@ -1,5 +1,6 @@
 #include "ToolsState.hpp"
 
+#include <devex/scene/AudioComponents.hpp>
 #include <devex/scene/Components.hpp>
 #include <devex/scene/PhysicsComponents.hpp>
 
@@ -23,6 +24,8 @@ constexpr math::Vec4 xAxisColor{0.6f, 0.08f, 0.08f, 0.9f};
 constexpr math::Vec4 zAxisColor{0.06f, 0.14f, 0.6f, 0.9f};
 constexpr math::Vec4 lightIconColor{1.0f, 0.8f, 0.3f, 0.95f};
 constexpr math::Vec4 cameraIconColor{0.85f, 0.85f, 0.85f, 0.95f};
+constexpr math::Vec4 audioIconColor{0.96f, 0.6f, 0.76f, 0.95f};
+constexpr math::Vec4 selectedIconColor{1.0f, 0.6f, 0.1f, 1.0f};
 // Collision shapes, as in Godot: solid ones in green, triggers in blue.
 constexpr math::Vec4 colliderColor{0.35f, 0.95f, 0.5f, 0.95f};
 constexpr math::Vec4 triggerColor{0.35f, 0.7f, 1.0f, 0.95f};
@@ -334,6 +337,71 @@ void addIcons(scene::Scene& scene, const ViewportView& view, scene::Entity selec
     }
 }
 
+// Speakers for sound sources, with the distances where a selected one starts to fade and stops
+// fading; an ear for the listener.
+void addAudioIcons(scene::Scene& scene, const ViewportView& view, scene::Entity selected, std::vector<OverlayVertex>& lines)
+{
+    const math::Vec3 right{view.view[0][0], view.view[1][0], view.view[2][0]};
+    const math::Vec3 up{view.view[0][1], view.view[1][1], view.view[2][1]};
+    constexpr float halfPi = twoPi * 0.25f;
+
+    for ([[maybe_unused]] auto [entity, transform, source] : scene.view<scene::WorldTransform, scene::AudioSource>())
+    {
+        const math::Vec3 position(transform.matrix[3]);
+        const float size = view.worldSize(position, iconSizeInPixels);
+        const math::Vec4 color = entity == selected ? selectedIconColor : audioIconColor;
+        // The body of the speaker, its cone, then two waves.
+        const math::Vec3 back = position - right * size * 0.9f;
+        const std::array<math::Vec3, 6> outline{
+            back + up * size * 0.3f,
+            back + right * size * 0.4f + up * size * 0.3f,
+            back + right * size * 0.9f + up * size * 0.7f,
+            back + right * size * 0.9f - up * size * 0.7f,
+            back + right * size * 0.4f - up * size * 0.3f,
+            back - up * size * 0.3f,
+        };
+        for (std::size_t corner = 0; corner < outline.size(); ++corner)
+        {
+            addLine(lines, outline[corner], outline[(corner + 1) % outline.size()], color);
+        }
+        addLine(lines, outline[1], outline[4], color);
+        addArc(lines, position, right, up, size * 0.4f, -halfPi * 0.55f, halfPi * 0.55f, color, 8);
+        addArc(lines, position, right, up, size * 0.85f, -halfPi * 0.6f, halfPi * 0.6f, color, 10);
+
+        if (entity == selected && source.spatial)
+        {
+            const math::Vec3 x{1.0f, 0.0f, 0.0f};
+            const math::Vec3 y{0.0f, 1.0f, 0.0f};
+            const math::Vec3 z{0.0f, 0.0f, 1.0f};
+            const math::Vec4 inner{audioIconColor.r, audioIconColor.g, audioIconColor.b, 0.8f};
+            const math::Vec4 outer{audioIconColor.r, audioIconColor.g, audioIconColor.b, 0.35f};
+            for (const auto& [radius, sphereColor] : {std::pair{source.minDistance, inner}, std::pair{source.maxDistance, outer}})
+            {
+                if (radius > 0.0f)
+                {
+                    addCircle(lines, position, x, y, radius, sphereColor, 64);
+                    addCircle(lines, position, y, z, radius, sphereColor, 64);
+                    addCircle(lines, position, z, x, radius, sphereColor, 64);
+                }
+            }
+        }
+    }
+
+    for ([[maybe_unused]] auto [entity, transform, listener] : scene.view<scene::WorldTransform, scene::AudioListener>())
+    {
+        const math::Vec3 position(transform.matrix[3]);
+        const float size = view.worldSize(position, iconSizeInPixels);
+        const math::Vec4 color = entity == selected ? selectedIconColor : audioIconColor;
+        // The rim of an ear, running down to the lobe, and its inner fold.
+        const math::Vec3 top = position + up * size * 0.25f;
+        const float lobeAngle = -halfPi * 0.6f;
+        addArc(lines, top, right, up, size * 0.6f, lobeAngle, halfPi * 2.0f, color, 16);
+        addLine(lines, top + (right * std::cos(lobeAngle) + up * std::sin(lobeAngle)) * size * 0.6f,
+                position - up * size * 0.8f, color);
+        addArc(lines, top, right, up, size * 0.25f, 0.0f, halfPi * 2.0f, color, 10);
+    }
+}
+
 // Indices of the entity and of its descendants.
 void collectSubtree(const scene::Scene& scene, scene::Entity entity, std::unordered_set<std::uint32_t>& indices)
 {
@@ -362,6 +430,7 @@ void addEditorOverlay(ToolsState& state, scene::Scene& scene, render::RenderWorl
     if (state.showIcons)
     {
         addIcons(scene, view, selected, world);
+        addAudioIcons(scene, view, selected, world.overlayLines);
     }
 
     std::unordered_set<std::uint32_t> selection;

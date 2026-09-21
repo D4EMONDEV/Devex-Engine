@@ -22,6 +22,7 @@ namespace devex::tools::detail {
     ICON(Anchor, "anchor")                           \
     ICON(ArrowDownToLine, "arrow-down-to-line")      \
     ICON(ArrowUpDown, "arrow-up-down")               \
+    ICON(AudioWaveform, "audio-waveform")            \
     ICON(Axis, "axis-3d")                            \
     ICON(BookOpen, "book-open")                      \
     ICON(Box, "box")                                 \
@@ -44,6 +45,7 @@ namespace devex::tools::detail {
     ICON(Crosshair, "crosshair")                     \
     ICON(Cuboid, "cuboid")                           \
     ICON(Cylinder, "cylinder")                       \
+    ICON(Ear, "ear")                                 \
     ICON(Ellipsis, "ellipsis-vertical")              \
     ICON(ExternalLink, "external-link")              \
     ICON(Eye, "eye")                                 \
@@ -115,6 +117,7 @@ namespace devex::tools::detail {
     ICON(Undo, "undo-2")                             \
     ICON(Unlink, "unlink")                           \
     ICON(Video, "video")                             \
+    ICON(Volume, "volume-2")                         \
     ICON(Weight, "weight")                           \
     ICON(ZoomIn, "zoom-in")                          \
     ICON(Logo, "devex")

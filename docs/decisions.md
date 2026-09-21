@@ -108,6 +108,10 @@ mais seulement explicitement ici : le code suit ce document, pas l'inverse.
 | Champs des composants C# | Chargés au début de chaque phase, écrits à sa fin                  |
 | Rechargement du C#       | Champs non enregistrés conservés par nom, Start non rappelé        |
 | Débogage du C#           | Attache depuis l'IDE, Play qui attend, symboles chargés            |
+| Audio                    | miniaudio + stb_vorbis, sons 2D ou spatialisés                    |
+| Clips audio              | WAV, FLAC, MP3, Ogg Vorbis ; décodés au chargement ou à la lecture |
+| Écouteur                 | `AudioListener`, sinon caméra principale                         |
+| Mixage                   | Volume Master et 8 groupes nommés par projet                      |
 
 ## Architecture cible
 
@@ -128,11 +132,12 @@ situé au-dessus de lui, et le graphe reste sans cycle.
 | `Platform`      | fenêtre, entrées, temps, dialogues, bibliothèques partagées, processus    | Core, SDL3                    |
 | `Reflection`    | description des champs (`TypeInfo`, `DEVEX_REFLECT`, `ValueKind`)         | Core, Math                    |
 | `Serialization` | format texte `.dvx*` (sections, valeurs) ; plus tard archives cookées     | Core                          |
-| `Asset`         | `AssetId`, données CPU (maillages, textures, matériaux, modèles), `.dvxasset`, projet, paquet `.dvxpak` | Core, Math, Reflection, Serialization, zstd |
-| `AssetImport`   | base d'assets, `.dvxmeta`, importeurs (textures, `.dvxmat`, glTF)         | Asset, Scene, fastgltf, basisu, stb, efsw |
+| `Asset`         | `AssetId`, données CPU (maillages, textures, matériaux, modèles, clips audio), `.dvxasset`, projet, paquet `.dvxpak` | Core, Math, Reflection, Serialization, zstd |
+| `AssetImport`   | base d'assets, `.dvxmeta`, importeurs (textures, `.dvxmat`, glTF, sons)   | Asset, Scene, Audio, fastgltf, basisu, stb, efsw |
 | `Render`        | façade `Renderer` / `RenderWorld` ; tout `Vk*` reste dans `src/render/vulkan` | Core, Math, Platform, Asset, Vulkan |
 | `Scene`         | entités, sparse sets, hiérarchie, composants intégrés, `.dvxscene`, sous-arbres, préfabs | Core, Math, Reflection, Serialization, Asset |
-| `Tools`         | panneaux ImGui, annulation, éditeur (viewport, gizmos, scènes, accueil)   | Core, Platform, Render, Scene, AssetImport, ImGui |
+| `Audio`         | clips, mixage et groupes, sources et écouteur de la scène                | Core, Math, Asset, Scene, miniaudio, stb |
+| `Tools`         | panneaux ImGui, annulation, éditeur (viewport, gizmos, scènes, accueil)   | Core, Platform, Render, Scene, Audio, AssetImport, ImGui |
 | `Runtime`       | `Application`, boucle, mode éditeur et Play, modules de jeu, `AssetManager`, extraction | tous les modules ci-dessus |
 
 Au sommet : `devex-editor`, `devex-player` et les modules de jeu des projets.
@@ -940,6 +945,56 @@ les assets s'écrivent au fil de leur lecture.
   limites (500 m/s, 15π rad/s), que les vitesses relues, une fois arrondies, pouvaient dépasser.
   En Debug, une vérification de Jolt qui échoue est écrite en erreur fatale avant l'arrêt.
 
+### Audio
+
+- **Backend** : module `Devex::Audio`, basé sur **miniaudio**, avec `stb_vorbis` pour Ogg Vorbis.
+  Un `AudioEngine` par application possède la sortie et les groupes de mixage ; un `AudioWorld`
+  gère les sons de la scène jouée. Les types de miniaudio restent privés au module. Sans sortie
+  sonore, le moteur continue avec un avertissement et un mélangeur sans périphérique, également
+  utilisé par les tests pour lire les échantillons sans matériel audio.
+- **Clips** : WAV, FLAC, MP3 et Ogg Vorbis sont importés comme assets `AudioClip` (`audio` dans la
+  réflexion). L'artefact `.dvxasset` conserve le fichier encodé, sa fréquence, ses canaux, sa durée
+  et les crêtes de sa forme d'onde. L'option d'import `loading` choisit `decoded` (PCM décodé une
+  fois au chargement et partagé entre les lectures), `streamed` (décodage pendant chaque lecture)
+  ou `auto` (décodé jusqu'à 10 secondes, sinon streamé). **Le fichier encodé reste en mémoire dans
+  les deux cas** : il ne s'agit pas encore de streaming depuis le disque. Les références de clips
+  suivent la même chaîne d'assets que les autres données, jusqu'au paquet exporté.
+- **Sources** : `AudioSource` porte le clip, le volume, le pitch, la boucle, le démarrage
+  automatique, le groupe et les réglages spatiaux. Une source 2D conserve le même volume partout ;
+  une source spatialisée suit la position mondiale de son entité, avec atténuation inverse,
+  linéaire, exponentielle ou désactivée, distances minimale et maximale, rolloff et Doppler.
+  `playOnStart` démarre la source quand elle apparaît dans la scène jouée ; retirer la source ou
+  l'entité arrête le son.
+- **Écouteur** : le premier `AudioListener` disposant d'une transformation écoute ; à défaut,
+  c'est la caméra marquée `primary`. Position et orientation suivent les transformations
+  mondiales (Y-up, -Z avant) ; les vitesses des sources et de l'écouteur sont calculées chaque
+  frame pour le Doppler. Un seul écouteur est actif.
+- **Jeu** : `SystemContext::audio` et `Application::audio()` donnent l'`AudioWorld` (nul si
+  l'audio est désactivé). `play(scene, entity)` recommence la source ; `stop`, `pause`, `resume`
+  et `isPlaying` la pilotent ; `playOneShot(clip, position, volume, group, spatial)` joue un son
+  ponctuel sans créer d'entité. En C#, `Audio.Play`, `Stop`, `Pause`, `Resume` et `IsPlaying`
+  pilotent les mêmes sources ; `Audio.PlayOneShot(clip, position)` spatialise le son, tandis que
+  la surcharge sans position le joue en 2D. `AudioSource` et `AudioListener` ont leurs vues C#
+  générées comme les autres composants du moteur.
+- **Groupes** : le `.dvxproj` enregistre le volume Master et huit groupes, dont Effects, Music et
+  Voice par défaut, dans `[audio]` et `[audio_group]`. Les sources et sons ponctuels choisissent
+  leur groupe par indice ; l'inspecteur l'affiche par nom (`audioGroup` en réflexion C++,
+  `[AudioGroup]` sur un champ `uint` C#). Le C++ obtient l'indice avec
+  `context.audio->engine().findGroup("Music")` puis appelle `setGroupVolume` ; le C# utilise
+  `Audio.GetGroupVolume("Music")` et `Audio.SetGroupVolume("Music", 0.5f)`, ou `Audio.Master` pour
+  le volume général. Ces changements du code ne réécrivent pas le projet.
+- **Éditeur** : sélectionner un clip dans FileSystem affiche sa forme d'onde, ses informations,
+  les boutons Play/Stop et le choix du mode de chargement (réimporté à chaque changement) ; un
+  double-clic lance l'aperçu sonore, disponible hors Play. *Project > Project Settings* règle les
+  volumes et noms des groupes. Le viewport dessine les icônes des sources et écouteurs, ainsi que
+  les distances minimale et maximale de la source spatialisée sélectionnée. Les sons du jeu
+  suivent la pause de Play et sont libérés à l'arrêt ou au changement de scène.
+- **Bac à sable** : le lanceur C++ joue `throw.wav` à chaque balle, les cibles C# `hit.wav` à chaque
+  impact et la porte C# sa source `door.wav` quand elle s'ouvre ou se ferme. Le cube flottant
+  bourdonne avec une source spatialisée en boucle ; une ambiance Ogg en 2D tourne dans Music.
+  Les sons sont synthétisés par `scripts/generate_sample_assets.py --audio-only` (encodage Ogg,
+  MP3 et FLAC par `ffmpeg`), avec des clips de test dans les quatre formats.
+
 ### Gameplay
 
 - **Modèle** : les données du jeu sont des **composants** réfléchis (sauvegardés, éditables dans
@@ -953,20 +1008,29 @@ les assets s'écrivent au fil de leur lecture.
   lecteur), `FixedUpdate` (au pas fixe) et `Update` (à chaque frame). Dans une phase, les systèmes
   s'exécutent par `order` croissant puis dans l'ordre d'enregistrement, après les fonctions
   virtuelles de l'`Application`. `SystemContext` donne la scène, les entrées, la fenêtre, les
-  assets, la physique, la durée du pas ou de la frame ; `quitRequested` termine le jeu (arrête Play
+  assets, la physique, l'audio, la durée du pas ou de la frame ; `quitRequested` termine le jeu (arrête Play
   dans l'éditeur). Chaque pas `FixedUpdate` est suivi d'un pas de physique.
 - **Projet** : le dossier `code/` d'un projet est un projet CMake (`find_package(Devex CONFIG)`,
   `devex_add_game_module(SOURCES …)`) ; *Code > Create game code* en crée un avec un composant
   et un système d'exemple. `Devex_DIR` désigne `cmake/` du dossier de build du moteur, où
   `DevexConfig.cmake` décrit `Devex::Engine` (bibliothèque, en-têtes, GLM, définitions) et
   impose la configuration du moteur. Le module est produit dans
-  `.devex/code/<configuration>/bin/Game.dll`.
+  `.devex/code/<configuration>/builds/<UUID>/bin/Game.dll` ; `active-build.txt` désigne la
+  dernière compilation réussie. Les anciens caches directement dans `<configuration>/bin`
+  restent détectés et sont reconstruits à l'ouverture.
 - **Compilation par l'éditeur** : l'éditeur surveille `code/` (toutes les 500 ms) et, 300 ms
   après la dernière modification, compile en arrière-plan : un script lance `vcvars64` trouvé
   par vswhere (sauf si l'environnement a déjà le compilateur), configure le dossier de build si
   besoin, puis `cmake --build`. Erreurs et avertissements du compilateur vont dans la console ;
   *Code > Build game code* (Ctrl+B) relance une compilation, et la barre de menus indique
   l'état (compilation, prêt, échec avec la première erreur en infobulle).
+- **Mise à jour du moteur** : le cache mémorise l'API, le paquet CMake du moteur et sa bibliothèque.
+  Un moteur différent ou reconstruit déclenche une recompilation même si les sources du jeu n'ont
+  pas changé. Le nouveau cache évite les fichiers de symboles anciens ou verrouillés ; après une
+  erreur `LNK1201`, une seule nouvelle tentative est faite dans un autre cache. Le pointeur vers
+  le module et son empreinte ne sont publiés, atomiquement, qu'après réussite. L'accueil affiche
+  *Code update required* et propose *Update & Edit* ; Run y attend la mise à jour, et Play reste
+  indisponible tant que le code n'est pas prêt. Les sources et les données des scènes sont conservées.
 - **Chargement et rechargement** : le runtime charge le module d'un projet à son ouverture, avant
   la première scène, depuis une **copie** (`.devex/code/modules`) pour que l'original puisse être
   recompilé. Quand une nouvelle build apparaît (compilée par l'éditeur ou par un IDE), il
@@ -1017,7 +1081,8 @@ les assets s'écrivent au fil de leur lecture.
   `Add`, `Remove`), `Scene` (dont `Scene.Current`), `Input` (clavier par position physique,
   souris, capture), `Time` (`Delta`, `Elapsed`, `Frame`), `Screen`, `Log`, `Game` (`Quit`,
   `LoadScene`), `Assets.Find("res://...")`, `Prefabs.Instantiate`, `Physics` (`Raycast`,
-  `SphereCast`, `OverlapSphere`, forces, couples et impulsions, `Contacts`).
+  `SphereCast`, `OverlapSphere`, forces, couples et impulsions, `Contacts`), `Audio` (sources,
+  lectures ponctuelles 2D ou spatialisées, volumes des groupes).
 - **Composants C++ vus du C#** : ceux du moteur comme ceux du module C++ du jeu sont atteints par
   des **vues** générées de leur réflexion : `ref var light = ref ...` n'est pas nécessaire, la vue
   est une `ref struct` sur la mémoire du composant dont les propriétés lisent et écrivent les
@@ -1060,12 +1125,30 @@ les assets s'écrivent au fil de leur lecture.
   le code à chaque rechargement. Avec *Wait for a debugger when Play starts*, Play attend qu'un
   débogueur soit attaché avant de lancer le jeu (Stop annule).
 - **Fichiers de code dans l'éditeur** : le panneau FileSystem montre le dossier `code/` (les
-  dossiers de build sont masqués) ; un fichier sélectionné s'affiche en lecture seule dans
-  l'inspecteur, numéroté, en police mono, avec *Open in Code Editor* (l'IDE associé aux `.cs` ou
-  `.cpp`) et *Show in File Manager*. L'édition se fait dans l'IDE : l'éditeur recompile à
-  l'enregistrement.
+  dossiers de build sont masqués) ; cliquer un fichier ouvre le panneau **Text Editor**, à
+  onglets, ancrable ou flottant dans la fenêtre principale. Police mono, sélection, copier-coller,
+  tabulations, annulation/rétablissement du champ actif, position ligne/colonne, **Ctrl+S**, Save All,
+  Reload et ouverture dans l'IDE externe. Les scripts enregistrés sont recompilés automatiquement.
+  **Editor > Panels > Text Editor** rouvre le panneau ; le masquer conserve les fichiers ouverts.
+  **Ctrl+O** ouvre un fichier texte et **Ctrl+W** ferme l'onglet lorsque ce panneau a le focus.
+- **Racine du projet** : `res://` représente le dossier contenant le `.dvxproj`, sans dossier
+  physique `res`. FileSystem regroupe le fichier de projet, `assets/` et `code/` sous cette racine.
+  Un nouveau projet crée `assets/` et `code/` ; ce dernier reste vide jusqu'à la création du code.
+  Le dossier seul ne déclenche aucune compilation. Le C++ utilise `code/CMakeLists.txt` et le C#
+  les `.cs` de `code/` et de ses sous-dossiers ; les fichiers en dehors de `code/` ne participent
+  pas automatiquement au gameplay. Les anciens projets sans ce dossier restent utilisables.
+- **Édition des fichiers Devex** : le menu contextuel des assets propose **Edit as Text** et
+  **Edit Import Metadata** (`.dvxmeta`) ; le fichier `.dvxproj` apparaît aussi dans FileSystem.
+  Double-cliquer une scène conserve son ouverture dans le viewport ; un `.dvxmat` s'ouvre en
+  texte. Les fichiers UTF-8 jusqu'à 2 Mio sont acceptés ; BOM et fins de ligne LF/CRLF sont
+  conservés. La sauvegarde remplace le fichier atomiquement et refuse d'écraser une version
+  modifiée sur disque. Fermer/recharger un fichier modifié, changer de projet ou quitter demande
+  Save / Don't Save / Cancel. Une scène enregistrée en texte est validée puis actualisée dans
+  son onglet ; ses modifications graphiques non enregistrées et le mode Play bloquent cette
+  sauvegarde. Les réglages du projet sont validés puis relus sans réécrire le texte saisi.
+  Cette première version ne propose ni coloration syntaxique, ni autocomplétion.
 - **Créer un script** : *Add Component > New Script…* demande un nom et le langage (C# par défaut),
-  écrit le fichier dans `code/`, l'ouvre dans l'IDE et, dès que la compilation aboutit, ajoute le
+  écrit le fichier dans `code/`, l'ouvre dans Text Editor et, dès que la compilation aboutit, ajoute le
   composant à l'entité sélectionnée (une commande annulable). Un composant C++ créé ainsi doit
   encore être enregistré à la main dans le module (`game.component<T>();`).
 - **Jeux exportés** : un projet qui contient du C# emporte son runtime .NET. L'export publie
@@ -1124,6 +1207,8 @@ les assets s'écrivent au fil de leur lecture.
 | Dear ImGui (docking, SDL3) | outils, éditeur | 5 ✅     |
 | basisu (encodeurs BC7, BC5) | compression des textures | 6 ✅ |
 | stb (stb_image)       | décodage des images  | 6 ✅     |
+| miniaudio             | sortie, mixage et spatialisation audio | 16 ✅ |
+| stb (stb_vorbis)      | décodage Ogg Vorbis  | 16 ✅    |
 | efsw                  | surveillance des fichiers | 6 ✅ |
 | mikktspace            | tangentes            | 7 ✅     |
 | joltphysics           | physique             | 11 ✅    |
@@ -1217,7 +1302,14 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     débogueur ; export qui génère ses vues pour sa build ; cibles, porte et distributeur de
     caisses en C# dans l'arène ; corps en rotation qui ne sont plus reconstruits à chaque pas.
 
-Ensuite, sans ordre figé : post-traitements (bloom, TAA), transparence, audio, animation
+16. ✅ **Audio** — miniaudio et stb_vorbis, import WAV/FLAC/MP3/Ogg Vorbis, clips décodés au
+    chargement ou pendant la lecture, `AudioSource` 2D ou spatialisée et `AudioListener` (sinon
+    caméra principale), atténuation et Doppler, sources et sons ponctuels en C++ et C#, volumes
+    Master et groupes du projet, pause avec Play, aperçu sonore et forme d'onde dans l'inspecteur,
+    icônes et distances dans le viewport, clips dans les jeux exportés, sons du lanceur, des cibles
+    et de la porte, bourdonnement mobile et ambiance en boucle dans l'arène.
+
+Ensuite, sans ordre figé : post-traitements (bloom, TAA), transparence, animation
 squelettique, CI Linux.
 
 ## Questions ouvertes
@@ -1244,7 +1336,8 @@ squelettique, CI Linux.
   contenu additionnel, signature de l'exécutable et installeur, retrait des bibliothèques qu'un jeu
   n'utilise pas, cuisson des textures par plateforme, chargement asynchrone depuis le paquet,
   export sans build Release du moteur (paquet d'un moteur distribué).
-- **Audio** : SDL3 audio, miniaudio ou FMOD/Wwise en option.
+- **Audio** : streaming depuis le disque, occlusion, réverbération, effets et routage des groupes,
+  budget de voix, plusieurs écouteurs, intégration optionnelle de FMOD/Wwise.
 - **UI retenue maison** pour l'éditeur et les jeux, qui remplacera ImGui.
 - **CI** : GitHub Actions Windows, puis Linux.
 - **Chargement asynchrone** : lecture et envoi GPU des assets hors du thread principal, streaming

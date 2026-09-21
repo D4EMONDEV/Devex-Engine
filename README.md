@@ -28,10 +28,11 @@ Le détail, l'architecture des modules et les jalons sont dans
 - `Devex::Reflection` : description des champs des composants (`DEVEX_REFLECT`), listes et
   références d'entités comprises ;
 - `Devex::Serialization` : format texte commun des fichiers `.dvx*`, flux binaires ;
-- `Devex::Asset` : `AssetId`, maillages, textures, matériaux et modèles, fichiers `.dvxasset`,
+- `Devex::Asset` : `AssetId`, maillages, textures, matériaux, modèles et clips audio, fichiers `.dvxasset`,
   projets `.dvxproj`, paquets de jeux exportés `.dvxpak` ;
 - `Devex::AssetImport` : base d'assets (`.dvxmeta`, cache `.devex/`, imports en arrière-plan,
-  réimport à chaud), importeurs de textures (BC7/BC5), de `.dvxmat`, de glTF et de scènes ;
+  réimport à chaud), importeurs de textures (BC7/BC5), de `.dvxmat`, de glTF, de scènes et de sons
+  (WAV, FLAC, MP3, Ogg Vorbis) ;
 - `Devex::Render` : renderer Vulkan 1.4 (volk, VMA), shaders Slang, render graph, PBR
   forward+ clustered, ombres en cascades, ciel HDR et IBL, MSAA, exposition automatique,
   tonemapping AgX, rendu dans une texture, sélection sur le GPU, contours et lignes d'outils ;
@@ -40,17 +41,22 @@ Le détail, l'architecture des modules et les jalons sont dans
   modifications) ;
 - `Devex::Physics` : simulation Jolt Physics des corps rigides, colliders (primitives, maillages,
   déclencheurs) et personnages, couches de collision, requêtes, forces, contacts, interpolation ;
+- `Devex::Audio` : miniaudio, sons spatialisés ou 2D, sources et écouteur dans la scène (sinon la
+  caméra principale), lecture ponctuelle par le code, groupes de volume, clips décodés au
+  chargement ou pendant la lecture ;
 - `Devex::Tools` : interface ImGui au thème réglable inspiré de Godot (Noto Sans, JetBrains Mono,
   icônes Lucide) : arbre de la scène, inspecteur, FileSystem, sortie, statistiques, annulation, en
   overlay (F1) ou dans l'éditeur : gestionnaire de projets, onglets de scènes, viewport et sa
   barre d'outils, caméra libre, sélection à la souris, gizmos, préfabs (glisser-déposer, valeurs
   modifiées, Revert, Make Local, Save as Prefab, mise à jour en direct), fichiers de code du projet
-  avec aperçu et ouverture dans l'IDE, *New Script…*, réglages de l'éditeur ;
+  avec éditeur de texte intégré à onglets (panneau ancrable ou flottant), ouverture dans l'IDE,
+  *New Script…*, réglages de l'éditeur, aperçu sonore et forme
+  d'onde des clips, volumes du projet, icônes et distances des sources audio ;
 - `Devex::Runtime` : `Application`, boucle à pas fixe, mode éditeur et mode Play, modules de jeu
   (composants et systèmes rechargeables à chaud), code C# sur .NET hébergé (composants, systèmes,
   compilation et rechargement à chaud), chargement des assets à la demande, changement de
   scène, rendu automatique de la scène, export d'un jeu ;
-- `Devex.Managed` : l'API C# du moteur (`Component`, `Entity`, `Scene`, `Input`, `Physics`,
+- `Devex.Managed` : l'API C# du moteur (`Component`, `Entity`, `Scene`, `Input`, `Physics`, `Audio`,
   `Prefabs`, `Assets`, `Time`, `Log`, maths) et les vues des composants du moteur, compilée dans
   `bin/managed` quand le SDK .NET est installé ;
 - `Devex::Engine` : tous les modules dans une bibliothèque partagée, `devex-engine.dll` ;
@@ -66,12 +72,16 @@ Le détail, l'architecture des modules et les jalons sont dans
   lampe) ; le C# y ajoute des cibles qui comptent les balles reçues et font clignoter leur lampe
   (`code/Target.cs`, avec le score), une porte qui s'ouvre quand le joueur approche
   (`code/Door.cs`), un distributeur de caisses (`code/Dispenser.cs`) et un cube qui flotte
-  (`code/Bobber.cs`) ; Tab passe à l'autre scène ; et la
+  (`code/Bobber.cs`) ; le lanceur C++ et les cibles C# jouent leurs sons, la porte sa source audio,
+  le cube flottant émet un bourdonnement spatialisé et une ambiance Ogg tourne en boucle dans le
+  groupe Music ; Tab passe à l'autre scène ; et la
   scène `sandbox` (caisse et balises glTF, sphères or et plastique, ciel HDR, plateau tournant, jour
   et nuit avec N).
 
 Le SDK Vulkan fournit `slangc`, qui compile les shaders pendant le build. Les assets
 d'exemple et les données de test sont produits par `scripts/generate_sample_assets.py`.
+L'option `--audio-only` régénère seulement les sons ; leur encodage en Ogg, MP3 et FLAC demande
+`ffmpeg` dans le `PATH`.
 
 Les tests marqués `[gpu]` ouvrent une fenêtre masquée et nécessitent un GPU Vulkan 1.4.
 
@@ -112,8 +122,10 @@ samples/sandbox/export/windows/Sandbox.exe
 
 À l'ouverture d'un projet qui a un dossier `code/`, l'éditeur le compile en arrière-plan (Visual
 Studio avec ses outils C++ est nécessaire, trouvé automatiquement), puis le recompile et le
-recharge à chaque fichier enregistré, même pendant une partie. Le code d'un jeu déclare des
-composants et des systèmes :
+recharge à chaque fichier enregistré, même pendant une partie. Après une mise à jour du moteur,
+l'accueil signale *Code update required* ; *Update & Edit* reconstruit automatiquement le module
+dans un nouveau cache en conservant les sources et les scènes. Play attend une compilation réussie.
+Le code d'un jeu déclare des composants et des systèmes :
 
 ```cpp
 struct Spinner { float speed = 1.0f; };

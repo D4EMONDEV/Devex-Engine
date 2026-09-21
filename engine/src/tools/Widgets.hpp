@@ -30,6 +30,10 @@ bool searchField(const char* id, std::string& text, const char* hint, float widt
 // Draws an icon in an sRGB color, then keeps the cursor on the same line.
 void iconLabel(IconText icon, ImVec4 color);
 
+// A hidden-label tree node whose icon is drawn at GetTreeNodeToLabelSpacing(). Leaf
+// connectors reach the icon instead of stopping before the unused arrow slot.
+[[nodiscard]] bool iconTreeNode(const char* id, ImGuiTreeNodeFlags flags);
+
 // A thin vertical line between groups of toolbar buttons.
 void toolbarSeparator();
 

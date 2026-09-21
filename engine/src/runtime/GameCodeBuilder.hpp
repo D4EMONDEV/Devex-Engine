@@ -34,6 +34,18 @@ public:
     // The file name of game modules: Game.dll on Windows.
     [[nodiscard]] static std::filesystem::path libraryFileName();
     [[nodiscard]] static bool hasCode(const asset::Project& project);
+
+    struct BuildStatus
+    {
+        bool needsBuild = false;
+        // The cached module belongs to another engine, or predates build tracking.
+        bool needsUpdate = false;
+        std::string message;
+    };
+    // Reads build metadata only: never loads or executes the project's DLL.
+    [[nodiscard]] static BuildStatus buildStatus(const asset::Project& project,
+                                                 const std::filesystem::path& devexConfigDirectory,
+                                                 std::string_view configuration = core::buildType());
     // Writes code/CMakeLists.txt and a first source file with an example component and system.
     [[nodiscard]] static core::Result<void> createCode(const asset::Project& project);
     // Writes a component in its own file of the code folder, which the module must register.
@@ -49,6 +61,9 @@ public:
     // the log. Returns true once when a build has just succeeded.
     [[nodiscard]] bool update();
     void requestBuild() noexcept;
+    // Rebuilds in a fresh generated folder, without touching sources or the last successful build.
+    void requestRebuild() noexcept;
+    [[nodiscard]] bool pending() const noexcept;
     // Builds now, whether sources changed or not, and returns once the build is over.
     [[nodiscard]] core::Result<void> buildAndWait();
 
@@ -67,13 +82,16 @@ private:
         bool operator==(const Snapshot&) const = default;
     };
 
-    [[nodiscard]] Snapshot snapshotSources() const;
+    [[nodiscard]] static Snapshot snapshotSources(const asset::Project& project);
+    void readBuildLine(const std::string& line);
     void startBuild();
     void finishBuild(int exitCode);
 
     asset::Project m_project;
     std::filesystem::path m_devexConfigDirectory;
     std::string m_configuration;
+    std::filesystem::path m_buildDirectory;
+    std::string m_engineStamp;
     std::optional<platform::Process> m_process;
     State m_state = State::Idle;
     std::string m_message;
@@ -82,6 +100,9 @@ private:
     std::optional<Clock::time_point> m_changedAt;
     Clock::time_point m_buildStart{};
     bool m_buildRequested = false;
+    bool m_freshBuildRequested = false;
+    bool m_symbolFailure = false;
+    bool m_retriedSymbols = false;
 };
 
 } // namespace devex::runtime::detail

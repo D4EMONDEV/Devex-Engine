@@ -86,6 +86,7 @@ std::uint32_t artifactVersion(AssetType type) noexcept
     case AssetType::Material:
     case AssetType::Model:
     case AssetType::Scene:
+    case AssetType::AudioClip:
         return 1;
     }
     return 0;
@@ -308,6 +309,82 @@ std::vector<std::byte> encodeScene(std::string_view text)
     BinaryWriter writer = beginArtifact(AssetType::Scene);
     writer.writeString(text);
     return writer.take();
+}
+
+std::vector<std::byte> encodeAudioClip(const AudioClipData& clip)
+{
+    BinaryWriter writer = beginArtifact(AssetType::AudioClip);
+    writer.write(clip.encoding);
+    writer.write(clip.loading);
+    writer.write(clip.channels);
+    writer.write(clip.sampleRate);
+    writer.write(clip.frames);
+    writer.writeArray(std::span<const std::uint8_t>(clip.waveform));
+    // The file last, so that the description reads without it.
+    writer.writeArray(std::span<const std::byte>(clip.encoded));
+    return writer.take();
+}
+
+namespace {
+
+[[nodiscard]] core::Result<AudioClipData> decodeAudioClip(std::span<const std::byte> bytes, bool withFile)
+{
+    BinaryReader reader(bytes);
+    if (core::Result<void> header = readHeader(reader, AssetType::AudioClip); !header)
+    {
+        return std::unexpected(header.error());
+    }
+    AudioClipData clip;
+    clip.encoding = reader.read<AudioEncoding>();
+    clip.loading = reader.read<AudioLoading>();
+    clip.channels = reader.read<std::uint32_t>();
+    clip.sampleRate = reader.read<std::uint32_t>();
+    clip.frames = reader.read<std::uint64_t>();
+    clip.waveform = reader.readArray<std::uint8_t>();
+    if (withFile)
+    {
+        clip.encoded = reader.readArray<std::byte>();
+    }
+    const bool known = clip.encoding >= AudioEncoding::Wav && clip.encoding <= AudioEncoding::Vorbis &&
+                       (clip.loading == AudioLoading::Decoded || clip.loading == AudioLoading::Streamed);
+    if (reader.failed() || !known || clip.channels == 0 || clip.sampleRate == 0 || (withFile && clip.encoded.empty()))
+    {
+        return std::unexpected(truncated(AssetType::AudioClip));
+    }
+    return clip;
+}
+
+} // namespace
+
+core::Result<AudioClipData> decodeAudioClip(std::span<const std::byte> bytes)
+{
+    return decodeAudioClip(bytes, true);
+}
+
+core::Result<AudioClipData> decodeAudioClipInfo(std::span<const std::byte> bytes)
+{
+    return decodeAudioClip(bytes, false);
+}
+
+std::string_view toString(AudioEncoding encoding) noexcept
+{
+    switch (encoding)
+    {
+    case AudioEncoding::Wav:
+        return "WAV";
+    case AudioEncoding::Flac:
+        return "FLAC";
+    case AudioEncoding::Mp3:
+        return "MP3";
+    case AudioEncoding::Vorbis:
+        return "Ogg Vorbis";
+    }
+    return "unknown";
+}
+
+std::string_view toString(AudioLoading loading) noexcept
+{
+    return loading == AudioLoading::Streamed ? "streamed" : "decoded";
 }
 
 core::Result<std::string> decodeScene(std::span<const std::byte> bytes)

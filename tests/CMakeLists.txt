@@ -91,6 +91,16 @@ target_compile_definitions(devex_asset_tests
     PRIVATE DEVEX_TEST_DATA_DIRECTORY="${CMAKE_CURRENT_SOURCE_DIR}/data"
 )
 
+devex_add_tests(audio
+    SOURCES
+        audio/AudioTests.cpp
+    LIBRARIES
+        Devex::Engine
+)
+target_compile_definitions(devex_audio_tests
+    PRIVATE DEVEX_TEST_DATA_DIRECTORY="${CMAKE_CURRENT_SOURCE_DIR}/data"
+)
+
 devex_add_tests(platform
     SOURCES
         platform/InputTests.cpp
@@ -128,6 +138,8 @@ devex_add_tests(tools
         tools/ProjectListTests.cpp
         tools/SceneCommandsTests.cpp
         tools/SceneTabsTests.cpp
+        tools/TextDocumentTests.cpp
+        tools/TextEditorTests.cpp
         tools/ThemeTests.cpp
         tools/ToolsOverlayTests.cpp
     LIBRARIES
@@ -148,6 +160,12 @@ target_link_libraries(devex_test_game_module PRIVATE Devex::Engine)
 set_target_properties(devex_test_game_module PROPERTIES FOLDER "Tests")
 devex_set_warnings(devex_test_game_module)
 
+# An old game ABI must be rejected before registering any of its components.
+add_library(devex_test_incompatible_game_module SHARED runtime/TestIncompatibleGameModule.cpp)
+target_link_libraries(devex_test_incompatible_game_module PRIVATE Devex::Engine)
+set_target_properties(devex_test_incompatible_game_module PROPERTIES FOLDER "Tests")
+devex_set_warnings(devex_test_incompatible_game_module)
+
 # The dummy SDL video driver lets the main loop run without a display.
 devex_add_tests(runtime
     SOURCES
@@ -163,7 +181,7 @@ devex_add_tests(runtime
     ENVIRONMENT
         SDL_VIDEO_DRIVER=dummy
 )
-add_dependencies(devex_runtime_tests devex_test_game_module)
+add_dependencies(devex_runtime_tests devex_test_game_module devex_test_incompatible_game_module)
 
 # A C# game assembly for the tests of the managed runtime, built when the .NET SDK is installed.
 if(DEVEX_DOTNET)
@@ -187,4 +205,6 @@ endif()
 target_include_directories(devex_runtime_tests PRIVATE "${PROJECT_SOURCE_DIR}/engine/src")
 target_compile_definitions(devex_runtime_tests
     PRIVATE DEVEX_TEST_GAME_MODULE="$<TARGET_FILE:devex_test_game_module>"
+            DEVEX_TEST_INCOMPATIBLE_GAME_MODULE="$<TARGET_FILE:devex_test_incompatible_game_module>"
+            DEVEX_TEST_DATA_DIRECTORY="${CMAKE_CURRENT_SOURCE_DIR}/data"
 )

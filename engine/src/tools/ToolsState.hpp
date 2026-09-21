@@ -6,11 +6,13 @@
 #include "Icons.hpp"
 #include "ProjectList.hpp"
 #include "SceneTabs.hpp"
+#include "TextDocument.hpp"
 #include "Theme.hpp"
 #include "Widgets.hpp"
 
 #include <devex/asset/AssetId.hpp>
 #include <devex/asset/AssetType.hpp>
+#include <devex/asset/AudioClipData.hpp>
 #include <devex/asset/Project.hpp>
 #include <devex/asset/import/AssetDatabase.hpp>
 #include <devex/core/Uuid.hpp>
@@ -29,12 +31,18 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <unordered_map>
 #include <vector>
+
+namespace devex::audio {
+class AudioEngine;
+class Clip;
+} // namespace devex::audio
 
 namespace devex::tools::detail {
 
@@ -47,6 +55,7 @@ inline constexpr const char* assetsWindow = "FileSystem";
 inline constexpr const char* viewportWindow = "Viewport";
 inline constexpr const char* settingsWindow = "Editor Settings";
 inline constexpr const char* debuggingWindow = "C# Debugging";
+inline constexpr const char* textEditorWindow = "Text Editor";
 
 // Payload type of an entity dragged in the hierarchy: the 16 bytes of its UUID.
 inline constexpr const char* entityPayload = "DEVEX_ENTITY";
@@ -86,13 +95,15 @@ enum class EditorTool : std::uint8_t
     Scale,
 };
 
-// An action that drops scenes, waiting for the user to decide about their unsaved changes.
+// An action that drops scenes or text files, waiting for a decision about their unsaved changes.
 struct PendingAction
 {
     enum class Kind : std::uint8_t
     {
         // Closes one scene tab.
         CloseTab,
+        CloseText,
+        ReloadText,
         OpenProject,
         // Goes back to the project manager.
         CloseProject,
@@ -102,7 +113,7 @@ struct PendingAction
     Kind kind = Kind::CloseTab;
     // The tab to close.
     std::uint64_t tab = 0;
-    // The project to open.
+    // The project to open, or the text file to close/reload.
     std::filesystem::path path;
 };
 
@@ -114,6 +125,7 @@ struct DialogAnswers
     std::optional<std::filesystem::path> scanFolder;
     std::optional<std::filesystem::path> newProjectLocation;
     std::optional<std::filesystem::path> openScene;
+    std::optional<std::filesystem::path> openText;
     std::optional<std::filesystem::path> saveSceneAs;
     std::optional<std::filesystem::path> saveAsPrefab;
     std::optional<std::filesystem::path> exportFolder;
@@ -124,6 +136,7 @@ struct ProjectInfo
 {
     std::string name;
     bool exists = false;
+    ProjectCodeStatus code;
     // When the project file last changed, in seconds since 1970.
     std::int64_t modified = 0;
 };
@@ -196,9 +209,27 @@ struct ToolsState
     bool showAssets = true;
     bool showViewport = true;
     bool showSettings = false;
+    bool showTextEditor = false;
+    bool focusTextEditor = false;
+    bool selectTextTab = false;
+    std::vector<TextDocument> textDocuments;
+    std::filesystem::path activeText;
+    std::string textOpenError;
 
     // Null when the application runs without a project.
     asset::AssetDatabase* database = nullptr;
+    // The mixer clips are previewed on, and where clips come from; null without audio.
+    audio::AudioEngine* audio = nullptr;
+    std::function<std::shared_ptr<const audio::Clip>(asset::AssetId)> audioClips;
+    // The asset of the FileSystem shown in the inspector (an audio clip), invalid when an entity or
+    // a code file is selected.
+    asset::AssetId selectedAsset;
+    // What the inspector shows of the selected clip, read again once the file is imported again.
+    std::optional<asset::AudioClipData> selectedClipInfo;
+    std::size_t selectedClipSize = 0;
+    bool selectedClipStale = true;
+    // The clip playing in the editor, whose playhead the inspector shows.
+    asset::AssetId previewedClip;
     std::string assetFilter;
     std::string hierarchyFilter;
 
@@ -237,6 +268,7 @@ struct ToolsState
     PlayState playState = PlayState::Editing;
     EditorRequests requests;
     GameCodeStatus gameCode;
+    std::function<ProjectCodeStatus(const asset::Project&)> projectCodeStatus;
     DebuggerStatus debugger;
     // The C# Debugging window, and whether Play waits for a debugger.
     bool showDebugging = false;
@@ -253,7 +285,6 @@ struct ToolsState
     // Code.
     // The file of the code folder shown in the inspector, empty when an entity is selected.
     std::filesystem::path selectedCode;
-    std::string selectedCodeText;
     // A component the editor asked for, added to this entity once its code is compiled and loaded.
     std::string pendingScript;
     core::Uuid pendingScriptEntity;
@@ -315,6 +346,14 @@ void drawHierarchyPanel(ToolsState& state, scene::Scene& scene);
 void drawInspectorPanel(ToolsState& state, scene::Scene& scene);
 // The files of the code folder of the project, under the assets.
 void drawCodeFiles(ToolsState& state);
+void openTextFile(ToolsState& state, const std::filesystem::path& path);
+void showOpenTextDialog(ToolsState& state);
+void drawTextEditorPanel(ToolsState& state, scene::Scene& scene);
+[[nodiscard]] bool textEditorFocused();
+[[nodiscard]] TextDocument* findTextDocument(ToolsState& state, const std::filesystem::path& path);
+[[nodiscard]] std::vector<TextDocument*> affectedTextDocuments(ToolsState& state, const PendingAction& action);
+[[nodiscard]] bool saveTextFile(ToolsState& state, scene::Scene& scene, TextDocument& document);
+void discardPendingAction(ToolsState& state, scene::Scene& scene);
 // The file selected in the code folder, shown read-only in the inspector.
 void drawCodeInspector(ToolsState& state);
 // Asks for a new component file and, once it is compiled, adds it to the entity.
@@ -327,6 +366,12 @@ void openInCodeEditor(ToolsState& state, const std::filesystem::path& file);
 void drawStatisticsPanel(ToolsState& state, const scene::Scene& scene);
 void drawConsolePanel(ToolsState& state);
 void drawAssetsPanel(ToolsState& state, scene::Scene& scene);
+// Shows an asset of the FileSystem in the inspector, in place of the selected entity or code file.
+void selectAsset(ToolsState& state, asset::AssetId id);
+// The selected audio clip: its format, its waveform, how it loads, and a preview.
+void drawAudioClipInspector(ToolsState& state);
+void previewAudioClip(ToolsState& state, asset::AssetId clip);
+void stopAudioPreview(ToolsState& state);
 
 // Editor.
 void drawViewportPanel(ToolsState& state, scene::Scene& scene);

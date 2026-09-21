@@ -343,6 +343,7 @@ void buildDefaultLayout(ImGuiID dockspace, const ImGuiViewport& viewport, ToolsM
     ImGui::DockBuilderDockWindow(detail::inspectorWindow, right);
     ImGui::DockBuilderDockWindow(detail::consoleWindow, bottom);
     ImGui::DockBuilderDockWindow(detail::statisticsWindow, bottom);
+    ImGui::DockBuilderDockWindow(detail::textEditorWindow, bottom);
     if (mode == ToolsMode::Editor)
     {
         ImGui::DockBuilderDockWindow(detail::viewportWindow, center);
@@ -379,6 +380,8 @@ void finishFrame(ToolsState& state)
 
 void handleShortcuts(ToolsState& state, scene::Scene& scene)
 {
+    if (detail::textEditorFocused())
+        return;
     // Text fields route these chords to their own undo first.
     if (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_Z, ImGuiInputFlags_RouteGlobal))
     {
@@ -464,6 +467,7 @@ void updateEditor(ToolsState& state, scene::Scene& scene, PlayState playState)
     detail::drawDebuggingWindow(state);
     detail::drawNewScriptPopup(state);
     detail::updatePendingScript(state, scene);
+    detail::drawTextEditorPanel(state, scene);
     detail::drawEditorPopups(state, scene);
     if (state.pendingCommand != nullptr)
     {
@@ -678,6 +682,12 @@ void ToolsOverlay::setGameCodeStatus(GameCodeStatus status)
     m_state->gameCode = std::move(status);
 }
 
+void ToolsOverlay::setProjectCodeStatusProvider(std::function<ProjectCodeStatus(const asset::Project&)> provider)
+{
+    m_state->projectCodeStatus = std::move(provider);
+    m_state->projectManager.refresh = true;
+}
+
 void ToolsOverlay::setDebuggerStatus(DebuggerStatus status)
 {
     if (status.waiting && !m_state->debugger.waiting)
@@ -734,10 +744,32 @@ void ToolsOverlay::setAssetDatabase(asset::AssetDatabase* database) noexcept
     state.tabs.clear(detail::ActiveDocument{state.scenePath, dropped, state.history, state.savedState, state.selection,
                                             state.camera});
     state.pendingAction.reset();
+    state.textDocuments.clear();
+    state.activeText.clear();
+    state.textOpenError.clear();
+    state.showTextEditor = false;
+    state.selectedCode.clear();
+    state.dialogAnswers->openText.reset();
     state.resumeActionAfterPlay = false;
+    detail::stopAudioPreview(state);
+    state.selectedAsset = {};
+    state.selectedClipInfo.reset();
     state.database = database;
     state.projectChanged = database != nullptr;
     state.projectManager.refresh = true;
+}
+
+void ToolsOverlay::openTextFile(const std::filesystem::path& file)
+{
+    detail::openTextFile(*m_state, file);
+}
+
+void ToolsOverlay::setAudio(audio::AudioEngine* engine,
+                            std::function<std::shared_ptr<const audio::Clip>(asset::AssetId)> clips)
+{
+    detail::stopAudioPreview(*m_state);
+    m_state->audio = engine;
+    m_state->audioClips = std::move(clips);
 }
 
 CommandHistory& ToolsOverlay::history() noexcept
