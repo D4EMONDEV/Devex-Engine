@@ -10,6 +10,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <filesystem>
+#include <memory>
 
 using devex::core::Duration;
 using devex::math::Vec2;
@@ -481,7 +482,8 @@ TEST_CASE("A canvas hands the styles of its theme to the elements that follow th
 {
     Form form;
     form.scene.get<UiRect>(form.toggle).style = "box";
-    devex::asset::ThemeData theme;
+    auto shared = std::make_shared<devex::asset::ThemeData>();
+    devex::asset::ThemeData& theme = *shared;
     theme.styles.push_back(
         {.name = "box",
          .values = {{.component = "UiImage",
@@ -492,7 +494,7 @@ TEST_CASE("A canvas hands the styles of its theme to the elements that follow th
                     {.component = "UiSlider", .field = "value", .value = "0.5"}}});
 
     UiWorld world;
-    world.setThemes([&theme](devex::asset::AssetId) { return &theme; });
+    world.setThemes([&shared](devex::asset::AssetId) { return shared; });
     form.scene.get<Canvas>(form.canvas).theme = devex::asset::AssetId::generate();
     world.update(form.scene, window, UiInput{}, frame);
 
@@ -588,4 +590,90 @@ TEST_CASE("A click lands between the letters of a field", "[ui][world][field]")
                  frame);
     CHECK(world.editStateOf(form.field)->selectionMin == 0);
     CHECK(world.editStateOf(form.field)->selectionMax == 6);
+}
+
+namespace {
+
+[[nodiscard]] std::shared_ptr<devex::asset::ThemeData> boxTheme(const char* color)
+{
+    auto theme = std::make_shared<devex::asset::ThemeData>();
+    theme->styles.push_back(
+        {.name = "box", .values = {{.component = "UiImage", .field = "color", .value = color}}});
+    return theme;
+}
+
+} // namespace
+
+TEST_CASE("An element names its style, found in the theme of the canvas above it",
+          "[ui][world][theme]")
+{
+    Form form;
+    const std::shared_ptr<devex::asset::ThemeData> theme = boxTheme("vec4(1, 0, 0, 1)");
+    const devex::asset::AssetId id = devex::asset::AssetId::generate();
+    form.scene.get<Canvas>(form.canvas).theme = id;
+    const devex::ui::ThemeSource themes = [&](devex::asset::AssetId asked) {
+        return asked == id ? theme : nullptr;
+    };
+
+    // An element that names no style has nothing to show.
+    CHECK(devex::ui::styleOf(form.scene, form.toggle, themes).name.empty());
+
+    form.scene.get<UiRect>(form.toggle).style = "box";
+    const devex::ui::ElementStyle found = devex::ui::styleOf(form.scene, form.toggle, themes);
+    CHECK(found.name == "box");
+    CHECK(found.theme == id);
+    REQUIRE(found.style != nullptr);
+    CHECK(found.sets("UiImage", "color"));
+    CHECK_FALSE(found.sets("UiImage", "texture"));
+    CHECK_FALSE(found.sets("UiText", "color"));
+
+    // A name the theme does not carry is found as missing, and so is a canvas without a theme.
+    form.scene.get<UiRect>(form.toggle).style = "nothing";
+    const devex::ui::ElementStyle missing = devex::ui::styleOf(form.scene, form.toggle, themes);
+    CHECK(missing.data != nullptr);
+    CHECK(missing.style == nullptr);
+    form.scene.get<Canvas>(form.canvas).theme = {};
+    CHECK_FALSE(devex::ui::styleOf(form.scene, form.toggle, themes).theme.isValid());
+}
+
+TEST_CASE("A theme that changes applies at the next frame", "[ui][world][theme]")
+{
+    Form form;
+    form.scene.get<UiRect>(form.toggle).style = "box";
+    form.scene.get<Canvas>(form.canvas).theme = devex::asset::AssetId::generate();
+    std::shared_ptr<const devex::asset::ThemeData> current = boxTheme("vec4(0.25, 0, 0, 1)");
+    UiWorld world;
+    world.setThemes([&current](devex::asset::AssetId) { return current; });
+
+    world.update(form.scene, window, UiInput{}, frame);
+    CHECK(form.scene.get<UiImage>(form.toggle).color.x == Catch::Approx(0.25f));
+
+    // The file was saved again: the asset manager hands out the new theme, read once more.
+    current = boxTheme("vec4(0.5, 0, 0, 1)");
+    world.update(form.scene, window, UiInput{}, frame);
+    CHECK(form.scene.get<UiImage>(form.toggle).color.x == Catch::Approx(0.5f));
+}
+
+TEST_CASE("The styles apply without an interface world, as the editor applies them",
+          "[ui][theme]")
+{
+    Form form;
+    form.scene.get<UiRect>(form.toggle).style = "box";
+    form.scene.get<Canvas>(form.canvas).theme = devex::asset::AssetId::generate();
+    const std::shared_ptr<devex::asset::ThemeData> theme = boxTheme("vec4(0.75, 0, 0, 1)");
+    // A value a style writes badly is left alone rather than breaking the others.
+    theme->styles.front().values.push_back({.component = "UiImage", .field = "corner_radius", .value = "vec4("});
+    theme->styles.front().values.push_back({.component = "UiImage", .field = "raycast_target", .value = "false"});
+
+    devex::ui::ThemeApplier applier;
+    applier.apply(form.scene);
+    CHECK(form.scene.get<UiImage>(form.toggle).color.x == Catch::Approx(1.0f));
+
+    applier.setThemes([&theme](devex::asset::AssetId) { return theme; });
+    applier.apply(form.scene);
+    CHECK(form.scene.get<UiImage>(form.toggle).color.x == Catch::Approx(0.75f));
+    CHECK(form.scene.get<UiImage>(form.toggle).cornerRadius == Catch::Approx(0.0f));
+    CHECK_FALSE(form.scene.get<UiImage>(form.toggle).raycastTarget);
+    // The elements that follow no style keep their own values.
+    CHECK(form.scene.get<UiImage>(form.slider).color.x == Catch::Approx(1.0f));
 }

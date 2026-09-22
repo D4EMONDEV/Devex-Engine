@@ -6,25 +6,26 @@
 #include <devex/ui/DrawList.hpp>
 #include <devex/ui/Layout.hpp>
 #include <devex/ui/TextLayout.hpp>
+#include <devex/ui/Theme.hpp>
 
 #include <cstddef>
 #include <functional>
+#include <memory>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <vector>
 
 namespace devex::scene {
 class Scene;
 }
 
-namespace devex::asset {
-struct ThemeData;
-}
-
 namespace devex::render {
 struct RenderWorld;
 }
+
 
 namespace devex::ui {
 
@@ -82,7 +83,7 @@ public:
     // it a field still takes what is typed, but only at the end of its text.
     void setFonts(std::function<FontRef(asset::AssetId)> fonts, asset::AssetId defaultFont = {});
     // Where the canvases find the theme they name. Without it the elements keep their own look.
-    void setThemes(std::function<const asset::ThemeData*(asset::AssetId)> themes);
+    void setThemes(ThemeSource themes);
 
     // Once per frame, before the drawing. The window size is in pixels. The scene is written to:
     // a list that scrolls and a field that is typed into keep their state in their components.
@@ -153,8 +154,6 @@ private:
     [[nodiscard]] ButtonState& buttonState(scene::Entity entity);
     // Writes what the bindings read into the texts they drive, before anything is placed.
     void updateBindings(scene::Scene& scene);
-    // Writes the styles of the theme of a canvas into the elements that follow them.
-    void updateTheme(scene::Scene& scene, const CanvasLayout& canvas);
     void updateHover(const scene::Scene& scene, const UiInput& input);
     void updateScroll(scene::Scene& scene, const UiInput& input);
     void updateNavigation(const scene::Scene& scene, const UiInput& input);
@@ -195,7 +194,7 @@ private:
     // The same cursor, in the bytes of the text the field draws, which the drawing reads.
     EditState m_editVisual;
     std::function<FontRef(asset::AssetId)> m_fonts;
-    std::function<const asset::ThemeData*(asset::AssetId)> m_themes;
+    ThemeApplier m_theme;
     asset::AssetId m_defaultFont;
     // Kept from one frame to the next, so that a field that is typed into allocates nothing.
     TextLayoutResult m_fieldLayout;

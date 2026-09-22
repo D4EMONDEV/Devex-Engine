@@ -1,12 +1,14 @@
 #include "ToolsState.hpp"
 
 #include <devex/asset/AssetId.hpp>
+#include <devex/asset/ThemeData.hpp>
 #include <devex/asset/Project.hpp>
 #include <devex/scene/ComponentRegistry.hpp>
 #include <devex/scene/FieldValue.hpp>
 #include <devex/scene/Prefab.hpp>
 #include <devex/scene/SceneSerializer.hpp>
 #include <devex/tools/SceneCommands.hpp>
+#include <devex/ui/Theme.hpp>
 
 #include <imgui_internal.h>
 #include <imgui_stdlib.h>
@@ -396,7 +398,8 @@ void drawListField(ToolsState& state, const scene::Scene& scene, core::Uuid enti
 
 // Draws a field, marked when its value differs from the one of the prefab's component, if any.
 void drawField(ToolsState& state, const scene::Scene& scene, core::Uuid entity, const scene::ComponentType& type,
-               const reflection::FieldInfo& field, void* component, const void* prefabComponent)
+               const reflection::FieldInfo& field, void* component, const void* prefabComponent,
+               const ui::ElementStyle& style)
 {
     void* const address = field.address(component);
     // The value before this frame's change, which becomes the start of an edit on activation.
@@ -418,7 +421,24 @@ void drawField(ToolsState& state, const scene::Scene& scene, core::Uuid entity, 
     const std::string label = displayName(field.name);
     propertyName(label.c_str(), prefabValue.has_value());
     const std::string id = "##" + std::string(field.name);
+    // A field the style of the element sets is written by the theme every frame: it shows the
+    // value of the theme and cannot be changed here, which would not hold.
+    const bool themed = style.sets(type.name(), field.name);
+    if (themed)
+    {
+        ImGui::BeginDisabled();
+    }
     const bool changed = drawValueWidget(state, scene, id.c_str(), field, address);
+    if (themed)
+    {
+        ImGui::EndDisabled();
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort))
+        {
+            ImGui::SetTooltip("Set by the style '%s' of the theme of the canvas.\n"
+                              "Change it in the theme, or leave the style to set it here.",
+                              style.name.c_str());
+        }
+    }
     if (prefabValue && state.playState == PlayState::Editing)
     {
         ImGui::PushID(id.c_str());
@@ -663,6 +683,76 @@ void drawAddComponent(ToolsState& state, scene::Scene& scene, scene::Entity enti
 
 } // namespace
 
+// Under the style field of an element: what its style does, or why it does nothing, and a way
+// to the theme that holds it.
+void drawStyleStatus(ToolsState& state, const ui::ElementStyle& style)
+{
+    if (style.name.empty())
+    {
+        return;
+    }
+    const ThemeColors& colors = themeColors();
+    ImGui::TableNextRow();
+    ImGui::TableSetColumnIndex(1);
+
+    std::optional<std::filesystem::path> themeFile;
+    std::string themeName = "the theme";
+    if (state.database != nullptr && style.theme.isValid())
+    {
+        if (const std::optional<asset::SourceFile> source = state.database->sourceOf(style.theme))
+        {
+            themeFile = state.database->project().absolutePath(source->path);
+            const std::size_t slash = source->path.find_last_of('/');
+            themeName = slash == std::string::npos ? source->path : source->path.substr(slash + 1);
+        }
+    }
+
+    ImGui::AlignTextToFramePadding();
+    if (!style.theme.isValid())
+    {
+        iconLabel(icons::TriangleAlert, colors.warning);
+        ImGui::SameLine();
+        ImGui::TextColored(uiColor(colors.warning), "No theme on the canvas");
+        ImGui::SetItemTooltip("The canvas above this element names no theme, so the style '%s' sets nothing.",
+                              style.name.c_str());
+        return;
+    }
+    if (style.data == nullptr || style.style == nullptr)
+    {
+        iconLabel(icons::TriangleAlert, colors.warning);
+        ImGui::SameLine();
+        ImGui::TextColored(uiColor(colors.warning), "Not in the theme");
+        if (style.data == nullptr)
+        {
+            ImGui::SetItemTooltip("The theme of the canvas, %s, is not loaded.", themeName.c_str());
+        }
+        else
+        {
+            ImGui::SetItemTooltip("%s has no style named '%s'.", themeName.c_str(), style.name.c_str());
+        }
+    }
+    else
+    {
+        // Short, so that the way to the theme stays in view in a narrow panel; the name of the
+        // theme is in the tooltip.
+        iconLabel(icons::Palette, colors.accent);
+        ImGui::SameLine();
+        const std::size_t count = style.style->values.size();
+        ImGui::TextDisabled("%zu %s", count, count == 1 ? "field" : "fields");
+        ImGui::SetItemTooltip("The style '%s' of %s sets %zu %s of this element: they show greyed out.",
+                              style.name.c_str(), themeName.c_str(), count, count == 1 ? "field" : "fields");
+    }
+    if (themeFile)
+    {
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Open"))
+        {
+            openTextFile(state, *themeFile);
+        }
+        ImGui::SetItemTooltip("Open %s in the Script screen", themeName.c_str());
+    }
+}
+
 void drawInspectorPanel(ToolsState& state, scene::Scene& scene)
 {
     if (ImGui::Begin(inspectorWindow))
@@ -725,6 +815,7 @@ void drawInspectorPanel(ToolsState& state, scene::Scene& scene)
         {
             drawPrefabSection(state, scene, entity, instance);
         }
+        const ui::ElementStyle style = ui::styleOf(scene, entity, state.themes);
 
         for (const scene::ComponentType& type : scene::componentRegistry().types())
         {
@@ -743,7 +834,12 @@ void drawInspectorPanel(ToolsState& state, scene::Scene& scene)
             {
                 for (const reflection::FieldInfo& field : type.type->fields)
                 {
-                    drawField(state, scene, uuid, type, field, const_cast<void*>(component), prefabComponent);
+                    drawField(state, scene, uuid, type, field, const_cast<void*>(component), prefabComponent,
+                              style);
+                    if (name == "UiRect" && field.name == "style")
+                    {
+                        drawStyleStatus(state, style);
+                    }
                 }
                 endProperties();
             }

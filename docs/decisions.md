@@ -1312,11 +1312,20 @@ les assets s'écrivent au fil de leur lecture.
 - **Thèmes** : un fichier `.dvxtheme` est un asset (`theme`) de **styles nommés** ; chaque section
   `[style name="panel" component="UiImage"]` donne des valeurs de champs d'un composant, et un
   style peut toucher plusieurs composants. Le canevas nomme son thème (`Canvas::theme`) et chaque
-  élément le style qu'il suit (`UiRect::style`) ; `UiWorld` écrit ces valeurs dans les composants
-  de l'élément à chaque frame, par la réflexion, sans ajouter de composant qu'il n'a pas. Les
-  valeurs qu'un style nomme appartiennent donc au thème : un script qui les change sera repris à
-  la frame suivante. Un thème modifié est relu aussitôt. Les champs de mise en page qu'un style
-  change prennent effet à la frame qui suit, puisque le style s'applique après le placement.
+  élément le style qu'il suit (`UiRect::style`) ; `ui::ThemeApplier` écrit ces valeurs dans les
+  composants de l'élément à chaque frame, avant la mise en page, par la réflexion, sans ajouter de
+  composant qu'il n'a pas. Les valeurs qu'un style nomme appartiennent donc au thème : un script qui
+  les change est repris à la frame suivante. Chaque texte de valeur n'est lu qu'une fois (le cache
+  est indexé par le texte, qui reste juste quand un thème est relu), et un thème modifié s'applique
+  à la frame qui suit sa réimportation.
+- **Thèmes dans l'éditeur** : hors Play, l'éditeur applique lui aussi les thèmes à la scène éditée,
+  pour que l'écran 2D et l'inspecteur montrent l'interface telle que le jeu la dessinera ; ces
+  écritures ne passent pas par l'historique et ne marquent pas la scène comme modifiée. Dans
+  l'inspecteur, les champs qu'un style écrit sont grisés et ne se modifient pas (une infobulle dit
+  pourquoi), et une ligne sous le champ `style` dit combien de champs le style écrit, ou pourquoi
+  il n'en écrit aucun (pas de thème sur le canevas, pas de style de ce nom), avec **Open** qui
+  ouvre le thème dans l'écran Script. `ui::styleOf` trouve le style d'un élément : le thème du
+  canevas le plus proche au-dessus de lui, puis le style de ce nom.
 - **Dessin** : `ui::buildDrawList` transforme les éléments placés en sommets, indices et lots que
   le renderer dessine en une passe après le tonemapping, dans l'image du jeu (donc aussi dans le
   viewport de l'éditeur). Les lots se rejoignent tant que la texture et le genre ne changent pas ;
@@ -1750,6 +1759,10 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     l'éditeur, rapport de plantage avec pile symbolisée et minidump, symboles des builds Release,
     recompilation du code périmé avant de jouer, et jeux exportés sans fenêtre console, qui
     montrent leur erreur fatale dans une boîte de dialogue.
+
+25. ✅ **Thèmes dans l'éditeur** — thèmes appliqués à la scène éditée hors Play et avant la mise
+    en page, valeurs lues une seule fois, champs écrits par un style grisés dans l'inspecteur,
+    état du style et ouverture du thème depuis l'inspecteur.
 
 Ensuite, sans ordre figé : jeux 2D, particules, CI Linux.
 

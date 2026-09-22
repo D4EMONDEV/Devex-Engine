@@ -532,6 +532,7 @@ target_sources(devex_ui
         src/ui/DrawList.cpp
         src/ui/Layout.cpp
         src/ui/TextLayout.cpp
+        src/ui/Theme.cpp
         src/ui/UiWorld.cpp
     PUBLIC
         FILE_SET HEADERS
@@ -540,6 +541,7 @@ target_sources(devex_ui
             include/devex/ui/DrawList.hpp
             include/devex/ui/Layout.hpp
             include/devex/ui/TextLayout.hpp
+            include/devex/ui/Theme.hpp
             include/devex/ui/UiWorld.hpp
 )
 

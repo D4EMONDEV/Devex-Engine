@@ -269,6 +269,8 @@ struct ToolsState
     asset::AssetId previewedClip;
     // Animations: where clips come from, and the animations of the game while it plays.
     std::function<std::shared_ptr<const animation::Clip>(asset::AssetId)> animationClips;
+    // The themes of interfaces, for the inspector to show what a style sets.
+    std::function<std::shared_ptr<const asset::ThemeData>(asset::AssetId)> themes;
     animation::AnimationWorld* animationWorld = nullptr;
     bool showAnimation = false;
     // What the Animation panel shows: the clip it last posed, and where its playhead stands.

@@ -823,6 +823,11 @@ void ToolsOverlay::setAnimationClips(std::function<std::shared_ptr<const animati
     m_state->animationClips = std::move(clips);
 }
 
+void ToolsOverlay::setThemes(std::function<std::shared_ptr<const asset::ThemeData>(asset::AssetId)> themes)
+{
+    m_state->themes = std::move(themes);
+}
+
 void ToolsOverlay::setAnimationWorld(animation::AnimationWorld* world) noexcept
 {
     m_state->animationWorld = world;

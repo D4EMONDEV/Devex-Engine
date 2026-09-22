@@ -63,7 +63,8 @@ Le détail, l'architecture des modules et les jalons sont dans
 - `Devex::Tools` : interface ImGui au thème réglable inspiré de Godot (Noto Sans, JetBrains Mono,
   icônes Lucide) : arbre de la scène, inspecteur, FileSystem, sortie, statistiques, annulation, en
   overlay (F1) ou dans l'éditeur : écrans 2D, 3D et Script au centre de la barre de menus, dont
-  l'écran 2D où les interfaces se choisissent, se déplacent et se redimensionnent,
+  l'écran 2D où les interfaces se choisissent, se déplacent et se redimensionnent avec leur thème
+  appliqué comme en jeu (l'inspecteur grise les champs qu'un style écrit et ouvre le thème),
   gestionnaire de projets, onglets de scènes, viewport et sa
   barre d'outils, caméra libre, sélection à la souris, gizmos, préfabs (glisser-déposer, valeurs
   modifiées, Revert, Make Local, Save as Prefab, mise à jour en direct), fichiers de code du projet

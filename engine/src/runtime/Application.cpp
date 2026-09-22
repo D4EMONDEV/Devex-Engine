@@ -318,8 +318,9 @@ private:
     std::unique_ptr<audio::AudioWorld> m_audio;
     std::unique_ptr<animation::AnimationWorld> m_animation;
     std::unique_ptr<ui::UiWorld> m_ui;
-    // Keeps the theme read last alive while the interface reads it.
-    std::shared_ptr<const asset::ThemeData> m_uiTheme;
+    // The themes of the scene being edited, applied outside Play so that the 2D screen and the
+    // inspector show the interface as the game will.
+    ui::ThemeApplier m_editedThemes;
     // The stick of the pad on the previous frame, so that pushing it moves the focus once.
     math::Vec2 m_uiStick{0.0f};
     // The audio settings the mixer has, to follow changes to the project.
@@ -356,6 +357,7 @@ ApplicationRunner::ApplicationRunner(Application& application, const Application
     , m_enablePhysics(config.enablePhysics)
 {
     m_application.m_runner = this;
+    m_editedThemes.setThemes([this](asset::AssetId id) { return m_services.assets.theme(id); });
     m_application.m_platform = &services.platform;
     m_application.m_window = &services.window;
     m_application.m_renderer = services.renderer;
@@ -608,6 +610,10 @@ void ApplicationRunner::runFrame()
         }
         updateAnimation(frameTime);
         updateUi(frameTime);
+        if (!m_playScene)
+        {
+            m_editedThemes.apply(*m_application.m_scene);
+        }
         m_application.m_scene->updateTransforms();
         if (m_physics && m_playScene)
         {
@@ -1374,10 +1380,7 @@ void ApplicationRunner::createUi()
                                : ui::FontRef{};
     });
     // The themes are kept by the asset manager: the world only reads the one a canvas names.
-    m_ui->setThemes([this](asset::AssetId id) {
-        m_uiTheme = m_services.assets.theme(id);
-        return m_uiTheme.get();
-    });
+    m_ui->setThemes([this](asset::AssetId id) { return m_services.assets.theme(id); });
     m_application.m_ui = m_ui.get();
 }
 
@@ -2027,6 +2030,7 @@ int run(Application& application, const ApplicationConfig& config)
             tools->setAudio(audioEngine.get(),
                             [&assets](asset::AssetId clip) { return assets.audioClip(clip); });
             tools->setAnimationClips([&assets](asset::AssetId clip) { return assets.animationClip(clip); });
+            tools->setThemes([&assets](asset::AssetId theme) { return assets.theme(theme); });
             const std::filesystem::path engineConfig = (platform->baseDirectory() / ".." / "cmake").lexically_normal();
             tools->setProjectCodeStatusProvider([engineConfig](const asset::Project& project) {
                 const auto status = detail::GameCodeBuilder::buildStatus(project, engineConfig);

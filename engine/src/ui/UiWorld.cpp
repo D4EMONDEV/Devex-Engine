@@ -227,6 +227,8 @@ void UiWorld::update(scene::Scene& scene, math::Vec2 windowSize, const UiInput& 
     m_cancelled = input.cancelPressed;
 
     updateBindings(scene);
+    // Before the layout, so that a style that moves or sizes an element does so this frame.
+    m_theme.apply(scene);
 
     // The canvases of the scene, laid out in the order they are drawn.
     std::vector<CanvasLayout> previous = std::move(m_canvases);
@@ -250,10 +252,6 @@ void UiWorld::update(scene::Scene& scene, math::Vec2 windowSize, const UiInput& 
         m_canvases.push_back(std::move(state));
     }
     std::ranges::stable_sort(m_canvases, {}, &CanvasLayout::sortOrder);
-    for (const CanvasLayout& canvas : m_canvases)
-    {
-        updateTheme(scene, canvas);
-    }
 
     updateHover(scene, input);
     updateScroll(scene, input);
@@ -343,56 +341,6 @@ void UiWorld::updateBindings(scene::Scene& scene)
         if (text->text != written)
         {
             text->text = written;
-        }
-    }
-}
-
-void UiWorld::updateTheme(scene::Scene& scene, const CanvasLayout& canvas)
-{
-    if (!m_themes)
-    {
-        return;
-    }
-    const scene::Canvas* const root = scene.tryGet<scene::Canvas>(canvas.entity);
-    const asset::ThemeData* const theme =
-        root != nullptr && root->theme.isValid() ? m_themes(root->theme) : nullptr;
-    if (theme == nullptr)
-    {
-        return;
-    }
-    const scene::ComponentRegistry& registry = scene::componentRegistry();
-    for (const LaidOutRect& rect : canvas.layout.rects)
-    {
-        const scene::UiRect* const element = scene.tryGet<scene::UiRect>(rect.entity);
-        if (element == nullptr || element->style.empty())
-        {
-            continue;
-        }
-        const asset::ThemeStyle* const style = theme->find(element->style);
-        if (style == nullptr)
-        {
-            continue;
-        }
-        for (const asset::ThemeOverride& written : style->values)
-        {
-            const scene::ComponentType* const type = registry.find(written.component);
-            void* const component =
-                type != nullptr && type->findMutable ? type->findMutable(scene, rect.entity)
-                                                     : nullptr;
-            const reflection::FieldInfo* const field =
-                component != nullptr ? type->type->findField(written.field) : nullptr;
-            if (field == nullptr || field->list != nullptr)
-            {
-                continue;
-            }
-            const std::optional<serialization::TextValue> value =
-                serialization::parseValue(written.value);
-            if (!value)
-            {
-                continue;
-            }
-            // A value the style writes badly is left alone rather than shouting every frame.
-            static_cast<void>(scene::readFieldValue(*field, *value, field->address(component)));
         }
     }
 }
@@ -1099,9 +1047,9 @@ void UiWorld::setFonts(std::function<FontRef(asset::AssetId)> fonts, asset::Asse
     m_defaultFont = defaultFont;
 }
 
-void UiWorld::setThemes(std::function<const asset::ThemeData*(asset::AssetId)> themes)
+void UiWorld::setThemes(ThemeSource themes)
 {
-    m_themes = std::move(themes);
+    m_theme.setThemes(std::move(themes));
 }
 
 scene::Entity UiWorld::editedField() const noexcept
