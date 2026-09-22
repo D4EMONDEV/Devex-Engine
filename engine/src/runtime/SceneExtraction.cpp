@@ -68,6 +68,7 @@ void extractScene(scene::Scene& scene, AssetManager& assets, render::RenderWorld
             .intensity = light.color * render::colorFromTemperature(light.temperature) *
                          render::luminousIntensityFromPower(light.intensity),
             .range = light.range,
+            .castShadows = light.castShadows,
         });
     }
     for ([[maybe_unused]] auto [entity, transform, light] :
@@ -82,6 +83,7 @@ void extractScene(scene::Scene& scene, AssetManager& assets, render::RenderWorld
             .range = light.range,
             .innerAngle = light.innerAngle,
             .outerAngle = light.outerAngle,
+            .castShadows = light.castShadows,
         });
     }
 

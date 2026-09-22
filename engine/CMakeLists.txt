@@ -296,6 +296,7 @@ add_library(Devex::Render ALIAS devex_render)
 
 target_sources(devex_render
     PRIVATE
+        src/render/Culling.cpp
         src/render/Lighting.cpp
         src/render/Lighting.hpp
         src/render/Photometry.cpp
@@ -331,6 +332,7 @@ target_sources(devex_render
         FILE_SET HEADERS
         BASE_DIRS include
         FILES
+            include/devex/render/Culling.hpp
             include/devex/render/Gpu.hpp
             include/devex/render/Photometry.hpp
             include/devex/render/Renderer.hpp

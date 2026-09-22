@@ -38,6 +38,7 @@ void drawStatisticsPanel(ToolsState& state, const scene::Scene& scene)
             row("Presentation", std::string(render::toString(state.renderer.presentMode())));
             row("Swapchain", std::format("{} x {}", stats.swapchainExtent.width, stats.swapchainExtent.height));
             row("Draw calls", std::format("{}", stats.drawCalls));
+            row("Culled", std::format("{}", stats.culledInstances));
             row("Meshes", std::format("{}", stats.meshCount));
             row("Textures", std::format("{}", stats.textureCount));
             row("Materials", std::format("{}", stats.materialCount));

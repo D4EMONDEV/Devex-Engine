@@ -112,6 +112,68 @@ float sunShadow(SceneData* scene, Surface surface)
     return 1.0;
 }
 
+// The face of the cube around a point light that a direction falls in, in the order the renderer
+// writes them: +X, -X, +Y, -Y, +Z, -Z.
+uint cubeFace(float3 direction)
+{
+    const float3 magnitude = abs(direction);
+    if (magnitude.x >= magnitude.y && magnitude.x >= magnitude.z)
+    {
+        return direction.x > 0.0 ? 0 : 1;
+    }
+    if (magnitude.y >= magnitude.z)
+    {
+        return direction.y > 0.0 ? 2 : 3;
+    }
+    return direction.z > 0.0 ? 4 : 5;
+}
+
+// How much of a local light reaches the surface: 1 in the open, 0 behind something it lights.
+float localShadow(SceneData* scene, Surface surface, Light light, float3 toSurface)
+{
+    if (light.firstShadowView < 0)
+    {
+        return 1.0;
+    }
+    // A point light looks at the surface through the face of its cube that holds it.
+    const uint view = uint(light.firstShadowView) +
+                      (light.spotScale == 0.0 ? cubeFace(toSurface) : 0);
+    const ShadowView shadow = scene.shadowViews[view];
+
+    // Moved along the normal, so that a surface does not shadow itself.
+    const float3 offsetPosition = surface.position + surface.normal * light.shadowFar * 0.004;
+    const float4 clip = mul(shadow.viewProjection, float4(offsetPosition, 1.0));
+    if (clip.w <= 0.0)
+    {
+        return 1.0;
+    }
+    const float3 projected = clip.xyz / clip.w;
+    const float2 uv = projected.xy * 0.5 + 0.5;
+    if (any(uv < 0.0) || any(uv > 1.0) || projected.z > 1.0)
+    {
+        return 1.0;
+    }
+
+    float width;
+    float height;
+    localShadowMap.GetDimensions(width, height);
+    const float2 atlasTexel = 1.0 / float2(width, height);
+    const float reference = projected.z - 0.0015;
+    float lit = 0.0;
+    for (int y = -1; y <= 1; ++y)
+    {
+        for (int x = -1; x <= 1; ++x)
+        {
+            // Every tap stays inside the tile, so that a shadow never leaks into its neighbour.
+            const float2 tileUv = clamp(uv + float2(x, y) * atlasTexel / max(shadow.tile.z, 1e-6),
+                                        0.001, 0.999);
+            lit += localShadowMap.SampleCmpLevelZero(
+                shadowSampler, shadow.tile.xy + tileUv * shadow.tile.zw, reference);
+        }
+    }
+    return lit / 9.0;
+}
+
 float3 localLights(SceneData* scene, Surface surface)
 {
     if (scene.lightCount == 0)
@@ -143,6 +205,11 @@ float3 localLights(SceneData* scene, Surface surface)
         const float spot = saturate(dot(light.direction, -direction) * light.spotScale + light.spotOffset);
         attenuation *= spot * spot;
 
+        if (attenuation <= 0.0)
+        {
+            continue;
+        }
+        attenuation *= localShadow(scene, surface, light, -toLight);
         luminance += shadeLight(surface, direction, light.intensity * attenuation);
     }
     return luminance;

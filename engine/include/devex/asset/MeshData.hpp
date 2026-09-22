@@ -51,7 +51,13 @@ struct MeshData
     // One per joint of a skinned mesh: from the space of the mesh to the space of the joint at
     // bind time. A bone matrix is the world transform of the joint times this matrix.
     std::vector<math::Mat4> inverseBind;
+    // The box holding every vertex, in the space of the mesh. Computed when the mesh is imported
+    // or built; the renderer measures it itself when it arrives empty.
+    math::Aabb bounds;
 };
+
+// The box holding every vertex of the mesh.
+[[nodiscard]] math::Aabb computeBounds(const MeshData& mesh) noexcept;
 
 // Whether the mesh carries skinning attributes, and must be drawn with its bones.
 [[nodiscard]] bool isSkinned(const MeshData& mesh) noexcept;

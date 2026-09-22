@@ -40,6 +40,7 @@ public:
     static constexpr std::uint32_t depthBinding = 8;
     static constexpr std::uint32_t resolvedBinding = 9;
     static constexpr std::uint32_t bloomBinding = 10;
+    static constexpr std::uint32_t localShadowBinding = 11;
     // How many halvings the bloom is built from.
     static constexpr std::uint32_t bloomLevels = 5;
 
@@ -57,6 +58,8 @@ public:
         // What the tonemapping reads: the image the antialiasing resolved, or the scene itself.
         VkImageView resolved = VK_NULL_HANDLE;
         std::array<VkImageView, bloomLevels> bloom{};
+        // The shadows of the local lights, side by side in one image.
+        VkImageView localShadowMap = VK_NULL_HANDLE;
 
         [[nodiscard]] bool operator==(const FrameImages&) const noexcept = default;
     };

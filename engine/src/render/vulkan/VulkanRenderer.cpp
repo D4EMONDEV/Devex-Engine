@@ -341,6 +341,8 @@ core::Result<MeshHandle> VulkanRenderer::createMesh(const asset::MeshData& mesh)
     }
 
     GpuMesh gpuMesh{
+        // A mesh built by hand, or imported before the box was cooked, is measured here.
+        .bounds = mesh.bounds.isEmpty() ? asset::computeBounds(mesh) : mesh.bounds,
         .vertices = std::move(*vertexBuffer),
         .indices = std::move(*indexBuffer),
         .skin = std::move(skinBuffer),
@@ -554,6 +556,7 @@ core::Result<void> VulkanRenderer::endFrame()
         return std::unexpected(recorded.error());
     }
     m_lastDrawCalls = *recorded;
+    m_lastCulledInstances = m_culledInstances;
     m_lastLightCount = static_cast<std::uint32_t>(m_world.lights.size());
     m_historyValid = antialiased;
     rememberFrame();
@@ -773,6 +776,29 @@ core::Result<void> VulkanRenderer::createDefaultResources()
     }
     m_whiteGeneralImage = std::move(*whiteGeneral);
 
+    core::Result<Image> emptyAtlas = Image::create(m_device, m_allocator,
+                                                   {
+                                                       .format = depthFormat,
+                                                       .extent = {1, 1},
+                                                       .usage = VK_IMAGE_USAGE_SAMPLED_BIT |
+                                                                VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+                                                   });
+    if (!emptyAtlas)
+    {
+        return std::unexpected(emptyAtlas.error());
+    }
+    const VkImage emptyAtlasHandle = emptyAtlas->handle();
+    if (core::Result<void> prepared = m_upload.submit([&](VkCommandBuffer commandBuffer) {
+            // Never written: the shader only reads it where no light has a tile.
+            transitionImage(commandBuffer, emptyAtlasHandle, ImageState::Undefined,
+                            ImageState::ShaderReadOnly, VK_IMAGE_ASPECT_DEPTH_BIT);
+        });
+        !prepared)
+    {
+        return prepared;
+    }
+    m_emptyShadowAtlas = std::move(*emptyAtlas);
+
     m_defaultMaterial = m_materials.insert(MaterialDesc{
         .baseColorFactor = {0.72f, 0.74f, 0.78f, 1.0f},
         .roughnessFactor = 0.6f,
@@ -864,17 +890,20 @@ core::Result<void> VulkanRenderer::createScenePipelines()
                     .depthWrite = false,
                 });
 
-    core::Result<Pipeline> shadow = createGraphicsPipeline(
-        device, {
-                    .shaderPath = m_shaderDirectory / "shadow.spv",
-                    .setLayouts = globalOnly,
-                    .pushConstantSize = sizeof(DrawPushConstants),
-                    .depthFormat = depthFormat,
-                    .cullMode = VK_CULL_MODE_NONE,
-                    .depthCompare = VK_COMPARE_OP_LESS_OR_EQUAL,
-                    .depthBias = true,
-                    .depthClamp = m_device.supportsDepthClamp(),
-                });
+    const GraphicsPipelineConfig shadowConfig{
+        .shaderPath = m_shaderDirectory / "shadow.spv",
+        .setLayouts = globalOnly,
+        .pushConstantSize = sizeof(DrawPushConstants),
+        .depthFormat = depthFormat,
+        .cullMode = VK_CULL_MODE_NONE,
+        .depthCompare = VK_COMPARE_OP_LESS_OR_EQUAL,
+        .depthBias = true,
+        .depthClamp = m_device.supportsDepthClamp(),
+    };
+    core::Result<Pipeline> shadow = createGraphicsPipeline(device, shadowConfig);
+    GraphicsPipelineConfig localShadowConfig = shadowConfig;
+    localShadowConfig.vertexEntry = "localVertex";
+    core::Result<Pipeline> localShadow = createGraphicsPipeline(device, localShadowConfig);
 
     // The sky covers what no geometry wrote, at the infinitely far depth 0.
     core::Result<Pipeline> sky = createGraphicsPipeline(
@@ -923,7 +952,7 @@ core::Result<void> VulkanRenderer::createScenePipelines()
 
     for (core::Result<Pipeline>* result : {&mesh, &doubleSided, &transparent, &transparentDoubleSided,
                                           &prepass, &prepassDoubleSided, &ambientOcclusion, &shadow,
-                                          &sky, &luminance, &pick, &selectionMask})
+                                          &localShadow, &sky, &luminance, &pick, &selectionMask})
     {
         if (!*result)
         {
@@ -937,6 +966,7 @@ core::Result<void> VulkanRenderer::createScenePipelines()
     m_prepassPipeline = std::move(*prepass);
     m_prepassDoubleSidedPipeline = std::move(*prepassDoubleSided);
     m_aoPipeline = std::move(*ambientOcclusion);
+    m_localShadowPipeline = std::move(*localShadow);
     m_shadowPipeline = std::move(*shadow);
     m_skyPipeline = std::move(*sky);
     m_luminancePipeline = std::move(*luminance);
@@ -1380,6 +1410,169 @@ void VulkanRenderer::updateExposure(FrameContext& frame)
     m_ev100 = adaptExposure(m_ev100, m_targetEv100, camera.adaptationSpeed, deltaSeconds);
 }
 
+// Where each face of a cube around a point light looks, in the order the shader expects.
+namespace {
+
+struct CubeFace
+{
+    math::Vec3 direction;
+    math::Vec3 up;
+};
+
+constexpr std::array<CubeFace, 6> cubeFaces{{
+    {{1.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}},
+    {{-1.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}},
+    {{0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}},
+    {{0.0f, -1.0f, 0.0f}, {0.0f, 0.0f, -1.0f}},
+    {{0.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 0.0f}},
+    {{0.0f, 0.0f, -1.0f}, {0.0f, 1.0f, 0.0f}},
+}};
+
+} // namespace
+
+void VulkanRenderer::assignShadowViews()
+{
+    m_shadowViews.clear();
+    m_shadowViewFrustums.clear();
+    for (GpuLight& light : m_gpuLights)
+    {
+        light.firstShadowView = -1;
+    }
+
+    // The lights that ask for a shadow, the brightest and nearest first: a light that fills the
+    // screen deserves its tile more than one that lights a corner far away.
+    std::vector<std::pair<float, std::size_t>> ranked;
+    for (std::size_t index = 0; index < m_world.lights.size() && index < m_gpuLights.size(); ++index)
+    {
+        const RenderLight& light = m_world.lights[index];
+        if (!light.castShadows)
+        {
+            continue;
+        }
+        const math::Aabb reach{light.position - math::Vec3{light.range},
+                               light.position + math::Vec3{light.range}};
+        if (!m_cameraFrustum.intersects(reach))
+        {
+            continue;
+        }
+        const float power = std::max({light.intensity.r, light.intensity.g, light.intensity.b});
+        const math::Vec3 toCamera = light.position - m_cameraPosition;
+        const float distanceSquared = std::max(math::dot(toCamera, toCamera), 1.0f);
+        ranked.emplace_back(power / distanceSquared, index);
+    }
+    std::ranges::sort(ranked, std::greater{}, &std::pair<float, std::size_t>::first);
+
+    // The atlas is cut into square cells; a tile is one cell, or a block of two by two for the
+    // lights at the top of the list.
+    std::array<bool, shadowAtlasCells * shadowAtlasCells> taken{};
+    const auto allocate = [&taken](std::uint32_t span) -> std::optional<std::pair<std::uint32_t, std::uint32_t>> {
+        for (std::uint32_t y = 0; y + span <= shadowAtlasCells; y += span)
+        {
+            for (std::uint32_t x = 0; x + span <= shadowAtlasCells; x += span)
+            {
+                bool free = true;
+                for (std::uint32_t dy = 0; dy < span && free; ++dy)
+                {
+                    for (std::uint32_t dx = 0; dx < span; ++dx)
+                    {
+                        free = free && !taken[(y + dy) * shadowAtlasCells + x + dx];
+                    }
+                }
+                if (!free)
+                {
+                    continue;
+                }
+                for (std::uint32_t dy = 0; dy < span; ++dy)
+                {
+                    for (std::uint32_t dx = 0; dx < span; ++dx)
+                    {
+                        taken[(y + dy) * shadowAtlasCells + x + dx] = true;
+                    }
+                }
+                return std::pair{x, y};
+            }
+        }
+        return std::nullopt;
+    };
+
+    math::Mat4 clipCorrection{1.0f};
+    clipCorrection[1][1] = -1.0f;
+    constexpr float nearPlane = 0.05f;
+
+    for (std::size_t rank = 0; rank < ranked.size(); ++rank)
+    {
+        const std::size_t index = ranked[rank].second;
+        const RenderLight& light = m_world.lights[index];
+        const bool point = light.type == LightType::Point;
+        const std::uint32_t span = rank < largeShadowLights ? 2 : 1;
+        const std::uint32_t views = point ? 6 : 1;
+
+        // Every view of a light is placed, or none of it is.
+        std::vector<std::pair<std::uint32_t, std::uint32_t>> cells;
+        for (std::uint32_t view = 0; view < views; ++view)
+        {
+            const std::optional<std::pair<std::uint32_t, std::uint32_t>> cell = allocate(span);
+            if (!cell)
+            {
+                break;
+            }
+            cells.push_back(*cell);
+        }
+        if (cells.size() < views)
+        {
+            // The atlas is full: this light keeps its light and loses its shadow. What it took
+            // back stays taken, which only costs the tiles of a light that did not fit.
+            continue;
+        }
+
+        m_gpuLights[index].firstShadowView = static_cast<std::int32_t>(m_shadowViews.size());
+        m_gpuLights[index].shadowFar = std::max(light.range, 1e-3f);
+        const float atlasSize = static_cast<float>(shadowAtlasSize);
+        const float tileSize = static_cast<float>(span * shadowAtlasCell);
+        for (std::uint32_t view = 0; view < views; ++view)
+        {
+            const math::Vec3 direction =
+                point ? cubeFaces[view].direction
+                      : (math::length(light.direction) > 0.0f ? math::normalize(light.direction)
+                                                              : math::Vec3{0.0f, 0.0f, -1.0f});
+            const math::Vec3 up =
+                point ? cubeFaces[view].up
+                      : (std::abs(direction.y) > 0.99f ? math::Vec3{0.0f, 0.0f, 1.0f}
+                                                       : math::Vec3{0.0f, 1.0f, 0.0f});
+            // A spot covers its whole cone, a point a quarter turn on each face.
+            const float fov = point ? math::radians(90.0f)
+                                    : std::clamp(light.outerAngle * 2.0f, math::radians(5.0f),
+                                                 math::radians(175.0f));
+            const math::Mat4 view4 = math::lookAt(light.position, light.position + direction, up);
+            const math::Mat4 projection =
+                math::perspective(fov, 1.0f, nearPlane, std::max(light.range, nearPlane * 2.0f));
+            const auto [cellX, cellY] = cells[view];
+            m_shadowViews.push_back({
+                .viewProjection = clipCorrection * projection * view4,
+                .tile = {static_cast<float>(cellX * shadowAtlasCell) / atlasSize,
+                         static_cast<float>(cellY * shadowAtlasCell) / atlasSize,
+                         tileSize / atlasSize, tileSize / atlasSize},
+            });
+            m_shadowViewFrustums.push_back(frustumOf(m_shadowViews.back().viewProjection));
+        }
+    }
+}
+
+core::Result<void> VulkanRenderer::uploadShadowViews(FrameContext& frame) const
+{
+    const VkDeviceSize bytes = std::max<std::size_t>(m_shadowViews.size(), 1) * sizeof(GpuShadowView);
+    if (core::Result<void> ensured = ensureHostBuffer(frame.shadowViews, bytes); !ensured)
+    {
+        return ensured;
+    }
+    if (!m_shadowViews.empty())
+    {
+        std::memcpy(frame.shadowViews->mappedBytes().data(), m_shadowViews.data(),
+                    m_shadowViews.size() * sizeof(GpuShadowView));
+    }
+    return {};
+}
+
 core::Result<void> VulkanRenderer::uploadLights(FrameContext& frame, float aspectRatio)
 {
     m_gpuLights.clear();
@@ -1423,6 +1616,11 @@ core::Result<void> VulkanRenderer::uploadLights(FrameContext& frame, float aspec
             return ensured;
         }
     }
+    assignShadowViews();
+    if (core::Result<void> views = uploadShadowViews(frame); !views)
+    {
+        return views;
+    }
     std::memcpy(frame.lights->mappedBytes().data(), m_gpuLights.data(), m_gpuLights.size() * sizeof(GpuLight));
     std::memcpy(frame.clusters->mappedBytes().data(), m_clusters.clusters.data(), clusterBytes);
     std::memcpy(frame.clusterLights->mappedBytes().data(), m_clusters.lightIndices.data(),
@@ -1451,6 +1649,8 @@ void VulkanRenderer::writeSceneData(FrameContext& frame,
     scene.unjitteredViewProjection = projection * camera.view;
     scene.previousViewProjection = m_previousViewProjection;
     scene.inverseViewProjection = math::inverse(scene.unjitteredViewProjection);
+    // What the camera keeps of the world, and what each cascade keeps of its casters.
+    m_cameraFrustum = frustumOf(scene.unjitteredViewProjection);
     m_unjitteredViewProjection = scene.unjitteredViewProjection;
     scene.view = camera.view;
     scene.skyInverseViewProjection = math::inverse(projection * rotationOnly);
@@ -1475,6 +1675,7 @@ void VulkanRenderer::writeSceneData(FrameContext& frame,
             scene.cascadeSplits[static_cast<int>(cascade)] = cascades->splitDistances[cascade];
             scene.cascadeTexelSizes[static_cast<int>(cascade)] = cascades->texelSizes[cascade];
             scene.cascadeViewProjections[cascade] = cascades->viewProjections[cascade];
+            m_cascadeFrustums[cascade] = frustumOf(cascades->viewProjections[cascade]);
         }
         scene.shadowDistance = sun.shadowDistance;
     }
@@ -1496,6 +1697,7 @@ void VulkanRenderer::writeSceneData(FrameContext& frame,
     scene.clusterSliceBias = m_clusters.sliceBias;
 
     scene.materials = frame.materials->deviceAddress();
+    scene.shadowViews = frame.shadowViews ? frame.shadowViews->deviceAddress() : 0;
     scene.lights = frame.lights->deviceAddress();
     scene.clusters = frame.clusters->deviceAddress();
     scene.clusterLights = frame.clusterLights->deviceAddress();
@@ -1514,9 +1716,48 @@ bool VulkanRenderer::isBlended(const MeshInstance& instance) const noexcept
     return material != nullptr && material->alphaMode == asset::AlphaMode::Blend;
 }
 
-std::span<const std::uint32_t> VulkanRenderer::instancesOf(MeshPass pass) const
+math::Aabb VulkanRenderer::worldBounds(const MeshInstance& instance) const noexcept
+{
+    const GpuMesh* const mesh = m_meshes.find(instance.mesh);
+    if (mesh == nullptr || mesh->bounds.isEmpty())
+    {
+        return {};
+    }
+    // A skinned mesh is drawn in the pose of its bones, which the bind pose only approximates: its
+    // box is grown by half so that a raised arm does not pop in and out.
+    const math::Aabb bounds = instance.boneCount > 0 ? mesh->bounds.grown(0.5f) : mesh->bounds;
+    return math::transform(instance.transform, bounds);
+}
+
+std::span<const std::uint32_t> VulkanRenderer::instancesOf(MeshPass pass,
+                                                           std::uint32_t cascade) const
 {
     m_passInstances.clear();
+    // Picking answers about a single pixel, and the mask outlines what is selected: both look at
+    // the whole world rather than at what a view keeps.
+    const bool culled = pass == MeshPass::Prepass || pass == MeshPass::Scene ||
+                        pass == MeshPass::Transparent || pass == MeshPass::Shadow ||
+                        pass == MeshPass::LocalShadow;
+    const auto visible = [&](const MeshInstance& instance) {
+        if (!culled)
+        {
+            return true;
+        }
+        const math::Aabb bounds = worldBounds(instance);
+        if (pass == MeshPass::Shadow)
+        {
+            return m_cascadeFrustums[std::min<std::size_t>(cascade, cascadeCount - 1)]
+                .intersectsSides(bounds);
+        }
+        if (pass == MeshPass::LocalShadow)
+        {
+            // A local light reaches only as far as its view: what is outside it casts nothing.
+            return cascade < m_shadowViewFrustums.size() &&
+                   m_shadowViewFrustums[cascade].intersects(bounds);
+        }
+        return m_cameraFrustum.intersects(bounds);
+    };
+
     if (pass != MeshPass::Transparent)
     {
         for (std::uint32_t index = 0; index < m_world.meshes.size(); ++index)
@@ -1524,12 +1765,18 @@ std::span<const std::uint32_t> VulkanRenderer::instancesOf(MeshPass pass) const
             // Blended surfaces have their own pass, and cast no shadow: a pane of glass that
             // darkened the ground under it would look like a wall.
             const bool skipped = (pass == MeshPass::Scene || pass == MeshPass::Shadow ||
-                                  pass == MeshPass::Prepass) &&
+                                  pass == MeshPass::LocalShadow || pass == MeshPass::Prepass) &&
                                  isBlended(m_world.meshes[index]);
-            if (!skipped)
+            if (skipped)
             {
-                m_passInstances.push_back(index);
+                continue;
             }
+            if (!visible(m_world.meshes[index]))
+            {
+                ++m_culledInstances;
+                continue;
+            }
+            m_passInstances.push_back(index);
         }
         return m_passInstances;
     }
@@ -1540,6 +1787,11 @@ std::span<const std::uint32_t> VulkanRenderer::instancesOf(MeshPass pass) const
     {
         if (!isBlended(m_world.meshes[index]))
         {
+            continue;
+        }
+        if (!visible(m_world.meshes[index]))
+        {
+            ++m_culledInstances;
             continue;
         }
         const math::Vec3 centre = math::Vec3(m_world.meshes[index].transform[3]);
@@ -1563,7 +1815,7 @@ std::uint32_t VulkanRenderer::drawMeshes(VkCommandBuffer commandBuffer, VkDevice
     const std::array sets{m_descriptors->global(), m_descriptors->frame(frameSlot)};
     const Pipeline* boundPipeline = nullptr;
     std::uint32_t drawCalls = 0;
-    for (const std::uint32_t index : instancesOf(pass))
+    for (const std::uint32_t index : instancesOf(pass, cascade))
     {
         const MeshInstance& instance = m_world.meshes[index];
         if (pass == MeshPass::SelectionMask && !instance.outlined)
@@ -1595,6 +1847,9 @@ std::uint32_t VulkanRenderer::drawMeshes(VkCommandBuffer commandBuffer, VkDevice
             break;
         case MeshPass::Shadow:
             pipeline = &*m_shadowPipeline;
+            break;
+        case MeshPass::LocalShadow:
+            pipeline = &*m_localShadowPipeline;
             break;
         case MeshPass::Pick:
             pipeline = &*m_pickPipeline;
@@ -1678,6 +1933,7 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
     const bool drawOverlay = outlines || !m_world.sceneLines.empty() || !m_world.overlayLines.empty() ||
                              !m_world.overlayTriangles.empty();
     const bool pick = frame.pickRequest.has_value();
+    m_culledInstances = 0;
     RenderGraph graph(m_device, m_allocator, frame.images);
 
     ImageState backbufferState = ImageState::AcquiredBackbuffer;
@@ -1696,6 +1952,15 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
         .usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
         .layers = cascadeCount,
     });
+    // One image holds the shadows of every local light that was given a tile.
+    const bool localShadows = !m_shadowViews.empty();
+    const std::size_t shadowAtlasIndex = localShadows ? create({
+                                                            .format = depthFormat,
+                                                            .extent = {shadowAtlasSize, shadowAtlasSize},
+                                                            .usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT |
+                                                                     VK_IMAGE_USAGE_SAMPLED_BIT,
+                                                        })
+                                                      : 0;
     const std::size_t sceneColorIndex = create({
         .format = sceneFormat,
         .extent = extent,
@@ -1832,6 +2097,8 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
         .history = m_history[readSlot]->view(),
         .depth = graph.view(depth),
         .resolved = antialiased ? m_history[writeSlot]->view() : graph.view(sceneColor),
+        .localShadowMap =
+            localShadows ? graph.view(*created[shadowAtlasIndex]) : m_emptyShadowAtlas->view(),
     };
     for (std::uint32_t level = 0; level < DescriptorSets::bloomLevels; ++level)
     {
@@ -1888,6 +2155,54 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
                               vkCmdEndRendering(commands);
                           }
                       });
+    }
+
+    if (localShadows)
+    {
+        const RenderGraph::ImageId atlas = *created[shadowAtlasIndex];
+        graph.addPass("Local shadows", {{atlas, ImageAccess::DepthAttachment}},
+                      [&, atlas](VkCommandBuffer commands) {
+            const VkRenderingAttachmentInfo depthAttachment{
+                .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+                .imageView = graph.view(atlas),
+                .imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+                .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+                .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+                .clearValue = {.depthStencil = {.depth = 1.0f}},
+            };
+            const VkRenderingInfo renderingInfo{
+                .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
+                .renderArea = {.extent = {shadowAtlasSize, shadowAtlasSize}},
+                .layerCount = 1,
+                .pDepthAttachment = &depthAttachment,
+            };
+            vkCmdBeginRendering(commands, &renderingInfo);
+            for (std::uint32_t view = 0; view < m_shadowViews.size(); ++view)
+            {
+                // Each view draws into its own tile, and nowhere else.
+                const math::Vec4& tile = m_shadowViews[view].tile;
+                const auto size = static_cast<float>(shadowAtlasSize);
+                const VkViewport viewport{
+                    .x = tile.x * size,
+                    .y = tile.y * size,
+                    .width = tile.z * size,
+                    .height = tile.w * size,
+                    .maxDepth = 1.0f,
+                };
+                const VkRect2D scissor{
+                    .offset = {static_cast<std::int32_t>(tile.x * size),
+                               static_cast<std::int32_t>(tile.y * size)},
+                    .extent = {static_cast<std::uint32_t>(tile.z * size),
+                               static_cast<std::uint32_t>(tile.w * size)},
+                };
+                vkCmdSetViewport(commands, 0, 1, &viewport);
+                vkCmdSetScissor(commands, 0, 1, &scissor);
+                vkCmdSetDepthBias(commands, 0.0f, 0.0f, 2.0f);
+                drawCalls += drawMeshes(commands, sceneData, boneMatrices, MeshPass::LocalShadow,
+                                        view, frameSlot);
+            }
+            vkCmdEndRendering(commands);
+        });
     }
 
     if (core::Result<void> uploaded = uploadPreviousBones(frame); !uploaded)
@@ -1949,7 +2264,9 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
                       {{depth, ImageAccess::FragmentRead},
                        {normal, ImageAccess::FragmentRead},
                        {occlusion, ImageAccess::ColorAttachment}},
-                      [&](VkCommandBuffer commands) {
+                      // The pass runs once the graph replays it, when this block is long gone: the
+                      // image it draws into is taken by value.
+                      [&, occlusion](VkCommandBuffer commands) {
             const VkRenderingAttachmentInfo colorAttachment{
                 .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
                 .imageView = graph.view(occlusion),
@@ -1988,6 +2305,10 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
         {depth, ImageAccess::DepthAttachment},
         {shadowMap, ImageAccess::FragmentRead},
     };
+    if (localShadows)
+    {
+        sceneAccesses.push_back({*created[shadowAtlasIndex], ImageAccess::FragmentRead});
+    }
     if (occluded)
     {
         sceneAccesses.push_back({*created[occlusionIndex], ImageAccess::FragmentRead});
@@ -2675,6 +2996,7 @@ RendererStats VulkanRenderer::stats() const noexcept
 {
     RendererStats stats{
         .drawCalls = m_lastDrawCalls,
+        .culledInstances = m_lastCulledInstances,
         .meshCount = m_meshes.size(),
         .textureCount = m_textures.size(),
         // The default material is not counted.

@@ -52,7 +52,8 @@ DEVEX_REFLECT(PointLight)
     type.field("color", &PointLight::color, {.color = true})
         .field("temperature", &PointLight::temperature)
         .field("intensity", &PointLight::intensity)
-        .field("range", &PointLight::range);
+        .field("range", &PointLight::range)
+        .field("cast_shadows", &PointLight::castShadows);
 }
 
 DEVEX_REFLECT(SpotLight)
@@ -62,7 +63,8 @@ DEVEX_REFLECT(SpotLight)
         .field("intensity", &SpotLight::intensity)
         .field("range", &SpotLight::range)
         .field("inner_angle", &SpotLight::innerAngle, {.angle = true})
-        .field("outer_angle", &SpotLight::outerAngle, {.angle = true});
+        .field("outer_angle", &SpotLight::outerAngle, {.angle = true})
+        .field("cast_shadows", &SpotLight::castShadows);
 }
 
 DEVEX_REFLECT(Environment)

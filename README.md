@@ -28,16 +28,18 @@ Le détail, l'architecture des modules et les jalons sont dans
 - `Devex::Reflection` : description des champs des composants (`DEVEX_REFLECT`), listes et
   références d'entités comprises ;
 - `Devex::Serialization` : format texte commun des fichiers `.dvx*`, flux binaires ;
-- `Devex::Asset` : `AssetId`, maillages, textures, matériaux, modèles, clips audio, animations et
-  polices, fichiers `.dvxasset`, projets `.dvxproj`, paquets de jeux exportés `.dvxpak` ;
+- `Devex::Asset` : `AssetId`, maillages (avec leur boîte englobante), textures, matériaux, modèles,
+  clips audio, animations et polices, fichiers `.dvxasset`, projets `.dvxproj`, paquets de jeux
+  exportés `.dvxpak` ;
 - `Devex::AssetImport` : base d'assets (`.dvxmeta`, cache `.devex/`, imports en arrière-plan,
   réimport à chaud), importeurs de textures (BC7/BC5), de `.dvxmat`, de glTF, de scènes, de sons
   (WAV, FLAC, MP3, Ogg Vorbis) et de polices (`.ttf`, `.otf` cuites en atlas de distances) ;
 - `Devex::Render` : renderer Vulkan 1.4 (volk, VMA), shaders Slang, render graph, PBR
-  forward+ clustered avec prépasse de profondeur, ombres en cascades, ciel HDR et IBL, surfaces
-  transparentes triées, anticrénelage temporel, occlusion ambiante en espace écran, bloom,
-  exposition automatique, tonemapping AgX, table de couleurs, vignette et grain, rendu dans une
-  texture, sélection sur le GPU, contours et lignes d'outils ;
+  forward+ clustered avec prépasse de profondeur, culling par tronc de vue, ombres en cascades pour
+  le soleil et en atlas pour les lumières locales, ciel HDR et IBL, surfaces transparentes triées,
+  anticrénelage temporel, occlusion ambiante en espace écran, bloom, exposition automatique,
+  tonemapping AgX, table de couleurs, vignette et grain, rendu dans une texture, sélection sur le
+  GPU, contours et lignes d'outils ;
 - `Devex::Scene` : entités à UUID, composants en sparse sets, hiérarchie, `.dvxscene`,
   instanciation de modèles, composants de physique, d'animation et d'interface, préfabs liés
   (scènes imbriquées avec leurs modifications) ;

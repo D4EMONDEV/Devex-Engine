@@ -117,6 +117,9 @@ mais seulement explicitement ici : le code suit ce document, pas l'inverse.
 | Lecture                  | Composant `Animator` : un clip, fondu croisé, root motion en option |
 | Skinning                 | Dans le vertex shader, matrices d'os en buffer par frame          |
 | Écrans de l'éditeur      | 2D, 3D et Script au centre de la barre de menus                    |
+| Culling                  | Tronc de vue sur CPU, pour la caméra, les cascades et chaque vue   |
+| Boîtes englobantes       | Cuites dans le maillage à l'import, transformées par instance      |
+| Ombres locales           | Un atlas de 4096², tuiles réparties par importance                 |
 | Transparence             | Tri par distance, passe après l'opaque, sans écrire la profondeur  |
 | Prépasse                 | Profondeur, mouvement et normales avant l'ombrage                 |
 | Anticrénelage            | Temporel : projection jitterée, historique borné par le voisinage  |
@@ -229,7 +232,8 @@ docs/          décisions et documentation
   d'un **pool propre à chaque contexte de frame**, gardées d'une frame à l'autre tant qu'elles
   servent : deux frames en vol ne partagent jamais une image. Pas encore d'élimination de
   passes ni de partage de mémoire entre images.
-- **Frame** : prépasse (profondeur, mouvement et normales), occlusion ambiante (si demandée),
+- **Frame** : ombres locales (si des lumières en projettent), prépasse (profondeur, mouvement et
+  normales), occlusion ambiante (si demandée),
   ombres du soleil (4 couches d'une image `D32` 2048²), scène HDR `RGBA16F` avec les maillages
   puis le ciel, puis les surfaces transparentes triées, mesure de luminance (si exposition
   automatique), sélection (si demandée), masque des objets entourés (s'il y en a), anticrénelage
@@ -334,10 +338,11 @@ docs/          décisions et documentation
   (approximation de Narkowicz) ou aucun, choisi sur la caméra ; sortie linéaire, encodée sRGB
   par le swapchain. La même passe ajoute le bloom et applique l'étalonnage (voir *Transparence
   et post-traitements*).
-- **Limites actuelles** : pas de culling (tout est dessiné, y compris dans chaque cascade), pas
-  d'ombres des lumières locales, pas de réflexions locales, transparence triée par instance (deux
-  surfaces qui s'entrecroisent restent fausses), et traînées possibles derrière un objet très
-  rapide, que l'anticrénelage temporel ne rattrape pas toujours.
+- **Limites actuelles** : culling par tronc de vue seulement (rien n'est enlevé parce qu'il est
+  caché derrière autre chose, et chaque instance est testée une par une sur le CPU), pas de
+  réflexions locales, transparence triée par instance (deux surfaces qui s'entrecroisent restent
+  fausses), et traînées possibles derrière un objet très rapide, que l'anticrénelage temporel ne
+  rattrape pas toujours.
 - **GPU requis en plus** : descriptor indexing (tableaux runtime, partially bound, update after
   bind, indexation non uniforme), compression BC, et une file graphique qui fait aussi du
   compute.
@@ -1075,6 +1080,37 @@ les assets s'écrivent au fil de leur lecture.
   patrouiller, attendre à chaque extrémité et saluer le joueur qui s'approche, en changeant de clip
   avec un fondu de 0,25 s.
 
+### Culling et ombres locales
+
+- **Boîtes englobantes** : l'import cuit dans le maillage la boîte qui tient tous ses sommets
+  (version 4 de sa disposition, donc les projets se réimportent d'eux-mêmes). Un maillage construit
+  par le code, ou importé avant, est mesuré quand il arrive sur le GPU. Chaque instance transforme
+  cette boîte par sa matrice, en gardant la boîte des huit coins déplacés.
+- **Tronc de vue** : `render::Frustum` lit les six plans d'une matrice de vue et projection, et
+  répond si une boîte peut être vue. Un plan que la projection laisse indéfini, comme le plan
+  lointain d'une projection infinie, revient vide et laisse tout passer ; une boîte jamais mesurée
+  passe aussi, pour qu'un maillage ne disparaisse jamais par accident. C'est du calcul pur, donc
+  c'est testé sans GPU.
+- **Ce qui est testé** : la prépasse, l'ombrage, les surfaces transparentes et chaque vue d'ombre
+  n'envoient que ce que leur vue garde. Une cascade ne teste que ses quatre côtés : ce qui est
+  au-dessus d'elle, entre le soleil et le sol, projette toujours dedans. La sélection et le picking
+  regardent la scène entière, puisqu'ils répondent sur un pixel plutôt que sur une image. Le
+  panneau *Statistics* montre le nombre d'instances écartées.
+- **Maillages animés** : la boîte de la pose de repos est agrandie de moitié, faute de connaître la
+  pose du moment sans parcourir les os. Un bras levé très haut peut encore sortir de sa boîte.
+- **Ombres locales** : `PointLight::castShadows` et `SpotLight::castShadows` les demandent. Chaque
+  frame, les lumières qui en veulent et que la caméra peut voir sont classées par puissance divisée
+  par le carré de leur distance ; les plus importantes reçoivent une tuile de 1024², les autres de
+  512², dans un atlas `D32` de 4096². Un spot prend une tuile, une lumière ponctuelle six, une par
+  face du cube autour d'elle. Une lumière qui ne tient plus garde sa lumière et perd son ombre.
+- **Vues** : chaque tuile porte sa matrice et sa place dans l'atlas (`ShadowView`), que le shader
+  lit par l'indice que la lumière garde (`firstShadowView`, -1 quand elle n'en a pas). Une lumière
+  ponctuelle choisit la face de son cube d'après la direction vers la surface. Le filtrage est le
+  même que celui des cascades, trois par trois, avec les taps bornés à l'intérieur de la tuile pour
+  qu'une ombre ne bave pas sur sa voisine.
+- **Bac à sable** : la première lampe de la scène `sandbox` projette tout autour d'elle et le
+  projecteur dans son cône ; la nuit (touche N), les caisses et les cubes portent leur ombre.
+
 ### Transparence et post-traitements
 
 - **Passes** : une frame dessine maintenant la **prépasse** (profondeur, mouvement et normales),
@@ -1564,6 +1600,10 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     place du MSAA, occlusion ambiante en espace écran, bloom, table de couleurs, vignette, grain et
     aberration chromatique, tous réglés sur la caméra.
 
+22. ✅ **Culling et ombres locales** — boîtes englobantes cuites à l'import, tronc de vue sur CPU
+    pour la caméra, les cascades d'ombre et chaque vue locale, et ombres des spots et des lumières
+    ponctuelles dans un atlas dont les tuiles vont aux lumières les plus importantes.
+
 Ensuite, sans ordre figé : jeux 2D, particules, CI Linux.
 
 ## Questions ouvertes
@@ -1612,8 +1652,10 @@ Ensuite, sans ordre figé : jeux 2D, particules, CI Linux.
 - **Textures partagées** : une image utilisée par un `.gltf` et présente dans le projet est
   importée deux fois ; relier les deux demandera de connaître son rôle (couleur, normale).
 - **Autres plateformes de textures** : ASTC ou Basis Universal pour le mobile, produits à l'export.
-- **Culling** : frustum culling sur CPU, puis sur GPU avec dessin indirect.
-- **Ombres locales** : atlas d'ombres pour les spots et cubemaps pour les lumières ponctuelles.
+- **Culling** : sur GPU avec dessin indirect, culling par occlusion, et hiérarchie spatiale pour
+  les grandes scènes (aujourd'hui chaque instance est testée une par une).
+- **Ombres locales** : filtrage plus doux (PCSS), tuiles gardées d'une frame à l'autre quand rien
+  ne bouge, et ombres des surfaces transparentes.
 - **Réflexions locales** : sondes de réflexion placées dans la scène, SSR.
 - **Transparence** : résolution sans tri (OIT pondéré) pour les surfaces qui s'entrecroisent,
   ombres des surfaces transparentes, réfraction, tri par triangle plutôt que par instance.

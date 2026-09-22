@@ -55,6 +55,20 @@ public struct Light
     // Luminous intensity in candelas.
     public float3 intensity;
     public float spotOffset;
+    // The first view of the shadow atlas this light owns, or -1 when it casts none. A point light
+    // owns the six that follow, one per face of the cube around it.
+    public int firstShadowView;
+    public float shadowFar;
+    public float padding0;
+    public float padding1;
+};
+
+// One view of the shadow atlas: where it looks from, and the part of the atlas it was given.
+public struct ShadowView
+{
+    public float4x4 viewProjection;
+    // Offset and size in the atlas, in texture coordinates.
+    public float4 tile;
 };
 
 public struct Cluster
@@ -108,6 +122,8 @@ public struct SceneData
     public float4x4 previousViewProjection;
     // Takes a point of clip space back to the world, without the jitter.
     public float4x4 inverseViewProjection;
+    // The views the local lights were given in the shadow atlas.
+    public ShadowView* shadowViews;
 };
 
 // A normal folded into two numbers on an octahedron, which keeps its precision where it matters.
@@ -189,6 +205,9 @@ public SamplerState skySampler;
 public Texture2DArray shadowMap;
 [[vk::binding(1, 1)]]
 public SamplerComparisonState shadowSampler;
+// The shadows of the local lights, side by side in one image.
+[[vk::binding(11, 1)]]
+public Texture2D localShadowMap;
 [[vk::binding(2, 1)]]
 public Texture2D sceneColor;
 // Coverage of the selected objects, outlined by the overlay.

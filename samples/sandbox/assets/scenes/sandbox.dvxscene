@@ -300,6 +300,7 @@ color = vec3(1, 0.55, 0.25)
 temperature = 6500
 intensity = 3000
 range = 9
+cast_shadows = true
 
 [entity uuid="f0c3ef42-5a92-48e0-80aa-5af645cbaa66" name="Lamp 2"]
 
@@ -341,6 +342,7 @@ intensity = 6000
 range = 12
 inner_angle = 0.34906584
 outer_angle = 0.5235988
+cast_shadows = true
 
 [entity uuid="57dacbd7-3373-4a28-a274-3c38636c9389" name="beacon"]
 

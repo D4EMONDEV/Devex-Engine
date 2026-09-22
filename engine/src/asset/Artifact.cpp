@@ -80,8 +80,9 @@ std::uint32_t artifactVersion(AssetType type) noexcept
     switch (type)
     {
     // 2: vertex tangents. 3: skinning weights and bind pose.
+    // 4: the box that holds the mesh.
     case AssetType::Mesh:
-        return 3;
+        return 4;
     // 2: skins and animations.
     case AssetType::Model:
         return 2;
@@ -132,6 +133,9 @@ std::vector<std::byte> encodeMesh(const MeshData& mesh)
     }
     writer.writeArray(std::span<const VertexSkin>(mesh.skin));
     writer.writeArray(std::span<const math::Mat4>(mesh.inverseBind));
+    // An empty box is written as it is: the renderer measures the mesh when it loads it.
+    writer.write(mesh.bounds.min);
+    writer.write(mesh.bounds.max);
     return writer.take();
 }
 
@@ -160,6 +164,8 @@ core::Result<MeshData> decodeMesh(std::span<const std::byte> bytes)
     }
     mesh.skin = reader.readArray<VertexSkin>();
     mesh.inverseBind = reader.readArray<math::Mat4>();
+    mesh.bounds.min = reader.read<math::Vec3>();
+    mesh.bounds.max = reader.read<math::Vec3>();
     if (reader.failed())
     {
         return std::unexpected(truncated(AssetType::Mesh));

@@ -17,6 +17,7 @@
 #include <devex/core/SlotMap.hpp>
 #include <devex/platform/Platform.hpp>
 #include <devex/platform/Window.hpp>
+#include <devex/render/Culling.hpp>
 #include <devex/render/Renderer.hpp>
 #include <devex/render/RenderWorld.hpp>
 
@@ -101,6 +102,12 @@ private:
     static constexpr VkFormat velocityFormat = VK_FORMAT_R16G16_SFLOAT;
     static constexpr VkFormat normalFormat = VK_FORMAT_R16G16_SFLOAT;
     static constexpr VkFormat occlusionFormat = VK_FORMAT_R8_UNORM;
+    // The shadows of the local lights share one image, cut into square tiles.
+    static constexpr std::uint32_t shadowAtlasSize = 4096;
+    static constexpr std::uint32_t shadowAtlasCell = 512;
+    static constexpr std::uint32_t shadowAtlasCells = shadowAtlasSize / shadowAtlasCell;
+    // How many lights are given tiles twice as wide, from the most important down.
+    static constexpr std::size_t largeShadowLights = 2;
     // Larger viewports are clamped, since images this large would exhaust memory.
     static constexpr std::uint32_t maxViewportSize = 8192;
 
@@ -113,6 +120,8 @@ private:
         // The blended materials, drawn after the scene from the farthest to the nearest.
         Transparent,
         Shadow,
+        // Into one tile of the shadow atlas, for a local light.
+        LocalShadow,
         Pick,
         // Only the outlined instances.
         SelectionMask,
@@ -153,6 +162,8 @@ private:
         DescriptorSets::FrameImages boundImages;
         // Where every skinned instance stood on the previous frame, for the motion of its pixels.
         std::optional<Buffer> previousBones;
+        // The views the local lights were given in the shadow atlas.
+        std::optional<Buffer> shadowViews;
         std::optional<Buffer> overlayVertices;
         // The triangles of the interface of the frame.
         std::optional<Buffer> uiVertices;
@@ -173,6 +184,8 @@ private:
 
     struct GpuMesh
     {
+        // The box holding the mesh, which the culling tests against the views.
+        math::Aabb bounds;
         Buffer vertices;
         Buffer indices;
         std::vector<SubmeshRange> submeshes;
@@ -228,6 +241,10 @@ private:
     [[nodiscard]] core::Result<OverlayRanges> uploadOverlay(FrameContext& frame);
     [[nodiscard]] core::Result<void> uploadUi(FrameContext& frame);
     [[nodiscard]] core::Result<void> uploadPreviousBones(FrameContext& frame) const;
+    // Gives the local lights that cast shadows a tile of the atlas, the most important first, and
+    // builds the view each tile is drawn through. Lights that do not fit keep their light alone.
+    void assignShadowViews();
+    [[nodiscard]] core::Result<void> uploadShadowViews(FrameContext& frame) const;
     // Creates the two images the antialiasing carries from frame to frame, when the scene changed
     // size or they do not exist yet.
     [[nodiscard]] core::Result<void> ensureHistory();
@@ -241,8 +258,12 @@ private:
                                                           bool drawShadows);
     // Whether the instance blends with what is behind it, and so belongs to the transparent pass.
     [[nodiscard]] bool isBlended(const MeshInstance& instance) const noexcept;
-    // The instances a pass draws, in the order it draws them.
-    [[nodiscard]] std::span<const std::uint32_t> instancesOf(MeshPass pass) const;
+    // The instances a pass draws, in the order it draws them: those its view can see.
+    [[nodiscard]] std::span<const std::uint32_t> instancesOf(MeshPass pass,
+                                                             std::uint32_t cascade) const;
+    // The box an instance takes in the world, grown for a skinned mesh whose pose has left its
+    // bind pose behind.
+    [[nodiscard]] math::Aabb worldBounds(const MeshInstance& instance) const noexcept;
     // The key an instance keeps between frames: its entity and the submesh it draws.
     [[nodiscard]] static std::uint64_t instanceKey(const MeshInstance& instance) noexcept
     {
@@ -284,6 +305,15 @@ private:
     mutable std::vector<std::uint32_t> m_passInstances;
     // Where the camera of the frame is, which sorts the blended instances.
     mutable math::Vec3 m_cameraPosition{0.0f};
+    // What the camera and each shadow cascade can see, rebuilt every frame.
+    mutable Frustum m_cameraFrustum;
+    mutable std::array<Frustum, cascadeCount> m_cascadeFrustums{};
+    // Instances kept and dropped by the culling of the frame, for the statistics.
+    mutable std::uint32_t m_culledInstances = 0;
+    // The views the local lights were given this frame, and what each one draws.
+    std::vector<GpuShadowView> m_shadowViews;
+    std::vector<Frustum> m_shadowViewFrustums;
+    std::uint32_t m_lastCulledInstances = 0;
     // Where each instance stood on the previous frame, by entity and submesh, and where its bones
     // were. An instance that was not there yet simply does not move.
     std::unordered_map<std::uint64_t, math::Mat4> m_previousTransforms;
@@ -307,6 +337,7 @@ private:
     std::optional<Pipeline> m_uiPipeline;
     std::optional<Pipeline> m_taaPipeline;
     std::optional<Pipeline> m_aoPipeline;
+    std::optional<Pipeline> m_localShadowPipeline;
     std::optional<Pipeline> m_bloomThresholdPipeline;
     std::optional<Pipeline> m_bloomDownsamplePipeline;
     std::optional<Pipeline> m_bloomUpsamplePipeline;
@@ -315,6 +346,8 @@ private:
     std::optional<Image> m_whiteImage;
     // The same, left in the general layout, for the bloom chain a frame did not build.
     std::optional<Image> m_whiteGeneralImage;
+    // Stands in for the shadow atlas when no local light casts a shadow.
+    std::optional<Image> m_emptyShadowAtlas;
     // What the antialiasing resolved, kept from one frame to the next: one image is read while the
     // other is written, and they swap every frame.
     std::array<std::optional<Image>, 2> m_history;

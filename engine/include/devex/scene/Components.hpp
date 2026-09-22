@@ -127,6 +127,9 @@ struct PointLight
     float intensity = 800.0f;
     // Distance in meters at which the light fades out entirely.
     float range = 10.0f;
+    // Casts a shadow all around it, which costs six views of the shadow atlas. Lights that do not
+    // fit in the atlas keep their light and lose their shadow.
+    bool castShadows = false;
 };
 DEVEX_DECLARE_REFLECTION(PointLight);
 
@@ -141,6 +144,8 @@ struct SpotLight
     // Half angles of the fully lit cone and of the cone where the light ends.
     float innerAngle = math::radians(20.0f);
     float outerAngle = math::radians(30.0f);
+    // Casts a shadow inside its cone, which costs one view of the shadow atlas.
+    bool castShadows = false;
 };
 DEVEX_DECLARE_REFLECTION(SpotLight);
 

@@ -625,6 +625,8 @@ private:
                 continue;
             }
 
+            mesh.bounds = computeBounds(mesh);
+
             const AssetId id = m_context.subAssets.acquire(AssetType::Mesh, keys[index]);
             m_meshIds[index] = id;
             m_artifacts.push_back({id, AssetType::Mesh, keys[index], encodeMesh(mesh)});

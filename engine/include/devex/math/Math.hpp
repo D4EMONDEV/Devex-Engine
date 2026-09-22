@@ -6,6 +6,7 @@
 
 #include <cmath>
 #include <cstdint>
+#include <limits>
 
 // Conventions: Y-up, right-handed, -Z forward, meters, radians, counter-clockwise front faces.
 namespace devex::math {
@@ -36,6 +37,7 @@ using glm::mat4_cast;
 using glm::mix;
 using glm::normalize;
 using glm::ortho;
+using glm::perspective;
 using glm::radians;
 using glm::rotate;
 using glm::scale;
@@ -109,6 +111,60 @@ struct Trs
     projection[2][3] = -1.0f;
     projection[3][2] = nearPlane;
     return projection;
+}
+
+// A box aligned with the axes, holding everything between its two corners. An empty box has its
+// minimum above its maximum, which no point can satisfy.
+struct Aabb
+{
+    Vec3 min{std::numeric_limits<float>::max()};
+    Vec3 max{std::numeric_limits<float>::lowest()};
+
+    [[nodiscard]] constexpr bool isEmpty() const noexcept
+    {
+        return min.x > max.x || min.y > max.y || min.z > max.z;
+    }
+
+    [[nodiscard]] constexpr Vec3 centre() const noexcept
+    {
+        return (min + max) * 0.5f;
+    }
+
+    [[nodiscard]] constexpr Vec3 extent() const noexcept
+    {
+        return (max - min) * 0.5f;
+    }
+
+    constexpr void add(Vec3 point) noexcept
+    {
+        min = glm::min(min, point);
+        max = glm::max(max, point);
+    }
+
+    // Grows the box by a fraction of its own size, for what moves inside it.
+    [[nodiscard]] constexpr Aabb grown(float fraction) const noexcept
+    {
+        const Vec3 margin = extent() * fraction;
+        return isEmpty() ? *this : Aabb{min - margin, max + margin};
+    }
+};
+
+// The box that holds the transformed box: the eight corners, moved and enclosed again.
+[[nodiscard]] inline Aabb transform(const Mat4& matrix, const Aabb& box) noexcept
+{
+    if (box.isEmpty())
+    {
+        return box;
+    }
+    Aabb result;
+    for (int corner = 0; corner < 8; ++corner)
+    {
+        const Vec3 point{(corner & 1) != 0 ? box.max.x : box.min.x,
+                         (corner & 2) != 0 ? box.max.y : box.min.y,
+                         (corner & 4) != 0 ? box.max.z : box.min.z};
+        result.add(Vec3(matrix * Vec4(point, 1.0f)));
+    }
+    return result;
 }
 
 } // namespace devex::math

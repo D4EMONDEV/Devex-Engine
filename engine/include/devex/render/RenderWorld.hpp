@@ -100,6 +100,9 @@ struct RenderLight
     // Half angles of a spot light's full and fading cones, in radians.
     float innerAngle = 0.0f;
     float outerAngle = 0.0f;
+    // Whether the light darkens what stands behind what it lights. A spot takes one view of the
+    // shadow atlas, a point light six; lights that do not fit keep their light without a shadow.
+    bool castShadows = false;
 };
 
 struct RenderEnvironment

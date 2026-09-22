@@ -50,6 +50,21 @@ struct GpuLight
     float spotScale = 0.0f;
     math::Vec3 intensity{0.0f};
     float spotOffset = 1.0f;
+    // The first view of the shadow atlas this light owns, or -1 when it casts none. A point light
+    // owns the six that follow, one per face of the cube around it.
+    std::int32_t firstShadowView = -1;
+    // How far the light reaches, which its views project between the near plane and it.
+    float shadowFar = 0.0f;
+    float padding0 = 0.0f;
+    float padding1 = 0.0f;
+};
+
+// One view of the shadow atlas: where it looks from, and the part of the atlas it was given.
+struct GpuShadowView
+{
+    math::Mat4 viewProjection{1.0f};
+    // Offset and size in the atlas, in texture coordinates.
+    math::Vec4 tile{0.0f};
 };
 
 struct GpuCluster
@@ -101,6 +116,8 @@ struct GpuSceneData
     math::Mat4 previousViewProjection{1.0f};
     // Takes a point of clip space back to the world, without the jitter.
     math::Mat4 inverseViewProjection{1.0f};
+    // The views the local lights were given in the shadow atlas.
+    VkDeviceAddress shadowViews = 0;
 };
 
 // How a vertex of a skinned mesh follows its bones, beside the vertex itself.
@@ -244,7 +261,8 @@ static_assert(offsetof(GpuMaterial, baseColorTexture) == 32);
 static_assert(offsetof(GpuMaterial, emissiveTexture) == 48);
 static_assert(offsetof(GpuMaterial, doubleSided) == 72);
 
-static_assert(sizeof(GpuLight) == 48);
+static_assert(sizeof(GpuLight) == 64);
+static_assert(sizeof(GpuShadowView) == 80);
 static_assert(offsetof(GpuLight, direction) == 16);
 static_assert(offsetof(GpuLight, intensity) == 32);
 
@@ -261,7 +279,7 @@ static_assert(offsetof(GpuSceneData, clusterSliceScale) == 576);
 static_assert(offsetof(GpuSceneData, materials) == 592);
 static_assert(offsetof(GpuSceneData, pickViewProjection) == 624);
 static_assert(offsetof(GpuSceneData, unjitteredViewProjection) == 688);
-static_assert(sizeof(GpuSceneData) == 880);
+static_assert(sizeof(GpuSceneData) == 888);
 
 // Vulkan guarantees 128 bytes of push constants on every device.
 static_assert(sizeof(DrawPushConstants) == 112);

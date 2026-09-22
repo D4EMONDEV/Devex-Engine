@@ -495,3 +495,112 @@ TEST_CASE("Blended surfaces, antialiasing, occlusion and bloom draw without vali
     }
     CHECK(capture.errors().empty());
 }
+
+TEST_CASE("Instances the camera cannot see are not drawn", "[render][gpu]")
+{
+    const ErrorCapture capture;
+    {
+        auto platform = devex::platform::Platform::create();
+        REQUIRE(platform.has_value());
+        auto window = platform->createWindow({.width = 320, .height = 240, .vulkan = true, .hidden = true});
+        REQUIRE(window.has_value());
+        auto renderer = devex::render::Renderer::create(*platform, *window, {.validation = true});
+        if (!renderer)
+        {
+            FAIL(std::format("{}", renderer.error()));
+        }
+
+        const auto cube = renderer->createMesh(devex::asset::makeCube());
+        REQUIRE(cube.has_value());
+        const devex::math::Mat4 cameraTransform =
+            devex::math::translate(devex::math::Mat4(1.0f), devex::math::Vec3{0.0f, 0.0f, 6.0f});
+
+        devex::render::RenderWorld& world = renderer->beginFrame();
+        world.camera.view = devex::math::inverse(cameraTransform);
+        // The sun is off, so nothing is drawn into the cascades either.
+        world.sun.illuminance = {0.0f, 0.0f, 0.0f};
+        world.meshes.push_back({.mesh = *cube, .objectId = 1});
+        // Far behind the camera, and far to the side.
+        world.meshes.push_back({
+            .mesh = *cube,
+            .transform = devex::math::translate(devex::math::Mat4(1.0f), devex::math::Vec3{0.0f, 0.0f, 60.0f}),
+            .objectId = 2,
+        });
+        world.meshes.push_back({
+            .mesh = *cube,
+            .transform = devex::math::translate(devex::math::Mat4(1.0f), devex::math::Vec3{200.0f, 0.0f, 0.0f}),
+            .objectId = 3,
+        });
+        REQUIRE(renderer->endFrame().has_value());
+
+        // Only the cube in front of the camera is drawn, by the prepass and by the shading.
+        CHECK(renderer->stats().drawCalls == 2);
+        // The two others are dropped by both passes.
+        CHECK(renderer->stats().culledInstances == 4);
+    }
+
+    for (const std::string& error : capture.errors())
+    {
+        UNSCOPED_INFO(error);
+    }
+    CHECK(capture.errors().empty());
+}
+
+TEST_CASE("Local lights that cast shadows are drawn into the atlas", "[render][gpu]")
+{
+    const ErrorCapture capture;
+    {
+        auto platform = devex::platform::Platform::create();
+        REQUIRE(platform.has_value());
+        auto window = platform->createWindow({.width = 320, .height = 240, .vulkan = true, .hidden = true});
+        REQUIRE(window.has_value());
+        auto renderer = devex::render::Renderer::create(*platform, *window, {.validation = true});
+        if (!renderer)
+        {
+            FAIL(std::format("{}", renderer.error()));
+        }
+
+        const auto cube = renderer->createMesh(devex::asset::makeCube());
+        REQUIRE(cube.has_value());
+        const devex::math::Mat4 cameraTransform =
+            devex::math::translate(devex::math::Mat4(1.0f), devex::math::Vec3{0.0f, 0.0f, 6.0f});
+
+        for (int frame = 0; frame < 3; ++frame)
+        {
+            devex::render::RenderWorld& world = renderer->beginFrame();
+            world.camera.view = devex::math::inverse(cameraTransform);
+            world.sun.illuminance = {0.0f, 0.0f, 0.0f};
+            world.meshes.push_back({.mesh = *cube, .objectId = 1});
+            // A spot takes one view of the atlas, a point light the six of its cube.
+            world.lights.push_back({
+                .type = devex::render::LightType::Spot,
+                .position = {0.0f, 3.0f, 0.0f},
+                .direction = {0.0f, -1.0f, 0.0f},
+                .intensity = {50.0f, 50.0f, 50.0f},
+                .range = 20.0f,
+                .innerAngle = devex::math::radians(20.0f),
+                .outerAngle = devex::math::radians(30.0f),
+                .castShadows = true,
+            });
+            world.lights.push_back({
+                .type = devex::render::LightType::Point,
+                .position = {2.0f, 1.0f, 0.0f},
+                .intensity = {20.0f, 20.0f, 20.0f},
+                .range = 15.0f,
+                .castShadows = true,
+            });
+            REQUIRE(renderer->endFrame().has_value());
+            // The cube is drawn by the prepass, by the shading, by the view of the spot, and by
+            // the two faces of the cube of the point light that look at it: the four others are
+            // culled, which is the whole point of giving every view its own frustum.
+            CHECK(renderer->stats().drawCalls == 2 + 1 + 2);
+            CHECK(renderer->stats().culledInstances == 4);
+        }
+    }
+
+    for (const std::string& error : capture.errors())
+    {
+        UNSCOPED_INFO(error);
+    }
+    CHECK(capture.errors().empty());
+}

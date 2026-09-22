@@ -9,6 +9,16 @@
 
 namespace devex::asset {
 
+math::Aabb computeBounds(const MeshData& mesh) noexcept
+{
+    math::Aabb bounds;
+    for (const Vertex& vertex : mesh.vertices)
+    {
+        bounds.add(vertex.position);
+    }
+    return bounds;
+}
+
 bool isSkinned(const MeshData& mesh) noexcept
 {
     return !mesh.skin.empty();

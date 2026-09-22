@@ -69,6 +69,8 @@ struct RendererStats
 {
     // Draw calls of the last presented frame.
     std::uint32_t drawCalls = 0;
+    // Instances the frustums dropped, over every pass of the frame.
+    std::uint32_t culledInstances = 0;
     std::size_t meshCount = 0;
     std::size_t textureCount = 0;
     std::size_t materialCount = 0;

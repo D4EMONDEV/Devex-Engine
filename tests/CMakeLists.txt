@@ -142,6 +142,7 @@ devex_add_tests(physics
 # Tests tagged [gpu] open a hidden window and need a Vulkan 1.4 GPU.
 devex_add_tests(render
     SOURCES
+        render/CullingTests.cpp
         render/LightingTests.cpp
         render/PhotometryTests.cpp
         render/RendererTests.cpp
