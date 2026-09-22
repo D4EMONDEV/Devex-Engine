@@ -497,6 +497,19 @@ core::Result<TextDocument> parseText(std::string_view source)
     return Parser(source).parse();
 }
 
+std::optional<TextValue> parseValue(std::string_view text)
+{
+    // A value alone is read as the one property of a document of one section.
+    const core::Result<TextDocument> document =
+        parseText("[value]\nv = " + std::string(text) + "\n");
+    if (!document || document->sections.size() != 1 ||
+        document->sections.front().properties.size() != 1)
+    {
+        return std::nullopt;
+    }
+    return document->sections.front().properties.front().value;
+}
+
 std::string writeText(const TextDocument& document)
 {
     std::string output;

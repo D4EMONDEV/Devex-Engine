@@ -36,6 +36,12 @@ struct LaidOutRect
     // How deep it sits under the canvas, and where it comes in the order of its siblings: the
     // elements are laid out parents first, so a later one is drawn over an earlier one.
     std::uint16_t depth = 0;
+    // What the element is cut to, from the ones above it: left, top, right and bottom, in units.
+    // An empty rectangle means nothing cuts it.
+    math::Vec4 clip{0.0f};
+    // The room its children take, for an element that scrolls: what lies beyond its own size is
+    // what the offset can reach.
+    math::Vec2 content{0.0f};
 
     [[nodiscard]] math::Vec2 size() const noexcept
     {
@@ -60,6 +66,10 @@ struct LayoutResult
 // Places every UiRect under the canvas entity. The canvas itself fills the window.
 void layoutCanvas(const scene::Scene& scene, scene::Entity canvas, math::Vec2 windowSize,
                   LayoutResult& result);
+
+// Whether the rectangle cuts anything, and what is left of a box once it is cut.
+[[nodiscard]] bool isClipped(const math::Vec4& clip) noexcept;
+[[nodiscard]] math::Vec4 intersectClip(const math::Vec4& clip, const math::Vec4& other) noexcept;
 
 // The four corners of a placed element, turned and scaled around its pivot, starting at the top
 // left corner and going clockwise.

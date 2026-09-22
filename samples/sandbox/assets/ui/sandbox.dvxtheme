@@ -1,0 +1,65 @@
+# The look of the sandbox interface. Every element that names one of these styles takes its
+# values, which keeps the colours of the whole game in one file.
+[theme format=1]
+
+[style name="panel" component="UiImage"]
+color = vec4(0.00335, 0.00402, 0.00561, 0.96)
+corner_radius = 0
+
+[style name="card" component="UiImage"]
+color = vec4(0.01521, 0.01938, 0.02956, 1)
+corner_radius = 14
+
+[style name="title" component="UiText"]
+color = vec4(0.84687, 0.86316, 0.88792, 1)
+size = 64
+align = "center"
+vertical_align = "middle"
+
+[style name="label" component="UiText"]
+color = vec4(0.62396, 0.65837, 0.70110, 1)
+size = 26
+align = "left"
+vertical_align = "middle"
+
+[style name="button" component="UiImage"]
+color = vec4(0.01521, 0.01938, 0.02956, 1)
+corner_radius = 10
+
+[style name="button" component="UiButton"]
+hover_color = vec4(2.4, 2.4, 2.4, 1)
+pressed_color = vec4(0.6, 0.6, 0.6, 1)
+fade_time = 0.08
+
+[style name="field" component="UiImage"]
+color = vec4(0.00754, 0.00913, 0.01298, 1)
+corner_radius = 8
+
+[style name="field" component="UiText"]
+color = vec4(0.84687, 0.86316, 0.88792, 1)
+size = 26
+align = "left"
+vertical_align = "middle"
+
+[style name="field" component="UiInput"]
+placeholder_color = vec4(0.21586, 0.23455, 0.26241, 1)
+selection_color = vec4(0.05286, 0.14703, 0.42327, 0.75)
+caret_color = vec4(0.84687, 0.86316, 0.88792, 1)
+padding = vec2(14, 0)
+
+[style name="track" component="UiImage"]
+color = vec4(0.00754, 0.00913, 0.01298, 1)
+corner_radius = 6
+
+[style name="track" component="UiSlider"]
+fill_color = vec4(0.09084, 0.23074, 0.52711, 1)
+handle_color = vec4(0.84687, 0.86316, 0.88792, 1)
+handle_size = 0.9
+
+[style name="box" component="UiImage"]
+color = vec4(0.00754, 0.00913, 0.01298, 1)
+corner_radius = 6
+
+[style name="box" component="UiToggle"]
+check_color = vec4(0.30499, 0.52712, 0.90842, 1)
+check_size = 0.6

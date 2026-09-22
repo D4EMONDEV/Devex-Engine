@@ -110,3 +110,41 @@ TEST_CASE("Keys outside the tracked range are ignored", "[platform][input]")
     CHECK_FALSE(input.isKeyDown(untracked));
     CHECK_FALSE(input.wasKeyPressed(untracked));
 }
+
+TEST_CASE("Typing is kept apart from the keys, for one frame", "[platform][input]")
+{
+    Input input;
+    input.beginFrame();
+    input.addTypedText("h\xc3\xa9");
+    input.addTypedText("!");
+    CHECK(input.typedText() == "h\xc3\xa9!");
+
+    // A key held down repeats without being pressed again.
+    input.setKeyDown(Key::Backspace, true);
+    input.beginFrame();
+    input.repeatKey(Key::Backspace);
+    CHECK(input.wasKeyRepeated(Key::Backspace));
+    CHECK_FALSE(input.wasKeyPressed(Key::Backspace));
+
+    input.beginFrame();
+    CHECK(input.typedText().empty());
+    CHECK_FALSE(input.wasKeyRepeated(Key::Backspace));
+}
+
+TEST_CASE("Shortcuts read the letter the layout prints, not the place of the key",
+          "[platform][input]")
+{
+    Input input;
+    input.beginFrame();
+    // On a French keyboard the key that writes A sits where Q is in the US: the place is Q, the
+    // letter is A, and Ctrl+A must select everything.
+    input.setKeyDown(Key::Q, true);
+    input.pressLetter('a');
+    CHECK(input.wasKeyPressed(Key::Q));
+    CHECK(input.wasLetterPressed('a'));
+    CHECK_FALSE(input.wasLetterPressed('q'));
+    CHECK_FALSE(input.wasLetterPressed('A'));
+
+    input.beginFrame();
+    CHECK_FALSE(input.wasLetterPressed('a'));
+}

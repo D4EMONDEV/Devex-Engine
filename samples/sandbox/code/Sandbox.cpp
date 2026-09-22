@@ -8,6 +8,7 @@
 #include <devex/scene/Components.hpp>
 #include <devex/scene/PhysicsComponents.hpp>
 #include <devex/scene/Prefab.hpp>
+#include <devex/ui/UiWorld.hpp>
 
 #include <cmath>
 #include <numbers>
@@ -209,21 +210,32 @@ DEVEX_REFLECT(SceneSwitch)
     return {};
 }
 
-// A click captures the mouse; Escape releases it, then ends the game.
+// Whether the player is typing into a field of the interface: the letters are then text, not
+// orders, and the systems that answer single keys leave them alone.
+[[nodiscard]] bool typing(const SystemContext& context)
+{
+    return context.ui != nullptr && context.ui->isEditing();
+}
+
+// A click in the world captures the mouse; Escape releases it, then ends the game. A click on the
+// interface belongs to it and leaves the cursor free, and a scene with an interface leaves Escape
+// to its menus, which have their own way out.
 void handleMouseCapture(SystemContext& context)
 {
     devex::platform::Window& window = context.window;
-    if (context.input.wasMouseButtonPressed(devex::platform::MouseButton::Left) && !window.isMouseCaptured())
+    const bool onInterface = context.ui != nullptr && context.ui->pointerOverInterface();
+    if (context.input.wasMouseButtonPressed(devex::platform::MouseButton::Left) &&
+        !window.isMouseCaptured() && !onInterface)
     {
         window.setMouseCaptured(true);
     }
-    if (context.input.wasKeyPressed(Key::Escape))
+    if (context.input.wasKeyPressed(Key::Escape) && !typing(context))
     {
         if (window.isMouseCaptured())
         {
             window.setMouseCaptured(false);
         }
-        else
+        else if (context.ui == nullptr || context.ui->canvases().empty())
         {
             context.quitRequested = true;
         }
@@ -452,7 +464,7 @@ void oscillate(SystemContext& context)
 // C switches between the player's view and the flying cameras.
 void switchScenes(SystemContext& context)
 {
-    if (!context.input.wasKeyPressed(Key::Tab))
+    if (!context.input.wasKeyPressed(Key::Tab) || typing(context))
     {
         return;
     }
@@ -469,7 +481,7 @@ void switchScenes(SystemContext& context)
 void switchCameras(SystemContext& context)
 {
     Scene& scene = context.scene;
-    if (!context.input.wasKeyPressed(Key::C))
+    if (!context.input.wasKeyPressed(Key::C) || typing(context))
     {
         return;
     }
@@ -514,7 +526,7 @@ void turnTurntables(SystemContext& context)
 
 void switchDayAndNight(SystemContext& context)
 {
-    if (!context.input.wasKeyPressed(Key::N))
+    if (!context.input.wasKeyPressed(Key::N) || typing(context))
     {
         return;
     }

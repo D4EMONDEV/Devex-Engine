@@ -91,7 +91,10 @@ std::uint32_t artifactVersion(AssetType type) noexcept
     case AssetType::Scene:
     case AssetType::AudioClip:
     case AssetType::AnimationClip:
+    // 2: the kerning pairs.
     case AssetType::Font:
+        return 2;
+    case AssetType::Theme:
         return 1;
     }
     return 0;
@@ -101,7 +104,7 @@ std::uint32_t artifactLayouts() noexcept
 {
     std::uint32_t combined = 0;
     for (std::uint8_t value = static_cast<std::uint8_t>(AssetType::Mesh);
-         value <= static_cast<std::uint8_t>(AssetType::Font); ++value)
+         value <= static_cast<std::uint8_t>(AssetType::Theme); ++value)
     {
         combined = combined * 31 + artifactVersion(static_cast<AssetType>(value));
     }
@@ -526,6 +529,7 @@ std::vector<std::byte> encodeFont(const FontData& font)
     writer.write(font.atlasHeight);
     writer.writeArray(std::span<const std::uint8_t>(font.atlas));
     writer.writeArray(std::span<const FontGlyph>(font.glyphs));
+    writer.writeArray(std::span<const FontKerning>(font.kerning));
     return writer.take();
 }
 
@@ -548,6 +552,7 @@ core::Result<FontData> decodeFont(std::span<const std::byte> bytes)
     font.atlasHeight = reader.read<std::uint32_t>();
     font.atlas = reader.readArray<std::uint8_t>();
     font.glyphs = reader.readArray<FontGlyph>();
+    font.kerning = reader.readArray<FontKerning>();
     if (reader.failed())
     {
         return std::unexpected(truncated(AssetType::Font));
@@ -557,6 +562,60 @@ core::Result<FontData> decodeFont(std::span<const std::byte> bytes)
         return std::unexpected(valid.error());
     }
     return font;
+}
+
+std::vector<std::byte> encodeTheme(const ThemeData& theme)
+{
+    BinaryWriter writer = beginArtifact(AssetType::Theme);
+    writer.write(static_cast<std::uint32_t>(theme.styles.size()));
+    for (const ThemeStyle& style : theme.styles)
+    {
+        writer.writeString(style.name);
+        writer.write(static_cast<std::uint32_t>(style.values.size()));
+        for (const ThemeOverride& value : style.values)
+        {
+            writer.writeString(value.component);
+            writer.writeString(value.field);
+            writer.writeString(value.value);
+        }
+    }
+    return writer.take();
+}
+
+core::Result<ThemeData> decodeTheme(std::span<const std::byte> bytes)
+{
+    BinaryReader reader(bytes);
+    if (core::Result<void> header = readHeader(reader, AssetType::Theme); !header)
+    {
+        return std::unexpected(header.error());
+    }
+
+    ThemeData theme;
+    const auto styles = reader.read<std::uint32_t>();
+    for (std::uint32_t index = 0; index < styles && !reader.failed(); ++index)
+    {
+        ThemeStyle style;
+        style.name = reader.readString();
+        const auto values = reader.read<std::uint32_t>();
+        for (std::uint32_t value = 0; value < values && !reader.failed(); ++value)
+        {
+            ThemeOverride written;
+            written.component = reader.readString();
+            written.field = reader.readString();
+            written.value = reader.readString();
+            style.values.push_back(std::move(written));
+        }
+        theme.styles.push_back(std::move(style));
+    }
+    if (reader.failed())
+    {
+        return std::unexpected(truncated(AssetType::Theme));
+    }
+    if (core::Result<void> valid = validate(theme); !valid)
+    {
+        return std::unexpected(valid.error());
+    }
+    return theme;
 }
 
 } // namespace devex::asset

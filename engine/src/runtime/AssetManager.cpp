@@ -163,6 +163,38 @@ std::shared_ptr<const animation::Clip> AssetManager::animationClip(asset::AssetI
     return *clip;
 }
 
+math::Extent2D AssetManager::textureSize(asset::AssetId id) const noexcept
+{
+    const auto found = m_textureSizes.find(id);
+    return found != m_textureSizes.end() ? found->second : math::Extent2D{};
+}
+
+std::shared_ptr<const asset::ThemeData> AssetManager::theme(asset::AssetId id)
+{
+    if (const auto found = m_themes.find(id); found != m_themes.end())
+    {
+        return found->second;
+    }
+    if (!id.isValid() || m_source == nullptr || m_failed.contains(id) ||
+        m_source->find(id) == nullptr)
+    {
+        return nullptr;
+    }
+    const core::Result<std::vector<std::byte>> bytes = m_source->loadArtifact(id);
+    core::Result<asset::ThemeData> data =
+        bytes ? asset::decodeTheme(*bytes)
+              : core::Result<asset::ThemeData>(std::unexpected(bytes.error()));
+    if (!data)
+    {
+        DEVEX_LOG_ERROR("Cannot load theme {}: {}", id.uuid, data.error());
+        m_failed.insert(id);
+        return nullptr;
+    }
+    auto theme = std::make_shared<const asset::ThemeData>(std::move(*data));
+    m_themes.emplace(id, theme);
+    return theme;
+}
+
 const LoadedFont* AssetManager::font(asset::AssetId id)
 {
     auto found = m_fonts.find(id);
@@ -184,6 +216,8 @@ void AssetManager::handleEvents(std::span<const asset::AssetEvent> events)
         // Sounds playing keep the clip they had; the next ones play the new one.
         m_audioClips.erase(event.id);
         m_animationClips.erase(event.id);
+        // A theme is read again on the next frame, which shows an edited look at once.
+        m_themes.erase(event.id);
     }
     bool texturesChanged = false;
     for (const asset::AssetEvent& event : events)
@@ -247,6 +281,7 @@ void AssetManager::handleEvents(std::span<const asset::AssetEvent> events)
             break;
         case asset::AssetType::AudioClip:
         case asset::AssetType::AnimationClip:
+        case asset::AssetType::Theme:
             break;
         }
     }
@@ -292,6 +327,7 @@ void AssetManager::setSource(asset::AssetSource* source)
     m_sceneTexts.clear();
     m_audioClips.clear();
     m_animationClips.clear();
+    m_themes.clear();
     m_failed.clear();
     m_source = source;
 }
@@ -343,6 +379,13 @@ bool AssetManager::loadTexture(asset::AssetId id)
         return false;
     }
     m_textures.insert_or_assign(id, *handle);
+    // Kept beside the handle, for the images whose borders stay unstretched.
+    if (!data->mips.empty())
+    {
+        m_textureSizes.insert_or_assign(id,
+                                        math::Extent2D{data->mips.front().width,
+                                                       data->mips.front().height});
+    }
     return true;
 }
 
@@ -463,6 +506,7 @@ void AssetManager::releaseTexture(asset::AssetId id)
     {
         m_renderer->destroyTexture(found->second);
         m_textures.erase(found);
+        m_textureSizes.erase(id);
     }
 }
 

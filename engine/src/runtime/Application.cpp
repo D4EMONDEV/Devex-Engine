@@ -314,6 +314,8 @@ private:
     std::unique_ptr<audio::AudioWorld> m_audio;
     std::unique_ptr<animation::AnimationWorld> m_animation;
     std::unique_ptr<ui::UiWorld> m_ui;
+    // Keeps the theme read last alive while the interface reads it.
+    std::shared_ptr<const asset::ThemeData> m_uiTheme;
     // The stick of the pad on the previous frame, so that pushing it moves the focus once.
     math::Vec2 m_uiStick{0.0f};
     // The audio settings the mixer has, to follow changes to the project.
@@ -1322,6 +1324,17 @@ void ApplicationRunner::createUi()
         return;
     }
     m_ui = std::make_unique<ui::UiWorld>();
+    // The fields measure their own text, so that a click lands between the right letters.
+    m_ui->setFonts([this](asset::AssetId id) {
+        const LoadedFont* const font = m_services.assets.font(id);
+        return font != nullptr ? ui::FontRef{.data = font->data.get(), .atlas = font->atlas}
+                               : ui::FontRef{};
+    });
+    // The themes are kept by the asset manager: the world only reads the one a canvas names.
+    m_ui->setThemes([this](asset::AssetId id) {
+        m_uiTheme = m_services.assets.theme(id);
+        return m_uiTheme.get();
+    });
     m_application.m_ui = m_ui.get();
 }
 
@@ -1376,6 +1389,10 @@ void ApplicationRunner::updateUi(std::chrono::nanoseconds frameTime)
         uiInput.pointerReleased = input.wasMouseButtonReleased(platform::MouseButton::Left);
         uiInput.pointerMoved = input.mouseDelta() != math::Vec2{0.0f};
     }
+    if (playing && pointerAvailable)
+    {
+        uiInput.wheel = input.mouseWheel().y;
+    }
     if (playing)
     {
         // One step per press: the arrows and the pad move the focus, and the stick does too once
@@ -1403,13 +1420,58 @@ void ApplicationRunner::updateUi(std::chrono::nanoseconds frameTime)
         uiInput.moveY = step(platform::Key::Up, platform::Key::Down, platform::GamepadButton::DpadUp,
                              platform::GamepadButton::DpadDown, stick.y, m_uiStick.y);
         m_uiStick = stick;
-        uiInput.submitPressed = input.wasKeyPressed(platform::Key::Enter) ||
-                                input.wasKeyPressed(platform::Key::Space) ||
-                                input.wasGamepadButtonPressed(platform::GamepadButton::South);
+        // While a field is being typed into, the space bar writes a space rather than pressing
+        // the button that has the focus.
+        const bool editing = m_ui->isEditing();
+        uiInput.submitPressed =
+            input.wasKeyPressed(platform::Key::Enter) ||
+            input.wasKeyPressed(platform::Key::KeypadEnter) ||
+            (!editing && (input.wasKeyPressed(platform::Key::Space) ||
+                          input.wasGamepadButtonPressed(platform::GamepadButton::South)));
         uiInput.cancelPressed = input.wasKeyPressed(platform::Key::Escape) ||
                                 input.wasGamepadButtonPressed(platform::GamepadButton::East);
+
+        // What a field takes: the letters the system made of the keys, and the keys that move the
+        // cursor, which answer the repeats of a key held down as well as its first press.
+        uiInput.typed = input.typedText();
+        const auto stroke = [&input](platform::Key key) {
+            return input.wasKeyPressed(key) || input.wasKeyRepeated(key);
+        };
+        const auto held = [&input](platform::Key left, platform::Key right) {
+            return input.isKeyDown(left) || input.isKeyDown(right);
+        };
+        const bool control = held(platform::Key::LeftControl, platform::Key::RightControl);
+        uiInput.backspacePressed = stroke(platform::Key::Backspace);
+        uiInput.deletePressed = stroke(platform::Key::Delete);
+        uiInput.leftPressed = stroke(platform::Key::Left);
+        uiInput.rightPressed = stroke(platform::Key::Right);
+        uiInput.upPressed = stroke(platform::Key::Up);
+        uiInput.downPressed = stroke(platform::Key::Down);
+        uiInput.homePressed = stroke(platform::Key::Home);
+        uiInput.endPressed = stroke(platform::Key::End);
+        uiInput.selecting = held(platform::Key::LeftShift, platform::Key::RightShift);
+        // The shortcuts follow the letters of the layout rather than the places of the keys.
+        uiInput.copyPressed = control && input.wasLetterPressed('c');
+        uiInput.cutPressed = control && input.wasLetterPressed('x');
+        uiInput.pastePressed = control && input.wasLetterPressed('v');
+        uiInput.selectAllPressed = control && input.wasLetterPressed('a');
+        if (uiInput.pastePressed)
+        {
+            uiInput.clipboard = m_services.platform.clipboardText();
+        }
     }
     m_ui->update(*m_application.m_scene, size, uiInput, core::Duration(frameTime));
+
+    // The system types into the field that is being edited: its keyboard opens on a touch screen,
+    // and a dead key composes into one letter.
+    if (m_ui->isEditing() != m_services.platform.isTextInputActive())
+    {
+        m_services.platform.setTextInput(m_services.window, m_ui->isEditing());
+    }
+    if (const std::string& copied = m_ui->clipboardRequest(); !copied.empty())
+    {
+        m_services.platform.setClipboardText(copied);
+    }
 }
 
 void ApplicationRunner::buildUi(render::RenderWorld& world)
@@ -1426,6 +1488,11 @@ void ApplicationRunner::buildUi(render::RenderWorld& world)
                                        : ui::FontRef{};
             },
         .textures = [this](asset::AssetId id) { return m_services.assets.texture(id); },
+        .textureSize =
+            [this](asset::AssetId id) {
+                const math::Extent2D size = m_services.assets.textureSize(id);
+                return math::Vec2{static_cast<float>(size.width), static_cast<float>(size.height)};
+            },
     };
     m_ui->build(*m_application.m_scene, context, world);
 }

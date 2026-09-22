@@ -78,6 +78,9 @@ struct TextDocument
 // Errors name the line and column of the problem.
 [[nodiscard]] core::Result<TextDocument> parseText(std::string_view source);
 
+// One value on its own, as formatValue wrote it. Nothing when the text is not a value.
+[[nodiscard]] std::optional<TextValue> parseValue(std::string_view text);
+
 [[nodiscard]] std::string writeText(const TextDocument& document);
 
 } // namespace devex::serialization

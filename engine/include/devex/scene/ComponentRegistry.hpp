@@ -23,6 +23,9 @@ struct ComponentType
     // Adds a default-constructed component, or returns the one the entity already has.
     std::function<void*(Scene& scene, Entity entity)> emplace;
     std::function<const void*(const Scene& scene, Entity entity)> find;
+    // The same component, to write into; null when the entity does not carry it. Nothing is
+    // added: a style only touches what an element already has.
+    std::function<void*(Scene& scene, Entity entity)> findMutable;
     std::function<void(Scene& scene, Entity entity)> remove;
     // The layout of a type described while the engine runs, such as a C# component; null for the
     // types declared in C++.
@@ -58,6 +61,9 @@ public:
                 return &scene.add<T>(entity);
             },
             .find = [](const Scene& scene, Entity entity) -> const void* {
+                return scene.tryGet<T>(entity);
+            },
+            .findMutable = [](Scene& scene, Entity entity) -> void* {
                 return scene.tryGet<T>(entity);
             },
             .remove = [](Scene& scene, Entity entity) { scene.remove<T>(entity); },

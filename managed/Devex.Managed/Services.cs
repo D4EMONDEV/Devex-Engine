@@ -295,6 +295,29 @@ public static unsafe class Ui
     /// <summary>Whether that very button was clicked during this frame.</summary>
     public static bool WasClicked(Entity entity) => Bootstrap.Native.UiClickedEntity(entity) != 0;
 
+    /// <summary>
+    /// Whether a slider carrying this action was moved, or a toggle carrying it turned over,
+    /// during this frame. The value itself is read from the component of the element.
+    /// </summary>
+    public static bool WasChanged(string action)
+    {
+        using var text = new Utf8Buffer(action);
+        return Bootstrap.Native.UiChangedAction(text.Pointer) != 0;
+    }
+
+    /// <summary>
+    /// Whether a field carrying this action was ended with Enter during this frame. What was
+    /// typed is the text of the UiText of the field.
+    /// </summary>
+    public static bool WasSubmitted(string action)
+    {
+        using var text = new Utf8Buffer(action);
+        return Bootstrap.Native.UiSubmittedAction(text.Pointer) != 0;
+    }
+
+    /// <summary>The field being typed into, or an invalid entity.</summary>
+    public static Entity EditedField => Bootstrap.Native.UiEditedField();
+
     /// <summary>Whether the player asked to go back this frame: Escape, or the east button.</summary>
     public static bool WasCancelled() => Bootstrap.Native.UiCancelled() != 0;
 

@@ -730,6 +730,25 @@ def material(path, lines):
     write(path, "[material format=1]\n" + "".join(line + "\n" for line in lines))
 
 
+def panel_pixel(size=64, radius=18):
+    """A rounded frame for the nine-slice demo: a lit rim around a dark middle, whose corners must
+    keep their size while the middle stretches."""
+
+    def pixel(x, y):
+        cx = min(max(x + 0.5, radius), size - radius)
+        cy = min(max(y + 0.5, radius), size - radius)
+        distance = ((x + 0.5 - cx) ** 2 + (y + 0.5 - cy) ** 2) ** 0.5
+        outside = distance - radius
+        if outside > 0.5:
+            return (0, 0, 0, 0)
+        edge = max(0.0, min(1.0, 0.5 - outside))
+        rim = max(0.0, min(1.0, (distance - (radius - 3.0)) / 3.0))
+        fill = (26, 28, 36, 235 * edge)
+        line = (120, 170, 255, 255 * edge)
+        return tuple(int(fill[i] + (line[i] - fill[i]) * rim) for i in range(4))
+    return pixel
+
+
 def devex_icon_pixel(size):
     """The Devex logo: a rounded square in a blue gradient with a white cube drawn in lines."""
     scale = size / 24.0
@@ -780,6 +799,8 @@ def main():
           png_bytes(256, 256, checker_pixel(16, 256, (196, 200, 206, 255), (150, 156, 166, 255))))
     # The icon of the exported game and of its window.
     write(SANDBOX_ASSETS / "textures" / "icon.png", png_bytes(256, 256, devex_icon_pixel(256)))
+    # The frame of the help panel of the settings screen, drawn in nine parts.
+    write(SANDBOX_ASSETS / "textures" / "panel.png", png_bytes(64, 64, panel_pixel()))
     crate(SANDBOX_ASSETS / "models" / "crate" / "crate.gltf")
     beacon(SANDBOX_ASSETS / "models" / "beacon.glb")
     # The sandbox sun travels along (-0.287, -0.866, -0.41).

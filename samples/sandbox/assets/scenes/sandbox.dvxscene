@@ -459,6 +459,7 @@ material = asset("5c8e2b41-9a07-4d63-8f1c-2e6b7d0a4f92")
 [component type="Canvas"]
 scale_mode = "scale_with_screen"
 reference_resolution = vec2(1920, 1080)
+theme = asset("c1a7f3d2-58e4-4b90-8a6c-19d0e7b45f23")
 match_width_or_height = 0.5
 sort_order = 0
 visible = true
@@ -474,6 +475,7 @@ offset_min = vec2(0, 0)
 offset_max = vec2(0, 0)
 opacity = 1.0
 visible = true
+style = "panel"
 
 [component type="UiImage"]
 color = vec4(0.00335, 0.00402, 0.00561, 0.96)
@@ -490,6 +492,7 @@ offset_min = vec2(0, 180)
 offset_max = vec2(0, 320)
 opacity = 1.0
 visible = true
+style = "title"
 
 [component type="UiText"]
 text = "Devex Sandbox"
@@ -528,6 +531,7 @@ offset_min = vec2(0, 0)
 offset_max = vec2(0, 64)
 opacity = 1.0
 visible = true
+style = "button"
 
 [component type="UiImage"]
 color = vec4(0.01521, 0.01938, 0.02956, 1.0)
@@ -572,6 +576,7 @@ offset_min = vec2(0, 0)
 offset_max = vec2(0, 64)
 opacity = 1.0
 visible = true
+style = "button"
 
 [component type="UiImage"]
 color = vec4(0.01521, 0.01938, 0.02956, 1.0)
@@ -616,6 +621,7 @@ offset_min = vec2(0, 0)
 offset_max = vec2(0, 64)
 opacity = 1.0
 visible = true
+style = "button"
 
 [component type="UiImage"]
 color = vec4(0.01521, 0.01938, 0.02956, 1.0)
@@ -660,6 +666,7 @@ offset_min = vec2(0, 0)
 offset_max = vec2(0, 0)
 opacity = 1.0
 visible = false
+style = "panel"
 
 [component type="UiImage"]
 color = vec4(0.00335, 0.00402, 0.00561, 0.96)
@@ -676,6 +683,7 @@ offset_min = vec2(0, 200)
 offset_max = vec2(0, 300)
 opacity = 1.0
 visible = true
+style = "title"
 
 [component type="UiText"]
 text = "Réglages"
@@ -691,10 +699,10 @@ raycast_target = false
 parent = "7e1b0a00-0001-4000-9000-00000000000b"
 
 [component type="UiRect"]
-anchor_min = vec2(0.5, 0.5)
-anchor_max = vec2(0.5, 0.5)
-offset_min = vec2(-220, -120)
-offset_max = vec2(220, 160)
+anchor_min = vec2(0, 0.5)
+anchor_max = vec2(0, 0.5)
+offset_min = vec2(160, -200)
+offset_max = vec2(780, 200)
 opacity = 1.0
 visible = true
 
@@ -704,93 +712,564 @@ spacing = 16
 padding = vec4(0, 0, 0, 0)
 align = "center"
 
-[entity uuid="7e1b0a00-0001-4000-9000-00000000000e" name="Volume +"]
+[entity uuid="7e1b0a00-0001-4000-9000-000000000030" name="Nom"]
 parent = "7e1b0a00-0001-4000-9000-00000000000d"
 
 [component type="UiRect"]
 anchor_min = vec2(0, 0)
 anchor_max = vec2(1, 0)
 offset_min = vec2(0, 0)
-offset_max = vec2(0, 64)
+offset_max = vec2(0, 56)
 opacity = 1.0
 visible = true
 
-[component type="UiImage"]
-color = vec4(0.01521, 0.01938, 0.02956, 1.0)
-corner_radius = 10.0
-raycast_target = true
+[entity uuid="7e1b0a00-0001-4000-9000-000000000031" name="Label"]
+parent = "7e1b0a00-0001-4000-9000-000000000030"
 
-[component type="UiButton"]
-action = "louder"
-interactable = true
-hover_color = vec4(2.4, 2.4, 2.4, 1)
-pressed_color = vec4(0.6, 0.6, 0.6, 1)
-fade_time = 0.08
+[component type="UiRect"]
+anchor_min = vec2(0, 0)
+anchor_max = vec2(0, 1)
+offset_min = vec2(0, 0)
+offset_max = vec2(210, 0)
+opacity = 1.0
+visible = true
+style = "label"
 
-[entity uuid="7e1b0a00-0001-4000-9000-00000000000f" name="Label"]
-parent = "7e1b0a00-0001-4000-9000-00000000000e"
+[component type="UiText"]
+text = "Nom"
+font = asset("3f5c9a10-8d21-4b77-9d3e-6a41c0f2e510")
+size = 26
+color = vec4(0.84687, 0.86316, 0.88792, 1.0)
+align = "left"
+vertical_align = "middle"
+wrap = false
+outline_width = 0.0
+raycast_target = false
+
+[entity uuid="7e1b0a00-0001-4000-9000-000000000032" name="Champ"]
+parent = "7e1b0a00-0001-4000-9000-000000000030"
 
 [component type="UiRect"]
 anchor_min = vec2(0, 0)
 anchor_max = vec2(1, 1)
-offset_min = vec2(0, 0)
-offset_max = vec2(0, 0)
+offset_min = vec2(220, 4)
+offset_max = vec2(0, -4)
 opacity = 1.0
 visible = true
+style = "field"
+
+[component type="UiImage"]
+color = vec4(0.01521, 0.01938, 0.02956, 1.0)
+corner_radius = 8.0
+raycast_target = true
 
 [component type="UiText"]
-text = "Volume +"
+text = ""
 font = asset("3f5c9a10-8d21-4b77-9d3e-6a41c0f2e510")
-size = 28
+size = 26
 color = vec4(0.84687, 0.86316, 0.88792, 1.0)
-align = "center"
+align = "left"
 vertical_align = "middle"
+wrap = false
 outline_width = 0.0
 raycast_target = false
 
-[entity uuid="7e1b0a00-0001-4000-9000-000000000010" name="Volume -"]
+[component type="UiInput"]
+placeholder = "Votre nom"
+max_length = 24
+action = "name"
+
+[entity uuid="7e1b0a00-0001-4000-9000-000000000033" name="Mot de passe"]
 parent = "7e1b0a00-0001-4000-9000-00000000000d"
 
 [component type="UiRect"]
 anchor_min = vec2(0, 0)
 anchor_max = vec2(1, 0)
 offset_min = vec2(0, 0)
-offset_max = vec2(0, 64)
+offset_max = vec2(0, 56)
 opacity = 1.0
 visible = true
 
-[component type="UiImage"]
-color = vec4(0.01521, 0.01938, 0.02956, 1.0)
-corner_radius = 10.0
-raycast_target = true
+[entity uuid="7e1b0a00-0001-4000-9000-000000000034" name="Label"]
+parent = "7e1b0a00-0001-4000-9000-000000000033"
 
-[component type="UiButton"]
-action = "softer"
-interactable = true
-hover_color = vec4(2.4, 2.4, 2.4, 1)
-pressed_color = vec4(0.6, 0.6, 0.6, 1)
-fade_time = 0.08
+[component type="UiRect"]
+anchor_min = vec2(0, 0)
+anchor_max = vec2(0, 1)
+offset_min = vec2(0, 0)
+offset_max = vec2(210, 0)
+opacity = 1.0
+visible = true
+style = "label"
 
-[entity uuid="7e1b0a00-0001-4000-9000-000000000011" name="Label"]
-parent = "7e1b0a00-0001-4000-9000-000000000010"
+[component type="UiText"]
+text = "Mot de passe"
+font = asset("3f5c9a10-8d21-4b77-9d3e-6a41c0f2e510")
+size = 26
+color = vec4(0.84687, 0.86316, 0.88792, 1.0)
+align = "left"
+vertical_align = "middle"
+wrap = false
+outline_width = 0.0
+raycast_target = false
+
+[entity uuid="7e1b0a00-0001-4000-9000-000000000035" name="Champ"]
+parent = "7e1b0a00-0001-4000-9000-000000000033"
 
 [component type="UiRect"]
 anchor_min = vec2(0, 0)
 anchor_max = vec2(1, 1)
+offset_min = vec2(220, 4)
+offset_max = vec2(0, -4)
+opacity = 1.0
+visible = true
+style = "field"
+
+[component type="UiImage"]
+color = vec4(0.01521, 0.01938, 0.02956, 1.0)
+corner_radius = 8.0
+raycast_target = true
+
+[component type="UiText"]
+text = ""
+font = asset("3f5c9a10-8d21-4b77-9d3e-6a41c0f2e510")
+size = 26
+color = vec4(0.84687, 0.86316, 0.88792, 1.0)
+align = "left"
+vertical_align = "middle"
+wrap = false
+outline_width = 0.0
+raycast_target = false
+
+[component type="UiInput"]
+placeholder = "Secret"
+password = true
+max_length = 16
+action = "password"
+
+[entity uuid="7e1b0a00-0001-4000-9000-000000000036" name="Volume"]
+parent = "7e1b0a00-0001-4000-9000-00000000000d"
+
+[component type="UiRect"]
+anchor_min = vec2(0, 0)
+anchor_max = vec2(1, 0)
 offset_min = vec2(0, 0)
+offset_max = vec2(0, 56)
+opacity = 1.0
+visible = true
+
+[entity uuid="7e1b0a00-0001-4000-9000-000000000037" name="Label"]
+parent = "7e1b0a00-0001-4000-9000-000000000036"
+
+[component type="UiRect"]
+anchor_min = vec2(0, 0)
+anchor_max = vec2(0, 1)
+offset_min = vec2(0, 0)
+offset_max = vec2(210, 0)
+opacity = 1.0
+visible = true
+style = "label"
+
+[component type="UiText"]
+text = "Volume"
+font = asset("3f5c9a10-8d21-4b77-9d3e-6a41c0f2e510")
+size = 26
+color = vec4(0.84687, 0.86316, 0.88792, 1.0)
+align = "left"
+vertical_align = "middle"
+wrap = false
+outline_width = 0.0
+raycast_target = false
+
+[entity uuid="7e1b0a00-0001-4000-9000-000000000038" name="Piste"]
+parent = "7e1b0a00-0001-4000-9000-000000000036"
+
+[component type="UiRect"]
+anchor_min = vec2(0, 0.5)
+anchor_max = vec2(1, 0.5)
+offset_min = vec2(220, -10)
+offset_max = vec2(-110, 10)
+opacity = 1.0
+visible = true
+style = "track"
+
+[component type="UiImage"]
+color = vec4(0.00754, 0.00913, 0.01298, 1.0)
+corner_radius = 6.0
+raycast_target = true
+
+[component type="UiSlider"]
+value = 70
+min_value = 0
+max_value = 100
+step = 1
+handle_size = 0.9
+action = "volume"
+
+[entity uuid="7e1b0a00-0001-4000-9000-000000000039" name="Valeur"]
+parent = "7e1b0a00-0001-4000-9000-000000000036"
+
+[component type="UiRect"]
+anchor_min = vec2(1, 0)
+anchor_max = vec2(1, 1)
+offset_min = vec2(-100, 0)
 offset_max = vec2(0, 0)
 opacity = 1.0
 visible = true
 
 [component type="UiText"]
-text = "Volume -"
+text = "70 %"
 font = asset("3f5c9a10-8d21-4b77-9d3e-6a41c0f2e510")
-size = 28
+size = 26
 color = vec4(0.84687, 0.86316, 0.88792, 1.0)
-align = "center"
+align = "right"
 vertical_align = "middle"
+wrap = false
 outline_width = 0.0
 raycast_target = false
+
+[component type="UiBinding"]
+component = "UiSlider"
+field = "value"
+format = "{} %"
+decimals = 0
+source = entity("7e1b0a00-0001-4000-9000-000000000038")
+
+[entity uuid="7e1b0a00-0001-4000-9000-00000000003a" name="Plein écran"]
+parent = "7e1b0a00-0001-4000-9000-00000000000d"
+
+[component type="UiRect"]
+anchor_min = vec2(0, 0)
+anchor_max = vec2(1, 0)
+offset_min = vec2(0, 0)
+offset_max = vec2(0, 56)
+opacity = 1.0
+visible = true
+
+[entity uuid="7e1b0a00-0001-4000-9000-00000000003b" name="Label"]
+parent = "7e1b0a00-0001-4000-9000-00000000003a"
+
+[component type="UiRect"]
+anchor_min = vec2(0, 0)
+anchor_max = vec2(0, 1)
+offset_min = vec2(0, 0)
+offset_max = vec2(210, 0)
+opacity = 1.0
+visible = true
+style = "label"
+
+[component type="UiText"]
+text = "Plein écran"
+font = asset("3f5c9a10-8d21-4b77-9d3e-6a41c0f2e510")
+size = 26
+color = vec4(0.84687, 0.86316, 0.88792, 1.0)
+align = "left"
+vertical_align = "middle"
+wrap = false
+outline_width = 0.0
+raycast_target = false
+
+[entity uuid="7e1b0a00-0001-4000-9000-00000000003c" name="Case"]
+parent = "7e1b0a00-0001-4000-9000-00000000003a"
+
+[component type="UiRect"]
+anchor_min = vec2(0, 0.5)
+anchor_max = vec2(0, 0.5)
+offset_min = vec2(220, -18)
+offset_max = vec2(256, 18)
+opacity = 1.0
+visible = true
+style = "box"
+
+[component type="UiImage"]
+color = vec4(0.00754, 0.00913, 0.01298, 1.0)
+corner_radius = 6.0
+raycast_target = true
+
+[component type="UiToggle"]
+value = true
+action = "fullscreen"
+
+[entity uuid="7e1b0a00-0001-4000-9000-000000000040" name="Aide"]
+parent = "7e1b0a00-0001-4000-9000-00000000000b"
+
+[component type="UiRect"]
+anchor_min = vec2(1, 0.5)
+anchor_max = vec2(1, 0.5)
+offset_min = vec2(-620, -230)
+offset_max = vec2(-60, 230)
+opacity = 1.0
+visible = true
+
+[component type="UiImage"]
+texture = asset("8b2d4e61-0c95-43a7-9f18-7d5c3a2e6b40")
+color = vec4(1, 1, 1, 1)
+border = vec4(0.3, 0.3, 0.3, 0.3)
+corner_radius = 0.0
+raycast_target = true
+
+[entity uuid="7e1b0a00-0001-4000-9000-000000000041" name="Liste"]
+parent = "7e1b0a00-0001-4000-9000-000000000040"
+
+[component type="UiRect"]
+anchor_min = vec2(0, 0)
+anchor_max = vec2(1, 1)
+offset_min = vec2(28, 28)
+offset_max = vec2(-28, -28)
+opacity = 1.0
+visible = true
+
+[component type="UiScroll"]
+offset = vec2(0, 0)
+vertical = true
+speed = 60
+
+[entity uuid="7e1b0a00-0001-4000-9000-000000000042" name="Lignes"]
+parent = "7e1b0a00-0001-4000-9000-000000000041"
+
+[component type="UiRect"]
+anchor_min = vec2(0, 0)
+anchor_max = vec2(1, 0)
+offset_min = vec2(0, 0)
+offset_max = vec2(0, 620)
+opacity = 1.0
+visible = true
+
+[component type="UiLayout"]
+kind = "column"
+spacing = 8
+padding = vec4(0, 0, 0, 0)
+align = "left"
+
+[entity uuid="7e1b0a00-0001-4000-9000-000000000043" name="Ligne 1"]
+parent = "7e1b0a00-0001-4000-9000-000000000042"
+
+[component type="UiRect"]
+anchor_min = vec2(0, 0)
+anchor_max = vec2(1, 0)
+offset_min = vec2(0, 0)
+offset_max = vec2(0, 54)
+opacity = 1.0
+visible = true
+
+[component type="UiText"]
+text = "[b]Aide[/b] — la molette fait défiler cette liste."
+font = asset("3f5c9a10-8d21-4b77-9d3e-6a41c0f2e510")
+size = 22
+color = vec4(0.84687, 0.86316, 0.88792, 1.0)
+align = "left"
+vertical_align = "middle"
+wrap = true
+outline_width = 0.0
+raycast_target = false
+rich = true
+
+[entity uuid="7e1b0a00-0001-4000-9000-000000000044" name="Ligne 2"]
+parent = "7e1b0a00-0001-4000-9000-000000000042"
+
+[component type="UiRect"]
+anchor_min = vec2(0, 0)
+anchor_max = vec2(1, 0)
+offset_min = vec2(0, 0)
+offset_max = vec2(0, 54)
+opacity = 1.0
+visible = true
+
+[component type="UiText"]
+text = "Cliquez dans le monde pour marquer [color=#7fd4ff]10 points[/color]."
+font = asset("3f5c9a10-8d21-4b77-9d3e-6a41c0f2e510")
+size = 22
+color = vec4(0.84687, 0.86316, 0.88792, 1.0)
+align = "left"
+vertical_align = "middle"
+wrap = true
+outline_width = 0.0
+raycast_target = false
+rich = true
+
+[entity uuid="7e1b0a00-0001-4000-9000-000000000045" name="Ligne 3"]
+parent = "7e1b0a00-0001-4000-9000-000000000042"
+
+[component type="UiRect"]
+anchor_min = vec2(0, 0)
+anchor_max = vec2(1, 0)
+offset_min = vec2(0, 0)
+offset_max = vec2(0, 54)
+opacity = 1.0
+visible = true
+
+[component type="UiText"]
+text = "[i]Échap[/i] met le jeu en pause."
+font = asset("3f5c9a10-8d21-4b77-9d3e-6a41c0f2e510")
+size = 22
+color = vec4(0.84687, 0.86316, 0.88792, 1.0)
+align = "left"
+vertical_align = "middle"
+wrap = true
+outline_width = 0.0
+raycast_target = false
+rich = true
+
+[entity uuid="7e1b0a00-0001-4000-9000-000000000046" name="Ligne 4"]
+parent = "7e1b0a00-0001-4000-9000-000000000042"
+
+[component type="UiRect"]
+anchor_min = vec2(0, 0)
+anchor_max = vec2(1, 0)
+offset_min = vec2(0, 0)
+offset_max = vec2(0, 54)
+opacity = 1.0
+visible = true
+
+[component type="UiText"]
+text = "Le volume se règle au [b]curseur[/b] ou aux flèches."
+font = asset("3f5c9a10-8d21-4b77-9d3e-6a41c0f2e510")
+size = 22
+color = vec4(0.84687, 0.86316, 0.88792, 1.0)
+align = "left"
+vertical_align = "middle"
+wrap = true
+outline_width = 0.0
+raycast_target = false
+rich = true
+
+[entity uuid="7e1b0a00-0001-4000-9000-000000000047" name="Ligne 5"]
+parent = "7e1b0a00-0001-4000-9000-000000000042"
+
+[component type="UiRect"]
+anchor_min = vec2(0, 0)
+anchor_max = vec2(1, 0)
+offset_min = vec2(0, 0)
+offset_max = vec2(0, 54)
+opacity = 1.0
+visible = true
+
+[component type="UiText"]
+text = "Le champ [color=#9fe6a0]Nom[/color] prend ce qui est tapé."
+font = asset("3f5c9a10-8d21-4b77-9d3e-6a41c0f2e510")
+size = 22
+color = vec4(0.84687, 0.86316, 0.88792, 1.0)
+align = "left"
+vertical_align = "middle"
+wrap = true
+outline_width = 0.0
+raycast_target = false
+rich = true
+
+[entity uuid="7e1b0a00-0001-4000-9000-000000000048" name="Ligne 6"]
+parent = "7e1b0a00-0001-4000-9000-000000000042"
+
+[component type="UiRect"]
+anchor_min = vec2(0, 0)
+anchor_max = vec2(1, 0)
+offset_min = vec2(0, 0)
+offset_max = vec2(0, 54)
+opacity = 1.0
+visible = true
+
+[component type="UiText"]
+text = "Le mot de passe s'affiche en points."
+font = asset("3f5c9a10-8d21-4b77-9d3e-6a41c0f2e510")
+size = 22
+color = vec4(0.84687, 0.86316, 0.88792, 1.0)
+align = "left"
+vertical_align = "middle"
+wrap = true
+outline_width = 0.0
+raycast_target = false
+rich = true
+
+[entity uuid="7e1b0a00-0001-4000-9000-000000000049" name="Ligne 7"]
+parent = "7e1b0a00-0001-4000-9000-000000000042"
+
+[component type="UiRect"]
+anchor_min = vec2(0, 0)
+anchor_max = vec2(1, 0)
+offset_min = vec2(0, 0)
+offset_max = vec2(0, 54)
+opacity = 1.0
+visible = true
+
+[component type="UiText"]
+text = "Ctrl+A, Ctrl+C, Ctrl+X et Ctrl+V fonctionnent."
+font = asset("3f5c9a10-8d21-4b77-9d3e-6a41c0f2e510")
+size = 22
+color = vec4(0.84687, 0.86316, 0.88792, 1.0)
+align = "left"
+vertical_align = "middle"
+wrap = true
+outline_width = 0.0
+raycast_target = false
+rich = true
+
+[entity uuid="7e1b0a00-0001-4000-9000-00000000004a" name="Ligne 8"]
+parent = "7e1b0a00-0001-4000-9000-000000000042"
+
+[component type="UiRect"]
+anchor_min = vec2(0, 0)
+anchor_max = vec2(1, 0)
+offset_min = vec2(0, 0)
+offset_max = vec2(0, 54)
+opacity = 1.0
+visible = true
+
+[component type="UiText"]
+text = "Ce cadre est une image de 64 pixels."
+font = asset("3f5c9a10-8d21-4b77-9d3e-6a41c0f2e510")
+size = 22
+color = vec4(0.84687, 0.86316, 0.88792, 1.0)
+align = "left"
+vertical_align = "middle"
+wrap = true
+outline_width = 0.0
+raycast_target = false
+rich = true
+
+[entity uuid="7e1b0a00-0001-4000-9000-00000000004b" name="Ligne 9"]
+parent = "7e1b0a00-0001-4000-9000-000000000042"
+
+[component type="UiRect"]
+anchor_min = vec2(0, 0)
+anchor_max = vec2(1, 0)
+offset_min = vec2(0, 0)
+offset_max = vec2(0, 54)
+opacity = 1.0
+visible = true
+
+[component type="UiText"]
+text = "Ses coins gardent leur taille (9-slice)."
+font = asset("3f5c9a10-8d21-4b77-9d3e-6a41c0f2e510")
+size = 22
+color = vec4(0.84687, 0.86316, 0.88792, 1.0)
+align = "left"
+vertical_align = "middle"
+wrap = true
+outline_width = 0.0
+raycast_target = false
+rich = true
+
+[entity uuid="7e1b0a00-0001-4000-9000-00000000004c" name="Ligne 10"]
+parent = "7e1b0a00-0001-4000-9000-000000000042"
+
+[component type="UiRect"]
+anchor_min = vec2(0, 0)
+anchor_max = vec2(1, 0)
+offset_min = vec2(0, 0)
+offset_max = vec2(0, 54)
+opacity = 1.0
+visible = true
+
+[component type="UiText"]
+text = "[size=20]Les couleurs viennent du thème du projet.[/size]"
+font = asset("3f5c9a10-8d21-4b77-9d3e-6a41c0f2e510")
+size = 22
+color = vec4(0.84687, 0.86316, 0.88792, 1.0)
+align = "left"
+vertical_align = "middle"
+wrap = true
+outline_width = 0.0
+raycast_target = false
+rich = true
 
 [entity uuid="7e1b0a00-0001-4000-9000-000000000012" name="Retour"]
 parent = "7e1b0a00-0001-4000-9000-00000000000d"
@@ -802,6 +1281,7 @@ offset_min = vec2(0, 0)
 offset_max = vec2(0, 64)
 opacity = 1.0
 visible = true
+style = "button"
 
 [component type="UiImage"]
 color = vec4(0.01521, 0.01938, 0.02956, 1.0)
@@ -1084,3 +1564,6 @@ pause_menu = entity("7e1b0a00-0001-4000-9000-000000000014")
 hud = entity("7e1b0a00-0001-4000-9000-00000000001d")
 score_text = entity("7e1b0a00-0001-4000-9000-00000000001e")
 timer_text = entity("7e1b0a00-0001-4000-9000-00000000001f")
+volume_slider = entity("7e1b0a00-0001-4000-9000-000000000038")
+name_field = entity("7e1b0a00-0001-4000-9000-000000000032")
+player_name = ""

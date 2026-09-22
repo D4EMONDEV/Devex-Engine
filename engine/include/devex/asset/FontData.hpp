@@ -26,6 +26,15 @@ struct FontGlyph
     float advance = 0.0f;
 };
 
+// How much closer two letters sit when one follows the other: an A after a V leans under it. The
+// amount is in the pixels the font was baked at, and is usually negative.
+struct FontKerning
+{
+    std::uint32_t first = 0;
+    std::uint32_t second = 0;
+    float amount = 0.0f;
+};
+
 // A font baked into one atlas of signed distances: every glyph stays sharp at any size, since the
 // shader reads how far each pixel is from the outline instead of a picture of the letter.
 struct FontData
@@ -45,6 +54,8 @@ struct FontData
     std::vector<std::uint8_t> atlas;
     // Sorted by codepoint, so that a glyph is found by halving.
     std::vector<FontGlyph> glyphs;
+    // Sorted by the pair they join, and holding only the pairs that move.
+    std::vector<FontKerning> kerning;
 
     // The height of one line of text at the baked size.
     [[nodiscard]] float lineHeight() const noexcept
@@ -55,6 +66,11 @@ struct FontData
 
 // The glyph of a character, or nothing when the font does not have it.
 [[nodiscard]] const FontGlyph* findGlyph(const FontData& font, std::uint32_t codepoint) noexcept;
+
+// How much the second letter moves towards the first, in the pixels the font was baked at; 0 when
+// the pair was not baked.
+[[nodiscard]] float kerningBetween(const FontData& font, std::uint32_t first,
+                                   std::uint32_t second) noexcept;
 
 // Checks that the atlas matches its size and that the glyphs fit inside it.
 [[nodiscard]] core::Result<void> validate(const FontData& font);

@@ -3,11 +3,13 @@
 #include <devex/asset/AssetId.hpp>
 #include <devex/math/Math.hpp>
 #include <devex/reflection/Reflection.hpp>
+#include <devex/scene/EntityRef.hpp>
 
 #include <array>
 #include <cstdint>
 #include <string>
 #include <string_view>
+#include <vector>
 
 // Interface components: what the interface world lays out, draws and answers to. They hold data
 // only; the Ui module places them on the screen while a game runs, and the editor shows them on
@@ -34,6 +36,9 @@ struct Canvas
     // Follows the width of the window at 0 and its height at 1; between the two it mixes them,
     // which keeps an interface usable on screens both wider and taller than the reference.
     float matchWidthOrHeight = 0.5f;
+    // The look its elements follow: a theme asset of named styles. Without one, every element
+    // keeps the values it carries.
+    asset::AssetId theme;
     // Canvases with a higher order are drawn over the others; a pause menu sits above a HUD.
     std::int32_t sortOrder = 0;
     bool visible = true;
@@ -67,6 +72,11 @@ struct UiRect
     // Multiplies the transparency of the element and of everything under it.
     float opacity = 1.0f;
     bool visible = true;
+    // Cuts everything under it to its own rectangle, as a list or a panel does.
+    bool clipChildren = false;
+    // The style of the theme of the canvas this element follows: "panel", "title". The values the
+    // style names are written into the components of the element, every frame.
+    std::string style;
 };
 DEVEX_DECLARE_REFLECTION(UiRect);
 
@@ -120,8 +130,36 @@ struct UiText
     math::Vec4 outlineColor{0.0f, 0.0f, 0.0f, 1.0f};
     float outlineWidth = 0.0f;
     bool raycastTarget = false;
+    // Reads [b], [i], [color=#rrggbb], [size=32] and [icon=0] as marks rather than as letters.
+    // Two opening brackets in a row write one.
+    bool rich = false;
+    // The images [icon=n] draws, in the order a text asks for them.
+    std::vector<asset::AssetId> icons;
 };
 DEVEX_DECLARE_REFLECTION(UiText);
+
+// Makes the text of its entity editable. The letters, the font, the size and the colour come from
+// the UiText beside it, which also holds what was typed; this component says how it is edited.
+struct UiInput
+{
+    // Shown, dimmed, while the text is empty.
+    std::string placeholder;
+    math::Vec4 placeholderColor{0.5f, 0.5f, 0.5f, 1.0f};
+    math::Vec4 selectionColor{0.2f, 0.4f, 0.9f, 0.5f};
+    math::Vec4 caretColor{1.0f, 1.0f, 1.0f, 1.0f};
+    // The room between the edges of the field and its letters: across, then down.
+    math::Vec2 padding{12.0f, 0.0f};
+    // Takes new lines rather than ending the edit on Enter.
+    bool multiline = false;
+    // Draws every letter as a dot, for a password.
+    bool password = false;
+    // Longest text the field takes, in characters; 0 does not limit it.
+    std::uint32_t maxLength = 0;
+    bool interactable = true;
+    // What a script asks for when Enter ends the edit: Ui.WasSubmitted("name").
+    std::string action;
+};
+DEVEX_DECLARE_REFLECTION(UiInput);
 
 // Answers the mouse, the keyboard and the pad on the rectangle of its entity. It tints the UiImage
 // of the entity as the pointer comes and goes, and reports its clicks to the scripts under the
@@ -140,6 +178,75 @@ struct UiButton
     float fadeTime = 0.1f;
 };
 DEVEX_DECLARE_REFLECTION(UiButton);
+
+// Writes a value read from a component into the text of the entity, once a frame. The text of
+// the UiText beside it is replaced: this is where the sentence lives, and every {} in it takes
+// the value, so that a score or a health bar follows the game without a line of script.
+struct UiBinding
+{
+    // The component the value is read from, by its name: "Transform", or a component of the game.
+    std::string component = "Transform";
+    // The field inside it, and the part of it that is wanted when it holds several numbers:
+    // "position.x", "color.a".
+    std::string field;
+    // What the text becomes, with the value in place of every {}.
+    std::string format = "{}";
+    // Digits after the point of a number; a negative number writes it as it reads.
+    std::int32_t decimals = -1;
+    // The entity the value is read from; the one carrying the binding when it is not set.
+    EntityRef source;
+};
+DEVEX_DECLARE_REFLECTION(UiBinding);
+
+// A value the pointer drags between two ends. The rectangle of the entity is the track: the part
+// before the value is filled, and the handle sits on it. A UiImage on the same entity draws what
+// lies under them, and the arrows move the value while the slider has the focus.
+struct UiSlider
+{
+    float value = 0.5f;
+    float minValue = 0.0f;
+    float maxValue = 1.0f;
+    // Rounds the value to a multiple of this, counted from the smaller end; 0 leaves it free.
+    float step = 0.0f;
+    // The part of the track before the handle.
+    math::Vec4 fillColor{0.35f, 0.6f, 1.0f, 1.0f};
+    math::Vec4 handleColor{1.0f, 1.0f, 1.0f, 1.0f};
+    // The handle is as wide as the track is tall, times this; 0 hides it.
+    float handleSize = 1.0f;
+    // What the arrows and the pad move the value by; 0 uses a twentieth of the range.
+    float keyStep = 0.0f;
+    bool interactable = true;
+    // What a script asks for: Ui.WasChanged("volume").
+    std::string action;
+};
+DEVEX_DECLARE_REFLECTION(UiSlider);
+
+// A box that is either on or off. Clicking it, or pressing the submit button while it has the
+// focus, turns it over; the mark is drawn inside the rectangle of the entity.
+struct UiToggle
+{
+    bool value = false;
+    math::Vec4 checkColor{1.0f, 1.0f, 1.0f, 1.0f};
+    // The mark fills this much of the box.
+    float checkSize = 0.55f;
+    bool interactable = true;
+    // What a script asks for: Ui.WasChanged("fullscreen").
+    std::string action;
+};
+DEVEX_DECLARE_REFLECTION(UiToggle);
+
+// Moves what it holds, so that a list longer than its rectangle can be walked through. The
+// element cuts its children by itself: it does not need clipChildren as well.
+struct UiScroll
+{
+    // How far the content is moved, in units; 0 shows its start.
+    math::Vec2 offset{0.0f, 0.0f};
+    bool horizontal = false;
+    bool vertical = true;
+    // Units the wheel moves the content by, per notch.
+    float speed = 60.0f;
+};
+DEVEX_DECLARE_REFLECTION(UiScroll);
 
 // How the children of a container follow each other.
 enum class UiLayoutKind : std::uint8_t

@@ -81,6 +81,15 @@ public:
     // Opens a folder in the system's file manager, or a file with its default application.
     [[nodiscard]] core::Result<void> openPath(const std::filesystem::path& path) const;
 
+    // Turns typing on for a window: until it is turned off, what the user types arrives in
+    // Input::typedText, and the system may show its input method over the window.
+    void setTextInput(const Window& window, bool active);
+    [[nodiscard]] bool isTextInputActive() const noexcept;
+
+    // The clipboard of the system, as UTF-8 text.
+    [[nodiscard]] std::string clipboardText() const;
+    void setClipboardText(std::string_view text);
+
     // Name of the key position, independent of the layout ("W").
     [[nodiscard]] std::string keyName(Key key) const;
     // Label of the key under the current keyboard layout ("Z" for Key::W on AZERTY).
@@ -109,6 +118,7 @@ private:
     void shutdown() noexcept;
 
     bool m_initialized = false;
+    bool m_textInputActive = false;
     bool m_imguiInitialized = false;
     bool m_imguiCapturesKeyboard = false;
     bool m_imguiCapturesMouse = false;

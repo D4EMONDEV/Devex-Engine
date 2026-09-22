@@ -68,6 +68,10 @@ bool ComponentRegistry::addDynamic(std::shared_ptr<const DynamicComponentLayout>
             const DynamicComponentPool* const pool = scene.dynamicPool(index);
             return pool != nullptr ? pool->find(entity) : nullptr;
         },
+        .findMutable = [index](Scene& scene, Entity entity) -> void* {
+            DynamicComponentPool* const pool = scene.dynamicPool(index);
+            return pool != nullptr ? pool->find(entity) : nullptr;
+        },
         .remove = [index](Scene& scene, Entity entity) {
             if (DynamicComponentPool* const pool = scene.dynamicPool(index))
             {
@@ -107,7 +111,12 @@ ComponentRegistry& componentRegistry()
         builtins.add<UiImage>();
         builtins.add<UiText>();
         builtins.add<UiButton>();
+        builtins.add<UiInput>();
+        builtins.add<UiBinding>();
+        builtins.add<UiSlider>();
+        builtins.add<UiToggle>();
         builtins.add<UiLayout>();
+        builtins.add<UiScroll>();
         return builtins;
     }();
     return registry;

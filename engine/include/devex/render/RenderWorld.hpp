@@ -173,6 +173,9 @@ struct UiDraw
     float radius = 0.0f;
     // For text: how many texels of the atlas one pixel covers, which keeps the edges sharp.
     float sharpness = 1.0f;
+    // What the batch is cut to, in pixels: left, top, right and bottom. An empty rectangle, with
+    // its right at or before its left, draws the whole image.
+    math::Vec4 clip{0.0f};
 };
 
 // Asks which object is visible at a pixel of the scene image.

@@ -121,6 +121,9 @@ struct NativeApi
     Entity (*uiFocused)();
     void (*uiSetFocus)(void* scene, Entity entity);
     int (*uiPointerOverInterface)();
+    int (*uiChangedAction)(const char* action);
+    int (*uiSubmittedAction)(const char* action);
+    Entity (*uiEditedField)();
 };
 
 // The functions the engine calls, in the order of Devex.Managed's ManagedApi.
@@ -135,7 +138,7 @@ struct ManagedApi
 };
 
 // Devex.Managed's Bootstrap.Version: both sides change it with the function tables.
-constexpr int bootstrapVersion = 4;
+constexpr int bootstrapVersion = 5;
 
 struct BootstrapArguments
 {
@@ -834,6 +837,21 @@ int apiUiPointerOverInterface()
     return uiWorld() != nullptr && uiWorld()->pointerOverInterface() ? 1 : 0;
 }
 
+int apiUiChangedAction(const char* action)
+{
+    return uiWorld() != nullptr && action != nullptr && uiWorld()->wasChanged(action) ? 1 : 0;
+}
+
+int apiUiSubmittedAction(const char* action)
+{
+    return uiWorld() != nullptr && action != nullptr && uiWorld()->wasSubmitted(action) ? 1 : 0;
+}
+
+Entity apiUiEditedField()
+{
+    return uiWorld() != nullptr ? uiWorld()->editedField() : Entity{};
+}
+
 [[nodiscard]] NativeApi makeNativeApi() noexcept
 {
     return NativeApi{
@@ -909,6 +927,9 @@ int apiUiPointerOverInterface()
         .uiFocused = &apiUiFocused,
         .uiSetFocus = &apiUiSetFocus,
         .uiPointerOverInterface = &apiUiPointerOverInterface,
+        .uiChangedAction = &apiUiChangedAction,
+        .uiSubmittedAction = &apiUiSubmittedAction,
+        .uiEditedField = &apiUiEditedField,
     };
 }
 

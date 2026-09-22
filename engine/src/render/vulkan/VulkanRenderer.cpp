@@ -2746,6 +2746,22 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
 
             for (const UiDraw& uiDraw : m_world.uiDraws)
             {
+                // A batch that names a rectangle is cut to it; the others cover the image.
+                const bool clipped = uiDraw.clip.z > uiDraw.clip.x && uiDraw.clip.w > uiDraw.clip.y;
+                const VkRect2D scissor =
+                    clipped ? VkRect2D{
+                                  .offset = {std::max(static_cast<std::int32_t>(uiDraw.clip.x), 0),
+                                             std::max(static_cast<std::int32_t>(uiDraw.clip.y), 0)},
+                                  .extent = {static_cast<std::uint32_t>(std::clamp(
+                                                 uiDraw.clip.z - std::max(uiDraw.clip.x, 0.0f), 0.0f,
+                                                 static_cast<float>(extent.width))),
+                                             static_cast<std::uint32_t>(std::clamp(
+                                                 uiDraw.clip.w - std::max(uiDraw.clip.y, 0.0f), 0.0f,
+                                                 static_cast<float>(extent.height)))},
+                              }
+                            : VkRect2D{.offset = {0, 0}, .extent = {extent.width, extent.height}};
+                vkCmdSetScissor(commands, 0, 1, &scissor);
+
                 const GpuTexture* const texture = m_textures.find(uiDraw.texture);
                 // Slang's SV_VertexID does not include the first vertex of a draw: the batch gets
                 // the address of its own first index instead.

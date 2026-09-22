@@ -525,6 +525,8 @@ core::Result<std::vector<asset::AssetId>> assetReferences(asset::AssetType type,
     case asset::AssetType::AnimationClip:
     // A font carries its own atlas: the scenes that write with it bring it along.
     case asset::AssetType::Font:
+    // A theme is a list of values: it needs nothing else.
+    case asset::AssetType::Theme:
         break;
     }
     std::erase_if(ids, [](asset::AssetId id) { return !id.isValid(); });

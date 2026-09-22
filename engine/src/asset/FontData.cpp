@@ -1,6 +1,7 @@
 #include <devex/asset/FontData.hpp>
 
 #include <algorithm>
+#include <utility>
 
 namespace devex::asset {
 
@@ -8,6 +9,17 @@ const FontGlyph* findGlyph(const FontData& font, std::uint32_t codepoint) noexce
 {
     const auto found = std::ranges::lower_bound(font.glyphs, codepoint, {}, &FontGlyph::codepoint);
     return found != font.glyphs.end() && found->codepoint == codepoint ? &*found : nullptr;
+}
+
+float kerningBetween(const FontData& font, std::uint32_t first, std::uint32_t second) noexcept
+{
+    const auto pair = std::pair{first, second};
+    const auto found = std::ranges::lower_bound(font.kerning, pair, {}, [](const FontKerning& entry) {
+        return std::pair{entry.first, entry.second};
+    });
+    return found != font.kerning.end() && found->first == first && found->second == second
+               ? found->amount
+               : 0.0f;
 }
 
 core::Result<void> validate(const FontData& font)
@@ -31,6 +43,12 @@ core::Result<void> validate(const FontData& font)
     if (!std::ranges::is_sorted(font.glyphs, {}, &FontGlyph::codepoint))
     {
         return core::makeError(core::ErrorCode::InvalidArgument, "the glyphs are not in order");
+    }
+    if (!std::ranges::is_sorted(font.kerning, {}, [](const FontKerning& entry) {
+            return std::pair{entry.first, entry.second};
+        }))
+    {
+        return core::makeError(core::ErrorCode::InvalidArgument, "the kerning pairs are not in order");
     }
     for (const FontGlyph& glyph : font.glyphs)
     {

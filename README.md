@@ -13,7 +13,8 @@ et rendu avec Vulkan. Il est distribué sous licence [MIT](LICENSE).
 - gameplay en C++ (composants et systèmes) **ou en C#** (.NET hébergé), compilé et rechargé à
   chaud par l'éditeur ;
 - éditeur Dear ImGui (docking) au style inspiré de Godot : gestionnaire de projets, onglets de
-  scènes, viewport, gizmos et mode Play ; UI maison plus tard.
+  scènes, viewport, gizmos et mode Play ; il passera plus tard sur l'interface des jeux, pour
+  n'avoir qu'un seul système d'interface.
 
 Le détail, l'architecture des modules et les jalons sont dans
 [docs/decisions.md](docs/decisions.md).
@@ -23,17 +24,18 @@ Le détail, l'architecture des modules et les jalons sont dans
 - `Devex::Core` : `Result`/`Error`, journal `DEVEX_LOG_*`, assertions, `SlotMap`, `Uuid`,
   hachage XXH64, pool de jobs ;
 - `Devex::Math` : types GLM sous `devex::math`, projection reverse-Z infinie, TRS ;
-- `Devex::Platform` : fenêtre, événements et entrées clavier, souris et manette, dialogues de
-  fichiers, bibliothèques partagées et processus sur SDL3 ;
+- `Devex::Platform` : fenêtre, événements et entrées clavier, souris et manette, saisie de texte
+  et presse-papiers, dialogues de fichiers, bibliothèques partagées et processus sur SDL3 ;
 - `Devex::Reflection` : description des champs des composants (`DEVEX_REFLECT`), listes et
   références d'entités comprises ;
 - `Devex::Serialization` : format texte commun des fichiers `.dvx*`, flux binaires ;
 - `Devex::Asset` : `AssetId`, maillages (avec leur boîte englobante), textures, matériaux, modèles,
-  clips audio, animations et polices, fichiers `.dvxasset`, projets `.dvxproj`, paquets de jeux
-  exportés `.dvxpak` ;
+  clips audio, animations, polices (avec leur crénage) et thèmes d'interface, fichiers
+  `.dvxasset`, projets `.dvxproj`, paquets de jeux exportés `.dvxpak` ;
 - `Devex::AssetImport` : base d'assets (`.dvxmeta`, cache `.devex/`, imports en arrière-plan,
   réimport à chaud), importeurs de textures (BC7/BC5), de `.dvxmat`, de glTF, de scènes, de sons
-  (WAV, FLAC, MP3, Ogg Vorbis) et de polices (`.ttf`, `.otf` cuites en atlas de distances) ;
+  (WAV, FLAC, MP3, Ogg Vorbis), de polices (`.ttf`, `.otf` cuites en atlas de distances) et de
+  thèmes `.dvxtheme` ;
 - `Devex::Render` : renderer Vulkan 1.4 (volk, VMA), shaders Slang, render graph, PBR
   forward+ clustered avec prépasse de profondeur, culling par tronc de vue, ombres en cascades pour
   le soleil et en atlas pour les lumières locales, ciel HDR et IBL, surfaces transparentes triées,
@@ -52,9 +54,12 @@ Le détail, l'architecture des modules et les jalons sont dans
   `Animator` qui joue un clip avec fondu croisé, root motion optionnel, skinning des maillages
   dans le vertex shader ;
 - `Devex::Ui` : interfaces faites d'entités (`Canvas`, `UiRect`, `UiImage`, `UiText`, `UiButton`,
-  `UiLayout`), placement par ancrages et marges puis par conteneurs, texte tiré d'un atlas de
-  distances signées, dessin en une passe après le tonemapping, survol, clic et focus au clavier
-  comme à la manette ;
+  `UiInput`, `UiSlider`, `UiToggle`, `UiScroll`, `UiLayout`, `UiBinding`), placement par ancrages
+  et marges puis par conteneurs, texte tiré d'un atlas de distances signées avec crénage et texte
+  riche, champs de saisie avec sélection, presse-papiers et mot de passe, curseurs et cases à
+  cocher, listes qui défilent et se découpent, images en neuf parts, liaison d'un texte à un champ
+  de composant, thèmes `.dvxtheme` de styles nommés, dessin en une passe après le tonemapping,
+  survol, clic et focus au clavier comme à la manette ;
 - `Devex::Tools` : interface ImGui au thème réglable inspiré de Godot (Noto Sans, JetBrains Mono,
   icônes Lucide) : arbre de la scène, inspecteur, FileSystem, sortie, statistiques, annulation, en
   overlay (F1) ou dans l'éditeur : écrans 2D, 3D et Script au centre de la barre de menus, dont
@@ -93,8 +98,10 @@ Le détail, l'architecture des modules et les jalons sont dans
   Tab passe à l'autre scène ; et la
   scène `sandbox` (caisse et balises glTF, sphères or et plastique, ciel HDR, plateau tournant dont
   les satellites brillent, panneaux de verre teinté, jour et nuit avec N), qui ouvre sur un menu
-  principal, des réglages de volume, un menu de pause appelé par Échap et un HUD, tous pilotés par
-  `code/Menu.cs`.
+  principal, un écran de réglages (nom, mot de passe, curseur de volume lié à son étiquette, case
+  plein écran, aide en texte riche qui défile dans un cadre en neuf parts), un menu de pause
+  appelé par Échap et un HUD, tous habillés par le thème `assets/ui/sandbox.dvxtheme` et pilotés
+  par `code/Menu.cs`.
 
 Le SDK Vulkan fournit `slangc`, qui compile les shaders pendant le build. Les assets
 d'exemple et les données de test sont produits par `scripts/generate_sample_assets.py`.

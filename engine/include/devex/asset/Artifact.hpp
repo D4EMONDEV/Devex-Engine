@@ -4,6 +4,7 @@
 #include <devex/asset/AssetType.hpp>
 #include <devex/asset/AudioClipData.hpp>
 #include <devex/asset/FontData.hpp>
+#include <devex/asset/ThemeData.hpp>
 #include <devex/asset/MaterialData.hpp>
 #include <devex/asset/MeshData.hpp>
 #include <devex/asset/ModelData.hpp>
@@ -42,6 +43,7 @@ inline constexpr std::string_view artifactExtension = ".dvxasset";
 [[nodiscard]] std::vector<std::byte> encodeAudioClip(const AudioClipData& clip);
 [[nodiscard]] std::vector<std::byte> encodeAnimation(const AnimationClipData& clip);
 [[nodiscard]] std::vector<std::byte> encodeFont(const FontData& font);
+[[nodiscard]] std::vector<std::byte> encodeTheme(const ThemeData& theme);
 
 // Decoding validates the header, the version and the data itself.
 [[nodiscard]] core::Result<MeshData> decodeMesh(std::span<const std::byte> bytes);
@@ -54,5 +56,6 @@ inline constexpr std::string_view artifactExtension = ".dvxasset";
 [[nodiscard]] core::Result<AudioClipData> decodeAudioClipInfo(std::span<const std::byte> bytes);
 [[nodiscard]] core::Result<AnimationClipData> decodeAnimation(std::span<const std::byte> bytes);
 [[nodiscard]] core::Result<FontData> decodeFont(std::span<const std::byte> bytes);
+[[nodiscard]] core::Result<ThemeData> decodeTheme(std::span<const std::byte> bytes);
 
 } // namespace devex::asset

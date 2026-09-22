@@ -1,6 +1,7 @@
 #include <devex/asset/Artifact.hpp>
 #include <devex/asset/import/Importer.hpp>
 #include <devex/asset/import/MaterialFile.hpp>
+#include <devex/asset/import/ThemeFile.hpp>
 #include <devex/asset/import/TextureProcessing.hpp>
 #include <devex/core/File.hpp>
 #include <devex/core/Path.hpp>
@@ -161,6 +162,25 @@ core::Result<ImportResult> importMaterialFile(ImportContext& context)
     return result;
 }
 
+core::Result<ImportResult> importThemeFile(ImportContext& context)
+{
+    const core::Result<std::string> text = core::readTextFile(context.source);
+    if (!text)
+    {
+        return std::unexpected(text.error());
+    }
+    const core::Result<ThemeData> theme = parseThemeFile(*text);
+    if (!theme)
+    {
+        return std::unexpected(theme.error());
+    }
+
+    ImportResult result;
+    result.artifacts.push_back({context.mainId, AssetType::Theme, context.name,
+                                encodeTheme(*theme)});
+    return result;
+}
+
 core::Result<ImportResult> importSceneFile(ImportContext& context)
 {
     const core::Result<std::string> text = core::readTextFile(context.source);
@@ -231,7 +251,8 @@ std::span<const Importer> importers()
         },
         Importer{
             .name = "font",
-            .version = 1,
+            // 2: central European letters, the punctuation of running text and the euro sign.
+            .version = 2,
             .mainType = AssetType::Font,
             .extensions = {".ttf", ".otf"},
             .defaultOptions =
@@ -240,6 +261,13 @@ std::span<const Importer> importers()
                     {"spread", TextValue(6.0)},
                 },
             .run = &importFontFile,
+        },
+        Importer{
+            .name = "theme",
+            .version = 1,
+            .mainType = AssetType::Theme,
+            .extensions = {themeExtension},
+            .run = &importThemeFile,
         },
         Importer{
             .name = "scene",

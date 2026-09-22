@@ -22,13 +22,15 @@ enum class AssetType : std::uint8_t
     AnimationClip = 7,
     // A font baked into an atlas of distances, for the text of interfaces.
     Font = 8,
+    // The look of an interface: named styles a canvas hands to its elements.
+    Theme = 9,
 };
 
 // Whether a stored value is one of the types above: update it with them.
 [[nodiscard]] constexpr bool isAssetType(std::uint8_t value) noexcept
 {
     return value >= static_cast<std::uint8_t>(AssetType::Mesh) &&
-           value <= static_cast<std::uint8_t>(AssetType::Font);
+           value <= static_cast<std::uint8_t>(AssetType::Theme);
 }
 
 // "mesh", "texture", "material", "model", "scene", "audio", "animation" or "font", as written in

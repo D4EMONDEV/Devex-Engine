@@ -171,7 +171,7 @@ void placeInLayout(const scene::Scene& scene, const scene::UiLayout& layout,
 // Lays out the children of one element, then their own children, parents first.
 void layoutChildren(const scene::Scene& scene, scene::Entity parent, math::Vec2 parentMin,
                     math::Vec2 parentSize, float opacity, bool visible, std::uint16_t depth,
-                    LayoutResult& result)
+                    const math::Vec4& clip, math::Vec2 shift, LayoutResult& result)
 {
     // An interface nested deeper than this is a mistake; the limit also guards the recursion.
     if (depth > 64)
@@ -222,7 +222,8 @@ void layoutChildren(const scene::Scene& scene, scene::Entity parent, math::Vec2 
                               .rotation = rect.rotation,
                               .opacity = opacity * std::clamp(rect.opacity, 0.0f, 1.0f),
                               .visible = visible && rect.visible,
-                              .depth = depth};
+                              .depth = depth,
+                              .clip = clip};
         if (std::ranges::find(placed, child) != placed.end())
         {
             placement.min = mins[index];
@@ -232,17 +233,70 @@ void layoutChildren(const scene::Scene& scene, scene::Entity parent, math::Vec2 
         {
             placeByAnchors(rect, parentMin, parentSize, placement);
         }
+        // What scrolls moves its children, and cuts them to itself.
+        placement.min = placement.min + shift;
+        placement.max = placement.max + shift;
         placement.pivot =
             math::Vec2{placement.min.x + (placement.max.x - placement.min.x) * rect.pivot.x,
                        placement.min.y + (placement.max.y - placement.min.y) * rect.pivot.y};
+        const std::size_t placedAt = result.rects.size();
         result.rects.push_back(placement);
 
+        const scene::UiScroll* const scroll = scene.tryGet<scene::UiScroll>(child);
+        math::Vec4 childClip = clip;
+        if (rect.clipChildren || scroll != nullptr)
+        {
+            childClip = intersectClip(
+                clip, math::Vec4{placement.min.x, placement.min.y, placement.max.x, placement.max.y});
+        }
+        const math::Vec2 childShift =
+            scroll != nullptr ? math::Vec2{scroll->horizontal ? -scroll->offset.x : 0.0f,
+                                           scroll->vertical ? -scroll->offset.y : 0.0f}
+                              : math::Vec2{0.0f, 0.0f};
+
+        const std::size_t firstChild = result.rects.size();
         layoutChildren(scene, child, placement.min, placement.size(), placement.opacity,
-                       placement.visible, static_cast<std::uint16_t>(depth + 1), result);
+                       placement.visible, static_cast<std::uint16_t>(depth + 1), childClip,
+                       childShift, result);
+        if (scroll != nullptr)
+        {
+            // The room the children take, which says how far the content can be moved.
+            math::Aabb content;
+            for (std::size_t descendant = firstChild; descendant < result.rects.size(); ++descendant)
+            {
+                content.add(math::Vec3{result.rects[descendant].min.x - childShift.x,
+                                       result.rects[descendant].min.y - childShift.y, 0.0f});
+                content.add(math::Vec3{result.rects[descendant].max.x - childShift.x,
+                                       result.rects[descendant].max.y - childShift.y, 0.0f});
+            }
+            result.rects[placedAt].content =
+                content.isEmpty() ? math::Vec2{0.0f}
+                                  : math::Vec2{content.max.x - result.rects[placedAt].min.x,
+                                               content.max.y - result.rects[placedAt].min.y};
+        }
     }
 }
 
 } // namespace
+
+bool isClipped(const math::Vec4& clip) noexcept
+{
+    return clip.z > clip.x && clip.w > clip.y;
+}
+
+math::Vec4 intersectClip(const math::Vec4& clip, const math::Vec4& other) noexcept
+{
+    if (!isClipped(clip))
+    {
+        return other;
+    }
+    if (!isClipped(other))
+    {
+        return clip;
+    }
+    return math::Vec4{std::max(clip.x, other.x), std::max(clip.y, other.y),
+                      std::min(clip.z, other.z), std::min(clip.w, other.w)};
+}
 
 const LaidOutRect* LayoutResult::find(scene::Entity entity) const noexcept
 {
@@ -311,7 +365,7 @@ void layoutCanvas(const scene::Scene& scene, scene::Entity canvas, math::Vec2 wi
     result.scale = std::max(canvasScale(*component, windowSize), 0.0001f);
     result.canvasSize = math::Vec2{windowSize.x / result.scale, windowSize.y / result.scale};
     layoutChildren(scene, canvas, math::Vec2{0.0f, 0.0f}, result.canvasSize, 1.0f,
-                   component->visible, 0, result);
+                   component->visible, 0, math::Vec4{0.0f}, math::Vec2{0.0f}, result);
 }
 
 } // namespace devex::ui

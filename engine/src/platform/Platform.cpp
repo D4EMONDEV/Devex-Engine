@@ -282,9 +282,22 @@ void dispatchEvent(const SDL_Event& event, Input& input, InputCapture capture,
 
     case SDL_EVENT_KEY_DOWN: {
         const Key key = toKey(event.key.scancode);
-        if (!event.key.repeat && !capture.keyboard)
+        if (!capture.keyboard)
         {
-            input.setKeyDown(key, true);
+            // A key held down is repeated by the system, which a field reads to keep erasing.
+            if (event.key.repeat)
+            {
+                input.repeatKey(key);
+            }
+            else
+            {
+                input.setKeyDown(key, true);
+            }
+            // The letter the layout prints on the key, for the shortcuts of text.
+            if (event.key.key >= SDLK_A && event.key.key <= SDLK_Z)
+            {
+                input.pressLetter(static_cast<char>('a' + (event.key.key - SDLK_A)));
+            }
         }
         callback(KeyPressed{key, event.key.repeat});
         break;
@@ -364,6 +377,13 @@ void dispatchEvent(const SDL_Event& event, Input& input, InputCapture capture,
                 // SDL reports whole numbers over the range of a signed short.
                 input.setGamepadAxis(*axis, *slot, static_cast<float>(event.gaxis.value) / 32767.0f);
             }
+        }
+        break;
+
+    case SDL_EVENT_TEXT_INPUT:
+        if (!capture.keyboard && event.text.text != nullptr)
+        {
+            input.addTypedText(event.text.text);
         }
         break;
 
@@ -449,6 +469,55 @@ void Platform::shutdown() noexcept
         SDL_Quit();
         platformExists.store(false);
         m_initialized = false;
+    }
+}
+
+void Platform::setTextInput(const Window& window, bool active)
+{
+    DEVEX_ASSERT(m_initialized);
+    if (active == m_textInputActive)
+    {
+        return;
+    }
+    SDL_Window* const handle = detail::toSdlWindow(window.m_native);
+    if (handle == nullptr)
+    {
+        return;
+    }
+    // SDL shows the input method of the system over the window while typing is on.
+    const bool changed = active ? SDL_StartTextInput(handle) : SDL_StopTextInput(handle);
+    if (!changed)
+    {
+        DEVEX_LOG_WARNING("Cannot turn text input {}: {}", active ? "on" : "off", SDL_GetError());
+        return;
+    }
+    m_textInputActive = active;
+}
+
+bool Platform::isTextInputActive() const noexcept
+{
+    return m_textInputActive;
+}
+
+std::string Platform::clipboardText() const
+{
+    DEVEX_ASSERT(m_initialized);
+    char* const text = SDL_GetClipboardText();
+    if (text == nullptr)
+    {
+        return {};
+    }
+    std::string result(text);
+    SDL_free(text);
+    return result;
+}
+
+void Platform::setClipboardText(std::string_view text)
+{
+    DEVEX_ASSERT(m_initialized);
+    if (!SDL_SetClipboardText(std::string(text).c_str()))
+    {
+        DEVEX_LOG_WARNING("Cannot write to the clipboard: {}", SDL_GetError());
     }
 }
 

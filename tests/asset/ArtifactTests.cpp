@@ -1,5 +1,6 @@
 #include <devex/asset/Artifact.hpp>
 #include <devex/asset/Primitives.hpp>
+#include <devex/asset/import/ThemeFile.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -86,4 +87,64 @@ TEST_CASE("Corrupt or mismatched cooked data is rejected", "[asset][artifact]")
     // Not an asset at all.
     const std::vector<std::byte> text(2, std::byte{0x68});
     CHECK_FALSE(devex::asset::artifactType(text).has_value());
+}
+
+TEST_CASE("A theme is read from its file and survives encoding", "[asset][artifact][theme]")
+{
+    const devex::core::Result<devex::asset::ThemeData> theme =
+        devex::asset::parseThemeFile("[theme format=1]\n"
+                                     "\n"
+                                     "[style name=\"panel\" component=\"UiImage\"]\n"
+                                     "color = vec4(0.1, 0.1, 0.12, 0.9)\n"
+                                     "corner_radius = 12\n"
+                                     "\n"
+                                     "[style name=\"panel\" component=\"UiText\"]\n"
+                                     "size = 20\n"
+                                     "\n"
+                                     "[style name=\"title\" component=\"UiText\"]\n"
+                                     "size = 34\n");
+    REQUIRE(theme.has_value());
+    REQUIRE(theme->styles.size() == 2);
+    REQUIRE(theme->find("panel") != nullptr);
+    // The two sections of the same name are one style.
+    REQUIRE(theme->find("panel")->values.size() == 3);
+    CHECK(theme->find("panel")->values[0].component == "UiImage");
+    CHECK(theme->find("panel")->values[0].field == "color");
+    CHECK(theme->find("panel")->values[1].value == "12");
+    CHECK(theme->find("panel")->values[2].component == "UiText");
+    CHECK(theme->find("nothing") == nullptr);
+
+    const std::vector<std::byte> bytes = devex::asset::encodeTheme(*theme);
+    const devex::core::Result<devex::asset::ThemeData> read = devex::asset::decodeTheme(bytes);
+    REQUIRE(read.has_value());
+    REQUIRE(read->styles.size() == 2);
+    CHECK(read->styles[1].name == "title");
+    CHECK(read->find("panel")->values[0].value == theme->find("panel")->values[0].value);
+
+    // What was read writes back to a file that reads the same.
+    const devex::core::Result<devex::asset::ThemeData> again =
+        devex::asset::parseThemeFile(devex::asset::writeThemeFile(*read));
+    REQUIRE(again.has_value());
+    REQUIRE(again->styles.size() == 2);
+    CHECK(again->find("title")->values[0].field == "size");
+    CHECK(again->find("panel")->values.size() == 3);
+}
+
+TEST_CASE("A theme that names no field or no style is refused", "[asset][artifact][theme]")
+{
+    // Without the header the file is not a theme at all.
+    CHECK_FALSE(devex::asset::parseThemeFile("[style name=\"a\" component=\"UiText\"]\n")
+                    .has_value());
+    CHECK_FALSE(devex::asset::parseThemeFile("[theme format=1]\n"
+                                             "[style component=\"UiText\"]\nsize = 1\n")
+                    .has_value());
+    // A style that names no component does not know what to write into.
+    CHECK_FALSE(devex::asset::parseThemeFile("[theme format=1]\n[style name=\"a\"]\nsize = 1\n")
+                    .has_value());
+    // The same field twice would make the look of an element a matter of order.
+    CHECK_FALSE(devex::asset::parseThemeFile("[theme format=1]\n"
+                                             "[style name=\"a\" component=\"UiText\"]\nsize = 1\n"
+                                             "[style name=\"a\" component=\"UiText\"]\nsize = 2\n")
+                    .has_value());
+    CHECK_FALSE(devex::asset::parseThemeFile("[theme format=9]\n").has_value());
 }

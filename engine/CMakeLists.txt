@@ -190,6 +190,7 @@ target_sources(devex_asset
         src/asset/Primitives.cpp
         src/asset/Project.cpp
         src/asset/TextureData.cpp
+        src/asset/ThemeData.cpp
     PUBLIC
         FILE_SET HEADERS
         BASE_DIRS include
@@ -201,6 +202,7 @@ target_sources(devex_asset
             include/devex/asset/AssetType.hpp
             include/devex/asset/AudioClipData.hpp
             include/devex/asset/FontData.hpp
+            include/devex/asset/ThemeData.hpp
             include/devex/asset/MaterialData.hpp
             include/devex/asset/MeshData.hpp
             include/devex/asset/ModelData.hpp
@@ -242,6 +244,7 @@ target_sources(devex_asset_import
         src/asset/import/MetaFile.cpp
         src/asset/import/StbImage.cpp
         src/asset/import/TextureProcessing.cpp
+        src/asset/import/ThemeFile.cpp
     PUBLIC
         FILE_SET HEADERS
         BASE_DIRS include
@@ -249,6 +252,7 @@ target_sources(devex_asset_import
             include/devex/asset/import/AssetDatabase.hpp
             include/devex/asset/import/Importer.hpp
             include/devex/asset/import/MaterialFile.hpp
+            include/devex/asset/import/ThemeFile.hpp
             include/devex/asset/import/MetaFile.hpp
             include/devex/asset/import/TextureProcessing.hpp
 )

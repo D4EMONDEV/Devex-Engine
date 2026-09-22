@@ -10,18 +10,26 @@
 #pragma warning(pop)
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstring>
+#include <utility>
 #include <vector>
 
 namespace devex::asset {
 namespace {
 
-// The characters every font is baked with: the Latin letters, digits and punctuation, then the
-// accented letters of western Europe. Other writings need a font baked for them, which the engine
-// cannot do yet.
-constexpr std::uint32_t firstCodepoint = 32;
-constexpr std::uint32_t lastCodepoint = 255;
+// The characters every font is baked with: the Latin letters, digits and punctuation, the
+// accented letters of western and central Europe with the œ of French, the punctuation of running
+// text (dashes, curly quotes, the ellipsis, and the dot a password shows) and the euro sign. Other
+// writings need a font baked for them, which the engine cannot do yet.
+constexpr std::array<std::pair<std::uint32_t, std::uint32_t>, 5> bakedRanges{{
+    {0x0020, 0x00FF},
+    {0x0100, 0x017F},
+    {0x2010, 0x2027},
+    {0x2030, 0x203A},
+    {0x20AC, 0x20AC},
+}};
 
 // Where glyphs are placed in the atlas: rows filled from left to right, each as tall as its
 // tallest glyph. Simple, and tight enough for a few hundred letters.
@@ -105,8 +113,16 @@ core::Result<ImportResult> importFontFile(ImportContext& context)
     stbtt_GetFontVMetrics(&info, &ascent, &descent, &lineGap);
 
     // Every glyph is baked as its distance to the outline, which stays sharp at any size.
+    std::vector<std::uint32_t> codepoints;
+    for (const auto& [first, last] : bakedRanges)
+    {
+        for (std::uint32_t codepoint = first; codepoint <= last; ++codepoint)
+        {
+            codepoints.push_back(codepoint);
+        }
+    }
     std::vector<BakedGlyph> baked;
-    for (std::uint32_t codepoint = firstCodepoint; codepoint <= lastCodepoint; ++codepoint)
+    for (const std::uint32_t codepoint : codepoints)
     {
         const int index = stbtt_FindGlyphIndex(&info, static_cast<int>(codepoint));
         if (index == 0)
@@ -190,8 +206,24 @@ core::Result<ImportResult> importFontFile(ImportContext& context)
     {
         return std::unexpected(valid.error());
     }
-    DEVEX_LOG_DEBUG("Baked {} glyphs of '{}' into a {}x{} atlas at {} pixels", font.glyphs.size(),
-                    font.family, font.atlasWidth, font.atlasHeight, font.bakedSize);
+    // The pairs that move when one letter follows another, which is what keeps an A from drifting
+    // away from a V. Only the pairs the font actually moves are kept.
+    for (const FontGlyph& first : font.glyphs)
+    {
+        for (const FontGlyph& second : font.glyphs)
+        {
+            const int amount = stbtt_GetCodepointKernAdvance(&info, static_cast<int>(first.codepoint),
+                                                             static_cast<int>(second.codepoint));
+            if (amount != 0)
+            {
+                font.kerning.push_back({first.codepoint, second.codepoint,
+                                        static_cast<float>(amount) * scale});
+            }
+        }
+    }
+    DEVEX_LOG_DEBUG("Baked {} glyphs and {} kerning pairs of '{}' into a {}x{} atlas at {} pixels",
+                    font.glyphs.size(), font.kerning.size(), font.family, font.atlasWidth,
+                    font.atlasHeight, font.bakedSize);
 
     ImportResult result;
     result.artifacts.push_back({context.mainId, AssetType::Font, context.name, encodeFont(font)});

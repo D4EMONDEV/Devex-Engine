@@ -67,6 +67,24 @@ bool Input::wasKeyReleased(Key key) const noexcept
     return isTracked(key) && m_keysReleased.test(indexOf(key));
 }
 
+bool Input::wasKeyRepeated(Key key) const noexcept
+{
+    return isTracked(key) && m_keysRepeated.test(indexOf(key));
+}
+
+bool Input::wasLetterPressed(char letter) const noexcept
+{
+    return letter >= 'a' && letter <= 'z' && m_lettersPressed.test(static_cast<std::size_t>(letter - 'a'));
+}
+
+void Input::pressLetter(char letter) noexcept
+{
+    if (letter >= 'a' && letter <= 'z')
+    {
+        m_lettersPressed.set(static_cast<std::size_t>(letter - 'a'));
+    }
+}
+
 bool Input::isMouseButtonDown(MouseButton button) const noexcept
 {
     return isTracked(button) && m_buttonsDown.test(indexOf(button));
@@ -101,10 +119,13 @@ void Input::beginFrame() noexcept
 {
     m_keysPressed.reset();
     m_keysReleased.reset();
+    m_keysRepeated.reset();
+    m_lettersPressed.reset();
     m_buttonsPressed.reset();
     m_buttonsReleased.reset();
     m_mouseDelta = math::Vec2{0.0f};
     m_mouseWheel = math::Vec2{0.0f};
+    m_typedText.clear();
     for (Gamepad& gamepad : m_gamepads)
     {
         gamepad.pressed.reset();
@@ -193,11 +214,29 @@ void Input::setGamepadAxis(GamepadAxis axis, std::size_t pad, float value) noexc
     m_gamepads[pad].axes[static_cast<std::size_t>(axis)] = trigger ? value : pastDeadZone(value);
 }
 
+const std::string& Input::typedText() const noexcept
+{
+    return m_typedText;
+}
+
+void Input::addTypedText(std::string_view text)
+{
+    m_typedText.append(text);
+}
+
 void Input::setKeyDown(Key key, bool down) noexcept
 {
     if (isTracked(key))
     {
         applyTransition(m_keysDown, m_keysPressed, m_keysReleased, indexOf(key), down);
+    }
+}
+
+void Input::repeatKey(Key key) noexcept
+{
+    if (isTracked(key))
+    {
+        m_keysRepeated.set(indexOf(key));
     }
 }
 

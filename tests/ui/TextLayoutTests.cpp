@@ -150,3 +150,89 @@ TEST_CASE("The sharpness of the text follows the size it is drawn at", "[ui][tex
     CHECK(devex::ui::textSharpness(font(), font().bakedSize * 2.0f) ==
           Catch::Approx(font().spread * 2.0f));
 }
+
+TEST_CASE("Kerning brings a letter under the one before it", "[ui][text]")
+{
+    // The font carries the pairs it moves: A and V lean into each other.
+    const float amount = devex::asset::kerningBetween(font(), U'A', U'V');
+    CHECK(amount < 0.0f);
+    CHECK(devex::asset::kerningBetween(font(), U'A', U'A') == 0.0f);
+
+    const TextStyle style{.size = 32.0f, .wrap = false};
+    const float pair = devex::ui::measureText(font(), "AV", style).x;
+    const float apart = devex::ui::measureText(font(), "AA", style).x;
+    CHECK(pair < apart);
+}
+
+TEST_CASE("A rich text colours, bolds and sizes the spans it marks", "[ui][text]")
+{
+    TextLayoutResult result;
+    const TextStyle style{.size = 32.0f, .wrap = false, .rich = true};
+    devex::ui::layoutText(font(), "a[b]b[/b][color=#ff0000]c[/color][size=64]a", style,
+                          Vec2{0.0f, 0.0f}, Vec2{600.0f, 100.0f}, result);
+
+    REQUIRE(result.glyphs.size() == 4);
+    CHECK_FALSE(result.glyphs[0].bold);
+    CHECK(result.glyphs[1].bold);
+    // The colour is kept the way the engine keeps colours: red alone, and lit.
+    CHECK(result.glyphs[2].color.x == Catch::Approx(1.0f));
+    CHECK(result.glyphs[2].color.y == Catch::Approx(0.0f));
+    CHECK_FALSE(result.glyphs[2].bold);
+    // The last letter is the same one, twice as tall.
+    const float small = result.glyphs[0].max.y - result.glyphs[0].min.y;
+    const float large = result.glyphs[3].max.y - result.glyphs[3].min.y;
+    CHECK(large == Catch::Approx(small * 2.0f).margin(1.0));
+}
+
+TEST_CASE("Two brackets in a row write one, and an unknown mark is left alone", "[ui][text]")
+{
+    TextLayoutResult plain;
+    devex::ui::layoutText(font(), "[[x]", TextStyle{.size = 32.0f, .wrap = false, .rich = true},
+                          Vec2{0.0f, 0.0f}, Vec2{600.0f, 100.0f}, plain);
+    // "[x]" is written: the doubled bracket, the letter and the closing one.
+    CHECK(plain.glyphs.size() == 3);
+
+    TextLayoutResult unknown;
+    devex::ui::layoutText(font(), "[wave]a", TextStyle{.size = 32.0f, .wrap = false, .rich = true},
+                          Vec2{0.0f, 0.0f}, Vec2{600.0f, 100.0f}, unknown);
+    CHECK(unknown.glyphs.size() == 7);
+}
+
+TEST_CASE("The cursor stands before every letter and at the end of each line", "[ui][text]")
+{
+    TextLayoutResult result;
+    const TextStyle style{.size = 32.0f, .wrap = false};
+    devex::ui::layoutText(font(), "ab\ncd", style, Vec2{0.0f, 0.0f}, Vec2{600.0f, 200.0f}, result);
+
+    // Two letters and the end of the line, twice over.
+    REQUIRE(result.stops.size() == 6);
+    CHECK(result.stops[0].offset == 0);
+    CHECK(result.stops[2].offset == 2);
+    CHECK(result.stops[2].line == 0);
+    CHECK(result.stops[3].line == 1);
+    CHECK(result.stops.back().offset == 5);
+
+    // The place of an offset, and the offset of a place, answer each other.
+    const devex::ui::CaretStop* const third = devex::ui::caretAt(result, 1);
+    REQUIRE(third != nullptr);
+    CHECK(third->offset == 1);
+    CHECK(devex::ui::offsetAt(result, third->position) == 1);
+    // A point past the end of the second line lands after its last letter.
+    const devex::ui::CaretStop& last = result.stops.back();
+    CHECK(devex::ui::offsetAt(
+              result, Vec2{last.position.x + 100.0f, last.position.y + last.height * 0.5f}) == 5);
+}
+
+TEST_CASE("A password carries its cursor from the letters to the dots", "[ui][text]")
+{
+    const std::string_view secret = "éa";
+    CHECK(devex::ui::characterIndexOf(secret, secret.size()) == 2);
+    // The first letter takes two bytes, so the second character starts at 2.
+    CHECK(devex::ui::offsetOfCharacter(secret, 1) == 2);
+    CHECK(devex::ui::previousOffset(secret, 2) == 0);
+
+    const std::string dots = devex::ui::shownText(secret, true);
+    CHECK(devex::ui::characterIndexOf(dots, dots.size()) == 2);
+    CHECK(dots.size() == 6);
+    CHECK(devex::ui::shownText(secret, false) == secret);
+}

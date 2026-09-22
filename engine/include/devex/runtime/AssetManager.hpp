@@ -6,6 +6,7 @@
 #include <devex/asset/FontData.hpp>
 #include <devex/asset/MaterialData.hpp>
 #include <devex/asset/ModelData.hpp>
+#include <devex/asset/ThemeData.hpp>
 #include <devex/asset/AssetSource.hpp>
 #include <devex/asset/import/AssetDatabase.hpp>
 #include <devex/render/Renderer.hpp>
@@ -76,6 +77,12 @@ public:
     // An animation, decoded once and shared by every animator that plays it; null when it cannot
     // be loaded.
     [[nodiscard]] std::shared_ptr<const animation::Clip> animationClip(asset::AssetId id);
+    // The size of a texture in pixels, or nothing when it is not loaded. A nine-slice keeps its
+    // corners at the size they were drawn at, which needs the size of the image.
+    [[nodiscard]] math::Extent2D textureSize(asset::AssetId id) const noexcept;
+
+    // The look an interface follows. Themes need no renderer: they are read as they are written.
+    [[nodiscard]] std::shared_ptr<const asset::ThemeData> theme(asset::AssetId id);
 
     // A font with its atlas, loaded once and shared by every text drawn with it; null when it
     // cannot be loaded.
@@ -121,12 +128,14 @@ private:
     asset::AssetSource* m_source;
     std::unordered_map<asset::AssetId, OwnedMesh> m_meshes;
     std::unordered_map<asset::AssetId, render::TextureHandle> m_textures;
+    std::unordered_map<asset::AssetId, math::Extent2D> m_textureSizes;
     std::unordered_map<asset::AssetId, LoadedMaterial> m_materials;
     std::unordered_map<asset::AssetId, asset::ModelData> m_models;
     std::unordered_map<asset::AssetId, asset::MeshData> m_meshData;
     std::unordered_map<asset::AssetId, std::string> m_sceneTexts;
     std::unordered_map<asset::AssetId, std::shared_ptr<const audio::Clip>> m_audioClips;
     std::unordered_map<asset::AssetId, std::shared_ptr<const animation::Clip>> m_animationClips;
+    std::unordered_map<asset::AssetId, std::shared_ptr<const asset::ThemeData>> m_themes;
     std::unordered_map<asset::AssetId, LoadedFont> m_fonts;
     // Assets whose loading failed, retried once an import changes them.
     std::unordered_set<asset::AssetId> m_failed;

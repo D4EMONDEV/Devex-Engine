@@ -19,7 +19,7 @@ mais seulement explicitement ici : le code suit ce document, pas l'inverse.
 | Gameplay                 | C++ (DLL rechargeable) et C# (.NET hébergé), au choix, ensemble    |
 | Format source            |  Texte maison lisible, extensions `.dvx*`, binaire cooké à l'export|
 | Import 3D                | glTF 2.0 (fastgltf) + FBX (ufbx)                                   |
-| UI éditeur               | Dear ImGui (docking) au style de Godot, UI retenue maison plus tard |
+| UI éditeur               | Dear ImGui pour l'instant, puis l'UI des jeux quand elle suffira   |
 | Modules C++              | Headers classiques                                                 |
 | Erreurs                  | `std::expected`, pas d'exceptions dans le moteur                   |
 | Dépendances              | vcpkg en mode manifeste (`vcpkg.json`)                             |
@@ -129,6 +129,9 @@ mais seulement explicitement ici : le code suit ce document, pas l'inverse.
 | Placement                | Ancrages et marges, puis conteneurs ligne, colonne et grille       |
 | Texte                    | Police cuite en atlas de distances signées, nette à toute taille   |
 | Entrées de l'interface   | Souris, clavier et manette, actions nommées lues par le jeu        |
+| Saisie de texte          | `UiInput` : sélection, presse-papiers, mot de passe, multiligne    |
+| Thèmes d'interface       | Asset `.dvxtheme` de styles nommés, référencé par le canevas       |
+| Liaison de données       | `UiBinding` écrit un champ de composant dans un texte              |
 | Manettes                 | SDL Gamepad, quatre manettes, sticks avec zone morte               |
 | Éditeur de texte         | Coloration dessinée par-dessus le champ ImGui                     |
 | Autocomplétion           | Mots-clés, noms du moteur et identifiants du fichier              |
@@ -438,6 +441,7 @@ MyGame/
     prefabs/hero.dvxprefab    # à venir
     materials/rock.dvxmat
     materials/rock.dvxmat.dvxmeta
+    ui/game.dvxtheme          # styles des interfaces, référencé par les canevas
     models/hero.glb
     models/hero.glb.dvxmeta   # UUID, options d'import et sous-assets
   .devex/                     # cache d'import local, ignoré par Git
@@ -1160,6 +1164,30 @@ les assets s'écrivent au fil de leur lecture.
 - **Bac à sable** : trois panneaux de verre teinté (`assets/materials/glass.dvxmat`) se croisent
   devant les sphères, et les satellites du plateau tournant brillent assez pour laisser un halo.
 
+### Une seule interface, deux usages
+
+- **La question** : l'éditeur est en Dear ImGui, les jeux ont `Devex::Ui`. Écrire deux systèmes
+  d'interface serait le double du travail et de la maintenance ; c'est ce qu'Unity a longtemps fait
+  avant de converger. Godot, lui, dessine son éditeur avec les mêmes nœuds que les jeux, et s'en
+  porte bien. **La cible est donc une seule interface, celle des jeux, qui grandira jusqu'à porter
+  l'éditeur.**
+- **Pourquoi pas tout de suite** : l'éditeur demande des champs de saisie complets, des arbres de
+  milliers de lignes, des tableaux, des séparateurs déplaçables, du docking, du glisser-déposer,
+  des menus contextuels, des modales et des sélecteurs de couleur. `Devex::Ui` sait dessiner des
+  rectangles, des images, du texte, des boutons et des conteneurs. Commencer le portage
+  aujourd'hui rendrait l'éditeur moins bon pendant des mois sans rien apporter aux jeux.
+- **Le mythe du mode immédiat** : ImGui reconstruit son interface à chaque frame, mais le coût suit
+  ce qui est visible, et l'éditeur tourne à plusieurs centaines d'images par seconde. `Devex::Ui`
+  reconstruit d'ailleurs sa liste de dessin à chaque frame elle aussi ; la différence est que son
+  **état** vit dans des entités plutôt que dans le code qui dessine. Ce qui manque vraiment à ImGui
+  est ailleurs : l'apparence est contrainte, il n'y a pas d'animation, et la mise en page ne suit
+  pas la fenêtre.
+- **Le chemin** : faire grandir `Devex::Ui` avec ce dont les jeux ont besoin de toute façon, et qui
+  se trouve être ce qui manque à l'éditeur — saisie de texte, défilement et découpe, thèmes
+  réutilisables, liaison de données, puis listes virtualisées et tableaux. Ensuite seulement,
+  porter l'éditeur panneau par panneau : les deux peuvent cohabiter dans la même frame, puisque
+  l'un est dessiné par le renderer et l'autre par ImGui.
+
 ### Interfaces
 
 - **Modèle** : une interface est faite d'**entités et de composants**, comme le reste d'une scène,
@@ -1185,12 +1213,70 @@ les assets s'écrivent au fil de leur lecture.
   `size` et `spread` en options d'import), ce qui garde les lettres nettes à toute taille sans
   cuire une police par taille. L'atlas est une texture à un canal (`R8Unorm`) ; le shader compare
   la distance lue au demi-seuil et adoucit le bord de la moitié d'un pixel, calculée à partir de
-  l'étalement et de la taille dessinée. Les codes 32 à 255 sont cuits : les autres écritures
-  demanderont une police cuite pour elles.
+  l'étalement et de la taille dessinée. Sont cuits : le latin de base et Latin-1, le latin étendu A
+  (le `œ` du français et les lettres d'Europe centrale), la ponctuation courante (tirets,
+  guillemets courbes, points de suspension, la puce `•` d'un mot de passe) et `€`. Les autres
+  écritures demanderont une police cuite pour elles. Les **paires de crénage** de la police (table
+  `kern` lue par stb_truetype) sont cuites avec l'atlas, seulement celles qui bougent, triées pour
+  être trouvées par dichotomie.
 - **Texte** : `UiText` porte son texte, sa police, sa taille en unités, son alignement, le retour à
   la ligne (coupé aux espaces, sinon au caractère), l'interligne et un contour dessiné en
   repassant les lettres autour d'elles. La mise en page est pure (`ui::layoutText`) : elle rend des
-  quadrilatères et se teste sans GPU.
+  quadrilatères, les images en ligne et les **arrêts du curseur** (un avant chaque caractère et un
+  en fin de ligne), et se teste sans GPU. Les champs, la sélection et le clic entre deux lettres
+  s'appuient tous sur ces arrêts.
+- **Texte riche** : avec `rich`, les marques `[b]`, `[i]`, `[color=#rrggbb]`, `[size=32]` et
+  `[icon=0]` changent l'apparence d'un passage, et `[/b]`, `[/i]`, `[/color]`, `[/size]` la
+  referment ; `[[` écrit un crochet, et une marque inconnue reste écrite telle quelle. Le gras est
+  simulé en dessinant la lettre deux fois, l'italique en la penchant : une police ne cuit qu'une
+  graisse. Les icônes sont les textures listées dans `icons`, à la taille du texte qui les entoure.
+- **Découpe et défilement** : `UiRect::clip_children` découpe tout ce qui est dessous au rectangle
+  de l'élément. Chaque lot de dessin porte son rectangle de découpe, appliqué en scissor : un
+  changement de découpe coupe le lot. `UiScroll` déplace ses enfants de son `offset`, les découpe
+  à lui-même, et la molette fait défiler la liste la plus profonde sous le pointeur, sans aller
+  plus loin que ce que le contenu dépasse.
+- **Neuf parts** : les bords d'une `UiImage` texturée sont des fractions **de la texture** : une
+  bordure de 0,3 sur une image de 64 pixels dessine des coins de 19 unités quelle que soit la
+  taille du rectangle, sans dépasser sa moitié. L'`AssetManager` retient la taille de chaque
+  texture chargée pour cela.
+- **Champs** : `UiInput`, posé à côté d'un `UiText` qui garde le texte tapé, rend un élément
+  éditable. Un clic place le curseur entre deux lettres et commence une sélection que le glisser
+  étend ; les flèches, Début et Fin déplacent le curseur (avec Maj, la sélection), Haut et Bas
+  changent de ligne dans un champ multiligne ; Retour arrière et Suppr effacent un caractère
+  entier, pas un octet. Ctrl+A, Ctrl+C, Ctrl+X et Ctrl+V passent par le presse-papiers de SDL ;
+  un champ `password` montre un point par caractère et ne donne jamais son texte au
+  presse-papiers. Entrée termine l'édition (`Ui.WasSubmitted("name")`) ou, en multiligne, va à
+  la ligne ; Échap rend le clavier sans toucher au texte et sans fermer le menu autour.
+  `max_length` limite en caractères, les caractères de contrôle n'entrent jamais, un texte de
+  remplacement grisé s'affiche tant que le champ est vide, le curseur clignote, et `padding`
+  écarte les lettres des bords. Le curseur est gardé en octets du texte réel ; pour un mot de
+  passe, il passe au texte de points en comptant les caractères.
+- **Saisie du système** : tant qu'un champ est édité, le runtime active la saisie de texte de SDL
+  (`Platform::setTextInput`), ce qui fait composer les touches mortes et ouvre la méthode de
+  saisie ; ce qui est tapé arrive dans `Input::typedText`, distinct des touches. Les touches
+  tenues se répètent (`Input::wasKeyRepeated`) pour continuer d'effacer ou de déplacer. Les
+  raccourcis de texte suivent la **lettre imprimée** sur la touche (`Input::wasLetterPressed`)
+  plutôt que sa place : sur un clavier français, Ctrl+A est à la place du Q américain, et c'est
+  bien lui qui sélectionne tout.
+- **Curseurs et cases** : `UiSlider` fait glisser une valeur entre `min_value` et `max_value`,
+  arrondie à `step` ; le rectangle est la piste, la partie remplie et la poignée sont dessinées
+  par-dessus l'image. Les flèches le déplacent quand il a le focus, sans déplacer le focus.
+  `UiToggle` s'inverse au clic ou au bouton de validation et dessine sa marque dans sa boîte.
+  Tous deux prennent le focus comme un bouton et signalent leur changement par leur action
+  (`Ui.WasChanged("volume")`) ; la valeur se lit dans le composant.
+- **Liaison de données** : `UiBinding` lit un champ d'un composant — de son entité ou de celle
+  qu'il nomme par `source` — par la réflexion, et écrit `format` dans le `UiText` voisin en
+  remplaçant chaque `{}` par la valeur, une fois par frame avant la mise en page. Un nom comme
+  `position.x` ou `color.a` choisit une composante ; `decimals` fixe les chiffres après la
+  virgule. Un score, une barre de vie ou la valeur d'un curseur suivent ainsi le jeu sans script.
+- **Thèmes** : un fichier `.dvxtheme` est un asset (`theme`) de **styles nommés** ; chaque section
+  `[style name="panel" component="UiImage"]` donne des valeurs de champs d'un composant, et un
+  style peut toucher plusieurs composants. Le canevas nomme son thème (`Canvas::theme`) et chaque
+  élément le style qu'il suit (`UiRect::style`) ; `UiWorld` écrit ces valeurs dans les composants
+  de l'élément à chaque frame, par la réflexion, sans ajouter de composant qu'il n'a pas. Les
+  valeurs qu'un style nomme appartiennent donc au thème : un script qui les change sera repris à
+  la frame suivante. Un thème modifié est relu aussitôt. Les champs de mise en page qu'un style
+  change prennent effet à la frame qui suit, puisque le style s'applique après le placement.
 - **Dessin** : `ui::buildDrawList` transforme les éléments placés en sommets, indices et lots que
   le renderer dessine en une passe après le tonemapping, dans l'image du jeu (donc aussi dans le
   viewport de l'éditeur). Les lots se rejoignent tant que la texture et le genre ne changent pas ;
@@ -1212,11 +1298,20 @@ les assets s'écrivent au fil de leur lecture.
   le glisser le déplace, ses huit poignées le redimensionnent, et ses ancrages sont marqués sur le
   canevas ; chaque geste devient une étape d'annulation sur `offset_min` et `offset_max`.
 - **Jeu** : `SystemContext::ui` et `Application::ui()` donnent l'`UiWorld` ; en C#, la classe `Ui`
-  offre `WasClicked(action)`, `WasClicked(entity)`, `WasCancelled()`, `Hovered`, `Focused` et
-  `PointerOverInterface`, que le jeu lit avant d'agir sur un clic qui lui serait destiné.
+  offre `WasClicked(action)`, `WasClicked(entity)`, `WasChanged(action)`, `WasSubmitted(action)`,
+  `WasCancelled()`, `Hovered`, `Focused`, `EditedField` et `PointerOverInterface`, que le jeu lit
+  avant d'agir sur un clic qui lui serait destiné. Les touches restent visibles des systèmes du
+  jeu pendant qu'un champ est édité, comme dans Unity et Godot : un système qui répond à une
+  touche seule vérifie `ui->isEditing()` (ou `Ui.EditedField`) pour ne pas réagir aux lettres
+  tapées.
 - **Bac à sable** : la scène `sandbox` ouvre sur un menu principal (Jouer, Réglages, Quitter), avec
-  un panneau de réglages qui change le volume général, un menu de pause appelé par Échap et un HUD
-  qui montre le score et le temps. Tout est piloté par `code/Menu.cs` à travers les actions.
+  un menu de pause appelé par Échap et un HUD qui montre le score et le temps. L'écran des
+  réglages montre un champ de nom, un mot de passe, un curseur de volume dont l'étiquette est liée
+  à sa valeur, une case « plein écran », et un panneau d'aide en neuf parts
+  (`textures/panel.png`, 64 pixels) qui contient une liste de texte riche défilant à la molette.
+  Tout suit le thème `ui/sandbox.dvxtheme`, et `code/Menu.cs` lit les actions. Un clic sur
+  l'interface ne capture plus la souris, et les touches du bac à sable (N, C, Tab, Échap) se
+  taisent pendant la saisie.
 
 ### Gameplay
 
@@ -1604,6 +1699,13 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     pour la caméra, les cascades d'ombre et chaque vue locale, et ombres des spots et des lumières
     ponctuelles dans un atlas dont les tuiles vont aux lumières les plus importantes.
 
+23. ✅ **Interfaces complètes** — champs de saisie sur une ou plusieurs lignes avec sélection,
+    presse-papiers, mot de passe et texte de remplacement, saisie de texte et répétition des
+    touches dans `Devex::Platform`, découpe par lot et défilement à la molette, crénage, texte
+    riche avec icônes, neuf parts à la taille de la texture, curseurs et cases à cocher, liaison
+    de données, thèmes `.dvxtheme` référencés par le canevas, polices étendues au latin d'Europe
+    centrale et à la ponctuation courante, et écran de réglages du bac à sable qui montre le tout.
+
 Ensuite, sans ordre figé : jeux 2D, particules, CI Linux.
 
 ## Questions ouvertes
@@ -1639,13 +1741,14 @@ Ensuite, sans ordre figé : jeux 2D, particules, CI Linux.
   événements de clip, cinématique inverse, morph targets, pré-skinning en compute (colliders et
   rayons suivant la pose), réutilisation d'un clip entre squelettes différents (retargeting),
   compression des courbes.
-- **UI des jeux** : c'est le prochain grand morceau, et l'écran **2D** de la barre de menus lui est
-  réservé. Il faut un système d'interface à l'exécution — canevas, ancrages et marges, rectangles,
-  texte, images, boutons et champs, thèmes, événements souris, clavier et manette, mise à l'échelle
-  selon la résolution — puis l'éditeur qui pose ces éléments dans un canevas 2D. Ensuite seulement
-  viendraient les jeux 2D eux-mêmes : sprites, atlas, tuiles, caméra et physique 2D, qui partagent
-  la même vue mais pas le même modèle.
-- **UI retenue maison** pour l'éditeur, qui remplacera ImGui dans les outils.
+- **UI des jeux, la suite** : listes virtualisées et tableaux pour les longues données, listes
+  déroulantes, barres de défilement visibles, transitions et animations d'éléments, position de la
+  fenêtre de la méthode de saisie sous le curseur, polices de repli pour les écritures non
+  cuites, texte bidirectionnel et écritures complexes, sélection au double clic et mot par mot,
+  annulation dans un champ, et édition des thèmes dans l'éditeur. Viendront ensuite les jeux 2D :
+  sprites, atlas, tuiles, caméra et physique 2D, qui partagent la vue 2D mais pas le même modèle.
+- **Portage de l'éditeur sur l'UI du moteur** : quand `Devex::Ui` saura ce qu'un éditeur demande,
+  panneau par panneau, le dockspace en dernier (voir *Une seule interface, deux usages*).
 - **CI** : GitHub Actions Windows, puis Linux.
 - **Chargement asynchrone** : lecture et envoi GPU des assets hors du thread principal, streaming
   des gros niveaux (aujourd'hui, le chargement depuis le cache est synchrone).

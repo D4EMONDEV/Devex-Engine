@@ -15,6 +15,13 @@ public class MenuController : Component
     public Entity ScoreText;
     public Entity TimerText;
 
+    // The settings the player changes: the slider of the volume and the name that was typed.
+    public Entity VolumeSlider;
+    public Entity NameField;
+
+    // The name the player answered, kept for the game to greet them with.
+    public string PlayerName = "";
+
     // Ten points for every click that lands in the world rather than on the interface.
     public int Score;
 
@@ -72,14 +79,18 @@ public class MenuController : Component
 
     private void UpdateSettings()
     {
-        // The buttons change the volume of the whole game, which every group follows.
-        if (Ui.WasClicked("louder"))
+        // The slider drives the volume of the whole game, which every group follows. The value
+        // itself lives in the component: the interface only says that it moved.
+        if (Ui.WasChanged("volume") && VolumeSlider.IsAlive &&
+            VolumeSlider.TryGet(out UiSlider volume))
         {
-            Audio.SetGroupVolume(Audio.Master, MathF.Min(Audio.GetGroupVolume(Audio.Master) + 0.1f, 1.0f));
+            Audio.SetGroupVolume(Audio.Master, Math.Clamp(volume.Value / 100.0f, 0.0f, 1.0f));
         }
-        if (Ui.WasClicked("softer"))
+        // Enter ends the edit of the field, and hands over what was typed.
+        if (Ui.WasSubmitted("name") && NameField.IsAlive && NameField.TryGet(out UiText typed))
         {
-            Audio.SetGroupVolume(Audio.Master, MathF.Max(Audio.GetGroupVolume(Audio.Master) - 0.1f, 0.0f));
+            PlayerName = typed.Text;
+            Log.Info($"Bonjour {PlayerName}");
         }
         if (Ui.WasClicked("back") || Ui.WasCancelled())
         {
