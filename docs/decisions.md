@@ -15,7 +15,7 @@ mais seulement explicitement ici : le code suit ce document, pas l'inverse.
 | Fenêtre / entrées        | SDL3                                                               |
 | Graphique                | Vulkan 1.4 minimum, API C + volk + VMA, sans RHI pour l'instant    |
 | Shaders                  | Slang → SPIR-V                                                     |
-| Architecture de rendu    | Forward+ clustered, PBR métal-rugosité (GGX), MSAA 4x              |
+| Architecture de rendu    | Forward+ clustered avec prépasse, PBR métal-rugosité (GGX)         |
 | Gameplay                 | C++ (DLL rechargeable) et C# (.NET hébergé), au choix, ensemble    |
 | Format source            |  Texte maison lisible, extensions `.dvx*`, binaire cooké à l'export|
 | Import 3D                | glTF 2.0 (fastgltf) + FBX (ufbx)                                   |
@@ -28,7 +28,7 @@ mais seulement explicitement ici : le code suit ce document, pas l'inverse.
 | Tests                    | Catch2 v3 via CTest                                                |
 | Boucle de jeu            | Pas fixe (60 Hz par défaut) + mise à jour variable par frame       |
 | Point d'entrée           | Le moteur possède la boucle, le jeu dérive de `Application`        |
-| Entrées                  | État interrogeable + événements, actions nommées plus tard         |
+| Entrées                  | État interrogeable + événements, clavier, souris et manettes       |
 | Clavier                  | `Key` = position physique (WASD devient ZQSD en AZERTY)            |
 | Présentation             | VSync (FIFO) par défaut, Mailbox/Immediate en option               |
 | Thread de rendu          | Thread principal, rendu découplé par un instantané `RenderWorld`   |
@@ -117,6 +117,11 @@ mais seulement explicitement ici : le code suit ce document, pas l'inverse.
 | Lecture                  | Composant `Animator` : un clip, fondu croisé, root motion en option |
 | Skinning                 | Dans le vertex shader, matrices d'os en buffer par frame          |
 | Écrans de l'éditeur      | 2D, 3D et Script au centre de la barre de menus                    |
+| Transparence             | Tri par distance, passe après l'opaque, sans écrire la profondeur  |
+| Prépasse                 | Profondeur, mouvement et normales avant l'ombrage                 |
+| Anticrénelage            | Temporel : projection jitterée, historique borné par le voisinage  |
+| Post-traitements         | Bloom, occlusion ambiante, table de couleurs, vignette, grain     |
+| Réglages de l'image      | Sur le composant Camera, à côté de l'exposition                   |
 | Interfaces               | Entités et composants : `Canvas`, `UiRect`, `UiImage`, `UiText`... |
 | Placement                | Ancrages et marges, puis conteneurs ligne, colonne et grille       |
 | Texte                    | Police cuite en atlas de distances signées, nette à toute taille   |
@@ -144,13 +149,14 @@ situé au-dessus de lui, et le graphe reste sans cycle.
 | `Platform`      | fenêtre, entrées, temps, dialogues, bibliothèques partagées, processus    | Core, SDL3                    |
 | `Reflection`    | description des champs (`TypeInfo`, `DEVEX_REFLECT`, `ValueKind`)         | Core, Math                    |
 | `Serialization` | format texte `.dvx*` (sections, valeurs) ; plus tard archives cookées     | Core                          |
-| `Asset`         | `AssetId`, données CPU (maillages, textures, matériaux, modèles, clips audio et d'animation), `.dvxasset`, projet, paquet `.dvxpak` | Core, Math, Reflection, Serialization, zstd |
-| `AssetImport`   | base d'assets, `.dvxmeta`, importeurs (textures, `.dvxmat`, glTF, sons)   | Asset, Scene, Audio, fastgltf, basisu, stb, efsw |
+| `Asset`         | `AssetId`, données CPU (maillages, textures, matériaux, modèles, clips audio et d'animation, polices), `.dvxasset`, projet, paquet `.dvxpak` | Core, Math, Reflection, Serialization, zstd |
+| `AssetImport`   | base d'assets, `.dvxmeta`, importeurs (textures, `.dvxmat`, glTF, sons, polices) | Asset, Scene, Audio, fastgltf, basisu, stb, efsw |
 | `Render`        | façade `Renderer` / `RenderWorld` ; tout `Vk*` reste dans `src/render/vulkan` | Core, Math, Platform, Asset, Vulkan |
 | `Scene`         | entités, sparse sets, hiérarchie, composants intégrés, `.dvxscene`, sous-arbres, préfabs | Core, Math, Reflection, Serialization, Asset |
 | `Audio`         | clips, mixage et groupes, sources et écouteur de la scène                | Core, Math, Asset, Scene, miniaudio, stb |
 | `Animation`     | clips d'animation, échantillonnage, fondus, squelettes des `Animator`    | Core, Math, Asset, Scene             |
-| `Tools`         | panneaux ImGui, annulation, éditeur (viewport, gizmos, scènes, accueil)   | Core, Platform, Render, Scene, Audio, Animation, AssetImport, ImGui |
+| `Ui`            | placement des canevas, mise en page du texte, survol et focus, dessin    | Core, Math, Asset, Scene, Render     |
+| `Tools`         | panneaux ImGui, annulation, éditeur (viewport, gizmos, scènes, accueil)   | Core, Platform, Render, Scene, Audio, Animation, Ui, AssetImport, ImGui |
 | `Runtime`       | `Application`, boucle, mode éditeur et Play, modules de jeu, `AssetManager`, extraction | tous les modules ci-dessus |
 
 Au sommet : `devex-editor`, `devex-player` et les modules de jeu des projets.
@@ -223,11 +229,12 @@ docs/          décisions et documentation
   d'un **pool propre à chaque contexte de frame**, gardées d'une frame à l'autre tant qu'elles
   servent : deux frames en vol ne partagent jamais une image. Pas encore d'élimination de
   passes ni de partage de mémoire entre images.
-- **Frame** : ombres du soleil (4 couches d'une image `D32` 2048²), scène HDR `RGBA16F`
-  multi-échantillonnée (MSAA 4x par défaut, `RendererConfig::msaaSamples`, résolue par
-  moyenne) avec les maillages puis le ciel, mesure de luminance (si exposition automatique),
-  sélection (si demandée), masque des objets entourés (s'il y en a), tonemapping vers la
-  cible, overlay des outils, puis ImGui sur le swapchain.
+- **Frame** : prépasse (profondeur, mouvement et normales), occlusion ambiante (si demandée),
+  ombres du soleil (4 couches d'une image `D32` 2048²), scène HDR `RGBA16F` avec les maillages
+  puis le ciel, puis les surfaces transparentes triées, mesure de luminance (si exposition
+  automatique), sélection (si demandée), masque des objets entourés (s'il y en a), anticrénelage
+  temporel (si demandé), chaîne du bloom (si demandé), tonemapping et étalonnage vers la cible,
+  overlay des outils, interface du jeu, puis ImGui sur le swapchain.
 - **Cible** : sans `RenderWorld::viewport`, la scène est dessinée sur tout le swapchain.
   Avec, elle l'est dans une image de cette taille (format du swapchain, au plus 8192²) que les
   outils affichent dans un panneau : `Renderer::viewportTexture()` est un identifiant de
@@ -242,8 +249,8 @@ docs/          décisions et documentation
   plus un.
 - **Overlay des outils** : lignes et triangles colorés (`RenderWorld::sceneLines`,
   `overlayLines`, `overlayTriangles`) dessinés en mélange alpha après le tonemapping. Les
-  lignes de scène sont cachées par les surfaces plus proches : la profondeur MSAA est résolue
-  (échantillon 0) dans une image simple, et leur profondeur est légèrement avancée pour rester
+  lignes de scène sont cachées par les surfaces plus proches : elles testent la profondeur de la
+  scène, et leur profondeur est légèrement avancée pour rester
   visibles sur les surfaces où elles reposent. Les autres passent devant tout. Les instances
   `outlined` sont dessinées dans un masque `R8`, puis un plein écran trace le contour orange des
   pixels hors masque à moins de deux pixels de lui. Lignes d'un pixel de large : pas encore de
@@ -251,16 +258,18 @@ docs/          décisions et documentation
 - **Profondeur** : reverse-Z à far plane infini (`math::perspectiveReverseZ`), `D32_SFLOAT`
   effacée à 0 et test `GREATER_OR_EQUAL`. La projection de `Math` garde Y vers le haut ; le
   renderer applique la correction du clip space Vulkan (Y vers le bas).
-- **Slang** : `cmake/DevexShaders.cmake` compile chaque shader d'entrée (`mesh`, `shadow`,
-  `sky`, `tonemap`, `luminance`, `ibl`, `pick`, `overlay`) en un `.spv` contenant tous ses points d'entrée
+- **Slang** : `cmake/DevexShaders.cmake` compile chaque shader d'entrée (`prepass`, `mesh`,
+  `shadow`, `sky`, `ao`, `taa`, `bloom`, `tonemap`, `luminance`, `ibl`, `pick`, `overlay`, `ui`)
+  en un `.spv` contenant tous ses points d'entrée
   (`-fvk-use-entrypoint-name`), avec des matrices column-major comme GLM ; les modules
   importés (`common`, `pbr`) entrent dans le depfile. Une erreur de shader est une erreur de
   build. L'API Slang servira plus tard au rechargement à chaud dans l'éditeur. En Vulkan,
   `SV_VertexID` ne compte pas le premier sommet du dessin : un dessin qui commence au milieu
   d'un buffer reçoit l'adresse de ce premier sommet.
 - **Données GPU** : vertex pulling. Les shaders lisent sommets et données de scène via des
-  *buffer device addresses* passées en push constants (96 octets, sous le minimum garanti
-  de 128) ; pas de vertex input state. Sommets de 48 octets : position, normale, UV et
+  *buffer device addresses* passées en push constants (112 octets pour un dessin, 184 pour la
+  prépasse qui ajoute la place précédente de l'instance ; Vulkan 1.4 en garantit 256) ; pas de
+  vertex input state. Sommets de 48 octets : position, normale, UV et
   tangente. Les dispositions mémoire C++ et Slang sont
   vérifiées par `static_assert` (`src/render/vulkan/GpuData.hpp`). Le descriptor set
   global bindless porte les textures (voir ci-dessous).
@@ -275,7 +284,9 @@ docs/          décisions et documentation
   set global bindless** (set 0 : tableau de `Texture2D` indexé, `PARTIALLY_BOUND` et
   `UPDATE_AFTER_BIND`, 8192 emplacements au plus, sampler linéaire, répétition, anisotrope
   x16), qui porte aussi l'IBL, la table BRDF et le ciel. Le set 1, un par contexte de frame,
-  porte la carte d'ombres, la couleur de scène résolue et le masque de sélection. Les
+  porte ce que la frame produit : carte d'ombres, couleur de scène, masque de sélection,
+  mouvement et normales de la prépasse, occlusion ambiante, historique de l'anticrénelage,
+  profondeur, image résolue et les cinq niveaux de la chaîne du bloom. Les
   emplacements 0 et 1 sont une texture blanche et une normale plate qui remplacent les textures
   absentes. Une texture détruite garde son emplacement jusqu'à la fin des frames en vol, puis
   l'emplacement repointe vers le blanc avant d'être réutilisé.
@@ -284,8 +295,9 @@ docs/          décisions et documentation
   octets dont **chaque frame en vol garde sa copie** (buffer adressé par `SceneData`), recopiée
   quand un matériau ou une texture change. Le shader utilise tous les paramètres : couleur de
   base, métal et rugosité (rugosité bornée à 0,045), normal map (BC5, Z reconstruit, échelle),
-  occlusion (sur la lumière indirecte), émission et mode alpha `mask` (discard, ombres
-  comprises) ; `blend` est dessiné opaque en attendant la transparence. Les matériaux `doubleSided` utilisent un second pipeline sans culling et éclairent
+  occlusion (sur la lumière indirecte, multipliée par celle mesurée à l'écran), émission et mode
+  alpha `mask` (discard, ombres comprises) ou `blend` (dessiné dans la passe transparente, trié,
+  sans ombre). Les matériaux `doubleSided` utilisent un second pipeline sans culling et éclairent
   la face arrière avec la normale retournée. Un matériau par défaut gris clair sert aux instances
   sans matériau.
 - **Normales** : transformées par la matrice des cofacteurs (signe du déterminant compris), juste
@@ -320,10 +332,12 @@ docs/          décisions et documentation
   s'adapte exponentiellement (`adaptationSpeed`).
 - **Tonemapping** : AgX (sigmoïde du look par défaut de Blender), Khronos PBR Neutral, ACES
   (approximation de Narkowicz) ou aucun, choisi sur la caméra ; sortie linéaire, encodée sRGB
-  par le swapchain.
+  par le swapchain. La même passe ajoute le bloom et applique l'étalonnage (voir *Transparence
+  et post-traitements*).
 - **Limites actuelles** : pas de culling (tout est dessiné, y compris dans chaque cascade), pas
-  d'ombres des lumières locales, résolution MSAA par moyenne des valeurs HDR (contours très
-  contrastés parfois crénelés), pas de réflexions locales.
+  d'ombres des lumières locales, pas de réflexions locales, transparence triée par instance (deux
+  surfaces qui s'entrecroisent restent fausses), et traînées possibles derrière un objet très
+  rapide, que l'anticrénelage temporel ne rattrape pas toujours.
 - **GPU requis en plus** : descriptor indexing (tableaux runtime, partially bound, update after
   bind, indexation non uniforme), compression BC, et une file graphique qui fait aussi du
   compute.
@@ -592,7 +606,11 @@ les assets s'écrivent au fil de leur lecture.
   des usages clavier USB HID. `Platform::keyLabel(Key::W)` renvoie « Z » sur AZERTY pour
   l'affichage.
 - Perdre le focus relâche toutes les touches et boutons.
-- Les actions nommées (InputMap, rebinding, manettes) viendront par-dessus plus tard.
+- **Manettes** : jusqu'à quatre manettes SDL, ouvertes et fermées quand elles sont branchées,
+  interrogées comme le clavier (`isGamepadButtonDown`, `wasGamepadButtonPressed`, `gamepadAxis`,
+  `gamepadLeftStick`). Les boutons portent le nom de leur place (South, East…) plutôt que la
+  lettre imprimée dessus, les sticks passent une zone morte, et une manette débranchée relâche ce
+  qu'elle tenait. Les actions nommées (InputMap, rebinding) viendront par-dessus plus tard.
 
 ### Outils
 
@@ -1057,6 +1075,55 @@ les assets s'écrivent au fil de leur lecture.
   patrouiller, attendre à chaque extrémité et saluer le joueur qui s'approche, en changeant de clip
   avec un fondu de 0,25 s.
 
+### Transparence et post-traitements
+
+- **Passes** : une frame dessine maintenant la **prépasse** (profondeur, mouvement et normales),
+  l'**occlusion ambiante**, les **ombres**, la **scène** opaque puis le ciel, les surfaces
+  **transparentes**, la mesure de luminance, l'**anticrénelage temporel**, la chaîne du **bloom**,
+  le **tonemapping** avec l'étalonnage, les lignes et gizmos des outils, l'interface, enfin les
+  panneaux. Le MSAA a disparu : le TAA le remplace, coûte moins cher et lisse aussi l'intérieur des
+  matériaux.
+- **Prépasse** : chaque instance opaque est dessinée une fois pour écrire la profondeur, le
+  déplacement de ses pixels depuis la frame précédente et la normale de sa surface (pliée sur un
+  octaèdre en deux nombres). L'ombrage qui suit teste la profondeur sans l'écrire : il ne calcule
+  la lumière que pour la surface visible. Le coût est un dessin de plus par instance, rendu par le
+  surdessin évité et par ce que la prépasse rend possible.
+- **Mouvement** : le renderer garde la transformation de chaque instance et les matrices de ses os
+  de la frame précédente, repérées par l'entité et le sous-maillage, et la vue et la projection
+  sans jitter. Un objet qui apparaît ne bouge pas ; un personnage animé suit ses os, donc ses
+  membres aussi.
+- **Transparence** : un matériau en `blend` quitte la passe opaque et rejoint une passe qui les
+  dessine du plus loin au plus proche, en testant la profondeur sans l'écrire, pour que deux
+  surfaces transparentes se mélangent. Le tri se fait par le centre de l'instance : deux surfaces
+  qui s'entrecroisent restent fausses, comme partout où l'on trie plutôt que de résoudre. Une
+  surface transparente ne projette pas d'ombre, sans quoi une vitre assombrirait le sol comme un
+  mur.
+- **Anticrénelage temporel** : la projection est déplacée d'une fraction de pixel à chaque frame
+  (suite de Halton, huit points), et la passe de résolution mélange la frame à ce que les
+  précédentes ont résolu, retrouvé en suivant le mouvement de chaque pixel. L'historique est borné
+  par les couleurs autour du pixel, ce qui empêche un objet qui bouge de traîner son passé ; les
+  couleurs sont pondérées par leur luminance, ce qui empêche une étincelle d'entraîner tout le
+  voisinage. Deux images d'historique alternent d'une frame à l'autre.
+- **Occlusion ambiante** : huit points jetés dans l'hémisphère au-dessus de chaque pixel, comparés
+  à la profondeur, donnent ce que la surface voit du ciel. Les points changent à chaque frame et le
+  TAA fait la moyenne, ce qui suffit sans flou séparé. Le résultat ne multiplie que la lumière
+  ambiante, jamais la lumière directe : c'est pour cela qu'il est calculé après la prépasse et
+  avant l'ombrage.
+- **Bloom** : l'image résolue est seuillée puis halvée cinq fois, chaque niveau filtré en treize
+  points, puis rajoutée du plus petit au plus grand avec un filtre en tente. La chaîne entière est
+  nommée par un seul descripteur, donc ses images restent dans la disposition générale : c'est la
+  seule façon d'en lire une pendant qu'on en écrit une autre.
+- **Étalonnage** : le tonemapping applique ensuite, dans l'ordre, l'aberration chromatique (au
+  moment de lire l'image), la table de couleurs, la vignette et le grain. La table est une texture
+  en bande de carrés, un par pas de bleu, lue entre les deux plus proches ; elle doit être importée
+  **sans encodage sRGB**, sinon ses valeurs sont décodées avant d'être lues.
+- **Réglages** : tout vit sur le composant `Camera`, à côté de l'exposition et du tonemapping :
+  `antialiasing`, `ambient_occlusion` et son rayon, `bloom` et son seuil, `vignette`, `grain`,
+  `chromatic_aberration` et `color_table`. Chaque effet s'éteint en mettant son réglage à zéro, et
+  le renderer saute alors ses passes.
+- **Bac à sable** : trois panneaux de verre teinté (`assets/materials/glass.dvxmat`) se croisent
+  devant les sphères, et les satellites du plateau tournant brillent assez pour laisser un halo.
+
 ### Interfaces
 
 - **Modèle** : une interface est faite d'**entités et de composants**, comme le reste d'une scène,
@@ -1413,7 +1480,7 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
    en arrière-plan sur un pool de jobs, réimport à chaud, textures BC7/BC5 bindless, matériaux
    (`.dvxmat` et glTF), modèles glTF placés en entités, panneau Assets.
 7. ✅ **Rendu PBR** — render graph, forward+ clustered, lumières en unités physiques, ombres en
-   cascades, ciel HDR et IBL, MSAA, exposition automatique, tonemapping AgX, tangentes
+   cascades, ciel HDR et IBL, exposition automatique, tonemapping AgX, tangentes
    MikkTSpace, énumérations dans la réflexion.
 8. ✅ **Éditeur** — mode éditeur du runtime et `devex-editor`, écran d'accueil et projets
    récents, scènes en assets (ouvrir, enregistrer, modifications non enregistrées), viewport
@@ -1492,7 +1559,12 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     à la manette, manettes dans `Devex::Platform`, API C++ et C# (`Ui`), écran 2D de l'éditeur pour
     poser les éléments, et menu, réglages, pause et HUD du bac à sable.
 
-Ensuite, sans ordre figé : post-traitements (bloom, TAA), transparence, CI Linux.
+21. ✅ **Transparence et post-traitements** — matériaux transparents triés et dessinés après
+    l'opaque, prépasse de profondeur, de mouvement et de normales, anticrénelage temporel à la
+    place du MSAA, occlusion ambiante en espace écran, bloom, table de couleurs, vignette, grain et
+    aberration chromatique, tous réglés sur la caméra.
+
+Ensuite, sans ordre figé : jeux 2D, particules, CI Linux.
 
 ## Questions ouvertes
 
@@ -1543,6 +1615,11 @@ Ensuite, sans ordre figé : post-traitements (bloom, TAA), transparence, CI Linu
 - **Culling** : frustum culling sur CPU, puis sur GPU avec dessin indirect.
 - **Ombres locales** : atlas d'ombres pour les spots et cubemaps pour les lumières ponctuelles.
 - **Réflexions locales** : sondes de réflexion placées dans la scène, SSR.
+- **Transparence** : résolution sans tri (OIT pondéré) pour les surfaces qui s'entrecroisent,
+  ombres des surfaces transparentes, réfraction, tri par triangle plutôt que par instance.
+- **Post-traitements** : profondeur de champ, flou de mouvement, volumes qui mélangent leurs
+  réglages selon la position de la caméra, mise à l'échelle temporelle (rendu sous la résolution
+  de l'écran), occlusion ambiante par cônes plutôt que par points.
 - **Ciel procédural** : atmosphère physique liée à la lumière directionnelle.
 - **Éditeur** : multi-sélection et rectangle de sélection, copier-coller et duplication, vues
   Scène et Jeu simultanées (plusieurs vues par frame dans le renderer), jeu dans un processus

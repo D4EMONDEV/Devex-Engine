@@ -32,7 +32,7 @@ namespace devex::render::vulkan {
 
 // Vulkan implementation behind render::Renderer.
 //
-// Each frame is recorded as render graph passes: the sun's shadow cascades, the multisampled
+// Each frame is recorded as render graph passes: the sun's shadow cascades, the
 // high dynamic range scene (forward+ lighting, then the sky), the luminance measure for automatic
 // exposure, picking and the selection mask when the tools ask for them, tonemapping to the
 // swapchain or to the viewport image of the tools, the tools' overlay, and ImGui.
@@ -81,6 +81,10 @@ private:
     // Frames recorded before the oldest one must complete, which bounds the latency added by
     // the CPU running ahead of the GPU.
     static constexpr std::uint64_t framesInFlight = 2;
+    // How many jittered frames cover a pixel before the pattern starts over.
+    static constexpr std::uint64_t taaSampleCount = 8;
+    // How much of the history a still pixel keeps: higher is smoother and slower to follow.
+    static constexpr float taaBlend = 0.9f;
     static constexpr VkFormat depthFormat = VK_FORMAT_D32_SFLOAT;
     static constexpr VkFormat sceneFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
     // More textures than any scene needs for now, within what drivers commonly allow.
@@ -93,12 +97,21 @@ private:
     static constexpr std::uint32_t luminanceGridHeight = 36;
     static constexpr VkFormat pickFormat = VK_FORMAT_R32_UINT;
     static constexpr VkFormat selectionMaskFormat = VK_FORMAT_R8_UNORM;
+    // Where a pixel was on the previous frame, and the normal of its surface.
+    static constexpr VkFormat velocityFormat = VK_FORMAT_R16G16_SFLOAT;
+    static constexpr VkFormat normalFormat = VK_FORMAT_R16G16_SFLOAT;
+    static constexpr VkFormat occlusionFormat = VK_FORMAT_R8_UNORM;
     // Larger viewports are clamped, since images this large would exhaust memory.
     static constexpr std::uint32_t maxViewportSize = 8192;
 
     enum class MeshPass : std::uint8_t
     {
+        // Depth, motion and normals of everything that hides what is behind it.
+        Prepass,
+        // Everything that hides what is behind it, including the cut-out materials.
         Scene,
+        // The blended materials, drawn after the scene from the farthest to the nearest.
+        Transparent,
         Shadow,
         Pick,
         // Only the outlined instances.
@@ -137,9 +150,9 @@ private:
         // The exposure that frame used, to turn measured values back into nits.
         float exposure = 1.0f;
         TransientImagePool images;
-        VkImageView boundShadowMap = VK_NULL_HANDLE;
-        VkImageView boundSceneColor = VK_NULL_HANDLE;
-        VkImageView boundSelectionMask = VK_NULL_HANDLE;
+        DescriptorSets::FrameImages boundImages;
+        // Where every skinned instance stood on the previous frame, for the motion of its pixels.
+        std::optional<Buffer> previousBones;
         std::optional<Buffer> overlayVertices;
         // The triangles of the interface of the frame.
         std::optional<Buffer> uiVertices;
@@ -214,15 +227,30 @@ private:
     void writeSceneData(FrameContext& frame, const std::optional<ShadowCascades>& cascades) const noexcept;
     [[nodiscard]] core::Result<OverlayRanges> uploadOverlay(FrameContext& frame);
     [[nodiscard]] core::Result<void> uploadUi(FrameContext& frame);
+    [[nodiscard]] core::Result<void> uploadPreviousBones(FrameContext& frame) const;
+    // Creates the two images the antialiasing carries from frame to frame, when the scene changed
+    // size or they do not exist yet.
+    [[nodiscard]] core::Result<void> ensureHistory();
+    // Remembers where the instances of this frame stood, for the motion of the next one.
+    void rememberFrame();
     // Keeps the answer of the pick request the frame recorded, now that it completed.
     void readPickResult(FrameContext& frame);
     // Returns the number of draw calls recorded.
     [[nodiscard]] core::Result<std::uint32_t> recordFrame(FrameContext& frame, std::uint32_t frameSlot,
                                                           std::uint32_t imageIndex, bool drawImGui,
                                                           bool drawShadows);
+    // Whether the instance blends with what is behind it, and so belongs to the transparent pass.
+    [[nodiscard]] bool isBlended(const MeshInstance& instance) const noexcept;
+    // The instances a pass draws, in the order it draws them.
+    [[nodiscard]] std::span<const std::uint32_t> instancesOf(MeshPass pass) const;
+    // The key an instance keeps between frames: its entity and the submesh it draws.
+    [[nodiscard]] static std::uint64_t instanceKey(const MeshInstance& instance) noexcept
+    {
+        return (static_cast<std::uint64_t>(instance.objectId) << 32) | instance.submesh;
+    }
     std::uint32_t drawMeshes(VkCommandBuffer commandBuffer, VkDeviceAddress sceneData,
                              VkDeviceAddress boneMatrices, MeshPass pass, std::uint32_t cascade,
-                             std::uint32_t frameSlot) const;
+                             std::uint32_t frameSlot, VkDeviceAddress previousBones = 0) const;
     // Copies the bone matrices of the frame's skinned instances into its buffer.
     [[nodiscard]] core::Result<void> uploadBones(FrameContext& frame) const;
     [[nodiscard]] core::Result<void> ensureHostBuffer(std::optional<Buffer>& buffer, VkDeviceSize bytes) const;
@@ -233,7 +261,6 @@ private:
 
     platform::Window& m_window;
     PresentMode m_requestedPresentMode;
-    std::uint32_t m_requestedSamples;
     std::filesystem::path m_shaderDirectory;
     Instance m_instance;
     Surface m_surface;
@@ -241,7 +268,6 @@ private:
     // Everything allocated through VMA is declared below, so it is destroyed before the allocator.
     Allocator m_allocator;
     UploadContext m_upload;
-    VkSampleCountFlagBits m_samples = VK_SAMPLE_COUNT_1_BIT;
     std::optional<DescriptorSets> m_descriptors;
     std::unique_ptr<EnvironmentBaker> m_baker;
     std::optional<Image> m_brdfTable;
@@ -249,6 +275,25 @@ private:
     std::optional<Swapchain> m_swapchain;
     std::optional<Pipeline> m_meshPipeline;
     std::optional<Pipeline> m_doubleSidedPipeline;
+    std::optional<Pipeline> m_transparentPipeline;
+    std::optional<Pipeline> m_transparentDoubleSidedPipeline;
+    std::optional<Pipeline> m_prepassPipeline;
+    std::optional<Pipeline> m_prepassDoubleSidedPipeline;
+    // Blended instances of the frame, farthest first; kept between frames to avoid allocating.
+    mutable std::vector<std::pair<float, std::uint32_t>> m_transparentOrder;
+    mutable std::vector<std::uint32_t> m_passInstances;
+    // Where the camera of the frame is, which sorts the blended instances.
+    mutable math::Vec3 m_cameraPosition{0.0f};
+    // Where each instance stood on the previous frame, by entity and submesh, and where its bones
+    // were. An instance that was not there yet simply does not move.
+    std::unordered_map<std::uint64_t, math::Mat4> m_previousTransforms;
+    std::unordered_map<std::uint64_t, std::uint32_t> m_previousFirstBone;
+    std::vector<math::Mat4> m_previousBoneMatrices;
+    // The view and projection of the previous frame, without its jitter.
+    math::Mat4 m_previousViewProjection{1.0f};
+    mutable math::Mat4 m_unjitteredViewProjection{1.0f};
+    // How far the projection of this frame is moved, in clip space.
+    math::Vec2 m_jitter{0.0f};
     std::optional<Pipeline> m_shadowPipeline;
     std::optional<Pipeline> m_skyPipeline;
     std::optional<Pipeline> m_luminancePipeline;
@@ -260,8 +305,23 @@ private:
     std::optional<Pipeline> m_overlayLinePipeline;
     std::optional<Pipeline> m_overlayTrianglePipeline;
     std::optional<Pipeline> m_uiPipeline;
+    std::optional<Pipeline> m_taaPipeline;
+    std::optional<Pipeline> m_aoPipeline;
+    std::optional<Pipeline> m_bloomThresholdPipeline;
+    std::optional<Pipeline> m_bloomDownsamplePipeline;
+    std::optional<Pipeline> m_bloomUpsamplePipeline;
     // Bound as the selection mask of frames that outline nothing.
     std::optional<Image> m_emptySelectionMask;
+    std::optional<Image> m_whiteImage;
+    // The same, left in the general layout, for the bloom chain a frame did not build.
+    std::optional<Image> m_whiteGeneralImage;
+    // What the antialiasing resolved, kept from one frame to the next: one image is read while the
+    // other is written, and they swap every frame.
+    std::array<std::optional<Image>, 2> m_history;
+    std::array<ImageState, 2> m_historyStates{ImageState::Undefined, ImageState::Undefined};
+    math::Extent2D m_historyExtent;
+    // False until a frame has resolved into the history, and whenever it was just recreated.
+    bool m_historyValid = false;
     math::Extent2D m_swapchainWindowPixelSize;
     // The size of the scene image of the frame being recorded.
     math::Extent2D m_sceneExtent;

@@ -5,6 +5,7 @@ module common;
 public static const float pi = 3.14159265358979;
 public static const uint cascadeCount = 4;
 public static const uint alphaModeMask = 1;
+public static const uint alphaModeBlend = 2;
 public static const uint sunEnabled = 1;
 public static const uint sunCastsShadows = 2;
 
@@ -101,7 +102,36 @@ public struct SceneData
     public uint* clusterLights;
     // Maps the pixel requested for picking to the whole 1x1 pick target.
     public float4x4 pickViewProjection;
+    // The same view and projection without the jitter of the temporal antialiasing, and the one of
+    // the previous frame: what lies between them is the motion of a pixel.
+    public float4x4 unjitteredViewProjection;
+    public float4x4 previousViewProjection;
+    // Takes a point of clip space back to the world, without the jitter.
+    public float4x4 inverseViewProjection;
 };
+
+// A normal folded into two numbers on an octahedron, which keeps its precision where it matters.
+public float2 encodeNormal(float3 normal)
+{
+    const float3 folded = normal / (abs(normal.x) + abs(normal.y) + abs(normal.z));
+    if (folded.z >= 0.0)
+    {
+        return folded.xy;
+    }
+    const float2 signs = float2(folded.x >= 0.0 ? 1.0 : -1.0, folded.y >= 0.0 ? 1.0 : -1.0);
+    return (1.0 - abs(folded.yx)) * signs;
+}
+
+public float3 decodeNormal(float2 folded)
+{
+    float3 normal = float3(folded.x, folded.y, 1.0 - abs(folded.x) - abs(folded.y));
+    if (normal.z < 0.0)
+    {
+        const float2 signs = float2(normal.x >= 0.0 ? 1.0 : -1.0, normal.y >= 0.0 ? 1.0 : -1.0);
+        normal.xy = (1.0 - abs(normal.yx)) * signs;
+    }
+    return normalize(normal);
+}
 
 public struct DrawData
 {
@@ -164,6 +194,27 @@ public Texture2D sceneColor;
 // Coverage of the selected objects, outlined by the overlay.
 [[vk::binding(3, 1)]]
 public Texture2D selectionMask;
+// Where every pixel was on the previous frame, in texture coordinates.
+[[vk::binding(4, 1)]]
+public Texture2D velocityTexture;
+// The normals of the prepass, folded into two numbers.
+[[vk::binding(5, 1)]]
+public Texture2D normalTexture;
+// How much of the sky each pixel sees, from 0 in a corner to 1 in the open.
+[[vk::binding(6, 1)]]
+public Texture2D ambientOcclusionTexture;
+// What the previous frame resolved, which the temporal antialiasing carries forward.
+[[vk::binding(7, 1)]]
+public Texture2D historyTexture;
+// The depth of the scene, as the prepass wrote it: 1 at the near plane, 0 infinitely far away.
+[[vk::binding(8, 1)]]
+public Texture2D depthTexture;
+// The image the tonemapping reads: what the antialiasing resolved, or the scene as it was drawn.
+[[vk::binding(9, 1)]]
+public Texture2D resolvedTexture;
+// The halved images the bloom is built from, the largest first.
+[[vk::binding(10, 1)]]
+public Texture2D bloomChain[5];
 
 public float4 sampleTexture(uint index, float2 uv)
 {

@@ -90,6 +90,20 @@ static_assert(sizeof(ClusterRange) == sizeof(GpuCluster));
     return matrix;
 }
 
+// The n-th point of the Halton sequence in a base, which fills an interval without clumping.
+[[nodiscard]] float haltonPoint(std::uint32_t index, std::uint32_t base) noexcept
+{
+    float result = 0.0f;
+    float fraction = 1.0f;
+    while (index > 0)
+    {
+        fraction /= static_cast<float>(base);
+        result += fraction * static_cast<float>(index % base);
+        index /= base;
+    }
+    return result;
+}
+
 [[nodiscard]] math::Mat4 projectionMatrix(const RenderCamera& camera, float aspectRatio) noexcept
 {
     // Vulkan clip space points Y down, while the engine convention points it up.
@@ -189,7 +203,6 @@ VulkanRenderer::VulkanRenderer(platform::Window& window, const RendererConfig& c
                                UploadContext upload) noexcept
     : m_window(window)
     , m_requestedPresentMode(config.presentMode)
-    , m_requestedSamples(config.msaaSamples)
     , m_shaderDirectory(std::move(shaderDirectory))
     , m_instance(std::move(instance))
     , m_surface(std::move(surface))
@@ -523,6 +536,16 @@ core::Result<void> VulkanRenderer::endFrame()
                                            aspectRatio, m_world.camera.nearPlane, sun.shadowDistance,
                                            sun.direction, shadowMapSize);
     }
+    if (core::Result<void> history = ensureHistory(); !history)
+    {
+        return history;
+    }
+    // Halton points cover a pixel evenly, whatever the number of frames that are kept.
+    const bool antialiased = m_world.camera.antialiasing == Antialiasing::Temporal;
+    const auto sample = static_cast<std::uint32_t>(m_frameIndex % taaSampleCount);
+    m_jitter = antialiased ? math::Vec2{(haltonPoint(sample + 1, 2) - 0.5f) * 2.0f / static_cast<float>(m_sceneExtent.width),
+                                        (haltonPoint(sample + 1, 3) - 0.5f) * 2.0f / static_cast<float>(m_sceneExtent.height)}
+                           : math::Vec2{0.0f};
     writeSceneData(frame, m_cascades);
 
     core::Result<std::uint32_t> recorded = recordFrame(frame, frameSlot, imageIndex, drawImGui, drawShadows);
@@ -532,6 +555,8 @@ core::Result<void> VulkanRenderer::endFrame()
     }
     m_lastDrawCalls = *recorded;
     m_lastLightCount = static_cast<std::uint32_t>(m_world.lights.size());
+    m_historyValid = antialiased;
+    rememberFrame();
 
     const VkSemaphore presentSemaphore = m_presentSemaphores[imageIndex];
     const VkSemaphoreSubmitInfo waitInfo{
@@ -644,7 +669,6 @@ core::Result<void> VulkanRenderer::createFrameContexts()
 
 core::Result<void> VulkanRenderer::createDefaultResources()
 {
-    m_samples = m_device.sampleCount(m_requestedSamples);
 
     core::Result<DescriptorSets> descriptors = DescriptorSets::create(
         m_device, std::min(m_device.maxBindlessTextures(), maxTextures),
@@ -696,6 +720,59 @@ core::Result<void> VulkanRenderer::createDefaultResources()
     }
     m_emptySelectionMask = std::move(*emptyMask);
 
+    // A single white pixel, which stands in for the images a frame did not produce, such as the
+    // occlusion of a scene drawn without it.
+    core::Result<Image> whitePixel = Image::create(m_device, m_allocator,
+                                              {
+                                                  .format = sceneFormat,
+                                                  .extent = {1, 1},
+                                                  .usage = VK_IMAGE_USAGE_SAMPLED_BIT |
+                                                           VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+                                              });
+    if (!whitePixel)
+    {
+        return std::unexpected(whitePixel.error());
+    }
+    const VkImage whiteHandle = whitePixel->handle();
+    if (core::Result<void> cleared = m_upload.submit([&](VkCommandBuffer commandBuffer) {
+            transitionImage(commandBuffer, whiteHandle, ImageState::Undefined, ImageState::TransferDestination);
+            const VkClearColorValue opaque{.float32 = {1.0f, 1.0f, 1.0f, 1.0f}};
+            const VkImageSubresourceRange range{.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .levelCount = 1, .layerCount = 1};
+            vkCmdClearColorImage(commandBuffer, whiteHandle, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &opaque, 1, &range);
+            transitionImage(commandBuffer, whiteHandle, ImageState::TransferDestination, ImageState::ShaderReadOnly);
+        });
+        !cleared)
+    {
+        return cleared;
+    }
+    m_whiteImage = std::move(*whitePixel);
+
+    core::Result<Image> whiteGeneral = Image::create(m_device, m_allocator,
+                                                     {
+                                                         .format = sceneFormat,
+                                                         .extent = {1, 1},
+                                                         .usage = VK_IMAGE_USAGE_SAMPLED_BIT |
+                                                                  VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+                                                     });
+    if (!whiteGeneral)
+    {
+        return std::unexpected(whiteGeneral.error());
+    }
+    const VkImage whiteGeneralHandle = whiteGeneral->handle();
+    if (core::Result<void> cleared = m_upload.submit([&](VkCommandBuffer commandBuffer) {
+            transitionImage(commandBuffer, whiteGeneralHandle, ImageState::Undefined, ImageState::TransferDestination);
+            const VkClearColorValue opaque{.float32 = {1.0f, 1.0f, 1.0f, 1.0f}};
+            const VkImageSubresourceRange range{.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .levelCount = 1, .layerCount = 1};
+            vkCmdClearColorImage(commandBuffer, whiteGeneralHandle, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &opaque, 1, &range);
+            // The bloom descriptors name the general layout, whether the chain was built or not.
+            transitionImage(commandBuffer, whiteGeneralHandle, ImageState::TransferDestination, ImageState::GeneralRead);
+        });
+        !cleared)
+    {
+        return cleared;
+    }
+    m_whiteGeneralImage = std::move(*whiteGeneral);
+
     m_defaultMaterial = m_materials.insert(MaterialDesc{
         .baseColorFactor = {0.72f, 0.74f, 0.78f, 1.0f},
         .roughnessFactor = 0.6f,
@@ -729,10 +806,6 @@ core::Result<void> VulkanRenderer::createDefaultResources()
                                   m_whiteTexture->image.view());
     m_environmentBound = true;
 
-    if (m_samples != VK_SAMPLE_COUNT_1_BIT)
-    {
-        DEVEX_LOG_DEBUG("Scene rendered with {}x multisampling", static_cast<std::uint32_t>(m_samples));
-    }
     return createScenePipelines();
 }
 
@@ -748,11 +821,48 @@ core::Result<void> VulkanRenderer::createScenePipelines()
         .pushConstantSize = sizeof(DrawPushConstants),
         .colorFormat = sceneFormat,
         .depthFormat = depthFormat,
-        .samples = m_samples,
+        // The prepass already wrote the nearest depth: only the surface that reaches it is shaded.
+        .depthWrite = false,
     };
     core::Result<Pipeline> mesh = createGraphicsPipeline(device, meshConfig);
     meshConfig.cullMode = VK_CULL_MODE_NONE;
     core::Result<Pipeline> doubleSided = createGraphicsPipeline(device, meshConfig);
+
+    // Blended surfaces are drawn over the scene: they test the depth of what is already there but
+    // do not write their own, so that two of them still blend with each other.
+    GraphicsPipelineConfig transparentConfig = meshConfig;
+    transparentConfig.alphaBlend = true;
+    transparentConfig.depthWrite = false;
+    transparentConfig.cullMode = VK_CULL_MODE_BACK_BIT;
+    core::Result<Pipeline> transparent = createGraphicsPipeline(device, transparentConfig);
+    transparentConfig.cullMode = VK_CULL_MODE_NONE;
+    core::Result<Pipeline> transparentDoubleSided = createGraphicsPipeline(device, transparentConfig);
+
+    // The prepass writes the depth, the motion and the normals; the shading pass then keeps only
+    // what it left, which it tests against without writing depth again.
+    const std::array<VkFormat, 2> prepassFormats{velocityFormat, normalFormat};
+    GraphicsPipelineConfig prepassConfig{
+        .shaderPath = m_shaderDirectory / "prepass.spv",
+        .setLayouts = bothSets,
+        .pushConstantSize = sizeof(PrepassPushConstants),
+        .colorFormats = prepassFormats,
+        .depthFormat = depthFormat,
+    };
+    core::Result<Pipeline> prepass = createGraphicsPipeline(device, prepassConfig);
+    prepassConfig.cullMode = VK_CULL_MODE_NONE;
+    core::Result<Pipeline> prepassDoubleSided = createGraphicsPipeline(device, prepassConfig);
+
+    // The occlusion is measured from the depth and the normals the prepass left.
+    core::Result<Pipeline> ambientOcclusion = createGraphicsPipeline(
+        device, {
+                    .shaderPath = m_shaderDirectory / "ao.spv",
+                    .setLayouts = bothSets,
+                    .pushConstantSize = sizeof(AoPushConstants),
+                    .colorFormat = occlusionFormat,
+                    .cullMode = VK_CULL_MODE_NONE,
+                    .depthTest = false,
+                    .depthWrite = false,
+                });
 
     core::Result<Pipeline> shadow = createGraphicsPipeline(
         device, {
@@ -774,7 +884,6 @@ core::Result<void> VulkanRenderer::createScenePipelines()
                     .pushConstantSize = sizeof(SkyPushConstants),
                     .colorFormat = sceneFormat,
                     .depthFormat = depthFormat,
-                    .samples = m_samples,
                     .cullMode = VK_CULL_MODE_NONE,
                     .depthWrite = false,
                 });
@@ -812,7 +921,9 @@ core::Result<void> VulkanRenderer::createScenePipelines()
                     .depthWrite = false,
                 });
 
-    for (core::Result<Pipeline>* result : {&mesh, &doubleSided, &shadow, &sky, &luminance, &pick, &selectionMask})
+    for (core::Result<Pipeline>* result : {&mesh, &doubleSided, &transparent, &transparentDoubleSided,
+                                          &prepass, &prepassDoubleSided, &ambientOcclusion, &shadow,
+                                          &sky, &luminance, &pick, &selectionMask})
     {
         if (!*result)
         {
@@ -821,6 +932,11 @@ core::Result<void> VulkanRenderer::createScenePipelines()
     }
     m_meshPipeline = std::move(*mesh);
     m_doubleSidedPipeline = std::move(*doubleSided);
+    m_transparentPipeline = std::move(*transparent);
+    m_transparentDoubleSidedPipeline = std::move(*transparentDoubleSided);
+    m_prepassPipeline = std::move(*prepass);
+    m_prepassDoubleSidedPipeline = std::move(*prepassDoubleSided);
+    m_aoPipeline = std::move(*ambientOcclusion);
     m_shadowPipeline = std::move(*shadow);
     m_skyPipeline = std::move(*sky);
     m_luminancePipeline = std::move(*luminance);
@@ -865,6 +981,38 @@ core::Result<void> VulkanRenderer::createTargetPipelines(VkFormat format)
     GraphicsPipelineConfig triangleConfig = overlay;
     triangleConfig.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
     core::Result<Pipeline> overlayTriangles = createGraphicsPipeline(device, triangleConfig);
+    // The bloom halves the image a few times, then adds the halves back up.
+    const GraphicsPipelineConfig bloomConfig{
+        .shaderPath = m_shaderDirectory / "bloom.spv",
+        .fragmentEntry = "downsampleFragment",
+        .setLayouts = bothSets,
+        .pushConstantSize = sizeof(BloomPushConstants),
+        .colorFormat = sceneFormat,
+        .cullMode = VK_CULL_MODE_NONE,
+        .depthTest = false,
+        .depthWrite = false,
+    };
+    core::Result<Pipeline> bloomDown = createGraphicsPipeline(device, bloomConfig);
+    GraphicsPipelineConfig thresholdConfig = bloomConfig;
+    thresholdConfig.fragmentEntry = "thresholdFragment";
+    core::Result<Pipeline> bloomThreshold = createGraphicsPipeline(device, thresholdConfig);
+    GraphicsPipelineConfig upsampleConfig = bloomConfig;
+    upsampleConfig.fragmentEntry = "upsampleFragment";
+    upsampleConfig.additiveBlend = true;
+    core::Result<Pipeline> bloomUp = createGraphicsPipeline(device, upsampleConfig);
+
+    // Temporal antialiasing resolves the scene into the image the tonemapping then reads.
+    core::Result<Pipeline> taa = createGraphicsPipeline(
+        device, {
+                    .shaderPath = m_shaderDirectory / "taa.spv",
+                    .setLayouts = bothSets,
+                    .pushConstantSize = sizeof(TaaPushConstants),
+                    .colorFormat = sceneFormat,
+                    .cullMode = VK_CULL_MODE_NONE,
+                    .depthTest = false,
+                    .depthWrite = false,
+                });
+
     // The interface is drawn flat over the image, with its own vertices and no depth at all.
     core::Result<Pipeline> interface = createGraphicsPipeline(
         device, {
@@ -886,7 +1034,8 @@ core::Result<void> VulkanRenderer::createTargetPipelines(VkFormat format)
     core::Result<Pipeline> outline = createGraphicsPipeline(device, outlineConfig);
 
     for (core::Result<Pipeline>* result :
-         {&tonemap, &sceneLines, &overlayLines, &overlayTriangles, &outline, &interface})
+         {&tonemap, &sceneLines, &overlayLines, &overlayTriangles, &outline, &interface, &taa,
+          &bloomDown, &bloomUp, &bloomThreshold})
     {
         if (!*result)
         {
@@ -899,6 +1048,10 @@ core::Result<void> VulkanRenderer::createTargetPipelines(VkFormat format)
     m_overlayTrianglePipeline = std::move(*overlayTriangles);
     m_outlinePipeline = std::move(*outline);
     m_uiPipeline = std::move(*interface);
+    m_taaPipeline = std::move(*taa);
+    m_bloomThresholdPipeline = std::move(*bloomThreshold);
+    m_bloomDownsamplePipeline = std::move(*bloomDown);
+    m_bloomUpsamplePipeline = std::move(*bloomUp);
     return {};
 }
 
@@ -1284,15 +1437,25 @@ void VulkanRenderer::writeSceneData(FrameContext& frame,
     const float aspectRatio = static_cast<float>(extent.width) / static_cast<float>(extent.height);
     const RenderCamera& camera = m_world.camera;
     const math::Mat4 projection = projectionMatrix(camera, aspectRatio);
+    // The jitter moves the whole image by a fraction of a pixel, so that the frames that follow
+    // each other end up covering the pixel evenly.
+    math::Mat4 jittered = projection;
+    jittered[2][0] += m_jitter.x;
+    jittered[2][1] += m_jitter.y;
 
     math::Mat4 rotationOnly = camera.view;
     rotationOnly[3] = math::Vec4{0.0f, 0.0f, 0.0f, 1.0f};
 
     GpuSceneData scene;
-    scene.viewProjection = projection * camera.view;
+    scene.viewProjection = jittered * camera.view;
+    scene.unjitteredViewProjection = projection * camera.view;
+    scene.previousViewProjection = m_previousViewProjection;
+    scene.inverseViewProjection = math::inverse(scene.unjitteredViewProjection);
+    m_unjitteredViewProjection = scene.unjitteredViewProjection;
     scene.view = camera.view;
     scene.skyInverseViewProjection = math::inverse(projection * rotationOnly);
     scene.cameraPosition = math::Vec3(math::inverse(camera.view)[3]);
+    m_cameraPosition = scene.cameraPosition;
     scene.exposure = exposureFromEv100(m_ev100);
     frame.exposure = scene.exposure;
 
@@ -1345,15 +1508,64 @@ void VulkanRenderer::writeSceneData(FrameContext& frame,
     std::memcpy(frame.sceneData->mappedBytes().data(), &scene, sizeof(scene));
 }
 
+bool VulkanRenderer::isBlended(const MeshInstance& instance) const noexcept
+{
+    const MaterialDesc* const material = m_materials.find(instance.material);
+    return material != nullptr && material->alphaMode == asset::AlphaMode::Blend;
+}
+
+std::span<const std::uint32_t> VulkanRenderer::instancesOf(MeshPass pass) const
+{
+    m_passInstances.clear();
+    if (pass != MeshPass::Transparent)
+    {
+        for (std::uint32_t index = 0; index < m_world.meshes.size(); ++index)
+        {
+            // Blended surfaces have their own pass, and cast no shadow: a pane of glass that
+            // darkened the ground under it would look like a wall.
+            const bool skipped = (pass == MeshPass::Scene || pass == MeshPass::Shadow ||
+                                  pass == MeshPass::Prepass) &&
+                                 isBlended(m_world.meshes[index]);
+            if (!skipped)
+            {
+                m_passInstances.push_back(index);
+            }
+        }
+        return m_passInstances;
+    }
+
+    // Farthest first: with no depth written, the order of the draws is the order of the blending.
+    m_transparentOrder.clear();
+    for (std::uint32_t index = 0; index < m_world.meshes.size(); ++index)
+    {
+        if (!isBlended(m_world.meshes[index]))
+        {
+            continue;
+        }
+        const math::Vec3 centre = math::Vec3(m_world.meshes[index].transform[3]);
+        const math::Vec3 toCamera = centre - m_cameraPosition;
+        m_transparentOrder.emplace_back(math::dot(toCamera, toCamera), index);
+    }
+    std::ranges::sort(m_transparentOrder, std::greater{}, &std::pair<float, std::uint32_t>::first);
+    for (const auto& [distance, index] : m_transparentOrder)
+    {
+        static_cast<void>(distance);
+        m_passInstances.push_back(index);
+    }
+    return m_passInstances;
+}
+
 std::uint32_t VulkanRenderer::drawMeshes(VkCommandBuffer commandBuffer, VkDeviceAddress sceneData,
                                          VkDeviceAddress boneMatrices, MeshPass pass,
-                                         std::uint32_t cascade, std::uint32_t frameSlot) const
+                                         std::uint32_t cascade, std::uint32_t frameSlot,
+                                         VkDeviceAddress previousBones) const
 {
     const std::array sets{m_descriptors->global(), m_descriptors->frame(frameSlot)};
     const Pipeline* boundPipeline = nullptr;
     std::uint32_t drawCalls = 0;
-    for (const MeshInstance& instance : m_world.meshes)
+    for (const std::uint32_t index : instancesOf(pass))
     {
+        const MeshInstance& instance = m_world.meshes[index];
         if (pass == MeshPass::SelectionMask && !instance.outlined)
         {
             continue;
@@ -1370,8 +1582,16 @@ std::uint32_t VulkanRenderer::drawMeshes(VkCommandBuffer commandBuffer, VkDevice
         const Pipeline* pipeline = nullptr;
         switch (pass)
         {
+        case MeshPass::Prepass:
+            pipeline = material != nullptr && material->doubleSided ? &*m_prepassDoubleSidedPipeline
+                                                                    : &*m_prepassPipeline;
+            break;
         case MeshPass::Scene:
             pipeline = material != nullptr && material->doubleSided ? &*m_doubleSidedPipeline : &*m_meshPipeline;
+            break;
+        case MeshPass::Transparent:
+            pipeline = material != nullptr && material->doubleSided ? &*m_transparentDoubleSidedPipeline
+                                                                    : &*m_transparentPipeline;
             break;
         case MeshPass::Shadow:
             pipeline = &*m_shadowPipeline;
@@ -1387,8 +1607,10 @@ std::uint32_t VulkanRenderer::drawMeshes(VkCommandBuffer commandBuffer, VkDevice
         {
             vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->handle());
             // Only the scene pass reads the images of the frame set.
+            const bool lit = pass == MeshPass::Scene || pass == MeshPass::Transparent ||
+                             pass == MeshPass::Prepass;
             vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->layout(), 0,
-                                    pass == MeshPass::Scene ? 2u : 1u, sets.data(), 0, nullptr);
+                                    lit ? 2u : 1u, sets.data(), 0, nullptr);
             boundPipeline = pipeline;
         }
 
@@ -1405,9 +1627,29 @@ std::uint32_t VulkanRenderer::drawMeshes(VkCommandBuffer commandBuffer, VkDevice
             .skin = skinned ? mesh->skin->deviceAddress() : 0,
             .bones = skinned ? boneMatrices + instance.firstBone * sizeof(math::Mat4) : 0,
         };
-        vkCmdPushConstants(commandBuffer, pipeline->layout(),
-                           VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
-                           sizeof(constants), &constants);
+        if (pass == MeshPass::Prepass)
+        {
+            const std::uint64_t key = instanceKey(instance);
+            const auto previous = m_previousTransforms.find(key);
+            const auto previousBone = m_previousFirstBone.find(key);
+            const PrepassPushConstants prepassConstants{
+                .draw = constants,
+                .previousWorld = previous != m_previousTransforms.end() ? previous->second
+                                                                        : instance.transform,
+                .previousBones = skinned && previousBones != 0 && previousBone != m_previousFirstBone.end()
+                                     ? previousBones + previousBone->second * sizeof(math::Mat4)
+                                     : constants.bones,
+            };
+            vkCmdPushConstants(commandBuffer, pipeline->layout(),
+                               VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+                               sizeof(prepassConstants), &prepassConstants);
+        }
+        else
+        {
+            vkCmdPushConstants(commandBuffer, pipeline->layout(),
+                               VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+                               sizeof(constants), &constants);
+        }
         const SubmeshRange& submesh = mesh->submeshes[instance.submesh];
         vkCmdBindIndexBuffer(commandBuffer, mesh->indices.handle(), 0, VK_INDEX_TYPE_UINT32);
         vkCmdDrawIndexed(commandBuffer, submesh.indexCount, 1, submesh.firstIndex, 0, 0);
@@ -1431,7 +1673,6 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
     const math::Extent2D extent = m_sceneExtent;
     const math::Extent2D windowExtent = m_swapchain->extent();
     const VkFormat targetFormat = m_swapchain->format();
-    const bool multisampled = m_samples != VK_SAMPLE_COUNT_1_BIT;
     const bool toViewport = m_world.viewport.width > 0 && m_world.viewport.height > 0;
     const bool outlines = std::ranges::any_of(m_world.meshes, &MeshInstance::outlined);
     const bool drawOverlay = outlines || !m_world.sceneLines.empty() || !m_world.overlayLines.empty() ||
@@ -1463,24 +1704,43 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
     const std::size_t depthIndex = create({
         .format = depthFormat,
         .extent = extent,
-        .usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
-        .samples = m_samples,
+        .usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
     });
-    const std::size_t multisampledColorIndex = multisampled ? create({
-                                                                  .format = sceneFormat,
-                                                                  .extent = extent,
-                                                                  .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
-                                                                  .samples = m_samples,
-                                                              })
-                                                            : sceneColorIndex;
-    // The overlay tests lines against single-sampled depth: sample zero of the scene depth.
-    const bool resolveDepth = drawOverlay && multisampled;
-    const std::size_t resolvedDepthIndex = resolveDepth ? create({
-                                                              .format = depthFormat,
-                                                              .extent = extent,
-                                                              .usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
-                                                          })
-                                                        : depthIndex;
+    const std::size_t velocityIndex = create({
+        .format = velocityFormat,
+        .extent = extent,
+        .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+    });
+    const std::size_t normalIndex = create({
+        .format = normalFormat,
+        .extent = extent,
+        .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+    });
+    // Every level halves the one before it, down to a few pixels.
+    const bool bloomed = m_world.camera.bloom > 0.0f;
+    std::array<std::size_t, DescriptorSets::bloomLevels> bloomIndices{};
+    std::array<math::Extent2D, DescriptorSets::bloomLevels> bloomExtents{};
+    for (std::uint32_t level = 0; level < DescriptorSets::bloomLevels; ++level)
+    {
+        bloomExtents[level] = {std::max(extent.width >> (level + 1), 1u),
+                               std::max(extent.height >> (level + 1), 1u)};
+        bloomIndices[level] = bloomed ? create({
+                                            .format = sceneFormat,
+                                            .extent = bloomExtents[level],
+                                            .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+                                                     VK_IMAGE_USAGE_SAMPLED_BIT,
+                                        })
+                                      : 0;
+    }
+
+    const bool occluded = m_world.camera.ambientOcclusion > 0.0f;
+    const std::size_t occlusionIndex = occluded ? create({
+                                                      .format = occlusionFormat,
+                                                      .extent = extent,
+                                                      .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+                                                               VK_IMAGE_USAGE_SAMPLED_BIT,
+                                                  })
+                                                : 0;
     const std::size_t selectionMaskIndex = outlines ? create({
                                                           .format = selectionMaskFormat,
                                                           .extent = extent,
@@ -1523,8 +1783,9 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
     const RenderGraph::ImageId shadowMap = *created[shadowMapIndex];
     const RenderGraph::ImageId sceneColor = *created[sceneColorIndex];
     const RenderGraph::ImageId depth = *created[depthIndex];
-    const RenderGraph::ImageId multisampledColor = *created[multisampledColorIndex];
-    const RenderGraph::ImageId sceneDepth = *created[resolvedDepthIndex];
+    const RenderGraph::ImageId velocity = *created[velocityIndex];
+    const RenderGraph::ImageId normal = *created[normalIndex];
+    const RenderGraph::ImageId sceneDepth = depth;
     const RenderGraph::ImageId target = toViewport ? *created[viewportIndex] : backbuffer;
 
     core::Result<OverlayRanges> overlayRanges = OverlayRanges{};
@@ -1546,17 +1807,41 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
         }
     }
 
+    // The antialiasing reads what the previous frame resolved and writes what this one resolves;
+    // the two swap every frame, which the frame slot already alternates with.
+    const bool antialiased = m_world.camera.antialiasing == Antialiasing::Temporal;
+    const std::size_t writeSlot = frameSlot % m_history.size();
+    const std::size_t readSlot = (writeSlot + 1) % m_history.size();
+    const RenderGraph::ImageId historyRead =
+        graph.importImage(m_history[readSlot]->handle(), m_history[readSlot]->view(), sceneFormat,
+                          m_historyStates[readSlot]);
+    const RenderGraph::ImageId historyWrite =
+        graph.importImage(m_history[writeSlot]->handle(), m_history[writeSlot]->view(), sceneFormat,
+                          m_historyStates[writeSlot]);
+
     // The frame set points at this frame's transient images.
     const VkImageView selectionMaskView =
         outlines ? graph.view(*created[selectionMaskIndex]) : m_emptySelectionMask->view();
-    if (frame.boundShadowMap != graph.view(shadowMap) || frame.boundSceneColor != graph.view(sceneColor) ||
-        frame.boundSelectionMask != selectionMaskView)
+    DescriptorSets::FrameImages images{
+        .shadowMap = graph.view(shadowMap),
+        .sceneColor = graph.view(sceneColor),
+        .selectionMask = selectionMaskView,
+        .velocity = graph.view(velocity),
+        .normal = graph.view(normal),
+        .ambientOcclusion = occluded ? graph.view(*created[occlusionIndex]) : m_whiteImage->view(),
+        .history = m_history[readSlot]->view(),
+        .depth = graph.view(depth),
+        .resolved = antialiased ? m_history[writeSlot]->view() : graph.view(sceneColor),
+    };
+    for (std::uint32_t level = 0; level < DescriptorSets::bloomLevels; ++level)
     {
-        frame.boundShadowMap = graph.view(shadowMap);
-        frame.boundSceneColor = graph.view(sceneColor);
-        frame.boundSelectionMask = selectionMaskView;
-        m_descriptors->setFrameImages(frameSlot, frame.boundShadowMap, frame.boundSceneColor,
-                                      frame.boundSelectionMask);
+        images.bloom[level] =
+            bloomed ? graph.view(*created[bloomIndices[level]]) : m_whiteGeneralImage->view();
+    }
+    if (frame.boundImages != images)
+    {
+        frame.boundImages = images;
+        m_descriptors->setFrameImages(frameSlot, images);
     }
 
     const VkDeviceAddress sceneData = frame.sceneData->deviceAddress();
@@ -1605,29 +1890,115 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
                       });
     }
 
+    if (core::Result<void> uploaded = uploadPreviousBones(frame); !uploaded)
+    {
+        return std::unexpected(uploaded.error());
+    }
+    const VkDeviceAddress previousBones =
+        frame.previousBones ? frame.previousBones->deviceAddress() : 0;
+    graph.addPass("Prepass",
+                  {{velocity, ImageAccess::ColorAttachment},
+                   {normal, ImageAccess::ColorAttachment},
+                   {depth, ImageAccess::DepthAttachment}},
+                  [&](VkCommandBuffer commands) {
+        const std::array<VkRenderingAttachmentInfo, 2> colorAttachments{
+            VkRenderingAttachmentInfo{
+                .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+                .imageView = graph.view(velocity),
+                .imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+                .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+                .clearValue = {.color = {.float32 = {0.0f, 0.0f, 0.0f, 0.0f}}},
+            },
+            VkRenderingAttachmentInfo{
+                .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+                .imageView = graph.view(normal),
+                .imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+                .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+                .clearValue = {.color = {.float32 = {0.0f, 0.0f, 0.0f, 0.0f}}},
+            },
+        };
+        const VkRenderingAttachmentInfo depthAttachment{
+            .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+            .imageView = graph.view(depth),
+            .imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+            .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+            .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+            .clearValue = {.depthStencil = {.depth = 0.0f}},
+        };
+        const VkRenderingInfo renderingInfo{
+            .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
+            .renderArea = {.extent = {extent.width, extent.height}},
+            .layerCount = 1,
+            .colorAttachmentCount = static_cast<std::uint32_t>(colorAttachments.size()),
+            .pColorAttachments = colorAttachments.data(),
+            .pDepthAttachment = &depthAttachment,
+        };
+        vkCmdBeginRendering(commands, &renderingInfo);
+        setViewport(commands, extent);
+        drawCalls += drawMeshes(commands, sceneData, boneMatrices, MeshPass::Prepass, 0, frameSlot,
+                                previousBones);
+        vkCmdEndRendering(commands);
+    });
+
+    if (occluded)
+    {
+        const RenderGraph::ImageId occlusion = *created[occlusionIndex];
+        graph.addPass("Ambient occlusion",
+                      {{depth, ImageAccess::FragmentRead},
+                       {normal, ImageAccess::FragmentRead},
+                       {occlusion, ImageAccess::ColorAttachment}},
+                      [&](VkCommandBuffer commands) {
+            const VkRenderingAttachmentInfo colorAttachment{
+                .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+                .imageView = graph.view(occlusion),
+                .imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                .loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+                .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+            };
+            const VkRenderingInfo renderingInfo{
+                .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
+                .renderArea = {.extent = {extent.width, extent.height}},
+                .layerCount = 1,
+                .colorAttachmentCount = 1,
+                .pColorAttachments = &colorAttachment,
+            };
+            vkCmdBeginRendering(commands, &renderingInfo);
+            setViewport(commands, extent);
+            vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, m_aoPipeline->handle());
+            vkCmdBindDescriptorSets(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, m_aoPipeline->layout(),
+                                    0, 2, sets.data(), 0, nullptr);
+            const AoPushConstants constants{
+                .scene = sceneData,
+                .radius = std::max(m_world.camera.ambientOcclusionRadius, 0.01f),
+                .intensity = std::clamp(m_world.camera.ambientOcclusion, 0.0f, 1.0f),
+                .frame = static_cast<float>(m_frameIndex % taaSampleCount),
+            };
+            vkCmdPushConstants(commands, m_aoPipeline->layout(),
+                               VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+                               sizeof(constants), &constants);
+            vkCmdDraw(commands, 3, 1, 0, 0);
+            vkCmdEndRendering(commands);
+        });
+    }
+
     std::vector<std::pair<RenderGraph::ImageId, ImageAccess>> sceneAccesses{
-        {multisampledColor, ImageAccess::ColorAttachment},
+        {sceneColor, ImageAccess::ColorAttachment},
         {depth, ImageAccess::DepthAttachment},
         {shadowMap, ImageAccess::FragmentRead},
     };
-    if (multisampled)
+    if (occluded)
     {
-        sceneAccesses.push_back({sceneColor, ImageAccess::ColorAttachment});
-    }
-    if (resolveDepth)
-    {
-        sceneAccesses.push_back({sceneDepth, ImageAccess::DepthResolveAttachment});
+        sceneAccesses.push_back({*created[occlusionIndex], ImageAccess::FragmentRead});
     }
     graph.addPass("Scene", std::move(sceneAccesses), [&](VkCommandBuffer commands) {
         const VkRenderingAttachmentInfo colorAttachment{
             .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-            .imageView = graph.view(multisampledColor),
+            .imageView = graph.view(sceneColor),
             .imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-            .resolveMode = multisampled ? VK_RESOLVE_MODE_AVERAGE_BIT : VK_RESOLVE_MODE_NONE,
-            .resolveImageView = multisampled ? graph.view(sceneColor) : VK_NULL_HANDLE,
-            .resolveImageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
             .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
-            .storeOp = multisampled ? VK_ATTACHMENT_STORE_OP_DONT_CARE : VK_ATTACHMENT_STORE_OP_STORE,
+            .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
             .clearValue = {.color = {.float32 = {0.0f, 0.0f, 0.0f, 1.0f}}},
         };
         // With reversed depth, 0 is infinitely far away.
@@ -1635,12 +2006,8 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
             .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
             .imageView = graph.view(depth),
             .imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
-            .resolveMode = resolveDepth ? VK_RESOLVE_MODE_SAMPLE_ZERO_BIT : VK_RESOLVE_MODE_NONE,
-            .resolveImageView = resolveDepth ? graph.view(sceneDepth) : VK_NULL_HANDLE,
-            .resolveImageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
-            .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
-            .storeOp = drawOverlay && !multisampled ? VK_ATTACHMENT_STORE_OP_STORE : VK_ATTACHMENT_STORE_OP_DONT_CARE,
-            .clearValue = {.depthStencil = {.depth = 0.0f}},
+            .loadOp = VK_ATTACHMENT_LOAD_OP_LOAD,
+            .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
         };
         const VkRenderingInfo renderingInfo{
             .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
@@ -1661,6 +2028,9 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
         vkCmdPushConstants(commands, m_skyPipeline->layout(),
                            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(sky), &sky);
         vkCmdDraw(commands, 3, 1, 0, 0);
+
+        // The blended surfaces come last, over the sky as over everything else.
+        drawCalls += drawMeshes(commands, sceneData, boneMatrices, MeshPass::Transparent, 0, frameSlot);
         vkCmdEndRendering(commands);
     });
 
@@ -1755,7 +2125,166 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
                       });
     }
 
-    graph.addPass("Tonemap", {{sceneColor, ImageAccess::FragmentRead}, {target, ImageAccess::ColorAttachment}},
+    if (antialiased)
+    {
+        graph.addPass("Antialiasing",
+                      {{sceneColor, ImageAccess::FragmentRead},
+                       {depth, ImageAccess::FragmentRead},
+                       {*created[velocityIndex], ImageAccess::FragmentRead},
+                       {historyRead, ImageAccess::FragmentRead},
+                       {historyWrite, ImageAccess::ColorAttachment}},
+                      [&](VkCommandBuffer commands) {
+            const VkRenderingAttachmentInfo colorAttachment{
+                .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+                .imageView = graph.view(historyWrite),
+                .imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                .loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+                .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+            };
+            const VkRenderingInfo renderingInfo{
+                .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
+                .renderArea = {.extent = {extent.width, extent.height}},
+                .layerCount = 1,
+                .colorAttachmentCount = 1,
+                .pColorAttachments = &colorAttachment,
+            };
+            vkCmdBeginRendering(commands, &renderingInfo);
+            setViewport(commands, extent);
+            vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, m_taaPipeline->handle());
+            vkCmdBindDescriptorSets(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, m_taaPipeline->layout(),
+                                    0, 2, sets.data(), 0, nullptr);
+            const TaaPushConstants constants{
+                .blend = taaBlend,
+                .historyValid = m_historyValid ? 1.0f : 0.0f,
+                .texelWidth = 1.0f / static_cast<float>(extent.width),
+                .texelHeight = 1.0f / static_cast<float>(extent.height),
+            };
+            vkCmdPushConstants(commands, m_taaPipeline->layout(),
+                               VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+                               sizeof(constants), &constants);
+            vkCmdDraw(commands, 3, 1, 0, 0);
+            vkCmdEndRendering(commands);
+        });
+    }
+
+    if (bloomed)
+    {
+        // Every level of the chain is named by one descriptor, so they all have to be in the
+        // general layout before any pass that binds it runs, even the ones written later.
+        std::vector<std::pair<RenderGraph::ImageId, ImageAccess>> chainAccesses;
+        for (const std::size_t index : bloomIndices)
+        {
+            chainAccesses.push_back({*created[index], ImageAccess::GeneralRead});
+        }
+        graph.addPass("Bloom chain", std::move(chainAccesses), {});
+
+        // Each step reads the level above it, and the last ones add themselves back into it.
+        const RenderGraph::ImageId resolved = antialiased ? historyWrite : sceneColor;
+        const auto blur = [&](const Pipeline& pipeline, RenderGraph::ImageId source,
+                              RenderGraph::ImageId destination, math::Extent2D sourceExtent,
+                              math::Extent2D destinationExtent, std::uint32_t sourceLevel,
+                              float strength, bool clear) {
+            graph.addPass("Bloom",
+                          {{source, ImageAccess::GeneralRead},
+                           {destination, ImageAccess::GeneralAttachment}},
+                          // The pass runs once the graph replays it, when the arguments of this
+                          // call are long gone: everything it needs is taken by value.
+                          [&graph, &sets, &setViewport, used = &pipeline, sourceLevel, strength,
+                           clear, destination, destinationExtent,
+                           sourceExtent](VkCommandBuffer commands) {
+                const VkRenderingAttachmentInfo colorAttachment{
+                    .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+                    .imageView = graph.view(destination),
+                    .imageLayout = VK_IMAGE_LAYOUT_GENERAL,
+                    .loadOp = clear ? VK_ATTACHMENT_LOAD_OP_DONT_CARE : VK_ATTACHMENT_LOAD_OP_LOAD,
+                    .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+                };
+                const VkRenderingInfo renderingInfo{
+                    .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
+                    .renderArea = {.extent = {destinationExtent.width, destinationExtent.height}},
+                    .layerCount = 1,
+                    .colorAttachmentCount = 1,
+                    .pColorAttachments = &colorAttachment,
+                };
+                vkCmdBeginRendering(commands, &renderingInfo);
+                setViewport(commands, destinationExtent);
+                vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, used->handle());
+                vkCmdBindDescriptorSets(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, used->layout(), 0,
+                                        2, sets.data(), 0, nullptr);
+                const BloomPushConstants constants{
+                    .source = sourceLevel,
+                    .texelWidth = 1.0f / static_cast<float>(sourceExtent.width),
+                    .texelHeight = 1.0f / static_cast<float>(sourceExtent.height),
+                    .strength = strength,
+                };
+                vkCmdPushConstants(commands, used->layout(),
+                                   VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+                                   sizeof(constants), &constants);
+                vkCmdDraw(commands, 3, 1, 0, 0);
+                vkCmdEndRendering(commands);
+            });
+        };
+
+        // The first step reads the resolved image, which the chain does not hold.
+        graph.addPass("Bloom",
+                      {{resolved, ImageAccess::FragmentRead},
+                       {*created[bloomIndices[0]], ImageAccess::GeneralAttachment}},
+                      [&](VkCommandBuffer commands) {
+            const VkRenderingAttachmentInfo colorAttachment{
+                .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+                .imageView = graph.view(*created[bloomIndices[0]]),
+                .imageLayout = VK_IMAGE_LAYOUT_GENERAL,
+                .loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+                .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+            };
+            const VkRenderingInfo renderingInfo{
+                .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
+                .renderArea = {.extent = {bloomExtents[0].width, bloomExtents[0].height}},
+                .layerCount = 1,
+                .colorAttachmentCount = 1,
+                .pColorAttachments = &colorAttachment,
+            };
+            vkCmdBeginRendering(commands, &renderingInfo);
+            setViewport(commands, bloomExtents[0]);
+            vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                              m_bloomThresholdPipeline->handle());
+            vkCmdBindDescriptorSets(commands, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                    m_bloomThresholdPipeline->layout(), 0, 2, sets.data(), 0, nullptr);
+            const BloomPushConstants constants{
+                .texelWidth = 1.0f / static_cast<float>(extent.width),
+                .texelHeight = 1.0f / static_cast<float>(extent.height),
+                .strength = m_world.camera.bloomThreshold,
+            };
+            vkCmdPushConstants(commands, m_bloomThresholdPipeline->layout(),
+                               VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+                               sizeof(constants), &constants);
+            vkCmdDraw(commands, 3, 1, 0, 0);
+            vkCmdEndRendering(commands);
+        });
+
+        for (std::uint32_t level = 1; level < DescriptorSets::bloomLevels; ++level)
+        {
+            blur(*m_bloomDownsamplePipeline, *created[bloomIndices[level - 1]],
+                 *created[bloomIndices[level]], bloomExtents[level - 1], bloomExtents[level],
+                 level - 1, 1.0f, true);
+        }
+        for (std::uint32_t level = DescriptorSets::bloomLevels - 1; level > 0; --level)
+        {
+            blur(*m_bloomUpsamplePipeline, *created[bloomIndices[level]],
+                 *created[bloomIndices[level - 1]], bloomExtents[level], bloomExtents[level - 1],
+                 level, 1.0f, false);
+        }
+    }
+
+    std::vector<std::pair<RenderGraph::ImageId, ImageAccess>> tonemapAccesses{
+        {antialiased ? historyWrite : sceneColor, ImageAccess::FragmentRead},
+        {target, ImageAccess::ColorAttachment},
+    };
+    if (bloomed)
+    {
+        tonemapAccesses.push_back({*created[bloomIndices[0]], ImageAccess::GeneralRead});
+    }
+    graph.addPass("Tonemap", std::move(tonemapAccesses),
                   [&](VkCommandBuffer commands) {
                       const VkRenderingAttachmentInfo colorAttachment{
                           .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
@@ -1776,8 +2305,19 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
                       vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, m_tonemapPipeline->handle());
                       vkCmdBindDescriptorSets(commands, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                               m_tonemapPipeline->layout(), 0, 2, sets.data(), 0, nullptr);
+                      const GpuTexture* const colorTable = m_textures.find(m_world.camera.colorTable);
                       const TonemapPushConstants tonemap{
                           .tonemapper = static_cast<std::uint32_t>(m_world.camera.tonemapper),
+                          .bloom = bloomed ? m_world.camera.bloom : 0.0f,
+                          .vignette = std::clamp(m_world.camera.vignette, 0.0f, 1.0f),
+                          .grain = std::max(m_world.camera.grain, 0.0f),
+                          .chromatic = std::max(m_world.camera.chromaticAberration, 0.0f),
+                          .time = static_cast<float>(m_frameIndex % 1024),
+                          .colorTable = colorTable != nullptr ? colorTable->slot : whiteTextureSlot,
+                          // A strip of squares is as tall as one step of the table.
+                          .colorTableSize = colorTable != nullptr
+                                                ? static_cast<float>(colorTable->image.extent().height)
+                                                : 0.0f,
                       };
                       vkCmdPushConstants(commands, m_tonemapPipeline->layout(),
                                          VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
@@ -1978,6 +2518,70 @@ void VulkanRenderer::readPickResult(FrameContext& frame)
     frame.pickRequest.reset();
 }
 
+core::Result<void> VulkanRenderer::ensureHistory()
+{
+    if (m_historyExtent == m_sceneExtent && m_history[0] && m_history[1])
+    {
+        return {};
+    }
+    // Frames in flight may still read the previous images; they go once their frames are done.
+    DEVEX_VK_TRY(vkDeviceWaitIdle, m_device.handle());
+    for (std::size_t index = 0; index < m_history.size(); ++index)
+    {
+        core::Result<Image> image = Image::create(m_device, m_allocator,
+                                                  {
+                                                      .format = sceneFormat,
+                                                      .extent = m_sceneExtent,
+                                                      .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+                                                               VK_IMAGE_USAGE_SAMPLED_BIT,
+                                                  });
+        if (!image)
+        {
+            return std::unexpected(image.error());
+        }
+        m_history[index] = std::move(*image);
+        m_historyStates[index] = ImageState::Undefined;
+    }
+    m_historyExtent = m_sceneExtent;
+    // Nothing was resolved into them yet.
+    m_historyValid = false;
+    return {};
+}
+
+core::Result<void> VulkanRenderer::uploadPreviousBones(FrameContext& frame) const
+{
+    const VkDeviceSize bytes =
+        std::max<std::size_t>(m_previousBoneMatrices.size(), 1) * sizeof(math::Mat4);
+    if (core::Result<void> ensured = ensureHostBuffer(frame.previousBones, bytes); !ensured)
+    {
+        return ensured;
+    }
+    if (!m_previousBoneMatrices.empty())
+    {
+        std::memcpy(frame.previousBones->mappedBytes().data(), m_previousBoneMatrices.data(),
+                    m_previousBoneMatrices.size() * sizeof(math::Mat4));
+    }
+    return {};
+}
+
+void VulkanRenderer::rememberFrame()
+{
+    m_previousViewProjection = m_unjitteredViewProjection;
+    // Instances that are gone are forgotten, so that the map follows the scene.
+    m_previousTransforms.clear();
+    m_previousFirstBone.clear();
+    for (const MeshInstance& instance : m_world.meshes)
+    {
+        const std::uint64_t key = instanceKey(instance);
+        m_previousTransforms.insert_or_assign(key, instance.transform);
+        if (instance.boneCount > 0)
+        {
+            m_previousFirstBone.insert_or_assign(key, instance.firstBone);
+        }
+    }
+    m_previousBoneMatrices = m_world.boneMatrices;
+}
+
 core::Result<void> VulkanRenderer::uploadUi(FrameContext& frame)
 {
     const std::size_t vertexBytes = std::max<std::size_t>(m_world.uiVertices.size(), 1) * sizeof(GpuUiVertex);
@@ -2077,7 +2681,6 @@ RendererStats VulkanRenderer::stats() const noexcept
         .materialCount = m_materials.size() - 1,
         .lightCount = m_lastLightCount,
         .ev100 = m_ev100,
-        .msaaSamples = static_cast<std::uint32_t>(m_samples),
         .swapchainExtent = m_swapchain ? m_swapchain->extent() : math::Extent2D{},
         .sceneExtent = m_sceneExtent,
     };

@@ -26,6 +26,16 @@ void extractScene(scene::Scene& scene, AssetManager& assets, render::RenderWorld
                 .maxEv100 = camera.maxEv100,
                 .adaptationSpeed = camera.adaptationSpeed,
                 .tonemapper = static_cast<render::Tonemapper>(camera.tonemapper),
+                .antialiasing = static_cast<render::Antialiasing>(camera.antialiasing),
+                .ambientOcclusion = camera.ambientOcclusion,
+                .ambientOcclusionRadius = camera.ambientOcclusionRadius,
+                .bloom = camera.bloom,
+                .bloomThreshold = camera.bloomThreshold,
+                .vignette = camera.vignette,
+                .grain = camera.grain,
+                .chromaticAberration = camera.chromaticAberration,
+                .colorTable = camera.colorTable.isValid() ? assets.texture(camera.colorTable)
+                                                          : render::TextureHandle{},
             };
             break;
         }

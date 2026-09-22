@@ -49,6 +49,14 @@ min_ev100 = -2
 max_ev100 = 18
 adaptation_speed = 1.5
 tonemapper = "agx"
+antialiasing = "temporal"
+ambient_occlusion = 1
+ambient_occlusion_radius = 0.4
+bloom = 0.06
+bloom_threshold = 1
+vignette = 0.25
+grain = 0.012
+chromatic_aberration = 0.0015
 
 [component type="FlyCamera"]
 speed = 4
@@ -400,6 +408,49 @@ material = asset("00000000-0000-0000-0000-000000000000")
 
 [component type="SceneSwitch"]
 scene = asset("fe6829dd-6137-4a9c-82e3-9fa4579868fe")
+
+[entity uuid="7e1b0a00-0002-4000-9000-000000000001" name="Glass"]
+
+[component type="Transform"]
+position = vec3(0, 0, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="7e1b0a00-0002-4000-9000-000000000002" name="Pane 1"]
+parent = "7e1b0a00-0002-4000-9000-000000000001"
+
+[component type="Transform"]
+position = vec3(-2.5, 0.65, 2.6)
+rotation = quat(0, -0.174108, 0, 0.984727)
+scale = vec3(2.2, 1.2, 0.06)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("5c8e2b41-9a07-4d63-8f1c-2e6b7d0a4f92")
+
+[entity uuid="7e1b0a00-0002-4000-9000-000000000003" name="Pane 2"]
+parent = "7e1b0a00-0002-4000-9000-000000000001"
+
+[component type="Transform"]
+position = vec3(0.0, 0.75, 1.8)
+rotation = quat(0, 0.000000, 0, 1.000000)
+scale = vec3(2.2, 1.4, 0.06)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("5c8e2b41-9a07-4d63-8f1c-2e6b7d0a4f92")
+
+[entity uuid="7e1b0a00-0002-4000-9000-000000000004" name="Pane 3"]
+parent = "7e1b0a00-0002-4000-9000-000000000001"
+
+[component type="Transform"]
+position = vec3(2.5, 0.65, 1.0)
+rotation = quat(0, 0.174108, 0, 0.984727)
+scale = vec3(2.2, 1.2, 0.06)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("5c8e2b41-9a07-4d63-8f1c-2e6b7d0a4f92")
 
 [entity uuid="7e1b0a00-0001-4000-9000-000000000001" name="Interface"]
 

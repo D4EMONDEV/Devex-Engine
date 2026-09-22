@@ -21,6 +21,10 @@ namespace {
         return ImageState::ComputeReadOnly;
     case ImageAccess::ComputeWrite:
         return ImageState::ComputeStorage;
+    case ImageAccess::GeneralRead:
+        return ImageState::GeneralRead;
+    case ImageAccess::GeneralAttachment:
+        return ImageState::GeneralAttachment;
     case ImageAccess::TransferRead:
         return ImageState::TransferSource;
     case ImageAccess::Present:

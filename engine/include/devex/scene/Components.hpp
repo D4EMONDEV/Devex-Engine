@@ -40,6 +40,15 @@ struct MeshRenderer
 };
 DEVEX_DECLARE_REFLECTION(MeshRenderer);
 
+// How the jagged edges of the image are smoothed.
+enum class Antialiasing : std::uint8_t
+{
+    None,
+    // Every frame is drawn a fraction of a pixel aside and mixed with the previous ones, which
+    // smooths the edges without drawing anything twice.
+    Temporal,
+};
+
 // Maps high dynamic range scene colors to the display.
 enum class Tonemapper : std::uint8_t
 {
@@ -71,6 +80,25 @@ struct Camera
     // How fast automatic exposure converges, as a rate per second.
     float adaptationSpeed = 1.5f;
     Tonemapper tonemapper = Tonemapper::AgX;
+    Antialiasing antialiasing = Antialiasing::Temporal;
+
+    // Darkens the ambient light where a surface sits in a corner; 0 turns it off.
+    float ambientOcclusion = 1.0f;
+    // How far, in meters, a surface looks around itself for what hides the sky.
+    float ambientOcclusionRadius = 0.5f;
+    // How much of the halo of very bright things is added back to the image; 0 turns it off.
+    float bloom = 0.05f;
+    // The brightness, after exposure, a pixel must pass before it glows.
+    float bloomThreshold = 1.0f;
+    // Darkens the corners of the image, from 0 to 1.
+    float vignette = 0.0f;
+    // Adds noise to the image, as film does.
+    float grain = 0.0f;
+    // Pulls red and blue apart towards the edges, as a lens does.
+    float chromaticAberration = 0.0f;
+    // A table of colors, kept as a strip of squares, applied to the image once it is tonemapped.
+    // The texture must be imported without the sRGB encoding.
+    asset::AssetId colorTable;
 };
 DEVEX_DECLARE_REFLECTION(Camera);
 
@@ -137,4 +165,10 @@ template <>
 struct devex::reflection::EnumNames<devex::scene::Tonemapper>
 {
     static constexpr std::array<std::string_view, 4> names{"agx", "pbr_neutral", "aces", "none"};
+};
+
+template <>
+struct devex::reflection::EnumNames<devex::scene::Antialiasing>
+{
+    static constexpr std::array<std::string_view, 2> names{"none", "temporal"};
 };

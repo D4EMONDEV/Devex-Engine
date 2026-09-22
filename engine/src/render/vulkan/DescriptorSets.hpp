@@ -3,6 +3,7 @@
 #include "Device.hpp"
 #include "Vulkan.hpp"
 
+#include <array>
 #include <cstdint>
 #include <vector>
 
@@ -13,7 +14,8 @@ namespace devex::render::vulkan {
 // Set 0, global and updated while frames using it are in flight: every texture in one array
 // indexed by materials, the image based lighting maps, the sky, and their samplers.
 // Set 1, one per frame context: the images produced earlier in the same frame, namely the shadow
-// map, the resolved scene color and the mask of the selected objects.
+// map, the scene color, the mask of the selected objects, the motion and the normals of the
+// prepass, the ambient occlusion, and the image the previous frame resolved.
 class DescriptorSets
 {
 public:
@@ -31,6 +33,33 @@ public:
     static constexpr std::uint32_t shadowSamplerBinding = 1;
     static constexpr std::uint32_t sceneColorBinding = 2;
     static constexpr std::uint32_t selectionMaskBinding = 3;
+    static constexpr std::uint32_t velocityBinding = 4;
+    static constexpr std::uint32_t normalBinding = 5;
+    static constexpr std::uint32_t ambientOcclusionBinding = 6;
+    static constexpr std::uint32_t historyBinding = 7;
+    static constexpr std::uint32_t depthBinding = 8;
+    static constexpr std::uint32_t resolvedBinding = 9;
+    static constexpr std::uint32_t bloomBinding = 10;
+    // How many halvings the bloom is built from.
+    static constexpr std::uint32_t bloomLevels = 5;
+
+    // The images of one frame context, all of them sampled by later passes of the frame.
+    struct FrameImages
+    {
+        VkImageView shadowMap = VK_NULL_HANDLE;
+        VkImageView sceneColor = VK_NULL_HANDLE;
+        VkImageView selectionMask = VK_NULL_HANDLE;
+        VkImageView velocity = VK_NULL_HANDLE;
+        VkImageView normal = VK_NULL_HANDLE;
+        VkImageView ambientOcclusion = VK_NULL_HANDLE;
+        VkImageView history = VK_NULL_HANDLE;
+        VkImageView depth = VK_NULL_HANDLE;
+        // What the tonemapping reads: the image the antialiasing resolved, or the scene itself.
+        VkImageView resolved = VK_NULL_HANDLE;
+        std::array<VkImageView, bloomLevels> bloom{};
+
+        [[nodiscard]] bool operator==(const FrameImages&) const noexcept = default;
+    };
 
     [[nodiscard]] static core::Result<DescriptorSets> create(const Device& device,
                                                              std::uint32_t textureCapacity,
@@ -54,14 +83,14 @@ public:
     void setEnvironment(VkImageView specular, VkImageView irradiance, VkImageView sky) noexcept;
     void setBrdfLut(VkImageView view) noexcept;
     // Only while no frame using the set is in flight.
-    void setFrameImages(std::uint32_t frame, VkImageView shadowMap, VkImageView sceneColor,
-                        VkImageView selectionMask) noexcept;
+    void setFrameImages(std::uint32_t frame, const FrameImages& images) noexcept;
 
 private:
     DescriptorSets() = default;
     void destroy() noexcept;
     void writeImage(VkDescriptorSet set, std::uint32_t binding, std::uint32_t element,
-                    VkImageView view) const noexcept;
+                    VkImageView view,
+                    VkImageLayout layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) const noexcept;
 
     VkDevice m_device = VK_NULL_HANDLE;
     VkSampler m_materialSampler = VK_NULL_HANDLE;

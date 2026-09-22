@@ -34,11 +34,13 @@ Le détail, l'architecture des modules et les jalons sont dans
   réimport à chaud), importeurs de textures (BC7/BC5), de `.dvxmat`, de glTF, de scènes, de sons
   (WAV, FLAC, MP3, Ogg Vorbis) et de polices (`.ttf`, `.otf` cuites en atlas de distances) ;
 - `Devex::Render` : renderer Vulkan 1.4 (volk, VMA), shaders Slang, render graph, PBR
-  forward+ clustered, ombres en cascades, ciel HDR et IBL, MSAA, exposition automatique,
-  tonemapping AgX, rendu dans une texture, sélection sur le GPU, contours et lignes d'outils ;
+  forward+ clustered avec prépasse de profondeur, ombres en cascades, ciel HDR et IBL, surfaces
+  transparentes triées, anticrénelage temporel, occlusion ambiante en espace écran, bloom,
+  exposition automatique, tonemapping AgX, table de couleurs, vignette et grain, rendu dans une
+  texture, sélection sur le GPU, contours et lignes d'outils ;
 - `Devex::Scene` : entités à UUID, composants en sparse sets, hiérarchie, `.dvxscene`,
-  instanciation de modèles, composants de physique, préfabs liés (scènes imbriquées avec leurs
-  modifications) ;
+  instanciation de modèles, composants de physique, d'animation et d'interface, préfabs liés
+  (scènes imbriquées avec leurs modifications) ;
 - `Devex::Physics` : simulation Jolt Physics des corps rigides, colliders (primitives, maillages,
   déclencheurs) et personnages, couches de collision, requêtes, forces, contacts, interpolation ;
 - `Devex::Audio` : miniaudio, sons spatialisés ou 2D, sources et écouteur dans la scène (sinon la
@@ -87,9 +89,10 @@ Le détail, l'architecture des modules et les jalons sont dans
   le cube flottant émet un bourdonnement spatialisé et une ambiance Ogg tourne en boucle dans le
   groupe Music ; un robot rigué patrouille, attend et salue le joueur (`code/Robot.cs`) ;
   Tab passe à l'autre scène ; et la
-  scène `sandbox` (caisse et balises glTF, sphères or et plastique, ciel HDR, plateau tournant, jour
-  et nuit avec N), qui ouvre sur un menu principal, des réglages de volume, un menu de pause
-  appelé par Échap et un HUD, tous pilotés par `code/Menu.cs`.
+  scène `sandbox` (caisse et balises glTF, sphères or et plastique, ciel HDR, plateau tournant dont
+  les satellites brillent, panneaux de verre teinté, jour et nuit avec N), qui ouvre sur un menu
+  principal, des réglages de volume, un menu de pause appelé par Échap et un HUD, tous pilotés par
+  `code/Menu.cs`.
 
 Le SDK Vulkan fournit `slangc`, qui compile les shaders pendant le build. Les assets
 d'exemple et les données de test sont produits par `scripts/generate_sample_assets.py`.

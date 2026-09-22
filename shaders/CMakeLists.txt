@@ -1,13 +1,17 @@
 devex_add_shaders(devex_shaders
     OUTPUT_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/shaders"
     SOURCES
+        ao.slang
+        bloom.slang
         ibl.slang
         luminance.slang
         mesh.slang
         overlay.slang
         pick.slang
+        prepass.slang
         shadow.slang
         sky.slang
+        taa.slang
         tonemap.slang
         ui.slang
     MODULES

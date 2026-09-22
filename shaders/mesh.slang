@@ -79,8 +79,11 @@ float4 fragmentMain(VertexOutput input, bool frontFacing : SV_IsFrontFace) : SV_
     const float metallic = saturate(material.metallicFactor * metallicRoughness.b);
     // Very low roughness makes highlights too small to sample: clamp it.
     const float roughness = clamp(material.roughnessFactor * metallicRoughness.g, 0.045, 1.0);
-    const float occlusion =
+    float occlusion =
         lerp(1.0, sampleTexture(material.occlusionTexture, input.uv).r, material.occlusionStrength);
+    // What the screen measured of the corners the surface sits in, which the pass before drew.
+    const float2 screenUv = input.position.xy / float2(scene->viewportWidth, scene->viewportHeight);
+    occlusion *= ambientOcclusionTexture.Sample(clampSampler, screenUv).r;
 
     const float3 toCamera = scene->cameraPosition - input.worldPosition;
     const float viewDistance = -mul(scene->view, float4(input.worldPosition, 1.0)).z;
@@ -102,5 +105,7 @@ float4 fragmentMain(VertexOutput input, bool frontFacing : SV_IsFrontFace) : SV_
     // whatever the lighting.
     const float3 emission =
         material.emissiveFactor * sampleTexture(material.emissiveTexture, input.uv).rgb;
-    return float4(luminance + emission, 1.0);
+    // A blended surface lets (1 - alpha) of what is behind it through; everything else covers it.
+    const float alpha = material.alphaMode == alphaModeBlend ? saturate(baseColor.a) : 1.0;
+    return float4(luminance + emission, alpha);
 }

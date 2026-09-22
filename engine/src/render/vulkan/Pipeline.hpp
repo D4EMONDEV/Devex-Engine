@@ -44,11 +44,16 @@ struct GraphicsPipelineConfig
     std::uint32_t pushConstantSize = 0;
     // Undefined for no color attachment.
     VkFormat colorFormat = VK_FORMAT_UNDEFINED;
+    // Several attachments, for a pass that writes more than a color; it replaces colorFormat.
+    // They all blend the same way, so a pass that writes several of them does not blend.
+    std::span<const VkFormat> colorFormats;
     VkFormat depthFormat = VK_FORMAT_UNDEFINED;
     VkSampleCountFlagBits samples = VK_SAMPLE_COUNT_1_BIT;
     VkPrimitiveTopology topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
     // Blends straight alpha over the target.
     bool alphaBlend = false;
+    // Adds to the target instead, as the steps of the bloom do.
+    bool additiveBlend = false;
     VkCullModeFlags cullMode = VK_CULL_MODE_BACK_BIT;
     bool depthTest = true;
     bool depthWrite = true;

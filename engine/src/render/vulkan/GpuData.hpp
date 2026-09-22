@@ -95,6 +95,12 @@ struct GpuSceneData
     VkDeviceAddress clusterLights = 0;
     // Maps the pixel requested for picking to the whole 1x1 pick target.
     math::Mat4 pickViewProjection{1.0f};
+    // The same view and projection without the jitter of the temporal antialiasing, and the one of
+    // the previous frame: what lies between them is the motion of a pixel.
+    math::Mat4 unjitteredViewProjection{1.0f};
+    math::Mat4 previousViewProjection{1.0f};
+    // Takes a point of clip space back to the world, without the jitter.
+    math::Mat4 inverseViewProjection{1.0f};
 };
 
 // How a vertex of a skinned mesh follows its bones, beside the vertex itself.
@@ -118,6 +124,15 @@ struct DrawPushConstants
     std::uint32_t skinned = 0;
     VkDeviceAddress skin = 0;
     VkDeviceAddress bones = 0;
+};
+
+// The prepass also needs where the instance stood on the previous frame. Vulkan 1.4 guarantees
+// 256 bytes of push constants, which these fit in.
+struct PrepassPushConstants
+{
+    DrawPushConstants draw;
+    math::Mat4 previousWorld{1.0f};
+    VkDeviceAddress previousBones = 0;
 };
 
 struct GpuOverlayVertex
@@ -165,9 +180,42 @@ struct SkyPushConstants
     VkDeviceAddress scene = 0;
 };
 
+struct AoPushConstants
+{
+    VkDeviceAddress scene = 0;
+    float radius = 0.5f;
+    float intensity = 1.0f;
+    float frame = 0.0f;
+    float padding = 0.0f;
+};
+
+struct TaaPushConstants
+{
+    float blend = 0.9f;
+    float historyValid = 0.0f;
+    float texelWidth = 0.0f;
+    float texelHeight = 0.0f;
+};
+
+struct BloomPushConstants
+{
+    std::uint32_t source = 0;
+    float texelWidth = 0.0f;
+    float texelHeight = 0.0f;
+    float strength = 1.0f;
+};
+
 struct TonemapPushConstants
 {
     std::uint32_t tonemapper = 0;
+    // How much of the bloom is added to the image; 0 leaves it alone.
+    float bloom = 0.0f;
+    float vignette = 0.0f;
+    float grain = 0.0f;
+    float chromatic = 0.0f;
+    float time = 0.0f;
+    std::uint32_t colorTable = 0;
+    float colorTableSize = 0.0f;
 };
 
 struct LuminancePushConstants
@@ -212,7 +260,8 @@ static_assert(offsetof(GpuSceneData, clusterCountX) == 560);
 static_assert(offsetof(GpuSceneData, clusterSliceScale) == 576);
 static_assert(offsetof(GpuSceneData, materials) == 592);
 static_assert(offsetof(GpuSceneData, pickViewProjection) == 624);
-static_assert(sizeof(GpuSceneData) == 688);
+static_assert(offsetof(GpuSceneData, unjitteredViewProjection) == 688);
+static_assert(sizeof(GpuSceneData) == 880);
 
 // Vulkan guarantees 128 bytes of push constants on every device.
 static_assert(sizeof(DrawPushConstants) == 112);

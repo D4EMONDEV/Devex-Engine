@@ -54,6 +54,12 @@ struct StateUsage
     case ImageState::ComputeStorage:
         return {VK_IMAGE_LAYOUT_GENERAL, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
                 VK_ACCESS_2_SHADER_STORAGE_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT};
+    case ImageState::GeneralRead:
+        return {VK_IMAGE_LAYOUT_GENERAL, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
+                VK_ACCESS_2_SHADER_SAMPLED_READ_BIT};
+    case ImageState::GeneralAttachment:
+        return {VK_IMAGE_LAYOUT_GENERAL, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+                VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT};
     }
     return {};
 }
@@ -62,7 +68,8 @@ struct StateUsage
 
 bool isReadOnly(ImageState state) noexcept
 {
-    return state == ImageState::ShaderReadOnly || state == ImageState::ComputeReadOnly;
+    return state == ImageState::ShaderReadOnly || state == ImageState::ComputeReadOnly ||
+           state == ImageState::GeneralRead;
 }
 
 VkImageLayout layoutOf(ImageState state) noexcept

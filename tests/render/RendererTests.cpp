@@ -230,7 +230,8 @@ TEST_CASE("Textured materials draw submeshes and survive texture removal", "[ren
                 renderer->destroyMaterial(opaque);
             }
         }
-        CHECK(renderer->stats().drawCalls == 2);
+        // Two instances, each drawn twice: once by the prepass and once by the shading.
+        CHECK(renderer->stats().drawCalls == 4);
         CHECK(renderer->stats().textureCount == 1);
         CHECK(renderer->stats().materialCount == 1);
     }
@@ -256,7 +257,6 @@ TEST_CASE("Lit frames with shadows, local lights and a sky texture render withou
         {
             FAIL(std::format("{}", renderer.error()));
         }
-        CHECK(renderer->stats().msaaSamples >= 1);
 
         auto ground = renderer->createMesh(devex::asset::makePlane(20.0f));
         auto sphere = renderer->createMesh(devex::asset::makeUvSphere());
@@ -426,4 +426,72 @@ TEST_CASE("Only one renderer can exist at a time", "[render][gpu]")
     auto second = devex::render::Renderer::create(*platform, *window, {.validation = false});
     REQUIRE_FALSE(second.has_value());
     CHECK(second.error().code == devex::core::ErrorCode::InvalidState);
+}
+
+TEST_CASE("Blended surfaces, antialiasing, occlusion and bloom draw without validation errors",
+          "[render][gpu]")
+{
+    const ErrorCapture capture;
+    {
+        auto platform = devex::platform::Platform::create();
+        REQUIRE(platform.has_value());
+        auto window = platform->createWindow({.width = 320, .height = 240, .vulkan = true, .hidden = true});
+        REQUIRE(window.has_value());
+        auto renderer = devex::render::Renderer::create(*platform, *window, {.validation = true});
+        if (!renderer)
+        {
+            FAIL(std::format("{}", renderer.error()));
+        }
+
+        const auto cube = renderer->createMesh(devex::asset::makeCube());
+        REQUIRE(cube.has_value());
+        const devex::render::MaterialHandle opaque =
+            renderer->createMaterial({.baseColorFactor = {0.8f, 0.8f, 0.8f, 1.0f}});
+        const devex::render::MaterialHandle glass =
+            renderer->createMaterial({.baseColorFactor = {0.4f, 0.6f, 0.9f, 0.35f},
+                                      .alphaMode = devex::asset::AlphaMode::Blend});
+
+        const devex::math::Mat4 cameraTransform =
+            devex::math::translate(devex::math::Mat4(1.0f), devex::math::Vec3{0.0f, 0.0f, 6.0f});
+        for (int frame = 0; frame < 6; ++frame)
+        {
+            devex::render::RenderWorld& world = renderer->beginFrame();
+            world.camera.view = devex::math::inverse(cameraTransform);
+            // Half of the frames run without the effects, which must be as quiet as with them.
+            const bool effects = frame % 2 == 0;
+            world.camera.antialiasing = effects ? devex::render::Antialiasing::Temporal
+                                                : devex::render::Antialiasing::None;
+            world.camera.bloom = effects ? 0.2f : 0.0f;
+            world.camera.ambientOcclusion = effects ? 1.0f : 0.0f;
+            world.camera.vignette = effects ? 0.3f : 0.0f;
+            world.camera.grain = effects ? 0.02f : 0.0f;
+            world.camera.chromaticAberration = effects ? 0.002f : 0.0f;
+            world.sun.illuminance = {10000.0f, 10000.0f, 10000.0f};
+
+            world.meshes.push_back({.mesh = *cube, .material = opaque, .objectId = 1});
+            // The blended cube stands in front of the opaque one.
+            world.meshes.push_back({
+                .mesh = *cube,
+                .material = glass,
+                .transform = devex::math::translate(devex::math::Mat4(1.0f),
+                                                    devex::math::Vec3{0.0f, 0.0f, 2.0f}),
+                .objectId = 2,
+            });
+
+            const devex::core::Result<void> presented = renderer->endFrame();
+            if (!presented)
+            {
+                FAIL(std::format("frame {}: {}", frame, presented.error()));
+            }
+            // The opaque cube is drawn twice, by the prepass and by the shading; the blended one
+            // once, by the pass that follows them.
+            CHECK(renderer->stats().drawCalls == 3);
+        }
+    }
+
+    for (const std::string& error : capture.errors())
+    {
+        UNSCOPED_INFO(error);
+    }
+    CHECK(capture.errors().empty());
 }

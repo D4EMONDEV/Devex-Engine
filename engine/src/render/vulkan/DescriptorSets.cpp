@@ -108,6 +108,18 @@ core::Result<DescriptorSets> DescriptorSets::create(const Device& device,
         sampler(shadowSamplerBinding, &sets.m_shadowSampler),
         image(sceneColorBinding),
         image(selectionMaskBinding),
+        image(velocityBinding),
+        image(normalBinding),
+        image(ambientOcclusionBinding),
+        image(historyBinding),
+        image(depthBinding),
+        image(resolvedBinding),
+        VkDescriptorSetLayoutBinding{
+            .binding = bloomBinding,
+            .descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
+            .descriptorCount = bloomLevels,
+            .stageFlags = VK_SHADER_STAGE_ALL,
+        },
     };
     const VkDescriptorSetLayoutCreateInfo frameLayoutInfo{
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
@@ -131,7 +143,8 @@ core::Result<DescriptorSets> DescriptorSets::create(const Device& device,
     DEVEX_VK_TRY(vkCreateDescriptorPool, sets.m_device, &globalPoolInfo, nullptr, &sets.m_globalPool);
 
     const std::array framePoolSizes{
-        VkDescriptorPoolSize{.type = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, .descriptorCount = 3 * frameCount},
+        VkDescriptorPoolSize{.type = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
+                             .descriptorCount = (9 + bloomLevels) * frameCount},
         VkDescriptorPoolSize{.type = VK_DESCRIPTOR_TYPE_SAMPLER, .descriptorCount = frameCount},
     };
     const VkDescriptorPoolCreateInfo framePoolInfo{
@@ -249,11 +262,11 @@ std::uint32_t DescriptorSets::textureCapacity() const noexcept
 }
 
 void DescriptorSets::writeImage(VkDescriptorSet set, std::uint32_t binding, std::uint32_t element,
-                                VkImageView view) const noexcept
+                                VkImageView view, VkImageLayout layout) const noexcept
 {
     const VkDescriptorImageInfo imageInfo{
         .imageView = view,
-        .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+        .imageLayout = layout,
     };
     const VkWriteDescriptorSet write{
         .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
@@ -285,12 +298,23 @@ void DescriptorSets::setBrdfLut(VkImageView view) noexcept
     writeImage(m_global, brdfBinding, 0, view);
 }
 
-void DescriptorSets::setFrameImages(std::uint32_t frame, VkImageView shadowMap, VkImageView sceneColor,
-                                    VkImageView selectionMask) noexcept
+void DescriptorSets::setFrameImages(std::uint32_t frame, const FrameImages& images) noexcept
 {
-    writeImage(m_frames[frame], shadowMapBinding, 0, shadowMap);
-    writeImage(m_frames[frame], sceneColorBinding, 0, sceneColor);
-    writeImage(m_frames[frame], selectionMaskBinding, 0, selectionMask);
+    writeImage(m_frames[frame], shadowMapBinding, 0, images.shadowMap);
+    writeImage(m_frames[frame], sceneColorBinding, 0, images.sceneColor);
+    writeImage(m_frames[frame], selectionMaskBinding, 0, images.selectionMask);
+    writeImage(m_frames[frame], velocityBinding, 0, images.velocity);
+    writeImage(m_frames[frame], normalBinding, 0, images.normal);
+    writeImage(m_frames[frame], ambientOcclusionBinding, 0, images.ambientOcclusion);
+    writeImage(m_frames[frame], historyBinding, 0, images.history);
+    writeImage(m_frames[frame], depthBinding, 0, images.depth);
+    writeImage(m_frames[frame], resolvedBinding, 0, images.resolved);
+    for (std::uint32_t level = 0; level < bloomLevels; ++level)
+    {
+        // The chain is read and drawn into within the same passes, so it stays in one layout.
+        writeImage(m_frames[frame], bloomBinding, level, images.bloom[level],
+                   VK_IMAGE_LAYOUT_GENERAL);
+    }
 }
 
 } // namespace devex::render::vulkan

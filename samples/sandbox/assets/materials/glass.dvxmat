@@ -1,0 +1,6 @@
+# Tinted glass: blended with what is behind it, and smooth enough to catch the sky.
+[material format=1]
+base_color = vec4(0.35, 0.62, 0.78, 0.28)
+metallic = 0
+roughness = 0.08
+alpha_mode = "blend"

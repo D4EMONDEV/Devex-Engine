@@ -54,6 +54,10 @@ enum class ImageAccess : std::uint8_t
     FragmentRead,
     ComputeRead,
     ComputeWrite,
+    // Read or drawn into while the image stays in the general layout, for a chain of images that
+    // are all named by one descriptor.
+    GeneralRead,
+    GeneralAttachment,
     // Copied to a buffer.
     TransferRead,
     Present,

@@ -27,6 +27,12 @@ enum class ImageState
     ComputeReadOnly,
     // Written by compute shaders as a storage image.
     ComputeStorage,
+    // Sampled while the image stays in the general layout, which lets other levels of the same
+    // chain be drawn into at the same time: the bloom reads one image while it writes another,
+    // and both are named by the same descriptor.
+    GeneralRead,
+    // Drawn into while staying in the general layout.
+    GeneralAttachment,
 };
 
 // True for states that only read the image, which need no barrier between each other when their

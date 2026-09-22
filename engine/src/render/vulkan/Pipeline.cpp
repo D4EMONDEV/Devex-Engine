@@ -233,10 +233,11 @@ core::Result<Pipeline> createGraphicsPipeline(VkDevice device, const GraphicsPip
         .depthWriteEnable = config.depthWrite ? VK_TRUE : VK_FALSE,
         .depthCompareOp = config.depthCompare,
     };
-    const VkPipelineColorBlendAttachmentState colorAttachment{
-        .blendEnable = config.alphaBlend ? VK_TRUE : VK_FALSE,
-        .srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA,
-        .dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
+    const VkPipelineColorBlendAttachmentState blended{
+        .blendEnable = config.alphaBlend || config.additiveBlend ? VK_TRUE : VK_FALSE,
+        .srcColorBlendFactor = config.additiveBlend ? VK_BLEND_FACTOR_ONE : VK_BLEND_FACTOR_SRC_ALPHA,
+        .dstColorBlendFactor = config.additiveBlend ? VK_BLEND_FACTOR_ONE
+                                                    : VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
         .colorBlendOp = VK_BLEND_OP_ADD,
         .srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE,
         .dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
@@ -244,11 +245,21 @@ core::Result<Pipeline> createGraphicsPipeline(VkDevice device, const GraphicsPip
         .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
                           VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT,
     };
-    const bool hasColor = config.colorFormat != VK_FORMAT_UNDEFINED;
+    const std::span<const VkFormat> formats =
+        !config.colorFormats.empty() ? config.colorFormats
+                                     : std::span<const VkFormat>(&config.colorFormat, 1);
+    const bool hasColor = !formats.empty() && formats.front() != VK_FORMAT_UNDEFINED;
+    std::vector<VkPipelineColorBlendAttachmentState> attachments;
+    if (hasColor)
+    {
+        // Without the independent blending feature, every attachment blends the same way; the
+        // passes that write several of them do not blend at all.
+        attachments.assign(formats.size(), blended);
+    }
     const VkPipelineColorBlendStateCreateInfo colorBlend{
         .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
-        .attachmentCount = hasColor ? 1u : 0u,
-        .pAttachments = hasColor ? &colorAttachment : nullptr,
+        .attachmentCount = static_cast<std::uint32_t>(attachments.size()),
+        .pAttachments = attachments.empty() ? nullptr : attachments.data(),
     };
     std::array<VkDynamicState, 3> dynamicStates{VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR,
                                                 VK_DYNAMIC_STATE_DEPTH_BIAS};
@@ -259,8 +270,8 @@ core::Result<Pipeline> createGraphicsPipeline(VkDevice device, const GraphicsPip
     };
     const VkPipelineRenderingCreateInfo renderingInfo{
         .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
-        .colorAttachmentCount = hasColor ? 1u : 0u,
-        .pColorAttachmentFormats = hasColor ? &config.colorFormat : nullptr,
+        .colorAttachmentCount = static_cast<std::uint32_t>(attachments.size()),
+        .pColorAttachmentFormats = hasColor ? formats.data() : nullptr,
         .depthAttachmentFormat = config.depthFormat,
     };
 

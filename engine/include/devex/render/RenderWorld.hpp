@@ -20,6 +20,14 @@ using TextureHandle = core::Handle<TextureTag>;
 // Refers to a material created with Renderer::createMaterial.
 using MaterialHandle = core::Handle<MaterialTag>;
 
+// How the jagged edges of the image are smoothed.
+enum class Antialiasing : std::uint8_t
+{
+    None,
+    // Every frame is drawn a fraction of a pixel aside and mixed with the previous ones.
+    Temporal,
+};
+
 enum class Tonemapper : std::uint8_t
 {
     AgX,
@@ -43,6 +51,24 @@ struct RenderCamera
     float maxEv100 = 18.0f;
     float adaptationSpeed = 1.5f;
     Tonemapper tonemapper = Tonemapper::AgX;
+    Antialiasing antialiasing = Antialiasing::Temporal;
+    // Darkens the ambient light in the corners of the scene; 0 turns it off.
+    float ambientOcclusion = 1.0f;
+    // How far, in meters, a surface looks for what hides it.
+    float ambientOcclusionRadius = 0.5f;
+    // How much of the halo of bright things is added to the image; 0 turns it off.
+    float bloom = 0.05f;
+    // The brightness, after exposure, a pixel must pass before it glows.
+    float bloomThreshold = 1.0f;
+    // Darkens the corners of the image, from 0 to 1.
+    float vignette = 0.0f;
+    // Adds noise to the image, as film does.
+    float grain = 0.0f;
+    // Pulls red and blue apart towards the edges of the image, as a lens does.
+    float chromaticAberration = 0.0f;
+    // A table of colors kept as a strip of squares, applied to the tonemapped image. The texture
+    // must be imported without the sRGB encoding, so that its values pass through untouched.
+    TextureHandle colorTable;
 };
 
 // The directional light, which may cast shadows.

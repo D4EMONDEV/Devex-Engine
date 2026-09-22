@@ -26,7 +26,16 @@ DEVEX_REFLECT(Camera)
         .field("min_ev100", &Camera::minEv100)
         .field("max_ev100", &Camera::maxEv100)
         .field("adaptation_speed", &Camera::adaptationSpeed)
-        .field("tonemapper", &Camera::tonemapper);
+        .field("tonemapper", &Camera::tonemapper)
+        .field("antialiasing", &Camera::antialiasing)
+        .field("ambient_occlusion", &Camera::ambientOcclusion)
+        .field("ambient_occlusion_radius", &Camera::ambientOcclusionRadius)
+        .field("bloom", &Camera::bloom)
+        .field("bloom_threshold", &Camera::bloomThreshold)
+        .field("vignette", &Camera::vignette)
+        .field("grain", &Camera::grain)
+        .field("chromatic_aberration", &Camera::chromaticAberration)
+        .field("color_table", &Camera::colorTable, {.assetType = "texture"});
 }
 
 DEVEX_REFLECT(DirectionalLight)
