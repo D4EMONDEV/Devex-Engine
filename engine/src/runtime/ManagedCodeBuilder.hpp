@@ -68,6 +68,8 @@ public:
     void requestBuild() noexcept;
     // Builds now and returns once the build is over, as the export does.
     [[nodiscard]] core::Result<void> buildAndWait();
+    // Whether the assembly is missing, or older than the sources or than the C# API of the engine.
+    [[nodiscard]] bool needsBuild() const noexcept;
 
     [[nodiscard]] State state() const noexcept;
     [[nodiscard]] const std::string& message() const noexcept;

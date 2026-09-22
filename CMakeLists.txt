@@ -40,6 +40,13 @@ if(MSVC AND CMAKE_BUILD_TYPE STREQUAL "Release")
         file(COPY ${CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS} DESTINATION "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/redist")
     endif()
 endif()
+# Release builds keep their symbols in .pdb files beside the binaries, with the same optimized code:
+# the report of a crash then names the functions and the lines it went through. The export of a
+# game does not copy them.
+if(MSVC)
+    set(CMAKE_MSVC_DEBUG_INFORMATION_FORMAT "$<$<CONFIG:Debug,RelWithDebInfo,Release>:ProgramDatabase>")
+    add_link_options("$<$<CONFIG:Release>:/DEBUG;/OPT:REF;/OPT:ICF>")
+endif()
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib")
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib")
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)

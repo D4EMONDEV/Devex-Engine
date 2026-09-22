@@ -244,6 +244,10 @@ private:
     // Game code of the project: loaded when a project opens, built by the editor, reloaded when a
     // new build appears.
     void openGameCode();
+    // Outside the editor, builds the code of the project when it is out of date, before any of it
+    // loads: a module built for another engine shares the layout of engine types and would not
+    // survive loading into this one.
+    [[nodiscard]] core::Result<void> buildOutdatedGameCode();
     void closeGameCode();
     void loadGameModule();
     void unloadGameModule();
@@ -448,6 +452,11 @@ bool ApplicationRunner::isEditor() const noexcept
 
 int ApplicationRunner::execute()
 {
+    if (core::Result<void> built = buildOutdatedGameCode(); !built)
+    {
+        DEVEX_LOG_FATAL("Cannot build the game code: {}", built.error());
+        return EXIT_FAILURE;
+    }
     // Game components are registered before the application or the editor opens a scene.
     openGameCode();
     if (core::Result<void> started = m_application.onStartup(); !started)
@@ -1024,6 +1033,40 @@ void ApplicationRunner::updateManagedCode()
         unloadManagedAssembly();
         loadManagedAssembly();
     }
+}
+
+core::Result<void> ApplicationRunner::buildOutdatedGameCode()
+{
+    if (isEditor() || !m_loadGameCode || m_services.database == nullptr)
+    {
+        return {};
+    }
+    const asset::Project& project = m_services.database->project();
+    if (GameCodeBuilder::hasCode(project))
+    {
+        GameCodeBuilder builder(project, (m_services.platform.baseDirectory() / ".." / "cmake").lexically_normal());
+        if (builder.pending())
+        {
+            DEVEX_LOG_INFO("The C++ code of {} is out of date: building it before playing", project.name);
+            if (core::Result<void> built = builder.buildAndWait(); !built)
+            {
+                return built;
+            }
+        }
+    }
+    if (ManagedCodeBuilder::hasCode(project))
+    {
+        ManagedCodeBuilder builder(project, m_services.platform.baseDirectory() / "managed");
+        if (builder.needsBuild())
+        {
+            DEVEX_LOG_INFO("The C# code of {} is out of date: building it before playing", project.name);
+            if (core::Result<void> built = builder.buildAndWait(); !built)
+            {
+                return built;
+            }
+        }
+    }
+    return {};
 }
 
 void ApplicationRunner::openGameCode()

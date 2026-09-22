@@ -30,6 +30,11 @@ public:
         m_sinks.push_back({consoleLogSinkId, [this](const LogRecord& record) { writeToConsole(record); }});
     }
 
+    [[nodiscard]] std::chrono::steady_clock::time_point startTime() const noexcept
+    {
+        return m_startTime;
+    }
+
     void setLevel(LogLevel level) noexcept
     {
         m_level.store(level, std::memory_order_relaxed);
@@ -151,6 +156,11 @@ LogLevel logLevel() noexcept
 bool isLogLevelEnabled(LogLevel level) noexcept
 {
     return level != LogLevel::Off && level >= logger().level();
+}
+
+std::chrono::steady_clock::time_point logStartTime() noexcept
+{
+    return logger().startTime();
 }
 
 LogSinkId addLogSink(LogSink sink)

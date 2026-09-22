@@ -132,6 +132,8 @@ mais seulement explicitement ici : le code suit ce document, pas l'inverse.
 | Saisie de texte          | `UiInput` : sélection, presse-papiers, mot de passe, multiligne    |
 | Thèmes d'interface       | Asset `.dvxtheme` de styles nommés, référencé par le canevas       |
 | Liaison de données       | `UiBinding` écrit un champ de composant dans un texte              |
+| Journal                  | Fichier par lancement, le précédent gardé, lisible pendant le jeu  |
+| Plantages                | Pile symbolisée dans le journal et minidump à côté                 |
 | Manettes                 | SDL Gamepad, quatre manettes, sticks avec zone morte               |
 | Éditeur de texte         | Coloration dessinée par-dessus le champ ImGui                     |
 | Autocomplétion           | Mots-clés, noms du moteur et identifiants du fichier              |
@@ -536,7 +538,8 @@ les assets s'écrivent au fil de leur lecture.
 ### Export d'un jeu
 
 - **Résultat** : un dossier qui tourne sans l'éditeur, sans le projet et sans les sources :
-  `<Jeu>.exe` (le lecteur `devex-player` renommé et son icône remplacée), `<Jeu>.dvxpak`,
+  `<Jeu>.exe` (le lecteur `devex-player` renommé, son icône remplacée, et basculé en application
+  fenêtrée pour qu'aucune console ne s'ouvre derrière le jeu), `<Jeu>.dvxpak`,
   `Game.dll`, `devex-engine.dll` et les autres bibliothèques du build du moteur, les shaders, le
   runtime C++ quand le build du moteur le fournit (`bin/redist`, copié par CMake en Release), et
   `devex-export.txt` qui marque le dossier comme un export. Un export Debug emporte aussi
@@ -575,6 +578,43 @@ les assets s'écrivent au fil de leur lecture.
 - **Scènes du jeu** : `SystemContext::sceneToLoad` demande une scène depuis un système, chargée à la
   fin de la frame (physique recréée, systèmes `Start` rejoués) ; `Application::loadScene` la charge
   tout de suite. La version de l'API des jeux passe à 3.
+- **Sans console** : le lecteur reste une application console, pratique pendant le développement ;
+  l'export change seulement le sous-système dans l'en-tête de l'exécutable copié
+  (`platform::setWindowedApplication`, qui lit et écrit des octets et marche donc depuis n'importe
+  quel système). Un jeu fenêtré qui ne peut pas démarrer (paquet absent, GPU refusé) montre sa
+  première erreur fatale dans une boîte de dialogue, avec le chemin du journal.
+
+### Journal et plantages
+
+- **Le problème** : `devex-player` ne laissait aucune trace. Un jeu qui s'arrêtait net ne disait ni
+  pourquoi ni où, et le journal, écrit dans un tampon, disparaissait avec le processus.
+- **Journal** : `core::LogFile` reçoit le journal dans un fichier dès la première ligne, et renomme
+  celui du lancement précédent en `<nom>.previous.log` : c'est celui qui dit pourquoi le jeu s'est
+  arrêté quand on le relance pour regarder. Chaque ligne est écrite sur le disque aussitôt (un
+  processus tué de l'extérieur garde ainsi tout son journal), et le fichier reste lisible pendant
+  que le programme tourne. Un projet joué écrit dans `.devex/logs/player.log` ; un jeu exporté dans
+  `%APPDATA%\<Jeu>\logs\game.log`, toujours inscriptible même si le jeu est installé dans
+  Program Files ; l'éditeur dans `%APPDATA%\Devex\Editor\logs\editor.log`.
+- **Plantages** : `platform::installCrashHandler` attrape, pour tout le processus, ce qui le tuerait
+  sans un mot : violations d'accès et autres exceptions matérielles, `abort`, `std::terminate`,
+  appels de fonctions virtuelles pures et paramètres invalides du runtime C. Le rapport nomme
+  l'exception, l'adresse fautive, puis la pile d'appels (`StackWalk64` de dbghelp) avec, pour chaque
+  appel, le module et son décalage, la fonction et la ligne quand les `.pdb` sont à côté des
+  binaires. Il va sur la sortie d'erreur et dans le journal, directement dans le fichier, sans
+  passer par le logger qui pouvait être occupé au moment du plantage. Un **minidump** (threads,
+  piles et mémoire qu'elles désignent, environ un mégaoctet) est écrit à côté du journal ; Visual
+  Studio l'ouvre à l'endroit où le processus s'est arrêté. Tout ce que le gestionnaire utilise est
+  réservé d'avance, et 64 Kio de pile lui sont garantis pour survivre à un débordement de pile.
+- **Symboles** : les builds Release écrivent aussi leurs `.pdb` (`/Zi`, `/DEBUG` avec `/OPT:REF` et
+  `/OPT:ICF`, donc le même code optimisé), sans que l'export les copie : les rapports des jeux livrés
+  ne donnent que modules et décalages, que les `.pdb` gardés du build permettent de retrouver.
+- **Code du jeu périmé** : le lecteur vérifie, comme l'éditeur, que le module C++ a été compilé
+  pour ce moteur (l'empreinte tient compte de la date de `devex-engine.dll`) et que l'assemblage C#
+  est plus récent que ses sources et que `Devex.Managed.dll`. Sinon il les recompile avant d'ouvrir
+  la scène, et refuse de démarrer si la compilation échoue. Charger un vieux module n'était pas
+  seulement faux mais dangereux : un module enregistre ses composants par un modèle C++ compilé
+  chez lui (`ComponentRegistry::add<T>`), qui écrit la structure `ComponentType` telle qu'il la
+  connaît dans le registre du moteur. La version de l'API des jeux passe à 9 pour la même raison.
 
 ### Boucle de jeu et application
 
@@ -1705,6 +1745,11 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     riche avec icônes, neuf parts à la taille de la texture, curseurs et cases à cocher, liaison
     de données, thèmes `.dvxtheme` référencés par le canevas, polices étendues au latin d'Europe
     centrale et à la ponctuation courante, et écran de réglages du bac à sable qui montre le tout.
+
+24. ✅ **Fiabilité du lecteur** — journal dans un fichier pour le lecteur, les jeux exportés et
+    l'éditeur, rapport de plantage avec pile symbolisée et minidump, symboles des builds Release,
+    recompilation du code périmé avant de jouer, et jeux exportés sans fenêtre console, qui
+    montrent leur erreur fatale dans une boîte de dialogue.
 
 Ensuite, sans ordre figé : jeux 2D, particules, CI Linux.
 

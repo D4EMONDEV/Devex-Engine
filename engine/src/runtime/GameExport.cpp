@@ -308,6 +308,14 @@ void collectAssetIds(const serialization::TextValue& value, std::vector<asset::A
     {
         return std::unexpected(copied.error());
     }
+#ifdef _WIN32
+    // The player prints to a console while a game is made; a player of the game double-clicks it,
+    // and a console window would open behind it. The game keeps its log in a file instead.
+    if (core::Result<void> windowed = platform::setWindowedApplication(executable); !windowed)
+    {
+        return std::unexpected(windowed.error());
+    }
+#endif
 
     std::error_code error;
     const auto copyLibraries = [&](const std::filesystem::path& folder) -> core::Result<void> {

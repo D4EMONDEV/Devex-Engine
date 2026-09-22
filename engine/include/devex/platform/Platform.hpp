@@ -131,4 +131,18 @@ void sleepPrecise(std::chrono::nanoseconds duration);
 // Directory containing the executable, available without a Platform, as for command-line tools.
 [[nodiscard]] std::filesystem::path executableDirectory();
 
+// A folder of the user that can always be written to, for the logs and the saves of an
+// application, created when missing: %APPDATA%\<organization>\<application> on Windows. An empty
+// organization leaves the application alone in the folder of the system. Available without a
+// Platform, since the log opens before it.
+[[nodiscard]] core::Result<std::filesystem::path> userDataDirectory(std::string_view organization,
+                                                                    std::string_view application);
+
+// Whether this process was built or made a windowed application, which has no console to print
+// to: an exported game started from the file manager.
+[[nodiscard]] bool isWindowedApplication() noexcept;
+// Shows an error in a box of the system, for a program with nowhere else to say it. Works before
+// the platform starts, and when it failed to.
+void showErrorMessage(std::string_view title, std::string_view message);
+
 } // namespace devex::platform

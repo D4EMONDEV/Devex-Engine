@@ -30,6 +30,7 @@ target_sources(devex_core
         src/core/Hash.cpp
         src/core/JobSystem.cpp
         src/core/Log.cpp
+        src/core/LogFile.cpp
         src/core/MappedFile.cpp
         src/core/Uuid.cpp
     PUBLIC
@@ -43,6 +44,7 @@ target_sources(devex_core
             include/devex/core/Hash.hpp
             include/devex/core/JobSystem.hpp
             include/devex/core/Log.hpp
+            include/devex/core/LogFile.hpp
             include/devex/core/MappedFile.hpp
             include/devex/core/Path.hpp
             include/devex/core/SlotMap.hpp
@@ -90,6 +92,7 @@ add_library(Devex::Platform ALIAS devex_platform)
 
 target_sources(devex_platform
     PRIVATE
+        src/platform/CrashHandler.cpp
         src/platform/Executable.cpp
         src/platform/Input.cpp
         src/platform/Platform.cpp
@@ -101,6 +104,7 @@ target_sources(devex_platform
         FILE_SET HEADERS
         BASE_DIRS include
         FILES
+            include/devex/platform/CrashHandler.hpp
             include/devex/platform/Event.hpp
             include/devex/platform/Executable.hpp
             include/devex/platform/Input.hpp
@@ -119,6 +123,7 @@ target_link_libraries(devex_platform
         imgui::imgui
         SDL3::SDL3
         $<$<PLATFORM_ID:Windows>:dwmapi>
+        $<$<PLATFORM_ID:Windows>:dbghelp>
 )
 set_target_properties(devex_platform PROPERTIES
     EXPORT_NAME Platform

@@ -24,4 +24,11 @@ struct IconImage
 [[nodiscard]] core::Result<void> setExecutableIcon(const std::filesystem::path& executable,
                                                    std::span<const IconImage> images);
 
+// Whether a Windows executable opens a console window when it is started from the file manager.
+[[nodiscard]] core::Result<bool> opensConsole(const std::filesystem::path& executable);
+// Makes a Windows executable a windowed application: started from the file manager, it opens no
+// console window, and what it prints goes nowhere, so it must keep a log file. Only the header of
+// the file changes; it works from any system, since it reads and writes bytes.
+[[nodiscard]] core::Result<void> setWindowedApplication(const std::filesystem::path& executable);
+
 } // namespace devex::platform

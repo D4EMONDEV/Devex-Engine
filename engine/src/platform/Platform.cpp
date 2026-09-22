@@ -13,8 +13,15 @@
 #include <imgui.h>
 #include <imgui_impl_sdl3.h>
 
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <windows.h>
+#endif
+
 #include <algorithm>
 #include <atomic>
+#include <cstddef>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -635,10 +642,32 @@ std::filesystem::path executableDirectory()
     return basePath != nullptr ? core::pathFromUtf8(basePath) : std::filesystem::current_path();
 }
 
-core::Result<std::filesystem::path> Platform::userDataDirectory(std::string_view application) const
+core::Result<std::filesystem::path> userDataDirectory(std::string_view organization, std::string_view application)
 {
-    const std::string name(application);
-    char* const path = SDL_GetPrefPath("Devex", name.c_str());
+    // The characters a Windows file name cannot hold, taken out of names that come from projects.
+    const auto clean = [](std::string_view name) {
+        std::string cleaned;
+        for (const char character : name)
+        {
+            if (std::string_view(R"(<>:"/\|?*)").find(character) == std::string_view::npos &&
+                static_cast<unsigned char>(character) >= 0x20)
+            {
+                cleaned.push_back(character);
+            }
+        }
+        while (!cleaned.empty() && (cleaned.back() == ' ' || cleaned.back() == '.'))
+        {
+            cleaned.pop_back();
+        }
+        return cleaned;
+    };
+    const std::string company = clean(organization);
+    std::string name = clean(application);
+    if (name.empty())
+    {
+        name = "Game";
+    }
+    char* const path = SDL_GetPrefPath(company.c_str(), name.c_str());
     if (path == nullptr)
     {
         return core::makeError(core::ErrorCode::Platform, "no user data directory: {}", SDL_GetError());
@@ -646,6 +675,35 @@ core::Result<std::filesystem::path> Platform::userDataDirectory(std::string_view
     std::filesystem::path directory = core::pathFromUtf8(path);
     SDL_free(path);
     return directory;
+}
+
+bool isWindowedApplication() noexcept
+{
+#ifdef _WIN32
+    // The subsystem of the running image, read from its header in memory.
+    const auto* const base = reinterpret_cast<const std::byte*>(GetModuleHandleW(nullptr));
+    if (base == nullptr)
+    {
+        return false;
+    }
+    const auto* const dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(base);
+    const auto* const nt = reinterpret_cast<const IMAGE_NT_HEADERS*>(base + dos->e_lfanew);
+    return nt->OptionalHeader.Subsystem == IMAGE_SUBSYSTEM_WINDOWS_GUI;
+#else
+    return false;
+#endif
+}
+
+void showErrorMessage(std::string_view title, std::string_view message)
+{
+    const std::string caption(title);
+    const std::string text(message);
+    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, caption.c_str(), text.c_str(), nullptr);
+}
+
+core::Result<std::filesystem::path> Platform::userDataDirectory(std::string_view application) const
+{
+    return platform::userDataDirectory("Devex", application);
 }
 
 core::Result<void> Platform::openPath(const std::filesystem::path& path) const

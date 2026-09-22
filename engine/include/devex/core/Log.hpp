@@ -47,6 +47,8 @@ void setLogLevel(LogLevel level) noexcept;
 [[nodiscard]] bool isLogLevelEnabled(LogLevel level) noexcept;
 
 [[nodiscard]] LogSinkId addLogSink(LogSink sink);
+// When the logger started: the lines of the console and of a log file count their seconds from it.
+[[nodiscard]] std::chrono::steady_clock::time_point logStartTime() noexcept;
 void removeLogSink(LogSinkId id);
 
 void logMessage(LogLevel level, std::string_view message,

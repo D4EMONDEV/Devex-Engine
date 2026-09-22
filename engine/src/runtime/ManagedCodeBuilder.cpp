@@ -148,7 +148,16 @@ ManagedCodeBuilder::ManagedCodeBuilder(asset::Project project, std::filesystem::
     m_sources = snapshotSources();
     std::error_code error;
     const std::filesystem::file_time_type built = std::filesystem::last_write_time(assemblyPath(m_project), error);
-    m_buildRequested = error || built < m_sources.newest;
+    // An engine rebuilt with another C# API needs the game compiled against it again.
+    std::error_code apiError;
+    const std::filesystem::file_time_type api =
+        std::filesystem::last_write_time(m_managedDirectory / "Devex.Managed.dll", apiError);
+    m_buildRequested = error || built < m_sources.newest || (!apiError && built < api);
+}
+
+bool ManagedCodeBuilder::needsBuild() const noexcept
+{
+    return m_buildRequested;
 }
 
 ManagedCodeBuilder::Snapshot ManagedCodeBuilder::snapshotSources() const

@@ -32,6 +32,7 @@ devex_add_tests(core
         core/FileTests.cpp
         core/HashTests.cpp
         core/JobSystemTests.cpp
+        core/LogFileTests.cpp
         core/LogTests.cpp
         core/MappedFileTests.cpp
         core/SlotMapTests.cpp
@@ -124,12 +125,23 @@ target_compile_definitions(devex_audio_tests
     PRIVATE DEVEX_TEST_DATA_DIRECTORY="${CMAKE_CURRENT_SOURCE_DIR}/data"
 )
 
+# Crashes on purpose, for the platform tests to read the report and the minidump it leaves.
+add_executable(devex_crash_probe platform/CrashProbe.cpp)
+target_link_libraries(devex_crash_probe PRIVATE Devex::Engine)
+set_target_properties(devex_crash_probe PROPERTIES FOLDER "Tests")
+devex_set_warnings(devex_crash_probe)
+
 devex_add_tests(platform
     SOURCES
+        platform/CrashHandlerTests.cpp
         platform/InputTests.cpp
         platform/ProcessTests.cpp
     LIBRARIES
         Devex::Engine
+)
+add_dependencies(devex_platform_tests devex_crash_probe)
+target_compile_definitions(devex_platform_tests
+    PRIVATE DEVEX_TEST_CRASH_PROBE="$<TARGET_FILE:devex_crash_probe>"
 )
 
 devex_add_tests(physics

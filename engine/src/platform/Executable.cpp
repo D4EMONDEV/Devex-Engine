@@ -7,9 +7,90 @@
 #include <windows.h>
 #endif
 
+#include <array>
 #include <cstring>
+#include <fstream>
 
 namespace devex::platform {
+
+namespace {
+
+// The subsystem field of a Portable Executable: where it is, and what it holds.
+constexpr std::uint16_t windowsGuiSubsystem = 2;
+constexpr std::uint16_t windowsConsoleSubsystem = 3;
+
+// Where the subsystem sits in the file: after the MS-DOS stub, the "PE" signature, the file header,
+// and 68 bytes into the optional header, for 32 and 64-bit images alike.
+[[nodiscard]] core::Result<std::streamoff> subsystemOffset(std::istream& file, const std::filesystem::path& path)
+{
+    std::array<char, 64> dos{};
+    file.read(dos.data(), dos.size());
+    if (!file || dos[0] != 'M' || dos[1] != 'Z')
+    {
+        return core::makeError(core::ErrorCode::Parse, "'{}' is not a Windows executable", core::toUtf8(path));
+    }
+    std::uint32_t peOffset = 0;
+    std::memcpy(&peOffset, dos.data() + 0x3C, sizeof(peOffset));
+    std::array<char, 4 + 20 + 2> headers{};
+    file.seekg(peOffset);
+    file.read(headers.data(), headers.size());
+    if (!file || headers[0] != 'P' || headers[1] != 'E' || headers[2] != '\0' || headers[3] != '\0')
+    {
+        return core::makeError(core::ErrorCode::Parse, "'{}' has no PE header", core::toUtf8(path));
+    }
+    std::uint16_t magic = 0;
+    std::memcpy(&magic, headers.data() + 24, sizeof(magic));
+    if (magic != 0x10B && magic != 0x20B)
+    {
+        return core::makeError(core::ErrorCode::Parse, "'{}' has an unknown optional header", core::toUtf8(path));
+    }
+    return static_cast<std::streamoff>(peOffset) + 24 + 68;
+}
+
+} // namespace
+
+core::Result<bool> opensConsole(const std::filesystem::path& executable)
+{
+    std::ifstream file(executable, std::ios::binary);
+    if (!file)
+    {
+        return core::makeError(core::ErrorCode::NotFound, "cannot read '{}'", core::toUtf8(executable));
+    }
+    const core::Result<std::streamoff> offset = subsystemOffset(file, executable);
+    if (!offset)
+    {
+        return std::unexpected(offset.error());
+    }
+    std::uint16_t subsystem = 0;
+    file.seekg(*offset);
+    file.read(reinterpret_cast<char*>(&subsystem), sizeof(subsystem));
+    if (!file)
+    {
+        return core::makeError(core::ErrorCode::Parse, "'{}' is cut short", core::toUtf8(executable));
+    }
+    return subsystem == windowsConsoleSubsystem;
+}
+
+core::Result<void> setWindowedApplication(const std::filesystem::path& executable)
+{
+    std::fstream file(executable, std::ios::binary | std::ios::in | std::ios::out);
+    if (!file)
+    {
+        return core::makeError(core::ErrorCode::Io, "cannot open '{}'", core::toUtf8(executable));
+    }
+    const core::Result<std::streamoff> offset = subsystemOffset(file, executable);
+    if (!offset)
+    {
+        return std::unexpected(offset.error());
+    }
+    file.seekp(*offset);
+    file.write(reinterpret_cast<const char*>(&windowsGuiSubsystem), sizeof(windowsGuiSubsystem));
+    if (!file)
+    {
+        return core::makeError(core::ErrorCode::Io, "cannot write '{}'", core::toUtf8(executable));
+    }
+    return {};
+}
 
 #ifdef _WIN32
 namespace {

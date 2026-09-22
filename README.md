@@ -81,8 +81,10 @@ Le détail, l'architecture des modules et les jalons sont dans
   moteur, compilée dans `bin/managed` quand le SDK .NET est installé ;
 - `Devex::Engine` : tous les modules dans une bibliothèque partagée, `devex-engine.dll` ;
 - `devex-editor` : l'éditeur, qui compile et recharge à chaud le code des projets ;
-- `devex-player` : lance un projet hors de l'éditeur, ou le paquet d'un jeu exporté (scène de
-  démarrage, réglages de fenêtre et code du jeu) ;
+- `devex-player` : lance un projet hors de l'éditeur, en recompilant d'abord son code s'il est
+  périmé, ou le paquet d'un jeu exporté (scène de démarrage, réglages de fenêtre et code du jeu) ;
+  le lecteur, les jeux exportés et l'éditeur tiennent un journal dans un fichier et, s'ils
+  plantent, y ajoutent la pile d'appels avec un minidump à côté ;
 - `devex-bindgen` : outil de build qui génère les vues C# des composants C++ ;
 - `samples/sandbox` : le bac à sable, un projet dont le gameplay mêle un module C++ et du C# dans
   `code/` :

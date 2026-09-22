@@ -24,8 +24,8 @@
 namespace devex::runtime {
 
 // Changes whenever game modules must be rebuilt to load: modules built for another version are
-// refused.
-inline constexpr std::uint32_t gameApiVersion = 8;
+// refused. 9: ComponentType gained findMutable, which modules fill in when they register a type.
+inline constexpr std::uint32_t gameApiVersion = 9;
 
 enum class SystemPhase : std::uint8_t
 {
