@@ -85,10 +85,23 @@ target_compile_definitions(devex_animation_tests
     PRIVATE DEVEX_TEST_DATA_DIRECTORY="${CMAKE_CURRENT_SOURCE_DIR}/data"
 )
 
+devex_add_tests(ui
+    SOURCES
+        ui/LayoutTests.cpp
+        ui/TextLayoutTests.cpp
+        ui/UiWorldTests.cpp
+    LIBRARIES
+        Devex::Engine
+)
+target_compile_definitions(devex_ui_tests
+    PRIVATE DEVEX_TEST_DATA_DIRECTORY="${CMAKE_CURRENT_SOURCE_DIR}/data"
+)
+
 devex_add_tests(asset
     SOURCES
         asset/ArtifactTests.cpp
         asset/AssetDatabaseTests.cpp
+        asset/FontImporterTests.cpp
         asset/GltfImporterTests.cpp
         asset/MeshDataTests.cpp
         asset/MetaFileTests.cpp

@@ -6,10 +6,16 @@
 
 #include <memory>
 #include <string>
+#include <vector>
 
 // Editing commands for scenes. Entities are named by UUID and components and fields by their
 // registered names, so commands only rely on reflection.
 namespace devex::tools {
+
+// Several commands undone and redone as one, such as the two corners a drag moves together. The
+// commands are applied in order and reverted in the opposite one; an empty list is no command.
+[[nodiscard]] std::unique_ptr<Command> makeCompositeCommand(
+    std::vector<std::unique_ptr<Command>> commands, std::string description);
 
 [[nodiscard]] std::unique_ptr<Command> makeSetFieldCommand(core::Uuid entity, std::string component,
                                                            std::string field,

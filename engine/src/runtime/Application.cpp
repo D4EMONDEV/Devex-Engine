@@ -268,6 +268,11 @@ private:
     // outside Play, which the Animation panel drives.
     void createAnimation();
     void destroyAnimation();
+    void createUi();
+    void destroyUi();
+    void updateUi(std::chrono::nanoseconds frameTime);
+    // Appends the canvases of the scene to the frame, over the game.
+    void buildUi(render::RenderWorld& world);
     // Before the transforms of the frame: clips advance and pose the bones they drive.
     void updateAnimation(std::chrono::nanoseconds frameTime);
     void applyAudioSettings();
@@ -308,6 +313,9 @@ private:
     std::unique_ptr<physics::PhysicsWorld> m_physics;
     std::unique_ptr<audio::AudioWorld> m_audio;
     std::unique_ptr<animation::AnimationWorld> m_animation;
+    std::unique_ptr<ui::UiWorld> m_ui;
+    // The stick of the pad on the previous frame, so that pushing it moves the focus once.
+    math::Vec2 m_uiStick{0.0f};
     // The audio settings the mixer has, to follow changes to the project.
     std::optional<asset::AudioSettings> m_audioSettings;
     // The Start systems ran for the scene that plays.
@@ -410,6 +418,7 @@ core::Result<void> ApplicationRunner::loadScene(asset::AssetId sceneAsset)
     const bool restart = m_gameStarted;
     if (restart)
     {
+        destroyUi();
         destroyAnimation();
         destroyAudio();
         destroyPhysics();
@@ -424,6 +433,7 @@ core::Result<void> ApplicationRunner::loadScene(asset::AssetId sceneAsset)
         createPhysics();
         createAudio();
         createAnimation();
+        createUi();
         runSystems(SystemPhase::Start, core::Duration::zero());
     }
     return {};
@@ -448,6 +458,7 @@ int ApplicationRunner::execute()
         createPhysics();
         createAudio();
         createAnimation();
+        createUi();
         m_gameStarted = true;
         runSystems(SystemPhase::Start, core::Duration::zero());
         loadRequestedScene();
@@ -484,6 +495,7 @@ int ApplicationRunner::execute()
     }
     m_services.platform.setLiveRedrawCallback({});
     m_application.onShutdown();
+    destroyUi();
     destroyAnimation();
     destroyAudio();
     destroyPhysics();
@@ -584,6 +596,7 @@ void ApplicationRunner::runFrame()
             runGameplay(m_timestep.step());
         }
         updateAnimation(frameTime);
+        updateUi(frameTime);
         m_application.m_scene->updateTransforms();
         if (m_physics && m_playScene)
         {
@@ -599,6 +612,7 @@ void ApplicationRunner::runFrame()
     {
         runGameplay(frameTime);
         updateAnimation(frameTime);
+        updateUi(frameTime);
         m_application.m_scene->updateTransforms();
         if (m_physics)
         {
@@ -682,6 +696,8 @@ void ApplicationRunner::render(bool gameplay)
     {
         m_services.tools->prepareRender(scene, world, m_playState);
     }
+    // The interface is drawn last, over the game and its overlays.
+    buildUi(world);
     if (core::Result<void> rendered = renderer->endFrame(); !rendered)
     {
         DEVEX_LOG_FATAL("Rendering failed: {}", rendered.error());
@@ -804,6 +820,7 @@ void ApplicationRunner::startPlaying()
     createPhysics();
     createAudio();
     createAnimation();
+    createUi();
     DEVEX_LOG_INFO("Playing");
     m_application.onPlayStarted();
     m_gameStarted = true;
@@ -814,6 +831,7 @@ void ApplicationRunner::startPlaying()
 void ApplicationRunner::stopPlaying()
 {
     m_application.onPlayStopped();
+    destroyUi();
     destroyAnimation();
     destroyAudio();
     destroyPhysics();
@@ -1199,6 +1217,7 @@ void ApplicationRunner::runSystems(SystemPhase phase, core::Duration delta)
         .physics = m_physics.get(),
         .audio = m_audio.get(),
         .animation = m_animation.get(),
+        .ui = m_ui.get(),
         .delta = delta,
         .interpolationAlpha = m_timestep.alpha(),
     };
@@ -1216,6 +1235,7 @@ void ApplicationRunner::runSystems(SystemPhase phase, core::Duration delta)
             .physics = m_physics.get(),
             .audio = m_audio.get(),
             .animation = m_animation.get(),
+            .ui = m_ui.get(),
             .assets = m_services.assets.source(),
         };
         m_managed->runPhase(frame, phase);
@@ -1293,6 +1313,121 @@ void ApplicationRunner::createAnimation()
     {
         m_services.tools->setAnimationWorld(m_animation.get());
     }
+}
+
+void ApplicationRunner::createUi()
+{
+    if (m_ui)
+    {
+        return;
+    }
+    m_ui = std::make_unique<ui::UiWorld>();
+    m_application.m_ui = m_ui.get();
+}
+
+void ApplicationRunner::destroyUi()
+{
+    m_application.m_ui = nullptr;
+    m_ui.reset();
+}
+
+void ApplicationRunner::updateUi(std::chrono::nanoseconds frameTime)
+{
+    if (!m_ui)
+    {
+        return;
+    }
+    // The interface answers where the game is shown: the whole window in the player, the viewport
+    // image in the editor.
+    math::Vec2 size{static_cast<float>(m_services.window.pixelSize().width),
+                    static_cast<float>(m_services.window.pixelSize().height)};
+    // Far outside every canvas, so that nothing is hovered while the pointer is elsewhere.
+    math::Vec2 pointer{-1.0e6f, -1.0e6f};
+    bool pointerAvailable = false;
+    if (isEditor())
+    {
+        const math::Extent2D viewport = m_services.tools->viewportPixels();
+        if (viewport.width == 0 || viewport.height == 0)
+        {
+            return;
+        }
+        size = math::Vec2{static_cast<float>(viewport.width), static_cast<float>(viewport.height)};
+        if (const std::optional<math::Vec2> inside = m_services.tools->viewportPointer())
+        {
+            pointer = *inside;
+            pointerAvailable = true;
+        }
+    }
+    else
+    {
+        const math::Extent2D points = m_services.window.size();
+        const float scale = points.width > 0 ? size.x / static_cast<float>(points.width) : 1.0f;
+        pointer = m_services.platform.input().mousePosition() * scale;
+        pointerAvailable = true;
+    }
+
+    const platform::Input& input = m_services.platform.input();
+    const bool playing = !isEditor() || m_playState == tools::PlayState::Playing;
+    ui::UiInput uiInput{.pointer = pointer};
+    if (playing && pointerAvailable)
+    {
+        uiInput.pointerDown = input.isMouseButtonDown(platform::MouseButton::Left);
+        uiInput.pointerPressed = input.wasMouseButtonPressed(platform::MouseButton::Left);
+        uiInput.pointerReleased = input.wasMouseButtonReleased(platform::MouseButton::Left);
+        uiInput.pointerMoved = input.mouseDelta() != math::Vec2{0.0f};
+    }
+    if (playing)
+    {
+        // One step per press: the arrows and the pad move the focus, and the stick does too once
+        // it is pushed, not every frame it stays there.
+        const math::Vec2 stick = input.gamepadLeftStick();
+        const auto step = [&](platform::Key negative, platform::Key positive,
+                              platform::GamepadButton padNegative, platform::GamepadButton padPositive,
+                              float axis, float previous) {
+            int amount = 0;
+            amount -= input.wasKeyPressed(negative) || input.wasGamepadButtonPressed(padNegative) ? 1 : 0;
+            amount += input.wasKeyPressed(positive) || input.wasGamepadButtonPressed(padPositive) ? 1 : 0;
+            constexpr float pushed = 0.5f;
+            if (axis <= -pushed && previous > -pushed)
+            {
+                --amount;
+            }
+            if (axis >= pushed && previous < pushed)
+            {
+                ++amount;
+            }
+            return std::clamp(amount, -1, 1);
+        };
+        uiInput.moveX = step(platform::Key::Left, platform::Key::Right, platform::GamepadButton::DpadLeft,
+                             platform::GamepadButton::DpadRight, stick.x, m_uiStick.x);
+        uiInput.moveY = step(platform::Key::Up, platform::Key::Down, platform::GamepadButton::DpadUp,
+                             platform::GamepadButton::DpadDown, stick.y, m_uiStick.y);
+        m_uiStick = stick;
+        uiInput.submitPressed = input.wasKeyPressed(platform::Key::Enter) ||
+                                input.wasKeyPressed(platform::Key::Space) ||
+                                input.wasGamepadButtonPressed(platform::GamepadButton::South);
+        uiInput.cancelPressed = input.wasKeyPressed(platform::Key::Escape) ||
+                                input.wasGamepadButtonPressed(platform::GamepadButton::East);
+    }
+    m_ui->update(*m_application.m_scene, size, uiInput, core::Duration(frameTime));
+}
+
+void ApplicationRunner::buildUi(render::RenderWorld& world)
+{
+    if (!m_ui)
+    {
+        return;
+    }
+    ui::DrawContext context{
+        .fonts =
+            [this](asset::AssetId id) {
+                const LoadedFont* const font = m_services.assets.font(id);
+                return font != nullptr ? ui::FontRef{.data = font->data.get(), .atlas = font->atlas}
+                                       : ui::FontRef{};
+            },
+        .textures = [this](asset::AssetId id) { return m_services.assets.texture(id); },
+    };
+    m_ui->build(*m_application.m_scene, context, world);
 }
 
 void ApplicationRunner::destroyAnimation()

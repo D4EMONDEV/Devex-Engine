@@ -23,16 +23,16 @@ Le détail, l'architecture des modules et les jalons sont dans
 - `Devex::Core` : `Result`/`Error`, journal `DEVEX_LOG_*`, assertions, `SlotMap`, `Uuid`,
   hachage XXH64, pool de jobs ;
 - `Devex::Math` : types GLM sous `devex::math`, projection reverse-Z infinie, TRS ;
-- `Devex::Platform` : fenêtre, événements et entrées clavier/souris, dialogues de fichiers,
-  bibliothèques partagées et processus sur SDL3 ;
+- `Devex::Platform` : fenêtre, événements et entrées clavier, souris et manette, dialogues de
+  fichiers, bibliothèques partagées et processus sur SDL3 ;
 - `Devex::Reflection` : description des champs des composants (`DEVEX_REFLECT`), listes et
   références d'entités comprises ;
 - `Devex::Serialization` : format texte commun des fichiers `.dvx*`, flux binaires ;
-- `Devex::Asset` : `AssetId`, maillages, textures, matériaux, modèles, clips audio et animations, fichiers `.dvxasset`,
-  projets `.dvxproj`, paquets de jeux exportés `.dvxpak` ;
+- `Devex::Asset` : `AssetId`, maillages, textures, matériaux, modèles, clips audio, animations et
+  polices, fichiers `.dvxasset`, projets `.dvxproj`, paquets de jeux exportés `.dvxpak` ;
 - `Devex::AssetImport` : base d'assets (`.dvxmeta`, cache `.devex/`, imports en arrière-plan,
-  réimport à chaud), importeurs de textures (BC7/BC5), de `.dvxmat`, de glTF, de scènes et de sons
-  (WAV, FLAC, MP3, Ogg Vorbis) ;
+  réimport à chaud), importeurs de textures (BC7/BC5), de `.dvxmat`, de glTF, de scènes, de sons
+  (WAV, FLAC, MP3, Ogg Vorbis) et de polices (`.ttf`, `.otf` cuites en atlas de distances) ;
 - `Devex::Render` : renderer Vulkan 1.4 (volk, VMA), shaders Slang, render graph, PBR
   forward+ clustered, ombres en cascades, ciel HDR et IBL, MSAA, exposition automatique,
   tonemapping AgX, rendu dans une texture, sélection sur le GPU, contours et lignes d'outils ;
@@ -47,10 +47,15 @@ Le détail, l'architecture des modules et les jalons sont dans
 - `Devex::Animation` : clips d'animation importés des modèles glTF, squelettes faits d'entités,
   `Animator` qui joue un clip avec fondu croisé, root motion optionnel, skinning des maillages
   dans le vertex shader ;
+- `Devex::Ui` : interfaces faites d'entités (`Canvas`, `UiRect`, `UiImage`, `UiText`, `UiButton`,
+  `UiLayout`), placement par ancrages et marges puis par conteneurs, texte tiré d'un atlas de
+  distances signées, dessin en une passe après le tonemapping, survol, clic et focus au clavier
+  comme à la manette ;
 - `Devex::Tools` : interface ImGui au thème réglable inspiré de Godot (Noto Sans, JetBrains Mono,
   icônes Lucide) : arbre de la scène, inspecteur, FileSystem, sortie, statistiques, annulation, en
-  overlay (F1) ou dans l'éditeur : écrans 3D et Script au centre de la barre de menus (2D à venir
-  avec les interfaces), gestionnaire de projets, onglets de scènes, viewport et sa
+  overlay (F1) ou dans l'éditeur : écrans 2D, 3D et Script au centre de la barre de menus, dont
+  l'écran 2D où les interfaces se choisissent, se déplacent et se redimensionnent,
+  gestionnaire de projets, onglets de scènes, viewport et sa
   barre d'outils, caméra libre, sélection à la souris, gizmos, préfabs (glisser-déposer, valeurs
   modifiées, Revert, Make Local, Save as Prefab, mise à jour en direct), fichiers de code du projet
   avec éditeur de texte intégré à onglets (coloration syntaxique, numéros de ligne, recherche et
@@ -62,9 +67,9 @@ Le détail, l'architecture des modules et les jalons sont dans
   (composants et systèmes rechargeables à chaud), code C# sur .NET hébergé (composants, systèmes,
   compilation et rechargement à chaud), chargement des assets à la demande, changement de
   scène, rendu automatique de la scène, export d'un jeu ;
-- `Devex.Managed` : l'API C# du moteur (`Component`, `Entity`, `Scene`, `Input`, `Physics`, `Audio`, `Animation`,
-  `Prefabs`, `Assets`, `Time`, `Log`, maths) et les vues des composants du moteur, compilée dans
-  `bin/managed` quand le SDK .NET est installé ;
+- `Devex.Managed` : l'API C# du moteur (`Component`, `Entity`, `Scene`, `Input`, `Physics`, `Audio`,
+  `Animation`, `Ui`, `Prefabs`, `Assets`, `Time`, `Log`, maths) et les vues des composants du
+  moteur, compilée dans `bin/managed` quand le SDK .NET est installé ;
 - `Devex::Engine` : tous les modules dans une bibliothèque partagée, `devex-engine.dll` ;
 - `devex-editor` : l'éditeur, qui compile et recharge à chaud le code des projets ;
 - `devex-player` : lance un projet hors de l'éditeur, ou le paquet d'un jeu exporté (scène de
@@ -83,7 +88,8 @@ Le détail, l'architecture des modules et les jalons sont dans
   groupe Music ; un robot rigué patrouille, attend et salue le joueur (`code/Robot.cs`) ;
   Tab passe à l'autre scène ; et la
   scène `sandbox` (caisse et balises glTF, sphères or et plastique, ciel HDR, plateau tournant, jour
-  et nuit avec N).
+  et nuit avec N), qui ouvre sur un menu principal, des réglages de volume, un menu de pause
+  appelé par Échap et un HUD, tous pilotés par `code/Menu.cs`.
 
 Le SDK Vulkan fournit `slangc`, qui compile les shaders pendant le build. Les assets
 d'exemple et les données de test sont produits par `scripts/generate_sample_assets.py`.

@@ -9,6 +9,7 @@ devex_add_shaders(devex_shaders
         shadow.slang
         sky.slang
         tonemap.slang
+        ui.slang
     MODULES
         common.slang
         pbr.slang

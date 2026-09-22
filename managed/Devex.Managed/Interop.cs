@@ -82,6 +82,14 @@ internal unsafe struct NativeApi
     public delegate* unmanaged<Entity, int> IsAnimationPlaying;
     public delegate* unmanaged<Entity, float> AnimationTime;
     public delegate* unmanaged<void*, Entity, float, void> SetAnimationTime;
+
+    public delegate* unmanaged<byte*, int> UiClickedAction;
+    public delegate* unmanaged<Entity, int> UiClickedEntity;
+    public delegate* unmanaged<int> UiCancelled;
+    public delegate* unmanaged<Entity> UiHovered;
+    public delegate* unmanaged<Entity> UiFocused;
+    public delegate* unmanaged<void*, Entity, void> UiSetFocus;
+    public delegate* unmanaged<int> UiPointerOverInterface;
 }
 
 /// <summary>The C# functions the engine calls. Filled by the runtime when it starts.</summary>

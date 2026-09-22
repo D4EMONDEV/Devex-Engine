@@ -10,6 +10,7 @@
 #include <devex/runtime/AssetManager.hpp>
 #include <devex/scene/ComponentRegistry.hpp>
 #include <devex/scene/Scene.hpp>
+#include <devex/ui/UiWorld.hpp>
 
 #include <cstdint>
 #include <span>
@@ -24,7 +25,7 @@ namespace devex::runtime {
 
 // Changes whenever game modules must be rebuilt to load: modules built for another version are
 // refused.
-inline constexpr std::uint32_t gameApiVersion = 7;
+inline constexpr std::uint32_t gameApiVersion = 8;
 
 enum class SystemPhase : std::uint8_t
 {
@@ -52,6 +53,9 @@ struct SystemContext
     // The animations of the scene: the clips its Animator components play. Null when the
     // application runs without animation.
     animation::AnimationWorld* animation = nullptr;
+    // The interface of the scene: its canvases, laid out every frame, and the buttons they
+    // answered this frame. Null when the application runs without an interface.
+    ui::UiWorld* ui = nullptr;
     // The fixed step during FixedUpdate, the time since the previous frame during Update, zero
     // during Start.
     core::Duration delta{0.0};

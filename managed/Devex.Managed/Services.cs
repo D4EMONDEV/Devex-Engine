@@ -275,3 +275,42 @@ public static unsafe class Animation
     public static void SetTime(Entity entity, float seconds)
         => Bootstrap.Native.SetAnimationTime(Scene.Current.Pointer, entity, seconds);
 }
+
+/// <summary>
+/// The interface of the game: the canvases of the scene, what the player clicked this frame, and
+/// where the focus sits for the keyboard and the pad.
+/// </summary>
+public static unsafe class Ui
+{
+    /// <summary>
+    /// Whether a button carrying this action was clicked during this frame. As many buttons as
+    /// needed may share an action: any of them answers.
+    /// </summary>
+    public static bool WasClicked(string action)
+    {
+        using var text = new Utf8Buffer(action);
+        return Bootstrap.Native.UiClickedAction(text.Pointer) != 0;
+    }
+
+    /// <summary>Whether that very button was clicked during this frame.</summary>
+    public static bool WasClicked(Entity entity) => Bootstrap.Native.UiClickedEntity(entity) != 0;
+
+    /// <summary>Whether the player asked to go back this frame: Escape, or the east button.</summary>
+    public static bool WasCancelled() => Bootstrap.Native.UiCancelled() != 0;
+
+    /// <summary>The button under the pointer, or an invalid entity.</summary>
+    public static Entity Hovered => Bootstrap.Native.UiHovered();
+
+    /// <summary>The button the keyboard and the pad act on, or an invalid entity.</summary>
+    public static Entity Focused
+    {
+        get => Bootstrap.Native.UiFocused();
+        set => Bootstrap.Native.UiSetFocus(Scene.Current.Pointer, value);
+    }
+
+    /// <summary>
+    /// Whether the pointer rests on the interface, which a game reads before acting on a click of
+    /// its own.
+    /// </summary>
+    public static bool PointerOverInterface => Bootstrap.Native.UiPointerOverInterface() != 0;
+}

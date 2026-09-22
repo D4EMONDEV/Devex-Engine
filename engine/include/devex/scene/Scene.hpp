@@ -159,6 +159,16 @@ public:
             std::make_tuple(findPool<std::remove_const_t<Components>>()...));
     }
 
+    // Reading a scene that cannot change, such as the one a system only looks at. Every component
+    // of the view is then const.
+    template <typename... Components>
+    [[nodiscard]] View<const Components...> view() const noexcept
+    {
+        return View<const Components...>(std::make_tuple(
+            const_cast<ComponentPool<std::remove_const_t<Components>>*>(
+                findPool<std::remove_const_t<Components>>())...));
+    }
+
     // Computes the WorldTransform of every entity that has a Transform, parents first. Entities
     // without a Transform pass their parent's transform down to their children.
     void updateTransforms();

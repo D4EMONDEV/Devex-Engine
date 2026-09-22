@@ -308,6 +308,7 @@ const char* windowOf(MainScreen screen) noexcept
     case MainScreen::Script:
         return textEditorWindow;
     case MainScreen::TwoD:
+        return interfaceWindow;
     case MainScreen::ThreeD:
         break;
     }
@@ -330,16 +331,12 @@ std::string_view toString(MainScreen screen) noexcept
 
 void setMainScreen(ToolsState& state, MainScreen screen)
 {
-    if (screen == MainScreen::TwoD)
-    {
-        // Interfaces come with the UI system; until then the button only shows what is planned.
-        return;
-    }
     state.mainScreen = screen;
     state.mainScreenChanged = true;
     // The middle holds one screen at a time: the others close, so that none of them shows a tab.
     state.showViewport = screen == MainScreen::ThreeD;
     state.showTextEditor = screen == MainScreen::Script;
+    state.showInterface = screen == MainScreen::TwoD;
 }
 
 namespace {
@@ -355,7 +352,7 @@ void drawMainScreenSwitch(ToolsState& state)
         const char* tooltip;
     };
     const std::array<Choice, 3> choices{{
-        {MainScreen::TwoD, icons::Square, "2D", "Interfaces: coming with the UI system"},
+        {MainScreen::TwoD, icons::Square, "2D", "The interfaces of the scene, laid out on screen"},
         {MainScreen::ThreeD, icons::Cuboid, "3D", "The scene in the viewport"},
         {MainScreen::Script, icons::Code, "Script", "The files of the project in the text editor"},
     }};
@@ -373,18 +370,12 @@ void drawMainScreenSwitch(ToolsState& state)
     for (const Choice& choice : choices)
     {
         const bool selected = state.mainScreen == choice.screen;
-        const bool available = choice.screen != MainScreen::TwoD;
         ImGui::PushStyleColor(ImGuiCol_Button, selected ? uiColor(colors.accent) : ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
-        ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(selected    ? ImGuiCol_Text
-                                                                     : available ? ImGuiCol_Text
-                                                                                 : ImGuiCol_TextDisabled));
-        ImGui::BeginDisabled(!available);
         if (ImGui::Button(withIcon(choice.icon, choice.label).c_str()))
         {
             setMainScreen(state, choice.screen);
         }
-        ImGui::EndDisabled();
-        ImGui::PopStyleColor(2);
+        ImGui::PopStyleColor();
         ImGui::SetItemTooltip("%s", choice.tooltip);
     }
 }

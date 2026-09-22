@@ -21,6 +21,8 @@ std::string_view toString(TextureFormat format) noexcept
         return "bc7-srgb";
     case TextureFormat::Rgba16Float:
         return "rgba16f";
+    case TextureFormat::R8Unorm:
+        return "r8";
     }
     return "unknown";
 }
@@ -45,7 +47,17 @@ std::size_t mipByteSize(TextureFormat format, std::uint32_t width, std::uint32_t
         const std::size_t blocksHigh = (static_cast<std::size_t>(height) + 3) / 4;
         return blocksWide * blocksHigh * 16;
     }
-    const std::size_t bytesPerTexel = format == TextureFormat::Rgba16Float ? 8 : 4;
+    const std::size_t bytesPerTexel = [format] -> std::size_t {
+        switch (format)
+        {
+        case TextureFormat::Rgba16Float:
+            return 8;
+        case TextureFormat::R8Unorm:
+            return 1;
+        default:
+            return 4;
+        }
+    }();
     return static_cast<std::size_t>(width) * height * bytesPerTexel;
 }
 

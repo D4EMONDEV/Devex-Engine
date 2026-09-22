@@ -3,6 +3,7 @@
 #include <devex/animation/Clip.hpp>
 #include <devex/audio/Clip.hpp>
 #include <devex/asset/AssetId.hpp>
+#include <devex/asset/FontData.hpp>
 #include <devex/asset/MaterialData.hpp>
 #include <devex/asset/ModelData.hpp>
 #include <devex/asset/AssetSource.hpp>
@@ -18,6 +19,14 @@
 #include <vector>
 
 namespace devex::runtime {
+
+// A font and the atlas of distances it is drawn from. The atlas is invalid without a renderer,
+// which still leaves the metrics usable to lay text out.
+struct LoadedFont
+{
+    std::shared_ptr<const asset::FontData> data;
+    render::TextureHandle atlas;
+};
 
 struct LoadedMesh
 {
@@ -68,6 +77,10 @@ public:
     // be loaded.
     [[nodiscard]] std::shared_ptr<const animation::Clip> animationClip(asset::AssetId id);
 
+    // A font with its atlas, loaded once and shared by every text drawn with it; null when it
+    // cannot be loaded.
+    [[nodiscard]] const LoadedFont* font(asset::AssetId id);
+
     // Reloads the loaded assets that an import changed and releases removed ones.
     void handleEvents(std::span<const asset::AssetEvent> events);
 
@@ -95,10 +108,12 @@ private:
     [[nodiscard]] bool loadTexture(asset::AssetId id);
     [[nodiscard]] bool loadMaterial(asset::AssetId id);
     [[nodiscard]] bool loadModel(asset::AssetId id);
+    [[nodiscard]] bool loadFont(asset::AssetId id);
     [[nodiscard]] render::MaterialDesc describe(const asset::MaterialData& material);
     void releaseMesh(asset::AssetId id);
     void releaseTexture(asset::AssetId id);
     void releaseMaterial(asset::AssetId id);
+    void releaseFont(asset::AssetId id);
     // Points every loaded material at the current handles of its textures.
     void refreshMaterials();
 
@@ -112,6 +127,7 @@ private:
     std::unordered_map<asset::AssetId, std::string> m_sceneTexts;
     std::unordered_map<asset::AssetId, std::shared_ptr<const audio::Clip>> m_audioClips;
     std::unordered_map<asset::AssetId, std::shared_ptr<const animation::Clip>> m_animationClips;
+    std::unordered_map<asset::AssetId, LoadedFont> m_fonts;
     // Assets whose loading failed, retried once an import changes them.
     std::unordered_set<asset::AssetId> m_failed;
 };

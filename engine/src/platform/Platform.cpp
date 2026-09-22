@@ -109,6 +109,131 @@ bool SDLCALL watchLiveRedraw(void* /*userData*/, SDL_Event* event)
     }
 }
 
+[[nodiscard]] std::optional<GamepadButton> toGamepadButton(Uint8 button) noexcept
+{
+    switch (button)
+    {
+    case SDL_GAMEPAD_BUTTON_SOUTH:
+        return GamepadButton::South;
+    case SDL_GAMEPAD_BUTTON_EAST:
+        return GamepadButton::East;
+    case SDL_GAMEPAD_BUTTON_WEST:
+        return GamepadButton::West;
+    case SDL_GAMEPAD_BUTTON_NORTH:
+        return GamepadButton::North;
+    case SDL_GAMEPAD_BUTTON_BACK:
+        return GamepadButton::Back;
+    case SDL_GAMEPAD_BUTTON_GUIDE:
+        return GamepadButton::Guide;
+    case SDL_GAMEPAD_BUTTON_START:
+        return GamepadButton::Start;
+    case SDL_GAMEPAD_BUTTON_LEFT_STICK:
+        return GamepadButton::LeftStick;
+    case SDL_GAMEPAD_BUTTON_RIGHT_STICK:
+        return GamepadButton::RightStick;
+    case SDL_GAMEPAD_BUTTON_LEFT_SHOULDER:
+        return GamepadButton::LeftShoulder;
+    case SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER:
+        return GamepadButton::RightShoulder;
+    case SDL_GAMEPAD_BUTTON_DPAD_UP:
+        return GamepadButton::DpadUp;
+    case SDL_GAMEPAD_BUTTON_DPAD_DOWN:
+        return GamepadButton::DpadDown;
+    case SDL_GAMEPAD_BUTTON_DPAD_LEFT:
+        return GamepadButton::DpadLeft;
+    case SDL_GAMEPAD_BUTTON_DPAD_RIGHT:
+        return GamepadButton::DpadRight;
+    default:
+        return std::nullopt;
+    }
+}
+
+[[nodiscard]] std::optional<GamepadAxis> toGamepadAxis(Uint8 axis) noexcept
+{
+    switch (axis)
+    {
+    case SDL_GAMEPAD_AXIS_LEFTX:
+        return GamepadAxis::LeftX;
+    case SDL_GAMEPAD_AXIS_LEFTY:
+        return GamepadAxis::LeftY;
+    case SDL_GAMEPAD_AXIS_RIGHTX:
+        return GamepadAxis::RightX;
+    case SDL_GAMEPAD_AXIS_RIGHTY:
+        return GamepadAxis::RightY;
+    case SDL_GAMEPAD_AXIS_LEFT_TRIGGER:
+        return GamepadAxis::LeftTrigger;
+    case SDL_GAMEPAD_AXIS_RIGHT_TRIGGER:
+        return GamepadAxis::RightTrigger;
+    default:
+        return std::nullopt;
+    }
+}
+
+// The pads that are open, each at the number the application knows it by. A pad keeps its number
+// until it is unplugged, and a new one takes the first free number.
+std::array<SDL_Gamepad*, gamepadCount> openGamepads{};
+
+[[nodiscard]] std::optional<std::size_t> gamepadSlot(SDL_JoystickID id) noexcept
+{
+    for (std::size_t slot = 0; slot < openGamepads.size(); ++slot)
+    {
+        if (openGamepads[slot] != nullptr && SDL_GetGamepadID(openGamepads[slot]) == id)
+        {
+            return slot;
+        }
+    }
+    return std::nullopt;
+}
+
+void openGamepad(SDL_JoystickID id, Input& input)
+{
+    if (gamepadSlot(id))
+    {
+        return;
+    }
+    for (std::size_t slot = 0; slot < openGamepads.size(); ++slot)
+    {
+        if (openGamepads[slot] == nullptr)
+        {
+            SDL_Gamepad* const gamepad = SDL_OpenGamepad(id);
+            if (gamepad == nullptr)
+            {
+                DEVEX_LOG_WARNING("Cannot open the gamepad {}: {}", id, SDL_GetError());
+                return;
+            }
+            openGamepads[slot] = gamepad;
+            input.setGamepadConnected(slot, true);
+            const char* const name = SDL_GetGamepadName(gamepad);
+            DEVEX_LOG_INFO("Gamepad {} connected: {}", slot, name != nullptr ? name : "unknown");
+            return;
+        }
+    }
+}
+
+void closeGamepad(SDL_JoystickID id, Input& input)
+{
+    if (const std::optional<std::size_t> slot = gamepadSlot(id))
+    {
+        SDL_CloseGamepad(openGamepads[*slot]);
+        openGamepads[*slot] = nullptr;
+        input.setGamepadConnected(*slot, false);
+        DEVEX_LOG_INFO("Gamepad {} disconnected", *slot);
+    }
+}
+
+void closeGamepads(Input& input)
+{
+    for (std::size_t slot = 0; slot < openGamepads.size(); ++slot)
+    {
+        if (openGamepads[slot] != nullptr)
+        {
+            SDL_CloseGamepad(openGamepads[slot]);
+            openGamepads[slot] = nullptr;
+            input.setGamepadConnected(slot, false);
+        }
+    }
+}
+
 // Devices whose presses and motion are used by ImGui instead of gameplay.
 struct InputCapture
 {
@@ -212,6 +337,36 @@ void dispatchEvent(const SDL_Event& event, Input& input, InputCapture capture,
         break;
     }
 
+    case SDL_EVENT_GAMEPAD_ADDED:
+        openGamepad(event.gdevice.which, input);
+        break;
+
+    case SDL_EVENT_GAMEPAD_REMOVED:
+        closeGamepad(event.gdevice.which, input);
+        break;
+
+    case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
+    case SDL_EVENT_GAMEPAD_BUTTON_UP:
+        if (const std::optional<std::size_t> slot = gamepadSlot(event.gbutton.which))
+        {
+            if (const std::optional<GamepadButton> button = toGamepadButton(event.gbutton.button))
+            {
+                input.setGamepadButtonDown(*button, *slot, event.gbutton.down);
+            }
+        }
+        break;
+
+    case SDL_EVENT_GAMEPAD_AXIS_MOTION:
+        if (const std::optional<std::size_t> slot = gamepadSlot(event.gaxis.which))
+        {
+            if (const std::optional<GamepadAxis> axis = toGamepadAxis(event.gaxis.axis))
+            {
+                // SDL reports whole numbers over the range of a signed short.
+                input.setGamepadAxis(*axis, *slot, static_cast<float>(event.gaxis.value) / 32767.0f);
+            }
+        }
+        break;
+
     case SDL_EVENT_DROP_FILE:
         callback(FileDropped{WindowId{event.drop.windowID},
                              event.drop.data != nullptr ? event.drop.data : ""});
@@ -232,7 +387,8 @@ core::Result<Platform> Platform::create()
     }
 
     SDL_SetMainReady();
-    if (!SDL_Init(SDL_INIT_VIDEO))
+    // Gamepads are optional: a machine without one, or without their driver, still runs.
+    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD))
     {
         platformExists.store(false);
         return core::makeError(core::ErrorCode::Platform, "SDL_Init failed: {}", SDL_GetError());
@@ -282,6 +438,7 @@ void Platform::shutdown() noexcept
     if (m_initialized)
     {
         shutdownImGui();
+        closeGamepads(m_input);
         SDL_RemoveEventWatch(&watchLiveRedraw, nullptr);
         liveRedrawCallback = nullptr;
         {

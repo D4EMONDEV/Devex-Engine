@@ -138,6 +138,28 @@ struct OverlayPushConstants
     float padding2 = 0.0f;
 };
 
+// One vertex of the interface. Its layout matches UiVertex in shaders/ui.slang.
+struct GpuUiVertex
+{
+    math::Vec2 position{0.0f};
+    math::Vec2 uv{0.0f};
+    math::Vec4 color{1.0f};
+};
+
+struct UiPushConstants
+{
+    VkDeviceAddress vertices = 0;
+    VkDeviceAddress indices = 0;
+    math::Vec2 inverseViewport{0.0f};
+    std::uint32_t kind = 0;
+    std::uint32_t texture = 0;
+    math::Vec4 rect{0.0f};
+    float radius = 0.0f;
+    float sharpness = 1.0f;
+    float padding0 = 0.0f;
+    float padding1 = 0.0f;
+};
+
 struct SkyPushConstants
 {
     VkDeviceAddress scene = 0;

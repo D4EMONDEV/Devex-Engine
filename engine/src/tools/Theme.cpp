@@ -3,6 +3,7 @@
 #include <devex/core/Log.hpp>
 #include <devex/core/Path.hpp>
 #include <devex/scene/AnimationComponents.hpp>
+#include <devex/scene/UiComponents.hpp>
 #include <devex/scene/AudioComponents.hpp>
 #include <devex/scene/ComponentRegistry.hpp>
 #include <devex/scene/Components.hpp>
@@ -113,11 +114,13 @@ bool g_linearColors = true;
 
 [[nodiscard]] bool isEngineComponent(std::string_view name) noexcept
 {
-    constexpr std::array<std::string_view, 18> engineComponents{
-        "Transform",       "MeshRenderer",     "Camera",       "DirectionalLight",    "PointLight",
-        "SpotLight",       "Environment",      "RigidBody",    "BoxCollider",         "SphereCollider",
-        "CapsuleCollider", "CylinderCollider", "MeshCollider", "CharacterController", "AudioSource",
-        "AudioListener",   "SkinnedMeshRenderer", "Animator"};
+    constexpr std::array<std::string_view, 24> engineComponents{
+        "Transform",       "MeshRenderer",        "Camera",       "DirectionalLight",
+        "PointLight",      "SpotLight",           "Environment",  "RigidBody",
+        "BoxCollider",     "SphereCollider",      "CapsuleCollider", "CylinderCollider",
+        "MeshCollider",    "CharacterController", "AudioSource",  "AudioListener",
+        "SkinnedMeshRenderer", "Animator",        "Canvas",       "UiRect",
+        "UiImage",         "UiText",              "UiButton",     "UiLayout"};
     return std::ranges::find(engineComponents, name) != engineComponents.end();
 }
 
@@ -273,10 +276,11 @@ ThemeColors deriveThemeColors(const ThemeSettings& settings)
     colors.axisY = hex(0x7ccf48);
     colors.axisZ = hex(0x4f8ff0);
 
-    const std::array<std::pair<ImVec4*, std::uint32_t>, 15> icons{{
+    const std::array<std::pair<ImVec4*, std::uint32_t>, 16> icons{{
         {&colors.physics, 0x72d6c6},
         {&colors.audio, 0xf49ac1},
         {&colors.animation, 0xc3a6f5},
+        {&colors.interface, 0x9fd3ff},
         {&colors.entity, 0xfc7f7f},
         {&colors.light, 0xffd166},
         {&colors.camera, 0xc49af2},
@@ -526,6 +530,26 @@ EntityIcon entityIcon(const scene::Scene& scene, scene::Entity entity)
     {
         return {icons::Film, colors.animation};
     }
+    if (scene.has<scene::Canvas>(entity))
+    {
+        return {icons::Monitor, colors.interface};
+    }
+    if (scene.has<scene::UiButton>(entity))
+    {
+        return {icons::Pointer, colors.interface};
+    }
+    if (scene.has<scene::UiText>(entity))
+    {
+        return {icons::Type, colors.interface};
+    }
+    if (scene.has<scene::UiLayout>(entity))
+    {
+        return {icons::LayoutDashboard, colors.interface};
+    }
+    if (scene.has<scene::UiImage>(entity) || scene.has<scene::UiRect>(entity))
+    {
+        return {icons::Square, colors.interface};
+    }
     if (scene.has<scene::SkinnedMeshRenderer>(entity))
     {
         return {icons::Bone, colors.animation};
@@ -649,6 +673,30 @@ EntityIcon componentIcon(std::string_view componentName)
     if (componentName == "AudioListener")
     {
         return {icons::Ear, colors.audio};
+    }
+    if (componentName == "Canvas")
+    {
+        return {icons::Monitor, colors.interface};
+    }
+    if (componentName == "UiRect")
+    {
+        return {icons::Square, colors.interface};
+    }
+    if (componentName == "UiImage")
+    {
+        return {icons::Image, colors.interface};
+    }
+    if (componentName == "UiText")
+    {
+        return {icons::Type, colors.interface};
+    }
+    if (componentName == "UiButton")
+    {
+        return {icons::Pointer, colors.interface};
+    }
+    if (componentName == "UiLayout")
+    {
+        return {icons::LayoutDashboard, colors.interface};
     }
     return {icons::Puzzle, colors.gameCode};
 }

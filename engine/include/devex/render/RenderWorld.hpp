@@ -113,6 +113,39 @@ struct OverlayVertex
     math::Vec4 color{1.0f};
 };
 
+// A vertex of the interface, in pixels of the image, with straight alpha.
+struct UiVertex
+{
+    math::Vec2 position{0.0f};
+    math::Vec2 uv{0.0f};
+    math::Vec4 color{1.0f};
+};
+
+enum class UiDrawKind : std::uint8_t
+{
+    // A rectangle, filled with its color and its texture when it has one.
+    Quad,
+    // The same, with its corners rounded.
+    RoundedQuad,
+    // Letters read from the atlas of distances of a font.
+    Text,
+};
+
+// One batch of the interface: the triangles that share a texture and a shape.
+struct UiDraw
+{
+    UiDrawKind kind = UiDrawKind::Quad;
+    // Invalid draws the color alone.
+    TextureHandle texture;
+    std::uint32_t firstIndex = 0;
+    std::uint32_t indexCount = 0;
+    // The rectangle the corners are rounded on, and by how much, in pixels.
+    math::Vec4 rect{0.0f};
+    float radius = 0.0f;
+    // For text: how many texels of the atlas one pixel covers, which keeps the edges sharp.
+    float sharpness = 1.0f;
+};
+
 // Asks which object is visible at a pixel of the scene image.
 struct PickRequest
 {
@@ -156,6 +189,12 @@ struct RenderWorld
     // Answered some frames later by Renderer::takePickResults.
     std::optional<PickRequest> pick;
 
+    // The interface, drawn over everything in the order it is filled. Positions are in pixels of
+    // the image, from its top left corner.
+    std::vector<UiVertex> uiVertices;
+    std::vector<std::uint32_t> uiIndices;
+    std::vector<UiDraw> uiDraws;
+
     // Restores the defaults while keeping allocated storage.
     void reset() noexcept
     {
@@ -165,6 +204,12 @@ struct RenderWorld
         std::vector<OverlayVertex> sceneLineStorage = std::move(sceneLines);
         std::vector<OverlayVertex> overlayLineStorage = std::move(overlayLines);
         std::vector<OverlayVertex> overlayTriangleStorage = std::move(overlayTriangles);
+        std::vector<UiVertex> uiVertexStorage = std::move(uiVertices);
+        std::vector<std::uint32_t> uiIndexStorage = std::move(uiIndices);
+        std::vector<UiDraw> uiDrawStorage = std::move(uiDraws);
+        uiVertexStorage.clear();
+        uiIndexStorage.clear();
+        uiDrawStorage.clear();
         lightStorage.clear();
         meshStorage.clear();
         boneStorage.clear();
@@ -178,6 +223,9 @@ struct RenderWorld
         sceneLines = std::move(sceneLineStorage);
         overlayLines = std::move(overlayLineStorage);
         overlayTriangles = std::move(overlayTriangleStorage);
+        uiVertices = std::move(uiVertexStorage);
+        uiIndices = std::move(uiIndexStorage);
+        uiDraws = std::move(uiDrawStorage);
     }
 };
 

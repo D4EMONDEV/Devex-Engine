@@ -191,6 +191,12 @@ public:
     [[nodiscard]] bool capturesKeyboard() const noexcept;
     [[nodiscard]] bool capturesMouse() const noexcept;
 
+    // Editor only: the size of the image the game is drawn into, in pixels, and where the mouse
+    // sits inside it. The position is nothing while the pointer is outside the viewport, which the
+    // interface of the game reads so that its buttons answer where the game is shown.
+    [[nodiscard]] math::Extent2D viewportPixels() const noexcept;
+    [[nodiscard]] std::optional<math::Vec2> viewportPointer() const noexcept;
+
     // Builds this frame's panels for the scene and queues them for the renderer's next endFrame.
     // In the editor, the scene is the one being edited, or the copy being played. While hidden,
     // only the frame time statistics are recorded.

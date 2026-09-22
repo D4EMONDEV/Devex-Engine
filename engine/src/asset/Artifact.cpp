@@ -90,6 +90,7 @@ std::uint32_t artifactVersion(AssetType type) noexcept
     case AssetType::Scene:
     case AssetType::AudioClip:
     case AssetType::AnimationClip:
+    case AssetType::Font:
         return 1;
     }
     return 0;
@@ -99,7 +100,7 @@ std::uint32_t artifactLayouts() noexcept
 {
     std::uint32_t combined = 0;
     for (std::uint8_t value = static_cast<std::uint8_t>(AssetType::Mesh);
-         value <= static_cast<std::uint8_t>(AssetType::AnimationClip); ++value)
+         value <= static_cast<std::uint8_t>(AssetType::Font); ++value)
     {
         combined = combined * 31 + artifactVersion(static_cast<AssetType>(value));
     }
@@ -504,6 +505,52 @@ core::Result<AnimationClipData> decodeAnimation(std::span<const std::byte> bytes
         return std::unexpected(valid.error());
     }
     return clip;
+}
+
+std::vector<std::byte> encodeFont(const FontData& font)
+{
+    BinaryWriter writer = beginArtifact(AssetType::Font);
+    writer.writeString(font.family);
+    writer.write(font.bakedSize);
+    writer.write(font.spread);
+    writer.write(font.ascent);
+    writer.write(font.descent);
+    writer.write(font.lineGap);
+    writer.write(font.atlasWidth);
+    writer.write(font.atlasHeight);
+    writer.writeArray(std::span<const std::uint8_t>(font.atlas));
+    writer.writeArray(std::span<const FontGlyph>(font.glyphs));
+    return writer.take();
+}
+
+core::Result<FontData> decodeFont(std::span<const std::byte> bytes)
+{
+    BinaryReader reader(bytes);
+    if (core::Result<void> header = readHeader(reader, AssetType::Font); !header)
+    {
+        return std::unexpected(header.error());
+    }
+
+    FontData font;
+    font.family = reader.readString();
+    font.bakedSize = reader.read<float>();
+    font.spread = reader.read<float>();
+    font.ascent = reader.read<float>();
+    font.descent = reader.read<float>();
+    font.lineGap = reader.read<float>();
+    font.atlasWidth = reader.read<std::uint32_t>();
+    font.atlasHeight = reader.read<std::uint32_t>();
+    font.atlas = reader.readArray<std::uint8_t>();
+    font.glyphs = reader.readArray<FontGlyph>();
+    if (reader.failed())
+    {
+        return std::unexpected(truncated(AssetType::Font));
+    }
+    if (core::Result<void> valid = validate(font); !valid)
+    {
+        return std::unexpected(valid.error());
+    }
+    return font;
 }
 
 } // namespace devex::asset

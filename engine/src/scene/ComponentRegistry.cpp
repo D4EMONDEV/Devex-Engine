@@ -3,6 +3,7 @@
 #include <devex/scene/ComponentRegistry.hpp>
 #include <devex/scene/Components.hpp>
 #include <devex/scene/PhysicsComponents.hpp>
+#include <devex/scene/UiComponents.hpp>
 
 #include <vector>
 
@@ -101,6 +102,12 @@ ComponentRegistry& componentRegistry()
         builtins.add<CharacterController>();
         builtins.add<AudioSource>();
         builtins.add<AudioListener>();
+        builtins.add<Canvas>();
+        builtins.add<UiRect>();
+        builtins.add<UiImage>();
+        builtins.add<UiText>();
+        builtins.add<UiButton>();
+        builtins.add<UiLayout>();
         return builtins;
     }();
     return registry;

@@ -351,6 +351,7 @@ void buildDefaultLayout(ImGuiID dockspace, const ImGuiViewport& viewport, ToolsM
         // the node shows no tab bar, so that the screen fills it as in Godot.
         ImGui::DockBuilderDockWindow(detail::viewportWindow, center);
         ImGui::DockBuilderDockWindow(detail::textEditorWindow, center);
+        ImGui::DockBuilderDockWindow(detail::interfaceWindow, center);
         if (ImGuiDockNode* const node = ImGui::DockBuilderGetNode(center))
         {
             node->SetLocalFlags(node->LocalFlags | ImGuiDockNodeFlags_NoTabBar |
@@ -370,7 +371,7 @@ void drawDockspace(ToolsState& state)
     // The name carries a version, increased when panels change, so that saved layouts from before
     // are rebuilt with the new panels docked.
     const bool editor = state.mode == ToolsMode::Editor;
-    const ImGuiID dockspace = ImHashStr(editor ? "Devex editor dockspace 5" : "Devex tools dockspace 6");
+    const ImGuiID dockspace = ImHashStr(editor ? "Devex editor dockspace 6" : "Devex tools dockspace 6");
     if (state.resetLayout || ImGui::DockBuilderGetNode(dockspace) == nullptr)
     {
         buildDefaultLayout(dockspace, *viewport, state.mode);
@@ -460,6 +461,10 @@ void updateEditor(ToolsState& state, scene::Scene& scene, PlayState playState)
     handleShortcuts(state, scene);
     detail::handleEditorShortcuts(state, scene);
     detail::drawViewportPanel(state, scene);
+    if (state.showInterface)
+    {
+        detail::drawInterfacePanel(state, scene);
+    }
     if (state.showHierarchy)
     {
         detail::drawHierarchyPanel(state, scene);
@@ -611,6 +616,22 @@ bool ToolsOverlay::capturesKeyboard() const noexcept
 bool ToolsOverlay::capturesMouse() const noexcept
 {
     return m_state->capturesMouse;
+}
+
+math::Extent2D ToolsOverlay::viewportPixels() const noexcept
+{
+    return m_state->viewportPixels;
+}
+
+std::optional<math::Vec2> ToolsOverlay::viewportPointer() const noexcept
+{
+    if (!m_state->viewportHovered || m_state->viewportPixels.width == 0)
+    {
+        return std::nullopt;
+    }
+    const ImGuiIO& io = ImGui::GetIO();
+    return (math::Vec2(io.MousePos.x, io.MousePos.y) - m_state->viewportOrigin) *
+           m_state->pixelsPerPoint;
 }
 
 void ToolsOverlay::update(scene::Scene& scene, core::Duration frameDelta, PlayState playState)

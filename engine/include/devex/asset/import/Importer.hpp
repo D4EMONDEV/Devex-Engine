@@ -63,6 +63,7 @@ struct ImportContext
 
     [[nodiscard]] bool isCancelled() const noexcept;
     [[nodiscard]] bool boolOption(std::string_view key, bool fallback) const noexcept;
+    [[nodiscard]] double numberOption(std::string_view key, double fallback) const noexcept;
     [[nodiscard]] std::string stringOption(std::string_view key, std::string_view fallback) const;
 };
 
@@ -88,7 +89,7 @@ struct Importer
     core::Result<ImportResult> (*run)(ImportContext& context) = nullptr;
 };
 
-// Texture images, .dvxmat materials, glTF models, sounds and .dvxscene scenes.
+// Texture images, .dvxmat materials, glTF models, sounds, fonts and .dvxscene scenes.
 [[nodiscard]] std::span<const Importer> importers();
 // The extension is compared without regard to case.
 [[nodiscard]] const Importer* findImporterForExtension(std::string_view extension);
@@ -101,6 +102,9 @@ struct Importer
 [[nodiscard]] core::Result<ImportResult> importSceneFile(ImportContext& context);
 // Sounds keep their file; the "loading" option chooses "decoded", "streamed" or "auto".
 [[nodiscard]] core::Result<ImportResult> importAudioFile(ImportContext& context);
+// Fonts are baked into an atlas of distances at the "size" of the option, with the "spread" of the
+// distances around each outline.
+[[nodiscard]] core::Result<ImportResult> importFontFile(ImportContext& context);
 
 // Local files that a .gltf or .glb file refers to, such as external buffers and images.
 [[nodiscard]] core::Result<std::vector<std::filesystem::path>> findGltfDependencies(

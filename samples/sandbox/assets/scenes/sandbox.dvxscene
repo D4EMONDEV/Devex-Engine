@@ -400,3 +400,634 @@ material = asset("00000000-0000-0000-0000-000000000000")
 
 [component type="SceneSwitch"]
 scene = asset("fe6829dd-6137-4a9c-82e3-9fa4579868fe")
+
+[entity uuid="7e1b0a00-0001-4000-9000-000000000001" name="Interface"]
+
+[component type="Canvas"]
+scale_mode = "scale_with_screen"
+reference_resolution = vec2(1920, 1080)
+match_width_or_height = 0.5
+sort_order = 0
+visible = true
+interactive = true
+
+[entity uuid="7e1b0a00-0001-4000-9000-000000000002" name="Main Menu"]
+parent = "7e1b0a00-0001-4000-9000-000000000001"
+
+[component type="UiRect"]
+anchor_min = vec2(0, 0)
+anchor_max = vec2(1, 1)
+offset_min = vec2(0, 0)
+offset_max = vec2(0, 0)
+opacity = 1.0
+visible = true
+
+[component type="UiImage"]
+color = vec4(0.00335, 0.00402, 0.00561, 0.96)
+corner_radius = 0.0
+raycast_target = true
+
+[entity uuid="7e1b0a00-0001-4000-9000-000000000003" name="Title"]
+parent = "7e1b0a00-0001-4000-9000-000000000002"
+
+[component type="UiRect"]
+anchor_min = vec2(0, 0)
+anchor_max = vec2(1, 0)
+offset_min = vec2(0, 180)
+offset_max = vec2(0, 320)
+opacity = 1.0
+visible = true
+
+[component type="UiText"]
+text = "Devex Sandbox"
+font = asset("3f5c9a10-8d21-4b77-9d3e-6a41c0f2e510")
+size = 88
+color = vec4(0.84687, 0.86316, 0.88792, 1.0)
+align = "center"
+vertical_align = "middle"
+outline_width = 0.0
+raycast_target = false
+
+[entity uuid="7e1b0a00-0001-4000-9000-000000000004" name="Entries"]
+parent = "7e1b0a00-0001-4000-9000-000000000002"
+
+[component type="UiRect"]
+anchor_min = vec2(0.5, 0.5)
+anchor_max = vec2(0.5, 0.5)
+offset_min = vec2(-200, -120)
+offset_max = vec2(200, 160)
+opacity = 1.0
+visible = true
+
+[component type="UiLayout"]
+kind = "column"
+spacing = 16
+padding = vec4(0, 0, 0, 0)
+align = "center"
+
+[entity uuid="7e1b0a00-0001-4000-9000-000000000005" name="Jouer"]
+parent = "7e1b0a00-0001-4000-9000-000000000004"
+
+[component type="UiRect"]
+anchor_min = vec2(0, 0)
+anchor_max = vec2(1, 0)
+offset_min = vec2(0, 0)
+offset_max = vec2(0, 64)
+opacity = 1.0
+visible = true
+
+[component type="UiImage"]
+color = vec4(0.01521, 0.01938, 0.02956, 1.0)
+corner_radius = 10.0
+raycast_target = true
+
+[component type="UiButton"]
+action = "play"
+interactable = true
+hover_color = vec4(2.4, 2.4, 2.4, 1)
+pressed_color = vec4(0.6, 0.6, 0.6, 1)
+fade_time = 0.08
+
+[entity uuid="7e1b0a00-0001-4000-9000-000000000006" name="Label"]
+parent = "7e1b0a00-0001-4000-9000-000000000005"
+
+[component type="UiRect"]
+anchor_min = vec2(0, 0)
+anchor_max = vec2(1, 1)
+offset_min = vec2(0, 0)
+offset_max = vec2(0, 0)
+opacity = 1.0
+visible = true
+
+[component type="UiText"]
+text = "Jouer"
+font = asset("3f5c9a10-8d21-4b77-9d3e-6a41c0f2e510")
+size = 28
+color = vec4(0.84687, 0.86316, 0.88792, 1.0)
+align = "center"
+vertical_align = "middle"
+outline_width = 0.0
+raycast_target = false
+
+[entity uuid="7e1b0a00-0001-4000-9000-000000000007" name="Réglages"]
+parent = "7e1b0a00-0001-4000-9000-000000000004"
+
+[component type="UiRect"]
+anchor_min = vec2(0, 0)
+anchor_max = vec2(1, 0)
+offset_min = vec2(0, 0)
+offset_max = vec2(0, 64)
+opacity = 1.0
+visible = true
+
+[component type="UiImage"]
+color = vec4(0.01521, 0.01938, 0.02956, 1.0)
+corner_radius = 10.0
+raycast_target = true
+
+[component type="UiButton"]
+action = "settings"
+interactable = true
+hover_color = vec4(2.4, 2.4, 2.4, 1)
+pressed_color = vec4(0.6, 0.6, 0.6, 1)
+fade_time = 0.08
+
+[entity uuid="7e1b0a00-0001-4000-9000-000000000008" name="Label"]
+parent = "7e1b0a00-0001-4000-9000-000000000007"
+
+[component type="UiRect"]
+anchor_min = vec2(0, 0)
+anchor_max = vec2(1, 1)
+offset_min = vec2(0, 0)
+offset_max = vec2(0, 0)
+opacity = 1.0
+visible = true
+
+[component type="UiText"]
+text = "Réglages"
+font = asset("3f5c9a10-8d21-4b77-9d3e-6a41c0f2e510")
+size = 28
+color = vec4(0.84687, 0.86316, 0.88792, 1.0)
+align = "center"
+vertical_align = "middle"
+outline_width = 0.0
+raycast_target = false
+
+[entity uuid="7e1b0a00-0001-4000-9000-000000000009" name="Quitter"]
+parent = "7e1b0a00-0001-4000-9000-000000000004"
+
+[component type="UiRect"]
+anchor_min = vec2(0, 0)
+anchor_max = vec2(1, 0)
+offset_min = vec2(0, 0)
+offset_max = vec2(0, 64)
+opacity = 1.0
+visible = true
+
+[component type="UiImage"]
+color = vec4(0.01521, 0.01938, 0.02956, 1.0)
+corner_radius = 10.0
+raycast_target = true
+
+[component type="UiButton"]
+action = "quit"
+interactable = true
+hover_color = vec4(2.4, 2.4, 2.4, 1)
+pressed_color = vec4(0.6, 0.6, 0.6, 1)
+fade_time = 0.08
+
+[entity uuid="7e1b0a00-0001-4000-9000-00000000000a" name="Label"]
+parent = "7e1b0a00-0001-4000-9000-000000000009"
+
+[component type="UiRect"]
+anchor_min = vec2(0, 0)
+anchor_max = vec2(1, 1)
+offset_min = vec2(0, 0)
+offset_max = vec2(0, 0)
+opacity = 1.0
+visible = true
+
+[component type="UiText"]
+text = "Quitter"
+font = asset("3f5c9a10-8d21-4b77-9d3e-6a41c0f2e510")
+size = 28
+color = vec4(0.84687, 0.86316, 0.88792, 1.0)
+align = "center"
+vertical_align = "middle"
+outline_width = 0.0
+raycast_target = false
+
+[entity uuid="7e1b0a00-0001-4000-9000-00000000000b" name="Settings"]
+parent = "7e1b0a00-0001-4000-9000-000000000001"
+
+[component type="UiRect"]
+anchor_min = vec2(0, 0)
+anchor_max = vec2(1, 1)
+offset_min = vec2(0, 0)
+offset_max = vec2(0, 0)
+opacity = 1.0
+visible = false
+
+[component type="UiImage"]
+color = vec4(0.00335, 0.00402, 0.00561, 0.96)
+corner_radius = 0.0
+raycast_target = true
+
+[entity uuid="7e1b0a00-0001-4000-9000-00000000000c" name="Title"]
+parent = "7e1b0a00-0001-4000-9000-00000000000b"
+
+[component type="UiRect"]
+anchor_min = vec2(0, 0)
+anchor_max = vec2(1, 0)
+offset_min = vec2(0, 200)
+offset_max = vec2(0, 300)
+opacity = 1.0
+visible = true
+
+[component type="UiText"]
+text = "Réglages"
+font = asset("3f5c9a10-8d21-4b77-9d3e-6a41c0f2e510")
+size = 64
+color = vec4(0.84687, 0.86316, 0.88792, 1.0)
+align = "center"
+vertical_align = "middle"
+outline_width = 0.0
+raycast_target = false
+
+[entity uuid="7e1b0a00-0001-4000-9000-00000000000d" name="Entries"]
+parent = "7e1b0a00-0001-4000-9000-00000000000b"
+
+[component type="UiRect"]
+anchor_min = vec2(0.5, 0.5)
+anchor_max = vec2(0.5, 0.5)
+offset_min = vec2(-220, -120)
+offset_max = vec2(220, 160)
+opacity = 1.0
+visible = true
+
+[component type="UiLayout"]
+kind = "column"
+spacing = 16
+padding = vec4(0, 0, 0, 0)
+align = "center"
+
+[entity uuid="7e1b0a00-0001-4000-9000-00000000000e" name="Volume +"]
+parent = "7e1b0a00-0001-4000-9000-00000000000d"
+
+[component type="UiRect"]
+anchor_min = vec2(0, 0)
+anchor_max = vec2(1, 0)
+offset_min = vec2(0, 0)
+offset_max = vec2(0, 64)
+opacity = 1.0
+visible = true
+
+[component type="UiImage"]
+color = vec4(0.01521, 0.01938, 0.02956, 1.0)
+corner_radius = 10.0
+raycast_target = true
+
+[component type="UiButton"]
+action = "louder"
+interactable = true
+hover_color = vec4(2.4, 2.4, 2.4, 1)
+pressed_color = vec4(0.6, 0.6, 0.6, 1)
+fade_time = 0.08
+
+[entity uuid="7e1b0a00-0001-4000-9000-00000000000f" name="Label"]
+parent = "7e1b0a00-0001-4000-9000-00000000000e"
+
+[component type="UiRect"]
+anchor_min = vec2(0, 0)
+anchor_max = vec2(1, 1)
+offset_min = vec2(0, 0)
+offset_max = vec2(0, 0)
+opacity = 1.0
+visible = true
+
+[component type="UiText"]
+text = "Volume +"
+font = asset("3f5c9a10-8d21-4b77-9d3e-6a41c0f2e510")
+size = 28
+color = vec4(0.84687, 0.86316, 0.88792, 1.0)
+align = "center"
+vertical_align = "middle"
+outline_width = 0.0
+raycast_target = false
+
+[entity uuid="7e1b0a00-0001-4000-9000-000000000010" name="Volume -"]
+parent = "7e1b0a00-0001-4000-9000-00000000000d"
+
+[component type="UiRect"]
+anchor_min = vec2(0, 0)
+anchor_max = vec2(1, 0)
+offset_min = vec2(0, 0)
+offset_max = vec2(0, 64)
+opacity = 1.0
+visible = true
+
+[component type="UiImage"]
+color = vec4(0.01521, 0.01938, 0.02956, 1.0)
+corner_radius = 10.0
+raycast_target = true
+
+[component type="UiButton"]
+action = "softer"
+interactable = true
+hover_color = vec4(2.4, 2.4, 2.4, 1)
+pressed_color = vec4(0.6, 0.6, 0.6, 1)
+fade_time = 0.08
+
+[entity uuid="7e1b0a00-0001-4000-9000-000000000011" name="Label"]
+parent = "7e1b0a00-0001-4000-9000-000000000010"
+
+[component type="UiRect"]
+anchor_min = vec2(0, 0)
+anchor_max = vec2(1, 1)
+offset_min = vec2(0, 0)
+offset_max = vec2(0, 0)
+opacity = 1.0
+visible = true
+
+[component type="UiText"]
+text = "Volume -"
+font = asset("3f5c9a10-8d21-4b77-9d3e-6a41c0f2e510")
+size = 28
+color = vec4(0.84687, 0.86316, 0.88792, 1.0)
+align = "center"
+vertical_align = "middle"
+outline_width = 0.0
+raycast_target = false
+
+[entity uuid="7e1b0a00-0001-4000-9000-000000000012" name="Retour"]
+parent = "7e1b0a00-0001-4000-9000-00000000000d"
+
+[component type="UiRect"]
+anchor_min = vec2(0, 0)
+anchor_max = vec2(1, 0)
+offset_min = vec2(0, 0)
+offset_max = vec2(0, 64)
+opacity = 1.0
+visible = true
+
+[component type="UiImage"]
+color = vec4(0.01521, 0.01938, 0.02956, 1.0)
+corner_radius = 10.0
+raycast_target = true
+
+[component type="UiButton"]
+action = "back"
+interactable = true
+hover_color = vec4(2.4, 2.4, 2.4, 1)
+pressed_color = vec4(0.6, 0.6, 0.6, 1)
+fade_time = 0.08
+
+[entity uuid="7e1b0a00-0001-4000-9000-000000000013" name="Label"]
+parent = "7e1b0a00-0001-4000-9000-000000000012"
+
+[component type="UiRect"]
+anchor_min = vec2(0, 0)
+anchor_max = vec2(1, 1)
+offset_min = vec2(0, 0)
+offset_max = vec2(0, 0)
+opacity = 1.0
+visible = true
+
+[component type="UiText"]
+text = "Retour"
+font = asset("3f5c9a10-8d21-4b77-9d3e-6a41c0f2e510")
+size = 28
+color = vec4(0.84687, 0.86316, 0.88792, 1.0)
+align = "center"
+vertical_align = "middle"
+outline_width = 0.0
+raycast_target = false
+
+[entity uuid="7e1b0a00-0001-4000-9000-000000000014" name="Pause Menu"]
+parent = "7e1b0a00-0001-4000-9000-000000000001"
+
+[component type="UiRect"]
+anchor_min = vec2(0, 0)
+anchor_max = vec2(1, 1)
+offset_min = vec2(0, 0)
+offset_max = vec2(0, 0)
+opacity = 1.0
+visible = false
+
+[component type="UiImage"]
+color = vec4(0.00152, 0.00182, 0.00304, 0.72)
+corner_radius = 0.0
+raycast_target = true
+
+[entity uuid="7e1b0a00-0001-4000-9000-000000000015" name="Title"]
+parent = "7e1b0a00-0001-4000-9000-000000000014"
+
+[component type="UiRect"]
+anchor_min = vec2(0, 0)
+anchor_max = vec2(1, 0)
+offset_min = vec2(0, 220)
+offset_max = vec2(0, 320)
+opacity = 1.0
+visible = true
+
+[component type="UiText"]
+text = "Pause"
+font = asset("3f5c9a10-8d21-4b77-9d3e-6a41c0f2e510")
+size = 64
+color = vec4(0.84687, 0.86316, 0.88792, 1.0)
+align = "center"
+vertical_align = "middle"
+outline_width = 0.0
+raycast_target = false
+
+[entity uuid="7e1b0a00-0001-4000-9000-000000000016" name="Entries"]
+parent = "7e1b0a00-0001-4000-9000-000000000014"
+
+[component type="UiRect"]
+anchor_min = vec2(0.5, 0.5)
+anchor_max = vec2(0.5, 0.5)
+offset_min = vec2(-200, -120)
+offset_max = vec2(200, 160)
+opacity = 1.0
+visible = true
+
+[component type="UiLayout"]
+kind = "column"
+spacing = 16
+padding = vec4(0, 0, 0, 0)
+align = "center"
+
+[entity uuid="7e1b0a00-0001-4000-9000-000000000017" name="Reprendre"]
+parent = "7e1b0a00-0001-4000-9000-000000000016"
+
+[component type="UiRect"]
+anchor_min = vec2(0, 0)
+anchor_max = vec2(1, 0)
+offset_min = vec2(0, 0)
+offset_max = vec2(0, 64)
+opacity = 1.0
+visible = true
+
+[component type="UiImage"]
+color = vec4(0.01521, 0.01938, 0.02956, 1.0)
+corner_radius = 10.0
+raycast_target = true
+
+[component type="UiButton"]
+action = "resume"
+interactable = true
+hover_color = vec4(2.4, 2.4, 2.4, 1)
+pressed_color = vec4(0.6, 0.6, 0.6, 1)
+fade_time = 0.08
+
+[entity uuid="7e1b0a00-0001-4000-9000-000000000018" name="Label"]
+parent = "7e1b0a00-0001-4000-9000-000000000017"
+
+[component type="UiRect"]
+anchor_min = vec2(0, 0)
+anchor_max = vec2(1, 1)
+offset_min = vec2(0, 0)
+offset_max = vec2(0, 0)
+opacity = 1.0
+visible = true
+
+[component type="UiText"]
+text = "Reprendre"
+font = asset("3f5c9a10-8d21-4b77-9d3e-6a41c0f2e510")
+size = 28
+color = vec4(0.84687, 0.86316, 0.88792, 1.0)
+align = "center"
+vertical_align = "middle"
+outline_width = 0.0
+raycast_target = false
+
+[entity uuid="7e1b0a00-0001-4000-9000-000000000019" name="Menu principal"]
+parent = "7e1b0a00-0001-4000-9000-000000000016"
+
+[component type="UiRect"]
+anchor_min = vec2(0, 0)
+anchor_max = vec2(1, 0)
+offset_min = vec2(0, 0)
+offset_max = vec2(0, 64)
+opacity = 1.0
+visible = true
+
+[component type="UiImage"]
+color = vec4(0.01521, 0.01938, 0.02956, 1.0)
+corner_radius = 10.0
+raycast_target = true
+
+[component type="UiButton"]
+action = "menu"
+interactable = true
+hover_color = vec4(2.4, 2.4, 2.4, 1)
+pressed_color = vec4(0.6, 0.6, 0.6, 1)
+fade_time = 0.08
+
+[entity uuid="7e1b0a00-0001-4000-9000-00000000001a" name="Label"]
+parent = "7e1b0a00-0001-4000-9000-000000000019"
+
+[component type="UiRect"]
+anchor_min = vec2(0, 0)
+anchor_max = vec2(1, 1)
+offset_min = vec2(0, 0)
+offset_max = vec2(0, 0)
+opacity = 1.0
+visible = true
+
+[component type="UiText"]
+text = "Menu principal"
+font = asset("3f5c9a10-8d21-4b77-9d3e-6a41c0f2e510")
+size = 28
+color = vec4(0.84687, 0.86316, 0.88792, 1.0)
+align = "center"
+vertical_align = "middle"
+outline_width = 0.0
+raycast_target = false
+
+[entity uuid="7e1b0a00-0001-4000-9000-00000000001b" name="Quitter"]
+parent = "7e1b0a00-0001-4000-9000-000000000016"
+
+[component type="UiRect"]
+anchor_min = vec2(0, 0)
+anchor_max = vec2(1, 0)
+offset_min = vec2(0, 0)
+offset_max = vec2(0, 64)
+opacity = 1.0
+visible = true
+
+[component type="UiImage"]
+color = vec4(0.01521, 0.01938, 0.02956, 1.0)
+corner_radius = 10.0
+raycast_target = true
+
+[component type="UiButton"]
+action = "quit"
+interactable = true
+hover_color = vec4(2.4, 2.4, 2.4, 1)
+pressed_color = vec4(0.6, 0.6, 0.6, 1)
+fade_time = 0.08
+
+[entity uuid="7e1b0a00-0001-4000-9000-00000000001c" name="Label"]
+parent = "7e1b0a00-0001-4000-9000-00000000001b"
+
+[component type="UiRect"]
+anchor_min = vec2(0, 0)
+anchor_max = vec2(1, 1)
+offset_min = vec2(0, 0)
+offset_max = vec2(0, 0)
+opacity = 1.0
+visible = true
+
+[component type="UiText"]
+text = "Quitter"
+font = asset("3f5c9a10-8d21-4b77-9d3e-6a41c0f2e510")
+size = 28
+color = vec4(0.84687, 0.86316, 0.88792, 1.0)
+align = "center"
+vertical_align = "middle"
+outline_width = 0.0
+raycast_target = false
+
+[entity uuid="7e1b0a00-0001-4000-9000-00000000001d" name="Hud"]
+parent = "7e1b0a00-0001-4000-9000-000000000001"
+
+[component type="UiRect"]
+anchor_min = vec2(0, 0)
+anchor_max = vec2(1, 1)
+offset_min = vec2(0, 0)
+offset_max = vec2(0, 0)
+opacity = 1.0
+visible = false
+
+[entity uuid="7e1b0a00-0001-4000-9000-00000000001e" name="Score"]
+parent = "7e1b0a00-0001-4000-9000-00000000001d"
+
+[component type="UiRect"]
+anchor_min = vec2(0, 0)
+anchor_max = vec2(0, 0)
+offset_min = vec2(40, 28)
+offset_max = vec2(540, 92)
+opacity = 1.0
+visible = true
+
+[component type="UiText"]
+text = "Score 0"
+font = asset("3f5c9a10-8d21-4b77-9d3e-6a41c0f2e510")
+size = 40
+color = vec4(0.84687, 0.86316, 0.88792, 1.0)
+align = "left"
+vertical_align = "middle"
+outline_width = 2.0
+raycast_target = false
+
+[entity uuid="7e1b0a00-0001-4000-9000-00000000001f" name="Timer"]
+parent = "7e1b0a00-0001-4000-9000-00000000001d"
+
+[component type="UiRect"]
+anchor_min = vec2(1, 0)
+anchor_max = vec2(1, 0)
+offset_min = vec2(-540, 28)
+offset_max = vec2(-40, 92)
+opacity = 1.0
+visible = true
+
+[component type="UiText"]
+text = "0:00"
+font = asset("3f5c9a10-8d21-4b77-9d3e-6a41c0f2e510")
+size = 40
+color = vec4(0.34191, 0.39157, 0.45641, 1.0)
+align = "right"
+vertical_align = "middle"
+outline_width = 2.0
+raycast_target = false
+
+[entity uuid="7e1b0a00-0001-4000-9000-000000000020" name="Menu"]
+
+[component type="MenuController"]
+main_menu = entity("7e1b0a00-0001-4000-9000-000000000002")
+settings = entity("7e1b0a00-0001-4000-9000-00000000000b")
+pause_menu = entity("7e1b0a00-0001-4000-9000-000000000014")
+hud = entity("7e1b0a00-0001-4000-9000-00000000001d")
+score_text = entity("7e1b0a00-0001-4000-9000-00000000001e")
+timer_text = entity("7e1b0a00-0001-4000-9000-00000000001f")

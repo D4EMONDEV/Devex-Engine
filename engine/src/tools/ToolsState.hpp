@@ -21,6 +21,7 @@
 #include <devex/platform/Platform.hpp>
 #include <devex/render/Renderer.hpp>
 #include <devex/scene/Scene.hpp>
+#include <devex/scene/UiComponents.hpp>
 #include <devex/serialization/Text.hpp>
 #include <devex/tools/CommandHistory.hpp>
 #include <devex/tools/LogBuffer.hpp>
@@ -63,6 +64,7 @@ inline constexpr const char* settingsWindow = "Editor Settings";
 inline constexpr const char* debuggingWindow = "C# Debugging";
 inline constexpr const char* animationWindow = "Animation";
 inline constexpr const char* textEditorWindow = "Text Editor";
+inline constexpr const char* interfaceWindow = "Interface";
 
 // Payload type of an entity dragged in the hierarchy: the 16 bytes of its UUID.
 inline constexpr const char* entityPayload = "DEVEX_ENTITY";
@@ -233,6 +235,7 @@ struct ToolsState
     // The screen was chosen this frame: its window takes the focus of the middle.
     bool mainScreenChanged = false;
     bool showTextEditor = false;
+    bool showInterface = false;
     bool focusTextEditor = false;
     bool selectTextTab = false;
     // Opening a document moves the others in memory: hold the path of a document across a frame,
@@ -282,6 +285,12 @@ struct ToolsState
     LogBuffer log;
     FrameTimes frameTimes;
     core::Uuid selection;
+
+    // The 2D screen: how much of the reference resolution it shows, and the drag under way.
+    float interfaceZoom = 1.0f;
+    core::Uuid interfaceDragEntity;
+    scene::UiRect interfaceDragStart;
+    std::uint8_t interfaceHandle = 0;
 
     // A structural change requested while walking the scene, applied once the panels are drawn.
     std::unique_ptr<Command> pendingCommand;
@@ -428,6 +437,8 @@ void stopAudioPreview(ToolsState& state);
 
 // Editor.
 void drawViewportPanel(ToolsState& state, scene::Scene& scene);
+// The 2D screen: the canvases of the scene, where their elements are moved and resized.
+void drawInterfacePanel(ToolsState& state, scene::Scene& scene);
 void drawProjectManager(ToolsState& state);
 void drawEditorMenus(ToolsState& state, scene::Scene& scene);
 // Shows a screen in the middle of the window: the panel it needs opens and takes the focus.

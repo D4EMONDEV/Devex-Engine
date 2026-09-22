@@ -1,6 +1,7 @@
 #pragma once
 
 #include <devex/animation/AnimationWorld.hpp>
+#include <devex/ui/UiWorld.hpp>
 #include <devex/asset/AssetSource.hpp>
 #include <devex/audio/AudioWorld.hpp>
 #include <devex/asset/import/AssetDatabase.hpp>
@@ -171,6 +172,8 @@ protected:
     [[nodiscard]] audio::AudioWorld* audio() noexcept;
     // The animations of the scene while gameplay runs; null otherwise.
     [[nodiscard]] animation::AnimationWorld* animation() noexcept;
+    // The interface of the scene while gameplay runs; null otherwise.
+    [[nodiscard]] ui::UiWorld* ui() noexcept;
 
     // True when the application runs inside the editor.
     [[nodiscard]] bool isEditor() const noexcept;
@@ -193,6 +196,7 @@ private:
     physics::PhysicsWorld* m_physics = nullptr;
     audio::AudioWorld* m_audio = nullptr;
     animation::AnimationWorld* m_animation = nullptr;
+    ui::UiWorld* m_ui = nullptr;
     double m_interpolationAlpha = 0.0;
     bool m_quitRequested = false;
     bool m_editor = false;

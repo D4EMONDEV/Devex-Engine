@@ -141,4 +141,43 @@ enum class MouseButton : std::uint8_t
 
 inline constexpr std::size_t mouseButtonCount = 5;
 
+// The buttons of a gamepad, named after their place rather than after the letters one make or
+// another prints on them: South is A on an Xbox pad and the cross on a PlayStation one.
+enum class GamepadButton : std::uint8_t
+{
+    South,
+    East,
+    West,
+    North,
+    Back,
+    Guide,
+    Start,
+    LeftStick,
+    RightStick,
+    LeftShoulder,
+    RightShoulder,
+    DpadUp,
+    DpadDown,
+    DpadLeft,
+    DpadRight,
+};
+
+inline constexpr std::size_t gamepadButtonCount = 15;
+
+// The sticks and triggers, from -1 to 1 for the sticks and from 0 to 1 for the triggers. Y is
+// positive downwards, as the screen is.
+enum class GamepadAxis : std::uint8_t
+{
+    LeftX,
+    LeftY,
+    RightX,
+    RightY,
+    LeftTrigger,
+    RightTrigger,
+};
+
+inline constexpr std::size_t gamepadAxisCount = 6;
+// Gamepads beyond this many are ignored.
+inline constexpr std::size_t gamepadCount = 4;
+
 } // namespace devex::platform

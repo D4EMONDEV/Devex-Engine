@@ -141,6 +141,9 @@ private:
         VkImageView boundSceneColor = VK_NULL_HANDLE;
         VkImageView boundSelectionMask = VK_NULL_HANDLE;
         std::optional<Buffer> overlayVertices;
+        // The triangles of the interface of the frame.
+        std::optional<Buffer> uiVertices;
+        std::optional<Buffer> uiIndices;
         // The object identifier the frame read under the requested pixel.
         std::optional<Buffer> pickReadback;
         std::optional<std::uint64_t> pickRequest;
@@ -210,6 +213,7 @@ private:
     [[nodiscard]] core::Result<void> uploadLights(FrameContext& frame, float aspectRatio);
     void writeSceneData(FrameContext& frame, const std::optional<ShadowCascades>& cascades) const noexcept;
     [[nodiscard]] core::Result<OverlayRanges> uploadOverlay(FrameContext& frame);
+    [[nodiscard]] core::Result<void> uploadUi(FrameContext& frame);
     // Keeps the answer of the pick request the frame recorded, now that it completed.
     void readPickResult(FrameContext& frame);
     // Returns the number of draw calls recorded.
@@ -255,6 +259,7 @@ private:
     std::optional<Pipeline> m_outlinePipeline;
     std::optional<Pipeline> m_overlayLinePipeline;
     std::optional<Pipeline> m_overlayTrianglePipeline;
+    std::optional<Pipeline> m_uiPipeline;
     // Bound as the selection mask of frames that outline nothing.
     std::optional<Image> m_emptySelectionMask;
     math::Extent2D m_swapchainWindowPixelSize;

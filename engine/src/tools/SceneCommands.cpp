@@ -584,7 +584,66 @@ private:
     std::vector<std::pair<std::string, TextValue>> m_values;
 };
 
+// Several commands as one step of the history.
+class CompositeCommand final : public Command
+{
+public:
+    CompositeCommand(std::vector<std::unique_ptr<Command>> commands, std::string description)
+        : m_commands(std::move(commands))
+        , m_description(std::move(description))
+    {
+    }
+
+    [[nodiscard]] std::string description() const override
+    {
+        return m_description;
+    }
+
+    [[nodiscard]] core::Result<void> apply(scene::Scene& scene) override
+    {
+        for (const std::unique_ptr<Command>& command : m_commands)
+        {
+            if (core::Result<void> applied = command->apply(scene); !applied)
+            {
+                return applied;
+            }
+        }
+        return {};
+    }
+
+    [[nodiscard]] core::Result<void> revert(scene::Scene& scene) override
+    {
+        // Backwards, so that each command undoes what the ones after it left.
+        for (auto command = m_commands.rbegin(); command != m_commands.rend(); ++command)
+        {
+            if (core::Result<void> reverted = (*command)->revert(scene); !reverted)
+            {
+                return reverted;
+            }
+        }
+        return {};
+    }
+
+private:
+    std::vector<std::unique_ptr<Command>> m_commands;
+    std::string m_description;
+};
+
 } // namespace
+
+std::unique_ptr<Command> makeCompositeCommand(std::vector<std::unique_ptr<Command>> commands,
+                                              std::string description)
+{
+    if (commands.empty())
+    {
+        return nullptr;
+    }
+    if (commands.size() == 1)
+    {
+        return std::move(commands.front());
+    }
+    return std::make_unique<CompositeCommand>(std::move(commands), std::move(description));
+}
 
 std::unique_ptr<Command> makeSetFieldCommand(core::Uuid entity, std::string component,
                                              std::string field, TextValue before, TextValue after)

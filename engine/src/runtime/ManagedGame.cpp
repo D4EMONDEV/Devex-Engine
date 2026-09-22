@@ -113,6 +113,14 @@ struct NativeApi
     int (*isAnimationPlaying)(Entity entity);
     float (*animationTime)(Entity entity);
     void (*setAnimationTime)(void* scene, Entity entity, float seconds);
+
+    int (*uiClickedAction)(const char* action);
+    int (*uiClickedEntity)(Entity entity);
+    int (*uiCancelled)();
+    Entity (*uiHovered)();
+    Entity (*uiFocused)();
+    void (*uiSetFocus)(void* scene, Entity entity);
+    int (*uiPointerOverInterface)();
 };
 
 // The functions the engine calls, in the order of Devex.Managed's ManagedApi.
@@ -783,6 +791,49 @@ void apiSetAnimationTime(void* scene, Entity entity, float seconds)
     }
 }
 
+[[nodiscard]] ui::UiWorld* uiWorld() noexcept
+{
+    return currentFrame() != nullptr ? currentFrame()->ui : nullptr;
+}
+
+int apiUiClickedAction(const char* action)
+{
+    return uiWorld() != nullptr && action != nullptr && uiWorld()->wasClicked(action) ? 1 : 0;
+}
+
+int apiUiClickedEntity(Entity entity)
+{
+    return uiWorld() != nullptr && uiWorld()->wasClicked(entity) ? 1 : 0;
+}
+
+int apiUiCancelled()
+{
+    return uiWorld() != nullptr && uiWorld()->wasCancelled() ? 1 : 0;
+}
+
+Entity apiUiHovered()
+{
+    return uiWorld() != nullptr ? uiWorld()->hovered() : Entity{};
+}
+
+Entity apiUiFocused()
+{
+    return uiWorld() != nullptr ? uiWorld()->focused() : Entity{};
+}
+
+void apiUiSetFocus(void* scene, Entity entity)
+{
+    if (uiWorld() != nullptr && scene != nullptr)
+    {
+        uiWorld()->setFocus(*toScene(scene), entity);
+    }
+}
+
+int apiUiPointerOverInterface()
+{
+    return uiWorld() != nullptr && uiWorld()->pointerOverInterface() ? 1 : 0;
+}
+
 [[nodiscard]] NativeApi makeNativeApi() noexcept
 {
     return NativeApi{
@@ -851,6 +902,13 @@ void apiSetAnimationTime(void* scene, Entity entity, float seconds)
         .isAnimationPlaying = &apiIsAnimationPlaying,
         .animationTime = &apiAnimationTime,
         .setAnimationTime = &apiSetAnimationTime,
+        .uiClickedAction = &apiUiClickedAction,
+        .uiClickedEntity = &apiUiClickedEntity,
+        .uiCancelled = &apiUiCancelled,
+        .uiHovered = &apiUiHovered,
+        .uiFocused = &apiUiFocused,
+        .uiSetFocus = &apiUiSetFocus,
+        .uiPointerOverInterface = &apiUiPointerOverInterface,
     };
 }
 

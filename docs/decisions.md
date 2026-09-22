@@ -117,6 +117,11 @@ mais seulement explicitement ici : le code suit ce document, pas l'inverse.
 | Lecture                  | Composant `Animator` : un clip, fondu croisé, root motion en option |
 | Skinning                 | Dans le vertex shader, matrices d'os en buffer par frame          |
 | Écrans de l'éditeur      | 2D, 3D et Script au centre de la barre de menus                    |
+| Interfaces               | Entités et composants : `Canvas`, `UiRect`, `UiImage`, `UiText`... |
+| Placement                | Ancrages et marges, puis conteneurs ligne, colonne et grille       |
+| Texte                    | Police cuite en atlas de distances signées, nette à toute taille   |
+| Entrées de l'interface   | Souris, clavier et manette, actions nommées lues par le jeu        |
+| Manettes                 | SDL Gamepad, quatre manettes, sticks avec zone morte               |
 | Éditeur de texte         | Coloration dessinée par-dessus le champ ImGui                     |
 | Autocomplétion           | Mots-clés, noms du moteur et identifiants du fichier              |
 
@@ -1052,6 +1057,64 @@ les assets s'écrivent au fil de leur lecture.
   patrouiller, attendre à chaque extrémité et saluer le joueur qui s'approche, en changeant de clip
   avec un fondu de 0,25 s.
 
+### Interfaces
+
+- **Modèle** : une interface est faite d'**entités et de composants**, comme le reste d'une scène,
+  plutôt que d'un arbre séparé : la hiérarchie, les préfabs, l'inspecteur, l'annulation et le C#
+  s'y appliquent sans rien de particulier. `Canvas` marque la racine d'une interface ; `UiRect`
+  donne à chaque élément sa place ; `UiImage`, `UiText` et `UiButton` disent ce qu'il montre et ce
+  qu'il répond ; `UiLayout` place les enfants à la place de leurs ancrages.
+- **Canevas** : plein écran seulement, dessiné par-dessus le jeu dans l'ordre de son `sortOrder`.
+  En `scale_with_screen`, l'interface est posée à sa résolution de référence puis mise à l'échelle
+  pour la fenêtre, en mélangeant les rapports de largeur et de hauteur en logarithmes selon
+  `match_width_or_height` ; en `constant_pixels`, une unité vaut un pixel. Un canevas non
+  interactif laisse passer la souris.
+- **Ancrages et marges** : `anchor_min` et `anchor_max` sont les fractions du parent dont
+  dépendent les coins, `offset_min` et `offset_max` les écartent en unités. Des ancrages égaux sur
+  un axe donnent une taille fixe, des ancrages séparés étirent l'élément avec son parent. Le pivot
+  sert à la rotation et à l'échelle ; X va à droite et Y vers le bas, comme l'écran.
+- **Conteneurs** : `UiLayout` range les enfants en ligne, en colonne ou en grille, avec un
+  espacement, un remplissage et un alignement. Sur l'axe du conteneur, un enfant garde la taille de
+  ses marges s'il ne s'étire pas, sinon il partage ce qui reste ; en travers il suit ses propres
+  ancrages. Les enfants cachés ne prennent pas de place, ce qui referme le trou d'une entrée
+  masquée. La grille donne à chaque case la même taille.
+- **Polices** : un `.ttf` ou `.otf` est importé en **atlas de distances signées** (stb_truetype,
+  `size` et `spread` en options d'import), ce qui garde les lettres nettes à toute taille sans
+  cuire une police par taille. L'atlas est une texture à un canal (`R8Unorm`) ; le shader compare
+  la distance lue au demi-seuil et adoucit le bord de la moitié d'un pixel, calculée à partir de
+  l'étalement et de la taille dessinée. Les codes 32 à 255 sont cuits : les autres écritures
+  demanderont une police cuite pour elles.
+- **Texte** : `UiText` porte son texte, sa police, sa taille en unités, son alignement, le retour à
+  la ligne (coupé aux espaces, sinon au caractère), l'interligne et un contour dessiné en
+  repassant les lettres autour d'elles. La mise en page est pure (`ui::layoutText`) : elle rend des
+  quadrilatères et se teste sans GPU.
+- **Dessin** : `ui::buildDrawList` transforme les éléments placés en sommets, indices et lots que
+  le renderer dessine en une passe après le tonemapping, dans l'image du jeu (donc aussi dans le
+  viewport de l'éditeur). Les lots se rejoignent tant que la texture et le genre ne changent pas ;
+  les coins arrondis et les lettres ont leur propre shader. Les couleurs sont **linéaires**, comme
+  partout dans le moteur, et l'écran 2D les convertit pour les montrer telles qu'elles seront.
+- **Entrées** : `ui::UiWorld` place les canevas chaque frame, cherche l'élément sous le pointeur du
+  plus haut canevas au plus bas et de l'élément dessiné en dernier au premier, et n'appelle un clic
+  que si l'appui et le relâchement tombent sur le même bouton. Le clavier (flèches, Entrée, Échap)
+  et la manette (croix, stick gauche, boutons sud et est) déplacent le focus vers le bouton le plus
+  proche dans la direction demandée, en comptant double ce qui est de travers. Un bouton porte une
+  **action** nommée que le jeu lit (`Ui.WasClicked("play")`), et teinte l'image de son entité selon
+  qu'il est survolé, enfoncé ou inutilisable.
+- **Manettes** : `Devex::Platform` ouvre les manettes SDL (quatre au plus), suit leurs boutons et
+  leurs axes, applique une zone morte aux sticks et relâche ce qui restait pressé quand une manette
+  est débranchée. `Input::isGamepadButtonDown`, `wasGamepadButtonPressed` et `gamepadAxis` les
+  donnent au jeu.
+- **Éditeur** : l'écran **2D** de la barre de menus montre les canevas de la scène à leur
+  résolution de référence, dessinés comme ils le seront. Cliquer choisit l'élément le plus haut,
+  le glisser le déplace, ses huit poignées le redimensionnent, et ses ancrages sont marqués sur le
+  canevas ; chaque geste devient une étape d'annulation sur `offset_min` et `offset_max`.
+- **Jeu** : `SystemContext::ui` et `Application::ui()` donnent l'`UiWorld` ; en C#, la classe `Ui`
+  offre `WasClicked(action)`, `WasClicked(entity)`, `WasCancelled()`, `Hovered`, `Focused` et
+  `PointerOverInterface`, que le jeu lit avant d'agir sur un clic qui lui serait destiné.
+- **Bac à sable** : la scène `sandbox` ouvre sur un menu principal (Jouer, Réglages, Quitter), avec
+  un panneau de réglages qui change le volume général, un menu de pause appelé par Échap et un HUD
+  qui montre le score et le temps. Tout est piloté par `code/Menu.cs` à travers les actions.
+
 ### Gameplay
 
 - **Modèle** : les données du jeu sont des **composants** réfléchis (sauvegardés, éditables dans
@@ -1418,6 +1481,16 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     ligne, commentaire par raccourci, indentation automatique, espaces de fin retirés à
     l'enregistrement, autocomplétion des mots-clés et des noms du moteur, et erreurs de
     compilation marquées dans la marge.
+
+19. ✅ **Écrans de l'éditeur** — 2D, 3D et Script au centre de la barre de menus, à la manière de
+    Godot : l'écran choisi est seul au centre de la fenêtre, sans onglet, et l'écran Script montre
+    la liste des fichiers du projet et le plan du fichier ouvert à côté de l'éditeur de texte.
+
+20. ✅ **Interfaces** — polices cuites en atlas de distances signées, composants `Canvas`,
+    `UiRect`, `UiImage`, `UiText`, `UiButton` et `UiLayout`, placement par ancrages et marges puis
+    par conteneurs, passe de dessin dédiée après le tonemapping, survol, clic, focus au clavier et
+    à la manette, manettes dans `Devex::Platform`, API C++ et C# (`Ui`), écran 2D de l'éditeur pour
+    poser les éléments, et menu, réglages, pause et HUD du bac à sable.
 
 Ensuite, sans ordre figé : post-traitements (bloom, TAA), transparence, CI Linux.
 

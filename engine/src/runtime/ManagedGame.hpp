@@ -9,6 +9,7 @@
 #include <devex/platform/Window.hpp>
 #include <devex/runtime/Game.hpp>
 #include <devex/scene/Scene.hpp>
+#include <devex/ui/UiWorld.hpp>
 
 #include <cstddef>
 #include <filesystem>
@@ -41,6 +42,8 @@ public:
         // Null without audio.
         audio::AudioWorld* audio = nullptr;
         animation::AnimationWorld* animation = nullptr;
+        // Null without an interface.
+        ui::UiWorld* ui = nullptr;
         // Where assets are found by path; null without a project or package.
         const asset::AssetSource* assets = nullptr;
         // Set by the game.

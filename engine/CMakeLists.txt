@@ -182,6 +182,7 @@ target_sources(devex_asset
         src/asset/AnimationData.cpp
         src/asset/Artifact.cpp
         src/asset/AssetType.cpp
+        src/asset/FontData.cpp
         src/asset/MaterialData.cpp
         src/asset/MeshData.cpp
         src/asset/ModelData.cpp
@@ -199,6 +200,7 @@ target_sources(devex_asset
             include/devex/asset/AssetSource.hpp
             include/devex/asset/AssetType.hpp
             include/devex/asset/AudioClipData.hpp
+            include/devex/asset/FontData.hpp
             include/devex/asset/MaterialData.hpp
             include/devex/asset/MeshData.hpp
             include/devex/asset/ModelData.hpp
@@ -233,6 +235,7 @@ target_sources(devex_asset_import
     PRIVATE
         src/asset/import/AssetDatabase.cpp
         src/asset/import/AudioImporter.cpp
+        src/asset/import/FontImporter.cpp
         src/asset/import/GltfImporter.cpp
         src/asset/import/Importer.cpp
         src/asset/import/MaterialFile.cpp
@@ -372,6 +375,7 @@ target_sources(devex_scene
         src/scene/FieldValue.cpp
         src/scene/ModelInstantiation.cpp
         src/scene/PhysicsComponents.cpp
+        src/scene/UiComponents.cpp
         src/scene/AnimationComponents.cpp
         src/scene/AudioComponents.cpp
         src/scene/Prefab.cpp
@@ -390,6 +394,7 @@ target_sources(devex_scene
             include/devex/scene/FieldValue.hpp
             include/devex/scene/ModelInstantiation.hpp
             include/devex/scene/PhysicsComponents.hpp
+            include/devex/scene/UiComponents.hpp
             include/devex/scene/AnimationComponents.hpp
             include/devex/scene/AudioComponents.hpp
             include/devex/scene/Prefab.hpp
@@ -506,6 +511,41 @@ set_target_properties(devex_audio PROPERTIES
 )
 devex_set_warnings(devex_audio)
 
+# Interface: the placement of the Canvas and UiRect components on the screen, the buttons they
+# answer with, and the quads and letters they are drawn from.
+add_library(devex_ui OBJECT)
+add_library(Devex::Ui ALIAS devex_ui)
+
+target_sources(devex_ui
+    PRIVATE
+        src/ui/DrawList.cpp
+        src/ui/Layout.cpp
+        src/ui/TextLayout.cpp
+        src/ui/UiWorld.cpp
+    PUBLIC
+        FILE_SET HEADERS
+        BASE_DIRS include
+        FILES
+            include/devex/ui/DrawList.hpp
+            include/devex/ui/Layout.hpp
+            include/devex/ui/TextLayout.hpp
+            include/devex/ui/UiWorld.hpp
+)
+
+target_link_libraries(devex_ui
+    PUBLIC
+        Devex::Asset
+        Devex::Core
+        Devex::Math
+        Devex::Render
+        Devex::Scene
+)
+set_target_properties(devex_ui PROPERTIES
+    EXPORT_NAME Ui
+    FOLDER "Engine"
+)
+devex_set_warnings(devex_ui)
+
 # The C# side of the engine is built with the .NET SDK when it is installed (see managed/). Without
 # it, the engine runs games written in C++ only.
 find_program(DEVEX_DOTNET NAMES dotnet)
@@ -579,6 +619,7 @@ target_sources(devex_tools
         src/tools/Icons.cpp
         src/tools/Icons.hpp
         src/tools/InspectorPanel.cpp
+        src/tools/InterfacePanel.cpp
         src/tools/LogBuffer.cpp
         src/tools/ProjectList.cpp
         src/tools/ProjectList.hpp
@@ -606,6 +647,7 @@ target_sources(devex_tools
 
 target_link_libraries(devex_tools
     PUBLIC
+        Devex::Ui
         Devex::Animation
         Devex::AssetImport
         Devex::Audio
@@ -699,6 +741,7 @@ target_link_libraries(devex_engine
         devex_scene
         devex_serialization
         devex_tools
+        devex_ui
 )
 set_target_properties(devex_engine PROPERTIES
     OUTPUT_NAME "devex-engine"

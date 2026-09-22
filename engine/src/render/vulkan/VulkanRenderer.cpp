@@ -54,6 +54,8 @@ static_assert(sizeof(ClusterRange) == sizeof(GpuCluster));
         return VK_FORMAT_BC7_SRGB_BLOCK;
     case asset::TextureFormat::Rgba16Float:
         return VK_FORMAT_R16G16B16A16_SFLOAT;
+    case asset::TextureFormat::R8Unorm:
+        return VK_FORMAT_R8_UNORM;
     }
     return VK_FORMAT_UNDEFINED;
 }
@@ -863,13 +865,28 @@ core::Result<void> VulkanRenderer::createTargetPipelines(VkFormat format)
     GraphicsPipelineConfig triangleConfig = overlay;
     triangleConfig.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
     core::Result<Pipeline> overlayTriangles = createGraphicsPipeline(device, triangleConfig);
+    // The interface is drawn flat over the image, with its own vertices and no depth at all.
+    core::Result<Pipeline> interface = createGraphicsPipeline(
+        device, {
+                    .shaderPath = m_shaderDirectory / "ui.spv",
+                    .setLayouts = bothSets,
+                    .pushConstantSize = sizeof(UiPushConstants),
+                    .colorFormat = format,
+                    .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+                    .alphaBlend = true,
+                    .cullMode = VK_CULL_MODE_NONE,
+                    .depthTest = false,
+                    .depthWrite = false,
+                });
+
     GraphicsPipelineConfig outlineConfig = triangleConfig;
     outlineConfig.vertexEntry = "outlineVertex";
     outlineConfig.fragmentEntry = "outlineFragment";
     outlineConfig.setLayouts = bothSets;
     core::Result<Pipeline> outline = createGraphicsPipeline(device, outlineConfig);
 
-    for (core::Result<Pipeline>* result : {&tonemap, &sceneLines, &overlayLines, &overlayTriangles, &outline})
+    for (core::Result<Pipeline>* result :
+         {&tonemap, &sceneLines, &overlayLines, &overlayTriangles, &outline, &interface})
     {
         if (!*result)
         {
@@ -881,6 +898,7 @@ core::Result<void> VulkanRenderer::createTargetPipelines(VkFormat format)
     m_overlayLinePipeline = std::move(*overlayLines);
     m_overlayTrianglePipeline = std::move(*overlayTriangles);
     m_outlinePipeline = std::move(*outline);
+    m_uiPipeline = std::move(*interface);
     return {};
 }
 
@@ -1519,6 +1537,15 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
         }
     }
 
+    const bool drawUi = !m_world.uiDraws.empty() && !m_world.uiIndices.empty();
+    if (drawUi)
+    {
+        if (core::Result<void> uploaded = uploadUi(frame); !uploaded)
+        {
+            return std::unexpected(uploaded.error());
+        }
+    }
+
     // The frame set points at this frame's transient images.
     const VkImageView selectionMaskView =
         outlines ? graph.view(*created[selectionMaskIndex]) : m_emptySelectionMask->view();
@@ -1832,6 +1859,57 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
         });
     }
 
+    if (drawUi)
+    {
+        graph.addPass("Interface", {{target, ImageAccess::ColorAttachment}},
+                      [&](VkCommandBuffer commands) {
+            const VkRenderingAttachmentInfo colorAttachment{
+                .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+                .imageView = graph.view(target),
+                .imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                .loadOp = VK_ATTACHMENT_LOAD_OP_LOAD,
+                .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+            };
+            const VkRenderingInfo renderingInfo{
+                .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
+                .renderArea = {.extent = {extent.width, extent.height}},
+                .layerCount = 1,
+                .colorAttachmentCount = 1,
+                .pColorAttachments = &colorAttachment,
+            };
+            vkCmdBeginRendering(commands, &renderingInfo);
+            setViewport(commands, extent);
+            vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, m_uiPipeline->handle());
+            vkCmdBindDescriptorSets(commands, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                    m_uiPipeline->layout(), 0, 2, sets.data(), 0, nullptr);
+
+            for (const UiDraw& uiDraw : m_world.uiDraws)
+            {
+                const GpuTexture* const texture = m_textures.find(uiDraw.texture);
+                // Slang's SV_VertexID does not include the first vertex of a draw: the batch gets
+                // the address of its own first index instead.
+                const UiPushConstants constants{
+                    .vertices = frame.uiVertices->deviceAddress(),
+                    .indices = frame.uiIndices->deviceAddress() +
+                               VkDeviceSize{uiDraw.firstIndex} * sizeof(std::uint32_t),
+                    .inverseViewport = math::Vec2{2.0f / static_cast<float>(extent.width),
+                                                  2.0f / static_cast<float>(extent.height)},
+                    .kind = static_cast<std::uint32_t>(uiDraw.kind),
+                    .texture = texture != nullptr ? texture->slot : whiteTextureSlot,
+                    .rect = uiDraw.rect,
+                    .radius = uiDraw.radius,
+                    .sharpness = uiDraw.sharpness,
+                };
+                vkCmdPushConstants(commands, m_uiPipeline->layout(),
+                                   VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+                                   sizeof(constants), &constants);
+                vkCmdDraw(commands, uiDraw.indexCount, 1, 0, 0);
+                ++drawCalls;
+            }
+            vkCmdEndRendering(commands);
+        });
+    }
+
     if (toViewport || drawImGui)
     {
         std::vector<std::pair<RenderGraph::ImageId, ImageAccess>> toolAccesses{
@@ -1898,6 +1976,34 @@ void VulkanRenderer::readPickResult(FrameContext& frame)
     std::memcpy(&objectId, frame.pickReadback->mappedBytes().data(), sizeof(objectId));
     m_pickResults.push_back({.request = *frame.pickRequest, .objectId = objectId});
     frame.pickRequest.reset();
+}
+
+core::Result<void> VulkanRenderer::uploadUi(FrameContext& frame)
+{
+    const std::size_t vertexBytes = std::max<std::size_t>(m_world.uiVertices.size(), 1) * sizeof(GpuUiVertex);
+    const std::size_t indexBytes = std::max<std::size_t>(m_world.uiIndices.size(), 1) * sizeof(std::uint32_t);
+    if (core::Result<void> ensured = ensureHostBuffer(frame.uiVertices, vertexBytes); !ensured)
+    {
+        return ensured;
+    }
+    if (core::Result<void> ensured = ensureHostBuffer(frame.uiIndices, indexBytes); !ensured)
+    {
+        return ensured;
+    }
+
+    const std::span<std::byte> vertices = frame.uiVertices->mappedBytes();
+    for (std::size_t index = 0; index < m_world.uiVertices.size(); ++index)
+    {
+        const UiVertex& vertex = m_world.uiVertices[index];
+        const GpuUiVertex gpuVertex{.position = vertex.position, .uv = vertex.uv, .color = vertex.color};
+        std::memcpy(vertices.data() + index * sizeof(GpuUiVertex), &gpuVertex, sizeof(gpuVertex));
+    }
+    if (!m_world.uiIndices.empty())
+    {
+        std::memcpy(frame.uiIndices->mappedBytes().data(), m_world.uiIndices.data(),
+                    m_world.uiIndices.size() * sizeof(std::uint32_t));
+    }
+    return {};
 }
 
 core::Result<VulkanRenderer::OverlayRanges> VulkanRenderer::uploadOverlay(FrameContext& frame)

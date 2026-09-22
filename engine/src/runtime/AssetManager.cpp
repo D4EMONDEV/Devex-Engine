@@ -163,6 +163,19 @@ std::shared_ptr<const animation::Clip> AssetManager::animationClip(asset::AssetI
     return *clip;
 }
 
+const LoadedFont* AssetManager::font(asset::AssetId id)
+{
+    auto found = m_fonts.find(id);
+    // Fonts load without a renderer as well: their metrics alone lay text out, in tests and in
+    // headless tools.
+    if (found == m_fonts.end() && id.isValid() && m_source != nullptr && !m_failed.contains(id) &&
+        m_source->find(id) != nullptr && loadFont(id))
+    {
+        found = m_fonts.find(id);
+    }
+    return found != m_fonts.end() ? &found->second : nullptr;
+}
+
 void AssetManager::handleEvents(std::span<const asset::AssetEvent> events)
 {
     for (const asset::AssetEvent& event : events)
@@ -201,6 +214,16 @@ void AssetManager::handleEvents(std::span<const asset::AssetEvent> events)
             }
             // Materials loaded before the texture was imported pick it up as well.
             texturesChanged = true;
+            break;
+        case asset::AssetType::Font:
+            if (m_fonts.contains(event.id))
+            {
+                releaseFont(event.id);
+                if (!removed)
+                {
+                    static_cast<void>(loadFont(event.id));
+                }
+            }
             break;
         case asset::AssetType::Material:
             if (m_materials.contains(event.id))
@@ -259,6 +282,10 @@ void AssetManager::setSource(asset::AssetSource* source)
     while (!m_textures.empty())
     {
         releaseTexture(m_textures.begin()->first);
+    }
+    while (!m_fonts.empty())
+    {
+        releaseFont(m_fonts.begin()->first);
     }
     m_models.clear();
     m_meshData.clear();
@@ -346,6 +373,42 @@ bool AssetManager::loadMaterial(asset::AssetId id)
     return true;
 }
 
+bool AssetManager::loadFont(asset::AssetId id)
+{
+    const core::Result<std::vector<std::byte>> bytes = m_source->loadArtifact(id);
+    core::Result<asset::FontData> data =
+        bytes ? asset::decodeFont(*bytes) : core::Result<asset::FontData>(std::unexpected(bytes.error()));
+    if (!data)
+    {
+        DEVEX_LOG_ERROR("Cannot load font {}: {}", id.uuid, data.error());
+        m_failed.insert(id);
+        return false;
+    }
+
+    LoadedFont loaded;
+    if (m_renderer != nullptr)
+    {
+        // The atlas holds distances, not colors: one channel, read as it was written.
+        asset::TextureData image{.format = asset::TextureFormat::R8Unorm};
+        image.mips.push_back({.width = data->atlasWidth,
+                              .height = data->atlasHeight,
+                              .bytes = std::vector<std::byte>(
+                                  reinterpret_cast<const std::byte*>(data->atlas.data()),
+                                  reinterpret_cast<const std::byte*>(data->atlas.data() + data->atlas.size()))});
+        const core::Result<render::TextureHandle> atlas = m_renderer->createTexture(image);
+        if (!atlas)
+        {
+            DEVEX_LOG_ERROR("Cannot load the atlas of font {}: {}", id.uuid, atlas.error());
+            m_failed.insert(id);
+            return false;
+        }
+        loaded.atlas = *atlas;
+    }
+    loaded.data = std::make_shared<const asset::FontData>(std::move(*data));
+    m_fonts.insert_or_assign(id, std::move(loaded));
+    return true;
+}
+
 bool AssetManager::loadModel(asset::AssetId id)
 {
     const core::Result<std::vector<std::byte>> bytes = m_source->loadArtifact(id);
@@ -400,6 +463,18 @@ void AssetManager::releaseTexture(asset::AssetId id)
     {
         m_renderer->destroyTexture(found->second);
         m_textures.erase(found);
+    }
+}
+
+void AssetManager::releaseFont(asset::AssetId id)
+{
+    if (const auto found = m_fonts.find(id); found != m_fonts.end())
+    {
+        if (m_renderer != nullptr && found->second.atlas.isValid())
+        {
+            m_renderer->destroyTexture(found->second.atlas);
+        }
+        m_fonts.erase(found);
     }
 }
 

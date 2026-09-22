@@ -57,6 +57,18 @@ bool ImportContext::boolOption(std::string_view key, bool fallback) const noexce
     return fallback;
 }
 
+double ImportContext::numberOption(std::string_view key, double fallback) const noexcept
+{
+    for (const serialization::TextProperty& property : options)
+    {
+        if (property.key == key)
+        {
+            return serialization::asNumber(property.value).value_or(fallback);
+        }
+    }
+    return fallback;
+}
+
 std::string ImportContext::stringOption(std::string_view key, std::string_view fallback) const
 {
     for (const serialization::TextProperty& property : options)
@@ -216,6 +228,18 @@ std::span<const Importer> importers()
             // "auto" decodes short clips once and streams the long ones.
             .defaultOptions = {{"loading", TextValue(std::string("auto"))}},
             .run = &importAudioFile,
+        },
+        Importer{
+            .name = "font",
+            .version = 1,
+            .mainType = AssetType::Font,
+            .extensions = {".ttf", ".otf"},
+            .defaultOptions =
+                {
+                    {"size", TextValue(48.0)},
+                    {"spread", TextValue(6.0)},
+                },
+            .run = &importFontFile,
         },
         Importer{
             .name = "scene",
