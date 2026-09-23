@@ -1,0 +1,105 @@
+# Builds the engine, the editor, the player and the tests, then runs every test that needs no GPU,
+# in Debug and in Release, on each push to main and on each pull request. The machines of GitHub
+# have no GPU: the tests tagged [gpu] run on developers' machines only.
+name: CI
+
+on:
+  push:
+    branches: [main, ci]
+  pull_request:
+  workflow_dispatch:
+
+# A newer push to the same branch makes the check under way pointless.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    name: Windows ${{ matrix.preset }}
+    # Windows Server 2025 with Visual Studio 2026, the compiler the engine is written for.
+    runs-on: windows-2025
+    timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      matrix:
+        preset: [x64-debug, x64-release]
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: 1
+      DOTNET_NOLOGO: 1
+      VCPKG_DISABLE_METRICS: 1
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      # Only slangc is taken from the SDK: the headers and volk come from vcpkg.
+      - name: Set up the Vulkan SDK
+        uses: jakoch/install-vulkan-sdk-action@v1
+        with:
+          vulkan_version: 1.4.350.0
+          install_runtime: false
+          cache: true
+
+      - name: Set up the compiler
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      # A clone of vcpkg that knows the baseline of vcpkg.json, and a folder for the packages it
+      # builds, kept from one run to the next.
+      - name: Set up vcpkg
+        shell: pwsh
+        run: |
+          $root = Join-Path $env:RUNNER_TEMP "vcpkg"
+          $archives = Join-Path $env:RUNNER_TEMP "vcpkg-archives"
+          git clone --quiet --filter=blob:none https://github.com/microsoft/vcpkg.git $root
+          & (Join-Path $root "bootstrap-vcpkg.bat") -disableMetrics
+          New-Item -ItemType Directory -Force $archives | Out-Null
+          "VCPKG_ROOT=$root" >> $env:GITHUB_ENV
+          "VCPKG_DEFAULT_BINARY_CACHE=$archives" >> $env:GITHUB_ENV
+
+      - name: Restore the packages vcpkg built
+        id: vcpkg-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/vcpkg-archives
+          key: vcpkg-${{ matrix.preset }}-${{ hashFiles('vcpkg.json') }}
+
+      # vcpkg builds the dependencies here, the first time for hours, then from its cache.
+      - name: Configure
+        run: cmake --preset ${{ matrix.preset }} -DDEVEX_WARNINGS_AS_ERRORS=ON
+
+      # Saved as soon as the dependencies are built, so that a failing build or test does not
+      # lose them.
+      - name: Keep the packages vcpkg built
+        if: steps.vcpkg-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/vcpkg-archives
+          key: vcpkg-${{ matrix.preset }}-${{ hashFiles('vcpkg.json') }}
+
+      - name: Build
+        run: cmake --build out/build/${{ matrix.preset }}
+
+      - name: Test
+        run: ctest --test-dir out/build/${{ matrix.preset }} --label-exclude gpu --output-on-failure --no-tests=error --timeout 600
+
+      - name: Keep the logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs-${{ matrix.preset }}
+          path: |
+            out/build/${{ matrix.preset }}/Testing/Temporary/LastTest*.log
+            out/build/${{ matrix.preset }}/vcpkg-manifest-install.log
+            ${{ runner.temp }}/vcpkg/buildtrees/**/*.log
+          if-no-files-found: ignore

@@ -17,9 +17,12 @@ function(devex_add_tests module)
     if(ARG_ENVIRONMENT)
         set(discovery_properties PROPERTIES ENVIRONMENT "${ARG_ENVIRONMENT}")
     endif()
+    # The tags of a test become its labels: the continuous integration skips those marked [gpu],
+    # since its machines have none (ctest -LE gpu).
     catch_discover_tests(${target}
         TEST_PREFIX "devex.${module}."
         DISCOVERY_MODE PRE_TEST
+        ADD_TAGS_AS_LABELS
         ${discovery_properties}
     )
 endfunction()
