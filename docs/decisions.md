@@ -1404,10 +1404,14 @@ les assets s'écrivent au fil de leur lecture.
   **libère** chaque scène (édition et copie jouée) : les composants des types du module y sont
   conservés en texte et les pools créés par son code détruits (ceux des types du moteur sont
   recréés aussitôt) ; puis il décharge le module, charge la nouvelle build et **restaure** les
-  composants, champs ajoutés ou retirés compris. Une partie en cours continue.
+  composants, champs ajoutés ou retirés compris. Une partie en cours continue. Le cache des
+  préfabs est vidé juste avant le déchargement : les instances telles que leur préfab les fait,
+  qu'il garde en scènes pour l'inspecteur et l'écriture des scènes, contiennent elles aussi des
+  pools du module, et les détruire après appelait du code déchargé (l'éditeur plantait en
+  fermant un projet après avoir montré une instance d'un préfab à composant du jeu).
 - **Lecteur** : `devex-player Projet.dvxproj` ouvre la scène de démarrage du projet (*Set as
   startup scene* dans le panneau Assets, sinon la première scène) avec son module de jeu, sans
-  éditeur ; il ne compile pas le code.
+  éditeur ; il compile d'abord le code s'il est périmé (voir *Journal et plantages*).
 - **Limites** : un plantage du code du jeu arrête l'éditeur ; les variables globales d'un module
   sont perdues au rechargement ; la compilation du code ne fonctionne que sous Windows pour
   l'instant.

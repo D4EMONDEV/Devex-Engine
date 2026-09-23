@@ -5,6 +5,7 @@
 #include <devex/scene/ComponentRegistry.hpp>
 #include <devex/scene/Components.hpp>
 #include <devex/scene/FieldValue.hpp>
+#include <devex/scene/Prefab.hpp>
 #include <devex/scene/SceneSerializer.hpp>
 
 #include <catch2/catch_test_macros.hpp>
@@ -93,6 +94,44 @@ TEST_CASE("Systems run by phase, order and registration", "[runtime][game]")
     order.clear();
     registry.run(SystemPhase::Update, context);
     CHECK(order == std::vector<std::string>{"early", "first", "second"});
+}
+
+TEST_CASE("Unloading a game module forgets the prefabs that held its components", "[runtime][game]")
+{
+    const TemporaryDirectory copies;
+    const devex::asset::AssetId prefab = devex::asset::AssetId::generate();
+    devex::scene::setPrefabSourceLoader([prefab](devex::asset::AssetId asked) -> devex::core::Result<std::string> {
+        if (asked != prefab)
+        {
+            return devex::core::makeError(devex::core::ErrorCode::NotFound, "no such prefab");
+        }
+        return std::string("[scene format=1]\n\n"
+                           "[entity uuid=\"7daae435-06f5-54aa-b285-e3278b16f58f\" name=\"Counted\"]\n\n"
+                           "[component type=\"Counter\"]\nvalue = 3\n");
+    });
+
+    auto module = GameModule::load(testModule, copies.path);
+    if (!module)
+    {
+        FAIL(std::format("{}", module.error()));
+    }
+    // The inspector and the scene writer ask for the base of an instance, which the cache keeps: a
+    // scene whose Counter pool was made by the module.
+    const devex::core::Uuid instance = devex::core::Uuid::generate();
+    {
+        const std::shared_ptr<const Scene> base = devex::scene::prefabBase(prefab, instance);
+        REQUIRE(base != nullptr);
+        const devex::scene::ComponentType* const counter = devex::scene::componentRegistry().find("Counter");
+        REQUIRE(counter != nullptr);
+        // A prefab of one root gives it the identifier of the instance.
+        CHECK(counter->find(*base, base->findEntity(instance)) != nullptr);
+    }
+
+    // Unloading the module drops the cached base before its code goes: clearing the cache now, as
+    // closing a project does, no longer calls into a library that is gone.
+    module->reset();
+    devex::scene::setPrefabSourceLoader({});
+    CHECK(devex::scene::componentRegistry().find("Counter") == nullptr);
 }
 
 TEST_CASE("Game modules register, run, and reload without losing their components", "[runtime][game]")

@@ -2,6 +2,7 @@
 #include <devex/core/Path.hpp>
 #include <devex/runtime/GameModule.hpp>
 #include <devex/scene/ComponentRegistry.hpp>
+#include <devex/scene/Prefab.hpp>
 #include <devex/scene/SceneSerializer.hpp>
 
 #include <algorithm>
@@ -102,6 +103,10 @@ GameModule::GameModule(std::filesystem::path source, platform::SharedLibrary lib
 
 GameModule::~GameModule()
 {
+    // The prefabs are kept as scenes too, as their instances start out, and those scenes hold pools
+    // whose code lives in the library about to be unloaded: destroying them later would call into a
+    // library that is gone. They are made again from their text when asked for.
+    scene::clearPrefabCache();
     for (const std::string& component : m_registry.components())
     {
         scene::componentRegistry().remove(component);
