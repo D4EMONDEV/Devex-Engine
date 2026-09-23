@@ -35,6 +35,7 @@ devex_add_tests(core
         core/LogFileTests.cpp
         core/LogTests.cpp
         core/MappedFileTests.cpp
+        core/ProfilerTests.cpp
         core/SlotMapTests.cpp
         core/UuidTests.cpp
     LIBRARIES
@@ -207,6 +208,7 @@ devex_set_warnings(devex_test_incompatible_game_module)
 devex_add_tests(runtime
     SOURCES
         runtime/ApplicationTests.cpp
+        runtime/AssetMemoryTests.cpp
         runtime/FixedTimestepTests.cpp
         runtime/GameCodeBuilderTests.cpp
         runtime/GameExportTests.cpp

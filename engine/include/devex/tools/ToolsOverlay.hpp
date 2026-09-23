@@ -29,6 +29,7 @@ class Clip;
 } // namespace devex::audio
 
 namespace devex::asset {
+struct MemoryReport;
 struct ThemeData;
 } // namespace devex::asset
 
@@ -251,6 +252,8 @@ public:
     void setAnimationClips(std::function<std::shared_ptr<const animation::Clip>(asset::AssetId)> clips);
     // Lets the inspector show which fields of an element its style sets, and open its theme.
     void setThemes(std::function<std::shared_ptr<const asset::ThemeData>(asset::AssetId)> themes);
+    // Lets the profiler show what the loaded assets take.
+    void setMemoryReport(std::function<asset::MemoryReport()> report);
     void setAnimationWorld(animation::AnimationWorld* world) noexcept;
 
     // Editor only: what the last build of the game code reported, shown in the margin of the text

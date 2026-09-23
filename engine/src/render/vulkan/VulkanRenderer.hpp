@@ -135,6 +135,9 @@ private:
         std::uint32_t overlayTriangles = 0;
     };
 
+    // Timestamps a frame can write: one per pass of the render graph, and one more.
+    static constexpr std::uint32_t maxTimestamps = 128;
+
     struct FrameContext
     {
         VkCommandPool commandPool = VK_NULL_HANDLE;
@@ -143,6 +146,13 @@ private:
         VkFence completed = VK_NULL_HANDLE;
         // Signaled when the acquired swapchain image is ready to be rendered to.
         VkSemaphore imageAcquired = VK_NULL_HANDLE;
+        // One timestamp before each pass of the graph and one after the last, read once the GPU
+        // has finished the frame; the names are those of the passes that follow each timestamp.
+        VkQueryPool timestamps = VK_NULL_HANDLE;
+        std::uint32_t timestampCount = 0;
+        std::vector<const char*> timedPasses;
+        // The frame of the profiler the timestamps belong to.
+        std::uint64_t profiledFrame = 0;
         // Data read by shaders through device addresses. Each frame keeps its own copies, so
         // writing them never touches memory a frame in flight reads.
         std::optional<Buffer> sceneData;
@@ -223,6 +233,8 @@ private:
                    Device device, Allocator allocator, UploadContext upload) noexcept;
 
     [[nodiscard]] core::Result<void> createFrameContexts();
+    // Hands the GPU times of the passes of a finished frame to the profiler.
+    void reportPassTimes(FrameContext& frame);
     [[nodiscard]] core::Result<void> createDefaultResources();
     [[nodiscard]] core::Result<void> createScenePipelines();
     // Pipelines drawing into the swapchain or the viewport image, which share its format.
@@ -388,6 +400,9 @@ private:
     std::vector<RetiredEnvironment> m_retiredEnvironments;
 
     std::uint64_t m_frameIndex = 0;
+    // Nanoseconds per timestamp tick, 0 when the queue writes none; and the bits it writes.
+    double m_timestampPeriod = 0.0;
+    std::uint64_t m_timestampMask = ~std::uint64_t{0};
     RenderWorld m_world;
     LightClusters m_clusters;
     std::vector<GpuLight> m_gpuLights;

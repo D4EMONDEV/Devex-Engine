@@ -4,6 +4,7 @@
 #include <devex/core/Assert.hpp>
 #include <devex/core/Log.hpp>
 #include <devex/core/Path.hpp>
+#include <devex/core/Profiler.hpp>
 #include <devex/scene/Components.hpp>
 #include <devex/scene/ModelInstantiation.hpp>
 #include <devex/scene/Prefab.hpp>
@@ -312,6 +313,7 @@ void drawOverlayMenu(ToolsState& state, scene::Scene& scene)
         ImGui::MenuItem(detail::animationWindow, nullptr, &state.showAnimation);
         ImGui::MenuItem(detail::consoleWindow, nullptr, &state.showConsole);
         ImGui::MenuItem(detail::statisticsWindow, nullptr, &state.showStatistics);
+        ImGui::MenuItem(detail::profilerWindow, nullptr, &state.showProfiler);
         ImGui::Separator();
         if (ImGui::MenuItem("Reset Layout"))
         {
@@ -344,6 +346,7 @@ void buildDefaultLayout(ImGuiID dockspace, const ImGuiViewport& viewport, ToolsM
     ImGui::DockBuilderDockWindow(detail::inspectorWindow, right);
     ImGui::DockBuilderDockWindow(detail::consoleWindow, bottom);
     ImGui::DockBuilderDockWindow(detail::statisticsWindow, bottom);
+    ImGui::DockBuilderDockWindow(detail::profilerWindow, bottom);
     ImGui::DockBuilderDockWindow(detail::animationWindow, bottom);
     if (mode == ToolsMode::Editor)
     {
@@ -477,6 +480,7 @@ void updateEditor(ToolsState& state, scene::Scene& scene, PlayState playState)
     {
         detail::drawStatisticsPanel(state, scene);
     }
+    detail::drawProfilerPanel(state);
     if (state.showConsole)
     {
         detail::drawConsolePanel(state);
@@ -638,6 +642,8 @@ void ToolsOverlay::update(scene::Scene& scene, core::Duration frameDelta, PlaySt
 {
     ToolsState& state = *m_state;
     state.frameTimes.record(static_cast<float>(frameDelta.count() * 1000.0));
+    // Frames are measured only for someone to look at them.
+    core::profiler::setEnabled(state.visible && state.showProfiler);
     if (!state.visible)
     {
         return;
@@ -669,6 +675,7 @@ void ToolsOverlay::update(scene::Scene& scene, core::Duration frameDelta, PlaySt
     {
         detail::drawStatisticsPanel(state, scene);
     }
+    detail::drawProfilerPanel(state);
     if (state.showConsole)
     {
         detail::drawConsolePanel(state);
@@ -826,6 +833,11 @@ void ToolsOverlay::setAnimationClips(std::function<std::shared_ptr<const animati
 void ToolsOverlay::setThemes(std::function<std::shared_ptr<const asset::ThemeData>(asset::AssetId)> themes)
 {
     m_state->themes = std::move(themes);
+}
+
+void ToolsOverlay::setMemoryReport(std::function<asset::MemoryReport()> report)
+{
+    m_state->memoryReport = std::move(report);
 }
 
 void ToolsOverlay::setAnimationWorld(animation::AnimationWorld* world) noexcept

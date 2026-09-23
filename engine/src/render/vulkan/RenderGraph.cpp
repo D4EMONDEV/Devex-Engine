@@ -124,10 +124,15 @@ void RenderGraph::addPass(std::string name, std::vector<std::pair<ImageId, Image
     m_passes.push_back({std::move(name), std::move(accesses), std::move(record)});
 }
 
-void RenderGraph::execute(VkCommandBuffer commandBuffer, bool labels)
+void RenderGraph::execute(VkCommandBuffer commandBuffer, bool labels, const PassMarker& marker)
 {
     for (Pass& pass : m_passes)
     {
+        // Before the barriers of the pass, which are part of what it costs.
+        if (marker)
+        {
+            marker(commandBuffer, pass.name);
+        }
         if (labels)
         {
             const VkDebugUtilsLabelEXT label{
@@ -162,6 +167,10 @@ void RenderGraph::execute(VkCommandBuffer commandBuffer, bool labels)
         {
             vkCmdEndDebugUtilsLabelEXT(commandBuffer);
         }
+    }
+    if (marker)
+    {
+        marker(commandBuffer, {});
     }
     m_passes.clear();
 }

@@ -193,6 +193,7 @@ void drawEditorMenu(ToolsState& state)
         ImGui::MenuItem(animationWindow, nullptr, &state.showAnimation);
         ImGui::MenuItem(consoleWindow, nullptr, &state.showConsole);
         ImGui::MenuItem(statisticsWindow, nullptr, &state.showStatistics);
+        ImGui::MenuItem(profilerWindow, nullptr, &state.showProfiler);
         ImGui::EndMenu();
     }
     if (ImGui::MenuItem("Reset Layout"))

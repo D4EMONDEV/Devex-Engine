@@ -12,6 +12,7 @@
 #include "Widgets.hpp"
 
 #include <devex/asset/AssetId.hpp>
+#include <devex/asset/AssetMemory.hpp>
 #include <devex/asset/AssetType.hpp>
 #include <devex/asset/AudioClipData.hpp>
 #include <devex/asset/Project.hpp>
@@ -65,6 +66,7 @@ inline constexpr const char* debuggingWindow = "C# Debugging";
 inline constexpr const char* animationWindow = "Animation";
 inline constexpr const char* textEditorWindow = "Text Editor";
 inline constexpr const char* interfaceWindow = "Interface";
+inline constexpr const char* profilerWindow = "Profiler";
 
 // Payload type of an entity dragged in the hierarchy: the 16 bytes of its UUID.
 inline constexpr const char* entityPayload = "DEVEX_ENTITY";
@@ -93,6 +95,20 @@ private:
     std::array<float, 240> m_milliseconds{};
     std::size_t m_next = 0;
     std::size_t m_count = 0;
+};
+
+// What the Profiler panel keeps from one frame to the next.
+struct ProfilerView
+{
+    // The frame shown, by index: while recording, the newest one, taken again twice a second.
+    std::uint64_t frame = 0;
+    double frameTaken = -1.0;
+    // The part of the frame the timeline shows, in nanoseconds from its start: all of it when the
+    // end is not after the beginning.
+    double visibleBegin = 0.0;
+    double visibleEnd = 0.0;
+    asset::MemoryReport memory;
+    double memoryRead = -1.0;
 };
 
 // What a click in the viewport does: select only, or also show a gizmo.
@@ -271,8 +287,13 @@ struct ToolsState
     std::function<std::shared_ptr<const animation::Clip>(asset::AssetId)> animationClips;
     // The themes of interfaces, for the inspector to show what a style sets.
     std::function<std::shared_ptr<const asset::ThemeData>(asset::AssetId)> themes;
+    // What the loaded assets take, for the Profiler panel.
+    std::function<asset::MemoryReport()> memoryReport;
     animation::AnimationWorld* animationWorld = nullptr;
     bool showAnimation = false;
+    // The profiler records while its panel is open.
+    bool showProfiler = false;
+    ProfilerView profiler;
     // What the Animation panel shows: the clip it last posed, and where its playhead stands.
     asset::AssetId previewedAnimation;
     float animationPreviewTime = 0.0f;
@@ -425,6 +446,9 @@ void drawDebuggingWindow(ToolsState& state);
 // Opens a file in the code editor of the system.
 void openInCodeEditor(ToolsState& state, const std::filesystem::path& file);
 void drawStatisticsPanel(ToolsState& state, const scene::Scene& scene);
+// Where the time of the recorded frames went, on the CPU and on the GPU, and what the loaded assets
+// take.
+void drawProfilerPanel(ToolsState& state);
 void drawConsolePanel(ToolsState& state);
 void drawAssetsPanel(ToolsState& state, scene::Scene& scene);
 // The clips of the selected Animator: a timeline of their keys, played or scrubbed. Outside Play

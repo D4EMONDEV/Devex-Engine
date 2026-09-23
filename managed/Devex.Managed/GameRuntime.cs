@@ -50,6 +50,10 @@ internal static unsafe class GameRuntime
         public List<Entity> Order { get; } = [];
         public bool HandlesCollisions { get; init; }
         public bool HandlesTriggers { get; init; }
+        // The zones of the profiler its methods run in, named once.
+        public string StartZone => field ??= Name + ".Start";
+        public string UpdateZone => field ??= Name + ".Update";
+        public string FixedUpdateZone => field ??= Name + ".FixedUpdate";
     }
 
     private sealed class SystemInfo(SystemPhase phase, int order, int found, string name, Action<Scene> run)
@@ -201,10 +205,16 @@ internal static unsafe class GameRuntime
             }
             Time.Delta = delta;
 
-            LoadInstances();
+            // Each type of component and each system is a zone of the profiler, when it measures.
+            bool profiling = Profiler.IsEnabled;
+            using (profiling ? Profiler.Scope("C# components in") : default)
+            {
+                LoadInstances();
+            }
             // Start runs before anything else happens to a component.
             foreach (ComponentTypeInfo info in Types)
             {
+                using ProfileScope zone = profiling && info.Order.Count > 0 ? Profiler.Scope(info.StartZone) : default;
                 foreach (Entity entity in info.Order)
                 {
                     if (info.Instances.TryGetValue(entity.Key, out Component? instance) && !instance.Started)
@@ -222,6 +232,9 @@ internal static unsafe class GameRuntime
             {
                 foreach (ComponentTypeInfo info in Types)
                 {
+                    using ProfileScope zone = profiling && info.Order.Count > 0
+                        ? Profiler.Scope(phase == SystemPhase.Update ? info.UpdateZone : info.FixedUpdateZone)
+                        : default;
                     foreach (Entity entity in info.Order)
                     {
                         if (!info.Instances.TryGetValue(entity.Key, out Component? instance))
@@ -245,6 +258,7 @@ internal static unsafe class GameRuntime
                 {
                     continue;
                 }
+                using ProfileScope zone = profiling ? Profiler.Scope(system.Name) : default;
                 try
                 {
                     system.Run(SceneView);
@@ -254,7 +268,10 @@ internal static unsafe class GameRuntime
                     Report($"The system {system.Name}", system.Name, exception);
                 }
             }
-            StoreInstances();
+            using (profiling ? Profiler.Scope("C# components out") : default)
+            {
+                StoreInstances();
+            }
         }
         finally
         {

@@ -6,6 +6,7 @@
 #include <devex/asset/import/TextureProcessing.hpp>
 #include <devex/audio/AudioEngine.hpp>
 #include <devex/core/File.hpp>
+#include <devex/core/Profiler.hpp>
 #include <devex/core/Path.hpp>
 #include <devex/core/Assert.hpp>
 #include <devex/core/BuildInfo.hpp>
@@ -222,6 +223,8 @@ private:
     // modal loop while the window is being resized, where events cannot be polled.
     void runFrame();
     void runGameplay(std::chrono::nanoseconds frameTime);
+    // Animation, interface, transforms, physics interpolation and audio, after the gameplay.
+    void updateFrameWorlds(std::chrono::nanoseconds frameTime, bool interpolate);
     // Loads the scene that game systems asked for, if any.
     void loadRequestedScene();
     void render(bool gameplay);
@@ -487,19 +490,25 @@ int ApplicationRunner::execute()
     m_previousFrame = Clock::now();
     while (!m_application.m_quitRequested)
     {
+        core::profiler::beginFrame();
         // Devices used by the tools during the previous frame do not drive gameplay.
         if (m_services.tools != nullptr)
         {
             m_services.platform.setImGuiInputCapture(m_services.tools->capturesKeyboard(),
                                                      m_services.tools->capturesMouse());
         }
-        m_services.platform.pollEvents(
-            [this](const platform::Event& event) { handleEvent(event); });
+        {
+            DEVEX_PROFILE_SCOPE("Events");
+            m_services.platform.pollEvents(
+                [this](const platform::Event& event) { handleEvent(event); });
+        }
         if (m_application.m_quitRequested)
         {
+            core::profiler::endFrame();
             break;
         }
         runFrame();
+        core::profiler::endFrame();
     }
 
     if (m_playScene)
@@ -581,10 +590,14 @@ void ApplicationRunner::runFrame()
     // Finished imports replace the assets they changed before anything uses them this frame.
     if (m_services.database != nullptr)
     {
+        DEVEX_PROFILE_SCOPE("Assets");
         handleAssetEvents(*m_services.database);
     }
 
-    updateGameCode();
+    {
+        DEVEX_PROFILE_SCOPE("Game code");
+        updateGameCode();
+    }
 
     const bool minimized = m_services.window.isMinimized();
     const bool canRender = m_services.renderer != nullptr && !minimized;
@@ -597,6 +610,7 @@ void ApplicationRunner::runFrame()
         updateExport();
         if (canRender)
         {
+            DEVEX_PROFILE_SCOPE("Editor");
             m_services.tools->update(*m_application.m_scene, core::Duration(frameTime), m_playState);
         }
         handleEditorRequests(m_services.tools->takeRequests());
@@ -608,18 +622,7 @@ void ApplicationRunner::runFrame()
         {
             runGameplay(m_timestep.step());
         }
-        updateAnimation(frameTime);
-        updateUi(frameTime);
-        if (!m_playScene)
-        {
-            m_editedThemes.apply(*m_application.m_scene);
-        }
-        m_application.m_scene->updateTransforms();
-        if (m_physics && m_playScene)
-        {
-            m_physics->interpolate(*m_application.m_scene, static_cast<float>(m_timestep.alpha()));
-        }
-        updateAudio(frameTime);
+        updateFrameWorlds(frameTime, m_playScene.has_value());
         if (canRender && !m_application.m_quitRequested)
         {
             render(m_playScene.has_value());
@@ -628,18 +631,12 @@ void ApplicationRunner::runFrame()
     else
     {
         runGameplay(frameTime);
-        updateAnimation(frameTime);
-        updateUi(frameTime);
-        m_application.m_scene->updateTransforms();
-        if (m_physics)
-        {
-            m_physics->interpolate(*m_application.m_scene, static_cast<float>(m_timestep.alpha()));
-        }
-        updateAudio(frameTime);
+        updateFrameWorlds(frameTime, true);
         if (canRender && !m_application.m_quitRequested)
         {
             if (m_services.tools != nullptr)
             {
+                DEVEX_PROFILE_SCOPE("Tools");
                 m_services.tools->update(*m_application.m_scene, core::Duration(frameTime));
             }
             render(true);
@@ -651,27 +648,61 @@ void ApplicationRunner::runFrame()
                   : m_frameBudget;
     if (frameLimit > std::chrono::nanoseconds::zero())
     {
+        DEVEX_PROFILE_SCOPE("Frame limit");
         platform::sleepPrecise(frameLimit - (Clock::now() - frameStart));
     }
 
     m_inFrame = false;
 }
 
+void ApplicationRunner::updateFrameWorlds(std::chrono::nanoseconds frameTime, bool interpolate)
+{
+    {
+        DEVEX_PROFILE_SCOPE("Animation");
+        updateAnimation(frameTime);
+    }
+    {
+        DEVEX_PROFILE_SCOPE("Interface");
+        updateUi(frameTime);
+        if (isEditor() && !m_playScene)
+        {
+            m_editedThemes.apply(*m_application.m_scene);
+        }
+    }
+    {
+        DEVEX_PROFILE_SCOPE("Transforms");
+        m_application.m_scene->updateTransforms();
+    }
+    if (m_physics && interpolate)
+    {
+        DEVEX_PROFILE_SCOPE("Physics interpolation");
+        m_physics->interpolate(*m_application.m_scene, static_cast<float>(m_timestep.alpha()));
+    }
+    {
+        DEVEX_PROFILE_SCOPE("Audio");
+        updateAudio(frameTime);
+    }
+}
+
 void ApplicationRunner::runGameplay(std::chrono::nanoseconds frameTime)
 {
+    DEVEX_PROFILE_SCOPE("Gameplay");
     const std::uint32_t steps = m_timestep.advance(frameTime);
     for (std::uint32_t step = 0; step < steps; ++step)
     {
+        DEVEX_PROFILE_SCOPE("Fixed step");
         m_application.onFixedUpdate(m_fixedDelta);
         runSystems(SystemPhase::FixedUpdate, m_fixedDelta);
         if (m_physics)
         {
+            DEVEX_PROFILE_SCOPE("Physics");
             m_application.m_scene->updateTransforms();
             m_physics->step(*m_application.m_scene, m_fixedDelta);
         }
     }
     m_application.m_interpolationAlpha = m_timestep.alpha();
     // The application may replace the scene during its updates.
+    DEVEX_PROFILE_SCOPE("Update");
     m_application.onUpdate(core::Duration(frameTime));
     runSystems(SystemPhase::Update, core::Duration(frameTime));
     // The contacts of this frame's steps have been seen by the updates.
@@ -701,20 +732,28 @@ void ApplicationRunner::loadRequestedScene()
 
 void ApplicationRunner::render(bool gameplay)
 {
+    DEVEX_PROFILE_SCOPE("Render");
     render::Renderer* const renderer = m_services.renderer;
     scene::Scene& scene = *m_application.m_scene;
     render::RenderWorld& world = renderer->beginFrame();
-    extractScene(scene, m_services.assets, world);
-    if (gameplay)
     {
-        m_application.onRender(world);
+        DEVEX_PROFILE_SCOPE("Scene extraction");
+        extractScene(scene, m_services.assets, world);
+        if (gameplay)
+        {
+            m_application.onRender(world);
+        }
     }
     if (isEditor())
     {
+        DEVEX_PROFILE_SCOPE("Editor overlays");
         m_services.tools->prepareRender(scene, world, m_playState);
     }
     // The interface is drawn last, over the game and its overlays.
-    buildUi(world);
+    {
+        DEVEX_PROFILE_SCOPE("Interface drawing");
+        buildUi(world);
+    }
     if (core::Result<void> rendered = renderer->endFrame(); !rendered)
     {
         DEVEX_LOG_FATAL("Rendering failed: {}", rendered.error());
@@ -2031,6 +2070,7 @@ int run(Application& application, const ApplicationConfig& config)
                             [&assets](asset::AssetId clip) { return assets.audioClip(clip); });
             tools->setAnimationClips([&assets](asset::AssetId clip) { return assets.animationClip(clip); });
             tools->setThemes([&assets](asset::AssetId theme) { return assets.theme(theme); });
+            tools->setMemoryReport([&assets] { return assets.memoryReport(); });
             const std::filesystem::path engineConfig = (platform->baseDirectory() / ".." / "cmake").lexically_normal();
             tools->setProjectCodeStatusProvider([engineConfig](const asset::Project& project) {
                 const auto status = detail::GameCodeBuilder::buildStatus(project, engineConfig);

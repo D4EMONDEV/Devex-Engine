@@ -20,7 +20,11 @@ public class Mover : Component
 
     public override void Update(float delta)
     {
-        Transform.Position += Direction * (Speed * delta);
+        // A zone of the game's own, measured when the profiler records.
+        using (Profiler.Scope("Move"))
+        {
+            Transform.Position += Direction * (Speed * delta);
+        }
         Label = $"moved {Entity.Name}";
     }
 }

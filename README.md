@@ -22,7 +22,7 @@ Le détail, l'architecture des modules et les jalons sont dans
 ## État actuel
 
 - `Devex::Core` : `Result`/`Error`, journal `DEVEX_LOG_*`, assertions, `SlotMap`, `Uuid`,
-  hachage XXH64, pool de jobs ;
+  hachage XXH64, pool de jobs, profileur (zones nommées par thread, rassemblées par image) ;
 - `Devex::Math` : types GLM sous `devex::math`, projection reverse-Z infinie, TRS ;
 - `Devex::Platform` : fenêtre, événements et entrées clavier, souris et manette, saisie de texte
   et presse-papiers, dialogues de fichiers, bibliothèques partagées et processus sur SDL3 ;
@@ -41,7 +41,7 @@ Le détail, l'architecture des modules et les jalons sont dans
   le soleil et en atlas pour les lumières locales, ciel HDR et IBL, surfaces transparentes triées,
   anticrénelage temporel, occlusion ambiante en espace écran, bloom, exposition automatique,
   tonemapping AgX, table de couleurs, vignette et grain, rendu dans une texture, sélection sur le
-  GPU, contours et lignes d'outils ;
+  GPU, contours et lignes d'outils, temps GPU de chaque passe ;
 - `Devex::Scene` : entités à UUID, composants en sparse sets, hiérarchie, `.dvxscene`,
   instanciation de modèles, composants de physique, d'animation et d'interface, préfabs liés
   (scènes imbriquées avec leurs modifications) ;
@@ -72,13 +72,14 @@ Le détail, l'architecture des modules et les jalons sont dans
   remplacement, autocomplétion, erreurs de compilation dans la marge), ouverture dans l'IDE,
   *New Script…*, réglages de l'éditeur, aperçu sonore et forme
   d'onde des clips, volumes du projet, icônes et distances des sources audio, panneau Animation
-  avec piste temporelle et images clés ;
+  avec piste temporelle et images clés, panneau Profiler (barres des images, chronologie par
+  thread et GPU, tableaux des zones, des passes et de la mémoire des assets) ;
 - `Devex::Runtime` : `Application`, boucle à pas fixe, mode éditeur et mode Play, modules de jeu
   (composants et systèmes rechargeables à chaud), code C# sur .NET hébergé (composants, systèmes,
   compilation et rechargement à chaud), chargement des assets à la demande, changement de
   scène, rendu automatique de la scène, export d'un jeu ;
 - `Devex.Managed` : l'API C# du moteur (`Component`, `Entity`, `Scene`, `Input`, `Physics`, `Audio`,
-  `Animation`, `Ui`, `Prefabs`, `Assets`, `Time`, `Log`, maths) et les vues des composants du
+  `Animation`, `Ui`, `Prefabs`, `Assets`, `Time`, `Log`, `Profiler`, maths) et les vues des composants du
   moteur, compilée dans `bin/managed` quand le SDK .NET est installé ;
 - `Devex::Engine` : tous les modules dans une bibliothèque partagée, `devex-engine.dll` ;
 - `devex-editor` : l'éditeur, qui compile et recharge à chaud le code des projets ;

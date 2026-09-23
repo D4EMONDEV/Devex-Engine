@@ -3,6 +3,7 @@
 #include <devex/asset/AssetId.hpp>
 #include <devex/core/File.hpp>
 #include <devex/core/Log.hpp>
+#include <devex/core/Profiler.hpp>
 #include <devex/core/Path.hpp>
 #include <devex/platform/SharedLibrary.hpp>
 #include <devex/runtime/ComponentViews.hpp>
@@ -124,6 +125,9 @@ struct NativeApi
     int (*uiChangedAction)(const char* action);
     int (*uiSubmittedAction)(const char* action);
     Entity (*uiEditedField)();
+    int (*profileEnabled)();
+    void (*profileBegin)(const char* name);
+    void (*profileEnd)();
 };
 
 // The functions the engine calls, in the order of Devex.Managed's ManagedApi.
@@ -138,7 +142,7 @@ struct ManagedApi
 };
 
 // Devex.Managed's Bootstrap.Version: both sides change it with the function tables.
-constexpr int bootstrapVersion = 5;
+constexpr int bootstrapVersion = 6;
 
 struct BootstrapArguments
 {
@@ -852,6 +856,25 @@ Entity apiUiEditedField()
     return uiWorld() != nullptr ? uiWorld()->editedField() : Entity{};
 }
 
+int apiProfileEnabled()
+{
+    return core::profiler::isEnabled() ? 1 : 0;
+}
+
+void apiProfileBegin(const char* name)
+{
+    // Names come from C# as text: the profiler keeps each one once.
+    if (name != nullptr && core::profiler::isEnabled())
+    {
+        core::profiler::beginZone(core::profiler::intern(name));
+    }
+}
+
+void apiProfileEnd()
+{
+    core::profiler::endZone();
+}
+
 [[nodiscard]] NativeApi makeNativeApi() noexcept
 {
     return NativeApi{
@@ -930,6 +953,9 @@ Entity apiUiEditedField()
         .uiChangedAction = &apiUiChangedAction,
         .uiSubmittedAction = &apiUiSubmittedAction,
         .uiEditedField = &apiUiEditedField,
+        .profileEnabled = &apiProfileEnabled,
+        .profileBegin = &apiProfileBegin,
+        .profileEnd = &apiProfileEnd,
     };
 }
 

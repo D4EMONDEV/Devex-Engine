@@ -1,5 +1,6 @@
 #include <devex/asset/Primitives.hpp>
 #include <devex/core/Log.hpp>
+#include <devex/core/Profiler.hpp>
 #include <devex/platform/Platform.hpp>
 #include <devex/render/Renderer.hpp>
 
@@ -11,6 +12,7 @@
 #include <format>
 #include <iterator>
 #include <string>
+#include <string_view>
 #include <vector>
 
 using devex::core::LogLevel;
@@ -597,6 +599,74 @@ TEST_CASE("Local lights that cast shadows are drawn into the atlas", "[render][g
             CHECK(renderer->stats().culledInstances == 4);
         }
     }
+
+    for (const std::string& error : capture.errors())
+    {
+        UNSCOPED_INFO(error);
+    }
+    CHECK(capture.errors().empty());
+}
+
+TEST_CASE("The GPU time of every pass reaches the profiler", "[render][gpu][profiler]")
+{
+    const ErrorCapture capture;
+    devex::core::profiler::clear();
+    devex::core::profiler::setEnabled(true);
+    {
+        auto platform = devex::platform::Platform::create();
+        REQUIRE(platform.has_value());
+        auto window = platform->createWindow({
+            .title = "Devex render tests",
+            .width = 320,
+            .height = 240,
+            .vulkan = true,
+            .hidden = true,
+        });
+        REQUIRE(window.has_value());
+        auto renderer = devex::render::Renderer::create(*platform, *window, {
+            .applicationName = "Devex render tests",
+            .validation = true,
+        });
+        if (!renderer)
+        {
+            FAIL(std::format("{}", renderer.error()));
+        }
+
+        // A frame is read back once the GPU has finished it, a few frames later.
+        for (int frame = 0; frame < 6; ++frame)
+        {
+            devex::core::profiler::beginFrame();
+            static_cast<void>(renderer->beginFrame());
+            const devex::core::Result<void> presented = renderer->endFrame();
+            devex::core::profiler::endFrame();
+            if (!presented)
+            {
+                FAIL(std::format("frame {}: {}", frame, presented.error()));
+            }
+        }
+    }
+    const auto frames = devex::core::profiler::history();
+    devex::core::profiler::setEnabled(false);
+    devex::core::profiler::clear();
+
+    const auto measured = std::ranges::find_if(frames, [](const auto& frame) { return frame->gpuMeasured; });
+    REQUIRE(measured != frames.end());
+    const devex::core::ProfileFrame& frame = **measured;
+    CHECK(frame.gpuDuration > 0);
+    REQUIRE_FALSE(frame.gpu.empty());
+    // The passes follow each other within the frame, named as the render graph names them.
+    CHECK(std::ranges::any_of(frame.gpu, [](const devex::core::ProfileZone& pass) {
+        return std::string_view(pass.name) == "Present";
+    }));
+    for (const devex::core::ProfileZone& pass : frame.gpu)
+    {
+        CHECK(pass.begin <= pass.end);
+        CHECK(pass.end <= frame.gpuDuration);
+    }
+    // The CPU zones of the renderer are there as well.
+    CHECK(std::ranges::any_of(frame.cpu, [](const devex::core::ProfileZone& zone) {
+        return std::string_view(zone.name) == "Wait for the GPU";
+    }));
 
     for (const std::string& error : capture.errors())
     {

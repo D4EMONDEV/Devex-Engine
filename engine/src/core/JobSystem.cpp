@@ -1,8 +1,10 @@
 #include <devex/core/Assert.hpp>
 #include <devex/core/JobSystem.hpp>
+#include <devex/core/Profiler.hpp>
 
 #include <algorithm>
 #include <atomic>
+#include <format>
 #include <memory>
 #include <utility>
 
@@ -41,7 +43,11 @@ JobSystem::JobSystem(std::uint32_t workerCount)
     m_workers.reserve(workerCount);
     for (std::uint32_t worker = 0; worker < workerCount; ++worker)
     {
-        m_workers.emplace_back([this](std::stop_token stop) { runWorker(stop); });
+        m_workers.emplace_back([this, worker](std::stop_token stop) {
+            // Each worker has its lane in the timeline of the profiler.
+            profiler::nameThread(std::format("Worker {}", worker + 1));
+            runWorker(stop);
+        });
     }
 }
 
@@ -140,7 +146,10 @@ void JobSystem::runWorker(std::stop_token stop)
         ++m_runningJobs;
         lock.unlock();
 
-        job();
+        {
+            DEVEX_PROFILE_SCOPE("Job");
+            job();
+        }
         // Captured state is released outside the lock.
         job = nullptr;
 

@@ -1,3 +1,4 @@
+#include <devex/core/Profiler.hpp>
 #include <devex/runtime/Game.hpp>
 
 #include <algorithm>
@@ -35,6 +36,8 @@ void GameRegistry::run(SystemPhase phase, SystemContext& context) const
     {
         if (system.phase == phase)
         {
+            // Every system has its zone, under the name it was registered with.
+            const core::ProfileScope scope(core::profiler::isEnabled() ? core::profiler::intern(system.name) : "");
             system.function(context);
         }
     }

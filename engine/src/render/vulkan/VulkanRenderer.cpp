@@ -5,6 +5,7 @@
 
 #include <devex/core/Assert.hpp>
 #include <devex/core/Log.hpp>
+#include <devex/core/Profiler.hpp>
 #include <devex/render/Photometry.hpp>
 
 #include <imgui.h>
@@ -225,6 +226,7 @@ VulkanRenderer::~VulkanRenderer()
         {
             vkDestroySemaphore(device, frame.imageAcquired, nullptr);
             vkDestroyFence(device, frame.completed, nullptr);
+            vkDestroyQueryPool(device, frame.timestamps, nullptr);
             vkDestroyCommandPool(device, frame.commandPool, nullptr);
         }
     }
@@ -468,19 +470,29 @@ core::Result<void> VulkanRenderer::endFrame()
     const VkDevice device = m_device.handle();
     const auto frameSlot = static_cast<std::uint32_t>(m_frameIndex % framesInFlight);
     FrameContext& frame = m_frames[frameSlot];
-    DEVEX_VK_TRY(vkWaitForFences, device, 1, &frame.completed, VK_TRUE, noTimeout);
+    {
+        DEVEX_PROFILE_SCOPE("Wait for the GPU");
+        DEVEX_VK_TRY(vkWaitForFences, device, 1, &frame.completed, VK_TRUE, noTimeout);
+    }
+    reportPassTimes(frame);
     readPickResult(frame);
     releaseRetiredResources();
     updateExposure(frame);
-    if (core::Result<void> environment = updateEnvironment(); !environment)
     {
-        return environment;
+        DEVEX_PROFILE_SCOPE("Environment");
+        if (core::Result<void> environment = updateEnvironment(); !environment)
+        {
+            return environment;
+        }
     }
 
     std::uint32_t imageIndex = 0;
-    const VkResult acquired = vkAcquireNextImageKHR(device, m_swapchain->handle(), noTimeout,
-                                                    frame.imageAcquired, VK_NULL_HANDLE,
-                                                    &imageIndex);
+    VkResult acquired = VK_SUCCESS;
+    {
+        DEVEX_PROFILE_SCOPE("Acquire the image");
+        acquired = vkAcquireNextImageKHR(device, m_swapchain->handle(), noTimeout, frame.imageAcquired,
+                                         VK_NULL_HANDLE, &imageIndex);
+    }
     if (acquired == VK_ERROR_OUT_OF_DATE_KHR)
     {
         m_swapchainOutdated = true;
@@ -496,9 +508,12 @@ core::Result<void> VulkanRenderer::endFrame()
     }
 
     DEVEX_VK_TRY(vkResetFences, device, 1, &frame.completed);
-    if (core::Result<void> materials = updateFrameMaterials(frame); !materials)
     {
-        return materials;
+        DEVEX_PROFILE_SCOPE("Materials");
+        if (core::Result<void> materials = updateFrameMaterials(frame); !materials)
+        {
+            return materials;
+        }
     }
 
     const math::Extent2D viewport = m_world.viewport;
@@ -507,13 +522,19 @@ core::Result<void> VulkanRenderer::endFrame()
                                          std::min(viewport.height, maxViewportSize)}
                         : m_swapchain->extent();
     const float aspectRatio = static_cast<float>(m_sceneExtent.width) / static_cast<float>(m_sceneExtent.height);
-    if (core::Result<void> lights = uploadLights(frame, aspectRatio); !lights)
     {
-        return lights;
+        DEVEX_PROFILE_SCOPE("Lights");
+        if (core::Result<void> lights = uploadLights(frame, aspectRatio); !lights)
+        {
+            return lights;
+        }
     }
-    if (core::Result<void> bones = uploadBones(frame); !bones)
     {
-        return bones;
+        DEVEX_PROFILE_SCOPE("Bones");
+        if (core::Result<void> bones = uploadBones(frame); !bones)
+        {
+            return bones;
+        }
     }
     if (const std::optional<PickRequest>& pick = m_world.pick; pick)
     {
@@ -548,8 +569,12 @@ core::Result<void> VulkanRenderer::endFrame()
     m_jitter = antialiased ? math::Vec2{(haltonPoint(sample + 1, 2) - 0.5f) * 2.0f / static_cast<float>(m_sceneExtent.width),
                                         (haltonPoint(sample + 1, 3) - 0.5f) * 2.0f / static_cast<float>(m_sceneExtent.height)}
                            : math::Vec2{0.0f};
-    writeSceneData(frame, m_cascades);
+    {
+        DEVEX_PROFILE_SCOPE("Scene data");
+        writeSceneData(frame, m_cascades);
+    }
 
+    DEVEX_PROFILE_SCOPE("Record and submit");
     core::Result<std::uint32_t> recorded = recordFrame(frame, frameSlot, imageIndex, drawImGui, drawShadows);
     if (!recorded)
     {
@@ -596,7 +621,11 @@ core::Result<void> VulkanRenderer::endFrame()
         .pSwapchains = &swapchain,
         .pImageIndices = &imageIndex,
     };
-    const VkResult presented = vkQueuePresentKHR(m_device.queue(), &presentInfo);
+    VkResult presented = VK_SUCCESS;
+    {
+        DEVEX_PROFILE_SCOPE("Present");
+        presented = vkQueuePresentKHR(m_device.queue(), &presentInfo);
+    }
     if (presented == VK_ERROR_OUT_OF_DATE_KHR || presented == VK_SUBOPTIMAL_KHR)
     {
         m_swapchainOutdated = true;
@@ -610,9 +639,50 @@ core::Result<void> VulkanRenderer::endFrame()
     return {};
 }
 
+void VulkanRenderer::reportPassTimes(FrameContext& frame)
+{
+    const std::uint32_t count = std::exchange(frame.timestampCount, 0);
+    if (count < 2 || frame.timestamps == VK_NULL_HANDLE)
+    {
+        return;
+    }
+    std::array<std::uint64_t, maxTimestamps> ticks{};
+    // The fence of the frame was waited on: every timestamp is there.
+    if (vkGetQueryPoolResults(m_device.handle(), frame.timestamps, 0, count, count * sizeof(std::uint64_t),
+                              ticks.data(), sizeof(std::uint64_t), VK_QUERY_RESULT_64_BIT) != VK_SUCCESS)
+    {
+        return;
+    }
+    const auto nanoseconds = [&](std::uint32_t index) {
+        const std::uint64_t elapsed = (ticks[index] - ticks[0]) & m_timestampMask;
+        return static_cast<std::uint64_t>(static_cast<double>(elapsed) * m_timestampPeriod);
+    };
+    std::vector<core::ProfileZone> passes;
+    passes.reserve(count - 1);
+    for (std::uint32_t index = 0; index + 1 < count; ++index)
+    {
+        if (frame.timedPasses[index] != nullptr)
+        {
+            passes.push_back({.name = frame.timedPasses[index], .begin = nanoseconds(index), .end = nanoseconds(index + 1)});
+        }
+    }
+    core::profiler::reportGpu(frame.profiledFrame, std::move(passes), nanoseconds(count - 1));
+}
+
 core::Result<void> VulkanRenderer::createFrameContexts()
 {
     const VkDevice device = m_device.handle();
+    // The queue must write timestamps for the passes to be timed on the GPU; most do.
+    std::uint32_t familyCount = 0;
+    vkGetPhysicalDeviceQueueFamilyProperties(m_device.physicalDevice(), &familyCount, nullptr);
+    std::vector<VkQueueFamilyProperties> families(familyCount);
+    vkGetPhysicalDeviceQueueFamilyProperties(m_device.physicalDevice(), &familyCount, families.data());
+    const std::uint32_t validBits =
+        m_device.queueFamily() < families.size() ? families[m_device.queueFamily()].timestampValidBits : 0;
+    VkPhysicalDeviceProperties properties{};
+    vkGetPhysicalDeviceProperties(m_device.physicalDevice(), &properties);
+    m_timestampPeriod = validBits > 0 ? static_cast<double>(properties.limits.timestampPeriod) : 0.0;
+    m_timestampMask = validBits >= 64 ? ~std::uint64_t{0} : (std::uint64_t{1} << validBits) - 1;
     for (FrameContext& frame : m_frames)
     {
         const VkCommandPoolCreateInfo poolInfo{
@@ -637,6 +707,16 @@ core::Result<void> VulkanRenderer::createFrameContexts()
 
         const VkSemaphoreCreateInfo semaphoreInfo{.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
         DEVEX_VK_TRY(vkCreateSemaphore, device, &semaphoreInfo, nullptr, &frame.imageAcquired);
+
+        if (m_timestampPeriod > 0.0)
+        {
+            const VkQueryPoolCreateInfo queryInfo{
+                .sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO,
+                .queryType = VK_QUERY_TYPE_TIMESTAMP,
+                .queryCount = maxTimestamps,
+            };
+            DEVEX_VK_TRY(vkCreateQueryPool, device, &queryInfo, nullptr, &frame.timestamps);
+        }
 
         core::Result<Buffer> pickReadback = Buffer::create(m_allocator, {
                                                                              .size = sizeof(std::uint32_t),
@@ -1599,8 +1679,11 @@ core::Result<void> VulkanRenderer::uploadLights(FrameContext& frame, float aspec
         .nearPlane = m_world.camera.nearPlane,
         .farPlane = std::max(clusterFarPlane, m_world.camera.nearPlane * 2.0f),
     };
-    assignLightsToClusters(grid, m_world.camera.view, m_world.camera.verticalFov, aspectRatio,
-                           m_world.lights, m_clusters);
+    {
+        DEVEX_PROFILE_SCOPE("Light clusters");
+        assignLightsToClusters(grid, m_world.camera.view, m_world.camera.verticalFov, aspectRatio,
+                               m_world.lights, m_clusters);
+    }
 
     const VkDeviceSize lightBytes = std::max<std::size_t>(m_gpuLights.size(), 1) * sizeof(GpuLight);
     const VkDeviceSize clusterBytes = m_clusters.clusters.size() * sizeof(GpuCluster);
@@ -1616,10 +1699,13 @@ core::Result<void> VulkanRenderer::uploadLights(FrameContext& frame, float aspec
             return ensured;
         }
     }
-    assignShadowViews();
-    if (core::Result<void> views = uploadShadowViews(frame); !views)
     {
-        return views;
+        DEVEX_PROFILE_SCOPE("Shadow views");
+        assignShadowViews();
+        if (core::Result<void> views = uploadShadowViews(frame); !views)
+        {
+            return views;
+        }
     }
     std::memcpy(frame.lights->mappedBytes().data(), m_gpuLights.data(), m_gpuLights.size() * sizeof(GpuLight));
     std::memcpy(frame.clusters->mappedBytes().data(), m_clusters.clusters.data(), clusterBytes);
@@ -1924,6 +2010,14 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
         .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
     };
     DEVEX_VK_TRY(vkBeginCommandBuffer, commandBuffer, &beginInfo);
+    const bool timed = frame.timestamps != VK_NULL_HANDLE && core::profiler::isEnabled();
+    frame.timestampCount = 0;
+    frame.timedPasses.clear();
+    if (timed)
+    {
+        vkCmdResetQueryPool(commandBuffer, frame.timestamps, 0, maxTimestamps);
+        frame.profiledFrame = core::profiler::currentFrame();
+    }
 
     const math::Extent2D extent = m_sceneExtent;
     const math::Extent2D windowExtent = m_swapchain->extent();
@@ -2831,7 +2925,22 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
     }
 
     graph.addPass("Present", {{backbuffer, ImageAccess::Present}}, {});
-    graph.execute(commandBuffer, m_instance.isValidationEnabled());
+    RenderGraph::PassMarker marker;
+    if (timed)
+    {
+        marker = [&frame](VkCommandBuffer commands, std::string_view pass) {
+            if (frame.timestampCount >= maxTimestamps)
+            {
+                return;
+            }
+            // Written once everything recorded before has finished: the end of one pass is the
+            // start of the next.
+            vkCmdWriteTimestamp2(commands, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, frame.timestamps,
+                                 frame.timestampCount++);
+            frame.timedPasses.push_back(pass.empty() ? nullptr : core::profiler::intern(pass));
+        };
+    }
+    graph.execute(commandBuffer, m_instance.isValidationEnabled(), marker);
     frame.images.endFrame();
 
     DEVEX_VK_TRY(vkEndCommandBuffer, commandBuffer);

@@ -5,6 +5,7 @@
 #include <devex/audio/Clip.hpp>
 #include <devex/core/File.hpp>
 #include <devex/core/Log.hpp>
+#include <devex/core/Profiler.hpp>
 #include <devex/physics/PhysicsWorld.hpp>
 #include <devex/platform/Platform.hpp>
 #include <devex/scene/AudioComponents.hpp>
@@ -20,6 +21,7 @@
 #include <format>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 
@@ -110,6 +112,52 @@ TEST_CASE("The C# runtime registers components and runs them", "[runtime][manage
     game->unloadAssembly();
     CHECK(registry.find("Mover") == nullptr);
     CHECK(devex::scene::saveScene(scene).find("speed = 7") != std::string::npos);
+}
+
+TEST_CASE("C# components, systems and zones of the game show in the profiler", "[runtime][managed][profiler]")
+{
+    const std::unique_ptr<ManagedGame> game = startRuntime();
+    const devex::scene::ComponentType* const mover = devex::scene::componentRegistry().find("Mover");
+    REQUIRE(mover != nullptr);
+    Scene scene;
+    const Entity entity = scene.createEntity("Runner");
+    scene.add<devex::scene::Transform>(entity);
+    REQUIRE(mover->emplace(scene, entity) != nullptr);
+
+    devex::core::profiler::clear();
+    devex::core::profiler::setEnabled(true);
+    devex::core::profiler::beginFrame();
+    run(*game, scene, SystemPhase::Start);
+    run(*game, scene, SystemPhase::Update, 0.5);
+    devex::core::profiler::endFrame();
+    devex::core::profiler::setEnabled(false);
+    const auto frames = devex::core::profiler::history();
+    devex::core::profiler::clear();
+
+    REQUIRE(frames.size() == 1);
+    const auto depthOf = [&frames](std::string_view name) {
+        for (const devex::core::ProfileZone& zone : frames[0]->cpu)
+        {
+            if (std::string_view(zone.name) == name)
+            {
+                return static_cast<int>(zone.depth);
+            }
+        }
+        return -1;
+    };
+    CHECK(depthOf("C# components in") >= 0);
+    CHECK(depthOf("Mover.Start") >= 0);
+    CHECK(depthOf("Mover.Update") >= 0);
+    CHECK(depthOf("Renamer.Rename") >= 0);
+    CHECK(depthOf("C# components out") >= 0);
+    // A zone the game opens sits inside the zone of its component.
+    CHECK(depthOf("Move") == depthOf("Mover.Update") + 1);
+    // Off, the profiler keeps nothing more.
+    devex::core::profiler::beginFrame();
+    run(*game, scene, SystemPhase::Update, 0.5);
+    devex::core::profiler::endFrame();
+    CHECK(devex::core::profiler::history().empty());
+    game->unloadAssembly();
 }
 
 TEST_CASE("C# components hold lists and entities and reach the other components", "[runtime][managed]")

@@ -160,6 +160,7 @@ std::shared_ptr<const animation::Clip> AssetManager::animationClip(asset::AssetI
         return nullptr;
     }
     m_animationClips.emplace(id, *clip);
+    m_animationBytes.insert_or_assign(id, bytes ? bytes->size() : 0);
     return *clip;
 }
 
@@ -216,6 +217,7 @@ void AssetManager::handleEvents(std::span<const asset::AssetEvent> events)
         // Sounds playing keep the clip they had; the next ones play the new one.
         m_audioClips.erase(event.id);
         m_animationClips.erase(event.id);
+        m_animationBytes.erase(event.id);
         // A theme is read again on the next frame, which shows an edited look at once.
         m_themes.erase(event.id);
     }
@@ -291,6 +293,100 @@ void AssetManager::handleEvents(std::span<const asset::AssetEvent> events)
     }
 }
 
+asset::MemoryReport AssetManager::memoryReport(std::size_t largest) const
+{
+    std::vector<asset::AssetMemory> assets;
+    const auto add = [&](asset::AssetId id, asset::AssetType type, std::size_t cpu, std::size_t gpu) {
+        if (cpu == 0 && gpu == 0)
+        {
+            return;
+        }
+        const asset::AssetInfo* const info = m_source != nullptr ? m_source->find(id) : nullptr;
+        assets.push_back({.id = id,
+                          .name = info != nullptr ? info->name : id.uuid.toString(),
+                          .type = type,
+                          .cpuBytes = cpu,
+                          .gpuBytes = gpu});
+    };
+    for (const auto& [id, mesh] : m_meshes)
+    {
+        if (mesh.owned)
+        {
+            add(id, asset::AssetType::Mesh, 0, mesh.mesh.gpuBytes);
+        }
+    }
+    // The copies kept on the CPU for colliders and skinning.
+    for (const auto& [id, data] : m_meshData)
+    {
+        add(id, asset::AssetType::Mesh,
+            data.vertices.size() * sizeof(asset::Vertex) + data.indices.size() * sizeof(std::uint32_t) +
+                data.skin.size() * sizeof(asset::VertexSkin),
+            0);
+    }
+    for (const auto& [id, bytes] : m_textureBytes)
+    {
+        add(id, asset::AssetType::Texture, 0, bytes);
+    }
+    for (const auto& [id, font] : m_fonts)
+    {
+        const std::size_t atlas = font.data != nullptr ? font.data->atlas.size() : 0;
+        const std::size_t glyphs = font.data != nullptr ? font.data->glyphs.size() * sizeof(asset::FontGlyph) +
+                                                              font.data->kerning.size() * sizeof(asset::FontKerning)
+                                                        : 0;
+        add(id, asset::AssetType::Font, atlas + glyphs, font.atlas.isValid() ? atlas : 0);
+    }
+    for (const auto& [id, clip] : m_audioClips)
+    {
+        add(id, asset::AssetType::AudioClip, clip != nullptr ? clip->samples().size_bytes() : 0, 0);
+    }
+    for (const auto& [id, bytes] : m_animationBytes)
+    {
+        add(id, asset::AssetType::AnimationClip, bytes, 0);
+    }
+    for (const auto& [id, model] : m_models)
+    {
+        add(id, asset::AssetType::Model, model.nodes.size() * sizeof(asset::ModelNode), 0);
+    }
+    for (const auto& [id, text] : m_sceneTexts)
+    {
+        add(id, asset::AssetType::Scene, text.size(), 0);
+    }
+
+    // A mesh counted on the GPU and on the CPU is one asset.
+    std::ranges::sort(assets, {}, &asset::AssetMemory::id);
+    std::vector<asset::AssetMemory> merged;
+    for (asset::AssetMemory& entry : assets)
+    {
+        if (!merged.empty() && merged.back().id == entry.id)
+        {
+            merged.back().cpuBytes += entry.cpuBytes;
+            merged.back().gpuBytes += entry.gpuBytes;
+            continue;
+        }
+        merged.push_back(std::move(entry));
+    }
+
+    asset::MemoryReport report;
+    for (const asset::AssetMemory& entry : merged)
+    {
+        auto line = std::ranges::find(report.types, entry.type, &asset::MemoryByType::type);
+        if (line == report.types.end())
+        {
+            report.types.push_back({.type = entry.type});
+            line = report.types.end() - 1;
+        }
+        ++line->count;
+        line->cpuBytes += entry.cpuBytes;
+        line->gpuBytes += entry.gpuBytes;
+    }
+    const auto weight = [](const auto& entry) { return entry.cpuBytes + entry.gpuBytes; };
+    std::ranges::sort(report.types, std::ranges::greater{}, weight);
+    std::ranges::sort(merged, std::ranges::greater{}, weight);
+    merged.resize(std::min(merged.size(), largest));
+    report.largest = std::move(merged);
+    return report;
+}
+
 asset::AssetSource* AssetManager::source() const noexcept
 {
     return m_source;
@@ -327,6 +423,7 @@ void AssetManager::setSource(asset::AssetSource* source)
     m_sceneTexts.clear();
     m_audioClips.clear();
     m_animationClips.clear();
+    m_animationBytes.clear();
     m_themes.clear();
     m_failed.clear();
     m_source = source;
@@ -354,7 +451,10 @@ bool AssetManager::loadMesh(asset::AssetId id)
         return false;
     }
 
-    LoadedMesh mesh{.handle = *handle};
+    LoadedMesh mesh{.handle = *handle,
+                    .gpuBytes = data->vertices.size() * sizeof(asset::Vertex) +
+                                data->indices.size() * sizeof(std::uint32_t) +
+                                data->skin.size() * sizeof(asset::VertexSkin)};
     for (const asset::Submesh& submesh : asset::submeshesOf(*data))
     {
         mesh.submeshMaterials.push_back(submesh.material);
@@ -379,6 +479,12 @@ bool AssetManager::loadTexture(asset::AssetId id)
         return false;
     }
     m_textures.insert_or_assign(id, *handle);
+    std::size_t textureBytes = 0;
+    for (const asset::TextureMip& mip : data->mips)
+    {
+        textureBytes += mip.bytes.size();
+    }
+    m_textureBytes.insert_or_assign(id, textureBytes);
     // Kept beside the handle, for the images whose borders stay unstretched.
     if (!data->mips.empty())
     {
@@ -507,6 +613,7 @@ void AssetManager::releaseTexture(asset::AssetId id)
         m_renderer->destroyTexture(found->second);
         m_textures.erase(found);
         m_textureSizes.erase(id);
+        m_textureBytes.erase(id);
     }
 }
 

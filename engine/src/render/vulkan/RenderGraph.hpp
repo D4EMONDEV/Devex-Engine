@@ -9,6 +9,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -71,6 +72,9 @@ class RenderGraph
 public:
     using ImageId = std::uint32_t;
     using Record = std::function<void(VkCommandBuffer commandBuffer)>;
+    // Called before each pass with its name, and once more after the last with an empty name:
+    // what lies between two calls is the work of one pass, which a GPU timer measures.
+    using PassMarker = std::function<void(VkCommandBuffer commandBuffer, std::string_view pass)>;
 
     RenderGraph(const Device& device, const Allocator& allocator, TransientImagePool& pool) noexcept;
 
@@ -90,7 +94,7 @@ public:
 
     // Records the passes in the order they were added. Labels name the passes in debuggers and
     // require the debug utils extension.
-    void execute(VkCommandBuffer commandBuffer, bool labels);
+    void execute(VkCommandBuffer commandBuffer, bool labels, const PassMarker& marker = {});
 
 private:
     struct Resource

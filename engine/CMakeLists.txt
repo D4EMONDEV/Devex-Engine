@@ -32,6 +32,7 @@ target_sources(devex_core
         src/core/Log.cpp
         src/core/LogFile.cpp
         src/core/MappedFile.cpp
+        src/core/Profiler.cpp
         src/core/Uuid.cpp
     PUBLIC
         FILE_SET HEADERS
@@ -47,6 +48,7 @@ target_sources(devex_core
             include/devex/core/LogFile.hpp
             include/devex/core/MappedFile.hpp
             include/devex/core/Path.hpp
+            include/devex/core/Profiler.hpp
             include/devex/core/SlotMap.hpp
             include/devex/core/Time.hpp
             include/devex/core/Uuid.hpp
@@ -203,6 +205,7 @@ target_sources(devex_asset
             include/devex/asset/AnimationData.hpp
             include/devex/asset/Artifact.hpp
             include/devex/asset/AssetId.hpp
+            include/devex/asset/AssetMemory.hpp
             include/devex/asset/AssetSource.hpp
             include/devex/asset/AssetType.hpp
             include/devex/asset/AudioClipData.hpp
@@ -636,6 +639,7 @@ target_sources(devex_tools
         src/tools/LogBuffer.cpp
         src/tools/ProjectList.cpp
         src/tools/ProjectList.hpp
+        src/tools/ProfilerPanel.cpp
         src/tools/ProjectManager.cpp
         src/tools/SceneCommands.cpp
         src/tools/SceneTabs.cpp

@@ -108,6 +108,8 @@ mais seulement explicitement ici : le code suit ce document, pas l'inverse.
 | Champs des composants C# | Chargés au début de chaque phase, écrits à sa fin                  |
 | Rechargement du C#       | Champs non enregistrés conservés par nom, Start non rappelé        |
 | Débogage du C#           | Attache depuis l'IDE, Play qui attend, symboles chargés            |
+| Profileur                | Maison : zones CPU par thread, timestamps GPU par passe, panneau   |
+| Mémoire des assets       | Estimée par l'`AssetManager`, par type et pour les plus lourds     |
 | Audio                    | miniaudio + stb_vorbis, sons 2D ou spatialisés                    |
 | Clips audio              | WAV, FLAC, MP3, Ogg Vorbis ; décodés au chargement ou à la lecture |
 | Écouteur                 | `AudioListener`, sinon caméra principale                         |
@@ -729,6 +731,74 @@ les assets s'écrivent au fil de leur lecture.
   (automatique ou de 75 à 250 %), tailles des polices, retour aux valeurs par défaut. Appliqués en
   direct et enregistrés pour l'utilisateur dans `%APPDATA%/Devex/Editor/editor.dvx` (section
   `[theme]`, avec la liste des projets). L'overlay F1 des jeux prend le thème par défaut.
+
+### Profileur
+
+- **Le besoin** : savoir où passe le temps d'une image (phases du moteur, systèmes du jeu, code
+  C#, passes du GPU) et ce que pèsent les assets chargés, sans quitter l'éditeur ni installer
+  d'outil. Choix : un profileur **maison**, montré dans un panneau *Profiler* ; Tracy et Perfetto
+  ont été écartés pour l'instant (dépendance, fenêtre à part), un export au format de Perfetto
+  pourra venir.
+- **Enregistrement** (`core::profiler`, module Core) : des zones nommées qui s'emboîtent, ouvertes
+  et fermées sur n'importe quel thread (`DEVEX_PROFILE_SCOPE("Physics")`, ou `ProfileScope`), et
+  rassemblées par image entre `beginFrame` et `endFrame`. Chaque thread empile ses zones ouvertes
+  sans verrou ; une zone terminée rejoint l'image sous un verrou court. Une zone appartient à
+  l'image pendant laquelle elle se termine. Les 300 dernières images sont gardées (environ cinq
+  secondes) ; en pause, les images sont encore mesurées mais plus gardées, ce qui fige
+  l'historique. Une image gardée ne change plus : les temps GPU qui arrivent plus tard la
+  remplacent par une copie, et le panneau lit sans verrou celle qu'il tient.
+- **Seulement quand on regarde** : l'enregistrement est coupé tant que le panneau *Profiler* est
+  fermé (dans l'éditeur, ou dans les outils F1 d'un jeu) ; une zone coûte alors un test de
+  drapeau. Le panneau a un bouton de fermeture et s'ouvre par *Editor > Panels* (*View* sur
+  l'overlay) ; une disposition sauvegardée avant lui le place à côté de *Output*.
+- **Noms** : un littéral, ou `profiler::intern` pour un nom construit à l'exécution (systèmes,
+  zones du C#), dont le texte vit aussi longtemps que le processus : une zone ne copie qu'un
+  pointeur. Les tableaux regroupent les zones par texte.
+- **Threads** : celui des images est *Main* ; les workers de `core::JobSystem` sont *Worker 1*,
+  *Worker 2*… (`nameThread`) et chaque job est une zone *Job* ; les threads jamais nommés partagent
+  la voie *Other threads*.
+- **Ce que le moteur mesure** : les phases de la boucle (événements, assets, code du jeu, éditeur,
+  outils, limite d'images, animation, interface, transformations, interpolation de la physique,
+  audio, gameplay, pas fixe, physique, `onUpdate`, rendu) ; chaque système, sous son nom ; dans le
+  rendu, l'extraction de la scène, les overlays de l'éditeur, le dessin de l'interface, l'attente
+  du GPU, l'environnement, l'acquisition de l'image, les matériaux, les lumières (clusters et vues
+  d'ombre), les os, les données de scène, l'enregistrement et l'envoi des commandes, la
+  présentation.
+- **GPU** : le render graph appelle un marqueur avant chaque passe et une fois après la dernière
+  (`RenderGraph::PassMarker`) ; le renderer y écrit un timestamp (`vkCmdWriteTimestamp2`, un pool
+  de 128 requêtes par image en vol) et lit les résultats après avoir attendu la fence de cette
+  image, quelques images plus tard : `profiler::reportGpu` les rattache à l'image qui les a
+  enregistrés. La fin d'une passe est le début de la suivante, barrières comprises ; les temps sont
+  comptés depuis le début de l'image sur le GPU. Une file qui ne sait pas écrire de timestamps
+  (`timestampValidBits` nul) n'a que les mesures du CPU.
+- **C#** : `using (Profiler.Scope("Find a path")) { ... }` mesure une zone du jeu, qui s'affiche à
+  côté de celles du moteur ; `Profiler.IsEnabled` dit si l'on enregistre. Le moteur mesure déjà
+  chaque type de composant C#, chaque système C# et la copie des champs à l'entrée et à la sortie
+  des phases. Un nom ne passe au moteur qu'une fois, gardé en UTF-8. `NativeApi` gagne
+  `profileEnabled`, `profileBegin` et `profileEnd` (version 6 de l'amorce).
+- **Le panneau** : en haut, pause et reprise, effacement et résumé de l'image choisie (CPU, dont
+  le travail, et GPU). Puis une barre par image, la plus récente à droite : le travail en couleur,
+  l'attente pâle au-dessus (limite d'images, attente du GPU, acquisition, présentation), en vert
+  jusqu'à 60 Hz, orange jusqu'à 30 Hz, rouge au-delà, à l'échelle de l'image la plus longue
+  montrée. Dessous, la chronologie de l'image : une voie par thread, les zones emboîtées sous
+  celle qui les contient, les attentes en gris, puis la voie du GPU ; la molette zoome autour du
+  pointeur, un glisser déplace, un double clic revient à l'image entière, une infobulle donne le
+  temps et la part de l'image. À droite, les onglets *CPU* (arbre par thread : temps total, temps
+  propre, appels), *GPU* (passes de la plus longue à la plus courte, celles du même nom
+  additionnées, part de l'image) et *Memory*. Pendant l'enregistrement, l'image montrée est la
+  plus récente dont le GPU est connu, reprise deux fois par seconde pour que les chiffres se
+  lisent ; un clic sur une barre met en pause sur cette image. Côte à côte dans un panneau large,
+  l'un sur l'autre dans un panneau haut.
+- **Mémoire des assets** : `AssetManager::memoryReport` donne, par type, le nombre d'assets et ce
+  qu'ils prennent dans la mémoire du processus et dans celle du GPU, puis les plus lourds :
+  maillages (sommets, indices et poids envoyés au GPU, et la copie gardée sur le CPU pour les
+  colliders et le skinning), textures (tous leurs niveaux), polices (atlas et glyphes), sons
+  (échantillons décodés), animations, modèles, textes des scènes. Ce sont des estimations tirées
+  des données envoyées, pas des allocations de VMA ; la mémoire GPU totale du moteur est rappelée
+  à côté. Relu deux fois par seconde tant que l'onglet est affiché.
+- **Coût observé** : dans l'éditeur du bac à sable en Debug, ouvrir le panneau fait passer une
+  image d'environ 8,2 à 9,8 ms, surtout pour dessiner la chronologie et l'arbre ; en Release,
+  toute la phase *Editor* reste autour de 0,3 ms panneau ouvert.
 
 ### Éditeur
 
@@ -1768,6 +1838,15 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     en page, valeurs lues une seule fois, champs écrits par un style grisés dans l'inspecteur,
     état du style et ouverture du thème depuis l'inspecteur.
 
+26. ⏳ **Intégration continue** — GitHub Actions sur Windows (Visual Studio 2026, SDK Vulkan,
+    cache des paquets vcpkg), Debug et Release avec le C#, tests sans ceux qui demandent un GPU ;
+    prêt sur la branche `ci`, en attente d'être poussé.
+
+27. ✅ **Profileur** — zones nommées sur chaque thread, rassemblées par image, temps GPU de chaque
+    passe du render graph par timestamps, zones du jeu en C++ et en C#, mémoire des assets par
+    type et pour les plus lourds, et panneau *Profiler* : barres des images, chronologie par
+    thread et GPU, tableaux CPU, GPU et mémoire.
+
 Ensuite, sans ordre figé : jeux 2D, particules, CI Linux.
 
 ## Questions ouvertes
@@ -1812,6 +1891,10 @@ Ensuite, sans ordre figé : jeux 2D, particules, CI Linux.
 - **Portage de l'éditeur sur l'UI du moteur** : quand `Devex::Ui` saura ce qu'un éditeur demande,
   panneau par panneau, le dockspace en dernier (voir *Une seule interface, deux usages*).
 - **CI** : GitHub Actions Windows, puis Linux.
+- **Profileur** : export vers Perfetto (format de trace de Chrome), compteurs dans la chronologie
+  (draw calls, mémoire, images par seconde), mémoire réellement allouée (VMA, tas du processus,
+  GC de .NET), recherche d'une zone et moyenne sur plusieurs images, comparaison de deux captures,
+  capture enregistrée dans un fichier, profilage d'un jeu exporté à distance.
 - **Chargement asynchrone** : lecture et envoi GPU des assets hors du thread principal, streaming
   des gros niveaux (aujourd'hui, le chargement depuis le cache est synchrone).
 - **Textures partagées** : une image utilisée par un `.gltf` et présente dans le projet est

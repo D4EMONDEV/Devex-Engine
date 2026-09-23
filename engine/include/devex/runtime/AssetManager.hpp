@@ -3,6 +3,7 @@
 #include <devex/animation/Clip.hpp>
 #include <devex/audio/Clip.hpp>
 #include <devex/asset/AssetId.hpp>
+#include <devex/asset/AssetMemory.hpp>
 #include <devex/asset/FontData.hpp>
 #include <devex/asset/MaterialData.hpp>
 #include <devex/asset/ModelData.hpp>
@@ -34,6 +35,8 @@ struct LoadedMesh
     render::MeshHandle handle;
     // Material of each submesh; invalid ones use the default material.
     std::vector<asset::AssetId> submeshMaterials;
+    // What its vertices and indices take on the GPU.
+    std::size_t gpuBytes = 0;
 };
 
 // Resolves asset identifiers to loaded resources. Assets are loaded from their source, the asset
@@ -84,6 +87,10 @@ public:
     // The look an interface follows. Themes need no renderer: they are read as they are written.
     [[nodiscard]] std::shared_ptr<const asset::ThemeData> theme(asset::AssetId id);
 
+    // What the loaded assets take, by type and for the heaviest ones. Read when asked: the
+    // profiler of the editor asks a few times a second at most.
+    [[nodiscard]] asset::MemoryReport memoryReport(std::size_t largest = 12) const;
+
     // A font with its atlas, loaded once and shared by every text drawn with it; null when it
     // cannot be loaded.
     [[nodiscard]] const LoadedFont* font(asset::AssetId id);
@@ -128,6 +135,10 @@ private:
     asset::AssetSource* m_source;
     std::unordered_map<asset::AssetId, OwnedMesh> m_meshes;
     std::unordered_map<asset::AssetId, render::TextureHandle> m_textures;
+    // What each texture takes on the GPU, all its mip levels.
+    std::unordered_map<asset::AssetId, std::size_t> m_textureBytes;
+    // What each animation was read from: its curves take about as much once decoded.
+    std::unordered_map<asset::AssetId, std::size_t> m_animationBytes;
     std::unordered_map<asset::AssetId, math::Extent2D> m_textureSizes;
     std::unordered_map<asset::AssetId, LoadedMaterial> m_materials;
     std::unordered_map<asset::AssetId, asset::ModelData> m_models;
