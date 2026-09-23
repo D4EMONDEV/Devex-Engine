@@ -232,10 +232,11 @@ class CreateEntityTreeCommand final : public Command
 {
 public:
     CreateEntityTreeCommand(std::string tree, core::Uuid root, core::Uuid parent,
-                            std::string description)
+                            std::string description, core::Uuid before)
         : m_tree(std::move(tree))
         , m_root(root)
         , m_parent(parent)
+        , m_before(before)
         , m_description(std::move(description))
     {
     }
@@ -252,7 +253,12 @@ public:
         {
             return std::unexpected(parent.error());
         }
-        core::Result<Entity> created = scene::loadEntityTree(scene, m_tree, *parent);
+        Entity before = m_before.isNil() ? Entity{} : scene.findEntity(m_before);
+        if (before.isValid() && scene.parent(before) != *parent)
+        {
+            before = {};
+        }
+        core::Result<Entity> created = scene::loadEntityTree(scene, m_tree, *parent, before);
         if (!created)
         {
             return std::unexpected(created.error());
@@ -275,6 +281,7 @@ private:
     std::string m_tree;
     core::Uuid m_root;
     core::Uuid m_parent;
+    core::Uuid m_before;
     std::string m_description;
 };
 
@@ -664,10 +671,10 @@ std::unique_ptr<Command> makeCreateEntityCommand(core::Uuid entity, std::string 
 }
 
 std::unique_ptr<Command> makeCreateEntityTreeCommand(std::string tree, core::Uuid root,
-                                                     core::Uuid parent, std::string description)
+                                                     core::Uuid parent, std::string description, core::Uuid before)
 {
     return std::make_unique<CreateEntityTreeCommand>(std::move(tree), root, parent,
-                                                     std::move(description));
+                                                     std::move(description), before);
 }
 
 std::unique_ptr<Command> makeReplaceEntityTreeCommand(core::Uuid root, std::string tree, std::string description)

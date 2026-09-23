@@ -368,7 +368,7 @@ void drawToolbar(ToolsState& state, const scene::Scene& scene, std::size_t canva
     ImGui::SliderFloat("##zoom", &state.interfaceZoom, 0.1f, 2.0f, "Zoom %.2fx",
                        ImGuiSliderFlags_AlwaysClamp | ImGuiSliderFlags_Logarithmic);
     ImGui::SameLine();
-    if (const scene::Entity selected = scene.findEntity(state.selection);
+    if (const scene::Entity selected = scene.findEntity(state.selection.active());
         selected.isValid() && scene.tryGet<scene::UiRect>(selected) != nullptr)
     {
         ImGui::TextDisabled("%s", scene.name(selected).c_str());
@@ -440,7 +440,7 @@ void drawInterfacePanel(ToolsState& state, scene::Scene& scene)
 
     // The element under the mouse, topmost first, and the one that is selected.
     const ImVec2 mouse = ImGui::GetIO().MousePos;
-    const scene::Entity selected = scene.findEntity(state.selection);
+    const scene::Entity selected = scene.findEntity(state.selection.active());
     const ui::LaidOutRect* selectedRect = nullptr;
     const ui::LayoutResult* selectedLayout = nullptr;
     for (const auto& [canvasEntity, layout] : canvases)
@@ -469,13 +469,13 @@ void drawInterfacePanel(ToolsState& state, scene::Scene& scene)
         if (selectedRect != nullptr && handle != Handle::None)
         {
             state.interfaceDragStart = scene.get<scene::UiRect>(selected);
-            state.interfaceDragEntity = state.selection;
+            state.interfaceDragEntity = state.selection.active();
         }
         else
         {
             // Clicking elsewhere selects what lies there.
             state.interfaceDragEntity = core::Uuid{};
-            state.selection = pickAt(scene, canvases, view.toCanvas(mouse), state.selection);
+            state.selection.set(pickAt(scene, canvases, view.toCanvas(mouse), state.selection.active()));
         }
     }
 
@@ -504,7 +504,7 @@ void drawInterfacePanel(ToolsState& state, scene::Scene& scene)
         {
             // Clicking the selection again without moving it reaches what lies under it, which is
             // how the label inside a button is picked.
-            state.selection = pickAt(scene, canvases, view.toCanvas(mouse), state.selection);
+            state.selection.set(pickAt(scene, canvases, view.toCanvas(mouse), state.selection.active()));
         }
         state.interfaceDragEntity = core::Uuid{};
         state.interfaceHandle = 0;

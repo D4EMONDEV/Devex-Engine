@@ -1,6 +1,7 @@
 #pragma once
 
 #include "EditorCamera.hpp"
+#include "Selection.hpp"
 
 #include <devex/core/Uuid.hpp>
 #include <devex/scene/Scene.hpp>
@@ -11,6 +12,7 @@
 #include <filesystem>
 #include <functional>
 #include <optional>
+#include <unordered_set>
 #include <vector>
 
 namespace devex::tools::detail {
@@ -24,8 +26,10 @@ struct SceneDocument
     CommandHistory history;
     // The history state when the scene was last saved or opened.
     std::uint64_t savedState = 0;
-    core::Uuid selection;
+    Selection selection;
     EditorCamera camera;
+    // The entities hidden in the viewport.
+    std::unordered_set<core::Uuid> hidden;
 };
 
 // The document on screen, whose parts live where the rest of the editor uses them: the scene of the
@@ -36,8 +40,9 @@ struct ActiveDocument
     scene::Scene& scene;
     CommandHistory& history;
     std::uint64_t& savedState;
-    core::Uuid& selection;
+    Selection& selection;
     EditorCamera& camera;
+    std::unordered_set<core::Uuid>& hidden;
 };
 
 // The scenes open in the editor, one per tab. The active tab's document lives in the editor itself,

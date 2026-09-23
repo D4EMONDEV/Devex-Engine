@@ -54,8 +54,13 @@ void propertyName(const char* name, bool highlighted = false);
 void endProperties();
 
 // Edits the components of a vector, each labelled with its axis letter in the axis color. Acts as one
-// item for IsItemActivated and IsItemDeactivatedAfterEdit.
-bool dragVector(const char* id, float* values, int count, float speed, const char* format = "%.3f");
+// item for IsItemActivated and IsItemDeactivatedAfterEdit. The components whose bit is set in mixed
+// show a dash: the entities selected together differ there.
+bool dragVector(const char* id, float* values, int count, float speed, const char* format = "%.3f",
+                unsigned mixed = 0);
+
+// What a field shows when the entities selected together differ there.
+inline constexpr const char* mixedValue = "\u2014";
 
 // Opens the fonts of the editor for the rest of the frame.
 void setEditorFonts(const EditorFonts& fonts) noexcept;

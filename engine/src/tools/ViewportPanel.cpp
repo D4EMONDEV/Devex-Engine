@@ -4,13 +4,17 @@
 #include <devex/core/Log.hpp>
 #include <devex/core/Path.hpp>
 #include <devex/platform/Input.hpp>
+#include <devex/scene/ComponentRegistry.hpp>
 #include <devex/scene/Components.hpp>
 #include <devex/scene/FieldValue.hpp>
+#include <devex/scene/Prefab.hpp>
 #include <devex/tools/SceneCommands.hpp>
 
 #include <imgui_internal.h>
 
 #include <algorithm>
+#include <array>
+#include <cstring>
 #include <cmath>
 #include <format>
 #include <limits>
@@ -33,18 +37,14 @@ constexpr float clickTolerance = 4.0f;
     return world != nullptr ? world->matrix : math::Mat4{1.0f};
 }
 
-// The light or camera whose icon is under the mouse, or an invalid entity.
-[[nodiscard]] scene::Entity iconAt(scene::Scene& scene, const ViewportView& view, math::Vec2 mouse, float pixelsPerPoint)
+// Calls the function with the entities that show an icon in the viewport, and where.
+template <typename Function>
+void forEachIcon(const ToolsState& state, scene::Scene& scene, Function&& function)
 {
-    scene::Entity closest;
-    float closestDistance = iconPickRadius * pixelsPerPoint;
     const auto consider = [&](scene::Entity entity, const scene::WorldTransform& world) {
-        const std::optional<math::Vec2> pixel = view.project(math::Vec3(world.matrix[3]));
-        if (const float distance = pixel ? math::length(*pixel - mouse) : std::numeric_limits<float>::max();
-            distance < closestDistance)
+        if (!isHidden(state, scene, entity))
         {
-            closest = entity;
-            closestDistance = distance;
+            function(entity, math::Vec3(world.matrix[3]));
         }
     };
     for ([[maybe_unused]] auto [entity, world, light] : scene.view<scene::WorldTransform, scene::DirectionalLight>())
@@ -63,7 +63,45 @@ constexpr float clickTolerance = 4.0f;
     {
         consider(entity, world);
     }
+}
+
+// The light or camera whose icon is under the mouse, or an invalid entity.
+[[nodiscard]] scene::Entity iconAt(const ToolsState& state, scene::Scene& scene, const ViewportView& view, math::Vec2 mouse)
+{
+    scene::Entity closest;
+    float closestDistance = iconPickRadius * state.pixelsPerPoint;
+    forEachIcon(state, scene, [&](scene::Entity entity, math::Vec3 position) {
+        const std::optional<math::Vec2> pixel = view.project(position);
+        if (const float distance = pixel ? math::length(*pixel - mouse) : std::numeric_limits<float>::max();
+            distance < closestDistance)
+        {
+            closest = entity;
+            closestDistance = distance;
+        }
+    });
     return closest;
+}
+
+// The lights and cameras whose icons are inside a rectangle of viewport pixels.
+[[nodiscard]] std::vector<core::Uuid> iconsIn(const ToolsState& state, scene::Scene& scene, const ViewportView& view,
+                                              math::Vec2 min, math::Vec2 max)
+{
+    std::vector<core::Uuid> found;
+    forEachIcon(state, scene, [&](scene::Entity entity, math::Vec3 position) {
+        if (const std::optional<math::Vec2> pixel = view.project(position);
+            pixel && pixel->x >= min.x && pixel->x <= max.x && pixel->y >= min.y && pixel->y <= max.y)
+        {
+            found.push_back(scene.uuid(outermostTarget(scene, entity)));
+        }
+    });
+    return found;
+}
+
+// How the modifier keys change what a click selects.
+[[nodiscard]] SelectMode selectMode()
+{
+    const ImGuiIO& io = ImGui::GetIO();
+    return io.KeyCtrl ? SelectMode::Toggle : io.KeyShift ? SelectMode::Add : SelectMode::Replace;
 }
 
 // Where a dropped model goes: on the ground under the mouse, or in front of the camera.
@@ -189,7 +227,8 @@ void drawToolbar(ToolsState& state, scene::Scene& scene)
         state.showColliders = !state.showColliders;
     }
     ImGui::SameLine(0.0f, 2.0f);
-    if (toolButton("frame", icons::Crosshair, "Frame the selection (F)", false, scene.findEntity(state.selection).isValid()))
+    if (toolButton("frame", icons::Crosshair, "Frame the selection (F)", false,
+                   scene.findEntity(state.selection.active()).isValid()))
     {
         frameSelection(state, scene);
     }
@@ -212,27 +251,100 @@ void drawToolbar(ToolsState& state, scene::Scene& scene)
     toolButton("help", icons::CircleHelp,
                "Right drag: look, with W A S D to fly, Q E to go down and up, Shift to go faster\n"
                "Alt + left drag: orbit    Middle drag: pan    Wheel: move forward\n"
-               "F: frame the selection    Delete: delete it    Ctrl: snap");
+               "Click: select, Shift or Ctrl + click: add or remove, left drag: select in a rectangle\n"
+               "F: frame the selection    H: hide it    Delete: delete it    Ctrl: snap");
 }
 
-// Records the fields a drag changed, already applied, as undoable steps.
-void recordTransformEdit(ToolsState& state, core::Uuid entity, const scene::Transform& before, const scene::Transform& after)
+// Adds the fields a drag changed, already applied, to the commands of one undo step.
+void addTransformEdit(std::vector<std::unique_ptr<Command>>& commands, core::Uuid entity, const scene::Transform& before,
+                      const scene::Transform& after)
 {
-    const auto record = [&](const char* field, reflection::ValueKind kind, const void* from, const void* to) {
-        state.history.recordApplied(makeSetFieldCommand(entity, "Transform", field, scene::writeFieldValue(kind, from),
-                                                        scene::writeFieldValue(kind, to)));
+    const auto add = [&](const char* field, reflection::ValueKind kind, const void* from, const void* to) {
+        commands.push_back(makeSetFieldCommand(entity, "Transform", field, scene::writeFieldValue(kind, from),
+                                               scene::writeFieldValue(kind, to)));
     };
     if (before.position != after.position)
     {
-        record("position", reflection::ValueKind::Vec3, &before.position, &after.position);
+        add("position", reflection::ValueKind::Vec3, &before.position, &after.position);
     }
     if (before.rotation != after.rotation)
     {
-        record("rotation", reflection::ValueKind::Quat, &before.rotation, &after.rotation);
+        add("rotation", reflection::ValueKind::Quat, &before.rotation, &after.rotation);
     }
     if (before.scale != after.scale)
     {
-        record("scale", reflection::ValueKind::Vec3, &before.scale, &after.scale);
+        add("scale", reflection::ValueKind::Vec3, &before.scale, &after.scale);
+    }
+}
+
+// Records what the gizmo did to the active entity and to the others, as one undo step.
+void finishGizmoDrag(ToolsState& state, scene::Scene& scene, core::Uuid active)
+{
+    std::vector<std::unique_ptr<Command>> commands;
+    if (const scene::Transform* const local = scene.tryGet<scene::Transform>(scene.findEntity(active)))
+    {
+        addTransformEdit(commands, active, state.gizmo.startTransform(), *local);
+    }
+    for (const GizmoFollower& follower : state.gizmoFollowers)
+    {
+        if (const scene::Transform* const local = scene.tryGet<scene::Transform>(scene.findEntity(follower.entity)))
+        {
+            addTransformEdit(commands, follower.entity, follower.local, *local);
+        }
+    }
+    const std::size_t moved = state.gizmoFollowers.size() + 1;
+    if (commands.size() == 1)
+    {
+        state.history.recordApplied(std::move(commands.front()));
+    }
+    else if (!commands.empty())
+    {
+        state.history.recordApplied(makeCompositeCommand(std::move(commands), std::format("Transform {} entities", moved)));
+    }
+    state.gizmoFollowers.clear();
+    state.gizmo.end();
+}
+
+// Moves, turns or scales the other selected entities as the gizmo does the active one, each about
+// its own origin, as Unity's Pivot mode does.
+void moveFollowers(ToolsState& state, scene::Scene& scene, const math::Mat4& activeParentWorld,
+                   const scene::Transform& activeLocal)
+{
+    const scene::Transform& start = state.gizmo.startTransform();
+    const math::Mat4 startWorld = activeParentWorld * start.matrix();
+    const math::Mat4 newWorld = activeParentWorld * activeLocal.matrix();
+    const math::Trs startTrs = math::decomposeTrs(startWorld);
+    const math::Trs newTrs = math::decomposeTrs(newWorld);
+    for (const GizmoFollower& follower : state.gizmoFollowers)
+    {
+        scene::Transform* const local = scene.tryGet<scene::Transform>(scene.findEntity(follower.entity));
+        if (local == nullptr)
+        {
+            continue;
+        }
+        scene::Transform moved = follower.local;
+        switch (state.gizmo.mode)
+        {
+        case GizmoMode::Translate: {
+            const math::Vec3 position = math::Vec3(follower.world[3]) + (newTrs.translation - startTrs.translation);
+            moved.position = math::Vec3(math::inverse(follower.parentWorld) * math::Vec4(position, 1.0f));
+            break;
+        }
+        case GizmoMode::Rotate: {
+            const math::Quat turn = newTrs.rotation * math::conjugate(startTrs.rotation);
+            const math::Quat parentRotation = math::decomposeTrs(follower.parentWorld).rotation;
+            const math::Quat world = turn * math::decomposeTrs(follower.world).rotation;
+            moved.rotation = math::normalize(math::conjugate(parentRotation) * world);
+            break;
+        }
+        case GizmoMode::Scale: {
+            const auto ratio = [](float to, float from) { return std::abs(from) > 1e-6f ? to / from : 1.0f; };
+            moved.scale *= math::Vec3{ratio(activeLocal.scale.x, start.scale.x), ratio(activeLocal.scale.y, start.scale.y),
+                                      ratio(activeLocal.scale.z, start.scale.z)};
+            break;
+        }
+        }
+        *local = moved;
     }
 }
 
@@ -306,31 +418,47 @@ void handleGizmoAndSelection(ToolsState& state, scene::Scene& scene, const Viewp
     }
     const ImGuiIO& io = ImGui::GetIO();
     const bool navigating = state.flying || state.orbiting || state.panning;
-    const scene::Entity selected = scene.findEntity(state.selection);
-    scene::Transform* const local = selected.isValid() ? scene.tryGet<scene::Transform>(selected) : nullptr;
+    const core::Uuid activeUuid = state.selection.active();
+    const scene::Entity active = scene.findEntity(activeUuid);
+    scene::Transform* const local = active.isValid() ? scene.tryGet<scene::Transform>(active) : nullptr;
 
-    if (local != nullptr && scene.has<scene::WorldTransform>(selected) && !navigating && state.tool != EditorTool::Select)
+    if (local != nullptr && scene.has<scene::WorldTransform>(active) && !navigating && state.tool != EditorTool::Select)
     {
-        const math::Mat4 world = worldMatrixOf(scene, selected);
-        const math::Mat4 parentWorld = worldMatrixOf(scene, scene.parent(selected));
+        const math::Mat4 world = worldMatrixOf(scene, active);
+        const math::Mat4 parentWorld = worldMatrixOf(scene, scene.parent(active));
         if (!state.gizmo.isDragging())
         {
             state.hoveredHandle = hovered ? state.gizmo.hitTest(view, world, mouse) : GizmoHandle::None;
             if (hovered && !io.KeyAlt && state.hoveredHandle != GizmoHandle::None && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
             {
                 state.gizmo.begin(state.hoveredHandle, view, world, parentWorld, *local, mouse);
+                // The other selected entities follow, except those that their ancestors carry. When
+                // the active entity is carried by a selected ancestor, the gizmo moves the ancestors.
+                state.gizmoFollowers.clear();
+                for (const scene::Entity root : selectedRoots(scene, state.selection))
+                {
+                    if (root != active && scene.has<scene::Transform>(root) && !scene::isInsidePrefabInstance(scene, root))
+                    {
+                        state.gizmoFollowers.push_back({.entity = scene.uuid(root),
+                                                        .local = scene.get<scene::Transform>(root),
+                                                        .world = worldMatrixOf(scene, root),
+                                                        .parentWorld = worldMatrixOf(scene, scene.parent(root))});
+                    }
+                }
             }
         }
         if (state.gizmo.isDragging())
         {
             if (ImGui::IsMouseDown(ImGuiMouseButton_Left))
             {
-                *local = state.gizmo.drag(view, mouse, io.KeyCtrl != state.snap);
+                const scene::Transform dragged = state.gizmo.drag(view, mouse, io.KeyCtrl != state.snap);
+                const bool carried = isUnderAny(scene, scene.parent(active), state.selection);
+                *local = carried ? state.gizmo.startTransform() : dragged;
+                moveFollowers(state, scene, parentWorld, dragged);
             }
             else
             {
-                recordTransformEdit(state, state.selection, state.gizmo.startTransform(), *local);
-                state.gizmo.end();
+                finishGizmoDrag(state, scene, activeUuid);
             }
             return;
         }
@@ -341,11 +469,7 @@ void handleGizmoAndSelection(ToolsState& state, scene::Scene& scene, const Viewp
         if (state.gizmo.isDragging())
         {
             // The entity disappeared while dragging, or navigation took over.
-            if (local != nullptr)
-            {
-                recordTransformEdit(state, state.selection, state.gizmo.startTransform(), *local);
-            }
-            state.gizmo.end();
+            finishGizmoDrag(state, scene, activeUuid);
         }
     }
 
@@ -353,27 +477,115 @@ void handleGizmoAndSelection(ToolsState& state, scene::Scene& scene, const Viewp
         ImGui::IsMouseClicked(ImGuiMouseButton_Left))
     {
         state.clickStart = mouse;
+        state.drawingRectangle = false;
     }
-    if (state.clickStart && !ImGui::IsMouseDown(ImGuiMouseButton_Left))
+    if (!state.clickStart)
     {
-        if (math::length(mouse - *state.clickStart) <= clickTolerance * state.pixelsPerPoint)
-        {
-            if (const scene::Entity icon = iconAt(scene, view, mouse, state.pixelsPerPoint); icon.isValid())
-            {
-                state.selection = scene.uuid(icon);
-            }
-            else
-            {
-                state.pickPixel = mouse;
-            }
-        }
-        state.clickStart.reset();
+        return;
     }
+    const float tolerance = clickTolerance * state.pixelsPerPoint;
+    if (ImGui::IsMouseDown(ImGuiMouseButton_Left))
+    {
+        // A press that moves draws a rectangle.
+        state.drawingRectangle |= math::length(mouse - *state.clickStart) > tolerance;
+        if (state.drawingRectangle)
+        {
+            const ThemeColors& colors = themeColors();
+            const ImVec2 from(state.viewportOrigin.x + state.clickStart->x / state.pixelsPerPoint,
+                              state.viewportOrigin.y + state.clickStart->y / state.pixelsPerPoint);
+            const ImVec2 to = io.MousePos;
+            const ImVec2 min(std::min(from.x, to.x), std::min(from.y, to.y));
+            const ImVec2 max(std::max(from.x, to.x), std::max(from.y, to.y));
+            ImDrawList* const draw = ImGui::GetWindowDrawList();
+            draw->AddRectFilled(min, max, uiColorU32(ImVec4(colors.accent.x, colors.accent.y, colors.accent.z, 0.15f)));
+            draw->AddRect(min, max, uiColorU32(colors.accent));
+        }
+        return;
+    }
+
+    const SelectMode mode = selectMode();
+    if (state.drawingRectangle)
+    {
+        const math::Vec2 min = math::min(*state.clickStart, mouse);
+        const math::Vec2 max = math::max(*state.clickStart, mouse);
+        state.pickQuery = PickQuery{.purpose = PickQuery::Purpose::Rectangle,
+                                    .min = min,
+                                    .max = max,
+                                    .mode = mode,
+                                    .icons = iconsIn(state, scene, view, min, max)};
+    }
+    else if (const scene::Entity icon = iconAt(state, scene, view, mouse); icon.isValid())
+    {
+        const std::array picked{scene.uuid(clickTarget(scene, icon, state.selection.active()))};
+        selectEntities(state, picked, mode);
+    }
+    else
+    {
+        state.pickQuery = PickQuery{.purpose = PickQuery::Purpose::Click, .min = mouse, .max = mouse, .mode = mode};
+    }
+    state.clickStart.reset();
+    state.drawingRectangle = false;
+}
+
+// A material dragged over the viewport goes to the surface under the mouse, which is outlined
+// until it is dropped.
+void handleMaterialDrop(ToolsState& state, scene::Scene& scene, math::Vec2 mouse, bool hovered)
+{
+    const ImGuiPayload* const payload = ImGui::GetDragDropPayload();
+    AssetPayload dragged{};
+    const bool material = payload != nullptr && payload->IsDataType(assetPayload) && payload->DataSize == sizeof(AssetPayload) &&
+                          (std::memcpy(&dragged, payload->Data, sizeof(dragged)), dragged.type == asset::AssetType::Material);
+    if (!material || !hovered)
+    {
+        state.materialTarget = {};
+        return;
+    }
+    // The surface under the mouse, asked again as soon as the previous answer came.
+    if (state.awaitedPick == 0 && !state.pickQuery)
+    {
+        state.pickQuery = PickQuery{.purpose = PickQuery::Purpose::MaterialTarget, .min = mouse, .max = mouse};
+    }
+    const std::optional<asset::AssetId> dropped = acceptDroppedAsset(asset::AssetType::Material);
+    const scene::Entity target = scene.findEntity(state.materialTarget);
+    if (!dropped || !target.isValid())
+    {
+        return;
+    }
+    // The first field of the entity's components that holds a material.
+    for (const scene::ComponentType& type : scene::componentRegistry().types())
+    {
+        const void* const component = type.find(scene, target);
+        if (component == nullptr)
+        {
+            continue;
+        }
+        for (const reflection::FieldInfo& field : type.type->fields)
+        {
+            if (field.kind != reflection::ValueKind::AssetId || field.list != nullptr ||
+                asset::parseAssetType(field.assetType) != asset::AssetType::Material)
+            {
+                continue;
+            }
+            const serialization::TextValue before = scene::writeFieldValue(field, field.address(component));
+            const serialization::TextValue after = scene::writeFieldValue(reflection::ValueKind::AssetId, &*dropped);
+            if (before != after)
+            {
+                state.pendingCommand =
+                    makeSetFieldCommand(state.materialTarget, std::string(type.name()), field.name, before, after);
+            }
+            state.selection.set(state.materialTarget);
+            state.materialTarget = {};
+            return;
+        }
+    }
+    DEVEX_LOG_WARNING("{} has no material to replace", scene.name(target));
+    state.materialTarget = {};
 }
 
 void handleKeys(ToolsState& state, scene::Scene& scene)
 {
-    if (state.flying || ImGui::GetIO().WantTextInput)
+    // Ctrl and a letter belong to the editing shortcuts: Ctrl+X cuts, it does not switch the space.
+    if (state.flying || ImGui::GetIO().WantTextInput || ImGui::GetIO().KeyCtrl)
     {
         return;
     }
@@ -401,28 +613,35 @@ void handleKeys(ToolsState& state, scene::Scene& scene)
     {
         frameSelection(state, scene);
     }
-    if (ImGui::IsKeyPressed(ImGuiKey_Delete, false) && scene.findEntity(state.selection).isValid())
-    {
-        state.pendingCommand = makeDestroyEntityCommand(state.selection);
-    }
 }
 
 } // namespace
 
 void frameSelection(ToolsState& state, const scene::Scene& scene)
 {
-    const scene::Entity entity = scene.findEntity(state.selection);
-    if (!entity.isValid())
+    // A sphere around every selected entity, each as large as it looks.
+    std::optional<std::pair<math::Vec3, math::Vec3>> bounds;
+    for (const core::Uuid uuid : state.selection.entities())
     {
-        return;
+        const scene::Entity entity = scene.findEntity(uuid);
+        if (!entity.isValid())
+        {
+            continue;
+        }
+        const math::Trs world = math::decomposeTrs(worldMatrixOf(scene, entity));
+        const float largest = std::max({std::abs(world.scale.x), std::abs(world.scale.y), std::abs(world.scale.z)});
+        // Built-in meshes span one unit; hierarchies such as models are usually larger.
+        const float radius = scene.has<scene::MeshRenderer>(entity) ? largest * 0.87f
+                             : scene.firstChild(entity).isValid() ? std::max(largest, 1.0f) * 2.0f
+                                                                  : 1.0f;
+        const math::Vec3 low = world.translation - math::Vec3{radius};
+        const math::Vec3 high = world.translation + math::Vec3{radius};
+        bounds = bounds ? std::pair{math::min(bounds->first, low), math::max(bounds->second, high)} : std::pair{low, high};
     }
-    const math::Trs world = math::decomposeTrs(worldMatrixOf(scene, entity));
-    const float largest = std::max({std::abs(world.scale.x), std::abs(world.scale.y), std::abs(world.scale.z)});
-    // Built-in meshes span one unit; hierarchies such as models are usually larger.
-    const float radius = scene.has<scene::MeshRenderer>(entity) ? largest * 0.87f
-                         : scene.firstChild(entity).isValid() ? std::max(largest, 1.0f) * 2.0f
-                                                              : 1.0f;
-    state.camera.frame(world.translation, radius);
+    if (bounds)
+    {
+        state.camera.frame((bounds->first + bounds->second) * 0.5f, math::length(bounds->second - bounds->first) * 0.5f);
+    }
 }
 
 void drawViewportPanel(ToolsState& state, scene::Scene& scene)
@@ -527,6 +746,8 @@ void drawViewportPanel(ToolsState& state, scene::Scene& scene)
         {
             ImGui::SetWindowFocus();
         }
+        // A drag from another panel holds the mouse: the view counts as hovered all the same.
+        handleMaterialDrop(state, scene, mouse, ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenBlockedByActiveItem));
         handleCamera(state, hovered, size);
         handleGizmoAndSelection(state, scene, view, mouse, hovered);
         if (state.viewportFocused || hovered)

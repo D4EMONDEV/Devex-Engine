@@ -253,6 +253,29 @@ TEST_CASE("Placed entity trees undo and redo with the same UUIDs", "[tools][comm
     CHECK(scene.findEntity(part).isValid());
 }
 
+TEST_CASE("Entity trees can be created before a sibling, as duplicates are", "[tools][commands]")
+{
+    Scene scratch;
+    const Entity copy = scratch.createEntity("Copy");
+    const Uuid copyUuid = scratch.uuid(copy);
+
+    Scene scene;
+    CommandHistory history;
+    const Entity first = scene.createEntity("First");
+    const Entity second = scene.createEntity("Second");
+    REQUIRE(history.execute(scene, devex::tools::makeCreateEntityTreeCommand(devex::scene::saveEntityTree(scratch, copy),
+                                                                             copyUuid, Uuid{}, "Duplicate",
+                                                                             scene.uuid(second))));
+    CHECK(scene.nextSibling(first) == scene.findEntity(copyUuid));
+    CHECK(scene.nextSibling(scene.findEntity(copyUuid)) == second);
+
+    REQUIRE(history.undo(scene));
+    // Once the sibling is gone, the tree goes last.
+    scene.destroyEntity(second);
+    REQUIRE(history.redo(scene));
+    CHECK(scene.nextSibling(first) == scene.findEntity(copyUuid));
+}
+
 TEST_CASE("Prefab instances are protected, reverted and made local as undoable steps", "[tools][commands][prefab]")
 {
     const devex::asset::AssetId lamp{*Uuid::parse("a0000000-0000-4000-8000-0000000000aa")};

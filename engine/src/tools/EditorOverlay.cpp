@@ -107,9 +107,11 @@ void addRoundShape(std::vector<OverlayVertex>& lines, math::Vec3 bottom, math::V
 // The collision shapes of the colliders and characters of the selected entity and its descendants,
 // or of every entity when they are all shown.
 void addColliders(const ToolsState& state, scene::Scene& scene, const std::unordered_set<std::uint32_t>& selection,
-                  std::vector<OverlayVertex>& lines)
+                  const std::unordered_set<std::uint32_t>& hidden, std::vector<OverlayVertex>& lines)
 {
-    const auto shown = [&](scene::Entity entity) { return state.showColliders || selection.contains(entity.index); };
+    const auto shown = [&](scene::Entity entity) {
+        return !hidden.contains(entity.index) && (state.showColliders || selection.contains(entity.index));
+    };
     const auto colorOf = [&](scene::Entity entity, bool trigger) {
         math::Vec4 color = trigger ? triggerColor : colliderColor;
         color.a = selection.contains(entity.index) ? 1.0f : 0.55f;
@@ -242,7 +244,8 @@ void addGrid(const ToolsState& state, std::vector<OverlayVertex>& lines)
     }
 }
 
-void addIcons(scene::Scene& scene, const ViewportView& view, scene::Entity selected, render::RenderWorld& world)
+void addIcons(scene::Scene& scene, const ViewportView& view, const std::unordered_set<std::uint32_t>& selected,
+              const std::unordered_set<std::uint32_t>& hidden, render::RenderWorld& world)
 {
     // Billboards face the camera: its right and up axes are the rows of the view rotation.
     const math::Vec3 right{view.view[0][0], view.view[1][0], view.view[2][0]};
@@ -251,9 +254,13 @@ void addIcons(scene::Scene& scene, const ViewportView& view, scene::Entity selec
 
     for ([[maybe_unused]] auto [entity, transform, light] : scene.view<scene::WorldTransform, scene::DirectionalLight>())
     {
+        if (hidden.contains(entity.index))
+        {
+            continue;
+        }
         const math::Vec3 position(transform.matrix[3]);
         const float size = view.worldSize(position, iconSizeInPixels);
-        const math::Vec4 color = entity == selected ? math::Vec4{1.0f, 0.6f, 0.1f, 1.0f} : lightIconColor;
+        const math::Vec4 color = selected.contains(entity.index) ? math::Vec4{1.0f, 0.6f, 0.1f, 1.0f} : lightIconColor;
         addCircle(lines, position, right, up, size * 0.6f, color, 16);
         for (int ray = 0; ray < 8; ++ray)
         {
@@ -266,13 +273,17 @@ void addIcons(scene::Scene& scene, const ViewportView& view, scene::Entity selec
 
     for ([[maybe_unused]] auto [entity, transform, light] : scene.view<scene::WorldTransform, scene::PointLight>())
     {
+        if (hidden.contains(entity.index))
+        {
+            continue;
+        }
         const math::Vec3 position(transform.matrix[3]);
         const float size = view.worldSize(position, iconSizeInPixels);
         math::Vec4 color(math::Vec3(light.color), 0.95f);
         addCircle(lines, position, right, up, size * 0.6f, color, 16);
         addLine(lines, position - right * size * 0.3f, position + right * size * 0.3f, color);
         addLine(lines, position - up * size * 0.3f, position + up * size * 0.3f, color);
-        if (entity == selected)
+        if (selected.contains(entity.index))
         {
             color.a = 0.5f;
             const math::Vec3 x{1.0f, 0.0f, 0.0f};
@@ -286,13 +297,17 @@ void addIcons(scene::Scene& scene, const ViewportView& view, scene::Entity selec
 
     for ([[maybe_unused]] auto [entity, transform, light] : scene.view<scene::WorldTransform, scene::SpotLight>())
     {
+        if (hidden.contains(entity.index))
+        {
+            continue;
+        }
         const math::Vec3 position(transform.matrix[3]);
         const math::Vec3 direction = forwardOf(transform.matrix);
         const float size = view.worldSize(position, iconSizeInPixels);
         math::Vec4 color(math::Vec3(light.color), 0.95f);
         addCircle(lines, position, right, up, size * 0.6f, color, 16);
         addLine(lines, position, position + direction * size * 2.5f, color);
-        if (entity == selected)
+        if (selected.contains(entity.index))
         {
             color.a = 0.6f;
             const float angle = std::clamp(light.outerAngle, 0.0f, math::radians(89.0f));
@@ -312,16 +327,20 @@ void addIcons(scene::Scene& scene, const ViewportView& view, scene::Entity selec
     const float aspect = view.size.x / std::max(view.size.y, 1.0f);
     for ([[maybe_unused]] auto [entity, transform, camera] : scene.view<scene::WorldTransform, scene::Camera>())
     {
+        if (hidden.contains(entity.index))
+        {
+            continue;
+        }
         const math::Vec3 position(transform.matrix[3]);
         const math::Mat3 axes(transform.matrix);
         const math::Vec3 forward = math::normalize(axes * math::Vec3{0.0f, 0.0f, -1.0f});
         const math::Vec3 cameraUp = math::normalize(axes * math::Vec3{0.0f, 1.0f, 0.0f});
         const math::Vec3 cameraRight = math::normalize(axes * math::Vec3{1.0f, 0.0f, 0.0f});
         // A small frustum, or one reaching a few meters for the selected camera.
-        const float depth = entity == selected ? 3.0f : view.worldSize(position, iconSizeInPixels * 2.5f);
+        const float depth = selected.contains(entity.index) ? 3.0f : view.worldSize(position, iconSizeInPixels * 2.5f);
         const float halfHeight = depth * std::tan(camera.verticalFov * 0.5f);
         const float halfWidth = halfHeight * aspect;
-        const math::Vec4 color = entity == selected ? math::Vec4{1.0f, 0.6f, 0.1f, 1.0f} : cameraIconColor;
+        const math::Vec4 color = selected.contains(entity.index) ? math::Vec4{1.0f, 0.6f, 0.1f, 1.0f} : cameraIconColor;
         const math::Vec3 center = position + forward * depth;
         const std::array<math::Vec3, 4> corners{center + cameraRight * halfWidth + cameraUp * halfHeight,
                                                 center - cameraRight * halfWidth + cameraUp * halfHeight,
@@ -339,7 +358,8 @@ void addIcons(scene::Scene& scene, const ViewportView& view, scene::Entity selec
 
 // Speakers for sound sources, with the distances where a selected one starts to fade and stops
 // fading; an ear for the listener.
-void addAudioIcons(scene::Scene& scene, const ViewportView& view, scene::Entity selected, std::vector<OverlayVertex>& lines)
+void addAudioIcons(scene::Scene& scene, const ViewportView& view, const std::unordered_set<std::uint32_t>& selected,
+                   const std::unordered_set<std::uint32_t>& hidden, std::vector<OverlayVertex>& lines)
 {
     const math::Vec3 right{view.view[0][0], view.view[1][0], view.view[2][0]};
     const math::Vec3 up{view.view[0][1], view.view[1][1], view.view[2][1]};
@@ -347,9 +367,13 @@ void addAudioIcons(scene::Scene& scene, const ViewportView& view, scene::Entity 
 
     for ([[maybe_unused]] auto [entity, transform, source] : scene.view<scene::WorldTransform, scene::AudioSource>())
     {
+        if (hidden.contains(entity.index))
+        {
+            continue;
+        }
         const math::Vec3 position(transform.matrix[3]);
         const float size = view.worldSize(position, iconSizeInPixels);
-        const math::Vec4 color = entity == selected ? selectedIconColor : audioIconColor;
+        const math::Vec4 color = selected.contains(entity.index) ? selectedIconColor : audioIconColor;
         // The body of the speaker, its cone, then two waves.
         const math::Vec3 back = position - right * size * 0.9f;
         const std::array<math::Vec3, 6> outline{
@@ -368,7 +392,7 @@ void addAudioIcons(scene::Scene& scene, const ViewportView& view, scene::Entity 
         addArc(lines, position, right, up, size * 0.4f, -halfPi * 0.55f, halfPi * 0.55f, color, 8);
         addArc(lines, position, right, up, size * 0.85f, -halfPi * 0.6f, halfPi * 0.6f, color, 10);
 
-        if (entity == selected && source.spatial)
+        if (selected.contains(entity.index) && source.spatial)
         {
             const math::Vec3 x{1.0f, 0.0f, 0.0f};
             const math::Vec3 y{0.0f, 1.0f, 0.0f};
@@ -389,9 +413,13 @@ void addAudioIcons(scene::Scene& scene, const ViewportView& view, scene::Entity 
 
     for ([[maybe_unused]] auto [entity, transform, listener] : scene.view<scene::WorldTransform, scene::AudioListener>())
     {
+        if (hidden.contains(entity.index))
+        {
+            continue;
+        }
         const math::Vec3 position(transform.matrix[3]);
         const float size = view.worldSize(position, iconSizeInPixels);
-        const math::Vec4 color = entity == selected ? selectedIconColor : audioIconColor;
+        const math::Vec4 color = selected.contains(entity.index) ? selectedIconColor : audioIconColor;
         // The rim of an ear, running down to the lobe, and its inner fold.
         const math::Vec3 top = position + up * size * 0.25f;
         const float lobeAngle = -halfPi * 0.6f;
@@ -421,7 +449,32 @@ void addEditorOverlay(ToolsState& state, scene::Scene& scene, render::RenderWorl
         .verticalFov = world.camera.verticalFov,
         .size = {static_cast<float>(std::max(world.viewport.width, 1u)), static_cast<float>(std::max(world.viewport.height, 1u))},
     };
-    const scene::Entity selected = scene.findEntity(state.selection);
+    // The selected entities, those under them, and the entities hidden with their descendants.
+    std::unordered_set<std::uint32_t> selected;
+    std::unordered_set<std::uint32_t> selection;
+    for (const core::Uuid uuid : state.selection.entities())
+    {
+        if (const scene::Entity entity = scene.findEntity(uuid); entity.isValid())
+        {
+            selected.insert(entity.index);
+            collectSubtree(scene, entity, selection);
+        }
+    }
+    std::unordered_set<std::uint32_t> hidden;
+    for (const core::Uuid uuid : state.hiddenEntities)
+    {
+        if (const scene::Entity entity = scene.findEntity(uuid); entity.isValid())
+        {
+            collectSubtree(scene, entity, hidden);
+        }
+    }
+    // What is hidden is neither drawn nor picked; the game still shows it when it runs.
+    if (!hidden.empty())
+    {
+        std::erase_if(world.meshes, [&hidden](const render::MeshInstance& mesh) {
+            return mesh.objectId > 0 && hidden.contains(mesh.objectId - 1);
+        });
+    }
 
     if (state.showGrid)
     {
@@ -429,27 +482,24 @@ void addEditorOverlay(ToolsState& state, scene::Scene& scene, render::RenderWorl
     }
     if (state.showIcons)
     {
-        addIcons(scene, view, selected, world);
-        addAudioIcons(scene, view, selected, world.overlayLines);
+        addIcons(scene, view, selected, hidden, world);
+        addAudioIcons(scene, view, selected, hidden, world.overlayLines);
+    }
+    addColliders(state, scene, selection, hidden, world.overlayLines);
+
+    // The selection is outlined, and so is the entity a dragged material would go to.
+    const scene::Entity materialTarget = scene.findEntity(state.materialTarget);
+    for (render::MeshInstance& mesh : world.meshes)
+    {
+        mesh.outlined = mesh.objectId > 0 && (selection.contains(mesh.objectId - 1) ||
+                                              (materialTarget.isValid() && mesh.objectId - 1 == materialTarget.index));
     }
 
-    std::unordered_set<std::uint32_t> selection;
-    if (selected.isValid())
+    // The gizmo sits on the active entity and moves the others with it.
+    if (const scene::Entity active = scene.findEntity(state.selection.active()); active.isValid())
     {
-        collectSubtree(scene, selected, selection);
-    }
-    addColliders(state, scene, selection, world.overlayLines);
-
-    if (selected.isValid())
-    {
-        const std::unordered_set<std::uint32_t>& outlined = selection;
-        for (render::MeshInstance& mesh : world.meshes)
-        {
-            mesh.outlined = mesh.objectId > 0 && outlined.contains(mesh.objectId - 1);
-        }
-
-        if (const scene::WorldTransform* const transform = scene.tryGet<scene::WorldTransform>(selected);
-            transform != nullptr && scene.has<scene::Transform>(selected) && state.tool != EditorTool::Select)
+        if (const scene::WorldTransform* const transform = scene.tryGet<scene::WorldTransform>(active);
+            transform != nullptr && scene.has<scene::Transform>(active) && state.tool != EditorTool::Select)
         {
             GizmoGeometry geometry;
             state.gizmo.draw(view, transform->matrix, state.hoveredHandle, geometry);
@@ -458,18 +508,23 @@ void addEditorOverlay(ToolsState& state, scene::Scene& scene, render::RenderWorl
         }
     }
 
-    if (state.pickPixel)
+    if (state.pickQuery)
     {
-        const math::Vec2 pixel = *std::exchange(state.pickPixel, std::nullopt);
-        if (pixel.x >= 0.0f && pixel.y >= 0.0f)
+        const PickQuery query = *std::exchange(state.pickQuery, std::nullopt);
+        const math::Vec2 min = math::max(math::min(query.min, query.max), math::Vec2{0.0f});
+        const math::Vec2 max = math::max(query.min, query.max);
+        if (max.x >= 0.0f && max.y >= 0.0f)
         {
             const std::uint64_t id = state.nextPickId++;
             world.pick = render::PickRequest{
-                .x = static_cast<std::uint32_t>(pixel.x),
-                .y = static_cast<std::uint32_t>(pixel.y),
+                .x = static_cast<std::uint32_t>(min.x),
+                .y = static_cast<std::uint32_t>(min.y),
                 .id = id,
+                .width = std::max(1u, static_cast<std::uint32_t>(max.x - min.x)),
+                .height = std::max(1u, static_cast<std::uint32_t>(max.y - min.y)),
             };
             state.awaitedPick = id;
+            state.awaitedQuery = query;
         }
     }
 }

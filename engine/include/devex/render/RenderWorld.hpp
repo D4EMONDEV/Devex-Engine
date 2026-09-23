@@ -178,21 +178,26 @@ struct UiDraw
     math::Vec4 clip{0.0f};
 };
 
-// Asks which object is visible at a pixel of the scene image.
+// Asks which objects are visible in a rectangle of the scene image, one pixel for a click.
 struct PickRequest
 {
-    // From the top-left corner of the scene image.
+    // The top-left corner of the rectangle, from the top-left corner of the scene image.
     std::uint32_t x = 0;
     std::uint32_t y = 0;
     // Returned with the result, to match it with its request.
     std::uint64_t id = 0;
+    std::uint32_t width = 1;
+    std::uint32_t height = 1;
 };
 
 struct PickResult
 {
     std::uint64_t request = 0;
-    // MeshInstance::objectId of the surface at the pixel, 0 when none is there.
+    // MeshInstance::objectId of the surface at the middle of the rectangle, 0 when none is there.
     std::uint32_t objectId = 0;
+    // Every object visible in the rectangle, once each, in increasing order. A large rectangle is
+    // looked at in fewer pixels than it covers, which may miss objects smaller than a few pixels.
+    std::vector<std::uint32_t> objectIds;
 };
 
 // Snapshot of everything the renderer draws in one frame. Gameplay fills it between

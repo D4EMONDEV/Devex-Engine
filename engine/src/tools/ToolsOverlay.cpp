@@ -138,7 +138,7 @@ void requestInstantiateModel(ToolsState& state, asset::AssetId model, core::Uuid
     const core::Uuid rootUuid = scratch.uuid(root);
     state.pendingCommand = makeCreateEntityTreeCommand(scene::saveEntityTree(scratch, root), rootUuid, parent,
                                                        std::format("Place {}", info->name));
-    state.selection = rootUuid;
+    state.selection.set(rootUuid);
 }
 
 std::string sceneAssetName(const ToolsState& state, asset::AssetId sceneAsset)
@@ -179,14 +179,14 @@ void requestInstantiatePrefab(ToolsState& state, asset::AssetId prefab, core::Uu
     const core::Uuid rootUuid = scratch.uuid(*root);
     state.pendingCommand = makeCreateEntityTreeCommand(scene::saveEntityTree(scratch, *root), rootUuid, parent,
                                                        std::format("Place {}", name));
-    state.selection = rootUuid;
+    state.selection.set(rootUuid);
 }
 
 void requestCreateEntity(ToolsState& state, core::Uuid parent)
 {
     const core::Uuid entity = core::Uuid::generate();
     state.pendingCommand = makeCreateEntityCommand(entity, "Entity", parent);
-    state.selection = entity;
+    state.selection.set(entity);
 }
 
 std::string displayName(std::string_view identifier)
@@ -293,16 +293,13 @@ void drawOverlayMenu(ToolsState& state, scene::Scene& scene)
             redo(state, scene);
         }
         ImGui::Separator();
-        const bool hasSelection = scene.findEntity(state.selection).isValid();
         if (ImGui::BeginMenuEx("Create", detail::icons::Plus.c_str()))
         {
             detail::drawCreateEntityMenu(state, core::Uuid{});
             ImGui::EndMenu();
         }
-        if (ImGui::MenuItemEx("Delete", detail::icons::Trash.c_str(), "Delete", false, hasSelection))
-        {
-            state.pendingCommand = makeDestroyEntityCommand(state.selection);
-        }
+        ImGui::Separator();
+        detail::drawEntityEditMenuItems(state, scene);
         ImGui::EndMenu();
     }
     if (ImGui::BeginMenu("View"))
@@ -498,6 +495,7 @@ void updateEditor(ToolsState& state, scene::Scene& scene, PlayState playState)
     detail::drawTextEditorPanel(state, scene);
     detail::drawAnimationPanel(state, scene);
     detail::drawEditorPopups(state, scene);
+    detail::handleEntityShortcuts(state, scene);
     if (state.pendingCommand != nullptr)
     {
         logFailure(state.history.execute(scene, std::exchange(state.pendingCommand, nullptr)));
@@ -684,6 +682,7 @@ void ToolsOverlay::update(scene::Scene& scene, core::Duration frameDelta, PlaySt
     {
         detail::drawAssetsPanel(state, scene);
     }
+    detail::handleEntityShortcuts(state, scene);
     if (state.pendingCommand != nullptr)
     {
         logFailure(state.history.execute(scene, std::exchange(state.pendingCommand, nullptr)));
@@ -790,7 +789,7 @@ void ToolsOverlay::setAssetDatabase(asset::AssetDatabase* database) noexcept
     // The scenes of the previous project go with it; the application empties the edited scene.
     scene::Scene dropped;
     state.tabs.clear(detail::ActiveDocument{state.scenePath, dropped, state.history, state.savedState, state.selection,
-                                            state.camera});
+                                            state.camera, state.hiddenEntities});
     state.pendingAction.reset();
     state.textDocuments.clear();
     state.activeText.clear();

@@ -51,7 +51,7 @@ void selectCodeFile(ToolsState& state, const std::filesystem::path& file)
 {
     state.selectedCode = file;
     // The inspector shows one thing at a time.
-    state.selection = core::Uuid{};
+    state.selection.clear();
     state.selectedAsset = {};
 }
 
@@ -246,7 +246,7 @@ void drawNewScriptPopup(ToolsState& state)
     {
         state.requests.newScript = NewScript{.name = name, .csharp = state.newScriptCSharp};
         state.pendingScript = name;
-        state.pendingScriptEntity = state.selection;
+        state.pendingScriptEntity = state.selection.active();
         ImGui::CloseCurrentPopup();
     }
     ImGui::SameLine();

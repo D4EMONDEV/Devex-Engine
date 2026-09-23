@@ -30,12 +30,14 @@ namespace devex::tools {
 [[nodiscard]] std::unique_ptr<Command> makeCreateEntityCommand(core::Uuid entity, std::string name,
                                                                core::Uuid parent);
 
-// Creates the entities written by scene::saveEntityTree, whose root has the UUID `root`, last under
-// parent or as a root when parent is nil. Used to place models: redo recreates the same UUIDs.
+// Creates the entities written by scene::saveEntityTree, whose root has the UUID `root`, under
+// parent or as a root when parent is nil: before the sibling `before`, or last when it is nil or no
+// longer a child of parent. Used to place models and to paste: redo recreates the same UUIDs.
 [[nodiscard]] std::unique_ptr<Command> makeCreateEntityTreeCommand(std::string tree,
                                                                    core::Uuid root,
                                                                    core::Uuid parent,
-                                                                   std::string description);
+                                                                   std::string description,
+                                                                   core::Uuid before = {});
 
 // Replaces an entity and its descendants with the entities written by scene::saveEntityTree, whose
 // root has the same UUID, at the same place. Used to turn entities into a prefab instance and back.

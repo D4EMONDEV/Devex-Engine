@@ -149,7 +149,8 @@ void SceneTabs::clear(const ActiveDocument& live)
     live.scene = scene::Scene{};
     live.history.clear();
     live.savedState = live.history.stateId();
-    live.selection = core::Uuid{};
+    live.selection.clear();
+    live.hidden.clear();
 }
 
 void SceneTabs::forEachBackgroundScene(const std::function<void(scene::Scene&)>& function)
@@ -171,6 +172,7 @@ void SceneTabs::swapDocument(SceneDocument& stored, const ActiveDocument& live)
     std::swap(stored.savedState, live.savedState);
     std::swap(stored.selection, live.selection);
     std::swap(stored.camera, live.camera);
+    std::swap(stored.hidden, live.hidden);
 }
 
 } // namespace devex::tools::detail

@@ -69,6 +69,7 @@ devex_add_tests(serialization
 devex_add_tests(scene
     SOURCES
         scene/DynamicComponentTests.cpp
+        scene/EntityCopyTests.cpp
         scene/EntityRefAndListTests.cpp
         scene/PrefabTests.cpp
         scene/SceneSerializerTests.cpp
@@ -176,6 +177,7 @@ devex_add_tests(tools
         tools/ProjectListTests.cpp
         tools/SceneCommandsTests.cpp
         tools/SceneTabsTests.cpp
+        tools/SelectionTests.cpp
         tools/TextDocumentTests.cpp
         tools/TextEditorTests.cpp
         tools/ThemeTests.cpp

@@ -137,6 +137,8 @@ private:
 
     // Timestamps a frame can write: one per pass of the render graph, and one more.
     static constexpr std::uint32_t maxTimestamps = 128;
+    // The largest side of the image a pick is drawn into.
+    static constexpr std::uint32_t maxPickSize = 512;
 
     struct FrameContext
     {
@@ -178,9 +180,12 @@ private:
         // The triangles of the interface of the frame.
         std::optional<Buffer> uiVertices;
         std::optional<Buffer> uiIndices;
-        // The object identifier the frame read under the requested pixel.
+        // The object identifiers the frame read in the requested rectangle: x, y, width and height
+        // in pixels of the scene image, drawn into an image of pickExtent, smaller for a large one.
         std::optional<Buffer> pickReadback;
         std::optional<std::uint64_t> pickRequest;
+        std::array<std::uint32_t, 4> pickRect{};
+        math::Extent2D pickExtent{1, 1};
         // ImGui's descriptor set for the viewport image of this frame context.
         VkDescriptorSet imguiViewport = VK_NULL_HANDLE;
         VkImageView imguiViewportView = VK_NULL_HANDLE;

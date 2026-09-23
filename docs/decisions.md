@@ -49,7 +49,9 @@ mais seulement explicitement ici : le code suit ce document, pas l'inverse.
 | Gizmos                   | Maison : déplacement, rotation, échelle, local/global, magnétisme  |
 | Projets dans l'éditeur   | Gestionnaire de projets dans une fenêtre compacte, ou argument     |
 | Scènes                   | Assets importés (`AssetId`), ouvertes et enregistrées par l'éditeur |
-| Sélection                | Simple pour l'instant                                              |
+| Sélection                | Multiple : Ctrl et Maj dans l'arbre, rectangle dans la vue         |
+| Copier-coller d'entités  | Texte `[entities]` du presse-papiers système, UUID neufs au collage |
+| Visibilité dans l'éditeur | Œil par entité, vue de l'éditeur seulement, gardé par projet      |
 | Code de jeu              | Composants et systèmes dans un module de jeu (DLL) par projet      |
 | Compilation du jeu       | Par l'éditeur (CMake, en arrière-plan) à chaque modification       |
 | Rechargement du jeu      | Composants conservés en texte, en édition comme en Play            |
@@ -251,13 +253,15 @@ docs/          décisions et documentation
   outils affichent dans un panneau : `Renderer::viewportTexture()` est un identifiant de
   texture ImGui fixe, remplacé pendant le dessin par le descriptor set ImGui de l'image de la
   frame (un par contexte de frame, recréé quand l'image change).
-- **Sélection à la souris** (*picking*) : `RenderWorld::pick` demande l'objet visible sous un
-  pixel. Une passe dessine tous les maillages dans une cible `R32_UINT` de 1 × 1 avec une
-  projection qui étire ce pixel sur toute la cible, en écrivant `MeshInstance::objectId`
-  (0 = rien) et en respectant le mode alpha `mask` ; la valeur est copiée dans un buffer
-  visible par le CPU et lue quand la frame est terminée, en général deux frames plus tard
-  (`Renderer::takePickResults`). `Runtime` identifie chaque instance par l'index de son entité
-  plus un.
+- **Sélection à la souris** (*picking*) : `RenderWorld::pick` demande les objets visibles dans un
+  rectangle de l'image, un pixel pour un clic. Une passe dessine tous les maillages dans une cible
+  `R32_UINT` de la taille du rectangle (réduite à 512 pixels de côté au plus) avec une projection
+  qui étire ce rectangle sur toute la cible, en écrivant `MeshInstance::objectId` (0 = rien) et en
+  respectant le mode alpha `mask` ; les valeurs sont copiées dans un buffer visible par le CPU et
+  lues quand la frame est terminée, en général deux frames plus tard
+  (`Renderer::takePickResults`) : l'objet au milieu du rectangle, et chaque objet vu, une fois.
+  Un grand rectangle regardé en moins de pixels qu'il n'en couvre peut manquer un objet de
+  quelques pixels. `Runtime` identifie chaque instance par l'index de son entité plus un.
 - **Overlay des outils** : lignes et triangles colorés (`RenderWorld::sceneLines`,
   `overlayLines`, `overlayTriangles`) dessinés en mélange alpha après le tonemapping. Les
   lignes de scène sont cachées par les surfaces plus proches : elles testent la profondeur de la
@@ -607,6 +611,8 @@ les assets s'écrivent au fil de leur lecture.
   piles et mémoire qu'elles désignent, environ un mégaoctet) est écrit à côté du journal ; Visual
   Studio l'ouvre à l'endroit où le processus s'est arrêté. Tout ce que le gestionnaire utilise est
   réservé d'avance, et 64 Kio de pile lui sont garantis pour survivre à un débordement de pile.
+  Le message du runtime C sur `abort` est coupé (`_set_abort_behavior`) : le rapport le remplace,
+  et en Debug c'était une boîte de dialogue qui retenait le processus avant lui.
 - **Symboles** : les builds Release écrivent aussi leurs `.pdb` (`/Zi`, `/DEBUG` avec `/OPT:REF` et
   `/OPT:ICF`, donc le même code optimisé), sans que l'export les copie : les rapports des jeux livrés
   ne donnent que modules et décalages, que les `.pdb` gardés du build permettent de retrouver.
@@ -719,7 +725,7 @@ les assets s'écrivent au fil de leur lecture.
   police par sa ligne entière, elles sont multipliées par la hauteur de ligne de la police
   (1,362 pour Noto Sans). Une police absente est remplacée par celle d'ImGui avec un
   avertissement.
-- **Icônes** (`src/tools/Icons`) : 98 icônes Lucide 1.47.0 (licence ISC, `third_party/lucide`) et le
+- **Icônes** (`src/tools/Icons`) : 107 icônes Lucide 1.47.0 (licence ISC, `third_party/lucide`) et le
   logo Devex (`engine/resources/icons/devex.svg`), copiés dans `bin/resources/icons`. Chaque icône
   est un caractère de la zone à usage privé (U+E000 et suivants) : un chargeur de police ImGui
   (`ImFontLoader`) fusionné dans chaque police dessine le SVG avec plutosvg à la taille du texte.
@@ -850,15 +856,15 @@ les assets s'écrivent au fil de leur lecture.
   sélection. En Play, le viewport montre la caméra du jeu, qui reçoit clavier et souris quand
   le panneau a le focus ; grille, icônes et gizmos disparaissent.
 - **Sélection** : un clic choisit la lumière ou la caméra dont l'icône est sous la souris (sur
-  le CPU), sinon demande au GPU l'objet visible sous le pixel ; l'entité sélectionnée et ses
-  descendants sont entourés. Une seule entité à la fois.
+  le CPU), sinon demande au GPU l'objet visible sous le pixel ; les entités sélectionnées et leurs
+  descendants sont entourés. Voir *Sélection et édition des entités*.
 - **Gizmos** (maison, `src/tools/Gizmo`) : W déplacement (axes, plans, plan de la vue), E
   rotation (anneaux par axe, anneau de la vue), R échelle (axes, uniforme au centre) ; X alterne
   axes du monde et de l'entité (l'échelle est toujours locale). Taille constante à l'écran,
   poignées testées en pixels, poignée survolée ou active en jaune. Ctrl aimante par 0,5 m, 15°
-  ou 0,1. Glisser modifie `Transform` en direct ; le relâchement enregistre une étape
-  annulable par champ modifié. Parent quelconque : le déplacement passe par l'inverse de sa
-  matrice monde.
+  ou 0,1. Glisser modifie `Transform` en direct ; le relâchement enregistre une seule étape
+  annulable, pour toutes les entités déplacées. Parent quelconque : le déplacement passe par
+  l'inverse de sa matrice monde.
 - **Icônes et repères** : grille au sol autour de la caméra (tous les mètres, tous les dix
   mètres de haut) qui s'estompe au loin, axes X et Z colorés ; icônes des lumières et des
   caméras, portée des lumières ponctuelles, cône des spots et pyramide de la caméra quand elles
@@ -871,12 +877,71 @@ les assets s'écrivent au fil de leur lecture.
 - **Création** : le menu *+* de *Scene*, *Edit > Create* ou le menu contextuel de l'arbre place une
   entité vide, une primitive, une lumière, une caméra ou un environnement au pivot de la caméra
   (ou comme enfant de l'entité choisie) ; un modèle glissé dans le viewport se pose au sol sous
-  la souris. Suppr supprime la sélection.
+  la souris ; un matériau glissé sur un objet le remplace. Suppr supprime la sélection.
 - **Raccourcis** : Ctrl+N, Ctrl+O, Ctrl+S, Ctrl+Maj+S, Ctrl+Alt+S, Ctrl+W, Ctrl+Tab ; F5 ou Ctrl+P
   pour jouer, F7 pause, F8 arrêt, F9 pas à pas ; Ctrl+B compile le code du jeu ; Ctrl+Maj+Q
   revient au gestionnaire de projets, Ctrl+Q quitte.
 - **Pendant le jeu** : l'historique des modifications est mis de côté ; les modifications faites
   à la copie jouée ont leur propre historique, oublié à l'arrêt.
+
+### Sélection et édition des entités
+
+- **Sélection multiple** (`src/tools/Selection`) : la sélection est une liste d'UUID dans l'ordre
+  où ils ont été choisis ; la dernière entité est l'**active**. Le gizmo s'y place, l'inspecteur y
+  lit ses valeurs, et *Create Child* s'en sert. Chaque onglet de scène garde la sienne ; ce que
+  l'annulation retire en sort.
+- **Dans l'arbre** : un clic sélectionne, Ctrl+clic ajoute ou retire, Maj+clic prend les lignes
+  entre la dernière cliquée et celle-ci, dans l'ordre affiché (Ctrl+Maj ajoute la plage). Un clic
+  sur une ligne d'une sélection de plusieurs ne la réduit qu'au relâchement, pour pouvoir la
+  glisser tout entière : les entités glissées changent de parent ensemble, en une étape, sans
+  passer sous elles-mêmes ni sortir d'une instance de préfab.
+- **Dans la vue** : Maj+clic ajoute, Ctrl+clic ajoute ou retire. Un glisser commencé hors d'une
+  poignée trace un **rectangle** qui sélectionne ce qu'on voit : les objets dont des pixels sont
+  visibles dedans, lus sur le GPU comme le clic, et les icônes des lumières et caméras qu'il
+  contient ; pas ce que cachent les murs.
+- **Préfabs** : une instance est un seul objet dans la vue. Le premier clic sélectionne son
+  instance la plus extérieure, les suivants descendent d'instance en instance jusqu'à l'entité
+  sous la souris, que les clics suivants gardent (comme Unity) ; un rectangle sélectionne
+  l'instance la plus extérieure. L'arbre sélectionne toujours exactement la ligne cliquée.
+- **Gizmo sur plusieurs entités** : il agit sur l'entité active et entraîne les autres racines de
+  la sélection (celles qu'aucun ancêtre sélectionné ne porte), chacune autour de sa propre origine
+  comme le mode *Pivot* de Unity : même déplacement dans le monde, même rotation dans le monde,
+  même rapport d'échelle. Quand l'active est portée par un ancêtre sélectionné, seul l'ancêtre
+  bouge. Une étape d'annulation pour le tout.
+- **Inspecteur de plusieurs entités** : les composants qu'elles ont toutes. Chaque champ montre la
+  valeur de l'active, ou un tiret quand les autres diffèrent (case indéterminée pour une case à
+  cocher, tiret par composante pour un vecteur ou des angles) ; une modification va à toutes,
+  un vecteur seulement dans les composantes changées, et devient une étape d'annulation. Les
+  listes s'éditent entité par entité. *Add Component* ajoute aux entités qui ne l'ont pas ; retirer
+  un composant le retire de toutes, sauf si l'une le tient de son préfab. Les couleurs montrent la
+  valeur de l'active sans tiret.
+- **Copier, couper, coller, dupliquer** (Ctrl+C, Ctrl+X, Ctrl+V, Ctrl+D, et les menus) : la copie
+  est un texte `[entities format=1]` suivi des arbres des racines de la sélection, tels que
+  `saveEntityTree` les écrit (`scene::saveEntityTrees`), mis dans le **presse-papiers du
+  système** : on colle dans une autre scène, un autre projet ou un autre éditeur ouvert, et on
+  peut le lire. Coller donne à chaque entité un **UUID neuf** (`scene::copyEntityTrees`) : les
+  références entre entités copiées suivent, celles vers d'autres entités restent, et les instances
+  de préfab restent liées, avec les entités qu'on leur a ajoutées et les références vers leurs
+  entités (UUID dérivés de la nouvelle instance). Les entités collées vont à côté de l'active,
+  sous le même parent ; dupliquer place chaque copie juste après son original. Une copie qui
+  prendrait le nom d'un frère est renommée : « Crate 3 » devient « Crate 4 », « Crate » devient
+  « Crate 2 ». Chaque opération est une étape d'annulation et sélectionne ce qu'elle crée.
+- **Renommer** : F2 ou le menu ; le nom s'édite dans l'arbre, Entrée ou un clic ailleurs valide,
+  Échap annule.
+- **Masquer dans la vue** (l'œil de fin de ligne, H, ou le menu) : comme la visibilité de scène de
+  Unity, l'entité et ses descendants disparaissent de la vue de l'éditeur (maillages, icônes,
+  formes de collision) et ne se sélectionnent plus au clic ; le jeu, lui, les voit toujours, et
+  le Play les montre. La liste est gardée par onglet et dans `.devex/editor.dvx` du projet
+  (`hidden` de la section de la scène), écrite dès qu'elle change ; elle se perd quand l'onglet
+  de la scène est fermé, comme sa caméra. *Show All in Viewport* les rend toutes.
+- **Glisser un matériau** du FileSystem sur un objet de la vue : l'objet sous la souris est
+  entouré pendant le glisser (une sélection GPU par frame), et le lâcher remplace le premier champ
+  matériau de ses composants (celui de `MeshRenderer`), en une étape ; sur une instance de
+  préfab, c'est une modification de l'instance.
+- **Raccourcis** : Ctrl+C, Ctrl+X, Ctrl+V, Ctrl+D, Ctrl+A (tout sélectionner), F2, H et Suppr
+  agissent quand l'arbre ou la vue a le clavier, jamais pendant la saisie d'un texte ni, pour la
+  vue, pendant le jeu ; Ctrl tenu désactive les touches d'outils de la vue (Ctrl+X coupe, il ne
+  change pas d'axes).
 
 ### Assets
 
@@ -1847,6 +1912,12 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     type et pour les plus lourds, et panneau *Profiler* : barres des images, chronologie par
     thread et GPU, tableaux CPU, GPU et mémoire.
 
+28. ✅ **Confort de l'éditeur** — sélection multiple (Ctrl et Maj dans l'arbre, rectangle dans la
+    vue lu sur le GPU), clics qui descendent dans les instances de préfab, gizmo et inspecteur sur
+    plusieurs entités, copier, couper, coller et dupliquer par le presse-papiers du système avec
+    UUID neufs, renommage dans l'arbre, entités masquées dans la vue et gardées par projet,
+    matériaux glissés sur les objets.
+
 Ensuite, sans ordre figé : jeux 2D, particules, CI Linux.
 
 ## Questions ouvertes
@@ -1867,8 +1938,8 @@ Ensuite, sans ordre figé : jeux 2D, particules, CI Linux.
 - **Préfabs** : retirer un composant ou une entité du préfab dans une instance, variantes
   explicites (une instance à la racine d'un préfab en fait déjà une), onglet ouvert sur le préfab
   d'une instance avec son contexte, édition des entités d'une instance sur place (Godot *Editable
-  Children*), sélection de la racine d'une instance au premier clic, mise à jour des instances
-  pendant le jeu, modifications vers des entités retirées gardées au lieu d'être abandonnées.
+  Children*), mise à jour des instances pendant le jeu, modifications vers des entités retirées
+  gardées au lieu d'être abandonnées.
 - **Export** : autres plateformes (Linux, macOS), export incrémental et paquets de mise à jour ou de
   contenu additionnel, signature de l'exécutable et installeur, retrait des bibliothèques qu'un jeu
   n'utilise pas, cuisson des textures par plateforme, chargement asynchrone depuis le paquet,
@@ -1911,9 +1982,9 @@ Ensuite, sans ordre figé : jeux 2D, particules, CI Linux.
   réglages selon la position de la caméra, mise à l'échelle temporelle (rendu sous la résolution
   de l'écran), occlusion ambiante par cônes plutôt que par points.
 - **Ciel procédural** : atmosphère physique liée à la lumière directionnelle.
-- **Éditeur** : multi-sélection et rectangle de sélection, copier-coller et duplication, vues
-  Scène et Jeu simultanées (plusieurs vues par frame dans le renderer), jeu dans un processus
-  séparé, glisser des matériaux sur les objets du viewport, lignes épaisses, visibilité des
-  entités (l'œil de Godot), renommage dans l'arbre.
+- **Éditeur** : vues Scène et Jeu simultanées (plusieurs vues par frame dans le renderer), jeu
+  dans un processus séparé, lignes épaisses, pivot au centre de la sélection (mode *Center* de
+  Unity), listes éditées à plusieurs, entités masquées aussi dans l'écran 2D, entité active ou
+  non pour le jeu (`SetActive` de Unity), déplacement au clavier dans l'arbre.
 - **Apparence** : thèmes enregistrables en fichiers, icône de projet choisie par projet, polices
   pour le chinois, le japonais et le coréen (Noto CJK), barre de titre intégrée à l'éditeur.

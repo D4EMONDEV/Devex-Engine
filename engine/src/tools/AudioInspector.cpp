@@ -116,7 +116,7 @@ void selectAsset(ToolsState& state, asset::AssetId id)
         state.selectedClipStale = true;
     }
     // The inspector shows one thing at a time.
-    state.selection = core::Uuid{};
+    state.selection.clear();
     state.selectedCode.clear();
 }
 

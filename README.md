@@ -66,7 +66,10 @@ Le détail, l'architecture des modules et les jalons sont dans
   l'écran 2D où les interfaces se choisissent, se déplacent et se redimensionnent avec leur thème
   appliqué comme en jeu (l'inspecteur grise les champs qu'un style écrit et ouvre le thème),
   gestionnaire de projets, onglets de scènes, viewport et sa
-  barre d'outils, caméra libre, sélection à la souris, gizmos, préfabs (glisser-déposer, valeurs
+  barre d'outils, caméra libre, sélection multiple (Ctrl et Maj dans l'arbre, rectangle dans la
+  vue), gizmos et inspecteur sur plusieurs entités, copier, coller et dupliquer par le
+  presse-papiers, renommage dans l'arbre, entités masquées dans la vue, matériaux glissés sur les
+  objets, préfabs (glisser-déposer, valeurs
   modifiées, Revert, Make Local, Save as Prefab, mise à jour en direct), fichiers de code du projet
   avec éditeur de texte intégré à onglets (coloration syntaxique, numéros de ligne, recherche et
   remplacement, autocomplétion, erreurs de compilation dans la marge), ouverture dans l'IDE,

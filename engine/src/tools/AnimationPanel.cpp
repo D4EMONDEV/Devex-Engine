@@ -101,7 +101,7 @@ void drawAnimationPanel(ToolsState& state, scene::Scene& scene)
         return;
     }
 
-    const scene::Entity entity = animatorOf(scene, scene.findEntity(state.selection));
+    const scene::Entity entity = animatorOf(scene, scene.findEntity(state.selection.active()));
     if (!entity.isValid())
     {
         ImGui::TextDisabled("Select an entity with an Animator to play its clips.");

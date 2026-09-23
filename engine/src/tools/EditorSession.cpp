@@ -67,6 +67,25 @@ void writeCamera(serialization::TextSection& section, const EditorCamera& camera
     }
 }
 
+// The entities of a scene hidden in the viewport, as writeProjectSettings lists them.
+[[nodiscard]] std::unordered_set<core::Uuid> readHidden(const serialization::TextSection& section)
+{
+    std::unordered_set<core::Uuid> hidden;
+    const TextValue* const value = section.findProperty("hidden");
+    if (const serialization::TextCall* const list = value != nullptr ? serialization::asCall(*value, "list") : nullptr)
+    {
+        for (const TextValue& entity : list->arguments)
+        {
+            const std::string* const text = serialization::asString(entity);
+            if (const std::optional<core::Uuid> uuid = text != nullptr ? core::Uuid::parse(*text) : std::nullopt)
+            {
+                hidden.insert(*uuid);
+            }
+        }
+    }
+    return hidden;
+}
+
 [[nodiscard]] EditorCamera readCamera(const serialization::TextSection& section)
 {
     EditorCamera camera;
@@ -104,6 +123,18 @@ void writeProjectSettings(ToolsState& state)
         tab.type = "scene";
         tab.attributes.push_back({"path", TextValue(resource)});
         writeCamera(tab, isActive ? state.camera : state.tabs.background(index).camera);
+        const std::unordered_set<core::Uuid>& hidden = isActive ? state.hiddenEntities : state.tabs.background(index).hidden;
+        if (!hidden.empty())
+        {
+            std::vector<std::string> sorted;
+            for (const core::Uuid entity : hidden)
+            {
+                sorted.push_back(entity.toString());
+            }
+            std::ranges::sort(sorted);
+            std::vector<TextValue> entities(sorted.begin(), sorted.end());
+            tab.properties.push_back({"hidden", serialization::makeCall("list", std::move(entities))});
+        }
     }
     std::error_code error;
     std::filesystem::create_directories(project.cacheDirectory(), error);
@@ -149,8 +180,13 @@ void resetTransientEdits(ToolsState& state)
     state.gizmo.end();
     state.hoveredHandle = GizmoHandle::None;
     state.clickStart.reset();
-    state.pickPixel.reset();
+    state.drawingRectangle = false;
+    state.pickQuery.reset();
     state.awaitedPick = 0;
+    state.gizmoFollowers.clear();
+    state.materialTarget = {};
+    state.renamedEntity = {};
+    state.pendingRowClick = {};
     state.pendingCommand.reset();
     state.nameBufferEntity = core::Uuid{};
     state.eulerEditId = 0;
@@ -212,6 +248,7 @@ void openProjectScenes(ToolsState& state, scene::Scene& scene)
                 {
                     if (std::optional<SceneDocument> document = loadDocument(*file, readCamera(section)))
                     {
+                        document->hidden = readHidden(section);
                         documents.push_back(std::move(*document));
                     }
                 }
@@ -379,7 +416,7 @@ void requestCreatePreset(ToolsState& state, core::Uuid parent, const char* name,
     const core::Uuid uuid = scratch.uuid(entity);
     state.pendingCommand = makeCreateEntityTreeCommand(scene::saveEntityTree(scratch, entity), uuid, parent,
                                                        std::format("Create {}", name));
-    state.selection = uuid;
+    state.selection.set(uuid);
 }
 
 // Writes the entity chosen for Save as Prefab and its descendants to a new scene file, then replaces
@@ -456,7 +493,7 @@ void saveAsPrefab(ToolsState& state, scene::Scene& scene, std::filesystem::path 
     }
     state.pendingCommand = makeReplaceEntityTreeCommand(state.prefabEntity, scene::saveEntityTree(scratch, *instance),
                                                         std::format("Save {} as prefab", scene.name(entity)));
-    state.selection = state.prefabEntity;
+    state.selection.set(state.prefabEntity);
     DEVEX_LOG_INFO("Saved {} as {}", scene.name(entity), resource);
 }
 
@@ -497,7 +534,7 @@ scene::Scene makeDefaultScene()
 
 ActiveDocument activeDocument(ToolsState& state, scene::Scene& scene) noexcept
 {
-    return {state.scenePath, scene, state.history, state.savedState, state.selection, state.camera};
+    return {state.scenePath, scene, state.history, state.savedState, state.selection, state.camera, state.hiddenEntities};
 }
 
 std::string tabName(const std::filesystem::path& path)
@@ -681,7 +718,7 @@ bool saveTextFile(ToolsState& state, scene::Scene& scene, TextDocument& document
             scene = std::move(*loadedScene);
             state.history.clear();
             state.savedState = state.history.stateId();
-            state.selection = {};
+            state.selection.clear();
         }
         else
         {
@@ -689,7 +726,7 @@ bool saveTextFile(ToolsState& state, scene::Scene& scene, TextDocument& document
             background.scene = std::move(*loadedScene);
             background.history.clear();
             background.savedState = background.history.stateId();
-            background.selection = {};
+            background.selection.clear();
         }
     }
     if (projectFile)
@@ -940,6 +977,77 @@ void saveUserSettings(const ToolsState& state)
     }
 }
 
+void selectEntities(ToolsState& state, std::span<const core::Uuid> entities, SelectMode mode)
+{
+    switch (mode)
+    {
+    case SelectMode::Replace:
+        state.selection.set(entities);
+        break;
+    case SelectMode::Add:
+        for (const core::Uuid entity : entities)
+        {
+            state.selection.add(entity);
+        }
+        break;
+    case SelectMode::Toggle:
+        for (const core::Uuid entity : entities)
+        {
+            state.selection.toggle(entity);
+        }
+        break;
+    }
+    state.rangeAnchor = state.selection.active();
+}
+
+namespace {
+
+// Applies what the GPU found under a click, a rectangle or a dragged material.
+void applyPick(ToolsState& state, const scene::Scene& scene, const render::PickResult& result)
+{
+    const PickQuery& query = state.awaitedQuery;
+    const auto entityOf = [&scene](std::uint32_t objectId) {
+        return objectId > 0 ? scene.entityAtIndex(objectId - 1) : scene::Entity{};
+    };
+    switch (query.purpose)
+    {
+    case PickQuery::Purpose::MaterialTarget: {
+        const scene::Entity entity = entityOf(result.objectId);
+        state.materialTarget = entity.isValid() ? scene.uuid(entity) : core::Uuid{};
+        return;
+    }
+    case PickQuery::Purpose::Click: {
+        const scene::Entity hit = entityOf(result.objectId);
+        std::vector<core::Uuid> picked;
+        if (hit.isValid())
+        {
+            picked.push_back(scene.uuid(clickTarget(scene, hit, state.selection.active())));
+        }
+        selectEntities(state, picked, query.mode);
+        return;
+    }
+    case PickQuery::Purpose::Rectangle: {
+        // The icons inside the rectangle were found without the GPU.
+        std::vector<core::Uuid> picked = query.icons;
+        for (const std::uint32_t objectId : result.objectIds)
+        {
+            if (const scene::Entity hit = entityOf(objectId); hit.isValid())
+            {
+                const core::Uuid target = scene.uuid(outermostTarget(scene, hit));
+                if (std::ranges::find(picked, target) == picked.end())
+                {
+                    picked.push_back(target);
+                }
+            }
+        }
+        selectEntities(state, picked, query.mode);
+        return;
+    }
+    }
+}
+
+} // namespace
+
 void updateEditorSession(ToolsState& state, scene::Scene& scene)
 {
     if (state.projectChanged && state.database != nullptr)
@@ -1031,9 +1139,10 @@ void updateEditorSession(ToolsState& state, scene::Scene& scene)
             continue;
         }
         state.awaitedPick = 0;
-        const scene::Entity entity = result.objectId > 0 ? scene.entityAtIndex(result.objectId - 1) : scene::Entity{};
-        state.selection = entity.isValid() ? scene.uuid(entity) : core::Uuid{};
+        applyPick(state, scene, result);
     }
+    // What undo and redo removed is no longer selected.
+    state.selection.prune(scene);
 }
 
 void updateWindowTitle(ToolsState& state, const scene::Scene& /*scene*/)

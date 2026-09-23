@@ -359,6 +359,8 @@ TEST_CASE("The scene renders into a viewport image with picking, outlines and ov
 
         // A cube 3 m in front of the camera covers the center of the image; the corner shows sky.
         const devex::math::Mat4 cubeTransform = devex::math::translate(devex::math::Mat4{1.0f}, Vec3{0.0f, 0.0f, -3.0f});
+        // Another one at the left edge.
+        const devex::math::Mat4 leftTransform = devex::math::translate(devex::math::Mat4{1.0f}, Vec3{-1.6f, 0.0f, -3.0f});
         std::vector<devex::render::PickResult> results;
         for (std::uint64_t frame = 0; frame < 12; ++frame)
         {
@@ -366,6 +368,7 @@ TEST_CASE("The scene renders into a viewport image with picking, outlines and ov
             // The viewport changes size once, which replaces its image.
             world.viewport = frame < 6 ? devex::math::Extent2D{200, 150} : devex::math::Extent2D{160, 120};
             world.meshes.push_back({.mesh = *cube, .transform = cubeTransform, .objectId = 42, .outlined = true});
+            world.meshes.push_back({.mesh = *cube, .transform = leftTransform, .objectId = 7});
             world.sceneLines = {OverlayVertex{Vec3{-5.0f, -0.5f, -3.0f}, Vec4{1.0f}},
                                 OverlayVertex{Vec3{5.0f, -0.5f, -3.0f}, Vec4{1.0f}}};
             world.overlayLines = {OverlayVertex{Vec3{0.0f}, Vec4{1.0f, 0.0f, 0.0f, 1.0f}},
@@ -386,6 +389,15 @@ TEST_CASE("The scene renders into a viewport image with picking, outlines and ov
                 // Outside the image: answered without drawing.
                 world.pick = devex::render::PickRequest{.x = 500, .y = 2, .id = 3};
             }
+            else if (frame == 4)
+            {
+                // A rectangle over the whole image sees both cubes; one over the middle, only one.
+                world.pick = devex::render::PickRequest{.x = 0, .y = 0, .id = 4, .width = 200, .height = 150};
+            }
+            else if (frame == 5)
+            {
+                world.pick = devex::render::PickRequest{.x = 90, .y = 60, .id = 5, .width = 100, .height = 30};
+            }
 
             const devex::core::Result<void> presented = renderer->endFrame();
             if (!presented)
@@ -397,13 +409,17 @@ TEST_CASE("The scene renders into a viewport image with picking, outlines and ov
 
         CHECK(renderer->stats().sceneExtent == devex::math::Extent2D{160, 120});
         std::ranges::sort(results, {}, &devex::render::PickResult::request);
-        REQUIRE(results.size() == 3);
+        REQUIRE(results.size() == 5);
         CHECK(results[0].request == 1);
         CHECK(results[0].objectId == 42);
+        CHECK(results[0].objectIds == std::vector<std::uint32_t>{42});
         CHECK(results[1].request == 2);
         CHECK(results[1].objectId == 0);
+        CHECK(results[1].objectIds.empty());
         CHECK(results[2].request == 3);
         CHECK(results[2].objectId == 0);
+        CHECK(results[3].objectIds == std::vector<std::uint32_t>{7, 42});
+        CHECK(results[4].objectIds == std::vector<std::uint32_t>{42});
         CHECK(devex::render::Renderer::viewportTexture() != 0);
         renderer->destroyMesh(*cube);
     }

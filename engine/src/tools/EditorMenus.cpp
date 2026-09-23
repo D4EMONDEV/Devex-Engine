@@ -95,15 +95,15 @@ void drawEditMenu(ToolsState& state, scene::Scene& scene)
         logFailure(state.history.redo(scene));
     }
     ImGui::Separator();
-    const bool hasSelection = scene.findEntity(state.selection).isValid();
+    const bool hasSelection = scene.findEntity(state.selection.active()).isValid();
     if (ImGui::BeginMenuEx("Create", icons::Plus.c_str()))
     {
         drawCreateEntityMenu(state, core::Uuid{});
         ImGui::EndMenu();
     }
-    if (ImGui::BeginMenuEx("Create Child", icons::Layers.c_str(), hasSelection))
+    if (ImGui::BeginMenuEx("Create Child", icons::Layers.c_str(), hasSelection && state.selection.size() == 1))
     {
-        drawCreateEntityMenu(state, state.selection);
+        drawCreateEntityMenu(state, state.selection.active());
         ImGui::EndMenu();
     }
     ImGui::Separator();
@@ -111,10 +111,8 @@ void drawEditMenu(ToolsState& state, scene::Scene& scene)
     {
         frameSelection(state, scene);
     }
-    if (menuItem(icons::Trash, "Delete", "Delete", hasSelection))
-    {
-        state.pendingCommand = makeDestroyEntityCommand(state.selection);
-    }
+    ImGui::Separator();
+    drawEntityEditMenuItems(state, scene);
 }
 
 void drawProjectMenu(ToolsState& state, scene::Scene& scene)

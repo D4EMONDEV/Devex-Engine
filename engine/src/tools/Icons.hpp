@@ -38,11 +38,13 @@ namespace devex::tools::detail {
     ICON(CircleHelp, "circle-question-mark")         \
     ICON(CircleX, "circle-x")                        \
     ICON(Clapperboard, "clapperboard")               \
+    ICON(ClipboardPaste, "clipboard-paste")          \
     ICON(Clock, "clock")                             \
     ICON(Close, "x")                                 \
     ICON(CloudSun, "cloud-sun")                      \
     ICON(Code, "code")                               \
     ICON(Copy, "copy")                               \
+    ICON(CopyPlus, "copy-plus")                      \
     ICON(Crosshair, "crosshair")                     \
     ICON(Cuboid, "cuboid")                           \
     ICON(Cylinder, "cylinder")                       \
@@ -100,6 +102,7 @@ namespace devex::tools::detail {
     ICON(Save, "save")                               \
     ICON(Scale, "scale-3d")                          \
     ICON(Scan, "scan")                               \
+    ICON(Scissors, "scissors")                       \
     ICON(ScrollText, "scroll-text")                  \
     ICON(Search, "search")                           \
     ICON(Settings, "settings")                       \

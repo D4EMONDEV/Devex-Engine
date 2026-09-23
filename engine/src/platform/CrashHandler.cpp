@@ -333,6 +333,9 @@ void installCrashHandler(CrashReporting reporting)
     SetThreadStackGuarantee(&guarantee);
 
     SetUnhandledExceptionFilter(&onUnhandledException);
+    // The report says what abort did: the runtime's own message would come first, and in Debug it
+    // is a dialog that holds the process until someone answers it.
+    _set_abort_behavior(0, _WRITE_ABORT_MSG | _CALL_REPORTFAULT);
     std::signal(SIGABRT, &onAbort);
     std::set_terminate(&onTerminate);
     _set_purecall_handler(&onPureCall);

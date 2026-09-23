@@ -76,18 +76,22 @@ static_assert(sizeof(ClusterRange) == sizeof(GpuCluster));
 }
 
 // Scales and moves clip space so that one pixel of an image covers the whole viewport.
-[[nodiscard]] math::Mat4 pixelSelectionMatrix(math::Extent2D extent, std::uint32_t x, std::uint32_t y) noexcept
+// Maps a rectangle of pixels of the image (x, y, width, height) to the whole clip space, so that
+// drawing into a small image shows only that rectangle.
+[[nodiscard]] math::Mat4 regionSelectionMatrix(math::Extent2D extent, const std::array<std::uint32_t, 4>& rect) noexcept
 {
     const auto width = static_cast<float>(extent.width);
     const auto height = static_cast<float>(extent.height);
+    const float scaleX = width / static_cast<float>(rect[2]);
+    const float scaleY = height / static_cast<float>(rect[3]);
     // Vulkan normalized device coordinates put -1 at the top.
-    const float centerX = (static_cast<float>(x) + 0.5f) / width * 2.0f - 1.0f;
-    const float centerY = (static_cast<float>(y) + 0.5f) / height * 2.0f - 1.0f;
+    const float centerX = (static_cast<float>(rect[0]) + static_cast<float>(rect[2]) * 0.5f) / width * 2.0f - 1.0f;
+    const float centerY = (static_cast<float>(rect[1]) + static_cast<float>(rect[3]) * 0.5f) / height * 2.0f - 1.0f;
     math::Mat4 matrix{1.0f};
-    matrix[0][0] = width;
-    matrix[1][1] = height;
-    matrix[3][0] = -centerX * width;
-    matrix[3][1] = -centerY * height;
+    matrix[0][0] = scaleX;
+    matrix[1][1] = scaleY;
+    matrix[3][0] = -centerX * scaleX;
+    matrix[3][1] = -centerY * scaleY;
     return matrix;
 }
 
@@ -541,7 +545,13 @@ core::Result<void> VulkanRenderer::endFrame()
         // A pixel outside the image shows nothing, which needs no GPU work.
         if (pick->x < m_sceneExtent.width && pick->y < m_sceneExtent.height)
         {
+            const std::uint32_t width = std::clamp(pick->width, 1u, m_sceneExtent.width - pick->x);
+            const std::uint32_t height = std::clamp(pick->height, 1u, m_sceneExtent.height - pick->y);
+            const float scale = std::min(1.0f, static_cast<float>(maxPickSize) / static_cast<float>(std::max(width, height)));
             frame.pickRequest = pick->id;
+            frame.pickRect = {pick->x, pick->y, width, height};
+            frame.pickExtent = {std::max(1u, static_cast<std::uint32_t>(std::lround(static_cast<float>(width) * scale))),
+                                std::max(1u, static_cast<std::uint32_t>(std::lround(static_cast<float>(height) * scale)))};
         }
         else
         {
@@ -719,7 +729,7 @@ core::Result<void> VulkanRenderer::createFrameContexts()
         }
 
         core::Result<Buffer> pickReadback = Buffer::create(m_allocator, {
-                                                                             .size = sizeof(std::uint32_t),
+                                                                             .size = sizeof(std::uint32_t) * maxPickSize * maxPickSize,
                                                                              .usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                                                                              .hostVisible = true,
                                                                          });
@@ -1787,10 +1797,9 @@ void VulkanRenderer::writeSceneData(FrameContext& frame,
     scene.lights = frame.lights->deviceAddress();
     scene.clusters = frame.clusters->deviceAddress();
     scene.clusterLights = frame.clusterLights->deviceAddress();
-    if (m_world.pick)
+    if (frame.pickRequest)
     {
-        scene.pickViewProjection =
-            pixelSelectionMatrix(extent, m_world.pick->x, m_world.pick->y) * scene.viewProjection;
+        scene.pickViewProjection = regionSelectionMatrix(extent, frame.pickRect) * scene.viewProjection;
     }
 
     std::memcpy(frame.sceneData->mappedBytes().data(), &scene, sizeof(scene));
@@ -2121,14 +2130,14 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
                                                  : 0;
     const std::size_t pickColorIndex = pick ? create({
                                                   .format = pickFormat,
-                                                  .extent = {1, 1},
+                                                  .extent = frame.pickExtent,
                                                   .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
                                                            VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
                                               })
                                             : 0;
     const std::size_t pickDepthIndex = pick ? create({
                                                   .format = depthFormat,
-                                                  .extent = {1, 1},
+                                                  .extent = frame.pickExtent,
                                                   .usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
                                               })
                                             : 0;
@@ -2491,14 +2500,14 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
                           };
                           const VkRenderingInfo renderingInfo{
                               .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
-                              .renderArea = {.extent = {1, 1}},
+                              .renderArea = {.extent = {frame.pickExtent.width, frame.pickExtent.height}},
                               .layerCount = 1,
                               .colorAttachmentCount = 1,
                               .pColorAttachments = &colorAttachment,
                               .pDepthAttachment = &depthAttachment,
                           };
                           vkCmdBeginRendering(commands, &renderingInfo);
-                          setViewport(commands, {1, 1});
+                          setViewport(commands, frame.pickExtent);
                           drawMeshes(commands, sceneData, boneMatrices, MeshPass::Pick, 0, frameSlot);
                           vkCmdEndRendering(commands);
                       });
@@ -2506,7 +2515,7 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
                       [&, pickColor](VkCommandBuffer commands) {
                           const VkBufferImageCopy copy{
                               .imageSubresource = {.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .layerCount = 1},
-                              .imageExtent = {1, 1, 1},
+                              .imageExtent = {frame.pickExtent.width, frame.pickExtent.height, 1},
                           };
                           vkCmdCopyImageToBuffer(commands, graph.handle(pickColor), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
                                                  frame.pickReadback->handle(), 1, &copy);
@@ -2958,9 +2967,17 @@ void VulkanRenderer::readPickResult(FrameContext& frame)
     {
         return;
     }
-    std::uint32_t objectId = 0;
-    std::memcpy(&objectId, frame.pickReadback->mappedBytes().data(), sizeof(objectId));
-    m_pickResults.push_back({.request = *frame.pickRequest, .objectId = objectId});
+    const math::Extent2D extent = frame.pickExtent;
+    std::vector<std::uint32_t> ids(static_cast<std::size_t>(extent.width) * extent.height);
+    std::memcpy(ids.data(), frame.pickReadback->mappedBytes().data(), ids.size() * sizeof(std::uint32_t));
+    PickResult result{.request = *frame.pickRequest,
+                      .objectId = ids[static_cast<std::size_t>(extent.height / 2) * extent.width + extent.width / 2]};
+    std::ranges::sort(ids);
+    const auto [first, last] = std::ranges::unique(ids);
+    ids.erase(first, last);
+    std::erase(ids, 0u);
+    result.objectIds = std::move(ids);
+    m_pickResults.push_back(std::move(result));
     frame.pickRequest.reset();
 }
 

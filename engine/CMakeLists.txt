@@ -386,6 +386,7 @@ target_sources(devex_scene
         src/scene/ComponentRegistry.cpp
         src/scene/Components.cpp
         src/scene/DynamicComponent.cpp
+        src/scene/EntityCopy.cpp
         src/scene/FieldValue.cpp
         src/scene/ModelInstantiation.cpp
         src/scene/PhysicsComponents.cpp
@@ -405,6 +406,7 @@ target_sources(devex_scene
             include/devex/scene/Components.hpp
             include/devex/scene/DynamicComponent.hpp
             include/devex/scene/Entity.hpp
+            include/devex/scene/EntityCopy.hpp
             include/devex/scene/FieldValue.hpp
             include/devex/scene/ModelInstantiation.hpp
             include/devex/scene/PhysicsComponents.hpp
@@ -628,6 +630,7 @@ target_sources(devex_tools
         src/tools/EditorSession.cpp
         src/tools/EditorView.cpp
         src/tools/EditorView.hpp
+        src/tools/EntityEditing.cpp
         src/tools/ExportWindow.cpp
         src/tools/Gizmo.cpp
         src/tools/Gizmo.hpp
@@ -643,6 +646,8 @@ target_sources(devex_tools
         src/tools/ProjectManager.cpp
         src/tools/SceneCommands.cpp
         src/tools/SceneTabs.cpp
+        src/tools/Selection.cpp
+        src/tools/Selection.hpp
         src/tools/SceneTabs.hpp
         src/tools/StatisticsPanel.cpp
         src/tools/Theme.cpp

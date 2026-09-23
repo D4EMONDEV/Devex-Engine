@@ -7,6 +7,7 @@
 #include "Icons.hpp"
 #include "ProjectList.hpp"
 #include "SceneTabs.hpp"
+#include "Selection.hpp"
 #include "TextDocument.hpp"
 #include "Theme.hpp"
 #include "Widgets.hpp"
@@ -37,9 +38,11 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace devex::animation {
@@ -109,6 +112,43 @@ struct ProfilerView
     double visibleEnd = 0.0;
     asset::MemoryReport memory;
     double memoryRead = -1.0;
+};
+
+// How a click or a rectangle changes the selection: Shift adds, Ctrl adds or removes.
+enum class SelectMode : std::uint8_t
+{
+    Replace,
+    Add,
+    Toggle,
+};
+
+// What the GPU is asked about the pixels of the viewport: the entity under a click, those under a
+// rectangle, or the one under a material being dragged.
+struct PickQuery
+{
+    enum class Purpose : std::uint8_t
+    {
+        Click,
+        Rectangle,
+        MaterialTarget,
+    };
+
+    Purpose purpose = Purpose::Click;
+    // Viewport pixels; a click covers one.
+    math::Vec2 min{0.0f};
+    math::Vec2 max{0.0f};
+    SelectMode mode = SelectMode::Replace;
+    // Entities a rectangle found without the GPU: the icons of lights and cameras inside it.
+    std::vector<core::Uuid> icons;
+};
+
+// An entity moved with the one under the gizmo, as it was when the drag started.
+struct GizmoFollower
+{
+    core::Uuid entity;
+    scene::Transform local;
+    math::Mat4 world{1.0f};
+    math::Mat4 parentWorld{1.0f};
 };
 
 // What a click in the viewport does: select only, or also show a gizmo.
@@ -307,7 +347,21 @@ struct ToolsState
     CommandHistory suspendedHistory;
     LogBuffer log;
     FrameTimes frameTimes;
-    core::Uuid selection;
+    Selection selection;
+    // Entities hidden in the viewport, with their descendants; the game still shows them. Kept per
+    // scene tab and in the project's editor settings.
+    std::unordered_set<core::Uuid> hiddenEntities;
+    // The entity renamed in the scene tree, and the name being typed.
+    core::Uuid renamedEntity;
+    std::string renameBuffer;
+    bool focusRename = false;
+    // The entities in the order the scene tree last listed them, which Shift+click ranges follow,
+    // and the entity a range starts from.
+    std::vector<core::Uuid> hierarchyOrder;
+    core::Uuid rangeAnchor;
+    // A click on a row of a selection of several, applied on release unless the rows are dragged.
+    core::Uuid pendingRowClick;
+    bool hierarchyFocused = false;
 
     // The 2D screen: how much of the reference resolution it shows, and the drag under way.
     float interfaceZoom = 1.0f;
@@ -322,8 +376,12 @@ struct ToolsState
     // The entity that Save as Prefab turns into a prefab once its file is chosen.
     core::Uuid prefabEntity;
 
-    // Value of the field being edited when the edit began, recorded as one undo step at the end.
+    // Value of the field being edited when the edit began, recorded as one undo step at the end;
+    // with several entities selected, the value of each.
     serialization::TextValue fieldEditStart;
+    std::vector<std::pair<core::Uuid, serialization::TextValue>> fieldEditStarts;
+    // The text typed in a field whose value differs between the selected entities.
+    std::string mixedTextBuffer;
     std::string nameEditStart;
     std::string nameBuffer;
     core::Uuid nameBufferEntity;
@@ -411,9 +469,17 @@ struct ToolsState
     bool orbiting = false;
     bool panning = false;
     std::optional<math::Vec2> clickStart;
-    std::optional<math::Vec2> pickPixel;
+    // A click that moved became a rectangle, drawn until the button is released.
+    bool drawingRectangle = false;
+    // Sent with the next frame, then awaited until the renderer answers.
+    std::optional<PickQuery> pickQuery;
+    PickQuery awaitedQuery;
     std::uint64_t nextPickId = 1;
     std::uint64_t awaitedPick = 0;
+    // The other selected entities that the gizmo moves, rotates or scales.
+    std::vector<GizmoFollower> gizmoFollowers;
+    // The entity a material dragged over the viewport would go to, as the last pick found it.
+    core::Uuid materialTarget;
 };
 
 void drawHierarchyPanel(ToolsState& state, scene::Scene& scene);
@@ -521,8 +587,9 @@ void frameSelection(ToolsState& state, const scene::Scene& scene);
 void drawCreateEntityMenu(ToolsState& state, core::Uuid parent);
 
 // A combo listing the assets of a type (any type without one), which also accepts dropped assets.
-// Returns whether the value changed.
-bool drawAssetPicker(ToolsState& state, const char* id, std::optional<asset::AssetType> type, asset::AssetId& value);
+// Returns whether the value changed. A mixed value shows a dash.
+bool drawAssetPicker(ToolsState& state, const char* id, std::optional<asset::AssetType> type, asset::AssetId& value,
+                     bool mixed = false);
 
 // Makes the last item a drag source for the asset.
 void dragAsset(asset::AssetId id, asset::AssetType type, const std::string& label);
@@ -549,6 +616,37 @@ void showSaveAsPrefabDialog(ToolsState& state, const scene::Scene& scene, core::
 
 // Queues the creation of an entity under parent (nil for a root) and selects it.
 void requestCreateEntity(ToolsState& state, core::Uuid parent);
+
+// The selection copied to the clipboard of the system, cut, pasted beside the active entity,
+// duplicated beside itself or deleted, each as one undo step. Pasted and duplicated entities are
+// selected, and renamed when a sibling has their name.
+void copySelection(ToolsState& state, const scene::Scene& scene);
+void cutSelection(ToolsState& state, scene::Scene& scene);
+void pasteEntities(ToolsState& state, scene::Scene& scene);
+void duplicateSelection(ToolsState& state, scene::Scene& scene);
+void deleteSelection(ToolsState& state, scene::Scene& scene);
+void selectAll(ToolsState& state, const scene::Scene& scene);
+// Whether the selection holds something that deleting or cutting may remove: the entities of a
+// prefab instance stay with it.
+[[nodiscard]] bool canDeleteSelection(const ToolsState& state, const scene::Scene& scene);
+// A name for an entity under parent that none of its children has, nor any of the names taken:
+// "Crate 3" becomes "Crate 4", "Crate" becomes "Crate 2".
+[[nodiscard]] std::string uniqueChildName(const scene::Scene& scene, scene::Entity parent, std::string_view name,
+                                          const std::vector<std::string>& taken = {});
+// Changes the selection as a click or a rectangle does.
+void selectEntities(ToolsState& state, std::span<const core::Uuid> entities, SelectMode mode);
+// Starts renaming the entity in the scene tree.
+void startRename(ToolsState& state, core::Uuid entity);
+
+// Whether the entity or one of its ancestors is hidden in the viewport.
+[[nodiscard]] bool isHidden(const ToolsState& state, const scene::Scene& scene, scene::Entity entity);
+// Hides the selected entities, or shows them again when all of them are hidden.
+void toggleSelectionHidden(ToolsState& state, const scene::Scene& scene);
+// The items of the Edit menu that act on the selected entities.
+void drawEntityEditMenuItems(ToolsState& state, scene::Scene& scene);
+// The shortcuts that act on the selected entities, while the scene tree or the viewport has the
+// keyboard: cut, copy, paste, duplicate, rename, hide, select all and delete.
+void handleEntityShortcuts(ToolsState& state, scene::Scene& scene);
 
 // "vertical_fov" becomes "Vertical fov".
 [[nodiscard]] std::string displayName(std::string_view identifier);

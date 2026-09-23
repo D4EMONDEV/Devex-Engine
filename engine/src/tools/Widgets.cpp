@@ -215,7 +215,7 @@ void endProperties()
     ImGui::EndTable();
 }
 
-bool dragVector(const char* id, float* values, int count, float speed, const char* format)
+bool dragVector(const char* id, float* values, int count, float speed, const char* format, unsigned mixed)
 {
     static constexpr std::array<const char*, 4> letters{"x", "y", "z", "w"};
     const ThemeColors& colors = themeColors();
@@ -243,7 +243,8 @@ bool dragVector(const char* id, float* values, int count, float speed, const cha
         ImGui::PopStyleColor();
         ImGui::SameLine(0.0f, 3.0f);
         ImGui::SetNextItemWidth(std::max(1.0f, width - letterWidth));
-        changed |= ImGui::DragFloat("##value", &values[index], speed, 0.0f, 0.0f, format);
+        const bool differs = (mixed & (1u << static_cast<unsigned>(index))) != 0;
+        changed |= ImGui::DragFloat("##value", &values[index], speed, 0.0f, 0.0f, differs ? mixedValue : format);
         ImGui::PopID();
     }
     ImGui::EndGroup();

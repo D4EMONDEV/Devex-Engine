@@ -64,7 +64,8 @@ constexpr std::array builtinMeshes{
 
 } // namespace
 
-bool drawAssetPicker(ToolsState& state, const char* id, std::optional<asset::AssetType> type, asset::AssetId& value)
+bool drawAssetPicker(ToolsState& state, const char* id, std::optional<asset::AssetType> type, asset::AssetId& value,
+                     bool mixed)
 {
     bool changed = false;
     const auto choose = [&](const char* name, asset::AssetId candidate) {
@@ -77,7 +78,7 @@ bool drawAssetPicker(ToolsState& state, const char* id, std::optional<asset::Ass
         ImGui::PopID();
     };
 
-    const std::string preview = assetLabel(state, value);
+    const std::string preview = mixed ? std::string(mixedValue) : assetLabel(state, value);
     if (beginCombo(id, preview.c_str(), ImGuiComboFlags_HeightLarge))
     {
         choose("(none)", asset::AssetId{});
@@ -111,7 +112,7 @@ bool drawAssetPicker(ToolsState& state, const char* id, std::optional<asset::Ass
 namespace {
 
 // A combo of the named collision layers of the project.
-bool drawLayerPicker(const ToolsState& state, const char* id, std::uint32_t& layer)
+bool drawLayerPicker(const ToolsState& state, const char* id, std::uint32_t& layer, bool mixed)
 {
     const asset::PhysicsSettings settings = state.database != nullptr ? state.database->project().physics : asset::PhysicsSettings{};
     const auto label = [&](std::uint32_t index) {
@@ -119,7 +120,7 @@ bool drawLayerPicker(const ToolsState& state, const char* id, std::uint32_t& lay
         return name.empty() ? std::format("{}: (unused)", index) : std::format("{}: {}", index, name);
     };
     bool changed = false;
-    if (beginCombo(id, label(layer).c_str()))
+    if (beginCombo(id, mixed ? mixedValue : label(layer).c_str()))
     {
         for (std::uint32_t index = 0; index < settings.layerNames.size(); ++index)
         {
@@ -140,7 +141,7 @@ bool drawLayerPicker(const ToolsState& state, const char* id, std::uint32_t& lay
     return changed;
 }
 
-bool drawAudioGroupPicker(const ToolsState& state, const char* id, std::uint32_t& group)
+bool drawAudioGroupPicker(const ToolsState& state, const char* id, std::uint32_t& group, bool mixed)
 {
     const asset::AudioSettings settings = state.database != nullptr ? state.database->project().audio : asset::AudioSettings{};
     const auto label = [&](std::uint32_t index) {
@@ -148,7 +149,7 @@ bool drawAudioGroupPicker(const ToolsState& state, const char* id, std::uint32_t
         return name.empty() ? std::format("{}: (unused)", index) : std::format("{}: {}", index, name);
     };
     bool changed = false;
-    if (beginCombo(id, label(group).c_str()))
+    if (beginCombo(id, mixed ? mixedValue : label(group).c_str()))
     {
         for (std::uint32_t index = 0; index < settings.groupNames.size(); ++index)
         {
@@ -190,10 +191,13 @@ bool chooseEntities(const scene::Scene& scene, scene::Entity entity, int depth, 
 }
 
 // An entity of the scene, chosen from a menu or dropped from the scene tree.
-bool drawEntityPicker(const scene::Scene& scene, const char* id, scene::EntityRef& value)
+bool drawEntityPicker(const scene::Scene& scene, const char* id, scene::EntityRef& value, bool mixed)
 {
     const scene::Entity target = scene.resolve(value);
-    const std::string preview = value.isNil() ? "(none)" : target.isValid() ? scene.name(target) : "(missing)";
+    const std::string preview = mixed          ? std::string(mixedValue)
+                                : value.isNil() ? "(none)"
+                                : target.isValid() ? scene.name(target)
+                                                   : "(missing)";
     bool changed = false;
     if (beginCombo(id, preview.c_str(), ImGuiComboFlags_HeightLarge))
     {
@@ -229,61 +233,81 @@ bool drawEntityPicker(const scene::Scene& scene, const char* id, scene::EntityRe
     return changed;
 }
 
-// Draws the widget for a field value and reports whether it changed the value this frame.
+// Draws the widget for a field value and reports whether it changed the value this frame. With
+// several entities selected, a mixed value shows a dash, and so do the components of a vector whose
+// bit is set in mixedComponents.
 bool drawValueWidget(ToolsState& state, const scene::Scene& scene, const char* id, const reflection::FieldInfo& field,
-                     void* address)
+                     void* address, bool mixed = false, unsigned mixedComponents = 0)
 {
     switch (field.kind)
     {
-    case ValueKind::Bool:
-        return ImGui::Checkbox(id, static_cast<bool*>(address));
+    case ValueKind::Bool: {
+        ImGui::PushItemFlag(ImGuiItemFlags_MixedValue, mixed);
+        const bool changed = ImGui::Checkbox(id, static_cast<bool*>(address));
+        ImGui::PopItemFlag();
+        return changed;
+    }
     case ValueKind::Int32:
-        return ImGui::DragScalar(id, ImGuiDataType_S32, address, 0.1f);
+        return ImGui::DragScalar(id, ImGuiDataType_S32, address, 0.1f, nullptr, nullptr, mixed ? mixedValue : "%d");
     case ValueKind::UInt32:
         if (field.physicsLayer)
         {
-            return drawLayerPicker(state, id, *static_cast<std::uint32_t*>(address));
+            return drawLayerPicker(state, id, *static_cast<std::uint32_t*>(address), mixed);
         }
         if (field.audioGroup)
         {
-            return drawAudioGroupPicker(state, id, *static_cast<std::uint32_t*>(address));
+            return drawAudioGroupPicker(state, id, *static_cast<std::uint32_t*>(address), mixed);
         }
-        return ImGui::DragScalar(id, ImGuiDataType_U32, address, 0.1f);
+        return ImGui::DragScalar(id, ImGuiDataType_U32, address, 0.1f, nullptr, nullptr, mixed ? mixedValue : "%u");
     case ValueKind::Float:
         if (field.angle)
         {
             float degrees = math::degrees(*static_cast<float*>(address));
-            const bool changed = ImGui::DragFloat(id, &degrees, 0.5f, 0.0f, 0.0f, "%.1f°");
+            const bool changed = ImGui::DragFloat(id, &degrees, 0.5f, 0.0f, 0.0f, mixed ? mixedValue : "%.1f°");
             if (changed)
             {
                 *static_cast<float*>(address) = math::radians(degrees);
             }
             return changed;
         }
-        return ImGui::DragFloat(id, static_cast<float*>(address), 0.01f, 0.0f, 0.0f, "%.3f");
+        return ImGui::DragFloat(id, static_cast<float*>(address), 0.01f, 0.0f, 0.0f, mixed ? mixedValue : "%.3f");
     case ValueKind::String:
+        if (mixed)
+        {
+            // Empty with a dash until something is typed, which then goes to every entity.
+            if (ImGui::GetActiveID() != ImGui::GetID(id))
+            {
+                state.mixedTextBuffer.clear();
+            }
+            if (ImGui::InputTextWithHint(id, mixedValue, &state.mixedTextBuffer))
+            {
+                *static_cast<std::string*>(address) = state.mixedTextBuffer;
+                return true;
+            }
+            return false;
+        }
         return ImGui::InputText(id, static_cast<std::string*>(address));
     case ValueKind::Vec2:
-        return dragVector(id, &(*static_cast<math::Vec2*>(address))[0], 2, 0.01f);
+        return dragVector(id, &(*static_cast<math::Vec2*>(address))[0], 2, 0.01f, "%.3f", mixedComponents);
     case ValueKind::Vec3:
         if (field.color)
         {
             return ImGui::ColorEdit3(id, &(*static_cast<math::Vec3*>(address))[0],
                                      ImGuiColorEditFlags_Float | ImGuiColorEditFlags_HDR);
         }
-        return dragVector(id, &(*static_cast<math::Vec3*>(address))[0], 3, 0.01f);
+        return dragVector(id, &(*static_cast<math::Vec3*>(address))[0], 3, 0.01f, "%.3f", mixedComponents);
     case ValueKind::Vec4:
         if (field.color)
         {
             return ImGui::ColorEdit4(id, &(*static_cast<math::Vec4*>(address))[0],
                                      ImGuiColorEditFlags_Float | ImGuiColorEditFlags_HDR);
         }
-        return dragVector(id, &(*static_cast<math::Vec4*>(address))[0], 4, 0.01f);
+        return dragVector(id, &(*static_cast<math::Vec4*>(address))[0], 4, 0.01f, "%.3f", mixedComponents);
     case ValueKind::Quat: {
         auto& rotation = *static_cast<math::Quat*>(address);
         const ImGuiID widget = ImGui::GetID(id);
         math::Vec3 degrees = state.eulerEditId == widget ? state.eulerEditDegrees : math::degrees(math::eulerAngles(rotation));
-        const bool changed = dragVector(id, &degrees[0], 3, 0.5f, "%.1f°");
+        const bool changed = dragVector(id, &degrees[0], 3, 0.5f, "%.1f°", mixedComponents);
         if (changed)
         {
             rotation = math::quatFromEulerAngles(math::radians(degrees));
@@ -307,12 +331,13 @@ bool drawValueWidget(ToolsState& state, const scene::Scene& scene, const char* i
     }
     case ValueKind::AssetId:
         return drawAssetPicker(state, id, field.assetType.empty() ? std::nullopt : asset::parseAssetType(field.assetType),
-                               *static_cast<asset::AssetId*>(address));
+                               *static_cast<asset::AssetId*>(address), mixed);
     case ValueKind::Enum: {
         const std::uint32_t current = reflection::readEnumIndex(field, address);
         bool changed = false;
-        const std::string preview =
-            current < field.enumNames.size() ? displayName(field.enumNames[current]) : std::to_string(current);
+        const std::string preview = mixed ? std::string(mixedValue)
+                                    : current < field.enumNames.size() ? displayName(field.enumNames[current])
+                                                                        : std::to_string(current);
         if (beginCombo(id, preview.c_str()))
         {
             for (std::uint32_t index = 0; index < field.enumNames.size(); ++index)
@@ -328,7 +353,7 @@ bool drawValueWidget(ToolsState& state, const scene::Scene& scene, const char* i
         return changed;
     }
     case ValueKind::Entity:
-        return drawEntityPicker(scene, id, *static_cast<scene::EntityRef*>(address));
+        return drawEntityPicker(scene, id, *static_cast<scene::EntityRef*>(address), mixed);
     }
     return false;
 }
@@ -627,6 +652,317 @@ void drawPrefabSection(ToolsState& state, scene::Scene& scene, scene::Entity ent
                             }).empty();
 }
 
+// Whether the entity has the component from its prefab, which cannot remove it.
+[[nodiscard]] bool hasFromPrefab(const scene::Scene& scene, scene::Entity entity, const scene::ComponentType& type)
+{
+    const scene::Entity instance = scene::owningPrefabInstance(scene, entity);
+    if (!instance.isValid() || !scene.has<scene::PrefabEntity>(entity) || !scene.get<scene::PrefabInstance>(instance).resolved)
+    {
+        return false;
+    }
+    const std::shared_ptr<const scene::Scene> base =
+        scene::prefabBase(scene.get<scene::PrefabInstance>(instance).prefab, scene.uuid(instance));
+    const scene::Entity original = base != nullptr ? base->findEntity(scene.uuid(entity)) : scene::Entity{};
+    return original.isValid() && type.find(*base, original) != nullptr;
+}
+
+// Which components of a vector differ between the value of the active entity and the others.
+[[nodiscard]] unsigned mixedComponents(const reflection::FieldInfo& field, const void* active,
+                                       const std::vector<const void*>& others)
+{
+    const auto components = [&field](const void* address) -> std::array<float, 4> {
+        switch (field.kind)
+        {
+        case ValueKind::Vec2: {
+            const auto& value = *static_cast<const math::Vec2*>(address);
+            return {value.x, value.y, 0.0f, 0.0f};
+        }
+        case ValueKind::Vec3: {
+            const auto& value = *static_cast<const math::Vec3*>(address);
+            return {value.x, value.y, value.z, 0.0f};
+        }
+        case ValueKind::Vec4: {
+            const auto& value = *static_cast<const math::Vec4*>(address);
+            return {value.x, value.y, value.z, value.w};
+        }
+        case ValueKind::Quat: {
+            const math::Vec3 degrees = math::degrees(math::eulerAngles(*static_cast<const math::Quat*>(address)));
+            return {degrees.x, degrees.y, degrees.z, 0.0f};
+        }
+        default:
+            return {};
+        }
+    };
+    const std::array<float, 4> reference = components(active);
+    unsigned mixed = 0;
+    for (const void* other : others)
+    {
+        const std::array<float, 4> values = components(other);
+        for (unsigned index = 0; index < 4; ++index)
+        {
+            if (std::abs(values[index] - reference[index]) > 1e-4f)
+            {
+                mixed |= 1u << index;
+            }
+        }
+    }
+    return mixed;
+}
+
+// Gives the other entity the components of the vector that the edit of the active one changed,
+// keeping its own for the others.
+void copyChangedComponents(const reflection::FieldInfo& field, const void* before, const void* after, void* other)
+{
+    const auto merge = [](auto& target, const auto& from, const auto& to, int count) {
+        for (int index = 0; index < count; ++index)
+        {
+            if (from[index] != to[index])
+            {
+                target[index] = to[index];
+            }
+        }
+    };
+    switch (field.kind)
+    {
+    case ValueKind::Vec2:
+        merge(*static_cast<math::Vec2*>(other), *static_cast<const math::Vec2*>(before),
+              *static_cast<const math::Vec2*>(after), 2);
+        break;
+    case ValueKind::Vec3:
+        merge(*static_cast<math::Vec3*>(other), *static_cast<const math::Vec3*>(before),
+              *static_cast<const math::Vec3*>(after), 3);
+        break;
+    case ValueKind::Vec4:
+        merge(*static_cast<math::Vec4*>(other), *static_cast<const math::Vec4*>(before),
+              *static_cast<const math::Vec4*>(after), 4);
+        break;
+    case ValueKind::Quat: {
+        // Angles, as the inspector shows them.
+        const math::Vec3 from = math::degrees(math::eulerAngles(*static_cast<const math::Quat*>(before)));
+        const math::Vec3 to = math::degrees(math::eulerAngles(*static_cast<const math::Quat*>(after)));
+        auto& rotation = *static_cast<math::Quat*>(other);
+        math::Vec3 degrees = math::degrees(math::eulerAngles(rotation));
+        for (int index = 0; index < 3; ++index)
+        {
+            if (std::abs(from[index] - to[index]) > 1e-4f)
+            {
+                degrees[index] = to[index];
+            }
+        }
+        rotation = math::quatFromEulerAngles(math::radians(degrees));
+        break;
+    }
+    default:
+        break;
+    }
+}
+
+[[nodiscard]] bool isVectorField(const reflection::FieldInfo& field) noexcept
+{
+    return !field.color && (field.kind == ValueKind::Vec2 || field.kind == ValueKind::Vec3 ||
+                            field.kind == ValueKind::Vec4 || field.kind == ValueKind::Quat);
+}
+
+// A field of a component every selected entity has. It shows the value of the active entity, or a
+// dash where the others differ; a change goes to all of them, one undo step for the whole edit.
+void drawSharedField(ToolsState& state, scene::Scene& scene, const std::vector<scene::Entity>& entities,
+                     const scene::ComponentType& type, const reflection::FieldInfo& field)
+{
+    const scene::Entity active = entities.back();
+    void* const address = field.address(const_cast<void*>(type.find(scene, active)));
+    const std::string label = displayName(field.name);
+    propertyName(label.c_str());
+    if (field.list != nullptr || field.kind == ValueKind::Uuid)
+    {
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextDisabled("%s", field.list != nullptr ? "One entity at a time" : mixedValue);
+        return;
+    }
+    // The values before this frame's change.
+    std::vector<serialization::TextValue> before;
+    std::vector<const void*> others;
+    for (const scene::Entity entity : entities)
+    {
+        const void* const value = field.address(type.find(scene, entity));
+        before.push_back(scene::writeFieldValue(field, value));
+        if (entity != active)
+        {
+            others.push_back(value);
+        }
+    }
+    const bool mixed = std::ranges::any_of(before, [&](const serialization::TextValue& value) { return value != before.back(); });
+    const unsigned components = isVectorField(field) ? mixedComponents(field, address, others) : 0;
+
+    const std::string id = "##" + std::string(field.name);
+    const bool changed = drawValueWidget(state, scene, id.c_str(), field, address, mixed && !isVectorField(field), components);
+    if (ImGui::IsItemActivated())
+    {
+        state.fieldEditStarts.clear();
+        for (std::size_t index = 0; index < entities.size(); ++index)
+        {
+            state.fieldEditStarts.emplace_back(scene.uuid(entities[index]), before[index]);
+        }
+    }
+    if (changed)
+    {
+        // The active entity took the change; the others follow, a vector only in the components
+        // that changed.
+        alignas(16) std::array<std::byte, 64> previous{};
+        const bool vector = isVectorField(field);
+        if (vector)
+        {
+            static_cast<void>(scene::readFieldValue(field, before.back(), previous.data()));
+        }
+        const serialization::TextValue after = scene::writeFieldValue(field, address);
+        for (const scene::Entity entity : entities)
+        {
+            if (entity == active)
+            {
+                continue;
+            }
+            void* const other = field.address(const_cast<void*>(type.find(scene, entity)));
+            if (vector)
+            {
+                copyChangedComponents(field, previous.data(), address, other);
+            }
+            else
+            {
+                static_cast<void>(scene::readFieldValue(field, after, other));
+            }
+        }
+    }
+    const bool oneClick = isOneClickEdit(field);
+    if (ImGui::IsItemDeactivatedAfterEdit() || (changed && oneClick))
+    {
+        std::vector<std::unique_ptr<Command>> commands;
+        for (std::size_t index = 0; index < entities.size(); ++index)
+        {
+            const core::Uuid uuid = scene.uuid(entities[index]);
+            serialization::TextValue start = before[index];
+            if (!oneClick)
+            {
+                const auto found = std::ranges::find(state.fieldEditStarts, uuid, &std::pair<core::Uuid, serialization::TextValue>::first);
+                if (found != state.fieldEditStarts.end())
+                {
+                    start = found->second;
+                }
+            }
+            serialization::TextValue end = scene::writeFieldValue(field, field.address(type.find(scene, entities[index])));
+            if (start != end)
+            {
+                commands.push_back(makeSetFieldCommand(uuid, std::string(type.name()), field.name, std::move(start), std::move(end)));
+            }
+        }
+        const std::size_t count = commands.size();
+        if (count == 1)
+        {
+            state.history.recordApplied(std::move(commands.front()));
+        }
+        else if (count > 1)
+        {
+            state.history.recordApplied(makeCompositeCommand(std::move(commands), std::format("Edit {} of {} entities", label, count)));
+        }
+        state.fieldEditStarts.clear();
+    }
+}
+
+// The inspector of several entities: the components they all have, and components to add to all.
+void drawSharedInspector(ToolsState& state, scene::Scene& scene, const std::vector<scene::Entity>& entities)
+{
+    const scene::Entity active = entities.back();
+    const EntityIcon icon = entityIcon(scene, active);
+    ImGui::AlignTextToFramePadding();
+    iconLabel(icon.icon, icon.color);
+    boldText(std::format("{} entities", entities.size()).c_str());
+    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+    ImGui::TextWrapped("A dash marks values that differ; changes apply to all of them.");
+    ImGui::PopStyleColor();
+    ImGui::Spacing();
+
+    for (const scene::ComponentType& type : scene::componentRegistry().types())
+    {
+        if (!std::ranges::all_of(entities, [&](scene::Entity entity) { return type.find(scene, entity) != nullptr; }))
+        {
+            continue;
+        }
+        const std::string name(type.name());
+        ImGui::PushID(name.c_str());
+        bool removed = false;
+        const bool fromPrefab = std::ranges::any_of(entities, [&](scene::Entity entity) { return hasFromPrefab(scene, entity, type); });
+        if (componentHeader(name.c_str(), componentIcon(name), true, &removed, fromPrefab) && beginProperties("fields"))
+        {
+            for (const reflection::FieldInfo& field : type.type->fields)
+            {
+                drawSharedField(state, scene, entities, type, field);
+            }
+            endProperties();
+        }
+        if (removed)
+        {
+            std::vector<std::unique_ptr<Command>> commands;
+            for (const scene::Entity entity : entities)
+            {
+                commands.push_back(makeRemoveComponentCommand(scene.uuid(entity), name));
+            }
+            state.pendingCommand = makeCompositeCommand(std::move(commands), std::format("Remove {} from {} entities", name, entities.size()));
+        }
+        ImGui::Spacing();
+        ImGui::PopID();
+    }
+
+    // Components that some of them lack, added to those.
+    static std::string filter;
+    ImGui::Spacing();
+    if (labelButton(icons::Plus, "Add Component", -FLT_MIN))
+    {
+        filter.clear();
+        ImGui::OpenPopup("add component");
+    }
+    ImGui::SetNextWindowSize(ImVec2(ImGui::GetItemRectSize().x, 0.0f));
+    if (ImGui::BeginPopup("add component"))
+    {
+        if (ImGui::IsWindowAppearing())
+        {
+            ImGui::SetKeyboardFocusHere();
+        }
+        searchField("##filter", filter, "Search Components");
+        for (const scene::ComponentType& type : scene::componentRegistry().types())
+        {
+            const std::string name(type.name());
+            std::vector<core::Uuid> lacking;
+            for (const scene::Entity entity : entities)
+            {
+                if (type.find(scene, entity) == nullptr)
+                {
+                    lacking.push_back(scene.uuid(entity));
+                }
+            }
+            if (lacking.empty() || !containsIgnoringCase(name, filter))
+            {
+                continue;
+            }
+            const EntityIcon componentIconOf = componentIcon(name);
+            const ImVec2 position = ImGui::GetCursorScreenPos();
+            const std::string label = std::format("      {}", name);
+            if (ImGui::Selectable(label.c_str()))
+            {
+                std::vector<std::unique_ptr<Command>> commands;
+                for (const core::Uuid uuid : lacking)
+                {
+                    commands.push_back(makeAddComponentCommand(uuid, name));
+                }
+                state.pendingCommand = makeCompositeCommand(std::move(commands), std::format("Add {} to {} entities", name, lacking.size()));
+            }
+            if (lacking.size() < entities.size())
+            {
+                ImGui::SetItemTooltip("Added to the %zu that lack it", lacking.size());
+            }
+            ImGui::GetWindowDrawList()->AddText(position, uiColorU32(componentIconOf.color), componentIconOf.icon.c_str());
+        }
+        ImGui::EndPopup();
+    }
+}
+
 void drawAddComponent(ToolsState& state, scene::Scene& scene, scene::Entity entity, core::Uuid uuid)
 {
     static std::string filter;
@@ -757,11 +1093,29 @@ void drawInspectorPanel(ToolsState& state, scene::Scene& scene)
 {
     if (ImGui::Begin(inspectorWindow))
     {
-        const scene::Entity entity = scene.findEntity(state.selection);
+        const scene::Entity entity = scene.findEntity(state.selection.active());
         if (entity.isValid())
         {
             state.selectedCode.clear();
             state.selectedAsset = {};
+        }
+        // Several entities: what they share.
+        if (state.selection.size() > 1)
+        {
+            std::vector<scene::Entity> entities;
+            for (const core::Uuid selected : state.selection.entities())
+            {
+                if (const scene::Entity found = scene.findEntity(selected); found.isValid())
+                {
+                    entities.push_back(found);
+                }
+            }
+            if (entities.size() > 1)
+            {
+                drawSharedInspector(state, scene, entities);
+                ImGui::End();
+                return;
+            }
         }
         // A clip plays while its inspector shows.
         if (state.previewedClip.isValid() && state.previewedClip != state.selectedAsset)
@@ -790,7 +1144,7 @@ void drawInspectorPanel(ToolsState& state, scene::Scene& scene)
             return;
         }
 
-        const core::Uuid uuid = state.selection;
+        const core::Uuid uuid = state.selection.active();
 
         // The entity as its prefab makes it, which overridden values differ from.
         const scene::Entity instance = scene::owningPrefabInstance(scene, entity);

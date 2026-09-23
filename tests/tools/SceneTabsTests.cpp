@@ -7,6 +7,7 @@
 
 #include <filesystem>
 #include <string>
+#include <unordered_set>
 
 using devex::tools::detail::ActiveDocument;
 using devex::tools::detail::SceneDocument;
@@ -21,12 +22,13 @@ struct Live
     devex::scene::Scene scene;
     devex::tools::CommandHistory history;
     std::uint64_t savedState = 0;
-    devex::core::Uuid selection;
+    devex::tools::detail::Selection selection;
     devex::tools::detail::EditorCamera camera;
+    std::unordered_set<devex::core::Uuid> hidden;
 
     [[nodiscard]] ActiveDocument document() noexcept
     {
-        return {path, scene, history, savedState, selection, camera};
+        return {path, scene, history, savedState, selection, camera, hidden};
     }
 };
 
@@ -62,7 +64,8 @@ TEST_CASE("Scene tabs swap their documents with the live one", "[tools][tabs]")
     // An edit and a selection stay with their scene.
     const devex::core::Uuid first = live.scene.uuid(live.scene.firstRoot());
     REQUIRE(live.history.execute(live.scene, devex::tools::makeRenameCommand(first, "level0", "Hero")));
-    live.selection = first;
+    live.selection.set(first);
+    live.hidden.insert(first);
     live.camera.set({1.0f, 2.0f, 3.0f}, 10.0f, -20.0f, 5.0f, 4.0f);
     CHECK(tabs.isModified(level, live.document()));
     CHECK_FALSE(tabs.isModified(menu, live.document()));
@@ -70,7 +73,8 @@ TEST_CASE("Scene tabs swap their documents with the live one", "[tools][tabs]")
     tabs.activate(menu, live.document());
     CHECK(live.scene.entityCount() == 1);
     CHECK(live.scene.name(live.scene.firstRoot()) == "menu0");
-    CHECK(live.selection.isNil());
+    CHECK(live.selection.empty());
+    CHECK(live.hidden.empty());
     CHECK(live.history.nextUndo() == nullptr);
     CHECK(tabs.isModified(level, live.document()));
     CHECK(tabs.background(level).scene.entityCount() == 3);
@@ -78,7 +82,8 @@ TEST_CASE("Scene tabs swap their documents with the live one", "[tools][tabs]")
     tabs.activate(level, live.document());
     CHECK(live.scene.entityCount() == 3);
     CHECK(live.scene.name(live.scene.firstRoot()) == "Hero");
-    CHECK(live.selection == first);
+    CHECK(live.selection.active() == first);
+    CHECK(live.hidden.contains(first));
     CHECK(live.camera.pivot() == devex::math::Vec3{1.0f, 2.0f, 3.0f});
     REQUIRE(live.history.nextUndo() != nullptr);
     REQUIRE(live.history.undo(live.scene));
