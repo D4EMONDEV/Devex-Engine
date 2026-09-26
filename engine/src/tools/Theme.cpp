@@ -114,7 +114,7 @@ bool g_linearColors = true;
 
 [[nodiscard]] bool isEngineComponent(std::string_view name) noexcept
 {
-    constexpr std::array<std::string_view, 29> engineComponents{
+    constexpr std::array<std::string_view, 30> engineComponents{
         "Transform",       "MeshRenderer",        "Camera",       "DirectionalLight",
         "PointLight",      "SpotLight",           "Environment",  "RigidBody",
         "BoxCollider",     "SphereCollider",      "CapsuleCollider", "CylinderCollider",
@@ -122,7 +122,7 @@ bool g_linearColors = true;
         "SkinnedMeshRenderer", "Animator",        "Canvas",       "UiRect",
         "UiImage",         "UiText",              "UiButton",     "UiLayout",
         "UiInput",         "UiScroll",            "UiSlider",     "UiToggle",
-        "UiBinding"};
+        "UiBinding",       "Tweener"};
     return std::ranges::find(engineComponents, name) != engineComponents.end();
 }
 
@@ -663,6 +663,10 @@ EntityIcon componentIcon(std::string_view componentName)
     if (componentName == "Animator")
     {
         return {icons::Film, colors.animation};
+    }
+    if (componentName == "Tweener")
+    {
+        return {icons::Activity, colors.animation};
     }
     if (componentName == "SkinnedMeshRenderer")
     {

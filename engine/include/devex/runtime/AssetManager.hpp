@@ -7,6 +7,7 @@
 #include <devex/asset/FontData.hpp>
 #include <devex/asset/MaterialData.hpp>
 #include <devex/asset/ModelData.hpp>
+#include <devex/asset/CurveData.hpp>
 #include <devex/asset/ThemeData.hpp>
 #include <devex/asset/AssetSource.hpp>
 #include <devex/asset/import/AssetDatabase.hpp>
@@ -125,6 +126,8 @@ public:
 
     // The look an interface follows. Themes need no renderer: they are read as they are written.
     [[nodiscard]] std::shared_ptr<const asset::ThemeData> theme(asset::AssetId id);
+    // A curve that eases tweens, read once and shared; null when it cannot be loaded.
+    [[nodiscard]] std::shared_ptr<const asset::CurveData> curve(asset::AssetId id);
 
     // What the loaded assets take, by type and for the heaviest ones. Read when asked: the
     // profiler of the editor asks a few times a second at most.
@@ -222,6 +225,7 @@ private:
     std::unordered_map<asset::AssetId, std::shared_ptr<const audio::Clip>> m_audioClips;
     std::unordered_map<asset::AssetId, std::shared_ptr<const animation::Clip>> m_animationClips;
     std::unordered_map<asset::AssetId, std::shared_ptr<const asset::ThemeData>> m_themes;
+    std::unordered_map<asset::AssetId, std::shared_ptr<const asset::CurveData>> m_curves;
     std::unordered_map<asset::AssetId, LoadedFont> m_fonts;
     // Assets whose loading failed, retried once an import changes them.
     std::unordered_set<asset::AssetId> m_failed;

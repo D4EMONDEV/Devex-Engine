@@ -1,6 +1,7 @@
 #pragma once
 
 #include <devex/animation/AnimationWorld.hpp>
+#include <devex/animation/TweenWorld.hpp>
 #include <devex/audio/AudioWorld.hpp>
 #include <devex/core/Time.hpp>
 #include <devex/physics/PhysicsWorld.hpp>
@@ -26,12 +27,15 @@
 // loses nothing.
 namespace devex::runtime {
 
+class CoroutineScheduler;
+
 // Changes whenever game modules must be rebuilt to load: modules built for another version are
 // refused. 9: ComponentType gained findMutable, which modules fill in when they register a type.
 // 10: SystemContext gained the loading of scenes in the background.
 // 11: SystemContext gained the input actions of the project.
 // 12: SystemContext gained the saves and the settings of the player.
-inline constexpr std::uint32_t gameApiVersion = 12;
+// 13: SystemContext gained the tweens and the coroutines.
+inline constexpr std::uint32_t gameApiVersion = 13;
 
 enum class SystemPhase : std::uint8_t
 {
@@ -68,6 +72,10 @@ struct SystemContext
     // The animations of the scene: the clips its Animator components play. Null when the
     // application runs without animation.
     animation::AnimationWorld* animation = nullptr;
+    // The tweens of the scene: those code plays and those of its Tweener components. Null likewise.
+    animation::TweenWorld* tweens = nullptr;
+    // The coroutines of the game code, which runtime/Coroutine.hpp describes. Null outside a game.
+    CoroutineScheduler* coroutines = nullptr;
     // The interface of the scene: its canvases, laid out every frame, and the buttons they
     // answered this frame. Null when the application runs without an interface.
     ui::UiWorld* ui = nullptr;

@@ -31,13 +31,13 @@ Le détail, l'architecture des modules et les jalons sont dans
   références d'entités comprises ;
 - `Devex::Serialization` : format texte commun des fichiers `.dvx*`, flux binaires ;
 - `Devex::Asset` : `AssetId`, maillages (avec leur boîte englobante), textures, matériaux, modèles,
-  clips audio, animations, polices (avec leur crénage) et thèmes d'interface, fichiers
+  clips audio, animations, polices (avec leur crénage), thèmes d'interface et courbes, fichiers
   `.dvxasset`, projets `.dvxproj`, paquets de jeux exportés `.dvxpak` ;
 - `Devex::AssetImport` : base d'assets (`.dvxmeta`, cache `.devex/`, imports en arrière-plan,
   réimport à chaud), importeurs de textures (BC7/BC5), de `.dvxmat`, de modèles glTF, FBX et OBJ
   (ufbx, convertis en mètres et Y-up avec une échelle réglable), de scènes, de sons
-  (WAV, FLAC, MP3, Ogg Vorbis), de polices (`.ttf`, `.otf` cuites en atlas de distances) et de
-  thèmes `.dvxtheme` ;
+  (WAV, FLAC, MP3, Ogg Vorbis), de polices (`.ttf`, `.otf` cuites en atlas de distances), de
+  thèmes `.dvxtheme` et de courbes `.dvxcurve` ;
 - `Devex::Render` : renderer Vulkan 1.4 (volk, VMA), shaders Slang, render graph, PBR
   forward+ clustered avec prépasse de profondeur, culling par tronc de vue, ombres en cascades pour
   le soleil et en atlas pour les lumières locales, ciel HDR et IBL, surfaces transparentes triées,
@@ -55,7 +55,9 @@ Le détail, l'architecture des modules et les jalons sont dans
   chargement ou pendant la lecture ;
 - `Devex::Animation` : clips d'animation importés des modèles glTF et FBX, squelettes faits d'entités,
   `Animator` qui joue un clip avec fondu croisé, root motion optionnel, skinning des maillages
-  dans le vertex shader ;
+  dans le vertex shader ; tweens de tout champ numérique, vectoriel, de couleur ou de rotation
+  d'un composant (délai, boucles, aller-retour, séquences), par code ou par le composant
+  `Tweener`, avec 22 courbes classiques ou une courbe dessinée (`.dvxcurve`) ;
 - `Devex::Ui` : interfaces faites d'entités (`Canvas`, `UiRect`, `UiImage`, `UiText`, `UiButton`,
   `UiInput`, `UiSlider`, `UiToggle`, `UiScroll`, `UiLayout`, `UiBinding`), placement par ancrages
   et marges puis par conteneurs, texte tiré d'un atlas de distances signées avec crénage et texte
@@ -77,7 +79,8 @@ Le détail, l'architecture des modules et les jalons sont dans
   avec éditeur de texte intégré à onglets (coloration syntaxique, numéros de ligne, recherche et
   remplacement, autocomplétion, erreurs de compilation dans la marge), ouverture dans l'IDE,
   *New Script…*, réglages de l'éditeur, aperçu sonore et forme
-  d'onde des clips, volumes du projet, icônes et distances des sources audio, panneau Animation
+  d'onde des clips, éditeur de courbes (clés et pentes à déplacer, préréglages, *New Curve*),
+  volumes du projet, icônes et distances des sources audio, panneau Animation
   avec piste temporelle et images clés, panneau Profiler (barres des images, chronologie par
   thread et GPU, tableaux des zones, des passes et de la mémoire des assets) ;
 - `Devex::Runtime` : `Application`, boucle à pas fixe, mode éditeur et mode Play, modules de jeu
@@ -86,11 +89,13 @@ Le détail, l'architecture des modules et les jalons sont dans
   préchargement, changement de scène immédiat ou en arrière-plan avec progression, actions
   d'entrée du projet (boutons, axes, vecteurs, contextes, réaffectation gardée pour le joueur),
   sauvegardes dans le dossier du joueur (objets réfléchis, scène restaurée, miniature), réglages
-  du joueur gardés (volumes, fenêtre, valeurs du jeu), rendu automatique de la scène, export d'un
-  jeu ;
+  du joueur gardés (volumes, fenêtre, valeurs du jeu), coroutines C++20 (`co_await` du temps, des
+  frames, d'une condition ou d'un tween, arrêtées avec leur entité), rendu automatique de la
+  scène, export d'un jeu ;
 - `Devex.Managed` : l'API C# du moteur (`Component`, `Entity`, `Scene`, `Input`, `Physics`, `Audio`,
-  `Animation`, `Ui`, `Prefabs`, `Assets`, `Saves`, `PlayerSettings`, `Time`, `Log`, `Profiler`, maths)
-  et les vues des composants du
+  `Animation`, `Tween`, `Ui`, `Prefabs`, `Assets`, `Saves`, `PlayerSettings`, `Time`, `Log`,
+  `Profiler`, maths), les coroutines `async Coroutine` (`Wait.Seconds`, `Wait.Until`, tweens et
+  tâches attendus sur le thread du jeu) et les vues des composants du
   moteur, compilée dans `bin/managed` quand le SDK .NET est installé ;
 - `Devex::Engine` : tous les modules dans une bibliothèque partagée, `devex-engine.dll` ;
 - `devex-editor` : l'éditeur, qui compile et recharge à chaud le code des projets ;
@@ -112,11 +117,14 @@ Le détail, l'architecture des modules et les jalons sont dans
   groupe Music ; un robot rigué patrouille, attend et salue le joueur (`code/Robot.cs`) ;
   Tab passe à l'autre scène ; et la
   scène `sandbox` (caisse et balises glTF, sphères or et plastique, ciel HDR, plateau tournant dont
-  les satellites brillent, panneaux de verre teinté, jour et nuit avec N), qui ouvre sur un menu
+  les satellites brillent et dont la caisse flotte par un `Tweener` et la courbe
+  `assets/curves/Hover.dvxcurve`, panneaux de verre teinté, jour et nuit en fondu avec N par une
+  coroutine C++), qui ouvre sur un menu
   principal, un écran de réglages (nom, mot de passe, curseur de volume lié à son étiquette, case
   plein écran, touche de saut à réaffecter et à réinitialiser, gardés d'une partie à l'autre, aide
   en texte riche qui défile dans un cadre en neuf parts), un menu de pause appelé par Échap, qui
-  sauvegarde la partie que le menu principal reprend avec sa miniature, et un HUD, tous habillés
+  sauvegarde la partie (le bouton le dit par une coroutine C# qui attend ses fondus) que le menu
+  principal reprend avec sa miniature, et un HUD, tous habillés
   par le thème `assets/ui/sandbox.dvxtheme` et pilotés par `code/Menu.cs`.
 
 Le SDK Vulkan fournit `slangc`, qui compile les shaders pendant le build. Les assets

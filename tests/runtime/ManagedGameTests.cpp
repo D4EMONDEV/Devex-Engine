@@ -1,5 +1,6 @@
 #include "runtime/ManagedGame.hpp"
 
+#include <devex/animation/TweenWorld.hpp>
 #include <devex/asset/Primitives.hpp>
 #include <devex/audio/AudioWorld.hpp>
 #include <devex/audio/Clip.hpp>
@@ -67,7 +68,7 @@ void run(ManagedGame& game, Scene& scene, SystemPhase phase, double seconds = 0.
 TEST_CASE("The C# runtime registers components and runs them", "[runtime][managed]")
 {
     const std::unique_ptr<ManagedGame> game = startRuntime();
-    CHECK(game->componentTypes().size() == 9);
+    CHECK(game->componentTypes().size() == 11);
 
     devex::scene::ComponentRegistry& registry = devex::scene::componentRegistry();
     const devex::scene::ComponentType* const mover = registry.find("Mover");
@@ -407,6 +408,87 @@ TEST_CASE("C# code saves objects into slots and keeps the settings of the player
     game->unloadAssembly();
     std::error_code error;
     std::filesystem::remove_all(folder, error);
+}
+
+TEST_CASE("C# coroutines wait for frames, time, tweens and tasks, and end with their component", "[runtime][managed][coroutine]")
+{
+    const std::unique_ptr<ManagedGame> game = startRuntime();
+    devex::scene::ComponentRegistry& registry = devex::scene::componentRegistry();
+    const devex::scene::ComponentType* const choreographer = registry.find("Choreographer");
+    const devex::scene::ComponentType* const reader = registry.find("TickReader");
+    REQUIRE(choreographer != nullptr);
+    REQUIRE(reader != nullptr);
+    Scene scene;
+    const Entity entity = scene.createEntity("Dancer");
+    scene.add<devex::scene::Transform>(entity);
+    REQUIRE(choreographer->emplace(scene, entity) != nullptr);
+    const Entity counter = scene.createEntity("Counter");
+    REQUIRE(reader->emplace(scene, counter) != nullptr);
+    const auto value = [&]<typename T>(const char* name, T) -> T& {
+        return field<T>(*choreographer, const_cast<void*>(choreographer->find(scene, entity)), name);
+    };
+    const auto ticks = [&] {
+        return field<std::int32_t>(*reader, const_cast<void*>(reader->find(scene, counter)), "ticks");
+    };
+
+    devex::animation::TweenWorld tweens;
+    ManagedGame::Frame frame{.scene = &scene, .tweens = &tweens};
+    game->runPhase(frame, SystemPhase::Start);
+    CHECK(value("step", std::int32_t{}) == 1);
+    // As the engine does: the coroutines during Update, then the tweens.
+    const auto update = [&](double seconds) {
+        frame.delta = devex::core::Duration(seconds);
+        game->runPhase(frame, SystemPhase::Update);
+        tweens.update(scene, devex::core::Duration(seconds));
+    };
+    update(0.1);
+    CHECK(value("step", std::int32_t{}) == 2);
+    update(0.3);
+    CHECK(value("step", std::int32_t{}) == 2);
+    update(0.3);
+    CHECK(value("step", std::int32_t{}) == 3);
+    CHECK(scene.get<devex::scene::Transform>(entity).position.y == Catch::Approx(0.6f));
+    update(0.5);
+    update(0.5);
+    CHECK(value("step", std::int32_t{}) == 3);
+    CHECK(scene.get<devex::scene::Transform>(entity).position.y == Catch::Approx(2.0f));
+    update(0.1);
+    CHECK(value("step", std::int32_t{}) == 4);
+    // The awaited coroutine fails, and its caller catches what it threw.
+    update(0.1);
+    CHECK(value("nested_failed", bool{}));
+    CHECK(value("tween_failed", bool{}));
+    CHECK(value("step", std::int32_t{}) == 4);
+    // Task.Yield goes on in the next Update, on the thread of the game.
+    update(0.1);
+    CHECK(value("step", std::int32_t{}) == 5);
+    CHECK(value("on_game_thread", bool{}));
+    // The tween of the sequence, its interval, then the frame the coroutine sees it over.
+    for (int index = 0; index < 4; ++index)
+    {
+        update(0.3);
+    }
+    CHECK(scene.get<devex::scene::Transform>(entity).scale.x == Catch::Approx(2.0f));
+    CHECK(value("step", std::int32_t{}) == 5);
+    update(0.1);
+    CHECK(value("step", std::int32_t{}) == 6);
+    update(0.1);
+    CHECK(value("step", std::int32_t{}) == 6);
+    value("release", bool{}) = true;
+    update(0.1);
+    CHECK(value("step", std::int32_t{}) == 7);
+
+    // The coroutine that counts frames ends with its component.
+    const std::int32_t counted = ticks();
+    CHECK(counted > 10);
+    choreographer->remove(scene, entity);
+    update(0.1);
+    const std::int32_t after = ticks();
+    update(0.1);
+    update(0.1);
+    CHECK(ticks() == after);
+    CHECK(after <= counted + 1);
+    game->unloadAssembly();
 }
 
 TEST_CASE("C# code loads scenes in the background and reads how far they are", "[runtime][managed]")

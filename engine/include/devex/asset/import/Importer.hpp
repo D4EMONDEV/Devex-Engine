@@ -106,6 +106,7 @@ struct Importer
 // unit per meter, times the "scale" option.
 [[nodiscard]] core::Result<ImportResult> importFbxFile(ImportContext& context);
 [[nodiscard]] core::Result<ImportResult> importSceneFile(ImportContext& context);
+[[nodiscard]] core::Result<ImportResult> importCurveFile(ImportContext& context);
 // Sounds keep their file; the "loading" option chooses "decoded", "streamed" or "auto".
 [[nodiscard]] core::Result<ImportResult> importAudioFile(ImportContext& context);
 // Fonts are baked into an atlas of distances at the "size" of the option, with the "spread" of the

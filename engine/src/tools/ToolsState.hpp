@@ -16,6 +16,7 @@
 #include <devex/asset/AssetMemory.hpp>
 #include <devex/asset/AssetType.hpp>
 #include <devex/asset/AudioClipData.hpp>
+#include <devex/asset/CurveData.hpp>
 #include <devex/asset/Project.hpp>
 #include <devex/asset/import/AssetDatabase.hpp>
 #include <devex/core/Uuid.hpp>
@@ -243,6 +244,25 @@ enum class WindowLayout : std::uint8_t
     Editor,
 };
 
+// The curve the inspector edits: a copy of its file, saved when a change is over.
+struct CurveEditor
+{
+    asset::AssetId asset;
+    std::filesystem::path file;
+    // When the file was read or written, to read it again once changed elsewhere.
+    std::filesystem::file_time_type fileTime{};
+    asset::CurveData curve;
+    std::string error;
+    int selectedKey = -1;
+    // The key being dragged, -1 for none; its point (0) or the handle of a slope (-1 in, 1 out).
+    int draggedKey = -1;
+    int draggedPart = 0;
+    bool moved = false;
+    // The values the graph shows, held while a key moves so that the graph does not follow it.
+    float low = 0.0f;
+    float high = 1.0f;
+};
+
 struct ToolsState
 {
     ToolsState(platform::Platform& platformLayer, platform::Window& mainWindow, render::Renderer& gpu,
@@ -323,6 +343,10 @@ struct ToolsState
     bool selectedClipStale = true;
     // The clip playing in the editor, whose playhead the inspector shows.
     asset::AssetId previewedClip;
+    // The curve the inspector edits, as its file holds it.
+    CurveEditor curveEditor;
+    // A file just created, selected once it is imported, as a res:// path.
+    std::string assetToSelect;
     // Animations: where clips come from, and the animations of the game while it plays.
     std::function<std::shared_ptr<const animation::Clip>(asset::AssetId)> animationClips;
     // The themes of interfaces, for the inspector to show what a style sets.
@@ -536,6 +560,10 @@ void selectAsset(ToolsState& state, asset::AssetId id);
 void drawAudioClipInspector(ToolsState& state);
 // The selected model: what its file brought, and how it imports (scale, textures).
 void drawModelInspector(ToolsState& state);
+// The selected curve: a graph of its keys and their slopes, edited in place and saved to its file.
+void drawCurveInspector(ToolsState& state);
+// Writes a new curve into a res:// folder of the assets, and selects it once imported.
+core::Result<std::filesystem::path> createCurveFile(ToolsState& state, std::string_view folder);
 void previewAudioClip(ToolsState& state, asset::AssetId clip);
 void stopAudioPreview(ToolsState& state);
 

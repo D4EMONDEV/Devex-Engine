@@ -19,4 +19,20 @@ DEVEX_REFLECT(Animator)
         .field("apply_root_motion", &Animator::applyRootMotion);
 }
 
+DEVEX_REFLECT(Tweener)
+{
+    type.field("field", &Tweener::field)
+        .field("from", &Tweener::from)
+        .field("to", &Tweener::to)
+        .field("from_current", &Tweener::fromCurrent)
+        .field("relative", &Tweener::relative)
+        .field("duration", &Tweener::duration)
+        .field("delay", &Tweener::delay)
+        .field("ease", &Tweener::ease)
+        .field("curve", &Tweener::curve, {.assetType = "curve"})
+        .field("loop", &Tweener::loop)
+        .field("repeats", &Tweener::repeats)
+        .field("play_on_start", &Tweener::playOnStart);
+}
+
 } // namespace devex::scene

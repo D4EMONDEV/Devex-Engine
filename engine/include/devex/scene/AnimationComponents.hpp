@@ -1,10 +1,15 @@
 #pragma once
 
 #include <devex/asset/AssetId.hpp>
+#include <devex/math/Easing.hpp>
+#include <devex/math/Math.hpp>
 #include <devex/reflection/Reflection.hpp>
 #include <devex/scene/EntityRef.hpp>
 
+#include <array>
 #include <cstdint>
+#include <string>
+#include <string_view>
 #include <vector>
 
 namespace devex::scene {
@@ -40,4 +45,61 @@ struct Animator
 };
 DEVEX_DECLARE_REFLECTION(Animator);
 
+// What a tween does once it reaches its end.
+enum class TweenLoop : std::uint8_t
+{
+    // It stops there.
+    None,
+    // It starts again from its start.
+    Restart,
+    // It goes back to its start, then forth again.
+    PingPong,
+};
+
+// Animates a field of a component of its entity between two values, without code: a light that
+// pulses, a crate that floats, a sign that blinks. Code starts the same tweens with the TweenWorld,
+// on any entity.
+struct Tweener
+{
+    // The field, as "Component.field": "Transform.position", "UiRect.opacity", "UiImage.color". It
+    // holds a number, a vector, a color or a rotation.
+    std::string field = "Transform.position";
+    // The values, in as many components as the field has: x for a number, xyz for a position, all
+    // four for a color. A rotation is written in degrees around x, y and z.
+    math::Vec4 from{0.0f};
+    math::Vec4 to{0.0f, 1.0f, 0.0f, 0.0f};
+    // Starts from the value the field has instead of from.
+    bool fromCurrent = true;
+    // Adds to to the value it starts from, rather than going to it.
+    bool relative = true;
+    // In seconds.
+    float duration = 1.0f;
+    float delay = 0.0f;
+    math::Ease ease = math::Ease::InOutSine;
+    // A curve drawn by hand, which replaces the ease when set.
+    asset::AssetId curve;
+    TweenLoop loop = TweenLoop::PingPong;
+    // How many times it plays again once over; -1 without end.
+    std::int32_t repeats = -1;
+    // Starts when the entity appears in a game that plays; otherwise code starts it.
+    bool playOnStart = true;
+};
+DEVEX_DECLARE_REFLECTION(Tweener);
+
 } // namespace devex::scene
+
+template <>
+struct devex::reflection::EnumNames<devex::math::Ease>
+{
+    static constexpr std::array<std::string_view, devex::math::easeCount> names{
+        "linear",      "in_quad",      "out_quad",       "in_out_quad",    "in_cubic",     "out_cubic",
+        "in_out_cubic", "in_sine",     "out_sine",       "in_out_sine",    "in_expo",      "out_expo",
+        "in_out_expo", "in_back",      "out_back",       "in_out_back",    "in_elastic",   "out_elastic",
+        "in_out_elastic", "in_bounce", "out_bounce",     "in_out_bounce"};
+};
+
+template <>
+struct devex::reflection::EnumNames<devex::scene::TweenLoop>
+{
+    static constexpr std::array<std::string_view, 3> names{"none", "restart", "ping_pong"};
+};

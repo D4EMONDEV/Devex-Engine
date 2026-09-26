@@ -51,6 +51,25 @@ struct NativeSaveSlot
     std::int32_t hasThumbnail;
 };
 
+// A tween as C# describes it, in the layout of Devex.Managed's NativeTween.
+struct NativeTween
+{
+    Entity entity;
+    const char* field;
+    float to[4];
+    float from[4];
+    UuidBytes curve;
+    float duration;
+    float delay;
+    std::int32_t hasFrom;
+    std::int32_t relative;
+    std::int32_t ease;
+    std::int32_t loop;
+    std::int32_t repeats;
+    // The step of a sequence it plays in.
+    std::int32_t step;
+};
+
 // The functions the C# runtime calls, in the order of Devex.Managed's NativeApi.
 struct NativeApi
 {
@@ -187,6 +206,14 @@ struct NativeApi
     void (*setSettingsNumber)(const char* key, double value);
     void (*setSettingsString)(const char* key, const char* value);
     int (*removeSettingsValue)(const char* key);
+    std::uint64_t (*playTween)(void* scene, const NativeTween* tween, const char** error);
+    std::uint64_t (*playSequence)(void* scene, const NativeTween* tweens, int count, const float* intervals, int steps,
+                                  const char** error);
+    std::uint64_t (*playTweener)(void* scene, Entity entity, const char** error);
+    void (*killTween)(std::uint64_t handle, int complete);
+    void (*pauseTween)(std::uint64_t handle);
+    void (*resumeTween)(std::uint64_t handle);
+    int (*isTweenPlaying)(std::uint64_t handle);
 };
 
 // The functions the engine calls, in the order of Devex.Managed's ManagedApi.
@@ -201,7 +228,7 @@ struct ManagedApi
 };
 
 // Devex.Managed's Bootstrap.Version: both sides change it with the function tables.
-constexpr int bootstrapVersion = 9;
+constexpr int bootstrapVersion = 10;
 
 struct BootstrapArguments
 {
@@ -1490,6 +1517,126 @@ int apiRemoveSettingsValue(const char* key)
     return settings() != nullptr && key != nullptr && settings()->removeValue(key) ? 1 : 0;
 }
 
+[[nodiscard]] animation::TweenWorld* tweenWorld() noexcept
+{
+    return currentFrame() != nullptr ? currentFrame()->tweens : nullptr;
+}
+
+[[nodiscard]] animation::TweenSpec toTweenSpec(void* scene, const NativeTween& tween)
+{
+    return animation::TweenSpec{
+        .entity = optionalEntity(scene, tween.entity),
+        .field = tween.field != nullptr ? tween.field : "",
+        .to = {tween.to[0], tween.to[1], tween.to[2], tween.to[3]},
+        .from = tween.hasFrom != 0 ? std::optional<math::Vec4>(std::in_place, tween.from[0], tween.from[1], tween.from[2], tween.from[3])
+                                   : std::nullopt,
+        .relative = tween.relative != 0,
+        .duration = tween.duration,
+        .delay = tween.delay,
+        .ease = static_cast<math::Ease>(std::clamp(tween.ease, 0, static_cast<int>(math::easeCount) - 1)),
+        .curve = asset::AssetId{toUuid(&tween.curve)},
+        .loop = static_cast<scene::TweenLoop>(std::clamp(tween.loop, 0, 2)),
+        .repeats = tween.repeats,
+    };
+}
+
+// The handle, or 0 with the reason.
+std::uint64_t apiPlayTween(void* scene, const NativeTween* tween, const char** error)
+{
+    animation::TweenWorld* const tweens = tweenWorld();
+    if (tweens == nullptr || scene == nullptr || tween == nullptr)
+    {
+        *error = keepMessage("tweens only play while the game plays");
+        return 0;
+    }
+    const core::Result<animation::TweenHandle> played = tweens->play(*toScene(scene), toTweenSpec(scene, *tween));
+    if (!played)
+    {
+        *error = keepMessage(played.error().message);
+        return 0;
+    }
+    return played->id;
+}
+
+std::uint64_t apiPlaySequence(void* scene, const NativeTween* tweens, int count, const float* intervals, int steps,
+                              const char** error)
+{
+    animation::TweenWorld* const world = tweenWorld();
+    if (world == nullptr || scene == nullptr || steps < 0 || count < 0)
+    {
+        *error = keepMessage("tweens only play while the game plays");
+        return 0;
+    }
+    std::vector<animation::SequenceStep> sequence(static_cast<std::size_t>(steps));
+    for (int index = 0; index < steps; ++index)
+    {
+        sequence[static_cast<std::size_t>(index)].interval = std::max(intervals[index], 0.0f);
+    }
+    for (int index = 0; index < count; ++index)
+    {
+        const NativeTween& tween = tweens[index];
+        if (tween.step < 0 || tween.step >= steps)
+        {
+            *error = keepMessage("a tween of the sequence is outside its steps");
+            return 0;
+        }
+        sequence[static_cast<std::size_t>(tween.step)].tweens.push_back(toTweenSpec(scene, tween));
+    }
+    const core::Result<animation::TweenHandle> played = world->playSequence(*toScene(scene), std::move(sequence));
+    if (!played)
+    {
+        *error = keepMessage(played.error().message);
+        return 0;
+    }
+    return played->id;
+}
+
+std::uint64_t apiPlayTweener(void* scene, Entity entity, const char** error)
+{
+    animation::TweenWorld* const tweens = tweenWorld();
+    if (tweens == nullptr || scene == nullptr)
+    {
+        *error = keepMessage("tweens only play while the game plays");
+        return 0;
+    }
+    const core::Result<animation::TweenHandle> played = tweens->playTweener(*toScene(scene), optionalEntity(scene, entity));
+    if (!played)
+    {
+        *error = keepMessage(played.error().message);
+        return 0;
+    }
+    return played->id;
+}
+
+void apiKillTween(std::uint64_t handle, int complete)
+{
+    if (tweenWorld() != nullptr)
+    {
+        tweenWorld()->kill({handle}, complete != 0);
+    }
+}
+
+void apiPauseTween(std::uint64_t handle)
+{
+    if (tweenWorld() != nullptr)
+    {
+        tweenWorld()->pause({handle});
+    }
+}
+
+void apiResumeTween(std::uint64_t handle)
+{
+    if (tweenWorld() != nullptr)
+    {
+        tweenWorld()->resume({handle});
+    }
+}
+
+int apiIsTweenPlaying(std::uint64_t handle)
+{
+    return tweenWorld() != nullptr && tweenWorld()->isPlaying({handle}) ? 1 : 0;
+}
+
 [[nodiscard]] NativeApi makeNativeApi() noexcept
 {
     return NativeApi{
@@ -1613,6 +1760,13 @@ int apiRemoveSettingsValue(const char* key)
         .setSettingsNumber = &apiSetSettingsNumber,
         .setSettingsString = &apiSetSettingsString,
         .removeSettingsValue = &apiRemoveSettingsValue,
+        .playTween = &apiPlayTween,
+        .playSequence = &apiPlaySequence,
+        .playTweener = &apiPlayTweener,
+        .killTween = &apiKillTween,
+        .pauseTween = &apiPauseTween,
+        .resumeTween = &apiResumeTween,
+        .isTweenPlaying = &apiIsTweenPlaying,
     };
 }
 

@@ -138,6 +138,13 @@ internal unsafe struct NativeApi
     public delegate* unmanaged<byte*, double, void> SetSettingsNumber;
     public delegate* unmanaged<byte*, byte*, void> SetSettingsString;
     public delegate* unmanaged<byte*, int> RemoveSettingsValue;
+    public delegate* unmanaged<void*, Tween.NativeTween*, byte**, ulong> PlayTween;
+    public delegate* unmanaged<void*, Tween.NativeTween*, int, float*, int, byte**, ulong> PlaySequence;
+    public delegate* unmanaged<void*, Entity, byte**, ulong> PlayTweener;
+    public delegate* unmanaged<ulong, int, void> KillTween;
+    public delegate* unmanaged<ulong, void> PauseTween;
+    public delegate* unmanaged<ulong, void> ResumeTween;
+    public delegate* unmanaged<ulong, int> IsTweenPlaying;
 }
 
 /// <summary>The C# functions the engine calls. Filled by the runtime when it starts.</summary>
@@ -165,7 +172,7 @@ internal unsafe struct BootstrapArguments
 /// <summary>What the engine calls into: filling the function tables, then the game itself.</summary>
 public static unsafe class Bootstrap
 {
-    internal const int Version = 9;
+    internal const int Version = 10;
 
     internal static NativeApi Native;
     private static byte[]? _description;

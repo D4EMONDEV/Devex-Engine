@@ -50,8 +50,9 @@ public class MenuController : Component
 
     private float _time;
     private bool _playing;
-    // How long the save button still says the game was saved.
-    private float _savedFor;
+    // What says the game was saved, and the fade of the text of the button it plays.
+    private Coroutine? _confirmation;
+    private TweenHandle _fade;
 
     public override void Start()
     {
@@ -75,6 +76,11 @@ public class MenuController : Component
         Show(PauseMenu, false);
         Show(Hud, false);
         ShowLastSave();
+        // The menu appears rather than being there.
+        if (MainMenu.IsAlive && MainMenu.TryGet(out UiRect _))
+        {
+            new TweenSpec(MainMenu, "UiRect.opacity", 1.0f, 0.6f) { From = new Vec4(0.0f, 0.0f, 0.0f, 0.0f) }.Play();
+        }
     }
 
     public override void Update(float delta)
@@ -168,16 +174,13 @@ public class MenuController : Component
 
     private void UpdatePauseMenu()
     {
-        _savedFor = Math.Max(_savedFor - Time.Delta, 0.0f);
-        if (SaveLabel.IsAlive && SaveLabel.TryGet(out UiText label))
-        {
-            label.Text = _savedFor > 0.0f ? "Sauvegardé" : "Sauvegarder";
-        }
         if (Ui.WasClicked("save"))
         {
             // The scene is saved as it plays, with a picture of it without the menus.
             Saves.Save(Slot, new SandboxSave { Time = _time, Score = Score }, label: $"Score {Score}");
-            _savedFor = 1.5f;
+            // Saving again says so again.
+            _confirmation?.Stop();
+            _confirmation = ConfirmSave();
         }
         else if (Ui.WasClicked("resume") || Ui.WasCancelled())
         {
@@ -220,6 +223,40 @@ public class MenuController : Component
         if (TimerText.IsAlive && TimerText.TryGet(out UiText timer))
         {
             timer.Text = $"{(int)(_time / 60.0f)}:{(int)(_time % 60.0f):00}";
+        }
+    }
+
+    // The save button says the game was saved for a moment, then goes back to what it does: a
+    // coroutine, which waits for its fades and for time in the middle of what it does.
+    private async Coroutine ConfirmSave()
+    {
+        SetSaveText("Sauvegardé");
+        await FadeSaveText(1.0f, 0.2f, from: 0.2f);
+        await Wait.Seconds(1.2f);
+        await FadeSaveText(0.0f, 0.3f);
+        SetSaveText("Sauvegarder");
+        await FadeSaveText(1.0f, 0.3f);
+    }
+
+    private TweenHandle FadeSaveText(float opacity, float seconds, float? from = null)
+    {
+        _fade.Kill();
+        if (!SaveLabel.IsAlive)
+        {
+            return default;
+        }
+        _fade = new TweenSpec(SaveLabel, "UiRect.opacity", opacity, seconds)
+        {
+            From = from is { } start ? new Vec4(start, 0.0f, 0.0f, 0.0f) : null,
+        }.Play();
+        return _fade;
+    }
+
+    private void SetSaveText(string text)
+    {
+        if (SaveLabel.IsAlive && SaveLabel.TryGet(out UiText label))
+        {
+            label.Text = text;
         }
     }
 

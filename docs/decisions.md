@@ -32,6 +32,8 @@ mais seulement explicitement ici : le code suit ce document, pas l'inverse.
 | Actions d'entrée         | Dans les réglages du projet, contextes activables, réaffectation   |
 | Sauvegardes              | Objet réfléchi + scène + miniature, texte dans le dossier du joueur |
 | Réglages du joueur       | Volumes, fenêtre et valeurs du jeu, gardés et appliqués par le moteur |
+| Tweens                   | Tout champ d'un composant, par code ou `Tweener`, courbes dessinées |
+| Coroutines               | `co_await` en C++, `async Coroutine` en C#, reprises pendant Update |
 | Clavier                  | `Key` = position physique (WASD devient ZQSD en AZERTY)            |
 | Présentation             | VSync (FIFO) par défaut, Mailbox/Immediate en option               |
 | Thread de rendu          | Thread principal, rendu découplé par un instantané `RenderWorld`   |
@@ -168,14 +170,14 @@ situé au-dessus de lui, et le graphe reste sans cycle.
 | `Reflection`    | description des champs (`TypeInfo`, `DEVEX_REFLECT`, `ValueKind`)         | Core, Math                    |
 | `Serialization` | format texte `.dvx*` (sections, valeurs) ; plus tard archives cookées     | Core                          |
 | `Asset`         | `AssetId`, données CPU (maillages, textures, matériaux, modèles, clips audio et d'animation, polices), `.dvxasset`, projet, paquet `.dvxpak` | Core, Math, Reflection, Serialization, zstd |
-| `AssetImport`   | base d'assets, `.dvxmeta`, importeurs (textures, `.dvxmat`, glTF, FBX, OBJ, sons, polices) | Asset, Scene, Audio, fastgltf, ufbx, basisu, stb, efsw |
+| `AssetImport`   | base d'assets, `.dvxmeta`, importeurs (textures, `.dvxmat`, glTF, FBX, OBJ, sons, polices, courbes) | Asset, Scene, Audio, fastgltf, ufbx, basisu, stb, efsw |
 | `Render`        | façade `Renderer` / `RenderWorld` ; tout `Vk*` reste dans `src/render/vulkan` | Core, Math, Platform, Asset, Vulkan |
 | `Scene`         | entités, sparse sets, hiérarchie, composants intégrés, `.dvxscene`, sous-arbres, préfabs | Core, Math, Reflection, Serialization, Asset |
 | `Audio`         | clips, mixage et groupes, sources et écouteur de la scène                | Core, Math, Asset, Scene, miniaudio, stb |
-| `Animation`     | clips d'animation, échantillonnage, fondus, squelettes des `Animator`    | Core, Math, Asset, Scene             |
+| `Animation`     | clips d'animation, échantillonnage, fondus, squelettes des `Animator`, tweens | Core, Math, Asset, Scene             |
 | `Ui`            | placement des canevas, mise en page du texte, survol et focus, dessin    | Core, Math, Asset, Scene, Render     |
 | `Tools`         | panneaux ImGui, annulation, éditeur (viewport, gizmos, scènes, accueil)   | Core, Platform, Render, Scene, Audio, Animation, Ui, AssetImport, ImGui |
-| `Runtime`       | `Application`, boucle, mode éditeur et Play, modules de jeu, `AssetManager`, extraction | tous les modules ci-dessus |
+| `Runtime`       | `Application`, boucle, mode éditeur et Play, modules de jeu, coroutines, `AssetManager`, extraction | tous les modules ci-dessus |
 
 Au sommet : `devex-editor`, `devex-player` et les modules de jeu des projets.
 
@@ -470,6 +472,7 @@ MyGame/
     materials/rock.dvxmat
     materials/rock.dvxmat.dvxmeta
     ui/game.dvxtheme          # styles des interfaces, référencé par les canevas
+    curves/hover.dvxcurve     # courbe dessinée qui adoucit les tweens
     models/hero.glb
     models/hero.glb.dvxmeta   # UUID, options d'import et sous-assets
   .devex/                     # cache d'import local, ignoré par Git
@@ -548,6 +551,18 @@ double_sided = false
 Les autres propriétés sont `metallic_roughness_texture`, `normal_texture`, `normal_scale`,
 `occlusion_texture`, `occlusion_strength`, `emissive_texture` et `alpha_cutoff`. Sans texture,
 métal 0 et rugosité 1 par défaut (un import glTF écrit ses propres valeurs).
+
+Courbe (`.dvxcurve`, format 1), deux clés au moins, dans l'ordre du temps ; le temps va de 0 au
+début du tween à 1 à sa fin, la valeur de 0 à la valeur de départ à 1 à la valeur d'arrivée, et
+les pentes (`in`, `out`, en valeur par unité de temps, 0 par défaut) règlent la spline d'Hermite
+entre deux clés :
+
+```text
+[curve format=1]
+[key time=0 value=0 in=0 out=0]
+[key time=0.6 value=1.08 in=0.9 out=0.9]
+[key time=1 value=1 in=0 out=0]
+```
 
 Artefact (`.dvxasset`) : en-tête `DVXA`, type d'asset, version de disposition du type, puis les
 données en little-endian (`serialization::BinaryWriter`). Changer la disposition d'un type
@@ -1060,8 +1075,8 @@ les assets s'écrivent au fil de leur lecture.
   ouvert depuis les sources pour que les modifications d'assets s'y voient en direct.
 - **Sources et importeurs** : chaque fichier dont l'extension a un importeur est une source ;
   `texture` (`.png`, `.jpg`, `.tga`, `.bmp`, `.hdr`, décodés par stb_image), `material`
-  (`.dvxmat`), `gltf` (`.gltf`, `.glb`), `fbx` (`.fbx`), `obj` (`.obj`) et `scene` (`.dvxscene`),
-  entre autres. Les fichiers et dossiers cachés (`.`) sont ignorés.
+  (`.dvxmat`), `gltf` (`.gltf`, `.glb`), `fbx` (`.fbx`), `obj` (`.obj`), `scene` (`.dvxscene`) et
+  `curve` (`.dvxcurve`), entre autres. Les fichiers et dossiers cachés (`.`) sont ignorés.
 - **`.dvxmeta`** : créé au premier scan avec un UUID aléatoire et les options par défaut de
   l'importeur. Il porte l'identité de l'asset : il se versionne avec la source. Un `.dvxmeta`
   illisible est signalé et laissé tel quel, jamais remplacé. Une source copiée avec son
@@ -1444,6 +1459,73 @@ les assets s'écrivent au fil de leur lecture.
   os avec les clips *Idle*, *Walk* et *Wave*. Dans l'arène, le composant C# `RobotGuide` le fait
   patrouiller, attendre à chaque extrémité et saluer le joueur qui s'approche, en changeant de clip
   avec un fondu de 0,25 s.
+
+### Tweens et coroutines
+
+- **Tweens** (`animation::TweenWorld`, `SystemContext::tweens`, `Tween` en C#) : un tween amène un
+  **champ d'un composant** d'une valeur à une autre en un temps donné. Le champ tient un nombre,
+  un vecteur, une couleur ou une rotation et se nomme « Composant.champ » : `Transform.position`,
+  `UiRect.opacity`, `UiImage.color`, `PointLight.intensity` ou le champ d'un composant du jeu, C++
+  ou C#. Tout ce que la réflexion décrit s'anime donc sans code propre à chaque propriété. Le
+  tween part de la valeur du champ à la fin de son délai, ou d'une valeur donnée, et peut être
+  relatif (ajouté au départ). Les rotations se donnent en degrés autour de x, y et z et passent
+  par un slerp. Il boucle ou non (recommencer, aller-retour), un nombre de fois ou sans fin ; il se
+  met en pause, reprend, s'arrête sur place ou saute à sa fin.
+- **Résolus par nom à chaque frame** : un tween garde l'UUID de son entité et le nom de son champ,
+  pas de pointeur, parce que le module du jeu et le C# se rechargent et que les composants
+  bougent en mémoire. Il s'arrête avec son entité ou son composant. Les tweens écrivent une fois
+  par frame, après les clips des `Animator` (un tween déplace une entité animée en entier) et
+  avant la mise en page des interfaces et le calcul des transforms ; ils attendent quand
+  l'éditeur met le jeu en pause. Leurs identifiants ne se répètent pas dans un processus : une
+  poignée gardée d'une scène précédente ne désigne plus rien.
+- **Séquences** (`playSequence`, `TweenSequence` en C# avec `Append`, `Join`, `AppendInterval`) :
+  des étapes jouées l'une après l'autre, chacune faite de tweens joués ensemble puis d'une
+  attente. Le temps d'une frame va aux tweens d'une étape ou à une attente, jamais aux deux.
+- **Composant `Tweener`** : le même tween sans code, réglé dans l'inspecteur (champ, départ,
+  arrivée, relatif, durée, délai, courbe, boucle, répétitions). Il démarre seul avec le jeu
+  (*Play On Start*) ou quand le code le demande (`playTweener`, `Tween.PlayTweener`), et s'arrête
+  quand le composant est retiré ; remis, il repart.
+- **Courbes** : les 22 courbes classiques de Penner (`math::Ease`, `Ease` en C# : quadratique,
+  cubique, sinus, exponentielle, back, élastique, rebond ; entrée, sortie, les deux) et des
+  **courbes dessinées**. Une courbe dessinée est un asset `.dvxcurve` fait de clés (temps, valeur,
+  pentes d'entrée et de sortie, spline d'Hermite) ; un tween ou un `Tweener` qui la nomme la suit
+  à la place de sa courbe. Elle peut dépasser 1 (rebond, dépassement) ou redescendre.
+- **Éditeur de courbes** : l'inspecteur d'une courbe la dessine sur une grille, avec ses clés et
+  les poignées des pentes de la clé choisie à déplacer (Maj tourne un seul côté, Ctrl arrondit
+  les valeurs au dixième), un double clic pour ajouter une clé, le menu d'une clé (lisse, plate,
+  linéaire, supprimer), des préréglages (linéaire, entrée, sortie, les deux, dépassement, rebond)
+  et les valeurs de la clé choisie. Chaque modification terminée réécrit le fichier, qui se
+  réimporte ; un fichier changé ailleurs est relu. *New Curve*, dans le menu d'un dossier du
+  FileSystem, en crée une et la montre dès son import.
+- **Coroutines C++** (`runtime::Coroutine`, `CoroutineScheduler`, `SystemContext::coroutines`) : des
+  coroutines C++20 qui attendent `co.wait(secondes)`, `co.nextFrame()`, `co.until(condition)` ou
+  `co.tween(poignée)`. Chaque `co_await` rend le `SystemContext` de la frame où la coroutine
+  reprend, puisque celui d'une frame ne vit que pendant elle. Elles reprennent pendant Update,
+  après les systèmes, comme dans Unity. Elles s'arrêtent avec l'entité qui les possède, au
+  remplacement de la scène, à l'arrêt du jeu et avant le rechargement du module : leurs cadres
+  tiennent du code et des objets du module, et sont détruits avant lui (les destructeurs de leurs
+  variables passent). Le planificateur garde la fonction qui a lancé une coroutine, pour qu'une
+  lambda qui est elle-même une coroutine garde ses captures. Une exception termine la coroutine
+  et va au journal.
+- **Coroutines C#** : une méthode `async Coroutine` attend `Wait.Seconds`, `Wait.NextFrame`,
+  `Wait.Until`, `Wait.While`, un tween ou une autre coroutine. `Coroutine` est un type « à la
+  Task » avec son propre constructeur de méthode, qui confie ses attentes au planificateur du
+  runtime plutôt qu'à des rappels. Lancée par un composant (dans ses méthodes, ses rappels de
+  collision ou l'une de ses coroutines), une coroutine s'arrête avec lui ; sinon avec la scène. Le
+  runtime installe pendant les phases un contexte de synchronisation : l'`await` d'une `Task`
+  (`Task.Delay`, `Task.Yield`, une lecture de fichier) reprend pendant Update, sur le thread du
+  jeu, et l'exception d'un `async void` va au journal. Une coroutine qui échoue passe son
+  exception à celle qui l'attend ; si personne ne l'attend, elle est signalée à la frame suivante.
+  Une coroutine arrêtée ne passe pas par ses blocs `finally`, et toutes s'arrêtent au
+  rechargement du code, qui ne pourrait pas se décharger tant qu'elles le tiennent. Dans une
+  méthode `async`, un tween joué sans être attendu demande `_ =` (avertissement CS4014).
+- **Versions** : l'API des jeux passe à 13 (`SystemContext` gagne `tweens` et `coroutines`),
+  l'amorce C# à 10.
+- **Bac à sable** : la caisse du plateau tournant flotte par un `Tweener` qui suit la courbe
+  dessinée `curves/Hover.dvxcurve` ; N passe du jour à la nuit en trois secondes par une
+  coroutine C++ qui change la lumière par rapports égaux (100 000 lux à 0,3 passent par 170 au
+  milieu) ; le bouton Sauvegarder dit « Sauvegardé » puis revient en fondu, par une coroutine C#
+  qui attend ses tweens ; le menu principal apparaît en fondu.
 
 ### Culling et ombres locales
 
@@ -2130,6 +2212,13 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     précédente gardée ; réglages du joueur (volumes, plein écran, synchronisation verticale,
     valeurs du jeu) gardés et appliqués par le moteur ; démonstration dans le bac à sable.
 
+33. ✅ **Tweens et coroutines** — tweens de tout champ numérique, vectoriel, de couleur ou de
+    rotation, par code en C++ et en C# ou par le composant `Tweener`, avec délai, boucles,
+    aller-retour et séquences ; 22 courbes classiques et courbes dessinées dans l'inspecteur
+    (asset `.dvxcurve`) ; coroutines `co_await` en C++ et `async Coroutine` en C#, qui attendent
+    le temps, les frames, des conditions, les tweens et les tâches et s'arrêtent avec leur entité
+    ou leur composant ; démonstration dans le bac à sable.
+
 Ensuite, sans ordre figé : jeux 2D, particules, CI Linux.
 
 ## Questions ouvertes
@@ -2170,6 +2259,12 @@ Ensuite, sans ordre figé : jeux 2D, particules, CI Linux.
   cours de la physique et des animations, champs privés marqués à garder, migrations déclarées
   par version, plusieurs miniatures ou une taille choisie, entreprise (`organization`) dans les
   réglages du projet pour le dossier du joueur.
+- **Tweens et coroutines, la suite** : arrêt par jeton qui passe par les `finally`, coroutines qui
+  survivent au rechargement du code, ordre ou remplacement quand deux tweens écrivent le même
+  champ (aujourd'hui leur ordre n'est pas défini), temps réel et échelle du temps (ralenti, tweens
+  des menus qui jouent pendant une pause du jeu), tweens le long d'un chemin et de textes (compteur
+  qui défile), aperçu d'un `Tweener` et d'une courbe hors du jeu, annulation dans l'éditeur de
+  courbes, icône propre aux courbes.
 - **Entrées, la suite** : plusieurs joueurs sur un même écran (appareils attribués à un joueur),
   souris et molette comme axes (regarder, zoomer), modificateurs (inverser, échelle, courbe),
   combinaisons (Ctrl+S) et appuis longs ou doubles, navigation de l'interface par les actions,

@@ -154,6 +154,20 @@ scale = vec3(1, 1, 1)
 mesh = asset("0a4571b3-aa2e-4421-a385-09466c6dee9c")
 material = asset("00000000-0000-0000-0000-000000000000")
 
+[component type="Tweener"]
+field = "Transform.position"
+from = vec4(0, 0, 0, 0)
+to = vec4(0, 0.6, 0, 0)
+from_current = true
+relative = true
+duration = 1.4
+delay = 0
+ease = "in_out_sine"
+curve = asset("ab64709a-e0fe-432a-8ed8-aa41bf29a0f7")
+loop = "ping_pong"
+repeats = -1
+play_on_start = true
+
 [entity uuid="ca186ba4-1649-4233-8a96-2d1799b8984f" name="Spheres (gold)"]
 
 [component type="Transform"]

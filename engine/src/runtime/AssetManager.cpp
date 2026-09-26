@@ -524,6 +524,30 @@ std::shared_ptr<const asset::ThemeData> AssetManager::theme(asset::AssetId id)
     return theme;
 }
 
+std::shared_ptr<const asset::CurveData> AssetManager::curve(asset::AssetId id)
+{
+    if (const auto found = m_curves.find(id); found != m_curves.end())
+    {
+        return found->second;
+    }
+    if (!id.isValid() || m_source == nullptr || m_failed.contains(id) || m_source->find(id) == nullptr)
+    {
+        return nullptr;
+    }
+    const core::Result<std::vector<std::byte>> bytes = m_source->loadArtifact(id);
+    core::Result<asset::CurveData> data =
+        bytes ? asset::decodeCurve(*bytes) : core::Result<asset::CurveData>(std::unexpected(bytes.error()));
+    if (!data)
+    {
+        DEVEX_LOG_ERROR("Cannot load curve {}: {}", id.uuid, data.error());
+        m_failed.insert(id);
+        return nullptr;
+    }
+    auto curve = std::make_shared<const asset::CurveData>(std::move(*data));
+    m_curves.emplace(id, curve);
+    return curve;
+}
+
 const LoadedFont* AssetManager::font(asset::AssetId id)
 {
     auto found = m_fonts.find(id);
@@ -621,6 +645,10 @@ void AssetManager::handleEvents(std::span<const asset::AssetEvent> events)
         case asset::AssetType::AudioClip:
         case asset::AssetType::AnimationClip:
         case asset::AssetType::Theme:
+            break;
+        case asset::AssetType::Curve:
+            // Read again when a tween asks for it.
+            m_curves.erase(event.id);
             break;
         }
     }
@@ -764,6 +792,7 @@ void AssetManager::setSource(asset::AssetSource* source)
     m_animationClips.clear();
     m_animationBytes.clear();
     m_themes.clear();
+    m_curves.clear();
     m_failed.clear();
     m_source = source;
 }

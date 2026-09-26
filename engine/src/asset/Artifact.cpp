@@ -95,6 +95,7 @@ std::uint32_t artifactVersion(AssetType type) noexcept
     case AssetType::Font:
         return 2;
     case AssetType::Theme:
+    case AssetType::Curve:
         return 1;
     }
     return 0;
@@ -104,7 +105,7 @@ std::uint32_t artifactLayouts() noexcept
 {
     std::uint32_t combined = 0;
     for (std::uint8_t value = static_cast<std::uint8_t>(AssetType::Mesh);
-         value <= static_cast<std::uint8_t>(AssetType::Theme); ++value)
+         value <= static_cast<std::uint8_t>(AssetType::Curve); ++value)
     {
         combined = combined * 31 + artifactVersion(static_cast<AssetType>(value));
     }
@@ -580,6 +581,33 @@ std::vector<std::byte> encodeTheme(const ThemeData& theme)
         }
     }
     return writer.take();
+}
+
+std::vector<std::byte> encodeCurve(const CurveData& curve)
+{
+    BinaryWriter writer = beginArtifact(AssetType::Curve);
+    writer.writeArray(std::span<const CurveKey>(curve.keys));
+    return writer.take();
+}
+
+core::Result<CurveData> decodeCurve(std::span<const std::byte> bytes)
+{
+    BinaryReader reader(bytes);
+    if (core::Result<void> header = readHeader(reader, AssetType::Curve); !header)
+    {
+        return std::unexpected(header.error());
+    }
+    CurveData curve;
+    curve.keys = reader.readArray<CurveKey>();
+    if (reader.failed())
+    {
+        return std::unexpected(truncated(AssetType::Curve));
+    }
+    if (core::Result<void> valid = validate(curve); !valid)
+    {
+        return std::unexpected(valid.error());
+    }
+    return curve;
 }
 
 core::Result<ThemeData> decodeTheme(std::span<const std::byte> bytes)

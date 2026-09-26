@@ -78,6 +78,7 @@ target_sources(devex_math
         FILE_SET HEADERS
         BASE_DIRS include
         FILES
+            include/devex/math/Easing.hpp
             include/devex/math/Math.hpp
 )
 
@@ -191,6 +192,7 @@ target_sources(devex_asset
         src/asset/AnimationData.cpp
         src/asset/Artifact.cpp
         src/asset/AssetType.cpp
+        src/asset/CurveData.cpp
         src/asset/FontData.cpp
         src/asset/MaterialData.cpp
         src/asset/MeshData.cpp
@@ -211,6 +213,7 @@ target_sources(devex_asset
             include/devex/asset/AssetSource.hpp
             include/devex/asset/AssetType.hpp
             include/devex/asset/AudioClipData.hpp
+            include/devex/asset/CurveData.hpp
             include/devex/asset/FontData.hpp
             include/devex/asset/ThemeData.hpp
             include/devex/asset/MaterialData.hpp
@@ -257,6 +260,7 @@ target_sources(devex_asset_import
     PRIVATE
         src/asset/import/AssetDatabase.cpp
         src/asset/import/AudioImporter.cpp
+        src/asset/import/CurveFile.cpp
         src/asset/import/FbxImporter.cpp
         src/asset/import/FontImporter.cpp
         src/asset/import/GltfImporter.cpp
@@ -273,6 +277,7 @@ target_sources(devex_asset_import
         BASE_DIRS include
         FILES
             include/devex/asset/import/AssetDatabase.hpp
+            include/devex/asset/import/CurveFile.hpp
             include/devex/asset/import/Importer.hpp
             include/devex/asset/import/MaterialFile.hpp
             include/devex/asset/import/ThemeFile.hpp
@@ -489,12 +494,14 @@ target_sources(devex_animation
     PRIVATE
         src/animation/AnimationWorld.cpp
         src/animation/Clip.cpp
+        src/animation/TweenWorld.cpp
     PUBLIC
         FILE_SET HEADERS
         BASE_DIRS include
         FILES
             include/devex/animation/AnimationWorld.hpp
             include/devex/animation/Clip.hpp
+            include/devex/animation/TweenWorld.hpp
 )
 
 target_link_libraries(devex_animation
@@ -641,6 +648,7 @@ target_sources(devex_tools
         src/tools/TextDocument.hpp
         src/tools/TextEditorPanel.cpp
         src/tools/ConsolePanel.cpp
+        src/tools/CurveInspector.cpp
         src/tools/EditorCamera.cpp
         src/tools/EditorCamera.hpp
         src/tools/EditorMenus.cpp
@@ -726,6 +734,7 @@ target_sources(devex_runtime
         src/runtime/GameExport.cpp
         src/runtime/GameModule.cpp
         src/runtime/ComponentViews.cpp
+        src/runtime/Coroutine.cpp
         src/runtime/InputActions.cpp
         src/runtime/PlayerSettings.cpp
         src/runtime/SaveGames.cpp
@@ -740,6 +749,7 @@ target_sources(devex_runtime
         FILES
             include/devex/runtime/Application.hpp
             include/devex/runtime/AssetManager.hpp
+            include/devex/runtime/Coroutine.hpp
             include/devex/runtime/FixedTimestep.hpp
             include/devex/runtime/Game.hpp
             include/devex/runtime/GameExport.hpp

@@ -3,6 +3,7 @@
 #include <devex/asset/Primitives.hpp>
 #include <devex/asset/Project.hpp>
 #include <devex/animation/AnimationWorld.hpp>
+#include <devex/animation/TweenWorld.hpp>
 #include <devex/asset/import/TextureProcessing.hpp>
 #include <devex/audio/AudioEngine.hpp>
 #include <devex/core/File.hpp>
@@ -18,6 +19,7 @@
 #include <devex/platform/Process.hpp>
 #include <devex/runtime/Application.hpp>
 #include <devex/runtime/ComponentViews.hpp>
+#include <devex/runtime/Coroutine.hpp>
 #include <devex/runtime/FixedTimestep.hpp>
 #include <devex/runtime/GameExport.hpp>
 #include <devex/runtime/GameModule.hpp>
@@ -347,6 +349,9 @@ private:
     std::unique_ptr<physics::PhysicsWorld> m_physics;
     std::unique_ptr<audio::AudioWorld> m_audio;
     std::unique_ptr<animation::AnimationWorld> m_animation;
+    std::unique_ptr<animation::TweenWorld> m_tweens;
+    // The coroutines of the game module, whose frames are destroyed before it unloads.
+    CoroutineScheduler m_coroutines;
     std::unique_ptr<ui::UiWorld> m_ui;
     std::unique_ptr<InputActions> m_actions;
     std::filesystem::path m_userDirectory;
@@ -527,6 +532,7 @@ core::Result<void> ApplicationRunner::loadScene(asset::AssetId sceneAsset)
 void ApplicationRunner::replaceScene(scene::Scene loaded, asset::AssetId sceneAsset)
 {
     const bool restart = m_gameStarted;
+    m_coroutines.clear();
     if (restart)
     {
         destroyUi();
@@ -624,6 +630,7 @@ int ApplicationRunner::execute()
     }
     m_services.platform.setLiveRedrawCallback({});
     m_application.onShutdown();
+    m_coroutines.clear();
     destroyGameData();
     destroyInput();
     destroyUi();
@@ -1027,6 +1034,7 @@ void ApplicationRunner::startPlaying()
 void ApplicationRunner::stopPlaying()
 {
     m_application.onPlayStopped();
+    m_coroutines.clear();
     destroyGameData();
     destroyInput();
     destroyUi();
@@ -1391,6 +1399,8 @@ void ApplicationRunner::unloadGameModule()
     {
         return;
     }
+    // Coroutines run code of the module, and their frames hold its objects.
+    m_coroutines.clear();
     // Components of the module stay in the scenes as text until it comes back.
     forEachScene([this](scene::Scene& scene) { static_cast<void>(m_game->release(scene)); });
     m_game.reset();
@@ -1453,6 +1463,8 @@ void ApplicationRunner::runSystems(SystemPhase phase, core::Duration delta)
         .physics = m_physics.get(),
         .audio = m_audio.get(),
         .animation = m_animation.get(),
+        .tweens = m_tweens.get(),
+        .coroutines = &m_coroutines,
         .ui = m_ui.get(),
         .delta = delta,
         .interpolationAlpha = m_timestep.alpha(),
@@ -1462,6 +1474,12 @@ void ApplicationRunner::runSystems(SystemPhase phase, core::Duration delta)
     if (m_game)
     {
         m_game->registry().run(phase, context);
+    }
+    // After the systems, as Unity resumes its coroutines after Update.
+    if (phase == SystemPhase::Update && m_coroutines.count() != 0)
+    {
+        DEVEX_PROFILE_SCOPE("Coroutines");
+        m_coroutines.update(context);
     }
     if (m_managed)
     {
@@ -1473,6 +1491,7 @@ void ApplicationRunner::runSystems(SystemPhase phase, core::Duration delta)
             .physics = m_physics.get(),
             .audio = m_audio.get(),
             .animation = m_animation.get(),
+            .tweens = m_tweens.get(),
             .ui = m_ui.get(),
             .actions = m_actions.get(),
             .saves = m_saves.get(),
@@ -1565,6 +1584,9 @@ void ApplicationRunner::createAnimation()
     {
         m_services.tools->setAnimationWorld(m_animation.get());
     }
+    m_tweens = std::make_unique<animation::TweenWorld>(
+        [this](asset::AssetId curve) { return m_services.assets.curve(curve); });
+    m_application.m_tweens = m_tweens.get();
 }
 
 void ApplicationRunner::createUi()
@@ -1993,6 +2015,8 @@ void ApplicationRunner::destroyAnimation()
     }
     m_application.m_animation = nullptr;
     m_animation.reset();
+    m_application.m_tweens = nullptr;
+    m_tweens.reset();
 }
 
 void ApplicationRunner::updateAnimation(std::chrono::nanoseconds frameTime)
@@ -2004,6 +2028,12 @@ void ApplicationRunner::updateAnimation(std::chrono::nanoseconds frameTime)
     const bool paused = isEditor() && m_playState != tools::PlayState::Playing;
     m_animation->setPaused(paused);
     m_animation->update(*m_application.m_scene, core::Duration(frameTime));
+    // After the clips, so that a tween moves an animated entity as a whole.
+    if (m_tweens)
+    {
+        m_tweens->setPaused(paused);
+        m_tweens->update(*m_application.m_scene, core::Duration(frameTime));
+    }
 }
 
 void ApplicationRunner::applyAudioSettings()
@@ -2313,6 +2343,11 @@ audio::AudioWorld* Application::audio() noexcept
 animation::AnimationWorld* Application::animation() noexcept
 {
     return m_animation;
+}
+
+animation::TweenWorld* Application::tweens() noexcept
+{
+    return m_tweens;
 }
 
 ui::UiWorld* Application::ui() noexcept

@@ -2,8 +2,10 @@
 // scene; a character that walks, jumps and launches balls in the physics arena.
 #include <devex/asset/AssetId.hpp>
 #include <devex/core/Log.hpp>
+#include <devex/math/Easing.hpp>
 #include <devex/math/Math.hpp>
 #include <devex/platform/Input.hpp>
+#include <devex/runtime/Coroutine.hpp>
 #include <devex/runtime/Game.hpp>
 #include <devex/runtime/InputActions.hpp>
 #include <devex/scene/Components.hpp>
@@ -546,9 +548,62 @@ void turnTurntables(SystemContext& context)
     }
 }
 
+// From one light level to another by equal ratios, as the eye sees light: 100000 lux to 0.3 goes
+// through 170 lux at the middle, not through 50000.
+[[nodiscard]] float blendLight(float from, float to, float t)
+{
+    from = std::max(from, 1e-4f);
+    to = std::max(to, 1e-4f);
+    return from * std::pow(to / from, t);
+}
+
+// The sky and the sun, from where they are to the day or the night their DayNight asks for, over a
+// few seconds: a coroutine, which goes on during Update frame after frame until it is there.
+devex::runtime::Coroutine fadeDayAndNight(devex::runtime::CoroutineContext& co, Entity sky)
+{
+    constexpr float duration = 3.0f;
+    Scene& scene = co.frame().scene;
+    const DayNight* const switcher = scene.tryGet<DayNight>(sky);
+    const devex::scene::Environment* const environment = scene.tryGet<devex::scene::Environment>(sky);
+    if (switcher == nullptr || environment == nullptr)
+    {
+        co_return;
+    }
+    const float skyFrom = environment->intensity;
+    const float skyTo = switcher->night ? switcher->nightSkyIntensity : switcher->daySkyIntensity;
+    const float sunTo = switcher->night ? switcher->nightIlluminance : switcher->dayIlluminance;
+    const float temperatureTo = switcher->night ? switcher->nightTemperature : switcher->dayTemperature;
+    float sunFrom = sunTo;
+    float temperatureFrom = temperatureTo;
+    for ([[maybe_unused]] auto [lightEntity, light] : scene.view<devex::scene::DirectionalLight>())
+    {
+        sunFrom = light.illuminance;
+        temperatureFrom = light.temperature;
+    }
+    for (float elapsed = 0.0f; elapsed < duration;)
+    {
+        // Each wait gives the frame the coroutine goes on in.
+        SystemContext& frame = co_await co.nextFrame();
+        elapsed += static_cast<float>(frame.delta.count());
+        const float t = devex::math::ease(devex::math::Ease::InOutSine, elapsed / duration);
+        if (auto* const current = frame.scene.tryGet<devex::scene::Environment>(sky))
+        {
+            current->intensity = blendLight(skyFrom, skyTo, t);
+        }
+        for ([[maybe_unused]] auto [lightEntity, light] : frame.scene.view<devex::scene::DirectionalLight>())
+        {
+            light.illuminance = blendLight(sunFrom, sunTo, t);
+            light.temperature = temperatureFrom + (temperatureTo - temperatureFrom) * t;
+        }
+    }
+}
+
+// The transition that plays, which pressing N again replaces from where it is.
+devex::runtime::CoroutineHandle dayNightTransition;
+
 void switchDayAndNight(SystemContext& context)
 {
-    if (!context.input.wasKeyPressed(Key::N) || typing(context))
+    if (!context.input.wasKeyPressed(Key::N) || typing(context) || context.coroutines == nullptr)
     {
         return;
     }
@@ -556,12 +611,10 @@ void switchDayAndNight(SystemContext& context)
          context.scene.view<DayNight, devex::scene::Environment>())
     {
         switcher.night = !switcher.night;
-        environment.intensity = switcher.night ? switcher.nightSkyIntensity : switcher.daySkyIntensity;
-        for ([[maybe_unused]] auto [lightEntity, light] : context.scene.view<devex::scene::DirectionalLight>())
-        {
-            light.illuminance = switcher.night ? switcher.nightIlluminance : switcher.dayIlluminance;
-            light.temperature = switcher.night ? switcher.nightTemperature : switcher.dayTemperature;
-        }
+        context.coroutines->stop(dayNightTransition);
+        // It ends with the sky, should the sky go away.
+        dayNightTransition = context.coroutines->start(
+            context, [sky = entity](devex::runtime::CoroutineContext& co) { return fadeDayAndNight(co, sky); }, entity);
         DEVEX_LOG_INFO("{}", switcher.night ? "Night" : "Day");
     }
 }

@@ -1,5 +1,6 @@
 #include <devex/asset/Artifact.hpp>
 #include <devex/asset/import/Importer.hpp>
+#include <devex/asset/import/CurveFile.hpp>
 #include <devex/asset/import/MaterialFile.hpp>
 #include <devex/asset/import/ThemeFile.hpp>
 #include <devex/asset/import/TextureProcessing.hpp>
@@ -181,6 +182,23 @@ core::Result<ImportResult> importThemeFile(ImportContext& context)
     return result;
 }
 
+core::Result<ImportResult> importCurveFile(ImportContext& context)
+{
+    const core::Result<std::string> text = core::readTextFile(context.source);
+    if (!text)
+    {
+        return std::unexpected(text.error());
+    }
+    const core::Result<CurveData> curve = parseCurveFile(*text);
+    if (!curve)
+    {
+        return std::unexpected(curve.error());
+    }
+    ImportResult result;
+    result.artifacts.push_back({context.mainId, AssetType::Curve, context.name, encodeCurve(*curve)});
+    return result;
+}
+
 core::Result<ImportResult> importSceneFile(ImportContext& context)
 {
     const core::Result<std::string> text = core::readTextFile(context.source);
@@ -298,6 +316,13 @@ std::span<const Importer> importers()
             .mainType = AssetType::Theme,
             .extensions = {themeExtension},
             .run = &importThemeFile,
+        },
+        Importer{
+            .name = "curve",
+            .version = 1,
+            .mainType = AssetType::Curve,
+            .extensions = {curveExtension},
+            .run = &importCurveFile,
         },
         Importer{
             .name = "scene",

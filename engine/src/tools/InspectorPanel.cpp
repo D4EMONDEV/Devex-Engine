@@ -1135,6 +1135,10 @@ void drawInspectorPanel(ToolsState& state, scene::Scene& scene)
             {
                 drawModelInspector(state);
             }
+            else if (selected != nullptr && selected->type == asset::AssetType::Curve)
+            {
+                drawCurveInspector(state);
+            }
             else
             {
                 drawAudioClipInspector(state);

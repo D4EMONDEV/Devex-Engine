@@ -133,6 +133,8 @@ internal static unsafe class GameRuntime
     /// <summary>Forgets the game assembly and everything it defined, keeping the state of its components.</summary>
     public static void Unload()
     {
+        // Coroutines run code of the assembly, which cannot go while they hold it.
+        Coroutines.Clear();
         PreserveInstances();
         Saves.Forget();
         Systems.Clear();
@@ -173,11 +175,16 @@ internal static unsafe class GameRuntime
     {
         SceneView.Bind(scene);
         _running = true;
+        // An await of a Task goes on in the game, during Update, rather than on another thread.
+        SynchronizationContext? previousContext = SynchronizationContext.Current;
+        SynchronizationContext.SetSynchronizationContext(Coroutines.Context);
+        Coroutines.SetMainThread();
         try
         {
             if (phase == SystemPhase.Start)
             {
-                // A new game, or a new scene: every component starts over.
+                // A new game, or a new scene: every component and coroutine starts over.
+                Coroutines.Clear();
                 foreach (ComponentTypeInfo info in Types)
                 {
                     info.Instances.Clear();
@@ -256,6 +263,11 @@ internal static unsafe class GameRuntime
                     Report($"The system {system.Name}", system.Name, exception);
                 }
             }
+            if (phase == SystemPhase.Update)
+            {
+                using ProfileScope zone = profiling ? Profiler.Scope("C# coroutines") : default;
+                Coroutines.Update(delta);
+            }
             using (profiling ? Profiler.Scope("C# components out") : default)
             {
                 StoreInstances();
@@ -267,6 +279,7 @@ internal static unsafe class GameRuntime
             Preserved.Clear();
             _running = false;
             SceneView.Bind(null);
+            SynchronizationContext.SetSynchronizationContext(previousContext);
         }
     }
 
@@ -461,6 +474,7 @@ internal static unsafe class GameRuntime
         {
             return;
         }
+        Coroutines.CurrentOwner = instance;
         try
         {
             switch (contact.Trigger, contact.Phase)
@@ -483,11 +497,17 @@ internal static unsafe class GameRuntime
         {
             Report($"{info.Name} of '{self.Name}'", $"{info.Name}.collision", exception);
         }
+        finally
+        {
+            Coroutines.CurrentOwner = null;
+        }
     }
 
     private static void Call(ComponentTypeInfo info, Component instance, string method, Action<Component, float> action,
                              float delta)
     {
+        // The coroutines it starts end with it.
+        Coroutines.CurrentOwner = instance;
         try
         {
             action(instance, delta);
@@ -496,11 +516,26 @@ internal static unsafe class GameRuntime
         {
             Report($"{info.Name}.{method} of '{instance.Entity.Name}'", $"{info.Name}.{method}", exception);
         }
+        finally
+        {
+            Coroutines.CurrentOwner = null;
+        }
+    }
+
+    /// <summary>Whether a phase runs, with its scene.</summary>
+    internal static bool InPhase => _running;
+
+    /// <summary>Whether the component is still on its entity, as the phase found them.</summary>
+    internal static bool IsLive(Component component)
+    {
+        return TypesByType.TryGetValue(component.GetType(), out ComponentTypeInfo? info) &&
+               info.Instances.TryGetValue(component.Entity.Key, out Component? instance) &&
+               ReferenceEquals(instance, component);
     }
 
     // An error is written with its stack once, then counted, so that a failing Update, on one entity
     // or on many, does not flood the output.
-    private static void Report(string where, string what, Exception exception)
+    internal static void Report(string where, string what, Exception exception)
     {
         if (exception is TargetInvocationException { InnerException: { } inner })
         {

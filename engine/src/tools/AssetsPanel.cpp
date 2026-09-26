@@ -81,6 +81,10 @@ struct Folder
         return {icons::AudioWaveform, colors.audio};
     case asset::AssetType::AnimationClip:
         return {icons::Film, colors.animation};
+    case asset::AssetType::Curve:
+        return {icons::Activity, colors.animation};
+    default:
+        break;
     }
     return {icons::File, colors.neutral};
 }
@@ -217,6 +221,11 @@ void drawSource(ToolsState& state, scene::Scene& scene, const asset::SourceFile&
                 openTextFile(state, *path);
             }
         }
+        // Curves are edited in the inspector.
+        if (mainAsset->type == asset::AssetType::Curve && ImGui::IsItemClicked(ImGuiMouseButton_Left))
+        {
+            selectAsset(state, mainAsset->id);
+        }
         // Models show how they import in the inspector, and are placed when double-clicked.
         if (mainAsset->type == asset::AssetType::Model && ImGui::IsItemClicked(ImGuiMouseButton_Left))
         {
@@ -286,7 +295,26 @@ void drawSource(ToolsState& state, scene::Scene& scene, const asset::SourceFile&
     ImGui::PopID();
 }
 
-void drawFolder(ToolsState& state, scene::Scene& scene, const std::string& name, const Folder& folder, int depth)
+// What can be created in a folder.
+void drawFolderMenu(ToolsState& state, const std::string& path)
+{
+    if (!ImGui::BeginPopupContextItem("folder menu"))
+    {
+        return;
+    }
+    if (ImGui::MenuItemEx("New Curve", icons::Activity.c_str()))
+    {
+        if (core::Result<std::filesystem::path> created = createCurveFile(state, path); !created)
+        {
+            DEVEX_LOG_ERROR("Cannot create the curve: {}", created.error());
+        }
+    }
+    ImGui::SetItemTooltip("A curve drawn by hand, which eases tweens and Tweeners");
+    ImGui::EndPopup();
+}
+
+void drawFolder(ToolsState& state, scene::Scene& scene, const std::string& name, const std::string& path,
+                const Folder& folder, int depth)
 {
     const ThemeColors& colors = themeColors();
     ImGui::PushID(name.c_str());
@@ -299,11 +327,13 @@ void drawFolder(ToolsState& state, scene::Scene& scene, const std::string& name,
         flags |= ImGuiTreeNodeFlags_DefaultOpen;
     }
     const bool open = treeRow("##folder", flags, {wasOpen ? icons::FolderOpen : icons::Folder, colors.folder}, name);
+    drawFolderMenu(state, path);
     if (open)
     {
         for (const auto& [childName, child] : folder.folders)
         {
-            drawFolder(state, scene, childName, child, depth + 1);
+            drawFolder(state, scene, childName, path.ends_with('/') ? path + childName : path + "/" + childName, child,
+                       depth + 1);
         }
         for (const asset::SourceFile* const source : folder.files)
         {
@@ -341,6 +371,16 @@ void drawAssetsPanel(ToolsState& state, scene::Scene& scene)
         }
 
         const asset::AssetDatabase& database = *state.database;
+        // A file created here shows in the inspector once imported.
+        if (!state.assetToSelect.empty())
+        {
+            const std::optional<asset::AssetId> created = database.findByPath(state.assetToSelect);
+            if (created && database.find(*created) != nullptr)
+            {
+                selectAsset(state, *created);
+                state.assetToSelect.clear();
+            }
+        }
         searchField("##filter", state.assetFilter, "Filter Files");
         ImGui::SetItemTooltip(state.mode == ToolsMode::Editor
                                   ? "Drag a model into the viewport or the scene tree, or an asset onto a property. "
@@ -356,7 +396,7 @@ void drawAssetsPanel(ToolsState& state, scene::Scene& scene)
             const std::vector<asset::SourceFile> sources = database.sources();
             if (state.assetFilter.empty())
             {
-                drawFolder(state, scene, "res://", buildTree(sources), 0);
+                drawFolder(state, scene, "res://", std::string(asset::resourceScheme), buildTree(sources), 0);
             }
             else
             {

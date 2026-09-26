@@ -309,3 +309,84 @@ public class Loader : Component
         Ready = Assets.IsReady(Target);
     }
 }
+
+// Tweens and coroutines: a coroutine that waits for frames, time, tweens, another coroutine, a Task
+// and a condition, and one that counts frames for as long as the component lives.
+public class Choreographer : Component
+{
+    public int Step;
+    public bool NestedFailed;
+    public bool TweenFailed;
+    public bool OnGameThread;
+    public bool Release;
+
+    internal static int Ticks;
+
+    public override void Start()
+    {
+        _ = Run();
+        _ = Tick();
+    }
+
+    private async Coroutine Run()
+    {
+        Step = 1;
+        await Wait.NextFrame();
+        Step = 2;
+        await Wait.Seconds(0.5f);
+        Step = 3;
+        await Tween.MoveBy(Entity, new Vec3(0.0f, 2.0f, 0.0f), 1.0f, Ease.Linear);
+        Step = 4;
+        try
+        {
+            await Fail();
+        }
+        catch (InvalidOperationException)
+        {
+            NestedFailed = true;
+        }
+        try
+        {
+            // The entity has no UiRect.
+            _ = Tween.Fade(Entity, 0.0f, 1.0f);
+        }
+        catch (InvalidOperationException)
+        {
+            TweenFailed = true;
+        }
+        int thread = System.Environment.CurrentManagedThreadId;
+        await Task.Yield();
+        OnGameThread = System.Environment.CurrentManagedThreadId == thread;
+        Step = 5;
+        await new TweenSequence()
+            .Append(new TweenSpec(Entity, "Transform.scale", new Vec3(2.0f, 2.0f, 2.0f), 0.5f) { Ease = Ease.Linear })
+            .AppendInterval(0.5f)
+            .Play();
+        Step = 6;
+        await Wait.Until(() => Release);
+        Step = 7;
+    }
+
+    private static async Coroutine Fail()
+    {
+        await Wait.NextFrame();
+        throw new InvalidOperationException("nested");
+    }
+
+    private static async Coroutine Tick()
+    {
+        while (true)
+        {
+            await Wait.NextFrame();
+            ++Ticks;
+        }
+    }
+}
+
+// Reads the frames the coroutine of the Choreographer counted.
+public class TickReader : Component
+{
+    public int Ticks;
+
+    public override void Update(float delta) => Ticks = Choreographer.Ticks;
+}

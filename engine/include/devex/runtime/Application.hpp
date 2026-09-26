@@ -1,6 +1,7 @@
 #pragma once
 
 #include <devex/animation/AnimationWorld.hpp>
+#include <devex/animation/TweenWorld.hpp>
 #include <devex/ui/UiWorld.hpp>
 #include <devex/asset/AssetSource.hpp>
 #include <devex/audio/AudioWorld.hpp>
@@ -182,6 +183,8 @@ protected:
     [[nodiscard]] audio::AudioWorld* audio() noexcept;
     // The animations of the scene while gameplay runs; null otherwise.
     [[nodiscard]] animation::AnimationWorld* animation() noexcept;
+    // The tweens of the scene while gameplay runs; null otherwise.
+    [[nodiscard]] animation::TweenWorld* tweens() noexcept;
     // The interface of the scene while gameplay runs; null otherwise.
     [[nodiscard]] ui::UiWorld* ui() noexcept;
     // The input actions of the project while gameplay runs; null otherwise.
@@ -211,6 +214,7 @@ private:
     physics::PhysicsWorld* m_physics = nullptr;
     audio::AudioWorld* m_audio = nullptr;
     animation::AnimationWorld* m_animation = nullptr;
+    animation::TweenWorld* m_tweens = nullptr;
     ui::UiWorld* m_ui = nullptr;
     InputActions* m_actions = nullptr;
     SaveGames* m_saves = nullptr;

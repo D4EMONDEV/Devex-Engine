@@ -45,6 +45,7 @@ target_compile_definitions(devex_core_tests PRIVATE DEVEX_TEST_EXPECTED_VERSION=
 
 devex_add_tests(math
     SOURCES
+        math/EasingTests.cpp
         math/ProjectionTests.cpp
         math/TransformTests.cpp
     LIBRARIES
@@ -82,6 +83,7 @@ devex_add_tests(scene
 devex_add_tests(animation
     SOURCES
         animation/AnimationTests.cpp
+        animation/TweenTests.cpp
     LIBRARIES
         Devex::Engine
 )
@@ -105,6 +107,7 @@ devex_add_tests(asset
     SOURCES
         asset/ArtifactTests.cpp
         asset/AssetDatabaseTests.cpp
+        asset/CurveTests.cpp
         asset/FbxImporterTests.cpp
         asset/FontImporterTests.cpp
         asset/GltfImporterTests.cpp
@@ -215,6 +218,7 @@ devex_add_tests(runtime
     SOURCES
         runtime/ApplicationTests.cpp
         runtime/AssetMemoryTests.cpp
+        runtime/CoroutineTests.cpp
         runtime/FixedTimestepTests.cpp
         runtime/GameCodeBuilderTests.cpp
         runtime/GameExportTests.cpp

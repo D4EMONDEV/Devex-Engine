@@ -92,6 +92,7 @@ ComponentRegistry& componentRegistry()
         builtins.add<MeshRenderer>();
         builtins.add<SkinnedMeshRenderer>();
         builtins.add<Animator>();
+        builtins.add<Tweener>();
         builtins.add<Camera>();
         builtins.add<DirectionalLight>();
         builtins.add<PointLight>();
