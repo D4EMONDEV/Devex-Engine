@@ -449,6 +449,14 @@ struct ToolsState
     // The collision shapes of every entity, rather than only those of the selection.
     bool showColliders = false;
     bool showProjectSettings = false;
+    // The binding of the input settings waiting for a key or a gamepad button, by action and
+    // binding, and the filter of the list bindings are chosen from.
+    std::optional<std::pair<std::size_t, std::size_t>> listeningBinding;
+    std::string inputSourceFilter;
+    // The key pressed since the previous frame, whatever window had the keyboard, and the one of
+    // this frame: the input settings bind it by its place, which ImGui does not tell.
+    std::optional<platform::Key> notifiedKey;
+    std::optional<platform::Key> pressedKey;
     // Edits of the project settings, saved once the edited field is released.
     std::optional<asset::Project> pendingProject;
     // Export.
@@ -544,6 +552,8 @@ void setMainScreen(ToolsState& state, MainScreen screen);
 void drawStatusBar(ToolsState& state, const scene::Scene& scene);
 void drawSettingsWindow(ToolsState& state);
 void drawProjectSettingsWindow(ToolsState& state);
+// The Input page of the project settings: contexts, actions and their bindings.
+void drawInputSettings(ToolsState& state, asset::InputSettings& input);
 void drawExportWindow(ToolsState& state);
 void drawEditorPopups(ToolsState& state, scene::Scene& scene);
 void handleEditorShortcuts(ToolsState& state, scene::Scene& scene);

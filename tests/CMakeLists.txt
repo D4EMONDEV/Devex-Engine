@@ -218,6 +218,7 @@ devex_add_tests(runtime
         runtime/FixedTimestepTests.cpp
         runtime/GameCodeBuilderTests.cpp
         runtime/GameExportTests.cpp
+        runtime/InputActionsTests.cpp
         runtime/ManagedGameTests.cpp
         runtime/GameModuleTests.cpp
         runtime/SceneExtractionTests.cpp

@@ -628,176 +628,193 @@ void drawProjectSettingsWindow(ToolsState& state)
     const asset::Project& saved = state.database->project();
     // Edits build on those not saved yet, so that a drag keeps its progress from frame to frame.
     asset::Project project = state.pendingProject.value_or(saved);
-    ImGui::PushFont(editorFonts().bold, 0.0f);
-    ImGui::SeparatorText("General");
-    ImGui::PopFont();
-    if (beginProperties("general"))
+    if (!ImGui::BeginTabBar("pages"))
     {
-        propertyName("Name");
-        ImGui::InputText("##name", &project.name);
-        propertyName("Startup scene");
-        ImGui::AlignTextToFramePadding();
-        ImGui::TextDisabled("%s", project.startupScene.empty() ? "(the first scene)" : project.startupScene.c_str());
-        endProperties();
+        ImGui::End();
+        return;
     }
-
-    ImGui::Spacing();
-    ImGui::PushFont(editorFonts().bold, 0.0f);
-    ImGui::SeparatorText("Window");
-    ImGui::PopFont();
-    asset::WindowSettings& window = project.window;
-    if (beginProperties("window"))
+    if (ImGui::BeginTabItem("General"))
     {
-        propertyName("Size");
-        std::array<std::uint32_t, 2> size{window.width, window.height};
-        const std::uint32_t minimumSize = 64;
-        const std::uint32_t maximumSize = 16384;
-        if (ImGui::DragScalarN("##size", ImGuiDataType_U32, size.data(), 2, 1.0f, &minimumSize, &maximumSize, "%u"))
+        if (beginProperties("general"))
         {
-            window.width = size[0];
-            window.height = size[1];
-        }
-        ImGui::SetItemTooltip("The size of the window, in points: the system scales it on high-density displays");
-        propertyName("Fullscreen");
-        ImGui::Checkbox("##fullscreen", &window.fullscreen);
-        propertyName("VSync");
-        ImGui::Checkbox("##vsync", &window.vsync);
-        ImGui::SetItemTooltip("Waits for the display refresh: no tearing, lower power");
-        propertyName("Frame rate limit");
-        const std::uint32_t noLimit = 0;
-        const std::uint32_t highestLimit = 1000;
-        ImGui::DragScalar("##frame rate", ImGuiDataType_U32, &window.maxFrameRate, 0.5f, &noLimit, &highestLimit,
-                          window.maxFrameRate == 0 ? "unlimited" : "%u fps");
-        propertyName("Icon");
-        static_cast<void>(drawAssetPicker(state, "##icon", asset::AssetType::Texture, window.icon));
-        ImGui::SetItemTooltip("An image of the project, square and 256 pixels or more");
-        endProperties();
-    }
-
-    ImGui::Spacing();
-    ImGui::PushFont(editorFonts().bold, 0.0f);
-    ImGui::SeparatorText("Physics");
-    ImGui::PopFont();
-    asset::PhysicsSettings& physics = project.physics;
-    if (beginProperties("physics"))
-    {
-        propertyName("Gravity");
-        dragVector("##gravity", &physics.gravity[0], 3, 0.05f, "%.2f");
-        endProperties();
-    }
-
-    ImGui::Spacing();
-    ImGui::TextDisabled("Collision layers: name the layers bodies use, then choose which ones touch.");
-    if (ImGui::BeginTable("layers", 2, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_PadOuterX))
-    {
-        ImGui::TableSetupColumn("index", ImGuiTableColumnFlags_WidthFixed, ImGui::GetFontSize() * 2.0f);
-        ImGui::TableSetupColumn("name", ImGuiTableColumnFlags_WidthStretch);
-        for (std::size_t index = 0; index < asset::physicsLayerCount; ++index)
-        {
-            ImGui::TableNextRow();
-            ImGui::TableSetColumnIndex(0);
+            propertyName("Name");
+            ImGui::InputText("##name", &project.name);
+            propertyName("Startup scene");
             ImGui::AlignTextToFramePadding();
-            ImGui::TextDisabled("%zu", index);
-            ImGui::TableSetColumnIndex(1);
-            ImGui::PushID(static_cast<int>(index));
-            ImGui::SetNextItemWidth(-FLT_MIN);
-            ImGui::InputTextWithHint("##layer", index == 0 ? "Default" : "unused", &physics.layerNames[index]);
-            ImGui::PopID();
+            ImGui::TextDisabled("%s", project.startupScene.empty() ? "(the first scene)" : project.startupScene.c_str());
+            endProperties();
         }
-        ImGui::EndTable();
-    }
 
-    // The collision matrix of the named layers, as a triangle.
-    std::vector<std::uint32_t> named;
-    for (std::uint32_t index = 0; index < asset::physicsLayerCount; ++index)
-    {
-        if (index == 0 || !physics.layerNames[index].empty())
+        ImGui::Spacing();
+        ImGui::PushFont(editorFonts().bold, 0.0f);
+        ImGui::SeparatorText("Window");
+        ImGui::PopFont();
+        asset::WindowSettings& window = project.window;
+        if (beginProperties("window"))
         {
-            named.push_back(index);
-        }
-    }
-    ImGui::Spacing();
-    const ImGuiTableFlags matrixFlags = ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_BordersInnerV |
-                                        ImGuiTableFlags_HighlightHoveredColumn | ImGuiTableFlags_NoHostExtendX;
-    if (ImGui::BeginTable("collisions", static_cast<int>(named.size()) + 1, matrixFlags))
-    {
-        ImGui::TableSetupColumn("##rows", ImGuiTableColumnFlags_WidthFixed, ImGui::GetFontSize() * 8.0f);
-        for (auto column = named.rbegin(); column != named.rend(); ++column)
-        {
-            const std::string& name = physics.layerNames[*column];
-            ImGui::TableSetupColumn(name.empty() ? "Default" : name.c_str(),
-                                    ImGuiTableColumnFlags_AngledHeader | ImGuiTableColumnFlags_WidthFixed);
-        }
-        ImGui::TableAngledHeadersRow();
-        for (std::size_t row = 0; row < named.size(); ++row)
-        {
-            const std::uint32_t layer = named[row];
-            ImGui::TableNextRow();
-            ImGui::TableSetColumnIndex(0);
-            ImGui::AlignTextToFramePadding();
-            ImGui::TextUnformatted(physics.layerNames[layer].empty() ? "Default" : physics.layerNames[layer].c_str());
-            for (std::size_t column = 0; column < named.size() - row; ++column)
+            propertyName("Size");
+            std::array<std::uint32_t, 2> size{window.width, window.height};
+            const std::uint32_t minimumSize = 64;
+            const std::uint32_t maximumSize = 16384;
+            if (ImGui::DragScalarN("##size", ImGuiDataType_U32, size.data(), 2, 1.0f, &minimumSize, &maximumSize, "%u"))
             {
-                const std::uint32_t other = named[named.size() - 1 - column];
-                ImGui::TableSetColumnIndex(static_cast<int>(column) + 1);
-                ImGui::PushID(static_cast<int>(layer * asset::physicsLayerCount + other));
-                bool collides = physics.collides(layer, other);
-                if (ImGui::Checkbox("##collides", &collides))
-                {
-                    physics.setCollides(layer, other, collides);
-                }
-                ImGui::SetItemTooltip("%s and %s", physics.layerNames[layer].empty() ? "Default" : physics.layerNames[layer].c_str(),
-                                      physics.layerNames[other].empty() ? "Default" : physics.layerNames[other].c_str());
+                window.width = size[0];
+                window.height = size[1];
+            }
+            ImGui::SetItemTooltip("The size of the window, in points: the system scales it on high-density displays");
+            propertyName("Fullscreen");
+            ImGui::Checkbox("##fullscreen", &window.fullscreen);
+            propertyName("VSync");
+            ImGui::Checkbox("##vsync", &window.vsync);
+            ImGui::SetItemTooltip("Waits for the display refresh: no tearing, lower power");
+            propertyName("Frame rate limit");
+            const std::uint32_t noLimit = 0;
+            const std::uint32_t highestLimit = 1000;
+            ImGui::DragScalar("##frame rate", ImGuiDataType_U32, &window.maxFrameRate, 0.5f, &noLimit, &highestLimit,
+                              window.maxFrameRate == 0 ? "unlimited" : "%u fps");
+            propertyName("Icon");
+            static_cast<void>(drawAssetPicker(state, "##icon", asset::AssetType::Texture, window.icon));
+            ImGui::SetItemTooltip("An image of the project, square and 256 pixels or more");
+            endProperties();
+        }
+        ImGui::EndTabItem();
+    }
+
+    if (ImGui::BeginTabItem("Physics"))
+    {
+        asset::PhysicsSettings& physics = project.physics;
+        if (beginProperties("physics"))
+        {
+            propertyName("Gravity");
+            dragVector("##gravity", &physics.gravity[0], 3, 0.05f, "%.2f");
+            endProperties();
+        }
+
+        ImGui::Spacing();
+        ImGui::TextDisabled("Collision layers: name the layers bodies use, then choose which ones touch.");
+        if (ImGui::BeginTable("layers", 2, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_PadOuterX))
+        {
+            ImGui::TableSetupColumn("index", ImGuiTableColumnFlags_WidthFixed, ImGui::GetFontSize() * 2.0f);
+            ImGui::TableSetupColumn("name", ImGuiTableColumnFlags_WidthStretch);
+            for (std::size_t index = 0; index < asset::physicsLayerCount; ++index)
+            {
+                ImGui::TableNextRow();
+                ImGui::TableSetColumnIndex(0);
+                ImGui::AlignTextToFramePadding();
+                ImGui::TextDisabled("%zu", index);
+                ImGui::TableSetColumnIndex(1);
+                ImGui::PushID(static_cast<int>(index));
+                ImGui::SetNextItemWidth(-FLT_MIN);
+                ImGui::InputTextWithHint("##layer", index == 0 ? "Default" : "unused", &physics.layerNames[index]);
                 ImGui::PopID();
             }
+            ImGui::EndTable();
         }
-        ImGui::EndTable();
-    }
-    ImGui::Spacing();
-    ImGui::TextDisabled("Changes apply the next time the game starts.");
 
-    ImGui::Spacing();
-    ImGui::PushFont(editorFonts().bold, 0.0f);
-    ImGui::SeparatorText("Audio");
-    ImGui::PopFont();
-    asset::AudioSettings& audio = project.audio;
-    if (beginProperties("audio"))
-    {
-        propertyName("Master volume");
-        ImGui::SliderFloat("##master", &audio.masterVolume, 0.0f, 1.0f, "%.2f");
-        ImGui::SetItemTooltip("The volume of every sound of the game");
-        endProperties();
-    }
-    ImGui::Spacing();
-    ImGui::TextDisabled("Groups: AudioSource components and one-shot sounds play in one, whose volume code can change.");
-    if (ImGui::BeginTable("audio groups", 3, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_PadOuterX))
-    {
-        ImGui::TableSetupColumn("index", ImGuiTableColumnFlags_WidthFixed, ImGui::GetFontSize() * 2.0f);
-        ImGui::TableSetupColumn("name", ImGuiTableColumnFlags_WidthStretch, 1.0f);
-        ImGui::TableSetupColumn("volume", ImGuiTableColumnFlags_WidthStretch, 1.0f);
-        for (std::size_t index = 0; index < asset::audioGroupCount; ++index)
+        // The collision matrix of the named layers, as a triangle.
+        std::vector<std::uint32_t> named;
+        for (std::uint32_t index = 0; index < asset::physicsLayerCount; ++index)
         {
-            ImGui::TableNextRow();
-            ImGui::TableSetColumnIndex(0);
-            ImGui::AlignTextToFramePadding();
-            ImGui::TextDisabled("%zu", index);
-            ImGui::PushID(static_cast<int>(index));
-            ImGui::TableSetColumnIndex(1);
-            ImGui::SetNextItemWidth(-FLT_MIN);
-            ImGui::InputTextWithHint("##group", "unused", &audio.groupNames[index]);
-            ImGui::TableSetColumnIndex(2);
-            ImGui::SetNextItemWidth(-FLT_MIN);
-            ImGui::SliderFloat("##volume", &audio.groupVolumes[index], 0.0f, 1.0f, "%.2f");
-            ImGui::PopID();
+            if (index == 0 || !physics.layerNames[index].empty())
+            {
+                named.push_back(index);
+            }
         }
-        ImGui::EndTable();
+        ImGui::Spacing();
+        const ImGuiTableFlags matrixFlags = ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_BordersInnerV |
+                                            ImGuiTableFlags_HighlightHoveredColumn | ImGuiTableFlags_NoHostExtendX;
+        if (ImGui::BeginTable("collisions", static_cast<int>(named.size()) + 1, matrixFlags))
+        {
+            ImGui::TableSetupColumn("##rows", ImGuiTableColumnFlags_WidthFixed, ImGui::GetFontSize() * 8.0f);
+            for (auto column = named.rbegin(); column != named.rend(); ++column)
+            {
+                const std::string& name = physics.layerNames[*column];
+                ImGui::TableSetupColumn(name.empty() ? "Default" : name.c_str(),
+                                        ImGuiTableColumnFlags_AngledHeader | ImGuiTableColumnFlags_WidthFixed);
+            }
+            ImGui::TableAngledHeadersRow();
+            for (std::size_t row = 0; row < named.size(); ++row)
+            {
+                const std::uint32_t layer = named[row];
+                ImGui::TableNextRow();
+                ImGui::TableSetColumnIndex(0);
+                ImGui::AlignTextToFramePadding();
+                ImGui::TextUnformatted(physics.layerNames[layer].empty() ? "Default" : physics.layerNames[layer].c_str());
+                for (std::size_t column = 0; column < named.size() - row; ++column)
+                {
+                    const std::uint32_t other = named[named.size() - 1 - column];
+                    ImGui::TableSetColumnIndex(static_cast<int>(column) + 1);
+                    ImGui::PushID(static_cast<int>(layer * asset::physicsLayerCount + other));
+                    bool collides = physics.collides(layer, other);
+                    if (ImGui::Checkbox("##collides", &collides))
+                    {
+                        physics.setCollides(layer, other, collides);
+                    }
+                    ImGui::SetItemTooltip("%s and %s", physics.layerNames[layer].empty() ? "Default" : physics.layerNames[layer].c_str(),
+                                          physics.layerNames[other].empty() ? "Default" : physics.layerNames[other].c_str());
+                    ImGui::PopID();
+                }
+            }
+            ImGui::EndTable();
+        }
+        ImGui::Spacing();
+        ImGui::TextDisabled("Changes apply the next time the game starts.");
+        ImGui::EndTabItem();
     }
-    ImGui::TextDisabled("Volumes apply at once, and each time the game starts.");
+
+    if (ImGui::BeginTabItem("Audio"))
+    {
+        asset::AudioSettings& audio = project.audio;
+        if (beginProperties("audio"))
+        {
+            propertyName("Master volume");
+            ImGui::SliderFloat("##master", &audio.masterVolume, 0.0f, 1.0f, "%.2f");
+            ImGui::SetItemTooltip("The volume of every sound of the game");
+            endProperties();
+        }
+        ImGui::Spacing();
+        ImGui::TextDisabled("Groups: AudioSource components and one-shot sounds play in one, whose volume code can change.");
+        if (ImGui::BeginTable("audio groups", 3, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_PadOuterX))
+        {
+            ImGui::TableSetupColumn("index", ImGuiTableColumnFlags_WidthFixed, ImGui::GetFontSize() * 2.0f);
+            ImGui::TableSetupColumn("name", ImGuiTableColumnFlags_WidthStretch, 1.0f);
+            ImGui::TableSetupColumn("volume", ImGuiTableColumnFlags_WidthStretch, 1.0f);
+            for (std::size_t index = 0; index < asset::audioGroupCount; ++index)
+            {
+                ImGui::TableNextRow();
+                ImGui::TableSetColumnIndex(0);
+                ImGui::AlignTextToFramePadding();
+                ImGui::TextDisabled("%zu", index);
+                ImGui::PushID(static_cast<int>(index));
+                ImGui::TableSetColumnIndex(1);
+                ImGui::SetNextItemWidth(-FLT_MIN);
+                ImGui::InputTextWithHint("##group", "unused", &audio.groupNames[index]);
+                ImGui::TableSetColumnIndex(2);
+                ImGui::SetNextItemWidth(-FLT_MIN);
+                ImGui::SliderFloat("##volume", &audio.groupVolumes[index], 0.0f, 1.0f, "%.2f");
+                ImGui::PopID();
+            }
+            ImGui::EndTable();
+        }
+        ImGui::TextDisabled("Volumes apply at once, and each time the game starts.");
+        ImGui::EndTabItem();
+    }
+
+    if (ImGui::BeginTabItem("Input"))
+    {
+        drawInputSettings(state, project.input);
+        ImGui::EndTabItem();
+    }
+    else
+    {
+        state.listeningBinding.reset();
+    }
+    ImGui::EndTabBar();
     ImGui::End();
 
     // Saved once an edit ends, so that typing a name does not rewrite the project at every key.
     if (project.name != saved.name || project.physics != saved.physics || project.window != saved.window ||
-        project.audio != saved.audio)
+        project.audio != saved.audio || project.input != saved.input)
     {
         state.pendingProject = std::move(project);
     }

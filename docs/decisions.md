@@ -29,6 +29,7 @@ mais seulement explicitement ici : le code suit ce document, pas l'inverse.
 | Boucle de jeu            | Pas fixe (60 Hz par défaut) + mise à jour variable par frame       |
 | Point d'entrée           | Le moteur possède la boucle, le jeu dérive de `Application`        |
 | Entrées                  | État interrogeable + événements, clavier, souris et manettes       |
+| Actions d'entrée         | Dans les réglages du projet, contextes activables, réaffectation   |
 | Clavier                  | `Key` = position physique (WASD devient ZQSD en AZERTY)            |
 | Présentation             | VSync (FIFO) par défaut, Mailbox/Immediate en option               |
 | Thread de rendu          | Thread principal, rendu découplé par un instantané `RenderWorld`   |
@@ -684,7 +685,52 @@ les assets s'écrivent au fil de leur lecture.
   interrogées comme le clavier (`isGamepadButtonDown`, `wasGamepadButtonPressed`, `gamepadAxis`,
   `gamepadLeftStick`). Les boutons portent le nom de leur place (South, East…) plutôt que la
   lettre imprimée dessus, les sticks passent une zone morte, et une manette débranchée relâche ce
-  qu'elle tenait. Les actions nommées (InputMap, rebinding) viendront par-dessus plus tard.
+  qu'elle tenait.
+- **Sources d'entrée** : `platform::InputSource` nomme un contrôle dans les fichiers : `key:Space`
+  (position physique, comme `Key`), `mouse:Left`, `pad:South`, `axis:LeftTrigger` (un axe de
+  stick ou une gâchette), `stick:Left` (un stick entier). `displayName` donne un nom lisible
+  indépendant de la disposition ; `Platform::keyLabel` reste celui qui suit le clavier.
+- **Actions** : les jeux lisent des actions nommées (« Jump », « Move ») plutôt que des touches.
+  Elles sont dans les **réglages du projet** (`[input_action]` du `.dvxproj`, une seule table par
+  projet, comme l'Input Map de Godot) et s'éditent dans la page **Input** de *Project Settings*,
+  désormais en onglets (General, Physics, Audio, Input). Une action est un **bouton** (appuyé ou
+  non), un **axe** (de -1 à 1) ou un **vecteur** (une direction de longueur 1 au plus, y vers le
+  haut) ; chaque liaison dit dans quelle direction elle pousse (`positive`, `negative`, `up`,
+  `down`, `left`, `right`), un stick donne un vecteur entier. Plusieurs touches s'additionnent,
+  bornées (deux touches en diagonale ne vont pas plus vite qu'une), et une **zone morte** par
+  action s'ajoute à celle des sticks, la suite de la course étant ramenée de zéro à un. Un axe ou
+  un stick poussé à mi-course enfonce une action bouton. Toutes les manettes jouent (un seul
+  joueur) : pour un axe, celle qui pousse le plus.
+- **Lecture** : `runtime::InputActions` lit les périphériques une fois par frame, avant les
+  mises à jour fixes : `isDown`, `wasPressed`, `wasReleased` (une frame, comme `Input`), `axis`,
+  `vector`. Les systèmes C++ l'ont dans `SystemContext::actions` (version de l'API des jeux 11),
+  les applications dans `Application::inputActions()`, le C# dans `Input.IsActionDown`,
+  `WasActionPressed`, `WasActionReleased`, `ActionAxis`, `ActionVector` (une action inconnue lève
+  une exception en C# et lit zéro en C++ ; amorce C# en version 8). Le clavier ne compte plus
+  pendant qu'un champ de l'interface prend du texte : taper un nom ne fait plus avancer le joueur.
+- **Contextes** : chaque action appartient à un contexte (« Gameplay » par défaut, qu'un projet
+  reçoit sans l'écrire) ou à aucun (toujours lue). Le code les active ou les coupe
+  (`setContextActive`, `Input.SetContextActive`) ; les actions d'un contexte coupé lisent
+  relâché, avec leur `wasReleased`. Ils démarrent comme le projet le dit et appartiennent au jeu,
+  pas à la scène : ils gardent leur état d'une scène à l'autre.
+- **Réaffectation** : `listen(action, liaison)` (`Input.ListenForBinding`) attend la prochaine
+  touche ou le prochain bouton et le met à la place de la liaison : une liaison clavier ou souris
+  prend une touche ou un bouton de souris, une liaison de manette un bouton de manette ; Échap
+  abandonne. Pendant l'attente, les actions lisent relâché, et la touche qui répond ne fait rien
+  d'autre (ni l'action, ni le bouton de l'interface qui a le focus). `rebind`, `resetBindings`,
+  `bindingLabel` (la touche telle que le clavier l'imprime) complètent l'API. Les sticks et
+  gâchettes se choisissent dans les réglages du projet, pas par écoute.
+- **Sauvegarde** : les liaisons qui diffèrent du projet vont dans `input.dvx`, dans le dossier de
+  l'utilisateur au nom du jeu (`%APPDATA%\<jeu>` sous Windows, celui des journaux d'un jeu
+  exporté ; `ApplicationConfig::userDirectory` le remplace), écrit dès qu'elles changent et relu
+  au lancement ; celles que le projet n'a plus sont ignorées. Un jeu sans action n'y crée rien.
+  Jouer dans l'éditeur et le jeu exporté partagent donc les liaisons du joueur.
+- **Éditeur** : la page Input liste les contextes (actif au départ ou non), puis les actions
+  dépliables : nom, genre, contexte, zone morte, liaisons choisies dans une liste filtrable par
+  appareil (les touches sous leur nom sur ce clavier, « Z (W) » en AZERTY) ou par écoute de la
+  prochaine touche ou du prochain bouton de manette. Les changements s'appliquent au prochain
+  lancement du jeu. Le bac à sable joue Move, Look, Jump, Run et Fly par actions, coupe
+  « Gameplay » tant qu'un menu est ouvert, et son écran de réglages réaffecte Sauter.
 
 ### Outils
 
@@ -2025,6 +2071,12 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     squelettes, skinning et animations ; échelle 100 des exports Blender cuite dans la géométrie,
     fichiers voisins copiés avec le modèle, inspecteur des modèles avec leurs réglages d'import.
 
+31. ✅ **Actions d'entrée** — actions bouton, axe et vecteur dans les réglages du projet, liées aux
+    touches, boutons de souris, boutons, axes et sticks de manette, zones mortes, contextes
+    activables, clavier ignoré pendant la saisie de texte, réaffectation par écoute gardée dans le
+    dossier de l'utilisateur, page Input des réglages du projet, API C++ et C#, bac à sable joué
+    par actions avec un écran de touches.
+
 Ensuite, sans ordre figé : jeux 2D, particules, CI Linux.
 
 ## Questions ouvertes
@@ -2060,6 +2112,10 @@ Ensuite, sans ordre figé : jeux 2D, particules, CI Linux.
   événements de clip, cinématique inverse, morph targets, pré-skinning en compute (colliders et
   rayons suivant la pose), réutilisation d'un clip entre squelettes différents (retargeting),
   compression des courbes.
+- **Entrées, la suite** : plusieurs joueurs sur un même écran (appareils attribués à un joueur),
+  souris et molette comme axes (regarder, zoomer), modificateurs (inverser, échelle, courbe),
+  combinaisons (Ctrl+S) et appuis longs ou doubles, navigation de l'interface par les actions,
+  conflits signalés à la réaffectation, glyphes des boutons selon la manette, vibrations.
 - **UI des jeux, la suite** : listes virtualisées et tableaux pour les longues données, listes
   déroulantes, barres de défilement visibles, transitions et animations d'éléments, position de la
   fenêtre de la méthode de saisie sous le curseur, polices de repli pour les écritures non

@@ -132,6 +132,17 @@ struct NativeApi
     float (*sceneLoadingProgress)();
     void (*preloadAsset)(const UuidBytes* asset);
     int (*isAssetReady)(const UuidBytes* asset);
+    int (*actionState)(const char* action, int query);
+    int (*actionAxis)(const char* action, float* value);
+    int (*actionVector)(const char* action, float* values);
+    int (*setInputContextActive)(const char* context, int active);
+    int (*isInputContextActive)(const char* context);
+    int (*bindingCount)(const char* action);
+    const char* (*bindingLabel)(const char* action, int index);
+    int (*listenForBinding)(const char* action, int index);
+    int (*isListeningForBinding)();
+    void (*stopListeningForBinding)();
+    void (*resetBindings)();
 };
 
 // The functions the engine calls, in the order of Devex.Managed's ManagedApi.
@@ -146,7 +157,7 @@ struct ManagedApi
 };
 
 // Devex.Managed's Bootstrap.Version: both sides change it with the function tables.
-constexpr int bootstrapVersion = 7;
+constexpr int bootstrapVersion = 8;
 
 struct BootstrapArguments
 {
@@ -906,6 +917,112 @@ int apiIsAssetReady(const UuidBytes* asset)
     return assets == nullptr || assets->isReady(asset::AssetId{toUuid(asset)}) ? 1 : 0;
 }
 
+[[nodiscard]] InputActions* actions() noexcept
+{
+    return currentFrame() != nullptr ? currentFrame()->actions : nullptr;
+}
+
+// 0 for down, 1 for pressed, 2 for released; -1 for an action the project does not have.
+int apiActionState(const char* action, int query)
+{
+    const InputActions* const input = actions();
+    if (input == nullptr || action == nullptr || !input->hasAction(action))
+    {
+        return -1;
+    }
+    const bool state = query == 0 ? input->isDown(action) : query == 1 ? input->wasPressed(action) : input->wasReleased(action);
+    return state ? 1 : 0;
+}
+
+int apiActionAxis(const char* action, float* value)
+{
+    const InputActions* const input = actions();
+    if (input == nullptr || action == nullptr || !input->hasAction(action))
+    {
+        return 0;
+    }
+    *value = input->axis(action);
+    return 1;
+}
+
+int apiActionVector(const char* action, float* values)
+{
+    const InputActions* const input = actions();
+    if (input == nullptr || action == nullptr || !input->hasAction(action))
+    {
+        return 0;
+    }
+    const math::Vec2 vector = input->vector(action);
+    values[0] = vector.x;
+    values[1] = vector.y;
+    return 1;
+}
+
+int apiSetInputContextActive(const char* context, int active)
+{
+    InputActions* const input = actions();
+    return input != nullptr && context != nullptr && input->setContextActive(context, active != 0) ? 1 : 0;
+}
+
+// -1 for a context the project does not have.
+int apiIsInputContextActive(const char* context)
+{
+    InputActions* const input = actions();
+    if (input == nullptr || context == nullptr || !input->setContextActive(context, input->isContextActive(context)))
+    {
+        return -1;
+    }
+    return input->isContextActive(context) ? 1 : 0;
+}
+
+int apiBindingCount(const char* action)
+{
+    const InputActions* const input = actions();
+    if (input == nullptr || action == nullptr || !input->hasAction(action))
+    {
+        return -1;
+    }
+    return static_cast<int>(input->bindingCount(action));
+}
+
+const char* apiBindingLabel(const char* action, int index)
+{
+    // Read by C# before the next call, on the thread of the game.
+    static std::string label;
+    const InputActions* const input = actions();
+    label = input != nullptr && action != nullptr && index >= 0 ? input->bindingLabel(action, static_cast<std::size_t>(index))
+                                                                : std::string();
+    return label.c_str();
+}
+
+int apiListenForBinding(const char* action, int index)
+{
+    InputActions* const input = actions();
+    return input != nullptr && action != nullptr && index >= 0 && input->listen(action, static_cast<std::size_t>(index)) ? 1 : 0;
+}
+
+int apiIsListeningForBinding()
+{
+    const InputActions* const input = actions();
+    return input != nullptr && input->isListening() ? 1 : 0;
+}
+
+void apiStopListeningForBinding()
+{
+    if (InputActions* const input = actions())
+    {
+        input->stopListening();
+    }
+}
+
+void apiResetBindings()
+{
+    if (InputActions* const input = actions())
+    {
+        input->resetBindings();
+    }
+}
+
 [[nodiscard]] NativeApi makeNativeApi() noexcept
 {
     return NativeApi{
@@ -991,6 +1108,17 @@ int apiIsAssetReady(const UuidBytes* asset)
         .sceneLoadingProgress = &apiSceneLoadingProgress,
         .preloadAsset = &apiPreloadAsset,
         .isAssetReady = &apiIsAssetReady,
+        .actionState = &apiActionState,
+        .actionAxis = &apiActionAxis,
+        .actionVector = &apiActionVector,
+        .setInputContextActive = &apiSetInputContextActive,
+        .isInputContextActive = &apiIsInputContextActive,
+        .bindingCount = &apiBindingCount,
+        .bindingLabel = &apiBindingLabel,
+        .listenForBinding = &apiListenForBinding,
+        .isListeningForBinding = &apiIsListeningForBinding,
+        .stopListeningForBinding = &apiStopListeningForBinding,
+        .resetBindings = &apiResetBindings,
     };
 }
 

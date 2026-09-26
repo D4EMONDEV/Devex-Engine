@@ -5,7 +5,10 @@
 #include <devex/serialization/Text.hpp>
 
 #include <algorithm>
+#include <format>
+#include <string>
 #include <system_error>
+#include <utility>
 
 namespace devex::asset {
 namespace {
@@ -131,6 +134,66 @@ void readAudio(const serialization::TextDocument& document, AudioSettings& audio
     }
 }
 
+// Contexts in the order of their sections, which replace the default one; actions with their
+// bindings, written "key:W up" in a list.
+void readInput(const serialization::TextDocument& document, InputSettings& input)
+{
+    bool contextsRead = false;
+    for (const serialization::TextSection& section : document.sections)
+    {
+        const serialization::TextValue* const name = section.findAttribute("name");
+        const std::string* const nameText = name != nullptr ? serialization::asString(*name) : nullptr;
+        if (section.type == "input_context" && nameText != nullptr && !nameText->empty())
+        {
+            if (!std::exchange(contextsRead, true))
+            {
+                input.contexts.clear();
+            }
+            InputContext& context = input.contexts.emplace_back(InputContext{.name = *nameText});
+            if (const serialization::TextValue* const active = section.findAttribute("active"))
+            {
+                context.activeAtStart = serialization::asBool(*active).value_or(true);
+            }
+        }
+        else if (section.type == "input_action" && nameText != nullptr && !nameText->empty())
+        {
+            InputAction& action = input.actions.emplace_back(InputAction{.name = *nameText});
+            if (const serialization::TextValue* const kind = section.findAttribute("kind"))
+            {
+                const std::string* const kindText = serialization::asString(*kind);
+                action.kind = kindText != nullptr ? parseInputActionKind(*kindText).value_or(InputActionKind::Button)
+                                                  : InputActionKind::Button;
+            }
+            if (const serialization::TextValue* const context = section.findAttribute("context"))
+            {
+                if (const std::string* const contextText = serialization::asString(*context))
+                {
+                    action.context = *contextText;
+                }
+            }
+            action.deadZone = std::clamp(numberAttribute(section, "dead_zone").value_or(0.0f), 0.0f, 0.99f);
+            const serialization::TextValue* const bindings = section.findProperty("bindings");
+            const serialization::TextCall* const list = bindings != nullptr ? serialization::asCall(*bindings, "list") : nullptr;
+            for (const serialization::TextValue& entry : list != nullptr ? list->arguments : std::vector<serialization::TextValue>{})
+            {
+                const std::string* const text = serialization::asString(entry);
+                if (text == nullptr || text->empty())
+                {
+                    continue;
+                }
+                const std::size_t space = text->find(' ');
+                InputBinding binding{.input = text->substr(0, space)};
+                if (space != std::string::npos)
+                {
+                    binding.direction = parseInputDirection(std::string_view(*text).substr(space + 1))
+                                            .value_or(InputDirection::Positive);
+                }
+                action.bindings.push_back(std::move(binding));
+            }
+        }
+    }
+}
+
 [[nodiscard]] const std::string* stringAttribute(const serialization::TextSection& section, std::string_view key)
 {
     const serialization::TextValue* const value = section.findAttribute(key);
@@ -202,6 +265,65 @@ void readWindowAndExport(const serialization::TextDocument& document, Project& p
 }
 
 } // namespace
+
+std::string_view toString(InputActionKind kind) noexcept
+{
+    switch (kind)
+    {
+    case InputActionKind::Button:
+        return "button";
+    case InputActionKind::Axis:
+        return "axis";
+    case InputActionKind::Vector:
+        return "vector";
+    }
+    return "button";
+}
+
+std::optional<InputActionKind> parseInputActionKind(std::string_view text) noexcept
+{
+    for (const InputActionKind kind : {InputActionKind::Button, InputActionKind::Axis, InputActionKind::Vector})
+    {
+        if (toString(kind) == text)
+        {
+            return kind;
+        }
+    }
+    return std::nullopt;
+}
+
+std::string_view toString(InputDirection direction) noexcept
+{
+    switch (direction)
+    {
+    case InputDirection::Positive:
+        return "positive";
+    case InputDirection::Negative:
+        return "negative";
+    case InputDirection::Up:
+        return "up";
+    case InputDirection::Down:
+        return "down";
+    case InputDirection::Left:
+        return "left";
+    case InputDirection::Right:
+        return "right";
+    }
+    return "positive";
+}
+
+std::optional<InputDirection> parseInputDirection(std::string_view text) noexcept
+{
+    for (const InputDirection direction : {InputDirection::Positive, InputDirection::Negative, InputDirection::Up,
+                                           InputDirection::Down, InputDirection::Left, InputDirection::Right})
+    {
+        if (toString(direction) == text)
+        {
+            return direction;
+        }
+    }
+    return std::nullopt;
+}
 
 bool PhysicsSettings::collides(std::uint32_t a, std::uint32_t b) const noexcept
 {
@@ -300,6 +422,7 @@ core::Result<Project> parseProject(std::string_view text, const std::filesystem:
     readPhysics(*document, project.physics);
     readAudio(*document, project.audio);
     readWindowAndExport(*document, project);
+    readInput(*document, project.input);
     return project;
 }
 
@@ -403,6 +526,41 @@ std::string writeProjectText(const Project& project)
         serialization::TextSection& folderSection = document.sections.emplace_back();
         folderSection.type = "export_folder";
         folderSection.attributes.push_back({"path", serialization::TextValue(folder)});
+    }
+
+    if (project.input.contexts != InputSettings{}.contexts)
+    {
+        for (const InputContext& context : project.input.contexts)
+        {
+            serialization::TextSection& contextSection = document.sections.emplace_back();
+            contextSection.type = "input_context";
+            contextSection.attributes.push_back({"name", serialization::TextValue(context.name)});
+            contextSection.attributes.push_back({"active", serialization::TextValue(context.activeAtStart)});
+        }
+    }
+    for (const InputAction& action : project.input.actions)
+    {
+        serialization::TextSection& actionSection = document.sections.emplace_back();
+        actionSection.type = "input_action";
+        actionSection.attributes.push_back({"name", serialization::TextValue(action.name)});
+        actionSection.attributes.push_back({"kind", serialization::TextValue(std::string(toString(action.kind)))});
+        if (!action.context.empty())
+        {
+            actionSection.attributes.push_back({"context", serialization::TextValue(action.context)});
+        }
+        if (action.deadZone > 0.0f)
+        {
+            // The shortest text of the float, not of the double it widens to: 0.1 rather than 0.10000000149.
+            actionSection.attributes.push_back({"dead_zone", serialization::TextValue(std::stod(std::format("{}", action.deadZone)))});
+        }
+        std::vector<serialization::TextValue> bindings;
+        for (const InputBinding& binding : action.bindings)
+        {
+            bindings.emplace_back(binding.direction == InputDirection::Positive
+                                      ? binding.input
+                                      : binding.input + " " + std::string(toString(binding.direction)));
+        }
+        actionSection.properties.push_back({"bindings", serialization::makeCall("list", std::move(bindings))});
     }
     return serialization::writeText(document);
 }

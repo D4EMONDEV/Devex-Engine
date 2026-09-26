@@ -67,7 +67,7 @@ void run(ManagedGame& game, Scene& scene, SystemPhase phase, double seconds = 0.
 TEST_CASE("The C# runtime registers components and runs them", "[runtime][managed]")
 {
     const std::unique_ptr<ManagedGame> game = startRuntime();
-    CHECK(game->componentTypes().size() == 7);
+    CHECK(game->componentTypes().size() == 8);
 
     devex::scene::ComponentRegistry& registry = devex::scene::componentRegistry();
     const devex::scene::ComponentType* const mover = registry.find("Mover");
@@ -315,6 +315,55 @@ TEST_CASE("C# components hear collisions and triggers and query the physics", "[
     CHECK(field<int>(*bumper, bumperOf(zone), "hits") == 0);
     // The ray from above the block finds the ball resting on it.
     CHECK(field<std::string>(*bumper, bumperOf(block), "below") == "Ball");
+    game->unloadAssembly();
+}
+
+TEST_CASE("C# code reads the input actions of the project and binds them to other keys", "[runtime][managed][input]")
+{
+    const std::unique_ptr<ManagedGame> game = startRuntime();
+    const devex::scene::ComponentType* const pilot = devex::scene::componentRegistry().find("Pilot");
+    REQUIRE(pilot != nullptr);
+    Scene scene;
+    const Entity entity = scene.createEntity("Pilot");
+    REQUIRE(pilot->emplace(scene, entity) != nullptr);
+    const auto value = [&]<typename T>(const char* name, T) -> T& {
+        return field<T>(*pilot, const_cast<void*>(pilot->find(scene, entity)), name);
+    };
+
+    using devex::asset::InputDirection;
+    devex::runtime::InputActions actions(devex::asset::InputSettings{
+        .actions = {
+            {.name = "Jump", .context = "Gameplay", .bindings = {{"key:Space"}}},
+            {.name = "Throttle", .kind = devex::asset::InputActionKind::Axis, .bindings = {{"key:S", InputDirection::Negative}}},
+            {.name = "Move", .kind = devex::asset::InputActionKind::Vector, .bindings = {{"key:D", InputDirection::Right}}},
+        }});
+    devex::platform::Input input;
+    input.beginFrame();
+    input.setKeyDown(devex::platform::Key::Space, true);
+    input.setKeyDown(devex::platform::Key::S, true);
+    input.setKeyDown(devex::platform::Key::D, true);
+    actions.update(input, false);
+
+    ManagedGame::Frame frame{.scene = &scene, .input = &input, .actions = &actions};
+    game->runPhase(frame, SystemPhase::Update);
+    CHECK(value("jumping", bool{}));
+    CHECK(value("jump_pressed", bool{}));
+    CHECK(value("throttle", float{}) == -1.0f);
+    CHECK(value("move_x", float{}) == 1.0f);
+    CHECK(value("move_y", float{}) == 0.0f);
+    CHECK(value("jump_label", std::string{}) == "Space");
+    CHECK(value("unknown_action_throws", bool{}));
+    CHECK(value("gameplay_active", bool{}));
+
+    // The game waits for a key, then turns its context off.
+    value("listen", bool{}) = true;
+    game->runPhase(frame, SystemPhase::Update);
+    CHECK(value("listening", bool{}));
+    CHECK(actions.isListening());
+    value("stop_gameplay", bool{}) = true;
+    game->runPhase(frame, SystemPhase::Update);
+    CHECK_FALSE(value("gameplay_active", bool{}));
+    CHECK_FALSE(actions.isContextActive("Gameplay"));
     game->unloadAssembly();
 }
 

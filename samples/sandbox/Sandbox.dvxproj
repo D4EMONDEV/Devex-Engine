@@ -1,3 +1,18 @@
 [project format=1 name="Sandbox" startup_scene="res://assets/scenes/arena.dvxscene"]
 
 [window width=1600 height=900 fullscreen=false vsync=true max_frame_rate=0 icon=asset("a0b10371-4bc1-4dc2-8fd8-ba5676e805fb")]
+
+[input_action name="Move" kind="vector" context="Gameplay"]
+bindings = list("key:W up", "key:S down", "key:A left", "key:D right", "stick:Left")
+
+[input_action name="Look" kind="vector" context="Gameplay" dead_zone=0.1]
+bindings = list("stick:Right")
+
+[input_action name="Jump" kind="button" context="Gameplay"]
+bindings = list("key:Space", "pad:South")
+
+[input_action name="Run" kind="button" context="Gameplay"]
+bindings = list("key:LeftShift", "pad:LeftStick")
+
+[input_action name="Fly" kind="axis" context="Gameplay"]
+bindings = list("key:Space", "key:LeftControl negative", "pad:RightShoulder", "pad:LeftShoulder negative")

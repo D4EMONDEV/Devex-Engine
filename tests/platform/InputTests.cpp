@@ -1,4 +1,5 @@
 #include <devex/platform/Input.hpp>
+#include <devex/platform/InputSource.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -6,6 +7,41 @@ using devex::math::Vec2;
 using devex::platform::Input;
 using devex::platform::Key;
 using devex::platform::MouseButton;
+
+TEST_CASE("Input sources read and write their names", "[platform][input]")
+{
+    using devex::platform::InputDevice;
+    CHECK(devex::platform::parseInputSource("key:Space") == devex::platform::keySource(Key::Space));
+    CHECK(devex::platform::parseInputSource("mouse:Right") == devex::platform::mouseSource(MouseButton::Right));
+    CHECK(devex::platform::parseInputSource("pad:South") ==
+          devex::platform::gamepadSource(devex::platform::GamepadButton::South));
+    CHECK(devex::platform::parseInputSource("axis:LeftTrigger") ==
+          devex::platform::gamepadSource(devex::platform::GamepadAxis::LeftTrigger));
+    CHECK(devex::platform::parseInputSource("stick:Right") ==
+          devex::platform::InputSource{InputDevice::GamepadStick, devex::platform::rightStick});
+    CHECK_FALSE(devex::platform::parseInputSource("key:Nothing").has_value());
+    CHECK_FALSE(devex::platform::parseInputSource("wheel:Up").has_value());
+    CHECK_FALSE(devex::platform::parseInputSource("Space").has_value());
+
+    // Every source reads back from its name.
+    for (const InputDevice device : {InputDevice::Key, InputDevice::MouseButton, InputDevice::GamepadButton,
+                                     InputDevice::GamepadAxis, InputDevice::GamepadStick})
+    {
+        for (const devex::platform::InputSource source : devex::platform::inputSources(device))
+        {
+            CHECK(devex::platform::parseInputSource(devex::platform::toString(source)) == source);
+            CHECK_FALSE(devex::platform::displayName(source).empty());
+        }
+    }
+    CHECK(devex::platform::inputSources(InputDevice::Key).size() > 100);
+
+    CHECK(devex::platform::displayName(devex::platform::keySource(Key::LeftShift)) == "Left Shift");
+    CHECK(devex::platform::displayName(devex::platform::mouseSource(MouseButton::Left)) == "Left Mouse Button");
+    CHECK(devex::platform::displayName(devex::platform::gamepadSource(devex::platform::GamepadAxis::RightX)) ==
+          "Right Stick X");
+    CHECK(devex::platform::isAnalog(*devex::platform::parseInputSource("axis:RightTrigger")));
+    CHECK(devex::platform::isKeyboardOrMouse(*devex::platform::parseInputSource("mouse:X1")));
+}
 
 TEST_CASE("Key presses and releases last one frame", "[platform][input]")
 {

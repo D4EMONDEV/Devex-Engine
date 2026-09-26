@@ -169,6 +169,52 @@ public class Jukebox : Component
     }
 }
 
+// Reads the input actions of the project, binds a key and turns a context off.
+public class Pilot : Component
+{
+    public bool Jumping;
+    public bool JumpPressed;
+    public float Throttle;
+    public float MoveX;
+    public float MoveY;
+    public string JumpLabel = "";
+    public bool UnknownActionThrows;
+    public bool Listen;
+    public bool Listening;
+    public bool StopGameplay;
+    public bool GameplayActive;
+
+    public override void Update(float delta)
+    {
+        Jumping = Input.IsActionDown("Jump");
+        JumpPressed = Input.WasActionPressed("Jump");
+        Throttle = Input.ActionAxis("Throttle");
+        Vec2 move = Input.ActionVector("Move");
+        MoveX = move.X;
+        MoveY = move.Y;
+        JumpLabel = Input.BindingLabel("Jump", 0);
+        try
+        {
+            Input.IsActionDown("Fly");
+        }
+        catch (ArgumentException)
+        {
+            UnknownActionThrows = true;
+        }
+        if (Listen)
+        {
+            Input.ListenForBinding("Jump", 0);
+            Listen = false;
+        }
+        Listening = Input.IsListeningForBinding;
+        if (StopGameplay)
+        {
+            Input.SetContextActive("Gameplay", false);
+        }
+        GameplayActive = Input.IsContextActive("Gameplay");
+    }
+}
+
 // Asks for a scene in the background, and reads how far it is.
 public class Loader : Component
 {

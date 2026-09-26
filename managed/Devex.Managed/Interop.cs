@@ -100,6 +100,17 @@ internal unsafe struct NativeApi
     public delegate* unmanaged<float> SceneLoadingProgress;
     public delegate* unmanaged<Uuid*, void> PreloadAsset;
     public delegate* unmanaged<Uuid*, int> IsAssetReady;
+    public delegate* unmanaged<byte*, int, int> ActionState;
+    public delegate* unmanaged<byte*, float*, int> ActionAxis;
+    public delegate* unmanaged<byte*, float*, int> ActionVector;
+    public delegate* unmanaged<byte*, int, int> SetInputContextActive;
+    public delegate* unmanaged<byte*, int> IsInputContextActive;
+    public delegate* unmanaged<byte*, int> BindingCount;
+    public delegate* unmanaged<byte*, int, byte*> BindingLabel;
+    public delegate* unmanaged<byte*, int, int> ListenForBinding;
+    public delegate* unmanaged<int> IsListeningForBinding;
+    public delegate* unmanaged<void> StopListeningForBinding;
+    public delegate* unmanaged<void> ResetBindings;
 }
 
 /// <summary>The C# functions the engine calls. Filled by the runtime when it starts.</summary>
@@ -127,7 +138,7 @@ internal unsafe struct BootstrapArguments
 /// <summary>What the engine calls into: filling the function tables, then the game itself.</summary>
 public static unsafe class Bootstrap
 {
-    internal const int Version = 7;
+    internal const int Version = 8;
 
     internal static NativeApi Native;
     private static byte[]? _description;

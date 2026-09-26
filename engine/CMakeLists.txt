@@ -97,6 +97,7 @@ target_sources(devex_platform
         src/platform/CrashHandler.cpp
         src/platform/Executable.cpp
         src/platform/Input.cpp
+        src/platform/InputSource.cpp
         src/platform/Platform.cpp
         src/platform/Process.cpp
         src/platform/SdlWindow.hpp
@@ -110,6 +111,7 @@ target_sources(devex_platform
             include/devex/platform/Event.hpp
             include/devex/platform/Executable.hpp
             include/devex/platform/Input.hpp
+            include/devex/platform/InputSource.hpp
             include/devex/platform/Key.hpp
             include/devex/platform/Platform.hpp
             include/devex/platform/Process.hpp
@@ -653,6 +655,7 @@ target_sources(devex_tools
         src/tools/HierarchyPanel.cpp
         src/tools/Icons.cpp
         src/tools/Icons.hpp
+        src/tools/InputSettings.cpp
         src/tools/InspectorPanel.cpp
         src/tools/InterfacePanel.cpp
         src/tools/LogBuffer.cpp
@@ -723,6 +726,7 @@ target_sources(devex_runtime
         src/runtime/GameExport.cpp
         src/runtime/GameModule.cpp
         src/runtime/ComponentViews.cpp
+        src/runtime/InputActions.cpp
         src/runtime/ManagedCodeBuilder.cpp
         src/runtime/ManagedCodeBuilder.hpp
         src/runtime/ManagedGame.cpp
@@ -738,6 +742,7 @@ target_sources(devex_runtime
             include/devex/runtime/Game.hpp
             include/devex/runtime/GameExport.hpp
             include/devex/runtime/GameModule.hpp
+            include/devex/runtime/InputActions.hpp
             include/devex/runtime/SceneExtraction.hpp
 )
 

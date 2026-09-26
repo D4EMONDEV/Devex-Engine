@@ -280,6 +280,38 @@ TEST_CASE("Window and export settings of projects are saved and read back", "[as
     CHECK(parsed->root == project.root);
 }
 
+TEST_CASE("Input actions and contexts of projects are saved and read back", "[asset][project][input]")
+{
+    TemporaryProject temporary;
+    devex::asset::Project project = temporary.project;
+    // A project starts with one context for the game, active, which is not written.
+    REQUIRE(project.input.contexts.size() == 1);
+    CHECK(project.input.contexts[0].name == "Gameplay");
+    CHECK(project.input.contexts[0].activeAtStart);
+    CHECK(devex::asset::writeProjectText(project).find("[input") == std::string::npos);
+
+    using devex::asset::InputActionKind;
+    using devex::asset::InputDirection;
+    project.input.contexts.push_back({.name = "Menu", .activeAtStart = false});
+    project.input.actions = {
+        {.name = "Jump", .context = "Gameplay", .bindings = {{"key:Space"}, {"pad:South"}}},
+        {.name = "Move",
+         .kind = InputActionKind::Vector,
+         .context = "Gameplay",
+         .deadZone = 0.25f,
+         .bindings = {{"key:W", InputDirection::Up}, {"key:A", InputDirection::Left}, {"stick:Left"}}},
+        {.name = "Back", .kind = InputActionKind::Axis, .bindings = {{"key:Escape", InputDirection::Negative}}},
+    };
+    REQUIRE(devex::asset::saveProject(project));
+    const std::string text = *devex::core::readTextFile(project.file);
+    CHECK(text.find("\"key:W up\"") != std::string::npos);
+    CHECK(text.find("\"key:Space\"") != std::string::npos);
+
+    const auto loaded = devex::asset::loadProject(project.file);
+    REQUIRE(loaded.has_value());
+    CHECK(loaded->input == project.input);
+}
+
 TEST_CASE("Physics settings of projects keep gravity, layer names and collisions", "[asset][project]")
 {
     TemporaryProject project;

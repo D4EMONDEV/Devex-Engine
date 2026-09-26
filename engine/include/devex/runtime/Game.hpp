@@ -8,6 +8,7 @@
 #include <devex/platform/Window.hpp>
 #include <devex/reflection/Reflection.hpp>
 #include <devex/runtime/AssetManager.hpp>
+#include <devex/runtime/InputActions.hpp>
 #include <devex/scene/ComponentRegistry.hpp>
 #include <devex/scene/Scene.hpp>
 #include <devex/ui/UiWorld.hpp>
@@ -26,7 +27,8 @@ namespace devex::runtime {
 // Changes whenever game modules must be rebuilt to load: modules built for another version are
 // refused. 9: ComponentType gained findMutable, which modules fill in when they register a type.
 // 10: SystemContext gained the loading of scenes in the background.
-inline constexpr std::uint32_t gameApiVersion = 10;
+// 11: SystemContext gained the input actions of the project.
+inline constexpr std::uint32_t gameApiVersion = 11;
 
 enum class SystemPhase : std::uint8_t
 {
@@ -42,9 +44,13 @@ enum class SystemPhase : std::uint8_t
 struct SystemContext
 {
     scene::Scene& scene;
+    // The keys, buttons and sticks themselves. Actions are what games read rather than keys.
     const platform::Input& input;
     platform::Window& window;
     AssetManager& assets;
+    // The actions of the project ("Jump", "Move"), their contexts and the bindings of the player.
+    // Null when the application runs without them.
+    InputActions* actions = nullptr;
     // The simulation of the scene: queries, forces, and the contacts of the steps of this frame,
     // which Update systems see once. Null when the application runs without physics.
     physics::PhysicsWorld* physics = nullptr;

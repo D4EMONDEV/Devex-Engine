@@ -44,6 +44,8 @@ public:
         animation::AnimationWorld* animation = nullptr;
         // Null without an interface.
         ui::UiWorld* ui = nullptr;
+        // The input actions of the project; null outside a game.
+        InputActions* actions = nullptr;
         // Where assets are found by path; null without a project or package.
         const asset::AssetSource* assets = nullptr;
         // What preloads assets and tells whether they are ready; null in tests.

@@ -90,6 +90,77 @@ struct ExportSettings
     bool operator==(const ExportSettings&) const = default;
 };
 
+// The value an input action gives: a button is pressed or not, an axis goes from -1 to 1 (a wheel,
+// a throttle), a vector gives a direction of length 1 at most (moving, looking).
+enum class InputActionKind : std::uint8_t
+{
+    Button,
+    Axis,
+    Vector,
+};
+
+// Which way a binding pushes an axis or a vector action, or rather its positive end for a
+// gamepad axis. Buttons ignore it, and a stick gives a whole vector. Up is positive, as on a map.
+enum class InputDirection : std::uint8_t
+{
+    Positive,
+    Negative,
+    Up,
+    Down,
+    Left,
+    Right,
+};
+
+[[nodiscard]] std::string_view toString(InputActionKind kind) noexcept;
+[[nodiscard]] std::optional<InputActionKind> parseInputActionKind(std::string_view text) noexcept;
+[[nodiscard]] std::string_view toString(InputDirection direction) noexcept;
+[[nodiscard]] std::optional<InputDirection> parseInputDirection(std::string_view text) noexcept;
+
+// What the player presses or moves for an action.
+struct InputBinding
+{
+    // A key, a mouse button, a gamepad button, axis or stick, as platform::parseInputSource reads
+    // it: "key:Space", "mouse:Left", "pad:South", "axis:LeftTrigger", "stick:Left".
+    std::string input;
+    InputDirection direction = InputDirection::Positive;
+
+    bool operator==(const InputBinding&) const = default;
+};
+
+// Something the player does, such as "Jump" or "Move", that game code reads instead of keys.
+struct InputAction
+{
+    std::string name;
+    InputActionKind kind = InputActionKind::Button;
+    // The context the action belongs to; empty for an action that is always read.
+    std::string context;
+    // Below this, an axis or the length of a vector reads zero; the rest of the range is spread
+    // back from zero to one. Gamepads already ignore small moves of their sticks.
+    float deadZone = 0.0f;
+    std::vector<InputBinding> bindings;
+
+    bool operator==(const InputAction&) const = default;
+};
+
+// A group of actions that game code turns on and off, such as the actions of the game while a menu
+// is open.
+struct InputContext
+{
+    std::string name;
+    bool activeAtStart = true;
+
+    bool operator==(const InputContext&) const = default;
+};
+
+// The actions of a game and what plays them, which the player may change for themselves.
+struct InputSettings
+{
+    std::vector<InputContext> contexts{InputContext{.name = "Gameplay"}};
+    std::vector<InputAction> actions;
+
+    bool operator==(const InputSettings&) const = default;
+};
+
 // A game project: a .dvxproj file whose directory holds the assets/ folder, the code/ folder of its
 // game module when it has one, and the .devex/ cache of imported data and builds, which is never
 // versioned.
@@ -106,6 +177,7 @@ struct Project
     AudioSettings audio;
     WindowSettings window;
     ExportSettings exportSettings;
+    InputSettings input;
 
     [[nodiscard]] std::filesystem::path assetsDirectory() const
     {
@@ -131,7 +203,7 @@ struct Project
 
 // Reads "[project format=1 name="My game" startup_scene="res://assets/scenes/Main.dvxscene"]" from
 // the .dvxproj file, followed by optional [physics], [physics_layer], [audio], [audio_group],
-// [window], [export], [export_scene] and [export_folder] sections.
+// [window], [export], [export_scene], [export_folder], [input_context] and [input_action] sections.
 [[nodiscard]] core::Result<Project> loadProject(const std::filesystem::path& projectFile);
 // The same from the text of a project file, as exported games keep it; projectFile gives the
 // project its root.

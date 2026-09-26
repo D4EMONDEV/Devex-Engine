@@ -285,6 +285,12 @@ private:
     void destroyAnimation();
     void createUi();
     void destroyUi();
+    // The input actions live as long as the game, across its scenes: their contexts and the
+    // bindings of the player are the game's, which keeps the bindings in the folder of the user.
+    void createInput();
+    void destroyInput();
+    [[nodiscard]] std::optional<std::filesystem::path> bindingsFile() const;
+    void saveBindings();
     void updateUi(std::chrono::nanoseconds frameTime);
     // Appends the canvases of the scene to the frame, over the game.
     void buildUi(render::RenderWorld& world);
@@ -329,6 +335,8 @@ private:
     std::unique_ptr<audio::AudioWorld> m_audio;
     std::unique_ptr<animation::AnimationWorld> m_animation;
     std::unique_ptr<ui::UiWorld> m_ui;
+    std::unique_ptr<InputActions> m_actions;
+    std::filesystem::path m_userDirectory;
     // The themes of the scene being edited, applied outside Play so that the 2D screen and the
     // inspector show the interface as the game will.
     ui::ThemeApplier m_editedThemes;
@@ -375,6 +383,7 @@ ApplicationRunner::ApplicationRunner(Application& application, const Application
                         : std::chrono::nanoseconds(std::chrono::seconds(1)) / config.maxFrameRate)
     , m_loadGameCode(config.loadGameCode || config.editor)
     , m_enablePhysics(config.enablePhysics)
+    , m_userDirectory(config.userDirectory)
 {
     m_application.m_runner = this;
     m_editedThemes.setThemes([this](asset::AssetId id) { return m_services.assets.theme(id); });
@@ -548,6 +557,7 @@ int ApplicationRunner::execute()
         createAudio();
         createAnimation();
         createUi();
+        createInput();
         m_gameStarted = true;
         runSystems(SystemPhase::Start, core::Duration::zero());
         loadRequestedScene();
@@ -590,6 +600,7 @@ int ApplicationRunner::execute()
     }
     m_services.platform.setLiveRedrawCallback({});
     m_application.onShutdown();
+    destroyInput();
     destroyUi();
     destroyAnimation();
     destroyAudio();
@@ -620,6 +631,10 @@ void ApplicationRunner::handleEvent(const platform::Event& event)
         }
     }
 
+    if (const auto* key = std::get_if<platform::KeyPressed>(&event); key != nullptr && !key->repeat && m_services.tools != nullptr)
+    {
+        m_services.tools->notifyKeyPressed(key->key);
+    }
     if (const auto* key = std::get_if<platform::KeyPressed>(&event);
         key != nullptr && key->key == platform::Key::F1 && !key->repeat &&
         m_services.tools != nullptr && !isEditor())
@@ -764,6 +779,10 @@ void ApplicationRunner::updateFrameWorlds(std::chrono::nanoseconds frameTime, bo
 void ApplicationRunner::runGameplay(std::chrono::nanoseconds frameTime)
 {
     DEVEX_PROFILE_SCOPE("Gameplay");
+    if (m_actions)
+    {
+        m_actions->update(m_services.platform.input(), m_ui && m_ui->isEditing());
+    }
     const std::uint32_t steps = m_timestep.advance(frameTime);
     for (std::uint32_t step = 0; step < steps; ++step)
     {
@@ -782,6 +801,10 @@ void ApplicationRunner::runGameplay(std::chrono::nanoseconds frameTime)
     DEVEX_PROFILE_SCOPE("Update");
     m_application.onUpdate(core::Duration(frameTime));
     runSystems(SystemPhase::Update, core::Duration(frameTime));
+    if (m_actions && m_actions->takeChanges())
+    {
+        saveBindings();
+    }
     // The contacts of this frame's steps have been seen by the updates.
     if (m_physics)
     {
@@ -956,6 +979,7 @@ void ApplicationRunner::startPlaying()
     createAudio();
     createAnimation();
     createUi();
+    createInput();
     DEVEX_LOG_INFO("Playing");
     m_application.onPlayStarted();
     m_gameStarted = true;
@@ -966,6 +990,7 @@ void ApplicationRunner::startPlaying()
 void ApplicationRunner::stopPlaying()
 {
     m_application.onPlayStopped();
+    destroyInput();
     destroyUi();
     destroyAnimation();
     destroyAudio();
@@ -1384,6 +1409,7 @@ void ApplicationRunner::runSystems(SystemPhase phase, core::Duration delta)
         .input = m_services.platform.input(),
         .window = m_services.window,
         .assets = m_services.assets,
+        .actions = m_actions.get(),
         .physics = m_physics.get(),
         .audio = m_audio.get(),
         .animation = m_animation.get(),
@@ -1408,6 +1434,7 @@ void ApplicationRunner::runSystems(SystemPhase phase, core::Duration delta)
             .audio = m_audio.get(),
             .animation = m_animation.get(),
             .ui = m_ui.get(),
+            .actions = m_actions.get(),
             .assets = m_services.assets.source(),
             .assetManager = &m_services.assets,
             .loadingScene = context.loadingScene,
@@ -1520,6 +1547,76 @@ void ApplicationRunner::destroyUi()
 {
     m_application.m_ui = nullptr;
     m_ui.reset();
+}
+
+void ApplicationRunner::createInput()
+{
+    if (m_actions)
+    {
+        return;
+    }
+    const asset::AssetSource* const source = assetSource();
+    m_actions = std::make_unique<InputActions>(source != nullptr ? source->project().input : asset::InputSettings{});
+    const platform::Platform& platform = m_services.platform;
+    m_actions->setKeyLabeler([&platform](platform::Key key) { return platform.keyLabel(key); });
+    if (const std::optional<std::filesystem::path> file = bindingsFile())
+    {
+        std::error_code error;
+        if (std::filesystem::exists(*file, error))
+        {
+            if (const core::Result<std::string> text = core::readTextFile(*file))
+            {
+                m_actions->readOverrides(*text);
+            }
+            else
+            {
+                DEVEX_LOG_WARNING("Cannot read the key bindings of the player: {}", text.error());
+            }
+        }
+    }
+    m_application.m_actions = m_actions.get();
+}
+
+void ApplicationRunner::destroyInput()
+{
+    m_application.m_actions = nullptr;
+    m_actions.reset();
+}
+
+std::optional<std::filesystem::path> ApplicationRunner::bindingsFile() const
+{
+    // A game without actions has no bindings, and no folder is made for it.
+    const asset::AssetSource* const source = assetSource();
+    if (source == nullptr || source->project().input.actions.empty())
+    {
+        return std::nullopt;
+    }
+    if (!m_userDirectory.empty())
+    {
+        return m_userDirectory / "input.dvx";
+    }
+    const core::Result<std::filesystem::path> directory = platform::userDataDirectory("", source->project().name);
+    if (!directory)
+    {
+        DEVEX_LOG_WARNING("The key bindings of the player are not kept: {}", directory.error());
+        return std::nullopt;
+    }
+    return *directory / "input.dvx";
+}
+
+void ApplicationRunner::saveBindings()
+{
+    const std::optional<std::filesystem::path> file = m_actions ? bindingsFile() : std::nullopt;
+    if (!file)
+    {
+        return;
+    }
+    std::error_code error;
+    std::filesystem::create_directories(file->parent_path(), error);
+    if (core::Result<void> written = core::writeTextFile(*file, m_actions->writeOverrides()); !written)
+    {
+        DEVEX_LOG_WARNING("Cannot save the key bindings of the player: {}", written.error());
+    }
 }
 
 void ApplicationRunner::updateUi(std::chrono::nanoseconds frameTime)
@@ -1637,6 +1734,15 @@ void ApplicationRunner::updateUi(std::chrono::nanoseconds frameTime)
         {
             uiInput.clipboard = m_services.platform.clipboardText();
         }
+    }
+    // The key or the button that answered a binding the player was choosing does nothing else.
+    if (m_actions && m_actions->tookInput())
+    {
+        uiInput.pointerPressed = false;
+        uiInput.submitPressed = false;
+        uiInput.cancelPressed = false;
+        uiInput.moveX = 0;
+        uiInput.moveY = 0;
     }
     m_ui->update(*m_application.m_scene, size, uiInput, core::Duration(frameTime));
 
@@ -2003,6 +2109,16 @@ audio::AudioWorld* Application::audio() noexcept
 animation::AnimationWorld* Application::animation() noexcept
 {
     return m_animation;
+}
+
+ui::UiWorld* Application::ui() noexcept
+{
+    return m_ui;
+}
+
+InputActions* Application::inputActions() noexcept
+{
+    return m_actions;
 }
 
 bool Application::isEditor() const noexcept

@@ -15,9 +15,11 @@ public class MenuController : Component
     public Entity ScoreText;
     public Entity TimerText;
 
-    // The settings the player changes: the slider of the volume and the name that was typed.
+    // The settings the player changes: the slider of the volume, the name that was typed, and the
+    // text of the button that binds Jump to another key.
     public Entity VolumeSlider;
     public Entity NameField;
+    public Entity JumpKey;
 
     // The name the player answered, kept for the game to greet them with.
     public string PlayerName = "";
@@ -41,6 +43,8 @@ public class MenuController : Component
 
     public override void Update(float delta)
     {
+        // The game only moves while no menu is open.
+        Input.SetContextActive("Gameplay", !IsVisible(MainMenu) && !IsVisible(Settings) && !IsVisible(PauseMenu));
         if (Ui.WasClicked("quit"))
         {
             Game.Quit();
@@ -92,8 +96,23 @@ public class MenuController : Component
             PlayerName = typed.Text;
             Log.Info($"Bonjour {PlayerName}");
         }
+        // The key of Jump: the button waits for the next key, which the player keeps from one game
+        // to the next. Escape gives up, and does nothing else.
+        if (Ui.WasClicked("bind_jump"))
+        {
+            Input.ListenForBinding("Jump", 0);
+        }
+        else if (Ui.WasClicked("reset_keys"))
+        {
+            Input.ResetBindings();
+        }
+        if (JumpKey.IsAlive && JumpKey.TryGet(out UiText key))
+        {
+            key.Text = Input.IsListeningForBinding ? "Appuyez sur une touche" : Input.BindingLabel("Jump", 0);
+        }
         if (Ui.WasClicked("back") || Ui.WasCancelled())
         {
+            Input.StopListeningForBinding();
             Show(Settings, false);
             Show(MainMenu, true);
         }

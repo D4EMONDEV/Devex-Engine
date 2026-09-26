@@ -5,17 +5,21 @@
 #include <devex/math/Math.hpp>
 #include <devex/platform/Input.hpp>
 #include <devex/runtime/Game.hpp>
+#include <devex/runtime/InputActions.hpp>
 #include <devex/scene/Components.hpp>
 #include <devex/scene/PhysicsComponents.hpp>
 #include <devex/scene/Prefab.hpp>
 #include <devex/ui/UiWorld.hpp>
 
+#include <algorithm>
 #include <cmath>
 #include <numbers>
+#include <string_view>
 #include <vector>
 
 namespace {
 
+using devex::math::Vec2;
 using devex::math::Vec3;
 using devex::platform::Key;
 using devex::runtime::SystemContext;
@@ -25,10 +29,34 @@ using devex::scene::Scene;
 
 constexpr Vec3 up{0.0f, 1.0f, 0.0f};
 constexpr Vec3 right{1.0f, 0.0f, 0.0f};
+// How fast a gamepad stick turns the view, pushed all the way, in radians per second.
+constexpr float stickTurnSpeed = devex::math::radians(150.0f);
+
+// The actions of the project: Move, Look, Jump, Run and Fly, played by the keyboard or a gamepad.
+[[nodiscard]] Vec2 actionVector(const SystemContext& context, std::string_view action)
+{
+    return context.actions != nullptr ? context.actions->vector(action) : Vec2{0.0f};
+}
+
+[[nodiscard]] float actionAxis(const SystemContext& context, std::string_view action)
+{
+    return context.actions != nullptr ? context.actions->axis(action) : 0.0f;
+}
+
+[[nodiscard]] bool actionDown(const SystemContext& context, std::string_view action)
+{
+    return context.actions != nullptr && context.actions->isDown(action);
+}
+
+[[nodiscard]] bool actionPressed(const SystemContext& context, std::string_view action)
+{
+    return context.actions != nullptr && context.actions->wasPressed(action);
+}
 
 // Flies its entity like a first-person camera while its camera is the primary one: a click
-// captures the mouse to look around, W A S D (Z Q S D on AZERTY) move, Space and Ctrl go up and
-// down, Shift is faster, Escape releases the mouse, then ends the game.
+// captures the mouse to look around, the Move action (W A S D, Z Q S D on AZERTY, or the left
+// stick) moves, Fly (Space and Ctrl, or the shoulders) goes up and down, Run is faster, Look (the
+// right stick) turns; Escape releases the mouse, then ends the game.
 struct FlyCamera
 {
     // In meters per second.
@@ -253,28 +281,22 @@ void flyCameras(SystemContext& context)
             continue;
         }
         handleMouseCapture(context);
-        if (context.window.isMouseCaptured())
-        {
-            camera.yaw -= input.mouseDelta().x * camera.sensitivity;
-            camera.pitch = std::clamp(camera.pitch - input.mouseDelta().y * camera.sensitivity,
-                                      devex::math::radians(-89.0f), devex::math::radians(89.0f));
-        }
+        const Vec2 look = actionVector(context, "Look") * stickTurnSpeed * seconds;
+        const Vec2 mouse = context.window.isMouseCaptured() ? input.mouseDelta() * camera.sensitivity : Vec2{0.0f};
+        camera.yaw -= mouse.x + look.x;
+        camera.pitch = std::clamp(camera.pitch - mouse.y + look.y, devex::math::radians(-89.0f), devex::math::radians(89.0f));
 
-        // Movement is relative to the heading, on the horizontal plane.
+        // Movement is relative to the heading, on the horizontal plane; a stick pushed halfway
+        // flies half as fast.
         const devex::math::Quat heading = devex::math::angleAxis(camera.yaw, up);
         const Vec3 forward = heading * Vec3{0.0f, 0.0f, -1.0f};
         const Vec3 sideways = heading * right;
-        Vec3 direction{0.0f};
-        direction += input.isKeyDown(Key::W) ? forward : Vec3{0.0f};
-        direction -= input.isKeyDown(Key::S) ? forward : Vec3{0.0f};
-        direction += input.isKeyDown(Key::D) ? sideways : Vec3{0.0f};
-        direction -= input.isKeyDown(Key::A) ? sideways : Vec3{0.0f};
-        direction += input.isKeyDown(Key::Space) ? up : Vec3{0.0f};
-        direction -= input.isKeyDown(Key::LeftControl) ? up : Vec3{0.0f};
-        if (devex::math::length(direction) > 0.0f)
+        const Vec2 move = actionVector(context, "Move");
+        Vec3 direction = forward * move.y + sideways * move.x + up * actionAxis(context, "Fly");
+        if (const float length = devex::math::length(direction); length > 0.0f)
         {
-            const float speed = input.isKeyDown(Key::LeftShift) ? camera.fastSpeed : camera.speed;
-            transform.position += devex::math::normalize(direction) * speed * seconds;
+            const float speed = actionDown(context, "Run") ? camera.fastSpeed : camera.speed;
+            transform.position += direction / std::max(length, 1.0f) * speed * seconds;
         }
         transform.rotation = heading * devex::math::angleAxis(camera.pitch, right);
     }
@@ -293,27 +315,21 @@ void movePlayers(SystemContext& context)
             continue;
         }
         handleMouseCapture(context);
-        if (context.window.isMouseCaptured())
-        {
-            player.yaw -= input.mouseDelta().x * player.sensitivity;
-            player.pitch = std::clamp(player.pitch - input.mouseDelta().y * player.sensitivity,
-                                      devex::math::radians(-85.0f), devex::math::radians(85.0f));
-        }
+        const Vec2 look = actionVector(context, "Look") * stickTurnSpeed * static_cast<float>(context.delta.count());
+        const Vec2 mouse = context.window.isMouseCaptured() ? input.mouseDelta() * player.sensitivity : Vec2{0.0f};
+        player.yaw -= mouse.x + look.x;
+        player.pitch = std::clamp(player.pitch - mouse.y + look.y, devex::math::radians(-85.0f), devex::math::radians(85.0f));
         transform.rotation = devex::math::angleAxis(player.yaw, up);
         scene.get<devex::scene::Transform>(eyes).rotation = devex::math::angleAxis(player.pitch, right);
 
         const Vec3 forward = transform.rotation * Vec3{0.0f, 0.0f, -1.0f};
         const Vec3 sideways = transform.rotation * right;
-        Vec3 direction{0.0f};
-        direction += input.isKeyDown(Key::W) ? forward : Vec3{0.0f};
-        direction -= input.isKeyDown(Key::S) ? forward : Vec3{0.0f};
-        direction += input.isKeyDown(Key::D) ? sideways : Vec3{0.0f};
-        direction -= input.isKeyDown(Key::A) ? sideways : Vec3{0.0f};
-        const float speed = input.isKeyDown(Key::LeftShift) ? player.runSpeed : player.walkSpeed;
-        const Vec3 walk = devex::math::length(direction) > 0.0f ? devex::math::normalize(direction) * speed : Vec3{0.0f};
+        const Vec2 move = actionVector(context, "Move");
+        const float speed = actionDown(context, "Run") ? player.runSpeed : player.walkSpeed;
+        const Vec3 walk = (forward * move.y + sideways * move.x) * speed;
         controller.velocity.x = walk.x;
         controller.velocity.z = walk.z;
-        if (input.wasKeyPressed(Key::Space) && controller.grounded)
+        if (actionPressed(context, "Jump") && controller.grounded)
         {
             controller.velocity.y = player.jumpSpeed;
         }
@@ -472,8 +488,13 @@ void switchScenes(SystemContext& context)
     {
         if (switcher.scene.isValid())
         {
-            // In the background: this scene goes on until what the other shows is ready.
+            // In the background: this scene goes on until what the other shows is ready. Contexts
+            // are the game's, not the scene's: the menus of this one may have turned the game off.
             context.sceneToLoadInBackground = switcher.scene;
+            if (context.actions != nullptr)
+            {
+                context.actions->setContextActive("Gameplay", true);
+            }
             return;
         }
     }

@@ -256,6 +256,9 @@ public:
     void setMemoryReport(std::function<asset::MemoryReport()> report);
     // Lets the status bar tell how many assets are loading in the background.
     void setPendingLoads(std::function<std::size_t()> pending);
+    // A key went down, even while the tools had the keyboard: the input settings bind keys by
+    // their place.
+    void notifyKeyPressed(platform::Key key) noexcept;
     void setAnimationWorld(animation::AnimationWorld* world) noexcept;
 
     // Editor only: what the last build of the game code reported, shown in the margin of the text

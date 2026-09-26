@@ -639,6 +639,7 @@ std::optional<math::Vec2> ToolsOverlay::viewportPointer() const noexcept
 void ToolsOverlay::update(scene::Scene& scene, core::Duration frameDelta, PlayState playState)
 {
     ToolsState& state = *m_state;
+    state.pressedKey = std::exchange(state.notifiedKey, std::nullopt);
     state.frameTimes.record(static_cast<float>(frameDelta.count() * 1000.0));
     // Frames are measured only for someone to look at them.
     core::profiler::setEnabled(state.visible && state.showProfiler);
@@ -842,6 +843,11 @@ void ToolsOverlay::setMemoryReport(std::function<asset::MemoryReport()> report)
 void ToolsOverlay::setPendingLoads(std::function<std::size_t()> pending)
 {
     m_state->pendingLoads = std::move(pending);
+}
+
+void ToolsOverlay::notifyKeyPressed(platform::Key key) noexcept
+{
+    m_state->notifiedKey = key;
 }
 
 void ToolsOverlay::setAnimationWorld(animation::AnimationWorld* world) noexcept
