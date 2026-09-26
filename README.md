@@ -111,7 +111,8 @@ Le détail, l'architecture des modules et les jalons sont dans
   scène `sandbox` (caisse et balises glTF, sphères or et plastique, ciel HDR, plateau tournant dont
   les satellites brillent, panneaux de verre teinté, jour et nuit avec N), qui ouvre sur un menu
   principal, un écran de réglages (nom, mot de passe, curseur de volume lié à son étiquette, case
-  plein écran, aide en texte riche qui défile dans un cadre en neuf parts), un menu de pause
+  plein écran, touche de saut à réaffecter et à réinitialiser, aide en texte riche qui défile dans
+  un cadre en neuf parts), un menu de pause
   appelé par Échap et un HUD, tous habillés par le thème `assets/ui/sandbox.dvxtheme` et pilotés
   par `code/Menu.cs`.
 
@@ -139,7 +140,8 @@ ctest --preset test-x64-debug
 ```
 
 Les programmes sont produits dans `out/build/x64-debug/bin` ; dans l'arène du bac à sable, un clic
-capture la souris, ZQSD (WASD) marchent, Maj court, Espace saute, un clic lance une balle, C passe à
+capture la souris, ZQSD (WASD) ou le stick gauche marchent, le stick droit regarde, Maj court,
+Espace ou le bouton du bas saute (ce sont les actions du projet), un clic lance une balle, C passe à
 la caméra libre et Échap libère la souris :
 
 ```powershell
