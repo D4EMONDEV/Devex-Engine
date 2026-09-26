@@ -314,8 +314,8 @@ struct ToolsState
     // The mixer clips are previewed on, and where clips come from; null without audio.
     audio::AudioEngine* audio = nullptr;
     std::function<std::shared_ptr<const audio::Clip>(asset::AssetId)> audioClips;
-    // The asset of the FileSystem shown in the inspector (an audio clip), invalid when an entity or
-    // a code file is selected.
+    // The asset of the FileSystem shown in the inspector (an audio clip or a model), invalid when an
+    // entity or a code file is selected.
     asset::AssetId selectedAsset;
     // What the inspector shows of the selected clip, read again once the file is imported again.
     std::optional<asset::AudioClipData> selectedClipInfo;
@@ -526,6 +526,8 @@ void drawAnimationPanel(ToolsState& state, scene::Scene& scene);
 void selectAsset(ToolsState& state, asset::AssetId id);
 // The selected audio clip: its format, its waveform, how it loads, and a preview.
 void drawAudioClipInspector(ToolsState& state);
+// The selected model: what its file brought, and how it imports (scale, textures).
+void drawModelInspector(ToolsState& state);
 void previewAudioClip(ToolsState& state, asset::AssetId clip);
 void stopAudioPreview(ToolsState& state);
 

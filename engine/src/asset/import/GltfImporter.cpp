@@ -1,3 +1,5 @@
+#include "ModelImport.hpp"
+
 #include <devex/asset/Artifact.hpp>
 #include <devex/asset/import/Importer.hpp>
 #include <devex/asset/import/TextureProcessing.hpp>
@@ -28,47 +30,9 @@ constexpr fastgltf::Extensions supportedExtensions =
     fastgltf::Extensions::KHR_mesh_quantization | fastgltf::Extensions::KHR_texture_transform |
     fastgltf::Extensions::KHR_materials_emissive_strength;
 
-enum class TextureRole : std::uint8_t
-{
-    // sRGB colors: base color and emission.
-    Color,
-    // Linear values: metallic-roughness and occlusion.
-    Data,
-    Normal,
-};
-
-[[nodiscard]] std::string_view keySuffix(TextureRole role) noexcept
-{
-    switch (role)
-    {
-    case TextureRole::Color:
-        return "";
-    case TextureRole::Data:
-        return " (linear)";
-    case TextureRole::Normal:
-        return " (normal)";
-    }
-    return "";
-}
-
-// Names used as keys in the .dvxmeta: the glTF name when present, a fallback otherwise, and the
-// index appended to names shared by several elements.
-[[nodiscard]] std::vector<std::string> uniqueKeys(std::vector<std::string> names)
-{
-    std::unordered_map<std::string, std::size_t> occurrences;
-    for (const std::string& name : names)
-    {
-        ++occurrences[name];
-    }
-    for (std::size_t index = 0; index < names.size(); ++index)
-    {
-        if (occurrences[names[index]] > 1)
-        {
-            names[index] = std::format("{} #{}", names[index], index);
-        }
-    }
-    return names;
-}
+using detail::keySuffix;
+using detail::TextureRole;
+using detail::uniqueKeys;
 
 [[nodiscard]] std::optional<AnimationPath> toAnimationPath(fastgltf::AnimationPath path) noexcept
 {
@@ -392,66 +356,30 @@ private:
 
     void importTextures()
     {
-        const std::optional<TextureQuality> quality =
-            parseTextureQuality(m_context.stringOption("texture_quality", "normal"));
-        const bool compress = m_context.boolOption("compress_textures", true);
-
         std::vector<TextureUse> uses;
+        std::vector<detail::TextureRequest> requests;
         for (auto& [use, id] : m_textureIds)
         {
-            id = m_context.subAssets.acquire(
-                AssetType::Texture, m_imageKeys[use.image] + std::string(keySuffix(use.role)));
+            std::string key = m_imageKeys[use.image] + std::string(keySuffix(use.role));
+            id = m_context.subAssets.acquire(AssetType::Texture, key);
             uses.push_back(use);
+            requests.push_back({
+                .id = id,
+                .key = std::move(key),
+                .role = use.role,
+                .decode = [this, image = use.image]() -> core::Result<Image> {
+                    const core::Result<std::span<const std::byte>> bytes =
+                        imageBytes(m_asset, m_asset.images[image]);
+                    if (!bytes)
+                    {
+                        return std::unexpected(bytes.error());
+                    }
+                    return decodeImage(*bytes);
+                },
+            });
         }
 
-        std::vector<std::optional<ImportedArtifact>> built(uses.size());
-        const auto build = [&](std::size_t index) {
-            const TextureUse use = uses[index];
-            const std::string& key = m_imageKeys[use.image];
-            const core::Result<std::span<const std::byte>> bytes =
-                imageBytes(m_asset, m_asset.images[use.image]);
-            core::Result<Image> image = bytes ? decodeImage(*bytes)
-                                              : core::Result<Image>(std::unexpected(bytes.error()));
-            if (!image)
-            {
-                DEVEX_LOG_WARNING("Skipping image '{}' of '{}': {}", key,
-                                  core::toUtf8(m_context.source.filename()), image.error());
-                return;
-            }
-            const TextureBuildOptions options{
-                .srgb = use.role == TextureRole::Color,
-                .normalMap = use.role == TextureRole::Normal,
-                .compress = compress,
-                .quality = quality.value_or(TextureQuality::Normal),
-            };
-            core::Result<TextureData> texture =
-                buildTexture(*image, options, m_context.jobs, m_context.cancelled);
-            if (!texture)
-            {
-                if (!m_context.isCancelled())
-                {
-                    DEVEX_LOG_WARNING("Skipping image '{}' of '{}': {}", key,
-                                      core::toUtf8(m_context.source.filename()), texture.error());
-                }
-                return;
-            }
-            const AssetId id = m_textureIds.at(use);
-            built[index] = ImportedArtifact{id, AssetType::Texture,
-                                            key + std::string(keySuffix(use.role)),
-                                            encodeTexture(*texture)};
-        };
-        if (m_context.jobs != nullptr)
-        {
-            m_context.jobs->parallelFor(uses.size(), build);
-        }
-        else
-        {
-            for (std::size_t index = 0; index < uses.size(); ++index)
-            {
-                build(index);
-            }
-        }
-
+        std::vector<std::optional<ImportedArtifact>> built = detail::buildTextures(m_context, requests);
         for (std::size_t index = 0; index < uses.size(); ++index)
         {
             if (built[index])

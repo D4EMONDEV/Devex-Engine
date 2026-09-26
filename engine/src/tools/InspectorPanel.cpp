@@ -1130,7 +1130,15 @@ void drawInspectorPanel(ToolsState& state, scene::Scene& scene)
         }
         if (!entity.isValid() && state.selectedAsset.isValid())
         {
-            drawAudioClipInspector(state);
+            const asset::AssetInfo* const selected = state.database != nullptr ? state.database->find(state.selectedAsset) : nullptr;
+            if (selected != nullptr && selected->type == asset::AssetType::Model)
+            {
+                drawModelInspector(state);
+            }
+            else
+            {
+                drawAudioClipInspector(state);
+            }
             ImGui::End();
             return;
         }

@@ -87,9 +87,12 @@ struct Importer
     // Written into new .dvxmeta files.
     std::vector<serialization::TextProperty> defaultOptions;
     core::Result<ImportResult> (*run)(ImportContext& context) = nullptr;
+    // The other files a source reads, found without importing it, such as the images next to a
+    // model; they are copied with it into the project. Null for formats that read none.
+    core::Result<std::vector<std::filesystem::path>> (*findDependencies)(const std::filesystem::path& file) = nullptr;
 };
 
-// Texture images, .dvxmat materials, glTF models, sounds, fonts and .dvxscene scenes.
+// Texture images, .dvxmat materials, glTF, FBX and OBJ models, sounds, fonts and .dvxscene scenes.
 [[nodiscard]] std::span<const Importer> importers();
 // The extension is compared without regard to case.
 [[nodiscard]] const Importer* findImporterForExtension(std::string_view extension);
@@ -99,6 +102,9 @@ struct Importer
 [[nodiscard]] core::Result<ImportResult> importTextureFile(ImportContext& context);
 [[nodiscard]] core::Result<ImportResult> importMaterialFile(ImportContext& context);
 [[nodiscard]] core::Result<ImportResult> importGltfFile(ImportContext& context);
+// FBX and OBJ files, read by ufbx and converted to the engine conventions: Y up, right-handed, one
+// unit per meter, times the "scale" option.
+[[nodiscard]] core::Result<ImportResult> importFbxFile(ImportContext& context);
 [[nodiscard]] core::Result<ImportResult> importSceneFile(ImportContext& context);
 // Sounds keep their file; the "loading" option chooses "decoded", "streamed" or "auto".
 [[nodiscard]] core::Result<ImportResult> importAudioFile(ImportContext& context);
@@ -108,6 +114,9 @@ struct Importer
 
 // Local files that a .gltf or .glb file refers to, such as external buffers and images.
 [[nodiscard]] core::Result<std::vector<std::filesystem::path>> findGltfDependencies(
+    const std::filesystem::path& file);
+// The images an FBX or OBJ file refers to and finds beside it, and the .mtl of an OBJ file.
+[[nodiscard]] core::Result<std::vector<std::filesystem::path>> findFbxDependencies(
     const std::filesystem::path& file);
 
 } // namespace devex::asset

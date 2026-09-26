@@ -217,6 +217,11 @@ void drawSource(ToolsState& state, scene::Scene& scene, const asset::SourceFile&
                 openTextFile(state, *path);
             }
         }
+        // Models show how they import in the inspector, and are placed when double-clicked.
+        if (mainAsset->type == asset::AssetType::Model && ImGui::IsItemClicked(ImGuiMouseButton_Left))
+        {
+            selectAsset(state, mainAsset->id);
+        }
         if (mainAsset->type == asset::AssetType::Model && doubleClicked)
         {
             requestInstantiateModel(state, mainAsset->id, core::Uuid{});

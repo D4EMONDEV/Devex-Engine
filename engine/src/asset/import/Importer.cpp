@@ -239,6 +239,36 @@ std::span<const Importer> importers()
                     {"texture_quality", TextValue(std::string("normal"))},
                 },
             .run = &importGltfFile,
+            .findDependencies = &findGltfDependencies,
+        },
+        Importer{
+            .name = "fbx",
+            .version = 1,
+            .mainType = AssetType::Model,
+            .extensions = {".fbx"},
+            .defaultOptions =
+                {
+                    {"scale", TextValue(1.0)},
+                    {"compress_textures", TextValue(true)},
+                    {"texture_quality", TextValue(std::string("normal"))},
+                },
+            .run = &importFbxFile,
+            .findDependencies = &findFbxDependencies,
+        },
+        Importer{
+            .name = "obj",
+            .version = 1,
+            .mainType = AssetType::Model,
+            .extensions = {".obj"},
+            .defaultOptions =
+                {
+                    {"scale", TextValue(1.0)},
+                    {"compress_textures", TextValue(true)},
+                    {"texture_quality", TextValue(std::string("normal"))},
+                },
+            // ufbx reads OBJ files too.
+            .run = &importFbxFile,
+            .findDependencies = &findFbxDependencies,
         },
         Importer{
             .name = "audio",

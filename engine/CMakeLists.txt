@@ -236,6 +236,16 @@ set_target_properties(devex_asset PROPERTIES
 )
 devex_set_warnings(devex_asset)
 
+# ufbx, vendored in third_party: reads FBX and OBJ files. A single C file, compiled with the
+# warnings of its authors rather than the engine's.
+add_library(devex_ufbx STATIC "${PROJECT_SOURCE_DIR}/third_party/ufbx/ufbx.c")
+target_include_directories(devex_ufbx SYSTEM PUBLIC "${PROJECT_SOURCE_DIR}/third_party/ufbx")
+set_target_properties(devex_ufbx PROPERTIES
+    C_STANDARD 11
+    POSITION_INDEPENDENT_CODE ON
+    FOLDER "ThirdParty"
+)
+
 # AssetImport: the asset database and the importers of source formats. Meant for tools, not
 # shipped games.
 add_library(devex_asset_import OBJECT)
@@ -245,11 +255,14 @@ target_sources(devex_asset_import
     PRIVATE
         src/asset/import/AssetDatabase.cpp
         src/asset/import/AudioImporter.cpp
+        src/asset/import/FbxImporter.cpp
         src/asset/import/FontImporter.cpp
         src/asset/import/GltfImporter.cpp
         src/asset/import/Importer.cpp
         src/asset/import/MaterialFile.cpp
         src/asset/import/MetaFile.cpp
+        src/asset/import/ModelImport.cpp
+        src/asset/import/ModelImport.hpp
         src/asset/import/StbImage.cpp
         src/asset/import/TextureProcessing.cpp
         src/asset/import/ThemeFile.cpp
@@ -275,6 +288,7 @@ target_link_libraries(devex_asset_import
         Devex::Audio
         Devex::Scene
         basisu::basisu_encoder
+        devex_ufbx
         efsw::efsw
         fastgltf::fastgltf
 )
@@ -642,6 +656,7 @@ target_sources(devex_tools
         src/tools/InspectorPanel.cpp
         src/tools/InterfacePanel.cpp
         src/tools/LogBuffer.cpp
+        src/tools/ModelInspector.cpp
         src/tools/ProjectList.cpp
         src/tools/ProjectList.hpp
         src/tools/ProfilerPanel.cpp

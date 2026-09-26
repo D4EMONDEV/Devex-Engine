@@ -12,6 +12,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
+#include <cmath>
 #include <filesystem>
 #include <memory>
 #include <string>
@@ -325,4 +326,50 @@ TEST_CASE("A rigged model imports its skeleton, its skinning and its animations"
         world.update(scene, Duration(0.3));
         CHECK(scene.get<Transform>(leg).rotation != bind);
     }
+}
+
+TEST_CASE("A rigged FBX model plays its animations on its instantiated skeleton", "[animation][fbx]")
+{
+    devex::asset::ImportContext context{
+        .source = dataDirectory / "fbx" / "walker.fbx",
+        .mainId = AssetId::generate(),
+        .name = "walker",
+    };
+    const auto result = devex::asset::importFbxFile(context);
+    REQUIRE(result.has_value());
+    const auto model = devex::asset::decodeModel(result->artifacts.front().bytes);
+    REQUIRE(model.has_value());
+    const auto clipArtifact = std::ranges::find(result->artifacts, AssetType::AnimationClip,
+                                                &devex::asset::ImportedArtifact::type);
+    REQUIRE(clipArtifact != result->artifacts.end());
+    const auto walk = devex::asset::decodeAnimation(clipArtifact->bytes);
+    REQUIRE(walk.has_value());
+
+    Scene scene;
+    const Entity root = devex::scene::instantiateModel(scene, *model, "Walker");
+    const auto renderers = scene.view<SkinnedMeshRenderer>();
+    const auto first = renderers.begin();
+    REQUIRE(first != renderers.end());
+    [[maybe_unused]] const auto [entity, renderer] = *first;
+    REQUIRE(renderer.bones.size() == 2);
+    Entity knee;
+    for (const auto& bone : renderer.bones)
+    {
+        if (scene.name(scene.resolve(bone)) == "Knee")
+        {
+            knee = scene.resolve(bone);
+        }
+    }
+    REQUIRE(knee.isValid());
+
+    // A second of the clip bends the knee by 45 degrees.
+    const AssetId clipId = AssetId::generate();
+    const std::shared_ptr<const Clip> clip = clipOf(*walk);
+    AnimationWorld world([&](AssetId id) { return id == clipId ? clip : nullptr; });
+    scene.add<Animator>(root, Animator{.clip = clipId, .loop = false});
+    const devex::math::Quat bind = scene.get<Transform>(knee).rotation;
+    world.update(scene, Duration(0.0));
+    world.update(scene, Duration(1.0));
+    const float cosine = std::abs(devex::math::dot(bind, scene.get<Transform>(knee).rotation));
+    CHECK(2.0f * std::acos(std::min(cosine, 1.0f)) == Catch::Approx(devex::math::radians(45.0f)).margin(1e-2));
 }

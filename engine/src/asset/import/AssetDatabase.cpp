@@ -822,9 +822,9 @@ public:
         }
 
         std::vector<std::filesystem::path> dependencies;
-        if (importer->name == "gltf")
+        if (importer->findDependencies != nullptr)
         {
-            core::Result<std::vector<std::filesystem::path>> found = findGltfDependencies(file);
+            core::Result<std::vector<std::filesystem::path>> found = importer->findDependencies(file);
             if (!found)
             {
                 return std::unexpected(found.error());

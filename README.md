@@ -33,7 +33,8 @@ Le détail, l'architecture des modules et les jalons sont dans
   clips audio, animations, polices (avec leur crénage) et thèmes d'interface, fichiers
   `.dvxasset`, projets `.dvxproj`, paquets de jeux exportés `.dvxpak` ;
 - `Devex::AssetImport` : base d'assets (`.dvxmeta`, cache `.devex/`, imports en arrière-plan,
-  réimport à chaud), importeurs de textures (BC7/BC5), de `.dvxmat`, de glTF, de scènes, de sons
+  réimport à chaud), importeurs de textures (BC7/BC5), de `.dvxmat`, de modèles glTF, FBX et OBJ
+  (ufbx, convertis en mètres et Y-up avec une échelle réglable), de scènes, de sons
   (WAV, FLAC, MP3, Ogg Vorbis), de polices (`.ttf`, `.otf` cuites en atlas de distances) et de
   thèmes `.dvxtheme` ;
 - `Devex::Render` : renderer Vulkan 1.4 (volk, VMA), shaders Slang, render graph, PBR
@@ -51,7 +52,7 @@ Le détail, l'architecture des modules et les jalons sont dans
 - `Devex::Audio` : miniaudio, sons spatialisés ou 2D, sources et écouteur dans la scène (sinon la
   caméra principale), lecture ponctuelle par le code, groupes de volume, clips décodés au
   chargement ou pendant la lecture ;
-- `Devex::Animation` : clips d'animation importés des modèles glTF, squelettes faits d'entités,
+- `Devex::Animation` : clips d'animation importés des modèles glTF et FBX, squelettes faits d'entités,
   `Animator` qui joue un clip avec fondu croisé, root motion optionnel, skinning des maillages
   dans le vertex shader ;
 - `Devex::Ui` : interfaces faites d'entités (`Canvas`, `UiRect`, `UiImage`, `UiText`, `UiButton`,
@@ -236,7 +237,8 @@ fermer un onglet de scène et F5 pour jouer (F8 arrête). Le thème, l'échelle 
 règlent dans *Editor > Editor Settings*.
 
 Les polices (Noto Sans, JetBrains Mono : SIL OFL 1.1) et les icônes (Lucide : ISC) de l'éditeur sont
-dans `third_party` avec leurs licences.
+dans `third_party` avec leurs licences, comme ufbx (MIT ou domaine public), qui lit les fichiers FBX
+et OBJ.
 
 Avec Visual Studio en français sans le pack de langue anglais, la configuration fait passer le
 compilateur par un petit lanceur qui traduit ses notes `/showIncludes` pour Ninja (voir

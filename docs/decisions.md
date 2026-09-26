@@ -18,7 +18,7 @@ mais seulement explicitement ici : le code suit ce document, pas l'inverse.
 | Architecture de rendu    | Forward+ clustered avec prépasse, PBR métal-rugosité (GGX)         |
 | Gameplay                 | C++ (DLL rechargeable) et C# (.NET hébergé), au choix, ensemble    |
 | Format source            |  Texte maison lisible, extensions `.dvx*`, binaire cooké à l'export|
-| Import 3D                | glTF 2.0 (fastgltf) + FBX (ufbx)                                   |
+| Import 3D                | glTF 2.0 (fastgltf), FBX et OBJ (ufbx), convertis au repère moteur |
 | UI éditeur               | Dear ImGui pour l'instant, puis l'UI des jeux quand elle suffira   |
 | Modules C++              | Headers classiques                                                 |
 | Erreurs                  | `std::expected`, pas d'exceptions dans le moteur                   |
@@ -165,7 +165,7 @@ situé au-dessus de lui, et le graphe reste sans cycle.
 | `Reflection`    | description des champs (`TypeInfo`, `DEVEX_REFLECT`, `ValueKind`)         | Core, Math                    |
 | `Serialization` | format texte `.dvx*` (sections, valeurs) ; plus tard archives cookées     | Core                          |
 | `Asset`         | `AssetId`, données CPU (maillages, textures, matériaux, modèles, clips audio et d'animation, polices), `.dvxasset`, projet, paquet `.dvxpak` | Core, Math, Reflection, Serialization, zstd |
-| `AssetImport`   | base d'assets, `.dvxmeta`, importeurs (textures, `.dvxmat`, glTF, sons, polices) | Asset, Scene, Audio, fastgltf, basisu, stb, efsw |
+| `AssetImport`   | base d'assets, `.dvxmeta`, importeurs (textures, `.dvxmat`, glTF, FBX, OBJ, sons, polices) | Asset, Scene, Audio, fastgltf, ufbx, basisu, stb, efsw |
 | `Render`        | façade `Renderer` / `RenderWorld` ; tout `Vk*` reste dans `src/render/vulkan` | Core, Math, Platform, Asset, Vulkan |
 | `Scene`         | entités, sparse sets, hiérarchie, composants intégrés, `.dvxscene`, sous-arbres, préfabs | Core, Math, Reflection, Serialization, Asset |
 | `Audio`         | clips, mixage et groupes, sources et écouteur de la scène                | Core, Math, Asset, Scene, miniaudio, stb |
@@ -448,7 +448,7 @@ docs/          décisions et documentation
   convertit les unités (`render/Photometry.hpp`), puis appelle `onRender` pour les ajouts
   éventuels.
 - Repère : **Y-up, main droite**, +X droite, -Z avant, mètres, angles en radians.
-  glTF s'importe sans conversion ; FBX est converti à l'import.
+  glTF s'importe sans conversion ; FBX et OBJ sont convertis à l'import (voir *Assets*).
 
 ### Formats de fichiers
 
@@ -967,15 +967,17 @@ les assets s'écrivent au fil de leur lecture.
   ouvert depuis les sources pour que les modifications d'assets s'y voient en direct.
 - **Sources et importeurs** : chaque fichier dont l'extension a un importeur est une source ;
   `texture` (`.png`, `.jpg`, `.tga`, `.bmp`, `.hdr`, décodés par stb_image), `material`
-  (`.dvxmat`), `gltf` (`.gltf`, `.glb`) et `scene` (`.dvxscene`). Les fichiers et dossiers cachés (`.`) sont ignorés.
+  (`.dvxmat`), `gltf` (`.gltf`, `.glb`), `fbx` (`.fbx`), `obj` (`.obj`) et `scene` (`.dvxscene`),
+  entre autres. Les fichiers et dossiers cachés (`.`) sont ignorés.
 - **`.dvxmeta`** : créé au premier scan avec un UUID aléatoire et les options par défaut de
   l'importeur. Il porte l'identité de l'asset : il se versionne avec la source. Un `.dvxmeta`
   illisible est signalé et laissé tel quel, jamais remplacé. Une source copiée avec son
   `.dvxmeta` (UUID déjà vu) reçoit de nouveaux identifiants.
-- **Sous-assets** : les éléments d'un fichier (maillages, matériaux, textures d'un glTF) sont
-  listés dans le `.dvxmeta` par type, **clé** et UUID. La clé est le nom glTF, un nom de repli
-  (`Mesh 2`) ou le nom suivi de `#index` en cas de doublon ; une texture reçoit le suffixe de son
-  rôle (` (linear)`, ` (normal)`). Une clé connue garde son UUID ; une clé disparue reste listée,
+- **Sous-assets** : les éléments d'un fichier (maillages, matériaux, textures d'un modèle) sont
+  listés dans le `.dvxmeta` par type, **clé** et UUID. La clé est le nom du fichier, un nom de
+  repli (`Mesh 2`) ou le nom suivi de `#index` en cas de doublon ; une texture reçoit le suffixe de
+  son rôle (` (linear)`, ` (normal)`, ` (metallic-roughness)` pour celles que l'import FBX
+  assemble). Une clé connue garde son UUID ; une clé disparue reste listée,
   pour que son UUID revienne avec elle.
 - **Cache** : chaque import écrit ses artefacts (`imported/<uuid>.dvxasset`, écriture atomique)
   et un enregistrement texte (`sources/<uuid>.dvxsource`) : importeur et version, empreinte des
@@ -984,8 +986,8 @@ les assets s'écrivent au fil de leur lecture.
   immédiatement ; les artefacts qu'aucun enregistrement ne cite sont supprimés.
 - **Détection des changements** : taille et date d'abord, contenu haché seulement si elles
   diffèrent (un fichier touché sans changement n'est pas réimporté). Changent aussi l'import :
-  options, importeur, version, dépendances (buffers et images externes d'un `.gltf`), artefact
-  manquant. Une source déplacée avec son `.dvxmeta` garde ses assets sans réimport.
+  options, importeur, version, dépendances (buffers et images externes d'un `.gltf`, images d'un
+  FBX, `.mtl` et images d'un OBJ), artefact manquant. Une source déplacée avec son `.dvxmeta` garde ses assets sans réimport.
 - **Imports** : sur le `core::JobSystem` (un thread par cœur moins un), en parallèle entre fichiers
   et à l'intérieur (lignes de blocs d'une texture, textures d'un glTF). `AssetDatabase::update`,
   appelé au début de chaque frame, applique les imports terminés et renvoie des `AssetEvent`
@@ -1049,9 +1051,49 @@ les assets s'écrivent au fil de leur lecture.
   les matériaux reprennent tous les paramètres PBR (y compris `KHR_materials_emissive_strength`).
   Les images référencées par un `.gltf` sont importées comme sous-assets du modèle, même si elles
   sont aussi des textures du projet.
+- **FBX et OBJ** : lus par **ufbx** (v0.23.1, un seul fichier C vendu dans `third_party/ufbx`,
+  compilé en bibliothèque statique avec ses propres avertissements), ils donnent les mêmes assets
+  qu'un glTF : un modèle, un maillage par géométrie (un sous-maillage par matériau, faces
+  triangulées, sommets identiques fusionnés, tangentes MikkTSpace), matériaux, textures,
+  squelettes, skinning (les quatre os les plus lourds) et un clip par pile d'animation. Les
+  deux formats partagent l'importeur ; l'OBJ n'a pas d'animation.
+  - **Repère** : ufbx convertit les axes et l'unité du fichier au repère du moteur (Y-up, main
+    droite, mètres), dans la géométrie et les translations, pas dans une échelle des nœuds ; les
+    transformations propres aux maillages (*geometric transforms*) sont appliquées aux sommets et
+    les modes d'héritage d'échelle compensés. Un OBJ, qui ne dit rien, est pris en mètres et Y-up.
+  - **Échelle** : l'option `scale` du `.dvxmeta` (1 par défaut) multiplie le tout. L'échelle
+    uniforme et fixe des nœuds racines est **cuite** dans les maillages et les translations de
+    leurs descendants (ce qui commute avec leurs rotations), avec la pose de référence des skins
+    corrigée : les objets qu'exporte Blender, à l'échelle 100 pour compenser le centimètre de
+    ses fichiers, arrivent à l'échelle 1 comme ceux d'un glTF. Une racine dont l'échelle est
+    animée, non uniforme, ou dont un maillage est partagé avec une racine d'une autre échelle, la
+    garde.
+  - **Matériaux** : ufbx ramène chaque modèle d'ombrage (Lambert, Phong, Standard Surface,
+    Physical de 3ds Max, matériaux de Blender relus en PBR…) à des paramètres PBR. Une texture
+    remplace la couleur à laquelle elle est reliée ; les couleurs sont prises linéaires, comme
+    Blender les écrit. Rugosité et métal, dans des cartes séparées en FBX, sont **assemblés**
+    dans une texture métal-rugosité (vert et bleu), une carte de brillance inversée ; une même
+    image pour les deux est prise comme déjà assemblée. L'opacité d'un matériau Phong vient de
+    sa transparence ; une opacité reliée à l'image de couleur donne un matériau découpé (`Mask`),
+    une opacité fixe inférieure à 1 un matériau transparent.
+  - **Images** : intégrées au FBX, ou cherchées au chemin relatif écrit dans le fichier puis sous
+    leur seul nom à côté du modèle ; les chemins absolus (souvent ceux de la machine de
+    l'artiste) ne sont pas suivis. Une image introuvable est signalée et le matériau garde ses
+    valeurs.
+  - **Animations** : chaque pile est échantillonnée par ufbx en clés linéaires (30 par seconde
+    pour les courbes non linéaires, clés réduites quand elles s'alignent) à partir de zéro ; les
+    pistes constantes égales à la pose de repos sont omises.
+  - Non importés : caméras, lumières, morph targets, matériaux propres à une instance d'un
+    maillage partagé, couleurs de sommets, seconds jeux d'UV.
 - **Ajout de fichiers** : `AssetDatabase::addFile` copie un fichier extérieur dans un dossier du
-  projet, avec les buffers et images d'un `.gltf`, écrit son `.dvxmeta` et renvoie l'UUID du
+  projet, avec les fichiers qu'il lit (`Importer::findDependencies` : buffers et images d'un
+  `.gltf`, images d'un FBX, `.mtl` et images d'un OBJ), écrit son `.dvxmeta` et renvoie l'UUID du
   modèle à venir. L'éditeur l'utilise pour les fichiers déposés sur la fenêtre.
+- **Inspecteur des modèles** : cliquer un modèle dans FileSystem montre ce que son fichier a donné
+  (maillages, matériaux, textures, animations), **Place in Scene**, **Reimport** et ses réglages
+  d'import : échelle (FBX et OBJ), compression et qualité des textures ; changer un réglage
+  réimporte le fichier. Les modèles déjà placés gardent la position de leurs nœuds (ce sont des
+  copies) : seuls leurs maillages suivent.
 - **Outils** : panneau *Assets* (sources, type, statut, erreur en infobulle, réimport, sous-assets
   dépliables) ; un asset se glisse sur un champ `AssetId` de l'inspecteur, un modèle dans la
   hiérarchie (placement annulable). L'inspecteur liste les assets du type attendu.
@@ -1263,7 +1305,7 @@ les assets s'écrivent au fil de leur lecture.
 
 ### Animation squelettique
 
-- **Import** : un fichier glTF rigué produit, à côté de ses maillages et matériaux, un squelette et
+- **Import** : un fichier glTF ou FBX rigué produit, à côté de ses maillages et matériaux, un squelette et
   un asset `AnimationClip` par animation (`animation` dans la réflexion). Le maillage emporte les
   joints et poids de ses sommets (quatre par sommet, normalisés à l'import) et sa **pose de
   référence** (`inverseBind`) ; le modèle emporte la liste des joints de chaque skin et les clips du
@@ -1821,8 +1863,10 @@ Hors vcpkg :
   (`dotnet` cherché à la configuration, facultatif : sans lui, le moteur se construit et tourne
   sans C#) ; le runtime est chargé à l'exécution par `hostfxr`, jamais lié au moteur ;
 - **Slang** est fourni par le SDK Vulkan (`C:\VulkanSDK\1.4.350.0`) ;
-- **ufbx** n'existe pas dans vcpkg : ses deux fichiers (`ufbx.c`, `ufbx.h`) seront
-  intégrés dans `third_party/ufbx` lors du support FBX ;
+- **ufbx** v0.23.1 n'existe pas dans vcpkg : ses deux fichiers (`ufbx.c`, `ufbx.h`) et sa licence
+  (MIT ou domaine public) sont versionnés dans `third_party/ufbx` ; le projet CMake active le C pour
+  lui. Les fichiers de test FBX et OBJ (`tests/data/fbx`) sont faits par Blender, avec le script
+  qui les accompagne ;
 - les **polices** Noto Sans (commit `53486ab` de `notofonts.github.io`) et JetBrains Mono (v2.304),
   sous SIL OFL 1.1, et les **icônes** Lucide 1.47.0 (ISC) sont versionnées dans `third_party/fonts`
   et `third_party/lucide` avec leurs licences, copiées avec elles dans `bin/resources`.
@@ -1975,6 +2019,12 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     l'ancienne version jusqu'à la nouvelle, scènes chargées en arrière-plan avec progression et
     préchargement en C++ et en C#, état du chargement dans l'éditeur.
 
+30. ✅ **Import FBX** — FBX et OBJ lus par ufbx et convertis au repère du moteur (axes, mètres,
+    option d'échelle), mêmes assets qu'un glTF : hiérarchie, maillages à sous-maillages,
+    matériaux PBR (cartes de rugosité et de métal assemblées), images intégrées ou voisines,
+    squelettes, skinning et animations ; échelle 100 des exports Blender cuite dans la géométrie,
+    fichiers voisins copiés avec le modèle, inspecteur des modèles avec leurs réglages d'import.
+
 Ensuite, sans ordre figé : jeux 2D, particules, CI Linux.
 
 ## Questions ouvertes
@@ -2028,8 +2078,12 @@ Ensuite, sans ordre figé : jeux 2D, particules, CI Linux.
   workers, construction de la scène elle-même (et de ses préfabs) hors du thread principal,
   cuisson de l'IBL sans attente, priorités (ce qui est proche de la caméra d'abord),
   déchargement des assets qui ne servent plus.
-- **Textures partagées** : une image utilisée par un `.gltf` et présente dans le projet est
+- **Textures partagées** : une image utilisée par un modèle et présente dans le projet est
   importée deux fois ; relier les deux demandera de connaître son rôle (couleur, normale).
+- **Import 3D, la suite** : caméras et lumières des fichiers, morph targets (glTF et FBX),
+  matériaux par instance, couleurs de sommets et seconds jeux d'UV, rétablir les chemins absolus
+  des images, modèles placés qui suivent leur fichier (préfabs de modèles), options d'import
+  des animations (découpage d'une pile en clips, fréquence d'échantillonnage).
 - **Autres plateformes de textures** : ASTC ou Basis Universal pour le mobile, produits à l'export.
 - **Culling** : sur GPU avec dessin indirect, culling par occlusion, et hiérarchie spatiale pour
   les grandes scènes (aujourd'hui chaque instance est testée une par une).

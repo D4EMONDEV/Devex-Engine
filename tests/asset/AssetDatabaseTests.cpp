@@ -376,6 +376,33 @@ TEST_CASE("External glTF files are copied into the project with their dependenci
     CHECK_FALSE((*database)->addFile(dataDirectory / "checker.png", "res://elsewhere").has_value());
 }
 
+TEST_CASE("External OBJ files are copied into the project with their .mtl and images", "[asset][database]")
+{
+    TemporaryProject project;
+    devex::core::JobSystem jobs(2);
+    auto database = AssetDatabase::open(project.project, jobs, {.watchFiles = false});
+    REQUIRE(database.has_value());
+
+    const auto added = (*database)->addFile(dataDirectory / "fbx" / "crate.obj", "res://assets/imported");
+    REQUIRE(added.has_value());
+    CHECK(std::filesystem::exists(project.assets() / "imported/crate.obj"));
+    CHECK(std::filesystem::exists(project.assets() / "imported/crate.mtl"));
+    CHECK(std::filesystem::exists(project.assets() / "imported/crate_color.png"));
+    static_cast<void>(settle(**database));
+
+    const auto source = (*database)->sourceOf(*added);
+    REQUIRE(source.has_value());
+    CHECK(source->importer == "obj");
+    CHECK(source->status == ImportStatus::Ready);
+    CHECK((*database)->find(*added)->type == AssetType::Model);
+    // Model, mesh, two materials and a texture.
+    CHECK(source->assets.size() == 5);
+    // The scale of the model is an option of its .dvxmeta.
+    const auto scale = (*database)->importOption(*added, "scale");
+    REQUIRE(scale.has_value());
+    CHECK(devex::serialization::asNumber(*scale) == 1.0);
+}
+
 TEST_CASE("Watched folders import changes without an explicit refresh", "[asset][database]")
 {
     TemporaryProject project;

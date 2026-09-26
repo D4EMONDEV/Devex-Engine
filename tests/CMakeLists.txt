@@ -105,6 +105,7 @@ devex_add_tests(asset
     SOURCES
         asset/ArtifactTests.cpp
         asset/AssetDatabaseTests.cpp
+        asset/FbxImporterTests.cpp
         asset/FontImporterTests.cpp
         asset/GltfImporterTests.cpp
         asset/MeshDataTests.cpp

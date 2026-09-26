@@ -12,7 +12,7 @@ include(DevexVcpkg)
 project(DevexEngine
     VERSION 0.1.0
     DESCRIPTION "Open-source 3D game engine"
-    LANGUAGES CXX
+    LANGUAGES C CXX
 )
 
 # C++23 is the current stable baseline. C++26 is available only for experiments.

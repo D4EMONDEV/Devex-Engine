@@ -902,7 +902,7 @@ void drawEditorPopups(ToolsState& state, scene::Scene& scene)
                  {"Dear ImGui", "MIT"},
                  {"SDL 3", "zlib"},
                  {"Vulkan, volk, Vulkan Memory Allocator", "Apache 2.0, MIT"},
-                 {"GLM, fastgltf, Basis Universal", "MIT, MIT, Apache 2.0"},
+                 {"GLM, fastgltf, ufbx, Basis Universal", "MIT, MIT, MIT, Apache 2.0"},
                  {"FreeType, plutosvg", "FreeType License, MIT"},
                  {"Noto Sans, JetBrains Mono", "SIL Open Font License 1.1"},
                  {"Lucide icons", "ISC"},

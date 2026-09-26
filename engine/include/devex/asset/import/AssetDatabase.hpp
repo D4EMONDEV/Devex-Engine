@@ -128,7 +128,7 @@ public:
     [[nodiscard]] core::Result<std::string> sceneText(AssetId id) const override;
 
     // Copies a file from outside the project into a folder of it, given as a res:// path, together
-    // with the files a .gltf refers to. Returns the identifier of the main asset, which becomes
+    // with the files a model refers to. Returns the identifier of the main asset, which becomes
     // available once the import finishes.
     [[nodiscard]] core::Result<AssetId> addFile(const std::filesystem::path& file,
                                                 std::string_view folder);
