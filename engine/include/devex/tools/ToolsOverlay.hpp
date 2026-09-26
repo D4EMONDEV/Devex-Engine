@@ -254,6 +254,8 @@ public:
     void setThemes(std::function<std::shared_ptr<const asset::ThemeData>(asset::AssetId)> themes);
     // Lets the profiler show what the loaded assets take.
     void setMemoryReport(std::function<asset::MemoryReport()> report);
+    // Lets the status bar tell how many assets are loading in the background.
+    void setPendingLoads(std::function<std::size_t()> pending);
     void setAnimationWorld(animation::AnimationWorld* world) noexcept;
 
     // Editor only: what the last build of the game code reported, shown in the margin of the text

@@ -128,6 +128,10 @@ struct NativeApi
     int (*profileEnabled)();
     void (*profileBegin)(const char* name);
     void (*profileEnd)();
+    void (*loadSceneInBackground)(const UuidBytes* scene);
+    float (*sceneLoadingProgress)();
+    void (*preloadAsset)(const UuidBytes* asset);
+    int (*isAssetReady)(const UuidBytes* asset);
 };
 
 // The functions the engine calls, in the order of Devex.Managed's ManagedApi.
@@ -142,7 +146,7 @@ struct ManagedApi
 };
 
 // Devex.Managed's Bootstrap.Version: both sides change it with the function tables.
-constexpr int bootstrapVersion = 6;
+constexpr int bootstrapVersion = 7;
 
 struct BootstrapArguments
 {
@@ -875,6 +879,33 @@ void apiProfileEnd()
     core::profiler::endZone();
 }
 
+void apiLoadSceneInBackground(const UuidBytes* scene)
+{
+    if (currentFrame() != nullptr)
+    {
+        currentFrame()->sceneToLoadInBackground = asset::AssetId{toUuid(scene)};
+    }
+}
+
+float apiSceneLoadingProgress()
+{
+    return currentFrame() != nullptr ? currentFrame()->loadingProgress : -1.0f;
+}
+
+void apiPreloadAsset(const UuidBytes* asset)
+{
+    if (currentFrame() != nullptr && currentFrame()->assetManager != nullptr)
+    {
+        currentFrame()->assetManager->preload(asset::AssetId{toUuid(asset)});
+    }
+}
+
+int apiIsAssetReady(const UuidBytes* asset)
+{
+    AssetManager* const assets = currentFrame() != nullptr ? currentFrame()->assetManager : nullptr;
+    return assets == nullptr || assets->isReady(asset::AssetId{toUuid(asset)}) ? 1 : 0;
+}
+
 [[nodiscard]] NativeApi makeNativeApi() noexcept
 {
     return NativeApi{
@@ -956,6 +987,10 @@ void apiProfileEnd()
         .profileEnabled = &apiProfileEnabled,
         .profileBegin = &apiProfileBegin,
         .profileEnd = &apiProfileEnd,
+        .loadSceneInBackground = &apiLoadSceneInBackground,
+        .sceneLoadingProgress = &apiSceneLoadingProgress,
+        .preloadAsset = &apiPreloadAsset,
+        .isAssetReady = &apiIsAssetReady,
     };
 }
 

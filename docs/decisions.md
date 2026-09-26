@@ -71,6 +71,9 @@ mais seulement explicitement ici : le code suit ce document, pas l'inverse.
 | Cache d'import           | Artefacts binaires `.dvxasset` = format chargé par le jeu          |
 | Fichiers modifiés        | Dossier `assets/` surveillé (efsw), réimport et remplacement à chaud |
 | Exécution des imports    | Pool de jobs `core::JobSystem`, en arrière-plan                    |
+| Chargement des assets    | Maillages et textures lus sur les workers, remplaçants en attendant |
+| Envoi au GPU             | Copies dans les commandes de l'image, budget par image, sans attente |
+| Scènes des jeux          | Chargement en arrière-plan avec progression, ou immédiat           |
 | Textures                 | BC7 (couleurs, données) et BC5 (normales) à l'import, via basisu   |
 | Modèles dans une scène   | Copie d'entités ; préfabs liés dans un jalon dédié                 |
 | Matériaux                | Paramètres PBR glTF ; sous-assets en lecture seule + `.dvxmat`     |
@@ -288,13 +291,27 @@ docs/          décisions et documentation
   tangente. Les dispositions mémoire C++ et Slang sont
   vérifiées par `static_assert` (`src/render/vulkan/GpuData.hpp`). Le descriptor set
   global bindless porte les textures (voir ci-dessous).
-- **Maillages** : `Renderer::createMesh` valide les données et les transfère de façon
-  synchrone (buffer de staging VMA) ; il renvoie un `MeshHandle` générationnel
-  (`core::SlotMap`). `destroyMesh` retarde la libération jusqu'à ce qu'aucune frame en
+- **Maillages** : `Renderer::createMesh` valide les données, crée les buffers et remplit un buffer
+  de staging VMA, puis renvoie aussitôt un `MeshHandle` générationnel (`core::SlotMap`) ; la
+  copie vers le GPU vient avec les frames suivantes (voir *Envois au GPU*). `destroyMesh` retarde la libération jusqu'à ce qu'aucune frame en
   vol ne puisse encore l'utiliser. Faces avant dans le sens antihoraire, back-face culling.
   Un maillage a des **sous-maillages** (plages d'indices) ; le `RenderWorld` contient une
   instance par sous-maillage avec son matériau.
-- **Textures** : `Renderer::createTexture` envoie tous les niveaux de mip d'un `TextureData`
+- **Envois au GPU** : ni `createMesh` ni `createTexture` n'attendent plus le GPU. Chaque création
+  laisse une copie en attente ; au début d'une frame, après l'attente de sa fence, le renderer
+  prend les copies qui tiennent dans son budget (`RendererConfig::uploadBytesPerFrame`, 64 Mo ;
+  la première passe toujours, pour qu'une grosse texture n'attende pas indéfiniment) et les
+  enregistre dans une passe *Uploads* en tête du render graph, suivie d'une barrière vers toutes
+  les lectures ; les buffers de staging sont libérés quand la frame est finie. Jusqu'à sa copie,
+  un maillage n'est pas dessiné (ses instances sont retirées de la frame), une texture est
+  échantillonnée comme la texture par défaut (blanche ou normale plate) et les éléments
+  d'interface qui la dessinent sont laissés de côté ; un ciel attend d'être copié pour être cuit
+  en IBL. `Renderer::isReady` dit si c'est fait ; les statistiques donnent les copies en attente
+  et ce que la dernière frame a copié. Une copie créée pendant une frame est enregistrée dans la
+  même, avant ses passes : ce qui tient dans le budget s'affiche aussitôt. Les textures propres
+  au renderer (blanche, normale plate) et la cuisson de l'IBL restent synchrones. Une file de
+  transfert dédiée viendra plus tard.
+- **Textures** : `Renderer::createTexture` prend tous les niveaux de mip d'un `TextureData`
   (RGBA8, BC5, BC7, RGBA16F) et renvoie un `TextureHandle`. Elles vivent dans **un descriptor
   set global bindless** (set 0 : tableau de `Texture2D` indexé, `PARTIALLY_BOUND` et
   `UPDATE_AFTER_BIND`, 8192 emplacements au plus, sampler linéaire, répétition, anisotrope
@@ -980,11 +997,45 @@ les assets s'écrivent au fil de leur lecture.
 - **Suppression** : les assets d'une source supprimée disparaissent (`Removed`) avec leurs
   artefacts ; son `.dvxmeta` reste, et la source qui revient retrouve ses UUID.
 - **Chargement** : l'`AssetManager` de `Runtime` charge un asset la première fois qu'il sert
-  (maillage et matériaux d'un `MeshRenderer`, textures d'un matériau, modèle placé), de façon
-  synchrone depuis le cache. Sur `Imported`, un asset chargé est rechargé : maillages et textures
-  changent de handle (l'ancien est libéré après les frames en vol), un matériau garde le sien,
-  et les matériaux sont résolus à nouveau après tout changement de texture. Les maillages
-  enregistrés par l'application (primitives) ne sont jamais détruits par lui.
+  (maillage et matériaux d'un `MeshRenderer`, textures d'un matériau, modèle placé). Avec le
+  pool de jobs de l'application, les **maillages et textures se chargent en arrière-plan** :
+  les demander lance la lecture et le décodage sur un worker et ne renvoie rien ; une fois par
+  frame, avant l'extraction de la scène, `finishLoads` confie ce qui est fini au renderer
+  (64 Mo au plus par frame : la copie dans la mémoire de staging se fait sur le thread
+  principal), qui les copie sur le GPU. En attendant, les maillages ne sont pas dessinés et les
+  matériaux prennent les textures par défaut : rien ne gèle, les objets apparaissent en quelques
+  frames. Les matériaux, modèles, polices (dont l'atlas suit le même chemin vers le GPU),
+  triangles des colliders, sons, animations, thèmes et textes des scènes restent lus quand on
+  les demande : légers, ou nécessaires tout de suite. Sans pool de jobs (tests, outils), tout se
+  charge quand on le demande, comme avant.
+- **Sûreté des workers** : un worker ne touche qu'une fonction de lecture préparée sur le thread
+  principal (`AssetSource::artifactReader` : le chemin de l'artefact pour la base d'assets, dont
+  la liste change pendant les imports ; l'appel direct pour un paquet, immuable) et une file
+  partagée qu'il garde en vie. Chaque demande a un numéro : un réimport en lance une nouvelle et
+  rend l'ancienne périmée. Changer de source ou détruire le gestionnaire incrémente une
+  génération, attend les lectures en cours et oublie les autres, qui s'arrêtent sans rien lire.
+- **Rechargement** : sur `Imported`, un maillage ou une texture chargé est relu en arrière-plan et
+  **reste affiché jusqu'à ce que la nouvelle version soit prête**, qui prend alors un nouveau
+  handle (l'ancien est libéré après les frames en vol) ; un matériau garde le sien, et les
+  matériaux sont résolus à nouveau quand des textures arrivent. Les maillages enregistrés par
+  l'application (primitives) ne sont jamais détruits par lui.
+- **Préchargement** : `AssetManager::preload` lance le chargement d'un asset sans l'utiliser,
+  `isReady` dit s'il est chargé et, pour ce qui se dessine, copié sur le GPU (un matériau l'est
+  quand ses textures le sont ; un asset qui a échoué compte comme prêt, pour ne pas attendre
+  indéfiniment), `pendingLoads` compte ce qui est en route. L'éditeur l'affiche dans sa barre
+  d'état (*Loading N assets*) et le panneau *Statistics* montre les copies vers le GPU ; le
+  profileur montre les zones *Load a mesh* et *Load a texture* sur les workers, *Finish loads*
+  et *Uploads* sur le thread principal, et la passe *Uploads* du GPU.
+- **Scènes chargées en arrière-plan** : `SystemContext::sceneToLoadInBackground` (ou
+  `Application::loadSceneInBackground`, `Game.LoadSceneInBackground` en C#) lit et construit la
+  scène tout de suite, hors de l'écran, puis précharge les assets que nomment les champs de ses
+  composants (`scene::referencedAssets`, par la réflexion, listes comprises). La scène courante
+  continue ; `SystemContext::loadingScene` et `loadingProgress` (`Game.IsLoadingScene`,
+  `Game.LoadingProgress`) donnent la part prête, de 0 à 1, pour un écran de chargement ; quand
+  tout est prêt, elle remplace la scène courante comme `sceneToLoad`, qui reste le chemin
+  immédiat et annule un chargement en cours. En C#, `Assets.Preload` et `Assets.IsReady`. La
+  version de l'API des jeux passe à 10, celle de l'amorce C# à 7. Tab, dans le bac à sable,
+  change de scène ainsi.
 - **Textures** : mipmaps complets calculés en espace linéaire pour les couleurs sRGB, normales
   renormalisées à chaque niveau. Les images Radiance `.hdr` deviennent des textures `RGBA16F`
   non compressées, pour les ciels. Compression **BC7** (sRGB pour les couleurs, perceptuelle) par
@@ -1918,6 +1969,12 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     UUID neufs, renommage dans l'arbre, entités masquées dans la vue et gardées par projet,
     matériaux glissés sur les objets.
 
+29. ✅ **Chargement asynchrone** — maillages et textures lus et décodés sur les workers, confiés au
+    renderer une fois par frame, copies vers le GPU sans attente dans un budget par frame,
+    remplaçants en attendant (rien de dessiné, textures par défaut), rechargement qui garde
+    l'ancienne version jusqu'à la nouvelle, scènes chargées en arrière-plan avec progression et
+    préchargement en C++ et en C#, état du chargement dans l'éditeur.
+
 Ensuite, sans ordre figé : jeux 2D, particules, CI Linux.
 
 ## Questions ouvertes
@@ -1942,8 +1999,8 @@ Ensuite, sans ordre figé : jeux 2D, particules, CI Linux.
   gardées au lieu d'être abandonnées.
 - **Export** : autres plateformes (Linux, macOS), export incrémental et paquets de mise à jour ou de
   contenu additionnel, signature de l'exécutable et installeur, retrait des bibliothèques qu'un jeu
-  n'utilise pas, cuisson des textures par plateforme, chargement asynchrone depuis le paquet,
-  export sans build Release du moteur (paquet d'un moteur distribué).
+  n'utilise pas, cuisson des textures par plateforme, export sans build Release du moteur (paquet
+  d'un moteur distribué).
 - **Audio** : streaming depuis le disque, occlusion, réverbération, effets et routage des groupes,
   budget de voix, plusieurs écouteurs, intégration optionnelle de FMOD/Wwise.
 - **Éditeur de texte** : client LSP (clangd, Roslyn) pour une vraie complétion, les diagnostics en
@@ -1966,8 +2023,11 @@ Ensuite, sans ordre figé : jeux 2D, particules, CI Linux.
   (draw calls, mémoire, images par seconde), mémoire réellement allouée (VMA, tas du processus,
   GC de .NET), recherche d'une zone et moyenne sur plusieurs images, comparaison de deux captures,
   capture enregistrée dans un fichier, profilage d'un jeu exporté à distance.
-- **Chargement asynchrone** : lecture et envoi GPU des assets hors du thread principal, streaming
-  des gros niveaux (aujourd'hui, le chargement depuis le cache est synchrone).
+- **Chargement asynchrone, la suite** : file de transfert dédiée pour les copies, streaming des
+  gros niveaux (charger et décharger par zones), décodage des sons et des animations sur les
+  workers, construction de la scène elle-même (et de ses préfabs) hors du thread principal,
+  cuisson de l'IBL sans attente, priorités (ce qui est proche de la caméra d'abord),
+  déchargement des assets qui ne servent plus.
 - **Textures partagées** : une image utilisée par un `.gltf` et présente dans le projet est
   importée deux fois ; relier les deux demandera de connaître son rôle (couleur, normale).
 - **Autres plateformes de textures** : ASTC ou Basis Universal pour le mobile, produits à l'export.

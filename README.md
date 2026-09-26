@@ -41,7 +41,8 @@ Le détail, l'architecture des modules et les jalons sont dans
   le soleil et en atlas pour les lumières locales, ciel HDR et IBL, surfaces transparentes triées,
   anticrénelage temporel, occlusion ambiante en espace écran, bloom, exposition automatique,
   tonemapping AgX, table de couleurs, vignette et grain, rendu dans une texture, sélection sur le
-  GPU, contours et lignes d'outils, temps GPU de chaque passe ;
+  GPU, contours et lignes d'outils, temps GPU de chaque passe, copies vers le GPU sans attente et
+  dans un budget par image ;
 - `Devex::Scene` : entités à UUID, composants en sparse sets, hiérarchie, `.dvxscene`,
   instanciation de modèles, composants de physique, d'animation et d'interface, préfabs liés
   (scènes imbriquées avec leurs modifications) ;
@@ -79,8 +80,9 @@ Le détail, l'architecture des modules et les jalons sont dans
   thread et GPU, tableaux des zones, des passes et de la mémoire des assets) ;
 - `Devex::Runtime` : `Application`, boucle à pas fixe, mode éditeur et mode Play, modules de jeu
   (composants et systèmes rechargeables à chaud), code C# sur .NET hébergé (composants, systèmes,
-  compilation et rechargement à chaud), chargement des assets à la demande, changement de
-  scène, rendu automatique de la scène, export d'un jeu ;
+  compilation et rechargement à chaud), chargement des maillages et textures en arrière-plan,
+  préchargement, changement de scène immédiat ou en arrière-plan avec progression, rendu
+  automatique de la scène, export d'un jeu ;
 - `Devex.Managed` : l'API C# du moteur (`Component`, `Entity`, `Scene`, `Input`, `Physics`, `Audio`,
   `Animation`, `Ui`, `Prefabs`, `Assets`, `Time`, `Log`, `Profiler`, maths) et les vues des composants du
   moteur, compilée dans `bin/managed` quand le SDK .NET est installé ;

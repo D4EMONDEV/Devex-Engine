@@ -208,6 +208,7 @@ VulkanRenderer::VulkanRenderer(platform::Window& window, const RendererConfig& c
                                UploadContext upload) noexcept
     : m_window(window)
     , m_requestedPresentMode(config.presentMode)
+    , m_uploadBytesPerFrame(config.uploadBytesPerFrame)
     , m_shaderDirectory(std::move(shaderDirectory))
     , m_instance(std::move(instance))
     , m_surface(std::move(surface))
@@ -329,23 +330,6 @@ core::Result<MeshHandle> VulkanRenderer::createMesh(const asset::MeshData& mesh)
         std::memcpy(stagingBytes.data() + vertexBytes + indexBytes, skin.data(), skinBytes);
     }
 
-    const core::Result<void> uploaded = m_upload.submit([&](VkCommandBuffer commandBuffer) {
-        const VkBufferCopy vertexCopy{.srcOffset = 0, .dstOffset = 0, .size = vertexBytes};
-        vkCmdCopyBuffer(commandBuffer, staging->handle(), vertexBuffer->handle(), 1, &vertexCopy);
-        const VkBufferCopy indexCopy{.srcOffset = vertexBytes, .dstOffset = 0, .size = indexBytes};
-        vkCmdCopyBuffer(commandBuffer, staging->handle(), indexBuffer->handle(), 1, &indexCopy);
-        if (skinBytes > 0)
-        {
-            const VkBufferCopy skinCopy{
-                .srcOffset = vertexBytes + indexBytes, .dstOffset = 0, .size = skinBytes};
-            vkCmdCopyBuffer(commandBuffer, staging->handle(), skinBuffer->handle(), 1, &skinCopy);
-        }
-    });
-    if (!uploaded)
-    {
-        return std::unexpected(uploaded.error());
-    }
-
     GpuMesh gpuMesh{
         // A mesh built by hand, or imported before the box was cooked, is measured here.
         .bounds = mesh.bounds.isEmpty() ? asset::computeBounds(mesh) : mesh.bounds,
@@ -357,7 +341,26 @@ core::Result<MeshHandle> VulkanRenderer::createMesh(const asset::MeshData& mesh)
     {
         gpuMesh.submeshes.push_back({submesh.firstIndex, submesh.indexCount});
     }
-    return m_meshes.insert(std::move(gpuMesh));
+    const MeshHandle handle = m_meshes.insert(std::move(gpuMesh));
+    // Copied by the next frames, within their budget.
+    m_pendingUploads.push_back({.staging = std::move(*staging),
+                                .bytes = vertexBytes + indexBytes + skinBytes,
+                                .mesh = handle,
+                                .bufferBytes = {vertexBytes, indexBytes, skinBytes}});
+    m_pendingUploadBytes += vertexBytes + indexBytes + skinBytes;
+    return handle;
+}
+
+bool VulkanRenderer::isReady(MeshHandle mesh) const noexcept
+{
+    const GpuMesh* const found = m_meshes.find(mesh);
+    return found != nullptr && found->ready;
+}
+
+bool VulkanRenderer::isReady(TextureHandle texture) const noexcept
+{
+    const GpuTexture* const found = m_textures.find(texture);
+    return found != nullptr && found->ready;
 }
 
 void VulkanRenderer::destroyMesh(MeshHandle mesh)
@@ -391,10 +394,10 @@ core::Result<TextureHandle> VulkanRenderer::createTexture(const asset::TextureDa
                                m_descriptors->textureCapacity());
     }
 
-    core::Result<GpuTexture> uploaded = uploadTexture(texture, slot);
-    if (!uploaded)
+    core::Result<std::pair<GpuTexture, PendingUpload>> prepared = prepareTexture(texture, slot);
+    if (!prepared)
     {
-        return std::unexpected(uploaded.error());
+        return std::unexpected(prepared.error());
     }
     if (!m_freeTextureSlots.empty())
     {
@@ -404,10 +407,12 @@ core::Result<TextureHandle> VulkanRenderer::createTexture(const asset::TextureDa
     {
         ++m_nextTextureSlot;
     }
-    // Materials referring to a destroyed handle never refer to this one, but a new texture may
-    // replace one of theirs: they are resolved again.
-    m_materialsChanged = true;
-    return m_textures.insert(std::move(*uploaded));
+    prepared->first.ready = false;
+    const TextureHandle handle = m_textures.insert(std::move(prepared->first));
+    prepared->second.texture = handle;
+    m_pendingUploadBytes += prepared->second.bytes;
+    m_pendingUploads.push_back(std::move(prepared->second));
+    return handle;
 }
 
 void VulkanRenderer::destroyTexture(TextureHandle texture)
@@ -478,6 +483,8 @@ core::Result<void> VulkanRenderer::endFrame()
         DEVEX_PROFILE_SCOPE("Wait for the GPU");
         DEVEX_VK_TRY(vkWaitForFences, device, 1, &frame.completed, VK_TRUE, noTimeout);
     }
+    // The copies of the previous use of this context are done.
+    frame.uploads.clear();
     reportPassTimes(frame);
     readPickResult(frame);
     releaseRetiredResources();
@@ -512,6 +519,10 @@ core::Result<void> VulkanRenderer::endFrame()
     }
 
     DEVEX_VK_TRY(vkResetFences, device, 1, &frame.completed);
+    {
+        DEVEX_PROFILE_SCOPE("Uploads");
+        selectUploads(frame);
+    }
     {
         DEVEX_PROFILE_SCOPE("Materials");
         if (core::Result<void> materials = updateFrameMaterials(frame); !materials)
@@ -1245,6 +1256,30 @@ core::Result<void> VulkanRenderer::recreateSwapchain(math::Extent2D windowPixelS
 core::Result<VulkanRenderer::GpuTexture> VulkanRenderer::uploadTexture(
     const asset::TextureData& texture, std::uint32_t slot)
 {
+    core::Result<std::pair<GpuTexture, PendingUpload>> prepared = prepareTexture(texture, slot);
+    if (!prepared)
+    {
+        return std::unexpected(prepared.error());
+    }
+    const VkImage imageHandle = prepared->first.image.handle();
+    const PendingUpload& upload = prepared->second;
+    const core::Result<void> uploaded = m_upload.submit([&](VkCommandBuffer commandBuffer) {
+        transitionImage(commandBuffer, imageHandle, ImageState::Undefined, ImageState::TransferDestination);
+        vkCmdCopyBufferToImage(commandBuffer, upload.staging.handle(), imageHandle, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                               static_cast<std::uint32_t>(upload.levels.size()), upload.levels.data());
+        transitionImage(commandBuffer, imageHandle, ImageState::TransferDestination, ImageState::ShaderReadOnly);
+    });
+    if (!uploaded)
+    {
+        return std::unexpected(uploaded.error());
+    }
+    m_descriptors->setTexture(slot, prepared->first.image.view());
+    return std::move(prepared->first);
+}
+
+core::Result<std::pair<VulkanRenderer::GpuTexture, VulkanRenderer::PendingUpload>> VulkanRenderer::prepareTexture(
+    const asset::TextureData& texture, std::uint32_t slot)
+{
     if (core::Result<void> valid = asset::validate(texture); !valid)
     {
         return std::unexpected(valid.error());
@@ -1299,30 +1334,111 @@ core::Result<VulkanRenderer::GpuTexture> VulkanRenderer::uploadTexture(
         std::memcpy(stagingBytes.data() + copies[level].bufferOffset, bytes.data(), bytes.size());
     }
 
-    const VkImage imageHandle = image->handle();
-    const core::Result<void> uploaded = m_upload.submit([&](VkCommandBuffer commandBuffer) {
-        transitionImage(commandBuffer, imageHandle, ImageState::Undefined,
-                        ImageState::TransferDestination);
-        vkCmdCopyBufferToImage(commandBuffer, staging->handle(), imageHandle,
-                               VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                               static_cast<std::uint32_t>(copies.size()), copies.data());
-        transitionImage(commandBuffer, imageHandle, ImageState::TransferDestination,
-                        ImageState::ShaderReadOnly);
-    });
-    if (!uploaded)
-    {
-        return std::unexpected(uploaded.error());
-    }
+    return std::pair{GpuTexture{.image = std::move(*image), .slot = slot},
+                     PendingUpload{.staging = std::move(*staging), .bytes = totalBytes, .levels = std::move(copies)}};
+}
 
-    m_descriptors->setTexture(slot, image->view());
-    return GpuTexture{.image = std::move(*image), .slot = slot};
+void VulkanRenderer::selectUploads(FrameContext& frame)
+{
+    VkDeviceSize spent = 0;
+    while (!m_pendingUploads.empty())
+    {
+        PendingUpload& next = m_pendingUploads.front();
+        GpuMesh* const mesh = next.mesh.isValid() ? m_meshes.find(next.mesh) : nullptr;
+        GpuTexture* const texture = next.texture.isValid() ? m_textures.find(next.texture) : nullptr;
+        // Destroyed before a frame copied it: nothing to copy.
+        if (mesh == nullptr && texture == nullptr)
+        {
+            m_pendingUploadBytes -= next.bytes;
+            m_pendingUploads.pop_front();
+            continue;
+        }
+        if (spent > 0 && spent + next.bytes > m_uploadBytesPerFrame)
+        {
+            break;
+        }
+        spent += next.bytes;
+        m_pendingUploadBytes -= next.bytes;
+        if (mesh != nullptr)
+        {
+            mesh->ready = true;
+        }
+        if (texture != nullptr)
+        {
+            texture->ready = true;
+            // Recorded before any draw of the frame, which is the first to sample it.
+            m_descriptors->setTexture(texture->slot, texture->image.view());
+            m_materialsChanged = true;
+        }
+        frame.uploads.push_back(std::move(next));
+        m_pendingUploads.pop_front();
+    }
+    m_lastUploadedBytes = spent;
+
+    // What waits is left out of the frame: meshes are not drawn, and interfaces skip the images and
+    // letters of textures that are not there yet.
+    std::erase_if(m_world.meshes, [this](const MeshInstance& instance) { return !isReady(instance.mesh); });
+    std::erase_if(m_world.uiDraws, [this](const UiDraw& draw) {
+        return draw.texture.isValid() && m_textures.contains(draw.texture) && !isReady(draw.texture);
+    });
+}
+
+void VulkanRenderer::recordUploads(VkCommandBuffer commandBuffer, const FrameContext& frame) const
+{
+    bool buffersCopied = false;
+    for (const PendingUpload& upload : frame.uploads)
+    {
+        if (const GpuMesh* const mesh = m_meshes.find(upload.mesh))
+        {
+            const std::array<const Buffer*, 3> targets{&mesh->vertices, &mesh->indices,
+                                                       mesh->skin ? &*mesh->skin : nullptr};
+            VkDeviceSize offset = 0;
+            for (std::size_t part = 0; part < targets.size(); ++part)
+            {
+                if (targets[part] != nullptr && upload.bufferBytes[part] > 0)
+                {
+                    const VkBufferCopy copy{.srcOffset = offset, .dstOffset = 0, .size = upload.bufferBytes[part]};
+                    vkCmdCopyBuffer(commandBuffer, upload.staging.handle(), targets[part]->handle(), 1, &copy);
+                    buffersCopied = true;
+                }
+                offset += upload.bufferBytes[part];
+            }
+        }
+        else if (const GpuTexture* const texture = m_textures.find(upload.texture))
+        {
+            const VkImage image = texture->image.handle();
+            transitionImage(commandBuffer, image, ImageState::Undefined, ImageState::TransferDestination);
+            vkCmdCopyBufferToImage(commandBuffer, upload.staging.handle(), image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                                   static_cast<std::uint32_t>(upload.levels.size()), upload.levels.data());
+            transitionImage(commandBuffer, image, ImageState::TransferDestination, ImageState::ShaderReadOnly);
+        }
+    }
+    if (buffersCopied)
+    {
+        // The vertices, indices and weights are read by every later command, of this frame and of
+        // the next submissions.
+        const VkMemoryBarrier2 barrier{
+            .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
+            .srcStageMask = VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT,
+            .srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT,
+            .dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+            .dstAccessMask = VK_ACCESS_2_MEMORY_READ_BIT,
+        };
+        const VkDependencyInfo dependency{
+            .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+            .memoryBarrierCount = 1,
+            .pMemoryBarriers = &barrier,
+        };
+        vkCmdPipelineBarrier2(commandBuffer, &dependency);
+    }
 }
 
 GpuMaterial VulkanRenderer::toGpuMaterial(const MaterialDesc& material) const noexcept
 {
+    // A texture still waiting for its copy is sampled as the default one.
     const auto slotOf = [this](TextureHandle texture, std::uint32_t fallback) {
         const GpuTexture* const found = m_textures.find(texture);
-        return found != nullptr ? found->slot : fallback;
+        return found != nullptr && found->ready ? found->slot : fallback;
     };
     return GpuMaterial{
         .baseColorFactor = material.baseColorFactor,
@@ -1412,6 +1528,11 @@ core::Result<void> VulkanRenderer::updateEnvironment()
     const TextureHandle requested =
         m_textures.contains(m_world.environment.sky) ? m_world.environment.sky : TextureHandle{};
     if (m_environmentBound && requested == m_environmentSource)
+    {
+        return {};
+    }
+    // A sky still waiting for its copy keeps the current light, and is baked once a frame copied it.
+    if (requested.isValid() && !isReady(requested) && m_environmentBound)
     {
         return {};
     }
@@ -2038,6 +2159,11 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
     const bool pick = frame.pickRequest.has_value();
     m_culledInstances = 0;
     RenderGraph graph(m_device, m_allocator, frame.images);
+    // The meshes and textures created since the previous frame, before anything draws them.
+    if (!frame.uploads.empty())
+    {
+        graph.addPass("Uploads", {}, [&](VkCommandBuffer commands) { recordUploads(commands, frame); });
+    }
 
     ImageState backbufferState = ImageState::AcquiredBackbuffer;
     const RenderGraph::ImageId backbuffer =
@@ -2729,7 +2855,8 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
                       vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, m_tonemapPipeline->handle());
                       vkCmdBindDescriptorSets(commands, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                               m_tonemapPipeline->layout(), 0, 2, sets.data(), 0, nullptr);
-                      const GpuTexture* const colorTable = m_textures.find(m_world.camera.colorTable);
+                      const GpuTexture* const colorTable =
+                          isReady(m_world.camera.colorTable) ? m_textures.find(m_world.camera.colorTable) : nullptr;
                       const TonemapPushConstants tonemap{
                           .tonemapper = static_cast<std::uint32_t>(m_world.camera.tonemapper),
                           .bloom = bloomed ? m_world.camera.bloom : 0.0f,
@@ -3147,6 +3274,9 @@ RendererStats VulkanRenderer::stats() const noexcept
         .ev100 = m_ev100,
         .swapchainExtent = m_swapchain ? m_swapchain->extent() : math::Extent2D{},
         .sceneExtent = m_sceneExtent,
+        .pendingUploads = m_pendingUploads.size(),
+        .pendingUploadBytes = m_pendingUploadBytes,
+        .uploadedBytes = m_lastUploadedBytes,
     };
 
     const VkPhysicalDeviceMemoryProperties* memory = nullptr;

@@ -68,6 +68,7 @@ devex_add_tests(serialization
 
 devex_add_tests(scene
     SOURCES
+        scene/AssetReferencesTests.cpp
         scene/DynamicComponentTests.cpp
         scene/EntityCopyTests.cpp
         scene/EntityRefAndListTests.cpp
@@ -154,8 +155,10 @@ devex_add_tests(physics
 )
 
 # Tests tagged [gpu] open a hidden window and need a Vulkan 1.4 GPU.
+# The loading of assets in the background ends on the GPU: its tests are here.
 devex_add_tests(render
     SOURCES
+        render/AssetLoadingTests.cpp
         render/CullingTests.cpp
         render/LightingTests.cpp
         render/PhotometryTests.cpp

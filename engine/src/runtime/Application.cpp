@@ -21,6 +21,7 @@
 #include <devex/runtime/FixedTimestep.hpp>
 #include <devex/runtime/GameExport.hpp>
 #include <devex/runtime/GameModule.hpp>
+#include <devex/scene/AssetReferences.hpp>
 #include <devex/scene/ComponentRegistry.hpp>
 #include <devex/scene/Prefab.hpp>
 #include <devex/scene/SceneSerializer.hpp>
@@ -208,6 +209,13 @@ public:
     [[nodiscard]] asset::AssetSource* assetSource() const noexcept;
     // Replaces the scene the application sees with a scene asset, restarting the game when it runs.
     [[nodiscard]] core::Result<void> loadScene(asset::AssetId sceneAsset);
+    [[nodiscard]] core::Result<scene::Scene> readScene(asset::AssetId sceneAsset);
+    // Replaces the scene, restarting the game's worlds and systems when it plays.
+    void replaceScene(scene::Scene loaded, asset::AssetId sceneAsset);
+    void loadSceneInBackground(asset::AssetId sceneAsset);
+    // Replaces the scene with the one loading in the background once what it shows is ready.
+    void updateBackgroundScene();
+    [[nodiscard]] std::optional<float> sceneLoadingProgress() const noexcept;
 
 private:
     using Clock = std::chrono::steady_clock;
@@ -333,6 +341,15 @@ private:
     bool m_waitingForDebugger = false;
     // A scene asked for by game systems, loaded once the updates of the frame are done.
     std::optional<asset::AssetId> m_sceneToLoad;
+    // A scene read and built, whose assets load before it replaces the current one.
+    struct BackgroundScene
+    {
+        asset::AssetId asset;
+        scene::Scene scene;
+        std::vector<asset::AssetId> assets;
+        float progress = 0.0f;
+    };
+    std::optional<BackgroundScene> m_backgroundScene;
     std::optional<GameCodeBuilder> m_gameBuilder;
     bool m_apiRebuildAttempted = false;
     bool m_openManagedAfterBuild = false;
@@ -414,18 +431,74 @@ asset::AssetSource* ApplicationRunner::assetSource() const noexcept
     return m_services.package.get();
 }
 
-core::Result<void> ApplicationRunner::loadScene(asset::AssetId sceneAsset)
+core::Result<scene::Scene> ApplicationRunner::readScene(asset::AssetId sceneAsset)
 {
     const core::Result<std::string> text = m_services.assets.sceneText(sceneAsset);
     if (!text)
     {
         return std::unexpected(text.error());
     }
-    core::Result<scene::Scene> loaded = scene::loadScene(*text);
+    return scene::loadScene(*text);
+}
+
+void ApplicationRunner::loadSceneInBackground(asset::AssetId sceneAsset)
+{
+    if (m_backgroundScene && m_backgroundScene->asset == sceneAsset)
+    {
+        return;
+    }
+    core::Result<scene::Scene> loaded = readScene(sceneAsset);
+    if (!loaded)
+    {
+        DEVEX_LOG_ERROR("Cannot load scene {}: {}", sceneAsset.uuid, loaded.error());
+        return;
+    }
+    BackgroundScene background{.asset = sceneAsset, .scene = std::move(*loaded)};
+    background.assets = scene::referencedAssets(background.scene);
+    for (const asset::AssetId asset : background.assets)
+    {
+        m_services.assets.preload(asset);
+    }
+    m_backgroundScene = std::move(background);
+}
+
+void ApplicationRunner::updateBackgroundScene()
+{
+    if (!m_backgroundScene)
+    {
+        return;
+    }
+    const std::size_t ready = static_cast<std::size_t>(
+        std::ranges::count_if(m_backgroundScene->assets, [this](asset::AssetId asset) { return m_services.assets.isReady(asset); }));
+    m_backgroundScene->progress =
+        m_backgroundScene->assets.empty() ? 1.0f : static_cast<float>(ready) / static_cast<float>(m_backgroundScene->assets.size());
+    if (ready < m_backgroundScene->assets.size())
+    {
+        return;
+    }
+    BackgroundScene background = std::move(*m_backgroundScene);
+    m_backgroundScene.reset();
+    replaceScene(std::move(background.scene), background.asset);
+}
+
+std::optional<float> ApplicationRunner::sceneLoadingProgress() const noexcept
+{
+    return m_backgroundScene ? std::optional<float>(m_backgroundScene->progress) : std::nullopt;
+}
+
+core::Result<void> ApplicationRunner::loadScene(asset::AssetId sceneAsset)
+{
+    core::Result<scene::Scene> loaded = readScene(sceneAsset);
     if (!loaded)
     {
         return std::unexpected(loaded.error());
     }
+    replaceScene(std::move(*loaded), sceneAsset);
+    return {};
+}
+
+void ApplicationRunner::replaceScene(scene::Scene loaded, asset::AssetId sceneAsset)
+{
     const bool restart = m_gameStarted;
     if (restart)
     {
@@ -434,8 +507,9 @@ core::Result<void> ApplicationRunner::loadScene(asset::AssetId sceneAsset)
         destroyAudio();
         destroyPhysics();
     }
-    *m_application.m_scene = std::move(*loaded);
+    *m_application.m_scene = std::move(loaded);
     m_sceneToLoad.reset();
+    m_backgroundScene.reset();
     const asset::AssetSource* const source = assetSource();
     const asset::AssetInfo* const info = source != nullptr ? source->find(sceneAsset) : nullptr;
     DEVEX_LOG_INFO("Loaded scene {}", info != nullptr ? info->name : sceneAsset.uuid.toString());
@@ -447,7 +521,6 @@ core::Result<void> ApplicationRunner::loadScene(asset::AssetId sceneAsset)
         createUi();
         runSystems(SystemPhase::Start, core::Duration::zero());
     }
-    return {};
 }
 
 bool ApplicationRunner::isEditor() const noexcept
@@ -587,11 +660,15 @@ void ApplicationRunner::runFrame()
     const std::chrono::nanoseconds frameTime = frameStart - m_previousFrame;
     m_previousFrame = frameStart;
 
-    // Finished imports replace the assets they changed before anything uses them this frame.
-    if (m_services.database != nullptr)
+    // Finished imports replace the assets they changed before anything uses them this frame, and
+    // the meshes and textures the workers loaded reach the renderer.
     {
         DEVEX_PROFILE_SCOPE("Assets");
-        handleAssetEvents(*m_services.database);
+        if (m_services.database != nullptr)
+        {
+            handleAssetEvents(*m_services.database);
+        }
+        m_services.assets.finishLoads();
     }
 
     {
@@ -727,7 +804,9 @@ void ApplicationRunner::loadRequestedScene()
         {
             DEVEX_LOG_ERROR("Cannot load scene {}: {}", sceneAsset->uuid, loaded.error());
         }
+        return;
     }
+    updateBackgroundScene();
 }
 
 void ApplicationRunner::render(bool gameplay)
@@ -893,6 +972,7 @@ void ApplicationRunner::stopPlaying()
     destroyPhysics();
     m_gameStarted = false;
     m_sceneToLoad.reset();
+    m_backgroundScene.reset();
     m_application.m_scene = &m_services.scene;
     m_application.m_playing = false;
     m_application.m_stopRequested = false;
@@ -1310,6 +1390,8 @@ void ApplicationRunner::runSystems(SystemPhase phase, core::Duration delta)
         .ui = m_ui.get(),
         .delta = delta,
         .interpolationAlpha = m_timestep.alpha(),
+        .loadingScene = m_backgroundScene ? m_backgroundScene->asset : asset::AssetId{},
+        .loadingProgress = m_backgroundScene ? m_backgroundScene->progress : 0.0f,
     };
     if (m_game)
     {
@@ -1327,12 +1409,19 @@ void ApplicationRunner::runSystems(SystemPhase phase, core::Duration delta)
             .animation = m_animation.get(),
             .ui = m_ui.get(),
             .assets = m_services.assets.source(),
+            .assetManager = &m_services.assets,
+            .loadingScene = context.loadingScene,
+            .loadingProgress = context.loadingScene.isValid() ? context.loadingProgress : -1.0f,
         };
         m_managed->runPhase(frame, phase);
         context.quitRequested = context.quitRequested || frame.quitRequested;
         if (frame.sceneToLoad.isValid())
         {
             context.sceneToLoad = frame.sceneToLoad;
+        }
+        if (frame.sceneToLoadInBackground.isValid())
+        {
+            context.sceneToLoadInBackground = frame.sceneToLoadInBackground;
         }
     }
     if (context.quitRequested)
@@ -1342,6 +1431,10 @@ void ApplicationRunner::runSystems(SystemPhase phase, core::Duration delta)
     if (context.sceneToLoad.isValid())
     {
         m_sceneToLoad = context.sceneToLoad;
+    }
+    if (context.sceneToLoadInBackground.isValid())
+    {
+        loadSceneInBackground(context.sceneToLoadInBackground);
     }
 }
 
@@ -1863,6 +1956,17 @@ core::Result<void> Application::loadScene(asset::AssetId sceneAsset)
     return m_runner->loadScene(sceneAsset);
 }
 
+void Application::loadSceneInBackground(asset::AssetId sceneAsset)
+{
+    DEVEX_ASSERT_MSG(m_runner != nullptr, "engine services are unavailable outside run()");
+    m_runner->loadSceneInBackground(sceneAsset);
+}
+
+std::optional<float> Application::sceneLoadingProgress() const noexcept
+{
+    return m_runner != nullptr ? m_runner->sceneLoadingProgress() : std::nullopt;
+}
+
 core::JobSystem& Application::jobs() noexcept
 {
     DEVEX_ASSERT_MSG(m_jobs != nullptr, "engine services are unavailable outside run()");
@@ -2042,8 +2146,9 @@ int run(Application& application, const ApplicationConfig& config)
         }
     }
 
+    // Meshes and textures load on the workers of the job system.
     AssetManager assets(renderer ? &*renderer : nullptr,
-                        database != nullptr ? static_cast<asset::AssetSource*>(database.get()) : package.get());
+                        database != nullptr ? static_cast<asset::AssetSource*>(database.get()) : package.get(), &jobs);
     if (renderer)
     {
         if (core::Result<void> builtins = detail::registerBuiltinMeshes(*renderer, assets);
@@ -2071,6 +2176,7 @@ int run(Application& application, const ApplicationConfig& config)
             tools->setAnimationClips([&assets](asset::AssetId clip) { return assets.animationClip(clip); });
             tools->setThemes([&assets](asset::AssetId theme) { return assets.theme(theme); });
             tools->setMemoryReport([&assets] { return assets.memoryReport(); });
+            tools->setPendingLoads([&assets] { return assets.pendingLoads(); });
             const std::filesystem::path engineConfig = (platform->baseDirectory() / ".." / "cmake").lexically_normal();
             tools->setProjectCodeStatusProvider([engineConfig](const asset::Project& project) {
                 const auto status = detail::GameCodeBuilder::buildStatus(project, engineConfig);

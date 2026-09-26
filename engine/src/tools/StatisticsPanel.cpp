@@ -44,6 +44,9 @@ void drawStatisticsPanel(ToolsState& state, const scene::Scene& scene)
             row("Materials", std::format("{}", stats.materialCount));
             row("GPU memory", std::format("{:.1f} / {:.0f} MB", static_cast<double>(stats.gpuMemoryUsage) / bytesPerMegabyte,
                                           static_cast<double>(stats.gpuMemoryBudget) / bytesPerMegabyte));
+            row("Uploads", std::format("{} waiting, {:.1f} MB; {:.1f} MB last frame", stats.pendingUploads,
+                                       static_cast<double>(stats.pendingUploadBytes) / bytesPerMegabyte,
+                                       static_cast<double>(stats.uploadedBytes) / bytesPerMegabyte));
             row("Entities", std::format("{}", scene.entityCount()));
             row("Undo steps", std::format("{}", state.history.undoCount()));
             endProperties();

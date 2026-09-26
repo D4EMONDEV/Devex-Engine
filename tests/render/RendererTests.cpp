@@ -101,6 +101,67 @@ TEST_CASE("The renderer presents frames without validation errors", "[render][gp
     CHECK(capture.errors().empty());
 }
 
+TEST_CASE("Meshes and textures reach the GPU within the upload budget of each frame", "[render][gpu]")
+{
+    const ErrorCapture capture;
+    {
+        auto platform = devex::platform::Platform::create();
+        REQUIRE(platform.has_value());
+        auto window = platform->createWindow({.width = 320, .height = 240, .vulkan = true, .hidden = true});
+        REQUIRE(window.has_value());
+        // A budget of one byte: each frame copies its first waiting resource only.
+        auto renderer = devex::render::Renderer::create(*platform, *window, {.validation = true, .uploadBytesPerFrame = 1});
+        if (!renderer)
+        {
+            FAIL(std::format("{}", renderer.error()));
+        }
+
+        devex::asset::TextureData image{.format = devex::asset::TextureFormat::Rgba8Srgb};
+        image.mips.push_back({.width = 4, .height = 4, .bytes = std::vector<std::byte>(4 * 4 * 4, std::byte{200})});
+        auto cube = renderer->createMesh(devex::asset::makeCube());
+        auto texture = renderer->createTexture(image);
+        auto dropped = renderer->createMesh(devex::asset::makeUvSphere());
+        REQUIRE(cube.has_value());
+        REQUIRE(texture.has_value());
+        REQUIRE(dropped.has_value());
+        // Created at once, copied later.
+        CHECK_FALSE(renderer->isReady(*cube));
+        CHECK_FALSE(renderer->isReady(*texture));
+        CHECK(renderer->stats().pendingUploads == 3);
+        CHECK(renderer->stats().pendingUploadBytes > 0);
+        // Destroyed before any frame copied it: nothing is copied.
+        renderer->destroyMesh(*dropped);
+
+        const devex::render::MaterialHandle material = renderer->createMaterial({.baseColorTexture = *texture});
+        std::vector<bool> cubeReady;
+        std::vector<bool> textureReady;
+        for (int frame = 0; frame < 4; ++frame)
+        {
+            devex::render::RenderWorld& world = renderer->beginFrame();
+            world.camera.view = devex::math::inverse(devex::math::translate(devex::math::Mat4{1.0f}, {0.0f, 0.0f, 3.0f}));
+            world.meshes.push_back({.mesh = *cube, .material = material});
+            const devex::core::Result<void> presented = renderer->endFrame();
+            if (!presented)
+            {
+                FAIL(std::format("frame {}: {}", frame, presented.error()));
+            }
+            cubeReady.push_back(renderer->isReady(*cube));
+            textureReady.push_back(renderer->isReady(*texture));
+        }
+        CHECK(cubeReady == std::vector<bool>{true, true, true, true});
+        CHECK(textureReady == std::vector<bool>{false, true, true, true});
+        CHECK(renderer->stats().pendingUploads == 0);
+        CHECK(renderer->stats().pendingUploadBytes == 0);
+        CHECK_FALSE(renderer->isReady(*dropped));
+    }
+
+    for (const std::string& error : capture.errors())
+    {
+        UNSCOPED_INFO(error);
+    }
+    CHECK(capture.errors().empty());
+}
+
 TEST_CASE("Meshes are drawn and destroyed without validation errors", "[render][gpu]")
 {
     const ErrorCapture capture;

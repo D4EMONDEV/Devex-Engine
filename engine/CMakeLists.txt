@@ -392,6 +392,7 @@ target_sources(devex_scene
         src/scene/PhysicsComponents.cpp
         src/scene/UiComponents.cpp
         src/scene/AnimationComponents.cpp
+        src/scene/AssetReferences.cpp
         src/scene/AudioComponents.cpp
         src/scene/Prefab.cpp
         src/scene/Scene.cpp
@@ -412,6 +413,7 @@ target_sources(devex_scene
             include/devex/scene/PhysicsComponents.hpp
             include/devex/scene/UiComponents.hpp
             include/devex/scene/AnimationComponents.hpp
+            include/devex/scene/AssetReferences.hpp
             include/devex/scene/AudioComponents.hpp
             include/devex/scene/Prefab.hpp
             include/devex/scene/Scene.hpp

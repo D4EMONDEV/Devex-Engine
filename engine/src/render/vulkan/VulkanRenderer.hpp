@@ -22,6 +22,7 @@
 #include <devex/render/RenderWorld.hpp>
 
 #include <array>
+#include <deque>
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
@@ -56,6 +57,8 @@ public:
     [[nodiscard]] PresentMode presentMode() const noexcept;
 
     [[nodiscard]] core::Result<MeshHandle> createMesh(const asset::MeshData& mesh);
+    [[nodiscard]] bool isReady(MeshHandle mesh) const noexcept;
+    [[nodiscard]] bool isReady(TextureHandle texture) const noexcept;
     void destroyMesh(MeshHandle mesh);
     [[nodiscard]] std::uint32_t submeshCount(MeshHandle mesh) const noexcept;
 
@@ -135,6 +138,19 @@ private:
         std::uint32_t overlayTriangles = 0;
     };
 
+    // The copy of a created mesh or texture to the GPU, waiting for a frame to record it.
+    struct PendingUpload
+    {
+        Buffer staging;
+        VkDeviceSize bytes = 0;
+        MeshHandle mesh;
+        TextureHandle texture;
+        // For a mesh, from the staging buffer to its vertex, index and skin buffers in turn.
+        std::array<VkDeviceSize, 3> bufferBytes{};
+        // For a texture, one copy per mip level.
+        std::vector<VkBufferImageCopy> levels;
+    };
+
     // Timestamps a frame can write: one per pass of the render graph, and one more.
     static constexpr std::uint32_t maxTimestamps = 128;
     // The largest side of the image a pick is drawn into.
@@ -186,6 +202,8 @@ private:
         std::optional<std::uint64_t> pickRequest;
         std::array<std::uint32_t, 4> pickRect{};
         math::Extent2D pickExtent{1, 1};
+        // The copies the frame recorded, whose staging buffers wait for the frame to complete.
+        std::vector<PendingUpload> uploads;
         // ImGui's descriptor set for the viewport image of this frame context.
         VkDescriptorSet imguiViewport = VK_NULL_HANDLE;
         VkImageView imguiViewportView = VK_NULL_HANDLE;
@@ -206,6 +224,8 @@ private:
         std::vector<SubmeshRange> submeshes;
         // Only for a skinned mesh: the joints and weights of its vertices.
         std::optional<Buffer> skin;
+        // False until a frame has recorded the copy of its data: it is not drawn before.
+        bool ready = false;
     };
 
     // A destroyed mesh waiting for the frames that may still reference it.
@@ -219,6 +239,8 @@ private:
     {
         Image image;
         std::uint32_t slot = 0;
+        // As for a mesh; the textures of the renderer itself are copied at once.
+        bool ready = true;
     };
 
     struct RetiredTexture
@@ -245,8 +267,16 @@ private:
     // Pipelines drawing into the swapchain or the viewport image, which share its format.
     [[nodiscard]] core::Result<void> createTargetPipelines(VkFormat format);
     [[nodiscard]] core::Result<void> recreateSwapchain(math::Extent2D windowPixelSize);
-    [[nodiscard]] core::Result<GpuTexture> uploadTexture(const asset::TextureData& texture,
-                                                         std::uint32_t slot);
+    // Copies the texture at once and waits for the copy: for the textures of the renderer itself.
+    [[nodiscard]] core::Result<GpuTexture> uploadTexture(const asset::TextureData& texture, std::uint32_t slot);
+    // Creates the image and fills a staging buffer with its levels, for a later copy.
+    [[nodiscard]] core::Result<std::pair<GpuTexture, PendingUpload>> prepareTexture(const asset::TextureData& texture,
+                                                                                    std::uint32_t slot);
+    // Moves the waiting copies that fit the budget of the frame into it, and makes their meshes
+    // and textures ready; then leaves out what the frame would draw with what is still waiting.
+    void selectUploads(FrameContext& frame);
+    // Records the copies selected for the frame.
+    void recordUploads(VkCommandBuffer commandBuffer, const FrameContext& frame) const;
     [[nodiscard]] GpuMaterial toGpuMaterial(const MaterialDesc& material) const noexcept;
     // Refreshes the frame's copy of the materials when it is older than the current ones.
     [[nodiscard]] core::Result<void> updateFrameMaterials(FrameContext& frame);
@@ -379,6 +409,12 @@ private:
     std::array<FrameContext, framesInFlight> m_frames{};
     // One per swapchain image: a presented image keeps its semaphore busy until it is replaced.
     std::vector<VkSemaphore> m_presentSemaphores;
+
+    // Meshes and textures created and not yet copied to the GPU, oldest first.
+    std::deque<PendingUpload> m_pendingUploads;
+    std::uint64_t m_pendingUploadBytes = 0;
+    std::uint64_t m_uploadBytesPerFrame = 0;
+    std::uint64_t m_lastUploadedBytes = 0;
 
     core::SlotMap<GpuMesh, MeshTag> m_meshes;
     std::vector<RetiredMesh> m_retiredMeshes;

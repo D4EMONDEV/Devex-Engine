@@ -793,6 +793,18 @@ public:
         return core::readBinaryFile(artifactPath(id));
     }
 
+    [[nodiscard]] ArtifactReader artifactReader(AssetId id) const
+    {
+        if (find(id) == nullptr)
+        {
+            return [id]() -> core::Result<std::vector<std::byte>> {
+                return core::makeError(core::ErrorCode::NotFound, "asset {} is not imported", id.uuid);
+            };
+        }
+        // Only the file: reading it takes nothing else from the database.
+        return [path = artifactPath(id)] { return core::readBinaryFile(path); };
+    }
+
     [[nodiscard]] core::Result<AssetId> addFile(const std::filesystem::path& file,
                                                 std::string_view folder)
     {
@@ -1363,6 +1375,11 @@ std::filesystem::path AssetDatabase::artifactPath(AssetId id) const
 core::Result<std::vector<std::byte>> AssetDatabase::loadArtifact(AssetId id) const
 {
     return m_impl->loadArtifact(id);
+}
+
+ArtifactReader AssetDatabase::artifactReader(AssetId id) const
+{
+    return m_impl->artifactReader(id);
 }
 
 core::Result<std::string> AssetDatabase::sceneText(AssetId id) const

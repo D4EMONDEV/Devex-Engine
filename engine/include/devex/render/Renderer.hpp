@@ -42,6 +42,9 @@ struct RendererConfig
     bool validation = core::assertsEnabled;
     // Directory of the compiled .spv shaders; empty uses "shaders" next to the executable.
     std::filesystem::path shaderDirectory;
+    // What a frame copies to the GPU at most for the meshes and textures created since the
+    // previous one. The first copy of a frame always goes, so that a larger texture never waits.
+    std::uint64_t uploadBytesPerFrame = std::uint64_t{64} << 20;
 };
 
 // Parameters of a material, with textures already uploaded. Invalid or destroyed textures sample as
@@ -84,6 +87,10 @@ struct RendererStats
     // operating system starts evicting memory.
     std::uint64_t gpuMemoryUsage = 0;
     std::uint64_t gpuMemoryBudget = 0;
+    // Meshes and textures created and not yet copied to the GPU, and what the last frame copied.
+    std::size_t pendingUploads = 0;
+    std::uint64_t pendingUploadBytes = 0;
+    std::uint64_t uploadedBytes = 0;
 };
 
 namespace vulkan {
@@ -110,15 +117,20 @@ public:
     // The present mode in use, which may differ from the requested one.
     [[nodiscard]] PresentMode presentMode() const noexcept;
 
-    // Uploads the mesh to GPU memory and waits for the transfer to complete.
+    // Creates the mesh at once; its data reaches the GPU with the next frames, within the upload
+    // budget of each (RendererConfig::uploadBytesPerFrame). Until then it is not drawn.
     [[nodiscard]] core::Result<MeshHandle> createMesh(const asset::MeshData& mesh);
+    // Whether the data of the mesh is on the GPU, so that it is drawn. False for a stale handle.
+    [[nodiscard]] bool isReady(MeshHandle mesh) const noexcept;
     // Releases the mesh once no frame in flight uses it. Stale handles are ignored.
     void destroyMesh(MeshHandle mesh);
     // Zero for a stale handle.
     [[nodiscard]] std::uint32_t submeshCount(MeshHandle mesh) const noexcept;
 
-    // Uploads the texture with its mip levels and waits for the transfer to complete.
+    // Creates the texture with its mip levels at once; they reach the GPU as a mesh's data does.
+    // Until then materials use the default texture, and interfaces leave out what it draws.
     [[nodiscard]] core::Result<TextureHandle> createTexture(const asset::TextureData& texture);
+    [[nodiscard]] bool isReady(TextureHandle texture) const noexcept;
     // Releases the texture once no frame in flight uses it. Materials using it sample the
     // default texture from the next frame on. Stale handles are ignored.
     void destroyTexture(TextureHandle texture);

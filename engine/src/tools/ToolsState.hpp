@@ -329,6 +329,8 @@ struct ToolsState
     std::function<std::shared_ptr<const asset::ThemeData>(asset::AssetId)> themes;
     // What the loaded assets take, for the Profiler panel.
     std::function<asset::MemoryReport()> memoryReport;
+    // The meshes and textures loading in the background, for the status bar.
+    std::function<std::size_t()> pendingLoads;
     animation::AnimationWorld* animationWorld = nullptr;
     bool showAnimation = false;
     // The profiler records while its panel is open.

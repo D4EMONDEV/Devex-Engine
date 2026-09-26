@@ -17,6 +17,26 @@ public static unsafe class Game
 
     /// <summary>Replaces the scene by its path, such as "res://assets/scenes/arena.dvxscene".</summary>
     public static void LoadScene(string path) => LoadScene(Assets.Find(path) ?? throw new ArgumentException($"no scene at {path}"));
+
+    /// <summary>
+    /// Loads a scene in the background: what it shows loads while this scene goes on, then it replaces
+    /// this one. <see cref="LoadingProgress"/> says how far it is, for a loading screen.
+    /// </summary>
+    public static void LoadSceneInBackground(AssetId scene)
+    {
+        Uuid uuid = scene.Uuid;
+        Bootstrap.Native.LoadSceneInBackground(&uuid);
+    }
+
+    /// <summary>Loads a scene in the background by its path.</summary>
+    public static void LoadSceneInBackground(string path) =>
+        LoadSceneInBackground(Assets.Find(path) ?? throw new ArgumentException($"no scene at {path}"));
+
+    /// <summary>Whether a scene is loading in the background.</summary>
+    public static bool IsLoadingScene => Bootstrap.Native.SceneLoadingProgress() >= 0.0f;
+
+    /// <summary>How much of the scene loading in the background is ready, from 0 to 1; 0 when none is.</summary>
+    public static float LoadingProgress => MathF.Max(Bootstrap.Native.SceneLoadingProgress(), 0.0f);
 }
 
 /// <summary>Time of the game.</summary>
@@ -60,6 +80,23 @@ public static unsafe class Assets
         Uuid uuid;
         using var text = new Utf8Buffer(path);
         return Bootstrap.Native.FindAsset(text.Pointer, &uuid) != 0 ? new AssetId(uuid) : null;
+    }
+
+    /// <summary>
+    /// Starts loading an asset without using it, so that it is ready when it is shown: meshes, textures
+    /// and materials load in the background.
+    /// </summary>
+    public static void Preload(AssetId asset)
+    {
+        Uuid uuid = asset.Uuid;
+        Bootstrap.Native.PreloadAsset(&uuid);
+    }
+
+    /// <summary>Whether the asset is loaded and, for what is drawn, on the GPU.</summary>
+    public static bool IsReady(AssetId asset)
+    {
+        Uuid uuid = asset.Uuid;
+        return Bootstrap.Native.IsAssetReady(&uuid) != 0;
     }
 }
 

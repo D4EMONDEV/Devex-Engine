@@ -46,9 +46,15 @@ public:
         ui::UiWorld* ui = nullptr;
         // Where assets are found by path; null without a project or package.
         const asset::AssetSource* assets = nullptr;
+        // What preloads assets and tells whether they are ready; null in tests.
+        AssetManager* assetManager = nullptr;
+        // The scene loading in the background, and how far; -1 when none is.
+        asset::AssetId loadingScene;
+        float loadingProgress = -1.0f;
         // Set by the game.
         bool quitRequested = false;
         asset::AssetId sceneToLoad;
+        asset::AssetId sceneToLoadInBackground;
     };
 
     // Starts .NET and the runtime assembly. Fails when .NET or the assembly is missing, and the

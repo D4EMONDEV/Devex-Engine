@@ -67,7 +67,7 @@ void run(ManagedGame& game, Scene& scene, SystemPhase phase, double seconds = 0.
 TEST_CASE("The C# runtime registers components and runs them", "[runtime][managed]")
 {
     const std::unique_ptr<ManagedGame> game = startRuntime();
-    CHECK(game->componentTypes().size() == 6);
+    CHECK(game->componentTypes().size() == 7);
 
     devex::scene::ComponentRegistry& registry = devex::scene::componentRegistry();
     const devex::scene::ComponentType* const mover = registry.find("Mover");
@@ -315,6 +315,38 @@ TEST_CASE("C# components hear collisions and triggers and query the physics", "[
     CHECK(field<int>(*bumper, bumperOf(zone), "hits") == 0);
     // The ray from above the block finds the ball resting on it.
     CHECK(field<std::string>(*bumper, bumperOf(block), "below") == "Ball");
+    game->unloadAssembly();
+}
+
+TEST_CASE("C# code loads scenes in the background and reads how far they are", "[runtime][managed]")
+{
+    const std::unique_ptr<ManagedGame> game = startRuntime();
+    const devex::scene::ComponentType* const loader = devex::scene::componentRegistry().find("Loader");
+    REQUIRE(loader != nullptr);
+    Scene scene;
+    const Entity entity = scene.createEntity("Loader");
+    void* const component = loader->emplace(scene, entity);
+    REQUIRE(component != nullptr);
+    const devex::asset::AssetId next{devex::core::Uuid::generate()};
+    field<devex::asset::AssetId>(*loader, component, "target") = next;
+    run(*game, scene, SystemPhase::Start);
+
+    // A scene already loading: the game reads its progress and asks for nothing.
+    ManagedGame::Frame loading{.scene = &scene, .loadingScene = next, .loadingProgress = 0.25f};
+    game->runPhase(loading, SystemPhase::Update);
+    const void* const updated = loader->find(scene, entity);
+    CHECK(field<bool>(*loader, const_cast<void*>(updated), "loading"));
+    CHECK(field<float>(*loader, const_cast<void*>(updated), "progress") == 0.25f);
+    CHECK_FALSE(loading.sceneToLoadInBackground.isValid());
+    // Without an asset manager, assets count as ready.
+    CHECK(field<bool>(*loader, const_cast<void*>(updated), "ready"));
+
+    // None loading: the game asks for one.
+    ManagedGame::Frame idle{.scene = &scene};
+    game->runPhase(idle, SystemPhase::Update);
+    CHECK_FALSE(field<bool>(*loader, const_cast<void*>(loader->find(scene, entity)), "loading"));
+    CHECK(field<float>(*loader, const_cast<void*>(loader->find(scene, entity)), "progress") == 0.0f);
+    CHECK(idle.sceneToLoadInBackground == next);
     game->unloadAssembly();
 }
 

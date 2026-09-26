@@ -96,6 +96,10 @@ internal unsafe struct NativeApi
     public delegate* unmanaged<int> ProfileEnabled;
     public delegate* unmanaged<byte*, void> ProfileBegin;
     public delegate* unmanaged<void> ProfileEnd;
+    public delegate* unmanaged<Uuid*, void> LoadSceneInBackground;
+    public delegate* unmanaged<float> SceneLoadingProgress;
+    public delegate* unmanaged<Uuid*, void> PreloadAsset;
+    public delegate* unmanaged<Uuid*, int> IsAssetReady;
 }
 
 /// <summary>The C# functions the engine calls. Filled by the runtime when it starts.</summary>
@@ -123,7 +127,7 @@ internal unsafe struct BootstrapArguments
 /// <summary>What the engine calls into: filling the function tables, then the game itself.</summary>
 public static unsafe class Bootstrap
 {
-    internal const int Version = 6;
+    internal const int Version = 7;
 
     internal static NativeApi Native;
     private static byte[]? _description;

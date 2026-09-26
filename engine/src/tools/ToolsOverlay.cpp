@@ -839,6 +839,11 @@ void ToolsOverlay::setMemoryReport(std::function<asset::MemoryReport()> report)
     m_state->memoryReport = std::move(report);
 }
 
+void ToolsOverlay::setPendingLoads(std::function<std::size_t()> pending)
+{
+    m_state->pendingLoads = std::move(pending);
+}
+
 void ToolsOverlay::setAnimationWorld(animation::AnimationWorld* world) noexcept
 {
     m_state->animationWorld = world;

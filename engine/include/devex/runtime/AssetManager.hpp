@@ -13,12 +13,22 @@
 #include <devex/render/Renderer.hpp>
 #include <devex/render/RenderWorld.hpp>
 
+#include <condition_variable>
+#include <cstdint>
+#include <deque>
 #include <memory>
+#include <mutex>
+#include <optional>
 #include <span>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
+#include <variant>
 #include <vector>
+
+namespace devex::core {
+class JobSystem;
+} // namespace devex::core
 
 namespace devex::runtime {
 
@@ -41,14 +51,22 @@ struct LoadedMesh
 
 // Resolves asset identifiers to loaded resources. Assets are loaded from their source, the asset
 // database of a project or the package of an exported game, the first time they are needed, and
-// loaded again when an import changes
-// them. Applications can also register resources they create, such as the built-in meshes.
+// loaded again when an import changes them. Applications can also register resources they create,
+// such as the built-in meshes.
+//
+// With a job system, meshes and textures load in the background: asking for one starts reading and
+// decoding it on a worker and answers nothing until finishLoads, once a frame, hands it to the
+// renderer, which copies it to the GPU within the next frames. Meanwhile meshes are not drawn and
+// materials use the default textures. Everything else loads when it is asked for.
 class AssetManager
 {
 public:
-    // Both may be null: without a renderer nothing reaches the GPU, and without a source only
-    // registered resources are known. The renderer and the source must outlive the manager.
-    AssetManager(render::Renderer* renderer, asset::AssetSource* source) noexcept;
+    // All may be null: without a renderer nothing reaches the GPU, without a source only registered
+    // resources are known, and without a job system everything loads when it is asked for. They
+    // must outlive the manager.
+    AssetManager(render::Renderer* renderer, asset::AssetSource* source, core::JobSystem* jobs = nullptr) noexcept;
+    // Waits for the loads running on the workers.
+    ~AssetManager();
 
     AssetManager(const AssetManager&) = delete;
     AssetManager& operator=(const AssetManager&) = delete;
@@ -58,11 +76,29 @@ public:
     void registerMesh(asset::AssetId id, render::MeshHandle mesh,
                       std::vector<asset::AssetId> submeshMaterials = {});
 
-    // Null when the mesh is neither registered nor loadable.
+    // Null when the mesh is neither registered nor loadable, and while it loads.
     [[nodiscard]] const LoadedMesh* mesh(asset::AssetId id);
-    // Invalid when the material cannot be loaded.
+    // Invalid when the material cannot be loaded. Its textures may still be loading: it uses the
+    // default ones meanwhile.
     [[nodiscard]] render::MaterialHandle material(asset::AssetId id);
+    // Invalid when the texture cannot be loaded, and while it loads.
     [[nodiscard]] render::TextureHandle texture(asset::AssetId id);
+
+    // Hands the meshes and textures that the workers finished to the renderer. Called once a frame
+    // before anything draws; a frame hands over a bounded amount of data, the rest waits for the
+    // next frames.
+    void finishLoads();
+    // Starts loading an asset as asking for it would, without using it: a scene preloads what it
+    // shows before it replaces another.
+    void preload(asset::AssetId id);
+    // Whether the asset is loaded and, for what the renderer draws, on the GPU. A material is ready
+    // once its textures are. Assets loaded when asked for are always ready.
+    [[nodiscard]] bool isReady(asset::AssetId id);
+    // The meshes and textures being read and decoded, or waiting to be handed to the renderer.
+    [[nodiscard]] std::size_t pendingLoads() const noexcept;
+    // Blocks until every load started is handed to the renderer, for tools and tests. The copies
+    // to the GPU still come with the next frames.
+    void waitForLoads();
     // CPU data only; null when the model cannot be loaded.
     [[nodiscard]] const asset::ModelData* model(asset::AssetId id);
     // The vertices and triangles of a mesh on the CPU, for physics, including the built-in meshes;
@@ -104,6 +140,28 @@ public:
     void setSource(asset::AssetSource* source);
 
 private:
+    // A mesh or a texture read and decoded on a worker, for the main thread to create.
+    struct FinishedLoad
+    {
+        asset::AssetId id;
+        asset::AssetType type = asset::AssetType::Mesh;
+        std::uint64_t request = 0;
+        std::variant<asset::MeshData, asset::TextureData> data;
+        std::optional<core::Error> error;
+        std::size_t bytes = 0;
+    };
+
+    // What the workers share with the manager, which they keep alive: a manager that is gone, or
+    // that changed its source, only bumps the generation.
+    struct LoadQueue
+    {
+        std::mutex mutex;
+        std::condition_variable changed;
+        std::uint64_t generation = 0;
+        std::size_t running = 0;
+        std::vector<FinishedLoad> finished;
+    };
+
     struct OwnedMesh
     {
         LoadedMesh mesh;
@@ -118,8 +176,15 @@ private:
     };
 
     [[nodiscard]] bool canLoad(asset::AssetId id) const;
-    [[nodiscard]] bool loadMesh(asset::AssetId id);
-    [[nodiscard]] bool loadTexture(asset::AssetId id);
+    // Reads and decodes the mesh or texture on a worker, or right away without a job system. A new
+    // request makes the result of an older one of the same asset stale.
+    void startLoad(asset::AssetId id, asset::AssetType type);
+    // Creates what a load read for the renderer, replacing the previous version. Returns whether it
+    // was a texture, which materials refer to.
+    bool apply(FinishedLoad& load);
+    void finishLoads(std::size_t byteBudget);
+    // Waits for the loads running on the workers and forgets every load started.
+    void cancelLoads();
     [[nodiscard]] bool loadMaterial(asset::AssetId id);
     [[nodiscard]] bool loadModel(asset::AssetId id);
     [[nodiscard]] bool loadFont(asset::AssetId id);
@@ -133,6 +198,13 @@ private:
 
     render::Renderer* m_renderer;
     asset::AssetSource* m_source;
+    core::JobSystem* m_jobs;
+    std::shared_ptr<LoadQueue> m_queue = std::make_shared<LoadQueue>();
+    // Loads started and not yet applied, by the request whose result is awaited.
+    std::unordered_map<asset::AssetId, std::uint64_t> m_loading;
+    std::uint64_t m_nextRequest = 0;
+    // Finished loads that a frame did not have the budget to hand over.
+    std::deque<FinishedLoad> m_finished;
     std::unordered_map<asset::AssetId, OwnedMesh> m_meshes;
     std::unordered_map<asset::AssetId, render::TextureHandle> m_textures;
     // What each texture takes on the GPU, all its mip levels.

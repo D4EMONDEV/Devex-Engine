@@ -1,16 +1,321 @@
 #include <devex/asset/Artifact.hpp>
+#include <devex/core/JobSystem.hpp>
 #include <devex/core/Log.hpp>
+#include <devex/core/Profiler.hpp>
 #include <devex/asset/Primitives.hpp>
 #include <devex/runtime/AssetManager.hpp>
 
+#include <limits>
 #include <utility>
 
 namespace devex::runtime {
+namespace {
 
-AssetManager::AssetManager(render::Renderer* renderer, asset::AssetSource* source) noexcept
+// What a frame hands to the renderer at most: the copy into its staging memory is done on the main
+// thread.
+constexpr std::size_t finishedBytesPerFrame = std::size_t{64} << 20;
+
+[[nodiscard]] std::size_t sizeOf(const asset::MeshData& mesh) noexcept
+{
+    return mesh.vertices.size() * sizeof(asset::Vertex) + mesh.indices.size() * sizeof(std::uint32_t) +
+           mesh.skin.size() * sizeof(asset::VertexSkin);
+}
+
+[[nodiscard]] std::size_t sizeOf(const asset::TextureData& texture) noexcept
+{
+    std::size_t bytes = 0;
+    for (const asset::TextureMip& mip : texture.mips)
+    {
+        bytes += mip.bytes.size();
+    }
+    return bytes;
+}
+
+} // namespace
+
+AssetManager::AssetManager(render::Renderer* renderer, asset::AssetSource* source, core::JobSystem* jobs) noexcept
     : m_renderer(renderer)
     , m_source(source)
+    , m_jobs(jobs)
 {
+}
+
+AssetManager::~AssetManager()
+{
+    cancelLoads();
+}
+
+void AssetManager::startLoad(asset::AssetId id, asset::AssetType type)
+{
+    const std::uint64_t request = ++m_nextRequest;
+    m_loading.insert_or_assign(id, request);
+    asset::ArtifactReader reader = m_source->artifactReader(id);
+    // Runs on a worker: it touches nothing but what it was given.
+    const auto load = [id, type, request](const asset::ArtifactReader& read) {
+        DEVEX_PROFILE_SCOPE(type == asset::AssetType::Mesh ? "Load a mesh" : "Load a texture");
+        FinishedLoad finished{.id = id, .type = type, .request = request};
+        const core::Result<std::vector<std::byte>> bytes = read();
+        if (!bytes)
+        {
+            finished.error = bytes.error();
+            return finished;
+        }
+        if (type == asset::AssetType::Mesh)
+        {
+            core::Result<asset::MeshData> mesh = asset::decodeMesh(*bytes);
+            if (!mesh)
+            {
+                finished.error = mesh.error();
+                return finished;
+            }
+            finished.bytes = sizeOf(*mesh);
+            finished.data = std::move(*mesh);
+        }
+        else
+        {
+            core::Result<asset::TextureData> texture = asset::decodeTexture(*bytes);
+            if (!texture)
+            {
+                finished.error = texture.error();
+                return finished;
+            }
+            finished.bytes = sizeOf(*texture);
+            finished.data = std::move(*texture);
+        }
+        return finished;
+    };
+
+    if (m_jobs == nullptr)
+    {
+        FinishedLoad finished = load(reader);
+        static_cast<void>(apply(finished));
+        return;
+    }
+    std::uint64_t generation = 0;
+    {
+        const std::scoped_lock lock(m_queue->mutex);
+        generation = m_queue->generation;
+    }
+    m_jobs->schedule([queue = m_queue, reader = std::move(reader), load, generation] {
+        {
+            // A load the manager no longer awaits does not touch its source, which may be gone.
+            const std::scoped_lock lock(queue->mutex);
+            if (queue->generation != generation)
+            {
+                return;
+            }
+            ++queue->running;
+        }
+        FinishedLoad finished = load(reader);
+        const std::scoped_lock lock(queue->mutex);
+        --queue->running;
+        if (queue->generation == generation)
+        {
+            queue->finished.push_back(std::move(finished));
+        }
+        queue->changed.notify_all();
+    });
+}
+
+bool AssetManager::apply(FinishedLoad& load)
+{
+    const auto awaited = m_loading.find(load.id);
+    // A reimport asked for a newer version meanwhile, or the asset was forgotten.
+    if (awaited == m_loading.end() || awaited->second != load.request)
+    {
+        return false;
+    }
+    m_loading.erase(awaited);
+    const char* const what = load.type == asset::AssetType::Mesh ? "mesh" : "texture";
+    if (load.error)
+    {
+        DEVEX_LOG_ERROR("Cannot load {} {}: {}", what, load.id.uuid, *load.error);
+        m_failed.insert(load.id);
+        return false;
+    }
+
+    if (auto* const data = std::get_if<asset::MeshData>(&load.data))
+    {
+        core::Result<render::MeshHandle> handle = m_renderer->createMesh(*data);
+        if (!handle)
+        {
+            DEVEX_LOG_ERROR("Cannot load mesh {}: {}", load.id.uuid, handle.error());
+            m_failed.insert(load.id);
+            return false;
+        }
+        LoadedMesh mesh{.handle = *handle, .gpuBytes = load.bytes};
+        for (const asset::Submesh& submesh : asset::submeshesOf(*data))
+        {
+            mesh.submeshMaterials.push_back(submesh.material);
+        }
+        // A reimported mesh replaces the previous one, which was drawn until now.
+        releaseMesh(load.id);
+        m_meshes.insert_or_assign(load.id, OwnedMesh{std::move(mesh), true});
+        return false;
+    }
+
+    const asset::TextureData& data = std::get<asset::TextureData>(load.data);
+    core::Result<render::TextureHandle> handle = m_renderer->createTexture(data);
+    if (!handle)
+    {
+        DEVEX_LOG_ERROR("Cannot load texture {}: {}", load.id.uuid, handle.error());
+        m_failed.insert(load.id);
+        return false;
+    }
+    releaseTexture(load.id);
+    m_textures.insert_or_assign(load.id, *handle);
+    m_textureBytes.insert_or_assign(load.id, load.bytes);
+    // Kept beside the handle, for the images whose borders stay unstretched.
+    if (!data.mips.empty())
+    {
+        m_textureSizes.insert_or_assign(load.id, math::Extent2D{data.mips.front().width, data.mips.front().height});
+    }
+    return true;
+}
+
+void AssetManager::finishLoads()
+{
+    finishLoads(finishedBytesPerFrame);
+}
+
+void AssetManager::finishLoads(std::size_t byteBudget)
+{
+    DEVEX_PROFILE_SCOPE("Finish loads");
+    {
+        const std::scoped_lock lock(m_queue->mutex);
+        for (FinishedLoad& finished : m_queue->finished)
+        {
+            m_finished.push_back(std::move(finished));
+        }
+        m_queue->finished.clear();
+    }
+    std::size_t spent = 0;
+    bool textures = false;
+    while (!m_finished.empty())
+    {
+        FinishedLoad& next = m_finished.front();
+        // The first one always goes, so that a large texture does not wait forever.
+        if (spent > 0 && spent + next.bytes > byteBudget)
+        {
+            break;
+        }
+        spent += next.bytes;
+        textures |= apply(next);
+        m_finished.pop_front();
+    }
+    // Materials waiting for these textures sample them from now on.
+    if (textures)
+    {
+        refreshMaterials();
+    }
+}
+
+void AssetManager::preload(asset::AssetId id)
+{
+    const asset::AssetInfo* const info = id.isValid() && m_source != nullptr ? m_source->find(id) : nullptr;
+    if (info == nullptr)
+    {
+        return;
+    }
+    switch (info->type)
+    {
+    case asset::AssetType::Mesh:
+        static_cast<void>(mesh(id));
+        break;
+    case asset::AssetType::Texture:
+        static_cast<void>(texture(id));
+        break;
+    case asset::AssetType::Material:
+        static_cast<void>(material(id));
+        break;
+    case asset::AssetType::Font:
+        static_cast<void>(font(id));
+        break;
+    default:
+        // The others load when they are asked for.
+        break;
+    }
+}
+
+bool AssetManager::isReady(asset::AssetId id)
+{
+    if (!id.isValid())
+    {
+        return true;
+    }
+    if (const auto found = m_meshes.find(id); found != m_meshes.end())
+    {
+        return m_renderer == nullptr || m_renderer->isReady(found->second.mesh.handle);
+    }
+    const asset::AssetInfo* const info = m_source != nullptr ? m_source->find(id) : nullptr;
+    if (info == nullptr || m_failed.contains(id))
+    {
+        // Nothing will come: waiting for it would wait forever.
+        return true;
+    }
+    switch (info->type)
+    {
+    case asset::AssetType::Mesh:
+        return m_renderer == nullptr;
+    case asset::AssetType::Texture: {
+        const auto found = m_textures.find(id);
+        return m_renderer == nullptr || (found != m_textures.end() && m_renderer->isReady(found->second));
+    }
+    case asset::AssetType::Material: {
+        const auto found = m_materials.find(id);
+        if (found == m_materials.end())
+        {
+            return m_renderer == nullptr;
+        }
+        const asset::MaterialData& data = found->second.data;
+        for (const asset::AssetId texture : {data.baseColorTexture, data.metallicRoughnessTexture, data.normalTexture,
+                                             data.occlusionTexture, data.emissiveTexture})
+        {
+            if (!isReady(texture))
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+    case asset::AssetType::Font: {
+        const auto found = m_fonts.find(id);
+        return found != m_fonts.end() &&
+               (m_renderer == nullptr || !found->second.atlas.isValid() || m_renderer->isReady(found->second.atlas));
+    }
+    default:
+        return true;
+    }
+}
+
+std::size_t AssetManager::pendingLoads() const noexcept
+{
+    return m_loading.size();
+}
+
+void AssetManager::waitForLoads()
+{
+    while (!m_loading.empty() && m_jobs != nullptr)
+    {
+        {
+            std::unique_lock lock(m_queue->mutex);
+            m_queue->changed.wait(lock, [this] { return !m_queue->finished.empty(); });
+        }
+        finishLoads(std::numeric_limits<std::size_t>::max());
+    }
+    finishLoads(std::numeric_limits<std::size_t>::max());
+}
+
+void AssetManager::cancelLoads()
+{
+    {
+        std::unique_lock lock(m_queue->mutex);
+        ++m_queue->generation;
+        m_queue->changed.wait(lock, [this] { return m_queue->running == 0; });
+        m_queue->finished.clear();
+    }
+    m_finished.clear();
+    m_loading.clear();
 }
 
 void AssetManager::registerMesh(asset::AssetId id, render::MeshHandle mesh,
@@ -28,8 +333,9 @@ void AssetManager::registerMesh(asset::AssetId id, render::MeshHandle mesh,
 const LoadedMesh* AssetManager::mesh(asset::AssetId id)
 {
     auto found = m_meshes.find(id);
-    if (found == m_meshes.end() && canLoad(id) && loadMesh(id))
+    if (found == m_meshes.end() && !m_loading.contains(id) && canLoad(id))
     {
+        startLoad(id, asset::AssetType::Mesh);
         found = m_meshes.find(id);
     }
     return found != m_meshes.end() ? &found->second.mesh : nullptr;
@@ -48,8 +354,9 @@ render::MaterialHandle AssetManager::material(asset::AssetId id)
 render::TextureHandle AssetManager::texture(asset::AssetId id)
 {
     auto found = m_textures.find(id);
-    if (found == m_textures.end() && canLoad(id) && loadTexture(id))
+    if (found == m_textures.end() && !m_loading.contains(id) && canLoad(id))
     {
+        startLoad(id, asset::AssetType::Texture);
         found = m_textures.find(id);
     }
     return found != m_textures.end() ? found->second : render::TextureHandle{};
@@ -230,22 +537,31 @@ void AssetManager::handleEvents(std::span<const asset::AssetEvent> events)
         {
         case asset::AssetType::Mesh:
             if (const auto found = m_meshes.find(event.id);
-                found != m_meshes.end() && found->second.owned)
+                (found != m_meshes.end() && found->second.owned) || m_loading.contains(event.id))
             {
-                releaseMesh(event.id);
-                if (!removed)
+                // The previous version is drawn until the new one is loaded.
+                if (removed)
                 {
-                    static_cast<void>(loadMesh(event.id));
+                    releaseMesh(event.id);
+                    m_loading.erase(event.id);
+                }
+                else if (canLoad(event.id))
+                {
+                    startLoad(event.id, asset::AssetType::Mesh);
                 }
             }
             break;
         case asset::AssetType::Texture:
-            if (m_textures.contains(event.id))
+            if (m_textures.contains(event.id) || m_loading.contains(event.id))
             {
-                releaseTexture(event.id);
-                if (!removed)
+                if (removed)
                 {
-                    static_cast<void>(loadTexture(event.id));
+                    releaseTexture(event.id);
+                    m_loading.erase(event.id);
+                }
+                else if (canLoad(event.id))
+                {
+                    startLoad(event.id, asset::AssetType::Texture);
                 }
             }
             // Materials loaded before the texture was imported pick it up as well.
@@ -394,6 +710,8 @@ asset::AssetSource* AssetManager::source() const noexcept
 
 void AssetManager::setSource(asset::AssetSource* source)
 {
+    // The workers read from the source that goes away.
+    cancelLoads();
     std::vector<asset::AssetId> loaded;
     for (const auto& [id, mesh] : m_meshes)
     {
@@ -434,65 +752,6 @@ bool AssetManager::canLoad(asset::AssetId id) const
     // Assets still importing are not in the database yet; their import event triggers a retry.
     return id.isValid() && m_renderer != nullptr && m_source != nullptr &&
            !m_failed.contains(id) && m_source->find(id) != nullptr;
-}
-
-bool AssetManager::loadMesh(asset::AssetId id)
-{
-    const core::Result<std::vector<std::byte>> bytes = m_source->loadArtifact(id);
-    core::Result<asset::MeshData> data = bytes ? asset::decodeMesh(*bytes)
-                                               : core::Result<asset::MeshData>(std::unexpected(bytes.error()));
-    core::Result<render::MeshHandle> handle =
-        data ? m_renderer->createMesh(*data)
-             : core::Result<render::MeshHandle>(std::unexpected(data.error()));
-    if (!handle)
-    {
-        DEVEX_LOG_ERROR("Cannot load mesh {}: {}", id.uuid, handle.error());
-        m_failed.insert(id);
-        return false;
-    }
-
-    LoadedMesh mesh{.handle = *handle,
-                    .gpuBytes = data->vertices.size() * sizeof(asset::Vertex) +
-                                data->indices.size() * sizeof(std::uint32_t) +
-                                data->skin.size() * sizeof(asset::VertexSkin)};
-    for (const asset::Submesh& submesh : asset::submeshesOf(*data))
-    {
-        mesh.submeshMaterials.push_back(submesh.material);
-    }
-    m_meshes.insert_or_assign(id, OwnedMesh{std::move(mesh), true});
-    return true;
-}
-
-bool AssetManager::loadTexture(asset::AssetId id)
-{
-    const core::Result<std::vector<std::byte>> bytes = m_source->loadArtifact(id);
-    core::Result<asset::TextureData> data =
-        bytes ? asset::decodeTexture(*bytes)
-              : core::Result<asset::TextureData>(std::unexpected(bytes.error()));
-    core::Result<render::TextureHandle> handle =
-        data ? m_renderer->createTexture(*data)
-             : core::Result<render::TextureHandle>(std::unexpected(data.error()));
-    if (!handle)
-    {
-        DEVEX_LOG_ERROR("Cannot load texture {}: {}", id.uuid, handle.error());
-        m_failed.insert(id);
-        return false;
-    }
-    m_textures.insert_or_assign(id, *handle);
-    std::size_t textureBytes = 0;
-    for (const asset::TextureMip& mip : data->mips)
-    {
-        textureBytes += mip.bytes.size();
-    }
-    m_textureBytes.insert_or_assign(id, textureBytes);
-    // Kept beside the handle, for the images whose borders stay unstretched.
-    if (!data->mips.empty())
-    {
-        m_textureSizes.insert_or_assign(id,
-                                        math::Extent2D{data->mips.front().width,
-                                                       data->mips.front().height});
-    }
-    return true;
 }
 
 bool AssetManager::loadMaterial(asset::AssetId id)

@@ -25,7 +25,8 @@ namespace devex::runtime {
 
 // Changes whenever game modules must be rebuilt to load: modules built for another version are
 // refused. 9: ComponentType gained findMutable, which modules fill in when they register a type.
-inline constexpr std::uint32_t gameApiVersion = 9;
+// 10: SystemContext gained the loading of scenes in the background.
+inline constexpr std::uint32_t gameApiVersion = 10;
 
 enum class SystemPhase : std::uint8_t
 {
@@ -66,6 +67,13 @@ struct SystemContext
     // Set to replace the scene with a scene asset once the updates of the frame are done. The
     // physics starts over and the Start systems run for the new scene.
     asset::AssetId sceneToLoad;
+    // Set to load a scene in the background: the assets it shows load while this scene goes on,
+    // then it replaces this one as sceneToLoad does. Asking for another one gives up the first.
+    asset::AssetId sceneToLoadInBackground;
+    // The scene loading in the background, invalid when none, and how much of what it shows is
+    // ready, from 0 to 1: what a loading screen shows.
+    asset::AssetId loadingScene;
+    float loadingProgress = 0.0f;
 };
 
 using SystemFunction = void (*)(SystemContext& context);

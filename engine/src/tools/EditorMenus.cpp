@@ -456,10 +456,17 @@ void drawStatusBar(ToolsState& state, const scene::Scene& scene)
     ImGui::PopStyleVar();
     if (open && ImGui::BeginMenuBar())
     {
+        // What loads in the background: read and decoded on the workers, then copied to the GPU.
+        const std::size_t loading = (state.pendingLoads ? state.pendingLoads() : 0) + state.renderer.stats().pendingUploads;
         if (const std::size_t pending = state.database != nullptr ? state.database->pendingImports() : 0; pending > 0)
         {
             iconLabel(icons::Loader, colors.warning);
             ImGui::TextColored(uiColor(colors.warning), "Importing %zu asset%s", pending, pending == 1 ? "" : "s");
+        }
+        else if (loading > 0)
+        {
+            iconLabel(icons::Loader, colors.accent);
+            ImGui::TextColored(uiColor(colors.accent), "Loading %zu asset%s", loading, loading == 1 ? "" : "s");
         }
         else if (state.gameCode.state == GameCodeStatus::State::Building)
         {

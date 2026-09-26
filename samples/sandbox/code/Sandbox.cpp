@@ -472,7 +472,8 @@ void switchScenes(SystemContext& context)
     {
         if (switcher.scene.isValid())
         {
-            context.sceneToLoad = switcher.scene;
+            // In the background: this scene goes on until what the other shows is ready.
+            context.sceneToLoadInBackground = switcher.scene;
             return;
         }
     }

@@ -122,6 +122,8 @@ public:
 
     [[nodiscard]] std::filesystem::path artifactPath(AssetId id) const;
     [[nodiscard]] core::Result<std::vector<std::byte>> loadArtifact(AssetId id) const override;
+    // Reads the artifact file found now: imports change the list of assets meanwhile.
+    [[nodiscard]] ArtifactReader artifactReader(AssetId id) const override;
     // The source file of the scene when it can be read, otherwise its import.
     [[nodiscard]] core::Result<std::string> sceneText(AssetId id) const override;
 

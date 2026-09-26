@@ -46,6 +46,18 @@ core::Result<MeshHandle> Renderer::createMesh(const asset::MeshData& mesh)
     return m_implementation->createMesh(mesh);
 }
 
+bool Renderer::isReady(MeshHandle mesh) const noexcept
+{
+    DEVEX_ASSERT(m_implementation != nullptr);
+    return m_implementation->isReady(mesh);
+}
+
+bool Renderer::isReady(TextureHandle texture) const noexcept
+{
+    DEVEX_ASSERT(m_implementation != nullptr);
+    return m_implementation->isReady(texture);
+}
+
 void Renderer::destroyMesh(MeshHandle mesh)
 {
     DEVEX_ASSERT(m_implementation != nullptr);

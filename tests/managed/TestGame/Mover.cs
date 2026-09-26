@@ -168,3 +168,24 @@ public class Jukebox : Component
         Stopped = !Audio.IsPlaying(Entity);
     }
 }
+
+// Asks for a scene in the background, and reads how far it is.
+public class Loader : Component
+{
+    public AssetId Target;
+    public bool Loading;
+    public float Progress = -1.0f;
+    public bool Ready;
+
+    public override void Update(float delta)
+    {
+        Loading = Game.IsLoadingScene;
+        Progress = Game.LoadingProgress;
+        if (!Loading)
+        {
+            Game.LoadSceneInBackground(Target);
+        }
+        Assets.Preload(Target);
+        Ready = Assets.IsReady(Target);
+    }
+}

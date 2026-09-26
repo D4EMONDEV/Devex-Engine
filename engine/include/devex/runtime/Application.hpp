@@ -159,6 +159,10 @@ protected:
     // Replaces scene() with a scene asset now. While the game runs, the physics starts over and the
     // Start systems run for the new scene. Game systems ask for it with SystemContext::sceneToLoad.
     [[nodiscard]] core::Result<void> loadScene(asset::AssetId scene);
+    // Loads the scene in the background, as SystemContext::sceneToLoadInBackground does.
+    void loadSceneInBackground(asset::AssetId scene);
+    // How much of the scene loading in the background is ready, from 0 to 1; nothing when none is.
+    [[nodiscard]] std::optional<float> sceneLoadingProgress() const noexcept;
     [[nodiscard]] core::JobSystem& jobs() noexcept;
     // Only available when ApplicationConfig::enableRendering is set.
     [[nodiscard]] render::Renderer& renderer() noexcept;
