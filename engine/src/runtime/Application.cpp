@@ -4,6 +4,7 @@
 #include <devex/asset/Project.hpp>
 #include <devex/animation/AnimationWorld.hpp>
 #include <devex/animation/TweenWorld.hpp>
+#include <devex/particles/ParticleWorld.hpp>
 #include <devex/asset/import/TextureProcessing.hpp>
 #include <devex/audio/AudioEngine.hpp>
 #include <devex/core/File.hpp>
@@ -311,6 +312,7 @@ private:
     void buildUi(render::RenderWorld& world);
     // Before the transforms of the frame: clips advance and pose the bones they drive.
     void updateAnimation(std::chrono::nanoseconds frameTime);
+    void updateParticles(std::chrono::nanoseconds frameTime);
     void applyAudioSettings();
     // After the transforms of the frame are final: sounds follow their entities, and pause with
     // the game in the editor.
@@ -350,6 +352,8 @@ private:
     std::unique_ptr<audio::AudioWorld> m_audio;
     std::unique_ptr<animation::AnimationWorld> m_animation;
     std::unique_ptr<animation::TweenWorld> m_tweens;
+    // The particles of the scene shown, the one the editor edits included, which it previews.
+    std::unique_ptr<particles::ParticleWorld> m_particles;
     // The coroutines of the game module, whose frames are destroyed before it unloads.
     CoroutineScheduler m_coroutines;
     std::unique_ptr<ui::UiWorld> m_ui;
@@ -410,6 +414,13 @@ ApplicationRunner::ApplicationRunner(Application& application, const Application
 {
     m_application.m_runner = this;
     m_editedThemes.setThemes([this](asset::AssetId id) { return m_services.assets.theme(id); });
+    m_particles = std::make_unique<particles::ParticleWorld>(
+        [this](asset::AssetId curve) { return m_services.assets.curve(curve); }, &services.jobs);
+    m_application.m_particles = m_particles.get();
+    if (services.tools != nullptr)
+    {
+        services.tools->setParticleWorld(m_particles.get());
+    }
     m_application.m_platform = &services.platform;
     m_application.m_window = &services.window;
     m_application.m_renderer = services.renderer;
@@ -440,6 +451,11 @@ ApplicationRunner::~ApplicationRunner()
     closeGameCode();
     scene::setPrefabSourceLoader({});
     m_services.platform.setLiveRedrawCallback({});
+    if (m_services.tools != nullptr)
+    {
+        m_services.tools->setParticleWorld(nullptr);
+    }
+    m_application.m_particles = nullptr;
     m_application.m_runner = nullptr;
     m_application.m_platform = nullptr;
     m_application.m_window = nullptr;
@@ -533,6 +549,7 @@ void ApplicationRunner::replaceScene(scene::Scene loaded, asset::AssetId sceneAs
 {
     const bool restart = m_gameStarted;
     m_coroutines.clear();
+    m_particles->clear();
     if (restart)
     {
         destroyUi();
@@ -803,6 +820,11 @@ void ApplicationRunner::updateFrameWorlds(std::chrono::nanoseconds frameTime, bo
         DEVEX_PROFILE_SCOPE("Physics interpolation");
         m_physics->interpolate(*m_application.m_scene, static_cast<float>(m_timestep.alpha()));
     }
+    // Once the emitters stand where the frame shows them.
+    {
+        DEVEX_PROFILE_SCOPE("Particles");
+        updateParticles(frameTime);
+    }
     {
         DEVEX_PROFILE_SCOPE("Audio");
         updateAudio(frameTime);
@@ -879,6 +901,7 @@ void ApplicationRunner::render(bool gameplay)
     {
         DEVEX_PROFILE_SCOPE("Scene extraction");
         extractScene(scene, m_services.assets, world);
+        extractParticles(*m_particles, m_services.assets, world);
         if (gameplay)
         {
             m_application.onRender(world);
@@ -1008,6 +1031,7 @@ void ApplicationRunner::startPlaying()
     }
     m_playScene.emplace(m_services.scene.clone());
     m_application.m_scene = &*m_playScene;
+    m_particles->clear();
     m_application.m_playing = true;
     m_application.m_stopRequested = false;
     m_playState = tools::PlayState::Playing;
@@ -1035,6 +1059,7 @@ void ApplicationRunner::stopPlaying()
 {
     m_application.onPlayStopped();
     m_coroutines.clear();
+    m_particles->clear();
     destroyGameData();
     destroyInput();
     destroyUi();
@@ -1465,6 +1490,7 @@ void ApplicationRunner::runSystems(SystemPhase phase, core::Duration delta)
         .animation = m_animation.get(),
         .tweens = m_tweens.get(),
         .coroutines = &m_coroutines,
+        .particles = m_particles.get(),
         .ui = m_ui.get(),
         .delta = delta,
         .interpolationAlpha = m_timestep.alpha(),
@@ -1492,6 +1518,7 @@ void ApplicationRunner::runSystems(SystemPhase phase, core::Duration delta)
             .audio = m_audio.get(),
             .animation = m_animation.get(),
             .tweens = m_tweens.get(),
+            .particles = m_particles.get(),
             .ui = m_ui.get(),
             .actions = m_actions.get(),
             .saves = m_saves.get(),
@@ -2036,6 +2063,34 @@ void ApplicationRunner::updateAnimation(std::chrono::nanoseconds frameTime)
     }
 }
 
+void ApplicationRunner::updateParticles(std::chrono::nanoseconds frameTime)
+{
+    // The editor previews the emitters of the scene it edits; a paused game holds its own.
+    m_particles->setPaused(isEditor() && m_playScene && m_playState != tools::PlayState::Playing);
+    if (physics::PhysicsWorld* const physics = m_physics.get())
+    {
+        m_particles->setGravity(physics->settings().gravity);
+        // Particles bounce off solid bodies, from the workers: the world does not step meanwhile.
+        m_particles->setCollisionQuery(
+            [physics](math::Vec3 from, math::Vec3 to) -> std::optional<particles::ParticleWorld::Hit> {
+                const math::Vec3 path = to - from;
+                const float length = math::length(path);
+                const std::optional<physics::RayHit> hit =
+                    length > 1e-6f ? physics->raycastSolid(from, path, length) : std::nullopt;
+                if (!hit)
+                {
+                    return std::nullopt;
+                }
+                return particles::ParticleWorld::Hit{.point = hit->point, .normal = hit->normal};
+            });
+    }
+    else
+    {
+        m_particles->setCollisionQuery({});
+    }
+    m_particles->update(*m_application.m_scene, core::Duration(frameTime));
+}
+
 void ApplicationRunner::applyAudioSettings()
 {
     if (m_services.audio == nullptr)
@@ -2348,6 +2403,11 @@ animation::AnimationWorld* Application::animation() noexcept
 animation::TweenWorld* Application::tweens() noexcept
 {
     return m_tweens;
+}
+
+particles::ParticleWorld* Application::particles() noexcept
+{
+    return m_particles;
 }
 
 ui::UiWorld* Application::ui() noexcept

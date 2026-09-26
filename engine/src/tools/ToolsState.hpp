@@ -46,6 +46,10 @@
 #include <unordered_set>
 #include <vector>
 
+namespace devex::particles {
+class ParticleWorld;
+} // namespace devex::particles
+
 namespace devex::animation {
 class AnimationWorld;
 class Clip;
@@ -356,6 +360,8 @@ struct ToolsState
     // The meshes and textures loading in the background, for the status bar.
     std::function<std::size_t()> pendingLoads;
     animation::AnimationWorld* animationWorld = nullptr;
+    // The particles of the scene shown, previewed in the editor; null without them.
+    particles::ParticleWorld* particleWorld = nullptr;
     bool showAnimation = false;
     // The profiler records while its panel is open.
     bool showProfiler = false;

@@ -91,6 +91,13 @@ target_compile_definitions(devex_animation_tests
     PRIVATE DEVEX_TEST_DATA_DIRECTORY="${CMAKE_CURRENT_SOURCE_DIR}/data"
 )
 
+devex_add_tests(particles
+    SOURCES
+        particles/ParticleTests.cpp
+    LIBRARIES
+        Devex::Engine
+)
+
 devex_add_tests(ui
     SOURCES
         ui/LayoutTests.cpp

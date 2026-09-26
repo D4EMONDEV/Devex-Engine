@@ -192,6 +192,53 @@ struct UiPushConstants
     float padding1 = 0.0f;
 };
 
+// A particle as shaders/particle.slang reads it.
+struct GpuParticle
+{
+    math::Vec3 position{0.0f};
+    float size = 1.0f;
+    math::Vec4 color{1.0f};
+    math::Vec3 stretch{0.0f};
+    float rotation = 0.0f;
+    float frame = 0.0f;
+    float padding0 = 0.0f;
+    float padding1 = 0.0f;
+    float padding2 = 0.0f;
+};
+
+// A point of a ribbon as shaders/particle.slang reads it.
+struct GpuTrailPoint
+{
+    math::Vec3 position{0.0f};
+    float width = 0.0f;
+    math::Vec4 color{1.0f};
+    math::Vec3 direction{0.0f, 0.0f, 1.0f};
+    float u = 0.0f;
+};
+
+// The flags of ParticlePushConstants.
+inline constexpr std::uint32_t particleAdditive = 1;
+inline constexpr std::uint32_t particleLit = 2;
+
+struct ParticlePushConstants
+{
+    VkDeviceAddress scene = 0;
+    VkDeviceAddress particles = 0;
+    VkDeviceAddress points = 0;
+    // Ribbons: the index of the point each segment starts at.
+    VkDeviceAddress segments = 0;
+    std::uint32_t first = 0;
+    std::uint32_t facing = 0;
+    std::uint32_t flags = 0;
+    // An index of the texture array, or noTexture for a soft disc and plain ribbons.
+    std::uint32_t texture = 0;
+    math::Vec2 sheet{1.0f};
+    float softness = 0.0f;
+    float padding = 0.0f;
+};
+
+inline constexpr std::uint32_t noParticleTexture = 0xFFFFFFFFU;
+
 struct SkyPushConstants
 {
     VkDeviceAddress scene = 0;
@@ -295,6 +342,9 @@ static_assert(sizeof(GpuVertexSkin) == 32);
 static_assert(sizeof(GpuOverlayVertex) == 32);
 static_assert(offsetof(OverlayPushConstants, depthScale) == 32);
 static_assert(sizeof(OverlayPushConstants) == 48);
+static_assert(sizeof(GpuParticle) == 64);
+static_assert(sizeof(GpuTrailPoint) == 48);
+static_assert(sizeof(ParticlePushConstants) == 64);
 static_assert(sizeof(LuminancePushConstants) == 16);
 static_assert(sizeof(BakePushConstants) == 24);
 

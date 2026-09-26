@@ -18,6 +18,10 @@
 #include <string>
 #include <vector>
 
+namespace devex::particles {
+class ParticleWorld;
+} // namespace devex::particles
+
 namespace devex::animation {
 class AnimationWorld;
 class Clip;
@@ -262,6 +266,8 @@ public:
     // their place.
     void notifyKeyPressed(platform::Key key) noexcept;
     void setAnimationWorld(animation::AnimationWorld* world) noexcept;
+    // Lets the inspector restart the emitter it shows, and tell how many particles it has.
+    void setParticleWorld(particles::ParticleWorld* world) noexcept;
 
     // Editor only: what the last build of the game code reported, shown in the margin of the text
     // editor on the lines the compiler named.

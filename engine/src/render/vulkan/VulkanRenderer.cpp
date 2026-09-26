@@ -552,6 +552,13 @@ core::Result<void> VulkanRenderer::endFrame()
             return bones;
         }
     }
+    {
+        DEVEX_PROFILE_SCOPE("Particles");
+        if (core::Result<void> particles = uploadParticles(frame); !particles)
+        {
+            return particles;
+        }
+    }
     if (const std::optional<PickRequest>& pick = m_world.pick; pick)
     {
         // A pixel outside the image shows nothing, which needs no GPU work.
@@ -989,6 +996,25 @@ core::Result<void> VulkanRenderer::createScenePipelines()
     transparentConfig.cullMode = VK_CULL_MODE_NONE;
     core::Result<Pipeline> transparentDoubleSided = createGraphicsPipeline(device, transparentConfig);
 
+    // Particles and ribbons blend premultiplied colours among the blended surfaces, testing the
+    // depth of the scene without writing it.
+    GraphicsPipelineConfig particleConfig{
+        .shaderPath = m_shaderDirectory / "particle.spv",
+        .vertexEntry = "particleVertex",
+        .fragmentEntry = "particleFragment",
+        .setLayouts = bothSets,
+        .pushConstantSize = sizeof(ParticlePushConstants),
+        .colorFormat = sceneFormat,
+        .depthFormat = depthFormat,
+        .premultipliedBlend = true,
+        .cullMode = VK_CULL_MODE_NONE,
+        .depthWrite = false,
+    };
+    core::Result<Pipeline> particle = createGraphicsPipeline(device, particleConfig);
+    particleConfig.vertexEntry = "ribbonVertex";
+    particleConfig.fragmentEntry = "ribbonFragment";
+    core::Result<Pipeline> ribbon = createGraphicsPipeline(device, particleConfig);
+
     // The prepass writes the depth, the motion and the normals; the shading pass then keeps only
     // what it left, which it tests against without writing depth again.
     const std::array<VkFormat, 2> prepassFormats{velocityFormat, normalFormat};
@@ -1076,6 +1102,7 @@ core::Result<void> VulkanRenderer::createScenePipelines()
                 });
 
     for (core::Result<Pipeline>* result : {&mesh, &doubleSided, &transparent, &transparentDoubleSided,
+                                          &particle, &ribbon,
                                           &prepass, &prepassDoubleSided, &ambientOcclusion, &shadow,
                                           &localShadow, &sky, &luminance, &pick, &selectionMask})
     {
@@ -1088,6 +1115,8 @@ core::Result<void> VulkanRenderer::createScenePipelines()
     m_doubleSidedPipeline = std::move(*doubleSided);
     m_transparentPipeline = std::move(*transparent);
     m_transparentDoubleSidedPipeline = std::move(*transparentDoubleSided);
+    m_particlePipeline = std::move(*particle);
+    m_ribbonPipeline = std::move(*ribbon);
     m_prepassPipeline = std::move(*prepass);
     m_prepassDoubleSidedPipeline = std::move(*prepassDoubleSided);
     m_aoPipeline = std::move(*ambientOcclusion);
@@ -1403,6 +1432,9 @@ void VulkanRenderer::selectUploads(FrameContext& frame)
     // letters of textures that are not there yet.
     std::erase_if(m_world.meshes, [this](const MeshInstance& instance) { return !isReady(instance.mesh); });
     std::erase_if(m_world.uiDraws, [this](const UiDraw& draw) {
+        return draw.texture.isValid() && m_textures.contains(draw.texture) && !isReady(draw.texture);
+    });
+    std::erase_if(m_world.particleDraws, [this](const ParticleDraw& draw) {
         return draw.texture.isValid() && m_textures.contains(draw.texture) && !isReady(draw.texture);
     });
 }
@@ -2050,12 +2082,12 @@ std::span<const std::uint32_t> VulkanRenderer::instancesOf(MeshPass pass,
 std::uint32_t VulkanRenderer::drawMeshes(VkCommandBuffer commandBuffer, VkDeviceAddress sceneData,
                                          VkDeviceAddress boneMatrices, MeshPass pass,
                                          std::uint32_t cascade, std::uint32_t frameSlot,
-                                         VkDeviceAddress previousBones) const
+                                         VkDeviceAddress previousBones, std::span<const std::uint32_t> only) const
 {
     const std::array sets{m_descriptors->global(), m_descriptors->frame(frameSlot)};
     const Pipeline* boundPipeline = nullptr;
     std::uint32_t drawCalls = 0;
-    for (const std::uint32_t index : instancesOf(pass, cascade))
+    for (const std::uint32_t index : only.empty() ? instancesOf(pass, cascade) : only)
     {
         const MeshInstance& instance = m_world.meshes[index];
         if (pass == MeshPass::SelectionMask && !instance.outlined)
@@ -2151,6 +2183,173 @@ std::uint32_t VulkanRenderer::drawMeshes(VkCommandBuffer commandBuffer, VkDevice
         ++drawCalls;
     }
     return drawCalls;
+}
+
+std::uint32_t VulkanRenderer::drawTransparent(VkCommandBuffer commandBuffer, VkDeviceAddress sceneData,
+                                              VkDeviceAddress boneMatrices, const FrameContext& frame,
+                                              std::uint32_t frameSlot) const
+{
+    // The blended instances come sorted, farthest first, with their distances.
+    static_cast<void>(instancesOf(MeshPass::Transparent, 0));
+    const std::vector<std::pair<float, std::uint32_t>> meshes = m_transparentOrder;
+    m_particleOrder.clear();
+    for (std::uint32_t index = 0; index < m_world.particleDraws.size(); ++index)
+    {
+        const math::Vec3 toCamera = m_world.particleDraws[index].center - m_cameraPosition;
+        m_particleOrder.emplace_back(math::dot(toCamera, toCamera), index);
+    }
+    std::ranges::sort(m_particleOrder, std::greater{}, &std::pair<float, std::uint32_t>::first);
+
+    // Runs of instances between two batches are drawn together.
+    std::uint32_t drawCalls = 0;
+    m_transparentRun.clear();
+    const auto flush = [&] {
+        if (!m_transparentRun.empty())
+        {
+            drawCalls += drawMeshes(commandBuffer, sceneData, boneMatrices, MeshPass::Transparent, 0, frameSlot, 0,
+                                    m_transparentRun);
+            m_transparentRun.clear();
+        }
+    };
+    std::size_t mesh = 0;
+    std::size_t batch = 0;
+    while (mesh < meshes.size() || batch < m_particleOrder.size())
+    {
+        if (batch == m_particleOrder.size() ||
+            (mesh < meshes.size() && meshes[mesh].first >= m_particleOrder[batch].first))
+        {
+            m_transparentRun.push_back(meshes[mesh++].second);
+            continue;
+        }
+        flush();
+        drawCalls += drawParticles(commandBuffer, sceneData, frame, frameSlot,
+                                   m_world.particleDraws[m_particleOrder[batch++].second]);
+    }
+    flush();
+    return drawCalls;
+}
+
+std::uint32_t VulkanRenderer::drawParticles(VkCommandBuffer commandBuffer, VkDeviceAddress sceneData,
+                                            const FrameContext& frame, std::uint32_t frameSlot,
+                                            const ParticleDraw& draw) const
+{
+    if (draw.count == 0 || !frame.particles || !frame.trailPoints || !frame.trailSegments)
+    {
+        return 0;
+    }
+    const Pipeline& pipeline = draw.ribbons ? *m_ribbonPipeline : *m_particlePipeline;
+    const std::array sets{m_descriptors->global(), m_descriptors->frame(frameSlot)};
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.handle());
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.layout(), 0,
+                            static_cast<std::uint32_t>(sets.size()), sets.data(), 0, nullptr);
+    const GpuTexture* const texture = m_textures.find(draw.texture);
+    const ParticlePushConstants constants{
+        .scene = sceneData,
+        .particles = frame.particles->deviceAddress(),
+        .points = frame.trailPoints->deviceAddress(),
+        .segments = frame.trailSegments->deviceAddress(),
+        .first = draw.first,
+        .facing = static_cast<std::uint32_t>(draw.facing),
+        .flags = (draw.blend == ParticleBlend::Additive ? particleAdditive : 0U) | (draw.lit ? particleLit : 0U),
+        .texture = texture != nullptr && texture->ready ? texture->slot : noParticleTexture,
+        .sheet = math::Vec2{static_cast<float>(std::max(draw.sheetColumns, 1U)),
+                            static_cast<float>(std::max(draw.sheetRows, 1U))},
+        .softness = std::max(draw.softness, 0.0f),
+    };
+    vkCmdPushConstants(commandBuffer, pipeline.layout(), VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                       0, sizeof(constants), &constants);
+    // Six corners for each particle or segment; the instance says which.
+    vkCmdDraw(commandBuffer, 6, draw.count, 0, 0);
+    return 1;
+}
+
+core::Result<void> VulkanRenderer::uploadParticles(FrameContext& frame) const
+{
+    // Blended batches are drawn from their farthest particle, as seen from the camera of the frame.
+    const math::Vec3 camera = math::Vec3(math::inverse(m_world.camera.view)[3]);
+    const std::vector<RenderParticle>& particles = m_world.particles;
+    m_gpuParticles.resize(particles.size());
+    const auto convert = [](const RenderParticle& particle) {
+        return GpuParticle{
+            .position = particle.position,
+            .size = particle.size,
+            .color = particle.color,
+            .stretch = particle.stretch,
+            .rotation = particle.rotation,
+            .frame = particle.frame,
+        };
+    };
+    for (const ParticleDraw& draw : m_world.particleDraws)
+    {
+        if (draw.ribbons || draw.first >= particles.size())
+        {
+            continue;
+        }
+        const std::uint32_t end = std::min<std::uint32_t>(draw.first + draw.count, static_cast<std::uint32_t>(particles.size()));
+        if (draw.blend == ParticleBlend::Additive)
+        {
+            for (std::uint32_t index = draw.first; index < end; ++index)
+            {
+                m_gpuParticles[index] = convert(particles[index]);
+            }
+            continue;
+        }
+        m_particleOrder.clear();
+        for (std::uint32_t index = draw.first; index < end; ++index)
+        {
+            const math::Vec3 toCamera = particles[index].position - camera;
+            m_particleOrder.emplace_back(math::dot(toCamera, toCamera), index);
+        }
+        std::ranges::sort(m_particleOrder, std::greater{}, &std::pair<float, std::uint32_t>::first);
+        std::uint32_t slot = draw.first;
+        for (const auto& [distance, index] : m_particleOrder)
+        {
+            static_cast<void>(distance);
+            m_gpuParticles[slot++] = convert(particles[index]);
+        }
+    }
+
+    m_gpuTrailPoints.resize(m_world.trailPoints.size());
+    for (std::size_t index = 0; index < m_world.trailPoints.size(); ++index)
+    {
+        const RenderTrailPoint& point = m_world.trailPoints[index];
+        m_gpuTrailPoints[index] = GpuTrailPoint{
+            .position = point.position,
+            .width = point.width,
+            .color = point.color,
+            .direction = point.direction,
+            .u = point.u,
+        };
+    }
+
+    const VkDeviceSize particleBytes = std::max<std::size_t>(m_gpuParticles.size(), 1) * sizeof(GpuParticle);
+    const VkDeviceSize pointBytes = std::max<std::size_t>(m_gpuTrailPoints.size(), 1) * sizeof(GpuTrailPoint);
+    const VkDeviceSize segmentBytes = std::max<std::size_t>(m_world.trailSegments.size(), 1) * sizeof(std::uint32_t);
+    for (const auto& [buffer, bytes] :
+         {std::pair<std::optional<Buffer>*, VkDeviceSize>{&frame.particles, particleBytes},
+          std::pair<std::optional<Buffer>*, VkDeviceSize>{&frame.trailPoints, pointBytes},
+          std::pair<std::optional<Buffer>*, VkDeviceSize>{&frame.trailSegments, segmentBytes}})
+    {
+        if (core::Result<void> ensured = ensureHostBuffer(*buffer, bytes); !ensured)
+        {
+            return ensured;
+        }
+    }
+    if (!m_gpuParticles.empty())
+    {
+        std::memcpy(frame.particles->mappedBytes().data(), m_gpuParticles.data(), m_gpuParticles.size() * sizeof(GpuParticle));
+    }
+    if (!m_gpuTrailPoints.empty())
+    {
+        std::memcpy(frame.trailPoints->mappedBytes().data(), m_gpuTrailPoints.data(),
+                    m_gpuTrailPoints.size() * sizeof(GpuTrailPoint));
+    }
+    if (!m_world.trailSegments.empty())
+    {
+        std::memcpy(frame.trailSegments->mappedBytes().data(), m_world.trailSegments.data(),
+                    m_world.trailSegments.size() * sizeof(std::uint32_t));
+    }
+    return {};
 }
 
 core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std::uint32_t frameSlot,
@@ -2613,8 +2812,50 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
                            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(sky), &sky);
         vkCmdDraw(commands, 3, 1, 0, 0);
 
-        // The blended surfaces come last, over the sky as over everything else.
-        drawCalls += drawMeshes(commands, sceneData, boneMatrices, MeshPass::Transparent, 0, frameSlot);
+        vkCmdEndRendering(commands);
+    });
+
+    // The blended surfaces and the particles come last, over the sky as over everything else. They
+    // test the depth without writing it, which lets particles read it to fade into surfaces.
+    std::vector<std::pair<RenderGraph::ImageId, ImageAccess>> transparentAccesses{
+        {sceneColor, ImageAccess::ColorAttachment},
+        {depth, ImageAccess::DepthReadOnly},
+        {shadowMap, ImageAccess::FragmentRead},
+    };
+    if (localShadows)
+    {
+        transparentAccesses.push_back({*created[shadowAtlasIndex], ImageAccess::FragmentRead});
+    }
+    if (occluded)
+    {
+        transparentAccesses.push_back({*created[occlusionIndex], ImageAccess::FragmentRead});
+    }
+    graph.addPass("Transparent", std::move(transparentAccesses), [&](VkCommandBuffer commands) {
+        const VkRenderingAttachmentInfo colorAttachment{
+            .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+            .imageView = graph.view(sceneColor),
+            .imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+            .loadOp = VK_ATTACHMENT_LOAD_OP_LOAD,
+            .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+        };
+        const VkRenderingAttachmentInfo depthAttachment{
+            .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+            .imageView = graph.view(depth),
+            .imageLayout = VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL,
+            .loadOp = VK_ATTACHMENT_LOAD_OP_LOAD,
+            .storeOp = VK_ATTACHMENT_STORE_OP_NONE,
+        };
+        const VkRenderingInfo renderingInfo{
+            .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
+            .renderArea = {.extent = {extent.width, extent.height}},
+            .layerCount = 1,
+            .colorAttachmentCount = 1,
+            .pColorAttachments = &colorAttachment,
+            .pDepthAttachment = &depthAttachment,
+        };
+        vkCmdBeginRendering(commands, &renderingInfo);
+        setViewport(commands, extent);
+        drawCalls += drawTransparent(commands, sceneData, boneMatrices, frame, frameSlot);
         vkCmdEndRendering(commands);
     });
 

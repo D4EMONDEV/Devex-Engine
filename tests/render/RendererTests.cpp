@@ -821,3 +821,116 @@ TEST_CASE("Captures picture the scene of a frame at a small size, without its in
     }
     CHECK(capture.errors().empty());
 }
+
+TEST_CASE("Particles and ribbons blend among the blended surfaces without validation errors", "[render][gpu]")
+{
+    const ErrorCapture capture;
+    {
+        auto platform = devex::platform::Platform::create();
+        REQUIRE(platform.has_value());
+        auto window = platform->createWindow({.width = 320, .height = 240, .vulkan = true, .hidden = true});
+        REQUIRE(window.has_value());
+        auto renderer = devex::render::Renderer::create(*platform, *window, {.validation = true});
+        if (!renderer)
+        {
+            FAIL(std::format("{}", renderer.error()));
+        }
+        const auto cube = renderer->createMesh(devex::asset::makeCube());
+        REQUIRE(cube.has_value());
+        const devex::render::MaterialHandle glass =
+            renderer->createMaterial({.baseColorFactor = {0.4f, 0.6f, 0.9f, 0.35f}, .alphaMode = devex::asset::AlphaMode::Blend});
+        const devex::math::Mat4 cameraTransform =
+            devex::math::translate(devex::math::Mat4(1.0f), devex::math::Vec3{0.0f, 0.0f, 6.0f});
+
+        // A dark sky with a bright glow in its middle, and the same sky without it.
+        const auto draw = [&](devex::render::RenderWorld& world, bool particles) {
+            world.camera.view = devex::math::inverse(cameraTransform);
+            world.camera.autoExposure = false;
+            world.camera.ev100 = 0.0f;
+            world.camera.antialiasing = devex::render::Antialiasing::None;
+            world.environment.color = {0.02f, 0.02f, 0.02f};
+            world.environment.intensity = 1.0f;
+            world.sun.illuminance = {5.0f, 5.0f, 5.0f};
+            // Glass behind the particles and glass in front of them: they sort together.
+            world.meshes.push_back({.mesh = *cube,
+                                    .material = glass,
+                                    .transform = devex::math::translate(devex::math::Mat4(1.0f), devex::math::Vec3{2.5f, 0.0f, -2.0f}),
+                                    .objectId = 1});
+            world.meshes.push_back({.mesh = *cube,
+                                    .material = glass,
+                                    .transform = devex::math::translate(devex::math::Mat4(1.0f), devex::math::Vec3{-2.5f, 0.0f, 3.0f}),
+                                    .objectId = 2});
+            if (!particles)
+            {
+                return;
+            }
+            // Soft discs by alpha, lit; bright additive streaks; and a ribbon.
+            for (int index = 0; index < 5; ++index)
+            {
+                world.particles.push_back({.position = {static_cast<float>(index) * 0.2f - 0.4f, 0.0f, 0.0f},
+                                           .size = 1.5f,
+                                           .color = {1.0f, 0.8f, 0.4f, 0.8f}});
+            }
+            world.particleDraws.push_back({.first = 0, .count = 5, .lit = true, .softness = 0.3f});
+            world.particles.push_back({.position = {0.0f, 0.0f, 1.0f}, .size = 1.0f, .color = {40.0f, 40.0f, 40.0f, 1.0f}});
+            world.particles.push_back({.position = {1.0f, 1.0f, 1.0f},
+                                       .size = 0.1f,
+                                       .color = {8.0f, 4.0f, 1.0f, 1.0f},
+                                       .stretch = {0.5f, 0.0f, 0.0f}});
+            world.particleDraws.push_back({.first = 5,
+                                           .count = 2,
+                                           .blend = devex::render::ParticleBlend::Additive,
+                                           .facing = devex::render::ParticleFacing::Stretched,
+                                           .center = {0.0f, 0.0f, 1.0f}});
+            for (int index = 0; index < 4; ++index)
+            {
+                world.trailPoints.push_back({.position = {static_cast<float>(index) - 1.5f, -1.0f, 0.5f},
+                                             .width = 0.2f,
+                                             .color = {1.0f, 1.0f, 1.0f, 1.0f},
+                                             .direction = {1.0f, 0.0f, 0.0f},
+                                             .u = static_cast<float>(index) / 3.0f});
+            }
+            world.trailSegments = {0, 1, 2};
+            world.particleDraws.push_back({.ribbons = true, .first = 0, .count = 3, .center = {0.0f, -1.0f, 0.5f}});
+        };
+
+        const std::uint64_t without = renderer->requestCapture(64, 48);
+        std::vector<devex::render::CapturedImage> captured;
+        std::uint64_t with = 0;
+        for (int frame = 0; frame < 10; ++frame)
+        {
+            devex::render::RenderWorld& world = renderer->beginFrame();
+            draw(world, frame >= 4);
+            const devex::core::Result<void> presented = renderer->endFrame();
+            if (!presented)
+            {
+                FAIL(std::format("frame {}: {}", frame, presented.error()));
+            }
+            if (frame >= 4)
+            {
+                // Two blended cubes and three batches of particles: nothing else draws in them.
+                CHECK(renderer->stats().drawCalls == 5);
+            }
+            if (frame == 5)
+            {
+                with = renderer->requestCapture(64, 48);
+            }
+            for (devex::render::CapturedImage& image : renderer->takeCaptures())
+            {
+                captured.push_back(std::move(image));
+            }
+        }
+        REQUIRE(captured.size() == 2);
+        CHECK(captured[0].request == without);
+        CHECK(captured[1].request == with);
+        // The middle of the picture glows where the additive particle stands.
+        const std::size_t middle = (std::size_t{24} * 64 + 32) * 4;
+        CHECK(captured[1].rgba[middle] > captured[0].rgba[middle] + 50);
+    }
+
+    for (const std::string& error : capture.errors())
+    {
+        UNSCOPED_INFO(error);
+    }
+    CHECK(capture.errors().empty());
+}

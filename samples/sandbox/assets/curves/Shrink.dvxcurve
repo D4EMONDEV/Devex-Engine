@@ -1,0 +1,5 @@
+[curve format=1]
+
+[key time=0 value=1 in=0 out=0]
+
+[key time=1 value=0.15 in=-1.6 out=-1.6]

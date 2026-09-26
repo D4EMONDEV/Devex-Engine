@@ -52,6 +52,9 @@ void alignRight(float width);
 [[nodiscard]] bool beginProperties(const char* id);
 void propertyName(const char* name, bool highlighted = false);
 void endProperties();
+// A row across the table that starts a section of properties, open at first; false while folded,
+// when the properties of the section are skipped.
+[[nodiscard]] bool propertyGroup(const char* name);
 
 // Edits the components of a vector, each labelled with its axis letter in the axis color. Acts as one
 // item for IsItemActivated and IsItemDeactivatedAfterEdit. The components whose bit is set in mixed

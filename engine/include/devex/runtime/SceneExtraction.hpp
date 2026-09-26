@@ -1,5 +1,6 @@
 #pragma once
 
+#include <devex/particles/ParticleWorld.hpp>
 #include <devex/render/RenderWorld.hpp>
 #include <devex/runtime/AssetManager.hpp>
 #include <devex/scene/Scene.hpp>
@@ -12,5 +13,9 @@ namespace devex::runtime {
 // use. Light units become candelas and colored illuminance. Mesh instances are identified by the
 // index of their entity plus one, for picking. World transforms must be up to date.
 void extractScene(scene::Scene& scene, AssetManager& assets, render::RenderWorld& world);
+
+// Adds the particles of the emitters, in the world, one batch per emitter, and the ribbons of
+// their trails and of the TrailRenderer components, one batch each.
+void extractParticles(const particles::ParticleWorld& particles, AssetManager& assets, render::RenderWorld& world);
 
 } // namespace devex::runtime

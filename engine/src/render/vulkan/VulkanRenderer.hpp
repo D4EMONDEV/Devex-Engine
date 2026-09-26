@@ -183,6 +183,11 @@ private:
         std::optional<Buffer> lights;
         // The bone matrices of every skinned instance of the frame.
         std::optional<Buffer> bones;
+        // The particles of the frame, those of a blended batch farthest first, and the points and
+        // segments of its ribbons.
+        std::optional<Buffer> particles;
+        std::optional<Buffer> trailPoints;
+        std::optional<Buffer> trailSegments;
         std::optional<Buffer> clusters;
         std::optional<Buffer> clusterLights;
         // Exposed luminance measured on a grid by the last frame recorded with this context.
@@ -327,9 +332,19 @@ private:
     {
         return (static_cast<std::uint64_t>(instance.objectId) << 32) | instance.submesh;
     }
+    // The instances of the pass, or only those given, in their order.
     std::uint32_t drawMeshes(VkCommandBuffer commandBuffer, VkDeviceAddress sceneData,
                              VkDeviceAddress boneMatrices, MeshPass pass, std::uint32_t cascade,
-                             std::uint32_t frameSlot, VkDeviceAddress previousBones = 0) const;
+                             std::uint32_t frameSlot, VkDeviceAddress previousBones = 0,
+                             std::span<const std::uint32_t> only = {}) const;
+    // The blended instances and the particle batches, farthest first, over the opaque scene.
+    std::uint32_t drawTransparent(VkCommandBuffer commandBuffer, VkDeviceAddress sceneData,
+                                  VkDeviceAddress boneMatrices, const FrameContext& frame,
+                                  std::uint32_t frameSlot) const;
+    std::uint32_t drawParticles(VkCommandBuffer commandBuffer, VkDeviceAddress sceneData,
+                                const FrameContext& frame, std::uint32_t frameSlot, const ParticleDraw& draw) const;
+    // Copies the particles and the ribbons of the frame into its buffers, sorting blended batches.
+    [[nodiscard]] core::Result<void> uploadParticles(FrameContext& frame) const;
     // Copies the bone matrices of the frame's skinned instances into its buffer.
     [[nodiscard]] core::Result<void> uploadBones(FrameContext& frame) const;
     [[nodiscard]] core::Result<void> ensureHostBuffer(std::optional<Buffer>& buffer, VkDeviceSize bytes) const;
@@ -358,6 +373,13 @@ private:
     std::optional<Pipeline> m_transparentDoubleSidedPipeline;
     std::optional<Pipeline> m_prepassPipeline;
     std::optional<Pipeline> m_prepassDoubleSidedPipeline;
+    std::optional<Pipeline> m_particlePipeline;
+    std::optional<Pipeline> m_ribbonPipeline;
+    // Scratch for the particles of the frame, kept between frames to avoid allocating.
+    mutable std::vector<GpuParticle> m_gpuParticles;
+    mutable std::vector<GpuTrailPoint> m_gpuTrailPoints;
+    mutable std::vector<std::pair<float, std::uint32_t>> m_particleOrder;
+    mutable std::vector<std::uint32_t> m_transparentRun;
     // Blended instances of the frame, farthest first; kept between frames to avoid allocating.
     mutable std::vector<std::pair<float, std::uint32_t>> m_transparentOrder;
     mutable std::vector<std::uint32_t> m_passInstances;

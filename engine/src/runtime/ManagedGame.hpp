@@ -43,6 +43,7 @@ public:
         audio::AudioWorld* audio = nullptr;
         animation::AnimationWorld* animation = nullptr;
         animation::TweenWorld* tweens = nullptr;
+        particles::ParticleWorld* particles = nullptr;
         // Null without an interface.
         ui::UiWorld* ui = nullptr;
         // The input actions of the project; null outside a game.

@@ -7,11 +7,13 @@
 #include <devex/core/File.hpp>
 #include <devex/core/Log.hpp>
 #include <devex/core/Profiler.hpp>
+#include <devex/particles/ParticleWorld.hpp>
 #include <devex/physics/PhysicsWorld.hpp>
 #include <devex/platform/Platform.hpp>
 #include <devex/scene/AudioComponents.hpp>
 #include <devex/scene/ComponentRegistry.hpp>
 #include <devex/scene/Components.hpp>
+#include <devex/scene/ParticleComponents.hpp>
 #include <devex/scene/PhysicsComponents.hpp>
 #include <devex/scene/SceneSerializer.hpp>
 
@@ -68,7 +70,7 @@ void run(ManagedGame& game, Scene& scene, SystemPhase phase, double seconds = 0.
 TEST_CASE("The C# runtime registers components and runs them", "[runtime][managed]")
 {
     const std::unique_ptr<ManagedGame> game = startRuntime();
-    CHECK(game->componentTypes().size() == 11);
+    CHECK(game->componentTypes().size() == 12);
 
     devex::scene::ComponentRegistry& registry = devex::scene::componentRegistry();
     const devex::scene::ComponentType* const mover = registry.find("Mover");
@@ -488,6 +490,37 @@ TEST_CASE("C# coroutines wait for frames, time, tweens and tasks, and end with t
     update(0.1);
     CHECK(ticks() == after);
     CHECK(after <= counted + 1);
+    game->unloadAssembly();
+}
+
+TEST_CASE("C# code bursts, reads and stops the particles of an emitter", "[runtime][managed][particles]")
+{
+    const std::unique_ptr<ManagedGame> game = startRuntime();
+    const devex::scene::ComponentType* const type = devex::scene::componentRegistry().find("Pyrotechnician");
+    REQUIRE(type != nullptr);
+    Scene scene;
+    const Entity entity = scene.createEntity("Fireworks");
+    scene.add<devex::scene::Transform>(entity);
+    devex::scene::ParticleEmitter settings;
+    settings.playOnStart = false;
+    settings.lifetime = {10.0f, 10.0f};
+    scene.add<devex::scene::ParticleEmitter>(entity, settings);
+    REQUIRE(type->emplace(scene, entity) != nullptr);
+    const auto value = [&]<typename T>(const char* name, T) -> T& {
+        return field<T>(*type, const_cast<void*>(type->find(scene, entity)), name);
+    };
+
+    devex::particles::ParticleWorld particles;
+    ManagedGame::Frame frame{.scene = &scene, .delta = devex::core::Duration(0.1), .particles = &particles};
+    for (int index = 0; index < 3; ++index)
+    {
+        game->runPhase(frame, SystemPhase::Update);
+        scene.updateTransforms();
+        particles.update(scene, devex::core::Duration(0.1));
+    }
+    CHECK(value("emitted", std::int32_t{}) == 5);
+    CHECK(value("playing", bool{}));
+    CHECK(value("stopped", bool{}));
     game->unloadAssembly();
 }
 

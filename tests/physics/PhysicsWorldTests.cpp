@@ -185,6 +185,18 @@ TEST_CASE("Triggers report what enters and leaves them without blocking it", "[p
     CHECK(scene.get<devex::scene::Transform>(ball).position.y < 0.0f);
     CHECK(hasContact(contacts, ContactPhase::Begin, zone, ball, true));
     CHECK(hasContact(contacts, ContactPhase::End, zone, ball, true));
+
+    // Rays stop on triggers, except those of particles, which only solid bodies stop.
+    const Entity ground = addGround(scene);
+    const auto solidWorld = makeWorld();
+    simulate(*solidWorld, scene, stepSeconds);
+    const auto blocked = solidWorld->raycast({0.0f, 10.0f, 0.0f}, {0.0f, -1.0f, 0.0f}, 20.0f);
+    REQUIRE(blocked.has_value());
+    CHECK(blocked->entity == zone);
+    const auto through = solidWorld->raycastSolid({0.0f, 10.0f, 0.0f}, {0.0f, -1.0f, 0.0f}, 20.0f);
+    REQUIRE(through.has_value());
+    CHECK(through->entity == ground);
+    CHECK(through->normal.y == Catch::Approx(1.0f).margin(0.01f));
 }
 
 TEST_CASE("Collision layers decide which bodies touch and what queries find", "[physics]")

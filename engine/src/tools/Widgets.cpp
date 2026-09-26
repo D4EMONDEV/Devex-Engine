@@ -215,6 +215,19 @@ void endProperties()
     ImGui::EndTable();
 }
 
+bool propertyGroup(const char* name)
+{
+    ImGui::TableNextRow();
+    ImGui::TableSetColumnIndex(0);
+    ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+    ImGui::PushFont(g_fonts.bold, 0.0f);
+    const bool open = ImGui::TreeNodeEx(name, ImGuiTreeNodeFlags_SpanAllColumns | ImGuiTreeNodeFlags_DefaultOpen |
+                                                  ImGuiTreeNodeFlags_NoTreePushOnOpen | ImGuiTreeNodeFlags_FramePadding);
+    ImGui::PopFont();
+    ImGui::PopStyleColor();
+    return open;
+}
+
 bool dragVector(const char* id, float* values, int count, float speed, const char* format, unsigned mixed)
 {
     static constexpr std::array<const char*, 4> letters{"x", "y", "z", "w"};

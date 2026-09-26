@@ -121,6 +121,7 @@ core::Result<DescriptorSets> DescriptorSets::create(const Device& device,
             .stageFlags = VK_SHADER_STAGE_ALL,
         },
         image(localShadowBinding),
+        image(depthReadOnlyBinding),
     };
     const VkDescriptorSetLayoutCreateInfo frameLayoutInfo{
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
@@ -145,7 +146,7 @@ core::Result<DescriptorSets> DescriptorSets::create(const Device& device,
 
     const std::array framePoolSizes{
         VkDescriptorPoolSize{.type = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
-                             .descriptorCount = (10 + bloomLevels) * frameCount},
+                             .descriptorCount = (11 + bloomLevels) * frameCount},
         VkDescriptorPoolSize{.type = VK_DESCRIPTOR_TYPE_SAMPLER, .descriptorCount = frameCount},
     };
     const VkDescriptorPoolCreateInfo framePoolInfo{
@@ -317,6 +318,7 @@ void DescriptorSets::setFrameImages(std::uint32_t frame, const FrameImages& imag
                    VK_IMAGE_LAYOUT_GENERAL);
     }
     writeImage(m_frames[frame], localShadowBinding, 0, images.localShadowMap);
+    writeImage(m_frames[frame], depthReadOnlyBinding, 0, images.depth, VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL);
 }
 
 } // namespace devex::render::vulkan

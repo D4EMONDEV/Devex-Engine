@@ -34,6 +34,8 @@ mais seulement explicitement ici : le code suit ce document, pas l'inverse.
 | Réglages du joueur       | Volumes, fenêtre et valeurs du jeu, gardés et appliqués par le moteur |
 | Tweens                   | Tout champ d'un composant, par code ou `Tweener`, courbes dessinées |
 | Coroutines               | `co_await` en C++, `async Coroutine` en C#, reprises pendant Update |
+| Particules               | Simulées sur le CPU en parallèle, réglages dans `ParticleEmitter`  |
+| Rendu des particules     | Billboards, étirées, traînées en ruban, triées avec la transparence |
 | Clavier                  | `Key` = position physique (WASD devient ZQSD en AZERTY)            |
 | Présentation             | VSync (FIFO) par défaut, Mailbox/Immediate en option               |
 | Thread de rendu          | Thread principal, rendu découplé par un instantané `RenderWorld`   |
@@ -175,8 +177,9 @@ situé au-dessus de lui, et le graphe reste sans cycle.
 | `Scene`         | entités, sparse sets, hiérarchie, composants intégrés, `.dvxscene`, sous-arbres, préfabs | Core, Math, Reflection, Serialization, Asset |
 | `Audio`         | clips, mixage et groupes, sources et écouteur de la scène                | Core, Math, Asset, Scene, miniaudio, stb |
 | `Animation`     | clips d'animation, échantillonnage, fondus, squelettes des `Animator`, tweens | Core, Math, Asset, Scene             |
+| `Particles`     | émetteurs et traînées de la scène, simulés sur les workers              | Core, Math, Asset, Scene             |
 | `Ui`            | placement des canevas, mise en page du texte, survol et focus, dessin    | Core, Math, Asset, Scene, Render     |
-| `Tools`         | panneaux ImGui, annulation, éditeur (viewport, gizmos, scènes, accueil)   | Core, Platform, Render, Scene, Audio, Animation, Ui, AssetImport, ImGui |
+| `Tools`         | panneaux ImGui, annulation, éditeur (viewport, gizmos, scènes, accueil)   | Core, Platform, Render, Scene, Audio, Animation, Particles, Ui, AssetImport, ImGui |
 | `Runtime`       | `Application`, boucle, mode éditeur et Play, modules de jeu, coroutines, `AssetManager`, extraction | tous les modules ci-dessus |
 
 Au sommet : `devex-editor`, `devex-player` et les modules de jeu des projets.
@@ -1527,6 +1530,71 @@ les assets s'écrivent au fil de leur lecture.
   milieu) ; le bouton Sauvegarder dit « Sauvegardé » puis revient en fondu, par une coroutine C#
   qui attend ses tweens ; le menu principal apparaît en fondu.
 
+### Particules
+
+- **Simulation sur le CPU** (`particles::ParticleWorld`, `SystemContext::particles`, `Particles` en
+  C#) : chaque émetteur est simulé par un job du pool du moteur (`JobSystem::parallelFor`), les
+  émetteurs en parallèle, comme Shuriken dans Unity. Des dizaines de milliers de particules
+  tiennent dans le budget ; le code du jeu lit et pilote les émetteurs sans aller-retour avec le
+  GPU ; les collisions passent par la physique ; et l'aperçu de l'éditeur montre ce que le jeu
+  montrera. Une simulation sur le GPU (des millions de particules) viendra à côté, pas à la place.
+- **Réglages dans le composant** : `ParticleEmitter` porte tout l'effet, rangé dans l'inspecteur en
+  sections repliables : *Emitter* (durée d'un cycle, boucle, préchauffage, maximum, espace du
+  monde ou local, graine), *Emission* (par seconde, par mètre parcouru, salve à chaque cycle),
+  *Shape* (point, sphère, demi-sphère, cône, boîte, cercle ; volume ou surface ; direction
+  aléatoire), *Particles* (plages de durée de vie, vitesse, taille, rotation et rotation par
+  seconde ; couleurs de naissance et de mort ; intensité), *Motion* (gravité, accélération,
+  freinage, part du mouvement de l'émetteur, bruit tourbillonnant), *Over Life* (courbes de
+  taille, d'opacité et de vitesse, les assets `.dvxcurve` du jalon 33), *Collision*, *Sub
+  Emitter*, *Rendering* et *Trails*. Un effet se réutilise par un préfab, comme dans Unity. Ces
+  sections viennent d'un indice de réflexion, `FieldHints::group`, que n'importe quel composant
+  peut employer.
+- **Identité et durée de vie** : l'état d'un émetteur (ses particules, ses traînées, son cycle)
+  vit dans le `ParticleWorld`, pas dans la scène : il n'est ni sauvegardé ni copié, et une scène
+  commence sans particules. Les émetteurs sont retrouvés chaque frame par leur entité et démarrent
+  seuls (*Play On Start*) ; le code les joue, les arrête (en laissant finir ou en effaçant), les
+  met en pause et émet d'un coup (`play`, `stop`, `pause`, `emit` ; `Particles.Play`, `Stop`,
+  `Emit`… en C#). Une nouvelle scène, le début et la fin du jeu vident le monde.
+- **Mouvement** : intégration semi-implicite, gravité du projet, accélération constante, freinage,
+  bruit de gradient en trois dimensions qui évolue dans le temps. Les particules émises au rythme
+  de l'émetteur se répartissent le long de son chemin pendant la frame, déjà en route, pour qu'un
+  émetteur rapide laisse une traînée continue ; une salve ou une émission du code part de là où
+  l'émetteur se tient. En espace local, les particules suivent l'émetteur ; la gravité est alors
+  ramenée dans son repère.
+- **Collisions** : pendant le jeu, un segment de la position précédente à la suivante interroge la
+  physique (`PhysicsWorld::raycastSolid`, qui traverse les déclencheurs), depuis les workers : la
+  physique ne fait pas de pas pendant ce temps. La particule rebondit (rebond et frottement), perd
+  une part de sa vie, et peut déclencher un **sous-émetteur** : un autre émetteur, qui n'émet que
+  là où une particule touche ou meurt (étincelles d'un impact, éclaboussures de pluie). Ces
+  émissions sont appliquées après les jobs, sur le thread principal.
+- **Traînées** : chaque particule garde les derniers points de son chemin (`trails`), et un
+  composant `TrailRenderer` laisse un ruban derrière son entité (projectiles, balles, épées) :
+  un point tous les quelques centimètres, qui vit un temps donné, avec largeur et couleur de la
+  tête à la queue.
+- **Rendu** : le `RenderWorld` reçoit des particules (position, taille, couleur, rotation, image
+  de la planche, étirement) et des rubans (points et segments), par lots triés **avec les
+  surfaces transparentes**, du plus loin au plus proche : une particule derrière une vitre est
+  vue à travers. Les surfaces transparentes quittent donc la passe *Scene* pour une passe
+  *Transparent* où la profondeur est attachée en lecture seule et lue en même temps
+  (`DEPTH_READ_ONLY_OPTIMAL`, liaison 12 du set de la frame), ce qui donne des **particules
+  douces** qui s'estompent au contact des surfaces. Les particules d'un lot en alpha sont triées
+  sur le CPU ; les lots additifs ne le sont pas. Un seul pipeline mélange des couleurs
+  prémultipliées : une particule additive sort un alpha nul, qui s'ajoute.
+- **Apparence** : face à la caméra, étirée le long de son mouvement (étincelles, pluie), couchée
+  ou dressée ; texture (sans texture, un disque doux), planches d'images jouées sur la vie ou
+  tirées au hasard ; couleurs relatives à l'exposition comme l'émission des matériaux, au-dessus
+  de 1 elles alimentent le bloom ; ou **éclairées** comme une surface mate tournée vers la caméra
+  (soleil et ses ombres, ciel, lumières locales), pour la fumée et la poussière.
+- **Éditeur** : les émetteurs de la scène éditée jouent en aperçu dans la vue, sans collisions ;
+  l'inspecteur d'un émetteur ajoute *Restart*, *Stop* et le nombre de particules vivantes.
+  Mettre le jeu en pause fige ses particules.
+- **Versions** : l'API des jeux passe à 14 (`SystemContext::particles`), l'amorce C# à 11.
+- **Bac à sable** : sur la balise de gauche de la scène `sandbox`, un feu additif qui rétrécit et
+  une fumée éclairée qui grandit et s'estompe (courbes `Shrink`, `Grow`, `FadeInOut`) ; sur celle
+  de droite, une fontaine d'étincelles étirées avec leurs traînées. Dans l'arène, les balles
+  lancées laissent une traînée, et une cible touchée rejoue, là où la balle l'a frappée, la salve
+  d'étincelles d'un émetteur qui rebondissent sur le sol (`code/Target.cs`).
+
 ### Culling et ombres locales
 
 - **Boîtes englobantes** : l'import cuit dans le maillage la boîte qui tient tous ses sommets
@@ -2219,7 +2287,14 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     le temps, les frames, des conditions, les tweens et les tâches et s'arrêtent avec leur entité
     ou leur composant ; démonstration dans le bac à sable.
 
-Ensuite, sans ordre figé : jeux 2D, particules, CI Linux.
+34. ✅ **Particules** — émetteurs simulés sur le CPU en parallèle, réglés dans le composant
+    `ParticleEmitter` (émission, formes, forces, bruit, courbes sur la vie, collisions avec la
+    physique, sous-émetteurs), traînées des particules et composant `TrailRenderer`, rendu en
+    billboards, particules étirées, couchées ou dressées et rubans, doux au contact des surfaces,
+    éclairés ou non, triés avec les surfaces transparentes ; aperçu dans l'éditeur, API C++ et C#,
+    démonstration dans le bac à sable.
+
+Ensuite, sans ordre figé : jeux 2D, CI Linux.
 
 ## Questions ouvertes
 
@@ -2259,6 +2334,13 @@ Ensuite, sans ordre figé : jeux 2D, particules, CI Linux.
   cours de la physique et des animations, champs privés marqués à garder, migrations déclarées
   par version, plusieurs miniatures ou une taille choisie, entreprise (`organization`) dans les
   réglages du projet pour le dossier du joueur.
+- **Particules, la suite** : simulation sur le GPU pour les très grands nombres, éditeur de
+  dégradés de couleur plutôt que deux couleurs, particules faites de maillages, lumières portées
+  par les particules, ombres qu'elles projettent, collisions contre la profondeur de l'écran,
+  forces de zone (vent, attracteurs), vitesse limitée et orbites, bruit plus riche (curl),
+  sous-émetteurs multiples, culling des émetteurs hors de la vue et niveaux de détail, particules
+  en mouvement pour l'anticrénelage temporel (vecteurs de mouvement), aperçu de l'éditeur limité à
+  la sélection.
 - **Tweens et coroutines, la suite** : arrêt par jeton qui passe par les `finally`, coroutines qui
   survivent au rechargement du code, ordre ou remplacement quand deux tweens écrivent le même
   champ (aujourd'hui leur ordre n'est pas défini), temps réel et échelle du temps (ralenti, tweens

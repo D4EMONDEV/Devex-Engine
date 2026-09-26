@@ -25,6 +25,8 @@ namespace {
         return ImageState::GeneralRead;
     case ImageAccess::GeneralAttachment:
         return ImageState::GeneralAttachment;
+    case ImageAccess::DepthReadOnly:
+        return ImageState::DepthReadOnly;
     case ImageAccess::TransferRead:
         return ImageState::TransferSource;
     case ImageAccess::Present:

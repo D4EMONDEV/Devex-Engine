@@ -109,6 +109,10 @@ public:
     // bodies of an entity. The direction does not need to be normalized.
     [[nodiscard]] std::optional<RayHit> raycast(math::Vec3 origin, math::Vec3 direction, float maxDistance,
                                                 std::uint16_t layers = allLayers, scene::Entity ignore = {}) const;
+    // The same through triggers, which only solid bodies stop: what particles bounce off. It may be
+    // called from several threads at once while the world does not step.
+    [[nodiscard]] std::optional<RayHit> raycastSolid(math::Vec3 origin, math::Vec3 direction, float maxDistance,
+                                                     std::uint16_t layers = allLayers) const;
     // The first body a sphere moving along the direction touches.
     [[nodiscard]] std::optional<RayHit> sphereCast(math::Vec3 origin, float radius, math::Vec3 direction,
                                                    float maxDistance, std::uint16_t layers = allLayers,

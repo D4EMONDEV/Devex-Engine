@@ -41,6 +41,9 @@ public:
     static constexpr std::uint32_t resolvedBinding = 9;
     static constexpr std::uint32_t bloomBinding = 10;
     static constexpr std::uint32_t localShadowBinding = 11;
+    // The depth of the scene again, while the blended surfaces and the particles test against it:
+    // the depth attachment in its read-only layout, which particles read to fade into surfaces.
+    static constexpr std::uint32_t depthReadOnlyBinding = 12;
     // How many halvings the bloom is built from.
     static constexpr std::uint32_t bloomLevels = 5;
 

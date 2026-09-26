@@ -33,6 +33,8 @@ enum class ImageState
     GeneralRead,
     // Drawn into while staying in the general layout.
     GeneralAttachment,
+    // Tested against as a depth attachment that is not written, and sampled at the same time.
+    DepthReadOnly,
 };
 
 // True for states that only read the image, which need no barrier between each other when their

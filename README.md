@@ -42,7 +42,9 @@ Le détail, l'architecture des modules et les jalons sont dans
   forward+ clustered avec prépasse de profondeur, culling par tronc de vue, ombres en cascades pour
   le soleil et en atlas pour les lumières locales, ciel HDR et IBL, surfaces transparentes triées,
   anticrénelage temporel, occlusion ambiante en espace écran, bloom, exposition automatique,
-  tonemapping AgX, table de couleurs, vignette et grain, rendu dans une texture, sélection sur le
+  tonemapping AgX, table de couleurs, vignette et grain, particules et rubans (face à la caméra,
+  étirés, doux au contact des surfaces, éclairés ou non, triés avec la transparence), rendu dans
+  une texture, sélection sur le
   GPU, contours et lignes d'outils, temps GPU de chaque passe, copies vers le GPU sans attente et
   dans un budget par image ;
 - `Devex::Scene` : entités à UUID, composants en sparse sets, hiérarchie, `.dvxscene`,
@@ -58,6 +60,10 @@ Le détail, l'architecture des modules et les jalons sont dans
   dans le vertex shader ; tweens de tout champ numérique, vectoriel, de couleur ou de rotation
   d'un composant (délai, boucles, aller-retour, séquences), par code ou par le composant
   `Tweener`, avec 22 courbes classiques ou une courbe dessinée (`.dvxcurve`) ;
+- `Devex::Particles` : émetteurs `ParticleEmitter` simulés sur les workers (émission par seconde,
+  par mètre et en salves, formes, gravité, bruit, courbes sur la vie, collisions avec la physique,
+  sous-émetteurs, espace du monde ou local) et traînées des particules et des entités
+  (`TrailRenderer`) ;
 - `Devex::Ui` : interfaces faites d'entités (`Canvas`, `UiRect`, `UiImage`, `UiText`, `UiButton`,
   `UiInput`, `UiSlider`, `UiToggle`, `UiScroll`, `UiLayout`, `UiBinding`), placement par ancrages
   et marges puis par conteneurs, texte tiré d'un atlas de distances signées avec crénage et texte
@@ -80,6 +86,8 @@ Le détail, l'architecture des modules et les jalons sont dans
   remplacement, autocomplétion, erreurs de compilation dans la marge), ouverture dans l'IDE,
   *New Script…*, réglages de l'éditeur, aperçu sonore et forme
   d'onde des clips, éditeur de courbes (clés et pentes à déplacer, préréglages, *New Curve*),
+  aperçu des particules dans la vue et contrôles de l'émetteur dans l'inspecteur, réglages des
+  composants rangés en sections repliables,
   volumes du projet, icônes et distances des sources audio, panneau Animation
   avec piste temporelle et images clés, panneau Profiler (barres des images, chronologie par
   thread et GPU, tableaux des zones, des passes et de la mémoire des assets) ;
@@ -93,7 +101,7 @@ Le détail, l'architecture des modules et les jalons sont dans
   frames, d'une condition ou d'un tween, arrêtées avec leur entité), rendu automatique de la
   scène, export d'un jeu ;
 - `Devex.Managed` : l'API C# du moteur (`Component`, `Entity`, `Scene`, `Input`, `Physics`, `Audio`,
-  `Animation`, `Tween`, `Ui`, `Prefabs`, `Assets`, `Saves`, `PlayerSettings`, `Time`, `Log`,
+  `Animation`, `Tween`, `Particles`, `Ui`, `Prefabs`, `Assets`, `Saves`, `PlayerSettings`, `Time`, `Log`,
   `Profiler`, maths), les coroutines `async Coroutine` (`Wait.Seconds`, `Wait.Until`, tweens et
   tâches attendus sur le thread du jeu) et les vues des composants du
   moteur, compilée dans `bin/managed` quand le SDK .NET est installé ;
@@ -108,10 +116,11 @@ Le détail, l'architecture des modules et les jalons sont dans
   `code/` :
   la scène `arena` (scène de démarrage), où un personnage marche, saute, lance des balles et
   renverse des caisses entre rampe, marches, plateforme mobile et zones qui allument des lampes,
-  faite en partie de préfabs (`assets/prefabs` : caisse, pyramide de caisses, balle, zone de
-  lampe) ; le C# y ajoute des cibles qui comptent les balles reçues et font clignoter leur lampe
-  (`code/Target.cs`, avec le score), une porte qui s'ouvre quand le joueur approche
-  (`code/Door.cs`), un distributeur de caisses (`code/Dispenser.cs`) et un cube qui flotte
+  faite en partie de préfabs (`assets/prefabs` : caisse, pyramide de caisses, balle qui laisse
+  une traînée, zone de lampe) ; le C# y ajoute des cibles qui comptent les balles reçues, font
+  clignoter leur lampe et jaillir des étincelles là où la balle frappe (`code/Target.cs`, avec
+  le score), une porte qui s'ouvre quand le joueur approche (`code/Door.cs`), un distributeur de
+  caisses (`code/Dispenser.cs`) et un cube qui flotte
   (`code/Bobber.cs`) ; le lanceur C++ et les cibles C# jouent leurs sons, la porte sa source audio,
   le cube flottant émet un bourdonnement spatialisé et une ambiance Ogg tourne en boucle dans le
   groupe Music ; un robot rigué patrouille, attend et salue le joueur (`code/Robot.cs`) ;
@@ -119,7 +128,8 @@ Le détail, l'architecture des modules et les jalons sont dans
   scène `sandbox` (caisse et balises glTF, sphères or et plastique, ciel HDR, plateau tournant dont
   les satellites brillent et dont la caisse flotte par un `Tweener` et la courbe
   `assets/curves/Hover.dvxcurve`, panneaux de verre teinté, jour et nuit en fondu avec N par une
-  coroutine C++), qui ouvre sur un menu
+  coroutine C++, feu et fumée sur une balise, fontaine d'étincelles à traînées sur l'autre), qui
+  ouvre sur un menu
   principal, un écran de réglages (nom, mot de passe, curseur de volume lié à son étiquette, case
   plein écran, touche de saut à réaffecter et à réinitialiser, gardés d'une partie à l'autre, aide
   en texte riche qui défile dans un cadre en neuf parts), un menu de pause appelé par Échap, qui

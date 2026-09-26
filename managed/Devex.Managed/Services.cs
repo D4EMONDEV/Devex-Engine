@@ -314,6 +314,33 @@ public static unsafe class Animation
 }
 
 /// <summary>
+/// The particles of the game: the ParticleEmitter components of the scene, which emit by themselves
+/// when they play on start, and which code plays, stops and bursts.
+/// </summary>
+public static unsafe class Particles
+{
+    /// <summary>Emits again from the start of a cycle, with its burst.</summary>
+    public static void Play(Entity emitter) => Bootstrap.Native.PlayParticles(Scene.Current.Pointer, emitter);
+
+    /// <summary>Stops emitting; the particles alive finish their life, or vanish with clear.</summary>
+    public static void Stop(Entity emitter, bool clear = false) => Bootstrap.Native.StopParticles(emitter, clear ? 1 : 0);
+
+    /// <summary>Holds the emitter and its particles where they are.</summary>
+    public static void Pause(Entity emitter) => Bootstrap.Native.PauseParticles(emitter);
+
+    public static void Resume(Entity emitter) => Bootstrap.Native.ResumeParticles(emitter);
+
+    /// <summary>Emits particles at once, whether the emitter plays or not: sparks where a ball lands.</summary>
+    public static void Emit(Entity emitter, int count) => Bootstrap.Native.EmitParticles(Scene.Current.Pointer, emitter, count);
+
+    /// <summary>While it emits, or particles it emitted are alive.</summary>
+    public static bool IsPlaying(Entity emitter) => Bootstrap.Native.AreParticlesPlaying(emitter) != 0;
+
+    /// <summary>The particles alive.</summary>
+    public static int Count(Entity emitter) => Bootstrap.Native.ParticleCount(emitter);
+}
+
+/// <summary>
 /// The interface of the game: the canvases of the scene, what the player clicked this frame, and
 /// where the focus sits for the keyboard and the pad.
 /// </summary>

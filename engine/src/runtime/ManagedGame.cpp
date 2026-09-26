@@ -214,6 +214,13 @@ struct NativeApi
     void (*pauseTween)(std::uint64_t handle);
     void (*resumeTween)(std::uint64_t handle);
     int (*isTweenPlaying)(std::uint64_t handle);
+    void (*playParticles)(void* scene, Entity entity);
+    void (*stopParticles)(Entity entity, int clear);
+    void (*pauseParticles)(Entity entity);
+    void (*resumeParticles)(Entity entity);
+    void (*emitParticles)(void* scene, Entity entity, int count);
+    int (*areParticlesPlaying)(Entity entity);
+    int (*particleCount)(Entity entity);
 };
 
 // The functions the engine calls, in the order of Devex.Managed's ManagedApi.
@@ -228,7 +235,7 @@ struct ManagedApi
 };
 
 // Devex.Managed's Bootstrap.Version: both sides change it with the function tables.
-constexpr int bootstrapVersion = 10;
+constexpr int bootstrapVersion = 11;
 
 struct BootstrapArguments
 {
@@ -1637,6 +1644,61 @@ int apiIsTweenPlaying(std::uint64_t handle)
     return tweenWorld() != nullptr && tweenWorld()->isPlaying({handle}) ? 1 : 0;
 }
 
+[[nodiscard]] particles::ParticleWorld* particleWorld() noexcept
+{
+    return currentFrame() != nullptr ? currentFrame()->particles : nullptr;
+}
+
+void apiPlayParticles(void* scene, Entity entity)
+{
+    if (particleWorld() != nullptr && scene != nullptr)
+    {
+        particleWorld()->play(*toScene(scene), optionalEntity(scene, entity));
+    }
+}
+
+void apiStopParticles(Entity entity, int clear)
+{
+    if (particleWorld() != nullptr)
+    {
+        particleWorld()->stop(entity, clear != 0);
+    }
+}
+
+void apiPauseParticles(Entity entity)
+{
+    if (particleWorld() != nullptr)
+    {
+        particleWorld()->pause(entity);
+    }
+}
+
+void apiResumeParticles(Entity entity)
+{
+    if (particleWorld() != nullptr)
+    {
+        particleWorld()->resume(entity);
+    }
+}
+
+void apiEmitParticles(void* scene, Entity entity, int count)
+{
+    if (particleWorld() != nullptr && scene != nullptr)
+    {
+        particleWorld()->emit(*toScene(scene), optionalEntity(scene, entity), count);
+    }
+}
+
+int apiAreParticlesPlaying(Entity entity)
+{
+    return particleWorld() != nullptr && particleWorld()->isPlaying(entity) ? 1 : 0;
+}
+
+int apiParticleCount(Entity entity)
+{
+    return particleWorld() != nullptr ? static_cast<int>(particleWorld()->particleCount(entity)) : 0;
+}
+
 [[nodiscard]] NativeApi makeNativeApi() noexcept
 {
     return NativeApi{
@@ -1767,6 +1829,13 @@ int apiIsTweenPlaying(std::uint64_t handle)
         .pauseTween = &apiPauseTween,
         .resumeTween = &apiResumeTween,
         .isTweenPlaying = &apiIsTweenPlaying,
+        .playParticles = &apiPlayParticles,
+        .stopParticles = &apiStopParticles,
+        .pauseParticles = &apiPauseParticles,
+        .resumeParticles = &apiResumeParticles,
+        .emitParticles = &apiEmitParticles,
+        .areParticlesPlaying = &apiAreParticlesPlaying,
+        .particleCount = &apiParticleCount,
     };
 }
 

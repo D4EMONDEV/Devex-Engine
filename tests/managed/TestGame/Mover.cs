@@ -390,3 +390,32 @@ public class TickReader : Component
 
     public override void Update(float delta) => Ticks = Choreographer.Ticks;
 }
+
+// Bursts the particles of its entity, reads how many there are, then stops them.
+public class Pyrotechnician : Component
+{
+    public int Emitted;
+    public bool Playing;
+    public bool Stopped;
+
+    private int _frame;
+
+    public override void Update(float delta)
+    {
+        ++_frame;
+        if (_frame == 1)
+        {
+            Particles.Emit(Entity, 5);
+        }
+        else if (_frame == 2)
+        {
+            Emitted = Particles.Count(Entity);
+            Playing = Particles.IsPlaying(Entity);
+            Particles.Stop(Entity, clear: true);
+        }
+        else if (_frame == 3)
+        {
+            Stopped = Particles.Count(Entity) == 0 && !Particles.IsPlaying(Entity);
+        }
+    }
+}

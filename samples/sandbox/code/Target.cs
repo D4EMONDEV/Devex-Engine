@@ -16,6 +16,9 @@ public class Target : Component
     [AssetType("audio")]
     public AssetId HitSound;
 
+    // An emitter whose burst of sparks plays where a ball lands, moved there at each hit.
+    public Entity Sparks;
+
     public int Hits;
 
     private float _flash;
@@ -32,6 +35,11 @@ public class Target : Component
         if (HitSound.IsValid)
         {
             Audio.PlayOneShot(HitSound, Entity.WorldPosition);
+        }
+        if (Sparks.IsAlive)
+        {
+            Sparks.Transform.Position = other.WorldPosition;
+            Particles.Play(Sparks);
         }
         Log.Info($"{Entity.Name} hit ({Hits})");
     }

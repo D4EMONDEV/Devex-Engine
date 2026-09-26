@@ -192,6 +192,9 @@ struct FieldHints
     bool physicsLayer = false;
     // A std::uint32_t index into the audio groups of the project, shown by name.
     bool audioGroup = false;
+    // Starts a section of the fields, which the inspector shows under this title and folds: the
+    // fields that follow belong to it until the next field that starts one.
+    std::string_view group;
 };
 
 struct FieldInfo
@@ -203,6 +206,8 @@ struct FieldInfo
     bool angle = false;
     bool physicsLayer = false;
     bool audioGroup = false;
+    // The section the field starts, empty when it continues the previous one.
+    std::string group;
     // For enumerations: the name of each value, and the size of the stored value in bytes.
     std::vector<std::string_view> enumNames;
     std::uint8_t enumSize = 0;
@@ -274,6 +279,7 @@ public:
             .angle = hints.angle,
             .physicsLayer = hints.physicsLayer,
             .audioGroup = hints.audioGroup,
+            .group = std::string(hints.group),
             .enumNames = std::move(enumNames),
             .enumSize = static_cast<std::uint8_t>(ReflectableEnum<Value> ? sizeof(Value) : 0),
             .access = [member](void* object) -> void* {
@@ -302,6 +308,7 @@ public:
             .angle = hints.angle,
             .physicsLayer = hints.physicsLayer,
             .audioGroup = hints.audioGroup,
+            .group = std::string(hints.group),
             .enumNames = std::move(enumNames),
             .enumSize = static_cast<std::uint8_t>(ReflectableEnum<Element> ? sizeof(Element) : 0),
             .access = [member](void* object) -> void* {

@@ -289,6 +289,19 @@ private:
     std::uint64_t m_key;
 };
 
+// Lets rays pass through triggers.
+class SolidFilter final : public JPH::BodyFilter
+{
+public:
+    bool ShouldCollideLocked(const JPH::Body& body) const override
+    {
+        return !body.IsSensor();
+    }
+};
+
+[[nodiscard]] std::optional<RayHit> castRay(const JPH::PhysicsSystem& system, math::Vec3 origin, math::Vec3 direction,
+                                            float maxDistance, std::uint16_t layers, const JPH::BodyFilter& bodyFilter);
+
 // ---- Contacts ----------------------------------------------------------------------------------
 
 struct RawContact
@@ -1322,7 +1335,20 @@ void PhysicsWorld::clearContacts() noexcept
 std::optional<RayHit> PhysicsWorld::raycast(math::Vec3 origin, math::Vec3 direction, float maxDistance, std::uint16_t layers,
                                             Entity ignore) const
 {
-    const Implementation& world = *m_implementation;
+    return castRay(m_implementation->system, origin, direction, maxDistance, layers, IgnoreEntityFilter(ignore));
+}
+
+std::optional<RayHit> PhysicsWorld::raycastSolid(math::Vec3 origin, math::Vec3 direction, float maxDistance,
+                                                 std::uint16_t layers) const
+{
+    return castRay(m_implementation->system, origin, direction, maxDistance, layers, SolidFilter());
+}
+
+namespace {
+
+std::optional<RayHit> castRay(const JPH::PhysicsSystem& system, math::Vec3 origin, math::Vec3 direction,
+                              float maxDistance, std::uint16_t layers, const JPH::BodyFilter& bodyFilter)
+{
     const float length = math::length(direction);
     if (length <= 0.0f || maxDistance <= 0.0f)
     {
@@ -1331,15 +1357,14 @@ std::optional<RayHit> PhysicsWorld::raycast(math::Vec3 origin, math::Vec3 direct
     const JPH::RRayCast ray{toJoltPosition(origin), toJolt(direction / length * maxDistance)};
     JPH::RayCastResult result;
     const LayerMaskFilter layerFilter(layers);
-    const IgnoreEntityFilter bodyFilter(ignore);
-    if (!world.system.GetNarrowPhaseQuery().CastRay(ray, result, {}, layerFilter, bodyFilter))
+    if (!system.GetNarrowPhaseQuery().CastRay(ray, result, {}, layerFilter, bodyFilter))
     {
         return std::nullopt;
     }
     RayHit hit;
     hit.distance = result.mFraction * maxDistance;
     hit.point = fromJoltPosition(ray.GetPointOnRay(result.mFraction));
-    const JPH::BodyLockRead lock(world.system.GetBodyLockInterface(), result.mBodyID);
+    const JPH::BodyLockRead lock(system.GetBodyLockInterface(), result.mBodyID);
     if (lock.Succeeded())
     {
         const JPH::Body& body = lock.GetBody();
@@ -1348,6 +1373,8 @@ std::optional<RayHit> PhysicsWorld::raycast(math::Vec3 origin, math::Vec3 direct
     }
     return hit;
 }
+
+} // namespace
 
 std::optional<RayHit> PhysicsWorld::sphereCast(math::Vec3 origin, float radius, math::Vec3 direction, float maxDistance,
                                                std::uint16_t layers, Entity ignore) const

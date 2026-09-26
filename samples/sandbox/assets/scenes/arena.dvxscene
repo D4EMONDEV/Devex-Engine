@@ -512,6 +512,7 @@ flash_intensity = 6000
 flash_time = 0.5
 hit_sound = asset("a19e4f7c-3d52-4c8b-b0e6-7f2d9a1c5b83")
 hits = 0
+sparks = entity("e91d548e-d783-4b33-9b8e-5dc732cc6425")
 
 [entity uuid="ee1909d0-7530-5c09-b3dc-fb1c991c1e42" name="Target 1 lamp"]
 parent = "d0cfd4c9-118f-5fb2-9ed7-7f3c483a2526"
@@ -554,6 +555,7 @@ flash_intensity = 6000
 flash_time = 0.5
 hit_sound = asset("a19e4f7c-3d52-4c8b-b0e6-7f2d9a1c5b83")
 hits = 0
+sparks = entity("e91d548e-d783-4b33-9b8e-5dc732cc6425")
 
 [entity uuid="7cd21d8e-5d8d-520b-bb21-b5a602aa6b2d" name="Target 2 lamp"]
 parent = "d0cfd4c9-118f-5fb2-9ed7-7f3c483a2526"
@@ -596,6 +598,7 @@ flash_intensity = 6000
 flash_time = 0.5
 hit_sound = asset("a19e4f7c-3d52-4c8b-b0e6-7f2d9a1c5b83")
 hits = 0
+sparks = entity("e91d548e-d783-4b33-9b8e-5dc732cc6425")
 
 [entity uuid="772f2fa4-0bcc-5ba2-a351-7a566ec7cd1f" name="Target 3 lamp"]
 parent = "d0cfd4c9-118f-5fb2-9ed7-7f3c483a2526"
@@ -614,6 +617,37 @@ color = vec3(1, 0.35, 0.2)
 temperature = 6500
 intensity = 0
 range = 8
+
+[entity uuid="e91d548e-d783-4b33-9b8e-5dc732cc6425" name="Hit sparks"]
+
+[component type="Transform"]
+position = vec3(16, 1.5, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="ParticleEmitter"]
+play_on_start = false
+looping = false
+duration = 1
+max_particles = 600
+rate = 0
+burst = 60
+shape = "sphere"
+radius = 0.1
+lifetime = vec2(0.5, 1)
+speed = vec2(4, 9)
+size = vec2(0.06, 0.12)
+color = vec4(1, 0.7, 0.3, 1)
+end_color = vec4(1, 0.2, 0.05, 0)
+intensity = 4
+gravity = 1
+drag = 0.5
+collide = true
+bounce = 0.4
+friction = 0.3
+blend = "additive"
+render_mode = "stretched"
+stretch = 0.04
 
 [entity uuid="2ab11a81-f608-5958-88e9-4fd8cc1be643" name="Gate"]
 

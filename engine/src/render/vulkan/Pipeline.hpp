@@ -54,6 +54,8 @@ struct GraphicsPipelineConfig
     bool alphaBlend = false;
     // Adds to the target instead, as the steps of the bloom do.
     bool additiveBlend = false;
+    // Blends a premultiplied colour: its alpha covers the target, and an alpha of zero adds to it.
+    bool premultipliedBlend = false;
     VkCullModeFlags cullMode = VK_CULL_MODE_BACK_BIT;
     bool depthTest = true;
     bool depthWrite = true;

@@ -1,4 +1,5 @@
 #include <devex/scene/AnimationComponents.hpp>
+#include <devex/scene/ParticleComponents.hpp>
 #include <devex/scene/AudioComponents.hpp>
 #include <devex/scene/ComponentRegistry.hpp>
 #include <devex/scene/Components.hpp>
@@ -93,6 +94,8 @@ ComponentRegistry& componentRegistry()
         builtins.add<SkinnedMeshRenderer>();
         builtins.add<Animator>();
         builtins.add<Tweener>();
+        builtins.add<ParticleEmitter>();
+        builtins.add<TrailRenderer>();
         builtins.add<Camera>();
         builtins.add<DirectionalLight>();
         builtins.add<PointLight>();

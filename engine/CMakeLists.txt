@@ -413,6 +413,7 @@ target_sources(devex_scene
         src/scene/PhysicsComponents.cpp
         src/scene/UiComponents.cpp
         src/scene/AnimationComponents.cpp
+        src/scene/ParticleComponents.cpp
         src/scene/AssetReferences.cpp
         src/scene/AudioComponents.cpp
         src/scene/Prefab.cpp
@@ -434,6 +435,7 @@ target_sources(devex_scene
             include/devex/scene/PhysicsComponents.hpp
             include/devex/scene/UiComponents.hpp
             include/devex/scene/AnimationComponents.hpp
+            include/devex/scene/ParticleComponents.hpp
             include/devex/scene/AssetReferences.hpp
             include/devex/scene/AudioComponents.hpp
             include/devex/scene/Prefab.hpp
@@ -516,6 +518,33 @@ set_target_properties(devex_animation PROPERTIES
     FOLDER "Engine"
 )
 devex_set_warnings(devex_animation)
+
+# Particles: the emitters of a scene, simulated on the job system, and the ribbons of its trails.
+add_library(devex_particles OBJECT)
+add_library(Devex::Particles ALIAS devex_particles)
+
+target_sources(devex_particles
+    PRIVATE
+        src/particles/ParticleWorld.cpp
+    PUBLIC
+        FILE_SET HEADERS
+        BASE_DIRS include
+        FILES
+            include/devex/particles/ParticleWorld.hpp
+)
+
+target_link_libraries(devex_particles
+    PUBLIC
+        Devex::Asset
+        Devex::Core
+        Devex::Math
+        Devex::Scene
+)
+set_target_properties(devex_particles PROPERTIES
+    EXPORT_NAME Particles
+    FOLDER "Engine"
+)
+devex_set_warnings(devex_particles)
 
 # Audio: clips, the mixer and its groups, and the sounds of the AudioSource components of a game,
 # played with miniaudio (Ogg Vorbis decoded by stb_vorbis).
@@ -702,6 +731,7 @@ target_link_libraries(devex_tools
         Devex::AssetImport
         Devex::Audio
         Devex::Core
+        Devex::Particles
         Devex::Platform
         Devex::Render
         Devex::Scene
@@ -766,6 +796,7 @@ target_link_libraries(devex_runtime
         Devex::AssetImport
         Devex::Audio
         Devex::Core
+        Devex::Particles
         Devex::Physics
         Devex::Platform
         Devex::Render
@@ -791,6 +822,7 @@ target_link_libraries(devex_engine
         devex_audio
         devex_core
         devex_math
+        devex_particles
         devex_physics
         devex_platform
         devex_reflection

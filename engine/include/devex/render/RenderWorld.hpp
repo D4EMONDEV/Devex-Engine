@@ -134,6 +134,72 @@ struct MeshInstance
     bool outlined = false;
 };
 
+// A particle as the renderer draws it: a quad facing the camera, or lying as its batch says.
+struct RenderParticle
+{
+    math::Vec3 position{0.0f};
+    // Width in meters.
+    float size = 1.0f;
+    // Linear color relative to the exposure, as the emission of materials, with straight alpha.
+    math::Vec4 color{1.0f};
+    // For stretched particles: from the tail of the particle to its head, in the world.
+    math::Vec3 stretch{0.0f};
+    // Around the axis the particle faces, in radians.
+    float rotation = 0.0f;
+    // The frame of the sheet of its texture.
+    float frame = 0.0f;
+};
+
+// A point of a ribbon: a trail behind a particle or an entity.
+struct RenderTrailPoint
+{
+    math::Vec3 position{0.0f};
+    float width = 0.0f;
+    math::Vec4 color{1.0f};
+    // Along the ribbon, from its head towards its tail, normalized.
+    math::Vec3 direction{0.0f, 0.0f, 1.0f};
+    // Across the texture, 0 at the head of the ribbon and 1 at its tail.
+    float u = 0.0f;
+};
+
+enum class ParticleBlend : std::uint8_t
+{
+    // Covers by alpha; the particles of a batch are drawn from the farthest.
+    Alpha,
+    // Adds its light, in any order.
+    Additive,
+};
+
+enum class ParticleFacing : std::uint8_t
+{
+    Billboard,
+    Stretched,
+    Horizontal,
+    Vertical,
+};
+
+// Particles or ribbons drawn together, sorted as a whole with the blended surfaces of the scene.
+struct ParticleDraw
+{
+    // Ribbons: segments of RenderWorld::trailSegments; otherwise RenderWorld::particles.
+    bool ribbons = false;
+    std::uint32_t first = 0;
+    std::uint32_t count = 0;
+    // Invalid draws a soft disc for particles, and plain ribbons.
+    TextureHandle texture;
+    ParticleBlend blend = ParticleBlend::Alpha;
+    ParticleFacing facing = ParticleFacing::Billboard;
+    // The frames of the texture, side by side.
+    std::uint32_t sheetColumns = 1;
+    std::uint32_t sheetRows = 1;
+    // Lit as a matte surface by the sun, the sky and the lights; otherwise shines alone.
+    bool lit = false;
+    // Meters over which particles fade into the surfaces they cross.
+    float softness = 0.0f;
+    // Where the batch stands, to order it among the blended surfaces.
+    math::Vec3 center{0.0f};
+};
+
 // A vertex of the lines and triangles the tools draw over the scene, such as grids and gizmos.
 struct OverlayVertex
 {
@@ -224,6 +290,12 @@ struct RenderWorld
     // The bones of the skinned instances of the frame, each already holding the transform from the
     // space of its mesh to the world.
     std::vector<math::Mat4> boneMatrices;
+    // Particles and ribbons, drawn batch by batch among the blended surfaces. A ribbon segment is
+    // the index of the trail point it starts at; it ends at the next one.
+    std::vector<RenderParticle> particles;
+    std::vector<RenderTrailPoint> trailPoints;
+    std::vector<std::uint32_t> trailSegments;
+    std::vector<ParticleDraw> particleDraws;
 
     // Size in pixels of the image the scene is drawn into for the tools, which show it with
     // Renderer::viewportTexture. Zero draws the scene over the whole window.
@@ -249,6 +321,14 @@ struct RenderWorld
         std::vector<RenderLight> lightStorage = std::move(lights);
         std::vector<MeshInstance> meshStorage = std::move(meshes);
         std::vector<math::Mat4> boneStorage = std::move(boneMatrices);
+        std::vector<RenderParticle> particleStorage = std::move(particles);
+        std::vector<RenderTrailPoint> trailPointStorage = std::move(trailPoints);
+        std::vector<std::uint32_t> trailSegmentStorage = std::move(trailSegments);
+        std::vector<ParticleDraw> particleDrawStorage = std::move(particleDraws);
+        particleStorage.clear();
+        trailPointStorage.clear();
+        trailSegmentStorage.clear();
+        particleDrawStorage.clear();
         std::vector<OverlayVertex> sceneLineStorage = std::move(sceneLines);
         std::vector<OverlayVertex> overlayLineStorage = std::move(overlayLines);
         std::vector<OverlayVertex> overlayTriangleStorage = std::move(overlayTriangles);
@@ -268,6 +348,10 @@ struct RenderWorld
         lights = std::move(lightStorage);
         meshes = std::move(meshStorage);
         boneMatrices = std::move(boneStorage);
+        particles = std::move(particleStorage);
+        trailPoints = std::move(trailPointStorage);
+        trailSegments = std::move(trailSegmentStorage);
+        particleDraws = std::move(particleDrawStorage);
         sceneLines = std::move(sceneLineStorage);
         overlayLines = std::move(overlayLineStorage);
         overlayTriangles = std::move(overlayTriangleStorage);

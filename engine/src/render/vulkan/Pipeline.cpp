@@ -234,8 +234,9 @@ core::Result<Pipeline> createGraphicsPipeline(VkDevice device, const GraphicsPip
         .depthCompareOp = config.depthCompare,
     };
     const VkPipelineColorBlendAttachmentState blended{
-        .blendEnable = config.alphaBlend || config.additiveBlend ? VK_TRUE : VK_FALSE,
-        .srcColorBlendFactor = config.additiveBlend ? VK_BLEND_FACTOR_ONE : VK_BLEND_FACTOR_SRC_ALPHA,
+        .blendEnable = config.alphaBlend || config.additiveBlend || config.premultipliedBlend ? VK_TRUE : VK_FALSE,
+        .srcColorBlendFactor = config.additiveBlend || config.premultipliedBlend ? VK_BLEND_FACTOR_ONE
+                                                                                  : VK_BLEND_FACTOR_SRC_ALPHA,
         .dstColorBlendFactor = config.additiveBlend ? VK_BLEND_FACTOR_ONE
                                                     : VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
         .colorBlendOp = VK_BLEND_OP_ADD,

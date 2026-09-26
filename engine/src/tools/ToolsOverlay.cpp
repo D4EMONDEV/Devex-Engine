@@ -861,6 +861,11 @@ void ToolsOverlay::setAnimationWorld(animation::AnimationWorld* world) noexcept
     m_state->animationPreviewPlaying = false;
 }
 
+void ToolsOverlay::setParticleWorld(particles::ParticleWorld* world) noexcept
+{
+    m_state->particleWorld = world;
+}
+
 CommandHistory& ToolsOverlay::history() noexcept
 {
     return m_state->history;

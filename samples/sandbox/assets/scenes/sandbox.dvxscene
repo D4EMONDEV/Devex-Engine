@@ -420,6 +420,96 @@ scale = vec3(0.6, 0.15, 0.6)
 mesh = asset("a8581e5c-6572-499c-8d31-c3769bb31bd9")
 material = asset("00000000-0000-0000-0000-000000000000")
 
+[entity uuid="83d68554-dc60-4ea7-a35d-7fa9164218d9" name="Flame"]
+parent = "57dacbd7-3373-4a28-a274-3c38636c9389"
+
+[component type="Transform"]
+position = vec3(0, 1.8, 0)
+rotation = quat(0.70710677, 0, 0, 0.70710677)
+scale = vec3(1, 1, 1)
+
+[component type="ParticleEmitter"]
+prewarm = true
+max_particles = 300
+rate = 60
+shape = "cone"
+radius = 0.18
+angle = 0.2
+lifetime = vec2(0.5, 0.9)
+speed = vec2(0.8, 1.6)
+size = vec2(0.35, 0.55)
+rotation = vec2(0, 360)
+spin = vec2(-90, 90)
+color = vec4(1, 0.55, 0.15, 1)
+end_color = vec4(0.9, 0.12, 0.02, 0)
+intensity = 4
+acceleration = vec3(0, 0.6, 0)
+drag = 0.5
+noise = 1.5
+noise_frequency = 1.5
+noise_speed = 1
+size_curve = asset("42b991eb-dcc4-4f10-b700-88eb08cbae28")
+blend = "additive"
+softness = 0.3
+
+[entity uuid="18b7eef3-6fa4-44d7-acdf-499bce32bbc0" name="Smoke"]
+parent = "57dacbd7-3373-4a28-a274-3c38636c9389"
+
+[component type="Transform"]
+position = vec3(0, 2.3, 0)
+rotation = quat(0.70710677, 0, 0, 0.70710677)
+scale = vec3(1, 1, 1)
+
+[component type="ParticleEmitter"]
+prewarm = true
+max_particles = 200
+rate = 10
+shape = "cone"
+radius = 0.2
+angle = 0.25
+lifetime = vec2(2.5, 3.5)
+speed = vec2(0.4, 0.7)
+size = vec2(0.5, 0.7)
+rotation = vec2(0, 360)
+spin = vec2(-20, 20)
+color = vec4(0.32, 0.31, 0.3, 0.6)
+end_color = vec4(0.25, 0.25, 0.25, 0.6)
+acceleration = vec3(0.25, 0.25, 0)
+noise = 0.6
+noise_frequency = 0.8
+size_curve = asset("a57019ab-8802-4076-bbe0-70c220416684")
+alpha_curve = asset("0620154d-3e67-4a36-997b-b2a855800c70")
+lit = true
+softness = 0.5
+
+[entity uuid="3e2b8cf5-ba53-41b8-94f8-06911b00504d" name="Fountain"]
+parent = "fba9071e-53ba-4c20-ad77-202630b826cb"
+
+[component type="Transform"]
+position = vec3(0, 1.8, 0)
+rotation = quat(0.70710677, 0, 0, 0.70710677)
+scale = vec3(1, 1, 1)
+
+[component type="ParticleEmitter"]
+max_particles = 400
+rate = 40
+shape = "cone"
+radius = 0.05
+angle = 0.35
+lifetime = vec2(1.2, 1.8)
+speed = vec2(3, 4.5)
+size = vec2(0.04, 0.07)
+color = vec4(0.5, 0.8, 1, 1)
+end_color = vec4(0.2, 0.4, 1, 0)
+intensity = 4
+gravity = 1
+blend = "additive"
+render_mode = "stretched"
+stretch = 0.03
+trails = true
+trail_time = 0.25
+trail_width = 0.8
+
 [entity uuid="9d3c1f0e-5b2a-4c7e-8f61-2a4b6c8d0e13" name="Scene switch"]
 
 [component type="SceneSwitch"]

@@ -4,6 +4,7 @@
 #include <devex/animation/TweenWorld.hpp>
 #include <devex/audio/AudioWorld.hpp>
 #include <devex/core/Time.hpp>
+#include <devex/particles/ParticleWorld.hpp>
 #include <devex/physics/PhysicsWorld.hpp>
 #include <devex/platform/Input.hpp>
 #include <devex/platform/Window.hpp>
@@ -35,7 +36,8 @@ class CoroutineScheduler;
 // 11: SystemContext gained the input actions of the project.
 // 12: SystemContext gained the saves and the settings of the player.
 // 13: SystemContext gained the tweens and the coroutines.
-inline constexpr std::uint32_t gameApiVersion = 13;
+// 14: SystemContext gained the particles.
+inline constexpr std::uint32_t gameApiVersion = 14;
 
 enum class SystemPhase : std::uint8_t
 {
@@ -76,6 +78,8 @@ struct SystemContext
     animation::TweenWorld* tweens = nullptr;
     // The coroutines of the game code, which runtime/Coroutine.hpp describes. Null outside a game.
     CoroutineScheduler* coroutines = nullptr;
+    // The particles of the scene: its emitters, which code plays, stops and bursts. Null likewise.
+    particles::ParticleWorld* particles = nullptr;
     // The interface of the scene: its canvases, laid out every frame, and the buttons they
     // answered this frame. Null when the application runs without an interface.
     ui::UiWorld* ui = nullptr;

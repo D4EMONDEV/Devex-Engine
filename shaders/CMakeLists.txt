@@ -7,6 +7,7 @@ devex_add_shaders(devex_shaders
         luminance.slang
         mesh.slang
         overlay.slang
+        particle.slang
         pick.slang
         prepass.slang
         shadow.slang

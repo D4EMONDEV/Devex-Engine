@@ -2,6 +2,7 @@
 
 #include <devex/animation/AnimationWorld.hpp>
 #include <devex/animation/TweenWorld.hpp>
+#include <devex/particles/ParticleWorld.hpp>
 #include <devex/ui/UiWorld.hpp>
 #include <devex/asset/AssetSource.hpp>
 #include <devex/audio/AudioWorld.hpp>
@@ -185,6 +186,8 @@ protected:
     [[nodiscard]] animation::AnimationWorld* animation() noexcept;
     // The tweens of the scene while gameplay runs; null otherwise.
     [[nodiscard]] animation::TweenWorld* tweens() noexcept;
+    // The particles of the scene shown: those of the game, or the preview of the editor.
+    [[nodiscard]] particles::ParticleWorld* particles() noexcept;
     // The interface of the scene while gameplay runs; null otherwise.
     [[nodiscard]] ui::UiWorld* ui() noexcept;
     // The input actions of the project while gameplay runs; null otherwise.
@@ -215,6 +218,7 @@ private:
     audio::AudioWorld* m_audio = nullptr;
     animation::AnimationWorld* m_animation = nullptr;
     animation::TweenWorld* m_tweens = nullptr;
+    particles::ParticleWorld* m_particles = nullptr;
     ui::UiWorld* m_ui = nullptr;
     InputActions* m_actions = nullptr;
     SaveGames* m_saves = nullptr;

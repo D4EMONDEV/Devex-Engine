@@ -3,6 +3,7 @@
 #include <devex/asset/AssetId.hpp>
 #include <devex/asset/ThemeData.hpp>
 #include <devex/asset/Project.hpp>
+#include <devex/particles/ParticleWorld.hpp>
 #include <devex/scene/ComponentRegistry.hpp>
 #include <devex/scene/FieldValue.hpp>
 #include <devex/scene/Prefab.hpp>
@@ -891,9 +892,17 @@ void drawSharedInspector(ToolsState& state, scene::Scene& scene, const std::vect
         const bool fromPrefab = std::ranges::any_of(entities, [&](scene::Entity entity) { return hasFromPrefab(scene, entity, type); });
         if (componentHeader(name.c_str(), componentIcon(name), true, &removed, fromPrefab) && beginProperties("fields"))
         {
+            bool groupOpen = true;
             for (const reflection::FieldInfo& field : type.type->fields)
             {
-                drawSharedField(state, scene, entities, type, field);
+                if (!field.group.empty())
+                {
+                    groupOpen = propertyGroup(field.group.c_str());
+                }
+                if (groupOpen)
+                {
+                    drawSharedField(state, scene, entities, type, field);
+                }
             }
             endProperties();
         }
@@ -1089,6 +1098,36 @@ void drawStyleStatus(ToolsState& state, const ui::ElementStyle& style)
     }
 }
 
+namespace {
+
+// Plays the emitter again, or stops it, in the scene shown: the preview of the editor, or the game.
+void drawParticleControls(ToolsState& state, scene::Scene& scene, scene::Entity entity)
+{
+    particles::ParticleWorld* const world = state.particleWorld;
+    if (world == nullptr)
+    {
+        return;
+    }
+    ImGui::Spacing();
+    if (labelButton(icons::Refresh, "Restart"))
+    {
+        world->play(scene, entity);
+    }
+    ImGui::SetItemTooltip("Emits again from the start of a cycle, as when the game starts");
+    ImGui::SameLine();
+    if (labelButton(icons::Square, "Stop"))
+    {
+        world->stop(entity, true);
+    }
+    ImGui::SetItemTooltip("Stops emitting and clears the particles; Restart plays it again");
+    ImGui::SameLine();
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextDisabled("%zu particles", world->particleCount(entity));
+    ImGui::Spacing();
+}
+
+} // namespace
+
 void drawInspectorPanel(ToolsState& state, scene::Scene& scene)
 {
     if (ImGui::Begin(inspectorWindow))
@@ -1198,8 +1237,17 @@ void drawInspectorPanel(ToolsState& state, scene::Scene& scene)
                                 prefabEntity.isValid() && prefabComponent == nullptr) &&
                 beginProperties("fields"))
             {
+                bool groupOpen = true;
                 for (const reflection::FieldInfo& field : type.type->fields)
                 {
+                    if (!field.group.empty())
+                    {
+                        groupOpen = propertyGroup(field.group.c_str());
+                    }
+                    if (!groupOpen)
+                    {
+                        continue;
+                    }
                     drawField(state, scene, uuid, type, field, const_cast<void*>(component), prefabComponent,
                               style);
                     if (name == "UiRect" && field.name == "style")
@@ -1208,6 +1256,10 @@ void drawInspectorPanel(ToolsState& state, scene::Scene& scene)
                     }
                 }
                 endProperties();
+                if (name == "ParticleEmitter")
+                {
+                    drawParticleControls(state, scene, entity);
+                }
             }
             if (removed)
             {

@@ -107,3 +107,74 @@ TEST_CASE("Extraction copies the camera, the lights and the loaded meshes", "[ru
     CHECK(world.meshes[1].mesh == pairHandle);
     CHECK(world.meshes[2].submesh == 1);
 }
+
+TEST_CASE("Extraction adds the particles of the emitters and the ribbons of the trails", "[runtime][extraction][particles]")
+{
+    Scene scene;
+    devex::runtime::AssetManager assets(nullptr, nullptr);
+    devex::particles::ParticleWorld particles;
+
+    devex::scene::ParticleEmitter settings;
+    settings.rate = 0.0f;
+    settings.burst = 4;
+    settings.looping = false;
+    settings.lifetime = {10.0f, 10.0f};
+    settings.speed = {1.0f, 1.0f};
+    settings.shape = devex::scene::ParticleShape::Cone;
+    settings.radius = 0.0f;
+    settings.angle = 0.0f;
+    settings.space = devex::scene::ParticleSpace::Local;
+    settings.blend = devex::scene::ParticleBlend::Additive;
+    settings.renderMode = devex::scene::ParticleRenderMode::Stretched;
+    settings.trails = true;
+    settings.trailTime = 1.0f;
+    const Entity emitter = scene.createEntity("Sparks");
+    scene.add<Transform>(emitter, Transform{.position = {2.0f, 0.0f, 0.0f}});
+    scene.add<devex::scene::ParticleEmitter>(emitter, settings);
+
+    const Entity ball = scene.createEntity("Ball");
+    scene.add<Transform>(ball);
+    scene.add<devex::scene::TrailRenderer>(ball, devex::scene::TrailRenderer{.minDistance = 0.1f, .width = 0.3f});
+
+    for (int frame = 0; frame < 8; ++frame)
+    {
+        scene.get<Transform>(ball).position.y = static_cast<float>(frame) * 0.5f;
+        scene.updateTransforms();
+        particles.update(scene, devex::core::Duration(0.05));
+    }
+
+    devex::render::RenderWorld world;
+    devex::runtime::extractParticles(particles, assets, world);
+    REQUIRE(world.particles.size() == 4);
+    for (const devex::render::RenderParticle& particle : world.particles)
+    {
+        // In local space, placed where the emitter stands, and streaked along their motion.
+        CHECK_THAT(particle.position.x, WithinAbs(2.0, 1e-4));
+        CHECK(particle.stretch.z < 0.0f);
+    }
+    std::size_t batches = 0;
+    std::size_t ribbons = 0;
+    for (const devex::render::ParticleDraw& draw : world.particleDraws)
+    {
+        if (draw.ribbons)
+        {
+            ++ribbons;
+            CHECK(draw.count > 0);
+            for (std::uint32_t segment = draw.first; segment < draw.first + draw.count; ++segment)
+            {
+                CHECK(world.trailSegments[segment] + 1 < world.trailPoints.size());
+            }
+        }
+        else
+        {
+            ++batches;
+            CHECK(draw.count == 4);
+            CHECK(draw.blend == devex::render::ParticleBlend::Additive);
+            CHECK(draw.facing == devex::render::ParticleFacing::Stretched);
+            CHECK_THAT(draw.center.x, WithinAbs(2.0, 1e-4));
+        }
+    }
+    CHECK(batches == 1);
+    // The trails of the particles, and the ribbon of the ball.
+    CHECK(ribbons == 2);
+}

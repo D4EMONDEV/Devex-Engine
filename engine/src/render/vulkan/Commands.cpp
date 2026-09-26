@@ -60,6 +60,11 @@ struct StateUsage
     case ImageState::GeneralAttachment:
         return {VK_IMAGE_LAYOUT_GENERAL, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
                 VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT};
+    case ImageState::DepthReadOnly:
+        return {VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL,
+                VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT |
+                    VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
+                VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_2_SHADER_SAMPLED_READ_BIT};
     }
     return {};
 }
@@ -69,7 +74,7 @@ struct StateUsage
 bool isReadOnly(ImageState state) noexcept
 {
     return state == ImageState::ShaderReadOnly || state == ImageState::ComputeReadOnly ||
-           state == ImageState::GeneralRead;
+           state == ImageState::GeneralRead || state == ImageState::DepthReadOnly;
 }
 
 VkImageLayout layoutOf(ImageState state) noexcept

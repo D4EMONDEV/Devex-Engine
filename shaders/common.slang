@@ -228,6 +228,10 @@ public Texture2D historyTexture;
 // The depth of the scene, as the prepass wrote it: 1 at the near plane, 0 infinitely far away.
 [[vk::binding(8, 1)]]
 public Texture2D depthTexture;
+// The same depth while the blended surfaces and the particles are drawn over the scene, which
+// test against it without writing it.
+[[vk::binding(12, 1)]]
+public Texture2D sceneDepth;
 // The image the tonemapping reads: what the antialiasing resolved, or the scene as it was drawn.
 [[vk::binding(9, 1)]]
 public Texture2D resolvedTexture;

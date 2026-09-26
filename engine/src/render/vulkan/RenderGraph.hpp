@@ -59,6 +59,8 @@ enum class ImageAccess : std::uint8_t
     // are all named by one descriptor.
     GeneralRead,
     GeneralAttachment,
+    // A depth attachment that is tested but not written, and sampled by the same pass.
+    DepthReadOnly,
     // Copied to a buffer.
     TransferRead,
     Present,
