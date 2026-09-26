@@ -150,6 +150,14 @@ public:
     // while the window has no drawable area drops its request.
     [[nodiscard]] std::vector<PickResult> takePickResults();
 
+    // Asks for a picture of the next frame drawn, scaled down to fit the size and keeping the
+    // shape of the scene, with the scene alone: no interface, no tools. Returns the request the
+    // answer carries.
+    [[nodiscard]] std::uint64_t requestCapture(std::uint32_t maxWidth, std::uint32_t maxHeight);
+    // The pictures received since the last call, once the GPU has completed their frames, usually
+    // two frames later.
+    [[nodiscard]] std::vector<CapturedImage> takeCaptures();
+
     [[nodiscard]] RendererStats stats() const noexcept;
 
     // Connects Dear ImGui to the renderer. An ImGui context must be current and the window must

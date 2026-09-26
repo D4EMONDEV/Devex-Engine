@@ -31,10 +31,11 @@ internal static unsafe class GameRuntime
         }
     }
 
-    private sealed class FieldBinding
+    /// <summary>Copies one field between a C# object and the memory the engine keeps it in.</summary>
+    internal sealed class FieldBinding
     {
-        public required Action<Component, nint> Load;
-        public required Action<Component, nint> Store;
+        public required Action<object, nint> Load;
+        public required Action<object, nint> Store;
     }
 
     private sealed class ComponentTypeInfo(Type type, string name, FieldInfo[] fields)
@@ -109,21 +110,7 @@ internal static unsafe class GameRuntime
                 Log.Warning($"{type.Name} is skipped: a component needs a constructor without arguments");
                 continue;
             }
-            var fields = new List<FieldInfo>();
-            foreach (FieldInfo field in type.GetFields(BindingFlags.Public | BindingFlags.Instance))
-            {
-                if (field.IsInitOnly || field.GetCustomAttribute<HiddenAttribute>() != null)
-                {
-                    continue;
-                }
-                if (Describe(field.FieldType).Kind == null)
-                {
-                    Log.Warning($"{type.Name}.{field.Name} is not saved: its type {field.FieldType.Name} is not supported");
-                    continue;
-                }
-                fields.Add(field);
-            }
-            var info = new ComponentTypeInfo(type, type.Name, [.. fields])
+            var info = new ComponentTypeInfo(type, type.Name, SavedFields(type))
             {
                 HandlesCollisions = Overrides(type, nameof(Component.OnCollisionEnter)) ||
                                     Overrides(type, nameof(Component.OnCollisionExit)),
@@ -147,6 +134,7 @@ internal static unsafe class GameRuntime
     public static void Unload()
     {
         PreserveInstances();
+        Saves.Forget();
         Systems.Clear();
         Types.Clear();
         TypesByType.Clear();
@@ -175,7 +163,7 @@ internal static unsafe class GameRuntime
         info.Bindings = new FieldBinding[info.Fields.Length];
         for (int index = 0; index < info.Fields.Length; ++index)
         {
-            info.Bindings[index] = BindField(info, info.Fields[index], offsets[index], index);
+            info.Bindings[index] = BindField(info.Type, info.TypeIndex, info.Fields[index], offsets[index], index);
         }
         info.Bound = true;
     }
@@ -749,12 +737,33 @@ internal static unsafe class GameRuntime
         return null;
     }
 
-    // Reading and writing a field of the engine's memory, compiled once per field.
-    private static FieldBinding BindField(ComponentTypeInfo info, FieldInfo field, int offset, int fieldIndex)
+    /// <summary>The public fields of a type that the engine keeps: those of a type it stores.</summary>
+    internal static FieldInfo[] SavedFields(Type type)
     {
-        ParameterExpression instance = Expression.Parameter(typeof(Component), "instance");
+        var fields = new List<FieldInfo>();
+        foreach (FieldInfo field in type.GetFields(BindingFlags.Public | BindingFlags.Instance))
+        {
+            if (field.IsInitOnly || field.GetCustomAttribute<HiddenAttribute>() != null)
+            {
+                continue;
+            }
+            if (Describe(field.FieldType).Kind == null)
+            {
+                Log.Warning($"{type.Name}.{field.Name} is not saved: its type {field.FieldType.Name} is not supported");
+                continue;
+            }
+            fields.Add(field);
+        }
+        return [.. fields];
+    }
+
+    // Reading and writing a field of the engine's memory, compiled once per field. Lists find their
+    // field in the engine by the index of the type.
+    internal static FieldBinding BindField(Type ownerType, nuint typeIndex, FieldInfo field, int offset, int fieldIndex)
+    {
+        ParameterExpression instance = Expression.Parameter(typeof(object), "instance");
         ParameterExpression memory = Expression.Parameter(typeof(nint), "memory");
-        MemberExpression member = Expression.Field(Expression.Convert(instance, info.Type), field);
+        MemberExpression member = Expression.Field(Expression.Convert(instance, ownerType), field);
         ConstantExpression at = Expression.Constant(offset);
         FieldKind kind = Describe(field.FieldType);
 
@@ -762,7 +771,7 @@ internal static unsafe class GameRuntime
         Expression write;
         if (kind.List)
         {
-            ConstantExpression type = Expression.Constant(info.TypeIndex);
+            ConstantExpression type = Expression.Constant(typeIndex);
             ConstantExpression index = Expression.Constant(fieldIndex);
             MethodInfo reader;
             MethodInfo writer;
@@ -806,8 +815,8 @@ internal static unsafe class GameRuntime
         }
         return new FieldBinding
         {
-            Load = Expression.Lambda<Action<Component, nint>>(Expression.Assign(member, read), instance, memory).Compile(),
-            Store = Expression.Lambda<Action<Component, nint>>(write, instance, memory).Compile(),
+            Load = Expression.Lambda<Action<object, nint>>(Expression.Assign(member, read), instance, memory).Compile(),
+            Store = Expression.Lambda<Action<object, nint>>(write, instance, memory).Compile(),
         };
     }
 
@@ -927,43 +936,49 @@ internal static unsafe class GameRuntime
         var text = new StringBuilder();
         foreach (ComponentTypeInfo info in Types)
         {
-            text.Append($"[component type=\"{info.Name}\"]\n\n");
-            foreach (FieldInfo field in info.Fields)
-            {
-                FieldKind kind = Describe(field.FieldType);
-                text.Append($"[field name=\"{FileName(field.Name)}\" kind=\"{kind.Kind}\"");
-                if (kind.List)
-                {
-                    text.Append(" list=true");
-                }
-                if (field.GetCustomAttribute<AngleAttribute>() != null)
-                {
-                    text.Append(" angle=true");
-                }
-                if (field.GetCustomAttribute<ColorAttribute>() != null)
-                {
-                    text.Append(" color=true");
-                }
-                if (field.GetCustomAttribute<PhysicsLayerAttribute>() != null)
-                {
-                    text.Append(" physics_layer=true");
-                }
-                if (field.GetCustomAttribute<AudioGroupAttribute>() != null)
-                {
-                    text.Append(" audio_group=true");
-                }
-                if (field.GetCustomAttribute<AssetTypeAttribute>() is { } asset)
-                {
-                    text.Append($" asset_type=\"{asset.Type}\"");
-                }
-                if (kind.Element is { IsEnum: true } enumeration)
-                {
-                    text.Append($" values=\"{string.Join(',', Enum.GetNames(enumeration).Select(FileName))}\"");
-                }
-                text.Append("]\n\n");
-            }
+            DescribeType(text, info.Name, info.Fields);
         }
         return text.ToString();
+    }
+
+    /// <summary>A type as the engine reads it: its name, then each field with its kind.</summary>
+    internal static void DescribeType(StringBuilder text, string name, FieldInfo[] fields)
+    {
+        text.Append($"[component type=\"{name}\"]\n\n");
+        foreach (FieldInfo field in fields)
+        {
+            FieldKind kind = Describe(field.FieldType);
+            text.Append($"[field name=\"{FileName(field.Name)}\" kind=\"{kind.Kind}\"");
+            if (kind.List)
+            {
+                text.Append(" list=true");
+            }
+            if (field.GetCustomAttribute<AngleAttribute>() != null)
+            {
+                text.Append(" angle=true");
+            }
+            if (field.GetCustomAttribute<ColorAttribute>() != null)
+            {
+                text.Append(" color=true");
+            }
+            if (field.GetCustomAttribute<PhysicsLayerAttribute>() != null)
+            {
+                text.Append(" physics_layer=true");
+            }
+            if (field.GetCustomAttribute<AudioGroupAttribute>() != null)
+            {
+                text.Append(" audio_group=true");
+            }
+            if (field.GetCustomAttribute<AssetTypeAttribute>() is { } asset)
+            {
+                text.Append($" asset_type=\"{asset.Type}\"");
+            }
+            if (kind.Element is { IsEnum: true } enumeration)
+            {
+                text.Append($" values=\"{string.Join(',', Enum.GetNames(enumeration).Select(FileName))}\"");
+            }
+            text.Append("]\n\n");
+        }
     }
 
     /// <summary>WalkSpeed becomes walk_speed, as fields are named in scene files.</summary>

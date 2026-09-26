@@ -20,6 +20,9 @@ struct TonemapData
     // The table of colors, and how many steps it has; a size of 0 leaves the image alone.
     uint colorTable;
     float colorTableSize;
+    // The size of the image drawn into, smaller than the scene for a capture.
+    float targetWidth;
+    float targetHeight;
 };
 
 [[vk::push_constant]]
@@ -122,7 +125,11 @@ float4 fragmentMain(VertexOutput input) : SV_Target
     uint imageWidth;
     uint imageHeight;
     resolvedTexture.GetDimensions(imageWidth, imageHeight);
-    const float2 imageUv = (input.position.xy + 0.5) / float2(imageWidth, imageHeight);
+    // A capture draws the whole scene into a smaller image, which samples it rather than reading
+    // its pixels one for one.
+    const float2 targetSize = float2(settings.targetWidth, settings.targetHeight);
+    const bool smaller = targetSize.x < float(imageWidth) || targetSize.y < float(imageHeight);
+    const float2 imageUv = (input.position.xy + 0.5) / targetSize;
     // The middle of the image, from which the corners are measured.
     const float2 fromMiddle = imageUv - 0.5;
 
@@ -134,6 +141,10 @@ float4 fragmentMain(VertexOutput input) : SV_Target
         color = float3(resolvedTexture.Sample(clampSampler, imageUv + shift).r,
                        resolvedTexture.Sample(clampSampler, imageUv).g,
                        resolvedTexture.Sample(clampSampler, imageUv - shift).b);
+    }
+    else if (smaller)
+    {
+        color = resolvedTexture.Sample(clampSampler, input.position.xy / targetSize).rgb;
     }
     else
     {

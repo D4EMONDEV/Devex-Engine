@@ -85,9 +85,12 @@ Le détail, l'architecture des modules et les jalons sont dans
   compilation et rechargement à chaud), chargement des maillages et textures en arrière-plan,
   préchargement, changement de scène immédiat ou en arrière-plan avec progression, actions
   d'entrée du projet (boutons, axes, vecteurs, contextes, réaffectation gardée pour le joueur),
-  rendu automatique de la scène, export d'un jeu ;
+  sauvegardes dans le dossier du joueur (objets réfléchis, scène restaurée, miniature), réglages
+  du joueur gardés (volumes, fenêtre, valeurs du jeu), rendu automatique de la scène, export d'un
+  jeu ;
 - `Devex.Managed` : l'API C# du moteur (`Component`, `Entity`, `Scene`, `Input`, `Physics`, `Audio`,
-  `Animation`, `Ui`, `Prefabs`, `Assets`, `Time`, `Log`, `Profiler`, maths) et les vues des composants du
+  `Animation`, `Ui`, `Prefabs`, `Assets`, `Saves`, `PlayerSettings`, `Time`, `Log`, `Profiler`, maths)
+  et les vues des composants du
   moteur, compilée dans `bin/managed` quand le SDK .NET est installé ;
 - `Devex::Engine` : tous les modules dans une bibliothèque partagée, `devex-engine.dll` ;
 - `devex-editor` : l'éditeur, qui compile et recharge à chaud le code des projets ;
@@ -111,10 +114,10 @@ Le détail, l'architecture des modules et les jalons sont dans
   scène `sandbox` (caisse et balises glTF, sphères or et plastique, ciel HDR, plateau tournant dont
   les satellites brillent, panneaux de verre teinté, jour et nuit avec N), qui ouvre sur un menu
   principal, un écran de réglages (nom, mot de passe, curseur de volume lié à son étiquette, case
-  plein écran, touche de saut à réaffecter et à réinitialiser, aide en texte riche qui défile dans
-  un cadre en neuf parts), un menu de pause
-  appelé par Échap et un HUD, tous habillés par le thème `assets/ui/sandbox.dvxtheme` et pilotés
-  par `code/Menu.cs`.
+  plein écran, touche de saut à réaffecter et à réinitialiser, gardés d'une partie à l'autre, aide
+  en texte riche qui défile dans un cadre en neuf parts), un menu de pause appelé par Échap, qui
+  sauvegarde la partie que le menu principal reprend avec sa miniature, et un HUD, tous habillés
+  par le thème `assets/ui/sandbox.dvxtheme` et pilotés par `code/Menu.cs`.
 
 Le SDK Vulkan fournit `slangc`, qui compile les shaders pendant le build. Les assets
 d'exemple et les données de test sont produits par `scripts/generate_sample_assets.py`.

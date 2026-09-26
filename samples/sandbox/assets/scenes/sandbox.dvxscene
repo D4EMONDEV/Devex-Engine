@@ -510,8 +510,8 @@ parent = "7e1b0a00-0001-4000-9000-000000000002"
 [component type="UiRect"]
 anchor_min = vec2(0.5, 0.5)
 anchor_max = vec2(0.5, 0.5)
-offset_min = vec2(-200, -120)
-offset_max = vec2(200, 160)
+offset_min = vec2(-200, -150)
+offset_max = vec2(200, 210)
 opacity = 1.0
 visible = true
 
@@ -558,6 +558,51 @@ visible = true
 
 [component type="UiText"]
 text = "Jouer"
+font = asset("3f5c9a10-8d21-4b77-9d3e-6a41c0f2e510")
+size = 28
+color = vec4(0.84687, 0.86316, 0.88792, 1.0)
+align = "center"
+vertical_align = "middle"
+outline_width = 0.0
+raycast_target = false
+
+[entity uuid="7e1b0a00-0001-4000-9000-000000000060" name="Continuer"]
+parent = "7e1b0a00-0001-4000-9000-000000000004"
+
+[component type="UiRect"]
+anchor_min = vec2(0, 0)
+anchor_max = vec2(1, 0)
+offset_min = vec2(0, 0)
+offset_max = vec2(0, 64)
+opacity = 1.0
+visible = true
+style = "button"
+
+[component type="UiImage"]
+color = vec4(0.01521, 0.01938, 0.02956, 1.0)
+corner_radius = 10.0
+raycast_target = true
+
+[component type="UiButton"]
+action = "continue"
+interactable = true
+hover_color = vec4(2.4, 2.4, 2.4, 1)
+pressed_color = vec4(0.6, 0.6, 0.6, 1)
+fade_time = 0.08
+
+[entity uuid="7e1b0a00-0001-4000-9000-000000000061" name="Label"]
+parent = "7e1b0a00-0001-4000-9000-000000000060"
+
+[component type="UiRect"]
+anchor_min = vec2(0, 0)
+anchor_max = vec2(1, 1)
+offset_min = vec2(0, 0)
+offset_max = vec2(0, 0)
+opacity = 1.0
+visible = true
+
+[component type="UiText"]
+text = "Continuer"
 font = asset("3f5c9a10-8d21-4b77-9d3e-6a41c0f2e510")
 size = 28
 color = vec4(0.84687, 0.86316, 0.88792, 1.0)
@@ -653,6 +698,60 @@ size = 28
 color = vec4(0.84687, 0.86316, 0.88792, 1.0)
 align = "center"
 vertical_align = "middle"
+outline_width = 0.0
+raycast_target = false
+
+[entity uuid="7e1b0a00-0001-4000-9000-000000000064" name="Dernière sauvegarde"]
+parent = "7e1b0a00-0001-4000-9000-000000000002"
+
+[component type="UiRect"]
+anchor_min = vec2(1, 0.5)
+anchor_max = vec2(1, 0.5)
+offset_min = vec2(-460, -150)
+offset_max = vec2(-80, 140)
+opacity = 1.0
+visible = false
+
+[component type="UiImage"]
+color = vec4(0.01521, 0.01938, 0.02956, 1.0)
+corner_radius = 10.0
+raycast_target = false
+
+[entity uuid="7e1b0a00-0001-4000-9000-000000000065" name="Aperçu"]
+parent = "7e1b0a00-0001-4000-9000-000000000064"
+
+[component type="UiRect"]
+anchor_min = vec2(0, 0)
+anchor_max = vec2(1, 0)
+offset_min = vec2(10, 10)
+offset_max = vec2(-10, 210)
+opacity = 1.0
+visible = true
+
+[component type="UiImage"]
+color = vec4(1, 1, 1, 1)
+corner_radius = 6.0
+raycast_target = false
+
+[entity uuid="7e1b0a00-0001-4000-9000-000000000066" name="Infos"]
+parent = "7e1b0a00-0001-4000-9000-000000000064"
+
+[component type="UiRect"]
+anchor_min = vec2(0, 0)
+anchor_max = vec2(1, 0)
+offset_min = vec2(14, 218)
+offset_max = vec2(-14, 282)
+opacity = 1.0
+visible = true
+
+[component type="UiText"]
+text = ""
+font = asset("3f5c9a10-8d21-4b77-9d3e-6a41c0f2e510")
+size = 22
+color = vec4(0.84687, 0.86316, 0.88792, 1.0)
+align = "left"
+vertical_align = "middle"
+wrap = true
 outline_width = 0.0
 raycast_target = false
 
@@ -1517,8 +1616,8 @@ parent = "7e1b0a00-0001-4000-9000-000000000014"
 [component type="UiRect"]
 anchor_min = vec2(0.5, 0.5)
 anchor_max = vec2(0.5, 0.5)
-offset_min = vec2(-200, -120)
-offset_max = vec2(200, 160)
+offset_min = vec2(-200, -150)
+offset_max = vec2(200, 210)
 opacity = 1.0
 visible = true
 
@@ -1564,6 +1663,50 @@ visible = true
 
 [component type="UiText"]
 text = "Reprendre"
+font = asset("3f5c9a10-8d21-4b77-9d3e-6a41c0f2e510")
+size = 28
+color = vec4(0.84687, 0.86316, 0.88792, 1.0)
+align = "center"
+vertical_align = "middle"
+outline_width = 0.0
+raycast_target = false
+
+[entity uuid="7e1b0a00-0001-4000-9000-000000000062" name="Sauvegarder"]
+parent = "7e1b0a00-0001-4000-9000-000000000016"
+
+[component type="UiRect"]
+anchor_min = vec2(0, 0)
+anchor_max = vec2(1, 0)
+offset_min = vec2(0, 0)
+offset_max = vec2(0, 64)
+opacity = 1.0
+visible = true
+
+[component type="UiImage"]
+color = vec4(0.01521, 0.01938, 0.02956, 1.0)
+corner_radius = 10.0
+raycast_target = true
+
+[component type="UiButton"]
+action = "save"
+interactable = true
+hover_color = vec4(2.4, 2.4, 2.4, 1)
+pressed_color = vec4(0.6, 0.6, 0.6, 1)
+fade_time = 0.08
+
+[entity uuid="7e1b0a00-0001-4000-9000-000000000063" name="Label"]
+parent = "7e1b0a00-0001-4000-9000-000000000062"
+
+[component type="UiRect"]
+anchor_min = vec2(0, 0)
+anchor_max = vec2(1, 1)
+offset_min = vec2(0, 0)
+offset_max = vec2(0, 0)
+opacity = 1.0
+visible = true
+
+[component type="UiText"]
+text = "Sauvegarder"
 font = asset("3f5c9a10-8d21-4b77-9d3e-6a41c0f2e510")
 size = 28
 color = vec4(0.84687, 0.86316, 0.88792, 1.0)
@@ -1725,4 +1868,10 @@ timer_text = entity("7e1b0a00-0001-4000-9000-00000000001f")
 volume_slider = entity("7e1b0a00-0001-4000-9000-000000000038")
 name_field = entity("7e1b0a00-0001-4000-9000-000000000032")
 jump_key = entity("7e1b0a00-0001-4000-9000-000000000053")
+save_panel = entity("7e1b0a00-0001-4000-9000-000000000064")
+save_image = entity("7e1b0a00-0001-4000-9000-000000000065")
+save_info = entity("7e1b0a00-0001-4000-9000-000000000066")
+save_label = entity("7e1b0a00-0001-4000-9000-000000000063")
+fullscreen_toggle = entity("7e1b0a00-0001-4000-9000-00000000003c")
+continue_button = entity("7e1b0a00-0001-4000-9000-000000000060")
 player_name = ""

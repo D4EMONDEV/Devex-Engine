@@ -389,3 +389,26 @@ TEST_CASE("Projects keep their audio groups", "[audio][asset]")
     CHECK(loaded->audio == project.audio);
     CHECK(devex::asset::writeProjectText(devex::asset::Project{.name = "Quiet"}).find("audio") == std::string::npos);
 }
+
+TEST_CASE("The volumes the player chose multiply those the game sets", "[audio][settings]")
+{
+    const std::unique_ptr<AudioEngine> engine = offlineEngine();
+    engine->configure(devex::asset::AudioSettings{});
+    engine->setGroupVolume(1, 0.5f);
+    engine->setPlayerGroupVolume(1, 0.4f);
+    CHECK(engine->groupVolume(1) == 0.5f);
+    CHECK(engine->playerGroupVolume(1) == 0.4f);
+    // The game changes its own volume: the player's stays.
+    engine->setGroupVolume(1, 1.0f);
+    CHECK(engine->playerGroupVolume(1) == 0.4f);
+    engine->configure(devex::asset::AudioSettings{});
+    CHECK(engine->playerGroupVolume(1) == 0.4f);
+
+    engine->setMasterVolume(0.8f);
+    engine->setPlayerMasterVolume(0.5f);
+    CHECK(engine->masterVolume() == 0.8f);
+    CHECK(engine->playerMasterVolume() == 0.5f);
+    engine->setPlayerMasterVolume(-1.0f);
+    CHECK(engine->playerMasterVolume() == 0.0f);
+    CHECK(engine->playerGroupVolume(99) == 0.0f);
+}

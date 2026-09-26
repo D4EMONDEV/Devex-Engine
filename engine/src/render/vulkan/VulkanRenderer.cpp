@@ -487,6 +487,7 @@ core::Result<void> VulkanRenderer::endFrame()
     frame.uploads.clear();
     reportPassTimes(frame);
     readPickResult(frame);
+    readCapture(frame);
     releaseRetiredResources();
     updateExposure(frame);
     {
@@ -568,6 +569,18 @@ core::Result<void> VulkanRenderer::endFrame()
         {
             m_pickResults.push_back({.request = pick->id});
         }
+    }
+    // One capture a frame, the oldest first, fitted to the shape of the scene.
+    if (!m_captureRequests.empty() && m_sceneExtent.width > 0 && m_sceneExtent.height > 0)
+    {
+        const CaptureRequest request = m_captureRequests.front();
+        m_captureRequests.pop_front();
+        const float scale = std::min({1.0f,
+                                      static_cast<float>(std::min(request.maxWidth, maxCaptureSize)) / static_cast<float>(m_sceneExtent.width),
+                                      static_cast<float>(std::min(request.maxHeight, maxCaptureSize)) / static_cast<float>(m_sceneExtent.height)});
+        frame.captureRequest = request.id;
+        frame.captureExtent = {std::max(1u, static_cast<std::uint32_t>(std::lround(static_cast<float>(m_sceneExtent.width) * scale))),
+                               std::max(1u, static_cast<std::uint32_t>(std::lround(static_cast<float>(m_sceneExtent.height) * scale)))};
     }
 
     const RenderSun& sun = m_world.sun;
@@ -749,6 +762,17 @@ core::Result<void> VulkanRenderer::createFrameContexts()
             return std::unexpected(pickReadback.error());
         }
         frame.pickReadback = std::move(*pickReadback);
+
+        core::Result<Buffer> captureReadback = Buffer::create(m_allocator, {
+                                                                                   .size = VkDeviceSize{4} * maxCaptureSize * maxCaptureSize,
+                                                                                   .usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                                                                                   .hostVisible = true,
+                                                                               });
+        if (!captureReadback)
+        {
+            return std::unexpected(captureReadback.error());
+        }
+        frame.captureReadback = std::move(*captureReadback);
 
         for (const auto& [buffer, bytes] :
              {std::pair<std::optional<Buffer>*, VkDeviceSize>{&frame.sceneData, sizeof(GpuSceneData)},
@@ -2267,6 +2291,16 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
                                                   .usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
                                               })
                                             : 0;
+    // A capture tonemaps the scene a second time, into a small image copied to the CPU.
+    const bool capture = frame.captureRequest.has_value();
+    frame.captureFormat = targetFormat;
+    const std::size_t captureIndex = capture ? create({
+                                                   .format = targetFormat,
+                                                   .extent = frame.captureExtent,
+                                                   .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+                                                            VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
+                                               })
+                                             : 0;
     for (const core::Result<RenderGraph::ImageId>& image : created)
     {
         if (!image)
@@ -2834,48 +2868,69 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
     {
         tonemapAccesses.push_back({*created[bloomIndices[0]], ImageAccess::GeneralRead});
     }
+    // Draws the scene into the target, or into the smaller image of a capture.
+    const auto drawTonemap = [&](VkCommandBuffer commands, RenderGraph::ImageId image, math::Extent2D size) {
+        const VkRenderingAttachmentInfo colorAttachment{
+            .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+            .imageView = graph.view(image),
+            .imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+            .loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+            .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+        };
+        const VkRenderingInfo renderingInfo{
+            .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
+            .renderArea = {.extent = {size.width, size.height}},
+            .layerCount = 1,
+            .colorAttachmentCount = 1,
+            .pColorAttachments = &colorAttachment,
+        };
+        vkCmdBeginRendering(commands, &renderingInfo);
+        setViewport(commands, size);
+        vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, m_tonemapPipeline->handle());
+        vkCmdBindDescriptorSets(commands, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                m_tonemapPipeline->layout(), 0, 2, sets.data(), 0, nullptr);
+        const GpuTexture* const colorTable =
+            isReady(m_world.camera.colorTable) ? m_textures.find(m_world.camera.colorTable) : nullptr;
+        const TonemapPushConstants tonemap{
+            .tonemapper = static_cast<std::uint32_t>(m_world.camera.tonemapper),
+            .bloom = bloomed ? m_world.camera.bloom : 0.0f,
+            .vignette = std::clamp(m_world.camera.vignette, 0.0f, 1.0f),
+            .grain = std::max(m_world.camera.grain, 0.0f),
+            .chromatic = std::max(m_world.camera.chromaticAberration, 0.0f),
+            .time = static_cast<float>(m_frameIndex % 1024),
+            .colorTable = colorTable != nullptr ? colorTable->slot : whiteTextureSlot,
+            // A strip of squares is as tall as one step of the table.
+            .colorTableSize = colorTable != nullptr
+                                  ? static_cast<float>(colorTable->image.extent().height)
+                                  : 0.0f,
+            .targetWidth = static_cast<float>(size.width),
+            .targetHeight = static_cast<float>(size.height),
+        };
+        vkCmdPushConstants(commands, m_tonemapPipeline->layout(),
+                           VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+                           sizeof(tonemap), &tonemap);
+        vkCmdDraw(commands, 3, 1, 0, 0);
+        vkCmdEndRendering(commands);
+    };
+    std::vector<std::pair<RenderGraph::ImageId, ImageAccess>> captureAccesses = tonemapAccesses;
     graph.addPass("Tonemap", std::move(tonemapAccesses),
-                  [&](VkCommandBuffer commands) {
-                      const VkRenderingAttachmentInfo colorAttachment{
-                          .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-                          .imageView = graph.view(target),
-                          .imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                          .loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-                          .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-                      };
-                      const VkRenderingInfo renderingInfo{
-                          .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
-                          .renderArea = {.extent = {extent.width, extent.height}},
-                          .layerCount = 1,
-                          .colorAttachmentCount = 1,
-                          .pColorAttachments = &colorAttachment,
-                      };
-                      vkCmdBeginRendering(commands, &renderingInfo);
-                      setViewport(commands, extent);
-                      vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, m_tonemapPipeline->handle());
-                      vkCmdBindDescriptorSets(commands, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                              m_tonemapPipeline->layout(), 0, 2, sets.data(), 0, nullptr);
-                      const GpuTexture* const colorTable =
-                          isReady(m_world.camera.colorTable) ? m_textures.find(m_world.camera.colorTable) : nullptr;
-                      const TonemapPushConstants tonemap{
-                          .tonemapper = static_cast<std::uint32_t>(m_world.camera.tonemapper),
-                          .bloom = bloomed ? m_world.camera.bloom : 0.0f,
-                          .vignette = std::clamp(m_world.camera.vignette, 0.0f, 1.0f),
-                          .grain = std::max(m_world.camera.grain, 0.0f),
-                          .chromatic = std::max(m_world.camera.chromaticAberration, 0.0f),
-                          .time = static_cast<float>(m_frameIndex % 1024),
-                          .colorTable = colorTable != nullptr ? colorTable->slot : whiteTextureSlot,
-                          // A strip of squares is as tall as one step of the table.
-                          .colorTableSize = colorTable != nullptr
-                                                ? static_cast<float>(colorTable->image.extent().height)
-                                                : 0.0f,
-                      };
-                      vkCmdPushConstants(commands, m_tonemapPipeline->layout(),
-                                         VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
-                                         sizeof(tonemap), &tonemap);
-                      vkCmdDraw(commands, 3, 1, 0, 0);
-                      vkCmdEndRendering(commands);
-                  });
+                  [&](VkCommandBuffer commands) { drawTonemap(commands, target, extent); });
+    if (capture)
+    {
+        const RenderGraph::ImageId captured = *created[captureIndex];
+        captureAccesses[1] = {captured, ImageAccess::ColorAttachment};
+        graph.addPass("Capture", std::move(captureAccesses),
+                      [&, captured](VkCommandBuffer commands) { drawTonemap(commands, captured, frame.captureExtent); });
+        graph.addPass("Capture readback", {{captured, ImageAccess::TransferRead}},
+                      [&, captured](VkCommandBuffer commands) {
+                          const VkBufferImageCopy copy{
+                              .imageSubresource = {.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .layerCount = 1},
+                              .imageExtent = {frame.captureExtent.width, frame.captureExtent.height, 1},
+                          };
+                          vkCmdCopyImageToBuffer(commands, graph.handle(captured), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                                                 frame.captureReadback->handle(), 1, &copy);
+                      });
+    }
 
     if (drawOverlay)
     {
@@ -3086,6 +3141,42 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
 std::vector<PickResult> VulkanRenderer::takePickResults()
 {
     return std::exchange(m_pickResults, {});
+}
+
+std::uint64_t VulkanRenderer::requestCapture(std::uint32_t maxWidth, std::uint32_t maxHeight)
+{
+    const std::uint64_t id = m_nextCapture++;
+    m_captureRequests.push_back({id, std::max(maxWidth, 1u), std::max(maxHeight, 1u)});
+    return id;
+}
+
+std::vector<CapturedImage> VulkanRenderer::takeCaptures()
+{
+    return std::exchange(m_captures, {});
+}
+
+void VulkanRenderer::readCapture(FrameContext& frame)
+{
+    if (!frame.captureRequest)
+    {
+        return;
+    }
+    const math::Extent2D extent = frame.captureExtent;
+    CapturedImage image{.request = *frame.captureRequest, .width = extent.width, .height = extent.height};
+    image.rgba.resize(std::size_t{4} * extent.width * extent.height);
+    std::memcpy(image.rgba.data(), frame.captureReadback->mappedBytes().data(), image.rgba.size());
+    // The target keeps blue first on most displays; the picture has red first, and no transparency.
+    const bool blueFirst = frame.captureFormat == VK_FORMAT_B8G8R8A8_SRGB || frame.captureFormat == VK_FORMAT_B8G8R8A8_UNORM;
+    for (std::size_t pixel = 0; pixel < image.rgba.size(); pixel += 4)
+    {
+        if (blueFirst)
+        {
+            std::swap(image.rgba[pixel], image.rgba[pixel + 2]);
+        }
+        image.rgba[pixel + 3] = 255;
+    }
+    m_captures.push_back(std::move(image));
+    frame.captureRequest.reset();
 }
 
 void VulkanRenderer::readPickResult(FrameContext& frame)

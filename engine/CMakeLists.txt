@@ -727,6 +727,8 @@ target_sources(devex_runtime
         src/runtime/GameModule.cpp
         src/runtime/ComponentViews.cpp
         src/runtime/InputActions.cpp
+        src/runtime/PlayerSettings.cpp
+        src/runtime/SaveGames.cpp
         src/runtime/ManagedCodeBuilder.cpp
         src/runtime/ManagedCodeBuilder.hpp
         src/runtime/ManagedGame.cpp
@@ -743,6 +745,8 @@ target_sources(devex_runtime
             include/devex/runtime/GameExport.hpp
             include/devex/runtime/GameModule.hpp
             include/devex/runtime/InputActions.hpp
+            include/devex/runtime/PlayerSettings.hpp
+            include/devex/runtime/SaveGames.hpp
             include/devex/runtime/SceneExtraction.hpp
 )
 

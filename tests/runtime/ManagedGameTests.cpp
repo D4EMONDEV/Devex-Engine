@@ -67,7 +67,7 @@ void run(ManagedGame& game, Scene& scene, SystemPhase phase, double seconds = 0.
 TEST_CASE("The C# runtime registers components and runs them", "[runtime][managed]")
 {
     const std::unique_ptr<ManagedGame> game = startRuntime();
-    CHECK(game->componentTypes().size() == 8);
+    CHECK(game->componentTypes().size() == 9);
 
     devex::scene::ComponentRegistry& registry = devex::scene::componentRegistry();
     const devex::scene::ComponentType* const mover = registry.find("Mover");
@@ -365,6 +365,48 @@ TEST_CASE("C# code reads the input actions of the project and binds them to othe
     CHECK_FALSE(value("gameplay_active", bool{}));
     CHECK_FALSE(actions.isContextActive("Gameplay"));
     game->unloadAssembly();
+}
+
+TEST_CASE("C# code saves objects into slots and keeps the settings of the player", "[runtime][managed][saves]")
+{
+    const std::unique_ptr<ManagedGame> game = startRuntime();
+    const devex::scene::ComponentType* const archivist = devex::scene::componentRegistry().find("Archivist");
+    REQUIRE(archivist != nullptr);
+    Scene scene;
+    const Entity entity = scene.createEntity("Archivist");
+    REQUIRE(archivist->emplace(scene, entity) != nullptr);
+    const auto value = [&]<typename T>(const char* name, T) -> T& {
+        return field<T>(*archivist, const_cast<void*>(archivist->find(scene, entity)), name);
+    };
+
+    const std::filesystem::path folder =
+        std::filesystem::temp_directory_path() / ("devex-managed-saves-" + devex::core::Uuid::generate().toString());
+    devex::runtime::SaveGames saves(folder);
+    devex::runtime::PlayerSettings settings;
+    ManagedGame::Frame frame{.scene = &scene, .saves = &saves, .settings = &settings};
+    game->runPhase(frame, SystemPhase::Update);
+
+    CHECK(value("saved", bool{}));
+    CHECK(value("loaded", bool{}));
+    CHECK(value("loaded_level", int{}) == 5);
+    CHECK(value("loaded_name", std::string{}) == "Léa");
+    CHECK(value("loaded_items", int{}) == 2);
+    CHECK(value("loaded_checkpoint_y", float{}) == 2.0f);
+    CHECK(value("loaded_rank", std::string{}) == "Gold");
+    CHECK(value("slot_count", int{}) == 1);
+    CHECK(value("first_label", std::string{}) == "Cave");
+    CHECK(value("first_version", int{}) == 2);
+    CHECK(value("missing_is_null", bool{}));
+    CHECK(value("master_volume", float{}) == 0.3f);
+    CHECK(value("language", std::string{}) == "fr");
+    CHECK(value("difficulty", int{}) == 3);
+    CHECK(value("deleted", bool{}));
+    CHECK(settings.volume(devex::runtime::PlayerSettings::master) == 0.3f);
+    CHECK(settings.stringValue("language", "") == "fr");
+    CHECK(settings.integerValue("difficulty", 0) == 3);
+    game->unloadAssembly();
+    std::error_code error;
+    std::filesystem::remove_all(folder, error);
 }
 
 TEST_CASE("C# code loads scenes in the background and reads how far they are", "[runtime][managed]")

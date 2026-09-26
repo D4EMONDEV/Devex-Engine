@@ -9,6 +9,8 @@
 #include <devex/reflection/Reflection.hpp>
 #include <devex/runtime/AssetManager.hpp>
 #include <devex/runtime/InputActions.hpp>
+#include <devex/runtime/PlayerSettings.hpp>
+#include <devex/runtime/SaveGames.hpp>
 #include <devex/scene/ComponentRegistry.hpp>
 #include <devex/scene/Scene.hpp>
 #include <devex/ui/UiWorld.hpp>
@@ -28,7 +30,8 @@ namespace devex::runtime {
 // refused. 9: ComponentType gained findMutable, which modules fill in when they register a type.
 // 10: SystemContext gained the loading of scenes in the background.
 // 11: SystemContext gained the input actions of the project.
-inline constexpr std::uint32_t gameApiVersion = 11;
+// 12: SystemContext gained the saves and the settings of the player.
+inline constexpr std::uint32_t gameApiVersion = 12;
 
 enum class SystemPhase : std::uint8_t
 {
@@ -51,6 +54,11 @@ struct SystemContext
     // The actions of the project ("Jump", "Move"), their contexts and the bindings of the player.
     // Null when the application runs without them.
     InputActions* actions = nullptr;
+    // The saves of the game, in the folder of the user; the slot the scene was restored from is
+    // there while its Start systems run. Null when the application runs without them.
+    SaveGames* saves = nullptr;
+    // What the player chose: volumes, window, and the values the game keeps. Null likewise.
+    PlayerSettings* settings = nullptr;
     // The simulation of the scene: queries, forces, and the contacts of the steps of this frame,
     // which Update systems see once. Null when the application runs without physics.
     physics::PhysicsWorld* physics = nullptr;

@@ -30,6 +30,8 @@ mais seulement explicitement ici : le code suit ce document, pas l'inverse.
 | Point d'entrée           | Le moteur possède la boucle, le jeu dérive de `Application`        |
 | Entrées                  | État interrogeable + événements, clavier, souris et manettes       |
 | Actions d'entrée         | Dans les réglages du projet, contextes activables, réaffectation   |
+| Sauvegardes              | Objet réfléchi + scène + miniature, texte dans le dossier du joueur |
+| Réglages du joueur       | Volumes, fenêtre et valeurs du jeu, gardés et appliqués par le moteur |
 | Clavier                  | `Key` = position physique (WASD devient ZQSD en AZERTY)            |
 | Présentation             | VSync (FIFO) par défaut, Mailbox/Immediate en option               |
 | Thread de rendu          | Thread principal, rendu découplé par un instantané `RenderWorld`   |
@@ -731,6 +733,51 @@ les assets s'écrivent au fil de leur lecture.
   prochaine touche ou du prochain bouton de manette. Les changements s'appliquent au prochain
   lancement du jeu. Le bac à sable joue Move, Look, Jump, Run et Fly par actions, coupe
   « Gameplay » tant qu'un menu est ouvert, et son écran de réglages réaffecte Sauter.
+
+### Sauvegardes et réglages du joueur
+
+- **Dossier du joueur** : ce que le joueur garde va dans `%APPDATA%\<jeu>` (le nom du projet ;
+  `ApplicationConfig::userDirectory` le remplace, pour les tests) : `saves/`, `settings.dvx`,
+  `input.dvx`. Jouer dans l'éditeur et le jeu exporté partagent donc ce dossier, comme le
+  `user://` de Godot ; *Project > Open Player Data Folder* l'ouvre, et le supprimer fait repartir
+  en nouveau joueur. `platform::userDataLocation` le trouve sans le créer : rien n'est écrit
+  tant que le jeu ne garde rien.
+- **Sauvegardes** (`runtime::SaveGames`, `SystemContext::saves`, `Saves` en C#) : une sauvegarde
+  est un **objet du jeu** décrit comme un composant (struct réfléchie en C++, classe aux champs
+  publics en C#, avec listes, énumérations, vecteurs et assets), écrit par ses champs dans un
+  **emplacement** nommé (`"1"`, `"auto"`, `"quick"`) : `saves/<emplacement>.dvxsave`, au format
+  texte du moteur, avec un en-tête (type, version donnée par le jeu, libellé, date, temps de jeu,
+  scène). Côté C#, l'objet passe par une disposition en mémoire créée pour son type, comme pour
+  les composants : un seul format pour les deux langages. Les champs que le type n'a plus sont
+  ignorés et les nouveaux gardent leur valeur par défaut ; la version dit au jeu le reste.
+- **Scène sauvegardée** : par défaut, la sauvegarde garde aussi la **scène qui joue**, telle que son
+  fichier l'écrirait (entités créées et détruites, positions, champs des composants, instances de
+  préfabs). La charger la remet à la place de la scène courante à la fin de la frame ; ses systèmes
+  Start voient alors l'emplacement (`SaveGames::restoredSlot`, `Saves.RestoredSlot`) pour ne pas
+  remettre à zéro ce que la sauvegarde a rapporté. Ce que les champs privés du C#, la physique en
+  cours (vitesses) ou les sons tiennent n'est pas gardé.
+- **Miniature** : une sauvegarde demande une petite image de la frame suivante,
+  `Renderer::requestCapture` : la scène est tonemappée une seconde fois dans une image de 320×180
+  au plus, sans l'interface ni les outils, copiée vers le CPU et écrite en PNG à côté de la
+  sauvegarde deux frames plus tard. `SaveGames::thumbnail` (`SaveSlot.Thumbnail`) en fait une
+  texture qu'une `UiImage` affiche (`AssetManager::setTexture`), refaite quand la sauvegarde change.
+- **Sûreté** : écriture atomique ; la sauvegarde précédente de l'emplacement reste à côté
+  (`.bak`), et un fichier abîmé la fait charger à sa place. Les noms d'emplacements sont limités
+  (lettres, chiffres, espaces, tirets, points, soulignés). `slots()` liste les sauvegardes, la plus
+  récente d'abord ; le temps de jeu reprend celui de la sauvegarde chargée.
+- **Réglages du joueur** (`runtime::PlayerSettings`, `SystemContext::settings`, `PlayerSettings` en
+  C# pour ne pas se heurter aux champs nommés « Settings » des jeux) : le moteur garde lui-même le
+  plein écran, la synchronisation verticale et les volumes (Master et groupes), plus les valeurs
+  que le jeu range par clé (booléens, entiers, nombres, textes : langue, sensibilité…), dans
+  `settings.dvx`, écrit dès qu'ils changent et relu au lancement. Les volumes du joueur
+  **multiplient** ceux du projet et du code du jeu (`AudioEngine::setPlayerGroupVolume`) : un jeu
+  peut baisser sa musique pendant un dialogue sans perdre le choix du joueur ; l'éditeur remet les
+  siens à 1 à l'arrêt. Le plein écran s'applique aussitôt hors de l'éditeur, la synchronisation
+  verticale au lancement suivant (le lecteur les lit avant d'ouvrir sa fenêtre).
+- **Bac à sable** : son écran de réglages garde volume, plein écran et nom ; le menu pause
+  sauvegarde (le bouton dit « Sauvegardé ») et le menu principal montre la dernière sauvegarde,
+  avec sa miniature, son libellé, sa date et le temps de jeu, que « Continuer » reprend. La version
+  de l'API des jeux passe à 12, celle de l'amorce C# à 9.
 
 ### Outils
 
@@ -2077,6 +2124,12 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     dossier de l'utilisateur, page Input des réglages du projet, API C++ et C#, bac à sable joué
     par actions avec un écran de touches.
 
+32. ✅ **Sauvegardes et réglages du joueur** — sauvegardes d'objets réfléchis en C++ et en C# dans
+    des emplacements du dossier du joueur, avec la scène qui joue, restaurée au chargement, et une
+    miniature capturée sans l'interface ; version, libellé, date et temps de jeu, sauvegarde
+    précédente gardée ; réglages du joueur (volumes, plein écran, synchronisation verticale,
+    valeurs du jeu) gardés et appliqués par le moteur ; démonstration dans le bac à sable.
+
 Ensuite, sans ordre figé : jeux 2D, particules, CI Linux.
 
 ## Questions ouvertes
@@ -2112,6 +2165,11 @@ Ensuite, sans ordre figé : jeux 2D, particules, CI Linux.
   événements de clip, cinématique inverse, morph targets, pré-skinning en compute (colliders et
   rayons suivant la pose), réutilisation d'un clip entre squelettes différents (retargeting),
   compression des courbes.
+- **Sauvegardes, la suite** : écriture sur un worker pour les grosses scènes, compression et
+  signature des fichiers des jeux exportés, sauvegardes dans le nuage des plateformes, état en
+  cours de la physique et des animations, champs privés marqués à garder, migrations déclarées
+  par version, plusieurs miniatures ou une taille choisie, entreprise (`organization`) dans les
+  réglages du projet pour le dossier du joueur.
 - **Entrées, la suite** : plusieurs joueurs sur un même écran (appareils attribués à un joueur),
   souris et molette comme axes (regarder, zoomer), modificateurs (inverser, échelle, courbe),
   combinaisons (Ctrl+S) et appuis longs ou doubles, navigation de l'interface par les actions,

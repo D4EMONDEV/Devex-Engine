@@ -72,6 +72,8 @@ public:
     [[nodiscard]] RenderWorld& beginFrame() noexcept;
     [[nodiscard]] core::Result<void> endFrame();
     [[nodiscard]] std::vector<PickResult> takePickResults();
+    [[nodiscard]] std::uint64_t requestCapture(std::uint32_t maxWidth, std::uint32_t maxHeight);
+    [[nodiscard]] std::vector<CapturedImage> takeCaptures();
 
     [[nodiscard]] RendererStats stats() const noexcept;
 
@@ -155,6 +157,8 @@ private:
     static constexpr std::uint32_t maxTimestamps = 128;
     // The largest side of the image a pick is drawn into.
     static constexpr std::uint32_t maxPickSize = 512;
+    // The largest side of a captured picture.
+    static constexpr std::uint32_t maxCaptureSize = 512;
 
     struct FrameContext
     {
@@ -202,6 +206,11 @@ private:
         std::optional<std::uint64_t> pickRequest;
         std::array<std::uint32_t, 4> pickRect{};
         math::Extent2D pickExtent{1, 1};
+        // The picture of the scene the frame drew for a capture, in the format of the target.
+        std::optional<Buffer> captureReadback;
+        std::optional<std::uint64_t> captureRequest;
+        math::Extent2D captureExtent{1, 1};
+        VkFormat captureFormat = VK_FORMAT_UNDEFINED;
         // The copies the frame recorded, whose staging buffers wait for the frame to complete.
         std::vector<PendingUpload> uploads;
         // ImGui's descriptor set for the viewport image of this frame context.
@@ -299,6 +308,8 @@ private:
     void rememberFrame();
     // Keeps the answer of the pick request the frame recorded, now that it completed.
     void readPickResult(FrameContext& frame);
+    // Keeps the picture the frame captured, now that it completed.
+    void readCapture(FrameContext& frame);
     // Returns the number of draw calls recorded.
     [[nodiscard]] core::Result<std::uint32_t> recordFrame(FrameContext& frame, std::uint32_t frameSlot,
                                                           std::uint32_t imageIndex, bool drawImGui,
@@ -454,6 +465,15 @@ private:
     bool m_exposureInitialized = false;
     std::chrono::steady_clock::time_point m_lastExposureUpdate;
     std::vector<PickResult> m_pickResults;
+    struct CaptureRequest
+    {
+        std::uint64_t id = 0;
+        std::uint32_t maxWidth = 0;
+        std::uint32_t maxHeight = 0;
+    };
+    std::deque<CaptureRequest> m_captureRequests;
+    std::uint64_t m_nextCapture = 1;
+    std::vector<CapturedImage> m_captures;
     std::uint32_t m_lastDrawCalls = 0;
     std::uint32_t m_lastLightCount = 0;
     bool m_imguiInitialized = false;

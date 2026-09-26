@@ -231,6 +231,8 @@ public:
     // editor asks what to do with them first, and requests to quit once they are saved or dropped.
     // The scene is the edited one, not a copy being played.
     [[nodiscard]] bool confirmClose(scene::Scene& editedScene);
+    // The file of the scene being edited, empty for a scene never saved.
+    [[nodiscard]] std::filesystem::path scenePath() const;
 
     // Editor only: calls the function with the scenes of the tabs in the background, which live in
     // the editor rather than in the application.

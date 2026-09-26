@@ -233,6 +233,9 @@ struct TonemapPushConstants
     float time = 0.0f;
     std::uint32_t colorTable = 0;
     float colorTableSize = 0.0f;
+    // The size of the image drawn into, smaller than the scene for a capture.
+    float targetWidth = 0.0f;
+    float targetHeight = 0.0f;
 };
 
 struct LuminancePushConstants

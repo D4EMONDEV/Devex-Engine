@@ -362,6 +362,27 @@ render::TextureHandle AssetManager::texture(asset::AssetId id)
     return found != m_textures.end() ? found->second : render::TextureHandle{};
 }
 
+core::Result<void> AssetManager::setTexture(asset::AssetId id, const asset::TextureData& data)
+{
+    if (m_renderer == nullptr)
+    {
+        return core::makeError(core::ErrorCode::Unsupported, "there is no renderer to make the texture");
+    }
+    core::Result<render::TextureHandle> handle = m_renderer->createTexture(data);
+    if (!handle)
+    {
+        return std::unexpected(handle.error());
+    }
+    releaseTexture(id);
+    m_textures.insert_or_assign(id, *handle);
+    if (!data.mips.empty())
+    {
+        m_textureSizes.insert_or_assign(id, math::Extent2D{data.mips.front().width, data.mips.front().height});
+    }
+    m_failed.erase(id);
+    return {};
+}
+
 const asset::ModelData* AssetManager::model(asset::AssetId id)
 {
     auto found = m_models.find(id);

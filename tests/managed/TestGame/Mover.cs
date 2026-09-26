@@ -215,6 +215,80 @@ public class Pilot : Component
     }
 }
 
+public enum Rank
+{
+    Bronze,
+    Silver,
+    Gold,
+}
+
+// What the test game keeps between sessions.
+public class ProgressData
+{
+    public int Level;
+    public string Name = "";
+    public List<string> Items = [];
+    public Vec3 Checkpoint;
+    public Rank Rank;
+    public float Speed = 2.5f;
+}
+
+// Saves and loads its progress, lists the saves, and keeps settings.
+public class Archivist : Component
+{
+    public bool Saved;
+    public bool Loaded;
+    public int LoadedLevel;
+    public string LoadedName = "";
+    public int LoadedItems;
+    public float LoadedCheckpointY;
+    public string LoadedRank = "";
+    public int SlotCount;
+    public string FirstLabel = "";
+    public int FirstVersion;
+    public bool MissingIsNull;
+    public float MasterVolume;
+    public string Language = "";
+    public int Difficulty;
+    public bool Deleted;
+
+    public override void Update(float delta)
+    {
+        var progress = new ProgressData
+        {
+            Level = 5,
+            Name = "Léa",
+            Items = ["key", "map"],
+            Checkpoint = new Vec3(1.0f, 2.0f, 3.0f),
+            Rank = Rank.Gold,
+        };
+        Saves.Save("1", progress, label: "Cave", scene: false, thumbnail: false, version: 2);
+        Saved = Saves.Exists("1");
+        ProgressData? loaded = Saves.Load<ProgressData>("1");
+        Loaded = loaded != null;
+        LoadedLevel = loaded?.Level ?? 0;
+        LoadedName = loaded?.Name ?? "";
+        LoadedItems = loaded?.Items.Count ?? 0;
+        LoadedCheckpointY = loaded?.Checkpoint.Y ?? 0.0f;
+        LoadedRank = loaded?.Rank.ToString() ?? "";
+        SaveSlot[] slots = Saves.List();
+        SlotCount = slots.Length;
+        FirstLabel = slots.Length > 0 ? slots[0].Label : "";
+        FirstVersion = slots.Length > 0 ? slots[0].Version : -1;
+        MissingIsNull = Saves.Load<ProgressData>("nothing") == null;
+
+        PlayerSettings.SetVolume(Audio.Master, 0.3f);
+        MasterVolume = PlayerSettings.GetVolume(Audio.Master);
+        PlayerSettings.SetString("language", "fr");
+        Language = PlayerSettings.GetString("language");
+        PlayerSettings.SetInt("difficulty", 3);
+        Difficulty = PlayerSettings.GetInt("difficulty");
+
+        Saves.Delete("1");
+        Deleted = !Saves.Exists("1");
+    }
+}
+
 // Asks for a scene in the background, and reads how far it is.
 public class Loader : Component
 {

@@ -220,6 +220,7 @@ devex_add_tests(runtime
         runtime/GameExportTests.cpp
         runtime/InputActionsTests.cpp
         runtime/ManagedGameTests.cpp
+        runtime/SaveGamesTests.cpp
         runtime/GameModuleTests.cpp
         runtime/SceneExtractionTests.cpp
     LIBRARIES

@@ -22,6 +22,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cstddef>
+#include <cstdlib>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -642,27 +643,33 @@ std::filesystem::path executableDirectory()
     return basePath != nullptr ? core::pathFromUtf8(basePath) : std::filesystem::current_path();
 }
 
+namespace {
+
+// The characters a Windows file name cannot hold, taken out of names that come from projects.
+[[nodiscard]] std::string cleanFolderName(std::string_view name)
+{
+    std::string cleaned;
+    for (const char character : name)
+    {
+        if (std::string_view(R"(<>:"/\|?*)").find(character) == std::string_view::npos &&
+            static_cast<unsigned char>(character) >= 0x20)
+        {
+            cleaned.push_back(character);
+        }
+    }
+    while (!cleaned.empty() && (cleaned.back() == ' ' || cleaned.back() == '.'))
+    {
+        cleaned.pop_back();
+    }
+    return cleaned;
+}
+
+} // namespace
+
 core::Result<std::filesystem::path> userDataDirectory(std::string_view organization, std::string_view application)
 {
-    // The characters a Windows file name cannot hold, taken out of names that come from projects.
-    const auto clean = [](std::string_view name) {
-        std::string cleaned;
-        for (const char character : name)
-        {
-            if (std::string_view(R"(<>:"/\|?*)").find(character) == std::string_view::npos &&
-                static_cast<unsigned char>(character) >= 0x20)
-            {
-                cleaned.push_back(character);
-            }
-        }
-        while (!cleaned.empty() && (cleaned.back() == ' ' || cleaned.back() == '.'))
-        {
-            cleaned.pop_back();
-        }
-        return cleaned;
-    };
-    const std::string company = clean(organization);
-    std::string name = clean(application);
+    const std::string company = cleanFolderName(organization);
+    std::string name = cleanFolderName(application);
     if (name.empty())
     {
         name = "Game";
@@ -675,6 +682,46 @@ core::Result<std::filesystem::path> userDataDirectory(std::string_view organizat
     std::filesystem::path directory = core::pathFromUtf8(path);
     SDL_free(path);
     return directory;
+}
+
+core::Result<std::filesystem::path> userDataLocation(std::string_view organization, std::string_view application)
+{
+    // Where SDL_GetPrefPath puts the folder, found without making it.
+    std::filesystem::path base;
+#ifdef _WIN32
+    wchar_t* appData = nullptr;
+    std::size_t length = 0;
+    if (_wdupenv_s(&appData, &length, L"APPDATA") == 0 && appData != nullptr && *appData != L'\0')
+    {
+        base = std::filesystem::path(appData);
+    }
+    std::free(appData);
+#elif defined(__APPLE__)
+    if (const char* const home = std::getenv("HOME"); home != nullptr && *home != '\0')
+    {
+        base = std::filesystem::path(home) / "Library" / "Application Support";
+    }
+#else
+    if (const char* const data = std::getenv("XDG_DATA_HOME"); data != nullptr && *data != '\0')
+    {
+        base = std::filesystem::path(data);
+    }
+    else if (const char* const home = std::getenv("HOME"); home != nullptr && *home != '\0')
+    {
+        base = std::filesystem::path(home) / ".local" / "share";
+    }
+#endif
+    if (base.empty())
+    {
+        return core::makeError(core::ErrorCode::Platform, "no user data directory");
+    }
+    const std::string company = cleanFolderName(organization);
+    std::string name = cleanFolderName(application);
+    if (!company.empty())
+    {
+        base /= core::pathFromUtf8(company);
+    }
+    return base / core::pathFromUtf8(name.empty() ? "Game" : name);
 }
 
 bool isWindowedApplication() noexcept

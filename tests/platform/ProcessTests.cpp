@@ -1,3 +1,5 @@
+#include <devex/core/Uuid.hpp>
+#include <devex/platform/Platform.hpp>
 #include <devex/platform/Process.hpp>
 #include <devex/platform/SharedLibrary.hpp>
 
@@ -85,4 +87,17 @@ TEST_CASE("Shared libraries export functions and know their addresses", "[platfo
 TEST_CASE("Processes need a program", "[platform][process]")
 {
     CHECK_FALSE(devex::platform::Process::start({}).has_value());
+}
+
+TEST_CASE("The folder of the player is found without being made", "[platform][user]")
+{
+    const std::string game = "Devex test " + devex::core::Uuid::generate().toString();
+    const devex::core::Result<std::filesystem::path> folder = devex::platform::userDataLocation("", game + " <:?>");
+    REQUIRE(folder.has_value());
+    // The characters a file name cannot hold are left out.
+    CHECK(folder->filename() == std::filesystem::path(game));
+    CHECK_FALSE(std::filesystem::exists(*folder));
+    const devex::core::Result<std::filesystem::path> company = devex::platform::userDataLocation("Studio", game);
+    REQUIRE(company.has_value());
+    CHECK(company->parent_path().filename() == "Studio");
 }

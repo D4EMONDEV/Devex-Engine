@@ -35,6 +35,22 @@ struct UuidBytes
     std::uint8_t bytes[16];
 };
 
+// A save as C# lists it, in the layout of Devex.Managed's NativeSaveSlot. Its texts live until the
+// next list.
+struct NativeSaveSlot
+{
+    const char* name;
+    const char* label;
+    const char* sceneName;
+    const char* type;
+    std::int64_t time;
+    double playTime;
+    UuidBytes scene;
+    std::int32_t version;
+    std::int32_t hasScene;
+    std::int32_t hasThumbnail;
+};
+
 // The functions the C# runtime calls, in the order of Devex.Managed's NativeApi.
 struct NativeApi
 {
@@ -143,6 +159,34 @@ struct NativeApi
     int (*isListeningForBinding)();
     void (*stopListeningForBinding)();
     void (*resetBindings)();
+    int (*registerSaveType)(const char* description, std::size_t* offsets, int capacity);
+    void* (*createSaveObject)(int type);
+    void (*destroySaveObject)(int type, void* object);
+    int (*writeSave)(const char* slot, int type, const void* object, const char* label, int scene, int thumbnail,
+                     int version, const char** error);
+    int (*readSave)(const char* slot, int type, void* object, int restoreScene, const char** error);
+    int (*saveSlots)();
+    int (*saveSlotAt)(int index, struct NativeSaveSlot* slot);
+    int (*findSaveSlot)(const char* slot, struct NativeSaveSlot* found);
+    int (*deleteSave)(const char* slot);
+    const char* (*restoredSlot)();
+    double (*playTime)();
+    void (*saveThumbnail)(const char* slot, UuidBytes* texture);
+    int (*settingsFullscreen)();
+    void (*setSettingsFullscreen)(int fullscreen);
+    int (*settingsVsync)();
+    void (*setSettingsVsync)(int vsync);
+    float (*settingsVolume)(const char* group);
+    int (*setSettingsVolume)(const char* group, float volume);
+    int (*settingsBool)(const char* key, int* value);
+    int (*settingsInteger)(const char* key, std::int64_t* value);
+    int (*settingsNumber)(const char* key, double* value);
+    const char* (*settingsString)(const char* key);
+    void (*setSettingsBool)(const char* key, int value);
+    void (*setSettingsInteger)(const char* key, std::int64_t value);
+    void (*setSettingsNumber)(const char* key, double value);
+    void (*setSettingsString)(const char* key, const char* value);
+    int (*removeSettingsValue)(const char* key);
 };
 
 // The functions the engine calls, in the order of Devex.Managed's ManagedApi.
@@ -157,7 +201,7 @@ struct ManagedApi
 };
 
 // Devex.Managed's Bootstrap.Version: both sides change it with the function tables.
-constexpr int bootstrapVersion = 8;
+constexpr int bootstrapVersion = 9;
 
 struct BootstrapArguments
 {
@@ -302,14 +346,39 @@ void apiWriteString(void* address, const char* value)
 }
 
 // The list field of a component type, or null.
+// The types of the objects C# saves, described like its components but not components. C# names
+// them by their index with saveTypeFlag, where lists find their fields.
+constexpr std::size_t saveTypeFlag = std::size_t{1} << 30;
+
+[[nodiscard]] std::vector<std::shared_ptr<const scene::DynamicComponentLayout>>& saveLayouts()
+{
+    static std::vector<std::shared_ptr<const scene::DynamicComponentLayout>> layouts;
+    return layouts;
+}
+
+[[nodiscard]] const scene::DynamicComponentLayout* saveLayout(int type) noexcept
+{
+    return type >= 0 && static_cast<std::size_t>(type) < saveLayouts().size() ? saveLayouts()[static_cast<std::size_t>(type)].get()
+                                                                           : nullptr;
+}
+
 [[nodiscard]] const reflection::FieldInfo* listField(std::size_t typeIndex, int field)
 {
-    const scene::ComponentType* const type = scene::componentRegistry().findByIndex(typeIndex);
-    if (type == nullptr || field < 0 || static_cast<std::size_t>(field) >= type->type->fields.size())
+    const reflection::TypeInfo* described = nullptr;
+    if ((typeIndex & saveTypeFlag) != 0)
+    {
+        const scene::DynamicComponentLayout* const layout = saveLayout(static_cast<int>(typeIndex & ~saveTypeFlag));
+        described = layout != nullptr ? &layout->type() : nullptr;
+    }
+    else if (const scene::ComponentType* const type = scene::componentRegistry().findByIndex(typeIndex))
+    {
+        described = type->type;
+    }
+    if (described == nullptr || field < 0 || static_cast<std::size_t>(field) >= described->fields.size())
     {
         return nullptr;
     }
-    const reflection::FieldInfo& info = type->type->fields[static_cast<std::size_t>(field)];
+    const reflection::FieldInfo& info = described->fields[static_cast<std::size_t>(field)];
     return info.list != nullptr ? &info : nullptr;
 }
 
@@ -1023,6 +1092,404 @@ void apiResetBindings()
     }
 }
 
+// The kinds a C# field can have, as the runtime names them.
+[[nodiscard]] std::optional<reflection::ValueKind> parseKind(std::string_view kind) noexcept
+{
+    using reflection::ValueKind;
+    if (kind == "bool") return ValueKind::Bool;
+    if (kind == "int") return ValueKind::Int32;
+    if (kind == "uint") return ValueKind::UInt32;
+    if (kind == "float") return ValueKind::Float;
+    if (kind == "string") return ValueKind::String;
+    if (kind == "vec2") return ValueKind::Vec2;
+    if (kind == "vec3") return ValueKind::Vec3;
+    if (kind == "vec4") return ValueKind::Vec4;
+    if (kind == "quat") return ValueKind::Quat;
+    if (kind == "uuid") return ValueKind::Uuid;
+    if (kind == "asset") return ValueKind::AssetId;
+    if (kind == "enum") return ValueKind::Enum;
+    if (kind == "entity") return ValueKind::Entity;
+    return std::nullopt;
+}
+
+[[nodiscard]] const std::string* stringAttribute(const serialization::TextSection& section, std::string_view key)
+{
+    const serialization::TextValue* const value = section.findAttribute(key);
+    return value != nullptr ? serialization::asString(*value) : nullptr;
+}
+
+[[nodiscard]] bool boolAttribute(const serialization::TextSection& section, std::string_view key)
+{
+    const serialization::TextValue* const value = section.findAttribute(key);
+    return value != nullptr && serialization::asBool(*value).value_or(false);
+}
+
+[[nodiscard]] std::vector<std::string> splitValues(std::string_view text)
+{
+    std::vector<std::string> values;
+    while (!text.empty())
+    {
+        const std::size_t comma = text.find(',');
+        values.emplace_back(text.substr(0, comma));
+        if (comma == std::string_view::npos)
+        {
+            break;
+        }
+        text.remove_prefix(comma + 1);
+    }
+    return values;
+}
+
+// A [field] section of the types C# describes.
+[[nodiscard]] std::optional<scene::DynamicField> parseField(const serialization::TextSection& section)
+{
+    const std::string* const name = stringAttribute(section, "name");
+    const std::string* const kind = stringAttribute(section, "kind");
+    const std::optional<reflection::ValueKind> valueKind = kind != nullptr ? parseKind(*kind) : std::nullopt;
+    if (name == nullptr || !valueKind)
+    {
+        return std::nullopt;
+    }
+    const std::string* const values = stringAttribute(section, "values");
+    const std::string* const assetType = stringAttribute(section, "asset_type");
+    return scene::DynamicField{
+        .name = *name,
+        .kind = *valueKind,
+        .assetType = assetType != nullptr ? *assetType : std::string(),
+        .color = boolAttribute(section, "color"),
+        .angle = boolAttribute(section, "angle"),
+        .physicsLayer = boolAttribute(section, "physics_layer"),
+        .audioGroup = boolAttribute(section, "audio_group"),
+        .enumNames = values != nullptr ? splitValues(*values) : std::vector<std::string>{},
+        .list = boolAttribute(section, "list"),
+    };
+}
+
+[[nodiscard]] SaveGames* saves() noexcept
+{
+    return currentFrame() != nullptr ? currentFrame()->saves : nullptr;
+}
+
+[[nodiscard]] PlayerSettings* settings() noexcept
+{
+    return currentFrame() != nullptr ? currentFrame()->settings : nullptr;
+}
+
+// A message C# reads before the next call, on the thread of the game.
+[[nodiscard]] const char* keepMessage(std::string message)
+{
+    static std::string kept;
+    kept = std::move(message);
+    return kept.c_str();
+}
+
+int apiRegisterSaveType(const char* description, std::size_t* offsets, int capacity)
+{
+    const core::Result<serialization::TextDocument> document =
+        serialization::parseText(description != nullptr ? description : "");
+    if (!document || document->sections.empty() || document->sections.front().type != "component")
+    {
+        DEVEX_LOG_ERROR("A C# save type cannot be read");
+        return -1;
+    }
+    const std::string* const name = stringAttribute(document->sections.front(), "type");
+    std::vector<scene::DynamicField> fields;
+    for (const serialization::TextSection& section : document->sections)
+    {
+        if (std::optional<scene::DynamicField> field = section.type == "field" ? parseField(section) : std::nullopt)
+        {
+            fields.push_back(std::move(*field));
+        }
+    }
+    core::Result<std::shared_ptr<const scene::DynamicComponentLayout>> layout =
+        scene::DynamicComponentLayout::create(name != nullptr ? *name : std::string("Save"), fields);
+    if (!layout || static_cast<int>((*layout)->offsets().size()) > capacity)
+    {
+        DEVEX_LOG_ERROR("The C# save type {} cannot be saved: {}", name != nullptr ? *name : std::string(),
+                        layout ? std::string("too many fields") : layout.error().message);
+        return -1;
+    }
+    std::ranges::copy((*layout)->offsets(), offsets);
+    saveLayouts().push_back(std::move(*layout));
+    return static_cast<int>(saveLayouts().size() - 1);
+}
+
+void* apiCreateSaveObject(int type)
+{
+    const scene::DynamicComponentLayout* const layout = saveLayout(type);
+    if (layout == nullptr)
+    {
+        return nullptr;
+    }
+    void* const object = ::operator new(std::max<std::size_t>(layout->size(), 1), std::align_val_t{layout->alignment()});
+    layout->construct(object);
+    return object;
+}
+
+void apiDestroySaveObject(int type, void* object)
+{
+    const scene::DynamicComponentLayout* const layout = saveLayout(type);
+    if (layout == nullptr || object == nullptr)
+    {
+        return;
+    }
+    layout->destroy(object);
+    ::operator delete(object, std::align_val_t{layout->alignment()});
+}
+
+int apiWriteSave(const char* slot, int type, const void* object, const char* label, int scene, int thumbnail, int version,
+                 const char** error)
+{
+    SaveGames* const games = saves();
+    const scene::DynamicComponentLayout* const layout = saveLayout(type);
+    if (games == nullptr || layout == nullptr || slot == nullptr || object == nullptr)
+    {
+        *error = keepMessage("saves are only available while the game plays");
+        return 0;
+    }
+    const core::Result<void> saved = games->save(slot, layout->type(), object,
+                                                 {.label = label != nullptr ? label : "",
+                                                  .scene = scene != 0,
+                                                  .thumbnail = thumbnail != 0,
+                                                  .version = static_cast<std::uint32_t>(std::max(version, 0))});
+    if (!saved)
+    {
+        *error = keepMessage(saved.error().message);
+        return 0;
+    }
+    return 1;
+}
+
+// 1 once read, 0 for a slot that has no save, -1 for a save that cannot be read.
+int apiReadSave(const char* slot, int type, void* object, int restoreScene, const char** error)
+{
+    SaveGames* const games = saves();
+    const scene::DynamicComponentLayout* const layout = saveLayout(type);
+    if (games == nullptr || layout == nullptr || slot == nullptr || object == nullptr)
+    {
+        *error = keepMessage("saves are only available while the game plays");
+        return -1;
+    }
+    const core::Result<SaveSlot> loaded = games->load(slot, layout->type(), object, restoreScene != 0);
+    if (!loaded)
+    {
+        *error = keepMessage(loaded.error().message);
+        return loaded.error().code == core::ErrorCode::NotFound ? 0 : -1;
+    }
+    return 1;
+}
+
+[[nodiscard]] std::vector<SaveSlot>& listedSlots()
+{
+    static std::vector<SaveSlot> slots;
+    return slots;
+}
+
+void describeSlot(const SaveSlot& slot, NativeSaveSlot* native)
+{
+    native->name = slot.name.c_str();
+    native->label = slot.label.c_str();
+    native->sceneName = slot.sceneName.c_str();
+    native->type = slot.type.c_str();
+    native->time = slot.time;
+    native->playTime = slot.playTime;
+    writeUuid(slot.scene.uuid, &native->scene);
+    native->version = static_cast<std::int32_t>(slot.version);
+    native->hasScene = slot.hasScene ? 1 : 0;
+    native->hasThumbnail = slot.thumbnail.has_value() ? 1 : 0;
+}
+
+int apiSaveSlots()
+{
+    listedSlots() = saves() != nullptr ? saves()->slots() : std::vector<SaveSlot>{};
+    return static_cast<int>(listedSlots().size());
+}
+
+int apiSaveSlotAt(int index, NativeSaveSlot* slot)
+{
+    if (index < 0 || static_cast<std::size_t>(index) >= listedSlots().size() || slot == nullptr)
+    {
+        return 0;
+    }
+    describeSlot(listedSlots()[static_cast<std::size_t>(index)], slot);
+    return 1;
+}
+
+int apiFindSaveSlot(const char* slot, NativeSaveSlot* found)
+{
+    std::optional<SaveSlot> save = saves() != nullptr && slot != nullptr ? saves()->find(slot) : std::nullopt;
+    if (!save || found == nullptr)
+    {
+        return 0;
+    }
+    listedSlots() = {std::move(*save)};
+    describeSlot(listedSlots().front(), found);
+    return 1;
+}
+
+int apiDeleteSave(const char* slot)
+{
+    if (saves() == nullptr || slot == nullptr)
+    {
+        return 0;
+    }
+    if (const core::Result<void> removed = saves()->remove(slot); !removed)
+    {
+        DEVEX_LOG_ERROR("Cannot delete save '{}': {}", slot, removed.error());
+        return 0;
+    }
+    return 1;
+}
+
+const char* apiRestoredSlot()
+{
+    return saves() != nullptr ? saves()->restoredSlot().c_str() : "";
+}
+
+double apiPlayTime()
+{
+    return saves() != nullptr ? saves()->playTime() : 0.0;
+}
+
+void apiSaveThumbnail(const char* slot, UuidBytes* texture)
+{
+    writeUuid(saves() != nullptr && slot != nullptr ? saves()->thumbnail(slot).uuid : core::Uuid{}, texture);
+}
+
+int apiSettingsFullscreen()
+{
+    const std::optional<bool> chosen = settings() != nullptr ? settings()->fullscreen() : std::nullopt;
+    return chosen.value_or(window() != nullptr && window()->isFullscreen()) ? 1 : 0;
+}
+
+void apiSetSettingsFullscreen(int fullscreen)
+{
+    if (settings() != nullptr)
+    {
+        settings()->setFullscreen(fullscreen != 0);
+    }
+}
+
+int apiSettingsVsync()
+{
+    return settings() != nullptr ? (settings()->vsync().value_or(true) ? 1 : 0) : 1;
+}
+
+void apiSetSettingsVsync(int vsync)
+{
+    if (settings() != nullptr)
+    {
+        settings()->setVsync(vsync != 0);
+    }
+}
+
+// -1 for a group the project does not have.
+float apiSettingsVolume(const char* group)
+{
+    if (settings() == nullptr || group == nullptr)
+    {
+        return 1.0f;
+    }
+    if (!isMaster(group) && audioWorld() != nullptr && !audioWorld()->engine().findGroup(group))
+    {
+        return -1.0f;
+    }
+    return settings()->volume(isMaster(group) ? PlayerSettings::master : std::string_view(group));
+}
+
+int apiSetSettingsVolume(const char* group, float volume)
+{
+    if (settings() == nullptr || group == nullptr)
+    {
+        return 1;
+    }
+    if (!isMaster(group) && audioWorld() != nullptr && !audioWorld()->engine().findGroup(group))
+    {
+        return 0;
+    }
+    settings()->setVolume(isMaster(group) ? PlayerSettings::master : std::string_view(group), volume);
+    return 1;
+}
+
+int apiSettingsBool(const char* key, int* value)
+{
+    const serialization::TextValue* const found = settings() != nullptr && key != nullptr ? settings()->value(key) : nullptr;
+    const std::optional<bool> read = found != nullptr ? serialization::asBool(*found) : std::nullopt;
+    if (!read)
+    {
+        return 0;
+    }
+    *value = *read ? 1 : 0;
+    return 1;
+}
+
+int apiSettingsInteger(const char* key, std::int64_t* value)
+{
+    const serialization::TextValue* const found = settings() != nullptr && key != nullptr ? settings()->value(key) : nullptr;
+    if (found == nullptr || !serialization::asNumber(*found))
+    {
+        return 0;
+    }
+    *value = settings()->integerValue(key, 0);
+    return 1;
+}
+
+int apiSettingsNumber(const char* key, double* value)
+{
+    const serialization::TextValue* const found = settings() != nullptr && key != nullptr ? settings()->value(key) : nullptr;
+    const std::optional<double> read = found != nullptr ? serialization::asNumber(*found) : std::nullopt;
+    if (!read)
+    {
+        return 0;
+    }
+    *value = *read;
+    return 1;
+}
+
+const char* apiSettingsString(const char* key)
+{
+    const serialization::TextValue* const found = settings() != nullptr && key != nullptr ? settings()->value(key) : nullptr;
+    const std::string* const text = found != nullptr ? serialization::asString(*found) : nullptr;
+    return text != nullptr ? text->c_str() : nullptr;
+}
+
+void apiSetSettingsBool(const char* key, int value)
+{
+    if (settings() != nullptr && key != nullptr)
+    {
+        settings()->setValue(key, serialization::TextValue(value != 0));
+    }
+}
+
+void apiSetSettingsInteger(const char* key, std::int64_t value)
+{
+    if (settings() != nullptr && key != nullptr)
+    {
+        settings()->setValue(key, serialization::TextValue(value));
+    }
+}
+
+void apiSetSettingsNumber(const char* key, double value)
+{
+    if (settings() != nullptr && key != nullptr)
+    {
+        settings()->setValue(key, serialization::TextValue(value));
+    }
+}
+
+void apiSetSettingsString(const char* key, const char* value)
+{
+    if (settings() != nullptr && key != nullptr)
+    {
+        settings()->setValue(key, serialization::TextValue(std::string(value != nullptr ? value : "")));
+    }
+}
+
+int apiRemoveSettingsValue(const char* key)
+{
+    return settings() != nullptr && key != nullptr && settings()->removeValue(key) ? 1 : 0;
+}
+
 [[nodiscard]] NativeApi makeNativeApi() noexcept
 {
     return NativeApi{
@@ -1119,56 +1586,36 @@ void apiResetBindings()
         .isListeningForBinding = &apiIsListeningForBinding,
         .stopListeningForBinding = &apiStopListeningForBinding,
         .resetBindings = &apiResetBindings,
+        .registerSaveType = &apiRegisterSaveType,
+        .createSaveObject = &apiCreateSaveObject,
+        .destroySaveObject = &apiDestroySaveObject,
+        .writeSave = &apiWriteSave,
+        .readSave = &apiReadSave,
+        .saveSlots = &apiSaveSlots,
+        .saveSlotAt = &apiSaveSlotAt,
+        .findSaveSlot = &apiFindSaveSlot,
+        .deleteSave = &apiDeleteSave,
+        .restoredSlot = &apiRestoredSlot,
+        .playTime = &apiPlayTime,
+        .saveThumbnail = &apiSaveThumbnail,
+        .settingsFullscreen = &apiSettingsFullscreen,
+        .setSettingsFullscreen = &apiSetSettingsFullscreen,
+        .settingsVsync = &apiSettingsVsync,
+        .setSettingsVsync = &apiSetSettingsVsync,
+        .settingsVolume = &apiSettingsVolume,
+        .setSettingsVolume = &apiSetSettingsVolume,
+        .settingsBool = &apiSettingsBool,
+        .settingsInteger = &apiSettingsInteger,
+        .settingsNumber = &apiSettingsNumber,
+        .settingsString = &apiSettingsString,
+        .setSettingsBool = &apiSetSettingsBool,
+        .setSettingsInteger = &apiSetSettingsInteger,
+        .setSettingsNumber = &apiSetSettingsNumber,
+        .setSettingsString = &apiSetSettingsString,
+        .removeSettingsValue = &apiRemoveSettingsValue,
     };
 }
 
-// The kinds a C# field can have, as the runtime names them.
-[[nodiscard]] std::optional<reflection::ValueKind> parseKind(std::string_view kind) noexcept
-{
-    using reflection::ValueKind;
-    if (kind == "bool") return ValueKind::Bool;
-    if (kind == "int") return ValueKind::Int32;
-    if (kind == "uint") return ValueKind::UInt32;
-    if (kind == "float") return ValueKind::Float;
-    if (kind == "string") return ValueKind::String;
-    if (kind == "vec2") return ValueKind::Vec2;
-    if (kind == "vec3") return ValueKind::Vec3;
-    if (kind == "vec4") return ValueKind::Vec4;
-    if (kind == "quat") return ValueKind::Quat;
-    if (kind == "uuid") return ValueKind::Uuid;
-    if (kind == "asset") return ValueKind::AssetId;
-    if (kind == "enum") return ValueKind::Enum;
-    if (kind == "entity") return ValueKind::Entity;
-    return std::nullopt;
-}
-
-[[nodiscard]] const std::string* stringAttribute(const serialization::TextSection& section, std::string_view key)
-{
-    const serialization::TextValue* const value = section.findAttribute(key);
-    return value != nullptr ? serialization::asString(*value) : nullptr;
-}
-
-[[nodiscard]] bool boolAttribute(const serialization::TextSection& section, std::string_view key)
-{
-    const serialization::TextValue* const value = section.findAttribute(key);
-    return value != nullptr && serialization::asBool(*value).value_or(false);
-}
-
-[[nodiscard]] std::vector<std::string> splitValues(std::string_view text)
-{
-    std::vector<std::string> values;
-    while (!text.empty())
-    {
-        const std::size_t comma = text.find(',');
-        values.emplace_back(text.substr(0, comma));
-        if (comma == std::string_view::npos)
-        {
-            break;
-        }
-        text.remove_prefix(comma + 1);
-    }
-    return values;
-}
 
 } // namespace
 
@@ -1523,26 +1970,10 @@ core::Result<void> ManagedGame::loadAssembly(const std::filesystem::path& assemb
         }
         else if (section.type == "field" && !typeName.empty())
         {
-            const std::string* const name = stringAttribute(section, "name");
-            const std::string* const kind = stringAttribute(section, "kind");
-            const std::optional<reflection::ValueKind> valueKind = kind != nullptr ? parseKind(*kind) : std::nullopt;
-            if (name == nullptr || !valueKind)
+            if (std::optional<scene::DynamicField> field = parseField(section))
             {
-                continue;
+                fields.push_back(std::move(*field));
             }
-            const std::string* const values = stringAttribute(section, "values");
-            const std::string* const assetType = stringAttribute(section, "asset_type");
-            fields.push_back({
-                .name = *name,
-                .kind = *valueKind,
-                .assetType = assetType != nullptr ? *assetType : std::string(),
-                .color = boolAttribute(section, "color"),
-                .angle = boolAttribute(section, "angle"),
-                .physicsLayer = boolAttribute(section, "physics_layer"),
-                .audioGroup = boolAttribute(section, "audio_group"),
-                .enumNames = values != nullptr ? splitValues(*values) : std::vector<std::string>{},
-                .list = boolAttribute(section, "list"),
-            });
         }
     }
     registerType();

@@ -751,3 +751,73 @@ TEST_CASE("The GPU time of every pass reaches the profiler", "[render][gpu][prof
     }
     CHECK(capture.errors().empty());
 }
+
+TEST_CASE("Captures picture the scene of a frame at a small size, without its interface", "[render][gpu]")
+{
+    const ErrorCapture capture;
+    {
+        auto platform = devex::platform::Platform::create();
+        REQUIRE(platform.has_value());
+        auto window = platform->createWindow({.width = 320, .height = 240, .vulkan = true, .hidden = true});
+        REQUIRE(window.has_value());
+        auto renderer = devex::render::Renderer::create(*platform, *window, {.validation = true});
+        if (!renderer)
+        {
+            FAIL(std::format("{}", renderer.error()));
+        }
+
+        auto cube = renderer->createMesh(devex::asset::makeCube());
+        REQUIRE(cube.has_value());
+        // A cube 3 m in front of the camera covers the middle of the picture; the sky, its corners.
+        const devex::math::Mat4 cubeTransform =
+            devex::math::translate(devex::math::Mat4{1.0f}, devex::math::Vec3{0.0f, 0.0f, -3.0f});
+
+        // Into the swapchain, then into a viewport of another shape.
+        const std::uint64_t first = renderer->requestCapture(160, 160);
+        std::vector<devex::render::CapturedImage> captured;
+        std::uint64_t second = 0;
+        for (int frame = 0; frame < 10; ++frame)
+        {
+            devex::render::RenderWorld& world = renderer->beginFrame();
+            world.environment.color = {1.0f, 0.0f, 0.0f};
+            world.meshes.push_back({.mesh = *cube, .transform = cubeTransform, .objectId = 1});
+            if (frame >= 4)
+            {
+                world.viewport = devex::math::Extent2D{200, 100};
+            }
+            REQUIRE(renderer->endFrame());
+            if (frame == 4)
+            {
+                second = renderer->requestCapture(100, 100);
+            }
+            for (devex::render::CapturedImage& image : renderer->takeCaptures())
+            {
+                captured.push_back(std::move(image));
+            }
+        }
+
+        REQUIRE(captured.size() == 2);
+        CHECK(captured[0].request == first);
+        // The window is 4:3: the picture keeps its shape within 160 by 160.
+        CHECK(captured[0].width == 160);
+        CHECK(captured[0].height == 120);
+        REQUIRE(captured[0].rgba.size() == std::size_t{4} * 160 * 120);
+        // A red sky, red first, opaque.
+        CHECK(captured[0].rgba[0] > 100);
+        CHECK(captured[0].rgba[0] > captured[0].rgba[2]);
+        CHECK(captured[0].rgba[3] == 255);
+        // The whole scene is in the picture, not a corner of it: the middle shows the cube.
+        const std::size_t middle = (std::size_t{60} * 160 + 80) * 4;
+        CHECK((captured[0].rgba[middle] != captured[0].rgba[0] || captured[0].rgba[middle + 1] != captured[0].rgba[1] ||
+               captured[0].rgba[middle + 2] != captured[0].rgba[2]));
+        CHECK(captured[1].request == second);
+        CHECK(captured[1].width == 100);
+        CHECK(captured[1].height == 50);
+    }
+
+    for (const std::string& error : capture.errors())
+    {
+        UNSCOPED_INFO(error);
+    }
+    CHECK(capture.errors().empty());
+}

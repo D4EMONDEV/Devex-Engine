@@ -46,6 +46,9 @@ public:
         ui::UiWorld* ui = nullptr;
         // The input actions of the project; null outside a game.
         InputActions* actions = nullptr;
+        // The saves and the settings of the player; null outside a game.
+        SaveGames* saves = nullptr;
+        PlayerSettings* settings = nullptr;
         // Where assets are found by path; null without a project or package.
         const asset::AssetSource* assets = nullptr;
         // What preloads assets and tells whether they are ready; null in tests.

@@ -46,6 +46,13 @@ public:
     [[nodiscard]] float groupVolume(std::uint32_t group) const noexcept;
     void setMasterVolume(float volume);
     [[nodiscard]] float masterVolume() const noexcept;
+    // The volumes the player chose in the settings of the game, which multiply those the project
+    // and the game code set: a game may lower its music during a dialogue without losing them.
+    // One for all of them, and one for each group.
+    void setPlayerMasterVolume(float volume);
+    [[nodiscard]] float playerMasterVolume() const noexcept;
+    void setPlayerGroupVolume(std::uint32_t group, float volume);
+    [[nodiscard]] float playerGroupVolume(std::uint32_t group) const noexcept;
 
     // Mixes the next frames into interleaved samples, frames times channels, for an engine without
     // a device.

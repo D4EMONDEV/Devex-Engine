@@ -137,6 +137,9 @@ void sleepPrecise(std::chrono::nanoseconds duration);
 // Platform, since the log opens before it.
 [[nodiscard]] core::Result<std::filesystem::path> userDataDirectory(std::string_view organization,
                                                                     std::string_view application);
+// The same folder without making it, for reading what may not be there.
+[[nodiscard]] core::Result<std::filesystem::path> userDataLocation(std::string_view organization,
+                                                                   std::string_view application);
 
 // Whether this process was built or made a windowed application, which has no console to print
 // to: an exported game started from the file manager.

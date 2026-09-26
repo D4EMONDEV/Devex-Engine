@@ -111,6 +111,33 @@ internal unsafe struct NativeApi
     public delegate* unmanaged<int> IsListeningForBinding;
     public delegate* unmanaged<void> StopListeningForBinding;
     public delegate* unmanaged<void> ResetBindings;
+    public delegate* unmanaged<byte*, nuint*, int, int> RegisterSaveType;
+    public delegate* unmanaged<int, void*> CreateSaveObject;
+    public delegate* unmanaged<int, void*, void> DestroySaveObject;
+    public delegate* unmanaged<byte*, int, void*, byte*, int, int, int, byte**, int> WriteSave;
+    public delegate* unmanaged<byte*, int, void*, int, byte**, int> ReadSave;
+    public delegate* unmanaged<int> SaveSlots;
+    public delegate* unmanaged<int, NativeSaveSlot*, int> SaveSlotAt;
+    public delegate* unmanaged<byte*, NativeSaveSlot*, int> FindSaveSlot;
+    public delegate* unmanaged<byte*, int> DeleteSave;
+    public delegate* unmanaged<byte*> RestoredSlot;
+    public delegate* unmanaged<double> PlayTime;
+    public delegate* unmanaged<byte*, Uuid*, void> SaveThumbnail;
+    public delegate* unmanaged<int> SettingsFullscreen;
+    public delegate* unmanaged<int, void> SetSettingsFullscreen;
+    public delegate* unmanaged<int> SettingsVsync;
+    public delegate* unmanaged<int, void> SetSettingsVsync;
+    public delegate* unmanaged<byte*, float> SettingsVolume;
+    public delegate* unmanaged<byte*, float, int> SetSettingsVolume;
+    public delegate* unmanaged<byte*, int*, int> SettingsBool;
+    public delegate* unmanaged<byte*, long*, int> SettingsInteger;
+    public delegate* unmanaged<byte*, double*, int> SettingsNumber;
+    public delegate* unmanaged<byte*, byte*> SettingsString;
+    public delegate* unmanaged<byte*, int, void> SetSettingsBool;
+    public delegate* unmanaged<byte*, long, void> SetSettingsInteger;
+    public delegate* unmanaged<byte*, double, void> SetSettingsNumber;
+    public delegate* unmanaged<byte*, byte*, void> SetSettingsString;
+    public delegate* unmanaged<byte*, int> RemoveSettingsValue;
 }
 
 /// <summary>The C# functions the engine calls. Filled by the runtime when it starts.</summary>
@@ -138,7 +165,7 @@ internal unsafe struct BootstrapArguments
 /// <summary>What the engine calls into: filling the function tables, then the game itself.</summary>
 public static unsafe class Bootstrap
 {
-    internal const int Version = 8;
+    internal const int Version = 9;
 
     internal static NativeApi Native;
     private static byte[]? _description;

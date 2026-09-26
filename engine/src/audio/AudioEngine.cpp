@@ -18,6 +18,15 @@ struct AudioEngine::Implementation
     // Groups exist from the start, at stable addresses, so that sounds can always play in them.
     std::array<std::unique_ptr<ma_sound_group>, asset::audioGroupCount> groups;
     std::array<std::string, asset::audioGroupCount> names;
+    // The volumes of the game, and those of the player that multiply them.
+    std::array<float, asset::audioGroupCount> volumes = [] {
+        std::array<float, asset::audioGroupCount> all{};
+        all.fill(1.0f);
+        return all;
+    }();
+    std::array<float, asset::audioGroupCount> playerVolumes = volumes;
+    float masterVolume = 1.0f;
+    float playerMasterVolume = 1.0f;
     std::unique_ptr<detail::Voice> preview;
 
     ~Implementation()
@@ -130,23 +139,52 @@ void AudioEngine::setGroupVolume(std::uint32_t group, float volume)
 {
     if (group < asset::audioGroupCount)
     {
-        ma_sound_group_set_volume(m_implementation->groups[group].get(), std::max(volume, 0.0f));
+        Implementation& state = *m_implementation;
+        state.volumes[group] = std::max(volume, 0.0f);
+        ma_sound_group_set_volume(state.groups[group].get(), state.volumes[group] * state.playerVolumes[group]);
     }
 }
 
 float AudioEngine::groupVolume(std::uint32_t group) const noexcept
 {
-    return group < asset::audioGroupCount ? ma_sound_group_get_volume(m_implementation->groups[group].get()) : 0.0f;
+    return group < asset::audioGroupCount ? m_implementation->volumes[group] : 0.0f;
 }
 
 void AudioEngine::setMasterVolume(float volume)
 {
-    ma_engine_set_volume(&m_implementation->engine, std::max(volume, 0.0f));
+    Implementation& state = *m_implementation;
+    state.masterVolume = std::max(volume, 0.0f);
+    ma_engine_set_volume(&state.engine, state.masterVolume * state.playerMasterVolume);
 }
 
 float AudioEngine::masterVolume() const noexcept
 {
-    return ma_engine_get_volume(&m_implementation->engine);
+    return m_implementation->masterVolume;
+}
+
+void AudioEngine::setPlayerMasterVolume(float volume)
+{
+    m_implementation->playerMasterVolume = std::max(volume, 0.0f);
+    setMasterVolume(m_implementation->masterVolume);
+}
+
+float AudioEngine::playerMasterVolume() const noexcept
+{
+    return m_implementation->playerMasterVolume;
+}
+
+void AudioEngine::setPlayerGroupVolume(std::uint32_t group, float volume)
+{
+    if (group < asset::audioGroupCount)
+    {
+        m_implementation->playerVolumes[group] = std::max(volume, 0.0f);
+        setGroupVolume(group, m_implementation->volumes[group]);
+    }
+}
+
+float AudioEngine::playerGroupVolume(std::uint32_t group) const noexcept
+{
+    return group < asset::audioGroupCount ? m_implementation->playerVolumes[group] : 0.0f;
 }
 
 void AudioEngine::read(std::span<float> samples)

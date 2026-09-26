@@ -83,6 +83,9 @@ public:
     [[nodiscard]] render::MaterialHandle material(asset::AssetId id);
     // Invalid when the texture cannot be loaded, and while it loads.
     [[nodiscard]] render::TextureHandle texture(asset::AssetId id);
+    // Makes a texture of pixels the game produced, such as the thumbnail of a save, known under the
+    // identifier, in place of any texture it named. It reaches the GPU as loaded textures do.
+    [[nodiscard]] core::Result<void> setTexture(asset::AssetId id, const asset::TextureData& data);
 
     // Hands the meshes and textures that the workers finished to the renderer. Called once a frame
     // before anything draws; a frame hands over a bounded amount of data, the rest waits for the

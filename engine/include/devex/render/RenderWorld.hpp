@@ -200,6 +200,17 @@ struct PickResult
     std::vector<std::uint32_t> objectIds;
 };
 
+// A small picture of a frame as the game shows it, without its interface nor the tools, such as
+// the thumbnail of a save.
+struct CapturedImage
+{
+    std::uint64_t request = 0;
+    std::uint32_t width = 0;
+    std::uint32_t height = 0;
+    // Four bytes per pixel, red first, in sRGB as the display shows them; opaque.
+    std::vector<std::uint8_t> rgba;
+};
+
 // Snapshot of everything the renderer draws in one frame. Gameplay fills it between
 // Renderer::beginFrame and Renderer::endFrame, and the renderer never reads gameplay state
 // directly, so rendering can later move to its own thread without changing this contract.

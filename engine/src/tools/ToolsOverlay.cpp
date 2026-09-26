@@ -845,6 +845,11 @@ void ToolsOverlay::setPendingLoads(std::function<std::size_t()> pending)
     m_state->pendingLoads = std::move(pending);
 }
 
+std::filesystem::path ToolsOverlay::scenePath() const
+{
+    return m_state->scenePath;
+}
+
 void ToolsOverlay::notifyKeyPressed(platform::Key key) noexcept
 {
     m_state->notifiedKey = key;

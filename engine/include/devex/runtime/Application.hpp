@@ -17,6 +17,8 @@
 #include <devex/render/RenderWorld.hpp>
 #include <devex/runtime/AssetManager.hpp>
 #include <devex/runtime/InputActions.hpp>
+#include <devex/runtime/PlayerSettings.hpp>
+#include <devex/runtime/SaveGames.hpp>
 #include <devex/scene/Scene.hpp>
 
 #include <concepts>
@@ -75,7 +77,7 @@ struct ApplicationConfig
     bool audioOutput = true;
     // Worker threads for imports and other jobs; 0 uses every hardware thread but one.
     std::uint32_t workerThreads = 0;
-    // Where the settings the player changes are kept, such as their key bindings; empty uses a
+    // Where what the player keeps goes: their settings, key bindings and saves; empty uses a
     // folder of the user named after the game: %APPDATA%\<game> on Windows.
     std::filesystem::path userDirectory;
 };
@@ -184,6 +186,9 @@ protected:
     [[nodiscard]] ui::UiWorld* ui() noexcept;
     // The input actions of the project while gameplay runs; null otherwise.
     [[nodiscard]] InputActions* inputActions() noexcept;
+    // The saves and the settings of the player while gameplay runs; null otherwise.
+    [[nodiscard]] SaveGames* saves() noexcept;
+    [[nodiscard]] PlayerSettings* playerSettings() noexcept;
 
     // True when the application runs inside the editor.
     [[nodiscard]] bool isEditor() const noexcept;
@@ -208,6 +213,8 @@ private:
     animation::AnimationWorld* m_animation = nullptr;
     ui::UiWorld* m_ui = nullptr;
     InputActions* m_actions = nullptr;
+    SaveGames* m_saves = nullptr;
+    PlayerSettings* m_settings = nullptr;
     double m_interpolationAlpha = 0.0;
     bool m_quitRequested = false;
     bool m_editor = false;

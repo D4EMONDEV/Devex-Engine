@@ -168,6 +168,19 @@ void drawProjectMenu(ToolsState& state, scene::Scene& scene)
     {
         openPath(state, project.codeDirectory());
     }
+    // Where the game keeps the saves, settings and key bindings of the player, shared with its
+    // exported version: deleting it starts over as a new player.
+    if (menuItem(icons::Save, "Open Player Data Folder"))
+    {
+        if (const core::Result<std::filesystem::path> folder = platform::userDataDirectory("", project.name))
+        {
+            openPath(state, *folder);
+        }
+        else
+        {
+            DEVEX_LOG_ERROR("Cannot open the folder of the player: {}", folder.error());
+        }
+    }
     ImGui::Separator();
     if (menuItem(icons::LogOut, "Project Manager"))
     {

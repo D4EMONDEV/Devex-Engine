@@ -32,6 +32,7 @@
 #include <atomic>
 #include <format>
 #include <functional>
+#include <map>
 #include <memory>
 #include <chrono>
 #include <cstdlib>
@@ -291,6 +292,18 @@ private:
     void destroyInput();
     [[nodiscard]] std::optional<std::filesystem::path> bindingsFile() const;
     void saveBindings();
+    [[nodiscard]] std::string sceneName(asset::AssetId scene) const;
+    // Where what the player keeps goes, found without making it; nothing without a project.
+    [[nodiscard]] std::optional<std::filesystem::path> userDirectory() const;
+    // The saves and the settings of the player live as long as the game. The settings apply to
+    // the mixer, and to the window outside the editor.
+    void createGameData();
+    void destroyGameData();
+    void applyPlayerSettings();
+    // After the updates: settings written, pictures asked for, a saved scene put in place.
+    void updateGameData();
+    // Writes the pictures of the saves the renderer captured.
+    void writeThumbnails();
     void updateUi(std::chrono::nanoseconds frameTime);
     // Appends the canvases of the scene to the frame, over the game.
     void buildUi(render::RenderWorld& world);
@@ -337,6 +350,11 @@ private:
     std::unique_ptr<ui::UiWorld> m_ui;
     std::unique_ptr<InputActions> m_actions;
     std::filesystem::path m_userDirectory;
+    std::unique_ptr<SaveGames> m_saves;
+    std::unique_ptr<PlayerSettings> m_settings;
+    // The scene asset that plays, and the files the captures in flight go to.
+    asset::AssetId m_sceneAsset;
+    std::map<std::uint64_t, std::filesystem::path> m_thumbnailCaptures;
     // The themes of the scene being edited, applied outside Play so that the 2D screen and the
     // inspector show the interface as the game will.
     ui::ThemeApplier m_editedThemes;
@@ -517,6 +535,11 @@ void ApplicationRunner::replaceScene(scene::Scene loaded, asset::AssetId sceneAs
         destroyPhysics();
     }
     *m_application.m_scene = std::move(loaded);
+    m_sceneAsset = sceneAsset;
+    if (m_saves)
+    {
+        m_saves->setScene(m_application.m_scene, sceneAsset, sceneName(sceneAsset));
+    }
     m_sceneToLoad.reset();
     m_backgroundScene.reset();
     const asset::AssetSource* const source = assetSource();
@@ -558,6 +581,7 @@ int ApplicationRunner::execute()
         createAnimation();
         createUi();
         createInput();
+        createGameData();
         m_gameStarted = true;
         runSystems(SystemPhase::Start, core::Duration::zero());
         loadRequestedScene();
@@ -600,6 +624,7 @@ int ApplicationRunner::execute()
     }
     m_services.platform.setLiveRedrawCallback({});
     m_application.onShutdown();
+    destroyGameData();
     destroyInput();
     destroyUi();
     destroyAnimation();
@@ -684,6 +709,7 @@ void ApplicationRunner::runFrame()
             handleAssetEvents(*m_services.database);
         }
         m_services.assets.finishLoads();
+        writeThumbnails();
     }
 
     {
@@ -783,6 +809,10 @@ void ApplicationRunner::runGameplay(std::chrono::nanoseconds frameTime)
     {
         m_actions->update(m_services.platform.input(), m_ui && m_ui->isEditing());
     }
+    if (m_saves)
+    {
+        m_saves->addPlayTime(std::chrono::duration<double>(frameTime).count());
+    }
     const std::uint32_t steps = m_timestep.advance(frameTime);
     for (std::uint32_t step = 0; step < steps; ++step)
     {
@@ -805,6 +835,7 @@ void ApplicationRunner::runGameplay(std::chrono::nanoseconds frameTime)
     {
         saveBindings();
     }
+    updateGameData();
     // The contacts of this frame's steps have been seen by the updates.
     if (m_physics)
     {
@@ -980,6 +1011,12 @@ void ApplicationRunner::startPlaying()
     createAnimation();
     createUi();
     createInput();
+    if (m_services.database != nullptr)
+    {
+        const std::string edited = m_services.database->project().resourcePath(m_services.tools->scenePath());
+        m_sceneAsset = edited.empty() ? asset::AssetId{} : m_services.database->findByPath(edited).value_or(asset::AssetId{});
+    }
+    createGameData();
     DEVEX_LOG_INFO("Playing");
     m_application.onPlayStarted();
     m_gameStarted = true;
@@ -990,6 +1027,7 @@ void ApplicationRunner::startPlaying()
 void ApplicationRunner::stopPlaying()
 {
     m_application.onPlayStopped();
+    destroyGameData();
     destroyInput();
     destroyUi();
     destroyAnimation();
@@ -1410,6 +1448,8 @@ void ApplicationRunner::runSystems(SystemPhase phase, core::Duration delta)
         .window = m_services.window,
         .assets = m_services.assets,
         .actions = m_actions.get(),
+        .saves = m_saves.get(),
+        .settings = m_settings.get(),
         .physics = m_physics.get(),
         .audio = m_audio.get(),
         .animation = m_animation.get(),
@@ -1435,6 +1475,8 @@ void ApplicationRunner::runSystems(SystemPhase phase, core::Duration delta)
             .animation = m_animation.get(),
             .ui = m_ui.get(),
             .actions = m_actions.get(),
+            .saves = m_saves.get(),
+            .settings = m_settings.get(),
             .assets = m_services.assets.source(),
             .assetManager = &m_services.assets,
             .loadingScene = context.loadingScene,
@@ -1585,23 +1627,185 @@ void ApplicationRunner::destroyInput()
 
 std::optional<std::filesystem::path> ApplicationRunner::bindingsFile() const
 {
-    // A game without actions has no bindings, and no folder is made for it.
+    // A game without actions has no bindings.
     const asset::AssetSource* const source = assetSource();
     if (source == nullptr || source->project().input.actions.empty())
     {
         return std::nullopt;
     }
+    const std::optional<std::filesystem::path> directory = userDirectory();
+    return directory ? std::optional(*directory / "input.dvx") : std::nullopt;
+}
+
+std::optional<std::filesystem::path> ApplicationRunner::userDirectory() const
+{
     if (!m_userDirectory.empty())
     {
-        return m_userDirectory / "input.dvx";
+        return m_userDirectory;
     }
-    const core::Result<std::filesystem::path> directory = platform::userDataDirectory("", source->project().name);
-    if (!directory)
+    const asset::AssetSource* const source = assetSource();
+    if (source == nullptr)
     {
-        DEVEX_LOG_WARNING("The key bindings of the player are not kept: {}", directory.error());
         return std::nullopt;
     }
-    return *directory / "input.dvx";
+    // Found without making it: nothing is written there until the player keeps something.
+    const core::Result<std::filesystem::path> directory = platform::userDataLocation("", source->project().name);
+    if (!directory)
+    {
+        DEVEX_LOG_WARNING("What the player keeps cannot be kept: {}", directory.error());
+        return std::nullopt;
+    }
+    return *directory;
+}
+
+std::string ApplicationRunner::sceneName(asset::AssetId scene) const
+{
+    const asset::AssetSource* const source = assetSource();
+    const asset::AssetInfo* const info = source != nullptr && scene.isValid() ? source->find(scene) : nullptr;
+    return info != nullptr ? info->name : std::string();
+}
+
+void ApplicationRunner::createGameData()
+{
+    if (m_saves)
+    {
+        return;
+    }
+    const std::optional<std::filesystem::path> directory = userDirectory();
+    m_saves = std::make_unique<SaveGames>(directory ? *directory / "saves" : std::filesystem::path());
+    m_saves->setAssets(&m_services.assets);
+    m_saves->setScene(m_application.m_scene, m_sceneAsset, sceneName(m_sceneAsset));
+    m_settings = std::make_unique<PlayerSettings>();
+    if (directory)
+    {
+        const std::filesystem::path file = *directory / "settings.dvx";
+        std::error_code error;
+        if (std::filesystem::exists(file, error))
+        {
+            if (const core::Result<std::string> text = core::readTextFile(file))
+            {
+                m_settings->read(*text);
+            }
+            else
+            {
+                DEVEX_LOG_WARNING("Cannot read the settings of the player: {}", text.error());
+            }
+        }
+    }
+    applyPlayerSettings();
+    m_application.m_saves = m_saves.get();
+    m_application.m_settings = m_settings.get();
+}
+
+void ApplicationRunner::destroyGameData()
+{
+    m_application.m_saves = nullptr;
+    m_application.m_settings = nullptr;
+    // The editor previews sounds at the volumes of the project, not those of the last game.
+    if (m_services.audio != nullptr && isEditor())
+    {
+        m_services.audio->setPlayerMasterVolume(1.0f);
+        for (std::uint32_t group = 0; group < asset::audioGroupCount; ++group)
+        {
+            m_services.audio->setPlayerGroupVolume(group, 1.0f);
+        }
+    }
+    m_saves.reset();
+    m_settings.reset();
+}
+
+void ApplicationRunner::applyPlayerSettings()
+{
+    if (!m_settings)
+    {
+        return;
+    }
+    if (m_services.audio != nullptr)
+    {
+        m_services.audio->setPlayerMasterVolume(m_settings->volume(PlayerSettings::master));
+        for (std::uint32_t group = 0; group < asset::audioGroupCount; ++group)
+        {
+            m_services.audio->setPlayerGroupVolume(group, 1.0f);
+        }
+        for (const auto& [name, volume] : m_settings->volumes())
+        {
+            if (const std::optional<std::uint32_t> group = m_services.audio->findGroup(name))
+            {
+                m_services.audio->setPlayerGroupVolume(*group, volume);
+            }
+        }
+    }
+    // The window of the editor stays as it is; vertical sync applies from the next launch.
+    const std::optional<bool> fullscreen = m_settings->fullscreen();
+    if (!isEditor() && fullscreen && *fullscreen != m_services.window.isFullscreen())
+    {
+        m_services.window.setFullscreen(*fullscreen);
+    }
+}
+
+void ApplicationRunner::updateGameData()
+{
+    if (m_settings && m_settings->takeChanges())
+    {
+        applyPlayerSettings();
+        if (const std::optional<std::filesystem::path> directory = userDirectory())
+        {
+            if (core::Result<void> written = core::writeTextFile(*directory / "settings.dvx", m_settings->write()); !written)
+            {
+                DEVEX_LOG_WARNING("Cannot save the settings of the player: {}", written.error());
+            }
+        }
+    }
+    if (!m_saves)
+    {
+        return;
+    }
+    for (std::filesystem::path& file : m_saves->takeThumbnailRequests())
+    {
+        if (m_services.renderer != nullptr)
+        {
+            m_thumbnailCaptures.emplace(m_services.renderer->requestCapture(320, 180), std::move(file));
+        }
+    }
+    if (std::optional<SaveGames::Restore> restore = m_saves->takeRestore())
+    {
+        core::Result<scene::Scene> restored = scene::loadScene(restore->sceneText);
+        if (!restored)
+        {
+            DEVEX_LOG_ERROR("Cannot restore the scene of save '{}': {}", restore->slot, restored.error());
+            return;
+        }
+        // Start systems see where the scene comes from, to leave alone what the save brought back.
+        m_saves->setRestoredSlot(restore->slot);
+        replaceScene(std::move(*restored), restore->scene);
+        if (m_saves)
+        {
+            m_saves->setRestoredSlot({});
+        }
+    }
+}
+
+void ApplicationRunner::writeThumbnails()
+{
+    if (m_services.renderer == nullptr || m_thumbnailCaptures.empty())
+    {
+        return;
+    }
+    for (render::CapturedImage& captured : m_services.renderer->takeCaptures())
+    {
+        const auto found = m_thumbnailCaptures.find(captured.request);
+        if (found == m_thumbnailCaptures.end())
+        {
+            continue;
+        }
+        const asset::Image image{.width = captured.width, .height = captured.height, .rgba = std::move(captured.rgba)};
+        const std::vector<std::byte> png = asset::encodePng(image);
+        if (core::Result<void> written = core::writeFileAtomically(found->second, png); !written)
+        {
+            DEVEX_LOG_WARNING("Cannot save the picture of a save: {}", written.error());
+        }
+        m_thumbnailCaptures.erase(found);
+    }
 }
 
 void ApplicationRunner::saveBindings()
@@ -2121,6 +2325,16 @@ InputActions* Application::inputActions() noexcept
     return m_actions;
 }
 
+SaveGames* Application::saves() noexcept
+{
+    return m_saves;
+}
+
+PlayerSettings* Application::playerSettings() noexcept
+{
+    return m_settings;
+}
+
 bool Application::isEditor() const noexcept
 {
     return m_editor;
@@ -2182,6 +2396,7 @@ int run(Application& application, const ApplicationConfig& config)
         }
     }
     ApplicationConfig effective = config;
+    bool fullscreen = false;
     if (config.useProjectWindowSettings && launchSettings)
     {
         const asset::WindowSettings& settings = launchSettings->window;
@@ -2189,7 +2404,24 @@ int run(Application& application, const ApplicationConfig& config)
         effective.width = settings.width;
         effective.height = settings.height;
         effective.maxFrameRate = settings.maxFrameRate;
-        effective.presentMode = settings.vsync ? render::PresentMode::Fifo : render::PresentMode::Immediate;
+        fullscreen = settings.fullscreen;
+        bool vsync = settings.vsync;
+        // What the player chose last time comes before what the project says.
+        const core::Result<std::filesystem::path> user =
+            config.userDirectory.empty() ? platform::userDataLocation("", launchSettings->name)
+                                         : core::Result<std::filesystem::path>(config.userDirectory);
+        std::error_code error;
+        if (user && std::filesystem::exists(*user / "settings.dvx", error))
+        {
+            if (const core::Result<std::string> text = core::readTextFile(*user / "settings.dvx"))
+            {
+                PlayerSettings chosen;
+                chosen.read(*text);
+                fullscreen = chosen.fullscreen().value_or(fullscreen);
+                vsync = chosen.vsync().value_or(vsync);
+            }
+        }
+        effective.presentMode = vsync ? render::PresentMode::Fifo : render::PresentMode::Immediate;
     }
 
     core::Result<platform::Window> window = platform->createWindow({
@@ -2198,7 +2430,7 @@ int run(Application& application, const ApplicationConfig& config)
         .height = effective.height,
         .resizable = effective.resizable,
         .vulkan = effective.enableRendering,
-        .fullscreen = config.useProjectWindowSettings && launchSettings && launchSettings->window.fullscreen,
+        .fullscreen = fullscreen,
     });
     if (!window)
     {
