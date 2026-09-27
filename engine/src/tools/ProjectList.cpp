@@ -85,18 +85,20 @@ const std::vector<ProjectEntry>& ProjectList::entries() const noexcept
     return m_entries;
 }
 
+// Paths are compared in their canonical form: a short name such as RUNNER~1 and its long name are
+// the same folder.
 const ProjectEntry* ProjectList::find(const std::filesystem::path& file) const
 {
-    const auto found = std::ranges::find(m_entries, file.lexically_normal(),
-                                         [](const ProjectEntry& entry) { return entry.file.lexically_normal(); });
+    const auto found = std::ranges::find(m_entries, normalProjectPath(file),
+                                         [](const ProjectEntry& entry) { return normalProjectPath(entry.file); });
     return found != m_entries.end() ? &*found : nullptr;
 }
 
 void ProjectList::add(const std::filesystem::path& file, std::int64_t openedAt)
 {
     const std::filesystem::path normal = normalProjectPath(file);
-    auto found = std::ranges::find(m_entries, normal.lexically_normal(),
-                                   [](const ProjectEntry& entry) { return entry.file.lexically_normal(); });
+    auto found = std::ranges::find(m_entries, normal,
+                                   [](const ProjectEntry& entry) { return normalProjectPath(entry.file); });
     if (found == m_entries.end())
     {
         m_entries.push_back({.file = normal});
@@ -110,16 +112,16 @@ void ProjectList::add(const std::filesystem::path& file, std::int64_t openedAt)
 
 void ProjectList::remove(const std::filesystem::path& file)
 {
-    std::erase_if(m_entries, [&](const ProjectEntry& entry) {
-        return entry.file.lexically_normal() == file.lexically_normal();
-    });
+    const std::filesystem::path normal = normalProjectPath(file);
+    std::erase_if(m_entries, [&](const ProjectEntry& entry) { return normalProjectPath(entry.file) == normal; });
 }
 
 void ProjectList::setFavorite(const std::filesystem::path& file, bool favorite)
 {
+    const std::filesystem::path normal = normalProjectPath(file);
     for (ProjectEntry& entry : m_entries)
     {
-        if (entry.file.lexically_normal() == file.lexically_normal())
+        if (normalProjectPath(entry.file) == normal)
         {
             entry.favorite = favorite;
         }
