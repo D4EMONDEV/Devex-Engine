@@ -26,6 +26,7 @@ mais seulement explicitement ici : le code suit ce document, pas l'inverse.
 | Maths                    | GLM derrière `devex::math`                                         |
 | Coordonnées              | Y-up, main droite, -Z avant, 1 unité = 1 mètre                     |
 | Tests                    | Catch2 v3 via CTest                                                |
+| Intégration continue     | GitHub Actions, Windows, Debug et Release, tests sans GPU          |
 | Boucle de jeu            | Pas fixe (60 Hz par défaut) + mise à jour variable par frame       |
 | Point d'entrée           | Le moteur possède la boucle, le jeu dérive de `Application`        |
 | Entrées                  | État interrogeable + événements, clavier, souris et manettes       |
@@ -240,6 +241,7 @@ scripts/       outils de développement (assets d'exemple, liaisons C# généré
 third_party/   sources externes copiées (backend Vulkan d'ImGui), avec leur licence
 cmake/         fonctions CMake partagées, outils de build (cmake/tools)
 docs/          décisions et documentation
+.github/       le workflow de l'intégration continue (GitHub Actions)
 ```
 
 ## Détails des décisions
@@ -2485,6 +2487,34 @@ les assets s'écrivent au fil de leur lecture.
   passer le compilateur par un petit lanceur (`cmake/tools/ShowIncludesLauncher.cpp`, compilé à
   la configuration) qui réécrit ces notes avec le préfixe anglais.
 
+### Intégration continue
+
+- **GitHub Actions** (`.github/workflows/ci.yml`) : à chaque push sur `main` ou `ci`, à chaque pull
+  request, et à la demande. Deux jobs en parallèle sur `windows-2025`, `x64-debug` et
+  `x64-release`, avec les presets du dépôt, Visual Studio 2026 (MSVC 19.51), le SDK .NET 10 pour
+  le C#, `slangc` du SDK Vulkan 1.4.350 et Ninja, que l'image ne fournit pas (téléchargé des
+  versions publiées). Un push plus récent sur la même branche annule l'exécution en cours.
+- **Exigences** : les avertissements sont des erreurs (`DEVEX_WARNINGS_AS_ERRORS=ON`), et tous les
+  tests passent, sauf ceux marqués `[gpu]` : les machines de GitHub n'ont pas de GPU. Les tags
+  Catch2 deviennent des labels CTest (`ADD_TAGS_AS_LABELS`), et la CI lance
+  `ctest --label-exclude gpu` ; les tests `[gpu]` (rendu, éditeur) restent à lancer sur les
+  machines des développeurs.
+- **vcpkg** : un clone **complet** de vcpkg, dont l'historique contient les ports fixés par la
+  `builtin-baseline` (un clone partiel lui faisait chercher ces versions pendant l'installation,
+  ce qui échouait sur le réseau de la CI). Les paquets construits sont gardés dans le cache de
+  GitHub, par configuration et par empreinte de `vcpkg.json`, et sauvés dès la configuration :
+  la première exécution construit les dépendances (une dizaine de minutes), les suivantes les
+  reprennent ; une exécution complète dure environ un quart d'heure.
+- **Échecs lisibles par tous** : les journaux d'une exécution ne se lisent qu'avec des droits sur
+  le dépôt. Chaque étape garde donc ce qu'elle écrit dans un fichier, et une exécution qui échoue
+  publie en **annotations d'erreur** la fin des journaux de l'étape en faute : la configuration
+  avec vcpkg et le port qu'il n'a pas pu construire, les erreurs du build, ou celles des tests.
+  Le résumé de l'exécution les montre, et l'API publique de GitHub les rend. Les journaux
+  complets restent en artefacts.
+- **Ce qu'elle a déjà trouvé** : la liste des projets cherchait un projet par son chemin tel
+  qu'écrit alors qu'elle le range sous sa forme canonique ; un dossier au nom court de Windows,
+  comme le dossier temporaire des machines de GitHub (`RUNNER~1`), le manquait.
+
 ### Dépendances prévues (vcpkg)
 
 | Bibliothèque          | Usage                | Jalon    |
@@ -2650,9 +2680,10 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     en page, valeurs lues une seule fois, champs écrits par un style grisés dans l'inspecteur,
     état du style et ouverture du thème depuis l'inspecteur.
 
-26. ⏳ **Intégration continue** — GitHub Actions sur Windows (Visual Studio 2026, SDK Vulkan,
-    cache des paquets vcpkg), Debug et Release avec le C#, tests sans ceux qui demandent un GPU ;
-    prêt sur la branche `ci`, en attente d'être poussé.
+26. ✅ **Intégration continue** — GitHub Actions sur Windows (Visual Studio 2026, SDK Vulkan,
+    Ninja, cache des paquets vcpkg), Debug et Release avec le C#, avertissements en erreurs,
+    tests sans ceux qui demandent un GPU, erreurs publiées en annotations ; en service sur `main`
+    depuis le jalon 39.
 
 27. ✅ **Profileur** — zones nommées sur chaque thread, rassemblées par image, temps GPU de chaque
     passe du render graph par timestamps, zones du jeu en C++ et en C#, mémoire des assets par
@@ -2826,7 +2857,10 @@ Ensuite, sans ordre figé : CI Linux.
   annulation dans un champ, et édition des thèmes dans l'éditeur.
 - **Portage de l'éditeur sur l'UI du moteur** : quand `Devex::Ui` saura ce qu'un éditeur demande,
   panneau par panneau, le dockspace en dernier (voir *Une seule interface, deux usages*).
-- **CI** : GitHub Actions Windows, puis Linux.
+- **CI, la suite** : Linux, puis macOS ; les tests `[gpu]` sur un rendu logiciel (lavapipe,
+  SwiftShader) ou une machine avec GPU ; actions passées à Node.js 24 (celles en v4 tournent sur
+  Node.js 20, déprécié) ; cache de compilation (sccache) ; éditeur et lecteur publiés en artefacts
+  à chaque version ; badge d'état dans le README.
 - **Profileur** : export vers Perfetto (format de trace de Chrome), compteurs dans la chronologie
   (draw calls, mémoire, images par seconde), mémoire réellement allouée (VMA, tas du processus,
   GC de .NET), recherche d'une zone et moyenne sur plusieurs images, comparaison de deux captures,

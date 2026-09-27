@@ -193,6 +193,10 @@ cmake --build --preset build-x64-debug
 ctest --preset test-x64-debug
 ```
 
+Chaque push sur `main` est construit et testé par GitHub Actions (Windows, Debug et Release, sans
+les tests qui demandent un GPU) : voir [.github/workflows/ci.yml](.github/workflows/ci.yml) et
+l'onglet *Actions* du dépôt. Les tests marqués `[gpu]` se lancent localement avec `ctest`.
+
 Les programmes sont produits dans `out/build/x64-debug/bin` ; dans l'arène du bac à sable, un clic
 capture la souris, ZQSD (WASD) ou le stick gauche marchent, le stick droit regarde, Maj court,
 Espace ou le bouton du bas saute (ce sont les actions du projet), un clic lance une balle, C passe à
