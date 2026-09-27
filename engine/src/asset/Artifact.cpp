@@ -102,6 +102,7 @@ std::uint32_t artifactVersion(AssetType type) noexcept
     case AssetType::SpriteFrames:
     case AssetType::Tileset:
     case AssetType::Animator:
+    case AssetType::NavMesh:
         return 1;
     }
     return 0;
@@ -111,7 +112,7 @@ std::uint32_t artifactLayouts() noexcept
 {
     std::uint32_t combined = 0;
     for (std::uint8_t value = static_cast<std::uint8_t>(AssetType::Mesh);
-         value <= static_cast<std::uint8_t>(AssetType::Animator); ++value)
+         value <= static_cast<std::uint8_t>(AssetType::NavMesh); ++value)
     {
         combined = combined * 31 + artifactVersion(static_cast<AssetType>(value));
     }
@@ -884,6 +885,53 @@ core::Result<AnimatorData> decodeAnimator(std::span<const std::byte> bytes)
         return std::unexpected(valid.error());
     }
     return animator;
+}
+
+std::vector<std::byte> encodeNavMesh(const NavMeshData& navMesh)
+{
+    BinaryWriter writer = beginArtifact(AssetType::NavMesh);
+    writer.write(navMesh.settings);
+    writer.write(navMesh.origin);
+    writer.write(navMesh.boundsMax);
+    writer.write(navMesh.tilesX);
+    writer.write(navMesh.tilesZ);
+    writer.write(navMesh.triangles);
+    writer.write(static_cast<std::uint32_t>(navMesh.layers.size()));
+    for (const std::vector<std::byte>& layer : navMesh.layers)
+    {
+        writer.writeArray(std::span<const std::byte>(layer));
+    }
+    return writer.take();
+}
+
+core::Result<NavMeshData> decodeNavMesh(std::span<const std::byte> bytes)
+{
+    BinaryReader reader(bytes);
+    if (core::Result<void> header = readHeader(reader, AssetType::NavMesh); !header)
+    {
+        return std::unexpected(header.error());
+    }
+    NavMeshData navMesh;
+    navMesh.settings = reader.read<NavMeshBuildSettings>();
+    navMesh.origin = reader.read<math::Vec3>();
+    navMesh.boundsMax = reader.read<math::Vec3>();
+    navMesh.tilesX = reader.read<std::int32_t>();
+    navMesh.tilesZ = reader.read<std::int32_t>();
+    navMesh.triangles = reader.read<std::uint32_t>();
+    const auto layers = reader.read<std::uint32_t>();
+    for (std::uint32_t index = 0; index < layers && !reader.failed(); ++index)
+    {
+        navMesh.layers.push_back(reader.readArray<std::byte>());
+    }
+    if (reader.failed())
+    {
+        return std::unexpected(truncated(AssetType::NavMesh));
+    }
+    if (core::Result<void> valid = validate(navMesh); !valid)
+    {
+        return std::unexpected(valid.error());
+    }
+    return navMesh;
 }
 
 core::Result<ThemeData> decodeTheme(std::span<const std::byte> bytes)

@@ -10,6 +10,7 @@
 #include <devex/asset/CurveData.hpp>
 #include <devex/asset/SpriteData.hpp>
 #include <devex/asset/AnimatorData.hpp>
+#include <devex/asset/NavMeshData.hpp>
 #include <devex/asset/TilesetData.hpp>
 #include <devex/asset/ThemeData.hpp>
 #include <devex/asset/AssetSource.hpp>
@@ -142,6 +143,8 @@ public:
     // The state machine of animators, read once and shared; null when it cannot be loaded. A new
     // import replaces it, which animators that play it notice.
     [[nodiscard]] std::shared_ptr<const asset::AnimatorData> animator(asset::AssetId id);
+    // A baked navigation mesh, read once and shared; null when it cannot be loaded.
+    [[nodiscard]] std::shared_ptr<const asset::NavMeshData> navMesh(asset::AssetId id);
 
     // What the loaded assets take, by type and for the heaviest ones. Read when asked: the
     // profiler of the editor asks a few times a second at most.
@@ -244,6 +247,7 @@ private:
     std::unordered_map<asset::AssetId, std::shared_ptr<const asset::SpriteFramesData>> m_spriteFrames;
     std::unordered_map<asset::AssetId, std::shared_ptr<const asset::TilesetData>> m_tilesets;
     std::unordered_map<asset::AssetId, std::shared_ptr<const asset::AnimatorData>> m_animators;
+    std::unordered_map<asset::AssetId, std::shared_ptr<const asset::NavMeshData>> m_navMeshes;
     std::unordered_map<asset::AssetId, LoadedFont> m_fonts;
     // Assets whose loading failed, retried once an import changes them.
     std::unordered_set<asset::AssetId> m_failed;

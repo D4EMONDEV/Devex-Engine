@@ -5,6 +5,7 @@
 #include <devex/scene/ComponentRegistry.hpp>
 #include <devex/scene/Components.hpp>
 #include <devex/scene/SceneSerializer.hpp>
+#include <devex/scene/SpriteComponents.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -136,7 +137,7 @@ TEST_CASE("Scene files use the documented format", "[scene][serializer]")
     scene.add<Transform>(entity, Transform{.position = {0.0f, 1.0f, 0.0f}});
     scene.add<MeshRenderer>(entity, devex::asset::builtin::cubeMesh);
 
-    CHECK(devex::scene::saveScene(scene) == R"([scene format=1]
+    CHECK(devex::scene::saveScene(scene) == R"([scene format=1 kind="3d"]
 
 [entity uuid="6f1c2a9e-3b7d-4e21-9a55-0c8d7e4f1b23" name="Cube"]
 
@@ -398,4 +399,40 @@ TEST_CASE("Skinned meshes and animators are saved with their bones", "[scene][se
     const devex::scene::ComponentType* const type = devex::scene::componentRegistry().find("Animator");
     REQUIRE(type != nullptr);
     CHECK(type->type->findField("clip")->assetType == "animation");
+}
+
+TEST_CASE("A scene is made for the 2D screen or the 3D screen, and says which", "[scene][serializer]")
+{
+    Scene level;
+    level.setKind(devex::scene::SceneKind::TwoD);
+    const std::string text = devex::scene::saveScene(level);
+    CHECK(text.starts_with("[scene format=1 kind=\"2d\"]"));
+    const auto loaded = devex::scene::loadScene(text);
+    REQUIRE(loaded.has_value());
+    CHECK(loaded->kind() == devex::scene::SceneKind::TwoD);
+    CHECK(loaded->clone().kind() == devex::scene::SceneKind::TwoD);
+
+    // Files written before scenes had a kind: their camera tells, or else what they draw.
+    const auto kindOf = [](std::string_view source) {
+        const auto scene = devex::scene::loadScene(source);
+        REQUIRE(scene.has_value());
+        return scene->kind();
+    };
+    CHECK(kindOf(R"([scene format=1]
+
+[entity uuid="6f1c2a9e-3b7d-4e21-9a55-0c8d7e4f1b23" name="Camera"]
+
+[component type="Camera"]
+projection = "orthographic"
+)") == devex::scene::SceneKind::TwoD);
+    CHECK(kindOf("[scene format=1]\n") == devex::scene::SceneKind::ThreeD);
+
+    Scene coin;
+    coin.add<devex::scene::SpriteRenderer>(coin.createEntity("Coin"));
+    CHECK(devex::scene::inferSceneKind(coin) == devex::scene::SceneKind::TwoD);
+    coin.add<MeshRenderer>(coin.createEntity("Crate"));
+    CHECK(devex::scene::inferSceneKind(coin) == devex::scene::SceneKind::ThreeD);
+    Scene world;
+    world.add<Camera>(world.createEntity("Camera"));
+    CHECK(devex::scene::inferSceneKind(world) == devex::scene::SceneKind::ThreeD);
 }

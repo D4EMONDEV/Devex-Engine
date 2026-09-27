@@ -30,7 +30,10 @@
 #include <devex/scene/Prefab.hpp>
 #include <devex/scene/SceneSerializer.hpp>
 #include <devex/runtime/SceneExtraction.hpp>
+#include <devex/scene/UiComponents.hpp>
 #include <devex/tools/ToolsOverlay.hpp>
+#include <devex/ui/DrawList.hpp>
+#include <devex/ui/Layout.hpp>
 
 #include <algorithm>
 #include <atomic>
@@ -351,6 +354,7 @@ private:
     bool m_enablePhysics;
     std::unique_ptr<physics::PhysicsWorld> m_physics;
     std::unique_ptr<physics2d::Physics2DWorld> m_physics2d;
+    std::unique_ptr<navigation::NavigationWorld> m_navigation;
     std::unique_ptr<audio::AudioWorld> m_audio;
     std::unique_ptr<animation::AnimationWorld> m_animation;
     std::unique_ptr<animation::TweenWorld> m_tweens;
@@ -371,6 +375,8 @@ private:
     // The themes of the scene being edited, applied outside Play so that the 2D screen and the
     // inspector show the interface as the game will.
     ui::ThemeApplier m_editedThemes;
+    // A canvas of the edited scene, laid out for the 2D screen of the editor.
+    ui::LayoutResult m_editedLayout;
     // The stick of the pad on the previous frame, so that pushing it moves the focus once.
     math::Vec2 m_uiStick{0.0f};
     // The audio settings the mixer has, to follow changes to the project.
@@ -882,6 +888,13 @@ void ApplicationRunner::runGameplay(std::chrono::nanoseconds frameTime)
     DEVEX_PROFILE_SCOPE("Update");
     m_application.onUpdate(core::Duration(frameTime));
     runSystems(SystemPhase::Update, core::Duration(frameTime));
+    // Agents walk to the destinations the updates gave them.
+    if (m_navigation)
+    {
+        DEVEX_PROFILE_SCOPE("Navigation");
+        m_application.m_scene->updateTransforms();
+        m_navigation->update(*m_application.m_scene, core::Duration(frameTime));
+    }
     if (m_actions && m_actions->takeChanges())
     {
         saveBindings();
@@ -1517,6 +1530,7 @@ void ApplicationRunner::runSystems(SystemPhase phase, core::Duration delta)
         .settings = m_settings.get(),
         .physics = m_physics.get(),
         .physics2d = m_physics2d.get(),
+        .navigation = m_navigation.get(),
         .audio = m_audio.get(),
         .animation = m_animation.get(),
         .tweens = m_tweens.get(),
@@ -1547,6 +1561,7 @@ void ApplicationRunner::runSystems(SystemPhase phase, core::Duration delta)
             .window = &m_services.window,
             .physics = m_physics.get(),
             .physics2d = m_physics2d.get(),
+            .navigation = m_navigation.get(),
             .audio = m_audio.get(),
             .animation = m_animation.get(),
             .tweens = m_tweens.get(),
@@ -1614,14 +1629,36 @@ void ApplicationRunner::createPhysics()
     }
     m_physics2d = std::move(*world2d);
     m_application.m_physics2d = m_physics2d.get();
+
+    // The navigation lives alongside the physics.
+    core::Result<std::unique_ptr<navigation::NavigationWorld>> navigationWorld = navigation::NavigationWorld::create({
+        .navMeshes = [this](asset::AssetId navMesh) { return m_services.assets.navMesh(navMesh); },
+    });
+    if (!navigationWorld)
+    {
+        DEVEX_LOG_ERROR("The game runs without navigation: {}", navigationWorld.error());
+        return;
+    }
+    m_navigation = std::move(*navigationWorld);
+    m_application.m_navigation = m_navigation.get();
+    if (m_services.tools != nullptr)
+    {
+        m_services.tools->setNavigationWorld(m_navigation.get());
+    }
 }
 
 void ApplicationRunner::destroyPhysics()
 {
+    if (m_services.tools != nullptr)
+    {
+        m_services.tools->setNavigationWorld(nullptr);
+    }
     m_application.m_physics = nullptr;
     m_application.m_physics2d = nullptr;
+    m_application.m_navigation = nullptr;
     m_physics.reset();
     m_physics2d.reset();
+    m_navigation.reset();
 }
 
 void ApplicationRunner::createAudio()
@@ -2061,7 +2098,11 @@ void ApplicationRunner::updateUi(std::chrono::nanoseconds frameTime)
 
 void ApplicationRunner::buildUi(render::RenderWorld& world)
 {
-    if (!m_ui)
+    // While editing, the 2D screen of the editor shows the interfaces of the scene in the frame of
+    // what its game shows; the 3D screen does not show them.
+    const std::optional<tools::InterfaceFrame> edited =
+        !m_ui && isEditor() ? m_services.tools->interfaceFrame() : std::nullopt;
+    if (!m_ui && !edited)
     {
         return;
     }
@@ -2079,7 +2120,29 @@ void ApplicationRunner::buildUi(render::RenderWorld& world)
                 return math::Vec2{static_cast<float>(size.width), static_cast<float>(size.height)};
             },
     };
-    m_ui->build(*m_application.m_scene, context, world);
+    if (m_ui)
+    {
+        m_ui->build(*m_application.m_scene, context, world);
+        return;
+    }
+    // Laid out as the game lays them out on the viewport, drawn smaller inside the frame.
+    const scene::Scene& scene = *m_application.m_scene;
+    std::vector<std::pair<std::int32_t, scene::Entity>> canvases;
+    for (auto [entity, canvas] : scene.view<scene::Canvas>())
+    {
+        if (canvas.visible)
+        {
+            canvases.emplace_back(canvas.sortOrder, entity);
+        }
+    }
+    std::ranges::stable_sort(canvases, {}, &std::pair<std::int32_t, scene::Entity>::first);
+    const ui::DrawListMark mark = ui::markDrawList(world);
+    for (const auto& [order, canvas] : canvases)
+    {
+        ui::layoutCanvas(scene, canvas, edited->layoutSize, m_editedLayout);
+        ui::buildDrawList(scene, m_editedLayout, context, world);
+    }
+    ui::placeDrawList(world, mark, edited->offset, edited->scale);
 }
 
 void ApplicationRunner::destroyAnimation()
@@ -2450,6 +2513,11 @@ physics2d::Physics2DWorld* Application::physics2d() noexcept
     return m_physics2d;
 }
 
+navigation::NavigationWorld* Application::navigation() noexcept
+{
+    return m_navigation;
+}
+
 audio::AudioWorld* Application::audio() noexcept
 {
     return m_audio;
@@ -2682,6 +2750,8 @@ int run(Application& application, const ApplicationConfig& config)
                                     [&assets](asset::AssetId texture) { return assets.textureSize(texture); },
                                     [&assets](asset::AssetId sprite) { return assets.sprite(sprite); },
                                     [&assets](asset::AssetId tileset) { return assets.tileset(tileset); });
+            tools->setNavigationSources([&assets](asset::AssetId mesh) { return assets.meshData(mesh); },
+                                        [&assets](asset::AssetId navMesh) { return assets.navMesh(navMesh); });
             tools->setMemoryReport([&assets] { return assets.memoryReport(); });
             tools->setPendingLoads([&assets] { return assets.pendingLoads(); });
             const std::filesystem::path engineConfig = (platform->baseDirectory() / ".." / "cmake").lexically_normal();

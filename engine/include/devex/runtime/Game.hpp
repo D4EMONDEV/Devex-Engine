@@ -5,6 +5,7 @@
 #include <devex/audio/AudioWorld.hpp>
 #include <devex/core/Time.hpp>
 #include <devex/particles/ParticleWorld.hpp>
+#include <devex/navigation/NavigationWorld.hpp>
 #include <devex/physics/PhysicsWorld.hpp>
 #include <devex/physics2d/Physics2DWorld.hpp>
 #include <devex/platform/Input.hpp>
@@ -39,7 +40,7 @@ class CoroutineScheduler;
 // 13: SystemContext gained the tweens and the coroutines.
 // 14: SystemContext gained the particles.
 // 15: Camera gained its orthographic projection, which moved its fields; sprites.
-inline constexpr std::uint32_t gameApiVersion = 17;
+inline constexpr std::uint32_t gameApiVersion = 18;
 
 enum class SystemPhase : std::uint8_t
 {
@@ -72,6 +73,9 @@ struct SystemContext
     physics::PhysicsWorld* physics = nullptr;
     // The 2D simulation of the scene, beside the 3D one: queries, forces and contacts likewise.
     physics2d::Physics2DWorld* physics2d = nullptr;
+    // The navigation of the scene: its agents, their destinations, and paths along its navigation
+    // mesh. Null when the application runs without it.
+    navigation::NavigationWorld* navigation = nullptr;
     // The sounds of the scene: its AudioSource components, one-shot sounds and the volumes of the
     // groups. Null when the application runs without audio.
     audio::AudioWorld* audio = nullptr;

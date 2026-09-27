@@ -1318,6 +1318,10 @@ void drawInspectorPanel(ToolsState& state, scene::Scene& scene)
                 {
                     drawTilePainter(state, scene, entity);
                 }
+                if (name == "NavMeshSurface")
+                {
+                    drawNavMeshBaker(state, scene, entity);
+                }
             }
             if (removed)
             {

@@ -547,3 +547,29 @@ public class Conductor : Component
         Waved = Waved || Animation.IsInState(Entity, "Waving");
     }
 }
+
+// Sends its agent across the level, and asks for a path, the ground under a point and a ray.
+public class Navigator : Component
+{
+    public Vec3 Target;
+    public bool Sent;
+    public int Corners;
+    public bool Sampled;
+    public float SampledHeight;
+    public bool Blocked;
+    public bool Arrived;
+
+    public override void Update(float delta)
+    {
+        if (!Sent)
+        {
+            Sent = Navigation.SetDestination(Entity, Target);
+            Corners = Navigation.FindPath(Transform.Position, Target).Length;
+            Sampled = Navigation.SamplePosition(new Vec3(2.0f, 1.5f, 7.0f), 3.0f, out Vec3 ground);
+            SampledHeight = ground.Y;
+            Blocked = Navigation.Raycast(new Vec3(-5.0f, 0.0f, -5.0f), new Vec3(5.0f, 0.0f, -5.0f), out _, out _);
+            return;
+        }
+        Arrived = Arrived || !Navigation.HasDestination(Entity);
+    }
+}

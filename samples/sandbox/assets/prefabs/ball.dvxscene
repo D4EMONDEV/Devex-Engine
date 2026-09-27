@@ -1,4 +1,4 @@
-[scene format=1]
+[scene format=1 kind="3d"]
 
 [entity uuid="d5e170c4-ff74-57fb-9e80-6d203f5889b9" name="Ball"]
 

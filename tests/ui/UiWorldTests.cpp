@@ -4,6 +4,8 @@
 #include <devex/scene/Components.hpp>
 #include <devex/scene/Scene.hpp>
 #include <devex/scene/UiComponents.hpp>
+#include <devex/ui/DrawList.hpp>
+#include <devex/ui/Layout.hpp>
 #include <devex/ui/UiWorld.hpp>
 
 #include <catch2/catch_approx.hpp>
@@ -676,4 +678,52 @@ TEST_CASE("The styles apply without an interface world, as the editor applies th
     CHECK_FALSE(form.scene.get<UiImage>(form.toggle).raycastTarget);
     // The elements that follow no style keep their own values.
     CHECK(form.scene.get<UiImage>(form.slider).color.x == Catch::Approx(1.0f));
+}
+
+TEST_CASE("The editor draws an interface smaller, inside the frame of its game", "[ui][draw]")
+{
+    Scene scene;
+    const Entity canvas = scene.createEntity("Canvas");
+    scene.add<Canvas>(canvas, Canvas{.scaleMode = CanvasScaleMode::ConstantPixels});
+    const Entity panel = scene.createEntity("Panel");
+    REQUIRE(scene.setParent(panel, canvas).has_value());
+    scene.add<UiRect>(panel, UiRect{.anchorMin = {0.0f, 0.0f},
+                                    .anchorMax = {0.0f, 0.0f},
+                                    .offsetMin = {100.0f, 50.0f},
+                                    .offsetMax = {300.0f, 150.0f}});
+    scene.add<UiImage>(panel, UiImage{.cornerRadius = 10.0f});
+
+    devex::ui::LayoutResult layout;
+    devex::ui::layoutCanvas(scene, canvas, window, layout);
+    devex::render::RenderWorld world;
+    const devex::ui::DrawListMark mark = devex::ui::markDrawList(world);
+    devex::ui::buildDrawList(scene, layout, devex::ui::DrawContext{}, world);
+    REQUIRE(world.uiDraws.size() == 1);
+    REQUIRE(world.uiVertices.size() == 4);
+
+    // Half as large, from 40 pixels right and 20 down.
+    devex::ui::placeDrawList(world, mark, Vec2{40.0f, 20.0f}, 0.5f);
+    Vec2 low{1e9f};
+    Vec2 high{-1e9f};
+    for (const devex::render::UiVertex& vertex : world.uiVertices)
+    {
+        low = devex::math::min(low, vertex.position);
+        high = devex::math::max(high, vertex.position);
+    }
+    CHECK(low.x == Catch::Approx(90.0f));
+    CHECK(low.y == Catch::Approx(45.0f));
+    CHECK(high.x == Catch::Approx(190.0f));
+    CHECK(high.y == Catch::Approx(95.0f));
+    const devex::render::UiDraw& draw = world.uiDraws.front();
+    CHECK(draw.kind == devex::render::UiDrawKind::RoundedQuad);
+    CHECK(draw.rect.x == Catch::Approx(90.0f));
+    CHECK(draw.rect.w == Catch::Approx(95.0f));
+    CHECK(draw.radius == Catch::Approx(5.0f));
+    // An element that cuts nothing still draws on the whole image.
+    CHECK(draw.clip == devex::math::Vec4{0.0f});
+
+    // What was there before the mark stays where it was.
+    const devex::ui::DrawListMark second = devex::ui::markDrawList(world);
+    devex::ui::placeDrawList(world, second, Vec2{1000.0f, 1000.0f}, 2.0f);
+    CHECK(world.uiDraws.front().rect.x == Catch::Approx(90.0f));
 }

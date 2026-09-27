@@ -89,6 +89,8 @@ struct Folder
         return {icons::Grid, colors.texture};
     case asset::AssetType::Animator:
         return {icons::Workflow, colors.animation};
+    case asset::AssetType::NavMesh:
+        return {icons::Footprints, colors.physics};
     default:
         break;
     }

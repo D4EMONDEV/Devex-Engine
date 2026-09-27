@@ -39,7 +39,10 @@ mais seulement explicitement ici : le code suit ce document, pas l'inverse.
 | Sprites                  | Découpés à l'import de la texture, dessinés dans le rendu 3D       |
 | Animation des sprites    | Asset `.dvxframes` d'animations nommées, joué par `SpriteAnimator` |
 | Tri 2D                   | Couches de tri nommées du projet, ordre, puis distance             |
-| Vue 2D de l'éditeur      | Bouton 2D : caméra orthographique face au plan XY, gizmos 2D       |
+| Type de scène            | 2D ou 3D, écrit dans le fichier (`kind`), comme la racine de Godot |
+| Écrans 2D et 3D          | Une scène se voit dans l'écran de son type, l'autre écran est vide |
+| Interfaces dans l'éditeur | Éditées dans l'écran 2D, montrées dans l'écran 3D d'une scène 3D  |
+| 2.5D                     | Une scène 3D : sprites et maillages ensemble dans l'écran 3D       |
 | Caméra orthographique    | `Camera::projection`, profondeur inversée entre deux plans          |
 | Filtrage des textures    | Réglage d'import, un sampler par texture à côté du tableau bindless |
 | Tuiles                   | Composant `Tilemap`, cellules par blocs de 16×16 dans la scène     |
@@ -49,6 +52,10 @@ mais seulement explicitement ici : le code suit ce document, pas l'inverse.
 | Corps 2D                 | `RigidBody2D` + colliders 2D (boîte, cercle, capsule, polygone)    |
 | Collisions des tuiles    | `TilemapCollider2D` : rectangles fusionnés et corniches du tileset |
 | Personnages 2D           | `CharacterController2D` « move and slide » sur le mover de Box2D   |
+| Navigation               | Recast & Detour (zlib), module `Navigation`, foule de DetourCrowd  |
+| Maillage de navigation   | Asset `.dvxnavmesh` cuit dans l'éditeur depuis les colliders statiques |
+| Agents                   | Composant `NavMeshAgent`, destinations données par le code         |
+| Obstacles mobiles        | `NavMeshObstacle` (boîte, cylindre) découpe les tuiles pendant le jeu |
 | Clavier                  | `Key` = position physique (WASD devient ZQSD en AZERTY)            |
 | Présentation             | VSync (FIFO) par défaut, Mailbox/Immediate en option               |
 | Thread de rendu          | Thread principal, rendu découplé par un instantané `RenderWorld`   |
@@ -196,8 +203,9 @@ situé au-dessus de lui, et le graphe reste sans cycle.
 | `Particles`     | émetteurs et traînées de la scène, simulés sur les workers              | Core, Math, Asset, Scene             |
 | `Physics`       | corps, colliders et personnages 3D de la scène, simulés par Jolt         | Core, Math, Asset, Scene, Jolt       |
 | `Physics2D`     | corps, colliders, tuiles et personnages 2D de la scène, simulés par Box2D | Core, Math, Asset, Scene, Box2D     |
+| `Navigation`    | cuisson des maillages de navigation, agents, obstacles et requêtes de chemin | Core, Math, Asset, Scene, Recast & Detour, zstd |
 | `Ui`            | placement des canevas, mise en page du texte, survol et focus, dessin    | Core, Math, Asset, Scene, Render     |
-| `Tools`         | panneaux ImGui, annulation, éditeur (viewport, gizmos, scènes, accueil)   | Core, Platform, Render, Scene, Audio, Animation, Particles, Physics2D, Ui, AssetImport, ImGui |
+| `Tools`         | panneaux ImGui, annulation, éditeur (viewport, gizmos, scènes, accueil)   | Core, Platform, Render, Scene, Audio, Animation, Particles, Physics2D, Navigation, Ui, AssetImport, ImGui |
 | `Runtime`       | `Application`, boucle, mode éditeur et Play, modules de jeu, coroutines, `AssetManager`, extraction | tous les modules ci-dessus |
 
 Au sommet : `devex-editor`, `devex-player` et les modules de jeu des projets.
@@ -514,7 +522,7 @@ propriété tiennent chacune sur une ligne ; les erreurs donnent ligne et colonn
 Scène (`.dvxscene`, format 1) :
 
 ```text
-[scene format=1]
+[scene format=1 kind="3d"]
 
 [entity uuid="6f1c2a9e-3b7d-4e21-9a55-0c8d7e4f1b23" name="Player"]
 parent = "b41e7c02-9d3a-4f6e-8c11-5a2e9b7d0f44"
@@ -528,6 +536,8 @@ scale = vec3(1, 1, 1)
 mesh = asset("00000000-0000-0000-0000-000000000001")
 ```
 
+- `kind` dit pour quel écran de l'éditeur la scène est faite, `"2d"` ou `"3d"` (voir *Sprites et
+  jeux 2D*) ; absent, la scène est classée à la lecture. Le format reste 1.
 - Les sections `component` appartiennent à l'entité qui les précède. Les parents sont
   écrits avant leurs enfants, dans l'ordre de la hiérarchie ; les quaternions en `x, y, z, w`.
 - Un type de composant ou un champ inconnu est ignoré avec un avertissement (un moteur
@@ -1098,8 +1108,8 @@ les assets s'écrivent au fil de leur lecture.
 - **Sources et importeurs** : chaque fichier dont l'extension a un importeur est une source ;
   `texture` (`.png`, `.jpg`, `.tga`, `.bmp`, `.hdr`, décodés par stb_image), `material`
   (`.dvxmat`), `gltf` (`.gltf`, `.glb`), `fbx` (`.fbx`), `obj` (`.obj`), `scene` (`.dvxscene`),
-  `curve` (`.dvxcurve`), `frames` (`.dvxframes`), `tileset` (`.dvxtileset`) et `animator`
-  (`.dvxanimator`), entre autres. Les fichiers et dossiers cachés (`.`) sont ignorés.
+  `curve` (`.dvxcurve`), `frames` (`.dvxframes`), `tileset` (`.dvxtileset`), `animator`
+  (`.dvxanimator`) et `navmesh` (`.dvxnavmesh`), entre autres. Les fichiers et dossiers cachés (`.`) sont ignorés.
 - **`.dvxmeta`** : créé au premier scan avec un UUID aléatoire et les options par défaut de
   l'importeur. Il porte l'identité de l'asset : il se versionne avec la source. Un `.dvxmeta`
   illisible est signalé et laissé tel quel, jamais remplacé. Une source copiée avec son
@@ -1736,14 +1746,30 @@ les assets s'écrivent au fil de leur lecture.
   orthographique se voit comme d'une perspective de 60° : une toile de fond qui tourne avec la
   caméra sans se déplacer avec elle. *Create > 2D camera* place une caméra orthographique aux
   couleurs gardées telles quelles (tonemapping *None*, sans anticrénelage ni occlusion).
-- **Vue 2D de l'éditeur** (comme Unity) : le bouton **2D** de la barre de la vue passe la caméra de
-  l'éditeur en orthographique face au plan XY, en gardant à l'écran ce qu'elle regardait ; clic
-  droit ou milieu pour glisser, molette pour zoomer vers la souris, F pour cadrer ; grille du
-  plan XY qui s'adapte au zoom, axes X et Y colorés ; le gizmo garde les poignées du plan (X, Y,
-  le plan XY, le centre, la rotation autour de Z). La caméra d'une scène orthographique montre sa
-  boîte. La vue 2D est gardée par onglet dans `.devex/editor.dvx`. L'écran 2D reste celui des
-  interfaces. Les sprites se choisissent au clic et au rectangle (sur le GPU, à leurs pixels
-  visibles, dans leur ordre de dessin) et s'entourent quand ils sont sélectionnés.
+- **Type de scène** : comme la racine d'une scène Godot est un `Node2D` ou un `Node3D`, une scène
+  est **2D** ou **3D** (`scene::SceneKind`), écrit dans son en-tête : `[scene format=1 kind="2d"]`.
+  Une scène écrite avant le type est classée à la lecture (`scene::inferSceneKind`) : 2D si sa
+  caméra principale (ou sa première) est orthographique, ou, sans caméra, si elle dessine sprites,
+  tuiles ou interfaces et aucun maillage ; 3D sinon. *Scene > New 2D Scene* (une caméra 2D) et
+  *New 3D Scene* (soleil, ciel, caméra, sol, cube) ; Ctrl+N et le bouton + d'onglet créent une
+  scène du type de l'écran montré. *Scene > Scene Kind* change le type, avec son annulation.
+- **Écrans 2D et 3D** (comme Godot) : une scène se voit dans l'écran de son type, qui s'ouvre avec
+  elle. L'écran de l'autre type reste cliquable mais ne montre **rien** de la scène : un ciel
+  neutre gris à exposition fixe, la grille et une ligne qui dit où la scène s'édite ; ni
+  sélection, ni gizmo, ni dépôt. Seule exception : l'écran 2D d'une scène 3D, où s'éditent ses
+  **interfaces**. Chaque écran montre tout ce que sa scène contient : une scène 2D montre ses
+  maillages dans l'écran 2D, vus de face, et une scène 3D ses sprites dans l'écran 3D. La 2.5D
+  (sprites parmi des modèles, caméra orthographique ou non) est donc une scène 3D, comme dans
+  Godot (`Sprite3D`, caméra 3D). Ainsi rien de la scène ne se voit mal, ni ne disparaît.
+- **Écran 2D de l'éditeur** : le viewport vu de face, sans perspective : la caméra de l'éditeur
+  regarde le plan XY en orthographique ; clic droit ou milieu pour glisser, molette pour zoomer
+  vers la souris, F pour cadrer ; grille du plan XY qui s'adapte au zoom, axes X et Y colorés ; le
+  gizmo garde les poignées du plan (X, Y, le plan XY, le centre, la rotation autour de Z). La
+  caméra d'une scène orthographique montre sa boîte. Les sprites se choisissent au clic et au
+  rectangle (sur le GPU, à leurs pixels visibles, dans leur ordre de dessin) et s'entourent quand
+  ils sont sélectionnés. Le jalon 35 avait mis un bouton 2D dans la barre du viewport, à la
+  manière d'Unity, l'écran 2D ne sachant alors dessiner que des rectangles d'interface : ce
+  raccourci allait contre la disposition de Godot que suit l'éditeur, et il a été retiré.
 - **Inspecteurs** : une texture montre son aperçu, avec la grille de découpe et les pivots, ses
   réglages d'import (couleur, normal map, mipmaps, compression, qualité, filtrage) et ses sprites
   (mode, pixels par unité, colonnes et lignes, pivot prédéfini ou libre, bords), et *New Sprite
@@ -1900,6 +1926,65 @@ les assets s'écrivent au fil de leur lecture.
   déclencheurs ramassés dans `OnTriggerEnter`, trois caisses dynamiques se poussent, et une
   plateforme cinématique (`Shuttle2D`) fait traverser l'eau. Le code de collision écrit à la main
   a disparu de `code/Platformer.cs`.
+
+### Navigation
+
+- **Bibliothèque** : Recast & Detour 1.6 (zlib), par vcpkg (`recastnavigation`), derrière le module
+  `Navigation` : son API publique (`devex/navigation/NavMeshBuilder.hpp`, `NavigationWorld.hpp`)
+  ne montre aucun type de Recast ou de Detour. Recast cuit le maillage, Detour y cherche les
+  chemins, DetourTileCache le reconstruit autour des obstacles et DetourCrowd fait marcher les
+  agents en foule, comme le *NavMesh* d'Unity ou le *NavigationServer* de Godot.
+- **Composants** (module `Scene`) : `NavMeshSurface` porte l'asset cuit (`nav_mesh`) et les
+  réglages de la cuisson : rayon, hauteur, marche et pente maximales de l'agent (0,4 m, 1,8 m,
+  0,4 m, 45°), taille des cellules (0,2 m) et hauteur des cellules (0,1 m), côté des tuiles en
+  cellules (48). `NavMeshAgent` : vitesse, accélération, vitesse de rotation, rayon, hauteur,
+  distance d'arrêt, qualité d'évitement (`none` à `high`) et `velocity`, l'état du jeu
+  (`FieldHints::runtime`). `NavMeshObstacle` : boîte ou cylindre, taille et centre dans l'espace
+  de son entité, dont il suit l'échelle.
+- **Ce qui est cuit** : les colliders qui ne bougent pas, sans `RigidBody` ou sous un `RigidBody`
+  statique, ni déclencheurs ni personnages ; boîtes et maillages exacts (`MeshCollider`, par son
+  maillage), sphères, capsules et cylindres à 12 côtés, triangles tournés vers l'extérieur. Ce que
+  le joueur heurte est ce que les agents contournent.
+- **Cuisson** : par tuiles de Recast (hauteur de champ, surfaces praticables, filtres des
+  obstacles bas, des corniches et des passages trop bas, érosion du rayon de l'agent), jusqu'aux
+  **couches** de chaque tuile, compressées par zstd, que l'asset garde avec les réglages et les
+  bornes. Au chargement, DetourTileCache fait des couches le maillage de polygones de chaque tuile
+  (bits de tuiles et de polygones calculés au plus juste) ; un obstacle ne reconstruit que les
+  tuiles qu'il touche.
+- **Asset** : `.dvxnavmesh`, un fichier binaire écrit par l'éditeur à côté de la scène (importeur
+  `navmesh`, type `NavMesh`) : un maillage qu'on régénère, pas un fichier qu'on écrit à la main.
+  L'importeur le lit, le vérifie et le garde tel quel ; l'export le copie comme les autres.
+- **Monde** (`NavigationWorld`, un par scène jouée, créé avec la physique) : il marche le maillage
+  de la première `NavMeshSurface` qui en a un (un avertissement s'il y en a d'autres) ; le maillage
+  suit son asset (recuit : les agents repartent sur le nouveau). Chaque frame, après les systèmes
+  Update et la mise à jour des transformées : les obstacles déplacés de plus de 10 cm ou tournés de
+  plus de 0,05 rad sont redécoupés (boîtes tournées autour de Y seulement) ; les agents
+  apparaissent, changent de réglages et partent avec leurs composants ; un agent que le jeu a
+  déplacé repart de là (téléportation) ; la foule avance, puis chaque agent écrit sa position
+  (par son `Transform`, sous son parent), sa vitesse, et se tourne vers où il va, debout autour de
+  Y, à sa vitesse de rotation. Un agent arrive quand il est à sa distance d'arrêt, à plat.
+  256 agents et 256 obstacles au plus ; quatre qualités d'évitement de DetourCrowd, `none` sans
+  évitement ni séparation.
+- **Jeu** : `SystemContext::navigation` (nul sans navigation) donne `setDestination` (au point du
+  maillage le plus proche, avant même que l'agent marche), `stop`, `hasDestination`,
+  `remainingDistance`, `path` (les coins devant l'agent), `findPath`, `samplePosition` et `raycast`
+  le long du maillage ; l'API des jeux passe à 18. En C#, la classe `Navigation` :
+  `SetDestination`, `Stop`, `HasDestination`, `RemainingDistance`, `FindPath` (tableau de `Vec3`),
+  `SamplePosition` et `Raycast` (`out` position et normale) ; les vues des trois composants sont
+  générées. L'amorce C# passe à 15.
+- **Éditeur** : sous la `NavMeshSurface` de l'inspecteur, ce que le maillage contient (polygones,
+  tuiles, triangles de départ), un avertissement quand les réglages ont changé depuis la cuisson,
+  **Bake** et **Clear**. Bake cuit la scène ouverte (enregistrée, dans `assets/`), écrit
+  `<scène>.dvxnavmesh` à côté d'elle (`<scène> <entité>` s'il y a plusieurs surfaces), attend son
+  import puis pose l'asset dans le champ par une commande annulable, et dit le temps, les tuiles,
+  les couches et la taille. La vue dessine le maillage (bords en cyan, arêtes intérieures
+  estompées) de la surface sélectionnée, ou de toutes avec les collisions ; les agents en
+  cylindres, les obstacles en contours, et pendant le jeu les chemins des agents. Le menu de
+  création ajoute une surface et un agent.
+- **Bac à sable** : dans l'arène, le robot patrouille par son `NavMeshAgent` (le code ne donne plus
+  que ses destinations ; sa machine à états mélange la marche par la vitesse réelle de l'agent),
+  deux drones suivent le joueur (`code/Follower.cs`) en se contournant, la porte fermée et les
+  caisses (le préfab) découpent le maillage pendant qu'elles bougent.
 
 ### Culling et ombres locales
 
@@ -2119,10 +2204,23 @@ les assets s'écrivent au fil de leur lecture.
   leurs axes, applique une zone morte aux sticks et relâche ce qui restait pressé quand une manette
   est débranchée. `Input::isGamepadButtonDown`, `wasGamepadButtonPressed` et `gamepadAxis` les
   donnent au jeu.
-- **Éditeur** : l'écran **2D** de la barre de menus montre les canevas de la scène à leur
-  résolution de référence, dessinés comme ils le seront. Cliquer choisit l'élément le plus haut,
-  le glisser le déplace, ses huit poignées le redimensionnent, et ses ancrages sont marqués sur le
-  canevas ; chaque geste devient une étape d'annulation sur `offset_min` et `offset_max`.
+- **Éditeur** : les interfaces s'éditent dans l'écran **2D**, qui montre les canevas visibles de la
+  scène **rendus pour de vrai** (polices, images, coins arrondis, thèmes) par le renderer, dans le
+  **cadre de ce que montre le jeu** : pour une scène 2D, la boîte de sa caméra principale quand
+  elle est orthographique (le HUD apparaît au-dessus du niveau, là où le joueur le verra) ; pour
+  une scène 3D, qui n'y montre que ses interfaces, le cadre d'une caméra 2D neuve à l'origine,
+  entouré comme Godot entoure son viewport. L'écran **3D** d'une scène 3D les dessine par-dessus
+  la vue, comme le jeu le fera, sans les modifier ; un bouton de sa barre les masque quand un menu
+  plein écran cache la scène (la vue 3D de Godot ne les montre pas, ce que des propositions
+  demandent). Les canevas sont placés comme le jeu les
+  placerait sur l'image du viewport, puis réduits dans le cadre (`ui::placeDrawList` : échelle et
+  décalage des sommets, des rectangles arrondis, des découpes et de la netteté des lettres) ;
+  `ToolsOverlay::interfaceFrame` dit où, et le runtime les dessine hors du jeu. Un clic choisit
+  d'abord l'élément dessiné (image ou texte) le plus haut, avant les entités du monde ; les
+  conteneurs qui ne dessinent rien se choisissent dans l'arbre, pour qu'un panneau étiré sur tout
+  l'écran laisse le monde en dessous à portée. Cliquer de nouveau descend à l'élément du dessous,
+  le glisser le déplace, ses huit poignées le redimensionnent, ses ancrages sont marqués ; chaque
+  geste devient une étape d'annulation sur `offset_min` et `offset_max`, et F cadre l'élément.
 - **Jeu** : `SystemContext::ui` et `Application::ui()` donnent l'`UiWorld` ; en C#, la classe `Ui`
   offre `WasClicked(action)`, `WasClicked(entity)`, `WasChanged(action)`, `WasSubmitted(action)`,
   `WasCancelled()`, `Hovered`, `Focused`, `EditedField` et `PointerOverInterface`, que le jeu lit
@@ -2281,12 +2379,15 @@ les assets s'écrivent au fil de leur lecture.
   **Editor > Panels > Text Editor** rouvre le panneau ; le masquer conserve les fichiers ouverts.
   **Ctrl+O** ouvre un fichier texte et **Ctrl+W** ferme l'onglet lorsque ce panneau a le focus.
 - **Écrans principaux** : le centre de la fenêtre montre un **écran** à la fois, choisi au milieu
-  de la barre de menus comme dans Godot : **3D** (le viewport) et **Script** (l'éditeur de texte)
-  partagent le nœud central du dock, sans barre d'onglets — l'écran choisi est le seul ouvert, si
-  bien qu'il remplit le centre. **Ctrl+F2** et **Ctrl+F3** les appellent. L'éditeur suit ce
-  qu'on ouvre : un fichier montre Script, une scène ou le lancement du jeu montre 3D. Le bouton
-  **2D** est présent mais désactivé : il attend le système d'interface. Les panneaux autour
-  (hiérarchie, inspecteur, FileSystem, sortie) ne bougent pas d'un écran à l'autre.
+  de la barre de menus comme dans Godot : **2D** et **3D** (le viewport, vu de face ou en
+  perspective) et **Script** (l'éditeur de texte) partagent le nœud central du dock, sans barre
+  d'onglets — l'écran choisi est le seul ouvert, si bien qu'il remplit le centre. **Ctrl+F1**,
+  **Ctrl+F2** et **Ctrl+F3** les appellent. 2D et 3D ont chacun leur vue de la scène (centre et
+  zoom en 2D, pivot, orientation et distance en 3D), gardées par onglet dans
+  `.devex/editor.dvx`. L'éditeur suit ce qu'on ouvre : un fichier montre Script ; une scène, un
+  changement d'onglet, F5 ou un changement de type montrent l'écran du type de la scène. Les
+  panneaux autour (hiérarchie, inspecteur, FileSystem, sortie) ne bougent pas d'un écran à
+  l'autre.
 - **Coloration syntaxique** : `InputTextMultiline` ne colore pas son texte. Le champ est donc rendu
   avec une couleur de texte transparente, et le panneau **dessine lui-même** les jetons colorés et
   le curseur par-dessus, en mesurant les positions avec la police du champ ; la sélection reste
@@ -2402,6 +2503,7 @@ les assets s'écrivent au fil de leur lecture.
 | mikktspace            | tangentes            | 7 ✅     |
 | joltphysics           | physique             | 11 ✅    |
 | box2d                 | physique 2D          | 37 ✅    |
+| recastnavigation      | navigation           | 39 ✅    |
 | zstd                  | paquets de jeux      | 13 ✅    |
 | FreeType (`imgui[freetype]`) | rendu des polices de l'éditeur | 10 ✅ |
 | plutosvg              | icônes SVG de l'éditeur | 10 ✅  |
@@ -2625,6 +2727,13 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     avec son annulation, réglages dans l'inspecteur, suivi en direct pendant le jeu ; API C++ et C# ;
     le robot et le chevalier du bac à sable s'en servent.
 
+39. ✅ **Navigation** — Recast & Detour derrière le module `Navigation` : maillage cuit dans
+    l'éditeur depuis les colliders statiques (asset `.dvxnavmesh` à côté de la scène, par tuiles
+    compressées), agents `NavMeshAgent` en foule avec évitement, obstacles `NavMeshObstacle` qui
+    découpent le maillage pendant le jeu, requêtes de chemin, d'échantillonnage et de rayon en C++
+    et en C#, maillage, agents et chemins dessinés dans la vue ; le robot et deux drones de l'arène
+    marchent par la navigation.
+
 Ensuite, sans ordre figé : CI Linux.
 
 ## Questions ouvertes
@@ -2648,6 +2757,12 @@ Ensuite, sans ordre figé : CI Linux.
   de formes et requêtes par boîte, vitesse horizontale constante sur les pentes, saut à hauteur
   variable, plateformes cinématiques qui poussent les personnages de côté, monde 2D créé
   seulement si la scène en a besoin, simulation dans l'éditeur.
+- **Navigation, la suite** : liens hors maillage (sauts, échelles, *NavMeshLink*), zones et coûts
+  de passage, plusieurs tailles d'agents (plusieurs surfaces actives à la fois), cuisson pendant le
+  jeu et tuiles recuites autour d'un changement, cuisson sur un worker avec sa progression,
+  géométrie des maillages rendus et des terrains comme source, obstacles qui ne découpent pas
+  (évitement seul), agents portés par les plateformes mobiles, root motion qui conduit l'agent,
+  essai d'un chemin dans l'éditeur hors jeu, cuisson automatique à l'enregistrement.
 - **Préfabs** : retirer un composant ou une entité du préfab dans une instance, variantes
   explicites (une instance à la racine d'un préfab en fait déjà une), onglet ouvert sur le préfab
   d'une instance avec son contexte, édition des entités d'une instance sur place (Godot *Editable
@@ -2739,6 +2854,10 @@ Ensuite, sans ordre figé : CI Linux.
   réglages selon la position de la caméra, mise à l'échelle temporelle (rendu sous la résolution
   de l'écran), occlusion ambiante par cônes plutôt que par points.
 - **Ciel procédural** : atmosphère physique liée à la lumière directionnelle.
+- **Écran 2D, la suite** : poignées des éléments tournés ou mis à l'échelle, aimantation et
+  repères, sélection des éléments au rectangle, aperçu à plusieurs résolutions, textes liés
+  (`UiBinding`) montrés hors du jeu, canevas cachés montrés à la demande, gizmos au-dessus de
+  l'interface, interfaces placées dans le monde 3D (canevas en espace monde).
 - **Éditeur** : vues Scène et Jeu simultanées (plusieurs vues par frame dans le renderer), jeu
   dans un processus séparé, lignes épaisses, pivot au centre de la sélection (mode *Center* de
   Unity), listes éditées à plusieurs, entités masquées aussi dans l'écran 2D, entité active ou

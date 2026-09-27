@@ -14,6 +14,8 @@
 
 #include <devex/asset/AnimatorData.hpp>
 #include <devex/asset/AssetId.hpp>
+#include <devex/asset/MeshData.hpp>
+#include <devex/asset/NavMeshData.hpp>
 #include <devex/asset/AssetMemory.hpp>
 #include <devex/asset/AssetType.hpp>
 #include <devex/asset/AudioClipData.hpp>
@@ -24,6 +26,7 @@
 #include <devex/asset/import/AssetDatabase.hpp>
 #include <devex/core/Uuid.hpp>
 #include <devex/math/Math.hpp>
+#include <devex/navigation/NavMeshBuilder.hpp>
 #include <devex/platform/Platform.hpp>
 #include <devex/render/Renderer.hpp>
 #include <devex/scene/Scene.hpp>
@@ -58,6 +61,10 @@ class AnimationWorld;
 class Clip;
 } // namespace devex::animation
 
+namespace devex::navigation {
+class NavigationWorld;
+} // namespace devex::navigation
+
 namespace devex::audio {
 class AudioEngine;
 class Clip;
@@ -77,7 +84,6 @@ inline constexpr const char* debuggingWindow = "C# Debugging";
 inline constexpr const char* animationWindow = "Animation";
 inline constexpr const char* animatorWindow = "Animator";
 inline constexpr const char* textEditorWindow = "Text Editor";
-inline constexpr const char* interfaceWindow = "Interface";
 inline constexpr const char* profilerWindow = "Profiler";
 
 // Payload type of an entity dragged in the hierarchy: the 16 bytes of its UUID.
@@ -236,8 +242,9 @@ struct ProjectManagerState
 // What the middle of the window shows. The panels around it stay where they are.
 enum class MainScreen : std::uint8_t
 {
-    // Interfaces, and later the 2D games the engine will also make.
+    // The viewport facing the XY plane: 2D games and the interfaces of the scene.
     TwoD,
+    // The viewport in perspective.
     ThreeD,
     Script,
 };
@@ -427,12 +434,12 @@ struct ToolsState
     bool showViewport = true;
     bool showSettings = false;
     // The screen the middle of the window shows, chosen in the menu bar or by what the editor
-    // opens: a scene shows the viewport, a file shows the text editor.
+    // opens: a scene shows the viewport in the screen it was left in, 2D or 3D, a file shows the
+    // text editor.
     MainScreen mainScreen = MainScreen::ThreeD;
     // The screen was chosen this frame: its window takes the focus of the middle.
     bool mainScreenChanged = false;
     bool showTextEditor = false;
-    bool showInterface = false;
     bool focusTextEditor = false;
     bool selectTextTab = false;
     // Opening a document moves the others in memory: hold the path of a document across a frame,
@@ -482,11 +489,20 @@ struct ToolsState
     std::function<math::Extent2D(asset::AssetId)> textureSizes;
     std::function<std::shared_ptr<const asset::SpriteData>(asset::AssetId)> sprites;
     std::function<std::shared_ptr<const asset::TilesetData>(asset::AssetId)> tilesets;
+    // Navigation: the meshes of mesh colliders, to bake, and baked navigation meshes, with the lines
+    // of the one last drawn and what the last bake said.
+    std::function<const asset::MeshData*(asset::AssetId)> meshes;
+    std::function<std::shared_ptr<const asset::NavMeshData>(asset::AssetId)> navMeshes;
+    std::shared_ptr<const asset::NavMeshData> navMeshDrawn;
+    navigation::NavMeshLines navMeshLines;
+    std::string navMeshBakeStatus;
+    bool navMeshBakeFailed = false;
     // What the loaded assets take, for the Profiler panel.
     std::function<asset::MemoryReport()> memoryReport;
     // The meshes and textures loading in the background, for the status bar.
     std::function<std::size_t()> pendingLoads;
     animation::AnimationWorld* animationWorld = nullptr;
+    navigation::NavigationWorld* navigationWorld = nullptr;
     // The particles of the scene shown, previewed in the editor; null without them.
     particles::ParticleWorld* particleWorld = nullptr;
     bool showAnimation = false;
@@ -523,8 +539,8 @@ struct ToolsState
     core::Uuid pendingRowClick;
     bool hierarchyFocused = false;
 
-    // The 2D screen: how much of the reference resolution it shows, and the drag under way.
-    float interfaceZoom = 1.0f;
+    // The 2D screen: where it draws the interfaces this frame, and the drag of an element under way.
+    std::optional<InterfaceFrame> interfaceFrame;
     core::Uuid interfaceDragEntity;
     scene::UiRect interfaceDragStart;
     std::uint8_t interfaceHandle = 0;
@@ -606,6 +622,10 @@ struct ToolsState
     bool showIcons = true;
     // The collision shapes of every entity, rather than only those of the selection.
     bool showColliders = false;
+    // The interfaces of a 3D scene over its 3D screen, as the game will draw them.
+    bool showInterfaces = true;
+    // The kind of the edited scene on the previous frame: the screen follows it when it changes.
+    std::optional<scene::SceneKind> shownSceneKind;
     bool showProjectSettings = false;
     // The binding of the input settings waiting for a key or a gamepad button, by action and
     // binding, and the filter of the list bindings are chosen from.
@@ -728,6 +748,13 @@ bool drawAnimatorElementInspector(ToolsState& state);
 void drawAnimatorInspector(ToolsState& state);
 // Writes a new animator controller into a res:// folder of the assets, and selects it once imported.
 core::Result<std::filesystem::path> createAnimatorFile(ToolsState& state, std::string_view folder);
+// Under the NavMeshSurface of the inspected entity: what its navigation mesh holds, and the button
+// that bakes it again from the colliders of the scene, next to the scene file.
+void drawNavMeshBaker(ToolsState& state, scene::Scene& scene, scene::Entity entity);
+// The navigation meshes of the surfaces shown, the agents and obstacles, and the paths agents walk
+// while the game plays, as lines of the overlay.
+void addNavigationLines(ToolsState& state, scene::Scene& scene, const std::unordered_set<std::uint32_t>& shown, bool showAll,
+                        std::vector<render::OverlayVertex>& lines);
 // Under the Tilemap of the inspected entity: the tools that paint it and the palette of its tiles.
 void drawTilePainter(ToolsState& state, scene::Scene& scene, scene::Entity entity);
 // Paints the selected tilemap with the mouse when a tool is chosen. Returns whether it took the
@@ -746,8 +773,17 @@ void stopAudioPreview(ToolsState& state);
 
 // Editor.
 void drawViewportPanel(ToolsState& state, scene::Scene& scene);
-// The 2D screen: the canvases of the scene, where their elements are moved and resized.
-void drawInterfacePanel(ToolsState& state, scene::Scene& scene);
+// The 2D screen: picks, moves and resizes the elements of the interfaces under the mouse, before
+// the entities of the world. Answers whether it took the mouse.
+bool handleInterfaceEditing(ToolsState& state, scene::Scene& scene, bool hovered);
+// The 2D screen: the frame of the game when no camera draws it, and the handles of the selected
+// element, over the viewport.
+void drawInterfaceOverlay(ToolsState& state, const scene::Scene& scene);
+// The rectangle of the XY plane the selected elements of the interfaces cover in the 2D screen.
+[[nodiscard]] std::optional<std::pair<math::Vec2, math::Vec2>> selectedInterfaceBounds(const ToolsState& state,
+                                                                                     const scene::Scene& scene);
+// Shows the viewport in the screen of the kind of the active scene, 2D or 3D.
+void showSceneScreen(ToolsState& state, const scene::Scene& scene);
 void drawProjectManager(ToolsState& state);
 void drawEditorMenus(ToolsState& state, scene::Scene& scene);
 // Shows a screen in the middle of the window: the panel it needs opens and takes the focus.
@@ -776,10 +812,13 @@ void saveEditorSettings(ToolsState& state);
 // Scene tabs.
 // A small lit scene to start from: a sun, a sky, a camera, a ground and a cube.
 [[nodiscard]] scene::Scene makeDefaultScene();
+// A 2D scene holding a 2D camera.
+[[nodiscard]] scene::Scene makeDefault2DScene();
 [[nodiscard]] ActiveDocument activeDocument(ToolsState& state, scene::Scene& scene) noexcept;
 // The name shown for a tab: its file name, or "[unsaved]".
 [[nodiscard]] std::string tabName(const std::filesystem::path& path);
-void newSceneTab(ToolsState& state, scene::Scene& scene);
+// A new scene of that kind, or of the kind of the screen shown.
+void newSceneTab(ToolsState& state, scene::Scene& scene, std::optional<scene::SceneKind> kind = std::nullopt);
 // Opens a scene in a new tab, or shows its tab when it is already open.
 void openSceneTab(ToolsState& state, scene::Scene& scene, const std::filesystem::path& path);
 void activateSceneTab(ToolsState& state, scene::Scene& scene, std::size_t index);

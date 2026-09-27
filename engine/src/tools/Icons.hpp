@@ -63,6 +63,7 @@ namespace devex::tools::detail {
     ICON(FolderOpen, "folder-open")                  \
     ICON(FolderSearch, "folder-search")              \
     ICON(FolderTree, "folder-tree")                  \
+    ICON(Footprints, "footprints")                   \
     ICON(Funnel, "funnel")                           \
     ICON(Gauge, "gauge")                             \
     ICON(Globe, "globe")                             \

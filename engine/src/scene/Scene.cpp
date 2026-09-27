@@ -40,7 +40,18 @@ Scene Scene::clone() const
     copy.m_firstRoot = m_firstRoot;
     copy.m_lastRoot = m_lastRoot;
     copy.m_entityCount = m_entityCount;
+    copy.m_kind = m_kind;
     return copy;
+}
+
+SceneKind Scene::kind() const noexcept
+{
+    return m_kind;
+}
+
+void Scene::setKind(SceneKind kind) noexcept
+{
+    m_kind = kind;
 }
 
 Entity Scene::createEntity(std::string name)

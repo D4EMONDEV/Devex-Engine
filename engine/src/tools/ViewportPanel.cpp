@@ -1,4 +1,5 @@
 #include "ToolsState.hpp"
+#include "TwoDScreen.hpp"
 
 #include <devex/asset/Project.hpp>
 #include <devex/core/Log.hpp>
@@ -8,6 +9,7 @@
 #include <devex/scene/Components.hpp>
 #include <devex/scene/FieldValue.hpp>
 #include <devex/scene/Prefab.hpp>
+#include <devex/scene/UiComponents.hpp>
 #include <devex/tools/SceneCommands.hpp>
 
 #include <imgui_internal.h>
@@ -186,38 +188,13 @@ void drawSceneTabs(ToolsState& state, scene::Scene& scene)
     }
 }
 
-// A button showing a word rather than an icon, lit while its setting is on, as the tool buttons.
-[[nodiscard]] bool wordToggle(const char* label, const char* tooltip, bool selected)
-{
-    const ThemeColors& colors = themeColors();
-    const ImVec4 accent = colors.accent;
-    ImGui::PushStyleColor(ImGuiCol_Button, selected ? uiColor(ImVec4(accent.x, accent.y, accent.z, 0.28f)) : ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, selected ? uiColor(ImVec4(accent.x, accent.y, accent.z, 0.36f))
-                                                           : ImGui::GetStyleColorVec4(ImGuiCol_HeaderHovered));
-    ImGui::PushStyleColor(ImGuiCol_ButtonActive, uiColor(ImVec4(accent.x, accent.y, accent.z, 0.45f)));
-    ImGui::PushStyleColor(ImGuiCol_Text, uiColor(selected ? colors.accent : colors.text));
-    const float height = toolButtonWidth();
-    const float width = std::max(height, ImGui::CalcTextSize(label).x + ImGui::GetStyle().FramePadding.x * 2.0f);
-    const bool pressed = ImGui::Button(label, ImVec2(width, height));
-    ImGui::PopStyleColor(4);
-    ImGui::SetItemTooltip("%s", tooltip);
-    return pressed;
-}
-
 void drawToolbar(ToolsState& state, scene::Scene& scene)
 {
     const ThemeColors& colors = themeColors();
     const ImGuiStyle& style = ImGui::GetStyle();
     ImGui::SetCursorPosX(ImGui::GetCursorPosX() + style.ItemSpacing.x);
+    // The 2D screen and the 3D screen share the viewport; the menu bar chooses between them.
     const bool twoD = state.camera.isTwoD();
-    if (wordToggle("2D", twoD ? "2D view: facing the XY plane, without perspective. Click to go back to 3D."
-                              : "Look straight at the XY plane without perspective, to lay sprites out",
-                   twoD))
-    {
-        state.camera.setTwoD(!twoD);
-    }
-    ImGui::SameLine(0.0f, 2.0f);
-    toolbarSeparator();
     const auto toolButtonFor = [&](const char* id, IconText icon, EditorTool tool, const char* tooltip) {
         if (toolButton(id, icon, tooltip, state.tool == tool))
         {
@@ -265,6 +242,18 @@ void drawToolbar(ToolsState& state, scene::Scene& scene)
     {
         frameSelection(state, scene);
     }
+    // The interfaces of a 3D scene show over its 3D screen, as the game will draw them; a menu that
+    // covers the whole screen hides the scene, hence the button.
+    if (!twoD && scene.kind() == scene::SceneKind::ThreeD)
+    {
+        ImGui::SameLine(0.0f, 2.0f);
+        if (toolButton("interfaces", icons::LayoutDashboard,
+                       "Interfaces over the scene, as the game draws them (they are edited in the 2D screen)",
+                       state.showInterfaces))
+        {
+            state.showInterfaces = !state.showInterfaces;
+        }
+    }
 
     const std::string speed = twoD ? std::format("{:.3g} m", state.camera.orthographicSize() * 2.0f)
                                    : std::format("{:.1f} m/s", state.camera.speed());
@@ -286,6 +275,8 @@ void drawToolbar(ToolsState& state, scene::Scene& scene)
     toolButton("help", icons::CircleHelp,
                twoD ? "Right or middle drag: slide    Wheel: zoom at the mouse\n"
                       "Click: select, Shift or Ctrl + click: add or remove, left drag: select in a rectangle\n"
+                      "Interfaces: click an element to select it, again to reach the one under it,\n"
+                      "drag it or its handles to move or resize it\n"
                       "F: frame the selection    H: hide it    Delete: delete it    Ctrl: snap"
                     : "Right drag: look, with W A S D to fly, Q E to go down and up, Shift to go faster\n"
                       "Alt + left drag: orbit    Middle drag: pan    Wheel: move forward\n"
@@ -673,10 +664,45 @@ void handleKeys(ToolsState& state, scene::Scene& scene)
     }
 }
 
+// Over the screen of the other kind, which shows nothing of the scene: why, and where it is edited.
+void drawOtherKindHint(const ToolsState& state, const scene::Scene& scene, ScreenContent content, ImVec2 origin,
+                       ImVec2 available)
+{
+    const char* hint = nullptr;
+    if (content == ScreenContent::Nothing)
+    {
+        hint = "A 2D scene: it is edited in the 2D screen";
+    }
+    else if (!state.interfaceFrame || scene.view<scene::Canvas>().begin() == scene.view<scene::Canvas>().end())
+    {
+        hint = "A 3D scene: its interfaces are edited here, and the scene in the 3D screen";
+    }
+    if (hint == nullptr)
+    {
+        return;
+    }
+    const ThemeColors& colors = themeColors();
+    const ImVec2 measured = ImGui::CalcTextSize(hint);
+    const ImVec2 at(origin.x + (available.x - measured.x) * 0.5f, origin.y + available.y - measured.y * 2.5f);
+    const ImVec2 padding = ImGui::GetStyle().FramePadding;
+    ImDrawList& drawing = *ImGui::GetWindowDrawList();
+    drawing.AddRectFilled(ImVec2(at.x - padding.x, at.y - padding.y),
+                          ImVec2(at.x + measured.x + padding.x, at.y + measured.y + padding.y),
+                          uiColorU32(ImVec4(colors.panel.x, colors.panel.y, colors.panel.z, 0.85f)), ImGui::GetStyle().FrameRounding);
+    drawing.AddText(at, uiColorU32(colors.text), hint);
+}
+
 } // namespace
 
 void frameSelection(ToolsState& state, const scene::Scene& scene)
 {
+    // The elements of an interface, where the 2D screen draws them.
+    if (const std::optional<std::pair<math::Vec2, math::Vec2>> elements = selectedInterfaceBounds(state, scene))
+    {
+        const math::Vec2 center = (elements->first + elements->second) * 0.5f;
+        state.camera.frame(math::Vec3(center, 0.0f), math::length(elements->second - elements->first) * 0.5f);
+        return;
+    }
     // A sphere around every selected entity, each as large as it looks.
     std::optional<std::pair<math::Vec3, math::Vec3>> bounds;
     for (const core::Uuid uuid : state.selection.entities())
@@ -706,6 +732,7 @@ void drawViewportPanel(ToolsState& state, scene::Scene& scene)
 {
     state.viewportHovered = false;
     state.viewportFocused = false;
+    state.interfaceFrame.reset();
     if (!state.showViewport)
     {
         state.viewportPixels = {};
@@ -788,14 +815,43 @@ void drawViewportPanel(ToolsState& state, scene::Scene& scene)
 
     const math::Vec2 size{static_cast<float>(width), static_cast<float>(height)};
     const math::Vec2 mouse = (math::Vec2(io.MousePos.x, io.MousePos.y) - state.viewportOrigin) * state.pixelsPerPoint;
+    const ScreenContent content = screenContent(state.camera.isTwoD(), scene);
     const ViewportView view{.view = state.camera.view(),
                             .verticalFov = EditorCamera::verticalFov,
                             .size = size,
                             .orthographic = state.camera.isTwoD(),
                             .orthographicSize = state.camera.orthographicSize()};
     state.gizmo.twoD = state.camera.isTwoD();
+    // The 2D screen draws the interfaces in the frame of what the game shows, and the 3D screen of a
+    // 3D scene over the whole view, as the game will.
+    if (state.camera.isTwoD())
+    {
+        state.interfaceFrame = interfaceFrame(gameFrame(scene, size.x / size.y), view);
+    }
+    else if (content == ScreenContent::Scene && state.showInterfaces)
+    {
+        state.interfaceFrame = InterfaceFrame{.layoutSize = size, .offset = {0.0f, 0.0f}, .scale = 1.0f};
+    }
 
-    if (editing)
+    if (editing && content != ScreenContent::Scene)
+    {
+        if (hovered && (ImGui::IsMouseClicked(ImGuiMouseButton_Left) || ImGui::IsMouseClicked(ImGuiMouseButton_Middle)))
+        {
+            ImGui::SetWindowFocus();
+        }
+        handleCamera(state, hovered, size, mouse);
+        if (content == ScreenContent::Interfaces)
+        {
+            static_cast<void>(handleInterfaceEditing(state, scene, hovered));
+            if (state.viewportFocused || hovered)
+            {
+                handleKeys(state, scene);
+            }
+        }
+        drawInterfaceOverlay(state, scene);
+        drawOtherKindHint(state, scene, content, origin, available);
+    }
+    else if (editing)
     {
         if (const std::optional<asset::AssetId> model = acceptDroppedAsset(asset::AssetType::Model))
         {
@@ -816,11 +872,13 @@ void drawViewportPanel(ToolsState& state, scene::Scene& scene)
         // A drag from another panel holds the mouse: the view counts as hovered all the same.
         handleMaterialDrop(state, scene, mouse, ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenBlockedByActiveItem));
         handleCamera(state, hovered, size, mouse);
-        // A tile tool takes the left button from the selection and the gizmo.
-        if (!handleTilePainting(state, scene, view, mouse, hovered))
+        // A tile tool takes the left button from the selection and the gizmo, and the elements of
+        // the interfaces take it from the world under them.
+        if (!handleTilePainting(state, scene, view, mouse, hovered) && !handleInterfaceEditing(state, scene, hovered))
         {
             handleGizmoAndSelection(state, scene, view, mouse, hovered);
         }
+        drawInterfaceOverlay(state, scene);
         if (state.viewportFocused || hovered)
         {
             handleKeys(state, scene);

@@ -165,6 +165,13 @@ target_compile_definitions(devex_platform_tests
     PRIVATE DEVEX_TEST_CRASH_PROBE="$<TARGET_FILE:devex_crash_probe>"
 )
 
+devex_add_tests(navigation
+    SOURCES
+        navigation/NavigationTests.cpp
+    LIBRARIES
+        Devex::Engine
+)
+
 devex_add_tests(physics
     SOURCES
         physics/Physics2DWorldTests.cpp
@@ -204,6 +211,7 @@ devex_add_tests(tools
         tools/TextEditorTests.cpp
         tools/ThemeTests.cpp
         tools/ToolsOverlayTests.cpp
+        tools/TwoDScreenTests.cpp
     LIBRARIES
         Devex::Engine
 )

@@ -48,6 +48,15 @@ template <typename T>
     return index;
 }
 
+// What a scene is made for, as the root of a Godot scene is a Node2D or a Node3D: the editor shows
+// a 2D scene in its 2D screen, facing the XY plane, and a 3D scene in its 3D screen. A 2.5D game,
+// with sprites among models, is a 3D scene.
+enum class SceneKind : std::uint8_t
+{
+    ThreeD,
+    TwoD,
+};
+
 // A world of entities organized in a hierarchy. Each entity has a UUID, a name and any number of
 // components, at most one per type, stored contiguously per type.
 class Scene
@@ -173,6 +182,9 @@ public:
     // without a Transform pass their parent's transform down to their children.
     void updateTransforms();
 
+    [[nodiscard]] SceneKind kind() const noexcept;
+    void setKind(SceneKind kind) noexcept;
+
     // The pool of a component type described while the engine runs, such as a C# component,
     // created with the layout when the scene has none yet.
     [[nodiscard]] DynamicComponentPool& dynamicPool(std::size_t typeIndex,
@@ -245,6 +257,7 @@ private:
     Entity m_firstRoot;
     Entity m_lastRoot;
     std::size_t m_entityCount = 0;
+    SceneKind m_kind = SceneKind::ThreeD;
 };
 
 } // namespace devex::scene

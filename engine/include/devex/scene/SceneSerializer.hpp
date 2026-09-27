@@ -57,7 +57,13 @@ enum class PrefabLoading : std::uint8_t
     KeepUnresolved,
 };
 
+// The [scene] header names what the scene is made for, `kind = "2d"` or `"3d"`.
 [[nodiscard]] std::string saveScene(const Scene& scene);
+
+// What a scene written before scenes had a kind is made for: 2D when its primary camera, or its
+// first camera, is orthographic, or, without a camera, when it draws sprites, tiles or interfaces
+// and no mesh, as the prefab of a 2D object does; 3D otherwise.
+[[nodiscard]] SceneKind inferSceneKind(const Scene& scene);
 
 // Unknown component types are preserved, and unknown fields skipped with a warning, so that a scene
 // written by a newer version or with game code that is not loaded still opens. Malformed values are

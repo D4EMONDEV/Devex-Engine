@@ -604,6 +604,12 @@ std::shared_ptr<const asset::AnimatorData> AssetManager::animator(asset::AssetId
                                            [](std::span<const std::byte> bytes) { return asset::decodeAnimator(bytes); });
 }
 
+std::shared_ptr<const asset::NavMeshData> AssetManager::navMesh(asset::AssetId id)
+{
+    return loadShared<asset::NavMeshData>(id, m_source, m_failed, m_navMeshes, "navigation mesh",
+                                          [](std::span<const std::byte> bytes) { return asset::decodeNavMesh(bytes); });
+}
+
 const LoadedFont* AssetManager::font(asset::AssetId id)
 {
     auto found = m_fonts.find(id);
@@ -717,6 +723,9 @@ void AssetManager::handleEvents(std::span<const asset::AssetEvent> events)
             break;
         case asset::AssetType::Animator:
             m_animators.erase(event.id);
+            break;
+        case asset::AssetType::NavMesh:
+            m_navMeshes.erase(event.id);
             break;
         }
     }
@@ -865,6 +874,7 @@ void AssetManager::setSource(asset::AssetSource* source)
     m_spriteFrames.clear();
     m_tilesets.clear();
     m_animators.clear();
+    m_navMeshes.clear();
     m_failed.clear();
     m_source = source;
 }

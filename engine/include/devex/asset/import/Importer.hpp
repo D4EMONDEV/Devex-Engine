@@ -115,6 +115,7 @@ struct Importer
 [[nodiscard]] core::Result<ImportResult> importSpriteFramesFile(ImportContext& context);
 [[nodiscard]] core::Result<ImportResult> importTilesetFile(ImportContext& context);
 [[nodiscard]] core::Result<ImportResult> importAnimatorFile(ImportContext& context);
+[[nodiscard]] core::Result<ImportResult> importNavMeshFile(ImportContext& context);
 // Sounds keep their file; the "loading" option chooses "decoded", "streamed" or "auto".
 [[nodiscard]] core::Result<ImportResult> importAudioFile(ImportContext& context);
 // Fonts are baked into an atlas of distances at the "size" of the option, with the "spread" of the

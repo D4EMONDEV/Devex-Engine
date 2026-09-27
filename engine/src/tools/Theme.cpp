@@ -10,6 +10,7 @@
 #include <devex/scene/AudioComponents.hpp>
 #include <devex/scene/ComponentRegistry.hpp>
 #include <devex/scene/Components.hpp>
+#include <devex/scene/NavigationComponents.hpp>
 #include <devex/scene/Physics2DComponents.hpp>
 #include <devex/scene/PhysicsComponents.hpp>
 #include <devex/scene/Prefab.hpp>
@@ -118,7 +119,7 @@ bool g_linearColors = true;
 
 [[nodiscard]] bool isEngineComponent(std::string_view name) noexcept
 {
-    constexpr std::array<std::string_view, 42> engineComponents{
+    constexpr std::array<std::string_view, 45> engineComponents{
         "Transform",       "MeshRenderer",        "Camera",       "DirectionalLight",
         "PointLight",      "SpotLight",           "Environment",  "RigidBody",
         "BoxCollider",     "SphereCollider",      "CapsuleCollider", "CylinderCollider",
@@ -129,7 +130,7 @@ bool g_linearColors = true;
         "UiBinding",       "Tweener",             "ParticleEmitter", "TrailRenderer",
         "SpriteRenderer",  "SpriteAnimator",      "Tilemap",      "RigidBody2D",
         "BoxCollider2D",   "CircleCollider2D",    "CapsuleCollider2D", "PolygonCollider2D",
-        "TilemapCollider2D", "CharacterController2D"};
+        "TilemapCollider2D", "CharacterController2D", "NavMeshSurface", "NavMeshAgent", "NavMeshObstacle"};
     return std::ranges::find(engineComponents, name) != engineComponents.end();
 }
 
@@ -587,6 +588,10 @@ EntityIcon entityIcon(const scene::Scene& scene, scene::Entity entity)
     {
         return {icons::PersonStanding, colors.physics};
     }
+    if (scene.has<scene::NavMeshSurface>(entity) || scene.has<scene::NavMeshAgent>(entity))
+    {
+        return {icons::Footprints, colors.physics};
+    }
     if (scene.has<scene::MeshRenderer>(entity))
     {
         return {icons::Box, colors.entity};
@@ -712,6 +717,14 @@ EntityIcon componentIcon(std::string_view componentName)
     if (componentName == "TilemapCollider2D")
     {
         return {icons::Grid, colors.physics};
+    }
+    if (componentName == "NavMeshSurface" || componentName == "NavMeshAgent")
+    {
+        return {icons::Footprints, colors.physics};
+    }
+    if (componentName == "NavMeshObstacle")
+    {
+        return {icons::SquareDashed, colors.physics};
     }
     if (componentName == "SkinnedMeshRenderer")
     {

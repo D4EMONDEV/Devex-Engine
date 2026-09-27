@@ -25,24 +25,6 @@ bool EditorCamera::isTwoD() const noexcept
 
 void EditorCamera::setTwoD(bool twoD) noexcept
 {
-    if (twoD == m_twoD)
-    {
-        return;
-    }
-    const float tangent = std::tan(verticalFov * 0.5f);
-    if (twoD)
-    {
-        // The plane at the pivot keeps its size on screen, seen from the front.
-        m_orthographicSize = std::clamp(m_distance * tangent, minimumOrthographicSize, maximumOrthographicSize);
-        m_pivot.z = 0.0f;
-    }
-    else
-    {
-        // Back in 3D, the camera faces the plane it showed, from the distance that shows it as large.
-        m_distance = std::clamp(m_orthographicSize / tangent, minimumDistance, maximumDistance);
-        m_yaw = 0.0f;
-        m_pitch = 0.0f;
-    }
     m_twoD = twoD;
 }
 
@@ -56,6 +38,17 @@ void EditorCamera::setOrthographicSize(float size) noexcept
     m_orthographicSize = std::clamp(size, minimumOrthographicSize, maximumOrthographicSize);
 }
 
+math::Vec2 EditorCamera::center() const noexcept
+{
+    return m_center;
+}
+
+void EditorCamera::setView2D(math::Vec2 center, float orthographicSize) noexcept
+{
+    m_center = center;
+    setOrthographicSize(orthographicSize);
+}
+
 void EditorCamera::zoomAt(float wheelSteps, math::Vec2 pixel, math::Vec2 viewportSize) noexcept
 {
     const float height = std::max(viewportSize.y, 1.0f);
@@ -66,12 +59,12 @@ void EditorCamera::zoomAt(float wheelSteps, math::Vec2 pixel, math::Vec2 viewpor
     const math::Vec2 before = worldAt(m_orthographicSize);
     setOrthographicSize(m_orthographicSize * std::pow(0.85f, wheelSteps));
     const math::Vec2 after = worldAt(m_orthographicSize);
-    m_pivot += math::Vec3(before - after, 0.0f);
+    m_center += before - after;
 }
 
 math::Vec3 EditorCamera::position() const noexcept
 {
-    return m_pivot - forward() * (m_twoD ? twoDDistance : m_distance);
+    return pivot() - forward() * (m_twoD ? twoDDistance : m_distance);
 }
 
 math::Quat EditorCamera::rotation() const noexcept
@@ -89,6 +82,11 @@ math::Vec3 EditorCamera::forward() const noexcept
 }
 
 math::Vec3 EditorCamera::pivot() const noexcept
+{
+    return m_twoD ? math::Vec3(m_center, 0.0f) : m_pivot;
+}
+
+math::Vec3 EditorCamera::pivot3D() const noexcept
 {
     return m_pivot;
 }
@@ -156,16 +154,17 @@ void EditorCamera::fly(math::Vec3 direction, float seconds, bool fast) noexcept
     {
         return;
     }
+    const float step = m_speed * (fast ? 4.0f : 1.0f) * seconds;
     // In 2D, the keys slide the view across the plane.
     if (m_twoD)
     {
-        direction.z = 0.0f;
-        if (math::length(direction) <= 0.0f)
+        const math::Vec2 flat{direction.x, direction.y};
+        if (math::length(flat) > 0.0f)
         {
-            return;
+            m_center += math::normalize(flat) * step;
         }
+        return;
     }
-    const float step = m_speed * (fast ? 4.0f : 1.0f) * seconds;
     m_pivot += rotation() * math::normalize(direction) * step;
 }
 
@@ -184,6 +183,11 @@ void EditorCamera::pan(math::Vec2 mouseDelta, float viewportHeight) noexcept
     // One pixel covers this much at the pivot's distance.
     const float metersPerPixel = 2.0f * (m_twoD ? m_orthographicSize : m_distance * std::tan(verticalFov * 0.5f)) /
                                  std::max(viewportHeight, 1.0f);
+    if (m_twoD)
+    {
+        m_center += math::Vec2{-mouseDelta.x * metersPerPixel, mouseDelta.y * metersPerPixel};
+        return;
+    }
     const math::Quat orientation = rotation();
     m_pivot += orientation * math::Vec3{-mouseDelta.x * metersPerPixel, mouseDelta.y * metersPerPixel, 0.0f};
 }
@@ -207,7 +211,7 @@ void EditorCamera::frame(math::Vec3 center, float radius) noexcept
 {
     if (m_twoD)
     {
-        m_pivot = math::Vec3{center.x, center.y, 0.0f};
+        m_center = math::Vec2{center.x, center.y};
         setOrthographicSize(std::max(radius, 0.1f) * 1.2f);
         return;
     }

@@ -1,4 +1,4 @@
-[scene format=1]
+[scene format=1 kind="3d"]
 
 [entity uuid="7daae435-06f5-54aa-b285-e3278b16f58f" name="Lamp zone"]
 

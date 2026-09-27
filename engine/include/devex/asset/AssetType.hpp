@@ -34,13 +34,15 @@ enum class AssetType : std::uint8_t
     Tileset = 13,
     // The state machine an Animator plays, a .dvxanimator file.
     Animator = 14,
+    // Where agents walk in a scene, baked by the editor into a .dvxnavmesh file.
+    NavMesh = 15,
 };
 
 // Whether a stored value is one of the types above: update it with them.
 [[nodiscard]] constexpr bool isAssetType(std::uint8_t value) noexcept
 {
     return value >= static_cast<std::uint8_t>(AssetType::Mesh) &&
-           value <= static_cast<std::uint8_t>(AssetType::Animator);
+           value <= static_cast<std::uint8_t>(AssetType::NavMesh);
 }
 
 // "mesh", "texture", "material", "model", "scene", "audio", "animation" or "font", as written in

@@ -1,5 +1,6 @@
 find_package(basisu CONFIG REQUIRED)
 find_package(box2d CONFIG REQUIRED)
+find_package(recastnavigation CONFIG REQUIRED)
 find_package(efsw CONFIG REQUIRED)
 find_package(fastgltf CONFIG REQUIRED)
 find_package(glm CONFIG REQUIRED)
@@ -207,6 +208,7 @@ target_sources(devex_asset
         src/asset/TextureData.cpp
         src/asset/TilesetData.cpp
         src/asset/AnimatorData.cpp
+        src/asset/NavMeshData.cpp
         src/asset/ThemeData.cpp
     PUBLIC
         FILE_SET HEADERS
@@ -232,6 +234,7 @@ target_sources(devex_asset
             include/devex/asset/TextureData.hpp
             include/devex/asset/TilesetData.hpp
             include/devex/asset/AnimatorData.hpp
+            include/devex/asset/NavMeshData.hpp
 )
 
 target_link_libraries(devex_asset
@@ -427,6 +430,7 @@ target_sources(devex_scene
         src/scene/ModelInstantiation.cpp
         src/scene/PhysicsComponents.cpp
         src/scene/Physics2DComponents.cpp
+        src/scene/NavigationComponents.cpp
         src/scene/UiComponents.cpp
         src/scene/AnimationComponents.cpp
         src/scene/ParticleComponents.cpp
@@ -452,6 +456,7 @@ target_sources(devex_scene
             include/devex/scene/ModelInstantiation.hpp
             include/devex/scene/PhysicsComponents.hpp
             include/devex/scene/Physics2DComponents.hpp
+            include/devex/scene/NavigationComponents.hpp
             include/devex/scene/UiComponents.hpp
             include/devex/scene/AnimationComponents.hpp
             include/devex/scene/ParticleComponents.hpp
@@ -537,6 +542,44 @@ set_target_properties(devex_physics2d PROPERTIES
     FOLDER "Engine"
 )
 devex_set_warnings(devex_physics2d)
+
+# Navigation: navigation meshes baked with Recast from the colliders of a scene, and the agents and
+# obstacles of the scene on them with Detour.
+add_library(devex_navigation OBJECT)
+add_library(Devex::Navigation ALIAS devex_navigation)
+
+target_sources(devex_navigation
+    PRIVATE
+        src/navigation/NavMeshBuilder.cpp
+        src/navigation/NavigationWorld.cpp
+        src/navigation/TileCache.cpp
+        src/navigation/TileCache.hpp
+    PUBLIC
+        FILE_SET HEADERS
+        BASE_DIRS include
+        FILES
+            include/devex/navigation/NavMeshBuilder.hpp
+            include/devex/navigation/NavigationWorld.hpp
+)
+
+target_link_libraries(devex_navigation
+    PUBLIC
+        Devex::Asset
+        Devex::Core
+        Devex::Math
+        Devex::Scene
+    PRIVATE
+        RecastNavigation::Recast
+        RecastNavigation::Detour
+        RecastNavigation::DetourCrowd
+        RecastNavigation::DetourTileCache
+        zstd::libzstd
+)
+set_target_properties(devex_navigation PROPERTIES
+    EXPORT_NAME Navigation
+    FOLDER "Engine"
+)
+devex_set_warnings(devex_navigation)
 
 # Animation: animation clips, their sampling and blending, and the skeletons of the Animator
 # components of a game.
@@ -752,9 +795,9 @@ target_sources(devex_tools
         src/tools/Icons.hpp
         src/tools/InputSettings.cpp
         src/tools/InspectorPanel.cpp
-        src/tools/InterfacePanel.cpp
         src/tools/LogBuffer.cpp
         src/tools/ModelInspector.cpp
+        src/tools/NavigationTools.cpp
         src/tools/ProjectList.cpp
         src/tools/ProjectList.hpp
         src/tools/ProfilerPanel.cpp
@@ -769,6 +812,8 @@ target_sources(devex_tools
         src/tools/Theme.hpp
         src/tools/ToolsOverlay.cpp
         src/tools/ToolsState.hpp
+        src/tools/TwoDScreen.cpp
+        src/tools/TwoDScreen.hpp
         src/tools/ViewportPanel.cpp
         src/tools/Widgets.cpp
         src/tools/Widgets.hpp
@@ -790,6 +835,7 @@ target_link_libraries(devex_tools
         Devex::Audio
         Devex::Core
         Devex::Particles
+        Devex::Navigation
         Devex::Physics2D
         Devex::Platform
         Devex::Render
@@ -857,6 +903,7 @@ target_link_libraries(devex_runtime
         Devex::Core
         Devex::Particles
         Devex::Physics
+        Devex::Navigation
         Devex::Physics2D
         Devex::Platform
         Devex::Render
@@ -884,6 +931,7 @@ target_link_libraries(devex_engine
         devex_math
         devex_particles
         devex_physics
+        devex_navigation
         devex_physics2d
         devex_platform
         devex_reflection

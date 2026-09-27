@@ -1,4 +1,4 @@
-[scene format=1]
+[scene format=1 kind="3d"]
 
 [entity uuid="e3d13bf5-f82b-52d8-b067-e917134f9a3c" name="Crate"]
 
@@ -16,4 +16,8 @@ mass = 8
 friction = 0.7
 
 [component type="BoxCollider"]
+size = vec3(1, 1, 1)
+
+[component type="NavMeshObstacle"]
+shape = "box"
 size = vec3(1, 1, 1)

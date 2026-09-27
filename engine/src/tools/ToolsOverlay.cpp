@@ -1,4 +1,5 @@
 #include "ToolsState.hpp"
+#include "TwoDScreen.hpp"
 
 #include <devex/asset/Artifact.hpp>
 #include <devex/core/Assert.hpp>
@@ -353,7 +354,6 @@ void buildDefaultLayout(ImGuiID dockspace, const ImGuiViewport& viewport, ToolsM
         // the node shows no tab bar, so that the screen fills it as in Godot.
         ImGui::DockBuilderDockWindow(detail::viewportWindow, center);
         ImGui::DockBuilderDockWindow(detail::textEditorWindow, center);
-        ImGui::DockBuilderDockWindow(detail::interfaceWindow, center);
         if (ImGuiDockNode* const node = ImGui::DockBuilderGetNode(center))
         {
             node->SetLocalFlags(node->LocalFlags | ImGuiDockNodeFlags_NoTabBar |
@@ -454,6 +454,13 @@ void updateEditor(ToolsState& state, scene::Scene& scene, PlayState playState)
     }
 
     applyWindowLayout(state, detail::WindowLayout::Editor);
+    // The screen follows the kind of the scene when it changes, from the Scene menu or its undo.
+    if (state.shownSceneKind && *state.shownSceneKind != scene.kind() && state.mainScreen != detail::MainScreen::Script &&
+        state.playState == PlayState::Editing)
+    {
+        detail::showSceneScreen(state, scene);
+    }
+    state.shownSceneKind = scene.kind();
     detail::drawEditorMenus(state, scene);
     if (std::exchange(state.mainScreenChanged, false))
     {
@@ -464,10 +471,6 @@ void updateEditor(ToolsState& state, scene::Scene& scene, PlayState playState)
     handleShortcuts(state, scene);
     detail::handleEditorShortcuts(state, scene);
     detail::drawViewportPanel(state, scene);
-    if (state.showInterface)
-    {
-        detail::drawInterfacePanel(state, scene);
-    }
     if (state.showHierarchy)
     {
         detail::drawHierarchyPanel(state, scene);
@@ -629,6 +632,11 @@ math::Extent2D ToolsOverlay::viewportPixels() const noexcept
     return m_state->viewportPixels;
 }
 
+std::optional<InterfaceFrame> ToolsOverlay::interfaceFrame() const noexcept
+{
+    return m_state->playState == PlayState::Editing && m_state->showViewport ? m_state->interfaceFrame : std::nullopt;
+}
+
 std::optional<math::Vec2> ToolsOverlay::viewportPointer() const noexcept
 {
     if (!m_state->viewportHovered || m_state->viewportPixels.width == 0)
@@ -715,12 +723,36 @@ void ToolsOverlay::prepareRender(scene::Scene& scene, render::RenderWorld& world
         world.camera.view = state.camera.view();
         world.camera.verticalFov = detail::EditorCamera::verticalFov;
         world.camera.nearPlane = detail::EditorCamera::nearPlane;
-        // The 2D view looks straight at the XY plane, whatever the cameras of the scene do.
+        // The 2D screen looks straight at the XY plane, whatever the cameras of the scene do.
         const bool twoD = state.camera.isTwoD();
         world.camera.projection = twoD ? render::Projection::Orthographic : render::Projection::Perspective;
         world.camera.orthographicSize = state.camera.orthographicSize();
         world.camera.farPlane = detail::EditorCamera::twoDFarPlane;
         state.gizmo.twoD = twoD;
+        // The screen of the other kind shows nothing of the scene, as the 3D view of Godot shows
+        // nothing of a 2D scene: a neutral sky and the grid, and the interfaces of a 3D scene in 2D.
+        if (detail::screenContent(twoD, scene) != detail::ScreenContent::Scene)
+        {
+            world.sun = render::RenderSun{};
+            world.lights.clear();
+            world.environment = render::RenderEnvironment{};
+            // The same gray whatever the camera of the scene exposes for, as a 2D game's does for its
+            // sprites.
+            world.camera.autoExposure = false;
+            world.camera.ev100 = 14.0f;
+            world.camera.exposureCompensation = 0.0f;
+            world.camera.tonemapper = render::Tonemapper::AgX;
+            world.meshes.clear();
+            world.boneMatrices.clear();
+            world.particles.clear();
+            world.trailPoints.clear();
+            world.trailSegments.clear();
+            world.particleDraws.clear();
+            world.sprites.clear();
+            world.tilemaps.clear();
+            world.tiles.clear();
+            world.sceneLines.clear();
+        }
         if (state.database != nullptr)
         {
             detail::addEditorOverlay(state, scene, world);
@@ -856,6 +888,13 @@ void ToolsOverlay::setSpriteSources(std::function<render::TextureHandle(asset::A
     m_state->tilesets = std::move(tilesets);
 }
 
+void ToolsOverlay::setNavigationSources(std::function<const asset::MeshData*(asset::AssetId)> meshes,
+                                        std::function<std::shared_ptr<const asset::NavMeshData>(asset::AssetId)> navMeshes)
+{
+    m_state->meshes = std::move(meshes);
+    m_state->navMeshes = std::move(navMeshes);
+}
+
 void ToolsOverlay::setMemoryReport(std::function<asset::MemoryReport()> report)
 {
     m_state->memoryReport = std::move(report);
@@ -874,6 +913,11 @@ std::filesystem::path ToolsOverlay::scenePath() const
 void ToolsOverlay::notifyKeyPressed(platform::Key key) noexcept
 {
     m_state->notifiedKey = key;
+}
+
+void ToolsOverlay::setNavigationWorld(navigation::NavigationWorld* world) noexcept
+{
+    m_state->navigationWorld = world;
 }
 
 void ToolsOverlay::setAnimationWorld(animation::AnimationWorld* world) noexcept

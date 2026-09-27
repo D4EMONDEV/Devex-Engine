@@ -54,4 +54,17 @@ struct DrawContext
 void buildDrawList(const scene::Scene& scene, const LayoutResult& layout,
                    const DrawContext& context, render::RenderWorld& world);
 
+// How much interface the frame held at a moment, to move what is added after it.
+struct DrawListMark
+{
+    std::size_t vertices = 0;
+    std::size_t draws = 0;
+};
+[[nodiscard]] DrawListMark markDrawList(const render::RenderWorld& world) noexcept;
+
+// Scales what was added since the mark around the top left corner of the image, then moves it by
+// an offset in pixels: the editor draws the interfaces of a scene inside the frame of what its
+// game shows, as the game would draw them on the whole image.
+void placeDrawList(render::RenderWorld& world, DrawListMark mark, math::Vec2 offset, float scale) noexcept;
+
 } // namespace devex::ui

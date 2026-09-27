@@ -4,6 +4,7 @@
 #include <devex/asset/AssetSource.hpp>
 #include <devex/core/Error.hpp>
 #include <devex/core/Time.hpp>
+#include <devex/navigation/NavigationWorld.hpp>
 #include <devex/physics/PhysicsWorld.hpp>
 #include <devex/physics2d/Physics2DWorld.hpp>
 #include <devex/platform/Input.hpp>
@@ -41,6 +42,7 @@ public:
         // Null without physics.
         physics::PhysicsWorld* physics = nullptr;
         physics2d::Physics2DWorld* physics2d = nullptr;
+        navigation::NavigationWorld* navigation = nullptr;
         // Null without audio.
         audio::AudioWorld* audio = nullptr;
         animation::AnimationWorld* animation = nullptr;

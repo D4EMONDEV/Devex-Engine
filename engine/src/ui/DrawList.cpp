@@ -470,4 +470,35 @@ void buildDrawList(const scene::Scene& scene, const LayoutResult& layout,
     std::erase_if(world.uiDraws, [](const render::UiDraw& draw) { return draw.indexCount == 0; });
 }
 
+DrawListMark markDrawList(const render::RenderWorld& world) noexcept
+{
+    return DrawListMark{.vertices = world.uiVertices.size(), .draws = world.uiDraws.size()};
+}
+
+void placeDrawList(render::RenderWorld& world, DrawListMark mark, math::Vec2 offset, float scale) noexcept
+{
+    const auto place = [&](math::Vec2 point) { return point * scale + offset; };
+    for (std::size_t index = mark.vertices; index < world.uiVertices.size(); ++index)
+    {
+        world.uiVertices[index].position = place(world.uiVertices[index].position);
+    }
+    for (std::size_t index = mark.draws; index < world.uiDraws.size(); ++index)
+    {
+        render::UiDraw& draw = world.uiDraws[index];
+        const math::Vec2 rectMin = place(math::Vec2{draw.rect.x, draw.rect.y});
+        const math::Vec2 rectMax = place(math::Vec2{draw.rect.z, draw.rect.w});
+        draw.rect = math::Vec4{rectMin.x, rectMin.y, rectMax.x, rectMax.y};
+        draw.radius *= scale;
+        // Fewer pixels for the same letters: their edges soften over fewer of them.
+        draw.sharpness *= scale;
+        // An empty cut draws the whole image, and stays empty.
+        if (isClipped(draw.clip))
+        {
+            const math::Vec2 clipMin = place(math::Vec2{draw.clip.x, draw.clip.y});
+            const math::Vec2 clipMax = place(math::Vec2{draw.clip.z, draw.clip.w});
+            draw.clip = math::Vec4{clipMin.x, clipMin.y, clipMax.x, clipMax.y};
+        }
+    }
+}
+
 } // namespace devex::ui

@@ -43,9 +43,13 @@ void openPath(ToolsState& state, const std::filesystem::path& path)
 void drawSceneMenu(ToolsState& state, scene::Scene& scene)
 {
     const bool editing = state.playState == PlayState::Editing;
-    if (menuItem(icons::FilePlus, "New Scene", "Ctrl+N", editing))
+    if (menuItem(icons::FilePlus, "New 2D Scene", nullptr, editing))
     {
-        newSceneTab(state, scene);
+        newSceneTab(state, scene, scene::SceneKind::TwoD);
+    }
+    if (menuItem(icons::FilePlus, "New 3D Scene", nullptr, editing))
+    {
+        newSceneTab(state, scene, scene::SceneKind::ThreeD);
     }
     if (menuItem(icons::FolderOpen, "Open Scene...", "Ctrl+O", editing))
     {
@@ -63,6 +67,20 @@ void drawSceneMenu(ToolsState& state, scene::Scene& scene)
     if (ImGui::MenuItem("Save All Scenes", "Ctrl+Alt+S", false, editing))
     {
         saveAllScenes(state, scene);
+    }
+    ImGui::Separator();
+    // What the scene is made for, as the root of a Godot scene is a Node2D or a Node3D.
+    if (ImGui::BeginMenuEx("Scene Kind", icons::Clapperboard.c_str(), editing))
+    {
+        for (const auto& [kind, label] : {std::pair{scene::SceneKind::TwoD, "2D: sprites, tiles and interfaces, seen from the front"},
+                                          std::pair{scene::SceneKind::ThreeD, "3D: models and 2.5D, in perspective"}})
+        {
+            if (ImGui::MenuItem(label, nullptr, scene.kind() == kind) && scene.kind() != kind)
+            {
+                logFailure(state.history.execute(scene, makeSetSceneKindCommand(scene.kind(), kind)));
+            }
+        }
+        ImGui::EndMenu();
     }
     ImGui::Separator();
     if (menuItem(icons::Close, "Close Scene", "Ctrl+W", editing && state.tabs.active().has_value()))
@@ -262,7 +280,10 @@ void drawPlayControls(ToolsState& state)
                    editing ? std::optional(colors.text) : std::optional(colors.accent)))
     {
         state.requests.play = true;
-        setMainScreen(state, MainScreen::ThreeD);
+        if (state.mainScreen == MainScreen::Script)
+        {
+            setMainScreen(state, state.camera.isTwoD() ? MainScreen::TwoD : MainScreen::ThreeD);
+        }
     }
     ImGui::SameLine(0.0f, 2.0f);
     if (toolButton("pause", icons::Pause, "Pause (F7)", state.playState == PlayState::Paused, !editing))
@@ -316,16 +337,7 @@ struct LogCounts
 
 const char* windowOf(MainScreen screen) noexcept
 {
-    switch (screen)
-    {
-    case MainScreen::Script:
-        return textEditorWindow;
-    case MainScreen::TwoD:
-        return interfaceWindow;
-    case MainScreen::ThreeD:
-        break;
-    }
-    return viewportWindow;
+    return screen == MainScreen::Script ? textEditorWindow : viewportWindow;
 }
 
 std::string_view toString(MainScreen screen) noexcept
@@ -347,9 +359,18 @@ void setMainScreen(ToolsState& state, MainScreen screen)
     state.mainScreen = screen;
     state.mainScreenChanged = true;
     // The middle holds one screen at a time: the others close, so that none of them shows a tab.
-    state.showViewport = screen == MainScreen::ThreeD;
+    // 2D and 3D share the viewport, each with its own view of the scene.
+    state.showViewport = screen != MainScreen::Script;
     state.showTextEditor = screen == MainScreen::Script;
-    state.showInterface = screen == MainScreen::TwoD;
+    if (screen != MainScreen::Script)
+    {
+        state.camera.setTwoD(screen == MainScreen::TwoD);
+    }
+}
+
+void showSceneScreen(ToolsState& state, const scene::Scene& scene)
+{
+    setMainScreen(state, scene.kind() == scene::SceneKind::TwoD ? MainScreen::TwoD : MainScreen::ThreeD);
 }
 
 namespace {
@@ -365,8 +386,8 @@ void drawMainScreenSwitch(ToolsState& state)
         const char* tooltip;
     };
     const std::array<Choice, 3> choices{{
-        {MainScreen::TwoD, icons::Square, "2D", "The interfaces of the scene, laid out on screen"},
-        {MainScreen::ThreeD, icons::Cuboid, "3D", "The scene in the viewport"},
+        {MainScreen::TwoD, icons::Square, "2D", "2D scenes, seen from the front, and the interfaces of 3D scenes (Ctrl+F1)"},
+        {MainScreen::ThreeD, icons::Cuboid, "3D", "3D scenes, 2.5D included, in perspective (Ctrl+F2)"},
         {MainScreen::Script, icons::Code, "Script", "The files of the project in the text editor"},
     }};
 
@@ -1058,7 +1079,7 @@ void handleEditorShortcuts(ToolsState& state, scene::Scene& scene)
     if (pressed(ImGuiKey_F5) && editing)
     {
         state.requests.play = true;
-        setMainScreen(state, MainScreen::ThreeD);
+        showSceneScreen(state, scene);
     }
     if ((pressed(ImGuiMod_Ctrl | ImGuiMod_Shift | ImGuiKey_P) || pressed(ImGuiKey_F7)) && !editing)
     {
@@ -1086,6 +1107,10 @@ void handleEditorShortcuts(ToolsState& state, scene::Scene& scene)
         requestAction(state, scene, {.kind = PendingAction::Kind::Quit});
     }
     // The screens of the menu bar, numbered as Godot numbers them.
+    if (pressed(ImGuiMod_Ctrl | ImGuiKey_F1))
+    {
+        setMainScreen(state, MainScreen::TwoD);
+    }
     if (pressed(ImGuiMod_Ctrl | ImGuiKey_F2))
     {
         setMainScreen(state, MainScreen::ThreeD);

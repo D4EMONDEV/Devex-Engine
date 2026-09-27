@@ -8,6 +8,8 @@
 #include <devex/core/File.hpp>
 #include <devex/core/Log.hpp>
 #include <devex/core/Profiler.hpp>
+#include <devex/navigation/NavMeshBuilder.hpp>
+#include <devex/navigation/NavigationWorld.hpp>
 #include <devex/particles/ParticleWorld.hpp>
 #include <devex/physics/PhysicsWorld.hpp>
 #include <devex/physics2d/Physics2DWorld.hpp>
@@ -16,6 +18,7 @@
 #include <devex/scene/AudioComponents.hpp>
 #include <devex/scene/ComponentRegistry.hpp>
 #include <devex/scene/Components.hpp>
+#include <devex/scene/NavigationComponents.hpp>
 #include <devex/scene/ParticleComponents.hpp>
 #include <devex/scene/SpriteComponents.hpp>
 #include <devex/scene/TilemapComponents.hpp>
@@ -76,7 +79,7 @@ void run(ManagedGame& game, Scene& scene, SystemPhase phase, double seconds = 0.
 TEST_CASE("The C# runtime registers components and runs them", "[runtime][managed]")
 {
     const std::unique_ptr<ManagedGame> game = startRuntime();
-    CHECK(game->componentTypes().size() == 17);
+    CHECK(game->componentTypes().size() == 18);
 
     devex::scene::ComponentRegistry& registry = devex::scene::componentRegistry();
     const devex::scene::ComponentType* const mover = registry.find("Mover");
@@ -432,6 +435,63 @@ TEST_CASE("C# components set the parameters of state machines and read their sta
     CHECK(field<float>(*conductor, component, "speed") == 2.0f);
     CHECK(field<bool>(*conductor, component, "waved"));
     CHECK(world.parameter(dancer, "Wave") == 0.0f);
+    game->unloadAssembly();
+}
+
+TEST_CASE("C# components send navigation agents and query the navigation mesh", "[runtime][managed][navigation]")
+{
+    const std::unique_ptr<ManagedGame> game = startRuntime();
+    const devex::scene::ComponentType* const navigator = devex::scene::componentRegistry().find("Navigator");
+    REQUIRE(navigator != nullptr);
+
+    // A floor, and a wall to walk around.
+    Scene scene;
+    for (const auto& [position, size] : {std::pair{devex::math::Vec3{0.0f, -0.5f, 0.0f}, devex::math::Vec3{20.0f, 1.0f, 20.0f}},
+                                         std::pair{devex::math::Vec3{0.0f, 1.0f, -3.0f}, devex::math::Vec3{1.0f, 2.0f, 14.0f}}})
+    {
+        const Entity box = scene.createEntity("Box");
+        scene.add<devex::scene::Transform>(box, devex::scene::Transform{.position = position});
+        scene.add<devex::scene::BoxCollider>(box, devex::scene::BoxCollider{.size = size});
+    }
+    const devex::asset::AssetId navMeshId = devex::asset::AssetId::generate();
+    const Entity surface = scene.createEntity("Navigation");
+    scene.add<devex::scene::NavMeshSurface>(surface, devex::scene::NavMeshSurface{.navMesh = navMeshId});
+    scene.updateTransforms();
+    devex::core::Result<devex::asset::NavMeshData> baked =
+        devex::navigation::bakeNavMesh(devex::navigation::collectGeometry(scene, {}), {});
+    REQUIRE(baked.has_value());
+    const auto navMesh = std::make_shared<const devex::asset::NavMeshData>(std::move(*baked));
+    devex::core::Result<std::unique_ptr<devex::navigation::NavigationWorld>> world = devex::navigation::NavigationWorld::create({
+        .navMeshes = [&](devex::asset::AssetId id) { return id == navMeshId ? navMesh : nullptr; },
+    });
+    REQUIRE(world.has_value());
+
+    const Entity agent = scene.createEntity("Agent");
+    scene.add<devex::scene::Transform>(agent, devex::scene::Transform{.position = {-5.0f, 0.0f, -5.0f}});
+    scene.add<devex::scene::NavMeshAgent>(agent);
+    void* const component = navigator->emplace(scene, agent);
+    field<devex::math::Vec3>(*navigator, component, "target") = {5.0f, 0.0f, -5.0f};
+    scene.updateTransforms();
+    (*world)->update(scene, devex::core::Duration(0.0));
+
+    ManagedGame::Frame frame{.scene = &scene, .navigation = world->get()};
+    game->runPhase(frame, SystemPhase::Start);
+    for (int step = 0; step < 60 * 12; ++step)
+    {
+        frame.delta = devex::core::Duration(1.0 / 60.0);
+        game->runPhase(frame, SystemPhase::Update);
+        scene.updateTransforms();
+        (*world)->update(scene, devex::core::Duration(1.0 / 60.0));
+    }
+    CHECK(field<bool>(*navigator, component, "sent"));
+    CHECK(field<int>(*navigator, component, "corners") >= 3);
+    CHECK(field<bool>(*navigator, component, "sampled"));
+    CHECK(field<float>(*navigator, component, "sampled_height") == Catch::Approx(0.0f).margin(0.2f));
+    CHECK(field<bool>(*navigator, component, "blocked"));
+    CHECK(field<bool>(*navigator, component, "arrived"));
+    const devex::math::Vec3 reached = scene.get<devex::scene::Transform>(agent).position;
+    CHECK(std::abs(reached.x - 5.0f) < 0.3f);
+    CHECK(std::abs(reached.z + 5.0f) < 0.3f);
     game->unloadAssembly();
 }
 

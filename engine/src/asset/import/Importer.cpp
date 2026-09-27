@@ -474,6 +474,23 @@ core::Result<ImportResult> importAnimatorFile(ImportContext& context)
     return result;
 }
 
+core::Result<ImportResult> importNavMeshFile(ImportContext& context)
+{
+    core::Result<std::vector<std::byte>> bytes = core::readBinaryFile(context.source);
+    if (!bytes)
+    {
+        return std::unexpected(bytes.error());
+    }
+    // The file is the cooked asset already: checked, then taken as it is.
+    if (const core::Result<NavMeshData> navMesh = decodeNavMesh(*bytes); !navMesh)
+    {
+        return std::unexpected(navMesh.error());
+    }
+    ImportResult result;
+    result.artifacts.push_back({context.mainId, AssetType::NavMesh, context.name, std::move(*bytes)});
+    return result;
+}
+
 core::Result<ImportResult> importSceneFile(ImportContext& context)
 {
     const core::Result<std::string> text = core::readTextFile(context.source);
@@ -621,6 +638,13 @@ std::span<const Importer> importers()
             .mainType = AssetType::Animator,
             .extensions = {animatorExtension},
             .run = &importAnimatorFile,
+        },
+        Importer{
+            .name = "navmesh",
+            .version = 1,
+            .mainType = AssetType::NavMesh,
+            .extensions = {navMeshExtension},
+            .run = &importNavMeshFile,
         },
         Importer{
             .name = "scene",

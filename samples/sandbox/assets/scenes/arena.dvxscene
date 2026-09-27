@@ -1,4 +1,4 @@
-[scene format=1]
+[scene format=1 kind="3d"]
 
 [entity uuid="5bcd5b05-f9a8-56d8-8959-6c1fd47f22c4" name="Sun"]
 
@@ -742,6 +742,11 @@ open_offset = vec3(0, 2.8, 0)
 speed = 3
 open = false
 
+[component type="NavMeshObstacle"]
+shape = "box"
+size = vec3(1, 1, 1)
+center = vec3(0, 0, 0)
+
 [entity uuid="02ad646d-3822-57dd-acfe-42ff6f5f23ef" name="Door zone"]
 parent = "2ab11a81-f608-5958-88e9-4fd8cc1be643"
 
@@ -791,6 +796,109 @@ rolloff = 1
 doppler = 1
 group = 1
 
+[entity uuid="10361b91-5fa2-5941-bc6e-526df8a25b9e" name="Navigation"]
+
+[component type="Transform"]
+position = vec3(0, 0, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="NavMeshSurface"]
+nav_mesh = asset("81ea33a3-562e-41ac-98a3-a1e7753ac112")
+agent_radius = 0.35
+agent_height = 1.8
+agent_max_climb = 0.3
+agent_max_slope = 0.785398
+cell_size = 0.15
+cell_height = 0.1
+tile_size = 48
+
+[entity uuid="d04d7fc9-b95f-5bf3-9df7-60e08c35531f" name="Drone 1"]
+
+[component type="Transform"]
+position = vec3(4, 0, 13)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="NavMeshAgent"]
+speed = 4
+acceleration = 10
+angular_speed = 6.283185
+radius = 0.35
+height = 1
+stopping_distance = 2
+avoidance = "good"
+
+[component type="Follower"]
+target = entity("676e924f-c76c-50fc-bcd7-65b77292b44a")
+interval = 0.3
+
+[entity uuid="e736ff2e-57c7-5609-ac1b-a72f8941c272" name="Body"]
+parent = "d04d7fc9-b95f-5bf3-9df7-60e08c35531f"
+
+[component type="Transform"]
+position = vec3(0, 0.55, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(0.5, 0.45, 0.6)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("8d26543c-0394-49bd-95c4-a6ab39cb7d25")
+
+[entity uuid="8dd6abd3-02ba-5ddf-a536-2994bd5e43bf" name="Eye"]
+parent = "d04d7fc9-b95f-5bf3-9df7-60e08c35531f"
+
+[component type="Transform"]
+position = vec3(0, 0.62, -0.3)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(0.3, 0.1, 0.05)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+
+[entity uuid="17aea4f9-83d3-5680-94b6-95ba14da4974" name="Drone 2"]
+
+[component type="Transform"]
+position = vec3(-3, 0, 14)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="NavMeshAgent"]
+speed = 4
+acceleration = 10
+angular_speed = 6.283185
+radius = 0.35
+height = 1
+stopping_distance = 2
+avoidance = "good"
+
+[component type="Follower"]
+target = entity("676e924f-c76c-50fc-bcd7-65b77292b44a")
+interval = 0.3
+
+[entity uuid="72d67d4d-1ae1-56d1-981e-a98f50e17e17" name="Body"]
+parent = "17aea4f9-83d3-5680-94b6-95ba14da4974"
+
+[component type="Transform"]
+position = vec3(0, 0.55, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(0.5, 0.45, 0.6)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("8d26543c-0394-49bd-95c4-a6ab39cb7d25")
+
+[entity uuid="3ce4c3ec-5c07-52e1-9a7e-82a7551c89ec" name="Eye"]
+parent = "17aea4f9-83d3-5680-94b6-95ba14da4974"
+
+[component type="Transform"]
+position = vec3(0, 0.62, -0.3)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(0.3, 0.1, 0.05)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+
 [entity uuid="70176674-bbb5-5fa2-9885-0442304385ab" name="Robot"]
 
 [component type="Transform"]
@@ -809,10 +917,17 @@ apply_root_motion = false
 
 [component type="RobotGuide"]
 patrol = vec3(0, 0, -11)
-speed = 1.6
-acceleration = 3
 wait_time = 1.5
 greet_distance = 4.5
+
+[component type="NavMeshAgent"]
+speed = 1.6
+acceleration = 3
+angular_speed = 4.18879
+radius = 0.35
+height = 1.8
+stopping_distance = 0.2
+avoidance = "good"
 
 [entity uuid="0fc39f7f-23fa-5a3f-b187-69da16b5c43f" name="Hips"]
 parent = "70176674-bbb5-5fa2-9885-0442304385ab"

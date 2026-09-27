@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/asset/MeshData.hpp>
+#include <devex/asset/NavMeshData.hpp>
 #include <devex/asset/SpriteData.hpp>
 #include <devex/asset/TilesetData.hpp>
 #include <devex/asset/import/AssetDatabase.hpp>
@@ -28,6 +30,10 @@ namespace devex::animation {
 class AnimationWorld;
 class Clip;
 } // namespace devex::animation
+
+namespace devex::navigation {
+class NavigationWorld;
+} // namespace devex::navigation
 
 namespace devex::audio {
 class AudioEngine;
@@ -172,6 +178,16 @@ struct EditorRequests
     std::optional<NewScript> newScript;
 };
 
+// Where the editor's 2D screen shows the interfaces of the scene it edits: laid out as the game lays
+// them out on an image of `layoutSize` pixels, then scaled by `scale` and moved by `offset`, in
+// pixels of the viewport image, into the frame of what the game shows.
+struct InterfaceFrame
+{
+    math::Vec2 layoutSize{0.0f};
+    math::Vec2 offset{0.0f};
+    float scale = 1.0f;
+};
+
 // Docked Dear ImGui panels in a Godot-like theme: scene tree, inspector, file system, output and
 // statistics, over the game or around the editor's viewport. Only one instance may exist at a time,
 // since it owns the ImGui context.
@@ -207,6 +223,9 @@ public:
     // interface of the game reads so that its buttons answer where the game is shown.
     [[nodiscard]] math::Extent2D viewportPixels() const noexcept;
     [[nodiscard]] std::optional<math::Vec2> viewportPointer() const noexcept;
+    // Editor only: while the 2D screen edits a scene, where its interfaces are drawn. Nothing
+    // otherwise: the 3D screen does not show them, and a game that plays draws its own.
+    [[nodiscard]] std::optional<InterfaceFrame> interfaceFrame() const noexcept;
 
     // Builds this frame's panels for the scene and queues them for the renderer's next endFrame.
     // In the editor, the scene is the one being edited, or the copy being played. While hidden,
@@ -266,6 +285,10 @@ public:
                           std::function<math::Extent2D(asset::AssetId)> textureSizes,
                           std::function<std::shared_ptr<const asset::SpriteData>(asset::AssetId)> sprites,
                           std::function<std::shared_ptr<const asset::TilesetData>(asset::AssetId)> tilesets);
+    // What the navigation tools read: the meshes of mesh colliders, to bake navigation meshes, and
+    // the baked navigation meshes, to draw them.
+    void setNavigationSources(std::function<const asset::MeshData*(asset::AssetId)> meshes,
+                              std::function<std::shared_ptr<const asset::NavMeshData>(asset::AssetId)> navMeshes);
     // Lets the profiler show what the loaded assets take.
     void setMemoryReport(std::function<asset::MemoryReport()> report);
     // Lets the status bar tell how many assets are loading in the background.
@@ -274,6 +297,8 @@ public:
     // their place.
     void notifyKeyPressed(platform::Key key) noexcept;
     void setAnimationWorld(animation::AnimationWorld* world) noexcept;
+    // The navigation of the game while it plays, whose agents show their paths; null otherwise.
+    void setNavigationWorld(navigation::NavigationWorld* world) noexcept;
     // Lets the inspector restart the emitter it shows, and tell how many particles it has.
     void setParticleWorld(particles::ParticleWorld* world) noexcept;
 

@@ -133,6 +133,37 @@ private:
     TextValue m_after;
 };
 
+class SetSceneKindCommand final : public Command
+{
+public:
+    SetSceneKindCommand(scene::SceneKind before, scene::SceneKind after)
+        : m_before(before)
+        , m_after(after)
+    {
+    }
+
+    [[nodiscard]] std::string description() const override
+    {
+        return m_after == scene::SceneKind::TwoD ? "Make 2D scene" : "Make 3D scene";
+    }
+
+    [[nodiscard]] core::Result<void> apply(Scene& scene) override
+    {
+        scene.setKind(m_after);
+        return {};
+    }
+
+    [[nodiscard]] core::Result<void> revert(Scene& scene) override
+    {
+        scene.setKind(m_before);
+        return {};
+    }
+
+private:
+    scene::SceneKind m_before;
+    scene::SceneKind m_after;
+};
+
 class RenameCommand final : public Command
 {
 public:
@@ -662,6 +693,11 @@ std::unique_ptr<Command> makeSetFieldCommand(core::Uuid entity, std::string comp
 std::unique_ptr<Command> makeRenameCommand(core::Uuid entity, std::string before, std::string after)
 {
     return std::make_unique<RenameCommand>(entity, std::move(before), std::move(after));
+}
+
+std::unique_ptr<Command> makeSetSceneKindCommand(scene::SceneKind before, scene::SceneKind after)
+{
+    return std::make_unique<SetSceneKindCommand>(before, after);
 }
 
 std::unique_ptr<Command> makeCreateEntityCommand(core::Uuid entity, std::string name,

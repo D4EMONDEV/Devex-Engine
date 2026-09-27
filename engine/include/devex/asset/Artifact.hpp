@@ -12,6 +12,7 @@
 #include <devex/asset/SpriteData.hpp>
 #include <devex/asset/TextureData.hpp>
 #include <devex/asset/AnimatorData.hpp>
+#include <devex/asset/NavMeshData.hpp>
 #include <devex/asset/TilesetData.hpp>
 #include <devex/core/Error.hpp>
 
@@ -53,6 +54,8 @@ inline constexpr std::string_view artifactExtension = ".dvxasset";
 [[nodiscard]] std::vector<std::byte> encodeSpriteFrames(const SpriteFramesData& frames);
 [[nodiscard]] std::vector<std::byte> encodeTileset(const TilesetData& tileset);
 [[nodiscard]] std::vector<std::byte> encodeAnimator(const AnimatorData& animator);
+// Also the contents of a .dvxnavmesh file.
+[[nodiscard]] std::vector<std::byte> encodeNavMesh(const NavMeshData& navMesh);
 
 // Decoding validates the header, the version and the data itself.
 [[nodiscard]] core::Result<MeshData> decodeMesh(std::span<const std::byte> bytes);
@@ -71,5 +74,6 @@ inline constexpr std::string_view artifactExtension = ".dvxasset";
 [[nodiscard]] core::Result<SpriteFramesData> decodeSpriteFrames(std::span<const std::byte> bytes);
 [[nodiscard]] core::Result<TilesetData> decodeTileset(std::span<const std::byte> bytes);
 [[nodiscard]] core::Result<AnimatorData> decodeAnimator(std::span<const std::byte> bytes);
+[[nodiscard]] core::Result<NavMeshData> decodeNavMesh(std::span<const std::byte> bytes);
 
 } // namespace devex::asset

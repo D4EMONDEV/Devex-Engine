@@ -216,6 +216,56 @@ public static unsafe class Physics
     }
 }
 
+/// <summary>
+/// The navigation of the scene: NavMeshAgent components walk the navigation mesh of its
+/// NavMeshSurface to the destinations given here, and paths along it are found on demand.
+/// </summary>
+public static unsafe class Navigation
+{
+    /// <summary>
+    /// Sends an agent to the point of the navigation mesh closest to a destination; false when the
+    /// destination is far from the mesh.
+    /// </summary>
+    public static bool SetDestination(Entity agent, Vec3 destination) => Bootstrap.Native.NavSetDestination(agent, &destination) != 0;
+
+    /// <summary>Stops the agent where it is.</summary>
+    public static void Stop(Entity agent) => Bootstrap.Native.NavStop(agent);
+
+    /// <summary>Whether the agent walks to a destination; false once it arrived.</summary>
+    public static bool HasDestination(Entity agent) => Bootstrap.Native.NavHasDestination(agent) != 0;
+
+    /// <summary>How far the agent still has to walk along its path.</summary>
+    public static float RemainingDistance(Entity agent) => Bootstrap.Native.NavRemainingDistance(agent);
+
+    /// <summary>The corners of the shortest path along the navigation mesh; empty when there is none.</summary>
+    public static Vec3[] FindPath(Vec3 from, Vec3 to)
+    {
+        Vec3* corners;
+        int count = Bootstrap.Native.NavFindPath(&from, &to, &corners);
+        return count == 0 ? [] : new ReadOnlySpan<Vec3>(corners, count).ToArray();
+    }
+
+    /// <summary>The point of the navigation mesh closest to a point, within a distance.</summary>
+    public static bool SamplePosition(Vec3 point, float maxDistance, out Vec3 position)
+    {
+        Vec3 found;
+        bool hit = Bootstrap.Native.NavSamplePosition(&point, maxDistance, &found) != 0;
+        position = found;
+        return hit;
+    }
+
+    /// <summary>Walks a straight line along the navigation mesh; true when it leaves the mesh, at the position given.</summary>
+    public static bool Raycast(Vec3 from, Vec3 to, out Vec3 position, out Vec3 normal)
+    {
+        Vec3 hit;
+        Vec3 away;
+        bool blocked = Bootstrap.Native.NavRaycast(&from, &to, &hit, &away) != 0;
+        position = hit;
+        normal = away;
+        return blocked;
+    }
+}
+
 /// <summary>What a 2D ray hit.</summary>
 [StructLayout(LayoutKind.Sequential)]
 public struct RayHit2D

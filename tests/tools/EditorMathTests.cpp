@@ -201,11 +201,12 @@ TEST_CASE("Rotation and scale handles change the local transform", "[tools][edit
 TEST_CASE("The 2D camera slides and zooms over the XY plane without perspective", "[tools][editor]")
 {
     EditorCamera camera;
-    camera.lookAt(Vec3{2.0f, 1.0f, 10.0f}, Vec3{2.0f, 1.0f, 0.0f});
+    camera.setView2D(Vec2{2.0f, 1.0f}, 5.77f);
     camera.setTwoD(true);
     REQUIRE(camera.isTwoD());
-    // The plane keeps its size on screen: ten meters away with 60 degrees shows 5.77 m above.
-    CHECK_THAT(camera.orthographicSize(), WithinAbs(10.0 * std::tan(std::numbers::pi / 6.0), 1e-4));
+    CHECK_THAT(camera.pivot().x, WithinAbs(2.0, 1e-6));
+    CHECK_THAT(camera.pivot().y, WithinAbs(1.0, 1e-6));
+    CHECK_THAT(camera.pivot().z, WithinAbs(0.0, 1e-6));
     CHECK_THAT(camera.forward().z, WithinAbs(-1.0, 1e-6));
     // Looking and orbiting do nothing in 2D.
     camera.look(Vec2{100.0f, 50.0f});
@@ -247,15 +248,40 @@ TEST_CASE("The 2D camera slides and zooms over the XY plane without perspective"
     CHECK_THAT(after.y, WithinAbs(before.y, 1e-3));
     CHECK(camera.orthographicSize() < 5.0f);
 
-    // Framing centers the plane on the box; back in 3D, the camera faces the plane it showed.
+    // Framing centers the plane on the box.
     camera.frame(Vec3{-4.0f, 3.0f, 7.0f}, 2.0f);
     CHECK_THAT(camera.pivot().x, WithinAbs(-4.0, 1e-5));
     CHECK_THAT(camera.pivot().z, WithinAbs(0.0, 1e-5));
     CHECK_THAT(camera.orthographicSize(), WithinAbs(2.4, 1e-5));
+}
+
+TEST_CASE("The 2D and the 3D views of the editor each stay where they were left", "[tools][editor]")
+{
+    EditorCamera camera;
+    camera.lookAt(Vec3{6.0f, 4.0f, 8.0f}, Vec3{0.0f, 0.5f, 0.0f});
+    const Vec3 pivot = camera.pivot();
+    const float yaw = camera.yaw();
+    const float distance = camera.distance();
+
+    // The 2D screen slides and zooms its own view.
+    camera.setTwoD(true);
+    camera.pan(Vec2{100.0f, -50.0f}, 600.0f);
+    camera.zoomAt(2.0f, Vec2{650.0f, 150.0f}, Vec2{800.0f, 600.0f});
+    camera.fly(Vec3{1.0f, 0.0f, 0.0f}, 0.5f, false);
+    const Vec2 center = camera.center();
+    const float size = camera.orthographicSize();
+    CHECK(camera.pivot3D() == pivot);
+
+    // The 3D screen finds its view as it was, and orbiting there leaves the 2D view alone.
     camera.setTwoD(false);
-    CHECK_FALSE(camera.isTwoD());
-    CHECK_THAT(camera.forward().z, WithinAbs(-1.0, 1e-5));
-    CHECK_THAT(camera.distance(), WithinAbs(2.4 / std::tan(std::numbers::pi / 6.0), 1e-3));
+    CHECK(camera.pivot() == pivot);
+    CHECK(camera.yaw() == yaw);
+    CHECK(camera.distance() == distance);
+    camera.orbit(Vec2{50.0f, 20.0f});
+    camera.frame(Vec3{10.0f, 0.0f, 0.0f}, 1.0f);
+    camera.setTwoD(true);
+    CHECK(camera.center() == center);
+    CHECK(camera.orthographicSize() == size);
 }
 
 TEST_CASE("In 2D, the gizmo keeps the handles of the XY plane", "[tools][editor]")

@@ -1,4 +1,4 @@
-[scene format=1]
+[scene format=1 kind="2d"]
 
 [entity uuid="143b462f-d610-5925-b5d2-066a6a20517b" name="Camera"]
 

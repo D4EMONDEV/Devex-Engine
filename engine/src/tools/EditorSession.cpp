@@ -1,4 +1,5 @@
 #include "ToolsState.hpp"
+#include "TwoDScreen.hpp"
 
 #include <devex/asset/Primitives.hpp>
 #include <devex/asset/Project.hpp>
@@ -6,6 +7,7 @@
 #include <devex/core/Log.hpp>
 #include <devex/core/Path.hpp>
 #include <devex/scene/Components.hpp>
+#include <devex/scene/NavigationComponents.hpp>
 #include <devex/scene/Physics2DComponents.hpp>
 #include <devex/scene/PhysicsComponents.hpp>
 #include <devex/scene/SpriteComponents.hpp>
@@ -55,23 +57,22 @@ constexpr int scanDepth = 6;
     return value != nullptr ? serialization::asString(*value) : nullptr;
 }
 
+// The 3D view and the 2D view; the screen follows the kind of the scene.
 void writeCamera(serialization::TextSection& section, const EditorCamera& camera)
 {
-    const math::Vec3 pivot = camera.pivot();
+    const math::Vec3 pivot = camera.pivot3D();
     for (const auto& [key, value] : {std::pair<const char*, float>{"x", pivot.x},
                                      {"y", pivot.y},
                                      {"z", pivot.z},
                                      {"yaw", camera.yaw()},
                                      {"pitch", camera.pitch()},
                                      {"distance", camera.distance()},
-                                     {"speed", camera.speed()}})
+                                     {"speed", camera.speed()},
+                                     {"x2d", camera.center().x},
+                                     {"y2d", camera.center().y},
+                                     {"size", camera.orthographicSize()}})
     {
         section.attributes.push_back({key, TextValue(static_cast<double>(value))});
-    }
-    if (camera.isTwoD())
-    {
-        section.attributes.push_back({"two_d", TextValue(true)});
-        section.attributes.push_back({"size", TextValue(static_cast<double>(camera.orthographicSize()))});
     }
 }
 
@@ -100,12 +101,9 @@ void writeCamera(serialization::TextSection& section, const EditorCamera& camera
     camera.set({numberOr(section, "x", 0.0f), numberOr(section, "y", 0.0f), numberOr(section, "z", 0.0f)},
                numberOr(section, "yaw", -30.0f), numberOr(section, "pitch", -25.0f), numberOr(section, "distance", 10.0f),
                numberOr(section, "speed", 6.0f));
-    const TextValue* const twoD = section.findAttribute("two_d");
-    if (twoD != nullptr && serialization::asBool(*twoD).value_or(false))
-    {
-        camera.setTwoD(true);
-        camera.setOrthographicSize(numberOr(section, "size", 5.0f));
-    }
+    // Editors whose two views were one kept the middle of the 2D view in the pivot.
+    camera.setView2D({numberOr(section, "x2d", numberOr(section, "x", 0.0f)), numberOr(section, "y2d", numberOr(section, "y", 0.0f))},
+                     numberOr(section, "size", 5.0f));
     return camera;
 }
 
@@ -177,7 +175,8 @@ void writeProjectSettings(ToolsState& state)
     return document;
 }
 
-[[nodiscard]] std::optional<SceneDocument> loadDocument(const std::filesystem::path& path, EditorCamera camera)
+// A scene read from its file, with the views it was left with, or else the views it is made for.
+[[nodiscard]] std::optional<SceneDocument> loadDocument(const std::filesystem::path& path, std::optional<EditorCamera> camera)
 {
     core::Result<scene::Scene> loaded = scene::loadSceneFile(path);
     if (!loaded)
@@ -185,7 +184,13 @@ void writeProjectSettings(ToolsState& state)
         DEVEX_LOG_ERROR("Cannot open the scene: {}", loaded.error());
         return std::nullopt;
     }
-    return makeDocument(path, std::move(*loaded), camera);
+    if (!camera)
+    {
+        loaded->updateTransforms();
+        camera = defaultCamera();
+        fitToScene(*camera, *loaded);
+    }
+    return makeDocument(path, std::move(*loaded), *camera);
 }
 
 // Edits in progress refer to the entities of the scene that leaves the screen.
@@ -239,7 +244,7 @@ void openProjectScenes(ToolsState& state, scene::Scene& scene)
     {
         if (const core::Result<serialization::TextDocument> settings = serialization::parseText(*text))
         {
-            EditorCamera legacyCamera = defaultCamera();
+            std::optional<EditorCamera> legacyCamera;
             std::optional<std::filesystem::path> legacyScene;
             for (const serialization::TextSection& section : settings->sections)
             {
@@ -287,7 +292,7 @@ void openProjectScenes(ToolsState& state, scene::Scene& scene)
                 source.importer == "scene" ? database.project().absolutePath(source.path) : std::nullopt;
             if (path)
             {
-                if (std::optional<SceneDocument> document = loadDocument(*path, defaultCamera()))
+                if (std::optional<SceneDocument> document = loadDocument(*path, std::nullopt))
                 {
                     documents.push_back(std::move(*document));
                     break;
@@ -546,6 +551,21 @@ scene::Scene makeDefaultScene()
     return result;
 }
 
+scene::Scene makeDefault2DScene()
+{
+    scene::Scene result;
+    result.setKind(scene::SceneKind::TwoD);
+    // In front of the XY plane, framing ten meters, with the colours of the sprites kept as drawn.
+    const scene::Entity camera = result.createEntity("Camera");
+    result.add<scene::Transform>(camera, scene::Transform{.position = {0.0f, 0.0f, 10.0f}});
+    result.add<scene::Camera>(camera, scene::Camera{.projection = scene::Projection::Orthographic,
+                                                    .tonemapper = scene::Tonemapper::None,
+                                                    .antialiasing = scene::Antialiasing::None,
+                                                    .ambientOcclusion = 0.0f,
+                                                    .bloom = 0.0f});
+    return result;
+}
+
 ActiveDocument activeDocument(ToolsState& state, scene::Scene& scene) noexcept
 {
     return {state.scenePath, scene, state.history, state.savedState, state.selection, state.camera, state.hiddenEntities};
@@ -558,30 +578,36 @@ std::string tabName(const std::filesystem::path& path)
 
 void activateSceneTab(ToolsState& state, scene::Scene& scene, std::size_t index)
 {
-    setMainScreen(state, MainScreen::ThreeD);
-    if (state.playState != PlayState::Editing || index >= state.tabs.size() || index == state.tabs.active())
+    if (state.playState == PlayState::Editing && index < state.tabs.size() && index != state.tabs.active())
     {
-        return;
+        resetTransientEdits(state);
+        state.tabs.activate(index, activeDocument(state, scene));
     }
-    resetTransientEdits(state);
-    state.tabs.activate(index, activeDocument(state, scene));
+    // A scene shows in the screen of its kind, as Godot shows a 2D scene in its 2D screen.
+    showSceneScreen(state, scene);
+    state.shownSceneKind = scene.kind();
 }
 
-void newSceneTab(ToolsState& state, scene::Scene& scene)
+void newSceneTab(ToolsState& state, scene::Scene& scene, std::optional<scene::SceneKind> kind)
 {
     if (state.playState != PlayState::Editing)
     {
         return;
     }
-    addAndActivate(state, scene, makeDocument({}, makeDefaultScene(), defaultCamera()));
+    const bool twoD = kind ? *kind == scene::SceneKind::TwoD : state.mainScreen == MainScreen::TwoD;
+    scene::Scene created = twoD ? makeDefault2DScene() : makeDefaultScene();
+    EditorCamera camera = defaultCamera();
+    created.updateTransforms();
+    fitToScene(camera, created);
+    addAndActivate(state, scene, makeDocument({}, std::move(created), camera));
 }
 
 void openSceneTab(ToolsState& state, scene::Scene& scene, const std::filesystem::path& path)
 {
     // A scene belongs to the viewport, as a file belongs to the text editor.
-    setMainScreen(state, MainScreen::ThreeD);
     if (state.playState != PlayState::Editing)
     {
+        showSceneScreen(state, scene);
         return;
     }
     if (const std::optional<std::size_t> open = state.tabs.findByPath(path, activeDocument(state, scene)))
@@ -589,7 +615,7 @@ void openSceneTab(ToolsState& state, scene::Scene& scene, const std::filesystem:
         activateSceneTab(state, scene, *open);
         return;
     }
-    std::optional<SceneDocument> document = loadDocument(path, defaultCamera());
+    std::optional<SceneDocument> document = loadDocument(path, std::nullopt);
     if (!document)
     {
         return;
@@ -1338,6 +1364,19 @@ void drawCreateEntityMenu(ToolsState& state, core::Uuid parent)
     {
         requestCreatePreset(state, parent, "Trigger zone 2D", [](scene::Scene& scratch, scene::Entity entity) {
             scratch.add<scene::BoxCollider2D>(entity, scene::BoxCollider2D{.size = {2.0f, 2.0f}, .trigger = true});
+        });
+    }
+    ImGui::Separator();
+    if (item(icons::Footprints, colors.physics, "Navigation Surface"))
+    {
+        requestCreatePreset(state, parent, "Navigation", [](scene::Scene& scratch, scene::Entity entity) {
+            scratch.add<scene::NavMeshSurface>(entity);
+        });
+    }
+    if (item(icons::PersonStanding, colors.physics, "Navigation Agent"))
+    {
+        requestCreatePreset(state, parent, "Agent", [](scene::Scene& scratch, scene::Entity entity) {
+            scratch.add<scene::NavMeshAgent>(entity);
         });
     }
 }

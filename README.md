@@ -60,6 +60,10 @@ Le détail, l'architecture des modules et les jalons sont dans
   cercle, capsule, polygone, déclencheurs, à sens unique), collider généré des tuiles et
   personnages « move and slide » (pentes, marches, corniches, plateformes mobiles, poussée),
   requêtes, forces et contacts, partagés avec le C# ;
+- `Devex::Navigation` : Recast & Detour, maillage de navigation cuit depuis les colliders statiques
+  (`.dvxnavmesh`, tuiles compressées), agents `NavMeshAgent` qui marchent en foule en s'évitant,
+  obstacles `NavMeshObstacle` qui découpent le maillage pendant le jeu, chemins, échantillonnage
+  et rayons le long du maillage, partagés avec le C# ;
 - `Devex::Audio` : miniaudio, sons spatialisés ou 2D, sources et écouteur dans la scène (sinon la
   caméra principale), lecture ponctuelle par le code, groupes de volume, clips décodés au
   chargement ou pendant la lecture ;
@@ -84,9 +88,12 @@ Le détail, l'architecture des modules et les jalons sont dans
   survol, clic et focus au clavier comme à la manette ;
 - `Devex::Tools` : interface ImGui au thème réglable inspiré de Godot (Noto Sans, JetBrains Mono,
   icônes Lucide) : arbre de la scène, inspecteur, FileSystem, sortie, statistiques, annulation, en
-  overlay (F1) ou dans l'éditeur : écrans 2D, 3D et Script au centre de la barre de menus, dont
-  l'écran 2D où les interfaces se choisissent, se déplacent et se redimensionnent avec leur thème
-  appliqué comme en jeu (l'inspecteur grise les champs qu'un style écrit et ouvre le thème),
+  overlay (F1) ou dans l'éditeur : écrans 2D, 3D et Script au centre de la barre de menus comme
+  dans Godot : chaque scène est 2D ou 3D et se voit dans l'écran de son type (l'autre reste vide),
+  et les interfaces s'éditent dans l'écran 2D (canevas rendus pour de vrai dans le cadre de la
+  caméra du jeu, éléments choisis, déplacés et redimensionnés avec leur thème appliqué ;
+  l'inspecteur grise les champs qu'un style écrit et ouvre le thème) et se montrent par-dessus
+  l'écran 3D d'une scène 3D,
   gestionnaire de projets, onglets de scènes, viewport et sa
   barre d'outils, caméra libre, sélection multiple (Ctrl et Maj dans l'arbre, rectangle dans la
   vue), gizmos et inspecteur sur plusieurs entités, copier, coller et dupliquer par le
@@ -98,11 +105,12 @@ Le détail, l'architecture des modules et les jalons sont dans
   *New Script…*, réglages de l'éditeur, aperçu sonore et forme
   d'onde des clips, éditeur de courbes (clés et pentes à déplacer, préréglages, *New Curve*),
   aperçu des particules dans la vue et contrôles de l'émetteur dans l'inspecteur, réglages des
-  composants rangés en sections repliables, vue 2D (caméra orthographique face au plan XY,
-  grille et gizmos 2D), textures découpées en sprites dans l'inspecteur, éditeur des animations
+  composants rangés en sections repliables, grille et gizmos 2D dans l'écran 2D, textures
+  découpées en sprites dans l'inspecteur, éditeur des animations
   de sprites, couches de tri du projet, peinture des tuiles dans la vue (pinceau, gomme,
   rectangle, remplissage, pipette) et inspecteur des tilesets, formes de la physique 2D
-  dessinées dans la vue,
+  dessinées dans la vue, cuisson du maillage de navigation depuis l'inspecteur et son dessin dans
+  la vue avec les agents, les obstacles et les chemins,
   volumes du projet, icônes et distances des sources audio, panneau Animation
   avec piste temporelle et images clés, panneau Animator (graphe de nœuds des machines à états,
   suivi en direct pendant le jeu), panneau Profiler (barres des images, chronologie par
@@ -117,7 +125,7 @@ Le détail, l'architecture des modules et les jalons sont dans
   frames, d'une condition ou d'un tween, arrêtées avec leur entité), rendu automatique de la
   scène, export d'un jeu ;
 - `Devex.Managed` : l'API C# du moteur (`Component`, `Entity`, `Scene`, `Input`, `Physics`, `Audio`,
-  `Animation`, `Tween`, `Particles`, `Tilemaps`, `Ui`, `Prefabs`, `Assets`, `Saves`, `PlayerSettings`, `Time`, `Log`,
+  `Animation`, `Navigation`, `Tween`, `Particles`, `Tilemaps`, `Ui`, `Prefabs`, `Assets`, `Saves`, `PlayerSettings`, `Time`, `Log`,
   `Profiler`, maths), les coroutines `async Coroutine` (`Wait.Seconds`, `Wait.Until`, tweens et
   tâches attendus sur le thread du jeu) et les vues des composants du
   moteur, compilée dans `bin/managed` quand le SDK .NET est installé ;
@@ -139,8 +147,10 @@ Le détail, l'architecture des modules et les jalons sont dans
   caisses (`code/Dispenser.cs`) et un cube qui flotte
   (`code/Bobber.cs`) ; le lanceur C++ et les cibles C# jouent leurs sons, la porte sa source audio,
   le cube flottant émet un bourdonnement spatialisé et une ambiance Ogg tourne en boucle dans le
-  groupe Music ; un robot rigué patrouille, attend et salue le joueur par sa machine à états
-  (`assets/animators/robot.dvxanimator`, `code/Robot.cs`) ;
+  groupe Music ; un robot rigué patrouille par le maillage de navigation, attend et salue le
+  joueur par sa machine à états (`assets/animators/robot.dvxanimator`, `code/Robot.cs`), deux
+  drones suivent le joueur en se contournant (`code/Follower.cs`), et la porte fermée comme les
+  caisses poussées découpent le maillage ;
   Tab passe à la scène `platformer`, un jeu de plateformes en pixel art (un chevalier animé qui
   court et saute sur un niveau de tuiles simulé par la physique 2D, traverse les corniches
   par-dessous, pousse des caisses, prend une plateforme mobile au-dessus de l'eau animée et

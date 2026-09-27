@@ -577,6 +577,8 @@ core::Result<std::vector<asset::AssetId>> assetReferences(asset::AssetType type,
         }
         break;
     }
+    // A navigation mesh holds its own tiles.
+    case asset::AssetType::NavMesh:
     case asset::AssetType::Texture:
     case asset::AssetType::AudioClip:
     case asset::AssetType::AnimationClip:

@@ -238,6 +238,13 @@ struct NativeApi
     void (*setAnimatorParameter)(Entity entity, const char* name, int kind, float value);
     int (*animatorParameter)(Entity entity, const char* name, float* value);
     const char* (*animatorState)(Entity entity, float* normalizedTime);
+    int (*navSetDestination)(Entity agent, const math::Vec3* destination);
+    void (*navStop)(Entity agent);
+    int (*navHasDestination)(Entity agent);
+    float (*navRemainingDistance)(Entity agent);
+    int (*navFindPath)(const math::Vec3* from, const math::Vec3* to, const math::Vec3** corners);
+    int (*navSamplePosition)(const math::Vec3* point, float maxDistance, math::Vec3* position);
+    int (*navRaycast)(const math::Vec3* from, const math::Vec3* to, math::Vec3* position, math::Vec3* normal);
 };
 
 // The functions the engine calls, in the order of Devex.Managed's ManagedApi.
@@ -252,7 +259,7 @@ struct ManagedApi
 };
 
 // Devex.Managed's Bootstrap.Version: both sides change it with the function tables.
-constexpr int bootstrapVersion = 14;
+constexpr int bootstrapVersion = 15;
 
 struct BootstrapArguments
 {
@@ -1041,6 +1048,60 @@ int apiAnimatorParameter(Entity entity, const char* name, float* value)
         animationWorld() != nullptr && name != nullptr ? animationWorld()->parameter(entity, name) : std::nullopt;
     *value = found.value_or(0.0f);
     return found ? 1 : 0;
+}
+
+[[nodiscard]] navigation::NavigationWorld* navigationWorld() noexcept
+{
+    return currentFrame() != nullptr ? currentFrame()->navigation : nullptr;
+}
+
+int apiNavSetDestination(Entity agent, const math::Vec3* destination)
+{
+    return navigationWorld() != nullptr && navigationWorld()->setDestination(agent, *destination) ? 1 : 0;
+}
+
+void apiNavStop(Entity agent)
+{
+    if (navigationWorld() != nullptr)
+    {
+        navigationWorld()->stop(agent);
+    }
+}
+
+int apiNavHasDestination(Entity agent)
+{
+    return navigationWorld() != nullptr && navigationWorld()->hasDestination(agent) ? 1 : 0;
+}
+
+float apiNavRemainingDistance(Entity agent)
+{
+    return navigationWorld() != nullptr ? navigationWorld()->remainingDistance(agent) : 0.0f;
+}
+
+int apiNavFindPath(const math::Vec3* from, const math::Vec3* to, const math::Vec3** corners)
+{
+    // Kept until the next query, while C# copies it.
+    static std::vector<math::Vec3> found;
+    found = navigationWorld() != nullptr ? navigationWorld()->findPath(*from, *to) : std::vector<math::Vec3>{};
+    *corners = found.data();
+    return static_cast<int>(found.size());
+}
+
+int apiNavSamplePosition(const math::Vec3* point, float maxDistance, math::Vec3* position)
+{
+    const std::optional<math::Vec3> found =
+        navigationWorld() != nullptr ? navigationWorld()->samplePosition(*point, maxDistance) : std::nullopt;
+    *position = found.value_or(*point);
+    return found ? 1 : 0;
+}
+
+int apiNavRaycast(const math::Vec3* from, const math::Vec3* to, math::Vec3* position, math::Vec3* normal)
+{
+    const std::optional<navigation::NavHit> hit =
+        navigationWorld() != nullptr ? navigationWorld()->raycast(*from, *to) : std::nullopt;
+    *position = hit ? hit->position : *to;
+    *normal = hit ? hit->normal : math::Vec3{0.0f};
+    return hit ? 1 : 0;
 }
 
 const char* apiAnimatorState(Entity entity, float* normalizedTime)
@@ -2058,6 +2119,13 @@ int apiParticleCount(Entity entity)
         .setAnimatorParameter = &apiSetAnimatorParameter,
         .animatorParameter = &apiAnimatorParameter,
         .animatorState = &apiAnimatorState,
+        .navSetDestination = &apiNavSetDestination,
+        .navStop = &apiNavStop,
+        .navHasDestination = &apiNavHasDestination,
+        .navRemainingDistance = &apiNavRemainingDistance,
+        .navFindPath = &apiNavFindPath,
+        .navSamplePosition = &apiNavSamplePosition,
+        .navRaycast = &apiNavRaycast,
     };
 }
 

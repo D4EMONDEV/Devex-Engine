@@ -175,7 +175,7 @@ private:
 
 [[nodiscard]] std::string sceneWithInstance(AssetId prefab, std::string_view overrides = {})
 {
-    return std::format("[scene format=1]\n\n[entity uuid=\"{}\" name=\"Instance\"]\nprefab = asset(\"{}\")\n{}{}",
+    return std::format("[scene format=1 kind=\"3d\"]\n\n[entity uuid=\"{}\" name=\"Instance\"]\nprefab = asset(\"{}\")\n{}{}",
                        instanceUuid, prefab.uuid, overrides.empty() ? "" : "\n", overrides);
 }
 

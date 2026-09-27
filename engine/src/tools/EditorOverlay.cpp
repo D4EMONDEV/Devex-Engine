@@ -1,4 +1,5 @@
 #include "ToolsState.hpp"
+#include "TwoDScreen.hpp"
 
 #include <devex/physics2d/Physics2DWorld.hpp>
 #include <devex/scene/AudioComponents.hpp>
@@ -254,7 +255,6 @@ void addColliders(const ToolsState& state, scene::Scene& scene, const std::unord
         color.a = selection.contains(entity.index) ? 1.0f : 0.55f;
         return color;
     };
-
     for ([[maybe_unused]] auto [entity, world, collider] : scene.view<scene::WorldTransform, scene::BoxCollider>())
     {
         if (!shown(entity))
@@ -623,6 +623,16 @@ void collectSubtree(const scene::Scene& scene, scene::Entity entity, std::unorde
 
 void addEditorOverlay(ToolsState& state, scene::Scene& scene, render::RenderWorld& world)
 {
+    // The screen of the other kind shows nothing of the scene to draw over or to pick: the grid.
+    if (screenContent(state.camera.isTwoD(), scene) != ScreenContent::Scene)
+    {
+        if (state.showGrid)
+        {
+            addGrid(state, world.sceneLines);
+        }
+        state.pickQuery.reset();
+        return;
+    }
     const ViewportView view{
         .view = world.camera.view,
         .verticalFov = world.camera.verticalFov,
@@ -674,6 +684,7 @@ void addEditorOverlay(ToolsState& state, scene::Scene& scene, render::RenderWorl
         addAudioIcons(scene, view, selected, hidden, world.overlayLines);
     }
     addColliders(state, scene, selection, hidden, world.overlayLines);
+    addNavigationLines(state, scene, selection, state.showColliders, world.overlayLines);
 
     // The selection is outlined, and so is the entity a dragged material would go to.
     const scene::Entity materialTarget = scene.findEntity(state.materialTarget);

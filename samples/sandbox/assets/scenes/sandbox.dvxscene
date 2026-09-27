@@ -1,4 +1,4 @@
-[scene format=1]
+[scene format=1 kind="3d"]
 
 [entity uuid="ca4064e7-ec2c-4207-bbf0-b1ab3b9d32b0" name="Sun"]
 

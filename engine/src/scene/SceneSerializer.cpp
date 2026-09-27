@@ -2,10 +2,15 @@
 
 #include <devex/core/File.hpp>
 #include <devex/core/Log.hpp>
+#include <devex/scene/AnimationComponents.hpp>
 #include <devex/scene/ComponentRegistry.hpp>
+#include <devex/scene/Components.hpp>
 #include <devex/scene/FieldValue.hpp>
 #include <devex/scene/Prefab.hpp>
 #include <devex/scene/SceneSerializer.hpp>
+#include <devex/scene/SpriteComponents.hpp>
+#include <devex/scene/TilemapComponents.hpp>
+#include <devex/scene/UiComponents.hpp>
 #include <devex/serialization/Text.hpp>
 
 #include <algorithm>
@@ -403,6 +408,16 @@ using serialization::TextDocument;
 using serialization::TextSection;
 using serialization::TextValue;
 
+template <typename T>
+[[nodiscard]] bool hasAny(const Scene& scene)
+{
+    const auto components = scene.view<T>();
+    return components.begin() != components.end();
+}
+
+constexpr std::string_view kind2D = "2d";
+constexpr std::string_view kind3D = "3d";
+
 [[nodiscard]] core::Result<Scene> createScene(const TextDocument& document, std::size_t first, PrefabLoading prefabs)
 {
     detail::PrefabStack stack;
@@ -421,11 +436,33 @@ using serialization::TextValue;
 
 } // namespace
 
+SceneKind inferSceneKind(const Scene& scene)
+{
+    // The camera the game shows the scene through says what the scene is made for.
+    std::optional<Projection> first;
+    for ([[maybe_unused]] auto [entity, camera] : scene.view<Camera>())
+    {
+        if (camera.primary)
+        {
+            return camera.projection == Projection::Orthographic ? SceneKind::TwoD : SceneKind::ThreeD;
+        }
+        first = first.value_or(camera.projection);
+    }
+    if (first)
+    {
+        return *first == Projection::Orthographic ? SceneKind::TwoD : SceneKind::ThreeD;
+    }
+    const bool flat = hasAny<SpriteRenderer>(scene) || hasAny<Tilemap>(scene) || hasAny<Canvas>(scene);
+    const bool meshes = hasAny<MeshRenderer>(scene) || hasAny<SkinnedMeshRenderer>(scene);
+    return flat && !meshes ? SceneKind::TwoD : SceneKind::ThreeD;
+}
+
 std::string saveScene(const Scene& scene)
 {
     TextDocument document;
     TextSection header{.type = "scene"};
     header.attributes.push_back({"format", TextValue(sceneFormatVersion)});
+    header.attributes.push_back({"kind", TextValue(std::string(scene.kind() == SceneKind::TwoD ? kind2D : kind3D))});
     document.sections.push_back(std::move(header));
 
     for (Entity root = scene.firstRoot(); root.isValid(); root = scene.nextSibling(root))
@@ -446,7 +483,28 @@ core::Result<Scene> loadScene(std::string_view text, PrefabLoading prefabs)
     {
         return std::unexpected(header.error());
     }
-    return createScene(*document, 1, prefabs);
+    core::Result<Scene> scene = createScene(*document, 1, prefabs);
+    if (!scene)
+    {
+        return scene;
+    }
+    const TextSection& header = document->sections.front();
+    const TextValue* const kind = header.findAttribute("kind");
+    const std::string* const name = kind != nullptr ? serialization::asString(*kind) : nullptr;
+    if (name != nullptr && (*name == kind2D || *name == kind3D))
+    {
+        scene->setKind(*name == kind2D ? SceneKind::TwoD : SceneKind::ThreeD);
+    }
+    else
+    {
+        if (kind != nullptr)
+        {
+            DEVEX_LOG_WARNING("line {}: unknown scene kind, expected \"2d\" or \"3d\"", header.line);
+        }
+        // Written before scenes had a kind: what it holds tells.
+        scene->setKind(inferSceneKind(*scene));
+    }
+    return scene;
 }
 
 std::string saveEntityTree(const Scene& scene, Entity root)

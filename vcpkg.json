@@ -23,6 +23,7 @@
         "miniaudio",
         "mikktspace",
         "plutosvg",
+        "recastnavigation",
         {
             "name": "sdl3",
             "features": [

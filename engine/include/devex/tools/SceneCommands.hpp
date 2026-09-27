@@ -1,6 +1,7 @@
 #pragma once
 
 #include <devex/core/Uuid.hpp>
+#include <devex/scene/Scene.hpp>
 #include <devex/serialization/Text.hpp>
 #include <devex/tools/CommandHistory.hpp>
 
@@ -24,6 +25,9 @@ namespace devex::tools {
 
 [[nodiscard]] std::unique_ptr<Command> makeRenameCommand(core::Uuid entity, std::string before,
                                                          std::string after);
+
+// Makes the scene a 2D scene or a 3D scene (see scene::SceneKind).
+[[nodiscard]] std::unique_ptr<Command> makeSetSceneKindCommand(scene::SceneKind before, scene::SceneKind after);
 
 // Creates an entity with a Transform, last under parent, or as a root when parent is nil. The
 // caller chooses the UUID, so it can select the entity, and redo recreates the same one.

@@ -1,4 +1,4 @@
-[scene format=1]
+[scene format=1 kind="3d"]
 
 [entity uuid="b8a9258d-db51-570f-a1c6-00272836cae8" name="Crate pyramid"]
 
