@@ -30,13 +30,15 @@ enum class AssetType : std::uint8_t
     Sprite = 11,
     // Named animations of sprites, a .dvxframes file.
     SpriteFrames = 12,
+    // The tiles a tilemap paints with, a .dvxtileset file.
+    Tileset = 13,
 };
 
 // Whether a stored value is one of the types above: update it with them.
 [[nodiscard]] constexpr bool isAssetType(std::uint8_t value) noexcept
 {
     return value >= static_cast<std::uint8_t>(AssetType::Mesh) &&
-           value <= static_cast<std::uint8_t>(AssetType::SpriteFrames);
+           value <= static_cast<std::uint8_t>(AssetType::Tileset);
 }
 
 // "mesh", "texture", "material", "model", "scene", "audio", "animation" or "font", as written in

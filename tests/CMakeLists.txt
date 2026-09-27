@@ -27,6 +27,7 @@ endfunction()
 devex_add_tests(core
     SOURCES
         core/AssertTests.cpp
+        core/Base64Tests.cpp
         core/BuildInfoTests.cpp
         core/ErrorTests.cpp
         core/FileTests.cpp
@@ -76,6 +77,7 @@ devex_add_tests(scene
         scene/PrefabTests.cpp
         scene/SceneSerializerTests.cpp
         scene/SceneTests.cpp
+        scene/TilemapTests.cpp
     LIBRARIES
         Devex::Engine
 )
@@ -123,6 +125,7 @@ devex_add_tests(asset
         asset/MetaFileTests.cpp
         asset/PackageTests.cpp
         asset/SpriteTests.cpp
+        asset/TilesetTests.cpp
         asset/TextureProcessingTests.cpp
     LIBRARIES
         Devex::Engine

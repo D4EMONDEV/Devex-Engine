@@ -3,6 +3,7 @@
 #include <devex/asset/import/CurveFile.hpp>
 #include <devex/asset/import/MaterialFile.hpp>
 #include <devex/asset/import/SpriteFramesFile.hpp>
+#include <devex/asset/import/TilesetFile.hpp>
 #include <devex/asset/import/ThemeFile.hpp>
 #include <devex/asset/import/TextureProcessing.hpp>
 #include <devex/core/File.hpp>
@@ -438,6 +439,23 @@ core::Result<ImportResult> importSpriteFramesFile(ImportContext& context)
     return result;
 }
 
+core::Result<ImportResult> importTilesetFile(ImportContext& context)
+{
+    const core::Result<std::string> text = core::readTextFile(context.source);
+    if (!text)
+    {
+        return std::unexpected(text.error());
+    }
+    const core::Result<TilesetData> tileset = parseTilesetFile(*text);
+    if (!tileset)
+    {
+        return std::unexpected(tileset.error());
+    }
+    ImportResult result;
+    result.artifacts.push_back({context.mainId, AssetType::Tileset, context.name, encodeTileset(*tileset)});
+    return result;
+}
+
 core::Result<ImportResult> importSceneFile(ImportContext& context)
 {
     const core::Result<std::string> text = core::readTextFile(context.source);
@@ -571,6 +589,13 @@ std::span<const Importer> importers()
             .mainType = AssetType::SpriteFrames,
             .extensions = {spriteFramesExtension},
             .run = &importSpriteFramesFile,
+        },
+        Importer{
+            .name = "tileset",
+            .version = 1,
+            .mainType = AssetType::Tileset,
+            .extensions = {tilesetExtension},
+            .run = &importTilesetFile,
         },
         Importer{
             .name = "scene",

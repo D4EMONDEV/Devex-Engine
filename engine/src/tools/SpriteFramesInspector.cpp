@@ -97,8 +97,10 @@ void saveFrames(ToolsState& state)
     return name;
 }
 
+} // namespace
+
 // The sprites a texture was cut into, in the order of its cells.
-[[nodiscard]] std::vector<asset::AssetId> spritesOf(const ToolsState& state, asset::AssetId texture)
+std::vector<asset::AssetId> spritesOfTexture(const ToolsState& state, asset::AssetId texture)
 {
     std::vector<asset::AssetId> sprites;
     const std::optional<asset::SourceFile> source = state.database->sourceOf(texture);
@@ -118,7 +120,7 @@ void saveFrames(ToolsState& state)
 }
 
 // Sprites or the sprites of a texture dropped on the last item.
-[[nodiscard]] std::vector<asset::AssetId> acceptDroppedSprites(const ToolsState& state)
+std::vector<asset::AssetId> acceptDroppedSprites(const ToolsState& state)
 {
     if (const std::optional<asset::AssetId> sprite = acceptDroppedAsset(asset::AssetType::Sprite))
     {
@@ -126,12 +128,10 @@ void saveFrames(ToolsState& state)
     }
     if (const std::optional<asset::AssetId> texture = acceptDroppedAsset(asset::AssetType::Texture))
     {
-        return spritesOf(state, *texture);
+        return spritesOfTexture(state, *texture);
     }
     return {};
 }
-
-} // namespace
 
 void drawSpriteThumbnail(ToolsState& state, asset::AssetId sprite, float size, bool selected)
 {
@@ -430,7 +430,7 @@ core::Result<std::filesystem::path> createSpriteFramesFile(ToolsState& state, st
     asset::SpriteFramesData frames;
     if (texture != nullptr)
     {
-        frames.animations.push_back({.name = "default", .fps = 10.0f, .loop = true, .frames = spritesOf(state, fromTexture)});
+        frames.animations.push_back({.name = "default", .fps = 10.0f, .loop = true, .frames = spritesOfTexture(state, fromTexture)});
     }
     const std::string base = std::string(folder) + (folder.ends_with('/') ? "" : "/");
     for (int number = 1; number < 1000; ++number)

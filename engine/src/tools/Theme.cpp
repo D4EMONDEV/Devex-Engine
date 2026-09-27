@@ -5,6 +5,7 @@
 #include <devex/scene/AnimationComponents.hpp>
 #include <devex/scene/ParticleComponents.hpp>
 #include <devex/scene/SpriteComponents.hpp>
+#include <devex/scene/TilemapComponents.hpp>
 #include <devex/scene/UiComponents.hpp>
 #include <devex/scene/AudioComponents.hpp>
 #include <devex/scene/ComponentRegistry.hpp>
@@ -116,7 +117,7 @@ bool g_linearColors = true;
 
 [[nodiscard]] bool isEngineComponent(std::string_view name) noexcept
 {
-    constexpr std::array<std::string_view, 34> engineComponents{
+    constexpr std::array<std::string_view, 35> engineComponents{
         "Transform",       "MeshRenderer",        "Camera",       "DirectionalLight",
         "PointLight",      "SpotLight",           "Environment",  "RigidBody",
         "BoxCollider",     "SphereCollider",      "CapsuleCollider", "CylinderCollider",
@@ -125,7 +126,7 @@ bool g_linearColors = true;
         "UiImage",         "UiText",              "UiButton",     "UiLayout",
         "UiInput",         "UiScroll",            "UiSlider",     "UiToggle",
         "UiBinding",       "Tweener",             "ParticleEmitter", "TrailRenderer",
-        "SpriteRenderer",  "SpriteAnimator"};
+        "SpriteRenderer",  "SpriteAnimator",      "Tilemap"};
     return std::ranges::find(engineComponents, name) != engineComponents.end();
 }
 
@@ -543,6 +544,10 @@ EntityIcon entityIcon(const scene::Scene& scene, scene::Entity entity)
     {
         return {icons::Image, colors.texture};
     }
+    if (scene.has<scene::Tilemap>(entity))
+    {
+        return {icons::Grid, colors.texture};
+    }
     if (scene.has<scene::Canvas>(entity))
     {
         return {icons::Monitor, colors.interface};
@@ -694,6 +699,10 @@ EntityIcon componentIcon(std::string_view componentName)
     if (componentName == "SpriteAnimator")
     {
         return {icons::Clapperboard, colors.animation};
+    }
+    if (componentName == "Tilemap")
+    {
+        return {icons::Grid, colors.texture};
     }
     if (componentName == "SkinnedMeshRenderer")
     {

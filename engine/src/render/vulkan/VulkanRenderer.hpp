@@ -403,11 +403,24 @@ private:
         // The instance, the batch, or the place of the sprite in the sorted buffer.
         std::uint32_t index = 0;
     };
-    // Scratch for the sprites of the frame: their GPU data in drawing order, the sprite each one
-    // came from, and the distances that sorted them.
+    // Sprites drawn together among the blended surfaces: one sprite, or the tiles of a tilemap.
+    struct SpriteBatch
+    {
+        std::int32_t layer = 0;
+        std::int32_t order = 0;
+        float distance = 0.0f;
+        // A sprite of RenderWorld::sprites, or a tilemap of RenderWorld::tilemaps.
+        bool tilemap = false;
+        std::uint32_t source = 0;
+        // Where it is in the sorted buffer.
+        std::uint32_t first = 0;
+        std::uint32_t count = 0;
+    };
+    // Scratch for the sprites of the frame: the batches in drawing order, their GPU data in the
+    // same order, and which of those are outlined.
+    mutable std::vector<SpriteBatch> m_spriteBatches;
     mutable std::vector<GpuSprite> m_gpuSprites;
-    mutable std::vector<std::uint32_t> m_spriteOrder;
-    mutable std::vector<float> m_spriteDistances;
+    mutable std::vector<std::uint8_t> m_spriteOutlined;
     mutable std::vector<TransparentItem> m_transparentItems;
     // Scratch for the particles of the frame, kept between frames to avoid allocating.
     mutable std::vector<GpuParticle> m_gpuParticles;

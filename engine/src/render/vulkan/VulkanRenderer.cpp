@@ -2257,16 +2257,17 @@ std::uint32_t VulkanRenderer::drawTransparent(VkCommandBuffer commandBuffer, VkD
         m_transparentItems.push_back(
             {.distance = sortDistance(m_world.particleDraws[index].center, m_cameraPosition), .kind = 1, .index = index});
     }
-    for (std::uint32_t position = 0; position < m_spriteOrder.size(); ++position)
+    for (std::uint32_t index = 0; index < m_spriteBatches.size(); ++index)
     {
-        const RenderSprite& sprite = m_world.sprites[m_spriteOrder[position]];
-        m_transparentItems.push_back({.layer = sprite.layer,
-                                      .order = sprite.order,
-                                      .distance = m_spriteDistances[position],
-                                      .kind = 2,
-                                      .index = position});
+        const SpriteBatch& batch = m_spriteBatches[index];
+        if (batch.count > 0)
+        {
+            m_transparentItems.push_back(
+                {.layer = batch.layer, .order = batch.order, .distance = batch.distance, .kind = 2, .index = index});
+        }
     }
-    // Sprites come already in this order among themselves, which a stable sort keeps.
+    // Sprite batches come already in this order among themselves, which a stable sort keeps: those
+    // that follow each other lie one after the other in the buffer.
     std::ranges::stable_sort(m_transparentItems, [](const TransparentItem& a, const TransparentItem& b) {
         if (a.layer != b.layer)
         {
@@ -2314,11 +2315,12 @@ std::uint32_t VulkanRenderer::drawTransparent(VkCommandBuffer commandBuffer, VkD
             {
                 flush();
             }
+            const SpriteBatch& batch = m_spriteBatches[item.index];
             if (spriteCount == 0)
             {
-                firstSprite = item.index;
+                firstSprite = batch.first;
             }
-            ++spriteCount;
+            spriteCount += batch.count;
             continue;
         }
         flush();
@@ -2374,11 +2376,20 @@ float VulkanRenderer::sortDistance(math::Vec3 point, math::Vec3 cameraPosition) 
 
 core::Result<void> VulkanRenderer::uploadSprites(FrameContext& frame) const
 {
-    m_spriteOrder.clear();
-    m_spriteDistances.clear();
+    m_spriteBatches.clear();
     m_gpuSprites.clear();
-    std::vector<std::pair<float, std::uint32_t>>& order = m_particleOrder;
-    order.clear();
+    m_spriteOutlined.clear();
+    const auto boxOf = [](const math::Mat4& transform, math::Vec2 low, math::Vec2 high) {
+        math::Aabb bounds;
+        for (const float x : {low.x, high.x})
+        {
+            for (const float y : {low.y, high.y})
+            {
+                bounds.add(math::Vec3(transform * math::Vec4(x, y, 0.0f, 1.0f)));
+            }
+        }
+        return bounds;
+    };
     for (std::uint32_t index = 0; index < m_world.sprites.size(); ++index)
     {
         const RenderSprite& sprite = m_world.sprites[index];
@@ -2386,66 +2397,125 @@ core::Result<void> VulkanRenderer::uploadSprites(FrameContext& frame) const
         const math::Vec2 low = -sprite.pivot * sprite.size;
         const math::Vec2 high = (math::Vec2{1.0f} - sprite.pivot) * sprite.size;
         const math::Vec2 extent = math::max(math::abs(low), math::abs(high));
-        math::Aabb bounds;
-        for (const float x : {-extent.x, extent.x})
-        {
-            for (const float y : {-extent.y, extent.y})
-            {
-                bounds.add(math::Vec3(sprite.transform * math::Vec4(x, y, 0.0f, 1.0f)));
-            }
-        }
-        if (!m_cameraFrustum.intersects(bounds))
+        if (!m_cameraFrustum.intersects(boxOf(sprite.transform, -extent, extent)))
         {
             continue;
         }
         const math::Vec2 middle = (low + high) * 0.5f;
         const math::Vec3 center = math::Vec3(sprite.transform * math::Vec4(middle, 0.0f, 1.0f));
-        order.emplace_back(sortDistance(center, m_cameraPosition), index);
+        m_spriteBatches.push_back({.layer = sprite.layer,
+                                   .order = sprite.order,
+                                   .distance = sortDistance(center, m_cameraPosition),
+                                   .source = index,
+                                   .count = 1});
     }
-    std::ranges::stable_sort(order, [&](const std::pair<float, std::uint32_t>& a, const std::pair<float, std::uint32_t>& b) {
-        const RenderSprite& first = m_world.sprites[a.second];
-        const RenderSprite& second = m_world.sprites[b.second];
-        if (first.layer != second.layer)
+    // A tilemap sorts as a whole, from the middle of its tiles.
+    for (std::uint32_t index = 0; index < m_world.tilemaps.size(); ++index)
+    {
+        const RenderTilemap& tilemap = m_world.tilemaps[index];
+        const std::uint32_t end = std::min<std::uint32_t>(tilemap.firstTile + tilemap.tileCount,
+                                                          static_cast<std::uint32_t>(m_world.tiles.size()));
+        if (tilemap.firstTile >= end)
         {
-            return first.layer < second.layer;
+            continue;
         }
-        if (first.order != second.order)
+        math::IVec2 low{std::numeric_limits<std::int32_t>::max()};
+        math::IVec2 high{std::numeric_limits<std::int32_t>::lowest()};
+        for (std::uint32_t tile = tilemap.firstTile; tile < end; ++tile)
         {
-            return first.order < second.order;
+            low = math::min(low, m_world.tiles[tile].cell);
+            high = math::max(high, m_world.tiles[tile].cell + math::IVec2{1});
         }
-        return a.first > b.first;
+        const math::Vec2 lowCorner = math::Vec2(low) * tilemap.cellSize;
+        const math::Vec2 highCorner = math::Vec2(high) * tilemap.cellSize;
+        if (!m_cameraFrustum.intersects(boxOf(tilemap.transform, lowCorner, highCorner)))
+        {
+            continue;
+        }
+        const math::Vec3 center = math::Vec3(tilemap.transform * math::Vec4((lowCorner + highCorner) * 0.5f, 0.0f, 1.0f));
+        m_spriteBatches.push_back({.layer = tilemap.layer,
+                                   .order = tilemap.order,
+                                   .distance = sortDistance(center, m_cameraPosition),
+                                   .tilemap = true,
+                                   .source = index});
+    }
+    std::ranges::stable_sort(m_spriteBatches, [](const SpriteBatch& a, const SpriteBatch& b) {
+        if (a.layer != b.layer)
+        {
+            return a.layer < b.layer;
+        }
+        if (a.order != b.order)
+        {
+            return a.order < b.order;
+        }
+        return a.distance > b.distance;
     });
-    for (const auto& [distance, index] : order)
+
+    const auto slotOf = [this](TextureHandle handle) {
+        const GpuTexture* const texture = m_textures.find(handle);
+        return texture != nullptr && texture->ready ? texture->slot : noParticleTexture;
+    };
+    for (SpriteBatch& batch : m_spriteBatches)
     {
-        const RenderSprite& sprite = m_world.sprites[index];
-        const GpuTexture* const texture = m_textures.find(sprite.texture);
-        std::uint32_t flags = static_cast<std::uint32_t>(sprite.mode) & 3U;
-        flags |= (sprite.flipX ? spriteFlipX : 0U) | (sprite.flipY ? spriteFlipY : 0U);
-        flags |= (sprite.additive ? spriteAdditive : 0U) | (sprite.lit ? spriteLit : 0U);
-        m_spriteOrder.push_back(index);
-        m_spriteDistances.push_back(distance);
-        m_gpuSprites.push_back({
-            .world = sprite.transform,
-            .uvRect = sprite.uvRect,
-            .color = sprite.color,
-            .border = sprite.border,
-            .size = sprite.size,
-            .pivot = sprite.pivot,
-            .naturalSize = sprite.naturalSize,
-            .texture = texture != nullptr && texture->ready ? texture->slot : noParticleTexture,
-            .flags = flags,
-            .objectId = sprite.objectId,
-        });
-    }
-    // A sprite whose texture is still loading waits for it rather than showing a plain rectangle.
-    const std::size_t kept = m_gpuSprites.size();
-    for (std::size_t position = 0; position < kept; ++position)
-    {
-        if (m_world.sprites[m_spriteOrder[position]].texture.isValid() && m_gpuSprites[position].texture == noParticleTexture)
+        batch.first = static_cast<std::uint32_t>(m_gpuSprites.size());
+        if (!batch.tilemap)
         {
-            m_gpuSprites[position].color.a = 0.0f;
+            const RenderSprite& sprite = m_world.sprites[batch.source];
+            std::uint32_t flags = static_cast<std::uint32_t>(sprite.mode) & 3U;
+            flags |= (sprite.flipX ? spriteFlipX : 0U) | (sprite.flipY ? spriteFlipY : 0U);
+            flags |= (sprite.additive ? spriteAdditive : 0U) | (sprite.lit ? spriteLit : 0U);
+            GpuSprite& gpu = m_gpuSprites.emplace_back(GpuSprite{
+                .world = sprite.transform,
+                .uvRect = sprite.uvRect,
+                .color = sprite.color,
+                .border = sprite.border,
+                .size = sprite.size,
+                .pivot = sprite.pivot,
+                .naturalSize = sprite.naturalSize,
+                .texture = slotOf(sprite.texture),
+                .flags = flags,
+                .objectId = sprite.objectId,
+            });
+            // A sprite whose texture is still loading waits for it rather than showing a plain rectangle.
+            if (sprite.texture.isValid() && gpu.texture == noParticleTexture)
+            {
+                gpu.color.a = 0.0f;
+            }
+            m_spriteOutlined.push_back(sprite.outlined ? 1 : 0);
+            continue;
         }
+        // The tiles the camera sees, each filling its cell.
+        const RenderTilemap& tilemap = m_world.tilemaps[batch.source];
+        const std::uint32_t end = std::min<std::uint32_t>(tilemap.firstTile + tilemap.tileCount,
+                                                          static_cast<std::uint32_t>(m_world.tiles.size()));
+        for (std::uint32_t index = tilemap.firstTile; index < end; ++index)
+        {
+            const RenderTile& tile = m_world.tiles[index];
+            const math::Vec2 corner = math::Vec2(tile.cell) * tilemap.cellSize;
+            if (!m_cameraFrustum.intersects(boxOf(tilemap.transform, corner, corner + tilemap.cellSize)))
+            {
+                continue;
+            }
+            GpuSprite& gpu = m_gpuSprites.emplace_back(GpuSprite{
+                .world = tilemap.transform * math::translate(math::Mat4{1.0f}, math::Vec3(corner, 0.0f)),
+                .uvRect = tile.uvRect,
+                .color = tilemap.color,
+                .size = tilemap.cellSize,
+                .pivot = math::Vec2{0.0f},
+                .naturalSize = tilemap.cellSize,
+                .texture = slotOf(tile.texture),
+                .flags = tilemap.lit ? spriteLit : 0U,
+                .objectId = tilemap.objectId,
+            });
+            if (tile.texture.isValid() && gpu.texture == noParticleTexture)
+            {
+                gpu.color.a = 0.0f;
+            }
+            m_spriteOutlined.push_back(tilemap.outlined ? 1 : 0);
+        }
+        batch.count = static_cast<std::uint32_t>(m_gpuSprites.size()) - batch.first;
     }
+
     const VkDeviceSize bytes = std::max<std::size_t>(m_gpuSprites.size(), 1) * sizeof(GpuSprite);
     if (core::Result<void> ensured = ensureHostBuffer(frame.sprites, bytes); !ensured)
     {
@@ -2597,7 +2667,8 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
     const VkFormat targetFormat = m_swapchain->format();
     const bool toViewport = m_world.viewport.width > 0 && m_world.viewport.height > 0;
     const bool outlines = std::ranges::any_of(m_world.meshes, &MeshInstance::outlined) ||
-                          std::ranges::any_of(m_world.sprites, &RenderSprite::outlined);
+                          std::ranges::any_of(m_world.sprites, &RenderSprite::outlined) ||
+                          std::ranges::any_of(m_world.tilemaps, &RenderTilemap::outlined);
     const bool drawOverlay = outlines || !m_world.sceneLines.empty() || !m_world.overlayLines.empty() ||
                              !m_world.overlayTriangles.empty();
     const bool pick = frame.pickRequest.has_value();
@@ -3170,15 +3241,16 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
                           setViewport(commands, extent);
                           drawMeshes(commands, sceneData, boneMatrices, MeshPass::SelectionMask, 0, frameSlot);
                           // Runs of outlined sprites, in their order.
-                          for (std::uint32_t position = 0; position < m_spriteOrder.size();)
+                          const auto outlinedCount = static_cast<std::uint32_t>(m_spriteOutlined.size());
+                          for (std::uint32_t position = 0; position < outlinedCount;)
                           {
-                              if (!m_world.sprites[m_spriteOrder[position]].outlined)
+                              if (m_spriteOutlined[position] == 0)
                               {
                                   ++position;
                                   continue;
                               }
                               std::uint32_t end = position + 1;
-                              while (end < m_spriteOrder.size() && m_world.sprites[m_spriteOrder[end]].outlined)
+                              while (end < outlinedCount && m_spriteOutlined[end] != 0)
                               {
                                   ++end;
                               }

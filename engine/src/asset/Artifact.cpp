@@ -100,6 +100,7 @@ std::uint32_t artifactVersion(AssetType type) noexcept
     case AssetType::Curve:
     case AssetType::Sprite:
     case AssetType::SpriteFrames:
+    case AssetType::Tileset:
         return 1;
     }
     return 0;
@@ -109,7 +110,7 @@ std::uint32_t artifactLayouts() noexcept
 {
     std::uint32_t combined = 0;
     for (std::uint8_t value = static_cast<std::uint8_t>(AssetType::Mesh);
-         value <= static_cast<std::uint8_t>(AssetType::SpriteFrames); ++value)
+         value <= static_cast<std::uint8_t>(AssetType::Tileset); ++value)
     {
         combined = combined * 31 + artifactVersion(static_cast<AssetType>(value));
     }
@@ -698,6 +699,60 @@ core::Result<SpriteFramesData> decodeSpriteFrames(std::span<const std::byte> byt
         return std::unexpected(valid.error());
     }
     return frames;
+}
+
+std::vector<std::byte> encodeTileset(const TilesetData& tileset)
+{
+    BinaryWriter writer = beginArtifact(AssetType::Tileset);
+    writer.write(static_cast<std::uint32_t>(tileset.tiles.size()));
+    for (const TileData& tile : tileset.tiles)
+    {
+        writer.write(tile.id);
+        writer.write(tile.sprite);
+        writer.write(tile.collision);
+        writer.writeArray(std::span<const AssetId>(tile.frames));
+        writer.write(tile.fps);
+        writer.writeString(tile.data);
+    }
+    return writer.take();
+}
+
+core::Result<TilesetData> decodeTileset(std::span<const std::byte> bytes)
+{
+    BinaryReader reader(bytes);
+    if (core::Result<void> header = readHeader(reader, AssetType::Tileset); !header)
+    {
+        return std::unexpected(header.error());
+    }
+    TilesetData tileset;
+    const auto count = reader.read<std::uint32_t>();
+    for (std::uint32_t index = 0; index < count && !reader.failed(); ++index)
+    {
+        TileData tile;
+        tile.id = reader.read<std::uint32_t>();
+        tile.sprite = reader.read<AssetId>();
+        tile.collision = reader.read<TileCollision>();
+        tile.frames = reader.readArray<AssetId>();
+        tile.fps = reader.read<float>();
+        tile.data = reader.readString();
+        tileset.tiles.push_back(std::move(tile));
+    }
+    if (reader.failed())
+    {
+        return std::unexpected(truncated(AssetType::Tileset));
+    }
+    for (const TileData& tile : tileset.tiles)
+    {
+        if (tile.collision > TileCollision::Top)
+        {
+            return std::unexpected(truncated(AssetType::Tileset));
+        }
+    }
+    if (core::Result<void> valid = validate(tileset); !valid)
+    {
+        return std::unexpected(valid.error());
+    }
+    return tileset;
 }
 
 core::Result<ThemeData> decodeTheme(std::span<const std::byte> bytes)

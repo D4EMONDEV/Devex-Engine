@@ -85,6 +85,8 @@ struct Folder
         return {icons::Activity, colors.animation};
     case asset::AssetType::SpriteFrames:
         return {icons::Clapperboard, colors.animation};
+    case asset::AssetType::Tileset:
+        return {icons::Grid, colors.texture};
     default:
         break;
     }
@@ -225,7 +227,7 @@ void drawSource(ToolsState& state, scene::Scene& scene, const asset::SourceFile&
         }
         // Curves, sprite frames and textures are edited in the inspector.
         if ((mainAsset->type == asset::AssetType::Curve || mainAsset->type == asset::AssetType::SpriteFrames ||
-             mainAsset->type == asset::AssetType::Texture) &&
+             mainAsset->type == asset::AssetType::Texture || mainAsset->type == asset::AssetType::Tileset) &&
             ImGui::IsItemClicked(ImGuiMouseButton_Left))
         {
             selectAsset(state, mainAsset->id);
@@ -323,6 +325,14 @@ void drawFolderMenu(ToolsState& state, const std::string& path)
         }
     }
     ImGui::SetItemTooltip("Named animations of sprites, which SpriteAnimator components play");
+    if (ImGui::MenuItemEx("New Tileset", icons::Grid.c_str()))
+    {
+        if (core::Result<std::filesystem::path> created = createTilesetFile(state, path); !created)
+        {
+            DEVEX_LOG_ERROR("Cannot create the tileset: {}", created.error());
+        }
+    }
+    ImGui::SetItemTooltip("The tiles Tilemap components paint their cells with");
     ImGui::EndPopup();
 }
 

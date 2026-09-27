@@ -1,0 +1,29 @@
+[tileset format=1]
+
+[tile id=1 sprite=asset("e9d82d09-cb12-56da-a593-8fa5b99aed6f") collision="full"]
+
+[tile id=2 sprite=asset("c24d6dca-17c8-5469-b2d4-b21f38366a8f") collision="full"]
+
+[tile id=3 sprite=asset("881a6f59-41b4-5f1d-a0cb-c9a0bb337b2f") collision="full"]
+
+[tile id=4 sprite=asset("be0a1ca8-6ed0-5216-8d6d-7e554e8910ba") collision="full"]
+
+[tile id=5 sprite=asset("b1a3955e-5004-57a8-a28a-14df9834db97") collision="top"]
+
+[tile id=6 sprite=asset("4f0b166e-82fa-5846-9a34-8a8b5bf6bd01") collision="top"]
+
+[tile id=7 sprite=asset("404453dc-0fb4-5632-a6cc-47facf605078") collision="full"]
+
+[tile id=8 sprite=asset("83ec99c0-4e03-53ff-b86e-4e2af532fcca") collision="full"]
+
+[tile id=9 sprite=asset("93891a03-bb72-5ee4-977f-20f37586fd27") collision="none"]
+frames = list(asset("93891a03-bb72-5ee4-977f-20f37586fd27"), asset("8315aa1c-38ef-5e52-9a97-c1c60f82539c"), asset("baef9485-bd84-53f7-bc7f-4a61e83ae0dd"), asset("fbc22501-2319-5919-8a7a-796aa2aa7794"))
+fps = 4
+data = "water"
+
+[tile id=10 sprite=asset("448ca5a1-c505-5e3a-bc77-356e22c94705") collision="none"]
+
+[tile id=11 sprite=asset("fd7cfa77-fba2-5692-a577-00a0605c0d88") collision="none"]
+
+[tile id=12 sprite=asset("50c76fed-f990-5cb6-afca-6e7daba086cd") collision="none"]
+data = "water"

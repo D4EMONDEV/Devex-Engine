@@ -24,6 +24,7 @@ add_library(Devex::Core ALIAS devex_core)
 target_sources(devex_core
     PRIVATE
         src/core/Assert.cpp
+        src/core/Base64.cpp
         src/core/BuildInfo.cpp
         src/core/Error.cpp
         src/core/File.cpp
@@ -39,6 +40,7 @@ target_sources(devex_core
         BASE_DIRS include
         FILES
             include/devex/core/Assert.hpp
+            include/devex/core/Base64.hpp
             include/devex/core/BuildInfo.hpp
             include/devex/core/Error.hpp
             include/devex/core/File.hpp
@@ -202,6 +204,7 @@ target_sources(devex_asset
         src/asset/Project.cpp
         src/asset/SpriteData.cpp
         src/asset/TextureData.cpp
+        src/asset/TilesetData.cpp
         src/asset/ThemeData.cpp
     PUBLIC
         FILE_SET HEADERS
@@ -225,6 +228,7 @@ target_sources(devex_asset
             include/devex/asset/Project.hpp
             include/devex/asset/SpriteData.hpp
             include/devex/asset/TextureData.hpp
+            include/devex/asset/TilesetData.hpp
 )
 
 target_link_libraries(devex_asset
@@ -275,6 +279,7 @@ target_sources(devex_asset_import
         src/asset/import/StbImage.cpp
         src/asset/import/TextureProcessing.cpp
         src/asset/import/ThemeFile.cpp
+        src/asset/import/TilesetFile.cpp
     PUBLIC
         FILE_SET HEADERS
         BASE_DIRS include
@@ -287,6 +292,7 @@ target_sources(devex_asset_import
             include/devex/asset/import/MetaFile.hpp
             include/devex/asset/import/SpriteFramesFile.hpp
             include/devex/asset/import/TextureProcessing.hpp
+            include/devex/asset/import/TilesetFile.hpp
 )
 
 target_include_directories(devex_asset_import SYSTEM PRIVATE ${Stb_INCLUDE_DIR})
@@ -419,6 +425,7 @@ target_sources(devex_scene
         src/scene/AnimationComponents.cpp
         src/scene/ParticleComponents.cpp
         src/scene/SpriteComponents.cpp
+        src/scene/TilemapComponents.cpp
         src/scene/AssetReferences.cpp
         src/scene/AudioComponents.cpp
         src/scene/Prefab.cpp
@@ -442,6 +449,7 @@ target_sources(devex_scene
             include/devex/scene/AnimationComponents.hpp
             include/devex/scene/ParticleComponents.hpp
             include/devex/scene/SpriteComponents.hpp
+            include/devex/scene/TilemapComponents.hpp
             include/devex/scene/AssetReferences.hpp
             include/devex/scene/AudioComponents.hpp
             include/devex/scene/Prefab.hpp
@@ -688,6 +696,8 @@ target_sources(devex_tools
         src/tools/CurveInspector.cpp
         src/tools/SpriteFramesInspector.cpp
         src/tools/TextureInspector.cpp
+        src/tools/TilePainter.cpp
+        src/tools/TilesetInspector.cpp
         src/tools/EditorCamera.cpp
         src/tools/EditorCamera.hpp
         src/tools/EditorMenus.cpp

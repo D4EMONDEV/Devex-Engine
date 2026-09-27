@@ -194,6 +194,9 @@ struct FieldHints
     bool audioGroup = false;
     // A std::string naming a sorting layer of the project, chosen among them.
     bool sortingLayer = false;
+    // Saved, copied and seen by code, but not shown in the inspector: data that tools edit their
+    // own way, such as the cells of a tilemap.
+    bool hidden = false;
     // Starts a section of the fields, which the inspector shows under this title and folds: the
     // fields that follow belong to it until the next field that starts one.
     std::string_view group;
@@ -209,6 +212,7 @@ struct FieldInfo
     bool physicsLayer = false;
     bool audioGroup = false;
     bool sortingLayer = false;
+    bool hidden = false;
     // The section the field starts, empty when it continues the previous one.
     std::string group;
     // For enumerations: the name of each value, and the size of the stored value in bytes.
@@ -283,6 +287,7 @@ public:
             .physicsLayer = hints.physicsLayer,
             .audioGroup = hints.audioGroup,
             .sortingLayer = hints.sortingLayer,
+            .hidden = hints.hidden,
             .group = std::string(hints.group),
             .enumNames = std::move(enumNames),
             .enumSize = static_cast<std::uint8_t>(ReflectableEnum<Value> ? sizeof(Value) : 0),
@@ -313,6 +318,7 @@ public:
             .physicsLayer = hints.physicsLayer,
             .audioGroup = hints.audioGroup,
             .sortingLayer = hints.sortingLayer,
+            .hidden = hints.hidden,
             .group = std::string(hints.group),
             .enumNames = std::move(enumNames),
             .enumSize = static_cast<std::uint8_t>(ReflectableEnum<Element> ? sizeof(Element) : 0),

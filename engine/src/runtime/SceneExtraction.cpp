@@ -4,11 +4,14 @@
 #include <devex/scene/AnimationComponents.hpp>
 #include <devex/scene/Components.hpp>
 #include <devex/scene/SpriteComponents.hpp>
+#include <devex/scene/TilemapComponents.hpp>
 
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <limits>
+#include <optional>
+#include <unordered_map>
 #include <vector>
 
 namespace devex::runtime {
@@ -110,6 +113,78 @@ void extractSprites(scene::Scene& scene, AssetManager& assets, const asset::Sort
             .lit = sprite.lit,
             .layer = sorting.rank(sprite.sortingLayer),
             .order = sprite.order,
+            .objectId = entity.index + 1,
+        });
+    }
+}
+
+void extractTilemaps(scene::Scene& scene, AssetManager& assets, const asset::SortingSettings& sorting, double seconds,
+                     render::RenderWorld& world)
+{
+    // Where the sprite of a tile lies on its texture, found once per tilemap.
+    struct ResolvedTile
+    {
+        math::Vec4 uvRect{0.0f};
+        render::TextureHandle texture;
+    };
+    std::unordered_map<std::uint32_t, std::optional<ResolvedTile>> resolved;
+    for ([[maybe_unused]] auto [entity, transform, tilemap] : scene.view<scene::WorldTransform, scene::Tilemap>())
+    {
+        const std::shared_ptr<const asset::TilesetData> tileset =
+            tilemap.blocks.empty() || !tilemap.tileset.isValid() ? nullptr : assets.tileset(tilemap.tileset);
+        if (tileset == nullptr)
+        {
+            continue;
+        }
+        resolved.clear();
+        const auto resolve = [&](std::uint32_t id) -> const std::optional<ResolvedTile>& {
+            auto [found, added] = resolved.try_emplace(id);
+            if (!added)
+            {
+                return found->second;
+            }
+            const asset::TileData* const tile = tileset->find(id);
+            const std::shared_ptr<const asset::SpriteData> sprite = tile != nullptr ? assets.sprite(tile->spriteAt(seconds)) : nullptr;
+            const render::TextureHandle texture = sprite != nullptr ? assets.texture(sprite->texture) : render::TextureHandle{};
+            if (texture.isValid())
+            {
+                found->second = ResolvedTile{.uvRect = sprite->uvRect(), .texture = texture};
+            }
+            return found->second;
+        };
+        const auto first = static_cast<std::uint32_t>(world.tiles.size());
+        for (const scene::TileCell& cell : scene::TileGrid::read(tilemap).cells())
+        {
+            const std::optional<ResolvedTile>& tile = resolve(scene::tileIdOf(cell.value));
+            if (!tile)
+            {
+                continue;
+            }
+            math::Vec4 uv = tile->uvRect;
+            if ((cell.value & scene::tileFlipX) != 0)
+            {
+                std::swap(uv.x, uv.z);
+            }
+            if ((cell.value & scene::tileFlipY) != 0)
+            {
+                std::swap(uv.y, uv.w);
+            }
+            world.tiles.push_back({.cell = cell.cell, .uvRect = uv, .texture = tile->texture});
+        }
+        const auto count = static_cast<std::uint32_t>(world.tiles.size()) - first;
+        if (count == 0)
+        {
+            continue;
+        }
+        world.tilemaps.push_back({
+            .transform = transform.matrix,
+            .cellSize = tilemap.cellSize,
+            .color = tilemap.color,
+            .firstTile = first,
+            .tileCount = count,
+            .lit = tilemap.lit,
+            .layer = sorting.rank(tilemap.sortingLayer),
+            .order = tilemap.order,
             .objectId = entity.index + 1,
         });
     }

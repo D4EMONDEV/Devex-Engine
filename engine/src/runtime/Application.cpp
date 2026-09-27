@@ -355,6 +355,8 @@ private:
     std::unique_ptr<animation::TweenWorld> m_tweens;
     // The particles of the scene shown, the one the editor edits included, which it previews.
     std::unique_ptr<particles::ParticleWorld> m_particles;
+    // The clock animated tiles follow, in seconds.
+    double m_tileClock = 0.0;
     // The coroutines of the game module, whose frames are destroyed before it unloads.
     CoroutineScheduler m_coroutines;
     std::unique_ptr<ui::UiWorld> m_ui;
@@ -800,6 +802,11 @@ void ApplicationRunner::runFrame()
 
 void ApplicationRunner::updateFrameWorlds(std::chrono::nanoseconds frameTime, bool interpolate)
 {
+    // Animated tiles play in the editor too, and hold while the game is paused.
+    if (!(isEditor() && m_playScene && m_playState != tools::PlayState::Playing))
+    {
+        m_tileClock += std::chrono::duration<double>(frameTime).count();
+    }
     {
         DEVEX_PROFILE_SCOPE("Animation");
         updateAnimation(frameTime);
@@ -903,8 +910,9 @@ void ApplicationRunner::render(bool gameplay)
         DEVEX_PROFILE_SCOPE("Scene extraction");
         extractScene(scene, m_services.assets, world);
         const asset::AssetSource* const source = assetSource();
-        extractSprites(scene, m_services.assets, source != nullptr ? source->project().sorting : asset::SortingSettings{},
-                       world);
+        const asset::SortingSettings sorting = source != nullptr ? source->project().sorting : asset::SortingSettings{};
+        extractSprites(scene, m_services.assets, sorting, world);
+        extractTilemaps(scene, m_services.assets, sorting, m_tileClock, world);
         extractParticles(*m_particles, m_services.assets, world);
         if (gameplay)
         {
@@ -2631,7 +2639,8 @@ int run(Application& application, const ApplicationConfig& config)
             tools->setThemes([&assets](asset::AssetId theme) { return assets.theme(theme); });
             tools->setSpriteSources([&assets](asset::AssetId texture) { return assets.texture(texture); },
                                     [&assets](asset::AssetId texture) { return assets.textureSize(texture); },
-                                    [&assets](asset::AssetId sprite) { return assets.sprite(sprite); });
+                                    [&assets](asset::AssetId sprite) { return assets.sprite(sprite); },
+                                    [&assets](asset::AssetId tileset) { return assets.tileset(tileset); });
             tools->setMemoryReport([&assets] { return assets.memoryReport(); });
             tools->setPendingLoads([&assets] { return assets.pendingLoads(); });
             const std::filesystem::path engineConfig = (platform->baseDirectory() / ".." / "cmake").lexically_normal();

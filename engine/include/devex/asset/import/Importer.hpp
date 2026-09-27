@@ -96,8 +96,8 @@ struct Importer
     core::Result<std::vector<std::filesystem::path>> (*findDependencies)(const std::filesystem::path& file) = nullptr;
 };
 
-// Texture images, .dvxmat materials, glTF, FBX and OBJ models, sounds, fonts, curves, sprite frames
-// and .dvxscene scenes.
+// Texture images, .dvxmat materials, glTF, FBX and OBJ models, sounds, fonts, curves, sprite
+// frames, tilesets and .dvxscene scenes.
 [[nodiscard]] std::span<const Importer> importers();
 // The extension is compared without regard to case.
 [[nodiscard]] const Importer* findImporterForExtension(std::string_view extension);
@@ -113,6 +113,7 @@ struct Importer
 [[nodiscard]] core::Result<ImportResult> importSceneFile(ImportContext& context);
 [[nodiscard]] core::Result<ImportResult> importCurveFile(ImportContext& context);
 [[nodiscard]] core::Result<ImportResult> importSpriteFramesFile(ImportContext& context);
+[[nodiscard]] core::Result<ImportResult> importTilesetFile(ImportContext& context);
 // Sounds keep their file; the "loading" option chooses "decoded", "streamed" or "auto".
 [[nodiscard]] core::Result<ImportResult> importAudioFile(ImportContext& context);
 // Fonts are baked into an atlas of distances at the "size" of the option, with the "spread" of the

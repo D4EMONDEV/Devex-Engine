@@ -453,3 +453,22 @@ public class Animator2D : Component
         }
     }
 }
+
+// Paints and reads the cells of the tilemap of its entity.
+public class Tiler : Component
+{
+    public int Read;
+    public int CellX;
+    public int CellY;
+    public Vec3 Center;
+
+    public override void Update(float delta)
+    {
+        Tilemaps.SetTile(Entity, 2, 3, 5, flipX: true);
+        Tilemaps.SetTile(Entity, 4, 4, 6);
+        Tilemaps.SetTile(Entity, 4, 4, 0);
+        Read = Tilemaps.GetTile(Entity, 2, 3) * 10 + Tilemaps.GetTile(Entity, 4, 4);
+        (CellX, CellY) = Tilemaps.CellAt(Entity, new Vec3(12.5f, -0.5f, 0.0f));
+        Center = Tilemaps.CellCenter(Entity, 1, 1);
+    }
+}

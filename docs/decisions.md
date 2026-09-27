@@ -42,6 +42,9 @@ mais seulement explicitement ici : le code suit ce document, pas l'inverse.
 | Vue 2D de l'éditeur      | Bouton 2D : caméra orthographique face au plan XY, gizmos 2D       |
 | Caméra orthographique    | `Camera::projection`, profondeur inversée entre deux plans          |
 | Filtrage des textures    | Réglage d'import, un sampler par texture à côté du tableau bindless |
+| Tuiles                   | Composant `Tilemap`, cellules par blocs de 16×16 dans la scène     |
+| Tilesets                 | Asset `.dvxtileset` : sprite, collision, animation, données par tuile |
+| Peinture des tuiles      | Outils sous la `Tilemap` dans l'inspecteur, un trait par annulation |
 | Clavier                  | `Key` = position physique (WASD devient ZQSD en AZERTY)            |
 | Présentation             | VSync (FIFO) par défaut, Mailbox/Immediate en option               |
 | Thread de rendu          | Thread principal, rendu découplé par un instantané `RenderWorld`   |
@@ -1085,7 +1088,7 @@ les assets s'écrivent au fil de leur lecture.
 - **Sources et importeurs** : chaque fichier dont l'extension a un importeur est une source ;
   `texture` (`.png`, `.jpg`, `.tga`, `.bmp`, `.hdr`, décodés par stb_image), `material`
   (`.dvxmat`), `gltf` (`.gltf`, `.glb`), `fbx` (`.fbx`), `obj` (`.obj`), `scene` (`.dvxscene`),
-  `curve` (`.dvxcurve`) et `frames` (`.dvxframes`), entre autres. Les fichiers et dossiers cachés (`.`) sont ignorés.
+  `curve` (`.dvxcurve`), `frames` (`.dvxframes`) et `tileset` (`.dvxtileset`), entre autres. Les fichiers et dossiers cachés (`.`) sont ignorés.
 - **`.dvxmeta`** : créé au premier scan avec un UUID aléatoire et les options par défaut de
   l'importeur. Il porte l'identité de l'asset : il se versionne avec la source. Un `.dvxmeta`
   illisible est signalé et laissé tel quel, jamais remplacé. Une source copiée avec son
@@ -1681,11 +1684,63 @@ les assets s'écrivent au fil de leur lecture.
   change pas, les vues des composants étant générées.
 - **Bac à sable** : la scène `platformer` (Tab depuis l'arène) est un petit jeu de plateformes en
   pixel art généré (`assets/textures/2d`, `assets/sprites`) : un chevalier court et saute (`Move`,
-  `Jump`) sur des corniches répétées, ramasse des pièces qui tournent et flottent (étincelles,
-  son, compteur), devant un coucher de soleil répété qui défile plus lentement que le sol, un mur
-  de briques éclairé par une torche vacillante (particules, lumière et `Tweener`), et des herbes
-  dans la couche *Foreground*. Le jeu est en C# (`code/Platformer.cs`) ; les déplacements sont
-  écrits, sans physique 2D.
+  `Jump`), ramasse des pièces qui tournent et flottent (étincelles, son, compteur), devant un
+  coucher de soleil répété qui défile plus lentement que le sol, un mur de briques éclairé par une
+  torche vacillante (particules, lumière et `Tweener`), et des herbes dans la couche
+  *Foreground*. Le niveau est une carte de tuiles depuis le jalon 36 (voir *Tuiles*). Le jeu est
+  en C# (`code/Platformer.cs`) ; les déplacements sont écrits, sans physique 2D.
+
+### Tuiles
+
+- **Composant `Tilemap`** (comme Unity et Godot, les cellules vivent dans le composant) : un
+  tileset, la taille d'une cellule en mètres, une teinte, une couche de tri et un ordre, éclairé
+  ou non. La cellule (x, y) couvre [x, x + 1) × [y, y + 1) cellules depuis l'origine de l'entité,
+  y vers le haut, dans son plan XY ; chaque tuile remplit sa cellule, sans pivot. Une cellule
+  garde le numéro de sa tuile sur 14 bits (0 pour aucune) et deux bits qui la **retournent**
+  (horizontalement et verticalement).
+- **Par blocs** : les cellules sont rangées par blocs de 16 × 16 ; la scène les enregistre dans
+  le champ `blocks`, une chaîne par bloc (`"x,y:"` puis ses 256 cellules en base64, deux octets
+  chacune, ligne par ligne depuis le bas), triées par ligne puis par colonne, sans les blocs
+  vides. Une carte se copie avec son entité, se modifie dans un préfab et s'annule comme tout
+  champ ; les diffs changent d'une ligne par bloc touché. `scene::TileGrid` lit les blocs,
+  change beaucoup de cellules et les réécrit ; `tileAt` et `setTile` changent une cellule sans
+  décoder toute la carte ; `cellAt` et `cellCenter` passent du monde aux cellules. Le champ est
+  caché de l'inspecteur par un nouvel indice de réflexion, `FieldHints::hidden`.
+- **Tilesets** (comme le `TileSet` de Godot) : un asset `.dvxtileset` liste ses tuiles, chacune
+  avec un numéro stable (les cellules le gardent quand d'autres tuiles sont ajoutées ou
+  retirées), un sprite, une **collision** (*none*, *full* : solide de tous côtés, *top* : tient ce
+  qui arrive d'en haut et laisse passer par-dessous), des **images d'animation** avec leur cadence
+  (eau, lave, torches), et des **données** libres pour le jeu (`"water"`, `"damage=5"`). Les
+  collisions servent au code du jeu dès maintenant, et à la physique 2D plus tard.
+- **Rendu** : une carte est un lot parmi les sprites. L'extraction résout chaque tuile une fois
+  par carte (le sprite de son image à l'instant, la texture, les retournements en échangeant les
+  coordonnées de texture) ; le renderer trie les cartes avec les sprites par couche, ordre et
+  distance (depuis le milieu de leurs tuiles), écarte les tuiles hors de la vue et envoie celles
+  qui restent à la suite dans le buffer des sprites : les sprites et les cartes qui se suivent
+  partent en un seul appel instancié. Une carte se choisit au clic sur ses tuiles, et s'entoure
+  quand elle est sélectionnée. Les tuiles animées suivent une horloge qui avance dans l'éditeur
+  et s'arrête quand le jeu est en pause.
+- **Peinture** : sous la `Tilemap` de l'entité inspectée, les outils **Paint**, **Erase**,
+  **Rectangle**, **Fill** (les cellules pareilles qui se touchent ; les vides seulement dans le
+  rectangle des cellules peintes) et **Pick**, les retournements, et la palette des tuiles du
+  tileset. Dans la vue (2D ou 3D, le rayon rencontre le plan de la carte), le clic gauche peint en
+  glissant, sans trou entre deux positions ; Maj efface, Ctrl prend la tuile ; clic droit ou
+  milieu déplacent la vue ; Échap arrête. La vue montre les cellules autour de la souris, le
+  cadre de ce qui va changer et la tuile à peindre, pâle ; la sélection et le gizmo attendent.
+  Chaque trait est **une étape d'annulation** du champ `blocks`.
+- **Inspecteur d'un tileset** : sa palette, où l'on glisse des sprites ou une texture entière ;
+  pour la tuile choisie, son sprite, sa collision, ses données, ses images d'animation (glissées
+  aussi) et leur cadence ; *Remove Tile*. *New Tileset* dans un dossier du FileSystem, ou depuis
+  une texture découpée (une tuile par sprite).
+- **Code** : C++ par `scene::TileGrid`, `tileAt`, `setTile`, `cellAt`, `cellCenter` et
+  `AssetManager::tileset` ; C# par `Tilemaps.GetTile`, `SetTile` (retournée ou non), `CellAt`,
+  `CellCenter`, `GetCollision` et `GetData`. L'amorce C# passe à 12.
+- **Bac à sable** : le niveau du jeu de plateformes est une `Tilemap` (`assets/tiles/platformer`,
+  planche `assets/textures/2d/tiles.png`) : herbe et terre (bords retournés), corniches de pierre
+  qu'on traverse par-dessous, caisses, piliers de pierre, fleurs, panneau, et un bassin d'eau
+  animée. Le chevalier bute contre les tuiles pleines, se pose sur les corniches, et revient au
+  départ quand il tombe à l'eau, en lisant les collisions et les données du tileset
+  (`code/Platformer.cs`).
 
 ### Culling et ombres locales
 
@@ -2392,7 +2447,13 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     nommées et ordre, animations nommées `.dvxframes` jouées par `SpriteAnimator` ; vue 2D de
     l'éditeur, inspecteurs des textures et des animations ; jeu de plateformes du bac à sable.
 
-Ensuite, sans ordre figé : tuiles et physique 2D, CI Linux.
+36. ✅ **Tuiles** — composant `Tilemap` aux cellules rangées par blocs dans la scène, retournées ou
+    non, tilesets `.dvxtileset` (sprite, collision, animation et données par tuile), rendu en lot
+    parmi les sprites, peinture dans la vue (pinceau, gomme, rectangle, remplissage, pipette) avec
+    un trait par annulation, inspecteur des tilesets, API C++ et C# ; le niveau du jeu de
+    plateformes du bac à sable en tuiles.
+
+Ensuite, sans ordre figé : physique 2D, CI Linux.
 
 ## Questions ouvertes
 
@@ -2432,7 +2493,12 @@ Ensuite, sans ordre figé : tuiles et physique 2D, CI Linux.
   cours de la physique et des animations, champs privés marqués à garder, migrations déclarées
   par version, plusieurs miniatures ou une taille choisie, entreprise (`organization`) dans les
   réglages du projet pour le dossier du joueur.
-- **2D, la suite** : tuiles (tilemaps et leur pinceau), physique 2D, éclairage 2D (lumières 2D,
+- **Tuiles, la suite** : tuiles automatiques (terrains, règles de voisinage), tuiles tournées d'un
+  quart de tour, tampons de plusieurs tuiles et palette de morceaux de carte, grilles isométriques
+  et hexagonales, collisions générées pour la physique 2D, cartes découpées en morceaux pour le
+  culling et l'envoi au GPU gardé d'une image à l'autre, calques de la même carte, tuiles faites de
+  préfabs.
+- **2D, la suite** : physique 2D, éclairage 2D (lumières 2D,
   normal maps, ombres), découpe libre des sprites dans un éditeur de sprites et atlas regroupés à
   l'import, aimantation au pixel (pixel perfect), ordre par Y pour les vues de dessus, sprites
   écrits dans la profondeur (découpés à l'alpha), événements des animations, animations de

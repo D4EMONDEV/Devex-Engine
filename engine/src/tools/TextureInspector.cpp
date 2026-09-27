@@ -358,6 +358,17 @@ void drawTextureInspector(ToolsState& state)
                 }
             }
             ImGui::SetItemTooltip("Sprite frames beside the texture, with one animation of all its sprites");
+            ImGui::SameLine();
+            if (labelButton(icons::Grid, "New Tileset", 0.0f, sprites > 0))
+            {
+                const std::string folder = source->path.substr(0, source->path.find_last_of('/'));
+                if (core::Result<std::filesystem::path> created = createTilesetFile(state, folder, state.selectedAsset);
+                    !created)
+                {
+                    DEVEX_LOG_ERROR("Cannot create the tileset: {}", created.error());
+                }
+            }
+            ImGui::SetItemTooltip("A tileset beside the texture, with a tile for each of its sprites");
         }
     }
     ImGui::Spacing();

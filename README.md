@@ -45,12 +45,14 @@ Le détail, l'architecture des modules et les jalons sont dans
   tonemapping AgX, table de couleurs, vignette et grain, particules et rubans (face à la caméra,
   étirés, doux au contact des surfaces, éclairés ou non, triés avec la transparence), sprites
   (simples, découpés en neuf, répétés, retournés, éclairés ou non, triés par couche et par
-  ordre), caméra orthographique, textures filtrées au pixel près, rendu dans
+  ordre), cartes de tuiles en un lot, caméra orthographique, textures filtrées au pixel près,
+  rendu dans
   une texture, sélection sur le
   GPU, contours et lignes d'outils, temps GPU de chaque passe, copies vers le GPU sans attente et
   dans un budget par image ;
 - `Devex::Scene` : entités à UUID, composants en sparse sets, hiérarchie, `.dvxscene`,
-  instanciation de modèles, composants de physique, d'animation et d'interface, préfabs liés
+  instanciation de modèles, composants de physique, d'animation et d'interface, cartes de
+  tuiles (`Tilemap`, cellules par blocs, tilesets `.dvxtileset`), préfabs liés
   (scènes imbriquées avec leurs modifications) ;
 - `Devex::Physics` : simulation Jolt Physics des corps rigides, colliders (primitives, maillages,
   déclencheurs) et personnages, couches de collision, requêtes, forces, contacts, interpolation ;
@@ -92,7 +94,8 @@ Le détail, l'architecture des modules et les jalons sont dans
   aperçu des particules dans la vue et contrôles de l'émetteur dans l'inspecteur, réglages des
   composants rangés en sections repliables, vue 2D (caméra orthographique face au plan XY,
   grille et gizmos 2D), textures découpées en sprites dans l'inspecteur, éditeur des animations
-  de sprites, couches de tri du projet,
+  de sprites, couches de tri du projet, peinture des tuiles dans la vue (pinceau, gomme,
+  rectangle, remplissage, pipette) et inspecteur des tilesets,
   volumes du projet, icônes et distances des sources audio, panneau Animation
   avec piste temporelle et images clés, panneau Profiler (barres des images, chronologie par
   thread et GPU, tableaux des zones, des passes et de la mémoire des assets) ;
@@ -106,7 +109,7 @@ Le détail, l'architecture des modules et les jalons sont dans
   frames, d'une condition ou d'un tween, arrêtées avec leur entité), rendu automatique de la
   scène, export d'un jeu ;
 - `Devex.Managed` : l'API C# du moteur (`Component`, `Entity`, `Scene`, `Input`, `Physics`, `Audio`,
-  `Animation`, `Tween`, `Particles`, `Ui`, `Prefabs`, `Assets`, `Saves`, `PlayerSettings`, `Time`, `Log`,
+  `Animation`, `Tween`, `Particles`, `Tilemaps`, `Ui`, `Prefabs`, `Assets`, `Saves`, `PlayerSettings`, `Time`, `Log`,
   `Profiler`, maths), les coroutines `async Coroutine` (`Wait.Seconds`, `Wait.Until`, tweens et
   tâches attendus sur le thread du jeu) et les vues des composants du
   moteur, compilée dans `bin/managed` quand le SDK .NET est installé ;
@@ -130,8 +133,10 @@ Le détail, l'architecture des modules et les jalons sont dans
   le cube flottant émet un bourdonnement spatialisé et une ambiance Ogg tourne en boucle dans le
   groupe Music ; un robot rigué patrouille, attend et salue le joueur (`code/Robot.cs`) ;
   Tab passe à la scène `platformer`, un jeu de plateformes en pixel art (un chevalier animé qui
-  court et saute sur des corniches, des pièces qui tournent, un coucher de soleil qui défile plus
-  lentement, un mur éclairé par une torche, `code/Platformer.cs`), d'où Tab mène à la
+  court et saute sur un niveau de tuiles, bute contre les caisses, traverse les corniches
+  par-dessous et revient au départ s'il tombe dans l'eau animée, des pièces qui tournent, un
+  coucher de soleil qui défile plus lentement, un mur éclairé par une torche,
+  `code/Platformer.cs`), d'où Tab mène à la
   scène `sandbox` ; la
   scène `sandbox` (caisse et balises glTF, sphères or et plastique, ciel HDR, plateau tournant dont
   les satellites brillent et dont la caisse flotte par un `Tweener` et la courbe

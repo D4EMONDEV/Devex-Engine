@@ -592,6 +592,12 @@ std::shared_ptr<const asset::SpriteFramesData> AssetManager::spriteFrames(asset:
         [](std::span<const std::byte> bytes) { return asset::decodeSpriteFrames(bytes); });
 }
 
+std::shared_ptr<const asset::TilesetData> AssetManager::tileset(asset::AssetId id)
+{
+    return loadShared<asset::TilesetData>(id, m_source, m_failed, m_tilesets, "tileset",
+                                          [](std::span<const std::byte> bytes) { return asset::decodeTileset(bytes); });
+}
+
 const LoadedFont* AssetManager::font(asset::AssetId id)
 {
     auto found = m_fonts.find(id);
@@ -699,6 +705,9 @@ void AssetManager::handleEvents(std::span<const asset::AssetEvent> events)
             break;
         case asset::AssetType::SpriteFrames:
             m_spriteFrames.erase(event.id);
+            break;
+        case asset::AssetType::Tileset:
+            m_tilesets.erase(event.id);
             break;
         }
     }
@@ -845,6 +854,7 @@ void AssetManager::setSource(asset::AssetSource* source)
     m_curves.clear();
     m_sprites.clear();
     m_spriteFrames.clear();
+    m_tilesets.clear();
     m_failed.clear();
     m_source = source;
 }

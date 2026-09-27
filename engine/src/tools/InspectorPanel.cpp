@@ -931,7 +931,7 @@ void drawSharedInspector(ToolsState& state, scene::Scene& scene, const std::vect
                 {
                     groupOpen = propertyGroup(field.group.c_str());
                 }
-                if (groupOpen)
+                if (groupOpen && !field.hidden)
                 {
                     drawSharedField(state, scene, entities, type, field);
                 }
@@ -1218,6 +1218,10 @@ void drawInspectorPanel(ToolsState& state, scene::Scene& scene)
             {
                 drawSpriteFramesInspector(state);
             }
+            else if (selected != nullptr && selected->type == asset::AssetType::Tileset)
+            {
+                drawTilesetInspector(state);
+            }
             else
             {
                 drawAudioClipInspector(state);
@@ -1284,7 +1288,7 @@ void drawInspectorPanel(ToolsState& state, scene::Scene& scene)
                     {
                         groupOpen = propertyGroup(field.group.c_str());
                     }
-                    if (!groupOpen)
+                    if (!groupOpen || field.hidden)
                     {
                         continue;
                     }
@@ -1299,6 +1303,10 @@ void drawInspectorPanel(ToolsState& state, scene::Scene& scene)
                 if (name == "ParticleEmitter")
                 {
                     drawParticleControls(state, scene, entity);
+                }
+                if (name == "Tilemap")
+                {
+                    drawTilePainter(state, scene, entity);
                 }
             }
             if (removed)

@@ -549,6 +549,19 @@ core::Result<std::vector<asset::AssetId>> assetReferences(asset::AssetType type,
         }
         break;
     }
+    case asset::AssetType::Tileset: {
+        const core::Result<asset::TilesetData> tileset = asset::decodeTileset(artifact);
+        if (!tileset)
+        {
+            return std::unexpected(tileset.error());
+        }
+        for (const asset::TileData& tile : tileset->tiles)
+        {
+            ids.push_back(tile.sprite);
+            ids.insert(ids.end(), tile.frames.begin(), tile.frames.end());
+        }
+        break;
+    }
     case asset::AssetType::Texture:
     case asset::AssetType::AudioClip:
     case asset::AssetType::AnimationClip:

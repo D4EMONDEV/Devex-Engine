@@ -843,11 +843,13 @@ void ToolsOverlay::setThemes(std::function<std::shared_ptr<const asset::ThemeDat
 
 void ToolsOverlay::setSpriteSources(std::function<render::TextureHandle(asset::AssetId)> textures,
                                     std::function<math::Extent2D(asset::AssetId)> textureSizes,
-                                    std::function<std::shared_ptr<const asset::SpriteData>(asset::AssetId)> sprites)
+                                    std::function<std::shared_ptr<const asset::SpriteData>(asset::AssetId)> sprites,
+                                    std::function<std::shared_ptr<const asset::TilesetData>(asset::AssetId)> tilesets)
 {
     m_state->textures = std::move(textures);
     m_state->textureSizes = std::move(textureSizes);
     m_state->sprites = std::move(sprites);
+    m_state->tilesets = std::move(tilesets);
 }
 
 void ToolsOverlay::setMemoryReport(std::function<asset::MemoryReport()> report)

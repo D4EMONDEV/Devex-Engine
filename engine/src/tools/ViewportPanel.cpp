@@ -816,7 +816,11 @@ void drawViewportPanel(ToolsState& state, scene::Scene& scene)
         // A drag from another panel holds the mouse: the view counts as hovered all the same.
         handleMaterialDrop(state, scene, mouse, ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenBlockedByActiveItem));
         handleCamera(state, hovered, size, mouse);
-        handleGizmoAndSelection(state, scene, view, mouse, hovered);
+        // A tile tool takes the left button from the selection and the gizmo.
+        if (!handleTilePainting(state, scene, view, mouse, hovered))
+        {
+            handleGizmoAndSelection(state, scene, view, mouse, hovered);
+        }
         if (state.viewportFocused || hovered)
         {
             handleKeys(state, scene);

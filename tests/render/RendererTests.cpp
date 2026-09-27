@@ -1044,3 +1044,111 @@ TEST_CASE("Sprites draw by layer and order through an orthographic camera, and a
     }
     CHECK(capture.errors().empty());
 }
+
+TEST_CASE("Tilemaps draw their tiles in one batch among the sprites, and are picked", "[render][gpu]")
+{
+    const ErrorCapture capture;
+    {
+        auto platform = devex::platform::Platform::create();
+        REQUIRE(platform.has_value());
+        auto window = platform->createWindow({.width = 320, .height = 240, .vulkan = true, .hidden = true});
+        REQUIRE(window.has_value());
+        auto renderer = devex::render::Renderer::create(*platform, *window, {.validation = true});
+        if (!renderer)
+        {
+            FAIL(std::format("{}", renderer.error()));
+        }
+        // Green then red, at their nearest pixel.
+        devex::asset::TextureData pixels{.format = devex::asset::TextureFormat::Rgba8Srgb,
+                                         .filter = devex::asset::TextureFilter::Nearest};
+        pixels.mips.push_back({.width = 2,
+                               .height = 1,
+                               .bytes = {std::byte{0}, std::byte{255}, std::byte{0}, std::byte{255}, std::byte{255},
+                                         std::byte{0}, std::byte{0}, std::byte{255}}});
+        const auto texture = renderer->createTexture(pixels);
+        REQUIRE(texture.has_value());
+
+        const auto at = [](float x, float y, float z) {
+            return devex::math::translate(devex::math::Mat4(1.0f), devex::math::Vec3{x, y, z});
+        };
+        std::vector<devex::render::PickResult> results;
+        std::vector<devex::render::CapturedImage> captured;
+        for (int frame = 0; frame < 8; ++frame)
+        {
+            devex::render::RenderWorld& world = renderer->beginFrame();
+            world.camera.view = devex::math::inverse(at(0.0f, 0.0f, 10.0f));
+            world.camera.projection = devex::render::Projection::Orthographic;
+            world.camera.orthographicSize = 2.0f;
+            world.camera.farPlane = 100.0f;
+            world.camera.autoExposure = false;
+            world.camera.antialiasing = devex::render::Antialiasing::None;
+            world.camera.tonemapper = devex::render::Tonemapper::None;
+            world.camera.bloom = 0.0f;
+            world.environment.color = {0.0f, 0.0f, 0.0f};
+            // A red sprite behind, in the layer of the tilemap but at a lower order.
+            world.sprites.push_back({.transform = at(0.0f, 0.0f, 1.0f),
+                                     .size = {3.0f, 3.0f},
+                                     .uvRect = {0.5f, 0.0f, 1.0f, 1.0f},
+                                     .naturalSize = {3.0f, 3.0f},
+                                     .texture = *texture,
+                                     .layer = 1,
+                                     .objectId = 5});
+            // Six by four green cells of half a meter around the middle, one mirrored, and one far
+            // away that the camera does not see.
+            const auto first = static_cast<std::uint32_t>(world.tiles.size());
+            for (int y = -2; y < 2; ++y)
+            {
+                for (int x = -3; x < 3; ++x)
+                {
+                    world.tiles.push_back({.cell = {x, y},
+                                           .uvRect = x == 0 ? devex::math::Vec4{0.5f, 0.0f, 0.0f, 1.0f}
+                                                            : devex::math::Vec4{0.0f, 0.0f, 0.5f, 1.0f},
+                                           .texture = *texture});
+                }
+            }
+            world.tiles.push_back({.cell = {400, 0}, .uvRect = {0.0f, 0.0f, 0.5f, 1.0f}, .texture = *texture});
+            world.tilemaps.push_back({.transform = at(0.0f, 0.0f, 0.0f),
+                                      .cellSize = {0.5f, 0.5f},
+                                      .firstTile = first,
+                                      .tileCount = static_cast<std::uint32_t>(world.tiles.size()) - first,
+                                      .layer = 1,
+                                      .order = 1,
+                                      .objectId = 9,
+                                      .outlined = true});
+            if (frame == 4)
+            {
+                world.pick = devex::render::PickRequest{.x = 150, .y = 110, .id = 1};
+                static_cast<void>(renderer->requestCapture(64, 48));
+            }
+            const devex::core::Result<void> presented = renderer->endFrame();
+            if (!presented)
+            {
+                FAIL(std::format("frame {}: {}", frame, presented.error()));
+            }
+            if (frame >= 4)
+            {
+                // The sprite, then every tile the camera sees in one draw.
+                CHECK(renderer->stats().drawCalls == 1);
+            }
+            std::ranges::copy(renderer->takePickResults(), std::back_inserter(results));
+            for (devex::render::CapturedImage& image : renderer->takeCaptures())
+            {
+                captured.push_back(std::move(image));
+            }
+        }
+        REQUIRE(results.size() == 1);
+        CHECK(results[0].objectId == 9);
+        REQUIRE(captured.size() == 1);
+        // Left of the middle, a green tile covers the red sprite.
+        const std::size_t pixel = (std::size_t{24} * 64 + 28) * 4;
+        CHECK(captured[0].rgba[pixel + 1] > 200);
+        CHECK(captured[0].rgba[pixel] < 40);
+        renderer->destroyTexture(*texture);
+    }
+
+    for (const std::string& error : capture.errors())
+    {
+        UNSCOPED_INFO(error);
+    }
+    CHECK(capture.errors().empty());
+}

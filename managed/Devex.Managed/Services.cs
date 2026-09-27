@@ -338,6 +338,62 @@ public static class SpriteAnimations
     }
 }
 
+/// <summary>What a tile is to the game, as its tileset says.</summary>
+public enum TileCollision : byte
+{
+    /// <summary>Walked through.</summary>
+    None,
+    /// <summary>Solid on every side: ground, walls.</summary>
+    Full,
+    /// <summary>Holds up what lands on it from above, lets through what comes from below.</summary>
+    Top,
+}
+
+/// <summary>
+/// The Tilemap components of the scene: grids of cells painted with the tiles of a tileset. Cell
+/// (x, y) covers [x, x + 1) by [y, y + 1) cells from the origin of its entity, y up.
+/// </summary>
+public static unsafe class Tilemaps
+{
+    /// <summary>The flags of a cell that mirror its tile, above its identifier.</summary>
+    public const int FlipX = 0x4000;
+    public const int FlipY = 0x8000;
+
+    /// <summary>The tile of a cell, its identifier in the tileset; 0 for none.</summary>
+    public static int GetTile(Entity tilemap, int x, int y)
+        => Bootstrap.Native.TileAt(Scene.Current.Pointer, tilemap, x, y) & 0x3FFF;
+
+    /// <summary>Paints a cell with a tile of the tileset, mirrored or not; 0 empties it.</summary>
+    public static void SetTile(Entity tilemap, int x, int y, int tile, bool flipX = false, bool flipY = false)
+        => Bootstrap.Native.SetTile(Scene.Current.Pointer, tilemap, x, y,
+                                    tile == 0 ? 0 : (tile & 0x3FFF) | (flipX ? FlipX : 0) | (flipY ? FlipY : 0));
+
+    /// <summary>The cell under a point of the world.</summary>
+    public static (int X, int Y) CellAt(Entity tilemap, Vec3 point)
+    {
+        int x = 0;
+        int y = 0;
+        Bootstrap.Native.CellAt(Scene.Current.Pointer, tilemap, &point, &x, &y);
+        return (x, y);
+    }
+
+    /// <summary>The middle of a cell, in the world.</summary>
+    public static Vec3 CellCenter(Entity tilemap, int x, int y)
+    {
+        Vec3 center = default;
+        Bootstrap.Native.CellCenter(Scene.Current.Pointer, tilemap, x, y, &center);
+        return center;
+    }
+
+    /// <summary>How the tile of a cell collides, None for an empty cell.</summary>
+    public static TileCollision GetCollision(Entity tilemap, int x, int y)
+        => (TileCollision)Bootstrap.Native.TileCollision(Scene.Current.Pointer, tilemap, x, y);
+
+    /// <summary>What the tileset tells the game of the tile of a cell, such as "water"; empty for none.</summary>
+    public static string GetData(Entity tilemap, int x, int y)
+        => Utf8.ToString(Bootstrap.Native.TileData(Scene.Current.Pointer, tilemap, x, y)) ?? string.Empty;
+}
+
 /// <summary>
 /// The particles of the game: the ParticleEmitter components of the scene, which emit by themselves
 /// when they play on start, and which code plays, stops and bursts.

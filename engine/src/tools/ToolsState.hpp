@@ -18,6 +18,7 @@
 #include <devex/asset/AudioClipData.hpp>
 #include <devex/asset/CurveData.hpp>
 #include <devex/asset/SpriteData.hpp>
+#include <devex/asset/TilesetData.hpp>
 #include <devex/asset/Project.hpp>
 #include <devex/asset/import/AssetDatabase.hpp>
 #include <devex/core/Uuid.hpp>
@@ -250,6 +251,52 @@ enum class WindowLayout : std::uint8_t
 };
 
 // The curve the inspector edits: a copy of its file, saved when a change is over.
+// The tileset the inspector edits: a copy of its file, saved when a change is over.
+struct TilesetEditor
+{
+    asset::AssetId asset;
+    std::filesystem::path file;
+    // When the file was read or written, to read it again once changed elsewhere.
+    std::filesystem::file_time_type fileTime{};
+    asset::TilesetData tileset;
+    std::string error;
+    // The tile the inspector shows, 0 for none.
+    std::uint32_t selectedTile = 0;
+};
+
+// How the viewport paints the cells of the selected tilemap.
+enum class TileTool : std::uint8_t
+{
+    // The viewport selects and moves entities, as usual.
+    None,
+    Paint,
+    Erase,
+    // Fills the rectangle dragged.
+    Rectangle,
+    // Fills the cells like the one clicked that touch it.
+    Fill,
+    // Takes the tile of the cell clicked, then paints with it.
+    Pick,
+};
+
+struct TilePainter
+{
+    TileTool tool = TileTool::None;
+    // The tile painted with, and how it is mirrored.
+    std::uint32_t tile = 0;
+    bool flipX = false;
+    bool flipY = false;
+    // While the mouse is held: the tilemap painted, its cells before, the cell the stroke reached,
+    // and where a rectangle started.
+    bool stroking = false;
+    core::Uuid target;
+    serialization::TextValue before;
+    math::IVec2 lastCell{0};
+    std::optional<math::IVec2> rectangleStart;
+    // The cell under the mouse, shown in the viewport.
+    std::optional<math::IVec2> hovered;
+};
+
 // The sprite frames the inspector edits: a copy of their file, saved when a change is over.
 struct SpriteFramesEditor
 {
@@ -369,6 +416,8 @@ struct ToolsState
     // The curve the inspector edits, as its file holds it.
     CurveEditor curveEditor;
     SpriteFramesEditor spriteFramesEditor;
+    TilesetEditor tilesetEditor;
+    TilePainter tilePainter;
     // A file just created, selected once it is imported, as a res:// path.
     std::string assetToSelect;
     // Animations: where clips come from, and the animations of the game while it plays.
@@ -380,6 +429,7 @@ struct ToolsState
     std::function<render::TextureHandle(asset::AssetId)> textures;
     std::function<math::Extent2D(asset::AssetId)> textureSizes;
     std::function<std::shared_ptr<const asset::SpriteData>(asset::AssetId)> sprites;
+    std::function<std::shared_ptr<const asset::TilesetData>(asset::AssetId)> tilesets;
     // What the loaded assets take, for the Profiler panel.
     std::function<asset::MemoryReport()> memoryReport;
     // The meshes and textures loading in the background, for the status bar.
@@ -599,6 +649,28 @@ void drawTextureInspector(ToolsState& state);
 void drawSpriteFramesInspector(ToolsState& state);
 // A square holding a sprite at the cursor, fitted and centered; a placeholder while it loads.
 void drawSpriteThumbnail(ToolsState& state, asset::AssetId sprite, float size, bool selected);
+// The sprites a texture was cut into, in the order of its cells.
+[[nodiscard]] std::vector<asset::AssetId> spritesOfTexture(const ToolsState& state, asset::AssetId texture);
+// Sprites dropped on the last item, or the sprites of a texture dropped on it.
+[[nodiscard]] std::vector<asset::AssetId> acceptDroppedSprites(const ToolsState& state);
+// The tiles of a tileset as a grid of squares, the chosen one outlined; returns the one clicked.
+// With drops accepted, a box at the end takes the sprites dropped on it into `dropped`.
+std::optional<std::uint32_t> drawTilePalette(ToolsState& state, const asset::TilesetData& tileset, std::uint32_t selected,
+                                             float size, bool acceptsDrops, std::vector<asset::AssetId>* dropped);
+// The selected tileset: its tiles as a palette, and the sprite, collision, animation and data of
+// the one chosen, saved to its file.
+void drawTilesetInspector(ToolsState& state);
+// Writes a new tileset into a res:// folder of the assets, and selects it once imported. From a
+// texture, it holds a tile for each of its sprites.
+core::Result<std::filesystem::path> createTilesetFile(ToolsState& state, std::string_view folder,
+                                                      asset::AssetId fromTexture = {});
+// Under the Tilemap of the inspected entity: the tools that paint it and the palette of its tiles.
+void drawTilePainter(ToolsState& state, scene::Scene& scene, scene::Entity entity);
+// Paints the selected tilemap with the mouse when a tool is chosen. Returns whether it took the
+// mouse, which the selection and the gizmo then leave alone.
+bool handleTilePainting(ToolsState& state, scene::Scene& scene, const ViewportView& view, math::Vec2 mouse, bool hovered);
+// The cells around the mouse and the tile about to be painted.
+void addTilePainterOverlay(ToolsState& state, scene::Scene& scene, render::RenderWorld& world);
 // Writes new sprite frames into a res:// folder of the assets, and selects them once imported. From a
 // texture, they hold one animation of all its sprites.
 core::Result<std::filesystem::path> createSpriteFramesFile(ToolsState& state, std::string_view folder,

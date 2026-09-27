@@ -8,6 +8,7 @@
 #include <devex/scene/Components.hpp>
 #include <devex/scene/PhysicsComponents.hpp>
 #include <devex/scene/SpriteComponents.hpp>
+#include <devex/scene/TilemapComponents.hpp>
 #include <devex/scene/Prefab.hpp>
 #include <devex/scene/SceneSerializer.hpp>
 #include <devex/serialization/Text.hpp>
@@ -1248,6 +1249,12 @@ void drawCreateEntityMenu(ToolsState& state, core::Uuid parent)
     {
         requestCreatePreset(state, parent, "Sprite", [](scene::Scene& scratch, scene::Entity entity) {
             scratch.add<scene::SpriteRenderer>(entity);
+        });
+    }
+    if (item(icons::Grid, colors.texture, "Tilemap"))
+    {
+        requestCreatePreset(state, parent, "Tilemap", [](scene::Scene& scratch, scene::Entity entity) {
+            scratch.add<scene::Tilemap>(entity);
         });
     }
     if (item(icons::Video, colors.camera, "2D camera"))

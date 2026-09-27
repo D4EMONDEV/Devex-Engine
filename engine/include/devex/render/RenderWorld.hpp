@@ -257,6 +257,33 @@ struct RenderSprite
     bool outlined = false;
 };
 
+// A tile of a tilemap: a rectangle of a texture filling a cell.
+struct RenderTile
+{
+    math::IVec2 cell{0};
+    // Texture coordinates of the top-left corner, then of the bottom-right one; swapped to mirror.
+    math::Vec4 uvRect{0.0f, 0.0f, 1.0f, 1.0f};
+    TextureHandle texture;
+};
+
+// A grid of tiles in the XY plane of its transform, cell (x, y) covering [x, x + 1) by [y, y + 1)
+// cells from its origin. It sorts among the sprites as one of them.
+struct RenderTilemap
+{
+    math::Mat4 transform{1.0f};
+    math::Vec2 cellSize{1.0f};
+    // Linear color with straight alpha, relative to the exposure unless lit.
+    math::Vec4 color{1.0f};
+    // Its tiles, in RenderWorld::tiles.
+    std::uint32_t firstTile = 0;
+    std::uint32_t tileCount = 0;
+    bool lit = false;
+    std::int32_t layer = 0;
+    std::int32_t order = 0;
+    std::uint32_t objectId = 0;
+    bool outlined = false;
+};
+
 // A vertex of the lines and triangles the tools draw over the scene, such as grids and gizmos.
 struct OverlayVertex
 {
@@ -354,6 +381,8 @@ struct RenderWorld
     std::vector<std::uint32_t> trailSegments;
     std::vector<ParticleDraw> particleDraws;
     std::vector<RenderSprite> sprites;
+    std::vector<RenderTilemap> tilemaps;
+    std::vector<RenderTile> tiles;
 
     // Size in pixels of the image the scene is drawn into for the tools, which show it with
     // Renderer::viewportTexture. Zero draws the scene over the whole window.
@@ -384,7 +413,11 @@ struct RenderWorld
         std::vector<std::uint32_t> trailSegmentStorage = std::move(trailSegments);
         std::vector<ParticleDraw> particleDrawStorage = std::move(particleDraws);
         std::vector<RenderSprite> spriteStorage = std::move(sprites);
+        std::vector<RenderTilemap> tilemapStorage = std::move(tilemaps);
+        std::vector<RenderTile> tileStorage = std::move(tiles);
         spriteStorage.clear();
+        tilemapStorage.clear();
+        tileStorage.clear();
         particleStorage.clear();
         trailPointStorage.clear();
         trailSegmentStorage.clear();
@@ -413,6 +446,8 @@ struct RenderWorld
         trailSegments = std::move(trailSegmentStorage);
         particleDraws = std::move(particleDrawStorage);
         sprites = std::move(spriteStorage);
+        tilemaps = std::move(tilemapStorage);
+        tiles = std::move(tileStorage);
         sceneLines = std::move(sceneLineStorage);
         overlayLines = std::move(overlayLineStorage);
         overlayTriangles = std::move(overlayTriangleStorage);

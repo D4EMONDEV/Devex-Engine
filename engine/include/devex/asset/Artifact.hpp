@@ -11,6 +11,7 @@
 #include <devex/asset/ModelData.hpp>
 #include <devex/asset/SpriteData.hpp>
 #include <devex/asset/TextureData.hpp>
+#include <devex/asset/TilesetData.hpp>
 #include <devex/core/Error.hpp>
 
 #include <cstddef>
@@ -49,6 +50,7 @@ inline constexpr std::string_view artifactExtension = ".dvxasset";
 [[nodiscard]] std::vector<std::byte> encodeCurve(const CurveData& curve);
 [[nodiscard]] std::vector<std::byte> encodeSprite(const SpriteData& sprite);
 [[nodiscard]] std::vector<std::byte> encodeSpriteFrames(const SpriteFramesData& frames);
+[[nodiscard]] std::vector<std::byte> encodeTileset(const TilesetData& tileset);
 
 // Decoding validates the header, the version and the data itself.
 [[nodiscard]] core::Result<MeshData> decodeMesh(std::span<const std::byte> bytes);
@@ -65,5 +67,6 @@ inline constexpr std::string_view artifactExtension = ".dvxasset";
 [[nodiscard]] core::Result<CurveData> decodeCurve(std::span<const std::byte> bytes);
 [[nodiscard]] core::Result<SpriteData> decodeSprite(std::span<const std::byte> bytes);
 [[nodiscard]] core::Result<SpriteFramesData> decodeSpriteFrames(std::span<const std::byte> bytes);
+[[nodiscard]] core::Result<TilesetData> decodeTileset(std::span<const std::byte> bytes);
 
 } // namespace devex::asset

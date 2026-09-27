@@ -3,6 +3,7 @@
 #include <devex/scene/AudioComponents.hpp>
 #include <devex/scene/Components.hpp>
 #include <devex/scene/PhysicsComponents.hpp>
+#include <devex/scene/TilemapComponents.hpp>
 
 #include <algorithm>
 #include <array>
@@ -517,6 +518,10 @@ void addEditorOverlay(ToolsState& state, scene::Scene& scene, render::RenderWorl
         std::erase_if(world.sprites, [&hidden](const render::RenderSprite& sprite) {
             return sprite.objectId > 0 && hidden.contains(sprite.objectId - 1);
         });
+        // The tiles of a hidden tilemap stay in the list, unused.
+        std::erase_if(world.tilemaps, [&hidden](const render::RenderTilemap& tilemap) {
+            return tilemap.objectId > 0 && hidden.contains(tilemap.objectId - 1);
+        });
         std::erase_if(world.meshes, [&hidden](const render::MeshInstance& mesh) {
             return mesh.objectId > 0 && hidden.contains(mesh.objectId - 1);
         });
@@ -544,12 +549,17 @@ void addEditorOverlay(ToolsState& state, scene::Scene& scene, render::RenderWorl
     {
         sprite.outlined = sprite.objectId > 0 && selection.contains(sprite.objectId - 1);
     }
+    for (render::RenderTilemap& tilemap : world.tilemaps)
+    {
+        tilemap.outlined = tilemap.objectId > 0 && selection.contains(tilemap.objectId - 1);
+    }
 
     // The gizmo sits on the active entity and moves the others with it.
     if (const scene::Entity active = scene.findEntity(state.selection.active()); active.isValid())
     {
+        const bool painting = state.tilePainter.tool != TileTool::None && scene.has<scene::Tilemap>(active);
         if (const scene::WorldTransform* const transform = scene.tryGet<scene::WorldTransform>(active);
-            transform != nullptr && scene.has<scene::Transform>(active) && state.tool != EditorTool::Select)
+            transform != nullptr && scene.has<scene::Transform>(active) && state.tool != EditorTool::Select && !painting)
         {
             GizmoGeometry geometry;
             state.gizmo.draw(view, transform->matrix, state.hoveredHandle, geometry);
@@ -557,6 +567,8 @@ void addEditorOverlay(ToolsState& state, scene::Scene& scene, render::RenderWorl
             world.overlayLines.insert(world.overlayLines.end(), geometry.lines.begin(), geometry.lines.end());
         }
     }
+
+    addTilePainterOverlay(state, scene, world);
 
     if (state.pickQuery)
     {

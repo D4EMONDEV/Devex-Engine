@@ -11,6 +11,7 @@
 #include <devex/runtime/SceneExtraction.hpp>
 #include <devex/scene/Components.hpp>
 #include <devex/scene/SpriteComponents.hpp>
+#include <devex/scene/TilemapComponents.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -306,4 +307,68 @@ TEST_CASE("Extraction draws the sprites, with the frames of their animators and 
     CHECK(shownPlatform.border.x == 0.25f);
     CHECK(shownPlatform.color == devex::math::Vec4{1.0f, 0.5f, 2.0f, 0.5f});
     CHECK(shownPlatform.layer == -1);
+}
+
+TEST_CASE("Extraction draws the tiles of tilemaps, animated and mirrored", "[runtime][assets][gpu]")
+{
+    auto platform = devex::platform::Platform::create();
+    REQUIRE(platform.has_value());
+    auto window = platform->createWindow({.width = 320, .height = 240, .vulkan = true, .hidden = true});
+    REQUIRE(window.has_value());
+    auto renderer = devex::render::Renderer::create(*platform, *window, {});
+    REQUIRE(renderer.has_value());
+
+    // Four sprites side by side on a texture: ground, then three frames of water.
+    MemorySource source;
+    const AssetId textureId = AssetId::generate();
+    devex::asset::TextureData texture{.format = devex::asset::TextureFormat::Rgba8Srgb};
+    texture.mips.push_back({.width = 64, .height = 16, .bytes = std::vector<std::byte>(64 * 16 * 4, std::byte{255})});
+    source.set(textureId, AssetType::Texture, devex::asset::encodeTexture(texture));
+    std::vector<AssetId> sprites;
+    for (std::uint32_t index = 0; index < 4; ++index)
+    {
+        sprites.push_back(AssetId::generate());
+        source.set(sprites.back(), AssetType::Sprite,
+                   devex::asset::encodeSprite({.texture = textureId, .x = index * 16, .width = 16, .height = 16,
+                                               .textureWidth = 64, .textureHeight = 16, .pixelsPerUnit = 16.0f}));
+    }
+    const AssetId tilesetId = AssetId::generate();
+    source.set(tilesetId, AssetType::Tileset,
+               devex::asset::encodeTileset({.tiles = {{.id = 1, .sprite = sprites[0]},
+                                                      {.id = 2, .sprite = sprites[1],
+                                                       .frames = {sprites[1], sprites[2], sprites[3]}, .fps = 2.0f}}}));
+    devex::runtime::AssetManager assets(&*renderer, &source);
+
+    devex::scene::Scene scene;
+    const auto level = scene.createEntity("Level");
+    scene.add<devex::scene::Transform>(level, devex::scene::Transform{.position = {1.0f, 2.0f, 0.0f}});
+    devex::scene::Tilemap tilemap{.tileset = tilesetId, .cellSize = {0.5f, 0.5f}, .sortingLayer = "Back", .order = -1};
+    devex::scene::setTile(tilemap, {0, 0}, 1);
+    devex::scene::setTile(tilemap, {1, 0}, 1 | devex::scene::tileFlipX);
+    devex::scene::setTile(tilemap, {2, 0}, 2);
+    // A tile the tileset does not have is not drawn.
+    devex::scene::setTile(tilemap, {3, 0}, 9);
+    scene.add<devex::scene::Tilemap>(level, tilemap);
+    // Without a tileset, nothing.
+    scene.add<devex::scene::Transform>(scene.createEntity("Empty"));
+    scene.updateTransforms();
+
+    devex::render::RenderWorld world;
+    // Water on its second frame: 2 frames a second, at 0.6 s.
+    devex::runtime::extractTilemaps(scene, assets, {.layers = {"Back", "Default"}}, 0.6, world);
+    REQUIRE(world.tilemaps.size() == 1);
+    const devex::render::RenderTilemap& drawn = world.tilemaps.front();
+    CHECK(drawn.objectId == level.index + 1);
+    CHECK(drawn.layer == -1);
+    CHECK(drawn.order == -1);
+    CHECK(drawn.cellSize == devex::math::Vec2{0.5f, 0.5f});
+    CHECK(drawn.transform[3].x == 1.0f);
+    REQUIRE(drawn.tileCount == 3);
+    const auto tileAt = [&](int x) {
+        return *std::ranges::find(world.tiles, devex::math::IVec2{x, 0}, &devex::render::RenderTile::cell);
+    };
+    CHECK(tileAt(0).uvRect == devex::math::Vec4{0.0f, 0.0f, 0.25f, 1.0f});
+    CHECK(tileAt(1).uvRect == devex::math::Vec4{0.25f, 0.0f, 0.0f, 1.0f});
+    CHECK(tileAt(2).uvRect.x == 0.5f);
+    CHECK(tileAt(0).texture.isValid());
 }

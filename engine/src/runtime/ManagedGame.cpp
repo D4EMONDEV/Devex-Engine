@@ -13,6 +13,7 @@
 #include <devex/scene/EntityRef.hpp>
 #include <devex/scene/Prefab.hpp>
 #include <devex/scene/SceneSerializer.hpp>
+#include <devex/scene/TilemapComponents.hpp>
 #include <devex/serialization/Text.hpp>
 
 #include <algorithm>
@@ -221,6 +222,12 @@ struct NativeApi
     void (*emitParticles)(void* scene, Entity entity, int count);
     int (*areParticlesPlaying)(Entity entity);
     int (*particleCount)(Entity entity);
+    int (*tileAt)(void* scene, Entity tilemap, int x, int y);
+    void (*setTile)(void* scene, Entity tilemap, int x, int y, int value);
+    void (*cellAt)(void* scene, Entity tilemap, const math::Vec3* point, int* x, int* y);
+    void (*cellCenter)(void* scene, Entity tilemap, int x, int y, math::Vec3* center);
+    int (*tileCollision)(void* scene, Entity tilemap, int x, int y);
+    const char* (*tileData)(void* scene, Entity tilemap, int x, int y);
 };
 
 // The functions the engine calls, in the order of Devex.Managed's ManagedApi.
@@ -235,7 +242,7 @@ struct ManagedApi
 };
 
 // Devex.Managed's Bootstrap.Version: both sides change it with the function tables.
-constexpr int bootstrapVersion = 11;
+constexpr int bootstrapVersion = 12;
 
 struct BootstrapArguments
 {
@@ -1694,6 +1701,78 @@ int apiAreParticlesPlaying(Entity entity)
     return particleWorld() != nullptr && particleWorld()->isPlaying(entity) ? 1 : 0;
 }
 
+[[nodiscard]] scene::Tilemap* tilemapOf(void* scene, Entity entity) noexcept
+{
+    return scene != nullptr && toScene(scene)->isAlive(entity) ? toScene(scene)->tryGet<scene::Tilemap>(entity) : nullptr;
+}
+
+[[nodiscard]] math::Mat4 worldOf(void* scene, Entity entity) noexcept
+{
+    const scene::WorldTransform* const world = toScene(scene)->tryGet<scene::WorldTransform>(entity);
+    return world != nullptr ? world->matrix : math::Mat4{1.0f};
+}
+
+int apiTileAt(void* scene, Entity entity, int x, int y)
+{
+    const scene::Tilemap* const tilemap = tilemapOf(scene, entity);
+    return tilemap != nullptr ? scene::tileAt(*tilemap, {x, y}) : 0;
+}
+
+void apiSetTile(void* scene, Entity entity, int x, int y, int value)
+{
+    if (scene::Tilemap* const tilemap = tilemapOf(scene, entity))
+    {
+        scene::setTile(*tilemap, {x, y}, static_cast<std::uint16_t>(std::clamp(value, 0, 0xFFFF)));
+    }
+}
+
+void apiCellAt(void* scene, Entity entity, const math::Vec3* point, int* x, int* y)
+{
+    const scene::Tilemap* const tilemap = tilemapOf(scene, entity);
+    const math::IVec2 cell = tilemap != nullptr && point != nullptr ? scene::cellAt(*tilemap, worldOf(scene, entity), *point)
+                                                                    : math::IVec2{0};
+    *x = cell.x;
+    *y = cell.y;
+}
+
+void apiCellCenter(void* scene, Entity entity, int x, int y, math::Vec3* center)
+{
+    const scene::Tilemap* const tilemap = tilemapOf(scene, entity);
+    *center = tilemap != nullptr ? scene::cellCenter(*tilemap, worldOf(scene, entity), {x, y}) : math::Vec3{0.0f};
+}
+
+// The tile of a cell as its tileset describes it; null without a tile, a tileset or its asset.
+[[nodiscard]] const asset::TileData* tileDataOf(void* scene, Entity entity, int x, int y,
+                                                std::shared_ptr<const asset::TilesetData>& tileset)
+{
+    const scene::Tilemap* const tilemap = tilemapOf(scene, entity);
+    AssetManager* const assets = currentFrame() != nullptr ? currentFrame()->assetManager : nullptr;
+    if (tilemap == nullptr || assets == nullptr)
+    {
+        return nullptr;
+    }
+    const std::uint32_t id = scene::tileIdOf(scene::tileAt(*tilemap, {x, y}));
+    tileset = id != 0 ? assets->tileset(tilemap->tileset) : nullptr;
+    return tileset != nullptr ? tileset->find(id) : nullptr;
+}
+
+int apiTileCollision(void* scene, Entity entity, int x, int y)
+{
+    std::shared_ptr<const asset::TilesetData> tileset;
+    const asset::TileData* const tile = tileDataOf(scene, entity, x, y, tileset);
+    return tile != nullptr ? static_cast<int>(tile->collision) : 0;
+}
+
+const char* apiTileData(void* scene, Entity entity, int x, int y)
+{
+    // Read by C# before the next call.
+    static std::string data;
+    std::shared_ptr<const asset::TilesetData> tileset;
+    const asset::TileData* const tile = tileDataOf(scene, entity, x, y, tileset);
+    data = tile != nullptr ? tile->data : std::string();
+    return data.c_str();
+}
+
 int apiParticleCount(Entity entity)
 {
     return particleWorld() != nullptr ? static_cast<int>(particleWorld()->particleCount(entity)) : 0;
@@ -1836,6 +1915,12 @@ int apiParticleCount(Entity entity)
         .emitParticles = &apiEmitParticles,
         .areParticlesPlaying = &apiAreParticlesPlaying,
         .particleCount = &apiParticleCount,
+        .tileAt = &apiTileAt,
+        .setTile = &apiSetTile,
+        .cellAt = &apiCellAt,
+        .cellCenter = &apiCellCenter,
+        .tileCollision = &apiTileCollision,
+        .tileData = &apiTileData,
     };
 }
 

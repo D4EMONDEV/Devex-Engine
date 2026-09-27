@@ -5,6 +5,7 @@
 #include <devex/scene/Components.hpp>
 #include <devex/scene/PhysicsComponents.hpp>
 #include <devex/scene/SpriteComponents.hpp>
+#include <devex/scene/TilemapComponents.hpp>
 #include <devex/scene/UiComponents.hpp>
 
 #include <vector>
@@ -99,6 +100,7 @@ ComponentRegistry& componentRegistry()
         builtins.add<TrailRenderer>();
         builtins.add<SpriteRenderer>();
         builtins.add<SpriteAnimator>();
+        builtins.add<Tilemap>();
         builtins.add<Camera>();
         builtins.add<DirectionalLight>();
         builtins.add<PointLight>();

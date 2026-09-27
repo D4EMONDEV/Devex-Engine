@@ -1,6 +1,7 @@
 #pragma once
 
 #include <devex/asset/SpriteData.hpp>
+#include <devex/asset/TilesetData.hpp>
 #include <devex/asset/import/AssetDatabase.hpp>
 #include <devex/core/Error.hpp>
 #include <devex/core/Time.hpp>
@@ -263,7 +264,8 @@ public:
     // in pixels, and the rectangles of the sprites.
     void setSpriteSources(std::function<render::TextureHandle(asset::AssetId)> textures,
                           std::function<math::Extent2D(asset::AssetId)> textureSizes,
-                          std::function<std::shared_ptr<const asset::SpriteData>(asset::AssetId)> sprites);
+                          std::function<std::shared_ptr<const asset::SpriteData>(asset::AssetId)> sprites,
+                          std::function<std::shared_ptr<const asset::TilesetData>(asset::AssetId)> tilesets);
     // Lets the profiler show what the loaded assets take.
     void setMemoryReport(std::function<asset::MemoryReport()> report);
     // Lets the status bar tell how many assets are loading in the background.

@@ -21,6 +21,12 @@ void extractScene(scene::Scene& scene, AssetManager& assets, render::RenderWorld
 void extractSprites(scene::Scene& scene, AssetManager& assets, const asset::SortingSettings& sorting,
                     render::RenderWorld& world);
 
+// Adds the Tilemap components whose tileset is loaded, with the tiles whose sprite and texture
+// are, animated tiles on their frame at `seconds`. Tilemaps are identified for picking as mesh
+// instances are.
+void extractTilemaps(scene::Scene& scene, AssetManager& assets, const asset::SortingSettings& sorting, double seconds,
+                     render::RenderWorld& world);
+
 // Adds the particles of the emitters, in the world, one batch per emitter, and the ribbons of
 // their trails and of the TrailRenderer components, one batch each.
 void extractParticles(const particles::ParticleWorld& particles, AssetManager& assets, render::RenderWorld& world);

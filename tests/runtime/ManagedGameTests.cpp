@@ -15,6 +15,7 @@
 #include <devex/scene/Components.hpp>
 #include <devex/scene/ParticleComponents.hpp>
 #include <devex/scene/SpriteComponents.hpp>
+#include <devex/scene/TilemapComponents.hpp>
 #include <devex/scene/PhysicsComponents.hpp>
 #include <devex/scene/SceneSerializer.hpp>
 
@@ -71,7 +72,7 @@ void run(ManagedGame& game, Scene& scene, SystemPhase phase, double seconds = 0.
 TEST_CASE("The C# runtime registers components and runs them", "[runtime][managed]")
 {
     const std::unique_ptr<ManagedGame> game = startRuntime();
-    CHECK(game->componentTypes().size() == 13);
+    CHECK(game->componentTypes().size() == 14);
 
     devex::scene::ComponentRegistry& registry = devex::scene::componentRegistry();
     const devex::scene::ComponentType* const mover = registry.find("Mover");
@@ -547,6 +548,32 @@ TEST_CASE("C# code plays the animations of sprites and flips them", "[runtime][m
     CHECK(value("shown", std::string{}) == "run 2");
     run(*game, scene, SystemPhase::Update, 0.1);
     CHECK(value("restarted", bool{}));
+    game->unloadAssembly();
+}
+
+TEST_CASE("C# code paints and reads the cells of a tilemap", "[runtime][managed][tilemap]")
+{
+    const std::unique_ptr<ManagedGame> game = startRuntime();
+    const devex::scene::ComponentType* const type = devex::scene::componentRegistry().find("Tiler");
+    REQUIRE(type != nullptr);
+    Scene scene;
+    const Entity entity = scene.createEntity("Level");
+    scene.add<devex::scene::Transform>(entity, devex::scene::Transform{.position = {10.0f, 0.0f, 0.0f}});
+    scene.add<devex::scene::Tilemap>(entity, devex::scene::Tilemap{.cellSize = {2.0f, 2.0f}});
+    scene.updateTransforms();
+    REQUIRE(type->emplace(scene, entity) != nullptr);
+    const auto value = [&]<typename T>(const char* name, T) -> T& {
+        return field<T>(*type, const_cast<void*>(type->find(scene, entity)), name);
+    };
+
+    run(*game, scene, SystemPhase::Update, 0.1);
+    const devex::scene::Tilemap& tilemap = scene.get<devex::scene::Tilemap>(entity);
+    CHECK(devex::scene::tileAt(tilemap, {2, 3}) == (5 | devex::scene::tileFlipX));
+    CHECK(devex::scene::tileAt(tilemap, {4, 4}) == 0);
+    CHECK(value("read", std::int32_t{}) == 50);
+    CHECK(value("cell_x", std::int32_t{}) == 1);
+    CHECK(value("cell_y", std::int32_t{}) == -1);
+    CHECK(value("center", devex::math::Vec3{}) == devex::math::Vec3{13.0f, 3.0f, 0.0f});
     game->unloadAssembly();
 }
 
