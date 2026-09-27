@@ -10,6 +10,7 @@
 #include <devex/scene/AudioComponents.hpp>
 #include <devex/scene/ComponentRegistry.hpp>
 #include <devex/scene/Components.hpp>
+#include <devex/scene/Physics2DComponents.hpp>
 #include <devex/scene/PhysicsComponents.hpp>
 #include <devex/scene/Prefab.hpp>
 #include <devex/scene/Scene.hpp>
@@ -117,7 +118,7 @@ bool g_linearColors = true;
 
 [[nodiscard]] bool isEngineComponent(std::string_view name) noexcept
 {
-    constexpr std::array<std::string_view, 35> engineComponents{
+    constexpr std::array<std::string_view, 42> engineComponents{
         "Transform",       "MeshRenderer",        "Camera",       "DirectionalLight",
         "PointLight",      "SpotLight",           "Environment",  "RigidBody",
         "BoxCollider",     "SphereCollider",      "CapsuleCollider", "CylinderCollider",
@@ -126,7 +127,9 @@ bool g_linearColors = true;
         "UiImage",         "UiText",              "UiButton",     "UiLayout",
         "UiInput",         "UiScroll",            "UiSlider",     "UiToggle",
         "UiBinding",       "Tweener",             "ParticleEmitter", "TrailRenderer",
-        "SpriteRenderer",  "SpriteAnimator",      "Tilemap"};
+        "SpriteRenderer",  "SpriteAnimator",      "Tilemap",      "RigidBody2D",
+        "BoxCollider2D",   "CircleCollider2D",    "CapsuleCollider2D", "PolygonCollider2D",
+        "TilemapCollider2D", "CharacterController2D"};
     return std::ranges::find(engineComponents, name) != engineComponents.end();
 }
 
@@ -580,7 +583,7 @@ EntityIcon entityIcon(const scene::Scene& scene, scene::Entity entity)
     {
         return {icons::Ear, colors.audio};
     }
-    if (scene.has<scene::CharacterController>(entity))
+    if (scene.has<scene::CharacterController>(entity) || scene.has<scene::CharacterController2D>(entity))
     {
         return {icons::PersonStanding, colors.physics};
     }
@@ -588,13 +591,15 @@ EntityIcon entityIcon(const scene::Scene& scene, scene::Entity entity)
     {
         return {icons::Box, colors.entity};
     }
-    if (scene.has<scene::RigidBody>(entity))
+    if (scene.has<scene::RigidBody>(entity) || scene.has<scene::RigidBody2D>(entity))
     {
         return {icons::Weight, colors.physics};
     }
     if (scene.has<scene::BoxCollider>(entity) || scene.has<scene::SphereCollider>(entity) ||
         scene.has<scene::CapsuleCollider>(entity) || scene.has<scene::CylinderCollider>(entity) ||
-        scene.has<scene::MeshCollider>(entity))
+        scene.has<scene::MeshCollider>(entity) || scene.has<scene::BoxCollider2D>(entity) ||
+        scene.has<scene::CircleCollider2D>(entity) || scene.has<scene::CapsuleCollider2D>(entity) ||
+        scene.has<scene::PolygonCollider2D>(entity))
     {
         return {icons::SquareDashed, colors.physics};
     }
@@ -652,27 +657,27 @@ EntityIcon componentIcon(std::string_view componentName)
     {
         return {icons::CloudSun, colors.environment};
     }
-    if (componentName == "RigidBody")
+    if (componentName == "RigidBody" || componentName == "RigidBody2D")
     {
         return {icons::Weight, colors.physics};
     }
-    if (componentName == "BoxCollider")
+    if (componentName == "BoxCollider" || componentName == "BoxCollider2D")
     {
         return {icons::SquareDashed, colors.physics};
     }
-    if (componentName == "SphereCollider")
+    if (componentName == "SphereCollider" || componentName == "CircleCollider2D")
     {
         return {icons::CircleDashed, colors.physics};
     }
-    if (componentName == "CapsuleCollider" || componentName == "CylinderCollider")
+    if (componentName == "CapsuleCollider" || componentName == "CylinderCollider" || componentName == "CapsuleCollider2D")
     {
         return {icons::Cylinder, colors.physics};
     }
-    if (componentName == "MeshCollider")
+    if (componentName == "MeshCollider" || componentName == "PolygonCollider2D")
     {
         return {icons::Shapes, colors.physics};
     }
-    if (componentName == "CharacterController")
+    if (componentName == "CharacterController" || componentName == "CharacterController2D")
     {
         return {icons::PersonStanding, colors.physics};
     }
@@ -703,6 +708,10 @@ EntityIcon componentIcon(std::string_view componentName)
     if (componentName == "Tilemap")
     {
         return {icons::Grid, colors.texture};
+    }
+    if (componentName == "TilemapCollider2D")
+    {
+        return {icons::Grid, colors.physics};
     }
     if (componentName == "SkinnedMeshRenderer")
     {

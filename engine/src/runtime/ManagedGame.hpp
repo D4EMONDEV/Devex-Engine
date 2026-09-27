@@ -5,6 +5,7 @@
 #include <devex/core/Error.hpp>
 #include <devex/core/Time.hpp>
 #include <devex/physics/PhysicsWorld.hpp>
+#include <devex/physics2d/Physics2DWorld.hpp>
 #include <devex/platform/Input.hpp>
 #include <devex/platform/Window.hpp>
 #include <devex/runtime/Game.hpp>
@@ -39,6 +40,7 @@ public:
         platform::Window* window = nullptr;
         // Null without physics.
         physics::PhysicsWorld* physics = nullptr;
+        physics2d::Physics2DWorld* physics2d = nullptr;
         // Null without audio.
         audio::AudioWorld* audio = nullptr;
         animation::AnimationWorld* animation = nullptr;

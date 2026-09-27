@@ -6,6 +6,7 @@
 #include <devex/core/Log.hpp>
 #include <devex/core/Path.hpp>
 #include <devex/scene/Components.hpp>
+#include <devex/scene/Physics2DComponents.hpp>
 #include <devex/scene/PhysicsComponents.hpp>
 #include <devex/scene/SpriteComponents.hpp>
 #include <devex/scene/TilemapComponents.hpp>
@@ -1304,6 +1305,39 @@ void drawCreateEntityMenu(ToolsState& state, core::Uuid parent)
     {
         requestCreatePreset(state, parent, "Trigger zone", [](scene::Scene& scratch, scene::Entity entity) {
             scratch.add<scene::BoxCollider>(entity, scene::BoxCollider{.size = {2.0f, 2.0f, 2.0f}, .trigger = true});
+        });
+    }
+    ImGui::Separator();
+    if (item(icons::SquareDashed, colors.physics, "Static box 2D"))
+    {
+        requestCreatePreset(state, parent, "Static box 2D", [](scene::Scene& scratch, scene::Entity entity) {
+            scratch.add<scene::BoxCollider2D>(entity);
+        });
+    }
+    if (item(icons::Weight, colors.physics, "Rigid box 2D"))
+    {
+        requestCreatePreset(state, parent, "Rigid box 2D", [](scene::Scene& scratch, scene::Entity entity) {
+            scratch.add<scene::RigidBody2D>(entity);
+            scratch.add<scene::BoxCollider2D>(entity);
+        });
+    }
+    if (item(icons::CircleDashed, colors.physics, "Rigid circle 2D"))
+    {
+        requestCreatePreset(state, parent, "Rigid circle 2D", [](scene::Scene& scratch, scene::Entity entity) {
+            scratch.add<scene::RigidBody2D>(entity);
+            scratch.add<scene::CircleCollider2D>(entity);
+        });
+    }
+    if (item(icons::PersonStanding, colors.physics, "Character 2D"))
+    {
+        requestCreatePreset(state, parent, "Character 2D", [](scene::Scene& scratch, scene::Entity entity) {
+            scratch.add<scene::CharacterController2D>(entity);
+        });
+    }
+    if (item(icons::Scan, colors.physics, "Trigger zone 2D"))
+    {
+        requestCreatePreset(state, parent, "Trigger zone 2D", [](scene::Scene& scratch, scene::Entity entity) {
+            scratch.add<scene::BoxCollider2D>(entity, scene::BoxCollider2D{.size = {2.0f, 2.0f}, .trigger = true});
         });
     }
 }

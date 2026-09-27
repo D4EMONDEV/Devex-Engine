@@ -228,6 +228,13 @@ struct NativeApi
     void (*cellCenter)(void* scene, Entity tilemap, int x, int y, math::Vec3* center);
     int (*tileCollision)(void* scene, Entity tilemap, int x, int y);
     const char* (*tileData)(void* scene, Entity tilemap, int x, int y);
+    int (*raycast2D)(const math::Vec2* origin, const math::Vec2* direction, float maxDistance, std::uint32_t layers,
+                     Entity ignore, physics2d::RayHit* hit);
+    int (*overlapCircle2D)(const math::Vec2* center, float radius, std::uint32_t layers, Entity ignore,
+                           const Entity** entities);
+    void (*addForce2D)(Entity entity, const math::Vec2* force);
+    void (*addTorque2D)(Entity entity, float torque);
+    void (*addImpulse2D)(Entity entity, const math::Vec2* impulse);
 };
 
 // The functions the engine calls, in the order of Devex.Managed's ManagedApi.
@@ -242,7 +249,7 @@ struct ManagedApi
 };
 
 // Devex.Managed's Bootstrap.Version: both sides change it with the function tables.
-constexpr int bootstrapVersion = 12;
+constexpr int bootstrapVersion = 13;
 
 struct BootstrapArguments
 {
@@ -308,6 +315,9 @@ static_assert(offsetof(physics::RayHit, point) == 8 && offsetof(physics::RayHit,
 static_assert(sizeof(physics::Contact) == 24);
 static_assert(offsetof(physics::Contact, first) == 4 && offsetof(physics::Contact, second) == 12 &&
               offsetof(physics::Contact, trigger) == 20);
+static_assert(sizeof(physics2d::RayHit) == 28);
+static_assert(offsetof(physics2d::RayHit, point) == 8 && offsetof(physics2d::RayHit, normal) == 16 &&
+              offsetof(physics2d::RayHit, distance) == 24);
 
 void apiLog(int level, const char* message)
 {
@@ -769,12 +779,83 @@ void apiAddImpulseAt(Entity entity, const math::Vec3* impulse, const math::Vec3*
     }
 }
 
+[[nodiscard]] physics2d::Physics2DWorld* physics2dWorld() noexcept
+{
+    return currentFrame() != nullptr ? currentFrame()->physics2d : nullptr;
+}
+
+// The contacts of both worlds, which C# sees as one list.
 int apiContacts(const physics::Contact** contacts)
 {
-    const std::span<const physics::Contact> all =
+    const std::span<const physics::Contact> contacts3d =
         physicsWorld() != nullptr ? physicsWorld()->contacts() : std::span<const physics::Contact>{};
-    *contacts = all.data();
-    return static_cast<int>(all.size());
+    const std::span<const physics2d::Contact> contacts2d =
+        physics2dWorld() != nullptr ? physics2dWorld()->contacts() : std::span<const physics2d::Contact>{};
+    if (contacts2d.empty())
+    {
+        *contacts = contacts3d.data();
+        return static_cast<int>(contacts3d.size());
+    }
+    // Kept until the next call, while C# reads it.
+    static std::vector<physics::Contact> merged;
+    merged.assign(contacts3d.begin(), contacts3d.end());
+    for (const physics2d::Contact& contact : contacts2d)
+    {
+        merged.push_back({contact.phase == physics2d::ContactPhase::Begin ? physics::ContactPhase::Begin : physics::ContactPhase::End,
+                          contact.first, contact.second, contact.trigger});
+    }
+    *contacts = merged.data();
+    return static_cast<int>(merged.size());
+}
+
+int apiRaycast2D(const math::Vec2* origin, const math::Vec2* direction, float maxDistance, std::uint32_t layers,
+                 Entity ignore, physics2d::RayHit* hit)
+{
+    const std::optional<physics2d::RayHit> found =
+        physics2dWorld() != nullptr
+            ? physics2dWorld()->raycast(*origin, *direction, maxDistance, layerMask(layers), optionalEntity(ignore))
+            : std::nullopt;
+    if (found)
+    {
+        *hit = *found;
+    }
+    return found ? 1 : 0;
+}
+
+int apiOverlapCircle2D(const math::Vec2* center, float radius, std::uint32_t layers, Entity ignore,
+                       const Entity** entities)
+{
+    // Kept until the next query, while C# copies it.
+    static std::vector<Entity> found;
+    found = physics2dWorld() != nullptr
+                ? physics2dWorld()->overlapCircle(*center, radius, layerMask(layers), optionalEntity(ignore))
+                : std::vector<Entity>{};
+    *entities = found.data();
+    return static_cast<int>(found.size());
+}
+
+void apiAddForce2D(Entity entity, const math::Vec2* force)
+{
+    if (physics2dWorld() != nullptr)
+    {
+        physics2dWorld()->addForce(entity, *force);
+    }
+}
+
+void apiAddTorque2D(Entity entity, float torque)
+{
+    if (physics2dWorld() != nullptr)
+    {
+        physics2dWorld()->addTorque(entity, torque);
+    }
+}
+
+void apiAddImpulse2D(Entity entity, const math::Vec2* impulse)
+{
+    if (physics2dWorld() != nullptr)
+    {
+        physics2dWorld()->addImpulse(entity, *impulse);
+    }
 }
 
 [[nodiscard]] audio::AudioWorld* audioWorld() noexcept
@@ -1921,6 +2002,11 @@ int apiParticleCount(Entity entity)
         .cellCenter = &apiCellCenter,
         .tileCollision = &apiTileCollision,
         .tileData = &apiTileData,
+        .raycast2D = &apiRaycast2D,
+        .overlapCircle2D = &apiOverlapCircle2D,
+        .addForce2D = &apiAddForce2D,
+        .addTorque2D = &apiAddTorque2D,
+        .addImpulse2D = &apiAddImpulse2D,
     };
 }
 

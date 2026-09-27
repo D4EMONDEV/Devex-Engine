@@ -56,6 +56,10 @@ Le détail, l'architecture des modules et les jalons sont dans
   (scènes imbriquées avec leurs modifications) ;
 - `Devex::Physics` : simulation Jolt Physics des corps rigides, colliders (primitives, maillages,
   déclencheurs) et personnages, couches de collision, requêtes, forces, contacts, interpolation ;
+- `Devex::Physics2D` : simulation Box2D dans le plan XY des corps rigides 2D, colliders (boîte,
+  cercle, capsule, polygone, déclencheurs, à sens unique), collider généré des tuiles et
+  personnages « move and slide » (pentes, marches, corniches, plateformes mobiles, poussée),
+  requêtes, forces et contacts, partagés avec le C# ;
 - `Devex::Audio` : miniaudio, sons spatialisés ou 2D, sources et écouteur dans la scène (sinon la
   caméra principale), lecture ponctuelle par le code, groupes de volume, clips décodés au
   chargement ou pendant la lecture ;
@@ -95,7 +99,8 @@ Le détail, l'architecture des modules et les jalons sont dans
   composants rangés en sections repliables, vue 2D (caméra orthographique face au plan XY,
   grille et gizmos 2D), textures découpées en sprites dans l'inspecteur, éditeur des animations
   de sprites, couches de tri du projet, peinture des tuiles dans la vue (pinceau, gomme,
-  rectangle, remplissage, pipette) et inspecteur des tilesets,
+  rectangle, remplissage, pipette) et inspecteur des tilesets, formes de la physique 2D
+  dessinées dans la vue,
   volumes du projet, icônes et distances des sources audio, panneau Animation
   avec piste temporelle et images clés, panneau Profiler (barres des images, chronologie par
   thread et GPU, tableaux des zones, des passes et de la mémoire des assets) ;
@@ -133,8 +138,9 @@ Le détail, l'architecture des modules et les jalons sont dans
   le cube flottant émet un bourdonnement spatialisé et une ambiance Ogg tourne en boucle dans le
   groupe Music ; un robot rigué patrouille, attend et salue le joueur (`code/Robot.cs`) ;
   Tab passe à la scène `platformer`, un jeu de plateformes en pixel art (un chevalier animé qui
-  court et saute sur un niveau de tuiles, bute contre les caisses, traverse les corniches
-  par-dessous et revient au départ s'il tombe dans l'eau animée, des pièces qui tournent, un
+  court et saute sur un niveau de tuiles simulé par la physique 2D, traverse les corniches
+  par-dessous, pousse des caisses, prend une plateforme mobile au-dessus de l'eau animée et
+  revient au départ s'il y tombe, des pièces qui tournent ramassées par déclencheur, un
   coucher de soleil qui défile plus lentement, un mur éclairé par une torche,
   `code/Platformer.cs`), d'où Tab mène à la
   scène `sandbox` ; la

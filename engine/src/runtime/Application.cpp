@@ -350,6 +350,7 @@ private:
     // Set when C# code asks the game to end.
     bool m_enablePhysics;
     std::unique_ptr<physics::PhysicsWorld> m_physics;
+    std::unique_ptr<physics2d::Physics2DWorld> m_physics2d;
     std::unique_ptr<audio::AudioWorld> m_audio;
     std::unique_ptr<animation::AnimationWorld> m_animation;
     std::unique_ptr<animation::TweenWorld> m_tweens;
@@ -828,6 +829,11 @@ void ApplicationRunner::updateFrameWorlds(std::chrono::nanoseconds frameTime, bo
         DEVEX_PROFILE_SCOPE("Physics interpolation");
         m_physics->interpolate(*m_application.m_scene, static_cast<float>(m_timestep.alpha()));
     }
+    if (m_physics2d && interpolate)
+    {
+        DEVEX_PROFILE_SCOPE("2D physics interpolation");
+        m_physics2d->interpolate(*m_application.m_scene, static_cast<float>(m_timestep.alpha()));
+    }
     // Once the emitters stand where the frame shows them.
     {
         DEVEX_PROFILE_SCOPE("Particles");
@@ -856,11 +862,19 @@ void ApplicationRunner::runGameplay(std::chrono::nanoseconds frameTime)
         DEVEX_PROFILE_SCOPE("Fixed step");
         m_application.onFixedUpdate(m_fixedDelta);
         runSystems(SystemPhase::FixedUpdate, m_fixedDelta);
+        if (m_physics || m_physics2d)
+        {
+            m_application.m_scene->updateTransforms();
+        }
         if (m_physics)
         {
             DEVEX_PROFILE_SCOPE("Physics");
-            m_application.m_scene->updateTransforms();
             m_physics->step(*m_application.m_scene, m_fixedDelta);
+        }
+        if (m_physics2d)
+        {
+            DEVEX_PROFILE_SCOPE("2D physics");
+            m_physics2d->step(*m_application.m_scene, m_fixedDelta);
         }
     }
     m_application.m_interpolationAlpha = m_timestep.alpha();
@@ -877,6 +891,10 @@ void ApplicationRunner::runGameplay(std::chrono::nanoseconds frameTime)
     if (m_physics)
     {
         m_physics->clearContacts();
+    }
+    if (m_physics2d)
+    {
+        m_physics2d->clearContacts();
     }
 
     if (std::exchange(m_application.m_stopRequested, false) && m_playScene)
@@ -1498,6 +1516,7 @@ void ApplicationRunner::runSystems(SystemPhase phase, core::Duration delta)
         .saves = m_saves.get(),
         .settings = m_settings.get(),
         .physics = m_physics.get(),
+        .physics2d = m_physics2d.get(),
         .audio = m_audio.get(),
         .animation = m_animation.get(),
         .tweens = m_tweens.get(),
@@ -1527,6 +1546,7 @@ void ApplicationRunner::runSystems(SystemPhase phase, core::Duration delta)
             .input = &m_services.platform.input(),
             .window = &m_services.window,
             .physics = m_physics.get(),
+            .physics2d = m_physics2d.get(),
             .audio = m_audio.get(),
             .animation = m_animation.get(),
             .tweens = m_tweens.get(),
@@ -1582,12 +1602,26 @@ void ApplicationRunner::createPhysics()
     }
     m_physics = std::move(*world);
     m_application.m_physics = m_physics.get();
+
+    core::Result<std::unique_ptr<physics2d::Physics2DWorld>> world2d = physics2d::Physics2DWorld::create({
+        .settings = assetSource() != nullptr ? assetSource()->project().physics : asset::PhysicsSettings{},
+        .tilesets = [this](asset::AssetId tileset) { return m_services.assets.tileset(tileset); },
+    });
+    if (!world2d)
+    {
+        DEVEX_LOG_ERROR("The game runs without 2D physics: {}", world2d.error());
+        return;
+    }
+    m_physics2d = std::move(*world2d);
+    m_application.m_physics2d = m_physics2d.get();
 }
 
 void ApplicationRunner::destroyPhysics()
 {
     m_application.m_physics = nullptr;
+    m_application.m_physics2d = nullptr;
     m_physics.reset();
+    m_physics2d.reset();
 }
 
 void ApplicationRunner::createAudio()
@@ -2407,6 +2441,11 @@ double Application::interpolationAlpha() const noexcept
 physics::PhysicsWorld* Application::physics() noexcept
 {
     return m_physics;
+}
+
+physics2d::Physics2DWorld* Application::physics2d() noexcept
+{
+    return m_physics2d;
 }
 
 audio::AudioWorld* Application::audio() noexcept

@@ -45,6 +45,10 @@ mais seulement explicitement ici : le code suit ce document, pas l'inverse.
 | Tuiles                   | Composant `Tilemap`, cellules par blocs de 16×16 dans la scène     |
 | Tilesets                 | Asset `.dvxtileset` : sprite, collision, animation, données par tuile |
 | Peinture des tuiles      | Outils sous la `Tilemap` dans l'inspecteur, un trait par annulation |
+| Physique 2D              | Box2D 3.1 (MIT), module `Physics2D`, à côté du monde 3D            |
+| Corps 2D                 | `RigidBody2D` + colliders 2D (boîte, cercle, capsule, polygone)    |
+| Collisions des tuiles    | `TilemapCollider2D` : rectangles fusionnés et corniches du tileset |
+| Personnages 2D           | `CharacterController2D` « move and slide » sur le mover de Box2D   |
 | Clavier                  | `Key` = position physique (WASD devient ZQSD en AZERTY)            |
 | Présentation             | VSync (FIFO) par défaut, Mailbox/Immediate en option               |
 | Thread de rendu          | Thread principal, rendu découplé par un instantané `RenderWorld`   |
@@ -187,8 +191,10 @@ situé au-dessus de lui, et le graphe reste sans cycle.
 | `Audio`         | clips, mixage et groupes, sources et écouteur de la scène                | Core, Math, Asset, Scene, miniaudio, stb |
 | `Animation`     | clips d'animation, échantillonnage, fondus, squelettes des `Animator`, tweens, images des sprites | Core, Math, Asset, Scene |
 | `Particles`     | émetteurs et traînées de la scène, simulés sur les workers              | Core, Math, Asset, Scene             |
+| `Physics`       | corps, colliders et personnages 3D de la scène, simulés par Jolt         | Core, Math, Asset, Scene, Jolt       |
+| `Physics2D`     | corps, colliders, tuiles et personnages 2D de la scène, simulés par Box2D | Core, Math, Asset, Scene, Box2D     |
 | `Ui`            | placement des canevas, mise en page du texte, survol et focus, dessin    | Core, Math, Asset, Scene, Render     |
-| `Tools`         | panneaux ImGui, annulation, éditeur (viewport, gizmos, scènes, accueil)   | Core, Platform, Render, Scene, Audio, Animation, Particles, Ui, AssetImport, ImGui |
+| `Tools`         | panneaux ImGui, annulation, éditeur (viewport, gizmos, scènes, accueil)   | Core, Platform, Render, Scene, Audio, Animation, Particles, Physics2D, Ui, AssetImport, ImGui |
 | `Runtime`       | `Application`, boucle, mode éditeur et Play, modules de jeu, coroutines, `AssetManager`, extraction | tous les modules ci-dessus |
 
 Au sommet : `devex-editor`, `devex-player` et les modules de jeu des projets.
@@ -436,7 +442,8 @@ docs/          décisions et documentation
   en texte dans les fichiers) et références d'entités ; et des listes de toutes ces valeurs sauf
   bool (`std::vector<T>`, décrit par `ListOps` : taille, élément, insertion, suppression). Des
   indications guident l'inspecteur (`FieldHints`) : type d'asset attendu, couleur, angle affiché
-  en degrés. La réflexion connaît aussi la taille des types et l'emplacement de chaque champ,
+  en degrés ; `hidden` cache un champ de l'inspecteur, `runtime` marque l'état que le moteur tient
+  pendant le jeu (ni sauvegardé, ni copié, ni montré). La réflexion connaît aussi la taille des types et l'emplacement de chaque champ,
   que les vues C# utilisent. MSVC 19.51 ne fournit pas encore `<meta>` (réflexion C++26) ; ces
   déclarations pourront alors être générées.
 - **Références d'entités** : un champ `scene::EntityRef` désigne une autre entité de la même scène
@@ -1687,8 +1694,9 @@ les assets s'écrivent au fil de leur lecture.
   `Jump`), ramasse des pièces qui tournent et flottent (étincelles, son, compteur), devant un
   coucher de soleil répété qui défile plus lentement que le sol, un mur de briques éclairé par une
   torche vacillante (particules, lumière et `Tweener`), et des herbes dans la couche
-  *Foreground*. Le niveau est une carte de tuiles depuis le jalon 36 (voir *Tuiles*). Le jeu est
-  en C# (`code/Platformer.cs`) ; les déplacements sont écrits, sans physique 2D.
+  *Foreground*. Le niveau est une carte de tuiles depuis le jalon 36 (voir *Tuiles*), et le jeu
+  bouge par la physique 2D depuis le jalon 37 (voir *Physique 2D*). Le jeu est en C#
+  (`code/Platformer.cs`).
 
 ### Tuiles
 
@@ -1711,7 +1719,8 @@ les assets s'écrivent au fil de leur lecture.
   retirées), un sprite, une **collision** (*none*, *full* : solide de tous côtés, *top* : tient ce
   qui arrive d'en haut et laisse passer par-dessous), des **images d'animation** avec leur cadence
   (eau, lave, torches), et des **données** libres pour le jeu (`"water"`, `"damage=5"`). Les
-  collisions servent au code du jeu dès maintenant, et à la physique 2D plus tard.
+  collisions servent au code du jeu et, depuis le jalon 37, à la physique 2D
+  (`TilemapCollider2D`).
 - **Rendu** : une carte est un lot parmi les sprites. L'extraction résout chaque tuile une fois
   par carte (le sprite de son image à l'instant, la texture, les retournements en échangeant les
   coordonnées de texture) ; le renderer trie les cartes avec les sprites par couche, ordre et
@@ -1738,9 +1747,94 @@ les assets s'écrivent au fil de leur lecture.
 - **Bac à sable** : le niveau du jeu de plateformes est une `Tilemap` (`assets/tiles/platformer`,
   planche `assets/textures/2d/tiles.png`) : herbe et terre (bords retournés), corniches de pierre
   qu'on traverse par-dessous, caisses, piliers de pierre, fleurs, panneau, et un bassin d'eau
-  animée. Le chevalier bute contre les tuiles pleines, se pose sur les corniches, et revient au
-  départ quand il tombe à l'eau, en lisant les collisions et les données du tileset
-  (`code/Platformer.cs`).
+  animée. Le chevalier revient au départ quand il tombe à l'eau, en lisant les données du
+  tileset (`code/Platformer.cs`) ; il bute contre les tuiles et se pose sur les corniches par la
+  physique 2D depuis le jalon 37.
+
+### Physique 2D
+
+- **Moteur** : Box2D 3.1 (MIT), par vcpkg (`box2d`), derrière le module `Physics2D` : son API
+  publique (`devex/physics2d/Physics2DWorld.hpp`) ne montre aucun type de Box2D. Un monde 2D existe
+  à côté du monde 3D pendant le jeu ; les deux partagent la gravité (X et Y) et les 16 couches du
+  projet, mais ne se touchent pas. Une entité simulée en 2D bouge en X et Y et tourne autour de Z ;
+  sa profondeur, son échelle et ses rotations autour des autres axes restent.
+- **Composants** (module `Scene`) : `RigidBody2D` (type `static`, `kinematic` ou `dynamic`, masse
+  répartie sur l'aire des colliders, frottement, rebond, amortissements, échelle de gravité,
+  couche, rotation bloquée, collision continue, vitesses) ; `BoxCollider2D`, `CircleCollider2D`,
+  `CapsuleCollider2D` (debout sur Y) et `PolygonCollider2D` (3 à 8 points, enveloppe convexe),
+  dimensionnés dans l'espace de leur entité dont ils suivent l'échelle, `trigger`, et `one_way`
+  pour la boîte et le polygone ; `TilemapCollider2D` ; `CharacterController2D`. Mêmes règles qu'en
+  3D : un `RigidBody2D` forme un corps avec les colliders 2D de son entité et des descendants sans
+  `RigidBody2D` à eux ; des colliders sans `RigidBody2D` au-dessus d'eux forment un corps statique.
+- **Synchronisation** : comme en 3D, une signature des réglages et des formes (placées dans le
+  repère du corps) crée, reconstruit et retire les corps ; un corps déplacé par le jeu est
+  téléporté, un cinématique suit son entité (`b2Body_SetTargetTransform`, sa vitesse porte ce qui
+  le touche), une vitesse modifiée est appliquée ; après le pas (4 sous-pas), les corps dynamiques
+  écrivent leur `Transform`, leurs vitesses et les transformées de leurs descendants. Le monde 2D
+  fait son pas juste après le 3D, et s'interpole de même.
+- **Filtrage** : bits de catégorie de Box2D : les 16 couches pour les formes pleines et les
+  personnages, un bit pour les corniches, un pour les déclencheurs, que les formes pleines listent
+  dans leur masque. Les couches et le drapeau de chaque forme vivent aussi dans ses données
+  utilisateur, où les requêtes du jeu les lisent.
+- **Collisions à sens unique** (*one way*) : une corniche tient ce qui arrive d'en haut et laisse
+  passer par-dessous et par les côtés. Les corps dynamiques passent par le rappel *pre-solve* de
+  Box2D : le contact vaut si la normale sort de la corniche vers le haut et si le corps n'est pas
+  déjà enfoncé de plus de 5 cm. Les personnages ne touchent jamais les corniches par leur corps :
+  leur déplacement les traite (plus bas).
+- **Collider de tuiles** (`TilemapCollider2D`, comme le *TilemapCollider2D* d'Unity avec son
+  *CompositeCollider*) : les tuiles *full* de chaque ligne se fusionnent en bandes, puis les bandes
+  de même largeur empilées en rectangles ; les tuiles *top* d'une ligne deviennent une corniche d'un
+  dixième de cellule en haut des cellules. Les rectangles sont gardés tant que les blocs de la carte
+  et le tileset restent les mêmes : peindre pendant le jeu reconstruit le corps. `tileRectangles`
+  est public et testé seul ; l'éditeur dessine les mêmes rectangles.
+- **Personnage 2D** (`CharacterController2D`, « move and slide » comme Godot, sur le *mover* de
+  Box2D 3.1) : une capsule posée sur la position de l'entité (rayon, hauteur), pente et marche
+  maximales, échelle de gravité, force de poussée, couche ; `velocity`, `grounded` et
+  `ground_normal` sont l'état du jeu (plus bas). À chaque pas, avant le pas de Box2D : sans sol,
+  la gravité s'ajoute ; debout, elle ne s'accumule pas et la vitesse du sol porte le personnage.
+  Jusqu'à 5 itérations recueillent les plans en contact (`b2World_CollideMover`), les résolvent
+  (`b2SolvePlanes`) et avancent jusqu'au premier obstacle (`b2World_CastMover`, et un lancer de
+  capsule pour les corniches) ; la vitesse est coupée par ce qui arrête. En marchant, ce qui est
+  trop raide (pentes, coins des marches) devient un mur vertical, que le personnage ne gravit pas
+  en glissant ; une **marche** (montée de `step_height`, avancée, descente) le fait passer sur
+  plus haut que lui, s'il retombe sur un sol plus haut que son départ ; en descente de pente ou de
+  marche, il reste **collé au sol** ; posé à moins de 5 cm d'un sol, il s'y **pose**. Le **sol** est
+  une surface assez plate sous la capsule, ou le coin d'un dessus plat (un court rayon à côté du
+  coin le trouve) : un personnage tient au bord d'une plateforme sur son arrondi. Une corniche
+  n'arrête le personnage que si ses pieds étaient au-dessus au début du pas et s'il ne monte pas
+  vers elle ; une corniche déjà traversée le laisse passer. Il **pousse** les corps dynamiques
+  rencontrés de côté jusqu'à sa vitesse, avec au plus sa force de poussée. Un corps cinématique
+  suit la capsule, pour les déclencheurs, les requêtes et les corps qui tombent dessus ; comme en
+  Box2D les corps cinématiques ne touchent ni les statiques ni les cinématiques, un personnage n'a
+  de contacts qu'avec les corps dynamiques et les déclencheurs.
+- **Points des plans** : Box2D 3.1.1 donne le point de `b2PlaneResult` dans le repère du corps
+  touché ; le monde le passe en coordonnées du monde (la règle des corniches, et le coin du sol, le
+  demandent).
+- **Contacts** : `Begin`/`End` par paire d'entités, déclencheur ou non, depuis les événements de
+  contact et de capteur de Box2D (activés sur toutes les formes). Le monde compte les paires de
+  formes qui se touchent : un contact commence avec la première et finit avec la dernière ; les
+  paires d'une forme détruite finissent avec elle, quel que soit le moment où Box2D le rapporte.
+  Même disposition que les contacts 3D.
+- **Jeu** : `SystemContext::physics2d` (nul sans physique) donne `raycast` (à travers les
+  déclencheurs), `overlapCircle` (déclencheurs compris), `addForce`, `addTorque`, `addImpulse` et
+  les contacts ; l'API des jeux passe à 16. En C#, `Physics2D.Raycast` (`RayHit2D`),
+  `OverlapCircle`, `AddForce`, `AddTorque` et `AddImpulse` ; les contacts 2D suivent les 3D dans
+  `Physics.Contacts` et arrivent aux mêmes `OnCollisionEnter`/`OnTriggerEnter`. Les vues C# des
+  composants 2D sont générées ; `CharacterController2D.Velocity` et `Grounded` se lisent et
+  s'écrivent comme les autres champs. L'amorce C# passe à 13.
+- **État de jeu** : un nouvel indice de réflexion, `FieldHints::runtime`, marque les champs que le
+  moteur tient pendant le jeu (vitesse et sol du personnage 2D) : vus par le code C++ et C#, ni
+  sauvegardés, ni copiés, ni montrés.
+- **Éditeur** : les formes 2D sont dessinées dans le plan XY avec les autres collisions (celles de
+  la sélection, ou toutes) : boîtes, cercles, capsules, polygones, rectangles des tuiles, capsules
+  des personnages, et une flèche vers le haut sur ce qui est à sens unique. Le menu de création
+  ajoute boîte statique 2D, boîte et cercle rigides 2D, personnage 2D et zone de déclenchement 2D.
+- **Bac à sable** : le jeu de plateformes passe à la physique 2D : le niveau a un
+  `TilemapCollider2D`, le chevalier un `CharacterController2D` (gravité × 3, saut de 14 m/s pour
+  franchir les corniches à 3 m, que le saut d'avant n'atteignait pas), les pièces sont des
+  déclencheurs ramassés dans `OnTriggerEnter`, trois caisses dynamiques se poussent, et une
+  plateforme cinématique (`Shuttle2D`) fait traverser l'eau. Le code de collision écrit à la main
+  a disparu de `code/Platformer.cs`.
 
 ### Culling et ombres locales
 
@@ -2242,6 +2336,7 @@ les assets s'écrivent au fil de leur lecture.
 | efsw                  | surveillance des fichiers | 6 ✅ |
 | mikktspace            | tangentes            | 7 ✅     |
 | joltphysics           | physique             | 11 ✅    |
+| box2d                 | physique 2D          | 37 ✅    |
 | zstd                  | paquets de jeux      | 13 ✅    |
 | FreeType (`imgui[freetype]`) | rendu des polices de l'éditeur | 10 ✅ |
 | plutosvg              | icônes SVG de l'éditeur | 10 ✅  |
@@ -2453,7 +2548,13 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     un trait par annulation, inspecteur des tilesets, API C++ et C# ; le niveau du jeu de
     plateformes du bac à sable en tuiles.
 
-Ensuite, sans ordre figé : physique 2D, CI Linux.
+37. ✅ **Physique 2D** — Box2D 3.1 derrière le module `Physics2D` : corps rigides 2D statiques,
+    cinématiques et dynamiques, colliders boîte, cercle, capsule et polygone, déclencheurs,
+    collisions à sens unique, collider généré des tuiles, personnage « move and slide » (pentes,
+    marches, sol, corniches, plateformes mobiles, poussée), requêtes, forces et contacts en C++ et
+    en C#, formes dessinées dans l'éditeur ; le jeu de plateformes du bac à sable simulé.
+
+Ensuite, sans ordre figé : CI Linux.
 
 ## Questions ouvertes
 
@@ -2470,6 +2571,12 @@ Ensuite, sans ordre figé : physique 2D, CI Linux.
 - **Physique** : articulations (charnières, ressorts), véhicules, ragdolls, matériaux physiques par
   collider, marqueurs de modification pour les grandes scènes, simulation dans l'éditeur (mode
   Simulate), débogage visuel des contacts, pool de jobs de Jolt fusionné avec `core::JobSystem`.
+- **Physique 2D, la suite** : articulations (charnière, ressort, distance, souris), chaînes de
+  segments pour les contours, polygones concaves découpés, matériaux par forme et par tuile,
+  descendre d'une corniche (bas + saut), contacts des personnages avec le décor statique, lancers
+  de formes et requêtes par boîte, vitesse horizontale constante sur les pentes, saut à hauteur
+  variable, plateformes cinématiques qui poussent les personnages de côté, monde 2D créé
+  seulement si la scène en a besoin, simulation dans l'éditeur.
 - **Préfabs** : retirer un composant ou une entité du préfab dans une instance, variantes
   explicites (une instance à la racine d'un préfab en fait déjà une), onglet ouvert sur le préfab
   d'une instance avec son contexte, édition des entités d'une instance sur place (Godot *Editable
@@ -2495,7 +2602,7 @@ Ensuite, sans ordre figé : physique 2D, CI Linux.
   réglages du projet pour le dossier du joueur.
 - **Tuiles, la suite** : tuiles automatiques (terrains, règles de voisinage), tuiles tournées d'un
   quart de tour, tampons de plusieurs tuiles et palette de morceaux de carte, grilles isométriques
-  et hexagonales, collisions générées pour la physique 2D, cartes découpées en morceaux pour le
+  et hexagonales, formes de collision par tuile (pentes, demi-tuiles), cartes découpées en morceaux pour le
   culling et l'envoi au GPU gardé d'une image à l'autre, calques de la même carte, tuiles faites de
   préfabs.
 - **2D, la suite** : physique 2D, éclairage 2D (lumières 2D,

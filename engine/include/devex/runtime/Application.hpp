@@ -15,6 +15,7 @@
 #include <devex/platform/Platform.hpp>
 #include <devex/platform/Window.hpp>
 #include <devex/physics/PhysicsWorld.hpp>
+#include <devex/physics2d/Physics2DWorld.hpp>
 #include <devex/render/Renderer.hpp>
 #include <devex/render/RenderWorld.hpp>
 #include <devex/runtime/AssetManager.hpp>
@@ -180,6 +181,8 @@ protected:
     [[nodiscard]] double interpolationAlpha() const noexcept;
     // The physics world of the scene while gameplay runs; null otherwise, or without physics.
     [[nodiscard]] physics::PhysicsWorld* physics() noexcept;
+    // The 2D physics world of the scene, likewise.
+    [[nodiscard]] physics2d::Physics2DWorld* physics2d() noexcept;
     // The sounds of the scene while gameplay runs; null otherwise, or without audio.
     [[nodiscard]] audio::AudioWorld* audio() noexcept;
     // The animations of the scene while gameplay runs; null otherwise.
@@ -215,6 +218,7 @@ private:
     AssetManager* m_assets = nullptr;
     core::JobSystem* m_jobs = nullptr;
     physics::PhysicsWorld* m_physics = nullptr;
+    physics2d::Physics2DWorld* m_physics2d = nullptr;
     audio::AudioWorld* m_audio = nullptr;
     animation::AnimationWorld* m_animation = nullptr;
     animation::TweenWorld* m_tweens = nullptr;

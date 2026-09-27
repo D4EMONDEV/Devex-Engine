@@ -42,7 +42,10 @@ TextSection writeComponent(const ComponentType& componentType, const void* compo
     componentSection.attributes.push_back({"type", TextValue(std::string(componentType.name()))});
     for (const reflection::FieldInfo& field : componentType.type->fields)
     {
-        componentSection.properties.push_back({field.name, writeFieldValue(field, field.address(component))});
+        if (!field.runtime)
+        {
+            componentSection.properties.push_back({field.name, writeFieldValue(field, field.address(component))});
+        }
     }
     return componentSection;
 }

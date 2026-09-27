@@ -76,6 +76,9 @@ order = 0
 lit = false
 blocks = list("-1,-1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAACAAIAAgACAAIAAgACAAIAAgACAAIAAAAAAAAAAAAEAAIAAgACAAIAAgACAAIAAgACAAIAAgAAAAAAAAAAAAQAAgACAAIAAgACAAIAAgACAAIAAgACAAAAAAAAAAAABAACAAIAAgACAAIAAgACAAIAAgACAAIAAAAAAAAAAAADAAEAAQABAAEAAQABAAEAAQABAAEAAQAAAAAAAAAAAAgAAAAKAAAAAAAAAAAAAAAAAAAAAAAKAAAAAAAAAAAACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIAAAAAAAAAAAAAAAFAAYABgAFQAAAAAA=", "0,-1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIAAgACAAIAAgACAAIAAgACAARADAAMAAwADAAEAAIAAgACAAIAAgACAAIAAgACAAIABEAMAAwADAAMAAQAAgACAAIAAgACAAIAAgACAAIAAgAEQAwADAAMAAwABAACAAIAAgACAAIAAgACAAIAAgACAARACQAJAAkACQAEAAIAAQABAAEAAQABAAEAAQABAAEAA0AAAAAAAAAAAAMAAQAAAAAAAAAHAAAAAAAAAAAACwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=", "1,-1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIAAgACAAIAAgACAAIAAgACAAIAAgACAAIAAgACAARAAgACAAIAAgACAAIAAgACAAIAAgACAAIAAgACAAIABEACAAIAAgACAAIAAgACAAIAAgACAAIAAgACAAIAAgAEQAIAAgACAAIAAgACAAIAAgACAAIAAgACAAIAAgACAARAAQABAAEAAQABAAEAAQABAAEAAQABAAEAAQABAAEAA0AKAAAAAAAAAAAABwAAAAAACgAAAAcABwAAAAAAAAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHAAAAAAAAAAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAA=", "-1,0:AAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=", "0,0:AAAAAAAAAAAAAAUABgAGAAVAAAAAAAAAAAAAAAAAAAAFAAYABUAAAAAAAAAAAAAAAAAAAAAABQAGAAVAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=", "1,0:AAAFAAYABUAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIAAAAAAAAAAAAAAAAAAUABgAGAAVAAAAAAAAAAAAAAAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")
 
+[component type="TilemapCollider2D"]
+trigger = false
+
 [entity uuid="6e5f1e49-2687-5b79-afff-252ba10f2eb4" name="Wall"]
 
 [component type="Transform"]
@@ -197,10 +200,18 @@ speed = 1
 playing = true
 frame = 0
 
+[component type="CharacterController2D"]
+radius = 0.3
+height = 0.85
+max_slope = 0.872665
+step_height = 0.25
+gravity_scale = 3
+push_force = 200
+layer = 0
+
 [component type="Hero2D"]
 speed = 5
-jump_speed = 11
-gravity = 30
+jump_speed = 14
 sparkles = entity("41c964b7-8a9c-5b75-ba3e-0a4a4d964b3a")
 pickup_sound = asset("a19e4f7c-3d52-4c8b-b0e6-7f2d9a1c5b83")
 counter = entity("a0aece7b-e6ae-5a95-a5d5-416ab56490ba")
@@ -258,6 +269,11 @@ frame = 0
 
 [component type="Coin2D"]
 
+[component type="CircleCollider2D"]
+radius = 0.35
+center = vec2(0, 0)
+trigger = true
+
 [component type="Tweener"]
 field = "Transform.position"
 from = vec4(0, 0, 0, 0)
@@ -299,6 +315,11 @@ playing = true
 frame = 1
 
 [component type="Coin2D"]
+
+[component type="CircleCollider2D"]
+radius = 0.35
+center = vec2(0, 0)
+trigger = true
 
 [component type="Tweener"]
 field = "Transform.position"
@@ -342,6 +363,11 @@ frame = 2
 
 [component type="Coin2D"]
 
+[component type="CircleCollider2D"]
+radius = 0.35
+center = vec2(0, 0)
+trigger = true
+
 [component type="Tweener"]
 field = "Transform.position"
 from = vec4(0, 0, 0, 0)
@@ -383,6 +409,11 @@ playing = true
 frame = 3
 
 [component type="Coin2D"]
+
+[component type="CircleCollider2D"]
+radius = 0.35
+center = vec2(0, 0)
+trigger = true
 
 [component type="Tweener"]
 field = "Transform.position"
@@ -426,6 +457,11 @@ frame = 4
 
 [component type="Coin2D"]
 
+[component type="CircleCollider2D"]
+radius = 0.35
+center = vec2(0, 0)
+trigger = true
+
 [component type="Tweener"]
 field = "Transform.position"
 from = vec4(0, 0, 0, 0)
@@ -467,6 +503,11 @@ playing = true
 frame = 5
 
 [component type="Coin2D"]
+
+[component type="CircleCollider2D"]
+radius = 0.35
+center = vec2(0, 0)
+trigger = true
 
 [component type="Tweener"]
 field = "Transform.position"
@@ -510,6 +551,11 @@ frame = 0
 
 [component type="Coin2D"]
 
+[component type="CircleCollider2D"]
+radius = 0.35
+center = vec2(0, 0)
+trigger = true
+
 [component type="Tweener"]
 field = "Transform.position"
 from = vec4(0, 0, 0, 0)
@@ -551,6 +597,11 @@ playing = true
 frame = 1
 
 [component type="Coin2D"]
+
+[component type="CircleCollider2D"]
+radius = 0.35
+center = vec2(0, 0)
+trigger = true
 
 [component type="Tweener"]
 field = "Transform.position"
@@ -594,6 +645,11 @@ frame = 2
 
 [component type="Coin2D"]
 
+[component type="CircleCollider2D"]
+radius = 0.35
+center = vec2(0, 0)
+trigger = true
+
 [component type="Tweener"]
 field = "Transform.position"
 from = vec4(0, 0, 0, 0)
@@ -635,6 +691,11 @@ playing = true
 frame = 3
 
 [component type="Coin2D"]
+
+[component type="CircleCollider2D"]
+radius = 0.35
+center = vec2(0, 0)
+trigger = true
 
 [component type="Tweener"]
 field = "Transform.position"
@@ -678,6 +739,11 @@ frame = 4
 
 [component type="Coin2D"]
 
+[component type="CircleCollider2D"]
+radius = 0.35
+center = vec2(0, 0)
+trigger = true
+
 [component type="Tweener"]
 field = "Transform.position"
 from = vec4(0, 0, 0, 0)
@@ -720,6 +786,11 @@ frame = 5
 
 [component type="Coin2D"]
 
+[component type="CircleCollider2D"]
+radius = 0.35
+center = vec2(0, 0)
+trigger = true
+
 [component type="Tweener"]
 field = "Transform.position"
 from = vec4(0, 0, 0, 0)
@@ -732,6 +803,170 @@ ease = "in_out_sine"
 loop = "ping_pong"
 repeats = -1
 play_on_start = true
+
+[entity uuid="01c8dbf4-b1fe-5d64-9834-441f8734318d" name="Crate 1"]
+
+[component type="Transform"]
+position = vec3(5.2, -2.6, 0.1)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(0.8, 0.8, 1)
+
+[component type="SpriteRenderer"]
+sprite = asset("404453dc-0fb4-5632-a6cc-47facf605078")
+color = vec4(1, 1, 1, 1)
+intensity = 1
+flip_x = false
+flip_y = false
+draw_mode = "simple"
+size = vec2(1, 1)
+sorting_layer = "Default"
+order = 0
+blend = "alpha"
+lit = false
+
+[component type="RigidBody2D"]
+type = "dynamic"
+mass = 2
+friction = 0.6
+restitution = 0
+linear_damping = 0
+angular_damping = 0.05
+gravity_scale = 3
+layer = 0
+fixed_rotation = false
+continuous_collision = false
+linear_velocity = vec2(0, 0)
+angular_velocity = 0
+
+[component type="BoxCollider2D"]
+size = vec2(1, 1)
+center = vec2(0, 0)
+trigger = false
+one_way = false
+
+[entity uuid="cc4d8b47-5283-5980-a679-f5f4792fe922" name="Crate 2"]
+
+[component type="Transform"]
+position = vec3(19.6, -2.6, 0.1)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(0.8, 0.8, 1)
+
+[component type="SpriteRenderer"]
+sprite = asset("404453dc-0fb4-5632-a6cc-47facf605078")
+color = vec4(1, 1, 1, 1)
+intensity = 1
+flip_x = false
+flip_y = false
+draw_mode = "simple"
+size = vec2(1, 1)
+sorting_layer = "Default"
+order = 0
+blend = "alpha"
+lit = false
+
+[component type="RigidBody2D"]
+type = "dynamic"
+mass = 2
+friction = 0.6
+restitution = 0
+linear_damping = 0
+angular_damping = 0.05
+gravity_scale = 3
+layer = 0
+fixed_rotation = false
+continuous_collision = false
+linear_velocity = vec2(0, 0)
+angular_velocity = 0
+
+[component type="BoxCollider2D"]
+size = vec2(1, 1)
+center = vec2(0, 0)
+trigger = false
+one_way = false
+
+[entity uuid="8c22c149-5930-5d83-9ee6-8455f5655fdb" name="Crate 3"]
+
+[component type="Transform"]
+position = vec3(19.6, -1.8, 0.1)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(0.8, 0.8, 1)
+
+[component type="SpriteRenderer"]
+sprite = asset("404453dc-0fb4-5632-a6cc-47facf605078")
+color = vec4(1, 1, 1, 1)
+intensity = 1
+flip_x = false
+flip_y = false
+draw_mode = "simple"
+size = vec2(1, 1)
+sorting_layer = "Default"
+order = 0
+blend = "alpha"
+lit = false
+
+[component type="RigidBody2D"]
+type = "dynamic"
+mass = 2
+friction = 0.6
+restitution = 0
+linear_damping = 0
+angular_damping = 0.05
+gravity_scale = 3
+layer = 0
+fixed_rotation = false
+continuous_collision = false
+linear_velocity = vec2(0, 0)
+angular_velocity = 0
+
+[component type="BoxCollider2D"]
+size = vec2(1, 1)
+center = vec2(0, 0)
+trigger = false
+one_way = false
+
+[entity uuid="ba6ee81a-5663-51f6-891b-2fbca43141a3" name="Platform"]
+
+[component type="Transform"]
+position = vec3(11, -3.5, 0.1)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="SpriteRenderer"]
+sprite = asset("4f0b166e-82fa-5846-9a34-8a8b5bf6bd01")
+color = vec4(1, 1, 1, 1)
+intensity = 1
+flip_x = false
+flip_y = false
+draw_mode = "tiled"
+size = vec2(2, 1)
+sorting_layer = "Default"
+order = 0
+blend = "alpha"
+lit = false
+
+[component type="RigidBody2D"]
+type = "kinematic"
+mass = 1
+friction = 0.8
+restitution = 0
+linear_damping = 0
+angular_damping = 0
+gravity_scale = 1
+layer = 0
+fixed_rotation = true
+continuous_collision = false
+linear_velocity = vec2(0, 0)
+angular_velocity = 0
+
+[component type="BoxCollider2D"]
+size = vec2(2, 0.3)
+center = vec2(0, 0.35)
+trigger = false
+one_way = true
+
+[component type="Shuttle2D"]
+distance = 2
+period = 4
 
 [entity uuid="fd12783d-d4dc-5510-8cb1-2d2d8c47e1db" name="Tufts 1"]
 
@@ -916,7 +1151,7 @@ opacity = 1.0
 visible = true
 
 [component type="UiText"]
-text = "A D or the stick: run    Space: jump, through the ledges from below    Tab: next scene"
+text = "A D or the stick: run, push the crates    Space: jump, through the ledges from below    Tab: next scene"
 font = asset("3f5c9a10-8d21-4b77-9d3e-6a41c0f2e510")
 size = 30
 color = vec4(0.85, 0.87, 0.9, 1.0)

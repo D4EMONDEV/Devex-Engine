@@ -472,3 +472,53 @@ public class Tiler : Component
         Center = Tilemaps.CellCenter(Entity, 1, 1);
     }
 }
+
+// Counts the 2D bodies that hit it and pass through it, and looks around with 2D queries.
+public class Bumper2D : Component
+{
+    public int Hits;
+    public int Entered;
+    public int Left;
+    public string Below = "";
+    public int Near;
+
+    public override void OnCollisionEnter(Entity other) => ++Hits;
+
+    public override void OnTriggerEnter(Entity other) => ++Entered;
+
+    public override void OnTriggerExit(Entity other) => ++Left;
+
+    public override void Update(float delta)
+    {
+        Vec3 position = Transform.Position;
+        Below = Physics2D.Raycast(new Vec2(position.X, position.Y + 5.0f), new Vec2(0.0f, -1.0f), 20.0f, out RayHit2D hit)
+            ? hit.Entity.Name
+            : "nothing";
+        Near = Physics2D.OverlapCircle(new Vec2(position.X, position.Y), 2.5f).Length;
+    }
+}
+
+// Walks right, jumps once from the ground, and kicks a crate up.
+public class Walker2D : Component
+{
+    public Entity Crate;
+    public bool Jumped;
+    public bool Landed;
+
+    public override void Start() => Physics2D.AddImpulse(Crate, new Vec2(0.0f, 4.0f));
+
+    public override void FixedUpdate(float delta)
+    {
+        CharacterController2D controller = Entity.Get<CharacterController2D>();
+        if (!Jumped && controller.Grounded)
+        {
+            controller.Velocity = new Vec2(2.0f, 5.0f);
+            Jumped = true;
+        }
+        else
+        {
+            controller.Velocity = new Vec2(2.0f, controller.Velocity.Y);
+            Landed = Landed || (Jumped && controller.Grounded);
+        }
+    }
+}

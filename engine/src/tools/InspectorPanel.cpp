@@ -931,7 +931,7 @@ void drawSharedInspector(ToolsState& state, scene::Scene& scene, const std::vect
                 {
                     groupOpen = propertyGroup(field.group.c_str());
                 }
-                if (groupOpen && !field.hidden)
+                if (groupOpen && !field.hidden && !field.runtime)
                 {
                     drawSharedField(state, scene, entities, type, field);
                 }
@@ -1288,7 +1288,7 @@ void drawInspectorPanel(ToolsState& state, scene::Scene& scene)
                     {
                         groupOpen = propertyGroup(field.group.c_str());
                     }
-                    if (!groupOpen || field.hidden)
+                    if (!groupOpen || field.hidden || field.runtime)
                     {
                         continue;
                     }

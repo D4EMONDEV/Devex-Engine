@@ -1,14 +1,18 @@
 #include "ToolsState.hpp"
 
+#include <devex/physics2d/Physics2DWorld.hpp>
 #include <devex/scene/AudioComponents.hpp>
 #include <devex/scene/Components.hpp>
+#include <devex/scene/Physics2DComponents.hpp>
 #include <devex/scene/PhysicsComponents.hpp>
 #include <devex/scene/TilemapComponents.hpp>
 
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <functional>
 #include <numbers>
+#include <span>
 #include <unordered_set>
 #include <vector>
 
@@ -106,6 +110,137 @@ void addRoundShape(std::vector<OverlayVertex>& lines, math::Vec3 bottom, math::V
     }
 }
 
+// A closed outline through points.
+void addLoop(std::vector<OverlayVertex>& lines, std::span<const math::Vec3> points, math::Vec4 color)
+{
+    for (std::size_t index = 0; index < points.size(); ++index)
+    {
+        addLine(lines, points[index], points[(index + 1) % points.size()], color);
+    }
+}
+
+// A 2D capsule in the XY plane, between the centers of its rounded ends.
+void addCapsule2D(std::vector<OverlayVertex>& lines, math::Vec3 bottom, math::Vec3 top, float radius, math::Vec4 color)
+{
+    const math::Vec3 along = math::length(top - bottom) > 1e-6f ? math::normalize(top - bottom) : math::Vec3{0.0f, 1.0f, 0.0f};
+    const math::Vec3 side{-along.y, along.x, 0.0f};
+    addLine(lines, bottom + side * radius, top + side * radius, color);
+    addLine(lines, bottom - side * radius, top - side * radius, color);
+    addArc(lines, top, side, along, radius, 0.0f, std::numbers::pi_v<float>, color);
+    addArc(lines, bottom, -side, -along, radius, 0.0f, std::numbers::pi_v<float>, color);
+}
+
+// One-way colliders show which way they let through: an arrow up from the middle of their top.
+void addOneWayArrow(std::vector<OverlayVertex>& lines, math::Vec3 top, float size, math::Vec4 color)
+{
+    const math::Vec3 tip = top + math::Vec3{0.0f, size, 0.0f};
+    addLine(lines, top, tip, color);
+    addLine(lines, tip, tip + math::Vec3{-size * 0.35f, -size * 0.35f, 0.0f}, color);
+    addLine(lines, tip, tip + math::Vec3{size * 0.35f, -size * 0.35f, 0.0f}, color);
+}
+
+// The shapes of 2D physics, in the XY plane where it simulates them.
+void addColliders2D(const ToolsState& state, scene::Scene& scene, const std::function<bool(scene::Entity)>& shown,
+                    const std::function<math::Vec4(scene::Entity, bool)>& colorOf, std::vector<OverlayVertex>& lines)
+{
+    const auto place = [](const math::Mat4& world, math::Vec2 point) { return math::Vec3(world * math::Vec4(point, 0.0f, 1.0f)); };
+    const auto planeScale = [](const math::Mat4& world) {
+        return std::max(math::length(math::Vec2(world[0])), math::length(math::Vec2(world[1])));
+    };
+    const auto addBox = [&](const math::Mat4& world, math::Vec2 low, math::Vec2 high, bool oneWay, math::Vec4 color) {
+        const std::array<math::Vec3, 4> corners{place(world, low), place(world, {high.x, low.y}), place(world, high),
+                                                place(world, {low.x, high.y})};
+        addLoop(lines, corners, color);
+        if (oneWay)
+        {
+            const math::Vec3 top = (corners[2] + corners[3]) * 0.5f;
+            addOneWayArrow(lines, top, std::clamp(math::length(corners[2] - corners[3]) * 0.1f, 0.1f, 0.3f), color);
+        }
+    };
+
+    for ([[maybe_unused]] auto [entity, world, collider] : scene.view<scene::WorldTransform, scene::BoxCollider2D>())
+    {
+        if (shown(entity))
+        {
+            const math::Vec2 half = math::abs(collider.size) * 0.5f;
+            addBox(world.matrix, collider.center - half, collider.center + half, collider.oneWay,
+                   colorOf(entity, collider.trigger));
+        }
+    }
+    for ([[maybe_unused]] auto [entity, world, collider] : scene.view<scene::WorldTransform, scene::CircleCollider2D>())
+    {
+        if (shown(entity))
+        {
+            addCircle(lines, place(world.matrix, collider.center), math::Vec3{1.0f, 0.0f, 0.0f}, math::Vec3{0.0f, 1.0f, 0.0f},
+                      collider.radius * planeScale(world.matrix), colorOf(entity, collider.trigger), 48);
+        }
+    }
+    for ([[maybe_unused]] auto [entity, world, collider] : scene.view<scene::WorldTransform, scene::CapsuleCollider2D>())
+    {
+        if (shown(entity))
+        {
+            const float radius = std::max(collider.radius, 0.001f);
+            const float reach = std::max(collider.height * 0.5f - radius, 0.0005f);
+            addCapsule2D(lines, place(world.matrix, collider.center - math::Vec2{0.0f, reach}),
+                         place(world.matrix, collider.center + math::Vec2{0.0f, reach}), radius * planeScale(world.matrix),
+                         colorOf(entity, collider.trigger));
+        }
+    }
+    for ([[maybe_unused]] auto [entity, world, collider] : scene.view<scene::WorldTransform, scene::PolygonCollider2D>())
+    {
+        if (shown(entity) && collider.points.size() >= 2)
+        {
+            std::vector<math::Vec3> points;
+            for (const math::Vec2 point : collider.points)
+            {
+                points.push_back(place(world.matrix, point));
+            }
+            const math::Vec4 color = colorOf(entity, collider.trigger);
+            addLoop(lines, points, color);
+            if (collider.oneWay)
+            {
+                const auto top = std::ranges::max_element(points, {}, [](const math::Vec3& point) { return point.y; });
+                addOneWayArrow(lines, *top, 0.2f, color);
+            }
+        }
+    }
+    for ([[maybe_unused]] auto [entity, world, collider, tilemap] :
+         scene.view<scene::WorldTransform, scene::TilemapCollider2D, scene::Tilemap>())
+    {
+        const std::shared_ptr<const asset::TilesetData> tileset =
+            shown(entity) && state.tilesets && tilemap.tileset.isValid() ? state.tilesets(tilemap.tileset) : nullptr;
+        if (tileset == nullptr)
+        {
+            continue;
+        }
+        const math::Vec4 color = colorOf(entity, collider.trigger);
+        const std::vector<physics2d::TileRectangle> rectangles =
+            physics2d::tileRectangles(scene::TileGrid::read(tilemap), [&](std::uint32_t id) {
+                const asset::TileData* const tile = tileset->find(id);
+                return tile != nullptr ? tile->collision : asset::TileCollision::None;
+            });
+        for (const physics2d::TileRectangle& rectangle : rectangles)
+        {
+            const math::Vec2 low = math::Vec2(rectangle.cell) * tilemap.cellSize;
+            const math::Vec2 high = math::Vec2(rectangle.cell + rectangle.size) * tilemap.cellSize;
+            addBox(world.matrix, rectangle.oneWay ? math::Vec2{low.x, high.y - 0.1f * tilemap.cellSize.y} : low, high,
+                   rectangle.oneWay && !collider.trigger, color);
+        }
+    }
+    // Characters stand upright on their position.
+    for ([[maybe_unused]] auto [entity, world, controller] : scene.view<scene::WorldTransform, scene::CharacterController2D>())
+    {
+        if (shown(entity))
+        {
+            const math::Vec3 feet(world.matrix[3]);
+            const float radius = std::max(controller.radius, 0.01f);
+            const float height = std::max(controller.height, radius * 2.0f + 0.01f);
+            addCapsule2D(lines, feet + math::Vec3{0.0f, radius, 0.0f}, feet + math::Vec3{0.0f, height - radius, 0.0f}, radius,
+                         colorOf(entity, false));
+        }
+    }
+}
+
 // The collision shapes of the colliders and characters of the selected entity and its descendants,
 // or of every entity when they are all shown.
 void addColliders(const ToolsState& state, scene::Scene& scene, const std::unordered_set<std::uint32_t>& selection,
@@ -196,6 +331,8 @@ void addColliders(const ToolsState& state, scene::Scene& scene, const std::unord
         addRoundShape(lines, middle - up * half, middle + up * half, up, math::Vec3{1.0f, 0.0f, 0.0f},
                       math::Vec3{0.0f, 0.0f, 1.0f}, controller.radius, true, colorOf(entity, false));
     }
+
+    addColliders2D(state, scene, shown, colorOf, lines);
 }
 
 [[nodiscard]] math::Vec3 forwardOf(const math::Mat4& world)

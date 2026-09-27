@@ -201,7 +201,10 @@ public static unsafe class Physics
     public static void AddImpulseAt(Entity entity, Vec3 impulse, Vec3 point)
         => Bootstrap.Native.AddImpulseAt(entity, &impulse, &point);
 
-    /// <summary>The contacts that began or ended during the physics steps of the frame, seen during Update.</summary>
+    /// <summary>
+    /// The contacts that began or ended during the physics steps of the frame, seen during Update: those
+    /// of 3D bodies, then those of 2D bodies.
+    /// </summary>
     public static ReadOnlySpan<Contact> Contacts
     {
         get
@@ -211,6 +214,54 @@ public static unsafe class Physics
             return count == 0 ? [] : new ReadOnlySpan<Contact>(contacts, count);
         }
     }
+}
+
+/// <summary>What a 2D ray hit.</summary>
+[StructLayout(LayoutKind.Sequential)]
+public struct RayHit2D
+{
+    /// <summary>The entity of the body hit: the entity of its RigidBody2D, or of its collider.</summary>
+    public Entity Entity;
+    public Vec2 Point;
+    public Vec2 Normal;
+    public float Distance;
+}
+
+/// <summary>
+/// The 2D simulation of the scene, in the XY plane: queries and forces. Its contacts come with the
+/// others in <see cref="Physics.Contacts"/>, and reach OnCollisionEnter and OnTriggerEnter alike.
+/// </summary>
+public static unsafe class Physics2D
+{
+    /// <summary>
+    /// The closest 2D body along a ray, among the layers of the mask, through triggers, ignoring the
+    /// bodies of an entity.
+    /// </summary>
+    public static bool Raycast(Vec2 origin, Vec2 direction, float maxDistance, out RayHit2D hit,
+                               uint layers = Physics.AllLayers, Entity ignore = default)
+    {
+        RayHit2D result;
+        bool found = Bootstrap.Native.Raycast2D(&origin, &direction, maxDistance, layers, ignore, &result) != 0;
+        hit = found ? result : default;
+        return found;
+    }
+
+    /// <summary>The entities whose 2D bodies, triggers included, overlap a circle, each once.</summary>
+    public static Entity[] OverlapCircle(Vec2 center, float radius, uint layers = Physics.AllLayers, Entity ignore = default)
+    {
+        Entity* entities;
+        int count = Bootstrap.Native.OverlapCircle2D(&center, radius, layers, ignore, &entities);
+        return count == 0 ? [] : new ReadOnlySpan<Entity>(entities, count).ToArray();
+    }
+
+    /// <summary>A force on the dynamic 2D body of the entity during the next step.</summary>
+    public static void AddForce(Entity entity, Vec2 force) => Bootstrap.Native.AddForce2D(entity, &force);
+
+    /// <summary>A torque around Z on the dynamic 2D body of the entity during the next step.</summary>
+    public static void AddTorque(Entity entity, float torque) => Bootstrap.Native.AddTorque2D(entity, torque);
+
+    /// <summary>Changes the velocity of the dynamic 2D body of the entity at once.</summary>
+    public static void AddImpulse(Entity entity, Vec2 impulse) => Bootstrap.Native.AddImpulse2D(entity, &impulse);
 }
 
 /// <summary>

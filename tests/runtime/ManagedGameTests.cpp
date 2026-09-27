@@ -9,6 +9,7 @@
 #include <devex/core/Profiler.hpp>
 #include <devex/particles/ParticleWorld.hpp>
 #include <devex/physics/PhysicsWorld.hpp>
+#include <devex/physics2d/Physics2DWorld.hpp>
 #include <devex/platform/Platform.hpp>
 #include <devex/scene/AudioComponents.hpp>
 #include <devex/scene/ComponentRegistry.hpp>
@@ -16,6 +17,7 @@
 #include <devex/scene/ParticleComponents.hpp>
 #include <devex/scene/SpriteComponents.hpp>
 #include <devex/scene/TilemapComponents.hpp>
+#include <devex/scene/Physics2DComponents.hpp>
 #include <devex/scene/PhysicsComponents.hpp>
 #include <devex/scene/SceneSerializer.hpp>
 
@@ -72,7 +74,7 @@ void run(ManagedGame& game, Scene& scene, SystemPhase phase, double seconds = 0.
 TEST_CASE("The C# runtime registers components and runs them", "[runtime][managed]")
 {
     const std::unique_ptr<ManagedGame> game = startRuntime();
-    CHECK(game->componentTypes().size() == 14);
+    CHECK(game->componentTypes().size() == 16);
 
     devex::scene::ComponentRegistry& registry = devex::scene::componentRegistry();
     const devex::scene::ComponentType* const mover = registry.find("Mover");
@@ -320,6 +322,73 @@ TEST_CASE("C# components hear collisions and triggers and query the physics", "[
     CHECK(field<int>(*bumper, bumperOf(zone), "hits") == 0);
     // The ray from above the block finds the ball resting on it.
     CHECK(field<std::string>(*bumper, bumperOf(block), "below") == "Ball");
+    game->unloadAssembly();
+}
+
+TEST_CASE("C# components hear 2D collisions and triggers and drive 2D characters", "[runtime][managed][physics2d]")
+{
+    const std::unique_ptr<ManagedGame> game = startRuntime();
+    const devex::scene::ComponentType* const bumper = devex::scene::componentRegistry().find("Bumper2D");
+    const devex::scene::ComponentType* const walker = devex::scene::componentRegistry().find("Walker2D");
+    REQUIRE(bumper != nullptr);
+    REQUIRE(walker != nullptr);
+    devex::core::Result<std::unique_ptr<devex::physics2d::Physics2DWorld>> world = devex::physics2d::Physics2DWorld::create({});
+    REQUIRE(world.has_value());
+
+    // A floor that a crate lands on, a trigger that another crate falls through, and a character
+    // that walks and jumps.
+    Scene scene;
+    const Entity floor = scene.createEntity("Floor");
+    scene.add<devex::scene::Transform>(floor, devex::scene::Transform{.position = {0.0f, -0.5f, 0.0f}});
+    scene.add<devex::scene::BoxCollider2D>(floor, devex::scene::BoxCollider2D{.size = {40.0f, 1.0f}});
+    static_cast<void>(bumper->emplace(scene, floor));
+    const Entity zone = scene.createEntity("Zone");
+    scene.add<devex::scene::Transform>(zone, devex::scene::Transform{.position = {-10.0f, 2.0f, 0.0f}});
+    scene.add<devex::scene::BoxCollider2D>(zone, devex::scene::BoxCollider2D{.size = {2.0f, 1.0f}, .trigger = true});
+    static_cast<void>(bumper->emplace(scene, zone));
+    const Entity crate = scene.createEntity("Crate");
+    scene.add<devex::scene::Transform>(crate, devex::scene::Transform{.position = {5.0f, 0.5f, 0.0f}});
+    scene.add<devex::scene::RigidBody2D>(crate);
+    scene.add<devex::scene::BoxCollider2D>(crate);
+    const Entity faller = scene.createEntity("Faller");
+    scene.add<devex::scene::Transform>(faller, devex::scene::Transform{.position = {-10.0f, 4.0f, 0.0f}});
+    scene.add<devex::scene::RigidBody2D>(faller);
+    scene.add<devex::scene::CircleCollider2D>(faller, devex::scene::CircleCollider2D{.radius = 0.25f});
+    const Entity hero = scene.createEntity("Hero");
+    scene.add<devex::scene::Transform>(hero, devex::scene::Transform{.position = {-3.0f, 0.0f, 0.0f}});
+    scene.add<devex::scene::CharacterController2D>(hero);
+    void* const walking = walker->emplace(scene, hero);
+    field<EntityRef>(*walker, walking, "crate") = scene.reference(crate);
+
+    ManagedGame::Frame frame{.scene = &scene, .physics2d = world->get()};
+    scene.updateTransforms();
+    (*world)->step(scene, devex::core::Duration(1.0 / 60.0));
+    game->runPhase(frame, SystemPhase::Start);
+    float highestCrate = 0.0f;
+    for (int step = 0; step < 150; ++step)
+    {
+        frame.delta = devex::core::Duration(1.0 / 60.0);
+        game->runPhase(frame, SystemPhase::FixedUpdate);
+        scene.updateTransforms();
+        (*world)->step(scene, devex::core::Duration(1.0 / 60.0));
+        highestCrate = std::max(highestCrate, scene.get<devex::scene::Transform>(crate).position.y);
+        game->runPhase(frame, SystemPhase::Update);
+        (*world)->clearContacts();
+    }
+    const auto bumperOf = [&](Entity entity) { return const_cast<void*>(bumper->find(scene, entity)); };
+    CHECK(field<int>(*bumper, bumperOf(floor), "hits") >= 2);
+    CHECK(field<int>(*bumper, bumperOf(zone), "entered") == 1);
+    CHECK(field<int>(*bumper, bumperOf(zone), "left") == 1);
+    CHECK(field<int>(*bumper, bumperOf(zone), "hits") == 0);
+    // Rays go through triggers, to the ball resting under the zone.
+    CHECK(field<std::string>(*bumper, bumperOf(zone), "below") == "Faller");
+    // Around the zone: itself, the floor, and the ball.
+    CHECK(field<int>(*bumper, bumperOf(zone), "near") == 3);
+    // Kicked up by C# at the start.
+    CHECK(highestCrate > 1.0f);
+    CHECK(field<bool>(*walker, walking, "jumped"));
+    CHECK(field<bool>(*walker, walking, "landed"));
+    CHECK(scene.get<devex::scene::Transform>(hero).position.x > 0.0f);
     game->unloadAssembly();
 }
 

@@ -3,6 +3,7 @@
 #include <devex/scene/AudioComponents.hpp>
 #include <devex/scene/ComponentRegistry.hpp>
 #include <devex/scene/Components.hpp>
+#include <devex/scene/Physics2DComponents.hpp>
 #include <devex/scene/PhysicsComponents.hpp>
 #include <devex/scene/SpriteComponents.hpp>
 #include <devex/scene/TilemapComponents.hpp>
@@ -113,6 +114,13 @@ ComponentRegistry& componentRegistry()
         builtins.add<CylinderCollider>();
         builtins.add<MeshCollider>();
         builtins.add<CharacterController>();
+        builtins.add<RigidBody2D>();
+        builtins.add<BoxCollider2D>();
+        builtins.add<CircleCollider2D>();
+        builtins.add<CapsuleCollider2D>();
+        builtins.add<PolygonCollider2D>();
+        builtins.add<TilemapCollider2D>();
+        builtins.add<CharacterController2D>();
         builtins.add<AudioSource>();
         builtins.add<AudioListener>();
         builtins.add<Canvas>();

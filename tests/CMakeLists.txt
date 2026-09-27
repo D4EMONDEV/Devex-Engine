@@ -165,6 +165,7 @@ target_compile_definitions(devex_platform_tests
 
 devex_add_tests(physics
     SOURCES
+        physics/Physics2DWorldTests.cpp
         physics/PhysicsWorldTests.cpp
     LIBRARIES
         Devex::Engine

@@ -1,4 +1,5 @@
 find_package(basisu CONFIG REQUIRED)
+find_package(box2d CONFIG REQUIRED)
 find_package(efsw CONFIG REQUIRED)
 find_package(fastgltf CONFIG REQUIRED)
 find_package(glm CONFIG REQUIRED)
@@ -421,6 +422,7 @@ target_sources(devex_scene
         src/scene/FieldValue.cpp
         src/scene/ModelInstantiation.cpp
         src/scene/PhysicsComponents.cpp
+        src/scene/Physics2DComponents.cpp
         src/scene/UiComponents.cpp
         src/scene/AnimationComponents.cpp
         src/scene/ParticleComponents.cpp
@@ -445,6 +447,7 @@ target_sources(devex_scene
             include/devex/scene/FieldValue.hpp
             include/devex/scene/ModelInstantiation.hpp
             include/devex/scene/PhysicsComponents.hpp
+            include/devex/scene/Physics2DComponents.hpp
             include/devex/scene/UiComponents.hpp
             include/devex/scene/AnimationComponents.hpp
             include/devex/scene/ParticleComponents.hpp
@@ -500,6 +503,36 @@ set_target_properties(devex_physics PROPERTIES
     FOLDER "Engine"
 )
 devex_set_warnings(devex_physics)
+
+# 2D physics: rigid bodies, colliders, tilemap colliders and characters in the XY plane, simulated
+# with Box2D from scene components.
+add_library(devex_physics2d OBJECT)
+add_library(Devex::Physics2D ALIAS devex_physics2d)
+
+target_sources(devex_physics2d
+    PRIVATE
+        src/physics2d/Physics2DWorld.cpp
+    PUBLIC
+        FILE_SET HEADERS
+        BASE_DIRS include
+        FILES
+            include/devex/physics2d/Physics2DWorld.hpp
+)
+
+target_link_libraries(devex_physics2d
+    PUBLIC
+        Devex::Asset
+        Devex::Core
+        Devex::Math
+        Devex::Scene
+    PRIVATE
+        box2d::box2d
+)
+set_target_properties(devex_physics2d PROPERTIES
+    EXPORT_NAME Physics2D
+    FOLDER "Engine"
+)
+devex_set_warnings(devex_physics2d)
 
 # Animation: animation clips, their sampling and blending, and the skeletons of the Animator
 # components of a game.
@@ -752,6 +785,7 @@ target_link_libraries(devex_tools
         Devex::Audio
         Devex::Core
         Devex::Particles
+        Devex::Physics2D
         Devex::Platform
         Devex::Render
         Devex::Scene
@@ -818,6 +852,7 @@ target_link_libraries(devex_runtime
         Devex::Core
         Devex::Particles
         Devex::Physics
+        Devex::Physics2D
         Devex::Platform
         Devex::Render
         Devex::Scene
@@ -844,6 +879,7 @@ target_link_libraries(devex_engine
         devex_math
         devex_particles
         devex_physics
+        devex_physics2d
         devex_platform
         devex_reflection
         devex_render
