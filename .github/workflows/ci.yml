@@ -88,6 +88,7 @@ jobs:
       # vcpkg builds the dependencies here, the first time for hours, then from its cache. What the
       # steps print is also kept in a file (cmd merges the errors in), for the failure to be shown.
       - name: Configure
+        id: configure
         run: cmd /c "cmake --preset ${{ matrix.preset }} -DDEVEX_WARNINGS_AS_ERRORS=ON 2>&1" | Tee-Object -FilePath "$env:RUNNER_TEMP/configure.log"
 
       # Saved as soon as the dependencies are built, so that a failing build or test does not
@@ -100,9 +101,11 @@ jobs:
           key: vcpkg-${{ matrix.preset }}-${{ hashFiles('vcpkg.json') }}
 
       - name: Build
+        id: build
         run: cmd /c "cmake --build out/build/${{ matrix.preset }} 2>&1" | Tee-Object -FilePath "$env:RUNNER_TEMP/build.log"
 
       - name: Test
+        id: test
         run: cmd /c "ctest --test-dir out/build/${{ matrix.preset }} --label-exclude gpu --output-on-failure --no-tests=error --timeout 600 2>&1" | Tee-Object -FilePath "$env:RUNNER_TEMP/test.log"
 
       # Reading the logs of a run takes rights on the repository: what failed is also given as
@@ -110,17 +113,23 @@ jobs:
       - name: Show what failed
         if: failure()
         shell: pwsh
+        env:
+          CONFIGURE: ${{ steps.configure.outcome }}
+          BUILD: ${{ steps.build.outcome }}
+          TEST: ${{ steps.test.outcome }}
         run: |
-          $logs = @(
-            @{ Path = "$env:RUNNER_TEMP/configure.log"; Errors = $false },
-            @{ Path = "out/build/${{ matrix.preset }}/vcpkg-manifest-install.log"; Errors = $false },
-            @{ Path = "$env:RUNNER_TEMP/build.log"; Errors = $true },
-            @{ Path = "$env:RUNNER_TEMP/test.log"; Errors = $true }
-          )
-          # The error log of the port vcpkg failed to build last, if one did.
-          $port = Get-ChildItem -Path "$env:RUNNER_TEMP/vcpkg/buildtrees" -Recurse -Filter "*-err.log" -ErrorAction SilentlyContinue |
-            Where-Object Length -gt 0 | Sort-Object LastWriteTime | Select-Object -Last 1
-          if ($port) { $logs += @{ Path = $port.FullName; Errors = $false } }
+          # The logs of the step that failed: the configuration with vcpkg and the port it failed to
+          # build last, or the errors of the build, or those of the tests.
+          $logs = @()
+          if ($env:CONFIGURE -eq "failure") {
+            $logs += @{ Path = "$env:RUNNER_TEMP/configure.log"; Errors = $false }
+            $logs += @{ Path = "out/build/${{ matrix.preset }}/vcpkg-manifest-install.log"; Errors = $false }
+            $port = Get-ChildItem -Path "$env:RUNNER_TEMP/vcpkg/buildtrees" -Recurse -Filter "*-err.log" -ErrorAction SilentlyContinue |
+              Where-Object Length -gt 0 | Sort-Object LastWriteTime | Select-Object -Last 1
+            if ($port) { $logs += @{ Path = $port.FullName; Errors = $false } }
+          }
+          if ($env:BUILD -eq "failure") { $logs += @{ Path = "$env:RUNNER_TEMP/build.log"; Errors = $true } }
+          if ($env:TEST -eq "failure") { $logs += @{ Path = "$env:RUNNER_TEMP/test.log"; Errors = $true } }
           foreach ($log in $logs) {
             if (-not (Test-Path $log.Path)) { continue }
             $lines = Get-Content $log.Path
