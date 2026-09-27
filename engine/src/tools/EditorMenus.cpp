@@ -775,6 +775,83 @@ void drawProjectSettingsWindow(ToolsState& state)
         ImGui::EndTabItem();
     }
 
+    if (ImGui::BeginTabItem("Sorting"))
+    {
+        std::vector<std::string>& layers = project.sorting.layers;
+        ImGui::TextDisabled("Sorting layers: sprites draw over the sprites of the layers above theirs.");
+        ImGui::TextDisabled("Blended surfaces and particles draw in Default.");
+        ImGui::Spacing();
+        std::optional<std::size_t> removed;
+        std::optional<std::size_t> raised;
+        if (ImGui::BeginTable("sorting layers", 3, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_PadOuterX))
+        {
+            ImGui::TableSetupColumn("index", ImGuiTableColumnFlags_WidthFixed, ImGui::GetFontSize() * 2.0f);
+            ImGui::TableSetupColumn("name", ImGuiTableColumnFlags_WidthStretch);
+            ImGui::TableSetupColumn("actions", ImGuiTableColumnFlags_WidthFixed,
+                                    toolButtonWidth() * 3.0f + ImGui::GetStyle().ItemSpacing.x * 2.0f);
+            for (std::size_t index = 0; index < layers.size(); ++index)
+            {
+                ImGui::TableNextRow();
+                ImGui::PushID(static_cast<int>(index));
+                ImGui::TableSetColumnIndex(0);
+                ImGui::AlignTextToFramePadding();
+                ImGui::TextDisabled("%zu", index);
+                ImGui::TableSetColumnIndex(1);
+                const bool fixed = layers[index] == "Default";
+                if (fixed)
+                {
+                    ImGui::AlignTextToFramePadding();
+                    ImGui::TextUnformatted("Default");
+                }
+                else
+                {
+                    ImGui::SetNextItemWidth(-FLT_MIN);
+                    ImGui::InputTextWithHint("##layer", "name", &layers[index]);
+                }
+                ImGui::TableSetColumnIndex(2);
+                if (ImGui::ArrowButton("up", ImGuiDir_Up) && index > 0)
+                {
+                    raised = index;
+                }
+                ImGui::SetItemTooltip("Draw behind the layer above");
+                ImGui::SameLine();
+                if (ImGui::ArrowButton("down", ImGuiDir_Down) && index + 1 < layers.size())
+                {
+                    raised = index + 1;
+                }
+                ImGui::SetItemTooltip("Draw in front of the layer below");
+                ImGui::SameLine();
+                if (toolButton("remove", icons::Minus, fixed ? "Default is always there" : "Remove the layer", false, !fixed))
+                {
+                    removed = index;
+                }
+                ImGui::PopID();
+            }
+            ImGui::EndTable();
+        }
+        if (raised)
+        {
+            std::swap(layers[*raised], layers[*raised - 1]);
+        }
+        if (removed)
+        {
+            layers.erase(layers.begin() + static_cast<std::ptrdiff_t>(*removed));
+        }
+        if (labelButton(icons::Plus, "Add Layer"))
+        {
+            std::string name = "Layer";
+            for (int number = 2; std::ranges::find(layers, name) != layers.end(); ++number)
+            {
+                name = std::format("Layer {}", number);
+            }
+            layers.push_back(std::move(name));
+        }
+        ImGui::Spacing();
+        ImGui::TextWrapped("Sprites name their layer: a sprite whose layer is renamed or removed draws in Default "
+                           "until it names a layer again.");
+        ImGui::EndTabItem();
+    }
+
     if (ImGui::BeginTabItem("Audio"))
     {
         asset::AudioSettings& audio = project.audio;
@@ -827,7 +904,7 @@ void drawProjectSettingsWindow(ToolsState& state)
 
     // Saved once an edit ends, so that typing a name does not rewrite the project at every key.
     if (project.name != saved.name || project.physics != saved.physics || project.window != saved.window ||
-        project.audio != saved.audio || project.input != saved.input)
+        project.audio != saved.audio || project.input != saved.input || project.sorting != saved.sorting)
     {
         state.pendingProject = std::move(project);
     }
@@ -841,6 +918,21 @@ void drawProjectSettingsWindow(ToolsState& state)
         {
             state.pendingProject->name = saved.name;
         }
+        // Sorting layers have names, each its own, and Default among them.
+        std::vector<std::string>& layers = state.pendingProject->sorting.layers;
+        std::vector<std::string> kept;
+        for (std::string& layer : layers)
+        {
+            if (!layer.empty() && std::ranges::find(kept, layer) == kept.end())
+            {
+                kept.push_back(std::move(layer));
+            }
+        }
+        if (std::ranges::find(kept, "Default") == kept.end())
+        {
+            kept.insert(kept.begin(), "Default");
+        }
+        layers = std::move(kept);
         if (core::Result<void> written = state.database->updateProject(*std::exchange(state.pendingProject, std::nullopt)); !written)
         {
             DEVEX_LOG_ERROR("Cannot save the project: {}", written.error());

@@ -25,10 +25,11 @@ std::optional<math::Vec2> ViewportView::project(math::Vec3 position) const noexc
     {
         return std::nullopt;
     }
-    const float tangent = std::tan(verticalFov * 0.5f);
     const float aspect = size.x / size.y;
-    const float ndcX = viewPosition.x / (depth * tangent * aspect);
-    const float ndcY = viewPosition.y / (depth * tangent);
+    // Half the height of the view at the depth of the position.
+    const float halfHeight = orthographic ? orthographicSize : depth * std::tan(verticalFov * 0.5f);
+    const float ndcX = viewPosition.x / (halfHeight * aspect);
+    const float ndcY = viewPosition.y / halfHeight;
     return math::Vec2{(ndcX + 1.0f) * 0.5f * size.x, (1.0f - ndcY) * 0.5f * size.y};
 }
 
@@ -39,12 +40,23 @@ Ray ViewportView::ray(math::Vec2 pixel) const noexcept
     const float ndcX = pixel.x / size.x * 2.0f - 1.0f;
     const float ndcY = 1.0f - pixel.y / size.y * 2.0f;
     const math::Mat4 cameraWorld = math::inverse(view);
+    if (orthographic)
+    {
+        // Parallel rays, from the plane of the camera.
+        const math::Vec3 offset{ndcX * orthographicSize * aspect, ndcY * orthographicSize, 0.0f};
+        return {math::Vec3(cameraWorld * math::Vec4(offset, 1.0f)),
+                math::normalize(math::Mat3(cameraWorld) * math::Vec3{0.0f, 0.0f, -1.0f})};
+    }
     const math::Vec3 direction = math::Mat3(cameraWorld) * math::Vec3{ndcX * tangent * aspect, ndcY * tangent, -1.0f};
     return {math::Vec3(cameraWorld[3]), math::normalize(direction)};
 }
 
 float ViewportView::worldSize(math::Vec3 position, float pixels) const noexcept
 {
+    if (orthographic)
+    {
+        return 2.0f * orthographicSize * pixels / size.y;
+    }
     const float depth = std::max(-(view * math::Vec4(position, 1.0f)).z, 1e-3f);
     return depth * 2.0f * std::tan(verticalFov * 0.5f) * pixels / size.y;
 }

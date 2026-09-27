@@ -45,3 +45,19 @@ TEST_CASE("The frustum edges map to the clip space borders", "[math][projection]
     CHECK_THAT(projected.x, WithinAbs(1.0, 1e-5));
     CHECK_THAT(projected.y, WithinAbs(1.0, 1e-5));
 }
+
+TEST_CASE("An orthographic projection keeps sizes and reverses depth between its planes", "[math][projection]")
+{
+    const Mat4 projection = devex::math::orthographicReverseZ(5.0f, 2.0f, 0.5f, 100.5f);
+
+    CHECK_THAT(project(projection, {0.0f, 0.0f, -0.5f}).z, WithinAbs(1.0, 1e-6));
+    CHECK_THAT(project(projection, {0.0f, 0.0f, -100.5f}).z, WithinAbs(0.0, 1e-6));
+    CHECK_THAT(project(projection, {0.0f, 0.0f, -50.5f}).z, WithinAbs(0.5, 1e-6));
+    // The same point stands at the same place of the image whatever its distance.
+    for (const float distance : {1.0f, 20.0f, 90.0f})
+    {
+        const Vec3 corner = project(projection, {10.0f, 5.0f, -distance});
+        CHECK_THAT(corner.x, WithinAbs(1.0, 1e-6));
+        CHECK_THAT(corner.y, WithinAbs(1.0, 1e-6));
+    }
+}

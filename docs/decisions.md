@@ -36,6 +36,12 @@ mais seulement explicitement ici : le code suit ce document, pas l'inverse.
 | Coroutines               | `co_await` en C++, `async Coroutine` en C#, reprises pendant Update |
 | Particules               | Simulées sur le CPU en parallèle, réglages dans `ParticleEmitter`  |
 | Rendu des particules     | Billboards, étirées, traînées en ruban, triées avec la transparence |
+| Sprites                  | Découpés à l'import de la texture, dessinés dans le rendu 3D       |
+| Animation des sprites    | Asset `.dvxframes` d'animations nommées, joué par `SpriteAnimator` |
+| Tri 2D                   | Couches de tri nommées du projet, ordre, puis distance             |
+| Vue 2D de l'éditeur      | Bouton 2D : caméra orthographique face au plan XY, gizmos 2D       |
+| Caméra orthographique    | `Camera::projection`, profondeur inversée entre deux plans          |
+| Filtrage des textures    | Réglage d'import, un sampler par texture à côté du tableau bindless |
 | Clavier                  | `Key` = position physique (WASD devient ZQSD en AZERTY)            |
 | Présentation             | VSync (FIFO) par défaut, Mailbox/Immediate en option               |
 | Thread de rendu          | Thread principal, rendu découplé par un instantané `RenderWorld`   |
@@ -176,7 +182,7 @@ situé au-dessus de lui, et le graphe reste sans cycle.
 | `Render`        | façade `Renderer` / `RenderWorld` ; tout `Vk*` reste dans `src/render/vulkan` | Core, Math, Platform, Asset, Vulkan |
 | `Scene`         | entités, sparse sets, hiérarchie, composants intégrés, `.dvxscene`, sous-arbres, préfabs | Core, Math, Reflection, Serialization, Asset |
 | `Audio`         | clips, mixage et groupes, sources et écouteur de la scène                | Core, Math, Asset, Scene, miniaudio, stb |
-| `Animation`     | clips d'animation, échantillonnage, fondus, squelettes des `Animator`, tweens | Core, Math, Asset, Scene             |
+| `Animation`     | clips d'animation, échantillonnage, fondus, squelettes des `Animator`, tweens, images des sprites | Core, Math, Asset, Scene |
 | `Particles`     | émetteurs et traînées de la scène, simulés sur les workers              | Core, Math, Asset, Scene             |
 | `Ui`            | placement des canevas, mise en page du texte, survol et focus, dessin    | Core, Math, Asset, Scene, Render     |
 | `Tools`         | panneaux ImGui, annulation, éditeur (viewport, gizmos, scènes, accueil)   | Core, Platform, Render, Scene, Audio, Animation, Particles, Ui, AssetImport, ImGui |
@@ -1078,8 +1084,8 @@ les assets s'écrivent au fil de leur lecture.
   ouvert depuis les sources pour que les modifications d'assets s'y voient en direct.
 - **Sources et importeurs** : chaque fichier dont l'extension a un importeur est une source ;
   `texture` (`.png`, `.jpg`, `.tga`, `.bmp`, `.hdr`, décodés par stb_image), `material`
-  (`.dvxmat`), `gltf` (`.gltf`, `.glb`), `fbx` (`.fbx`), `obj` (`.obj`), `scene` (`.dvxscene`) et
-  `curve` (`.dvxcurve`), entre autres. Les fichiers et dossiers cachés (`.`) sont ignorés.
+  (`.dvxmat`), `gltf` (`.gltf`, `.glb`), `fbx` (`.fbx`), `obj` (`.obj`), `scene` (`.dvxscene`),
+  `curve` (`.dvxcurve`) et `frames` (`.dvxframes`), entre autres. Les fichiers et dossiers cachés (`.`) sont ignorés.
 - **`.dvxmeta`** : créé au premier scan avec un UUID aléatoire et les options par défaut de
   l'importeur. Il porte l'identité de l'asset : il se versionne avec la source. Un `.dvxmeta`
   illisible est signalé et laissé tel quel, jamais remplacé. Une source copiée avec son
@@ -1594,6 +1600,92 @@ les assets s'écrivent au fil de leur lecture.
   de droite, une fontaine d'étincelles étirées avec leurs traînées. Dans l'arène, les balles
   lancées laissent une traînée, et une cible touchée rejoue, là où la balle l'a frappée, la salve
   d'étincelles d'un émetteur qui rebondissent sur le sol (`code/Target.cs`).
+
+### Sprites et jeux 2D
+
+- **Dans le rendu 3D** : un sprite est un rectangle de texture posé dans le plan XY de son entité,
+  face à +Z, dessiné dans la passe *Transparent* avec les surfaces transparentes et les
+  particules, dans les unités du monde (mètres). 2D et 3D se mélangent comme dans l'URP 2D
+  d'Unity : un sprite passe derrière un mur, une particule devant un sprite, et le post-traitement
+  s'applique à tout. Les sprites ne s'écrivent pas dans la profondeur : ils testent celle des
+  surfaces opaques, et se couvrent entre eux dans leur ordre de dessin.
+- **Découpés à l'import de la texture** (comme Unity) : les réglages d'import d'une texture
+  (`sprite_mode`) en font un sprite (`single`) ou la découpent en grille (`grid`, `columns` et
+  `rows`, cellules de gauche à droite puis de haut en bas, cellules vides écartées). Chaque sprite
+  est un **sous-asset** de la texture (`AssetType::Sprite`, clé = numéro de la cellule, qui garde
+  son UUID d'un import à l'autre) : son rectangle en pixels, la taille de la texture, les **pixels
+  par unité**, le **pivot** (où se tient l'entité, de (0, 0) en bas à gauche à (1, 1) en haut à
+  droite) et les **bords** gardés par les modes découpé et répété. Sous les pixels transparents
+  d'une texture de sprites, l'import étend la couleur des pixels voisins, pour qu'un filtrage lisse
+  ne fasse pas de liseré sombre. Un sprite glissé du FileSystem dans la vue crée une entité qui le
+  montre, sous la souris.
+- **Filtrage** : `filter = "nearest"` est un réglage d'import de toute texture (format de texture
+  cuit en version 3) : le pixel art reste net. Chaque texture du tableau bindless a son sampler à
+  côté d'elle (`textureSamplers[]`, liaison 8 du set global), lisse ou au plus proche : tous les
+  shaders qui lisent une texture (matériaux, interface, particules, sprites) respectent le réglage
+  sans rien savoir de plus.
+- **Composant `SpriteRenderer`** (le nom d'Unity, comme `MeshRenderer`) : le sprite, une teinte et
+  une intensité (au-dessus de 1, le bloom), retournements horizontal et vertical autour du pivot,
+  mode de dessin (**simple** à la taille de ses pixels, **découpé en neuf** dont le milieu s'étire,
+  **répété** dont le milieu se répète, à la taille du composant), **couche de tri** et **ordre**
+  dans la couche, mélange alpha ou additif, et **éclairé** en option : par défaut, les couleurs
+  sont montrées telles quelles, quelle que soit l'exposition, comme les particules ; éclairé, le
+  sprite est une surface mate tournée vers la caméra (soleil, ciel, lumières), sans éclairage 2D
+  dédié pour l'instant. Le découpage en neuf et la répétition se font par pixel dans le shader
+  (`shaders/sprite.slang`), sur un seul quad, avec les pentes d'une projection continue pour que
+  les coutures ne changent pas de niveau de mip.
+- **Tri** (comme Unity) : des **couches de tri nommées** dans les réglages du projet
+  (`[sorting_layer]`, onglet *Sorting* : ajouter, renommer, monter, descendre, retirer ; *Default*
+  toujours présente), puis l'**ordre** dans la couche, puis la distance (le carré de la distance
+  à une caméra en perspective, la profondeur le long d'une caméra orthographique), la plus loin
+  d'abord. Les surfaces transparentes et les particules sont dans *Default*, à l'ordre 0 : un
+  sprite de *Foreground* passe devant elles, où qu'il soit. Un sprite nomme sa couche : renommer
+  une couche laisse ses sprites dans *Default* jusqu'à ce qu'ils la nomment de nouveau. Les
+  sprites vus sont triés sur le CPU et envoyés dans cet ordre ; les sprites qui se suivent entre
+  deux autres dessins partent en un seul appel instancié.
+- **Animation image par image** (comme le `SpriteFrames` de Godot) : un asset `.dvxframes` porte
+  les **animations nommées** d'un personnage (*idle*, *run*, *jump*…), chacune avec ses sprites,
+  sa cadence et sa boucle. Le composant `SpriteAnimator` en joue une par son nom (vide : la
+  première), à une vitesse (négative : à l'envers) ; nommer une autre animation la reprend à sa
+  première image, une animation sans boucle s'arrête sur sa dernière et éteint `playing`. Son
+  image (`frame`) choisit ce que montre le `SpriteRenderer`, dans l'éditeur aussi : elle pose le
+  sprite. Les animateurs avancent pendant le jeu seulement (`animation::updateSpriteAnimators`,
+  après les clips), et se mettent en pause avec lui. En C#, les champs sont ceux du composant, et
+  `animator.Play("run")` joue une animation sans la reprendre si elle joue déjà : on l'appelle à
+  chaque frame depuis une machine à états.
+- **Caméra orthographique** : `Camera::projection` (*perspective* ou *orthographic*),
+  `orthographic_size` (la moitié de la hauteur montrée, en mètres) et `far_plane` ; la profondeur
+  reste inversée, de 1 au plan proche à 0 au plan lointain. Les cascades d'ombre et les clusters
+  de lumières se calculent sur un **volume de vue** (demi-taille à une distance = demi-taille
+  d'origine + pente × distance), qui décrit les deux projections. Le ciel d'une vue
+  orthographique se voit comme d'une perspective de 60° : une toile de fond qui tourne avec la
+  caméra sans se déplacer avec elle. *Create > 2D camera* place une caméra orthographique aux
+  couleurs gardées telles quelles (tonemapping *None*, sans anticrénelage ni occlusion).
+- **Vue 2D de l'éditeur** (comme Unity) : le bouton **2D** de la barre de la vue passe la caméra de
+  l'éditeur en orthographique face au plan XY, en gardant à l'écran ce qu'elle regardait ; clic
+  droit ou milieu pour glisser, molette pour zoomer vers la souris, F pour cadrer ; grille du
+  plan XY qui s'adapte au zoom, axes X et Y colorés ; le gizmo garde les poignées du plan (X, Y,
+  le plan XY, le centre, la rotation autour de Z). La caméra d'une scène orthographique montre sa
+  boîte. La vue 2D est gardée par onglet dans `.devex/editor.dvx`. L'écran 2D reste celui des
+  interfaces. Les sprites se choisissent au clic et au rectangle (sur le GPU, à leurs pixels
+  visibles, dans leur ordre de dessin) et s'entourent quand ils sont sélectionnés.
+- **Inspecteurs** : une texture montre son aperçu, avec la grille de découpe et les pivots, ses
+  réglages d'import (couleur, normal map, mipmaps, compression, qualité, filtrage) et ses sprites
+  (mode, pixels par unité, colonnes et lignes, pivot prédéfini ou libre, bords), et *New Sprite
+  Frames* crée à côté d'elle des animations de tous ses sprites. Des sprite frames montrent leurs
+  animations (ajouter, retirer, renommer, cadence, boucle), un aperçu qui joue, et leurs images :
+  un sprite ou une texture glissés du FileSystem s'ajoutent, un clic droit déplace, duplique ou
+  retire. Les aperçus passent par `Renderer::imguiTexture`, un set ImGui par texture créé à la
+  demande et libéré avec elle.
+- **Versions** : l'API des jeux passe à 15 (la caméra a changé de disposition) ; l'amorce C# ne
+  change pas, les vues des composants étant générées.
+- **Bac à sable** : la scène `platformer` (Tab depuis l'arène) est un petit jeu de plateformes en
+  pixel art généré (`assets/textures/2d`, `assets/sprites`) : un chevalier court et saute (`Move`,
+  `Jump`) sur des corniches répétées, ramasse des pièces qui tournent et flottent (étincelles,
+  son, compteur), devant un coucher de soleil répété qui défile plus lentement que le sol, un mur
+  de briques éclairé par une torche vacillante (particules, lumière et `Tweener`), et des herbes
+  dans la couche *Foreground*. Le jeu est en C# (`code/Platformer.cs`) ; les déplacements sont
+  écrits, sans physique 2D.
 
 ### Culling et ombres locales
 
@@ -2294,7 +2386,13 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     éclairés ou non, triés avec les surfaces transparentes ; aperçu dans l'éditeur, API C++ et C#,
     démonstration dans le bac à sable.
 
-Ensuite, sans ordre figé : jeux 2D, CI Linux.
+35. ✅ **Sprites et caméra 2D** — caméra orthographique, textures découpées en sprites à l'import
+    (unique ou grille, pixels par unité, pivot, bords) et filtrées au pixel près, composant
+    `SpriteRenderer` (simple, découpé en neuf, répété, retourné, éclairé ou non), couches de tri
+    nommées et ordre, animations nommées `.dvxframes` jouées par `SpriteAnimator` ; vue 2D de
+    l'éditeur, inspecteurs des textures et des animations ; jeu de plateformes du bac à sable.
+
+Ensuite, sans ordre figé : tuiles et physique 2D, CI Linux.
 
 ## Questions ouvertes
 
@@ -2334,6 +2432,12 @@ Ensuite, sans ordre figé : jeux 2D, CI Linux.
   cours de la physique et des animations, champs privés marqués à garder, migrations déclarées
   par version, plusieurs miniatures ou une taille choisie, entreprise (`organization`) dans les
   réglages du projet pour le dossier du joueur.
+- **2D, la suite** : tuiles (tilemaps et leur pinceau), physique 2D, éclairage 2D (lumières 2D,
+  normal maps, ombres), découpe libre des sprites dans un éditeur de sprites et atlas regroupés à
+  l'import, aimantation au pixel (pixel perfect), ordre par Y pour les vues de dessus, sprites
+  écrits dans la profondeur (découpés à l'alpha), événements des animations, animations de
+  n'importe quel champ par des clips (comme Unity), aperçus ImGui au pixel près, culling des
+  sprites par lots plutôt qu'un à un.
 - **Particules, la suite** : simulation sur le GPU pour les très grands nombres, éditeur de
   dégradés de couleur plutôt que deux couleurs, particules faites de maillages, lumières portées
   par les particules, ombres qu'elles projettent, collisions contre la profondeur de l'écran,
@@ -2355,8 +2459,7 @@ Ensuite, sans ordre figé : jeux 2D, CI Linux.
   déroulantes, barres de défilement visibles, transitions et animations d'éléments, position de la
   fenêtre de la méthode de saisie sous le curseur, polices de repli pour les écritures non
   cuites, texte bidirectionnel et écritures complexes, sélection au double clic et mot par mot,
-  annulation dans un champ, et édition des thèmes dans l'éditeur. Viendront ensuite les jeux 2D :
-  sprites, atlas, tuiles, caméra et physique 2D, qui partagent la vue 2D mais pas le même modèle.
+  annulation dans un champ, et édition des thèmes dans l'éditeur.
 - **Portage de l'éditeur sur l'UI du moteur** : quand `Devex::Ui` saura ce qu'un éditeur demande,
   panneau par panneau, le dockspace en dernier (voir *Une seule interface, deux usages*).
 - **CI** : GitHub Actions Windows, puis Linux.

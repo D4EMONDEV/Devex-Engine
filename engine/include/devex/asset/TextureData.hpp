@@ -33,6 +33,16 @@ enum class TextureFormat : std::uint8_t
 [[nodiscard]] std::size_t mipByteSize(TextureFormat format, std::uint32_t width,
                                       std::uint32_t height) noexcept;
 
+// How a texture is read between its pixels. The values are stored in cooked files: never reorder
+// them.
+enum class TextureFilter : std::uint8_t
+{
+    // Blends the nearest pixels and mip levels, for smooth images.
+    Linear = 0,
+    // Takes the nearest pixel, which keeps pixel art sharp.
+    Nearest = 1,
+};
+
 struct TextureMip
 {
     std::uint32_t width = 0;
@@ -45,6 +55,7 @@ struct TextureMip
 struct TextureData
 {
     TextureFormat format = TextureFormat::Rgba8Srgb;
+    TextureFilter filter = TextureFilter::Linear;
     std::vector<TextureMip> mips;
 };
 

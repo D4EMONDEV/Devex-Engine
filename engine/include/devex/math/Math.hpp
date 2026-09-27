@@ -4,6 +4,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/quaternion.hpp>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <limits>
@@ -112,6 +113,21 @@ struct Trs
     projection[1][1] = focalLength;
     projection[2][3] = -1.0f;
     projection[3][2] = nearPlane;
+    return projection;
+}
+
+// Orthographic projection showing halfHeight meters above and below the view axis, with reversed
+// depth: 1 at the near plane and 0 at the far plane.
+[[nodiscard]] inline Mat4 orthographicReverseZ(float halfHeight, float aspectRatio, float nearPlane,
+                                               float farPlane) noexcept
+{
+    const float depth = std::max(farPlane - nearPlane, 1e-6f);
+    Mat4 projection{1.0f};
+    projection[0][0] = 1.0f / (halfHeight * aspectRatio);
+    projection[1][1] = 1.0f / halfHeight;
+    // View space looks down -Z: z = -near gives 1, z = -far gives 0.
+    projection[2][2] = 1.0f / depth;
+    projection[3][2] = farPlane / depth;
     return projection;
 }
 

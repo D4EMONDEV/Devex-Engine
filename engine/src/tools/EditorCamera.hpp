@@ -6,12 +6,26 @@ namespace devex::tools::detail {
 
 // The camera of the editor's viewport, independent of the cameras of the scene. It looks at a
 // pivot in front of it: orbiting turns around the pivot, flying moves both, and framing an object
-// moves the pivot onto it.
+// moves the pivot onto it. In 2D, it looks straight down -Z at the XY plane through an orthographic
+// projection: it slides and zooms, but does not turn.
 class EditorCamera
 {
 public:
     static constexpr float verticalFov = math::radians(60.0f);
     static constexpr float nearPlane = 0.05f;
+    // How far in front of the XY plane the 2D camera stands, and how deep it sees.
+    static constexpr float twoDDistance = 500.0f;
+    static constexpr float twoDFarPlane = 1000.0f;
+
+    [[nodiscard]] bool isTwoD() const noexcept;
+    // Enters or leaves 2D, keeping in view what the camera looks at.
+    void setTwoD(bool twoD) noexcept;
+    // Half the height the 2D view shows, in meters.
+    [[nodiscard]] float orthographicSize() const noexcept;
+    void setOrthographicSize(float size) noexcept;
+    // Zooms the 2D view by steps of the mouse wheel, keeping the point under the mouse in place.
+    // The pixel counts from the top-left corner of a viewport of the given size.
+    void zoomAt(float wheelSteps, math::Vec2 pixel, math::Vec2 viewportSize) noexcept;
 
     [[nodiscard]] math::Vec3 position() const noexcept;
     [[nodiscard]] math::Quat rotation() const noexcept;
@@ -52,6 +66,8 @@ private:
     float m_pitch = -25.0f;
     float m_distance = 10.0f;
     float m_speed = 6.0f;
+    bool m_twoD = false;
+    float m_orthographicSize = 5.0f;
 };
 
 } // namespace devex::tools::detail

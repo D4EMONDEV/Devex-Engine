@@ -1,0 +1,13 @@
+[frames format=1]
+
+[animation name="idle" fps=5 loop=true]
+frames = list(asset("2442b40e-7412-5642-a2a6-6aec08a99db5"), asset("47f0a409-5ef4-569a-b231-11b37f8722c9"), asset("2c9bc982-32dc-5456-8041-9577b95d100a"), asset("97442bda-2c9b-5c14-89fc-0238e39171b7"))
+
+[animation name="run" fps=12 loop=true]
+frames = list(asset("15aecb0a-409c-5861-8269-c5c6d77c1769"), asset("8b4d7636-8085-590d-bee1-e903e8d053a9"), asset("236597b8-1884-5248-b8ed-ac4a92f0dbf6"), asset("32983063-b7e4-5af3-9edf-c095a6f12d9c"), asset("b7197c77-8be3-52fe-9d3f-8ba7541518f4"), asset("d2229094-10f7-5899-95b4-72d1d7b929c6"))
+
+[animation name="jump" fps=1 loop=false]
+frames = list(asset("d868ff0d-b8b7-5947-8b97-999837ff9731"))
+
+[animation name="fall" fps=1 loop=false]
+frames = list(asset("9643650c-84d0-5e49-b514-df98e77c2006"))

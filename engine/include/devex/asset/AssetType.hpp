@@ -26,13 +26,17 @@ enum class AssetType : std::uint8_t
     Theme = 9,
     // A curve drawn by hand, which eases tweens.
     Curve = 10,
+    // A rectangle of a texture drawn flat in the world, cut from its texture as it imports.
+    Sprite = 11,
+    // Named animations of sprites, a .dvxframes file.
+    SpriteFrames = 12,
 };
 
 // Whether a stored value is one of the types above: update it with them.
 [[nodiscard]] constexpr bool isAssetType(std::uint8_t value) noexcept
 {
     return value >= static_cast<std::uint8_t>(AssetType::Mesh) &&
-           value <= static_cast<std::uint8_t>(AssetType::Curve);
+           value <= static_cast<std::uint8_t>(AssetType::SpriteFrames);
 }
 
 // "mesh", "texture", "material", "model", "scene", "audio", "animation" or "font", as written in

@@ -257,9 +257,12 @@ core::Result<Device> Device::create(VkInstance instance, VkSurfaceKHR surface,
     device.m_maxSamplerAnisotropy = supported.features.features.samplerAnisotropy == VK_TRUE
                                         ? properties.properties.limits.maxSamplerAnisotropy
                                         : 1.0f;
+    // Each texture has its sampler beside it, and a few more samplers are bound.
     device.m_maxBindlessTextures =
-        std::min(properties12.maxDescriptorSetUpdateAfterBindSampledImages,
-                 properties12.maxPerStageDescriptorUpdateAfterBindSampledImages);
+        std::min({properties12.maxDescriptorSetUpdateAfterBindSampledImages,
+                  properties12.maxPerStageDescriptorUpdateAfterBindSampledImages,
+                  properties12.maxDescriptorSetUpdateAfterBindSamplers - 8,
+                  properties12.maxPerStageDescriptorUpdateAfterBindSamplers - 8});
     device.m_sampleCounts = properties.properties.limits.framebufferColorSampleCounts &
                             properties.properties.limits.framebufferDepthSampleCounts;
 

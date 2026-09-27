@@ -1,0 +1,37 @@
+# Devex import settings: keep this file next to its asset in version control.
+[asset format=1 uuid="73684094-6384-58d4-b541-a6ef1aec3459" importer="texture"]
+srgb = true
+normal_map = false
+mipmaps = false
+compress = false
+quality = "normal"
+filter = "nearest"
+sprite_mode = "grid"
+pixels_per_unit = 16
+pivot = vec2(0.5, 0)
+columns = 6
+rows = 2
+
+[subasset type="sprite" key="0" uuid="2442b40e-7412-5642-a2a6-6aec08a99db5"]
+
+[subasset type="sprite" key="1" uuid="47f0a409-5ef4-569a-b231-11b37f8722c9"]
+
+[subasset type="sprite" key="2" uuid="2c9bc982-32dc-5456-8041-9577b95d100a"]
+
+[subasset type="sprite" key="3" uuid="97442bda-2c9b-5c14-89fc-0238e39171b7"]
+
+[subasset type="sprite" key="4" uuid="d868ff0d-b8b7-5947-8b97-999837ff9731"]
+
+[subasset type="sprite" key="5" uuid="9643650c-84d0-5e49-b514-df98e77c2006"]
+
+[subasset type="sprite" key="6" uuid="15aecb0a-409c-5861-8269-c5c6d77c1769"]
+
+[subasset type="sprite" key="7" uuid="8b4d7636-8085-590d-bee1-e903e8d053a9"]
+
+[subasset type="sprite" key="8" uuid="236597b8-1884-5248-b8ed-ac4a92f0dbf6"]
+
+[subasset type="sprite" key="9" uuid="32983063-b7e4-5af3-9edf-c095a6f12d9c"]
+
+[subasset type="sprite" key="10" uuid="b7197c77-8be3-52fe-9d3f-8ba7541518f4"]
+
+[subasset type="sprite" key="11" uuid="d2229094-10f7-5899-95b4-72d1d7b929c6"]

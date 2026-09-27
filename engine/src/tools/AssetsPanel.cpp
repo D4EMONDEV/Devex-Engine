@@ -83,6 +83,8 @@ struct Folder
         return {icons::Film, colors.animation};
     case asset::AssetType::Curve:
         return {icons::Activity, colors.animation};
+    case asset::AssetType::SpriteFrames:
+        return {icons::Clapperboard, colors.animation};
     default:
         break;
     }
@@ -221,8 +223,10 @@ void drawSource(ToolsState& state, scene::Scene& scene, const asset::SourceFile&
                 openTextFile(state, *path);
             }
         }
-        // Curves are edited in the inspector.
-        if (mainAsset->type == asset::AssetType::Curve && ImGui::IsItemClicked(ImGuiMouseButton_Left))
+        // Curves, sprite frames and textures are edited in the inspector.
+        if ((mainAsset->type == asset::AssetType::Curve || mainAsset->type == asset::AssetType::SpriteFrames ||
+             mainAsset->type == asset::AssetType::Texture) &&
+            ImGui::IsItemClicked(ImGuiMouseButton_Left))
         {
             selectAsset(state, mainAsset->id);
         }
@@ -284,6 +288,7 @@ void drawSource(ToolsState& state, scene::Scene& scene, const asset::SourceFile&
                 : info->type == asset::AssetType::Material      ? EntityIcon{icons::Palette, colors.material}
                 : info->type == asset::AssetType::Texture       ? EntityIcon{icons::Image, colors.texture}
                 : info->type == asset::AssetType::AnimationClip ? EntityIcon{icons::Film, colors.animation}
+                : info->type == asset::AssetType::Sprite        ? EntityIcon{icons::Image, colors.texture}
                                                                 : EntityIcon{icons::File, colors.neutral};
             static_cast<void>(treeRow("##asset", ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen, icon,
                                       info->name));
@@ -310,6 +315,14 @@ void drawFolderMenu(ToolsState& state, const std::string& path)
         }
     }
     ImGui::SetItemTooltip("A curve drawn by hand, which eases tweens and Tweeners");
+    if (ImGui::MenuItemEx("New Sprite Frames", icons::Clapperboard.c_str()))
+    {
+        if (core::Result<std::filesystem::path> created = createSpriteFramesFile(state, path); !created)
+        {
+            DEVEX_LOG_ERROR("Cannot create the sprite frames: {}", created.error());
+        }
+    }
+    ImGui::SetItemTooltip("Named animations of sprites, which SpriteAnimator components play");
     ImGui::EndPopup();
 }
 

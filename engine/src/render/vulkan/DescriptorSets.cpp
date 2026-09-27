@@ -36,6 +36,15 @@ core::Result<DescriptorSets> DescriptorSets::create(const Device& device,
     };
     DEVEX_VK_TRY(vkCreateSampler, sets.m_device, &materialSamplerInfo, nullptr, &sets.m_materialSampler);
 
+    // The nearest pixel of the nearest level, for pixel art.
+    VkSamplerCreateInfo pixelSamplerInfo = materialSamplerInfo;
+    pixelSamplerInfo.magFilter = VK_FILTER_NEAREST;
+    pixelSamplerInfo.minFilter = VK_FILTER_NEAREST;
+    pixelSamplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+    pixelSamplerInfo.anisotropyEnable = VK_FALSE;
+    pixelSamplerInfo.maxAnisotropy = 1.0f;
+    DEVEX_VK_TRY(vkCreateSampler, sets.m_device, &pixelSamplerInfo, nullptr, &sets.m_pixelSampler);
+
     VkSamplerCreateInfo clampSamplerInfo = materialSamplerInfo;
     clampSamplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
     clampSamplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
@@ -84,9 +93,15 @@ core::Result<DescriptorSets> DescriptorSets::create(const Device& device,
         sampler(clampSamplerBinding, &sets.m_clampSampler),
         image(skyBinding),
         sampler(skySamplerBinding, &sets.m_skySampler),
+        VkDescriptorSetLayoutBinding{
+            .binding = textureSamplersBinding,
+            .descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER,
+            .descriptorCount = textureCapacity,
+            .stageFlags = shaderStages,
+        },
     };
-    const std::array<VkDescriptorBindingFlags, 8> globalFlags{
-        updatedInFlight, 0, updatedInFlight, updatedInFlight, updatedInFlight, 0, updatedInFlight, 0,
+    const std::array<VkDescriptorBindingFlags, 9> globalFlags{
+        updatedInFlight, 0, updatedInFlight, updatedInFlight, updatedInFlight, 0, updatedInFlight, 0, updatedInFlight,
     };
     const VkDescriptorSetLayoutBindingFlagsCreateInfo globalFlagsInfo{
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO,
@@ -133,7 +148,7 @@ core::Result<DescriptorSets> DescriptorSets::create(const Device& device,
 
     const std::array globalPoolSizes{
         VkDescriptorPoolSize{.type = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, .descriptorCount = textureCapacity + 4},
-        VkDescriptorPoolSize{.type = VK_DESCRIPTOR_TYPE_SAMPLER, .descriptorCount = 3},
+        VkDescriptorPoolSize{.type = VK_DESCRIPTOR_TYPE_SAMPLER, .descriptorCount = 3 + textureCapacity},
     };
     const VkDescriptorPoolCreateInfo globalPoolInfo{
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
@@ -180,6 +195,7 @@ core::Result<DescriptorSets> DescriptorSets::create(const Device& device,
 DescriptorSets::DescriptorSets(DescriptorSets&& other) noexcept
     : m_device(std::exchange(other.m_device, VK_NULL_HANDLE))
     , m_materialSampler(std::exchange(other.m_materialSampler, VK_NULL_HANDLE))
+    , m_pixelSampler(std::exchange(other.m_pixelSampler, VK_NULL_HANDLE))
     , m_clampSampler(std::exchange(other.m_clampSampler, VK_NULL_HANDLE))
     , m_skySampler(std::exchange(other.m_skySampler, VK_NULL_HANDLE))
     , m_shadowSampler(std::exchange(other.m_shadowSampler, VK_NULL_HANDLE))
@@ -200,6 +216,7 @@ DescriptorSets& DescriptorSets::operator=(DescriptorSets&& other) noexcept
         destroy();
         m_device = std::exchange(other.m_device, VK_NULL_HANDLE);
         m_materialSampler = std::exchange(other.m_materialSampler, VK_NULL_HANDLE);
+        m_pixelSampler = std::exchange(other.m_pixelSampler, VK_NULL_HANDLE);
         m_clampSampler = std::exchange(other.m_clampSampler, VK_NULL_HANDLE);
         m_skySampler = std::exchange(other.m_skySampler, VK_NULL_HANDLE);
         m_shadowSampler = std::exchange(other.m_shadowSampler, VK_NULL_HANDLE);
@@ -230,7 +247,7 @@ void DescriptorSets::destroy() noexcept
     vkDestroyDescriptorPool(m_device, m_framePool, nullptr);
     vkDestroyDescriptorSetLayout(m_device, m_globalLayout, nullptr);
     vkDestroyDescriptorSetLayout(m_device, m_frameLayout, nullptr);
-    for (const VkSampler sampler : {m_materialSampler, m_clampSampler, m_skySampler, m_shadowSampler})
+    for (const VkSampler sampler : {m_materialSampler, m_pixelSampler, m_clampSampler, m_skySampler, m_shadowSampler})
     {
         vkDestroySampler(m_device, sampler, nullptr);
     }
@@ -282,9 +299,20 @@ void DescriptorSets::writeImage(VkDescriptorSet set, std::uint32_t binding, std:
     vkUpdateDescriptorSets(m_device, 1, &write, 0, nullptr);
 }
 
-void DescriptorSets::setTexture(std::uint32_t slot, VkImageView view) noexcept
+void DescriptorSets::setTexture(std::uint32_t slot, VkImageView view, bool nearest) noexcept
 {
     writeImage(m_global, texturesBinding, slot, view);
+    const VkDescriptorImageInfo samplerInfo{.sampler = nearest ? m_pixelSampler : m_materialSampler};
+    const VkWriteDescriptorSet write{
+        .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+        .dstSet = m_global,
+        .dstBinding = textureSamplersBinding,
+        .dstArrayElement = slot,
+        .descriptorCount = 1,
+        .descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER,
+        .pImageInfo = &samplerInfo,
+    };
+    vkUpdateDescriptorSets(m_device, 1, &write, 0, nullptr);
 }
 
 void DescriptorSets::setEnvironment(VkImageView specular, VkImageView irradiance,

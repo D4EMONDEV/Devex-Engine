@@ -86,7 +86,9 @@ std::uint32_t artifactVersion(AssetType type) noexcept
     // 2: skins and animations.
     case AssetType::Model:
         return 2;
+    // 3: the filter.
     case AssetType::Texture:
+        return 3;
     case AssetType::Material:
     case AssetType::Scene:
     case AssetType::AudioClip:
@@ -96,6 +98,8 @@ std::uint32_t artifactVersion(AssetType type) noexcept
         return 2;
     case AssetType::Theme:
     case AssetType::Curve:
+    case AssetType::Sprite:
+    case AssetType::SpriteFrames:
         return 1;
     }
     return 0;
@@ -105,7 +109,7 @@ std::uint32_t artifactLayouts() noexcept
 {
     std::uint32_t combined = 0;
     for (std::uint8_t value = static_cast<std::uint8_t>(AssetType::Mesh);
-         value <= static_cast<std::uint8_t>(AssetType::Curve); ++value)
+         value <= static_cast<std::uint8_t>(AssetType::SpriteFrames); ++value)
     {
         combined = combined * 31 + artifactVersion(static_cast<AssetType>(value));
     }
@@ -185,6 +189,7 @@ std::vector<std::byte> encodeTexture(const TextureData& texture)
 {
     BinaryWriter writer = beginArtifact(AssetType::Texture);
     writer.write(texture.format);
+    writer.write(texture.filter);
     writer.write(static_cast<std::uint32_t>(texture.mips.size()));
     for (const TextureMip& mip : texture.mips)
     {
@@ -205,6 +210,7 @@ core::Result<TextureData> decodeTexture(std::span<const std::byte> bytes)
 
     TextureData texture;
     texture.format = reader.read<TextureFormat>();
+    texture.filter = reader.read<TextureFilter>();
     const auto mipCount = reader.read<std::uint32_t>();
     // A 64-bit texture cannot have more levels.
     if (mipCount > 64)
@@ -218,7 +224,7 @@ core::Result<TextureData> decodeTexture(std::span<const std::byte> bytes)
         mip.height = reader.read<std::uint32_t>();
         mip.bytes = reader.readArray<std::byte>();
     }
-    if (reader.failed() || toString(texture.format) == "unknown")
+    if (reader.failed() || toString(texture.format) == "unknown" || texture.filter > TextureFilter::Nearest)
     {
         return std::unexpected(truncated(AssetType::Texture));
     }
@@ -608,6 +614,90 @@ core::Result<CurveData> decodeCurve(std::span<const std::byte> bytes)
         return std::unexpected(valid.error());
     }
     return curve;
+}
+
+std::vector<std::byte> encodeSprite(const SpriteData& sprite)
+{
+    BinaryWriter writer = beginArtifact(AssetType::Sprite);
+    writer.write(sprite.texture);
+    for (const std::uint32_t value : {sprite.x, sprite.y, sprite.width, sprite.height, sprite.textureWidth, sprite.textureHeight})
+    {
+        writer.write(value);
+    }
+    writer.write(sprite.pixelsPerUnit);
+    writer.write(sprite.pivot);
+    writer.write(sprite.border);
+    return writer.take();
+}
+
+core::Result<SpriteData> decodeSprite(std::span<const std::byte> bytes)
+{
+    BinaryReader reader(bytes);
+    if (core::Result<void> header = readHeader(reader, AssetType::Sprite); !header)
+    {
+        return std::unexpected(header.error());
+    }
+    SpriteData sprite;
+    sprite.texture = reader.read<AssetId>();
+    for (std::uint32_t* const value : {&sprite.x, &sprite.y, &sprite.width, &sprite.height, &sprite.textureWidth, &sprite.textureHeight})
+    {
+        *value = reader.read<std::uint32_t>();
+    }
+    sprite.pixelsPerUnit = reader.read<float>();
+    sprite.pivot = reader.read<math::Vec2>();
+    sprite.border = reader.read<math::Vec4>();
+    if (reader.failed())
+    {
+        return std::unexpected(truncated(AssetType::Sprite));
+    }
+    if (core::Result<void> valid = validate(sprite); !valid)
+    {
+        return std::unexpected(valid.error());
+    }
+    return sprite;
+}
+
+std::vector<std::byte> encodeSpriteFrames(const SpriteFramesData& frames)
+{
+    BinaryWriter writer = beginArtifact(AssetType::SpriteFrames);
+    writer.write(static_cast<std::uint32_t>(frames.animations.size()));
+    for (const SpriteAnimationData& animation : frames.animations)
+    {
+        writer.writeString(animation.name);
+        writer.write(animation.fps);
+        writer.write(static_cast<std::uint8_t>(animation.loop ? 1 : 0));
+        writer.writeArray(std::span<const AssetId>(animation.frames));
+    }
+    return writer.take();
+}
+
+core::Result<SpriteFramesData> decodeSpriteFrames(std::span<const std::byte> bytes)
+{
+    BinaryReader reader(bytes);
+    if (core::Result<void> header = readHeader(reader, AssetType::SpriteFrames); !header)
+    {
+        return std::unexpected(header.error());
+    }
+    SpriteFramesData frames;
+    const auto count = reader.read<std::uint32_t>();
+    for (std::uint32_t index = 0; index < count && !reader.failed(); ++index)
+    {
+        SpriteAnimationData animation;
+        animation.name = reader.readString();
+        animation.fps = reader.read<float>();
+        animation.loop = reader.read<std::uint8_t>() != 0;
+        animation.frames = reader.readArray<AssetId>();
+        frames.animations.push_back(std::move(animation));
+    }
+    if (reader.failed())
+    {
+        return std::unexpected(truncated(AssetType::SpriteFrames));
+    }
+    if (core::Result<void> valid = validate(frames); !valid)
+    {
+        return std::unexpected(valid.error());
+    }
+    return frames;
 }
 
 core::Result<ThemeData> decodeTheme(std::span<const std::byte> bytes)

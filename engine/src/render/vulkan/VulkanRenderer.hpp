@@ -79,6 +79,7 @@ public:
 
     [[nodiscard]] core::Result<void> initializeImGui();
     void shutdownImGui() noexcept;
+    [[nodiscard]] std::uint64_t imguiTexture(TextureHandle texture);
     void beginImGuiFrame();
     void queueImGuiDrawData() noexcept;
     [[nodiscard]] bool imGuiNeedsLinearColors() const noexcept;
@@ -188,6 +189,8 @@ private:
         std::optional<Buffer> particles;
         std::optional<Buffer> trailPoints;
         std::optional<Buffer> trailSegments;
+        // The sprites of the frame the camera can see, in the order they are drawn.
+        std::optional<Buffer> sprites;
         std::optional<Buffer> clusters;
         std::optional<Buffer> clusterLights;
         // Exposed luminance measured on a grid by the last frame recorded with this context.
@@ -253,6 +256,8 @@ private:
     {
         Image image;
         std::uint32_t slot = 0;
+        // Read at its nearest pixel, for pixel art.
+        bool nearest = false;
         // As for a mesh; the textures of the renderer itself are copied at once.
         bool ready = true;
     };
@@ -345,6 +350,15 @@ private:
                                 const FrameContext& frame, std::uint32_t frameSlot, const ParticleDraw& draw) const;
     // Copies the particles and the ribbons of the frame into its buffers, sorting blended batches.
     [[nodiscard]] core::Result<void> uploadParticles(FrameContext& frame) const;
+    // Copies the sprites the camera sees into the buffer of the frame, in the order they are drawn.
+    [[nodiscard]] core::Result<void> uploadSprites(FrameContext& frame) const;
+    // Sprites [first, first + count) of the sorted buffer, with the pipeline of a pass.
+    std::uint32_t drawSprites(VkCommandBuffer commandBuffer, VkDeviceAddress sceneData, const FrameContext& frame,
+                              std::uint32_t frameSlot, const Pipeline& pipeline, std::uint32_t first,
+                              std::uint32_t count) const;
+    // How far a point is, for the order of the blended draws: its squared distance from a
+    // perspective camera, its depth along an orthographic one. Greater is drawn first.
+    [[nodiscard]] float sortDistance(math::Vec3 point, math::Vec3 cameraPosition) const noexcept;
     // Copies the bone matrices of the frame's skinned instances into its buffer.
     [[nodiscard]] core::Result<void> uploadBones(FrameContext& frame) const;
     [[nodiscard]] core::Result<void> ensureHostBuffer(std::optional<Buffer>& buffer, VkDeviceSize bytes) const;
@@ -375,6 +389,26 @@ private:
     std::optional<Pipeline> m_prepassDoubleSidedPipeline;
     std::optional<Pipeline> m_particlePipeline;
     std::optional<Pipeline> m_ribbonPipeline;
+    std::optional<Pipeline> m_spritePipeline;
+    std::optional<Pipeline> m_spritePickPipeline;
+    std::optional<Pipeline> m_spriteMaskPipeline;
+    // Something the blended pass draws, sorted by layer, order, then distance.
+    struct TransparentItem
+    {
+        std::int32_t layer = 0;
+        std::int32_t order = 0;
+        float distance = 0.0f;
+        // 0 for a mesh instance, 1 for a batch of particles, 2 for a sprite.
+        std::uint8_t kind = 0;
+        // The instance, the batch, or the place of the sprite in the sorted buffer.
+        std::uint32_t index = 0;
+    };
+    // Scratch for the sprites of the frame: their GPU data in drawing order, the sprite each one
+    // came from, and the distances that sorted them.
+    mutable std::vector<GpuSprite> m_gpuSprites;
+    mutable std::vector<std::uint32_t> m_spriteOrder;
+    mutable std::vector<float> m_spriteDistances;
+    mutable std::vector<TransparentItem> m_transparentItems;
     // Scratch for the particles of the frame, kept between frames to avoid allocating.
     mutable std::vector<GpuParticle> m_gpuParticles;
     mutable std::vector<GpuTrailPoint> m_gpuTrailPoints;
@@ -455,6 +489,8 @@ private:
     std::optional<GpuTexture> m_flatNormalTexture;
     core::SlotMap<GpuTexture, TextureTag> m_textures;
     std::vector<RetiredTexture> m_retiredTextures;
+    // The ImGui sets that show textures to the tools, by texture slot, with the view each shows.
+    std::unordered_map<std::uint32_t, std::pair<VkImageView, VkDescriptorSet>> m_imguiTextures;
     // Bindless slots released by destroyed textures, reused before new ones.
     std::vector<std::uint32_t> m_freeTextureSlots;
     std::uint32_t m_nextTextureSlot = flatNormalTextureSlot + 1;

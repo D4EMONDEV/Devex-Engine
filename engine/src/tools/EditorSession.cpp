@@ -7,6 +7,7 @@
 #include <devex/core/Path.hpp>
 #include <devex/scene/Components.hpp>
 #include <devex/scene/PhysicsComponents.hpp>
+#include <devex/scene/SpriteComponents.hpp>
 #include <devex/scene/Prefab.hpp>
 #include <devex/scene/SceneSerializer.hpp>
 #include <devex/serialization/Text.hpp>
@@ -65,6 +66,11 @@ void writeCamera(serialization::TextSection& section, const EditorCamera& camera
     {
         section.attributes.push_back({key, TextValue(static_cast<double>(value))});
     }
+    if (camera.isTwoD())
+    {
+        section.attributes.push_back({"two_d", TextValue(true)});
+        section.attributes.push_back({"size", TextValue(static_cast<double>(camera.orthographicSize()))});
+    }
 }
 
 // The entities of a scene hidden in the viewport, as writeProjectSettings lists them.
@@ -92,6 +98,12 @@ void writeCamera(serialization::TextSection& section, const EditorCamera& camera
     camera.set({numberOr(section, "x", 0.0f), numberOr(section, "y", 0.0f), numberOr(section, "z", 0.0f)},
                numberOr(section, "yaw", -30.0f), numberOr(section, "pitch", -25.0f), numberOr(section, "distance", 10.0f),
                numberOr(section, "speed", 6.0f));
+    const TextValue* const twoD = section.findAttribute("two_d");
+    if (twoD != nullptr && serialization::asBool(*twoD).value_or(false))
+    {
+        camera.setTwoD(true);
+        camera.setOrthographicSize(numberOr(section, "size", 5.0f));
+    }
     return camera;
 }
 
@@ -1232,6 +1244,26 @@ void drawCreateEntityMenu(ToolsState& state, core::Uuid parent)
         });
     }
     ImGui::Separator();
+    if (item(icons::Image, colors.texture, "Sprite"))
+    {
+        requestCreatePreset(state, parent, "Sprite", [](scene::Scene& scratch, scene::Entity entity) {
+            scratch.add<scene::SpriteRenderer>(entity);
+        });
+    }
+    if (item(icons::Video, colors.camera, "2D camera"))
+    {
+        // In front of the XY plane, framing ten meters, with the colours of the sprites kept as drawn.
+        requestCreatePreset(state, parent, "2D camera", [](scene::Scene& scratch, scene::Entity entity) {
+            scratch.get<scene::Transform>(entity).position.z = 10.0f;
+            scratch.add<scene::Camera>(entity, scene::Camera{.projection = scene::Projection::Orthographic,
+                                                             .primary = false,
+                                                             .tonemapper = scene::Tonemapper::None,
+                                                             .antialiasing = scene::Antialiasing::None,
+                                                             .ambientOcclusion = 0.0f,
+                                                             .bloom = 0.0f});
+        });
+    }
+    ImGui::Separator();
     if (item(icons::SquareDashed, colors.physics, "Static box"))
     {
         requestCreatePreset(state, parent, "Static box", [](scene::Scene& scratch, scene::Entity entity) {
@@ -1267,6 +1299,20 @@ void drawCreateEntityMenu(ToolsState& state, core::Uuid parent)
             scratch.add<scene::BoxCollider>(entity, scene::BoxCollider{.size = {2.0f, 2.0f, 2.0f}, .trigger = true});
         });
     }
+}
+
+void requestCreateSprite(ToolsState& state, asset::AssetId sprite, math::Vec3 position)
+{
+    const asset::AssetInfo* const info = state.database != nullptr ? state.database->find(sprite) : nullptr;
+    const std::string name = info != nullptr ? info->name : "Sprite";
+    scene::Scene scratch;
+    const scene::Entity entity = scratch.createEntity(name);
+    scratch.add<scene::Transform>(entity, scene::Transform{.position = position});
+    scratch.add<scene::SpriteRenderer>(entity, scene::SpriteRenderer{.sprite = sprite});
+    const core::Uuid uuid = scratch.uuid(entity);
+    state.pendingCommand = makeCreateEntityTreeCommand(scene::saveEntityTree(scratch, entity), uuid, core::Uuid{},
+                                                       std::format("Create {}", name));
+    state.selection.set(uuid);
 }
 
 } // namespace devex::tools::detail

@@ -62,12 +62,26 @@ enum class Tonemapper : std::uint8_t
     None,
 };
 
-// Perspective camera looking along -Z of its entity. The renderer uses the first primary camera.
-// Exposure follows photographic units: an EV100 of 15 suits direct sunlight, 7 a lit interior.
+// How a camera projects the world onto the image.
+enum class Projection : std::uint8_t
+{
+    // Farther things look smaller, as the eye sees them.
+    Perspective,
+    // Everything keeps its size whatever its distance: 2D games, maps, isometric views.
+    Orthographic,
+};
+
+// Camera looking along -Z of its entity. The renderer uses the first primary camera. Exposure
+// follows photographic units: an EV100 of 15 suits direct sunlight, 7 a lit interior.
 struct Camera
 {
+    Projection projection = Projection::Perspective;
     float verticalFov = math::radians(60.0f);
+    // Orthographic: half the height the image shows, in meters.
+    float orthographicSize = 5.0f;
     float nearPlane = 0.1f;
+    // Orthographic: what stands farther than this is not drawn. A perspective sees infinitely far.
+    float farPlane = 1000.0f;
     bool primary = true;
     // Adapts the exposure to the average luminance of the image, between the limits below.
     bool autoExposure = true;
@@ -176,4 +190,10 @@ template <>
 struct devex::reflection::EnumNames<devex::scene::Antialiasing>
 {
     static constexpr std::array<std::string_view, 2> names{"none", "temporal"};
+};
+
+template <>
+struct devex::reflection::EnumNames<devex::scene::Projection>
+{
+    static constexpr std::array<std::string_view, 2> names{"perspective", "orthographic"};
 };

@@ -1,0 +1,25 @@
+# Devex import settings: keep this file next to its asset in version control.
+[asset format=1 uuid="0a34e280-9c63-514f-b0d1-91dce7814b9a" importer="texture"]
+srgb = true
+normal_map = false
+mipmaps = false
+compress = false
+quality = "normal"
+filter = "nearest"
+sprite_mode = "grid"
+pixels_per_unit = 16
+pivot = vec2(0.5, 0.5)
+columns = 6
+rows = 1
+
+[subasset type="sprite" key="0" uuid="e38c27bb-c150-5fef-9956-a870471fe23a"]
+
+[subasset type="sprite" key="1" uuid="11a7ff12-1f02-5762-982e-73b14a8c97a9"]
+
+[subasset type="sprite" key="2" uuid="f416ee90-adf7-5d66-ba65-3cc9d1c4f1dd"]
+
+[subasset type="sprite" key="3" uuid="1617f437-3c0e-5bb8-8f85-eba1fa6edaea"]
+
+[subasset type="sprite" key="4" uuid="8dca1747-3aca-5113-b3bb-fe9f9a26bfd0"]
+
+[subasset type="sprite" key="5" uuid="efb13061-dcdb-53db-b7d2-cdcfbdde6bb5"]

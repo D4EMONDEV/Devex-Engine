@@ -4,6 +4,7 @@
 #include <devex/scene/ComponentRegistry.hpp>
 #include <devex/scene/Components.hpp>
 #include <devex/scene/PhysicsComponents.hpp>
+#include <devex/scene/SpriteComponents.hpp>
 #include <devex/scene/UiComponents.hpp>
 
 #include <vector>
@@ -96,6 +97,8 @@ ComponentRegistry& componentRegistry()
         builtins.add<Tweener>();
         builtins.add<ParticleEmitter>();
         builtins.add<TrailRenderer>();
+        builtins.add<SpriteRenderer>();
+        builtins.add<SpriteAnimator>();
         builtins.add<Camera>();
         builtins.add<DirectionalLight>();
         builtins.add<PointLight>();

@@ -114,6 +114,11 @@ static_assert(sizeof(ClusterRange) == sizeof(GpuCluster));
     // Vulkan clip space points Y down, while the engine convention points it up.
     math::Mat4 clipCorrection{1.0f};
     clipCorrection[1][1] = -1.0f;
+    if (camera.projection == Projection::Orthographic)
+    {
+        return clipCorrection * math::orthographicReverseZ(camera.orthographicSize, aspectRatio, camera.nearPlane,
+                                                           camera.farPlane);
+    }
     return clipCorrection * math::perspectiveReverseZ(camera.verticalFov, aspectRatio, camera.nearPlane);
 }
 
@@ -596,9 +601,9 @@ core::Result<void> VulkanRenderer::endFrame()
     m_cascades.reset();
     if (drawShadows)
     {
-        m_cascades = computeShadowCascades(math::inverse(m_world.camera.view), m_world.camera.verticalFov,
-                                           aspectRatio, m_world.camera.nearPlane, sun.shadowDistance,
-                                           sun.direction, shadowMapSize);
+        m_cascades = computeShadowCascades(math::inverse(m_world.camera.view),
+                                           ViewVolume::of(m_world.camera, aspectRatio), m_world.camera.nearPlane,
+                                           sun.shadowDistance, sun.direction, shadowMapSize);
     }
     if (core::Result<void> history = ensureHistory(); !history)
     {
@@ -613,6 +618,13 @@ core::Result<void> VulkanRenderer::endFrame()
     {
         DEVEX_PROFILE_SCOPE("Scene data");
         writeSceneData(frame, m_cascades);
+    }
+    {
+        DEVEX_PROFILE_SCOPE("Sprites");
+        if (core::Result<void> sprites = uploadSprites(frame); !sprites)
+        {
+            return sprites;
+        }
     }
 
     DEVEX_PROFILE_SCOPE("Record and submit");
@@ -1015,6 +1027,14 @@ core::Result<void> VulkanRenderer::createScenePipelines()
     particleConfig.fragmentEntry = "ribbonFragment";
     core::Result<Pipeline> ribbon = createGraphicsPipeline(device, particleConfig);
 
+    // Sprites blend among them the same way.
+    GraphicsPipelineConfig spriteConfig = particleConfig;
+    spriteConfig.shaderPath = m_shaderDirectory / "sprite.spv";
+    spriteConfig.vertexEntry = "spriteVertex";
+    spriteConfig.fragmentEntry = "spriteFragment";
+    spriteConfig.pushConstantSize = sizeof(SpritePushConstants);
+    core::Result<Pipeline> sprite = createGraphicsPipeline(device, spriteConfig);
+
     // The prepass writes the depth, the motion and the normals; the shading pass then keeps only
     // what it left, which it tests against without writing depth again.
     const std::array<VkFormat, 2> prepassFormats{velocityFormat, normalFormat};
@@ -1100,9 +1120,35 @@ core::Result<void> VulkanRenderer::createScenePipelines()
                     .depthTest = false,
                     .depthWrite = false,
                 });
+    // Sprites are picked in the order they are drawn, over what they cover but behind nearer
+    // surfaces: they test the depth of the meshes without writing their own.
+    core::Result<Pipeline> spritePick = createGraphicsPipeline(
+        device, {
+                    .shaderPath = m_shaderDirectory / "sprite.spv",
+                    .vertexEntry = "spritePickVertex",
+                    .fragmentEntry = "spritePickFragment",
+                    .setLayouts = globalOnly,
+                    .pushConstantSize = sizeof(SpritePushConstants),
+                    .colorFormat = pickFormat,
+                    .depthFormat = depthFormat,
+                    .cullMode = VK_CULL_MODE_NONE,
+                    .depthWrite = false,
+                });
+    core::Result<Pipeline> spriteMask = createGraphicsPipeline(
+        device, {
+                    .shaderPath = m_shaderDirectory / "sprite.spv",
+                    .vertexEntry = "spriteVertex",
+                    .fragmentEntry = "spriteMaskFragment",
+                    .setLayouts = globalOnly,
+                    .pushConstantSize = sizeof(SpritePushConstants),
+                    .colorFormat = selectionMaskFormat,
+                    .cullMode = VK_CULL_MODE_NONE,
+                    .depthTest = false,
+                    .depthWrite = false,
+                });
 
     for (core::Result<Pipeline>* result : {&mesh, &doubleSided, &transparent, &transparentDoubleSided,
-                                          &particle, &ribbon,
+                                          &particle, &ribbon, &sprite, &spritePick, &spriteMask,
                                           &prepass, &prepassDoubleSided, &ambientOcclusion, &shadow,
                                           &localShadow, &sky, &luminance, &pick, &selectionMask})
     {
@@ -1117,6 +1163,9 @@ core::Result<void> VulkanRenderer::createScenePipelines()
     m_transparentDoubleSidedPipeline = std::move(*transparentDoubleSided);
     m_particlePipeline = std::move(*particle);
     m_ribbonPipeline = std::move(*ribbon);
+    m_spritePipeline = std::move(*sprite);
+    m_spritePickPipeline = std::move(*spritePick);
+    m_spriteMaskPipeline = std::move(*spriteMask);
     m_prepassPipeline = std::move(*prepass);
     m_prepassDoubleSidedPipeline = std::move(*prepassDoubleSided);
     m_aoPipeline = std::move(*ambientOcclusion);
@@ -1326,7 +1375,7 @@ core::Result<VulkanRenderer::GpuTexture> VulkanRenderer::uploadTexture(
     {
         return std::unexpected(uploaded.error());
     }
-    m_descriptors->setTexture(slot, prepared->first.image.view());
+    m_descriptors->setTexture(slot, prepared->first.image.view(), prepared->first.nearest);
     return std::move(prepared->first);
 }
 
@@ -1387,7 +1436,9 @@ core::Result<std::pair<VulkanRenderer::GpuTexture, VulkanRenderer::PendingUpload
         std::memcpy(stagingBytes.data() + copies[level].bufferOffset, bytes.data(), bytes.size());
     }
 
-    return std::pair{GpuTexture{.image = std::move(*image), .slot = slot},
+    return std::pair{GpuTexture{.image = std::move(*image),
+                                .slot = slot,
+                                .nearest = texture.filter == asset::TextureFilter::Nearest},
                      PendingUpload{.staging = std::move(*staging), .bytes = totalBytes, .levels = std::move(copies)}};
 }
 
@@ -1420,7 +1471,7 @@ void VulkanRenderer::selectUploads(FrameContext& frame)
         {
             texture->ready = true;
             // Recorded before any draw of the frame, which is the first to sample it.
-            m_descriptors->setTexture(texture->slot, texture->image.view());
+            m_descriptors->setTexture(texture->slot, texture->image.view(), texture->nearest);
             m_materialsChanged = true;
         }
         frame.uploads.push_back(std::move(next));
@@ -1868,7 +1919,7 @@ core::Result<void> VulkanRenderer::uploadLights(FrameContext& frame, float aspec
     };
     {
         DEVEX_PROFILE_SCOPE("Light clusters");
-        assignLightsToClusters(grid, m_world.camera.view, m_world.camera.verticalFov, aspectRatio,
+        assignLightsToClusters(grid, m_world.camera.view, ViewVolume::of(m_world.camera, aspectRatio),
                                m_world.lights, m_clusters);
     }
 
@@ -1926,7 +1977,12 @@ void VulkanRenderer::writeSceneData(FrameContext& frame,
     m_cameraFrustum = frustumOf(scene.unjitteredViewProjection);
     m_unjitteredViewProjection = scene.unjitteredViewProjection;
     scene.view = camera.view;
-    scene.skyInverseViewProjection = math::inverse(projection * rotationOnly);
+    // An orthographic view looks along one direction only: its sky is seen as a perspective would
+    // see it, a backdrop that turns with the camera but does not move with it.
+    RenderCamera skyCamera = camera;
+    skyCamera.projection = Projection::Perspective;
+    skyCamera.verticalFov = camera.projection == Projection::Orthographic ? math::radians(60.0f) : camera.verticalFov;
+    scene.skyInverseViewProjection = math::inverse(projectionMatrix(skyCamera, aspectRatio) * rotationOnly);
     scene.cameraPosition = math::Vec3(math::inverse(camera.view)[3]);
     m_cameraPosition = scene.cameraPosition;
     scene.exposure = exposureFromEv100(m_ev100);
@@ -2067,8 +2123,7 @@ std::span<const std::uint32_t> VulkanRenderer::instancesOf(MeshPass pass,
             continue;
         }
         const math::Vec3 centre = math::Vec3(m_world.meshes[index].transform[3]);
-        const math::Vec3 toCamera = centre - m_cameraPosition;
-        m_transparentOrder.emplace_back(math::dot(toCamera, toCamera), index);
+        m_transparentOrder.emplace_back(sortDistance(centre, m_cameraPosition), index);
     }
     std::ranges::sort(m_transparentOrder, std::greater{}, &std::pair<float, std::uint32_t>::first);
     for (const auto& [distance, index] : m_transparentOrder)
@@ -2189,20 +2244,46 @@ std::uint32_t VulkanRenderer::drawTransparent(VkCommandBuffer commandBuffer, VkD
                                               VkDeviceAddress boneMatrices, const FrameContext& frame,
                                               std::uint32_t frameSlot) const
 {
-    // The blended instances come sorted, farthest first, with their distances.
+    // The blended instances come sorted, farthest first, with their distances; they and the
+    // particles draw in the layer "Default", which sprites place themselves around.
     static_cast<void>(instancesOf(MeshPass::Transparent, 0));
-    const std::vector<std::pair<float, std::uint32_t>> meshes = m_transparentOrder;
-    m_particleOrder.clear();
+    m_transparentItems.clear();
+    for (const auto& [distance, index] : m_transparentOrder)
+    {
+        m_transparentItems.push_back({.distance = distance, .kind = 0, .index = index});
+    }
     for (std::uint32_t index = 0; index < m_world.particleDraws.size(); ++index)
     {
-        const math::Vec3 toCamera = m_world.particleDraws[index].center - m_cameraPosition;
-        m_particleOrder.emplace_back(math::dot(toCamera, toCamera), index);
+        m_transparentItems.push_back(
+            {.distance = sortDistance(m_world.particleDraws[index].center, m_cameraPosition), .kind = 1, .index = index});
     }
-    std::ranges::sort(m_particleOrder, std::greater{}, &std::pair<float, std::uint32_t>::first);
+    for (std::uint32_t position = 0; position < m_spriteOrder.size(); ++position)
+    {
+        const RenderSprite& sprite = m_world.sprites[m_spriteOrder[position]];
+        m_transparentItems.push_back({.layer = sprite.layer,
+                                      .order = sprite.order,
+                                      .distance = m_spriteDistances[position],
+                                      .kind = 2,
+                                      .index = position});
+    }
+    // Sprites come already in this order among themselves, which a stable sort keeps.
+    std::ranges::stable_sort(m_transparentItems, [](const TransparentItem& a, const TransparentItem& b) {
+        if (a.layer != b.layer)
+        {
+            return a.layer < b.layer;
+        }
+        if (a.order != b.order)
+        {
+            return a.order < b.order;
+        }
+        return a.distance > b.distance;
+    });
 
-    // Runs of instances between two batches are drawn together.
+    // Runs of instances, and of sprites, between the other draws are drawn together.
     std::uint32_t drawCalls = 0;
     m_transparentRun.clear();
+    std::uint32_t firstSprite = 0;
+    std::uint32_t spriteCount = 0;
     const auto flush = [&] {
         if (!m_transparentRun.empty())
         {
@@ -2210,20 +2291,38 @@ std::uint32_t VulkanRenderer::drawTransparent(VkCommandBuffer commandBuffer, VkD
                                     m_transparentRun);
             m_transparentRun.clear();
         }
-    };
-    std::size_t mesh = 0;
-    std::size_t batch = 0;
-    while (mesh < meshes.size() || batch < m_particleOrder.size())
-    {
-        if (batch == m_particleOrder.size() ||
-            (mesh < meshes.size() && meshes[mesh].first >= m_particleOrder[batch].first))
+        if (spriteCount > 0)
         {
-            m_transparentRun.push_back(meshes[mesh++].second);
+            drawCalls += drawSprites(commandBuffer, sceneData, frame, frameSlot, *m_spritePipeline, firstSprite, spriteCount);
+            spriteCount = 0;
+        }
+    };
+    for (const TransparentItem& item : m_transparentItems)
+    {
+        if (item.kind == 0)
+        {
+            if (spriteCount > 0)
+            {
+                flush();
+            }
+            m_transparentRun.push_back(item.index);
+            continue;
+        }
+        if (item.kind == 2)
+        {
+            if (!m_transparentRun.empty())
+            {
+                flush();
+            }
+            if (spriteCount == 0)
+            {
+                firstSprite = item.index;
+            }
+            ++spriteCount;
             continue;
         }
         flush();
-        drawCalls += drawParticles(commandBuffer, sceneData, frame, frameSlot,
-                                   m_world.particleDraws[m_particleOrder[batch++].second]);
+        drawCalls += drawParticles(commandBuffer, sceneData, frame, frameSlot, m_world.particleDraws[item.index]);
     }
     flush();
     return drawCalls;
@@ -2260,6 +2359,127 @@ std::uint32_t VulkanRenderer::drawParticles(VkCommandBuffer commandBuffer, VkDev
                        0, sizeof(constants), &constants);
     // Six corners for each particle or segment; the instance says which.
     vkCmdDraw(commandBuffer, 6, draw.count, 0, 0);
+    return 1;
+}
+
+float VulkanRenderer::sortDistance(math::Vec3 point, math::Vec3 cameraPosition) const noexcept
+{
+    if (m_world.camera.projection == Projection::Orthographic)
+    {
+        return -(m_world.camera.view * math::Vec4(point, 1.0f)).z;
+    }
+    const math::Vec3 toCamera = point - cameraPosition;
+    return math::dot(toCamera, toCamera);
+}
+
+core::Result<void> VulkanRenderer::uploadSprites(FrameContext& frame) const
+{
+    m_spriteOrder.clear();
+    m_spriteDistances.clear();
+    m_gpuSprites.clear();
+    std::vector<std::pair<float, std::uint32_t>>& order = m_particleOrder;
+    order.clear();
+    for (std::uint32_t index = 0; index < m_world.sprites.size(); ++index)
+    {
+        const RenderSprite& sprite = m_world.sprites[index];
+        // The box of the four corners, flipped or not: the flip mirrors around the pivot.
+        const math::Vec2 low = -sprite.pivot * sprite.size;
+        const math::Vec2 high = (math::Vec2{1.0f} - sprite.pivot) * sprite.size;
+        const math::Vec2 extent = math::max(math::abs(low), math::abs(high));
+        math::Aabb bounds;
+        for (const float x : {-extent.x, extent.x})
+        {
+            for (const float y : {-extent.y, extent.y})
+            {
+                bounds.add(math::Vec3(sprite.transform * math::Vec4(x, y, 0.0f, 1.0f)));
+            }
+        }
+        if (!m_cameraFrustum.intersects(bounds))
+        {
+            continue;
+        }
+        const math::Vec2 middle = (low + high) * 0.5f;
+        const math::Vec3 center = math::Vec3(sprite.transform * math::Vec4(middle, 0.0f, 1.0f));
+        order.emplace_back(sortDistance(center, m_cameraPosition), index);
+    }
+    std::ranges::stable_sort(order, [&](const std::pair<float, std::uint32_t>& a, const std::pair<float, std::uint32_t>& b) {
+        const RenderSprite& first = m_world.sprites[a.second];
+        const RenderSprite& second = m_world.sprites[b.second];
+        if (first.layer != second.layer)
+        {
+            return first.layer < second.layer;
+        }
+        if (first.order != second.order)
+        {
+            return first.order < second.order;
+        }
+        return a.first > b.first;
+    });
+    for (const auto& [distance, index] : order)
+    {
+        const RenderSprite& sprite = m_world.sprites[index];
+        const GpuTexture* const texture = m_textures.find(sprite.texture);
+        std::uint32_t flags = static_cast<std::uint32_t>(sprite.mode) & 3U;
+        flags |= (sprite.flipX ? spriteFlipX : 0U) | (sprite.flipY ? spriteFlipY : 0U);
+        flags |= (sprite.additive ? spriteAdditive : 0U) | (sprite.lit ? spriteLit : 0U);
+        m_spriteOrder.push_back(index);
+        m_spriteDistances.push_back(distance);
+        m_gpuSprites.push_back({
+            .world = sprite.transform,
+            .uvRect = sprite.uvRect,
+            .color = sprite.color,
+            .border = sprite.border,
+            .size = sprite.size,
+            .pivot = sprite.pivot,
+            .naturalSize = sprite.naturalSize,
+            .texture = texture != nullptr && texture->ready ? texture->slot : noParticleTexture,
+            .flags = flags,
+            .objectId = sprite.objectId,
+        });
+    }
+    // A sprite whose texture is still loading waits for it rather than showing a plain rectangle.
+    const std::size_t kept = m_gpuSprites.size();
+    for (std::size_t position = 0; position < kept; ++position)
+    {
+        if (m_world.sprites[m_spriteOrder[position]].texture.isValid() && m_gpuSprites[position].texture == noParticleTexture)
+        {
+            m_gpuSprites[position].color.a = 0.0f;
+        }
+    }
+    const VkDeviceSize bytes = std::max<std::size_t>(m_gpuSprites.size(), 1) * sizeof(GpuSprite);
+    if (core::Result<void> ensured = ensureHostBuffer(frame.sprites, bytes); !ensured)
+    {
+        return ensured;
+    }
+    if (!m_gpuSprites.empty())
+    {
+        std::memcpy(frame.sprites->mappedBytes().data(), m_gpuSprites.data(), m_gpuSprites.size() * sizeof(GpuSprite));
+    }
+    return {};
+}
+
+std::uint32_t VulkanRenderer::drawSprites(VkCommandBuffer commandBuffer, VkDeviceAddress sceneData,
+                                          const FrameContext& frame, std::uint32_t frameSlot, const Pipeline& pipeline,
+                                          std::uint32_t first, std::uint32_t count) const
+{
+    if (count == 0 || !frame.sprites)
+    {
+        return 0;
+    }
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.handle());
+    // The picking and the mask read the global set alone.
+    const bool blended = &pipeline == &*m_spritePipeline;
+    const std::array sets{m_descriptors->global(), m_descriptors->frame(frameSlot)};
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.layout(), 0,
+                            blended ? 2U : 1U, sets.data(), 0, nullptr);
+    const SpritePushConstants constants{
+        .scene = sceneData,
+        .sprites = frame.sprites->deviceAddress(),
+        .first = first,
+    };
+    vkCmdPushConstants(commandBuffer, pipeline.layout(), VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+                       sizeof(constants), &constants);
+    vkCmdDraw(commandBuffer, 6, count, 0, 0);
     return 1;
 }
 
@@ -2376,7 +2596,8 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
     const math::Extent2D windowExtent = m_swapchain->extent();
     const VkFormat targetFormat = m_swapchain->format();
     const bool toViewport = m_world.viewport.width > 0 && m_world.viewport.height > 0;
-    const bool outlines = std::ranges::any_of(m_world.meshes, &MeshInstance::outlined);
+    const bool outlines = std::ranges::any_of(m_world.meshes, &MeshInstance::outlined) ||
+                          std::ranges::any_of(m_world.sprites, &RenderSprite::outlined);
     const bool drawOverlay = outlines || !m_world.sceneLines.empty() || !m_world.overlayLines.empty() ||
                              !m_world.overlayTriangles.empty();
     const bool pick = frame.pickRequest.has_value();
@@ -2910,6 +3131,8 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
                           vkCmdBeginRendering(commands, &renderingInfo);
                           setViewport(commands, frame.pickExtent);
                           drawMeshes(commands, sceneData, boneMatrices, MeshPass::Pick, 0, frameSlot);
+                          static_cast<void>(drawSprites(commands, sceneData, frame, frameSlot, *m_spritePickPipeline, 0,
+                                                        static_cast<std::uint32_t>(m_gpuSprites.size())));
                           vkCmdEndRendering(commands);
                       });
         graph.addPass("Pick readback", {{pickColor, ImageAccess::TransferRead}},
@@ -2946,6 +3169,23 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
                           vkCmdBeginRendering(commands, &renderingInfo);
                           setViewport(commands, extent);
                           drawMeshes(commands, sceneData, boneMatrices, MeshPass::SelectionMask, 0, frameSlot);
+                          // Runs of outlined sprites, in their order.
+                          for (std::uint32_t position = 0; position < m_spriteOrder.size();)
+                          {
+                              if (!m_world.sprites[m_spriteOrder[position]].outlined)
+                              {
+                                  ++position;
+                                  continue;
+                              }
+                              std::uint32_t end = position + 1;
+                              while (end < m_spriteOrder.size() && m_world.sprites[m_spriteOrder[end]].outlined)
+                              {
+                                  ++end;
+                              }
+                              static_cast<void>(drawSprites(commands, sceneData, frame, frameSlot, *m_spriteMaskPipeline,
+                                                            position, end - position));
+                              position = end;
+                          }
                           vkCmdEndRendering(commands);
                       });
     }
@@ -3675,16 +3915,38 @@ void VulkanRenderer::shutdownImGui() noexcept
     if (m_imguiInitialized)
     {
         vkDeviceWaitIdle(m_device.handle());
-        // The backend's descriptor pool holds the viewport sets.
+        // The backend's descriptor pool holds the viewport sets and those of the textures.
         for (FrameContext& frame : m_frames)
         {
             frame.imguiViewport = VK_NULL_HANDLE;
             frame.imguiViewportView = VK_NULL_HANDLE;
         }
+        m_imguiTextures.clear();
         ImGui_ImplVulkan_Shutdown();
         m_imguiInitialized = false;
         m_imguiDrawQueued = false;
     }
+}
+
+std::uint64_t VulkanRenderer::imguiTexture(TextureHandle handle)
+{
+    const GpuTexture* const texture = m_textures.find(handle);
+    if (!m_imguiInitialized || texture == nullptr || !texture->ready)
+    {
+        return 0;
+    }
+    auto& [view, set] = m_imguiTextures[texture->slot];
+    if (view != texture->image.view())
+    {
+        // A slot is used again only once the frames of its previous texture completed.
+        if (set != VK_NULL_HANDLE)
+        {
+            ImGui_ImplVulkan_RemoveTexture(set);
+        }
+        view = texture->image.view();
+        set = ImGui_ImplVulkan_AddTexture(view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    }
+    return static_cast<std::uint64_t>(std::bit_cast<std::uintptr_t>(set));
 }
 
 void VulkanRenderer::beginImGuiFrame()
@@ -3721,6 +3983,14 @@ void VulkanRenderer::releaseRetiredResources() noexcept
         }
         // The slot must not keep pointing at a destroyed view.
         m_descriptors->setTexture(retired.texture.slot, m_whiteTexture->image.view());
+        if (const auto shown = m_imguiTextures.find(retired.texture.slot); shown != m_imguiTextures.end())
+        {
+            if (m_imguiInitialized && shown->second.first == retired.texture.image.view())
+            {
+                ImGui_ImplVulkan_RemoveTexture(shown->second.second);
+                m_imguiTextures.erase(shown);
+            }
+        }
         m_freeTextureSlots.push_back(retired.texture.slot);
         return true;
     });

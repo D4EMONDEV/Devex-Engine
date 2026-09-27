@@ -548,6 +548,50 @@ std::shared_ptr<const asset::CurveData> AssetManager::curve(asset::AssetId id)
     return curve;
 }
 
+namespace {
+
+// Reads a small asset once, keeps it shared, and remembers the ones that fail.
+template <typename Data, typename Decode>
+[[nodiscard]] std::shared_ptr<const Data> loadShared(
+    asset::AssetId id, asset::AssetSource* source, std::unordered_set<asset::AssetId>& failed,
+    std::unordered_map<asset::AssetId, std::shared_ptr<const Data>>& loaded, std::string_view kind, Decode decode)
+{
+    if (const auto found = loaded.find(id); found != loaded.end())
+    {
+        return found->second;
+    }
+    if (!id.isValid() || source == nullptr || failed.contains(id) || source->find(id) == nullptr)
+    {
+        return nullptr;
+    }
+    const core::Result<std::vector<std::byte>> bytes = source->loadArtifact(id);
+    core::Result<Data> data = bytes ? decode(*bytes) : core::Result<Data>(std::unexpected(bytes.error()));
+    if (!data)
+    {
+        DEVEX_LOG_ERROR("Cannot load {} {}: {}", kind, id.uuid, data.error());
+        failed.insert(id);
+        return nullptr;
+    }
+    auto shared = std::make_shared<const Data>(std::move(*data));
+    loaded.emplace(id, shared);
+    return shared;
+}
+
+} // namespace
+
+std::shared_ptr<const asset::SpriteData> AssetManager::sprite(asset::AssetId id)
+{
+    return loadShared<asset::SpriteData>(id, m_source, m_failed, m_sprites, "sprite",
+                                         [](std::span<const std::byte> bytes) { return asset::decodeSprite(bytes); });
+}
+
+std::shared_ptr<const asset::SpriteFramesData> AssetManager::spriteFrames(asset::AssetId id)
+{
+    return loadShared<asset::SpriteFramesData>(
+        id, m_source, m_failed, m_spriteFrames, "sprite frames",
+        [](std::span<const std::byte> bytes) { return asset::decodeSpriteFrames(bytes); });
+}
+
 const LoadedFont* AssetManager::font(asset::AssetId id)
 {
     auto found = m_fonts.find(id);
@@ -649,6 +693,12 @@ void AssetManager::handleEvents(std::span<const asset::AssetEvent> events)
         case asset::AssetType::Curve:
             // Read again when a tween asks for it.
             m_curves.erase(event.id);
+            break;
+        case asset::AssetType::Sprite:
+            m_sprites.erase(event.id);
+            break;
+        case asset::AssetType::SpriteFrames:
+            m_spriteFrames.erase(event.id);
             break;
         }
     }
@@ -793,6 +843,8 @@ void AssetManager::setSource(asset::AssetSource* source)
     m_animationBytes.clear();
     m_themes.clear();
     m_curves.clear();
+    m_sprites.clear();
+    m_spriteFrames.clear();
     m_failed.clear();
     m_source = source;
 }

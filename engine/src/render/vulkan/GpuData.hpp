@@ -239,6 +239,43 @@ struct ParticlePushConstants
 
 inline constexpr std::uint32_t noParticleTexture = 0xFFFFFFFFU;
 
+// A sprite as shaders/sprite.slang reads it.
+struct GpuSprite
+{
+    math::Mat4 world{1.0f};
+    math::Vec4 uvRect{0.0f, 0.0f, 1.0f, 1.0f};
+    math::Vec4 color{1.0f};
+    math::Vec4 border{0.0f};
+    math::Vec2 size{1.0f};
+    math::Vec2 pivot{0.5f};
+    math::Vec2 naturalSize{1.0f};
+    // An index of the texture array, or noParticleTexture for a plain rectangle.
+    std::uint32_t texture = 0;
+    // The mode in the two lowest bits, then the flags below.
+    std::uint32_t flags = 0;
+    std::uint32_t objectId = 0;
+    std::uint32_t padding0 = 0;
+    std::uint32_t padding1 = 0;
+    std::uint32_t padding2 = 0;
+};
+
+// The flags of GpuSprite, above its mode.
+inline constexpr std::uint32_t spriteFlipX = 4;
+inline constexpr std::uint32_t spriteFlipY = 8;
+inline constexpr std::uint32_t spriteAdditive = 16;
+inline constexpr std::uint32_t spriteLit = 32;
+
+struct SpritePushConstants
+{
+    VkDeviceAddress scene = 0;
+    VkDeviceAddress sprites = 0;
+    // The first sprite of the draw, in the buffer the frame sorted them into.
+    std::uint32_t first = 0;
+    std::uint32_t padding0 = 0;
+    std::uint32_t padding1 = 0;
+    std::uint32_t padding2 = 0;
+};
+
 struct SkyPushConstants
 {
     VkDeviceAddress scene = 0;
@@ -345,6 +382,8 @@ static_assert(sizeof(OverlayPushConstants) == 48);
 static_assert(sizeof(GpuParticle) == 64);
 static_assert(sizeof(GpuTrailPoint) == 48);
 static_assert(sizeof(ParticlePushConstants) == 64);
+static_assert(sizeof(GpuSprite) == 160);
+static_assert(sizeof(SpritePushConstants) == 32);
 static_assert(sizeof(LuminancePushConstants) == 16);
 static_assert(sizeof(BakePushConstants) == 24);
 

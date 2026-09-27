@@ -197,3 +197,103 @@ TEST_CASE("Rotation and scale handles change the local transform", "[tools][edit
         CHECK(scaled.position == local.position);
     }
 }
+
+TEST_CASE("The 2D camera slides and zooms over the XY plane without perspective", "[tools][editor]")
+{
+    EditorCamera camera;
+    camera.lookAt(Vec3{2.0f, 1.0f, 10.0f}, Vec3{2.0f, 1.0f, 0.0f});
+    camera.setTwoD(true);
+    REQUIRE(camera.isTwoD());
+    // The plane keeps its size on screen: ten meters away with 60 degrees shows 5.77 m above.
+    CHECK_THAT(camera.orthographicSize(), WithinAbs(10.0 * std::tan(std::numbers::pi / 6.0), 1e-4));
+    CHECK_THAT(camera.forward().z, WithinAbs(-1.0, 1e-6));
+    // Looking and orbiting do nothing in 2D.
+    camera.look(Vec2{100.0f, 50.0f});
+    camera.orbit(Vec2{100.0f, 50.0f});
+    CHECK_THAT(camera.forward().z, WithinAbs(-1.0, 1e-6));
+
+    const Vec2 size{800.0f, 600.0f};
+    const auto viewOf = [&] {
+        return ViewportView{.view = camera.view(),
+                            .verticalFov = EditorCamera::verticalFov,
+                            .size = size,
+                            .orthographic = true,
+                            .orthographicSize = camera.orthographicSize()};
+    };
+    // Parallel rays: two pixels send rays in the same direction, from different places.
+    const ViewportView view = viewOf();
+    const auto left = view.ray(Vec2{100.0f, 300.0f});
+    const auto right = view.ray(Vec2{700.0f, 300.0f});
+    CHECK_THAT(left.direction.z, WithinAbs(-1.0, 1e-6));
+    CHECK_THAT(right.direction.z, WithinAbs(-1.0, 1e-6));
+    CHECK(right.origin.x > left.origin.x);
+    // A point projects to the same pixel whatever its depth, and back.
+    const auto near = view.project(Vec3{3.0f, 2.0f, 0.0f});
+    const auto far = view.project(Vec3{3.0f, 2.0f, -50.0f});
+    REQUIRE(near.has_value());
+    REQUIRE(far.has_value());
+    CHECK_THAT(near->x, WithinAbs(far->x, 1e-3));
+    const auto back = view.ray(*near);
+    CHECK_THAT(back.origin.x, WithinAbs(3.0, 1e-3));
+    CHECK_THAT(back.origin.y, WithinAbs(2.0, 1e-3));
+    CHECK_THAT(view.worldSize(Vec3{0.0f}, 600.0f), WithinAbs(2.0 * camera.orthographicSize(), 1e-4));
+
+    // Zooming keeps the point under the mouse where it is.
+    const Vec2 mouse{650.0f, 150.0f};
+    const Vec3 before = viewOf().ray(mouse).origin;
+    camera.zoomAt(3.0f, mouse, size);
+    const Vec3 after = viewOf().ray(mouse).origin;
+    CHECK_THAT(after.x, WithinAbs(before.x, 1e-3));
+    CHECK_THAT(after.y, WithinAbs(before.y, 1e-3));
+    CHECK(camera.orthographicSize() < 5.0f);
+
+    // Framing centers the plane on the box; back in 3D, the camera faces the plane it showed.
+    camera.frame(Vec3{-4.0f, 3.0f, 7.0f}, 2.0f);
+    CHECK_THAT(camera.pivot().x, WithinAbs(-4.0, 1e-5));
+    CHECK_THAT(camera.pivot().z, WithinAbs(0.0, 1e-5));
+    CHECK_THAT(camera.orthographicSize(), WithinAbs(2.4, 1e-5));
+    camera.setTwoD(false);
+    CHECK_FALSE(camera.isTwoD());
+    CHECK_THAT(camera.forward().z, WithinAbs(-1.0, 1e-5));
+    CHECK_THAT(camera.distance(), WithinAbs(2.4 / std::tan(std::numbers::pi / 6.0), 1e-3));
+}
+
+TEST_CASE("In 2D, the gizmo keeps the handles of the XY plane", "[tools][editor]")
+{
+    EditorCamera camera;
+    camera.setTwoD(true);
+    camera.setOrthographicSize(5.0f);
+    const ViewportView view{.view = camera.view(),
+                            .verticalFov = EditorCamera::verticalFov,
+                            .size = {800.0f, 600.0f},
+                            .orthographic = true,
+                            .orthographicSize = 5.0f};
+    Gizmo gizmo;
+    gizmo.twoD = true;
+    const Mat4 world{1.0f};
+    const auto center = view.project(Vec3{0.0f});
+    REQUIRE(center.has_value());
+    const float handle = view.worldSize(Vec3{0.0f}, Gizmo::sizeInPixels);
+    // Along X, then the plane between X and Y; the center moves in the view plane.
+    const auto alongX = view.project(Vec3{handle * 0.9f, 0.0f, 0.0f});
+    REQUIRE(alongX.has_value());
+    CHECK(gizmo.hitTest(view, world, *alongX) == GizmoHandle::X);
+    CHECK(gizmo.hitTest(view, world, *center) == GizmoHandle::View);
+    const auto inPlane = view.project(Vec3{handle * 0.3f, handle * 0.3f, 0.0f});
+    REQUIRE(inPlane.has_value());
+    CHECK(gizmo.hitTest(view, world, *inPlane) == GizmoHandle::XY);
+
+    // Dragging X moves along X only.
+    gizmo.begin(GizmoHandle::X, view, world, Mat4{1.0f}, devex::scene::Transform{}, *alongX);
+    const devex::scene::Transform moved = gizmo.drag(view, *alongX + Vec2{80.0f, 40.0f}, false);
+    CHECK(moved.position.x > 0.5f);
+    CHECK_THAT(moved.position.y, WithinAbs(0.0, 1e-4));
+    gizmo.end();
+
+    // Rotation turns around Z only.
+    gizmo.mode = GizmoMode::Rotate;
+    const auto ring = view.project(Vec3{0.0f, handle, 0.0f});
+    REQUIRE(ring.has_value());
+    const GizmoHandle hit = gizmo.hitTest(view, world, *ring);
+    CHECK((hit == GizmoHandle::Z || hit == GizmoHandle::View));
+}

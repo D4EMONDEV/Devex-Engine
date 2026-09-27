@@ -108,6 +108,12 @@ void forEachIcon(const ToolsState& state, scene::Scene& scene, Function&& functi
 [[nodiscard]] math::Vec3 dropPosition(const ToolsState& state, const ViewportView& view, math::Vec2 mouse)
 {
     const Ray ray = view.ray(mouse);
+    // The 2D view places things on the XY plane, under the mouse.
+    if (state.camera.isTwoD())
+    {
+        const std::optional<math::Vec3> plane = intersectPlane(ray, math::Vec3{0.0f}, math::Vec3{0.0f, 0.0f, 1.0f});
+        return plane.value_or(math::Vec3{state.camera.pivot().x, state.camera.pivot().y, 0.0f});
+    }
     if (const std::optional<math::Vec3> ground = intersectPlane(ray, math::Vec3{0.0f}, math::Vec3{0.0f, 1.0f, 0.0f});
         ground && math::length(*ground - ray.origin) < 500.0f)
     {
@@ -180,11 +186,38 @@ void drawSceneTabs(ToolsState& state, scene::Scene& scene)
     }
 }
 
+// A button showing a word rather than an icon, lit while its setting is on, as the tool buttons.
+[[nodiscard]] bool wordToggle(const char* label, const char* tooltip, bool selected)
+{
+    const ThemeColors& colors = themeColors();
+    const ImVec4 accent = colors.accent;
+    ImGui::PushStyleColor(ImGuiCol_Button, selected ? uiColor(ImVec4(accent.x, accent.y, accent.z, 0.28f)) : ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, selected ? uiColor(ImVec4(accent.x, accent.y, accent.z, 0.36f))
+                                                           : ImGui::GetStyleColorVec4(ImGuiCol_HeaderHovered));
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, uiColor(ImVec4(accent.x, accent.y, accent.z, 0.45f)));
+    ImGui::PushStyleColor(ImGuiCol_Text, uiColor(selected ? colors.accent : colors.text));
+    const float height = toolButtonWidth();
+    const float width = std::max(height, ImGui::CalcTextSize(label).x + ImGui::GetStyle().FramePadding.x * 2.0f);
+    const bool pressed = ImGui::Button(label, ImVec2(width, height));
+    ImGui::PopStyleColor(4);
+    ImGui::SetItemTooltip("%s", tooltip);
+    return pressed;
+}
+
 void drawToolbar(ToolsState& state, scene::Scene& scene)
 {
     const ThemeColors& colors = themeColors();
     const ImGuiStyle& style = ImGui::GetStyle();
     ImGui::SetCursorPosX(ImGui::GetCursorPosX() + style.ItemSpacing.x);
+    const bool twoD = state.camera.isTwoD();
+    if (wordToggle("2D", twoD ? "2D view: facing the XY plane, without perspective. Click to go back to 3D."
+                              : "Look straight at the XY plane without perspective, to lay sprites out",
+                   twoD))
+    {
+        state.camera.setTwoD(!twoD);
+    }
+    ImGui::SameLine(0.0f, 2.0f);
+    toolbarSeparator();
     const auto toolButtonFor = [&](const char* id, IconText icon, EditorTool tool, const char* tooltip) {
         if (toolButton(id, icon, tooltip, state.tool == tool))
         {
@@ -233,7 +266,8 @@ void drawToolbar(ToolsState& state, scene::Scene& scene)
         frameSelection(state, scene);
     }
 
-    const std::string speed = std::format("{:.1f} m/s", state.camera.speed());
+    const std::string speed = twoD ? std::format("{:.3g} m", state.camera.orthographicSize() * 2.0f)
+                                   : std::format("{:.1f} m/s", state.camera.speed());
     const std::string exposure = std::format("EV {:.1f}", state.renderer.stats().ev100);
     const float rightWidth = ImGui::CalcTextSize(icons::Gauge.c_str()).x + ImGui::CalcTextSize(speed.c_str()).x +
                              ImGui::CalcTextSize(exposure.c_str()).x + toolButtonWidth() + style.ItemSpacing.x * 4.0f +
@@ -243,16 +277,20 @@ void drawToolbar(ToolsState& state, scene::Scene& scene)
     ImGui::AlignTextToFramePadding();
     iconLabel(icons::Gauge, colors.textDim);
     ImGui::TextDisabled("%s", speed.c_str());
-    ImGui::SetItemTooltip("Flying speed: the mouse wheel changes it while flying");
+    ImGui::SetItemTooltip(twoD ? "Height of the 2D view: the mouse wheel zooms at the mouse"
+                               : "Flying speed: the mouse wheel changes it while flying");
     ImGui::SameLine();
     ImGui::TextDisabled("%s", exposure.c_str());
     ImGui::SetItemTooltip("Exposure of the editor camera");
     ImGui::SameLine();
     toolButton("help", icons::CircleHelp,
-               "Right drag: look, with W A S D to fly, Q E to go down and up, Shift to go faster\n"
-               "Alt + left drag: orbit    Middle drag: pan    Wheel: move forward\n"
-               "Click: select, Shift or Ctrl + click: add or remove, left drag: select in a rectangle\n"
-               "F: frame the selection    H: hide it    Delete: delete it    Ctrl: snap");
+               twoD ? "Right or middle drag: slide    Wheel: zoom at the mouse\n"
+                      "Click: select, Shift or Ctrl + click: add or remove, left drag: select in a rectangle\n"
+                      "F: frame the selection    H: hide it    Delete: delete it    Ctrl: snap"
+                    : "Right drag: look, with W A S D to fly, Q E to go down and up, Shift to go faster\n"
+                      "Alt + left drag: orbit    Middle drag: pan    Wheel: move forward\n"
+                      "Click: select, Shift or Ctrl + click: add or remove, left drag: select in a rectangle\n"
+                      "F: frame the selection    H: hide it    Delete: delete it    Ctrl: snap");
 }
 
 // Adds the fields a drag changed, already applied, to the commands of one undo step.
@@ -348,10 +386,30 @@ void moveFollowers(ToolsState& state, scene::Scene& scene, const math::Mat4& act
     }
 }
 
-void handleCamera(ToolsState& state, bool hovered, math::Vec2 size)
+void handleCamera(ToolsState& state, bool hovered, math::Vec2 size, math::Vec2 mouse)
 {
     const ImGuiIO& io = ImGui::GetIO();
     const platform::Input& input = state.platform.input();
+
+    // In 2D, the right and the middle buttons slide the view, and the wheel zooms at the mouse.
+    if (state.camera.isTwoD())
+    {
+        if (hovered && (ImGui::IsMouseClicked(ImGuiMouseButton_Right) || ImGui::IsMouseClicked(ImGuiMouseButton_Middle)))
+        {
+            state.panning = true;
+            ImGui::SetWindowFocus();
+        }
+        if (state.panning)
+        {
+            state.panning = ImGui::IsMouseDown(ImGuiMouseButton_Right) || ImGui::IsMouseDown(ImGuiMouseButton_Middle);
+            state.camera.pan(math::Vec2(io.MouseDelta.x, io.MouseDelta.y) * state.pixelsPerPoint, size.y);
+        }
+        if (hovered && io.MouseWheel != 0.0f)
+        {
+            state.camera.zoomAt(io.MouseWheel, mouse, size);
+        }
+        return;
+    }
 
     if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Right))
     {
@@ -730,7 +788,12 @@ void drawViewportPanel(ToolsState& state, scene::Scene& scene)
 
     const math::Vec2 size{static_cast<float>(width), static_cast<float>(height)};
     const math::Vec2 mouse = (math::Vec2(io.MousePos.x, io.MousePos.y) - state.viewportOrigin) * state.pixelsPerPoint;
-    const ViewportView view{.view = state.camera.view(), .verticalFov = EditorCamera::verticalFov, .size = size};
+    const ViewportView view{.view = state.camera.view(),
+                            .verticalFov = EditorCamera::verticalFov,
+                            .size = size,
+                            .orthographic = state.camera.isTwoD(),
+                            .orthographicSize = state.camera.orthographicSize()};
+    state.gizmo.twoD = state.camera.isTwoD();
 
     if (editing)
     {
@@ -742,13 +805,17 @@ void drawViewportPanel(ToolsState& state, scene::Scene& scene)
         {
             requestInstantiatePrefab(state, *prefab, core::Uuid{}, dropPosition(state, view, mouse));
         }
+        if (const std::optional<asset::AssetId> sprite = acceptDroppedAsset(asset::AssetType::Sprite))
+        {
+            requestCreateSprite(state, *sprite, dropPosition(state, view, mouse));
+        }
         if (hovered && (ImGui::IsMouseClicked(ImGuiMouseButton_Left) || ImGui::IsMouseClicked(ImGuiMouseButton_Middle)))
         {
             ImGui::SetWindowFocus();
         }
         // A drag from another panel holds the mouse: the view counts as hovered all the same.
         handleMaterialDrop(state, scene, mouse, ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenBlockedByActiveItem));
-        handleCamera(state, hovered, size);
+        handleCamera(state, hovered, size, mouse);
         handleGizmoAndSelection(state, scene, view, mouse, hovered);
         if (state.viewportFocused || hovered)
         {

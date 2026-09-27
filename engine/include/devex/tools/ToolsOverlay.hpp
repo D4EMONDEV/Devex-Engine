@@ -1,5 +1,6 @@
 #pragma once
 
+#include <devex/asset/SpriteData.hpp>
 #include <devex/asset/import/AssetDatabase.hpp>
 #include <devex/core/Error.hpp>
 #include <devex/core/Time.hpp>
@@ -258,6 +259,11 @@ public:
     void setAnimationClips(std::function<std::shared_ptr<const animation::Clip>(asset::AssetId)> clips);
     // Lets the inspector show which fields of an element its style sets, and open its theme.
     void setThemes(std::function<std::shared_ptr<const asset::ThemeData>(asset::AssetId)> themes);
+    // Where the previews of textures and sprites come from: the textures of the renderer, their size
+    // in pixels, and the rectangles of the sprites.
+    void setSpriteSources(std::function<render::TextureHandle(asset::AssetId)> textures,
+                          std::function<math::Extent2D(asset::AssetId)> textureSizes,
+                          std::function<std::shared_ptr<const asset::SpriteData>(asset::AssetId)> sprites);
     // Lets the profiler show what the loaded assets take.
     void setMemoryReport(std::function<asset::MemoryReport()> report);
     // Lets the status bar tell how many assets are loading in the background.

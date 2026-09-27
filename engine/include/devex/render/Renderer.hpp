@@ -174,6 +174,9 @@ public:
     // An ImGui texture identifier (ImTextureID) that shows the scene image of the frame it is drawn
     // in, when RenderWorld::viewport is set.
     [[nodiscard]] static std::uint64_t viewportTexture() noexcept;
+    // An ImGui texture identifier that shows a texture, for the previews of the tools; 0 while the
+    // texture is not on the GPU or ImGui is not connected.
+    [[nodiscard]] std::uint64_t imguiTexture(TextureHandle texture);
 
 private:
     explicit Renderer(std::unique_ptr<vulkan::VulkanRenderer> implementation) noexcept;

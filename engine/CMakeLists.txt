@@ -200,6 +200,7 @@ target_sources(devex_asset
         src/asset/Package.cpp
         src/asset/Primitives.cpp
         src/asset/Project.cpp
+        src/asset/SpriteData.cpp
         src/asset/TextureData.cpp
         src/asset/ThemeData.cpp
     PUBLIC
@@ -222,6 +223,7 @@ target_sources(devex_asset
             include/devex/asset/Package.hpp
             include/devex/asset/Primitives.hpp
             include/devex/asset/Project.hpp
+            include/devex/asset/SpriteData.hpp
             include/devex/asset/TextureData.hpp
 )
 
@@ -269,6 +271,7 @@ target_sources(devex_asset_import
         src/asset/import/MetaFile.cpp
         src/asset/import/ModelImport.cpp
         src/asset/import/ModelImport.hpp
+        src/asset/import/SpriteFramesFile.cpp
         src/asset/import/StbImage.cpp
         src/asset/import/TextureProcessing.cpp
         src/asset/import/ThemeFile.cpp
@@ -282,6 +285,7 @@ target_sources(devex_asset_import
             include/devex/asset/import/MaterialFile.hpp
             include/devex/asset/import/ThemeFile.hpp
             include/devex/asset/import/MetaFile.hpp
+            include/devex/asset/import/SpriteFramesFile.hpp
             include/devex/asset/import/TextureProcessing.hpp
 )
 
@@ -414,6 +418,7 @@ target_sources(devex_scene
         src/scene/UiComponents.cpp
         src/scene/AnimationComponents.cpp
         src/scene/ParticleComponents.cpp
+        src/scene/SpriteComponents.cpp
         src/scene/AssetReferences.cpp
         src/scene/AudioComponents.cpp
         src/scene/Prefab.cpp
@@ -436,6 +441,7 @@ target_sources(devex_scene
             include/devex/scene/UiComponents.hpp
             include/devex/scene/AnimationComponents.hpp
             include/devex/scene/ParticleComponents.hpp
+            include/devex/scene/SpriteComponents.hpp
             include/devex/scene/AssetReferences.hpp
             include/devex/scene/AudioComponents.hpp
             include/devex/scene/Prefab.hpp
@@ -496,6 +502,7 @@ target_sources(devex_animation
     PRIVATE
         src/animation/AnimationWorld.cpp
         src/animation/Clip.cpp
+        src/animation/SpriteAnimation.cpp
         src/animation/TweenWorld.cpp
     PUBLIC
         FILE_SET HEADERS
@@ -503,6 +510,7 @@ target_sources(devex_animation
         FILES
             include/devex/animation/AnimationWorld.hpp
             include/devex/animation/Clip.hpp
+            include/devex/animation/SpriteAnimation.hpp
             include/devex/animation/TweenWorld.hpp
 )
 
@@ -678,6 +686,8 @@ target_sources(devex_tools
         src/tools/TextEditorPanel.cpp
         src/tools/ConsolePanel.cpp
         src/tools/CurveInspector.cpp
+        src/tools/SpriteFramesInspector.cpp
+        src/tools/TextureInspector.cpp
         src/tools/EditorCamera.cpp
         src/tools/EditorCamera.hpp
         src/tools/EditorMenus.cpp

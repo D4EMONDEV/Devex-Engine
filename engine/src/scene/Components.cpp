@@ -17,8 +17,11 @@ DEVEX_REFLECT(MeshRenderer)
 
 DEVEX_REFLECT(Camera)
 {
-    type.field("vertical_fov", &Camera::verticalFov, {.angle = true})
+    type.field("projection", &Camera::projection)
+        .field("vertical_fov", &Camera::verticalFov, {.angle = true})
+        .field("orthographic_size", &Camera::orthographicSize)
         .field("near_plane", &Camera::nearPlane)
+        .field("far_plane", &Camera::farPlane)
         .field("primary", &Camera::primary)
         .field("auto_exposure", &Camera::autoExposure)
         .field("ev100", &Camera::ev100)

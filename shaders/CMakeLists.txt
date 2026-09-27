@@ -11,6 +11,7 @@ devex_add_shaders(devex_shaders
         pick.slang
         prepass.slang
         shadow.slang
+        sprite.slang
         sky.slang
         taa.slang
         tonemap.slang

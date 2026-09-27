@@ -20,8 +20,40 @@ std::array<float, cascadeCount> computeCascadeSplits(float nearPlane, float shad
     return splits;
 }
 
+ViewVolume ViewVolume::perspective(float verticalFov, float aspectRatio) noexcept
+{
+    const float tanY = std::tan(verticalFov * 0.5f);
+    return {.halfExtent = math::Vec2{0.0f}, .slope = math::Vec2{tanY * aspectRatio, tanY}};
+}
+
+ViewVolume ViewVolume::orthographic(float halfHeight, float aspectRatio) noexcept
+{
+    return {.halfExtent = math::Vec2{halfHeight * aspectRatio, halfHeight}, .slope = math::Vec2{0.0f}};
+}
+
+ViewVolume ViewVolume::of(const RenderCamera& camera, float aspectRatio) noexcept
+{
+    return camera.projection == Projection::Orthographic ? orthographic(camera.orthographicSize, aspectRatio)
+                                                         : perspective(camera.verticalFov, aspectRatio);
+}
+
 ShadowCascades computeShadowCascades(const math::Mat4& cameraWorld, float verticalFov,
                                      float aspectRatio, float nearPlane, float shadowDistance,
+                                     math::Vec3 lightDirection, std::uint32_t resolution) noexcept
+{
+    return computeShadowCascades(cameraWorld, ViewVolume::perspective(verticalFov, aspectRatio), nearPlane,
+                                 shadowDistance, lightDirection, resolution);
+}
+
+void assignLightsToClusters(const ClusterGrid& grid, const math::Mat4& view, float verticalFov,
+                            float aspectRatio, std::span<const RenderLight> lights,
+                            LightClusters& result)
+{
+    assignLightsToClusters(grid, view, ViewVolume::perspective(verticalFov, aspectRatio), lights, result);
+}
+
+ShadowCascades computeShadowCascades(const math::Mat4& cameraWorld, const ViewVolume& volume,
+                                     float nearPlane, float shadowDistance,
                                      math::Vec3 lightDirection, std::uint32_t resolution) noexcept
 {
     ShadowCascades cascades;
@@ -31,9 +63,6 @@ ShadowCascades computeShadowCascades(const math::Mat4& cameraWorld, float vertic
     // Any vector not parallel to the light works as the up direction of the shadow view.
     const math::Vec3 up = std::abs(direction.y) > 0.99f ? math::Vec3{0.0f, 0.0f, 1.0f}
                                                          : math::Vec3{0.0f, 1.0f, 0.0f};
-    const float tanY = std::tan(verticalFov * 0.5f);
-    const float tanX = tanY * aspectRatio;
-
     math::Mat4 clipCorrection{1.0f};
     clipCorrection[1][1] = -1.0f;
 
@@ -42,12 +71,11 @@ ShadowCascades computeShadowCascades(const math::Mat4& cameraWorld, float vertic
     {
         const float sliceFar = cascades.splitDistances[cascade];
 
-        // The bounding sphere of the slice depends only on its distances and the field of view,
-        // so its radius does not change when the camera turns. Corners lie at `diagonal` times
-        // their distance from the view axis.
-        const float diagonal = std::sqrt(tanX * tanX + tanY * tanY);
-        const float nearCorner = sliceNear * diagonal;
-        const float farCorner = sliceFar * diagonal;
+        // The bounding sphere of the slice depends only on its distances and the shape of the
+        // view, so its radius does not change when the camera turns. Corners lie that far from the
+        // view axis.
+        const float nearCorner = math::length(volume.halfSizeAt(sliceNear));
+        const float farCorner = math::length(volume.halfSizeAt(sliceFar));
         const float length = sliceFar - sliceNear;
         // Distance along the view axis from the slice near plane to the sphere center.
         const float centerOffset = std::clamp(
@@ -84,9 +112,8 @@ ShadowCascades computeShadowCascades(const math::Mat4& cameraWorld, float vertic
     return cascades;
 }
 
-void assignLightsToClusters(const ClusterGrid& grid, const math::Mat4& view, float verticalFov,
-                            float aspectRatio, std::span<const RenderLight> lights,
-                            LightClusters& result)
+void assignLightsToClusters(const ClusterGrid& grid, const math::Mat4& view, const ViewVolume& volume,
+                            std::span<const RenderLight> lights, LightClusters& result)
 {
     const std::uint32_t clusterCount = grid.tilesX * grid.tilesY * grid.slices;
     result.clusters.assign(clusterCount, ClusterRange{});
@@ -100,8 +127,6 @@ void assignLightsToClusters(const ClusterGrid& grid, const math::Mat4& view, flo
         return;
     }
 
-    const float tanY = std::tan(verticalFov * 0.5f);
-    const float tanX = tanY * aspectRatio;
     const auto sliceDistance = [&](std::uint32_t slice) {
         return grid.nearPlane * std::pow(grid.farPlane / grid.nearPlane,
                                          static_cast<float>(slice) / static_cast<float>(grid.slices));
@@ -140,14 +165,18 @@ void assignLightsToClusters(const ClusterGrid& grid, const math::Mat4& view, flo
                 // Rows start at the top of the screen, where view-space Y is largest.
                 const float top = 1.0f - 2.0f * static_cast<float>(tileY) / static_cast<float>(grid.tilesY);
                 const float bottom = 1.0f - 2.0f * static_cast<float>(tileY + 1) / static_cast<float>(grid.tilesY);
-                const float minY = std::min(bottom * tanY * nearDistance, bottom * tanY * farDistance);
-                const float maxY = std::max(top * tanY * nearDistance, top * tanY * farDistance);
+                const float nearHeight = volume.halfSizeAt(nearDistance).y;
+                const float farHeight = volume.halfSizeAt(farDistance).y;
+                const float minY = std::min(bottom * nearHeight, bottom * farHeight);
+                const float maxY = std::max(top * nearHeight, top * farHeight);
                 for (std::uint32_t tileX = 0; tileX < grid.tilesX; ++tileX)
                 {
                     const float left = -1.0f + 2.0f * static_cast<float>(tileX) / static_cast<float>(grid.tilesX);
                     const float right = -1.0f + 2.0f * static_cast<float>(tileX + 1) / static_cast<float>(grid.tilesX);
-                    const float minX = std::min(left * tanX * nearDistance, left * tanX * farDistance);
-                    const float maxX = std::max(right * tanX * nearDistance, right * tanX * farDistance);
+                    const float nearWidth = volume.halfSizeAt(nearDistance).x;
+                    const float farWidth = volume.halfSizeAt(farDistance).x;
+                    const float minX = std::min(left * nearWidth, left * farWidth);
+                    const float maxX = std::max(right * nearWidth, right * farWidth);
 
                     // Distance from the sphere center to the cluster's bounding box.
                     const float dx = std::max({minX - center.x, 0.0f, center.x - maxX});

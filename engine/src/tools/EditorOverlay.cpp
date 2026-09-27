@@ -22,6 +22,7 @@ constexpr math::Vec4 gridColor{0.25f, 0.25f, 0.25f, 0.55f};
 constexpr math::Vec4 gridMajorColor{0.35f, 0.35f, 0.35f, 0.8f};
 constexpr math::Vec4 xAxisColor{0.6f, 0.08f, 0.08f, 0.9f};
 constexpr math::Vec4 zAxisColor{0.06f, 0.14f, 0.6f, 0.9f};
+constexpr math::Vec4 yAxisColor{0.12f, 0.55f, 0.1f, 0.9f};
 constexpr math::Vec4 lightIconColor{1.0f, 0.8f, 0.3f, 0.95f};
 constexpr math::Vec4 cameraIconColor{0.85f, 0.85f, 0.85f, 0.95f};
 constexpr math::Vec4 audioIconColor{0.96f, 0.6f, 0.76f, 0.95f};
@@ -204,8 +205,40 @@ void addColliders(const ToolsState& state, scene::Scene& scene, const std::unord
 
 // Lines on the ground around the camera, fading with distance, every meter or every ten meters
 // from high up.
+// The grid of the 2D view, in the XY plane: lines a power of ten apart, fitted to the zoom, with a
+// stronger one every ten.
+void addPlaneGrid(const ToolsState& state, std::vector<OverlayVertex>& lines)
+{
+    const float size = state.camera.orthographicSize();
+    const float spacing = std::pow(10.0f, std::floor(std::log10(std::max(size * 0.4f, 1e-4f))));
+    // Wide enough for a wide viewport.
+    const float extent = size * 3.0f;
+    const math::Vec3 pivot = state.camera.pivot();
+    const float centerX = std::round(pivot.x / spacing) * spacing;
+    const float centerY = std::round(pivot.y / spacing) * spacing;
+    const int count = static_cast<int>(extent / spacing) + 1;
+    for (int index = -count; index <= count; ++index)
+    {
+        const float x = centerX + static_cast<float>(index) * spacing;
+        const float y = centerY + static_cast<float>(index) * spacing;
+        const bool majorX = std::fmod(std::abs(x) + 0.5f * spacing, spacing * 10.0f) < spacing;
+        const bool majorY = std::fmod(std::abs(y) + 0.5f * spacing, spacing * 10.0f) < spacing;
+        const math::Vec4 vertical = std::abs(x) < 0.5f * spacing ? yAxisColor : majorX ? gridMajorColor : gridColor;
+        const math::Vec4 horizontal = std::abs(y) < 0.5f * spacing ? xAxisColor : majorY ? gridMajorColor : gridColor;
+        lines.push_back({{x, centerY - extent, 0.0f}, vertical});
+        lines.push_back({{x, centerY + extent, 0.0f}, vertical});
+        lines.push_back({{centerX - extent, y, 0.0f}, horizontal});
+        lines.push_back({{centerX + extent, y, 0.0f}, horizontal});
+    }
+}
+
 void addGrid(const ToolsState& state, std::vector<OverlayVertex>& lines)
 {
+    if (state.camera.isTwoD())
+    {
+        addPlaneGrid(state, lines);
+        return;
+    }
     const math::Vec3 eye = state.camera.position();
     const float height = std::abs(eye.y);
     const float spacing = height > 60.0f ? 10.0f : 1.0f;
@@ -336,9 +369,11 @@ void addIcons(scene::Scene& scene, const ViewportView& view, const std::unordere
         const math::Vec3 forward = math::normalize(axes * math::Vec3{0.0f, 0.0f, -1.0f});
         const math::Vec3 cameraUp = math::normalize(axes * math::Vec3{0.0f, 1.0f, 0.0f});
         const math::Vec3 cameraRight = math::normalize(axes * math::Vec3{1.0f, 0.0f, 0.0f});
-        // A small frustum, or one reaching a few meters for the selected camera.
+        // A small frustum, or one reaching a few meters for the selected camera. The box of an
+        // orthographic camera shows what it frames.
+        const bool orthographic = camera.projection == scene::Projection::Orthographic;
         const float depth = selected.contains(entity.index) ? 3.0f : view.worldSize(position, iconSizeInPixels * 2.5f);
-        const float halfHeight = depth * std::tan(camera.verticalFov * 0.5f);
+        const float halfHeight = orthographic ? camera.orthographicSize : depth * std::tan(camera.verticalFov * 0.5f);
         const float halfWidth = halfHeight * aspect;
         const math::Vec4 color = selected.contains(entity.index) ? math::Vec4{1.0f, 0.6f, 0.1f, 1.0f} : cameraIconColor;
         const math::Vec3 center = position + forward * depth;
@@ -348,8 +383,14 @@ void addIcons(scene::Scene& scene, const ViewportView& view, const std::unordere
                                                 center + cameraRight * halfWidth - cameraUp * halfHeight};
         for (std::size_t corner = 0; corner < corners.size(); ++corner)
         {
-            addLine(lines, position, corners[corner], color);
+            // The sides of an orthographic box run parallel to its axis.
+            addLine(lines, orthographic ? corners[corner] - forward * depth : position, corners[corner], color);
             addLine(lines, corners[corner], corners[(corner + 1) % corners.size()], color);
+            if (orthographic)
+            {
+                addLine(lines, corners[corner] - forward * depth, corners[(corner + 1) % corners.size()] - forward * depth,
+                        color);
+            }
         }
         // A notch marks the top of the image.
         addLine(lines, center + cameraUp * halfHeight * 1.3f, center + cameraUp * halfHeight * 1.05f, color);
@@ -448,6 +489,8 @@ void addEditorOverlay(ToolsState& state, scene::Scene& scene, render::RenderWorl
         .view = world.camera.view,
         .verticalFov = world.camera.verticalFov,
         .size = {static_cast<float>(std::max(world.viewport.width, 1u)), static_cast<float>(std::max(world.viewport.height, 1u))},
+        .orthographic = world.camera.projection == render::Projection::Orthographic,
+        .orthographicSize = world.camera.orthographicSize,
     };
     // The selected entities, those under them, and the entities hidden with their descendants.
     std::unordered_set<std::uint32_t> selected;
@@ -471,6 +514,9 @@ void addEditorOverlay(ToolsState& state, scene::Scene& scene, render::RenderWorl
     // What is hidden is neither drawn nor picked; the game still shows it when it runs.
     if (!hidden.empty())
     {
+        std::erase_if(world.sprites, [&hidden](const render::RenderSprite& sprite) {
+            return sprite.objectId > 0 && hidden.contains(sprite.objectId - 1);
+        });
         std::erase_if(world.meshes, [&hidden](const render::MeshInstance& mesh) {
             return mesh.objectId > 0 && hidden.contains(mesh.objectId - 1);
         });
@@ -493,6 +539,10 @@ void addEditorOverlay(ToolsState& state, scene::Scene& scene, render::RenderWorl
     {
         mesh.outlined = mesh.objectId > 0 && (selection.contains(mesh.objectId - 1) ||
                                               (materialTarget.isValid() && mesh.objectId - 1 == materialTarget.index));
+    }
+    for (render::RenderSprite& sprite : world.sprites)
+    {
+        sprite.outlined = sprite.objectId > 0 && selection.contains(sprite.objectId - 1);
     }
 
     // The gizmo sits on the active entity and moves the others with it.

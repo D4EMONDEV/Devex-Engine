@@ -528,6 +528,27 @@ core::Result<std::vector<asset::AssetId>> assetReferences(asset::AssetType type,
         ids.insert(ids.end(), model->animations.begin(), model->animations.end());
         break;
     }
+    case asset::AssetType::Sprite: {
+        const core::Result<asset::SpriteData> sprite = asset::decodeSprite(artifact);
+        if (!sprite)
+        {
+            return std::unexpected(sprite.error());
+        }
+        ids.push_back(sprite->texture);
+        break;
+    }
+    case asset::AssetType::SpriteFrames: {
+        const core::Result<asset::SpriteFramesData> frames = asset::decodeSpriteFrames(artifact);
+        if (!frames)
+        {
+            return std::unexpected(frames.error());
+        }
+        for (const asset::SpriteAnimationData& animation : frames->animations)
+        {
+            ids.insert(ids.end(), animation.frames.begin(), animation.frames.end());
+        }
+        break;
+    }
     case asset::AssetType::Texture:
     case asset::AssetType::AudioClip:
     case asset::AssetType::AnimationClip:

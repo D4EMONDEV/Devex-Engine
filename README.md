@@ -43,7 +43,9 @@ Le détail, l'architecture des modules et les jalons sont dans
   le soleil et en atlas pour les lumières locales, ciel HDR et IBL, surfaces transparentes triées,
   anticrénelage temporel, occlusion ambiante en espace écran, bloom, exposition automatique,
   tonemapping AgX, table de couleurs, vignette et grain, particules et rubans (face à la caméra,
-  étirés, doux au contact des surfaces, éclairés ou non, triés avec la transparence), rendu dans
+  étirés, doux au contact des surfaces, éclairés ou non, triés avec la transparence), sprites
+  (simples, découpés en neuf, répétés, retournés, éclairés ou non, triés par couche et par
+  ordre), caméra orthographique, textures filtrées au pixel près, rendu dans
   une texture, sélection sur le
   GPU, contours et lignes d'outils, temps GPU de chaque passe, copies vers le GPU sans attente et
   dans un budget par image ;
@@ -59,7 +61,8 @@ Le détail, l'architecture des modules et les jalons sont dans
   `Animator` qui joue un clip avec fondu croisé, root motion optionnel, skinning des maillages
   dans le vertex shader ; tweens de tout champ numérique, vectoriel, de couleur ou de rotation
   d'un composant (délai, boucles, aller-retour, séquences), par code ou par le composant
-  `Tweener`, avec 22 courbes classiques ou une courbe dessinée (`.dvxcurve`) ;
+  `Tweener`, avec 22 courbes classiques ou une courbe dessinée (`.dvxcurve`) ; sprites animés
+  image par image (`SpriteAnimator` et animations nommées `.dvxframes`) ;
 - `Devex::Particles` : émetteurs `ParticleEmitter` simulés sur les workers (émission par seconde,
   par mètre et en salves, formes, gravité, bruit, courbes sur la vie, collisions avec la physique,
   sous-émetteurs, espace du monde ou local) et traînées des particules et des entités
@@ -87,7 +90,9 @@ Le détail, l'architecture des modules et les jalons sont dans
   *New Script…*, réglages de l'éditeur, aperçu sonore et forme
   d'onde des clips, éditeur de courbes (clés et pentes à déplacer, préréglages, *New Curve*),
   aperçu des particules dans la vue et contrôles de l'émetteur dans l'inspecteur, réglages des
-  composants rangés en sections repliables,
+  composants rangés en sections repliables, vue 2D (caméra orthographique face au plan XY,
+  grille et gizmos 2D), textures découpées en sprites dans l'inspecteur, éditeur des animations
+  de sprites, couches de tri du projet,
   volumes du projet, icônes et distances des sources audio, panneau Animation
   avec piste temporelle et images clés, panneau Profiler (barres des images, chronologie par
   thread et GPU, tableaux des zones, des passes et de la mémoire des assets) ;
@@ -124,7 +129,10 @@ Le détail, l'architecture des modules et les jalons sont dans
   (`code/Bobber.cs`) ; le lanceur C++ et les cibles C# jouent leurs sons, la porte sa source audio,
   le cube flottant émet un bourdonnement spatialisé et une ambiance Ogg tourne en boucle dans le
   groupe Music ; un robot rigué patrouille, attend et salue le joueur (`code/Robot.cs`) ;
-  Tab passe à l'autre scène ; et la
+  Tab passe à la scène `platformer`, un jeu de plateformes en pixel art (un chevalier animé qui
+  court et saute sur des corniches, des pièces qui tournent, un coucher de soleil qui défile plus
+  lentement, un mur éclairé par une torche, `code/Platformer.cs`), d'où Tab mène à la
+  scène `sandbox` ; la
   scène `sandbox` (caisse et balises glTF, sphères or et plastique, ciel HDR, plateau tournant dont
   les satellites brillent et dont la caisse flotte par un `Tweener` et la courbe
   `assets/curves/Hover.dvxcurve`, panneaux de verre teinté, jour et nuit en fondu avec N par une

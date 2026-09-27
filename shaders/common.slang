@@ -199,6 +199,9 @@ public SamplerState clampSampler;
 public Texture2D skyTexture;
 [[vk::binding(7, 0)]]
 public SamplerState skySampler;
+// The sampler of each texture, beside it: smooth, or the nearest pixel for pixel art.
+[[vk::binding(8, 0)]]
+public SamplerState textureSamplers[];
 
 // Set 1: images produced earlier in the frame.
 [[vk::binding(0, 1)]]
@@ -241,7 +244,14 @@ public Texture2D bloomChain[5];
 
 public float4 sampleTexture(uint index, float2 uv)
 {
-    return textures[NonUniformResourceIndex(index)].Sample(materialSampler, uv);
+    return textures[NonUniformResourceIndex(index)].Sample(textureSamplers[NonUniformResourceIndex(index)], uv);
+}
+
+// The same with the slopes of the coordinates given, for mappings that jump.
+public float4 sampleTextureGrad(uint index, float2 uv, float2 slopeX, float2 slopeY)
+{
+    return textures[NonUniformResourceIndex(index)].SampleGrad(textureSamplers[NonUniformResourceIndex(index)], uv,
+                                                               slopeX, slopeY);
 }
 
 // Rotates a direction around the vertical axis, to turn the environment.

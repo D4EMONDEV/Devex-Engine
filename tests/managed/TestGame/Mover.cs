@@ -419,3 +419,37 @@ public class Pyrotechnician : Component
         }
     }
 }
+
+// Plays the animations of the sprite of its entity, and flips it, as a character would.
+public class Animator2D : Component
+{
+    public string Shown = "";
+    public bool Restarted;
+
+    private int _frame;
+
+    public override void Update(float delta)
+    {
+        ++_frame;
+        SpriteAnimator animator = Entity.Get<SpriteAnimator>();
+        if (_frame == 1)
+        {
+            animator.Play("run");
+            Entity.Get<SpriteRenderer>().FlipX = true;
+        }
+        else if (_frame == 2)
+        {
+            // Called again, the same animation goes on.
+            animator.Frame = 2;
+            animator.Play("run");
+            Shown = $"{animator.Animation} {animator.Frame}";
+        }
+        else if (_frame == 3)
+        {
+            // An animation that ended starts again.
+            animator.Playing = false;
+            animator.Play("run");
+            Restarted = animator.Playing && animator.Frame == 0;
+        }
+    }
+}

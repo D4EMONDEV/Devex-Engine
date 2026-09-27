@@ -314,6 +314,31 @@ public static unsafe class Animation
 }
 
 /// <summary>
+/// Frame by frame animation of sprites: the SpriteAnimator components, which show the frames of an
+/// animation of their sprite frames on the SpriteRenderer of their entity.
+/// </summary>
+public static class SpriteAnimations
+{
+    /// <summary>
+    /// Plays an animation by name. Another animation starts from its first frame; the one already
+    /// playing goes on, so that this can be called every frame; one that ended starts again.
+    /// </summary>
+    public static void Play(this SpriteAnimator animator, string animation)
+    {
+        if (animator.Animation != animation)
+        {
+            animator.Animation = animation;
+        }
+        else if (!animator.Playing)
+        {
+            // Backwards, the animation starts from its last frame, where the frame is clamped to.
+            animator.Frame = animator.Speed < 0.0f ? int.MaxValue : 0;
+        }
+        animator.Playing = true;
+    }
+}
+
+/// <summary>
 /// The particles of the game: the ParticleEmitter components of the scene, which emit by themselves
 /// when they play on start, and which code plays, stops and bursts.
 /// </summary>

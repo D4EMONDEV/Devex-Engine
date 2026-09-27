@@ -243,6 +243,10 @@ GizmoHandle Gizmo::hitTest(const ViewportView& view, const math::Mat4& world, ma
         {
             for (const GizmoHandle handle : planeHandles)
             {
+                if (twoD && handle != GizmoHandle::XY)
+                {
+                    continue;
+                }
                 const auto [first, second] = planeAxes(handle);
                 const math::Vec3 a = gizmoAxes[static_cast<std::size_t>(first)] * size;
                 const math::Vec3 b = gizmoAxes[static_cast<std::size_t>(second)] * size;
@@ -264,7 +268,7 @@ GizmoHandle Gizmo::hitTest(const ViewportView& view, const math::Mat4& world, ma
                 }
             }
         }
-        for (int axis = 0; axis < 3; ++axis)
+        for (int axis = 0; axis < (twoD ? 2 : 3); ++axis)
         {
             consider(axisHandles[static_cast<std::size_t>(axis)], axisDistance(axis));
         }
@@ -272,7 +276,7 @@ GizmoHandle Gizmo::hitTest(const ViewportView& view, const math::Mat4& world, ma
     }
     case GizmoMode::Rotate: {
         const math::Vec3 toCamera = view.cameraPosition() - center;
-        for (int axis = 0; axis < 3; ++axis)
+        for (int axis = twoD ? 2 : 0; axis < 3; ++axis)
         {
             const auto [first, second] = perpendicularBasis(gizmoAxes[static_cast<std::size_t>(axis)]);
             std::optional<math::Vec2> previous;
@@ -480,6 +484,10 @@ void Gizmo::draw(const ViewportView& view, const math::Mat4& world, GizmoHandle 
     case GizmoMode::Translate: {
         for (const GizmoHandle handle : planeHandles)
         {
+            if (twoD && handle != GizmoHandle::XY)
+            {
+                continue;
+            }
             const auto [first, second] = planeAxes(handle);
             const math::Vec3 a = gizmoAxes[static_cast<std::size_t>(first)] * size;
             const math::Vec3 b = gizmoAxes[static_cast<std::size_t>(second)] * size;
@@ -490,6 +498,10 @@ void Gizmo::draw(const ViewportView& view, const math::Mat4& world, GizmoHandle 
         }
         for (const int axis : order)
         {
+            if (twoD && axis == 2)
+            {
+                continue;
+            }
             const GizmoHandle handle = axisHandles[static_cast<std::size_t>(axis)];
             const math::Vec3 direction = gizmoAxes[static_cast<std::size_t>(axis)];
             const math::Vec4 color = colorOf(handle, axisColors[axis]);
@@ -503,6 +515,10 @@ void Gizmo::draw(const ViewportView& view, const math::Mat4& world, GizmoHandle 
     case GizmoMode::Rotate: {
         for (const int axis : order)
         {
+            if (twoD && axis != 2)
+            {
+                continue;
+            }
             const GizmoHandle handle = axisHandles[static_cast<std::size_t>(axis)];
             addRing(geometry, view, center, gizmoAxes[static_cast<std::size_t>(axis)], size, thickness,
                     colorOf(handle, axisColors[axis]), true);
@@ -514,6 +530,10 @@ void Gizmo::draw(const ViewportView& view, const math::Mat4& world, GizmoHandle 
     case GizmoMode::Scale: {
         for (const int axis : order)
         {
+            if (twoD && axis == 2)
+            {
+                continue;
+            }
             const GizmoHandle handle = axisHandles[static_cast<std::size_t>(axis)];
             const math::Vec3 direction = gizmoAxes[static_cast<std::size_t>(axis)];
             const math::Vec4 color = colorOf(handle, axisColors[axis]);

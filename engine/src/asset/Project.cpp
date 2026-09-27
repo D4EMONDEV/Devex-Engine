@@ -134,6 +134,31 @@ void readAudio(const serialization::TextDocument& document, AudioSettings& audio
     }
 }
 
+// The sorting layers in the order of their sections, "Default" among them.
+void readSorting(const serialization::TextDocument& document, SortingSettings& sorting)
+{
+    std::vector<std::string> layers;
+    for (const serialization::TextSection& section : document.sections)
+    {
+        const serialization::TextValue* const name = section.findAttribute("name");
+        const std::string* const nameText = name != nullptr ? serialization::asString(*name) : nullptr;
+        if (section.type == "sorting_layer" && nameText != nullptr && !nameText->empty() &&
+            std::ranges::find(layers, *nameText) == layers.end())
+        {
+            layers.push_back(*nameText);
+        }
+    }
+    if (layers.empty())
+    {
+        return;
+    }
+    if (std::ranges::find(layers, "Default") == layers.end())
+    {
+        layers.insert(layers.begin(), "Default");
+    }
+    sorting.layers = std::move(layers);
+}
+
 // Contexts in the order of their sections, which replace the default one; actions with their
 // bindings, written "key:W up" in a list.
 void readInput(const serialization::TextDocument& document, InputSettings& input)
@@ -325,6 +350,17 @@ std::optional<InputDirection> parseInputDirection(std::string_view text) noexcep
     return std::nullopt;
 }
 
+std::int32_t SortingSettings::rank(std::string_view layer) const noexcept
+{
+    const auto position = [&](std::string_view name) {
+        const auto found = std::ranges::find(layers, name);
+        return found != layers.end() ? static_cast<std::int32_t>(found - layers.begin()) : -1;
+    };
+    const std::int32_t defaultPosition = std::max(position("Default"), 0);
+    const std::int32_t found = layer.empty() ? -1 : position(layer);
+    return found < 0 ? 0 : found - defaultPosition;
+}
+
 bool PhysicsSettings::collides(std::uint32_t a, std::uint32_t b) const noexcept
 {
     if (a >= physicsLayerCount || b >= physicsLayerCount)
@@ -421,6 +457,7 @@ core::Result<Project> parseProject(std::string_view text, const std::filesystem:
     }
     readPhysics(*document, project.physics);
     readAudio(*document, project.audio);
+    readSorting(*document, project.sorting);
     readWindowAndExport(*document, project);
     readInput(*document, project.input);
     return project;
@@ -503,6 +540,16 @@ std::string writeProjectText(const Project& project)
         if (settings.icon.isValid())
         {
             window.attributes.push_back({"icon", serialization::makeCall("asset", {serialization::TextValue(settings.icon.uuid.toString())})});
+        }
+    }
+
+    if (project.sorting != SortingSettings{})
+    {
+        for (const std::string& layer : project.sorting.layers)
+        {
+            serialization::TextSection& layerSection = document.sections.emplace_back();
+            layerSection.type = "sorting_layer";
+            layerSection.attributes.push_back({"name", serialization::TextValue(layer)});
         }
     }
 

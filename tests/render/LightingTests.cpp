@@ -85,3 +85,61 @@ TEST_CASE("Lights are assigned to the clusters their range touches", "[render][l
     CHECK(clusters.clusters.front().count == 0);
     CHECK(clusters.clusters.back().count == 0);
 }
+
+TEST_CASE("Orthographic cascades hold the box of each slice of the view", "[render][lighting]")
+{
+    // A 2D camera looking down -Z, ten meters in front of the XY plane.
+    const Mat4 cameraWorld = devex::math::translate(Mat4{1.0f}, Vec3{4.0f, 2.0f, 10.0f});
+    const float aspect = 16.0f / 9.0f;
+    const float halfHeight = 6.0f;
+    const float nearPlane = 0.1f;
+    const devex::render::ViewVolume volume = devex::render::ViewVolume::orthographic(halfHeight, aspect);
+    CHECK(volume.halfSizeAt(0.0f).y == halfHeight);
+    CHECK(volume.halfSizeAt(50.0f).x == halfHeight * aspect);
+    const devex::render::ShadowCascades cascades =
+        devex::render::computeShadowCascades(cameraWorld, volume, nearPlane, 40.0f, Vec3{-0.3f, -1.0f, -0.4f}, 2048);
+
+    float sliceNear = nearPlane;
+    for (std::uint32_t cascade = 0; cascade < devex::render::cascadeCount; ++cascade)
+    {
+        const float sliceFar = cascades.splitDistances[cascade];
+        for (const float distance : {sliceNear, sliceFar})
+        {
+            for (const float sx : {-1.0f, 1.0f})
+            {
+                for (const float sy : {-1.0f, 1.0f})
+                {
+                    const Vec4 viewCorner{sx * halfHeight * aspect, sy * halfHeight, -distance, 1.0f};
+                    const Vec4 clip = cascades.viewProjections[cascade] * (cameraWorld * viewCorner);
+                    CHECK(std::abs(clip.x) <= 1.0f);
+                    CHECK(std::abs(clip.y) <= 1.0f);
+                    CHECK(clip.z >= 0.0f);
+                    CHECK(clip.z <= 1.0f);
+                }
+            }
+        }
+        sliceNear = sliceFar;
+    }
+}
+
+TEST_CASE("An orthographic view gives its lights the clusters of their place on screen", "[render][lighting]")
+{
+    const devex::render::ClusterGrid grid;
+    const devex::render::ViewVolume volume = devex::render::ViewVolume::orthographic(9.0f, 16.0f / 9.0f);
+    const std::vector<devex::render::RenderLight> lights{
+        // Near the right edge of the screen, in front of the camera.
+        {.position = {15.0f, 0.0f, -10.0f}, .range = 1.0f},
+    };
+    devex::render::LightClusters clusters;
+    devex::render::assignLightsToClusters(grid, Mat4{1.0f}, volume, lights, clusters);
+
+    const auto slice = static_cast<std::uint32_t>(std::floor(std::log2(10.0f) * clusters.sliceScale + clusters.sliceBias));
+    REQUIRE(slice < grid.slices);
+    // The screen is 32 meters wide: x = 15 falls in the last column; in perspective it would not.
+    const devex::render::ClusterRange right =
+        clusters.clusters[(slice * grid.tilesY + grid.tilesY / 2) * grid.tilesX + grid.tilesX - 1];
+    CHECK(right.count == 1);
+    const devex::render::ClusterRange center =
+        clusters.clusters[(slice * grid.tilesY + grid.tilesY / 2) * grid.tilesX + grid.tilesX / 2];
+    CHECK(center.count == 0);
+}

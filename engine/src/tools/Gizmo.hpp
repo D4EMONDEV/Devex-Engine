@@ -59,6 +59,9 @@ public:
 
     GizmoMode mode = GizmoMode::Translate;
     GizmoSpace space = GizmoSpace::World;
+    // Keeps the handles that stay in the XY plane, for the 2D view: the X and Y axes, their plane,
+    // the view handle, and the rotation around Z.
+    bool twoD = false;
 
     // The handle under the mouse, closest first.
     [[nodiscard]] GizmoHandle hitTest(const ViewportView& view, const math::Mat4& world, math::Vec2 mouse) const;

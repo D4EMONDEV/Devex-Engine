@@ -83,6 +83,7 @@ devex_add_tests(scene
 devex_add_tests(animation
     SOURCES
         animation/AnimationTests.cpp
+        animation/SpriteAnimationTests.cpp
         animation/TweenTests.cpp
     LIBRARIES
         Devex::Engine
@@ -121,6 +122,7 @@ devex_add_tests(asset
         asset/MeshDataTests.cpp
         asset/MetaFileTests.cpp
         asset/PackageTests.cpp
+        asset/SpriteTests.cpp
         asset/TextureProcessingTests.cpp
     LIBRARIES
         Devex::Engine

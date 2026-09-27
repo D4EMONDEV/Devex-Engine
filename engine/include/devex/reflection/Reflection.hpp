@@ -192,6 +192,8 @@ struct FieldHints
     bool physicsLayer = false;
     // A std::uint32_t index into the audio groups of the project, shown by name.
     bool audioGroup = false;
+    // A std::string naming a sorting layer of the project, chosen among them.
+    bool sortingLayer = false;
     // Starts a section of the fields, which the inspector shows under this title and folds: the
     // fields that follow belong to it until the next field that starts one.
     std::string_view group;
@@ -206,6 +208,7 @@ struct FieldInfo
     bool angle = false;
     bool physicsLayer = false;
     bool audioGroup = false;
+    bool sortingLayer = false;
     // The section the field starts, empty when it continues the previous one.
     std::string group;
     // For enumerations: the name of each value, and the size of the stored value in bytes.
@@ -279,6 +282,7 @@ public:
             .angle = hints.angle,
             .physicsLayer = hints.physicsLayer,
             .audioGroup = hints.audioGroup,
+            .sortingLayer = hints.sortingLayer,
             .group = std::string(hints.group),
             .enumNames = std::move(enumNames),
             .enumSize = static_cast<std::uint8_t>(ReflectableEnum<Value> ? sizeof(Value) : 0),
@@ -308,6 +312,7 @@ public:
             .angle = hints.angle,
             .physicsLayer = hints.physicsLayer,
             .audioGroup = hints.audioGroup,
+            .sortingLayer = hints.sortingLayer,
             .group = std::string(hints.group),
             .enumNames = std::move(enumNames),
             .enumSize = static_cast<std::uint8_t>(ReflectableEnum<Element> ? sizeof(Element) : 0),

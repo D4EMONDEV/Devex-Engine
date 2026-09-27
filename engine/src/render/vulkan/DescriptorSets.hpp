@@ -12,7 +12,8 @@ namespace devex::render::vulkan {
 // The descriptor sets shared by the frame's shaders.
 //
 // Set 0, global and updated while frames using it are in flight: every texture in one array
-// indexed by materials, the image based lighting maps, the sky, and their samplers.
+// indexed by materials, the sampler of each texture beside it, the image based lighting maps, the
+// sky, and their samplers.
 // Set 1, one per frame context: the images produced earlier in the same frame, namely the shadow
 // map, the scene color, the mask of the selected objects, the motion and the normals of the
 // prepass, the ambient occlusion, and the image the previous frame resolved.
@@ -28,6 +29,8 @@ public:
     static constexpr std::uint32_t clampSamplerBinding = 5;
     static constexpr std::uint32_t skyBinding = 6;
     static constexpr std::uint32_t skySamplerBinding = 7;
+    // The sampler of each texture, at the same index: smooth, or the nearest pixel.
+    static constexpr std::uint32_t textureSamplersBinding = 8;
     // Frame set bindings.
     static constexpr std::uint32_t shadowMapBinding = 0;
     static constexpr std::uint32_t shadowSamplerBinding = 1;
@@ -84,8 +87,9 @@ public:
     [[nodiscard]] VkDescriptorSet frame(std::uint32_t index) const noexcept;
     [[nodiscard]] std::uint32_t textureCapacity() const noexcept;
 
-    // Views must be in the shader read-only layout whenever a frame samples them.
-    void setTexture(std::uint32_t slot, VkImageView view) noexcept;
+    // Views must be in the shader read-only layout whenever a frame samples them. Nearest textures
+    // are read at their nearest pixel, which keeps pixel art sharp.
+    void setTexture(std::uint32_t slot, VkImageView view, bool nearest = false) noexcept;
     void setEnvironment(VkImageView specular, VkImageView irradiance, VkImageView sky) noexcept;
     void setBrdfLut(VkImageView view) noexcept;
     // Only while no frame using the set is in flight.
@@ -100,6 +104,7 @@ private:
 
     VkDevice m_device = VK_NULL_HANDLE;
     VkSampler m_materialSampler = VK_NULL_HANDLE;
+    VkSampler m_pixelSampler = VK_NULL_HANDLE;
     VkSampler m_clampSampler = VK_NULL_HANDLE;
     VkSampler m_skySampler = VK_NULL_HANDLE;
     VkSampler m_shadowSampler = VK_NULL_HANDLE;

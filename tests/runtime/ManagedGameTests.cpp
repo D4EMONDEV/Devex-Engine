@@ -14,6 +14,7 @@
 #include <devex/scene/ComponentRegistry.hpp>
 #include <devex/scene/Components.hpp>
 #include <devex/scene/ParticleComponents.hpp>
+#include <devex/scene/SpriteComponents.hpp>
 #include <devex/scene/PhysicsComponents.hpp>
 #include <devex/scene/SceneSerializer.hpp>
 
@@ -70,7 +71,7 @@ void run(ManagedGame& game, Scene& scene, SystemPhase phase, double seconds = 0.
 TEST_CASE("The C# runtime registers components and runs them", "[runtime][managed]")
 {
     const std::unique_ptr<ManagedGame> game = startRuntime();
-    CHECK(game->componentTypes().size() == 12);
+    CHECK(game->componentTypes().size() == 13);
 
     devex::scene::ComponentRegistry& registry = devex::scene::componentRegistry();
     const devex::scene::ComponentType* const mover = registry.find("Mover");
@@ -521,6 +522,31 @@ TEST_CASE("C# code bursts, reads and stops the particles of an emitter", "[runti
     CHECK(value("emitted", std::int32_t{}) == 5);
     CHECK(value("playing", bool{}));
     CHECK(value("stopped", bool{}));
+    game->unloadAssembly();
+}
+
+TEST_CASE("C# code plays the animations of sprites and flips them", "[runtime][managed][sprite]")
+{
+    const std::unique_ptr<ManagedGame> game = startRuntime();
+    const devex::scene::ComponentType* const type = devex::scene::componentRegistry().find("Animator2D");
+    REQUIRE(type != nullptr);
+    Scene scene;
+    const Entity entity = scene.createEntity("Hero");
+    scene.add<devex::scene::Transform>(entity);
+    scene.add<devex::scene::SpriteRenderer>(entity);
+    scene.add<devex::scene::SpriteAnimator>(entity, devex::scene::SpriteAnimator{.animation = "idle"});
+    REQUIRE(type->emplace(scene, entity) != nullptr);
+    const auto value = [&]<typename T>(const char* name, T) -> T& {
+        return field<T>(*type, const_cast<void*>(type->find(scene, entity)), name);
+    };
+
+    run(*game, scene, SystemPhase::Update, 0.1);
+    CHECK(scene.get<devex::scene::SpriteAnimator>(entity).animation == "run");
+    CHECK(scene.get<devex::scene::SpriteRenderer>(entity).flipX);
+    run(*game, scene, SystemPhase::Update, 0.1);
+    CHECK(value("shown", std::string{}) == "run 2");
+    run(*game, scene, SystemPhase::Update, 0.1);
+    CHECK(value("restarted", bool{}));
     game->unloadAssembly();
 }
 

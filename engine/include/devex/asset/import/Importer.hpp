@@ -5,6 +5,7 @@
 #include <devex/asset/import/MetaFile.hpp>
 #include <devex/core/Error.hpp>
 #include <devex/core/JobSystem.hpp>
+#include <devex/math/Math.hpp>
 #include <devex/serialization/Text.hpp>
 
 #include <atomic>
@@ -65,6 +66,9 @@ struct ImportContext
     [[nodiscard]] bool boolOption(std::string_view key, bool fallback) const noexcept;
     [[nodiscard]] double numberOption(std::string_view key, double fallback) const noexcept;
     [[nodiscard]] std::string stringOption(std::string_view key, std::string_view fallback) const;
+    // The numbers of a vec2(...), vec3(...) or vec4(...) option, in order; the components the
+    // option does not give keep those of the fallback.
+    [[nodiscard]] math::Vec4 vectorOption(std::string_view key, math::Vec4 fallback) const noexcept;
 };
 
 struct ImportResult
@@ -92,7 +96,8 @@ struct Importer
     core::Result<std::vector<std::filesystem::path>> (*findDependencies)(const std::filesystem::path& file) = nullptr;
 };
 
-// Texture images, .dvxmat materials, glTF, FBX and OBJ models, sounds, fonts and .dvxscene scenes.
+// Texture images, .dvxmat materials, glTF, FBX and OBJ models, sounds, fonts, curves, sprite frames
+// and .dvxscene scenes.
 [[nodiscard]] std::span<const Importer> importers();
 // The extension is compared without regard to case.
 [[nodiscard]] const Importer* findImporterForExtension(std::string_view extension);
@@ -107,6 +112,7 @@ struct Importer
 [[nodiscard]] core::Result<ImportResult> importFbxFile(ImportContext& context);
 [[nodiscard]] core::Result<ImportResult> importSceneFile(ImportContext& context);
 [[nodiscard]] core::Result<ImportResult> importCurveFile(ImportContext& context);
+[[nodiscard]] core::Result<ImportResult> importSpriteFramesFile(ImportContext& context);
 // Sounds keep their file; the "loading" option chooses "decoded", "streamed" or "auto".
 [[nodiscard]] core::Result<ImportResult> importAudioFile(ImportContext& context);
 // Fonts are baked into an atlas of distances at the "size" of the option, with the "spread" of the

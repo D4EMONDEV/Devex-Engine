@@ -9,6 +9,7 @@
 #include <devex/asset/MaterialData.hpp>
 #include <devex/asset/MeshData.hpp>
 #include <devex/asset/ModelData.hpp>
+#include <devex/asset/SpriteData.hpp>
 #include <devex/asset/TextureData.hpp>
 #include <devex/core/Error.hpp>
 
@@ -46,6 +47,8 @@ inline constexpr std::string_view artifactExtension = ".dvxasset";
 [[nodiscard]] std::vector<std::byte> encodeFont(const FontData& font);
 [[nodiscard]] std::vector<std::byte> encodeTheme(const ThemeData& theme);
 [[nodiscard]] std::vector<std::byte> encodeCurve(const CurveData& curve);
+[[nodiscard]] std::vector<std::byte> encodeSprite(const SpriteData& sprite);
+[[nodiscard]] std::vector<std::byte> encodeSpriteFrames(const SpriteFramesData& frames);
 
 // Decoding validates the header, the version and the data itself.
 [[nodiscard]] core::Result<MeshData> decodeMesh(std::span<const std::byte> bytes);
@@ -60,5 +63,7 @@ inline constexpr std::string_view artifactExtension = ".dvxasset";
 [[nodiscard]] core::Result<FontData> decodeFont(std::span<const std::byte> bytes);
 [[nodiscard]] core::Result<ThemeData> decodeTheme(std::span<const std::byte> bytes);
 [[nodiscard]] core::Result<CurveData> decodeCurve(std::span<const std::byte> bytes);
+[[nodiscard]] core::Result<SpriteData> decodeSprite(std::span<const std::byte> bytes);
+[[nodiscard]] core::Result<SpriteFramesData> decodeSpriteFrames(std::span<const std::byte> bytes);
 
 } // namespace devex::asset

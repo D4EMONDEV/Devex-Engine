@@ -3,6 +3,7 @@
 #include <devex/asset/Primitives.hpp>
 #include <devex/asset/Project.hpp>
 #include <devex/animation/AnimationWorld.hpp>
+#include <devex/animation/SpriteAnimation.hpp>
 #include <devex/animation/TweenWorld.hpp>
 #include <devex/particles/ParticleWorld.hpp>
 #include <devex/asset/import/TextureProcessing.hpp>
@@ -901,6 +902,9 @@ void ApplicationRunner::render(bool gameplay)
     {
         DEVEX_PROFILE_SCOPE("Scene extraction");
         extractScene(scene, m_services.assets, world);
+        const asset::AssetSource* const source = assetSource();
+        extractSprites(scene, m_services.assets, source != nullptr ? source->project().sorting : asset::SortingSettings{},
+                       world);
         extractParticles(*m_particles, m_services.assets, world);
         if (gameplay)
         {
@@ -2055,6 +2059,13 @@ void ApplicationRunner::updateAnimation(std::chrono::nanoseconds frameTime)
     const bool paused = isEditor() && m_playState != tools::PlayState::Playing;
     m_animation->setPaused(paused);
     m_animation->update(*m_application.m_scene, core::Duration(frameTime));
+    // Sprites move from frame to frame while the game plays.
+    if (!paused)
+    {
+        animation::updateSpriteAnimators(
+            *m_application.m_scene, [this](asset::AssetId frames) { return m_services.assets.spriteFrames(frames); },
+            std::chrono::duration<float>(frameTime).count());
+    }
     // After the clips, so that a tween moves an animated entity as a whole.
     if (m_tweens)
     {
@@ -2618,6 +2629,9 @@ int run(Application& application, const ApplicationConfig& config)
                             [&assets](asset::AssetId clip) { return assets.audioClip(clip); });
             tools->setAnimationClips([&assets](asset::AssetId clip) { return assets.animationClip(clip); });
             tools->setThemes([&assets](asset::AssetId theme) { return assets.theme(theme); });
+            tools->setSpriteSources([&assets](asset::AssetId texture) { return assets.texture(texture); },
+                                    [&assets](asset::AssetId texture) { return assets.textureSize(texture); },
+                                    [&assets](asset::AssetId sprite) { return assets.sprite(sprite); });
             tools->setMemoryReport([&assets] { return assets.memoryReport(); });
             tools->setPendingLoads([&assets] { return assets.pendingLoads(); });
             const std::filesystem::path engineConfig = (platform->baseDirectory() / ".." / "cmake").lexically_normal();

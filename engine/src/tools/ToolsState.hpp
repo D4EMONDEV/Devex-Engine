@@ -17,6 +17,7 @@
 #include <devex/asset/AssetType.hpp>
 #include <devex/asset/AudioClipData.hpp>
 #include <devex/asset/CurveData.hpp>
+#include <devex/asset/SpriteData.hpp>
 #include <devex/asset/Project.hpp>
 #include <devex/asset/import/AssetDatabase.hpp>
 #include <devex/core/Uuid.hpp>
@@ -249,6 +250,24 @@ enum class WindowLayout : std::uint8_t
 };
 
 // The curve the inspector edits: a copy of its file, saved when a change is over.
+// The sprite frames the inspector edits: a copy of their file, saved when a change is over.
+struct SpriteFramesEditor
+{
+    asset::AssetId asset;
+    std::filesystem::path file;
+    // When the file was read or written, to read it again once changed elsewhere.
+    std::filesystem::file_time_type fileTime{};
+    asset::SpriteFramesData frames;
+    std::string error;
+    int selectedAnimation = 0;
+    // The frame shown while the preview is paused; -1 for none.
+    int selectedFrame = -1;
+    // The name of the selected animation while it is typed.
+    std::string renaming;
+    bool previewPlaying = true;
+    float previewTime = 0.0f;
+};
+
 struct CurveEditor
 {
     asset::AssetId asset;
@@ -349,12 +368,18 @@ struct ToolsState
     asset::AssetId previewedClip;
     // The curve the inspector edits, as its file holds it.
     CurveEditor curveEditor;
+    SpriteFramesEditor spriteFramesEditor;
     // A file just created, selected once it is imported, as a res:// path.
     std::string assetToSelect;
     // Animations: where clips come from, and the animations of the game while it plays.
     std::function<std::shared_ptr<const animation::Clip>(asset::AssetId)> animationClips;
     // The themes of interfaces, for the inspector to show what a style sets.
     std::function<std::shared_ptr<const asset::ThemeData>(asset::AssetId)> themes;
+    // Previews of textures and sprites: textures as the renderer holds them, their sizes, and where
+    // sprites lie on them. Loading starts when they are asked for.
+    std::function<render::TextureHandle(asset::AssetId)> textures;
+    std::function<math::Extent2D(asset::AssetId)> textureSizes;
+    std::function<std::shared_ptr<const asset::SpriteData>(asset::AssetId)> sprites;
     // What the loaded assets take, for the Profiler panel.
     std::function<asset::MemoryReport()> memoryReport;
     // The meshes and textures loading in the background, for the status bar.
@@ -568,6 +593,16 @@ void drawAudioClipInspector(ToolsState& state);
 void drawModelInspector(ToolsState& state);
 // The selected curve: a graph of its keys and their slopes, edited in place and saved to its file.
 void drawCurveInspector(ToolsState& state);
+// The selected texture: a preview, how it imports, and how it is cut into sprites.
+void drawTextureInspector(ToolsState& state);
+// The selected sprite frames: their animations, each with its frames, rate and loop, and a preview.
+void drawSpriteFramesInspector(ToolsState& state);
+// A square holding a sprite at the cursor, fitted and centered; a placeholder while it loads.
+void drawSpriteThumbnail(ToolsState& state, asset::AssetId sprite, float size, bool selected);
+// Writes new sprite frames into a res:// folder of the assets, and selects them once imported. From a
+// texture, they hold one animation of all its sprites.
+core::Result<std::filesystem::path> createSpriteFramesFile(ToolsState& state, std::string_view folder,
+                                                           asset::AssetId fromTexture = {});
 // Writes a new curve into a res:// folder of the assets, and selects it once imported.
 core::Result<std::filesystem::path> createCurveFile(ToolsState& state, std::string_view folder);
 void previewAudioClip(ToolsState& state, asset::AssetId clip);
@@ -633,6 +668,8 @@ void frameSelection(ToolsState& state, const scene::Scene& scene);
 // The create menu of entities: empty, primitives, lights, camera, environment. Created entities go
 // under parent (nil for a root), at the editor camera's pivot.
 void drawCreateEntityMenu(ToolsState& state, core::Uuid parent);
+// Creates an entity showing a sprite, at a position of the world, as one undoable step.
+void requestCreateSprite(ToolsState& state, asset::AssetId sprite, math::Vec3 position);
 
 // A combo listing the assets of a type (any type without one), which also accepts dropped assets.
 // Returns whether the value changed. A mixed value shows a dash.

@@ -8,9 +8,13 @@
 #include <devex/platform/Platform.hpp>
 #include <devex/render/Renderer.hpp>
 #include <devex/runtime/AssetManager.hpp>
+#include <devex/runtime/SceneExtraction.hpp>
+#include <devex/scene/Components.hpp>
+#include <devex/scene/SpriteComponents.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <array>
 #include <format>
 #include <mutex>
@@ -213,4 +217,93 @@ TEST_CASE("An asset that fails to load is ready at once and is not asked for aga
     devex::runtime::AssetManager synchronous(&*renderer, &source);
     CHECK(synchronous.mesh(mesh) != nullptr);
     CHECK(synchronous.pendingLoads() == 0);
+}
+
+TEST_CASE("Extraction draws the sprites, with the frames of their animators and their layers", "[runtime][assets][gpu]")
+{
+    auto platform = devex::platform::Platform::create();
+    REQUIRE(platform.has_value());
+    auto window = platform->createWindow({.width = 320, .height = 240, .vulkan = true, .hidden = true});
+    REQUIRE(window.has_value());
+    auto renderer = devex::render::Renderer::create(*platform, *window, {});
+    REQUIRE(renderer.has_value());
+
+    // A texture of 32 by 16 pixels cut into two sprites, and the frames of a run.
+    MemorySource source;
+    const AssetId textureId = AssetId::generate();
+    devex::asset::TextureData texture{.format = devex::asset::TextureFormat::Rgba8Srgb};
+    texture.mips.push_back({.width = 32, .height = 16, .bytes = std::vector<std::byte>(32 * 16 * 4, std::byte{255})});
+    source.set(textureId, AssetType::Texture, devex::asset::encodeTexture(texture));
+    const devex::asset::SpriteData first{.texture = textureId, .width = 16, .height = 16, .textureWidth = 32,
+                                         .textureHeight = 16, .pixelsPerUnit = 16.0f, .pivot = {0.5f, 0.0f}};
+    devex::asset::SpriteData second = first;
+    second.x = 16;
+    second.border = {4.0f, 4.0f, 4.0f, 4.0f};
+    const AssetId firstId = AssetId::generate();
+    const AssetId secondId = AssetId::generate();
+    source.set(firstId, AssetType::Sprite, devex::asset::encodeSprite(first));
+    source.set(secondId, AssetType::Sprite, devex::asset::encodeSprite(second));
+    const AssetId framesId = AssetId::generate();
+    source.set(framesId, AssetType::SpriteFrames,
+               devex::asset::encodeSpriteFrames({.animations = {{.name = "run", .frames = {firstId, secondId}}}}));
+    devex::runtime::AssetManager assets(&*renderer, &source);
+
+    devex::scene::Scene scene;
+    const auto camera = scene.createEntity("Camera");
+    scene.add<devex::scene::Transform>(camera, devex::scene::Transform{.position = {0.0f, 0.0f, 10.0f}});
+    scene.add<devex::scene::Camera>(camera, devex::scene::Camera{.projection = devex::scene::Projection::Orthographic,
+                                                                 .orthographicSize = 3.0f,
+                                                                 .farPlane = 50.0f});
+    // A hero on its second frame, in front; a platform sliced behind, twice as bright.
+    const auto hero = scene.createEntity("Hero");
+    scene.add<devex::scene::Transform>(hero, devex::scene::Transform{.position = {1.0f, 0.0f, 0.0f}});
+    scene.add<devex::scene::SpriteRenderer>(hero, devex::scene::SpriteRenderer{.sprite = firstId,
+                                                                               .flipX = true,
+                                                                               .sortingLayer = "Front",
+                                                                               .order = 3});
+    scene.add<devex::scene::SpriteAnimator>(hero, devex::scene::SpriteAnimator{.frames = framesId, .animation = "run",
+                                                                               .frame = 1});
+    const auto platformEntity = scene.createEntity("Platform");
+    scene.add<devex::scene::Transform>(platformEntity);
+    scene.add<devex::scene::SpriteRenderer>(platformEntity,
+                                            devex::scene::SpriteRenderer{.sprite = secondId,
+                                                                         .color = {0.5f, 0.25f, 1.0f, 0.5f},
+                                                                         .intensity = 2.0f,
+                                                                         .drawMode = devex::scene::SpriteDrawMode::Sliced,
+                                                                         .size = {3.0f, 1.0f},
+                                                                         .sortingLayer = "Back"});
+    // Without a sprite, or with one that does not exist, nothing is drawn.
+    scene.add<devex::scene::SpriteRenderer>(scene.createEntity("Empty"));
+    scene.add<devex::scene::SpriteRenderer>(scene.createEntity("Missing"),
+                                            devex::scene::SpriteRenderer{.sprite = AssetId::generate()});
+    scene.updateTransforms();
+
+    devex::render::RenderWorld world;
+    devex::runtime::extractScene(scene, assets, world);
+    devex::runtime::extractSprites(scene, assets, {.layers = {"Back", "Default", "Front"}}, world);
+
+    CHECK(world.camera.projection == devex::render::Projection::Orthographic);
+    CHECK(world.camera.orthographicSize == 3.0f);
+    CHECK(world.camera.farPlane == 50.0f);
+    REQUIRE(world.sprites.size() == 2);
+    const auto shown = [&](devex::scene::Entity entity) -> const devex::render::RenderSprite& {
+        const auto found = std::ranges::find(world.sprites, entity.index + 1, &devex::render::RenderSprite::objectId);
+        REQUIRE(found != world.sprites.end());
+        return *found;
+    };
+    const devex::render::RenderSprite& shownHero = shown(hero);
+    // The second frame, at its pixels.
+    CHECK(shownHero.uvRect.x == 0.5f);
+    CHECK(shownHero.size == devex::math::Vec2{1.0f, 1.0f});
+    CHECK(shownHero.pivot.y == 0.0f);
+    CHECK(shownHero.flipX);
+    CHECK(shownHero.layer == 1);
+    CHECK(shownHero.order == 3);
+    CHECK(shownHero.texture.isValid());
+    const devex::render::RenderSprite& shownPlatform = shown(platformEntity);
+    CHECK(shownPlatform.mode == devex::render::SpriteMode::Sliced);
+    CHECK(shownPlatform.size == devex::math::Vec2{3.0f, 1.0f});
+    CHECK(shownPlatform.border.x == 0.25f);
+    CHECK(shownPlatform.color == devex::math::Vec4{1.0f, 0.5f, 2.0f, 0.5f});
+    CHECK(shownPlatform.layer == -1);
 }

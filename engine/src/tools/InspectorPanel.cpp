@@ -171,6 +171,34 @@ bool drawAudioGroupPicker(const ToolsState& state, const char* id, std::uint32_t
     return changed;
 }
 
+// A combo of the sorting layers of the project, back to front. A name the project does not know
+// stays as it is, and draws in "Default".
+bool drawSortingLayerPicker(const ToolsState& state, const char* id, std::string& layer, bool mixed)
+{
+    const asset::SortingSettings settings = state.database != nullptr ? state.database->project().sorting : asset::SortingSettings{};
+    const bool known = layer.empty() || std::ranges::find(settings.layers, layer) != settings.layers.end();
+    const std::string label = mixed ? std::string(mixedValue)
+                              : layer.empty() ? std::string("Default")
+                              : known       ? layer
+                                            : std::format("{} (unknown: Default)", layer);
+    bool changed = false;
+    if (beginCombo(id, label.c_str()))
+    {
+        for (const std::string& name : settings.layers)
+        {
+            if (ImGui::Selectable(name.c_str(), name == layer) && name != layer)
+            {
+                layer = name;
+                changed = true;
+            }
+        }
+        ImGui::Separator();
+        ImGui::TextDisabled("Order layers in Project > Project Settings");
+        ImGui::EndCombo();
+    }
+    return changed;
+}
+
 // Adds the entities of a subtree to the menu of an entity picker, indented by depth.
 bool chooseEntities(const scene::Scene& scene, scene::Entity entity, int depth, scene::EntityRef& value)
 {
@@ -273,6 +301,10 @@ bool drawValueWidget(ToolsState& state, const scene::Scene& scene, const char* i
         }
         return ImGui::DragFloat(id, static_cast<float*>(address), 0.01f, 0.0f, 0.0f, mixed ? mixedValue : "%.3f");
     case ValueKind::String:
+        if (field.sortingLayer)
+        {
+            return drawSortingLayerPicker(state, id, *static_cast<std::string*>(address), mixed);
+        }
         if (mixed)
         {
             // Empty with a dash until something is typed, which then goes to every entity.
@@ -364,7 +396,7 @@ bool drawValueWidget(ToolsState& state, const scene::Scene& scene, const char* i
 [[nodiscard]] bool isOneClickEdit(const reflection::FieldInfo& field) noexcept
 {
     return field.kind == ValueKind::AssetId || field.kind == ValueKind::Enum || field.kind == ValueKind::Entity ||
-           field.physicsLayer || field.audioGroup;
+           field.physicsLayer || field.audioGroup || field.sortingLayer;
 }
 
 // A list: its size and a button to add an element, then a row per element with a button to
@@ -1177,6 +1209,14 @@ void drawInspectorPanel(ToolsState& state, scene::Scene& scene)
             else if (selected != nullptr && selected->type == asset::AssetType::Curve)
             {
                 drawCurveInspector(state);
+            }
+            else if (selected != nullptr && selected->type == asset::AssetType::Texture)
+            {
+                drawTextureInspector(state);
+            }
+            else if (selected != nullptr && selected->type == asset::AssetType::SpriteFrames)
+            {
+                drawSpriteFramesInspector(state);
             }
             else
             {

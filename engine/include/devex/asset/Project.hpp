@@ -56,6 +56,20 @@ struct AudioSettings
     bool operator==(const AudioSettings&) const = default;
 };
 
+// How sprites cover each other: the sorting layers of the project, from the back to the front.
+// Sprites name their layer; the blended surfaces and the particles draw in "Default".
+struct SortingSettings
+{
+    // "Default" is always among them.
+    std::vector<std::string> layers{"Default"};
+
+    // Where a layer draws, counted from "Default": negative behind it, positive in front of it. An
+    // empty or unknown name draws in "Default".
+    [[nodiscard]] std::int32_t rank(std::string_view layer) const noexcept;
+
+    bool operator==(const SortingSettings&) const = default;
+};
+
 // How the window of the game starts, in the player and in exported games.
 struct WindowSettings
 {
@@ -175,6 +189,7 @@ struct Project
     std::string startupScene;
     PhysicsSettings physics;
     AudioSettings audio;
+    SortingSettings sorting;
     WindowSettings window;
     ExportSettings exportSettings;
     InputSettings input;
@@ -203,7 +218,8 @@ struct Project
 
 // Reads "[project format=1 name="My game" startup_scene="res://assets/scenes/Main.dvxscene"]" from
 // the .dvxproj file, followed by optional [physics], [physics_layer], [audio], [audio_group],
-// [window], [export], [export_scene], [export_folder], [input_context] and [input_action] sections.
+// [sorting_layer], [window], [export], [export_scene], [export_folder], [input_context] and
+// [input_action] sections.
 [[nodiscard]] core::Result<Project> loadProject(const std::filesystem::path& projectFile);
 // The same from the text of a project file, as exported games keep it; projectFile gives the
 // project its root.

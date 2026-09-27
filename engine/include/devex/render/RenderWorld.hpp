@@ -36,13 +36,25 @@ enum class Tonemapper : std::uint8_t
     None,
 };
 
+enum class Projection : std::uint8_t
+{
+    Perspective,
+    // Things keep their size whatever their distance, as in 2D games.
+    Orthographic,
+};
+
 struct RenderCamera
 {
     // World to view transform: the inverse of the camera's world transform.
     math::Mat4 view{1.0f};
+    Projection projection = Projection::Perspective;
     float verticalFov = math::radians(60.0f);
-    // Distance of the near plane. There is no far plane: depth is reversed and infinite.
+    // Orthographic: half the height of the image, in meters.
+    float orthographicSize = 5.0f;
+    // Distance of the near plane. Depth is reversed: a perspective has no far plane and sees
+    // infinitely far, an orthographic view stops at its far plane.
     float nearPlane = 0.1f;
+    float farPlane = 1000.0f;
     // Exposure in photographic units: see Camera in the scene module.
     bool autoExposure = true;
     float ev100 = 14.0f;
@@ -200,6 +212,51 @@ struct ParticleDraw
     math::Vec3 center{0.0f};
 };
 
+enum class SpriteMode : std::uint8_t
+{
+    // Its rectangle stretched over the quad.
+    Simple,
+    // Its borders kept at their size and its middle stretched.
+    Sliced,
+    // Its borders kept at their size and its middle repeated.
+    Tiled,
+};
+
+// A rectangle of a texture lying in the XY plane of its transform and facing +Z, drawn among the
+// blended surfaces: by layer, then by order, then from the farthest.
+struct RenderSprite
+{
+    math::Mat4 transform{1.0f};
+    // The rectangle drawn, in meters, and the point of it at the origin of the transform, from its
+    // bottom-left corner (0, 0) to its top-right one (1, 1).
+    math::Vec2 size{1.0f};
+    math::Vec2 pivot{0.5f};
+    // Texture coordinates of the top-left corner of the sprite, then of its bottom-right one.
+    math::Vec4 uvRect{0.0f, 0.0f, 1.0f, 1.0f};
+    // The size of the sprite at its pixels, and the borders a sliced or tiled one keeps at their
+    // size: left, bottom, right and top, in meters.
+    math::Vec2 naturalSize{1.0f};
+    math::Vec4 border{0.0f};
+    // Linear color with straight alpha, relative to the exposure unless lit.
+    math::Vec4 color{1.0f};
+    // Invalid fills the rectangle with the color.
+    TextureHandle texture;
+    SpriteMode mode = SpriteMode::Simple;
+    // Mirrors the sprite around its pivot.
+    bool flipX = false;
+    bool flipY = false;
+    bool additive = false;
+    // Lit as a matte surface by the sun, the sky and the lights; otherwise shines alone.
+    bool lit = false;
+    // The sorting layer, counted from the one of the blended surfaces and the particles, then the
+    // order within it: higher ones draw over lower ones, whatever their distance.
+    std::int32_t layer = 0;
+    std::int32_t order = 0;
+    // As for a mesh instance: reported by picking, and outlined for the selection.
+    std::uint32_t objectId = 0;
+    bool outlined = false;
+};
+
 // A vertex of the lines and triangles the tools draw over the scene, such as grids and gizmos.
 struct OverlayVertex
 {
@@ -296,6 +353,7 @@ struct RenderWorld
     std::vector<RenderTrailPoint> trailPoints;
     std::vector<std::uint32_t> trailSegments;
     std::vector<ParticleDraw> particleDraws;
+    std::vector<RenderSprite> sprites;
 
     // Size in pixels of the image the scene is drawn into for the tools, which show it with
     // Renderer::viewportTexture. Zero draws the scene over the whole window.
@@ -325,6 +383,8 @@ struct RenderWorld
         std::vector<RenderTrailPoint> trailPointStorage = std::move(trailPoints);
         std::vector<std::uint32_t> trailSegmentStorage = std::move(trailSegments);
         std::vector<ParticleDraw> particleDrawStorage = std::move(particleDraws);
+        std::vector<RenderSprite> spriteStorage = std::move(sprites);
+        spriteStorage.clear();
         particleStorage.clear();
         trailPointStorage.clear();
         trailSegmentStorage.clear();
@@ -352,6 +412,7 @@ struct RenderWorld
         trailPoints = std::move(trailPointStorage);
         trailSegments = std::move(trailSegmentStorage);
         particleDraws = std::move(particleDrawStorage);
+        sprites = std::move(spriteStorage);
         sceneLines = std::move(sceneLineStorage);
         overlayLines = std::move(overlayLineStorage);
         overlayTriangles = std::move(overlayTriangleStorage);

@@ -1,0 +1,948 @@
+[scene format=1]
+
+[entity uuid="143b462f-d610-5925-b5d2-066a6a20517b" name="Camera"]
+
+[component type="Transform"]
+position = vec3(-6, 1, 10)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="Camera"]
+projection = "orthographic"
+orthographic_size = 5
+near_plane = 0.1
+far_plane = 100
+primary = true
+auto_exposure = false
+ev100 = 3
+tonemapper = "none"
+antialiasing = "none"
+ambient_occlusion = 0
+bloom = 0.04
+bloom_threshold = 1
+
+[component type="Follow2D"]
+target = entity("4a7dac21-2b21-52b6-8184-fb0ae4824884")
+smoothing = 4
+min_x = -6
+max_x = 14
+min_y = 1
+above = 1.5
+
+[entity uuid="e1cbdb56-8485-5dac-a469-7da0e01272a6" name="Environment"]
+
+[component type="Environment"]
+color = vec3(0.32, 0.34, 0.5)
+intensity = 2
+rotation = 0
+
+[entity uuid="67112a34-b424-5eb2-9066-71bf53efe480" name="Sunset"]
+
+[component type="Transform"]
+position = vec3(-6, 1.5, -20)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="SpriteRenderer"]
+sprite = asset("cc9857ec-42bc-5f86-99a4-82d3bf94e56c")
+color = vec4(1, 1, 1, 1)
+intensity = 1
+flip_x = false
+flip_y = false
+draw_mode = "tiled"
+size = vec2(120, 18)
+sorting_layer = "Background"
+order = 0
+blend = "alpha"
+lit = false
+
+[component type="Parallax2D"]
+camera = entity("143b462f-d610-5925-b5d2-066a6a20517b")
+factor = 0.75
+
+[entity uuid="8fddd4ac-073f-5020-9847-1e16d73b606e" name="Ground"]
+
+[component type="Transform"]
+position = vec3(4, -3, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="SpriteRenderer"]
+sprite = asset("e1c07229-ccb7-5878-a9cc-23f0bcbcb535")
+color = vec4(1, 1, 1, 1)
+intensity = 1
+flip_x = false
+flip_y = false
+draw_mode = "tiled"
+size = vec2(48, 4)
+sorting_layer = "Default"
+order = 0
+blend = "alpha"
+lit = false
+
+[component type="Platform2D"]
+width = 48
+
+[entity uuid="1561105a-6637-5db3-88e5-b221fc5683d7" name="Ledge 1"]
+
+[component type="Transform"]
+position = vec3(-4.5, -0.6, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="SpriteRenderer"]
+sprite = asset("2c9a91c0-d230-5588-a04f-2cf7b8d9bd3b")
+color = vec4(1, 1, 1, 1)
+intensity = 1
+flip_x = false
+flip_y = false
+draw_mode = "tiled"
+size = vec2(4, 0.5)
+sorting_layer = "Default"
+order = 0
+blend = "alpha"
+lit = false
+
+[component type="Platform2D"]
+width = 4
+
+[entity uuid="9b0e1d59-6ee3-58aa-b9d7-8a52a8ff27af" name="Ledge 2"]
+
+[component type="Transform"]
+position = vec3(1, 1.2, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="SpriteRenderer"]
+sprite = asset("2c9a91c0-d230-5588-a04f-2cf7b8d9bd3b")
+color = vec4(1, 1, 1, 1)
+intensity = 1
+flip_x = false
+flip_y = false
+draw_mode = "tiled"
+size = vec2(3, 0.5)
+sorting_layer = "Default"
+order = 0
+blend = "alpha"
+lit = false
+
+[component type="Platform2D"]
+width = 3
+
+[entity uuid="b83896d4-b752-5529-8e61-264565c24cf0" name="Ledge 3"]
+
+[component type="Transform"]
+position = vec3(6.5, -0.2, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="SpriteRenderer"]
+sprite = asset("2c9a91c0-d230-5588-a04f-2cf7b8d9bd3b")
+color = vec4(1, 1, 1, 1)
+intensity = 1
+flip_x = false
+flip_y = false
+draw_mode = "tiled"
+size = vec2(5, 0.5)
+sorting_layer = "Default"
+order = 0
+blend = "alpha"
+lit = false
+
+[component type="Platform2D"]
+width = 5
+
+[entity uuid="279ce4be-858f-56d5-b91a-0011b60e129f" name="Ledge 4"]
+
+[component type="Transform"]
+position = vec3(12, 1.8, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="SpriteRenderer"]
+sprite = asset("2c9a91c0-d230-5588-a04f-2cf7b8d9bd3b")
+color = vec4(1, 1, 1, 1)
+intensity = 1
+flip_x = false
+flip_y = false
+draw_mode = "tiled"
+size = vec2(3.5, 0.5)
+sorting_layer = "Default"
+order = 0
+blend = "alpha"
+lit = false
+
+[component type="Platform2D"]
+width = 3.5
+
+[entity uuid="689b02db-2a5d-5360-9c43-667fb24c5a8d" name="Ledge 5"]
+
+[component type="Transform"]
+position = vec3(17, 0.4, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="SpriteRenderer"]
+sprite = asset("2c9a91c0-d230-5588-a04f-2cf7b8d9bd3b")
+color = vec4(1, 1, 1, 1)
+intensity = 1
+flip_x = false
+flip_y = false
+draw_mode = "tiled"
+size = vec2(3, 0.5)
+sorting_layer = "Default"
+order = 0
+blend = "alpha"
+lit = false
+
+[component type="Platform2D"]
+width = 3
+
+[entity uuid="6e5f1e49-2687-5b79-afff-252ba10f2eb4" name="Wall"]
+
+[component type="Transform"]
+position = vec3(-8.5, -1, -1)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="SpriteRenderer"]
+sprite = asset("44dd1bde-bdd9-5a52-92bd-d187f8a5057a")
+color = vec4(1, 1, 1, 1)
+intensity = 1
+flip_x = false
+flip_y = false
+draw_mode = "tiled"
+size = vec2(5, 4)
+sorting_layer = "Background"
+order = 1
+blend = "alpha"
+lit = true
+
+[entity uuid="6d1a4ad2-6381-590b-a559-86af8d221b42" name="Torch"]
+
+[component type="Transform"]
+position = vec3(-8.5, -0.8, -0.9)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="SpriteRenderer"]
+sprite = asset("98573ac9-47d9-595d-9697-8e08cf94c87b")
+color = vec4(1, 1, 1, 1)
+intensity = 1
+flip_x = false
+flip_y = false
+draw_mode = "simple"
+size = vec2(1, 1)
+sorting_layer = "Background"
+order = 2
+blend = "alpha"
+lit = false
+
+[entity uuid="65f31822-0ffe-55c7-9620-a11d963d0c5e" name="Flame"]
+parent = "6d1a4ad2-6381-590b-a559-86af8d221b42"
+
+[component type="Transform"]
+position = vec3(0, 0.3, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="ParticleEmitter"]
+prewarm = true
+max_particles = 120
+rate = 30
+shape = "cone"
+radius = 0.06
+angle = 0.2
+lifetime = vec2(0.3, 0.55)
+speed = vec2(0.5, 1.1)
+size = vec2(0.12, 0.2)
+color = vec4(1, 0.62, 0.2, 1)
+end_color = vec4(1, 0.15, 0.02, 0)
+intensity = 3
+acceleration = vec3(0, 0.8, 0)
+noise = 0.6
+noise_frequency = 2
+blend = "additive"
+
+[entity uuid="8ebfaa12-b3cd-5ec8-bffa-1769017799e5" name="Torch light"]
+parent = "6d1a4ad2-6381-590b-a559-86af8d221b42"
+
+[component type="Transform"]
+position = vec3(0, 0.45, 1.2)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="PointLight"]
+color = vec3(1, 0.62, 0.3)
+temperature = 6500
+intensity = 700
+range = 6
+cast_shadows = false
+
+[component type="Tweener"]
+field = "PointLight.intensity"
+from = vec4(520, 0, 0, 0)
+to = vec4(760, 0, 0, 0)
+from_current = false
+relative = false
+duration = 0.14
+delay = 0
+ease = "in_out_sine"
+loop = "ping_pong"
+repeats = -1
+play_on_start = true
+
+[entity uuid="4a7dac21-2b21-52b6-8184-fb0ae4824884" name="Hero"]
+
+[component type="Transform"]
+position = vec3(-6, -3, 0.5)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="SpriteRenderer"]
+sprite = asset("2442b40e-7412-5642-a2a6-6aec08a99db5")
+color = vec4(1, 1, 1, 1)
+intensity = 1
+flip_x = false
+flip_y = false
+draw_mode = "simple"
+size = vec2(1, 1)
+sorting_layer = "Default"
+order = 1
+blend = "alpha"
+lit = false
+
+[component type="SpriteAnimator"]
+frames = asset("3ee33835-95ed-5b9c-9a6d-f2c7a8b7eb48")
+animation = "idle"
+speed = 1
+playing = true
+frame = 0
+
+[component type="Hero2D"]
+speed = 5
+jump_speed = 11
+gravity = 30
+sparkles = entity("41c964b7-8a9c-5b75-ba3e-0a4a4d964b3a")
+pickup_sound = asset("a19e4f7c-3d52-4c8b-b0e6-7f2d9a1c5b83")
+counter = entity("a0aece7b-e6ae-5a95-a5d5-416ab56490ba")
+
+[entity uuid="41c964b7-8a9c-5b75-ba3e-0a4a4d964b3a" name="Sparkles"]
+
+[component type="Transform"]
+position = vec3(0, 0, 1)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="ParticleEmitter"]
+play_on_start = false
+max_particles = 300
+rate = 0
+shape = "sphere"
+radius = 0.1
+lifetime = vec2(0.3, 0.7)
+speed = vec2(1.5, 3.5)
+size = vec2(0.06, 0.12)
+color = vec4(1, 0.9, 0.4, 1)
+end_color = vec4(1, 0.5, 0.1, 0)
+intensity = 3
+gravity = 0.6
+drag = 1
+blend = "additive"
+
+[entity uuid="e19e0cf6-9a7c-533b-93b5-b0a1976d07c4" name="Coin 1"]
+
+[component type="Transform"]
+position = vec3(-2, -2.3, 0.2)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="SpriteRenderer"]
+sprite = asset("e38c27bb-c150-5fef-9956-a870471fe23a")
+color = vec4(1, 1, 1, 1)
+intensity = 1.3
+flip_x = false
+flip_y = false
+draw_mode = "simple"
+size = vec2(1, 1)
+sorting_layer = "Default"
+order = 0
+blend = "alpha"
+lit = false
+
+[component type="SpriteAnimator"]
+frames = asset("24109346-ee52-5a6b-b719-e8d4ad48ef3b")
+animation = "spin"
+speed = 1
+playing = true
+frame = 0
+
+[component type="Coin2D"]
+
+[component type="Tweener"]
+field = "Transform.position"
+from = vec4(0, 0, 0, 0)
+to = vec4(0, 0.15, 0, 0)
+from_current = true
+relative = true
+duration = 0.8
+delay = 0
+ease = "in_out_sine"
+loop = "ping_pong"
+repeats = -1
+play_on_start = true
+
+[entity uuid="41efd30f-269f-5364-ad18-058b79540f01" name="Coin 2"]
+
+[component type="Transform"]
+position = vec3(-1, -2.3, 0.2)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="SpriteRenderer"]
+sprite = asset("e38c27bb-c150-5fef-9956-a870471fe23a")
+color = vec4(1, 1, 1, 1)
+intensity = 1.3
+flip_x = false
+flip_y = false
+draw_mode = "simple"
+size = vec2(1, 1)
+sorting_layer = "Default"
+order = 0
+blend = "alpha"
+lit = false
+
+[component type="SpriteAnimator"]
+frames = asset("24109346-ee52-5a6b-b719-e8d4ad48ef3b")
+animation = "spin"
+speed = 1.15
+playing = true
+frame = 1
+
+[component type="Coin2D"]
+
+[component type="Tweener"]
+field = "Transform.position"
+from = vec4(0, 0, 0, 0)
+to = vec4(0, 0.15, 0, 0)
+from_current = true
+relative = true
+duration = 0.8
+delay = 0
+ease = "in_out_sine"
+loop = "ping_pong"
+repeats = -1
+play_on_start = true
+
+[entity uuid="99ca2f07-255f-52c4-824d-d2ad33fb4d0c" name="Coin 3"]
+
+[component type="Transform"]
+position = vec3(-5.2, 0.1, 0.2)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="SpriteRenderer"]
+sprite = asset("e38c27bb-c150-5fef-9956-a870471fe23a")
+color = vec4(1, 1, 1, 1)
+intensity = 1.3
+flip_x = false
+flip_y = false
+draw_mode = "simple"
+size = vec2(1, 1)
+sorting_layer = "Default"
+order = 0
+blend = "alpha"
+lit = false
+
+[component type="SpriteAnimator"]
+frames = asset("24109346-ee52-5a6b-b719-e8d4ad48ef3b")
+animation = "spin"
+speed = 1.3
+playing = true
+frame = 2
+
+[component type="Coin2D"]
+
+[component type="Tweener"]
+field = "Transform.position"
+from = vec4(0, 0, 0, 0)
+to = vec4(0, 0.15, 0, 0)
+from_current = true
+relative = true
+duration = 0.8
+delay = 0
+ease = "in_out_sine"
+loop = "ping_pong"
+repeats = -1
+play_on_start = true
+
+[entity uuid="8b0449f8-dd39-5960-b42b-23b400441691" name="Coin 4"]
+
+[component type="Transform"]
+position = vec3(-3.8, 0.1, 0.2)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="SpriteRenderer"]
+sprite = asset("e38c27bb-c150-5fef-9956-a870471fe23a")
+color = vec4(1, 1, 1, 1)
+intensity = 1.3
+flip_x = false
+flip_y = false
+draw_mode = "simple"
+size = vec2(1, 1)
+sorting_layer = "Default"
+order = 0
+blend = "alpha"
+lit = false
+
+[component type="SpriteAnimator"]
+frames = asset("24109346-ee52-5a6b-b719-e8d4ad48ef3b")
+animation = "spin"
+speed = 1
+playing = true
+frame = 3
+
+[component type="Coin2D"]
+
+[component type="Tweener"]
+field = "Transform.position"
+from = vec4(0, 0, 0, 0)
+to = vec4(0, 0.15, 0, 0)
+from_current = true
+relative = true
+duration = 0.8
+delay = 0
+ease = "in_out_sine"
+loop = "ping_pong"
+repeats = -1
+play_on_start = true
+
+[entity uuid="cac1376c-fe0e-5f24-a879-6484a4c1a34b" name="Coin 5"]
+
+[component type="Transform"]
+position = vec3(1, 1.9, 0.2)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="SpriteRenderer"]
+sprite = asset("e38c27bb-c150-5fef-9956-a870471fe23a")
+color = vec4(1, 1, 1, 1)
+intensity = 1.3
+flip_x = false
+flip_y = false
+draw_mode = "simple"
+size = vec2(1, 1)
+sorting_layer = "Default"
+order = 0
+blend = "alpha"
+lit = false
+
+[component type="SpriteAnimator"]
+frames = asset("24109346-ee52-5a6b-b719-e8d4ad48ef3b")
+animation = "spin"
+speed = 1.15
+playing = true
+frame = 4
+
+[component type="Coin2D"]
+
+[component type="Tweener"]
+field = "Transform.position"
+from = vec4(0, 0, 0, 0)
+to = vec4(0, 0.15, 0, 0)
+from_current = true
+relative = true
+duration = 0.8
+delay = 0
+ease = "in_out_sine"
+loop = "ping_pong"
+repeats = -1
+play_on_start = true
+
+[entity uuid="85f2a8e5-13f6-5bf8-8e68-2437f18b8236" name="Coin 6"]
+
+[component type="Transform"]
+position = vec3(5.5, 0.5, 0.2)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="SpriteRenderer"]
+sprite = asset("e38c27bb-c150-5fef-9956-a870471fe23a")
+color = vec4(1, 1, 1, 1)
+intensity = 1.3
+flip_x = false
+flip_y = false
+draw_mode = "simple"
+size = vec2(1, 1)
+sorting_layer = "Default"
+order = 0
+blend = "alpha"
+lit = false
+
+[component type="SpriteAnimator"]
+frames = asset("24109346-ee52-5a6b-b719-e8d4ad48ef3b")
+animation = "spin"
+speed = 1.3
+playing = true
+frame = 5
+
+[component type="Coin2D"]
+
+[component type="Tweener"]
+field = "Transform.position"
+from = vec4(0, 0, 0, 0)
+to = vec4(0, 0.15, 0, 0)
+from_current = true
+relative = true
+duration = 0.8
+delay = 0
+ease = "in_out_sine"
+loop = "ping_pong"
+repeats = -1
+play_on_start = true
+
+[entity uuid="1507b44b-94e6-5659-aa26-eec6556badb2" name="Coin 7"]
+
+[component type="Transform"]
+position = vec3(7.5, 0.5, 0.2)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="SpriteRenderer"]
+sprite = asset("e38c27bb-c150-5fef-9956-a870471fe23a")
+color = vec4(1, 1, 1, 1)
+intensity = 1.3
+flip_x = false
+flip_y = false
+draw_mode = "simple"
+size = vec2(1, 1)
+sorting_layer = "Default"
+order = 0
+blend = "alpha"
+lit = false
+
+[component type="SpriteAnimator"]
+frames = asset("24109346-ee52-5a6b-b719-e8d4ad48ef3b")
+animation = "spin"
+speed = 1
+playing = true
+frame = 0
+
+[component type="Coin2D"]
+
+[component type="Tweener"]
+field = "Transform.position"
+from = vec4(0, 0, 0, 0)
+to = vec4(0, 0.15, 0, 0)
+from_current = true
+relative = true
+duration = 0.8
+delay = 0
+ease = "in_out_sine"
+loop = "ping_pong"
+repeats = -1
+play_on_start = true
+
+[entity uuid="99e037db-1631-5aec-bce2-134871f14a73" name="Coin 8"]
+
+[component type="Transform"]
+position = vec3(12, 2.5, 0.2)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="SpriteRenderer"]
+sprite = asset("e38c27bb-c150-5fef-9956-a870471fe23a")
+color = vec4(1, 1, 1, 1)
+intensity = 1.3
+flip_x = false
+flip_y = false
+draw_mode = "simple"
+size = vec2(1, 1)
+sorting_layer = "Default"
+order = 0
+blend = "alpha"
+lit = false
+
+[component type="SpriteAnimator"]
+frames = asset("24109346-ee52-5a6b-b719-e8d4ad48ef3b")
+animation = "spin"
+speed = 1.15
+playing = true
+frame = 1
+
+[component type="Coin2D"]
+
+[component type="Tweener"]
+field = "Transform.position"
+from = vec4(0, 0, 0, 0)
+to = vec4(0, 0.15, 0, 0)
+from_current = true
+relative = true
+duration = 0.8
+delay = 0
+ease = "in_out_sine"
+loop = "ping_pong"
+repeats = -1
+play_on_start = true
+
+[entity uuid="d6169371-c19f-57a9-9cf5-ca812cffec11" name="Coin 9"]
+
+[component type="Transform"]
+position = vec3(12.9, 2.5, 0.2)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="SpriteRenderer"]
+sprite = asset("e38c27bb-c150-5fef-9956-a870471fe23a")
+color = vec4(1, 1, 1, 1)
+intensity = 1.3
+flip_x = false
+flip_y = false
+draw_mode = "simple"
+size = vec2(1, 1)
+sorting_layer = "Default"
+order = 0
+blend = "alpha"
+lit = false
+
+[component type="SpriteAnimator"]
+frames = asset("24109346-ee52-5a6b-b719-e8d4ad48ef3b")
+animation = "spin"
+speed = 1.3
+playing = true
+frame = 2
+
+[component type="Coin2D"]
+
+[component type="Tweener"]
+field = "Transform.position"
+from = vec4(0, 0, 0, 0)
+to = vec4(0, 0.15, 0, 0)
+from_current = true
+relative = true
+duration = 0.8
+delay = 0
+ease = "in_out_sine"
+loop = "ping_pong"
+repeats = -1
+play_on_start = true
+
+[entity uuid="e23c51ea-3d0f-5dea-9d66-5bfb39026d3a" name="Coin 10"]
+
+[component type="Transform"]
+position = vec3(17, 1.1, 0.2)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="SpriteRenderer"]
+sprite = asset("e38c27bb-c150-5fef-9956-a870471fe23a")
+color = vec4(1, 1, 1, 1)
+intensity = 1.3
+flip_x = false
+flip_y = false
+draw_mode = "simple"
+size = vec2(1, 1)
+sorting_layer = "Default"
+order = 0
+blend = "alpha"
+lit = false
+
+[component type="SpriteAnimator"]
+frames = asset("24109346-ee52-5a6b-b719-e8d4ad48ef3b")
+animation = "spin"
+speed = 1
+playing = true
+frame = 3
+
+[component type="Coin2D"]
+
+[component type="Tweener"]
+field = "Transform.position"
+from = vec4(0, 0, 0, 0)
+to = vec4(0, 0.15, 0, 0)
+from_current = true
+relative = true
+duration = 0.8
+delay = 0
+ease = "in_out_sine"
+loop = "ping_pong"
+repeats = -1
+play_on_start = true
+
+[entity uuid="fd12783d-d4dc-5510-8cb1-2d2d8c47e1db" name="Tufts 1"]
+
+[component type="Transform"]
+position = vec3(-7.5, -3, 1)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="SpriteRenderer"]
+sprite = asset("0f4b24f8-48d8-597e-b634-22d6d23867ac")
+color = vec4(1, 1, 1, 1)
+intensity = 1
+flip_x = false
+flip_y = false
+draw_mode = "simple"
+size = vec2(1, 1)
+sorting_layer = "Foreground"
+order = 0
+blend = "alpha"
+lit = false
+
+[entity uuid="cb02f80d-b790-5bd1-be8b-40726c76632d" name="Tufts 2"]
+
+[component type="Transform"]
+position = vec3(-3, -3, 1)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="SpriteRenderer"]
+sprite = asset("0f4b24f8-48d8-597e-b634-22d6d23867ac")
+color = vec4(1, 1, 1, 1)
+intensity = 1
+flip_x = false
+flip_y = false
+draw_mode = "simple"
+size = vec2(1, 1)
+sorting_layer = "Foreground"
+order = 0
+blend = "alpha"
+lit = false
+
+[entity uuid="93c9dc31-32c9-5c5d-9ad2-4b9e56e9c853" name="Tufts 3"]
+
+[component type="Transform"]
+position = vec3(2.5, -3, 1)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="SpriteRenderer"]
+sprite = asset("0f4b24f8-48d8-597e-b634-22d6d23867ac")
+color = vec4(1, 1, 1, 1)
+intensity = 1
+flip_x = false
+flip_y = false
+draw_mode = "simple"
+size = vec2(1, 1)
+sorting_layer = "Foreground"
+order = 0
+blend = "alpha"
+lit = false
+
+[entity uuid="754bfeda-6a80-57f9-922d-4ea95ebefda7" name="Tufts 4"]
+
+[component type="Transform"]
+position = vec3(8, -3, 1)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="SpriteRenderer"]
+sprite = asset("0f4b24f8-48d8-597e-b634-22d6d23867ac")
+color = vec4(1, 1, 1, 1)
+intensity = 1
+flip_x = false
+flip_y = false
+draw_mode = "simple"
+size = vec2(1, 1)
+sorting_layer = "Foreground"
+order = 0
+blend = "alpha"
+lit = false
+
+[entity uuid="8eaf8305-cd81-5089-acfc-f2f9484e5a6c" name="Tufts 5"]
+
+[component type="Transform"]
+position = vec3(11, -3, 1)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="SpriteRenderer"]
+sprite = asset("0f4b24f8-48d8-597e-b634-22d6d23867ac")
+color = vec4(1, 1, 1, 1)
+intensity = 1
+flip_x = false
+flip_y = false
+draw_mode = "simple"
+size = vec2(1, 1)
+sorting_layer = "Foreground"
+order = 0
+blend = "alpha"
+lit = false
+
+[entity uuid="82924880-6d31-52a3-a329-b5720e8a54fd" name="Tufts 6"]
+
+[component type="Transform"]
+position = vec3(15.5, -3, 1)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="SpriteRenderer"]
+sprite = asset("0f4b24f8-48d8-597e-b634-22d6d23867ac")
+color = vec4(1, 1, 1, 1)
+intensity = 1
+flip_x = false
+flip_y = false
+draw_mode = "simple"
+size = vec2(1, 1)
+sorting_layer = "Foreground"
+order = 0
+blend = "alpha"
+lit = false
+
+[entity uuid="2975b166-28b4-5384-96dc-6b58ef278974" name="Interface"]
+
+[component type="Canvas"]
+scale_mode = "scale_with_screen"
+reference_resolution = vec2(1920, 1080)
+match_width_or_height = 0.5
+sort_order = 0
+visible = true
+interactive = true
+
+[entity uuid="a0aece7b-e6ae-5a95-a5d5-416ab56490ba" name="Counter"]
+parent = "2975b166-28b4-5384-96dc-6b58ef278974"
+
+[component type="UiRect"]
+anchor_min = vec2(0, 0)
+anchor_max = vec2(0, 0)
+offset_min = vec2(40, 28)
+offset_max = vec2(840, 92)
+opacity = 1.0
+visible = true
+
+[component type="UiText"]
+text = "Coins 0   (10 left)"
+font = asset("3f5c9a10-8d21-4b77-9d3e-6a41c0f2e510")
+size = 40
+color = vec4(1, 0.93, 0.7, 1.0)
+align = "left"
+vertical_align = "middle"
+outline_width = 2.0
+raycast_target = false
+
+[entity uuid="9f408ff9-ff1e-5edf-9fd5-89286decce01" name="Help"]
+parent = "2975b166-28b4-5384-96dc-6b58ef278974"
+
+[component type="UiRect"]
+anchor_min = vec2(0, 1)
+anchor_max = vec2(1, 1)
+offset_min = vec2(40, -80)
+offset_max = vec2(-40, -24)
+opacity = 1.0
+visible = true
+
+[component type="UiText"]
+text = "A D or the stick: run    Space: jump    Tab: next scene"
+font = asset("3f5c9a10-8d21-4b77-9d3e-6a41c0f2e510")
+size = 30
+color = vec4(0.85, 0.87, 0.9, 1.0)
+align = "center"
+vertical_align = "middle"
+outline_width = 2.0
+raycast_target = false
+
+[entity uuid="d849842d-35c6-5ae0-a557-3efe08b34e01" name="Scene switch"]
+
+[component type="SceneSwitch"]
+scene = asset("4bd5feef-9c35-4dfe-88fe-a66b488e9f9e")

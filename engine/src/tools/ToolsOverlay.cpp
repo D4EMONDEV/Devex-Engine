@@ -711,6 +711,12 @@ void ToolsOverlay::prepareRender(scene::Scene& scene, render::RenderWorld& world
         world.camera.view = state.camera.view();
         world.camera.verticalFov = detail::EditorCamera::verticalFov;
         world.camera.nearPlane = detail::EditorCamera::nearPlane;
+        // The 2D view looks straight at the XY plane, whatever the cameras of the scene do.
+        const bool twoD = state.camera.isTwoD();
+        world.camera.projection = twoD ? render::Projection::Orthographic : render::Projection::Perspective;
+        world.camera.orthographicSize = state.camera.orthographicSize();
+        world.camera.farPlane = detail::EditorCamera::twoDFarPlane;
+        state.gizmo.twoD = twoD;
         if (state.database != nullptr)
         {
             detail::addEditorOverlay(state, scene, world);
@@ -833,6 +839,15 @@ void ToolsOverlay::setAnimationClips(std::function<std::shared_ptr<const animati
 void ToolsOverlay::setThemes(std::function<std::shared_ptr<const asset::ThemeData>(asset::AssetId)> themes)
 {
     m_state->themes = std::move(themes);
+}
+
+void ToolsOverlay::setSpriteSources(std::function<render::TextureHandle(asset::AssetId)> textures,
+                                    std::function<math::Extent2D(asset::AssetId)> textureSizes,
+                                    std::function<std::shared_ptr<const asset::SpriteData>(asset::AssetId)> sprites)
+{
+    m_state->textures = std::move(textures);
+    m_state->textureSizes = std::move(textureSizes);
+    m_state->sprites = std::move(sprites);
 }
 
 void ToolsOverlay::setMemoryReport(std::function<asset::MemoryReport()> report)

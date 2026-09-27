@@ -1,7 +1,9 @@
+#include <devex/animation/SpriteAnimation.hpp>
 #include <devex/render/Photometry.hpp>
 #include <devex/runtime/SceneExtraction.hpp>
 #include <devex/scene/AnimationComponents.hpp>
 #include <devex/scene/Components.hpp>
+#include <devex/scene/SpriteComponents.hpp>
 
 #include <algorithm>
 #include <cmath>
@@ -60,6 +62,59 @@ void addRibbon(render::RenderWorld& world, const std::vector<RibbonPoint>& point
 
 } // namespace
 
+void extractSprites(scene::Scene& scene, AssetManager& assets, const asset::SortingSettings& sorting,
+                    render::RenderWorld& world)
+{
+    for ([[maybe_unused]] auto [entity, transform, sprite] : scene.view<scene::WorldTransform, scene::SpriteRenderer>())
+    {
+        asset::AssetId shown = sprite.sprite;
+        if (const scene::SpriteAnimator* const animator = scene.tryGet<scene::SpriteAnimator>(entity);
+            animator != nullptr && animator->frames.isValid())
+        {
+            if (const std::shared_ptr<const asset::SpriteFramesData> frames = assets.spriteFrames(animator->frames))
+            {
+                if (const asset::AssetId frame = animation::spriteOf(*frames, *animator); frame.isValid())
+                {
+                    shown = frame;
+                }
+            }
+        }
+        const std::shared_ptr<const asset::SpriteData> data = shown.isValid() ? assets.sprite(shown) : nullptr;
+        if (data == nullptr)
+        {
+            continue;
+        }
+        // Drawn once its texture is.
+        const render::TextureHandle texture = assets.texture(data->texture);
+        if (!texture.isValid())
+        {
+            continue;
+        }
+        const math::Vec2 natural = data->size();
+        const float metersPerPixel = 1.0f / data->pixelsPerUnit;
+        const bool simple = sprite.drawMode == scene::SpriteDrawMode::Simple;
+        const float intensity = sprite.lit ? 1.0f : std::max(sprite.intensity, 0.0f);
+        world.sprites.push_back({
+            .transform = transform.matrix,
+            .size = simple ? natural : math::max(sprite.size, math::Vec2{0.0f}),
+            .pivot = data->pivot,
+            .uvRect = data->uvRect(),
+            .naturalSize = natural,
+            .border = data->border * metersPerPixel,
+            .color = math::Vec4(math::Vec3(sprite.color) * intensity, sprite.color.a),
+            .texture = texture,
+            .mode = static_cast<render::SpriteMode>(sprite.drawMode),
+            .flipX = sprite.flipX,
+            .flipY = sprite.flipY,
+            .additive = sprite.blend == scene::SpriteBlend::Additive,
+            .lit = sprite.lit,
+            .layer = sorting.rank(sprite.sortingLayer),
+            .order = sprite.order,
+            .objectId = entity.index + 1,
+        });
+    }
+}
+
 void extractScene(scene::Scene& scene, AssetManager& assets, render::RenderWorld& world)
 {
     for ([[maybe_unused]] auto [entity, transform, camera] :
@@ -69,8 +124,11 @@ void extractScene(scene::Scene& scene, AssetManager& assets, render::RenderWorld
         {
             world.camera = {
                 .view = math::inverse(transform.matrix),
+                .projection = static_cast<render::Projection>(camera.projection),
                 .verticalFov = camera.verticalFov,
+                .orthographicSize = std::max(camera.orthographicSize, 1e-4f),
                 .nearPlane = camera.nearPlane,
+                .farPlane = std::max(camera.farPlane, camera.nearPlane + 1e-3f),
                 .autoExposure = camera.autoExposure,
                 .ev100 = camera.ev100,
                 .exposureCompensation = camera.exposureCompensation,

@@ -934,3 +934,113 @@ TEST_CASE("Particles and ribbons blend among the blended surfaces without valida
     }
     CHECK(capture.errors().empty());
 }
+
+TEST_CASE("Sprites draw by layer and order through an orthographic camera, and are picked", "[render][gpu]")
+{
+    const ErrorCapture capture;
+    {
+        auto platform = devex::platform::Platform::create();
+        REQUIRE(platform.has_value());
+        auto window = platform->createWindow({.width = 320, .height = 240, .vulkan = true, .hidden = true});
+        REQUIRE(window.has_value());
+        auto renderer = devex::render::Renderer::create(*platform, *window, {.validation = true});
+        if (!renderer)
+        {
+            FAIL(std::format("{}", renderer.error()));
+        }
+        // Two pixels, red then blue, read at their nearest pixel.
+        devex::asset::TextureData pixels{.format = devex::asset::TextureFormat::Rgba8Srgb,
+                                         .filter = devex::asset::TextureFilter::Nearest};
+        pixels.mips.push_back({.width = 2,
+                               .height = 1,
+                               .bytes = {std::byte{255}, std::byte{0}, std::byte{0}, std::byte{255}, std::byte{0},
+                                         std::byte{0}, std::byte{255}, std::byte{255}}});
+        const auto texture = renderer->createTexture(pixels);
+        REQUIRE(texture.has_value());
+        const auto cube = renderer->createMesh(devex::asset::makeCube());
+        REQUIRE(cube.has_value());
+
+        const auto at = [](float x, float y, float z) {
+            return devex::math::translate(devex::math::Mat4(1.0f), devex::math::Vec3{x, y, z});
+        };
+        std::vector<devex::render::PickResult> results;
+        std::vector<devex::render::CapturedImage> captured;
+        for (int frame = 0; frame < 8; ++frame)
+        {
+            devex::render::RenderWorld& world = renderer->beginFrame();
+            // Four meters high, from ten meters in front of the XY plane; colours kept as they are.
+            world.camera.view = devex::math::inverse(at(0.0f, 0.0f, 10.0f));
+            world.camera.projection = devex::render::Projection::Orthographic;
+            world.camera.orthographicSize = 2.0f;
+            world.camera.farPlane = 100.0f;
+            world.camera.autoExposure = false;
+            world.camera.antialiasing = devex::render::Antialiasing::None;
+            world.camera.tonemapper = devex::render::Tonemapper::None;
+            world.camera.bloom = 0.0f;
+            world.environment.color = {0.0f, 0.0f, 0.0f};
+            // The red half in a layer in front, although farther; the blue half nearer, behind it.
+            world.sprites.push_back({.transform = at(0.0f, 0.0f, -5.0f),
+                                     .size = {2.0f, 2.0f},
+                                     .uvRect = {0.0f, 0.0f, 0.5f, 1.0f},
+                                     .naturalSize = {2.0f, 2.0f},
+                                     .texture = *texture,
+                                     .layer = 1,
+                                     .objectId = 11,
+                                     .outlined = true});
+            world.sprites.push_back({.transform = at(0.0f, 0.0f, 2.0f),
+                                     .size = {2.0f, 2.0f},
+                                     .uvRect = {0.5f, 0.0f, 1.0f, 1.0f},
+                                     .naturalSize = {2.0f, 2.0f},
+                                     .texture = *texture,
+                                     .objectId = 12});
+            // Sliced, tiled, flipped, lit and additive sprites at the edges, and one out of view.
+            world.sprites.push_back({.transform = at(-2.2f, 1.0f, 0.0f),
+                                     .size = {1.5f, 0.5f},
+                                     .naturalSize = {0.5f, 0.5f},
+                                     .border = {0.1f, 0.1f, 0.1f, 0.1f},
+                                     .texture = *texture,
+                                     .mode = devex::render::SpriteMode::Sliced,
+                                     .flipX = true,
+                                     .lit = true});
+            world.sprites.push_back({.transform = at(2.2f, -1.0f, 0.0f),
+                                     .size = {1.5f, 0.5f},
+                                     .naturalSize = {0.25f, 0.25f},
+                                     .texture = *texture,
+                                     .mode = devex::render::SpriteMode::Tiled,
+                                     .additive = true});
+            world.sprites.push_back({.transform = at(50.0f, 0.0f, 0.0f), .texture = *texture});
+            // An opaque cube beside them.
+            world.meshes.push_back({.mesh = *cube, .transform = at(2.2f, 1.0f, 0.0f), .objectId = 13});
+            if (frame == 4)
+            {
+                world.pick = devex::render::PickRequest{.x = 160, .y = 120, .id = 1};
+                static_cast<void>(renderer->requestCapture(64, 48));
+            }
+            const devex::core::Result<void> presented = renderer->endFrame();
+            if (!presented)
+            {
+                FAIL(std::format("frame {}: {}", frame, presented.error()));
+            }
+            std::ranges::copy(renderer->takePickResults(), std::back_inserter(results));
+            for (devex::render::CapturedImage& image : renderer->takeCaptures())
+            {
+                captured.push_back(std::move(image));
+            }
+        }
+        REQUIRE(results.size() == 1);
+        // The sprite in front by its layer is the one under the middle.
+        CHECK(results[0].objectId == 11);
+        REQUIRE(captured.size() == 1);
+        const std::size_t middle = (std::size_t{24} * 64 + 32) * 4;
+        CHECK(captured[0].rgba[middle] > 200);
+        CHECK(captured[0].rgba[middle + 2] < 40);
+        renderer->destroyTexture(*texture);
+        renderer->destroyMesh(*cube);
+    }
+
+    for (const std::string& error : capture.errors())
+    {
+        UNSCOPED_INFO(error);
+    }
+    CHECK(capture.errors().empty());
+}

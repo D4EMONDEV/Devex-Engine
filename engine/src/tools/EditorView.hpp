@@ -13,14 +13,17 @@ struct Ray
     math::Vec3 direction{0.0f, 0.0f, -1.0f};
 };
 
-// How the viewport shows the world: a perspective camera and the size of the image in pixels. Pixels
-// count from the top-left corner, like mouse positions.
+// How the viewport shows the world: a perspective or orthographic camera and the size of the image
+// in pixels. Pixels count from the top-left corner, like mouse positions.
 struct ViewportView
 {
     // World to view transform of a camera looking along -Z with +Y up.
     math::Mat4 view{1.0f};
     float verticalFov = math::radians(60.0f);
     math::Vec2 size{1.0f};
+    // An orthographic view shows orthographicSize meters above and below its axis at any distance.
+    bool orthographic = false;
+    float orthographicSize = 5.0f;
 
     [[nodiscard]] math::Vec3 cameraPosition() const noexcept;
     // The direction the camera looks at, normalized.
