@@ -74,9 +74,10 @@ jobs:
           path: ${{ runner.temp }}/vcpkg-archives
           key: vcpkg-${{ matrix.preset }}-${{ hashFiles('vcpkg.json') }}
 
-      # vcpkg builds the dependencies here, the first time for hours, then from its cache.
+      # vcpkg builds the dependencies here, the first time for hours, then from its cache. What the
+      # steps print is also kept in a file (cmd merges the errors in), for the failure to be shown.
       - name: Configure
-        run: cmake --preset ${{ matrix.preset }} -DDEVEX_WARNINGS_AS_ERRORS=ON
+        run: cmd /c "cmake --preset ${{ matrix.preset }} -DDEVEX_WARNINGS_AS_ERRORS=ON 2>&1" | Tee-Object -FilePath "$env:RUNNER_TEMP/configure.log"
 
       # Saved as soon as the dependencies are built, so that a failing build or test does not
       # lose them.
@@ -88,10 +89,37 @@ jobs:
           key: vcpkg-${{ matrix.preset }}-${{ hashFiles('vcpkg.json') }}
 
       - name: Build
-        run: cmake --build out/build/${{ matrix.preset }}
+        run: cmd /c "cmake --build out/build/${{ matrix.preset }} 2>&1" | Tee-Object -FilePath "$env:RUNNER_TEMP/build.log"
 
       - name: Test
-        run: ctest --test-dir out/build/${{ matrix.preset }} --label-exclude gpu --output-on-failure --no-tests=error --timeout 600
+        run: cmd /c "ctest --test-dir out/build/${{ matrix.preset }} --label-exclude gpu --output-on-failure --no-tests=error --timeout 600 2>&1" | Tee-Object -FilePath "$env:RUNNER_TEMP/test.log"
+
+      # Reading the logs of a run takes rights on the repository: what failed is also given as
+      # annotations, which the summary of the run shows to everyone.
+      - name: Show what failed
+        if: failure()
+        shell: pwsh
+        run: |
+          $logs = @(
+            @{ Path = "$env:RUNNER_TEMP/configure.log"; Errors = $false },
+            @{ Path = "out/build/${{ matrix.preset }}/vcpkg-manifest-install.log"; Errors = $false },
+            @{ Path = "$env:RUNNER_TEMP/build.log"; Errors = $true },
+            @{ Path = "$env:RUNNER_TEMP/test.log"; Errors = $true }
+          )
+          # The error log of the port vcpkg failed to build last, if one did.
+          $port = Get-ChildItem -Path "$env:RUNNER_TEMP/vcpkg/buildtrees" -Recurse -Filter "*-err.log" -ErrorAction SilentlyContinue |
+            Where-Object Length -gt 0 | Sort-Object LastWriteTime | Select-Object -Last 1
+          if ($port) { $logs += @{ Path = $port.FullName; Errors = $false } }
+          foreach ($log in $logs) {
+            if (-not (Test-Path $log.Path)) { continue }
+            $lines = Get-Content $log.Path
+            if ($log.Errors) {
+              $found = $lines | Select-String -Pattern "error|FAILED|Failed" | Select-Object -First 40 | ForEach-Object Line
+              if ($found) { $lines = $found }
+            }
+            $text = (($lines | Select-Object -Last 60) -join "`n").Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
+            Write-Output "::error title=$(Split-Path $log.Path -Leaf)::$text"
+          }
 
       - name: Keep the logs
         if: failure()
