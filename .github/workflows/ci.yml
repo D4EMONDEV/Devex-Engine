@@ -54,14 +54,25 @@ jobs:
         with:
           arch: x64
 
-      # A clone of vcpkg that knows the baseline of vcpkg.json, and a folder for the packages it
-      # builds, kept from one run to the next.
+      # The generator of the presets: neither the image nor its Visual Studio put it on the path.
+      - name: Set up Ninja
+        shell: pwsh
+        run: |
+          $dir = Join-Path $env:RUNNER_TEMP "ninja"
+          New-Item -ItemType Directory -Force $dir | Out-Null
+          Invoke-WebRequest "https://github.com/ninja-build/ninja/releases/download/v1.12.1/ninja-win.zip" -OutFile "$dir/ninja.zip"
+          Expand-Archive "$dir/ninja.zip" -DestinationPath $dir -Force
+          $dir >> $env:GITHUB_PATH
+
+      # A whole clone of vcpkg, whose history holds the ports at the baseline of vcpkg.json: a
+      # partial one makes vcpkg fetch the older ports while it installs, which fails there. And a
+      # folder for the packages it builds, kept from one run to the next.
       - name: Set up vcpkg
         shell: pwsh
         run: |
           $root = Join-Path $env:RUNNER_TEMP "vcpkg"
           $archives = Join-Path $env:RUNNER_TEMP "vcpkg-archives"
-          git clone --quiet --filter=blob:none https://github.com/microsoft/vcpkg.git $root
+          git clone --quiet https://github.com/microsoft/vcpkg.git $root
           & (Join-Path $root "bootstrap-vcpkg.bat") -disableMetrics
           New-Item -ItemType Directory -Force $archives | Out-Null
           "VCPKG_ROOT=$root" >> $env:GITHUB_ENV
