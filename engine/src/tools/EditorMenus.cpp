@@ -202,6 +202,7 @@ void drawEditorMenu(ToolsState& state)
         ImGui::MenuItem(inspectorWindow, nullptr, &state.showInspector);
         ImGui::MenuItem(assetsWindow, nullptr, &state.showAssets);
         ImGui::MenuItem(animationWindow, nullptr, &state.showAnimation);
+        ImGui::MenuItem(animatorWindow, nullptr, &state.showAnimator);
         ImGui::MenuItem(consoleWindow, nullptr, &state.showConsole);
         ImGui::MenuItem(statisticsWindow, nullptr, &state.showStatistics);
         ImGui::MenuItem(profilerWindow, nullptr, &state.showProfiler);

@@ -124,6 +124,7 @@ namespace devex::tools::detail {
     ICON(Video, "video")                             \
     ICON(Volume, "volume-2")                         \
     ICON(Weight, "weight")                           \
+    ICON(Workflow, "workflow")                       \
     ICON(ZoomIn, "zoom-in")                          \
     ICON(Logo, "devex")
 

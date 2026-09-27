@@ -1,5 +1,6 @@
 #include "runtime/ManagedGame.hpp"
 
+#include <devex/animation/AnimationWorld.hpp>
 #include <devex/animation/TweenWorld.hpp>
 #include <devex/asset/Primitives.hpp>
 #include <devex/audio/AudioWorld.hpp>
@@ -11,6 +12,7 @@
 #include <devex/physics/PhysicsWorld.hpp>
 #include <devex/physics2d/Physics2DWorld.hpp>
 #include <devex/platform/Platform.hpp>
+#include <devex/scene/AnimationComponents.hpp>
 #include <devex/scene/AudioComponents.hpp>
 #include <devex/scene/ComponentRegistry.hpp>
 #include <devex/scene/Components.hpp>
@@ -74,7 +76,7 @@ void run(ManagedGame& game, Scene& scene, SystemPhase phase, double seconds = 0.
 TEST_CASE("The C# runtime registers components and runs them", "[runtime][managed]")
 {
     const std::unique_ptr<ManagedGame> game = startRuntime();
-    CHECK(game->componentTypes().size() == 16);
+    CHECK(game->componentTypes().size() == 17);
 
     devex::scene::ComponentRegistry& registry = devex::scene::componentRegistry();
     const devex::scene::ComponentType* const mover = registry.find("Mover");
@@ -389,6 +391,47 @@ TEST_CASE("C# components hear 2D collisions and triggers and drive 2D characters
     CHECK(field<bool>(*walker, walking, "jumped"));
     CHECK(field<bool>(*walker, walking, "landed"));
     CHECK(scene.get<devex::scene::Transform>(hero).position.x > 0.0f);
+    game->unloadAssembly();
+}
+
+TEST_CASE("C# components set the parameters of state machines and read their states", "[runtime][managed][animation]")
+{
+    const std::unique_ptr<ManagedGame> game = startRuntime();
+    const devex::scene::ComponentType* const conductor = devex::scene::componentRegistry().find("Conductor");
+    REQUIRE(conductor != nullptr);
+
+    const devex::asset::AssetId controllerId = devex::asset::AssetId::generate();
+    devex::asset::AnimatorData data;
+    data.entry = "Idle";
+    data.parameters = {{.name = "Speed"}, {.name = "Wave", .type = devex::asset::AnimatorParameterType::Trigger}};
+    data.states = {{.name = "Idle"}, {.name = "Walk"}, {.name = "Waving"}};
+    data.transitions = {
+        {.from = "Idle", .to = "Walk", .duration = 0.0f,
+         .conditions = {{.parameter = "Speed", .test = devex::asset::AnimatorTest::Greater, .value = 1.0f}}},
+        {.to = "Waving", .duration = 0.0f, .conditions = {{.parameter = "Wave", .test = devex::asset::AnimatorTest::Triggered}}},
+    };
+    const auto controller = std::make_shared<const devex::asset::AnimatorData>(data);
+    devex::animation::AnimationWorld world([](devex::asset::AssetId) { return nullptr; },
+                                           [&](devex::asset::AssetId id) { return id == controllerId ? controller : nullptr; });
+
+    Scene scene;
+    const Entity dancer = scene.createEntity("Dancer");
+    scene.add<devex::scene::Transform>(dancer);
+    scene.add<devex::scene::Animator>(dancer, devex::scene::Animator{.controller = controllerId});
+    void* const component = conductor->emplace(scene, dancer);
+
+    ManagedGame::Frame frame{.scene = &scene, .animation = &world};
+    game->runPhase(frame, SystemPhase::Start);
+    for (int step = 0; step < 5; ++step)
+    {
+        frame.delta = devex::core::Duration(1.0 / 60.0);
+        game->runPhase(frame, SystemPhase::Update);
+        world.update(scene, devex::core::Duration(1.0 / 60.0));
+    }
+    CHECK(field<std::string>(*conductor, component, "state") == "Waving");
+    CHECK(field<float>(*conductor, component, "speed") == 2.0f);
+    CHECK(field<bool>(*conductor, component, "waved"));
+    CHECK(world.parameter(dancer, "Wave") == 0.0f);
     game->unloadAssembly();
 }
 

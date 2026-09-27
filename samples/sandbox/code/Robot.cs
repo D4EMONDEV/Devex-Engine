@@ -1,23 +1,18 @@
 using Devex;
 
 // The robot of the arena: it walks between two posts, waits at each end, and waves when the player
-// comes close. The clips come from its model, and the Animator crossfades between them.
+// comes close. Its Animator plays the state machine of assets/animators/robot.dvxanimator: a blend
+// tree mixes idle and walk by the Speed parameter, and Greeting crossfades to the wave.
 public class RobotGuide : Component
 {
-    [AssetType("animation")]
-    public AssetId Idle;
-
-    [AssetType("animation")]
-    public AssetId Walk;
-
-    [AssetType("animation")]
-    public AssetId Wave;
-
     // Where the robot walks to, from where it starts.
     public Vec3 Patrol = new(0.0f, 0.0f, -10.0f);
 
     // In meters per second.
     public float Speed = 1.6f;
+
+    // How fast the robot speeds up and slows down, in meters per second each second.
+    public float Acceleration = 3.0f;
 
     // Seconds spent still at each end of the patrol.
     public float WaitTime = 1.5f;
@@ -28,54 +23,60 @@ public class RobotGuide : Component
     private Vec3 _start;
     private Vec3 _target;
     private float _wait;
-    private AssetId _clip;
+    private float _speed;
 
     public override void Start()
     {
         _start = Transform.Position;
         _target = _start + Patrol;
         _wait = 0.0f;
-        PlayClip(Idle);
     }
 
     public override void Update(float delta)
     {
         Entity player = Entity.Find("Player");
         Vec3 position = Transform.Position;
+        bool greeting = false;
         if (player.IsAlive && player.HasTransform)
         {
             Vec3 toPlayer = player.Transform.Position - position;
             toPlayer.Y = 0.0f;
-            if (toPlayer.Length < GreetDistance)
+            greeting = toPlayer.Length < GreetDistance;
+            if (greeting)
             {
-                // Greeting: the robot turns to the player and waves until it walks away.
+                // Greeting: the robot stops, turns to the player and waves until it walks away.
                 Face(toPlayer, delta);
-                PlayClip(Wave);
-                return;
             }
         }
-
-        if (_wait > 0.0f)
-        {
-            _wait -= delta;
-            PlayClip(Idle);
-            return;
-        }
+        Animation.SetBool(Entity, "Greeting", greeting);
 
         Vec3 toTarget = _target - position;
         toTarget.Y = 0.0f;
-        if (toTarget.Length < 0.15f)
+        float wanted = Speed;
+        if (greeting || _wait > 0.0f)
+        {
+            wanted = 0.0f;
+            _wait = greeting ? _wait : _wait - delta;
+        }
+        else if (toTarget.Length < 0.15f)
         {
             // The end of the patrol: wait, then walk back.
             _target = (_target - _start).Length < 0.15f ? _start + Patrol : _start;
             _wait = WaitTime;
-            PlayClip(Idle);
-            return;
+            wanted = 0.0f;
         }
 
-        PlayClip(Walk);
-        Face(toTarget, delta);
-        Transform.Position = position + toTarget.Normalized * (Speed * delta);
+        // The robot speeds up and slows down, and its walk follows its speed.
+        _speed = _speed < wanted ? MathF.Min(_speed + Acceleration * delta, wanted) : MathF.Max(_speed - Acceleration * delta, wanted);
+        Animation.SetFloat(Entity, "Speed", _speed);
+        if (_speed > 0.0f && toTarget.Length > 0.001f)
+        {
+            if (!greeting)
+            {
+                Face(toTarget, delta);
+            }
+            Transform.Position = position + toTarget.Normalized * MathF.Min(_speed * delta, toTarget.Length);
+        }
     }
 
     // Turns towards a direction, a little every frame.
@@ -100,15 +101,5 @@ public class RobotGuide : Component
         }
         float step = MathF.Min(MathF.Abs(difference), 4.0f * delta) * MathF.Sign(difference);
         transform.Rotation = Quat.AngleAxis(step, Vec3.Up) * transform.Rotation;
-    }
-
-    // Starts a clip only when it is not the one already playing, so that the crossfade happens once.
-    private void PlayClip(AssetId clip)
-    {
-        if (clip.IsValid && clip != _clip)
-        {
-            _clip = clip;
-            Animation.Play(Entity, clip);
-        }
     }
 }

@@ -1,0 +1,43 @@
+[animator format=1 entry="Idle"]
+entry_position = vec2(-260, 0)
+any_state_position = vec2(-260, 150)
+
+[parameter name="Speed" type="float" default=0]
+
+[parameter name="Grounded" type="bool" default=true]
+
+[parameter name="VerticalSpeed" type="float" default=0]
+
+[state name="Idle"]
+position = vec2(0, 0)
+sprite = "idle"
+
+[state name="Run"]
+position = vec2(280, 0)
+sprite = "run"
+
+[state name="Jump"]
+position = vec2(0, 150)
+sprite = "jump"
+
+[state name="Fall"]
+position = vec2(280, 150)
+sprite = "fall"
+
+[transition from="Idle" to="Run" duration=0]
+conditions = list(greater("Speed", 0.1))
+
+[transition from="Run" to="Idle" duration=0]
+conditions = list(less("Speed", 0.1))
+
+[transition to="Jump" duration=0]
+conditions = list(is("Grounded", false), greater("VerticalSpeed", 0.1))
+
+[transition to="Fall" duration=0]
+conditions = list(is("Grounded", false), less("VerticalSpeed", 0.1))
+
+[transition from="Jump" to="Idle" duration=0]
+conditions = list(is("Grounded", true))
+
+[transition from="Fall" to="Idle" duration=0]
+conditions = list(is("Grounded", true))

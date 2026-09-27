@@ -142,6 +142,9 @@ mais seulement explicitement ici : le code suit ce document, pas l'inverse.
 | Animation                | Squelettes glTF, clips en sous-assets du modèle                   |
 | Os                       | Une entité par os, pilotée par nom                                |
 | Lecture                  | Composant `Animator` : un clip, fondu croisé, root motion en option |
+| Machines à états         | Asset `.dvxanimator` (paramètres, états, transitions) joué par `Animator` |
+| Arbres de mélange        | 1D (seuils) et 2D (bandes de gradient), clips synchronisés        |
+| Éditeur d'animator       | Panneau de graphe de nœuds, réglages dans l'inspecteur, annulation propre |
 | Skinning                 | Dans le vertex shader, matrices d'os en buffer par frame          |
 | Écrans de l'éditeur      | 2D, 3D et Script au centre de la barre de menus                    |
 | Culling                  | Tronc de vue sur CPU, pour la caméra, les cascades et chaque vue   |
@@ -1095,7 +1098,8 @@ les assets s'écrivent au fil de leur lecture.
 - **Sources et importeurs** : chaque fichier dont l'extension a un importeur est une source ;
   `texture` (`.png`, `.jpg`, `.tga`, `.bmp`, `.hdr`, décodés par stb_image), `material`
   (`.dvxmat`), `gltf` (`.gltf`, `.glb`), `fbx` (`.fbx`), `obj` (`.obj`), `scene` (`.dvxscene`),
-  `curve` (`.dvxcurve`), `frames` (`.dvxframes`) et `tileset` (`.dvxtileset`), entre autres. Les fichiers et dossiers cachés (`.`) sont ignorés.
+  `curve` (`.dvxcurve`), `frames` (`.dvxframes`), `tileset` (`.dvxtileset`) et `animator`
+  (`.dvxanimator`), entre autres. Les fichiers et dossiers cachés (`.`) sont ignorés.
 - **`.dvxmeta`** : créé au premier scan avec un UUID aléatoire et les options par défaut de
   l'importeur. Il porte l'identité de l'asset : il se versionne avec la source. Un `.dvxmeta`
   illisible est signalé et laissé tel quel, jamais remplacé. Une source copiée avec son
@@ -1478,6 +1482,67 @@ les assets s'écrivent au fil de leur lecture.
   os avec les clips *Idle*, *Walk* et *Wave*. Dans l'arène, le composant C# `RobotGuide` le fait
   patrouiller, attendre à chaque extrémité et saluer le joueur qui s'approche, en changeant de clip
   avec un fondu de 0,25 s.
+
+### Machines à états d'animation
+
+- **Asset** : un fichier `.dvxanimator` (importeur `animator`, type `Animator`), comme
+  l'*Animator Controller* d'Unity ou l'*AnimationTree* de Godot, partagé par tous les personnages
+  qui le jouent. Il liste des **paramètres** (`float`, `int`, `bool`, `trigger`, avec leur valeur de
+  départ), des **états**, des **transitions** et l'**état d'entrée**, ainsi que la place des nœuds
+  dans le graphe de l'éditeur. Les états et les paramètres se nomment de façon unique ; les
+  transitions désignent les états par leur nom (lisible et stable dans les diffs). Les conditions
+  s'écrivent en appels : `greater("Speed", 0.1)`, `less`, `equals`, `not_equals` (entiers),
+  `is("Grounded", true)`, `trigger("Jump")`. Une transition sans `from` part de n'importe quel état
+  (« Any State »). `asset::validate` refuse un animator incohérent (entrée inconnue, noms en double,
+  transition vers un état inconnu, test inadapté au type du paramètre…).
+- **États** : un clip seul, un **arbre de mélange 1D** (des clips placés sur une ligne qu'un
+  paramètre parcourt : marche vers course) ou **2D** (des clips placés sur un plan de deux
+  paramètres, pondérés par interpolation en bandes de gradient, le *freeform cartesian* d'Unity :
+  chaque clip a tout le poids à sa place, les poids varient en douceur entre elles). Les clips d'un
+  arbre avancent à la même fraction de leur cycle, et l'état dure la moyenne de leurs durées selon
+  leurs poids. Un état porte aussi une vitesse, un paramètre qui la multiplie, la boucle, et une
+  **animation de sprite** : en entrant dans l'état, le `SpriteAnimator` de l'entité joue cette
+  animation nommée de ses `.dvxframes` (l'état dure alors ses images divisées par leur cadence).
+- **Transitions** : vérifiées dans l'ordre du fichier, la première dont toutes les conditions sont
+  vraies et dont le **temps de sortie** est atteint (fraction du cycle de l'état depuis son début :
+  1 à la fin) est prise ; sans condition, une transition part à la fin de l'état. Les déclencheurs
+  qu'elle vérifie sont remis à zéro. L'état quitté continue d'avancer pendant le **fondu** (durée en
+  secondes) et les deux poses se mêlent ; aucune transition n'est prise pendant un fondu.
+- **Lecture** : le composant `Animator` gagne un champ `controller` ; avec lui, l'`AnimationWorld`
+  joue la machine à états (le clip du composant est ignoré, `play` la reprend depuis l'entrée,
+  `stop` y revient), sinon il joue son clip comme avant. Le root motion suit la pose finale. Une
+  nouvelle version de l'asset (réimport, édition pendant le jeu) est reprise telle quelle : la
+  machine garde son état s'il existe encore, les nouveaux paramètres prennent leur valeur de
+  départ.
+- **Jeu** : `AnimationWorld::setFloat`, `setInteger`, `setBool`, `setTrigger`, `resetTrigger`,
+  `parameter`, `state`, `stateTime` et `status` (l'état, le fondu en cours, les paramètres), en C++
+  ; en C#, `Animation.SetFloat`, `SetInteger`, `SetBool`, `SetTrigger`, `ResetTrigger`, `GetFloat`,
+  `GetInteger`, `GetBool`, `GetState`, `IsInState` et `GetStateTime`. Un paramètre peut être posé
+  avant que l'animator ne charge ; un nom inconnu du contrôleur est signalé une fois. L'API des
+  jeux passe à 17 (le composant `Animator` change de disposition) et l'amorce C# à 14.
+- **Éditeur** : le panneau **Animator** (ancrable, à côté d'*Output* la première fois ; *View >
+  Animator*, double-clic sur un `.dvxanimator`, ou le bouton de son inspecteur) montre le graphe du
+  contrôleur de l'`Animator` de l'entité sélectionnée, ou de l'animator choisi dans le FileSystem :
+  nœuds *Entry* (flèche orange vers l'état d'entrée), *Any State* et états (nom et ce qu'ils
+  jouent), transitions en flèches, côte à côte dans les deux sens. On déplace les nœuds, la vue
+  (bouton du milieu ou droit, molette pour le zoom, bouton pour tout cadrer) ; clic droit : nouvel
+  état, arbre 1D ou 2D, *Make Transition* (puis clic sur la cible), état d'entrée, suppression ;
+  un clip glissé du FileSystem crée un état, ou devient le clip de l'état sous la souris. À gauche,
+  les paramètres (ajout par type, renommage propagé aux conditions et aux arbres, valeur de
+  départ). L'état ou la transition cliqué s'édite dans l'**inspecteur** (nom, entrée, mouvement,
+  clips et seuils ou positions de l'arbre, animation de sprite, vitesse, boucle, transitions
+  sortantes ; durée, temps de sortie, conditions, ordre), jusqu'à ce qu'une autre entité ou un autre
+  asset soit choisi. Chaque changement terminé est enregistré dans le fichier (réimporté aussitôt)
+  et forme une étape d'**annulation propre au panneau** (Ctrl+Z, Ctrl+Y, boutons), puisque les
+  assets n'entrent pas dans l'historique de la scène ; un contrôleur incohérent n'est pas enregistré
+  et la raison s'affiche. Pendant le jeu, l'état actif s'allume avec l'avancement de son cycle, le
+  fondu en cours s'éclaire, et les paramètres montrent les valeurs du jeu, modifiables à la main
+  (un bouton lève les déclencheurs). *New Animator* dans un dossier du FileSystem en crée un.
+- **Bac à sable** : le robot de l'arène joue `assets/animators/robot.dvxanimator` : un arbre 1D
+  mêle *Idle* et *Walk* selon `Speed`, que `RobotGuide` fait monter et descendre (accélération),
+  et `Greeting` fond vers *Wave* quand le joueur approche. Le chevalier du jeu de plateformes joue
+  `hero.dvxanimator` : ses états *Idle*, *Run*, *Jump* et *Fall* nomment ses animations de sprite,
+  et `Hero2D` ne donne plus que `Speed`, `Grounded` et `VerticalSpeed`.
 
 ### Tweens et coroutines
 
@@ -2554,6 +2619,12 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     marches, sol, corniches, plateformes mobiles, poussée), requêtes, forces et contacts en C++ et
     en C#, formes dessinées dans l'éditeur ; le jeu de plateformes du bac à sable simulé.
 
+38. ✅ **Machines à états d'animation** — asset `.dvxanimator` de paramètres, d'états et de
+    transitions (conditions, temps de sortie, fondus, « Any State »), arbres de mélange 1D et 2D,
+    états qui jouent des animations de sprite, joué par l'`Animator` ; panneau de graphe de nœuds
+    avec son annulation, réglages dans l'inspecteur, suivi en direct pendant le jeu ; API C++ et C# ;
+    le robot et le chevalier du bac à sable s'en servent.
+
 Ensuite, sans ordre figé : CI Linux.
 
 ## Questions ouvertes
@@ -2591,7 +2662,12 @@ Ensuite, sans ordre figé : CI Linux.
 - **Éditeur de texte** : client LSP (clangd, Roslyn) pour une vraie complétion, les diagnostics en
   direct et l'aller à la définition ; repli de code, multi-curseur, sélection par colonnes,
   recherche dans tout le projet, et un rendu propre des tabulations.
-- **Animation** : machine à états et blend trees dans l'éditeur, couches et masques d'os,
+- **Machines à états, la suite** : sous-machines et arbres imbriqués, couches et masques d'os,
+  transitions interrompues par d'autres, conditions sur la fin d'un état, temps de sortie par
+  boucle, arbres 2D directionnels simples, courbes de fondu, aperçu d'un état dans l'éditeur hors
+  jeu, états communs à plusieurs contrôleurs (overrides d'Unity), valeurs des paramètres gardées
+  dans les sauvegardes.
+- **Animation** : couches et masques d'os,
   événements de clip, cinématique inverse, morph targets, pré-skinning en compute (colliders et
   rayons suivant la pose), réutilisation d'un clip entre squelettes différents (retargeting),
   compression des courbes.

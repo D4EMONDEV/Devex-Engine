@@ -13,7 +13,8 @@ public class Coin2D : Component
 
 // The hero: Move runs, Jump jumps. Its CharacterController2D moves it against the tiles, the crates
 // and the platform, through ledges from below and onto them from above; water brings it back to
-// where it started. It faces where it runs and plays idle, run, jump and fall on its SpriteAnimator.
+// where it started. It faces where it runs; its Animator (assets/animators/hero.dvxanimator) turns
+// the Speed, Grounded and VerticalSpeed it is given into idle, run, jump and fall.
 public class Hero2D : Component
 {
     public float Speed = 5.0f;
@@ -56,15 +57,9 @@ public class Hero2D : Component
             controller.Velocity = default;
         }
 
-        SpriteAnimator animator = Entity.Get<SpriteAnimator>();
-        if (!controller.Grounded)
-        {
-            animator.Play(controller.Velocity.Y > 0.0f ? "jump" : "fall");
-        }
-        else
-        {
-            animator.Play(MathF.Abs(run) > 0.1f ? "run" : "idle");
-        }
+        Animation.SetFloat(Entity, "Speed", MathF.Abs(run));
+        Animation.SetBool(Entity, "Grounded", controller.Grounded);
+        Animation.SetFloat(Entity, "VerticalSpeed", controller.Velocity.Y);
         if (MathF.Abs(run) > 0.1f)
         {
             Entity.Get<SpriteRenderer>().FlipX = run < 0.0f;

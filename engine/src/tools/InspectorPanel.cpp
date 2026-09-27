@@ -1170,6 +1170,12 @@ void drawInspectorPanel(ToolsState& state, scene::Scene& scene)
             state.selectedCode.clear();
             state.selectedAsset = {};
         }
+        // A state or a transition chosen in the Animator panel.
+        if (drawAnimatorElementInspector(state))
+        {
+            ImGui::End();
+            return;
+        }
         // Several entities: what they share.
         if (state.selection.size() > 1)
         {
@@ -1221,6 +1227,10 @@ void drawInspectorPanel(ToolsState& state, scene::Scene& scene)
             else if (selected != nullptr && selected->type == asset::AssetType::Tileset)
             {
                 drawTilesetInspector(state);
+            }
+            else if (selected != nullptr && selected->type == asset::AssetType::Animator)
+            {
+                drawAnimatorInspector(state);
             }
             else
             {

@@ -1651,7 +1651,9 @@ void ApplicationRunner::createAnimation()
         return;
     }
     m_animation = std::make_unique<animation::AnimationWorld>(
-        [this](asset::AssetId clip) { return m_services.assets.animationClip(clip); });
+        [this](asset::AssetId clip) { return m_services.assets.animationClip(clip); },
+        [this](asset::AssetId controller) { return m_services.assets.animator(controller); },
+        [this](asset::AssetId frames) { return m_services.assets.spriteFrames(frames); });
     m_application.m_animation = m_animation.get();
     if (m_services.tools != nullptr)
     {

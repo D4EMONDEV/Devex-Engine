@@ -30,6 +30,9 @@ DEVEX_DECLARE_REFLECTION(SkinnedMeshRenderer);
 // imported with one model plays on any skeleton whose bones carry the same names.
 struct Animator
 {
+    // The state machine that chooses the clips, a .dvxanimator; game code moves it by setting its
+    // parameters. Without one, the Animator plays its clip.
+    asset::AssetId controller;
     // The clip that plays; changing it from code or from the inspector starts the new one.
     asset::AssetId clip;
     // Times the speed of the clip; 0 holds the current pose.

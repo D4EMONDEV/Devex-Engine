@@ -308,6 +308,7 @@ void drawOverlayMenu(ToolsState& state, scene::Scene& scene)
         ImGui::MenuItem(detail::inspectorWindow, nullptr, &state.showInspector);
         ImGui::MenuItem(detail::assetsWindow, nullptr, &state.showAssets);
         ImGui::MenuItem(detail::animationWindow, nullptr, &state.showAnimation);
+        ImGui::MenuItem(detail::animatorWindow, nullptr, &state.showAnimator);
         ImGui::MenuItem(detail::consoleWindow, nullptr, &state.showConsole);
         ImGui::MenuItem(detail::statisticsWindow, nullptr, &state.showStatistics);
         ImGui::MenuItem(detail::profilerWindow, nullptr, &state.showProfiler);
@@ -345,6 +346,7 @@ void buildDefaultLayout(ImGuiID dockspace, const ImGuiViewport& viewport, ToolsM
     ImGui::DockBuilderDockWindow(detail::statisticsWindow, bottom);
     ImGui::DockBuilderDockWindow(detail::profilerWindow, bottom);
     ImGui::DockBuilderDockWindow(detail::animationWindow, bottom);
+    ImGui::DockBuilderDockWindow(detail::animatorWindow, bottom);
     if (mode == ToolsMode::Editor)
     {
         // The screens of the menu bar share the middle: the switch brings one to the front, and
@@ -394,7 +396,8 @@ void finishFrame(ToolsState& state)
 
 void handleShortcuts(ToolsState& state, scene::Scene& scene)
 {
-    if (detail::textEditorFocused())
+    // The text editor and the graph of the Animator panel undo their own changes.
+    if (detail::textEditorFocused() || state.animatorEditor.focused)
     {
         return;
     }
@@ -494,6 +497,7 @@ void updateEditor(ToolsState& state, scene::Scene& scene, PlayState playState)
     detail::updatePendingScript(state, scene);
     detail::drawTextEditorPanel(state, scene);
     detail::drawAnimationPanel(state, scene);
+    detail::drawAnimatorPanel(state, scene);
     detail::drawEditorPopups(state, scene);
     detail::handleEntityShortcuts(state, scene);
     if (state.pendingCommand != nullptr)

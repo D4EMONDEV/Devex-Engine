@@ -362,6 +362,58 @@ public static unsafe class Animation
     /// <summary>Jumps to a time of the clip and poses the bones there.</summary>
     public static void SetTime(Entity entity, float seconds)
         => Bootstrap.Native.SetAnimationTime(Scene.Current.Pointer, entity, seconds);
+
+    /// <summary>Sets a float parameter of the state machine of the Animator of the entity.</summary>
+    public static void SetFloat(Entity entity, string parameter, float value) => SetParameter(entity, parameter, 0, value);
+
+    public static void SetInteger(Entity entity, string parameter, int value) => SetParameter(entity, parameter, 1, value);
+
+    public static void SetBool(Entity entity, string parameter, bool value) => SetParameter(entity, parameter, 2, value ? 1.0f : 0.0f);
+
+    /// <summary>Sets a trigger, which the transition it lets through resets.</summary>
+    public static void SetTrigger(Entity entity, string parameter) => SetParameter(entity, parameter, 3, 1.0f);
+
+    public static void ResetTrigger(Entity entity, string parameter) => SetParameter(entity, parameter, 4, 0.0f);
+
+    /// <summary>A parameter of the state machine; bools and triggers read as 0 or 1.</summary>
+    public static float GetFloat(Entity entity, string parameter)
+    {
+        using var text = new Utf8Buffer(parameter);
+        float value;
+        Bootstrap.Native.AnimatorParameter(entity, text.Pointer, &value);
+        return value;
+    }
+
+    public static int GetInteger(Entity entity, string parameter) => (int)MathF.Round(GetFloat(entity, parameter));
+
+    public static bool GetBool(Entity entity, string parameter) => GetFloat(entity, parameter) != 0.0f;
+
+    /// <summary>The state the state machine of the entity is in; empty without a controller.</summary>
+    public static string GetState(Entity entity) => ReadState(entity, out _);
+
+    /// <summary>Whether the state machine of the entity is in a state.</summary>
+    public static bool IsInState(Entity entity, string state) => GetState(entity) == state;
+
+    /// <summary>How far into its state the state machine is: 1 at its end, more for a state that loops.</summary>
+    public static float GetStateTime(Entity entity)
+    {
+        ReadState(entity, out float time);
+        return time;
+    }
+
+    private static void SetParameter(Entity entity, string parameter, int kind, float value)
+    {
+        using var text = new Utf8Buffer(parameter);
+        Bootstrap.Native.SetAnimatorParameter(entity, text.Pointer, kind, value);
+    }
+
+    private static string ReadState(Entity entity, out float time)
+    {
+        float read;
+        byte* state = Bootstrap.Native.AnimatorState(entity, &read);
+        time = read;
+        return Utf8.ToString(state) ?? "";
+    }
 }
 
 /// <summary>

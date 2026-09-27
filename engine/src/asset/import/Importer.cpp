@@ -3,6 +3,7 @@
 #include <devex/asset/import/CurveFile.hpp>
 #include <devex/asset/import/MaterialFile.hpp>
 #include <devex/asset/import/SpriteFramesFile.hpp>
+#include <devex/asset/import/AnimatorFile.hpp>
 #include <devex/asset/import/TilesetFile.hpp>
 #include <devex/asset/import/ThemeFile.hpp>
 #include <devex/asset/import/TextureProcessing.hpp>
@@ -456,6 +457,23 @@ core::Result<ImportResult> importTilesetFile(ImportContext& context)
     return result;
 }
 
+core::Result<ImportResult> importAnimatorFile(ImportContext& context)
+{
+    const core::Result<std::string> text = core::readTextFile(context.source);
+    if (!text)
+    {
+        return std::unexpected(text.error());
+    }
+    const core::Result<AnimatorData> animator = parseAnimatorFile(*text);
+    if (!animator)
+    {
+        return std::unexpected(animator.error());
+    }
+    ImportResult result;
+    result.artifacts.push_back({context.mainId, AssetType::Animator, context.name, encodeAnimator(*animator)});
+    return result;
+}
+
 core::Result<ImportResult> importSceneFile(ImportContext& context)
 {
     const core::Result<std::string> text = core::readTextFile(context.source);
@@ -596,6 +614,13 @@ std::span<const Importer> importers()
             .mainType = AssetType::Tileset,
             .extensions = {tilesetExtension},
             .run = &importTilesetFile,
+        },
+        Importer{
+            .name = "animator",
+            .version = 1,
+            .mainType = AssetType::Animator,
+            .extensions = {animatorExtension},
+            .run = &importAnimatorFile,
         },
         Importer{
             .name = "scene",

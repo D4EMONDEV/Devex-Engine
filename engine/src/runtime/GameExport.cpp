@@ -562,6 +562,21 @@ core::Result<std::vector<asset::AssetId>> assetReferences(asset::AssetType type,
         }
         break;
     }
+    case asset::AssetType::Animator: {
+        const core::Result<asset::AnimatorData> animator = asset::decodeAnimator(artifact);
+        if (!animator)
+        {
+            return std::unexpected(animator.error());
+        }
+        for (const asset::AnimatorState& state : animator->states)
+        {
+            for (const asset::AnimatorMotion& motion : state.motions)
+            {
+                ids.push_back(motion.clip);
+            }
+        }
+        break;
+    }
     case asset::AssetType::Texture:
     case asset::AssetType::AudioClip:
     case asset::AssetType::AnimationClip:

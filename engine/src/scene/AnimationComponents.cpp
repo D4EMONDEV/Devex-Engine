@@ -11,7 +11,8 @@ DEVEX_REFLECT(SkinnedMeshRenderer)
 
 DEVEX_REFLECT(Animator)
 {
-    type.field("clip", &Animator::clip, {.assetType = "animation"})
+    type.field("controller", &Animator::controller, {.assetType = "animator"})
+        .field("clip", &Animator::clip, {.assetType = "animation"})
         .field("speed", &Animator::speed)
         .field("loop", &Animator::loop)
         .field("play_on_start", &Animator::playOnStart)

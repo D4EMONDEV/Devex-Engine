@@ -206,6 +206,7 @@ target_sources(devex_asset
         src/asset/SpriteData.cpp
         src/asset/TextureData.cpp
         src/asset/TilesetData.cpp
+        src/asset/AnimatorData.cpp
         src/asset/ThemeData.cpp
     PUBLIC
         FILE_SET HEADERS
@@ -230,6 +231,7 @@ target_sources(devex_asset
             include/devex/asset/SpriteData.hpp
             include/devex/asset/TextureData.hpp
             include/devex/asset/TilesetData.hpp
+            include/devex/asset/AnimatorData.hpp
 )
 
 target_link_libraries(devex_asset
@@ -281,6 +283,7 @@ target_sources(devex_asset_import
         src/asset/import/TextureProcessing.cpp
         src/asset/import/ThemeFile.cpp
         src/asset/import/TilesetFile.cpp
+        src/asset/import/AnimatorFile.cpp
     PUBLIC
         FILE_SET HEADERS
         BASE_DIRS include
@@ -294,6 +297,7 @@ target_sources(devex_asset_import
             include/devex/asset/import/SpriteFramesFile.hpp
             include/devex/asset/import/TextureProcessing.hpp
             include/devex/asset/import/TilesetFile.hpp
+            include/devex/asset/import/AnimatorFile.hpp
 )
 
 target_include_directories(devex_asset_import SYSTEM PRIVATE ${Stb_INCLUDE_DIR})
@@ -710,6 +714,7 @@ add_library(Devex::Tools ALIAS devex_tools)
 target_sources(devex_tools
     PRIVATE
         src/tools/AnimationPanel.cpp
+        src/tools/AnimatorPanel.cpp
         src/tools/AssetsPanel.cpp
         src/tools/AudioInspector.cpp
         src/tools/CommandHistory.cpp

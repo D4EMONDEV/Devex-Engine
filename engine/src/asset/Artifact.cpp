@@ -101,6 +101,7 @@ std::uint32_t artifactVersion(AssetType type) noexcept
     case AssetType::Sprite:
     case AssetType::SpriteFrames:
     case AssetType::Tileset:
+    case AssetType::Animator:
         return 1;
     }
     return 0;
@@ -110,7 +111,7 @@ std::uint32_t artifactLayouts() noexcept
 {
     std::uint32_t combined = 0;
     for (std::uint8_t value = static_cast<std::uint8_t>(AssetType::Mesh);
-         value <= static_cast<std::uint8_t>(AssetType::Tileset); ++value)
+         value <= static_cast<std::uint8_t>(AssetType::Animator); ++value)
     {
         combined = combined * 31 + artifactVersion(static_cast<AssetType>(value));
     }
@@ -753,6 +754,136 @@ core::Result<TilesetData> decodeTileset(std::span<const std::byte> bytes)
         return std::unexpected(valid.error());
     }
     return tileset;
+}
+
+std::vector<std::byte> encodeAnimator(const AnimatorData& animator)
+{
+    BinaryWriter writer = beginArtifact(AssetType::Animator);
+    writer.writeString(animator.entry);
+    writer.write(animator.entryPosition);
+    writer.write(animator.anyStatePosition);
+    writer.write(static_cast<std::uint32_t>(animator.parameters.size()));
+    for (const AnimatorParameter& parameter : animator.parameters)
+    {
+        writer.writeString(parameter.name);
+        writer.write(parameter.type);
+        writer.write(parameter.defaultValue);
+    }
+    writer.write(static_cast<std::uint32_t>(animator.states.size()));
+    for (const AnimatorState& state : animator.states)
+    {
+        writer.writeString(state.name);
+        writer.write(state.blend);
+        writer.write(static_cast<std::uint32_t>(state.motions.size()));
+        for (const AnimatorMotion& motion : state.motions)
+        {
+            writer.write(motion.clip);
+            writer.write(motion.threshold);
+            writer.write(motion.position);
+        }
+        writer.writeString(state.parameter);
+        writer.writeString(state.parameterY);
+        writer.writeString(state.spriteAnimation);
+        writer.write(state.speed);
+        writer.writeString(state.speedParameter);
+        writer.write(state.loop);
+        writer.write(state.graphPosition);
+    }
+    writer.write(static_cast<std::uint32_t>(animator.transitions.size()));
+    for (const AnimatorTransition& transition : animator.transitions)
+    {
+        writer.writeString(transition.from);
+        writer.writeString(transition.to);
+        writer.write(transition.duration);
+        writer.write(transition.exitTime);
+        writer.write(static_cast<std::uint32_t>(transition.conditions.size()));
+        for (const AnimatorCondition& condition : transition.conditions)
+        {
+            writer.writeString(condition.parameter);
+            writer.write(condition.test);
+            writer.write(condition.value);
+        }
+    }
+    return writer.take();
+}
+
+core::Result<AnimatorData> decodeAnimator(std::span<const std::byte> bytes)
+{
+    BinaryReader reader(bytes);
+    if (core::Result<void> header = readHeader(reader, AssetType::Animator); !header)
+    {
+        return std::unexpected(header.error());
+    }
+    AnimatorData animator;
+    animator.entry = reader.readString();
+    animator.entryPosition = reader.read<math::Vec2>();
+    animator.anyStatePosition = reader.read<math::Vec2>();
+    const auto parameters = reader.read<std::uint32_t>();
+    for (std::uint32_t index = 0; index < parameters && !reader.failed(); ++index)
+    {
+        AnimatorParameter& parameter = animator.parameters.emplace_back();
+        parameter.name = reader.readString();
+        parameter.type = reader.read<AnimatorParameterType>();
+        parameter.defaultValue = reader.read<float>();
+    }
+    const auto states = reader.read<std::uint32_t>();
+    for (std::uint32_t index = 0; index < states && !reader.failed(); ++index)
+    {
+        AnimatorState& state = animator.states.emplace_back();
+        state.name = reader.readString();
+        state.blend = reader.read<AnimatorBlend>();
+        const auto motions = reader.read<std::uint32_t>();
+        for (std::uint32_t motion = 0; motion < motions && !reader.failed(); ++motion)
+        {
+            AnimatorMotion& read = state.motions.emplace_back();
+            read.clip = reader.read<AssetId>();
+            read.threshold = reader.read<float>();
+            read.position = reader.read<math::Vec2>();
+        }
+        state.parameter = reader.readString();
+        state.parameterY = reader.readString();
+        state.spriteAnimation = reader.readString();
+        state.speed = reader.read<float>();
+        state.speedParameter = reader.readString();
+        state.loop = reader.read<bool>();
+        state.graphPosition = reader.read<math::Vec2>();
+    }
+    const auto transitions = reader.read<std::uint32_t>();
+    for (std::uint32_t index = 0; index < transitions && !reader.failed(); ++index)
+    {
+        AnimatorTransition& transition = animator.transitions.emplace_back();
+        transition.from = reader.readString();
+        transition.to = reader.readString();
+        transition.duration = reader.read<float>();
+        transition.exitTime = reader.read<float>();
+        const auto conditions = reader.read<std::uint32_t>();
+        for (std::uint32_t condition = 0; condition < conditions && !reader.failed(); ++condition)
+        {
+            AnimatorCondition& read = transition.conditions.emplace_back();
+            read.parameter = reader.readString();
+            read.test = reader.read<AnimatorTest>();
+            read.value = reader.read<float>();
+        }
+    }
+    if (reader.failed())
+    {
+        return std::unexpected(truncated(AssetType::Animator));
+    }
+    for (const AnimatorTransition& transition : animator.transitions)
+    {
+        for (const AnimatorCondition& condition : transition.conditions)
+        {
+            if (condition.test > AnimatorTest::Triggered)
+            {
+                return std::unexpected(truncated(AssetType::Animator));
+            }
+        }
+    }
+    if (core::Result<void> valid = validate(animator); !valid)
+    {
+        return std::unexpected(valid.error());
+    }
+    return animator;
 }
 
 core::Result<ThemeData> decodeTheme(std::span<const std::byte> bytes)

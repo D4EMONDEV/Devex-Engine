@@ -12,6 +12,7 @@
 #include "Theme.hpp"
 #include "Widgets.hpp"
 
+#include <devex/asset/AnimatorData.hpp>
 #include <devex/asset/AssetId.hpp>
 #include <devex/asset/AssetMemory.hpp>
 #include <devex/asset/AssetType.hpp>
@@ -74,6 +75,7 @@ inline constexpr const char* viewportWindow = "Viewport";
 inline constexpr const char* settingsWindow = "Editor Settings";
 inline constexpr const char* debuggingWindow = "C# Debugging";
 inline constexpr const char* animationWindow = "Animation";
+inline constexpr const char* animatorWindow = "Animator";
 inline constexpr const char* textEditorWindow = "Text Editor";
 inline constexpr const char* interfaceWindow = "Interface";
 inline constexpr const char* profilerWindow = "Profiler";
@@ -264,6 +266,55 @@ struct TilesetEditor
     std::uint32_t selectedTile = 0;
 };
 
+// What the graph of the Animator panel has selected.
+enum class AnimatorElement : std::uint8_t
+{
+    None,
+    State,
+    Transition,
+    Entry,
+    AnyState,
+};
+
+// The animator controller the Animator panel edits: a copy of its file, saved when a change is over,
+// with its own undo history.
+struct AnimatorEditor
+{
+    asset::AssetId asset;
+    std::filesystem::path file;
+    // When the file was read or written, to read it again once changed elsewhere.
+    std::filesystem::file_time_type fileTime{};
+    asset::AnimatorData animator;
+    // As the file holds it: what an undo step goes back to.
+    asset::AnimatorData saved;
+    std::vector<asset::AnimatorData> undo;
+    std::vector<asset::AnimatorData> redo;
+    // Why the file could not be read, or why the last change is not saved.
+    std::string error;
+    AnimatorElement selected = AnimatorElement::None;
+    // The state or the transition selected.
+    std::int32_t index = -1;
+    // The inspector shows the element selected, until another entity or asset is selected.
+    bool inspecting = false;
+    core::Uuid inspectedEntity;
+    asset::AssetId inspectedAsset;
+    // The graph: where its origin sits in the panel, in pixels, and how large it is drawn.
+    math::Vec2 pan{280.0f, 120.0f};
+    float zoom = 1.0f;
+    // Fits the view to the graph at the next frame: when another controller opens, or asked.
+    bool frame = true;
+    // A transition being drawn from a state (-1: from Any State), to the state clicked next.
+    std::optional<std::int32_t> connectingFrom;
+    // A node being dragged, and whether it moved.
+    AnimatorElement dragged = AnimatorElement::None;
+    std::int32_t draggedIndex = -1;
+    bool panning = false;
+    // The entity whose Animator the panel follows, for its state while the game plays.
+    core::Uuid entity;
+    // The panel had the keyboard focus last frame: its undo takes Ctrl+Z.
+    bool focused = false;
+};
+
 // How the viewport paints the cells of the selected tilemap.
 enum class TileTool : std::uint8_t
 {
@@ -417,6 +468,7 @@ struct ToolsState
     CurveEditor curveEditor;
     SpriteFramesEditor spriteFramesEditor;
     TilesetEditor tilesetEditor;
+    AnimatorEditor animatorEditor;
     TilePainter tilePainter;
     // A file just created, selected once it is imported, as a res:// path.
     std::string assetToSelect;
@@ -438,6 +490,7 @@ struct ToolsState
     // The particles of the scene shown, previewed in the editor; null without them.
     particles::ParticleWorld* particleWorld = nullptr;
     bool showAnimation = false;
+    bool showAnimator = false;
     // The profiler records while its panel is open.
     bool showProfiler = false;
     ProfilerView profiler;
@@ -664,6 +717,17 @@ void drawTilesetInspector(ToolsState& state);
 // texture, it holds a tile for each of its sprites.
 core::Result<std::filesystem::path> createTilesetFile(ToolsState& state, std::string_view folder,
                                                       asset::AssetId fromTexture = {});
+// The Animator panel: the graph of the states and transitions of an animator controller, with its
+// parameters, followed live while the game plays. It edits the controller of the Animator of the
+// selected entity, or the animator selected in the FileSystem.
+void drawAnimatorPanel(ToolsState& state, scene::Scene& scene);
+// The state or transition selected in the Animator panel, in the inspector; false when the inspector
+// shows something else.
+bool drawAnimatorElementInspector(ToolsState& state);
+// The selected animator asset in the inspector: what it holds, and the way to its graph.
+void drawAnimatorInspector(ToolsState& state);
+// Writes a new animator controller into a res:// folder of the assets, and selects it once imported.
+core::Result<std::filesystem::path> createAnimatorFile(ToolsState& state, std::string_view folder);
 // Under the Tilemap of the inspected entity: the tools that paint it and the palette of its tiles.
 void drawTilePainter(ToolsState& state, scene::Scene& scene, scene::Entity entity);
 // Paints the selected tilemap with the mouse when a tool is chosen. Returns whether it took the

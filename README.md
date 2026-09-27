@@ -64,7 +64,9 @@ Le détail, l'architecture des modules et les jalons sont dans
   caméra principale), lecture ponctuelle par le code, groupes de volume, clips décodés au
   chargement ou pendant la lecture ;
 - `Devex::Animation` : clips d'animation importés des modèles glTF et FBX, squelettes faits d'entités,
-  `Animator` qui joue un clip avec fondu croisé, root motion optionnel, skinning des maillages
+  `Animator` qui joue un clip avec fondu croisé ou une machine à états `.dvxanimator` (paramètres,
+  transitions conditionnelles, arbres de mélange 1D et 2D, états de sprites), root motion
+  optionnel, skinning des maillages
   dans le vertex shader ; tweens de tout champ numérique, vectoriel, de couleur ou de rotation
   d'un composant (délai, boucles, aller-retour, séquences), par code ou par le composant
   `Tweener`, avec 22 courbes classiques ou une courbe dessinée (`.dvxcurve`) ; sprites animés
@@ -102,7 +104,8 @@ Le détail, l'architecture des modules et les jalons sont dans
   rectangle, remplissage, pipette) et inspecteur des tilesets, formes de la physique 2D
   dessinées dans la vue,
   volumes du projet, icônes et distances des sources audio, panneau Animation
-  avec piste temporelle et images clés, panneau Profiler (barres des images, chronologie par
+  avec piste temporelle et images clés, panneau Animator (graphe de nœuds des machines à états,
+  suivi en direct pendant le jeu), panneau Profiler (barres des images, chronologie par
   thread et GPU, tableaux des zones, des passes et de la mémoire des assets) ;
 - `Devex::Runtime` : `Application`, boucle à pas fixe, mode éditeur et mode Play, modules de jeu
   (composants et systèmes rechargeables à chaud), code C# sur .NET hébergé (composants, systèmes,
@@ -136,7 +139,8 @@ Le détail, l'architecture des modules et les jalons sont dans
   caisses (`code/Dispenser.cs`) et un cube qui flotte
   (`code/Bobber.cs`) ; le lanceur C++ et les cibles C# jouent leurs sons, la porte sa source audio,
   le cube flottant émet un bourdonnement spatialisé et une ambiance Ogg tourne en boucle dans le
-  groupe Music ; un robot rigué patrouille, attend et salue le joueur (`code/Robot.cs`) ;
+  groupe Music ; un robot rigué patrouille, attend et salue le joueur par sa machine à états
+  (`assets/animators/robot.dvxanimator`, `code/Robot.cs`) ;
   Tab passe à la scène `platformer`, un jeu de plateformes en pixel art (un chevalier animé qui
   court et saute sur un niveau de tuiles simulé par la physique 2D, traverse les corniches
   par-dessous, pousse des caisses, prend une plateforme mobile au-dessus de l'eau animée et

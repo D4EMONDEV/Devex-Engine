@@ -200,6 +200,10 @@ speed = 1
 playing = true
 frame = 0
 
+[component type="Animator"]
+controller = asset("f9208eac-b107-535e-8d55-e237f9c69e6b")
+play_on_start = true
+
 [component type="CharacterController2D"]
 radius = 0.3
 height = 0.85

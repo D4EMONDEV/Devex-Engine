@@ -87,6 +87,8 @@ struct Folder
         return {icons::Clapperboard, colors.animation};
     case asset::AssetType::Tileset:
         return {icons::Grid, colors.texture};
+    case asset::AssetType::Animator:
+        return {icons::Workflow, colors.animation};
     default:
         break;
     }
@@ -227,10 +229,17 @@ void drawSource(ToolsState& state, scene::Scene& scene, const asset::SourceFile&
         }
         // Curves, sprite frames and textures are edited in the inspector.
         if ((mainAsset->type == asset::AssetType::Curve || mainAsset->type == asset::AssetType::SpriteFrames ||
-             mainAsset->type == asset::AssetType::Texture || mainAsset->type == asset::AssetType::Tileset) &&
+             mainAsset->type == asset::AssetType::Texture || mainAsset->type == asset::AssetType::Tileset ||
+             mainAsset->type == asset::AssetType::Animator) &&
             ImGui::IsItemClicked(ImGuiMouseButton_Left))
         {
             selectAsset(state, mainAsset->id);
+        }
+        // Animators open in the Animator panel when double-clicked.
+        if (mainAsset->type == asset::AssetType::Animator && doubleClicked)
+        {
+            state.showAnimator = true;
+            ImGui::SetWindowFocus(animatorWindow);
         }
         // Models show how they import in the inspector, and are placed when double-clicked.
         if (mainAsset->type == asset::AssetType::Model && ImGui::IsItemClicked(ImGuiMouseButton_Left))
@@ -333,6 +342,14 @@ void drawFolderMenu(ToolsState& state, const std::string& path)
         }
     }
     ImGui::SetItemTooltip("The tiles Tilemap components paint their cells with");
+    if (ImGui::MenuItemEx("New Animator", icons::Workflow.c_str()))
+    {
+        if (core::Result<std::filesystem::path> created = createAnimatorFile(state, path); !created)
+        {
+            DEVEX_LOG_ERROR("Cannot create the animator: {}", created.error());
+        }
+    }
+    ImGui::SetItemTooltip("A state machine of animations, which Animator components play");
     ImGui::EndPopup();
 }
 

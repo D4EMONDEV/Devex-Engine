@@ -235,6 +235,9 @@ struct NativeApi
     void (*addForce2D)(Entity entity, const math::Vec2* force);
     void (*addTorque2D)(Entity entity, float torque);
     void (*addImpulse2D)(Entity entity, const math::Vec2* impulse);
+    void (*setAnimatorParameter)(Entity entity, const char* name, int kind, float value);
+    int (*animatorParameter)(Entity entity, const char* name, float* value);
+    const char* (*animatorState)(Entity entity, float* normalizedTime);
 };
 
 // The functions the engine calls, in the order of Devex.Managed's ManagedApi.
@@ -249,7 +252,7 @@ struct ManagedApi
 };
 
 // Devex.Managed's Bootstrap.Version: both sides change it with the function tables.
-constexpr int bootstrapVersion = 13;
+constexpr int bootstrapVersion = 14;
 
 struct BootstrapArguments
 {
@@ -1002,6 +1005,51 @@ void apiSetAnimationTime(void* scene, Entity entity, float seconds)
     {
         animationWorld()->setTime(*toScene(scene), entity, seconds);
     }
+}
+
+// What C# sets on a state machine: 0 a float, 1 an integer, 2 a bool, 3 sets a trigger, 4 resets it.
+void apiSetAnimatorParameter(Entity entity, const char* name, int kind, float value)
+{
+    animation::AnimationWorld* const world = animationWorld();
+    if (world == nullptr || name == nullptr)
+    {
+        return;
+    }
+    switch (kind)
+    {
+    case 0:
+        world->setFloat(entity, name, value);
+        break;
+    case 1:
+        world->setInteger(entity, name, static_cast<std::int32_t>(std::lround(value)));
+        break;
+    case 2:
+        world->setBool(entity, name, value != 0.0f);
+        break;
+    case 3:
+        world->setTrigger(entity, name);
+        break;
+    default:
+        world->resetTrigger(entity, name);
+        break;
+    }
+}
+
+int apiAnimatorParameter(Entity entity, const char* name, float* value)
+{
+    const std::optional<float> found =
+        animationWorld() != nullptr && name != nullptr ? animationWorld()->parameter(entity, name) : std::nullopt;
+    *value = found.value_or(0.0f);
+    return found ? 1 : 0;
+}
+
+const char* apiAnimatorState(Entity entity, float* normalizedTime)
+{
+    // Kept until the next call, while C# copies it.
+    static std::string state;
+    state = animationWorld() != nullptr ? std::string(animationWorld()->state(entity)) : std::string{};
+    *normalizedTime = animationWorld() != nullptr ? animationWorld()->stateTime(entity) : 0.0f;
+    return state.c_str();
 }
 
 [[nodiscard]] ui::UiWorld* uiWorld() noexcept
@@ -2007,6 +2055,9 @@ int apiParticleCount(Entity entity)
         .addForce2D = &apiAddForce2D,
         .addTorque2D = &apiAddTorque2D,
         .addImpulse2D = &apiAddImpulse2D,
+        .setAnimatorParameter = &apiSetAnimatorParameter,
+        .animatorParameter = &apiAnimatorParameter,
+        .animatorState = &apiAnimatorState,
     };
 }
 

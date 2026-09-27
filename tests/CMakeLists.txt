@@ -86,6 +86,7 @@ devex_add_tests(animation
     SOURCES
         animation/AnimationTests.cpp
         animation/SpriteAnimationTests.cpp
+        animation/StateMachineTests.cpp
         animation/TweenTests.cpp
     LIBRARIES
         Devex::Engine
@@ -115,6 +116,7 @@ target_compile_definitions(devex_ui_tests
 
 devex_add_tests(asset
     SOURCES
+        asset/AnimatorTests.cpp
         asset/ArtifactTests.cpp
         asset/AssetDatabaseTests.cpp
         asset/CurveTests.cpp

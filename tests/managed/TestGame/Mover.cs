@@ -522,3 +522,28 @@ public class Walker2D : Component
         }
     }
 }
+
+// Drives a state machine from C#: its speed, then a trigger, reading back the state it is in.
+public class Conductor : Component
+{
+    public string State = "";
+    public float Speed;
+    public bool Waved;
+    private int _frames;
+
+    public override void Update(float delta)
+    {
+        ++_frames;
+        if (_frames == 1)
+        {
+            Animation.SetFloat(Entity, "Speed", 2.0f);
+        }
+        if (_frames == 3)
+        {
+            Animation.SetTrigger(Entity, "Wave");
+        }
+        State = Animation.GetState(Entity);
+        Speed = Animation.GetFloat(Entity, "Speed");
+        Waved = Waved || Animation.IsInState(Entity, "Waving");
+    }
+}

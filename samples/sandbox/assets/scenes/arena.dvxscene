@@ -799,7 +799,8 @@ rotation = quat(0, 0, 0, 1)
 scale = vec3(1, 1, 1)
 
 [component type="Animator"]
-clip = asset("b0742248-4cbb-4d75-9e8d-f9ff4c9efa5c")
+controller = asset("a6a31931-deb0-5d31-9232-372a3affa9b7")
+clip = asset("00000000-0000-0000-0000-000000000000")
 speed = 1
 loop = true
 play_on_start = true
@@ -807,11 +808,9 @@ blend_time = 0.25
 apply_root_motion = false
 
 [component type="RobotGuide"]
-idle = asset("b0742248-4cbb-4d75-9e8d-f9ff4c9efa5c")
-walk = asset("905859b5-6eb4-4bd7-9280-c73e4dee07f2")
-wave = asset("c89b91c7-df3b-49f2-ba28-ead218f0b781")
 patrol = vec3(0, 0, -11)
 speed = 1.6
+acceleration = 3
 wait_time = 1.5
 greet_distance = 4.5
 

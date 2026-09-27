@@ -1,0 +1,22 @@
+[animator format=1 entry="Locomotion"]
+entry_position = vec2(-260, 0)
+any_state_position = vec2(-260, 110)
+
+[parameter name="Speed" type="float" default=0]
+
+[parameter name="Greeting" type="bool" default=false]
+
+[state name="Locomotion" blend="1d" parameter="Speed"]
+position = vec2(0, 0)
+clips = list(asset("b0742248-4cbb-4d75-9e8d-f9ff4c9efa5c"), asset("905859b5-6eb4-4bd7-9280-c73e4dee07f2"))
+thresholds = list(0, 1.6)
+
+[state name="Waving"]
+position = vec2(280, 0)
+clips = list(asset("c89b91c7-df3b-49f2-ba28-ead218f0b781"))
+
+[transition from="Locomotion" to="Waving" duration=0.25]
+conditions = list(is("Greeting", true))
+
+[transition from="Waving" to="Locomotion" duration=0.3]
+conditions = list(is("Greeting", false))
