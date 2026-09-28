@@ -72,6 +72,9 @@ class Clip;
 
 namespace devex::tools::detail {
 
+class EditorUiKit;
+struct ProjectManagerUi;
+
 // Window names are also their identifiers in the saved layout.
 inline constexpr const char* hierarchyWindow = "Scene";
 inline constexpr const char* inspectorWindow = "Inspector";
@@ -411,6 +414,10 @@ struct ToolsState
 
     // Appearance.
     IconSet icons;
+    // The fonts, icons and theme the panels made with the interface of the engine share, and the
+    // project manager, the first of them.
+    std::shared_ptr<EditorUiKit> uiKit;
+    std::shared_ptr<ProjectManagerUi> projectManagerUi;
     EditorFonts fonts;
     ThemeSettings theme;
     // The theme changed and applies before the next frame.
@@ -785,6 +792,8 @@ void drawInterfaceOverlay(ToolsState& state, const scene::Scene& scene);
 // Shows the viewport in the screen of the kind of the active scene, 2D or 3D.
 void showSceneScreen(ToolsState& state, const scene::Scene& scene);
 void drawProjectManager(ToolsState& state);
+// Adds the image of the project manager to the frame, when it was drawn this frame.
+void renderProjectManager(ToolsState& state, render::RenderWorld& world);
 void drawEditorMenus(ToolsState& state, scene::Scene& scene);
 // Shows a screen in the middle of the window: the panel it needs opens and takes the focus.
 void setMainScreen(ToolsState& state, MainScreen screen);

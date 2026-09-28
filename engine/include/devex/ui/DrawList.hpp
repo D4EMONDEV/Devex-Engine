@@ -45,6 +45,8 @@ struct DrawContext
     // Nothing for a field that is not being edited: it then shows its placeholder rather than a
     // cursor.
     std::function<const EditState*(scene::Entity)> editing;
+    // Whether the pointer holds or rests on the bar of a splitter, which then lights up.
+    std::function<bool(scene::Entity)> grabbed;
     // The font used by a UiText that names none.
     asset::AssetId defaultFont;
 };
@@ -53,6 +55,24 @@ struct DrawContext
 // out: parents first, then their children over them.
 void buildDrawList(const scene::Scene& scene, const LayoutResult& layout,
                    const DrawContext& context, render::RenderWorld& world);
+
+// A line of text drawn over the canvases, in pixels: the list of a dropdown and the tooltips.
+struct OverlayText
+{
+    std::string_view text;
+    // The default font of the context when invalid.
+    asset::AssetId font;
+    float size = 16.0f;
+    math::Vec4 color{1.0f};
+};
+
+// A rectangle of one color over the canvases, in pixels, its corners rounded by `radius`.
+void drawOverlayBox(render::RenderWorld& world, math::Vec2 min, math::Vec2 max, math::Vec4 color,
+                    float radius = 0.0f);
+// One line of text in a box, in pixels: from its left edge, centred on its height, and cut to it.
+void drawOverlayText(render::RenderWorld& world, const DrawContext& context, math::Vec2 min, math::Vec2 max,
+                     const OverlayText& text);
+[[nodiscard]] math::Vec2 measureOverlayText(const DrawContext& context, const OverlayText& text);
 
 // How much interface the frame held at a moment, to move what is added after it.
 struct DrawListMark

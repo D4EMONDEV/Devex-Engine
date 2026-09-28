@@ -1485,6 +1485,12 @@ void VulkanRenderer::selectUploads(FrameContext& frame)
     std::erase_if(m_world.uiDraws, [this](const UiDraw& draw) {
         return draw.texture.isValid() && m_textures.contains(draw.texture) && !isReady(draw.texture);
     });
+    for (UiSurface& surface : m_world.uiSurfaces)
+    {
+        std::erase_if(surface.draws, [this](const UiDraw& draw) {
+            return draw.texture.isValid() && m_textures.contains(draw.texture) && !isReady(draw.texture);
+        });
+    }
     std::erase_if(m_world.particleDraws, [this](const ParticleDraw& draw) {
         return draw.texture.isValid() && m_textures.contains(draw.texture) && !isReady(draw.texture);
     });
@@ -2769,6 +2775,20 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
                                                                               : VK_FORMAT_UNDEFINED,
                                                    })
                                                  : 0;
+    // The interface surfaces, for the tools only, sampled by them as the viewport is.
+    std::vector<std::size_t> surfaceIndices;
+    if (drawImGui)
+    {
+        for (const UiSurface& surface : m_world.uiSurfaces)
+        {
+            surfaceIndices.push_back(create({
+                .format = targetFormat,
+                .extent = {std::max(surface.size.width, 1u), std::max(surface.size.height, 1u)},
+                .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+                .alternateFormat = toolsFormat != targetFormat ? toolsFormat : VK_FORMAT_UNDEFINED,
+            }));
+        }
+    }
     const std::size_t pickColorIndex = pick ? create({
                                                   .format = pickFormat,
                                                   .extent = frame.pickExtent,
@@ -2818,9 +2838,10 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
     }
 
     const bool drawUi = !m_world.uiDraws.empty() && !m_world.uiIndices.empty();
-    if (drawUi)
+    std::vector<std::uint32_t> surfaceIndexBases;
+    if (drawUi || !surfaceIndices.empty())
     {
-        if (core::Result<void> uploaded = uploadUi(frame); !uploaded)
+        if (core::Result<void> uploaded = uploadUi(frame, surfaceIndexBases); !uploaded)
         {
             return std::unexpected(uploaded.error());
         }
@@ -3558,70 +3579,90 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
         });
     }
 
-    if (drawUi)
-    {
-        graph.addPass("Interface", {{target, ImageAccess::ColorAttachment}},
-                      [&](VkCommandBuffer commands) {
-            const VkRenderingAttachmentInfo colorAttachment{
-                .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-                .imageView = graph.view(target),
-                .imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                .loadOp = VK_ATTACHMENT_LOAD_OP_LOAD,
-                .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-            };
-            const VkRenderingInfo renderingInfo{
-                .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
-                .renderArea = {.extent = {extent.width, extent.height}},
-                .layerCount = 1,
-                .colorAttachmentCount = 1,
-                .pColorAttachments = &colorAttachment,
-            };
-            vkCmdBeginRendering(commands, &renderingInfo);
-            setViewport(commands, extent);
+    // Draws the batches of an interface into an image of `size`, their indices counted from
+    // `indexBase` in the index buffer of the frame.
+    const auto drawInterface = [&](VkCommandBuffer commands, VkImageView view, VkAttachmentLoadOp load,
+                                   const math::Vec4& clearColor, math::Extent2D size,
+                                   std::span<const UiDraw> draws, std::uint32_t indexBase) {
+        const VkRenderingAttachmentInfo colorAttachment{
+            .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+            .imageView = view,
+            .imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+            .loadOp = load,
+            .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+            .clearValue = {.color = {.float32 = {clearColor.x, clearColor.y, clearColor.z, clearColor.w}}},
+        };
+        const VkRenderingInfo renderingInfo{
+            .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
+            .renderArea = {.extent = {size.width, size.height}},
+            .layerCount = 1,
+            .colorAttachmentCount = 1,
+            .pColorAttachments = &colorAttachment,
+        };
+        vkCmdBeginRendering(commands, &renderingInfo);
+        setViewport(commands, size);
+        if (!draws.empty())
+        {
             vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, m_uiPipeline->handle());
             vkCmdBindDescriptorSets(commands, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                     m_uiPipeline->layout(), 0, 2, sets.data(), 0, nullptr);
+        }
+        for (const UiDraw& uiDraw : draws)
+        {
+            // A batch that names a rectangle is cut to it; the others cover the image.
+            const bool clipped = uiDraw.clip.z > uiDraw.clip.x && uiDraw.clip.w > uiDraw.clip.y;
+            const VkRect2D scissor =
+                clipped ? VkRect2D{
+                              .offset = {std::max(static_cast<std::int32_t>(uiDraw.clip.x), 0),
+                                         std::max(static_cast<std::int32_t>(uiDraw.clip.y), 0)},
+                              .extent = {static_cast<std::uint32_t>(std::clamp(
+                                             uiDraw.clip.z - std::max(uiDraw.clip.x, 0.0f), 0.0f,
+                                             static_cast<float>(size.width))),
+                                         static_cast<std::uint32_t>(std::clamp(
+                                             uiDraw.clip.w - std::max(uiDraw.clip.y, 0.0f), 0.0f,
+                                             static_cast<float>(size.height)))},
+                          }
+                        : VkRect2D{.offset = {0, 0}, .extent = {size.width, size.height}};
+            vkCmdSetScissor(commands, 0, 1, &scissor);
 
-            for (const UiDraw& uiDraw : m_world.uiDraws)
-            {
-                // A batch that names a rectangle is cut to it; the others cover the image.
-                const bool clipped = uiDraw.clip.z > uiDraw.clip.x && uiDraw.clip.w > uiDraw.clip.y;
-                const VkRect2D scissor =
-                    clipped ? VkRect2D{
-                                  .offset = {std::max(static_cast<std::int32_t>(uiDraw.clip.x), 0),
-                                             std::max(static_cast<std::int32_t>(uiDraw.clip.y), 0)},
-                                  .extent = {static_cast<std::uint32_t>(std::clamp(
-                                                 uiDraw.clip.z - std::max(uiDraw.clip.x, 0.0f), 0.0f,
-                                                 static_cast<float>(extent.width))),
-                                             static_cast<std::uint32_t>(std::clamp(
-                                                 uiDraw.clip.w - std::max(uiDraw.clip.y, 0.0f), 0.0f,
-                                                 static_cast<float>(extent.height)))},
-                              }
-                            : VkRect2D{.offset = {0, 0}, .extent = {extent.width, extent.height}};
-                vkCmdSetScissor(commands, 0, 1, &scissor);
-
-                const GpuTexture* const texture = m_textures.find(uiDraw.texture);
-                // Slang's SV_VertexID does not include the first vertex of a draw: the batch gets
-                // the address of its own first index instead.
-                const UiPushConstants constants{
-                    .vertices = frame.uiVertices->deviceAddress(),
-                    .indices = frame.uiIndices->deviceAddress() +
-                               VkDeviceSize{uiDraw.firstIndex} * sizeof(std::uint32_t),
-                    .inverseViewport = math::Vec2{2.0f / static_cast<float>(extent.width),
-                                                  2.0f / static_cast<float>(extent.height)},
-                    .kind = static_cast<std::uint32_t>(uiDraw.kind),
-                    .texture = texture != nullptr ? texture->slot : whiteTextureSlot,
-                    .rect = uiDraw.rect,
-                    .radius = uiDraw.radius,
-                    .sharpness = uiDraw.sharpness,
-                };
-                vkCmdPushConstants(commands, m_uiPipeline->layout(),
-                                   VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
-                                   sizeof(constants), &constants);
-                vkCmdDraw(commands, uiDraw.indexCount, 1, 0, 0);
-                ++drawCalls;
-            }
-            vkCmdEndRendering(commands);
+            const GpuTexture* const texture = m_textures.find(uiDraw.texture);
+            // Slang's SV_VertexID does not include the first vertex of a draw: the batch gets
+            // the address of its own first index instead.
+            const UiPushConstants constants{
+                .vertices = frame.uiVertices->deviceAddress(),
+                .indices = frame.uiIndices->deviceAddress() +
+                           VkDeviceSize{indexBase + uiDraw.firstIndex} * sizeof(std::uint32_t),
+                .inverseViewport = math::Vec2{2.0f / static_cast<float>(size.width),
+                                              2.0f / static_cast<float>(size.height)},
+                .kind = static_cast<std::uint32_t>(uiDraw.kind),
+                .texture = texture != nullptr ? texture->slot : whiteTextureSlot,
+                .rect = uiDraw.rect,
+                .radius = uiDraw.radius,
+                .sharpness = uiDraw.sharpness,
+            };
+            vkCmdPushConstants(commands, m_uiPipeline->layout(),
+                               VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+                               sizeof(constants), &constants);
+            vkCmdDraw(commands, uiDraw.indexCount, 1, 0, 0);
+            ++drawCalls;
+        }
+        vkCmdEndRendering(commands);
+    };
+    if (drawUi)
+    {
+        graph.addPass("Interface", {{target, ImageAccess::ColorAttachment}}, [&](VkCommandBuffer commands) {
+            drawInterface(commands, graph.view(target), VK_ATTACHMENT_LOAD_OP_LOAD, math::Vec4{0.0f}, extent,
+                          m_world.uiDraws, 0);
+        });
+    }
+    for (std::size_t surface = 0; surface < surfaceIndices.size(); ++surface)
+    {
+        const RenderGraph::ImageId image = *created[surfaceIndices[surface]];
+        graph.addPass("Interface surface", {{image, ImageAccess::ColorAttachment}}, [&, surface, image](VkCommandBuffer commands) {
+            const UiSurface& drawn = m_world.uiSurfaces[surface];
+            drawInterface(commands, graph.view(image), VK_ATTACHMENT_LOAD_OP_CLEAR, drawn.clearColor,
+                          math::Extent2D{std::max(drawn.size.width, 1u), std::max(drawn.size.height, 1u)}, drawn.draws,
+                          surfaceIndexBases[surface]);
         });
     }
 
@@ -3630,6 +3671,18 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
         std::vector<std::pair<RenderGraph::ImageId, ImageAccess>> toolAccesses{
             {backbuffer, ImageAccess::ColorAttachment},
         };
+        std::vector<std::pair<std::uint32_t, VkImageView>> surfaceViews;
+        for (std::size_t surface = 0; surface < surfaceIndices.size(); ++surface)
+        {
+            const RenderGraph::ImageId image = *created[surfaceIndices[surface]];
+            toolAccesses.push_back({image, ImageAccess::FragmentRead});
+            const VkImageView alternate = graph.image(image)->alternateView();
+            surfaceViews.emplace_back(m_world.uiSurfaces[surface].id, alternate != VK_NULL_HANDLE ? alternate : graph.view(image));
+        }
+        if (drawImGui)
+        {
+            bindSurfaceTextures(frame, surfaceViews);
+        }
         if (toViewport)
         {
             toolAccesses.push_back({target, ImageAccess::FragmentRead});
@@ -3816,10 +3869,18 @@ void VulkanRenderer::rememberFrame()
     m_previousBoneMatrices = m_world.boneMatrices;
 }
 
-core::Result<void> VulkanRenderer::uploadUi(FrameContext& frame)
+core::Result<void> VulkanRenderer::uploadUi(FrameContext& frame, std::vector<std::uint32_t>& surfaceIndexBases)
 {
-    const std::size_t vertexBytes = std::max<std::size_t>(m_world.uiVertices.size(), 1) * sizeof(GpuUiVertex);
-    const std::size_t indexBytes = std::max<std::size_t>(m_world.uiIndices.size(), 1) * sizeof(std::uint32_t);
+    // The surfaces follow the interface of the scene in the same buffers.
+    std::size_t vertexCount = m_world.uiVertices.size();
+    std::size_t indexCount = m_world.uiIndices.size();
+    for (const UiSurface& surface : m_world.uiSurfaces)
+    {
+        vertexCount += surface.vertices.size();
+        indexCount += surface.indices.size();
+    }
+    const std::size_t vertexBytes = std::max<std::size_t>(vertexCount, 1) * sizeof(GpuUiVertex);
+    const std::size_t indexBytes = std::max<std::size_t>(indexCount, 1) * sizeof(std::uint32_t);
     if (core::Result<void> ensured = ensureHostBuffer(frame.uiVertices, vertexBytes); !ensured)
     {
         return ensured;
@@ -3840,6 +3901,27 @@ core::Result<void> VulkanRenderer::uploadUi(FrameContext& frame)
     {
         std::memcpy(frame.uiIndices->mappedBytes().data(), m_world.uiIndices.data(),
                     m_world.uiIndices.size() * sizeof(std::uint32_t));
+    }
+    // Each surface counts its indices from its own first vertex, placed after what came before.
+    auto vertexBase = static_cast<std::uint32_t>(m_world.uiVertices.size());
+    auto indexBase = static_cast<std::uint32_t>(m_world.uiIndices.size());
+    surfaceIndexBases.clear();
+    auto* const indices = reinterpret_cast<std::uint32_t*>(frame.uiIndices->mappedBytes().data());
+    for (const UiSurface& surface : m_world.uiSurfaces)
+    {
+        for (std::size_t index = 0; index < surface.vertices.size(); ++index)
+        {
+            const UiVertex& vertex = surface.vertices[index];
+            const GpuUiVertex gpuVertex{.position = vertex.position, .uv = vertex.uv, .color = vertex.color};
+            std::memcpy(vertices.data() + (vertexBase + index) * sizeof(GpuUiVertex), &gpuVertex, sizeof(gpuVertex));
+        }
+        for (std::size_t index = 0; index < surface.indices.size(); ++index)
+        {
+            indices[indexBase + index] = vertexBase + surface.indices[index];
+        }
+        surfaceIndexBases.push_back(indexBase);
+        vertexBase += static_cast<std::uint32_t>(surface.vertices.size());
+        indexBase += static_cast<std::uint32_t>(surface.indices.size());
     }
     return {};
 }
@@ -3869,6 +3951,58 @@ core::Result<VulkanRenderer::OverlayRanges> VulkanRenderer::uploadOverlay(FrameC
     ranges.overlayLines = append(m_world.overlayLines);
     ranges.overlayTriangles = append(m_world.overlayTriangles);
     return ranges;
+}
+
+void VulkanRenderer::bindSurfaceTextures(FrameContext& frame,
+                                         std::span<const std::pair<std::uint32_t, VkImageView>> surfaces)
+{
+    if (!m_imguiInitialized)
+    {
+        return;
+    }
+    std::unordered_map<std::uint64_t, ImTextureID> sets;
+    for (const auto& [id, view] : surfaces)
+    {
+        auto& [boundView, set] = frame.imguiSurfaces[id];
+        if (boundView != view)
+        {
+            // The previous set was last used by this context's previous frame, which has completed.
+            if (set != VK_NULL_HANDLE)
+            {
+                ImGui_ImplVulkan_RemoveTexture(set);
+            }
+            set = ImGui_ImplVulkan_AddTexture(view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+            boundView = view;
+        }
+        sets[uiSurfaceTextureBase + id] = static_cast<ImTextureID>(std::bit_cast<std::uintptr_t>(set));
+    }
+    ImDrawData* const drawData = ImGui::GetDrawData();
+    if (drawData == nullptr)
+    {
+        return;
+    }
+    for (ImDrawList* const list : drawData->CmdLists)
+    {
+        for (ImDrawCmd& command : list->CmdBuffer)
+        {
+            if (command.TexRef._TexData != nullptr)
+            {
+                continue;
+            }
+            if (const auto found = sets.find(static_cast<std::uint64_t>(command.TexRef._TexID)); found != sets.end())
+            {
+                command.TexRef._TexID = found->second;
+            }
+            else if (command.TexRef._TexID >= uiSurfaceTextureBase && command.TexRef._TexID < uiSurfaceTextureBase + 0x10000)
+            {
+                // A surface that was not drawn this frame shows nothing rather than a stale image. An
+                // empty clip rectangle makes the backend skip the command before it binds the texture.
+                command.ElemCount = 0;
+                command.ClipRect = ImVec4(drawData->DisplayPos.x, drawData->DisplayPos.y, drawData->DisplayPos.x,
+                                          drawData->DisplayPos.y);
+            }
+        }
+    }
 }
 
 void VulkanRenderer::bindViewportTexture(FrameContext& frame, VkImageView viewport)
@@ -3992,6 +4126,7 @@ void VulkanRenderer::shutdownImGui() noexcept
         {
             frame.imguiViewport = VK_NULL_HANDLE;
             frame.imguiViewportView = VK_NULL_HANDLE;
+            frame.imguiSurfaces.clear();
         }
         m_imguiTextures.clear();
         ImGui_ImplVulkan_Shutdown();

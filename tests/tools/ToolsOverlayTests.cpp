@@ -157,6 +157,11 @@ TEST_CASE("The editor opens the project's scenes in tabs and renders its viewpor
             (*editor)->update(scene, std::chrono::milliseconds(16), PlayState::Editing);
             devex::render::RenderWorld& world = renderer->beginFrame();
             (*editor)->prepareRender(scene, world, PlayState::Editing);
+            // The project manager is made with the interface of the engine, drawn into an image
+            // of its own that ImGui shows.
+            REQUIRE(world.uiSurfaces.size() == 1);
+            CHECK_FALSE(world.uiSurfaces.front().draws.empty());
+            CHECK(world.uiSurfaces.front().size.width > 0);
             REQUIRE(renderer->endFrame());
             CHECK_FALSE((*editor)->takeRequests().openProject.has_value());
         }

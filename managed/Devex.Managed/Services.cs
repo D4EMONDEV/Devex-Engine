@@ -634,4 +634,35 @@ public static unsafe class Ui
     /// its own.
     /// </summary>
     public static bool PointerOverInterface => Bootstrap.Native.UiPointerOverInterface() != 0;
+
+    /// <summary>
+    /// Whether a button carrying this action was clicked twice in a row, quickly, during this
+    /// frame. The second click also counts as a click.
+    /// </summary>
+    public static bool WasDoubleClicked(string action)
+    {
+        using var text = new Utf8Buffer(action);
+        return Bootstrap.Native.UiDoubleClickedAction(text.Pointer) != 0;
+    }
+
+    /// <summary>Whether that very button was clicked twice in a row, quickly, during this frame.</summary>
+    public static bool WasDoubleClicked(Entity entity) => Bootstrap.Native.UiDoubleClickedEntity(entity) != 0;
+
+    /// <summary>Opens a popup (UiPopup) where its anchors put it.</summary>
+    public static void OpenPopup(Entity popup) => Bootstrap.Native.UiOpenPopup(Scene.Current.Pointer, popup, null);
+
+    /// <summary>Opens a popup with its top left corner at a point of the screen, in pixels.</summary>
+    public static void OpenPopup(Entity popup, Vec2 at) => Bootstrap.Native.UiOpenPopup(Scene.Current.Pointer, popup, &at);
+
+    /// <summary>Closes a popup. Menus close by themselves; a modal stays until it is closed.</summary>
+    public static void ClosePopup(Entity popup) => Bootstrap.Native.UiClosePopup(Scene.Current.Pointer, popup);
+
+    /// <summary>Whether a popup is open.</summary>
+    public static bool IsPopupOpen(Entity popup) => Bootstrap.Native.UiPopupOpen(Scene.Current.Pointer, popup) != 0;
+
+    /// <summary>
+    /// The element whose UiContextMenu opened the last context menu, such as the row of a list,
+    /// which the entries of the menu act on.
+    /// </summary>
+    public static Entity ContextTarget => Bootstrap.Native.UiContextTarget();
 }

@@ -44,6 +44,8 @@ public:
     // Stands for the viewport image in ImGui draw data. It is replaced while drawing by the ImGui
     // descriptor set of the frame's image, and cannot collide with a real set, which is a pointer.
     static constexpr std::uint64_t viewportTextureId = 0xFFFF'FFFF'DE7E'0001ull;
+    // The ImGui identifiers of the interface surfaces follow this one, by their id.
+    static constexpr std::uint64_t uiSurfaceTextureBase = 0xFFFF'FFFF'DE7F'0000ull;
 
     [[nodiscard]] static core::Result<std::unique_ptr<VulkanRenderer>> create(
         const platform::Platform& platform, platform::Window& window, const RendererConfig& config);
@@ -224,6 +226,8 @@ private:
         // ImGui's descriptor set for the viewport image of this frame context.
         VkDescriptorSet imguiViewport = VK_NULL_HANDLE;
         VkImageView imguiViewportView = VK_NULL_HANDLE;
+        // And those of the interface surfaces, by id: the view each was made for, and the set.
+        std::unordered_map<std::uint32_t, std::pair<VkImageView, VkDescriptorSet>> imguiSurfaces;
     };
 
     struct SubmeshRange
@@ -305,7 +309,7 @@ private:
     [[nodiscard]] core::Result<void> uploadLights(FrameContext& frame, float aspectRatio);
     void writeSceneData(FrameContext& frame, const std::optional<ShadowCascades>& cascades) const noexcept;
     [[nodiscard]] core::Result<OverlayRanges> uploadOverlay(FrameContext& frame);
-    [[nodiscard]] core::Result<void> uploadUi(FrameContext& frame);
+    [[nodiscard]] core::Result<void> uploadUi(FrameContext& frame, std::vector<std::uint32_t>& surfaceIndexBases);
     [[nodiscard]] core::Result<void> uploadPreviousBones(FrameContext& frame) const;
     // Gives the local lights that cast shadows a tile of the atlas, the most important first, and
     // builds the view each tile is drawn through. Lights that do not fit keep their light alone.
@@ -364,6 +368,8 @@ private:
     [[nodiscard]] core::Result<void> ensureHostBuffer(std::optional<Buffer>& buffer, VkDeviceSize bytes) const;
     // Replaces the viewport placeholder of the ImGui draw data with the frame's viewport image.
     void bindViewportTexture(FrameContext& frame, VkImageView viewport);
+    // Gives ImGui the images of the interface surfaces, by the ids its draws name them with.
+    void bindSurfaceTextures(FrameContext& frame, std::span<const std::pair<std::uint32_t, VkImageView>> surfaces);
     void releaseRetiredResources() noexcept;
     void destroyPresentSemaphores() noexcept;
 

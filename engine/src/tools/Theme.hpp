@@ -80,6 +80,9 @@ struct ThemeColors
     ImVec4 panel;
     // Text fields and lists.
     ImVec4 field;
+    // Buttons, a little lighter than the panel; and what popups and menus stand on.
+    ImVec4 raised;
+    ImVec4 popup;
     ImVec4 border;
     ImVec4 success;
     ImVec4 warning;

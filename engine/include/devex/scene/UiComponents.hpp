@@ -245,8 +245,138 @@ struct UiScroll
     bool vertical = true;
     // Units the wheel moves the content by, per notch.
     float speed = 60.0f;
+    // A bar along the edge while the content is longer than the element, whose thumb the pointer
+    // drags and whose track moves the content a page.
+    bool scrollbar = true;
+    float scrollbarSize = 8.0f;
+    math::Vec4 scrollbarColor{1.0f, 1.0f, 1.0f, 0.3f};
 };
 DEVEX_DECLARE_REFLECTION(UiScroll);
+
+// How a popup behaves once open.
+enum class UiPopupKind : std::uint8_t
+{
+    // Closes when one of its buttons is clicked, when the pointer presses outside it, or on
+    // Escape: context menus and the menus of a menu bar.
+    Menu,
+    // Stays until the game closes it, and keeps the rest of its canvas from the pointer and the
+    // keys under a veil: confirmations and forms.
+    Modal,
+};
+
+// An element shown over the rest of its canvas while it is open, and hidden otherwise: its UiRect
+// is visible only while it is open. Ui.OpenPopup opens it where its anchors put it, or at a point
+// of the screen; a UiContextMenu opens it under the pointer.
+struct UiPopup
+{
+    UiPopupKind kind = UiPopupKind::Menu;
+    // A modal darkens what lies under it with this.
+    math::Vec4 veilColor{0.0f, 0.0f, 0.0f, 0.45f};
+};
+DEVEX_DECLARE_REFLECTION(UiPopup);
+
+// Opens a popup menu under the pointer when the element, or an element inside it, is clicked with
+// the second button: the menu of a row of a list. Ui.ContextTarget then names the element.
+struct UiContextMenu
+{
+    EntityRef popup;
+};
+DEVEX_DECLARE_REFLECTION(UiContextMenu);
+
+// A line of help shown next to the pointer once it has rested on the element, even on an element
+// that cannot be used.
+struct UiTooltip
+{
+    std::string text;
+    // Seconds the pointer rests before it shows.
+    float delay = 0.5f;
+};
+DEVEX_DECLARE_REFLECTION(UiTooltip);
+
+// A button that shows one of its options, and a list of all of them to choose from once clicked.
+// The UiText of the entity shows the chosen option, and the list takes its font, size and color.
+struct UiDropdown
+{
+    std::vector<std::string> options;
+    // The chosen option, from 0; -1 shows none.
+    std::int32_t selected = 0;
+    // Behind the list, and behind the option under the pointer.
+    math::Vec4 listColor{0.14f, 0.15f, 0.18f, 1.0f};
+    math::Vec4 highlightColor{0.35f, 0.6f, 1.0f, 1.0f};
+    math::Vec4 arrowColor{1.0f, 1.0f, 1.0f, 0.7f};
+    bool interactable = true;
+    // What a script asks for: Ui.WasChanged("quality").
+    std::string action;
+};
+DEVEX_DECLARE_REFLECTION(UiDropdown);
+
+// Shares its rectangle between its first two children, with a bar between them the pointer drags:
+// a panel beside another, or above it.
+struct UiSplitter
+{
+    // One above the other rather than side by side.
+    bool vertical = false;
+    // Where the bar starts, in units from the start of the element.
+    float position = 200.0f;
+    // Neither child gets smaller than this.
+    float minSize = 40.0f;
+    float barSize = 6.0f;
+    math::Vec4 barColor{1.0f, 1.0f, 1.0f, 0.06f};
+    math::Vec4 hoverColor{0.35f, 0.6f, 1.0f, 0.8f};
+};
+DEVEX_DECLARE_REFLECTION(UiSplitter);
+
+// A header that shows or hides the element it names, with an arrow at its left that says which:
+// the sections of an inspector, or the branches of a tree when foldouts hold each other.
+struct UiFoldout
+{
+    bool expanded = true;
+    // Shown while expanded; its UiRect is hidden otherwise.
+    EntityRef content;
+    math::Vec4 arrowColor{1.0f, 1.0f, 1.0f, 0.7f};
+    bool interactable = true;
+    // What a script asks for: Ui.WasChanged("details").
+    std::string action;
+};
+DEVEX_DECLARE_REFLECTION(UiFoldout);
+
+// A long list shown with a handful of elements: its children are the rows on screen, placed at the
+// items they show as the list scrolls, which a script fills from the item in `first`. The element must
+// sit in a UiScroll: it takes the height of every item, and draws only those in view.
+struct UiVirtualList
+{
+    std::uint32_t itemCount = 0;
+    // The height of one item, in units.
+    float itemSize = 32.0f;
+    // The item its first child shows, which the interface writes as the list scrolls.
+    std::uint32_t first = 0;
+};
+DEVEX_DECLARE_REFLECTION(UiVirtualList);
+
+// Lines its rows up in columns: the children of each UiTableRow among its descendants are the
+// cells, one per column, as wide as the column. The row marked header resizes the columns when
+// the edge of one of its cells is dragged, and sorts by a column when it is clicked.
+struct UiTable
+{
+    // The width of each column, in units.
+    std::vector<float> columns{160.0f, 160.0f};
+    bool resizable = true;
+    // The column the rows are sorted by, -1 for none, and which way: a click on the header picks
+    // them, and a script sorts its rows once Ui.WasChanged of the action says so.
+    std::int32_t sortColumn = -1;
+    bool sortAscending = true;
+    math::Vec4 arrowColor{1.0f, 1.0f, 1.0f, 0.7f};
+    std::string action;
+};
+DEVEX_DECLARE_REFLECTION(UiTable);
+
+// A row of the UiTable above it.
+struct UiTableRow
+{
+    // The row of the column titles.
+    bool header = false;
+};
+DEVEX_DECLARE_REFLECTION(UiTableRow);
 
 // How the children of a container follow each other.
 enum class UiLayoutKind : std::uint8_t
@@ -302,4 +432,10 @@ template <>
 struct devex::reflection::EnumNames<devex::scene::UiLayoutKind>
 {
     static constexpr std::array<std::string_view, 3> names{"row", "column", "grid"};
+};
+
+template <>
+struct devex::reflection::EnumNames<devex::scene::UiPopupKind>
+{
+    static constexpr std::array<std::string_view, 2> names{"menu", "modal"};
 };

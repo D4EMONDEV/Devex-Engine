@@ -684,6 +684,7 @@ add_library(Devex::Ui ALIAS devex_ui)
 
 target_sources(devex_ui
     PRIVATE
+        src/ui/Controls.cpp
         src/ui/DrawList.cpp
         src/ui/Layout.cpp
         src/ui/TextLayout.cpp
@@ -784,6 +785,8 @@ target_sources(devex_tools
         src/tools/EditorMenus.cpp
         src/tools/EditorOverlay.cpp
         src/tools/EditorSession.cpp
+        src/tools/EditorUi.cpp
+        src/tools/EditorUi.hpp
         src/tools/EditorView.cpp
         src/tools/EditorView.hpp
         src/tools/EntityEditing.cpp

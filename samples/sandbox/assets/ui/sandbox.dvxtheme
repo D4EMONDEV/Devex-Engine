@@ -56,6 +56,21 @@ fill_color = vec4(0.09084, 0.23074, 0.52711, 1)
 handle_color = vec4(0.84687, 0.86316, 0.88792, 1)
 handle_size = 0.9
 
+[style name="choice" component="UiImage"]
+color = vec4(0.00754, 0.00913, 0.01298, 1)
+corner_radius = 8
+
+[style name="choice" component="UiText"]
+color = vec4(0.84687, 0.86316, 0.88792, 1)
+size = 26
+align = "left"
+vertical_align = "middle"
+
+[style name="choice" component="UiDropdown"]
+list_color = vec4(0.01521, 0.01938, 0.02956, 1)
+highlight_color = vec4(0.09084, 0.23074, 0.52711, 1)
+arrow_color = vec4(0.62396, 0.65837, 0.70110, 1)
+
 [style name="box" component="UiImage"]
 color = vec4(0.00754, 0.00913, 0.01298, 1)
 corner_radius = 6

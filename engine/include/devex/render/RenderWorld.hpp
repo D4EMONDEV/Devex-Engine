@@ -328,6 +328,20 @@ struct UiDraw
     math::Vec4 clip{0.0f};
 };
 
+// An interface drawn into an image of its own rather than over the scene, which the tools show as a
+// texture (Renderer::uiSurfaceTexture): the panels of the editor made with the interface of the
+// engine. Positions are in pixels of that image; indices count from its own first vertex.
+struct UiSurface
+{
+    std::uint32_t id = 0;
+    math::Extent2D size;
+    // Linear RGB, what the image holds under the interface.
+    math::Vec4 clearColor{0.0f, 0.0f, 0.0f, 1.0f};
+    std::vector<UiVertex> vertices;
+    std::vector<std::uint32_t> indices;
+    std::vector<UiDraw> draws;
+};
+
 // Asks which objects are visible in a rectangle of the scene image, one pixel for a click.
 struct PickRequest
 {
@@ -401,6 +415,8 @@ struct RenderWorld
     std::vector<UiVertex> uiVertices;
     std::vector<std::uint32_t> uiIndices;
     std::vector<UiDraw> uiDraws;
+    // Interfaces drawn into images of their own, for the tools; only drawn with them.
+    std::vector<UiSurface> uiSurfaces;
 
     // Restores the defaults while keeping allocated storage.
     void reset() noexcept

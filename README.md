@@ -13,8 +13,8 @@ et rendu avec Vulkan. Il est distribué sous licence [MIT](LICENSE).
 - gameplay en C++ (composants et systèmes) **ou en C#** (.NET hébergé), compilé et rechargé à
   chaud par l'éditeur ;
 - éditeur Dear ImGui (docking) au style inspiré de Godot : gestionnaire de projets, onglets de
-  scènes, viewport, gizmos et mode Play ; il passera plus tard sur l'interface des jeux, pour
-  n'avoir qu'un seul système d'interface.
+  scènes, viewport, gizmos et mode Play ; il passe panneau par panneau sur l'interface des jeux,
+  pour n'avoir qu'un seul système d'interface, en commençant par le gestionnaire de projets.
 
 Le détail, l'architecture des modules et les jalons sont dans
 [docs/decisions.md](docs/decisions.md).
@@ -83,9 +83,12 @@ Le détail, l'architecture des modules et les jalons sont dans
   `UiInput`, `UiSlider`, `UiToggle`, `UiScroll`, `UiLayout`, `UiBinding`), placement par ancrages
   et marges puis par conteneurs, texte tiré d'un atlas de distances signées avec crénage et texte
   riche, champs de saisie avec sélection, presse-papiers et mot de passe, curseurs et cases à
-  cocher, listes qui défilent et se découpent, images en neuf parts, liaison d'un texte à un champ
-  de composant, thèmes `.dvxtheme` de styles nommés, dessin en une passe après le tonemapping,
-  survol, clic et focus au clavier comme à la manette ;
+  cocher, listes qui défilent et se découpent avec leur barre de défilement, images en neuf
+  parts, liaison d'un texte à un champ de composant, thèmes `.dvxtheme` de styles nommés, popups,
+  menus et modales (`UiPopup`), menus contextuels au clic droit, infobulles, listes déroulantes,
+  séparateurs déplaçables, dépliants, listes virtuelles et tableaux aux colonnes redimensionnables
+  et triables, double clic, dessin en une passe après le tonemapping ou dans une image à part
+  (les panneaux de l'éditeur), survol, clic et focus au clavier comme à la manette ;
 - `Devex::Tools` : interface ImGui au thème réglable inspiré de Godot (Noto Sans, JetBrains Mono,
   icônes Lucide) : arbre de la scène, inspecteur, FileSystem, sortie, statistiques, annulation, en
   overlay (F1) ou dans l'éditeur : écrans 2D, 3D et Script au centre de la barre de menus comme
@@ -94,7 +97,8 @@ Le détail, l'architecture des modules et les jalons sont dans
   caméra du jeu, éléments choisis, déplacés et redimensionnés avec leur thème appliqué ;
   l'inspecteur grise les champs qu'un style écrit et ouvre le thème) et se montrent par-dessus
   l'écran 3D d'une scène 3D,
-  gestionnaire de projets, onglets de scènes, viewport et sa
+  gestionnaire de projets (déjà écrit avec `Devex::Ui` : menus contextuels, infobulles, modales),
+  onglets de scènes, viewport et sa
   barre d'outils, caméra libre, sélection multiple (Ctrl et Maj dans l'arbre, rectangle dans la
   vue), gizmos et inspecteur sur plusieurs entités, copier, coller et dupliquer par le
   presse-papiers, renommage dans l'arbre, entités masquées dans la vue, matériaux glissés sur les
@@ -164,7 +168,8 @@ Le détail, l'architecture des modules et les jalons sont dans
   coroutine C++, feu et fumée sur une balise, fontaine d'étincelles à traînées sur l'autre), qui
   ouvre sur un menu
   principal, un écran de réglages (nom, mot de passe, curseur de volume lié à son étiquette, case
-  plein écran, touche de saut à réaffecter et à réinitialiser, gardés d'une partie à l'autre, aide
+  plein écran, liste déroulante de la difficulté, infobulles, touche de saut à réaffecter et à
+  réinitialiser, gardés d'une partie à l'autre, aide
   en texte riche qui défile dans un cadre en neuf parts), un menu de pause appelé par Échap, qui
   sauvegarde la partie (le bouton le dit par une coroutine C# qui attend ses fondus) que le menu
   principal reprend avec sa miniature, et un HUD, tous habillés

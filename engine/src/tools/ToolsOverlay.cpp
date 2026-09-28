@@ -716,6 +716,8 @@ void ToolsOverlay::prepareRender(scene::Scene& scene, render::RenderWorld& world
     {
         return;
     }
+    // The panels made with the interface of the engine draw into images of their own.
+    detail::renderProjectManager(state, world);
     // A hidden viewport still renders, at a size too small to cost anything.
     world.viewport = state.viewportPixels.width > 0 ? state.viewportPixels : math::Extent2D{16, 16};
     if (playState == PlayState::Editing)

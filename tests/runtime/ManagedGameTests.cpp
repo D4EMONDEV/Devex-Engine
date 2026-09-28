@@ -22,9 +22,11 @@
 #include <devex/scene/ParticleComponents.hpp>
 #include <devex/scene/SpriteComponents.hpp>
 #include <devex/scene/TilemapComponents.hpp>
+#include <devex/scene/UiComponents.hpp>
 #include <devex/scene/Physics2DComponents.hpp>
 #include <devex/scene/PhysicsComponents.hpp>
 #include <devex/scene/SceneSerializer.hpp>
+#include <devex/ui/UiWorld.hpp>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -79,7 +81,7 @@ void run(ManagedGame& game, Scene& scene, SystemPhase phase, double seconds = 0.
 TEST_CASE("The C# runtime registers components and runs them", "[runtime][managed]")
 {
     const std::unique_ptr<ManagedGame> game = startRuntime();
-    CHECK(game->componentTypes().size() == 18);
+    CHECK(game->componentTypes().size() == 19);
 
     devex::scene::ComponentRegistry& registry = devex::scene::componentRegistry();
     const devex::scene::ComponentType* const mover = registry.find("Mover");
@@ -492,6 +494,70 @@ TEST_CASE("C# components send navigation agents and query the navigation mesh", 
     const devex::math::Vec3 reached = scene.get<devex::scene::Transform>(agent).position;
     CHECK(std::abs(reached.x - 5.0f) < 0.3f);
     CHECK(std::abs(reached.z + 5.0f) < 0.3f);
+    game->unloadAssembly();
+}
+
+TEST_CASE("C# components open popups and read context menus and double clicks", "[runtime][managed][ui]")
+{
+    const std::unique_ptr<ManagedGame> game = startRuntime();
+    const devex::scene::ComponentType* const menus = devex::scene::componentRegistry().find("Menus");
+    REQUIRE(menus != nullptr);
+
+    Scene scene;
+    const Entity canvas = scene.createEntity("Canvas");
+    scene.add<devex::scene::Canvas>(canvas, devex::scene::Canvas{.scaleMode = devex::scene::CanvasScaleMode::ConstantPixels});
+    const auto element = [&](const char* name, devex::math::Vec2 min, devex::math::Vec2 max) {
+        const Entity entity = scene.createEntity(name);
+        REQUIRE(scene.setParent(entity, canvas).has_value());
+        scene.add<devex::scene::UiRect>(entity, devex::scene::UiRect{.anchorMin = {0.0f, 0.0f},
+                                                                      .anchorMax = {0.0f, 0.0f},
+                                                                      .offsetMin = min,
+                                                                      .offsetMax = max});
+        return entity;
+    };
+    const Entity popup = element("Menu", {0.0f, 0.0f}, {200.0f, 60.0f});
+    scene.add<devex::scene::UiPopup>(popup);
+    scene.get<devex::scene::UiRect>(popup).visible = false;
+    const Entity row = element("Row", {100.0f, 400.0f}, {500.0f, 440.0f});
+    scene.add<devex::scene::UiImage>(row);
+    scene.add<devex::scene::UiButton>(row);
+    scene.add<devex::scene::UiContextMenu>(row, devex::scene::UiContextMenu{.popup = scene.reference(popup)});
+    const Entity choice = element("Choice", {100.0f, 500.0f}, {300.0f, 530.0f});
+    scene.add<devex::scene::UiDropdown>(choice, devex::scene::UiDropdown{.options = {"Easy", "Hard"}});
+
+    const Entity holder = scene.createEntity("Holder");
+    void* const component = menus->emplace(scene, holder);
+    field<devex::scene::EntityRef>(*menus, component, "popup") = scene.reference(popup);
+    field<devex::scene::EntityRef>(*menus, component, "row") = scene.reference(row);
+    field<devex::scene::EntityRef>(*menus, component, "choice") = scene.reference(choice);
+
+    devex::ui::UiWorld world;
+    const devex::math::Vec2 window{1280.0f, 720.0f};
+    const devex::core::Duration step{1.0 / 60.0};
+    ManagedGame::Frame frame{.scene = &scene, .ui = &world};
+    game->runPhase(frame, SystemPhase::Start);
+    // Each frame, the interface answers the pointer, then the game reads what it did.
+    const std::array<devex::ui::UiInput, 7> inputs{{
+        {},
+        {.pointer = {300.0f, 420.0f}, .secondaryPressed = true},
+        {.pointer = {300.0f, 420.0f}, .pointerDown = true, .pointerPressed = true},
+        {.pointer = {300.0f, 420.0f}, .pointerReleased = true},
+        {.pointer = {300.0f, 420.0f}, .pointerDown = true, .pointerPressed = true},
+        {.pointer = {300.0f, 420.0f}, .pointerReleased = true},
+        {},
+    }};
+    for (const devex::ui::UiInput& input : inputs)
+    {
+        world.update(scene, window, input, step);
+        frame.delta = step;
+        game->runPhase(frame, SystemPhase::Update);
+    }
+    CHECK(field<bool>(*menus, component, "opened"));
+    CHECK(field<int>(*menus, component, "options") == 2);
+    CHECK(field<std::string>(*menus, component, "second_option") == "Hard");
+    CHECK(field<bool>(*menus, component, "target_seen"));
+    CHECK(field<bool>(*menus, component, "double_clicked"));
+    CHECK(field<bool>(*menus, component, "closed"));
     game->unloadAssembly();
 }
 

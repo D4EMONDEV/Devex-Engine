@@ -33,7 +33,77 @@ DEVEX_REFLECT(UiScroll)
     type.field("offset", &UiScroll::offset)
         .field("horizontal", &UiScroll::horizontal)
         .field("vertical", &UiScroll::vertical)
-        .field("speed", &UiScroll::speed);
+        .field("speed", &UiScroll::speed)
+        .field("scrollbar", &UiScroll::scrollbar)
+        .field("scrollbar_size", &UiScroll::scrollbarSize)
+        .field("scrollbar_color", &UiScroll::scrollbarColor, {.color = true});
+}
+
+DEVEX_REFLECT(UiPopup)
+{
+    type.field("kind", &UiPopup::kind).field("veil_color", &UiPopup::veilColor, {.color = true});
+}
+
+DEVEX_REFLECT(UiContextMenu)
+{
+    type.field("popup", &UiContextMenu::popup);
+}
+
+DEVEX_REFLECT(UiTooltip)
+{
+    type.field("text", &UiTooltip::text).field("delay", &UiTooltip::delay);
+}
+
+DEVEX_REFLECT(UiDropdown)
+{
+    type.field("options", &UiDropdown::options)
+        .field("selected", &UiDropdown::selected)
+        .field("list_color", &UiDropdown::listColor, {.color = true})
+        .field("highlight_color", &UiDropdown::highlightColor, {.color = true})
+        .field("arrow_color", &UiDropdown::arrowColor, {.color = true})
+        .field("interactable", &UiDropdown::interactable)
+        .field("action", &UiDropdown::action);
+}
+
+DEVEX_REFLECT(UiSplitter)
+{
+    type.field("vertical", &UiSplitter::vertical)
+        .field("position", &UiSplitter::position)
+        .field("min_size", &UiSplitter::minSize)
+        .field("bar_size", &UiSplitter::barSize)
+        .field("bar_color", &UiSplitter::barColor, {.color = true})
+        .field("hover_color", &UiSplitter::hoverColor, {.color = true});
+}
+
+DEVEX_REFLECT(UiFoldout)
+{
+    type.field("expanded", &UiFoldout::expanded)
+        .field("content", &UiFoldout::content)
+        .field("arrow_color", &UiFoldout::arrowColor, {.color = true})
+        .field("interactable", &UiFoldout::interactable)
+        .field("action", &UiFoldout::action);
+}
+
+DEVEX_REFLECT(UiVirtualList)
+{
+    type.field("item_count", &UiVirtualList::itemCount)
+        .field("item_size", &UiVirtualList::itemSize)
+        .field("first", &UiVirtualList::first, {.runtime = true});
+}
+
+DEVEX_REFLECT(UiTable)
+{
+    type.field("columns", &UiTable::columns)
+        .field("resizable", &UiTable::resizable)
+        .field("sort_column", &UiTable::sortColumn)
+        .field("sort_ascending", &UiTable::sortAscending)
+        .field("arrow_color", &UiTable::arrowColor, {.color = true})
+        .field("action", &UiTable::action);
+}
+
+DEVEX_REFLECT(UiTableRow)
+{
+    type.field("header", &UiTableRow::header);
 }
 
 DEVEX_REFLECT(UiImage)

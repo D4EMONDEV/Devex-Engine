@@ -33,6 +33,8 @@ public class MenuController : Component
     public Entity NameField;
     public Entity JumpKey;
     public Entity FullscreenToggle;
+    // The list of the difficulty, whose choice the player keeps too.
+    public Entity DifficultyDropdown;
 
     // The last save beside the main menu, its picture and what it holds; the button that continues
     // it, and the text of the one that saves.
@@ -141,6 +143,12 @@ public class MenuController : Component
         if (Ui.WasChanged("fullscreen") && FullscreenToggle.IsAlive && FullscreenToggle.TryGet(out UiToggle fullscreen))
         {
             PlayerSettings.Fullscreen = fullscreen.Value;
+        }
+        // The dropdown says which option was chosen; its text already shows it.
+        if (Ui.WasChanged("difficulty") && DifficultyDropdown.IsAlive &&
+            DifficultyDropdown.TryGet(out UiDropdown difficulty))
+        {
+            PlayerSettings.SetInt("difficulty", difficulty.Selected);
         }
         // Enter ends the edit of the field, and hands over what was typed.
         if (Ui.WasSubmitted("name") && NameField.IsAlive && NameField.TryGet(out UiText typed))
@@ -279,6 +287,10 @@ public class MenuController : Component
         if (FullscreenToggle.IsAlive && FullscreenToggle.TryGet(out UiToggle fullscreen))
         {
             fullscreen.Value = PlayerSettings.Fullscreen;
+        }
+        if (DifficultyDropdown.IsAlive && DifficultyDropdown.TryGet(out UiDropdown difficulty))
+        {
+            difficulty.Selected = PlayerSettings.GetInt("difficulty", 1);
         }
         PlayerName = PlayerSettings.GetString("player_name", PlayerName);
         if (NameField.IsAlive && NameField.TryGet(out UiText name))

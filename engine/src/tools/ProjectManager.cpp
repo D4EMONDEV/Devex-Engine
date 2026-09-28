@@ -1,3 +1,6 @@
+// The project manager, the first screen of the editor, made with the interface of the engine: a
+// canvas of entities in a panel of its own, drawn into an image that its ImGui window shows.
+#include "EditorUi.hpp"
 #include "ToolsState.hpp"
 
 #include <devex/asset/Project.hpp>
@@ -7,9 +10,10 @@
 #include <devex/platform/Process.hpp>
 #include <devex/scene/Components.hpp>
 #include <devex/scene/SceneSerializer.hpp>
+#include <devex/scene/UiComponents.hpp>
+#include <devex/ui/TextLayout.hpp>
 
 #include <imgui_internal.h>
-#include <imgui_stdlib.h>
 
 #include <algorithm>
 #include <array>
@@ -17,11 +21,14 @@
 #include <format>
 
 namespace devex::tools::detail {
+
+using scene::Entity;
+using scene::UiRect;
+
 namespace {
 
-constexpr const char* createPopup = "Create New Project";
-constexpr const char* renamePopup = "Rename Project";
-constexpr const char* removePopup = "Remove Project";
+// The image the panel is drawn into, among the interface surfaces of the editor.
+constexpr std::uint32_t projectManagerSurface = 1;
 
 [[nodiscard]] std::int64_t fileTime(const std::filesystem::path& file)
 {
@@ -175,463 +182,789 @@ void createProject(ToolsState& state, const std::filesystem::path& directory)
     state.requests.openProject = project->file;
 }
 
-void drawCreatePopup(ToolsState& state)
+// Rectangles as the layouts of the panel use them, in units.
+[[nodiscard]] UiRect fixed(math::Vec2 size) noexcept
 {
-    ProjectManagerState& manager = state.projectManager;
-    const ThemeColors& colors = themeColors();
-    const ImGuiStyle& style = ImGui::GetStyle();
-    if (std::exchange(manager.openCreate, false))
-    {
-        ImGui::OpenPopup(createPopup);
-    }
-    ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
-    ImGui::SetNextWindowSize(ImVec2(ImGui::GetFontSize() * 34.0f, 0.0f), ImGuiCond_Appearing);
-    if (!ImGui::BeginPopupModal(createPopup, nullptr, ImGuiWindowFlags_NoSavedSettings))
-    {
-        return;
-    }
-    const std::filesystem::path parent = core::pathFromUtf8(manager.createParent);
-    const std::filesystem::path directory =
-        manager.createFolder ? parent / core::pathFromUtf8(manager.createName) : parent;
-
-    ImGui::TextUnformatted("Project Name:");
-    ImGui::SetNextItemWidth(-FLT_MIN);
-    if (ImGui::IsWindowAppearing())
-    {
-        ImGui::SetKeyboardFocusHere();
-    }
-    ImGui::InputText("##name", &manager.createName);
-    ImGui::Spacing();
-    ImGui::TextUnformatted("Project Path:");
-    const float browseWidth = ImGui::CalcTextSize("Browse").x + ImGui::CalcTextSize(icons::FolderOpen.c_str()).x +
-                              style.FramePadding.x * 2.0f + ImGui::CalcTextSize("  ").x;
-    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - browseWidth - style.ItemSpacing.x);
-    ImGui::InputText("##parent", &manager.createParent);
-    ImGui::SameLine();
-    if (labelButton(icons::FolderOpen, "Browse"))
-    {
-        showFolderDialog(state, &DialogAnswers::newProjectLocation);
-    }
-    ImGui::Checkbox("Create folder", &manager.createFolder);
-
-    ImGui::Spacing();
-    const std::optional<std::string> problem = createProblem(manager, directory);
-    if (problem)
-    {
-        iconLabel(icons::CircleX, colors.error);
-        ImGui::TextColored(uiColor(colors.error), "%s", problem->c_str());
-    }
-    else
-    {
-        iconLabel(icons::CircleCheck, colors.success);
-        ImGui::TextColored(uiColor(colors.success), "The project goes in %s", core::toUtf8(directory).c_str());
-    }
-
-    ImGui::Dummy(ImVec2(0.0f, style.ItemSpacing.y));
-    const float buttonWidth = ImGui::GetFontSize() * 8.0f;
-    alignRight(buttonWidth * 2.0f + style.ItemSpacing.x);
-    if (primaryButton(icons::Plus, "Create & Edit", buttonWidth, !problem.has_value()) ||
-        (!problem && ImGui::IsKeyPressed(ImGuiKey_Enter)))
-    {
-        ImGui::CloseCurrentPopup();
-        createProject(state, directory);
-    }
-    ImGui::SameLine();
-    if (ImGui::Button("Cancel", ImVec2(buttonWidth, 0.0f)) || ImGui::IsKeyPressed(ImGuiKey_Escape))
-    {
-        ImGui::CloseCurrentPopup();
-    }
-    ImGui::EndPopup();
+    return UiRect{.anchorMin = {0.0f, 0.0f}, .anchorMax = {0.0f, 0.0f}, .offsetMin = {0.0f, 0.0f}, .offsetMax = size};
 }
 
-void drawRenamePopup(ToolsState& state)
+// A fixed size, in the middle of the height of a row.
+[[nodiscard]] UiRect middle(math::Vec2 size) noexcept
 {
-    ProjectManagerState& manager = state.projectManager;
-    if (std::exchange(manager.openRename, false))
+    return UiRect{.anchorMin = {0.0f, 0.5f},
+                  .anchorMax = {0.0f, 0.5f},
+                  .offsetMin = {0.0f, -size.y * 0.5f},
+                  .offsetMax = {size.x, size.y * 0.5f}};
+}
+
+// Takes what is left of a row, at a height in the middle of it.
+[[nodiscard]] UiRect grow(float height) noexcept
+{
+    return UiRect{.anchorMin = {0.0f, 0.5f},
+                  .anchorMax = {1.0f, 0.5f},
+                  .offsetMin = {0.0f, -height * 0.5f},
+                  .offsetMax = {0.0f, height * 0.5f}};
+}
+
+// As wide as its column, at a height.
+[[nodiscard]] UiRect wide(float height) noexcept
+{
+    return UiRect{.anchorMin = {0.0f, 0.0f}, .anchorMax = {1.0f, 0.0f}, .offsetMin = {0.0f, 0.0f}, .offsetMax = {0.0f, height}};
+}
+
+[[nodiscard]] UiRect whole(math::Vec4 inset = math::Vec4{0.0f}) noexcept
+{
+    return UiRect{.anchorMin = {0.0f, 0.0f},
+                  .anchorMax = {1.0f, 1.0f},
+                  .offsetMin = {inset.x, inset.y},
+                  .offsetMax = {-inset.z, -inset.w}};
+}
+
+// A button of the panel: its entity, its icon and its label.
+struct Button
+{
+    Entity entity;
+    Entity icon;
+    Entity label;
+};
+
+// One project of the list and what its row shows.
+struct Row
+{
+    std::filesystem::path file;
+    Entity row;
+    Entity star;
+    Entity starIcon;
+    Entity logo;
+    Entity name;
+    Entity update;
+    Entity pathIcon;
+    Entity path;
+    Entity date;
+};
+
+} // namespace
+
+// The panel and the entities the code reads and changes, beside the ones it only places.
+struct ProjectManagerUi
+{
+    UiPanel panel{projectManagerSurface};
+    float font = 14.0f;
+    float sideWidth = 175.0f;
+    bool built = false;
+
+    Entity window;
+    Button settings;
+    Button create;
+    Button import;
+    Button scan;
+    Entity filter;
+    Entity sort;
+    Entity list;
+    Entity scroll;
+    Entity rowsColumn;
+    Entity emptyHint;
+    std::vector<Row> rows;
+    Button edit;
+    Button run;
+    Button rename;
+    Button show;
+    Button remove;
+    Button removeMissing;
+    Entity updateTitle;
+    Entity updateMessage;
+    Entity updateHint;
+    Entity version;
+
+    Entity rowMenu;
+    Button menuEdit;
+    Button menuRun;
+    Button menuShow;
+    Button menuFavorite;
+    Button menuRemove;
+
+    Entity createDialog;
+    Entity createName;
+    Entity createParent;
+    Button browse;
+    Entity createFolder;
+    Entity createStatusIcon;
+    Entity createStatus;
+    Button createConfirm;
+    Button createCancel;
+    std::string syncedParent;
+
+    Entity renameDialog;
+    Entity renameName;
+    Button renameConfirm;
+    Button renameCancel;
+
+    Entity removeDialog;
+    Entity removeText;
+    Button removeConfirm;
+    Button removeCancel;
+
+    [[nodiscard]] scene::Scene& scene() noexcept
     {
-        ImGui::OpenPopup(renamePopup);
+        return panel.scene();
     }
-    ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
-    ImGui::SetNextWindowSize(ImVec2(ImGui::GetFontSize() * 26.0f, 0.0f), ImGuiCond_Appearing);
-    if (!ImGui::BeginPopupModal(renamePopup, nullptr, ImGuiWindowFlags_NoSavedSettings))
+
+    Entity add(Entity parent, const char* name, UiRect rect, std::string_view style = {})
     {
-        return;
+        const Entity entity = scene().createEntity(name);
+        static_cast<void>(scene().setParent(entity, parent.isValid() ? parent : panel.canvas()));
+        rect.style = style;
+        scene().add<UiRect>(entity, rect);
+        return entity;
     }
-    ImGui::TextUnformatted("Project Name:");
-    ImGui::SetNextItemWidth(-FLT_MIN);
-    if (ImGui::IsWindowAppearing())
+
+    Entity text(Entity parent, UiRect rect, std::string value, std::string_view style, bool bold = false,
+                scene::TextAlign align = scene::TextAlign::Left, float size = 0.0f)
     {
-        ImGui::SetKeyboardFocusHere();
+        const Entity entity = add(parent, "Text", rect, style);
+        scene().add<scene::UiText>(entity, scene::UiText{.text = std::move(value),
+                                                         .font = bold ? EditorUiKit::boldFont() : EditorUiKit::regularFont(),
+                                                         .size = size > 0.0f ? size : font,
+                                                         .align = align,
+                                                         .verticalAlign = scene::TextVerticalAlign::Middle,
+                                                         .wrap = false});
+        return entity;
     }
-    ImGui::InputText("##name", &manager.renameBuffer);
-    ImGui::TextDisabled("The folder and the project file keep their names.");
-    ImGui::Spacing();
-    const float buttonWidth = ImGui::GetFontSize() * 7.0f;
-    alignRight(buttonWidth * 2.0f + ImGui::GetStyle().ItemSpacing.x);
-    const bool valid = !manager.renameBuffer.empty();
-    if (primaryButton(icons::Check, "Rename", buttonWidth, valid) || (valid && ImGui::IsKeyPressed(ImGuiKey_Enter)))
+
+    Entity icon(EditorUiKit& kit, Entity parent, UiRect rect, Icon glyph, std::string_view style = "icon")
     {
-        ImGui::CloseCurrentPopup();
-        core::Result<asset::Project> project = asset::loadProject(manager.selected);
-        if (project)
+        const Entity entity = add(parent, "Icon", rect, style);
+        scene().add<scene::UiImage>(entity, scene::UiImage{.texture = kit.icon(glyph), .raycastTarget = false});
+        return entity;
+    }
+
+    // A button with an icon and a label, as wide as they need, or the width given.
+    Button button(EditorUiKit& kit, Entity parent, std::optional<Icon> glyph, std::string_view label,
+                  std::string_view style = "button", float width = 0.0f, float height = 0.0f,
+                  scene::TextAlign align = scene::TextAlign::Center)
+    {
+        const float tall = height > 0.0f ? height : font * 2.0f;
+        const float iconSize = font * 1.1f;
+        const float needed = font * 1.4f + (glyph ? iconSize + font * 0.45f : 0.0f) +
+                             kit.textWidth(EditorUiKit::regularFont(), label, font);
+        Button made;
+        made.entity = add(parent, "Button", width < 0.0f ? wide(tall) : middle({width > 0.0f ? width : needed, tall}), style);
+        scene().add<scene::UiImage>(made.entity);
+        scene().add<scene::UiButton>(made.entity);
+        scene().add<scene::UiLayout>(made.entity, scene::UiLayout{.kind = scene::UiLayoutKind::Row,
+                                                                  .spacing = font * 0.45f,
+                                                                  .padding = {font * 0.7f, 0.0f, font * 0.7f, 0.0f},
+                                                                  .align = align});
+        if (glyph)
         {
-            project->name = manager.renameBuffer;
-            if (core::Result<void> saved = asset::saveProject(*project); !saved)
+            made.icon = icon(kit, made.entity, middle({iconSize, iconSize}), *glyph);
+        }
+        made.label = text(made.entity, middle({kit.textWidth(EditorUiKit::regularFont(), label, font) + 2.0f, tall}),
+                          std::string(label), "text");
+        return made;
+    }
+
+    // Changes the label of a button, which keeps its width.
+    void relabel(EditorUiKit& kit, const Button& target, std::string_view label)
+    {
+        scene::UiText& shown = scene().get<scene::UiText>(target.label);
+        if (shown.text != label)
+        {
+            shown.text = std::string(label);
+            UiRect& rect = scene().get<UiRect>(target.label);
+            rect.offsetMax.x = rect.offsetMin.x + kit.textWidth(EditorUiKit::regularFont(), label, font) + 2.0f;
+        }
+    }
+
+    void enable(const Button& target, bool enabled)
+    {
+        scene().get<scene::UiButton>(target.entity).interactable = enabled;
+        const float opacity = enabled ? 1.0f : 0.45f;
+        for (const Entity part : {target.icon, target.label})
+        {
+            if (part.isValid())
             {
-                DEVEX_LOG_ERROR("Cannot rename the project: {}", saved.error());
+                scene().get<UiRect>(part).opacity = opacity;
             }
         }
-        else
+    }
+
+    void tooltip(Entity entity, std::string value)
+    {
+        if (scene::UiTooltip* const existing = scene().tryGet<scene::UiTooltip>(entity))
         {
-            DEVEX_LOG_ERROR("Cannot rename the project: {}", project.error());
+            existing->text = std::move(value);
+            return;
         }
-        manager.refresh = true;
+        scene().add<scene::UiTooltip>(entity, scene::UiTooltip{.text = std::move(value), .delay = 0.45f});
     }
-    ImGui::SameLine();
-    if (ImGui::Button("Cancel", ImVec2(buttonWidth, 0.0f)) || ImGui::IsKeyPressed(ImGuiKey_Escape))
-    {
-        ImGui::CloseCurrentPopup();
-    }
-    ImGui::EndPopup();
-}
 
-void drawRemovePopup(ToolsState& state)
-{
-    ProjectManagerState& manager = state.projectManager;
-    const ThemeColors& colors = themeColors();
-    if (std::exchange(manager.openRemove, false))
+    Entity field(Entity parent, UiRect rect, std::string value, std::string placeholder, std::string action = {})
     {
-        ImGui::OpenPopup(removePopup);
+        const Entity entity = add(parent, "Field", rect, "field");
+        scene().add<scene::UiImage>(entity);
+        scene().add<scene::UiText>(entity, scene::UiText{.text = std::move(value),
+                                                         .font = EditorUiKit::regularFont(),
+                                                         .size = font,
+                                                         .verticalAlign = scene::TextVerticalAlign::Middle,
+                                                         .wrap = false});
+        scene().add<scene::UiInput>(entity, scene::UiInput{.placeholder = std::move(placeholder),
+                                                           .padding = {font * 0.6f, 0.0f},
+                                                           .action = std::move(action)});
+        return entity;
     }
-    ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
-    if (!ImGui::BeginPopupModal(removePopup, nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings))
-    {
-        return;
-    }
-    const ProjectInfo* const info = infoOf(state, manager.selected);
-    iconLabel(icons::TriangleAlert, colors.warning);
-    ImGui::Text("Remove %s from the list?", info != nullptr ? info->name.c_str() : "the project");
-    ImGui::TextDisabled("The project folder and its files are not modified.");
-    ImGui::Spacing();
-    const float buttonWidth = ImGui::GetFontSize() * 7.0f;
-    alignRight(buttonWidth * 2.0f + ImGui::GetStyle().ItemSpacing.x);
-    if (primaryButton(icons::Trash, "Remove", buttonWidth))
-    {
-        ImGui::CloseCurrentPopup();
-        state.projects.remove(manager.selected);
-        manager.selected.clear();
-        manager.refresh = true;
-        saveUserSettings(state);
-    }
-    ImGui::SameLine();
-    if (ImGui::Button("Cancel", ImVec2(buttonWidth, 0.0f)) || ImGui::IsKeyPressed(ImGuiKey_Escape))
-    {
-        ImGui::CloseCurrentPopup();
-    }
-    ImGui::EndPopup();
-}
 
-// One row of the list: favorite star, icon, name and path, and the date it was last edited.
-void drawProjectRow(ToolsState& state, const ProjectEntry& entry, bool& open)
+    // A dialog in the middle of the panel, over a veil.
+    Entity dialog(const char* name, math::Vec2 size)
+    {
+        const Entity entity = add({}, name,
+                                  UiRect{.anchorMin = {0.5f, 0.5f},
+                                         .anchorMax = {0.5f, 0.5f},
+                                         .offsetMin = {-size.x * 0.5f, -size.y * 0.5f},
+                                         .offsetMax = {size.x * 0.5f, size.y * 0.5f},
+                                         .visible = false},
+                                  "popup");
+        scene().add<scene::UiImage>(entity);
+        scene().add<scene::UiPopup>(entity, scene::UiPopup{.kind = scene::UiPopupKind::Modal});
+        scene().add<scene::UiLayout>(entity, scene::UiLayout{.kind = scene::UiLayoutKind::Column,
+                                                             .spacing = font * 0.55f,
+                                                             .padding = math::Vec4{font * 1.2f},
+                                                             .align = scene::TextAlign::Left});
+        return entity;
+    }
+
+    // The two buttons at the bottom of a dialog, on its right.
+    std::pair<Button, Button> dialogButtons(EditorUiKit& kit, Entity dialog, Icon glyph, std::string_view confirm,
+                                            float width)
+    {
+        const Entity line = add(dialog, "Buttons", wide(font * 2.0f));
+        scene().add<scene::UiLayout>(line, scene::UiLayout{.kind = scene::UiLayoutKind::Row,
+                                                           .spacing = font * 0.5f,
+                                                           .align = scene::TextAlign::Right});
+        const Button first = button(kit, line, glyph, confirm, "primary", width);
+        const Button second = button(kit, line, std::nullopt, "Cancel", "button", width * 0.75f);
+        return {first, second};
+    }
+
+    void build(ToolsState& state, EditorUiKit& kit);
+    void buildRows(ToolsState& state, EditorUiKit& kit, const std::vector<ProjectEntry>& projects);
+    void update(ToolsState& state, EditorUiKit& kit, core::Duration delta);
+};
+
+namespace {
+
+[[nodiscard]] std::string projectName(const ToolsState& state, const ProjectEntry& entry)
 {
-    ProjectManagerState& manager = state.projectManager;
-    const ThemeColors& colors = themeColors();
-    const ImGuiStyle& style = ImGui::GetStyle();
     const ProjectInfo* const info = infoOf(state, entry.file);
-    const bool exists = info != nullptr && info->exists;
-    const bool needsUpdate = exists && info->code.needsUpdate;
-    const std::string path = core::toUtf8(entry.file.parent_path());
-    const float lineHeight = ImGui::GetTextLineHeight();
-    const float rowHeight = lineHeight * 2.0f + style.FramePadding.y * 4.0f;
-    const float iconSize = rowHeight - style.FramePadding.y * 2.0f;
-
-    ImGui::PushID(core::toUtf8(entry.file).c_str());
-    const ImVec2 rowStart = ImGui::GetCursorScreenPos();
-    const bool selected = manager.selected == entry.file;
-    if (ImGui::Selectable("##row", selected, ImGuiSelectableFlags_AllowDoubleClick | ImGuiSelectableFlags_AllowOverlap,
-                         ImVec2(0.0f, rowHeight)))
-    {
-        manager.selected = entry.file;
-        if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
-        {
-            open = true;
-        }
-    }
-    const float rowWidth = ImGui::GetItemRectSize().x;
-    if (ImGui::BeginPopupContextItem("project menu"))
-    {
-        manager.selected = entry.file;
-        if (ImGui::MenuItemEx(needsUpdate ? "Update & Edit" : "Edit", icons::Pencil.c_str(), nullptr, false, exists))
-        {
-            open = true;
-        }
-        if (ImGui::MenuItemEx("Run", icons::Play.c_str(), nullptr, false, exists && !needsUpdate))
-        {
-            runProject(state, entry.file);
-        }
-        if (needsUpdate && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-        {
-            ImGui::SetTooltip("Open with Update & Edit to rebuild the game code before running.");
-        }
-        if (ImGui::MenuItemEx("Show in File Manager", icons::FolderOpen.c_str(), nullptr, false, exists))
-        {
-            static_cast<void>(state.platform.openPath(entry.file.parent_path()));
-        }
-        ImGui::Separator();
-        if (ImGui::MenuItemEx(entry.favorite ? "Remove from Favorites" : "Add to Favorites", icons::Star.c_str()))
-        {
-            state.projects.setFavorite(entry.file, !entry.favorite);
-            saveUserSettings(state);
-        }
-        if (ImGui::MenuItemEx("Remove from List", icons::Trash.c_str()))
-        {
-            manager.openRemove = true;
-        }
-        ImGui::EndPopup();
-    }
-
-    // The star toggles the favorite state without selecting the row.
-    const float starWidth = ImGui::GetFrameHeight();
-    ImGui::SetCursorScreenPos(ImVec2(rowStart.x + style.FramePadding.x, rowStart.y + (rowHeight - starWidth) * 0.5f));
-    if (toolButton("favorite", icons::Star, entry.favorite ? "Remove from favorites" : "Add to favorites", false, true,
-                   entry.favorite ? colors.favorite : colors.textDim))
-    {
-        state.projects.setFavorite(entry.file, !entry.favorite);
-        saveUserSettings(state);
-    }
-
-    ImDrawList* const draw = ImGui::GetWindowDrawList();
-    const float iconX = rowStart.x + style.FramePadding.x * 2.0f + starWidth;
-    ImFont* const font = ImGui::GetFont();
-    draw->AddText(font, iconSize / 0.9f, ImVec2(iconX, rowStart.y + (rowHeight - iconSize / 0.9f) * 0.5f),
-                  exists ? IM_COL32_WHITE : IM_COL32(255, 255, 255, 90), icons::Logo.c_str());
-
-    const float textX = iconX + iconSize + style.ItemSpacing.x * 2.0f;
-    const float nameY = rowStart.y + style.FramePadding.y * 1.5f;
-    const std::string name = info != nullptr ? info->name : core::toUtf8(entry.file.stem());
-    const char* const updateLabel = "Code update required";
-    const float rowRight = rowStart.x + rowWidth - style.FramePadding.x * 3.0f;
-    const float updateWidth = needsUpdate ? ImGui::CalcTextSize(updateLabel).x : 0.0f;
-    const ImVec4 nameClip(textX, nameY, rowRight - updateWidth - style.ItemSpacing.x, nameY + lineHeight);
-    draw->AddText(editorFonts().bold, ImGui::GetFontSize(), ImVec2(textX, nameY),
-                  exists ? ImGui::GetColorU32(ImGuiCol_Text) : ImGui::GetColorU32(ImGuiCol_TextDisabled), name.c_str(),
-                  nullptr, 0.0f, &nameClip);
-    if (needsUpdate)
-    {
-        draw->AddText(ImVec2(rowRight - updateWidth, nameY), uiColorU32(colors.warning), updateLabel);
-        if (ImGui::IsMouseHoveringRect(ImVec2(rowRight - updateWidth, nameY), ImVec2(rowRight, nameY + lineHeight)))
-        {
-            ImGui::SetTooltip("%s\nOpening this project will rebuild its game code.", info->code.message.c_str());
-        }
-    }
-    const float pathY = nameY + lineHeight + style.FramePadding.y;
-    const ImU32 dim = ImGui::GetColorU32(ImGuiCol_TextDisabled);
-    if (exists)
-    {
-        draw->AddText(ImVec2(textX, pathY), dim, icons::Folder.c_str());
-        draw->AddText(ImVec2(textX + ImGui::CalcTextSize(icons::Folder.c_str()).x + style.ItemInnerSpacing.x * 2.0f, pathY),
-                      dim, path.c_str());
-    }
-    else
-    {
-        draw->AddText(ImVec2(textX, pathY), uiColorU32(colors.error), icons::TriangleAlert.c_str());
-        const std::string missing = "Missing: " + path;
-        draw->AddText(ImVec2(textX + ImGui::CalcTextSize(icons::TriangleAlert.c_str()).x + style.ItemInnerSpacing.x * 2.0f, pathY),
-                      uiColorU32(colors.error), missing.c_str());
-    }
-    const std::string date = formatTime(std::max(entry.lastOpened, info != nullptr ? info->modified : 0));
-    const float dateWidth = ImGui::CalcTextSize(date.c_str()).x;
-    draw->AddText(ImVec2(rowStart.x + rowWidth - dateWidth - style.FramePadding.x * 3.0f, pathY), dim, date.c_str());
-
-    ImGui::SetCursorScreenPos(ImVec2(rowStart.x, rowStart.y + rowHeight + style.ItemSpacing.y));
-    ImGui::Dummy(ImVec2(0.0f, 0.0f));
-    ImGui::PopID();
+    return info != nullptr ? info->name : core::toUtf8(entry.file.stem());
 }
 
 } // namespace
 
-void drawProjectManager(ToolsState& state)
+void ProjectManagerUi::build(ToolsState& state, EditorUiKit& kit)
+{
+    built = true;
+    const float line = font * 2.0f;
+    sideWidth = font * 12.5f;
+
+    window = add({}, "Window", whole(), "window");
+    scene().add<scene::UiImage>(window);
+    scene().add<scene::UiLayout>(window, scene::UiLayout{.kind = scene::UiLayoutKind::Column,
+                                                         .spacing = font * 0.7f,
+                                                         .padding = {font * 1.2f, font * 0.9f, font * 1.2f, font * 0.7f},
+                                                         .align = scene::TextAlign::Left});
+
+    // Title bar: the logo and name on the left, the section in the middle, the settings on the right.
+    const Entity title = add(window, "Title", wide(font * 2.4f));
+    const Entity brand = add(title, "Brand",
+                             UiRect{.anchorMin = {0.0f, 0.0f}, .anchorMax = {0.0f, 1.0f}, .offsetMin = {0.0f, 0.0f}, .offsetMax = {font * 12.0f, 0.0f}});
+    scene().add<scene::UiLayout>(brand, scene::UiLayout{.kind = scene::UiLayoutKind::Row,
+                                                        .spacing = font * 0.5f,
+                                                        .align = scene::TextAlign::Left});
+    const float logo = font * 1.7f;
+    const Entity logoImage = add(brand, "Logo", middle({logo, logo}));
+    scene().add<scene::UiImage>(logoImage, scene::UiImage{.texture = kit.icon(Icon::Logo), .raycastTarget = false});
+    text(brand, middle({font * 6.0f, font * 2.0f}), "DEVEX", "text", true, scene::TextAlign::Left, font * 1.3f);
+    const float sectionWidth = font * 1.2f + font * 0.5f + kit.textWidth(EditorUiKit::boldFont(), "Projects", font);
+    const Entity section = add(title, "Section",
+                               UiRect{.anchorMin = {0.5f, 0.0f},
+                                      .anchorMax = {0.5f, 1.0f},
+                                      .offsetMin = {-sectionWidth * 0.5f, 0.0f},
+                                      .offsetMax = {sectionWidth * 0.5f, 0.0f}});
+    scene().add<scene::UiLayout>(section, scene::UiLayout{.kind = scene::UiLayoutKind::Row,
+                                                          .spacing = font * 0.5f,
+                                                          .align = scene::TextAlign::Center});
+    icon(kit, section, middle({font * 1.2f, font * 1.2f}), Icon::ListTree, "icon_accent");
+    text(section, middle({kit.textWidth(EditorUiKit::boldFont(), "Projects", font) + 2.0f, line}), "Projects", "accent", true);
+    const Entity right = add(title, "Right",
+                             UiRect{.anchorMin = {1.0f, 0.0f}, .anchorMax = {1.0f, 1.0f}, .offsetMin = {-font * 12.0f, 0.0f}, .offsetMax = {0.0f, 0.0f}});
+    scene().add<scene::UiLayout>(right, scene::UiLayout{.kind = scene::UiLayoutKind::Row, .align = scene::TextAlign::Right});
+    settings = button(kit, right, Icon::Settings, "Settings", "flat");
+
+    // Toolbar: create, import, scan, then the filter and the sort.
+    const Entity toolbar = add(window, "Toolbar", wide(line));
+    scene().add<scene::UiLayout>(toolbar, scene::UiLayout{.kind = scene::UiLayoutKind::Row,
+                                                          .spacing = font * 0.45f,
+                                                          .align = scene::TextAlign::Left});
+    create = button(kit, toolbar, Icon::Plus, "Create");
+    import = button(kit, toolbar, Icon::FolderOpen, "Import");
+    scan = button(kit, toolbar, Icon::FolderSearch, "Scan");
+    tooltip(scan.entity, "Adds the projects found in a folder and its subfolders");
+    add(toolbar, "Gap", middle({font * 0.4f, 1.0f}));
+    filter = field(toolbar, grow(line), state.projectManager.filter, "Filter Projects");
+    scene().get<scene::UiInput>(filter).padding.x = font * 2.0f;
+    icon(kit, filter, UiRect{.anchorMin = {0.0f, 0.5f},
+                             .anchorMax = {0.0f, 0.5f},
+                             .offsetMin = {font * 0.6f, -font * 0.5f},
+                             .offsetMax = {font * 1.6f, font * 0.5f}},
+         Icon::Search, "icon_dim");
+    text(toolbar, middle({kit.textWidth(EditorUiKit::regularFont(), "Sort:", font) + font * 0.6f, line}), "Sort:", "text",
+         false, scene::TextAlign::Right);
+    sort = add(toolbar, "Sort", middle({font * 10.0f, line}), "dropdown");
+    scene().add<scene::UiImage>(sort);
+    scene().add<scene::UiButton>(sort);
+    scene().add<scene::UiText>(sort, scene::UiText{.font = EditorUiKit::regularFont(),
+                                                   .size = font,
+                                                   .align = scene::TextAlign::Left,
+                                                   .verticalAlign = scene::TextVerticalAlign::Middle,
+                                                   .wrap = false});
+    scene().add<scene::UiDropdown>(sort, scene::UiDropdown{.options = {"Last Edited", "Name", "Path"},
+                                                           .selected = static_cast<std::int32_t>(state.projectManager.sort),
+                                                           .action = "sort"});
+
+    // The list of projects, and the actions on the selected one.
+    const Entity body = add(window, "Body", whole());
+    scene().add<scene::UiLayout>(body, scene::UiLayout{.kind = scene::UiLayoutKind::Row,
+                                                       .spacing = font * 0.7f,
+                                                       .align = scene::TextAlign::Left});
+    list = add(body, "List", whole(), "list");
+    scene().add<scene::UiImage>(list, scene::UiImage{.raycastTarget = false});
+    scroll = add(list, "Scroll", whole(math::Vec4{2.0f}), "scroll");
+    scene().add<scene::UiScroll>(scroll, scene::UiScroll{.speed = font * 4.0f});
+    rowsColumn = add(scroll, "Rows",
+                     UiRect{.anchorMin = {0.0f, 0.0f}, .anchorMax = {1.0f, 0.0f}, .offsetMin = {4.0f, 4.0f}, .offsetMax = {-12.0f, 4.0f}});
+    scene().add<scene::UiLayout>(rowsColumn, scene::UiLayout{.kind = scene::UiLayoutKind::Column,
+                                                             .spacing = font * 0.3f,
+                                                             .align = scene::TextAlign::Left});
+    emptyHint = text(list, whole(), "", "dim", false, scene::TextAlign::Center);
+
+    const Entity side = add(body, "Actions", UiRect{.anchorMin = {0.0f, 0.0f}, .anchorMax = {0.0f, 1.0f}, .offsetMin = {0.0f, 0.0f}, .offsetMax = {sideWidth, 0.0f}});
+    scene().add<scene::UiLayout>(side, scene::UiLayout{.kind = scene::UiLayoutKind::Column,
+                                                       .spacing = font * 0.45f,
+                                                       .align = scene::TextAlign::Left});
+    edit = button(kit, side, Icon::Pencil, "Edit", "button", -1.0f, 0.0f, scene::TextAlign::Left);
+    run = button(kit, side, Icon::Play, "Run", "button", -1.0f, 0.0f, scene::TextAlign::Left);
+    rename = button(kit, side, Icon::TextCursor, "Rename", "button", -1.0f, 0.0f, scene::TextAlign::Left);
+    show = button(kit, side, Icon::FolderOpen, "Show in Folder", "button", -1.0f, 0.0f, scene::TextAlign::Left);
+    add(side, "Gap", wide(font * 0.5f));
+    remove = button(kit, side, Icon::Trash, "Remove", "button", -1.0f, 0.0f, scene::TextAlign::Left);
+    removeMissing = button(kit, side, Icon::ListX, "Remove Missing", "button", -1.0f, 0.0f, scene::TextAlign::Left);
+    add(side, "Gap", wide(font * 0.5f));
+    updateTitle = text(side, wide(font * 1.5f), "Code update required", "warning");
+    updateMessage = text(side, wide(font * 4.5f), "", "text");
+    updateHint = text(side, wide(font * 3.0f), "Opening this project will rebuild its game code.", "dim");
+    for (const Entity wrapped : {updateMessage, updateHint})
+    {
+        scene::UiText& shown = scene().get<scene::UiText>(wrapped);
+        shown.wrap = true;
+        shown.verticalAlign = scene::TextVerticalAlign::Top;
+    }
+
+    const std::string versionText = std::format("v{} {}", core::version(), core::buildType());
+    version = text(window, wide(font * 1.3f), versionText, "dim", false, scene::TextAlign::Right);
+
+    // The menu of a row, opened with the second button.
+    rowMenu = add({}, "Row menu", UiRect{.anchorMin = {0.0f, 0.0f}, .anchorMax = {0.0f, 0.0f}, .offsetMin = {0.0f, 0.0f}, .offsetMax = {font * 15.0f, font * 11.4f}, .visible = false}, "popup");
+    scene().add<scene::UiImage>(rowMenu);
+    scene().add<scene::UiPopup>(rowMenu);
+    scene().add<scene::UiLayout>(rowMenu, scene::UiLayout{.kind = scene::UiLayoutKind::Column,
+                                                          .spacing = 1.0f,
+                                                          .padding = math::Vec4{font * 0.3f},
+                                                          .align = scene::TextAlign::Left});
+    const float item = font * 1.9f;
+    menuEdit = button(kit, rowMenu, Icon::Pencil, "Edit", "menu_item", -1.0f, item, scene::TextAlign::Left);
+    menuRun = button(kit, rowMenu, Icon::Play, "Run", "menu_item", -1.0f, item, scene::TextAlign::Left);
+    menuShow = button(kit, rowMenu, Icon::FolderOpen, "Show in File Manager", "menu_item", -1.0f, item, scene::TextAlign::Left);
+    const Entity separator = add(rowMenu, "Separator", wide(1.0f), "separator");
+    scene().add<scene::UiImage>(separator, scene::UiImage{.raycastTarget = false});
+    menuFavorite = button(kit, rowMenu, Icon::Star, "Add to Favorites", "menu_item", -1.0f, item, scene::TextAlign::Left);
+    menuRemove = button(kit, rowMenu, Icon::Trash, "Remove from List", "menu_item", -1.0f, item, scene::TextAlign::Left);
+
+    // Creating a project: its name, the folder it goes in, and whether a folder of its name is made.
+    createDialog = dialog("Create dialog", {font * 34.0f, font * 19.5f});
+    text(createDialog, wide(font * 1.6f), "Create New Project", "text", true, scene::TextAlign::Left, font * 1.15f);
+    text(createDialog, wide(font * 1.4f), "Project Name:", "text");
+    createName = field(createDialog, wide(line), state.projectManager.createName, "", "create");
+    text(createDialog, wide(font * 1.4f), "Project Path:", "text");
+    const Entity pathLine = add(createDialog, "Path", wide(line));
+    scene().add<scene::UiLayout>(pathLine, scene::UiLayout{.kind = scene::UiLayoutKind::Row,
+                                                           .spacing = font * 0.45f,
+                                                           .align = scene::TextAlign::Left});
+    createParent = field(pathLine, grow(line), state.projectManager.createParent, "", "create");
+    browse = button(kit, pathLine, Icon::FolderOpen, "Browse");
+    const Entity folderLine = add(createDialog, "Folder", wide(font * 1.6f));
+    scene().add<scene::UiLayout>(folderLine, scene::UiLayout{.kind = scene::UiLayoutKind::Row,
+                                                             .spacing = font * 0.5f,
+                                                             .align = scene::TextAlign::Left});
+    createFolder = add(folderLine, "Create folder", middle({font * 1.2f, font * 1.2f}), "toggle");
+    scene().add<scene::UiImage>(createFolder);
+    scene().add<scene::UiToggle>(createFolder, scene::UiToggle{.value = state.projectManager.createFolder});
+    text(folderLine, middle({font * 8.0f, font * 1.6f}), "Create folder", "text");
+    const Entity statusLine = add(createDialog, "Status", wide(font * 1.6f));
+    scene().add<scene::UiLayout>(statusLine, scene::UiLayout{.kind = scene::UiLayoutKind::Row,
+                                                             .spacing = font * 0.5f,
+                                                             .align = scene::TextAlign::Left});
+    createStatusIcon = icon(kit, statusLine, middle({font * 1.1f, font * 1.1f}), Icon::CircleCheck, "icon_success");
+    createStatus = text(statusLine, grow(font * 1.6f), "", "success");
+    add(createDialog, "Gap", wide(font * 0.3f));
+    std::tie(createConfirm, createCancel) = dialogButtons(kit, createDialog, Icon::Plus, "Create & Edit", font * 9.0f);
+
+    renameDialog = dialog("Rename dialog", {font * 26.0f, font * 12.5f});
+    text(renameDialog, wide(font * 1.6f), "Rename Project", "text", true, scene::TextAlign::Left, font * 1.15f);
+    text(renameDialog, wide(font * 1.4f), "Project Name:", "text");
+    renameName = field(renameDialog, wide(line), "", "", "rename");
+    text(renameDialog, wide(font * 1.4f), "The folder and the project file keep their names.", "dim");
+    std::tie(renameConfirm, renameCancel) = dialogButtons(kit, renameDialog, Icon::Check, "Rename", font * 7.0f);
+
+    removeDialog = dialog("Remove dialog", {font * 28.0f, font * 10.0f});
+    const Entity warning = add(removeDialog, "Question", wide(font * 1.8f));
+    scene().add<scene::UiLayout>(warning, scene::UiLayout{.kind = scene::UiLayoutKind::Row,
+                                                          .spacing = font * 0.5f,
+                                                          .align = scene::TextAlign::Left});
+    icon(kit, warning, middle({font * 1.2f, font * 1.2f}), Icon::TriangleAlert, "icon_warning");
+    removeText = text(warning, grow(font * 1.8f), "", "text");
+    text(removeDialog, wide(font * 1.4f), "The project folder and its files are not modified.", "dim");
+    std::tie(removeConfirm, removeCancel) = dialogButtons(kit, removeDialog, Icon::Trash, "Remove", font * 7.0f);
+}
+
+void ProjectManagerUi::buildRows(ToolsState& state, EditorUiKit& kit, const std::vector<ProjectEntry>& projects)
+{
+    for (const Row& row : rows)
+    {
+        scene().destroyEntity(row.row);
+    }
+    rows.clear();
+    const float height = font * 3.5f;
+    for (const ProjectEntry& entry : projects)
+    {
+        Row row{.file = entry.file};
+        row.row = add(rowsColumn, "Row", wide(height), "row");
+        scene().add<scene::UiImage>(row.row);
+        scene().add<scene::UiButton>(row.row);
+        scene().add<scene::UiContextMenu>(row.row, scene::UiContextMenu{.popup = scene().reference(rowMenu)});
+
+        // The star toggles the favorite without selecting the row.
+        const float star = font * 1.8f;
+        row.star = add(row.row, "Star",
+                       UiRect{.anchorMin = {0.0f, 0.5f},
+                              .anchorMax = {0.0f, 0.5f},
+                              .offsetMin = {font * 0.4f, -star * 0.5f},
+                              .offsetMax = {font * 0.4f + star, star * 0.5f}},
+                       "flat");
+        scene().add<scene::UiImage>(row.star);
+        scene().add<scene::UiButton>(row.star);
+        row.starIcon = icon(kit, row.star, whole(math::Vec4{font * 0.35f}), Icon::Star, "icon_dim");
+
+        const float logo = font * 2.4f;
+        const float logoLeft = font * 0.4f + star + font * 0.5f;
+        row.logo = add(row.row, "Logo",
+                       UiRect{.anchorMin = {0.0f, 0.5f},
+                              .anchorMax = {0.0f, 0.5f},
+                              .offsetMin = {logoLeft, -logo * 0.5f},
+                              .offsetMax = {logoLeft + logo, logo * 0.5f}});
+        scene().add<scene::UiImage>(row.logo, scene::UiImage{.texture = kit.icon(Icon::Logo), .raycastTarget = false});
+
+        const float left = logoLeft + logo + font * 0.9f;
+        const float dateWidth = font * 9.0f;
+        const float top = (height - font * 2.8f) * 0.5f;
+        row.name = text(row.row,
+                        UiRect{.anchorMin = {0.0f, 0.0f},
+                               .anchorMax = {1.0f, 0.0f},
+                               .offsetMin = {left, top},
+                               .offsetMax = {-dateWidth, top + font * 1.4f}},
+                        projectName(state, entry), "text", true);
+        const float updateWidth = kit.textWidth(EditorUiKit::regularFont(), "Code update required", font) + 4.0f;
+        row.update = text(row.row,
+                          UiRect{.anchorMin = {1.0f, 0.0f},
+                                 .anchorMax = {1.0f, 0.0f},
+                                 .offsetMin = {-updateWidth - font * 0.8f, top},
+                                 .offsetMax = {-font * 0.8f, top + font * 1.4f}},
+                          "Code update required", "warning", false, scene::TextAlign::Right);
+        scene().get<scene::UiText>(row.update).raycastTarget = true;
+        row.pathIcon = icon(kit, row.row,
+                            UiRect{.anchorMin = {0.0f, 0.0f},
+                                   .anchorMax = {0.0f, 0.0f},
+                                   .offsetMin = {left, top + font * 1.55f},
+                                   .offsetMax = {left + font, top + font * 2.55f}},
+                            Icon::Folder, "icon_dim");
+        row.path = text(row.row,
+                        UiRect{.anchorMin = {0.0f, 0.0f},
+                               .anchorMax = {1.0f, 0.0f},
+                               .offsetMin = {left + font * 1.4f, top + font * 1.4f},
+                               .offsetMax = {-dateWidth, top + font * 2.8f}},
+                        core::toUtf8(entry.file.parent_path()), "dim");
+        row.date = text(row.row,
+                        UiRect{.anchorMin = {1.0f, 0.0f},
+                               .anchorMax = {1.0f, 0.0f},
+                               .offsetMin = {-dateWidth, top + font * 1.4f},
+                               .offsetMax = {-font * 0.8f, top + font * 2.8f}},
+                        "", "dim", false, scene::TextAlign::Right);
+        rows.push_back(std::move(row));
+    }
+    // The column is as tall as its rows, for the list to scroll through them.
+    UiRect& column = scene().get<UiRect>(rowsColumn);
+    const auto count = static_cast<float>(rows.size());
+    column.offsetMax.y = column.offsetMin.y + count * height + std::max(count - 1.0f, 0.0f) * font * 0.3f;
+}
+
+void ProjectManagerUi::update(ToolsState& state, EditorUiKit& kit, core::Duration delta)
 {
     ProjectManagerState& manager = state.projectManager;
-    const ThemeColors& colors = themeColors();
-    const ImGuiStyle& style = ImGui::GetStyle();
     if (manager.refresh)
     {
         refreshProjects(state);
     }
-
-    const ImGuiViewport* const viewport = ImGui::GetMainViewport();
-    ImGui::SetNextWindowPos(viewport->WorkPos);
-    ImGui::SetNextWindowSize(viewport->WorkSize);
-    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImGui::GetStyleColorVec4(ImGuiCol_MenuBarBg));
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(style.WindowPadding.x * 1.5f, style.WindowPadding.y * 1.2f));
-    const ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
-                                   ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoBringToFrontOnFocus;
-    const bool visible = ImGui::Begin("Project Manager", nullptr, flags);
-    ImGui::PopStyleVar();
-    ImGui::PopStyleColor();
-    if (!visible)
+    const ThemeColors& colors = themeColors();
+    kit.refreshTheme(colors);
+    font = state.theme.fontSize;
+    if (!built)
     {
-        ImGui::End();
-        return;
+        build(state, kit);
+    }
+    ui::UiWorld& world = panel.world();
+    world.setTooltipStyle(ui::TooltipStyle{.background = linearColor(colors.popup),
+                                           .text = linearColor(colors.text),
+                                           .font = EditorUiKit::regularFont(),
+                                           .size = font,
+                                           .padding = font * 0.45f,
+                                           .cornerRadius = 4.0f});
+
+    // The rows follow the list, its sort and its filter.
+    manager.filter = scene().get<scene::UiText>(filter).text;
+    const std::vector<ProjectEntry> projects =
+        state.projects.sorted(manager.sort, manager.filter, [&state](const ProjectEntry& entry) { return projectName(state, entry); });
+    const bool same = projects.size() == rows.size() &&
+                      std::ranges::equal(projects, rows, {}, &ProjectEntry::file, &Row::file);
+    if (!same)
+    {
+        buildRows(state, kit, projects);
+    }
+    // The first project is selected until the user picks another, as the most likely to open.
+    if (!projects.empty() && std::ranges::none_of(projects, [&](const ProjectEntry& entry) { return entry.file == manager.selected; }))
+    {
+        manager.selected = projects.front().file;
+    }
+    scene::UiText& hint = scene().get<scene::UiText>(emptyHint);
+    hint.text = !projects.empty()                ? std::string{}
+                : state.projects.entries().empty() ? "No project yet: create one, or import or scan existing ones."
+                                                   : "No project matches the filter.";
+
+    for (std::size_t index = 0; index < rows.size(); ++index)
+    {
+        const Row& row = rows[index];
+        const ProjectEntry& entry = projects[index];
+        const ProjectInfo* const info = infoOf(state, entry.file);
+        const bool exists = info != nullptr && info->exists;
+        const bool needsUpdate = exists && info->code.needsUpdate;
+        scene().get<UiRect>(row.row).style = entry.file == manager.selected ? "row_selected" : "row";
+        scene().get<UiRect>(row.starIcon).style = entry.favorite ? "icon_favorite" : "icon_dim";
+        tooltip(row.star, entry.favorite ? "Remove from favorites" : "Add to favorites");
+        scene().get<scene::UiText>(row.name).text = projectName(state, entry);
+        scene().get<UiRect>(row.name).style = exists ? "text" : "dim";
+        scene().get<UiRect>(row.logo).opacity = exists ? 1.0f : 0.35f;
+        scene().get<UiRect>(row.update).visible = needsUpdate;
+        if (needsUpdate)
+        {
+            tooltip(row.update, info->code.message + "\nOpening this project will rebuild its game code.");
+        }
+        const std::string folder = core::toUtf8(entry.file.parent_path());
+        scene().get<scene::UiText>(row.path).text = exists ? folder : "Missing: " + folder;
+        scene().get<UiRect>(row.path).style = exists ? "dim" : "error";
+        scene().get<scene::UiImage>(row.pathIcon).texture = kit.icon(exists ? Icon::Folder : Icon::TriangleAlert);
+        scene().get<UiRect>(row.pathIcon).style = exists ? "icon_dim" : "icon_error";
+        scene().get<scene::UiText>(row.date).text = formatTime(std::max(entry.lastOpened, info != nullptr ? info->modified : 0));
     }
 
-    // Title bar: the logo and name, the section, and the settings.
-    ImGui::PushFont(editorFonts().bold, style.FontSizeBase * 1.25f);
-    ImGui::AlignTextToFramePadding();
-    ImGui::TextUnformatted(icons::Logo.c_str());
-    ImGui::SameLine();
-    ImGui::TextUnformatted("DEVEX");
-    ImGui::PopFont();
-    const char* const section = "Projects";
-    const float sectionWidth = ImGui::CalcTextSize(icons::ListTree.c_str()).x + ImGui::CalcTextSize(section).x +
-                               style.ItemInnerSpacing.x;
-    ImGui::SameLine((ImGui::GetWindowWidth() - sectionWidth) * 0.5f);
-    ImGui::PushStyleColor(ImGuiCol_Text, uiColor(colors.accent));
-    ImGui::AlignTextToFramePadding();
-    iconLabel(icons::ListTree, colors.accent);
-    boldText(section);
-    ImGui::PopStyleColor();
-    const float settingsWidth = ImGui::CalcTextSize("Settings").x + ImGui::CalcTextSize(icons::Settings.c_str()).x +
-                                ImGui::CalcTextSize("  ").x + style.FramePadding.x * 2.0f;
-    ImGui::SameLine();
-    alignRight(settingsWidth);
-    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
-    if (labelButton(icons::Settings, "Settings"))
+    // The actions on the selected project.
+    const ProjectInfo* const selected = manager.selected.empty() ? nullptr : infoOf(state, manager.selected);
+    const bool canEdit = selected != nullptr && selected->exists;
+    const bool needsUpdate = canEdit && selected->code.needsUpdate;
+    relabel(kit, edit, needsUpdate ? "Update & Edit" : "Edit");
+    enable(edit, canEdit);
+    enable(run, canEdit && !needsUpdate);
+    tooltip(run.entity, needsUpdate ? "Open with Update & Edit to rebuild the game code before running."
+                                    : "Runs the startup scene in devex-player");
+    enable(rename, canEdit);
+    enable(show, canEdit);
+    enable(remove, selected != nullptr);
+    for (const Entity part : {updateTitle, updateMessage, updateHint})
+    {
+        scene().get<UiRect>(part).visible = needsUpdate;
+    }
+    // The message takes the lines it wraps into, and the hint follows it.
+    for (const auto& [part, value] : {std::pair{updateMessage, needsUpdate ? selected->code.message : std::string{}},
+                                      std::pair{updateHint, std::string("Opening this project will rebuild its game code.")}})
+    {
+        scene::UiText& shown = scene().get<scene::UiText>(part);
+        shown.text = value;
+        if (const asset::FontData* const data = kit.fontData(shown.font))
+        {
+            const float height = ui::measureText(*data, value, ui::TextStyle{.size = font, .wrap = true}, sideWidth).y;
+            UiRect& rect = scene().get<UiRect>(part);
+            rect.offsetMax.y = rect.offsetMin.y + height + 2.0f;
+        }
+    }
+
+    // The menu of a row speaks of the project it was opened on.
+    const auto rowOf = [&](Entity entity) -> const Row* {
+        const auto found = std::ranges::find(rows, entity, &Row::row);
+        return found != rows.end() ? &*found : nullptr;
+    };
+    if (world.isPopupOpen(scene(), rowMenu))
+    {
+        if (const Row* const target = rowOf(world.contextTarget()))
+        {
+            const ProjectInfo* const info = infoOf(state, target->file);
+            const bool exists = info != nullptr && info->exists;
+            const bool update = exists && info->code.needsUpdate;
+            const auto entry = std::ranges::find(state.projects.entries(), target->file, &ProjectEntry::file);
+            relabel(kit, menuEdit, update ? "Update & Edit" : "Edit");
+            enable(menuEdit, exists);
+            enable(menuRun, exists && !update);
+            enable(menuShow, exists);
+            relabel(kit, menuFavorite,
+                    entry != state.projects.entries().end() && entry->favorite ? "Remove from Favorites" : "Add to Favorites");
+        }
+        else
+        {
+            world.closePopup(scene(), rowMenu);
+        }
+    }
+
+    // The dialogs keep what they edit in the state of the manager, which the dialog of a folder
+    // may change as well.
+    const std::filesystem::path parent = core::pathFromUtf8(manager.createParent);
+    const std::filesystem::path directory = manager.createFolder ? parent / core::pathFromUtf8(manager.createName) : parent;
+    const std::optional<std::string> problem = createProblem(manager, directory);
+    if (world.isPopupOpen(scene(), createDialog))
+    {
+        scene().get<scene::UiText>(createStatus).text = problem ? *problem : "The project goes in " + core::toUtf8(directory);
+        scene().get<UiRect>(createStatus).style = problem ? "error" : "success";
+        scene().get<scene::UiImage>(createStatusIcon).texture = kit.icon(problem ? Icon::CircleX : Icon::CircleCheck);
+        scene().get<UiRect>(createStatusIcon).style = problem ? "icon_error" : "icon_success";
+        enable(createConfirm, !problem.has_value());
+    }
+    if (manager.createParent != syncedParent)
+    {
+        scene().get<scene::UiText>(createParent).text = manager.createParent;
+        syncedParent = manager.createParent;
+    }
+
+    // The panel takes the mouse and the keys of its window, and lays itself out.
+    const float zoom = (ImGui::GetIO().DisplayFramebufferScale.x > 0.0f ? ImGui::GetIO().DisplayFramebufferScale.x : 1.0f) *
+                       ImGui::GetFontSize() / std::max(font, 1.0f);
+    panel.update(kit, delta, zoom);
+
+    // What was done this frame.
+    std::optional<std::filesystem::path> opened;
+    if (world.wasClicked(settings.entity))
     {
         state.showSettings = true;
     }
-    ImGui::PopStyleColor();
-    ImGui::Spacing();
-
-    // Toolbar: create, import, scan, filter and sort.
-    const float sideWidth = ImGui::GetFontSize() * 11.0f;
-    if (labelButton(icons::Plus, "Create"))
+    if (world.wasClicked(create.entity))
     {
-        manager.openCreate = true;
         if (manager.createParent.empty() && !state.projects.entries().empty())
         {
             const auto newest = std::ranges::max_element(state.projects.entries(), {}, &ProjectEntry::lastOpened);
             manager.createParent = core::toUtf8(newest->file.parent_path().parent_path());
+            scene().get<scene::UiText>(createParent).text = manager.createParent;
+            syncedParent = manager.createParent;
         }
+        scene().get<scene::UiText>(createName).text = manager.createName;
+        world.openPopup(scene(), createDialog);
+        world.startEditing(scene(), createName);
     }
-    ImGui::SameLine();
-    if (labelButton(icons::FolderOpen, "Import"))
+    if (world.wasClicked(import.entity))
     {
         showImportDialog(state);
     }
-    ImGui::SameLine();
-    if (labelButton(icons::FolderSearch, "Scan"))
+    if (world.wasClicked(scan.entity))
     {
         showFolderDialog(state, &DialogAnswers::scanFolder);
     }
-    ImGui::SetItemTooltip("Adds the projects found in a folder and its subfolders");
-    ImGui::SameLine();
-    const char* const sortLabel = "Sort:";
-    const float sortComboWidth = ImGui::GetFontSize() * 9.0f;
-    const float filterWidth = ImGui::GetContentRegionAvail().x - sideWidth - ImGui::CalcTextSize(sortLabel).x -
-                              sortComboWidth - style.ItemSpacing.x * 4.0f;
-    searchField("##filter", manager.filter, "Filter Projects", std::max(filterWidth, ImGui::GetFontSize() * 6.0f));
-    ImGui::SameLine();
-    ImGui::AlignTextToFramePadding();
-    ImGui::TextUnformatted(sortLabel);
-    ImGui::SameLine();
-    ImGui::SetNextItemWidth(sortComboWidth);
-    constexpr std::array<const char*, 3> sortNames{"Last Edited", "Name", "Path"};
-    if (beginCombo("##sort", sortNames[static_cast<std::size_t>(manager.sort)]))
+    if (world.wasChanged("sort"))
     {
-        for (std::size_t index = 0; index < sortNames.size(); ++index)
+        manager.sort = static_cast<ProjectSort>(std::clamp(scene().get<scene::UiDropdown>(sort).selected, 0, 2));
+    }
+    for (const Row& row : rows)
+    {
+        if (world.wasClicked(row.star))
         {
-            if (ImGui::Selectable(sortNames[index], static_cast<std::size_t>(manager.sort) == index))
+            const auto entry = std::ranges::find(state.projects.entries(), row.file, &ProjectEntry::file);
+            state.projects.setFavorite(row.file, entry == state.projects.entries().end() || !entry->favorite);
+            saveUserSettings(state);
+        }
+        else if (world.wasClicked(row.row))
+        {
+            manager.selected = row.file;
+            if (world.wasDoubleClicked(row.row))
             {
-                manager.sort = static_cast<ProjectSort>(index);
+                opened = row.file;
             }
         }
-        ImGui::EndCombo();
     }
-
-    // The list of projects.
-    const float footerHeight = ImGui::GetTextLineHeightWithSpacing() + style.ItemSpacing.y;
-    const float listWidth = ImGui::GetContentRegionAvail().x - sideWidth - style.ItemSpacing.x;
-    const float listHeight = ImGui::GetContentRegionAvail().y - footerHeight;
-    std::optional<std::filesystem::path> opened;
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, uiColor(colors.field));
-    ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, style.FrameRounding);
-    if (ImGui::BeginChild("projects", ImVec2(listWidth, listHeight), ImGuiChildFlags_None))
+    if (const Row* const target = rowOf(world.contextTarget()); target != nullptr && world.isPopupOpen(scene(), rowMenu))
     {
-        const std::vector<ProjectEntry> projects =
-            state.projects.sorted(manager.sort, manager.filter, [&state](const ProjectEntry& entry) {
-                const ProjectInfo* const info = infoOf(state, entry.file);
-                return info != nullptr ? info->name : core::toUtf8(entry.file.stem());
-            });
-        if (projects.empty())
+        manager.selected = target->file;
+    }
+    if (const Row* const target = rowOf(world.contextTarget()))
+    {
+        if (world.wasClicked(menuEdit.entity))
         {
-            const char* const hint = state.projects.entries().empty()
-                                         ? "No project yet: create one, or import or scan existing ones."
-                                         : "No project matches the filter.";
-            const ImVec2 size = ImGui::CalcTextSize(hint);
-            ImGui::SetCursorPos(ImVec2((ImGui::GetWindowWidth() - size.x) * 0.5f, (ImGui::GetWindowHeight() - size.y) * 0.4f));
-            ImGui::TextDisabled("%s", hint);
+            opened = target->file;
         }
-        // The first project is selected until the user picks another, as the most likely to open.
-        if (!projects.empty() && std::ranges::none_of(projects, [&](const ProjectEntry& entry) {
-                return entry.file == manager.selected;
-            }))
+        if (world.wasClicked(menuRun.entity))
         {
-            manager.selected = projects.front().file;
+            runProject(state, target->file);
         }
-        for (const ProjectEntry& entry : projects)
+        if (world.wasClicked(menuShow.entity))
         {
-            bool open = false;
-            drawProjectRow(state, entry, open);
-            if (open)
-            {
-                opened = entry.file;
-            }
+            static_cast<void>(state.platform.openPath(target->file.parent_path()));
         }
-        if (!manager.selected.empty() && ImGui::IsWindowFocused() && ImGui::IsKeyPressed(ImGuiKey_Enter))
+        if (world.wasClicked(menuFavorite.entity))
         {
-            opened = manager.selected;
+            const auto entry = std::ranges::find(state.projects.entries(), target->file, &ProjectEntry::file);
+            state.projects.setFavorite(target->file, entry == state.projects.entries().end() || !entry->favorite);
+            saveUserSettings(state);
+        }
+        if (world.wasClicked(menuRemove.entity))
+        {
+            manager.selected = target->file;
+            manager.openRemove = true;
         }
     }
-    ImGui::EndChild();
-    ImGui::PopStyleVar();
-    ImGui::PopStyleColor();
-
-    // The actions on the selected project.
-    ImGui::SameLine();
-    ImGui::BeginGroup();
-    const ProjectInfo* const selected = manager.selected.empty() ? nullptr : infoOf(state, manager.selected);
-    const bool canEdit = selected != nullptr && selected->exists;
-    const bool needsUpdate = canEdit && selected->code.needsUpdate;
-    if (labelButton(icons::Pencil, needsUpdate ? "Update & Edit" : "Edit", sideWidth, canEdit))
+    if (world.wasClicked(edit.entity))
     {
         opened = manager.selected;
     }
-    if (labelButton(icons::Play, "Run", sideWidth, canEdit && !needsUpdate))
+    if (world.wasClicked(run.entity))
     {
         runProject(state, manager.selected);
     }
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-    {
-        ImGui::SetTooltip(needsUpdate ? "Open with Update & Edit to rebuild the game code before running."
-                                     : "Runs the startup scene in devex-player");
-    }
-    if (labelButton(icons::TextCursor, "Rename", sideWidth, canEdit))
+    if (world.wasClicked(rename.entity) && selected != nullptr)
     {
         manager.renameBuffer = selected->name;
         manager.openRename = true;
     }
-    if (labelButton(icons::FolderOpen, "Show in Folder", sideWidth, canEdit))
+    if (world.wasClicked(show.entity))
     {
         static_cast<void>(state.platform.openPath(manager.selected.parent_path()));
     }
-    ImGui::Spacing();
-    if (labelButton(icons::Trash, "Remove", sideWidth, selected != nullptr))
+    if (world.wasClicked(remove.entity))
     {
         manager.openRemove = true;
     }
-    if (labelButton(icons::ListX, "Remove Missing", sideWidth))
+    if (world.wasClicked(removeMissing.entity))
     {
         if (const std::size_t removed = state.projects.removeMissing(); removed > 0)
         {
@@ -640,32 +973,140 @@ void drawProjectManager(ToolsState& state)
             saveUserSettings(state);
         }
     }
-    if (needsUpdate)
+    // Enter opens the selected project, when nothing else takes it.
+    const bool dialogOpen = world.isPopupOpen(scene(), createDialog) || world.isPopupOpen(scene(), renameDialog) ||
+                            world.isPopupOpen(scene(), removeDialog);
+    if (panel.focused() && !dialogOpen && !world.isEditing() && ImGui::IsKeyPressed(ImGuiKey_Enter, false) &&
+        !manager.selected.empty())
     {
-        ImGui::Spacing();
-        ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + sideWidth);
-        ImGui::TextColored(uiColor(colors.warning), "Code update required");
-        if (!selected->code.message.empty())
-        {
-            ImGui::TextWrapped("%s", selected->code.message.c_str());
-        }
-        ImGui::TextDisabled("Opening this project will rebuild its game code.");
-        ImGui::PopTextWrapPos();
+        opened = manager.selected;
     }
-    ImGui::EndGroup();
 
-    const std::string version = std::format("v{} {}", core::version(), core::buildType());
-    ImGui::SetCursorPosX(ImGui::GetWindowWidth() - ImGui::CalcTextSize(version.c_str()).x - style.WindowPadding.x);
-    ImGui::TextDisabled("%s", version.c_str());
-
-    drawCreatePopup(state);
-    drawRenamePopup(state);
-    drawRemovePopup(state);
-    ImGui::End();
+    // The dialogs. Escape cancels one at once, even while its field has the keyboard, as in the
+    // dialogs of ImGui.
+    const bool escaped = panel.focused() && ImGui::IsKeyPressed(ImGuiKey_Escape, false);
+    if (std::exchange(manager.openCreate, false))
+    {
+        world.openPopup(scene(), createDialog);
+        world.startEditing(scene(), createName);
+    }
+    if (std::exchange(manager.openRename, false))
+    {
+        scene().get<scene::UiText>(renameName).text = manager.renameBuffer;
+        world.openPopup(scene(), renameDialog);
+        world.startEditing(scene(), renameName);
+    }
+    if (std::exchange(manager.openRemove, false))
+    {
+        const ProjectInfo* const info = infoOf(state, manager.selected);
+        scene().get<scene::UiText>(removeText).text =
+            std::format("Remove {} from the list?", info != nullptr ? info->name : std::string("the project"));
+        world.openPopup(scene(), removeDialog);
+    }
+    if (world.isPopupOpen(scene(), createDialog))
+    {
+        manager.createName = scene().get<scene::UiText>(createName).text;
+        manager.createParent = scene().get<scene::UiText>(createParent).text;
+        syncedParent = manager.createParent;
+        manager.createFolder = scene().get<scene::UiToggle>(createFolder).value;
+        if (world.wasClicked(browse.entity))
+        {
+            showFolderDialog(state, &DialogAnswers::newProjectLocation);
+        }
+        if ((world.wasClicked(createConfirm.entity) || world.wasSubmitted("create")) && !problem)
+        {
+            world.closePopup(scene(), createDialog);
+            createProject(state, directory);
+        }
+        else if (world.wasClicked(createCancel.entity) || world.wasCancelled() || escaped)
+        {
+            world.closePopup(scene(), createDialog);
+        }
+    }
+    if (world.isPopupOpen(scene(), renameDialog))
+    {
+        manager.renameBuffer = scene().get<scene::UiText>(renameName).text;
+        const bool valid = !manager.renameBuffer.empty();
+        enable(renameConfirm, valid);
+        if ((world.wasClicked(renameConfirm.entity) || world.wasSubmitted("rename")) && valid)
+        {
+            world.closePopup(scene(), renameDialog);
+            core::Result<asset::Project> project = asset::loadProject(manager.selected);
+            if (project)
+            {
+                project->name = manager.renameBuffer;
+                if (core::Result<void> saved = asset::saveProject(*project); !saved)
+                {
+                    DEVEX_LOG_ERROR("Cannot rename the project: {}", saved.error());
+                }
+            }
+            else
+            {
+                DEVEX_LOG_ERROR("Cannot rename the project: {}", project.error());
+            }
+            manager.refresh = true;
+        }
+        else if (world.wasClicked(renameCancel.entity) || world.wasCancelled() || escaped)
+        {
+            world.closePopup(scene(), renameDialog);
+        }
+    }
+    if (world.isPopupOpen(scene(), removeDialog))
+    {
+        if (world.wasClicked(removeConfirm.entity))
+        {
+            world.closePopup(scene(), removeDialog);
+            state.projects.remove(manager.selected);
+            manager.selected.clear();
+            manager.refresh = true;
+            saveUserSettings(state);
+        }
+        else if (world.wasClicked(removeCancel.entity) || world.wasCancelled() || escaped)
+        {
+            world.closePopup(scene(), removeDialog);
+        }
+    }
 
     if (opened)
     {
         openProject(state, *opened);
+    }
+}
+
+void drawProjectManager(ToolsState& state)
+{
+    if (!state.uiKit)
+    {
+        state.uiKit = std::make_shared<EditorUiKit>(state.renderer, state.icons,
+                                                    state.platform.baseDirectory() / "resources" / "fonts");
+    }
+    if (!state.projectManagerUi)
+    {
+        state.projectManagerUi = std::make_shared<ProjectManagerUi>();
+    }
+
+    const ImGuiViewport* const viewport = ImGui::GetMainViewport();
+    ImGui::SetNextWindowPos(viewport->WorkPos);
+    ImGui::SetNextWindowSize(viewport->WorkSize);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+    const ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
+                                   ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoBringToFrontOnFocus |
+                                   ImGuiWindowFlags_NoScrollWithMouse;
+    const bool visible = ImGui::Begin("Project Manager", nullptr, flags);
+    ImGui::PopStyleVar(2);
+    if (visible)
+    {
+        state.projectManagerUi->update(state, *state.uiKit, core::Duration(ImGui::GetIO().DeltaTime));
+    }
+    ImGui::End();
+}
+
+void renderProjectManager(ToolsState& state, render::RenderWorld& world)
+{
+    if (state.projectManagerUi && state.uiKit)
+    {
+        state.projectManagerUi->panel.render(*state.uiKit, world, linearColor(themeColors().outer));
     }
 }
 

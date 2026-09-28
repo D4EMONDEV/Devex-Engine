@@ -173,6 +173,12 @@ internal unsafe struct NativeApi
     public delegate* unmanaged<Vec3*, Vec3*, Vec3**, int> NavFindPath;
     public delegate* unmanaged<Vec3*, float, Vec3*, int> NavSamplePosition;
     public delegate* unmanaged<Vec3*, Vec3*, Vec3*, Vec3*, int> NavRaycast;
+    public delegate* unmanaged<void*, Entity, Vec2*, void> UiOpenPopup;
+    public delegate* unmanaged<void*, Entity, void> UiClosePopup;
+    public delegate* unmanaged<void*, Entity, int> UiPopupOpen;
+    public delegate* unmanaged<Entity> UiContextTarget;
+    public delegate* unmanaged<byte*, int> UiDoubleClickedAction;
+    public delegate* unmanaged<Entity, int> UiDoubleClickedEntity;
 }
 
 /// <summary>The C# functions the engine calls. Filled by the runtime when it starts.</summary>
@@ -200,7 +206,7 @@ internal unsafe struct BootstrapArguments
 /// <summary>What the engine calls into: filling the function tables, then the game itself.</summary>
 public static unsafe class Bootstrap
 {
-    internal const int Version = 15;
+    internal const int Version = 16;
 
     internal static NativeApi Native;
     private static byte[]? _description;

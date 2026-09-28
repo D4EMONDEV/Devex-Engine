@@ -138,6 +138,15 @@ ComponentRegistry& componentRegistry()
         builtins.add<UiToggle>();
         builtins.add<UiLayout>();
         builtins.add<UiScroll>();
+        builtins.add<UiPopup>();
+        builtins.add<UiContextMenu>();
+        builtins.add<UiTooltip>();
+        builtins.add<UiDropdown>();
+        builtins.add<UiSplitter>();
+        builtins.add<UiFoldout>();
+        builtins.add<UiVirtualList>();
+        builtins.add<UiTable>();
+        builtins.add<UiTableRow>();
         return builtins;
     }();
     return registry;

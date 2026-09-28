@@ -166,6 +166,11 @@ bool Renderer::imGuiNeedsLinearColors() const noexcept
     return m_implementation->imGuiNeedsLinearColors();
 }
 
+std::uint64_t Renderer::uiSurfaceTexture(std::uint32_t id) noexcept
+{
+    return vulkan::VulkanRenderer::uiSurfaceTextureBase + id;
+}
+
 std::uint64_t Renderer::viewportTexture() noexcept
 {
     return vulkan::VulkanRenderer::viewportTextureId;

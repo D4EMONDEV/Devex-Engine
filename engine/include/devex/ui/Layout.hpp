@@ -42,6 +42,8 @@ struct LaidOutRect
     // The room its children take, for an element that scrolls: what lies beyond its own size is
     // what the offset can reach.
     math::Vec2 content{0.0f};
+    // How many elements after it lie under it: its subtree is itself and those.
+    std::uint32_t descendants = 0;
 
     [[nodiscard]] math::Vec2 size() const noexcept
     {
@@ -64,8 +66,28 @@ struct LayoutResult
 [[nodiscard]] float canvasScale(const scene::Canvas& canvas, math::Vec2 windowSize) noexcept;
 
 // Places every UiRect under the canvas entity. The canvas itself fills the window.
+// A popup opened at a point, which it takes as its top left corner, in units of its canvas.
+struct PopupPlacement
+{
+    scene::Entity popup;
+    math::Vec2 point{0.0f};
+};
+
+// Open popups are laid out after the rest of their canvas, so that they are drawn over it and
+// answer the pointer first, and nothing above them cuts or scrolls them. Those opened at a point
+// stand there, inside the canvas.
 void layoutCanvas(const scene::Scene& scene, scene::Entity canvas, math::Vec2 windowSize,
-                  LayoutResult& result);
+                  LayoutResult& result, std::span<const PopupPlacement> popups = {});
+
+// The index after the last descendant of the element at `index`: its subtree is [index, end).
+[[nodiscard]] std::size_t subtreeEnd(std::span<const LaidOutRect> rects, std::size_t index) noexcept;
+
+// The bar of a splitter laid out in `rect`, between its two children: its corners, in units.
+[[nodiscard]] std::pair<math::Vec2, math::Vec2> splitterBar(const LaidOutRect& rect,
+                                                            const scene::UiSplitter& splitter) noexcept;
+
+// The item the first child of a virtual list shows: the first one in view.
+[[nodiscard]] std::uint32_t virtualFirst(const LaidOutRect& rect, const scene::UiVirtualList& list) noexcept;
 
 // Whether the rectangle cuts anything, and what is left of a box once it is cut.
 [[nodiscard]] bool isClipped(const math::Vec4& clip) noexcept;

@@ -9,6 +9,7 @@
 #include <devex/ui/TextLayout.hpp>
 
 #include <algorithm>
+#include <functional>
 #include <array>
 #include <cmath>
 #include <cstdint>
@@ -109,7 +110,9 @@ namespace {
     if (scene.tryGet<scene::UiButton>(entity) != nullptr ||
         scene.tryGet<scene::UiInput>(entity) != nullptr ||
         scene.tryGet<scene::UiSlider>(entity) != nullptr ||
-        scene.tryGet<scene::UiToggle>(entity) != nullptr)
+        scene.tryGet<scene::UiToggle>(entity) != nullptr ||
+        scene.tryGet<scene::UiDropdown>(entity) != nullptr ||
+        scene.tryGet<scene::UiFoldout>(entity) != nullptr)
     {
         return true;
     }
@@ -145,6 +148,14 @@ namespace {
     {
         return slider->interactable;
     }
+    if (const scene::UiDropdown* const dropdown = scene.tryGet<scene::UiDropdown>(entity))
+    {
+        return dropdown->interactable;
+    }
+    if (const scene::UiFoldout* const foldout = scene.tryGet<scene::UiFoldout>(entity))
+    {
+        return foldout->interactable;
+    }
     return false;
 }
 
@@ -170,20 +181,24 @@ struct FieldHit
 
 [[nodiscard]] FieldHit fieldUnder(const scene::Scene& scene,
                                   std::span<const UiWorld::CanvasLayout> canvases,
-                                  math::Vec2 pointer)
+                                  math::Vec2 pointer,
+                                  const std::function<bool(std::size_t, std::size_t)>& reachable)
 {
     // The topmost canvas answers first, and inside it the element drawn last.
-    for (auto canvas = canvases.rbegin(); canvas != canvases.rend(); ++canvas)
+    for (std::size_t canvasIndex = canvases.size(); canvasIndex-- > 0;)
     {
+        const UiWorld::CanvasLayout* const canvas = &canvases[canvasIndex];
         if (!canvas->interactive || canvas->layout.scale <= 0.0f)
         {
             continue;
         }
         const math::Vec2 point{pointer.x / canvas->layout.scale, pointer.y / canvas->layout.scale};
         const std::vector<LaidOutRect>& rects = canvas->layout.rects;
-        for (auto rect = rects.rbegin(); rect != rects.rend(); ++rect)
+        for (std::size_t rectIndex = rects.size(); rectIndex-- > 0;)
         {
-            if (!rect->visible || rect->opacity <= 0.0f || !contains(*rect, point))
+            const LaidOutRect* const rect = &rects[rectIndex];
+            if (!rect->visible || rect->opacity <= 0.0f || !reachable(canvasIndex, rectIndex) ||
+                !contains(*rect, point))
             {
                 continue;
             }
@@ -217,56 +232,73 @@ struct FieldHit
 void UiWorld::update(scene::Scene& scene, math::Vec2 windowSize, const UiInput& input,
                      core::Duration delta)
 {
+    const float seconds = std::chrono::duration<float>(delta).count();
+    m_clock += static_cast<double>(seconds);
+    m_windowSize = windowSize;
     m_clicked.clear();
     m_clickedActions.clear();
     m_changed.clear();
     m_changedActions.clear();
     m_submitted.clear();
     m_submittedActions.clear();
+    m_doubleClicked.clear();
+    m_doubleClickedActions.clear();
     m_clipboardRequest.clear();
     m_cancelled = input.cancelPressed;
 
     updateBindings(scene);
     // Before the layout, so that a style that moves or sizes an element does so this frame.
     m_theme.apply(scene);
+    layoutCanvases(scene);
+    findModal(scene);
 
-    // The canvases of the scene, laid out in the order they are drawn.
-    std::vector<CanvasLayout> previous = std::move(m_canvases);
-    m_canvases.clear();
-    for (auto [entity, canvas] : scene.view<scene::Canvas>())
+    // What stands over the canvases takes the pointer first: the list of an open dropdown, the
+    // menus the pointer presses outside of, and what it starts to drag. The rest of the interface
+    // then sees neither the press nor the wheel.
+    UiInput rest = input;
+    const bool listed = updateDropdown(scene, rest);
+    bool taken = listed || closeMenusOutside(scene, input) || startDrag(scene, input);
+    updateDrag(scene, input);
+    taken = taken || m_drag.kind != DragKind::None;
+    if (taken)
     {
-        if (!canvas.visible)
-        {
-            continue;
-        }
-        CanvasLayout state{.entity = entity,
-                           .sortOrder = canvas.sortOrder,
-                           .interactive = canvas.interactive};
-        // The room a canvas laid out last frame is reused rather than allocated again.
-        if (const auto found = std::ranges::find(previous, entity, &CanvasLayout::entity);
-            found != previous.end())
-        {
-            state.layout = std::move(found->layout);
-        }
-        layoutCanvas(scene, entity, windowSize, state.layout);
-        m_canvases.push_back(std::move(state));
+        rest.pointerPressed = false;
+        rest.pointerReleased = rest.pointerReleased && m_pressed.isValid();
+        rest.secondaryPressed = false;
     }
-    std::ranges::stable_sort(m_canvases, {}, &CanvasLayout::sortOrder);
+    if (listed)
+    {
+        rest.wheel = 0.0f;
+        rest.moveX = 0;
+        rest.moveY = 0;
+        rest.submitPressed = false;
+        rest.cancelPressed = false;
+    }
+    else if (rest.cancelPressed && closeTopMenu(scene))
+    {
+        // Escape closed a menu: it does not go back as well.
+        m_cancelled = false;
+        rest.cancelPressed = false;
+    }
+    if (rest.secondaryPressed)
+    {
+        openContextMenu(scene, rest);
+    }
 
-    updateHover(scene, input);
-    updateScroll(scene, input);
+    updateHover(scene, rest);
+    updateScroll(scene, rest);
     const bool editedBefore = m_editing.entity.isValid();
-    updateFields(scene, input, delta);
+    updateFields(scene, rest, delta);
     // While a field takes what is typed, the keys belong to it rather than to the menu around it.
     const bool editing = editedBefore || m_editing.entity.isValid();
     // The arrows that moved a slider do not move the focus as well.
-    const bool slid = updateSliders(scene, input);
+    const bool slid = updateSliders(scene, rest);
     if (!editing && !slid)
     {
-        updateNavigation(scene, input);
+        updateNavigation(scene, rest);
     }
 
-    if (input.pointerPressed)
+    if (rest.pointerPressed)
     {
         m_pressed = takesFocus(scene, m_hovered) ? m_hovered : scene::Entity{};
         if (m_pressed.isValid())
@@ -274,7 +306,7 @@ void UiWorld::update(scene::Scene& scene, math::Vec2 windowSize, const UiInput& 
             m_focused = m_pressed;
         }
     }
-    if (input.pointerReleased)
+    if (rest.pointerReleased)
     {
         // A click needs the press and the release on the same button, as every interface does.
         if (m_pressed.isValid() && m_pressed == m_hovered)
@@ -283,11 +315,13 @@ void UiWorld::update(scene::Scene& scene, math::Vec2 windowSize, const UiInput& 
         }
         m_pressed = scene::Entity{};
     }
-    if (input.submitPressed && !editing && takesFocus(scene, m_focused))
+    if (rest.submitPressed && !editing && takesFocus(scene, m_focused))
     {
         click(scene, m_focused);
     }
 
+    updateControls(scene, rest);
+    updateTooltip(scene, input, seconds);
     updateTints(scene, delta);
 }
 
@@ -349,9 +383,16 @@ void UiWorld::updateHover(const scene::Scene& scene, const UiInput& input)
 {
     m_hovered = scene::Entity{};
     m_pointerOverInterface = false;
-    // The topmost canvas answers first, and inside it the element drawn last.
-    for (auto canvas = m_canvases.rbegin(); canvas != m_canvases.rend(); ++canvas)
+    if (m_dropdown)
     {
+        // The open list takes the pointer.
+        m_pointerOverInterface = true;
+        return;
+    }
+    // The topmost canvas answers first, and inside it the element drawn last.
+    for (std::size_t canvasIndex = m_canvases.size(); canvasIndex-- > 0;)
+    {
+        const CanvasLayout* const canvas = &m_canvases[canvasIndex];
         if (!canvas->interactive || canvas->layout.scale <= 0.0f)
         {
             continue;
@@ -359,10 +400,11 @@ void UiWorld::updateHover(const scene::Scene& scene, const UiInput& input)
         const math::Vec2 point{input.pointer.x / canvas->layout.scale,
                                input.pointer.y / canvas->layout.scale};
         const std::vector<LaidOutRect>& rects = canvas->layout.rects;
-        for (auto rect = rects.rbegin(); rect != rects.rend(); ++rect)
+        for (std::size_t rectIndex = rects.size(); rectIndex-- > 0;)
         {
-            if (!rect->visible || rect->opacity <= 0.0f || !answersPointer(scene, rect->entity) ||
-                !contains(*rect, point))
+            const LaidOutRect* const rect = &rects[rectIndex];
+            if (!rect->visible || rect->opacity <= 0.0f || !reachable(canvasIndex, rectIndex) ||
+                !answersPointer(scene, rect->entity) || !contains(*rect, point))
             {
                 continue;
             }
@@ -383,8 +425,9 @@ void UiWorld::updateScroll(scene::Scene& scene, const UiInput& input)
         return;
     }
     // The wheel moves the innermost list under the pointer, as every interface does.
-    for (auto canvas = m_canvases.rbegin(); canvas != m_canvases.rend(); ++canvas)
+    for (std::size_t canvasIndex = m_canvases.size(); canvasIndex-- > 0;)
     {
+        const CanvasLayout* const canvas = &m_canvases[canvasIndex];
         if (!canvas->interactive || canvas->layout.scale <= 0.0f)
         {
             continue;
@@ -392,10 +435,12 @@ void UiWorld::updateScroll(scene::Scene& scene, const UiInput& input)
         const math::Vec2 point{input.pointer.x / canvas->layout.scale,
                                input.pointer.y / canvas->layout.scale};
         const std::vector<LaidOutRect>& rects = canvas->layout.rects;
-        for (auto rect = rects.rbegin(); rect != rects.rend(); ++rect)
+        for (std::size_t rectIndex = rects.size(); rectIndex-- > 0;)
         {
+            const LaidOutRect* const rect = &rects[rectIndex];
             scene::UiScroll* const scroll = scene.tryGet<scene::UiScroll>(rect->entity);
-            if (scroll == nullptr || !rect->visible || !contains(*rect, point))
+            if (scroll == nullptr || !rect->visible || !reachable(canvasIndex, rectIndex) ||
+                !contains(*rect, point))
             {
                 continue;
             }
@@ -423,13 +468,16 @@ void UiWorld::updateNavigation(const scene::Scene& scene, const UiInput& input)
     {
         return;
     }
-    // The buttons the focus can reach: the ones of the topmost canvas that answers.
+    // The buttons the focus can reach: the ones of the open modal, or of the topmost canvas that
+    // answers.
     const CanvasLayout* canvas = nullptr;
-    for (auto state = m_canvases.rbegin(); state != m_canvases.rend(); ++state)
+    std::size_t canvasIndex = 0;
+    for (std::size_t index = m_canvases.size(); index-- > 0;)
     {
-        if (state->interactive)
+        if (m_canvases[index].interactive && (!m_modal || m_modal->canvas == index))
         {
-            canvas = &*state;
+            canvas = &m_canvases[index];
+            canvasIndex = index;
             break;
         }
     }
@@ -437,14 +485,21 @@ void UiWorld::updateNavigation(const scene::Scene& scene, const UiInput& input)
     {
         return;
     }
+    const auto inReach = [&](const LaidOutRect& rect) {
+        return reachable(canvasIndex, static_cast<std::size_t>(&rect - canvas->layout.rects.data()));
+    };
 
-    const LaidOutRect* const from = canvas->layout.find(m_focused);
+    const LaidOutRect* from = canvas->layout.find(m_focused);
+    if (from != nullptr && !inReach(*from))
+    {
+        from = nullptr;
+    }
     if (from == nullptr)
     {
         // Nothing is focused yet: the first button of the canvas takes it.
         for (const LaidOutRect& rect : canvas->layout.rects)
         {
-            if (rect.visible && takesFocus(scene, rect.entity))
+            if (rect.visible && inReach(rect) && takesFocus(scene, rect.entity))
             {
                 m_focused = rect.entity;
                 return;
@@ -459,7 +514,7 @@ void UiWorld::updateNavigation(const scene::Scene& scene, const UiInput& input)
     float bestDistance = std::numeric_limits<float>::max();
     for (const LaidOutRect& rect : canvas->layout.rects)
     {
-        if (!rect.visible || rect.entity == m_focused || !takesFocus(scene, rect.entity))
+        if (!rect.visible || rect.entity == m_focused || !inReach(rect) || !takesFocus(scene, rect.entity))
         {
             continue;
         }
@@ -495,7 +550,8 @@ void UiWorld::updateFields(scene::Scene& scene, const UiInput& input, core::Dura
 
     if (input.pointerPressed)
     {
-        const FieldHit hit = fieldUnder(scene, m_canvases, input.pointer);
+        const FieldHit hit = fieldUnder(scene, m_canvases, input.pointer,
+                                        [this](std::size_t canvas, std::size_t rect) { return reachable(canvas, rect); });
         if (hit.entity != m_editing.entity)
         {
             m_editing = EditingField{.entity = hit.entity};
@@ -891,6 +947,30 @@ void UiWorld::click(scene::Scene& scene, scene::Entity entity)
     {
         return;
     }
+    // A dropdown opens its list, which says what was chosen.
+    if (const scene::UiDropdown* const dropdown = scene.tryGet<scene::UiDropdown>(entity))
+    {
+        if (dropdown->interactable)
+        {
+            openDropdown(scene, entity);
+        }
+        return;
+    }
+    if (scene::UiFoldout* const foldout = scene.tryGet<scene::UiFoldout>(entity);
+        foldout != nullptr && foldout->interactable)
+    {
+        foldout->expanded = !foldout->expanded;
+        if (scene::UiRect* const content = scene.tryGet<scene::UiRect>(scene.resolve(foldout->content)))
+        {
+            content->visible = foldout->expanded;
+        }
+        m_changed.push_back(entity);
+        if (!foldout->action.empty())
+        {
+            m_changedActions.push_back(foldout->action);
+        }
+    }
+    noteClick(scene, entity);
     m_clicked.push_back(entity);
     if (const scene::UiButton* const button = scene.tryGet<scene::UiButton>(entity);
         button != nullptr && !button->action.empty())
@@ -907,6 +987,8 @@ void UiWorld::click(scene::Scene& scene, scene::Entity entity)
             m_changedActions.push_back(toggle->action);
         }
     }
+    // A button of a menu has done what it was for: the menu closes.
+    closeMenusHolding(scene, entity);
 }
 
 bool UiWorld::updateSliders(scene::Scene& scene, const UiInput& input)
@@ -1005,9 +1087,69 @@ void UiWorld::build(const scene::Scene& scene, const DrawContext& context,
     {
         withTints.editing = [this](scene::Entity entity) { return editStateOf(entity); };
     }
+    if (!withTints.grabbed)
+    {
+        withTints.grabbed = [this](scene::Entity entity) {
+            return entity == m_barHover || (m_drag.kind == DragKind::Splitter && entity == m_drag.entity);
+        };
+    }
     for (const CanvasLayout& canvas : m_canvases)
     {
         buildDrawList(scene, canvas.layout, withTints, world);
+    }
+
+    // The list of an open dropdown, over every canvas.
+    math::Vec2 listMin{0.0f};
+    math::Vec2 listMax{0.0f};
+    float item = 0.0f;
+    std::size_t shown = 0;
+    if (m_dropdown && dropdownList(scene, listMin, listMax, item, shown))
+    {
+        const scene::UiDropdown& dropdown = scene.get<scene::UiDropdown>(m_dropdown->entity);
+        const scene::UiText* const text = scene.tryGet<scene::UiText>(m_dropdown->entity);
+        const CanvasLayout* const canvas = canvasOf(m_dropdown->entity);
+        const float scale = canvas != nullptr ? canvas->layout.scale : 1.0f;
+        drawOverlayBox(world, listMin, listMax, dropdown.listColor, 4.0f * scale);
+        for (std::size_t row = 0; row < shown; ++row)
+        {
+            const std::size_t option = m_dropdown->first + row;
+            if (option >= dropdown.options.size())
+            {
+                break;
+            }
+            const math::Vec2 rowMin{listMin.x, listMin.y + item * static_cast<float>(row)};
+            const math::Vec2 rowMax{listMax.x, rowMin.y + item};
+            if (static_cast<std::int32_t>(option) == m_dropdown->highlighted)
+            {
+                drawOverlayBox(world, rowMin, rowMax, dropdown.highlightColor, 3.0f * scale);
+            }
+            const OverlayText label{.text = dropdown.options[option],
+                                    .font = text != nullptr ? text->font : asset::AssetId{},
+                                    .size = (text != nullptr ? text->size : 18.0f) * scale,
+                                    .color = text != nullptr ? text->color : math::Vec4{1.0f}};
+            drawOverlayText(world, withTints, math::Vec2{rowMin.x + 10.0f * scale, rowMin.y},
+                            math::Vec2{rowMax.x - 6.0f * scale, rowMax.y}, label);
+        }
+    }
+
+    // The tooltip, over everything, kept inside the image.
+    if (m_tooltip.shown && scene.isAlive(m_tooltip.entity))
+    {
+        if (const scene::UiTooltip* const tooltip = scene.tryGet<scene::UiTooltip>(m_tooltip.entity);
+            tooltip != nullptr && !tooltip->text.empty())
+        {
+            const OverlayText label{.text = tooltip->text,
+                                    .font = m_tooltipStyle.font,
+                                    .size = m_tooltipStyle.size,
+                                    .color = m_tooltipStyle.text};
+            const math::Vec2 measured = measureOverlayText(withTints, label);
+            const math::Vec2 size = measured + math::Vec2{m_tooltipStyle.padding * 2.0f};
+            math::Vec2 at = m_tooltip.at + math::Vec2{12.0f, 18.0f};
+            at.x = std::clamp(at.x, 0.0f, std::max(m_windowSize.x - size.x, 0.0f));
+            at.y = at.y + size.y > m_windowSize.y ? std::max(m_tooltip.at.y - size.y - 4.0f, 0.0f) : at.y;
+            drawOverlayBox(world, at, at + size, m_tooltipStyle.background, m_tooltipStyle.cornerRadius);
+            drawOverlayText(world, withTints, at + math::Vec2{m_tooltipStyle.padding}, at + size, label);
+        }
     }
 }
 
@@ -1050,6 +1192,16 @@ void UiWorld::setFonts(std::function<FontRef(asset::AssetId)> fonts, asset::Asse
 void UiWorld::setThemes(ThemeSource themes)
 {
     m_theme.setThemes(std::move(themes));
+}
+
+void UiWorld::startEditing(const scene::Scene& scene, scene::Entity field)
+{
+    if (!isEditable(scene, field))
+    {
+        return;
+    }
+    const std::size_t end = scene.get<scene::UiText>(field).text.size();
+    m_editing = EditingField{.entity = field, .caret = end, .anchor = 0};
 }
 
 scene::Entity UiWorld::editedField() const noexcept
@@ -1126,6 +1278,17 @@ void UiWorld::clear()
     m_cancelled = false;
     m_editing = EditingField{};
     m_editVisual = EditState{};
+    m_popupPlacements.clear();
+    m_modal.reset();
+    m_contextTarget = scene::Entity{};
+    m_lastClick = scene::Entity{};
+    m_lastClickTime = -1.0;
+    m_doubleClicked.clear();
+    m_doubleClickedActions.clear();
+    m_drag = Drag{};
+    m_headerPressed = scene::Entity{};
+    m_dropdown.reset();
+    m_tooltip = Tooltip{};
 }
 
 } // namespace devex::ui

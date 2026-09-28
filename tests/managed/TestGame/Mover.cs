@@ -573,3 +573,39 @@ public class Navigator : Component
         Arrived = Arrived || !Navigation.HasDestination(Entity);
     }
 }
+
+// Opens a popup, reads the menu a right click opened and the double clicks of a row, and the
+// options of a dropdown.
+public class Menus : Component
+{
+    public Entity Popup;
+    public Entity Row;
+    public Entity Choice;
+    public int Step;
+    public bool Opened;
+    public bool TargetSeen;
+    public bool DoubleClicked;
+    public bool Closed;
+    public int Options;
+    public string SecondOption = "";
+
+    public override void Update(float delta)
+    {
+        if (Step == 0)
+        {
+            Ui.OpenPopup(Popup, new Vec2(300.0f, 120.0f));
+            Opened = Ui.IsPopupOpen(Popup);
+            var dropdown = Choice.Get<UiDropdown>();
+            Options = dropdown.Options.Count;
+            SecondOption = dropdown.Options[1];
+        }
+        TargetSeen = TargetSeen || Ui.ContextTarget == Row;
+        DoubleClicked = DoubleClicked || Ui.WasDoubleClicked(Row);
+        if (Step == 6)
+        {
+            Ui.ClosePopup(Popup);
+            Closed = !Ui.IsPopupOpen(Popup);
+        }
+        ++Step;
+    }
+}

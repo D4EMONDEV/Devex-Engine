@@ -39,6 +39,8 @@ struct UiInput
     bool pointerPressed = false;
     bool pointerReleased = false;
     bool pointerMoved = false;
+    // The second button, which opens context menus.
+    bool secondaryPressed = false;
     // -1, 0 or 1: which way the focus moves.
     int moveX = 0;
     int moveY = 0;
@@ -63,6 +65,18 @@ struct UiInput
     bool selectAllPressed = false;
     // What the clipboard holds, and what the interface asks to put in it.
     std::string clipboard;
+};
+
+// How the tooltips look: the interface world draws them over every canvas, in pixels.
+struct TooltipStyle
+{
+    math::Vec4 background{0.08f, 0.09f, 0.11f, 0.96f};
+    math::Vec4 text{0.92f, 0.93f, 0.95f, 1.0f};
+    // The font, or the default one.
+    asset::AssetId font;
+    float size = 15.0f;
+    float padding = 6.0f;
+    float cornerRadius = 4.0f;
 };
 
 // The interfaces of a game that plays: the canvases of its scene, laid out every frame, answering
@@ -103,9 +117,25 @@ public:
     // for a field that is not being edited.
     [[nodiscard]] const EditState* editStateOf(scene::Entity entity) const noexcept;
 
-    // Appends the canvases of the last update to the frame, the lowest sort order first.
+    // Appends the canvases of the last update to the frame, the lowest sort order first, then what
+    // stands over all of them: the list of an open dropdown, and the tooltip.
     void build(const scene::Scene& scene, const DrawContext& context,
                render::RenderWorld& world) const;
+
+    // Opens a popup where its anchors put it, or with its top left corner at a point of the image,
+    // in pixels. Menus close by themselves; a modal stays until it is closed.
+    void openPopup(scene::Scene& scene, scene::Entity popup, std::optional<math::Vec2> at = std::nullopt);
+    void closePopup(scene::Scene& scene, scene::Entity popup);
+    [[nodiscard]] bool isPopupOpen(const scene::Scene& scene, scene::Entity popup) const;
+    // The element whose UiContextMenu opened the last context menu, such as the row of a list.
+    [[nodiscard]] scene::Entity contextTarget() const noexcept;
+    // Whether a button was clicked twice in a row, quickly, during this frame; the second click
+    // also counts as a click.
+    [[nodiscard]] bool wasDoubleClicked(std::string_view action) const;
+    [[nodiscard]] bool wasDoubleClicked(scene::Entity entity) const;
+    void setTooltipStyle(TooltipStyle style);
+    // Gives a field the keyboard, its text selected, as a form does for its first field.
+    void startEditing(const scene::Scene& scene, scene::Entity field);
 
     // Whether a button of that action was clicked during the last update. An action names as many
     // buttons as a game needs: any of them answers.
@@ -133,6 +163,47 @@ public:
     void clear();
 
 private:
+    // The modal every input goes to while it is open: its canvas and its elements there.
+    struct ModalRange
+    {
+        std::size_t canvas = 0;
+        std::size_t begin = 0;
+        std::size_t end = 0;
+    };
+
+    // An element the pointer drags: the thumb of a scrollbar, the bar of a splitter, the edge of
+    // a column. The grab is where the pointer took it, in units of its canvas.
+    enum class DragKind : std::uint8_t
+    {
+        None,
+        ScrollVertical,
+        ScrollHorizontal,
+        Splitter,
+        Column,
+    };
+    struct Drag
+    {
+        DragKind kind = DragKind::None;
+        scene::Entity entity;
+        float grab = 0.0f;
+        std::size_t column = 0;
+    };
+
+    // The dropdown whose list is open, the option under the pointer, and the first one shown.
+    struct OpenDropdown
+    {
+        scene::Entity entity;
+        std::int32_t highlighted = -1;
+        std::size_t first = 0;
+    };
+
+    struct Tooltip
+    {
+        scene::Entity entity;
+        float rested = 0.0f;
+        bool shown = false;
+        math::Vec2 at{0.0f};
+    };
     struct ButtonState
     {
         scene::Entity entity;
@@ -175,6 +246,31 @@ private:
     [[nodiscard]] std::size_t caretFromPoint(const scene::Scene& scene, scene::Entity entity,
                                              const LaidOutRect& rect, math::Vec2 point);
 
+    // Popups, context menus, modals, dropdowns, tooltips, scrollbars, splitters, foldouts, tables
+    // and virtual lists, in Controls.cpp.
+    void layoutCanvases(scene::Scene& scene);
+    void findModal(const scene::Scene& scene);
+    [[nodiscard]] bool reachable(std::size_t canvas, std::size_t rect) const noexcept;
+    // Closes the menus the pointer pressed outside of; answers whether the press was taken.
+    [[nodiscard]] bool closeMenusOutside(scene::Scene& scene, const UiInput& input);
+    void closeMenusHolding(scene::Scene& scene, scene::Entity entity);
+    [[nodiscard]] bool closeTopMenu(scene::Scene& scene);
+    void openContextMenu(scene::Scene& scene, const UiInput& input);
+    [[nodiscard]] bool updateDropdown(scene::Scene& scene, const UiInput& input);
+    void openDropdown(const scene::Scene& scene, scene::Entity entity);
+    // The rectangles of the open dropdown list: the whole list and one option, in pixels.
+    [[nodiscard]] bool dropdownList(const scene::Scene& scene, math::Vec2& min, math::Vec2& max, float& item,
+                                    std::size_t& shown) const;
+    [[nodiscard]] bool startDrag(scene::Scene& scene, const UiInput& input);
+    void updateDrag(scene::Scene& scene, const UiInput& input);
+    void updateControls(scene::Scene& scene, const UiInput& input);
+    void updateTooltip(const scene::Scene& scene, const UiInput& input, float seconds);
+    void noteClick(const scene::Scene& scene, scene::Entity entity);
+    [[nodiscard]] std::optional<std::pair<std::size_t, std::size_t>> hit(const scene::Scene& scene, math::Vec2 pointer,
+                                                                         bool anyElement) const;
+    [[nodiscard]] math::Vec2 toCanvas(std::size_t canvas, math::Vec2 pointer) const noexcept;
+    [[nodiscard]] scene::Entity canvasEntityOf(const scene::Scene& scene, scene::Entity entity) const;
+
     std::vector<CanvasLayout> m_canvases;
     std::vector<ButtonState> m_buttons;
     std::vector<scene::Entity> m_clicked;
@@ -198,6 +294,27 @@ private:
     asset::AssetId m_defaultFont;
     // Kept from one frame to the next, so that a field that is typed into allocates nothing.
     TextLayoutResult m_fieldLayout;
+
+    math::Vec2 m_windowSize{0.0f};
+    // Seconds since the world started, which tells a double click from two clicks.
+    double m_clock = 0.0;
+    std::vector<PopupPlacement> m_popupPlacements;
+    std::optional<ModalRange> m_modal;
+    scene::Entity m_contextTarget;
+    // The last click, for the next one to be a double click.
+    scene::Entity m_lastClick;
+    double m_lastClickTime = -1.0;
+    std::vector<scene::Entity> m_doubleClicked;
+    std::vector<std::string> m_doubleClickedActions;
+    Drag m_drag;
+    // The splitter whose bar the pointer rests on, which lights up.
+    scene::Entity m_barHover;
+    // The header cell pressed, which sorts its table if the pointer is let go on it.
+    scene::Entity m_headerPressed;
+    std::size_t m_headerColumn = 0;
+    std::optional<OpenDropdown> m_dropdown;
+    Tooltip m_tooltip;
+    TooltipStyle m_tooltipStyle;
 };
 
 } // namespace devex::ui

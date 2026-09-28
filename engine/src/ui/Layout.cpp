@@ -168,10 +168,56 @@ void placeInLayout(const scene::Scene& scene, const scene::UiLayout& layout,
     }
 }
 
+// Places the first two children of a splitter on either side of its bar.
+void placeInSplitter(const scene::UiSplitter& splitter, std::span<const scene::Entity> children,
+                     math::Vec2 parentMin, math::Vec2 parentSize, std::vector<math::Vec2>& mins,
+                     std::vector<math::Vec2>& maxes)
+{
+    const int axis = splitter.vertical ? 1 : 0;
+    const float length = component(parentSize, axis);
+    const float bar = std::clamp(splitter.barSize, 0.0f, length);
+    const float low = std::min(std::max(splitter.minSize, 0.0f), (length - bar) * 0.5f);
+    const float position = std::clamp(splitter.position, low, std::max(length - bar - low, low));
+    for (std::size_t index = 0; index < std::min<std::size_t>(children.size(), 2); ++index)
+    {
+        mins[index] = parentMin;
+        maxes[index] = parentMin + parentSize;
+        const float start = component(parentMin, axis);
+        if (index == 0)
+        {
+            setComponent(maxes[index], axis, start + position);
+        }
+        else
+        {
+            setComponent(mins[index], axis, start + position + bar);
+        }
+    }
+    // A third child and beyond have no room: they are laid out empty at the end.
+    for (std::size_t index = 2; index < children.size(); ++index)
+    {
+        mins[index] = parentMin + parentSize;
+        maxes[index] = parentMin + parentSize;
+    }
+}
+
+// The widths of the columns of the table a row belongs to, or nothing when no table holds it.
+[[nodiscard]] const scene::UiTable* tableOf(const scene::Scene& scene, scene::Entity row) noexcept
+{
+    for (scene::Entity above = scene.parent(row); above.isValid(); above = scene.parent(above))
+    {
+        if (const scene::UiTable* const table = scene.tryGet<scene::UiTable>(above))
+        {
+            return table;
+        }
+    }
+    return nullptr;
+}
+
 // Lays out the children of one element, then their own children, parents first.
 void layoutChildren(const scene::Scene& scene, scene::Entity parent, math::Vec2 parentMin,
                     math::Vec2 parentSize, float opacity, bool visible, std::uint16_t depth,
-                    const math::Vec4& clip, math::Vec2 shift, LayoutResult& result)
+                    const math::Vec4& clip, math::Vec2 shift, std::span<const PopupPlacement> popups,
+                    LayoutResult& result)
 {
     // An interface nested deeper than this is a mistake; the limit also guards the recursion.
     if (depth > 64)
@@ -187,7 +233,42 @@ void layoutChildren(const scene::Scene& scene, scene::Entity parent, math::Vec2 
     std::vector<math::Vec2> mins(children.size());
     std::vector<math::Vec2> maxes(children.size());
     std::vector<scene::Entity> placed;
-    if (const scene::UiLayout* const layout = scene.tryGet<scene::UiLayout>(parent))
+    // The rows of a virtual list stand at the items in view, the first one at the first in view.
+    const scene::UiVirtualList* const virtualList = scene.tryGet<scene::UiVirtualList>(parent);
+    std::uint32_t firstItem = 0;
+    if (const scene::UiSplitter* const splitter = scene.tryGet<scene::UiSplitter>(parent))
+    {
+        placed = children;
+        placeInSplitter(*splitter, children, parentMin, parentSize, mins, maxes);
+    }
+    else if (const scene::UiTable* const table =
+                 scene.tryGet<scene::UiTableRow>(parent) != nullptr ? tableOf(scene, parent) : nullptr)
+    {
+        // The cells of a row, one per column, as wide as the column.
+        placed = children;
+        float pen = parentMin.x;
+        for (std::size_t index = 0; index < children.size(); ++index)
+        {
+            const float width = index < table->columns.size() ? std::max(table->columns[index], 0.0f) : 0.0f;
+            mins[index] = math::Vec2{pen, parentMin.y};
+            maxes[index] = math::Vec2{pen + width, parentMin.y + parentSize.y};
+            pen += width;
+        }
+    }
+    else if (virtualList != nullptr)
+    {
+        placed = children;
+        LaidOutRect self{.min = parentMin, .max = parentMin + parentSize, .clip = clip};
+        firstItem = virtualFirst(self, *virtualList);
+        const float item = std::max(virtualList->itemSize, 1.0f);
+        for (std::size_t index = 0; index < children.size(); ++index)
+        {
+            const float top = parentMin.y + (static_cast<float>(firstItem) + static_cast<float>(index)) * item;
+            mins[index] = math::Vec2{parentMin.x, top};
+            maxes[index] = math::Vec2{parentMin.x + parentSize.x, top + item};
+        }
+    }
+    else if (const scene::UiLayout* const layout = scene.tryGet<scene::UiLayout>(parent))
     {
         // A container skips its hidden children, so that a menu closes the gap they leave.
         std::vector<std::size_t> indices;
@@ -217,13 +298,17 @@ void layoutChildren(const scene::Scene& scene, scene::Entity parent, math::Vec2 
     {
         const scene::Entity child = children[index];
         const scene::UiRect& rect = scene.get<scene::UiRect>(child);
+        // A popup stands over everything: nothing above it cuts or scrolls it.
+        const bool popup = scene.tryGet<scene::UiPopup>(child) != nullptr;
+        // A row of a virtual list past its last item has nothing to show.
+        const bool shown = virtualList == nullptr || firstItem + index < virtualList->itemCount;
         LaidOutRect placement{.entity = child,
                               .scale = rect.scale,
                               .rotation = rect.rotation,
                               .opacity = opacity * std::clamp(rect.opacity, 0.0f, 1.0f),
-                              .visible = visible && rect.visible,
+                              .visible = visible && rect.visible && shown,
                               .depth = depth,
-                              .clip = clip};
+                              .clip = popup ? math::Vec4{0.0f} : clip};
         if (std::ranges::find(placed, child) != placed.end())
         {
             placement.min = mins[index];
@@ -233,9 +318,26 @@ void layoutChildren(const scene::Scene& scene, scene::Entity parent, math::Vec2 
         {
             placeByAnchors(rect, parentMin, parentSize, placement);
         }
-        // What scrolls moves its children, and cuts them to itself.
-        placement.min = placement.min + shift;
-        placement.max = placement.max + shift;
+        const auto opened = std::ranges::find(popups, child, &PopupPlacement::popup);
+        if (popup && opened != popups.end())
+        {
+            // Opened at a point: its own size from there, kept inside the canvas.
+            const math::Vec2 size = placement.size();
+            const math::Vec2 room = math::max(result.canvasSize - size, math::Vec2{0.0f});
+            placement.min = math::clamp(opened->point, math::Vec2{0.0f}, room);
+            placement.max = placement.min + size;
+        }
+        else if (!popup)
+        {
+            // What scrolls moves its children, and cuts them to itself.
+            placement.min = placement.min + shift;
+            placement.max = placement.max + shift;
+        }
+        if (const scene::UiVirtualList* const list = scene.tryGet<scene::UiVirtualList>(child))
+        {
+            // As tall as all its items, for the scroll around it to reach the last one.
+            placement.max.y = placement.min.y + static_cast<float>(list->itemCount) * std::max(list->itemSize, 1.0f);
+        }
         placement.pivot =
             math::Vec2{placement.min.x + (placement.max.x - placement.min.x) * rect.pivot.x,
                        placement.min.y + (placement.max.y - placement.min.y) * rect.pivot.y};
@@ -257,7 +359,8 @@ void layoutChildren(const scene::Scene& scene, scene::Entity parent, math::Vec2 
         const std::size_t firstChild = result.rects.size();
         layoutChildren(scene, child, placement.min, placement.size(), placement.opacity,
                        placement.visible, static_cast<std::uint16_t>(depth + 1), childClip,
-                       childShift, result);
+                       childShift, popups, result);
+        result.rects[placedAt].descendants = static_cast<std::uint32_t>(result.rects.size() - firstChild);
         if (scroll != nullptr)
         {
             // The room the children take, which says how far the content can be moved.
@@ -278,6 +381,36 @@ void layoutChildren(const scene::Scene& scene, scene::Entity parent, math::Vec2 
 }
 
 } // namespace
+
+std::size_t subtreeEnd(std::span<const LaidOutRect> rects, std::size_t index) noexcept
+{
+    return std::min(index + 1 + rects[index].descendants, rects.size());
+}
+
+std::pair<math::Vec2, math::Vec2> splitterBar(const LaidOutRect& rect, const scene::UiSplitter& splitter) noexcept
+{
+    const int axis = splitter.vertical ? 1 : 0;
+    const float length = component(rect.size(), axis);
+    const float bar = std::clamp(splitter.barSize, 0.0f, length);
+    const float low = std::min(std::max(splitter.minSize, 0.0f), (length - bar) * 0.5f);
+    const float position = std::clamp(splitter.position, low, std::max(length - bar - low, low));
+    math::Vec2 min = rect.min;
+    math::Vec2 max = rect.max;
+    setComponent(min, axis, component(rect.min, axis) + position);
+    setComponent(max, axis, component(rect.min, axis) + position + bar);
+    return {min, max};
+}
+
+std::uint32_t virtualFirst(const LaidOutRect& rect, const scene::UiVirtualList& list) noexcept
+{
+    if (!isClipped(rect.clip) || list.itemCount == 0)
+    {
+        return 0;
+    }
+    const float hidden = std::max(rect.clip.y - rect.min.y, 0.0f);
+    const auto first = static_cast<std::uint32_t>(hidden / std::max(list.itemSize, 1.0f));
+    return std::min(first, list.itemCount - 1);
+}
 
 bool isClipped(const math::Vec4& clip) noexcept
 {
@@ -352,7 +485,7 @@ bool contains(const LaidOutRect& rect, math::Vec2 point) noexcept
 }
 
 void layoutCanvas(const scene::Scene& scene, scene::Entity canvas, math::Vec2 windowSize,
-                  LayoutResult& result)
+                  LayoutResult& result, std::span<const PopupPlacement> popups)
 {
     result.rects.clear();
     const scene::Canvas* const component = scene.tryGet<scene::Canvas>(canvas);
@@ -365,7 +498,34 @@ void layoutCanvas(const scene::Scene& scene, scene::Entity canvas, math::Vec2 wi
     result.scale = std::max(canvasScale(*component, windowSize), 0.0001f);
     result.canvasSize = math::Vec2{windowSize.x / result.scale, windowSize.y / result.scale};
     layoutChildren(scene, canvas, math::Vec2{0.0f, 0.0f}, result.canvasSize, 1.0f,
-                   component->visible, 0, math::Vec4{0.0f}, math::Vec2{0.0f}, result);
+                   component->visible, 0, math::Vec4{0.0f}, math::Vec2{0.0f}, popups, result);
+
+    // Open popups go last, their subtrees whole, so that they are drawn over the rest and answer
+    // the pointer first; a popup inside another one stays after it.
+    std::vector<LaidOutRect> lifted;
+    for (std::size_t index = 0; index < result.rects.size();)
+    {
+        const LaidOutRect& rect = result.rects[index];
+        if (!rect.visible || scene.tryGet<scene::UiPopup>(rect.entity) == nullptr)
+        {
+            ++index;
+            continue;
+        }
+        const std::size_t end = subtreeEnd(result.rects, index);
+        // The elements above it no longer hold it.
+        for (std::size_t above = 0; above < index; ++above)
+        {
+            if (above + 1 + result.rects[above].descendants > index)
+            {
+                result.rects[above].descendants -= static_cast<std::uint32_t>(end - index);
+            }
+        }
+        lifted.insert(lifted.end(), result.rects.begin() + static_cast<std::ptrdiff_t>(index),
+                      result.rects.begin() + static_cast<std::ptrdiff_t>(end));
+        result.rects.erase(result.rects.begin() + static_cast<std::ptrdiff_t>(index),
+                           result.rects.begin() + static_cast<std::ptrdiff_t>(end));
+    }
+    result.rects.insert(result.rects.end(), lifted.begin(), lifted.end());
 }
 
 } // namespace devex::ui

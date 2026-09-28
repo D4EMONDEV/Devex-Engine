@@ -119,7 +119,7 @@ bool g_linearColors = true;
 
 [[nodiscard]] bool isEngineComponent(std::string_view name) noexcept
 {
-    constexpr std::array<std::string_view, 45> engineComponents{
+    constexpr std::array<std::string_view, 54> engineComponents{
         "Transform",       "MeshRenderer",        "Camera",       "DirectionalLight",
         "PointLight",      "SpotLight",           "Environment",  "RigidBody",
         "BoxCollider",     "SphereCollider",      "CapsuleCollider", "CylinderCollider",
@@ -130,7 +130,10 @@ bool g_linearColors = true;
         "UiBinding",       "Tweener",             "ParticleEmitter", "TrailRenderer",
         "SpriteRenderer",  "SpriteAnimator",      "Tilemap",      "RigidBody2D",
         "BoxCollider2D",   "CircleCollider2D",    "CapsuleCollider2D", "PolygonCollider2D",
-        "TilemapCollider2D", "CharacterController2D", "NavMeshSurface", "NavMeshAgent", "NavMeshObstacle"};
+        "TilemapCollider2D", "CharacterController2D", "NavMeshSurface", "NavMeshAgent", "NavMeshObstacle",
+        "UiPopup",         "UiContextMenu",       "UiTooltip",    "UiDropdown",
+        "UiSplitter",      "UiFoldout",           "UiVirtualList", "UiTable",
+        "UiTableRow"};
     return std::ranges::find(engineComponents, name) != engineComponents.end();
 }
 
@@ -269,6 +272,8 @@ ThemeColors deriveThemeColors(const ThemeSettings& settings)
     colors.field = colors.dark ? mix(mix(base, black, contrast), mono, luminance(base) < 0.02f ? 0.07f : 0.0f)
                                : mix(base, white, 0.75f);
     colors.border = withAlpha(mono, colors.dark ? 0.09f : 0.14f);
+    colors.raised = mix(colors.panel, mono, colors.dark ? 0.075f : 0.06f);
+    colors.popup = colors.dark ? mix(colors.panel, black, std::max(contrast, 0.0f) * 0.5f) : mix(colors.panel, white, 0.6f);
 
     if (colors.dark)
     {
@@ -333,9 +338,8 @@ void applyTheme(const ThemeSettings& settings, float displayScale, bool linearCo
     const float scale = effectiveInterfaceScale(settings, displayScale);
     const ImVec4 mono = colors.dark ? hex(0xFFFFFF) : hex(0x000000);
     const ImVec4 none{0.0f, 0.0f, 0.0f, 0.0f};
-    const ImVec4 raised = mix(colors.panel, mono, colors.dark ? 0.075f : 0.06f);
-    const ImVec4 popup = colors.dark ? mix(colors.panel, hex(0x000000), std::max(settings.contrast, 0.0f) * 0.5f)
-                                     : mix(colors.panel, hex(0xFFFFFF), 0.6f);
+    const ImVec4 raised = colors.raised;
+    const ImVec4 popup = colors.popup;
 
     ImGuiStyle style;
     style.WindowPadding = {8.0f, 8.0f};

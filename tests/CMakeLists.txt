@@ -107,6 +107,7 @@ devex_add_tests(particles
 
 devex_add_tests(ui
     SOURCES
+        ui/ControlsTests.cpp
         ui/LayoutTests.cpp
         ui/TextLayoutTests.cpp
         ui/UiWorldTests.cpp

@@ -19,7 +19,7 @@ mais seulement explicitement ici : le code suit ce document, pas l'inverse.
 | Gameplay                 | C++ (DLL rechargeable) et C# (.NET hébergé), au choix, ensemble    |
 | Format source            |  Texte maison lisible, extensions `.dvx*`, binaire cooké à l'export|
 | Import 3D                | glTF 2.0 (fastgltf), FBX et OBJ (ufbx), convertis au repère moteur |
-| UI éditeur               | Dear ImGui pour l'instant, puis l'UI des jeux quand elle suffira   |
+| UI éditeur               | Dear ImGui, remplacé panneau par panneau par l'UI des jeux         |
 | Modules C++              | Headers classiques                                                 |
 | Erreurs                  | `std::expected`, pas d'exceptions dans le moteur                   |
 | Dépendances              | vcpkg en mode manifeste (`vcpkg.json`)                             |
@@ -292,6 +292,15 @@ docs/          décisions et documentation
   outils affichent dans un panneau : `Renderer::viewportTexture()` est un identifiant de
   texture ImGui fixe, remplacé pendant le dessin par le descriptor set ImGui de l'image de la
   frame (un par contexte de frame, recréé quand l'image change).
+- **Surfaces d'interface** : `RenderWorld::uiSurfaces` porte des interfaces dessinées chacune dans
+  une image à elle plutôt que sur la scène (`UiSurface` : identifiant, taille en pixels, couleur de
+  fond, sommets, indices et lots, comme l'interface du jeu). Ce sont les panneaux de l'éditeur faits
+  avec `Devex::Ui`. Chaque surface est une image transitoire du graphe (passe « Interface
+  surface », au format de la cible avec une vue au format des outils), que les outils montrent par
+  `Renderer::uiSurfaceTexture(id)`, un identifiant ImGui fixe remplacé pendant le dessin comme
+  celui du viewport. Une commande ImGui dont la surface n'a pas été dessinée dans la frame est
+  sautée (rectangle de découpe vide) plutôt que de lier une texture qui n'existe pas. Les surfaces
+  ne sont dessinées qu'avec les outils.
 - **Sélection à la souris** (*picking*) : `RenderWorld::pick` demande les objets visibles dans un
   rectangle de l'image, un pixel pour un clic. Une passe dessine tous les maillages dans une cible
   `R32_UINT` de la taille du rectangle (réduite à 512 pixels de côté au plus) avec une projection
@@ -987,7 +996,11 @@ les assets s'écrivent au fil de leur lecture.
   revient. La liste (`[project path favorite last_opened]`) remplace les projets récents, dont
   l'ancien format est relu. Un `.dvxproj` passé en argument s'ouvre directement. Les dialogues
   de fichiers sont ceux du système (SDL3), sans bloquer : la réponse arrive par
-  `Platform::pollEvents`.
+  `Platform::pollEvents`. C'est le **premier panneau écrit avec `Devex::Ui`** (voir *Une seule
+  interface, deux usages*) : ses boutons ont des infobulles, chaque ligne a un menu contextuel (clic
+  droit : Edit, Run, Show in Folder, favori, Remove), le tri est une liste déroulante, et Create,
+  Rename et Remove sont des modales avec leur voile ; Échap les ferme, Entrée ouvre le projet
+  choisi.
 - **Onglets de scènes** (`src/tools/SceneTabs`) : chaque scène ouverte a son onglet au-dessus du
   viewport, avec son fichier, sa scène, son historique d'annulation, sa sélection et sa caméra.
   L'onglet actif vit là où le reste de l'éditeur le lit (la scène de l'application, les champs
@@ -2075,11 +2088,11 @@ les assets s'écrivent au fil de leur lecture.
   avant de converger. Godot, lui, dessine son éditeur avec les mêmes nœuds que les jeux, et s'en
   porte bien. **La cible est donc une seule interface, celle des jeux, qui grandira jusqu'à porter
   l'éditeur.**
-- **Pourquoi pas tout de suite** : l'éditeur demande des champs de saisie complets, des arbres de
+- **Pourquoi pas d'un coup** : l'éditeur demande des champs de saisie complets, des arbres de
   milliers de lignes, des tableaux, des séparateurs déplaçables, du docking, du glisser-déposer,
-  des menus contextuels, des modales et des sélecteurs de couleur. `Devex::Ui` sait dessiner des
-  rectangles, des images, du texte, des boutons et des conteneurs. Commencer le portage
-  aujourd'hui rendrait l'éditeur moins bon pendant des mois sans rien apporter aux jeux.
+  des menus contextuels, des modales et des sélecteurs de couleur. Tout porter d'un coup rendrait
+  l'éditeur moins bon pendant des mois ; `Devex::Ui` grandit donc d'abord, puis prend les panneaux
+  un à un.
 - **Le mythe du mode immédiat** : ImGui reconstruit son interface à chaque frame, mais le coût suit
   ce qui est visible, et l'éditeur tourne à plusieurs centaines d'images par seconde. `Devex::Ui`
   reconstruit d'ailleurs sa liste de dessin à chaque frame elle aussi ; la différence est que son
@@ -2091,6 +2104,21 @@ les assets s'écrivent au fil de leur lecture.
   réutilisables, liaison de données, puis listes virtualisées et tableaux. Ensuite seulement,
   porter l'éditeur panneau par panneau : les deux peuvent cohabiter dans la même frame, puisque
   l'un est dessiné par le renderer et l'autre par ImGui.
+- **Le début** (jalon 40) : un panneau de l'éditeur est **fait d'entités**, comme Godot fait son
+  éditeur de nœuds : une scène à lui, un canevas en `constant_pixels`, un `UiWorld` qui le place et
+  lui répond, et le code du panneau qui crée ses entités une fois puis lit ses actions
+  (`wasClicked`, `wasChanged`, `contextTarget`...) comme un script de jeu. `tools::detail::UiPanel`
+  le loge dans une fenêtre ImGui : il prend la place qui reste, lui donne la souris et les touches
+  que la fenêtre reçoit (avec la saisie de texte et la position de la méthode de saisie par
+  `ImGuiPlatformImeData`), et montre son image (`ImGui::Image` d'une surface d'interface) ; le
+  dock reste celui d'ImGui en attendant. Ses unités valent la taille du texte de l'éditeur, si bien
+  qu'il suit l'échelle de l'interface. `EditorUiKit` partage entre les panneaux les polices de
+  l'éditeur (Noto Sans normale et grasse, cuites en atlas de distances à 40 pixels), ses icônes
+  (les SVG dessinés en textures blanches que les images teintent) et son **thème**, une liste de
+  styles nommés (`panel`, `button`, `primary`, `row_selected`, `field`, `dropdown`...) refaits
+  depuis les couleurs de l'éditeur quand elles changent. Les polices, le thème et les icônes ont
+  des identifiants d'asset réservés que seul le kit résout. Premier panneau porté : le
+  gestionnaire de projets.
 
 ### Interfaces
 
@@ -2223,9 +2251,49 @@ les assets s'écrivent au fil de leur lecture.
   l'écran laisse le monde en dessous à portée. Cliquer de nouveau descend à l'élément du dessous,
   le glisser le déplace, ses huit poignées le redimensionnent, ses ancrages sont marqués ; chaque
   geste devient une étape d'annulation sur `offset_min` et `offset_max`, et F cadre l'élément.
+- **Popups et menus** : `UiPopup` marque un élément montré par-dessus le reste de son canevas
+  tant qu'il est ouvert (son `UiRect` n'est visible que pendant ce temps). Un popup ouvert est
+  placé après tout son canevas, donc dessiné au-dessus, servi le premier par le pointeur, et ni
+  découpé ni défilé par ce qui l'entoure ; ouvert en un point (`openPopup(scene, popup, at)`), il y
+  pose son coin haut gauche en restant dans le canevas. Un **menu** (`kind = menu`) se ferme quand
+  un de ses boutons est choisi (avec les menus d'où il a été ouvert), quand le pointeur appuie
+  ailleurs — cet appui ne fait rien d'autre — ou sur Échap. Une **modale** reste jusqu'à ce que le
+  jeu la ferme et garde le reste de son canevas du pointeur et du clavier sous un voile
+  (`veil_color`).
+- **Menus contextuels** : `UiContextMenu` nomme un popup menu que le clic droit (`UiInput`
+  `secondaryPressed`) ouvre sous le pointeur, sur l'élément ou sur un de ses descendants ;
+  `contextTarget()` dit ensuite sur quoi le menu agit, comme la ligne d'une liste.
+- **Infobulles** : `UiTooltip` montre une ligne d'aide près du pointeur quand il s'est posé
+  `delay` secondes (0,5 par défaut) sur l'élément, même inutilisable ; un élément qui ne fait que
+  dessiner, comme un texte posé sur une liste, laisse passer le pointeur vers ce qui est dessous.
+  L'apparence (`TooltipStyle` : fond, texte, police, taille, marge, arrondi) est celle de
+  l'`UiWorld`, dessinée en pixels par-dessus tous les canevas.
+- **Listes déroulantes** : `UiDropdown` est un bouton dont le `UiText` montre l'option choisie
+  (`selected`, écrit par l'interface), en retrait du bord gauche, avec une flèche à droite. Cliqué,
+  il ouvre la liste de ses options sous lui (au-dessus s'il n'y a pas la place), aussi large que
+  lui, dix options au plus que la molette fait défiler ; les flèches, Entrée et Échap y marchent
+  aussi. Le choix est signalé par son action (`Ui.WasChanged("difficulty")`).
+- **Défilement, séparateurs, dépliants** : `UiScroll` dessine une **barre de défilement** tant que
+  le contenu dépasse (`scrollbar`, `scrollbar_size`, `scrollbar_color`), dont le pouce se tire et
+  dont la piste avance d'une page. `UiSplitter` partage son rectangle entre ses deux premiers
+  enfants, côte à côte ou l'un sur l'autre, avec une barre que le pointeur tire (`position`,
+  `min_size`). `UiFoldout` montre ou cache l'élément qu'il nomme (`content`), avec une flèche qui dit
+  lequel : sections d'un inspecteur, ou branches d'un arbre quand les dépliants s'emboîtent.
+- **Listes virtuelles et tableaux** : `UiVirtualList`, dans un `UiScroll`, prend la hauteur de
+  `item_count` éléments de `item_size` unités mais n'a que les lignes visibles pour enfants :
+  l'interface les place aux éléments qu'elles montrent et écrit dans `first` le premier, qu'un
+  script lit pour les remplir. `UiTable` aligne en colonnes les cellules (enfants) de chaque
+  `UiTableRow` en dessous de lui ; la ligne `header` redimensionne une colonne quand on tire le bord
+  d'une cellule, et trie par une colonne quand on la clique (`sort_column`, `sort_ascending`, une
+  flèche la marque) : le script trie ses lignes quand l'action du tableau change.
+- **Double clic** : deux clics sur le même bouton à moins de 0,4 seconde ; le second compte aussi
+  comme un clic (`wasDoubleClicked`). `startEditing` donne le clavier à un champ, son texte
+  sélectionné, comme un formulaire à son premier champ.
 - **Jeu** : `SystemContext::ui` et `Application::ui()` donnent l'`UiWorld` ; en C#, la classe `Ui`
-  offre `WasClicked(action)`, `WasClicked(entity)`, `WasChanged(action)`, `WasSubmitted(action)`,
-  `WasCancelled()`, `Hovered`, `Focused`, `EditedField` et `PointerOverInterface`, que le jeu lit
+  offre `WasClicked(action)`, `WasClicked(entity)`, `WasDoubleClicked(action)`,
+  `WasDoubleClicked(entity)`, `WasChanged(action)`, `WasSubmitted(action)`, `WasCancelled()`,
+  `OpenPopup(entity)`, `OpenPopup(entity, at)`, `ClosePopup`, `IsPopupOpen`, `ContextTarget`,
+  `Hovered`, `Focused`, `EditedField` et `PointerOverInterface`, que le jeu lit
   avant d'agir sur un clic qui lui serait destiné. Les touches restent visibles des systèmes du
   jeu pendant qu'un champ est édité, comme dans Unity et Godot : un système qui répond à une
   touche seule vérifie `ui->isEditing()` (ou `Ui.EditedField`) pour ne pas réagir aux lettres
@@ -2233,7 +2301,8 @@ les assets s'écrivent au fil de leur lecture.
 - **Bac à sable** : la scène `sandbox` ouvre sur un menu principal (Jouer, Réglages, Quitter), avec
   un menu de pause appelé par Échap et un HUD qui montre le score et le temps. L'écran des
   réglages montre un champ de nom, un mot de passe, un curseur de volume dont l'étiquette est liée
-  à sa valeur, une case « plein écran », et un panneau d'aide en neuf parts
+  à sa valeur, une case « plein écran », une liste déroulante de la difficulté (gardée dans les
+  réglages du joueur), des infobulles sur ces trois contrôles, et un panneau d'aide en neuf parts
   (`textures/panel.png`, 64 pixels) qui contient une liste de texte riche défilant à la molette.
   Tout suit le thème `ui/sandbox.dvxtheme`, et `code/Menu.cs` lit les actions. Un clic sur
   l'interface ne capture plus la souris, et les touches du bac à sable (N, C, Tab, Échap) se
@@ -2765,7 +2834,14 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     et en C#, maillage, agents et chemins dessinés dans la vue ; le robot et deux drones de l'arène
     marchent par la navigation.
 
-Ensuite, sans ordre figé : CI Linux.
+40. ✅ **Début de Devex UI dans l'éditeur** — contrôles de `Devex::Ui` qui manquaient à un
+    éditeur : popups, menus et modales, menus contextuels, infobulles, listes déroulantes, barres de
+    défilement, double clic, séparateurs, dépliants, listes virtuelles et tableaux, en C++ et en
+    C# ; surfaces d'interface du renderer montrées par ImGui ; panneaux de l'éditeur faits
+    d'entités, logés dans une fenêtre ImGui ; le gestionnaire de projets porté ; difficulté et
+    infobulles dans les réglages du bac à sable.
+
+Ensuite, sans ordre figé : CI Linux, la suite du portage de l'éditeur.
 
 ## Questions ouvertes
 
@@ -2850,13 +2926,19 @@ Ensuite, sans ordre figé : CI Linux.
   souris et molette comme axes (regarder, zoomer), modificateurs (inverser, échelle, courbe),
   combinaisons (Ctrl+S) et appuis longs ou doubles, navigation de l'interface par les actions,
   conflits signalés à la réaffectation, glyphes des boutons selon la manette, vibrations.
-- **UI des jeux, la suite** : listes virtualisées et tableaux pour les longues données, listes
-  déroulantes, barres de défilement visibles, transitions et animations d'éléments, position de la
-  fenêtre de la méthode de saisie sous le curseur, polices de repli pour les écritures non
-  cuites, texte bidirectionnel et écritures complexes, sélection au double clic et mot par mot,
-  annulation dans un champ, et édition des thèmes dans l'éditeur.
-- **Portage de l'éditeur sur l'UI du moteur** : quand `Devex::Ui` saura ce qu'un éditeur demande,
-  panneau par panneau, le dockspace en dernier (voir *Une seule interface, deux usages*).
+- **UI des jeux, la suite** : transitions et animations d'éléments, position de la fenêtre de la
+  méthode de saisie sous le curseur dans les jeux, polices de repli pour les écritures non cuites,
+  texte bidirectionnel et écritures complexes, sélection d'un mot au double clic, annulation dans
+  un champ, édition des thèmes dans l'éditeur, infobulles stylées par le thème du canevas plutôt
+  que par l'`UiWorld`, sous-menus ouverts au survol et navigation au clavier dans les menus,
+  glisser-déposer, sélection multiple dans les listes, arbres virtuels (dépliants dans une liste
+  virtuelle), recherche dans une liste déroulante.
+- **Portage de l'éditeur sur l'UI du moteur, la suite** : les panneaux un à un (FileSystem et
+  Output d'abord, puis la hiérarchie et l'inspecteur, qui demandent les arbres virtuels et le
+  glisser-déposer), le dockspace et les menus de la fenêtre en dernier (voir *Une seule interface,
+  deux usages*) ; un panneau redessiné seulement quand il change ; les polices de l'éditeur cuites
+  une fois et gardées en cache plutôt qu'à chaque lancement ; un seul thème pour ImGui et
+  `Devex::Ui` tant qu'ils cohabitent.
 - **CI, la suite** : Linux, puis macOS ; les tests `[gpu]` sur un rendu logiciel (lavapipe,
   SwiftShader) ou une machine avec GPU ; actions passées à Node.js 24 (celles en v4 tournent sur
   Node.js 20, déprécié) ; cache de compilation (sccache) ; éditeur et lecteur publiés en artefacts

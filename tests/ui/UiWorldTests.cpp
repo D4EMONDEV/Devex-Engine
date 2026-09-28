@@ -11,6 +11,7 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <filesystem>
 #include <memory>
 
@@ -564,6 +565,52 @@ TEST_CASE("A field being edited draws its selection, its letters and its cursor"
         CHECK(frameWorld.uiDraws.size() >= 3);
         CHECK(frameWorld.uiIndices.size() >= 6 * 4);
     }
+}
+
+TEST_CASE("The text of a dropdown stands off its left edge and leaves room for its arrow", "[ui][world][controls]")
+{
+    // Where the letters of the chosen option start and end, aligned one way or the other.
+    const auto drawnText = [](devex::scene::TextAlign align) {
+        Scene scene;
+        const Entity canvas = scene.createEntity("Canvas");
+        scene.add<Canvas>(canvas, Canvas{.scaleMode = devex::scene::CanvasScaleMode::ConstantPixels});
+        const Entity choice = scene.createEntity("Choice");
+        REQUIRE(scene.setParent(choice, canvas).has_value());
+        scene.add<UiRect>(choice, UiRect{.anchorMin = {0.0f, 0.0f},
+                                         .anchorMax = {0.0f, 0.0f},
+                                         .offsetMin = {100.0f, 100.0f},
+                                         .offsetMax = {300.0f, 140.0f}});
+        scene.add<devex::scene::UiText>(choice, devex::scene::UiText{.size = 20.0f, .align = align, .wrap = false});
+        scene.add<devex::scene::UiDropdown>(choice, devex::scene::UiDropdown{.options = {"Normal"}});
+        UiWorld world;
+        world.setFonts(&fontRef);
+        world.update(scene, window, UiInput{}, frame);
+
+        devex::render::RenderWorld drawn;
+        world.build(scene, devex::ui::DrawContext{.fonts = &fontRef}, drawn);
+        Vec2 span{1.0e9f, -1.0e9f};
+        for (const devex::render::UiDraw& draw : drawn.uiDraws)
+        {
+            if (draw.kind != devex::render::UiDrawKind::Text)
+            {
+                continue;
+            }
+            for (std::uint32_t index = draw.firstIndex; index < draw.firstIndex + draw.indexCount; ++index)
+            {
+                const float x = drawn.uiVertices[drawn.uiIndices[index]].position.x;
+                span.x = std::min(span.x, x);
+                span.y = std::max(span.y, x);
+            }
+        }
+        REQUIRE(span.y > span.x);
+        return span;
+    };
+    // The quads of the letters reach a little past them, by the spread of the atlas.
+    const Vec2 left = drawnText(devex::scene::TextAlign::Left);
+    CHECK(left.x > 100.0f + 40.0f * 0.3f - 4.0f);
+    // The arrow is drawn 0.45 of the height from the right edge, 0.28 of it wide on each side.
+    const Vec2 right = drawnText(devex::scene::TextAlign::Right);
+    CHECK(right.y < 300.0f - 40.0f * (0.45f + 0.28f));
 }
 
 TEST_CASE("A click lands between the letters of a field", "[ui][world][field]")

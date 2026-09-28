@@ -245,6 +245,12 @@ struct NativeApi
     int (*navFindPath)(const math::Vec3* from, const math::Vec3* to, const math::Vec3** corners);
     int (*navSamplePosition)(const math::Vec3* point, float maxDistance, math::Vec3* position);
     int (*navRaycast)(const math::Vec3* from, const math::Vec3* to, math::Vec3* position, math::Vec3* normal);
+    void (*uiOpenPopup)(void* scene, Entity popup, const math::Vec2* at);
+    void (*uiClosePopup)(void* scene, Entity popup);
+    int (*uiPopupOpen)(void* scene, Entity popup);
+    Entity (*uiContextTarget)();
+    int (*uiDoubleClickedAction)(const char* action);
+    int (*uiDoubleClickedEntity)(Entity entity);
 };
 
 // The functions the engine calls, in the order of Devex.Managed's ManagedApi.
@@ -259,7 +265,7 @@ struct ManagedApi
 };
 
 // Devex.Managed's Bootstrap.Version: both sides change it with the function tables.
-constexpr int bootstrapVersion = 15;
+constexpr int bootstrapVersion = 16;
 
 struct BootstrapArguments
 {
@@ -1169,6 +1175,42 @@ int apiUiSubmittedAction(const char* action)
 Entity apiUiEditedField()
 {
     return uiWorld() != nullptr ? uiWorld()->editedField() : Entity{};
+}
+
+void apiUiOpenPopup(void* scene, Entity popup, const math::Vec2* at)
+{
+    if (uiWorld() != nullptr && scene != nullptr)
+    {
+        uiWorld()->openPopup(*toScene(scene), popup, at != nullptr ? std::optional(*at) : std::nullopt);
+    }
+}
+
+void apiUiClosePopup(void* scene, Entity popup)
+{
+    if (uiWorld() != nullptr && scene != nullptr)
+    {
+        uiWorld()->closePopup(*toScene(scene), popup);
+    }
+}
+
+int apiUiPopupOpen(void* scene, Entity popup)
+{
+    return uiWorld() != nullptr && scene != nullptr && uiWorld()->isPopupOpen(*toScene(scene), popup) ? 1 : 0;
+}
+
+Entity apiUiContextTarget()
+{
+    return uiWorld() != nullptr ? uiWorld()->contextTarget() : Entity{};
+}
+
+int apiUiDoubleClickedAction(const char* action)
+{
+    return uiWorld() != nullptr && action != nullptr && uiWorld()->wasDoubleClicked(action) ? 1 : 0;
+}
+
+int apiUiDoubleClickedEntity(Entity entity)
+{
+    return uiWorld() != nullptr && uiWorld()->wasDoubleClicked(entity) ? 1 : 0;
 }
 
 int apiProfileEnabled()
@@ -2126,6 +2168,12 @@ int apiParticleCount(Entity entity)
         .navFindPath = &apiNavFindPath,
         .navSamplePosition = &apiNavSamplePosition,
         .navRaycast = &apiNavRaycast,
+        .uiOpenPopup = &apiUiOpenPopup,
+        .uiClosePopup = &apiUiClosePopup,
+        .uiPopupOpen = &apiUiPopupOpen,
+        .uiContextTarget = &apiUiContextTarget,
+        .uiDoubleClickedAction = &apiUiDoubleClickedAction,
+        .uiDoubleClickedEntity = &apiUiDoubleClickedEntity,
     };
 }
 

@@ -292,6 +292,122 @@ void fill(Builder& builder, math::Vec2 min, math::Vec2 max, math::Vec4 color)
     builder.quad(draw, min, max, math::Vec2{0.0f, 0.0f}, math::Vec2{1.0f, 1.0f}, color);
 }
 
+// A triangle of one colour: the arrows of dropdowns, foldouts and sorted columns.
+void triangle(Builder& builder, math::Vec2 a, math::Vec2 b, math::Vec2 c, math::Vec4 color)
+{
+    if (color.w <= 0.0f)
+    {
+        return;
+    }
+    render::UiDraw& draw = builder.batch(render::UiDrawKind::Quad, render::TextureHandle{},
+                                         math::Vec4{0.0f}, 0.0f, 1.0f);
+    builder.quad(draw, std::array<math::Vec2, 4>{a, b, c, c}, math::Vec2{0.0f, 0.0f}, math::Vec2{1.0f, 1.0f}, color);
+}
+
+// An arrow in a square of `size` around a point: down, or right when `right`, or up when `up`.
+void arrow(Builder& builder, math::Vec2 centre, float size, bool right, bool up, math::Vec4 color)
+{
+    const float half = size * 0.5f;
+    if (right)
+    {
+        triangle(builder, centre + math::Vec2{-half * 0.6f, -half}, centre + math::Vec2{half * 0.7f, 0.0f},
+                 centre + math::Vec2{-half * 0.6f, half}, color);
+    }
+    else if (up)
+    {
+        triangle(builder, centre + math::Vec2{-half, half * 0.6f}, centre + math::Vec2{0.0f, -half * 0.7f},
+                 centre + math::Vec2{half, half * 0.6f}, color);
+    }
+    else
+    {
+        triangle(builder, centre + math::Vec2{-half, -half * 0.6f}, centre + math::Vec2{half, -half * 0.6f},
+                 centre + math::Vec2{0.0f, half * 0.7f}, color);
+    }
+}
+
+// The thumbs of what scrolls, over what it holds, while the content is longer than the element.
+void drawScrollbars(Builder& builder, const LaidOutRect& rect, const scene::UiScroll& scroll)
+{
+    const math::Vec2 size = rect.size();
+    const float bar = std::max(scroll.scrollbarSize, 1.0f);
+    const math::Vec4 color = withOpacity(scroll.scrollbarColor, rect.opacity);
+    if (scroll.vertical && rect.content.y > size.y + 0.5f)
+    {
+        const float thumb = std::max(size.y * size.y / rect.content.y, bar * 2.0f);
+        const float room = std::max(rect.content.y - size.y, 1.0f);
+        const float top = rect.min.y + (size.y - thumb) * std::clamp(scroll.offset.y / room, 0.0f, 1.0f);
+        fill(builder, math::Vec2{rect.max.x - bar, top}, math::Vec2{rect.max.x - 1.0f, top + thumb}, color);
+    }
+    if (scroll.horizontal && rect.content.x > size.x + 0.5f)
+    {
+        const float thumb = std::max(size.x * size.x / rect.content.x, bar * 2.0f);
+        const float room = std::max(rect.content.x - size.x, 1.0f);
+        const float left = rect.min.x + (size.x - thumb) * std::clamp(scroll.offset.x / room, 0.0f, 1.0f);
+        fill(builder, math::Vec2{left, rect.max.y - bar}, math::Vec2{left + thumb, rect.max.y - 1.0f}, color);
+    }
+}
+
+// The index of a cell among the cells of its row.
+[[nodiscard]] std::size_t cellIndex(const scene::Scene& scene, scene::Entity cell)
+{
+    std::size_t index = 0;
+    for (scene::Entity sibling = scene.firstChild(scene.parent(cell)); sibling.isValid() && sibling != cell;
+         sibling = scene.nextSibling(sibling))
+    {
+        if (scene.has<scene::UiRect>(sibling))
+        {
+            ++index;
+        }
+    }
+    return index;
+}
+
+// What the controls draw over their own image: the arrow of a dropdown and of a foldout, the bar of
+// a splitter, and the arrow of the column a table is sorted by, with the edges of its header.
+void drawControls(Builder& builder, const scene::Scene& scene, const DrawContext& context, const LaidOutRect& rect)
+{
+    const float height = rect.size().y;
+    if (const scene::UiDropdown* const dropdown = scene.tryGet<scene::UiDropdown>(rect.entity))
+    {
+        arrow(builder, math::Vec2{rect.max.x - height * 0.45f, rect.min.y + height * 0.5f}, height * 0.28f, false,
+              false, withOpacity(dropdown->arrowColor, rect.opacity));
+    }
+    if (const scene::UiFoldout* const foldout = scene.tryGet<scene::UiFoldout>(rect.entity))
+    {
+        const float size = std::min(height, 28.0f) * 0.32f;
+        arrow(builder, math::Vec2{rect.min.x + std::min(height, 28.0f) * 0.5f, rect.min.y + height * 0.5f}, size,
+              !foldout->expanded, false, withOpacity(foldout->arrowColor, rect.opacity));
+    }
+    if (const scene::UiSplitter* const splitter = scene.tryGet<scene::UiSplitter>(rect.entity))
+    {
+        const auto [barMin, barMax] = splitterBar(rect, *splitter);
+        const bool grabbed = context.grabbed && context.grabbed(rect.entity);
+        fill(builder, barMin, barMax, withOpacity(grabbed ? splitter->hoverColor : splitter->barColor, rect.opacity));
+    }
+    const scene::Entity row = scene.parent(rect.entity);
+    const scene::UiTableRow* const header = row.isValid() ? scene.tryGet<scene::UiTableRow>(row) : nullptr;
+    if (header != nullptr && header->header)
+    {
+        const scene::UiTable* table = nullptr;
+        for (scene::Entity above = scene.parent(row); above.isValid() && table == nullptr; above = scene.parent(above))
+        {
+            table = scene.tryGet<scene::UiTable>(above);
+        }
+        if (table != nullptr)
+        {
+            const math::Vec4 color = withOpacity(table->arrowColor, rect.opacity);
+            // The edge the pointer drags, and the way the column is sorted.
+            fill(builder, math::Vec2{rect.max.x - 1.0f, rect.min.y + height * 0.2f},
+                 math::Vec2{rect.max.x, rect.max.y - height * 0.2f}, withOpacity(color, 0.4f));
+            if (table->sortColumn >= 0 && cellIndex(scene, rect.entity) == static_cast<std::size_t>(table->sortColumn))
+            {
+                arrow(builder, math::Vec2{rect.max.x - height * 0.45f, rect.min.y + height * 0.5f}, height * 0.26f,
+                      false, table->sortAscending, color);
+            }
+        }
+    }
+}
+
 // What is selected, one rectangle per line it covers. The stops follow the text, so a line is the
 // run of stops that share it.
 void drawSelection(Builder& builder, const TextLayoutResult& letters, math::Vec4 color,
@@ -426,12 +542,33 @@ void buildDrawList(const scene::Scene& scene, const LayoutResult& layout,
                    const DrawContext& context, render::RenderWorld& world)
 {
     Builder builder{.world = world, .scale = layout.scale};
-    for (const LaidOutRect& rect : layout.rects)
+    // What scrolls draws its bars once what it holds is drawn, over it: the elements waiting for
+    // the end of their subtree, the innermost last.
+    std::vector<std::size_t> waiting;
+    const auto drawWaiting = [&](std::size_t upTo) {
+        while (!waiting.empty() && subtreeEnd(layout.rects, waiting.back()) <= upTo)
+        {
+            const LaidOutRect& scrolling = layout.rects[waiting.back()];
+            builder.clip = isClipped(scrolling.clip) ? scrolling.clip * layout.scale : math::Vec4{0.0f};
+            drawScrollbars(builder, scrolling, scene.get<scene::UiScroll>(scrolling.entity));
+            waiting.pop_back();
+        }
+    };
+    for (std::size_t index = 0; index < layout.rects.size(); ++index)
     {
+        drawWaiting(index);
+        const LaidOutRect& rect = layout.rects[index];
         if (!rect.visible || rect.opacity <= 0.0f || rect.size().x <= 0.0f ||
             rect.size().y <= 0.0f)
         {
             continue;
+        }
+        // A modal darkens the whole canvas under it.
+        if (const scene::UiPopup* const popup = scene.tryGet<scene::UiPopup>(rect.entity);
+            popup != nullptr && popup->kind == scene::UiPopupKind::Modal)
+        {
+            builder.clip = math::Vec4{0.0f};
+            fill(builder, math::Vec2{0.0f}, layout.canvasSize, withOpacity(popup->veilColor, rect.opacity));
         }
         // Everything the element draws is cut the same way, in pixels of the image.
         builder.clip = isClipped(rect.clip) ? rect.clip * layout.scale : math::Vec4{0.0f};
@@ -460,14 +597,75 @@ void buildDrawList(const scene::Scene& scene, const LayoutResult& layout,
             {
                 drawField(builder, context, rect, *text, *field);
             }
+            else if (scene.tryGet<scene::UiDropdown>(rect.entity) != nullptr)
+            {
+                // The chosen option stands off the left edge, and leaves the right to the arrow.
+                LaidOutRect inner = rect;
+                inner.min.x += rect.size().y * 0.3f;
+                inner.max.x = std::max(inner.min.x, rect.max.x - rect.size().y * 0.9f);
+                drawText(builder, context, inner, *text);
+            }
             else
             {
                 drawText(builder, context, rect, *text);
             }
         }
+        drawControls(builder, scene, context, rect);
+        if (const scene::UiScroll* const scroll = scene.tryGet<scene::UiScroll>(rect.entity);
+            scroll != nullptr && scroll->scrollbar)
+        {
+            waiting.push_back(index);
+        }
     }
+    drawWaiting(layout.rects.size());
     // Batches that ended up empty would draw nothing; they are dropped so the renderer skips them.
     std::erase_if(world.uiDraws, [](const render::UiDraw& draw) { return draw.indexCount == 0; });
+}
+
+void drawOverlayBox(render::RenderWorld& world, math::Vec2 min, math::Vec2 max, math::Vec4 color, float radius)
+{
+    if (color.w <= 0.0f || max.x <= min.x || max.y <= min.y)
+    {
+        return;
+    }
+    Builder builder{.world = world};
+    render::UiDraw& draw = builder.batch(radius > 0.0f ? render::UiDrawKind::RoundedQuad : render::UiDrawKind::Quad,
+                                         render::TextureHandle{}, math::Vec4{min.x, min.y, max.x, max.y}, radius, 1.0f);
+    builder.quad(draw, min, max, math::Vec2{0.0f, 0.0f}, math::Vec2{1.0f, 1.0f}, color);
+    std::erase_if(world.uiDraws, [](const render::UiDraw& batch) { return batch.indexCount == 0; });
+}
+
+void drawOverlayText(render::RenderWorld& world, const DrawContext& context, math::Vec2 min, math::Vec2 max,
+                     const OverlayText& text)
+{
+    if (!context.fonts || text.text.empty())
+    {
+        return;
+    }
+    const FontRef font = context.fonts(text.font.isValid() ? text.font : context.defaultFont);
+    if (font.data == nullptr || !font.atlas.isValid())
+    {
+        return;
+    }
+    Builder builder{.world = world, .clip = math::Vec4{min.x, min.y, max.x, max.y}};
+    TextLayoutResult letters;
+    layoutText(*font.data, text.text,
+               TextStyle{.size = text.size, .verticalAlign = scene::TextVerticalAlign::Middle, .wrap = false}, min, max,
+               letters);
+    const scene::UiText style{.text = std::string(text.text), .size = text.size, .color = text.color};
+    drawTextLayout(builder, context, LaidOutRect{.min = min, .max = max}, style, letters, font, text.color);
+    std::erase_if(world.uiDraws, [](const render::UiDraw& batch) { return batch.indexCount == 0; });
+}
+
+math::Vec2 measureOverlayText(const DrawContext& context, const OverlayText& text)
+{
+    if (!context.fonts || text.text.empty())
+    {
+        return math::Vec2{0.0f};
+    }
+    const FontRef font = context.fonts(text.font.isValid() ? text.font : context.defaultFont);
+    return font.data != nullptr ? measureText(*font.data, text.text, TextStyle{.size = text.size, .wrap = false})
+                                : math::Vec2{0.0f};
 }
 
 DrawListMark markDrawList(const render::RenderWorld& world) noexcept

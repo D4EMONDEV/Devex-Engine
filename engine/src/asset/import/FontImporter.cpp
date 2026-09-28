@@ -89,19 +89,33 @@ core::Result<ImportResult> importFontFile(ImportContext& context)
     {
         return std::unexpected(file.error());
     }
-    const auto* const bytes = reinterpret_cast<const unsigned char*>(file->data());
+    core::Result<FontData> font = bakeFont(*file, core::toUtf8(context.source.stem()),
+                                           static_cast<float>(context.numberOption("size", 48.0)),
+                                           static_cast<float>(context.numberOption("spread", 6.0)));
+    if (!font)
+    {
+        return std::unexpected(font.error());
+    }
+    ImportResult result;
+    result.artifacts.push_back({context.mainId, AssetType::Font, context.name, encodeFont(*font)});
+    return result;
+}
+
+core::Result<FontData> bakeFont(std::span<const std::byte> file, std::string family, float wantedSize, float wantedSpread)
+{
+    const auto* const bytes = reinterpret_cast<const unsigned char*>(file.data());
 
     // stb_truetype trusts the offsets it reads, so the file is recognised as a font before it is
     // opened: anything else would be walked as if it were one.
     stbtt_fontinfo info{};
-    const int offset = file->size() >= 12 ? stbtt_GetFontOffsetForIndex(bytes, 0) : -1;
+    const int offset = file.size() >= 12 ? stbtt_GetFontOffsetForIndex(bytes, 0) : -1;
     if (offset < 0 || stbtt_InitFont(&info, bytes, offset) == 0)
     {
         return core::makeError(core::ErrorCode::Parse, "the file is not a TrueType font");
     }
 
-    const float size = std::clamp(static_cast<float>(context.numberOption("size", 48.0)), 8.0f, 128.0f);
-    const float spread = std::clamp(static_cast<float>(context.numberOption("spread", 6.0)), 1.0f, 32.0f);
+    const float size = std::clamp(wantedSize, 8.0f, 128.0f);
+    const float spread = std::clamp(wantedSpread, 1.0f, 32.0f);
     // The size is the em of the font, as it is in a style sheet or in a drawing tool, so that the
     // same number gives the same letters as elsewhere.
     const float scale = stbtt_ScaleForMappingEmToPixels(&info, size);
@@ -159,7 +173,7 @@ core::Result<ImportResult> importFontFile(ImportContext& context)
     constexpr std::uint32_t atlasWidth = 1024;
     ShelfPacker packer(atlasWidth);
     FontData font;
-    font.family = core::toUtf8(context.source.stem());
+    font.family = std::move(family);
     font.bakedSize = size;
     font.spread = spread;
     font.ascent = static_cast<float>(ascent) * scale;
@@ -224,10 +238,7 @@ core::Result<ImportResult> importFontFile(ImportContext& context)
     DEVEX_LOG_DEBUG("Baked {} glyphs and {} kerning pairs of '{}' into a {}x{} atlas at {} pixels",
                     font.glyphs.size(), font.kerning.size(), font.family, font.atlasWidth,
                     font.atlasHeight, font.bakedSize);
-
-    ImportResult result;
-    result.artifacts.push_back({context.mainId, AssetType::Font, context.name, encodeFont(font)});
-    return result;
+    return font;
 }
 
 } // namespace devex::asset

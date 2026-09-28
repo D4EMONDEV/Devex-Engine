@@ -2,6 +2,7 @@
 
 #include <devex/asset/AssetId.hpp>
 #include <devex/asset/AssetType.hpp>
+#include <devex/asset/FontData.hpp>
 #include <devex/asset/import/MetaFile.hpp>
 #include <devex/core/Error.hpp>
 #include <devex/core/JobSystem.hpp>
@@ -121,6 +122,10 @@ struct Importer
 // Fonts are baked into an atlas of distances at the "size" of the option, with the "spread" of the
 // distances around each outline.
 [[nodiscard]] core::Result<ImportResult> importFontFile(ImportContext& context);
+// Bakes the letters of a TrueType font into an atlas of distances, as the font importer does: the
+// em at `size` pixels, the distances spread over `spread` pixels. The editor bakes its own fonts so.
+[[nodiscard]] core::Result<FontData> bakeFont(std::span<const std::byte> file, std::string family, float size = 48.0f,
+                                              float spread = 6.0f);
 
 // Local files that a .gltf or .glb file refers to, such as external buffers and images.
 [[nodiscard]] core::Result<std::vector<std::filesystem::path>> findGltfDependencies(
