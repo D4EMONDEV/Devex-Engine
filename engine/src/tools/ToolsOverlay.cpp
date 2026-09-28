@@ -294,10 +294,9 @@ void drawOverlayMenu(ToolsState& state, scene::Scene& scene)
             redo(state, scene);
         }
         ImGui::Separator();
-        if (ImGui::BeginMenuEx("Create", detail::icons::Plus.c_str()))
+        if (ImGui::MenuItemEx("Create Entity...", detail::icons::Plus.c_str()))
         {
-            detail::drawCreateEntityMenu(state, core::Uuid{});
-            ImGui::EndMenu();
+            detail::openCreateEntity(state, core::Uuid{});
         }
         ImGui::Separator();
         detail::drawEntityEditMenuItems(state, scene);
@@ -494,6 +493,7 @@ void updateEditor(ToolsState& state, scene::Scene& scene, PlayState playState)
     }
     detail::drawSettingsWindow(state);
     detail::drawProjectSettingsWindow(state);
+    detail::drawCreationDialog(state, scene);
     detail::drawExportWindow(state);
     detail::drawDebuggingWindow(state);
     detail::drawNewScriptPopup(state);
@@ -695,6 +695,7 @@ void ToolsOverlay::update(scene::Scene& scene, core::Duration frameDelta, PlaySt
     {
         detail::drawAssetsPanel(state, scene);
     }
+    detail::drawCreationDialog(state, scene);
     detail::handleEntityShortcuts(state, scene);
     if (state.pendingCommand != nullptr)
     {
@@ -712,12 +713,16 @@ void ToolsOverlay::update(scene::Scene& scene, core::Duration frameDelta, PlaySt
 void ToolsOverlay::prepareRender(scene::Scene& scene, render::RenderWorld& world, PlayState playState)
 {
     ToolsState& state = *m_state;
+    // The panels made with the interface of the engine draw into images of their own, in the
+    // overlay of a game as in the editor.
+    detail::renderProjectManager(state, world);
+    detail::renderFileSystem(state, world);
+    detail::renderOutput(state, world);
+    detail::renderCreationDialog(state, world);
     if (state.mode != ToolsMode::Editor)
     {
         return;
     }
-    // The panels made with the interface of the engine draw into images of their own.
-    detail::renderProjectManager(state, world);
     // A hidden viewport still renders, at a size too small to cost anything.
     world.viewport = state.viewportPixels.width > 0 ? state.viewportPixels : math::Extent2D{16, 16};
     if (playState == PlayState::Editing)

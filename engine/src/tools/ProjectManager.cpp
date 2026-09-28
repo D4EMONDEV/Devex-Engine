@@ -24,6 +24,8 @@ namespace devex::tools::detail {
 
 using scene::Entity;
 using scene::UiRect;
+using namespace rects;
+using Button = PanelButton;
 
 namespace {
 
@@ -182,52 +184,6 @@ void createProject(ToolsState& state, const std::filesystem::path& directory)
     state.requests.openProject = project->file;
 }
 
-// Rectangles as the layouts of the panel use them, in units.
-[[nodiscard]] UiRect fixed(math::Vec2 size) noexcept
-{
-    return UiRect{.anchorMin = {0.0f, 0.0f}, .anchorMax = {0.0f, 0.0f}, .offsetMin = {0.0f, 0.0f}, .offsetMax = size};
-}
-
-// A fixed size, in the middle of the height of a row.
-[[nodiscard]] UiRect middle(math::Vec2 size) noexcept
-{
-    return UiRect{.anchorMin = {0.0f, 0.5f},
-                  .anchorMax = {0.0f, 0.5f},
-                  .offsetMin = {0.0f, -size.y * 0.5f},
-                  .offsetMax = {size.x, size.y * 0.5f}};
-}
-
-// Takes what is left of a row, at a height in the middle of it.
-[[nodiscard]] UiRect grow(float height) noexcept
-{
-    return UiRect{.anchorMin = {0.0f, 0.5f},
-                  .anchorMax = {1.0f, 0.5f},
-                  .offsetMin = {0.0f, -height * 0.5f},
-                  .offsetMax = {0.0f, height * 0.5f}};
-}
-
-// As wide as its column, at a height.
-[[nodiscard]] UiRect wide(float height) noexcept
-{
-    return UiRect{.anchorMin = {0.0f, 0.0f}, .anchorMax = {1.0f, 0.0f}, .offsetMin = {0.0f, 0.0f}, .offsetMax = {0.0f, height}};
-}
-
-[[nodiscard]] UiRect whole(math::Vec4 inset = math::Vec4{0.0f}) noexcept
-{
-    return UiRect{.anchorMin = {0.0f, 0.0f},
-                  .anchorMax = {1.0f, 1.0f},
-                  .offsetMin = {inset.x, inset.y},
-                  .offsetMax = {-inset.z, -inset.w}};
-}
-
-// A button of the panel: its entity, its icon and its label.
-struct Button
-{
-    Entity entity;
-    Entity icon;
-    Entity label;
-};
-
 // One project of the list and what its row shows.
 struct Row
 {
@@ -246,10 +202,13 @@ struct Row
 } // namespace
 
 // The panel and the entities the code reads and changes, beside the ones it only places.
-struct ProjectManagerUi
+struct ProjectManagerUi : PanelBuilder
 {
-    UiPanel panel{projectManagerSurface};
-    float font = 14.0f;
+    ProjectManagerUi()
+        : PanelBuilder(projectManagerSurface)
+    {
+    }
+
     float sideWidth = 175.0f;
     bool built = false;
 
@@ -303,148 +262,6 @@ struct ProjectManagerUi
     Entity removeText;
     Button removeConfirm;
     Button removeCancel;
-
-    [[nodiscard]] scene::Scene& scene() noexcept
-    {
-        return panel.scene();
-    }
-
-    Entity add(Entity parent, const char* name, UiRect rect, std::string_view style = {})
-    {
-        const Entity entity = scene().createEntity(name);
-        static_cast<void>(scene().setParent(entity, parent.isValid() ? parent : panel.canvas()));
-        rect.style = style;
-        scene().add<UiRect>(entity, rect);
-        return entity;
-    }
-
-    Entity text(Entity parent, UiRect rect, std::string value, std::string_view style, bool bold = false,
-                scene::TextAlign align = scene::TextAlign::Left, float size = 0.0f)
-    {
-        const Entity entity = add(parent, "Text", rect, style);
-        scene().add<scene::UiText>(entity, scene::UiText{.text = std::move(value),
-                                                         .font = bold ? EditorUiKit::boldFont() : EditorUiKit::regularFont(),
-                                                         .size = size > 0.0f ? size : font,
-                                                         .align = align,
-                                                         .verticalAlign = scene::TextVerticalAlign::Middle,
-                                                         .wrap = false});
-        return entity;
-    }
-
-    Entity icon(EditorUiKit& kit, Entity parent, UiRect rect, Icon glyph, std::string_view style = "icon")
-    {
-        const Entity entity = add(parent, "Icon", rect, style);
-        scene().add<scene::UiImage>(entity, scene::UiImage{.texture = kit.icon(glyph), .raycastTarget = false});
-        return entity;
-    }
-
-    // A button with an icon and a label, as wide as they need, or the width given.
-    Button button(EditorUiKit& kit, Entity parent, std::optional<Icon> glyph, std::string_view label,
-                  std::string_view style = "button", float width = 0.0f, float height = 0.0f,
-                  scene::TextAlign align = scene::TextAlign::Center)
-    {
-        const float tall = height > 0.0f ? height : font * 2.0f;
-        const float iconSize = font * 1.1f;
-        const float needed = font * 1.4f + (glyph ? iconSize + font * 0.45f : 0.0f) +
-                             kit.textWidth(EditorUiKit::regularFont(), label, font);
-        Button made;
-        made.entity = add(parent, "Button", width < 0.0f ? wide(tall) : middle({width > 0.0f ? width : needed, tall}), style);
-        scene().add<scene::UiImage>(made.entity);
-        scene().add<scene::UiButton>(made.entity);
-        scene().add<scene::UiLayout>(made.entity, scene::UiLayout{.kind = scene::UiLayoutKind::Row,
-                                                                  .spacing = font * 0.45f,
-                                                                  .padding = {font * 0.7f, 0.0f, font * 0.7f, 0.0f},
-                                                                  .align = align});
-        if (glyph)
-        {
-            made.icon = icon(kit, made.entity, middle({iconSize, iconSize}), *glyph);
-        }
-        made.label = text(made.entity, middle({kit.textWidth(EditorUiKit::regularFont(), label, font) + 2.0f, tall}),
-                          std::string(label), "text");
-        return made;
-    }
-
-    // Changes the label of a button, which keeps its width.
-    void relabel(EditorUiKit& kit, const Button& target, std::string_view label)
-    {
-        scene::UiText& shown = scene().get<scene::UiText>(target.label);
-        if (shown.text != label)
-        {
-            shown.text = std::string(label);
-            UiRect& rect = scene().get<UiRect>(target.label);
-            rect.offsetMax.x = rect.offsetMin.x + kit.textWidth(EditorUiKit::regularFont(), label, font) + 2.0f;
-        }
-    }
-
-    void enable(const Button& target, bool enabled)
-    {
-        scene().get<scene::UiButton>(target.entity).interactable = enabled;
-        const float opacity = enabled ? 1.0f : 0.45f;
-        for (const Entity part : {target.icon, target.label})
-        {
-            if (part.isValid())
-            {
-                scene().get<UiRect>(part).opacity = opacity;
-            }
-        }
-    }
-
-    void tooltip(Entity entity, std::string value)
-    {
-        if (scene::UiTooltip* const existing = scene().tryGet<scene::UiTooltip>(entity))
-        {
-            existing->text = std::move(value);
-            return;
-        }
-        scene().add<scene::UiTooltip>(entity, scene::UiTooltip{.text = std::move(value), .delay = 0.45f});
-    }
-
-    Entity field(Entity parent, UiRect rect, std::string value, std::string placeholder, std::string action = {})
-    {
-        const Entity entity = add(parent, "Field", rect, "field");
-        scene().add<scene::UiImage>(entity);
-        scene().add<scene::UiText>(entity, scene::UiText{.text = std::move(value),
-                                                         .font = EditorUiKit::regularFont(),
-                                                         .size = font,
-                                                         .verticalAlign = scene::TextVerticalAlign::Middle,
-                                                         .wrap = false});
-        scene().add<scene::UiInput>(entity, scene::UiInput{.placeholder = std::move(placeholder),
-                                                           .padding = {font * 0.6f, 0.0f},
-                                                           .action = std::move(action)});
-        return entity;
-    }
-
-    // A dialog in the middle of the panel, over a veil.
-    Entity dialog(const char* name, math::Vec2 size)
-    {
-        const Entity entity = add({}, name,
-                                  UiRect{.anchorMin = {0.5f, 0.5f},
-                                         .anchorMax = {0.5f, 0.5f},
-                                         .offsetMin = {-size.x * 0.5f, -size.y * 0.5f},
-                                         .offsetMax = {size.x * 0.5f, size.y * 0.5f},
-                                         .visible = false},
-                                  "popup");
-        scene().add<scene::UiImage>(entity);
-        scene().add<scene::UiPopup>(entity, scene::UiPopup{.kind = scene::UiPopupKind::Modal});
-        scene().add<scene::UiLayout>(entity, scene::UiLayout{.kind = scene::UiLayoutKind::Column,
-                                                             .spacing = font * 0.55f,
-                                                             .padding = math::Vec4{font * 1.2f},
-                                                             .align = scene::TextAlign::Left});
-        return entity;
-    }
-
-    // The two buttons at the bottom of a dialog, on its right.
-    std::pair<Button, Button> dialogButtons(EditorUiKit& kit, Entity dialog, Icon glyph, std::string_view confirm,
-                                            float width)
-    {
-        const Entity line = add(dialog, "Buttons", wide(font * 2.0f));
-        scene().add<scene::UiLayout>(line, scene::UiLayout{.kind = scene::UiLayoutKind::Row,
-                                                           .spacing = font * 0.5f,
-                                                           .align = scene::TextAlign::Right});
-        const Button first = button(kit, line, glyph, confirm, "primary", width);
-        const Button second = button(kit, line, std::nullopt, "Cancel", "button", width * 0.75f);
-        return {first, second};
-    }
 
     void build(ToolsState& state, EditorUiKit& kit);
     void buildRows(ToolsState& state, EditorUiKit& kit, const std::vector<ProjectEntry>& projects);
@@ -511,13 +328,7 @@ void ProjectManagerUi::build(ToolsState& state, EditorUiKit& kit)
     scan = button(kit, toolbar, Icon::FolderSearch, "Scan");
     tooltip(scan.entity, "Adds the projects found in a folder and its subfolders");
     add(toolbar, "Gap", middle({font * 0.4f, 1.0f}));
-    filter = field(toolbar, grow(line), state.projectManager.filter, "Filter Projects");
-    scene().get<scene::UiInput>(filter).padding.x = font * 2.0f;
-    icon(kit, filter, UiRect{.anchorMin = {0.0f, 0.5f},
-                             .anchorMax = {0.0f, 0.5f},
-                             .offsetMin = {font * 0.6f, -font * 0.5f},
-                             .offsetMax = {font * 1.6f, font * 0.5f}},
-         Icon::Search, "icon_dim");
+    filter = searchField(kit, toolbar, grow(line), state.projectManager.filter, "Filter Projects");
     text(toolbar, middle({kit.textWidth(EditorUiKit::regularFont(), "Sort:", font) + font * 0.6f, line}), "Sort:", "text",
          false, scene::TextAlign::Right);
     sort = add(toolbar, "Sort", middle({font * 10.0f, line}), "dropdown");
@@ -732,12 +543,7 @@ void ProjectManagerUi::update(ToolsState& state, EditorUiKit& kit, core::Duratio
         build(state, kit);
     }
     ui::UiWorld& world = panel.world();
-    world.setTooltipStyle(ui::TooltipStyle{.background = linearColor(colors.popup),
-                                           .text = linearColor(colors.text),
-                                           .font = EditorUiKit::regularFont(),
-                                           .size = font,
-                                           .padding = font * 0.45f,
-                                           .cornerRadius = 4.0f});
+    styleTooltips(colors);
 
     // The rows follow the list, its sort and its filter.
     manager.filter = scene().get<scene::UiText>(filter).text;
@@ -861,9 +667,7 @@ void ProjectManagerUi::update(ToolsState& state, EditorUiKit& kit, core::Duratio
     }
 
     // The panel takes the mouse and the keys of its window, and lays itself out.
-    const float zoom = (ImGui::GetIO().DisplayFramebufferScale.x > 0.0f ? ImGui::GetIO().DisplayFramebufferScale.x : 1.0f) *
-                       ImGui::GetFontSize() / std::max(font, 1.0f);
-    panel.update(kit, delta, zoom);
+    panel.update(kit, delta, UiPanel::zoomFor(font));
 
     // What was done this frame.
     std::optional<std::filesystem::path> opened;

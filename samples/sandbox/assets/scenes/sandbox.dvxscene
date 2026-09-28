@@ -1986,6 +1986,271 @@ vertical_align = "middle"
 outline_width = 0.0
 raycast_target = false
 
+[entity uuid="7e1b0a00-0001-4000-9000-000000000080" name="Sac"]
+parent = "7e1b0a00-0001-4000-9000-000000000014"
+
+[component type="UiRect"]
+anchor_min = vec2(0.5, 0.5)
+anchor_max = vec2(0.5, 0.5)
+offset_min = vec2(260, -150)
+offset_max = vec2(560, 108)
+opacity = 1.0
+visible = true
+style = "card"
+
+[component type="UiImage"]
+color = vec4(0.01521, 0.01938, 0.02956, 1.0)
+corner_radius = 14.0
+raycast_target = true
+
+[entity uuid="7e1b0a00-0001-4000-9000-000000000081" name="Titre"]
+parent = "7e1b0a00-0001-4000-9000-000000000080"
+
+[component type="UiRect"]
+anchor_min = vec2(0, 0)
+anchor_max = vec2(1, 0)
+offset_min = vec2(24, 12)
+offset_max = vec2(-24, 60)
+opacity = 1.0
+visible = true
+style = "label"
+
+[component type="UiText"]
+text = "Sac"
+font = asset("3f5c9a10-8d21-4b77-9d3e-6a41c0f2e510")
+size = 26
+color = vec4(0.84687, 0.86316, 0.88792, 1.0)
+align = "left"
+vertical_align = "middle"
+wrap = false
+outline_width = 0.0
+raycast_target = false
+
+[entity uuid="7e1b0a00-0001-4000-9000-000000000082" name="Cases"]
+parent = "7e1b0a00-0001-4000-9000-000000000080"
+
+[component type="UiRect"]
+anchor_min = vec2(0, 0)
+anchor_max = vec2(1, 1)
+offset_min = vec2(24, 70)
+offset_max = vec2(-24, -24)
+opacity = 1.0
+visible = true
+
+[component type="UiLayout"]
+kind = "grid"
+spacing = 12
+padding = vec4(0, 0, 0, 0)
+columns = 3
+align = "center"
+
+[entity uuid="7e1b0a00-0001-4000-9000-000000000083" name="Case 1"]
+parent = "7e1b0a00-0001-4000-9000-000000000082"
+
+[component type="UiRect"]
+anchor_min = vec2(0, 0)
+anchor_max = vec2(0, 0)
+offset_min = vec2(0, 0)
+offset_max = vec2(76, 76)
+opacity = 1.0
+visible = true
+style = "field"
+
+[component type="UiImage"]
+color = vec4(0.00754, 0.00913, 0.01298, 1.0)
+corner_radius = 8.0
+raycast_target = true
+
+[component type="UiDropTarget"]
+accepts = list("item")
+highlight_color = vec4(0.09084, 0.23074, 0.52711, 0.6)
+action = "slot"
+
+[entity uuid="7e1b0a00-0001-4000-9000-000000000090" name="Torche"]
+parent = "7e1b0a00-0001-4000-9000-000000000083"
+
+[component type="UiRect"]
+anchor_min = vec2(0, 0)
+anchor_max = vec2(1, 1)
+offset_min = vec2(10, 10)
+offset_max = vec2(-10, -10)
+opacity = 1.0
+visible = true
+
+[component type="UiImage"]
+texture = asset("f29ace31-97a6-59f7-b402-23c4788a1259")
+color = vec4(1.0, 1.0, 1.0, 1.0)
+corner_radius = 0.0
+raycast_target = true
+
+[component type="UiDragSource"]
+type = "item"
+data = "torch"
+label = "Torche"
+
+[component type="UiTooltip"]
+text = "Torche : glissez-la dans une autre case"
+
+[entity uuid="7e1b0a00-0001-4000-9000-000000000084" name="Case 2"]
+parent = "7e1b0a00-0001-4000-9000-000000000082"
+
+[component type="UiRect"]
+anchor_min = vec2(0, 0)
+anchor_max = vec2(0, 0)
+offset_min = vec2(0, 0)
+offset_max = vec2(76, 76)
+opacity = 1.0
+visible = true
+style = "field"
+
+[component type="UiImage"]
+color = vec4(0.00754, 0.00913, 0.01298, 1.0)
+corner_radius = 8.0
+raycast_target = true
+
+[component type="UiDropTarget"]
+accepts = list("item")
+highlight_color = vec4(0.09084, 0.23074, 0.52711, 0.6)
+action = "slot"
+
+[entity uuid="7e1b0a00-0001-4000-9000-000000000091" name="Caisse"]
+parent = "7e1b0a00-0001-4000-9000-000000000084"
+
+[component type="UiRect"]
+anchor_min = vec2(0, 0)
+anchor_max = vec2(1, 1)
+offset_min = vec2(10, 10)
+offset_max = vec2(-10, -10)
+opacity = 1.0
+visible = true
+
+[component type="UiImage"]
+texture = asset("cccefb89-ad7d-4017-baee-768010b4c990")
+color = vec4(1.0, 1.0, 1.0, 1.0)
+corner_radius = 0.0
+raycast_target = true
+
+[component type="UiDragSource"]
+type = "item"
+data = "crate"
+label = "Caisse"
+
+[component type="UiTooltip"]
+text = "Caisse : glissez-la dans une autre case"
+
+[entity uuid="7e1b0a00-0001-4000-9000-000000000085" name="Case 3"]
+parent = "7e1b0a00-0001-4000-9000-000000000082"
+
+[component type="UiRect"]
+anchor_min = vec2(0, 0)
+anchor_max = vec2(0, 0)
+offset_min = vec2(0, 0)
+offset_max = vec2(76, 76)
+opacity = 1.0
+visible = true
+style = "field"
+
+[component type="UiImage"]
+color = vec4(0.00754, 0.00913, 0.01298, 1.0)
+corner_radius = 8.0
+raycast_target = true
+
+[component type="UiDropTarget"]
+accepts = list("item")
+highlight_color = vec4(0.09084, 0.23074, 0.52711, 0.6)
+action = "slot"
+
+[entity uuid="7e1b0a00-0001-4000-9000-000000000086" name="Case 4"]
+parent = "7e1b0a00-0001-4000-9000-000000000082"
+
+[component type="UiRect"]
+anchor_min = vec2(0, 0)
+anchor_max = vec2(0, 0)
+offset_min = vec2(0, 0)
+offset_max = vec2(76, 76)
+opacity = 1.0
+visible = true
+style = "field"
+
+[component type="UiImage"]
+color = vec4(0.00754, 0.00913, 0.01298, 1.0)
+corner_radius = 8.0
+raycast_target = true
+
+[component type="UiDropTarget"]
+accepts = list("item")
+highlight_color = vec4(0.09084, 0.23074, 0.52711, 0.6)
+action = "slot"
+
+[entity uuid="7e1b0a00-0001-4000-9000-000000000092" name="Devex"]
+parent = "7e1b0a00-0001-4000-9000-000000000086"
+
+[component type="UiRect"]
+anchor_min = vec2(0, 0)
+anchor_max = vec2(1, 1)
+offset_min = vec2(10, 10)
+offset_max = vec2(-10, -10)
+opacity = 1.0
+visible = true
+
+[component type="UiImage"]
+texture = asset("a0b10371-4bc1-4dc2-8fd8-ba5676e805fb")
+color = vec4(1.0, 1.0, 1.0, 1.0)
+corner_radius = 0.0
+raycast_target = true
+
+[component type="UiDragSource"]
+type = "item"
+data = "devex"
+label = "Devex"
+
+[component type="UiTooltip"]
+text = "Devex : glissez-la dans une autre case"
+
+[entity uuid="7e1b0a00-0001-4000-9000-000000000087" name="Case 5"]
+parent = "7e1b0a00-0001-4000-9000-000000000082"
+
+[component type="UiRect"]
+anchor_min = vec2(0, 0)
+anchor_max = vec2(0, 0)
+offset_min = vec2(0, 0)
+offset_max = vec2(76, 76)
+opacity = 1.0
+visible = true
+style = "field"
+
+[component type="UiImage"]
+color = vec4(0.00754, 0.00913, 0.01298, 1.0)
+corner_radius = 8.0
+raycast_target = true
+
+[component type="UiDropTarget"]
+accepts = list("item")
+highlight_color = vec4(0.09084, 0.23074, 0.52711, 0.6)
+action = "slot"
+
+[entity uuid="7e1b0a00-0001-4000-9000-000000000088" name="Case 6"]
+parent = "7e1b0a00-0001-4000-9000-000000000082"
+
+[component type="UiRect"]
+anchor_min = vec2(0, 0)
+anchor_max = vec2(0, 0)
+offset_min = vec2(0, 0)
+offset_max = vec2(76, 76)
+opacity = 1.0
+visible = true
+style = "field"
+
+[component type="UiImage"]
+color = vec4(0.00754, 0.00913, 0.01298, 1.0)
+corner_radius = 8.0
+raycast_target = true
+
+[component type="UiDropTarget"]
+accepts = list("item")
+highlight_color = vec4(0.09084, 0.23074, 0.52711, 0.6)
+action = "slot"
+
 [entity uuid="7e1b0a00-0001-4000-9000-00000000001d" name="Hud"]
 parent = "7e1b0a00-0001-4000-9000-000000000001"
 

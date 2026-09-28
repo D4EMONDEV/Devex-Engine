@@ -951,110 +951,25 @@ void drawSharedInspector(ToolsState& state, scene::Scene& scene, const std::vect
         ImGui::PopID();
     }
 
-    // Components that some of them lack, added to those.
-    static std::string filter;
+    // Components that some of them lack, added to those, from the window that creates entities.
     ImGui::Spacing();
     if (labelButton(icons::Plus, "Add Component", -FLT_MIN))
     {
-        filter.clear();
-        ImGui::OpenPopup("add component");
-    }
-    ImGui::SetNextWindowSize(ImVec2(ImGui::GetItemRectSize().x, 0.0f));
-    if (ImGui::BeginPopup("add component"))
-    {
-        if (ImGui::IsWindowAppearing())
+        std::vector<core::Uuid> targets;
+        for (const scene::Entity entity : entities)
         {
-            ImGui::SetKeyboardFocusHere();
+            targets.push_back(scene.uuid(entity));
         }
-        searchField("##filter", filter, "Search Components");
-        for (const scene::ComponentType& type : scene::componentRegistry().types())
-        {
-            const std::string name(type.name());
-            std::vector<core::Uuid> lacking;
-            for (const scene::Entity entity : entities)
-            {
-                if (type.find(scene, entity) == nullptr)
-                {
-                    lacking.push_back(scene.uuid(entity));
-                }
-            }
-            if (lacking.empty() || !containsIgnoringCase(name, filter))
-            {
-                continue;
-            }
-            const EntityIcon componentIconOf = componentIcon(name);
-            const ImVec2 position = ImGui::GetCursorScreenPos();
-            const std::string label = std::format("      {}", name);
-            if (ImGui::Selectable(label.c_str()))
-            {
-                std::vector<std::unique_ptr<Command>> commands;
-                for (const core::Uuid uuid : lacking)
-                {
-                    commands.push_back(makeAddComponentCommand(uuid, name));
-                }
-                state.pendingCommand = makeCompositeCommand(std::move(commands), std::format("Add {} to {} entities", name, lacking.size()));
-            }
-            if (lacking.size() < entities.size())
-            {
-                ImGui::SetItemTooltip("Added to the %zu that lack it", lacking.size());
-            }
-            ImGui::GetWindowDrawList()->AddText(position, uiColorU32(componentIconOf.color), componentIconOf.icon.c_str());
-        }
-        ImGui::EndPopup();
+        openAddComponent(state, std::move(targets));
     }
 }
 
-void drawAddComponent(ToolsState& state, scene::Scene& scene, scene::Entity entity, core::Uuid uuid)
+void drawAddComponent(ToolsState& state, core::Uuid uuid)
 {
-    static std::string filter;
     ImGui::Spacing();
     if (labelButton(icons::Plus, "Add Component", -FLT_MIN))
     {
-        filter.clear();
-        ImGui::OpenPopup("add component");
-    }
-    ImGui::SetNextWindowSize(ImVec2(ImGui::GetItemRectSize().x, 0.0f));
-    if (ImGui::BeginPopup("add component"))
-    {
-        if (ImGui::IsWindowAppearing())
-        {
-            ImGui::SetKeyboardFocusHere();
-        }
-        searchField("##filter", filter, "Search Components");
-        if (state.mode == ToolsMode::Editor && state.database != nullptr)
-        {
-            const ImVec2 position = ImGui::GetCursorScreenPos();
-            if (ImGui::Selectable("      New Script..."))
-            {
-                state.openNewScriptPopup = true;
-            }
-            ImGui::SetItemTooltip("Writes a component in a new file of the code folder and adds it here");
-            ImGui::GetWindowDrawList()->AddText(position, uiColorU32(themeColors().gameCode), icons::FilePlus.c_str());
-            ImGui::Separator();
-        }
-        std::size_t shown = 0;
-        for (const scene::ComponentType& type : scene::componentRegistry().types())
-        {
-            const std::string name(type.name());
-            if (type.find(scene, entity) != nullptr || !containsIgnoringCase(name, filter))
-            {
-                continue;
-            }
-            ++shown;
-            const EntityIcon icon = componentIcon(name);
-            const ImVec2 position = ImGui::GetCursorScreenPos();
-            const std::string label = std::format("      {}", name);
-            if (ImGui::Selectable(label.c_str()))
-            {
-                state.pendingCommand = makeAddComponentCommand(uuid, name);
-            }
-            ImGui::GetWindowDrawList()->AddText(position, uiColorU32(icon.color), icon.icon.c_str());
-        }
-        if (shown == 0)
-        {
-            ImGui::TextDisabled("No component to add.");
-        }
-        ImGui::EndPopup();
+        openAddComponent(state, {uuid});
     }
 }
 
@@ -1347,7 +1262,7 @@ void drawInspectorPanel(ToolsState& state, scene::Scene& scene)
             }
         }
 
-        drawAddComponent(state, scene, entity, uuid);
+        drawAddComponent(state, uuid);
     }
     ImGui::End();
 }

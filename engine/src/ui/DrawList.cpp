@@ -649,9 +649,10 @@ void drawOverlayText(render::RenderWorld& world, const DrawContext& context, mat
     }
     Builder builder{.world = world, .clip = math::Vec4{min.x, min.y, max.x, max.y}};
     TextLayoutResult letters;
+    const bool wrap = text.wrapWidth > 0.0f;
     layoutText(*font.data, text.text,
-               TextStyle{.size = text.size, .verticalAlign = scene::TextVerticalAlign::Middle, .wrap = false}, min, max,
-               letters);
+               TextStyle{.size = text.size, .verticalAlign = scene::TextVerticalAlign::Middle, .wrap = wrap}, min,
+               wrap ? math::Vec2{min.x + text.wrapWidth, max.y} : max, letters);
     const scene::UiText style{.text = std::string(text.text), .size = text.size, .color = text.color};
     drawTextLayout(builder, context, LaidOutRect{.min = min, .max = max}, style, letters, font, text.color);
     std::erase_if(world.uiDraws, [](const render::UiDraw& batch) { return batch.indexCount == 0; });
@@ -664,7 +665,9 @@ math::Vec2 measureOverlayText(const DrawContext& context, const OverlayText& tex
         return math::Vec2{0.0f};
     }
     const FontRef font = context.fonts(text.font.isValid() ? text.font : context.defaultFont);
-    return font.data != nullptr ? measureText(*font.data, text.text, TextStyle{.size = text.size, .wrap = false})
+    const bool wrap = text.wrapWidth > 0.0f;
+    return font.data != nullptr ? measureText(*font.data, text.text, TextStyle{.size = text.size, .wrap = wrap},
+                                              wrap ? text.wrapWidth : 0.0f)
                                 : math::Vec2{0.0f};
 }
 

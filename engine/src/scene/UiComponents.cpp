@@ -106,6 +106,21 @@ DEVEX_REFLECT(UiTableRow)
     type.field("header", &UiTableRow::header);
 }
 
+DEVEX_REFLECT(UiDragSource)
+{
+    type.field("type", &UiDragSource::type)
+        .field("data", &UiDragSource::data)
+        .field("label", &UiDragSource::label)
+        .field("interactable", &UiDragSource::interactable);
+}
+
+DEVEX_REFLECT(UiDropTarget)
+{
+    type.field("accepts", &UiDropTarget::accepts)
+        .field("highlight_color", &UiDropTarget::highlightColor, {.color = true})
+        .field("action", &UiDropTarget::action);
+}
+
 DEVEX_REFLECT(UiImage)
 {
     type.field("texture", &UiImage::texture, {.assetType = "texture"})

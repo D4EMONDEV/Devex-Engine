@@ -363,10 +363,15 @@ void layoutChildren(const scene::Scene& scene, scene::Entity parent, math::Vec2 
         result.rects[placedAt].descendants = static_cast<std::uint32_t>(result.rects.size() - firstChild);
         if (scroll != nullptr)
         {
-            // The room the children take, which says how far the content can be moved.
+            // The room the children take, which says how far the content can be moved. What is
+            // hidden takes none, such as the rows a virtual list keeps past its last item.
             math::Aabb content;
             for (std::size_t descendant = firstChild; descendant < result.rects.size(); ++descendant)
             {
+                if (!result.rects[descendant].visible)
+                {
+                    continue;
+                }
                 content.add(math::Vec3{result.rects[descendant].min.x - childShift.x,
                                        result.rects[descendant].min.y - childShift.y, 0.0f});
                 content.add(math::Vec3{result.rects[descendant].max.x - childShift.x,
@@ -427,8 +432,15 @@ math::Vec4 intersectClip(const math::Vec4& clip, const math::Vec4& other) noexce
     {
         return clip;
     }
-    return math::Vec4{std::max(clip.x, other.x), std::max(clip.y, other.y),
-                      std::min(clip.z, other.z), std::min(clip.w, other.w)};
+    math::Vec4 cut{std::max(clip.x, other.x), std::max(clip.y, other.y), std::min(clip.z, other.z),
+                   std::min(clip.w, other.w)};
+    // Nothing is left of them: a box too small to hold a pixel, rather than an empty one, which would
+    // mean that nothing cuts at all, and draw the children of an element scrolled out of view.
+    if (cut.z <= cut.x || cut.w <= cut.y)
+    {
+        cut = math::Vec4{cut.x, cut.y, cut.x + 0.001f, cut.y + 0.001f};
+    }
+    return cut;
 }
 
 const LaidOutRect* LayoutResult::find(scene::Entity entity) const noexcept

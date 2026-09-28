@@ -203,6 +203,19 @@ public class MenuController : Component
             Show(MainMenu, true);
             ShowLastSave();
         }
+        // An item of the bag dropped on a case goes there, and the one that was there takes its place.
+        if (Ui.WasDropped("slot") && Ui.Dropped is UiDrop drop && drop.Source.IsAlive)
+        {
+            Entity from = drop.Source.Parent;
+            foreach (Entity held in new List<Entity>(drop.Target.Children))
+            {
+                if (held != drop.Source)
+                {
+                    held.SetParent(from);
+                }
+            }
+            drop.Source.SetParent(drop.Target);
+        }
     }
 
     private void UpdateGame(float delta)

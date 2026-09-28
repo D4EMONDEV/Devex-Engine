@@ -251,6 +251,13 @@ struct NativeApi
     Entity (*uiContextTarget)();
     int (*uiDoubleClickedAction)(const char* action);
     int (*uiDoubleClickedEntity)(Entity entity);
+    int (*uiDroppedAction)(const char* action);
+    int (*uiDroppedEntity)(Entity target);
+    Entity (*uiDropSource)();
+    Entity (*uiDropTarget)();
+    const char* (*uiDropType)();
+    const char* (*uiDropData)();
+    Entity (*uiCarried)();
 };
 
 // The functions the engine calls, in the order of Devex.Managed's ManagedApi.
@@ -265,7 +272,7 @@ struct ManagedApi
 };
 
 // Devex.Managed's Bootstrap.Version: both sides change it with the function tables.
-constexpr int bootstrapVersion = 16;
+constexpr int bootstrapVersion = 17;
 
 struct BootstrapArguments
 {
@@ -1211,6 +1218,48 @@ int apiUiDoubleClickedAction(const char* action)
 int apiUiDoubleClickedEntity(Entity entity)
 {
     return uiWorld() != nullptr && uiWorld()->wasDoubleClicked(entity) ? 1 : 0;
+}
+
+int apiUiDroppedAction(const char* action)
+{
+    return uiWorld() != nullptr && action != nullptr && uiWorld()->wasDropped(action) ? 1 : 0;
+}
+
+int apiUiDroppedEntity(Entity target)
+{
+    return uiWorld() != nullptr && uiWorld()->wasDropped(target) ? 1 : 0;
+}
+
+// The last drop, whose strings live in the interface world until its next update.
+const ui::Drop* lastDrop()
+{
+    return uiWorld() != nullptr ? uiWorld()->dropped() : nullptr;
+}
+
+Entity apiUiDropSource()
+{
+    return lastDrop() != nullptr ? lastDrop()->source : Entity{};
+}
+
+Entity apiUiDropTarget()
+{
+    return lastDrop() != nullptr ? lastDrop()->target : Entity{};
+}
+
+const char* apiUiDropType()
+{
+    return lastDrop() != nullptr ? lastDrop()->type.c_str() : "";
+}
+
+const char* apiUiDropData()
+{
+    return lastDrop() != nullptr ? lastDrop()->data.c_str() : "";
+}
+
+Entity apiUiCarried()
+{
+    const ui::Carried* const carried = uiWorld() != nullptr ? uiWorld()->carried() : nullptr;
+    return carried != nullptr ? carried->source : Entity{};
 }
 
 int apiProfileEnabled()
@@ -2174,6 +2223,13 @@ int apiParticleCount(Entity entity)
         .uiContextTarget = &apiUiContextTarget,
         .uiDoubleClickedAction = &apiUiDoubleClickedAction,
         .uiDoubleClickedEntity = &apiUiDoubleClickedEntity,
+        .uiDroppedAction = &apiUiDroppedAction,
+        .uiDroppedEntity = &apiUiDroppedEntity,
+        .uiDropSource = &apiUiDropSource,
+        .uiDropTarget = &apiUiDropTarget,
+        .uiDropType = &apiUiDropType,
+        .uiDropData = &apiUiDropData,
+        .uiCarried = &apiUiCarried,
     };
 }
 

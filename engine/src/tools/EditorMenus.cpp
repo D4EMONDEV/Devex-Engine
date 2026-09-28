@@ -114,15 +114,13 @@ void drawEditMenu(ToolsState& state, scene::Scene& scene)
     }
     ImGui::Separator();
     const bool hasSelection = scene.findEntity(state.selection.active()).isValid();
-    if (ImGui::BeginMenuEx("Create", icons::Plus.c_str()))
+    if (menuItem(icons::Plus, "Create Entity..."))
     {
-        drawCreateEntityMenu(state, core::Uuid{});
-        ImGui::EndMenu();
+        openCreateEntity(state, core::Uuid{});
     }
-    if (ImGui::BeginMenuEx("Create Child", icons::Layers.c_str(), hasSelection && state.selection.size() == 1))
+    if (menuItem(icons::Layers, "Create Child...", nullptr, hasSelection && state.selection.size() == 1))
     {
-        drawCreateEntityMenu(state, state.selection.active());
-        ImGui::EndMenu();
+        openCreateEntity(state, state.selection.active());
     }
     ImGui::Separator();
     if (menuItem(icons::Crosshair, "Frame Selection", "F", hasSelection))

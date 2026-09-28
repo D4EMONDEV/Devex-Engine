@@ -609,3 +609,25 @@ public class Menus : Component
         ++Step;
     }
 }
+
+// Reads what the pointer carries and what a slot takes.
+public class Drops : Component
+{
+    public Entity Gem;
+    public Entity Slot;
+    public bool Carrying;
+    public bool Dropped;
+    public bool FromGem;
+    public string Data = "";
+
+    public override void Update(float delta)
+    {
+        Carrying = Carrying || Ui.Carried == Gem;
+        if (Ui.WasDropped("slot") && Ui.WasDropped(Slot) && Ui.Dropped is UiDrop drop)
+        {
+            Dropped = true;
+            FromGem = drop.Source == Gem && drop.Target == Slot && drop.Type == "item";
+            Data = drop.Data;
+        }
+    }
+}

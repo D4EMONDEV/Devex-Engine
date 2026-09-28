@@ -10,14 +10,20 @@
 #include <devex/render/Renderer.hpp>
 #include <devex/render/RenderWorld.hpp>
 #include <devex/scene/Scene.hpp>
+#include <devex/scene/UiComponents.hpp>
 #include <devex/ui/UiWorld.hpp>
 
 #include <imgui.h>
 
+#include <cstddef>
 #include <filesystem>
+#include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_map>
+#include <utility>
+#include <vector>
 
 // The panels of the editor made with the interface of the engine, as Godot draws its editor with the
 // nodes its games use. They live beside the ImGui panels until the dock itself moves over.
@@ -26,6 +32,9 @@ namespace devex::tools::detail {
 // A color of the editor theme, written in sRGB as ImGui's are, as the linear color of the interface
 // of the engine.
 [[nodiscard]] math::Vec4 linearColor(ImVec4 srgb) noexcept;
+
+// The icon an ImGui text of one icon writes.
+[[nodiscard]] Icon iconOf(IconText text) noexcept;
 
 // What the panels share: the fonts of the editor baked into atlases of distances, its icons drawn as
 // white textures that the images showing them tint, and its theme as the named styles of a theme of
@@ -42,6 +51,8 @@ public:
     // Identifiers only the kit resolves: the fonts, the theme, and the icons.
     [[nodiscard]] static asset::AssetId regularFont() noexcept;
     [[nodiscard]] static asset::AssetId boldFont() noexcept;
+    // The letters of code and of the output, all as wide.
+    [[nodiscard]] static asset::AssetId monoFont() noexcept;
     [[nodiscard]] static asset::AssetId themeId() noexcept;
     [[nodiscard]] asset::AssetId icon(Icon icon);
 
@@ -65,6 +76,7 @@ private:
     };
 
     void bakeFonts();
+    [[nodiscard]] const BakedFont& baked(asset::AssetId font) const noexcept;
 
     render::Renderer& m_renderer;
     const IconSet& m_icons;
@@ -72,10 +84,20 @@ private:
     bool m_fontsBaked = false;
     BakedFont m_regular;
     BakedFont m_bold;
+    BakedFont m_mono;
     std::unordered_map<asset::AssetId, render::TextureHandle> m_iconTextures;
     std::shared_ptr<asset::ThemeData> m_theme;
     ImVec4 m_themeAccent{-1.0f, 0.0f, 0.0f, 0.0f};
     ImVec4 m_themePanel{-1.0f, 0.0f, 0.0f, 0.0f};
+};
+
+// A drag between a panel and the ImGui windows around it, as ImGui carries it.
+struct ImGuiDrag
+{
+    std::string type;
+    std::vector<std::byte> payload;
+    // Shown next to the pointer once it leaves the panel.
+    std::string label;
 };
 
 // A panel made with the interface of the engine: a canvas of entities in a scene of its own, which an
@@ -93,6 +115,20 @@ public:
     [[nodiscard]] math::Vec2 size() const noexcept;
     // Whether the ImGui window it stands in has the keyboard.
     [[nodiscard]] bool focused() const noexcept;
+    // Whether the pointer is over the image of the panel.
+    [[nodiscard]] bool hovered() const noexcept;
+    // What the last update gave the interface world, in units of the panel.
+    [[nodiscard]] const ui::UiInput& input() const noexcept;
+
+    // What the drags of the panel become once they leave it: a payload the ImGui windows take, or
+    // nothing when they stay in the panel.
+    void setDragOut(std::function<std::optional<ImGuiDrag>(const ui::Carried&)> convert);
+    // What the ImGui drags that come over the panel become: the type and data its drop targets read,
+    // or nothing for those it does not take.
+    void setDragIn(std::function<std::optional<std::pair<std::string, std::string>>(const ImGuiPayload&)> convert);
+    // Whether the arrows, Enter and Space move the focus between the buttons and press them, as in a
+    // menu; a panel that answers the keys itself, as a tree does, turns it off.
+    void setKeyboardNavigation(bool enabled) noexcept;
 
     // Inside the ImGui window it fills: takes the room left in it, gives the interface world the
     // mouse and the keys the window receives, and shows the image of the panel. `zoom` is how many
@@ -101,7 +137,13 @@ public:
     // Adds the image of the panel to the frame, over a color, when the last update showed it.
     void render(EditorUiKit& kit, render::RenderWorld& world, math::Vec4 background);
 
+    // How many pixels a unit takes in a panel whose text is `font` units, its letters as large as
+    // those of ImGui.
+    [[nodiscard]] static float zoomFor(float font) noexcept;
+
 private:
+    void carryToImGui(const ImVec2& origin, float pixelsPerPoint);
+
     scene::Scene m_scene;
     ui::UiWorld m_world;
     scene::Entity m_canvas;
@@ -110,9 +152,80 @@ private:
     float m_zoom = 1.0f;
     bool m_shown = false;
     bool m_focused = false;
+    bool m_hovered = false;
     bool m_connected = false;
+    bool m_navigation = true;
+    ui::UiInput m_input;
+    std::function<std::optional<ImGuiDrag>(const ui::Carried&)> m_dragOut;
+    std::function<std::optional<std::pair<std::string, std::string>>(const ImGuiPayload&)> m_dragIn;
     // Where the last frame was drawn, kept to reuse its storage.
     render::RenderWorld m_scratch;
+};
+
+// Rectangles as the panels lay them out, in units.
+namespace rects {
+[[nodiscard]] scene::UiRect fixed(math::Vec2 size) noexcept;
+// A fixed size, in the middle of the height of a row.
+[[nodiscard]] scene::UiRect middle(math::Vec2 size) noexcept;
+// What is left of a row, at a height in the middle of it.
+[[nodiscard]] scene::UiRect grow(float height) noexcept;
+// As wide as its column, at a height.
+[[nodiscard]] scene::UiRect wide(float height) noexcept;
+[[nodiscard]] scene::UiRect whole(math::Vec4 inset = math::Vec4{0.0f}) noexcept;
+} // namespace rects
+
+// A button of a panel: its entity, its icon and its label.
+struct PanelButton
+{
+    scene::Entity entity;
+    scene::Entity icon;
+    scene::Entity label;
+};
+
+// The pieces the panels of the editor are made of, as entities of their panel, sized in units of the
+// size of their text.
+class PanelBuilder
+{
+public:
+    explicit PanelBuilder(std::uint32_t surface);
+
+    UiPanel panel;
+    float font = 14.0f;
+
+    [[nodiscard]] scene::Scene& scene() noexcept;
+
+    scene::Entity add(scene::Entity parent, const char* name, scene::UiRect rect, std::string_view style = {});
+    scene::Entity text(scene::Entity parent, scene::UiRect rect, std::string value, std::string_view style,
+                       bool bold = false, scene::TextAlign align = scene::TextAlign::Left, float size = 0.0f);
+    scene::Entity icon(EditorUiKit& kit, scene::Entity parent, scene::UiRect rect, Icon glyph,
+                       std::string_view style = "icon");
+    // A button with an icon and a label, as wide as they need, or the width given; a negative width
+    // makes it as wide as its column.
+    PanelButton button(EditorUiKit& kit, scene::Entity parent, std::optional<Icon> glyph, std::string_view label,
+                       std::string_view style = "button", float width = 0.0f, float height = 0.0f,
+                       scene::TextAlign align = scene::TextAlign::Center);
+    // Changes the label of a button, which keeps its width.
+    void relabel(EditorUiKit& kit, const PanelButton& target, std::string_view label);
+    void enable(const PanelButton& target, bool enabled);
+    void tooltip(scene::Entity entity, std::string value);
+    scene::Entity field(scene::Entity parent, scene::UiRect rect, std::string value, std::string placeholder,
+                        std::string action = {});
+    // A field that filters a list, with a magnifying glass at its left.
+    scene::Entity searchField(EditorUiKit& kit, scene::Entity parent, scene::UiRect rect, std::string value,
+                              std::string placeholder);
+    // A dialog in the middle of the panel, over a veil.
+    scene::Entity dialog(const char* name, math::Vec2 size);
+    // The two buttons at the bottom of a dialog, on its right.
+    std::pair<PanelButton, PanelButton> dialogButtons(EditorUiKit& kit, scene::Entity dialog, Icon glyph,
+                                                      std::string_view confirm, float width);
+    // A menu that opens under the pointer, its entries, and the lines between them.
+    scene::Entity menu(const char* name, float width);
+    PanelButton menuItem(EditorUiKit& kit, scene::Entity menu, std::optional<Icon> glyph, std::string_view label);
+    scene::Entity menuSeparator(scene::Entity menu);
+    // Makes a menu as tall as its visible entries, and no wider than the panel.
+    void fitMenu(scene::Entity menu, float width);
+    // Tooltips in the colors and the size of the editor.
+    void styleTooltips(const ThemeColors& colors);
 };
 
 } // namespace devex::tools::detail

@@ -147,6 +147,8 @@ ComponentRegistry& componentRegistry()
         builtins.add<UiVirtualList>();
         builtins.add<UiTable>();
         builtins.add<UiTableRow>();
+        builtins.add<UiDragSource>();
+        builtins.add<UiDropTarget>();
         return builtins;
     }();
     return registry;

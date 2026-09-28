@@ -15,6 +15,7 @@
 
 #include <chrono>
 #include <filesystem>
+#include <set>
 #include <format>
 #include <string>
 #include <vector>
@@ -170,6 +171,7 @@ TEST_CASE("The editor opens the project's scenes in tabs and renders its viewpor
         // The text panel participates in docking and renders alongside the scene, including Play.
         (*editor)->openTextFile(project.file);
 
+        std::set<std::uint32_t> surfaces;
         for (int frame = 0; frame < 8; ++frame)
         {
             // Two frames play, one is paused, then editing resumes.
@@ -188,6 +190,10 @@ TEST_CASE("The editor opens the project's scenes in tabs and renders its viewpor
             }
             (*editor)->prepareRender(scene, world, playState);
             CHECK(world.viewport.width > 0);
+            for (const devex::render::UiSurface& surface : world.uiSurfaces)
+            {
+                surfaces.insert(surface.id);
+            }
             if (playState == PlayState::Editing)
             {
                 // The grid and the icon of the light.
@@ -206,6 +212,12 @@ TEST_CASE("The editor opens the project's scenes in tabs and renders its viewpor
             const devex::tools::EditorRequests requests = (*editor)->takeRequests();
             CHECK_FALSE(requests.quit);
         }
+
+        // FileSystem and Output are made with the interface of the engine as well, each in its image; the
+        // project manager is gone.
+        CHECK(surfaces.contains(2));
+        CHECK(surfaces.contains(3));
+        CHECK_FALSE(surfaces.contains(1));
 
         // Both scenes opened, the level on screen and the menu in a background tab, without unsaved changes.
         CHECK(scene.entityCount() == 3);

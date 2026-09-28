@@ -468,6 +468,8 @@ private:
     std::optional<Pipeline> m_overlayLinePipeline;
     std::optional<Pipeline> m_overlayTrianglePipeline;
     std::optional<Pipeline> m_uiPipeline;
+    // The same, for the interface surfaces of the tools, drawn in the format of the tools.
+    std::optional<Pipeline> m_uiDisplayPipeline;
     std::optional<Pipeline> m_taaPipeline;
     std::optional<Pipeline> m_aoPipeline;
     std::optional<Pipeline> m_localShadowPipeline;

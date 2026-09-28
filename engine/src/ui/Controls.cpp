@@ -1,6 +1,6 @@
 // What the interface world does for the controls that stand over the others or that the pointer
 // drags: popups and context menus, modals, dropdowns, tooltips, scrollbars, splitters, foldouts,
-// the headers of tables, and virtual lists.
+// the headers of tables, virtual lists, and what is dragged and dropped.
 #include <devex/ui/UiWorld.hpp>
 
 #include <devex/scene/Scene.hpp>
@@ -20,6 +20,9 @@ constexpr float columnGrip = 5.0f;
 constexpr float columnMinimum = 24.0f;
 // Options an open dropdown shows at once; the wheel reaches the others.
 constexpr std::size_t dropdownRows = 10;
+// How far the pointer moves from where it pressed a drag source before it takes it away, in
+// pixels, so that a click that shakes a little stays a click.
+constexpr float carryDistance = 6.0f;
 
 [[nodiscard]] bool isMenu(const scene::Scene& scene, scene::Entity entity) noexcept
 {
@@ -75,7 +78,8 @@ struct HeaderCell
 {
     if (scene.has<scene::UiButton>(entity) || scene.has<scene::UiInput>(entity) ||
         scene.has<scene::UiSlider>(entity) || scene.has<scene::UiToggle>(entity) ||
-        scene.has<scene::UiDropdown>(entity) || scene.has<scene::UiFoldout>(entity))
+        scene.has<scene::UiDropdown>(entity) || scene.has<scene::UiFoldout>(entity) ||
+        scene.has<scene::UiDragSource>(entity) || scene.has<scene::UiDropTarget>(entity))
     {
         return true;
     }
@@ -88,6 +92,23 @@ struct HeaderCell
         return text->raycastTarget;
     }
     return false;
+}
+
+// The text of the first element at or under an element that has one, in the order they are drawn.
+[[nodiscard]] std::string textBelow(const scene::Scene& scene, scene::Entity entity)
+{
+    if (const scene::UiText* const text = scene.tryGet<scene::UiText>(entity); text != nullptr && !text->text.empty())
+    {
+        return text->text;
+    }
+    for (scene::Entity child = scene.firstChild(entity); child.isValid(); child = scene.nextSibling(child))
+    {
+        if (std::string found = textBelow(scene, child); !found.empty())
+        {
+            return found;
+        }
+    }
+    return {};
 }
 
 // The thumb of a vertical or horizontal scrollbar: where it starts and how long it is, in units.
@@ -675,7 +696,8 @@ void UiWorld::updateControls(scene::Scene& scene, const UiInput& input)
             }
         }
     }
-    // A virtual list says which item its first row shows, for a script to fill the rows.
+    // A virtual list says which item its first row shows, for a script to fill the rows; a list
+    // whose content shrank, or that was moved from elsewhere, never shows past its end.
     for (const CanvasLayout& canvas : m_canvases)
     {
         for (const LaidOutRect& rect : canvas.layout.rects)
@@ -683,6 +705,11 @@ void UiWorld::updateControls(scene::Scene& scene, const UiInput& input)
             if (scene::UiVirtualList* const list = scene.tryGet<scene::UiVirtualList>(rect.entity))
             {
                 list->first = virtualFirst(rect, *list);
+            }
+            if (scene::UiScroll* const scroll = scene.tryGet<scene::UiScroll>(rect.entity); scroll != nullptr && rect.visible)
+            {
+                scroll->offset.x = std::clamp(scroll->offset.x, 0.0f, std::max(rect.content.x - rect.size().x, 0.0f));
+                scroll->offset.y = std::clamp(scroll->offset.y, 0.0f, std::max(rect.content.y - rect.size().y, 0.0f));
             }
         }
     }
@@ -729,7 +756,7 @@ void UiWorld::updateTooltip(const scene::Scene& scene, const UiInput& input, flo
     // The topmost element under the pointer that stops it or carries a tooltip: an element that
     // only draws, such as a text over a list, lets the pointer through to what lies under it.
     scene::Entity entity;
-    if (!m_dropdown && m_drag.kind == DragKind::None)
+    if (!m_dropdown && m_drag.kind == DragKind::None && !m_carried)
     {
         scene::Entity under;
         for (std::size_t canvas = m_canvases.size(); canvas-- > 0 && !under.isValid();)
@@ -809,6 +836,174 @@ bool UiWorld::wasDoubleClicked(scene::Entity entity) const
 void UiWorld::setTooltipStyle(TooltipStyle style)
 {
     m_tooltipStyle = style;
+}
+
+bool UiWorld::updateCarry(scene::Scene& scene, const UiInput& input, bool taken)
+{
+    // A drag from outside lasts as long as it is announced.
+    const bool outside = m_outside.has_value();
+    if (outside)
+    {
+        m_carried = std::move(m_outside);
+        m_outside.reset();
+        m_dragCandidate.reset();
+    }
+    else if (m_carried && !m_carried->source.isValid())
+    {
+        m_carried.reset();
+        m_dropTarget = scene::Entity{};
+    }
+
+    if (!m_carried)
+    {
+        // A press on a drag source, or on an element inside one, makes it a candidate; it is taken
+        // away once the pointer moves far enough, before which the press is an ordinary one.
+        if (input.pointerPressed && !taken)
+        {
+            m_dragCandidate.reset();
+            scene::Entity under;
+            for (std::size_t canvas = m_canvases.size(); canvas-- > 0 && !under.isValid();)
+            {
+                if (!m_canvases[canvas].interactive || m_canvases[canvas].layout.scale <= 0.0f)
+                {
+                    continue;
+                }
+                const math::Vec2 point = toCanvas(canvas, input.pointer);
+                const std::vector<LaidOutRect>& rects = m_canvases[canvas].layout.rects;
+                for (std::size_t index = rects.size(); index-- > 0;)
+                {
+                    const LaidOutRect& rect = rects[index];
+                    if (rect.visible && rect.opacity > 0.0f && reachable(canvas, index) && contains(rect, point) &&
+                        stopsPointer(scene, rect.entity))
+                    {
+                        under = rect.entity;
+                        break;
+                    }
+                }
+            }
+            for (scene::Entity above = under; above.isValid(); above = scene.parent(above))
+            {
+                if (const scene::UiDragSource* const source = scene.tryGet<scene::UiDragSource>(above))
+                {
+                    if (source->interactable)
+                    {
+                        m_dragCandidate = DragCandidate{.source = above, .from = input.pointer};
+                    }
+                    break;
+                }
+            }
+        }
+        if (!input.pointerDown || input.pointerReleased || (m_dragCandidate && !scene.isAlive(m_dragCandidate->source)))
+        {
+            m_dragCandidate.reset();
+            return false;
+        }
+        if (!m_dragCandidate ||
+            std::hypot(input.pointer.x - m_dragCandidate->from.x, input.pointer.y - m_dragCandidate->from.y) < carryDistance)
+        {
+            return false;
+        }
+        const scene::UiDragSource& source = scene.get<scene::UiDragSource>(m_dragCandidate->source);
+        m_carried = Carried{.source = m_dragCandidate->source,
+                            .type = source.type,
+                            .data = source.data,
+                            .label = source.label.empty() ? textBelow(scene, m_dragCandidate->source) : source.label};
+        m_dragCandidate.reset();
+        m_tooltip = Tooltip{};
+    }
+
+    // Escape puts back what the pointer carries, and does nothing else.
+    if (input.cancelPressed && m_carried->source.isValid())
+    {
+        m_carried.reset();
+        m_dropTarget = scene::Entity{};
+        m_cancelled = false;
+        return true;
+    }
+    m_dropTarget = targetUnder(scene, input.pointer, *m_carried);
+    if (input.pointerReleased || !input.pointerDown)
+    {
+        // Only the release drops: a drag from outside may still be announced a frame after it.
+        if (m_dropTarget.isValid() && input.pointerReleased)
+        {
+            m_drops.push_back(Drop{.source = m_carried->source,
+                                   .target = m_dropTarget,
+                                   .type = m_carried->type,
+                                   .data = m_carried->data});
+            if (const std::string& action = scene.get<scene::UiDropTarget>(m_dropTarget).action; !action.empty())
+            {
+                m_dropActions.push_back(action);
+            }
+        }
+        m_carried.reset();
+        m_dropTarget = scene::Entity{};
+    }
+    return true;
+}
+
+scene::Entity UiWorld::targetUnder(const scene::Scene& scene, math::Vec2 pointer, const Carried& carried) const
+{
+    // The topmost element under the pointer that stops it, then the first target at or above it
+    // that accepts what is carried; a source is never dropped on itself.
+    for (std::size_t canvas = m_canvases.size(); canvas-- > 0;)
+    {
+        if (!m_canvases[canvas].interactive || m_canvases[canvas].layout.scale <= 0.0f)
+        {
+            continue;
+        }
+        const math::Vec2 point = toCanvas(canvas, pointer);
+        const std::vector<LaidOutRect>& rects = m_canvases[canvas].layout.rects;
+        for (std::size_t index = rects.size(); index-- > 0;)
+        {
+            const LaidOutRect& rect = rects[index];
+            if (!rect.visible || rect.opacity <= 0.0f || !reachable(canvas, index) || !contains(rect, point) ||
+                !stopsPointer(scene, rect.entity))
+            {
+                continue;
+            }
+            for (scene::Entity above = rect.entity; above.isValid(); above = scene.parent(above))
+            {
+                const scene::UiDropTarget* const target = scene.tryGet<scene::UiDropTarget>(above);
+                if (target != nullptr && above != carried.source &&
+                    std::ranges::find(target->accepts, carried.type) != target->accepts.end())
+                {
+                    return above;
+                }
+            }
+            return scene::Entity{};
+        }
+    }
+    return scene::Entity{};
+}
+
+const Carried* UiWorld::carried() const noexcept
+{
+    return m_carried ? &*m_carried : nullptr;
+}
+
+void UiWorld::carryFromOutside(std::string type, std::string data)
+{
+    m_outside = Carried{.type = std::move(type), .data = std::move(data)};
+}
+
+scene::Entity UiWorld::dropTarget() const noexcept
+{
+    return m_dropTarget;
+}
+
+bool UiWorld::wasDropped(std::string_view action) const
+{
+    return std::ranges::find(m_dropActions, action) != m_dropActions.end();
+}
+
+bool UiWorld::wasDropped(scene::Entity target) const
+{
+    return std::ranges::find(m_drops, target, &Drop::target) != m_drops.end();
+}
+
+const Drop* UiWorld::dropped() const noexcept
+{
+    return m_drops.empty() ? nullptr : &m_drops.back();
 }
 
 } // namespace devex::ui

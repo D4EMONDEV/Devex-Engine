@@ -424,19 +424,6 @@ void scanForProjects(ToolsState& state, const std::filesystem::path& folder)
     saveUserSettings(state);
 }
 
-// Adds an entity built in a scratch scene as one undoable step, at the editor camera's pivot.
-void requestCreatePreset(ToolsState& state, core::Uuid parent, const char* name,
-                         const std::function<void(scene::Scene&, scene::Entity)>& build)
-{
-    scene::Scene scratch;
-    const scene::Entity entity = scratch.createEntity(name);
-    scratch.add<scene::Transform>(entity, scene::Transform{.position = parent.isNil() ? state.camera.pivot() : math::Vec3{0.0f}});
-    build(scratch, entity);
-    const core::Uuid uuid = scratch.uuid(entity);
-    state.pendingCommand = makeCreateEntityTreeCommand(scene::saveEntityTree(scratch, entity), uuid, parent,
-                                                       std::format("Create {}", name));
-    state.selection.set(uuid);
-}
 
 // Writes the entity chosen for Save as Prefab and its descendants to a new scene file, then replaces
 // them with an instance of it, as one undoable step.
@@ -517,6 +504,19 @@ void saveAsPrefab(ToolsState& state, scene::Scene& scene, std::filesystem::path 
 }
 
 } // namespace
+
+void requestCreatePreset(ToolsState& state, core::Uuid parent, const char* name,
+                         const std::function<void(scene::Scene&, scene::Entity)>& build)
+{
+    scene::Scene scratch;
+    const scene::Entity entity = scratch.createEntity(name);
+    scratch.add<scene::Transform>(entity, scene::Transform{.position = parent.isNil() ? state.camera.pivot() : math::Vec3{0.0f}});
+    build(scratch, entity);
+    const core::Uuid uuid = scratch.uuid(entity);
+    state.pendingCommand = makeCreateEntityTreeCommand(scene::saveEntityTree(scratch, entity), uuid, parent,
+                                                       std::format("Create {}", name));
+    state.selection.set(uuid);
+}
 
 scene::Scene makeDefaultScene()
 {
@@ -1207,178 +1207,6 @@ void updateWindowTitle(ToolsState& state, const scene::Scene& /*scene*/)
 void saveEditorSettings(ToolsState& state)
 {
     writeProjectSettings(state);
-}
-
-void drawCreateEntityMenu(ToolsState& state, core::Uuid parent)
-{
-    const ThemeColors& colors = themeColors();
-    const auto item = [](IconText icon, ImVec4 color, const char* label) {
-        const ImVec2 position = ImGui::GetCursorScreenPos();
-        const std::string text = std::format("      {}", label);
-        const bool clicked = ImGui::MenuItem(text.c_str());
-        ImGui::GetWindowDrawList()->AddText(position, uiColorU32(color), icon.c_str());
-        return clicked;
-    };
-    if (item(icons::Axis, colors.entity, "Empty"))
-    {
-        requestCreatePreset(state, parent, "Entity", [](scene::Scene&, scene::Entity) {});
-    }
-    ImGui::Separator();
-    for (const auto& [name, mesh] : {std::pair<const char*, asset::AssetId>{"Cube", asset::builtin::cubeMesh},
-                                     {"Sphere", asset::builtin::sphereMesh},
-                                     {"Plane", asset::builtin::planeMesh}})
-    {
-        if (item(icons::Box, colors.entity, name))
-        {
-            const asset::AssetId meshId = mesh;
-            requestCreatePreset(state, parent, name, [meshId](scene::Scene& scratch, scene::Entity entity) {
-                scratch.add<scene::MeshRenderer>(entity, scene::MeshRenderer{.mesh = meshId});
-            });
-        }
-    }
-    ImGui::Separator();
-    if (item(icons::Sun, colors.light, "Directional light"))
-    {
-        requestCreatePreset(state, parent, "Directional light", [](scene::Scene& scratch, scene::Entity entity) {
-            scratch.get<scene::Transform>(entity).rotation = math::angleAxis(math::radians(-50.0f), math::Vec3{1.0f, 0.0f, 0.0f});
-            scratch.add<scene::DirectionalLight>(entity);
-        });
-    }
-    if (item(icons::Lightbulb, colors.light, "Point light"))
-    {
-        requestCreatePreset(state, parent, "Point light", [](scene::Scene& scratch, scene::Entity entity) {
-            scratch.add<scene::PointLight>(entity);
-        });
-    }
-    if (item(icons::Flashlight, colors.light, "Spot light"))
-    {
-        requestCreatePreset(state, parent, "Spot light", [](scene::Scene& scratch, scene::Entity entity) {
-            scratch.get<scene::Transform>(entity).rotation = math::angleAxis(math::radians(-90.0f), math::Vec3{1.0f, 0.0f, 0.0f});
-            scratch.add<scene::SpotLight>(entity);
-        });
-    }
-    ImGui::Separator();
-    if (item(icons::Video, colors.camera, "Camera"))
-    {
-        requestCreatePreset(state, parent, "Camera", [](scene::Scene& scratch, scene::Entity entity) {
-            scratch.add<scene::Camera>(entity, scene::Camera{.primary = false});
-        });
-    }
-    if (item(icons::CloudSun, colors.environment, "Environment"))
-    {
-        requestCreatePreset(state, parent, "Environment", [](scene::Scene& scratch, scene::Entity entity) {
-            scratch.remove<scene::Transform>(entity);
-            scratch.add<scene::Environment>(entity);
-        });
-    }
-    ImGui::Separator();
-    if (item(icons::Image, colors.texture, "Sprite"))
-    {
-        requestCreatePreset(state, parent, "Sprite", [](scene::Scene& scratch, scene::Entity entity) {
-            scratch.add<scene::SpriteRenderer>(entity);
-        });
-    }
-    if (item(icons::Grid, colors.texture, "Tilemap"))
-    {
-        requestCreatePreset(state, parent, "Tilemap", [](scene::Scene& scratch, scene::Entity entity) {
-            scratch.add<scene::Tilemap>(entity);
-        });
-    }
-    if (item(icons::Video, colors.camera, "2D camera"))
-    {
-        // In front of the XY plane, framing ten meters, with the colours of the sprites kept as drawn.
-        requestCreatePreset(state, parent, "2D camera", [](scene::Scene& scratch, scene::Entity entity) {
-            scratch.get<scene::Transform>(entity).position.z = 10.0f;
-            scratch.add<scene::Camera>(entity, scene::Camera{.projection = scene::Projection::Orthographic,
-                                                             .primary = false,
-                                                             .tonemapper = scene::Tonemapper::None,
-                                                             .antialiasing = scene::Antialiasing::None,
-                                                             .ambientOcclusion = 0.0f,
-                                                             .bloom = 0.0f});
-        });
-    }
-    ImGui::Separator();
-    if (item(icons::SquareDashed, colors.physics, "Static box"))
-    {
-        requestCreatePreset(state, parent, "Static box", [](scene::Scene& scratch, scene::Entity entity) {
-            scratch.add<scene::MeshRenderer>(entity, scene::MeshRenderer{.mesh = asset::builtin::cubeMesh});
-            scratch.add<scene::BoxCollider>(entity);
-        });
-    }
-    if (item(icons::Weight, colors.physics, "Rigid box"))
-    {
-        requestCreatePreset(state, parent, "Rigid box", [](scene::Scene& scratch, scene::Entity entity) {
-            scratch.add<scene::MeshRenderer>(entity, scene::MeshRenderer{.mesh = asset::builtin::cubeMesh});
-            scratch.add<scene::RigidBody>(entity);
-            scratch.add<scene::BoxCollider>(entity);
-        });
-    }
-    if (item(icons::CircleDashed, colors.physics, "Rigid sphere"))
-    {
-        requestCreatePreset(state, parent, "Rigid sphere", [](scene::Scene& scratch, scene::Entity entity) {
-            scratch.add<scene::MeshRenderer>(entity, scene::MeshRenderer{.mesh = asset::builtin::sphereMesh});
-            scratch.add<scene::RigidBody>(entity);
-            scratch.add<scene::SphereCollider>(entity);
-        });
-    }
-    if (item(icons::PersonStanding, colors.physics, "Character"))
-    {
-        requestCreatePreset(state, parent, "Character", [](scene::Scene& scratch, scene::Entity entity) {
-            scratch.add<scene::CharacterController>(entity);
-        });
-    }
-    if (item(icons::Scan, colors.physics, "Trigger zone"))
-    {
-        requestCreatePreset(state, parent, "Trigger zone", [](scene::Scene& scratch, scene::Entity entity) {
-            scratch.add<scene::BoxCollider>(entity, scene::BoxCollider{.size = {2.0f, 2.0f, 2.0f}, .trigger = true});
-        });
-    }
-    ImGui::Separator();
-    if (item(icons::SquareDashed, colors.physics, "Static box 2D"))
-    {
-        requestCreatePreset(state, parent, "Static box 2D", [](scene::Scene& scratch, scene::Entity entity) {
-            scratch.add<scene::BoxCollider2D>(entity);
-        });
-    }
-    if (item(icons::Weight, colors.physics, "Rigid box 2D"))
-    {
-        requestCreatePreset(state, parent, "Rigid box 2D", [](scene::Scene& scratch, scene::Entity entity) {
-            scratch.add<scene::RigidBody2D>(entity);
-            scratch.add<scene::BoxCollider2D>(entity);
-        });
-    }
-    if (item(icons::CircleDashed, colors.physics, "Rigid circle 2D"))
-    {
-        requestCreatePreset(state, parent, "Rigid circle 2D", [](scene::Scene& scratch, scene::Entity entity) {
-            scratch.add<scene::RigidBody2D>(entity);
-            scratch.add<scene::CircleCollider2D>(entity);
-        });
-    }
-    if (item(icons::PersonStanding, colors.physics, "Character 2D"))
-    {
-        requestCreatePreset(state, parent, "Character 2D", [](scene::Scene& scratch, scene::Entity entity) {
-            scratch.add<scene::CharacterController2D>(entity);
-        });
-    }
-    if (item(icons::Scan, colors.physics, "Trigger zone 2D"))
-    {
-        requestCreatePreset(state, parent, "Trigger zone 2D", [](scene::Scene& scratch, scene::Entity entity) {
-            scratch.add<scene::BoxCollider2D>(entity, scene::BoxCollider2D{.size = {2.0f, 2.0f}, .trigger = true});
-        });
-    }
-    ImGui::Separator();
-    if (item(icons::Footprints, colors.physics, "Navigation Surface"))
-    {
-        requestCreatePreset(state, parent, "Navigation", [](scene::Scene& scratch, scene::Entity entity) {
-            scratch.add<scene::NavMeshSurface>(entity);
-        });
-    }
-    if (item(icons::PersonStanding, colors.physics, "Navigation Agent"))
-    {
-        requestCreatePreset(state, parent, "Agent", [](scene::Scene& scratch, scene::Entity entity) {
-            scratch.add<scene::NavMeshAgent>(entity);
-        });
-    }
 }
 
 void requestCreateSprite(ToolsState& state, asset::AssetId sprite, math::Vec3 position)

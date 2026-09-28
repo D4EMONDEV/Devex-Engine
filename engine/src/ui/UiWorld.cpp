@@ -112,7 +112,9 @@ namespace {
         scene.tryGet<scene::UiSlider>(entity) != nullptr ||
         scene.tryGet<scene::UiToggle>(entity) != nullptr ||
         scene.tryGet<scene::UiDropdown>(entity) != nullptr ||
-        scene.tryGet<scene::UiFoldout>(entity) != nullptr)
+        scene.tryGet<scene::UiFoldout>(entity) != nullptr ||
+        scene.tryGet<scene::UiDragSource>(entity) != nullptr ||
+        scene.tryGet<scene::UiDropTarget>(entity) != nullptr)
     {
         return true;
     }
@@ -274,8 +276,11 @@ void UiWorld::update(scene::Scene& scene, math::Vec2 windowSize, const UiInput& 
     m_submittedActions.clear();
     m_doubleClicked.clear();
     m_doubleClickedActions.clear();
+    m_drops.clear();
+    m_dropActions.clear();
     m_clipboardRequest.clear();
     m_cancelled = input.cancelPressed;
+    m_pointer = input.pointer;
 
     updateBindings(scene);
     // Before the layout, so that a style that moves or sizes an element does so this frame.
@@ -291,6 +296,13 @@ void UiWorld::update(scene::Scene& scene, math::Vec2 windowSize, const UiInput& 
     bool taken = listed || closeMenusOutside(scene, input) || startDrag(scene, input);
     updateDrag(scene, input);
     taken = taken || m_drag.kind != DragKind::None;
+    // What the pointer carries away holds it from the moment it leaves its place: the button it
+    // was pressed on is not clicked.
+    if (updateCarry(scene, input, taken))
+    {
+        taken = true;
+        m_pressed = scene::Entity{};
+    }
     if (taken)
     {
         rest.pointerPressed = false;
@@ -1129,6 +1141,19 @@ void UiWorld::build(const scene::Scene& scene, const DrawContext& context,
         buildDrawList(scene, canvas.layout, withTints, world);
     }
 
+    // The target that would take what the pointer carries, lit over its canvas.
+    if (m_dropTarget.isValid() && scene.isAlive(m_dropTarget))
+    {
+        const CanvasLayout* const canvas = canvasOf(m_dropTarget);
+        const LaidOutRect* const rect = canvas != nullptr ? canvas->layout.find(m_dropTarget) : nullptr;
+        if (rect != nullptr)
+        {
+            const float scale = canvas->layout.scale;
+            drawOverlayBox(world, rect->min * scale, rect->max * scale,
+                           scene.get<scene::UiDropTarget>(m_dropTarget).highlightColor, 4.0f * scale);
+        }
+    }
+
     // The list of an open dropdown, over every canvas.
     math::Vec2 listMin{0.0f};
     math::Vec2 listMax{0.0f};
@@ -1172,10 +1197,14 @@ void UiWorld::build(const scene::Scene& scene, const DrawContext& context,
             const asset::AssetId font = m_tooltipStyle.font.isValid() || withTints.defaultFont.isValid()
                                             ? m_tooltipStyle.font
                                             : fontAround(scene, m_tooltip.entity);
+            // Long lines go on to the next one, so that the tooltip stays inside the image.
             const OverlayText label{.text = tooltip->text,
                                     .font = font,
                                     .size = m_tooltipStyle.size,
-                                    .color = m_tooltipStyle.text};
+                                    .color = m_tooltipStyle.text,
+                                    .wrapWidth = std::max(std::min(m_windowSize.x - m_tooltipStyle.padding * 2.0f - 8.0f,
+                                                                   m_tooltipStyle.size * 32.0f),
+                                                          m_tooltipStyle.size * 4.0f)};
             const math::Vec2 measured = measureOverlayText(withTints, label);
             const math::Vec2 size = measured + math::Vec2{m_tooltipStyle.padding * 2.0f};
             math::Vec2 at = m_tooltip.at + math::Vec2{12.0f, 18.0f};
@@ -1184,6 +1213,25 @@ void UiWorld::build(const scene::Scene& scene, const DrawContext& context,
             drawOverlayBox(world, at, at + size, m_tooltipStyle.background, m_tooltipStyle.cornerRadius);
             drawOverlayText(world, withTints, at + math::Vec2{m_tooltipStyle.padding}, at + size, label);
         }
+    }
+
+    // What the pointer carries, named next to it as a tooltip is, while it stays over the image.
+    if (m_carried && !m_carried->label.empty() && scene.isAlive(m_carried->source) && m_pointer.x >= 0.0f &&
+        m_pointer.y >= 0.0f && m_pointer.x <= m_windowSize.x && m_pointer.y <= m_windowSize.y)
+    {
+        const asset::AssetId font = m_tooltipStyle.font.isValid() || withTints.defaultFont.isValid()
+                                        ? m_tooltipStyle.font
+                                        : fontAround(scene, m_carried->source);
+        const OverlayText label{.text = m_carried->label,
+                                .font = font,
+                                .size = m_tooltipStyle.size,
+                                .color = m_tooltipStyle.text};
+        const math::Vec2 size = measureOverlayText(withTints, label) + math::Vec2{m_tooltipStyle.padding * 2.0f};
+        math::Vec2 at = m_pointer + math::Vec2{14.0f, 4.0f};
+        at.x = std::clamp(at.x, 0.0f, std::max(m_windowSize.x - size.x, 0.0f));
+        at.y = std::clamp(at.y, 0.0f, std::max(m_windowSize.y - size.y, 0.0f));
+        drawOverlayBox(world, at, at + size, m_tooltipStyle.background, m_tooltipStyle.cornerRadius);
+        drawOverlayText(world, withTints, at + math::Vec2{m_tooltipStyle.padding}, at + size, label);
     }
 }
 
@@ -1228,14 +1276,14 @@ void UiWorld::setThemes(ThemeSource themes)
     m_theme.setThemes(std::move(themes));
 }
 
-void UiWorld::startEditing(const scene::Scene& scene, scene::Entity field)
+void UiWorld::startEditing(const scene::Scene& scene, scene::Entity field, bool selectAll)
 {
     if (!isEditable(scene, field))
     {
         return;
     }
     const std::size_t end = scene.get<scene::UiText>(field).text.size();
-    m_editing = EditingField{.entity = field, .caret = end, .anchor = 0};
+    m_editing = EditingField{.entity = field, .caret = end, .anchor = selectAll ? 0 : end};
 }
 
 scene::Entity UiWorld::editedField() const noexcept
@@ -1323,6 +1371,12 @@ void UiWorld::clear()
     m_headerPressed = scene::Entity{};
     m_dropdown.reset();
     m_tooltip = Tooltip{};
+    m_dragCandidate.reset();
+    m_carried.reset();
+    m_outside.reset();
+    m_dropTarget = scene::Entity{};
+    m_drops.clear();
+    m_dropActions.clear();
 }
 
 } // namespace devex::ui

@@ -64,12 +64,14 @@ struct OverlayText
     asset::AssetId font;
     float size = 16.0f;
     math::Vec4 color{1.0f};
+    // Lines longer than this go on to the next one, between words; 0 keeps them whole.
+    float wrapWidth = 0.0f;
 };
 
 // A rectangle of one color over the canvases, in pixels, its corners rounded by `radius`.
 void drawOverlayBox(render::RenderWorld& world, math::Vec2 min, math::Vec2 max, math::Vec4 color,
                     float radius = 0.0f);
-// One line of text in a box, in pixels: from its left edge, centred on its height, and cut to it.
+// Text in a box, in pixels: from its left edge, centred on its height, and cut to it.
 void drawOverlayText(render::RenderWorld& world, const DrawContext& context, math::Vec2 min, math::Vec2 max,
                      const OverlayText& text);
 [[nodiscard]] math::Vec2 measureOverlayText(const DrawContext& context, const OverlayText& text);

@@ -308,3 +308,16 @@ TEST_CASE("A point is inside an element once it is turned and scaled", "[ui][lay
     CHECK(devex::ui::contains(placed(result, button), Vec2{1150.0f, 540.0f}));
     CHECK_FALSE(devex::ui::contains(placed(result, button), Vec2{1170.0f, 540.0f}));
 }
+
+TEST_CASE("Boxes that do not overlap leave a cut that shows nothing, not one that cuts nothing", "[ui][layout]")
+{
+    // An element scrolled out of view cuts its children to nothing.
+    const Vec4 cut = devex::ui::intersectClip(Vec4{0.0f, 0.0f, 100.0f, 100.0f}, Vec4{0.0f, 150.0f, 100.0f, 190.0f});
+    CHECK(devex::ui::isClipped(cut));
+    CHECK(cut.z - cut.x < 0.01f);
+    CHECK(cut.w - cut.y < 0.01f);
+    // Overlapping boxes keep what they share.
+    const Vec4 shared = devex::ui::intersectClip(Vec4{0.0f, 0.0f, 100.0f, 100.0f}, Vec4{50.0f, 50.0f, 150.0f, 150.0f});
+    CHECK(shared.x == Catch::Approx(50.0f));
+    CHECK(shared.w == Catch::Approx(100.0f));
+}

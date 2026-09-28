@@ -134,10 +134,9 @@ void drawEntityMenu(ToolsState& state, scene::Scene& scene, Entity entity, core:
 {
     const bool single = state.selection.size() <= 1;
     const bool editor = state.mode == ToolsMode::Editor;
-    if (ImGui::BeginMenuEx("Create Child", icons::Plus.c_str(), single))
+    if (ImGui::MenuItemEx("Create Child...", icons::Plus.c_str(), nullptr, false, single))
     {
-        drawCreateEntityMenu(state, uuid);
-        ImGui::EndMenu();
+        openCreateEntity(state, uuid);
     }
     if (editor && ImGui::MenuItemEx("Frame", icons::Crosshair.c_str(), "F"))
     {
@@ -412,14 +411,10 @@ void drawHierarchyPanel(ToolsState& state, scene::Scene& scene)
     if (ImGui::Begin(hierarchyWindow))
     {
         state.hierarchyFocused = ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows);
+        // As in Godot, the entity goes under the one chosen, or at the root.
         if (toolButton("add", icons::Plus, "Create an entity"))
         {
-            ImGui::OpenPopup("create entity");
-        }
-        if (ImGui::BeginPopup("create entity"))
-        {
-            drawCreateEntityMenu(state, core::Uuid{});
-            ImGui::EndPopup();
+            openCreateEntity(state, state.selection.size() == 1 ? state.selection.active() : core::Uuid{});
         }
         ImGui::SameLine();
         searchField("##filter", state.hierarchyFilter, "Filter Entities");
@@ -459,7 +454,10 @@ void drawHierarchyPanel(ToolsState& state, scene::Scene& scene)
             }
             if (ImGui::BeginPopupContextItem("roots menu"))
             {
-                drawCreateEntityMenu(state, core::Uuid{});
+                if (ImGui::MenuItemEx("Create Entity...", icons::Plus.c_str()))
+                {
+                    openCreateEntity(state, core::Uuid{});
+                }
                 ImGui::Separator();
                 if (ImGui::MenuItemEx("Paste", icons::ClipboardPaste.c_str(), "Ctrl+V"))
                 {

@@ -14,7 +14,8 @@ et rendu avec Vulkan. Il est distribué sous licence [MIT](LICENSE).
   chaud par l'éditeur ;
 - éditeur Dear ImGui (docking) au style inspiré de Godot : gestionnaire de projets, onglets de
   scènes, viewport, gizmos et mode Play ; il passe panneau par panneau sur l'interface des jeux,
-  pour n'avoir qu'un seul système d'interface, en commençant par le gestionnaire de projets.
+  pour n'avoir qu'un seul système d'interface : le gestionnaire de projets, FileSystem, Output et
+  la fenêtre qui crée les entités et ajoute les composants le sont déjà.
 
 Le détail, l'architecture des modules et les jalons sont dans
 [docs/decisions.md](docs/decisions.md).
@@ -87,7 +88,8 @@ Le détail, l'architecture des modules et les jalons sont dans
   parts, liaison d'un texte à un champ de composant, thèmes `.dvxtheme` de styles nommés, popups,
   menus et modales (`UiPopup`), menus contextuels au clic droit, infobulles, listes déroulantes,
   séparateurs déplaçables, dépliants, listes virtuelles et tableaux aux colonnes redimensionnables
-  et triables, double clic, dessin en une passe après le tonemapping ou dans une image à part
+  et triables, double clic, glisser-déposer (`UiDragSource`, `UiDropTarget`, et depuis les autres
+  fenêtres d'un outil), dessin en une passe après le tonemapping ou dans une image à part
   (les panneaux de l'éditeur), survol, clic et focus au clavier comme à la manette ;
 - `Devex::Tools` : interface ImGui au thème réglable inspiré de Godot (Noto Sans, JetBrains Mono,
   icônes Lucide) : arbre de la scène, inspecteur, FileSystem, sortie, statistiques, annulation, en
@@ -97,7 +99,11 @@ Le détail, l'architecture des modules et les jalons sont dans
   caméra du jeu, éléments choisis, déplacés et redimensionnés avec leur thème appliqué ;
   l'inspecteur grise les champs qu'un style écrit et ouvre le thème) et se montrent par-dessus
   l'écran 3D d'une scène 3D,
-  gestionnaire de projets (déjà écrit avec `Devex::Ui` : menus contextuels, infobulles, modales),
+  fenêtre *Create Entity* / *Add Component* en palette comme le *Create New Node* de Godot
+  (composants et préréglages, recherche, catégories, fiche, favoris et récents par projet),
+  gestionnaire de projets, FileSystem et Output déjà écrits avec `Devex::Ui` (menus contextuels,
+  infobulles, modales, listes virtuelles, texte de la sortie choisi et copié à la souris, fichiers
+  glissés vers la vue et l'inspecteur, entités lâchées sur un dossier qui deviennent des préfabs),
   onglets de scènes, viewport et sa
   barre d'outils, caméra libre, sélection multiple (Ctrl et Maj dans l'arbre, rectangle dans la
   vue), gizmos et inspecteur sur plusieurs entités, copier, coller et dupliquer par le
@@ -170,9 +176,10 @@ Le détail, l'architecture des modules et les jalons sont dans
   principal, un écran de réglages (nom, mot de passe, curseur de volume lié à son étiquette, case
   plein écran, liste déroulante de la difficulté, infobulles, touche de saut à réaffecter et à
   réinitialiser, gardés d'une partie à l'autre, aide
-  en texte riche qui défile dans un cadre en neuf parts), un menu de pause appelé par Échap, qui
-  sauvegarde la partie (le bouton le dit par une coroutine C# qui attend ses fondus) que le menu
-  principal reprend avec sa miniature, et un HUD, tous habillés
+  en texte riche qui défile dans un cadre en neuf parts), un menu de pause appelé par Échap, avec
+  un sac dont on glisse les objets d'une case à l'autre, qui sauvegarde la partie (le bouton le
+  dit par une coroutine C# qui attend ses fondus) que le menu principal reprend avec sa
+  miniature, et un HUD, tous habillés
   par le thème `assets/ui/sandbox.dvxtheme` et pilotés par `code/Menu.cs`.
 
 Le SDK Vulkan fournit `slangc`, qui compile les shaders pendant le build. Les assets

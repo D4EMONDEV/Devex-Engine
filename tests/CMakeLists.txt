@@ -204,6 +204,7 @@ target_include_directories(devex_render_tests PRIVATE "${PROJECT_SOURCE_DIR}/eng
 devex_add_tests(tools
     SOURCES
         tools/CodeEditingTests.cpp
+        tools/CreationCatalogTests.cpp
         tools/EditorMathTests.cpp
         tools/IconsTests.cpp
         tools/LogBufferTests.cpp

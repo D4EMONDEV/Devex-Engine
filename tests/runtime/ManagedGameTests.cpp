@@ -81,7 +81,7 @@ void run(ManagedGame& game, Scene& scene, SystemPhase phase, double seconds = 0.
 TEST_CASE("The C# runtime registers components and runs them", "[runtime][managed]")
 {
     const std::unique_ptr<ManagedGame> game = startRuntime();
-    CHECK(game->componentTypes().size() == 19);
+    CHECK(game->componentTypes().size() == 20);
 
     devex::scene::ComponentRegistry& registry = devex::scene::componentRegistry();
     const devex::scene::ComponentType* const mover = registry.find("Mover");
@@ -558,6 +558,60 @@ TEST_CASE("C# components open popups and read context menus and double clicks", 
     CHECK(field<bool>(*menus, component, "target_seen"));
     CHECK(field<bool>(*menus, component, "double_clicked"));
     CHECK(field<bool>(*menus, component, "closed"));
+    game->unloadAssembly();
+}
+
+TEST_CASE("C# components read what the pointer carries and where it was dropped", "[runtime][managed][ui]")
+{
+    const std::unique_ptr<ManagedGame> game = startRuntime();
+    const devex::scene::ComponentType* const drops = devex::scene::componentRegistry().find("Drops");
+    REQUIRE(drops != nullptr);
+
+    Scene scene;
+    const Entity canvas = scene.createEntity("Canvas");
+    scene.add<devex::scene::Canvas>(canvas, devex::scene::Canvas{.scaleMode = devex::scene::CanvasScaleMode::ConstantPixels});
+    const auto element = [&](const char* name, devex::math::Vec2 min, devex::math::Vec2 max) {
+        const Entity entity = scene.createEntity(name);
+        REQUIRE(scene.setParent(entity, canvas).has_value());
+        scene.add<devex::scene::UiRect>(entity, devex::scene::UiRect{.anchorMin = {0.0f, 0.0f},
+                                                                      .anchorMax = {0.0f, 0.0f},
+                                                                      .offsetMin = min,
+                                                                      .offsetMax = max});
+        scene.add<devex::scene::UiImage>(entity);
+        return entity;
+    };
+    const Entity gem = element("Gem", {100.0f, 100.0f}, {160.0f, 160.0f});
+    scene.add<devex::scene::UiDragSource>(gem, devex::scene::UiDragSource{.type = "item", .data = "ruby"});
+    const Entity slot = element("Slot", {400.0f, 100.0f}, {480.0f, 180.0f});
+    scene.add<devex::scene::UiDropTarget>(slot, devex::scene::UiDropTarget{.accepts = {"item"}, .action = "slot"});
+
+    const Entity holder = scene.createEntity("Holder");
+    void* const component = drops->emplace(scene, holder);
+    field<devex::scene::EntityRef>(*drops, component, "gem") = scene.reference(gem);
+    field<devex::scene::EntityRef>(*drops, component, "slot") = scene.reference(slot);
+
+    devex::ui::UiWorld world;
+    const devex::math::Vec2 window{1280.0f, 720.0f};
+    const devex::core::Duration step{1.0 / 60.0};
+    ManagedGame::Frame frame{.scene = &scene, .ui = &world};
+    game->runPhase(frame, SystemPhase::Start);
+    const std::array<devex::ui::UiInput, 5> inputs{{
+        {},
+        {.pointer = {130.0f, 130.0f}, .pointerDown = true, .pointerPressed = true},
+        {.pointer = {300.0f, 140.0f}, .pointerDown = true, .pointerMoved = true},
+        {.pointer = {440.0f, 140.0f}, .pointerDown = true, .pointerMoved = true},
+        {.pointer = {440.0f, 140.0f}, .pointerReleased = true},
+    }};
+    for (const devex::ui::UiInput& input : inputs)
+    {
+        world.update(scene, window, input, step);
+        frame.delta = step;
+        game->runPhase(frame, SystemPhase::Update);
+    }
+    CHECK(field<bool>(*drops, component, "carrying"));
+    CHECK(field<bool>(*drops, component, "dropped"));
+    CHECK(field<bool>(*drops, component, "from_gem"));
+    CHECK(field<std::string>(*drops, component, "data") == "ruby");
     game->unloadAssembly();
 }
 

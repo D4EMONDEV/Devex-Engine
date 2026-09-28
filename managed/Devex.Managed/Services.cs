@@ -665,4 +665,41 @@ public static unsafe class Ui
     /// which the entries of the menu act on.
     /// </summary>
     public static Entity ContextTarget => Bootstrap.Native.UiContextTarget();
+
+    /// <summary>
+    /// Whether something was dropped during this frame on a drop target (UiDropTarget) carrying
+    /// this action. What was dropped is in <see cref="Dropped"/>.
+    /// </summary>
+    public static bool WasDropped(string action)
+    {
+        using var text = new Utf8Buffer(action);
+        return Bootstrap.Native.UiDroppedAction(text.Pointer) != 0;
+    }
+
+    /// <summary>Whether something was dropped on that very target during this frame.</summary>
+    public static bool WasDropped(Entity target) => Bootstrap.Native.UiDroppedEntity(target) != 0;
+
+    /// <summary>The last drop of this frame, or null when nothing was dropped.</summary>
+    public static UiDrop? Dropped
+    {
+        get
+        {
+            Entity target = Bootstrap.Native.UiDropTarget();
+            if (!target.IsValid)
+            {
+                return null;
+            }
+            return new UiDrop(Bootstrap.Native.UiDropSource(), target, Utf8.ToString(Bootstrap.Native.UiDropType()) ?? string.Empty,
+                              Utf8.ToString(Bootstrap.Native.UiDropData()) ?? string.Empty);
+        }
+    }
+
+    /// <summary>The drag source (UiDragSource) the pointer carries, or an invalid entity.</summary>
+    public static Entity Carried => Bootstrap.Native.UiCarried();
 }
+
+/// <summary>
+/// What a drop target took: the drag source it came from, the target, and the type and data of
+/// the source.
+/// </summary>
+public readonly record struct UiDrop(Entity Source, Entity Target, string Type, string Data);

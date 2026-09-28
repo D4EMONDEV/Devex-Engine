@@ -74,6 +74,9 @@ namespace devex::tools::detail {
 
 class EditorUiKit;
 struct ProjectManagerUi;
+struct FileSystemUi;
+struct OutputUi;
+struct CreationDialogUi;
 
 // Window names are also their identifiers in the saved layout.
 inline constexpr const char* hierarchyWindow = "Scene";
@@ -202,6 +205,16 @@ struct PendingAction
 
 // Answers of native file dialogs, which arrive between frames. Dialogs hold it weakly, so that an
 // answer arriving after the tools are gone is dropped.
+// What the Create Entity and Add Component window was opened for.
+struct CreationRequest
+{
+    bool addComponent = false;
+    // The entity the new one goes under, nil for a root.
+    core::Uuid parent;
+    // The entities a component is added to.
+    std::vector<core::Uuid> targets;
+};
+
 struct DialogAnswers
 {
     std::optional<std::filesystem::path> importProject;
@@ -418,6 +431,11 @@ struct ToolsState
     // project manager, the first of them.
     std::shared_ptr<EditorUiKit> uiKit;
     std::shared_ptr<ProjectManagerUi> projectManagerUi;
+    std::shared_ptr<FileSystemUi> fileSystemUi;
+    std::shared_ptr<OutputUi> outputUi;
+    std::shared_ptr<CreationDialogUi> creationDialog;
+    // Opens the window at the next frame.
+    std::optional<CreationRequest> creationRequest;
     EditorFonts fonts;
     ThemeSettings theme;
     // The theme changed and applies before the next frame.
@@ -683,8 +701,6 @@ void drawInspectorPanel(ToolsState& state, scene::Scene& scene);
 [[nodiscard]] bool containsIgnoringCase(std::string_view text, std::string_view part);
 // The icon of a code file, by its extension.
 [[nodiscard]] EntityIcon codeIcon(const std::filesystem::path& path);
-// The files of the code folder of the project, under the assets.
-void drawCodeFiles(ToolsState& state);
 void openTextFile(ToolsState& state, const std::filesystem::path& path);
 void showOpenTextDialog(ToolsState& state);
 void drawTextEditorPanel(ToolsState& state, scene::Scene& scene);
@@ -794,6 +810,8 @@ void showSceneScreen(ToolsState& state, const scene::Scene& scene);
 void drawProjectManager(ToolsState& state);
 // Adds the image of the project manager to the frame, when it was drawn this frame.
 void renderProjectManager(ToolsState& state, render::RenderWorld& world);
+void renderFileSystem(ToolsState& state, render::RenderWorld& world);
+void renderOutput(ToolsState& state, render::RenderWorld& world);
 void drawEditorMenus(ToolsState& state, scene::Scene& scene);
 // Shows a screen in the middle of the window: the panel it needs opens and takes the focus.
 void setMainScreen(ToolsState& state, MainScreen screen);
@@ -849,11 +867,18 @@ void showOpenSceneDialog(ToolsState& state);
 void frameSelection(ToolsState& state, const scene::Scene& scene);
 [[nodiscard]] core::Uuid uuidFromBytes(const std::array<std::uint8_t, 16>& bytes) noexcept;
 
-// The create menu of entities: empty, primitives, lights, camera, environment. Created entities go
-// under parent (nil for a root), at the editor camera's pivot.
-void drawCreateEntityMenu(ToolsState& state, core::Uuid parent);
+// The window that creates an entity under parent (nil for a root, at the editor camera's pivot), as
+// Godot's Create New Node does, and that adds components to entities.
+void openCreateEntity(ToolsState& state, core::Uuid parent);
+void openAddComponent(ToolsState& state, std::vector<core::Uuid> targets);
+void drawCreationDialog(ToolsState& state, scene::Scene& scene);
+void renderCreationDialog(ToolsState& state, render::RenderWorld& world);
 // Creates an entity showing a sprite, at a position of the world, as one undoable step.
 void requestCreateSprite(ToolsState& state, asset::AssetId sprite, math::Vec3 position);
+// Adds an entity built in a scratch scene as one undoable step, under parent or at the root at the
+// editor camera's pivot, and selects it.
+void requestCreatePreset(ToolsState& state, core::Uuid parent, const char* name,
+                         const std::function<void(scene::Scene&, scene::Entity)>& build);
 
 // A combo listing the assets of a type (any type without one), which also accepts dropped assets.
 // Returns whether the value changed. A mixed value shows a dash.

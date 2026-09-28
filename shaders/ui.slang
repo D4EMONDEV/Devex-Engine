@@ -30,6 +30,10 @@ struct UiData
     float radius;
     // How much of the stored distances one pixel of the screen covers, for the letters.
     float sharpness;
+    // 1 when the image stores the colours of the display rather than light, as the tools do: the
+    // colours are encoded before they are blended, as ImGui blends its own, so that light letters
+    // on a dark panel look as thin as the letters of ImGui beside them.
+    uint displaySpace;
 };
 
 [[vk::push_constant]]
@@ -54,6 +58,12 @@ VertexOutput vertexMain(uint vertexIndex : SV_VertexID)
     output.color = vertex.color;
     output.pixel = vertex.position;
     return output;
+}
+
+float encodeChannel(float value)
+{
+    const float clamped = saturate(value);
+    return clamped <= 0.0031308 ? clamped * 12.92 : 1.055 * pow(clamped, 1.0 / 2.4) - 0.055;
 }
 
 // How far a point is from the outline of a rectangle with rounded corners: negative inside.
@@ -93,6 +103,10 @@ float4 fragmentMain(VertexOutput input) : SV_Target
     if (color.a <= 0.0)
     {
         discard;
+    }
+    if (ui.displaySpace != 0)
+    {
+        color.rgb = float3(encodeChannel(color.r), encodeChannel(color.g), encodeChannel(color.b));
     }
     return color;
 }

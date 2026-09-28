@@ -300,7 +300,11 @@ docs/          décisions et documentation
   `Renderer::uiSurfaceTexture(id)`, un identifiant ImGui fixe remplacé pendant le dessin comme
   celui du viewport. Une commande ImGui dont la surface n'a pas été dessinée dans la frame est
   sautée (rectangle de découpe vide) plutôt que de lier une texture qui n'existe pas. Les surfaces
-  ne sont dessinées qu'avec les outils.
+  ne sont dessinées qu'avec les outils. Elles sont écrites par la vue UNORM de leur image, le shader
+  encodant les couleurs pour l'écran avant le mélange (`displaySpace`) : le mélange se fait alors
+  en espace d'affichage, comme celui d'ImGui, et des lettres claires sur un panneau sombre gardent
+  la même finesse que celles d'ImGui à côté (mélangées en lumière, elles paraissaient plus
+  grasses). L'interface des jeux, elle, reste mélangée en lumière.
 - **Sélection à la souris** (*picking*) : `RenderWorld::pick` demande les objets visibles dans un
   rectangle de l'image, un pixel pour un clic. Une passe dessine tous les maillages dans une cible
   `R32_UINT` de la taille du rectangle (réduite à 512 pixels de côté au plus) avec une projection
@@ -843,13 +847,18 @@ les assets s'écrivent au fil de leur lecture.
   toute application avec **F1** (`ApplicationConfig::enableTools`, actif hors Release), ou
   autour du viewport de l'éditeur (`ToolsMode::Editor`).
 - **Panneaux** (noms de Godot) : *Scene*, l'arbre des entités (icône colorée selon les
-  composants, filtre, menu *+* de création, glisser-déposer pour changer de parent, double-clic
+  composants, filtre, bouton *+* qui ouvre la fenêtre de création, glisser-déposer pour changer de parent, double-clic
   pour cadrer) ; *Inspector*, généré par la réflexion (nom, UUID, une section repliable par
   composant avec son icône et un menu pour le retirer, propriétés sur deux colonnes, vecteurs
-  aux lettres x, y, z colorées, angles en degrés, *Add Component* avec recherche) ;
+  aux lettres x, y, z colorées, angles en degrés, *Add Component* qui ouvre la même fenêtre) ;
   *FileSystem*, l'arborescence `res://` des sources (icône par type, état d'import, menu :
-  ouvrir, placer, scène de démarrage, réimporter, copier le chemin, afficher dans l'explorateur)
-  ; *Output* (police à chasse fixe, recherche, compteurs par niveau qui servent de filtres) ;
+  ouvrir, placer, scène de démarrage, réimporter, copier le chemin, afficher dans l'explorateur,
+  créer une courbe, des animations de sprite, un tileset ou un animator dans un dossier ; les
+  flèches parcourent l'arbre, Entrée ouvre ; une entité de l'arbre de scène lâchée sur un dossier
+  y devient un préfab, comme Godot enregistre une branche lâchée sur son FileSystem) ; *Output*
+  (police à chasse fixe, recherche, compteurs par niveau qui servent de filtres, texte choisi à la
+  souris sur plusieurs lignes et copié, double-clic sur un mot, menu Copy, Select All, Clear) ;
+  ces deux-là sont faits avec `Devex::Ui` (voir *Une seule interface, deux usages*) ;
   *Statistics*. Les panneaux n'ont pas de bouton de fermeture : le menu *Editor > Panels* (ou
   *View* sur l'overlay) les affiche. La disposition par défaut est construite au premier
   lancement, puis sauvegardée dans `devex-tools.ini` ou `devex-editor.ini` à côté de
@@ -1046,10 +1055,28 @@ les assets s'écrivent au fil de leur lecture.
   des lumières et caméras, cadrage ; à droite, vitesse de vol, EV de la caméra de l'éditeur et
   aide des contrôles en infobulle. En Play, elle annonce l'état du jeu et le viewport est encadré
   à la couleur d'accent.
-- **Création** : le menu *+* de *Scene*, *Edit > Create* ou le menu contextuel de l'arbre place une
-  entité vide, une primitive, une lumière, une caméra ou un environnement au pivot de la caméra
-  (ou comme enfant de l'entité choisie) ; un modèle glissé dans le viewport se pose au sol sous
-  la souris ; un matériau glissé sur un objet le remplace. Suppr supprime la sélection.
+- **Création** : le *+* de *Scene* (sous l'entité choisie, comme chez Godot), *Edit > Create
+  Entity…* et *Create Child…*, ou le menu contextuel de l'arbre ouvrent la fenêtre **Create
+  Entity**, l'équivalent du *Create New Node* de Godot. Devex ayant des entités et des composants
+  plutôt que des types de nœuds, elle propose **chaque composant** (du moteur et du code du jeu),
+  qui crée une entité le portant avec ce qu'il lui faut (une place dans le monde, ou le rectangle,
+  l'image et le texte d'un élément d'interface ; un soleil incliné, une caméra qui ne prend pas la
+  place de celle du jeu), et les **préréglages** qui en réunissent plusieurs (Cube, Static box,
+  Rigid box, Trigger zone, 2D camera…). L'entité se pose au pivot de la caméra, ou comme enfant. La
+  même fenêtre sert à *Add Component* : elle n'offre alors que ce qui manque à l'une des entités
+  choisies, ajoute avec le composant ce dont il a besoin, et propose *New Script*. Faite avec
+  `Devex::Ui`, elle s'éloigne de l'arbre de Godot : une **palette** avec la recherche en haut (le
+  clavier y va dès l'ouverture ; les noms qui commencent par ce qui est tapé d'abord, puis les mots
+  des noms, le composant, la catégorie et la description, tous les mots devant se trouver), les
+  catégories en colonne d'icônes à gauche avec *Favorites* et *Recent*, les résultats en lignes
+  arrondies (icône teintée, nom, description, catégorie, étoile) et une fiche à droite (grande
+  icône, type, catégorie, description, ce que l'entité reçoit). Haut, Bas, Page haut et bas
+  choisissent, Entrée ou un double-clic crée, Échap ferme. Favoris et récents (les dix derniers)
+  sont gardés **par projet**, comme chez Godot, dans `.devex/creation.dvx`. Le catalogue
+  (`src/tools/CreationCatalog`) est du code pur, testé sans fenêtre. Un modèle glissé dans le
+  viewport se pose au sol sous la souris ; un matériau glissé sur un objet le remplace. Suppr
+  supprime la sélection. Ctrl+A garde son rôle de *tout sélectionner* (il ajoute un nœud chez
+  Godot).
 - **Raccourcis** : Ctrl+N, Ctrl+O, Ctrl+S, Ctrl+Maj+S, Ctrl+Alt+S, Ctrl+W, Ctrl+Tab ; F5 ou Ctrl+P
   pour jouer, F7 pause, F8 arrêt, F9 pas à pas ; Ctrl+B compile le code du jeu ; Ctrl+Maj+Q
   revient au gestionnaire de projets, Ctrl+Q quitte.
@@ -2111,14 +2138,30 @@ les assets s'écrivent au fil de leur lecture.
   le loge dans une fenêtre ImGui : il prend la place qui reste, lui donne la souris et les touches
   que la fenêtre reçoit (avec la saisie de texte et la position de la méthode de saisie par
   `ImGuiPlatformImeData`), et montre son image (`ImGui::Image` d'une surface d'interface) ; le
-  dock reste celui d'ImGui en attendant. Ses unités valent la taille du texte de l'éditeur, si bien
-  qu'il suit l'échelle de l'interface. `EditorUiKit` partage entre les panneaux les polices de
+  dock reste celui d'ImGui en attendant. Ses unités sont des points de texte, à l'échelle où ImGui
+  dessine les siens (ImGui mesure une police à sa ligne entière, Devex UI à son em : sans cette
+  correction, les lettres étaient 36 % plus grandes que leurs voisines), si bien qu'il suit
+  l'échelle de l'interface. `EditorUiKit` partage entre les panneaux les polices de
   l'éditeur (Noto Sans normale et grasse, cuites en atlas de distances à 40 pixels), ses icônes
   (les SVG dessinés en textures blanches que les images teintent) et son **thème**, une liste de
   styles nommés (`panel`, `button`, `primary`, `row_selected`, `field`, `dropdown`...) refaits
   depuis les couleurs de l'éditeur quand elles changent. Les polices, le thème et les icônes ont
   des identifiants d'asset réservés que seul le kit résout. Premier panneau porté : le
   gestionnaire de projets.
+- **La suite** (jalon 41) : *FileSystem* et *Output*. Les briques des panneaux (boutons, champs de
+  recherche, menus qui prennent la hauteur de leurs entrées visibles, dialogues, infobulles aux
+  couleurs de l'éditeur) sont partagées par `PanelBuilder`, et la police à chasse fixe
+  (JetBrains Mono) rejoint le kit. Les deux listes sont **virtuelles** : seules les lignes à l'écran
+  ont des entités, remplies d'après le défilement avant la mise en page ; l'arbre de FileSystem est
+  aplati en lignes à chaque image selon les dossiers ouverts, et les dossiers du code sont relus
+  une fois par seconde. Un panneau qui répond lui-même aux touches (l'arbre) coupe la navigation
+  au clavier de Devex UI (`setKeyboardNavigation`). Le **glisser-déposer traverse la frontière**
+  avec ImGui : ce que porte un panneau devient aussi un glisser ImGui
+  (`ImGuiDragDropFlags_SourceExtern`, sans aperçu, l'infobulle d'ImGui prenant le relais hors du
+  panneau), que la vue et l'inspecteur prennent comme les leurs ; un glisser ImGui qui passe sur
+  le panneau y est annoncé (`carryFromOutside`), et ses cibles le prennent. Limite : les menus et
+  les infobulles d'un panneau sont dessinés dans son image, ils ne peuvent pas en sortir (Godot en
+  fait des fenêtres) ; les infobulles passent à la ligne pour y tenir.
 
 ### Interfaces
 
@@ -2275,12 +2318,17 @@ les assets s'écrivent au fil de leur lecture.
   il ouvre la liste de ses options sous lui (au-dessus s'il n'y a pas la place), aussi large que
   lui, dix options au plus que la molette fait défiler ; les flèches, Entrée et Échap y marchent
   aussi. Le choix est signalé par son action (`Ui.WasChanged("difficulty")`).
+- **Découpe** : un élément qui découpe ses enfants et qui est sorti de la vue ne leur laisse rien,
+  plutôt qu'une découpe vide, qui voudrait dire que rien ne les découpe : les lignes d'une liste
+  défilée hors de sa vue n'y débordent plus.
 - **Défilement, séparateurs, dépliants** : `UiScroll` dessine une **barre de défilement** tant que
   le contenu dépasse (`scrollbar`, `scrollbar_size`, `scrollbar_color`), dont le pouce se tire et
   dont la piste avance d'une page. `UiSplitter` partage son rectangle entre ses deux premiers
   enfants, côte à côte ou l'un sur l'autre, avec une barre que le pointeur tire (`position`,
   `min_size`). `UiFoldout` montre ou cache l'élément qu'il nomme (`content`), avec une flèche qui dit
-  lequel : sections d'un inspecteur, ou branches d'un arbre quand les dépliants s'emboîtent.
+  lequel : sections d'un inspecteur, ou branches d'un arbre quand les dépliants s'emboîtent. Ce
+  qui est caché ne compte pas dans le contenu d'une zone qui défile, et une zone dont le contenu a
+  rétréci revient d'elle-même à sa fin plutôt que de montrer du vide.
 - **Listes virtuelles et tableaux** : `UiVirtualList`, dans un `UiScroll`, prend la hauteur de
   `item_count` éléments de `item_size` unités mais n'a que les lignes visibles pour enfants :
   l'interface les place aux éléments qu'elles montrent et écrit dans `first` le premier, qu'un
@@ -2288,6 +2336,17 @@ les assets s'écrivent au fil de leur lecture.
   `UiTableRow` en dessous de lui ; la ligne `header` redimensionne une colonne quand on tire le bord
   d'une cellule, et trie par une colonne quand on la clique (`sort_column`, `sort_ascending`, une
   flèche la marque) : le script trie ses lignes quand l'action du tableau change.
+- **Glisser-déposer** : `UiDragSource` (un type, des données, une étiquette) laisse le pointeur
+  emporter un élément, ou ce qui est dessous, une fois qu'il s'est éloigné de 6 pixels de
+  l'appui : un clic qui tremble reste un clic, et un bouton emporté n'est pas cliqué. Pendant le
+  glisser, l'étiquette (le premier texte de l'élément par défaut) suit le pointeur dans le style
+  des infobulles, et la `UiDropTarget` sous lui qui accepte ce type s'éclaire
+  (`highlight_color`) ; lâché dessus, `wasDropped(action)` et `dropped()` (source, cible, type,
+  données) le disent au jeu, qui décide quoi en faire : ranger l'objet dans la case, l'échanger.
+  Échap repose ce qui est porté ; une cible ne prend jamais sa propre source. Un outil annonce un
+  glisser venu d'ailleurs par `carryFromOutside`, chaque image où il dure. Comme chez Godot, rien
+  ne bouge tout seul : Godot passe par `_get_drag_data`, `_can_drop_data` et `_drop_data` sur ses
+  nœuds, Devex par des composants et des actions, comme le reste de son interface.
 - **Double clic** : deux clics sur le même bouton à moins de 0,4 seconde ; le second compte aussi
   comme un clic (`wasDoubleClicked`). `startEditing` donne le clavier à un champ, son texte
   sélectionné, comme un formulaire à son premier champ.
@@ -2295,13 +2354,16 @@ les assets s'écrivent au fil de leur lecture.
   offre `WasClicked(action)`, `WasClicked(entity)`, `WasDoubleClicked(action)`,
   `WasDoubleClicked(entity)`, `WasChanged(action)`, `WasSubmitted(action)`, `WasCancelled()`,
   `OpenPopup(entity)`, `OpenPopup(entity, at)`, `ClosePopup`, `IsPopupOpen`, `ContextTarget`,
-  `Hovered`, `Focused`, `EditedField` et `PointerOverInterface`, que le jeu lit
+  `WasDropped(action)`, `WasDropped(entity)`, `Dropped` (un `UiDrop` : source, cible, type,
+  données), `Carried`, `Hovered`, `Focused`, `EditedField` et `PointerOverInterface`, que le jeu lit
   avant d'agir sur un clic qui lui serait destiné. Les touches restent visibles des systèmes du
   jeu pendant qu'un champ est édité, comme dans Unity et Godot : un système qui répond à une
   touche seule vérifie `ui->isEditing()` (ou `Ui.EditedField`) pour ne pas réagir aux lettres
   tapées.
 - **Bac à sable** : la scène `sandbox` ouvre sur un menu principal (Jouer, Réglages, Quitter), avec
-  un menu de pause appelé par Échap et un HUD qui montre le score et le temps. L'écran des
+  un menu de pause appelé par Échap, avec un sac de six cases dont on glisse les objets d'une case
+  à l'autre (un objet lâché sur une case occupée échange sa place), et un HUD qui montre le score
+  et le temps. L'écran des
   réglages montre un champ de nom, un mot de passe, un curseur de volume dont l'étiquette est liée
   à sa valeur, une case « plein écran », une liste déroulante de la difficulté (gardée dans les
   réglages du joueur), des infobulles sur ces trois contrôles, et un panneau d'aide en neuf parts
@@ -2843,6 +2905,14 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     d'entités, logés dans une fenêtre ImGui ; le gestionnaire de projets porté ; difficulté et
     infobulles dans les réglages du bac à sable.
 
+41. ✅ **FileSystem et Output en Devex UI** — glisser-déposer dans `Devex::Ui` (sources, cibles,
+    glissers venus d'ailleurs) en C++ et en C#, et entre ses panneaux et ImGui ; FileSystem en
+    arbre virtuel avec ses menus, le clavier, ses fichiers glissés vers la vue et l'inspecteur et
+    les entités lâchées sur un dossier qui deviennent des préfabs ; Output dont le texte se choisit
+    et se copie ; panneaux à la taille du texte d'ImGui et mélangés comme lui ; fenêtre Create
+    Entity et Add Component en palette (composants et préréglages, recherche, catégories, fiche,
+    favoris et récents par projet) ; sac du menu de pause du bac à sable.
+
 Ensuite, sans ordre figé : CI Linux, la suite du portage de l'éditeur.
 
 ## Questions ouvertes
@@ -2933,13 +3003,19 @@ Ensuite, sans ordre figé : CI Linux, la suite du portage de l'éditeur.
   texte bidirectionnel et écritures complexes, sélection d'un mot au double clic, annulation dans
   un champ, édition des thèmes dans l'éditeur, infobulles stylées par le thème du canevas plutôt
   que par l'`UiWorld`, sous-menus ouverts au survol et navigation au clavier dans les menus,
-  glisser-déposer, sélection multiple dans les listes, arbres virtuels (dépliants dans une liste
-  virtuelle), recherche dans une liste déroulante.
-- **Portage de l'éditeur sur l'UI du moteur, la suite** : les panneaux un à un (FileSystem et
-  Output d'abord, puis la hiérarchie et l'inspecteur, qui demandent les arbres virtuels et le
-  glisser-déposer), le dockspace et les menus de la fenêtre en dernier (voir *Une seule interface,
-  deux usages*) ; un panneau redessiné seulement quand il change ; les polices de l'éditeur cuites
-  une fois et gardées en cache plutôt qu'à chaque lancement ; un seul thème pour ImGui et
+  sélection multiple dans les listes, arbres virtuels tout faits (FileSystem aplatit le sien),
+  recherche dans une liste déroulante, aperçu d'un glisser fait d'un élément plutôt que d'une
+  étiquette, défilement automatique d'une liste quand on glisse près de son bord, texte en lecture
+  seule sélectionnable tout fait (l'Output fait le sien).
+- **Portage de l'éditeur sur l'UI du moteur, la suite** : la hiérarchie et l'inspecteur (champs de
+  propriétés, sélecteur de couleur, édition de plusieurs entités), puis les autres panneaux, le
+  dockspace et les menus de la fenêtre en dernier (voir *Une seule interface, deux usages*) ; des
+  popups et infobulles qui sortent du panneau (fenêtres à elles, comme chez Godot) ; déplacer et
+  renommer des fichiers dans FileSystem (glissés sur un dossier, F2), sélection de plusieurs
+  fichiers, vignettes ; dans la fenêtre de création, les descriptions et les icônes des composants
+  du jeu (tirées des commentaires de leur code), et des préréglages faits de préfabs du projet ; un
+  panneau redessiné seulement quand il change ; les polices de l'éditeur
+  cuites une fois et gardées en cache plutôt qu'à chaque lancement ; un seul thème pour ImGui et
   `Devex::Ui` tant qu'ils cohabitent.
 - **CI, la suite** : Linux, puis macOS ; les tests `[gpu]` sur un rendu logiciel (lavapipe,
   SwiftShader) ou une machine avec GPU ; actions passées à Node.js 24 (celles en v4 tournent sur

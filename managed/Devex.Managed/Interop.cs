@@ -179,6 +179,13 @@ internal unsafe struct NativeApi
     public delegate* unmanaged<Entity> UiContextTarget;
     public delegate* unmanaged<byte*, int> UiDoubleClickedAction;
     public delegate* unmanaged<Entity, int> UiDoubleClickedEntity;
+    public delegate* unmanaged<byte*, int> UiDroppedAction;
+    public delegate* unmanaged<Entity, int> UiDroppedEntity;
+    public delegate* unmanaged<Entity> UiDropSource;
+    public delegate* unmanaged<Entity> UiDropTarget;
+    public delegate* unmanaged<byte*> UiDropType;
+    public delegate* unmanaged<byte*> UiDropData;
+    public delegate* unmanaged<Entity> UiCarried;
 }
 
 /// <summary>The C# functions the engine calls. Filled by the runtime when it starts.</summary>
@@ -206,7 +213,7 @@ internal unsafe struct BootstrapArguments
 /// <summary>What the engine calls into: filling the function tables, then the game itself.</summary>
 public static unsafe class Bootstrap
 {
-    internal const int Version = 16;
+    internal const int Version = 17;
 
     internal static NativeApi Native;
     private static byte[]? _description;

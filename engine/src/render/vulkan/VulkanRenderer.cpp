@@ -1247,18 +1247,22 @@ core::Result<void> VulkanRenderer::createTargetPipelines(VkFormat format)
                 });
 
     // The interface is drawn flat over the image, with its own vertices and no depth at all.
-    core::Result<Pipeline> interface = createGraphicsPipeline(
-        device, {
-                    .shaderPath = m_shaderDirectory / "ui.spv",
-                    .setLayouts = bothSets,
-                    .pushConstantSize = sizeof(UiPushConstants),
-                    .colorFormat = format,
-                    .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
-                    .alphaBlend = true,
-                    .cullMode = VK_CULL_MODE_NONE,
-                    .depthTest = false,
-                    .depthWrite = false,
-                });
+    const GraphicsPipelineConfig interfaceConfig{
+        .shaderPath = m_shaderDirectory / "ui.spv",
+        .setLayouts = bothSets,
+        .pushConstantSize = sizeof(UiPushConstants),
+        .colorFormat = format,
+        .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+        .alphaBlend = true,
+        .cullMode = VK_CULL_MODE_NONE,
+        .depthTest = false,
+        .depthWrite = false,
+    };
+    core::Result<Pipeline> interface = createGraphicsPipeline(device, interfaceConfig);
+    // The panels of the tools write display colours into the view of their image the tools read.
+    GraphicsPipelineConfig displayConfig = interfaceConfig;
+    displayConfig.colorFormat = m_swapchain ? m_swapchain->toolsFormat() : format;
+    core::Result<Pipeline> interfaceDisplay = createGraphicsPipeline(device, displayConfig);
 
     GraphicsPipelineConfig outlineConfig = triangleConfig;
     outlineConfig.vertexEntry = "outlineVertex";
@@ -1267,7 +1271,7 @@ core::Result<void> VulkanRenderer::createTargetPipelines(VkFormat format)
     core::Result<Pipeline> outline = createGraphicsPipeline(device, outlineConfig);
 
     for (core::Result<Pipeline>* result :
-         {&tonemap, &sceneLines, &overlayLines, &overlayTriangles, &outline, &interface, &taa,
+         {&tonemap, &sceneLines, &overlayLines, &overlayTriangles, &outline, &interface, &interfaceDisplay, &taa,
           &bloomDown, &bloomUp, &bloomThreshold})
     {
         if (!*result)
@@ -1281,6 +1285,7 @@ core::Result<void> VulkanRenderer::createTargetPipelines(VkFormat format)
     m_overlayTrianglePipeline = std::move(*overlayTriangles);
     m_outlinePipeline = std::move(*outline);
     m_uiPipeline = std::move(*interface);
+    m_uiDisplayPipeline = std::move(*interfaceDisplay);
     m_taaPipeline = std::move(*taa);
     m_bloomThresholdPipeline = std::move(*bloomThreshold);
     m_bloomDownsamplePipeline = std::move(*bloomDown);
@@ -3583,15 +3588,26 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
     // `indexBase` in the index buffer of the frame.
     const auto drawInterface = [&](VkCommandBuffer commands, VkImageView view, VkAttachmentLoadOp load,
                                    const math::Vec4& clearColor, math::Extent2D size,
-                                   std::span<const UiDraw> draws, std::uint32_t indexBase) {
+                                   std::span<const UiDraw> draws, std::uint32_t indexBase, bool displaySpace) {
+        // A view of display colours takes its clear colour encoded as well.
+        const auto encode = [displaySpace](float value) {
+            if (!displaySpace)
+            {
+                return value;
+            }
+            const float clamped = std::clamp(value, 0.0f, 1.0f);
+            return clamped <= 0.0031308f ? clamped * 12.92f : 1.055f * std::pow(clamped, 1.0f / 2.4f) - 0.055f;
+        };
         const VkRenderingAttachmentInfo colorAttachment{
             .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
             .imageView = view,
             .imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
             .loadOp = load,
             .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-            .clearValue = {.color = {.float32 = {clearColor.x, clearColor.y, clearColor.z, clearColor.w}}},
+            .clearValue = {.color = {.float32 = {encode(clearColor.x), encode(clearColor.y), encode(clearColor.z),
+                                                 clearColor.w}}},
         };
+        const Pipeline& pipeline = displaySpace ? *m_uiDisplayPipeline : *m_uiPipeline;
         const VkRenderingInfo renderingInfo{
             .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
             .renderArea = {.extent = {size.width, size.height}},
@@ -3603,9 +3619,9 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
         setViewport(commands, size);
         if (!draws.empty())
         {
-            vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, m_uiPipeline->handle());
+            vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.handle());
             vkCmdBindDescriptorSets(commands, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                    m_uiPipeline->layout(), 0, 2, sets.data(), 0, nullptr);
+                                    pipeline.layout(), 0, 2, sets.data(), 0, nullptr);
         }
         for (const UiDraw& uiDraw : draws)
         {
@@ -3639,8 +3655,9 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
                 .rect = uiDraw.rect,
                 .radius = uiDraw.radius,
                 .sharpness = uiDraw.sharpness,
+                .displaySpace = displaySpace ? 1u : 0u,
             };
-            vkCmdPushConstants(commands, m_uiPipeline->layout(),
+            vkCmdPushConstants(commands, pipeline.layout(),
                                VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
                                sizeof(constants), &constants);
             vkCmdDraw(commands, uiDraw.indexCount, 1, 0, 0);
@@ -3652,7 +3669,7 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
     {
         graph.addPass("Interface", {{target, ImageAccess::ColorAttachment}}, [&](VkCommandBuffer commands) {
             drawInterface(commands, graph.view(target), VK_ATTACHMENT_LOAD_OP_LOAD, math::Vec4{0.0f}, extent,
-                          m_world.uiDraws, 0);
+                          m_world.uiDraws, 0, false);
         });
     }
     for (std::size_t surface = 0; surface < surfaceIndices.size(); ++surface)
@@ -3660,9 +3677,11 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
         const RenderGraph::ImageId image = *created[surfaceIndices[surface]];
         graph.addPass("Interface surface", {{image, ImageAccess::ColorAttachment}}, [&, surface, image](VkCommandBuffer commands) {
             const UiSurface& drawn = m_world.uiSurfaces[surface];
-            drawInterface(commands, graph.view(image), VK_ATTACHMENT_LOAD_OP_CLEAR, drawn.clearColor,
-                          math::Extent2D{std::max(drawn.size.width, 1u), std::max(drawn.size.height, 1u)}, drawn.draws,
-                          surfaceIndexBases[surface]);
+            // Written through the view the tools read, in the colours of the display.
+            const VkImageView alternate = graph.image(image)->alternateView();
+            drawInterface(commands, alternate != VK_NULL_HANDLE ? alternate : graph.view(image), VK_ATTACHMENT_LOAD_OP_CLEAR,
+                          drawn.clearColor, math::Extent2D{std::max(drawn.size.width, 1u), std::max(drawn.size.height, 1u)},
+                          drawn.draws, surfaceIndexBases[surface], alternate != VK_NULL_HANDLE);
         });
     }
 

@@ -371,3 +371,102 @@ TEST_CASE("A table lines its cells up in columns, resized and sorted from its he
     CHECK_FALSE(screen.scene.get<devex::scene::UiTable>(table).sortAscending);
     static_cast<void>(name);
 }
+
+TEST_CASE("A drag source carried to a target that accepts it is dropped there", "[ui][controls][drag]")
+{
+    Screen screen;
+    const Entity gem = screen.button({}, {100.0f, 100.0f}, {200.0f, 140.0f}, "pick");
+    screen.scene.add<devex::scene::UiDragSource>(gem, devex::scene::UiDragSource{.type = "item", .data = "gem"});
+    const Entity slot = screen.element({}, {400.0f, 100.0f}, {500.0f, 200.0f}, "Slot");
+    screen.scene.add<UiImage>(slot);
+    screen.scene.add<devex::scene::UiDropTarget>(slot, devex::scene::UiDropTarget{.accepts = {"item"}, .action = "slot"});
+    const Entity other = screen.element({}, {600.0f, 100.0f}, {700.0f, 200.0f}, "Other");
+    screen.scene.add<UiImage>(other);
+    screen.scene.add<devex::scene::UiDropTarget>(other, devex::scene::UiDropTarget{.accepts = {"spell"}});
+    screen.update();
+
+    const auto drag = [&](Vec2 point) { screen.update(UiInput{.pointer = point, .pointerDown = true, .pointerMoved = true}); };
+    screen.press({150.0f, 120.0f});
+    // A shake of the hand is still a click.
+    drag({153.0f, 121.0f});
+    CHECK(screen.world.carried() == nullptr);
+    drag({300.0f, 150.0f});
+    REQUIRE(screen.world.carried() != nullptr);
+    CHECK(screen.world.carried()->source == gem);
+    CHECK(screen.world.carried()->type == "item");
+
+    // Only the targets that accept what is carried take it.
+    drag({650.0f, 150.0f});
+    CHECK_FALSE(screen.world.dropTarget().isValid());
+    drag({450.0f, 150.0f});
+    CHECK(screen.world.dropTarget() == slot);
+
+    screen.release({450.0f, 150.0f});
+    CHECK(screen.world.wasDropped("slot"));
+    CHECK(screen.world.wasDropped(slot));
+    REQUIRE(screen.world.dropped() != nullptr);
+    CHECK(screen.world.dropped()->source == gem);
+    CHECK(screen.world.dropped()->data == "gem");
+    // The button carried away is not clicked.
+    CHECK_FALSE(screen.world.wasClicked("pick"));
+    CHECK(screen.world.carried() == nullptr);
+    screen.update();
+    CHECK_FALSE(screen.world.wasDropped("slot"));
+}
+
+TEST_CASE("A drag source that is not moved is clicked, and Escape puts back what is carried", "[ui][controls][drag]")
+{
+    Screen screen;
+    const Entity gem = screen.button({}, {100.0f, 100.0f}, {200.0f, 140.0f}, "pick");
+    screen.scene.add<devex::scene::UiDragSource>(gem, devex::scene::UiDragSource{.type = "item"});
+    const Entity slot = screen.element({}, {400.0f, 100.0f}, {500.0f, 200.0f}, "Slot");
+    screen.scene.add<UiImage>(slot);
+    screen.scene.add<devex::scene::UiDropTarget>(slot, devex::scene::UiDropTarget{.accepts = {"item"}, .action = "slot"});
+    screen.update();
+
+    screen.click({150.0f, 120.0f});
+    CHECK(screen.world.wasClicked("pick"));
+    CHECK(screen.world.carried() == nullptr);
+
+    screen.press({150.0f, 120.0f});
+    screen.update(UiInput{.pointer = {450.0f, 150.0f}, .pointerDown = true, .pointerMoved = true});
+    REQUIRE(screen.world.carried() != nullptr);
+    screen.update(UiInput{.pointer = {450.0f, 150.0f}, .pointerDown = true, .cancelPressed = true});
+    CHECK(screen.world.carried() == nullptr);
+    CHECK_FALSE(screen.world.wasCancelled());
+    screen.release({450.0f, 150.0f});
+    CHECK_FALSE(screen.world.wasDropped("slot"));
+    CHECK_FALSE(screen.world.wasClicked("pick"));
+}
+
+TEST_CASE("A drag from outside the interface is dropped on a target that accepts its type", "[ui][controls][drag]")
+{
+    Screen screen;
+    const Entity folder = screen.button({}, {100.0f, 100.0f}, {300.0f, 140.0f}, "folder");
+    screen.scene.add<devex::scene::UiDropTarget>(folder, devex::scene::UiDropTarget{.accepts = {"entity"}});
+    screen.update();
+
+    screen.world.carryFromOutside("entity", "e1");
+    screen.update(UiInput{.pointer = {200.0f, 120.0f}, .pointerDown = true, .pointerMoved = true});
+    REQUIRE(screen.world.carried() != nullptr);
+    CHECK_FALSE(screen.world.carried()->source.isValid());
+    CHECK(screen.world.dropTarget() == folder);
+
+    screen.world.carryFromOutside("entity", "e1");
+    screen.release({200.0f, 120.0f});
+    CHECK(screen.world.wasDropped(folder));
+    REQUIRE(screen.world.dropped() != nullptr);
+    CHECK_FALSE(screen.world.dropped()->source.isValid());
+    CHECK(screen.world.dropped()->data == "e1");
+    CHECK_FALSE(screen.world.wasClicked("folder"));
+
+    // Announced once more after the release, as ImGui keeps its drag a frame longer, it drops nothing.
+    screen.world.carryFromOutside("entity", "e1");
+    screen.update(UiInput{.pointer = {200.0f, 120.0f}});
+    CHECK_FALSE(screen.world.wasDropped(folder));
+    CHECK(screen.world.carried() == nullptr);
+
+    // A drag that is no longer announced has ended.
+    screen.update(UiInput{.pointer = {200.0f, 120.0f}, .pointerDown = true});
+    CHECK(screen.world.carried() == nullptr);
+}

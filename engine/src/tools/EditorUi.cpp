@@ -80,6 +80,15 @@ math::Vec4 linearColor(ImVec4 srgb) noexcept
     return math::Vec4{linear(srgb.x), linear(srgb.y), linear(srgb.z), std::clamp(srgb.w, 0.0f, 1.0f)};
 }
 
+Icon iconOf(IconText text) noexcept
+{
+    // Three bytes of UTF-8 for a character of the private use area.
+    const std::string_view bytes = text;
+    const auto byte = [&](std::size_t index) { return static_cast<char32_t>(static_cast<unsigned char>(bytes[index])); };
+    const char32_t codepoint = ((byte(0) & 0x0F) << 12) | ((byte(1) & 0x3F) << 6) | (byte(2) & 0x3F);
+    return static_cast<Icon>(codepoint - firstIconCodepoint);
+}
+
 EditorUiKit::EditorUiKit(render::Renderer& renderer, const IconSet& icons, std::filesystem::path fontsDirectory)
     : m_renderer(renderer)
     , m_icons(icons)
@@ -89,7 +98,7 @@ EditorUiKit::EditorUiKit(render::Renderer& renderer, const IconSet& icons, std::
 
 EditorUiKit::~EditorUiKit()
 {
-    for (const BakedFont* font : {&m_regular, &m_bold})
+    for (const BakedFont* font : {&m_regular, &m_bold, &m_mono})
     {
         if (font->atlas.isValid())
         {
@@ -118,6 +127,16 @@ asset::AssetId EditorUiKit::boldFont() noexcept
 asset::AssetId EditorUiKit::themeId() noexcept
 {
     return asset::AssetId{core::Uuid::fromParts(0, 0x10003)};
+}
+
+asset::AssetId EditorUiKit::monoFont() noexcept
+{
+    return asset::AssetId{core::Uuid::fromParts(0, 0x10004)};
+}
+
+const EditorUiKit::BakedFont& EditorUiKit::baked(asset::AssetId font) const noexcept
+{
+    return font == boldFont() ? m_bold : font == monoFont() ? m_mono : m_regular;
 }
 
 asset::AssetId EditorUiKit::icon(Icon icon)
@@ -178,13 +197,14 @@ void EditorUiKit::bakeFonts()
     };
     bake("NotoSans-Regular.ttf", m_regular);
     bake("NotoSans-Bold.ttf", m_bold);
+    bake("JetBrainsMono-Regular.ttf", m_mono);
 }
 
 std::function<ui::FontRef(asset::AssetId)> EditorUiKit::fonts()
 {
     bakeFonts();
     return [this](asset::AssetId id) {
-        const BakedFont& font = id == boldFont() ? m_bold : m_regular;
+        const BakedFont& font = baked(id);
         return ui::FontRef{.data = font.data.get(), .atlas = font.atlas};
     };
 }
@@ -213,7 +233,7 @@ ui::DrawContext EditorUiKit::drawContext()
 const asset::FontData* EditorUiKit::fontData(asset::AssetId font)
 {
     bakeFonts();
-    return (font == boldFont() ? m_bold : m_regular).data.get();
+    return baked(font).data.get();
 }
 
 float EditorUiKit::textWidth(asset::AssetId font, std::string_view text, float size)
@@ -300,6 +320,20 @@ void EditorUiKit::refreshTheme(const ThemeColors& colors)
     add("icon_warning", {{"UiImage", "color", written(colors.warning)}});
     add("icon_error", {{"UiImage", "color", written(colors.error)}});
     add("icon_success", {{"UiImage", "color", written(colors.success)}});
+    // The palette that creates entities and adds components: a card with rounded corners, lists of
+    // soft rows, and pills that name a category.
+    add("dialog", image(written(colors.panel), 10.0f));
+    add("dialog_list", image(written(colors.field), 8.0f));
+    add("dialog_card", image(written(mixed(colors.panel, colors.raised, 0.55f)), 8.0f));
+    // The colour of the card, so that only the pointer lights it up.
+    add("side", clickable(image(written(colors.panel), 6.0f)));
+    add("side_selected", clickable(image(written(mixed(colors.panel, colors.accent, 0.28f)), 6.0f)));
+    add("soft_row", clickable(image(written(colors.field), 6.0f)));
+    add("soft_row_selected", clickable(image(written(mixed(colors.field, colors.accent, 0.30f)), 6.0f)));
+    add("chip", image(written(ImVec4(colors.accent.x, colors.accent.y, colors.accent.z, 0.18f)), 9.0f));
+    // What is selected of a text that is only read.
+    add("selection", {{"UiImage", "color", written(ImVec4(colors.accent.x, colors.accent.y, colors.accent.z, 0.4f))},
+                      {"UiImage", "corner_radius", "0"}});
     m_theme = std::move(theme);
 }
 
@@ -336,17 +370,51 @@ bool UiPanel::focused() const noexcept
     return m_focused;
 }
 
+bool UiPanel::hovered() const noexcept
+{
+    return m_hovered;
+}
+
+const ui::UiInput& UiPanel::input() const noexcept
+{
+    return m_input;
+}
+
+void UiPanel::setDragOut(std::function<std::optional<ImGuiDrag>(const ui::Carried&)> convert)
+{
+    m_dragOut = std::move(convert);
+}
+
+void UiPanel::setDragIn(std::function<std::optional<std::pair<std::string, std::string>>(const ImGuiPayload&)> convert)
+{
+    m_dragIn = std::move(convert);
+}
+
+void UiPanel::setKeyboardNavigation(bool enabled) noexcept
+{
+    m_navigation = enabled;
+}
+
+float UiPanel::zoomFor(float font) noexcept
+{
+    const float pixelsPerPoint =
+        ImGui::GetIO().DisplayFramebufferScale.x > 0.0f ? ImGui::GetIO().DisplayFramebufferScale.x : 1.0f;
+    // ImGui sizes its fonts by their whole line, the interface of the engine by their em: a unit
+    // is a point of text, scaled as ImGui scales its own.
+    return pixelsPerPoint * ImGui::GetFontSize() / std::max(regularFontPixels(font), 1.0f);
+}
+
 void UiPanel::update(EditorUiKit& kit, core::Duration delta, float zoom)
 {
     const ImGuiIO& io = ImGui::GetIO();
     const float pixelsPerPoint = io.DisplayFramebufferScale.x > 0.0f ? io.DisplayFramebufferScale.x : 1.0f;
-    const ImVec2 available = ImGui::GetContentRegionAvail();
+    const ImVec2 available(std::max(ImGui::GetContentRegionAvail().x, 1.0f), std::max(ImGui::GetContentRegionAvail().y, 1.0f));
     const ImVec2 origin = ImGui::GetCursorScreenPos();
     m_zoom = std::max(zoom, 0.1f);
     m_pixels = {static_cast<std::uint32_t>(std::max(std::floor(available.x * pixelsPerPoint), 1.0f)),
                 static_cast<std::uint32_t>(std::max(std::floor(available.y * pixelsPerPoint), 1.0f))};
     ImGui::Image(ImTextureRef(static_cast<ImTextureID>(render::Renderer::uiSurfaceTexture(m_surface))), available);
-    const bool hovered = ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenBlockedByActiveItem);
+    m_hovered = ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenBlockedByActiveItem);
     m_focused = ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows);
     if (!m_connected)
     {
@@ -360,12 +428,12 @@ void UiPanel::update(EditorUiKit& kit, core::Duration delta, float zoom)
     ui::UiInput input;
     input.pointer = math::Vec2{(io.MousePos.x - origin.x) * pixelsPerPoint, (io.MousePos.y - origin.y) * pixelsPerPoint} / m_zoom;
     input.pointerDown = ImGui::IsMouseDown(ImGuiMouseButton_Left);
-    input.pointerPressed = hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left);
+    input.pointerPressed = m_hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left);
     input.pointerReleased = ImGui::IsMouseReleased(ImGuiMouseButton_Left);
     input.pointerMoved = io.MouseDelta.x != 0.0f || io.MouseDelta.y != 0.0f;
-    input.secondaryPressed = hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Right);
-    input.wheel = hovered ? io.MouseWheel : 0.0f;
-    if (!hovered && !input.pointerDown)
+    input.secondaryPressed = m_hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Right);
+    input.wheel = m_hovered ? io.MouseWheel : 0.0f;
+    if (!m_hovered && !input.pointerDown && !input.pointerReleased)
     {
         // Far outside every element, so that nothing is hovered while the pointer is elsewhere.
         input.pointer = math::Vec2{-1.0e6f, -1.0e6f};
@@ -381,10 +449,14 @@ void UiPanel::update(EditorUiKit& kit, core::Duration delta, float zoom)
                 appendUtf8(input.typed, character);
             }
         }
-        input.moveX = (stroke(ImGuiKey_RightArrow) ? 1 : 0) - (stroke(ImGuiKey_LeftArrow) ? 1 : 0);
-        input.moveY = (stroke(ImGuiKey_DownArrow) ? 1 : 0) - (stroke(ImGuiKey_UpArrow) ? 1 : 0);
-        input.submitPressed = ImGui::IsKeyPressed(ImGuiKey_Enter, false) || ImGui::IsKeyPressed(ImGuiKey_KeypadEnter, false) ||
-                              (!editing && ImGui::IsKeyPressed(ImGuiKey_Space, false));
+        if (m_navigation)
+        {
+            input.moveX = (stroke(ImGuiKey_RightArrow) ? 1 : 0) - (stroke(ImGuiKey_LeftArrow) ? 1 : 0);
+            input.moveY = (stroke(ImGuiKey_DownArrow) ? 1 : 0) - (stroke(ImGuiKey_UpArrow) ? 1 : 0);
+        }
+        input.submitPressed = (m_navigation || editing) &&
+                              (ImGui::IsKeyPressed(ImGuiKey_Enter, false) || ImGui::IsKeyPressed(ImGuiKey_KeypadEnter, false) ||
+                               (m_navigation && !editing && ImGui::IsKeyPressed(ImGuiKey_Space, false)));
         input.cancelPressed = ImGui::IsKeyPressed(ImGuiKey_Escape, false);
         input.backspacePressed = stroke(ImGuiKey_Backspace);
         input.deletePressed = stroke(ImGuiKey_Delete);
@@ -407,7 +479,20 @@ void UiPanel::update(EditorUiKit& kit, core::Duration delta, float zoom)
             }
         }
     }
+
+    // An ImGui drag that comes over the panel, which its targets may take; not the panel's own,
+    // which ImGui carries once it leaves.
+    if (const ImGuiPayload* const payload = ImGui::GetDragDropPayload();
+        payload != nullptr && m_dragIn && payload->SourceId != ImHashStr("#SourceExtern"))
+    {
+        if (std::optional<std::pair<std::string, std::string>> carried = m_dragIn(*payload))
+        {
+            m_world.carryFromOutside(std::move(carried->first), std::move(carried->second));
+        }
+    }
     m_world.update(m_scene, size(), input, delta);
+    m_input = input;
+    carryToImGui(origin, pixelsPerPoint);
     if (const std::string& copied = m_world.clipboardRequest(); !copied.empty())
     {
         ImGui::SetClipboardText(copied.c_str());
@@ -430,6 +515,36 @@ void UiPanel::update(EditorUiKit& kit, core::Duration delta, float zoom)
     m_shown = true;
 }
 
+void UiPanel::carryToImGui(const ImVec2& origin, float pixelsPerPoint)
+{
+    // What the panel carries is an ImGui drag as well for as long as the button is held, so that the
+    // windows around take it where they take their own; the panel draws its label while the pointer
+    // is over it, and an ImGui tooltip does once it leaves.
+    const ui::Carried* const carried = m_world.carried();
+    if (carried == nullptr || !carried->source.isValid() || !m_dragOut || !ImGui::IsMouseDown(ImGuiMouseButton_Left))
+    {
+        return;
+    }
+    const std::optional<ImGuiDrag> drag = m_dragOut(*carried);
+    if (!drag)
+    {
+        return;
+    }
+    if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_SourceExtern | ImGuiDragDropFlags_SourceNoPreviewTooltip))
+    {
+        ImGui::SetDragDropPayload(drag->type.c_str(), drag->payload.data(), drag->payload.size());
+        ImGui::EndDragDropSource();
+    }
+    const ImVec2 mouse = ImGui::GetIO().MousePos;
+    const ImVec2 end(origin.x + static_cast<float>(m_pixels.width) / pixelsPerPoint,
+                     origin.y + static_cast<float>(m_pixels.height) / pixelsPerPoint);
+    const bool inside = mouse.x >= origin.x && mouse.y >= origin.y && mouse.x < end.x && mouse.y < end.y;
+    if (!inside && !drag->label.empty())
+    {
+        ImGui::SetTooltip("%s", drag->label.c_str());
+    }
+}
+
 void UiPanel::render(EditorUiKit& kit, render::RenderWorld& world, math::Vec4 background)
 {
     if (!std::exchange(m_shown, false))
@@ -447,6 +562,268 @@ void UiPanel::render(EditorUiKit& kit, render::RenderWorld& world, math::Vec4 ba
     surface.indices = m_scratch.uiIndices;
     surface.draws = m_scratch.uiDraws;
     world.uiSurfaces.push_back(std::move(surface));
+}
+
+namespace rects {
+
+scene::UiRect fixed(math::Vec2 size) noexcept
+{
+    return scene::UiRect{.anchorMin = {0.0f, 0.0f}, .anchorMax = {0.0f, 0.0f}, .offsetMin = {0.0f, 0.0f}, .offsetMax = size};
+}
+
+scene::UiRect middle(math::Vec2 size) noexcept
+{
+    return scene::UiRect{.anchorMin = {0.0f, 0.5f},
+                         .anchorMax = {0.0f, 0.5f},
+                         .offsetMin = {0.0f, -size.y * 0.5f},
+                         .offsetMax = {size.x, size.y * 0.5f}};
+}
+
+scene::UiRect grow(float height) noexcept
+{
+    return scene::UiRect{.anchorMin = {0.0f, 0.5f},
+                         .anchorMax = {1.0f, 0.5f},
+                         .offsetMin = {0.0f, -height * 0.5f},
+                         .offsetMax = {0.0f, height * 0.5f}};
+}
+
+scene::UiRect wide(float height) noexcept
+{
+    return scene::UiRect{.anchorMin = {0.0f, 0.0f}, .anchorMax = {1.0f, 0.0f}, .offsetMin = {0.0f, 0.0f}, .offsetMax = {0.0f, height}};
+}
+
+scene::UiRect whole(math::Vec4 inset) noexcept
+{
+    return scene::UiRect{.anchorMin = {0.0f, 0.0f},
+                         .anchorMax = {1.0f, 1.0f},
+                         .offsetMin = {inset.x, inset.y},
+                         .offsetMax = {-inset.z, -inset.w}};
+}
+
+} // namespace rects
+
+PanelBuilder::PanelBuilder(std::uint32_t surface)
+    : panel(surface)
+{
+}
+
+scene::Scene& PanelBuilder::scene() noexcept
+{
+    return panel.scene();
+}
+
+scene::Entity PanelBuilder::add(scene::Entity parent, const char* name, scene::UiRect rect, std::string_view style)
+{
+    const scene::Entity entity = scene().createEntity(name);
+    static_cast<void>(scene().setParent(entity, parent.isValid() ? parent : panel.canvas()));
+    rect.style = style;
+    scene().add<scene::UiRect>(entity, rect);
+    return entity;
+}
+
+scene::Entity PanelBuilder::text(scene::Entity parent, scene::UiRect rect, std::string value, std::string_view style,
+                                 bool bold, scene::TextAlign align, float size)
+{
+    const scene::Entity entity = add(parent, "Text", rect, style);
+    scene().add<scene::UiText>(entity, scene::UiText{.text = std::move(value),
+                                                     .font = bold ? EditorUiKit::boldFont() : EditorUiKit::regularFont(),
+                                                     .size = size > 0.0f ? size : font,
+                                                     .align = align,
+                                                     .verticalAlign = scene::TextVerticalAlign::Middle,
+                                                     .wrap = false});
+    return entity;
+}
+
+scene::Entity PanelBuilder::icon(EditorUiKit& kit, scene::Entity parent, scene::UiRect rect, Icon glyph,
+                                 std::string_view style)
+{
+    const scene::Entity entity = add(parent, "Icon", rect, style);
+    scene().add<scene::UiImage>(entity, scene::UiImage{.texture = kit.icon(glyph), .raycastTarget = false});
+    return entity;
+}
+
+PanelButton PanelBuilder::button(EditorUiKit& kit, scene::Entity parent, std::optional<Icon> glyph, std::string_view label,
+                                 std::string_view style, float width, float height, scene::TextAlign align)
+{
+    const float tall = height > 0.0f ? height : font * 2.0f;
+    const float iconSize = font * 1.1f;
+    const float labelWidth = label.empty() ? 0.0f : kit.textWidth(EditorUiKit::regularFont(), label, font);
+    const float needed = font * 1.4f + (glyph ? iconSize + (label.empty() ? 0.0f : font * 0.45f) : 0.0f) + labelWidth;
+    PanelButton made;
+    made.entity = add(parent, "Button", width < 0.0f ? rects::wide(tall) : rects::middle({width > 0.0f ? width : needed, tall}),
+                      style);
+    scene().add<scene::UiImage>(made.entity);
+    scene().add<scene::UiButton>(made.entity);
+    scene().add<scene::UiLayout>(made.entity, scene::UiLayout{.kind = scene::UiLayoutKind::Row,
+                                                              .spacing = font * 0.45f,
+                                                              .padding = {font * 0.7f, 0.0f, font * 0.7f, 0.0f},
+                                                              .align = align});
+    if (glyph)
+    {
+        made.icon = icon(kit, made.entity, rects::middle({iconSize, iconSize}), *glyph);
+    }
+    if (!label.empty())
+    {
+        made.label = text(made.entity, rects::middle({labelWidth + 2.0f, tall}), std::string(label), "text");
+    }
+    return made;
+}
+
+void PanelBuilder::relabel(EditorUiKit& kit, const PanelButton& target, std::string_view label)
+{
+    scene::UiText& shown = scene().get<scene::UiText>(target.label);
+    if (shown.text != label)
+    {
+        shown.text = std::string(label);
+        scene::UiRect& rect = scene().get<scene::UiRect>(target.label);
+        rect.offsetMax.x = rect.offsetMin.x + kit.textWidth(EditorUiKit::regularFont(), label, font) + 2.0f;
+    }
+}
+
+void PanelBuilder::enable(const PanelButton& target, bool enabled)
+{
+    scene().get<scene::UiButton>(target.entity).interactable = enabled;
+    const float opacity = enabled ? 1.0f : 0.45f;
+    for (const scene::Entity part : {target.icon, target.label})
+    {
+        if (part.isValid())
+        {
+            scene().get<scene::UiRect>(part).opacity = opacity;
+        }
+    }
+}
+
+void PanelBuilder::tooltip(scene::Entity entity, std::string value)
+{
+    if (scene::UiTooltip* const existing = scene().tryGet<scene::UiTooltip>(entity))
+    {
+        if (existing->text != value)
+        {
+            existing->text = std::move(value);
+        }
+        return;
+    }
+    scene().add<scene::UiTooltip>(entity, scene::UiTooltip{.text = std::move(value), .delay = 0.45f});
+}
+
+scene::Entity PanelBuilder::field(scene::Entity parent, scene::UiRect rect, std::string value, std::string placeholder,
+                                  std::string action)
+{
+    const scene::Entity entity = add(parent, "Field", rect, "field");
+    scene().add<scene::UiImage>(entity);
+    scene().add<scene::UiText>(entity, scene::UiText{.text = std::move(value),
+                                                     .font = EditorUiKit::regularFont(),
+                                                     .size = font,
+                                                     .verticalAlign = scene::TextVerticalAlign::Middle,
+                                                     .wrap = false});
+    scene().add<scene::UiInput>(entity, scene::UiInput{.placeholder = std::move(placeholder),
+                                                       .padding = {font * 0.6f, 0.0f},
+                                                       .action = std::move(action)});
+    return entity;
+}
+
+scene::Entity PanelBuilder::searchField(EditorUiKit& kit, scene::Entity parent, scene::UiRect rect, std::string value,
+                                        std::string placeholder)
+{
+    const scene::Entity entity = field(parent, rect, std::move(value), std::move(placeholder));
+    scene().get<scene::UiInput>(entity).padding.x = font * 2.0f;
+    icon(kit, entity,
+         scene::UiRect{.anchorMin = {0.0f, 0.5f},
+                       .anchorMax = {0.0f, 0.5f},
+                       .offsetMin = {font * 0.6f, -font * 0.5f},
+                       .offsetMax = {font * 1.6f, font * 0.5f}},
+         Icon::Search, "icon_dim");
+    return entity;
+}
+
+scene::Entity PanelBuilder::dialog(const char* name, math::Vec2 size)
+{
+    const scene::Entity entity = add({}, name,
+                                     scene::UiRect{.anchorMin = {0.5f, 0.5f},
+                                                   .anchorMax = {0.5f, 0.5f},
+                                                   .offsetMin = {-size.x * 0.5f, -size.y * 0.5f},
+                                                   .offsetMax = {size.x * 0.5f, size.y * 0.5f},
+                                                   .visible = false},
+                                     "popup");
+    scene().add<scene::UiImage>(entity);
+    scene().add<scene::UiPopup>(entity, scene::UiPopup{.kind = scene::UiPopupKind::Modal});
+    scene().add<scene::UiLayout>(entity, scene::UiLayout{.kind = scene::UiLayoutKind::Column,
+                                                         .spacing = font * 0.55f,
+                                                         .padding = math::Vec4{font * 1.2f},
+                                                         .align = scene::TextAlign::Left});
+    return entity;
+}
+
+std::pair<PanelButton, PanelButton> PanelBuilder::dialogButtons(EditorUiKit& kit, scene::Entity dialog, Icon glyph,
+                                                                std::string_view confirm, float width)
+{
+    const scene::Entity line = add(dialog, "Buttons", rects::wide(font * 2.0f));
+    scene().add<scene::UiLayout>(line, scene::UiLayout{.kind = scene::UiLayoutKind::Row,
+                                                       .spacing = font * 0.5f,
+                                                       .align = scene::TextAlign::Right});
+    const PanelButton first = button(kit, line, glyph, confirm, "primary", width);
+    const PanelButton second = button(kit, line, std::nullopt, "Cancel", "button", width * 0.75f);
+    return {first, second};
+}
+
+scene::Entity PanelBuilder::menu(const char* name, float width)
+{
+    const scene::Entity entity = add({}, name,
+                                     scene::UiRect{.anchorMin = {0.0f, 0.0f},
+                                                   .anchorMax = {0.0f, 0.0f},
+                                                   .offsetMin = {0.0f, 0.0f},
+                                                   .offsetMax = {width, font * 2.0f},
+                                                   .visible = false},
+                                     "popup");
+    scene().add<scene::UiImage>(entity);
+    scene().add<scene::UiPopup>(entity);
+    scene().add<scene::UiLayout>(entity, scene::UiLayout{.kind = scene::UiLayoutKind::Column,
+                                                         .spacing = 1.0f,
+                                                         .padding = math::Vec4{font * 0.3f},
+                                                         .align = scene::TextAlign::Left});
+    return entity;
+}
+
+PanelButton PanelBuilder::menuItem(EditorUiKit& kit, scene::Entity menu, std::optional<Icon> glyph, std::string_view label)
+{
+    return button(kit, menu, glyph, label, "menu_item", -1.0f, font * 1.9f, scene::TextAlign::Left);
+}
+
+scene::Entity PanelBuilder::menuSeparator(scene::Entity menu)
+{
+    const scene::Entity separator = add(menu, "Separator", rects::wide(1.0f), "separator");
+    scene().add<scene::UiImage>(separator, scene::UiImage{.raycastTarget = false});
+    return separator;
+}
+
+void PanelBuilder::fitMenu(scene::Entity menu, float width)
+{
+    // The layout skips hidden entries: the menu takes the height of those it shows.
+    float height = font * 0.6f;
+    std::size_t shown = 0;
+    for (scene::Entity child = scene().firstChild(menu); child.isValid(); child = scene().nextSibling(child))
+    {
+        const scene::UiRect& rect = scene().get<scene::UiRect>(child);
+        if (rect.visible)
+        {
+            height += rect.offsetMax.y - rect.offsetMin.y;
+            ++shown;
+        }
+    }
+    height += static_cast<float>(shown > 0 ? shown - 1 : 0);
+    scene::UiRect& rect = scene().get<scene::UiRect>(menu);
+    const float room = panel.size().x > 0.0f ? panel.size().x : width;
+    rect.offsetMax = rect.offsetMin + math::Vec2{std::min(width, room), height};
+}
+
+void PanelBuilder::styleTooltips(const ThemeColors& colors)
+{
+    panel.world().setTooltipStyle(ui::TooltipStyle{.background = linearColor(colors.popup),
+                                                   .text = linearColor(colors.text),
+                                                   .font = EditorUiKit::regularFont(),
+                                                   .size = font,
+                                                   .padding = font * 0.45f,
+                                                   .cornerRadius = 4.0f});
 }
 
 } // namespace devex::tools::detail

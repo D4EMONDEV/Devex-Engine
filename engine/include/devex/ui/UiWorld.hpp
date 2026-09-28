@@ -80,6 +80,28 @@ struct TooltipStyle
     float cornerRadius = 4.0f;
 };
 
+// What the pointer carries to the drop targets: a UiDragSource taken away, or what a drag that
+// started outside the interface announced.
+struct Carried
+{
+    // Invalid when the drag started outside the interface.
+    scene::Entity source;
+    std::string type;
+    std::string data;
+    // Shown next to the pointer; nothing for a drag from outside, which draws its own.
+    std::string label;
+};
+
+// What a drop target took.
+struct Drop
+{
+    // Invalid when the drag started outside the interface.
+    scene::Entity source;
+    scene::Entity target;
+    std::string type;
+    std::string data;
+};
+
 // The interfaces of a game that plays: the canvases of its scene, laid out every frame, answering
 // the pointer and the pad, and turned into the triangles the renderer draws.
 class UiWorld
@@ -135,8 +157,24 @@ public:
     [[nodiscard]] bool wasDoubleClicked(std::string_view action) const;
     [[nodiscard]] bool wasDoubleClicked(scene::Entity entity) const;
     void setTooltipStyle(TooltipStyle style);
-    // Gives a field the keyboard, its text selected, as a form does for its first field.
-    void startEditing(const scene::Scene& scene, scene::Entity field);
+    // Gives a field the keyboard, its text selected as a form does for its first field, or the
+    // cursor at its end to go on typing.
+    void startEditing(const scene::Scene& scene, scene::Entity field, bool selectAll = true);
+
+    // What the pointer carries, if anything.
+    [[nodiscard]] const Carried* carried() const noexcept;
+    // Announces, for the next update, a drag that started outside the interface, such as one from
+    // another window of a tool: the targets that accept its type light up under the pointer, and
+    // take it when the pointer is let go over them. Announced every frame the drag lasts.
+    void carryFromOutside(std::string type, std::string data);
+    // The drop target under the pointer that accepts what it carries.
+    [[nodiscard]] scene::Entity dropTarget() const noexcept;
+    // Whether something was dropped on a target of that action, or on that target, during the last
+    // update.
+    [[nodiscard]] bool wasDropped(std::string_view action) const;
+    [[nodiscard]] bool wasDropped(scene::Entity target) const;
+    // The last drop of the last update, if any.
+    [[nodiscard]] const Drop* dropped() const noexcept;
 
     // Whether a button of that action was clicked during the last update. An action names as many
     // buttons as a game needs: any of them answers.
@@ -263,6 +301,10 @@ private:
     [[nodiscard]] bool dropdownList(const scene::Scene& scene, math::Vec2& min, math::Vec2& max, float& item,
                                     std::size_t& shown) const;
     [[nodiscard]] bool startDrag(scene::Scene& scene, const UiInput& input);
+    // Takes a drag source away once the pointer moved far enough from where it was pressed, finds
+    // the target under what it carries, and drops it there. Answers whether it holds the pointer.
+    [[nodiscard]] bool updateCarry(scene::Scene& scene, const UiInput& input, bool taken);
+    [[nodiscard]] scene::Entity targetUnder(const scene::Scene& scene, math::Vec2 pointer, const Carried& carried) const;
     void updateDrag(scene::Scene& scene, const UiInput& input);
     void updateControls(scene::Scene& scene, const UiInput& input);
     void updateTooltip(const scene::Scene& scene, const UiInput& input, float seconds);
@@ -316,6 +358,22 @@ private:
     std::optional<OpenDropdown> m_dropdown;
     Tooltip m_tooltip;
     TooltipStyle m_tooltipStyle;
+
+    // A drag source pressed, and where, until the pointer moves far enough to take it away.
+    struct DragCandidate
+    {
+        scene::Entity source;
+        math::Vec2 from{0.0f};
+    };
+    std::optional<DragCandidate> m_dragCandidate;
+    std::optional<Carried> m_carried;
+    // A drag from outside, announced for the next update.
+    std::optional<Carried> m_outside;
+    scene::Entity m_dropTarget;
+    std::vector<Drop> m_drops;
+    std::vector<std::string> m_dropActions;
+    // Where the pointer was at the last update, which the carried label follows.
+    math::Vec2 m_pointer{0.0f};
 };
 
 } // namespace devex::ui

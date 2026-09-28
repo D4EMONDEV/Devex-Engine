@@ -378,6 +378,32 @@ struct UiTableRow
 };
 DEVEX_DECLARE_REFLECTION(UiTableRow);
 
+// Lets the pointer carry the element to a UiDropTarget: pressed on it and moved a few pixels, what it
+// holds follows the pointer until it is let go. A button carried away is not clicked.
+struct UiDragSource
+{
+    // What is carried, which the targets accept by name: "item", "asset".
+    std::string type;
+    // What the target is given: a name, an identifier.
+    std::string data;
+    // Shown next to the pointer while it is carried; the first text at or under the element when
+    // empty.
+    std::string label;
+    bool interactable = true;
+};
+DEVEX_DECLARE_REFLECTION(UiDragSource);
+
+// Takes what is dropped on it, or on an element inside it, when it accepts its type; lit while
+// the pointer carries something it accepts over it.
+struct UiDropTarget
+{
+    std::vector<std::string> accepts;
+    math::Vec4 highlightColor{0.35f, 0.6f, 1.0f, 0.3f};
+    // What a script asks for: Ui.WasDropped("slot").
+    std::string action;
+};
+DEVEX_DECLARE_REFLECTION(UiDropTarget);
+
 // How the children of a container follow each other.
 enum class UiLayoutKind : std::uint8_t
 {
