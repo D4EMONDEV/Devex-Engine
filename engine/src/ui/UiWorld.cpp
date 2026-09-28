@@ -227,6 +227,37 @@ struct FieldHit
                       from.z + (to.z - from.z) * amount, from.w + (to.w - from.w) * amount};
 }
 
+// The font of the first text at or under an element, in the order the elements are drawn.
+[[nodiscard]] asset::AssetId fontBelow(const scene::Scene& scene, scene::Entity entity)
+{
+    if (const scene::UiText* const text = scene.tryGet<scene::UiText>(entity); text != nullptr && text->font.isValid())
+    {
+        return text->font;
+    }
+    for (scene::Entity child = scene.firstChild(entity); child.isValid(); child = scene.nextSibling(child))
+    {
+        if (const asset::AssetId font = fontBelow(scene, child); font.isValid())
+        {
+            return font;
+        }
+    }
+    return {};
+}
+
+// The font of the interface around an element: its own text, else the nearest one around it. A
+// tooltip that names no font speaks with it, since a game has no font of its own.
+[[nodiscard]] asset::AssetId fontAround(const scene::Scene& scene, scene::Entity entity)
+{
+    for (scene::Entity above = entity; above.isValid(); above = scene.parent(above))
+    {
+        if (const asset::AssetId font = fontBelow(scene, above); font.isValid())
+        {
+            return font;
+        }
+    }
+    return {};
+}
+
 } // namespace
 
 void UiWorld::update(scene::Scene& scene, math::Vec2 windowSize, const UiInput& input,
@@ -1138,8 +1169,11 @@ void UiWorld::build(const scene::Scene& scene, const DrawContext& context,
         if (const scene::UiTooltip* const tooltip = scene.tryGet<scene::UiTooltip>(m_tooltip.entity);
             tooltip != nullptr && !tooltip->text.empty())
         {
+            const asset::AssetId font = m_tooltipStyle.font.isValid() || withTints.defaultFont.isValid()
+                                            ? m_tooltipStyle.font
+                                            : fontAround(scene, m_tooltip.entity);
             const OverlayText label{.text = tooltip->text,
-                                    .font = m_tooltipStyle.font,
+                                    .font = font,
                                     .size = m_tooltipStyle.size,
                                     .color = m_tooltipStyle.text};
             const math::Vec2 measured = measureOverlayText(withTints, label);

@@ -72,7 +72,8 @@ struct TooltipStyle
 {
     math::Vec4 background{0.08f, 0.09f, 0.11f, 0.96f};
     math::Vec4 text{0.92f, 0.93f, 0.95f, 1.0f};
-    // The font, or the default one.
+    // The font; without one, the default font of the drawing, else the font of the texts around
+    // the element, since a game has no font of its own.
     asset::AssetId font;
     float size = 15.0f;
     float padding = 6.0f;

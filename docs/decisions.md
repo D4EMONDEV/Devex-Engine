@@ -2267,7 +2267,9 @@ les assets s'écrivent au fil de leur lecture.
   `delay` secondes (0,5 par défaut) sur l'élément, même inutilisable ; un élément qui ne fait que
   dessiner, comme un texte posé sur une liste, laisse passer le pointeur vers ce qui est dessous.
   L'apparence (`TooltipStyle` : fond, texte, police, taille, marge, arrondi) est celle de
-  l'`UiWorld`, dessinée en pixels par-dessus tous les canevas.
+  l'`UiWorld`, dessinée en pixels par-dessus tous les canevas. Sans police à elle ni police par
+  défaut (un jeu n'en a pas), une infobulle prend celle des textes de l'interface qu'elle aide :
+  le texte de l'élément, sinon le plus proche autour de lui.
 - **Listes déroulantes** : `UiDropdown` est un bouton dont le `UiText` montre l'option choisie
   (`selected`, écrit par l'interface), en retrait du bord gauche, avec une flèche à droite. Cliqué,
   il ouvre la liste de ses options sous lui (au-dessus s'il n'y a pas la place), aussi large que

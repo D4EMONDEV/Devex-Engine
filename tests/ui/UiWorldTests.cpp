@@ -12,6 +12,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
+#include <chrono>
 #include <filesystem>
 #include <memory>
 
@@ -611,6 +612,55 @@ TEST_CASE("The text of a dropdown stands off its left edge and leaves room for i
     // The arrow is drawn 0.45 of the height from the right edge, 0.28 of it wide on each side.
     const Vec2 right = drawnText(devex::scene::TextAlign::Right);
     CHECK(right.y < 300.0f - 40.0f * (0.45f + 0.28f));
+}
+
+TEST_CASE("A tooltip without a font of its own speaks with the font of the interface around it", "[ui][world][controls]")
+{
+    Scene scene;
+    const Entity canvas = scene.createEntity("Canvas");
+    scene.add<Canvas>(canvas, Canvas{.scaleMode = devex::scene::CanvasScaleMode::ConstantPixels});
+    const auto element = [&](const char* name, Vec2 min, Vec2 max) {
+        const Entity entity = scene.createEntity(name);
+        REQUIRE(scene.setParent(entity, canvas).has_value());
+        scene.add<UiRect>(entity, UiRect{.anchorMin = {0.0f, 0.0f}, .anchorMax = {0.0f, 0.0f}, .offsetMin = min, .offsetMax = max});
+        return entity;
+    };
+    // A box with no text, and far below it the one text of the screen, which names its font.
+    const Entity box = element("Box", {100.0f, 100.0f}, {140.0f, 140.0f});
+    scene.add<UiImage>(box);
+    scene.add<UiButton>(box);
+    scene.add<devex::scene::UiTooltip>(box, devex::scene::UiTooltip{.text = "Fullscreen", .delay = 0.1f});
+    const Entity label = element("Label", {100.0f, 600.0f}, {400.0f, 640.0f});
+    scene.add<devex::scene::UiText>(label, devex::scene::UiText{.text = "Settings",
+                                                                .font = devex::asset::AssetId::generate(),
+                                                                .size = 24.0f,
+                                                                .wrap = false});
+
+    // A game has no default font: only the fonts it names resolve.
+    const auto fonts = [](devex::asset::AssetId id) {
+        return id.isValid() ? fontRef(id) : devex::ui::FontRef{};
+    };
+    UiWorld world;
+    world.setFonts(fonts);
+    world.update(scene, window, UiInput{.pointer = {120.0f, 120.0f}}, frame);
+    world.update(scene, window, UiInput{.pointer = {120.0f, 120.0f}}, std::chrono::milliseconds(200));
+
+    devex::render::RenderWorld drawn;
+    world.build(scene, devex::ui::DrawContext{.fonts = fonts}, drawn);
+    // Letters near the pointer, besides those of the label far below.
+    bool tooltipLetters = false;
+    for (const devex::render::UiDraw& draw : drawn.uiDraws)
+    {
+        if (draw.kind != devex::render::UiDrawKind::Text)
+        {
+            continue;
+        }
+        for (std::uint32_t index = draw.firstIndex; index < draw.firstIndex + draw.indexCount; ++index)
+        {
+            tooltipLetters = tooltipLetters || drawn.uiVertices[drawn.uiIndices[index]].position.y < 300.0f;
+        }
+    }
+    CHECK(tooltipLetters);
 }
 
 TEST_CASE("A click lands between the letters of a field", "[ui][world][field]")
