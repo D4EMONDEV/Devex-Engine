@@ -719,6 +719,7 @@ void ToolsOverlay::prepareRender(scene::Scene& scene, render::RenderWorld& world
     detail::renderFileSystem(state, world);
     detail::renderOutput(state, world);
     detail::renderSceneTree(state, world);
+    detail::renderInspector(state, world);
     detail::renderCreationDialog(state, world);
     if (state.mode != ToolsMode::Editor)
     {
@@ -860,6 +861,11 @@ void ToolsOverlay::setAssetDatabase(asset::AssetDatabase* database) noexcept
 void ToolsOverlay::openTextFile(const std::filesystem::path& file)
 {
     detail::openTextFile(*m_state, file);
+}
+
+void ToolsOverlay::select(std::span<const core::Uuid> entities)
+{
+    m_state->selection.set(entities);
 }
 
 void ToolsOverlay::setAudio(audio::AudioEngine* engine,

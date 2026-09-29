@@ -7,12 +7,14 @@
 #include <devex/core/Uuid.hpp>
 #include <devex/platform/Platform.hpp>
 #include <devex/render/Renderer.hpp>
+#include <devex/scene/ComponentRegistry.hpp>
 #include <devex/scene/Components.hpp>
 #include <devex/scene/SceneSerializer.hpp>
 #include <devex/tools/ToolsOverlay.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <array>
 #include <chrono>
 #include <filesystem>
 #include <set>
@@ -220,6 +222,54 @@ TEST_CASE("The editor opens the project's scenes in tabs and renders its viewpor
         // The scene tree too.
         CHECK(surfaces.contains(5));
         CHECK_FALSE(surfaces.contains(1));
+        // Nothing is selected: the inspector says so with ImGui.
+        CHECK_FALSE(surfaces.contains(6));
+
+        // The inspector of entities is made with the interface of the engine as well: an entity that
+        // carries every component of the engine shows a row for each of their fields, and several
+        // entities the components they share.
+        const auto inspectorFrames = [&](int count) {
+            bool drawn = false;
+            for (int frame = 0; frame < count; ++frame)
+            {
+                platform->pollEvents([](const devex::platform::Event&) {});
+                (*editor)->update(scene, std::chrono::milliseconds(16), PlayState::Editing);
+                scene.updateTransforms();
+                devex::render::RenderWorld& world = renderer->beginFrame();
+                (*editor)->prepareRender(scene, world, PlayState::Editing);
+                for (const devex::render::UiSurface& surface : world.uiSurfaces)
+                {
+                    drawn |= surface.id == 6 && !surface.draws.empty();
+                }
+                const devex::core::Result<void> presented = renderer->endFrame();
+                if (!presented)
+                {
+                    FAIL(std::format("inspector frame {}: {}", frame, presented.error()));
+                }
+            }
+            return drawn;
+        };
+        const devex::scene::Entity everything = scene.createEntity("Everything");
+        for (const devex::scene::ComponentType& type : devex::scene::componentRegistry().types())
+        {
+            static_cast<void>(type.emplace(scene, everything));
+        }
+        const std::array<devex::core::Uuid, 1> alone{scene.uuid(everything)};
+        (*editor)->select(alone);
+        CHECK(inspectorFrames(3));
+        std::vector<devex::core::Uuid> level;
+        for (devex::scene::Entity top = scene.firstRoot(); top.isValid(); top = scene.nextSibling(top))
+        {
+            if (top != everything)
+            {
+                level.push_back(scene.uuid(top));
+            }
+        }
+        (*editor)->select(level);
+        CHECK(inspectorFrames(3));
+        (*editor)->select({});
+        scene.destroyEntity(everything);
+        static_cast<void>(inspectorFrames(1));
 
         // Both scenes opened, the level on screen and the menu in a background tab, without unsaved changes.
         CHECK(scene.entityCount() == 3);

@@ -26,6 +26,7 @@
 #include <devex/asset/TilesetData.hpp>
 #include <devex/asset/Project.hpp>
 #include <devex/asset/import/AssetDatabase.hpp>
+#include <devex/core/Time.hpp>
 #include <devex/core/Uuid.hpp>
 #include <devex/math/Math.hpp>
 #include <devex/navigation/NavMeshBuilder.hpp>
@@ -67,6 +68,10 @@ namespace devex::navigation {
 class NavigationWorld;
 } // namespace devex::navigation
 
+namespace devex::scene {
+struct NavMeshSurface;
+} // namespace devex::scene
+
 namespace devex::audio {
 class AudioEngine;
 class Clip;
@@ -80,6 +85,7 @@ struct FileSystemUi;
 struct OutputUi;
 struct CreationDialogUi;
 struct SceneTreeUi;
+struct InspectorUi;
 
 // Window names are also their identifiers in the saved layout.
 inline constexpr const char* hierarchyWindow = "Scene";
@@ -438,6 +444,7 @@ struct DEVEX_API ToolsState
     std::shared_ptr<OutputUi> outputUi;
     std::shared_ptr<CreationDialogUi> creationDialog;
     std::shared_ptr<SceneTreeUi> sceneTreeUi;
+    std::shared_ptr<InspectorUi> inspectorUi;
     // Opens the window at the next frame.
     std::optional<CreationRequest> creationRequest;
     EditorFonts fonts;
@@ -580,19 +587,6 @@ struct DEVEX_API ToolsState
     std::optional<asset::AssetId> prefabToOpen;
     // The entity that Save as Prefab turns into a prefab once its file is chosen.
     core::Uuid prefabEntity;
-
-    // Value of the field being edited when the edit began, recorded as one undo step at the end;
-    // with several entities selected, the value of each.
-    serialization::TextValue fieldEditStart;
-    std::vector<std::pair<core::Uuid, serialization::TextValue>> fieldEditStarts;
-    // The text typed in a field whose value differs between the selected entities.
-    std::string mixedTextBuffer;
-    std::string nameEditStart;
-    std::string nameBuffer;
-    core::Uuid nameBufferEntity;
-    // Rotations are edited as Euler angles, kept while the widget is active to avoid jumps.
-    ImGuiID eulerEditId = 0;
-    math::Vec3 eulerEditDegrees{0.0f};
 
     std::string consoleFilter;
     bool consoleShowDebug = true;
@@ -775,9 +769,18 @@ DEVEX_API bool drawAnimatorElementInspector(ToolsState& state);
 DEVEX_API void drawAnimatorInspector(ToolsState& state);
 // Writes a new animator controller into a res:// folder of the assets, and selects it once imported.
 DEVEX_API core::Result<std::filesystem::path> createAnimatorFile(ToolsState& state, std::string_view folder);
-// Under the NavMeshSurface of the inspected entity: what its navigation mesh holds, and the button
-// that bakes it again from the colliders of the scene, next to the scene file.
-DEVEX_API void drawNavMeshBaker(ToolsState& state, scene::Scene& scene, scene::Entity entity);
+// Under the NavMeshSurface of the inspected entity: what its navigation mesh holds, and whether its
+// settings changed since it was baked.
+struct DEVEX_API NavMeshSummary
+{
+    std::string text;
+    bool stale = false;
+};
+[[nodiscard]] DEVEX_API NavMeshSummary navMeshSummary(ToolsState& state, const scene::NavMeshSurface& surface);
+// Bakes the navigation mesh of the surface again from the colliders of the scene, next to the scene
+// file, or forgets it, each as one undoable step; state.navMeshBakeStatus says how it went.
+DEVEX_API void bakeNavMesh(ToolsState& state, scene::Scene& scene, scene::Entity entity);
+DEVEX_API void clearNavMesh(ToolsState& state, scene::Scene& scene, scene::Entity entity);
 // The navigation meshes of the surfaces shown, the agents and obstacles, and the paths agents walk
 // while the game plays, as lines of the overlay.
 DEVEX_API void addNavigationLines(ToolsState& state, scene::Scene& scene, const std::unordered_set<std::uint32_t>& shown, bool showAll,
@@ -817,6 +820,11 @@ DEVEX_API void renderProjectManager(ToolsState& state, render::RenderWorld& worl
 DEVEX_API void renderFileSystem(ToolsState& state, render::RenderWorld& world);
 DEVEX_API void renderOutput(ToolsState& state, render::RenderWorld& world);
 DEVEX_API void renderSceneTree(ToolsState& state, render::RenderWorld& world);
+DEVEX_API void renderInspector(ToolsState& state, render::RenderWorld& world);
+// The inspector of entities, made with the interface of the engine: made once, then updated in the
+// room left in the Inspector window.
+[[nodiscard]] DEVEX_API std::shared_ptr<InspectorUi> makeInspectorUi();
+DEVEX_API void updateInspectorUi(ToolsState& state, scene::Scene& scene, core::Duration delta);
 DEVEX_API void drawEditorMenus(ToolsState& state, scene::Scene& scene);
 // Shows a screen in the middle of the window: the panel it needs opens and takes the focus.
 DEVEX_API void setMainScreen(ToolsState& state, MainScreen screen);
@@ -884,6 +892,17 @@ DEVEX_API void requestCreateSprite(ToolsState& state, asset::AssetId sprite, mat
 // editor camera's pivot, and selects it.
 DEVEX_API void requestCreatePreset(ToolsState& state, core::Uuid parent, const char* name,
                                    const std::function<void(scene::Scene&, scene::Entity)>& build);
+
+// The meshes every project has, which a mesh field offers before those of the project.
+struct DEVEX_API BuiltinAsset
+{
+    const char* name;
+    asset::AssetId id;
+};
+[[nodiscard]] DEVEX_API std::span<const BuiltinAsset> builtinMeshAssets() noexcept;
+// The name an asset field shows: "(none)", a built-in mesh, the name of the asset, or its UUID when
+// the project does not know it.
+[[nodiscard]] DEVEX_API std::string assetLabel(const ToolsState& state, asset::AssetId id);
 
 // A combo listing the assets of a type (any type without one), which also accepts dropped assets.
 // Returns whether the value changed. A mixed value shows a dash.

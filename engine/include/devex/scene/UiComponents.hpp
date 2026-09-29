@@ -309,8 +309,51 @@ struct DEVEX_API UiDropdown
     bool interactable = true;
     // What a script asks for: Ui.WasChanged("quality").
     std::string action;
+    // Shown while no option is chosen: "Choose a class".
+    std::string placeholder;
 };
 DEVEX_DECLARE_ENGINE_REFLECTION(UiDropdown);
+
+// A number the pointer drags sideways, or types once the field is clicked, as the fields of an
+// inspector. The UiText of the entity shows it, and the UiInput beside it takes what is typed,
+// which may be a sum such as 2*3+1.
+struct DEVEX_API UiNumberField
+{
+    float value = 0.0f;
+    // The value stays between them when the smaller is below the larger; equal, it is free.
+    float minValue = 0.0f;
+    float maxValue = 0.0f;
+    // Rounds the value to a multiple of this, counted from the smaller end; 0 leaves it free.
+    float step = 0.0f;
+    // What a unit the pointer moves across adds to the value; Shift makes it ten times smaller.
+    float dragSpeed = 0.01f;
+    // Digits shown after the point at most: 1.5 rather than 1.500.
+    std::int32_t decimals = 3;
+    // What the text shows, the value in place of {}: "{} m", "{}°". Without {} it shows as it is,
+    // as a dash says that several values differ.
+    std::string format = "{}";
+    bool interactable = true;
+    // What a script asks for: Ui.WasChanged("speed").
+    std::string action;
+};
+DEVEX_DECLARE_ENGINE_REFLECTION(UiNumberField);
+
+// Chooses a colour in its rectangle: a square of saturation across and brightness down for the hue
+// of the bar at its right, and a bar of opacity under them. The pointer drags in each part. The
+// colour is linear, as the colours of images are; the square spreads it as the eye sees it.
+struct DEVEX_API UiColorPicker
+{
+    math::Vec4 color{1.0f, 1.0f, 1.0f, 1.0f};
+    // Whether the bar of opacity shows; without it the opacity stays as it is.
+    bool alpha = true;
+    // The width of the bars, and the room between the parts, in units.
+    float barSize = 16.0f;
+    float spacing = 8.0f;
+    bool interactable = true;
+    // What a script asks for: Ui.WasChanged("tint").
+    std::string action;
+};
+DEVEX_DECLARE_ENGINE_REFLECTION(UiColorPicker);
 
 // Shares its rectangle between its first two children, with a bar between them the pointer drags:
 // a panel beside another, or above it.

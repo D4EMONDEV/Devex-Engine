@@ -684,6 +684,7 @@ add_library(Devex::Ui ALIAS devex_ui)
 
 target_sources(devex_ui
     PRIVATE
+        src/ui/Color.cpp
         src/ui/Controls.cpp
         src/ui/DrawList.cpp
         src/ui/Layout.cpp
@@ -694,6 +695,7 @@ target_sources(devex_ui
         FILE_SET HEADERS
         BASE_DIRS include
         FILES
+            include/devex/ui/Color.hpp
             include/devex/ui/DrawList.hpp
             include/devex/ui/Layout.hpp
             include/devex/ui/TextLayout.hpp
@@ -801,6 +803,7 @@ target_sources(devex_tools
         src/tools/Icons.hpp
         src/tools/InputSettings.cpp
         src/tools/InspectorPanel.cpp
+        src/tools/InspectorUi.cpp
         src/tools/LogBuffer.cpp
         src/tools/ModelInspector.cpp
         src/tools/NavigationTools.cpp

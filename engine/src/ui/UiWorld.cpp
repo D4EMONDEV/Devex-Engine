@@ -114,7 +114,9 @@ namespace {
         scene.tryGet<scene::UiDropdown>(entity) != nullptr ||
         scene.tryGet<scene::UiFoldout>(entity) != nullptr ||
         scene.tryGet<scene::UiDragSource>(entity) != nullptr ||
-        scene.tryGet<scene::UiDropTarget>(entity) != nullptr)
+        scene.tryGet<scene::UiDropTarget>(entity) != nullptr ||
+        scene.tryGet<scene::UiNumberField>(entity) != nullptr ||
+        scene.tryGet<scene::UiColorPicker>(entity) != nullptr)
     {
         return true;
     }
@@ -157,6 +159,14 @@ namespace {
     if (const scene::UiFoldout* const foldout = scene.tryGet<scene::UiFoldout>(entity))
     {
         return foldout->interactable;
+    }
+    if (const scene::UiNumberField* const number = scene.tryGet<scene::UiNumberField>(entity))
+    {
+        return number->interactable;
+    }
+    if (const scene::UiColorPicker* const picker = scene.tryGet<scene::UiColorPicker>(entity))
+    {
+        return picker->interactable;
     }
     return false;
 }
@@ -332,10 +342,14 @@ void UiWorld::update(scene::Scene& scene, math::Vec2 windowSize, const UiInput& 
     updateScroll(scene, rest);
     const bool editedBefore = m_editing.entity.isValid();
     updateFields(scene, rest, delta);
+    // A number field that stopped being typed into reads what was typed.
+    finishNumberEdit(scene);
     // While a field takes what is typed, the keys belong to it rather than to the menu around it.
     const bool editing = editedBefore || m_editing.entity.isValid();
     // The arrows that moved a slider do not move the focus as well.
     const bool slid = updateSliders(scene, rest);
+    updateNumberFields(scene, rest);
+    updateColorPickers(scene, rest);
     if (!editing && !slid)
     {
         updateNavigation(scene, rest);
@@ -362,10 +376,17 @@ void UiWorld::update(scene::Scene& scene, math::Vec2 windowSize, const UiInput& 
     {
         click(scene, m_focused);
     }
+    // The press of a number field ends with the button, dragged or clicked.
+    if (!input.pointerDown || input.pointerReleased)
+    {
+        m_numberDrag.reset();
+    }
 
     updateControls(scene, rest);
     updateTooltip(scene, input, seconds);
     updateTints(scene, delta);
+    // Once every change of the frame is made, so that the drawing shows the values as they end.
+    writeNumberTexts(scene);
 }
 
 void UiWorld::updateBindings(scene::Scene& scene)
@@ -593,8 +614,13 @@ void UiWorld::updateFields(scene::Scene& scene, const UiInput& input, core::Dura
 
     if (input.pointerPressed)
     {
-        const FieldHit hit = fieldUnder(scene, m_canvases, input.pointer,
-                                        [this](std::size_t canvas, std::size_t rect) { return reachable(canvas, rect); });
+        FieldHit hit = fieldUnder(scene, m_canvases, input.pointer,
+                                  [this](std::size_t canvas, std::size_t rect) { return reachable(canvas, rect); });
+        // A number field is dragged when pressed, and typed into only once clicked.
+        if (hit.entity.isValid() && hit.entity != m_editing.entity && scene.has<scene::UiNumberField>(hit.entity))
+        {
+            hit = FieldHit{};
+        }
         if (hit.entity != m_editing.entity)
         {
             m_editing = EditingField{.entity = hit.entity};
@@ -883,6 +909,7 @@ void UiWorld::editField(scene::Scene& scene, const UiInput& input)
         // The field ate the key: the menu around it does not close as well.
         m_editing = EditingField{};
         m_cancelled = false;
+        m_editCancelled = true;
         return;
     }
     if (moved)
@@ -985,9 +1012,19 @@ UiWorld::ButtonState& UiWorld::buttonState(scene::Entity entity)
 
 void UiWorld::click(scene::Scene& scene, scene::Entity entity)
 {
-    // A slider answers the drag, not the click: it has nothing to report here.
-    if (scene.tryGet<scene::UiSlider>(entity) != nullptr)
+    // A slider and a colour picker answer the drag, not the click: they have nothing to report here.
+    if (scene.tryGet<scene::UiSlider>(entity) != nullptr || scene.tryGet<scene::UiColorPicker>(entity) != nullptr)
     {
+        return;
+    }
+    // A number field clicked without being dragged is typed into; in a menu, the menu stays.
+    if (const scene::UiNumberField* const number = scene.tryGet<scene::UiNumberField>(entity))
+    {
+        const bool dragged = m_numberDrag && m_numberDrag->entity == entity && m_numberDrag->moved;
+        if (number->interactable && !dragged)
+        {
+            beginNumberEdit(scene, entity);
+        }
         return;
     }
     // A dropdown opens its list, which says what was chosen.
@@ -1135,6 +1172,10 @@ void UiWorld::build(const scene::Scene& scene, const DrawContext& context,
         withTints.grabbed = [this](scene::Entity entity) {
             return entity == m_barHover || (m_drag.kind == DragKind::Splitter && entity == m_drag.entity);
         };
+    }
+    if (!withTints.pickerHsv)
+    {
+        withTints.pickerHsv = [this, &scene](scene::Entity entity, math::Vec3& hsv) { return pickerHsv(scene, entity, hsv); };
     }
     for (const CanvasLayout& canvas : m_canvases)
     {
@@ -1284,6 +1325,12 @@ void UiWorld::startEditing(const scene::Scene& scene, scene::Entity field, bool 
     }
     const std::size_t end = scene.get<scene::UiText>(field).text.size();
     m_editing = EditingField{.entity = field, .caret = end, .anchor = selectAll ? 0 : end};
+    if (scene.has<scene::UiNumberField>(field))
+    {
+        m_numberEdit = field;
+        m_numberEditText = scene.get<scene::UiText>(field).text;
+        m_editCancelled = false;
+    }
 }
 
 scene::Entity UiWorld::editedField() const noexcept
@@ -1309,6 +1356,24 @@ const std::string& UiWorld::clipboardRequest() const noexcept
 bool UiWorld::wasCancelled() const noexcept
 {
     return m_cancelled;
+}
+
+scene::Entity UiWorld::listedDropdown() const noexcept
+{
+    return m_dropdown ? m_dropdown->entity : scene::Entity{};
+}
+
+scene::Entity UiWorld::held() const noexcept
+{
+    if (m_dragged.isValid())
+    {
+        return m_dragged;
+    }
+    if (m_numberDrag && m_numberDrag->moved)
+    {
+        return m_numberDrag->entity;
+    }
+    return m_pickerHeld;
 }
 
 scene::Entity UiWorld::hovered() const noexcept
@@ -1377,6 +1442,12 @@ void UiWorld::clear()
     m_dropTarget = scene::Entity{};
     m_drops.clear();
     m_dropActions.clear();
+    m_numberDrag.reset();
+    m_numberEdit = scene::Entity{};
+    m_editCancelled = false;
+    m_pickers.clear();
+    m_pickerHeld = scene::Entity{};
+    m_pickerPart = PickerPart::None;
 }
 
 } // namespace devex::ui

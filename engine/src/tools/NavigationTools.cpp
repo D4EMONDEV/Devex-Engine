@@ -9,8 +9,6 @@
 #include <devex/scene/NavigationComponents.hpp>
 #include <devex/tools/SceneCommands.hpp>
 
-#include <imgui.h>
-
 #include <chrono>
 #include <cmath>
 #include <format>
@@ -145,48 +143,31 @@ void bake(ToolsState& state, scene::Scene& scene, scene::Entity entity)
 
 } // namespace
 
-void drawNavMeshBaker(ToolsState& state, scene::Scene& scene, scene::Entity entity)
+NavMeshSummary navMeshSummary(ToolsState& state, const scene::NavMeshSurface& surface)
 {
-    const ThemeColors& colors = themeColors();
-    const scene::NavMeshSurface& surface = scene.get<scene::NavMeshSurface>(entity);
-    ImGui::PushID("navmesh baker");
-    ImGui::Spacing();
     if (const navigation::NavMeshLines* const lines = linesOf(state, surface.navMesh))
     {
         const std::shared_ptr<const asset::NavMeshData> data = state.navMeshDrawn;
-        ImGui::TextDisabled("%zu polygons in %d tiles, baked from %u triangles", lines->polygons, data->tilesX * data->tilesZ,
-                            data->triangles);
-        if (data->settings != navigation::buildSettingsOf(surface))
-        {
-            ImGui::TextColored(uiColor(colors.warning), "The settings changed since the bake: bake again.");
-        }
+        return NavMeshSummary{.text = std::format("{} polygons in {} tiles, baked from {} triangles", lines->polygons,
+                                                  data->tilesX * data->tilesZ, data->triangles),
+                              .stale = data->settings != navigation::buildSettingsOf(surface)};
     }
-    else
-    {
-        ImGui::TextDisabled(surface.navMesh.isValid() ? "The navigation mesh is loading, or cannot be read." : "Not baked yet.");
-    }
-    const bool editing = state.playState == PlayState::Editing;
-    if (primaryButton(icons::Footprints, "Bake", 0.0f, editing))
-    {
-        bake(state, scene, entity);
-    }
-    ImGui::SetItemTooltip("Finds where agents fit on the colliders that stay put, and writes the navigation mesh next to the scene");
-    ImGui::SameLine();
-    if (labelButton(icons::Close, "Clear", 0.0f, editing && surface.navMesh.isValid()))
-    {
-        const asset::AssetId none;
-        state.pendingCommand = makeSetFieldCommand(scene.uuid(entity), "NavMeshSurface", "nav_mesh",
-                                                   scene::writeFieldValue(reflection::ValueKind::AssetId, &surface.navMesh),
-                                                   scene::writeFieldValue(reflection::ValueKind::AssetId, &none));
-        state.navMeshBakeStatus.clear();
-    }
-    if (!state.navMeshBakeStatus.empty())
-    {
-        ImGui::PushTextWrapPos(0.0f);
-        ImGui::TextColored(uiColor(state.navMeshBakeFailed ? colors.error : colors.textDim), "%s", state.navMeshBakeStatus.c_str());
-        ImGui::PopTextWrapPos();
-    }
-    ImGui::PopID();
+    return NavMeshSummary{.text = surface.navMesh.isValid() ? "The navigation mesh is loading, or cannot be read." : "Not baked yet."};
+}
+
+void bakeNavMesh(ToolsState& state, scene::Scene& scene, scene::Entity entity)
+{
+    bake(state, scene, entity);
+}
+
+void clearNavMesh(ToolsState& state, scene::Scene& scene, scene::Entity entity)
+{
+    const scene::NavMeshSurface& surface = scene.get<scene::NavMeshSurface>(entity);
+    const asset::AssetId none;
+    state.pendingCommand = makeSetFieldCommand(scene.uuid(entity), "NavMeshSurface", "nav_mesh",
+                                               scene::writeFieldValue(reflection::ValueKind::AssetId, &surface.navMesh),
+                                               scene::writeFieldValue(reflection::ValueKind::AssetId, &none));
+    state.navMeshBakeStatus.clear();
 }
 
 void addNavigationLines(ToolsState& state, scene::Scene& scene, const std::unordered_set<std::uint32_t>& shown, bool showAll,

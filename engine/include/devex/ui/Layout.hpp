@@ -88,6 +88,19 @@ DEVEX_API void layoutCanvas(const scene::Scene& scene, scene::Entity canvas, mat
 [[nodiscard]] DEVEX_API std::pair<math::Vec2, math::Vec2> splitterBar(const LaidOutRect& rect,
                                                                       const scene::UiSplitter& splitter) noexcept;
 
+// The parts of a colour picker laid out in `rect`, in units: the square, the bar of hue at its
+// right, and the bar of opacity under them, empty when the picker has none.
+struct DEVEX_API ColorPickerParts
+{
+    math::Vec2 squareMin{0.0f};
+    math::Vec2 squareMax{0.0f};
+    math::Vec2 hueMin{0.0f};
+    math::Vec2 hueMax{0.0f};
+    math::Vec2 alphaMin{0.0f};
+    math::Vec2 alphaMax{0.0f};
+};
+[[nodiscard]] DEVEX_API ColorPickerParts colorPickerParts(const LaidOutRect& rect, const scene::UiColorPicker& picker) noexcept;
+
 // The item the first child of a virtual list shows: the first one in view.
 [[nodiscard]] DEVEX_API std::uint32_t virtualFirst(const LaidOutRect& rect, const scene::UiVirtualList& list) noexcept;
 

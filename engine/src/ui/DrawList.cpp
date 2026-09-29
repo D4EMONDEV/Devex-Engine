@@ -2,6 +2,7 @@
 
 #include <devex/scene/Scene.hpp>
 #include <devex/scene/UiComponents.hpp>
+#include <devex/ui/Color.hpp>
 #include <devex/ui/TextLayout.hpp>
 
 #include <algorithm>
@@ -60,6 +61,23 @@ struct Builder
             {.position = math::Vec2{min.x, max.y} * scale,
              .uv = math::Vec2{uvMin.x, uvMax.y},
              .color = color});
+        for (const std::uint32_t corner : {0u, 1u, 2u, 0u, 2u, 3u})
+        {
+            world.uiIndices.push_back(first + corner);
+        }
+        draw.indexCount += 6;
+    }
+
+    // A rectangle whose corners each have their colour, blended between them: the top left, the top
+    // right, the bottom right and the bottom left.
+    void gradient(render::UiDraw& draw, math::Vec2 min, math::Vec2 max, const std::array<math::Vec4, 4>& colors)
+    {
+        const auto first = static_cast<std::uint32_t>(world.uiVertices.size());
+        const std::array<math::Vec2, 4> points{min, math::Vec2{max.x, min.y}, max, math::Vec2{min.x, max.y}};
+        for (std::size_t index = 0; index < points.size(); ++index)
+        {
+            world.uiVertices.push_back({.position = points[index] * scale, .uv = math::Vec2{0.0f}, .color = colors[index]});
+        }
         for (const std::uint32_t corner : {0u, 1u, 2u, 0u, 2u, 3u})
         {
             world.uiIndices.push_back(first + corner);
@@ -457,6 +475,112 @@ void drawSlider(Builder& builder, const LaidOutRect& rect, const scene::UiSlider
     }
 }
 
+// A box of one colour with rounded corners, for the handles of a colour picker.
+void roundedBox(Builder& builder, math::Vec2 min, math::Vec2 max, float radius, math::Vec4 color)
+{
+    if (color.w <= 0.0f || max.x <= min.x || max.y <= min.y)
+    {
+        return;
+    }
+    const math::Vec4 shape{min.x * builder.scale, min.y * builder.scale, max.x * builder.scale, max.y * builder.scale};
+    render::UiDraw& draw =
+        builder.batch(render::UiDrawKind::RoundedQuad, render::TextureHandle{}, shape, radius * builder.scale, 1.0f);
+    builder.quad(draw, min, max, math::Vec2{0.0f, 0.0f}, math::Vec2{1.0f, 1.0f}, color);
+}
+
+// A colour picker: its square of saturation and value for the hue it shows, its bar of hues, its bar
+// of opacity over a checkerboard, and a handle on each. The colours are worked out as the eye sees
+// them and drawn linear, the square in cells so that blending between their corners stays close.
+void drawColorPicker(Builder& builder, const DrawContext& context, const LaidOutRect& rect, const scene::UiColorPicker& picker)
+{
+    const ColorPickerParts parts = colorPickerParts(rect, picker);
+    const float intensity = std::max({1.0f, picker.color.x, picker.color.y, picker.color.z});
+    math::Vec3 hsv{0.0f};
+    if (!context.pickerHsv || !context.pickerHsv(rect.entity, hsv))
+    {
+        hsv = hsvFromRgb(math::Vec3{srgbFromLinear(picker.color.x / intensity), srgbFromLinear(picker.color.y / intensity),
+                                    srgbFromLinear(picker.color.z / intensity)});
+    }
+    const float opacity = rect.opacity;
+    const auto shown = [opacity](math::Vec3 color, float alpha) {
+        const math::Vec3 rgb = rgbFromHsv(color);
+        return math::Vec4{linearFromSrgb(rgb.x), linearFromSrgb(rgb.y), linearFromSrgb(rgb.z), alpha * opacity};
+    };
+    const auto mix = [](math::Vec2 from, math::Vec2 to, float x, float y) {
+        return math::Vec2{from.x + (to.x - from.x) * x, from.y + (to.y - from.y) * y};
+    };
+    const float handle = std::clamp(picker.barSize * 0.45f, 3.0f, 12.0f);
+    const math::Vec4 white{1.0f, 1.0f, 1.0f, opacity};
+    const math::Vec4 shade{0.0f, 0.0f, 0.0f, 0.55f * opacity};
+
+    // The square, white to the hue across and down to black.
+    constexpr int cells = 8;
+    if (parts.squareMax.x > parts.squareMin.x && parts.squareMax.y > parts.squareMin.y)
+    {
+        render::UiDraw& draw = builder.batch(render::UiDrawKind::Quad, render::TextureHandle{}, math::Vec4{0.0f}, 0.0f, 1.0f);
+        for (int row = 0; row < cells; ++row)
+        {
+            for (int column = 0; column < cells; ++column)
+            {
+                const float left = static_cast<float>(column) / cells;
+                const float right = static_cast<float>(column + 1) / cells;
+                const float top = static_cast<float>(row) / cells;
+                const float bottom = static_cast<float>(row + 1) / cells;
+                builder.gradient(draw, mix(parts.squareMin, parts.squareMax, left, top),
+                                 mix(parts.squareMin, parts.squareMax, right, bottom),
+                                 {shown({hsv.x, left, 1.0f - top}, 1.0f), shown({hsv.x, right, 1.0f - top}, 1.0f),
+                                  shown({hsv.x, right, 1.0f - bottom}, 1.0f), shown({hsv.x, left, 1.0f - bottom}, 1.0f)});
+            }
+        }
+        const math::Vec2 at = mix(parts.squareMin, parts.squareMax, hsv.y, 1.0f - hsv.z);
+        roundedBox(builder, at - math::Vec2{handle + 1.0f}, at + math::Vec2{handle + 1.0f}, handle + 1.0f, shade);
+        roundedBox(builder, at - math::Vec2{handle}, at + math::Vec2{handle}, handle, white);
+        roundedBox(builder, at - math::Vec2{handle - 2.0f}, at + math::Vec2{handle - 2.0f}, handle - 2.0f,
+                   shown(hsv, 1.0f));
+    }
+
+    // The hues from top to bottom, red at both ends.
+    constexpr int hues = 24;
+    if (parts.hueMax.x > parts.hueMin.x && parts.hueMax.y > parts.hueMin.y)
+    {
+        render::UiDraw& draw = builder.batch(render::UiDrawKind::Quad, render::TextureHandle{}, math::Vec4{0.0f}, 0.0f, 1.0f);
+        for (int band = 0; band < hues; ++band)
+        {
+            const float top = static_cast<float>(band) / hues;
+            const float bottom = static_cast<float>(band + 1) / hues;
+            const math::Vec4 upper = shown({top, 1.0f, 1.0f}, 1.0f);
+            const math::Vec4 lower = shown({bottom, 1.0f, 1.0f}, 1.0f);
+            builder.gradient(draw, mix(parts.hueMin, parts.hueMax, 0.0f, top), mix(parts.hueMin, parts.hueMax, 1.0f, bottom),
+                             {upper, upper, lower, lower});
+        }
+        const float y = parts.hueMin.y + (parts.hueMax.y - parts.hueMin.y) * std::clamp(hsv.x, 0.0f, 1.0f);
+        roundedBox(builder, math::Vec2{parts.hueMin.x - 3.0f, y - 3.0f}, math::Vec2{parts.hueMax.x + 3.0f, y + 3.0f}, 3.0f, shade);
+        roundedBox(builder, math::Vec2{parts.hueMin.x - 2.0f, y - 2.0f}, math::Vec2{parts.hueMax.x + 2.0f, y + 2.0f}, 2.0f, white);
+    }
+
+    // The opacity, from none to whole, over squares that show through.
+    if (picker.alpha && parts.alphaMax.x > parts.alphaMin.x && parts.alphaMax.y > parts.alphaMin.y)
+    {
+        const float cell = std::max((parts.alphaMax.y - parts.alphaMin.y) * 0.5f, 2.0f);
+        const math::Vec4 light{0.8f, 0.8f, 0.8f, opacity};
+        const math::Vec4 dark{0.45f, 0.45f, 0.45f, opacity};
+        std::size_t index = 0;
+        for (float x = parts.alphaMin.x; x < parts.alphaMax.x; x += cell, ++index)
+        {
+            const float right = std::min(x + cell, parts.alphaMax.x);
+            fill(builder, math::Vec2{x, parts.alphaMin.y}, math::Vec2{right, parts.alphaMin.y + cell}, index % 2 == 0 ? light : dark);
+            fill(builder, math::Vec2{x, parts.alphaMin.y + cell}, math::Vec2{right, parts.alphaMax.y}, index % 2 == 0 ? dark : light);
+        }
+        render::UiDraw& draw = builder.batch(render::UiDrawKind::Quad, render::TextureHandle{}, math::Vec4{0.0f}, 0.0f, 1.0f);
+        const math::Vec4 clear = shown(hsv, 0.0f);
+        const math::Vec4 whole = shown(hsv, 1.0f);
+        builder.gradient(draw, parts.alphaMin, parts.alphaMax, {clear, whole, whole, clear});
+        const float x = parts.alphaMin.x + (parts.alphaMax.x - parts.alphaMin.x) * std::clamp(picker.color.w, 0.0f, 1.0f);
+        roundedBox(builder, math::Vec2{x - 3.0f, parts.alphaMin.y - 3.0f}, math::Vec2{x + 3.0f, parts.alphaMax.y + 3.0f}, 3.0f, shade);
+        roundedBox(builder, math::Vec2{x - 2.0f, parts.alphaMin.y - 2.0f}, math::Vec2{x + 2.0f, parts.alphaMax.y + 2.0f}, 2.0f, white);
+    }
+}
+
 // The mark of a toggle that is on, inside its box.
 void drawToggle(Builder& builder, const LaidOutRect& rect, const scene::UiToggle& toggle)
 {
@@ -590,6 +714,10 @@ void buildDrawList(const scene::Scene& scene, const LayoutResult& layout,
         if (const scene::UiToggle* const toggle = scene.tryGet<scene::UiToggle>(rect.entity))
         {
             drawToggle(builder, rect, *toggle);
+        }
+        if (const scene::UiColorPicker* const picker = scene.tryGet<scene::UiColorPicker>(rect.entity))
+        {
+            drawColorPicker(builder, context, rect, *picker);
         }
         if (const scene::UiText* const text = scene.tryGet<scene::UiText>(rect.entity))
         {

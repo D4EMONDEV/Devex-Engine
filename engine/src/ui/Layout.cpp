@@ -406,6 +406,25 @@ std::pair<math::Vec2, math::Vec2> splitterBar(const LaidOutRect& rect, const sce
     return {min, max};
 }
 
+ColorPickerParts colorPickerParts(const LaidOutRect& rect, const scene::UiColorPicker& picker) noexcept
+{
+    const float bar = std::clamp(picker.barSize, 1.0f, std::max(std::min(rect.size().x, rect.size().y) * 0.4f, 1.0f));
+    const float gap = std::max(picker.spacing, 0.0f);
+    ColorPickerParts parts;
+    const float squareBottom = picker.alpha ? std::max(rect.max.y - bar - gap, rect.min.y) : rect.max.y;
+    const float squareRight = std::max(rect.max.x - bar - gap, rect.min.x);
+    parts.squareMin = rect.min;
+    parts.squareMax = math::Vec2{squareRight, squareBottom};
+    parts.hueMin = math::Vec2{std::max(rect.max.x - bar, rect.min.x), rect.min.y};
+    parts.hueMax = math::Vec2{rect.max.x, squareBottom};
+    if (picker.alpha)
+    {
+        parts.alphaMin = math::Vec2{rect.min.x, std::max(rect.max.y - bar, rect.min.y)};
+        parts.alphaMax = rect.max;
+    }
+    return parts;
+}
+
 std::uint32_t virtualFirst(const LaidOutRect& rect, const scene::UiVirtualList& list) noexcept
 {
     if (!isClipped(rect.clip) || list.itemCount == 0)

@@ -49,6 +49,9 @@ struct DEVEX_API DrawContext
     std::function<const EditState*(scene::Entity)> editing;
     // Whether the pointer holds or rests on the bar of a splitter, which then lights up.
     std::function<bool(scene::Entity)> grabbed;
+    // The hue, saturation and value a colour picker shows, which its colour gives when this says
+    // nothing: a grey loses its hue.
+    std::function<bool(scene::Entity, math::Vec3&)> pickerHsv;
     // The font used by a UiText that names none.
     asset::AssetId defaultFont;
 };

@@ -5,9 +5,13 @@
 
 #include <devex/scene/Scene.hpp>
 #include <devex/scene/UiComponents.hpp>
+#include <devex/ui/Color.hpp>
 
 #include <algorithm>
+#include <charconv>
 #include <cmath>
+#include <format>
+#include <string>
 
 namespace devex::ui {
 namespace {
@@ -23,6 +27,8 @@ constexpr std::size_t dropdownRows = 10;
 // How far the pointer moves from where it pressed a drag source before it takes it away, in
 // pixels, so that a click that shakes a little stays a click.
 constexpr float carryDistance = 6.0f;
+// The same for a number field, which the pointer drags sideways.
+constexpr float numberDragDistance = 3.0f;
 
 [[nodiscard]] bool isMenu(const scene::Scene& scene, scene::Entity entity) noexcept
 {
@@ -79,7 +85,8 @@ struct HeaderCell
     if (scene.has<scene::UiButton>(entity) || scene.has<scene::UiInput>(entity) ||
         scene.has<scene::UiSlider>(entity) || scene.has<scene::UiToggle>(entity) ||
         scene.has<scene::UiDropdown>(entity) || scene.has<scene::UiFoldout>(entity) ||
-        scene.has<scene::UiDragSource>(entity) || scene.has<scene::UiDropTarget>(entity))
+        scene.has<scene::UiDragSource>(entity) || scene.has<scene::UiDropTarget>(entity) ||
+        scene.has<scene::UiNumberField>(entity) || scene.has<scene::UiColorPicker>(entity))
     {
         return true;
     }
@@ -122,6 +129,204 @@ struct HeaderCell
     const float start = (axis == 1 ? rect.min.y : rect.min.x) + (size - thumb) * std::clamp(offset / room, 0.0f, 1.0f);
     return {start, thumb};
 }
+
+
+// The text a number field writes around its value: what comes before {} and after it.
+struct FormatParts
+{
+    std::string_view before;
+    std::string_view after;
+    bool hasValue = false;
+};
+
+[[nodiscard]] FormatParts splitFormat(std::string_view format) noexcept
+{
+    const std::size_t at = format.find("{}");
+    if (at == std::string_view::npos)
+    {
+        return FormatParts{.before = format};
+    }
+    return FormatParts{.before = format.substr(0, at), .after = format.substr(at + 2), .hasValue = true};
+}
+
+[[nodiscard]] std::string_view trimmed(std::string_view text) noexcept
+{
+    while (!text.empty() && (text.front() == ' ' || text.front() == '\t'))
+    {
+        text.remove_prefix(1);
+    }
+    while (!text.empty() && (text.back() == ' ' || text.back() == '\t'))
+    {
+        text.remove_suffix(1);
+    }
+    return text;
+}
+
+// The value a number field keeps: on its steps, between its bounds.
+[[nodiscard]] double fitNumber(const scene::UiNumberField& field, double value) noexcept
+{
+    const double low = std::min(field.minValue, field.maxValue);
+    const double high = std::max(field.minValue, field.maxValue);
+    if (field.step > 0.0f)
+    {
+        value = low + std::round((value - low) / field.step) * field.step;
+    }
+    return low < high ? std::clamp(value, low, high) : value;
+}
+
+// Reads a sum of numbers: + and - between products, * and / between factors, a sign before a
+// factor, and brackets.
+class Expression
+{
+public:
+    explicit Expression(std::string_view text) noexcept
+        : m_text(text)
+    {
+    }
+
+    [[nodiscard]] std::optional<double> read()
+    {
+        std::optional<double> value = sum();
+        skipSpaces();
+        if (!value || m_at != m_text.size() || !std::isfinite(*value))
+        {
+            return std::nullopt;
+        }
+        return value;
+    }
+
+private:
+    void skipSpaces() noexcept
+    {
+        while (m_at < m_text.size() && (m_text[m_at] == ' ' || m_text[m_at] == '\t'))
+        {
+            ++m_at;
+        }
+    }
+
+    [[nodiscard]] bool take(char wanted) noexcept
+    {
+        skipSpaces();
+        if (m_at < m_text.size() && m_text[m_at] == wanted)
+        {
+            ++m_at;
+            return true;
+        }
+        return false;
+    }
+
+    [[nodiscard]] std::optional<double> sum()
+    {
+        std::optional<double> left = product();
+        while (left)
+        {
+            if (take('+'))
+            {
+                const std::optional<double> right = product();
+                left = right ? std::optional(*left + *right) : std::nullopt;
+            }
+            else if (take('-'))
+            {
+                const std::optional<double> right = product();
+                left = right ? std::optional(*left - *right) : std::nullopt;
+            }
+            else
+            {
+                break;
+            }
+        }
+        return left;
+    }
+
+    [[nodiscard]] std::optional<double> product()
+    {
+        std::optional<double> left = factor();
+        while (left)
+        {
+            if (take('*'))
+            {
+                const std::optional<double> right = factor();
+                left = right ? std::optional(*left * *right) : std::nullopt;
+            }
+            else if (take('/'))
+            {
+                const std::optional<double> right = factor();
+                left = right && *right != 0.0 ? std::optional(*left / *right) : std::nullopt;
+            }
+            else
+            {
+                break;
+            }
+        }
+        return left;
+    }
+
+    [[nodiscard]] std::optional<double> factor()
+    {
+        // Brackets inside brackets are read by recursion, which a limit keeps from running away.
+        if (m_depth >= 64)
+        {
+            return std::nullopt;
+        }
+        ++m_depth;
+        std::optional<double> value;
+        if (take('-'))
+        {
+            const std::optional<double> inner = factor();
+            value = inner ? std::optional(-*inner) : std::nullopt;
+        }
+        else if (take('+'))
+        {
+            value = factor();
+        }
+        else if (take('('))
+        {
+            value = sum();
+            if (!take(')'))
+            {
+                value.reset();
+            }
+        }
+        else
+        {
+            value = number();
+        }
+        --m_depth;
+        return value;
+    }
+
+    [[nodiscard]] std::optional<double> number()
+    {
+        skipSpaces();
+        std::string digits;
+        while (m_at < m_text.size())
+        {
+            const char letter = m_text[m_at];
+            const bool exponentSign = (letter == '-' || letter == '+') && !digits.empty() &&
+                                      (digits.back() == 'e' || digits.back() == 'E');
+            if ((letter >= '0' && letter <= '9') || letter == '.' || letter == ',' || letter == 'e' || letter == 'E' ||
+                exponentSign)
+            {
+                // A comma is the point of the numbers of many languages.
+                digits.push_back(letter == ',' ? '.' : letter);
+                ++m_at;
+                continue;
+            }
+            break;
+        }
+        double value = 0.0;
+        const auto [end, error] = std::from_chars(digits.data(), digits.data() + digits.size(), value);
+        if (digits.empty() || error != std::errc{} || end != digits.data() + digits.size())
+        {
+            return std::nullopt;
+        }
+        return value;
+    }
+
+    std::string_view m_text;
+    std::size_t m_at = 0;
+    int m_depth = 0;
+};
 
 } // namespace
 
@@ -689,7 +894,7 @@ void UiWorld::updateControls(scene::Scene& scene, const UiInput& input)
         if (scene::UiText* const text = scene.tryGet<scene::UiText>(entity))
         {
             const bool chosen = dropdown.selected >= 0 && static_cast<std::size_t>(dropdown.selected) < dropdown.options.size();
-            const std::string& option = chosen ? dropdown.options[static_cast<std::size_t>(dropdown.selected)] : std::string{};
+            const std::string& option = chosen ? dropdown.options[static_cast<std::size_t>(dropdown.selected)] : dropdown.placeholder;
             if (text->text != option)
             {
                 text->text = option;
@@ -1012,6 +1217,330 @@ bool UiWorld::wasDropped(scene::Entity target) const
 const Drop* UiWorld::dropped() const noexcept
 {
     return m_drops.empty() ? nullptr : &m_drops.back();
+}
+
+void UiWorld::updateNumberFields(scene::Scene& scene, const UiInput& input)
+{
+    // Pressed, a number field waits to see whether the pointer drags it or lets it go.
+    if (input.pointerPressed && m_hovered.isValid() && m_hovered != m_editing.entity)
+    {
+        if (const scene::UiNumberField* const number = scene.tryGet<scene::UiNumberField>(m_hovered);
+            number != nullptr && number->interactable)
+        {
+            m_numberDrag = NumberDrag{.entity = m_hovered, .from = input.pointer, .lastX = input.pointer.x, .raw = number->value};
+        }
+    }
+    if (!m_numberDrag || !input.pointerDown)
+    {
+        return;
+    }
+    scene::UiNumberField* const number =
+        scene.isAlive(m_numberDrag->entity) ? scene.tryGet<scene::UiNumberField>(m_numberDrag->entity) : nullptr;
+    const CanvasLayout* const canvas = canvasOf(m_numberDrag->entity);
+    if (number == nullptr || !number->interactable || canvas == nullptr)
+    {
+        m_numberDrag.reset();
+        return;
+    }
+    if (!m_numberDrag->moved)
+    {
+        const math::Vec2 moved = input.pointer - m_numberDrag->from;
+        if (std::abs(moved.x) < numberDragDistance && std::abs(moved.y) < numberDragDistance)
+        {
+            return;
+        }
+        // The value moves from here, so that it does not jump by the distance that started the drag.
+        m_numberDrag->moved = true;
+        m_numberDrag->lastX = input.pointer.x;
+        return;
+    }
+    const float units = (input.pointer.x - m_numberDrag->lastX) / std::max(canvas->layout.scale, 0.0001f);
+    m_numberDrag->lastX = input.pointer.x;
+    if (units == 0.0f)
+    {
+        return;
+    }
+    // Shift drags ten times finer.
+    m_numberDrag->raw += static_cast<double>(units) * number->dragSpeed * (input.selecting ? 0.1 : 1.0);
+    const double low = std::min(number->minValue, number->maxValue);
+    const double high = std::max(number->minValue, number->maxValue);
+    if (low < high)
+    {
+        // Past a bound the value waits there, and comes back as soon as the pointer does.
+        m_numberDrag->raw = std::clamp(m_numberDrag->raw, low, high);
+    }
+    double value = m_numberDrag->raw;
+    if (number->step <= 0.0f && number->decimals >= 0)
+    {
+        // Dragged values stop at the digits shown.
+        const double unit = std::pow(10.0, std::min(number->decimals, 9));
+        value = std::round(value * unit) / unit;
+    }
+    setNumber(m_numberDrag->entity, *number, value);
+}
+
+void UiWorld::beginNumberEdit(scene::Scene& scene, scene::Entity entity)
+{
+    const scene::UiNumberField* const number = scene.tryGet<scene::UiNumberField>(entity);
+    scene::UiText* const text = scene.tryGet<scene::UiText>(entity);
+    if (number == nullptr || text == nullptr || !scene.has<scene::UiInput>(entity))
+    {
+        return;
+    }
+    // The number alone, without what the format writes around it, selected to be typed over.
+    text->text = formatNumber(number->value, number->decimals);
+    startEditing(scene, entity);
+}
+
+void UiWorld::finishNumberEdit(scene::Scene& scene)
+{
+    if (!m_numberEdit.isValid() || m_editing.entity == m_numberEdit)
+    {
+        return;
+    }
+    const scene::Entity entity = std::exchange(m_numberEdit, scene::Entity{});
+    const bool cancelled = std::exchange(m_editCancelled, false);
+    const std::string started = std::exchange(m_numberEditText, std::string{});
+    scene::UiNumberField* const number = scene.isAlive(entity) ? scene.tryGet<scene::UiNumberField>(entity) : nullptr;
+    const scene::UiText* const text = number != nullptr ? scene.tryGet<scene::UiText>(entity) : nullptr;
+    if (text == nullptr || cancelled || text->text == started)
+    {
+        return;
+    }
+    // What the format writes around the value may have been typed as well: 90° is 90.
+    const FormatParts parts = splitFormat(number->format);
+    std::string_view typed = trimmed(text->text);
+    if (parts.hasValue)
+    {
+        if (const std::string_view before = trimmed(parts.before); !before.empty() && typed.starts_with(before))
+        {
+            typed.remove_prefix(before.size());
+        }
+        if (const std::string_view after = trimmed(parts.after); !after.empty() && typed.ends_with(after))
+        {
+            typed.remove_suffix(after.size());
+        }
+    }
+    if (const std::optional<double> value = evaluateNumber(typed))
+    {
+        setNumber(entity, *number, *value);
+    }
+}
+
+void UiWorld::setNumber(scene::Entity entity, scene::UiNumberField& field, double value)
+{
+    const auto stored = static_cast<float>(fitNumber(field, value));
+    if (stored == field.value)
+    {
+        return;
+    }
+    field.value = stored;
+    m_changed.push_back(entity);
+    if (!field.action.empty())
+    {
+        m_changedActions.push_back(field.action);
+    }
+}
+
+void UiWorld::writeNumberTexts(scene::Scene& scene) const
+{
+    for (auto [entity, number] : scene.view<scene::UiNumberField>())
+    {
+        scene::UiText* const text = scene.tryGet<scene::UiText>(entity);
+        if (text == nullptr || entity == m_editing.entity)
+        {
+            continue;
+        }
+        const FormatParts parts = splitFormat(number.format);
+        std::string shown = parts.hasValue
+                                ? std::string(parts.before) + formatNumber(number.value, number.decimals) + std::string(parts.after)
+                                : std::string(number.format);
+        if (text->text != shown)
+        {
+            text->text = std::move(shown);
+        }
+    }
+}
+
+UiWorld::PickerState& UiWorld::pickerState(scene::Entity entity, math::Vec4 color)
+{
+    auto found = std::ranges::find(m_pickers, entity, &PickerState::entity);
+    if (found == m_pickers.end())
+    {
+        m_pickers.push_back(PickerState{.entity = entity});
+        found = std::prev(m_pickers.end());
+    }
+    if (found->color != color)
+    {
+        // A colour set from outside gives its hue, but a grey keeps the hue it had, and a black its
+        // saturation as well, so that the square does not jump back to red.
+        const float intensity = std::max({1.0f, color.x, color.y, color.z});
+        const math::Vec3 hsv = hsvFromRgb(math::Vec3{srgbFromLinear(color.x / intensity), srgbFromLinear(color.y / intensity),
+                                                     srgbFromLinear(color.z / intensity)});
+        const bool known = found->color.x >= 0.0f;
+        found->hsv = math::Vec3{known && (hsv.y <= 0.0f || hsv.z <= 0.0f) ? found->hsv.x : hsv.x,
+                                known && hsv.z <= 0.0f ? found->hsv.y : hsv.y, hsv.z};
+        found->intensity = intensity;
+        found->color = color;
+    }
+    return *found;
+}
+
+bool UiWorld::pickerHsv(const scene::Scene& scene, scene::Entity entity, math::Vec3& hsv) const
+{
+    const scene::UiColorPicker* const picker = scene.isAlive(entity) ? scene.tryGet<scene::UiColorPicker>(entity) : nullptr;
+    if (picker == nullptr)
+    {
+        return false;
+    }
+    if (const auto found = std::ranges::find(m_pickers, entity, &PickerState::entity);
+        found != m_pickers.end() && found->color == picker->color)
+    {
+        hsv = found->hsv;
+        return true;
+    }
+    const math::Vec4 color = picker->color;
+    const float intensity = std::max({1.0f, color.x, color.y, color.z});
+    hsv = hsvFromRgb(math::Vec3{srgbFromLinear(color.x / intensity), srgbFromLinear(color.y / intensity),
+                                srgbFromLinear(color.z / intensity)});
+    return true;
+}
+
+void UiWorld::updateColorPickers(scene::Scene& scene, const UiInput& input)
+{
+    std::erase_if(m_pickers, [&scene](const PickerState& state) {
+        return !scene.isAlive(state.entity) || !scene.has<scene::UiColorPicker>(state.entity);
+    });
+    for (auto [entity, picker] : scene.view<scene::UiColorPicker>())
+    {
+        static_cast<void>(pickerState(entity, picker.color));
+    }
+
+    const auto partsOf = [this](scene::Entity entity, const scene::UiColorPicker& picker,
+                                float& scale) -> std::optional<ColorPickerParts> {
+        const CanvasLayout* const canvas = canvasOf(entity);
+        const LaidOutRect* const rect = canvas != nullptr ? canvas->layout.find(entity) : nullptr;
+        if (rect == nullptr)
+        {
+            return std::nullopt;
+        }
+        scale = std::max(canvas->layout.scale, 0.0001f);
+        return colorPickerParts(*rect, picker);
+    };
+    const auto inside = [](math::Vec2 point, math::Vec2 min, math::Vec2 max) {
+        return max.x > min.x && max.y > min.y && point.x >= min.x && point.x <= max.x && point.y >= min.y &&
+               point.y <= max.y;
+    };
+
+    // The part pressed is the one dragged, until the button is let go.
+    if (input.pointerPressed && m_hovered.isValid())
+    {
+        if (const scene::UiColorPicker* const picker = scene.tryGet<scene::UiColorPicker>(m_hovered);
+            picker != nullptr && picker->interactable)
+        {
+            float scale = 1.0f;
+            if (const std::optional<ColorPickerParts> parts = partsOf(m_hovered, *picker, scale))
+            {
+                const math::Vec2 point = input.pointer / scale;
+                m_pickerPart = inside(point, parts->squareMin, parts->squareMax) ? PickerPart::Square
+                               : inside(point, parts->hueMin, parts->hueMax)     ? PickerPart::Hue
+                               : inside(point, parts->alphaMin, parts->alphaMax) ? PickerPart::Alpha
+                                                                                 : PickerPart::None;
+                m_pickerHeld = m_pickerPart != PickerPart::None ? m_hovered : scene::Entity{};
+            }
+        }
+    }
+    if (!m_pickerHeld.isValid())
+    {
+        return;
+    }
+    scene::UiColorPicker* const picker =
+        scene.isAlive(m_pickerHeld) ? scene.tryGet<scene::UiColorPicker>(m_pickerHeld) : nullptr;
+    float scale = 1.0f;
+    const std::optional<ColorPickerParts> parts =
+        picker != nullptr && picker->interactable ? partsOf(m_pickerHeld, *picker, scale) : std::nullopt;
+    if (!parts || !input.pointerDown)
+    {
+        m_pickerHeld = scene::Entity{};
+        m_pickerPart = PickerPart::None;
+        return;
+    }
+    const math::Vec2 point = input.pointer / scale;
+    const auto fraction = [](float at, float from, float to) {
+        return to > from ? std::clamp((at - from) / (to - from), 0.0f, 1.0f) : 0.0f;
+    };
+    PickerState& state = pickerState(m_pickerHeld, picker->color);
+    math::Vec3 hsv = state.hsv;
+    math::Vec4 color = picker->color;
+    switch (m_pickerPart)
+    {
+    case PickerPart::Square:
+        hsv.y = fraction(point.x, parts->squareMin.x, parts->squareMax.x);
+        hsv.z = 1.0f - fraction(point.y, parts->squareMin.y, parts->squareMax.y);
+        break;
+    case PickerPart::Hue:
+        hsv.x = fraction(point.y, parts->hueMin.y, parts->hueMax.y);
+        break;
+    case PickerPart::Alpha:
+        color.w = fraction(point.x, parts->alphaMin.x, parts->alphaMax.x);
+        break;
+    case PickerPart::None:
+        break;
+    }
+    if (m_pickerPart != PickerPart::Alpha)
+    {
+        const math::Vec3 rgb = rgbFromHsv(hsv);
+        color = math::Vec4{linearFromSrgb(rgb.x) * state.intensity, linearFromSrgb(rgb.y) * state.intensity,
+                           linearFromSrgb(rgb.z) * state.intensity, color.w};
+    }
+    // The hue of a grey changes what the square shows, not the colour.
+    state.hsv = hsv;
+    if (color != picker->color)
+    {
+        picker->color = color;
+        state.color = color;
+        m_changed.push_back(m_pickerHeld);
+        if (!picker->action.empty())
+        {
+            m_changedActions.push_back(picker->action);
+        }
+    }
+}
+
+std::string formatNumber(double value, std::int32_t decimals)
+{
+    if (!std::isfinite(value))
+    {
+        return std::isnan(value) ? "nan" : value > 0.0 ? "inf" : "-inf";
+    }
+    std::string text = decimals < 0 ? std::format("{}", static_cast<float>(value))
+                                    : std::format("{:.{}f}", value, std::min(static_cast<int>(decimals), 9));
+    if (decimals >= 0 && text.find('.') != std::string::npos)
+    {
+        while (text.back() == '0')
+        {
+            text.pop_back();
+        }
+        if (text.back() == '.')
+        {
+            text.pop_back();
+        }
+    }
+    if (text == "-0")
+    {
+        text = "0";
+    }
+    return text;
+}
+
+std::optional<double> evaluateNumber(std::string_view text)
+{
+    text = trimmed(text);
+    if (text.empty())
+    {
+        return std::nullopt;
+    }
+    return Expression(text).read();
 }
 
 } // namespace devex::ui

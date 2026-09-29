@@ -25,7 +25,7 @@ struct ComponentInfo
     Category category;
     std::string_view description;
     // What it needs beside it to do anything, added with it.
-    std::array<std::string_view, 2> needs{};
+    std::array<std::string_view, 3> needs{};
 };
 
 // In the order the window lists them.
@@ -81,6 +81,10 @@ constexpr std::array engineComponents{
     ComponentInfo{"UiDragSource", "Drag source", Category::Interface,
                   "Lets the pointer carry the element to a drop target."},
     ComponentInfo{"UiDropTarget", "Drop target", Category::Interface, "Takes what is dropped on it, when it accepts its type."},
+    ComponentInfo{"UiNumberField", "Number field", Category::Interface,
+                  "A number dragged sideways, or typed once clicked, as in an inspector.", {"UiImage", "UiText", "UiInput"}},
+    ComponentInfo{"UiColorPicker", "Color picker", Category::Interface,
+                  "Chooses a colour in a square of saturation and brightness, with bars of hue and opacity."},
     ComponentInfo{"RigidBody", "Rigid body", Category::Physics, "Moved by the physics: gravity, forces and collisions."},
     ComponentInfo{"BoxCollider", "Box collider", Category::Physics, "A box the physics collides with."},
     ComponentInfo{"SphereCollider", "Sphere collider", Category::Physics, "A sphere the physics collides with."},

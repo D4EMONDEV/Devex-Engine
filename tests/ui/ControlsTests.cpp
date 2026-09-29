@@ -473,3 +473,202 @@ TEST_CASE("A drag from outside the interface is dropped on a target that accepts
     screen.update(UiInput{.pointer = {200.0f, 120.0f}, .pointerDown = true});
     CHECK(screen.world.carried() == nullptr);
 }
+
+namespace {
+
+// A number field as an inspector has it: a box that shows the number and takes what is typed.
+Entity numberField(Screen& screen, Entity parent, Vec2 min, Vec2 max, devex::scene::UiNumberField number)
+{
+    const Entity entity = screen.element(parent, min, max, "Number");
+    screen.scene.add<UiImage>(entity);
+    screen.scene.add<UiText>(entity, UiText{.text = ""});
+    screen.scene.add<devex::scene::UiInput>(entity);
+    screen.scene.add<devex::scene::UiNumberField>(entity, number);
+    return entity;
+}
+
+} // namespace
+
+TEST_CASE("A number field is dragged sideways, and typed into once clicked", "[ui][controls][number]")
+{
+    Screen screen;
+    const Entity field = numberField(screen, {}, {100.0f, 100.0f}, {300.0f, 130.0f},
+                                     {.value = 1.0f, .dragSpeed = 0.1f, .decimals = 2, .format = "{} m", .action = "speed"});
+    screen.update();
+    CHECK(screen.scene.get<UiText>(field).text == "1 m");
+    const auto& number = screen.scene.get<devex::scene::UiNumberField>(field);
+
+    // A press that shakes a little changes nothing; then the value follows the pointer across.
+    screen.press({150.0f, 115.0f});
+    screen.update(UiInput{.pointer = {152.0f, 116.0f}, .pointerDown = true, .pointerMoved = true});
+    CHECK(number.value == Catch::Approx(1.0f));
+    screen.update(UiInput{.pointer = {160.0f, 115.0f}, .pointerDown = true, .pointerMoved = true});
+    CHECK(number.value == Catch::Approx(1.0f));
+    CHECK(screen.world.held() == field);
+    screen.update(UiInput{.pointer = {170.0f, 115.0f}, .pointerDown = true, .pointerMoved = true});
+    CHECK(number.value == Catch::Approx(2.0f));
+    CHECK(screen.world.wasChanged("speed"));
+    CHECK(screen.scene.get<UiText>(field).text == "2 m");
+    // Shift drags ten times finer.
+    screen.update(UiInput{.pointer = {180.0f, 115.0f}, .pointerDown = true, .pointerMoved = true, .selecting = true});
+    CHECK(number.value == Catch::Approx(2.1f));
+    // Let go after a drag, nothing is typed into.
+    screen.release({180.0f, 115.0f});
+    CHECK_FALSE(screen.world.isEditing());
+    CHECK_FALSE(screen.world.held().isValid());
+
+    // A click types into it: the number alone, selected, which a sum replaces.
+    screen.click({150.0f, 115.0f});
+    CHECK(screen.world.editedField() == field);
+    CHECK(screen.scene.get<UiText>(field).text == "2.1");
+    screen.update(UiInput{.typed = "2*3+1"});
+    CHECK(number.value == Catch::Approx(2.1f));
+    screen.update(UiInput{.submitPressed = true});
+    CHECK(number.value == Catch::Approx(7.0f));
+    CHECK(screen.world.wasChanged(field));
+    CHECK(screen.scene.get<UiText>(field).text == "7 m");
+
+    // Escape leaves the value as it was; what the format writes may be typed as well.
+    screen.click({150.0f, 115.0f});
+    screen.update(UiInput{.typed = "50"});
+    screen.update(UiInput{.cancelPressed = true});
+    CHECK(number.value == Catch::Approx(7.0f));
+    CHECK(screen.scene.get<UiText>(field).text == "7 m");
+    screen.click({150.0f, 115.0f});
+    screen.update(UiInput{.typed = "3,5 m"});
+    // A click elsewhere ends the edit as Enter does.
+    screen.click({900.0f, 900.0f});
+    CHECK(number.value == Catch::Approx(3.5f));
+}
+
+TEST_CASE("A number field keeps its bounds, its steps and the digits it does not show", "[ui][controls][number]")
+{
+    Screen screen;
+    const Entity field =
+        numberField(screen, {}, {100.0f, 100.0f}, {300.0f, 130.0f}, {.value = 4.0f, .minValue = 0.0f, .maxValue = 10.0f, .step = 0.5f});
+    const Entity fine = numberField(screen, {}, {100.0f, 200.0f}, {300.0f, 230.0f}, {.value = 0.123456f, .decimals = 3});
+    screen.update();
+    const auto& number = screen.scene.get<devex::scene::UiNumberField>(field);
+
+    screen.click({150.0f, 115.0f});
+    screen.update(UiInput{.typed = "99"});
+    screen.update(UiInput{.submitPressed = true});
+    CHECK(number.value == Catch::Approx(10.0f));
+    screen.click({150.0f, 115.0f});
+    screen.update(UiInput{.typed = "2.3"});
+    screen.update(UiInput{.submitPressed = true});
+    CHECK(number.value == Catch::Approx(2.5f));
+    // What cannot be read changes nothing.
+    screen.click({150.0f, 115.0f});
+    screen.update(UiInput{.typed = "two"});
+    screen.update(UiInput{.submitPressed = true});
+    CHECK(number.value == Catch::Approx(2.5f));
+
+    // Shown with three digits, the value keeps its own when Enter changes nothing.
+    CHECK(screen.scene.get<UiText>(fine).text == "0.123");
+    screen.click({150.0f, 215.0f});
+    screen.update(UiInput{.submitPressed = true});
+    CHECK(screen.scene.get<devex::scene::UiNumberField>(fine).value == Catch::Approx(0.123456f));
+    CHECK_FALSE(screen.world.wasChanged(fine));
+
+    // A format without {} shows as it is, as a dash for values that differ.
+    screen.scene.get<devex::scene::UiNumberField>(fine).format = "-";
+    screen.update();
+    CHECK(screen.scene.get<UiText>(fine).text == "-");
+}
+
+TEST_CASE("A number field clicked in a menu leaves the menu open", "[ui][controls][number]")
+{
+    Screen screen;
+    const Entity menu = screen.element({}, {100.0f, 100.0f}, {400.0f, 300.0f}, "Menu");
+    screen.scene.add<devex::scene::UiPopup>(menu);
+    const Entity field = numberField(screen, menu, {10.0f, 10.0f}, {200.0f, 40.0f}, {.value = 1.0f});
+    screen.world.openPopup(screen.scene, menu);
+    screen.update();
+    screen.click({150.0f, 125.0f});
+    CHECK(screen.world.isPopupOpen(screen.scene, menu));
+    CHECK(screen.world.editedField() == field);
+}
+
+TEST_CASE("Numbers are written short and read from sums", "[ui][controls][number]")
+{
+    using devex::ui::evaluateNumber;
+    using devex::ui::formatNumber;
+    CHECK(formatNumber(1.5, 3) == "1.5");
+    CHECK(formatNumber(2.0, 3) == "2");
+    CHECK(formatNumber(-0.0001, 3) == "0");
+    CHECK(formatNumber(0.126, 2) == "0.13");
+    CHECK(formatNumber(1234.5678, 0) == "1235");
+    CHECK(evaluateNumber("  42 ") == Catch::Approx(42.0));
+    CHECK(evaluateNumber("2*3+1") == Catch::Approx(7.0));
+    CHECK(evaluateNumber("-(1 + 2) / 4") == Catch::Approx(-0.75));
+    CHECK(evaluateNumber("1,5") == Catch::Approx(1.5));
+    CHECK(evaluateNumber("1e3") == Catch::Approx(1000.0));
+    CHECK(evaluateNumber("2 - -1") == Catch::Approx(3.0));
+    CHECK_FALSE(evaluateNumber("").has_value());
+    CHECK_FALSE(evaluateNumber("1/0").has_value());
+    CHECK_FALSE(evaluateNumber("(1").has_value());
+    CHECK_FALSE(evaluateNumber("1 2").has_value());
+    CHECK_FALSE(evaluateNumber("abc").has_value());
+}
+
+TEST_CASE("A colour picker is dragged in its square, its hue and its opacity", "[ui][controls][color]")
+{
+    Screen screen;
+    const Entity picker = screen.element({}, {100.0f, 100.0f}, {300.0f, 300.0f}, "Picker");
+    screen.scene.add<devex::scene::UiColorPicker>(
+        picker, devex::scene::UiColorPicker{.color = {1.0f, 1.0f, 1.0f, 1.0f}, .barSize = 20.0f, .spacing = 10.0f, .action = "tint"});
+    screen.update();
+    const auto& chosen = screen.scene.get<devex::scene::UiColorPicker>(picker);
+
+    // The hue of a white changes what the square shows, not the colour.
+    screen.press({290.0f, 100.0f + 170.0f / 3.0f});
+    CHECK(screen.world.held() == picker);
+    CHECK_FALSE(screen.world.wasChanged("tint"));
+    screen.release({290.0f, 100.0f + 170.0f / 3.0f});
+    devex::math::Vec3 hsv{0.0f};
+    REQUIRE(screen.world.pickerHsv(screen.scene, picker, hsv));
+    CHECK(hsv.x == Catch::Approx(1.0f / 3.0f).margin(0.01f));
+
+    // The top right corner of the square is the hue itself: green.
+    screen.press({270.0f, 100.0f});
+    CHECK(screen.world.wasChanged("tint"));
+    CHECK(chosen.color.x == Catch::Approx(0.0f).margin(0.01f));
+    CHECK(chosen.color.y == Catch::Approx(1.0f).margin(0.01f));
+    CHECK(chosen.color.z == Catch::Approx(0.0f).margin(0.01f));
+    // Dragged out of the square, it stays at its edge: black at the bottom.
+    screen.update(UiInput{.pointer = {400.0f, 500.0f}, .pointerDown = true, .pointerMoved = true});
+    CHECK(chosen.color.y == Catch::Approx(0.0f).margin(0.001f));
+    screen.release({400.0f, 500.0f});
+
+    // A black keeps the hue it was chosen with.
+    REQUIRE(screen.world.pickerHsv(screen.scene, picker, hsv));
+    CHECK(hsv.x == Catch::Approx(1.0f / 3.0f).margin(0.01f));
+    CHECK(hsv.y == Catch::Approx(1.0f).margin(0.01f));
+
+    // The bar under them sets the opacity alone.
+    screen.click({200.0f, 290.0f});
+    CHECK(chosen.color.w == Catch::Approx(0.5f).margin(0.01f));
+
+    // A colour set from outside is shown, and one brighter than white keeps its intensity.
+    screen.scene.get<devex::scene::UiColorPicker>(picker).color = {2.0f, 0.0f, 0.0f, 1.0f};
+    screen.update();
+    screen.press({270.0f, 100.0f});
+    CHECK(chosen.color.x == Catch::Approx(2.0f).margin(0.01f));
+    screen.release({270.0f, 100.0f});
+}
+
+TEST_CASE("A dropdown with no option chosen shows its placeholder", "[ui][controls]")
+{
+    Screen screen;
+    const Entity dropdown = screen.element({}, {100.0f, 100.0f}, {300.0f, 130.0f}, "Dropdown");
+    screen.scene.add<UiImage>(dropdown);
+    screen.scene.add<UiText>(dropdown);
+    screen.scene.add<devex::scene::UiDropdown>(
+        dropdown, devex::scene::UiDropdown{.options = {"Easy", "Hard"}, .selected = -1, .placeholder = "Choose"});
+    screen.update();
+    CHECK(screen.scene.get<UiText>(dropdown).text == "Choose");
+    screen.scene.get<devex::scene::UiDropdown>(dropdown).selected = 1;
+    screen.update();
+    CHECK(screen.scene.get<UiText>(dropdown).text == "Hard");
+}

@@ -149,6 +149,8 @@ ComponentRegistry& componentRegistry()
         builtins.add<UiTableRow>();
         builtins.add<UiDragSource>();
         builtins.add<UiDropTarget>();
+        builtins.add<UiNumberField>();
+        builtins.add<UiColorPicker>();
         return builtins;
     }();
     return registry;

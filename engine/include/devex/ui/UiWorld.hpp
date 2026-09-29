@@ -22,6 +22,7 @@
 
 namespace devex::scene {
 class Scene;
+struct UiNumberField;
 }
 
 namespace devex::render {
@@ -189,6 +190,14 @@ public:
     [[nodiscard]] bool wasChanged(std::string_view action) const;
     [[nodiscard]] bool wasChanged(scene::Entity entity) const;
     [[nodiscard]] bool wasCancelled() const noexcept;
+    // The control the pointer holds while it drags it: a slider, a number field, a colour picker.
+    // A tool that makes one step of a drag waits for it to be let go.
+    [[nodiscard]] scene::Entity held() const noexcept;
+    // The dropdown whose list is open, if any.
+    [[nodiscard]] scene::Entity listedDropdown() const noexcept;
+    // The hue, saturation and value a colour picker shows, which keep their hue while the colour is
+    // grey; false for an entity that is not one.
+    [[nodiscard]] bool pickerHsv(const scene::Scene& scene, scene::Entity entity, math::Vec3& hsv) const;
 
     [[nodiscard]] scene::Entity hovered() const noexcept;
     [[nodiscard]] scene::Entity focused() const noexcept;
@@ -278,6 +287,14 @@ private:
     [[nodiscard]] bool updateSliders(scene::Scene& scene, const UiInput& input);
     void changeSlider(scene::Entity entity, scene::UiSlider& slider, float value);
     void editField(scene::Scene& scene, const UiInput& input);
+    // Number fields, in Controls.cpp: dragged sideways once pressed, typed into once clicked, and
+    // their value written into their text.
+    void updateNumberFields(scene::Scene& scene, const UiInput& input);
+    void beginNumberEdit(scene::Scene& scene, scene::Entity entity);
+    void finishNumberEdit(scene::Scene& scene);
+    void setNumber(scene::Entity entity, scene::UiNumberField& field, double value);
+    void writeNumberTexts(scene::Scene& scene) const;
+    void updateColorPickers(scene::Scene& scene, const UiInput& input);
     void updateTints(const scene::Scene& scene, core::Duration delta);
     void click(scene::Scene& scene, scene::Entity entity);
     void submit(const scene::Scene& scene, scene::Entity entity);
@@ -379,6 +396,51 @@ private:
     std::vector<std::string> m_dropActions;
     // Where the pointer was at the last update, which the carried label follows.
     math::Vec2 m_pointer{0.0f};
+
+    // A number field pressed: dragged once the pointer moves far enough, typed into if it is let go
+    // without moving. The value follows `raw`, which keeps what rounding to a step would lose.
+    struct DEVEX_API NumberDrag
+    {
+        scene::Entity entity;
+        math::Vec2 from{0.0f};
+        float lastX = 0.0f;
+        double raw = 0.0;
+        bool moved = false;
+    };
+    std::optional<NumberDrag> m_numberDrag;
+    // The number field being typed into, read once its edit ends unless Escape ended it or its text
+    // is still the one it started with, which may hold fewer digits than the value.
+    scene::Entity m_numberEdit;
+    std::string m_numberEditText;
+    bool m_editCancelled = false;
+
+    // What a colour picker shows beside its colour: the hue kept while the colour is grey, and the
+    // intensity of a colour brighter than white, which the square leaves as it is.
+    struct DEVEX_API PickerState
+    {
+        scene::Entity entity;
+        math::Vec4 color{-1.0f};
+        math::Vec3 hsv{0.0f};
+        float intensity = 1.0f;
+    };
+    enum class PickerPart : std::uint8_t
+    {
+        None,
+        Square,
+        Hue,
+        Alpha,
+    };
+    [[nodiscard]] PickerState& pickerState(scene::Entity entity, math::Vec4 color);
+    std::vector<PickerState> m_pickers;
+    scene::Entity m_pickerHeld;
+    PickerPart m_pickerPart = PickerPart::None;
 };
+
+// The text a number field shows: at most `decimals` digits after the point, without the zeros that
+// end them, and never -0.
+[[nodiscard]] DEVEX_API std::string formatNumber(double value, std::int32_t decimals);
+// What a number field reads from what was typed: a number, or a sum of numbers with + - * / and
+// brackets, a comma read as a point. Nothing when it cannot be read.
+[[nodiscard]] DEVEX_API std::optional<double> evaluateNumber(std::string_view text);
 
 } // namespace devex::ui

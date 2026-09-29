@@ -62,7 +62,31 @@ DEVEX_REFLECT(UiDropdown)
         .field("highlight_color", &UiDropdown::highlightColor, {.color = true})
         .field("arrow_color", &UiDropdown::arrowColor, {.color = true})
         .field("interactable", &UiDropdown::interactable)
-        .field("action", &UiDropdown::action);
+        .field("action", &UiDropdown::action)
+        .field("placeholder", &UiDropdown::placeholder);
+}
+
+DEVEX_REFLECT(UiNumberField)
+{
+    type.field("value", &UiNumberField::value)
+        .field("min_value", &UiNumberField::minValue)
+        .field("max_value", &UiNumberField::maxValue)
+        .field("step", &UiNumberField::step)
+        .field("drag_speed", &UiNumberField::dragSpeed)
+        .field("decimals", &UiNumberField::decimals)
+        .field("format", &UiNumberField::format)
+        .field("interactable", &UiNumberField::interactable)
+        .field("action", &UiNumberField::action);
+}
+
+DEVEX_REFLECT(UiColorPicker)
+{
+    type.field("color", &UiColorPicker::color, {.color = true})
+        .field("alpha", &UiColorPicker::alpha)
+        .field("bar_size", &UiColorPicker::barSize)
+        .field("spacing", &UiColorPicker::spacing)
+        .field("interactable", &UiColorPicker::interactable)
+        .field("action", &UiColorPicker::action);
 }
 
 DEVEX_REFLECT(UiSplitter)

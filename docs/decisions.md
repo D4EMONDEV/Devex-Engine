@@ -2188,6 +2188,41 @@ les assets s'écrivent au fil de leur lecture.
   l'arbre. Tant qu'un champ de `Devex::Ui` a le clavier, ImGui le sait comme pour un de ses
   champs (`WantTextInputNextFrame`) : les raccourcis de l'éditeur laissent les lettres au champ.
   Les entrées de menu montrent leur raccourci contre leur bord droit.
+- **Puis l'inspecteur** (jalon 43), celui des entités ; les inspecteurs des assets, des fichiers
+  de code et des éléments du panneau Animator restent en ImGui dans la même fenêtre (dans un
+  enfant qui défile, la fenêtre ne défilant plus elle-même), et le peintre de tuiles aussi, sous
+  l'entité, comme Godot peint dans un panneau à part. **Comme Godot, en plus soigné** : une carte
+  arrondie par composant, repliée depuis son en-tête (icône teintée, nom en gras, menu ⋮ et clic
+  droit : *Remove Component*), des groupes repliables, une ligne par champ dont le contrôle suit
+  la valeur. Les nombres se **glissent de côté** (Maj pour dix fois plus fin, le curseur devient
+  une double flèche) et se **tapent** après un clic, sommes comprises ; les vecteurs sont des
+  cases x, y, z, w aux lettres colorées ; les rotations s'éditent en angles d'Euler gardés tels
+  quels pendant l'édition, pour qu'ils ne sautent pas ; les couleurs ouvrent un **sélecteur
+  maison** (carré saturation-luminosité, barre des teintes, barre d'opacité sur damier,
+  hexadécimal, et les nombres de la valeur, qui peuvent dépasser 1 pour une lumière) ; les
+  énumérations, couches, groupes de sons, couches de tri, assets et entités sont des listes
+  déroulantes ; les champs d'assets et d'entités prennent ce que FileSystem et l'arbre y lâchent,
+  et ne s'éclairent que pour ce qu'ils acceptent (un glisser d'asset entre dans le panneau
+  typé `asset:texture`, `asset:mesh`...). Un champ qu'un style écrit est grisé et dit pourquoi ;
+  une valeur qui diffère du préfab est marquée d'un trait et d'un libellé en gras, et son menu
+  (clic droit) la ramène. Le statut du style d'un élément, les commandes d'un émetteur et la
+  cuisson du maillage de navigation ont suivi.
+- **Comment le panneau suit la scène** : les entités du panneau sont refaites quand la
+  **signature** de ce qu'il montre change (scène, entités choisies, composants qu'elles
+  partagent, taille des listes, préfab, génération du registre des composants, taille du texte),
+  et seulement alors ; à chaque image, les contrôles reprennent les valeurs de la scène (sauf ceux
+  en cours d'édition), puis, après la mise à jour de l'interface, les changements vont à la scène
+  en direct. **Une édition est un pas d'annulation** : il commence au premier changement (les
+  valeurs de toutes les entités sont gardées) et se clôt quand plus rien ne tient le contrôle
+  (`UiWorld::held()`, `editedField()`), si bien qu'un glisser, une frappe ou un réglage du
+  sélecteur font chacun un pas ; un clic (case, liste, dépôt) en fait un tout de suite. Plusieurs
+  entités montrent ce qu'elles partagent, un tiret où elles diffèrent (le format d'un nombre sans
+  `{}`, le texte indicatif d'un champ, celui d'une liste sans choix) ; un nombre d'un vecteur ne
+  change que cet axe chez chacune. Les longues listes (assets, entités de la scène) ne sont faites
+  qu'au moment où elles peuvent s'ouvrir : sous le pointeur, avec le focus ou déjà ouvertes
+  (`UiWorld::listedDropdown()`). Limites : pas de recherche dans ces listes (dix lignes et la
+  molette), des libellés coupés plutôt qu'abrégés (l'infobulle donne `Composant.champ`), et le
+  sélecteur de couleur reste dans l'image du panneau.
 
 ### Interfaces
 
@@ -2375,6 +2410,25 @@ les assets s'écrivent au fil de leur lecture.
   glisser venu d'ailleurs par `carryFromOutside`, chaque image où il dure. Comme chez Godot, rien
   ne bouge tout seul : Godot passe par `_get_drag_data`, `_can_drop_data` et `_drop_data` sur ses
   nœuds, Devex par des composants et des actions, comme le reste de son interface.
+- **Champs numériques** : `UiNumberField` (valeur, bornes, pas, vitesse de glisser, décimales,
+  format) donne à un `UiText` avec un `UiInput` le comportement du `EditorSpinSlider` de Godot, que
+  les jeux ont aussi : appuyé puis déplacé de 3 pixels, il suit le pointeur de côté (Maj : dix fois
+  plus fin), la valeur gardée à part pour que l'arrondi au pas ne la bloque pas ; cliqué sans
+  bouger, il se tape, le nombre seul sélectionné, et se lit quand le champ est quitté (Entrée ou
+  un clic ailleurs ; Échap le laisse). Ce qui est tapé peut être une somme (`2*3+1`, parenthèses,
+  virgule ou point) et reprendre le texte du format (`90°`) ; un texte inchangé ne touche pas une
+  valeur qui a plus de décimales qu'il n'en montre. Le texte suit la valeur par son format
+  (`{} m`), sans les zéros de fin ; un format sans `{}` s'écrit tel quel. `formatNumber` et
+  `evaluateNumber` sont publics.
+- **Sélecteur de couleur** : `UiColorPicker` choisit une couleur linéaire, comme celles des images,
+  dans un carré de saturation et de luminosité, une barre des teintes à droite et une barre
+  d'opacité dessous, qu'on tire chacun jusqu'au relâchement. Le carré répartit la couleur telle
+  que l'œil la voit (sRGB), dessiné en 8 × 8 cellules dont les coins sont justes, pour que le
+  mélange linéaire du GPU entre eux reste proche ; un gris garde sa teinte, un noir sa saturation,
+  et une couleur plus forte que le blanc son intensité. `devex/ui/Color.hpp` convertit entre
+  linéaire et sRGB, TSV et hexadécimal.
+- **Divers** : `UiWorld::held()` dit quel contrôle le pointeur tient (curseur, nombre, sélecteur) ;
+  une `UiDropdown` sans option choisie montre son `placeholder`.
 - **Double clic** : deux clics sur le même bouton à moins de 0,4 seconde ; le second compte aussi
   comme un clic (`wasDoubleClicked`). `startEditing` donne le clavier à un champ, son texte
   sélectionné, comme un formulaire à son premier champ.
@@ -2946,6 +3000,12 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     l'arbre, renommage dans la ligne, clavier, menus avec leurs raccourcis, œil, préfab et code au
     bout des lignes ; endroit du dépôt dans une cible en C++ et en C# ; exports explicites de la
     bibliothèque du moteur (`DEVEX_API`), passée sous la limite de Windows.
+
+43. ✅ **Inspecteur en Devex UI** — champs numériques glissés ou tapés (`UiNumberField`, sommes
+    comprises) et sélecteur de couleur (`UiColorPicker`) dans `Devex::Ui`, pour les jeux aussi ;
+    inspecteur des entités en cartes repliables, vecteurs aux axes colorés, listes déroulantes,
+    dépôts d'assets et d'entités, valeurs du préfab, champs grisés par les styles, plusieurs
+    entités, un pas d'annulation par édition ; les assets restent en ImGui dans la même fenêtre.
 
 Ensuite, sans ordre figé : CI Linux, la suite du portage de l'éditeur.
 

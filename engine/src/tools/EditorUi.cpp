@@ -340,6 +340,24 @@ void EditorUiKit::refreshTheme(const ThemeColors& colors)
     add("guide", image(written(ImVec4(colors.textDim.x, colors.textDim.y, colors.textDim.z, 0.28f)), 0.0f));
     add("drop_line", image(written(colors.accent), 1.0f));
     add("drop_into", image(written(ImVec4(colors.accent.x, colors.accent.y, colors.accent.z, 0.22f)), 6.0f));
+    // The inspector: a card per component under a header that lights up, labels a little dimmer than
+    // the values, numbers the pointer lights and drags, swatches whose colour is the value's, and the
+    // mark of a value that differs from its prefab's.
+    const ImVec4 card = mixed(colors.panel, colors.raised, 0.35f);
+    add("card", image(written(card), 6.0f));
+    add("card_header", clickable(image(written(mixed(card, colors.raised, 0.55f)), 5.0f)));
+    add("group", clickable(image(written(ImVec4(card.x, card.y, card.z, 0.0f)), 4.0f)));
+    add("label", text(mixed(colors.text, colors.textDim, 0.45f)));
+    add("number", [&] {
+        std::vector<asset::ThemeOverride> values = clickable(image(written(colors.field), 4.0f));
+        values.push_back({"UiText", "color", written(colors.text)});
+        values.push_back({"UiInput", "selection_color", written(ImVec4(colors.accent.x, colors.accent.y, colors.accent.z, 0.45f))});
+        values.push_back({"UiInput", "caret_color", written(colors.text)});
+        return values;
+    }());
+    add("swatch", clickable({{"UiImage", "corner_radius", "4"}}));
+    add("tool", clickable(image(written(ImVec4(colors.raised.x, colors.raised.y, colors.raised.z, 0.6f)), 4.0f)));
+    add("mark", image(written(colors.accent), 1.0f));
     // What is selected of a text that is only read.
     add("selection", {{"UiImage", "color", written(ImVec4(colors.accent.x, colors.accent.y, colors.accent.z, 0.4f))},
                       {"UiImage", "corner_radius", "0"}});

@@ -9,6 +9,7 @@
 #include <devex/asset/import/AssetDatabase.hpp>
 #include <devex/core/Error.hpp>
 #include <devex/core/Time.hpp>
+#include <devex/core/Uuid.hpp>
 #include <devex/platform/Platform.hpp>
 #include <devex/platform/Window.hpp>
 #include <devex/render/Renderer.hpp>
@@ -21,6 +22,7 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -271,6 +273,9 @@ public:
     void setAssetDatabase(asset::AssetDatabase* database) noexcept;
     // Opens an existing UTF-8 file in the dockable text editor.
     void openTextFile(const std::filesystem::path& file);
+    // Selects the entities of the scene, the last one active, as clicks in the scene tree do; the
+    // inspector then shows them.
+    void select(std::span<const core::Uuid> entities);
 
     // Lets the panels preview audio clips on the mixer, which must outlive the overlay, with the
     // clips the function loads. Without it, clips show but cannot be heard.

@@ -207,8 +207,6 @@ void resetTransientEdits(ToolsState& state)
     state.renamedEntity = {};
     state.pendingRowClick = {};
     state.pendingCommand.reset();
-    state.nameBufferEntity = core::Uuid{};
-    state.eulerEditId = 0;
 }
 
 void addAndActivate(ToolsState& state, scene::Scene& scene, SceneDocument document)
