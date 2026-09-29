@@ -1,5 +1,6 @@
 #include "ToolsState.hpp"
 
+#include <devex/core/Profiler.hpp>
 #include <devex/animation/AnimationWorld.hpp>
 #include <devex/asset/AnimationData.hpp>
 #include <devex/core/Log.hpp>
@@ -90,6 +91,7 @@ struct Track
 
 void drawAnimationPanel(ToolsState& state, scene::Scene& scene)
 {
+    DEVEX_PROFILE_SCOPE("Animation panel");
     if (!state.showAnimation)
     {
         return;

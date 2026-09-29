@@ -1,6 +1,7 @@
 #include "ToolsState.hpp"
 #include "TwoDScreen.hpp"
 
+#include <devex/core/Profiler.hpp>
 #include <devex/asset/Project.hpp>
 #include <devex/core/Log.hpp>
 #include <devex/core/Path.hpp>
@@ -730,6 +731,7 @@ void frameSelection(ToolsState& state, const scene::Scene& scene)
 
 void drawViewportPanel(ToolsState& state, scene::Scene& scene)
 {
+    DEVEX_PROFILE_SCOPE("Viewport panel");
     state.viewportHovered = false;
     state.viewportFocused = false;
     state.interfaceFrame.reset();

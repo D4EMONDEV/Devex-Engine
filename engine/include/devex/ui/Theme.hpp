@@ -54,16 +54,23 @@ struct DEVEX_API ElementStyle
 class DEVEX_API ThemeApplier
 {
 public:
+    ThemeApplier();
+    ~ThemeApplier();
+    ThemeApplier(ThemeApplier&&) noexcept;
+    ThemeApplier& operator=(ThemeApplier&&) noexcept;
+
     void setThemes(ThemeSource themes);
     [[nodiscard]] const ThemeSource& themes() const noexcept;
 
     void apply(scene::Scene& scene);
 
 private:
+    struct Compiled;
+
     ThemeSource m_themes;
-    // Every value a theme has written, read from its text once: themes apply every frame, and
-    // reading text is the slow part. Keyed by the text, which stays right when a theme is reloaded.
-    std::unordered_map<std::string, std::shared_ptr<const serialization::TextValue>> m_values;
+    // Every style of every theme, made once into the fields it writes and their values, read from
+    // their text and, for plain values, into their bytes: themes apply every frame to every element.
+    std::unique_ptr<Compiled> m_compiled;
 };
 
 } // namespace devex::ui

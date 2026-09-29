@@ -3,6 +3,7 @@
 // settings are part of the project, written once an edit ends and always before an export starts.
 #include "SettingsUi.hpp"
 
+#include <devex/core/Profiler.hpp>
 #include <devex/asset/Project.hpp>
 #include <devex/core/Log.hpp>
 #include <devex/core/Path.hpp>
@@ -467,6 +468,7 @@ void ExportUi::update(ToolsState& state, EditorUiKit& kit, core::Duration delta)
 
 void drawExportWindow(ToolsState& state)
 {
+    DEVEX_PROFILE_SCOPE("Export window");
     if (!state.showExport || state.database == nullptr)
     {
         return;

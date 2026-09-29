@@ -5,6 +5,7 @@
 #include "CodeHighlight.hpp"
 #include "CodeOutline.hpp"
 
+#include <devex/core/Profiler.hpp>
 #include <devex/core/Log.hpp>
 #include <devex/core/Path.hpp>
 
@@ -703,6 +704,7 @@ void drawScriptSidebar(ToolsState& state, scene::Scene& scene)
 
 void drawTextEditorPanel(ToolsState& state, scene::Scene& scene)
 {
+    DEVEX_PROFILE_SCOPE("Text editor");
     if (auto path = std::exchange(state.dialogAnswers->openText, std::nullopt))
     {
         openTextFile(state, *path);

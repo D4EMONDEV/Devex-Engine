@@ -1,3 +1,4 @@
+#include <devex/core/Profiler.hpp>
 #include "ToolsState.hpp"
 
 #include <format>
@@ -18,6 +19,7 @@ void row(const char* label, const std::string& value)
 
 void drawStatisticsPanel(ToolsState& state, const scene::Scene& scene)
 {
+    DEVEX_PROFILE_SCOPE("Statistics");
     if (ImGui::Begin(statisticsWindow))
     {
         const float averageMilliseconds = state.frameTimes.average();

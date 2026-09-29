@@ -6,6 +6,7 @@
 #include "Selection.hpp"
 #include "ToolsState.hpp"
 
+#include <devex/core/Profiler.hpp>
 #include <devex/asset/Project.hpp>
 #include <devex/core/File.hpp>
 #include <devex/core/Log.hpp>
@@ -273,6 +274,9 @@ struct SceneTreeUi : PanelBuilder
     std::unordered_map<core::Uuid, bool> expanded;
     core::Uuid shownActive;
     core::Uuid renaming;
+    // The components of the game, whose code a row opens, found once for each state of the registry.
+    std::vector<const scene::ComponentType*> gameTypes;
+    std::uint64_t gameTypesGeneration = ~std::uint64_t{0};
 
     void build(ToolsState& state, EditorUiKit& kit);
     void gather(const ToolsState& state, const scene::Scene& edited);
@@ -406,11 +410,11 @@ void SceneTreeUi::addNode(const ToolsState& state, const scene::Scene& edited, E
         node.missingPrefab = !instance->resolved;
     }
     node.prefabEntity = edited.has<scene::PrefabEntity>(entity);
-    for (const scene::ComponentType& type : scene::componentRegistry().types())
+    for (const scene::ComponentType* const type : gameTypes)
     {
-        if (isGameComponent(type.name()) && type.find(edited, entity) != nullptr)
+        if (type->find(edited, entity) != nullptr)
         {
-            node.gameComponent = std::string(type.name());
+            node.gameComponent = std::string(type->name());
             break;
         }
     }
@@ -440,6 +444,20 @@ void SceneTreeUi::addNode(const ToolsState& state, const scene::Scene& edited, E
 
 void SceneTreeUi::gather(const ToolsState& state, const scene::Scene& edited)
 {
+    DEVEX_PROFILE_SCOPE("Scene tree nodes");
+    const scene::ComponentRegistry& registry = scene::componentRegistry();
+    if (gameTypesGeneration != registry.generation())
+    {
+        gameTypesGeneration = registry.generation();
+        gameTypes.clear();
+        for (const scene::ComponentType& type : registry.types())
+        {
+            if (isGameComponent(type.name()))
+            {
+                gameTypes.push_back(&type);
+            }
+        }
+    }
     nodes.clear();
     std::vector<Entity> roots;
     for (Entity root = edited.firstRoot(); root.isValid(); root = edited.nextSibling(root))
@@ -458,6 +476,7 @@ void SceneTreeUi::gather(const ToolsState& state, const scene::Scene& edited)
 
 void SceneTreeUi::fillRows(ToolsState& state, EditorUiKit& kit, const scene::Scene& edited)
 {
+    DEVEX_PROFILE_SCOPE("Scene tree rows");
     const ThemeColors& colors = themeColors();
     const bool editor = state.mode == ToolsMode::Editor;
     const float iconSize = font * 1.15f;
@@ -1074,6 +1093,7 @@ void SceneTreeUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& edit
 
 void drawHierarchyPanel(ToolsState& state, scene::Scene& scene)
 {
+    DEVEX_PROFILE_SCOPE("Scene tree");
     state.hierarchyFocused = false;
     if (!ImGui::Begin(hierarchyWindow, nullptr, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse))
     {

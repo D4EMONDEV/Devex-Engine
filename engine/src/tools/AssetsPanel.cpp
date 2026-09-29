@@ -4,6 +4,7 @@
 #include "EditorUi.hpp"
 #include "ToolsState.hpp"
 
+#include <devex/core/Profiler.hpp>
 #include <devex/asset/Project.hpp>
 #include <devex/core/Log.hpp>
 #include <devex/core/Path.hpp>
@@ -1040,6 +1041,7 @@ bool containsIgnoringCase(std::string_view text, std::string_view part)
 
 void drawAssetsPanel(ToolsState& state, scene::Scene& scene)
 {
+    DEVEX_PROFILE_SCOPE("FileSystem");
     if (!ImGui::Begin(assetsWindow, nullptr, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse))
     {
         ImGui::End();

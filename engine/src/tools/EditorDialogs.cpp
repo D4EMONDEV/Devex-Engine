@@ -4,6 +4,7 @@
 // tells what the editor is made with.
 #include "SettingsUi.hpp"
 
+#include <devex/core/Profiler.hpp>
 #include <devex/core/BuildInfo.hpp>
 #include <devex/core/Path.hpp>
 #include <devex/scene/ComponentRegistry.hpp>
@@ -351,6 +352,7 @@ void EditorDialogsUi::update(ToolsState& state, EditorUiKit& kit, core::Duration
 
 void drawEditorPopups(ToolsState& state, scene::Scene& scene)
 {
+    DEVEX_PROFILE_SCOPE("Dialogs");
     std::optional<DialogKind> requested;
     if (std::exchange(state.openNewScriptPopup, false))
     {

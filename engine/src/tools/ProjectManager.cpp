@@ -3,6 +3,7 @@
 #include "EditorUi.hpp"
 #include "ToolsState.hpp"
 
+#include <devex/core/Profiler.hpp>
 #include <devex/asset/Project.hpp>
 #include <devex/core/BuildInfo.hpp>
 #include <devex/core/Log.hpp>
@@ -879,6 +880,7 @@ void ProjectManagerUi::update(ToolsState& state, EditorUiKit& kit, core::Duratio
 
 void drawProjectManager(ToolsState& state)
 {
+    DEVEX_PROFILE_SCOPE("Project manager");
     if (!state.uiKit)
     {
         state.uiKit = std::make_shared<EditorUiKit>(state.renderer, state.icons,

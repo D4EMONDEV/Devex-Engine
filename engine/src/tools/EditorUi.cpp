@@ -495,6 +495,7 @@ float UiPanel::zoomFor(float font) noexcept
 
 void UiPanel::update(EditorUiKit& kit, core::Duration delta, float zoom)
 {
+    DEVEX_PROFILE_SCOPE("Panel update");
     const ImGuiIO& io = ImGui::GetIO();
     const float pixelsPerPoint = io.DisplayFramebufferScale.x > 0.0f ? io.DisplayFramebufferScale.x : 1.0f;
     const ImVec2 available(std::max(ImGui::GetContentRegionAvail().x, 1.0f), std::max(ImGui::GetContentRegionAvail().y, 1.0f));
@@ -639,6 +640,7 @@ void UiPanel::carryToImGui(const ImVec2& origin, float pixelsPerPoint)
 
 void UiPanel::render(EditorUiKit& kit, render::RenderWorld& world, math::Vec4 background)
 {
+    DEVEX_PROFILE_SCOPE("Panel image");
     if (!std::exchange(m_shown, false))
     {
         return;

@@ -4,6 +4,7 @@
 // components. The theme applies as it is changed; the project is written once an edit ends.
 #include "SettingsUi.hpp"
 
+#include <devex/core/Profiler.hpp>
 #include <devex/core/Log.hpp>
 #include <devex/ui/Color.hpp>
 
@@ -427,6 +428,7 @@ void EditorSettingsUi::update(ToolsState& state, EditorUiKit& kit, core::Duratio
 
 void drawSettingsWindow(ToolsState& state)
 {
+    DEVEX_PROFILE_SCOPE("Editor Settings");
     if (!state.showSettings)
     {
         return;
@@ -929,6 +931,7 @@ void ProjectSettingsUi::update(ToolsState& state, EditorUiKit& kit, core::Durati
 
 void drawProjectSettingsWindow(ToolsState& state)
 {
+    DEVEX_PROFILE_SCOPE("Project Settings");
     if (!state.showProjectSettings || state.database == nullptr)
     {
         return;
@@ -947,6 +950,7 @@ void drawProjectSettingsWindow(ToolsState& state)
 
 void renderFormWindows(ToolsState& state, render::RenderWorld& world)
 {
+    DEVEX_PROFILE_SCOPE("Window images");
     if (!state.uiKit)
     {
         return;

@@ -217,6 +217,7 @@ devex_add_tests(tools
         tools/TextEditorTests.cpp
         tools/ThemeTests.cpp
         tools/ToolsOverlayTests.cpp
+        tools/EditorBenchmark.cpp
         tools/TwoDScreenTests.cpp
     LIBRARIES
         Devex::Engine

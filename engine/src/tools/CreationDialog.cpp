@@ -5,6 +5,7 @@
 #include "EditorUi.hpp"
 #include "ToolsState.hpp"
 
+#include <devex/core/Profiler.hpp>
 #include <devex/asset/Project.hpp>
 #include <devex/core/Log.hpp>
 #include <devex/scene/ComponentRegistry.hpp>
@@ -816,6 +817,7 @@ void openAddComponent(ToolsState& state, std::vector<core::Uuid> targets)
 
 void drawCreationDialog(ToolsState& state, scene::Scene& scene)
 {
+    DEVEX_PROFILE_SCOPE("Create window");
     if (state.creationRequest)
     {
         if (!state.uiKit)

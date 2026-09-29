@@ -895,6 +895,9 @@ void ToolsOverlay::openWindow(EditorWindow window)
     case EditorWindow::About:
         m_state->openAboutPopup = true;
         break;
+    case EditorWindow::Profiler:
+        m_state->showProfiler = true;
+        break;
     }
 }
 

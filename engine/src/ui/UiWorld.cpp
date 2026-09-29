@@ -1,6 +1,7 @@
 #include <devex/ui/UiWorld.hpp>
 
 #include <devex/asset/ThemeData.hpp>
+#include <devex/core/Profiler.hpp>
 #include <devex/reflection/Reflection.hpp>
 #include <devex/scene/ComponentRegistry.hpp>
 #include <devex/scene/FieldValue.hpp>
@@ -275,6 +276,7 @@ struct FieldHit
 void UiWorld::update(scene::Scene& scene, math::Vec2 windowSize, const UiInput& input,
                      core::Duration delta)
 {
+    DEVEX_PROFILE_SCOPE("UI update");
     const float seconds = std::chrono::duration<float>(delta).count();
     m_clock += static_cast<double>(seconds);
     m_windowSize = windowSize;
@@ -294,8 +296,14 @@ void UiWorld::update(scene::Scene& scene, math::Vec2 windowSize, const UiInput& 
 
     updateBindings(scene);
     // Before the layout, so that a style that moves or sizes an element does so this frame.
-    m_theme.apply(scene);
-    layoutCanvases(scene);
+    {
+        DEVEX_PROFILE_SCOPE("UI styles");
+        m_theme.apply(scene);
+    }
+    {
+        DEVEX_PROFILE_SCOPE("UI layout");
+        layoutCanvases(scene);
+    }
     findModal(scene);
 
     // What stands over the canvases takes the pointer first: the list of an open dropdown, the
@@ -1158,6 +1166,7 @@ void UiWorld::submit(const scene::Scene& scene, scene::Entity entity)
 void UiWorld::build(const scene::Scene& scene, const DrawContext& context,
                     render::RenderWorld& world) const
 {
+    DEVEX_PROFILE_SCOPE("UI draw list");
     DrawContext withTints = context;
     if (!withTints.tint)
     {

@@ -1,5 +1,6 @@
 #include "InspectorUi.hpp"
 
+#include <devex/core/Profiler.hpp>
 #include <devex/animation/AnimationWorld.hpp>
 #include <devex/asset/import/AnimatorFile.hpp>
 #include <devex/core/File.hpp>
@@ -1969,6 +1970,7 @@ private:
 
 void drawAnimatorPanel(ToolsState& state, scene::Scene& scene)
 {
+    DEVEX_PROFILE_SCOPE("Animator panel");
     AnimatorEditor& editor = state.animatorEditor;
     if (!state.showAnimator)
     {

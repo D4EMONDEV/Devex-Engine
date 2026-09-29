@@ -84,6 +84,8 @@ enum class EditorWindow : std::uint8_t
     Debugging,
     NewScript,
     About,
+    // The Profiler panel, which records frames while it is open.
+    Profiler,
 };
 
 // The state of the project's game code, shown by the editor.

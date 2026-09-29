@@ -1,5 +1,6 @@
 #include "ToolsState.hpp"
 
+#include <devex/core/Profiler.hpp>
 #include <devex/asset/Project.hpp>
 #include <devex/core/BuildInfo.hpp>
 #include <devex/core/Log.hpp>
@@ -406,6 +407,7 @@ void drawMainScreenSwitch(ToolsState& state)
 
 void drawEditorMenus(ToolsState& state, scene::Scene& scene)
 {
+    DEVEX_PROFILE_SCOPE("Menus");
     const ImGuiStyle& style = ImGui::GetStyle();
     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(style.FramePadding.x, style.FramePadding.y * 1.6f));
     const bool open = ImGui::BeginMainMenuBar();
@@ -467,6 +469,7 @@ void drawEditorMenus(ToolsState& state, scene::Scene& scene)
 
 void drawStatusBar(ToolsState& state, const scene::Scene& scene)
 {
+    DEVEX_PROFILE_SCOPE("Status bar");
     const ThemeColors& colors = themeColors();
     const ImGuiStyle& style = ImGui::GetStyle();
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(style.WindowPadding.x, style.FramePadding.y * 0.6f));

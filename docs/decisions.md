@@ -2369,6 +2369,17 @@ les assets s'écrivent au fil de leur lecture.
   les change est repris à la frame suivante. Chaque texte de valeur n'est lu qu'une fois (le cache
   est indexé par le texte, qui reste juste quand un thème est relu), et un thème modifié s'applique
   à la frame qui suit sa réimportation.
+- **Des styles compilés** : chaque style d'un thème est fait une fois en la liste des champs qu'il
+  écrit (type de composant, champ, valeur lue, et pour les valeurs simples — nombres, vecteurs,
+  booléens, énumérations — leurs octets, recopiés tels quels) ; le thème d'un canevas est demandé
+  une fois par passe, et partagé par les éléments d'un même parent. Chercher chaque frame le style
+  par son nom parmi une cinquantaine, puis le composant et le champ par leurs noms, coûtait à
+  l'éditeur, fait de milliers d'éléments stylés, 14 ms par image en Debug : 1 ms désormais. Un
+  thème qu'aucun élément ne suit est oublié, et tout est refait quand le code du jeu est rechargé.
+- **Profilage** : `UiWorld` mesure ses styles, sa mise en page et sa liste de dessin, et l'éditeur
+  chacun de ses panneaux (arbre de scène, FileSystem, inspecteur, fenêtres...) : le panneau
+  Profiler dit où va le temps. Un banc de mesure caché (`devex_tools_tests "Editor frame
+  benchmark"`) ouvre une copie de Sandbox dans une fenêtre cachée et imprime ces zones.
 - **Thèmes dans l'éditeur** : hors Play, l'éditeur applique lui aussi les thèmes à la scène éditée,
   pour que l'écran 2D et l'inspecteur montrent l'interface telle que le jeu la dessinera ; ces
   écritures ne passent pas par l'historique et ne marquent pas la scène comme modifiée. Dans

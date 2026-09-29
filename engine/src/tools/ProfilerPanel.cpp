@@ -773,6 +773,7 @@ void drawFrames(ProfilerView& view, std::span<const FramePtr> frames, const core
 
 void drawProfilerPanel(ToolsState& state)
 {
+    DEVEX_PROFILE_SCOPE("Profiler panel");
     if (!state.showProfiler)
     {
         return;

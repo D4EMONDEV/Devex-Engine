@@ -4,6 +4,7 @@
 #include "EditorUi.hpp"
 #include "ToolsState.hpp"
 
+#include <devex/core/Profiler.hpp>
 #include <devex/asset/AssetId.hpp>
 
 #include <imgui_internal.h>
@@ -95,6 +96,7 @@ bool drawAssetPicker(ToolsState& state, const char* id, std::optional<asset::Ass
 
 void drawInspectorPanel(ToolsState& state, scene::Scene& scene)
 {
+    DEVEX_PROFILE_SCOPE("Inspector");
     if (!ImGui::Begin(inspectorWindow, nullptr, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse))
     {
         ImGui::End();

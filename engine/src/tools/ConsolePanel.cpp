@@ -4,6 +4,7 @@
 #include "EditorUi.hpp"
 #include "ToolsState.hpp"
 
+#include <devex/core/Profiler.hpp>
 #include <devex/scene/UiComponents.hpp>
 #include <devex/ui/TextLayout.hpp>
 
@@ -706,6 +707,7 @@ void OutputUi::update(ToolsState& state, EditorUiKit& kit, core::Duration delta)
 
 void drawConsolePanel(ToolsState& state)
 {
+    DEVEX_PROFILE_SCOPE("Output");
     // A new layout shows the output rather than the statistics docked with it.
     if (state.selectOutputTabFrames > 0 && --state.selectOutputTabFrames == 0)
     {
