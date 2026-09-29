@@ -75,6 +75,17 @@ enum class PlayState : std::uint8_t
     Paused,
 };
 
+// The windows and dialogs of the editor its menus open.
+enum class EditorWindow : std::uint8_t
+{
+    EditorSettings,
+    ProjectSettings,
+    Export,
+    Debugging,
+    NewScript,
+    About,
+};
+
 // The state of the project's game code, shown by the editor.
 struct DEVEX_API GameCodeStatus
 {
@@ -278,6 +289,8 @@ public:
     void select(std::span<const core::Uuid> entities);
     // Shows an asset of the project in the inspector, as a click in FileSystem does.
     void selectAsset(asset::AssetId asset);
+    // Opens a window or a dialog of the editor, as its menu does.
+    void openWindow(EditorWindow window);
 
     // Lets the panels preview audio clips on the mixer, which must outlive the overlay, with the
     // clips the function loads. Without it, clips show but cannot be heard.

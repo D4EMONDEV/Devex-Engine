@@ -86,6 +86,11 @@ struct OutputUi;
 struct CreationDialogUi;
 struct SceneTreeUi;
 struct InspectorUi;
+struct EditorSettingsUi;
+struct ProjectSettingsUi;
+struct ExportUi;
+struct DebuggingUi;
+struct EditorDialogsUi;
 
 // Window names are also their identifiers in the saved layout.
 inline constexpr const char* hierarchyWindow = "Scene";
@@ -445,6 +450,12 @@ struct DEVEX_API ToolsState
     std::shared_ptr<CreationDialogUi> creationDialog;
     std::shared_ptr<SceneTreeUi> sceneTreeUi;
     std::shared_ptr<InspectorUi> inspectorUi;
+    // The windows that float over the others, and the dialogs.
+    std::shared_ptr<EditorSettingsUi> editorSettingsUi;
+    std::shared_ptr<ProjectSettingsUi> projectSettingsUi;
+    std::shared_ptr<ExportUi> exportUi;
+    std::shared_ptr<DebuggingUi> debuggingUi;
+    std::shared_ptr<EditorDialogsUi> dialogsUi;
     // Opens the window at the next frame.
     std::optional<CreationRequest> creationRequest;
     EditorFonts fonts;
@@ -650,19 +661,12 @@ struct DEVEX_API ToolsState
     // The kind of the edited scene on the previous frame: the screen follows it when it changes.
     std::optional<scene::SceneKind> shownSceneKind;
     bool showProjectSettings = false;
-    // The binding of the input settings waiting for a key or a gamepad button, by action and
-    // binding, and the filter of the list bindings are chosen from.
-    std::optional<std::pair<std::size_t, std::size_t>> listeningBinding;
-    std::string inputSourceFilter;
     // The key pressed since the previous frame, whatever window had the keyboard, and the one of
     // this frame: the input settings bind it by its place, which ImGui does not tell.
     std::optional<platform::Key> notifiedKey;
     std::optional<platform::Key> pressedKey;
-    // Edits of the project settings, saved once the edited field is released.
-    std::optional<asset::Project> pendingProject;
     // Export.
     bool showExport = false;
-    std::optional<asset::ExportSettings> pendingExport;
     std::vector<EngineBuildChoice> engineBuilds;
     ExportStatus exportStatus;
     GizmoHandle hoveredHandle = GizmoHandle::None;
@@ -711,11 +715,11 @@ DEVEX_API void discardPendingAction(ToolsState& state, scene::Scene& scene);
 DEVEX_API void drawCodeArea(ToolsState& state, TextDocument& document);
 DEVEX_API void drawFindBar(ToolsState& state, TextDocument& document);
 DEVEX_API void drawGoToLinePopup(ToolsState& state, TextDocument& document);
-// Asks for a new component file and, once it is compiled, adds it to the entity.
-DEVEX_API void drawNewScriptPopup(ToolsState& state);
+// Adds the component asked for in New Script to its entity, once its code is compiled and loaded.
 DEVEX_API void updatePendingScript(ToolsState& state, scene::Scene& scene);
 // How to attach a debugger to the C# code, and whether Play waits for one.
 DEVEX_API void drawDebuggingWindow(ToolsState& state);
+DEVEX_API void renderDebuggingWindow(ToolsState& state, render::RenderWorld& world);
 // Opens a file in the code editor of the system.
 DEVEX_API void openInCodeEditor(ToolsState& state, const std::filesystem::path& file);
 DEVEX_API void drawStatisticsPanel(ToolsState& state, const scene::Scene& scene);
@@ -801,12 +805,18 @@ DEVEX_API void setMainScreen(ToolsState& state, MainScreen screen);
 // The window of a screen, as the dock builder and the focus use it.
 [[nodiscard]] DEVEX_API const char* windowOf(MainScreen screen) noexcept;
 DEVEX_API void drawStatusBar(ToolsState& state, const scene::Scene& scene);
+// The windows of settings and the Export window, made with the interface of the engine, each floating
+// over the others while it is open.
 DEVEX_API void drawSettingsWindow(ToolsState& state);
 DEVEX_API void drawProjectSettingsWindow(ToolsState& state);
-// The Input page of the project settings: contexts, actions and their bindings.
-DEVEX_API void drawInputSettings(ToolsState& state, asset::InputSettings& input);
 DEVEX_API void drawExportWindow(ToolsState& state);
+DEVEX_API void renderExportWindow(ToolsState& state, render::RenderWorld& world);
+// The dialogs of the editor: New Script, the unsaved changes an action would drop, and About.
 DEVEX_API void drawEditorPopups(ToolsState& state, scene::Scene& scene);
+DEVEX_API void renderEditorDialogs(ToolsState& state, render::RenderWorld& world);
+// Adds the images of the windows of settings, of the Export and Debugging windows and of the dialogs
+// to the frame, those drawn this frame.
+DEVEX_API void renderFormWindows(ToolsState& state, render::RenderWorld& world);
 DEVEX_API void handleEditorShortcuts(ToolsState& state, scene::Scene& scene);
 // Opens the project's scenes when the project changed, handles dialog answers and pick results.
 DEVEX_API void updateEditorSession(ToolsState& state, scene::Scene& scene);

@@ -4109,8 +4109,9 @@ core::Result<void> VulkanRenderer::initializeImGui()
     info.Device = m_device.handle();
     info.QueueFamily = m_device.queueFamily();
     info.Queue = m_device.queue();
-    // The backend creates a small pool for the textures it binds.
-    info.DescriptorPoolSize = 16;
+    // The backend creates a small pool for the textures it binds: the font, the viewport and each
+    // image of the panels made with the interface of the engine, once per frame in flight.
+    info.DescriptorPoolSize = 64;
     info.MinImageCount = std::max(m_swapchain->imageCount(), 2u);
     info.ImageCount = info.MinImageCount;
     info.UseDynamicRendering = true;

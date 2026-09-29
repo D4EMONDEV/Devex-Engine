@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <string>
 #include <string_view>
 
@@ -109,6 +110,15 @@ struct Builder
 [[nodiscard]] bool isPlain(const LaidOutRect& rect) noexcept
 {
     return rect.rotation == 0.0f && rect.scale.x == 1.0f && rect.scale.y == 1.0f;
+}
+
+// A point of a placed element as its turn and its scale move it, around its pivot.
+[[nodiscard]] math::Vec2 turned(const LaidOutRect& rect, math::Vec2 point) noexcept
+{
+    const float cosine = std::cos(rect.rotation);
+    const float sine = std::sin(rect.rotation);
+    const math::Vec2 local{(point.x - rect.pivot.x) * rect.scale.x, (point.y - rect.pivot.y) * rect.scale.y};
+    return math::Vec2{rect.pivot.x + local.x * cosine - local.y * sine, rect.pivot.y + local.x * sine + local.y * cosine};
 }
 
 [[nodiscard]] math::Vec4 withOpacity(math::Vec4 color, float opacity) noexcept
@@ -270,15 +280,27 @@ void drawTextLayout(Builder& builder, const DrawContext& context, const LaidOutR
         }
         render::UiDraw& draw =
             builder.batch(render::UiDrawKind::Quad, texture, math::Vec4{0.0f}, 0.0f, 1.0f);
-        builder.quad(draw, image.min, image.max, math::Vec2{0.0f, 0.0f}, math::Vec2{1.0f, 1.0f},
-                     withOpacity(math::Vec4{1.0f, 1.0f, 1.0f, 1.0f}, rect.opacity));
+        const math::Vec4 white = withOpacity(math::Vec4{1.0f, 1.0f, 1.0f, 1.0f}, rect.opacity);
+        if (isPlain(rect))
+        {
+            builder.quad(draw, image.min, image.max, math::Vec2{0.0f, 0.0f}, math::Vec2{1.0f, 1.0f}, white);
+        }
+        else
+        {
+            const std::array<math::Vec2, 4> corners{turned(rect, image.min), turned(rect, math::Vec2{image.max.x, image.min.y}),
+                                                    turned(rect, image.max), turned(rect, math::Vec2{image.min.x, image.max.y})};
+            builder.quad(draw, corners, math::Vec2{0.0f, 0.0f}, math::Vec2{1.0f, 1.0f}, white);
+        }
     }
     if (letters.glyphs.empty())
     {
         return;
     }
 
-    const float sharpness = textSharpness(*font.data, text.size) * builder.scale;
+    // A turned or scaled element turns and scales its letters with it.
+    const bool plainRect = isPlain(rect);
+    const float sharpness = textSharpness(*font.data, text.size) * builder.scale *
+                            (plainRect ? 1.0f : std::sqrt(std::abs(rect.scale.x * rect.scale.y)));
     const auto drawGlyphs = [&](math::Vec4 color, math::Vec2 shift, bool plain) {
         render::UiDraw& draw =
             builder.batch(render::UiDrawKind::Text, font.atlas, math::Vec4{0.0f}, 0.0f, sharpness);
@@ -291,13 +313,20 @@ void drawTextLayout(Builder& builder, const DrawContext& context, const LaidOutR
             for (int pass = 0; pass < passes; ++pass)
             {
                 const math::Vec2 step = shift + math::Vec2{pass * text.size * 0.04f, 0.0f};
-                if (lean > 0.0f)
+                if (lean > 0.0f || !plainRect)
                 {
-                    const std::array<math::Vec2, 4> corners{
+                    std::array<math::Vec2, 4> corners{
                         math::Vec2{glyph.min.x + lean, glyph.min.y} + step,
                         math::Vec2{glyph.max.x + lean, glyph.min.y} + step,
                         math::Vec2{glyph.max.x, glyph.max.y} + step,
                         math::Vec2{glyph.min.x, glyph.max.y} + step};
+                    if (!plainRect)
+                    {
+                        for (math::Vec2& corner : corners)
+                        {
+                            corner = turned(rect, corner);
+                        }
+                    }
                     builder.quad(draw, corners, glyph.uvMin, glyph.uvMax, tint);
                 }
                 else

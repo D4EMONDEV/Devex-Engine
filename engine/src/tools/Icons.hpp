@@ -34,6 +34,7 @@ namespace devex::tools::detail {
     ICON(Check, "check")                             \
     ICON(ChevronDown, "chevron-down")                \
     ICON(ChevronRight, "chevron-right")              \
+    ICON(ChevronUp, "chevron-up")                    \
     ICON(Circle, "circle")                           \
     ICON(CircleCheck, "circle-check")                \
     ICON(CircleDashed, "circle-dashed")              \

@@ -795,7 +795,10 @@ target_sources(devex_tools
         src/tools/EditorView.cpp
         src/tools/EditorView.hpp
         src/tools/EntityEditing.cpp
+        src/tools/EditorDialogs.cpp
         src/tools/ExportWindow.cpp
+        src/tools/FormUi.cpp
+        src/tools/FormUi.hpp
         src/tools/Gizmo.cpp
         src/tools/Gizmo.hpp
         src/tools/HierarchyPanel.cpp
@@ -817,6 +820,8 @@ target_sources(devex_tools
         src/tools/Selection.cpp
         src/tools/Selection.hpp
         src/tools/SceneTabs.hpp
+        src/tools/SettingsUi.hpp
+        src/tools/SettingsWindows.cpp
         src/tools/StatisticsPanel.cpp
         src/tools/Theme.cpp
         src/tools/Theme.hpp

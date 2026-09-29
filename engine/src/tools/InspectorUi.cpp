@@ -45,12 +45,6 @@ namespace {
 // The image the panel is drawn into, among the interface surfaces of the editor.
 constexpr std::uint32_t inspectorSurface = 6;
 constexpr std::array<std::string_view, 4> axisLetters{"x", "y", "z", "w"};
-constexpr std::array<std::string_view, 4> channelLetters{"r", "g", "b", "a"};
-
-[[nodiscard]] std::string keyOf(const Section& section, int group)
-{
-    return group < 0 ? section.name : std::format("{}/{}", section.name, section.groups[static_cast<std::size_t>(group)]);
-}
 
 [[nodiscard]] void* fieldAddress(const scene::Scene& edited, Entity entity, const PropertyRow& row)
 {
@@ -179,14 +173,6 @@ void writeColor(const reflection::FieldInfo& field, void* address, math::Vec4 co
     }
 }
 
-// The hexadecimal of a colour as the eye sees it; a colour brighter than white shows its hue.
-[[nodiscard]] std::string hexOf(math::Vec4 color, bool alpha)
-{
-    const float intensity = std::max({1.0f, color.x, color.y, color.z});
-    return "#" + ui::hexFromColor(ui::srgbFromLinear(math::Vec4{color.x / intensity, color.y / intensity, color.z / intensity, color.w}),
-                                  alpha);
-}
-
 // How the numbers of a field are dragged and written.
 [[nodiscard]] scene::UiNumberField numberSettings(const reflection::FieldInfo& field)
 {
@@ -248,7 +234,7 @@ void writeColor(const reflection::FieldInfo& field, void* address, math::Vec4 co
 } // namespace
 
 InspectorUi::InspectorUi()
-    : PanelBuilder(inspectorSurface)
+    : FormUi(inspectorSurface)
 {
 }
 
@@ -267,47 +253,14 @@ void InspectorUi::each(const scene::Scene& edited, std::span<const Entity> inspe
 void InspectorUi::build(ToolsState& state, EditorUiKit& kit)
 {
     built = true;
-    const ThemeColors& colors = themeColors();
     const Entity root = add({}, "Inspector", whole());
-    scroll = add(root, "Scroll", whole(), "scroll");
-    scene().add<scene::UiScroll>(scroll, scene::UiScroll{});
-    content = add(scroll, "Content",
-                  UiRect{.anchorMin = {0.0f, 0.0f}, .anchorMax = {1.0f, 0.0f}, .offsetMin = {font * 0.3f, font * 0.3f},
-                         .offsetMax = {-font * 0.3f - 8.0f, 0.0f}});
-    scene().add<scene::UiLayout>(content, scene::UiLayout{.kind = scene::UiLayoutKind::Column,
-                                                          .spacing = font * 0.45f,
-                                                          .align = scene::TextAlign::Left});
+    buildForm(root, whole());
 
     componentMenu = menu("Component menu", font * 14.0f);
     removeComponent = menuItem(kit, componentMenu, Icon::Trash, "Remove Component");
     revertMenu = menu("Revert menu", font * 15.0f);
     revert = menuItem(kit, revertMenu, Icon::Undo, "Revert to Prefab Value");
-
-    // The colour picker: the square and its bars, the hexadecimal the eye sees, and the numbers of
-    // the value, which may go past 1 for a light brighter than white.
-    colorPopup = menu("Color", font * 17.0f);
-    scene::UiLayout& layout = scene().get<scene::UiLayout>(colorPopup);
-    layout.spacing = font * 0.45f;
-    layout.padding = math::Vec4{font * 0.6f};
-    picker = add(colorPopup, "Picker", wide(font * 11.0f));
-    scene().add<scene::UiColorPicker>(picker, scene::UiColorPicker{.barSize = std::round(font * 1.1f), .spacing = std::round(font * 0.5f)});
-    const Entity hexRow = add(colorPopup, "Hex", wide(line));
-    text(hexRow, UiRect{.anchorMin = {0.0f, 0.0f}, .anchorMax = {0.0f, 1.0f}, .offsetMin = {0.0f, 0.0f}, .offsetMax = {font * 2.6f, 0.0f}},
-         "Hex", "dim");
-    hexField = field(hexRow,
-                     UiRect{.anchorMin = {0.0f, 0.0f}, .anchorMax = {1.0f, 1.0f}, .offsetMin = {font * 2.8f, 2.0f}, .offsetMax = {0.0f, -2.0f}},
-                     "", "");
-    scene().get<scene::UiText>(hexField).font = EditorUiKit::monoFont();
-    channelRow = add(colorPopup, "Channels", wide(line - 4.0f));
-    scene().add<scene::UiLayout>(channelRow, scene::UiLayout{.kind = scene::UiLayoutKind::Row,
-                                                             .spacing = font * 0.3f,
-                                                             .equalSize = true,
-                                                             .align = scene::TextAlign::Left});
-    const std::array<ImVec4, 4> channelColors{colors.axisX, colors.axisY, colors.axisZ, colors.textDim};
-    for (std::size_t index = 0; index < channels.size(); ++index)
-    {
-        channels[index] = numberBox(channelRow, channelLetters[index], channelColors[index], {.dragSpeed = 0.005f, .decimals = 3});
-    }
+    buildColorPopup();
 
     // Entities come from the scene tree, and assets from FileSystem, named by their type so that a
     // field lights up only for what it takes.
@@ -351,53 +304,6 @@ void InspectorUi::build(ToolsState& state, EditorUiKit& kit)
                                    .uv = sprite->uvRect(),
                                    .size = math::Vec2{static_cast<float>(sprite->width), static_cast<float>(sprite->height)}};
         });
-}
-
-Entity InspectorUi::numberBox(Entity parent, std::string_view letter, ImVec4 letterColor, const scene::UiNumberField& settings)
-{
-    const Entity box = add(parent, "Number", UiRect{.anchorMin = {0.0f, 0.0f}, .anchorMax = {0.0f, 1.0f}, .offsetMin = {0.0f, 0.0f}, .offsetMax = {0.0f, 0.0f}},
-                           "number");
-    scene().add<scene::UiImage>(box);
-    scene().add<scene::UiText>(box, scene::UiText{.text = "",
-                                                  .font = EditorUiKit::regularFont(),
-                                                  .size = font,
-                                                  .verticalAlign = scene::TextVerticalAlign::Middle,
-                                                  .wrap = false});
-    scene().add<scene::UiInput>(box, scene::UiInput{.padding = {letter.empty() ? font * 0.55f : font * 1.55f, 0.0f}});
-    scene().add<scene::UiNumberField>(box, settings);
-    // For the light the pointer gives it.
-    scene().add<scene::UiButton>(box);
-    if (!letter.empty())
-    {
-        const Entity mark = text(box, UiRect{.anchorMin = {0.0f, 0.0f}, .anchorMax = {0.0f, 1.0f}, .offsetMin = {font * 0.45f, 0.0f},
-                                             .offsetMax = {font * 1.4f, 0.0f}},
-                                 std::string(letter), {}, true);
-        scene().get<scene::UiText>(mark).color = linearColor(letterColor);
-    }
-    return box;
-}
-
-Button InspectorUi::toolButton(EditorUiKit& kit, Entity parent, Icon glyph, UiRect rect)
-{
-    Button made;
-    made.entity = add(parent, "Button", rect, "tool");
-    scene().add<scene::UiImage>(made.entity);
-    scene().add<scene::UiButton>(made.entity);
-    const float inset = std::round((rect.offsetMax.y - rect.offsetMin.y) * 0.2f);
-    made.icon = icon(kit, made.entity, whole(math::Vec4{inset}), glyph, "icon_dim");
-    return made;
-}
-
-void InspectorUi::fitText(EditorUiKit& kit, Entity entity, std::string value, bool bold)
-{
-    scene::UiText& shown = scene().get<scene::UiText>(entity);
-    if (shown.text == value)
-    {
-        return;
-    }
-    UiRect& rect = scene().get<UiRect>(entity);
-    rect.offsetMax.x = rect.offsetMin.x + kit.textWidth(bold ? EditorUiKit::boldFont() : EditorUiKit::regularFont(), value, shown.size) + 2.0f;
-    shown.text = std::move(value);
 }
 
 std::string InspectorUi::signatureOf(const scene::Scene& edited, std::span<const Entity> inspected) const
@@ -458,37 +364,16 @@ void InspectorUi::clear(ToolsState& state, const scene::Scene& edited)
     }
     generation = scene::componentRegistry().generation();
     ui::UiWorld& world = panel.world();
-    for (const Entity popup : {componentMenu, revertMenu, colorPopup})
+    for (const Entity popup : {componentMenu, revertMenu})
     {
         world.closePopup(scene(), popup);
     }
     // What a page made outside the content goes with it.
-    for (const Entity made : pageEntities)
-    {
-        if (scene().isAlive(made))
-        {
-            world.closePopup(scene(), made);
-            scene().destroyEntity(made);
-        }
-    }
-    pageEntities.clear();
-    formRows.clear();
-    grids.clear();
+    clearForm();
     colorRow.reset();
     revertRow.reset();
     menuSection.reset();
     naming = false;
-    hexTyping = false;
-    std::vector<Entity> children;
-    for (Entity child = scene().firstChild(content); child.isValid(); child = scene().nextSibling(child))
-    {
-        children.push_back(child);
-    }
-    for (const Entity child : children)
-    {
-        scene().destroyEntity(child);
-    }
-    sections.clear();
     rows.clear();
     nameIcon = nameField = nameMark = uuidText = countText = Entity{};
     prefabIcon = prefabLead = prefabTitle = prefabTail = Entity{};
@@ -509,7 +394,7 @@ void InspectorUi::rebuild(ToolsState& state, EditorUiKit& kit, scene::Scene& edi
             continue;
         }
         const std::string name(type.name());
-        Section& section = addSection(kit, name, componentIcon(name), &type);
+        Section& section = addComponentSection(kit, name, componentIcon(name), &type);
         int group = -1;
         for (const reflection::FieldInfo& field : type.type->fields)
         {
@@ -638,35 +523,9 @@ void InspectorUi::buildTop(EditorUiKit& kit, const scene::Scene& edited, std::sp
     tooltip(makeLocal.entity, "Turns the instance into ordinary entities, no longer linked to the prefab");
 }
 
-Section& InspectorUi::addSection(EditorUiKit& kit, std::string name, const EntityIcon& look, const scene::ComponentType* type)
+Section& InspectorUi::addComponentSection(EditorUiKit& kit, std::string name, const EntityIcon& look, const scene::ComponentType* type)
 {
-    Section& section = sections.emplace_back();
-    section.type = type;
-    section.name = std::move(name);
-    section.card = add(content, "Component", wide(headerHeight + pad * 2.0f), "card");
-    scene().add<scene::UiImage>(section.card);
-    scene().add<scene::UiLayout>(section.card, scene::UiLayout{.kind = scene::UiLayoutKind::Column,
-                                                               .spacing = gap,
-                                                               .padding = math::Vec4{pad},
-                                                               .align = scene::TextAlign::Left});
-    section.header = add(section.card, "Header", wide(headerHeight), "card_header");
-    scene().add<scene::UiImage>(section.header);
-    scene().add<scene::UiButton>(section.header);
-    scene().add<scene::UiFoldout>(section.header);
-    // The arrow of the foldout stands in the first square of the header.
-    const float arrow = std::min(headerHeight, 28.0f);
-    const float iconSize = std::round(font * 1.15f);
-    section.icon = icon(kit, section.header, UiRect{.anchorMin = {0.0f, 0.5f}, .anchorMax = {0.0f, 0.5f}, .offsetMin = {arrow, -iconSize * 0.5f},
-                                                    .offsetMax = {arrow + iconSize, iconSize * 0.5f}},
-                        iconOf(look.icon), {});
-    scene().get<scene::UiImage>(section.icon).color = linearColor(look.color);
-    section.title = text(section.header, UiRect{.anchorMin = {0.0f, 0.0f}, .anchorMax = {1.0f, 1.0f}, .offsetMin = {arrow + iconSize + font * 0.5f, 0.0f},
-                                                .offsetMax = {-headerHeight, 0.0f}},
-                         section.name, "text", true);
-    section.added = add(section.header, "Added", UiRect{.anchorMin = {0.0f, 0.0f}, .anchorMax = {0.0f, 1.0f}, .offsetMin = {0.0f, 4.0f},
-                                                        .offsetMax = {3.0f, -4.0f}, .visible = false},
-                        "mark");
-    scene().add<scene::UiImage>(section.added, scene::UiImage{.raycastTarget = false});
+    Section& section = addSection(kit, std::move(name), look, type);
     if (type != nullptr)
     {
         const float size = std::round(headerHeight * 0.8f);
@@ -950,7 +809,7 @@ void InspectorUi::sync(ToolsState& state, EditorUiKit& kit, scene::Scene& edited
     {
         syncRow(state, edited, inspected, row, style, base.get(), prefabEntity, editing);
     }
-    syncColorPopup(edited, inspected);
+    syncEntityColor(edited, inspected);
     layoutCards();
 }
 
@@ -1369,7 +1228,7 @@ void InspectorUi::syncExtras(ToolsState& state, EditorUiKit& kit, scene::Scene& 
     }
 }
 
-void InspectorUi::syncColorPopup(const scene::Scene& edited, std::span<const Entity> inspected)
+void InspectorUi::syncEntityColor(const scene::Scene& edited, std::span<const Entity> inspected)
 {
     if (!colorRow)
     {
@@ -1420,57 +1279,6 @@ void InspectorUi::syncColorPopup(const scene::Scene& edited, std::span<const Ent
     UiRect& popup = scene().get<UiRect>(colorPopup);
     const float height = layout.padding.y + layout.padding.w + font * 11.0f + line + (line - 4.0f) + layout.spacing * 2.0f;
     popup.offsetMax.y = popup.offsetMin.y + height;
-}
-
-void InspectorUi::layoutCards()
-{
-    // The rows of the pages follow the width of the panel, as those of the components do.
-    for (const FormRow& row : formRows)
-    {
-        scene().get<UiRect>(scene().parent(row.label)).offsetMax.x = labelWidth - font * 0.4f;
-        scene().get<UiRect>(row.editor).offsetMin.x = labelWidth;
-    }
-    // Grids of sprites wrap at the width of their card: as many columns as fit, as many rows as needed.
-    const float room = std::max(panel.size().x - font * 0.6f - 8.0f - pad * 2.0f - font * 0.35f, 1.0f);
-    for (SpriteGrid* grid : grids)
-    {
-        const float spacing = scene().get<scene::UiLayout>(grid->grid).spacing;
-        const auto shownCells = static_cast<std::size_t>(
-            std::ranges::count_if(grid->cells, [&](Entity cell) { return scene().get<UiRect>(cell).visible; }));
-        const std::size_t count = shownCells + (grid->drop.isValid() ? 1 : 0);
-        const auto columns = static_cast<std::size_t>(std::max(std::floor((room + spacing) / (grid->size + spacing)), 1.0f));
-        const std::size_t rowsNeeded = std::max<std::size_t>((count + columns - 1) / columns, 1);
-        const std::size_t shownColumns = std::min(columns, std::max<std::size_t>(count, 1));
-        scene().get<scene::UiLayout>(grid->grid).columns = static_cast<std::uint32_t>(shownColumns);
-        UiRect& rect = scene().get<UiRect>(grid->grid);
-        rect.offsetMax = rect.offsetMin + math::Vec2{static_cast<float>(shownColumns) * (grid->size + spacing) - spacing,
-                                                     static_cast<float>(rowsNeeded) * (grid->size + spacing) - spacing};
-    }
-
-    // The layout skips hidden lines: a card is as tall as its header and the lines it shows.
-    for (Section& section : sections)
-    {
-        const bool open = !section.locked && !folded.contains(section.name);
-        scene().get<scene::UiFoldout>(section.header).expanded = open;
-        scene().get<scene::UiFoldout>(section.header).interactable = !section.locked;
-        float height = pad * 2.0f + headerHeight;
-        for (const Line& entry : section.lines)
-        {
-            const bool groupOpen = entry.group < 0 || !folded.contains(keyOf(section, entry.group));
-            if (entry.heading)
-            {
-                scene().get<scene::UiFoldout>(entry.entity).expanded = groupOpen;
-            }
-            UiRect& rect = scene().get<UiRect>(entry.entity);
-            rect.visible = open && entry.shown && (entry.heading || groupOpen);
-            if (rect.visible)
-            {
-                height += gap + rect.offsetMax.y - rect.offsetMin.y;
-            }
-        }
-        UiRect& card = scene().get<UiRect>(section.card);
-        card.offsetMax.y = card.offsetMin.y + height;
-    }
 }
 
 void InspectorUi::beginEdit(const scene::Scene& edited, std::span<const Entity> inspected, PropertyRow& row)
@@ -1684,7 +1492,7 @@ void InspectorUi::answerRow(ToolsState& state, scene::Scene& edited, std::span<c
     }
 }
 
-void InspectorUi::answerColorPopup(scene::Scene& edited, std::span<const Entity> inspected)
+void InspectorUi::answerEntityColor(scene::Scene& edited, std::span<const Entity> inspected)
 {
     ui::UiWorld& world = panel.world();
     if (colorRow && !world.isPopupOpen(scene(), colorPopup))
@@ -1863,33 +1671,13 @@ void InspectorUi::answer(ToolsState& state, EditorUiKit& kit, scene::Scene& edit
     }
 
     // Cards and groups folded from their headers.
-    for (Section& section : sections)
-    {
-        if (world.wasChanged(section.header))
-        {
-            if (!folded.erase(section.name))
-            {
-                folded.insert(section.name);
-            }
-        }
-        for (const Line& entry : section.lines)
-        {
-            if (entry.heading && world.wasChanged(entry.entity))
-            {
-                const std::string key = keyOf(section, entry.group);
-                if (!folded.erase(key))
-                {
-                    folded.insert(key);
-                }
-            }
-        }
-    }
+    answerForm();
 
     for (std::size_t index = 0; index < rows.size(); ++index)
     {
         answerRow(state, edited, inspected, index);
     }
-    answerColorPopup(edited, inspected);
+    answerEntityColor(edited, inspected);
     // A drag, a typed number or a colour ends as one step once nothing holds it anymore.
     for (std::size_t index = 0; index < rows.size(); ++index)
     {
@@ -1971,11 +1759,7 @@ void InspectorUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& edit
 {
     const ThemeColors& colors = themeColors();
     kit.refreshTheme(colors);
-    font = state.theme.fontSize;
-    line = std::round(font * 1.95f);
-    pad = std::round(font * 0.4f);
-    gap = std::max(std::round(font * 0.15f), 1.0f);
-    headerHeight = std::round(font * 2.1f);
+    setFont(state.theme.fontSize);
     if (!built)
     {
         build(state, kit);
@@ -2136,6 +1920,7 @@ void InspectorUi::updatePage(ToolsState& state, EditorUiKit& kit, const scene::S
     page->sync(*this, state, kit);
     layoutCards();
     panel.update(kit, delta, UiPanel::zoomFor(font));
+    answerForm();
     page->answer(*this, state, kit);
 
     const ui::UiWorld& world = panel.world();

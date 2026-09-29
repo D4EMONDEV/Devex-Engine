@@ -107,7 +107,10 @@ Le détail, l'architecture des modules et les jalons sont dans
   autre, œil, préfab et code au bout des lignes), inspecteur (cartes repliables, nombres glissés
   ou tapés, vecteurs aux axes colorés, sélecteur de couleur maison, assets et entités lâchés sur
   leurs champs, une page par asset avec ses réglages d'import appliqués par *Reimport* comme dans
-  Godot), FileSystem et Output déjà écrits avec
+  Godot), Editor Settings et Project Settings (sections à gauche et filtre comme dans Godot,
+  matrice de collision, Input Map dont chaque liaison écoute la prochaine touche), fenêtre Export,
+  dialogues New Script, modifications non enregistrées et About, FileSystem et Output déjà écrits
+  avec
   `Devex::Ui` (menus contextuels,
   infobulles, modales, listes virtuelles, texte de la sortie choisi et copié à la souris, fichiers
   glissés vers la vue et l'inspecteur, entités lâchées sur un dossier qui deviennent des préfabs),

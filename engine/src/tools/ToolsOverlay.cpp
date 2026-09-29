@@ -496,7 +496,6 @@ void updateEditor(ToolsState& state, scene::Scene& scene, PlayState playState)
     detail::drawCreationDialog(state, scene);
     detail::drawExportWindow(state);
     detail::drawDebuggingWindow(state);
-    detail::drawNewScriptPopup(state);
     detail::updatePendingScript(state, scene);
     detail::drawTextEditorPanel(state, scene);
     detail::drawAnimationPanel(state, scene);
@@ -721,6 +720,7 @@ void ToolsOverlay::prepareRender(scene::Scene& scene, render::RenderWorld& world
     detail::renderSceneTree(state, world);
     detail::renderInspector(state, world);
     detail::renderCreationDialog(state, world);
+    detail::renderFormWindows(state, world);
     if (state.mode != ToolsMode::Editor)
     {
         return;
@@ -871,6 +871,31 @@ void ToolsOverlay::select(std::span<const core::Uuid> entities)
 void ToolsOverlay::selectAsset(asset::AssetId asset)
 {
     detail::selectAsset(*m_state, asset);
+}
+
+void ToolsOverlay::openWindow(EditorWindow window)
+{
+    switch (window)
+    {
+    case EditorWindow::EditorSettings:
+        m_state->showSettings = true;
+        break;
+    case EditorWindow::ProjectSettings:
+        m_state->showProjectSettings = true;
+        break;
+    case EditorWindow::Export:
+        m_state->showExport = true;
+        break;
+    case EditorWindow::Debugging:
+        m_state->showDebugging = true;
+        break;
+    case EditorWindow::NewScript:
+        m_state->openNewScriptPopup = true;
+        break;
+    case EditorWindow::About:
+        m_state->openAboutPopup = true;
+        break;
+    }
 }
 
 void ToolsOverlay::setAudio(audio::AudioEngine* engine,

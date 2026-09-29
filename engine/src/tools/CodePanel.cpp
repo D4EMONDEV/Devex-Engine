@@ -1,4 +1,4 @@
-#include "ToolsState.hpp"
+#include "SettingsUi.hpp"
 
 #include <devex/core/File.hpp>
 #include <devex/core/Log.hpp>
@@ -6,25 +6,22 @@
 #include <devex/scene/ComponentRegistry.hpp>
 #include <devex/tools/SceneCommands.hpp>
 
-#include <imgui_internal.h>
-#include <imgui_stdlib.h>
-
 #include <algorithm>
-#include <cctype>
-#include <cfloat>
 #include <format>
 #include <string>
 #include <system_error>
+#include <tuple>
 #include <utility>
 #include <vector>
 
-// The code of the game in FileSystem, and new components created from the inspector.
+// The code of the game in FileSystem, the components created from the inspector, and the window that
+// tells how to attach a debugger to the C# code.
 namespace devex::tools::detail {
-namespace {
 
-inline constexpr const char* newScriptPopup = "New Script";
-
-} // namespace
+using scene::Entity;
+using scene::UiRect;
+using namespace rects;
+using Button = PanelButton;
 
 EntityIcon codeIcon(const std::filesystem::path& path)
 {
@@ -48,64 +45,119 @@ void openInCodeEditor(ToolsState& state, const std::filesystem::path& file)
     }
 }
 
-void drawNewScriptPopup(ToolsState& state)
+// The C# Debugging window: whether a debugger is attached, the process to attach it to and how, and
+// whether Play waits for one.
+struct DebuggingUi : FormUi
 {
-    if (std::exchange(state.openNewScriptPopup, false))
+    DebuggingUi()
+        : FormUi(debuggingSurface)
     {
-        ImGui::OpenPopup(newScriptPopup);
-    }
-    ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
-    if (!ImGui::BeginPopupModal(newScriptPopup, nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings))
-    {
-        return;
     }
 
-    ImGui::TextDisabled("A component with fields shown in the inspector, written to the code folder.");
-    ImGui::Spacing();
-    if (ImGui::IsWindowAppearing())
-    {
-        ImGui::SetKeyboardFocusHere();
-    }
-    ImGui::SetNextItemWidth(ImGui::GetFontSize() * 16.0f);
-    ImGui::InputTextWithHint("##name", "Component name", &state.newScriptName);
-    ImGui::SameLine();
-    if (ImGui::RadioButton("C#", state.newScriptCSharp))
-    {
-        state.newScriptCSharp = true;
-    }
-    ImGui::SameLine();
-    if (ImGui::RadioButton("C++", !state.newScriptCSharp))
-    {
-        state.newScriptCSharp = false;
-    }
+    bool built = false;
+    float builtFont = 0.0f;
+    Entity statusIcon;
+    Entity statusText;
+    Entity process;
+    Button copy;
+    Entity wait;
+    Button stopWaiting;
 
-    // A component name is a C# or C++ identifier.
-    const std::string& name = state.newScriptName;
-    const bool valid = !name.empty() && (std::isalpha(static_cast<unsigned char>(name.front())) != 0 || name.front() == '_') &&
-                       std::ranges::all_of(name, [](char character) {
-                           return std::isalnum(static_cast<unsigned char>(character)) != 0 || character == '_';
-                       }) &&
-                       scene::componentRegistry().find(name) == nullptr;
-    if (!valid)
+    void build(EditorUiKit& kit);
+    void update(ToolsState& state, EditorUiKit& kit, core::Duration delta);
+};
+
+void DebuggingUi::build(EditorUiKit& kit)
+{
+    built = true;
+    builtFont = font;
+    buildForm(add({}, "Debugging", whole()), whole(math::Vec4{font * 0.3f, font * 0.3f, 0.0f, 0.0f}));
+    panel.setKeyboardNavigation(false);
+
+    Section& status = card(kit, "Status");
+    const float iconSize = std::round(font * 1.2f);
+    const Entity statusRow = add(status.card, "Status", wide(line));
+    statusIcon = icon(kit, statusRow,
+                      UiRect{.anchorMin = {0.0f, 0.5f}, .anchorMax = {0.0f, 0.5f}, .offsetMin = {font * 0.35f, -iconSize * 0.5f},
+                             .offsetMax = {font * 0.35f + iconSize, iconSize * 0.5f}},
+                      Icon::Bug, {});
+    statusText = text(statusRow, UiRect{.anchorMin = {0.0f, 0.0f}, .anchorMax = {1.0f, 1.0f}, .offsetMin = {font * 0.85f + iconSize, 0.0f}, .offsetMax = {0.0f, 0.0f}},
+                      "", "text");
+    status.lines.push_back(Line{.entity = statusRow});
+    const Entity waitRow = actions(&status);
+    const float box = std::round(font * 1.3f);
+    wait = add(waitRow, "Wait", middle({box, box}), "toggle");
+    scene().add<scene::UiImage>(wait);
+    scene().add<scene::UiToggle>(wait);
+    scene().add<scene::UiButton>(wait);
+    const std::string waitLabel = "Wait for a debugger when Play starts";
+    text(waitRow, middle({kit.textWidth(EditorUiKit::regularFont(), waitLabel, font) + 4.0f, line}), waitLabel, "text");
+    stopWaiting = action(kit, waitRow, Icon::Close, "Stop Waiting");
+
+    Section& attach = card(kit, "Attach a Debugger");
+    const Entity processRow = actions(&attach);
+    process = text(processRow, middle({font * 16.0f, line}), "", "text", true);
+    copy = action(kit, processRow, Icon::Copy, "Copy Process Id");
+    note(&attach, "Attach the debugger of your code editor to this process, for .NET code:", "dim");
+    note(&attach, "•  Visual Studio: Debug > Attach to Process (Ctrl+Alt+P), devex-editor.exe, code type Managed (.NET Core, .NET 5+).", "text", 2.0f);
+    note(&attach, "•  Rider: Run > Attach to Process, devex-editor.", "text");
+    note(&attach, "•  VS Code with C# Dev Kit: .NET: Attach to a .NET 5+ or .NET Core process.", "text", 2.0f);
+    note(&attach, "Breakpoints follow the code as the editor builds and reloads it.", "dim");
+}
+
+void DebuggingUi::update(ToolsState& state, EditorUiKit& kit, core::Duration delta)
+{
+    const ThemeColors& colors = themeColors();
+    kit.refreshTheme(colors);
+    setFont(state.theme.fontSize);
+    if (!built || builtFont != font)
     {
-        iconLabel(icons::TriangleAlert, themeColors().warning);
-        ImGui::TextUnformatted(name.empty() ? "The component needs a name."
-                                            : "Use a name that no component has yet, made of letters, digits and _.");
+        if (built)
+        {
+            clearForm();
+            std::vector<Entity> children;
+            for (Entity child = scene().firstChild(panel.canvas()); child.isValid(); child = scene().nextSibling(child))
+            {
+                children.push_back(child);
+            }
+            for (const Entity child : children)
+            {
+                scene().destroyEntity(child);
+            }
+        }
+        build(kit);
     }
-    ImGui::Spacing();
-    if (primaryButton(icons::FilePlus, "Create", ImGui::GetFontSize() * 8.0f, valid))
+    styleTooltips(colors);
+
+    const DebuggerStatus& debugger = state.debugger;
+    const auto [glyph, color, message] =
+        !debugger.available  ? std::tuple{Icon::Info, colors.warning, "The project has no C# code loaded."}
+        : debugger.attached ? std::tuple{Icon::CircleCheck, colors.success, "A debugger is attached: breakpoints in the C# code stop the game."}
+        : debugger.waiting  ? std::tuple{Icon::Loader, colors.accent, "Play starts as soon as a debugger attaches."}
+                            : std::tuple{Icon::Bug, colors.warning, "No debugger is attached."};
+    scene().get<scene::UiImage>(statusIcon).texture = kit.icon(glyph);
+    scene().get<scene::UiImage>(statusIcon).color = linearColor(color);
+    scene().get<scene::UiText>(statusText).text = message;
+    scene().get<scene::UiText>(process).text = std::format("devex-editor, process {}", debugger.processId);
+    scene().get<scene::UiToggle>(wait).value = state.waitForDebugger;
+    scene().get<UiRect>(stopWaiting.entity).visible = debugger.waiting;
+    layoutCards();
+    panel.update(kit, delta, UiPanel::zoomFor(font));
+    answerForm();
+
+    const ui::UiWorld& world = panel.world();
+    if (world.wasClicked(copy.entity))
     {
-        state.requests.newScript = NewScript{.name = name, .csharp = state.newScriptCSharp};
-        state.pendingScript = name;
-        state.pendingScriptEntity = state.selection.active();
-        ImGui::CloseCurrentPopup();
+        ImGui::SetClipboardText(std::to_string(debugger.processId).c_str());
     }
-    ImGui::SameLine();
-    if (labelButton(icons::Close, "Cancel", ImGui::GetFontSize() * 8.0f))
+    if (world.wasChanged(wait))
     {
-        ImGui::CloseCurrentPopup();
+        state.waitForDebugger = scene().get<scene::UiToggle>(wait).value;
     }
-    ImGui::EndPopup();
+    if (world.wasClicked(stopWaiting.entity))
+    {
+        state.requests.stop = true;
+    }
 }
 
 void drawDebuggingWindow(ToolsState& state)
@@ -114,68 +166,24 @@ void drawDebuggingWindow(ToolsState& state)
     {
         return;
     }
-    const DebuggerStatus& debugger = state.debugger;
-    const ImGuiViewport* const viewport = ImGui::GetMainViewport();
-    ImGui::SetNextWindowPos(viewport->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
-    ImGui::SetNextWindowSize(ImVec2(ImGui::GetFontSize() * 34.0f, 0.0f), ImGuiCond_Appearing);
-    if (!ImGui::Begin(debuggingWindow, &state.showDebugging,
-                      ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_AlwaysAutoResize))
+    EditorUiKit& kit = editorUiKit(state);
+    if (!state.debuggingUi)
     {
+        state.debuggingUi = std::make_shared<DebuggingUi>();
+    }
+    if (beginFormWindow(debuggingWindow, &state.showDebugging, 36.0f, 23.0f))
+    {
+        state.debuggingUi->update(state, kit, core::Duration(ImGui::GetIO().DeltaTime));
         ImGui::End();
-        return;
     }
-    const ThemeColors& colors = themeColors();
-    ImGui::AlignTextToFramePadding();
-    if (!debugger.available)
-    {
-        iconLabel(icons::Info, colors.warning);
-        ImGui::TextUnformatted("The project has no C# code loaded.");
-    }
-    else if (debugger.attached)
-    {
-        iconLabel(icons::CircleCheck, colors.success);
-        ImGui::TextUnformatted("A debugger is attached: breakpoints in the C# code stop the game.");
-    }
-    else if (debugger.waiting)
-    {
-        iconLabel(icons::Loader, colors.accent);
-        ImGui::TextUnformatted("Play starts as soon as a debugger attaches.");
-    }
-    else
-    {
-        iconLabel(icons::Bug, colors.warning);
-        ImGui::TextUnformatted("No debugger is attached.");
-    }
+}
 
-    ImGui::Spacing();
-    const std::string process = std::format("devex-editor, process {}", debugger.processId);
-    ImGui::AlignTextToFramePadding();
-    boldText(process.c_str());
-    ImGui::SameLine();
-    if (labelButton(icons::Copy, "Copy Process Id"))
+void renderDebuggingWindow(ToolsState& state, render::RenderWorld& world)
+{
+    if (state.debuggingUi && state.uiKit)
     {
-        ImGui::SetClipboardText(std::to_string(debugger.processId).c_str());
+        state.debuggingUi->panel.render(*state.uiKit, world, linearColor(themeColors().panel));
     }
-    ImGui::Spacing();
-    ImGui::PushTextWrapPos(ImGui::GetFontSize() * 33.0f);
-    ImGui::TextDisabled("Attach the debugger of your code editor to this process, for .NET code:");
-    ImGui::BulletText("Visual Studio: Debug > Attach to Process (Ctrl+Alt+P), devex-editor.exe, "
-                      "code type Managed (.NET Core, .NET 5+).");
-    ImGui::BulletText("Rider: Run > Attach to Process, devex-editor.");
-    ImGui::BulletText("VS Code with C# Dev Kit: .NET: Attach to a .NET 5+ or .NET Core process.");
-    ImGui::TextDisabled("Breakpoints follow the code as the editor builds and reloads it.");
-    ImGui::PopTextWrapPos();
-    ImGui::Spacing();
-    ImGui::Checkbox("Wait for a debugger when Play starts", &state.waitForDebugger);
-    if (debugger.waiting)
-    {
-        ImGui::SameLine();
-        if (labelButton(icons::Close, "Stop Waiting"))
-        {
-            state.requests.stop = true;
-        }
-    }
-    ImGui::End();
 }
 
 void updatePendingScript(ToolsState& state, scene::Scene& scene)

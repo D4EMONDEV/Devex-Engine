@@ -2242,6 +2242,42 @@ les assets s'écrivent au fil de leur lecture.
   changée est marquée et gardée de côté, *Revert* l'oublie, *Reimport* les écrit toutes dans le
   `.dvxmeta` et importe le fichier une seule fois (`AssetDatabase::setImportOptions`). Une texture
   n'est plus recompressée à chaque clic.
+- **Puis les réglages et les dialogues** (jalon 45). Les pièces des pages quittent l'inspecteur
+  pour une base commune, `FormUi` (cartes, lignes, bascules, listes, nombres, champs, pastilles de
+  couleur et leur sélecteur, notes, rangées de boutons, grilles de sprites), dont héritent
+  l'inspecteur et toutes les fenêtres ; les cartes des pages d'assets se replient désormais,
+  comme celles des composants. **Editor Settings et Project Settings comme dans Godot** : les
+  sections à gauche, un **filtre** au-dessus qui trouve un réglage par son nom dans toutes les
+  sections (une carte dont le nom, ou celui de sa section, contient le filtre se montre entière ;
+  les autres ne gardent que leurs lignes qui le contiennent, et les sections sans rien pâlissent),
+  les cartes de la section choisie à droite. Project Settings a sept sections : *Application*
+  (nom, scène de démarrage choisie dans la liste des scènes, icône lâchée depuis FileSystem),
+  *Window*, *Physics*, *Collision Layers* (les noms, puis la **matrice en triangle aux noms
+  penchés** par `UiRect.rotation` ; le texte ignorait jusqu'ici la rotation et l'échelle de son
+  élément, il les suit désormais comme les images, dans les jeux aussi), *Sorting Layers* (montées, descendues,
+  retirées), *Audio* et *Input Map*. Chaque action d'entrée a sa carte ; une liaison se choisit
+  dans la **fenêtre d'événement**, comme celle de Godot : elle écoute la prochaine touche ou le
+  prochain bouton de manette pressé, et liste toutes les touches, boutons, axes et sticks par
+  appareil, avec un filtre (taper dans le filtre n'est pas une liaison ; Échap renonce).
+  - **Où les modifications vont** : le thème s'applique pendant qu'on le change (la fenêtre
+    garde la taille de son texte tant qu'un de ses contrôles est tenu, puis se refait), et
+    s'enregistre dans les réglages de l'utilisateur une fois l'édition finie. Le projet est
+    édité sur une copie, écrite dans le `.dvxproj` quand plus rien n'est glissé ni tapé ; un
+    champ texte ne compte qu'une fois quitté (Entrée ou clic ailleurs, Échap l'abandonne). Les
+    noms qui n'ont pas de sens sont corrigés à l'écriture (nom du jeu vide, couches de tri
+    en double).
+  - **Des fenêtres flottantes**, pas des modales : Editor Settings, Project Settings, Export et
+    C# Debugging restent des fenêtres qu'on déplace et redimensionne, pour voir le thème changer
+    ou régler un volume pendant que le jeu tourne ; leur contenu est une image de `Devex::Ui`
+    qui les remplit. **Les dialogues** (New Script, modifications non enregistrées, About) sont
+    une carte au milieu de la fenêtre sur un voile, comme la fenêtre de création ; New Script
+    vérifie le nom pendant qu'on le tape (identifiant, composant existant, fichier déjà dans
+    `code/`) et montre le fichier qu'il écrira. *Save as Prefab* reste le dialogue de fichier du
+    système.
+  - Chaque fenêtre a son image (surfaces 7 à 11) ; le pool de descripteurs du backend Vulkan
+    d'ImGui passe de 16 à 64 jeux, une image par fenêtre et par image en vol. Limites : pas de
+    bouton de retour à la valeur par défaut par réglage (seulement *Reset to Defaults* pour le
+    thème), et la fenêtre d'événement ne prend les boutons de la souris que dans la liste.
 
 ### Interfaces
 
@@ -3041,6 +3077,12 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     transition de l'Animator, et le peintre de tuiles, sans plus d'ImGui dans l'Inspecteur ;
     réglages d'import appliqués par *Reimport* comme dans Godot ; `UiImage` qui montre un sprite
     et garde ses proportions, `UiPlot` pour les courbes et les ondes, en C++ et en C#.
+
+45. ✅ **Réglages et dialogues en Devex UI** — Editor Settings et Project Settings avec leurs
+    sections à gauche et un filtre comme Godot, matrice de collision aux noms penchés, Input Map
+    avec sa fenêtre d'événement qui écoute la prochaine touche, fenêtres Export et C# Debugging,
+    dialogues New Script, modifications non enregistrées et About ; pièces de formulaire communes
+    (`FormUi`) à l'inspecteur et aux fenêtres.
 
 Ensuite, sans ordre figé : CI Linux, la suite du portage de l'éditeur.
 

@@ -614,6 +614,50 @@ TEST_CASE("The text of a dropdown stands off its left edge and leaves room for i
     CHECK(right.y < 300.0f - 40.0f * (0.45f + 0.28f));
 }
 
+TEST_CASE("A turned text turns its letters with it", "[ui][world]")
+{
+    // How far the letters of a line spread across and down, turned or not.
+    const auto spread = [](float rotation) {
+        Scene scene;
+        const Entity canvas = scene.createEntity("Canvas");
+        scene.add<Canvas>(canvas, Canvas{.scaleMode = devex::scene::CanvasScaleMode::ConstantPixels});
+        const Entity title = scene.createEntity("Title");
+        REQUIRE(scene.setParent(title, canvas).has_value());
+        scene.add<UiRect>(title, UiRect{.anchorMin = {0.0f, 0.0f},
+                                        .anchorMax = {0.0f, 0.0f},
+                                        .offsetMin = {400.0f, 400.0f},
+                                        .offsetMax = {700.0f, 440.0f},
+                                        .pivot = {0.0f, 0.5f},
+                                        .rotation = rotation});
+        scene.add<devex::scene::UiText>(title, devex::scene::UiText{.text = "Collision layers", .size = 24.0f, .wrap = false});
+        UiWorld world;
+        world.setFonts(&fontRef);
+        world.update(scene, window, UiInput{}, frame);
+        devex::render::RenderWorld drawn;
+        world.build(scene, devex::ui::DrawContext{.fonts = &fontRef}, drawn);
+        Vec2 low{1.0e9f};
+        Vec2 high{-1.0e9f};
+        for (const devex::render::UiDraw& draw : drawn.uiDraws)
+        {
+            for (std::uint32_t index = draw.firstIndex; draw.kind == devex::render::UiDrawKind::Text && index < draw.firstIndex + draw.indexCount;
+                 ++index)
+            {
+                const Vec2 point = drawn.uiVertices[drawn.uiIndices[index]].position;
+                low = Vec2{std::min(low.x, point.x), std::min(low.y, point.y)};
+                high = Vec2{std::max(high.x, point.x), std::max(high.y, point.y)};
+            }
+        }
+        REQUIRE(high.x > low.x);
+        return high - low;
+    };
+    // A line lies across; turned by a quarter about its left end, it stands up, above that end.
+    const Vec2 flat = spread(0.0f);
+    CHECK(flat.x > flat.y * 3.0f);
+    const Vec2 standing = spread(-devex::math::radians(90.0f));
+    CHECK(standing.y > standing.x * 3.0f);
+    CHECK(standing.y == Catch::Approx(flat.x).margin(1.0f));
+}
+
 TEST_CASE("A tooltip without a font of its own speaks with the font of the interface around it", "[ui][world][controls]")
 {
     Scene scene;

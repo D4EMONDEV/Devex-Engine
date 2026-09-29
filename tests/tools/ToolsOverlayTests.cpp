@@ -284,7 +284,7 @@ TEST_CASE("The editor opens the project's scenes in tabs and renders its viewpor
         // The inspector of entities is made with the interface of the engine as well: an entity that
         // carries every component of the engine shows a row for each of their fields, and several
         // entities the components they share.
-        const auto inspectorFrames = [&](int count) {
+        const auto inspectorFrames = [&](int count, std::uint32_t shown = 6) {
             bool drawn = false;
             for (int frame = 0; frame < count; ++frame)
             {
@@ -295,7 +295,7 @@ TEST_CASE("The editor opens the project's scenes in tabs and renders its viewpor
                 (*editor)->prepareRender(scene, world, PlayState::Editing);
                 for (const devex::render::UiSurface& surface : world.uiSurfaces)
                 {
-                    drawn |= surface.id == 6 && !surface.draws.empty();
+                    drawn |= surface.id == shown && !surface.draws.empty();
                 }
                 const devex::core::Result<void> presented = renderer->endFrame();
                 if (!presented)
@@ -339,6 +339,23 @@ TEST_CASE("The editor opens the project's scenes in tabs and renders its viewpor
             CHECK(inspectorFrames(3));
         }
         (*editor)->selectAsset({});
+
+        // The windows of settings, the export, the debugging window and the dialogs are made with the
+        // interface of the engine as well, each in its image; Project Settings makes every section.
+        using devex::tools::EditorWindow;
+        for (const auto& [opened, surface] : std::array<std::pair<EditorWindow, std::uint32_t>, 6>{{
+                 {EditorWindow::EditorSettings, 7},
+                 {EditorWindow::ProjectSettings, 8},
+                 {EditorWindow::Export, 9},
+                 {EditorWindow::Debugging, 10},
+                 {EditorWindow::NewScript, 11},
+                 {EditorWindow::About, 11},
+             }})
+        {
+            INFO(static_cast<int>(opened));
+            (*editor)->openWindow(opened);
+            CHECK(inspectorFrames(3, surface));
+        }
 
         // Both scenes opened, the level on screen and the menu in a background tab, without unsaved changes.
         CHECK(scene.entityCount() == 3);
