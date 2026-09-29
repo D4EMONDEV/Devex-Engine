@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <devex/asset/AssetId.hpp>
 #include <devex/asset/AssetSource.hpp>
 #include <devex/asset/AssetType.hpp>
@@ -29,10 +31,10 @@ enum class ImportStatus : std::uint8_t
     Failed,
 };
 
-[[nodiscard]] std::string_view toString(ImportStatus status) noexcept;
+[[nodiscard]] DEVEX_API std::string_view toString(ImportStatus status) noexcept;
 
 // A file of the assets folder that an importer handles.
-struct SourceFile
+struct DEVEX_API SourceFile
 {
     AssetId id;
     // res:// path.
@@ -52,14 +54,14 @@ enum class AssetChange : std::uint8_t
     Removed,
 };
 
-struct AssetEvent
+struct DEVEX_API AssetEvent
 {
     AssetId id;
     AssetType type = AssetType::Mesh;
     AssetChange change = AssetChange::Imported;
 };
 
-struct AssetDatabaseConfig
+struct DEVEX_API AssetDatabaseConfig
 {
     // Watches the assets folder and imports files again when they change.
     bool watchFiles = true;
@@ -72,7 +74,7 @@ struct AssetDatabaseConfig
 // identifiers and import options; imports run on the jobs and write cooked .dvxasset files and an
 // import record into the .devex cache, so that unchanged files are never imported twice. Every
 // member function must be called from the same thread, normally the main thread.
-class AssetDatabase final : public AssetSource
+class DEVEX_API AssetDatabase final : public AssetSource
 {
 public:
     // Reads the cache, then scans the folder and queues the imports it needs.

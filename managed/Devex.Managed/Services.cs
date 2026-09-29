@@ -689,8 +689,10 @@ public static unsafe class Ui
             {
                 return null;
             }
+            Vec2 at;
+            Bootstrap.Native.UiDropPosition(&at);
             return new UiDrop(Bootstrap.Native.UiDropSource(), target, Utf8.ToString(Bootstrap.Native.UiDropType()) ?? string.Empty,
-                              Utf8.ToString(Bootstrap.Native.UiDropData()) ?? string.Empty);
+                              Utf8.ToString(Bootstrap.Native.UiDropData()) ?? string.Empty, at);
         }
     }
 
@@ -699,7 +701,7 @@ public static unsafe class Ui
 }
 
 /// <summary>
-/// What a drop target took: the drag source it came from, the target, and the type and data of
-/// the source.
+/// What a drop target took: the drag source it came from, the target, the type and data of the
+/// source, and where it was let go in the target, from (0, 0) at its top left corner to (1, 1).
 /// </summary>
-public readonly record struct UiDrop(Entity Source, Entity Target, string Type, string Data);
+public readonly record struct UiDrop(Entity Source, Entity Target, string Type, string Data, Vec2 At);

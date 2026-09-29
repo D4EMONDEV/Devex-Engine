@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <devex/core/Error.hpp>
 #include <devex/platform/Event.hpp>
 #include <devex/platform/Input.hpp>
@@ -27,7 +29,7 @@ enum class FileDialogType : std::uint8_t
     OpenFolder,
 };
 
-struct FileFilter
+struct DEVEX_API FileFilter
 {
     // Shown to the user, such as "Scenes".
     std::string name;
@@ -35,7 +37,7 @@ struct FileFilter
     std::string extensions;
 };
 
-struct FileDialog
+struct DEVEX_API FileDialog
 {
     FileDialogType type = FileDialogType::OpenFile;
     // Ignored by folder dialogs.
@@ -49,7 +51,7 @@ using FileDialogCallback = std::function<void(std::optional<std::filesystem::pat
 
 // Owns the operating system layer: windows, events and input. Only one instance may exist at a
 // time, and it must outlive every window it creates.
-class Platform
+class DEVEX_API Platform
 {
 public:
     [[nodiscard]] static core::Result<Platform> create();
@@ -126,26 +128,26 @@ private:
 };
 
 // Sleeps for the given duration with sub-millisecond precision.
-void sleepPrecise(std::chrono::nanoseconds duration);
+DEVEX_API void sleepPrecise(std::chrono::nanoseconds duration);
 
 // Directory containing the executable, available without a Platform, as for command-line tools.
-[[nodiscard]] std::filesystem::path executableDirectory();
+[[nodiscard]] DEVEX_API std::filesystem::path executableDirectory();
 
 // A folder of the user that can always be written to, for the logs and the saves of an
 // application, created when missing: %APPDATA%\<organization>\<application> on Windows. An empty
 // organization leaves the application alone in the folder of the system. Available without a
 // Platform, since the log opens before it.
-[[nodiscard]] core::Result<std::filesystem::path> userDataDirectory(std::string_view organization,
-                                                                    std::string_view application);
+[[nodiscard]] DEVEX_API core::Result<std::filesystem::path> userDataDirectory(std::string_view organization,
+                                                                              std::string_view application);
 // The same folder without making it, for reading what may not be there.
-[[nodiscard]] core::Result<std::filesystem::path> userDataLocation(std::string_view organization,
-                                                                   std::string_view application);
+[[nodiscard]] DEVEX_API core::Result<std::filesystem::path> userDataLocation(std::string_view organization,
+                                                                             std::string_view application);
 
 // Whether this process was built or made a windowed application, which has no console to print
 // to: an exported game started from the file manager.
-[[nodiscard]] bool isWindowedApplication() noexcept;
+[[nodiscard]] DEVEX_API bool isWindowedApplication() noexcept;
 // Shows an error in a box of the system, for a program with nowhere else to say it. Works before
 // the platform starts, and when it failed to.
-void showErrorMessage(std::string_view title, std::string_view message);
+DEVEX_API void showErrorMessage(std::string_view title, std::string_view message);
 
 } // namespace devex::platform

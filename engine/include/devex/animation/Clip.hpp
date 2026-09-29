@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <devex/asset/AnimationData.hpp>
 #include <devex/core/Error.hpp>
 #include <devex/math/Math.hpp>
@@ -14,7 +16,7 @@ namespace devex::animation {
 
 // The local transform a clip gives one joint at one time. A property the clip does not drive keeps
 // whatever the bone already has.
-struct JointPose
+struct DEVEX_API JointPose
 {
     math::Vec3 translation{0.0f};
     math::Quat rotation{1.0f, 0.0f, 0.0f, 0.0f};
@@ -25,7 +27,7 @@ struct JointPose
 };
 
 // An animation ready to play, shared by every animator that plays it.
-class Clip
+class DEVEX_API Clip
 {
 public:
     [[nodiscard]] static core::Result<std::shared_ptr<const Clip>> create(asset::AnimationClipData data);
@@ -58,6 +60,6 @@ private:
 
 // Mixes other into target, with a weight of 0 keeping target and 1 taking other. Rotations follow
 // the shortest arc. A property only one side drives is taken from that side.
-void blendPoses(std::span<JointPose> target, std::span<const JointPose> other, float weight);
+DEVEX_API void blendPoses(std::span<JointPose> target, std::span<const JointPose> other, float weight);
 
 } // namespace devex::animation

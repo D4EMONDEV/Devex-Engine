@@ -183,6 +183,33 @@ TEST_CASE("Reparenting undoes to the original position", "[tools][commands]")
     CHECK(history.undoCount() == steps);
 }
 
+TEST_CASE("An entity moves before a sibling, among others or under another parent, and back", "[tools][commands]")
+{
+    Scene scene;
+    CommandHistory history;
+    const Entity first = scene.createEntity("First");
+    const Entity second = scene.createEntity("Second");
+    const Entity third = scene.createEntity("Third");
+    const Entity child = scene.createEntity("Child");
+    REQUIRE(scene.setParent(child, first));
+
+    // Among the roots, before the first one.
+    REQUIRE(history.execute(scene, devex::tools::makeReparentCommand(scene.uuid(third), {}, scene.uuid(first))));
+    CHECK(childNames(scene, Entity{}) == std::vector<std::string>{"Third", "First", "Second"});
+    // Under another parent, before its child.
+    REQUIRE(history.execute(scene, devex::tools::makeReparentCommand(scene.uuid(second), scene.uuid(first), scene.uuid(child))));
+    CHECK(childNames(scene, first) == std::vector<std::string>{"Second", "Child"});
+    // A sibling that is not under the new parent places the entity last.
+    REQUIRE(history.execute(scene, devex::tools::makeReparentCommand(scene.uuid(child), {}, scene.uuid(second))));
+    CHECK(childNames(scene, Entity{}) == std::vector<std::string>{"Third", "First", "Child"});
+
+    REQUIRE(history.undo(scene));
+    REQUIRE(history.undo(scene));
+    REQUIRE(history.undo(scene));
+    CHECK(childNames(scene, Entity{}) == std::vector<std::string>{"First", "Second", "Third"});
+    CHECK(childNames(scene, first) == std::vector<std::string>{"Child"});
+}
+
 TEST_CASE("Removed components come back with their values", "[tools][commands]")
 {
     Scene scene;

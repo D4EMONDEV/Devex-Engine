@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <devex/animation/AnimationWorld.hpp>
 #include <devex/animation/TweenWorld.hpp>
 #include <devex/audio/AudioWorld.hpp>
@@ -53,7 +55,7 @@ enum class SystemPhase : std::uint8_t
 };
 
 // What a system works on during one call.
-struct SystemContext
+struct DEVEX_API SystemContext
 {
     scene::Scene& scene;
     // The keys, buttons and sticks themselves. Actions are what games read rather than keys.
@@ -112,7 +114,7 @@ struct SystemContext
 
 using SystemFunction = void (*)(SystemContext& context);
 
-struct SystemInfo
+struct DEVEX_API SystemInfo
 {
     std::string name;
     SystemPhase phase = SystemPhase::Update;
@@ -122,7 +124,7 @@ struct SystemInfo
 };
 
 // What a game module declares when it is loaded: its components and its systems.
-class GameRegistry
+class DEVEX_API GameRegistry
 {
 public:
     // Registers a reflected component type, so that scenes save it and the inspector edits it.

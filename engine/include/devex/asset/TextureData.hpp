@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <devex/core/Error.hpp>
 
 #include <cstddef>
@@ -25,13 +27,13 @@ enum class TextureFormat : std::uint8_t
     R8Unorm = 7,
 };
 
-[[nodiscard]] std::string_view toString(TextureFormat format) noexcept;
-[[nodiscard]] bool isBlockCompressed(TextureFormat format) noexcept;
-[[nodiscard]] bool isSrgb(TextureFormat format) noexcept;
+[[nodiscard]] DEVEX_API std::string_view toString(TextureFormat format) noexcept;
+[[nodiscard]] DEVEX_API bool isBlockCompressed(TextureFormat format) noexcept;
+[[nodiscard]] DEVEX_API bool isSrgb(TextureFormat format) noexcept;
 
 // Bytes needed by one mip level of the given size.
-[[nodiscard]] std::size_t mipByteSize(TextureFormat format, std::uint32_t width,
-                                      std::uint32_t height) noexcept;
+[[nodiscard]] DEVEX_API std::size_t mipByteSize(TextureFormat format, std::uint32_t width,
+                                                std::uint32_t height) noexcept;
 
 // How a texture is read between its pixels. The values are stored in cooked files: never reorder
 // them.
@@ -43,7 +45,7 @@ enum class TextureFilter : std::uint8_t
     Nearest = 1,
 };
 
-struct TextureMip
+struct DEVEX_API TextureMip
 {
     std::uint32_t width = 0;
     std::uint32_t height = 0;
@@ -52,16 +54,16 @@ struct TextureMip
 
 // A 2D texture with its mip chain, largest level first. Each level halves the previous size,
 // rounding down, until the requested number of levels.
-struct TextureData
+struct DEVEX_API TextureData
 {
     TextureFormat format = TextureFormat::Rgba8Srgb;
     TextureFilter filter = TextureFilter::Linear;
     std::vector<TextureMip> mips;
 };
 
-[[nodiscard]] core::Result<void> validate(const TextureData& texture);
+[[nodiscard]] DEVEX_API core::Result<void> validate(const TextureData& texture);
 
 // Number of levels of a complete mip chain down to 1x1.
-[[nodiscard]] std::uint32_t fullMipCount(std::uint32_t width, std::uint32_t height) noexcept;
+[[nodiscard]] DEVEX_API std::uint32_t fullMipCount(std::uint32_t width, std::uint32_t height) noexcept;
 
 } // namespace devex::asset

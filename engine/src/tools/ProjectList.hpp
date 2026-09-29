@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <devex/serialization/Text.hpp>
 
 #include <cstdint>
@@ -12,7 +14,7 @@
 namespace devex::tools::detail {
 
 // A project known to the project manager.
-struct ProjectEntry
+struct DEVEX_API ProjectEntry
 {
     // The .dvxproj file.
     std::filesystem::path file;
@@ -29,7 +31,7 @@ enum class ProjectSort : std::uint8_t
 };
 
 // The projects of the project manager, kept in the editor's settings of the user.
-class ProjectList
+class DEVEX_API ProjectList
 {
 public:
     // Reads the [project] sections of a document, and the [recent_project] sections of older
@@ -58,6 +60,6 @@ private:
 };
 
 // The canonical form of a project file path, so that one project is listed once.
-[[nodiscard]] std::filesystem::path normalProjectPath(const std::filesystem::path& file);
+[[nodiscard]] DEVEX_API std::filesystem::path normalProjectPath(const std::filesystem::path& file);
 
 } // namespace devex::tools::detail

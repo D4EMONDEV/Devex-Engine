@@ -220,7 +220,8 @@ public:
                                                       std::string_view confirm, float width);
     // A menu that opens under the pointer, its entries, and the lines between them.
     scene::Entity menu(const char* name, float width);
-    PanelButton menuItem(EditorUiKit& kit, scene::Entity menu, std::optional<Icon> glyph, std::string_view label);
+    PanelButton menuItem(EditorUiKit& kit, scene::Entity menu, std::optional<Icon> glyph, std::string_view label,
+                         std::string_view shortcut = {});
     scene::Entity menuSeparator(scene::Entity menu);
     // Makes a menu as tall as its visible entries, and no wider than the panel.
     void fitMenu(scene::Entity menu, float width);

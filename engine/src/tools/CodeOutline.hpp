@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include "CodeHighlight.hpp"
 
 #include <string>
@@ -9,7 +11,7 @@
 namespace devex::tools::detail {
 
 // A name the outline of a file lists: a type, a function, or a section of a Devex file.
-struct CodeSymbol
+struct DEVEX_API CodeSymbol
 {
     std::string name;
     // Counting from one, as the editor numbers its lines.
@@ -23,6 +25,6 @@ struct CodeSymbol
 // The types and functions a file declares, in the order they appear. The reading is by shape
 // rather than by grammar: it follows indentation, keywords and parentheses, which is enough to
 // jump around a file and wrong only on unusual formatting.
-[[nodiscard]] std::vector<CodeSymbol> outlineOf(std::string_view text, CodeLanguage language);
+[[nodiscard]] DEVEX_API std::vector<CodeSymbol> outlineOf(std::string_view text, CodeLanguage language);
 
 } // namespace devex::tools::detail

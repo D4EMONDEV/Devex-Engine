@@ -139,6 +139,11 @@ bool g_linearColors = true;
 
 } // namespace
 
+bool isGameComponent(std::string_view name) noexcept
+{
+    return !isEngineComponent(name);
+}
+
 const char* displayName(ThemePreset preset) noexcept
 {
     switch (preset)

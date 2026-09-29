@@ -950,10 +950,18 @@ target_link_libraries(devex_engine
 )
 set_target_properties(devex_engine PROPERTIES
     OUTPUT_NAME "devex-engine"
-    WINDOWS_EXPORT_ALL_SYMBOLS ON
     EXPORT_NAME Engine
     FOLDER "Engine"
 )
+# The library shares what its headers mark DEVEX_API (devex/core/Export.hpp), which its parts
+# export while they are built; everything else imports it.
+foreach(part IN ITEMS devex_animation devex_asset devex_asset_import devex_audio devex_core
+                      devex_particles devex_physics devex_navigation devex_physics2d devex_platform
+                      devex_reflection devex_render devex_runtime devex_scene devex_serialization
+                      devex_tools devex_ui)
+    target_compile_definitions(${part} PRIVATE DEVEX_BUILDING_ENGINE)
+endforeach()
+target_compile_definitions(devex_engine PRIVATE DEVEX_BUILDING_ENGINE)
 devex_set_warnings(devex_engine)
 
 # The package that game modules find: cmake/DevexConfig.cmake in the build folder, next to bin/.

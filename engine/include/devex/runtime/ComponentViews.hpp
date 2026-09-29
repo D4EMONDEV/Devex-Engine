@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <devex/reflection/Reflection.hpp>
 
 #include <cstdint>
@@ -20,15 +22,15 @@ namespace devex::runtime {
 
 // A hash of what a view relies on: the name and size of the type, and the name, kind, offset, list
 // and enumeration values of each field.
-[[nodiscard]] std::uint64_t componentLayoutHash(const reflection::TypeInfo& type);
+[[nodiscard]] DEVEX_API std::uint64_t componentLayoutHash(const reflection::TypeInfo& type);
 
 // The C# source of the views of the types, in the namespace (the global one when empty). Types with
 // a field whose offset is unknown are skipped, and Transform, which Devex.Managed declares itself.
 // `origin` names what the types come from, in the header comment.
-[[nodiscard]] std::string generateComponentViews(std::span<const reflection::TypeInfo* const> types,
-                                                 std::string_view csharpNamespace, std::string_view origin);
+[[nodiscard]] DEVEX_API std::string generateComponentViews(std::span<const reflection::TypeInfo* const> types,
+                                                           std::string_view csharpNamespace, std::string_view origin);
 
 // "cast_shadows" becomes "CastShadows", as C# names members.
-[[nodiscard]] std::string pascalCase(std::string_view name);
+[[nodiscard]] DEVEX_API std::string pascalCase(std::string_view name);
 
 } // namespace devex::runtime

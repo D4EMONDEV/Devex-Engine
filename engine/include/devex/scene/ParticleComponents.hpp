@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <devex/asset/AssetId.hpp>
 #include <devex/math/Math.hpp>
 #include <devex/reflection/Reflection.hpp>
@@ -69,7 +71,7 @@ enum class SubEmitTrigger : std::uint8_t
 // the inspector shows them. Ranges hold a minimum and a maximum, between which each particle draws
 // its own value. Particles are not saved: a scene starts without them, and emitters that play on
 // start fill up again.
-struct ParticleEmitter
+struct DEVEX_API ParticleEmitter
 {
     // Emitter.
     // Emits once the game, or the preview of the editor, starts; otherwise code plays it.
@@ -183,11 +185,11 @@ struct ParticleEmitter
     // The width of the ribbon, as a part of the size of the particle.
     float trailWidth = 0.5f;
 };
-DEVEX_DECLARE_REFLECTION(ParticleEmitter);
+DEVEX_DECLARE_ENGINE_REFLECTION(ParticleEmitter);
 
 // Leaves a ribbon behind its entity as it moves: the streak of a projectile, of a sword, of a
 // thrown ball.
-struct TrailRenderer
+struct DEVEX_API TrailRenderer
 {
     // Adds points while true; the ribbon still fades out when false.
     bool emitting = true;
@@ -208,7 +210,7 @@ struct TrailRenderer
     bool lit = false;
     float softness = 0.0f;
 };
-DEVEX_DECLARE_REFLECTION(TrailRenderer);
+DEVEX_DECLARE_ENGINE_REFLECTION(TrailRenderer);
 
 } // namespace devex::scene
 

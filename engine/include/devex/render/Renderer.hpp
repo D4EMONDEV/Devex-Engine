@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <devex/asset/MaterialData.hpp>
 #include <devex/asset/MeshData.hpp>
 #include <devex/asset/TextureData.hpp>
@@ -29,9 +31,9 @@ enum class PresentMode : std::uint8_t
     Immediate,
 };
 
-[[nodiscard]] std::string_view toString(PresentMode mode) noexcept;
+[[nodiscard]] DEVEX_API std::string_view toString(PresentMode mode) noexcept;
 
-struct RendererConfig
+struct DEVEX_API RendererConfig
 {
     std::string applicationName = "Devex";
     // Falls back to Fifo when the display does not support the requested mode.
@@ -49,7 +51,7 @@ struct RendererConfig
 
 // Parameters of a material, with textures already uploaded. Invalid or destroyed textures sample as
 // white, or as a flat normal for the normal texture.
-struct MaterialDesc
+struct DEVEX_API MaterialDesc
 {
     // Linear RGBA.
     math::Vec4 baseColorFactor{1.0f};
@@ -68,7 +70,7 @@ struct MaterialDesc
     bool doubleSided = false;
 };
 
-struct RendererStats
+struct DEVEX_API RendererStats
 {
     // Draw calls of the last presented frame.
     std::uint32_t drawCalls = 0;
@@ -99,7 +101,7 @@ class VulkanRenderer;
 
 // Draws RenderWorld snapshots into a window. Only one renderer may exist at a time, and the
 // window must outlive it.
-class Renderer
+class DEVEX_API Renderer
 {
 public:
     [[nodiscard]] static core::Result<Renderer> create(const platform::Platform& platform,

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <chrono>
 #include <cstdint>
 
@@ -7,7 +9,7 @@ namespace devex::runtime {
 
 // Turns variable frame times into a whole number of fixed simulation steps. Time is accumulated
 // in integer nanoseconds so that the number of steps never drifts.
-class FixedTimestep
+class DEVEX_API FixedTimestep
 {
 public:
     explicit FixedTimestep(

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <devex/math/Math.hpp>
 
 namespace devex::tools::detail {
@@ -9,7 +11,7 @@ namespace devex::tools::detail {
 // at a pivot in front of it: orbiting turns around the pivot, flying moves both, and framing an
 // object moves the pivot onto it. In 2D, it looks straight down -Z at the XY plane through an
 // orthographic projection: it slides and zooms, but does not turn.
-class EditorCamera
+class DEVEX_API EditorCamera
 {
 public:
     static constexpr float verticalFov = math::radians(60.0f);

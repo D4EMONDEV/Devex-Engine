@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <devex/asset/AssetId.hpp>
 #include <devex/math/Math.hpp>
 #include <devex/reflection/Reflection.hpp>
@@ -28,7 +30,7 @@ enum class CanvasScaleMode : std::uint8_t
 
 // The root of an interface. Every UiRect under it is placed inside its rectangle, which covers the
 // whole window. Canvases are drawn over the game, in the order of their sortOrder.
-struct Canvas
+struct DEVEX_API Canvas
 {
     CanvasScaleMode scaleMode = CanvasScaleMode::ScaleWithScreen;
     // The size, in units, the interface was designed at.
@@ -46,7 +48,7 @@ struct Canvas
     // clicks reach whatever lies underneath.
     bool interactive = true;
 };
-DEVEX_DECLARE_REFLECTION(Canvas);
+DEVEX_DECLARE_ENGINE_REFLECTION(Canvas);
 
 // The rectangle of an element inside its parent. The anchors are the fractions of the parent the
 // corners hang from, and the offsets move each corner away from its anchor in units: anchors equal
@@ -57,7 +59,7 @@ DEVEX_DECLARE_REFLECTION(Canvas);
 //     a centred button   anchorMin {0.5, 0.5} anchorMax {0.5, 0.5}
 //
 // X goes right and Y goes down, as the screen does.
-struct UiRect
+struct DEVEX_API UiRect
 {
     math::Vec2 anchorMin{0.5f, 0.5f};
     math::Vec2 anchorMax{0.5f, 0.5f};
@@ -78,11 +80,11 @@ struct UiRect
     // style names are written into the components of the element, every frame.
     std::string style;
 };
-DEVEX_DECLARE_REFLECTION(UiRect);
+DEVEX_DECLARE_ENGINE_REFLECTION(UiRect);
 
 // A coloured rectangle, with a texture when it has one. Borders keep the corners of a texture
 // unstretched, which lets one image draw a panel of any size.
-struct UiImage
+struct DEVEX_API UiImage
 {
     asset::AssetId texture;
     // Multiplies the texture, or fills the rectangle on its own.
@@ -95,7 +97,7 @@ struct UiImage
     // Whether the mouse and the pad stop on it, rather than passing through.
     bool raycastTarget = true;
 };
-DEVEX_DECLARE_REFLECTION(UiImage);
+DEVEX_DECLARE_ENGINE_REFLECTION(UiImage);
 
 enum class TextAlign : std::uint8_t
 {
@@ -113,7 +115,7 @@ enum class TextVerticalAlign : std::uint8_t
 
 // A line or a paragraph of text, drawn from the atlas of distances of its font, which keeps the
 // letters sharp at any size.
-struct UiText
+struct DEVEX_API UiText
 {
     std::string text = "Text";
     asset::AssetId font;
@@ -136,11 +138,11 @@ struct UiText
     // The images [icon=n] draws, in the order a text asks for them.
     std::vector<asset::AssetId> icons;
 };
-DEVEX_DECLARE_REFLECTION(UiText);
+DEVEX_DECLARE_ENGINE_REFLECTION(UiText);
 
 // Makes the text of its entity editable. The letters, the font, the size and the colour come from
 // the UiText beside it, which also holds what was typed; this component says how it is edited.
-struct UiInput
+struct DEVEX_API UiInput
 {
     // Shown, dimmed, while the text is empty.
     std::string placeholder;
@@ -159,12 +161,12 @@ struct UiInput
     // What a script asks for when Enter ends the edit: Ui.WasSubmitted("name").
     std::string action;
 };
-DEVEX_DECLARE_REFLECTION(UiInput);
+DEVEX_DECLARE_ENGINE_REFLECTION(UiInput);
 
 // Answers the mouse, the keyboard and the pad on the rectangle of its entity. It tints the UiImage
 // of the entity as the pointer comes and goes, and reports its clicks to the scripts under the
 // name of its action.
-struct UiButton
+struct DEVEX_API UiButton
 {
     // What a script asks for: Ui.WasClicked("play"). An empty action is still clickable, and is
     // then read by entity.
@@ -177,12 +179,12 @@ struct UiButton
     // Seconds the tint takes to follow the pointer.
     float fadeTime = 0.1f;
 };
-DEVEX_DECLARE_REFLECTION(UiButton);
+DEVEX_DECLARE_ENGINE_REFLECTION(UiButton);
 
 // Writes a value read from a component into the text of the entity, once a frame. The text of
 // the UiText beside it is replaced: this is where the sentence lives, and every {} in it takes
 // the value, so that a score or a health bar follows the game without a line of script.
-struct UiBinding
+struct DEVEX_API UiBinding
 {
     // The component the value is read from, by its name: "Transform", or a component of the game.
     std::string component = "Transform";
@@ -196,12 +198,12 @@ struct UiBinding
     // The entity the value is read from; the one carrying the binding when it is not set.
     EntityRef source;
 };
-DEVEX_DECLARE_REFLECTION(UiBinding);
+DEVEX_DECLARE_ENGINE_REFLECTION(UiBinding);
 
 // A value the pointer drags between two ends. The rectangle of the entity is the track: the part
 // before the value is filled, and the handle sits on it. A UiImage on the same entity draws what
 // lies under them, and the arrows move the value while the slider has the focus.
-struct UiSlider
+struct DEVEX_API UiSlider
 {
     float value = 0.5f;
     float minValue = 0.0f;
@@ -219,11 +221,11 @@ struct UiSlider
     // What a script asks for: Ui.WasChanged("volume").
     std::string action;
 };
-DEVEX_DECLARE_REFLECTION(UiSlider);
+DEVEX_DECLARE_ENGINE_REFLECTION(UiSlider);
 
 // A box that is either on or off. Clicking it, or pressing the submit button while it has the
 // focus, turns it over; the mark is drawn inside the rectangle of the entity.
-struct UiToggle
+struct DEVEX_API UiToggle
 {
     bool value = false;
     math::Vec4 checkColor{1.0f, 1.0f, 1.0f, 1.0f};
@@ -233,11 +235,11 @@ struct UiToggle
     // What a script asks for: Ui.WasChanged("fullscreen").
     std::string action;
 };
-DEVEX_DECLARE_REFLECTION(UiToggle);
+DEVEX_DECLARE_ENGINE_REFLECTION(UiToggle);
 
 // Moves what it holds, so that a list longer than its rectangle can be walked through. The
 // element cuts its children by itself: it does not need clipChildren as well.
-struct UiScroll
+struct DEVEX_API UiScroll
 {
     // How far the content is moved, in units; 0 shows its start.
     math::Vec2 offset{0.0f, 0.0f};
@@ -251,7 +253,7 @@ struct UiScroll
     float scrollbarSize = 8.0f;
     math::Vec4 scrollbarColor{1.0f, 1.0f, 1.0f, 0.3f};
 };
-DEVEX_DECLARE_REFLECTION(UiScroll);
+DEVEX_DECLARE_ENGINE_REFLECTION(UiScroll);
 
 // How a popup behaves once open.
 enum class UiPopupKind : std::uint8_t
@@ -267,35 +269,35 @@ enum class UiPopupKind : std::uint8_t
 // An element shown over the rest of its canvas while it is open, and hidden otherwise: its UiRect
 // is visible only while it is open. Ui.OpenPopup opens it where its anchors put it, or at a point
 // of the screen; a UiContextMenu opens it under the pointer.
-struct UiPopup
+struct DEVEX_API UiPopup
 {
     UiPopupKind kind = UiPopupKind::Menu;
     // A modal darkens what lies under it with this.
     math::Vec4 veilColor{0.0f, 0.0f, 0.0f, 0.45f};
 };
-DEVEX_DECLARE_REFLECTION(UiPopup);
+DEVEX_DECLARE_ENGINE_REFLECTION(UiPopup);
 
 // Opens a popup menu under the pointer when the element, or an element inside it, is clicked with
 // the second button: the menu of a row of a list. Ui.ContextTarget then names the element.
-struct UiContextMenu
+struct DEVEX_API UiContextMenu
 {
     EntityRef popup;
 };
-DEVEX_DECLARE_REFLECTION(UiContextMenu);
+DEVEX_DECLARE_ENGINE_REFLECTION(UiContextMenu);
 
 // A line of help shown next to the pointer once it has rested on the element, even on an element
 // that cannot be used.
-struct UiTooltip
+struct DEVEX_API UiTooltip
 {
     std::string text;
     // Seconds the pointer rests before it shows.
     float delay = 0.5f;
 };
-DEVEX_DECLARE_REFLECTION(UiTooltip);
+DEVEX_DECLARE_ENGINE_REFLECTION(UiTooltip);
 
 // A button that shows one of its options, and a list of all of them to choose from once clicked.
 // The UiText of the entity shows the chosen option, and the list takes its font, size and color.
-struct UiDropdown
+struct DEVEX_API UiDropdown
 {
     std::vector<std::string> options;
     // The chosen option, from 0; -1 shows none.
@@ -308,11 +310,11 @@ struct UiDropdown
     // What a script asks for: Ui.WasChanged("quality").
     std::string action;
 };
-DEVEX_DECLARE_REFLECTION(UiDropdown);
+DEVEX_DECLARE_ENGINE_REFLECTION(UiDropdown);
 
 // Shares its rectangle between its first two children, with a bar between them the pointer drags:
 // a panel beside another, or above it.
-struct UiSplitter
+struct DEVEX_API UiSplitter
 {
     // One above the other rather than side by side.
     bool vertical = false;
@@ -324,11 +326,11 @@ struct UiSplitter
     math::Vec4 barColor{1.0f, 1.0f, 1.0f, 0.06f};
     math::Vec4 hoverColor{0.35f, 0.6f, 1.0f, 0.8f};
 };
-DEVEX_DECLARE_REFLECTION(UiSplitter);
+DEVEX_DECLARE_ENGINE_REFLECTION(UiSplitter);
 
 // A header that shows or hides the element it names, with an arrow at its left that says which:
 // the sections of an inspector, or the branches of a tree when foldouts hold each other.
-struct UiFoldout
+struct DEVEX_API UiFoldout
 {
     bool expanded = true;
     // Shown while expanded; its UiRect is hidden otherwise.
@@ -338,12 +340,12 @@ struct UiFoldout
     // What a script asks for: Ui.WasChanged("details").
     std::string action;
 };
-DEVEX_DECLARE_REFLECTION(UiFoldout);
+DEVEX_DECLARE_ENGINE_REFLECTION(UiFoldout);
 
 // A long list shown with a handful of elements: its children are the rows on screen, placed at the
 // items they show as the list scrolls, which a script fills from the item in `first`. The element must
 // sit in a UiScroll: it takes the height of every item, and draws only those in view.
-struct UiVirtualList
+struct DEVEX_API UiVirtualList
 {
     std::uint32_t itemCount = 0;
     // The height of one item, in units.
@@ -351,12 +353,12 @@ struct UiVirtualList
     // The item its first child shows, which the interface writes as the list scrolls.
     std::uint32_t first = 0;
 };
-DEVEX_DECLARE_REFLECTION(UiVirtualList);
+DEVEX_DECLARE_ENGINE_REFLECTION(UiVirtualList);
 
 // Lines its rows up in columns: the children of each UiTableRow among its descendants are the
 // cells, one per column, as wide as the column. The row marked header resizes the columns when
 // the edge of one of its cells is dragged, and sorts by a column when it is clicked.
-struct UiTable
+struct DEVEX_API UiTable
 {
     // The width of each column, in units.
     std::vector<float> columns{160.0f, 160.0f};
@@ -368,19 +370,19 @@ struct UiTable
     math::Vec4 arrowColor{1.0f, 1.0f, 1.0f, 0.7f};
     std::string action;
 };
-DEVEX_DECLARE_REFLECTION(UiTable);
+DEVEX_DECLARE_ENGINE_REFLECTION(UiTable);
 
 // A row of the UiTable above it.
-struct UiTableRow
+struct DEVEX_API UiTableRow
 {
     // The row of the column titles.
     bool header = false;
 };
-DEVEX_DECLARE_REFLECTION(UiTableRow);
+DEVEX_DECLARE_ENGINE_REFLECTION(UiTableRow);
 
 // Lets the pointer carry the element to a UiDropTarget: pressed on it and moved a few pixels, what it
 // holds follows the pointer until it is let go. A button carried away is not clicked.
-struct UiDragSource
+struct DEVEX_API UiDragSource
 {
     // What is carried, which the targets accept by name: "item", "asset".
     std::string type;
@@ -391,18 +393,18 @@ struct UiDragSource
     std::string label;
     bool interactable = true;
 };
-DEVEX_DECLARE_REFLECTION(UiDragSource);
+DEVEX_DECLARE_ENGINE_REFLECTION(UiDragSource);
 
 // Takes what is dropped on it, or on an element inside it, when it accepts its type; lit while
 // the pointer carries something it accepts over it.
-struct UiDropTarget
+struct DEVEX_API UiDropTarget
 {
     std::vector<std::string> accepts;
     math::Vec4 highlightColor{0.35f, 0.6f, 1.0f, 0.3f};
     // What a script asks for: Ui.WasDropped("slot").
     std::string action;
 };
-DEVEX_DECLARE_REFLECTION(UiDropTarget);
+DEVEX_DECLARE_ENGINE_REFLECTION(UiDropTarget);
 
 // How the children of a container follow each other.
 enum class UiLayoutKind : std::uint8_t
@@ -418,7 +420,7 @@ enum class UiLayoutKind : std::uint8_t
 // Places the children of its entity itself, instead of leaving them to their anchors: a menu of
 // buttons then keeps its spacing whatever it holds. Children keep their own size on the axis the
 // container does not drive, unless they stretch.
-struct UiLayout
+struct DEVEX_API UiLayout
 {
     UiLayoutKind kind = UiLayoutKind::Column;
     // Units between two children.
@@ -432,7 +434,7 @@ struct UiLayout
     // Where the children sit on the axis of the container when they do not fill it.
     TextAlign align = TextAlign::Center;
 };
-DEVEX_DECLARE_REFLECTION(UiLayout);
+DEVEX_DECLARE_ENGINE_REFLECTION(UiLayout);
 
 } // namespace devex::scene
 

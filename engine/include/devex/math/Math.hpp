@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/quaternion.hpp>
@@ -48,7 +50,7 @@ using glm::slerp;
 using glm::translate;
 
 // Size of a surface in whole units, such as a window or a framebuffer.
-struct Extent2D
+struct DEVEX_API Extent2D
 {
     std::uint32_t width = 0;
     std::uint32_t height = 0;
@@ -63,7 +65,7 @@ struct Extent2D
 }
 
 // Translation, rotation and scale, applied in the reverse order to a point.
-struct Trs
+struct DEVEX_API Trs
 {
     Vec3 translation{0.0f};
     Quat rotation{1.0f, 0.0f, 0.0f, 0.0f};
@@ -133,7 +135,7 @@ struct Trs
 
 // A box aligned with the axes, holding everything between its two corners. An empty box has its
 // minimum above its maximum, which no point can satisfy.
-struct Aabb
+struct DEVEX_API Aabb
 {
     Vec3 min{std::numeric_limits<float>::max()};
     Vec3 max{std::numeric_limits<float>::lowest()};

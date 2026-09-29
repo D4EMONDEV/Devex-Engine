@@ -6,6 +6,10 @@ function(devex_set_warnings target)
             /utf-8
             /Zc:__cplusplus
             /Zc:preprocessor
+            # The classes the engine library shares hold members of the standard library, which
+            # every side builds with the same compiler and runtime.
+            /wd4251
+            /wd4275
         )
     else()
         target_compile_options(${target} PRIVATE

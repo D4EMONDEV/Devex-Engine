@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <devex/core/Assert.hpp>
 #include <devex/scene/Entity.hpp>
 
@@ -15,7 +17,7 @@ namespace devex::scene {
 
 // Sparse set mapping entities to dense storage indices, independent of the component type.
 // Components of one type are stored contiguously; removing one moves the last into its slot.
-class ComponentPoolBase
+class DEVEX_API ComponentPoolBase
 {
 public:
     virtual ~ComponentPoolBase() = default;

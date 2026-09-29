@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <devex/core/Error.hpp>
 
 #include <array>
@@ -146,7 +148,7 @@ inline constexpr char32_t firstIconCodepoint = 0xE000;
 }
 
 // The UTF-8 encoding of an icon's character, to write it in ImGui text.
-class IconText
+class DEVEX_API IconText
 {
 public:
     constexpr explicit IconText(Icon icon) noexcept
@@ -177,13 +179,13 @@ DEVEX_EDITOR_ICONS(DEVEX_ICON_TEXT)
 } // namespace icons
 
 // "icon  label", with the spacing used by menus and buttons.
-[[nodiscard]] std::string withIcon(IconText icon, std::string_view label);
+[[nodiscard]] DEVEX_API std::string withIcon(IconText icon, std::string_view label);
 
 // The SVG file of an icon, without its extension.
-[[nodiscard]] std::string_view iconFileName(Icon icon) noexcept;
+[[nodiscard]] DEVEX_API std::string_view iconFileName(Icon icon) noexcept;
 
 // The pixels of a rendered SVG document: 8-bit RGBA, not premultiplied.
-struct SvgImage
+struct DEVEX_API SvgImage
 {
     std::uint32_t width = 0;
     std::uint32_t height = 0;
@@ -191,11 +193,11 @@ struct SvgImage
 };
 
 // Renders an SVG document at a size in pixels, with CSS currentColor as white.
-[[nodiscard]] core::Result<SvgImage> renderSvg(std::string_view svg, std::uint32_t width, std::uint32_t height);
+[[nodiscard]] DEVEX_API core::Result<SvgImage> renderSvg(std::string_view svg, std::uint32_t width, std::uint32_t height);
 
 // The icon documents, loaded from the SVG files of a directory. Icons whose file is missing draw
 // nothing.
-class IconSet
+class DEVEX_API IconSet
 {
 public:
     [[nodiscard]] static IconSet load(const std::filesystem::path& directory);
@@ -211,8 +213,8 @@ private:
 
 // The ImGui font loader that draws the icons of a set as glyphs. A font source using it takes the
 // set in FontLoaderData, which must outlive the font atlas.
-[[nodiscard]] const ImFontLoader& iconFontLoader() noexcept;
+[[nodiscard]] DEVEX_API const ImFontLoader& iconFontLoader() noexcept;
 // A font source to merge into a font so that its text can show the icons.
-[[nodiscard]] ImFontConfig iconFontSource(IconSet& icons);
+[[nodiscard]] DEVEX_API ImFontConfig iconFontSource(IconSet& icons);
 
 } // namespace devex::tools::detail

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <devex/core/Error.hpp>
 
 #include <string_view>
@@ -13,7 +15,7 @@ namespace devex::asset {
 inline constexpr std::string_view curveExtension = ".dvxcurve";
 
 // A point of the curve, with the slopes the curve leaves it with on each side.
-struct CurveKey
+struct DEVEX_API CurveKey
 {
     float time = 0.0f;
     float value = 0.0f;
@@ -24,7 +26,7 @@ struct CurveKey
     bool operator==(const CurveKey&) const = default;
 };
 
-struct CurveData
+struct DEVEX_API CurveData
 {
     // Sorted by time, two at least.
     std::vector<CurveKey> keys;
@@ -37,12 +39,12 @@ struct CurveData
 };
 
 // Keys in increasing time, finite values, at least two keys.
-[[nodiscard]] core::Result<void> validate(const CurveData& curve);
+[[nodiscard]] DEVEX_API core::Result<void> validate(const CurveData& curve);
 
 // A straight line from (0, 0) to (1, 1).
-[[nodiscard]] CurveData linearCurve();
+[[nodiscard]] DEVEX_API CurveData linearCurve();
 // The tangents of a key that make the curve pass through it smoothly, as the slope from its
 // neighbours; zero at the ends.
-void smoothTangents(CurveData& curve, std::size_t key);
+DEVEX_API void smoothTangents(CurveData& curve, std::size_t key);
 
 } // namespace devex::asset

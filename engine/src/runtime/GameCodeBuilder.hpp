@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <devex/asset/Project.hpp>
 #include <devex/core/BuildInfo.hpp>
 #include <devex/core/Error.hpp>
@@ -18,9 +20,9 @@ namespace devex::runtime::detail {
 // already have the compiler.
 // Asks the compilers for English diagnostics, whatever the language of the system, so that the
 // editor reads them the same way everywhere.
-void useEnglishDiagnostics();
+DEVEX_API void useEnglishDiagnostics();
 
-class GameCodeBuilder
+class DEVEX_API GameCodeBuilder
 {
 public:
     enum class State : std::uint8_t
@@ -40,7 +42,7 @@ public:
     [[nodiscard]] static bool hasCode(const asset::Project& project);
 
     // One error or warning of a build, at the place the compiler named.
-    struct Diagnostic
+    struct DEVEX_API Diagnostic
     {
         std::filesystem::path path;
         int line = 1;
@@ -55,7 +57,7 @@ public:
     // Whether a line of build output reports an error (true) or a warning (false).
     [[nodiscard]] static std::optional<bool> severityOf(const std::string& line);
 
-    struct BuildStatus
+    struct DEVEX_API BuildStatus
     {
         bool needsBuild = false;
         // The cached module belongs to another engine, or predates build tracking.
@@ -99,7 +101,7 @@ public:
 private:
     using Clock = std::chrono::steady_clock;
 
-    struct Snapshot
+    struct DEVEX_API Snapshot
     {
         std::filesystem::file_time_type newest{};
         std::size_t files = 0;

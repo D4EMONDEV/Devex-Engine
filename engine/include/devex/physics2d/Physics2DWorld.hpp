@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <devex/asset/AssetId.hpp>
 #include <devex/asset/Project.hpp>
 #include <devex/asset/TilesetData.hpp>
@@ -27,7 +29,7 @@ namespace devex::physics2d {
 // A mask of collision layers with every layer.
 inline constexpr std::uint16_t allLayers = 0xFFFF;
 
-struct RayHit
+struct DEVEX_API RayHit
 {
     // The entity that owns the body hit: the entity of its RigidBody2D, or of its collider.
     scene::Entity entity;
@@ -44,7 +46,7 @@ enum class ContactPhase : std::uint8_t
 
 // Two bodies that started or stopped touching. A trigger contact involves at least one trigger:
 // nothing blocked, something entered or left. The same layout as the contacts of 3D physics.
-struct Contact
+struct DEVEX_API Contact
 {
     ContactPhase phase = ContactPhase::Begin;
     scene::Entity first;
@@ -64,7 +66,7 @@ struct Contact
 
 // Cells a tilemap collides with: from the bottom-left cell, so many cells across and up. A one-way
 // rectangle is a ledge along the top of its cells.
-struct TileRectangle
+struct DEVEX_API TileRectangle
 {
     math::IVec2 cell{0};
     math::IVec2 size{1};
@@ -76,13 +78,13 @@ struct TileRectangle
 // The rectangles the collider of a tilemap is made of: full tiles merged into rectangles along rows,
 // then rows of the same width on top of each other; top tiles merged along rows. The collision of a
 // tile comes from its tileset.
-[[nodiscard]] std::vector<TileRectangle> tileRectangles(
-    const scene::TileGrid& grid, const std::function<asset::TileCollision(std::uint32_t tile)>& collisionOf);
+[[nodiscard]] DEVEX_API std::vector<TileRectangle> tileRectangles(
+              const scene::TileGrid& grid, const std::function<asset::TileCollision(std::uint32_t tile)>& collisionOf);
 
 // The tileset a tilemap collider reads; null when it cannot be loaded.
 using TilesetSource = std::function<std::shared_ptr<const asset::TilesetData>(asset::AssetId tileset)>;
 
-struct Physics2DWorldConfig
+struct DEVEX_API Physics2DWorldConfig
 {
     // The gravity of the world is the X and Y of the gravity of the project; the layers are the
     // project's.
@@ -95,7 +97,7 @@ struct Physics2DWorldConfig
 // The 2D simulation of one scene. As the 3D one, each step brings the bodies in line with the 2D
 // physics components of the scene, so that game code creates, changes, moves and removes bodies by
 // editing components and transforms, then advances the simulation and writes the result back.
-class Physics2DWorld
+class DEVEX_API Physics2DWorld
 {
 public:
     [[nodiscard]] static core::Result<std::unique_ptr<Physics2DWorld>> create(Physics2DWorldConfig config);

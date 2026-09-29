@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <devex/core/Error.hpp>
 #include <devex/reflection/Reflection.hpp>
 #include <devex/scene/ComponentPool.hpp>
@@ -17,7 +19,7 @@
 namespace devex::scene {
 
 // A field of a component type described at runtime.
-struct DynamicField
+struct DEVEX_API DynamicField
 {
     std::string name;
     reflection::ValueKind kind = reflection::ValueKind::Float;
@@ -38,7 +40,7 @@ struct DynamicListStorage;
 }
 
 // Where the fields of such a component live in the block of memory the engine allocates for it.
-class DynamicComponentLayout
+class DEVEX_API DynamicComponentLayout
 {
 public:
     // Gives a new component the values its own language calls default, after the fields are built.
@@ -76,6 +78,13 @@ public:
     void destroy(void* component) const noexcept;
     void copy(void* destination, const void* source) const;
 
+    // Shared by the pools that store its components, never copied: its names stay where they are.
+    DynamicComponentLayout(const DynamicComponentLayout&) = delete;
+    DynamicComponentLayout& operator=(const DynamicComponentLayout&) = delete;
+    DynamicComponentLayout(DynamicComponentLayout&&) = default;
+    DynamicComponentLayout& operator=(DynamicComponentLayout&&) = default;
+    ~DynamicComponentLayout() = default;
+
 private:
     DynamicComponentLayout() = default;
 
@@ -92,7 +101,7 @@ private:
 };
 
 // The components of one runtime-described type, stored like any other component pool.
-class DynamicComponentPool final : public ComponentPoolBase
+class DEVEX_API DynamicComponentPool final : public ComponentPoolBase
 {
 public:
     explicit DynamicComponentPool(std::shared_ptr<const DynamicComponentLayout> layout) noexcept;

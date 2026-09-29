@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <devex/asset/AssetId.hpp>
 #include <devex/asset/AssetType.hpp>
 #include <devex/asset/Project.hpp>
@@ -15,7 +17,7 @@
 namespace devex::asset {
 
 // An asset whose cooked data can be loaded.
-struct AssetInfo
+struct DEVEX_API AssetInfo
 {
     AssetId id;
     AssetType type = AssetType::Mesh;
@@ -29,7 +31,7 @@ using ArtifactReader = std::function<core::Result<std::vector<std::byte>>()>;
 
 // Where a game loads its assets from: the asset database of its project while it is developed,
 // the package of the exported game once it ships (asset::PackageReader).
-class AssetSource
+class DEVEX_API AssetSource
 {
 public:
     virtual ~AssetSource() = default;

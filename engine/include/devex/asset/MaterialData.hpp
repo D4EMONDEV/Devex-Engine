@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <devex/asset/AssetId.hpp>
 #include <devex/math/Math.hpp>
 
@@ -19,13 +21,13 @@ enum class AlphaMode : std::uint8_t
     Blend = 2,
 };
 
-[[nodiscard]] std::string_view toString(AlphaMode mode) noexcept;
-[[nodiscard]] std::optional<AlphaMode> parseAlphaMode(std::string_view text) noexcept;
+[[nodiscard]] DEVEX_API std::string_view toString(AlphaMode mode) noexcept;
+[[nodiscard]] DEVEX_API std::optional<AlphaMode> parseAlphaMode(std::string_view text) noexcept;
 
 // Metallic-roughness material with the parameters of glTF 2.0. Textures multiply their factors;
 // an invalid texture identifier leaves the factor alone. Until physically based rendering exists,
 // the renderer uses the base color, alpha, emission and ambient occlusion.
-struct MaterialData
+struct DEVEX_API MaterialData
 {
     // Linear RGBA.
     math::Vec4 baseColorFactor{1.0f};

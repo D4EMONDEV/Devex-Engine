@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <cstdint>
 #include <expected>
 #include <format>
@@ -24,10 +26,10 @@ enum class ErrorCode : std::uint16_t
     Graphics,
 };
 
-[[nodiscard]] std::string_view toString(ErrorCode code) noexcept;
+[[nodiscard]] DEVEX_API std::string_view toString(ErrorCode code) noexcept;
 
 // A recoverable failure. Programming errors are reported with DEVEX_ASSERT instead.
-struct Error
+struct DEVEX_API Error
 {
     ErrorCode code = ErrorCode::Unknown;
     std::string message;

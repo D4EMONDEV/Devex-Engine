@@ -217,6 +217,8 @@ TEST_CASE("The editor opens the project's scenes in tabs and renders its viewpor
         // project manager is gone.
         CHECK(surfaces.contains(2));
         CHECK(surfaces.contains(3));
+        // The scene tree too.
+        CHECK(surfaces.contains(5));
         CHECK_FALSE(surfaces.contains(1));
 
         // Both scenes opened, the level on screen and the menu in a background tab, without unsaved changes.

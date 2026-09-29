@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <devex/asset/AssetId.hpp>
 #include <devex/core/Error.hpp>
 #include <devex/reflection/Reflection.hpp>
@@ -20,7 +22,7 @@ namespace devex::runtime {
 
 class AssetManager;
 
-struct SaveOptions
+struct DEVEX_API SaveOptions
 {
     // Shown in the list of saves: "Chapter 2", the name of a place.
     std::string label;
@@ -34,7 +36,7 @@ struct SaveOptions
 };
 
 // A save as a list of saves shows it.
-struct SaveSlot
+struct DEVEX_API SaveSlot
 {
     std::string name;
     std::string label;
@@ -58,7 +60,7 @@ struct SaveSlot
 // which loading falls back on when the file is damaged. Fields the data no longer has are skipped
 // and new ones keep their defaults, so that older saves still load; the version tells the game
 // what else changed.
-class SaveGames
+class DEVEX_API SaveGames
 {
 public:
     // Empty for a game whose saves cannot be kept, which then fail.
@@ -116,7 +118,7 @@ public:
 
     // For the application. A scene to put in place of the one that plays, with the slot it comes
     // from.
-    struct Restore
+    struct DEVEX_API Restore
     {
         std::string slot;
         std::string sceneText;
@@ -143,7 +145,7 @@ private:
     std::string m_restoredSlot;
     std::vector<std::filesystem::path> m_thumbnailRequests;
     // The textures made of the pictures, with the time of the file they were made from.
-    struct Thumbnail
+    struct DEVEX_API Thumbnail
     {
         asset::AssetId texture;
         std::filesystem::file_time_type written;

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <devex/animation/AnimationWorld.hpp>
 #include <devex/animation/TweenWorld.hpp>
 #include <devex/particles/ParticleWorld.hpp>
@@ -32,7 +34,7 @@
 
 namespace devex::runtime {
 
-struct ApplicationConfig
+struct DEVEX_API ApplicationConfig
 {
     std::string title = "Devex";
     std::uint32_t width = 1280;
@@ -97,7 +99,7 @@ class ApplicationRunner;
 // Inside the editor, onStartup and onShutdown run as usual, but the updates and onRender only run
 // in Play mode, between onPlayStarted and onPlayStopped, and scene() then returns the copy of the
 // edited scene that plays. Entities keep their handles in the copy.
-class Application
+class DEVEX_API Application
 {
 public:
     virtual ~Application() = default;
@@ -240,7 +242,7 @@ private:
 
 // Runs the application until it requests to quit or its main window is closed. Returns a process
 // exit code.
-[[nodiscard]] int run(Application& application, const ApplicationConfig& config);
+[[nodiscard]] DEVEX_API int run(Application& application, const ApplicationConfig& config);
 
 template <std::derived_from<Application> App>
 [[nodiscard]] int run(const ApplicationConfig& config)

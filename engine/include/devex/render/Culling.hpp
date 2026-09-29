@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <devex/math/Math.hpp>
 
 #include <array>
@@ -11,7 +13,7 @@ namespace devex::render {
 // A plane as ax + by + cz + d = 0, whose normal points into the frustum.
 using Plane = math::Vec4;
 
-struct Frustum
+struct DEVEX_API Frustum
 {
     // Left, right, bottom, top, near, far.
     std::array<Plane, 6> planes{};
@@ -27,6 +29,6 @@ struct Frustum
 // The frustum of a view and projection, read from the matrix itself. A plane that the projection
 // leaves undefined, such as the far plane of an infinite projection, comes back empty and lets
 // everything through.
-[[nodiscard]] Frustum frustumOf(const math::Mat4& viewProjection) noexcept;
+[[nodiscard]] DEVEX_API Frustum frustumOf(const math::Mat4& viewProjection) noexcept;
 
 } // namespace devex::render

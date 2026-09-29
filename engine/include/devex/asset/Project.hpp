@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <devex/asset/AssetId.hpp>
 #include <devex/core/Error.hpp>
 #include <devex/math/Math.hpp>
@@ -21,7 +23,7 @@ inline constexpr std::size_t physicsLayerCount = 16;
 inline constexpr std::size_t audioGroupCount = 8;
 
 // The physics of a project: gravity, and the collision layers that bodies belong to.
-struct PhysicsSettings
+struct DEVEX_API PhysicsSettings
 {
     math::Vec3 gravity{0.0f, -9.81f, 0.0f};
     // The name of each layer; layers with an empty name are unused, except the first one.
@@ -42,7 +44,7 @@ struct PhysicsSettings
 
 // The mixer of a project: the master volume, and the groups that sounds play in, such as Music, each
 // with its volume, which game code changes (an options menu).
-struct AudioSettings
+struct DEVEX_API AudioSettings
 {
     float masterVolume = 1.0f;
     // Groups with an empty name are unused, except the first one.
@@ -58,7 +60,7 @@ struct AudioSettings
 
 // How sprites cover each other: the sorting layers of the project, from the back to the front.
 // Sprites name their layer; the blended surfaces and the particles draw in "Default".
-struct SortingSettings
+struct DEVEX_API SortingSettings
 {
     // "Default" is always among them.
     std::vector<std::string> layers{"Default"};
@@ -71,7 +73,7 @@ struct SortingSettings
 };
 
 // How the window of the game starts, in the player and in exported games.
-struct WindowSettings
+struct DEVEX_API WindowSettings
 {
     // In window coordinates, which the system scales on high-density displays.
     std::uint32_t width = 1280;
@@ -89,7 +91,7 @@ struct WindowSettings
 };
 
 // What an export of the game contains, and where it goes.
-struct ExportSettings
+struct DEVEX_API ExportSettings
 {
     // Scenes exported with the startup scene, as res:// paths. The scenes, prefabs and other assets
     // that exported scenes refer to are exported with them.
@@ -125,13 +127,13 @@ enum class InputDirection : std::uint8_t
     Right,
 };
 
-[[nodiscard]] std::string_view toString(InputActionKind kind) noexcept;
-[[nodiscard]] std::optional<InputActionKind> parseInputActionKind(std::string_view text) noexcept;
-[[nodiscard]] std::string_view toString(InputDirection direction) noexcept;
-[[nodiscard]] std::optional<InputDirection> parseInputDirection(std::string_view text) noexcept;
+[[nodiscard]] DEVEX_API std::string_view toString(InputActionKind kind) noexcept;
+[[nodiscard]] DEVEX_API std::optional<InputActionKind> parseInputActionKind(std::string_view text) noexcept;
+[[nodiscard]] DEVEX_API std::string_view toString(InputDirection direction) noexcept;
+[[nodiscard]] DEVEX_API std::optional<InputDirection> parseInputDirection(std::string_view text) noexcept;
 
 // What the player presses or moves for an action.
-struct InputBinding
+struct DEVEX_API InputBinding
 {
     // A key, a mouse button, a gamepad button, axis or stick, as platform::parseInputSource reads
     // it: "key:Space", "mouse:Left", "pad:South", "axis:LeftTrigger", "stick:Left".
@@ -142,7 +144,7 @@ struct InputBinding
 };
 
 // Something the player does, such as "Jump" or "Move", that game code reads instead of keys.
-struct InputAction
+struct DEVEX_API InputAction
 {
     std::string name;
     InputActionKind kind = InputActionKind::Button;
@@ -158,7 +160,7 @@ struct InputAction
 
 // A group of actions that game code turns on and off, such as the actions of the game while a menu
 // is open.
-struct InputContext
+struct DEVEX_API InputContext
 {
     std::string name;
     bool activeAtStart = true;
@@ -167,7 +169,7 @@ struct InputContext
 };
 
 // The actions of a game and what plays them, which the player may change for themselves.
-struct InputSettings
+struct DEVEX_API InputSettings
 {
     std::vector<InputContext> contexts{InputContext{.name = "Gameplay"}};
     std::vector<InputAction> actions;
@@ -178,7 +180,7 @@ struct InputSettings
 // A game project: a .dvxproj file whose directory holds the assets/ folder, the code/ folder of its
 // game module when it has one, and the .devex/ cache of imported data and builds, which is never
 // versioned.
-struct Project
+struct DEVEX_API Project
 {
     std::string name;
     // Absolute directory of the project file.
@@ -220,18 +222,18 @@ struct Project
 // the .dvxproj file, followed by optional [physics], [physics_layer], [audio], [audio_group],
 // [sorting_layer], [window], [export], [export_scene], [export_folder], [input_context] and
 // [input_action] sections.
-[[nodiscard]] core::Result<Project> loadProject(const std::filesystem::path& projectFile);
+[[nodiscard]] DEVEX_API core::Result<Project> loadProject(const std::filesystem::path& projectFile);
 // The same from the text of a project file, as exported games keep it; projectFile gives the
 // project its root.
-[[nodiscard]] core::Result<Project> parseProject(std::string_view text, const std::filesystem::path& projectFile);
+[[nodiscard]] DEVEX_API core::Result<Project> parseProject(std::string_view text, const std::filesystem::path& projectFile);
 
 // Writes the project's settings to its .dvxproj file. Sections are only written when they differ
 // from the defaults.
-[[nodiscard]] core::Result<void> saveProject(const Project& project);
-[[nodiscard]] std::string writeProjectText(const Project& project);
+[[nodiscard]] DEVEX_API core::Result<void> saveProject(const Project& project);
+[[nodiscard]] DEVEX_API std::string writeProjectText(const Project& project);
 
 // Writes a .dvxproj file into the directory and creates its assets/ and empty code/ folders.
-[[nodiscard]] core::Result<Project> createProject(const std::filesystem::path& directory,
-                                                  std::string_view name);
+[[nodiscard]] DEVEX_API core::Result<Project> createProject(const std::filesystem::path& directory,
+                                                            std::string_view name);
 
 } // namespace devex::asset

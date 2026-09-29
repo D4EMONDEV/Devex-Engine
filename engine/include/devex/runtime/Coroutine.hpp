@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <devex/animation/TweenWorld.hpp>
 #include <devex/core/Uuid.hpp>
 #include <devex/runtime/Game.hpp>
@@ -34,10 +36,10 @@ namespace devex::runtime {
 
 class CoroutineScheduler;
 
-class [[nodiscard]] Coroutine
+class DEVEX_API [[nodiscard]] Coroutine
 {
 public:
-    struct promise_type
+    struct DEVEX_API promise_type
     {
         std::exception_ptr exception;
 
@@ -108,7 +110,7 @@ private:
 };
 
 // What a coroutine waits for.
-struct CoroutineWait
+struct DEVEX_API CoroutineWait
 {
     enum class Kind : std::uint8_t
     {
@@ -124,10 +126,10 @@ struct CoroutineWait
 };
 
 // What a coroutine knows of the game while it runs: the frame it resumes in, and how to wait.
-class CoroutineContext
+class DEVEX_API CoroutineContext
 {
 public:
-    class Awaitable
+    class DEVEX_API Awaitable
     {
     public:
         Awaitable(CoroutineContext& context, CoroutineWait wait) noexcept
@@ -195,7 +197,7 @@ private:
     CoroutineWait m_wait;
 };
 
-struct CoroutineHandle
+struct DEVEX_API CoroutineHandle
 {
     std::uint64_t id = 0;
 
@@ -206,7 +208,7 @@ struct CoroutineHandle
 };
 
 // Runs the coroutines of a game: each frame, those whose wait is over go on until their next one.
-class CoroutineScheduler
+class DEVEX_API CoroutineScheduler
 {
 public:
     using Function = std::function<Coroutine(CoroutineContext& context)>;
@@ -232,7 +234,7 @@ public:
     [[nodiscard]] std::size_t count() const noexcept;
 
 private:
-    struct Entry
+    struct DEVEX_API Entry
     {
         std::uint64_t id = 0;
         Function function;

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <devex/asset/AssetId.hpp>
 #include <devex/asset/AssetType.hpp>
 
@@ -11,7 +13,7 @@
 // what the developer of a game can make smaller.
 namespace devex::asset {
 
-struct AssetMemory
+struct DEVEX_API AssetMemory
 {
     AssetId id;
     std::string name;
@@ -20,7 +22,7 @@ struct AssetMemory
     std::size_t gpuBytes = 0;
 };
 
-struct MemoryByType
+struct DEVEX_API MemoryByType
 {
     AssetType type = AssetType::Mesh;
     std::size_t count = 0;
@@ -28,7 +30,7 @@ struct MemoryByType
     std::size_t gpuBytes = 0;
 };
 
-struct MemoryReport
+struct DEVEX_API MemoryReport
 {
     // One line per type that has something loaded, the heaviest first.
     std::vector<MemoryByType> types;

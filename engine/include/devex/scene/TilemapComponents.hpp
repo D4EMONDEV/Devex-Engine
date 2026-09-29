@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <devex/asset/AssetId.hpp>
 #include <devex/math/Math.hpp>
 #include <devex/reflection/Reflection.hpp>
@@ -28,7 +30,7 @@ inline constexpr std::uint16_t tileFlipY = 0x8000;
 // A grid of tiles in the XY plane of its entity, painted from a tileset: cell (x, y) covers
 // [x, x + 1) by [y, y + 1) cells from the origin, y up. Every tile fills its cell. Tilemaps draw
 // among the sprites and the blended surfaces, by sorting layer, order, then distance.
-struct Tilemap
+struct DEVEX_API Tilemap
 {
     asset::AssetId tileset;
     // The size of a cell, in meters.
@@ -44,9 +46,9 @@ struct Tilemap
     // cells in base64, two bytes each, row by row from the bottom. TileGrid reads and writes them.
     std::vector<std::string> blocks;
 };
-DEVEX_DECLARE_REFLECTION(Tilemap);
+DEVEX_DECLARE_ENGINE_REFLECTION(Tilemap);
 
-struct TileCell
+struct DEVEX_API TileCell
 {
     math::IVec2 cell{0};
     std::uint16_t value = 0;
@@ -56,7 +58,7 @@ struct TileCell
 
 // The cells of a tilemap decoded, to read and change many of them: read from a Tilemap, changed,
 // then written back.
-class TileGrid
+class DEVEX_API TileGrid
 {
 public:
     static constexpr std::int32_t blockSize = 16;
@@ -95,13 +97,13 @@ private:
 };
 
 // One cell, without decoding the whole map.
-[[nodiscard]] std::uint16_t tileAt(const Tilemap& tilemap, math::IVec2 cell);
-void setTile(Tilemap& tilemap, math::IVec2 cell, std::uint16_t value);
+[[nodiscard]] DEVEX_API std::uint16_t tileAt(const Tilemap& tilemap, math::IVec2 cell);
+DEVEX_API void setTile(Tilemap& tilemap, math::IVec2 cell, std::uint16_t value);
 
 // The cell under a point of the world, for a tilemap whose entity stands at `world`: the point is
 // brought into the plane of the tilemap along its Z axis.
-[[nodiscard]] math::IVec2 cellAt(const Tilemap& tilemap, const math::Mat4& world, math::Vec3 point) noexcept;
+[[nodiscard]] DEVEX_API math::IVec2 cellAt(const Tilemap& tilemap, const math::Mat4& world, math::Vec3 point) noexcept;
 // The middle of a cell, in the world.
-[[nodiscard]] math::Vec3 cellCenter(const Tilemap& tilemap, const math::Mat4& world, math::IVec2 cell) noexcept;
+[[nodiscard]] DEVEX_API math::Vec3 cellCenter(const Tilemap& tilemap, const math::Mat4& world, math::IVec2 cell) noexcept;
 
 } // namespace devex::scene

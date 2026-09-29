@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <cstdint>
 #include <filesystem>
 #include <string_view>
@@ -23,7 +25,7 @@ enum class TokenKind : std::uint8_t
 };
 
 // A run of one kind inside one line, as byte offsets into that line.
-struct Token
+struct DEVEX_API Token
 {
     std::uint32_t begin = 0;
     std::uint32_t end = 0;
@@ -43,12 +45,12 @@ enum class CodeLanguage : std::uint8_t
 };
 
 // The language of a file, from its name and extension.
-[[nodiscard]] CodeLanguage languageOf(const std::filesystem::path& path);
+[[nodiscard]] DEVEX_API CodeLanguage languageOf(const std::filesystem::path& path);
 
-[[nodiscard]] std::string_view toString(CodeLanguage language) noexcept;
+[[nodiscard]] DEVEX_API std::string_view toString(CodeLanguage language) noexcept;
 
 // What a line leaves behind for the next one: a block comment or a raw string that goes on.
-struct HighlightState
+struct DEVEX_API HighlightState
 {
     bool inBlockComment = false;
 
@@ -57,10 +59,10 @@ struct HighlightState
 
 // The tokens of one line, in order, without the runs that carry no color. The state is read and
 // updated, so lines must be highlighted in order.
-[[nodiscard]] std::vector<Token> highlightLine(std::string_view line, CodeLanguage language,
-                                               HighlightState& state);
+[[nodiscard]] DEVEX_API std::vector<Token> highlightLine(std::string_view line, CodeLanguage language,
+                                                         HighlightState& state);
 
 // The text that starts a line comment, empty when the language has none: what Ctrl+/ inserts.
-[[nodiscard]] std::string_view lineCommentOf(CodeLanguage language) noexcept;
+[[nodiscard]] DEVEX_API std::string_view lineCommentOf(CodeLanguage language) noexcept;
 
 } // namespace devex::tools::detail

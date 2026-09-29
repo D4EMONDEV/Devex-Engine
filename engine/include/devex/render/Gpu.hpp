@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <cstdint>
 #include <string>
 #include <string_view>
@@ -15,10 +17,10 @@ enum class GpuType : std::uint8_t
     Cpu,
 };
 
-[[nodiscard]] std::string_view toString(GpuType type) noexcept;
+[[nodiscard]] DEVEX_API std::string_view toString(GpuType type) noexcept;
 
 // Description of a graphics adapter, for display and diagnostics.
-struct GpuInfo
+struct DEVEX_API GpuInfo
 {
     std::string name;
     GpuType type = GpuType::Other;

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <devex/asset/AssetId.hpp>
 #include <devex/math/Math.hpp>
 #include <devex/reflection/Reflection.hpp>
@@ -34,7 +36,7 @@ enum class SpriteBlend : std::uint8_t
 // Draws a sprite flat in the XY plane of its entity, facing +Z, towards a camera looking down -Z.
 // Sprites draw after the opaque surfaces, over each other by sorting layer, then by order, then
 // from the farthest to the nearest.
-struct SpriteRenderer
+struct DEVEX_API SpriteRenderer
 {
     asset::AssetId sprite;
     // Multiplies the sprite: its tint and its opacity.
@@ -56,12 +58,12 @@ struct SpriteRenderer
     // are, whatever the exposure.
     bool lit = false;
 };
-DEVEX_DECLARE_REFLECTION(SpriteRenderer);
+DEVEX_DECLARE_ENGINE_REFLECTION(SpriteRenderer);
 
 // Shows the frames of an animation of sprite frames on the SpriteRenderer of its entity, one after the
 // other while the game plays. It chooses what the renderer shows, in the editor too: its frame poses
 // the sprite.
-struct SpriteAnimator
+struct DEVEX_API SpriteAnimator
 {
     asset::AssetId frames;
     // The animation it plays, by name; empty plays the first one. Naming another one starts it from
@@ -79,7 +81,7 @@ struct SpriteAnimator
     std::string playedAnimation;
     float frameTime = 0.0f;
 };
-DEVEX_DECLARE_REFLECTION(SpriteAnimator);
+DEVEX_DECLARE_ENGINE_REFLECTION(SpriteAnimator);
 
 } // namespace devex::scene
 

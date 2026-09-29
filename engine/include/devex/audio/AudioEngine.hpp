@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <devex/asset/Project.hpp>
 #include <devex/audio/Clip.hpp>
 #include <devex/core/Error.hpp>
@@ -15,10 +17,10 @@
 // device, through the groups of the project (Effects, Music, Voice...), each with its volume.
 namespace devex::audio {
 
-class AudioEngine
+class DEVEX_API AudioEngine
 {
 public:
-    struct Config
+    struct DEVEX_API Config
     {
         // Without a device, the engine mixes only when read() asks, as tests do.
         bool device = true;

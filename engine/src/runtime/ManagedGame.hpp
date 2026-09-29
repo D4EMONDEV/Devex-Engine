@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <devex/asset/AssetId.hpp>
 #include <devex/asset/AssetSource.hpp>
 #include <devex/core/Error.hpp>
@@ -29,11 +31,11 @@ namespace devex::runtime::detail {
 // component types described at runtime: the engine owns their memory, so scenes, the inspector,
 // prefabs and undo treat them like the components written in C++. During each phase, the runtime
 // copies the values into the C# objects, runs the game's code, and copies them back.
-class ManagedGame
+class DEVEX_API ManagedGame
 {
 public:
     // What C# code reaches during one phase, and what it asks the engine to do afterwards.
-    struct Frame
+    struct DEVEX_API Frame
     {
         scene::Scene* scene = nullptr;
         core::Duration delta{0.0};

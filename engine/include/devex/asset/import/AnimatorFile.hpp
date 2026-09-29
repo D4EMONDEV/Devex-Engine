@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <devex/asset/AnimatorData.hpp>
 #include <devex/core/Error.hpp>
 
@@ -27,7 +29,7 @@ namespace devex::asset {
 // Conditions are greater(), less(), equals() and not_equals() of a parameter and a number,
 // is() of a bool parameter and true or false, and trigger() of a trigger. A transition without
 // from leaves any state.
-[[nodiscard]] core::Result<AnimatorData> parseAnimatorFile(std::string_view text);
-[[nodiscard]] std::string writeAnimatorFile(const AnimatorData& animator);
+[[nodiscard]] DEVEX_API core::Result<AnimatorData> parseAnimatorFile(std::string_view text);
+[[nodiscard]] DEVEX_API std::string writeAnimatorFile(const AnimatorData& animator);
 
 } // namespace devex::asset

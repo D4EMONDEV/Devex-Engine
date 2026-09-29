@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <devex/core/Error.hpp>
 
 #include <filesystem>
@@ -13,11 +15,11 @@ namespace devex::platform {
 
 // Sets a variable of this process's environment, which the programs it starts inherit. An empty
 // value removes it.
-void setEnvironmentVariable(std::string_view name, std::string_view value);
+DEVEX_API void setEnvironmentVariable(std::string_view name, std::string_view value);
 
 // A program run in the background with its output captured and read without blocking, such as a
 // compiler. Standard error is merged into standard output.
-class Process
+class DEVEX_API Process
 {
 public:
     // The first argument is the program, looked up in PATH. An empty working directory keeps the
@@ -56,6 +58,6 @@ private:
 };
 
 // The identifier of the running process, which debuggers attach to.
-[[nodiscard]] std::uint32_t currentProcessId() noexcept;
+[[nodiscard]] DEVEX_API std::uint32_t currentProcessId() noexcept;
 
 } // namespace devex::platform

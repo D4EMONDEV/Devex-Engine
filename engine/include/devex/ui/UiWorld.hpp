@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <devex/core/Time.hpp>
 #include <devex/math/Math.hpp>
 #include <devex/scene/Entity.hpp>
@@ -32,7 +34,7 @@ namespace devex::ui {
 // What drives the interface in one frame. The pointer is in pixels of the image the interface is
 // drawn over, from its top left corner; the steps come from the keyboard or from the pad, and are
 // sent once per press.
-struct UiInput
+struct DEVEX_API UiInput
 {
     math::Vec2 pointer{0.0f};
     bool pointerDown = false;
@@ -68,7 +70,7 @@ struct UiInput
 };
 
 // How the tooltips look: the interface world draws them over every canvas, in pixels.
-struct TooltipStyle
+struct DEVEX_API TooltipStyle
 {
     math::Vec4 background{0.08f, 0.09f, 0.11f, 0.96f};
     math::Vec4 text{0.92f, 0.93f, 0.95f, 1.0f};
@@ -82,7 +84,7 @@ struct TooltipStyle
 
 // What the pointer carries to the drop targets: a UiDragSource taken away, or what a drag that
 // started outside the interface announced.
-struct Carried
+struct DEVEX_API Carried
 {
     // Invalid when the drag started outside the interface.
     scene::Entity source;
@@ -93,22 +95,25 @@ struct Carried
 };
 
 // What a drop target took.
-struct Drop
+struct DEVEX_API Drop
 {
     // Invalid when the drag started outside the interface.
     scene::Entity source;
     scene::Entity target;
     std::string type;
     std::string data;
+    // Where it was let go in the target, from its top left corner (0, 0) to its bottom right (1, 1):
+    // a list tells a drop before a row from one after it.
+    math::Vec2 at{0.5f};
 };
 
 // The interfaces of a game that plays: the canvases of its scene, laid out every frame, answering
 // the pointer and the pad, and turned into the triangles the renderer draws.
-class UiWorld
+class DEVEX_API UiWorld
 {
 public:
     // One canvas of the scene, as the last update placed it.
-    struct CanvasLayout
+    struct DEVEX_API CanvasLayout
     {
         scene::Entity entity;
         LayoutResult layout;
@@ -203,7 +208,7 @@ public:
 
 private:
     // The modal every input goes to while it is open: its canvas and its elements there.
-    struct ModalRange
+    struct DEVEX_API ModalRange
     {
         std::size_t canvas = 0;
         std::size_t begin = 0;
@@ -220,7 +225,7 @@ private:
         Splitter,
         Column,
     };
-    struct Drag
+    struct DEVEX_API Drag
     {
         DragKind kind = DragKind::None;
         scene::Entity entity;
@@ -229,28 +234,28 @@ private:
     };
 
     // The dropdown whose list is open, the option under the pointer, and the first one shown.
-    struct OpenDropdown
+    struct DEVEX_API OpenDropdown
     {
         scene::Entity entity;
         std::int32_t highlighted = -1;
         std::size_t first = 0;
     };
 
-    struct Tooltip
+    struct DEVEX_API Tooltip
     {
         scene::Entity entity;
         float rested = 0.0f;
         bool shown = false;
         math::Vec2 at{0.0f};
     };
-    struct ButtonState
+    struct DEVEX_API ButtonState
     {
         scene::Entity entity;
         math::Vec4 tint{1.0f};
     };
 
     // The field being edited: where its cursor stands, in bytes of its own text.
-    struct EditingField
+    struct DEVEX_API EditingField
     {
         scene::Entity entity;
         std::size_t caret = 0;
@@ -360,7 +365,7 @@ private:
     TooltipStyle m_tooltipStyle;
 
     // A drag source pressed, and where, until the pointer moves far enough to take it away.
-    struct DragCandidate
+    struct DEVEX_API DragCandidate
     {
         scene::Entity source;
         math::Vec2 from{0.0f};

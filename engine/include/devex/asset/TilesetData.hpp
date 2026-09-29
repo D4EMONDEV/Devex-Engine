@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <devex/asset/AssetId.hpp>
 #include <devex/core/Error.hpp>
 
@@ -30,10 +32,10 @@ enum class TileCollision : std::uint8_t
     Top = 2,
 };
 
-[[nodiscard]] std::string_view toString(TileCollision collision) noexcept;
-[[nodiscard]] std::optional<TileCollision> parseTileCollision(std::string_view text) noexcept;
+[[nodiscard]] DEVEX_API std::string_view toString(TileCollision collision) noexcept;
+[[nodiscard]] DEVEX_API std::optional<TileCollision> parseTileCollision(std::string_view text) noexcept;
 
-struct TileData
+struct DEVEX_API TileData
 {
     // From 1 to maxTileId, kept when tiles are added or removed: cells hold it.
     std::uint32_t id = 0;
@@ -52,7 +54,7 @@ struct TileData
     bool operator==(const TileData&) const = default;
 };
 
-struct TilesetData
+struct DEVEX_API TilesetData
 {
     std::vector<TileData> tiles;
 
@@ -65,6 +67,6 @@ struct TilesetData
 };
 
 // Identifiers from 1 to maxTileId, each once, and frame rates that are not negative.
-[[nodiscard]] core::Result<void> validate(const TilesetData& tileset);
+[[nodiscard]] DEVEX_API core::Result<void> validate(const TilesetData& tileset);
 
 } // namespace devex::asset

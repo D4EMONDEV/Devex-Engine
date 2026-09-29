@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include "EditorCamera.hpp"
 #include "EditorView.hpp"
 
@@ -26,10 +28,10 @@ enum class ScreenContent : std::uint8_t
     Nothing,
 };
 
-[[nodiscard]] ScreenContent screenContent(bool twoD, const scene::Scene& scene) noexcept;
+[[nodiscard]] DEVEX_API ScreenContent screenContent(bool twoD, const scene::Scene& scene) noexcept;
 
 // The rectangle of the XY plane the game shows, in meters.
-struct GameFrame
+struct DEVEX_API GameFrame
 {
     math::Vec2 min{0.0f};
     math::Vec2 max{0.0f};
@@ -40,13 +42,13 @@ struct GameFrame
 // The view of the primary camera of a 2D scene when it is orthographic, or else the view a new 2D
 // camera would have from the origin, where the interfaces of a 3D scene are edited. The aspect is
 // the width of the image over its height.
-[[nodiscard]] GameFrame gameFrame(const scene::Scene& scene, float aspect);
+[[nodiscard]] DEVEX_API GameFrame gameFrame(const scene::Scene& scene, float aspect);
 
 // Where the 2D screen draws the interfaces: laid out on the image of the view, as the game lays them
 // out in the viewport, then shrunk into the frame of the game. Nothing when the frame is off the view.
-[[nodiscard]] std::optional<InterfaceFrame> interfaceFrame(const GameFrame& frame, const ViewportView& view);
+[[nodiscard]] DEVEX_API std::optional<InterfaceFrame> interfaceFrame(const GameFrame& frame, const ViewportView& view);
 
 // The screen of the kind of a scene, and its 2D view on what the game shows.
-void fitToScene(EditorCamera& camera, const scene::Scene& scene);
+DEVEX_API void fitToScene(EditorCamera& camera, const scene::Scene& scene);
 
 } // namespace devex::tools::detail

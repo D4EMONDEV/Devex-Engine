@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <devex/core/Error.hpp>
 
 #include <string>
@@ -14,7 +16,7 @@ inline constexpr std::string_view themeExtension = ".dvxtheme";
 
 // One value a style sets: the component it belongs to, the field inside it, and the value written
 // the way a text file writes it, such as "vec4(0.1, 0.1, 0.12, 0.9)".
-struct ThemeOverride
+struct DEVEX_API ThemeOverride
 {
     std::string component;
     std::string field;
@@ -22,13 +24,13 @@ struct ThemeOverride
 };
 
 // A look an element can follow: "panel", "title", "primary".
-struct ThemeStyle
+struct DEVEX_API ThemeStyle
 {
     std::string name;
     std::vector<ThemeOverride> values;
 };
 
-struct ThemeData
+struct DEVEX_API ThemeData
 {
     std::vector<ThemeStyle> styles;
 
@@ -36,6 +38,6 @@ struct ThemeData
     [[nodiscard]] const ThemeStyle* find(std::string_view name) const noexcept;
 };
 
-[[nodiscard]] core::Result<void> validate(const ThemeData& theme);
+[[nodiscard]] DEVEX_API core::Result<void> validate(const ThemeData& theme);
 
 } // namespace devex::asset

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <devex/math/Math.hpp>
 #include <devex/scene/Entity.hpp>
 #include <devex/scene/UiComponents.hpp>
@@ -19,7 +21,7 @@ namespace devex::ui {
 
 // One element, placed. Positions are in the units of the canvas, X to the right and Y downwards,
 // with the origin at the top left corner of the window.
-struct LaidOutRect
+struct DEVEX_API LaidOutRect
 {
     scene::Entity entity;
     // The rectangle before rotation and scaling.
@@ -52,7 +54,7 @@ struct LaidOutRect
 };
 
 // The elements of one canvas, parents before their children, in the order they are drawn.
-struct LayoutResult
+struct DEVEX_API LayoutResult
 {
     std::vector<LaidOutRect> rects;
     // The size of the canvas in its own units, and how many pixels one unit takes.
@@ -63,11 +65,11 @@ struct LayoutResult
 };
 
 // How many pixels one unit of the canvas takes on a window of that size, in pixels.
-[[nodiscard]] float canvasScale(const scene::Canvas& canvas, math::Vec2 windowSize) noexcept;
+[[nodiscard]] DEVEX_API float canvasScale(const scene::Canvas& canvas, math::Vec2 windowSize) noexcept;
 
 // Places every UiRect under the canvas entity. The canvas itself fills the window.
 // A popup opened at a point, which it takes as its top left corner, in units of its canvas.
-struct PopupPlacement
+struct DEVEX_API PopupPlacement
 {
     scene::Entity popup;
     math::Vec2 point{0.0f};
@@ -76,27 +78,27 @@ struct PopupPlacement
 // Open popups are laid out after the rest of their canvas, so that they are drawn over it and
 // answer the pointer first, and nothing above them cuts or scrolls them. Those opened at a point
 // stand there, inside the canvas.
-void layoutCanvas(const scene::Scene& scene, scene::Entity canvas, math::Vec2 windowSize,
-                  LayoutResult& result, std::span<const PopupPlacement> popups = {});
+DEVEX_API void layoutCanvas(const scene::Scene& scene, scene::Entity canvas, math::Vec2 windowSize,
+                            LayoutResult& result, std::span<const PopupPlacement> popups = {});
 
 // The index after the last descendant of the element at `index`: its subtree is [index, end).
-[[nodiscard]] std::size_t subtreeEnd(std::span<const LaidOutRect> rects, std::size_t index) noexcept;
+[[nodiscard]] DEVEX_API std::size_t subtreeEnd(std::span<const LaidOutRect> rects, std::size_t index) noexcept;
 
 // The bar of a splitter laid out in `rect`, between its two children: its corners, in units.
-[[nodiscard]] std::pair<math::Vec2, math::Vec2> splitterBar(const LaidOutRect& rect,
-                                                            const scene::UiSplitter& splitter) noexcept;
+[[nodiscard]] DEVEX_API std::pair<math::Vec2, math::Vec2> splitterBar(const LaidOutRect& rect,
+                                                                      const scene::UiSplitter& splitter) noexcept;
 
 // The item the first child of a virtual list shows: the first one in view.
-[[nodiscard]] std::uint32_t virtualFirst(const LaidOutRect& rect, const scene::UiVirtualList& list) noexcept;
+[[nodiscard]] DEVEX_API std::uint32_t virtualFirst(const LaidOutRect& rect, const scene::UiVirtualList& list) noexcept;
 
 // Whether the rectangle cuts anything, and what is left of a box once it is cut.
-[[nodiscard]] bool isClipped(const math::Vec4& clip) noexcept;
-[[nodiscard]] math::Vec4 intersectClip(const math::Vec4& clip, const math::Vec4& other) noexcept;
+[[nodiscard]] DEVEX_API bool isClipped(const math::Vec4& clip) noexcept;
+[[nodiscard]] DEVEX_API math::Vec4 intersectClip(const math::Vec4& clip, const math::Vec4& other) noexcept;
 
 // The four corners of a placed element, turned and scaled around its pivot, starting at the top
 // left corner and going clockwise.
-[[nodiscard]] std::array<math::Vec2, 4> corners(const LaidOutRect& rect) noexcept;
+[[nodiscard]] DEVEX_API std::array<math::Vec2, 4> corners(const LaidOutRect& rect) noexcept;
 // Whether a point of the canvas lies inside the element, rotation included.
-[[nodiscard]] bool contains(const LaidOutRect& rect, math::Vec2 point) noexcept;
+[[nodiscard]] DEVEX_API bool contains(const LaidOutRect& rect, math::Vec2 point) noexcept;
 
 } // namespace devex::ui

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <cstddef>
 #include <cstdint>
 #include <string_view>
@@ -26,12 +28,12 @@ enum class AudioLoading : std::uint8_t
     Streamed = 2,
 };
 
-[[nodiscard]] std::string_view toString(AudioEncoding encoding) noexcept;
-[[nodiscard]] std::string_view toString(AudioLoading loading) noexcept;
+[[nodiscard]] DEVEX_API std::string_view toString(AudioEncoding encoding) noexcept;
+[[nodiscard]] DEVEX_API std::string_view toString(AudioLoading loading) noexcept;
 
 // A sound: the file it was imported from, kept as it is, with what the engine and the editor need
 // to know about it without decoding it.
-struct AudioClipData
+struct DEVEX_API AudioClipData
 {
     AudioEncoding encoding = AudioEncoding::Wav;
     AudioLoading loading = AudioLoading::Decoded;

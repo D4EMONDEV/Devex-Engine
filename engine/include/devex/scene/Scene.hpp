@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <devex/core/Assert.hpp>
 #include <devex/core/Error.hpp>
 #include <devex/core/Uuid.hpp>
@@ -26,7 +28,7 @@ namespace devex::scene {
 namespace detail {
 // The index of a component type identified by its decorated name, assigned on first use. The
 // engine keeps these indices, so that the editor and game modules agree on them.
-[[nodiscard]] std::size_t componentTypeIndex(std::string_view typeKey);
+[[nodiscard]] DEVEX_API std::size_t componentTypeIndex(std::string_view typeKey);
 
 template <typename T>
 [[nodiscard]] const char* typeKey() noexcept
@@ -59,7 +61,7 @@ enum class SceneKind : std::uint8_t
 
 // A world of entities organized in a hierarchy. Each entity has a UUID, a name and any number of
 // components, at most one per type, stored contiguously per type.
-class Scene
+class DEVEX_API Scene
 {
 public:
     Scene();
@@ -103,6 +105,8 @@ public:
     // parent is child itself or one of its descendants, or when `before` is not a child of
     // parent. Keeps the current position when parent is unchanged and `before` is invalid.
     [[nodiscard]] core::Result<void> setParent(Entity child, Entity parent, Entity before = {});
+    // Moves an entity after the last of its siblings, under the same parent.
+    void placeLast(Entity child);
     [[nodiscard]] Entity parent(Entity entity) const noexcept;
     [[nodiscard]] Entity firstChild(Entity entity) const noexcept;
     [[nodiscard]] Entity nextSibling(Entity entity) const noexcept;
@@ -200,7 +204,7 @@ public:
     void destroyComponentPool(std::size_t typeIndex) noexcept;
 
 private:
-    struct EntityRecord
+    struct DEVEX_API EntityRecord
     {
         core::Uuid uuid;
         std::string name;

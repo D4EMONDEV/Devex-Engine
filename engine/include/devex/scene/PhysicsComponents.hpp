@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <devex/asset/AssetId.hpp>
 #include <devex/math/Math.hpp>
 #include <devex/reflection/Reflection.hpp>
@@ -26,7 +28,7 @@ enum class BodyType : std::uint8_t
 // descendants that have no RigidBody of their own. Colliders without any RigidBody above them form
 // static bodies. The simulation writes the position, rotation and velocities of dynamic bodies
 // back each fixed step; setting them from game code moves the body.
-struct RigidBody
+struct DEVEX_API RigidBody
 {
     BodyType type = BodyType::Dynamic;
     // In kilograms, for dynamic bodies.
@@ -51,29 +53,29 @@ struct RigidBody
     math::Vec3 linearVelocity{0.0f};
     math::Vec3 angularVelocity{0.0f};
 };
-DEVEX_DECLARE_REFLECTION(RigidBody);
+DEVEX_DECLARE_ENGINE_REFLECTION(RigidBody);
 
 // Colliders are sized in the space of their entity, whose scale they follow. A trigger detects
 // what enters and leaves it without blocking anything.
-struct BoxCollider
+struct DEVEX_API BoxCollider
 {
     // Full extents.
     math::Vec3 size{1.0f};
     math::Vec3 center{0.0f};
     bool trigger = false;
 };
-DEVEX_DECLARE_REFLECTION(BoxCollider);
+DEVEX_DECLARE_ENGINE_REFLECTION(BoxCollider);
 
-struct SphereCollider
+struct DEVEX_API SphereCollider
 {
     float radius = 0.5f;
     math::Vec3 center{0.0f};
     bool trigger = false;
 };
-DEVEX_DECLARE_REFLECTION(SphereCollider);
+DEVEX_DECLARE_ENGINE_REFLECTION(SphereCollider);
 
 // A capsule along the Y axis.
-struct CapsuleCollider
+struct DEVEX_API CapsuleCollider
 {
     float radius = 0.5f;
     // Total height, including the rounded ends.
@@ -81,33 +83,33 @@ struct CapsuleCollider
     math::Vec3 center{0.0f};
     bool trigger = false;
 };
-DEVEX_DECLARE_REFLECTION(CapsuleCollider);
+DEVEX_DECLARE_ENGINE_REFLECTION(CapsuleCollider);
 
 // A cylinder along the Y axis.
-struct CylinderCollider
+struct DEVEX_API CylinderCollider
 {
     float radius = 0.5f;
     float height = 1.0f;
     math::Vec3 center{0.0f};
     bool trigger = false;
 };
-DEVEX_DECLARE_REFLECTION(CylinderCollider);
+DEVEX_DECLARE_ENGINE_REFLECTION(CylinderCollider);
 
 // The triangles of a mesh, for static scenery, or their convex hull, which dynamic bodies need.
-struct MeshCollider
+struct DEVEX_API MeshCollider
 {
     // Without a mesh, the mesh of the entity's MeshRenderer.
     asset::AssetId mesh;
     bool convex = false;
     bool trigger = false;
 };
-DEVEX_DECLARE_REFLECTION(MeshCollider);
+DEVEX_DECLARE_ENGINE_REFLECTION(MeshCollider);
 
 // A character moved by game code: it walks up slopes and steps, stays on the ground, is carried by
 // moving platforms and pushes dynamic bodies. Its entity's position is at the bottom of its capsule.
 // Game code sets the velocity each frame; the simulation adds gravity, moves the character and
 // writes back the velocity and whether it stands on the ground.
-struct CharacterController
+struct DEVEX_API CharacterController
 {
     float radius = 0.35f;
     float height = 1.8f;
@@ -126,7 +128,7 @@ struct CharacterController
     bool grounded = false;
     math::Vec3 groundNormal{0.0f, 1.0f, 0.0f};
 };
-DEVEX_DECLARE_REFLECTION(CharacterController);
+DEVEX_DECLARE_ENGINE_REFLECTION(CharacterController);
 
 } // namespace devex::scene
 

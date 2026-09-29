@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <devex/asset/AssetId.hpp>
 #include <devex/asset/NavMeshData.hpp>
 #include <devex/core/Error.hpp>
@@ -22,7 +24,7 @@ namespace devex::navigation {
 // The baked navigation mesh of an asset; null when it cannot be loaded.
 using NavMeshSource = std::function<std::shared_ptr<const asset::NavMeshData>(asset::AssetId navMesh)>;
 
-struct NavigationWorldConfig
+struct DEVEX_API NavigationWorldConfig
 {
     NavMeshSource navMeshes;
     // Agents walking at the same time, and obstacles cut out of the mesh.
@@ -31,7 +33,7 @@ struct NavigationWorldConfig
 };
 
 // Where a ray along the navigation mesh leaves it.
-struct NavHit
+struct DEVEX_API NavHit
 {
     math::Vec3 position{0.0f};
     // Along the ground, away from the edge it hit.
@@ -42,7 +44,7 @@ struct NavHit
 // The navigation of a scene while it plays: the mesh of its NavMeshSurface, with its NavMeshObstacle
 // components cut out of it, and its NavMeshAgent components walking it as a crowd that steers around
 // itself.
-class NavigationWorld
+class DEVEX_API NavigationWorld
 {
 public:
     [[nodiscard]] static core::Result<std::unique_ptr<NavigationWorld>> create(NavigationWorldConfig config);

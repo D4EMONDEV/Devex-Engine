@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <devex/math/Math.hpp>
 #include <devex/render/RenderWorld.hpp>
 
@@ -17,7 +19,7 @@ inline constexpr std::uint32_t cascadeCount = 4;
 // How wide a view is along its axis: at a distance, its half width and half height are
 // halfExtent + slope * distance. A perspective starts from a point and widens with its field of
 // view; an orthographic view keeps its size.
-struct ViewVolume
+struct DEVEX_API ViewVolume
 {
     math::Vec2 halfExtent{0.0f};
     math::Vec2 slope{1.0f};
@@ -33,7 +35,7 @@ struct ViewVolume
     }
 };
 
-struct ShadowCascades
+struct DEVEX_API ShadowCascades
 {
     // World to shadow clip space, with the Vulkan clip space convention (Y down, depth 0 to 1).
     std::array<math::Mat4, cascadeCount> viewProjections{};
@@ -44,22 +46,22 @@ struct ShadowCascades
 };
 
 // Distances at which cascades end: a blend of uniform and logarithmic splits, weighted by lambda.
-[[nodiscard]] std::array<float, cascadeCount> computeCascadeSplits(float nearPlane, float shadowDistance,
-                                                                   float lambda) noexcept;
+[[nodiscard]] DEVEX_API std::array<float, cascadeCount> computeCascadeSplits(float nearPlane, float shadowDistance,
+                                                                             float lambda) noexcept;
 
 // Fits an orthographic shadow projection around each slice of the camera frustum. Each cascade
 // covers the bounding sphere of its slice, and snaps to shadow map texels, so that shadows do not
 // shimmer when the camera moves or turns.
-[[nodiscard]] ShadowCascades computeShadowCascades(const math::Mat4& cameraWorld, const ViewVolume& volume,
-                                                   float nearPlane, float shadowDistance,
-                                                   math::Vec3 lightDirection, std::uint32_t resolution) noexcept;
+[[nodiscard]] DEVEX_API ShadowCascades computeShadowCascades(const math::Mat4& cameraWorld, const ViewVolume& volume,
+                                                             float nearPlane, float shadowDistance,
+                                                             math::Vec3 lightDirection, std::uint32_t resolution) noexcept;
 // The same for a perspective camera.
-[[nodiscard]] ShadowCascades computeShadowCascades(const math::Mat4& cameraWorld, float verticalFov,
-                                                   float aspectRatio, float nearPlane,
-                                                   float shadowDistance, math::Vec3 lightDirection,
-                                                   std::uint32_t resolution) noexcept;
+[[nodiscard]] DEVEX_API ShadowCascades computeShadowCascades(const math::Mat4& cameraWorld, float verticalFov,
+                                                             float aspectRatio, float nearPlane,
+                                                             float shadowDistance, math::Vec3 lightDirection,
+                                                             std::uint32_t resolution) noexcept;
 
-struct ClusterGrid
+struct DEVEX_API ClusterGrid
 {
     std::uint32_t tilesX = 16;
     std::uint32_t tilesY = 9;
@@ -69,13 +71,13 @@ struct ClusterGrid
     float farPlane = 500.0f;
 };
 
-struct ClusterRange
+struct DEVEX_API ClusterRange
 {
     std::uint32_t offset = 0;
     std::uint32_t count = 0;
 };
 
-struct LightClusters
+struct DEVEX_API LightClusters
 {
     // Indexed by (slice * tilesY + tileY) * tilesX + tileX, with tile rows from the top.
     std::vector<ClusterRange> clusters;
@@ -86,11 +88,11 @@ struct LightClusters
 };
 
 // Lists, for every cluster of the view frustum, the lights whose sphere of influence touches it.
-void assignLightsToClusters(const ClusterGrid& grid, const math::Mat4& view, const ViewVolume& volume,
-                            std::span<const RenderLight> lights, LightClusters& result);
+DEVEX_API void assignLightsToClusters(const ClusterGrid& grid, const math::Mat4& view, const ViewVolume& volume,
+                                      std::span<const RenderLight> lights, LightClusters& result);
 // The same for a perspective camera.
-void assignLightsToClusters(const ClusterGrid& grid, const math::Mat4& view, float verticalFov,
-                            float aspectRatio, std::span<const RenderLight> lights,
-                            LightClusters& result);
+DEVEX_API void assignLightsToClusters(const ClusterGrid& grid, const math::Mat4& view, float verticalFov,
+                                      float aspectRatio, std::span<const RenderLight> lights,
+                                      LightClusters& result);
 
 } // namespace devex::render

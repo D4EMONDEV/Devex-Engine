@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <devex/animation/Clip.hpp>
 #include <devex/audio/Clip.hpp>
 #include <devex/asset/AssetId.hpp>
@@ -39,13 +41,13 @@ namespace devex::runtime {
 
 // A font and the atlas of distances it is drawn from. The atlas is invalid without a renderer,
 // which still leaves the metrics usable to lay text out.
-struct LoadedFont
+struct DEVEX_API LoadedFont
 {
     std::shared_ptr<const asset::FontData> data;
     render::TextureHandle atlas;
 };
 
-struct LoadedMesh
+struct DEVEX_API LoadedMesh
 {
     render::MeshHandle handle;
     // Material of each submesh; invalid ones use the default material.
@@ -63,7 +65,7 @@ struct LoadedMesh
 // decoding it on a worker and answers nothing until finishLoads, once a frame, hands it to the
 // renderer, which copies it to the GPU within the next frames. Meanwhile meshes are not drawn and
 // materials use the default textures. Everything else loads when it is asked for.
-class AssetManager
+class DEVEX_API AssetManager
 {
 public:
     // All may be null: without a renderer nothing reaches the GPU, without a source only registered
@@ -164,7 +166,7 @@ public:
 
 private:
     // A mesh or a texture read and decoded on a worker, for the main thread to create.
-    struct FinishedLoad
+    struct DEVEX_API FinishedLoad
     {
         asset::AssetId id;
         asset::AssetType type = asset::AssetType::Mesh;
@@ -176,7 +178,7 @@ private:
 
     // What the workers share with the manager, which they keep alive: a manager that is gone, or
     // that changed its source, only bumps the generation.
-    struct LoadQueue
+    struct DEVEX_API LoadQueue
     {
         std::mutex mutex;
         std::condition_variable changed;
@@ -185,14 +187,14 @@ private:
         std::vector<FinishedLoad> finished;
     };
 
-    struct OwnedMesh
+    struct DEVEX_API OwnedMesh
     {
         LoadedMesh mesh;
         // False for meshes registered by the application.
         bool owned = false;
     };
 
-    struct LoadedMaterial
+    struct DEVEX_API LoadedMaterial
     {
         render::MaterialHandle handle;
         asset::MaterialData data;

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <devex/asset/AssetId.hpp>
 #include <devex/core/Error.hpp>
 #include <devex/math/Math.hpp>
@@ -10,7 +12,7 @@
 
 namespace devex::asset {
 
-struct Vertex
+struct DEVEX_API Vertex
 {
     math::Vec3 position{0.0f};
     math::Vec3 normal{0.0f, 1.0f, 0.0f};
@@ -23,14 +25,14 @@ struct Vertex
 // How a vertex follows the joints of a skeleton: up to four of them, with weights that sum to one.
 // Joints are indices into the inverse bind matrices of the mesh, and into the bones of the
 // SkinnedMeshRenderer that draws it.
-struct VertexSkin
+struct DEVEX_API VertexSkin
 {
     std::array<std::uint16_t, 4> joints{};
     math::Vec4 weights{0.0f};
 };
 
 // A range of the index buffer drawn with one material.
-struct Submesh
+struct DEVEX_API Submesh
 {
     std::uint32_t firstIndex = 0;
     std::uint32_t indexCount = 0;
@@ -40,7 +42,7 @@ struct Submesh
 
 // Indexed triangle list in the engine conventions: Y-up, right-handed, counter-clockwise front
 // faces.
-struct MeshData
+struct DEVEX_API MeshData
 {
     std::vector<Vertex> vertices;
     std::vector<std::uint32_t> indices;
@@ -57,24 +59,24 @@ struct MeshData
 };
 
 // The box holding every vertex of the mesh.
-[[nodiscard]] math::Aabb computeBounds(const MeshData& mesh) noexcept;
+[[nodiscard]] DEVEX_API math::Aabb computeBounds(const MeshData& mesh) noexcept;
 
 // Whether the mesh carries skinning attributes, and must be drawn with its bones.
-[[nodiscard]] bool isSkinned(const MeshData& mesh) noexcept;
+[[nodiscard]] DEVEX_API bool isSkinned(const MeshData& mesh) noexcept;
 
 // Checks that the mesh has triangles, that every index refers to an existing vertex and that
 // submeshes cover whole triangles inside the index buffer.
-[[nodiscard]] core::Result<void> validate(const MeshData& mesh);
+[[nodiscard]] DEVEX_API core::Result<void> validate(const MeshData& mesh);
 
 // The submeshes of the mesh, with the implicit one when the list is empty.
-[[nodiscard]] std::vector<Submesh> submeshesOf(const MeshData& mesh);
+[[nodiscard]] DEVEX_API std::vector<Submesh> submeshesOf(const MeshData& mesh);
 
 // Replaces the normals with the area-weighted average of the adjacent triangle normals.
-void computeNormals(MeshData& mesh);
+DEVEX_API void computeNormals(MeshData& mesh);
 
 // Computes MikkTSpace tangents, the standard that normal map bakers follow. Vertices shared by
 // triangles whose tangents differ are split, so the vertex count may grow. Indices keep their
 // order, and submeshes stay valid.
-void computeTangents(MeshData& mesh);
+DEVEX_API void computeTangents(MeshData& mesh);
 
 } // namespace devex::asset

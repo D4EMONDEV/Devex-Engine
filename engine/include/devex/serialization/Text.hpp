@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <devex/core/Error.hpp>
 
 #include <cstdint>
@@ -22,7 +24,7 @@ namespace devex::serialization {
 
 struct TextValue;
 
-struct TextCall
+struct DEVEX_API TextCall
 {
     std::string name;
     std::vector<TextValue> arguments;
@@ -30,26 +32,26 @@ struct TextCall
     bool operator==(const TextCall&) const = default;
 };
 
-struct TextValue : std::variant<bool, std::int64_t, double, std::string, TextCall>
+struct DEVEX_API TextValue : std::variant<bool, std::int64_t, double, std::string, TextCall>
 {
     using variant::variant;
 };
 
-[[nodiscard]] TextValue makeCall(std::string name, std::vector<TextValue> arguments);
+[[nodiscard]] DEVEX_API TextValue makeCall(std::string name, std::vector<TextValue> arguments);
 
 // Integers and real numbers both convert to double.
-[[nodiscard]] std::optional<double> asNumber(const TextValue& value) noexcept;
-[[nodiscard]] std::optional<std::int64_t> asInteger(const TextValue& value) noexcept;
-[[nodiscard]] std::optional<bool> asBool(const TextValue& value) noexcept;
-[[nodiscard]] const std::string* asString(const TextValue& value) noexcept;
+[[nodiscard]] DEVEX_API std::optional<double> asNumber(const TextValue& value) noexcept;
+[[nodiscard]] DEVEX_API std::optional<std::int64_t> asInteger(const TextValue& value) noexcept;
+[[nodiscard]] DEVEX_API std::optional<bool> asBool(const TextValue& value) noexcept;
+[[nodiscard]] DEVEX_API const std::string* asString(const TextValue& value) noexcept;
 // Returns the call when the value is a call with that name.
-[[nodiscard]] const TextCall* asCall(const TextValue& value, std::string_view name) noexcept;
+[[nodiscard]] DEVEX_API const TextCall* asCall(const TextValue& value, std::string_view name) noexcept;
 
 // Formats the value as it appears in a document. Real numbers use the shortest text that
 // reads back to the same double.
-[[nodiscard]] std::string formatValue(const TextValue& value);
+[[nodiscard]] DEVEX_API std::string formatValue(const TextValue& value);
 
-struct TextProperty
+struct DEVEX_API TextProperty
 {
     std::string key;
     TextValue value;
@@ -57,7 +59,7 @@ struct TextProperty
     std::uint32_t line = 0;
 };
 
-struct TextSection
+struct DEVEX_API TextSection
 {
     std::string type;
     // The key=value pairs of the header line.
@@ -70,17 +72,17 @@ struct TextSection
     [[nodiscard]] const TextValue* findProperty(std::string_view key) const noexcept;
 };
 
-struct TextDocument
+struct DEVEX_API TextDocument
 {
     std::vector<TextSection> sections;
 };
 
 // Errors name the line and column of the problem.
-[[nodiscard]] core::Result<TextDocument> parseText(std::string_view source);
+[[nodiscard]] DEVEX_API core::Result<TextDocument> parseText(std::string_view source);
 
 // One value on its own, as formatValue wrote it. Nothing when the text is not a value.
-[[nodiscard]] std::optional<TextValue> parseValue(std::string_view text);
+[[nodiscard]] DEVEX_API std::optional<TextValue> parseValue(std::string_view text);
 
-[[nodiscard]] std::string writeText(const TextDocument& document);
+[[nodiscard]] DEVEX_API std::string writeText(const TextDocument& document);
 
 } // namespace devex::serialization

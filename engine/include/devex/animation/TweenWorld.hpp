@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <devex/asset/AssetId.hpp>
 #include <devex/asset/CurveData.hpp>
 #include <devex/core/Error.hpp>
@@ -30,7 +32,7 @@ struct FieldInfo;
 namespace devex::animation {
 
 // A tween: a field of a component of an entity, from one value to another over some time.
-struct TweenSpec
+struct DEVEX_API TweenSpec
 {
     scene::Entity entity;
     // "Component.field": "Transform.position", "UiRect.opacity", "UiImage.color". The field holds a
@@ -55,13 +57,13 @@ struct TweenSpec
 };
 
 // A step of a sequence: tweens that play together, then a wait before the next step.
-struct SequenceStep
+struct DEVEX_API SequenceStep
 {
     std::vector<TweenSpec> tweens;
     float interval = 0.0f;
 };
 
-struct TweenHandle
+struct DEVEX_API TweenHandle
 {
     std::uint64_t id = 0;
 
@@ -77,7 +79,7 @@ struct TweenHandle
 // Tweener components of its scene, which start by themselves. A tween follows its entity by UUID
 // and ends with it; the value is written into the component every frame, before the interface is
 // laid out and the transforms are computed.
-class TweenWorld
+class DEVEX_API TweenWorld
 {
 public:
     // The curve of an asset, loaded once and shared; null when it cannot be loaded.
@@ -115,13 +117,13 @@ public:
 private:
     // Found again every frame by name: game modules and C# register their types again when they
     // reload.
-    struct Target
+    struct DEVEX_API Target
     {
         const scene::ComponentType* component = nullptr;
         const reflection::FieldInfo* field = nullptr;
     };
 
-    struct Tween
+    struct DEVEX_API Tween
     {
         core::Uuid entity;
         TweenSpec spec;
@@ -140,7 +142,7 @@ private:
         math::Quat endRotation{1.0f, 0.0f, 0.0f, 0.0f};
     };
 
-    struct Sequence
+    struct DEVEX_API Sequence
     {
         std::vector<SequenceStep> steps;
         std::size_t next = 0;

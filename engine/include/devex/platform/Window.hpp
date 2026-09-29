@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <devex/core/Error.hpp>
 #include <devex/math/Math.hpp>
 
@@ -14,7 +16,7 @@ enum class WindowId : std::uint32_t
 {
 };
 
-struct WindowConfig
+struct DEVEX_API WindowConfig
 {
     std::string title = "Devex";
     std::uint32_t width = 1280;
@@ -33,7 +35,7 @@ struct NativeWindow;
 
 // An operating system window, created by Platform::createWindow. It must be destroyed before the
 // Platform that created it.
-class Window
+class DEVEX_API Window
 {
 public:
     Window(Window&& other) noexcept;

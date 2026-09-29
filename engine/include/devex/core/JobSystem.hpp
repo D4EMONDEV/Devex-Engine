@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <condition_variable>
 #include <cstddef>
 #include <cstdint>
@@ -13,7 +15,7 @@ namespace devex::core {
 
 // A pool of worker threads for work that must not block the main loop, such as asset imports.
 // Jobs start in the order they were scheduled.
-class JobSystem
+class DEVEX_API JobSystem
 {
 public:
     // A worker count of 0 uses every hardware thread but one, and at least one worker.

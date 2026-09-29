@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <chrono>
 #include <cstdint>
 #include <format>
@@ -21,9 +23,9 @@ enum class LogLevel : std::uint8_t
     Off,
 };
 
-[[nodiscard]] std::string_view toString(LogLevel level) noexcept;
+[[nodiscard]] DEVEX_API std::string_view toString(LogLevel level) noexcept;
 
-struct LogRecord
+struct DEVEX_API LogRecord
 {
     LogLevel level = LogLevel::Info;
     std::string_view message;
@@ -42,17 +44,17 @@ enum class LogSinkId : std::uint32_t
 inline constexpr LogSinkId consoleLogSinkId{0};
 
 // Messages below this level are discarded without evaluating their arguments.
-void setLogLevel(LogLevel level) noexcept;
-[[nodiscard]] LogLevel logLevel() noexcept;
-[[nodiscard]] bool isLogLevelEnabled(LogLevel level) noexcept;
+DEVEX_API void setLogLevel(LogLevel level) noexcept;
+[[nodiscard]] DEVEX_API LogLevel logLevel() noexcept;
+[[nodiscard]] DEVEX_API bool isLogLevelEnabled(LogLevel level) noexcept;
 
-[[nodiscard]] LogSinkId addLogSink(LogSink sink);
+[[nodiscard]] DEVEX_API LogSinkId addLogSink(LogSink sink);
 // When the logger started: the lines of the console and of a log file count their seconds from it.
-[[nodiscard]] std::chrono::steady_clock::time_point logStartTime() noexcept;
-void removeLogSink(LogSinkId id);
+[[nodiscard]] DEVEX_API std::chrono::steady_clock::time_point logStartTime() noexcept;
+DEVEX_API void removeLogSink(LogSinkId id);
 
-void logMessage(LogLevel level, std::string_view message,
-                std::source_location location = std::source_location::current());
+DEVEX_API void logMessage(LogLevel level, std::string_view message,
+                          std::source_location location = std::source_location::current());
 
 namespace detail {
 

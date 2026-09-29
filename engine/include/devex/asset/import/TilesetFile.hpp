@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <devex/asset/TilesetData.hpp>
 #include <devex/core/Error.hpp>
 
@@ -18,7 +20,7 @@ namespace devex::asset {
 //     frames = list(asset("..."), asset("..."))
 //     fps = 6
 //     data = "water"
-[[nodiscard]] core::Result<TilesetData> parseTilesetFile(std::string_view text);
-[[nodiscard]] std::string writeTilesetFile(const TilesetData& tileset);
+[[nodiscard]] DEVEX_API core::Result<TilesetData> parseTilesetFile(std::string_view text);
+[[nodiscard]] DEVEX_API std::string writeTilesetFile(const TilesetData& tileset);
 
 } // namespace devex::asset

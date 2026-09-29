@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <devex/core/Error.hpp>
 #include <devex/scene/ComponentRegistry.hpp>
 #include <devex/scene/Scene.hpp>
@@ -33,9 +35,9 @@ enum class CreationCategory : std::uint8_t
     Count,
 };
 
-[[nodiscard]] std::string_view categoryName(CreationCategory category) noexcept;
+[[nodiscard]] DEVEX_API std::string_view categoryName(CreationCategory category) noexcept;
 
-struct CreationEntry
+struct DEVEX_API CreationEntry
 {
     // What favorites and recents remember: "component:PointLight", "preset:Cube".
     std::string key;
@@ -58,19 +60,19 @@ struct CreationEntry
 
 // Every entry, the presets first, then the components of the engine by category, then those of the
 // game in the registry.
-[[nodiscard]] std::vector<CreationEntry> creationCatalog(const scene::ComponentRegistry& registry);
+[[nodiscard]] DEVEX_API std::vector<CreationEntry> creationCatalog(const scene::ComponentRegistry& registry);
 
 // How well an entry answers a search, 0 when it does not: every word must be found, in its name
 // first, then in its component, its category and its description.
-[[nodiscard]] int matchScore(const CreationEntry& entry, std::string_view search);
+[[nodiscard]] DEVEX_API int matchScore(const CreationEntry& entry, std::string_view search);
 
 // Gives an entity of a scratch scene what the entry makes; the entity has a Transform, which the
 // entries that do not stand in space remove.
-void buildEntry(const CreationEntry& entry, const scene::ComponentRegistry& registry, scene::Scene& scene,
-                scene::Entity entity);
+DEVEX_API void buildEntry(const CreationEntry& entry, const scene::ComponentRegistry& registry, scene::Scene& scene,
+                          scene::Entity entity);
 
 // What a project remembers of the window: its favorites, and what was created last, newest first.
-struct CreationMemory
+struct DEVEX_API CreationMemory
 {
     std::vector<std::string> favorites;
     std::vector<std::string> recent;
@@ -78,10 +80,10 @@ struct CreationMemory
 
 inline constexpr std::size_t maxRecentCreations = 10;
 
-[[nodiscard]] CreationMemory loadCreationMemory(const std::filesystem::path& file);
-[[nodiscard]] core::Result<void> saveCreationMemory(const CreationMemory& memory, const std::filesystem::path& file);
+[[nodiscard]] DEVEX_API CreationMemory loadCreationMemory(const std::filesystem::path& file);
+[[nodiscard]] DEVEX_API core::Result<void> saveCreationMemory(const CreationMemory& memory, const std::filesystem::path& file);
 // Puts an entry at the head of the recent ones.
-void rememberCreation(CreationMemory& memory, std::string_view key);
-void toggleFavorite(CreationMemory& memory, std::string_view key);
+DEVEX_API void rememberCreation(CreationMemory& memory, std::string_view key);
+DEVEX_API void toggleFavorite(CreationMemory& memory, std::string_view key);
 
 } // namespace devex::tools::detail

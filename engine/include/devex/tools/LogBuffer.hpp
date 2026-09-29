@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <devex/core/Log.hpp>
 
 #include <chrono>
@@ -12,7 +14,7 @@
 
 namespace devex::tools {
 
-struct LogEntry
+struct DEVEX_API LogEntry
 {
     core::LogLevel level = core::LogLevel::Info;
     std::string message;
@@ -22,7 +24,7 @@ struct LogEntry
 };
 
 // Keeps the most recent log messages for display, from the moment it is created.
-class LogBuffer
+class DEVEX_API LogBuffer
 {
 public:
     explicit LogBuffer(std::size_t capacity = 2000);

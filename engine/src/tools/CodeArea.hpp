@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include "CodeCompletion.hpp"
 #include "CodeHighlight.hpp"
 #include "CodeOutline.hpp"
@@ -22,10 +24,10 @@ class TextDocument;
 // What the Text Editor keeps for the document it shows: where the cursor is, what it searched for,
 // and the edits it asks ImGui to apply. While a text field is active ImGui owns the characters, so
 // every change made by the panel goes through the callback rather than through the string.
-struct TextEditState
+struct DEVEX_API TextEditState
 {
     // A range of the text replaced by something else.
-    struct Edit
+    struct DEVEX_API Edit
     {
         int begin = 0;
         int end = 0;
@@ -86,37 +88,37 @@ struct TextEditState
 };
 
 // What the callback of the text field works on.
-struct CodeAreaCallbackContext
+struct DEVEX_API CodeAreaCallbackContext
 {
     TextEditState* edit = nullptr;
     TextDocument* document = nullptr;
 };
 
 // Applies the queued edits, keeps the indentation when a line is typed, and reads the cursor back.
-int codeAreaCallback(ImGuiInputTextCallbackData* data);
+DEVEX_API int codeAreaCallback(ImGuiInputTextCallbackData* data);
 
 // The line a byte offset falls on, read from the index instead of counting the newlines again.
-[[nodiscard]] int lineOfOffsetIndexed(const TextEditState& edit, int offset);
+[[nodiscard]] DEVEX_API int lineOfOffsetIndexed(const TextEditState& edit, int offset);
 
 // Replaces what is being typed with the chosen completion.
-void acceptCompletion(TextEditState& edit);
+DEVEX_API void acceptCompletion(TextEditState& edit);
 
 // Rebuilds the list of completions for what is being typed, and closes the popup when there is
 // nothing to offer.
-void updateCompletion(TextEditState& edit, const TextDocument& document, CodeLanguage language);
+DEVEX_API void updateCompletion(TextEditState& edit, const TextDocument& document, CodeLanguage language);
 
 // Finds every occurrence of TextEditState::find in the document.
-void searchDocument(TextEditState& edit, const TextDocument& document);
+DEVEX_API void searchDocument(TextEditState& edit, const TextDocument& document);
 // Selects the next match (step 1), the previous one (-1), or the one after the cursor (0).
-void selectMatch(TextEditState& edit, const TextDocument& document, int step);
+DEVEX_API void selectMatch(TextEditState& edit, const TextDocument& document, int step);
 // Replaces the selected match, or every match.
-void replaceMatch(TextEditState& edit, const TextDocument& document, bool all);
+DEVEX_API void replaceMatch(TextEditState& edit, const TextDocument& document, bool all);
 // Puts the cursor at the start of a line and scrolls to it.
-void goToLine(TextEditState& edit, const TextDocument& document, int line);
+DEVEX_API void goToLine(TextEditState& edit, const TextDocument& document, int line);
 // Adds or removes the line comment of every line the selection touches.
-void commentSelection(TextEditState& edit, const TextDocument& document, CodeLanguage language);
+DEVEX_API void commentSelection(TextEditState& edit, const TextDocument& document, CodeLanguage language);
 
 // Removes the spaces and tabs at the end of every line, and reports how many characters went.
-std::size_t trimTrailingSpaces(std::string& text);
+DEVEX_API std::size_t trimTrailingSpaces(std::string& text);
 
 } // namespace devex::tools::detail

@@ -926,10 +926,18 @@ bool UiWorld::updateCarry(scene::Scene& scene, const UiInput& input, bool taken)
         // Only the release drops: a drag from outside may still be announced a frame after it.
         if (m_dropTarget.isValid() && input.pointerReleased)
         {
-            m_drops.push_back(Drop{.source = m_carried->source,
-                                   .target = m_dropTarget,
-                                   .type = m_carried->type,
-                                   .data = m_carried->data});
+            Drop drop{.source = m_carried->source, .target = m_dropTarget, .type = m_carried->type, .data = m_carried->data};
+            if (const CanvasLayout* const canvas = canvasOf(m_dropTarget))
+            {
+                if (const LaidOutRect* const rect = canvas->layout.find(m_dropTarget); rect != nullptr && canvas->layout.scale > 0.0f)
+                {
+                    const math::Vec2 point = input.pointer / canvas->layout.scale;
+                    const math::Vec2 size{std::max(rect->size().x, 0.0001f), std::max(rect->size().y, 0.0001f)};
+                    drop.at = math::Vec2{std::clamp((point.x - rect->min.x) / size.x, 0.0f, 1.0f),
+                                         std::clamp((point.y - rect->min.y) / size.y, 0.0f, 1.0f)};
+                }
+            }
+            m_drops.push_back(std::move(drop));
             if (const std::string& action = scene.get<scene::UiDropTarget>(m_dropTarget).action; !action.empty())
             {
                 m_dropActions.push_back(action);

@@ -253,6 +253,17 @@ core::Result<void> Scene::setParent(Entity child, Entity parent, Entity before)
     return {};
 }
 
+void Scene::placeLast(Entity child)
+{
+    if (!isAlive(child) || !record(child).nextSibling.isValid())
+    {
+        return;
+    }
+    const Entity parent = record(child).parent;
+    detach(child);
+    attach(child, parent, Entity{});
+}
+
 Entity Scene::parent(Entity entity) const noexcept
 {
     return record(entity).parent;

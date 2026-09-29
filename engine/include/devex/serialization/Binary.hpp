@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <bit>
 #include <cstddef>
 #include <cstdint>
@@ -22,7 +24,7 @@ static_assert(std::endian::native == std::endian::little);
 template <typename T>
 concept BinaryValue = std::is_trivially_copyable_v<T> && !std::is_pointer_v<T>;
 
-class BinaryWriter
+class DEVEX_API BinaryWriter
 {
 public:
     template <BinaryValue T>
@@ -67,7 +69,7 @@ private:
 
 // Reads what BinaryWriter wrote. A read past the end marks the reader as failed and returns
 // zeroed values, so decoders check failed() once at the end instead of after every read.
-class BinaryReader
+class DEVEX_API BinaryReader
 {
 public:
     explicit BinaryReader(std::span<const std::byte> bytes) noexcept

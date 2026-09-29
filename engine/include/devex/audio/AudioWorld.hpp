@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <devex/asset/AssetId.hpp>
 #include <devex/audio/AudioEngine.hpp>
 #include <devex/core/Time.hpp>
@@ -20,7 +22,7 @@ namespace devex::audio {
 // The sounds of a game that plays: those of the AudioSource components of its scene, which follow
 // their entities, and one-shot sounds played by code. The listener is the entity with an
 // AudioListener, or else the primary camera.
-class AudioWorld
+class DEVEX_API AudioWorld
 {
 public:
     // The clip of an asset, loaded once and shared; null when it cannot be loaded.

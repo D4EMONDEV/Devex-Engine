@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <devex/asset/AssetId.hpp>
 #include <devex/scene/Entity.hpp>
 
@@ -31,7 +33,7 @@ using ThemeSource = std::function<std::shared_ptr<const asset::ThemeData>(asset:
 
 // The style an element follows, as the inspector shows it: the style it names, the theme of the
 // canvas above it, and the style of that name in the theme, when there is one.
-struct ElementStyle
+struct DEVEX_API ElementStyle
 {
     std::string name;
     asset::AssetId theme;
@@ -44,12 +46,12 @@ struct ElementStyle
 
 // The style of an element: nothing named when it follows none, no theme when no canvas above it
 // has one, and no style found when the theme lacks the name.
-[[nodiscard]] ElementStyle styleOf(const scene::Scene& scene, scene::Entity entity, const ThemeSource& themes);
+[[nodiscard]] DEVEX_API ElementStyle styleOf(const scene::Scene& scene, scene::Entity entity, const ThemeSource& themes);
 
 // Writes, once a call, the values of every style into the components of the elements that name it,
 // through reflection and without adding a component an element does not have. The values a style
 // names therefore belong to the theme: a script or the inspector that changes them is overruled.
-class ThemeApplier
+class DEVEX_API ThemeApplier
 {
 public:
     void setThemes(ThemeSource themes);

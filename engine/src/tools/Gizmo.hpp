@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include "EditorView.hpp"
 
 #include <devex/math/Math.hpp>
@@ -39,7 +41,7 @@ enum class GizmoHandle : std::uint8_t
     View,
 };
 
-struct GizmoGeometry
+struct DEVEX_API GizmoGeometry
 {
     std::vector<render::OverlayVertex> lines;
     std::vector<render::OverlayVertex> triangles;
@@ -48,7 +50,7 @@ struct GizmoGeometry
 // Handles drawn at an entity to move, rotate and scale it with the mouse, keeping a constant size on
 // screen. Positions are viewport pixels; the entity is described by its world transform, the world
 // transform of its parent and its local Transform, which dragging changes.
-class Gizmo
+class DEVEX_API Gizmo
 {
 public:
     static constexpr float sizeInPixels = 90.0f;

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include "EditorCamera.hpp"
 #include "Selection.hpp"
 
@@ -18,7 +20,7 @@
 namespace devex::tools::detail {
 
 // What the editor keeps of a scene it edits: the scene, its file, its undo history and the view on it.
-struct SceneDocument
+struct DEVEX_API SceneDocument
 {
     // Empty until the scene is saved.
     std::filesystem::path path;
@@ -34,7 +36,7 @@ struct SceneDocument
 
 // The document on screen, whose parts live where the rest of the editor uses them: the scene of the
 // application, the history of the tools, and so on.
-struct ActiveDocument
+struct DEVEX_API ActiveDocument
 {
     std::filesystem::path& path;
     scene::Scene& scene;
@@ -47,9 +49,17 @@ struct ActiveDocument
 
 // The scenes open in the editor, one per tab. The active tab's document lives in the editor itself,
 // the others wait in their tab: switching tabs swaps them.
-class SceneTabs
+class DEVEX_API SceneTabs
 {
 public:
+    SceneTabs() = default;
+    // The scenes of the tabs belong to it alone.
+    SceneTabs(const SceneTabs&) = delete;
+    SceneTabs& operator=(const SceneTabs&) = delete;
+    SceneTabs(SceneTabs&&) = default;
+    SceneTabs& operator=(SceneTabs&&) = default;
+    ~SceneTabs() = default;
+
     [[nodiscard]] std::size_t size() const noexcept;
     [[nodiscard]] bool empty() const noexcept;
     [[nodiscard]] std::optional<std::size_t> active() const noexcept;

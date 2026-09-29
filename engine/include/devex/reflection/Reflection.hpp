@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <devex/core/Uuid.hpp>
 #include <devex/math/Math.hpp>
 
@@ -39,7 +41,7 @@ enum class ValueKind : std::uint8_t
     Entity,
 };
 
-[[nodiscard]] std::string_view toString(ValueKind kind) noexcept;
+[[nodiscard]] DEVEX_API std::string_view toString(ValueKind kind) noexcept;
 
 // Maps a C++ type to the value kind it is reflected as. Modules specialize it for their own
 // value types.
@@ -130,7 +132,7 @@ struct ValueTraits<core::Uuid>
 };
 
 // What generic code does with a std::vector field without knowing its element type.
-struct ListOps
+struct DEVEX_API ListOps
 {
     std::size_t (*size)(const void* list) noexcept;
     // New elements have the default value of their kind: zero, empty, or the identity rotation.
@@ -180,7 +182,7 @@ template <typename Element>
 }
 
 // Optional details about a field, for tools.
-struct FieldHints
+struct DEVEX_API FieldHints
 {
     // For asset references: the asset type expected, such as "mesh". Empty accepts any type.
     std::string_view assetType;
@@ -205,7 +207,7 @@ struct FieldHints
     std::string_view group;
 };
 
-struct FieldInfo
+struct DEVEX_API FieldInfo
 {
     std::string name;
     ValueKind kind = ValueKind::Bool;
@@ -243,7 +245,7 @@ struct FieldInfo
     }
 };
 
-struct TypeInfo
+struct DEVEX_API TypeInfo
 {
     std::string name;
     std::vector<FieldInfo> fields;
@@ -359,8 +361,8 @@ private:
 
 // Returns the description registered with DEVEX_REFLECT for T.
 // Reads or writes an enumeration field as the index of its value.
-[[nodiscard]] std::uint32_t readEnumIndex(const FieldInfo& field, const void* address) noexcept;
-void writeEnumIndex(const FieldInfo& field, void* address, std::uint32_t index) noexcept;
+[[nodiscard]] DEVEX_API std::uint32_t readEnumIndex(const FieldInfo& field, const void* address) noexcept;
+DEVEX_API void writeEnumIndex(const FieldInfo& field, void* address, std::uint32_t index) noexcept;
 
 template <typename T>
 [[nodiscard]] const TypeInfo& typeInfo()
@@ -378,6 +380,11 @@ template <typename T>
 // Declares the reflection of Type, in the namespace of Type, typically in its header.
 #define DEVEX_DECLARE_REFLECTION(Type)                                                             \
     void devexReflect(::devex::reflection::TypeBuilder<Type>& type)
+
+// The same for the types of the engine, whose reflection the engine library shares with the
+// programs, tests and game modules that use them.
+#define DEVEX_DECLARE_ENGINE_REFLECTION(Type)                                                      \
+    DEVEX_API void devexReflect(::devex::reflection::TypeBuilder<Type>& type)
 
 // Defines the reflection of Type, in the namespace of Type, followed by a body that registers
 // its fields on `type`:

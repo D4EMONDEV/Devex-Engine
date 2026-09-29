@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <devex/asset/FontData.hpp>
 #include <devex/math/Math.hpp>
 #include <devex/scene/UiComponents.hpp>
@@ -14,7 +16,7 @@
 namespace devex::ui {
 
 // One letter: the rectangle it covers and the part of the atlas it reads.
-struct GlyphQuad
+struct DEVEX_API GlyphQuad
 {
     math::Vec2 min{0.0f};
     math::Vec2 max{0.0f};
@@ -29,7 +31,7 @@ struct GlyphQuad
 };
 
 // An image asked for between two words, by its place in the list the text carries.
-struct InlineImage
+struct DEVEX_API InlineImage
 {
     std::uint32_t index = 0;
     math::Vec2 min{0.0f};
@@ -37,7 +39,7 @@ struct InlineImage
 };
 
 // Where the cursor can stand: before a character, or at the end of a line.
-struct CaretStop
+struct DEVEX_API CaretStop
 {
     // Byte offset in the text, as it was given, tags included.
     std::size_t offset = 0;
@@ -48,7 +50,7 @@ struct CaretStop
     std::uint32_t line = 0;
 };
 
-struct TextStyle
+struct DEVEX_API TextStyle
 {
     // The height of an em, in the units of the canvas.
     float size = 24.0f;
@@ -61,7 +63,7 @@ struct TextStyle
     bool rich = false;
 };
 
-struct TextLayoutResult
+struct DEVEX_API TextLayoutResult
 {
     std::vector<GlyphQuad> glyphs;
     std::vector<InlineImage> images;
@@ -83,41 +85,41 @@ struct TextLayoutResult
 
 // Places the letters of the text inside the rectangle, wrapping and aligning them. Letters the
 // font does not have are skipped.
-void layoutText(const asset::FontData& font, std::string_view text, const TextStyle& style,
-                math::Vec2 boxMin, math::Vec2 boxMax, TextLayoutResult& result);
+DEVEX_API void layoutText(const asset::FontData& font, std::string_view text, const TextStyle& style,
+                          math::Vec2 boxMin, math::Vec2 boxMax, TextLayoutResult& result);
 
 // How a field lays out what it holds: never reading tags, since a field shows what was typed,
 // and on one line unless it takes several.
-[[nodiscard]] TextStyle fieldStyle(const scene::UiText& text, const scene::UiInput& field) noexcept;
+[[nodiscard]] DEVEX_API TextStyle fieldStyle(const scene::UiText& text, const scene::UiInput& field) noexcept;
 // Where the letters of a field go inside its rectangle, once its padding is taken off.
-void fieldBox(const scene::UiInput& field, math::Vec2 rectMin, math::Vec2 rectMax, math::Vec2& boxMin,
-              math::Vec2& boxMax) noexcept;
+DEVEX_API void fieldBox(const scene::UiInput& field, math::Vec2 rectMin, math::Vec2 rectMax, math::Vec2& boxMin,
+                        math::Vec2& boxMax) noexcept;
 
 // The room the text takes on its own, with a width to wrap at, or 0 for one line per paragraph.
-[[nodiscard]] math::Vec2 measureText(const asset::FontData& font, std::string_view text,
-                                     const TextStyle& style, float wrapWidth = 0.0f);
+[[nodiscard]] DEVEX_API math::Vec2 measureText(const asset::FontData& font, std::string_view text,
+                                               const TextStyle& style, float wrapWidth = 0.0f);
 
 // Where the cursor stands for a byte offset, and the offset nearest to a point. Both read a text
 // that was already laid out, so that a field measures itself once per frame.
-[[nodiscard]] const CaretStop* caretAt(const TextLayoutResult& layout, std::size_t offset) noexcept;
-[[nodiscard]] std::size_t offsetAt(const TextLayoutResult& layout, math::Vec2 point) noexcept;
+[[nodiscard]] DEVEX_API const CaretStop* caretAt(const TextLayoutResult& layout, std::size_t offset) noexcept;
+[[nodiscard]] DEVEX_API std::size_t offsetAt(const TextLayoutResult& layout, math::Vec2 point) noexcept;
 
 // How wide, in atlas texels, one unit of the drawn text is: the shader keeps the edge of a letter
 // one pixel wide from it.
-[[nodiscard]] float textSharpness(const asset::FontData& font, float size) noexcept;
+[[nodiscard]] DEVEX_API float textSharpness(const asset::FontData& font, float size) noexcept;
 
 // The next character of a UTF-8 text, and where the one after it starts. Invalid bytes each come
 // back as one unknown character, so that a broken text still draws.
-[[nodiscard]] std::uint32_t nextCodepoint(std::string_view text, std::size_t& offset) noexcept;
+[[nodiscard]] DEVEX_API std::uint32_t nextCodepoint(std::string_view text, std::size_t& offset) noexcept;
 // The start of the character before an offset, for a cursor that steps back.
-[[nodiscard]] std::size_t previousOffset(std::string_view text, std::size_t offset) noexcept;
+[[nodiscard]] DEVEX_API std::size_t previousOffset(std::string_view text, std::size_t offset) noexcept;
 
 // How many characters come before a byte offset, and where the n-th character starts. A password
 // draws dots rather than letters, so the cursor is carried from one text to the other by counting
 // characters rather than bytes.
-[[nodiscard]] std::size_t characterIndexOf(std::string_view text, std::size_t offset) noexcept;
-[[nodiscard]] std::size_t offsetOfCharacter(std::string_view text, std::size_t index) noexcept;
+[[nodiscard]] DEVEX_API std::size_t characterIndexOf(std::string_view text, std::size_t offset) noexcept;
+[[nodiscard]] DEVEX_API std::size_t offsetOfCharacter(std::string_view text, std::size_t index) noexcept;
 // What a field shows: its text, or one dot per character when it hides what is typed.
-[[nodiscard]] std::string shownText(std::string_view text, bool password);
+[[nodiscard]] DEVEX_API std::string shownText(std::string_view text, bool password);
 
 } // namespace devex::ui

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <devex/core/SlotMap.hpp>
 #include <devex/math/Math.hpp>
 
@@ -43,7 +45,7 @@ enum class Projection : std::uint8_t
     Orthographic,
 };
 
-struct RenderCamera
+struct DEVEX_API RenderCamera
 {
     // World to view transform: the inverse of the camera's world transform.
     math::Mat4 view{1.0f};
@@ -84,7 +86,7 @@ struct RenderCamera
 };
 
 // The directional light, which may cast shadows.
-struct RenderSun
+struct DEVEX_API RenderSun
 {
     // Direction in which the light travels, in world space.
     math::Vec3 direction{-0.4f, -1.0f, -0.3f};
@@ -100,7 +102,7 @@ enum class LightType : std::uint8_t
     Spot,
 };
 
-struct RenderLight
+struct DEVEX_API RenderLight
 {
     LightType type = LightType::Point;
     math::Vec3 position{0.0f};
@@ -117,7 +119,7 @@ struct RenderLight
     bool castShadows = false;
 };
 
-struct RenderEnvironment
+struct DEVEX_API RenderEnvironment
 {
     // An equirectangular high dynamic range texture; invalid for a uniform sky of `color`.
     TextureHandle sky;
@@ -129,7 +131,7 @@ struct RenderEnvironment
 };
 
 // One submesh of a mesh, drawn with a material.
-struct MeshInstance
+struct DEVEX_API MeshInstance
 {
     MeshHandle mesh;
     std::uint32_t submesh = 0;
@@ -147,7 +149,7 @@ struct MeshInstance
 };
 
 // A particle as the renderer draws it: a quad facing the camera, or lying as its batch says.
-struct RenderParticle
+struct DEVEX_API RenderParticle
 {
     math::Vec3 position{0.0f};
     // Width in meters.
@@ -163,7 +165,7 @@ struct RenderParticle
 };
 
 // A point of a ribbon: a trail behind a particle or an entity.
-struct RenderTrailPoint
+struct DEVEX_API RenderTrailPoint
 {
     math::Vec3 position{0.0f};
     float width = 0.0f;
@@ -191,7 +193,7 @@ enum class ParticleFacing : std::uint8_t
 };
 
 // Particles or ribbons drawn together, sorted as a whole with the blended surfaces of the scene.
-struct ParticleDraw
+struct DEVEX_API ParticleDraw
 {
     // Ribbons: segments of RenderWorld::trailSegments; otherwise RenderWorld::particles.
     bool ribbons = false;
@@ -224,7 +226,7 @@ enum class SpriteMode : std::uint8_t
 
 // A rectangle of a texture lying in the XY plane of its transform and facing +Z, drawn among the
 // blended surfaces: by layer, then by order, then from the farthest.
-struct RenderSprite
+struct DEVEX_API RenderSprite
 {
     math::Mat4 transform{1.0f};
     // The rectangle drawn, in meters, and the point of it at the origin of the transform, from its
@@ -258,7 +260,7 @@ struct RenderSprite
 };
 
 // A tile of a tilemap: a rectangle of a texture filling a cell.
-struct RenderTile
+struct DEVEX_API RenderTile
 {
     math::IVec2 cell{0};
     // Texture coordinates of the top-left corner, then of the bottom-right one; swapped to mirror.
@@ -268,7 +270,7 @@ struct RenderTile
 
 // A grid of tiles in the XY plane of its transform, cell (x, y) covering [x, x + 1) by [y, y + 1)
 // cells from its origin. It sorts among the sprites as one of them.
-struct RenderTilemap
+struct DEVEX_API RenderTilemap
 {
     math::Mat4 transform{1.0f};
     math::Vec2 cellSize{1.0f};
@@ -285,7 +287,7 @@ struct RenderTilemap
 };
 
 // A vertex of the lines and triangles the tools draw over the scene, such as grids and gizmos.
-struct OverlayVertex
+struct DEVEX_API OverlayVertex
 {
     math::Vec3 position{0.0f};
     // Linear RGB and straight alpha, blended over the displayed image.
@@ -293,7 +295,7 @@ struct OverlayVertex
 };
 
 // A vertex of the interface, in pixels of the image, with straight alpha.
-struct UiVertex
+struct DEVEX_API UiVertex
 {
     math::Vec2 position{0.0f};
     math::Vec2 uv{0.0f};
@@ -311,7 +313,7 @@ enum class UiDrawKind : std::uint8_t
 };
 
 // One batch of the interface: the triangles that share a texture and a shape.
-struct UiDraw
+struct DEVEX_API UiDraw
 {
     UiDrawKind kind = UiDrawKind::Quad;
     // Invalid draws the color alone.
@@ -331,7 +333,7 @@ struct UiDraw
 // An interface drawn into an image of its own rather than over the scene, which the tools show as a
 // texture (Renderer::uiSurfaceTexture): the panels of the editor made with the interface of the
 // engine. Positions are in pixels of that image; indices count from its own first vertex.
-struct UiSurface
+struct DEVEX_API UiSurface
 {
     std::uint32_t id = 0;
     math::Extent2D size;
@@ -343,7 +345,7 @@ struct UiSurface
 };
 
 // Asks which objects are visible in a rectangle of the scene image, one pixel for a click.
-struct PickRequest
+struct DEVEX_API PickRequest
 {
     // The top-left corner of the rectangle, from the top-left corner of the scene image.
     std::uint32_t x = 0;
@@ -354,7 +356,7 @@ struct PickRequest
     std::uint32_t height = 1;
 };
 
-struct PickResult
+struct DEVEX_API PickResult
 {
     std::uint64_t request = 0;
     // MeshInstance::objectId of the surface at the middle of the rectangle, 0 when none is there.
@@ -366,7 +368,7 @@ struct PickResult
 
 // A small picture of a frame as the game shows it, without its interface nor the tools, such as
 // the thumbnail of a save.
-struct CapturedImage
+struct DEVEX_API CapturedImage
 {
     std::uint64_t request = 0;
     std::uint32_t width = 0;
@@ -378,7 +380,7 @@ struct CapturedImage
 // Snapshot of everything the renderer draws in one frame. Gameplay fills it between
 // Renderer::beginFrame and Renderer::endFrame, and the renderer never reads gameplay state
 // directly, so rendering can later move to its own thread without changing this contract.
-struct RenderWorld
+struct DEVEX_API RenderWorld
 {
     RenderCamera camera;
     RenderSun sun;

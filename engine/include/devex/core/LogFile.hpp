@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <devex/core/Error.hpp>
 #include <devex/core/Log.hpp>
 
@@ -13,7 +15,7 @@ namespace devex::core {
 // Keeps the log of a run in a file, beside the log of the run before it, which is renamed
 // <name>.previous.log. Every line reaches the disk as it is written, and the file can be read while
 // the program runs.
-class LogFile
+class DEVEX_API LogFile
 {
 public:
     // Creates the folder when it is missing, and starts receiving the log.

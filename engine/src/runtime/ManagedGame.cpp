@@ -258,6 +258,7 @@ struct NativeApi
     const char* (*uiDropType)();
     const char* (*uiDropData)();
     Entity (*uiCarried)();
+    void (*uiDropPosition)(math::Vec2* at);
 };
 
 // The functions the engine calls, in the order of Devex.Managed's ManagedApi.
@@ -272,7 +273,7 @@ struct ManagedApi
 };
 
 // Devex.Managed's Bootstrap.Version: both sides change it with the function tables.
-constexpr int bootstrapVersion = 17;
+constexpr int bootstrapVersion = 18;
 
 struct BootstrapArguments
 {
@@ -1256,6 +1257,14 @@ const char* apiUiDropData()
     return lastDrop() != nullptr ? lastDrop()->data.c_str() : "";
 }
 
+void apiUiDropPosition(math::Vec2* at)
+{
+    if (at != nullptr)
+    {
+        *at = lastDrop() != nullptr ? lastDrop()->at : math::Vec2{0.5f};
+    }
+}
+
 Entity apiUiCarried()
 {
     const ui::Carried* const carried = uiWorld() != nullptr ? uiWorld()->carried() : nullptr;
@@ -2230,6 +2239,7 @@ int apiParticleCount(Entity entity)
         .uiDropType = &apiUiDropType,
         .uiDropData = &apiUiDropData,
         .uiCarried = &apiUiCarried,
+        .uiDropPosition = &apiUiDropPosition,
     };
 }
 

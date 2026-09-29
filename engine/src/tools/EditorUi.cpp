@@ -331,6 +331,15 @@ void EditorUiKit::refreshTheme(const ThemeColors& colors)
     add("soft_row", clickable(image(written(colors.field), 6.0f)));
     add("soft_row_selected", clickable(image(written(mixed(colors.field, colors.accent, 0.30f)), 6.0f)));
     add("chip", image(written(ImVec4(colors.accent.x, colors.accent.y, colors.accent.z, 0.18f)), 9.0f));
+    // The scene tree: the names of prefab entities, the lines from children to their parent, and
+    // where what is dragged would land.
+    add("prefab", text(colors.prefab));
+    // The buttons at the end of a row take its colour, so that only the pointer shows them.
+    add("row_button", clickable(image(written(colors.field), 5.0f)));
+    add("row_button_selected", clickable(image(written(mixed(colors.field, colors.accent, 0.30f)), 5.0f)));
+    add("guide", image(written(ImVec4(colors.textDim.x, colors.textDim.y, colors.textDim.z, 0.28f)), 0.0f));
+    add("drop_line", image(written(colors.accent), 1.0f));
+    add("drop_into", image(written(ImVec4(colors.accent.x, colors.accent.y, colors.accent.z, 0.22f)), 6.0f));
     // What is selected of a text that is only read.
     add("selection", {{"UiImage", "color", written(ImVec4(colors.accent.x, colors.accent.y, colors.accent.z, 0.4f))},
                       {"UiImage", "corner_radius", "0"}});
@@ -482,8 +491,9 @@ void UiPanel::update(EditorUiKit& kit, core::Duration delta, float zoom)
 
     // An ImGui drag that comes over the panel, which its targets may take; not the panel's own,
     // which ImGui carries once it leaves.
+    const ui::Carried* const own = m_world.carried();
     if (const ImGuiPayload* const payload = ImGui::GetDragDropPayload();
-        payload != nullptr && m_dragIn && payload->SourceId != ImHashStr("#SourceExtern"))
+        payload != nullptr && m_dragIn && (own == nullptr || !own->source.isValid()))
     {
         if (std::optional<std::pair<std::string, std::string>> carried = m_dragIn(*payload))
         {
@@ -502,6 +512,8 @@ void UiPanel::update(EditorUiKit& kit, core::Duration delta, float zoom)
     if (m_focused && m_world.isEditing() && !m_world.canvases().empty())
     {
         ImGuiContext& context = *ImGui::GetCurrentContext();
+        // As an ImGui field does: the shortcuts of the editor leave the letters to the field.
+        context.WantTextInputNextFrame = 1;
         context.PlatformImeData.WantVisible = true;
         context.PlatformImeData.WantTextInput = true;
         context.PlatformImeData.InputLineHeight = ImGui::GetFontSize();
@@ -784,9 +796,24 @@ scene::Entity PanelBuilder::menu(const char* name, float width)
     return entity;
 }
 
-PanelButton PanelBuilder::menuItem(EditorUiKit& kit, scene::Entity menu, std::optional<Icon> glyph, std::string_view label)
+PanelButton PanelBuilder::menuItem(EditorUiKit& kit, scene::Entity menu, std::optional<Icon> glyph, std::string_view label,
+                                   std::string_view shortcut)
 {
-    return button(kit, menu, glyph, label, "menu_item", -1.0f, font * 1.9f, scene::TextAlign::Left);
+    PanelButton made = button(kit, menu, glyph, label, "menu_item", -1.0f, font * 1.9f, scene::TextAlign::Left);
+    if (!shortcut.empty())
+    {
+        // The label takes what the row leaves, which puts the keys against its right edge.
+        scene().get<scene::UiRect>(made.label) = rects::grow(font * 1.9f);
+        scene().get<scene::UiRect>(made.label).style = "text";
+        const scene::Entity keys = add(made.entity, "Shortcut", rects::middle({font * 5.5f, font * 1.9f}), "dim");
+        scene().add<scene::UiText>(keys, scene::UiText{.text = std::string(shortcut),
+                                                       .font = EditorUiKit::regularFont(),
+                                                       .size = font * 0.9f,
+                                                       .align = scene::TextAlign::Right,
+                                                       .verticalAlign = scene::TextVerticalAlign::Middle,
+                                                       .wrap = false});
+    }
+    return made;
 }
 
 scene::Entity PanelBuilder::menuSeparator(scene::Entity menu)

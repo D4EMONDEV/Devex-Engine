@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <devex/core/Error.hpp>
 
 #include <filesystem>
@@ -8,7 +10,7 @@
 namespace devex::platform {
 
 // A dynamic library loaded into the process, such as a game module, unloaded when destroyed.
-class SharedLibrary
+class DEVEX_API SharedLibrary
 {
 public:
     [[nodiscard]] static core::Result<SharedLibrary> load(const std::filesystem::path& path);

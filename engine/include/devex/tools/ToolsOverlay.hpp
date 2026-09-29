@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <devex/asset/MeshData.hpp>
 #include <devex/asset/NavMeshData.hpp>
 #include <devex/asset/SpriteData.hpp>
@@ -72,7 +74,7 @@ enum class PlayState : std::uint8_t
 };
 
 // The state of the project's game code, shown by the editor.
-struct GameCodeStatus
+struct DEVEX_API GameCodeStatus
 {
     enum class State : std::uint8_t
     {
@@ -90,14 +92,14 @@ struct GameCodeStatus
 };
 
 // Whether an unopened project's game code needs to be rebuilt for this engine.
-struct ProjectCodeStatus
+struct DEVEX_API ProjectCodeStatus
 {
     bool needsUpdate = false;
     std::string message;
 };
 
 // The C# debugger, as the editor shows it.
-struct DebuggerStatus
+struct DEVEX_API DebuggerStatus
 {
     // The project has C# code, loaded in .NET.
     bool available = false;
@@ -108,7 +110,7 @@ struct DebuggerStatus
 };
 
 // A build of the engine that games can be exported with, found next to the editor.
-struct EngineBuildChoice
+struct DEVEX_API EngineBuildChoice
 {
     // The name of its folder, such as "x64-release".
     std::string name;
@@ -117,7 +119,7 @@ struct EngineBuildChoice
 };
 
 // The progress or the outcome of the last export of the game.
-struct ExportStatus
+struct DEVEX_API ExportStatus
 {
     enum class State : std::uint8_t
     {
@@ -137,14 +139,14 @@ struct ExportStatus
 };
 
 // A component the editor is asked to create, in C# or in C++.
-struct NewScript
+struct DEVEX_API NewScript
 {
     std::string name;
     bool csharp = true;
 };
 
 // One error or warning of the last build of the game code, shown in the margin of its file.
-struct CodeDiagnostic
+struct DEVEX_API CodeDiagnostic
 {
     std::filesystem::path path;
     int line = 1;
@@ -154,7 +156,7 @@ struct CodeDiagnostic
 };
 
 // What the editor asks of the application, collected while its panels are drawn.
-struct EditorRequests
+struct DEVEX_API EditorRequests
 {
     bool play = false;
     // With play: start once a C# debugger is attached. Stop gives up waiting.
@@ -181,7 +183,7 @@ struct EditorRequests
 // Where the editor's 2D screen shows the interfaces of the scene it edits: laid out as the game lays
 // them out on an image of `layoutSize` pixels, then scaled by `scale` and moved by `offset`, in
 // pixels of the viewport image, into the frame of what the game shows.
-struct InterfaceFrame
+struct DEVEX_API InterfaceFrame
 {
     math::Vec2 layoutSize{0.0f};
     math::Vec2 offset{0.0f};
@@ -191,7 +193,7 @@ struct InterfaceFrame
 // Docked Dear ImGui panels in a Godot-like theme: scene tree, inspector, file system, output and
 // statistics, over the game or around the editor's viewport. Only one instance may exist at a time,
 // since it owns the ImGui context.
-class ToolsOverlay
+class DEVEX_API ToolsOverlay
 {
 public:
     // Creates the ImGui context and connects it to the platform and the renderer, which must

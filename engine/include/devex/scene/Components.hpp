@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <devex/asset/AssetId.hpp>
 #include <devex/math/Math.hpp>
 #include <devex/reflection/Reflection.hpp>
@@ -13,7 +15,7 @@
 namespace devex::scene {
 
 // Position, rotation and scale relative to the parent entity.
-struct Transform
+struct DEVEX_API Transform
 {
     math::Vec3 position{0.0f};
     math::Quat rotation{1.0f, 0.0f, 0.0f, 0.0f};
@@ -24,21 +26,21 @@ struct Transform
         return math::composeTrs({position, rotation, scale});
     }
 };
-DEVEX_DECLARE_REFLECTION(Transform);
+DEVEX_DECLARE_ENGINE_REFLECTION(Transform);
 
 // Transform relative to the world, computed by Scene::updateTransforms. It is never saved.
-struct WorldTransform
+struct DEVEX_API WorldTransform
 {
     math::Mat4 matrix{1.0f};
 };
 
 // Draws a mesh asset. Each submesh uses its own material unless `material` replaces them all.
-struct MeshRenderer
+struct DEVEX_API MeshRenderer
 {
     asset::AssetId mesh;
     asset::AssetId material;
 };
-DEVEX_DECLARE_REFLECTION(MeshRenderer);
+DEVEX_DECLARE_ENGINE_REFLECTION(MeshRenderer);
 
 // How the jagged edges of the image are smoothed.
 enum class Antialiasing : std::uint8_t
@@ -73,7 +75,7 @@ enum class Projection : std::uint8_t
 
 // Camera looking along -Z of its entity. The renderer uses the first primary camera. Exposure
 // follows photographic units: an EV100 of 15 suits direct sunlight, 7 a lit interior.
-struct Camera
+struct DEVEX_API Camera
 {
     Projection projection = Projection::Perspective;
     float verticalFov = math::radians(60.0f);
@@ -114,10 +116,10 @@ struct Camera
     // The texture must be imported without the sRGB encoding.
     asset::AssetId colorTable;
 };
-DEVEX_DECLARE_REFLECTION(Camera);
+DEVEX_DECLARE_ENGINE_REFLECTION(Camera);
 
 // Sunlight travelling along -Z of its entity.
-struct DirectionalLight
+struct DEVEX_API DirectionalLight
 {
     // Linear color, multiplied by the color of the temperature.
     math::Vec3 color{1.0f};
@@ -130,10 +132,10 @@ struct DirectionalLight
     // Distance from the camera, in meters, beyond which nothing is shadowed.
     float shadowDistance = 80.0f;
 };
-DEVEX_DECLARE_REFLECTION(DirectionalLight);
+DEVEX_DECLARE_ENGINE_REFLECTION(DirectionalLight);
 
 // Light emitted in every direction from the position of its entity.
-struct PointLight
+struct DEVEX_API PointLight
 {
     math::Vec3 color{1.0f};
     float temperature = 6500.0f;
@@ -145,10 +147,10 @@ struct PointLight
     // fit in the atlas keep their light and lose their shadow.
     bool castShadows = false;
 };
-DEVEX_DECLARE_REFLECTION(PointLight);
+DEVEX_DECLARE_ENGINE_REFLECTION(PointLight);
 
 // Light emitted in a cone along -Z of its entity.
-struct SpotLight
+struct DEVEX_API SpotLight
 {
     math::Vec3 color{1.0f};
     float temperature = 6500.0f;
@@ -161,11 +163,11 @@ struct SpotLight
     // Casts a shadow inside its cone, which costs one view of the shadow atlas.
     bool castShadows = false;
 };
-DEVEX_DECLARE_REFLECTION(SpotLight);
+DEVEX_DECLARE_ENGINE_REFLECTION(SpotLight);
 
 // The sky around the scene, which also lights it and appears in reflections. The renderer uses
 // the first environment.
-struct Environment
+struct DEVEX_API Environment
 {
     // An equirectangular high dynamic range texture; without one, the sky is a uniform color.
     asset::AssetId sky;
@@ -176,7 +178,7 @@ struct Environment
     // Rotation of the sky around the vertical axis.
     float rotation = 0.0f;
 };
-DEVEX_DECLARE_REFLECTION(Environment);
+DEVEX_DECLARE_ENGINE_REFLECTION(Environment);
 
 } // namespace devex::scene
 

@@ -718,6 +718,7 @@ void ToolsOverlay::prepareRender(scene::Scene& scene, render::RenderWorld& world
     detail::renderProjectManager(state, world);
     detail::renderFileSystem(state, world);
     detail::renderOutput(state, world);
+    detail::renderSceneTree(state, world);
     detail::renderCreationDialog(state, world);
     if (state.mode != ToolsMode::Editor)
     {

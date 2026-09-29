@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <devex/reflection/Reflection.hpp>
 #include <devex/scene/DynamicComponent.hpp>
 #include <devex/scene/Entity.hpp>
@@ -15,7 +17,7 @@
 namespace devex::scene {
 
 // Type-erased access to a reflected component type, used by generic code such as scene files.
-struct ComponentType
+struct DEVEX_API ComponentType
 {
     const reflection::TypeInfo* type = nullptr;
     // The componentTypeIndex of the type.
@@ -38,7 +40,7 @@ struct ComponentType
 };
 
 // Component types known by name. Only registered components are saved and loaded.
-class ComponentRegistry
+class DEVEX_API ComponentRegistry
 {
 public:
     // Registering the same type twice has no effect.
@@ -99,7 +101,7 @@ private:
 };
 
 // The process-wide registry, which already contains the built-in components.
-[[nodiscard]] ComponentRegistry& componentRegistry();
+[[nodiscard]] DEVEX_API ComponentRegistry& componentRegistry();
 
 template <typename T>
 void registerComponent()

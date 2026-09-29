@@ -619,6 +619,8 @@ public class Drops : Component
     public bool Dropped;
     public bool FromGem;
     public string Data = "";
+    public float AtX;
+    public float AtY;
 
     public override void Update(float delta)
     {
@@ -628,6 +630,8 @@ public class Drops : Component
             Dropped = true;
             FromGem = drop.Source == Gem && drop.Target == Slot && drop.Type == "item";
             Data = drop.Data;
+            AtX = drop.At.X;
+            AtY = drop.At.Y;
         }
     }
 }

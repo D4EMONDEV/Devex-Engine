@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <devex/asset/AssetId.hpp>
 #include <devex/asset/AssetType.hpp>
 #include <devex/core/Error.hpp>
@@ -16,7 +18,7 @@ inline constexpr std::string_view metaExtension = ".dvxmeta";
 
 // An asset inside a source file, such as a mesh of a glTF file. The key names it the same way
 // across imports, so that it keeps its identifier when the file changes.
-struct MetaSubAsset
+struct DEVEX_API MetaSubAsset
 {
     AssetType type = AssetType::Mesh;
     std::string key;
@@ -31,7 +33,7 @@ struct MetaSubAsset
 //     srgb = true
 //
 //     [subasset type="mesh" key="Crate" uuid="b41e7c02-9d3a-4f6e-8c11-5a2e9b7d0f44"]
-struct MetaFile
+struct DEVEX_API MetaFile
 {
     AssetId id;
     std::string importer;
@@ -40,10 +42,10 @@ struct MetaFile
     std::vector<MetaSubAsset> subAssets;
 };
 
-[[nodiscard]] core::Result<MetaFile> parseMetaFile(std::string_view text);
-[[nodiscard]] std::string writeMetaFile(const MetaFile& meta);
+[[nodiscard]] DEVEX_API core::Result<MetaFile> parseMetaFile(std::string_view text);
+[[nodiscard]] DEVEX_API std::string writeMetaFile(const MetaFile& meta);
 
 // Changes when the importer or its options change, which requires importing the source again.
-[[nodiscard]] std::uint64_t importSettingsHash(const MetaFile& meta);
+[[nodiscard]] DEVEX_API std::uint64_t importSettingsHash(const MetaFile& meta);
 
 } // namespace devex::asset

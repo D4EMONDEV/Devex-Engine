@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <devex/core/Error.hpp>
 #include <devex/math/Math.hpp>
 
@@ -16,7 +18,7 @@ inline constexpr std::string_view navMeshExtension = ".dvxnavmesh";
 
 // What a navigation mesh is baked for: the size of the agents that walk it, and how finely the
 // scene is cut into voxels to find where they fit.
-struct NavMeshBuildSettings
+struct DEVEX_API NavMeshBuildSettings
 {
     float agentRadius = 0.4f;
     float agentHeight = 1.8f;
@@ -33,7 +35,7 @@ struct NavMeshBuildSettings
     bool operator==(const NavMeshBuildSettings&) const = default;
 };
 
-struct NavMeshData
+struct DEVEX_API NavMeshData
 {
     NavMeshBuildSettings settings;
     // The corner of the grid of tiles, the far corner of what was baked, and how many tiles the
@@ -52,6 +54,6 @@ struct NavMeshData
 };
 
 // Settings that bake, a grid of tiles, and layers that hold data.
-[[nodiscard]] core::Result<void> validate(const NavMeshData& navMesh);
+[[nodiscard]] DEVEX_API core::Result<void> validate(const NavMeshData& navMesh);
 
 } // namespace devex::asset

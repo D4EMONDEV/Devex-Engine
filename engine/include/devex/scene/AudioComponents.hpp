@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <devex/asset/AssetId.hpp>
 #include <devex/reflection/Reflection.hpp>
 
@@ -28,7 +30,7 @@ enum class AudioAttenuation : std::uint8_t
 // panned between the speakers; a non-spatial one, such as music, is heard as it is. Code plays,
 // stops and pauses it; with playOnStart it starts on its own when the game starts or the source
 // appears.
-struct AudioSource
+struct DEVEX_API AudioSource
 {
     asset::AssetId clip;
     float volume = 1.0f;
@@ -48,13 +50,13 @@ struct AudioSource
     // The group of the project the sound plays in, such as Effects or Music.
     std::uint32_t group = 0;
 };
-DEVEX_DECLARE_REFLECTION(AudioSource);
+DEVEX_DECLARE_ENGINE_REFLECTION(AudioSource);
 
 // Where the game is heard from. Without one, the primary camera listens.
-struct AudioListener
+struct DEVEX_API AudioListener
 {
 };
-DEVEX_DECLARE_REFLECTION(AudioListener);
+DEVEX_DECLARE_ENGINE_REFLECTION(AudioListener);
 
 } // namespace devex::scene
 

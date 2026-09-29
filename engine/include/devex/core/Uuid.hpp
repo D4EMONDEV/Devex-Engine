@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <array>
 #include <compare>
 #include <cstddef>
@@ -13,7 +15,7 @@
 namespace devex::core {
 
 // 128-bit universally unique identifier, written as "6f1c2a9e-3b7d-4e21-9a55-0c8d7e4f1b23".
-class Uuid
+class DEVEX_API Uuid
 {
 public:
     constexpr Uuid() noexcept = default;

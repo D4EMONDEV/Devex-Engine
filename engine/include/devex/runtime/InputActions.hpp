@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <devex/asset/Project.hpp>
 #include <devex/math/Math.hpp>
 #include <devex/platform/Input.hpp>
@@ -19,7 +21,7 @@ namespace devex::runtime {
 // asks for instead of keys. Every device plays: the keyboard and the mouse, and any gamepad.
 // Actions are named in the project settings; the player may bind them to other keys, which
 // writeOverrides and readOverrides keep from one game to the next.
-class InputActions
+class DEVEX_API InputActions
 {
 public:
     // The text a key shows under the layout of the keyboard; its name when none is given.
@@ -82,7 +84,7 @@ public:
     void readOverrides(std::string_view text);
 
 private:
-    struct StringHash
+    struct DEVEX_API StringHash
     {
         using is_transparent = void;
         std::size_t operator()(std::string_view text) const noexcept
@@ -91,7 +93,7 @@ private:
         }
     };
 
-    struct Binding
+    struct DEVEX_API Binding
     {
         // Nothing for a binding of the project that could not be read.
         std::optional<platform::InputSource> source;
@@ -99,7 +101,7 @@ private:
         asset::InputDirection direction = asset::InputDirection::Positive;
     };
 
-    struct Action
+    struct DEVEX_API Action
     {
         std::string name;
         asset::InputActionKind kind = asset::InputActionKind::Button;
@@ -114,13 +116,13 @@ private:
         math::Vec2 vector{0.0f};
     };
 
-    struct Context
+    struct DEVEX_API Context
     {
         std::string name;
         bool active = true;
     };
 
-    struct Listening
+    struct DEVEX_API Listening
     {
         std::size_t action = 0;
         std::size_t binding = 0;

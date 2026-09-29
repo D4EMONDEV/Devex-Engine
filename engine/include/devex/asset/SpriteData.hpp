@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <devex/asset/AssetId.hpp>
 #include <devex/core/Error.hpp>
 #include <devex/math/Math.hpp>
@@ -16,7 +18,7 @@ namespace devex::asset {
 inline constexpr std::string_view spriteFramesExtension = ".dvxframes";
 
 // A rectangle of a texture, as large in the world as its pixels per unit make it.
-struct SpriteData
+struct DEVEX_API SpriteData
 {
     AssetId texture;
     // The pixels it covers, from the top-left corner of the texture.
@@ -43,10 +45,10 @@ struct SpriteData
 };
 
 // A rectangle inside its texture, a positive number of pixels per unit, borders that fit.
-[[nodiscard]] core::Result<void> validate(const SpriteData& sprite);
+[[nodiscard]] DEVEX_API core::Result<void> validate(const SpriteData& sprite);
 
 // An animation of sprites: the frames it shows one after the other.
-struct SpriteAnimationData
+struct DEVEX_API SpriteAnimationData
 {
     std::string name;
     // Frames per second.
@@ -59,7 +61,7 @@ struct SpriteAnimationData
 };
 
 // The animations of a character, found by name: "idle", "run", "jump"...
-struct SpriteFramesData
+struct DEVEX_API SpriteFramesData
 {
     std::vector<SpriteAnimationData> animations;
 
@@ -70,6 +72,6 @@ struct SpriteFramesData
 };
 
 // Names that are not empty and differ, positive frame rates.
-[[nodiscard]] core::Result<void> validate(const SpriteFramesData& frames);
+[[nodiscard]] DEVEX_API core::Result<void> validate(const SpriteFramesData& frames);
 
 } // namespace devex::asset

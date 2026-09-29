@@ -407,6 +407,9 @@ TEST_CASE("A drag source carried to a target that accepts it is dropped there", 
     REQUIRE(screen.world.dropped() != nullptr);
     CHECK(screen.world.dropped()->source == gem);
     CHECK(screen.world.dropped()->data == "gem");
+    // Where in the target it was let go: halfway across, halfway down.
+    CHECK(screen.world.dropped()->at.x == Catch::Approx(0.5f));
+    CHECK(screen.world.dropped()->at.y == Catch::Approx(0.5f));
     // The button carried away is not clicked.
     CHECK_FALSE(screen.world.wasClicked("pick"));
     CHECK(screen.world.carried() == nullptr);

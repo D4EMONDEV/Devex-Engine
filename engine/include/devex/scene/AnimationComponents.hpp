@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <devex/asset/AssetId.hpp>
 #include <devex/math/Easing.hpp>
 #include <devex/math/Math.hpp>
@@ -17,18 +19,18 @@ namespace devex::scene {
 // Draws a mesh whose vertices follow bones instead of one transform. The bones are entities of the
 // scene, in the order of the joints of the mesh; a missing bone leaves its vertices at the bind
 // pose. Instantiating a model with a skin adds this component and its bones.
-struct SkinnedMeshRenderer
+struct DEVEX_API SkinnedMeshRenderer
 {
     asset::AssetId mesh;
     // Overrides the materials of the mesh; invalid keeps them.
     asset::AssetId material;
     std::vector<EntityRef> bones;
 };
-DEVEX_DECLARE_REFLECTION(SkinnedMeshRenderer);
+DEVEX_DECLARE_ENGINE_REFLECTION(SkinnedMeshRenderer);
 
 // Plays animation clips on the bones under its entity. Clips drive bones by name, so a clip
 // imported with one model plays on any skeleton whose bones carry the same names.
-struct Animator
+struct DEVEX_API Animator
 {
     // The state machine that chooses the clips, a .dvxanimator; game code moves it by setting its
     // parameters. Without one, the Animator plays its clip.
@@ -46,7 +48,7 @@ struct Animator
     // CharacterController, the motion is given to it rather than to the Transform.
     bool applyRootMotion = false;
 };
-DEVEX_DECLARE_REFLECTION(Animator);
+DEVEX_DECLARE_ENGINE_REFLECTION(Animator);
 
 // What a tween does once it reaches its end.
 enum class TweenLoop : std::uint8_t
@@ -62,7 +64,7 @@ enum class TweenLoop : std::uint8_t
 // Animates a field of a component of its entity between two values, without code: a light that
 // pulses, a crate that floats, a sign that blinks. Code starts the same tweens with the TweenWorld,
 // on any entity.
-struct Tweener
+struct DEVEX_API Tweener
 {
     // The field, as "Component.field": "Transform.position", "UiRect.opacity", "UiImage.color". It
     // holds a number, a vector, a color or a rotation.
@@ -87,7 +89,7 @@ struct Tweener
     // Starts when the entity appears in a game that plays; otherwise code starts it.
     bool playOnStart = true;
 };
-DEVEX_DECLARE_REFLECTION(Tweener);
+DEVEX_DECLARE_ENGINE_REFLECTION(Tweener);
 
 } // namespace devex::scene
 

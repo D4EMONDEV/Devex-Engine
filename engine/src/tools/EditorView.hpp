@@ -1,12 +1,14 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <devex/math/Math.hpp>
 
 #include <optional>
 
 namespace devex::tools::detail {
 
-struct Ray
+struct DEVEX_API Ray
 {
     math::Vec3 origin{0.0f};
     // Normalized.
@@ -15,7 +17,7 @@ struct Ray
 
 // How the viewport shows the world: a perspective or orthographic camera and the size of the image
 // in pixels. Pixels count from the top-left corner, like mouse positions.
-struct ViewportView
+struct DEVEX_API ViewportView
 {
     // World to view transform of a camera looking along -Z with +Y up.
     math::Mat4 view{1.0f};
@@ -38,13 +40,13 @@ struct ViewportView
 
 // Parameter along the line origin + t * axis of its point closest to the ray, or nothing when the
 // ray is parallel to the line. The axis must be normalized.
-[[nodiscard]] std::optional<float> closestParameterOnLine(math::Vec3 origin, math::Vec3 axis, const Ray& ray) noexcept;
+[[nodiscard]] DEVEX_API std::optional<float> closestParameterOnLine(math::Vec3 origin, math::Vec3 axis, const Ray& ray) noexcept;
 
 // Where the ray meets the plane through `point` with `normal`, or nothing when the ray runs along
 // the plane or away from it.
-[[nodiscard]] std::optional<math::Vec3> intersectPlane(const Ray& ray, math::Vec3 point, math::Vec3 normal) noexcept;
+[[nodiscard]] DEVEX_API std::optional<math::Vec3> intersectPlane(const Ray& ray, math::Vec3 point, math::Vec3 normal) noexcept;
 
 // Distance from a point to a segment, in 2D.
-[[nodiscard]] float distanceToSegment(math::Vec2 point, math::Vec2 start, math::Vec2 end) noexcept;
+[[nodiscard]] DEVEX_API float distanceToSegment(math::Vec2 point, math::Vec2 start, math::Vec2 end) noexcept;
 
 } // namespace devex::tools::detail

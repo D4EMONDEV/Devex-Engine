@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <devex/asset/AssetSource.hpp>
 #include <devex/core/Error.hpp>
 #include <devex/core/MappedFile.hpp>
@@ -32,14 +34,14 @@ inline constexpr std::string_view packageExtension = ".dvxpak";
 inline constexpr std::uint32_t packageFormatVersion = 1;
 
 // The icon of a game: 8-bit RGBA pixels, row by row from the top-left corner.
-struct PackageIcon
+struct DEVEX_API PackageIcon
 {
     std::uint32_t width = 0;
     std::uint32_t height = 0;
     std::vector<std::uint8_t> rgba;
 };
 
-struct PackageStatistics
+struct DEVEX_API PackageStatistics
 {
     std::size_t assets = 0;
     // Bytes of the artifacts before and after compression.
@@ -51,7 +53,7 @@ struct PackageStatistics
 
 // Writes a package to a temporary file next to its destination, which replaces the destination
 // once finished.
-class PackageWriter
+class DEVEX_API PackageWriter
 {
 public:
     [[nodiscard]] static core::Result<PackageWriter> create(const std::filesystem::path& path);
@@ -72,7 +74,7 @@ public:
     [[nodiscard]] core::Result<PackageStatistics> finish();
 
 private:
-    struct Blob
+    struct DEVEX_API Blob
     {
         std::uint64_t offset = 0;
         std::uint64_t storedSize = 0;
@@ -80,7 +82,7 @@ private:
         bool compressed = false;
     };
 
-    struct Record
+    struct DEVEX_API Record
     {
         AssetInfo info;
         std::string path;
@@ -103,7 +105,7 @@ private:
 };
 
 // The assets and settings of an exported game, read from its package.
-class PackageReader final : public AssetSource
+class DEVEX_API PackageReader final : public AssetSource
 {
 public:
     // Checks the header and the index; an asset whose data is damaged fails when it is loaded.
@@ -121,7 +123,7 @@ public:
     [[nodiscard]] std::size_t assetCount() const noexcept;
 
 private:
-    struct Blob
+    struct DEVEX_API Blob
     {
         std::uint64_t offset = 0;
         std::uint64_t storedSize = 0;
@@ -129,7 +131,7 @@ private:
         bool compressed = false;
     };
 
-    struct Record
+    struct DEVEX_API Record
     {
         AssetInfo info;
         std::string path;

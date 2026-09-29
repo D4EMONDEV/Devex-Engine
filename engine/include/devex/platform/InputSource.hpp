@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <devex/platform/Key.hpp>
 
 #include <cstdint>
@@ -26,7 +28,7 @@ inline constexpr std::uint16_t leftStick = 0;
 inline constexpr std::uint16_t rightStick = 1;
 
 // A control the player presses or moves, which input actions are bound to.
-struct InputSource
+struct DEVEX_API InputSource
 {
     InputDevice device = InputDevice::Key;
     // The value of the Key, MouseButton, GamepadButton or GamepadAxis, or leftStick and rightStick.
@@ -57,14 +59,14 @@ struct InputSource
 
 // Reads "key:Space", "mouse:Left", "pad:South", "axis:LeftTrigger" or "stick:Left". Keys are named
 // after their place on a US keyboard, as Key is: "key:W" is the key labelled Z on AZERTY.
-[[nodiscard]] std::optional<InputSource> parseInputSource(std::string_view text);
-[[nodiscard]] std::string toString(InputSource source);
+[[nodiscard]] DEVEX_API std::optional<InputSource> parseInputSource(std::string_view text);
+[[nodiscard]] DEVEX_API std::string toString(InputSource source);
 // A name to show, which does not follow the layout of the keyboard: "Left Shift", "Left Mouse
 // Button", "Gamepad South", "Left Trigger", "Left Stick". Platform::keyLabel names keys as the
 // layout prints them.
-[[nodiscard]] std::string displayName(InputSource source);
+[[nodiscard]] DEVEX_API std::string displayName(InputSource source);
 // Every source of a device, for the lists a binding is chosen from.
-[[nodiscard]] std::vector<InputSource> inputSources(InputDevice device);
+[[nodiscard]] DEVEX_API std::vector<InputSource> inputSources(InputDevice device);
 
 // Whether the source moves over a range, as axes and sticks do, rather than being pressed or not.
 [[nodiscard]] constexpr bool isAnalog(InputSource source) noexcept

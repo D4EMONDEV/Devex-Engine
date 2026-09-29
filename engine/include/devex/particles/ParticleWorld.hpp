@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <devex/asset/AssetId.hpp>
 #include <devex/asset/CurveData.hpp>
 #include <devex/core/Time.hpp>
@@ -27,7 +29,7 @@ namespace devex::particles {
 
 // A particle as the simulation keeps it, in the space of its emitter: the world, or the emitter
 // itself for emitters in local space.
-struct Particle
+struct DEVEX_API Particle
 {
     math::Vec3 position{0.0f};
     // Seconds since its birth.
@@ -51,14 +53,14 @@ struct Particle
 };
 
 // A point of a trail, and when it was left there.
-struct TrailPoint
+struct DEVEX_API TrailPoint
 {
     math::Vec3 position{0.0f};
     float time = 0.0f;
 };
 
 // What the renderer needs of an emitter: its settings, where it stands and its particles.
-struct EmitterView
+struct DEVEX_API EmitterView
 {
     scene::Entity entity;
     const scene::ParticleEmitter* settings = nullptr;
@@ -74,10 +76,10 @@ struct EmitterView
 };
 
 // Points each particle keeps of its trail, the particle itself being the head.
-[[nodiscard]] std::uint32_t trailPointsPerParticle() noexcept;
+[[nodiscard]] DEVEX_API std::uint32_t trailPointsPerParticle() noexcept;
 
 // What the renderer needs of a TrailRenderer: its settings and the points it left, newest first.
-struct TrailView
+struct DEVEX_API TrailView
 {
     scene::Entity entity;
     const scene::TrailRenderer* settings = nullptr;
@@ -91,14 +93,14 @@ struct TrailView
 // the job system, and the ribbons of its TrailRenderer components. Emitters are found by their
 // entity every frame and start by themselves; their particles and ribbons are kept here, not in the
 // scene. The simulation runs once the world transforms of the frame are known.
-class ParticleWorld
+class DEVEX_API ParticleWorld
 {
 public:
     // The curve of an asset, loaded once and shared; null when it cannot be loaded.
     using CurveSource = std::function<std::shared_ptr<const asset::CurveData>(asset::AssetId curve)>;
 
     // Where a particle moving from one point to another hits a surface, and the normal there.
-    struct Hit
+    struct DEVEX_API Hit
     {
         math::Vec3 point{0.0f};
         math::Vec3 normal{0.0f, 1.0f, 0.0f};

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <devex/asset/AssetId.hpp>
 #include <devex/asset/MeshData.hpp>
 #include <devex/asset/Project.hpp>
@@ -26,7 +28,7 @@ namespace devex::physics {
 // A mask of collision layers with every layer.
 inline constexpr std::uint16_t allLayers = 0xFFFF;
 
-struct RayHit
+struct DEVEX_API RayHit
 {
     // The entity that owns the body hit: the entity of its RigidBody, or of its collider.
     scene::Entity entity;
@@ -43,7 +45,7 @@ enum class ContactPhase : std::uint8_t
 
 // Two bodies that started or stopped touching. A trigger contact involves at least one trigger:
 // nothing blocked, something entered or left.
-struct Contact
+struct DEVEX_API Contact
 {
     ContactPhase phase = ContactPhase::Begin;
     scene::Entity first;
@@ -67,7 +69,7 @@ struct Contact
 // must stay valid while the world exists.
 using MeshSource = std::function<const asset::MeshData*(asset::AssetId mesh)>;
 
-struct PhysicsWorldConfig
+struct DEVEX_API PhysicsWorldConfig
 {
     asset::PhysicsSettings settings;
     MeshSource meshes;
@@ -79,7 +81,7 @@ struct PhysicsWorldConfig
 // The simulation of one scene. Each step brings the bodies in line with the physics components of
 // the scene, so that game code creates, changes, moves and removes bodies by editing components
 // and transforms, then advances the simulation and writes the result back to the scene.
-class PhysicsWorld
+class DEVEX_API PhysicsWorld
 {
 public:
     [[nodiscard]] static core::Result<std::unique_ptr<PhysicsWorld>> create(PhysicsWorldConfig config);

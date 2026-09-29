@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <devex/core/Uuid.hpp>
 #include <devex/reflection/Reflection.hpp>
 
@@ -11,7 +13,7 @@ namespace devex::asset {
 
 // Identifies an asset independently of its file path, so that renaming or moving the file keeps
 // references valid. Written as asset("6f1c2a9e-...") in .dvx* files.
-struct AssetId
+struct DEVEX_API AssetId
 {
     core::Uuid uuid;
 

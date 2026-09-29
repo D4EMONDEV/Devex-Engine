@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <devex/asset/AssetId.hpp>
 #include <devex/core/Error.hpp>
 #include <devex/core/Uuid.hpp>
@@ -40,7 +42,7 @@
 namespace devex::scene {
 
 // The root of a prefab instance, and of the instances inside it.
-struct PrefabInstance
+struct DEVEX_API PrefabInstance
 {
     asset::AssetId prefab;
     // False when the prefab could not be loaded: the entity is empty and keeps the overrides as they
@@ -50,7 +52,7 @@ struct PrefabInstance
 };
 
 // An entity loaded from a prefab.
-struct PrefabEntity
+struct DEVEX_API PrefabEntity
 {
     // The root of the instance whose overrides save the entity: the outermost one in the scene.
     Entity instance;
@@ -64,51 +66,51 @@ using PrefabSourceLoader = std::function<core::Result<std::string>(asset::AssetI
 
 // Sets how prefabs are read, for the whole process, and forgets the prefabs read so far. The loader
 // is called on the thread that loads a scene. Without a loader, instances stay unresolved.
-void setPrefabSourceLoader(PrefabSourceLoader loader);
+DEVEX_API void setPrefabSourceLoader(PrefabSourceLoader loader);
 
 // Forgets the prefabs read so far. They are also read again when the text of the prefab, or of a
 // prefab it contains, changes.
-void clearPrefabCache();
+DEVEX_API void clearPrefabCache();
 
 // The UUID in a scene of the entity of an instance whose UUID in the prefab is `source`.
-[[nodiscard]] core::Uuid derivePrefabUuid(core::Uuid instance, core::Uuid source) noexcept;
+[[nodiscard]] DEVEX_API core::Uuid derivePrefabUuid(core::Uuid instance, core::Uuid source) noexcept;
 
 // Whether the entity is the root of an instance saved by the scene itself, rather than part of
 // another instance.
-[[nodiscard]] bool isPrefabInstanceRoot(const Scene& scene, Entity entity) noexcept;
+[[nodiscard]] DEVEX_API bool isPrefabInstanceRoot(const Scene& scene, Entity entity) noexcept;
 
 // The root of the instance whose overrides save the entity; invalid when it is not from a prefab.
-[[nodiscard]] Entity owningPrefabInstance(const Scene& scene, Entity entity) noexcept;
+[[nodiscard]] DEVEX_API Entity owningPrefabInstance(const Scene& scene, Entity entity) noexcept;
 
 // Whether the entity comes from the prefab of an instance without being its root. Such an entity
 // changes with its prefab: it cannot be destroyed or moved on its own.
-[[nodiscard]] bool isInsidePrefabInstance(const Scene& scene, Entity entity) noexcept;
+[[nodiscard]] DEVEX_API bool isInsidePrefabInstance(const Scene& scene, Entity entity) noexcept;
 
 // Creates an instance of the prefab with a new UUID, last under parent (a root when invalid).
-[[nodiscard]] core::Result<Entity> instantiatePrefab(Scene& scene, asset::AssetId prefab, Entity parent = {});
+[[nodiscard]] DEVEX_API core::Result<Entity> instantiatePrefab(Scene& scene, asset::AssetId prefab, Entity parent = {});
 
 // The prefabs that a scene text instantiates directly.
-[[nodiscard]] std::vector<asset::AssetId> prefabReferences(std::string_view sceneText);
+[[nodiscard]] DEVEX_API std::vector<asset::AssetId> prefabReferences(std::string_view sceneText);
 
 // Whether loading the prefab loads `used`, directly or through the prefabs it contains; true when
 // both are the same. Used to refuse instances that would contain themselves.
-[[nodiscard]] bool prefabUses(asset::AssetId prefab, asset::AssetId used);
+[[nodiscard]] DEVEX_API bool prefabUses(asset::AssetId prefab, asset::AssetId used);
 
 // The entities of an instance as its prefab makes them, without overrides, with the UUIDs they have
 // in the scene of the instance: the values that overrides differ from. Null when the prefab cannot
 // be loaded. Recent results are kept.
-[[nodiscard]] std::shared_ptr<const Scene> prefabBase(asset::AssetId prefab, core::Uuid instance);
+[[nodiscard]] DEVEX_API std::shared_ptr<const Scene> prefabBase(asset::AssetId prefab, core::Uuid instance);
 
 // Writes an entity and its descendants as saveEntityTree does, but with the entities of prefab
 // instances written as ordinary ones, no longer linked to their prefab.
-[[nodiscard]] std::string saveUnpackedEntityTree(const Scene& scene, Entity root);
+[[nodiscard]] DEVEX_API std::string saveUnpackedEntityTree(const Scene& scene, Entity root);
 
 // Writes the instance at root as saveEntityTree does, without its overrides except the Transform and
 // name of its root, keeping the entities added to it.
-[[nodiscard]] std::string saveRevertedPrefabInstance(const Scene& scene, Entity root);
+[[nodiscard]] DEVEX_API std::string saveRevertedPrefabInstance(const Scene& scene, Entity root);
 
 // An instance saved before its prefab changes, to be loaded again with the new prefab.
-struct PrefabInstanceSnapshot
+struct DEVEX_API PrefabInstanceSnapshot
 {
     core::Uuid root;
     core::Uuid parent;
@@ -118,11 +120,11 @@ struct PrefabInstanceSnapshot
 
 // Saves the instances that use one of the prefabs, while the loader still gives their previous
 // texts. Instances inside other saved instances are saved with them.
-[[nodiscard]] std::vector<PrefabInstanceSnapshot> snapshotPrefabInstances(const Scene& scene,
-                                                                          std::span<const asset::AssetId> prefabs);
+[[nodiscard]] DEVEX_API std::vector<PrefabInstanceSnapshot> snapshotPrefabInstances(const Scene& scene,
+                                                                                    std::span<const asset::AssetId> prefabs);
 
 // Replaces the saved instances with their snapshots loaded again, at the same place. An instance
 // that fails to load is left as it was, with an error. Returns the number of instances replaced.
-std::size_t rebuildPrefabInstances(Scene& scene, std::span<const PrefabInstanceSnapshot> snapshots);
+DEVEX_API std::size_t rebuildPrefabInstances(Scene& scene, std::span<const PrefabInstanceSnapshot> snapshots);
 
 } // namespace devex::scene

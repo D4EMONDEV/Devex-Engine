@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <devex/asset/AssetSource.hpp>
 #include <devex/asset/Project.hpp>
 #include <devex/asset/import/AssetDatabase.hpp>
@@ -30,7 +32,7 @@ namespace devex::runtime {
 
 // A build of the engine that games can be exported with: bin/ holds devex-player and the libraries,
 // cmake/ the package that game modules are built against.
-struct EngineBuild
+struct DEVEX_API EngineBuild
 {
     // The name of its folder, such as "x64-release".
     std::string name;
@@ -51,19 +53,19 @@ struct EngineBuild
 
 // The engine builds found in the folder of the build that binDirectory belongs to and in the folders
 // next to it, the running build first.
-[[nodiscard]] std::vector<EngineBuild> findEngineBuilds(const std::filesystem::path& binDirectory);
+[[nodiscard]] DEVEX_API std::vector<EngineBuild> findEngineBuilds(const std::filesystem::path& binDirectory);
 
 // The build of the configuration, preferring the running build.
-[[nodiscard]] std::optional<EngineBuild> findEngineBuild(std::span<const EngineBuild> builds, std::string_view configuration);
+[[nodiscard]] DEVEX_API std::optional<EngineBuild> findEngineBuild(std::span<const EngineBuild> builds, std::string_view configuration);
 
 // The file name of the exported executable, from the name of the game, without its extension.
-[[nodiscard]] std::string executableName(std::string_view gameName);
+[[nodiscard]] DEVEX_API std::string executableName(std::string_view gameName);
 
 // What an export needs from the asset database, gathered on the thread that owns it. The export
 // itself can then run on another thread.
-struct ExportPlan
+struct DEVEX_API ExportPlan
 {
-    struct Asset
+    struct DEVEX_API Asset
     {
         asset::AssetInfo info;
         // The res:// path of the source file of a main asset, empty for the other assets of a file.
@@ -91,16 +93,16 @@ struct ExportPlan
 
 // Fails when the project has no scene, when imports are still running or failed, or when an exported
 // scene or folder does not exist.
-[[nodiscard]] core::Result<ExportPlan> planExport(const asset::AssetDatabase& database, const EngineBuild& engine);
+[[nodiscard]] DEVEX_API core::Result<ExportPlan> planExport(const asset::AssetDatabase& database, const EngineBuild& engine);
 
-struct ExportProgress
+struct DEVEX_API ExportProgress
 {
     std::string step;
     // From 0 to 1.
     float fraction = 0.0f;
 };
 
-struct ExportResult
+struct DEVEX_API ExportResult
 {
     std::filesystem::path output;
     std::filesystem::path executable;
@@ -113,19 +115,19 @@ struct ExportResult
 // directly or through other assets, into the package, then copies the engine. The output folder must
 // be empty, missing, or a previous export, which is replaced. Progress is reported on the calling
 // thread; setting cancel stops the export at its next step.
-[[nodiscard]] core::Result<ExportResult> exportGame(const ExportPlan& plan,
-                                                   const std::function<void(const ExportProgress&)>& progress = {},
-                                                   const std::atomic<bool>* cancel = nullptr);
+[[nodiscard]] DEVEX_API core::Result<ExportResult> exportGame(const ExportPlan& plan,
+                                                             const std::function<void(const ExportProgress&)>& progress = {},
+                                                             const std::atomic<bool>* cancel = nullptr);
 
 // The assets that a cooked asset refers to: the assets named in a scene (prefabs, meshes, materials,
 // scenes...), the textures of a material, the materials of a mesh, the meshes of a model.
-[[nodiscard]] core::Result<std::vector<asset::AssetId>> assetReferences(asset::AssetType type,
-                                                                        std::span<const std::byte> artifact);
+[[nodiscard]] DEVEX_API core::Result<std::vector<asset::AssetId>> assetReferences(asset::AssetType type,
+                                                                                  std::span<const std::byte> artifact);
 
 // devex-editor --export <project.dvxproj> [--output <folder>] [--configuration <Release|Debug>]
 // Imports the assets of the project, exports the game as its export settings say, and prints the
 // progress. Returns the exit code of the process.
-[[nodiscard]] int exportFromCommandLine(std::span<const std::string_view> arguments,
-                                        const std::filesystem::path& binDirectory);
+[[nodiscard]] DEVEX_API int exportFromCommandLine(std::span<const std::string_view> arguments,
+                                                  const std::filesystem::path& binDirectory);
 
 } // namespace devex::runtime

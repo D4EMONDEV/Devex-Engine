@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <devex/math/Math.hpp>
 #include <devex/platform/Key.hpp>
 
@@ -13,7 +15,7 @@ namespace devex::platform {
 
 // Keyboard and mouse state for the current frame. "Pressed" and "released" transitions last
 // exactly one frame, so read them from onUpdate rather than onFixedUpdate.
-class Input
+class DEVEX_API Input
 {
 public:
     [[nodiscard]] bool isKeyDown(Key key) const noexcept;
@@ -86,7 +88,7 @@ private:
     math::Vec2 m_mouseWheel{0.0f};
     std::string m_typedText;
 
-    struct Gamepad
+    struct DEVEX_API Gamepad
     {
         bool connected = false;
         std::bitset<gamepadButtonCount> down;

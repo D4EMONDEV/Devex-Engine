@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <devex/asset/AudioClipData.hpp>
 #include <devex/core/Error.hpp>
 
@@ -15,7 +17,7 @@ namespace devex::audio {
 inline constexpr std::size_t waveformSize = 512;
 
 // What decoding a whole file tells about it.
-struct ClipInfo
+struct DEVEX_API ClipInfo
 {
     asset::AudioEncoding encoding = asset::AudioEncoding::Wav;
     std::uint32_t channels = 0;
@@ -26,11 +28,11 @@ struct ClipInfo
 
 // Recognizes a .wav, .flac, .mp3 or .ogg (Vorbis) file by its first bytes and decodes it whole, as
 // the import does. Fails for other files and for files that do not decode.
-[[nodiscard]] core::Result<ClipInfo> probeClip(std::span<const std::byte> file);
+[[nodiscard]] DEVEX_API core::Result<ClipInfo> probeClip(std::span<const std::byte> file);
 
 // A clip ready to play, shared by every sound that plays it: the file, and the samples of a decoded
 // clip.
-class Clip
+class DEVEX_API Clip
 {
 public:
     // Decodes the samples of a clip whose loading is Decoded.

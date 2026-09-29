@@ -14,8 +14,8 @@ et rendu avec Vulkan. Il est distribué sous licence [MIT](LICENSE).
   chaud par l'éditeur ;
 - éditeur Dear ImGui (docking) au style inspiré de Godot : gestionnaire de projets, onglets de
   scènes, viewport, gizmos et mode Play ; il passe panneau par panneau sur l'interface des jeux,
-  pour n'avoir qu'un seul système d'interface : le gestionnaire de projets, FileSystem, Output et
-  la fenêtre qui crée les entités et ajoute les composants le sont déjà.
+  pour n'avoir qu'un seul système d'interface : le gestionnaire de projets, l'arbre de scène,
+  FileSystem, Output et la fenêtre qui crée les entités et ajoute les composants le sont déjà.
 
 Le détail, l'architecture des modules et les jalons sont dans
 [docs/decisions.md](docs/decisions.md).
@@ -101,7 +101,9 @@ Le détail, l'architecture des modules et les jalons sont dans
   l'écran 3D d'une scène 3D,
   fenêtre *Create Entity* / *Add Component* en palette comme le *Create New Node* de Godot
   (composants et préréglages, recherche, catégories, fiche, favoris et récents par projet),
-  gestionnaire de projets, FileSystem et Output déjà écrits avec `Devex::Ui` (menus contextuels,
+  gestionnaire de projets, arbre de scène (guides fins, entités glissées avant, dans ou après une
+  autre, œil, préfab et code au bout des lignes), FileSystem et Output déjà écrits avec
+  `Devex::Ui` (menus contextuels,
   infobulles, modales, listes virtuelles, texte de la sortie choisi et copié à la souris, fichiers
   glissés vers la vue et l'inspecteur, entités lâchées sur un dossier qui deviennent des préfabs),
   onglets de scènes, viewport et sa

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <devex/asset/AssetId.hpp>
 #include <devex/asset/AssetType.hpp>
 #include <devex/asset/FontData.hpp>
@@ -21,7 +23,7 @@
 namespace devex::asset {
 
 // A cooked asset produced by an import, written to the cache as <uuid>.dvxasset.
-struct ImportedArtifact
+struct DEVEX_API ImportedArtifact
 {
     AssetId id;
     AssetType type = AssetType::Mesh;
@@ -32,7 +34,7 @@ struct ImportedArtifact
 // Identifiers of the assets inside a source file, as listed in its .dvxmeta. An importer names
 // each sub-asset with a key that survives changes to the file, such as a mesh name: a known key
 // keeps its identifier, and a new key receives a generated one.
-class SubAssetIds
+class DEVEX_API SubAssetIds
 {
 public:
     SubAssetIds() = default;
@@ -51,7 +53,7 @@ private:
 };
 
 // Everything an importer receives. It may run on a worker thread: it must not touch engine state.
-struct ImportContext
+struct DEVEX_API ImportContext
 {
     std::filesystem::path source;
     // Identifier of the main asset of the file, from its .dvxmeta.
@@ -72,7 +74,7 @@ struct ImportContext
     [[nodiscard]] math::Vec4 vectorOption(std::string_view key, math::Vec4 fallback) const noexcept;
 };
 
-struct ImportResult
+struct DEVEX_API ImportResult
 {
     // The main asset first, then the sub-assets.
     std::vector<ImportedArtifact> artifacts;
@@ -81,7 +83,7 @@ struct ImportResult
     std::vector<std::filesystem::path> dependencies;
 };
 
-struct Importer
+struct DEVEX_API Importer
 {
     std::string_view name;
     // Increased whenever the importer produces different data, so that sources import again.
@@ -99,39 +101,39 @@ struct Importer
 
 // Texture images, .dvxmat materials, glTF, FBX and OBJ models, sounds, fonts, curves, sprite
 // frames, tilesets and .dvxscene scenes.
-[[nodiscard]] std::span<const Importer> importers();
+[[nodiscard]] DEVEX_API std::span<const Importer> importers();
 // The extension is compared without regard to case.
-[[nodiscard]] const Importer* findImporterForExtension(std::string_view extension);
-[[nodiscard]] const Importer* findImporter(std::string_view name);
+[[nodiscard]] DEVEX_API const Importer* findImporterForExtension(std::string_view extension);
+[[nodiscard]] DEVEX_API const Importer* findImporter(std::string_view name);
 
 // Importers of the built-in formats, also usable directly.
-[[nodiscard]] core::Result<ImportResult> importTextureFile(ImportContext& context);
-[[nodiscard]] core::Result<ImportResult> importMaterialFile(ImportContext& context);
-[[nodiscard]] core::Result<ImportResult> importGltfFile(ImportContext& context);
+[[nodiscard]] DEVEX_API core::Result<ImportResult> importTextureFile(ImportContext& context);
+[[nodiscard]] DEVEX_API core::Result<ImportResult> importMaterialFile(ImportContext& context);
+[[nodiscard]] DEVEX_API core::Result<ImportResult> importGltfFile(ImportContext& context);
 // FBX and OBJ files, read by ufbx and converted to the engine conventions: Y up, right-handed, one
 // unit per meter, times the "scale" option.
-[[nodiscard]] core::Result<ImportResult> importFbxFile(ImportContext& context);
-[[nodiscard]] core::Result<ImportResult> importSceneFile(ImportContext& context);
-[[nodiscard]] core::Result<ImportResult> importCurveFile(ImportContext& context);
-[[nodiscard]] core::Result<ImportResult> importSpriteFramesFile(ImportContext& context);
-[[nodiscard]] core::Result<ImportResult> importTilesetFile(ImportContext& context);
-[[nodiscard]] core::Result<ImportResult> importAnimatorFile(ImportContext& context);
-[[nodiscard]] core::Result<ImportResult> importNavMeshFile(ImportContext& context);
+[[nodiscard]] DEVEX_API core::Result<ImportResult> importFbxFile(ImportContext& context);
+[[nodiscard]] DEVEX_API core::Result<ImportResult> importSceneFile(ImportContext& context);
+[[nodiscard]] DEVEX_API core::Result<ImportResult> importCurveFile(ImportContext& context);
+[[nodiscard]] DEVEX_API core::Result<ImportResult> importSpriteFramesFile(ImportContext& context);
+[[nodiscard]] DEVEX_API core::Result<ImportResult> importTilesetFile(ImportContext& context);
+[[nodiscard]] DEVEX_API core::Result<ImportResult> importAnimatorFile(ImportContext& context);
+[[nodiscard]] DEVEX_API core::Result<ImportResult> importNavMeshFile(ImportContext& context);
 // Sounds keep their file; the "loading" option chooses "decoded", "streamed" or "auto".
-[[nodiscard]] core::Result<ImportResult> importAudioFile(ImportContext& context);
+[[nodiscard]] DEVEX_API core::Result<ImportResult> importAudioFile(ImportContext& context);
 // Fonts are baked into an atlas of distances at the "size" of the option, with the "spread" of the
 // distances around each outline.
-[[nodiscard]] core::Result<ImportResult> importFontFile(ImportContext& context);
+[[nodiscard]] DEVEX_API core::Result<ImportResult> importFontFile(ImportContext& context);
 // Bakes the letters of a TrueType font into an atlas of distances, as the font importer does: the
 // em at `size` pixels, the distances spread over `spread` pixels. The editor bakes its own fonts so.
-[[nodiscard]] core::Result<FontData> bakeFont(std::span<const std::byte> file, std::string family, float size = 48.0f,
-                                              float spread = 6.0f);
+[[nodiscard]] DEVEX_API core::Result<FontData> bakeFont(std::span<const std::byte> file, std::string family, float size = 48.0f,
+                                                        float spread = 6.0f);
 
 // Local files that a .gltf or .glb file refers to, such as external buffers and images.
-[[nodiscard]] core::Result<std::vector<std::filesystem::path>> findGltfDependencies(
-    const std::filesystem::path& file);
+[[nodiscard]] DEVEX_API core::Result<std::vector<std::filesystem::path>> findGltfDependencies(
+              const std::filesystem::path& file);
 // The images an FBX or OBJ file refers to and finds beside it, and the .mtl of an OBJ file.
-[[nodiscard]] core::Result<std::vector<std::filesystem::path>> findFbxDependencies(
-    const std::filesystem::path& file);
+[[nodiscard]] DEVEX_API core::Result<std::vector<std::filesystem::path>> findFbxDependencies(
+              const std::filesystem::path& file);
 
 } // namespace devex::asset

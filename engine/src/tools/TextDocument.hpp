@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <devex/core/Error.hpp>
 
 #include <filesystem>
@@ -9,7 +11,7 @@ namespace devex::tools::detail {
 
 // A UTF-8 file, with an LF editing buffer and its original bytes for conflict detection.
 // Disk contents are only replaced after a successful save; reload also commits on success only.
-class TextDocument
+class DEVEX_API TextDocument
 {
 public:
     static constexpr std::size_t maximumBytes = 2 * 1024 * 1024;
@@ -36,6 +38,6 @@ private:
     bool m_bom = false;
 };
 
-[[nodiscard]] bool sameTextPath(const std::filesystem::path& a, const std::filesystem::path& b);
+[[nodiscard]] DEVEX_API bool sameTextPath(const std::filesystem::path& a, const std::filesystem::path& b);
 
 } // namespace devex::tools::detail

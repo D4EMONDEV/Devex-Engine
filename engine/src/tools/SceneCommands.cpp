@@ -438,9 +438,10 @@ private:
 class ReparentCommand final : public Command
 {
 public:
-    ReparentCommand(core::Uuid entity, core::Uuid newParent)
+    ReparentCommand(core::Uuid entity, core::Uuid newParent, core::Uuid before)
         : m_entity(entity)
         , m_newParent(newParent)
+        , m_before(before)
     {
     }
 
@@ -463,9 +464,17 @@ public:
         }
         const Entity oldParent = scene.parent(*entity);
         const Entity oldNext = scene.nextSibling(*entity);
-        if (core::Result<void> moved = scene.setParent(*entity, *newParent); !moved)
+        // Before a sibling that is still one under the new parent, or last.
+        const Entity before = m_before.isNil() ? Entity{} : scene.findEntity(m_before);
+        const bool placed = before.isValid() && before != *entity && scene.parent(before) == *newParent;
+        if (core::Result<void> moved = scene.setParent(*entity, *newParent, placed ? before : Entity{}); !moved)
         {
             return moved;
+        }
+        // Last among the siblings it already had, which setParent leaves where it is.
+        if (!placed && oldParent == *newParent)
+        {
+            scene.placeLast(*entity);
         }
         m_oldParent = oldParent.isValid() ? scene.uuid(oldParent) : core::Uuid{};
         m_oldNextSibling = oldNext.isValid() ? scene.uuid(oldNext) : core::Uuid{};
@@ -482,12 +491,22 @@ public:
         }
         const Entity before = m_oldNextSibling.isNil() ? Entity{} : scene.findEntity(m_oldNextSibling);
         const bool beforeIsSibling = before.isValid() && scene.parent(before) == *oldParent;
-        return scene.setParent(*entity, *oldParent, beforeIsSibling ? before : Entity{});
+        const bool sameParent = scene.parent(*entity) == *oldParent;
+        if (core::Result<void> moved = scene.setParent(*entity, *oldParent, beforeIsSibling ? before : Entity{}); !moved)
+        {
+            return moved;
+        }
+        if (!beforeIsSibling && sameParent)
+        {
+            scene.placeLast(*entity);
+        }
+        return {};
     }
 
 private:
     core::Uuid m_entity;
     core::Uuid m_newParent;
+    core::Uuid m_before;
     core::Uuid m_oldParent;
     core::Uuid m_oldNextSibling;
 };
@@ -723,9 +742,9 @@ std::unique_ptr<Command> makeDestroyEntityCommand(core::Uuid entity)
     return std::make_unique<DestroyEntityCommand>(entity);
 }
 
-std::unique_ptr<Command> makeReparentCommand(core::Uuid entity, core::Uuid newParent)
+std::unique_ptr<Command> makeReparentCommand(core::Uuid entity, core::Uuid newParent, core::Uuid before)
 {
-    return std::make_unique<ReparentCommand>(entity, newParent);
+    return std::make_unique<ReparentCommand>(entity, newParent, before);
 }
 
 std::unique_ptr<Command> makeAddComponentCommand(core::Uuid entity, std::string component)

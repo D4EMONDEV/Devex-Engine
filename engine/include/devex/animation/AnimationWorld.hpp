@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <devex/animation/Clip.hpp>
 #include <devex/asset/AnimatorData.hpp>
 #include <devex/asset/AssetId.hpp>
@@ -25,9 +27,9 @@ class Scene;
 namespace devex::animation {
 
 // What an animator with a controller is doing, for the tools.
-struct AnimatorStatus
+struct DEVEX_API AnimatorStatus
 {
-    struct Parameter
+    struct DEVEX_API Parameter
     {
         std::string name;
         asset::AnimatorParameterType type = asset::AnimatorParameterType::Float;
@@ -49,7 +51,7 @@ struct AnimatorStatus
 // under their entity every frame. Clips drive bones by name, so a clip plays on any skeleton whose
 // bones carry the same names. An Animator with a controller plays its state machine: game code sets
 // its parameters, and its transitions choose the states, whose clips and blend trees pose the bones.
-class AnimationWorld
+class DEVEX_API AnimationWorld
 {
 public:
     // The clip of an asset, loaded once and shared; null when it cannot be loaded.
@@ -118,15 +120,15 @@ private:
 
 // Poses the bones under an entity with one clip at one time, without any playback state: what the
 // editor shows while it previews a clip. Bones are found by name under the entity.
-void applyClip(scene::Scene& scene, scene::Entity entity, const Clip& clip, float time);
+DEVEX_API void applyClip(scene::Scene& scene, scene::Entity entity, const Clip& clip, float time);
 
 // The weights of the clips of a linear blend tree at a value: the two thresholds around the value
 // share it, the first and the last take all of it beyond them. Thresholds need not be sorted.
-[[nodiscard]] std::vector<float> linearBlendWeights(std::span<const float> thresholds, float value);
+[[nodiscard]] DEVEX_API std::vector<float> linearBlendWeights(std::span<const float> thresholds, float value);
 
 // The weights of the clips of a planar blend tree at a point, by gradient band interpolation (the
 // "freeform cartesian" blend of Unity): a clip takes all the weight on its position, and the
 // weights change smoothly between positions. They add up to 1.
-[[nodiscard]] std::vector<float> planarBlendWeights(std::span<const math::Vec2> positions, math::Vec2 value);
+[[nodiscard]] DEVEX_API std::vector<float> planarBlendWeights(std::span<const math::Vec2> positions, math::Vec2 value);
 
 } // namespace devex::animation

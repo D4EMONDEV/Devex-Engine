@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <devex/asset/AssetId.hpp>
 #include <devex/core/Error.hpp>
 #include <devex/math/Math.hpp>
@@ -10,7 +12,7 @@
 
 namespace devex::asset {
 
-struct ModelNode
+struct DEVEX_API ModelNode
 {
     std::string name;
     // Index of the parent node, or -1 for a root.
@@ -25,14 +27,14 @@ struct ModelNode
 };
 
 // The joints a skinned mesh follows, in the order its vertices and its inverse bind matrices use.
-struct ModelSkin
+struct DEVEX_API ModelSkin
 {
     // Node indices; every joint is a node of the model.
     std::vector<std::int32_t> joints;
 };
 
 // The node hierarchy of an imported scene file, such as the default scene of a glTF file.
-struct ModelData
+struct DEVEX_API ModelData
 {
     // Every parent comes before its children.
     std::vector<ModelNode> nodes;
@@ -41,6 +43,6 @@ struct ModelData
     std::vector<AssetId> animations;
 };
 
-[[nodiscard]] core::Result<void> validate(const ModelData& model);
+[[nodiscard]] DEVEX_API core::Result<void> validate(const ModelData& model);
 
 } // namespace devex::asset

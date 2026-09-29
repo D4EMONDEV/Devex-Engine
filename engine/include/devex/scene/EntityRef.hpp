@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <devex/core/Uuid.hpp>
 #include <devex/reflection/Reflection.hpp>
 
@@ -11,7 +13,7 @@ namespace devex::scene {
 // entity, so that it survives saving, the copy of a scene that plays, undo and prefab instances,
 // whose references between their own entities follow them to the UUIDs of each instance.
 // Scene::resolve gives the entity, which is invalid when the reference is empty or the entity gone.
-struct EntityRef
+struct DEVEX_API EntityRef
 {
     core::Uuid uuid;
 

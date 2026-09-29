@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <devex/asset/MaterialData.hpp>
 #include <devex/core/Error.hpp>
 
@@ -17,7 +19,7 @@ inline constexpr std::string_view materialExtension = ".dvxmat";
 //     base_color_texture = asset("6f1c2a9e-3b7d-4e21-9a55-0c8d7e4f1b23")
 //     roughness = 0.8
 //     alpha_mode = "mask"
-[[nodiscard]] core::Result<MaterialData> parseMaterialFile(std::string_view text);
-[[nodiscard]] std::string writeMaterialFile(const MaterialData& material);
+[[nodiscard]] DEVEX_API core::Result<MaterialData> parseMaterialFile(std::string_view text);
+[[nodiscard]] DEVEX_API std::string writeMaterialFile(const MaterialData& material);
 
 } // namespace devex::asset

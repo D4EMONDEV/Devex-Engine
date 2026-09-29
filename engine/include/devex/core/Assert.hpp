@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <cstdint>
 #include <format>
 #include <source_location>
@@ -14,7 +16,7 @@ enum class AssertAction : std::uint8_t
     Continue,
 };
 
-struct AssertInfo
+struct DEVEX_API AssertInfo
 {
     std::string_view expression;
     std::string_view message;
@@ -31,15 +33,15 @@ inline constexpr bool assertsEnabled = false;
 
 // Installs a process-wide handler and returns the previous one. nullptr restores the default
 // handler, which logs the failure and requests a debugger break.
-AssertHandler setAssertHandler(AssertHandler handler) noexcept;
+DEVEX_API AssertHandler setAssertHandler(AssertHandler handler) noexcept;
 
 namespace detail {
 
-[[nodiscard]] AssertAction reportAssertFailure(std::string_view expression,
-                                               std::string_view message,
-                                               std::source_location location);
+[[nodiscard]] DEVEX_API AssertAction reportAssertFailure(std::string_view expression,
+                                                         std::string_view message,
+                                                         std::source_location location);
 
-[[noreturn]] void reportUnreachable(std::source_location location);
+[[noreturn]] DEVEX_API void reportUnreachable(std::source_location location);
 
 } // namespace detail
 

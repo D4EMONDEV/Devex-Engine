@@ -612,6 +612,9 @@ TEST_CASE("C# components read what the pointer carries and where it was dropped"
     CHECK(field<bool>(*drops, component, "dropped"));
     CHECK(field<bool>(*drops, component, "from_gem"));
     CHECK(field<std::string>(*drops, component, "data") == "ruby");
+    // Let go in the middle of the slot.
+    CHECK(field<float>(*drops, component, "at_x") == Catch::Approx(0.5f));
+    CHECK(field<float>(*drops, component, "at_y") == Catch::Approx(0.5f));
     game->unloadAssembly();
 }
 

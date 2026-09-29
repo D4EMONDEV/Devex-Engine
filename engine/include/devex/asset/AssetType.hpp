@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <cstdint>
 #include <optional>
 #include <string_view>
@@ -47,7 +49,7 @@ enum class AssetType : std::uint8_t
 
 // "mesh", "texture", "material", "model", "scene", "audio", "animation" or "font", as written in
 // .dvxmeta files.
-[[nodiscard]] std::string_view toString(AssetType type) noexcept;
-[[nodiscard]] std::optional<AssetType> parseAssetType(std::string_view text) noexcept;
+[[nodiscard]] DEVEX_API std::string_view toString(AssetType type) noexcept;
+[[nodiscard]] DEVEX_API std::optional<AssetType> parseAssetType(std::string_view text) noexcept;
 
 } // namespace devex::asset

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <devex/asset/AssetId.hpp>
 #include <devex/math/Math.hpp>
 #include <devex/reflection/Reflection.hpp>
@@ -13,7 +15,7 @@ namespace devex::scene {
 
 // Where agents walk: the navigation mesh the editor bakes from the static colliders of the scene,
 // for agents of the size given here. Bake it again when the scenery changes.
-struct NavMeshSurface
+struct DEVEX_API NavMeshSurface
 {
     // The baked navigation mesh, a .dvxnavmesh next to the scene.
     asset::AssetId navMesh;
@@ -30,7 +32,7 @@ struct NavMeshSurface
     // Voxels along a side of a tile, which obstacles rebuild one at a time.
     std::int32_t tileSize = 48;
 };
-DEVEX_DECLARE_REFLECTION(NavMeshSurface);
+DEVEX_DECLARE_ENGINE_REFLECTION(NavMeshSurface);
 
 // How well agents steer around each other: better costs more.
 enum class NavAvoidance : std::uint8_t
@@ -45,7 +47,7 @@ enum class NavAvoidance : std::uint8_t
 // A character that walks the navigation mesh by itself: given a destination by game code, it finds
 // its way, speeds up, turns towards where it goes, steers around the other agents and stops there. It
 // moves its entity, which stands on the mesh.
-struct NavMeshAgent
+struct DEVEX_API NavMeshAgent
 {
     // In meters per second, and meters per second each second.
     float speed = 3.5f;
@@ -61,7 +63,7 @@ struct NavMeshAgent
     // Runtime state, neither saved nor shown: the velocity it walks at.
     math::Vec3 velocity{0.0f};
 };
-DEVEX_DECLARE_REFLECTION(NavMeshAgent);
+DEVEX_DECLARE_ENGINE_REFLECTION(NavMeshAgent);
 
 enum class NavObstacleShape : std::uint8_t
 {
@@ -71,14 +73,14 @@ enum class NavObstacleShape : std::uint8_t
 
 // Something agents walk around, such as a crate pushed in their way: it cuts its shape out of the
 // navigation mesh where it stands, and again once it moved.
-struct NavMeshObstacle
+struct DEVEX_API NavMeshObstacle
 {
     NavObstacleShape shape = NavObstacleShape::Box;
     // Full extents in the space of its entity; a cylinder is as wide as X and as high as Y.
     math::Vec3 size{1.0f};
     math::Vec3 center{0.0f};
 };
-DEVEX_DECLARE_REFLECTION(NavMeshObstacle);
+DEVEX_DECLARE_ENGINE_REFLECTION(NavMeshObstacle);
 
 } // namespace devex::scene
 

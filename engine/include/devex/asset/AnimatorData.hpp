@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <devex/asset/AssetId.hpp>
 #include <devex/core/Error.hpp>
 #include <devex/math/Math.hpp>
@@ -27,7 +29,7 @@ enum class AnimatorParameterType : std::uint8_t
     Trigger = 3,
 };
 
-struct AnimatorParameter
+struct DEVEX_API AnimatorParameter
 {
     std::string name;
     AnimatorParameterType type = AnimatorParameterType::Float;
@@ -50,7 +52,7 @@ enum class AnimatorBlend : std::uint8_t
 };
 
 // A clip of a state, and where it sits in its blend tree.
-struct AnimatorMotion
+struct DEVEX_API AnimatorMotion
 {
     AssetId clip;
     // Along the line of a linear blend.
@@ -61,7 +63,7 @@ struct AnimatorMotion
     bool operator==(const AnimatorMotion&) const = default;
 };
 
-struct AnimatorState
+struct DEVEX_API AnimatorState
 {
     // Unique in its animator; transitions and code name states by it.
     std::string name;
@@ -98,7 +100,7 @@ enum class AnimatorTest : std::uint8_t
     Triggered = 6,
 };
 
-struct AnimatorCondition
+struct DEVEX_API AnimatorCondition
 {
     std::string parameter;
     AnimatorTest test = AnimatorTest::Greater;
@@ -107,7 +109,7 @@ struct AnimatorCondition
     bool operator==(const AnimatorCondition&) const = default;
 };
 
-struct AnimatorTransition
+struct DEVEX_API AnimatorTransition
 {
     // The state it leaves, or empty for any state ("Any State").
     std::string from;
@@ -123,7 +125,7 @@ struct AnimatorTransition
     bool operator==(const AnimatorTransition&) const = default;
 };
 
-struct AnimatorData
+struct DEVEX_API AnimatorData
 {
     // The state the animator starts in.
     std::string entry;
@@ -141,20 +143,20 @@ struct AnimatorData
     bool operator==(const AnimatorData&) const = default;
 };
 
-[[nodiscard]] std::string_view toString(AnimatorParameterType type) noexcept;
-[[nodiscard]] std::optional<AnimatorParameterType> parseAnimatorParameterType(std::string_view text) noexcept;
-[[nodiscard]] std::string_view toString(AnimatorBlend blend) noexcept;
-[[nodiscard]] std::optional<AnimatorBlend> parseAnimatorBlend(std::string_view text) noexcept;
-[[nodiscard]] std::string_view toString(AnimatorTest test) noexcept;
-[[nodiscard]] std::optional<AnimatorTest> parseAnimatorTest(std::string_view text) noexcept;
+[[nodiscard]] DEVEX_API std::string_view toString(AnimatorParameterType type) noexcept;
+[[nodiscard]] DEVEX_API std::optional<AnimatorParameterType> parseAnimatorParameterType(std::string_view text) noexcept;
+[[nodiscard]] DEVEX_API std::string_view toString(AnimatorBlend blend) noexcept;
+[[nodiscard]] DEVEX_API std::optional<AnimatorBlend> parseAnimatorBlend(std::string_view text) noexcept;
+[[nodiscard]] DEVEX_API std::string_view toString(AnimatorTest test) noexcept;
+[[nodiscard]] DEVEX_API std::optional<AnimatorTest> parseAnimatorTest(std::string_view text) noexcept;
 
 // Whether a test applies to a type of parameter: greater and less to numbers, equals to integers,
 // is true and is false to bools, triggered to triggers.
-[[nodiscard]] bool testFits(AnimatorTest test, AnimatorParameterType type) noexcept;
+[[nodiscard]] DEVEX_API bool testFits(AnimatorTest test, AnimatorParameterType type) noexcept;
 
 // States and parameters with unique names that are not empty, an entry state that exists when there
 // are states, transitions between existing states, conditions and blends on existing parameters of a
 // fitting type, and durations that are not negative.
-[[nodiscard]] core::Result<void> validate(const AnimatorData& animator);
+[[nodiscard]] DEVEX_API core::Result<void> validate(const AnimatorData& animator);
 
 } // namespace devex::asset

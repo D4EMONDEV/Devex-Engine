@@ -182,9 +182,18 @@ Chaque module est une bibliothèque d'objets CMake avec son API publique dans
 `engine/include/devex/<module>/` et son implémentation dans `engine/src/<module>/`. Tous les
 modules forment **une seule bibliothèque partagée**, `devex-engine` (`Devex::Engine`), que lient
 les programmes, les tests et les modules de jeu : ils partagent ainsi un seul état du moteur
-(registres, journal, renderer), et un jeu voit la même API C++ que l'éditeur. Tous ses symboles
-sont exportés (`WINDOWS_EXPORT_ALL_SYMBOLS`) ; en contrepartie, un module de jeu doit être
-compilé avec le même compilateur et la même configuration que le moteur.
+(registres, journal, renderer), et un jeu voit la même API C++ que l'éditeur. Elle n'exporte
+que ce que ses en-têtes marquent **`DEVEX_API`** (`devex/core/Export.hpp`) : les classes et les
+fonctions de `engine/include`, et celles des en-têtes internes que les tests éprouvent. Ses
+parties sont compilées avec `DEVEX_BUILDING_ENGINE`, qui exporte ; tout le reste importe. Les
+types du moteur déclarent leur réflexion par `DEVEX_DECLARE_ENGINE_REFLECTION`, exportée, et les
+jeux par `DEVEX_DECLARE_REFLECTION` pour les leurs. Exporter tout (`WINDOWS_EXPORT_ALL_SYMBOLS`)
+avait mené à 65 667 symboles, au-delà des 65 535 qu'une DLL Windows peut exporter, dont 17 800
+instanciations de la bibliothèque standard et des dépendances que personne n'importait ; il en
+reste un peu plus de 3 300. Une classe exportée génère toutes ses copies implicites : celles qui
+ne se copient pas le disent (`= delete`). Les avertissements C4251 et C4275, sur les membres de la
+bibliothèque standard des classes exportées, sont coupés : moteur et modules sont compilés par le
+même compilateur, dans la même configuration, ce qu'un module de jeu doit respecter.
 Les dépendances sont strictement descendantes : un module ne connaît jamais un module
 situé au-dessus de lui, et le graphe reste sans cycle.
 
@@ -847,8 +856,11 @@ les assets s'écrivent au fil de leur lecture.
   toute application avec **F1** (`ApplicationConfig::enableTools`, actif hors Release), ou
   autour du viewport de l'éditeur (`ToolsMode::Editor`).
 - **Panneaux** (noms de Godot) : *Scene*, l'arbre des entités (icône colorée selon les
-  composants, filtre, bouton *+* qui ouvre la fenêtre de création, glisser-déposer pour changer de parent, double-clic
-  pour cadrer) ; *Inspector*, généré par la réflexion (nom, UUID, une section repliable par
+  composants, guides fins des enfants à leur parent, filtre, bouton *+* qui ouvre la fenêtre de
+  création, glisser-déposer avant, dans ou après une entité, double-clic pour cadrer, F2 pour
+  renommer dans la ligne, flèches du clavier ; au bout de chaque ligne l'œil qui la masque dans la
+  vue, l'icône qui ouvre le préfab d'une instance et celle qui ouvre le code d'un composant du jeu)
+  ; *Inspector*, généré par la réflexion (nom, UUID, une section repliable par
   composant avec son icône et un menu pour le retirer, propriétés sur deux colonnes, vecteurs
   aux lettres x, y, z colorées, angles en degrés, *Add Component* qui ouvre la même fenêtre) ;
   *FileSystem*, l'arborescence `res://` des sources (icône par type, état d'import, menu :
@@ -1090,10 +1102,17 @@ les assets s'écrivent au fil de leur lecture.
   lit ses valeurs, et *Create Child* s'en sert. Chaque onglet de scène garde la sienne ; ce que
   l'annulation retire en sort.
 - **Dans l'arbre** : un clic sélectionne, Ctrl+clic ajoute ou retire, Maj+clic prend les lignes
-  entre la dernière cliquée et celle-ci, dans l'ordre affiché (Ctrl+Maj ajoute la plage). Un clic
-  sur une ligne d'une sélection de plusieurs ne la réduit qu'au relâchement, pour pouvoir la
-  glisser tout entière : les entités glissées changent de parent ensemble, en une étape, sans
-  passer sous elles-mêmes ni sortir d'une instance de préfab.
+  entre la dernière cliquée et celle-ci, dans l'ordre affiché (Ctrl+Maj ajoute la plage) ; un clic
+  sous les lignes ne choisit rien. Les flèches Haut et Bas changent d'entité, Gauche et Droite
+  replient et déplient ; l'entité choisie dans la vue vient dans le champ de l'arbre. Glisser une
+  ligne d'une sélection emporte la sélection entière, en une étape, sans passer sous elle-même ni
+  sortir d'une instance de préfab. Comme chez Godot, **le quart haut d'une ligne place avant elle,
+  le quart bas après, le milieu dedans** : un trait d'accent ou la ligne éclairée le montrent
+  pendant le glisser ; sous les lignes, l'entité va en dernier parmi les racines. Un modèle ou un
+  préfab venu de FileSystem va dans la ligne où il est lâché. L'ordre des frères est celui du
+  fichier de scène : `makeReparentCommand` prend le frère devant lequel placer l'entité, et son
+  annulation la remet exactement où elle était (`Scene::placeLast` la remet en dernier sans
+  changer de parent, ce que `setParent` laisse en place).
 - **Dans la vue** : Maj+clic ajoute, Ctrl+clic ajoute ou retire. Un glisser commencé hors d'une
   poignée trace un **rectangle** qui sélectionne ce qu'on voit : les objets dont des pixels sont
   visibles dedans, lus sur le GPU comme le clic, et les icônes des lumières et caméras qu'il
@@ -2162,6 +2181,13 @@ les assets s'écrivent au fil de leur lecture.
   le panneau y est annoncé (`carryFromOutside`), et ses cibles le prennent. Limite : les menus et
   les infobulles d'un panneau sont dessinés dans son image, ils ne peuvent pas en sortir (Godot en
   fait des fenêtres) ; les infobulles passent à la ligne pour y tenir.
+- **Puis l'arbre de scène** (jalon 42), dans le même esprit que la fenêtre de création : lignes
+  arrondies, icône teintée, guides fins, noms des entités de préfabs dans leur couleur, boutons de
+  fin de ligne de la couleur de leur ligne (le pointeur les montre). Un panneau prend les glissers
+  de tous les autres, portés par ImGui, sauf le sien : un fichier de FileSystem se lâche dans
+  l'arbre. Tant qu'un champ de `Devex::Ui` a le clavier, ImGui le sait comme pour un de ses
+  champs (`WantTextInputNextFrame`) : les raccourcis de l'éditeur laissent les lettres au champ.
+  Les entrées de menu montrent leur raccourci contre leur bord droit.
 
 ### Interfaces
 
@@ -2342,7 +2368,9 @@ les assets s'écrivent au fil de leur lecture.
   glisser, l'étiquette (le premier texte de l'élément par défaut) suit le pointeur dans le style
   des infobulles, et la `UiDropTarget` sous lui qui accepte ce type s'éclaire
   (`highlight_color`) ; lâché dessus, `wasDropped(action)` et `dropped()` (source, cible, type,
-  données) le disent au jeu, qui décide quoi en faire : ranger l'objet dans la case, l'échanger.
+  données, et l'endroit de la cible où il a été lâché, de (0, 0) en haut à gauche à (1, 1)) le
+  disent au jeu, qui décide quoi en faire : ranger l'objet dans la case, l'échanger, le placer
+  avant ou après une ligne.
   Échap repose ce qui est porté ; une cible ne prend jamais sa propre source. Un outil annonce un
   glisser venu d'ailleurs par `carryFromOutside`, chaque image où il dure. Comme chez Godot, rien
   ne bouge tout seul : Godot passe par `_get_drag_data`, `_can_drop_data` et `_drop_data` sur ses
@@ -2355,7 +2383,7 @@ les assets s'écrivent au fil de leur lecture.
   `WasDoubleClicked(entity)`, `WasChanged(action)`, `WasSubmitted(action)`, `WasCancelled()`,
   `OpenPopup(entity)`, `OpenPopup(entity, at)`, `ClosePopup`, `IsPopupOpen`, `ContextTarget`,
   `WasDropped(action)`, `WasDropped(entity)`, `Dropped` (un `UiDrop` : source, cible, type,
-  données), `Carried`, `Hovered`, `Focused`, `EditedField` et `PointerOverInterface`, que le jeu lit
+  données, endroit), `Carried`, `Hovered`, `Focused`, `EditedField` et `PointerOverInterface`, que le jeu lit
   avant d'agir sur un clic qui lui serait destiné. Les touches restent visibles des systèmes du
   jeu pendant qu'un champ est édité, comme dans Unity et Godot : un système qui répond à une
   touche seule vérifie `ui->isEditing()` (ou `Ui.EditedField`) pour ne pas réagir aux lettres
@@ -2913,6 +2941,12 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     Entity et Add Component en palette (composants et préréglages, recherche, catégories, fiche,
     favoris et récents par projet) ; sac du menu de pause du bac à sable.
 
+42. ✅ **Arbre de scène en Devex UI** — liste virtuelle aux guides fins, entités glissées avant,
+    dans ou après une autre (ordre des frères annulable), fichiers de FileSystem lâchés dans
+    l'arbre, renommage dans la ligne, clavier, menus avec leurs raccourcis, œil, préfab et code au
+    bout des lignes ; endroit du dépôt dans une cible en C++ et en C# ; exports explicites de la
+    bibliothèque du moteur (`DEVEX_API`), passée sous la limite de Windows.
+
 Ensuite, sans ordre figé : CI Linux, la suite du portage de l'éditeur.
 
 ## Questions ouvertes
@@ -3007,8 +3041,9 @@ Ensuite, sans ordre figé : CI Linux, la suite du portage de l'éditeur.
   recherche dans une liste déroulante, aperçu d'un glisser fait d'un élément plutôt que d'une
   étiquette, défilement automatique d'une liste quand on glisse près de son bord, texte en lecture
   seule sélectionnable tout fait (l'Output fait le sien).
-- **Portage de l'éditeur sur l'UI du moteur, la suite** : la hiérarchie et l'inspecteur (champs de
-  propriétés, sélecteur de couleur, édition de plusieurs entités), puis les autres panneaux, le
+- **Portage de l'éditeur sur l'UI du moteur, la suite** : l'inspecteur (champs de propriétés,
+  sélecteur de couleur, édition de plusieurs entités, inspecteurs d'assets), puis les autres
+  panneaux, le
   dockspace et les menus de la fenêtre en dernier (voir *Une seule interface, deux usages*) ; des
   popups et infobulles qui sortent du panneau (fenêtres à elles, comme chez Godot) ; déplacer et
   renommer des fichiers dans FileSystem (glissés sur un dossier, F2), sélection de plusieurs

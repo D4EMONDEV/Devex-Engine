@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <devex/serialization/Text.hpp>
 
 #include <cstdint>
@@ -14,7 +16,7 @@ namespace devex::runtime {
 // What the player chose for the game, kept from one game to the next: the volumes, the window, and
 // the values the game keeps by name, such as a language or the sensitivity of the mouse. The engine
 // applies the volumes and the window itself; the game reads and writes the rest.
-class PlayerSettings
+class DEVEX_API PlayerSettings
 {
 public:
     // The name of the volume of every sound, over those of the groups.

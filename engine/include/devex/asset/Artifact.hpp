@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <devex/asset/AnimationData.hpp>
 #include <devex/asset/AssetType.hpp>
 #include <devex/asset/AudioClipData.hpp>
@@ -30,50 +32,50 @@ namespace devex::asset {
 inline constexpr std::string_view artifactExtension = ".dvxasset";
 
 // Bumped whenever the layout of a type changes: older files are then imported again.
-[[nodiscard]] std::uint32_t artifactVersion(AssetType type) noexcept;
+[[nodiscard]] DEVEX_API std::uint32_t artifactVersion(AssetType type) noexcept;
 
 // The versions of every layout together. The import cache stores it, so that assets cooked by an
 // engine with older layouts are imported again instead of failing to load.
-[[nodiscard]] std::uint32_t artifactLayouts() noexcept;
+[[nodiscard]] DEVEX_API std::uint32_t artifactLayouts() noexcept;
 
 // Reads the header only.
-[[nodiscard]] core::Result<AssetType> artifactType(std::span<const std::byte> bytes);
+[[nodiscard]] DEVEX_API core::Result<AssetType> artifactType(std::span<const std::byte> bytes);
 
-[[nodiscard]] std::vector<std::byte> encodeMesh(const MeshData& mesh);
-[[nodiscard]] std::vector<std::byte> encodeTexture(const TextureData& texture);
-[[nodiscard]] std::vector<std::byte> encodeMaterial(const MaterialData& material);
-[[nodiscard]] std::vector<std::byte> encodeModel(const ModelData& model);
+[[nodiscard]] DEVEX_API std::vector<std::byte> encodeMesh(const MeshData& mesh);
+[[nodiscard]] DEVEX_API std::vector<std::byte> encodeTexture(const TextureData& texture);
+[[nodiscard]] DEVEX_API std::vector<std::byte> encodeMaterial(const MaterialData& material);
+[[nodiscard]] DEVEX_API std::vector<std::byte> encodeModel(const ModelData& model);
 // Scenes keep the text of their .dvxscene file, validated by the import.
-[[nodiscard]] std::vector<std::byte> encodeScene(std::string_view text);
-[[nodiscard]] std::vector<std::byte> encodeAudioClip(const AudioClipData& clip);
-[[nodiscard]] std::vector<std::byte> encodeAnimation(const AnimationClipData& clip);
-[[nodiscard]] std::vector<std::byte> encodeFont(const FontData& font);
-[[nodiscard]] std::vector<std::byte> encodeTheme(const ThemeData& theme);
-[[nodiscard]] std::vector<std::byte> encodeCurve(const CurveData& curve);
-[[nodiscard]] std::vector<std::byte> encodeSprite(const SpriteData& sprite);
-[[nodiscard]] std::vector<std::byte> encodeSpriteFrames(const SpriteFramesData& frames);
-[[nodiscard]] std::vector<std::byte> encodeTileset(const TilesetData& tileset);
-[[nodiscard]] std::vector<std::byte> encodeAnimator(const AnimatorData& animator);
+[[nodiscard]] DEVEX_API std::vector<std::byte> encodeScene(std::string_view text);
+[[nodiscard]] DEVEX_API std::vector<std::byte> encodeAudioClip(const AudioClipData& clip);
+[[nodiscard]] DEVEX_API std::vector<std::byte> encodeAnimation(const AnimationClipData& clip);
+[[nodiscard]] DEVEX_API std::vector<std::byte> encodeFont(const FontData& font);
+[[nodiscard]] DEVEX_API std::vector<std::byte> encodeTheme(const ThemeData& theme);
+[[nodiscard]] DEVEX_API std::vector<std::byte> encodeCurve(const CurveData& curve);
+[[nodiscard]] DEVEX_API std::vector<std::byte> encodeSprite(const SpriteData& sprite);
+[[nodiscard]] DEVEX_API std::vector<std::byte> encodeSpriteFrames(const SpriteFramesData& frames);
+[[nodiscard]] DEVEX_API std::vector<std::byte> encodeTileset(const TilesetData& tileset);
+[[nodiscard]] DEVEX_API std::vector<std::byte> encodeAnimator(const AnimatorData& animator);
 // Also the contents of a .dvxnavmesh file.
-[[nodiscard]] std::vector<std::byte> encodeNavMesh(const NavMeshData& navMesh);
+[[nodiscard]] DEVEX_API std::vector<std::byte> encodeNavMesh(const NavMeshData& navMesh);
 
 // Decoding validates the header, the version and the data itself.
-[[nodiscard]] core::Result<MeshData> decodeMesh(std::span<const std::byte> bytes);
-[[nodiscard]] core::Result<TextureData> decodeTexture(std::span<const std::byte> bytes);
-[[nodiscard]] core::Result<MaterialData> decodeMaterial(std::span<const std::byte> bytes);
-[[nodiscard]] core::Result<ModelData> decodeModel(std::span<const std::byte> bytes);
-[[nodiscard]] core::Result<std::string> decodeScene(std::span<const std::byte> bytes);
-[[nodiscard]] core::Result<AudioClipData> decodeAudioClip(std::span<const std::byte> bytes);
+[[nodiscard]] DEVEX_API core::Result<MeshData> decodeMesh(std::span<const std::byte> bytes);
+[[nodiscard]] DEVEX_API core::Result<TextureData> decodeTexture(std::span<const std::byte> bytes);
+[[nodiscard]] DEVEX_API core::Result<MaterialData> decodeMaterial(std::span<const std::byte> bytes);
+[[nodiscard]] DEVEX_API core::Result<ModelData> decodeModel(std::span<const std::byte> bytes);
+[[nodiscard]] DEVEX_API core::Result<std::string> decodeScene(std::span<const std::byte> bytes);
+[[nodiscard]] DEVEX_API core::Result<AudioClipData> decodeAudioClip(std::span<const std::byte> bytes);
 // The description of a clip, without the bytes of its file, as the editor shows it.
-[[nodiscard]] core::Result<AudioClipData> decodeAudioClipInfo(std::span<const std::byte> bytes);
-[[nodiscard]] core::Result<AnimationClipData> decodeAnimation(std::span<const std::byte> bytes);
-[[nodiscard]] core::Result<FontData> decodeFont(std::span<const std::byte> bytes);
-[[nodiscard]] core::Result<ThemeData> decodeTheme(std::span<const std::byte> bytes);
-[[nodiscard]] core::Result<CurveData> decodeCurve(std::span<const std::byte> bytes);
-[[nodiscard]] core::Result<SpriteData> decodeSprite(std::span<const std::byte> bytes);
-[[nodiscard]] core::Result<SpriteFramesData> decodeSpriteFrames(std::span<const std::byte> bytes);
-[[nodiscard]] core::Result<TilesetData> decodeTileset(std::span<const std::byte> bytes);
-[[nodiscard]] core::Result<AnimatorData> decodeAnimator(std::span<const std::byte> bytes);
-[[nodiscard]] core::Result<NavMeshData> decodeNavMesh(std::span<const std::byte> bytes);
+[[nodiscard]] DEVEX_API core::Result<AudioClipData> decodeAudioClipInfo(std::span<const std::byte> bytes);
+[[nodiscard]] DEVEX_API core::Result<AnimationClipData> decodeAnimation(std::span<const std::byte> bytes);
+[[nodiscard]] DEVEX_API core::Result<FontData> decodeFont(std::span<const std::byte> bytes);
+[[nodiscard]] DEVEX_API core::Result<ThemeData> decodeTheme(std::span<const std::byte> bytes);
+[[nodiscard]] DEVEX_API core::Result<CurveData> decodeCurve(std::span<const std::byte> bytes);
+[[nodiscard]] DEVEX_API core::Result<SpriteData> decodeSprite(std::span<const std::byte> bytes);
+[[nodiscard]] DEVEX_API core::Result<SpriteFramesData> decodeSpriteFrames(std::span<const std::byte> bytes);
+[[nodiscard]] DEVEX_API core::Result<TilesetData> decodeTileset(std::span<const std::byte> bytes);
+[[nodiscard]] DEVEX_API core::Result<AnimatorData> decodeAnimator(std::span<const std::byte> bytes);
+[[nodiscard]] DEVEX_API core::Result<NavMeshData> decodeNavMesh(std::span<const std::byte> bytes);
 
 } // namespace devex::asset

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <devex/core/Error.hpp>
 
 #include <cstddef>
@@ -10,7 +12,7 @@ namespace devex::core {
 
 // A file mapped read-only into memory: its bytes are read from disk as they are touched, and the
 // system shares them between processes that map the same file.
-class MappedFile
+class DEVEX_API MappedFile
 {
 public:
     // An empty file maps to no bytes.

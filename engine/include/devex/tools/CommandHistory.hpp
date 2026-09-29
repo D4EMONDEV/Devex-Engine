@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <devex/core/Error.hpp>
 #include <devex/scene/Scene.hpp>
 
@@ -14,7 +16,7 @@ namespace devex::tools {
 
 // A reversible change to a scene. Commands refer to entities by UUID, so they keep working when an
 // entity is destroyed and recreated by other commands.
-class Command
+class DEVEX_API Command
 {
 public:
     virtual ~Command() = default;
@@ -26,10 +28,16 @@ public:
 };
 
 // Undo and redo stacks of commands.
-class CommandHistory
+class DEVEX_API CommandHistory
 {
 public:
     explicit CommandHistory(std::size_t capacity = 256);
+    // Its commands belong to it alone.
+    CommandHistory(const CommandHistory&) = delete;
+    CommandHistory& operator=(const CommandHistory&) = delete;
+    CommandHistory(CommandHistory&&) = default;
+    CommandHistory& operator=(CommandHistory&&) = default;
+    ~CommandHistory() = default;
 
     // Applies the command and records it. A failed command is not recorded.
     [[nodiscard]] core::Result<void> execute(scene::Scene& scene, std::unique_ptr<Command> command);

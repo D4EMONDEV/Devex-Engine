@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <devex/asset/ThemeData.hpp>
 #include <devex/core/Error.hpp>
 
@@ -20,7 +22,7 @@ namespace devex::asset {
 //     [style name="title" component="UiText"]
 //     size = 34
 //     color = vec4(1, 1, 1, 1)
-[[nodiscard]] core::Result<ThemeData> parseThemeFile(std::string_view text);
-[[nodiscard]] std::string writeThemeFile(const ThemeData& theme);
+[[nodiscard]] DEVEX_API core::Result<ThemeData> parseThemeFile(std::string_view text);
+[[nodiscard]] DEVEX_API std::string writeThemeFile(const ThemeData& theme);
 
 } // namespace devex::asset

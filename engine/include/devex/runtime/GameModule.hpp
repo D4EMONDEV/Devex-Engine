@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <devex/core/Error.hpp>
 #include <devex/platform/SharedLibrary.hpp>
 #include <devex/runtime/Game.hpp>
@@ -17,7 +19,7 @@ namespace devex::runtime {
 // scene, which preserves the components it defines as text (scene::PreservedComponents) and destroys
 // the component pools its code created. Once a module is loaded again, scene::restorePreservedComponents
 // brings the components back.
-class GameModule
+class DEVEX_API GameModule
 {
 public:
     // Copies the library into copyDirectory under a new name, loads the copy, checks its API version,

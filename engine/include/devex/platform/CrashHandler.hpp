@@ -1,5 +1,7 @@
 #pragma once
 
+#include <devex/core/Export.hpp>
+
 #include <devex/core/LogFile.hpp>
 
 #include <filesystem>
@@ -9,7 +11,7 @@ namespace devex::platform {
 // What a crash leaves behind: a report on the error stream and in the log — what went wrong, in
 // which module, and the calls that led there, named when the symbols (.pdb) sit beside the
 // binaries — and a minidump beside the log, which a debugger opens where the process stopped.
-struct CrashReporting
+struct DEVEX_API CrashReporting
 {
     // Where the minidumps go; nothing is written there until a crash.
     std::filesystem::path directory;
@@ -21,6 +23,6 @@ struct CrashReporting
 // other hardware exceptions, abort, std::terminate, pure virtual calls and invalid parameters of
 // the C runtime. A later call replaces the settings. Windows only for now: elsewhere the process
 // dies as it did.
-void installCrashHandler(CrashReporting reporting);
+DEVEX_API void installCrashHandler(CrashReporting reporting);
 
 } // namespace devex::platform

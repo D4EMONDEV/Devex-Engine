@@ -217,6 +217,14 @@ TEST_CASE("Entities can be inserted before a sibling", "[scene][hierarchy]")
     // The position must be a child of the new parent.
     CHECK_FALSE(scene.setParent(a, Entity{}, b).has_value());
     CHECK_FALSE(scene.setParent(a, root, a).has_value());
+
+    // Setting the same parent again keeps the place; placeLast moves it after its siblings.
+    REQUIRE(scene.setParent(c, root));
+    CHECK(childNames(scene, root) == std::vector<std::string>{"C", "A", "B"});
+    scene.placeLast(c);
+    CHECK(childNames(scene, root) == std::vector<std::string>{"A", "B", "C"});
+    scene.placeLast(c);
+    CHECK(childNames(scene, root) == std::vector<std::string>{"A", "B", "C"});
 }
 
 TEST_CASE("World transforms combine the ancestors' transforms", "[scene][hierarchy]")
