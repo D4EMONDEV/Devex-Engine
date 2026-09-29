@@ -1,10 +1,10 @@
-// The Inspector window: the entities, made with the interface of the engine in InspectorUi.cpp, and
-// the assets, the code files and the elements of the Animator panel, still drawn with ImGui.
+// The Inspector window, made with the interface of the engine: the entities in InspectorUi.cpp, and the
+// assets, the code files and the elements of the Animator panel in the pages of their kinds. Here are
+// the window, and the pickers of assets other panels still draw with ImGui.
 #include "EditorUi.hpp"
 #include "ToolsState.hpp"
 
 #include <devex/asset/AssetId.hpp>
-#include <devex/scene/TilemapComponents.hpp>
 
 #include <imgui_internal.h>
 
@@ -20,9 +20,6 @@ constexpr std::array builtinMeshes{
     BuiltinAsset{"Sphere", asset::builtin::sphereMesh},
     BuiltinAsset{"Plane", asset::builtin::planeMesh},
 };
-
-// The share of the window the tile painter takes under the entity.
-constexpr float painterShare = 0.45f;
 
 } // namespace
 
@@ -96,68 +93,6 @@ bool drawAssetPicker(ToolsState& state, const char* id, std::optional<asset::Ass
     return changed;
 }
 
-namespace {
-
-// What ImGui still draws in the window: an element of the Animator panel, a code file, an asset,
-// or the hint that nothing is selected. It scrolls in a child of its own, since the window does not.
-void drawImGuiInspector(ToolsState& state)
-{
-    if (!ImGui::BeginChild("##inspected", ImVec2(0.0f, 0.0f)))
-    {
-        ImGui::EndChild();
-        return;
-    }
-    if (drawAnimatorElementInspector(state))
-    {
-    }
-    else if (!state.selectedCode.empty())
-    {
-        drawCodeInspector(state);
-    }
-    else if (state.selectedAsset.isValid())
-    {
-        const asset::AssetInfo* const selected = state.database != nullptr ? state.database->find(state.selectedAsset) : nullptr;
-        if (selected != nullptr && selected->type == asset::AssetType::Model)
-        {
-            drawModelInspector(state);
-        }
-        else if (selected != nullptr && selected->type == asset::AssetType::Curve)
-        {
-            drawCurveInspector(state);
-        }
-        else if (selected != nullptr && selected->type == asset::AssetType::Texture)
-        {
-            drawTextureInspector(state);
-        }
-        else if (selected != nullptr && selected->type == asset::AssetType::SpriteFrames)
-        {
-            drawSpriteFramesInspector(state);
-        }
-        else if (selected != nullptr && selected->type == asset::AssetType::Tileset)
-        {
-            drawTilesetInspector(state);
-        }
-        else if (selected != nullptr && selected->type == asset::AssetType::Animator)
-        {
-            drawAnimatorInspector(state);
-        }
-        else
-        {
-            drawAudioClipInspector(state);
-        }
-    }
-    else
-    {
-        const char* const hint = "Select an entity to inspect it.";
-        const ImVec2 size = ImGui::CalcTextSize(hint);
-        ImGui::SetCursorPos(ImVec2(std::max(0.0f, (ImGui::GetWindowWidth() - size.x) * 0.5f), ImGui::GetWindowHeight() * 0.35f));
-        ImGui::TextDisabled("%s", hint);
-    }
-    ImGui::EndChild();
-}
-
-} // namespace
-
 void drawInspectorPanel(ToolsState& state, scene::Scene& scene)
 {
     if (!ImGui::Begin(inspectorWindow, nullptr, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse))
@@ -165,8 +100,8 @@ void drawInspectorPanel(ToolsState& state, scene::Scene& scene)
         ImGui::End();
         return;
     }
-    const scene::Entity entity = scene.findEntity(state.selection.active());
-    if (entity.isValid())
+    // The inspector shows one thing at a time: an entity chosen leaves the asset and the code file.
+    if (scene.findEntity(state.selection.active()).isValid())
     {
         state.selectedCode.clear();
         state.selectedAsset = {};
@@ -176,22 +111,6 @@ void drawInspectorPanel(ToolsState& state, scene::Scene& scene)
     {
         stopAudioPreview(state);
     }
-    // A state or a transition chosen in the Animator panel takes the window, as an asset does, until
-    // another entity or asset is chosen.
-    AnimatorEditor& animator = state.animatorEditor;
-    if (animator.inspecting && (state.selection.active() != animator.inspectedEntity || state.selectedAsset != animator.inspectedAsset))
-    {
-        animator.inspecting = false;
-    }
-    const bool animatorElement = animator.inspecting && state.showAnimator &&
-                                 (animator.selected == AnimatorElement::State || animator.selected == AnimatorElement::Transition);
-    if (!entity.isValid() || animatorElement)
-    {
-        drawImGuiInspector(state);
-        ImGui::End();
-        return;
-    }
-
     if (!state.uiKit)
     {
         state.uiKit = std::make_shared<EditorUiKit>(state.renderer, state.icons,
@@ -201,28 +120,7 @@ void drawInspectorPanel(ToolsState& state, scene::Scene& scene)
     {
         state.inspectorUi = makeInspectorUi();
     }
-    const core::Duration delta(ImGui::GetIO().DeltaTime);
-    // A tilemap is painted with the tools under the entity, as Godot paints in a panel of its own.
-    if (state.selection.size() == 1 && scene.has<scene::Tilemap>(entity))
-    {
-        const float height = ImGui::GetContentRegionAvail().y;
-        const float painter = std::clamp(std::round(height * painterShare), ImGui::GetFrameHeight() * 6.0f, height * 0.7f);
-        if (ImGui::BeginChild("##entity", ImVec2(0.0f, height - painter), ImGuiChildFlags_None,
-                              ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse))
-        {
-            updateInspectorUi(state, scene, delta);
-        }
-        ImGui::EndChild();
-        if (ImGui::BeginChild("##painter", ImVec2(0.0f, 0.0f), ImGuiChildFlags_Borders))
-        {
-            drawTilePainter(state, scene, entity);
-        }
-        ImGui::EndChild();
-    }
-    else
-    {
-        updateInspectorUi(state, scene, delta);
-    }
+    updateInspectorUi(state, scene, core::Duration(ImGui::GetIO().DeltaTime));
     ImGui::End();
 }
 

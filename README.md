@@ -82,11 +82,11 @@ Le détail, l'architecture des modules et les jalons sont dans
   (`TrailRenderer`) ;
 - `Devex::Ui` : interfaces faites d'entités (`Canvas`, `UiRect`, `UiImage`, `UiText`, `UiButton`,
   `UiInput`, `UiSlider`, `UiToggle`, `UiScroll`, `UiLayout`, `UiBinding`, `UiNumberField`,
-  `UiColorPicker`), placement par ancrages
+  `UiColorPicker`, `UiPlot`), placement par ancrages
   et marges puis par conteneurs, texte tiré d'un atlas de distances signées avec crénage et texte
   riche, champs de saisie avec sélection, presse-papiers et mot de passe, curseurs et cases à
   cocher, listes qui défilent et se découpent avec leur barre de défilement, images en neuf
-  parts, liaison d'un texte à un champ de composant, thèmes `.dvxtheme` de styles nommés, popups,
+  parts ou tirées d'un sprite d'atlas, graphes en ligne ou en barres, liaison d'un texte à un champ de composant, thèmes `.dvxtheme` de styles nommés, popups,
   menus et modales (`UiPopup`), menus contextuels au clic droit, infobulles, listes déroulantes,
   séparateurs déplaçables, dépliants, listes virtuelles et tableaux aux colonnes redimensionnables
   et triables, champs numériques glissés ou tapés (sommes comprises), sélecteur de couleur,
@@ -104,9 +104,10 @@ Le détail, l'architecture des modules et les jalons sont dans
   fenêtre *Create Entity* / *Add Component* en palette comme le *Create New Node* de Godot
   (composants et préréglages, recherche, catégories, fiche, favoris et récents par projet),
   gestionnaire de projets, arbre de scène (guides fins, entités glissées avant, dans ou après une
-  autre, œil, préfab et code au bout des lignes), inspecteur des entités (cartes repliables,
-  nombres glissés ou tapés, vecteurs aux axes colorés, sélecteur de couleur maison, assets et
-  entités lâchés sur leurs champs), FileSystem et Output déjà écrits avec
+  autre, œil, préfab et code au bout des lignes), inspecteur (cartes repliables, nombres glissés
+  ou tapés, vecteurs aux axes colorés, sélecteur de couleur maison, assets et entités lâchés sur
+  leurs champs, une page par asset avec ses réglages d'import appliqués par *Reimport* comme dans
+  Godot), FileSystem et Output déjà écrits avec
   `Devex::Ui` (menus contextuels,
   infobulles, modales, listes virtuelles, texte de la sortie choisi et copié à la souris, fichiers
   glissés vers la vue et l'inspecteur, entités lâchées sur un dossier qui deviennent des préfabs),

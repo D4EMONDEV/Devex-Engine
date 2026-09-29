@@ -122,10 +122,11 @@ struct Builder
 }
 
 // Draws an image whose borders stay unstretched: the four corners keep their size, the four sides
-// stretch one way and the middle stretches both. The borders are fractions of the texture, so a
-// border of 0.25 of an image of 64 pixels draws corners of 16 units, whatever the rectangle.
+// stretch one way and the middle stretches both. The borders are fractions of the texture, or of
+// the sprite, so a border of 0.25 of an image of 64 pixels draws corners of 16 units, whatever the
+// rectangle. `uv` is the part of the texture the image covers.
 void nineSlice(Builder& builder, render::UiDraw& draw, const LaidOutRect& rect,
-               const scene::UiImage& image, math::Vec4 color, math::Vec2 texture)
+               const scene::UiImage& image, math::Vec4 color, math::Vec2 texture, math::Vec4 uv)
 {
     // The size the borders cover of the image, never past the middle of the rectangle. Without
     // the size of the image the borders fall back on the rectangle, which still draws.
@@ -138,8 +139,10 @@ void nineSlice(Builder& builder, render::UiDraw& draw, const LaidOutRect& rect,
     const std::array<float, 4> columns{rect.min.x, rect.min.x + left, rect.max.x - right,
                                        rect.max.x};
     const std::array<float, 4> rows{rect.min.y, rect.min.y + top, rect.max.y - bottom, rect.max.y};
-    const std::array<float, 4> columnsUv{0.0f, image.border.x, 1.0f - image.border.z, 1.0f};
-    const std::array<float, 4> rowsUv{0.0f, image.border.y, 1.0f - image.border.w, 1.0f};
+    const auto across = [&](float fraction) { return uv.x + (uv.z - uv.x) * fraction; };
+    const auto down = [&](float fraction) { return uv.y + (uv.w - uv.y) * fraction; };
+    const std::array<float, 4> columnsUv{across(0.0f), across(image.border.x), across(1.0f - image.border.z), across(1.0f)};
+    const std::array<float, 4> rowsUv{down(0.0f), down(image.border.y), down(1.0f - image.border.w), down(1.0f)};
     for (std::size_t row = 0; row < 3; ++row)
     {
         for (std::size_t column = 0; column < 3; ++column)
@@ -152,12 +155,37 @@ void nineSlice(Builder& builder, render::UiDraw& draw, const LaidOutRect& rect,
     }
 }
 
-void drawImage(Builder& builder, const DrawContext& context, const LaidOutRect& rect,
+void drawImage(Builder& builder, const DrawContext& context, const LaidOutRect& placed,
                const scene::UiImage& image)
 {
-    const render::TextureHandle texture =
-        image.texture.isValid() && context.textures ? context.textures(image.texture)
-                                                    : render::TextureHandle{};
+    // A sprite is a part of its texture; any other asset is looked for among the textures.
+    render::TextureHandle texture;
+    math::Vec4 uv{0.0f, 0.0f, 1.0f, 1.0f};
+    math::Vec2 pixels{0.0f};
+    if (image.texture.isValid())
+    {
+        if (const std::optional<SpriteImage> sprite = context.sprites ? context.sprites(image.texture) : std::nullopt)
+        {
+            texture = sprite->texture;
+            uv = sprite->uv;
+            pixels = sprite->size;
+        }
+        else if (context.textures)
+        {
+            texture = context.textures(image.texture);
+            pixels = texture.isValid() && context.textureSize ? context.textureSize(image.texture) : math::Vec2{0.0f};
+        }
+    }
+    // Kept in its shape, the image takes the middle of its rectangle.
+    LaidOutRect rect = placed;
+    if (image.preserveAspect && pixels.x > 0.0f && pixels.y > 0.0f && rect.size().x > 0.0f && rect.size().y > 0.0f)
+    {
+        const float scale = std::min(rect.size().x / pixels.x, rect.size().y / pixels.y);
+        const math::Vec2 fitted = pixels * scale;
+        const math::Vec2 middle = (rect.min + rect.max) * 0.5f;
+        rect.min = middle - fitted * 0.5f;
+        rect.max = middle + fitted * 0.5f;
+    }
     math::Vec4 color = withOpacity(image.color, rect.opacity);
     if (context.tint)
     {
@@ -179,19 +207,16 @@ void drawImage(Builder& builder, const DrawContext& context, const LaidOutRect& 
                                               image.border.z > 0.0f || image.border.w > 0.0f);
     if (sliced && isPlain(rect))
     {
-        const math::Vec2 size =
-            context.textureSize ? context.textureSize(image.texture) : math::Vec2{0.0f};
-        nineSlice(builder, draw, rect, image, color, size);
+        nineSlice(builder, draw, rect, image, color, pixels, uv);
         return;
     }
     if (isPlain(rect))
     {
-        builder.quad(draw, rect.min, rect.max, math::Vec2{0.0f, 0.0f}, math::Vec2{1.0f, 1.0f},
-                     color);
+        builder.quad(draw, rect.min, rect.max, math::Vec2{uv.x, uv.y}, math::Vec2{uv.z, uv.w}, color);
     }
     else
     {
-        builder.quad(draw, corners(rect), math::Vec2{0.0f, 0.0f}, math::Vec2{1.0f, 1.0f}, color);
+        builder.quad(draw, corners(rect), math::Vec2{uv.x, uv.y}, math::Vec2{uv.z, uv.w}, color);
     }
 }
 
@@ -581,6 +606,81 @@ void drawColorPicker(Builder& builder, const DrawContext& context, const LaidOut
     }
 }
 
+// A series of values across the rectangle: a line through them, or a bar for each.
+void drawPlot(Builder& builder, const LaidOutRect& rect, const scene::UiPlot& plot)
+{
+    const std::size_t count = plot.values.size();
+    const math::Vec2 size = rect.size();
+    const math::Vec4 color = withOpacity(plot.color, rect.opacity);
+    const float low = std::min(plot.minValue, plot.maxValue);
+    const float high = std::max(plot.minValue, plot.maxValue);
+    const float range = high > low ? high - low : 1.0f;
+    // How high a value stands, from 0 at the bottom to 1 at the top.
+    const auto height = [&](float value) { return std::clamp((value - low) / range, 0.0f, 1.0f); };
+    if (count > 0 && color.w > 0.0f)
+    {
+        render::UiDraw& draw = builder.batch(render::UiDrawKind::Quad, render::TextureHandle{}, math::Vec4{0.0f}, 0.0f, 1.0f);
+        if (plot.kind == scene::UiPlotKind::Line)
+        {
+            const auto point = [&](std::size_t index) {
+                const float across = count > 1 ? static_cast<float>(index) / static_cast<float>(count - 1) : 0.5f;
+                return math::Vec2{rect.min.x + across * size.x, rect.max.y - height(plot.values[index]) * size.y};
+            };
+            const float half = std::max(plot.lineWidth, 0.5f) * 0.5f;
+            if (count == 1)
+            {
+                const math::Vec2 at = point(0);
+                builder.quad(draw, math::Vec2{rect.min.x, at.y - half}, math::Vec2{rect.max.x, at.y + half},
+                             math::Vec2{0.0f}, math::Vec2{1.0f}, color);
+            }
+            for (std::size_t index = 1; index < count; ++index)
+            {
+                // Each segment is a thin quad along it.
+                const math::Vec2 from = point(index - 1);
+                const math::Vec2 to = point(index);
+                const math::Vec2 along = to - from;
+                const float length = std::sqrt(along.x * along.x + along.y * along.y);
+                if (length <= 0.0f)
+                {
+                    continue;
+                }
+                const math::Vec2 side{-along.y / length * half, along.x / length * half};
+                builder.quad(draw, std::array<math::Vec2, 4>{from + side, to + side, to - side, from - side}, math::Vec2{0.0f},
+                             math::Vec2{1.0f}, color);
+            }
+        }
+        else
+        {
+            const float width = size.x / static_cast<float>(count);
+            // A hair between bars, while they are wide enough to spare it.
+            const float gap = width > 3.0f ? 1.0f : 0.0f;
+            const float middle = (rect.min.y + rect.max.y) * 0.5f;
+            for (std::size_t index = 0; index < count; ++index)
+            {
+                const float left = rect.min.x + static_cast<float>(index) * width;
+                const float extent = height(plot.values[index]);
+                if (plot.kind == scene::UiPlotKind::Bars)
+                {
+                    builder.quad(draw, math::Vec2{left, rect.max.y - extent * size.y}, math::Vec2{left + width - gap, rect.max.y},
+                                 math::Vec2{0.0f}, math::Vec2{1.0f}, color);
+                }
+                else
+                {
+                    const float half = std::max(extent * size.y * 0.5f, 0.5f);
+                    builder.quad(draw, math::Vec2{left, middle - half}, math::Vec2{left + width - gap, middle + half}, math::Vec2{0.0f},
+                                 math::Vec2{1.0f}, color);
+                }
+            }
+        }
+    }
+    if (plot.marker >= 0.0f)
+    {
+        const float x = rect.min.x + std::clamp(plot.marker, 0.0f, 1.0f) * size.x;
+        const float half = std::max(plot.lineWidth, 1.0f) * 0.5f;
+        fill(builder, math::Vec2{x - half, rect.min.y}, math::Vec2{x + half, rect.max.y}, withOpacity(plot.markerColor, rect.opacity));
+    }
+}
+
 // The mark of a toggle that is on, inside its box.
 void drawToggle(Builder& builder, const LaidOutRect& rect, const scene::UiToggle& toggle)
 {
@@ -718,6 +818,10 @@ void buildDrawList(const scene::Scene& scene, const LayoutResult& layout,
         if (const scene::UiColorPicker* const picker = scene.tryGet<scene::UiColorPicker>(rect.entity))
         {
             drawColorPicker(builder, context, rect, *picker);
+        }
+        if (const scene::UiPlot* const plot = scene.tryGet<scene::UiPlot>(rect.entity))
+        {
+            drawPlot(builder, rect, *plot);
         }
         if (const scene::UiText* const text = scene.tryGet<scene::UiText>(rect.entity))
         {

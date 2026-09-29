@@ -824,3 +824,130 @@ TEST_CASE("The editor draws an interface smaller, inside the frame of its game",
     devex::ui::placeDrawList(world, second, Vec2{1000.0f, 1000.0f}, 2.0f);
     CHECK(world.uiDraws.front().rect.x == Catch::Approx(90.0f));
 }
+
+namespace {
+
+// One element on a canvas one unit per pixel, drawn with a context.
+devex::render::RenderWorld drawOne(Scene& scene, Entity element, const devex::ui::DrawContext& context)
+{
+    static_cast<void>(element);
+    Entity canvas;
+    for (auto [entity, component] : scene.view<Canvas>())
+    {
+        canvas = entity;
+    }
+    devex::ui::LayoutResult layout;
+    devex::ui::layoutCanvas(scene, canvas, window, layout);
+    devex::render::RenderWorld world;
+    devex::ui::buildDrawList(scene, layout, context, world);
+    return world;
+}
+
+Entity placedElement(Scene& scene, Vec2 min, Vec2 max)
+{
+    const Entity canvas = scene.createEntity("Canvas");
+    scene.add<Canvas>(canvas, Canvas{.scaleMode = CanvasScaleMode::ConstantPixels});
+    const Entity element = scene.createEntity("Element");
+    REQUIRE(scene.setParent(element, canvas).has_value());
+    scene.add<UiRect>(element, UiRect{.anchorMin = {0.0f, 0.0f}, .anchorMax = {0.0f, 0.0f}, .offsetMin = min, .offsetMax = max});
+    return element;
+}
+
+} // namespace
+
+TEST_CASE("An image shows a sprite, the part of its texture it covers, in its shape", "[ui][draw]")
+{
+    Scene scene;
+    const Entity image = placedElement(scene, {0.0f, 0.0f}, {200.0f, 100.0f});
+    const devex::asset::AssetId sprite{devex::core::Uuid::fromParts(1, 2)};
+    const devex::asset::AssetId texture{devex::core::Uuid::fromParts(1, 3)};
+    scene.add<UiImage>(image, UiImage{.texture = sprite, .preserveAspect = true});
+
+    int textureLookups = 0;
+    const devex::render::TextureHandle atlas{.index = 7, .generation = 1};
+    const devex::ui::DrawContext context{
+        .textures =
+            [&](devex::asset::AssetId id) {
+                ++textureLookups;
+                return id == texture ? atlas : devex::render::TextureHandle{};
+            },
+        .sprites = [&](devex::asset::AssetId id) -> std::optional<devex::ui::SpriteImage> {
+            if (id != sprite)
+            {
+                return std::nullopt;
+            }
+            return devex::ui::SpriteImage{.texture = atlas, .uv = {0.25f, 0.0f, 0.5f, 0.5f}, .size = {32.0f, 32.0f}};
+        },
+    };
+    const devex::render::RenderWorld drawn = drawOne(scene, image, context);
+    // A sprite is never looked for among the textures.
+    CHECK(textureLookups == 0);
+    REQUIRE(drawn.uiDraws.size() == 1);
+    CHECK(drawn.uiDraws.front().texture == atlas);
+    REQUIRE(drawn.uiVertices.size() == 4);
+    // The region of the atlas...
+    CHECK(drawn.uiVertices[0].uv == Vec2{0.25f, 0.0f});
+    CHECK(drawn.uiVertices[2].uv == Vec2{0.5f, 0.5f});
+    // ...kept square in the middle of its wide rectangle.
+    CHECK(drawn.uiVertices[0].position.x == Catch::Approx(50.0f));
+    CHECK(drawn.uiVertices[0].position.y == Catch::Approx(0.0f));
+    CHECK(drawn.uiVertices[2].position.x == Catch::Approx(150.0f));
+    CHECK(drawn.uiVertices[2].position.y == Catch::Approx(100.0f));
+
+    // A texture, which is not a sprite, still draws whole and stretched.
+    scene.get<UiImage>(image) = UiImage{.texture = texture};
+    const devex::render::RenderWorld plain = drawOne(scene, image, context);
+    CHECK(textureLookups == 1);
+    REQUIRE(plain.uiVertices.size() == 4);
+    CHECK(plain.uiVertices[0].uv == Vec2{0.0f, 0.0f});
+    CHECK(plain.uiVertices[2].position.x == Catch::Approx(200.0f));
+
+    // Sliced, the borders are fractions of the sprite, inside its region.
+    scene.get<UiImage>(image) = UiImage{.texture = sprite, .border = {0.25f, 0.25f, 0.25f, 0.25f}};
+    const devex::render::RenderWorld sliced = drawOne(scene, image, context);
+    REQUIRE(sliced.uiVertices.size() == 36);
+    // The first corner covers a quarter of the sprite: 8 of its 32 pixels, and of its region.
+    CHECK(sliced.uiVertices[2].position.x == Catch::Approx(8.0f));
+    CHECK(sliced.uiVertices[2].uv.x == Catch::Approx(0.25f + 0.25f * 0.25f));
+    CHECK(sliced.uiVertices[2].uv.y == Catch::Approx(0.5f * 0.25f));
+}
+
+TEST_CASE("A plot draws its values as a line or as bars, between its bounds", "[ui][draw]")
+{
+    Scene scene;
+    const Entity element = placedElement(scene, {0.0f, 0.0f}, {100.0f, 50.0f});
+    scene.add<devex::scene::UiPlot>(element, devex::scene::UiPlot{.values = {0.0f, 1.0f, 0.5f}, .lineWidth = 2.0f});
+
+    // A line: a thin quad per segment between the values.
+    const devex::render::RenderWorld line = drawOne(scene, element, devex::ui::DrawContext{});
+    REQUIRE(line.uiVertices.size() == 8);
+    // The first segment goes from the bottom left to the top of the middle.
+    const Vec2 start = (line.uiVertices[0].position + line.uiVertices[3].position) * 0.5f;
+    const Vec2 end = (line.uiVertices[1].position + line.uiVertices[2].position) * 0.5f;
+    CHECK(start.x == Catch::Approx(0.0f).margin(1e-4f));
+    CHECK(start.y == Catch::Approx(50.0f).margin(1e-4f));
+    CHECK(end.x == Catch::Approx(50.0f).margin(1e-4f));
+    CHECK(end.y == Catch::Approx(0.0f).margin(1e-4f));
+
+    // Bars from the bottom; a value past the top stays at the edge.
+    auto& plot = scene.get<devex::scene::UiPlot>(element);
+    plot.kind = devex::scene::UiPlotKind::Bars;
+    plot.values = {0.5f, 2.0f};
+    const devex::render::RenderWorld bars = drawOne(scene, element, devex::ui::DrawContext{});
+    REQUIRE(bars.uiVertices.size() == 8);
+    CHECK(bars.uiVertices[0].position.y == Catch::Approx(25.0f));
+    CHECK(bars.uiVertices[4].position.y == Catch::Approx(0.0f));
+    CHECK(bars.uiVertices[4].position.x == Catch::Approx(50.0f));
+
+    // Mirrored around the middle, with the mark of where it plays.
+    plot.kind = devex::scene::UiPlotKind::MirroredBars;
+    plot.values = {1.0f};
+    plot.marker = 0.25f;
+    const devex::render::RenderWorld wave = drawOne(scene, element, devex::ui::DrawContext{});
+    REQUIRE(wave.uiVertices.size() == 8);
+    CHECK(wave.uiVertices[0].position.y == Catch::Approx(0.0f));
+    CHECK(wave.uiVertices[2].position.y == Catch::Approx(50.0f));
+    // The marker, one unit each side of a quarter of the width.
+    CHECK(wave.uiVertices[4].position.x == Catch::Approx(24.0f));
+    CHECK(wave.uiVertices[6].position.x == Catch::Approx(26.0f));
+}

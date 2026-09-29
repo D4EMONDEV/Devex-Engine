@@ -802,6 +802,7 @@ target_sources(devex_tools
         src/tools/Icons.cpp
         src/tools/Icons.hpp
         src/tools/InputSettings.cpp
+        src/tools/InspectorPages.cpp
         src/tools/InspectorPanel.cpp
         src/tools/InspectorUi.cpp
         src/tools/LogBuffer.cpp

@@ -1,11 +1,11 @@
-#include "ToolsState.hpp"
+// The page of a curve in the inspector: its graph, whose keys and slopes the pointer drags, presets,
+// and the numbers of the key chosen. The curve is saved once a change is over.
+#include "InspectorUi.hpp"
 
 #include <devex/asset/import/CurveFile.hpp>
 #include <devex/core/File.hpp>
 #include <devex/core/Log.hpp>
 #include <devex/core/Path.hpp>
-
-#include <imgui_internal.h>
 
 #include <algorithm>
 #include <array>
@@ -21,6 +21,8 @@ namespace {
 
 using asset::CurveData;
 using asset::CurveKey;
+using scene::Entity;
+using Button = PanelButton;
 
 struct CurvePreset
 {
@@ -145,48 +147,6 @@ void fitValues(CurveEditor& editor)
     editor.high = high + margin;
 }
 
-struct Graph
-{
-    ImVec2 min;
-    ImVec2 max;
-    float low = 0.0f;
-    float high = 1.0f;
-
-    [[nodiscard]] ImVec2 toScreen(float time, float value) const noexcept
-    {
-        return {min.x + time * (max.x - min.x), max.y - (value - low) / (high - low) * (max.y - min.y)};
-    }
-    [[nodiscard]] ImVec2 toCurve(ImVec2 point) const noexcept
-    {
-        return {(point.x - min.x) / (max.x - min.x), low + (max.y - point.y) / (max.y - min.y) * (high - low)};
-    }
-    // Where the handle of a tangent sits: a fixed length on screen along its slope.
-    [[nodiscard]] ImVec2 handle(const CurveKey& key, bool out, float length) const noexcept
-    {
-        const ImVec2 at = toScreen(key.time, key.value);
-        const float slope = out ? key.outTangent : key.inTangent;
-        // The slope in pixels: value per time, scaled by the size of the graph.
-        const float dx = max.x - min.x;
-        const float dy = -(slope * (max.y - min.y) / (high - low));
-        const float norm = std::sqrt(dx * dx + dy * dy);
-        const float side = out ? 1.0f : -1.0f;
-        return {at.x + side * dx / norm * length, at.y + side * dy / norm * length};
-    }
-    // The slope a handle dragged to a point gives, in value per time.
-    [[nodiscard]] float slope(const CurveKey& key, ImVec2 point, bool out) const noexcept
-    {
-        const ImVec2 at = toCurve(point);
-        float dt = at.x - key.time;
-        const float dv = at.y - key.value;
-        if (!out)
-        {
-            dt = -dt;
-        }
-        dt = std::max(dt, 1e-3f);
-        return (out ? dv : -dv) / dt;
-    }
-};
-
 // Adds a key where the pointer is, between the two it falls between.
 void addKey(CurveEditor& editor, float time, float value)
 {
@@ -208,180 +168,416 @@ void addKey(CurveEditor& editor, float time, float value)
     return key == 0 || key + 1 == static_cast<int>(editor.curve.keys.size());
 }
 
-// Draws the curve and moves its keys and tangents. True once a change is over, to be saved.
-[[nodiscard]] bool drawGraph(CurveEditor& editor)
+// The graph in the units of its area: time across from 0 to 1, values down from high to low.
+struct Graph
 {
-    const ThemeColors& colors = themeColors();
-    const float width = std::max(ImGui::GetContentRegionAvail().x, 50.0f);
-    const float height = std::clamp(width * 0.62f, ImGui::GetFontSize() * 8.0f, ImGui::GetFontSize() * 18.0f);
-    const ImVec2 origin = ImGui::GetCursorScreenPos();
-    const float padding = ImGui::GetFontSize() * 0.75f;
-    ImGui::InvisibleButton("##graph", ImVec2(width, height),
-                           ImGuiButtonFlags_MouseButtonLeft | ImGuiButtonFlags_MouseButtonRight);
-    const bool hovered = ImGui::IsItemHovered();
-    const bool active = ImGui::IsItemActive();
+    math::Vec2 size{1.0f};
+    float low = 0.0f;
+    float high = 1.0f;
 
-    if (editor.draggedKey < 0)
+    [[nodiscard]] math::Vec2 toArea(float time, float value) const noexcept
     {
-        fitValues(editor);
+        return {time * size.x, (high - value) / (high - low) * size.y};
     }
-    const Graph graph{.min = ImVec2(origin.x + padding, origin.y + padding),
-                      .max = ImVec2(origin.x + width - padding, origin.y + height - padding),
-                      .low = editor.low,
-                      .high = editor.high};
-    ImDrawList* const draw = ImGui::GetWindowDrawList();
-    draw->AddRectFilled(origin, ImVec2(origin.x + width, origin.y + height), uiColorU32(colors.field),
-                        ImGui::GetStyle().FrameRounding);
-    // Quarters of time, and the start and end values of the tween.
-    const ImU32 grid = uiColorU32(colors.border);
-    for (int quarter = 0; quarter <= 4; ++quarter)
+    [[nodiscard]] math::Vec2 toCurve(math::Vec2 point) const noexcept
     {
-        const float x = graph.toScreen(static_cast<float>(quarter) * 0.25f, 0.0f).x;
-        draw->AddLine(ImVec2(x, graph.min.y), ImVec2(x, graph.max.y), grid);
+        return {point.x / size.x, high - point.y / size.y * (high - low)};
     }
-    for (const float value : {0.0f, 1.0f})
+    // Where the handle of a tangent sits: a fixed length on screen along its slope.
+    [[nodiscard]] math::Vec2 handle(const CurveKey& key, bool out, float length) const noexcept
     {
-        const float y = graph.toScreen(0.0f, value).y;
-        draw->AddLine(ImVec2(graph.min.x, y), ImVec2(graph.max.x, y), uiColorU32(colors.textDim));
-        const std::string label = std::format("{:g}", value);
-        draw->AddText(ImVec2(graph.min.x + 3.0f, y - ImGui::GetFontSize() - 1.0f), uiColorU32(colors.textDim), label.c_str());
+        const math::Vec2 at = toArea(key.time, key.value);
+        const float slope = out ? key.outTangent : key.inTangent;
+        // The slope on screen: value per time, scaled by the size of the graph.
+        const float dx = size.x;
+        const float dy = -(slope * size.y / (high - low));
+        const float norm = std::sqrt(dx * dx + dy * dy);
+        const float side = out ? 1.0f : -1.0f;
+        return {at.x + side * dx / norm * length, at.y + side * dy / norm * length};
     }
+    // The slope a handle dragged to a point gives, in value per time.
+    [[nodiscard]] float slope(const CurveKey& key, math::Vec2 point, bool out) const noexcept
+    {
+        const math::Vec2 at = toCurve(point);
+        float dt = at.x - key.time;
+        const float dv = at.y - key.value;
+        if (!out)
+        {
+            dt = -dt;
+        }
+        dt = std::max(dt, 1e-3f);
+        return (out ? dv : -dv) / dt;
+    }
+};
 
-    // The curve, one segment every few pixels.
-    const ImU32 curveColor = uiColorU32(colors.animation);
-    const int samples = std::max(16, static_cast<int>((graph.max.x - graph.min.x) / 3.0f));
-    ImVec2 previous = graph.toScreen(0.0f, editor.curve.evaluate(0.0f));
-    for (int sample = 1; sample <= samples; ++sample)
+class CurvePage final : public InspectorPage
+{
+public:
+    std::string signature(ToolsState& state) override
     {
-        const float time = static_cast<float>(sample) / static_cast<float>(samples);
-        const ImVec2 point = graph.toScreen(time, editor.curve.evaluate(time));
-        draw->AddLine(previous, point, curveColor, 2.0f);
-        previous = point;
-    }
-
-    const float keyRadius = ImGui::GetFontSize() * 0.3f;
-    const float handleLength = ImGui::GetFontSize() * 2.2f;
-    const ImVec2 mouse = ImGui::GetIO().MousePos;
-    const auto near = [&](ImVec2 point) {
-        const ImVec2 delta(mouse.x - point.x, mouse.y - point.y);
-        return delta.x * delta.x + delta.y * delta.y <= (keyRadius * 2.0f) * (keyRadius * 2.0f);
-    };
-    // What the pointer is over: a key (0) or a handle of the selected key (-1 in, 1 out).
-    int hoveredKey = -1;
-    int hoveredPart = 0;
-    if (hovered && editor.selectedKey >= 0 && editor.selectedKey < static_cast<int>(editor.curve.keys.size()))
-    {
-        const CurveKey& key = editor.curve.keys[static_cast<std::size_t>(editor.selectedKey)];
-        if (editor.selectedKey > 0 && near(graph.handle(key, false, handleLength)))
+        const std::optional<asset::SourceFile> source = state.database->sourceOf(state.selectedAsset);
+        if (!source)
         {
-            hoveredKey = editor.selectedKey;
-            hoveredPart = -1;
+            return {};
         }
-        else if (editor.selectedKey + 1 < static_cast<int>(editor.curve.keys.size()) && near(graph.handle(key, true, handleLength)))
-        {
-            hoveredKey = editor.selectedKey;
-            hoveredPart = 1;
-        }
-    }
-    for (int index = 0; hovered && hoveredKey < 0 && index < static_cast<int>(editor.curve.keys.size()); ++index)
-    {
-        const CurveKey& key = editor.curve.keys[static_cast<std::size_t>(index)];
-        if (near(graph.toScreen(key.time, key.value)))
-        {
-            hoveredKey = index;
-        }
+        loadCurve(state, *source);
+        return std::format("{}|{}", state.curveEditor.curve.keys.size(), state.curveEditor.error.empty());
     }
 
-    bool changed = false;
-    if (ImGui::IsItemClicked(ImGuiMouseButton_Left))
+    void build(InspectorUi& ui, ToolsState& state, EditorUiKit& kit) override
     {
-        editor.draggedKey = hoveredKey;
-        editor.draggedPart = hoveredPart;
-        if (hoveredKey >= 0)
+        const ThemeColors& colors = themeColors();
+        CurveEditor& editor = state.curveEditor;
+        m_keys.clear();
+        m_box = {};
+        const asset::AssetInfo* const info = state.database->find(state.selectedAsset);
+        const std::optional<asset::SourceFile> source = state.database->sourceOf(state.selectedAsset);
+        if (info == nullptr || !source)
         {
-            editor.selectedKey = hoveredKey;
+            return;
         }
-        else if (!ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
+        ui.heading(kit, icons::Activity, colors.animation, info->name, source->path);
+        if (!editor.error.empty())
         {
-            editor.selectedKey = -1;
+            ui.note(nullptr, std::format("The file could not be read: {}", editor.error), "error", 2.0f);
+            ui.note(nullptr, "Editing the curve writes a new one over it.");
         }
-    }
-    // A double click adds a key.
-    if (hovered && hoveredKey < 0 && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
-    {
-        const ImVec2 at = graph.toCurve(mouse);
-        addKey(editor, at.x, at.y);
-        changed = true;
-    }
-    if (active && editor.draggedKey >= 0 && editor.draggedKey < static_cast<int>(editor.curve.keys.size()) &&
-        ImGui::IsMouseDragging(ImGuiMouseButton_Left))
-    {
-        editor.moved = true;
-        const auto index = static_cast<std::size_t>(editor.draggedKey);
-        CurveKey& key = editor.curve.keys[index];
-        if (editor.draggedPart == 0)
+
+        // The graph: quarters of time, the start and end values of the tween, the curve, and its keys.
+        m_box = ui.add(ui.content, "Graph", rects::wide(1.0f), "list");
+        ui.scene().add<scene::UiImage>(m_box);
+        ui.scene().add<scene::UiButton>(m_box);
+        ui.scene().get<scene::UiRect>(m_box).clipChildren = true;
+        m_area = ui.add(m_box, "Area", rects::whole(math::Vec4{std::round(ui.font * 0.75f)}));
+        const scene::UiRect corner{.anchorMin = {0.0f, 0.0f}, .anchorMax = {0.0f, 0.0f}, .offsetMin = {0.0f, 0.0f}, .offsetMax = {1.0f, 1.0f}};
+        const auto lineOf = [&](ImVec4 color) {
+            const Entity made = ui.add(m_area, "Line", corner);
+            ui.scene().add<scene::UiImage>(made, scene::UiImage{.color = linearColor(color), .raycastTarget = false});
+            return made;
+        };
+        for (Entity& quarter : m_quarters)
         {
-            const ImVec2 at = graph.toCurve(mouse);
-            // The first and last keys stay at the start and end of the tween.
-            if (!isEndKey(editor, editor.draggedKey))
-            {
-                const float before = editor.curve.keys[index - 1].time + 1e-3f;
-                const float after = editor.curve.keys[index + 1].time - 1e-3f;
-                key.time = std::clamp(at.x, before, after);
-            }
-            key.value = at.y;
-            if (ImGui::GetIO().KeyCtrl)
-            {
-                // Snaps to tenths.
-                key.value = std::round(key.value * 10.0f) / 10.0f;
-            }
+            quarter = lineOf(colors.border);
         }
-        else
+        for (std::size_t index = 0; index < m_levels.size(); ++index)
         {
-            const float slope = graph.slope(key, mouse, editor.draggedPart > 0);
-            // Both sides turn together, for a smooth curve; Shift turns one side only.
-            if (editor.draggedPart > 0 || !ImGui::GetIO().KeyShift)
-            {
-                key.outTangent = slope;
-            }
-            if (editor.draggedPart < 0 || !ImGui::GetIO().KeyShift)
-            {
-                key.inTangent = slope;
-            }
+            m_levels[index] = lineOf(colors.textDim);
+            m_levelLabels[index] = ui.text(m_area, corner, index == 0 ? "0" : "1", "dim", false, scene::TextAlign::Left,
+                                           std::round(ui.font * 0.85f));
         }
+        m_plot = ui.add(m_area, "Curve", rects::whole());
+        ui.scene().add<scene::UiPlot>(m_plot, scene::UiPlot{.color = linearColor(colors.animation), .lineWidth = 2.0f});
+        for (std::size_t side = 0; side < m_handleLines.size(); ++side)
+        {
+            m_handleLines[side] = lineOf(colors.text);
+        }
+        m_keyMenu = ui.pageMenu("Key menu", ui.font * 12.0f);
+        m_smooth = ui.menuItem(kit, m_keyMenu, Icon::Activity, "Smooth");
+        ui.tooltip(m_smooth.entity, "The slope from the key before to the key after");
+        m_flat = ui.menuItem(kit, m_keyMenu, Icon::Minus, "Flat");
+        m_linear = ui.menuItem(kit, m_keyMenu, Icon::Move, "Linear");
+        ui.menuSeparator(m_keyMenu);
+        m_delete = ui.menuItem(kit, m_keyMenu, Icon::Trash, "Delete Key", "Del");
+        const auto circle = [&](ImVec4 color) {
+            const Entity made = ui.add(m_area, "Key", corner);
+            ui.scene().add<scene::UiImage>(made, scene::UiImage{.color = linearColor(color)});
+            ui.scene().add<scene::UiButton>(made);
+            return made;
+        };
+        for (std::size_t side = 0; side < m_handles.size(); ++side)
+        {
+            m_handles[side] = circle(colors.text);
+        }
+        for (std::size_t index = 0; index < editor.curve.keys.size(); ++index)
+        {
+            const Entity key = circle(colors.text);
+            ui.scene().add<scene::UiContextMenu>(key, scene::UiContextMenu{.popup = ui.scene().reference(m_keyMenu)});
+            m_keys.push_back(key);
+        }
+        // Below rather than over the graph, which a tooltip would hide while keys move.
+        ui.note(nullptr, "Drag keys and slope handles. Double-click adds a key, right-click one for more. Shift turns one side of a "
+                         "slope, Ctrl snaps values to tenths.",
+                "dim", 2.0f);
+
+        Section& presets = ui.card(kit, "Presets");
+        const Entity grid = ui.add(presets.card, "Presets", rects::wide(ui.line * 2.0f + ui.gap * 3.0f));
+        ui.scene().add<scene::UiLayout>(grid, scene::UiLayout{.kind = scene::UiLayoutKind::Grid,
+                                                              .spacing = ui.gap * 3.0f,
+                                                              .padding = {ui.font * 0.35f, 0.0f, 0.0f, 0.0f},
+                                                              .columns = 3,
+                                                              .equalSize = true});
+        presets.lines.push_back(Line{.entity = grid});
+        m_presets.clear();
+        for (const CurvePreset& preset : curvePresets())
+        {
+            const Button made = ui.button(kit, grid, std::nullopt, preset.label, "button", 0.0f, ui.line - 4.0f);
+            ui.tooltip(made.entity, preset.tooltip);
+            m_presets.push_back(made);
+        }
+
+        ui.card(kit, "Key");
+        m_card = ui.sections.size() - 1;
+        const scene::UiNumberField values{.dragSpeed = 0.005f, .decimals = 3};
+        const scene::UiNumberField slopes{.dragSpeed = 0.02f, .decimals = 3};
+        const std::array<std::string_view, 1> one{""};
+        const auto field = [&](const char* name, const scene::UiNumberField& settings, const char* tooltip) {
+            const FormRow row = ui.formRow(ui.sections[m_card], name);
+            ui.tooltip(row.editor, tooltip);
+            m_fieldRows.push_back(row.row);
+            return ui.numbers(row.editor, one, settings).front();
+        };
+        m_fieldRows.clear();
+        m_time = field("Time", values, "From 0 at the start of the tween to 1 at its end");
+        m_value = field("Value", values, "0 at the start value of the tween, 1 at its end value");
+        m_in = field("Slope In", slopes, "The slope the curve arrives with");
+        m_out = field("Slope Out", slopes, "The slope the curve leaves with");
+        m_unselected = ui.note(&ui.sections[m_card], "");
+        ui.note(nullptr, "Tweens and Tweeners that name this curve ease along it in place of their ease.", "dim", 2.0f);
     }
-    if (editor.draggedKey >= 0 && ImGui::IsMouseReleased(ImGuiMouseButton_Left))
+
+    void sync(InspectorUi& ui, ToolsState& state, EditorUiKit&) override
     {
-        editor.draggedKey = -1;
-        changed = std::exchange(editor.moved, false);
-    }
-    // Right-click on a key: what can be done to it.
-    if (hovered && hoveredKey >= 0 && ImGui::IsMouseClicked(ImGuiMouseButton_Right))
-    {
-        editor.selectedKey = hoveredKey;
-        ImGui::OpenPopup("key menu");
-    }
-    if (ImGui::BeginPopup("key menu"))
-    {
+        const ThemeColors& colors = themeColors();
+        CurveEditor& editor = state.curveEditor;
+        if (!m_box.isValid() || m_keys.size() != editor.curve.keys.size())
+        {
+            return;
+        }
+        // As wide as the panel, about two thirds as tall.
+        const float width = std::max(ui.panel.size().x - ui.font * 0.6f - 8.0f, 50.0f);
+        const float height = std::clamp(width * 0.62f, ui.font * 8.0f, ui.font * 18.0f);
+        scene::UiRect& box = ui.scene().get<scene::UiRect>(m_box);
+        box.offsetMax.y = box.offsetMin.y + height;
+        const float inset = std::round(ui.font * 0.75f);
+        if (editor.draggedKey < 0)
+        {
+            fitValues(editor);
+        }
+        const Graph graph{.size = {std::max(width - inset * 2.0f, 1.0f), std::max(height - inset * 2.0f, 1.0f)},
+                          .low = editor.low,
+                          .high = editor.high};
+        const auto place = [&](Entity entity, math::Vec2 min, math::Vec2 max) {
+            scene::UiRect& rect = ui.scene().get<scene::UiRect>(entity);
+            rect.offsetMin = min;
+            rect.offsetMax = max;
+        };
+        for (std::size_t quarter = 0; quarter < m_quarters.size(); ++quarter)
+        {
+            const float x = graph.toArea(static_cast<float>(quarter) * 0.25f, 0.0f).x;
+            place(m_quarters[quarter], {x - 0.5f, 0.0f}, {x + 0.5f, graph.size.y});
+        }
+        for (std::size_t index = 0; index < m_levels.size(); ++index)
+        {
+            const float y = graph.toArea(0.0f, static_cast<float>(index)).y;
+            place(m_levels[index], {0.0f, y - 0.5f}, {graph.size.x, y + 0.5f});
+            place(m_levelLabels[index], {3.0f, y - ui.font * 1.3f}, {ui.font * 3.0f, y});
+        }
+        // The curve, a value every few units.
+        const int samples = std::clamp(static_cast<int>(graph.size.x / 3.0f), 16, 256);
+        scene::UiPlot& plot = ui.scene().get<scene::UiPlot>(m_plot);
+        plot.values.resize(static_cast<std::size_t>(samples) + 1);
+        for (int sample = 0; sample <= samples; ++sample)
+        {
+            plot.values[static_cast<std::size_t>(sample)] = editor.curve.evaluate(static_cast<float>(sample) / static_cast<float>(samples));
+        }
+        plot.minValue = graph.low;
+        plot.maxValue = graph.high;
+
+        // The keys over the curve, the selected one with the handles of its slopes.
+        const ui::UiWorld& world = ui.panel.world();
+        const float radius = std::round(ui.font * 0.3f);
+        const float length = ui.font * 2.2f;
         const int selected = editor.selectedKey;
-        if (selected >= 0 && selected < static_cast<int>(editor.curve.keys.size()))
+        for (std::size_t index = 0; index < m_keys.size(); ++index)
+        {
+            const CurveKey& key = editor.curve.keys[index];
+            const math::Vec2 at = graph.toArea(key.time, key.value);
+            const bool chosen = static_cast<int>(index) == selected;
+            const bool lit = world.hovered() == m_keys[index] || (editor.draggedKey == static_cast<int>(index) && editor.draggedPart == 0);
+            const float size = radius * (lit || chosen ? 1.25f : 1.0f);
+            place(m_keys[index], at - math::Vec2{size}, at + math::Vec2{size});
+            scene::UiImage& image = ui.scene().get<scene::UiImage>(m_keys[index]);
+            image.cornerRadius = size;
+            image.color = linearColor(chosen ? colors.accent : colors.text);
+        }
+        for (std::size_t side = 0; side < m_handles.size(); ++side)
+        {
+            const bool out = side == 1;
+            const bool shown = selected >= 0 && selected < static_cast<int>(m_keys.size()) &&
+                               (out ? selected + 1 < static_cast<int>(m_keys.size()) : selected > 0);
+            ui.scene().get<scene::UiRect>(m_handles[side]).visible = shown;
+            ui.scene().get<scene::UiRect>(m_handleLines[side]).visible = shown;
+            if (!shown)
+            {
+                continue;
+            }
+            const CurveKey& key = editor.curve.keys[static_cast<std::size_t>(selected)];
+            const math::Vec2 at = graph.toArea(key.time, key.value);
+            const math::Vec2 end = graph.handle(key, out, length);
+            const bool lit = world.hovered() == m_handles[side] || (editor.draggedKey == selected && editor.draggedPart == (out ? 1 : -1));
+            const float size = radius * (lit ? 0.95f : 0.75f);
+            place(m_handles[side], end - math::Vec2{size}, end + math::Vec2{size});
+            ui.scene().get<scene::UiImage>(m_handles[side]).cornerRadius = size;
+            // A thin line from the key to the handle, turned along it.
+            const math::Vec2 middle = (at + end) * 0.5f;
+            const math::Vec2 along = end - at;
+            const float span = std::sqrt(along.x * along.x + along.y * along.y);
+            scene::UiRect& lineRect = ui.scene().get<scene::UiRect>(m_handleLines[side]);
+            lineRect.offsetMin = middle - math::Vec2{span * 0.5f, 0.75f};
+            lineRect.offsetMax = middle + math::Vec2{span * 0.5f, 0.75f};
+            lineRect.rotation = std::atan2(along.y, along.x);
+        }
+
+        // The key chosen, as numbers.
+        const bool hasKey = selected >= 0 && selected < static_cast<int>(m_keys.size());
+        for (const Entity row : m_fieldRows)
+        {
+            ui.showLine(ui.sections[m_card], row, hasKey);
+        }
+        ui.showLine(ui.sections[m_card], m_unselected, !hasKey);
+        ui.scene().get<scene::UiText>(m_unselected).text = std::format("{} keys. Click one to edit it.", m_keys.size());
+        ui.scene().get<scene::UiText>(ui.sections[m_card].title).text = hasKey ? std::format("Key {}", selected + 1) : std::string("Key");
+        if (hasKey)
+        {
+            const CurveKey& key = editor.curve.keys[static_cast<std::size_t>(selected)];
+            const bool middleKey = !isEndKey(editor, selected);
+            const auto number = [&](Entity box, float value, bool open) {
+                scene::UiNumberField& field = ui.scene().get<scene::UiNumberField>(box);
+                field.interactable = open;
+                ui.scene().get<scene::UiRect>(box).opacity = open ? 1.0f : 0.5f;
+                if (world.editedField() != box && world.held() != box)
+                {
+                    field.value = value;
+                }
+            };
+            number(m_time, key.time, middleKey);
+            number(m_value, key.value, true);
+            number(m_in, key.inTangent, selected > 0);
+            number(m_out, key.outTangent, middleKey || selected == 0);
+        }
+        ui.enable(m_delete, hasKey && !isEndKey(editor, selected));
+        ui.fitMenu(m_keyMenu, ui.font * 12.0f);
+    }
+
+    void answer(InspectorUi& ui, ToolsState& state, EditorUiKit&) override
+    {
+        CurveEditor& editor = state.curveEditor;
+        if (!m_box.isValid() || m_keys.size() != editor.curve.keys.size())
+        {
+            return;
+        }
+        const ui::UiWorld& world = ui.panel.world();
+        const ui::UiInput& input = ui.panel.input();
+        const ui::LaidOutRect* const area = world.canvases().empty() ? nullptr : world.canvases().front().layout.find(m_area);
+        if (area == nullptr)
+        {
+            return;
+        }
+        const Graph graph{.size = math::max(area->size(), math::Vec2{1.0f}), .low = editor.low, .high = editor.high};
+        const math::Vec2 pointer = input.pointer - area->min;
+        const auto keyUnder = [&](Entity entity) -> int {
+            const auto found = std::ranges::find(m_keys, entity);
+            return found != m_keys.end() ? static_cast<int>(found - m_keys.begin()) : -1;
+        };
+
+        // A key or a handle pressed is dragged; a press on the graph elsewhere chooses nothing.
+        if (input.pointerPressed && ui.panel.hovered())
+        {
+            const Entity hovered = world.hovered();
+            if (const int key = keyUnder(hovered); key >= 0)
+            {
+                editor.draggedKey = key;
+                editor.draggedPart = 0;
+                editor.selectedKey = key;
+            }
+            else if (hovered.isValid() && (hovered == m_handles[0] || hovered == m_handles[1]))
+            {
+                editor.draggedKey = editor.selectedKey;
+                editor.draggedPart = hovered == m_handles[1] ? 1 : -1;
+            }
+            else if (hovered == m_box)
+            {
+                editor.selectedKey = -1;
+            }
+        }
+        // A double click adds a key.
+        if (world.wasDoubleClicked(m_box))
+        {
+            const math::Vec2 at = graph.toCurve(pointer);
+            addKey(editor, at.x, at.y);
+            m_dirty = true;
+        }
+        if (editor.draggedKey >= 0 && editor.draggedKey < static_cast<int>(editor.curve.keys.size()) && input.pointerDown &&
+            input.pointerMoved)
+        {
+            editor.moved = true;
+            const auto index = static_cast<std::size_t>(editor.draggedKey);
+            CurveKey& key = editor.curve.keys[index];
+            const ImGuiIO& io = ImGui::GetIO();
+            if (editor.draggedPart == 0)
+            {
+                const math::Vec2 at = graph.toCurve(pointer);
+                // The first and last keys stay at the start and end of the tween.
+                if (!isEndKey(editor, editor.draggedKey))
+                {
+                    const float before = editor.curve.keys[index - 1].time + 1e-3f;
+                    const float after = editor.curve.keys[index + 1].time - 1e-3f;
+                    key.time = std::clamp(at.x, before, after);
+                }
+                key.value = at.y;
+                if (io.KeyCtrl)
+                {
+                    // Snaps to tenths.
+                    key.value = std::round(key.value * 10.0f) / 10.0f;
+                }
+            }
+            else
+            {
+                const float slope = graph.slope(key, pointer, editor.draggedPart > 0);
+                // Both sides turn together, for a smooth curve; Shift turns one side only.
+                if (editor.draggedPart > 0 || !io.KeyShift)
+                {
+                    key.outTangent = slope;
+                }
+                if (editor.draggedPart < 0 || !io.KeyShift)
+                {
+                    key.inTangent = slope;
+                }
+            }
+        }
+        if (editor.draggedKey >= 0 && !input.pointerDown)
+        {
+            editor.draggedKey = -1;
+            m_dirty |= std::exchange(editor.moved, false);
+        }
+
+        // Right-click on a key: what can be done to it.
+        if (input.secondaryPressed && world.isPopupOpen(ui.scene(), m_keyMenu))
+        {
+            if (const int key = keyUnder(world.contextTarget()); key >= 0)
+            {
+                editor.selectedKey = key;
+            }
+        }
+        const int selected = editor.selectedKey;
+        const bool hasKey = selected >= 0 && selected < static_cast<int>(editor.curve.keys.size());
+        if (hasKey)
         {
             CurveKey& key = editor.curve.keys[static_cast<std::size_t>(selected)];
-            if (ImGui::MenuItemEx("Smooth", icons::Activity.c_str()))
+            if (world.wasClicked(m_smooth.entity))
             {
                 asset::smoothTangents(editor.curve, static_cast<std::size_t>(selected));
-                changed = true;
+                m_dirty = true;
             }
-            ImGui::SetItemTooltip("The slope from the key before to the key after");
-            if (ImGui::MenuItemEx("Flat", icons::Minus.c_str()))
+            else if (world.wasClicked(m_flat.entity))
             {
                 key.inTangent = 0.0f;
                 key.outTangent = 0.0f;
-                changed = true;
+                m_dirty = true;
             }
-            if (ImGui::MenuItemEx("Linear", icons::Move.c_str()))
+            else if (world.wasClicked(m_linear.entity))
             {
-                // Straight towards each neighbor.
+                // Straight towards each neighbour.
                 if (selected > 0)
                 {
                     const CurveKey& before = editor.curve.keys[static_cast<std::size_t>(selected) - 1];
@@ -392,157 +588,93 @@ void addKey(CurveEditor& editor, float time, float value)
                     const CurveKey& after = editor.curve.keys[static_cast<std::size_t>(selected) + 1];
                     key.outTangent = (after.value - key.value) / (after.time - key.time);
                 }
-                changed = true;
+                m_dirty = true;
             }
-            ImGui::Separator();
-            if (ImGui::MenuItemEx("Delete Key", icons::Trash.c_str(), "Del", false, !isEndKey(editor, selected)))
+            const bool deleteKey = world.wasClicked(m_delete.entity) ||
+                                   (ui.panel.focused() && !world.isEditing() && ImGui::IsKeyPressed(ImGuiKey_Delete, false));
+            if (deleteKey && !isEndKey(editor, selected))
             {
                 editor.curve.keys.erase(editor.curve.keys.begin() + selected);
                 editor.selectedKey = -1;
-                changed = true;
+                m_dirty = true;
+                saveCurve(state);
+                m_dirty = false;
+                return;
             }
-        }
-        ImGui::EndPopup();
-    }
-    if (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) && !ImGui::GetIO().WantTextInput &&
-        ImGui::IsKeyPressed(ImGuiKey_Delete, false) && editor.selectedKey >= 0 && !isEndKey(editor, editor.selectedKey) &&
-        editor.selectedKey < static_cast<int>(editor.curve.keys.size()))
-    {
-        editor.curve.keys.erase(editor.curve.keys.begin() + editor.selectedKey);
-        editor.selectedKey = -1;
-        changed = true;
-    }
-
-    // The keys over the curve, the selected one with the handles of its slopes.
-    for (int index = 0; index < static_cast<int>(editor.curve.keys.size()); ++index)
-    {
-        const CurveKey& key = editor.curve.keys[static_cast<std::size_t>(index)];
-        const ImVec2 at = graph.toScreen(key.time, key.value);
-        const bool selected = index == editor.selectedKey;
-        if (selected)
-        {
-            const ImU32 handleColor = uiColorU32(colors.text);
-            for (const bool out : {false, true})
-            {
-                if ((!out && index == 0) || (out && index + 1 == static_cast<int>(editor.curve.keys.size())))
-                {
-                    continue;
-                }
-                const ImVec2 end = graph.handle(key, out, handleLength);
-                draw->AddLine(at, end, handleColor);
-                const bool lit = hoveredKey == index && hoveredPart == (out ? 1 : -1);
-                draw->AddCircleFilled(end, keyRadius * (lit ? 0.95f : 0.75f), handleColor);
-            }
-        }
-        const bool lit = hoveredKey == index && hoveredPart == 0;
-        draw->AddCircleFilled(at, keyRadius * (lit || selected ? 1.25f : 1.0f),
-                              uiColorU32(selected ? colors.accent : colors.text));
-    }
-    return changed;
-}
-
-} // namespace
-
-void drawCurveInspector(ToolsState& state)
-{
-    const ThemeColors& colors = themeColors();
-    const asset::AssetInfo* const info = state.database != nullptr ? state.database->find(state.selectedAsset) : nullptr;
-    const std::optional<asset::SourceFile> source =
-        state.database != nullptr ? state.database->sourceOf(state.selectedAsset) : std::nullopt;
-    if (info == nullptr || !source)
-    {
-        state.selectedAsset = {};
-        return;
-    }
-    loadCurve(state, *source);
-    CurveEditor& editor = state.curveEditor;
-
-    ImGui::AlignTextToFramePadding();
-    iconLabel(icons::Activity, colors.animation);
-    boldText(info->name.c_str());
-    ImGui::TextDisabled("%s", source->path.c_str());
-    ImGui::Spacing();
-    if (!editor.error.empty())
-    {
-        ImGui::TextColored(uiColor(colors.error), "The file could not be read: %s", editor.error.c_str());
-        ImGui::TextWrapped("Editing the curve writes a new one over it.");
-    }
-
-    bool changed = drawGraph(editor);
-    // Below rather than over the graph, which a tooltip would hide while keys move.
-    ImGui::PushStyleColor(ImGuiCol_Text, uiColor(colors.textDim));
-    ImGui::TextWrapped("Drag keys and slope handles. Double-click adds a key, right-click one for more. "
-                       "Shift turns one side of a slope, Ctrl snaps values to tenths.");
-    ImGui::PopStyleColor();
-
-    ImGui::SeparatorText("Presets");
-    const float spacing = ImGui::GetStyle().ItemSpacing.x;
-    float lineWidth = 0.0f;
-    const float available = ImGui::GetContentRegionAvail().x;
-    for (const CurvePreset& preset : curvePresets())
-    {
-        const float buttonWidth = ImGui::CalcTextSize(preset.label).x + ImGui::GetStyle().FramePadding.x * 2.0f;
-        if (lineWidth > 0.0f && lineWidth + spacing + buttonWidth <= available)
-        {
-            ImGui::SameLine();
-            lineWidth += spacing;
-        }
-        else
-        {
-            lineWidth = 0.0f;
-        }
-        lineWidth += buttonWidth;
-        if (ImGui::Button(preset.label))
-        {
-            editor.curve = preset.curve;
-            editor.selectedKey = -1;
-            changed = true;
-        }
-        ImGui::SetItemTooltip("%s", preset.tooltip);
-    }
-
-    const int selected = editor.selectedKey;
-    if (selected >= 0 && selected < static_cast<int>(editor.curve.keys.size()))
-    {
-        ImGui::SeparatorText(std::format("Key {}", selected + 1).c_str());
-        CurveKey& key = editor.curve.keys[static_cast<std::size_t>(selected)];
-        if (beginProperties("key"))
-        {
-            const auto field = [&](const char* name, const char* id, float& value, float speed, bool enabled, const char* tooltip) {
-                propertyName(name);
-                ImGui::SetNextItemWidth(-FLT_MIN);
-                ImGui::BeginDisabled(!enabled);
-                ImGui::DragFloat(id, &value, speed, -FLT_MAX, FLT_MAX, "%.3f");
-                ImGui::EndDisabled();
-                ImGui::SetItemTooltip("%s", tooltip);
-                changed = changed || ImGui::IsItemDeactivatedAfterEdit();
-            };
-            const bool middle = !isEndKey(editor, selected);
-            field("Time", "##time", key.time, 0.005f, middle, "From 0 at the start of the tween to 1 at its end");
-            if (middle)
+            // The numbers of the key.
+            const auto value = [&](Entity box) { return ui.scene().get<scene::UiNumberField>(box).value; };
+            if (world.wasChanged(m_time) && !isEndKey(editor, selected))
             {
                 const float before = editor.curve.keys[static_cast<std::size_t>(selected) - 1].time + 1e-3f;
                 const float after = editor.curve.keys[static_cast<std::size_t>(selected) + 1].time - 1e-3f;
-                key.time = std::clamp(key.time, before, after);
+                key.time = std::clamp(value(m_time), before, after);
+                m_dirty = true;
             }
-            field("Value", "##value", key.value, 0.005f, true, "0 at the start value of the tween, 1 at its end value");
-            field("Slope In", "##in", key.inTangent, 0.02f, selected > 0, "The slope the curve arrives with");
-            field("Slope Out", "##out", key.outTangent, 0.02f, middle || selected == 0, "The slope the curve leaves with");
-            endProperties();
+            if (world.wasChanged(m_value))
+            {
+                key.value = value(m_value);
+                m_dirty = true;
+            }
+            if (world.wasChanged(m_in))
+            {
+                key.inTangent = value(m_in);
+                m_dirty = true;
+            }
+            if (world.wasChanged(m_out))
+            {
+                key.outTangent = value(m_out);
+                m_dirty = true;
+            }
+        }
+        for (std::size_t index = 0; index < m_presets.size(); ++index)
+        {
+            if (world.wasClicked(m_presets[index].entity))
+            {
+                editor.curve = curvePresets()[index].curve;
+                editor.selectedKey = -1;
+                m_dirty = true;
+            }
+        }
+        // Saved once a change is over: nothing dragged, held or typed any more.
+        const bool busy = editor.draggedKey >= 0 || world.held().isValid() || world.isEditing();
+        if (m_dirty && !busy)
+        {
+            saveCurve(state);
+            m_dirty = false;
         }
     }
-    else
-    {
-        ImGui::Spacing();
-        ImGui::TextDisabled("%zu keys. Click one to edit it.", editor.curve.keys.size());
-    }
-    ImGui::Spacing();
-    ImGui::TextWrapped("Tweens and Tweeners that name this curve ease along it in place of their ease.");
 
-    if (changed)
-    {
-        saveCurve(state);
-    }
+private:
+    Entity m_box;
+    Entity m_area;
+    std::array<Entity, 5> m_quarters{};
+    std::array<Entity, 2> m_levels{};
+    std::array<Entity, 2> m_levelLabels{};
+    Entity m_plot;
+    std::vector<Entity> m_keys;
+    std::array<Entity, 2> m_handles{};
+    std::array<Entity, 2> m_handleLines{};
+    Entity m_keyMenu;
+    Button m_smooth;
+    Button m_flat;
+    Button m_linear;
+    Button m_delete;
+    std::vector<Button> m_presets;
+    std::size_t m_card = 0;
+    std::vector<Entity> m_fieldRows;
+    Entity m_time;
+    Entity m_value;
+    Entity m_in;
+    Entity m_out;
+    Entity m_unselected;
+    bool m_dirty = false;
+};
+
+} // namespace
+
+std::unique_ptr<InspectorPage> makeCurvePage()
+{
+    return std::make_unique<CurvePage>();
 }
 
 core::Result<std::filesystem::path> createCurveFile(ToolsState& state, std::string_view folder)

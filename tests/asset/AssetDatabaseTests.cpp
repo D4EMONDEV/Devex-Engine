@@ -433,6 +433,17 @@ TEST_CASE("External OBJ files are copied into the project with their .mtl and im
     const auto scale = (*database)->importOption(*added, "scale");
     REQUIRE(scale.has_value());
     CHECK(devex::serialization::asNumber(*scale) == 1.0);
+
+    // Several options change at once, in one import; the same values again import nothing.
+    const std::array<devex::serialization::TextProperty, 2> options{devex::serialization::TextProperty{"scale", 2.0},
+                                                                    devex::serialization::TextProperty{"compress_textures", false}};
+    REQUIRE((*database)->setImportOptions(*added, options).has_value());
+    static_cast<void>(settle(**database));
+    CHECK(devex::serialization::asNumber(*(*database)->importOption(*added, "scale")) == 2.0);
+    CHECK(devex::serialization::asBool(*(*database)->importOption(*added, "compress_textures")) == false);
+    CHECK((*database)->sourceOf(*added)->status == ImportStatus::Ready);
+    REQUIRE((*database)->setImportOptions(*added, options).has_value());
+    CHECK((*database)->pendingImports() == 0);
 }
 
 TEST_CASE("Watched folders import changes without an explicit refresh", "[asset][database]")

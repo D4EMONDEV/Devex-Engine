@@ -868,6 +868,11 @@ void ToolsOverlay::select(std::span<const core::Uuid> entities)
     m_state->selection.set(entities);
 }
 
+void ToolsOverlay::selectAsset(asset::AssetId asset)
+{
+    detail::selectAsset(*m_state, asset);
+}
+
 void ToolsOverlay::setAudio(audio::AudioEngine* engine,
                             std::function<std::shared_ptr<const audio::Clip>(asset::AssetId)> clips)
 {

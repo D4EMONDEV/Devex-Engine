@@ -4,10 +4,10 @@
 // colours open a picker of the engine, and the fields of assets and entities take what FileSystem and
 // the scene tree drop on them. Several entities show the components they share, with a dash where
 // their values differ; a change goes to all of them, as one step to undo.
-#include "EditorUi.hpp"
-#include "ToolsState.hpp"
+#include "InspectorUi.hpp"
 
 #include <devex/asset/Project.hpp>
+#include <devex/core/Path.hpp>
 #include <devex/particles/ParticleWorld.hpp>
 #include <devex/scene/ComponentRegistry.hpp>
 #include <devex/scene/Components.hpp>
@@ -44,106 +44,8 @@ namespace {
 
 // The image the panel is drawn into, among the interface surfaces of the editor.
 constexpr std::uint32_t inspectorSurface = 6;
-// What a value shows when the selected entities do not share it.
-constexpr std::string_view dash = "—";
 constexpr std::array<std::string_view, 4> axisLetters{"x", "y", "z", "w"};
 constexpr std::array<std::string_view, 4> channelLetters{"r", "g", "b", "a"};
-
-enum class ControlKind : std::uint8_t
-{
-    Toggle,
-    Numbers,
-    Color,
-    Text,
-    Choice,
-    ReadOnly,
-    ListHeader,
-};
-
-// A property of a component: its row, and what shows and changes its value.
-struct PropertyRow
-{
-    const scene::ComponentType* type = nullptr;
-    const reflection::FieldInfo* field = nullptr;
-    // The element of a list the row edits; the whole field otherwise.
-    std::optional<std::size_t> element;
-    ControlKind kind = ControlKind::ReadOnly;
-    Entity row;
-    Entity labelBox;
-    Entity label;
-    Entity mark;
-    Entity editor;
-    // The numbers of a value: one, the axes of a vector, or the angles of a rotation.
-    std::array<Entity, 4> numbers{};
-    std::size_t count = 0;
-    // The toggle, the field, the list of choices, the colour, or the text that is only read.
-    Entity control;
-    // The word beside a toggle, or the hexadecimal of a colour, and the opacity under a colour.
-    Entity detail;
-    Entity opacity;
-    // Adds an element to a list, or removes this one.
-    Button button;
-    // What the choices stand for, in the order of the options.
-    std::vector<asset::AssetId> assets;
-    std::vector<scene::EntityRef> references;
-    std::vector<std::uint32_t> indices;
-    std::vector<std::string> names;
-    // An edit under way: the value of the field of each entity when it began.
-    bool editing = false;
-    std::vector<std::pair<core::Uuid, serialization::TextValue>> starts;
-    // Whether the field was typed into at the last update.
-    bool typing = false;
-    // Whether the style of the element writes the field, which then cannot be changed here.
-    bool themed = false;
-    // The angles a rotation shows, kept while it is edited so that they do not jump.
-    math::Vec3 degrees{0.0f};
-    // The value of the prefab, when the entity's differs from it.
-    std::optional<serialization::TextValue> prefabValue;
-};
-
-// A line of a card under its header: a property, the header of a group, or what a component adds.
-struct Line
-{
-    Entity entity;
-    // The group of the component it belongs to; -1 before the first group.
-    int group = -1;
-    bool heading = false;
-    // Whether it has something to show, for the lines that come and go.
-    bool shown = true;
-};
-
-// A component, as a card.
-struct Section
-{
-    const scene::ComponentType* type = nullptr;
-    std::string name;
-    Entity card;
-    Entity header;
-    Entity icon;
-    Entity title;
-    Entity added;
-    Button menu;
-    bool fromPrefab = false;
-    std::vector<Line> lines;
-    std::vector<std::string> groups;
-    // What some components show under their properties: the style of an element, the controls of
-    // an emitter, and the navigation mesh of a surface.
-    std::optional<std::size_t> styleLine;
-    Entity styleIcon;
-    Entity styleText;
-    Button styleOpen;
-    std::optional<std::filesystem::path> themeFile;
-    Button restart;
-    Button stop;
-    Entity particles;
-    std::optional<std::size_t> navWarningLine;
-    std::optional<std::size_t> navStatusLine;
-    Entity navInfo;
-    Entity navWarning;
-    Entity navStatus;
-    Button bake;
-    Button clear;
-};
 
 [[nodiscard]] std::string keyOf(const Section& section, int group)
 {
@@ -345,114 +247,24 @@ void writeColor(const reflection::FieldInfo& field, void* address, math::Vec4 co
 
 } // namespace
 
-// The panel and the entities the code reads and changes.
-struct InspectorUi : PanelBuilder
+InspectorUi::InspectorUi()
+    : PanelBuilder(inspectorSurface)
 {
-    InspectorUi()
-        : PanelBuilder(inspectorSurface)
+}
+
+template <typename Write>
+void InspectorUi::each(const scene::Scene& edited, std::span<const Entity> inspected, const PropertyRow& row, const Write& write)
+{
+    for (const Entity entity : inspected)
     {
-    }
-
-    bool built = false;
-    float line = 28.0f;
-    float pad = 6.0f;
-    float gap = 2.0f;
-    float headerHeight = 30.0f;
-    float labelWidth = 120.0f;
-
-    Entity scroll;
-    Entity content;
-    std::string signature;
-    // The registry the rows were made from: once game code reloads, their types are gone.
-    std::uint64_t generation = 0;
-    std::vector<core::Uuid> shownEntities;
-
-    // Above the components: the name and the UUID of an entity, or how many are selected.
-    Entity nameIcon;
-    Entity nameField;
-    Entity nameMark;
-    bool naming = false;
-    Entity uuidText;
-    Entity countText;
-    // The name the entity has in its prefab, when it differs.
-    std::optional<std::string> prefabName;
-    // The prefab the entity comes from, when it does.
-    Entity prefabIcon;
-    Entity prefabLead;
-    Entity prefabTitle;
-    Entity prefabTail;
-    Button openPrefab;
-    Button revertPrefab;
-    Button makeLocal;
-
-    std::vector<Section> sections;
-    std::vector<PropertyRow> rows;
-    Button addComponent;
-    // The cards and the groups folded, by name.
-    std::unordered_set<std::string> folded;
-
-    // The menu of a component, the menu that reverts a value to its prefab's, and the colour picker.
-    Entity componentMenu;
-    Button removeComponent;
-    std::optional<std::size_t> menuSection;
-    Entity revertMenu;
-    Button revert;
-    std::optional<std::size_t> revertRow;
-    bool revertName = false;
-    Entity colorPopup;
-    Entity picker;
-    Entity hexField;
-    Entity channelRow;
-    std::array<Entity, 4> channels{};
-    std::optional<std::size_t> colorRow;
-    bool hexTyping = false;
-
-    void build(EditorUiKit& kit);
-    [[nodiscard]] std::string signatureOf(const scene::Scene& edited, std::span<const Entity> inspected) const;
-    void rebuild(ToolsState& state, EditorUiKit& kit, scene::Scene& edited, std::span<const Entity> inspected);
-    void buildTop(EditorUiKit& kit, const scene::Scene& edited, std::span<const Entity> inspected);
-    Section& addSection(EditorUiKit& kit, std::string name, const EntityIcon& look, const scene::ComponentType* type);
-    void addProperty(EditorUiKit& kit, Section& section, const scene::ComponentType& type, const reflection::FieldInfo& field,
-                     std::optional<std::size_t> element, int group, bool shared);
-    void addExtras(EditorUiKit& kit, Section& section, int group);
-    Entity numberBox(Entity parent, std::string_view letter, ImVec4 letterColor, const scene::UiNumberField& settings);
-    Button toolButton(EditorUiKit& kit, Entity parent, Icon glyph, UiRect rect);
-    void fitText(EditorUiKit& kit, Entity entity, std::string value, bool bold = false);
-
-    void sync(ToolsState& state, EditorUiKit& kit, scene::Scene& edited, std::span<const Entity> inspected);
-    void syncRow(const ToolsState& state, const scene::Scene& edited, std::span<const Entity> inspected, PropertyRow& row,
-                 const ui::ElementStyle& style, const scene::Scene* base, Entity prefabEntity, bool editing);
-    void fillChoices(const ToolsState& state, const scene::Scene& edited, PropertyRow& row, const void* address, bool mixed);
-    void syncExtras(ToolsState& state, EditorUiKit& kit, scene::Scene& edited, Entity active, Section& section,
-                    const ui::ElementStyle& style);
-    void syncColorPopup(const scene::Scene& edited, std::span<const Entity> inspected);
-    void layoutCards();
-
-    void answer(ToolsState& state, EditorUiKit& kit, scene::Scene& edited, std::span<const Entity> inspected);
-    void answerRow(ToolsState& state, scene::Scene& edited, std::span<const Entity> inspected, std::size_t index);
-    void answerColorPopup(scene::Scene& edited, std::span<const Entity> inspected);
-    void answerMenus(ToolsState& state, EditorUiKit& kit, scene::Scene& edited, std::span<const Entity> inspected);
-    void beginEdit(const scene::Scene& edited, std::span<const Entity> inspected, PropertyRow& row);
-    void commit(ToolsState& state, const scene::Scene& edited, PropertyRow& row);
-    [[nodiscard]] bool isActive(std::size_t index);
-
-    void update(ToolsState& state, EditorUiKit& kit, scene::Scene& edited, core::Duration delta);
-
-    // Writes into the value every inspected entity has, knowing which one is the active entity.
-    template <typename Write>
-    void each(const scene::Scene& edited, std::span<const Entity> inspected, const PropertyRow& row, const Write& write)
-    {
-        for (const Entity entity : inspected)
+        if (void* const address = valueAddress(edited, entity, row))
         {
-            if (void* const address = valueAddress(edited, entity, row))
-            {
-                write(address, entity == inspected.back());
-            }
+            write(address, entity == inspected.back());
         }
     }
-};
+}
 
-void InspectorUi::build(EditorUiKit& kit)
+void InspectorUi::build(ToolsState& state, EditorUiKit& kit)
 {
     built = true;
     const ThemeColors& colors = themeColors();
@@ -515,6 +327,30 @@ void InspectorUi::build(EditorUiKit& kit)
         }
         return std::nullopt;
     });
+
+    // The previews of the pages: the textures of the project, and the sprites cut from them.
+    kit.setAssetImages(
+        [&state](asset::AssetId id) { return state.textures ? state.textures(id) : render::TextureHandle{}; },
+        [&state](asset::AssetId id) {
+            const math::Extent2D size = state.textureSizes ? state.textureSizes(id) : math::Extent2D{};
+            return math::Vec2{static_cast<float>(size.width), static_cast<float>(size.height)};
+        },
+        [&state](asset::AssetId id) -> std::optional<ui::SpriteImage> {
+            // Only a sprite is read as one, which the database tells.
+            const asset::AssetInfo* const info = state.database != nullptr ? state.database->find(id) : nullptr;
+            if (info == nullptr || info->type != asset::AssetType::Sprite || !state.sprites)
+            {
+                return std::nullopt;
+            }
+            const std::shared_ptr<const asset::SpriteData> sprite = state.sprites(id);
+            if (sprite == nullptr || !state.textures)
+            {
+                return ui::SpriteImage{};
+            }
+            return ui::SpriteImage{.texture = state.textures(sprite->texture),
+                                   .uv = sprite->uvRect(),
+                                   .size = math::Vec2{static_cast<float>(sprite->width), static_cast<float>(sprite->height)}};
+        });
 }
 
 Entity InspectorUi::numberBox(Entity parent, std::string_view letter, ImVec4 letterColor, const scene::UiNumberField& settings)
@@ -608,7 +444,7 @@ std::string InspectorUi::signatureOf(const scene::Scene& edited, std::span<const
     return text;
 }
 
-void InspectorUi::rebuild(ToolsState& state, EditorUiKit& kit, scene::Scene& edited, std::span<const Entity> inspected)
+void InspectorUi::clear(ToolsState& state, const scene::Scene& edited)
 {
     // What is under way ends as it stands, before its rows go, unless the types it edits went with
     // the code of the game.
@@ -626,6 +462,18 @@ void InspectorUi::rebuild(ToolsState& state, EditorUiKit& kit, scene::Scene& edi
     {
         world.closePopup(scene(), popup);
     }
+    // What a page made outside the content goes with it.
+    for (const Entity made : pageEntities)
+    {
+        if (scene().isAlive(made))
+        {
+            world.closePopup(scene(), made);
+            scene().destroyEntity(made);
+        }
+    }
+    pageEntities.clear();
+    formRows.clear();
+    grids.clear();
     colorRow.reset();
     revertRow.reset();
     menuSection.reset();
@@ -645,7 +493,12 @@ void InspectorUi::rebuild(ToolsState& state, EditorUiKit& kit, scene::Scene& edi
     nameIcon = nameField = nameMark = uuidText = countText = Entity{};
     prefabIcon = prefabLead = prefabTitle = prefabTail = Entity{};
     openPrefab = revertPrefab = makeLocal = Button{};
+    addComponent = Button{};
+}
 
+void InspectorUi::rebuild(ToolsState& state, EditorUiKit& kit, scene::Scene& edited, std::span<const Entity> inspected)
+{
+    clear(state, edited);
     buildTop(kit, edited, inspected);
     const bool shared = inspected.size() > 1;
     const Entity active = inspected.back();
@@ -695,6 +548,10 @@ void InspectorUi::rebuild(ToolsState& state, EditorUiKit& kit, scene::Scene& edi
         {
             addExtras(kit, section, -1);
         }
+        if (!shared && name == "Tilemap")
+        {
+            addTilePainter(*this, kit, section);
+        }
     }
 
     // Components whose type is not registered, such as those of game code that is not loaded.
@@ -708,6 +565,7 @@ void InspectorUi::rebuild(ToolsState& state, EditorUiKit& kit, scene::Scene& edi
                 const std::string* const typeName = typeValue != nullptr ? serialization::asString(*typeValue) : nullptr;
                 Section& section = addSection(kit, std::format("{} (not loaded)", typeName != nullptr ? *typeName : "?"),
                                               EntityIcon{icons::Puzzle, themeColors().gameCode}, nullptr);
+                section.locked = true;
                 scene().get<UiRect>(section.title).style = "dim";
                 tooltip(section.header, "The game code that defines this component is not loaded. It is kept in the scene and comes "
                                         "back with the code.");
@@ -1173,7 +1031,7 @@ void InspectorUi::syncRow(const ToolsState& state, const scene::Scene& edited, s
         toggle.value = value && !mixed;
         toggle.interactable = open;
         scene().get<scene::UiButton>(row.control).interactable = open;
-        scene().get<scene::UiText>(row.detail).text = mixed ? std::string(dash) : value ? "On" : "Off";
+        scene().get<scene::UiText>(row.detail).text = mixed ? std::string(mixedDash) : value ? "On" : "Off";
         break;
     }
     case ControlKind::Numbers: {
@@ -1201,7 +1059,7 @@ void InspectorUi::syncRow(const ToolsState& state, const scene::Scene& edited, s
                 continue;
             }
             number.value = values[index];
-            number.format = mixed ? std::string(dash) : settings.format;
+            number.format = mixed ? std::string(mixedDash) : settings.format;
         }
         break;
     }
@@ -1216,7 +1074,7 @@ void InspectorUi::syncRow(const ToolsState& state, const scene::Scene& edited, s
             bar.visible = color.w < 0.999f;
             scene().get<scene::UiImage>(row.opacity).color = math::Vec4{1.0f, 1.0f, 1.0f, 0.85f};
         }
-        scene().get<scene::UiText>(row.detail).text = differs() ? std::string(dash) : hexOf(color, field.kind == ValueKind::Vec4);
+        scene().get<scene::UiText>(row.detail).text = differs() ? std::string(mixedDash) : hexOf(color, field.kind == ValueKind::Vec4);
         break;
     }
     case ControlKind::Text: {
@@ -1226,7 +1084,7 @@ void InspectorUi::syncRow(const ToolsState& state, const scene::Scene& edited, s
         {
             const bool mixed = differs();
             scene().get<scene::UiText>(row.control).text = mixed ? std::string{} : *static_cast<const std::string*>(address);
-            input.placeholder = mixed ? std::string(dash) : std::string{};
+            input.placeholder = mixed ? std::string(mixedDash) : std::string{};
         }
         break;
     }
@@ -1238,7 +1096,7 @@ void InspectorUi::syncRow(const ToolsState& state, const scene::Scene& edited, s
         if (field.kind == ValueKind::Uuid)
         {
             scene().get<scene::UiText>(row.control).text =
-                differs() ? std::string(dash) : static_cast<const core::Uuid*>(address)->toString();
+                differs() ? std::string(mixedDash) : static_cast<const core::Uuid*>(address)->toString();
         }
         break;
     case ControlKind::ListHeader: {
@@ -1411,7 +1269,7 @@ void InspectorUi::fillChoices(const ToolsState& state, const scene::Scene& edite
     if (mixed)
     {
         selected = -1;
-        placeholder = std::string(dash);
+        placeholder = std::string(mixedDash);
     }
     if (dropdown.options != options)
     {
@@ -1493,6 +1351,10 @@ void InspectorUi::syncExtras(ToolsState& state, EditorUiKit& kit, scene::Scene& 
         enable(section.restart, world != nullptr);
         enable(section.stop, world != nullptr);
     }
+    if (section.painter != nullptr)
+    {
+        syncTilePainter(*this, state, kit, edited, active, section);
+    }
     if (section.navInfo.isValid())
     {
         const NavMeshSummary summary = navMeshSummary(state, edited.get<scene::NavMeshSurface>(active));
@@ -1552,7 +1414,7 @@ void InspectorUi::syncColorPopup(const scene::Scene& edited, std::span<const Ent
         }
         scene::UiNumberField& number = scene().get<scene::UiNumberField>(channels[index]);
         number.value = color[static_cast<math::Vec4::length_type>(index)];
-        number.format = mixed ? std::string(dash) : std::string("{}");
+        number.format = mixed ? std::string(mixedDash) : std::string("{}");
     }
     const scene::UiLayout& layout = scene().get<scene::UiLayout>(colorPopup);
     UiRect& popup = scene().get<UiRect>(colorPopup);
@@ -1562,15 +1424,35 @@ void InspectorUi::syncColorPopup(const scene::Scene& edited, std::span<const Ent
 
 void InspectorUi::layoutCards()
 {
+    // The rows of the pages follow the width of the panel, as those of the components do.
+    for (const FormRow& row : formRows)
+    {
+        scene().get<UiRect>(scene().parent(row.label)).offsetMax.x = labelWidth - font * 0.4f;
+        scene().get<UiRect>(row.editor).offsetMin.x = labelWidth;
+    }
+    // Grids of sprites wrap at the width of their card: as many columns as fit, as many rows as needed.
+    const float room = std::max(panel.size().x - font * 0.6f - 8.0f - pad * 2.0f - font * 0.35f, 1.0f);
+    for (SpriteGrid* grid : grids)
+    {
+        const float spacing = scene().get<scene::UiLayout>(grid->grid).spacing;
+        const auto shownCells = static_cast<std::size_t>(
+            std::ranges::count_if(grid->cells, [&](Entity cell) { return scene().get<UiRect>(cell).visible; }));
+        const std::size_t count = shownCells + (grid->drop.isValid() ? 1 : 0);
+        const auto columns = static_cast<std::size_t>(std::max(std::floor((room + spacing) / (grid->size + spacing)), 1.0f));
+        const std::size_t rowsNeeded = std::max<std::size_t>((count + columns - 1) / columns, 1);
+        const std::size_t shownColumns = std::min(columns, std::max<std::size_t>(count, 1));
+        scene().get<scene::UiLayout>(grid->grid).columns = static_cast<std::uint32_t>(shownColumns);
+        UiRect& rect = scene().get<UiRect>(grid->grid);
+        rect.offsetMax = rect.offsetMin + math::Vec2{static_cast<float>(shownColumns) * (grid->size + spacing) - spacing,
+                                                     static_cast<float>(rowsNeeded) * (grid->size + spacing) - spacing};
+    }
+
     // The layout skips hidden lines: a card is as tall as its header and the lines it shows.
     for (Section& section : sections)
     {
-        const bool open = section.type != nullptr && !folded.contains(section.name);
+        const bool open = !section.locked && !folded.contains(section.name);
         scene().get<scene::UiFoldout>(section.header).expanded = open;
-        if (section.type == nullptr)
-        {
-            scene().get<scene::UiFoldout>(section.header).interactable = false;
-        }
+        scene().get<scene::UiFoldout>(section.header).interactable = !section.locked;
         float height = pad * 2.0f + headerHeight;
         for (const Line& entry : section.lines)
         {
@@ -2039,8 +1921,12 @@ void InspectorUi::answer(ToolsState& state, EditorUiKit& kit, scene::Scene& edit
     }
 
     // What some components add under their properties.
-    for (const Section& section : sections)
+    for (Section& section : sections)
     {
+        if (section.painter != nullptr)
+        {
+            answerTilePainter(*this, state, section);
+        }
         if (section.styleOpen.entity.isValid() && world.wasClicked(section.styleOpen.entity) && section.themeFile)
         {
             openTextFile(state, *section.themeFile);
@@ -2092,17 +1978,85 @@ void InspectorUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& edit
     headerHeight = std::round(font * 2.1f);
     if (!built)
     {
-        build(kit);
+        build(state, kit);
     }
     styleTooltips(colors);
 
-    // The entities shown: the active one last, which the others follow.
-    std::vector<Entity> inspected;
-    const Entity active = edited.findEntity(state.selection.active());
-    if (!active.isValid())
+    // What the inspector shows: a state or a transition of the Animator panel until another entity or
+    // asset is chosen, the entities selected, a code file, an asset, or a word to choose something.
+    AnimatorEditor& animator = state.animatorEditor;
+    if (animator.inspecting && (state.selection.active() != animator.inspectedEntity || state.selectedAsset != animator.inspectedAsset))
     {
+        animator.inspecting = false;
+    }
+    const Entity active = edited.findEntity(state.selection.active());
+    if (state.selectedAsset.isValid() && (state.database == nullptr || state.database->find(state.selectedAsset) == nullptr))
+    {
+        state.selectedAsset = {};
+    }
+    std::string_view kind;
+    if (animator.inspecting && state.showAnimator &&
+        (animator.selected == AnimatorElement::State || animator.selected == AnimatorElement::Transition))
+    {
+        kind = "animator element";
+    }
+    else if (active.isValid())
+    {
+        kind = {};
+    }
+    else if (!state.selectedCode.empty())
+    {
+        kind = "code";
+    }
+    else if (state.selectedAsset.isValid())
+    {
+        switch (state.database->find(state.selectedAsset)->type)
+        {
+        case asset::AssetType::Texture:
+            kind = "texture";
+            break;
+        case asset::AssetType::Model:
+            kind = "model";
+            break;
+        case asset::AssetType::AudioClip:
+            kind = "audio";
+            break;
+        case asset::AssetType::Curve:
+            kind = "curve";
+            break;
+        case asset::AssetType::SpriteFrames:
+            kind = "sprite frames";
+            break;
+        case asset::AssetType::Tileset:
+            kind = "tileset";
+            break;
+        case asset::AssetType::Animator:
+            kind = "animator";
+            break;
+        default:
+            kind = "asset";
+            break;
+        }
+    }
+    else
+    {
+        kind = "none";
+    }
+    if (!kind.empty())
+    {
+        updatePage(state, kit, edited, kind, delta);
         return;
     }
+    if (page)
+    {
+        page.reset();
+        pageKind.clear();
+        pageTarget.clear();
+        signature.clear();
+    }
+
+    // The entities shown: the active one last, which the others follow.
+    std::vector<Entity> inspected;
     if (state.selection.size() > 1)
     {
         for (const core::Uuid selected : state.selection.entities())
@@ -2137,6 +2091,53 @@ void InspectorUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& edit
     answer(state, kit, edited, inspected);
 
     // A number shows that it is dragged sideways.
+    const ui::UiWorld& world = panel.world();
+    const Entity pointed = world.held().isValid() ? world.held() : world.hovered();
+    if (pointed.isValid() && scene().isAlive(pointed) && scene().has<scene::UiNumberField>(pointed) && world.editedField() != pointed)
+    {
+        ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
+    }
+}
+
+void InspectorUi::updatePage(ToolsState& state, EditorUiKit& kit, const scene::Scene& edited, std::string_view kind, core::Duration delta)
+{
+    if (!page || pageKind != kind)
+    {
+        page = kind == "animator element" ? makeAnimatorElementPage()
+               : kind == "code"           ? makeCodePage()
+               : kind == "texture"        ? makeTexturePage()
+               : kind == "model"          ? makeModelPage()
+               : kind == "audio"          ? makeAudioPage()
+               : kind == "curve"          ? makeCurvePage()
+               : kind == "sprite frames"  ? makeSpriteFramesPage()
+               : kind == "tileset"        ? makeTilesetPage()
+               : kind == "animator"       ? makeAnimatorPage()
+               : kind == "asset"          ? makeAssetPage()
+                                          : makeEmptyPage();
+        pageKind = kind;
+        signature.clear();
+    }
+    shownEntities.clear();
+    std::string target = std::format("{}|{}|{}", kind, state.selectedAsset.uuid.toString(), core::toUtf8(state.selectedCode));
+    if (std::string wanted = std::format("page|{}|{}|{}", font, target, page->signature(state)); wanted != signature)
+    {
+        // Another asset starts at the top; the same one keeps its place when what it holds changes.
+        if (target != pageTarget)
+        {
+            scene().get<scene::UiScroll>(scroll).offset = math::Vec2{0.0f};
+            pageTarget = std::move(target);
+        }
+        clear(state, edited);
+        page->build(*this, state, kit);
+        signature = std::move(wanted);
+    }
+    scene().get<scene::UiScroll>(scroll).speed = line * 3.0f;
+    labelWidth = std::clamp(std::round(panel.size().x * 0.38f), font * 5.5f, font * 13.0f);
+    page->sync(*this, state, kit);
+    layoutCards();
+    panel.update(kit, delta, UiPanel::zoomFor(font));
+    page->answer(*this, state, kit);
+
     const ui::UiWorld& world = panel.world();
     const Entity pointed = world.held().isValid() ? world.held() : world.hovered();
     if (pointed.isValid() && scene().isAlive(pointed) && scene().has<scene::UiNumberField>(pointed) && world.editedField() != pointed)

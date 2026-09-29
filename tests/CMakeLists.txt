@@ -228,6 +228,7 @@ target_include_directories(devex_tools_tests PRIVATE
 )
 target_compile_definitions(devex_tools_tests PRIVATE
     DEVEX_TEST_RESOURCES_DIRECTORY="${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/resources"
+    DEVEX_TEST_DATA_DIRECTORY="${CMAKE_CURRENT_SOURCE_DIR}/data"
 )
 
 # A game module loaded by the runtime tests.

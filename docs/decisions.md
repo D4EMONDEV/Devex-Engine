@@ -2223,6 +2223,25 @@ les assets s'écrivent au fil de leur lecture.
   (`UiWorld::listedDropdown()`). Limites : pas de recherche dans ces listes (dix lignes et la
   molette), des libellés coupés plutôt qu'abrégés (l'infobulle donne `Composant.champ`), et le
   sélecteur de couleur reste dans l'image du panneau.
+- **Puis le reste de la fenêtre** (jalon 44) : les assets, les fichiers de code et les éléments du
+  panneau Animator ont chacun leur **page**, faite des mêmes pièces que les entités (en-tête avec
+  l'icône et le fichier, cartes repliables, lignes d'un libellé et de ses contrôles, notes, rangées
+  de boutons, grilles de sprites qui passent à la ligne avec la largeur du panneau). Une page
+  (`InspectorPage`) dit sa signature, se construit, reprend ses valeurs avant la mise à jour de
+  l'interface et lit ensuite ce qui a été cliqué, tapé, glissé et lâché ; elle vit dans le fichier
+  de son domaine (`TextureInspector.cpp`, `CurveInspector.cpp`, `AnimatorPanel.cpp`...). Il n'y a
+  plus d'ImGui dans l'Inspecteur : texture (aperçu sur damier avec la grille de découpe et les
+  pivots), modèle, son (forme d'onde et tête de lecture), courbe (graphe dont on glisse les clés
+  et les pentes, double clic pour ajouter, clic droit pour lisser, aplatir, redresser ou
+  supprimer, préréglages), sprite frames (animations, aperçu qui joue, images réordonnées, doublées
+  et supprimées depuis leur menu, sprites lâchés après une image ou au bout), tileset (palette
+  animée, sprite, collision, données, images d'une tuile), animator (résumé), états et transitions
+  de l'Animator (clips, paramètres, conditions, ordre), fichier de code, tout autre asset (son nom,
+  son fichier, *Reimport*), et le peintre de tuiles sous le Tilemap d'une entité.
+- **Les réglages d'import attendent** *Reimport*, comme dans le dock Import de Godot : une option
+  changée est marquée et gardée de côté, *Revert* l'oublie, *Reimport* les écrit toutes dans le
+  `.dvxmeta` et importe le fichier une seule fois (`AssetDatabase::setImportOptions`). Une texture
+  n'est plus recompressée à chaque clic.
 
 ### Interfaces
 
@@ -2429,6 +2448,16 @@ les assets s'écrivent au fil de leur lecture.
   linéaire et sRGB, TSV et hexadécimal.
 - **Divers** : `UiWorld::held()` dit quel contrôle le pointeur tient (curseur, nombre, sélecteur) ;
   une `UiDropdown` sans option choisie montre son `placeholder`.
+- **Sprites dans les images** : la texture d'une `UiImage` peut être un asset Sprite, comme
+  l'`AtlasTexture` de Godot : l'image montre la partie de la texture que le sprite couvre, et ses
+  bords en neuf parts sont des fractions du sprite. Le contexte de dessin résout les sprites avant
+  les textures (`DrawContext::sprites`) ; le jeu ne lit comme sprite que ce que sa base d'assets dit
+  en être un, pour ne jamais charger une texture comme le mauvais type. `preserve_aspect` garde la
+  forme de l'image au milieu de son rectangle, pour les icônes et les aperçus.
+- **Graphes** : `UiPlot` dessine une suite de valeurs entre deux bornes, en ligne (un quad fin par
+  segment), en barres ou en barres en miroir (la forme d'onde d'un son), avec un repère vertical
+  (la tête de lecture) ; les valeurs au-delà des bornes restent au bord. Les jeux s'en servent pour
+  une jauge au fil du temps ; l'éditeur pour les sons et les courbes, bientôt les statistiques.
 - **Double clic** : deux clics sur le même bouton à moins de 0,4 seconde ; le second compte aussi
   comme un clic (`wasDoubleClicked`). `startEditing` donne le clavier à un champ, son texte
   sélectionné, comme un formulaire à son premier champ.
@@ -3006,6 +3035,12 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     inspecteur des entités en cartes repliables, vecteurs aux axes colorés, listes déroulantes,
     dépôts d'assets et d'entités, valeurs du préfab, champs grisés par les styles, plusieurs
     entités, un pas d'annulation par édition ; les assets restent en ImGui dans la même fenêtre.
+
+44. ✅ **Inspecteur des assets en Devex UI** — une page par asset (texture, modèle, son, courbe,
+    sprite frames, tileset, animator, tout autre asset), par fichier de code et par état ou
+    transition de l'Animator, et le peintre de tuiles, sans plus d'ImGui dans l'Inspecteur ;
+    réglages d'import appliqués par *Reimport* comme dans Godot ; `UiImage` qui montre un sprite
+    et garde ses proportions, `UiPlot` pour les courbes et les ondes, en C++ et en C#.
 
 Ensuite, sans ordre figé : CI Linux, la suite du portage de l'éditeur.
 

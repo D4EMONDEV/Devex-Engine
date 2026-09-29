@@ -1,11 +1,11 @@
-#include "ToolsState.hpp"
+// The page of a tileset in the inspector: its tiles as a palette, which sprites dropped from FileSystem
+// join, and the tile chosen: its sprite, its collision, its data and the frames that animate it.
+// Saved once a change is over.
+#include "InspectorUi.hpp"
 
 #include <devex/asset/import/TilesetFile.hpp>
 #include <devex/core/File.hpp>
 #include <devex/core/Log.hpp>
-
-#include <imgui_internal.h>
-#include <imgui_stdlib.h>
 
 #include <algorithm>
 #include <array>
@@ -17,6 +17,9 @@
 
 namespace devex::tools::detail {
 namespace {
+
+using scene::Entity;
+using Button = PanelButton;
 
 struct CollisionChoice
 {
@@ -118,226 +121,344 @@ std::uint32_t addTiles(asset::TilesetData& tileset, const std::vector<asset::Ass
     return first;
 }
 
-} // namespace
-
-// The tiles of a tileset as a grid of squares, the chosen one outlined; returns the one clicked.
-std::optional<std::uint32_t> drawTilePalette(ToolsState& state, const asset::TilesetData& tileset, std::uint32_t selected,
-                                             float size, bool acceptsDrops, std::vector<asset::AssetId>* dropped)
+// A list of sprites to choose from, with nothing first: all of them while it may open, the chosen one
+// otherwise, and the sprites it stands for.
+void fillSpriteChoice(InspectorUi& ui, const ToolsState& state, Entity list, asset::AssetId value, std::vector<asset::AssetId>& sprites)
 {
-    std::optional<std::uint32_t> clicked;
-    const float spacing = ImGui::GetStyle().ItemSpacing.x;
-    const float available = ImGui::GetContentRegionAvail().x;
-    const double seconds = ImGui::GetTime();
-    float lineWidth = 0.0f;
-    const auto place = [&] {
-        if (lineWidth > 0.0f && lineWidth + spacing + size <= available)
-        {
-            ImGui::SameLine();
-            lineWidth += spacing;
-        }
-        else
-        {
-            lineWidth = 0.0f;
-        }
-        lineWidth += size;
-    };
-    for (const asset::TileData& tile : tileset.tiles)
+    const ui::UiWorld& world = ui.panel.world();
+    const bool full = world.hovered() == list || world.focused() == list || world.listedDropdown() == list;
+    sprites.assign(1, asset::AssetId{});
+    if (full && state.database != nullptr)
     {
-        place();
-        ImGui::PushID(static_cast<int>(tile.id));
-        ImGui::BeginGroup();
-        drawSpriteThumbnail(state, tile.spriteAt(seconds), size, tile.id == selected);
-        ImGui::EndGroup();
-        if (ImGui::IsItemClicked(ImGuiMouseButton_Left))
+        for (const asset::AssetInfo& info : state.database->assets(asset::AssetType::Sprite))
         {
-            clicked = tile.id;
+            sprites.push_back(info.id);
         }
-        const asset::AssetInfo* const info = state.database != nullptr ? state.database->find(tile.sprite) : nullptr;
-        ImGui::SetItemTooltip("Tile %u: %s\nCollision: %s%s%s", tile.id, info != nullptr ? info->name.c_str() : "(no sprite)",
-                              std::string(asset::toString(tile.collision)).c_str(), tile.frames.empty() ? "" : "\nAnimated",
-                              tile.data.empty() ? "" : std::format("\nData: {}", tile.data).c_str());
-        ImGui::PopID();
     }
-    if (acceptsDrops && dropped != nullptr)
+    else if (value.isValid())
     {
-        place();
-        const ImVec2 origin = ImGui::GetCursorScreenPos();
-        ImGui::InvisibleButton("drop tiles", ImVec2(size, size));
-        const ThemeColors& colors = themeColors();
-        ImGui::GetWindowDrawList()->AddRect(origin, origin + ImVec2(size, size), uiColorU32(colors.textDim), 3.0f);
-        const ImVec2 plusSize = ImGui::CalcTextSize(icons::Plus.c_str());
-        ImGui::GetWindowDrawList()->AddText(origin + (ImVec2(size, size) - plusSize) * 0.5f, uiColorU32(colors.textDim),
-                                            icons::Plus.c_str());
-        ImGui::SetItemTooltip("Drop sprites from the FileSystem here, or a texture to add a tile for each of its sprites");
-        *dropped = acceptDroppedSprites(state);
+        sprites.push_back(value);
     }
-    return clicked;
+    std::vector<std::string> options;
+    std::int32_t selected = -1;
+    for (const asset::AssetId sprite : sprites)
+    {
+        if (sprite == value)
+        {
+            selected = static_cast<std::int32_t>(options.size());
+        }
+        options.push_back(assetLabel(state, sprite));
+    }
+    scene::UiDropdown& dropdown = ui.scene().get<scene::UiDropdown>(list);
+    if (dropdown.options != options)
+    {
+        dropdown.options = std::move(options);
+    }
+    dropdown.selected = selected;
+    dropdown.placeholder = assetLabel(state, value);
 }
 
-void drawTilesetInspector(ToolsState& state)
+[[nodiscard]] std::string tileTooltip(const ToolsState& state, const asset::TileData& tile)
 {
-    const ThemeColors& colors = themeColors();
-    const asset::AssetInfo* const info = state.database != nullptr ? state.database->find(state.selectedAsset) : nullptr;
-    const std::optional<asset::SourceFile> source =
-        state.database != nullptr ? state.database->sourceOf(state.selectedAsset) : std::nullopt;
-    if (info == nullptr || !source)
-    {
-        state.selectedAsset = {};
-        return;
-    }
-    loadTileset(state, *source);
-    TilesetEditor& editor = state.tilesetEditor;
-    asset::TilesetData& tileset = editor.tileset;
+    const asset::AssetInfo* const info = state.database != nullptr ? state.database->find(tile.sprite) : nullptr;
+    return std::format("Tile {}: {}\nCollision: {}{}{}", tile.id, info != nullptr ? info->name : std::string("(no sprite)"),
+                       asset::toString(tile.collision), tile.frames.empty() ? "" : "\nAnimated",
+                       tile.data.empty() ? std::string{} : std::format("\nData: {}", tile.data));
+}
 
-    ImGui::AlignTextToFramePadding();
-    iconLabel(icons::Grid, colors.texture);
-    boldText(info->name.c_str());
-    ImGui::TextDisabled("%s", source->path.c_str());
-    ImGui::Spacing();
-    if (!editor.error.empty())
+class TilesetPage final : public InspectorPage
+{
+public:
+    std::string signature(ToolsState& state) override
     {
-        ImGui::TextColored(uiColor(colors.error), "The file could not be read: %s", editor.error.c_str());
-        ImGui::TextWrapped("Editing the tileset writes a new one over it.");
-    }
-
-    bool changed = false;
-    ImGui::SeparatorText(std::format("Tiles ({})", tileset.tiles.size()).c_str());
-    std::vector<asset::AssetId> dropped;
-    if (const std::optional<std::uint32_t> clicked =
-            drawTilePalette(state, tileset, editor.selectedTile, ImGui::GetFontSize() * 3.2f, true, &dropped))
-    {
-        editor.selectedTile = *clicked;
-    }
-    if (!dropped.empty())
-    {
-        if (const std::uint32_t added = addTiles(tileset, dropped); added != 0)
+        const std::optional<asset::SourceFile> source = state.database->sourceOf(state.selectedAsset);
+        if (!source)
         {
-            editor.selectedTile = added;
-            changed = true;
+            return {};
         }
+        loadTileset(state, *source);
+        const TilesetEditor& editor = state.tilesetEditor;
+        const asset::TileData* const tile = editor.tileset.find(editor.selectedTile);
+        return std::format("{}|{}|{}|{}", editor.tileset.tiles.size(), tile != nullptr ? tile->id : 0u,
+                           tile != nullptr ? tile->frames.size() : 0u, editor.error.empty());
     }
 
-    asset::TileData* const tile = [&]() -> asset::TileData* {
-        const auto found = std::ranges::find(tileset.tiles, editor.selectedTile, &asset::TileData::id);
-        return found != tileset.tiles.end() ? &*found : nullptr;
-    }();
-    if (tile != nullptr)
+    void build(InspectorUi& ui, ToolsState& state, EditorUiKit& kit) override
     {
-        ImGui::PushFont(editorFonts().bold, 0.0f);
-        ImGui::SeparatorText(std::format("Tile {}", tile->id).c_str());
-        ImGui::PopFont();
-        if (beginProperties("tile"))
+        const ThemeColors& colors = themeColors();
+        TilesetEditor& editor = state.tilesetEditor;
+        m_tiles.reset();
+        m_frames.reset();
+        m_sprite = {};
+        const asset::AssetInfo* const info = state.database->find(state.selectedAsset);
+        const std::optional<asset::SourceFile> source = state.database->sourceOf(state.selectedAsset);
+        if (info == nullptr || !source)
         {
-            propertyName("Sprite");
-            changed |= drawAssetPicker(state, "##sprite", asset::AssetType::Sprite, tile->sprite);
-            propertyName("Collision");
-            const auto chosen = std::ranges::find(collisionChoices, tile->collision, &CollisionChoice::collision);
-            if (beginCombo("##collision", chosen != collisionChoices.end() ? chosen->label : "?"))
+            return;
+        }
+        ui.heading(kit, icons::Grid, colors.texture, info->name, source->path);
+        if (!editor.error.empty())
+        {
+            ui.note(nullptr, std::format("The file could not be read: {}", editor.error), "error", 2.0f);
+            ui.note(nullptr, "Editing the tileset writes a new one over it.");
+        }
+
+        ui.card(kit, "Tiles");
+        m_tilesCard = ui.sections.size() - 1;
+        ui.spriteGrid(kit, ui.sections[m_tilesCard], m_tiles, editor.tileset.tiles.size(), std::round(ui.font * 3.2f), true);
+        ui.tooltip(m_tiles->drop, "Drop sprites from the FileSystem here, or a texture to add a tile for each of its sprites");
+
+        const asset::TileData* const tile = editor.tileset.find(editor.selectedTile);
+        if (tile != nullptr)
+        {
+            ui.card(kit, "Tile", EntityIcon{icons::Grid, colors.texture});
+            m_tileCard = ui.sections.size() - 1;
+            Section& card = ui.sections[m_tileCard];
+            const FormRow spriteRow = ui.formRow(card, "Sprite");
+            m_sprite = ui.choice(spriteRow.editor);
+            const math::Vec4 accent = linearColor(colors.accent);
+            ui.scene().add<scene::UiDropTarget>(m_sprite, scene::UiDropTarget{.accepts = {"asset:sprite"},
+                                                                              .highlightColor = math::Vec4{accent.x, accent.y, accent.z, 0.35f}});
+            const FormRow collisionRow = ui.formRow(card, "Collision");
+            std::vector<std::string> labels;
+            for (const CollisionChoice& choice : collisionChoices)
             {
-                for (const CollisionChoice& choice : collisionChoices)
-                {
-                    if (ImGui::Selectable(choice.label, choice.collision == tile->collision) && choice.collision != tile->collision)
-                    {
-                        tile->collision = choice.collision;
-                        changed = true;
-                    }
-                    ImGui::SetItemTooltip("%s", choice.tooltip);
-                }
-                ImGui::EndCombo();
+                labels.emplace_back(choice.label);
             }
-            ImGui::SetItemTooltip("What game code reads of the tile with Tilemaps.GetCollision; 2D physics will too");
-            propertyName("Data");
-            ImGui::SetNextItemWidth(-FLT_MIN);
-            ImGui::InputTextWithHint("##data", "water, damage=5...", &tile->data);
-            ImGui::SetItemTooltip("Anything the game reads of the tile with Tilemaps.GetData");
-            changed |= ImGui::IsItemDeactivatedAfterEdit();
-            propertyName("Frames per second");
-            ImGui::SetNextItemWidth(-FLT_MIN);
-            ImGui::DragFloat("##fps", &tile->fps, 0.1f, 0.0f, 120.0f, "%g");
-            tile->fps = std::clamp(tile->fps, 0.0f, 120.0f);
-            ImGui::SetItemTooltip("How fast an animated tile goes through its frames");
-            changed |= ImGui::IsItemDeactivatedAfterEdit();
-            endProperties();
+            m_collision = ui.choice(collisionRow.editor, std::move(labels));
+            const FormRow dataRow = ui.formRow(card, "Data");
+            m_data = ui.textField(dataRow.editor, "water, damage=5...");
+            ui.tooltip(dataRow.editor, "Anything the game reads of the tile with Tilemaps.GetData");
+            const FormRow fpsRow = ui.formRow(card, "Frames per second");
+            const std::array<std::string_view, 1> one{""};
+            m_fps = ui.numbers(fpsRow.editor, one, {.minValue = 0.0f, .maxValue = 120.0f, .dragSpeed = 0.1f, .decimals = 2}).front();
+            ui.tooltip(fpsRow.editor, "How fast an animated tile goes through its frames");
+            // The frames of an animated tile, which replace its sprite while it plays.
+            m_animation = ui.note(&card, "");
+            ui.spriteGrid(kit, card, m_frames, tile->frames.size(), std::round(ui.font * 2.6f), true);
+            ui.tooltip(m_frames->drop, "Drop sprites here to animate the tile: water, lava, torches");
+            m_frameMenu = ui.pageMenu("Tile frame menu", ui.font * 10.0f);
+            m_removeFrame = ui.menuItem(kit, m_frameMenu, Icon::Trash, "Remove");
+            for (const Entity cell : m_frames->cells)
+            {
+                ui.scene().get<scene::UiContextMenu>(cell).popup = ui.scene().reference(m_frameMenu);
+            }
+            const Entity actions = ui.actions(&card);
+            m_removeTile = ui.action(kit, actions, Icon::Trash, "Remove Tile");
+            ui.tooltip(m_removeTile.entity, "Cells painted with it show nothing until a tile takes its number again");
         }
+        ui.note(nullptr, "A Tilemap that names this tileset paints its cells with these tiles: select it, then choose a tool under it in the "
+                         "inspector.",
+                "dim", 2.0f);
+    }
 
-        // The frames of an animated tile, which replace its sprite while it plays.
-        ImGui::TextDisabled("Animation: %zu %s", tile->frames.size(), tile->frames.size() == 1 ? "frame" : "frames");
-        const float thumbnail = ImGui::GetFontSize() * 2.6f;
-        const float spacing = ImGui::GetStyle().ItemSpacing.x;
-        const float available = ImGui::GetContentRegionAvail().x;
-        float lineWidth = 0.0f;
-        std::optional<std::size_t> removed;
+    void sync(InspectorUi& ui, ToolsState& state, EditorUiKit&) override
+    {
+        TilesetEditor& editor = state.tilesetEditor;
+        const asset::TilesetData& tileset = editor.tileset;
+        if (m_tiles == nullptr || m_tiles->cells.size() != tileset.tiles.size())
+        {
+            return;
+        }
+        // Animated tiles play in the palette as in the game.
+        const double seconds = ImGui::GetTime();
+        for (std::size_t index = 0; index < tileset.tiles.size(); ++index)
+        {
+            const asset::TileData& tile = tileset.tiles[index];
+            ui.showSprite(m_tiles->images[index], tile.spriteAt(seconds));
+            ui.scene().get<scene::UiRect>(m_tiles->cells[index]).style = tile.id == editor.selectedTile ? "row_selected" : "row";
+            ui.tooltip(m_tiles->cells[index], tileTooltip(state, tile));
+        }
+        ui.scene().get<scene::UiText>(ui.sections[m_tilesCard].title).text = std::format("Tiles ({})", tileset.tiles.size());
+        const asset::TileData* const tile = tileset.find(editor.selectedTile);
+        if (tile == nullptr || !m_sprite.isValid() || m_frames == nullptr || m_frames->cells.size() != tile->frames.size())
+        {
+            return;
+        }
+        const ui::UiWorld& world = ui.panel.world();
+        ui.scene().get<scene::UiText>(ui.sections[m_tileCard].title).text = std::format("Tile {}", tile->id);
+        fillSpriteChoice(ui, state, m_sprite, tile->sprite, m_sprites);
+        const auto chosen = std::ranges::find(collisionChoices, tile->collision, &CollisionChoice::collision);
+        ui.scene().get<scene::UiDropdown>(m_collision).selected =
+            chosen != collisionChoices.end() ? static_cast<std::int32_t>(chosen - collisionChoices.begin()) : -1;
+        ui.tooltip(m_collision, chosen != collisionChoices.end() ? std::string(chosen->tooltip) : std::string{});
+        if (world.editedField() != m_data)
+        {
+            ui.scene().get<scene::UiText>(m_data).text = tile->data;
+        }
+        if (world.editedField() != m_fps && world.held() != m_fps)
+        {
+            ui.scene().get<scene::UiNumberField>(m_fps).value = tile->fps;
+        }
+        ui.scene().get<scene::UiText>(m_animation).text =
+            std::format("Animation: {} {}", tile->frames.size(), tile->frames.size() == 1 ? "frame" : "frames");
         for (std::size_t index = 0; index < tile->frames.size(); ++index)
         {
-            if (lineWidth > 0.0f && lineWidth + spacing + thumbnail <= available)
-            {
-                ImGui::SameLine();
-                lineWidth += spacing;
-            }
-            else
-            {
-                lineWidth = 0.0f;
-            }
-            lineWidth += thumbnail;
-            ImGui::PushID(static_cast<int>(index));
-            ImGui::BeginGroup();
-            drawSpriteThumbnail(state, tile->frames[index], thumbnail, false);
-            ImGui::EndGroup();
-            ImGui::SetItemTooltip("Frame %zu: right-click to remove it", index + 1);
-            if (ImGui::BeginPopupContextItem("frame menu"))
-            {
-                if (ImGui::MenuItem("Remove"))
-                {
-                    removed = index;
-                }
-                ImGui::EndPopup();
-            }
-            ImGui::PopID();
+            ui.showSprite(m_frames->images[index], tile->frames[index]);
+            ui.tooltip(m_frames->cells[index], std::format("Frame {}: right-click to remove it", index + 1));
         }
-        if (lineWidth > 0.0f && lineWidth + spacing + thumbnail <= available)
-        {
-            ImGui::SameLine();
-        }
-        const ImVec2 origin = ImGui::GetCursorScreenPos();
-        ImGui::InvisibleButton("drop frames", ImVec2(thumbnail, thumbnail));
-        ImGui::GetWindowDrawList()->AddRect(origin, origin + ImVec2(thumbnail, thumbnail), uiColorU32(colors.textDim), 3.0f);
-        const ImVec2 plusSize = ImGui::CalcTextSize(icons::Plus.c_str());
-        ImGui::GetWindowDrawList()->AddText(origin + (ImVec2(thumbnail, thumbnail) - plusSize) * 0.5f,
-                                            uiColorU32(colors.textDim), icons::Plus.c_str());
-        ImGui::SetItemTooltip("Drop sprites here to animate the tile: water, lava, torches");
-        if (std::vector<asset::AssetId> frames = acceptDroppedSprites(state); !frames.empty())
-        {
-            tile->frames.insert(tile->frames.end(), frames.begin(), frames.end());
-            if (tile->fps <= 0.0f)
-            {
-                tile->fps = 6.0f;
-            }
-            changed = true;
-        }
-        if (removed)
-        {
-            tile->frames.erase(tile->frames.begin() + static_cast<std::ptrdiff_t>(*removed));
-            changed = true;
-        }
-
-        ImGui::Spacing();
-        if (labelButton(icons::Trash, "Remove Tile"))
-        {
-            const std::uint32_t id = tile->id;
-            std::erase_if(tileset.tiles, [id](const asset::TileData& other) { return other.id == id; });
-            editor.selectedTile = tileset.tiles.empty() ? 0 : tileset.tiles.front().id;
-            changed = true;
-        }
-        ImGui::SetItemTooltip("Cells painted with it show nothing until a tile takes its number again");
+        ui.fitMenu(m_frameMenu, ui.font * 10.0f);
     }
-    ImGui::Spacing();
-    ImGui::TextWrapped("A Tilemap that names this tileset paints its cells with these tiles: select it, then choose a "
-                       "tool under it in the inspector.");
 
-    if (changed)
+    void answer(InspectorUi& ui, ToolsState& state, EditorUiKit&) override
     {
-        saveTileset(state);
+        TilesetEditor& editor = state.tilesetEditor;
+        asset::TilesetData& tileset = editor.tileset;
+        if (m_tiles == nullptr || m_tiles->cells.size() != tileset.tiles.size())
+        {
+            return;
+        }
+        const ui::UiWorld& world = ui.panel.world();
+        std::vector<asset::AssetId> dropped;
+        for (std::size_t index = 0; index < tileset.tiles.size(); ++index)
+        {
+            if (world.wasClicked(m_tiles->cells[index]))
+            {
+                editor.selectedTile = tileset.tiles[index].id;
+            }
+            if (world.wasDropped(m_tiles->cells[index]) && world.dropped() != nullptr)
+            {
+                dropped = droppedSprites(state, *world.dropped());
+            }
+        }
+        if (world.wasDropped(m_tiles->drop) && world.dropped() != nullptr)
+        {
+            dropped = droppedSprites(state, *world.dropped());
+        }
+        if (!dropped.empty())
+        {
+            if (const std::uint32_t added = addTiles(tileset, dropped); added != 0)
+            {
+                editor.selectedTile = added;
+                m_dirty = true;
+            }
+        }
+
+        asset::TileData* const tile = [&]() -> asset::TileData* {
+            const auto found = std::ranges::find(tileset.tiles, editor.selectedTile, &asset::TileData::id);
+            return found != tileset.tiles.end() ? &*found : nullptr;
+        }();
+        if (tile != nullptr && m_sprite.isValid() && m_frames != nullptr && m_frames->cells.size() == tile->frames.size())
+        {
+            answerTile(ui, state, *tile);
+        }
+        const bool busy = world.held().isValid() || world.isEditing();
+        if (m_dirty && !busy)
+        {
+            saveTileset(state);
+            m_dirty = false;
+        }
     }
+
+private:
+    void answerTile(InspectorUi& ui, ToolsState& state, asset::TileData& tile)
+    {
+        TilesetEditor& editor = state.tilesetEditor;
+        const ui::UiWorld& world = ui.panel.world();
+        if (world.wasChanged(m_sprite))
+        {
+            const std::int32_t selected = ui.scene().get<scene::UiDropdown>(m_sprite).selected;
+            if (selected >= 0 && static_cast<std::size_t>(selected) < m_sprites.size())
+            {
+                tile.sprite = m_sprites[static_cast<std::size_t>(selected)];
+                m_dirty = true;
+            }
+        }
+        if (world.wasDropped(m_sprite) && world.dropped() != nullptr)
+        {
+            if (const std::optional<core::Uuid> uuid = core::Uuid::parse(world.dropped()->data))
+            {
+                tile.sprite = asset::AssetId{*uuid};
+                m_dirty = true;
+            }
+        }
+        if (world.wasChanged(m_collision))
+        {
+            const std::int32_t selected = ui.scene().get<scene::UiDropdown>(m_collision).selected;
+            if (selected >= 0 && static_cast<std::size_t>(selected) < collisionChoices.size())
+            {
+                tile.collision = collisionChoices[static_cast<std::size_t>(selected)].collision;
+                m_dirty = true;
+            }
+        }
+        if (world.editedField() == m_data)
+        {
+            m_typing = true;
+        }
+        else if (std::exchange(m_typing, false) && !ui.panel.input().cancelPressed)
+        {
+            const std::string typed = ui.scene().get<scene::UiText>(m_data).text;
+            if (typed != tile.data)
+            {
+                tile.data = typed;
+                m_dirty = true;
+            }
+        }
+        if (world.wasChanged(m_fps))
+        {
+            tile.fps = std::clamp(ui.scene().get<scene::UiNumberField>(m_fps).value, 0.0f, 120.0f);
+            m_dirty = true;
+        }
+        if (world.wasDropped(m_frames->drop) && world.dropped() != nullptr)
+        {
+            const std::vector<asset::AssetId> frames = droppedSprites(state, *world.dropped());
+            if (!frames.empty())
+            {
+                tile.frames.insert(tile.frames.end(), frames.begin(), frames.end());
+                if (tile.fps <= 0.0f)
+                {
+                    tile.fps = 6.0f;
+                }
+                m_dirty = true;
+            }
+        }
+        if (ui.panel.input().secondaryPressed && world.isPopupOpen(ui.scene(), m_frameMenu))
+        {
+            const auto found = std::ranges::find(m_frames->cells, world.contextTarget());
+            m_menuFrame = found != m_frames->cells.end() ? std::optional(static_cast<std::size_t>(found - m_frames->cells.begin()))
+                                                         : std::nullopt;
+        }
+        if (world.wasClicked(m_removeFrame.entity) && m_menuFrame && *m_menuFrame < tile.frames.size())
+        {
+            tile.frames.erase(tile.frames.begin() + static_cast<std::ptrdiff_t>(*m_menuFrame));
+            m_dirty = true;
+        }
+        if (!world.isPopupOpen(ui.scene(), m_frameMenu))
+        {
+            m_menuFrame.reset();
+        }
+        if (world.wasClicked(m_removeTile.entity))
+        {
+            const std::uint32_t id = tile.id;
+            std::erase_if(editor.tileset.tiles, [id](const asset::TileData& other) { return other.id == id; });
+            editor.selectedTile = editor.tileset.tiles.empty() ? 0 : editor.tileset.tiles.front().id;
+            m_dirty = true;
+        }
+    }
+
+    std::unique_ptr<SpriteGrid> m_tiles;
+    std::size_t m_tilesCard = 0;
+    std::size_t m_tileCard = 0;
+    Entity m_sprite;
+    std::vector<asset::AssetId> m_sprites;
+    Entity m_collision;
+    Entity m_data;
+    bool m_typing = false;
+    Entity m_fps;
+    Entity m_animation;
+    std::unique_ptr<SpriteGrid> m_frames;
+    Entity m_frameMenu;
+    Button m_removeFrame;
+    std::optional<std::size_t> m_menuFrame;
+    Button m_removeTile;
+    bool m_dirty = false;
+};
+
+} // namespace
+
+std::unique_ptr<InspectorPage> makeTilesetPage()
+{
+    return std::make_unique<TilesetPage>();
 }
 
 core::Result<std::filesystem::path> createTilesetFile(ToolsState& state, std::string_view folder, asset::AssetId fromTexture)

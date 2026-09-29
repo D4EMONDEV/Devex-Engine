@@ -1,4 +1,4 @@
-#include "ToolsState.hpp"
+#include "InspectorUi.hpp"
 
 #include <devex/scene/ComponentRegistry.hpp>
 #include <devex/scene/FieldValue.hpp>
@@ -167,86 +167,135 @@ void finishStroke(ToolsState& state, scene::Tilemap& tilemap)
     }
 }
 
-// A word button lit while its choice is on.
-[[nodiscard]] bool choiceButton(const char* label, const char* tooltip, bool selected)
-{
-    const ThemeColors& colors = themeColors();
-    const ImVec4 accent = colors.accent;
-    ImGui::PushStyleColor(ImGuiCol_Button, selected ? uiColor(ImVec4(accent.x, accent.y, accent.z, 0.35f))
-                                                    : ImGui::GetStyleColorVec4(ImGuiCol_FrameBg));
-    ImGui::PushStyleColor(ImGuiCol_Text, uiColor(selected ? colors.accent : colors.text));
-    const bool pressed = ImGui::Button(label);
-    ImGui::PopStyleColor(2);
-    ImGui::SetItemTooltip("%s", tooltip);
-    return pressed;
-}
-
 } // namespace
 
-void drawTilePainter(ToolsState& state, scene::Scene& scene, scene::Entity entity)
+// The tools that paint the tilemap, under its card: the tool, how the tile is mirrored, the palette
+// of the tiles of its tileset, and what the tool does.
+struct TilePainterUi
 {
-    const scene::Tilemap* const tilemap = scene.tryGet<scene::Tilemap>(entity);
+    std::array<PanelButton, toolChoices.size()> tools;
+    PanelButton flipX;
+    PanelButton flipY;
+    scene::Entity cells;
+    scene::Entity message;
+    scene::Entity hint;
+    std::unique_ptr<SpriteGrid> palette;
+    std::vector<std::uint32_t> tileIds;
+};
+
+void addTilePainter(InspectorUi& ui, EditorUiKit& kit, Section& section)
+{
+    auto painter = std::make_shared<TilePainterUi>();
+    const scene::Entity title = ui.note(&section, "Paint", "text");
+    ui.scene().get<scene::UiText>(title).font = EditorUiKit::boldFont();
+    // The tools, in rows of three however narrow the panel.
+    const scene::Entity tools = ui.add(section.card, "Tools", rects::wide(ui.line * 2.0f + ui.gap * 3.0f));
+    ui.scene().add<scene::UiLayout>(tools, scene::UiLayout{.kind = scene::UiLayoutKind::Grid,
+                                                           .spacing = ui.gap * 3.0f,
+                                                           .padding = {ui.font * 0.35f, 0.0f, 0.0f, 0.0f},
+                                                           .columns = 3,
+                                                           .equalSize = true});
+    section.lines.push_back(Line{.entity = tools});
+    for (std::size_t index = 0; index < toolChoices.size(); ++index)
+    {
+        painter->tools[index] = ui.button(kit, tools, std::nullopt, toolChoices[index].label, "button", 0.0f, ui.line - 4.0f);
+        ui.tooltip(painter->tools[index].entity, toolChoices[index].tooltip);
+    }
+    const scene::Entity flips = ui.actions(&section);
+    painter->flipX = ui.action(kit, flips, std::nullopt, "Flip X");
+    ui.tooltip(painter->flipX.entity, "Mirror the tile across");
+    painter->flipY = ui.action(kit, flips, std::nullopt, "Flip Y");
+    ui.tooltip(painter->flipY.entity, "Mirror the tile up and down");
+    painter->cells = ui.text(flips, rects::middle({ui.font * 7.0f, ui.line}), "", "dim");
+    painter->message = ui.note(&section, "", "dim");
+    ui.spriteGrid(kit, section, painter->palette, 0, std::round(ui.font * 2.6f), false);
+    painter->hint = ui.note(&section, "", "dim", 3.0f);
+    section.painter = std::move(painter);
+}
+
+void syncTilePainter(InspectorUi& ui, ToolsState& state, EditorUiKit& kit, scene::Scene& edited, scene::Entity entity, Section& section)
+{
+    static_cast<void>(kit);
+    TilePainterUi& shown = *section.painter;
+    const scene::Tilemap* const tilemap = edited.tryGet<scene::Tilemap>(entity);
     if (tilemap == nullptr)
     {
         return;
     }
     TilePainter& painter = state.tilePainter;
-    ImGui::Spacing();
-    ImGui::SeparatorText("Paint");
-    for (const ToolChoice& choice : toolChoices)
+    for (std::size_t index = 0; index < toolChoices.size(); ++index)
     {
-        if (choiceButton(choice.label, choice.tooltip, painter.tool == choice.tool))
-        {
-            painter.tool = painter.tool == choice.tool ? TileTool::None : choice.tool;
-        }
-        ImGui::SameLine(0.0f, 2.0f);
+        ui.scene().get<scene::UiRect>(shown.tools[index].entity).style = painter.tool == toolChoices[index].tool ? "primary" : "button";
     }
-    ImGui::NewLine();
-    if (choiceButton("Flip X", "Mirror the tile across", painter.flipX))
-    {
-        painter.flipX = !painter.flipX;
-    }
-    ImGui::SameLine(0.0f, 2.0f);
-    if (choiceButton("Flip Y", "Mirror the tile up and down", painter.flipY))
-    {
-        painter.flipY = !painter.flipY;
-    }
-    ImGui::SameLine();
-    ImGui::AlignTextToFramePadding();
+    ui.scene().get<scene::UiRect>(shown.flipX.entity).style = painter.flipX ? "primary" : "button";
+    ui.scene().get<scene::UiRect>(shown.flipY.entity).style = painter.flipY ? "primary" : "button";
     const scene::TileGrid grid = scene::TileGrid::read(*tilemap);
-    ImGui::TextDisabled("%zu %s", grid.count(), grid.count() == 1 ? "cell" : "cells");
+    ui.scene().get<scene::UiText>(shown.cells).text = std::format("{} {}", grid.count(), grid.count() == 1 ? "cell" : "cells");
 
     const std::shared_ptr<const asset::TilesetData> tileset =
         state.tilesets && tilemap->tileset.isValid() ? state.tilesets(tilemap->tileset) : nullptr;
-    if (tileset == nullptr)
+    const bool tiles = tileset != nullptr && !tileset->tiles.empty();
+    ui.scene().get<scene::UiText>(shown.message).text = tileset == nullptr ? "Choose a tileset to paint with."
+                                                        : !tiles           ? "The tileset has no tile yet: add some in its inspector."
+                                                                           : "";
+    ui.showLine(section, shown.message, !tiles);
+    ui.showLine(section, shown.palette->grid, tiles);
+    shown.tileIds.clear();
+    if (tiles)
     {
-        ImGui::TextDisabled("Choose a tileset to paint with.");
-        return;
-    }
-    if (tileset->tiles.empty())
-    {
-        ImGui::TextDisabled("The tileset has no tile yet: add some in its inspector.");
-        return;
-    }
-    if (tileset->find(painter.tile) == nullptr)
-    {
-        painter.tile = tileset->tiles.front().id;
-    }
-    if (const std::optional<std::uint32_t> clicked =
-            drawTilePalette(state, *tileset, painter.tile, ImGui::GetFontSize() * 2.6f, false, nullptr))
-    {
-        painter.tile = *clicked;
-        if (painter.tool == TileTool::None || painter.tool == TileTool::Erase || painter.tool == TileTool::Pick)
+        if (tileset->find(painter.tile) == nullptr)
         {
-            painter.tool = TileTool::Paint;
+            painter.tile = tileset->tiles.front().id;
+        }
+        ui.gridCells(*shown.palette, tileset->tiles.size(), false);
+        const double seconds = ImGui::GetTime();
+        for (std::size_t index = 0; index < tileset->tiles.size(); ++index)
+        {
+            const asset::TileData& tile = tileset->tiles[index];
+            ui.showSprite(shown.palette->images[index], tile.spriteAt(seconds));
+            ui.scene().get<scene::UiRect>(shown.palette->cells[index]).style = tile.id == painter.tile ? "row_selected" : "row";
+            const asset::AssetInfo* const info = state.database != nullptr ? state.database->find(tile.sprite) : nullptr;
+            ui.tooltip(shown.palette->cells[index], std::format("Tile {}: {}", tile.id, info != nullptr ? info->name : std::string("(no sprite)")));
+            shown.tileIds.push_back(tile.id);
         }
     }
-    ImGui::PushStyleColor(ImGuiCol_Text, uiColor(themeColors().textDim));
-    ImGui::TextWrapped(painter.tool == TileTool::None
-                           ? "Choose a tool or a tile to paint the tilemap in the view."
-                           : "Left drag paints in the view, Shift erases, Ctrl picks; right or middle drag slides the view; "
-                             "Escape stops painting. Each stroke is one step to undo.");
-    ImGui::PopStyleColor();
+    ui.scene().get<scene::UiText>(shown.hint).text =
+        painter.tool == TileTool::None ? "Choose a tool or a tile to paint the tilemap in the view."
+                                       : "Left drag paints in the view, Shift erases, Ctrl picks; right or middle drag slides the view; "
+                                         "Escape stops painting. Each stroke is one step to undo.";
+}
+
+void answerTilePainter(InspectorUi& ui, ToolsState& state, Section& section)
+{
+    TilePainterUi& shown = *section.painter;
+    TilePainter& painter = state.tilePainter;
+    const ui::UiWorld& world = ui.panel.world();
+    for (std::size_t index = 0; index < toolChoices.size(); ++index)
+    {
+        if (world.wasClicked(shown.tools[index].entity))
+        {
+            painter.tool = painter.tool == toolChoices[index].tool ? TileTool::None : toolChoices[index].tool;
+        }
+    }
+    if (world.wasClicked(shown.flipX.entity))
+    {
+        painter.flipX = !painter.flipX;
+    }
+    if (world.wasClicked(shown.flipY.entity))
+    {
+        painter.flipY = !painter.flipY;
+    }
+    for (std::size_t index = 0; index < shown.tileIds.size() && index < shown.palette->cells.size(); ++index)
+    {
+        if (world.wasClicked(shown.palette->cells[index]))
+        {
+            painter.tile = shown.tileIds[index];
+            if (painter.tool == TileTool::None || painter.tool == TileTool::Erase || painter.tool == TileTool::Pick)
+            {
+                painter.tool = TileTool::Paint;
+            }
+        }
+    }
 }
 
 bool handleTilePainting(ToolsState& state, scene::Scene& scene, const ViewportView& view, math::Vec2 mouse, bool hovered)

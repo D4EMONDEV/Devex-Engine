@@ -16,6 +16,7 @@
 #include <filesystem>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -109,6 +110,8 @@ public:
     [[nodiscard]] core::Result<void> reimport(AssetId id);
     // Sets an import option in the .dvxmeta of the source file of the asset, and imports it again.
     [[nodiscard]] core::Result<void> setImportOption(AssetId id, std::string_view key, serialization::TextValue value);
+    // Sets several import options at once, and imports the file again once when one of them changed.
+    [[nodiscard]] core::Result<void> setImportOptions(AssetId id, std::span<const serialization::TextProperty> options);
     // An import option in the .dvxmeta of the source file of the asset; nullopt when it is not set.
     [[nodiscard]] std::optional<serialization::TextValue> importOption(AssetId id, std::string_view key) const;
 

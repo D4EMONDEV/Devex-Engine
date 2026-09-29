@@ -66,6 +66,18 @@ DEVEX_REFLECT(UiDropdown)
         .field("placeholder", &UiDropdown::placeholder);
 }
 
+DEVEX_REFLECT(UiPlot)
+{
+    type.field("values", &UiPlot::values)
+        .field("min_value", &UiPlot::minValue)
+        .field("max_value", &UiPlot::maxValue)
+        .field("kind", &UiPlot::kind)
+        .field("color", &UiPlot::color, {.color = true})
+        .field("line_width", &UiPlot::lineWidth)
+        .field("marker", &UiPlot::marker)
+        .field("marker_color", &UiPlot::markerColor, {.color = true});
+}
+
 DEVEX_REFLECT(UiNumberField)
 {
     type.field("value", &UiNumberField::value)
@@ -151,6 +163,7 @@ DEVEX_REFLECT(UiImage)
         .field("color", &UiImage::color, {.color = true})
         .field("border", &UiImage::border)
         .field("corner_radius", &UiImage::cornerRadius)
+        .field("preserve_aspect", &UiImage::preserveAspect)
         .field("raycast_target", &UiImage::raycastTarget);
 }
 

@@ -1,4 +1,4 @@
-#include "ToolsState.hpp"
+#include "InspectorUi.hpp"
 
 #include <devex/animation/AnimationWorld.hpp>
 #include <devex/asset/import/AnimatorFile.hpp>
@@ -1125,378 +1125,845 @@ void drawGraph(ToolsState& state, const std::optional<animation::AnimatorStatus>
     }
 }
 
-// ---- The inspector ----
+// ---- The pages of the inspector ----
 
-// A combo of the parameters that fit, by name; an empty choice when allowed.
-bool parameterCombo(const char* id, const AnimatorData& animator, std::string& value, bool numbersOnly, const char* none = nullptr)
+using scene::Entity;
+using Button = PanelButton;
+
+// The parameters a list offers: those that hold a number when asked, after "none" when it may be
+// left empty.
+void fillParameters(InspectorUi& ui, Entity list, const AnimatorData& animator, const std::string& value, bool numbersOnly,
+                    const char* none, std::vector<std::string>& names)
 {
-    bool changed = false;
-    if (beginCombo(id, value.empty() ? (none != nullptr ? none : "(none)") : value.c_str()))
+    names.clear();
+    std::vector<std::string> options;
+    if (none != nullptr)
     {
-        if (none != nullptr && ImGui::Selectable(none, value.empty()))
-        {
-            value.clear();
-            changed = true;
-        }
-        for (const asset::AnimatorParameter& parameter : animator.parameters)
-        {
-            if (numbersOnly && !isNumber(parameter.type))
-            {
-                continue;
-            }
-            if (ImGui::Selectable(std::format("{}  ({})", parameter.name, parameterTypeLabel(parameter.type)).c_str(),
-                                  parameter.name == value))
-            {
-                value = parameter.name;
-                changed = true;
-            }
-        }
-        ImGui::EndCombo();
+        names.emplace_back();
+        options.emplace_back(none);
     }
-    return changed;
+    for (const asset::AnimatorParameter& parameter : animator.parameters)
+    {
+        if (numbersOnly && !isNumber(parameter.type))
+        {
+            continue;
+        }
+        names.push_back(parameter.name);
+        options.push_back(std::format("{}  ({})", parameter.name, parameterTypeLabel(parameter.type)));
+    }
+    scene::UiDropdown& dropdown = ui.scene().get<scene::UiDropdown>(list);
+    if (dropdown.options != options)
+    {
+        dropdown.options = std::move(options);
+    }
+    const auto found = std::ranges::find(names, value);
+    dropdown.selected = found != names.end() ? static_cast<std::int32_t>(found - names.begin()) : -1;
+    dropdown.placeholder = value.empty() ? std::string("(none)") : value;
 }
 
-void drawStateInspector(ToolsState& state, std::size_t index)
+// The animation clips a list offers: all of them while it may open, the chosen one otherwise.
+void fillClips(InspectorUi& ui, const ToolsState& state, Entity list, asset::AssetId value, std::vector<asset::AssetId>& clips)
 {
-    AnimatorEditor& editor = state.animatorEditor;
-    AnimatorData& animator = editor.animator;
-    AnimatorState& node = animator.states[index];
-    bool changed = false;
-
-    if (beginProperties("state"))
+    const ui::UiWorld& world = ui.panel.world();
+    const bool full = world.hovered() == list || world.focused() == list || world.listedDropdown() == list;
+    clips.assign(1, asset::AssetId{});
+    if (full && state.database != nullptr)
     {
-        propertyName("Name");
-        std::string name = node.name;
-        ImGui::SetNextItemWidth(-FLT_MIN);
-        if (ImGui::InputText("##name", &name, ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_AutoSelectAll) ||
-            (ImGui::IsItemDeactivatedAfterEdit() && name != node.name))
+        for (const asset::AssetInfo& info : state.database->assets(asset::AssetType::AnimationClip))
         {
-            if (!name.empty() && animator.findState(name) == nullptr)
-            {
-                renameState(animator, node.name, name);
-                changed = true;
-            }
+            clips.push_back(info.id);
         }
-        propertyName("Entry State");
-        bool entry = node.name == animator.entry;
-        if (ImGui::Checkbox("##entry", &entry) && entry)
+    }
+    else if (value.isValid())
+    {
+        clips.push_back(value);
+    }
+    std::vector<std::string> options;
+    std::int32_t selected = -1;
+    for (const asset::AssetId clip : clips)
+    {
+        if (clip == value)
         {
-            animator.entry = node.name;
-            changed = true;
+            selected = static_cast<std::int32_t>(options.size());
         }
-        ImGui::SetItemTooltip("The state the animator starts in");
+        options.push_back(assetLabel(state, clip));
+    }
+    scene::UiDropdown& dropdown = ui.scene().get<scene::UiDropdown>(list);
+    if (dropdown.options != options)
+    {
+        dropdown.options = std::move(options);
+    }
+    dropdown.selected = selected;
+    dropdown.placeholder = assetLabel(state, value);
+}
 
-        propertyName("Motion");
-        constexpr std::array<std::pair<AnimatorBlend, const char*>, 3> blends{
-            {{AnimatorBlend::None, "Clip"}, {AnimatorBlend::Linear, "Blend Tree 1D"}, {AnimatorBlend::Planar, "Blend Tree 2D"}}};
-        const auto chosen = std::ranges::find(blends, node.blend, &std::pair<AnimatorBlend, const char*>::first);
-        if (beginCombo("##blend", chosen != blends.end() ? chosen->second : "?"))
+[[nodiscard]] std::string clipDrop()
+{
+    return std::format("asset:{}", asset::toString(asset::AssetType::AnimationClip));
+}
+
+// The controller, from FileSystem: what it holds, and the way to its graph.
+class AnimatorPage final : public InspectorPage
+{
+public:
+    std::string signature(ToolsState& state) override
+    {
+        loadAnimator(state, state.selectedAsset);
+        return state.animatorEditor.error;
+    }
+
+    void build(InspectorUi& ui, ToolsState& state, EditorUiKit& kit) override
+    {
+        const asset::AssetInfo* const info = state.database->find(state.selectedAsset);
+        const std::optional<asset::SourceFile> source = state.database->sourceOf(state.selectedAsset);
+        if (info == nullptr || !source)
         {
-            for (const auto& [blend, label] : blends)
-            {
-                if (ImGui::Selectable(label, blend == node.blend) && blend != node.blend)
-                {
-                    node.blend = blend;
-                    if (blend != AnimatorBlend::None && node.parameter.empty())
-                    {
-                        node.parameter = numberParameter(animator, 0, blend == AnimatorBlend::Linear ? "Speed" : "X");
-                    }
-                    if (blend == AnimatorBlend::Planar && node.parameterY.empty())
-                    {
-                        node.parameterY = numberParameter(animator, 1, "Y");
-                    }
-                    changed = true;
-                }
-            }
-            ImGui::EndCombo();
+            return;
         }
-        if (node.blend == AnimatorBlend::None)
+        ui.heading(kit, icons::Workflow, themeColors().animation, info->name, source->path);
+        if (!state.animatorEditor.error.empty())
         {
-            propertyName("Clip");
-            if (node.motions.empty())
+            ui.note(nullptr, state.animatorEditor.error, "error", 2.0f);
+        }
+        m_counts = ui.note(nullptr, "");
+        m_entry = ui.note(nullptr, "");
+        const Entity row = ui.actions(nullptr);
+        m_open = ui.action(kit, row, Icon::Workflow, "Open in the Animator Panel");
+        ui.note(nullptr, "An Animator component plays it when its Controller names it; game code sets its parameters (Animation.SetFloat, "
+                         "SetBool, SetTrigger in C#).",
+                "dim", 3.0f);
+    }
+
+    void sync(InspectorUi& ui, ToolsState& state, EditorUiKit&) override
+    {
+        if (!m_counts.isValid())
+        {
+            return;
+        }
+        const AnimatorData& animator = state.animatorEditor.animator;
+        ui.scene().get<scene::UiText>(m_counts).text =
+            std::format("{} states, {} transitions, {} parameters", animator.states.size(), animator.transitions.size(),
+                        animator.parameters.size());
+        ui.scene().get<scene::UiText>(m_entry).text = animator.entry.empty() ? std::string{} : std::format("Starts in {}", animator.entry);
+    }
+
+    void answer(InspectorUi& ui, ToolsState& state, EditorUiKit&) override
+    {
+        if (m_open.entity.isValid() && ui.panel.world().wasClicked(m_open.entity))
+        {
+            state.showAnimator = true;
+            ImGui::SetWindowFocus(animatorWindow);
+        }
+    }
+
+private:
+    Entity m_counts;
+    Entity m_entry;
+    Button m_open;
+};
+
+// A state or a transition chosen in the graph of the Animator panel.
+class AnimatorElementPage final : public InspectorPage
+{
+public:
+    std::string signature(ToolsState& state) override
+    {
+        AnimatorEditor& editor = state.animatorEditor;
+        clampSelection(editor);
+        const AnimatorData& animator = editor.animator;
+        std::string text = std::format("{}|{}|{}", static_cast<int>(editor.selected), editor.index, animator.parameters.empty());
+        if (editor.selected == AnimatorElement::State && editor.index >= 0)
+        {
+            const AnimatorState& node = animator.states[static_cast<std::size_t>(editor.index)];
+            text += std::format("|{}|{}|", static_cast<int>(node.blend), node.motions.size());
+            for (const AnimatorTransition& leaving : animator.transitions)
             {
-                node.motions.push_back({});
+                text += leaving.from == node.name ? leaving.to + "," : std::string{};
             }
-            changed |= drawAssetPicker(state, "##clip", asset::AssetType::AnimationClip, node.motions.front().clip);
+        }
+        else if (editor.selected == AnimatorElement::Transition && editor.index >= 0)
+        {
+            const AnimatorTransition& transition = animator.transitions[static_cast<std::size_t>(editor.index)];
+            text += std::format("|{}|{}|{}|{}", transition.from, transition.to, transition.conditions.size(), transition.exitTime >= 0.0f);
+        }
+        return text;
+    }
+
+    void build(InspectorUi& ui, ToolsState& state, EditorUiKit& kit) override
+    {
+        const ThemeColors& colors = themeColors();
+        AnimatorEditor& editor = state.animatorEditor;
+        *this = AnimatorElementPage{};
+        const asset::AssetInfo* const info = state.database != nullptr ? state.database->find(editor.asset) : nullptr;
+        const bool isState = editor.selected == AnimatorElement::State;
+        if (editor.index < 0 || (!isState && editor.selected != AnimatorElement::Transition))
+        {
+            return;
+        }
+        ui.heading(kit, icons::Workflow, colors.animation, isState ? "State" : "Transition",
+                   std::format("in {}", info != nullptr ? info->name : std::string("the animator")));
+        const Entity top = ui.actions(nullptr);
+        m_back = ui.action(kit, top, Icon::Close, "Show the Selection Again");
+        if (isState)
+        {
+            buildState(ui, state, kit, editor.animator.states[static_cast<std::size_t>(editor.index)]);
         }
         else
         {
-            propertyName(node.blend == AnimatorBlend::Linear ? "Parameter" : "Parameter X");
-            changed |= parameterCombo("##parameter", animator, node.parameter, true);
-            if (node.blend == AnimatorBlend::Planar)
-            {
-                propertyName("Parameter Y");
-                changed |= parameterCombo("##parameterY", animator, node.parameterY, true);
-            }
+            buildTransition(ui, state, kit, editor.animator.transitions[static_cast<std::size_t>(editor.index)]);
         }
-        propertyName("Sprite Animation");
-        ImGui::SetNextItemWidth(-FLT_MIN);
-        ImGui::InputTextWithHint("##sprite", "none", &node.spriteAnimation);
-        changed |= ImGui::IsItemDeactivatedAfterEdit();
-        ImGui::SetItemTooltip("A named animation that the SpriteAnimator of the entity plays in this state");
-        propertyName("Speed");
-        ImGui::SetNextItemWidth(-FLT_MIN);
-        ImGui::DragFloat("##speed", &node.speed, 0.01f, -10.0f, 10.0f, "%.2f");
-        changed |= ImGui::IsItemDeactivatedAfterEdit();
-        propertyName("Speed Parameter");
-        changed |= parameterCombo("##speedParameter", animator, node.speedParameter, true, "none");
-        ImGui::SetItemTooltip("Multiplies the speed");
-        propertyName("Loop");
-        changed |= ImGui::Checkbox("##loop", &node.loop);
-        endProperties();
+        m_error = ui.note(nullptr, "", "error", 2.0f);
+        m_built = true;
     }
 
-    if (node.blend != AnimatorBlend::None)
+    void sync(InspectorUi& ui, ToolsState& state, EditorUiKit&) override
     {
-        ImGui::SeparatorText(node.blend == AnimatorBlend::Linear ? "Clips along the parameter" : "Clips on the plane");
-        std::optional<std::size_t> removed;
-        const float numberWidth = ImGui::GetFontSize() * (node.blend == AnimatorBlend::Linear ? 4.5f : 8.0f);
-        for (std::size_t motion = 0; motion < node.motions.size(); ++motion)
+        AnimatorEditor& editor = state.animatorEditor;
+        if (!m_built || editor.index < 0)
         {
-            ImGui::PushID(static_cast<int>(motion));
-            asset::AnimatorMotion& item = node.motions[motion];
-            ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - numberWidth - toolButtonWidth() -
-                                    ImGui::GetStyle().ItemSpacing.x * 2.0f);
-            changed |= drawAssetPicker(state, "##clip", asset::AssetType::AnimationClip, item.clip);
-            ImGui::SameLine();
-            ImGui::SetNextItemWidth(numberWidth);
-            if (node.blend == AnimatorBlend::Linear)
+            return;
+        }
+        ui.scene().get<scene::UiText>(m_error).text = editor.error;
+        ui.scene().get<scene::UiRect>(m_error).visible = !editor.error.empty();
+        if (editor.selected == AnimatorElement::State)
+        {
+            syncState(ui, state, editor.animator.states[static_cast<std::size_t>(editor.index)]);
+        }
+        else if (editor.selected == AnimatorElement::Transition)
+        {
+            syncTransition(ui, editor.animator, editor.animator.transitions[static_cast<std::size_t>(editor.index)]);
+        }
+    }
+
+    void answer(InspectorUi& ui, ToolsState& state, EditorUiKit&) override
+    {
+        AnimatorEditor& editor = state.animatorEditor;
+        if (!m_built || editor.index < 0)
+        {
+            return;
+        }
+        const ui::UiWorld& world = ui.panel.world();
+        if (world.wasClicked(m_back.entity))
+        {
+            editor.inspecting = false;
+            return;
+        }
+        const bool done = editor.selected == AnimatorElement::State
+                              ? answerState(ui, state, editor.animator.states[static_cast<std::size_t>(editor.index)])
+                              : answerTransition(ui, state, editor.animator.transitions[static_cast<std::size_t>(editor.index)]);
+        if (done)
+        {
+            return;
+        }
+        // Saved once a change is over, as one step of the undo history of the panel.
+        const bool busy = world.held().isValid() || world.isEditing();
+        if (m_dirty && !busy)
+        {
+            commit(state);
+            m_dirty = false;
+        }
+    }
+
+private:
+    struct MotionRow
+    {
+        Entity clip;
+        std::vector<Entity> numbers;
+        Button remove;
+        std::vector<asset::AssetId> clips;
+    };
+    struct ConditionRow
+    {
+        Entity parameter;
+        std::vector<std::string> names;
+        Entity test;
+        std::vector<AnimatorTest> tests;
+        Entity value;
+        Button remove;
+    };
+
+    // A row of controls placed by hand from the right: the first takes what the others leave.
+    Entity controlRow(InspectorUi& ui, Section& section)
+    {
+        const Entity row = ui.add(section.card, "Row", rects::wide(ui.line));
+        section.lines.push_back(Line{.entity = row});
+        return row;
+    }
+
+    Entity placed(InspectorUi& ui, Entity row, float right, float width)
+    {
+        return ui.add(row, "Control",
+                      scene::UiRect{.anchorMin = {1.0f, 0.0f}, .anchorMax = {1.0f, 1.0f}, .offsetMin = {-right - width, 2.0f},
+                                    .offsetMax = {-right, -2.0f}});
+    }
+
+    void buildState(InspectorUi& ui, ToolsState& state, EditorUiKit& kit, const AnimatorState& node)
+    {
+        static_cast<void>(state);
+        const std::array<std::string_view, 1> one{""};
+        Section& card = ui.card(kit, "State", EntityIcon{icons::Workflow, themeColors().animation});
+        m_card = ui.sections.size() - 1;
+        const FormRow nameRow = ui.formRow(card, "Name");
+        m_name = ui.textField(nameRow.editor);
+        const FormRow entryRow = ui.formRow(card, "Entry State");
+        m_entry = ui.toggle(entryRow.editor);
+        ui.tooltip(entryRow.editor, "The state the animator starts in");
+        const FormRow motionRow = ui.formRow(card, "Motion");
+        m_blend = ui.choice(motionRow.editor, {"Clip", "Blend Tree 1D", "Blend Tree 2D"});
+        if (node.blend == AnimatorBlend::None)
+        {
+            const FormRow clipRow = ui.formRow(card, "Clip");
+            m_clip = ui.choice(clipRow.editor);
+            const math::Vec4 accent = linearColor(themeColors().accent);
+            ui.scene().add<scene::UiDropTarget>(m_clip, scene::UiDropTarget{.accepts = {clipDrop()},
+                                                                            .highlightColor = math::Vec4{accent.x, accent.y, accent.z, 0.35f}});
+        }
+        else
+        {
+            const FormRow parameterRow = ui.formRow(card, node.blend == AnimatorBlend::Linear ? "Parameter" : "Parameter X");
+            m_parameter = ui.choice(parameterRow.editor);
+            if (node.blend == AnimatorBlend::Planar)
             {
-                ImGui::DragFloat("##threshold", &item.threshold, 0.01f, 0.0f, 0.0f, "%.2f");
-                ImGui::SetItemTooltip("Where the clip plays alone, along %s", node.parameter.c_str());
+                const FormRow yRow = ui.formRow(card, "Parameter Y");
+                m_parameterY = ui.choice(yRow.editor);
             }
-            else
+        }
+        const FormRow spriteRow = ui.formRow(card, "Sprite Animation");
+        m_sprite = ui.textField(spriteRow.editor, "none");
+        ui.tooltip(spriteRow.editor, "A named animation that the SpriteAnimator of the entity plays in this state");
+        const FormRow speedRow = ui.formRow(card, "Speed");
+        m_speed = ui.numbers(speedRow.editor, one, {.minValue = -10.0f, .maxValue = 10.0f, .dragSpeed = 0.01f, .decimals = 2}).front();
+        const FormRow speedParameterRow = ui.formRow(card, "Speed Parameter");
+        m_speedParameter = ui.choice(speedParameterRow.editor);
+        ui.tooltip(speedParameterRow.editor, "Multiplies the speed");
+        const FormRow loopRow = ui.formRow(card, "Loop");
+        m_loop = ui.toggle(loopRow.editor);
+
+        if (node.blend != AnimatorBlend::None)
+        {
+            Section& clips = ui.card(kit, node.blend == AnimatorBlend::Linear ? "Clips along the parameter" : "Clips on the plane");
+            const float button = ui.line - 6.0f;
+            const float numbers = ui.font * (node.blend == AnimatorBlend::Linear ? 4.5f : 8.0f);
+            const std::array<std::string_view, 2> axes{"x", "y"};
+            for (std::size_t index = 0; index < node.motions.size(); ++index)
             {
-                std::array<float, 2> position{item.position.x, item.position.y};
-                if (dragVector("##position", position.data(), 2, 0.01f, "%.2f"))
+                MotionRow motion;
+                const Entity row = controlRow(ui, clips);
+                const Entity clipBox = ui.add(row, "Clip",
+                                              scene::UiRect{.anchorMin = {0.0f, 0.0f}, .anchorMax = {1.0f, 1.0f},
+                                                            .offsetMin = {ui.font * 0.35f, 2.0f}, .offsetMax = {-button - numbers - ui.font * 0.6f, -2.0f}});
+                motion.clip = ui.choice(clipBox);
+                const Entity numberBox = placed(ui, row, button + ui.font * 0.3f, numbers);
+                if (node.blend == AnimatorBlend::Linear)
                 {
-                    item.position = {position[0], position[1]};
+                    motion.numbers = ui.numbers(numberBox, one, {.dragSpeed = 0.01f, .decimals = 2});
+                    ui.tooltip(numberBox, std::format("Where the clip plays alone, along {}", node.parameter));
                 }
-                ImGui::SetItemTooltip("Where the clip plays alone: %s, %s", node.parameter.c_str(), node.parameterY.c_str());
+                else
+                {
+                    motion.numbers = ui.numbers(numberBox, axes, {.dragSpeed = 0.01f, .decimals = 2});
+                    ui.tooltip(numberBox, std::format("Where the clip plays alone: {}, {}", node.parameter, node.parameterY));
+                }
+                motion.remove = ui.toolButton(kit, row, Icon::Trash,
+                                              scene::UiRect{.anchorMin = {1.0f, 0.5f}, .anchorMax = {1.0f, 0.5f},
+                                                            .offsetMin = {-button, -button * 0.5f}, .offsetMax = {0.0f, button * 0.5f}});
+                ui.tooltip(motion.remove.entity, "Remove the clip");
+                m_motions.push_back(std::move(motion));
             }
-            changed |= ImGui::IsItemDeactivatedAfterEdit();
-            ImGui::SameLine();
-            if (toolButton("remove", icons::Trash, "Remove the clip"))
+            const Entity actions = ui.actions(&clips);
+            m_addClip = ui.action(kit, actions, Icon::Plus, "Add Clip");
+            ui.tooltip(m_addClip.entity, "Or drop animation clips on this button");
+            const math::Vec4 accent = linearColor(themeColors().accent);
+            ui.scene().add<scene::UiDropTarget>(m_addClip.entity, scene::UiDropTarget{.accepts = {clipDrop()},
+                                                                                     .highlightColor = math::Vec4{accent.x, accent.y, accent.z, 0.35f}});
+        }
+
+        // The ways out of the state, in the order they are checked.
+        Section& transitions = ui.card(kit, "Transitions");
+        const AnimatorData& animator = state.animatorEditor.animator;
+        for (std::size_t index = 0; index < animator.transitions.size(); ++index)
+        {
+            const AnimatorTransition& leaving = animator.transitions[index];
+            if (leaving.from != node.name)
             {
-                removed = motion;
+                continue;
             }
-            ImGui::PopID();
+            const Entity row = ui.add(transitions.card, "Transition", rects::wide(ui.line), "soft_row");
+            ui.scene().add<scene::UiImage>(row);
+            ui.scene().add<scene::UiButton>(row);
+            ui.text(row, rects::whole(math::Vec4{ui.font * 0.6f, 0.0f, ui.font * 0.6f, 0.0f}),
+                    std::format("-> {}   {}", leaving.to, transitionText(leaving)), "text");
+            transitions.lines.push_back(Line{.entity = row});
+            m_leaving.emplace_back(row, index);
+        }
+        if (m_leaving.empty())
+        {
+            ui.note(&transitions, "None: right-click the state in the graph, then Make Transition.", "dim", 2.0f);
+        }
+        const Entity actions = ui.actions(nullptr);
+        m_delete = ui.action(kit, actions, Icon::Trash, "Delete State");
+    }
+
+    void syncState(InspectorUi& ui, ToolsState& state, const AnimatorState& node)
+    {
+        const AnimatorData& animator = state.animatorEditor.animator;
+        const ui::UiWorld& world = ui.panel.world();
+        ui.scene().get<scene::UiText>(ui.sections[m_card].title).text = node.name;
+        if (world.editedField() != m_name)
+        {
+            ui.scene().get<scene::UiText>(m_name).text = node.name;
+        }
+        ui.setToggle(m_entry, node.name == animator.entry);
+        ui.scene().get<scene::UiDropdown>(m_blend).selected = static_cast<std::int32_t>(node.blend);
+        if (m_clip.isValid())
+        {
+            fillClips(ui, state, m_clip, node.motions.empty() ? asset::AssetId{} : node.motions.front().clip, m_clips);
+        }
+        if (m_parameter.isValid())
+        {
+            fillParameters(ui, m_parameter, animator, node.parameter, true, nullptr, m_parameters);
+        }
+        if (m_parameterY.isValid())
+        {
+            fillParameters(ui, m_parameterY, animator, node.parameterY, true, nullptr, m_parametersY);
+        }
+        if (world.editedField() != m_sprite)
+        {
+            ui.scene().get<scene::UiText>(m_sprite).text = node.spriteAnimation;
+        }
+        if (world.editedField() != m_speed && world.held() != m_speed)
+        {
+            ui.scene().get<scene::UiNumberField>(m_speed).value = node.speed;
+        }
+        fillParameters(ui, m_speedParameter, animator, node.speedParameter, true, "none", m_speedParameters);
+        ui.setToggle(m_loop, node.loop);
+        for (std::size_t index = 0; index < m_motions.size() && index < node.motions.size(); ++index)
+        {
+            MotionRow& motion = m_motions[index];
+            const asset::AnimatorMotion& item = node.motions[index];
+            fillClips(ui, state, motion.clip, item.clip, motion.clips);
+            const std::array<float, 2> values{node.blend == AnimatorBlend::Linear ? item.threshold : item.position.x, item.position.y};
+            for (std::size_t axis = 0; axis < motion.numbers.size(); ++axis)
+            {
+                if (world.editedField() != motion.numbers[axis] && world.held() != motion.numbers[axis])
+                {
+                    ui.scene().get<scene::UiNumberField>(motion.numbers[axis]).value = values[axis];
+                }
+            }
+        }
+    }
+
+    // Answers whether the state went, which ends the page.
+    [[nodiscard]] bool answerState(InspectorUi& ui, ToolsState& state, AnimatorState& node)
+    {
+        AnimatorData& animator = state.animatorEditor.animator;
+        const ui::UiWorld& world = ui.panel.world();
+        const auto chosen = [&](Entity list) { return ui.scene().get<scene::UiDropdown>(list).selected; };
+        if (world.editedField() == m_name)
+        {
+            m_naming = true;
+        }
+        else if (std::exchange(m_naming, false) && !ui.panel.input().cancelPressed)
+        {
+            const std::string typed = ui.scene().get<scene::UiText>(m_name).text;
+            if (!typed.empty() && typed != node.name && animator.findState(typed) == nullptr)
+            {
+                renameState(animator, node.name, typed);
+                m_dirty = true;
+            }
+        }
+        if (world.wasChanged(m_entry) && ui.scene().get<scene::UiToggle>(m_entry).value)
+        {
+            animator.entry = node.name;
+            m_dirty = true;
+        }
+        if (world.wasChanged(m_blend) && chosen(m_blend) >= 0)
+        {
+            const auto blend = static_cast<AnimatorBlend>(chosen(m_blend));
+            if (blend != node.blend)
+            {
+                node.blend = blend;
+                if (blend != AnimatorBlend::None && node.parameter.empty())
+                {
+                    node.parameter = numberParameter(animator, 0, blend == AnimatorBlend::Linear ? "Speed" : "X");
+                }
+                if (blend == AnimatorBlend::Planar && node.parameterY.empty())
+                {
+                    node.parameterY = numberParameter(animator, 1, "Y");
+                }
+                m_dirty = true;
+            }
+        }
+        if (m_clip.isValid())
+        {
+            std::optional<asset::AssetId> clip;
+            if (world.wasChanged(m_clip) && chosen(m_clip) >= 0 && static_cast<std::size_t>(chosen(m_clip)) < m_clips.size())
+            {
+                clip = m_clips[static_cast<std::size_t>(chosen(m_clip))];
+            }
+            if (world.wasDropped(m_clip) && world.dropped() != nullptr)
+            {
+                if (const std::optional<core::Uuid> uuid = core::Uuid::parse(world.dropped()->data))
+                {
+                    clip = asset::AssetId{*uuid};
+                }
+            }
+            if (clip)
+            {
+                if (node.motions.empty())
+                {
+                    node.motions.push_back({});
+                }
+                node.motions.front().clip = *clip;
+                m_dirty = true;
+            }
+        }
+        const auto parameterChosen = [&](Entity list, const std::vector<std::string>& names, std::string& value) {
+            if (list.isValid() && world.wasChanged(list) && chosen(list) >= 0 && static_cast<std::size_t>(chosen(list)) < names.size())
+            {
+                value = names[static_cast<std::size_t>(chosen(list))];
+                m_dirty = true;
+            }
+        };
+        parameterChosen(m_parameter, m_parameters, node.parameter);
+        parameterChosen(m_parameterY, m_parametersY, node.parameterY);
+        parameterChosen(m_speedParameter, m_speedParameters, node.speedParameter);
+        if (world.editedField() == m_sprite)
+        {
+            m_typingSprite = true;
+        }
+        else if (std::exchange(m_typingSprite, false) && !ui.panel.input().cancelPressed)
+        {
+            node.spriteAnimation = ui.scene().get<scene::UiText>(m_sprite).text;
+            m_dirty = true;
+        }
+        if (world.wasChanged(m_speed))
+        {
+            node.speed = ui.scene().get<scene::UiNumberField>(m_speed).value;
+            m_dirty = true;
+        }
+        if (world.wasChanged(m_loop))
+        {
+            node.loop = ui.scene().get<scene::UiToggle>(m_loop).value;
+            m_dirty = true;
+        }
+
+        // The clips of a blend.
+        std::optional<std::size_t> removed;
+        for (std::size_t index = 0; index < m_motions.size() && index < node.motions.size(); ++index)
+        {
+            MotionRow& motion = m_motions[index];
+            asset::AnimatorMotion& item = node.motions[index];
+            if (world.wasChanged(motion.clip) && chosen(motion.clip) >= 0 &&
+                static_cast<std::size_t>(chosen(motion.clip)) < motion.clips.size())
+            {
+                item.clip = motion.clips[static_cast<std::size_t>(chosen(motion.clip))];
+                m_dirty = true;
+            }
+            for (std::size_t axis = 0; axis < motion.numbers.size(); ++axis)
+            {
+                if (!world.wasChanged(motion.numbers[axis]))
+                {
+                    continue;
+                }
+                const float value = ui.scene().get<scene::UiNumberField>(motion.numbers[axis]).value;
+                if (node.blend == AnimatorBlend::Linear)
+                {
+                    item.threshold = value;
+                }
+                else
+                {
+                    (axis == 0 ? item.position.x : item.position.y) = value;
+                }
+                m_dirty = true;
+            }
+            if (world.wasClicked(motion.remove.entity))
+            {
+                removed = index;
+            }
         }
         if (removed)
         {
             node.motions.erase(node.motions.begin() + static_cast<std::ptrdiff_t>(*removed));
-            changed = true;
+            m_dirty = true;
         }
-        if (labelButton(icons::Plus, "Add Clip"))
+        if (m_addClip.entity.isValid())
         {
-            asset::AnimatorMotion added;
-            if (!node.motions.empty())
+            if (world.wasClicked(m_addClip.entity))
             {
-                added.threshold = node.motions.back().threshold + 1.0f;
-                added.position = node.motions.back().position + math::Vec2{1.0f, 0.0f};
+                asset::AnimatorMotion added;
+                if (!node.motions.empty())
+                {
+                    added.threshold = node.motions.back().threshold + 1.0f;
+                    added.position = node.motions.back().position + math::Vec2{1.0f, 0.0f};
+                }
+                node.motions.push_back(added);
+                m_dirty = true;
             }
-            node.motions.push_back(added);
-            changed = true;
+            if (world.wasDropped(m_addClip.entity) && world.dropped() != nullptr)
+            {
+                if (const std::optional<core::Uuid> uuid = core::Uuid::parse(world.dropped()->data))
+                {
+                    node.motions.push_back({.clip = asset::AssetId{*uuid},
+                                            .threshold = node.motions.empty() ? 0.0f : node.motions.back().threshold + 1.0f});
+                    m_dirty = true;
+                }
+            }
         }
-        if (const std::optional<asset::AssetId> dropped = acceptDroppedAsset(asset::AssetType::AnimationClip))
+        for (const auto& [row, index] : m_leaving)
         {
-            node.motions.push_back({.clip = *dropped, .threshold = node.motions.empty() ? 0.0f : node.motions.back().threshold + 1.0f});
-            changed = true;
+            if (world.wasClicked(row))
+            {
+                select(state, AnimatorElement::Transition, static_cast<std::int32_t>(index));
+                return true;
+            }
         }
-        ImGui::SetItemTooltip("Or drop animation clips on this button");
+        if (world.wasClicked(m_delete.entity))
+        {
+            deleteSelection(state);
+            return true;
+        }
+        return false;
     }
 
-    // The ways out of the state, in the order they are checked.
-    ImGui::SeparatorText("Transitions");
-    bool any = false;
-    for (std::size_t transition = 0; transition < animator.transitions.size(); ++transition)
+    void buildTransition(InspectorUi& ui, ToolsState& state, EditorUiKit& kit, const AnimatorTransition& transition)
     {
-        const AnimatorTransition& leaving = animator.transitions[transition];
-        if (leaving.from != node.name)
+        const AnimatorData& animator = state.animatorEditor.animator;
+        const std::array<std::string_view, 1> one{""};
+        const Entity route = ui.note(nullptr, std::format("{}  ->  {}", transition.from.empty() ? "Any State" : transition.from, transition.to),
+                                     "text");
+        ui.scene().get<scene::UiText>(route).font = EditorUiKit::boldFont();
+        Section& card = ui.card(kit, "Transition", EntityIcon{icons::Workflow, themeColors().animation});
+        const FormRow durationRow = ui.formRow(card, "Duration");
+        m_duration = ui.numbers(durationRow.editor, one, {.minValue = 0.0f, .maxValue = 10.0f, .dragSpeed = 0.01f, .decimals = 2, .format = "{} s"})
+                         .front();
+        ui.tooltip(durationRow.editor, "Seconds of the crossfade from one state to the other");
+        const FormRow exitRow = ui.formRow(card, "Exit Time");
+        m_hasExit = ui.toggle(exitRow.editor);
+        ui.tooltip(exitRow.editor, "Waits until the state reaches a point of its cycle: 1 is its end");
+        if (transition.exitTime >= 0.0f)
         {
-            continue;
-        }
-        any = true;
-        ImGui::PushID(static_cast<int>(transition));
-        if (ImGui::Selectable(std::format("-> {}   {}", leaving.to, transitionText(leaving)).c_str()))
-        {
-            select(state, AnimatorElement::Transition, static_cast<std::int32_t>(transition));
-        }
-        ImGui::PopID();
-    }
-    if (!any)
-    {
-        ImGui::TextDisabled("None: right-click the state in the graph, then Make Transition.");
-    }
-    ImGui::Spacing();
-    if (labelButton(icons::Trash, "Delete State"))
-    {
-        deleteSelection(state);
-        return;
-    }
-    if (changed)
-    {
-        commit(state);
-    }
-}
-
-void drawTransitionInspector(ToolsState& state, std::size_t index)
-{
-    AnimatorEditor& editor = state.animatorEditor;
-    AnimatorData& animator = editor.animator;
-    AnimatorTransition& transition = animator.transitions[index];
-    const ThemeColors& colors = themeColors();
-    bool changed = false;
-
-    ImGui::AlignTextToFramePadding();
-    ImGui::TextUnformatted(transition.from.empty() ? "Any State" : transition.from.c_str());
-    ImGui::SameLine();
-    ImGui::TextColored(uiColor(colors.textDim), "->");
-    ImGui::SameLine();
-    ImGui::TextUnformatted(transition.to.c_str());
-
-    if (beginProperties("transition"))
-    {
-        propertyName("Duration");
-        ImGui::SetNextItemWidth(-FLT_MIN);
-        ImGui::DragFloat("##duration", &transition.duration, 0.01f, 0.0f, 10.0f, "%.2f s");
-        changed |= ImGui::IsItemDeactivatedAfterEdit();
-        ImGui::SetItemTooltip("Seconds of the crossfade from one state to the other");
-        propertyName("Exit Time");
-        bool exit = transition.exitTime >= 0.0f;
-        if (ImGui::Checkbox("##hasExit", &exit))
-        {
-            transition.exitTime = exit ? 1.0f : -1.0f;
-            changed = true;
-        }
-        ImGui::SetItemTooltip("Waits until the state reaches a point of its cycle: 1 is its end");
-        if (exit)
-        {
-            ImGui::SameLine();
-            ImGui::SetNextItemWidth(-FLT_MIN);
-            ImGui::DragFloat("##exit", &transition.exitTime, 0.01f, 0.0f, 10.0f, "%.2f");
-            changed |= ImGui::IsItemDeactivatedAfterEdit();
+            const FormRow atRow = ui.formRow(card, "");
+            m_exit = ui.numbers(atRow.editor, one, {.minValue = 0.0f, .maxValue = 10.0f, .dragSpeed = 0.01f, .decimals = 2}).front();
         }
         else if (transition.conditions.empty())
         {
-            ImGui::SameLine();
-            ImGui::TextDisabled("at the end, without conditions");
+            ui.note(&card, "At the end, without conditions.");
         }
-        endProperties();
-    }
 
-    ImGui::SeparatorText("Conditions");
-    std::optional<std::size_t> removed;
-    const float valueWidth = ImGui::GetFontSize() * 4.0f;
-    const float testWidth = ImGui::GetFontSize() * 5.5f;
-    for (std::size_t condition = 0; condition < transition.conditions.size(); ++condition)
-    {
-        asset::AnimatorCondition& item = transition.conditions[condition];
-        ImGui::PushID(static_cast<int>(condition));
-        const asset::AnimatorParameter* parameter = animator.findParameter(item.parameter);
-        ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - testWidth - valueWidth - toolButtonWidth() -
-                                ImGui::GetStyle().ItemSpacing.x * 3.0f);
-        if (parameterCombo("##parameter", animator, item.parameter, false))
+        Section& conditions = ui.card(kit, "Conditions");
+        const float button = ui.line - 6.0f;
+        const float valueWidth = ui.font * 4.5f;
+        const float testWidth = ui.font * 6.5f;
+        for (std::size_t index = 0; index < transition.conditions.size(); ++index)
         {
-            parameter = animator.findParameter(item.parameter);
-            if (parameter != nullptr && !asset::testFits(item.test, parameter->type))
-            {
-                item.test = firstFittingTest(parameter->type);
-            }
-            changed = true;
+            ConditionRow condition;
+            const Entity row = controlRow(ui, conditions);
+            const Entity parameterBox =
+                ui.add(row, "Parameter",
+                       scene::UiRect{.anchorMin = {0.0f, 0.0f}, .anchorMax = {1.0f, 1.0f}, .offsetMin = {ui.font * 0.35f, 2.0f},
+                                     .offsetMax = {-button - valueWidth - testWidth - ui.font * 0.9f, -2.0f}});
+            condition.parameter = ui.choice(parameterBox);
+            condition.test = ui.choice(placed(ui, row, button + valueWidth + ui.font * 0.6f, testWidth));
+            condition.value = ui.numbers(placed(ui, row, button + ui.font * 0.3f, valueWidth), one, {.dragSpeed = 0.01f, .decimals = 2}).front();
+            condition.remove = ui.toolButton(kit, row, Icon::Trash,
+                                             scene::UiRect{.anchorMin = {1.0f, 0.5f}, .anchorMax = {1.0f, 0.5f},
+                                                           .offsetMin = {-button, -button * 0.5f}, .offsetMax = {0.0f, button * 0.5f}});
+            ui.tooltip(condition.remove.entity, "Remove the condition");
+            m_conditions.push_back(std::move(condition));
         }
-        ImGui::SameLine();
-        ImGui::SetNextItemWidth(testWidth);
-        if (beginCombo("##test", testLabel(item.test)))
+        if (animator.parameters.empty())
         {
-            for (const AnimatorTest test : {AnimatorTest::Greater, AnimatorTest::Less, AnimatorTest::Equals, AnimatorTest::NotEquals,
-                                            AnimatorTest::IsTrue, AnimatorTest::IsFalse, AnimatorTest::Triggered})
-            {
-                if (parameter != nullptr && !asset::testFits(test, parameter->type))
-                {
-                    continue;
-                }
-                if (ImGui::Selectable(testLabel(test), test == item.test))
-                {
-                    item.test = test;
-                    changed = true;
-                }
-            }
-            ImGui::EndCombo();
-        }
-        ImGui::SameLine();
-        ImGui::SetNextItemWidth(valueWidth);
-        if (item.test <= AnimatorTest::NotEquals)
-        {
-            if (parameter != nullptr && parameter->type == AnimatorParameterType::Integer)
-            {
-                int whole = static_cast<int>(std::lround(item.value));
-                if (ImGui::DragInt("##value", &whole))
-                {
-                    item.value = static_cast<float>(whole);
-                }
-            }
-            else
-            {
-                ImGui::DragFloat("##value", &item.value, 0.01f, 0.0f, 0.0f, "%.2f");
-            }
-            changed |= ImGui::IsItemDeactivatedAfterEdit();
+            ui.note(&conditions, "Add parameters in the Animator panel to check them here.", "dim", 2.0f);
         }
         else
         {
-            ImGui::Dummy(ImVec2(valueWidth, ImGui::GetFrameHeight()));
+            m_addCondition = ui.action(kit, ui.actions(&conditions), Icon::Plus, "Add Condition");
         }
-        ImGui::SameLine();
-        if (toolButton("remove", icons::Trash, "Remove the condition"))
-        {
-            removed = condition;
-        }
-        ImGui::PopID();
-    }
-    if (removed)
-    {
-        transition.conditions.erase(transition.conditions.begin() + static_cast<std::ptrdiff_t>(*removed));
-        changed = true;
-    }
-    if (animator.parameters.empty())
-    {
-        ImGui::TextDisabled("Add parameters in the Animator panel to check them here.");
-    }
-    else if (labelButton(icons::Plus, "Add Condition"))
-    {
-        const asset::AnimatorParameter& first = animator.parameters.front();
-        transition.conditions.push_back({.parameter = first.name, .test = firstFittingTest(first.type)});
-        changed = true;
+
+        Section& order = ui.card(kit, "Order");
+        ui.note(&order, "Transitions are checked in order: the first one whose conditions are met is taken.", "dim", 2.0f);
+        const Entity moves = ui.actions(&order);
+        m_earlier = ui.action(kit, moves, Icon::ArrowUpDown, "Earlier");
+        m_later = ui.action(kit, moves, Icon::ArrowUpDown, "Later");
+        const Entity actions = ui.actions(nullptr);
+        m_delete = ui.action(kit, actions, Icon::Trash, "Delete Transition");
     }
 
-    ImGui::SeparatorText("Order");
-    ImGui::TextWrapped("Transitions are checked in order: the first one whose conditions are met is taken.");
-    if (labelButton(icons::ArrowUpDown, "Earlier", 0.0f, index > 0))
+    void syncTransition(InspectorUi& ui, const AnimatorData& animator, const AnimatorTransition& transition)
     {
-        std::swap(animator.transitions[index], animator.transitions[index - 1]);
-        editor.index = static_cast<std::int32_t>(index - 1);
-        commit(state);
-        return;
+        const ui::UiWorld& world = ui.panel.world();
+        const auto number = [&](Entity box, float value) {
+            if (box.isValid() && world.editedField() != box && world.held() != box)
+            {
+                ui.scene().get<scene::UiNumberField>(box).value = value;
+            }
+        };
+        number(m_duration, transition.duration);
+        ui.setToggle(m_hasExit, transition.exitTime >= 0.0f);
+        number(m_exit, transition.exitTime);
+        for (std::size_t index = 0; index < m_conditions.size() && index < transition.conditions.size(); ++index)
+        {
+            ConditionRow& row = m_conditions[index];
+            const asset::AnimatorCondition& item = transition.conditions[index];
+            fillParameters(ui, row.parameter, animator, item.parameter, false, nullptr, row.names);
+            // The tests that fit the parameter.
+            const asset::AnimatorParameter* const parameter = animator.findParameter(item.parameter);
+            row.tests.clear();
+            std::vector<std::string> labels;
+            for (const AnimatorTest test : {AnimatorTest::Greater, AnimatorTest::Less, AnimatorTest::Equals, AnimatorTest::NotEquals,
+                                            AnimatorTest::IsTrue, AnimatorTest::IsFalse, AnimatorTest::Triggered})
+            {
+                if (parameter == nullptr || asset::testFits(test, parameter->type))
+                {
+                    row.tests.push_back(test);
+                    labels.emplace_back(testLabel(test));
+                }
+            }
+            scene::UiDropdown& tests = ui.scene().get<scene::UiDropdown>(row.test);
+            if (tests.options != labels)
+            {
+                tests.options = std::move(labels);
+            }
+            const auto found = std::ranges::find(row.tests, item.test);
+            tests.selected = found != row.tests.end() ? static_cast<std::int32_t>(found - row.tests.begin()) : -1;
+            tests.placeholder = testLabel(item.test);
+            // Only the comparisons have a value; whole numbers for an integer.
+            const bool compared = item.test <= AnimatorTest::NotEquals;
+            ui.scene().get<scene::UiRect>(ui.scene().parent(row.value)).visible = compared;
+            scene::UiNumberField& value = ui.scene().get<scene::UiNumberField>(row.value);
+            const bool whole = parameter != nullptr && parameter->type == AnimatorParameterType::Integer;
+            value.step = whole ? 1.0f : 0.0f;
+            value.decimals = whole ? 0 : 2;
+            value.dragSpeed = whole ? 0.1f : 0.01f;
+            number(row.value, item.value);
+        }
     }
-    ImGui::SameLine();
-    if (labelButton(icons::ArrowUpDown, "Later", 0.0f, index + 1 < animator.transitions.size()))
+
+    [[nodiscard]] bool answerTransition(InspectorUi& ui, ToolsState& state, AnimatorTransition& transition)
     {
-        std::swap(animator.transitions[index], animator.transitions[index + 1]);
-        editor.index = static_cast<std::int32_t>(index + 1);
-        commit(state);
-        return;
+        AnimatorEditor& editor = state.animatorEditor;
+        AnimatorData& animator = editor.animator;
+        const ui::UiWorld& world = ui.panel.world();
+        const auto value = [&](Entity box) { return ui.scene().get<scene::UiNumberField>(box).value; };
+        if (world.wasChanged(m_duration))
+        {
+            transition.duration = std::max(value(m_duration), 0.0f);
+            m_dirty = true;
+        }
+        if (world.wasChanged(m_hasExit))
+        {
+            transition.exitTime = ui.scene().get<scene::UiToggle>(m_hasExit).value ? 1.0f : -1.0f;
+            m_dirty = true;
+        }
+        if (m_exit.isValid() && world.wasChanged(m_exit))
+        {
+            transition.exitTime = std::max(value(m_exit), 0.0f);
+            m_dirty = true;
+        }
+        std::optional<std::size_t> removed;
+        for (std::size_t index = 0; index < m_conditions.size() && index < transition.conditions.size(); ++index)
+        {
+            ConditionRow& row = m_conditions[index];
+            asset::AnimatorCondition& item = transition.conditions[index];
+            const std::int32_t parameterChosen = ui.scene().get<scene::UiDropdown>(row.parameter).selected;
+            if (world.wasChanged(row.parameter) && parameterChosen >= 0 && static_cast<std::size_t>(parameterChosen) < row.names.size())
+            {
+                item.parameter = row.names[static_cast<std::size_t>(parameterChosen)];
+                const asset::AnimatorParameter* const parameter = animator.findParameter(item.parameter);
+                if (parameter != nullptr && !asset::testFits(item.test, parameter->type))
+                {
+                    item.test = firstFittingTest(parameter->type);
+                }
+                m_dirty = true;
+            }
+            const std::int32_t testChosen = ui.scene().get<scene::UiDropdown>(row.test).selected;
+            if (world.wasChanged(row.test) && testChosen >= 0 && static_cast<std::size_t>(testChosen) < row.tests.size())
+            {
+                item.test = row.tests[static_cast<std::size_t>(testChosen)];
+                m_dirty = true;
+            }
+            if (world.wasChanged(row.value))
+            {
+                item.value = value(row.value);
+                m_dirty = true;
+            }
+            if (world.wasClicked(row.remove.entity))
+            {
+                removed = index;
+            }
+        }
+        if (removed)
+        {
+            transition.conditions.erase(transition.conditions.begin() + static_cast<std::ptrdiff_t>(*removed));
+            m_dirty = true;
+        }
+        if (m_addCondition.entity.isValid() && world.wasClicked(m_addCondition.entity) && !animator.parameters.empty())
+        {
+            const asset::AnimatorParameter& first = animator.parameters.front();
+            transition.conditions.push_back({.parameter = first.name, .test = firstFittingTest(first.type)});
+            m_dirty = true;
+        }
+        const auto index = static_cast<std::size_t>(editor.index);
+        ui.enable(m_earlier, index > 0);
+        ui.enable(m_later, index + 1 < animator.transitions.size());
+        if (world.wasClicked(m_earlier.entity) && index > 0)
+        {
+            std::swap(animator.transitions[index], animator.transitions[index - 1]);
+            editor.index = static_cast<std::int32_t>(index - 1);
+            commit(state);
+            return true;
+        }
+        if (world.wasClicked(m_later.entity) && index + 1 < animator.transitions.size())
+        {
+            std::swap(animator.transitions[index], animator.transitions[index + 1]);
+            editor.index = static_cast<std::int32_t>(index + 1);
+            commit(state);
+            return true;
+        }
+        if (world.wasClicked(m_delete.entity))
+        {
+            deleteSelection(state);
+            return true;
+        }
+        return false;
     }
-    ImGui::Spacing();
-    if (labelButton(icons::Trash, "Delete Transition"))
-    {
-        deleteSelection(state);
-        return;
-    }
-    if (changed)
-    {
-        commit(state);
-    }
-}
+
+    bool m_built = false;
+    Button m_back;
+    Entity m_error;
+    bool m_dirty = false;
+    // A state.
+    std::size_t m_card = 0;
+    Entity m_name;
+    bool m_naming = false;
+    Entity m_entry;
+    Entity m_blend;
+    Entity m_clip;
+    std::vector<asset::AssetId> m_clips;
+    Entity m_parameter;
+    std::vector<std::string> m_parameters;
+    Entity m_parameterY;
+    std::vector<std::string> m_parametersY;
+    Entity m_sprite;
+    bool m_typingSprite = false;
+    Entity m_speed;
+    Entity m_speedParameter;
+    std::vector<std::string> m_speedParameters;
+    Entity m_loop;
+    std::vector<MotionRow> m_motions;
+    Button m_addClip;
+    std::vector<std::pair<Entity, std::size_t>> m_leaving;
+    Button m_delete;
+    // A transition.
+    Entity m_duration;
+    Entity m_hasExit;
+    Entity m_exit;
+    std::vector<ConditionRow> m_conditions;
+    Button m_addCondition;
+    Button m_earlier;
+    Button m_later;
+};
 
 } // namespace
 
@@ -1639,87 +2106,14 @@ void drawAnimatorPanel(ToolsState& state, scene::Scene& scene)
     ImGui::End();
 }
 
-bool drawAnimatorElementInspector(ToolsState& state)
+std::unique_ptr<InspectorPage> makeAnimatorElementPage()
 {
-    AnimatorEditor& editor = state.animatorEditor;
-    // Choosing another entity or asset gives the inspector back to it.
-    if (editor.inspecting && (state.selection.active() != editor.inspectedEntity || state.selectedAsset != editor.inspectedAsset))
-    {
-        editor.inspecting = false;
-    }
-    clampSelection(editor);
-    if (!editor.inspecting || !state.showAnimator ||
-        (editor.selected != AnimatorElement::State && editor.selected != AnimatorElement::Transition))
-    {
-        return false;
-    }
-    const ThemeColors& colors = themeColors();
-    const asset::AssetInfo* const info = state.database != nullptr ? state.database->find(editor.asset) : nullptr;
-    ImGui::AlignTextToFramePadding();
-    iconLabel(icons::Workflow, colors.animation);
-    boldText(editor.selected == AnimatorElement::State ? "State" : "Transition");
-    ImGui::SameLine();
-    ImGui::TextDisabled("in %s", info != nullptr ? info->name.c_str() : "the animator");
-    alignRight(toolButtonWidth());
-    if (toolButton("back", icons::Close, "Show the selection again"))
-    {
-        editor.inspecting = false;
-        return false;
-    }
-    ImGui::Separator();
-    if (editor.selected == AnimatorElement::State)
-    {
-        drawStateInspector(state, static_cast<std::size_t>(editor.index));
-    }
-    else
-    {
-        drawTransitionInspector(state, static_cast<std::size_t>(editor.index));
-    }
-    if (!editor.error.empty())
-    {
-        ImGui::Spacing();
-        ImGui::TextColored(uiColor(colors.error), "%s", editor.error.c_str());
-    }
-    return true;
+    return std::make_unique<AnimatorElementPage>();
 }
 
-void drawAnimatorInspector(ToolsState& state)
+std::unique_ptr<InspectorPage> makeAnimatorPage()
 {
-    const ThemeColors& colors = themeColors();
-    const asset::AssetInfo* const info = state.database != nullptr ? state.database->find(state.selectedAsset) : nullptr;
-    const std::optional<asset::SourceFile> source =
-        state.database != nullptr ? state.database->sourceOf(state.selectedAsset) : std::nullopt;
-    if (info == nullptr || !source)
-    {
-        state.selectedAsset = {};
-        return;
-    }
-    loadAnimator(state, state.selectedAsset);
-    const AnimatorData& animator = state.animatorEditor.animator;
-    ImGui::AlignTextToFramePadding();
-    iconLabel(icons::Workflow, colors.animation);
-    boldText(info->name.c_str());
-    ImGui::TextDisabled("%s", source->path.c_str());
-    ImGui::Spacing();
-    if (!state.animatorEditor.error.empty())
-    {
-        ImGui::TextColored(uiColor(colors.error), "%s", state.animatorEditor.error.c_str());
-    }
-    ImGui::Text("%zu states, %zu transitions, %zu parameters", animator.states.size(), animator.transitions.size(),
-                animator.parameters.size());
-    if (!animator.entry.empty())
-    {
-        ImGui::Text("Starts in %s", animator.entry.c_str());
-    }
-    ImGui::Spacing();
-    if (labelButton(icons::Workflow, "Open in the Animator Panel"))
-    {
-        state.showAnimator = true;
-        ImGui::SetWindowFocus(animatorWindow);
-    }
-    ImGui::Spacing();
-    ImGui::TextWrapped("An Animator component plays it when its Controller names it; game code sets its parameters "
-                       "(Animation.SetFloat, SetBool, SetTrigger in C#).");
+    return std::make_unique<AnimatorPage>();
 }
 
 core::Result<std::filesystem::path> createAnimatorFile(ToolsState& state, std::string_view folder)

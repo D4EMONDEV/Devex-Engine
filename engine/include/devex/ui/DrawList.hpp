@@ -9,6 +9,7 @@
 #include <devex/ui/Layout.hpp>
 
 #include <functional>
+#include <optional>
 
 namespace devex::scene {
 class Scene;
@@ -22,6 +23,16 @@ struct DEVEX_API FontRef
 {
     const asset::FontData* data = nullptr;
     render::TextureHandle atlas;
+};
+
+// A sprite an image shows: the part of its texture it covers.
+struct DEVEX_API SpriteImage
+{
+    render::TextureHandle texture;
+    // The texture coordinates of its top-left corner, then of its bottom-right corner.
+    math::Vec4 uv{0.0f, 0.0f, 1.0f, 1.0f};
+    // Its size in pixels.
+    math::Vec2 size{0.0f};
 };
 
 // What a field being edited shows over its text. The offsets are bytes of the text as it is
@@ -41,6 +52,9 @@ struct DEVEX_API DrawContext
 {
     std::function<FontRef(asset::AssetId)> fonts;
     std::function<render::TextureHandle(asset::AssetId)> textures;
+    // The sprites an image may show in place of a texture; nothing for an asset that is not one,
+    // which is then looked for among the textures.
+    std::function<std::optional<SpriteImage>(asset::AssetId)> sprites;
     // The size of a texture in pixels, for the images whose borders stay unstretched.
     std::function<math::Vec2(asset::AssetId)> textureSize;
     std::function<math::Vec4(scene::Entity)> tint;

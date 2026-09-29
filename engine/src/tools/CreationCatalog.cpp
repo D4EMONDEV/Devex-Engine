@@ -85,6 +85,8 @@ constexpr std::array engineComponents{
                   "A number dragged sideways, or typed once clicked, as in an inspector.", {"UiImage", "UiText", "UiInput"}},
     ComponentInfo{"UiColorPicker", "Color picker", Category::Interface,
                   "Chooses a colour in a square of saturation and brightness, with bars of hue and opacity."},
+    ComponentInfo{"UiPlot", "Plot", Category::Interface,
+                  "Draws a series of values as a line or as bars: a graph, a curve, the wave of a sound."},
     ComponentInfo{"RigidBody", "Rigid body", Category::Physics, "Moved by the physics: gravity, forces and collisions."},
     ComponentInfo{"BoxCollider", "Box collider", Category::Physics, "A box the physics collides with."},
     ComponentInfo{"SphereCollider", "Sphere collider", Category::Physics, "A sphere the physics collides with."},

@@ -276,6 +276,8 @@ public:
     // Selects the entities of the scene, the last one active, as clicks in the scene tree do; the
     // inspector then shows them.
     void select(std::span<const core::Uuid> entities);
+    // Shows an asset of the project in the inspector, as a click in FileSystem does.
+    void selectAsset(asset::AssetId asset);
 
     // Lets the panels preview audio clips on the mixer, which must outlive the overlay, with the
     // clips the function loads. Without it, clips show but cannot be heard.

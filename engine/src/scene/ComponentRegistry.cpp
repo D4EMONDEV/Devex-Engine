@@ -151,6 +151,7 @@ ComponentRegistry& componentRegistry()
         builtins.add<UiDropTarget>();
         builtins.add<UiNumberField>();
         builtins.add<UiColorPicker>();
+        builtins.add<UiPlot>();
         return builtins;
     }();
     return registry;

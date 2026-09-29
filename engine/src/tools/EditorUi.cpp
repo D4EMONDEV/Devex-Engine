@@ -112,6 +112,52 @@ EditorUiKit::~EditorUiKit()
             m_renderer.destroyTexture(texture);
         }
     }
+    if (m_checker.isValid())
+    {
+        m_renderer.destroyTexture(m_checker);
+    }
+}
+
+void EditorUiKit::setAssetImages(std::function<render::TextureHandle(asset::AssetId)> textures,
+                                 std::function<math::Vec2(asset::AssetId)> sizes,
+                                 std::function<std::optional<ui::SpriteImage>(asset::AssetId)> sprites)
+{
+    m_assetTextures = std::move(textures);
+    m_assetSizes = std::move(sizes);
+    m_assetSprites = std::move(sprites);
+}
+
+asset::AssetId EditorUiKit::checker()
+{
+    const asset::AssetId id{core::Uuid::fromParts(0, 0x10005)};
+    if (m_checker.isValid())
+    {
+        return id;
+    }
+    // Squares of two greys, sharp however large the image they stand behind.
+    constexpr std::uint32_t size = 64;
+    constexpr std::uint32_t square = 8;
+    asset::Image image{.width = size, .height = size, .rgba = std::vector<std::uint8_t>(size * size * 4)};
+    for (std::uint32_t y = 0; y < size; ++y)
+    {
+        for (std::uint32_t x = 0; x < size; ++x)
+        {
+            const std::uint8_t grey = ((x / square) + (y / square)) % 2 == 0 ? 70 : 102;
+            std::uint8_t* const pixel = &image.rgba[(y * size + x) * 4];
+            pixel[0] = pixel[1] = pixel[2] = grey;
+            pixel[3] = 255;
+        }
+    }
+    if (core::Result<asset::TextureData> built =
+            asset::buildTexture(image, asset::TextureBuildOptions{.srgb = true, .mipmaps = false, .compress = false}))
+    {
+        built->filter = asset::TextureFilter::Nearest;
+        if (const core::Result<render::TextureHandle> created = m_renderer.createTexture(*built))
+        {
+            m_checker = *created;
+        }
+    }
+    return id;
 }
 
 asset::AssetId EditorUiKit::regularFont() noexcept
@@ -222,10 +268,26 @@ ui::DrawContext EditorUiKit::drawContext()
         .fonts = fonts(),
         .textures =
             [this](asset::AssetId id) {
-                const auto found = m_iconTextures.find(id);
-                return found != m_iconTextures.end() ? found->second : render::TextureHandle{};
+                // The icons and the checkerboard of the kit, then the textures of the project.
+                if (const auto found = m_iconTextures.find(id); found != m_iconTextures.end())
+                {
+                    return found->second;
+                }
+                if (id == asset::AssetId{core::Uuid::fromParts(0, 0x10005)})
+                {
+                    return m_checker;
+                }
+                return m_assetTextures ? m_assetTextures(id) : render::TextureHandle{};
             },
-        .textureSize = [](asset::AssetId) { return math::Vec2{static_cast<float>(iconPixels)}; },
+        .sprites = m_assetSprites,
+        .textureSize =
+            [this](asset::AssetId id) {
+                if (m_iconTextures.contains(id) || id == asset::AssetId{core::Uuid::fromParts(0, 0x10005)})
+                {
+                    return math::Vec2{static_cast<float>(iconPixels)};
+                }
+                return m_assetSizes ? m_assetSizes(id) : math::Vec2{0.0f};
+            },
         .defaultFont = regularFont(),
     };
 }

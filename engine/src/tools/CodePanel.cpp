@@ -48,23 +48,6 @@ void openInCodeEditor(ToolsState& state, const std::filesystem::path& file)
     }
 }
 
-void drawCodeInspector(ToolsState& state)
-{
-    const std::string name = core::toUtf8(state.selectedCode.filename());
-    ImGui::AlignTextToFramePadding();
-    iconLabel(codeIcon(state.selectedCode).icon, codeIcon(state.selectedCode).color);
-    boldText(name.c_str());
-    if (state.mode == ToolsMode::Editor && labelButton(icons::FileText, "Edit as Text"))
-    {
-        openTextFile(state, state.selectedCode);
-    }
-    if (labelButton(icons::ExternalLink, "Open in External Editor"))
-    {
-        openInCodeEditor(state, state.selectedCode);
-    }
-    ImGui::TextWrapped("Edit this file in the Text Editor panel. Saved scripts are compiled automatically.");
-}
-
 void drawNewScriptPopup(ToolsState& state)
 {
     if (std::exchange(state.openNewScriptPopup, false))

@@ -86,6 +86,7 @@ DEVEX_DECLARE_ENGINE_REFLECTION(UiRect);
 // unstretched, which lets one image draw a panel of any size.
 struct DEVEX_API UiImage
 {
+    // A texture, or a sprite: the part of its texture the sprite covers, as the icons of an atlas.
     asset::AssetId texture;
     // Multiplies the texture, or fills the rectangle on its own.
     math::Vec4 color{1.0f, 1.0f, 1.0f, 1.0f};
@@ -96,6 +97,8 @@ struct DEVEX_API UiImage
     float cornerRadius = 0.0f;
     // Whether the mouse and the pad stop on it, rather than passing through.
     bool raycastTarget = true;
+    // Fits the whole texture inside the rectangle, keeping its shape, in the middle of it.
+    bool preserveAspect = false;
 };
 DEVEX_DECLARE_ENGINE_REFLECTION(UiImage);
 
@@ -449,6 +452,35 @@ struct DEVEX_API UiDropTarget
 };
 DEVEX_DECLARE_ENGINE_REFLECTION(UiDropTarget);
 
+// How a plot draws its values.
+enum class UiPlotKind : std::uint8_t
+{
+    // A line through the values.
+    Line,
+    // A bar from the bottom up to each value.
+    Bars,
+    // A bar each side of the middle, as the wave of a sound.
+    MirroredBars,
+};
+
+// A series of values drawn across the rectangle, the first at its left and the last at its right,
+// between two bounds: a graph of frame times, a curve, the wave of a sound, a gauge over time.
+struct DEVEX_API UiPlot
+{
+    std::vector<float> values;
+    // The values at the bottom and at the top of the rectangle; those beyond stay at its edge.
+    float minValue = 0.0f;
+    float maxValue = 1.0f;
+    UiPlotKind kind = UiPlotKind::Line;
+    math::Vec4 color{0.35f, 0.6f, 1.0f, 1.0f};
+    // The width of the line, in units.
+    float lineWidth = 2.0f;
+    // A mark across the plot, at this fraction of its width: where a sound plays. Negative hides it.
+    float marker = -1.0f;
+    math::Vec4 markerColor{1.0f, 1.0f, 1.0f, 1.0f};
+};
+DEVEX_DECLARE_ENGINE_REFLECTION(UiPlot);
+
 // How the children of a container follow each other.
 enum class UiLayoutKind : std::uint8_t
 {
@@ -503,6 +535,12 @@ template <>
 struct devex::reflection::EnumNames<devex::scene::UiLayoutKind>
 {
     static constexpr std::array<std::string_view, 3> names{"row", "column", "grid"};
+};
+
+template <>
+struct devex::reflection::EnumNames<devex::scene::UiPlotKind>
+{
+    static constexpr std::array<std::string_view, 3> names{"line", "bars", "mirrored_bars"};
 };
 
 template <>

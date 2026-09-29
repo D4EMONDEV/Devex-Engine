@@ -12,6 +12,7 @@
 #include <efsw/efsw.hpp>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cctype>
 #include <charconv>
@@ -680,7 +681,7 @@ public:
         return {};
     }
 
-    [[nodiscard]] core::Result<void> setImportOption(AssetId id, std::string_view key, serialization::TextValue value)
+    [[nodiscard]] core::Result<void> setImportOptions(AssetId id, std::span<const serialization::TextProperty> options)
     {
         const AssetInfo* const info = find(id);
         const auto found = m_sources.find(info != nullptr ? info->source : id);
@@ -689,19 +690,25 @@ public:
             return core::makeError(core::ErrorCode::NotFound, "no source file produces asset {}", id.uuid);
         }
         Source& source = found->second;
-        const auto option = std::ranges::find_if(source.meta.options,
-                                                 [&](const serialization::TextProperty& property) { return property.key == key; });
-        if (option != source.meta.options.end())
+        bool changed = false;
+        for (const serialization::TextProperty& wanted : options)
         {
-            if (option->value == value)
+            const auto option = std::ranges::find_if(
+                source.meta.options, [&](const serialization::TextProperty& property) { return property.key == wanted.key; });
+            if (option == source.meta.options.end())
             {
-                return {};
+                source.meta.options.push_back(wanted);
+                changed = true;
             }
-            option->value = std::move(value);
+            else if (option->value != wanted.value)
+            {
+                option->value = wanted.value;
+                changed = true;
+            }
         }
-        else
+        if (!changed)
         {
-            source.meta.options.push_back({std::string(key), std::move(value)});
+            return {};
         }
         if (core::Result<void> written = writeText(metaFileOf(source.file), writeMetaFile(source.meta)); !written)
         {
@@ -1334,7 +1341,13 @@ core::Result<void> AssetDatabase::reimport(AssetId id)
 
 core::Result<void> AssetDatabase::setImportOption(AssetId id, std::string_view key, serialization::TextValue value)
 {
-    return m_impl->setImportOption(id, key, std::move(value));
+    const std::array<serialization::TextProperty, 1> options{serialization::TextProperty{std::string(key), std::move(value)}};
+    return m_impl->setImportOptions(id, options);
+}
+
+core::Result<void> AssetDatabase::setImportOptions(AssetId id, std::span<const serialization::TextProperty> options)
+{
+    return m_impl->setImportOptions(id, options);
 }
 
 std::optional<serialization::TextValue> AssetDatabase::importOption(AssetId id, std::string_view key) const

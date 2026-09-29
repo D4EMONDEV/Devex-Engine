@@ -119,7 +119,7 @@ bool g_linearColors = true;
 
 [[nodiscard]] bool isEngineComponent(std::string_view name) noexcept
 {
-    constexpr std::array<std::string_view, 58> engineComponents{
+    constexpr std::array<std::string_view, 59> engineComponents{
         "Transform",       "MeshRenderer",        "Camera",       "DirectionalLight",
         "PointLight",      "SpotLight",           "Environment",  "RigidBody",
         "BoxCollider",     "SphereCollider",      "CapsuleCollider", "CylinderCollider",
@@ -134,7 +134,7 @@ bool g_linearColors = true;
         "UiPopup",         "UiContextMenu",       "UiTooltip",    "UiDropdown",
         "UiSplitter",      "UiFoldout",           "UiVirtualList", "UiTable",
         "UiTableRow",      "UiDragSource",        "UiDropTarget", "UiNumberField",
-        "UiColorPicker"};
+        "UiColorPicker",   "UiPlot"};
     return std::ranges::find(engineComponents, name) != engineComponents.end();
 }
 

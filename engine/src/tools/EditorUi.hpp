@@ -68,6 +68,13 @@ public:
     // The styles follow the colors of the editor, made again when they change.
     void refreshTheme(const ThemeColors& colors);
 
+    // The textures of the project and the sprites cut from them, which the previews of the panels show.
+    void setAssetImages(std::function<render::TextureHandle(asset::AssetId)> textures,
+                        std::function<math::Vec2(asset::AssetId)> sizes,
+                        std::function<std::optional<ui::SpriteImage>(asset::AssetId)> sprites);
+    // A checkerboard, drawn behind what may be transparent.
+    [[nodiscard]] asset::AssetId checker();
+
 private:
     struct BakedFont
     {
@@ -86,6 +93,10 @@ private:
     BakedFont m_bold;
     BakedFont m_mono;
     std::unordered_map<asset::AssetId, render::TextureHandle> m_iconTextures;
+    render::TextureHandle m_checker;
+    std::function<render::TextureHandle(asset::AssetId)> m_assetTextures;
+    std::function<math::Vec2(asset::AssetId)> m_assetSizes;
+    std::function<std::optional<ui::SpriteImage>(asset::AssetId)> m_assetSprites;
     std::shared_ptr<asset::ThemeData> m_theme;
     ImVec4 m_themeAccent{-1.0f, 0.0f, 0.0f, 0.0f};
     ImVec4 m_themePanel{-1.0f, 0.0f, 0.0f, 0.0f};

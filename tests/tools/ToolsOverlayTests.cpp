@@ -1,6 +1,10 @@
 #include <devex/asset/Primitives.hpp>
 #include <devex/asset/Project.hpp>
+#include <devex/asset/import/AnimatorFile.hpp>
 #include <devex/asset/import/AssetDatabase.hpp>
+#include <devex/asset/import/CurveFile.hpp>
+#include <devex/asset/import/SpriteFramesFile.hpp>
+#include <devex/asset/import/TilesetFile.hpp>
 #include <devex/core/File.hpp>
 #include <devex/core/JobSystem.hpp>
 #include <devex/core/Log.hpp>
@@ -121,6 +125,58 @@ TEST_CASE("The editor opens the project's scenes in tabs and renders its viewpor
         auto database = devex::asset::AssetDatabase::open(project, jobs, {.watchFiles = false});
         REQUIRE(database.has_value());
 
+        // What the pages of the inspector show: a texture cut into sprites, a sound, a curve, an
+        // animator, and sprite frames and a tileset of those sprites.
+        const std::filesystem::path art = project.assetsDirectory() / "art";
+        std::filesystem::create_directories(art);
+        const std::filesystem::path data(DEVEX_TEST_DATA_DIRECTORY);
+        std::filesystem::copy_file(data / "checker.png", art / "checker.png");
+        std::filesystem::copy_file(data / "audio" / "tone.wav", art / "tone.wav");
+        REQUIRE(devex::core::writeTextFile(art / "ease.dvxcurve", devex::asset::writeCurveFile(devex::asset::linearCurve())));
+        devex::asset::AnimatorData states;
+        states.entry = "Idle";
+        states.parameters.push_back({.name = "Speed"});
+        states.states.push_back({.name = "Idle"});
+        states.states.push_back({.name = "Run", .blend = devex::asset::AnimatorBlend::Linear, .motions = {{}, {.threshold = 1.0f}},
+                                 .parameter = "Speed"});
+        states.transitions.push_back(
+            {.from = "Idle", .to = "Run", .conditions = {{.parameter = "Speed", .test = devex::asset::AnimatorTest::Greater, .value = 0.1f}}});
+        REQUIRE(devex::core::writeTextFile(art / "states.dvxanimator", devex::asset::writeAnimatorFile(states)));
+        const auto settleAssets = [&] {
+            (*database)->refresh();
+            (*database)->waitForImports();
+            static_cast<void>((*database)->update());
+        };
+        settleAssets();
+        const std::optional<devex::asset::AssetId> checker = (*database)->findByPath("res://assets/art/checker.png");
+        REQUIRE(checker.has_value());
+        const std::array<devex::serialization::TextProperty, 3> grid{devex::serialization::TextProperty{"sprite_mode", std::string("grid")},
+                                                                     devex::serialization::TextProperty{"columns", std::int64_t{2}},
+                                                                     devex::serialization::TextProperty{"rows", std::int64_t{2}}};
+        REQUIRE((*database)->setImportOptions(*checker, grid).has_value());
+        settleAssets();
+        std::vector<devex::asset::AssetId> sprites;
+        for (const devex::asset::AssetId id : (*database)->sourceOf(*checker)->assets)
+        {
+            if ((*database)->find(id)->type == devex::asset::AssetType::Sprite)
+            {
+                sprites.push_back(id);
+            }
+        }
+        REQUIRE_FALSE(sprites.empty());
+        devex::asset::SpriteFramesData frames;
+        frames.animations.push_back({.name = "spin", .fps = 8.0f, .loop = true, .frames = sprites});
+        REQUIRE(devex::core::writeTextFile(art / "spin.dvxframes", devex::asset::writeSpriteFramesFile(frames)));
+        devex::asset::TilesetData tiles;
+        for (std::size_t index = 0; index < sprites.size(); ++index)
+        {
+            tiles.tiles.push_back({.id = static_cast<std::uint32_t>(index + 1), .sprite = sprites[index]});
+        }
+        tiles.tiles.front().frames = sprites;
+        tiles.tiles.front().fps = 4.0f;
+        REQUIRE(devex::core::writeTextFile(art / "tiles.dvxtileset", devex::asset::writeTilesetFile(tiles)));
+        settleAssets();
+
         auto platform = devex::platform::Platform::create();
         REQUIRE(platform.has_value());
         auto window = platform->createWindow({.width = 800, .height = 600, .vulkan = true, .hidden = true});
@@ -222,8 +278,8 @@ TEST_CASE("The editor opens the project's scenes in tabs and renders its viewpor
         // The scene tree too.
         CHECK(surfaces.contains(5));
         CHECK_FALSE(surfaces.contains(1));
-        // Nothing is selected: the inspector says so with ImGui.
-        CHECK_FALSE(surfaces.contains(6));
+        // The inspector, which says to choose something while nothing is selected.
+        CHECK(surfaces.contains(6));
 
         // The inspector of entities is made with the interface of the engine as well: an entity that
         // carries every component of the engine shows a row for each of their fields, and several
@@ -270,6 +326,19 @@ TEST_CASE("The editor opens the project's scenes in tabs and renders its viewpor
         (*editor)->select({});
         scene.destroyEntity(everything);
         static_cast<void>(inspectorFrames(1));
+
+        // A page for each kind of asset, and for the others their name and their file.
+        for (const char* path : {"res://assets/art/checker.png", "res://assets/art/tone.wav", "res://assets/art/ease.dvxcurve",
+                                 "res://assets/art/states.dvxanimator", "res://assets/art/spin.dvxframes", "res://assets/art/tiles.dvxtileset",
+                                 "res://assets/scenes/menu.dvxscene"})
+        {
+            const std::optional<devex::asset::AssetId> id = (*database)->findByPath(path);
+            REQUIRE(id.has_value());
+            INFO(path);
+            (*editor)->selectAsset(*id);
+            CHECK(inspectorFrames(3));
+        }
+        (*editor)->selectAsset({});
 
         // Both scenes opened, the level on screen and the menu in a background tab, without unsaved changes.
         CHECK(scene.entityCount() == 3);

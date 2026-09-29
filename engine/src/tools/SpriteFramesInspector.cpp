@@ -1,11 +1,10 @@
-#include "ToolsState.hpp"
+// The page of sprite frames in the inspector: their animations, the one chosen playing as the game
+// will, and its frames, which sprites dropped from FileSystem join. Saved once a change is over.
+#include "InspectorUi.hpp"
 
 #include <devex/asset/import/SpriteFramesFile.hpp>
 #include <devex/core/File.hpp>
 #include <devex/core/Log.hpp>
-
-#include <imgui_internal.h>
-#include <imgui_stdlib.h>
 
 #include <algorithm>
 #include <cfloat>
@@ -17,6 +16,9 @@
 
 namespace devex::tools::detail {
 namespace {
+
+using scene::Entity;
+using Button = PanelButton;
 
 [[nodiscard]] std::filesystem::file_time_type writeTime(const std::filesystem::path& file)
 {
@@ -97,6 +99,390 @@ void saveFrames(ToolsState& state)
     return name;
 }
 
+class SpriteFramesPage final : public InspectorPage
+{
+public:
+    std::string signature(ToolsState& state) override
+    {
+        const std::optional<asset::SourceFile> source = state.database->sourceOf(state.selectedAsset);
+        if (!source)
+        {
+            return {};
+        }
+        loadFrames(state, *source);
+        SpriteFramesEditor& editor = state.spriteFramesEditor;
+        const auto count = static_cast<int>(editor.frames.animations.size());
+        editor.selectedAnimation = count == 0 ? -1 : std::clamp(editor.selectedAnimation, 0, count - 1);
+        const std::size_t frames =
+            editor.selectedAnimation >= 0 ? editor.frames.animations[static_cast<std::size_t>(editor.selectedAnimation)].frames.size() : 0;
+        return std::format("{}|{}|{}|{}", count, editor.selectedAnimation, frames, editor.error.empty());
+    }
+
+    void build(InspectorUi& ui, ToolsState& state, EditorUiKit& kit) override
+    {
+        const ThemeColors& colors = themeColors();
+        SpriteFramesEditor& editor = state.spriteFramesEditor;
+        m_rows.clear();
+        m_grid.reset();
+        m_name = {};
+        const asset::AssetInfo* const info = state.database->find(state.selectedAsset);
+        const std::optional<asset::SourceFile> source = state.database->sourceOf(state.selectedAsset);
+        if (info == nullptr || !source)
+        {
+            return;
+        }
+        ui.heading(kit, icons::Clapperboard, colors.animation, info->name, source->path);
+        if (!editor.error.empty())
+        {
+            ui.note(nullptr, std::format("The file could not be read: {}", editor.error), "error", 2.0f);
+            ui.note(nullptr, "Editing the frames writes new ones over it.");
+        }
+
+        // The animations, one row each, the chosen one lit.
+        Section& animations = ui.card(kit, "Animations");
+        for (std::size_t index = 0; index < editor.frames.animations.size(); ++index)
+        {
+            AnimationRow row;
+            row.row = ui.add(animations.card, "Animation", rects::wide(ui.line), "soft_row");
+            ui.scene().add<scene::UiImage>(row.row);
+            ui.scene().add<scene::UiButton>(row.row);
+            row.name = ui.text(row.row, rects::whole(math::Vec4{ui.font * 0.6f, 0.0f, ui.font * 9.0f, 0.0f}), "", "text");
+            row.summary = ui.text(row.row,
+                                  scene::UiRect{.anchorMin = {1.0f, 0.0f}, .anchorMax = {1.0f, 1.0f}, .offsetMin = {-ui.font * 9.0f, 0.0f},
+                                                .offsetMax = {-ui.font * 0.6f, 0.0f}},
+                                  "", "dim", false, scene::TextAlign::Right);
+            animations.lines.push_back(Line{.entity = row.row});
+            m_rows.push_back(row);
+        }
+        if (editor.frames.animations.empty())
+        {
+            ui.note(&animations, "No animation yet.");
+        }
+        const Entity buttons = ui.actions(&animations);
+        m_add = ui.action(kit, buttons, Icon::Plus, "Add Animation");
+        m_remove = ui.action(kit, buttons, Icon::Trash, "Remove");
+        if (editor.selectedAnimation < 0)
+        {
+            footnote(ui);
+            return;
+        }
+
+        // The animation chosen: its name, its pace, and whether it loops.
+        ui.card(kit, "Animation", EntityIcon{icons::Film, colors.animation});
+        m_card = ui.sections.size() - 1;
+        const FormRow nameRow = ui.formRow(ui.sections[m_card], "Name");
+        m_name = ui.textField(nameRow.editor);
+        ui.tooltip(nameRow.editor, "The name code plays it by: SpriteAnimator.Animation = \"run\"");
+        const FormRow fpsRow = ui.formRow(ui.sections[m_card], "Frames per second");
+        const std::array<std::string_view, 1> one{""};
+        m_fps = ui.numbers(fpsRow.editor, one, {.minValue = 0.1f, .maxValue = 240.0f, .dragSpeed = 0.1f, .decimals = 2}).front();
+        const FormRow loopRow = ui.formRow(ui.sections[m_card], "Loop");
+        m_loop = ui.toggle(loopRow.editor);
+        ui.tooltip(loopRow.editor, "Starts again after the last frame; otherwise stops on it");
+
+        // The preview plays the animation as the game will.
+        const float size = std::round(ui.font * 7.0f);
+        const Entity line = ui.add(ui.sections[m_card].card, "Preview", rects::wide(size));
+        ui.sections[m_card].lines.push_back(Line{.entity = line});
+        const Entity box = ui.add(line, "Box",
+                                  scene::UiRect{.anchorMin = {0.5f, 0.0f}, .anchorMax = {0.5f, 0.0f}, .offsetMin = {-size * 0.5f, 0.0f},
+                                                .offsetMax = {size * 0.5f, size}},
+                                  "list");
+        ui.scene().add<scene::UiImage>(box);
+        m_preview = ui.add(box, "Sprite", rects::whole(math::Vec4{4.0f}));
+        ui.scene().add<scene::UiImage>(m_preview, scene::UiImage{.raycastTarget = false, .preserveAspect = true});
+        const Entity controls = ui.actions(&ui.sections[m_card]);
+        m_play = ui.action(kit, controls, Icon::Pause, "Pause");
+        m_restart = ui.action(kit, controls, Icon::Refresh, "Restart");
+        ui.tooltip(m_restart.entity, "From the first frame");
+        m_position = ui.text(controls, rects::middle({ui.font * 5.0f, ui.line}), "", "dim");
+
+        // The frames, which sprites dropped on them join.
+        Section& frames = ui.card(kit, "Frames");
+        const std::size_t count = editor.frames.animations[static_cast<std::size_t>(editor.selectedAnimation)].frames.size();
+        ui.spriteGrid(kit, frames, m_grid, count, std::round(ui.font * 3.5f), true);
+        ui.tooltip(m_grid->drop, "Drop sprites from the FileSystem here, or a texture to add all its sprites");
+        m_frameMenu = ui.pageMenu("Frame menu", ui.font * 11.0f);
+        m_left = ui.menuItem(kit, m_frameMenu, Icon::ArrowUpDown, "Move Left");
+        m_right = ui.menuItem(kit, m_frameMenu, Icon::ArrowUpDown, "Move Right");
+        m_duplicate = ui.menuItem(kit, m_frameMenu, Icon::CopyPlus, "Duplicate");
+        m_removeFrame = ui.menuItem(kit, m_frameMenu, Icon::Trash, "Remove");
+        for (const Entity cell : m_grid->cells)
+        {
+            ui.scene().get<scene::UiContextMenu>(cell).popup = ui.scene().reference(m_frameMenu);
+        }
+        footnote(ui);
+    }
+
+    void sync(InspectorUi& ui, ToolsState& state, EditorUiKit& kit) override
+    {
+        SpriteFramesEditor& editor = state.spriteFramesEditor;
+        const asset::SpriteFramesData& frames = editor.frames;
+        if (m_rows.size() != frames.animations.size())
+        {
+            return;
+        }
+        for (std::size_t index = 0; index < m_rows.size(); ++index)
+        {
+            const asset::SpriteAnimationData& animation = frames.animations[index];
+            ui.scene().get<scene::UiRect>(m_rows[index].row).style =
+                static_cast<int>(index) == editor.selectedAnimation ? "soft_row_selected" : "soft_row";
+            ui.scene().get<scene::UiText>(m_rows[index].name).text = animation.name;
+            ui.scene().get<scene::UiText>(m_rows[index].summary).text =
+                std::format("{} {}, {} fps", animation.frames.size(), animation.frames.size() == 1 ? "frame" : "frames",
+                            ui::formatNumber(animation.fps, 2));
+        }
+        ui.enable(m_remove, editor.selectedAnimation >= 0);
+        if (!m_name.isValid() || editor.selectedAnimation < 0)
+        {
+            return;
+        }
+        const asset::SpriteAnimationData& animation = frames.animations[static_cast<std::size_t>(editor.selectedAnimation)];
+        const ui::UiWorld& world = ui.panel.world();
+        ui.scene().get<scene::UiText>(ui.sections[m_card].title).text = animation.name;
+        if (world.editedField() != m_name)
+        {
+            ui.scene().get<scene::UiText>(m_name).text = animation.name;
+        }
+        if (world.editedField() != m_fps && world.held() != m_fps)
+        {
+            ui.scene().get<scene::UiNumberField>(m_fps).value = animation.fps;
+        }
+        ui.setToggle(m_loop, animation.loop);
+
+        // The frame shown: the one the preview reached, or the one chosen while it is paused.
+        const std::size_t count = animation.frames.size();
+        if (editor.previewPlaying)
+        {
+            editor.previewTime += ImGui::GetIO().DeltaTime;
+        }
+        std::size_t shown = 0;
+        if (count > 0)
+        {
+            shown = static_cast<std::size_t>(std::floor(editor.previewTime * animation.fps));
+            shown = animation.loop ? shown % count : std::min(shown, count - 1);
+            if (editor.selectedFrame >= 0 && !editor.previewPlaying)
+            {
+                shown = std::min(static_cast<std::size_t>(editor.selectedFrame), count - 1);
+            }
+        }
+        ui.showSprite(m_preview, count > 0 ? animation.frames[shown] : asset::AssetId{});
+        ui.relabel(kit, m_play, editor.previewPlaying ? "Pause" : "Play");
+        ui.scene().get<scene::UiImage>(m_play.icon).texture = kit.icon(editor.previewPlaying ? Icon::Pause : Icon::Play);
+        ui.enable(m_play, count > 0);
+        ui.enable(m_restart, count > 0);
+        ui.scene().get<scene::UiText>(m_position).text = count > 0 ? std::format("{} / {}", shown + 1, count) : std::string("0 / 0");
+
+        if (m_grid != nullptr && m_grid->cells.size() == count)
+        {
+            for (std::size_t index = 0; index < count; ++index)
+            {
+                ui.showSprite(m_grid->images[index], animation.frames[index]);
+                ui.scene().get<scene::UiRect>(m_grid->cells[index]).style =
+                    static_cast<int>(index) == editor.selectedFrame ? "row_selected" : "row";
+                const asset::AssetInfo* const frameInfo = state.database->find(animation.frames[index]);
+                ui.tooltip(m_grid->cells[index], std::format("{}: {}\nRight-click for more; drop sprites here to insert them after it", index + 1,
+                                                             frameInfo != nullptr ? frameInfo->name : std::string("(missing sprite)")));
+            }
+        }
+        const std::optional<std::size_t> target = m_menuFrame;
+        ui.enable(m_left, target && *target > 0);
+        ui.enable(m_right, target && *target + 1 < count);
+        ui.fitMenu(m_frameMenu, ui.font * 11.0f);
+    }
+
+    void answer(InspectorUi& ui, ToolsState& state, EditorUiKit&) override
+    {
+        SpriteFramesEditor& editor = state.spriteFramesEditor;
+        asset::SpriteFramesData& frames = editor.frames;
+        if (m_rows.size() != frames.animations.size())
+        {
+            return;
+        }
+        const ui::UiWorld& world = ui.panel.world();
+        for (std::size_t index = 0; index < m_rows.size(); ++index)
+        {
+            if (world.wasClicked(m_rows[index].row))
+            {
+                editor.selectedAnimation = static_cast<int>(index);
+                editor.selectedFrame = -1;
+                editor.previewTime = 0.0f;
+            }
+        }
+        if (world.wasClicked(m_add.entity))
+        {
+            frames.animations.push_back({.name = freeName(frames, frames.animations.empty() ? "idle" : "animation")});
+            editor.selectedAnimation = static_cast<int>(frames.animations.size()) - 1;
+            editor.selectedFrame = -1;
+            m_dirty = true;
+        }
+        else if (world.wasClicked(m_remove.entity) && editor.selectedAnimation >= 0)
+        {
+            frames.animations.erase(frames.animations.begin() + editor.selectedAnimation);
+            editor.selectedAnimation = std::max(0, editor.selectedAnimation - 1);
+            editor.selectedFrame = -1;
+            m_dirty = true;
+        }
+        if (m_name.isValid() && editor.selectedAnimation >= 0 && editor.selectedAnimation < static_cast<int>(frames.animations.size()) &&
+            m_grid != nullptr)
+        {
+            answerAnimation(ui, state, frames.animations[static_cast<std::size_t>(editor.selectedAnimation)]);
+        }
+        const bool busy = world.held().isValid() || world.isEditing();
+        if (m_dirty && !busy)
+        {
+            saveFrames(state);
+            m_dirty = false;
+        }
+    }
+
+private:
+    struct AnimationRow
+    {
+        Entity row;
+        Entity name;
+        Entity summary;
+    };
+
+    void footnote(InspectorUi& ui)
+    {
+        ui.note(nullptr, "A SpriteAnimator that names these frames shows their animations on the SpriteRenderer of its entity.", "dim",
+                2.0f);
+    }
+
+    void answerAnimation(InspectorUi& ui, ToolsState& state, asset::SpriteAnimationData& animation)
+    {
+        SpriteFramesEditor& editor = state.spriteFramesEditor;
+        asset::SpriteFramesData& frames = editor.frames;
+        const ui::UiWorld& world = ui.panel.world();
+        // The name, once the field is left; another animation may not have it.
+        if (world.editedField() == m_name)
+        {
+            m_naming = true;
+        }
+        else if (std::exchange(m_naming, false) && !ui.panel.input().cancelPressed)
+        {
+            const std::string typed = ui.scene().get<scene::UiText>(m_name).text;
+            if (!typed.empty() && typed != animation.name)
+            {
+                if (frames.find(typed) == nullptr)
+                {
+                    animation.name = typed;
+                    m_dirty = true;
+                }
+                else
+                {
+                    DEVEX_LOG_WARNING("Another animation is already named \"{}\"", typed);
+                }
+            }
+        }
+        if (world.wasChanged(m_fps))
+        {
+            animation.fps = std::clamp(ui.scene().get<scene::UiNumberField>(m_fps).value, 0.1f, 240.0f);
+            m_dirty = true;
+        }
+        if (world.wasChanged(m_loop))
+        {
+            animation.loop = ui.scene().get<scene::UiToggle>(m_loop).value;
+            m_dirty = true;
+        }
+        if (world.wasClicked(m_play.entity))
+        {
+            editor.previewPlaying = !editor.previewPlaying;
+        }
+        else if (world.wasClicked(m_restart.entity))
+        {
+            editor.previewTime = 0.0f;
+        }
+
+        // Frames chosen, dropped on, and changed from their menu.
+        const std::size_t count = animation.frames.size();
+        if (m_grid->cells.size() != count)
+        {
+            return;
+        }
+        std::optional<std::pair<std::size_t, std::vector<asset::AssetId>>> inserted;
+        for (std::size_t index = 0; index < count; ++index)
+        {
+            if (world.wasClicked(m_grid->cells[index]))
+            {
+                editor.selectedFrame = static_cast<int>(index);
+                editor.previewPlaying = false;
+            }
+            if (world.wasDropped(m_grid->cells[index]) && world.dropped() != nullptr)
+            {
+                inserted = std::pair{index + 1, droppedSprites(state, *world.dropped())};
+            }
+        }
+        if (world.wasDropped(m_grid->drop) && world.dropped() != nullptr)
+        {
+            inserted = std::pair{count, droppedSprites(state, *world.dropped())};
+        }
+        if (ui.panel.input().secondaryPressed && world.isPopupOpen(ui.scene(), m_frameMenu))
+        {
+            const auto found = std::ranges::find(m_grid->cells, world.contextTarget());
+            m_menuFrame = found != m_grid->cells.end() ? std::optional(static_cast<std::size_t>(found - m_grid->cells.begin())) : std::nullopt;
+        }
+        if (m_menuFrame && *m_menuFrame < count)
+        {
+            const std::size_t index = *m_menuFrame;
+            if (world.wasClicked(m_left.entity) && index > 0)
+            {
+                std::swap(animation.frames[index - 1], animation.frames[index]);
+                editor.selectedFrame = static_cast<int>(index - 1);
+                m_dirty = true;
+            }
+            else if (world.wasClicked(m_right.entity) && index + 1 < count)
+            {
+                std::swap(animation.frames[index], animation.frames[index + 1]);
+                editor.selectedFrame = static_cast<int>(index + 1);
+                m_dirty = true;
+            }
+            else if (world.wasClicked(m_duplicate.entity))
+            {
+                inserted = std::pair{index + 1, std::vector<asset::AssetId>{animation.frames[index]}};
+            }
+            else if (world.wasClicked(m_removeFrame.entity))
+            {
+                animation.frames.erase(animation.frames.begin() + static_cast<std::ptrdiff_t>(index));
+                editor.selectedFrame = -1;
+                m_dirty = true;
+            }
+        }
+        if (!world.isPopupOpen(ui.scene(), m_frameMenu))
+        {
+            m_menuFrame.reset();
+        }
+        if (inserted && !inserted->second.empty())
+        {
+            animation.frames.insert(animation.frames.begin() + static_cast<std::ptrdiff_t>(inserted->first), inserted->second.begin(),
+                                    inserted->second.end());
+            m_dirty = true;
+        }
+    }
+
+    std::vector<AnimationRow> m_rows;
+    Button m_add;
+    Button m_remove;
+    std::size_t m_card = 0;
+    Entity m_name;
+    bool m_naming = false;
+    Entity m_fps;
+    Entity m_loop;
+    Entity m_preview;
+    Button m_play;
+    Button m_restart;
+    Entity m_position;
+    std::unique_ptr<SpriteGrid> m_grid;
+    Entity m_frameMenu;
+    Button m_left;
+    Button m_right;
+    Button m_duplicate;
+    Button m_removeFrame;
+    std::optional<std::size_t> m_menuFrame;
+    bool m_dirty = false;
+};
+
 } // namespace
 
 // The sprites a texture was cut into, in the order of its cells.
@@ -119,296 +505,9 @@ std::vector<asset::AssetId> spritesOfTexture(const ToolsState& state, asset::Ass
     return sprites;
 }
 
-// Sprites or the sprites of a texture dropped on the last item.
-std::vector<asset::AssetId> acceptDroppedSprites(const ToolsState& state)
+std::unique_ptr<InspectorPage> makeSpriteFramesPage()
 {
-    if (const std::optional<asset::AssetId> sprite = acceptDroppedAsset(asset::AssetType::Sprite))
-    {
-        return {*sprite};
-    }
-    if (const std::optional<asset::AssetId> texture = acceptDroppedAsset(asset::AssetType::Texture))
-    {
-        return spritesOfTexture(state, *texture);
-    }
-    return {};
-}
-
-void drawSpriteThumbnail(ToolsState& state, asset::AssetId sprite, float size, bool selected)
-{
-    const ThemeColors& colors = themeColors();
-    const ImVec2 origin = ImGui::GetCursorScreenPos();
-    ImDrawList* const draw = ImGui::GetWindowDrawList();
-    draw->AddRectFilled(origin, origin + ImVec2(size, size), uiColorU32(colors.field), 3.0f);
-    const std::shared_ptr<const asset::SpriteData> data = state.sprites && sprite.isValid() ? state.sprites(sprite) : nullptr;
-    const render::TextureHandle texture = data != nullptr && state.textures ? state.textures(data->texture) : render::TextureHandle{};
-    const std::uint64_t image = texture.isValid() ? state.renderer.imguiTexture(texture) : 0;
-    if (image != 0)
-    {
-        // The sprite fits the square, keeping its shape.
-        const float width = static_cast<float>(data->width);
-        const float height = static_cast<float>(data->height);
-        const float scale = (size - 4.0f) / std::max(width, height);
-        const ImVec2 extent(width * scale, height * scale);
-        const ImVec2 min = origin + (ImVec2(size, size) - extent) * 0.5f;
-        const math::Vec4 uv = data->uvRect();
-        draw->AddImage(ImTextureRef(static_cast<ImTextureID>(image)), min, min + extent, ImVec2(uv.x, uv.y), ImVec2(uv.z, uv.w));
-    }
-    else
-    {
-        const char* const text = sprite.isValid() ? "..." : "?";
-        const ImVec2 textSize = ImGui::CalcTextSize(text);
-        draw->AddText(origin + (ImVec2(size, size) - textSize) * 0.5f, uiColorU32(colors.textDim), text);
-    }
-    if (selected)
-    {
-        draw->AddRect(origin, origin + ImVec2(size, size), uiColorU32(colors.accent), 3.0f, 0, 2.0f);
-    }
-    ImGui::Dummy(ImVec2(size, size));
-}
-
-void drawSpriteFramesInspector(ToolsState& state)
-{
-    const ThemeColors& colors = themeColors();
-    const asset::AssetInfo* const info = state.database != nullptr ? state.database->find(state.selectedAsset) : nullptr;
-    const std::optional<asset::SourceFile> source =
-        state.database != nullptr ? state.database->sourceOf(state.selectedAsset) : std::nullopt;
-    if (info == nullptr || !source)
-    {
-        state.selectedAsset = {};
-        return;
-    }
-    loadFrames(state, *source);
-    SpriteFramesEditor& editor = state.spriteFramesEditor;
-    asset::SpriteFramesData& frames = editor.frames;
-
-    ImGui::AlignTextToFramePadding();
-    iconLabel(icons::Clapperboard, colors.animation);
-    boldText(info->name.c_str());
-    ImGui::TextDisabled("%s", source->path.c_str());
-    ImGui::Spacing();
-    if (!editor.error.empty())
-    {
-        ImGui::TextColored(uiColor(colors.error), "The file could not be read: %s", editor.error.c_str());
-        ImGui::TextWrapped("Editing the frames writes new ones over it.");
-    }
-
-    bool changed = false;
-    ImGui::SeparatorText("Animations");
-    for (std::size_t index = 0; index < frames.animations.size(); ++index)
-    {
-        const asset::SpriteAnimationData& animation = frames.animations[index];
-        ImGui::PushID(static_cast<int>(index));
-        const std::string label = std::format("{}##animation", animation.name);
-        if (ImGui::Selectable(label.c_str(), static_cast<int>(index) == editor.selectedAnimation))
-        {
-            editor.selectedAnimation = static_cast<int>(index);
-            editor.selectedFrame = -1;
-            editor.previewTime = 0.0f;
-        }
-        ImGui::SameLine();
-        alignRight(ImGui::CalcTextSize("000 frames, 00 fps").x);
-        ImGui::TextDisabled("%zu %s, %g fps", animation.frames.size(), animation.frames.size() == 1 ? "frame" : "frames",
-                            static_cast<double>(animation.fps));
-        ImGui::PopID();
-    }
-    if (frames.animations.empty())
-    {
-        ImGui::TextDisabled("No animation yet.");
-    }
-    if (labelButton(icons::Plus, "Add Animation"))
-    {
-        frames.animations.push_back({.name = freeName(frames, frames.animations.empty() ? "idle" : "animation")});
-        editor.selectedAnimation = static_cast<int>(frames.animations.size()) - 1;
-        editor.selectedFrame = -1;
-        changed = true;
-    }
-    const bool hasSelection =
-        editor.selectedAnimation >= 0 && editor.selectedAnimation < static_cast<int>(frames.animations.size());
-    ImGui::SameLine();
-    if (labelButton(icons::Trash, "Remove", 0.0f, hasSelection))
-    {
-        frames.animations.erase(frames.animations.begin() + editor.selectedAnimation);
-        editor.selectedAnimation = std::max(0, editor.selectedAnimation - 1);
-        editor.selectedFrame = -1;
-        changed = true;
-    }
-
-    if (editor.selectedAnimation >= 0 && editor.selectedAnimation < static_cast<int>(frames.animations.size()))
-    {
-        asset::SpriteAnimationData& animation = frames.animations[static_cast<std::size_t>(editor.selectedAnimation)];
-        ImGui::PushFont(editorFonts().bold, 0.0f);
-        ImGui::SeparatorText(animation.name.c_str());
-        ImGui::PopFont();
-        if (beginProperties("animation"))
-        {
-            propertyName("Name");
-            ImGui::SetNextItemWidth(-FLT_MIN);
-            // The name follows the animation until it is being typed.
-            if (ImGui::GetActiveID() != ImGui::GetID("##name"))
-            {
-                editor.renaming = animation.name;
-            }
-            ImGui::InputText("##name", &editor.renaming);
-            ImGui::SetItemTooltip("The name code plays it by: SpriteAnimator.Animation = \"run\"");
-            if (ImGui::IsItemDeactivatedAfterEdit() && !editor.renaming.empty() && editor.renaming != animation.name)
-            {
-                if (frames.find(editor.renaming) == nullptr)
-                {
-                    animation.name = editor.renaming;
-                    changed = true;
-                }
-                else
-                {
-                    DEVEX_LOG_WARNING("Another animation is already named \"{}\"", editor.renaming);
-                }
-            }
-            propertyName("Frames per second");
-            ImGui::SetNextItemWidth(-FLT_MIN);
-            ImGui::DragFloat("##fps", &animation.fps, 0.1f, 0.1f, 240.0f, "%g");
-            animation.fps = std::clamp(animation.fps, 0.1f, 240.0f);
-            changed |= ImGui::IsItemDeactivatedAfterEdit();
-            propertyName("Loop");
-            changed |= ImGui::Checkbox("##loop", &animation.loop);
-            ImGui::SetItemTooltip("Starts again after the last frame; otherwise stops on it");
-            endProperties();
-        }
-
-        // The preview plays the animation as the game will.
-        const std::size_t count = animation.frames.size();
-        if (count > 0)
-        {
-            if (editor.previewPlaying)
-            {
-                editor.previewTime += ImGui::GetIO().DeltaTime;
-            }
-            auto shown = static_cast<std::size_t>(std::floor(editor.previewTime * animation.fps));
-            shown = animation.loop ? shown % count : std::min(shown, count - 1);
-            if (editor.selectedFrame >= 0 && !editor.previewPlaying)
-            {
-                shown = std::min(static_cast<std::size_t>(editor.selectedFrame), count - 1);
-            }
-            const float previewSize = ImGui::GetFontSize() * 7.0f;
-            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (ImGui::GetContentRegionAvail().x - previewSize) * 0.5f);
-            drawSpriteThumbnail(state, animation.frames[shown], previewSize, false);
-            const float buttonsWidth = toolButtonWidth() * 2.0f + ImGui::GetStyle().ItemSpacing.x;
-            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (ImGui::GetContentRegionAvail().x - buttonsWidth) * 0.5f);
-            if (toolButton("play", editor.previewPlaying ? icons::Pause : icons::Play,
-                           editor.previewPlaying ? "Pause the preview" : "Play the preview", editor.previewPlaying))
-            {
-                editor.previewPlaying = !editor.previewPlaying;
-            }
-            ImGui::SameLine();
-            if (toolButton("restart", icons::Refresh, "From the first frame"))
-            {
-                editor.previewTime = 0.0f;
-            }
-            ImGui::SameLine();
-            ImGui::AlignTextToFramePadding();
-            ImGui::TextDisabled("%zu / %zu", shown + 1, count);
-        }
-
-        ImGui::SeparatorText("Frames");
-        const float thumbnail = ImGui::GetFontSize() * 3.5f;
-        const float spacing = ImGui::GetStyle().ItemSpacing.x;
-        const float available = ImGui::GetContentRegionAvail().x;
-        float lineWidth = 0.0f;
-        std::optional<std::size_t> removed;
-        std::optional<std::pair<std::size_t, std::size_t>> swapped;
-        std::optional<std::pair<std::size_t, std::vector<asset::AssetId>>> inserted;
-        for (std::size_t index = 0; index < count; ++index)
-        {
-            ImGui::PushID(static_cast<int>(index));
-            if (lineWidth > 0.0f && lineWidth + spacing + thumbnail <= available)
-            {
-                ImGui::SameLine();
-                lineWidth += spacing;
-            }
-            else
-            {
-                lineWidth = 0.0f;
-            }
-            lineWidth += thumbnail;
-            ImGui::BeginGroup();
-            drawSpriteThumbnail(state, animation.frames[index], thumbnail, static_cast<int>(index) == editor.selectedFrame);
-            ImGui::EndGroup();
-            if (ImGui::IsItemClicked(ImGuiMouseButton_Left))
-            {
-                editor.selectedFrame = static_cast<int>(index);
-                editor.previewPlaying = false;
-            }
-            const asset::AssetInfo* const frameInfo = state.database->find(animation.frames[index]);
-            ImGui::SetItemTooltip("%zu: %s\nRight-click for more; drop sprites here to insert them after it", index + 1,
-                                  frameInfo != nullptr ? frameInfo->name.c_str() : "(missing sprite)");
-            if (std::vector<asset::AssetId> dropped = acceptDroppedSprites(state); !dropped.empty())
-            {
-                inserted = std::pair{index + 1, std::move(dropped)};
-            }
-            if (ImGui::BeginPopupContextItem("frame menu"))
-            {
-                if (ImGui::MenuItem("Move Left", nullptr, false, index > 0))
-                {
-                    swapped = std::pair{index - 1, index};
-                }
-                if (ImGui::MenuItem("Move Right", nullptr, false, index + 1 < count))
-                {
-                    swapped = std::pair{index, index + 1};
-                }
-                if (ImGui::MenuItem("Duplicate"))
-                {
-                    inserted = std::pair{index + 1, std::vector<asset::AssetId>{animation.frames[index]}};
-                }
-                if (ImGui::MenuItem("Remove"))
-                {
-                    removed = index;
-                }
-                ImGui::EndPopup();
-            }
-            ImGui::PopID();
-        }
-        // A box at the end takes the sprites dropped on it.
-        if (lineWidth > 0.0f && lineWidth + spacing + thumbnail <= available)
-        {
-            ImGui::SameLine();
-        }
-        const ImVec2 dropOrigin = ImGui::GetCursorScreenPos();
-        ImGui::InvisibleButton("drop", ImVec2(thumbnail, thumbnail));
-        ImGui::GetWindowDrawList()->AddRect(dropOrigin, dropOrigin + ImVec2(thumbnail, thumbnail), uiColorU32(colors.textDim), 3.0f);
-        const ImVec2 plusSize = ImGui::CalcTextSize(icons::Plus.c_str());
-        ImGui::GetWindowDrawList()->AddText(dropOrigin + (ImVec2(thumbnail, thumbnail) - plusSize) * 0.5f,
-                                            uiColorU32(colors.textDim), icons::Plus.c_str());
-        ImGui::SetItemTooltip("Drop sprites from the FileSystem here, or a texture to add all its sprites");
-        if (std::vector<asset::AssetId> dropped = acceptDroppedSprites(state); !dropped.empty())
-        {
-            inserted = std::pair{count, std::move(dropped)};
-        }
-
-        if (swapped)
-        {
-            std::swap(animation.frames[swapped->first], animation.frames[swapped->second]);
-            editor.selectedFrame = static_cast<int>(editor.selectedFrame == static_cast<int>(swapped->first) ? swapped->second
-                                                                                                            : swapped->first);
-            changed = true;
-        }
-        if (removed)
-        {
-            animation.frames.erase(animation.frames.begin() + static_cast<std::ptrdiff_t>(*removed));
-            editor.selectedFrame = -1;
-            changed = true;
-        }
-        if (inserted)
-        {
-            animation.frames.insert(animation.frames.begin() + static_cast<std::ptrdiff_t>(inserted->first),
-                                    inserted->second.begin(), inserted->second.end());
-            changed = true;
-        }
-    }
-    ImGui::Spacing();
-    ImGui::TextWrapped("A SpriteAnimator that names these frames shows their animations on the SpriteRenderer of its entity.");
-
-    if (changed)
-    {
-        saveFrames(state);
-    }
+    return std::make_unique<SpriteFramesPage>();
 }
 
 core::Result<std::filesystem::path> createSpriteFramesFile(ToolsState& state, std::string_view folder,

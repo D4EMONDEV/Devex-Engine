@@ -707,8 +707,6 @@ DEVEX_API void drawTextEditorPanel(ToolsState& state, scene::Scene& scene);
 [[nodiscard]] DEVEX_API std::vector<TextDocument*> affectedTextDocuments(ToolsState& state, const PendingAction& action);
 [[nodiscard]] DEVEX_API bool saveTextFile(ToolsState& state, scene::Scene& scene, TextDocument& document);
 DEVEX_API void discardPendingAction(ToolsState& state, scene::Scene& scene);
-// The file selected in the code folder, shown read-only in the inspector.
-DEVEX_API void drawCodeInspector(ToolsState& state);
 // The text of the open document: line numbers, colors, margin markers and the completion popup.
 DEVEX_API void drawCodeArea(ToolsState& state, TextDocument& document);
 DEVEX_API void drawFindBar(ToolsState& state, TextDocument& document);
@@ -731,29 +729,8 @@ DEVEX_API void drawAssetsPanel(ToolsState& state, scene::Scene& scene);
 DEVEX_API void drawAnimationPanel(ToolsState& state, scene::Scene& scene);
 // Shows an asset of the FileSystem in the inspector, in place of the selected entity or code file.
 DEVEX_API void selectAsset(ToolsState& state, asset::AssetId id);
-// The selected audio clip: its format, its waveform, how it loads, and a preview.
-DEVEX_API void drawAudioClipInspector(ToolsState& state);
-// The selected model: what its file brought, and how it imports (scale, textures).
-DEVEX_API void drawModelInspector(ToolsState& state);
-// The selected curve: a graph of its keys and their slopes, edited in place and saved to its file.
-DEVEX_API void drawCurveInspector(ToolsState& state);
-// The selected texture: a preview, how it imports, and how it is cut into sprites.
-DEVEX_API void drawTextureInspector(ToolsState& state);
-// The selected sprite frames: their animations, each with its frames, rate and loop, and a preview.
-DEVEX_API void drawSpriteFramesInspector(ToolsState& state);
-// A square holding a sprite at the cursor, fitted and centered; a placeholder while it loads.
-DEVEX_API void drawSpriteThumbnail(ToolsState& state, asset::AssetId sprite, float size, bool selected);
 // The sprites a texture was cut into, in the order of its cells.
 [[nodiscard]] DEVEX_API std::vector<asset::AssetId> spritesOfTexture(const ToolsState& state, asset::AssetId texture);
-// Sprites dropped on the last item, or the sprites of a texture dropped on it.
-[[nodiscard]] DEVEX_API std::vector<asset::AssetId> acceptDroppedSprites(const ToolsState& state);
-// The tiles of a tileset as a grid of squares, the chosen one outlined; returns the one clicked.
-// With drops accepted, a box at the end takes the sprites dropped on it into `dropped`.
-DEVEX_API std::optional<std::uint32_t> drawTilePalette(ToolsState& state, const asset::TilesetData& tileset, std::uint32_t selected,
-                                                       float size, bool acceptsDrops, std::vector<asset::AssetId>* dropped);
-// The selected tileset: its tiles as a palette, and the sprite, collision, animation and data of
-// the one chosen, saved to its file.
-DEVEX_API void drawTilesetInspector(ToolsState& state);
 // Writes a new tileset into a res:// folder of the assets, and selects it once imported. From a
 // texture, it holds a tile for each of its sprites.
 DEVEX_API core::Result<std::filesystem::path> createTilesetFile(ToolsState& state, std::string_view folder,
@@ -762,11 +739,6 @@ DEVEX_API core::Result<std::filesystem::path> createTilesetFile(ToolsState& stat
 // parameters, followed live while the game plays. It edits the controller of the Animator of the
 // selected entity, or the animator selected in the FileSystem.
 DEVEX_API void drawAnimatorPanel(ToolsState& state, scene::Scene& scene);
-// The state or transition selected in the Animator panel, in the inspector; false when the inspector
-// shows something else.
-DEVEX_API bool drawAnimatorElementInspector(ToolsState& state);
-// The selected animator asset in the inspector: what it holds, and the way to its graph.
-DEVEX_API void drawAnimatorInspector(ToolsState& state);
 // Writes a new animator controller into a res:// folder of the assets, and selects it once imported.
 DEVEX_API core::Result<std::filesystem::path> createAnimatorFile(ToolsState& state, std::string_view folder);
 // Under the NavMeshSurface of the inspected entity: what its navigation mesh holds, and whether its
@@ -785,8 +757,6 @@ DEVEX_API void clearNavMesh(ToolsState& state, scene::Scene& scene, scene::Entit
 // while the game plays, as lines of the overlay.
 DEVEX_API void addNavigationLines(ToolsState& state, scene::Scene& scene, const std::unordered_set<std::uint32_t>& shown, bool showAll,
                                   std::vector<render::OverlayVertex>& lines);
-// Under the Tilemap of the inspected entity: the tools that paint it and the palette of its tiles.
-DEVEX_API void drawTilePainter(ToolsState& state, scene::Scene& scene, scene::Entity entity);
 // Paints the selected tilemap with the mouse when a tool is chosen. Returns whether it took the
 // mouse, which the selection and the gizmo then leave alone.
 DEVEX_API bool handleTilePainting(ToolsState& state, scene::Scene& scene, const ViewportView& view, math::Vec2 mouse, bool hovered);

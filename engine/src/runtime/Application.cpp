@@ -2114,6 +2114,23 @@ void ApplicationRunner::buildUi(render::RenderWorld& world)
                                        : ui::FontRef{};
             },
         .textures = [this](asset::AssetId id) { return m_services.assets.texture(id); },
+        .sprites = [this](asset::AssetId id) -> std::optional<ui::SpriteImage> {
+            // Only a sprite is read as one: a texture would be loaded as the wrong kind of asset.
+            const asset::AssetSource* const source = m_services.assets.source();
+            const asset::AssetInfo* const info = source != nullptr ? source->find(id) : nullptr;
+            if (info == nullptr || info->type != asset::AssetType::Sprite)
+            {
+                return std::nullopt;
+            }
+            const std::shared_ptr<const asset::SpriteData> sprite = m_services.assets.sprite(id);
+            if (sprite == nullptr)
+            {
+                return ui::SpriteImage{};
+            }
+            return ui::SpriteImage{.texture = m_services.assets.texture(sprite->texture),
+                                   .uv = sprite->uvRect(),
+                                   .size = math::Vec2{static_cast<float>(sprite->width), static_cast<float>(sprite->height)}};
+        },
         .textureSize =
             [this](asset::AssetId id) {
                 const math::Extent2D size = m_services.assets.textureSize(id);
