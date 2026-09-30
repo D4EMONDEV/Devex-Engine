@@ -15,7 +15,8 @@ et rendu avec Vulkan. Il est distribué sous licence [MIT](LICENSE).
 - éditeur au style inspiré de Godot : gestionnaire de projets, onglets de scènes, viewport,
   gizmos et mode Play ; il passe sur l'interface des jeux, pour n'avoir qu'un seul système
   d'interface : tous les panneaux et le dock (emplacements, onglets, barres) le sont déjà, et
-  Dear ImGui ne fait plus que lire l'entrée, tenir les fenêtres modales et afficher les images.
+  Dear ImGui ne fait plus que lire l'entrée et afficher les images ; les fenêtres de réglages
+  sont des modales, comme dans Godot.
 
 Le détail, l'architecture des modules et les jalons sont dans
 [docs/decisions.md](docs/decisions.md).

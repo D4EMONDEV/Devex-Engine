@@ -2,6 +2,7 @@
 // the interface of the engine and shaped as a palette: a search on top, the categories on the left,
 // what matches in the middle and a card about the chosen one on the right.
 #include "CreationCatalog.hpp"
+#include "EditorModal.hpp"
 #include "EditorUi.hpp"
 #include "ToolsState.hpp"
 
@@ -832,10 +833,11 @@ void drawCreationDialog(ToolsState& state, scene::Scene& scene)
         state.creationDialog->font = state.theme.fontSize;
         state.creationDialog->start(state, scene, std::move(*state.creationRequest), *state.uiKit);
         state.creationRequest.reset();
-        ImGui::OpenPopup(creationPopup);
+        openModal(state, creationPopup);
     }
     if (!state.creationDialog || !state.creationDialog->open)
     {
+        closeModal(state, creationPopup);
         return;
     }
 
@@ -845,29 +847,16 @@ void drawCreationDialog(ToolsState& state, scene::Scene& scene)
     const float unit = ImGui::GetFontSize() / std::max(regularFontPixels(state.theme.fontSize), 1.0f);
     const ImVec2 size(std::clamp(viewport->WorkSize.x * 0.68f, std::min(unit * 780.0f, viewport->WorkSize.x), unit * 1150.0f),
                       std::clamp(viewport->WorkSize.y * 0.72f, std::min(unit * 520.0f, viewport->WorkSize.y), unit * 760.0f));
-    ImGui::SetNextWindowPos(viewport->GetWorkCenter(), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
-    ImGui::SetNextWindowSize(size, ImGuiCond_Always);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
-    ImGui::PushStyleColor(ImGuiCol_PopupBg, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
-    const ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
-                                   ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoScrollbar |
-                                   ImGuiWindowFlags_NoScrollWithMouse;
-    const bool visible = ImGui::BeginPopupModal(creationPopup, nullptr, flags);
-    ImGui::PopStyleColor();
-    ImGui::PopStyleVar(3);
-    if (!visible)
+    if (!beginModal(state, creationPopup, size))
     {
-        state.creationDialog->open = false;
         return;
     }
     state.creationDialog->update(state, *state.uiKit, scene, core::Duration(ImGui::GetIO().DeltaTime));
+    endModal();
     if (!state.creationDialog->open)
     {
-        ImGui::CloseCurrentPopup();
+        closeModal(state, creationPopup);
     }
-    ImGui::EndPopup();
 }
 
 void renderCreationDialog(ToolsState& state, render::RenderWorld& world)

@@ -3,6 +3,7 @@
 // the unsaved changes dialog asks what to do with the scenes and files an action would drop, and About
 // tells what the editor is made with.
 #include "SettingsUi.hpp"
+#include "EditorModal.hpp"
 
 #include <devex/core/Profiler.hpp>
 #include <devex/core/BuildInfo.hpp>
@@ -374,39 +375,28 @@ void drawEditorPopups(ToolsState& state, scene::Scene& scene)
             state.dialogsUi = std::make_shared<EditorDialogsUi>();
         }
         state.dialogsUi->start(*requested, state, kit, scene);
-        ImGui::OpenPopup(dialogPopup);
+        openModal(state, dialogPopup);
     }
     EditorDialogsUi* const ui = state.dialogsUi.get();
     if (ui == nullptr || !ui->open)
     {
+        closeModal(state, dialogPopup);
         return;
     }
 
-    // In the middle of the window, over the veil of a modal, the card at the size of what it holds.
-    const ImGuiViewport* const viewport = ImGui::GetMainViewport();
+    // In the middle of the window, over the veil of a modal, the card at the size of what it holds;
+    // under another modal, it waits.
     const float unit = ImGui::GetFontSize() / std::max(regularFontPixels(ui->font), 1.0f);
-    ImGui::SetNextWindowPos(viewport->GetWorkCenter(), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
-    ImGui::SetNextWindowSize(ImVec2(ui->size.x * unit, ui->size.y * unit), ImGuiCond_Always);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
-    ImGui::PushStyleColor(ImGuiCol_PopupBg, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
-    const ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
-                                   ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse;
-    const bool visible = ImGui::BeginPopupModal(dialogPopup, nullptr, flags);
-    ImGui::PopStyleColor();
-    ImGui::PopStyleVar(3);
-    if (!visible)
+    if (!beginModal(state, dialogPopup, ImVec2(ui->size.x * unit, ui->size.y * unit)))
     {
-        ui->open = false;
         return;
     }
     ui->update(state, kit, core::Duration(ImGui::GetIO().DeltaTime));
+    endModal();
     if (!ui->open)
     {
-        ImGui::CloseCurrentPopup();
+        closeModal(state, dialogPopup);
     }
-    ImGui::EndPopup();
 
     // What the unsaved changes dialog was answered, once it is closed: saving may open the dialog
     // that names an untitled scene, and continuing may ask again.

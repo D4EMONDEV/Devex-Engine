@@ -4,6 +4,8 @@
 // components. The theme applies as it is changed; the project is written once an edit ends.
 #include "SettingsUi.hpp"
 
+#include "EditorModal.hpp"
+
 #include <devex/core/Profiler.hpp>
 #include <devex/core/Log.hpp>
 #include <devex/ui/Color.hpp>
@@ -89,24 +91,29 @@ EditorUiKit& editorUiKit(ToolsState& state)
     return *state.uiKit;
 }
 
-bool beginFormWindow(const char* title, bool* open, float width, float height)
+bool beginFormWindow(ToolsState& state, const char* title, bool* open, float width, float height)
 {
-    const ImGuiViewport* const viewport = ImGui::GetMainViewport();
-    const float font = ImGui::GetFontSize();
-    ImGui::SetNextWindowPos(viewport->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
-    ImGui::SetNextWindowSize(ImVec2(std::min(font * width, viewport->WorkSize.x), std::min(font * height, viewport->WorkSize.y)),
-                             ImGuiCond_Appearing);
-    ImGui::SetNextWindowSizeConstraints(ImVec2(font * 18.0f, font * 10.0f), ImVec2(FLT_MAX, FLT_MAX));
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
-    const bool shown = ImGui::Begin(title, open,
-                                    ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoScrollbar |
-                                        ImGuiWindowFlags_NoScrollWithMouse);
-    ImGui::PopStyleVar();
-    if (!shown)
+    if (takeModalClose(state, title))
     {
-        ImGui::End();
+        *open = false;
     }
-    return shown;
+    if (!*open)
+    {
+        closeModal(state, title);
+        return false;
+    }
+    // As the windows of settings of Godot: over the editor, which waits until they close.
+    if (std::ranges::find(state.modals, title) == state.modals.end())
+    {
+        openModal(state, title);
+    }
+    const float font = ImGui::GetFontSize();
+    return beginModal(state, title, ImVec2(font * width, font * height), title);
+}
+
+void endFormWindow()
+{
+    endModal();
 }
 
 // ---- The frame of the windows of settings ----
@@ -438,10 +445,10 @@ void drawSettingsWindow(ToolsState& state)
     {
         state.editorSettingsUi = std::make_shared<EditorSettingsUi>();
     }
-    if (beginFormWindow(settingsWindow, &state.showSettings, 40.0f, 24.0f))
+    if (beginFormWindow(state, settingsWindow, &state.showSettings, 40.0f, 24.0f))
     {
         state.editorSettingsUi->update(state, kit, core::Duration(ImGui::GetIO().DeltaTime));
-        ImGui::End();
+        endFormWindow();
     }
     if (!state.showSettings && state.themeUnsaved)
     {
@@ -941,10 +948,10 @@ void drawProjectSettingsWindow(ToolsState& state)
     {
         state.projectSettingsUi = std::make_shared<ProjectSettingsUi>();
     }
-    if (beginFormWindow("Project Settings", &state.showProjectSettings, 54.0f, 36.0f))
+    if (beginFormWindow(state, "Project Settings", &state.showProjectSettings, 54.0f, 36.0f))
     {
         state.projectSettingsUi->update(state, kit, core::Duration(ImGui::GetIO().DeltaTime));
-        ImGui::End();
+        endFormWindow();
     }
 }
 

@@ -97,6 +97,7 @@ struct AnimationUi;
 struct ScriptUi;
 struct ViewportOverlayUi;
 struct EditorDockUi;
+struct ModalLayerUi;
 
 // What the editor draws over the image of the viewport this frame, in points of the screen as ImGui
 // places things; the overlay of the viewport draws it.
@@ -552,6 +553,12 @@ struct DEVEX_API ToolsState
     std::shared_ptr<EditorDockUi> dockUi;
     std::string panelToFocus;
     bool dockChanged = false;
+    // The modals open, the last one on top; those asked for since the last frame began; the one its
+    // cross or Escape closed.
+    std::vector<std::string> modals;
+    std::vector<std::string> modalsAsked;
+    std::string modalToClose;
+    std::shared_ptr<ModalLayerUi> modalLayerUi;
 
     bool showHierarchy = true;
     bool showInspector = true;

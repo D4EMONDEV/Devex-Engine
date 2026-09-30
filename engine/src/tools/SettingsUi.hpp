@@ -30,7 +30,11 @@ inline constexpr std::uint32_t dialogSurface = 11;
 
 // Opens a window that floats over the others, in the middle of the editor when it appears, its
 // content filling it without a margin: false while it is folded away, and then nothing is to draw.
-[[nodiscard]] bool beginFormWindow(const char* title, bool* open, float width, float height);
+// Opens a window of settings as a modal, `width` by `height` lines of text, with its title and a
+// cross that clears `open`; false while it is closed or under another modal. endFormWindow follows
+// a true only.
+[[nodiscard]] bool beginFormWindow(ToolsState& state, const char* title, bool* open, float width, float height);
+void endFormWindow();
 // The fonts, icons and theme the panels share, made the first time a panel asks.
 EditorUiKit& editorUiKit(ToolsState& state);
 // Places an element at a distance from the right of its parent, as wide as given and as tall as it.

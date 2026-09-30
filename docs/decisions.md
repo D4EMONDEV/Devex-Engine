@@ -2337,6 +2337,24 @@ les assets s'écrivent au fil de leur lecture.
     d'accès aux menus par Alt ; l'appui qui ferme un menu n'agit pas sur ce qui est dessous ; pas
     de menu contextuel sur les onglets (ajouté depuis, voir le jalon 51) ; les onglets des panneaux
     ancrés restent ceux d'ImGui.
+- **Puis les modales** (jalon 53). Le voile et le cadre des fenêtres modales viennent de
+  l'interface du moteur, plus d'ImGui.
+  - **Les fenêtres de réglages deviennent des modales**, comme dans Godot : Editor Settings,
+    Project Settings, Export et C# Debugging s'ouvrent au milieu, sur un voile, et tiennent
+    l'éditeur jusqu'à ce qu'on les ferme. Un cadre porte leur titre et une croix ; Échap les ferme
+    quand on n'est pas en train d'écrire dans un champ. Elles ne se déplacent plus et ne changent
+    plus de taille. Écartées : des fenêtres déplaçables et redimensionnables en Devex UI, plus
+    longues à faire, et que Godot ne propose pas pour ces réglages.
+  - **Une couche modale** (surface 23) dessine le voile sur tout l'éditeur et, pour une fenêtre
+    de réglages, le cadre avec son titre et sa croix. Le panneau du dialogue remplit la carte au
+    milieu, comme avant. Les modales ouvertes forment une pile : la dernière ouverte se montre, les
+    autres attendent dessous, et une modale que plus personne ne demande est oubliée à l'image
+    suivante. Tant qu'une modale est ouverte, les raccourcis de l'éditeur ne répondent pas.
+  - La fenêtre de création, les dialogues (nouveau script, changements non enregistrés, À propos)
+    et les fenêtres de réglages passent tous par `beginModal` et `endModal`, à la place de
+    `BeginPopupModal` et des fenêtres flottantes d'ImGui. Une fenêtre ImGui sans fond, sur tout
+    l'écran, les tient encore, comme les fenêtres qui tiennent les panneaux, jusqu'au retrait
+    d'ImGui.
 - **Puis le dock** (jalon 52). ImGui ne place plus les panneaux. Il restait, pour quitter ImGui :
   le dock, les fenêtres modales, l'entrée (clavier, souris, raccourcis, presse-papiers), le glisser
   entre panneaux, et l'affichage des images. Le dock vient d'abord, le plus gros ; les modales,
@@ -3393,8 +3411,11 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     les écrans), onglets, barres qui partagent la place, onglets glissés d'un emplacement à
     l'autre, disposition gardée avec le projet.
 
-Ensuite, sans ordre figé : CI Linux, les fenêtres modales et l'entrée hors d'ImGui, puis le
-retrait d'ImGui.
+53. ✅ **Modales en Devex UI** — voile et cadre des modales dans l'interface du moteur ; fenêtres
+    de réglages en modales comme dans Godot (titre, croix, Échap), une pile où la dernière ouverte
+    se montre.
+
+Ensuite, sans ordre figé : CI Linux, l'entrée hors d'ImGui, puis le retrait d'ImGui.
 
 ## Questions ouvertes
 

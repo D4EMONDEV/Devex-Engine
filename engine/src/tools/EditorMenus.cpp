@@ -1,4 +1,5 @@
 #include "EditorFrame.hpp"
+#include "EditorModal.hpp"
 #include "SettingsUi.hpp"
 #include "ToolsState.hpp"
 
@@ -802,6 +803,11 @@ void renderEditorFrame(ToolsState& state, render::RenderWorld& world)
 
 void handleEditorShortcuts(ToolsState& state, scene::Scene& scene)
 {
+    // A modal holds the editor until it closes.
+    if (isModalOpen(state))
+    {
+        return;
+    }
     const bool editing = state.playState == PlayState::Editing;
     const ImGuiInputFlags global = ImGuiInputFlags_RouteGlobal;
     const auto pressed = [global](ImGuiKeyChord chord) { return ImGui::Shortcut(chord, global); };

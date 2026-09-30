@@ -391,6 +391,9 @@ TEST_CASE("The editor opens the project's scenes in tabs and renders its viewpor
             (*editor)->openWindow(opened);
             CHECK(inspectorFrames(3, surface));
         }
+        // The windows of settings and the dialogs are modals: the last one opened stands over the veil
+        // of the modal layer, the others wait under it.
+        CHECK(inspectorFrames(2, 23));
 
         // The Animator panel shows the graph of the controller chosen in FileSystem, its states as nodes
         // and its transitions as lines of that interface.

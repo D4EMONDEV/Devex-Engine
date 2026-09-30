@@ -1,4 +1,5 @@
 #include "EditorFrame.hpp"
+#include "EditorModal.hpp"
 #include "ToolsState.hpp"
 #include "TwoDScreen.hpp"
 
@@ -272,8 +273,9 @@ void finishFrame(ToolsState& state)
 
 void handleShortcuts(ToolsState& state, scene::Scene& scene)
 {
-    // The text editor and the graph of the Animator panel undo their own changes.
-    if (detail::textEditorFocused() || state.animatorEditor.focused)
+    // The text editor and the graph of the Animator panel undo their own changes; a modal holds
+    // the editor.
+    if (detail::textEditorFocused() || state.animatorEditor.focused || detail::isModalOpen(state))
     {
         return;
     }
@@ -543,6 +545,7 @@ void ToolsOverlay::update(scene::Scene& scene, core::Duration frameDelta, PlaySt
     state.platform.beginImGuiFrame();
     state.renderer.beginImGuiFrame();
     ImGui::NewFrame();
+    detail::pruneModals(state);
 
     if (state.mode == ToolsMode::Editor)
     {
@@ -598,6 +601,7 @@ void ToolsOverlay::prepareRender(scene::Scene& scene, render::RenderWorld& world
     // overlay of a game as in the editor.
     detail::renderProjectManager(state, world);
     detail::renderEditorDock(state, world);
+    detail::renderModalLayer(state, world);
     detail::renderFileSystem(state, world);
     detail::renderOutput(state, world);
     detail::renderSceneTree(state, world);

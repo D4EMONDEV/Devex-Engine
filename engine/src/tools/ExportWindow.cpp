@@ -2,6 +2,7 @@
 // exported with the startup scene, the folders always included, and the export with its progress. Its
 // settings are part of the project, written once an edit ends and always before an export starts.
 #include "SettingsUi.hpp"
+#include "EditorModal.hpp"
 
 #include <devex/core/Profiler.hpp>
 #include <devex/asset/Project.hpp>
@@ -478,10 +479,10 @@ void drawExportWindow(ToolsState& state)
     {
         state.exportUi = std::make_shared<ExportUi>();
     }
-    if (beginFormWindow(exportWindow, &state.showExport, 36.0f, 36.0f))
+    if (beginFormWindow(state, exportWindow, &state.showExport, 36.0f, 36.0f))
     {
         state.exportUi->update(state, kit, core::Duration(ImGui::GetIO().DeltaTime));
-        ImGui::End();
+        endFormWindow();
     }
 }
 

@@ -1,4 +1,5 @@
 #include "SettingsUi.hpp"
+#include "EditorModal.hpp"
 
 #include <devex/core/File.hpp>
 #include <devex/core/Log.hpp>
@@ -171,10 +172,10 @@ void drawDebuggingWindow(ToolsState& state)
     {
         state.debuggingUi = std::make_shared<DebuggingUi>();
     }
-    if (beginFormWindow(debuggingWindow, &state.showDebugging, 36.0f, 23.0f))
+    if (beginFormWindow(state, debuggingWindow, &state.showDebugging, 36.0f, 23.0f))
     {
         state.debuggingUi->update(state, kit, core::Duration(ImGui::GetIO().DeltaTime));
-        ImGui::End();
+        endFormWindow();
     }
 }
 

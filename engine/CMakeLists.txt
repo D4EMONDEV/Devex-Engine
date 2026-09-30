@@ -797,6 +797,8 @@ target_sources(devex_tools
         src/tools/EditorFrame.hpp
         src/tools/EditorLayer.cpp
         src/tools/EditorMenus.cpp
+        src/tools/EditorModal.cpp
+        src/tools/EditorModal.hpp
         src/tools/EditorOverlay.cpp
         src/tools/EditorSession.cpp
         src/tools/EditorUi.cpp
