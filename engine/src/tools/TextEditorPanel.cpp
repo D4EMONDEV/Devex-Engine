@@ -252,7 +252,7 @@ void indexDocument(TextEditState& edit, const TextDocument& document)
     entries.push_back({.icon = Icon::Redo, .label = "Redo", .shortcut = "Ctrl+Y", .enabled = canRedo,
                        .action = [](ToolsState& tools, scene::Scene&) { tools.textEdit.requestRedo = true; }});
     entries.push_back(MenuEntry::line());
-    entries.push_back({.label = "Toggle Comment", .shortcut = "Ctrl+/", .enabled = comments, .action = [](ToolsState& tools, scene::Scene&) {
+    entries.push_back({.label = "Toggle Comment", .shortcut = "Ctrl+K", .enabled = comments, .action = [](ToolsState& tools, scene::Scene&) {
                            if (const TextDocument* const open = shownDocument(tools))
                            {
                                commentSelection(tools.textEdit, *open, languageOf(open->path));
@@ -1011,7 +1011,7 @@ std::optional<PendingAction> ScriptUi::update(ToolsState& state, EditorUiKit& ki
         scene::UiText& written = scene().get<scene::UiText>(status);
         std::string value = !document->error.empty()
                                 ? document->error
-                                : std::format("Ln {}, Col {}  |  {}  |  UTF-8{}  |  {}  |  Ctrl+S Save   Ctrl+F Find   Ctrl+G Go to line   Ctrl+/ Comment",
+                                : std::format("Ln {}, Col {}  |  {}  |  UTF-8{}  |  {}  |  Ctrl+S Save   Ctrl+F Find   Ctrl+G Go to line   Ctrl+K Comment",
                                               document->line, document->column, toString(language), document->bom() ? " BOM" : "",
                                               document->crlf() ? "CRLF" : "LF");
         if (written.text != value)

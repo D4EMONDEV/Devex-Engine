@@ -241,6 +241,9 @@ TEST_CASE("Commenting a selection adds and removes the marker", "[tools][code]")
     commentSelection(edit, document, CodeLanguage::CSharp);
     REQUIRE(edit.edits.size() == 1);
     CHECK(edit.edits[0].text == "// int a = 1;\n    // int b = 2;");
+    // The selection keeps its letters: from the start of the first line to the space after b.
+    REQUIRE(edit.pendingCursor.has_value());
+    CHECK(*edit.pendingCursor == std::pair{0, 26});
 
     // Lines already commented lose their marker, keeping their indentation.
     const TextDocument commented = documentOf("// int a = 1;\n    // int b = 2;\n");
@@ -249,6 +252,20 @@ TEST_CASE("Commenting a selection adds and removes the marker", "[tools][code]")
     commentSelection(second, commented, CodeLanguage::CSharp);
     REQUIRE(second.edits.size() == 1);
     CHECK(second.edits[0].text == "int a = 1;\n    int b = 2;");
+    // Still on the b.
+    CHECK(*second.pendingCursor == std::pair{0, 19});
+
+    // A cursor at the end of a line stays at its end, and one in the indentation stays there.
+    const TextDocument indented = documentOf("    // turn\nnext\n");
+    TextEditState atEnd;
+    atEnd.selectionBegin = atEnd.selectionEnd = 11;
+    commentSelection(atEnd, indented, CodeLanguage::CSharp);
+    CHECK(atEnd.edits[0].text == "    turn");
+    CHECK(*atEnd.pendingCursor == std::pair{8, 8});
+    TextEditState inIndent;
+    inIndent.selectionBegin = inIndent.selectionEnd = 2;
+    commentSelection(inIndent, indented, CodeLanguage::CSharp);
+    CHECK(*inIndent.pendingCursor == std::pair{2, 2});
 
     // A language without line comments is left alone.
     TextEditState plain;

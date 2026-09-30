@@ -62,7 +62,7 @@ struct DEVEX_API HighlightState
 [[nodiscard]] DEVEX_API std::vector<Token> highlightLine(std::string_view line, CodeLanguage language,
                                                          HighlightState& state);
 
-// The text that starts a line comment, empty when the language has none: what Ctrl+/ inserts.
+// The text that starts a line comment, empty when the language has none: what Ctrl+K inserts.
 [[nodiscard]] DEVEX_API std::string_view lineCommentOf(CodeLanguage language) noexcept;
 
 } // namespace devex::tools::detail

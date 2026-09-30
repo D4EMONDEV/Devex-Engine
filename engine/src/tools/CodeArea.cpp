@@ -151,6 +151,41 @@ namespace {
     return {static_cast<int>(begin), static_cast<int>(end), std::move(changed)};
 }
 
+// Where an offset of the lines a comment was toggled on stands afterwards, `before` and `after`
+// being those lines from `start`: on the same line, the same distance from the letters it was
+// next to, and in the indentation where it was in it.
+[[nodiscard]] int movedByComment(std::string_view before, std::string_view after, std::size_t start, int offset)
+{
+    if (offset < static_cast<int>(start))
+    {
+        return offset;
+    }
+    const auto at = static_cast<std::size_t>(offset) - start;
+    if (at > before.size())
+    {
+        return offset + static_cast<int>(after.size()) - static_cast<int>(before.size());
+    }
+    std::size_t oldStart = 0;
+    std::size_t newStart = 0;
+    while (true)
+    {
+        const std::size_t oldStop = std::min(before.find('\n', oldStart), before.size());
+        const std::size_t newStop = std::min(after.find('\n', newStart), after.size());
+        if (at <= oldStop || oldStop == before.size() || newStop == after.size())
+        {
+            const std::string_view line = before.substr(oldStart, oldStop - oldStart);
+            const auto indent = static_cast<std::ptrdiff_t>(std::min(line.find_first_not_of(" \t"), line.size()));
+            const auto column = static_cast<std::ptrdiff_t>(std::min(at, oldStop) - oldStart);
+            const auto grown = static_cast<std::ptrdiff_t>(newStop - newStart) - static_cast<std::ptrdiff_t>(line.size());
+            const std::ptrdiff_t moved =
+                column <= indent ? column : std::clamp<std::ptrdiff_t>(column + grown, indent, static_cast<std::ptrdiff_t>(newStop - newStart));
+            return static_cast<int>(start + newStart) + static_cast<int>(moved);
+        }
+        oldStart = oldStop + 1;
+        newStart = newStop + 1;
+    }
+}
+
 } // namespace
 
 void acceptCompletion(TextEditState& edit)
@@ -276,7 +311,14 @@ void commentSelection(TextEditState& edit, const TextDocument& document, CodeLan
     }
     const auto begin = static_cast<std::size_t>(std::min(edit.selectionBegin, edit.selectionEnd));
     const auto end = static_cast<std::size_t>(std::max(edit.selectionBegin, edit.selectionEnd));
-    edit.edits.push_back(toggleComment(document.text, begin, end, comment));
+    TextEditState::Edit change = toggleComment(document.text, begin, end, comment);
+    // The cursor and the selection stay with the letters they were on, as in Godot.
+    const std::string_view before = std::string_view(document.text).substr(static_cast<std::size_t>(change.begin),
+                                                                           static_cast<std::size_t>(change.end - change.begin));
+    const auto start = static_cast<std::size_t>(change.begin);
+    edit.pendingCursor = std::pair{movedByComment(before, change.text, start, edit.selectionBegin),
+                                   movedByComment(before, change.text, start, edit.selectionEnd)};
+    edit.edits.push_back(std::move(change));
 }
 
 std::size_t trimTrailingSpaces(std::string& text)

@@ -881,7 +881,10 @@ void handleEditorShortcuts(ToolsState& state, scene::Scene& scene)
         {
             state.textEdit.openGoTo = true;
         }
-        if (pressed(ImGuiMod_Ctrl | ImGuiKey_Slash) && document != nullptr)
+        // Ctrl+K as in Godot, on every keyboard; Ctrl+/ too where / is a key of its own, as on the
+        // keypad.
+        if ((pressed(ImGuiMod_Ctrl | ImGuiKey_K) || pressed(ImGuiMod_Ctrl | ImGuiKey_Slash) || pressed(ImGuiMod_Ctrl | ImGuiKey_KeypadDivide)) &&
+            document != nullptr)
         {
             commentSelection(state.textEdit, *document, languageOf(document->path));
         }

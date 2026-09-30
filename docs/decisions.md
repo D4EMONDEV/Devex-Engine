@@ -2393,6 +2393,12 @@ les assets s'écrivent au fil de leur lecture.
     sans toucher à l'inspecteur, le met au milieu de la liste et efface un filtre qui le cacherait
     (`revealInFileSystem`). Écartés pour l'instant : les entrées d'enregistrement, que le menu
     Scene offre déjà, *Undo Close Tab* et *Play This Scene*.
+  - **Puis Ctrl+K commente les lignes**, comme dans Godot : Ctrl+/ ne répondait pas sur un clavier
+    AZERTY, où / se tape avec Maj. Les lettres suivent la disposition du clavier, Ctrl+K marche donc
+    partout ; Ctrl+/ reste pour les claviers où / est une touche, et le / du pavé numérique aussi.
+    Le menu Edit et la barre d'état de l'écran Script annoncent Ctrl+K. Au passage, le curseur et
+    la sélection restent sur leurs lettres quand une ligne gagne ou perd `// ` : ils gardaient leur
+    place en octets, ce qui envoyait le curseur d'une fin de ligne sur la suivante.
 - **Puis l'éditeur de texte** (jalon 50), le dernier panneau en ImGui, qui reposait sur le champ
   multi-ligne d'ImGui (curseur, sélection, annulation, défilement). Le champ de Devex UI, `UiInput`,
   replace tout son texte à chaque image : bien pour une ligne, pas pour un fichier de code.
@@ -2438,7 +2444,8 @@ les assets s'écrivent au fil de leur lecture.
     autre chose.
   - Limites : pas de retour à la ligne automatique dans une zone ; pas de sélection en colonnes ni
     de curseurs multiples ; les couleurs par morceau ne sont pas encore offertes au C# (le
-    composant, lui, l'est ; elles le sont depuis, voir le jalon 51) ; Ctrl+/ ne répond pas sur un clavier AZERTY (le menu Edit le fait) ;
+    composant, lui, l'est ; elles le sont depuis, voir le jalon 51) ; Ctrl+/ ne répond pas sur un
+    clavier AZERTY (le menu Edit le fait ; Ctrl+K depuis, voir le jalon 51) ;
     la liste de tous les scripts du projet a disparu de l'écran : ils s'ouvrent depuis FileSystem.
 - **Puis Animation et Animator** (jalon 49), les deux derniers panneaux ancrés encore en ImGui
   (surfaces 18 et 19). Ils demandaient au moteur deux choses qu'il n'avait pas, et que les jeux
@@ -2926,7 +2933,7 @@ les assets s'écrivent au fil de leur lecture.
   les mises en forme inhabituelles.
 - **Confort d'édition** : marge des numéros de ligne, surlignage de la ligne courante, **Ctrl+F**
   (recherche, compte des occurrences, sensibilité à la casse, F3 pour la suivante), **Ctrl+H**
-  (remplacement, un par un ou tous), **Ctrl+G** (aller à la ligne), **Ctrl+/** (commenter ou
+  (remplacement, un par un ou tous), **Ctrl+G** (aller à la ligne), **Ctrl+/** (puis **Ctrl+K**, commenter ou
   décommenter les lignes de la sélection), indentation conservée à la nouvelle ligne (et augmentée
   après `{`, `(` ou `:`), **Tab** qui insère quatre espaces, et retrait des espaces en fin de ligne
   à l'enregistrement. Comme ImGui possède les caractères pendant l'édition, ces changements passent
