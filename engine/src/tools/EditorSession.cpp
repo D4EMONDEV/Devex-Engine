@@ -326,7 +326,7 @@ void openProjectScenes(ToolsState& state, scene::Scene& scene)
     const ActiveDocument live = activeDocument(state, scene);
     for (std::size_t index = 0; index < state.tabs.size(); ++index)
     {
-        const bool concerned = action.kind != PendingAction::Kind::CloseTab || state.tabs.id(index) == action.tab;
+        const bool concerned = action.kind != PendingAction::Kind::CloseTab || std::ranges::contains(action.tabs, state.tabs.id(index));
         if (concerned && state.tabs.isModified(index, live))
         {
             tabs.push_back(index);
@@ -357,16 +357,19 @@ void applyAction(ToolsState& state, scene::Scene& scene, const PendingAction& ac
         }
         break;
     case PendingAction::Kind::CloseTab:
-        if (const std::optional<std::size_t> index = state.tabs.findById(action.tab))
+        for (const std::uint64_t tab : action.tabs)
         {
-            resetTransientEdits(state);
-            state.tabs.close(*index, activeDocument(state, scene));
-            if (state.tabs.empty())
+            if (const std::optional<std::size_t> index = state.tabs.findById(tab))
             {
-                newSceneTab(state, scene);
+                resetTransientEdits(state);
+                state.tabs.close(*index, activeDocument(state, scene));
             }
-            writeProjectSettings(state);
         }
+        if (state.tabs.empty())
+        {
+            newSceneTab(state, scene);
+        }
+        writeProjectSettings(state);
         break;
     case PendingAction::Kind::OpenProject:
         state.requests.openProject = action.path;

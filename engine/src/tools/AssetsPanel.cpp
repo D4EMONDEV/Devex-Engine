@@ -777,6 +777,29 @@ void FileSystemUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& edi
             state.assetToSelect.clear();
         }
     }
+    // A file another panel asks to show: the folders around it open, and its line is chosen.
+    std::optional<std::string> revealed;
+    if (!state.assetToReveal.empty())
+    {
+        const std::string resource = std::exchange(state.assetToReveal, std::string{});
+        if (const std::optional<asset::AssetId> id = state.database->findByPath(resource))
+        {
+            const std::size_t scheme = asset::resourceScheme.size();
+            expanded["folder:" + resource.substr(0, scheme)] = true;
+            for (std::size_t slash = resource.find('/', scheme); slash != std::string::npos; slash = resource.find('/', slash + 1))
+            {
+                expanded["folder:" + resource.substr(0, slash)] = true;
+            }
+            // A filter that would hide it gives way.
+            std::string& filterText = scene().get<scene::UiText>(filter).text;
+            if (!containsIgnoringCase(resource, filterText))
+            {
+                filterText.clear();
+            }
+            selected = "source:" + id->uuid.toString();
+            revealed = selected;
+        }
+    }
     state.assetFilter = scene().get<scene::UiText>(filter).text;
     gather(state);
 
@@ -789,6 +812,16 @@ void FileSystemUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& edi
     scene().get<scene::UiScroll>(scroll).speed = rowHeight * 3.0f;
     const ui::LaidOutRect* const view = world.canvases().empty() ? nullptr : world.canvases().front().layout.find(scroll);
     const float viewHeight = view != nullptr ? view->size().y : 0.0f;
+    if (revealed)
+    {
+        // In the middle of the list, as far as it goes.
+        if (const auto found = std::ranges::find(nodes, *revealed, &Node::key); found != nodes.end())
+        {
+            const float top = static_cast<float>(found - nodes.begin()) * rowHeight;
+            const float bottom = std::max(static_cast<float>(nodes.size()) * rowHeight - viewHeight, 0.0f);
+            scene().get<scene::UiScroll>(scroll).offset.y = std::clamp(top - (viewHeight - rowHeight) * 0.5f, 0.0f, bottom);
+        }
+    }
     const std::size_t needed = static_cast<std::size_t>(std::ceil(std::max(viewHeight, 300.0f) / rowHeight)) + 2;
     const float iconSize = font * 1.15f;
     const float arrow = font * 1.5f;
@@ -1065,6 +1098,13 @@ void drawAssetsPanel(ToolsState& state, scene::Scene& scene)
     }
     state.fileSystemUi->update(state, *state.uiKit, scene, core::Duration(ImGui::GetIO().DeltaTime));
     ImGui::End();
+}
+
+void revealInFileSystem(ToolsState& state, std::string resource)
+{
+    state.assetToReveal = std::move(resource);
+    state.showAssets = true;
+    ImGui::SetWindowFocus(assetsWindow);
 }
 
 void renderFileSystem(ToolsState& state, render::RenderWorld& world)

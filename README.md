@@ -113,7 +113,8 @@ Le détail, l'architecture des modules et les jalons sont dans
   dialogues New Script, modifications non enregistrées et About, moniteurs de Statistics (une
   courbe par mesure) et Profiler (barres des images, timeline zoomable des zones, arbre des temps
   CPU, passes GPU, mémoire des assets), cadre de l'éditeur (barre de menus et ses menus, barre
-  d'état, onglets des scènes que l'on glisse pour les ranger, barre d'outils de la vue), panneaux
+  d'état, onglets des scènes que l'on glisse pour les ranger et dont le clic droit ferme les autres
+  ou montre le fichier dans FileSystem, barre d'outils de la vue), panneaux
   Animation (timeline qui zoome et défile) et Animator (graphe des états, paramètres suivis en
   direct), écran Script (fichiers ouverts, menus File, Edit et Search, recherche, complétion, sur
   une zone de texte qui ne place que les lignes en vue), FileSystem et Output déjà écrits

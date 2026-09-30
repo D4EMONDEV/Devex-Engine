@@ -78,7 +78,7 @@ void openPath(ToolsState& state, const std::filesystem::path& path)
                        .action = [](ToolsState& tools, scene::Scene& edited) {
                            if (tools.tabs.active())
                            {
-                               requestAction(tools, edited, {.kind = PendingAction::Kind::CloseTab, .tab = tools.tabs.id(*tools.tabs.active())});
+                               requestAction(tools, edited, {.kind = PendingAction::Kind::CloseTab, .tabs = {tools.tabs.id(*tools.tabs.active())}});
                            }
                        }});
     entries.push_back(MenuEntry::line());
@@ -917,7 +917,7 @@ void handleEditorShortcuts(ToolsState& state, scene::Scene& scene)
     }
     if (pressed(ImGuiMod_Ctrl | ImGuiKey_W) && state.tabs.active())
     {
-        requestAction(state, scene, {.kind = PendingAction::Kind::CloseTab, .tab = state.tabs.id(*state.tabs.active())});
+        requestAction(state, scene, {.kind = PendingAction::Kind::CloseTab, .tabs = {state.tabs.id(*state.tabs.active())}});
     }
     // Ctrl+Tab goes to the next scene tab.
     if (pressed(ImGuiMod_Ctrl | ImGuiKey_Tab) && state.tabs.size() > 1 && state.tabs.active())

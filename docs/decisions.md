@@ -2335,7 +2335,8 @@ les assets s'écrivent au fil de leur lecture.
     les menus, 0,1 ms la barre d'état, 0,2 ms l'en-tête de la vue) ; la couche ne coûte rien tant
     qu'elle ne montre rien. Limites : un seul niveau de sous-menu, toujours ouvert à droite ; pas
     d'accès aux menus par Alt ; l'appui qui ferme un menu n'agit pas sur ce qui est dessous ; pas
-    de menu contextuel sur les onglets ; les onglets des panneaux ancrés restent ceux d'ImGui.
+    de menu contextuel sur les onglets (ajouté depuis, voir le jalon 51) ; les onglets des panneaux
+    ancrés restent ceux d'ImGui.
 - **Puis le ménage avant le dock** (jalon 51). Ce qui reste d'ImGui dans l'éditeur, une fois tous
   les panneaux portés, est le dock lui-même et les fenêtres qui accueillent les images des
   panneaux. Avant de s'y attaquer :
@@ -2382,6 +2383,16 @@ les assets s'écrivent au fil de leur lecture.
     vue : depuis le `Start` d'un script. Écartés : les octets en C# (faux dès le premier accent) et
     la sélection et l'annulation, qui peuvent attendre qu'un jeu en ait besoin. Le bootstrap passe
     à la version 20.
+  - **Puis le menu des onglets de scène**, au clic droit, comme celui de Godot : *Close Tab*,
+    *Close Other Tabs*, *Close Tabs to the Right*, *Close All Tabs* et *Show in FileSystem*. Il
+    s'ouvre sous le pointeur dans la couche au-dessus de l'éditeur, et tient les onglets par leurs
+    identifiants, qui ne changent pas quand on les range. `PendingAction` ferme désormais une liste
+    d'onglets : ceux qui ont des changements non enregistrés sont demandés une seule fois, dans la
+    fenêtre qui les liste comme en quittant, et une scène vide prend la place de la dernière.
+    *Show in FileSystem* amène le panneau devant, ouvre les dossiers autour du fichier, le choisit
+    sans toucher à l'inspecteur, le met au milieu de la liste et efface un filtre qui le cacherait
+    (`revealInFileSystem`). Écartés pour l'instant : les entrées d'enregistrement, que le menu
+    Scene offre déjà, *Undo Close Tab* et *Play This Scene*.
 - **Puis l'éditeur de texte** (jalon 50), le dernier panneau en ImGui, qui reposait sur le champ
   multi-ligne d'ImGui (curseur, sélection, annulation, défilement). Le champ de Devex UI, `UiInput`,
   replace tout son texte à chaque image : bien pour une ligne, pas pour un fichier de code.

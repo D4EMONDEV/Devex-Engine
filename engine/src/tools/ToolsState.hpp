@@ -258,7 +258,7 @@ struct DEVEX_API PendingAction
 {
     enum class Kind : std::uint8_t
     {
-        // Closes one scene tab.
+        // Closes scene tabs.
         CloseTab,
         CloseText,
         ReloadText,
@@ -269,8 +269,8 @@ struct DEVEX_API PendingAction
     };
 
     Kind kind = Kind::CloseTab;
-    // The tab to close.
-    std::uint64_t tab = 0;
+    // The tabs to close.
+    std::vector<std::uint64_t> tabs;
     // The project to open, or the text file to close/reload.
     std::filesystem::path path;
 };
@@ -595,6 +595,8 @@ struct DEVEX_API ToolsState
     TilePainter tilePainter;
     // A file just created, selected once it is imported, as a res:// path.
     std::string assetToSelect;
+    // A file the FileSystem shows at its next update, as a res:// path: revealInFileSystem.
+    std::string assetToReveal;
     // Animations: where clips come from, and the animations of the game while it plays.
     std::function<std::shared_ptr<const animation::Clip>(asset::AssetId)> animationClips;
     // The themes of interfaces, for the inspector to show what a style sets.
@@ -815,6 +817,9 @@ DEVEX_API void drawAnimationPanel(ToolsState& state, scene::Scene& scene);
 DEVEX_API void renderAnimationPanel(ToolsState& state, render::RenderWorld& world);
 // Shows an asset of the FileSystem in the inspector, in place of the selected entity or code file.
 DEVEX_API void selectAsset(ToolsState& state, asset::AssetId id);
+// Brings the FileSystem to the front, opens the folders around a res:// file and shows its line,
+// chosen, as Godot's Show in FileSystem. The inspector keeps what it shows.
+DEVEX_API void revealInFileSystem(ToolsState& state, std::string resource);
 // The sprites a texture was cut into, in the order of its cells.
 [[nodiscard]] DEVEX_API std::vector<asset::AssetId> spritesOfTexture(const ToolsState& state, asset::AssetId texture);
 // Writes a new tileset into a res:// folder of the assets, and selects it once imported. From a

@@ -33,6 +33,36 @@ namespace {
 constexpr const char* tabDrag = "scene tab";
 // How far the tabs go under the toolbar, which hides the lower corners of the one shown.
 constexpr float tabOverlap = 6.0f;
+// Who opened the menu of the layer over the editor: the menu bar counts from 0, the Script screen
+// from 100.
+constexpr std::size_t tabMenuOwner = 200;
+
+// The menu of a scene tab, as Godot's: closing it, the others, those at its right or all of them,
+// and finding its file. It holds the tabs by their ids, which stay the same when tabs move.
+[[nodiscard]] std::vector<MenuEntry> tabMenu(const std::vector<std::uint64_t>& ids, std::size_t index, bool active, std::string resource)
+{
+    const auto closing = [](std::vector<std::uint64_t> closed) {
+        return [closed = std::move(closed)](ToolsState& tools, scene::Scene& edited) {
+            requestAction(tools, edited, {.kind = PendingAction::Kind::CloseTab, .tabs = closed});
+        };
+    };
+    std::vector<std::uint64_t> others = ids;
+    others.erase(others.begin() + static_cast<std::ptrdiff_t>(index));
+    std::vector<MenuEntry> entries;
+    entries.push_back({.icon = Icon::Close, .label = "Close Tab", .shortcut = active ? "Ctrl+W" : "", .action = closing({ids[index]})});
+    entries.push_back({.label = "Close Other Tabs", .enabled = !others.empty(), .action = closing(std::move(others))});
+    entries.push_back({.label = "Close Tabs to the Right",
+                       .enabled = index + 1 < ids.size(),
+                       .action = closing(std::vector<std::uint64_t>(ids.begin() + static_cast<std::ptrdiff_t>(index) + 1, ids.end()))});
+    entries.push_back({.label = "Close All Tabs", .action = closing(ids)});
+    entries.push_back(MenuEntry::line());
+    const bool saved = !resource.empty();
+    entries.push_back({.icon = Icon::FolderOpen,
+                       .label = "Show in FileSystem",
+                       .enabled = saved,
+                       .action = [resource = std::move(resource)](ToolsState& tools, scene::Scene&) { revealInFileSystem(tools, resource); }});
+    return entries;
+}
 
 } // namespace
 
@@ -529,6 +559,22 @@ void ViewportHeaderUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene&
             closed = tabs[*under].id;
         }
     }
+    // The second button opens the menu of the tab under the pointer, where it was pressed.
+    if (editing && panel.hovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Right))
+    {
+        if (const std::optional<std::size_t> under = tabOf(world.hovered()); under && *under < state.tabs.size())
+        {
+            std::vector<std::uint64_t> ids;
+            ids.reserve(tabs.size());
+            for (const Tab& tab : tabs)
+            {
+                ids.push_back(tab.id);
+            }
+            const std::filesystem::path& file = state.tabs.path(*under, live);
+            std::string resource = file.empty() || state.database == nullptr ? std::string{} : state.database->project().resourcePath(file);
+            openEditorMenu(state, tabMenu(ids, *under, *under == active, std::move(resource)), ImGui::GetIO().MousePos, tabMenuOwner);
+        }
+    }
     const bool added = editing && world.wasClicked(newTab);
     std::optional<std::pair<std::size_t, std::size_t>> moved;
     if (const ui::Drop* const drop = world.dropped(); drop != nullptr && editing && drop->type == tabDrag)
@@ -553,7 +599,7 @@ void ViewportHeaderUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene&
     }
     else if (closed)
     {
-        requestAction(state, edited, {.kind = PendingAction::Kind::CloseTab, .tab = *closed});
+        requestAction(state, edited, {.kind = PendingAction::Kind::CloseTab, .tabs = {*closed}});
     }
     else if (shown && editing)
     {

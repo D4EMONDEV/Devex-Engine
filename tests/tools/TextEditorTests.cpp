@@ -122,3 +122,52 @@ TEST_CASE("Text editor protects pending changes and synchronizes scene and proje
     cancelPendingAction(state);
     CHECK(settings->modified());
 }
+
+TEST_CASE("Closing several scene tabs asks once about the unsaved ones and closes them all", "[tools][tabs][gpu]")
+{
+    struct Directory
+    {
+        std::filesystem::path path = std::filesystem::temp_directory_path() / ("devex-tabs-session-" + core::Uuid::generate().toString());
+        ~Directory() { std::error_code error; std::filesystem::remove_all(path, error); }
+    } directory;
+    auto project = asset::createProject(directory.path, "Tabs test");
+    REQUIRE(project);
+    core::JobSystem jobs(1);
+    auto database = asset::AssetDatabase::open(*project, jobs);
+    REQUIRE(database);
+    auto platform = platform::Platform::create();
+    REQUIRE(platform);
+    auto window = platform->createWindow({.width = 800, .height = 600, .vulkan = true, .hidden = true});
+    REQUIRE(window);
+    auto renderer = render::Renderer::create(*platform, *window, {.validation = true});
+    REQUIRE(renderer);
+    ToolsState state(*platform, *window, *renderer, tools::ToolsMode::Editor);
+    state.database = database->get();
+    scene::Scene scene;
+
+    // Three scenes, the one in the middle with a change not saved yet.
+    std::vector<std::uint64_t> ids;
+    for (const char* name : {"First", "Second", "Third"})
+    {
+        SceneDocument document;
+        document.path = project->assetsDirectory() / (std::string(name) + ".dvxscene");
+        REQUIRE(core::writeTextFile(document.path, "[scene format=1]\n"));
+        ids.push_back(state.tabs.id(state.tabs.add(std::move(document))));
+    }
+    activateSceneTab(state, scene, 0);
+    state.tabs.background(1).savedState = state.tabs.background(1).history.stateId() + 1;
+
+    // The tabs at the right of the first: the changed one holds them back until a choice.
+    requestAction(state, scene, {.kind = PendingAction::Kind::CloseTab, .tabs = {ids[1], ids[2]}});
+    REQUIRE(state.pendingAction);
+    CHECK(state.tabs.size() == 3);
+    discardPendingAction(state, scene);
+    REQUIRE(state.tabs.size() == 1);
+    CHECK(state.tabs.id(0) == ids[0]);
+
+    // All of them, none changed: they go at once, and a new scene takes their place.
+    requestAction(state, scene, {.kind = PendingAction::Kind::CloseTab, .tabs = {ids[0]}});
+    CHECK_FALSE(state.pendingAction);
+    REQUIRE(state.tabs.size() == 1);
+    CHECK(state.tabs.id(0) != ids[0]);
+}
