@@ -2363,6 +2363,10 @@ les assets s'écrivent au fil de leur lecture.
     prennent comme avant, et la vue prend les assets lâchés sur son image.
   - Plus de 400 appels à ImGui sont partis des outils ; il en reste une quarantaine, pour le contexte,
     l'image, et les mesures du thème. L'éditeur prend 0,49 ms de processeur par image en Release.
+  - Vérifié ensuite à l'écran, par-dessus un jeu (F1 dans `devex-player`) : les panneaux n'y
+    montraient plus que leur fond depuis qu'ils sont faits avec l'interface du moteur, parce que
+    l'application ne leur demandait leurs images que dans l'éditeur. Elle les demande maintenant
+    dès que les outils sont là.
 - **Puis les modales** (jalon 53). Le voile et le cadre des fenêtres modales viennent de
   l'interface du moteur, plus d'ImGui.
   - **Les fenêtres de réglages deviennent des modales**, comme dans Godot : Editor Settings,

@@ -950,7 +950,8 @@ void ApplicationRunner::render(bool gameplay)
             m_application.onRender(world);
         }
     }
-    if (isEditor())
+    // The panels draw their images over a game as in the editor; the editor adds its view.
+    if (m_services.tools != nullptr)
     {
         DEVEX_PROFILE_SCOPE("Editor overlays");
         m_services.tools->prepareRender(scene, world, m_playState);
