@@ -677,6 +677,7 @@ void ToolsOverlay::prepareRender(scene::Scene& scene, render::RenderWorld& world
     detail::renderProfiler(state, world);
     detail::renderAnimationPanel(state, world);
     detail::renderAnimatorPanel(state, world);
+    detail::renderTextEditor(state, world);
     detail::renderEditorFrame(state, world);
     if (state.mode != ToolsMode::Editor)
     {

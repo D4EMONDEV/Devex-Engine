@@ -167,6 +167,9 @@ public:
     // Whether the tooltips show outside the image of the panel, in the layer over the editor: a strip
     // such as a menu bar has no room for them.
     void setTooltipsOutside(bool outside) noexcept;
+    // Sees what the interface world is about to be given, and may take keys from it: a list of
+    // completions takes the arrows and Enter from the text under it.
+    void setInputFilter(std::function<void(ui::UiInput&)> filter);
 
     // Inside the ImGui window it fills: takes the room left in it, or only `height` points of it, gives
     // the interface world the mouse and the keys the window receives, and shows the image of the
@@ -203,6 +206,7 @@ private:
     ui::UiInput m_input;
     std::function<std::optional<ImGuiDrag>(const ui::Carried&)> m_dragOut;
     std::function<std::optional<std::pair<std::string, std::string>>(const ImGuiPayload&)> m_dragIn;
+    std::function<void(ui::UiInput&)> m_filter;
     // Where the last frame was drawn, kept to reuse its storage.
     render::RenderWorld m_scratch;
 };

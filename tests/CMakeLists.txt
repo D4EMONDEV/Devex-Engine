@@ -110,6 +110,7 @@ devex_add_tests(ui
         ui/ColorTests.cpp
         ui/ControlsTests.cpp
         ui/LayoutTests.cpp
+        ui/TextAreaTests.cpp
         ui/TextLayoutTests.cpp
         ui/UiWorldTests.cpp
     LIBRARIES

@@ -85,6 +85,25 @@ DEVEX_REFLECT(UiPlot)
         .field("marker_color", &UiPlot::markerColor, {.color = true});
 }
 
+DEVEX_REFLECT(UiTextArea)
+{
+    type.field("selection_color", &UiTextArea::selectionColor, {.color = true})
+        .field("caret_color", &UiTextArea::caretColor, {.color = true})
+        .field("padding", &UiTextArea::padding)
+        .field("scroll", &UiTextArea::scroll)
+        .field("line_numbers", &UiTextArea::lineNumbers)
+        .field("line_number_color", &UiTextArea::lineNumberColor, {.color = true})
+        .field("current_line_color", &UiTextArea::currentLineColor, {.color = true})
+        .field("tab_size", &UiTextArea::tabSize)
+        .field("auto_indent", &UiTextArea::autoIndent)
+        .field("indent_after", &UiTextArea::indentAfter)
+        .field("read_only", &UiTextArea::readOnly)
+        .field("scrollbar_size", &UiTextArea::scrollbarSize)
+        .field("scrollbar_color", &UiTextArea::scrollbarColor, {.color = true})
+        .field("interactable", &UiTextArea::interactable)
+        .field("action", &UiTextArea::action);
+}
+
 DEVEX_REFLECT(UiLine)
 {
     type.field("points", &UiLine::points)

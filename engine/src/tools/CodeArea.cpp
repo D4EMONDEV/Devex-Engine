@@ -8,9 +8,6 @@
 
 #include <devex/core/Path.hpp>
 
-#include <imgui_internal.h>
-#include <imgui_stdlib.h>
-
 #include <algorithm>
 #include <cmath>
 #include <string>
@@ -85,29 +82,6 @@ namespace {
     return matches;
 }
 
-// The indentation of the line holding an offset: what a new line below it starts with.
-[[nodiscard]] std::string indentationAt(std::string_view text, std::size_t offset)
-{
-    const auto [begin, end] = lineBounds(text, offset);
-    std::size_t stop = begin;
-    while (stop < end && (text[stop] == ' ' || text[stop] == '\t'))
-    {
-        ++stop;
-    }
-    std::string indentation(text.substr(begin, stop - begin));
-    // A line that opens a block indents the next one.
-    std::string_view trimmed = text.substr(begin, end - begin);
-    while (!trimmed.empty() && (trimmed.back() == ' ' || trimmed.back() == '\t'))
-    {
-        trimmed.remove_suffix(1);
-    }
-    if (!trimmed.empty() && (trimmed.back() == '{' || trimmed.back() == '(' || trimmed.back() == ':'))
-    {
-        indentation += "    ";
-    }
-    return indentation;
-}
-
 // Adds or removes the line comment of every line the selection touches.
 [[nodiscard]] TextEditState::Edit toggleComment(std::string_view text, std::size_t selectionBegin,
                                                 std::size_t selectionEnd, std::string_view comment)
@@ -179,75 +153,6 @@ namespace {
 
 } // namespace
 
-// Applies what the panel asked for on ImGui's own buffer, and reports where the cursor is.
-int codeAreaCallback(ImGuiInputTextCallbackData* data)
-{
-    auto& context = *static_cast<CodeAreaCallbackContext*>(data->UserData);
-    TextEditState& edit = *context.edit;
-    TextDocument& document = *context.document;
-
-    if (data->EventFlag == ImGuiInputTextFlags_CallbackCompletion)
-    {
-        // Tab takes the selected completion, or indents when the popup is closed.
-        if (edit.completing && !edit.completions.empty())
-        {
-            const CompletionItem& item = edit.completions[static_cast<std::size_t>(edit.completionIndex)];
-            const int begin = data->CursorPos - static_cast<int>(edit.completionPrefix.size());
-            data->DeleteChars(begin, static_cast<int>(edit.completionPrefix.size()));
-            data->InsertChars(begin, item.text.c_str());
-            edit.completing = false;
-        }
-        else
-        {
-            data->InsertChars(data->CursorPos, "    ");
-        }
-        return 0;
-    }
-    // CallbackAlways: apply the edits the panel queued, then read the cursor back.
-    for (const TextEditState::Edit& pending : edit.edits)
-    {
-        const int begin = std::clamp(pending.begin, 0, data->BufTextLen);
-        const int end = std::clamp(pending.end, begin, data->BufTextLen);
-        data->DeleteChars(begin, end - begin);
-        if (!pending.text.empty())
-        {
-            data->InsertChars(begin, pending.text.c_str());
-        }
-    }
-    edit.edits.clear();
-
-    if (edit.pendingCursor)
-    {
-        const auto [begin, end] = *std::exchange(edit.pendingCursor, std::nullopt);
-        data->CursorPos = std::clamp(end, 0, data->BufTextLen);
-        data->SelectionStart = std::clamp(begin, 0, data->BufTextLen);
-        data->SelectionEnd = data->CursorPos;
-    }
-
-    // Typing a newline keeps the indentation of the line above.
-    const bool inserted = data->BufTextLen == edit.previousLength + 1;
-    if (inserted && data->CursorPos > 0 && data->Buf[data->CursorPos - 1] == '\n')
-    {
-        const std::string indentation =
-            indentationAt(std::string_view(data->Buf, static_cast<std::size_t>(data->BufTextLen)),
-                          static_cast<std::size_t>(data->CursorPos) - 1);
-        if (!indentation.empty())
-        {
-            data->InsertChars(data->CursorPos, indentation.c_str());
-        }
-    }
-    edit.previousLength = data->BufTextLen;
-
-    edit.cursor = data->CursorPos;
-    edit.selectionBegin = data->SelectionStart;
-    edit.selectionEnd = data->SelectionEnd;
-    const std::string_view text(data->Buf, static_cast<std::size_t>(data->BufTextLen));
-    document.line = lineOfOffset(text, static_cast<std::size_t>(data->CursorPos));
-    document.column = 1 + static_cast<int>(static_cast<std::size_t>(data->CursorPos) -
-                                           lineBounds(text, static_cast<std::size_t>(data->CursorPos)).first);
-    return 0;
-}
-
 void acceptCompletion(TextEditState& edit)
 {
     if (!edit.completing || edit.completions.empty())
@@ -258,6 +163,7 @@ void acceptCompletion(TextEditState& edit)
         std::clamp(edit.completionIndex, 0, static_cast<int>(edit.completions.size()) - 1))];
     const int begin = edit.cursor - static_cast<int>(edit.completionPrefix.size());
     edit.edits.push_back({begin, edit.cursor, item.text});
+    edit.dismissedPrefix = item.text;
     const int end = begin + static_cast<int>(item.text.size());
     edit.pendingCursor = std::pair{end, end};
     edit.completing = false;
@@ -274,6 +180,13 @@ void updateCompletion(TextEditState& edit, const TextDocument& document, CodeLan
         edit.completions.clear();
         return;
     }
+    if (prefix == edit.dismissedPrefix)
+    {
+        edit.completing = false;
+        edit.completions.clear();
+        return;
+    }
+    edit.dismissedPrefix.clear();
     if (prefix == edit.completionPrefix && !edit.completions.empty())
     {
         return;

@@ -347,13 +347,19 @@ void UiWorld::update(scene::Scene& scene, math::Vec2 windowSize, const UiInput& 
     }
 
     updateHover(scene, rest);
+    // An area of text under the pointer takes the wheel before what scrolls around it.
+    if (scrollTextArea(scene, rest))
+    {
+        rest.wheel = 0.0f;
+    }
     updateScroll(scene, rest);
-    const bool editedBefore = m_editing.entity.isValid();
+    const bool editedBefore = m_editing.entity.isValid() || m_areaFocus.isValid();
     updateFields(scene, rest, delta);
+    updateTextAreas(scene, rest, delta);
     // A number field that stopped being typed into reads what was typed.
     finishNumberEdit(scene);
     // While a field takes what is typed, the keys belong to it rather than to the menu around it.
-    const bool editing = editedBefore || m_editing.entity.isValid();
+    const bool editing = editedBefore || m_editing.entity.isValid() || m_areaFocus.isValid();
     // The arrows that moved a slider do not move the focus as well.
     const bool slid = updateSliders(scene, rest);
     updateNumberFields(scene, rest);
@@ -1182,6 +1188,10 @@ void UiWorld::build(const scene::Scene& scene, const DrawContext& context,
             return entity == m_barHover || (m_drag.kind == DragKind::Splitter && entity == m_drag.entity);
         };
     }
+    if (!withTints.textAreas)
+    {
+        withTints.textAreas = [this](scene::Entity entity) { return textAreaView(entity); };
+    }
     if (!withTints.pickerHsv)
     {
         withTints.pickerHsv = [this, &scene](scene::Entity entity, math::Vec3& hsv) { return pickerHsv(scene, entity, hsv); };
@@ -1338,12 +1348,25 @@ void UiWorld::setThemes(ThemeSource themes)
 
 void UiWorld::startEditing(const scene::Scene& scene, scene::Entity field, bool selectAll)
 {
+    // An area of text takes the keyboard with its cursor where it was.
+    if (const scene::UiTextArea* const area = scene.isAlive(field) ? scene.tryGet<scene::UiTextArea>(field) : nullptr)
+    {
+        if (area->interactable && scene.has<scene::UiText>(field))
+        {
+            m_areaFocus = field;
+            m_areaBlink = 0.0f;
+            m_editing = EditingField{};
+        }
+        return;
+    }
     if (!isEditable(scene, field))
     {
         return;
     }
     const std::size_t end = scene.get<scene::UiText>(field).text.size();
     m_editing = EditingField{.entity = field, .caret = end, .anchor = selectAll ? 0 : end};
+    // One element takes what is typed: an area of text gives the keyboard up.
+    m_areaFocus = scene::Entity{};
     if (scene.has<scene::UiNumberField>(field))
     {
         m_numberEdit = field;
@@ -1359,7 +1382,7 @@ scene::Entity UiWorld::editedField() const noexcept
 
 bool UiWorld::isEditing() const noexcept
 {
-    return m_editing.entity.isValid();
+    return m_editing.entity.isValid() || m_areaFocus.isValid();
 }
 
 const EditState* UiWorld::editStateOf(scene::Entity entity) const noexcept
@@ -1485,6 +1508,12 @@ void UiWorld::clear()
     m_pickers.clear();
     m_pickerHeld = scene::Entity{};
     m_pickerPart = PickerPart::None;
+    m_areas.clear();
+    m_areaFocus = scene::Entity{};
+    m_areaSelecting = false;
+    m_areaBar = AreaBar::None;
+    m_areaPressTime = -1.0;
+    m_areaPresses = 0;
 }
 
 } // namespace devex::ui

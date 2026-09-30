@@ -15,15 +15,14 @@
 #include <utility>
 #include <vector>
 
-struct ImGuiInputTextCallbackData;
-
 namespace devex::tools::detail {
 
 class TextDocument;
 
 // What the Text Editor keeps for the document it shows: where the cursor is, what it searched for,
-// and the edits it asks ImGui to apply. While a text field is active ImGui owns the characters, so
-// every change made by the panel goes through the callback rather than through the string.
+// and the edits it asks for. The area of text that shows the document owns its letters: the changes
+// the panel asks for wait here until the panel writes them at its next update, all at once, so that
+// the area goes back on them in one step.
 struct DEVEX_API TextEditState
 {
     // A range of the text replaced by something else.
@@ -40,8 +39,6 @@ struct DEVEX_API TextEditState
     int cursor = 0;
     int selectionBegin = 0;
     int selectionEnd = 0;
-    // The length of the text at the previous frame, to notice a newline being typed.
-    int previousLength = 0;
 
     // Find and replace.
     bool showFind = false;
@@ -62,6 +59,9 @@ struct DEVEX_API TextEditState
     bool completing = false;
     int completionIndex = 0;
     std::string completionPrefix;
+    // What was being typed when a completion was taken or the list closed: the list stays closed
+    // until something else is typed.
+    std::string dismissedPrefix;
     std::vector<CompletionItem> completions;
     // The names of the engine, gathered once for the language of the document.
     std::vector<CompletionItem> engineNames;
@@ -80,22 +80,12 @@ struct DEVEX_API TextEditState
     bool textChanged = false;
     // The types and functions of the document, read with its lines.
     std::vector<CodeSymbol> outline;
-    // The cursor blinks from the last time it moved.
-    int previousCursor = -1;
-    double cursorTime = 0.0;
     // Set when the popup or a click chose a completion, applied on the next frame.
     bool completionAccepted = false;
+    // Asked by the Edit menu, answered by the area of text at the next update of the panel.
+    bool requestUndo = false;
+    bool requestRedo = false;
 };
-
-// What the callback of the text field works on.
-struct DEVEX_API CodeAreaCallbackContext
-{
-    TextEditState* edit = nullptr;
-    TextDocument* document = nullptr;
-};
-
-// Applies the queued edits, keeps the indentation when a line is typed, and reads the cursor back.
-DEVEX_API int codeAreaCallback(ImGuiInputTextCallbackData* data);
 
 // The line a byte offset falls on, read from the index instead of counting the newlines again.
 [[nodiscard]] DEVEX_API int lineOfOffsetIndexed(const TextEditState& edit, int offset);

@@ -153,6 +153,7 @@ ComponentRegistry& componentRegistry()
         builtins.add<UiColorPicker>();
         builtins.add<UiPlot>();
         builtins.add<UiLine>();
+        builtins.add<UiTextArea>();
         return builtins;
     }();
     return registry;

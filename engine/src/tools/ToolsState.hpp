@@ -94,6 +94,7 @@ struct EditorDialogsUi;
 struct StatisticsUi;
 struct ProfilerUi;
 struct AnimationUi;
+struct ScriptUi;
 struct AnimatorUi;
 struct MenuBarUi;
 struct StatusBarUi;
@@ -498,6 +499,7 @@ struct DEVEX_API ToolsState
     std::shared_ptr<StatisticsUi> statisticsUi;
     std::shared_ptr<ProfilerUi> profilerUi;
     std::shared_ptr<AnimationUi> animationUi;
+    std::shared_ptr<ScriptUi> scriptUi;
     std::shared_ptr<AnimatorUi> animatorUi;
     // The frame of the editor: its bars, the header of the view, and the layer of their menus.
     std::shared_ptr<MenuBarUi> menuBarUi;
@@ -546,11 +548,7 @@ struct DEVEX_API ToolsState
     TextEditState textEdit;
     // The errors and warnings of the last build of the game code, shown in the margin.
     std::vector<CodeDiagnostic> codeDiagnostics;
-    // The script screen: the files of the project's code, listed beside the text.
-    std::vector<std::filesystem::path> scriptFiles;
-    double scriptsScanned = -1.0;
-    std::string scriptFilter;
-    std::string symbolFilter;
+    // The file the Script screen shows, among those that are open.
     std::filesystem::path activeText;
     std::string textOpenError;
 
@@ -763,6 +761,7 @@ DEVEX_API void openTextFile(ToolsState& state, const std::filesystem::path& path
 DEVEX_API void showOpenTextDialog(ToolsState& state);
 DEVEX_API void drawTextEditorPanel(ToolsState& state, scene::Scene& scene);
 [[nodiscard]] DEVEX_API bool textEditorFocused();
+DEVEX_API void renderTextEditor(ToolsState& state, render::RenderWorld& world);
 [[nodiscard]] DEVEX_API TextDocument* findTextDocument(ToolsState& state, const std::filesystem::path& path);
 [[nodiscard]] DEVEX_API std::vector<TextDocument*> affectedTextDocuments(ToolsState& state, const PendingAction& action);
 [[nodiscard]] DEVEX_API bool saveTextFile(ToolsState& state, scene::Scene& scene, TextDocument& document);

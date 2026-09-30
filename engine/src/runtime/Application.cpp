@@ -2068,6 +2068,13 @@ void ApplicationRunner::updateUi(std::chrono::nanoseconds frameTime)
         uiInput.cutPressed = control && input.wasLetterPressed('x');
         uiInput.pastePressed = control && input.wasLetterPressed('v');
         uiInput.selectAllPressed = control && input.wasLetterPressed('a');
+        // What an area of text answers beside these.
+        uiInput.pageUpPressed = stroke(platform::Key::PageUp);
+        uiInput.pageDownPressed = stroke(platform::Key::PageDown);
+        uiInput.tabPressed = stroke(platform::Key::Tab);
+        uiInput.wordModifier = control;
+        uiInput.undoPressed = control && !uiInput.selecting && input.wasLetterPressed('z');
+        uiInput.redoPressed = control && (input.wasLetterPressed('y') || (uiInput.selecting && input.wasLetterPressed('z')));
         if (uiInput.pastePressed)
         {
             uiInput.clipboard = m_services.platform.clipboardText();

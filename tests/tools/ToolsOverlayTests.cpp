@@ -396,6 +396,10 @@ TEST_CASE("The editor opens the project's scenes in tabs and renders its viewpor
         CHECK(inspectorFrames(3, 19));
         (*editor)->selectAsset({});
 
+        // The Script screen shows the file it is given in an area of text of that interface.
+        (*editor)->openTextFile(project.file);
+        CHECK(inspectorFrames(3, 20));
+
         // The menus of the menu bar are menus of that interface, in a layer over the whole window that
         // is drawn while one is open.
         using devex::tools::EditorMenu;

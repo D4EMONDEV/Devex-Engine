@@ -19,6 +19,7 @@ class Scene;
 namespace devex::ui {
 
 class TextCache;
+struct TextAreaView;
 
 // A font ready to draw with: its letters and the atlas they are read from.
 struct DEVEX_API FontRef
@@ -68,6 +69,9 @@ struct DEVEX_API DrawContext
     // The hue, saturation and value a colour picker shows, which its colour gives when this says
     // nothing: a grey loses its hue.
     std::function<bool(scene::Entity, math::Vec3&)> pickerHsv;
+    // What an area of text shows beside its letters: its lines, its cursor, its selection and the
+    // colours a tool gave it. Without it an area draws its text alone.
+    std::function<const TextAreaView*(scene::Entity)> textAreas;
     // The font used by a UiText that names none.
     asset::AssetId defaultFont;
     // Where the texts keep their letters from a frame to the next; without it, the letters of every

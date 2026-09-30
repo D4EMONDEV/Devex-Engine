@@ -395,6 +395,17 @@ void EditorUiKit::refreshTheme(const ThemeColors& colors)
         values.push_back({"UiToggle", "check_color", written(colors.accent)});
         return values;
     }());
+    // The text of a file: the colours of its cursor, of what is selected and of its gutter.
+    add("code", [&] {
+        std::vector<asset::ThemeOverride> values = image(written(colors.field), 4.0f);
+        values.push_back({"UiText", "color", written(colors.text)});
+        values.push_back({"UiTextArea", "selection_color", written(ImVec4(colors.accent.x, colors.accent.y, colors.accent.z, 0.45f))});
+        values.push_back({"UiTextArea", "caret_color", written(colors.text)});
+        values.push_back({"UiTextArea", "line_number_color", written(colors.textDim)});
+        values.push_back({"UiTextArea", "current_line_color", written(ImVec4(mono.x, mono.y, mono.z, 0.05f))});
+        values.push_back({"UiTextArea", "scrollbar_color", written(ImVec4(mono.x, mono.y, mono.z, 0.2f))});
+        return values;
+    }());
     add("scroll", {{"UiScroll", "scrollbar_color", written(ImVec4(mono.x, mono.y, mono.z, 0.2f))},
                    {"UiScroll", "scrollbar_size", "7"}});
     add("separator", image(written(colors.border), 0.0f));
@@ -524,6 +535,11 @@ void UiPanel::setKeyboardNavigation(bool enabled) noexcept
     m_navigation = enabled;
 }
 
+void UiPanel::setInputFilter(std::function<void(ui::UiInput&)> filter)
+{
+    m_filter = std::move(filter);
+}
+
 void UiPanel::setTooltipsOutside(bool outside) noexcept
 {
     m_tooltipsOutside = outside;
@@ -622,6 +638,13 @@ void UiPanel::update(EditorUiKit& kit, core::Duration delta, float zoom, float h
         input.cutPressed = io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_X, false);
         input.pastePressed = io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_V, false);
         input.selectAllPressed = io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_A, false);
+        // What an area of text answers beside these.
+        input.pageUpPressed = stroke(ImGuiKey_PageUp);
+        input.pageDownPressed = stroke(ImGuiKey_PageDown);
+        input.tabPressed = stroke(ImGuiKey_Tab);
+        input.wordModifier = io.KeyCtrl;
+        input.undoPressed = io.KeyCtrl && !io.KeyShift && stroke(ImGuiKey_Z);
+        input.redoPressed = io.KeyCtrl && (stroke(ImGuiKey_Y) || (io.KeyShift && stroke(ImGuiKey_Z)));
         if (input.pastePressed)
         {
             if (const char* const clipboard = ImGui::GetClipboardText())
@@ -641,6 +664,10 @@ void UiPanel::update(EditorUiKit& kit, core::Duration delta, float zoom, float h
         {
             m_world.carryFromOutside(std::move(carried->first), std::move(carried->second));
         }
+    }
+    if (m_filter)
+    {
+        m_filter(input);
     }
     m_world.update(m_scene, size(), input, delta);
     m_input = input;
@@ -672,6 +699,12 @@ void UiPanel::update(EditorUiKit& kit, core::Duration delta, float zoom, float h
         {
             context.PlatformImeData.InputPos =
                 ImVec2(origin.x + field->min.x * m_zoom / pixelsPerPoint, origin.y + field->max.y * m_zoom / pixelsPerPoint);
+        }
+        else if (const std::optional<ui::UiWorld::CaretPlace> caret = m_world.textCaretPlace(m_scene, m_world.editedTextArea()))
+        {
+            // Under the cursor of an area of text.
+            context.PlatformImeData.InputPos = ImVec2(origin.x + caret->position.x * m_zoom / pixelsPerPoint,
+                                                      origin.y + (caret->position.y + caret->height) * m_zoom / pixelsPerPoint);
         }
     }
     m_shown = true;

@@ -3,6 +3,7 @@
 #include <devex/scene/Scene.hpp>
 #include <devex/scene/UiComponents.hpp>
 #include <devex/ui/Color.hpp>
+#include <devex/ui/TextArea.hpp>
 #include <devex/ui/TextCache.hpp>
 #include <devex/ui/TextLayout.hpp>
 
@@ -12,6 +13,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace devex::ui {
 namespace {
@@ -986,6 +988,191 @@ void drawField(Builder& builder, const DrawContext& context, const LaidOutRect& 
 
 } // namespace
 
+// An area of text: the lines in view and their numbers, what is selected or marked behind the letters,
+// the cursor, and the thumbs of its bars. The letters are cut to the area, and leave its gutter alone.
+void drawTextArea(Builder& builder, const DrawContext& context, const LaidOutRect& rect, const scene::UiText& text,
+                  const scene::UiTextArea& area)
+{
+    if (!context.fonts)
+    {
+        return;
+    }
+    const FontRef font = context.fonts(text.font.isValid() ? text.font : context.defaultFont);
+    if (font.data == nullptr || !font.atlas.isValid())
+    {
+        return;
+    }
+    // Without a world that keeps them, the lines are found again here.
+    const TextAreaView* const view = context.textAreas ? context.textAreas(rect.entity) : nullptr;
+    std::vector<std::uint32_t> found;
+    std::span<const std::uint32_t> starts;
+    if (view != nullptr)
+    {
+        starts = view->lineStarts;
+    }
+    else
+    {
+        indexLines(text.text, found);
+        starts = found;
+    }
+    if (starts.empty())
+    {
+        return;
+    }
+    const TextAreaMetrics metrics = textAreaMetrics(*font.data, text, area, rect, starts.size());
+    const TextAreaBars bars = textAreaBars(metrics, text, area, rect, view != nullptr ? view->contentWidth : 0.0f);
+    const math::Vec2 scroll{std::clamp(area.scroll.x, 0.0f, bars.maxScroll.x), std::clamp(area.scroll.y, 0.0f, bars.maxScroll.y)};
+    const std::size_t first = std::min(static_cast<std::size_t>((scroll.y + 0.01f) / metrics.lineHeight), starts.size() - 1);
+    const std::size_t last = std::min(first + static_cast<std::size_t>(std::ceil(metrics.viewSize().y / metrics.lineHeight)) + 1, starts.size());
+    const auto topOf = [&](std::size_t line) { return metrics.origin.y - scroll.y + static_cast<float>(line) * metrics.lineHeight; };
+
+    const math::Vec4 outer = builder.clip;
+    const auto cut = [&](math::Vec2 min, math::Vec2 max) {
+        const math::Vec4 own{min.x * builder.scale, min.y * builder.scale, max.x * builder.scale, max.y * builder.scale};
+        builder.clip = isClipped(outer) ? math::Vec4{std::max(outer.x, own.x), std::max(outer.y, own.y), std::min(outer.z, own.z), std::min(outer.w, own.w)}
+                                        : own;
+    };
+    const math::Vec2 lettersMin{rect.min.x + metrics.gutter, rect.min.y};
+    const math::Vec2 lettersMax = rect.max;
+    cut(lettersMin, lettersMax);
+
+    // The lines in view, placed once for everything drawn over and under them.
+    static thread_local std::vector<TextAreaLine> lines;
+    if (lines.size() < last - first)
+    {
+        lines.resize(last - first);
+    }
+    for (std::size_t line = first; line < last; ++line)
+    {
+        layoutAreaLine(*font.data, lineText(text.text, starts, line), text.size, area.tabSize, math::Vec2{metrics.origin.x - scroll.x, topOf(line)},
+                       lines[line - first]);
+    }
+    const auto endOf = [&](std::size_t line) { return starts[line] + lines[line - first].length; };
+    // A run of the text behind its letters, on every line in view it crosses.
+    const auto behind = [&](std::size_t begin, std::size_t end, math::Vec4 color) {
+        if (end <= begin || color.w <= 0.0f)
+        {
+            return;
+        }
+        for (std::size_t line = std::max(lineOfOffset(starts, begin), first); line < last && starts[line] < end; ++line)
+        {
+            const TextAreaLine& placed = lines[line - first];
+            const float left = placed.xOf(std::max<std::size_t>(begin, starts[line]) - starts[line]);
+            float right = placed.xOf(std::min(end, endOf(line)) - starts[line]);
+            if (end > endOf(line))
+            {
+                // The new line that ends it is taken too.
+                right += text.size * 0.45f;
+            }
+            fill(builder, math::Vec2{left, topOf(line)}, math::Vec2{right, topOf(line) + metrics.lineHeight}, color);
+        }
+    };
+
+    const std::size_t caretLine = view != nullptr ? lineOfOffset(starts, view->caret) : 0;
+    if (view != nullptr && view->focused && caretLine >= first && caretLine < last)
+    {
+        fill(builder, math::Vec2{lettersMin.x, topOf(caretLine)}, math::Vec2{lettersMax.x, topOf(caretLine) + metrics.lineHeight},
+             withOpacity(area.currentLineColor, rect.opacity));
+    }
+    if (view != nullptr)
+    {
+        for (const TextSpan& highlight : view->highlights)
+        {
+            behind(highlight.begin, highlight.end, withOpacity(highlight.color, rect.opacity));
+        }
+        behind(view->selectionMin, view->selectionMax, withOpacity(area.selectionColor, rect.opacity));
+        for (const TextLineMark& mark : view->marks)
+        {
+            if (mark.line >= first && mark.line < last)
+            {
+                const float bottom = topOf(mark.line) + metrics.lineHeight;
+                fill(builder, math::Vec2{lettersMin.x, bottom - 1.0f}, math::Vec2{lettersMax.x, bottom},
+                     withOpacity(math::Vec4{mark.color.x, mark.color.y, mark.color.z, mark.color.w * 0.35f}, rect.opacity));
+            }
+        }
+    }
+
+    // The letters, each in the colour of the run it is in.
+    const float sharpness = textSharpness(*font.data, text.size) * builder.scale;
+    const math::Vec4 plain = withOpacity(text.color, rect.opacity);
+    const std::span<const TextSpan> spans = view != nullptr ? view->spans : std::span<const TextSpan>{};
+    std::size_t span = 0;
+    {
+        render::UiDraw& draw = builder.batch(render::UiDrawKind::Text, font.atlas, math::Vec4{0.0f}, 0.0f, sharpness);
+        for (std::size_t line = first; line < last; ++line)
+        {
+            const TextAreaLine& placed = lines[line - first];
+            const std::vector<CaretStop>& stops = placed.layout.stops;
+            std::size_t stop = 0;
+            for (const GlyphQuad& glyph : placed.layout.glyphs)
+            {
+                // The byte a letter comes from: the stop of the cursor it stands after.
+                const float centre = (glyph.min.x + glyph.max.x) * 0.5f;
+                while (stop + 1 < stops.size() && stops[stop + 1].position.x <= centre)
+                {
+                    ++stop;
+                }
+                const std::size_t offset = starts[line] + (stops.empty() ? 0 : placed.sourceOf(stops[stop].offset));
+                while (span < spans.size() && spans[span].end <= offset)
+                {
+                    ++span;
+                }
+                const bool coloured = span < spans.size() && spans[span].begin <= offset;
+                builder.quad(draw, glyph.min, glyph.max, glyph.uvMin, glyph.uvMax, coloured ? withOpacity(spans[span].color, rect.opacity) : plain);
+            }
+        }
+    }
+    if (view != nullptr && view->caretVisible && caretLine >= first && caretLine < last)
+    {
+        const float x = lines[caretLine - first].xOf(view->caret - starts[caretLine]);
+        fill(builder, math::Vec2{x, topOf(caretLine)}, math::Vec2{x + std::max(text.size * 0.09f, 1.0f), topOf(caretLine) + metrics.lineHeight},
+             withOpacity(area.caretColor, rect.opacity));
+    }
+
+    // The gutter: the number of each line, the one of the cursor in the colour of the text, and a
+    // bar for the lines that are marked.
+    cut(rect.min, rect.max);
+    if (metrics.gutter > 0.0f)
+    {
+        if (view != nullptr)
+        {
+            for (const TextLineMark& mark : view->marks)
+            {
+                if (mark.line >= first && mark.line < last)
+                {
+                    fill(builder, math::Vec2{rect.min.x, topOf(mark.line)}, math::Vec2{rect.min.x + 3.0f, topOf(mark.line) + metrics.lineHeight},
+                         withOpacity(mark.color, rect.opacity));
+                }
+            }
+        }
+        static thread_local TextLayoutResult number;
+        static thread_local std::string digits;
+        const float digit = metrics.gutter / static_cast<float>(std::to_string(starts.size()).size() + 2);
+        render::UiDraw& draw = builder.batch(render::UiDrawKind::Text, font.atlas, math::Vec4{0.0f}, 0.0f, sharpness);
+        for (std::size_t line = first; line < last; ++line)
+        {
+            digits = std::to_string(line + 1);
+            layoutText(*font.data, digits, TextStyle{.size = text.size, .align = scene::TextAlign::Right, .wrap = false},
+                       math::Vec2{rect.min.x, topOf(line)}, math::Vec2{rect.min.x + metrics.gutter - digit, topOf(line)}, number);
+            const math::Vec4 color = view != nullptr && view->focused && line == caretLine ? plain : withOpacity(area.lineNumberColor, rect.opacity);
+            for (const GlyphQuad& glyph : number.glyphs)
+            {
+                builder.quad(draw, glyph.min, glyph.max, glyph.uvMin, glyph.uvMax, color);
+            }
+        }
+    }
+    const math::Vec4 barColor = withOpacity(area.scrollbarColor, rect.opacity);
+    if (bars.vertical())
+    {
+        fill(builder, bars.verticalMin, bars.verticalMax, barColor);
+    }
+    if (bars.horizontal())
+    {
+        fill(builder, bars.horizontalMin, bars.horizontalMax, barColor);
+    }
+    builder.clip = outer;
+}
+
 void buildDrawList(const scene::Scene& scene, const LayoutResult& layout,
                    const DrawContext& context, render::RenderWorld& world)
 {
@@ -1056,6 +1243,10 @@ void buildDrawList(const scene::Scene& scene, const LayoutResult& layout,
             if (const scene::UiInput* const field = scene.tryGet<scene::UiInput>(rect.entity))
             {
                 drawField(builder, context, rect, *text, *field);
+            }
+            else if (const scene::UiTextArea* const area = scene.tryGet<scene::UiTextArea>(rect.entity))
+            {
+                drawTextArea(builder, context, rect, *text, *area);
             }
             else if (scene.tryGet<scene::UiDropdown>(rect.entity) != nullptr)
             {

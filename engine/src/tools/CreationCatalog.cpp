@@ -87,6 +87,8 @@ constexpr std::array engineComponents{
                   "Chooses a colour in a square of saturation and brightness, with bars of hue and opacity."},
     ComponentInfo{"UiPlot", "Plot", Category::Interface,
                   "Draws a series of values as a line or as bars: a graph, a curve, the wave of a sound."},
+    ComponentInfo{"UiTextArea", "Text area", Category::Interface,
+                  "A text of many lines that is typed into and scrolls: notes, a console, code.", {"UiImage", "UiText"}},
     ComponentInfo{"UiLine", "Line", Category::Interface,
                   "A line through points, with the head of an arrow: the links of a graph, a path on a map."},
     ComponentInfo{"RigidBody", "Rigid body", Category::Physics, "Moved by the physics: gravity, forces and collisions."},

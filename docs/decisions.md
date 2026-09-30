@@ -2336,6 +2336,53 @@ les assets s'écrivent au fil de leur lecture.
     qu'elle ne montre rien. Limites : un seul niveau de sous-menu, toujours ouvert à droite ; pas
     d'accès aux menus par Alt ; l'appui qui ferme un menu n'agit pas sur ce qui est dessous ; pas
     de menu contextuel sur les onglets ; les onglets des panneaux ancrés restent ceux d'ImGui.
+- **Puis l'éditeur de texte** (jalon 50), le dernier panneau en ImGui, qui reposait sur le champ
+  multi-ligne d'ImGui (curseur, sélection, annulation, défilement). Le champ de Devex UI, `UiInput`,
+  replace tout son texte à chaque image : bien pour une ligne, pas pour un fichier de code.
+  - **`UiTextArea`, un composant du moteur**, comme Godot sépare `LineEdit` et `TextEdit` : un texte
+    de beaucoup de lignes (celui du `UiText` à côté, comme pour un champ), qui défile dans les deux
+    sens au lieu de revenir à la ligne. **Seules les lignes en vue sont placées** : le monde garde
+    où commence chaque ligne et la largeur de la plus longue, ce qui fait coûter à un fichier de
+    milliers de lignes ce que son écran montre. Écartés : étendre `UiInput` (le champ d'un
+    formulaire et l'éditeur de code n'ont pas les mêmes règles) et une zone écrite dans les outils
+    seulement (rien pour les jeux, et la logique d'édition hors du moteur).
+  - Ce qu'il fait : curseur et sélection à la souris (double clic pour le mot, triple pour la ligne,
+    glisser, Maj+clic), flèches, Ctrl+flèches par mots, Origine sur la première lettre puis le
+    début de la ligne, Ctrl+Origine/Fin, pages ; Entrée garde l'indentation (`auto_indent`) et
+    l'augmente après les caractères de `indent_after` ; Tab écrit des espaces jusqu'au prochain
+    arrêt, déplace les lignes sélectionnées, Maj+Tab les ramène, et Retour arrière dans
+    l'indentation recule d'un arrêt ; une tabulation du texte est aussi large que `tab_size`
+    espaces ; copier, couper, coller (sans les retours chariot d'un autre système) ; lecture seule
+    (`read_only`) ; numéros de ligne ; ligne du curseur éclairée ; barres de défilement à glisser ;
+    molette.
+  - **L'annulation vit dans le monde**, par zone : les lettres tapées à la suite font un pas
+    jusqu'à la fin d'un mot, et **ce qu'un outil ou un script écrit dans le texte devient un pas
+    comme un autre** — le monde garde le texte tel qu'il l'a vu et en déduit ce qui a changé (du
+    premier octet différent au dernier). Rechercher-remplacer, commenter, compléter s'annulent
+    donc d'un coup, sans rien demander aux outils. `forgetTextHistory` repart de zéro quand le texte
+    devient un autre (un fichier relu).
+  - **Les couleurs viennent de l'outil**, pour les lignes en vue seulement : des morceaux
+    (`TextSpan`) que le monde garde hors de la scène, des morceaux dessinés derrière les lettres
+    (ce que la recherche a trouvé) et des lignes marquées (erreurs d'une compilation). Le monde dit
+    quelles lignes sont en vue, où est le curseur (pour la liste des complétions et l'IME), quelle
+    ligne est sous le pointeur, et sélectionne à la demande. `UiInput` reçoit en plus les pages,
+    Tab, l'annulation et le modificateur des mots, depuis l'éditeur comme depuis un jeu.
+  - **L'écran Script, comme celui de Godot** : plus d'onglets ; à gauche la liste des fichiers
+    ouverts (point des modifications, croix et bouton du milieu pour fermer, filtre) et, dessous,
+    ce que le fichier montré déclare ; au-dessus du texte, des menus **File** (nouveau script,
+    ouvrir, enregistrer, tout enregistrer, relire, éditeur externe, fermer), **Edit** (annuler,
+    refaire, commenter) et **Search** (chercher, remplacer, suivant, précédent, aller à la ligne),
+    qui passent par la couche au-dessus de la fenêtre ; les barres de recherche, de remplacement et
+    d'aller à la ligne s'ouvrent au-dessus du texte ; la ligne du curseur, le langage et
+    l'encodage dessous. **Chaque fichier ouvert a sa zone**, qui garde son curseur, son défilement
+    et son annulation tant qu'il reste ouvert (avant, changer d'onglet remettait tout à zéro). La
+    liste des complétions prend les flèches, Entrée et Tab au texte tant qu'elle est ouverte
+    (`UiPanel::setInputFilter`), et reste fermée après un choix ou Échap jusqu'à ce qu'on tape
+    autre chose.
+  - Limites : pas de retour à la ligne automatique dans une zone ; pas de sélection en colonnes ni
+    de curseurs multiples ; les couleurs par morceau ne sont pas encore offertes au C# (le
+    composant, lui, l'est) ; Ctrl+/ ne répond pas sur un clavier AZERTY (le menu Edit le fait) ;
+    la liste de tous les scripts du projet a disparu de l'écran : ils s'ouvrent depuis FileSystem.
 - **Puis Animation et Animator** (jalon 49), les deux derniers panneaux ancrés encore en ImGui
   (surfaces 18 et 19). Ils demandaient au moteur deux choses qu'il n'avait pas, et que les jeux
   gagnent aussi : des traits et des marques.
@@ -2620,6 +2667,12 @@ les assets s'écrivent au fil de leur lecture.
   de bas en haut (`highlighted`). `UiWorld::plotValueAt` (`Ui.PlotValueAt` en C#) dit quelle valeur
   est sous le pointeur : la barre, ou le point de la ligne le plus proche. En marques (`marks`),
   chaque valeur est une place le long du tracé où se dessine un losange : les clés d'une piste.
+- **Zones de texte** : `UiTextArea` rend le texte de son entité éditable sur beaucoup de lignes,
+  sans retour à la ligne, en défilant dans les deux sens : notes, console, code d'un outil. Seules
+  les lignes en vue sont placées et dessinées ; le monde garde les débuts de lignes, le curseur,
+  la sélection et l'annulation de chaque zone. Un outil lui donne les couleurs de morceaux du
+  texte, ce qui se dessine derrière les lettres et des lignes marquées
+  (`UiWorld::setTextSpans`, `setTextHighlights`, `setTextMarks`).
 - **Traits** : `UiLine` dessine une ligne brisée entre des points, en unités depuis le coin haut
   gauche de son élément qu'elle peut quitter, avec une pointe de flèche au bout ou au milieu et la
   fermeture sur le premier point : les liens d'un graphe ou d'un arbre de compétences, un tracé sur
@@ -3233,6 +3286,11 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     jeu ; `UiLine` (lignes brisées et flèches) et les marques de `UiPlot` dans le moteur, en C++
     et en C#.
 
+50. ✅ **Éditeur de texte en Devex UI** — `UiTextArea` dans le moteur (seules les lignes en vue
+    sont placées, annulation qui retient aussi ce que les outils écrivent, Tab et indentation,
+    mots, pages, couleurs par morceau) ; écran Script comme celui de Godot : fichiers ouverts à
+    gauche, menus File, Edit et Search, recherche, remplacement, aller à la ligne, complétion.
+
 Ensuite, sans ordre figé : CI Linux, la suite du portage de l'éditeur.
 
 ## Questions ouvertes
@@ -3275,7 +3333,8 @@ Ensuite, sans ordre figé : CI Linux, la suite du portage de l'éditeur.
   budget de voix, plusieurs écouteurs, intégration optionnelle de FMOD/Wwise.
 - **Éditeur de texte** : client LSP (clangd, Roslyn) pour une vraie complétion, les diagnostics en
   direct et l'aller à la définition ; repli de code, multi-curseur, sélection par colonnes,
-  recherche dans tout le projet, et un rendu propre des tabulations.
+  retour à la ligne automatique, tabulations alignées sur des colonnes plutôt que d'une largeur
+  fixe, et recherche dans tout le projet.
 - **Machines à états, la suite** : sous-machines et arbres imbriqués, couches et masques d'os,
   transitions interrompues par d'autres, conditions sur la fin d'un état, temps de sortie par
   boucle, arbres 2D directionnels simples, courbes de fondu, aperçu d'un état dans l'éditeur hors

@@ -688,6 +688,8 @@ target_sources(devex_ui
         src/ui/Controls.cpp
         src/ui/DrawList.cpp
         src/ui/Layout.cpp
+        src/ui/TextArea.cpp
+        src/ui/TextAreas.cpp
         src/ui/TextCache.cpp
         src/ui/TextLayout.cpp
         src/ui/Theme.cpp
@@ -699,6 +701,7 @@ target_sources(devex_ui
             include/devex/ui/Color.hpp
             include/devex/ui/DrawList.hpp
             include/devex/ui/Layout.hpp
+            include/devex/ui/TextArea.hpp
             include/devex/ui/TextCache.hpp
             include/devex/ui/TextLayout.hpp
             include/devex/ui/Theme.hpp

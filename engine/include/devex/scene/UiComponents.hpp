@@ -166,6 +166,42 @@ struct DEVEX_API UiInput
 };
 DEVEX_DECLARE_ENGINE_REFLECTION(UiInput);
 
+// A text of many lines that is typed into, which scrolls both ways inside the rectangle of its
+// entity rather than wrapping: notes, a console, the code of a tool. As with a field, the letters,
+// the font, the size and the colour come from the UiText beside it, which holds the text. Only the
+// lines in view are placed, so that thousands of lines cost what the screen shows. Tab and Enter
+// write in it, Ctrl+Z and Ctrl+Y undo and redo what was typed, and Ctrl with an arrow moves by
+// words. A field, UiInput, stays the choice for one line or a few.
+struct DEVEX_API UiTextArea
+{
+    math::Vec4 selectionColor{0.2f, 0.4f, 0.9f, 0.5f};
+    math::Vec4 caretColor{1.0f, 1.0f, 1.0f, 1.0f};
+    // The room between the edges of the area and its letters: across, then down.
+    math::Vec2 padding{8.0f, 6.0f};
+    // How far the text is moved, in units: across, then down.
+    math::Vec2 scroll{0.0f, 0.0f};
+    // The number of each line, at its left.
+    bool lineNumbers = false;
+    math::Vec4 lineNumberColor{1.0f, 1.0f, 1.0f, 0.4f};
+    // Behind the line the cursor is on, while the area takes what is typed.
+    math::Vec4 currentLineColor{1.0f, 1.0f, 1.0f, 0.04f};
+    // The spaces the Tab key writes, which is also how wide a tab of the text is drawn; 0 leaves the
+    // key alone.
+    std::int32_t tabSize = 4;
+    // A new line starts under the first letter of the one above.
+    bool autoIndent = true;
+    // The characters that, ending a line, indent the next one once more: "{(:" for code.
+    std::string indentAfter;
+    // Shows and selects, but takes no change: an output, a log.
+    bool readOnly = false;
+    float scrollbarSize = 8.0f;
+    math::Vec4 scrollbarColor{1.0f, 1.0f, 1.0f, 0.3f};
+    bool interactable = true;
+    // What a script asks for once the text changed: Ui.WasChanged("notes").
+    std::string action;
+};
+DEVEX_DECLARE_ENGINE_REFLECTION(UiTextArea);
+
 // Answers the mouse, the keyboard and the pad on the rectangle of its entity. It tints the UiImage
 // of the entity as the pointer comes and goes, and reports its clicks to the scripts under the
 // name of its action.

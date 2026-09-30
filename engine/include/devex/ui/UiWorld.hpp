@@ -7,6 +7,7 @@
 #include <devex/scene/Entity.hpp>
 #include <devex/ui/DrawList.hpp>
 #include <devex/ui/Layout.hpp>
+#include <devex/ui/TextArea.hpp>
 #include <devex/ui/TextCache.hpp>
 #include <devex/ui/TextLayout.hpp>
 #include <devex/ui/Theme.hpp>
@@ -69,6 +70,15 @@ struct DEVEX_API UiInput
     bool selectAllPressed = false;
     // What the clipboard holds, and what the interface asks to put in it.
     std::string clipboard;
+    // What an area of text answers beside these: the pages, the Tab key, undo and redo, and the
+    // modifier that makes the arrows, Backspace and Delete go by words and Home and End to the ends
+    // of the text.
+    bool pageUpPressed = false;
+    bool pageDownPressed = false;
+    bool tabPressed = false;
+    bool undoPressed = false;
+    bool redoPressed = false;
+    bool wordModifier = false;
 };
 
 // How the tooltips look: the interface world draws them over every canvas, in pixels.
@@ -176,8 +186,44 @@ public:
     };
     [[nodiscard]] std::optional<ShownTooltip> shownTooltip(const scene::Scene& scene) const;
     // Gives a field the keyboard, its text selected as a form does for its first field, or the
-    // cursor at its end to go on typing.
+    // cursor at its end to go on typing. An area of text takes the keyboard the same way, its
+    // cursor left where it was.
     void startEditing(const scene::Scene& scene, scene::Entity field, bool selectAll = true);
+
+    // The areas of text. The colours of runs of their text, in its order: the words of a language.
+    // A tool gives them for the lines in view, which `visibleTextLines` names, at every frame they
+    // change; they are not kept with the scene.
+    void setTextSpans(scene::Entity area, std::vector<TextSpan> spans);
+    // Runs drawn behind the letters, such as what a search found, and lines marked at their left.
+    void setTextHighlights(scene::Entity area, std::vector<TextSpan> highlights);
+    void setTextMarks(scene::Entity area, std::vector<TextLineMark> marks);
+    // The first line an area shows, from 0, and how many it shows.
+    [[nodiscard]] std::pair<std::size_t, std::size_t> visibleTextLines(const scene::Scene& scene, scene::Entity area) const;
+    // Where the cursor of an area stands and where its selection started, in bytes of its text; the
+    // two are equal when nothing is selected.
+    [[nodiscard]] std::pair<std::size_t, std::size_t> textSelection(scene::Entity area) const noexcept;
+    // Selects from `anchor` to `caret`, where the cursor ends, and brings it into view.
+    void selectText(scene::Scene& scene, scene::Entity area, std::size_t anchor, std::size_t caret);
+    // Goes back on the last change of an area, or makes it again. A change made to its text from
+    // outside, by a tool or a script, is a change it goes back on too.
+    void undoText(scene::Scene& scene, scene::Entity area);
+    void redoText(scene::Scene& scene, scene::Entity area);
+    [[nodiscard]] bool canUndoText(scene::Entity area) const noexcept;
+    [[nodiscard]] bool canRedoText(scene::Entity area) const noexcept;
+    // Forgets the changes an area could go back on, as when its text becomes another one.
+    void forgetTextHistory(scene::Scene& scene, scene::Entity area);
+    // The top of the cursor of an area and its height, in units of its canvas: where a list of
+    // completions opens. Nothing for an area that was not laid out.
+    struct DEVEX_API CaretPlace
+    {
+        math::Vec2 position{0.0f};
+        float height = 0.0f;
+    };
+    [[nodiscard]] std::optional<CaretPlace> textCaretPlace(const scene::Scene& scene, scene::Entity area) const;
+    // The line of an area under a point of the image, from 0; -1 outside its text.
+    [[nodiscard]] std::int32_t textLineAt(const scene::Scene& scene, scene::Entity area, math::Vec2 point) const;
+    // The area that takes what is typed, if any.
+    [[nodiscard]] scene::Entity editedTextArea() const noexcept;
 
     // What the pointer carries, if anything.
     [[nodiscard]] const Carried* carried() const noexcept;
@@ -453,6 +499,80 @@ private:
     std::vector<PickerState> m_pickers;
     scene::Entity m_pickerHeld;
     PickerPart m_pickerPart = PickerPart::None;
+
+    // The areas of text, in TextAreas.cpp. A change of the text of an area: what stood there, and
+    // what stands there now, with the cursor before and after it.
+    struct DEVEX_API TextChange
+    {
+        std::size_t offset = 0;
+        std::string removed;
+        std::string inserted;
+        std::size_t caretBefore = 0;
+        std::size_t anchorBefore = 0;
+        std::size_t caretAfter = 0;
+        // Letters typed one after the other make one change to go back on.
+        bool typing = false;
+    };
+    // What the world keeps of an area from a frame to the next.
+    struct DEVEX_API TextAreaState
+    {
+        scene::Entity entity;
+        // The text as the area last saw it, which tells a change made from outside.
+        std::string known;
+        std::vector<std::uint32_t> lineStarts;
+        // The width of the longest line, in units.
+        float contentWidth = 0.0f;
+        std::size_t caret = 0;
+        std::size_t anchor = 0;
+        // Where the cursor wants to stand across while it goes up and down; negative when unset.
+        float wantedX = -1.0f;
+        std::vector<TextChange> undo;
+        std::vector<TextChange> redo;
+        std::vector<TextSpan> spans;
+        std::vector<TextSpan> highlights;
+        std::vector<TextLineMark> marks;
+        mutable TextAreaView view;
+        bool seen = false;
+    };
+    enum class AreaBar : std::uint8_t
+    {
+        None,
+        Vertical,
+        Horizontal,
+    };
+    [[nodiscard]] TextAreaState* areaState(scene::Entity entity) noexcept;
+    [[nodiscard]] const TextAreaState* areaState(scene::Entity entity) const noexcept;
+    [[nodiscard]] TextAreaState& ensureAreaState(scene::Entity entity, const std::string& text);
+    [[nodiscard]] const TextAreaView* textAreaView(scene::Entity entity) const noexcept;
+    // Reads the text again when it changed outside the area, as a change it can go back on.
+    void syncArea(TextAreaState& state, std::string& text);
+    void indexArea(const scene::Scene& scene, TextAreaState& state, const std::string& text);
+    // Replaces a run of the text, remembers it, and leaves the cursor after what was written.
+    void changeArea(scene::Scene& scene, TextAreaState& state, std::string& text, std::size_t offset, std::size_t removed,
+                    std::string_view inserted, bool typing);
+    void applyTextChange(scene::Scene& scene, TextAreaState& state, std::string& text, const TextChange& change, bool forward);
+    void notifyArea(const scene::Scene& scene, scene::Entity entity);
+    // The font of an area and where it puts things, when it was laid out.
+    [[nodiscard]] bool areaPlace(const scene::Scene& scene, scene::Entity entity, const asset::FontData*& font, TextAreaMetrics& metrics,
+                                 const LaidOutRect*& rect, float& scale) const;
+    [[nodiscard]] std::size_t areaOffsetAt(const scene::Scene& scene, const TextAreaState& state, math::Vec2 point) const;
+    void revealCaret(scene::Scene& scene, TextAreaState& state);
+    // The wheel over an area moves its lines; answers whether it took it.
+    [[nodiscard]] bool scrollTextArea(scene::Scene& scene, const UiInput& input);
+    void updateTextAreas(scene::Scene& scene, const UiInput& input, core::Duration delta);
+    void editTextArea(scene::Scene& scene, TextAreaState& state, const UiInput& input);
+
+    std::vector<TextAreaState> m_areas;
+    // The area that takes what is typed, and what the pointer holds of it.
+    scene::Entity m_areaFocus;
+    bool m_areaSelecting = false;
+    AreaBar m_areaBar = AreaBar::None;
+    float m_areaGrab = 0.0f;
+    float m_areaBlink = 0.0f;
+    // The last press on an area, for the next one to select a word, then a line.
+    double m_areaPressTime = -1.0;
+    std::size_t m_areaPressOffset = 0;
+    int m_areaPresses = 0;
 };
 
 // The text a number field shows: at most `decimals` digits after the point, without the zeros that

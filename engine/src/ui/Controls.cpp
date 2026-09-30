@@ -86,7 +86,7 @@ struct HeaderCell
         scene.has<scene::UiSlider>(entity) || scene.has<scene::UiToggle>(entity) ||
         scene.has<scene::UiDropdown>(entity) || scene.has<scene::UiFoldout>(entity) ||
         scene.has<scene::UiDragSource>(entity) || scene.has<scene::UiDropTarget>(entity) ||
-        scene.has<scene::UiNumberField>(entity) || scene.has<scene::UiColorPicker>(entity))
+        scene.has<scene::UiNumberField>(entity) || scene.has<scene::UiColorPicker>(entity) || scene.has<scene::UiTextArea>(entity))
     {
         return true;
     }
