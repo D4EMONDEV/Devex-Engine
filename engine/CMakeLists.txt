@@ -837,9 +837,8 @@ target_sources(devex_tools
         src/tools/TwoDScreen.cpp
         src/tools/TwoDScreen.hpp
         src/tools/ViewportHeader.cpp
+        src/tools/ViewportOverlay.cpp
         src/tools/ViewportPanel.cpp
-        src/tools/Widgets.cpp
-        src/tools/Widgets.hpp
     PUBLIC
         FILE_SET HEADERS
         BASE_DIRS include

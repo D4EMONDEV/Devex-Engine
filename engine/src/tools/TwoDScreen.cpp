@@ -189,22 +189,21 @@ void layoutCanvases(const scene::Scene& scene, math::Vec2 size, std::vector<Laid
     return inside ? Handle::Body : Handle::None;
 }
 
-// Draws the frame of the selected element: its outline, its handles and its anchors.
-void drawSelection(ImDrawList& drawing, const CanvasView& view, const ui::LayoutResult& layout,
-                   const ui::LaidOutRect& rect, const scene::UiRect& component, const ThemeColors& colors)
+// Marks the frame of the selected element for the overlay of the viewport: its outline, its handles
+// and its anchors.
+void markSelection(ViewportMarks& marks, const CanvasView& view, const ui::LayoutResult& layout, const ui::LaidOutRect& rect,
+                   const scene::UiRect& component)
 {
-    const ImU32 accent = uiColorU32(colors.accent);
-    drawing.AddRect(view.toScreen(rect.min), view.toScreen(rect.max), accent, 0.0f, 0, 1.5f);
+    marks.element = std::pair{view.toScreen(rect.min), view.toScreen(rect.max)};
+    marks.handleRadius = handleRadius;
     for (const auto& [handle, point] : handlesOf(view, rect))
     {
         static_cast<void>(handle);
-        drawing.AddRectFilled(ImVec2(point.x - handleRadius, point.y - handleRadius),
-                              ImVec2(point.x + handleRadius, point.y + handleRadius), accent, 2.0f);
+        marks.handles.push_back(point);
     }
 
     // The anchors, as four rings on the canvas: what the element hangs from, and so what it
     // follows when the window changes size.
-    const ImU32 anchorColor = uiColorU32(colors.textDim);
     const math::Vec2 size = layout.canvasSize;
     const std::array<math::Vec2, 4> anchors{
         math::Vec2{component.anchorMin.x * size.x, component.anchorMin.y * size.y},
@@ -214,7 +213,7 @@ void drawSelection(ImDrawList& drawing, const CanvasView& view, const ui::Layout
     };
     for (const math::Vec2 anchor : anchors)
     {
-        drawing.AddCircle(view.toScreen(anchor), 4.0f, anchorColor, 0, 1.5f);
+        marks.anchors.push_back(view.toScreen(anchor));
     }
 }
 
@@ -493,12 +492,7 @@ void drawInterfaceOverlay(ToolsState& state, const scene::Scene& scene)
     {
         return;
     }
-    const ThemeColors& colors = themeColors();
-    ImDrawList& drawing = *ImGui::GetWindowDrawList();
     const ImVec2 corner(state.viewportOrigin.x, state.viewportOrigin.y);
-    const ImVec2 size(static_cast<float>(state.viewportPixels.width) / state.pixelsPerPoint,
-                      static_cast<float>(state.viewportPixels.height) / state.pixelsPerPoint);
-    drawing.PushClipRect(corner, ImVec2(corner.x + size.x, corner.y + size.y), true);
 
     std::vector<LaidOutCanvas> canvases;
     layoutCanvases(scene, frame->layoutSize, canvases);
@@ -508,15 +502,14 @@ void drawInterfaceOverlay(ToolsState& state, const scene::Scene& scene)
         const ImVec2 min(corner.x + frame->offset.x / state.pixelsPerPoint, corner.y + frame->offset.y / state.pixelsPerPoint);
         const ImVec2 max(min.x + frame->layoutSize.x * frame->scale / state.pixelsPerPoint,
                          min.y + frame->layoutSize.y * frame->scale / state.pixelsPerPoint);
-        drawing.AddRect(min, max, uiColorU32(ImVec4(colors.accent.x, colors.accent.y, colors.accent.z, 0.6f)), 0.0f, 0, 1.5f);
+        state.viewportMarks.gameFrame = std::pair{min, max};
     }
     const PlacedElement selected = placedElement(scene, canvases, state.selection.active());
     if (selected.rect != nullptr)
     {
-        drawSelection(drawing, viewOf(state, *frame, *selected.layout), *selected.layout, *selected.rect,
-                      scene.get<scene::UiRect>(selected.entity), colors);
+        markSelection(state.viewportMarks, viewOf(state, *frame, *selected.layout), *selected.layout, *selected.rect,
+                      scene.get<scene::UiRect>(selected.entity));
     }
-    drawing.PopClipRect();
 }
 
 std::optional<std::pair<math::Vec2, math::Vec2>> selectedInterfaceBounds(const ToolsState& state, const scene::Scene& scene)

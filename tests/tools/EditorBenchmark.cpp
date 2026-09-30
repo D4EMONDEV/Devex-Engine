@@ -1,8 +1,11 @@
 // Where the time of an editor frame goes, on a copy of the sandbox project with its camera selected:
 // the zones of the profiler, a frame's worth each. Hidden, run on demand:
 //     devex_tools_tests "Editor frame benchmark"
+//     devex_tools_tests "Script screen benchmark"
+//     devex_tools_tests "Animator panel benchmark"
 #include <devex/asset/Project.hpp>
 #include <devex/asset/import/AssetDatabase.hpp>
+#include <devex/core/File.hpp>
 #include <devex/core/JobSystem.hpp>
 #include <devex/core/Profiler.hpp>
 #include <devex/platform/Platform.hpp>
@@ -17,11 +20,17 @@
 #include <chrono>
 #include <cstdio>
 #include <filesystem>
+#include <format>
+#include <functional>
 #include <map>
 #include <string>
 #include <vector>
 
-TEST_CASE("Editor frame benchmark", "[.][benchmark]")
+namespace {
+
+// Runs the editor on a copy of the sandbox, lets `setup` open what is measured once the project is
+// loaded and its camera selected, then prints the time of a frame and its zones.
+void measureEditor(const std::function<void(devex::tools::ToolsOverlay&, const std::filesystem::path&, const devex::asset::AssetDatabase&)>& setup)
 {
     const std::filesystem::path source = std::filesystem::path(DEVEX_TEST_DATA_DIRECTORY) / ".." / ".." / "samples" / "sandbox";
     const std::filesystem::path root = std::filesystem::temp_directory_path() / "devex-bench-sandbox";
@@ -79,6 +88,7 @@ TEST_CASE("Editor frame benchmark", "[.][benchmark]")
             (*editor)->select(selected);
         }
     }
+    setup(**editor, root, **database);
     for (int index = 0; index < 20; ++index)
     {
         frame();
@@ -112,4 +122,38 @@ TEST_CASE("Editor frame benchmark", "[.][benchmark]")
         std::printf("%8.3f ms  %s\n", sorted[index].second / static_cast<double>(history.size()), sorted[index].first.c_str());
     }
     (*editor)->setAssetDatabase(nullptr);
+}
+
+} // namespace
+
+TEST_CASE("Editor frame benchmark", "[.][benchmark]")
+{
+    measureEditor([](devex::tools::ToolsOverlay&, const std::filesystem::path&, const devex::asset::AssetDatabase&) {});
+}
+
+// The Script screen on a file of five thousand lines: what it costs does not grow with the file.
+TEST_CASE("Script screen benchmark", "[.][benchmark]")
+{
+    measureEditor([](devex::tools::ToolsOverlay& editor, const std::filesystem::path& root, const devex::asset::AssetDatabase&) {
+        std::string code = "using Devex;\n\npublic class Big : Component\n{\n";
+        for (int line = 0; line < 5000; ++line)
+        {
+            code += std::format("    public float Value{} = {}.0f; // A field of the class, number {}.\n", line, line, line);
+        }
+        code += "}\n";
+        const std::filesystem::path file = root / "code" / "Big.cs";
+        REQUIRE(devex::core::writeTextFile(file, code).has_value());
+        editor.openTextFile(file);
+    });
+}
+
+// The Animator panel on the controller of the robot, its graph and its parameters.
+TEST_CASE("Animator panel benchmark", "[.][benchmark]")
+{
+    measureEditor([](devex::tools::ToolsOverlay& editor, const std::filesystem::path&, const devex::asset::AssetDatabase& database) {
+        const std::optional<devex::asset::AssetId> controller = database.findByPath("res://assets/animators/robot.dvxanimator");
+        REQUIRE(controller.has_value());
+        editor.selectAsset(*controller);
+        editor.openWindow(devex::tools::EditorWindow::Animator);
+    });
 }

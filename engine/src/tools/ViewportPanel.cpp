@@ -381,15 +381,11 @@ void handleGizmoAndSelection(ToolsState& state, scene::Scene& scene, const Viewp
         state.drawingRectangle |= math::length(mouse - *state.clickStart) > tolerance;
         if (state.drawingRectangle)
         {
-            const ThemeColors& colors = themeColors();
             const ImVec2 from(state.viewportOrigin.x + state.clickStart->x / state.pixelsPerPoint,
                               state.viewportOrigin.y + state.clickStart->y / state.pixelsPerPoint);
             const ImVec2 to = io.MousePos;
-            const ImVec2 min(std::min(from.x, to.x), std::min(from.y, to.y));
-            const ImVec2 max(std::max(from.x, to.x), std::max(from.y, to.y));
-            ImDrawList* const draw = ImGui::GetWindowDrawList();
-            draw->AddRectFilled(min, max, uiColorU32(ImVec4(colors.accent.x, colors.accent.y, colors.accent.z, 0.15f)));
-            draw->AddRect(min, max, uiColorU32(colors.accent));
+            state.viewportMarks.selecting =
+                std::pair{ImVec2(std::min(from.x, to.x), std::min(from.y, to.y)), ImVec2(std::max(from.x, to.x), std::max(from.y, to.y))};
         }
         return;
     }
@@ -507,8 +503,7 @@ void handleKeys(ToolsState& state, scene::Scene& scene)
 }
 
 // Over the screen of the other kind, which shows nothing of the scene: why, and where it is edited.
-void drawOtherKindHint(const ToolsState& state, const scene::Scene& scene, ScreenContent content, ImVec2 origin,
-                       ImVec2 available)
+void markOtherKindHint(ToolsState& state, const scene::Scene& scene, ScreenContent content)
 {
     const char* hint = nullptr;
     if (content == ScreenContent::Nothing)
@@ -519,19 +514,10 @@ void drawOtherKindHint(const ToolsState& state, const scene::Scene& scene, Scree
     {
         hint = "A 3D scene: its interfaces are edited here, and the scene in the 3D screen";
     }
-    if (hint == nullptr)
+    if (hint != nullptr)
     {
-        return;
+        state.viewportMarks.hint = hint;
     }
-    const ThemeColors& colors = themeColors();
-    const ImVec2 measured = ImGui::CalcTextSize(hint);
-    const ImVec2 at(origin.x + (available.x - measured.x) * 0.5f, origin.y + available.y - measured.y * 2.5f);
-    const ImVec2 padding = ImGui::GetStyle().FramePadding;
-    ImDrawList& drawing = *ImGui::GetWindowDrawList();
-    drawing.AddRectFilled(ImVec2(at.x - padding.x, at.y - padding.y),
-                          ImVec2(at.x + measured.x + padding.x, at.y + measured.y + padding.y),
-                          uiColorU32(ImVec4(colors.panel.x, colors.panel.y, colors.panel.z, 0.85f)), ImGui::GetStyle().FrameRounding);
-    drawing.AddText(at, uiColorU32(colors.text), hint);
 }
 
 } // namespace
@@ -573,6 +559,7 @@ void frameSelection(ToolsState& state, const scene::Scene& scene)
 void drawViewportPanel(ToolsState& state, scene::Scene& scene)
 {
     DEVEX_PROFILE_SCOPE("Viewport panel");
+    state.viewportMarks = ViewportMarks{};
     state.viewportHovered = false;
     state.viewportFocused = false;
     state.interfaceFrame.reset();
@@ -627,11 +614,8 @@ void drawViewportPanel(ToolsState& state, scene::Scene& scene)
     const bool hovered = ImGui::IsItemHovered();
     state.viewportHovered = hovered;
     state.viewportFocused = ImGui::IsWindowFocused();
-    if (!editing)
-    {
-        // The game is framed in the accent color while it runs.
-        ImGui::GetWindowDrawList()->AddRect(origin, origin + available, uiColorU32(colors.accent), 0.0f, 0, 2.0f);
-    }
+    // The game is framed in the accent colour while it runs.
+    state.viewportMarks.playing = !editing;
 
     const math::Vec2 size{static_cast<float>(width), static_cast<float>(height)};
     const math::Vec2 mouse = (math::Vec2(io.MousePos.x, io.MousePos.y) - state.viewportOrigin) * state.pixelsPerPoint;
@@ -669,7 +653,7 @@ void drawViewportPanel(ToolsState& state, scene::Scene& scene)
             }
         }
         drawInterfaceOverlay(state, scene);
-        drawOtherKindHint(state, scene, content, origin, available);
+        markOtherKindHint(state, scene, content);
     }
     else if (editing)
     {
@@ -709,6 +693,8 @@ void drawViewportPanel(ToolsState& state, scene::Scene& scene)
         // Clicking the game gives it the keyboard.
         ImGui::SetWindowFocus();
     }
+    // Over everything that answered the mouse over the view.
+    drawViewportOverlay(state);
     ImGui::End();
 }
 

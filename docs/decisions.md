@@ -2336,6 +2336,24 @@ les assets s'écrivent au fil de leur lecture.
     qu'elle ne montre rien. Limites : un seul niveau de sous-menu, toujours ouvert à droite ; pas
     d'accès aux menus par Alt ; l'appui qui ferme un menu n'agit pas sur ce qui est dessous ; pas
     de menu contextuel sur les onglets ; les onglets des panneaux ancrés restent ceux d'ImGui.
+- **Puis le ménage avant le dock** (jalon 51). Ce qui reste d'ImGui dans l'éditeur, une fois tous
+  les panneaux portés, est le dock lui-même et les fenêtres qui accueillent les images des
+  panneaux. Avant de s'y attaquer :
+  - **Les dessins par-dessus la vue passent en Devex UI.** La vue et le 2D posent des marques
+    (`ViewportMarks` : le rectangle d'une sélection à la souris, le cadre du jeu, le contour, les
+    poignées et les ancres de l'élément d'interface choisi, le mot sur ce que montre l'écran, le
+    cadre du jeu qui tourne) ; un panneau transparent (surface 21), d'une unité par pixel de la vue,
+    les dessine avec des `UiLine`, des images et un texte, une fois que tout ce qui répond à la
+    souris sur la vue a répondu. Il ne prend rien : la vue sous lui garde le pointeur.
+  - **Les widgets ImGui sans appelant disparaissent** : `Widgets.hpp/.cpp` (boutons d'outil,
+    listes, champs de recherche, grilles de propriétés, vecteurs glissés), le sélecteur d'asset en
+    ImGui et `uiColorU32`.
+  - **Mesures** (bancs cachés de `devex_tools_tests`, cinq passages, la médiane) : la disposition
+    par défaut prend 7,9 ms par image en Debug, comme au jalon 48 ; l'écran Script sur un fichier
+    de cinq mille lignes 13,0 ms, dont 3,5 ms à placer les lettres des lignes en vue ; le panneau
+    Animator 6,7 ms. En Release l'image attend la synchronisation de l'écran (4,2 ms à 240 Hz), et
+    l'éditeur prend 0,43 ms de processeur par image, 0,58 ms avec l'écran Script et ses cinq mille
+    lignes, 0,44 ms avec l'Animator : ce que coûte une zone de texte ne grandit pas avec son texte.
 - **Puis l'éditeur de texte** (jalon 50), le dernier panneau en ImGui, qui reposait sur le champ
   multi-ligne d'ImGui (curseur, sélection, annulation, défilement). Le champ de Devex UI, `UiInput`,
   replace tout son texte à chaque image : bien pour une ligne, pas pour un fichier de code.
@@ -3291,7 +3309,11 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     mots, pages, couleurs par morceau) ; écran Script comme celui de Godot : fichiers ouverts à
     gauche, menus File, Edit et Search, recherche, remplacement, aller à la ligne, complétion.
 
-Ensuite, sans ordre figé : CI Linux, la suite du portage de l'éditeur.
+51. ✅ **Ménage avant le dock** — dessins par-dessus la vue (sélection, cadre du jeu, poignées et
+    ancres des interfaces, indications) en Devex UI sur un panneau transparent ; widgets ImGui
+    sans appelant retirés.
+
+Ensuite, sans ordre figé : CI Linux, le dock en Devex UI.
 
 ## Questions ouvertes
 

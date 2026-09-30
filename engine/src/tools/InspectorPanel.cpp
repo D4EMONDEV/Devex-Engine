@@ -49,51 +49,6 @@ std::string assetLabel(const ToolsState& state, asset::AssetId id)
     return id.uuid.toString();
 }
 
-bool drawAssetPicker(ToolsState& state, const char* id, std::optional<asset::AssetType> type, asset::AssetId& value,
-                     bool mixed)
-{
-    bool changed = false;
-    const auto choose = [&](const char* name, asset::AssetId candidate) {
-        ImGui::PushID(name);
-        if (ImGui::Selectable(name, candidate == value) && candidate != value)
-        {
-            value = candidate;
-            changed = true;
-        }
-        ImGui::PopID();
-    };
-
-    const std::string preview = mixed ? std::string(mixedValue) : assetLabel(state, value);
-    if (beginCombo(id, preview.c_str(), ImGuiComboFlags_HeightLarge))
-    {
-        choose("(none)", asset::AssetId{});
-        if (!type || *type == asset::AssetType::Mesh)
-        {
-            for (const BuiltinAsset& builtin : builtinMeshes)
-            {
-                choose(builtin.name, builtin.id);
-            }
-        }
-        if (state.database != nullptr)
-        {
-            ImGui::Separator();
-            for (const asset::AssetInfo& info : state.database->assets(type))
-            {
-                ImGui::PushID(info.id.uuid.toString().c_str());
-                choose(info.name.c_str(), info.id);
-                ImGui::PopID();
-            }
-        }
-        ImGui::EndCombo();
-    }
-    if (const std::optional<asset::AssetId> dropped = acceptDroppedAsset(type); dropped && *dropped != value)
-    {
-        value = *dropped;
-        changed = true;
-    }
-    return changed;
-}
-
 void drawInspectorPanel(ToolsState& state, scene::Scene& scene)
 {
     DEVEX_PROFILE_SCOPE("Inspector");

@@ -469,11 +469,6 @@ ImVec4 uiColor(ImVec4 srgb) noexcept
     return g_linearColors ? toLinear(srgb) : srgb;
 }
 
-ImU32 uiColorU32(ImVec4 srgb) noexcept
-{
-    return ImGui::GetColorU32(uiColor(srgb));
-}
-
 float regularFontPixels(float points) noexcept
 {
     return std::round(points * notoSansLineHeight);

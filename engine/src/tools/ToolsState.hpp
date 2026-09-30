@@ -12,7 +12,6 @@
 #include "Selection.hpp"
 #include "TextDocument.hpp"
 #include "Theme.hpp"
-#include "Widgets.hpp"
 
 #include <devex/asset/AnimatorData.hpp>
 #include <devex/asset/AssetId.hpp>
@@ -95,6 +94,26 @@ struct StatisticsUi;
 struct ProfilerUi;
 struct AnimationUi;
 struct ScriptUi;
+struct ViewportOverlayUi;
+
+// What the editor draws over the image of the viewport this frame, in points of the screen as ImGui
+// places things; the overlay of the viewport draws it.
+struct DEVEX_API ViewportMarks
+{
+    // The rectangle a drag selects in.
+    std::optional<std::pair<ImVec2, ImVec2>> selecting;
+    // What the game shows, when no camera draws its own box.
+    std::optional<std::pair<ImVec2, ImVec2>> gameFrame;
+    // The element of an interface that is selected, its handles and its anchors.
+    std::optional<std::pair<ImVec2, ImVec2>> element;
+    std::vector<ImVec2> handles;
+    std::vector<ImVec2> anchors;
+    float handleRadius = 5.0f;
+    // A word on what the screen shows, at its bottom.
+    std::string hint;
+    // The game runs: it is framed in the accent colour.
+    bool playing = false;
+};
 struct AnimatorUi;
 struct MenuBarUi;
 struct StatusBarUi;
@@ -500,6 +519,8 @@ struct DEVEX_API ToolsState
     std::shared_ptr<ProfilerUi> profilerUi;
     std::shared_ptr<AnimationUi> animationUi;
     std::shared_ptr<ScriptUi> scriptUi;
+    std::shared_ptr<ViewportOverlayUi> viewportOverlayUi;
+    ViewportMarks viewportMarks;
     std::shared_ptr<AnimatorUi> animatorUi;
     // The frame of the editor: its bars, the header of the view, and the layer of their menus.
     std::shared_ptr<MenuBarUi> menuBarUi;
@@ -843,7 +864,7 @@ DEVEX_API void drawViewportPanel(ToolsState& state, scene::Scene& scene);
 // the entities of the world. Answers whether it took the mouse.
 DEVEX_API bool handleInterfaceEditing(ToolsState& state, scene::Scene& scene, bool hovered);
 // The 2D screen: the frame of the game when no camera draws it, and the handles of the selected
-// element, over the viewport.
+// element, left in the marks of the viewport for its overlay.
 DEVEX_API void drawInterfaceOverlay(ToolsState& state, const scene::Scene& scene);
 // The rectangle of the XY plane the selected elements of the interfaces cover in the 2D screen.
 [[nodiscard]] DEVEX_API std::optional<std::pair<math::Vec2, math::Vec2>> selectedInterfaceBounds(const ToolsState& state,
@@ -946,10 +967,6 @@ struct DEVEX_API BuiltinAsset
 // the project does not know it.
 [[nodiscard]] DEVEX_API std::string assetLabel(const ToolsState& state, asset::AssetId id);
 
-// A combo listing the assets of a type (any type without one), which also accepts dropped assets.
-// Returns whether the value changed. A mixed value shows a dash.
-DEVEX_API bool drawAssetPicker(ToolsState& state, const char* id, std::optional<asset::AssetType> type, asset::AssetId& value,
-                               bool mixed = false);
 
 // Makes the last item a drag source for the asset.
 DEVEX_API void dragAsset(asset::AssetId id, asset::AssetType type, const std::string& label);

@@ -504,7 +504,6 @@ core::Result<std::unique_ptr<ToolsOverlay>> ToolsOverlay::create(
     ImGui::GetCurrentContext()->ConfigNavWindowingKeyNext = 0;
     ImGui::GetCurrentContext()->ConfigNavWindowingKeyPrev = 0;
     state->fonts = detail::loadEditorFonts(resources / "fonts", state->icons);
-    detail::setEditorFonts(state->fonts);
 
     if (core::Result<void> connected = platform.initializeImGui(window); !connected)
     {
@@ -678,6 +677,7 @@ void ToolsOverlay::prepareRender(scene::Scene& scene, render::RenderWorld& world
     detail::renderAnimationPanel(state, world);
     detail::renderAnimatorPanel(state, world);
     detail::renderTextEditor(state, world);
+    detail::renderViewportOverlay(state, world);
     detail::renderEditorFrame(state, world);
     if (state.mode != ToolsMode::Editor)
     {

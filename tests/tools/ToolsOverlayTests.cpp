@@ -308,6 +308,8 @@ TEST_CASE("The editor opens the project's scenes in tabs and renders its viewpor
         CHECK(surfaces.contains(16));
         CHECK(surfaces.contains(17));
         CHECK_FALSE(surfaces.contains(15));
+        // While the game plays, the view is framed by an overlay of that interface over its image.
+        CHECK(surfaces.contains(21));
 
         // The inspector of entities is made with the interface of the engine as well: an entity that
         // carries every component of the engine shows a row for each of their fields, and several

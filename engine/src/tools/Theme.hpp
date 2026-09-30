@@ -132,7 +132,6 @@ DEVEX_API void applyTheme(const ThemeSettings& settings, float displayScale, boo
 [[nodiscard]] DEVEX_API const ThemeColors& themeColors() noexcept;
 // A color given in sRGB, as ImGui style colors are, converted for the renderer when needed.
 [[nodiscard]] DEVEX_API ImVec4 uiColor(ImVec4 srgb) noexcept;
-[[nodiscard]] DEVEX_API ImU32 uiColorU32(ImVec4 srgb) noexcept;
 
 // The fonts of the editor, all of them able to draw the icons.
 struct DEVEX_API EditorFonts

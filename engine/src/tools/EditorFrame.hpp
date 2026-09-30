@@ -69,6 +69,10 @@ DEVEX_API void addEntityEditEntries(ToolsState& state, scene::Scene& scene, std:
 // of the viewport: in ViewportHeader.cpp.
 DEVEX_API void drawViewportHeader(ToolsState& state, scene::Scene& scene);
 DEVEX_API void renderViewportHeader(ToolsState& state, render::RenderWorld& world);
+// What the editor draws over the image of the viewport, from the marks the frame left: after
+// everything that answers the mouse over the viewport.
+DEVEX_API void drawViewportOverlay(ToolsState& state);
+DEVEX_API void renderViewportOverlay(ToolsState& state, render::RenderWorld& world);
 // Adds the images of the menu bar, of the status bar, of the header of the viewport and of the layer
 // over them to the frame, those drawn this frame.
 DEVEX_API void renderEditorFrame(ToolsState& state, render::RenderWorld& world);
