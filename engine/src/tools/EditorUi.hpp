@@ -187,7 +187,7 @@ public:
     [[nodiscard]] static float zoomFor(float font) noexcept;
 
 private:
-    void carryToImGui(const ImVec2& origin, float pixelsPerPoint);
+    void carryToImGui(EditorUiKit& kit, const ImVec2& origin, float pixelsPerPoint);
 
     scene::Scene m_scene;
     ui::UiWorld m_world;

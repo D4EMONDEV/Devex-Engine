@@ -325,7 +325,8 @@ void FileSystemUi::build(ToolsState& state, EditorUiKit& kit)
             return std::nullopt;
         }
         const AssetPayload payload{.uuid = uuid->bytes(), .type = info->type};
-        ImGuiDrag drag{.type = assetPayload, .label = std::format("{} ({})", info->name, asset::toString(info->type))};
+        // The same name out of the panel as in it.
+        ImGuiDrag drag{.type = assetPayload, .label = carried.label.empty() ? info->name : carried.label};
         drag.payload.resize(sizeof(payload));
         std::memcpy(drag.payload.data(), &payload, sizeof(payload));
         return drag;

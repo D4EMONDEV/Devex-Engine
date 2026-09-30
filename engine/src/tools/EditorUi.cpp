@@ -679,7 +679,7 @@ void UiPanel::update(EditorUiKit& kit, core::Duration delta, float zoom, float h
             kit.showTooltip(std::string(shown->text), screenOf(shown->at));
         }
     }
-    carryToImGui(origin, pixelsPerPoint);
+    carryToImGui(kit, origin, pixelsPerPoint);
     if (const std::string& copied = m_world.clipboardRequest(); !copied.empty())
     {
         ImGui::SetClipboardText(copied.c_str());
@@ -710,11 +710,11 @@ void UiPanel::update(EditorUiKit& kit, core::Duration delta, float zoom, float h
     m_shown = true;
 }
 
-void UiPanel::carryToImGui(const ImVec2& origin, float pixelsPerPoint)
+void UiPanel::carryToImGui(EditorUiKit& kit, const ImVec2& origin, float pixelsPerPoint)
 {
     // What the panel carries is an ImGui drag as well for as long as the button is held, so that the
     // windows around take it where they take their own; the panel draws its label while the pointer
-    // is over it, and an ImGui tooltip does once it leaves.
+    // is over it, and the layer over the editor does once it leaves, next to the pointer.
     const ui::Carried* const carried = m_world.carried();
     if (carried == nullptr || !carried->source.isValid() || !m_dragOut || !ImGui::IsMouseDown(ImGuiMouseButton_Left))
     {
@@ -736,7 +736,7 @@ void UiPanel::carryToImGui(const ImVec2& origin, float pixelsPerPoint)
     const bool inside = mouse.x >= origin.x && mouse.y >= origin.y && mouse.x < end.x && mouse.y < end.y;
     if (!inside && !drag->label.empty())
     {
-        ImGui::SetTooltip("%s", drag->label.c_str());
+        kit.showTooltip(drag->label, mouse);
     }
 }
 

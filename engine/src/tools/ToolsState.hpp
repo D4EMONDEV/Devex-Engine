@@ -968,8 +968,6 @@ struct DEVEX_API BuiltinAsset
 [[nodiscard]] DEVEX_API std::string assetLabel(const ToolsState& state, asset::AssetId id);
 
 
-// Makes the last item a drag source for the asset.
-DEVEX_API void dragAsset(asset::AssetId id, asset::AssetType type, const std::string& label);
 // Accepts an asset dropped on the last item, of the given type when one is given.
 [[nodiscard]] DEVEX_API std::optional<asset::AssetId> acceptDroppedAsset(
               std::optional<asset::AssetType> type = std::nullopt);

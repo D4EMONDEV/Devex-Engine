@@ -2365,6 +2365,13 @@ les assets s'écrivent au fil de leur lecture.
     changent pas ; les couleurs des sortes de mots sont calculées une fois par image. L'écran Script
     passe de 10,5 à 9,5 ms par image en Debug, et le panneau de texte de 0,17 à 0,11 ms en Release
     (l'éditeur de 0,60 à 0,52 ms).
+  - **Puis ce qu'on glisse hors d'un panneau se dit en Devex UI** : son nom suit le pointeur dans la
+    couche au-dessus de l'éditeur, qui remplace l'infobulle d'ImGui, et c'est le même nom que dans le
+    panneau (`ball.dvxscene`, plus `ball (scene)` au dehors). La vue qui accepte un asset ne
+    s'encadre plus du rectangle d'ImGui (`ImGuiDragDropFlags_AcceptNoDrawDefaultRect`) : comme dans
+    Godot, elle reste nette, et un matériau montre toujours la surface qui le prendra.
+    `dragAsset`, une source de glisser ImGui sans appelant, disparaît. Le glisser reste un glisser
+    ImGui sous le capot, pour que la vue le prenne, jusqu'au dock.
 - **Puis l'éditeur de texte** (jalon 50), le dernier panneau en ImGui, qui reposait sur le champ
   multi-ligne d'ImGui (curseur, sélection, annulation, défilement). Le champ de Devex UI, `UiInput`,
   replace tout son texte à chaque image : bien pour une ligne, pas pour un fichier de code.

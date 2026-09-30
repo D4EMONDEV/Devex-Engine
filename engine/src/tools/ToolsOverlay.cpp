@@ -79,17 +79,6 @@ core::Uuid uuidFromBytes(const std::array<std::uint8_t, 16>& bytes) noexcept
     return core::Uuid::fromParts(high, low);
 }
 
-void dragAsset(asset::AssetId id, asset::AssetType type, const std::string& label)
-{
-    if (ImGui::BeginDragDropSource())
-    {
-        const AssetPayload payload{.uuid = id.uuid.bytes(), .type = type};
-        ImGui::SetDragDropPayload(assetPayload, &payload, sizeof(payload));
-        ImGui::Text("%s (%s)", label.c_str(), std::string(asset::toString(type)).c_str());
-        ImGui::EndDragDropSource();
-    }
-}
-
 std::optional<asset::AssetId> acceptDroppedAsset(std::optional<asset::AssetType> type)
 {
     std::optional<asset::AssetId> dropped;
@@ -104,7 +93,9 @@ std::optional<asset::AssetId> acceptDroppedAsset(std::optional<asset::AssetType>
             std::memcpy(&payload, peeked->Data, sizeof(payload));
             matches = !type || payload.type == *type;
         }
-        if (matches && ImGui::AcceptDragDropPayload(assetPayload) != nullptr)
+        // Without the frame ImGui would draw around the view: what is carried says itself next to
+        // the pointer, as in Godot.
+        if (matches && ImGui::AcceptDragDropPayload(assetPayload, ImGuiDragDropFlags_AcceptNoDrawDefaultRect) != nullptr)
         {
             dropped = asset::AssetId{uuidFromBytes(payload.uuid)};
         }
