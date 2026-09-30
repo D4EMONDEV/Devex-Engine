@@ -841,25 +841,35 @@ void UiWorld::editTextArea(scene::Scene& scene, TextAreaState& state, const UiIn
     }
 }
 
-void UiWorld::setTextSpans(scene::Entity area, std::vector<TextSpan> spans)
+UiWorld::TextAreaState* UiWorld::areaStateOf(const scene::Scene& scene, scene::Entity entity)
 {
-    if (TextAreaState* const state = areaState(area))
+    if (TextAreaState* const state = areaState(entity))
+    {
+        return state;
+    }
+    const auto* const shown = scene.isAlive(entity) && scene.has<scene::UiTextArea>(entity) ? scene.tryGet<scene::UiText>(entity) : nullptr;
+    return shown != nullptr ? &ensureAreaState(entity, shown->text) : nullptr;
+}
+
+void UiWorld::setTextSpans(const scene::Scene& scene, scene::Entity area, std::vector<TextSpan> spans)
+{
+    if (TextAreaState* const state = areaStateOf(scene, area))
     {
         state->spans = std::move(spans);
     }
 }
 
-void UiWorld::setTextHighlights(scene::Entity area, std::vector<TextSpan> highlights)
+void UiWorld::setTextHighlights(const scene::Scene& scene, scene::Entity area, std::vector<TextSpan> highlights)
 {
-    if (TextAreaState* const state = areaState(area))
+    if (TextAreaState* const state = areaStateOf(scene, area))
     {
         state->highlights = std::move(highlights);
     }
 }
 
-void UiWorld::setTextMarks(scene::Entity area, std::vector<TextLineMark> marks)
+void UiWorld::setTextMarks(const scene::Scene& scene, scene::Entity area, std::vector<TextLineMark> marks)
 {
-    if (TextAreaState* const state = areaState(area))
+    if (TextAreaState* const state = areaStateOf(scene, area))
     {
         state->marks = std::move(marks);
     }

@@ -91,7 +91,8 @@ Le détail, l'architecture des modules et les jalons sont dans
   séparateurs déplaçables, dépliants, listes virtuelles et tableaux aux colonnes redimensionnables
   et triables, champs numériques glissés ou tapés (sommes comprises), sélecteur de couleur,
   double clic, glisser-déposer (`UiDragSource`, `UiDropTarget`, et depuis les autres
-  fenêtres d'un outil), dessin en une passe après le tonemapping ou dans une image à part
+  fenêtres d'un outil), zones de texte colorées par morceaux, surlignées et marquées par ligne,
+  en C++ comme en C# (`Ui.SetTextColors`), dessin en une passe après le tonemapping ou dans une image à part
   (les panneaux de l'éditeur), survol, clic et focus au clavier comme à la manette ;
 - `Devex::Tools` : interface ImGui au thème réglable inspiré de Godot (Noto Sans, JetBrains Mono,
   icônes Lucide) : arbre de la scène, inspecteur, FileSystem, sortie, statistiques, annulation, en

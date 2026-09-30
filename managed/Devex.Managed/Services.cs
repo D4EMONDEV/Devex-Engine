@@ -704,6 +704,57 @@ public static unsafe class Ui
 
     /// <summary>The drag source (UiDragSource) the pointer carries, or an invalid entity.</summary>
     public static Entity Carried => Bootstrap.Native.UiCarried();
+
+    /// <summary>
+    /// Colours runs of the text of an area (UiTextArea): the words of a language, the names of a
+    /// log. Positions count characters of its text, as <c>string.IndexOf</c> does; the letters out
+    /// of every run keep the colour of the UiText. The runs stay until the next call and do not
+    /// follow the text when it changes: a script gives them again then, for the lines in view
+    /// (<see cref="VisibleTextLines"/>) when the text is long.
+    /// </summary>
+    public static void SetTextColors(Entity area, ReadOnlySpan<UiTextSpan> spans)
+    {
+        fixed (UiTextSpan* pointer = spans)
+        {
+            Bootstrap.Native.UiSetTextSpans(Scene.Current.Pointer, area, 0, pointer, spans.Length);
+        }
+    }
+
+    /// <summary>
+    /// Runs drawn behind the letters of an area, such as what a search found, which stay until the
+    /// next call.
+    /// </summary>
+    public static void SetTextHighlights(Entity area, ReadOnlySpan<UiTextSpan> highlights)
+    {
+        fixed (UiTextSpan* pointer = highlights)
+        {
+            Bootstrap.Native.UiSetTextSpans(Scene.Current.Pointer, area, 1, pointer, highlights.Length);
+        }
+    }
+
+    /// <summary>
+    /// Lines an area marks at their left and underlines, such as an error, which stay until the
+    /// next call.
+    /// </summary>
+    public static void SetTextMarks(Entity area, ReadOnlySpan<UiTextLineMark> marks)
+    {
+        fixed (UiTextLineMark* pointer = marks)
+        {
+            Bootstrap.Native.UiSetTextMarks(Scene.Current.Pointer, area, pointer, marks.Length);
+        }
+    }
+
+    /// <summary>
+    /// The first line an area shows, from 0, and how many it shows: the ones worth colouring.
+    /// Nothing before the area was first laid out.
+    /// </summary>
+    public static (int First, int Count) VisibleTextLines(Entity area)
+    {
+        int first = 0;
+        int count = 0;
+        Bootstrap.Native.UiVisibleTextLines(Scene.Current.Pointer, area, &first, &count);
+        return (first, count);
+    }
 }
 
 /// <summary>
@@ -711,3 +762,14 @@ public static unsafe class Ui
 /// source, and where it was let go in the target, from (0, 0) at its top left corner to (1, 1).
 /// </summary>
 public readonly record struct UiDrop(Entity Source, Entity Target, string Type, string Data, Vec2 At);
+
+/// <summary>
+/// A run of the text of an area, from <c>Start</c> up to <c>End</c> in characters of its text, and
+/// its colour, as the colours of the UiText are given.
+/// </summary>
+[StructLayout(LayoutKind.Sequential)]
+public readonly record struct UiTextSpan(int Start, int End, Vec4 Color);
+
+/// <summary>A line of an area, from 0, and the colour it is marked in.</summary>
+[StructLayout(LayoutKind.Sequential)]
+public readonly record struct UiTextLineMark(int Line, Vec4 Color);

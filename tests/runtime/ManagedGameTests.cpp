@@ -2,7 +2,9 @@
 
 #include <devex/animation/AnimationWorld.hpp>
 #include <devex/animation/TweenWorld.hpp>
+#include <devex/asset/Artifact.hpp>
 #include <devex/asset/Primitives.hpp>
+#include <devex/asset/import/Importer.hpp>
 #include <devex/audio/AudioWorld.hpp>
 #include <devex/audio/Clip.hpp>
 #include <devex/core/File.hpp>
@@ -31,6 +33,7 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <filesystem>
 #include <format>
 #include <memory>
@@ -81,7 +84,7 @@ void run(ManagedGame& game, Scene& scene, SystemPhase phase, double seconds = 0.
 TEST_CASE("The C# runtime registers components and runs them", "[runtime][managed]")
 {
     const std::unique_ptr<ManagedGame> game = startRuntime();
-    CHECK(game->componentTypes().size() == 20);
+    CHECK(game->componentTypes().size() == 21);
 
     devex::scene::ComponentRegistry& registry = devex::scene::componentRegistry();
     const devex::scene::ComponentType* const mover = registry.find("Mover");
@@ -558,6 +561,81 @@ TEST_CASE("C# components open popups and read context menus and double clicks", 
     CHECK(field<bool>(*menus, component, "target_seen"));
     CHECK(field<bool>(*menus, component, "double_clicked"));
     CHECK(field<bool>(*menus, component, "closed"));
+    game->unloadAssembly();
+}
+
+TEST_CASE("C# components colour the runs of an area of text, counted in their characters", "[runtime][managed][ui]")
+{
+    const std::unique_ptr<ManagedGame> game = startRuntime();
+    const devex::scene::ComponentType* const colors = devex::scene::componentRegistry().find("TextColors");
+    REQUIRE(colors != nullptr);
+    static const devex::asset::FontData baked = [] {
+        devex::asset::ImportContext context{
+            .source = std::filesystem::path{DEVEX_TEST_DATA_DIRECTORY} / "fonts" / "NotoSans-Regular.ttf",
+            .mainId = devex::asset::AssetId::generate(),
+            .name = "font",
+            .options = {{"size", devex::serialization::TextValue(32.0)}},
+        };
+        const auto result = devex::asset::importFontFile(context);
+        REQUIRE(result.has_value());
+        const auto data = devex::asset::decodeFont(result->artifacts.front().bytes);
+        REQUIRE(data.has_value());
+        return *data;
+    }();
+
+    Scene scene;
+    const Entity canvas = scene.createEntity("Canvas");
+    scene.add<devex::scene::Canvas>(canvas, devex::scene::Canvas{.scaleMode = devex::scene::CanvasScaleMode::ConstantPixels});
+    const Entity area = scene.createEntity("Notes");
+    REQUIRE(scene.setParent(area, canvas).has_value());
+    scene.add<devex::scene::UiRect>(area, devex::scene::UiRect{.anchorMin = {0.0f, 0.0f}, .anchorMax = {0.0f, 0.0f}, .offsetMin = {100.0f, 100.0f},
+                                                               .offsetMax = {500.0f, 300.0f}});
+    // "é", a face beyond the first plane, then the word.
+    scene.add<devex::scene::UiText>(area, devex::scene::UiText{.text = "\xC3\xA9\xF0\x9F\x98\x80 red\nsecond\nthird", .size = 20.0f});
+    scene.add<devex::scene::UiTextArea>(area, devex::scene::UiTextArea{.scrollbarSize = 0.0f});
+    const Entity holder = scene.createEntity("Holder");
+    void* const component = colors->emplace(scene, holder);
+    field<devex::scene::EntityRef>(*colors, component, "area") = scene.reference(area);
+
+    const auto fontOf = [](devex::asset::AssetId) {
+        devex::render::TextureHandle atlas;
+        atlas.index = 0;
+        atlas.generation = 1;
+        return devex::ui::FontRef{.data = &baked, .atlas = atlas};
+    };
+    devex::ui::UiWorld world;
+    world.setFonts(fontOf);
+    ManagedGame::Frame frame{.scene = &scene, .ui = &world};
+    // The colours are given before the interface ever saw the area.
+    game->runPhase(frame, SystemPhase::Start);
+    world.update(scene, devex::math::Vec2{1280.0f, 720.0f}, devex::ui::UiInput{}, devex::core::Duration(1.0 / 60.0));
+    game->runPhase(frame, SystemPhase::Update);
+    CHECK(field<int>(*colors, component, "first") == 0);
+    CHECK(field<int>(*colors, component, "count") == 3);
+
+    devex::render::RenderWorld drawn;
+    world.build(scene, devex::ui::DrawContext{.fonts = fontOf}, drawn);
+    const auto quadsOf = [&](devex::math::Vec4 color) {
+        std::vector<float> tops;
+        for (std::size_t vertex = 0; vertex + 3 < drawn.uiVertices.size(); vertex += 4)
+        {
+            if (drawn.uiVertices[vertex].color == color)
+            {
+                tops.push_back(drawn.uiVertices[vertex].position.y);
+            }
+        }
+        return tops;
+    };
+    // The three letters of the word, all on the first line.
+    const std::vector<float> red = quadsOf({1.0f, 0.0f, 0.0f, 1.0f});
+    REQUIRE(red.size() == 3);
+    CHECK(std::ranges::max(red) - std::ranges::min(red) < 10.0f);
+    const std::vector<float> plain = quadsOf({1.0f, 1.0f, 1.0f, 1.0f});
+    REQUIRE_FALSE(plain.empty());
+    CHECK(std::ranges::min(red) < std::ranges::min(plain) + 10.0f);
+    // A box behind the first letter, and the second line underlined, paler.
+    CHECK(quadsOf({1.0f, 1.0f, 0.0f, 0.5f}).size() == 1);
+    CHECK(quadsOf({0.0f, 1.0f, 0.0f, 0.35f}).size() == 1);
     game->unloadAssembly();
 }
 

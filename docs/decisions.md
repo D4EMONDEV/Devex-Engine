@@ -2372,6 +2372,16 @@ les assets s'écrivent au fil de leur lecture.
     Godot, elle reste nette, et un matériau montre toujours la surface qui le prendra.
     `dragAsset`, une source de glisser ImGui sans appelant, disparaît. Le glisser reste un glisser
     ImGui sous le capot, pour que la vue le prenne, jusqu'au dock.
+  - **Puis le C# colore les zones de texte** comme l'écran Script : `Ui.SetTextColors` (les mots),
+    `Ui.SetTextHighlights` (ce qu'une recherche trouve), `Ui.SetTextMarks` (une erreur) et
+    `Ui.VisibleTextLines` (ce qui vaut d'être coloré). Les positions comptent les caractères de la
+    string C#, comme `IndexOf` ; le moteur les traduit en octets UTF-8 d'un seul passage sur le
+    texte de la zone (une lettre hors du premier plan fait deux caractères et quatre octets), et
+    range les couleurs dans l'ordre du texte, que le dessin demande. `UiWorld::setTextSpans` et ses
+    voisins prennent la scène, pour garder ce qu'on donne à une zone que le monde n'a pas encore
+    vue : depuis le `Start` d'un script. Écartés : les octets en C# (faux dès le premier accent) et
+    la sélection et l'annulation, qui peuvent attendre qu'un jeu en ait besoin. Le bootstrap passe
+    à la version 20.
 - **Puis l'éditeur de texte** (jalon 50), le dernier panneau en ImGui, qui reposait sur le champ
   multi-ligne d'ImGui (curseur, sélection, annulation, défilement). Le champ de Devex UI, `UiInput`,
   replace tout son texte à chaque image : bien pour une ligne, pas pour un fichier de code.
@@ -2417,7 +2427,7 @@ les assets s'écrivent au fil de leur lecture.
     autre chose.
   - Limites : pas de retour à la ligne automatique dans une zone ; pas de sélection en colonnes ni
     de curseurs multiples ; les couleurs par morceau ne sont pas encore offertes au C# (le
-    composant, lui, l'est) ; Ctrl+/ ne répond pas sur un clavier AZERTY (le menu Edit le fait) ;
+    composant, lui, l'est ; elles le sont depuis, voir le jalon 51) ; Ctrl+/ ne répond pas sur un clavier AZERTY (le menu Edit le fait) ;
     la liste de tous les scripts du projet a disparu de l'écran : ils s'ouvrent depuis FileSystem.
 - **Puis Animation et Animator** (jalon 49), les deux derniers panneaux ancrés encore en ImGui
   (surfaces 18 et 19). Ils demandaient au moteur deux choses qu'il n'avait pas, et que les jeux

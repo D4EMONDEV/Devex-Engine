@@ -406,7 +406,7 @@ TEST_CASE("The runs of an area take their colours, and what is selected or found
     Notes notes("int x;", UiTextArea{.scrollbarSize = 0.0f});
     const Vec4 blue{0.0f, 0.0f, 1.0f, 1.0f};
     const Vec4 yellow{1.0f, 1.0f, 0.0f, 0.5f};
-    notes.world.setTextSpans(notes.area, {devex::ui::TextSpan{.begin = 0, .end = 3, .color = blue}});
+    notes.world.setTextSpans(notes.scene, notes.area, {devex::ui::TextSpan{.begin = 0, .end = 3, .color = blue}});
     // "int", "x" and ";": five letters, the first three in blue and the others in the colour of the text.
     const devex::render::RenderWorld plain = notes.draw();
     REQUIRE(plain.uiVertices.size() == 5 * 4);
@@ -415,7 +415,7 @@ TEST_CASE("The runs of an area take their colours, and what is selected or found
     CHECK(plain.uiVertices[3 * 4].color == Vec4{1.0f, 1.0f, 1.0f, 1.0f});
 
     // What a search found is a box behind its letters, drawn before them.
-    notes.world.setTextHighlights(notes.area, {devex::ui::TextSpan{.begin = 4, .end = 5, .color = yellow}});
+    notes.world.setTextHighlights(notes.scene, notes.area, {devex::ui::TextSpan{.begin = 4, .end = 5, .color = yellow}});
     const devex::render::RenderWorld found = notes.draw();
     REQUIRE(found.uiVertices.size() == 6 * 4);
     CHECK(found.uiVertices[0].color == yellow);
@@ -432,7 +432,7 @@ TEST_CASE("The runs of an area take their colours, and what is selected or found
     CHECK(edited.uiVertices[8 * 4].color == notes.settings().caretColor);
 
     // A line that is marked is underlined, and with a gutter it has a bar at its left.
-    notes.world.setTextMarks(notes.area, {devex::ui::TextLineMark{.line = 0, .color = Vec4{1.0f, 0.0f, 0.0f, 1.0f}}});
+    notes.world.setTextMarks(notes.scene, notes.area, {devex::ui::TextLineMark{.line = 0, .color = Vec4{1.0f, 0.0f, 0.0f, 1.0f}}});
     CHECK(notes.draw().uiVertices.size() == 10 * 4);
 }
 

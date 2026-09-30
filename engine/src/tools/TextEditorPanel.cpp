@@ -734,7 +734,7 @@ void ScriptUi::colorLines(ToolsState& state, const TextDocument& document, Entit
         entry.second.used = false;
         return !used;
     });
-    world.setTextSpans(area, std::move(spans));
+    world.setTextSpans(scene(), area, std::move(spans));
 
     // Everything the search found in view, and the match the panel is on.
     std::vector<ui::TextSpan> found;
@@ -751,7 +751,7 @@ void ScriptUi::colorLines(ToolsState& state, const TextDocument& document, Entit
                              .color = linearColor(ImVec4(tint.x, tint.y, tint.z, current ? 0.6f : 0.35f))});
         }
     }
-    world.setTextHighlights(area, std::move(found));
+    world.setTextHighlights(scene(), area, std::move(found));
 
     // The diagnostics of the last build of the game code, on the lines they name.
     std::vector<ui::TextLineMark> marks;
@@ -762,7 +762,7 @@ void ScriptUi::colorLines(ToolsState& state, const TextDocument& document, Entit
             marks.push_back({.line = static_cast<std::uint32_t>(diagnostic.line - 1), .color = linearColor(diagnostic.error ? colors.error : colors.warning)});
         }
     }
-    world.setTextMarks(area, std::move(marks));
+    world.setTextMarks(scene(), area, std::move(marks));
 }
 
 void ScriptUi::showCompletions(ToolsState& state, Entity area, bool focused)

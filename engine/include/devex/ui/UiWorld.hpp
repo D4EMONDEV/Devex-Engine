@@ -192,11 +192,12 @@ public:
 
     // The areas of text. The colours of runs of their text, in its order: the words of a language.
     // A tool gives them for the lines in view, which `visibleTextLines` names, at every frame they
-    // change; they are not kept with the scene.
-    void setTextSpans(scene::Entity area, std::vector<TextSpan> spans);
+    // change; they are not kept with the scene. An area the world has not updated yet takes them
+    // all the same, as from a script's Start.
+    void setTextSpans(const scene::Scene& scene, scene::Entity area, std::vector<TextSpan> spans);
     // Runs drawn behind the letters, such as what a search found, and lines marked at their left.
-    void setTextHighlights(scene::Entity area, std::vector<TextSpan> highlights);
-    void setTextMarks(scene::Entity area, std::vector<TextLineMark> marks);
+    void setTextHighlights(const scene::Scene& scene, scene::Entity area, std::vector<TextSpan> highlights);
+    void setTextMarks(const scene::Scene& scene, scene::Entity area, std::vector<TextLineMark> marks);
     // The first line an area shows, from 0, and how many it shows.
     [[nodiscard]] std::pair<std::size_t, std::size_t> visibleTextLines(const scene::Scene& scene, scene::Entity area) const;
     // Where the cursor of an area stands and where its selection started, in bytes of its text; the
@@ -543,6 +544,8 @@ private:
     [[nodiscard]] TextAreaState* areaState(scene::Entity entity) noexcept;
     [[nodiscard]] const TextAreaState* areaState(scene::Entity entity) const noexcept;
     [[nodiscard]] TextAreaState& ensureAreaState(scene::Entity entity, const std::string& text);
+    // What an area of the scene keeps, made for one not updated yet; null for what is no area.
+    [[nodiscard]] TextAreaState* areaStateOf(const scene::Scene& scene, scene::Entity entity);
     [[nodiscard]] const TextAreaView* textAreaView(scene::Entity entity) const noexcept;
     // Reads the text again when it changed outside the area, as a change it can go back on.
     void syncArea(TextAreaState& state, std::string& text);

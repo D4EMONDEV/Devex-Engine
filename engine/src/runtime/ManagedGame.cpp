@@ -14,6 +14,7 @@
 #include <devex/scene/Prefab.hpp>
 #include <devex/scene/SceneSerializer.hpp>
 #include <devex/scene/TilemapComponents.hpp>
+#include <devex/scene/UiComponents.hpp>
 #include <devex/serialization/Text.hpp>
 
 #include <algorithm>
@@ -21,6 +22,7 @@
 #include <cstring>
 #include <optional>
 #include <source_location>
+#include <span>
 #include <string_view>
 #include <system_error>
 #include <utility>
@@ -69,6 +71,22 @@ struct NativeTween
     std::int32_t repeats;
     // The step of a sequence it plays in.
     std::int32_t step;
+};
+
+// A run of the text of an area as C# gives it, in the layout of Devex.Managed's UiTextSpan: from
+// `start` up to `end` in characters of the C# string, which counts in UTF-16.
+struct NativeTextSpan
+{
+    std::int32_t start;
+    std::int32_t end;
+    math::Vec4 color;
+};
+
+// A line an area marks, from 0, in the layout of Devex.Managed's UiTextLineMark.
+struct NativeTextLineMark
+{
+    std::int32_t line;
+    math::Vec4 color;
 };
 
 // The functions the C# runtime calls, in the order of Devex.Managed's NativeApi.
@@ -260,6 +278,9 @@ struct NativeApi
     Entity (*uiCarried)();
     void (*uiDropPosition)(math::Vec2* at);
     int (*uiPlotValueAt)(void* scene, Entity plot);
+    void (*uiSetTextSpans)(void* scene, Entity area, int behind, const NativeTextSpan* spans, int count);
+    void (*uiSetTextMarks)(void* scene, Entity area, const NativeTextLineMark* marks, int count);
+    void (*uiVisibleTextLines)(void* scene, Entity area, int* first, int* count);
 };
 
 // The functions the engine calls, in the order of Devex.Managed's ManagedApi.
@@ -274,7 +295,7 @@ struct ManagedApi
 };
 
 // Devex.Managed's Bootstrap.Version: both sides change it with the function tables.
-constexpr int bootstrapVersion = 19;
+constexpr int bootstrapVersion = 20;
 
 struct BootstrapArguments
 {
@@ -343,6 +364,8 @@ static_assert(offsetof(physics::Contact, first) == 4 && offsetof(physics::Contac
 static_assert(sizeof(physics2d::RayHit) == 28);
 static_assert(offsetof(physics2d::RayHit, point) == 8 && offsetof(physics2d::RayHit, normal) == 16 &&
               offsetof(physics2d::RayHit, distance) == 24);
+static_assert(sizeof(NativeTextSpan) == 24 && offsetof(NativeTextSpan, color) == 8);
+static_assert(sizeof(NativeTextLineMark) == 20 && offsetof(NativeTextLineMark, color) == 4);
 
 void apiLog(int level, const char* message)
 {
@@ -1275,6 +1298,103 @@ Entity apiUiCarried()
 int apiUiPlotValueAt(void* scene, Entity plot)
 {
     return uiWorld() != nullptr && scene != nullptr ? uiWorld()->plotValueAt(*toScene(scene), plot) : -1;
+}
+
+// The runs C# gives an area, from characters of its C# string to bytes of its text: their ends are
+// sorted once and found in a single walk over the text, those past its end at its end. The colours
+// are drawn in the order of the text, whatever the order they came in.
+[[nodiscard]] std::vector<ui::TextSpan> textSpansOf(std::string_view text, const NativeTextSpan* given, int count)
+{
+    std::vector<ui::TextSpan> spans;
+    if (given == nullptr || count <= 0)
+    {
+        return spans;
+    }
+    spans.reserve(static_cast<std::size_t>(count));
+    for (const NativeTextSpan& span : std::span(given, static_cast<std::size_t>(count)))
+    {
+        if (span.end > span.start && span.end > 0)
+        {
+            spans.push_back({.begin = static_cast<std::size_t>(std::max(span.start, 0)), .end = static_cast<std::size_t>(span.end), .color = span.color});
+        }
+    }
+    std::vector<std::size_t*> ends;
+    ends.reserve(spans.size() * 2);
+    for (ui::TextSpan& span : spans)
+    {
+        ends.push_back(&span.begin);
+        ends.push_back(&span.end);
+    }
+    std::ranges::sort(ends, {}, [](const std::size_t* end) { return *end; });
+    std::size_t byte = 0;
+    std::size_t character = 0;
+    for (std::size_t* const end : ends)
+    {
+        while (character < *end && byte < text.size())
+        {
+            const auto lead = static_cast<unsigned char>(text[byte]);
+            const std::size_t length = lead < 0xC0 ? 1 : lead < 0xE0 ? 2 : lead < 0xF0 ? 3 : 4;
+            byte = std::min(byte + length, text.size());
+            // A letter beyond the first plane is two characters of a C# string.
+            character += length == 4 ? 2 : 1;
+        }
+        *end = byte;
+    }
+    std::ranges::sort(spans, {}, &ui::TextSpan::begin);
+    return spans;
+}
+
+void apiUiSetTextSpans(void* scene, Entity area, int behind, const NativeTextSpan* spans, int count)
+{
+    const scene::Scene* const shown = toScene(scene);
+    const auto* const text = uiWorld() != nullptr && shown != nullptr && shown->isAlive(area) ? shown->tryGet<scene::UiText>(area) : nullptr;
+    if (text == nullptr)
+    {
+        return;
+    }
+    std::vector<ui::TextSpan> converted = textSpansOf(text->text, spans, count);
+    if (behind != 0)
+    {
+        uiWorld()->setTextHighlights(*shown, area, std::move(converted));
+    }
+    else
+    {
+        uiWorld()->setTextSpans(*shown, area, std::move(converted));
+    }
+}
+
+void apiUiSetTextMarks(void* scene, Entity area, const NativeTextLineMark* marks, int count)
+{
+    if (uiWorld() == nullptr || scene == nullptr)
+    {
+        return;
+    }
+    std::vector<ui::TextLineMark> kept;
+    if (marks != nullptr && count > 0)
+    {
+        for (const NativeTextLineMark& mark : std::span(marks, static_cast<std::size_t>(count)))
+        {
+            if (mark.line >= 0)
+            {
+                kept.push_back({.line = static_cast<std::uint32_t>(mark.line), .color = mark.color});
+            }
+        }
+    }
+    uiWorld()->setTextMarks(*toScene(scene), area, std::move(kept));
+}
+
+void apiUiVisibleTextLines(void* scene, Entity area, int* first, int* count)
+{
+    const auto [from, shown] =
+        uiWorld() != nullptr && scene != nullptr ? uiWorld()->visibleTextLines(*toScene(scene), area) : std::pair<std::size_t, std::size_t>{0, 0};
+    if (first != nullptr)
+    {
+        *first = static_cast<int>(from);
+    }
+    if (count != nullptr)
+    {
+        *count = static_cast<int>(shown);
+    }
 }
 
 int apiProfileEnabled()
@@ -2247,6 +2367,9 @@ int apiParticleCount(Entity entity)
         .uiCarried = &apiUiCarried,
         .uiDropPosition = &apiUiDropPosition,
         .uiPlotValueAt = &apiUiPlotValueAt,
+        .uiSetTextSpans = &apiUiSetTextSpans,
+        .uiSetTextMarks = &apiUiSetTextMarks,
+        .uiVisibleTextLines = &apiUiVisibleTextLines,
     };
 }
 

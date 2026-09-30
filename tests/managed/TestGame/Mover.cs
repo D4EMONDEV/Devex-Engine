@@ -610,6 +610,29 @@ public class Menus : Component
     }
 }
 
+// Colours a word of an area of text from its Start, before the interface has laid it out, finds
+// something behind its first letter, marks its second line and reads the lines in view. The letters
+// before the word are one character of C# and two bytes, then two characters and four bytes.
+public class TextColors : Component
+{
+    public Entity Area;
+    public int First = -1;
+    public int Count = -1;
+
+    public override void Start()
+    {
+        int word = Area.Get<UiText>().Text.IndexOf("red");
+        Ui.SetTextColors(Area, [new UiTextSpan(word, word + 3, new Vec4(1.0f, 0.0f, 0.0f, 1.0f))]);
+        Ui.SetTextHighlights(Area, [new UiTextSpan(0, 1, new Vec4(1.0f, 1.0f, 0.0f, 0.5f))]);
+        Ui.SetTextMarks(Area, [new UiTextLineMark(1, new Vec4(0.0f, 1.0f, 0.0f, 1.0f))]);
+    }
+
+    public override void Update(float delta)
+    {
+        (First, Count) = Ui.VisibleTextLines(Area);
+    }
+}
+
 // Reads what the pointer carries and what a slot takes.
 public class Drops : Component
 {
