@@ -13,6 +13,7 @@
 #include <devex/ui/TextLayout.hpp>
 
 #include <algorithm>
+#include <bit>
 #include <cmath>
 #include <format>
 
@@ -301,7 +302,25 @@ const asset::FontData* EditorUiKit::fontData(asset::AssetId font)
 float EditorUiKit::textWidth(asset::AssetId font, std::string_view text, float size)
 {
     const asset::FontData* const data = fontData(font);
-    return data != nullptr ? ui::measureText(*data, text, ui::TextStyle{.size = size, .wrap = false}).x : 0.0f;
+    if (data == nullptr)
+    {
+        return 0.0f;
+    }
+    // Measured once for a font and a size; the fonts of the kit never change once baked.
+    const std::uint64_t face = font == boldFont() ? 1 : font == monoFont() ? 2 : 0;
+    auto& widths = m_widths[(face << 32) | std::bit_cast<std::uint32_t>(size)];
+    if (const auto known = widths.find(text); known != widths.end())
+    {
+        return known->second;
+    }
+    // Names and numbers come and go: what was kept is dropped before it grows without end.
+    if (widths.size() >= 4096)
+    {
+        widths.clear();
+    }
+    const float width = ui::measureText(*data, text, ui::TextStyle{.size = size, .wrap = false}).x;
+    widths.emplace(std::string(text), width);
+    return width;
 }
 
 void EditorUiKit::refreshTheme(const ThemeColors& colors)

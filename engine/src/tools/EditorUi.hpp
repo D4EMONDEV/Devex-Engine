@@ -21,6 +21,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -98,6 +99,18 @@ private:
     std::function<math::Vec2(asset::AssetId)> m_assetSizes;
     std::function<std::optional<ui::SpriteImage>(asset::AssetId)> m_assetSprites;
     std::shared_ptr<asset::ThemeData> m_theme;
+    // Finds a text among the widths kept without making a string of it.
+    struct TextHash
+    {
+        using is_transparent = void;
+        [[nodiscard]] std::size_t operator()(std::string_view text) const noexcept
+        {
+            return std::hash<std::string_view>{}(text);
+        }
+    };
+    // The widths already measured, by font and size then by text: the panels ask for the same ones at
+    // every frame.
+    std::unordered_map<std::uint64_t, std::unordered_map<std::string, float, TextHash, std::equal_to<>>> m_widths;
     ImVec4 m_themeAccent{-1.0f, 0.0f, 0.0f, 0.0f};
     ImVec4 m_themePanel{-1.0f, 0.0f, 0.0f, 0.0f};
 };

@@ -1186,9 +1186,19 @@ void UiWorld::build(const scene::Scene& scene, const DrawContext& context,
     {
         withTints.pickerHsv = [this, &scene](scene::Entity entity, math::Vec3& hsv) { return pickerHsv(scene, entity, hsv); };
     }
+    // The texts keep their letters from a drawing to the next, unless the caller keeps them itself.
+    const bool ownTexts = withTints.textCache == nullptr;
+    if (ownTexts)
+    {
+        withTints.textCache = &m_textCache;
+    }
     for (const CanvasLayout& canvas : m_canvases)
     {
         buildDrawList(scene, canvas.layout, withTints, world);
+    }
+    if (ownTexts)
+    {
+        m_textCache.sweep();
     }
 
     // The target that would take what the pointer carries, lit over its canvas.
@@ -1435,6 +1445,7 @@ std::span<const UiWorld::CanvasLayout> UiWorld::canvases() const noexcept
 
 void UiWorld::clear()
 {
+    m_textCache.clear();
     m_canvases.clear();
     m_buttons.clear();
     m_clicked.clear();

@@ -18,6 +18,8 @@ class Scene;
 // Turns the placed elements of an interface into the triangles the renderer draws.
 namespace devex::ui {
 
+class TextCache;
+
 // A font ready to draw with: its letters and the atlas they are read from.
 struct DEVEX_API FontRef
 {
@@ -68,6 +70,9 @@ struct DEVEX_API DrawContext
     std::function<bool(scene::Entity, math::Vec3&)> pickerHsv;
     // The font used by a UiText that names none.
     asset::AssetId defaultFont;
+    // Where the texts keep their letters from a frame to the next; without it, the letters of every
+    // text are placed again at every drawing.
+    TextCache* textCache = nullptr;
 };
 
 // Appends the elements of one canvas to the interface of the frame, in the order they were laid

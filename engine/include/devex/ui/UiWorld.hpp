@@ -7,6 +7,7 @@
 #include <devex/scene/Entity.hpp>
 #include <devex/ui/DrawList.hpp>
 #include <devex/ui/Layout.hpp>
+#include <devex/ui/TextCache.hpp>
 #include <devex/ui/TextLayout.hpp>
 #include <devex/ui/Theme.hpp>
 
@@ -360,6 +361,9 @@ private:
     std::function<FontRef(asset::AssetId)> m_fonts;
     ThemeApplier m_theme;
     asset::AssetId m_defaultFont;
+    // The letters of the texts as the last drawing placed them, which the next one takes again for
+    // the texts that did not change.
+    mutable TextCache m_textCache;
     // Kept from one frame to the next, so that a field that is typed into allocates nothing.
     TextLayoutResult m_fieldLayout;
 

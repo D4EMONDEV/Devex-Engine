@@ -2395,6 +2395,20 @@ les assets s'écrivent au fil de leur lecture.
   par son nom parmi une cinquantaine, puis le composant et le champ par leurs noms, coûtait à
   l'éditeur, fait de milliers d'éléments stylés, 14 ms par image en Debug : 1 ms désormais. Un
   thème qu'aucun élément ne suit est oublié, et tout est refait quand le code du jeu est rechargé.
+- **Des lettres gardées** (jalon 47) : placer les lettres d'un texte (lire ses caractères, couper
+  ses lignes, l'aligner) est la partie lente de son dessin, et la plupart des textes disent la même
+  chose au même endroit pendant longtemps. `ui::TextCache` garde donc, **par élément**, les lettres
+  telles qu'elles ont été placées, dans une boîte dont le coin est à l'origine : le dessin les
+  déplace là où se tient l'élément, si bien qu'un texte qui défile ou qu'on déplace n'est pas
+  replacé. Elles ne le sont que si le texte, son style, sa police ou la taille de sa boîte
+  changent — une comparaison par image, sans hachage — et un texte qui n'est plus dessiné est
+  oublié au balayage qui suit. Un champ garde à part ce qu'il contient et ce qu'il montre quand il
+  est vide. `UiWorld` a son cache, que chaque dessin prend sauf si l'appelant donne le sien
+  (`DrawContext::textCache`) ; les jeux en profitent sans rien faire. Les listes déroulantes
+  ouvertes et les infobulles, passagères, sont placées à chaque image. Côté éditeur, les largeurs
+  mesurées par les panneaux (`EditorUiKit::textWidth`) sont gardées par police et par taille.
+  Mesuré sur Sandbox en Debug : la liste de dessin passe de 3,2 à 1,2 ms, et l'image de l'éditeur,
+  à 26,5 ms avant les styles compilés, à 7,1 ms.
 - **Profilage** : `UiWorld` mesure ses styles, sa mise en page et sa liste de dessin, et l'éditeur
   chacun de ses panneaux (arbre de scène, FileSystem, inspecteur, fenêtres...) : le panneau
   Profiler dit où va le temps. Un banc de mesure caché (`devex_tools_tests "Editor frame
@@ -3123,6 +3137,10 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     Profiler en barres, timeline zoomable et onglets CPU, GPU et Memory ; `UiPlot` avec une
     couleur par valeur, une série derrière, des repères, une valeur éclairée et la valeur sous le
     pointeur, en C++ et en C#.
+
+47. ✅ **Texte mis en cache** — les lettres de chaque texte gardées d'une image à l'autre par
+    élément (`ui::TextCache`), replacées seulement quand le texte, son style, sa police ou la
+    taille de sa boîte changent ; largeurs mesurées gardées dans l'éditeur.
 
 Ensuite, sans ordre figé : CI Linux, la suite du portage de l'éditeur.
 

@@ -3,6 +3,7 @@
 #include <devex/scene/Scene.hpp>
 #include <devex/scene/UiComponents.hpp>
 #include <devex/ui/Color.hpp>
+#include <devex/ui/TextCache.hpp>
 #include <devex/ui/TextLayout.hpp>
 
 #include <algorithm>
@@ -234,7 +235,7 @@ void drawImage(Builder& builder, const DrawContext& context, const LaidOutRect& 
 // The letters and the images of a text that was already laid out, which a field draws too.
 void drawTextLayout(Builder& builder, const DrawContext& context, const LaidOutRect& rect,
                     const scene::UiText& text, const TextLayoutResult& letters, const FontRef& font,
-                    math::Vec4 color);
+                    math::Vec4 color, math::Vec2 origin = math::Vec2{0.0f});
 
 void drawText(Builder& builder, const DrawContext& context, const LaidOutRect& rect,
               const scene::UiText& text)
@@ -250,22 +251,29 @@ void drawText(Builder& builder, const DrawContext& context, const LaidOutRect& r
         return;
     }
 
+    const TextStyle style{.size = text.size,
+                          .align = text.align,
+                          .verticalAlign = text.verticalAlign,
+                          .wrap = text.wrap,
+                          .lineSpacing = text.lineSpacing,
+                          .rich = text.rich};
+    if (context.textCache != nullptr)
+    {
+        // The letters kept from the last frames, placed from the corner of the element.
+        drawTextLayout(builder, context, rect, text, context.textCache->layout(rect.entity, 0, *font.data, text.text, style, rect.size()),
+                       font, text.color, rect.min);
+        return;
+    }
     TextLayoutResult letters;
-    layoutText(*font.data, text.text,
-               TextStyle{.size = text.size,
-                         .align = text.align,
-                         .verticalAlign = text.verticalAlign,
-                         .wrap = text.wrap,
-                         .lineSpacing = text.lineSpacing,
-                         .rich = text.rich},
-               rect.min, rect.max, letters);
+    layoutText(*font.data, text.text, style, rect.min, rect.max, letters);
     drawTextLayout(builder, context, rect, text, letters, font, text.color);
 }
 
-// The letters and the images of a text that was already laid out, which a field draws too.
+// The letters and the images of a text that was already laid out, which a field draws too. `origin`
+// moves letters that were placed from the origin to where their element stands.
 void drawTextLayout(Builder& builder, const DrawContext& context, const LaidOutRect& rect,
                     const scene::UiText& text, const TextLayoutResult& letters, const FontRef& font,
-                    math::Vec4 color)
+                    math::Vec4 color, math::Vec2 origin)
 {
     // The images a rich text asked for, each in its own batch since they carry their own texture.
     for (const InlineImage& image : letters.images)
@@ -282,14 +290,16 @@ void drawTextLayout(Builder& builder, const DrawContext& context, const LaidOutR
         render::UiDraw& draw =
             builder.batch(render::UiDrawKind::Quad, texture, math::Vec4{0.0f}, 0.0f, 1.0f);
         const math::Vec4 white = withOpacity(math::Vec4{1.0f, 1.0f, 1.0f, 1.0f}, rect.opacity);
+        const math::Vec2 imageMin = image.min + origin;
+        const math::Vec2 imageMax = image.max + origin;
         if (isPlain(rect))
         {
-            builder.quad(draw, image.min, image.max, math::Vec2{0.0f, 0.0f}, math::Vec2{1.0f, 1.0f}, white);
+            builder.quad(draw, imageMin, imageMax, math::Vec2{0.0f, 0.0f}, math::Vec2{1.0f, 1.0f}, white);
         }
         else
         {
-            const std::array<math::Vec2, 4> corners{turned(rect, image.min), turned(rect, math::Vec2{image.max.x, image.min.y}),
-                                                    turned(rect, image.max), turned(rect, math::Vec2{image.min.x, image.max.y})};
+            const std::array<math::Vec2, 4> corners{turned(rect, imageMin), turned(rect, math::Vec2{imageMax.x, imageMin.y}),
+                                                    turned(rect, imageMax), turned(rect, math::Vec2{imageMin.x, imageMax.y})};
             builder.quad(draw, corners, math::Vec2{0.0f, 0.0f}, math::Vec2{1.0f, 1.0f}, white);
         }
     }
@@ -313,7 +323,7 @@ void drawTextLayout(Builder& builder, const DrawContext& context, const LaidOutR
             const int passes = glyph.bold && plain == false ? 2 : 1;
             for (int pass = 0; pass < passes; ++pass)
             {
-                const math::Vec2 step = shift + math::Vec2{pass * text.size * 0.04f, 0.0f};
+                const math::Vec2 step = origin + shift + math::Vec2{pass * text.size * 0.04f, 0.0f};
                 if (lean > 0.0f || !plainRect)
                 {
                     std::array<math::Vec2, 4> corners{
@@ -484,7 +494,7 @@ void drawControls(Builder& builder, const scene::Scene& scene, const DrawContext
 // What is selected, one rectangle per line it covers. The stops follow the text, so a line is the
 // run of stops that share it.
 void drawSelection(Builder& builder, const TextLayoutResult& letters, math::Vec4 color,
-                   const EditState& edit)
+                   const EditState& edit, math::Vec2 origin)
 {
     std::size_t index = 0;
     while (index < letters.stops.size())
@@ -503,8 +513,8 @@ void drawSelection(Builder& builder, const TextLayoutResult& letters, math::Vec4
             last = &letters.stops[next];
             ++next;
         }
-        fill(builder, first.position,
-             math::Vec2{last->position.x, last->position.y + last->height}, color);
+        fill(builder, first.position + origin,
+             math::Vec2{last->position.x, last->position.y + last->height} + origin, color);
         index = next;
     }
 }
@@ -787,7 +797,24 @@ void drawField(Builder& builder, const DrawContext& context, const LaidOutRect& 
     math::Vec2 boxMin{0.0f};
     math::Vec2 boxMax{0.0f};
     fieldBox(field, rect.min, rect.max, boxMin, boxMax);
-    TextLayoutResult letters;
+    // The letters kept from the last frames are placed from the origin, and moved to the box; without
+    // a cache they are placed in the box.
+    TextLayoutResult placed;
+    const auto lettersOf = [&](std::uint32_t part, std::string_view shown, math::Vec2& origin) -> const TextLayoutResult& {
+        if (context.textCache != nullptr)
+        {
+            origin = boxMin;
+            return context.textCache->layout(rect.entity, part, *font.data, shown, style, boxMax - boxMin);
+        }
+        origin = math::Vec2{0.0f};
+        layoutText(*font.data, shown, style, boxMin, boxMax, placed);
+        return placed;
+    };
+    const auto caret = [&](const CaretStop& stop, math::Vec2 origin) {
+        fill(builder, stop.position + origin,
+             math::Vec2{stop.position.x + std::max(text.size * 0.06f, 1.0f), stop.position.y + stop.height} + origin,
+             withOpacity(field.caretColor, rect.opacity));
+    };
 
     if (text.text.empty())
     {
@@ -795,8 +822,9 @@ void drawField(Builder& builder, const DrawContext& context, const LaidOutRect& 
         // at the start while the field is being edited.
         if (!field.placeholder.empty())
         {
-            layoutText(*font.data, field.placeholder, style, boxMin, boxMax, letters);
-            drawTextLayout(builder, context, rect, text, letters, font, field.placeholderColor);
+            math::Vec2 origin{0.0f};
+            const TextLayoutResult& letters = lettersOf(2, field.placeholder, origin);
+            drawTextLayout(builder, context, rect, text, letters, font, field.placeholderColor, origin);
         }
         if (edit != nullptr && edit->caretVisible)
         {
@@ -804,30 +832,26 @@ void drawField(Builder& builder, const DrawContext& context, const LaidOutRect& 
             layoutText(*font.data, std::string_view{}, style, boxMin, boxMax, empty);
             if (const CaretStop* const stop = caretAt(empty, 0))
             {
-                fill(builder, stop->position,
-                     math::Vec2{stop->position.x + std::max(text.size * 0.06f, 1.0f),
-                                stop->position.y + stop->height},
-                     withOpacity(field.caretColor, rect.opacity));
+                caret(*stop, math::Vec2{0.0f});
             }
         }
         return;
     }
 
-    const std::string shown = shownText(text.text, field.password);
-    layoutText(*font.data, shown, style, boxMin, boxMax, letters);
+    // A field that hides what is typed shows a dot per character.
+    const std::string dots = field.password ? shownText(text.text, true) : std::string{};
+    math::Vec2 origin{0.0f};
+    const TextLayoutResult& letters = lettersOf(1, field.password ? std::string_view(dots) : std::string_view(text.text), origin);
     if (edit != nullptr && edit->selectionMax > edit->selectionMin)
     {
-        drawSelection(builder, letters, withOpacity(field.selectionColor, rect.opacity), *edit);
+        drawSelection(builder, letters, withOpacity(field.selectionColor, rect.opacity), *edit, origin);
     }
-    drawTextLayout(builder, context, rect, text, letters, font, text.color);
+    drawTextLayout(builder, context, rect, text, letters, font, text.color, origin);
     if (edit != nullptr && edit->caretVisible)
     {
         if (const CaretStop* const stop = caretAt(letters, edit->caret))
         {
-            fill(builder, stop->position,
-                 math::Vec2{stop->position.x + std::max(text.size * 0.06f, 1.0f),
-                            stop->position.y + stop->height},
-                 withOpacity(field.caretColor, rect.opacity));
+            caret(*stop, origin);
         }
     }
 }

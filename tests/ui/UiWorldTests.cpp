@@ -659,6 +659,91 @@ TEST_CASE("A turned text turns its letters with it", "[ui][world]")
     CHECK(standing.y == Catch::Approx(flat.x).margin(1.0f));
 }
 
+TEST_CASE("Texts keep their letters from a drawing to the next until they change", "[ui][world][text]")
+{
+    Scene scene;
+    const Entity canvas = scene.createEntity("Canvas");
+    scene.add<Canvas>(canvas, Canvas{.scaleMode = devex::scene::CanvasScaleMode::ConstantPixels});
+    const auto element = [&](const char* name, Vec2 min, Vec2 max) {
+        const Entity entity = scene.createEntity(name);
+        REQUIRE(scene.setParent(entity, canvas).has_value());
+        scene.add<UiRect>(entity, UiRect{.anchorMin = {0.0f, 0.0f}, .anchorMax = {0.0f, 0.0f}, .offsetMin = min, .offsetMax = max});
+        return entity;
+    };
+    const Entity label = element("Label", {100.0f, 100.0f}, {400.0f, 140.0f});
+    scene.add<devex::scene::UiText>(label, devex::scene::UiText{.text = "Frame time",
+                                                                .size = 24.0f,
+                                                                .align = devex::scene::TextAlign::Center,
+                                                                .verticalAlign = devex::scene::TextVerticalAlign::Middle,
+                                                                .wrap = false});
+    const Entity field = element("Field", {100.0f, 200.0f}, {400.0f, 240.0f});
+    scene.add<devex::scene::UiText>(field, devex::scene::UiText{.text = "12.5", .size = 24.0f, .wrap = false});
+    scene.add<devex::scene::UiInput>(field, devex::scene::UiInput{.placeholder = "Value"});
+
+    UiWorld world;
+    world.setFonts(&fontRef);
+    devex::ui::TextCache cache;
+    const auto drawn = [&] {
+        world.update(scene, window, UiInput{}, frame);
+        devex::render::RenderWorld kept;
+        world.build(scene, devex::ui::DrawContext{.fonts = &fontRef, .textCache = &cache}, kept);
+        return kept;
+    };
+
+    // The letters kept land where letters placed at every drawing do.
+    const devex::render::RenderWorld first = drawn();
+    devex::render::RenderWorld plain;
+    devex::ui::buildDrawList(scene, world.canvases().front().layout, devex::ui::DrawContext{.fonts = &fontRef}, plain);
+    REQUIRE(first.uiVertices.size() == plain.uiVertices.size());
+    REQUIRE_FALSE(first.uiVertices.empty());
+    for (std::size_t index = 0; index < first.uiVertices.size(); ++index)
+    {
+        CHECK(first.uiVertices[index].position.x == Catch::Approx(plain.uiVertices[index].position.x).margin(1e-3));
+        CHECK(first.uiVertices[index].position.y == Catch::Approx(plain.uiVertices[index].position.y).margin(1e-3));
+        CHECK(first.uiVertices[index].uv == plain.uiVertices[index].uv);
+    }
+    // The label and what the field holds; the placeholder of a field that holds something is not.
+    CHECK(cache.placed() == 2);
+
+    // Drawn again, nothing is placed; moved, the same letters move with their element.
+    static_cast<void>(drawn());
+    CHECK(cache.placed() == 2);
+    scene.get<UiRect>(label).offsetMin.x += 50.0f;
+    scene.get<UiRect>(label).offsetMax.x += 50.0f;
+    const devex::render::RenderWorld moved = drawn();
+    CHECK(cache.placed() == 2);
+    REQUIRE(moved.uiVertices.size() == first.uiVertices.size());
+    CHECK(moved.uiVertices[0].position.x == Catch::Approx(first.uiVertices[0].position.x + 50.0f).margin(1e-3));
+
+    // Another text, another size of the room, or another style places them again.
+    scene.get<devex::scene::UiText>(label).text = "Frame times";
+    static_cast<void>(drawn());
+    CHECK(cache.placed() == 3);
+    scene.get<UiRect>(label).offsetMax.x += 20.0f;
+    static_cast<void>(drawn());
+    CHECK(cache.placed() == 4);
+    scene.get<devex::scene::UiText>(label).size = 20.0f;
+    static_cast<void>(drawn());
+    CHECK(cache.placed() == 5);
+    // An empty field shows its placeholder, kept apart from what it held.
+    scene.get<devex::scene::UiText>(field).text.clear();
+    static_cast<void>(drawn());
+    CHECK(cache.placed() == 6);
+
+    // A text that is no longer drawn is forgotten at the sweep after the drawing: what the field
+    // held first, then the label once it is hidden.
+    cache.sweep();
+    CHECK(cache.size() == 3);
+    static_cast<void>(drawn());
+    cache.sweep();
+    CHECK(cache.size() == 2);
+    scene.get<UiRect>(label).visible = false;
+    static_cast<void>(drawn());
+    cache.sweep();
+    CHECK(cache.size() == 1);
+    CHECK(cache.placed() == 6);
+}
+
 TEST_CASE("A tooltip without a font of its own speaks with the font of the interface around it", "[ui][world][controls]")
 {
     Scene scene;
