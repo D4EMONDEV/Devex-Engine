@@ -1,4 +1,5 @@
 #include "EditorFrame.hpp"
+#include "SettingsUi.hpp"
 #include "ToolsState.hpp"
 #include "TwoDScreen.hpp"
 
@@ -102,10 +103,9 @@ void forEachIcon(const ToolsState& state, scene::Scene& scene, Function&& functi
 }
 
 // How the modifier keys change what a click selects.
-[[nodiscard]] SelectMode selectMode()
+[[nodiscard]] SelectMode selectMode(const ToolsState& state)
 {
-    const ImGuiIO& io = ImGui::GetIO();
-    return io.KeyCtrl ? SelectMode::Toggle : io.KeyShift ? SelectMode::Add : SelectMode::Replace;
+    return state.input.ctrl() ? SelectMode::Toggle : state.input.shift() ? SelectMode::Add : SelectMode::Replace;
 }
 
 // Where a dropped model goes: on the ground under the mouse, or in front of the camera.
@@ -221,38 +221,37 @@ void moveFollowers(ToolsState& state, scene::Scene& scene, const math::Mat4& act
 
 void handleCamera(ToolsState& state, bool hovered, math::Vec2 size, math::Vec2 mouse)
 {
-    const ImGuiIO& io = ImGui::GetIO();
     const platform::Input& input = state.platform.input();
 
     // In 2D, the right and the middle buttons slide the view, and the wheel zooms at the mouse.
     if (state.camera.isTwoD())
     {
-        if (hovered && (ImGui::IsMouseClicked(ImGuiMouseButton_Right) || ImGui::IsMouseClicked(ImGuiMouseButton_Middle)))
+        if (hovered && (state.input.clicked(Mouse::Right) || state.input.clicked(Mouse::Middle)))
         {
             state.panning = true;
-            ImGui::SetWindowFocus();
+            state.hosts.focusCurrent();
         }
         if (state.panning)
         {
-            state.panning = ImGui::IsMouseDown(ImGuiMouseButton_Right) || ImGui::IsMouseDown(ImGuiMouseButton_Middle);
-            state.camera.pan(math::Vec2(io.MouseDelta.x, io.MouseDelta.y) * state.pixelsPerPoint, size.y);
+            state.panning = state.input.down(Mouse::Right) || state.input.down(Mouse::Middle);
+            state.camera.pan(math::Vec2(state.input.mouseDelta().x, state.input.mouseDelta().y) * state.pixelsPerPoint, size.y);
         }
-        if (hovered && io.MouseWheel != 0.0f)
+        if (hovered && state.input.wheel().y != 0.0f)
         {
-            state.camera.zoomAt(io.MouseWheel, mouse, size);
+            state.camera.zoomAt(state.input.wheel().y, mouse, size);
         }
         return;
     }
 
-    if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Right))
+    if (hovered && state.input.clicked(Mouse::Right))
     {
         state.flying = true;
         state.window.setMouseCaptured(true);
-        ImGui::SetWindowFocus();
+        state.hosts.focusCurrent();
     }
     if (state.flying)
     {
-        if (!ImGui::IsMouseDown(ImGuiMouseButton_Right) && !input.isMouseButtonDown(MouseButton::Right))
+        if (!state.input.down(Mouse::Right) && !input.isMouseButtonDown(MouseButton::Right))
         {
             state.flying = false;
             state.window.setMouseCaptured(false);
@@ -263,38 +262,38 @@ void handleCamera(ToolsState& state, bool hovered, math::Vec2 size, math::Vec2 m
             const auto axis = [&](Key positive, Key negative) {
                 return (input.isKeyDown(positive) ? 1.0f : 0.0f) - (input.isKeyDown(negative) ? 1.0f : 0.0f);
             };
-            state.camera.fly(math::Vec3{axis(Key::D, Key::A), axis(Key::E, Key::Q), axis(Key::S, Key::W)}, io.DeltaTime,
+            state.camera.fly(math::Vec3{axis(Key::D, Key::A), axis(Key::E, Key::Q), axis(Key::S, Key::W)}, state.input.delta(),
                              input.isKeyDown(Key::LeftShift) || input.isKeyDown(Key::RightShift));
-            if (io.MouseWheel != 0.0f)
+            if (state.input.wheel().y != 0.0f)
             {
-                state.camera.changeSpeed(io.MouseWheel);
+                state.camera.changeSpeed(state.input.wheel().y);
             }
         }
     }
 
-    if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Middle))
+    if (hovered && state.input.clicked(Mouse::Middle))
     {
         state.panning = true;
     }
     if (state.panning)
     {
-        state.panning = ImGui::IsMouseDown(ImGuiMouseButton_Middle);
-        state.camera.pan(math::Vec2(io.MouseDelta.x, io.MouseDelta.y) * state.pixelsPerPoint, size.y);
+        state.panning = state.input.down(Mouse::Middle);
+        state.camera.pan(math::Vec2(state.input.mouseDelta().x, state.input.mouseDelta().y) * state.pixelsPerPoint, size.y);
     }
 
-    if (hovered && io.KeyAlt && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
+    if (hovered && state.input.alt() && state.input.clicked(Mouse::Left))
     {
         state.orbiting = true;
     }
     if (state.orbiting)
     {
-        state.orbiting = ImGui::IsMouseDown(ImGuiMouseButton_Left);
-        state.camera.orbit(math::Vec2(io.MouseDelta.x, io.MouseDelta.y));
+        state.orbiting = state.input.down(Mouse::Left);
+        state.camera.orbit(math::Vec2(state.input.mouseDelta().x, state.input.mouseDelta().y));
     }
 
-    if (hovered && !state.flying && io.MouseWheel != 0.0f)
+    if (hovered && !state.flying && state.input.wheel().y != 0.0f)
     {
-        state.camera.dolly(io.MouseWheel);
+        state.camera.dolly(state.input.wheel().y);
     }
 }
 
@@ -307,7 +306,6 @@ void handleGizmoAndSelection(ToolsState& state, scene::Scene& scene, const Viewp
                            : state.tool == EditorTool::Scale ? GizmoMode::Scale
                                                              : GizmoMode::Translate;
     }
-    const ImGuiIO& io = ImGui::GetIO();
     const bool navigating = state.flying || state.orbiting || state.panning;
     const core::Uuid activeUuid = state.selection.active();
     const scene::Entity active = scene.findEntity(activeUuid);
@@ -320,7 +318,7 @@ void handleGizmoAndSelection(ToolsState& state, scene::Scene& scene, const Viewp
         if (!state.gizmo.isDragging())
         {
             state.hoveredHandle = hovered ? state.gizmo.hitTest(view, world, mouse) : GizmoHandle::None;
-            if (hovered && !io.KeyAlt && state.hoveredHandle != GizmoHandle::None && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
+            if (hovered && !state.input.alt() && state.hoveredHandle != GizmoHandle::None && state.input.clicked(Mouse::Left))
             {
                 state.gizmo.begin(state.hoveredHandle, view, world, parentWorld, *local, mouse);
                 // The other selected entities follow, except those that their ancestors carry. When
@@ -340,9 +338,9 @@ void handleGizmoAndSelection(ToolsState& state, scene::Scene& scene, const Viewp
         }
         if (state.gizmo.isDragging())
         {
-            if (ImGui::IsMouseDown(ImGuiMouseButton_Left))
+            if (state.input.down(Mouse::Left))
             {
-                const scene::Transform dragged = state.gizmo.drag(view, mouse, io.KeyCtrl != state.snap);
+                const scene::Transform dragged = state.gizmo.drag(view, mouse, state.input.ctrl() != state.snap);
                 const bool carried = isUnderAny(scene, scene.parent(active), state.selection);
                 *local = carried ? state.gizmo.startTransform() : dragged;
                 moveFollowers(state, scene, parentWorld, dragged);
@@ -364,8 +362,8 @@ void handleGizmoAndSelection(ToolsState& state, scene::Scene& scene, const Viewp
         }
     }
 
-    if (hovered && !io.KeyAlt && !navigating && state.hoveredHandle == GizmoHandle::None &&
-        ImGui::IsMouseClicked(ImGuiMouseButton_Left))
+    if (hovered && !state.input.alt() && !navigating && state.hoveredHandle == GizmoHandle::None &&
+        state.input.clicked(Mouse::Left))
     {
         state.clickStart = mouse;
         state.drawingRectangle = false;
@@ -375,7 +373,7 @@ void handleGizmoAndSelection(ToolsState& state, scene::Scene& scene, const Viewp
         return;
     }
     const float tolerance = clickTolerance * state.pixelsPerPoint;
-    if (ImGui::IsMouseDown(ImGuiMouseButton_Left))
+    if (state.input.down(Mouse::Left))
     {
         // A press that moves draws a rectangle.
         state.drawingRectangle |= math::length(mouse - *state.clickStart) > tolerance;
@@ -383,14 +381,14 @@ void handleGizmoAndSelection(ToolsState& state, scene::Scene& scene, const Viewp
         {
             const ImVec2 from(state.viewportOrigin.x + state.clickStart->x / state.pixelsPerPoint,
                               state.viewportOrigin.y + state.clickStart->y / state.pixelsPerPoint);
-            const ImVec2 to = io.MousePos;
+            const ImVec2 to = pointOf(state.input.mouse());
             state.viewportMarks.selecting =
                 std::pair{ImVec2(std::min(from.x, to.x), std::min(from.y, to.y)), ImVec2(std::max(from.x, to.x), std::max(from.y, to.y))};
         }
         return;
     }
 
-    const SelectMode mode = selectMode();
+    const SelectMode mode = selectMode(state);
     if (state.drawingRectangle)
     {
         const math::Vec2 min = math::min(*state.clickStart, mouse);
@@ -418,10 +416,10 @@ void handleGizmoAndSelection(ToolsState& state, scene::Scene& scene, const Viewp
 // until it is dropped.
 void handleMaterialDrop(ToolsState& state, scene::Scene& scene, math::Vec2 mouse, bool hovered)
 {
-    const ImGuiPayload* const payload = ImGui::GetDragDropPayload();
+    const EditorDrag* const payload = editorUiKit(state).carried();
     AssetPayload dragged{};
-    const bool material = payload != nullptr && payload->IsDataType(assetPayload) && payload->DataSize == sizeof(AssetPayload) &&
-                          (std::memcpy(&dragged, payload->Data, sizeof(dragged)), dragged.type == asset::AssetType::Material);
+    const bool material = payload != nullptr && payload->is(assetPayload, sizeof(AssetPayload)) &&
+                          (std::memcpy(&dragged, payload->payload.data(), sizeof(dragged)), dragged.type == asset::AssetType::Material);
     if (!material || !hovered)
     {
         state.materialTarget = {};
@@ -432,7 +430,7 @@ void handleMaterialDrop(ToolsState& state, scene::Scene& scene, math::Vec2 mouse
     {
         state.pickQuery = PickQuery{.purpose = PickQuery::Purpose::MaterialTarget, .min = mouse, .max = mouse};
     }
-    const std::optional<asset::AssetId> dropped = acceptDroppedAsset(asset::AssetType::Material);
+    const std::optional<asset::AssetId> dropped = acceptDroppedAsset(state, asset::AssetType::Material);
     const scene::Entity target = scene.findEntity(state.materialTarget);
     if (!dropped || !target.isValid())
     {
@@ -472,31 +470,31 @@ void handleMaterialDrop(ToolsState& state, scene::Scene& scene, math::Vec2 mouse
 void handleKeys(ToolsState& state, scene::Scene& scene)
 {
     // Ctrl and a letter belong to the editing shortcuts: Ctrl+X cuts, it does not switch the space.
-    if (state.flying || ImGui::GetIO().WantTextInput || ImGui::GetIO().KeyCtrl)
+    if (state.flying || state.typing || state.input.ctrl())
     {
         return;
     }
-    if (ImGui::IsKeyPressed(ImGuiKey_Q, false))
+    if (state.input.letterPressed('q', false))
     {
         state.tool = EditorTool::Select;
     }
-    if (ImGui::IsKeyPressed(ImGuiKey_W, false))
+    if (state.input.letterPressed('w', false))
     {
         state.tool = EditorTool::Move;
     }
-    if (ImGui::IsKeyPressed(ImGuiKey_E, false))
+    if (state.input.letterPressed('e', false))
     {
         state.tool = EditorTool::Rotate;
     }
-    if (ImGui::IsKeyPressed(ImGuiKey_R, false))
+    if (state.input.letterPressed('r', false))
     {
         state.tool = EditorTool::Scale;
     }
-    if (ImGui::IsKeyPressed(ImGuiKey_X, false))
+    if (state.input.letterPressed('x', false))
     {
         state.gizmo.space = state.gizmo.space == GizmoSpace::World ? GizmoSpace::Local : GizmoSpace::World;
     }
-    if (ImGui::IsKeyPressed(ImGuiKey_F, false))
+    if (state.input.letterPressed('f', false))
     {
         frameSelection(state, scene);
     }
@@ -590,29 +588,29 @@ void drawViewportPanel(ToolsState& state, scene::Scene& scene)
     drawViewportHeader(state, scene);
 
     const ImGuiIO& io = ImGui::GetIO();
-    const ImVec2 available = ImGui::GetContentRegionAvail();
+    const ImVec2 available = state.hosts.available();
     state.pixelsPerPoint = io.DisplayFramebufferScale.x > 0.0f ? io.DisplayFramebufferScale.x : 1.0f;
     const auto width = static_cast<std::uint32_t>(std::max(0.0f, std::floor(available.x * state.pixelsPerPoint)));
     const auto height = static_cast<std::uint32_t>(std::max(0.0f, std::floor(available.y * state.pixelsPerPoint)));
     if (width < 8 || height < 8)
     {
         state.viewportPixels = {};
-        ImGui::End();
+        endDockedPanel(state);
         return;
     }
     state.viewportPixels = {width, height};
-    const ImVec2 origin = ImGui::GetCursorScreenPos();
+    const ImVec2 origin = state.hosts.cursor();
     state.viewportOrigin = {origin.x, origin.y};
 
-    ImGui::Image(ImTextureRef(static_cast<ImTextureID>(state.renderer.viewportTexture())), available);
-    const bool hovered = ImGui::IsItemHovered();
+    state.hosts.image(static_cast<std::uint64_t>(state.renderer.viewportTexture()), available);
+    const bool hovered = state.hosts.itemHovered();
     state.viewportHovered = hovered;
-    state.viewportFocused = ImGui::IsWindowFocused();
+    state.viewportFocused = state.hosts.focused();
     // The game is framed in the accent colour while it runs.
     state.viewportMarks.playing = !editing;
 
     const math::Vec2 size{static_cast<float>(width), static_cast<float>(height)};
-    const math::Vec2 mouse = (math::Vec2(io.MousePos.x, io.MousePos.y) - state.viewportOrigin) * state.pixelsPerPoint;
+    const math::Vec2 mouse = (math::Vec2(pointOf(state.input.mouse()).x, pointOf(state.input.mouse()).y) - state.viewportOrigin) * state.pixelsPerPoint;
     const ScreenContent content = screenContent(state.camera.isTwoD(), scene);
     const ViewportView view{.view = state.camera.view(),
                             .verticalFov = EditorCamera::verticalFov,
@@ -633,9 +631,9 @@ void drawViewportPanel(ToolsState& state, scene::Scene& scene)
 
     if (editing && content != ScreenContent::Scene)
     {
-        if (hovered && (ImGui::IsMouseClicked(ImGuiMouseButton_Left) || ImGui::IsMouseClicked(ImGuiMouseButton_Middle)))
+        if (hovered && (state.input.clicked(Mouse::Left) || state.input.clicked(Mouse::Middle)))
         {
-            ImGui::SetWindowFocus();
+            state.hosts.focusCurrent();
         }
         handleCamera(state, hovered, size, mouse);
         if (content == ScreenContent::Interfaces)
@@ -651,24 +649,24 @@ void drawViewportPanel(ToolsState& state, scene::Scene& scene)
     }
     else if (editing)
     {
-        if (const std::optional<asset::AssetId> model = acceptDroppedAsset(asset::AssetType::Model))
+        if (const std::optional<asset::AssetId> model = acceptDroppedAsset(state, asset::AssetType::Model))
         {
             requestInstantiateModel(state, *model, core::Uuid{}, dropPosition(state, view, mouse));
         }
-        if (const std::optional<asset::AssetId> prefab = acceptDroppedAsset(asset::AssetType::Scene))
+        if (const std::optional<asset::AssetId> prefab = acceptDroppedAsset(state, asset::AssetType::Scene))
         {
             requestInstantiatePrefab(state, *prefab, core::Uuid{}, dropPosition(state, view, mouse));
         }
-        if (const std::optional<asset::AssetId> sprite = acceptDroppedAsset(asset::AssetType::Sprite))
+        if (const std::optional<asset::AssetId> sprite = acceptDroppedAsset(state, asset::AssetType::Sprite))
         {
             requestCreateSprite(state, *sprite, dropPosition(state, view, mouse));
         }
-        if (hovered && (ImGui::IsMouseClicked(ImGuiMouseButton_Left) || ImGui::IsMouseClicked(ImGuiMouseButton_Middle)))
+        if (hovered && (state.input.clicked(Mouse::Left) || state.input.clicked(Mouse::Middle)))
         {
-            ImGui::SetWindowFocus();
+            state.hosts.focusCurrent();
         }
         // A drag from another panel holds the mouse: the view counts as hovered all the same.
-        handleMaterialDrop(state, scene, mouse, ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenBlockedByActiveItem));
+        handleMaterialDrop(state, scene, mouse, state.hosts.itemHovered());
         handleCamera(state, hovered, size, mouse);
         // A tile tool takes the left button from the selection and the gizmo, and the elements of
         // the interfaces take it from the world under them.
@@ -682,14 +680,14 @@ void drawViewportPanel(ToolsState& state, scene::Scene& scene)
             handleKeys(state, scene);
         }
     }
-    else if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
+    else if (hovered && state.input.clicked(Mouse::Left))
     {
         // Clicking the game gives it the keyboard.
-        ImGui::SetWindowFocus();
+        state.hosts.focusCurrent();
     }
     // Over everything that answered the mouse over the view.
     drawViewportOverlay(state);
-    ImGui::End();
+    endDockedPanel(state);
 }
 
 } // namespace devex::tools::detail

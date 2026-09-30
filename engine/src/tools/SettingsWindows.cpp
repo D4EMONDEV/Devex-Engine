@@ -71,14 +71,14 @@ UiRect rightButton(float size, float right)
     return UiRect{.anchorMin = {1.0f, 0.5f}, .anchorMax = {1.0f, 0.5f}, .offsetMin = {-right - size, -size * 0.5f}, .offsetMax = {-right, size * 0.5f}};
 }
 
-void numberCursor(UiPanel& panel)
+void numberCursor(ToolsState& state, UiPanel& panel)
 {
     const ui::UiWorld& world = panel.world();
     const Entity pointed = world.held().isValid() ? world.held() : world.hovered();
     if (pointed.isValid() && panel.scene().isAlive(pointed) && panel.scene().has<scene::UiNumberField>(pointed) &&
         world.editedField() != pointed)
     {
-        ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
+        state.input.cursor = platform::Cursor::ResizeHorizontal;
     }
 }
 
@@ -111,9 +111,9 @@ bool beginFormWindow(ToolsState& state, const char* title, bool* open, float wid
     return beginModal(state, title, ImVec2(font * width, font * height), title);
 }
 
-void endFormWindow()
+void endFormWindow(ToolsState& state)
 {
-    endModal();
+    endModal(state);
 }
 
 // ---- The frame of the windows of settings ----
@@ -430,7 +430,7 @@ void EditorSettingsUi::update(ToolsState& state, EditorUiKit& kit, core::Duratio
         state.themeUnsaved = false;
         saveUserSettings(state);
     }
-    numberCursor(panel);
+    numberCursor(state, panel);
 }
 
 void drawSettingsWindow(ToolsState& state)
@@ -447,8 +447,8 @@ void drawSettingsWindow(ToolsState& state)
     }
     if (beginFormWindow(state, settingsWindow, &state.showSettings, 40.0f, 24.0f))
     {
-        state.editorSettingsUi->update(state, kit, core::Duration(ImGui::GetIO().DeltaTime));
-        endFormWindow();
+        state.editorSettingsUi->update(state, kit, core::Duration(state.input.delta()));
+        endFormWindow(state);
     }
     if (!state.showSettings && state.themeUnsaved)
     {
@@ -899,11 +899,11 @@ void ProjectSettingsUi::update(ToolsState& state, EditorUiKit& kit, core::Durati
         buildFrame(kit, projectPages);
         buildEventDialog(*this, kit);
         // Textures come from FileSystem, to be the icon of the game.
-        panel.setDragIn([](const ImGuiPayload& payload) -> std::optional<std::pair<std::string, std::string>> {
-            if (payload.IsDataType(assetPayload) && payload.DataSize == sizeof(AssetPayload))
+        panel.setDragIn([](const EditorDrag& payload) -> std::optional<std::pair<std::string, std::string>> {
+            if (payload.is(assetPayload, sizeof(AssetPayload)))
             {
                 AssetPayload asset;
-                std::memcpy(&asset, payload.Data, sizeof(asset));
+                std::memcpy(&asset, payload.payload.data(), sizeof(asset));
                 return std::pair{std::format("asset:{}", asset::toString(asset.type)), uuidFromBytes(asset.uuid).toString()};
             }
             return std::nullopt;
@@ -933,7 +933,7 @@ void ProjectSettingsUi::update(ToolsState& state, EditorUiKit& kit, core::Durati
     answerFrame();
     answer(state, kit);
     save(state);
-    numberCursor(panel);
+    numberCursor(state, panel);
 }
 
 void drawProjectSettingsWindow(ToolsState& state)
@@ -950,8 +950,8 @@ void drawProjectSettingsWindow(ToolsState& state)
     }
     if (beginFormWindow(state, "Project Settings", &state.showProjectSettings, 54.0f, 36.0f))
     {
-        state.projectSettingsUi->update(state, kit, core::Duration(ImGui::GetIO().DeltaTime));
-        endFormWindow();
+        state.projectSettingsUi->update(state, kit, core::Duration(state.input.delta()));
+        endFormWindow(state);
     }
 }
 

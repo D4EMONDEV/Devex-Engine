@@ -248,6 +248,8 @@ public:
     // True when the panels use the keyboard or the mouse, which gameplay should then ignore.
     [[nodiscard]] bool capturesKeyboard() const noexcept;
     [[nodiscard]] bool capturesMouse() const noexcept;
+    // True while a field of the panels takes what is typed: typing stays on for it.
+    [[nodiscard]] bool wantsTextInput() const noexcept;
 
     // Editor only: the size of the image the game is drawn into, in pixels, and where the mouse
     // sits inside it. The position is nothing while the pointer is outside the viewport, which the

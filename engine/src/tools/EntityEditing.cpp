@@ -322,41 +322,40 @@ void handleEntityShortcuts(ToolsState& state, scene::Scene& scene)
 {
     // While the game runs, the viewport gives it the keyboard.
     const bool viewport = state.viewportFocused && state.playState == PlayState::Editing;
-    const ImGuiIO& io = ImGui::GetIO();
-    if ((!state.hierarchyFocused && !viewport) || io.WantTextInput || state.flying || !state.renamedEntity.isNil())
+    if ((!state.hierarchyFocused && !viewport) || state.typing || state.flying || !state.renamedEntity.isNil())
     {
         return;
     }
-    const auto pressed = [](ImGuiKeyChord chord) { return ImGui::IsKeyChordPressed(chord); };
-    if (pressed(ImGuiMod_Ctrl | ImGuiKey_C))
+    const auto pressed = [&state](KeyModifiers modifiers, auto key) { return state.input.chord(modifiers, key); };
+    if (pressed(KeyModifiers{.ctrl = true}, 'c'))
     {
         copySelection(state, scene);
     }
-    else if (pressed(ImGuiMod_Ctrl | ImGuiKey_X))
+    else if (pressed(KeyModifiers{.ctrl = true}, 'x'))
     {
         cutSelection(state, scene);
     }
-    else if (pressed(ImGuiMod_Ctrl | ImGuiKey_V))
+    else if (pressed(KeyModifiers{.ctrl = true}, 'v'))
     {
         pasteEntities(state, scene);
     }
-    else if (pressed(ImGuiMod_Ctrl | ImGuiKey_D))
+    else if (pressed(KeyModifiers{.ctrl = true}, 'd'))
     {
         duplicateSelection(state, scene);
     }
-    else if (pressed(ImGuiMod_Ctrl | ImGuiKey_A))
+    else if (pressed(KeyModifiers{.ctrl = true}, 'a'))
     {
         selectAll(state, scene);
     }
-    else if (pressed(ImGuiKey_F2))
+    else if (pressed(KeyModifiers{}, platform::Key::F2))
     {
         startRename(state, state.selection.active());
     }
-    else if (pressed(ImGuiKey_H))
+    else if (pressed(KeyModifiers{}, 'h'))
     {
         toggleSelectionHidden(state, scene);
     }
-    else if (pressed(ImGuiKey_Delete))
+    else if (pressed(KeyModifiers{}, platform::Key::Delete))
     {
         deleteSelection(state, scene);
     }

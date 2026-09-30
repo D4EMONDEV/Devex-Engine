@@ -513,7 +513,6 @@ public:
             editor.moved = true;
             const auto index = static_cast<std::size_t>(editor.draggedKey);
             CurveKey& key = editor.curve.keys[index];
-            const ImGuiIO& io = ImGui::GetIO();
             if (editor.draggedPart == 0)
             {
                 const math::Vec2 at = graph.toCurve(pointer);
@@ -525,7 +524,7 @@ public:
                     key.time = std::clamp(at.x, before, after);
                 }
                 key.value = at.y;
-                if (io.KeyCtrl)
+                if (state.input.ctrl())
                 {
                     // Snaps to tenths.
                     key.value = std::round(key.value * 10.0f) / 10.0f;
@@ -535,11 +534,11 @@ public:
             {
                 const float slope = graph.slope(key, pointer, editor.draggedPart > 0);
                 // Both sides turn together, for a smooth curve; Shift turns one side only.
-                if (editor.draggedPart > 0 || !io.KeyShift)
+                if (editor.draggedPart > 0 || !state.input.shift())
                 {
                     key.outTangent = slope;
                 }
-                if (editor.draggedPart < 0 || !io.KeyShift)
+                if (editor.draggedPart < 0 || !state.input.shift())
                 {
                     key.inTangent = slope;
                 }
@@ -591,7 +590,7 @@ public:
                 m_dirty = true;
             }
             const bool deleteKey = world.wasClicked(m_delete.entity) ||
-                                   (ui.panel.focused() && !world.isEditing() && ImGui::IsKeyPressed(ImGuiKey_Delete, false));
+                                   (ui.panel.focused() && !world.isEditing() && state.input.pressed(platform::Key::Delete, false));
             if (deleteKey && !isEndKey(editor, selected))
             {
                 editor.curve.keys.erase(editor.curve.keys.begin() + selected);

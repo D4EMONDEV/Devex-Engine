@@ -51,6 +51,21 @@ using FileDialogCallback = std::function<void(std::optional<std::filesystem::pat
 
 // Owns the operating system layer: windows, events and input. Only one instance may exist at a
 // time, and it must outlive every window it creates.
+// The shapes of the mouse pointer the system draws.
+enum class Cursor : std::uint8_t
+{
+    Arrow,
+    Text,
+    ResizeHorizontal,
+    ResizeVertical,
+    // From the top left corner to the bottom right one, and from the bottom left to the top right.
+    ResizeDiagonalDown,
+    ResizeDiagonalUp,
+    Move,
+    Hand,
+    NotAllowed,
+};
+
 class DEVEX_API Platform
 {
 public:
@@ -69,6 +84,9 @@ public:
     void pollEvents(const EventCallback& callback);
 
     [[nodiscard]] const Input& input() const noexcept;
+    // Everything the devices did this frame, whatever the tools keep from the game: what the tools
+    // of the editor read, the game reading input().
+    [[nodiscard]] const Input& toolsInput() const noexcept;
 
     // Directory containing the executable, where engine data such as shaders is deployed.
     [[nodiscard]] std::filesystem::path baseDirectory() const;
@@ -87,6 +105,12 @@ public:
     // Input::typedText, and the system may show its input method over the window.
     void setTextInput(const Window& window, bool active);
     [[nodiscard]] bool isTextInputActive() const noexcept;
+    // Where the text being typed stands in a window, in its coordinates: the input method of the
+    // system opens next to it.
+    void setTextInputArea(const Window& window, math::Vec2 min, math::Vec2 max);
+
+    // The shape of the mouse pointer, until it is set again.
+    void setCursor(Cursor cursor);
 
     // The clipboard of the system, as UTF-8 text.
     [[nodiscard]] std::string clipboardText() const;
@@ -124,7 +148,9 @@ private:
     bool m_imguiInitialized = false;
     bool m_imguiCapturesKeyboard = false;
     bool m_imguiCapturesMouse = false;
+    Cursor m_cursor = Cursor::Arrow;
     Input m_input;
+    Input m_toolsInput;
 };
 
 // Sleeps for the given duration with sub-millisecond precision.

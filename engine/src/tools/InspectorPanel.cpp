@@ -76,8 +76,8 @@ void drawInspectorPanel(ToolsState& state, scene::Scene& scene)
     {
         state.inspectorUi = makeInspectorUi();
     }
-    updateInspectorUi(state, scene, core::Duration(ImGui::GetIO().DeltaTime));
-    ImGui::End();
+    updateInspectorUi(state, scene, core::Duration(state.input.delta()));
+    endDockedPanel(state);
 }
 
 } // namespace devex::tools::detail

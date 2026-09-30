@@ -188,7 +188,7 @@ void ViewportOverlayUi::update(ToolsState& state, EditorUiKit& kit, core::Durati
     }
 
     // Over the image of the viewport, one unit to a pixel.
-    ImGui::SetCursorScreenPos(ImVec2(state.viewportOrigin.x, state.viewportOrigin.y));
+    state.hosts.setCursor(ImVec2(state.viewportOrigin.x, state.viewportOrigin.y));
     panel.update(kit, delta, 1.0f, view.y / ppp);
 }
 
@@ -207,7 +207,7 @@ void drawViewportOverlay(ToolsState& state)
     {
         state.viewportOverlayUi = std::make_shared<ViewportOverlayUi>();
     }
-    state.viewportOverlayUi->update(state, kit, core::Duration(ImGui::GetIO().DeltaTime));
+    state.viewportOverlayUi->update(state, kit, core::Duration(state.input.delta()));
 }
 
 void renderViewportOverlay(ToolsState& state, render::RenderWorld& world)

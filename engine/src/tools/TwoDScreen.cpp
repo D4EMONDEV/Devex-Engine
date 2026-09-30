@@ -248,28 +248,28 @@ void dragRect(scene::UiRect& rect, Handle handle, math::Vec2 delta)
     }
 }
 
-[[nodiscard]] ImGuiMouseCursor cursorOf(Handle handle) noexcept
+[[nodiscard]] platform::Cursor cursorOf(Handle handle) noexcept
 {
     switch (handle)
     {
     case Handle::Left:
     case Handle::Right:
-        return ImGuiMouseCursor_ResizeEW;
+        return platform::Cursor::ResizeHorizontal;
     case Handle::Top:
     case Handle::Bottom:
-        return ImGuiMouseCursor_ResizeNS;
+        return platform::Cursor::ResizeVertical;
     case Handle::TopLeft:
     case Handle::BottomRight:
-        return ImGuiMouseCursor_ResizeNWSE;
+        return platform::Cursor::ResizeDiagonalDown;
     case Handle::TopRight:
     case Handle::BottomLeft:
-        return ImGuiMouseCursor_ResizeNESW;
+        return platform::Cursor::ResizeDiagonalUp;
     case Handle::Body:
-        return ImGuiMouseCursor_Hand;
+        return platform::Cursor::Hand;
     case Handle::None:
         break;
     }
-    return ImGuiMouseCursor_Arrow;
+    return platform::Cursor::Arrow;
 }
 
 // Records the offsets a drag changed, already applied, as one undoable step: both corners move
@@ -405,8 +405,7 @@ bool handleInterfaceEditing(ToolsState& state, scene::Scene& scene, bool hovered
     }
     std::vector<LaidOutCanvas> canvases;
     layoutCanvases(scene, frame->layoutSize, canvases);
-    const ImGuiIO& io = ImGui::GetIO();
-    const ImVec2 pointer = io.MousePos;
+    const ImVec2 pointer = pointOf(state.input.mouse());
 
     // A drag under way: the element follows the mouse, and the change is recorded once let go.
     if (!state.interfaceDragEntity.isNil())
@@ -420,14 +419,14 @@ bool handleInterfaceEditing(ToolsState& state, scene::Scene& scene, bool hovered
             return false;
         }
         const float zoom = viewOf(state, *frame, *placed.layout).zoom;
-        const ImVec2 total = ImGui::GetMouseDragDelta(ImGuiMouseButton_Left);
+        const math::Vec2 total = state.input.dragDelta(Mouse::Left);
         const Handle handle = static_cast<Handle>(state.interfaceHandle);
-        if (ImGui::IsMouseDown(ImGuiMouseButton_Left))
+        if (state.input.down(Mouse::Left))
         {
             scene::UiRect edited = state.interfaceDragStart;
             dragRect(edited, handle, math::Vec2{total.x / zoom, total.y / zoom});
             *component = edited;
-            ImGui::SetMouseCursor(cursorOf(handle));
+            state.input.cursor = cursorOf(handle);
             return true;
         }
         recordRectEdit(state, state.interfaceDragEntity, state.interfaceDragStart, *component);
@@ -447,7 +446,7 @@ bool handleInterfaceEditing(ToolsState& state, scene::Scene& scene, bool hovered
     }
 
     const bool navigating = state.flying || state.orbiting || state.panning;
-    if (!hovered || navigating || io.KeyAlt)
+    if (!hovered || navigating || state.input.alt())
     {
         return false;
     }
@@ -458,13 +457,13 @@ bool handleInterfaceEditing(ToolsState& state, scene::Scene& scene, bool hovered
                                                    : Handle::None;
     if (handle != Handle::None)
     {
-        ImGui::SetMouseCursor(cursorOf(handle));
+        state.input.cursor = cursorOf(handle);
     }
-    if (!ImGui::IsMouseClicked(ImGuiMouseButton_Left))
+    if (!state.input.clicked(Mouse::Left))
     {
         return false;
     }
-    if (handle != Handle::None && !io.KeyCtrl && !io.KeyShift)
+    if (handle != Handle::None && !state.input.ctrl() && !state.input.shift())
     {
         state.interfaceHandle = static_cast<std::uint8_t>(handle);
         state.interfaceDragStart = scene.get<scene::UiRect>(selected.entity);
@@ -481,7 +480,7 @@ bool handleInterfaceEditing(ToolsState& state, scene::Scene& scene, bool hovered
         return false;
     }
     const std::array entities{picked};
-    selectEntities(state, entities, io.KeyCtrl ? SelectMode::Toggle : io.KeyShift ? SelectMode::Add : SelectMode::Replace);
+    selectEntities(state, entities, state.input.ctrl() ? SelectMode::Toggle : state.input.shift() ? SelectMode::Add : SelectMode::Replace);
     return true;
 }
 

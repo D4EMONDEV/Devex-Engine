@@ -149,7 +149,7 @@ void DebuggingUi::update(ToolsState& state, EditorUiKit& kit, core::Duration del
     const ui::UiWorld& world = panel.world();
     if (world.wasClicked(copy.entity))
     {
-        ImGui::SetClipboardText(std::to_string(debugger.processId).c_str());
+        state.platform.setClipboardText(std::to_string(debugger.processId).c_str());
     }
     if (world.wasChanged(wait))
     {
@@ -174,8 +174,8 @@ void drawDebuggingWindow(ToolsState& state)
     }
     if (beginFormWindow(state, debuggingWindow, &state.showDebugging, 36.0f, 23.0f))
     {
-        state.debuggingUi->update(state, kit, core::Duration(ImGui::GetIO().DeltaTime));
-        endFormWindow();
+        state.debuggingUi->update(state, kit, core::Duration(state.input.delta()));
+        endFormWindow(state);
     }
 }
 

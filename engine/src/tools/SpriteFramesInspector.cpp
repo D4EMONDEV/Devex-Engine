@@ -254,7 +254,7 @@ public:
         const std::size_t count = animation.frames.size();
         if (editor.previewPlaying)
         {
-            editor.previewTime += ImGui::GetIO().DeltaTime;
+            editor.previewTime += state.input.delta();
         }
         std::size_t shown = 0;
         if (count > 0)

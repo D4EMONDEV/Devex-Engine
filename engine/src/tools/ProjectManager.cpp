@@ -781,7 +781,7 @@ void ProjectManagerUi::update(ToolsState& state, EditorUiKit& kit, core::Duratio
     // Enter opens the selected project, when nothing else takes it.
     const bool dialogOpen = world.isPopupOpen(scene(), createDialog) || world.isPopupOpen(scene(), renameDialog) ||
                             world.isPopupOpen(scene(), removeDialog);
-    if (panel.focused() && !dialogOpen && !world.isEditing() && ImGui::IsKeyPressed(ImGuiKey_Enter, false) &&
+    if (panel.focused() && !dialogOpen && !world.isEditing() && state.input.pressed(platform::Key::Enter, false) &&
         !manager.selected.empty())
     {
         opened = manager.selected;
@@ -789,7 +789,7 @@ void ProjectManagerUi::update(ToolsState& state, EditorUiKit& kit, core::Duratio
 
     // The dialogs. Escape cancels one at once, even while its field has the keyboard, as in the
     // dialogs of ImGui.
-    const bool escaped = panel.focused() && ImGui::IsKeyPressed(ImGuiKey_Escape, false);
+    const bool escaped = panel.focused() && state.input.pressed(platform::Key::Escape, false);
     if (std::exchange(manager.openCreate, false))
     {
         world.openPopup(scene(), createDialog);
@@ -891,21 +891,14 @@ void drawProjectManager(ToolsState& state)
         state.projectManagerUi = std::make_shared<ProjectManagerUi>();
     }
 
-    const ImGuiViewport* const viewport = ImGui::GetMainViewport();
-    ImGui::SetNextWindowPos(viewport->WorkPos);
-    ImGui::SetNextWindowSize(viewport->WorkSize);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
-    const ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
-                                   ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoBringToFrontOnFocus |
-                                   ImGuiWindowFlags_NoScrollWithMouse;
-    const bool visible = ImGui::Begin("Project Manager", nullptr, flags);
-    ImGui::PopStyleVar(2);
-    if (visible)
+    // The whole window, which takes the keyboard.
+    state.hosts.begin("Project Manager", state.workMin, state.workMax, HostLayer::Panels);
+    if (state.hosts.focusedId().empty())
     {
-        state.projectManagerUi->update(state, *state.uiKit, core::Duration(ImGui::GetIO().DeltaTime));
+        state.hosts.focus("Project Manager");
     }
-    ImGui::End();
+    state.projectManagerUi->update(state, *state.uiKit, core::Duration(state.input.delta()));
+    state.hosts.end();
 }
 
 void renderProjectManager(ToolsState& state, render::RenderWorld& world)

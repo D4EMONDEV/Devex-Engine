@@ -2337,6 +2337,32 @@ les assets s'écrivent au fil de leur lecture.
     d'accès aux menus par Alt ; l'appui qui ferme un menu n'agit pas sur ce qui est dessous ; pas
     de menu contextuel sur les onglets (ajouté depuis, voir le jalon 51) ; les onglets des panneaux
     ancrés restent ceux d'ImGui.
+- **Puis l'entrée et l'aiguillage** (jalon 54). L'éditeur lit lui-même le clavier et la souris, et
+  décide lui-même qui les reçoit ; les fenêtres d'ImGui disparaissent. ImGui ne fait plus qu'afficher
+  les images où l'éditeur les pose, et donne encore quelques mesures de son thème (taille du texte,
+  marges) : son retrait vient ensuite.
+  - **L'entrée des outils** : la plateforme tient une seconde `Input`, qui voit tout ce que font les
+    appareils, alors que celle du jeu perd ce que les outils gardent pendant Play. `EditorInput` la
+    lit à chaque image : les touches, les lettres de la disposition du clavier pour les raccourcis
+    (Ctrl+Z annule aussi en AZERTY), les boutons avec le double clic et le glisser mesurés, la
+    molette, le texte tapé. La plateforme gagne aussi la forme du pointeur et l'endroit où s'ouvre la
+    méthode de saisie du système, que les champs demandent.
+  - **L'aiguillage** : `EditorHosts` remplace les fenêtres d'ImGui. Chaque partie de l'éditeur y
+    déclare à chaque image où elle se tient, dans une couche (le dock, les panneaux, les bandes du
+    cadre, les modales, les menus) ; le pointeur trouve l'hôte du dessus parmi ceux de l'image
+    d'avant, comme ImGui trouvait ses fenêtres, et un clic donne le clavier à ce qu'il touche, sauf
+    aux bandes et au dock, qui le laissent où il était. Un clic hors de tout hôte (le jeu sous les
+    outils, F1) le rend au jeu. Un compositeur pose ensuite les fonds et les images, de la couche du
+    bas à celle du haut. `UiPanel` prend sa place, sa souris et son clavier là, sans rien savoir des
+    fenêtres.
+  - **Pendant Play, comme avant** : le jeu reçoit le clavier tant que la vue l'a, et la souris
+    au-dessus de la vue ; les raccourcis de l'éditeur (F5, F8…) marchent toujours, puisque les outils
+    lisent leur propre entrée. Un raccourci sans Ctrl ni Alt laisse ses lettres au champ qu'on tape.
+  - **Le glisser d'un panneau à l'autre** ne passe plus par ImGui : ce que porte un panneau est porté
+    pour tout l'éditeur (`EditorDrag`) jusqu'à ce que le bouton lâche, les autres panneaux le
+    prennent comme avant, et la vue prend les assets lâchés sur son image.
+  - Plus de 400 appels à ImGui sont partis des outils ; il en reste une quarantaine, pour le contexte,
+    l'image, et les mesures du thème. L'éditeur prend 0,49 ms de processeur par image en Release.
 - **Puis les modales** (jalon 53). Le voile et le cadre des fenêtres modales viennent de
   l'interface du moteur, plus d'ImGui.
   - **Les fenêtres de réglages deviennent des modales**, comme dans Godot : Editor Settings,
@@ -3415,7 +3441,12 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     de réglages en modales comme dans Godot (titre, croix, Échap), une pile où la dernière ouverte
     se montre.
 
-Ensuite, sans ordre figé : CI Linux, l'entrée hors d'ImGui, puis le retrait d'ImGui.
+54. ✅ **Entrée et aiguillage hors d'ImGui** — l'éditeur lit le clavier et la souris depuis la
+    plateforme et décide qui les reçoit (`EditorHosts`) ; plus de fenêtres ImGui, un compositeur pose
+    les images ; glisser entre panneaux, curseur et saisie de texte sans ImGui.
+
+Ensuite, sans ordre figé : CI Linux, puis le retrait d'ImGui (l'affichage des images et les mesures
+du thème).
 
 ## Questions ouvertes
 

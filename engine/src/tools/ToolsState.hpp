@@ -4,6 +4,8 @@
 
 #include "CodeArea.hpp"
 #include "EditorDock.hpp"
+#include "EditorHosts.hpp"
+#include "EditorInput.hpp"
 #include "EditorCamera.hpp"
 #include "EditorView.hpp"
 #include "Gizmo.hpp"
@@ -546,6 +548,22 @@ struct DEVEX_API ToolsState
     bool capturesKeyboard = false;
     bool capturesMouse = false;
     bool resetLayout = false;
+    // The keyboard and the mouse this frame, as the platform saw them, and the seconds the tools
+    // have run for.
+    EditorInput input;
+    double clock = 0.0;
+    // The places of the screen the editor shows its images in, and where the strips of the frame and
+    // the room between them stand this frame, in points.
+    EditorHosts hosts;
+    ImVec2 menuBarMin{0.0f, 0.0f};
+    ImVec2 menuBarMax{0.0f, 0.0f};
+    ImVec2 statusBarMin{0.0f, 0.0f};
+    ImVec2 statusBarMax{0.0f, 0.0f};
+    ImVec2 workMin{0.0f, 0.0f};
+    ImVec2 workMax{0.0f, 0.0f};
+    // Whether a field took what is typed at the last frame: the shortcuts without Ctrl leave it the
+    // letters.
+    bool typing = false;
     // Where the panels stand, where the dock put them this frame, and the panel the keyboard goes to
     // next; a change of the layout is saved once the mouse lets go.
     DockLayout dock;
@@ -797,7 +815,7 @@ DEVEX_API void drawInspectorPanel(ToolsState& state, scene::Scene& scene);
 DEVEX_API void openTextFile(ToolsState& state, const std::filesystem::path& path);
 DEVEX_API void showOpenTextDialog(ToolsState& state);
 DEVEX_API void drawTextEditorPanel(ToolsState& state, scene::Scene& scene);
-[[nodiscard]] DEVEX_API bool textEditorFocused();
+[[nodiscard]] DEVEX_API bool textEditorFocused(const ToolsState& state);
 DEVEX_API void renderTextEditor(ToolsState& state, render::RenderWorld& world);
 [[nodiscard]] DEVEX_API TextDocument* findTextDocument(ToolsState& state, const std::filesystem::path& path);
 [[nodiscard]] DEVEX_API std::vector<TextDocument*> affectedTextDocuments(ToolsState& state, const PendingAction& action);
@@ -988,8 +1006,7 @@ struct DEVEX_API BuiltinAsset
 
 
 // Accepts an asset dropped on the last item, of the given type when one is given.
-[[nodiscard]] DEVEX_API std::optional<asset::AssetId> acceptDroppedAsset(
-              std::optional<asset::AssetType> type = std::nullopt);
+[[nodiscard]] DEVEX_API std::optional<asset::AssetId> acceptDroppedAsset(ToolsState& state, std::optional<asset::AssetType> type = std::nullopt);
 
 // Queues the creation of the model's entities under parent (nil for a root), at a position relative
 // to it when one is given, and selects them.

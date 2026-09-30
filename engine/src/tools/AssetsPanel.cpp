@@ -314,9 +314,9 @@ void FileSystemUi::build(ToolsState& state, EditorUiKit& kit)
     externalEditor = menuItem(kit, menu, Icon::ExternalLink, "Open in External Editor");
     showFolder = menuItem(kit, menu, Icon::FolderOpen, "Show in File Manager");
 
-    // The files leave as the assets ImGui windows take; entities come in to be made prefabs.
+    // The files leave for the other panels and the view; entities come in to be made prefabs.
     panel.setKeyboardNavigation(false);
-    panel.setDragOut([&state](const ui::Carried& carried) -> std::optional<ImGuiDrag> {
+    panel.setDragOut([&state](const ui::Carried& carried) -> std::optional<EditorDrag> {
         const std::optional<core::Uuid> uuid = core::Uuid::parse(carried.data);
         const asset::AssetInfo* const info =
             carried.type == "asset" && uuid && state.database != nullptr ? state.database->find(asset::AssetId{*uuid}) : nullptr;
@@ -326,19 +326,19 @@ void FileSystemUi::build(ToolsState& state, EditorUiKit& kit)
         }
         const AssetPayload payload{.uuid = uuid->bytes(), .type = info->type};
         // The same name out of the panel as in it.
-        ImGuiDrag drag{.type = assetPayload, .label = carried.label.empty() ? info->name : carried.label};
+        EditorDrag drag{.type = assetPayload, .label = carried.label.empty() ? info->name : carried.label};
         drag.payload.resize(sizeof(payload));
         std::memcpy(drag.payload.data(), &payload, sizeof(payload));
         return drag;
     });
-    panel.setDragIn([&state](const ImGuiPayload& payload) -> std::optional<std::pair<std::string, std::string>> {
-        if (!payload.IsDataType(entityPayload) || payload.DataSize != 16 || state.mode != ToolsMode::Editor ||
+    panel.setDragIn([&state](const EditorDrag& payload) -> std::optional<std::pair<std::string, std::string>> {
+        if (!payload.is(entityPayload, 16) || state.mode != ToolsMode::Editor ||
             state.playState != PlayState::Editing)
         {
             return std::nullopt;
         }
         std::array<std::uint8_t, 16> bytes{};
-        std::memcpy(bytes.data(), payload.Data, bytes.size());
+        std::memcpy(bytes.data(), payload.payload.data(), bytes.size());
         return std::pair{std::string("entity"), uuidFromBytes(bytes).toString()};
     });
 }
@@ -694,7 +694,7 @@ void FileSystemUi::answerMenu(ToolsState& state, scene::Scene& edited)
     }
     else if (world.wasClicked(copyPath.entity))
     {
-        ImGui::SetClipboardText(node.path.c_str());
+        state.platform.setClipboardText(node.path.c_str());
     }
     else if (world.wasClicked(newCurve.entity))
     {
@@ -970,15 +970,15 @@ void FileSystemUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& edi
         const auto current = std::ranges::find(nodes, selected, &Node::key);
         std::size_t index = current != nodes.end() ? static_cast<std::size_t>(current - nodes.begin()) : 0;
         std::optional<std::size_t> moved;
-        if (ImGui::IsKeyPressed(ImGuiKey_DownArrow, true))
+        if (state.input.pressed(platform::Key::Down, true))
         {
             moved = current != nodes.end() ? std::min(index + 1, nodes.size() - 1) : 0;
         }
-        else if (ImGui::IsKeyPressed(ImGuiKey_UpArrow, true))
+        else if (state.input.pressed(platform::Key::Up, true))
         {
             moved = current != nodes.end() && index > 0 ? index - 1 : 0;
         }
-        else if (current != nodes.end() && ImGui::IsKeyPressed(ImGuiKey_RightArrow, true) && current->expandable)
+        else if (current != nodes.end() && state.input.pressed(platform::Key::Right, true) && current->expandable)
         {
             if (!current->expanded)
             {
@@ -989,7 +989,7 @@ void FileSystemUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& edi
                 moved = index + 1;
             }
         }
-        else if (current != nodes.end() && ImGui::IsKeyPressed(ImGuiKey_LeftArrow, true))
+        else if (current != nodes.end() && state.input.pressed(platform::Key::Left, true))
         {
             if (current->expandable && current->expanded)
             {
@@ -1008,7 +1008,7 @@ void FileSystemUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& edi
                 }
             }
         }
-        else if (current != nodes.end() && (ImGui::IsKeyPressed(ImGuiKey_Enter, false) || ImGui::IsKeyPressed(ImGuiKey_KeypadEnter, false)))
+        else if (current != nodes.end() && (state.input.pressed(platform::Key::Enter, false) || state.input.pressed(platform::Key::KeypadEnter, false)))
         {
             activate(state, edited, *current);
         }
@@ -1081,8 +1081,7 @@ void drawAssetsPanel(ToolsState& state, scene::Scene& scene)
     }
     if (state.database == nullptr)
     {
-        ImGui::TextDisabled("No project: set ApplicationConfig::project to import assets.");
-        ImGui::End();
+        endDockedPanel(state);
         return;
     }
     if (!state.uiKit)
@@ -1094,8 +1093,8 @@ void drawAssetsPanel(ToolsState& state, scene::Scene& scene)
     {
         state.fileSystemUi = std::make_shared<FileSystemUi>();
     }
-    state.fileSystemUi->update(state, *state.uiKit, scene, core::Duration(ImGui::GetIO().DeltaTime));
-    ImGui::End();
+    state.fileSystemUi->update(state, *state.uiKit, scene, core::Duration(state.input.delta()));
+    endDockedPanel(state);
 }
 
 void revealInFileSystem(ToolsState& state, std::string resource)

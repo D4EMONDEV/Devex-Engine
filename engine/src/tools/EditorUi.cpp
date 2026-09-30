@@ -133,6 +133,59 @@ void EditorUiKit::showTooltip(std::string text, ImVec2 at)
     m_tooltip = Tooltip{.text = std::move(text), .at = at};
 }
 
+void EditorUiKit::setFrame(EditorHosts& hosts, const EditorInput& input, platform::Platform& platform) noexcept
+{
+    m_hosts = &hosts;
+    m_input = &input;
+    m_platform = &platform;
+    m_textInput.reset();
+    // What was let go last frame was taken, or dropped on nothing.
+    if (m_carried && !input.down(Mouse::Left) && !input.released(Mouse::Left))
+    {
+        m_carried.reset();
+    }
+}
+
+EditorHosts& EditorUiKit::hosts() const noexcept
+{
+    return *m_hosts;
+}
+
+const EditorInput& EditorUiKit::input() const noexcept
+{
+    return *m_input;
+}
+
+platform::Platform& EditorUiKit::platform() const noexcept
+{
+    return *m_platform;
+}
+
+void EditorUiKit::carry(EditorDrag drag)
+{
+    m_carried = std::move(drag);
+}
+
+const EditorDrag* EditorUiKit::carried() const noexcept
+{
+    return m_carried ? &*m_carried : nullptr;
+}
+
+void EditorUiKit::forgetCarried() noexcept
+{
+    m_carried.reset();
+}
+
+void EditorUiKit::requestTextInput(ImVec2 min, ImVec2 max) noexcept
+{
+    m_textInput = std::pair{min, max};
+}
+
+std::optional<std::pair<ImVec2, ImVec2>> EditorUiKit::takeTextInput() noexcept
+{
+    return std::exchange(m_textInput, std::nullopt);
+}
+
 std::optional<EditorUiKit::Tooltip> EditorUiKit::takeTooltip() noexcept
 {
     return std::exchange(m_tooltip, std::nullopt);
@@ -520,12 +573,12 @@ const ui::UiInput& UiPanel::input() const noexcept
     return m_input;
 }
 
-void UiPanel::setDragOut(std::function<std::optional<ImGuiDrag>(const ui::Carried&)> convert)
+void UiPanel::setDragOut(std::function<std::optional<EditorDrag>(const ui::Carried&)> convert)
 {
     m_dragOut = std::move(convert);
 }
 
-void UiPanel::setDragIn(std::function<std::optional<std::pair<std::string, std::string>>(const ImGuiPayload&)> convert)
+void UiPanel::setDragIn(std::function<std::optional<std::pair<std::string, std::string>>(const EditorDrag&)> convert)
 {
     m_dragIn = std::move(convert);
 }
@@ -570,19 +623,21 @@ float UiPanel::zoomFor(float font) noexcept
 void UiPanel::update(EditorUiKit& kit, core::Duration delta, float zoom, float height)
 {
     DEVEX_PROFILE_SCOPE("Panel update");
+    EditorHosts& hosts = kit.hosts();
+    const EditorInput& devices = kit.input();
     const ImGuiIO& io = ImGui::GetIO();
     const float pixelsPerPoint = io.DisplayFramebufferScale.x > 0.0f ? io.DisplayFramebufferScale.x : 1.0f;
-    const ImVec2 available(std::max(ImGui::GetContentRegionAvail().x, 1.0f),
-                           std::max(height > 0.0f ? height : ImGui::GetContentRegionAvail().y, 1.0f));
-    const ImVec2 origin = ImGui::GetCursorScreenPos();
+    const ImVec2 room = hosts.available();
+    const ImVec2 available(std::max(room.x, 1.0f), std::max(height > 0.0f ? height : room.y, 1.0f));
+    const ImVec2 origin = hosts.cursor();
     m_origin = origin;
     m_pixelsPerPoint = pixelsPerPoint;
     m_zoom = std::max(zoom, 0.1f);
     m_pixels = {static_cast<std::uint32_t>(std::max(std::floor(available.x * pixelsPerPoint), 1.0f)),
                 static_cast<std::uint32_t>(std::max(std::floor(available.y * pixelsPerPoint), 1.0f))};
-    ImGui::Image(ImTextureRef(static_cast<ImTextureID>(render::Renderer::uiSurfaceTexture(m_surface))), available);
-    m_hovered = ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenBlockedByActiveItem);
-    m_focused = ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows);
+    hosts.image(render::Renderer::uiSurfaceTexture(m_surface), available);
+    m_hovered = hosts.itemHovered();
+    m_focused = hosts.focused();
     if (!m_connected)
     {
         m_world.setFonts(kit.fonts(), EditorUiKit::regularFont());
@@ -590,16 +645,17 @@ void UiPanel::update(EditorUiKit& kit, core::Duration delta, float zoom, float h
         m_connected = true;
     }
 
-    // The mouse, in units of the panel from its top left corner; the keys while the window has
-    // the keyboard.
+    // The mouse, in units of the panel from its top left corner; the keys while the host has the
+    // keyboard.
     ui::UiInput input;
-    input.pointer = math::Vec2{(io.MousePos.x - origin.x) * pixelsPerPoint, (io.MousePos.y - origin.y) * pixelsPerPoint} / m_zoom;
-    input.pointerDown = ImGui::IsMouseDown(ImGuiMouseButton_Left);
-    input.pointerPressed = m_hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left);
-    input.pointerReleased = ImGui::IsMouseReleased(ImGuiMouseButton_Left);
-    input.pointerMoved = io.MouseDelta.x != 0.0f || io.MouseDelta.y != 0.0f;
-    input.secondaryPressed = m_hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Right);
-    input.wheel = m_hovered ? io.MouseWheel : 0.0f;
+    const math::Vec2 mouse = devices.mouse();
+    input.pointer = math::Vec2{(mouse.x - origin.x) * pixelsPerPoint, (mouse.y - origin.y) * pixelsPerPoint} / m_zoom;
+    input.pointerDown = devices.down(Mouse::Left);
+    input.pointerPressed = m_hovered && devices.clicked(Mouse::Left);
+    input.pointerReleased = devices.released(Mouse::Left);
+    input.pointerMoved = devices.mouseDelta().x != 0.0f || devices.mouseDelta().y != 0.0f;
+    input.secondaryPressed = m_hovered && devices.clicked(Mouse::Right);
+    input.wheel = m_hovered ? devices.wheel().y : 0.0f;
     if (!m_hovered && !input.pointerDown && !input.pointerReleased)
     {
         // Far outside every element, so that nothing is hovered while the pointer is elsewhere.
@@ -607,60 +663,59 @@ void UiPanel::update(EditorUiKit& kit, core::Duration delta, float zoom, float h
     }
     if (m_focused)
     {
-        const auto stroke = [](ImGuiKey key) { return ImGui::IsKeyPressed(key, true); };
+        using platform::Key;
+        const auto stroke = [&](Key key) { return devices.pressed(key, true); };
         const bool editing = m_world.isEditing();
-        for (const ImWchar character : io.InputQueueCharacters)
+        // What the system typed, without the keys that steer.
+        for (const char letter : devices.typed())
         {
-            if (character >= 0x20 && character != 0x7F)
+            const auto byte = static_cast<unsigned char>(letter);
+            if (byte >= 0x20 && byte != 0x7F)
             {
-                appendUtf8(input.typed, character);
+                input.typed.push_back(letter);
             }
         }
         if (m_navigation)
         {
-            input.moveX = (stroke(ImGuiKey_RightArrow) ? 1 : 0) - (stroke(ImGuiKey_LeftArrow) ? 1 : 0);
-            input.moveY = (stroke(ImGuiKey_DownArrow) ? 1 : 0) - (stroke(ImGuiKey_UpArrow) ? 1 : 0);
+            input.moveX = (stroke(Key::Right) ? 1 : 0) - (stroke(Key::Left) ? 1 : 0);
+            input.moveY = (stroke(Key::Down) ? 1 : 0) - (stroke(Key::Up) ? 1 : 0);
         }
         input.submitPressed = (m_navigation || editing) &&
-                              (ImGui::IsKeyPressed(ImGuiKey_Enter, false) || ImGui::IsKeyPressed(ImGuiKey_KeypadEnter, false) ||
-                               (m_navigation && !editing && ImGui::IsKeyPressed(ImGuiKey_Space, false)));
-        input.cancelPressed = ImGui::IsKeyPressed(ImGuiKey_Escape, false);
-        input.backspacePressed = stroke(ImGuiKey_Backspace);
-        input.deletePressed = stroke(ImGuiKey_Delete);
-        input.leftPressed = stroke(ImGuiKey_LeftArrow);
-        input.rightPressed = stroke(ImGuiKey_RightArrow);
-        input.upPressed = stroke(ImGuiKey_UpArrow);
-        input.downPressed = stroke(ImGuiKey_DownArrow);
-        input.homePressed = stroke(ImGuiKey_Home);
-        input.endPressed = stroke(ImGuiKey_End);
-        input.selecting = io.KeyShift;
-        input.copyPressed = io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_C, false);
-        input.cutPressed = io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_X, false);
-        input.pastePressed = io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_V, false);
-        input.selectAllPressed = io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_A, false);
+                              (devices.pressed(Key::Enter, false) || devices.pressed(Key::KeypadEnter, false) ||
+                               (m_navigation && !editing && devices.pressed(Key::Space, false)));
+        input.cancelPressed = devices.pressed(Key::Escape, false);
+        input.backspacePressed = stroke(Key::Backspace);
+        input.deletePressed = stroke(Key::Delete);
+        input.leftPressed = stroke(Key::Left);
+        input.rightPressed = stroke(Key::Right);
+        input.upPressed = stroke(Key::Up);
+        input.downPressed = stroke(Key::Down);
+        input.homePressed = stroke(Key::Home);
+        input.endPressed = stroke(Key::End);
+        input.selecting = devices.shift();
+        const bool control = devices.ctrl();
+        input.copyPressed = control && devices.letterPressed('c');
+        input.cutPressed = control && devices.letterPressed('x');
+        input.pastePressed = control && devices.letterPressed('v');
+        input.selectAllPressed = control && devices.letterPressed('a');
         // What an area of text answers beside these.
-        input.pageUpPressed = stroke(ImGuiKey_PageUp);
-        input.pageDownPressed = stroke(ImGuiKey_PageDown);
-        input.tabPressed = stroke(ImGuiKey_Tab);
-        input.wordModifier = io.KeyCtrl;
-        input.undoPressed = io.KeyCtrl && !io.KeyShift && stroke(ImGuiKey_Z);
-        input.redoPressed = io.KeyCtrl && (stroke(ImGuiKey_Y) || (io.KeyShift && stroke(ImGuiKey_Z)));
+        input.pageUpPressed = stroke(Key::PageUp);
+        input.pageDownPressed = stroke(Key::PageDown);
+        input.tabPressed = stroke(Key::Tab);
+        input.wordModifier = control;
+        input.undoPressed = control && !devices.shift() && devices.letterPressed('z', true);
+        input.redoPressed = control && (devices.letterPressed('y', true) || (devices.shift() && devices.letterPressed('z', true)));
         if (input.pastePressed)
         {
-            if (const char* const clipboard = ImGui::GetClipboardText())
-            {
-                input.clipboard = clipboard;
-            }
+            input.clipboard = kit.platform().clipboardText();
         }
     }
 
-    // An ImGui drag that comes over the panel, which its targets may take; not the panel's own,
-    // which ImGui carries once it leaves.
+    // What another panel carries over this one, which its targets may take; not the panel's own.
     const ui::Carried* const own = m_world.carried();
-    if (const ImGuiPayload* const payload = ImGui::GetDragDropPayload();
-        payload != nullptr && m_dragIn && (own == nullptr || !own->source.isValid()))
+    if (const EditorDrag* const outside = kit.carried(); outside != nullptr && m_hovered && m_dragIn && (own == nullptr || !own->source.isValid()))
     {
-        if (std::optional<std::pair<std::string, std::string>> carried = m_dragIn(*payload))
+        if (std::optional<std::pair<std::string, std::string>> carried = m_dragIn(*outside))
         {
             m_world.carryFromOutside(std::move(carried->first), std::move(carried->second));
         }
@@ -679,65 +734,59 @@ void UiPanel::update(EditorUiKit& kit, core::Duration delta, float zoom, float h
             kit.showTooltip(std::string(shown->text), screenOf(shown->at));
         }
     }
-    carryToImGui(kit, origin, pixelsPerPoint);
+    carryOut(kit, origin, pixelsPerPoint);
     if (const std::string& copied = m_world.clipboardRequest(); !copied.empty())
     {
-        ImGui::SetClipboardText(copied.c_str());
+        kit.platform().setClipboardText(copied);
     }
-    // While a field takes what is typed, the system sends the letters, as it does for an ImGui field,
-    // and shows its input method next to the field.
+    // While a field takes what is typed, the system sends the letters and shows its input method
+    // next to the field.
     if (m_focused && m_world.isEditing() && !m_world.canvases().empty())
     {
-        ImGuiContext& context = *ImGui::GetCurrentContext();
-        // As an ImGui field does: the shortcuts of the editor leave the letters to the field.
-        context.WantTextInputNextFrame = 1;
-        context.PlatformImeData.WantVisible = true;
-        context.PlatformImeData.WantTextInput = true;
-        context.PlatformImeData.InputLineHeight = ImGui::GetFontSize();
-        context.PlatformImeData.ViewportId = ImGui::GetWindowViewport()->ID;
+        const float lineHeight = ImGui::GetFontSize();
         if (const ui::LaidOutRect* const field = m_world.canvases().front().layout.find(m_world.editedField()))
         {
-            context.PlatformImeData.InputPos =
-                ImVec2(origin.x + field->min.x * m_zoom / pixelsPerPoint, origin.y + field->max.y * m_zoom / pixelsPerPoint);
+            kit.requestTextInput(ImVec2(origin.x + field->min.x * m_zoom / pixelsPerPoint, origin.y + field->min.y * m_zoom / pixelsPerPoint),
+                                 ImVec2(origin.x + field->max.x * m_zoom / pixelsPerPoint, origin.y + field->max.y * m_zoom / pixelsPerPoint));
         }
         else if (const std::optional<ui::UiWorld::CaretPlace> caret = m_world.textCaretPlace(m_scene, m_world.editedTextArea()))
         {
-            // Under the cursor of an area of text.
-            context.PlatformImeData.InputPos = ImVec2(origin.x + caret->position.x * m_zoom / pixelsPerPoint,
-                                                      origin.y + (caret->position.y + caret->height) * m_zoom / pixelsPerPoint);
+            // At the cursor of an area of text.
+            const ImVec2 at(origin.x + caret->position.x * m_zoom / pixelsPerPoint, origin.y + caret->position.y * m_zoom / pixelsPerPoint);
+            kit.requestTextInput(at, ImVec2(at.x + 1.0f, at.y + std::max(caret->height * m_zoom / pixelsPerPoint, lineHeight)));
+        }
+        else
+        {
+            kit.requestTextInput(origin, ImVec2(origin.x + available.x, origin.y + lineHeight));
         }
     }
     m_shown = true;
 }
 
-void UiPanel::carryToImGui(EditorUiKit& kit, const ImVec2& origin, float pixelsPerPoint)
+void UiPanel::carryOut(EditorUiKit& kit, const ImVec2& origin, float pixelsPerPoint)
 {
-    // What the panel carries is an ImGui drag as well for as long as the button is held, so that the
-    // windows around take it where they take their own; the panel draws its label while the pointer
-    // is over it, and the layer over the editor does once it leaves, next to the pointer.
+    // What the panel carries is carried for the whole editor as well, for as long as the button is
+    // held, so that the other panels and the view take it; the panel draws its label while the
+    // pointer is over it, and the layer over the editor does once it leaves, next to the pointer.
     const ui::Carried* const carried = m_world.carried();
-    if (carried == nullptr || !carried->source.isValid() || !m_dragOut || !ImGui::IsMouseDown(ImGuiMouseButton_Left))
+    if (carried == nullptr || !carried->source.isValid() || !m_dragOut || !kit.input().down(Mouse::Left))
     {
         return;
     }
-    const std::optional<ImGuiDrag> drag = m_dragOut(*carried);
+    std::optional<EditorDrag> drag = m_dragOut(*carried);
     if (!drag)
     {
         return;
     }
-    if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_SourceExtern | ImGuiDragDropFlags_SourceNoPreviewTooltip))
-    {
-        ImGui::SetDragDropPayload(drag->type.c_str(), drag->payload.data(), drag->payload.size());
-        ImGui::EndDragDropSource();
-    }
-    const ImVec2 mouse = ImGui::GetIO().MousePos;
+    const math::Vec2 mouse = kit.input().mouse();
     const ImVec2 end(origin.x + static_cast<float>(m_pixels.width) / pixelsPerPoint,
                      origin.y + static_cast<float>(m_pixels.height) / pixelsPerPoint);
     const bool inside = mouse.x >= origin.x && mouse.y >= origin.y && mouse.x < end.x && mouse.y < end.y;
     if (!inside && !drag->label.empty())
     {
-        kit.showTooltip(drag->label, mouse);
+        kit.showTooltip(drag->label, ImVec2(mouse.x, mouse.y));
     }
+    kit.carry(std::move(*drag));
 }
 
 void UiPanel::render(EditorUiKit& kit, render::RenderWorld& world, math::Vec4 background)

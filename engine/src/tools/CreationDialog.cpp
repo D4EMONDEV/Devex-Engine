@@ -754,19 +754,19 @@ void CreationDialogUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene&
         const auto current = std::ranges::find_if(shown, [&](std::size_t index) { return catalog[index].key == selectedKey; });
         std::size_t at = current != shown.end() ? static_cast<std::size_t>(current - shown.begin()) : 0;
         const std::size_t page = std::max<std::size_t>(static_cast<std::size_t>(viewHeight / (font * 3.45f)), 1);
-        if (ImGui::IsKeyPressed(ImGuiKey_DownArrow, true))
+        if (state.input.pressed(platform::Key::Down, true))
         {
             at = std::min(at + 1, shown.size() - 1);
         }
-        else if (ImGui::IsKeyPressed(ImGuiKey_UpArrow, true))
+        else if (state.input.pressed(platform::Key::Up, true))
         {
             at = at > 0 ? at - 1 : 0;
         }
-        else if (ImGui::IsKeyPressed(ImGuiKey_PageDown, true))
+        else if (state.input.pressed(platform::Key::PageDown, true))
         {
             at = std::min(at + page, shown.size() - 1);
         }
-        else if (ImGui::IsKeyPressed(ImGuiKey_PageUp, true))
+        else if (state.input.pressed(platform::Key::PageUp, true))
         {
             at = at > page ? at - page : 0;
         }
@@ -776,7 +776,7 @@ void CreationDialogUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene&
             scrollToSelection = true;
         }
     }
-    if (panel.focused() && (ImGui::IsKeyPressed(ImGuiKey_Enter, false) || ImGui::IsKeyPressed(ImGuiKey_KeypadEnter, false)))
+    if (panel.focused() && (state.input.pressed(platform::Key::Enter, false) || state.input.pressed(platform::Key::KeypadEnter, false)))
     {
         if (const CreationEntry* const entry = selectedEntry())
         {
@@ -790,7 +790,7 @@ void CreationDialogUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene&
             picked = static_cast<std::size_t>(entry - catalog.data());
         }
     }
-    if (panel.focused() && ImGui::IsKeyPressed(ImGuiKey_Escape, false))
+    if (panel.focused() && state.input.pressed(platform::Key::Escape, false))
     {
         open = false;
     }
@@ -851,8 +851,8 @@ void drawCreationDialog(ToolsState& state, scene::Scene& scene)
     {
         return;
     }
-    state.creationDialog->update(state, *state.uiKit, scene, core::Duration(ImGui::GetIO().DeltaTime));
-    endModal();
+    state.creationDialog->update(state, *state.uiKit, scene, core::Duration(state.input.delta()));
+    endModal(state);
     if (!state.creationDialog->open)
     {
         closeModal(state, creationPopup);

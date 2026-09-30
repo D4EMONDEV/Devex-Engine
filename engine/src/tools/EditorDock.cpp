@@ -530,7 +530,6 @@ void EditorDockUi::update(ToolsState& state, EditorUiKit& kit, core::Duration de
     place(background, places.area);
     scene().get<UiRect>(background).visible = editor && !carried;
     scene().get<scene::UiImage>(background).color = linearColor(colors.outer);
-    const ImGuiWindow* const focused = ImGui::GetCurrentContext()->NavWindow;
     const Entity hovered = world.hovered();
     std::array<float, dockSlotCount> used{};
     const float tall = std::round(places.tabHeight * unitsPerPoint);
@@ -555,7 +554,7 @@ void EditorDockUi::update(ToolsState& state, EditorUiKit& kit, core::Duration de
         used[slot] += rect.visible ? tab.width + 2.0f : 0.0f;
         rect.style = front ? "tab_selected" : hovered == tab.entity ? "tab_hover" : "tab";
         scene().get<UiRect>(tab.label).style = front ? "text" : "dim";
-        scene().get<UiRect>(tab.overline).visible = front && focused != nullptr && tab.name == focused->Name;
+        scene().get<UiRect>(tab.overline).visible = front && state.hosts.isFocused(tab.name);
         if (tab.close.isValid())
         {
             scene().get<UiRect>(tab.close).style = barStyle(world, tab.close, false);
@@ -563,7 +562,7 @@ void EditorDockUi::update(ToolsState& state, EditorUiKit& kit, core::Duration de
     }
 
     // The bars light up under the pointer, and while they are dragged.
-    const ImVec2 mouse = io.MousePos;
+    const ImVec2 mouse(state.input.mouse().x, state.input.mouse().y);
     std::optional<DockBar> pointed;
     for (std::size_t bar = 0; bar < dockBarCount; ++bar)
     {
@@ -616,14 +615,14 @@ void EditorDockUi::update(ToolsState& state, EditorUiKit& kit, core::Duration de
     }
 
     // A bar follows the pointer while the button holds it.
-    if (!dragged && pointed && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
+    if (!dragged && pointed && state.input.clicked(Mouse::Left))
     {
         dragged = pointed;
         grab = ImVec2(mouse.x - places.bars[static_cast<std::size_t>(*pointed)].min.x, mouse.y - places.bars[static_cast<std::size_t>(*pointed)].min.y);
     }
     if (dragged)
     {
-        if (ImGui::IsMouseDown(ImGuiMouseButton_Left))
+        if (state.input.down(Mouse::Left))
         {
             dragDockBar(state.dock, places, *dragged, mouse, grab);
         }
@@ -636,7 +635,7 @@ void EditorDockUi::update(ToolsState& state, EditorUiKit& kit, core::Duration de
     if (const std::optional<DockBar> shownBar = dragged ? dragged : pointed)
     {
         const bool across = *shownBar == DockBar::Left || *shownBar == DockBar::Right;
-        ImGui::SetMouseCursor(across ? ImGuiMouseCursor_ResizeEW : ImGuiMouseCursor_ResizeNS);
+        state.input.cursor = across ? platform::Cursor::ResizeHorizontal : platform::Cursor::ResizeVertical;
     }
 }
 
@@ -654,15 +653,12 @@ void drawEditorDock(ToolsState& state)
     {
         state.dock.adopt(panel.name, editor);
     }
-    const ImGuiViewport* const viewport = ImGui::GetMainViewport();
     const auto shown = [&](std::string_view name) {
         const DockPanel* const known = dockPanel(name);
         return known != nullptr && state.*known->shown;
     };
     const auto placeAll = [&] {
-        state.dockPlaces = placeDock(state.dock, shown, viewport->WorkPos,
-                                     ImVec2(viewport->WorkPos.x + viewport->WorkSize.x, viewport->WorkPos.y + viewport->WorkSize.y),
-                                     std::round(ImGui::GetStyle().DockingSeparatorSize), std::round(ImGui::GetFrameHeight() + 4.0f));
+        state.dockPlaces = placeDock(state.dock, shown, state.workMin, state.workMax, std::round(ImGui::GetStyle().DockingSeparatorSize), std::round(ImGui::GetFrameHeight() + 4.0f));
     };
     placeAll();
 
@@ -673,39 +669,20 @@ void drawEditorDock(ToolsState& state)
     }
     EditorDockUi& dock = *state.dockUi;
     const DockRect& area = state.dockPlaces.area;
-    ImGui::SetNextWindowPos(area.min);
-    ImGui::SetNextWindowSize(ImVec2(area.max.x - area.min.x, area.max.y - area.min.y));
-    ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoBackground |
-                             ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav |
-                             ImGuiWindowFlags_NoScrollWithMouse;
-    // Over a game, the screens let the pointer through to it.
-    const bool carrying = dock.carrying() || dock.dragged.has_value();
-    if (!editor && !carrying && state.dockPlaces.center.contains(ImGui::GetIO().MousePos))
+    // Behind the panels, or in front of them while a tab is carried over them; over a game, the
+    // screens let the pointer through to it. The dock never takes the keyboard.
+    HostOptions options{.focusable = false};
+    if (!editor)
     {
-        flags |= ImGuiWindowFlags_NoInputs;
+        options.hole = std::pair{state.dockPlaces.center.min, state.dockPlaces.center.max};
     }
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
-    const bool open = ImGui::Begin(dockWindow, nullptr, flags);
-    ImGui::PopStyleVar(3);
-    if (open)
-    {
-        // Behind the panels, or in front of them while a tab is carried over them.
-        if (dock.carrying())
-        {
-            ImGui::BringWindowToDisplayFront(ImGui::GetCurrentWindow());
-        }
-        else
-        {
-            ImGui::BringWindowToDisplayBack(ImGui::GetCurrentWindow());
-        }
-        dock.update(state, kit, core::Duration(ImGui::GetIO().DeltaTime));
-    }
-    ImGui::End();
+    state.hosts.begin(dockWindow, area.min, area.max, dock.carrying() ? HostLayer::Strips : HostLayer::Dock, options);
+    dock.update(state, kit, core::Duration(state.input.delta()));
+    state.hosts.end();
     // What the tabs and the bars changed shows this frame.
     placeAll();
-    if (state.dockChanged && !ImGui::IsAnyMouseDown())
+    const bool held = state.input.down(Mouse::Left) || state.input.down(Mouse::Right) || state.input.down(Mouse::Middle);
+    if (state.dockChanged && !held)
     {
         state.dockChanged = false;
         if (editor)
@@ -750,26 +727,21 @@ bool beginDockedPanel(ToolsState& state, const char* name)
     {
         return false;
     }
-    ImGui::SetNextWindowPos(where.min);
-    ImGui::SetNextWindowSize(ImVec2(where.max.x - where.min.x, where.max.y - where.min.y));
     if (state.panelToFocus == name)
     {
-        ImGui::SetNextWindowFocus();
+        state.hosts.focus(name);
         state.panelToFocus.clear();
     }
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
-    const bool open = ImGui::Begin(name, nullptr,
-                                   ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse |
-                                       ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoScrollbar |
-                                       ImGuiWindowFlags_NoScrollWithMouse);
-    ImGui::PopStyleVar(2);
-    if (!open)
-    {
-        ImGui::End();
-        return false;
-    }
+    // As a window of the editor: the colour and the padding of the style, which a panel may push.
+    const ImGuiStyle& style = ImGui::GetStyle();
+    state.hosts.begin(name, where.min, where.max, HostLayer::Panels,
+                      HostOptions{.background = style.Colors[ImGuiCol_WindowBg], .padding = style.WindowPadding.x});
     return true;
+}
+
+void endDockedPanel(ToolsState& state)
+{
+    state.hosts.end();
 }
 
 void focusPanel(ToolsState& state, std::string_view name)

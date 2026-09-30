@@ -552,7 +552,7 @@ void ViewportHeaderUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene&
             closed = tabs[index].id;
         }
     }
-    if (editing && panel.hovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Middle))
+    if (editing && panel.hovered() && state.input.clicked(Mouse::Middle))
     {
         if (const std::optional<std::size_t> under = tabOf(world.hovered()))
         {
@@ -560,7 +560,7 @@ void ViewportHeaderUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene&
         }
     }
     // The second button opens the menu of the tab under the pointer, where it was pressed.
-    if (editing && panel.hovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Right))
+    if (editing && panel.hovered() && state.input.clicked(Mouse::Right))
     {
         if (const std::optional<std::size_t> under = tabOf(world.hovered()); under && *under < state.tabs.size())
         {
@@ -572,7 +572,7 @@ void ViewportHeaderUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene&
             }
             const std::filesystem::path& file = state.tabs.path(*under, live);
             std::string resource = file.empty() || state.database == nullptr ? std::string{} : state.database->project().resourcePath(file);
-            openEditorMenu(state, tabMenu(ids, *under, *under == active, std::move(resource)), ImGui::GetIO().MousePos, tabMenuOwner);
+            openEditorMenu(state, tabMenu(ids, *under, *under == active, std::move(resource)), pointOf(state.input.mouse()), tabMenuOwner);
         }
     }
     const bool added = editing && world.wasClicked(newTab);
@@ -616,9 +616,7 @@ void drawViewportHeader(ToolsState& state, scene::Scene& scene)
         state.viewportHeaderUi = std::make_shared<ViewportHeaderUi>();
     }
     // Nothing between the header and the view under it.
-    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0.0f, 0.0f));
-    state.viewportHeaderUi->update(state, kit, scene, core::Duration(ImGui::GetIO().DeltaTime));
-    ImGui::PopStyleVar();
+    state.viewportHeaderUi->update(state, kit, scene, core::Duration(state.input.delta()));
 }
 
 void renderViewportHeader(ToolsState& state, render::RenderWorld& world)

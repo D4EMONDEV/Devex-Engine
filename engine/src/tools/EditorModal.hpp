@@ -29,7 +29,7 @@ DEVEX_API void pruneModals(ToolsState& state);
 // Opens the window of a modal that is open, `size` points large without its title; false while
 // another one is on top of it. An endModal follows a true only.
 [[nodiscard]] DEVEX_API bool beginModal(ToolsState& state, std::string_view id, ImVec2 size, std::string_view title = {});
-DEVEX_API void endModal();
+DEVEX_API void endModal(ToolsState& state);
 // Whether the cross of a titled modal, or Escape, asked to close it since the last call.
 [[nodiscard]] DEVEX_API bool takeModalClose(ToolsState& state, std::string_view id);
 

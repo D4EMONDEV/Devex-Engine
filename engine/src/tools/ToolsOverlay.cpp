@@ -1,5 +1,7 @@
 #include "EditorFrame.hpp"
 #include "EditorModal.hpp"
+#include "EditorUi.hpp"
+#include "SettingsUi.hpp"
 #include "ToolsState.hpp"
 #include "TwoDScreen.hpp"
 
@@ -80,29 +82,24 @@ core::Uuid uuidFromBytes(const std::array<std::uint8_t, 16>& bytes) noexcept
     return core::Uuid::fromParts(high, low);
 }
 
-std::optional<asset::AssetId> acceptDroppedAsset(std::optional<asset::AssetType> type)
+std::optional<asset::AssetId> acceptDroppedAsset(ToolsState& state, std::optional<asset::AssetType> type)
 {
-    std::optional<asset::AssetId> dropped;
-    if (ImGui::BeginDragDropTarget())
+    // What a panel carries, let go over the last image shown: the view.
+    EditorUiKit& kit = editorUiKit(state);
+    const EditorDrag* const carried = kit.carried();
+    if (carried == nullptr || !carried->is(assetPayload, sizeof(AssetPayload)) || !state.hosts.itemHovered() ||
+        !state.input.released(Mouse::Left))
     {
-        // Peeked first, so that assets of another type are not highlighted as accepted.
-        const ImGuiPayload* const peeked = ImGui::GetDragDropPayload();
-        AssetPayload payload;
-        bool matches = false;
-        if (peeked != nullptr && peeked->IsDataType(assetPayload) && peeked->DataSize == sizeof(AssetPayload))
-        {
-            std::memcpy(&payload, peeked->Data, sizeof(payload));
-            matches = !type || payload.type == *type;
-        }
-        // Without the frame ImGui would draw around the view: what is carried says itself next to
-        // the pointer, as in Godot.
-        if (matches && ImGui::AcceptDragDropPayload(assetPayload, ImGuiDragDropFlags_AcceptNoDrawDefaultRect) != nullptr)
-        {
-            dropped = asset::AssetId{uuidFromBytes(payload.uuid)};
-        }
-        ImGui::EndDragDropTarget();
+        return std::nullopt;
     }
-    return dropped;
+    AssetPayload payload;
+    std::memcpy(&payload, carried->payload.data(), sizeof(payload));
+    if (type && payload.type != *type)
+    {
+        return std::nullopt;
+    }
+    kit.forgetCarried();
+    return asset::AssetId{uuidFromBytes(payload.uuid)};
 }
 
 void requestInstantiateModel(ToolsState& state, asset::AssetId model, core::Uuid parent,
@@ -265,8 +262,38 @@ void applyWindowLayout(ToolsState& state, detail::WindowLayout layout)
     }
 }
 
+// Where the strips of the frame stand, and the room the dock or the project manager has between them.
+void layoutScreen(ToolsState& state)
+{
+    const ImGuiViewport* const viewport = ImGui::GetMainViewport();
+    const ImGuiStyle& style = ImGui::GetStyle();
+    const ImVec2 min = viewport->Pos;
+    const ImVec2 max(viewport->Pos.x + viewport->Size.x, viewport->Pos.y + viewport->Size.y);
+    const bool framed = state.mode != ToolsMode::Editor || state.database != nullptr;
+    const float menu = framed ? std::round(ImGui::GetFontSize() + style.FramePadding.y * 3.2f) : 0.0f;
+    const float status = state.mode == ToolsMode::Editor && framed ? std::round(ImGui::GetFrameHeight() + style.FramePadding.y * 1.2f) : 0.0f;
+    state.menuBarMin = min;
+    state.menuBarMax = ImVec2(max.x, min.y + menu);
+    state.statusBarMin = ImVec2(min.x, max.y - status);
+    state.statusBarMax = max;
+    state.workMin = ImVec2(min.x, min.y + menu);
+    state.workMax = ImVec2(max.x, max.y - status);
+}
+
 void finishFrame(ToolsState& state)
 {
+    // The images of the frame, from the dock up; the shape of the pointer; and typing, on while a
+    // field takes it, with the input method of the system next to the field.
+    state.hosts.compose(*ImGui::GetBackgroundDrawList());
+    state.platform.setCursor(state.input.cursor);
+    const std::optional<std::pair<ImVec2, ImVec2>> typing = editorUiKit(state).takeTextInput();
+    state.typing = typing.has_value();
+    if (typing)
+    {
+        state.platform.setTextInputArea(state.window, math::Vec2{typing->first.x, typing->first.y},
+                                        math::Vec2{typing->second.x, typing->second.y});
+    }
+    state.platform.setTextInput(state.window, state.typing);
     ImGui::Render();
     state.renderer.queueImGuiDrawData();
 }
@@ -275,17 +302,21 @@ void handleShortcuts(ToolsState& state, scene::Scene& scene)
 {
     // The text editor and the graph of the Animator panel undo their own changes; a modal holds
     // the editor.
-    if (detail::textEditorFocused() || state.animatorEditor.focused || detail::isModalOpen(state))
+    if (detail::textEditorFocused(state) || state.animatorEditor.focused || detail::isModalOpen(state))
     {
         return;
     }
-    // Text fields route these chords to their own undo first.
-    if (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_Z, ImGuiInputFlags_RouteGlobal))
+    // A field being typed into undoes its own letters.
+    if (state.typing)
+    {
+        return;
+    }
+    using detail::KeyModifiers;
+    if (state.input.chord(KeyModifiers{.ctrl = true}, 'z'))
     {
         undo(state, scene);
     }
-    if (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_Y, ImGuiInputFlags_RouteGlobal) ||
-        ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiMod_Shift | ImGuiKey_Z, ImGuiInputFlags_RouteGlobal))
+    if (state.input.chord(KeyModifiers{.ctrl = true}, 'y') || state.input.chord(KeyModifiers{.ctrl = true, .shift = true}, 'z'))
     {
         redo(state, scene);
     }
@@ -325,9 +356,8 @@ void updateEditor(ToolsState& state, scene::Scene& scene, PlayState playState)
         state.viewportPixels = {};
         detail::updateWindowTitle(state, scene);
         finishFrame(state);
-        const ImGuiIO& io = ImGui::GetIO();
-        state.capturesKeyboard = io.WantCaptureKeyboard;
-        state.capturesMouse = io.WantCaptureMouse;
+        state.capturesKeyboard = true;
+        state.capturesMouse = state.hosts.pointerTaken();
         return;
     }
 
@@ -391,10 +421,9 @@ void updateEditor(ToolsState& state, scene::Scene& scene, PlayState playState)
     finishFrame(state);
 
     // Gameplay receives the devices the game view uses, and the editor camera flies with them.
-    const ImGuiIO& io = ImGui::GetIO();
     const bool playing = playState != PlayState::Editing;
-    state.capturesKeyboard = io.WantCaptureKeyboard && !state.flying && !(playing && state.viewportFocused);
-    state.capturesMouse = io.WantCaptureMouse && !state.flying && !(playing && state.viewportHovered);
+    state.capturesKeyboard = !state.hosts.focusedId().empty() && !state.flying && !(playing && state.viewportFocused);
+    state.capturesMouse = state.hosts.pointerTaken() && !state.flying && !(playing && state.viewportHovered);
 }
 
 // The Devex logo as the icon of the window and its taskbar button.
@@ -430,8 +459,9 @@ core::Result<std::unique_ptr<ToolsOverlay>> ToolsOverlay::create(
 
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
-    // The dock of the editor places the panels itself.
-    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+    // The editor places its images, reads the devices and shapes the pointer itself: ImGui only
+    // draws the images where the editor puts them.
+    io.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
     io.IniFilename = state->settingsFile.c_str();
     // Ctrl+Tab goes through scene tabs rather than ImGui's windows.
     ImGui::GetCurrentContext()->ConfigNavWindowingKeyNext = 0;
@@ -507,6 +537,11 @@ bool ToolsOverlay::capturesMouse() const noexcept
     return m_state->capturesMouse;
 }
 
+bool ToolsOverlay::wantsTextInput() const noexcept
+{
+    return m_state->visible && m_state->typing;
+}
+
 math::Extent2D ToolsOverlay::viewportPixels() const noexcept
 {
     return m_state->viewportPixels;
@@ -523,9 +558,7 @@ std::optional<math::Vec2> ToolsOverlay::viewportPointer() const noexcept
     {
         return std::nullopt;
     }
-    const ImGuiIO& io = ImGui::GetIO();
-    return (math::Vec2(io.MousePos.x, io.MousePos.y) - m_state->viewportOrigin) *
-           m_state->pixelsPerPoint;
+    return (m_state->input.mouse() - m_state->viewportOrigin) * m_state->pixelsPerPoint;
 }
 
 void ToolsOverlay::update(scene::Scene& scene, core::Duration frameDelta, PlayState playState)
@@ -545,6 +578,14 @@ void ToolsOverlay::update(scene::Scene& scene, core::Duration frameDelta, PlaySt
     state.platform.beginImGuiFrame();
     state.renderer.beginImGuiFrame();
     ImGui::NewFrame();
+    state.clock += frameDelta.count();
+    state.input.begin(state.platform.toolsInput(), state.clock, static_cast<float>(frameDelta.count()));
+    // Where the strips and the panels stand, which host the pointer is over, and what the panels read.
+    layoutScreen(state);
+    using detail::Mouse;
+    state.hosts.beginFrame(state.input.mouse(),
+                           state.input.clicked(Mouse::Left) || state.input.clicked(Mouse::Right) || state.input.clicked(Mouse::Middle));
+    detail::editorUiKit(state).setFrame(state.hosts, state.input, state.platform);
     detail::pruneModals(state);
 
     if (state.mode == ToolsMode::Editor)
@@ -586,12 +627,9 @@ void ToolsOverlay::update(scene::Scene& scene, core::Duration frameDelta, PlaySt
         logFailure(state.history.execute(scene, std::exchange(state.pendingCommand, nullptr)));
     }
 
-    ImGui::Render();
-    state.renderer.queueImGuiDrawData();
-
-    const ImGuiIO& io = ImGui::GetIO();
-    state.capturesKeyboard = io.WantCaptureKeyboard;
-    state.capturesMouse = io.WantCaptureMouse;
+    finishFrame(state);
+    state.capturesKeyboard = !state.hosts.focusedId().empty();
+    state.capturesMouse = state.hosts.pointerTaken();
 }
 
 void ToolsOverlay::prepareRender(scene::Scene& scene, render::RenderWorld& world, PlayState playState)

@@ -481,8 +481,8 @@ void drawExportWindow(ToolsState& state)
     }
     if (beginFormWindow(state, exportWindow, &state.showExport, 36.0f, 36.0f))
     {
-        state.exportUi->update(state, kit, core::Duration(ImGui::GetIO().DeltaTime));
-        endFormWindow();
+        state.exportUi->update(state, kit, core::Duration(state.input.delta()));
+        endFormWindow(state);
     }
 }
 

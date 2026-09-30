@@ -2091,11 +2091,12 @@ void ApplicationRunner::updateUi(std::chrono::nanoseconds frameTime)
     }
     m_ui->update(*m_application.m_scene, size, uiInput, core::Duration(frameTime));
 
-    // The system types into the field that is being edited: its keyboard opens on a touch screen,
-    // and a dead key composes into one letter.
-    if (m_ui->isEditing() != m_services.platform.isTextInputActive())
+    // The system types into the field that is being edited, of the game or of the tools: its keyboard
+    // opens on a touch screen, and a dead key composes into one letter.
+    const bool typing = m_ui->isEditing() || (m_services.tools != nullptr && m_services.tools->wantsTextInput());
+    if (typing != m_services.platform.isTextInputActive())
     {
-        m_services.platform.setTextInput(m_services.window, m_ui->isEditing());
+        m_services.platform.setTextInput(m_services.window, typing);
     }
     if (const std::string& copied = m_ui->clipboardRequest(); !copied.empty())
     {

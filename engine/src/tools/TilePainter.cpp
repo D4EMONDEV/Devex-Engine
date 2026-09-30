@@ -248,7 +248,7 @@ void syncTilePainter(InspectorUi& ui, ToolsState& state, EditorUiKit& kit, scene
             painter.tile = tileset->tiles.front().id;
         }
         ui.gridCells(*shown.palette, tileset->tiles.size(), false);
-        const double seconds = ImGui::GetTime();
+        const double seconds = state.input.time();
         for (std::size_t index = 0; index < tileset->tiles.size(); ++index)
         {
             const asset::TileData& tile = tileset->tiles[index];
@@ -310,7 +310,7 @@ bool handleTilePainting(ToolsState& state, scene::Scene& scene, const ViewportVi
         painter.rectangleStart.reset();
         return false;
     }
-    if (state.viewportFocused && !painter.stroking && ImGui::IsKeyPressed(ImGuiKey_Escape))
+    if (state.viewportFocused && !painter.stroking && state.input.pressed(platform::Key::Escape, true))
     {
         painter.tool = TileTool::None;
         painter.hovered.reset();
@@ -320,22 +320,21 @@ bool handleTilePainting(ToolsState& state, scene::Scene& scene, const ViewportVi
     const std::optional<math::IVec2> cell = cellUnder(*tilemap, world, view, mouse);
     painter.hovered = hovered || painter.stroking ? cell : std::nullopt;
 
-    const ImGuiIO& io = ImGui::GetIO();
     TileTool tool = painter.tool;
-    if (io.KeyCtrl && tool != TileTool::Fill)
+    if (state.input.ctrl() && tool != TileTool::Fill)
     {
         tool = TileTool::Pick;
     }
-    const bool erasing = tool == TileTool::Erase || (io.KeyShift && (tool == TileTool::Paint || tool == TileTool::Rectangle));
+    const bool erasing = tool == TileTool::Erase || (state.input.shift() && (tool == TileTool::Paint || tool == TileTool::Rectangle));
     const std::uint16_t value = erasing ? std::uint16_t{0} : brushValue(painter);
 
     if (!painter.stroking)
     {
-        if (!hovered || !cell || !ImGui::IsMouseClicked(ImGuiMouseButton_Left))
+        if (!hovered || !cell || !state.input.clicked(Mouse::Left))
         {
             return hovered;
         }
-        ImGui::SetWindowFocus();
+        state.hosts.focusCurrent();
         if (tool == TileTool::Pick)
         {
             const std::uint16_t picked = scene::tileAt(*tilemap, *cell);
@@ -375,7 +374,7 @@ bool handleTilePainting(ToolsState& state, scene::Scene& scene, const ViewportVi
     }
 
     // The stroke goes on while the button is held, and ends as one step.
-    if (ImGui::IsMouseDown(ImGuiMouseButton_Left))
+    if (state.input.down(Mouse::Left))
     {
         if (cell && *cell != painter.lastCell)
         {
@@ -437,7 +436,7 @@ void addTilePainterOverlay(ToolsState& state, scene::Scene& scene, render::Rende
     }
 
     // The cells the tool is about to change.
-    const bool erasing = painter.tool == TileTool::Erase || ImGui::GetIO().KeyShift;
+    const bool erasing = painter.tool == TileTool::Erase || state.input.shift();
     math::IVec2 low = center;
     math::IVec2 high = center;
     if (painter.rectangleStart)

@@ -28,6 +28,10 @@ public:
     // are places, which suits moving; the shortcuts of text follow the letters instead, so that
     // Ctrl+A selects everything on a French keyboard too, where A is not where it is in the US.
     [[nodiscard]] bool wasLetterPressed(char letter) const noexcept;
+    // The same letters held down, and repeated by the system this frame; the tools read them apart
+    // from the first press, which is when a shortcut acts.
+    [[nodiscard]] bool isLetterDown(char letter) const noexcept;
+    [[nodiscard]] bool wasLetterRepeated(char letter) const noexcept;
 
     [[nodiscard]] bool isMouseButtonDown(MouseButton button) const noexcept;
     [[nodiscard]] bool wasMouseButtonPressed(MouseButton button) const noexcept;
@@ -64,6 +68,8 @@ public:
     void setKeyDown(Key key, bool down) noexcept;
     void repeatKey(Key key) noexcept;
     void pressLetter(char letter) noexcept;
+    void repeatLetter(char letter) noexcept;
+    void releaseLetter(char letter) noexcept;
     void setMouseButtonDown(MouseButton button, bool down) noexcept;
     void setGamepadConnected(std::size_t pad, bool connected) noexcept;
     void setGamepadButtonDown(GamepadButton button, std::size_t pad, bool down) noexcept;
@@ -80,6 +86,8 @@ private:
     std::bitset<keyCount> m_keysReleased;
     std::bitset<keyCount> m_keysRepeated;
     std::bitset<26> m_lettersPressed;
+    std::bitset<26> m_lettersDown;
+    std::bitset<26> m_lettersRepeated;
     std::bitset<mouseButtonCount> m_buttonsDown;
     std::bitset<mouseButtonCount> m_buttonsPressed;
     std::bitset<mouseButtonCount> m_buttonsReleased;

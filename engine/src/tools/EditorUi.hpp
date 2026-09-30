@@ -1,5 +1,7 @@
 #pragma once
 
+#include "EditorHosts.hpp"
+#include "EditorInput.hpp"
 #include "Icons.hpp"
 #include "Theme.hpp"
 
@@ -40,6 +42,21 @@ namespace devex::tools::detail {
 // What the panels share: the fonts of the editor baked into atlases of distances, its icons drawn as
 // white textures that the images showing them tint, and its theme as the named styles of a theme of
 // that interface.
+// What the pointer carries from a panel to another, or to the view: a type, the bytes it names, and
+// what it is called.
+struct EditorDrag
+{
+    std::string type;
+    std::vector<std::byte> payload;
+    // Shown next to the pointer once it leaves the panel.
+    std::string label;
+
+    [[nodiscard]] bool is(std::string_view kind, std::size_t bytes) const noexcept
+    {
+        return type == kind && payload.size() == bytes;
+    }
+};
+
 class EditorUiKit
 {
 public:
@@ -86,6 +103,21 @@ public:
     void showTooltip(std::string text, ImVec2 at);
     [[nodiscard]] std::optional<Tooltip> takeTooltip() noexcept;
 
+    // The places, the devices and the platform of the frame, which the panels read.
+    void setFrame(EditorHosts& hosts, const EditorInput& input, platform::Platform& platform) noexcept;
+    [[nodiscard]] EditorHosts& hosts() const noexcept;
+    [[nodiscard]] const EditorInput& input() const noexcept;
+    [[nodiscard]] platform::Platform& platform() const noexcept;
+    // What the pointer carries from a panel, while the button holds it; forgotten the frame after it
+    // is let go.
+    void carry(EditorDrag drag);
+    [[nodiscard]] const EditorDrag* carried() const noexcept;
+    void forgetCarried() noexcept;
+    // A field that takes what is typed, where it stands on the screen: the input method of the system
+    // opens next to it.
+    void requestTextInput(ImVec2 min, ImVec2 max) noexcept;
+    [[nodiscard]] std::optional<std::pair<ImVec2, ImVec2>> takeTextInput() noexcept;
+
 private:
     struct BakedFont
     {
@@ -124,16 +156,13 @@ private:
     ImVec4 m_themeAccent{-1.0f, 0.0f, 0.0f, 0.0f};
     ImVec4 m_themePanel{-1.0f, 0.0f, 0.0f, 0.0f};
     std::optional<Tooltip> m_tooltip;
+    EditorHosts* m_hosts = nullptr;
+    const EditorInput* m_input = nullptr;
+    platform::Platform* m_platform = nullptr;
+    std::optional<EditorDrag> m_carried;
+    std::optional<std::pair<ImVec2, ImVec2>> m_textInput;
 };
 
-// A drag between a panel and the ImGui windows around it, as ImGui carries it.
-struct ImGuiDrag
-{
-    std::string type;
-    std::vector<std::byte> payload;
-    // Shown next to the pointer once it leaves the panel.
-    std::string label;
-};
 
 // A panel made with the interface of the engine: a canvas of entities in a scene of its own, which an
 // interface world lays out and answers, drawn into an image that the ImGui window around it shows.
@@ -155,12 +184,12 @@ public:
     // What the last update gave the interface world, in units of the panel.
     [[nodiscard]] const ui::UiInput& input() const noexcept;
 
-    // What the drags of the panel become once they leave it: a payload the ImGui windows take, or
-    // nothing when they stay in the panel.
-    void setDragOut(std::function<std::optional<ImGuiDrag>(const ui::Carried&)> convert);
-    // What the ImGui drags that come over the panel become: the type and data its drop targets read,
-    // or nothing for those it does not take.
-    void setDragIn(std::function<std::optional<std::pair<std::string, std::string>>(const ImGuiPayload&)> convert);
+    // What the drags of the panel become once they leave it: what the other panels and the view take,
+    // or nothing when they stay in the panel.
+    void setDragOut(std::function<std::optional<EditorDrag>(const ui::Carried&)> convert);
+    // What the drags of other panels that come over the panel become: the type and data its drop
+    // targets read, or nothing for those it does not take.
+    void setDragIn(std::function<std::optional<std::pair<std::string, std::string>>(const EditorDrag&)> convert);
     // Whether the arrows, Enter and Space move the focus between the buttons and press them, as in a
     // menu; a panel that answers the keys itself, as a tree does, turns it off.
     void setKeyboardNavigation(bool enabled) noexcept;
@@ -171,8 +200,8 @@ public:
     // completions takes the arrows and Enter from the text under it.
     void setInputFilter(std::function<void(ui::UiInput&)> filter);
 
-    // Inside the ImGui window it fills: takes the room left in it, or only `height` points of it, gives
-    // the interface world the mouse and the keys the window receives, and shows the image of the
+    // Inside the host it stands in: takes the room left in it, or only `height` points of it, gives
+    // the interface world the mouse and the keys the host receives, and shows the image of the
     // panel. `zoom` is how many pixels one unit of the panel takes.
     void update(EditorUiKit& kit, core::Duration delta, float zoom, float height = 0.0f);
     // Where a point of the panel, in its units, is on the screen, as ImGui places things; and the
@@ -187,7 +216,7 @@ public:
     [[nodiscard]] static float zoomFor(float font) noexcept;
 
 private:
-    void carryToImGui(EditorUiKit& kit, const ImVec2& origin, float pixelsPerPoint);
+    void carryOut(EditorUiKit& kit, const ImVec2& origin, float pixelsPerPoint);
 
     scene::Scene m_scene;
     ui::UiWorld m_world;
@@ -204,8 +233,8 @@ private:
     ImVec2 m_origin{0.0f, 0.0f};
     float m_pixelsPerPoint = 1.0f;
     ui::UiInput m_input;
-    std::function<std::optional<ImGuiDrag>(const ui::Carried&)> m_dragOut;
-    std::function<std::optional<std::pair<std::string, std::string>>(const ImGuiPayload&)> m_dragIn;
+    std::function<std::optional<EditorDrag>(const ui::Carried&)> m_dragOut;
+    std::function<std::optional<std::pair<std::string, std::string>>(const EditorDrag&)> m_dragIn;
     std::function<void(ui::UiInput&)> m_filter;
     // Where the last frame was drawn, kept to reuse its storage.
     render::RenderWorld m_scratch;

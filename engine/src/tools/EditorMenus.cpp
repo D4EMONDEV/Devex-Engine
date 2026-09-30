@@ -147,7 +147,6 @@ void addHistoryEntries(ToolsState& state, std::vector<MenuEntry>& entries)
     entries.push_back({.icon = Icon::Bug, .label = "C# Debugging...", .enabled = state.debugger.available,
                        .action = [](ToolsState& tools, scene::Scene&) {
                            tools.showDebugging = true;
-                           ImGui::SetWindowFocus(debuggingWindow);
                        }});
     entries.push_back(MenuEntry::line());
     const std::string sceneResource = project.resourcePath(state.scenePath);
@@ -167,11 +166,9 @@ void addHistoryEntries(ToolsState& state, std::vector<MenuEntry>& entries)
                        }});
     entries.push_back({.icon = Icon::Sliders, .label = "Project Settings...", .action = [](ToolsState& tools, scene::Scene&) {
                            tools.showProjectSettings = true;
-                           ImGui::SetWindowFocus("Project Settings");
                        }});
     entries.push_back({.icon = Icon::Package, .label = "Export Game...", .action = [](ToolsState& tools, scene::Scene&) {
                            tools.showExport = true;
-                           ImGui::SetWindowFocus("Export Game");
                        }});
     entries.push_back(MenuEntry::line());
     entries.push_back({.icon = Icon::FolderOpen, .label = "Open Project Folder",
@@ -223,7 +220,6 @@ void addPanelEntries(ToolsState& state, std::vector<MenuEntry>& entries)
     std::vector<MenuEntry> entries;
     entries.push_back({.icon = Icon::Settings, .label = "Editor Settings...", .action = [](ToolsState& tools, scene::Scene&) {
                            tools.showSettings = true;
-                           ImGui::SetWindowFocus(settingsWindow);
                        }});
     entries.push_back(MenuEntry::line());
     MenuEntry panels{.icon = Icon::LayoutDashboard, .label = "Panels"};
@@ -271,16 +267,11 @@ struct LogCounts
     return counts;
 }
 
-// A strip along an edge of the window, which the dock leaves room for, its content filling it.
-[[nodiscard]] bool beginStrip(const char* name, ImGuiDir edge, float height)
+// A strip along an edge of the window, which the dock leaves room for, its content filling it. It
+// leaves the keyboard where it was.
+void beginStrip(ToolsState& state, const char* name, ImVec2 min, ImVec2 max)
 {
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
-    const bool open = ImGui::BeginViewportSideBar(name, ImGui::GetMainViewport(), edge, height,
-                                                  ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse |
-                                                      ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoNav);
-    ImGui::PopStyleVar(2);
-    return open;
+    state.hosts.begin(name, min, max, HostLayer::Strips, HostOptions{.focusable = false});
 }
 
 } // namespace
@@ -496,7 +487,7 @@ void MenuBarUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& edited
     // A title opens its menu under itself, or closes it; while one is open, the pointer on another
     // title goes to its menu, as in every menu bar.
     const ui::LayoutResult* const layout = world.canvases().empty() ? nullptr : &world.canvases().front().layout;
-    const ImVec2 mouse = ImGui::GetIO().MousePos;
+    const ImVec2 mouse = pointOf(state.input.mouse());
     for (std::size_t index = 0; index < titles.size() && layout != nullptr; ++index)
     {
         const ui::LaidOutRect* const rect = layout->find(titles[index].entity);
@@ -626,16 +617,13 @@ void drawEditorMenus(ToolsState& state, scene::Scene& scene)
 {
     DEVEX_PROFILE_SCOPE("Menus");
     EditorUiKit& kit = editorUiKit(state);
-    const ImGuiStyle& style = ImGui::GetStyle();
-    if (beginStrip("##menu bar", ImGuiDir_Up, ImGui::GetFontSize() + style.FramePadding.y * 3.2f))
+    beginStrip(state, "##menu bar", state.menuBarMin, state.menuBarMax);
+    if (!state.menuBarUi)
     {
-        if (!state.menuBarUi)
-        {
-            state.menuBarUi = std::make_shared<MenuBarUi>();
-        }
-        state.menuBarUi->update(state, kit, scene, core::Duration(ImGui::GetIO().DeltaTime));
+        state.menuBarUi = std::make_shared<MenuBarUi>();
     }
-    ImGui::End();
+    state.menuBarUi->update(state, kit, scene, core::Duration(state.input.delta()));
+    state.hosts.end();
 }
 
 // ---- The status bar ----
@@ -770,16 +758,13 @@ void drawStatusBar(ToolsState& state, const scene::Scene& scene)
 {
     DEVEX_PROFILE_SCOPE("Status bar");
     EditorUiKit& kit = editorUiKit(state);
-    const ImGuiStyle& style = ImGui::GetStyle();
-    if (beginStrip("##status bar", ImGuiDir_Down, ImGui::GetFrameHeight() + style.FramePadding.y * 1.2f))
+    beginStrip(state, "##status bar", state.statusBarMin, state.statusBarMax);
+    if (!state.statusBarUi)
     {
-        if (!state.statusBarUi)
-        {
-            state.statusBarUi = std::make_shared<StatusBarUi>();
-        }
-        state.statusBarUi->update(state, kit, scene, core::Duration(ImGui::GetIO().DeltaTime));
+        state.statusBarUi = std::make_shared<StatusBarUi>();
     }
-    ImGui::End();
+    state.statusBarUi->update(state, kit, scene, core::Duration(state.input.delta()));
+    state.hosts.end();
 }
 
 void renderEditorFrame(ToolsState& state, render::RenderWorld& world)
@@ -809,93 +794,102 @@ void handleEditorShortcuts(ToolsState& state, scene::Scene& scene)
         return;
     }
     const bool editing = state.playState == PlayState::Editing;
-    const ImGuiInputFlags global = ImGuiInputFlags_RouteGlobal;
-    const auto pressed = [global](ImGuiKeyChord chord) { return ImGui::Shortcut(chord, global); };
-    if (pressed(ImGuiMod_Ctrl | ImGuiKey_P))
+    // Shortcuts without Ctrl or Alt leave the keys to a field being typed into, the F keys aside.
+    const auto pressed = [&state](KeyModifiers modifiers, auto key) {
+        if constexpr (std::is_same_v<decltype(key), char>)
+        {
+            return (!state.typing || modifiers.ctrl || modifiers.alt) && state.input.chord(modifiers, key);
+        }
+        else
+        {
+            return state.input.chord(modifiers, key);
+        }
+    };
+    if (pressed(KeyModifiers{.ctrl = true}, 'p'))
     {
         (editing ? state.requests.play : state.requests.stop) = true;
     }
-    if (pressed(ImGuiKey_F5) && editing)
+    if (pressed(KeyModifiers{}, platform::Key::F5) && editing)
     {
         state.requests.play = true;
         showSceneScreen(state, scene);
     }
-    if ((pressed(ImGuiMod_Ctrl | ImGuiMod_Shift | ImGuiKey_P) || pressed(ImGuiKey_F7)) && !editing)
+    if ((pressed(KeyModifiers{.ctrl = true, .shift = true}, 'p') || pressed(KeyModifiers{}, platform::Key::F7)) && !editing)
     {
         state.requests.togglePause = true;
     }
-    if (pressed(ImGuiKey_F8) && !editing)
+    if (pressed(KeyModifiers{}, platform::Key::F8) && !editing)
     {
         state.requests.stop = true;
     }
-    if ((pressed(ImGuiMod_Ctrl | ImGuiMod_Alt | ImGuiKey_P) || pressed(ImGuiKey_F9)) &&
+    if ((pressed(KeyModifiers{.ctrl = true, .alt = true}, 'p') || pressed(KeyModifiers{}, platform::Key::F9)) &&
         state.playState == PlayState::Paused)
     {
         state.requests.step = true;
     }
-    if (pressed(ImGuiMod_Ctrl | ImGuiKey_B) && state.gameCode.state != GameCodeStatus::State::None)
+    if (pressed(KeyModifiers{.ctrl = true}, 'b') && state.gameCode.state != GameCodeStatus::State::None)
     {
         state.requests.buildCode = true;
     }
-    if (pressed(ImGuiMod_Ctrl | ImGuiMod_Shift | ImGuiKey_Q))
+    if (pressed(KeyModifiers{.ctrl = true, .shift = true}, 'q'))
     {
         requestAction(state, scene, {.kind = PendingAction::Kind::CloseProject});
     }
-    if (pressed(ImGuiMod_Ctrl | ImGuiKey_Q))
+    if (pressed(KeyModifiers{.ctrl = true}, 'q'))
     {
         requestAction(state, scene, {.kind = PendingAction::Kind::Quit});
     }
     // The screens of the menu bar, numbered as Godot numbers them.
-    if (pressed(ImGuiMod_Ctrl | ImGuiKey_F1))
+    if (pressed(KeyModifiers{.ctrl = true}, platform::Key::F1))
     {
         setMainScreen(state, MainScreen::TwoD);
     }
-    if (pressed(ImGuiMod_Ctrl | ImGuiKey_F2))
+    if (pressed(KeyModifiers{.ctrl = true}, platform::Key::F2))
     {
         setMainScreen(state, MainScreen::ThreeD);
     }
-    if (pressed(ImGuiMod_Ctrl | ImGuiKey_F3))
+    if (pressed(KeyModifiers{.ctrl = true}, platform::Key::F3))
     {
         setMainScreen(state, MainScreen::Script);
     }
-    if (textEditorFocused())
+    if (textEditorFocused(state))
     {
-        if (pressed(ImGuiMod_Ctrl | ImGuiKey_S))
+        if (pressed(KeyModifiers{.ctrl = true}, 's'))
         {
             if (TextDocument* document = findTextDocument(state, state.activeText))
             {
                 static_cast<void>(saveTextFile(state, scene, *document));
             }
         }
-        if (pressed(ImGuiMod_Ctrl | ImGuiKey_O))
+        if (pressed(KeyModifiers{.ctrl = true}, 'o'))
         {
             showOpenTextDialog(state);
         }
-        if (pressed(ImGuiMod_Ctrl | ImGuiKey_W) && !state.activeText.empty())
+        if (pressed(KeyModifiers{.ctrl = true}, 'w') && !state.activeText.empty())
         {
             requestAction(state, scene, {.kind = PendingAction::Kind::CloseText, .path = state.activeText});
         }
         TextDocument* const document = findTextDocument(state, state.activeText);
-        if (pressed(ImGuiMod_Ctrl | ImGuiKey_F) || pressed(ImGuiMod_Ctrl | ImGuiKey_H))
+        if (pressed(KeyModifiers{.ctrl = true}, 'f') || pressed(KeyModifiers{.ctrl = true}, 'h'))
         {
             state.textEdit.showFind = true;
-            state.textEdit.showReplace = state.textEdit.showReplace || ImGui::IsKeyDown(ImGuiKey_H);
+            state.textEdit.showReplace = state.textEdit.showReplace || state.input.letterDown('h');
             state.textEdit.focusFind = true;
         }
-        if (pressed(ImGuiMod_Ctrl | ImGuiKey_G))
+        if (pressed(KeyModifiers{.ctrl = true}, 'g'))
         {
             state.textEdit.openGoTo = true;
         }
         // Ctrl+K as in Godot, on every keyboard; Ctrl+/ too where / is a key of its own, as on the
         // keypad.
-        if ((pressed(ImGuiMod_Ctrl | ImGuiKey_K) || pressed(ImGuiMod_Ctrl | ImGuiKey_Slash) || pressed(ImGuiMod_Ctrl | ImGuiKey_KeypadDivide)) &&
+        if ((pressed(KeyModifiers{.ctrl = true}, 'k') || pressed(KeyModifiers{.ctrl = true}, platform::Key::Slash) || pressed(KeyModifiers{.ctrl = true}, platform::Key::KeypadDivide)) &&
             document != nullptr)
         {
             commentSelection(state.textEdit, *document, languageOf(document->path));
         }
-        if (pressed(ImGuiKey_F3) && document != nullptr)
+        if (pressed(KeyModifiers{}, platform::Key::F3) && document != nullptr)
         {
-            selectMatch(state.textEdit, *document, ImGui::GetIO().KeyShift ? -1 : 1);
+            selectMatch(state.textEdit, *document, state.input.shift() ? -1 : 1);
         }
         return;
     }
@@ -903,32 +897,32 @@ void handleEditorShortcuts(ToolsState& state, scene::Scene& scene)
     {
         return;
     }
-    if (pressed(ImGuiMod_Ctrl | ImGuiKey_S))
+    if (pressed(KeyModifiers{.ctrl = true}, 's'))
     {
         static_cast<void>(saveScene(state, scene));
     }
-    if (pressed(ImGuiMod_Ctrl | ImGuiMod_Shift | ImGuiKey_S))
+    if (pressed(KeyModifiers{.ctrl = true, .shift = true}, 's'))
     {
         showSaveSceneDialog(state);
     }
-    if (pressed(ImGuiMod_Ctrl | ImGuiMod_Alt | ImGuiKey_S))
+    if (pressed(KeyModifiers{.ctrl = true, .alt = true}, 's'))
     {
         saveAllScenes(state, scene);
     }
-    if (pressed(ImGuiMod_Ctrl | ImGuiKey_N))
+    if (pressed(KeyModifiers{.ctrl = true}, 'n'))
     {
         newSceneTab(state, scene);
     }
-    if (pressed(ImGuiMod_Ctrl | ImGuiKey_O))
+    if (pressed(KeyModifiers{.ctrl = true}, 'o'))
     {
         showOpenSceneDialog(state);
     }
-    if (pressed(ImGuiMod_Ctrl | ImGuiKey_W) && state.tabs.active())
+    if (pressed(KeyModifiers{.ctrl = true}, 'w') && state.tabs.active())
     {
         requestAction(state, scene, {.kind = PendingAction::Kind::CloseTab, .tabs = {state.tabs.id(*state.tabs.active())}});
     }
     // Ctrl+Tab goes to the next scene tab.
-    if (pressed(ImGuiMod_Ctrl | ImGuiKey_Tab) && state.tabs.size() > 1 && state.tabs.active())
+    if (pressed(KeyModifiers{.ctrl = true}, platform::Key::Tab) && state.tabs.size() > 1 && state.tabs.active())
     {
         activateSceneTab(state, scene, (*state.tabs.active() + 1) % state.tabs.size());
     }

@@ -525,7 +525,7 @@ void OutputUi::update(ToolsState& state, EditorUiKit& kit, core::Duration delta)
     const auto copy = [&] {
         if (const std::string copied = selectedText(); !copied.empty())
         {
-            ImGui::SetClipboardText(copied.c_str());
+            state.platform.setClipboardText(copied.c_str());
         }
     };
     const auto clearAll = [&] {
@@ -719,8 +719,8 @@ void drawConsolePanel(ToolsState& state)
     }
     if (beginDockedPanel(state, consoleWindow))
     {
-        state.outputUi->update(state, *state.uiKit, core::Duration(ImGui::GetIO().DeltaTime));
-        ImGui::End();
+        state.outputUi->update(state, *state.uiKit, core::Duration(state.input.delta()));
+        endDockedPanel(state);
     }
 }
 

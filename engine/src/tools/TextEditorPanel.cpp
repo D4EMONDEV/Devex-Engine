@@ -105,11 +105,9 @@ void showOpenTextDialog(ToolsState& state)
         });
 }
 
-bool textEditorFocused()
+bool textEditorFocused(const ToolsState& state)
 {
-    const ImGuiWindow* window = ImGui::FindWindowByName(textEditorWindow);
-    const ImGuiWindow* focused = GImGui->NavWindow;
-    return window != nullptr && focused != nullptr && focused->RootWindow == window->RootWindow;
+    return state.hosts.isFocused(textEditorWindow);
 }
 
 // The line a byte offset falls on, found in the index rather than by counting again.
@@ -1032,7 +1030,7 @@ std::optional<PendingAction> ScriptUi::update(ToolsState& state, EditorUiKit& ki
 
     // The menus open under their titles, and the pointer on another title goes to its menu.
     const ui::LayoutResult* const layout = world.canvases().empty() ? nullptr : &world.canvases().front().layout;
-    const ImVec2 mouse = ImGui::GetIO().MousePos;
+    const ImVec2 mouse = pointOf(state.input.mouse());
     for (std::size_t index = 0; index < menus.size() && layout != nullptr; ++index)
     {
         const ui::LaidOutRect* const rect = layout->find(menus[index].entity);
@@ -1066,7 +1064,7 @@ std::optional<PendingAction> ScriptUi::update(ToolsState& state, EditorUiKit& ki
             state.activeText = row.path;
         }
     }
-    if (panel.hovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Middle))
+    if (panel.hovered() && state.input.clicked(Mouse::Middle))
     {
         for (Entity above = world.hovered(); above.isValid() && scene().isAlive(above); above = scene().parent(above))
         {
@@ -1267,8 +1265,8 @@ void drawTextEditorPanel(ToolsState& state, scene::Scene& scene)
     {
         state.scriptUi = std::make_shared<ScriptUi>();
     }
-    std::optional<PendingAction> action = state.scriptUi->update(state, kit, core::Duration(ImGui::GetIO().DeltaTime));
-    ImGui::End();
+    std::optional<PendingAction> action = state.scriptUi->update(state, kit, core::Duration(state.input.delta()));
+    endDockedPanel(state);
     // Closing/reloading may invalidate a document: do this after the panel has used it.
     if (action)
     {

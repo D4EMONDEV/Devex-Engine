@@ -265,17 +265,17 @@ void InspectorUi::build(ToolsState& state, EditorUiKit& kit)
     // Entities come from the scene tree, and assets from FileSystem, named by their type so that a
     // field lights up only for what it takes.
     panel.setKeyboardNavigation(false);
-    panel.setDragIn([](const ImGuiPayload& payload) -> std::optional<std::pair<std::string, std::string>> {
-        if (payload.IsDataType(entityPayload) && payload.DataSize == 16)
+    panel.setDragIn([](const EditorDrag& payload) -> std::optional<std::pair<std::string, std::string>> {
+        if (payload.is(entityPayload, 16))
         {
             std::array<std::uint8_t, 16> bytes{};
-            std::memcpy(bytes.data(), payload.Data, bytes.size());
+            std::memcpy(bytes.data(), payload.payload.data(), bytes.size());
             return std::pair{std::string("entity"), uuidFromBytes(bytes).toString()};
         }
-        if (payload.IsDataType(assetPayload) && payload.DataSize == sizeof(AssetPayload))
+        if (payload.is(assetPayload, sizeof(AssetPayload)))
         {
             AssetPayload asset;
-            std::memcpy(&asset, payload.Data, sizeof(asset));
+            std::memcpy(&asset, payload.payload.data(), sizeof(asset));
             return std::pair{std::format("asset:{}", asset::toString(asset.type)), uuidFromBytes(asset.uuid).toString()};
         }
         return std::nullopt;
@@ -1879,7 +1879,7 @@ void InspectorUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& edit
     const Entity pointed = world.held().isValid() ? world.held() : world.hovered();
     if (pointed.isValid() && scene().isAlive(pointed) && scene().has<scene::UiNumberField>(pointed) && world.editedField() != pointed)
     {
-        ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
+        state.input.cursor = platform::Cursor::ResizeHorizontal;
     }
 }
 
@@ -1927,7 +1927,7 @@ void InspectorUi::updatePage(ToolsState& state, EditorUiKit& kit, const scene::S
     const Entity pointed = world.held().isValid() ? world.held() : world.hovered();
     if (pointed.isValid() && scene().isAlive(pointed) && scene().has<scene::UiNumberField>(pointed) && world.editedField() != pointed)
     {
-        ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
+        state.input.cursor = platform::Cursor::ResizeHorizontal;
     }
 }
 

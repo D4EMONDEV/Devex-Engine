@@ -795,6 +795,10 @@ target_sources(devex_tools
         src/tools/EditorDock.cpp
         src/tools/EditorDock.hpp
         src/tools/EditorFrame.hpp
+        src/tools/EditorHosts.cpp
+        src/tools/EditorHosts.hpp
+        src/tools/EditorInput.cpp
+        src/tools/EditorInput.hpp
         src/tools/EditorLayer.cpp
         src/tools/EditorMenus.cpp
         src/tools/EditorModal.cpp

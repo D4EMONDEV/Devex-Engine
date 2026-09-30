@@ -34,7 +34,7 @@ inline constexpr std::uint32_t dialogSurface = 11;
 // cross that clears `open`; false while it is closed or under another modal. endFormWindow follows
 // a true only.
 [[nodiscard]] bool beginFormWindow(ToolsState& state, const char* title, bool* open, float width, float height);
-void endFormWindow();
+void endFormWindow(ToolsState& state);
 // The fonts, icons and theme the panels share, made the first time a panel asks.
 EditorUiKit& editorUiKit(ToolsState& state);
 // Places an element at a distance from the right of its parent, as wide as given and as tall as it.
@@ -42,7 +42,7 @@ void placeRight(scene::Scene& scene, scene::Entity entity, float right, float wi
 // A square button in the middle of the height of its parent, at a distance from its right.
 [[nodiscard]] scene::UiRect rightButton(float size, float right);
 // What the pointer shows over the numbers of a panel: that they are dragged sideways.
-void numberCursor(UiPanel& panel);
+void numberCursor(ToolsState& state, UiPanel& panel);
 // A number without a letter, as the rows of settings show one.
 inline constexpr std::array<std::string_view, 1> singleNumber{""};
 

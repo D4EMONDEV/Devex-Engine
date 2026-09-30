@@ -1579,11 +1579,11 @@ void AnimatorUi::build(EditorUiKit& kit)
     nodeViews.clear();
     panel.setKeyboardNavigation(false);
     // Clips come from FileSystem, named by their type.
-    panel.setDragIn([](const ImGuiPayload& payload) -> std::optional<std::pair<std::string, std::string>> {
-        if (payload.IsDataType(assetPayload) && payload.DataSize == sizeof(AssetPayload))
+    panel.setDragIn([](const EditorDrag& payload) -> std::optional<std::pair<std::string, std::string>> {
+        if (payload.is(assetPayload, sizeof(AssetPayload)))
         {
             AssetPayload asset;
-            std::memcpy(&asset, payload.Data, sizeof(asset));
+            std::memcpy(&asset, payload.payload.data(), sizeof(asset));
             return std::pair{std::format("asset:{}", asset::toString(asset.type)), uuidFromBytes(asset.uuid).toString()};
         }
         return std::nullopt;
@@ -2131,7 +2131,6 @@ void AnimatorUi::answerGraph(ToolsState& state, EditorUiKit& kit, const ui::Laid
     AnimatorData& animator = editor.animator;
     ui::UiWorld& world = panel.world();
     const ui::UiInput& input = panel.input();
-    const ImGuiIO& io = ImGui::GetIO();
     areaSize = area.size();
     const math::Vec2 mouse = input.pointer - area.min;
     pointer = mouse;
@@ -2226,7 +2225,7 @@ void AnimatorUi::answerGraph(ToolsState& state, EditorUiKit& kit, const ui::Laid
     {
         if (input.pointerDown)
         {
-            const math::Vec2 moved = math::Vec2{io.MouseDelta.x, io.MouseDelta.y} * (unitsPerPoint / view.scale);
+            const math::Vec2 moved = math::Vec2{state.input.mouseDelta().x, state.input.mouseDelta().y} * (unitsPerPoint / view.scale);
             if (editor.dragged == AnimatorElement::Entry)
             {
                 animator.entryPosition += moved;
@@ -2248,13 +2247,13 @@ void AnimatorUi::answerGraph(ToolsState& state, EditorUiKit& kit, const ui::Laid
     }
 
     // The view moves with the middle or the right button, and zooms around the pointer.
-    if (hovered && (ImGui::IsMouseClicked(ImGuiMouseButton_Right) || ImGui::IsMouseClicked(ImGuiMouseButton_Middle)))
+    if (hovered && (state.input.clicked(Mouse::Right) || state.input.clicked(Mouse::Middle)))
     {
         grabbed = true;
     }
-    if (grabbed && (ImGui::IsMouseDragging(ImGuiMouseButton_Middle) || ImGui::IsMouseDragging(ImGuiMouseButton_Right)))
+    if (grabbed && (state.input.dragging(Mouse::Middle) || state.input.dragging(Mouse::Right)))
     {
-        editor.pan += math::Vec2{io.MouseDelta.x, io.MouseDelta.y} * unitsPerPoint;
+        editor.pan += math::Vec2{state.input.mouseDelta().x, state.input.mouseDelta().y} * unitsPerPoint;
         editor.panning = true;
     }
     if (hovered && input.wheel != 0.0f)
@@ -2264,7 +2263,7 @@ void AnimatorUi::answerGraph(ToolsState& state, EditorUiKit& kit, const ui::Laid
         editor.pan = mouse - under * (editor.zoom * graphUnit());
     }
     // A right click that did not move the view opens the menu of what it is on.
-    if (grabbed && ImGui::IsMouseReleased(ImGuiMouseButton_Right))
+    if (grabbed && state.input.released(Mouse::Right))
     {
         if (hovered && !editor.panning && !editor.connectingFrom)
         {
@@ -2296,12 +2295,12 @@ void AnimatorUi::answerGraph(ToolsState& state, EditorUiKit& kit, const ui::Laid
         }
         editor.connectingFrom.reset();
     }
-    if (!ImGui::IsMouseDown(ImGuiMouseButton_Right) && !ImGui::IsMouseDown(ImGuiMouseButton_Middle))
+    if (!state.input.down(Mouse::Right) && !state.input.down(Mouse::Middle))
     {
         editor.panning = false;
         grabbed = false;
     }
-    if (editor.connectingFrom && panel.focused() && ImGui::IsKeyPressed(ImGuiKey_Escape))
+    if (editor.connectingFrom && panel.focused() && state.input.pressed(platform::Key::Escape, true))
     {
         editor.connectingFrom.reset();
     }
@@ -2311,7 +2310,7 @@ void AnimatorUi::answerGraph(ToolsState& state, EditorUiKit& kit, const ui::Laid
     {
         const AnimatorTransition& transition = animator.transitions[static_cast<std::size_t>(hoveredArrow->transition)];
         kit.showTooltip(std::format("{} to {}\n{}", transition.from.empty() ? "Any State" : transition.from, transition.to, transitionText(transition)),
-                        io.MousePos);
+                        pointOf(state.input.mouse()));
     }
 
     // The menu of the graph.
@@ -2458,15 +2457,15 @@ void AnimatorUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& edite
     // Shortcuts, while no field takes the keys.
     if (editor.focused && !world.isEditing())
     {
-        if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_Z))
+        if (state.input.chord(KeyModifiers{.ctrl = true}, 'z'))
         {
             undoAnimator(state);
         }
-        if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_Y) || ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiMod_Shift | ImGuiKey_Z))
+        if (state.input.chord(KeyModifiers{.ctrl = true}, 'y') || state.input.chord(KeyModifiers{.ctrl = true, .shift = true}, 'z'))
         {
             redoAnimator(state);
         }
-        if (ImGui::IsKeyPressed(ImGuiKey_Delete, false))
+        if (state.input.pressed(platform::Key::Delete, false))
         {
             deleteSelection(state);
         }
@@ -2496,8 +2495,8 @@ void drawAnimatorPanel(ToolsState& state, scene::Scene& scene)
     {
         state.animatorUi = std::make_shared<AnimatorUi>();
     }
-    state.animatorUi->update(state, kit, scene, core::Duration(ImGui::GetIO().DeltaTime));
-    ImGui::End();
+    state.animatorUi->update(state, kit, scene, core::Duration(state.input.delta()));
+    endDockedPanel(state);
 }
 
 void renderAnimatorPanel(ToolsState& state, render::RenderWorld& world)

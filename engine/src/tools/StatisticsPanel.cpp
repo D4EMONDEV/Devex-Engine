@@ -285,8 +285,8 @@ void drawStatisticsPanel(ToolsState& state, const scene::Scene& scene)
     {
         state.statisticsUi = std::make_shared<StatisticsUi>();
     }
-    state.statisticsUi->update(state, kit, scene, core::Duration(ImGui::GetIO().DeltaTime));
-    ImGui::End();
+    state.statisticsUi->update(state, kit, scene, core::Duration(state.input.delta()));
+    endDockedPanel(state);
 }
 
 void renderStatistics(ToolsState& state, render::RenderWorld& world)

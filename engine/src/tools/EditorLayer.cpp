@@ -20,6 +20,13 @@
 
 namespace devex::tools::detail {
 
+namespace {
+
+// The host of the layer, over everything.
+constexpr const char* editorLayerHost = "##editor layer";
+
+} // namespace
+
 using scene::Entity;
 using scene::UiRect;
 using namespace rects;
@@ -61,11 +68,11 @@ struct EditorLayerUi : PanelBuilder
     Entity tipText;
     // The window the keyboard was in before a strip or a menu took it, which takes it back once the
     // menu closes or the strip is let go.
-    ImGuiWindow* working = nullptr;
+    std::string working;
     bool holdsFocus = false;
 
     void build();
-    void giveFocusBack();
+    void giveFocusBack(EditorHosts& hosts);
     [[nodiscard]] bool menuOpen();
     // Makes the entries of a list, and returns the size the list takes.
     math::Vec2 fill(EditorUiKit& kit, Entity parent, const std::vector<MenuEntry>& shown, std::vector<Item>& made);
@@ -115,11 +122,11 @@ void EditorLayerUi::build()
     scene().get<scene::UiText>(tipText).verticalAlign = scene::TextVerticalAlign::Top;
 }
 
-void EditorLayerUi::giveFocusBack()
+void EditorLayerUi::giveFocusBack(EditorHosts& hosts)
 {
-    if (std::exchange(holdsFocus, false) && working != nullptr && working->WasActive)
+    if (std::exchange(holdsFocus, false) && !working.empty())
     {
-        ImGui::FocusWindow(working);
+        hosts.focus(working);
     }
 }
 
@@ -218,7 +225,7 @@ void EditorLayerUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& ed
     ui::UiWorld& world = panel.world();
     const float zoom = UiPanel::zoomFor(font);
     const float unitsPerPoint = (ImGui::GetIO().DisplayFramebufferScale.x > 0.0f ? ImGui::GetIO().DisplayFramebufferScale.x : 1.0f) / zoom;
-    const ImVec2 origin = ImGui::GetCursorScreenPos();
+    const ImVec2 origin = state.hosts.cursor();
 
     // A menu asked for since the last frame: its entries, under where it was asked.
     if (std::exchange(pending, false))
@@ -239,7 +246,7 @@ void EditorLayerUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& ed
     {
         const float padding = std::round(font * 0.45f);
         const asset::FontData* const letters = kit.fontData(EditorUiKit::regularFont());
-        const math::Vec2 room{ImGui::GetContentRegionAvail().x * unitsPerPoint, ImGui::GetContentRegionAvail().y * unitsPerPoint};
+        const math::Vec2 room{state.hosts.available().x * unitsPerPoint, state.hosts.available().y * unitsPerPoint};
         const float wrapWidth = std::max(std::min(room.x - padding * 2.0f - 8.0f, font * 56.0f), font * 4.0f);
         const math::Vec2 measured =
             letters != nullptr ? ui::measureText(*letters, tooltip->text, ui::TextStyle{.size = font, .wrap = true}, wrapWidth) : math::Vec2{0.0f};
@@ -283,7 +290,7 @@ void EditorLayerUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& ed
         world.closePopup(scene(), menu);
         owner.reset();
         // Before the choice runs: it may bring a window of its own to the front.
-        giveFocusBack();
+        giveFocusBack(state.hosts);
         if (action)
         {
             action(state, edited);
@@ -330,23 +337,6 @@ void EditorLayerUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& ed
     }
 }
 
-namespace {
-
-// Whether a window is one of the frame of the editor rather than one a user works in.
-[[nodiscard]] bool isFrameWindow(const ImGuiWindow& window) noexcept
-{
-    for (const char* const name : {"##menu bar", "##status bar", "##editor menus", "##editor tooltips", "##dock"})
-    {
-        if (std::strcmp(window.Name, name) == 0)
-        {
-            return true;
-        }
-    }
-    return false;
-}
-
-} // namespace
-
 void openEditorMenu(ToolsState& state, std::vector<MenuEntry> entries, ImVec2 at, std::size_t owner)
 {
     if (!state.editorLayerUi)
@@ -354,6 +344,11 @@ void openEditorMenu(ToolsState& state, std::vector<MenuEntry> entries, ImVec2 at
         state.editorLayerUi = std::make_shared<EditorLayerUi>();
     }
     EditorLayerUi& layer = *state.editorLayerUi;
+    // The keyboard goes back where it was once the menu closes.
+    if (!layer.holdsFocus && state.hosts.focusedId() != editorLayerHost)
+    {
+        layer.working = state.hosts.focusedId();
+    }
     layer.holdsFocus = true;
     layer.entries = std::move(entries);
     layer.owner = owner;
@@ -393,52 +388,26 @@ void drawEditorLayer(ToolsState& state, scene::Scene& scene)
     }
     EditorLayerUi& layer = *state.editorLayerUi;
     const bool menu = layer.menuOpen();
-    // The strips and the menus borrow the keyboard: a click on the menu bar does not take it away
-    // from the panel one was working in.
-    if (ImGuiWindow* const focused = ImGui::GetCurrentContext()->NavWindow; focused != nullptr && !isFrameWindow(*focused))
-    {
-        layer.working = focused;
-    }
-    else if (focused != nullptr && !menu && !ImGui::IsAnyMouseDown())
-    {
-        layer.holdsFocus = true;
-    }
     if (!menu)
     {
-        layer.giveFocusBack();
+        layer.giveFocusBack(state.hosts);
     }
     if (!menu && !tooltip)
     {
         return;
     }
 
-    // Over the whole window and every other one; without a menu, the mouse goes through it.
+    // Over the whole window and everything else; without a menu, the mouse goes through it. An open
+    // menu takes the keyboard, and gives it back when it closes.
     const ImGuiViewport* const viewport = ImGui::GetMainViewport();
-    ImGui::SetNextWindowPos(viewport->Pos);
-    ImGui::SetNextWindowSize(viewport->Size);
-    ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoSavedSettings |
-                             ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoScrollWithMouse;
-    if (menu)
+    state.hosts.begin(editorLayerHost, viewport->Pos, ImVec2(viewport->Pos.x + viewport->Size.x, viewport->Pos.y + viewport->Size.y),
+                      HostLayer::Menus, HostOptions{.focusable = menu, .takesPointer = menu});
+    if (menu && layer.pending)
     {
-        if (layer.pending)
-        {
-            ImGui::SetNextWindowFocus();
-        }
+        state.hosts.focus(editorLayerHost);
     }
-    else
-    {
-        flags |= ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoFocusOnAppearing;
-    }
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
-    const bool shown = ImGui::Begin(menu ? "##editor menus" : "##editor tooltips", nullptr, flags);
-    ImGui::PopStyleVar(2);
-    if (shown)
-    {
-        ImGui::BringWindowToDisplayFront(ImGui::GetCurrentWindow());
-        layer.update(state, kit, scene, core::Duration(ImGui::GetIO().DeltaTime), tooltip);
-    }
-    ImGui::End();
+    layer.update(state, kit, scene, core::Duration(state.input.delta()), tooltip);
+    state.hosts.end();
 }
 
 void renderEditorLayer(ToolsState& state, render::RenderWorld& world)

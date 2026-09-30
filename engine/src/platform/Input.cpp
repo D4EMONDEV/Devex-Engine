@@ -82,6 +82,34 @@ void Input::pressLetter(char letter) noexcept
     if (letter >= 'a' && letter <= 'z')
     {
         m_lettersPressed.set(static_cast<std::size_t>(letter - 'a'));
+        m_lettersDown.set(static_cast<std::size_t>(letter - 'a'));
+    }
+}
+
+bool Input::isLetterDown(char letter) const noexcept
+{
+    return letter >= 'a' && letter <= 'z' && m_lettersDown.test(static_cast<std::size_t>(letter - 'a'));
+}
+
+bool Input::wasLetterRepeated(char letter) const noexcept
+{
+    return letter >= 'a' && letter <= 'z' && m_lettersRepeated.test(static_cast<std::size_t>(letter - 'a'));
+}
+
+void Input::repeatLetter(char letter) noexcept
+{
+    if (letter >= 'a' && letter <= 'z')
+    {
+        m_lettersRepeated.set(static_cast<std::size_t>(letter - 'a'));
+        m_lettersDown.set(static_cast<std::size_t>(letter - 'a'));
+    }
+}
+
+void Input::releaseLetter(char letter) noexcept
+{
+    if (letter >= 'a' && letter <= 'z')
+    {
+        m_lettersDown.reset(static_cast<std::size_t>(letter - 'a'));
     }
 }
 
@@ -121,6 +149,7 @@ void Input::beginFrame() noexcept
     m_keysReleased.reset();
     m_keysRepeated.reset();
     m_lettersPressed.reset();
+    m_lettersRepeated.reset();
     m_buttonsPressed.reset();
     m_buttonsReleased.reset();
     m_mouseDelta = math::Vec2{0.0f};
@@ -263,6 +292,7 @@ void Input::releaseAll() noexcept
 {
     m_keysReleased |= m_keysDown;
     m_keysDown.reset();
+    m_lettersDown.reset();
     m_buttonsReleased |= m_buttonsDown;
     m_buttonsDown.reset();
     for (Gamepad& gamepad : m_gamepads)

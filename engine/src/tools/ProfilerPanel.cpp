@@ -149,10 +149,9 @@ constexpr std::array<std::string_view, 4> waitingZones{"Frame limit", "Wait for 
 
 // While recording, the newest frame the GPU has finished, taken again twice a second; once paused,
 // the frame chosen in the bars.
-[[nodiscard]] FramePtr shownFrame(ProfilerView& view, std::span<const FramePtr> frames)
+[[nodiscard]] FramePtr shownFrame(ProfilerView& view, std::span<const FramePtr> frames, double now)
 {
     const auto found = std::ranges::find(frames, view.frame, [](const FramePtr& frame) { return frame->index; });
-    const double now = ImGui::GetTime();
     if (!core::profiler::isPaused() && (found == frames.end() || now - view.frameTaken >= followSeconds))
     {
         if (frames.empty())
@@ -257,7 +256,7 @@ struct ProfilerUi : FormUi
     void syncToolbar(EditorUiKit& kit, const core::ProfileFrame* frame);
     void syncBars(std::span<const FramePtr> frames, const core::ProfileFrame* shown);
     void syncTimeline(EditorUiKit& kit, ProfilerView& view, const core::ProfileFrame* frame, const std::vector<std::string>& threads);
-    void answerTimeline(ProfilerView& view, const core::ProfileFrame* frame);
+    void answerTimeline(ToolsState& state, ProfilerView& view, const core::ProfileFrame* frame);
     void buildTable(ToolsState& state, EditorUiKit& kit, const core::ProfileFrame* frame, const std::vector<std::string>& threads);
     // A line of a table: its text at the left, indented, and cells at the right.
     Entity tableRow(float height = 0.0f);
@@ -629,7 +628,7 @@ void ProfilerUi::syncTimeline(EditorUiKit& kit, ProfilerView& view, const core::
     }
 }
 
-void ProfilerUi::answerTimeline(ProfilerView& view, const core::ProfileFrame* frame)
+void ProfilerUi::answerTimeline(ToolsState& state, ProfilerView& view, const core::ProfileFrame* frame)
 {
     const ui::LaidOutRect* const area = panel.world().canvases().empty() ? nullptr : panel.world().canvases().front().layout.find(timeline);
     if (frame == nullptr || area == nullptr)
@@ -682,7 +681,7 @@ void ProfilerUi::answerTimeline(ProfilerView& view, const core::ProfileFrame* fr
         dragging = false;
     }
     // A double click shows the whole frame again.
-    if (inside && panel.hovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
+    if (inside && panel.hovered() && state.input.doubleClicked(Mouse::Left))
     {
         begin = 0.0;
         end = length;
@@ -940,10 +939,10 @@ void ProfilerUi::update(ToolsState& state, EditorUiKit& kit, core::Duration delt
 
     ProfilerView& view = state.profiler;
     const std::vector<FramePtr> frames = core::profiler::history();
-    const FramePtr frame = shownFrame(view, frames);
+    const FramePtr frame = shownFrame(view, frames, state.input.time());
     const std::vector<std::string> threads = core::profiler::threadNames();
     // The memory of the assets, read twice a second while its tab shows.
-    const double now = ImGui::GetTime();
+    const double now = state.input.time();
     std::uint64_t memoryStamp = 0;
     if (tab == Tab::Memory && state.memoryReport)
     {
@@ -1024,7 +1023,7 @@ void ProfilerUi::update(ToolsState& state, EditorUiKit& kit, core::Duration delt
             }
         }
     }
-    answerTimeline(view, frame.get());
+    answerTimeline(state, view, frame.get());
 
     // The zone under the pointer tells its time and its share of the frame in its tooltip; the
     // others say nothing, so that only one text is made a frame.
@@ -1069,8 +1068,8 @@ void drawProfilerPanel(ToolsState& state)
     {
         state.profilerUi = std::make_shared<ProfilerUi>();
     }
-    state.profilerUi->update(state, kit, core::Duration(ImGui::GetIO().DeltaTime));
-    ImGui::End();
+    state.profilerUi->update(state, kit, core::Duration(state.input.delta()));
+    endDockedPanel(state);
 }
 
 void renderProfiler(ToolsState& state, render::RenderWorld& world)

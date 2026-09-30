@@ -20,6 +20,7 @@
 #endif
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cstddef>
 #include <cstdlib>
@@ -249,6 +250,57 @@ struct InputCapture
     bool mouse = false;
 };
 
+// What the tools of the editor read: every key, press and motion, which the game may not see.
+void recordToolsInput(const SDL_Event& event, Input& input)
+{
+    const auto letterOf = [](SDL_Keycode key) -> char { return key >= SDLK_A && key <= SDLK_Z ? static_cast<char>('a' + (key - SDLK_A)) : '\0'; };
+    switch (event.type)
+    {
+    case SDL_EVENT_WINDOW_FOCUS_LOST:
+        input.releaseAll();
+        break;
+    case SDL_EVENT_KEY_DOWN:
+        if (event.key.repeat)
+        {
+            input.repeatKey(toKey(event.key.scancode));
+            input.repeatLetter(letterOf(event.key.key));
+        }
+        else
+        {
+            input.setKeyDown(toKey(event.key.scancode), true);
+            input.pressLetter(letterOf(event.key.key));
+        }
+        break;
+    case SDL_EVENT_KEY_UP:
+        input.setKeyDown(toKey(event.key.scancode), false);
+        input.releaseLetter(letterOf(event.key.key));
+        break;
+    case SDL_EVENT_MOUSE_BUTTON_DOWN:
+    case SDL_EVENT_MOUSE_BUTTON_UP:
+        if (const std::optional<MouseButton> button = toMouseButton(event.button.button))
+        {
+            input.setMouseButtonDown(*button, event.button.down);
+        }
+        break;
+    case SDL_EVENT_MOUSE_MOTION:
+        input.moveMouse(math::Vec2{event.motion.x, event.motion.y}, math::Vec2{event.motion.xrel, event.motion.yrel});
+        break;
+    case SDL_EVENT_MOUSE_WHEEL: {
+        const float direction = event.wheel.direction == SDL_MOUSEWHEEL_FLIPPED ? -1.0f : 1.0f;
+        input.scrollMouse(math::Vec2{event.wheel.x * direction, event.wheel.y * direction});
+        break;
+    }
+    case SDL_EVENT_TEXT_INPUT:
+        if (event.text.text != nullptr)
+        {
+            input.addTypedText(event.text.text);
+        }
+        break;
+    default:
+        break;
+    }
+}
+
 void dispatchEvent(const SDL_Event& event, Input& input, InputCapture capture,
                    const EventCallback& callback)
 {
@@ -442,6 +494,7 @@ core::Result<Platform> Platform::create()
 Platform::Platform(Platform&& other) noexcept
     : m_initialized(std::exchange(other.m_initialized, false))
     , m_input(other.m_input)
+    , m_toolsInput(other.m_toolsInput)
 {
 }
 
@@ -452,6 +505,7 @@ Platform& Platform::operator=(Platform&& other) noexcept
         shutdown();
         m_initialized = std::exchange(other.m_initialized, false);
         m_input = other.m_input;
+        m_toolsInput = other.m_toolsInput;
     }
     return *this;
 }
@@ -567,6 +621,7 @@ void Platform::pollEvents(const EventCallback& callback)
     DEVEX_ASSERT(m_initialized);
 
     m_input.beginFrame();
+    m_toolsInput.beginFrame();
     const InputCapture capture{m_imguiCapturesKeyboard, m_imguiCapturesMouse};
     SDL_Event event;
     while (SDL_PollEvent(&event))
@@ -575,6 +630,7 @@ void Platform::pollEvents(const EventCallback& callback)
         {
             ImGui_ImplSDL3_ProcessEvent(&event);
         }
+        recordToolsInput(event, m_toolsInput);
         dispatchEvent(event, m_input, capture, callback);
     }
 
@@ -630,6 +686,74 @@ void Platform::setImGuiInputCapture(bool keyboard, bool mouse) noexcept
 const Input& Platform::input() const noexcept
 {
     return m_input;
+}
+
+const Input& Platform::toolsInput() const noexcept
+{
+    return m_toolsInput;
+}
+
+void Platform::setTextInputArea(const Window& window, math::Vec2 min, math::Vec2 max)
+{
+    DEVEX_ASSERT(m_initialized);
+    if (SDL_Window* const handle = detail::toSdlWindow(window.m_native))
+    {
+        const SDL_Rect area{static_cast<int>(min.x), static_cast<int>(min.y), static_cast<int>(std::max(max.x - min.x, 1.0f)),
+                            static_cast<int>(std::max(max.y - min.y, 1.0f))};
+        SDL_SetTextInputArea(handle, &area, 0);
+    }
+}
+
+void Platform::setCursor(Cursor cursor)
+{
+    DEVEX_ASSERT(m_initialized);
+    if (cursor == m_cursor)
+    {
+        return;
+    }
+    m_cursor = cursor;
+    // Made once each, and kept until SDL quits.
+    static std::array<SDL_Cursor*, 9> made{};
+    SDL_Cursor*& shape = made[static_cast<std::size_t>(cursor)];
+    if (shape == nullptr)
+    {
+        SDL_SystemCursor system = SDL_SYSTEM_CURSOR_DEFAULT;
+        switch (cursor)
+        {
+        case Cursor::Arrow:
+            system = SDL_SYSTEM_CURSOR_DEFAULT;
+            break;
+        case Cursor::Text:
+            system = SDL_SYSTEM_CURSOR_TEXT;
+            break;
+        case Cursor::ResizeHorizontal:
+            system = SDL_SYSTEM_CURSOR_EW_RESIZE;
+            break;
+        case Cursor::ResizeVertical:
+            system = SDL_SYSTEM_CURSOR_NS_RESIZE;
+            break;
+        case Cursor::ResizeDiagonalDown:
+            system = SDL_SYSTEM_CURSOR_NWSE_RESIZE;
+            break;
+        case Cursor::ResizeDiagonalUp:
+            system = SDL_SYSTEM_CURSOR_NESW_RESIZE;
+            break;
+        case Cursor::Move:
+            system = SDL_SYSTEM_CURSOR_MOVE;
+            break;
+        case Cursor::Hand:
+            system = SDL_SYSTEM_CURSOR_POINTER;
+            break;
+        case Cursor::NotAllowed:
+            system = SDL_SYSTEM_CURSOR_NOT_ALLOWED;
+            break;
+        }
+        shape = SDL_CreateSystemCursor(system);
+    }
+    if (shape != nullptr)
+    {
+        SDL_SetCursor(shape);
+    }
 }
 
 std::filesystem::path Platform::baseDirectory() const

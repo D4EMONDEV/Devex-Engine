@@ -116,8 +116,7 @@ enum class DropPlace : std::uint8_t
 // anchor and this one, as the tree listed them.
 void clickRow(ToolsState& state, core::Uuid uuid)
 {
-    const ImGuiIO& io = ImGui::GetIO();
-    if (io.KeyShift && !state.rangeAnchor.isNil())
+    if (state.input.shift() && !state.rangeAnchor.isNil())
     {
         const auto from = std::ranges::find(state.hierarchyOrder, state.rangeAnchor);
         const auto to = std::ranges::find(state.hierarchyOrder, uuid);
@@ -127,7 +126,7 @@ void clickRow(ToolsState& state, core::Uuid uuid)
             // The clicked row ends active.
             std::erase(range, uuid);
             range.push_back(uuid);
-            if (!io.KeyCtrl)
+            if (!state.input.ctrl())
             {
                 state.selection.clear();
             }
@@ -138,7 +137,7 @@ void clickRow(ToolsState& state, core::Uuid uuid)
             return;
         }
     }
-    if (io.KeyCtrl)
+    if (state.input.ctrl())
     {
         state.selection.toggle(uuid);
     }
@@ -354,31 +353,31 @@ void SceneTreeUi::build(ToolsState& state, EditorUiKit& kit)
                                                                .highlightColor = math::Vec4{accent.x, accent.y, accent.z, 0.08f}});
     scene().add<scene::UiContextMenu>(list, scene::UiContextMenu{.popup = scene().reference(menu)});
 
-    // The entities leave as ImGui carries them, for the fields of the inspector; entities and the
+    // The entities leave for the fields of the inspector; entities and the
     // files of FileSystem come in.
     panel.setKeyboardNavigation(false);
-    panel.setDragOut([](const ui::Carried& carried) -> std::optional<ImGuiDrag> {
+    panel.setDragOut([](const ui::Carried& carried) -> std::optional<EditorDrag> {
         const std::optional<core::Uuid> uuid = core::Uuid::parse(carried.data);
         if (carried.type != "entity" || !uuid)
         {
             return std::nullopt;
         }
-        ImGuiDrag drag{.type = entityPayload, .label = carried.label};
+        EditorDrag drag{.type = entityPayload, .label = carried.label};
         drag.payload.resize(uuid->bytes().size());
         std::memcpy(drag.payload.data(), uuid->bytes().data(), uuid->bytes().size());
         return drag;
     });
-    panel.setDragIn([](const ImGuiPayload& payload) -> std::optional<std::pair<std::string, std::string>> {
-        if (payload.IsDataType(entityPayload) && payload.DataSize == 16)
+    panel.setDragIn([](const EditorDrag& payload) -> std::optional<std::pair<std::string, std::string>> {
+        if (payload.is(entityPayload, 16))
         {
             std::array<std::uint8_t, 16> bytes{};
-            std::memcpy(bytes.data(), payload.Data, bytes.size());
+            std::memcpy(bytes.data(), payload.payload.data(), bytes.size());
             return std::pair{std::string("entity"), uuidFromBytes(bytes).toString()};
         }
-        if (payload.IsDataType(assetPayload) && payload.DataSize == sizeof(AssetPayload))
+        if (payload.is(assetPayload, sizeof(AssetPayload)))
         {
             AssetPayload asset;
-            std::memcpy(&asset, payload.Data, sizeof(asset));
+            std::memcpy(&asset, payload.payload.data(), sizeof(asset));
             // Only what the tree places: models and prefabs.
             if (asset.type == asset::AssetType::Model || asset.type == asset::AssetType::Scene)
             {
@@ -1003,15 +1002,15 @@ void SceneTreeUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& edit
         const auto current = std::ranges::find(nodes, state.selection.active(), &TreeNode::uuid);
         const std::size_t at = current != nodes.end() ? static_cast<std::size_t>(current - nodes.begin()) : 0;
         std::optional<std::size_t> moved;
-        if (ImGui::IsKeyPressed(ImGuiKey_DownArrow, true))
+        if (state.input.pressed(platform::Key::Down, true))
         {
             moved = current != nodes.end() ? std::min(at + 1, nodes.size() - 1) : 0;
         }
-        else if (ImGui::IsKeyPressed(ImGuiKey_UpArrow, true))
+        else if (state.input.pressed(platform::Key::Up, true))
         {
             moved = current != nodes.end() && at > 0 ? at - 1 : 0;
         }
-        else if (current != nodes.end() && ImGui::IsKeyPressed(ImGuiKey_RightArrow, true) && current->hasChildren)
+        else if (current != nodes.end() && state.input.pressed(platform::Key::Right, true) && current->hasChildren)
         {
             if (!current->expanded)
             {
@@ -1022,7 +1021,7 @@ void SceneTreeUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& edit
                 moved = at + 1;
             }
         }
-        else if (current != nodes.end() && ImGui::IsKeyPressed(ImGuiKey_LeftArrow, true))
+        else if (current != nodes.end() && state.input.pressed(platform::Key::Left, true))
         {
             if (current->hasChildren && current->expanded)
             {
@@ -1080,7 +1079,7 @@ void SceneTreeUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& edit
     }
     // A click under the rows chooses nothing.
     if (panel.input().pointerReleased && !world.carried() && world.hovered() == Entity{} && panel.hovered() &&
-        !world.isPopupOpen(scene(), menu) && world.dropped() == nullptr && !ImGui::GetIO().KeyCtrl && !ImGui::GetIO().KeyShift)
+        !world.isPopupOpen(scene(), menu) && world.dropped() == nullptr && !state.input.ctrl() && !state.input.shift())
     {
         const ui::LaidOutRect* const area = world.canvases().empty() ? nullptr : world.canvases().front().layout.find(list);
         const math::Vec2 point = panel.input().pointer;
@@ -1108,8 +1107,8 @@ void drawHierarchyPanel(ToolsState& state, scene::Scene& scene)
     {
         state.sceneTreeUi = std::make_shared<SceneTreeUi>();
     }
-    state.sceneTreeUi->update(state, *state.uiKit, scene, core::Duration(ImGui::GetIO().DeltaTime));
-    ImGui::End();
+    state.sceneTreeUi->update(state, *state.uiKit, scene, core::Duration(state.input.delta()));
+    endDockedPanel(state);
 }
 
 void renderSceneTree(ToolsState& state, render::RenderWorld& world)

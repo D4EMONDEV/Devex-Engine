@@ -513,8 +513,7 @@ void AnimationUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& edit
         head.offsetMax.x = x + 1.0f;
     }
     // The wheel scrolls the tracks; with Ctrl it zooms, and with Shift it slides along the clip.
-    const ImGuiIO& io = ImGui::GetIO();
-    scene().get<scene::UiScroll>(tracks).speed = io.KeyCtrl || io.KeyShift ? 0.0f : rowHeight() * 3.0f;
+    scene().get<scene::UiScroll>(tracks).speed = state.input.ctrl() || state.input.shift() ? 0.0f : rowHeight() * 3.0f;
 
     panel.update(kit, delta, zoom);
     answerClip();
@@ -562,24 +561,24 @@ void AnimationUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& edit
                             input.pointer.y <= area->max.y;
         const float across = std::clamp((input.pointer.x - left) / areaWidth, 0.0f, 1.0f);
         float span = end - begin;
-        if (inside && input.wheel != 0.0f && io.KeyCtrl)
+        if (inside && input.wheel != 0.0f && state.input.ctrl())
         {
             // Around the pointer, no closer than a few hundredths of a second across the width.
             const float at = begin + across * span;
             span = std::clamp(span * std::pow(0.8f, input.wheel), std::min(0.05f, duration), duration);
             begin = std::clamp(at - across * span, 0.0f, duration - span);
         }
-        else if (inside && input.wheel != 0.0f && io.KeyShift)
+        else if (inside && input.wheel != 0.0f && state.input.shift())
         {
             begin = std::clamp(begin - input.wheel * span * 0.1f, 0.0f, duration - span);
         }
-        if (inside && ImGui::IsMouseDown(ImGuiMouseButton_Middle))
+        if (inside && state.input.down(Mouse::Middle))
         {
-            begin = std::clamp(begin - io.MouseDelta.x * (panel.unitsOf(ImVec2(1.0f, 0.0f)).x - panel.unitsOf(ImVec2(0.0f, 0.0f)).x) / areaWidth * span, 0.0f,
+            begin = std::clamp(begin - state.input.mouseDelta().x * (panel.unitsOf(ImVec2(1.0f, 0.0f)).x - panel.unitsOf(ImVec2(0.0f, 0.0f)).x) / areaWidth * span, 0.0f,
                                duration - span);
         }
         // A double click shows the whole clip again.
-        if (inside && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
+        if (inside && state.input.doubleClicked(Mouse::Left))
         {
             begin = 0.0f;
             span = duration;
@@ -638,8 +637,8 @@ void drawAnimationPanel(ToolsState& state, scene::Scene& scene)
     {
         state.animationUi = std::make_shared<AnimationUi>();
     }
-    state.animationUi->update(state, kit, scene, core::Duration(ImGui::GetIO().DeltaTime));
-    ImGui::End();
+    state.animationUi->update(state, kit, scene, core::Duration(state.input.delta()));
+    endDockedPanel(state);
 }
 
 void renderAnimationPanel(ToolsState& state, render::RenderWorld& world)

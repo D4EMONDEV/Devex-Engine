@@ -86,7 +86,7 @@ struct ModalLayerUi : PanelBuilder
         const float pixelsPerPoint = io.DisplayFramebufferScale.x > 0.0f ? io.DisplayFramebufferScale.x : 1.0f;
         const float zoom = UiPanel::zoomFor(font);
         const float unitsPerPoint = pixelsPerPoint / zoom;
-        const ImVec2 origin = ImGui::GetCursorScreenPos();
+        const ImVec2 origin = state.hosts.cursor();
 
         scene().get<scene::UiImage>(veil).color = linearColor(ImVec4(0.0f, 0.0f, 0.0f, 0.45f));
         UiRect& framed = scene().get<UiRect>(frame);
@@ -108,12 +108,12 @@ struct ModalLayerUi : PanelBuilder
         closeRect.offsetMax = {-margin - font * 0.2f, margin + size};
         closeRect.style = barStyle(panel.world(), close, false);
 
-        panel.update(kit, core::Duration(io.DeltaTime), zoom);
+        panel.update(kit, core::Duration(state.input.delta()), zoom);
 
         // The cross, or Escape while nothing in the window is being typed into, closes a window of
         // settings; the dialogs answer Escape themselves.
-        const bool escaped = ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) && ImGui::IsKeyPressed(ImGuiKey_Escape, false) &&
-                             !io.WantTextInput;
+        const bool escaped = state.hosts.focused() && state.input.pressed(platform::Key::Escape, false) &&
+                             !state.typing;
         if (!heading.empty() && (panel.world().wasClicked(close) || escaped))
         {
             state.modalToClose = std::string(id);
@@ -190,32 +190,24 @@ bool beginModal(ToolsState& state, std::string_view id, ImVec2 size, std::string
     const ImVec2 center = viewport->GetWorkCenter();
     const ImVec2 frameMin(std::round(center.x - frameSize.x * 0.5f), std::round(center.y - frameSize.y * 0.5f));
 
+    // The veil over everything takes the pointer and the keyboard; the card stands in it.
     const std::string window = "##modal " + std::string(id);
+    state.hosts.begin(window, viewport->Pos, ImVec2(viewport->Pos.x + viewport->Size.x, viewport->Pos.y + viewport->Size.y), HostLayer::Modal);
     if (layer.shown != id)
     {
-        ImGui::SetNextWindowFocus();
+        state.hosts.focus(window);
         layer.shown = std::string(id);
     }
-    ImGui::SetNextWindowPos(viewport->Pos);
-    ImGui::SetNextWindowSize(viewport->Size);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
-    ImGui::Begin(window.c_str(), nullptr,
-                 ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoBackground |
-                     ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoNav);
-    ImGui::BringWindowToDisplayFront(ImGui::GetCurrentWindow());
     layer.update(state, kit, id, frameMin, frameSize, titleHeight, title);
-    ImGui::SetCursorScreenPos(ImVec2(frameMin.x + border, frameMin.y + titleHeight));
-    ImGui::BeginChild("##card", card, ImGuiChildFlags_None, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoBackground);
-    ImGui::PopStyleVar(3);
+    const ImVec2 cardMin(frameMin.x + border, frameMin.y + titleHeight);
+    state.hosts.begin(window + " card", cardMin, ImVec2(cardMin.x + card.x, cardMin.y + card.y), HostLayer::Modal);
     return true;
 }
 
-void endModal()
+void endModal(ToolsState& state)
 {
-    ImGui::EndChild();
-    ImGui::End();
+    state.hosts.end();
+    state.hosts.end();
 }
 
 bool takeModalClose(ToolsState& state, std::string_view id)

@@ -261,7 +261,7 @@ public:
             return;
         }
         // Animated tiles play in the palette as in the game.
-        const double seconds = ImGui::GetTime();
+        const double seconds = state.input.time();
         for (std::size_t index = 0; index < tileset.tiles.size(); ++index)
         {
             const asset::TileData& tile = tileset.tiles[index];

@@ -308,7 +308,7 @@ void EditorDialogsUi::update(ToolsState& state, EditorUiKit& kit, core::Duration
         world.startEditing(scene(), scriptName, true);
     }
 
-    const bool escape = panel.input().cancelPressed || (panel.focused() && ImGui::IsKeyPressed(ImGuiKey_Escape, false));
+    const bool escape = panel.input().cancelPressed || (panel.focused() && state.input.pressed(platform::Key::Escape, false));
     switch (kind)
     {
     case DialogKind::NewScript:
@@ -343,7 +343,7 @@ void EditorDialogsUi::update(ToolsState& state, EditorUiKit& kit, core::Duration
         break;
     case DialogKind::About:
         if (world.wasClicked(confirm.entity) || escape ||
-            (panel.focused() && (ImGui::IsKeyPressed(ImGuiKey_Enter, false) || ImGui::IsKeyPressed(ImGuiKey_KeypadEnter, false))))
+            (panel.focused() && (state.input.pressed(platform::Key::Enter, false) || state.input.pressed(platform::Key::KeypadEnter, false))))
         {
             open = false;
         }
@@ -391,8 +391,8 @@ void drawEditorPopups(ToolsState& state, scene::Scene& scene)
     {
         return;
     }
-    ui->update(state, kit, core::Duration(ImGui::GetIO().DeltaTime));
-    endModal();
+    ui->update(state, kit, core::Duration(state.input.delta()));
+    endModal(state);
     if (!ui->open)
     {
         closeModal(state, dialogPopup);
