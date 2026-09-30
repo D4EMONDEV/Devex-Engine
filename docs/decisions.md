@@ -2354,6 +2354,12 @@ les assets s'écrivent au fil de leur lecture.
     Animator 6,7 ms. En Release l'image attend la synchronisation de l'écran (4,2 ms à 240 Hz), et
     l'éditeur prend 0,43 ms de processeur par image, 0,58 ms avec l'écran Script et ses cinq mille
     lignes, 0,44 ms avec l'Animator : ce que coûte une zone de texte ne grandit pas avec son texte.
+  - **Puis les lignes d'une zone de texte gardent leurs lettres** d'une image à l'autre, comme les
+    textes du jalon 47 : `TextCache::areaLine` garde chaque ligne en vue et son numéro, placés
+    depuis l'origine et déplacés au dessin, et ne les place à nouveau que si leur texte change ;
+    une ligne qui sort de la vue est oubliée. L'écran Script sur cinq mille lignes passe de 13,0 à
+    10,5 ms par image en Debug (le dessin des panneaux de 4,8 à 2,6 ms), et de 0,32 à 0,23 ms de
+    dessin en Release.
 - **Puis l'éditeur de texte** (jalon 50), le dernier panneau en ImGui, qui reposait sur le champ
   multi-ligne d'ImGui (curseur, sélection, annulation, défilement). Le champ de Devex UI, `UiInput`,
   replace tout son texte à chaque image : bien pour une ligne, pas pour un fichier de code.

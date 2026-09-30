@@ -35,23 +35,48 @@ const TextLayoutResult& TextCache::layout(scene::Entity element, std::uint32_t p
     return entry.letters;
 }
 
+const TextAreaLine& TextCache::areaLine(scene::Entity element, std::size_t line, bool number, const asset::FontData& font, std::string_view text,
+                                        float size, std::int32_t tabSize)
+{
+    AreaEntry& entry = m_areaLines[(static_cast<std::uint64_t>(element.index) << 32) ^ ((static_cast<std::uint64_t>(line) << 1) | (number ? 1u : 0u))];
+    entry.used = true;
+    const bool kept = entry.font == &font && entry.generation == element.generation && entry.bakedSize == font.bakedSize &&
+                      entry.glyphCount == font.glyphs.size() && entry.size == size && entry.tabSize == tabSize && entry.text == text;
+    if (!kept)
+    {
+        entry.generation = element.generation;
+        entry.font = &font;
+        entry.bakedSize = font.bakedSize;
+        entry.glyphCount = font.glyphs.size();
+        entry.text.assign(text);
+        entry.size = size;
+        entry.tabSize = tabSize;
+        layoutAreaLine(font, text, size, tabSize, math::Vec2{0.0f}, entry.placed);
+        ++m_placed;
+    }
+    return entry.placed;
+}
+
 void TextCache::sweep()
 {
-    std::erase_if(m_entries, [](auto& entry) {
+    const auto unused = [](auto& entry) {
         const bool used = entry.second.used;
         entry.second.used = false;
         return !used;
-    });
+    };
+    std::erase_if(m_entries, unused);
+    std::erase_if(m_areaLines, unused);
 }
 
 void TextCache::clear() noexcept
 {
     m_entries.clear();
+    m_areaLines.clear();
 }
 
 std::size_t TextCache::size() const noexcept
 {
-    return m_entries.size();
+    return m_entries.size() + m_areaLines.size();
 }
 
 std::uint64_t TextCache::placed() const noexcept

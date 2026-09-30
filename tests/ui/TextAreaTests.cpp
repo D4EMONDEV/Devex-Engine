@@ -5,6 +5,7 @@
 #include <devex/ui/DrawList.hpp>
 #include <devex/ui/Layout.hpp>
 #include <devex/ui/TextArea.hpp>
+#include <devex/ui/TextCache.hpp>
 #include <devex/ui/UiWorld.hpp>
 
 #include <catch2/catch_approx.hpp>
@@ -433,4 +434,29 @@ TEST_CASE("The runs of an area take their colours, and what is selected or found
     // A line that is marked is underlined, and with a gutter it has a bar at its left.
     notes.world.setTextMarks(notes.area, {devex::ui::TextLineMark{.line = 0, .color = Vec4{1.0f, 0.0f, 0.0f, 1.0f}}});
     CHECK(notes.draw().uiVertices.size() == 10 * 4);
+}
+
+TEST_CASE("The lines of an area keep their letters from a drawing to the next until they change", "[ui][textarea]")
+{
+    Notes notes("one\ntwo\nthree", UiTextArea{.lineNumbers = true});
+    devex::ui::TextCache cache;
+    const auto draw = [&] {
+        devex::render::RenderWorld drawn;
+        devex::ui::LayoutResult layout;
+        devex::ui::layoutCanvas(notes.scene, notes.canvas, window, layout);
+        devex::ui::buildDrawList(notes.scene, layout, devex::ui::DrawContext{.fonts = &fontRef, .textCache = &cache}, drawn);
+        cache.sweep();
+        return drawn;
+    };
+    // Three lines and their three numbers.
+    const devex::render::RenderWorld first = draw();
+    CHECK(cache.placed() == 6);
+    const devex::render::RenderWorld second = draw();
+    CHECK(cache.placed() == 6);
+    REQUIRE(second.uiVertices.size() == first.uiVertices.size());
+    CHECK(second.uiVertices.front().position == first.uiVertices.front().position);
+    // A line that changes is placed again, alone.
+    notes.text() = "one\nTWO\nthree";
+    static_cast<void>(draw());
+    CHECK(cache.placed() == 7);
 }

@@ -1036,18 +1036,28 @@ void drawTextArea(Builder& builder, const DrawContext& context, const LaidOutRec
     const math::Vec2 lettersMax = rect.max;
     cut(lettersMin, lettersMax);
 
-    // The lines in view, placed once for everything drawn over and under them.
-    static thread_local std::vector<TextAreaLine> lines;
-    if (lines.size() < last - first)
-    {
-        lines.resize(last - first);
-    }
+    // The lines in view, placed from the origin once for everything drawn over and under them, and
+    // kept from a frame to the next while their text stays the same. `left` moves them across.
+    const float left = metrics.origin.x - scroll.x;
+    static thread_local std::vector<TextAreaLine> placedHere;
+    static thread_local std::vector<const TextAreaLine*> lines;
+    lines.resize(last - first);
     for (std::size_t line = first; line < last; ++line)
     {
-        layoutAreaLine(*font.data, lineText(text.text, starts, line), text.size, area.tabSize, math::Vec2{metrics.origin.x - scroll.x, topOf(line)},
-                       lines[line - first]);
+        const std::string_view content = lineText(text.text, starts, line);
+        if (context.textCache != nullptr)
+        {
+            lines[line - first] = &context.textCache->areaLine(rect.entity, line, false, *font.data, content, text.size, area.tabSize);
+            continue;
+        }
+        if (placedHere.size() < last - first)
+        {
+            placedHere.resize(last - first);
+        }
+        layoutAreaLine(*font.data, content, text.size, area.tabSize, math::Vec2{0.0f}, placedHere[line - first]);
+        lines[line - first] = &placedHere[line - first];
     }
-    const auto endOf = [&](std::size_t line) { return starts[line] + lines[line - first].length; };
+    const auto endOf = [&](std::size_t line) { return starts[line] + lines[line - first]->length; };
     // A run of the text behind its letters, on every line in view it crosses.
     const auto behind = [&](std::size_t begin, std::size_t end, math::Vec4 color) {
         if (end <= begin || color.w <= 0.0f)
@@ -1056,15 +1066,15 @@ void drawTextArea(Builder& builder, const DrawContext& context, const LaidOutRec
         }
         for (std::size_t line = std::max(lineOfOffset(starts, begin), first); line < last && starts[line] < end; ++line)
         {
-            const TextAreaLine& placed = lines[line - first];
-            const float left = placed.xOf(std::max<std::size_t>(begin, starts[line]) - starts[line]);
-            float right = placed.xOf(std::min(end, endOf(line)) - starts[line]);
+            const TextAreaLine& placed = *lines[line - first];
+            const float from = left + placed.xOf(std::max<std::size_t>(begin, starts[line]) - starts[line]);
+            float right = left + placed.xOf(std::min(end, endOf(line)) - starts[line]);
             if (end > endOf(line))
             {
                 // The new line that ends it is taken too.
                 right += text.size * 0.45f;
             }
-            fill(builder, math::Vec2{left, topOf(line)}, math::Vec2{right, topOf(line) + metrics.lineHeight}, color);
+            fill(builder, math::Vec2{from, topOf(line)}, math::Vec2{right, topOf(line) + metrics.lineHeight}, color);
         }
     };
 
@@ -1101,8 +1111,9 @@ void drawTextArea(Builder& builder, const DrawContext& context, const LaidOutRec
         render::UiDraw& draw = builder.batch(render::UiDrawKind::Text, font.atlas, math::Vec4{0.0f}, 0.0f, sharpness);
         for (std::size_t line = first; line < last; ++line)
         {
-            const TextAreaLine& placed = lines[line - first];
+            const TextAreaLine& placed = *lines[line - first];
             const std::vector<CaretStop>& stops = placed.layout.stops;
+            const math::Vec2 step{left, topOf(line)};
             std::size_t stop = 0;
             for (const GlyphQuad& glyph : placed.layout.glyphs)
             {
@@ -1118,13 +1129,14 @@ void drawTextArea(Builder& builder, const DrawContext& context, const LaidOutRec
                     ++span;
                 }
                 const bool coloured = span < spans.size() && spans[span].begin <= offset;
-                builder.quad(draw, glyph.min, glyph.max, glyph.uvMin, glyph.uvMax, coloured ? withOpacity(spans[span].color, rect.opacity) : plain);
+                builder.quad(draw, glyph.min + step, glyph.max + step, glyph.uvMin, glyph.uvMax,
+                             coloured ? withOpacity(spans[span].color, rect.opacity) : plain);
             }
         }
     }
     if (view != nullptr && view->caretVisible && caretLine >= first && caretLine < last)
     {
-        const float x = lines[caretLine - first].xOf(view->caret - starts[caretLine]);
+        const float x = left + lines[caretLine - first]->xOf(view->caret - starts[caretLine]);
         fill(builder, math::Vec2{x, topOf(caretLine)}, math::Vec2{x + std::max(text.size * 0.09f, 1.0f), topOf(caretLine) + metrics.lineHeight},
              withOpacity(area.caretColor, rect.opacity));
     }
@@ -1145,19 +1157,28 @@ void drawTextArea(Builder& builder, const DrawContext& context, const LaidOutRec
                 }
             }
         }
-        static thread_local TextLayoutResult number;
+        static thread_local TextAreaLine number;
         static thread_local std::string digits;
         const float digit = metrics.gutter / static_cast<float>(std::to_string(starts.size()).size() + 2);
         render::UiDraw& draw = builder.batch(render::UiDrawKind::Text, font.atlas, math::Vec4{0.0f}, 0.0f, sharpness);
         for (std::size_t line = first; line < last; ++line)
         {
             digits = std::to_string(line + 1);
-            layoutText(*font.data, digits, TextStyle{.size = text.size, .align = scene::TextAlign::Right, .wrap = false},
-                       math::Vec2{rect.min.x, topOf(line)}, math::Vec2{rect.min.x + metrics.gutter - digit, topOf(line)}, number);
-            const math::Vec4 color = view != nullptr && view->focused && line == caretLine ? plain : withOpacity(area.lineNumberColor, rect.opacity);
-            for (const GlyphQuad& glyph : number.glyphs)
+            const TextAreaLine* placed = &number;
+            if (context.textCache != nullptr)
             {
-                builder.quad(draw, glyph.min, glyph.max, glyph.uvMin, glyph.uvMax, color);
+                placed = &context.textCache->areaLine(rect.entity, line, true, *font.data, digits, text.size, 0);
+            }
+            else
+            {
+                layoutAreaLine(*font.data, digits, text.size, 0, math::Vec2{0.0f}, number);
+            }
+            // Against the right of the gutter, a digit away from the text.
+            const math::Vec2 step{rect.min.x + metrics.gutter - digit - placed->layout.size.x, topOf(line)};
+            const math::Vec4 color = view != nullptr && view->focused && line == caretLine ? plain : withOpacity(area.lineNumberColor, rect.opacity);
+            for (const GlyphQuad& glyph : placed->layout.glyphs)
+            {
+                builder.quad(draw, glyph.min + step, glyph.max + step, glyph.uvMin, glyph.uvMax, color);
             }
         }
     }

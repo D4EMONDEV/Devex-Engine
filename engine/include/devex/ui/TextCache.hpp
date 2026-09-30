@@ -5,6 +5,7 @@
 #include <devex/asset/FontData.hpp>
 #include <devex/math/Math.hpp>
 #include <devex/scene/Entity.hpp>
+#include <devex/ui/TextArea.hpp>
 #include <devex/ui/TextLayout.hpp>
 
 #include <cstddef>
@@ -27,6 +28,12 @@ public:
     // holds, and what it shows while it is empty.
     [[nodiscard]] const TextLayoutResult& layout(scene::Entity element, std::uint32_t part, const asset::FontData& font,
                                                  std::string_view text, const TextStyle& style, math::Vec2 box);
+
+    // A line of an area of text placed from the origin, kept by the element and the place of the line:
+    // placed again when its text changes, and forgotten once it leaves the view. `number` keeps the
+    // number of the line apart from its text.
+    [[nodiscard]] const TextAreaLine& areaLine(scene::Entity element, std::size_t line, bool number, const asset::FontData& font,
+                                               std::string_view text, float size, std::int32_t tabSize);
 
     // Forgets the texts that were not asked for since the last sweep: their elements are gone, or
     // no longer drawn.
@@ -53,7 +60,21 @@ private:
         bool used = false;
     };
 
+    struct AreaEntry
+    {
+        std::uint32_t generation = 0;
+        const asset::FontData* font = nullptr;
+        float bakedSize = 0.0f;
+        std::size_t glyphCount = 0;
+        std::string text;
+        float size = 0.0f;
+        std::int32_t tabSize = 0;
+        TextAreaLine placed;
+        bool used = false;
+    };
+
     std::unordered_map<std::uint64_t, Entry> m_entries;
+    std::unordered_map<std::uint64_t, AreaEntry> m_areaLines;
     std::uint64_t m_placed = 0;
 };
 
