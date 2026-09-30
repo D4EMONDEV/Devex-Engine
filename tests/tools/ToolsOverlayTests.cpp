@@ -62,11 +62,25 @@ TEST_CASE("The tools overlay renders over the scene without validation errors", 
         scene.add<devex::scene::Transform>(entity);
         (*overlay)->setVisible(true);
 
-        for (int frame = 0; frame < 5; ++frame)
+        std::set<std::uint32_t> surfaces;
+        for (int frame = 0; frame < 6; ++frame)
         {
+            if (frame == 2)
+            {
+                // The first menu of the tools: Edit.
+                (*overlay)->openMenu(devex::tools::EditorMenu::Scene);
+            }
             platform->pollEvents([](const devex::platform::Event&) {});
             (*overlay)->update(scene, std::chrono::milliseconds(16));
-            static_cast<void>(renderer->beginFrame());
+            devex::render::RenderWorld& world = renderer->beginFrame();
+            (*overlay)->prepareRender(scene, world, devex::tools::PlayState::Editing);
+            for (const devex::render::UiSurface& surface : world.uiSurfaces)
+            {
+                if (!surface.draws.empty())
+                {
+                    surfaces.insert(surface.id);
+                }
+            }
             const devex::core::Result<void> presented = renderer->endFrame();
             if (!presented)
             {
@@ -74,6 +88,11 @@ TEST_CASE("The tools overlay renders over the scene without validation errors", 
             }
         }
         CHECK(renderer->stats().gpuMemoryBudget > 0);
+        // The menu bar of the tools is the one of the editor, with the two menus they have, which
+        // open in the layer over the window.
+        CHECK(surfaces.contains(14));
+        CHECK(surfaces.contains(15));
+        CHECK_FALSE(surfaces.contains(16));
     }
     devex::core::removeLogSink(sink);
 
@@ -282,6 +301,13 @@ TEST_CASE("The editor opens the project's scenes in tabs and renders its viewpor
         CHECK(surfaces.contains(6));
         // The monitors of Statistics.
         CHECK(surfaces.contains(12));
+        // The frame of the editor: its menu bar, its status bar, and the tabs of the scenes over the
+        // toolbar of the view. Nothing opened a menu or rested on a button: the layer over them is
+        // not drawn.
+        CHECK(surfaces.contains(14));
+        CHECK(surfaces.contains(16));
+        CHECK(surfaces.contains(17));
+        CHECK_FALSE(surfaces.contains(15));
 
         // The inspector of entities is made with the interface of the engine as well: an entity that
         // carries every component of the engine shows a row for each of their fields, and several
@@ -359,6 +385,18 @@ TEST_CASE("The editor opens the project's scenes in tabs and renders its viewpor
             (*editor)->openWindow(opened);
             CHECK(inspectorFrames(3, surface));
         }
+
+        // The menus of the menu bar are menus of that interface, in a layer over the whole window that
+        // is drawn while one is open.
+        using devex::tools::EditorMenu;
+        for (const EditorMenu title : {EditorMenu::Scene, EditorMenu::Edit, EditorMenu::Project, EditorMenu::Editor, EditorMenu::Help})
+        {
+            INFO(static_cast<int>(title));
+            (*editor)->openMenu(title);
+            CHECK(inspectorFrames(3, 15));
+        }
+        (*editor)->closeMenu();
+        CHECK_FALSE(inspectorFrames(2, 15));
 
         // Both scenes opened, the level on screen and the menu in a background tab, without unsaved changes.
         CHECK(scene.entityCount() == 3);

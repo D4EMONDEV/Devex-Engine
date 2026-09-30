@@ -164,6 +164,17 @@ public:
     [[nodiscard]] bool wasDoubleClicked(std::string_view action) const;
     [[nodiscard]] bool wasDoubleClicked(scene::Entity entity) const;
     void setTooltipStyle(TooltipStyle style);
+    // Whether the drawing shows the tooltips, inside the image. A tool whose image is too small for
+    // them turns it off and shows `shownTooltip` itself, elsewhere.
+    void setTooltipsDrawn(bool drawn) noexcept;
+    // The tooltip shown at the last update, if any: its text, and where the pointer rested, in the
+    // pixels of the image.
+    struct DEVEX_API ShownTooltip
+    {
+        std::string_view text;
+        math::Vec2 at{0.0f};
+    };
+    [[nodiscard]] std::optional<ShownTooltip> shownTooltip(const scene::Scene& scene) const;
     // Gives a field the keyboard, its text selected as a form does for its first field, or the
     // cursor at its end to go on typing.
     void startEditing(const scene::Scene& scene, scene::Entity field, bool selectAll = true);
@@ -387,6 +398,7 @@ private:
     std::optional<OpenDropdown> m_dropdown;
     Tooltip m_tooltip;
     TooltipStyle m_tooltipStyle;
+    bool m_tooltipsDrawn = true;
 
     // A drag source pressed, and where, until the pointer moves far enough to take it away.
     struct DEVEX_API DragCandidate

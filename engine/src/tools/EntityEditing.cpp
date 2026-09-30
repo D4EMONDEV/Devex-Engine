@@ -1,3 +1,4 @@
+#include "EditorFrame.hpp"
 #include "ToolsState.hpp"
 
 #include <devex/core/Log.hpp>
@@ -281,56 +282,40 @@ void toggleSelectionHidden(ToolsState& state, const scene::Scene& scene)
     saveEditorSettings(state);
 }
 
-void drawEntityEditMenuItems(ToolsState& state, scene::Scene& scene)
+void addEntityEditEntries(ToolsState& state, scene::Scene& scene, std::vector<MenuEntry>& entries)
 {
     const bool hasSelection = scene.findEntity(state.selection.active()).isValid();
     const bool deletable = canDeleteSelection(state, scene);
-    if (ImGui::MenuItemEx("Cut", icons::Scissors.c_str(), "Ctrl+X", false, deletable))
-    {
-        cutSelection(state, scene);
-    }
-    if (ImGui::MenuItemEx("Copy", icons::Copy.c_str(), "Ctrl+C", false, hasSelection))
-    {
-        copySelection(state, scene);
-    }
-    if (ImGui::MenuItemEx("Paste", icons::ClipboardPaste.c_str(), "Ctrl+V", false,
-                          scene::isEntityCopy(state.platform.clipboardText())))
-    {
-        pasteEntities(state, scene);
-    }
-    if (ImGui::MenuItemEx("Duplicate", icons::CopyPlus.c_str(), "Ctrl+D", false, hasSelection))
-    {
-        duplicateSelection(state, scene);
-    }
-    if (ImGui::MenuItemEx("Rename", icons::Pencil.c_str(), "F2", false, hasSelection))
-    {
-        startRename(state, state.selection.active());
-    }
-    if (ImGui::MenuItemEx("Select All", nullptr, "Ctrl+A"))
-    {
-        selectAll(state, scene);
-    }
+    entries.push_back({.icon = Icon::Scissors, .label = "Cut", .shortcut = "Ctrl+X", .enabled = deletable,
+                       .action = [](ToolsState& tools, scene::Scene& edited) { cutSelection(tools, edited); }});
+    entries.push_back({.icon = Icon::Copy, .label = "Copy", .shortcut = "Ctrl+C", .enabled = hasSelection,
+                       .action = [](ToolsState& tools, scene::Scene& edited) { copySelection(tools, edited); }});
+    entries.push_back({.icon = Icon::ClipboardPaste, .label = "Paste", .shortcut = "Ctrl+V",
+                       .enabled = scene::isEntityCopy(state.platform.clipboardText()),
+                       .action = [](ToolsState& tools, scene::Scene& edited) { pasteEntities(tools, edited); }});
+    entries.push_back({.icon = Icon::CopyPlus, .label = "Duplicate", .shortcut = "Ctrl+D", .enabled = hasSelection,
+                       .action = [](ToolsState& tools, scene::Scene& edited) { duplicateSelection(tools, edited); }});
+    entries.push_back({.icon = Icon::Pencil, .label = "Rename", .shortcut = "F2", .enabled = hasSelection,
+                       .action = [](ToolsState& tools, scene::Scene&) { startRename(tools, tools.selection.active()); }});
+    entries.push_back({.label = "Select All", .shortcut = "Ctrl+A",
+                       .action = [](ToolsState& tools, scene::Scene& edited) { selectAll(tools, edited); }});
     if (state.mode == ToolsMode::Editor)
     {
         const bool allHidden = hasSelection && std::ranges::all_of(state.selection.entities(), [&state](core::Uuid entity) {
             return state.hiddenEntities.contains(entity);
         });
-        if (ImGui::MenuItemEx(allHidden ? "Show in Viewport" : "Hide in Viewport",
-                              (allHidden ? icons::Eye : icons::EyeOff).c_str(), "H", false, hasSelection))
-        {
-            toggleSelectionHidden(state, scene);
-        }
-        if (ImGui::MenuItemEx("Show All in Viewport", nullptr, nullptr, false, !state.hiddenEntities.empty()))
-        {
-            state.hiddenEntities.clear();
-            saveEditorSettings(state);
-        }
+        entries.push_back({.icon = allHidden ? Icon::Eye : Icon::EyeOff, .label = allHidden ? "Show in Viewport" : "Hide in Viewport",
+                           .shortcut = "H", .enabled = hasSelection,
+                           .action = [](ToolsState& tools, scene::Scene& edited) { toggleSelectionHidden(tools, edited); }});
+        entries.push_back({.label = "Show All in Viewport", .enabled = !state.hiddenEntities.empty(),
+                           .action = [](ToolsState& tools, scene::Scene&) {
+                               tools.hiddenEntities.clear();
+                               saveEditorSettings(tools);
+                           }});
     }
-    ImGui::Separator();
-    if (ImGui::MenuItemEx("Delete", icons::Trash.c_str(), "Delete", false, deletable))
-    {
-        deleteSelection(state, scene);
-    }
+    entries.push_back(MenuEntry::line());
+    entries.push_back({.icon = Icon::Trash, .label = "Delete", .shortcut = "Delete", .enabled = deletable,
+                       .action = [](ToolsState& tools, scene::Scene& edited) { deleteSelection(tools, edited); }});
 }
 
 void handleEntityShortcuts(ToolsState& state, scene::Scene& scene)

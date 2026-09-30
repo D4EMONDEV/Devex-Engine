@@ -1043,6 +1043,25 @@ void UiWorld::setTooltipStyle(TooltipStyle style)
     m_tooltipStyle = style;
 }
 
+void UiWorld::setTooltipsDrawn(bool drawn) noexcept
+{
+    m_tooltipsDrawn = drawn;
+}
+
+std::optional<UiWorld::ShownTooltip> UiWorld::shownTooltip(const scene::Scene& scene) const
+{
+    if (!m_tooltip.shown || !scene.isAlive(m_tooltip.entity))
+    {
+        return std::nullopt;
+    }
+    const scene::UiTooltip* const tooltip = scene.tryGet<scene::UiTooltip>(m_tooltip.entity);
+    if (tooltip == nullptr || tooltip->text.empty())
+    {
+        return std::nullopt;
+    }
+    return ShownTooltip{.text = tooltip->text, .at = m_tooltip.at};
+}
+
 bool UiWorld::updateCarry(scene::Scene& scene, const UiInput& input, bool taken)
 {
     // A drag from outside lasts as long as it is announced.

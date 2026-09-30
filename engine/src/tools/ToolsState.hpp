@@ -93,6 +93,10 @@ struct DebuggingUi;
 struct EditorDialogsUi;
 struct StatisticsUi;
 struct ProfilerUi;
+struct MenuBarUi;
+struct StatusBarUi;
+struct ViewportHeaderUi;
+struct EditorLayerUi;
 
 // Window names are also their identifiers in the saved layout.
 inline constexpr const char* hierarchyWindow = "Scene";
@@ -491,6 +495,13 @@ struct DEVEX_API ToolsState
     // The panels of measures.
     std::shared_ptr<StatisticsUi> statisticsUi;
     std::shared_ptr<ProfilerUi> profilerUi;
+    // The frame of the editor: its bars, the header of the view, and the layer of their menus.
+    std::shared_ptr<MenuBarUi> menuBarUi;
+    // A menu of the menu bar to open at its next update, by the place of its title.
+    std::optional<std::size_t> menuRequest;
+    std::shared_ptr<StatusBarUi> statusBarUi;
+    std::shared_ptr<ViewportHeaderUi> viewportHeaderUi;
+    std::shared_ptr<EditorLayerUi> editorLayerUi;
     // Opens the window at the next frame.
     std::optional<CreationRequest> creationRequest;
     EditorFonts fonts;
@@ -983,8 +994,6 @@ DEVEX_API void startRename(ToolsState& state, core::Uuid entity);
 [[nodiscard]] DEVEX_API bool isHidden(const ToolsState& state, const scene::Scene& scene, scene::Entity entity);
 // Hides the selected entities, or shows them again when all of them are hidden.
 DEVEX_API void toggleSelectionHidden(ToolsState& state, const scene::Scene& scene);
-// The items of the Edit menu that act on the selected entities.
-DEVEX_API void drawEntityEditMenuItems(ToolsState& state, scene::Scene& scene);
 // The shortcuts that act on the selected entities, while the scene tree or the viewport has the
 // keyboard: cut, copy, paste, duplicate, rename, hide, select all and delete.
 DEVEX_API void handleEntityShortcuts(ToolsState& state, scene::Scene& scene);

@@ -1,3 +1,4 @@
+#include "EditorFrame.hpp"
 #include "ToolsState.hpp"
 #include "TwoDScreen.hpp"
 
@@ -272,63 +273,6 @@ void applyWindowLayout(ToolsState& state, detail::WindowLayout layout)
     }
 }
 
-void drawOverlayMenu(ToolsState& state, scene::Scene& scene)
-{
-    if (!ImGui::BeginMainMenuBar())
-    {
-        return;
-    }
-    ImGui::TextUnformatted(detail::icons::Logo.c_str());
-    if (ImGui::BeginMenu("Edit"))
-    {
-        const Command* const nextUndo = state.history.nextUndo();
-        const std::string undoLabel = nextUndo != nullptr ? std::format("Undo {}", nextUndo->description()) : "Undo";
-        if (ImGui::MenuItemEx(undoLabel.c_str(), detail::icons::Undo.c_str(), "Ctrl+Z", false, nextUndo != nullptr))
-        {
-            undo(state, scene);
-        }
-        const Command* const nextRedo = state.history.nextRedo();
-        const std::string redoLabel = nextRedo != nullptr ? std::format("Redo {}", nextRedo->description()) : "Redo";
-        if (ImGui::MenuItemEx(redoLabel.c_str(), detail::icons::Redo.c_str(), "Ctrl+Y", false, nextRedo != nullptr))
-        {
-            redo(state, scene);
-        }
-        ImGui::Separator();
-        if (ImGui::MenuItemEx("Create Entity...", detail::icons::Plus.c_str()))
-        {
-            detail::openCreateEntity(state, core::Uuid{});
-        }
-        ImGui::Separator();
-        detail::drawEntityEditMenuItems(state, scene);
-        ImGui::EndMenu();
-    }
-    if (ImGui::BeginMenu("View"))
-    {
-        ImGui::MenuItem(detail::hierarchyWindow, nullptr, &state.showHierarchy);
-        ImGui::MenuItem(detail::inspectorWindow, nullptr, &state.showInspector);
-        ImGui::MenuItem(detail::assetsWindow, nullptr, &state.showAssets);
-        ImGui::MenuItem(detail::animationWindow, nullptr, &state.showAnimation);
-        ImGui::MenuItem(detail::animatorWindow, nullptr, &state.showAnimator);
-        ImGui::MenuItem(detail::consoleWindow, nullptr, &state.showConsole);
-        ImGui::MenuItem(detail::statisticsWindow, nullptr, &state.showStatistics);
-        if (ImGui::MenuItem(detail::profilerWindow, nullptr, &state.showProfiler) && state.showProfiler)
-        {
-            state.focusProfiler = true;
-        }
-        ImGui::Separator();
-        if (ImGui::MenuItem("Reset Layout"))
-        {
-            state.resetLayout = true;
-        }
-        ImGui::EndMenu();
-    }
-
-    const char* const hint = "F1 hides the tools";
-    ImGui::SameLine(ImGui::GetWindowWidth() - ImGui::CalcTextSize(hint).x - ImGui::GetStyle().ItemSpacing.x * 2.0f);
-    ImGui::TextDisabled("%s", hint);
-    ImGui::EndMainMenuBar();
-}
-
 // Scene tree and file system on the left, inspector on the right, output and statistics under the view.
 void buildDefaultLayout(ImGuiID dockspace, const ImGuiViewport& viewport, ToolsMode mode)
 {
@@ -505,6 +449,8 @@ void updateEditor(ToolsState& state, scene::Scene& scene, PlayState playState)
     detail::drawAnimatorPanel(state, scene);
     detail::drawEditorPopups(state, scene);
     detail::handleEntityShortcuts(state, scene);
+    // Over every window: the menus of the menu bar, and the tooltips of the strips.
+    detail::drawEditorLayer(state, scene);
     if (state.pendingCommand != nullptr)
     {
         logFailure(state.history.execute(scene, std::exchange(state.pendingCommand, nullptr)));
@@ -674,7 +620,8 @@ void ToolsOverlay::update(scene::Scene& scene, core::Duration frameDelta, PlaySt
         return;
     }
 
-    drawOverlayMenu(state, scene);
+    // The menu bar of the editor, with the menus the tools over a game have.
+    detail::drawEditorMenus(state, scene);
     drawDockspace(state);
     handleShortcuts(state, scene);
     if (state.showHierarchy)
@@ -700,6 +647,7 @@ void ToolsOverlay::update(scene::Scene& scene, core::Duration frameDelta, PlaySt
     }
     detail::drawCreationDialog(state, scene);
     detail::handleEntityShortcuts(state, scene);
+    detail::drawEditorLayer(state, scene);
     if (state.pendingCommand != nullptr)
     {
         logFailure(state.history.execute(scene, std::exchange(state.pendingCommand, nullptr)));
@@ -727,6 +675,7 @@ void ToolsOverlay::prepareRender(scene::Scene& scene, render::RenderWorld& world
     detail::renderFormWindows(state, world);
     detail::renderStatistics(state, world);
     detail::renderProfiler(state, world);
+    detail::renderEditorFrame(state, world);
     if (state.mode != ToolsMode::Editor)
     {
         return;
@@ -906,6 +855,17 @@ void ToolsOverlay::openWindow(EditorWindow window)
         m_state->focusProfiler = true;
         break;
     }
+}
+
+void ToolsOverlay::openMenu(EditorMenu menu)
+{
+    m_state->menuRequest = static_cast<std::size_t>(menu);
+}
+
+void ToolsOverlay::closeMenu()
+{
+    m_state->menuRequest.reset();
+    detail::closeEditorMenu(*m_state);
 }
 
 void ToolsOverlay::setAudio(audio::AudioEngine* engine,

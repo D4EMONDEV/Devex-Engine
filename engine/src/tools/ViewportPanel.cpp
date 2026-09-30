@@ -1,3 +1,4 @@
+#include "EditorFrame.hpp"
 #include "ToolsState.hpp"
 #include "TwoDScreen.hpp"
 
@@ -123,166 +124,6 @@ void forEachIcon(const ToolsState& state, scene::Scene& scene, Function&& functi
         return *ground;
     }
     return state.camera.position() + state.camera.forward() * 8.0f;
-}
-
-// The scene tabs above the viewport, with a button to add a scene.
-void drawSceneTabs(ToolsState& state, scene::Scene& scene)
-{
-    const bool editing = state.playState == PlayState::Editing;
-    const ActiveDocument live = activeDocument(state, scene);
-    const ImGuiTabBarFlags flags = ImGuiTabBarFlags_Reorderable | ImGuiTabBarFlags_FittingPolicyScroll |
-                                   ImGuiTabBarFlags_NoCloseWithMiddleMouseButton;
-    if (!ImGui::BeginTabBar("scene tabs", flags))
-    {
-        return;
-    }
-    // ImGui shows the tab selected on the previous frame: the active tab is selected every frame, and
-    // only clicks change it, so that a tab opened from elsewhere is not switched back.
-    std::optional<std::size_t> clicked;
-    std::optional<std::uint64_t> closed;
-    for (std::size_t index = 0; index < state.tabs.size(); ++index)
-    {
-        const bool active = index == state.tabs.active();
-        const std::string label = std::format("{}  {}###tab{}", std::string_view(icons::Clapperboard),
-                                              tabName(state.tabs.path(index, live)), state.tabs.id(index));
-        ImGuiTabItemFlags itemFlags = ImGuiTabItemFlags_None;
-        if (state.tabs.isModified(index, live) && (editing || !active))
-        {
-            itemFlags |= ImGuiTabItemFlags_UnsavedDocument;
-        }
-        if (active)
-        {
-            itemFlags |= ImGuiTabItemFlags_SetSelected;
-        }
-        bool open = true;
-        const bool visible = ImGui::BeginTabItem(label.c_str(), editing ? &open : nullptr, itemFlags);
-        if (!active && ImGui::IsItemClicked(ImGuiMouseButton_Left))
-        {
-            clicked = index;
-        }
-        if (visible)
-        {
-            ImGui::EndTabItem();
-        }
-        if (const std::filesystem::path& path = state.tabs.path(index, live); !path.empty())
-        {
-            ImGui::SetItemTooltip("%s", core::toUtf8(path).c_str());
-        }
-        if (!open)
-        {
-            closed = state.tabs.id(index);
-        }
-    }
-    if (editing && ImGui::TabItemButton(icons::Plus.c_str(), ImGuiTabItemFlags_Trailing | ImGuiTabItemFlags_NoTooltip))
-    {
-        newSceneTab(state, scene);
-    }
-    ImGui::EndTabBar();
-
-    if (clicked && editing)
-    {
-        activateSceneTab(state, scene, *clicked);
-    }
-    if (closed)
-    {
-        requestAction(state, scene, {.kind = PendingAction::Kind::CloseTab, .tab = *closed});
-    }
-}
-
-void drawToolbar(ToolsState& state, scene::Scene& scene)
-{
-    const ThemeColors& colors = themeColors();
-    const ImGuiStyle& style = ImGui::GetStyle();
-    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + style.ItemSpacing.x);
-    // The 2D screen and the 3D screen share the viewport; the menu bar chooses between them.
-    const bool twoD = state.camera.isTwoD();
-    const auto toolButtonFor = [&](const char* id, IconText icon, EditorTool tool, const char* tooltip) {
-        if (toolButton(id, icon, tooltip, state.tool == tool))
-        {
-            state.tool = tool;
-        }
-        ImGui::SameLine(0.0f, 2.0f);
-    };
-    toolButtonFor("select", icons::Pointer, EditorTool::Select, "Select (Q)");
-    toolButtonFor("move", icons::Move, EditorTool::Move, "Move (W)");
-    toolButtonFor("rotate", icons::Rotate, EditorTool::Rotate, "Rotate (E)");
-    toolButtonFor("scale", icons::Scale, EditorTool::Scale, "Scale (R)");
-    toolbarSeparator();
-    const bool local = state.gizmo.space == GizmoSpace::Local;
-    if (toolButton("space", local ? icons::Box : icons::Globe,
-                   local ? "Handles follow the entity's axes (X). Scaling is always local."
-                         : "Handles follow the world axes (X). Scaling is always local.",
-                   local))
-    {
-        state.gizmo.space = local ? GizmoSpace::World : GizmoSpace::Local;
-    }
-    ImGui::SameLine(0.0f, 2.0f);
-    if (toolButton("snap", icons::Magnet, "Snap by 0.5 m, 15° or 0.1 (Ctrl switches it while dragging)", state.snap))
-    {
-        state.snap = !state.snap;
-    }
-    toolbarSeparator();
-    if (toolButton("grid", icons::Grid, "Grid", state.showGrid))
-    {
-        state.showGrid = !state.showGrid;
-    }
-    ImGui::SameLine(0.0f, 2.0f);
-    if (toolButton("icons", icons::Eye, "Light and camera icons", state.showIcons))
-    {
-        state.showIcons = !state.showIcons;
-    }
-    ImGui::SameLine(0.0f, 2.0f);
-    if (toolButton("colliders", icons::Scan, "Collision shapes of every entity (the selection always shows its own)",
-                   state.showColliders))
-    {
-        state.showColliders = !state.showColliders;
-    }
-    ImGui::SameLine(0.0f, 2.0f);
-    if (toolButton("frame", icons::Crosshair, "Frame the selection (F)", false,
-                   scene.findEntity(state.selection.active()).isValid()))
-    {
-        frameSelection(state, scene);
-    }
-    // The interfaces of a 3D scene show over its 3D screen, as the game will draw them; a menu that
-    // covers the whole screen hides the scene, hence the button.
-    if (!twoD && scene.kind() == scene::SceneKind::ThreeD)
-    {
-        ImGui::SameLine(0.0f, 2.0f);
-        if (toolButton("interfaces", icons::LayoutDashboard,
-                       "Interfaces over the scene, as the game draws them (they are edited in the 2D screen)",
-                       state.showInterfaces))
-        {
-            state.showInterfaces = !state.showInterfaces;
-        }
-    }
-
-    const std::string speed = twoD ? std::format("{:.3g} m", state.camera.orthographicSize() * 2.0f)
-                                   : std::format("{:.1f} m/s", state.camera.speed());
-    const std::string exposure = std::format("EV {:.1f}", state.renderer.stats().ev100);
-    const float rightWidth = ImGui::CalcTextSize(icons::Gauge.c_str()).x + ImGui::CalcTextSize(speed.c_str()).x +
-                             ImGui::CalcTextSize(exposure.c_str()).x + toolButtonWidth() + style.ItemSpacing.x * 4.0f +
-                             style.ItemInnerSpacing.x;
-    ImGui::SameLine();
-    alignRight(rightWidth);
-    ImGui::AlignTextToFramePadding();
-    iconLabel(icons::Gauge, colors.textDim);
-    ImGui::TextDisabled("%s", speed.c_str());
-    ImGui::SetItemTooltip(twoD ? "Height of the 2D view: the mouse wheel zooms at the mouse"
-                               : "Flying speed: the mouse wheel changes it while flying");
-    ImGui::SameLine();
-    ImGui::TextDisabled("%s", exposure.c_str());
-    ImGui::SetItemTooltip("Exposure of the editor camera");
-    ImGui::SameLine();
-    toolButton("help", icons::CircleHelp,
-               twoD ? "Right or middle drag: slide    Wheel: zoom at the mouse\n"
-                      "Click: select, Shift or Ctrl + click: add or remove, left drag: select in a rectangle\n"
-                      "Interfaces: click an element to select it, again to reach the one under it,\n"
-                      "drag it or its handles to move or resize it\n"
-                      "F: frame the selection    H: hide it    Delete: delete it    Ctrl: snap"
-                    : "Right drag: look, with W A S D to fly, Q E to go down and up, Shift to go faster\n"
-                      "Alt + left drag: orbit    Middle drag: pan    Wheel: move forward\n"
-                      "Click: select, Shift or Ctrl + click: add or remove, left drag: select in a rectangle\n"
-                      "F: frame the selection    H: hide it    Delete: delete it    Ctrl: snap");
 }
 
 // Adds the fields a drag changed, already applied, to the commands of one undo step.
@@ -764,29 +605,8 @@ void drawViewportPanel(ToolsState& state, scene::Scene& scene)
     }
 
     const bool editing = state.playState == PlayState::Editing;
-    drawSceneTabs(state, scene);
-    // The toolbar sits on the panel color, under the tabs.
-    {
-        const ImGuiStyle& style = ImGui::GetStyle();
-        const ImVec2 start = ImGui::GetCursorScreenPos();
-        const float height = ImGui::GetFrameHeight() + style.FramePadding.y * 2.0f;
-        ImGui::GetWindowDrawList()->AddRectFilled(start, ImVec2(start.x + ImGui::GetContentRegionAvail().x, start.y + height),
-                                                  uiColorU32(colors.panel));
-        ImGui::SetCursorScreenPos(ImVec2(start.x, start.y + style.FramePadding.y));
-        if (editing)
-        {
-            drawToolbar(state, scene);
-        }
-        else
-        {
-            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + style.ItemSpacing.x);
-            ImGui::AlignTextToFramePadding();
-            iconLabel(state.playState == PlayState::Paused ? icons::Pause : icons::Play, colors.accent);
-            ImGui::TextColored(uiColor(colors.accent), "%s",
-                               state.playState == PlayState::Paused ? "Paused" : "Playing: click the view to give the game the keyboard");
-        }
-        ImGui::SetCursorScreenPos(ImVec2(start.x, start.y + height));
-    }
+    // The tabs of the scenes, and the toolbar under them.
+    drawViewportHeader(state, scene);
 
     const ImGuiIO& io = ImGui::GetIO();
     const ImVec2 available = ImGui::GetContentRegionAvail();
@@ -796,8 +616,6 @@ void drawViewportPanel(ToolsState& state, scene::Scene& scene)
     if (width < 8 || height < 8)
     {
         state.viewportPixels = {};
-        // The toolbar moved the cursor below itself, which ImGui wants an item to follow.
-        ImGui::Dummy(ImVec2(0.0f, 0.0f));
         ImGui::End();
         return;
     }

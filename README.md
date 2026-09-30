@@ -111,7 +111,9 @@ Le détail, l'architecture des modules et les jalons sont dans
   matrice de collision, Input Map dont chaque liaison écoute la prochaine touche), fenêtre Export,
   dialogues New Script, modifications non enregistrées et About, moniteurs de Statistics (une
   courbe par mesure) et Profiler (barres des images, timeline zoomable des zones, arbre des temps
-  CPU, passes GPU, mémoire des assets), FileSystem et Output déjà écrits
+  CPU, passes GPU, mémoire des assets), cadre de l'éditeur (barre de menus et ses menus, barre
+  d'état, onglets des scènes que l'on glisse pour les ranger, barre d'outils de la vue), FileSystem
+  et Output déjà écrits
   avec
   `Devex::Ui` (menus contextuels,
   infobulles, modales, listes virtuelles, texte de la sortie choisi et copié à la souris, fichiers

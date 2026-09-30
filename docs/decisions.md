@@ -2297,6 +2297,45 @@ les assets s'écrivent au fil de leur lecture.
     temps d'attente de chaque image enregistrée est trouvé une fois, et seule la zone sous le
     pointeur écrit son infobulle : le panneau ne coûte presque rien en Release.
   - Le Profiler ouvert depuis le menu passe devant les autres onglets de son dock.
+- **Puis le cadre de l'éditeur** (jalon 48) : la barre de menus, la barre d'état, les onglets des
+  scènes et la barre d'outils de la vue. Ce sont des bandes fines, chacune un panneau Devex UI dans
+  sa fenêtre ImGui (surfaces 14, 16 et 17) ; le dock entre elles reste celui d'ImGui.
+  - **Une couche au-dessus de la fenêtre pour les menus et les infobulles.** Une bande de trente
+    points n'a pas la place de dessiner un menu ni une infobulle dans sa propre image. Choix : une
+    **couche** (surface 15) qui couvre toute la fenêtre, transparente, dessinée seulement tant
+    qu'un menu est ouvert ou qu'une infobulle se montre ; elle ne prend la souris que pour un menu.
+    Écarté : agrandir l'image de chaque bande (elle couvrirait les panneaux et leur prendrait la
+    souris) et garder les menus d'ImGui (deux apparences pour les mêmes menus). Côté moteur,
+    `UiWorld::setTooltipsDrawn(false)` et `UiWorld::shownTooltip` laissent un outil montrer
+    l'infobulle ailleurs que dans l'image ; `UiPanel::setTooltipsOutside` s'en sert.
+  - **Des menus décrits en données** (`MenuEntry` : icône, libellé, raccourci, coche, séparateur,
+    action, entrées du sous-menu). Un seul `UiPopup` de type menu les montre, avec le sous-menu
+    **dans le même popup**, à côté de l'entrée survolée : un appui dans le sous-menu n'est pas un
+    appui hors du menu. Comme dans toute barre de menus, un titre ouvre son menu au clic, et le
+    pointeur sur un autre titre y passe tant qu'un menu est ouvert ; une entrée qui n'ouvre qu'un
+    sous-menu ne ferme rien ; Échap ou un appui ailleurs ferme. Les bandes et les menus ne font
+    qu'**emprunter le clavier** : il revient à la fenêtre où l'on travaillait dès que le menu se
+    ferme ou que le bouton est lâché, avant que l'entrée choisie n'agisse (elle peut ouvrir sa
+    propre fenêtre).
+  - **Les onglets des scènes, comme dans Godot** : glisser un onglet sur un autre prend sa place
+    (`UiDragSource` et `UiDropTarget`, `SceneTabs::move`), la croix ou le bouton du milieu ferme, un
+    point marque ce qui n'est pas enregistré, l'infobulle donne le chemin, **+** ajoute une scène
+    et reste en vue au bout des onglets ; quand ils débordent, la molette les fait défiler et
+    l'onglet qui vient à l'écran est ramené en vue. L'onglet affiché prend la couleur de la barre
+    d'outils sous lui. Pendant le jeu : ni croix ni **+**, et un mot sur le jeu (*Playing*,
+    *Paused*) à la place des outils.
+  - **Des boutons clairs tant qu'on ne les survole pas** : les styles teintent la couleur d'un
+    bouton, et un bouton transparent n'a rien à éclaircir. Les boutons des barres changent donc de
+    style — `bar_button`, `bar_hover` sous le pointeur, `bar_selected` tant que ce qu'ils
+    représentent est actif — ce qui marche aussi sur le thème noir, où multiplier ne donne rien.
+  - **La barre des outils par-dessus un jeu (F1) est la même** (`MenuBarUi`), avec ses deux menus,
+    *Edit* et *View*. `ToolsOverlay::openMenu` ouvre un menu comme un clic sur son titre, pour les
+    tests.
+  - Coût mesuré sur le banc caché, en Debug : 7,1 → 7,9 ms par image pour les trois bandes (0,2 ms
+    les menus, 0,1 ms la barre d'état, 0,2 ms l'en-tête de la vue) ; la couche ne coûte rien tant
+    qu'elle ne montre rien. Limites : un seul niveau de sous-menu, toujours ouvert à droite ; pas
+    d'accès aux menus par Alt ; l'appui qui ferme un menu n'agit pas sur ce qui est dessous ; pas
+    de menu contextuel sur les onglets ; les onglets des panneaux ancrés restent ceux d'ImGui.
 
 ### Interfaces
 
@@ -3141,6 +3180,11 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
 47. ✅ **Texte mis en cache** — les lettres de chaque texte gardées d'une image à l'autre par
     élément (`ui::TextCache`), replacées seulement quand le texte, son style, sa police ou la
     taille de sa boîte changent ; largeurs mesurées gardées dans l'éditeur.
+
+48. ✅ **Cadre de l'éditeur en Devex UI** — barre de menus, barre d'état, onglets des scènes
+    (glisser pour les ranger, croix et bouton du milieu, point des modifications, **+**, molette)
+    et barre d'outils de la vue ; menus décrits en données et infobulles dans une couche au-dessus
+    de la fenêtre ; même barre pour les outils par-dessus un jeu.
 
 Ensuite, sans ordre figé : CI Linux, la suite du portage de l'éditeur.
 

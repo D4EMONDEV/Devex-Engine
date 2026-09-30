@@ -88,6 +88,17 @@ enum class EditorWindow : std::uint8_t
     Profiler,
 };
 
+// The menus of the menu bar of the editor, in the order of their titles. The tools over a game have
+// two, Edit and View, in the first two places.
+enum class EditorMenu : std::uint8_t
+{
+    Scene,
+    Edit,
+    Project,
+    Editor,
+    Help,
+};
+
 // The state of the project's game code, shown by the editor.
 struct DEVEX_API GameCodeStatus
 {
@@ -293,6 +304,10 @@ public:
     void selectAsset(asset::AssetId asset);
     // Opens a window or a dialog of the editor, as its menu does.
     void openWindow(EditorWindow window);
+    // Opens a menu of the menu bar under its title, as a click on the title does, and closes the menu
+    // that is open.
+    void openMenu(EditorMenu menu);
+    void closeMenu();
 
     // Lets the panels preview audio clips on the mixer, which must outlive the overlay, with the
     // clips the function loads. Without it, clips show but cannot be heard.

@@ -76,6 +76,16 @@ public:
     // A checkerboard, drawn behind what may be transparent.
     [[nodiscard]] asset::AssetId checker();
 
+    // A tooltip a panel too small for it asks to be shown outside its image, where the pointer rested
+    // on the screen; the layer over the editor shows the last one asked for in the frame.
+    struct Tooltip
+    {
+        std::string text;
+        ImVec2 at{0.0f, 0.0f};
+    };
+    void showTooltip(std::string text, ImVec2 at);
+    [[nodiscard]] std::optional<Tooltip> takeTooltip() noexcept;
+
 private:
     struct BakedFont
     {
@@ -113,6 +123,7 @@ private:
     std::unordered_map<std::uint64_t, std::unordered_map<std::string, float, TextHash, std::equal_to<>>> m_widths;
     ImVec4 m_themeAccent{-1.0f, 0.0f, 0.0f, 0.0f};
     ImVec4 m_themePanel{-1.0f, 0.0f, 0.0f, 0.0f};
+    std::optional<Tooltip> m_tooltip;
 };
 
 // A drag between a panel and the ImGui windows around it, as ImGui carries it.
@@ -153,11 +164,18 @@ public:
     // Whether the arrows, Enter and Space move the focus between the buttons and press them, as in a
     // menu; a panel that answers the keys itself, as a tree does, turns it off.
     void setKeyboardNavigation(bool enabled) noexcept;
+    // Whether the tooltips show outside the image of the panel, in the layer over the editor: a strip
+    // such as a menu bar has no room for them.
+    void setTooltipsOutside(bool outside) noexcept;
 
-    // Inside the ImGui window it fills: takes the room left in it, gives the interface world the
-    // mouse and the keys the window receives, and shows the image of the panel. `zoom` is how many
-    // pixels one unit of the panel takes.
-    void update(EditorUiKit& kit, core::Duration delta, float zoom);
+    // Inside the ImGui window it fills: takes the room left in it, or only `height` points of it, gives
+    // the interface world the mouse and the keys the window receives, and shows the image of the
+    // panel. `zoom` is how many pixels one unit of the panel takes.
+    void update(EditorUiKit& kit, core::Duration delta, float zoom, float height = 0.0f);
+    // Where a point of the panel, in its units, is on the screen, as ImGui places things; and the
+    // point of the panel a place of the screen is.
+    [[nodiscard]] ImVec2 screenOf(math::Vec2 units) const noexcept;
+    [[nodiscard]] math::Vec2 unitsOf(ImVec2 screen) const noexcept;
     // Adds the image of the panel to the frame, over a color, when the last update showed it.
     void render(EditorUiKit& kit, render::RenderWorld& world, math::Vec4 background);
 
@@ -179,6 +197,9 @@ private:
     bool m_hovered = false;
     bool m_connected = false;
     bool m_navigation = true;
+    bool m_tooltipsOutside = false;
+    ImVec2 m_origin{0.0f, 0.0f};
+    float m_pixelsPerPoint = 1.0f;
     ui::UiInput m_input;
     std::function<std::optional<ImGuiDrag>(const ui::Carried&)> m_dragOut;
     std::function<std::optional<std::pair<std::string, std::string>>(const ImGuiPayload&)> m_dragIn;

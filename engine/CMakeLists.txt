@@ -789,6 +789,8 @@ target_sources(devex_tools
         src/tools/TilesetInspector.cpp
         src/tools/EditorCamera.cpp
         src/tools/EditorCamera.hpp
+        src/tools/EditorFrame.hpp
+        src/tools/EditorLayer.cpp
         src/tools/EditorMenus.cpp
         src/tools/EditorOverlay.cpp
         src/tools/EditorSession.cpp
@@ -831,6 +833,7 @@ target_sources(devex_tools
         src/tools/ToolsState.hpp
         src/tools/TwoDScreen.cpp
         src/tools/TwoDScreen.hpp
+        src/tools/ViewportHeader.cpp
         src/tools/ViewportPanel.cpp
         src/tools/Widgets.cpp
         src/tools/Widgets.hpp

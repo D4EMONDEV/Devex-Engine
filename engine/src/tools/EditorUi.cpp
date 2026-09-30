@@ -128,6 +128,16 @@ void EditorUiKit::setAssetImages(std::function<render::TextureHandle(asset::Asse
     m_assetSprites = std::move(sprites);
 }
 
+void EditorUiKit::showTooltip(std::string text, ImVec2 at)
+{
+    m_tooltip = Tooltip{.text = std::move(text), .at = at};
+}
+
+std::optional<EditorUiKit::Tooltip> EditorUiKit::takeTooltip() noexcept
+{
+    return std::exchange(m_tooltip, std::nullopt);
+}
+
 asset::AssetId EditorUiKit::checker()
 {
     const asset::AssetId id{core::Uuid::fromParts(0, 0x10005)};
@@ -439,6 +449,17 @@ void EditorUiKit::refreshTheme(const ThemeColors& colors)
     add("swatch", clickable({{"UiImage", "corner_radius", "4"}}));
     add("tool", clickable(image(written(ImVec4(colors.raised.x, colors.raised.y, colors.raised.z, 0.6f)), 4.0f)));
     add("mark", image(written(colors.accent), 1.0f));
+    // The frame of the editor: buttons that are clear until the pointer is on them, and tinted while
+    // what they stand for is on; the tabs of the scenes, of which the one shown takes the colour of
+    // the toolbar under it; and the tooltips shown over everything. A clear button has no colour for
+    // the pointer to light, hence a style of its own under it.
+    add("bar_button", clickable(image(written(ImVec4(mono.x, mono.y, mono.z, 0.0f)), 4.0f)));
+    add("bar_hover", clickable(image(written(ImVec4(mono.x, mono.y, mono.z, 0.10f)), 4.0f)));
+    add("bar_selected", clickable(image(written(ImVec4(colors.accent.x, colors.accent.y, colors.accent.z, 0.28f)), 4.0f)));
+    add("tab", clickable(image(written(ImVec4(mono.x, mono.y, mono.z, 0.0f)), 5.0f)));
+    add("tab_hover", clickable(image(written(ImVec4(mono.x, mono.y, mono.z, 0.06f)), 5.0f)));
+    add("tab_selected", clickable(image(written(colors.panel), 5.0f)));
+    add("tooltip", image(written(colors.popup), 4.0f));
     // What is selected of a text that is only read.
     add("selection", {{"UiImage", "color", written(ImVec4(colors.accent.x, colors.accent.y, colors.accent.z, 0.4f))},
                       {"UiImage", "corner_radius", "0"}});
@@ -503,6 +524,24 @@ void UiPanel::setKeyboardNavigation(bool enabled) noexcept
     m_navigation = enabled;
 }
 
+void UiPanel::setTooltipsOutside(bool outside) noexcept
+{
+    m_tooltipsOutside = outside;
+    m_world.setTooltipsDrawn(!outside);
+}
+
+ImVec2 UiPanel::screenOf(math::Vec2 units) const noexcept
+{
+    const float pointsPerUnit = m_zoom / m_pixelsPerPoint;
+    return ImVec2(m_origin.x + units.x * pointsPerUnit, m_origin.y + units.y * pointsPerUnit);
+}
+
+math::Vec2 UiPanel::unitsOf(ImVec2 screen) const noexcept
+{
+    const float unitsPerPoint = m_pixelsPerPoint / m_zoom;
+    return math::Vec2{(screen.x - m_origin.x) * unitsPerPoint, (screen.y - m_origin.y) * unitsPerPoint};
+}
+
 float UiPanel::zoomFor(float font) noexcept
 {
     const float pixelsPerPoint =
@@ -512,13 +551,16 @@ float UiPanel::zoomFor(float font) noexcept
     return pixelsPerPoint * ImGui::GetFontSize() / std::max(regularFontPixels(font), 1.0f);
 }
 
-void UiPanel::update(EditorUiKit& kit, core::Duration delta, float zoom)
+void UiPanel::update(EditorUiKit& kit, core::Duration delta, float zoom, float height)
 {
     DEVEX_PROFILE_SCOPE("Panel update");
     const ImGuiIO& io = ImGui::GetIO();
     const float pixelsPerPoint = io.DisplayFramebufferScale.x > 0.0f ? io.DisplayFramebufferScale.x : 1.0f;
-    const ImVec2 available(std::max(ImGui::GetContentRegionAvail().x, 1.0f), std::max(ImGui::GetContentRegionAvail().y, 1.0f));
+    const ImVec2 available(std::max(ImGui::GetContentRegionAvail().x, 1.0f),
+                           std::max(height > 0.0f ? height : ImGui::GetContentRegionAvail().y, 1.0f));
     const ImVec2 origin = ImGui::GetCursorScreenPos();
+    m_origin = origin;
+    m_pixelsPerPoint = pixelsPerPoint;
     m_zoom = std::max(zoom, 0.1f);
     m_pixels = {static_cast<std::uint32_t>(std::max(std::floor(available.x * pixelsPerPoint), 1.0f)),
                 static_cast<std::uint32_t>(std::max(std::floor(available.y * pixelsPerPoint), 1.0f))};
@@ -602,6 +644,14 @@ void UiPanel::update(EditorUiKit& kit, core::Duration delta, float zoom)
     }
     m_world.update(m_scene, size(), input, delta);
     m_input = input;
+    // A tooltip the image has no room for goes to the layer over the editor.
+    if (m_tooltipsOutside)
+    {
+        if (const std::optional<ui::UiWorld::ShownTooltip> shown = m_world.shownTooltip(m_scene))
+        {
+            kit.showTooltip(std::string(shown->text), screenOf(shown->at));
+        }
+    }
     carryToImGui(origin, pixelsPerPoint);
     if (const std::string& copied = m_world.clipboardRequest(); !copied.empty())
     {

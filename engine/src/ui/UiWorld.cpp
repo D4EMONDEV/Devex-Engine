@@ -1249,7 +1249,7 @@ void UiWorld::build(const scene::Scene& scene, const DrawContext& context,
     }
 
     // The tooltip, over everything, kept inside the image.
-    if (m_tooltip.shown && scene.isAlive(m_tooltip.entity))
+    if (m_tooltipsDrawn && m_tooltip.shown && scene.isAlive(m_tooltip.entity))
     {
         if (const scene::UiTooltip* const tooltip = scene.tryGet<scene::UiTooltip>(m_tooltip.entity);
             tooltip != nullptr && !tooltip->text.empty())
