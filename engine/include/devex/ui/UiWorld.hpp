@@ -195,6 +195,9 @@ public:
     [[nodiscard]] scene::Entity held() const noexcept;
     // The dropdown whose list is open, if any.
     [[nodiscard]] scene::Entity listedDropdown() const noexcept;
+    // The value of a plot the pointer is over at the last update, from 0: the bar under it, or the
+    // point of the line nearest across; -1 when the pointer is elsewhere.
+    [[nodiscard]] std::int32_t plotValueAt(const scene::Scene& scene, scene::Entity plot) const;
     // The hue, saturation and value a colour picker shows, which keep their hue while the colour is
     // grey; false for an entity that is not one.
     [[nodiscard]] bool pickerHsv(const scene::Scene& scene, scene::Entity entity, math::Vec3& hsv) const;

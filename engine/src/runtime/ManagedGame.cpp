@@ -259,6 +259,7 @@ struct NativeApi
     const char* (*uiDropData)();
     Entity (*uiCarried)();
     void (*uiDropPosition)(math::Vec2* at);
+    int (*uiPlotValueAt)(void* scene, Entity plot);
 };
 
 // The functions the engine calls, in the order of Devex.Managed's ManagedApi.
@@ -273,7 +274,7 @@ struct ManagedApi
 };
 
 // Devex.Managed's Bootstrap.Version: both sides change it with the function tables.
-constexpr int bootstrapVersion = 18;
+constexpr int bootstrapVersion = 19;
 
 struct BootstrapArguments
 {
@@ -1271,6 +1272,11 @@ Entity apiUiCarried()
     return carried != nullptr ? carried->source : Entity{};
 }
 
+int apiUiPlotValueAt(void* scene, Entity plot)
+{
+    return uiWorld() != nullptr && scene != nullptr ? uiWorld()->plotValueAt(*toScene(scene), plot) : -1;
+}
+
 int apiProfileEnabled()
 {
     return core::profiler::isEnabled() ? 1 : 0;
@@ -2240,6 +2246,7 @@ int apiParticleCount(Entity entity)
         .uiDropData = &apiUiDropData,
         .uiCarried = &apiUiCarried,
         .uiDropPosition = &apiUiDropPosition,
+        .uiPlotValueAt = &apiUiPlotValueAt,
     };
 }
 

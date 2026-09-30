@@ -280,6 +280,8 @@ TEST_CASE("The editor opens the project's scenes in tabs and renders its viewpor
         CHECK_FALSE(surfaces.contains(1));
         // The inspector, which says to choose something while nothing is selected.
         CHECK(surfaces.contains(6));
+        // The monitors of Statistics.
+        CHECK(surfaces.contains(12));
 
         // The inspector of entities is made with the interface of the engine as well: an entity that
         // carries every component of the engine shows a row for each of their fields, and several
@@ -343,13 +345,14 @@ TEST_CASE("The editor opens the project's scenes in tabs and renders its viewpor
         // The windows of settings, the export, the debugging window and the dialogs are made with the
         // interface of the engine as well, each in its image; Project Settings makes every section.
         using devex::tools::EditorWindow;
-        for (const auto& [opened, surface] : std::array<std::pair<EditorWindow, std::uint32_t>, 6>{{
+        for (const auto& [opened, surface] : std::array<std::pair<EditorWindow, std::uint32_t>, 7>{{
                  {EditorWindow::EditorSettings, 7},
                  {EditorWindow::ProjectSettings, 8},
                  {EditorWindow::Export, 9},
                  {EditorWindow::Debugging, 10},
                  {EditorWindow::NewScript, 11},
                  {EditorWindow::About, 11},
+                 {EditorWindow::Profiler, 13},
              }})
         {
             INFO(static_cast<int>(opened));

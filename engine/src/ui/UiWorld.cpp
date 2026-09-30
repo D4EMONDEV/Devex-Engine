@@ -1372,6 +1372,23 @@ scene::Entity UiWorld::listedDropdown() const noexcept
     return m_dropdown ? m_dropdown->entity : scene::Entity{};
 }
 
+std::int32_t UiWorld::plotValueAt(const scene::Scene& scene, scene::Entity plot) const
+{
+    const scene::UiPlot* const values = scene.tryGet<scene::UiPlot>(plot);
+    if (values == nullptr)
+    {
+        return -1;
+    }
+    for (const CanvasLayout& canvas : m_canvases)
+    {
+        if (const LaidOutRect* const rect = canvas.layout.find(plot); rect != nullptr && rect->visible && canvas.layout.scale > 0.0f)
+        {
+            return ui::plotValueAt(*rect, *values, m_pointer / canvas.layout.scale);
+        }
+    }
+    return -1;
+}
+
 scene::Entity UiWorld::held() const noexcept
 {
     if (m_dragged.isValid())

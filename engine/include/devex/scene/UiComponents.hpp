@@ -473,6 +473,19 @@ struct DEVEX_API UiPlot
     float maxValue = 1.0f;
     UiPlotKind kind = UiPlotKind::Line;
     math::Vec4 color{0.35f, 0.6f, 1.0f, 1.0f};
+    // The colour of each value in place of `color`: its bar, or the segment of the line that ends at
+    // it. Values past the end of the list take `color`.
+    std::vector<math::Vec4> colors;
+    // A second series drawn behind the first, of the same kind, in the colour of each value times
+    // `backColor`: what a frame spent waiting, faint behind what it spent working.
+    std::vector<float> backValues;
+    math::Vec4 backColor{1.0f, 1.0f, 1.0f, 0.3f};
+    // Lines across the plot at these values: the time of a frame at 60 frames a second.
+    std::vector<float> guides;
+    math::Vec4 guideColor{1.0f, 1.0f, 1.0f, 0.3f};
+    // A value lit from the bottom to the top, from 0; -1 lights none: the frame looked at.
+    std::int32_t highlighted = -1;
+    math::Vec4 highlightColor{1.0f, 1.0f, 1.0f, 0.18f};
     // The width of the line, in units.
     float lineWidth = 2.0f;
     // A mark across the plot, at this fraction of its width: where a sound plays. Negative hides it.

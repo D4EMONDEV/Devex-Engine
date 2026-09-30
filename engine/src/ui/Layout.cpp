@@ -425,6 +425,22 @@ ColorPickerParts colorPickerParts(const LaidOutRect& rect, const scene::UiColorP
     return parts;
 }
 
+std::int32_t plotValueAt(const LaidOutRect& rect, const scene::UiPlot& plot, math::Vec2 point) noexcept
+{
+    const std::size_t count = plot.values.size();
+    const math::Vec2 size = rect.size();
+    if (count == 0 || size.x <= 0.0f || !contains(rect, point))
+    {
+        return -1;
+    }
+    const float across = std::clamp((point.x - rect.min.x) / size.x, 0.0f, 1.0f);
+    const std::size_t index =
+        plot.kind == scene::UiPlotKind::Line
+            ? static_cast<std::size_t>(std::lround(across * static_cast<float>(count > 1 ? count - 1 : 0)))
+            : std::min(static_cast<std::size_t>(across * static_cast<float>(count)), count - 1);
+    return static_cast<std::int32_t>(index);
+}
+
 std::uint32_t virtualFirst(const LaidOutRect& rect, const scene::UiVirtualList& list) noexcept
 {
     if (!isClipped(rect.clip) || list.itemCount == 0)

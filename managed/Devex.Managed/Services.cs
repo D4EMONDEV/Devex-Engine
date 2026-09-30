@@ -667,6 +667,12 @@ public static unsafe class Ui
     public static Entity ContextTarget => Bootstrap.Native.UiContextTarget();
 
     /// <summary>
+    /// The value of a plot (UiPlot) the pointer is over, from 0: the bar under it, or the point of
+    /// the line nearest across; -1 when the pointer is elsewhere.
+    /// </summary>
+    public static int PlotValueAt(Entity plot) => Bootstrap.Native.UiPlotValueAt(Scene.Current.Pointer, plot);
+
+    /// <summary>
     /// Whether something was dropped during this frame on a drop target (UiDropTarget) carrying
     /// this action. What was dropped is in <see cref="Dropped"/>.
     /// </summary>

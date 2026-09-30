@@ -101,6 +101,10 @@ struct DEVEX_API ColorPickerParts
 };
 [[nodiscard]] DEVEX_API ColorPickerParts colorPickerParts(const LaidOutRect& rect, const scene::UiColorPicker& picker) noexcept;
 
+// The value of a plot laid out in `rect` a point is over: the bar under it, or the point of the line
+// nearest across; -1 outside the plot or when it has no value.
+[[nodiscard]] DEVEX_API std::int32_t plotValueAt(const LaidOutRect& rect, const scene::UiPlot& plot, math::Vec2 point) noexcept;
+
 // The item the first child of a virtual list shows: the first one in view.
 [[nodiscard]] DEVEX_API std::uint32_t virtualFirst(const LaidOutRect& rect, const scene::UiVirtualList& list) noexcept;
 

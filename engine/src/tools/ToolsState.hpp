@@ -91,6 +91,8 @@ struct ProjectSettingsUi;
 struct ExportUi;
 struct DebuggingUi;
 struct EditorDialogsUi;
+struct StatisticsUi;
+struct ProfilerUi;
 
 // Window names are also their identifiers in the saved layout.
 inline constexpr const char* hierarchyWindow = "Scene";
@@ -133,6 +135,36 @@ private:
     std::array<float, 240> m_milliseconds{};
     std::size_t m_next = 0;
     std::size_t m_count = 0;
+};
+
+// The last values of a measure, one a frame, which the monitors of the Statistics panel draw.
+class DEVEX_API MonitorHistory
+{
+public:
+    void record(float value) noexcept;
+    // Oldest first.
+    void values(std::vector<float>& out) const;
+    [[nodiscard]] float last() const noexcept;
+    [[nodiscard]] float maximum() const noexcept;
+    [[nodiscard]] std::size_t count() const noexcept;
+
+private:
+    std::array<float, 240> m_values{};
+    std::size_t m_next = 0;
+    std::size_t m_count = 0;
+};
+
+// The measures of the Statistics panel, recorded every frame whether it shows or not.
+struct DEVEX_API Monitors
+{
+    // In milliseconds.
+    MonitorHistory frameTime;
+    MonitorHistory drawCalls;
+    MonitorHistory culled;
+    // In megabytes: the memory of the GPU the engine takes, and what it sent to the GPU last frame.
+    MonitorHistory gpuMemory;
+    MonitorHistory uploads;
+    MonitorHistory entities;
 };
 
 // What the Profiler panel keeps from one frame to the next.
@@ -456,6 +488,9 @@ struct DEVEX_API ToolsState
     std::shared_ptr<ExportUi> exportUi;
     std::shared_ptr<DebuggingUi> debuggingUi;
     std::shared_ptr<EditorDialogsUi> dialogsUi;
+    // The panels of measures.
+    std::shared_ptr<StatisticsUi> statisticsUi;
+    std::shared_ptr<ProfilerUi> profilerUi;
     // Opens the window at the next frame.
     std::optional<CreationRequest> creationRequest;
     EditorFonts fonts;
@@ -556,6 +591,8 @@ struct DEVEX_API ToolsState
     bool showAnimator = false;
     // The profiler records while its panel is open.
     bool showProfiler = false;
+    // The Profiler panel comes to the front of its dock at its next frame, as when it is opened.
+    bool focusProfiler = false;
     ProfilerView profiler;
     // What the Animation panel shows: the clip it last posed, and where its playhead stands.
     asset::AssetId previewedAnimation;
@@ -570,6 +607,7 @@ struct DEVEX_API ToolsState
     CommandHistory suspendedHistory;
     LogBuffer log;
     FrameTimes frameTimes;
+    Monitors monitors;
     Selection selection;
     // Entities hidden in the viewport, with their descendants; the game still shows them. Kept per
     // scene tab and in the project's editor settings.
@@ -722,10 +760,15 @@ DEVEX_API void drawDebuggingWindow(ToolsState& state);
 DEVEX_API void renderDebuggingWindow(ToolsState& state, render::RenderWorld& world);
 // Opens a file in the code editor of the system.
 DEVEX_API void openInCodeEditor(ToolsState& state, const std::filesystem::path& file);
+// The device and the monitors of the measures of the frames, a curve each, as Godot's Monitors.
 DEVEX_API void drawStatisticsPanel(ToolsState& state, const scene::Scene& scene);
+// Records the measures of the monitors, once a frame.
+DEVEX_API void recordMonitors(ToolsState& state, const scene::Scene& scene, core::Duration frameDelta);
+DEVEX_API void renderStatistics(ToolsState& state, render::RenderWorld& world);
 // Where the time of the recorded frames went, on the CPU and on the GPU, and what the loaded assets
 // take.
 DEVEX_API void drawProfilerPanel(ToolsState& state);
+DEVEX_API void renderProfiler(ToolsState& state, render::RenderWorld& world);
 DEVEX_API void drawConsolePanel(ToolsState& state);
 DEVEX_API void drawAssetsPanel(ToolsState& state, scene::Scene& scene);
 // The clips of the selected Animator: a timeline of their keys, played or scrubbed. Outside Play

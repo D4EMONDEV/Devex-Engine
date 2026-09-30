@@ -311,7 +311,10 @@ void drawOverlayMenu(ToolsState& state, scene::Scene& scene)
         ImGui::MenuItem(detail::animatorWindow, nullptr, &state.showAnimator);
         ImGui::MenuItem(detail::consoleWindow, nullptr, &state.showConsole);
         ImGui::MenuItem(detail::statisticsWindow, nullptr, &state.showStatistics);
-        ImGui::MenuItem(detail::profilerWindow, nullptr, &state.showProfiler);
+        if (ImGui::MenuItem(detail::profilerWindow, nullptr, &state.showProfiler) && state.showProfiler)
+        {
+            state.focusProfiler = true;
+        }
         ImGui::Separator();
         if (ImGui::MenuItem("Reset Layout"))
         {
@@ -652,6 +655,7 @@ void ToolsOverlay::update(scene::Scene& scene, core::Duration frameDelta, PlaySt
     ToolsState& state = *m_state;
     state.pressedKey = std::exchange(state.notifiedKey, std::nullopt);
     state.frameTimes.record(static_cast<float>(frameDelta.count() * 1000.0));
+    detail::recordMonitors(state, scene, frameDelta);
     // Frames are measured only for someone to look at them.
     core::profiler::setEnabled(state.visible && state.showProfiler);
     if (!state.visible)
@@ -721,6 +725,8 @@ void ToolsOverlay::prepareRender(scene::Scene& scene, render::RenderWorld& world
     detail::renderInspector(state, world);
     detail::renderCreationDialog(state, world);
     detail::renderFormWindows(state, world);
+    detail::renderStatistics(state, world);
+    detail::renderProfiler(state, world);
     if (state.mode != ToolsMode::Editor)
     {
         return;
@@ -897,6 +903,7 @@ void ToolsOverlay::openWindow(EditorWindow window)
         break;
     case EditorWindow::Profiler:
         m_state->showProfiler = true;
+        m_state->focusProfiler = true;
         break;
     }
 }

@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <span>
 #include <string>
 #include <string_view>
 
@@ -640,31 +641,63 @@ void drawPlot(Builder& builder, const LaidOutRect& rect, const scene::UiPlot& pl
 {
     const std::size_t count = plot.values.size();
     const math::Vec2 size = rect.size();
-    const math::Vec4 color = withOpacity(plot.color, rect.opacity);
     const float low = std::min(plot.minValue, plot.maxValue);
     const float high = std::max(plot.minValue, plot.maxValue);
     const float range = high > low ? high - low : 1.0f;
     // How high a value stands, from 0 at the bottom to 1 at the top.
     const auto height = [&](float value) { return std::clamp((value - low) / range, 0.0f, 1.0f); };
-    if (count > 0 && color.w > 0.0f)
+    const auto colorOf = [&](std::size_t index) {
+        return withOpacity(index < plot.colors.size() ? plot.colors[index] : plot.color, rect.opacity);
+    };
+    // The places of the values across: those of the first series, which the one behind follows.
+    const auto slots = [&](std::size_t values) { return count > 0 ? count : values; };
+    const auto across = [&](std::size_t index, std::size_t places) {
+        return rect.min.x + (places > 1 ? static_cast<float>(index) / static_cast<float>(places - 1) : 0.5f) * size.x;
+    };
+    // A hair between bars, while they are wide enough to spare it.
+    const auto gapOf = [](float width) { return width > 3.0f ? 1.0f : 0.0f; };
+
+    // The value looked at, lit from the bottom to the top behind the series.
+    if (plot.highlighted >= 0 && static_cast<std::size_t>(plot.highlighted) < count)
     {
+        const auto index = static_cast<std::size_t>(plot.highlighted);
+        const float width = size.x / static_cast<float>(count);
+        float left = rect.min.x + static_cast<float>(index) * width;
+        float right = left + width - gapOf(width);
+        if (plot.kind == scene::UiPlotKind::Line)
+        {
+            const float half = std::max(width * 0.5f, plot.lineWidth);
+            left = across(index, count) - half;
+            right = across(index, count) + half;
+        }
+        fill(builder, math::Vec2{std::max(left, rect.min.x), rect.min.y}, math::Vec2{std::min(right, rect.max.x), rect.max.y},
+             withOpacity(plot.highlightColor, rect.opacity));
+    }
+
+    const auto series = [&](std::span<const float> values, bool back) {
+        const std::size_t places = slots(values.size());
+        if (values.empty() || places == 0 || (plot.colors.empty() && plot.color.w <= 0.0f))
+        {
+            return;
+        }
+        const auto tint = [&](std::size_t index) { return back ? multiply(colorOf(index), plot.backColor) : colorOf(index); };
         render::UiDraw& draw = builder.batch(render::UiDrawKind::Quad, render::TextureHandle{}, math::Vec4{0.0f}, 0.0f, 1.0f);
+        const std::size_t shown = std::min(values.size(), places);
         if (plot.kind == scene::UiPlotKind::Line)
         {
             const auto point = [&](std::size_t index) {
-                const float across = count > 1 ? static_cast<float>(index) / static_cast<float>(count - 1) : 0.5f;
-                return math::Vec2{rect.min.x + across * size.x, rect.max.y - height(plot.values[index]) * size.y};
+                return math::Vec2{across(index, places), rect.max.y - height(values[index]) * size.y};
             };
             const float half = std::max(plot.lineWidth, 0.5f) * 0.5f;
-            if (count == 1)
+            if (shown == 1)
             {
                 const math::Vec2 at = point(0);
-                builder.quad(draw, math::Vec2{rect.min.x, at.y - half}, math::Vec2{rect.max.x, at.y + half},
-                             math::Vec2{0.0f}, math::Vec2{1.0f}, color);
+                builder.quad(draw, math::Vec2{rect.min.x, at.y - half}, math::Vec2{rect.max.x, at.y + half}, math::Vec2{0.0f},
+                             math::Vec2{1.0f}, tint(0));
             }
-            for (std::size_t index = 1; index < count; ++index)
+            for (std::size_t index = 1; index < shown; ++index)
             {
-                // Each segment is a thin quad along it.
+                // Each segment is a thin quad along it, in the colour of the value it ends at.
                 const math::Vec2 from = point(index - 1);
                 const math::Vec2 to = point(index);
                 const math::Vec2 along = to - from;
@@ -675,32 +708,42 @@ void drawPlot(Builder& builder, const LaidOutRect& rect, const scene::UiPlot& pl
                 }
                 const math::Vec2 side{-along.y / length * half, along.x / length * half};
                 builder.quad(draw, std::array<math::Vec2, 4>{from + side, to + side, to - side, from - side}, math::Vec2{0.0f},
-                             math::Vec2{1.0f}, color);
+                             math::Vec2{1.0f}, tint(index));
             }
+            return;
         }
-        else
+        const float width = size.x / static_cast<float>(places);
+        const float gap = gapOf(width);
+        const float middle = (rect.min.y + rect.max.y) * 0.5f;
+        for (std::size_t index = 0; index < shown; ++index)
         {
-            const float width = size.x / static_cast<float>(count);
-            // A hair between bars, while they are wide enough to spare it.
-            const float gap = width > 3.0f ? 1.0f : 0.0f;
-            const float middle = (rect.min.y + rect.max.y) * 0.5f;
-            for (std::size_t index = 0; index < count; ++index)
+            const float left = rect.min.x + static_cast<float>(index) * width;
+            const float extent = height(values[index]);
+            if (plot.kind == scene::UiPlotKind::Bars)
             {
-                const float left = rect.min.x + static_cast<float>(index) * width;
-                const float extent = height(plot.values[index]);
-                if (plot.kind == scene::UiPlotKind::Bars)
-                {
-                    builder.quad(draw, math::Vec2{left, rect.max.y - extent * size.y}, math::Vec2{left + width - gap, rect.max.y},
-                                 math::Vec2{0.0f}, math::Vec2{1.0f}, color);
-                }
-                else
-                {
-                    const float half = std::max(extent * size.y * 0.5f, 0.5f);
-                    builder.quad(draw, math::Vec2{left, middle - half}, math::Vec2{left + width - gap, middle + half}, math::Vec2{0.0f},
-                                 math::Vec2{1.0f}, color);
-                }
+                builder.quad(draw, math::Vec2{left, rect.max.y - extent * size.y}, math::Vec2{left + width - gap, rect.max.y},
+                             math::Vec2{0.0f}, math::Vec2{1.0f}, tint(index));
+            }
+            else
+            {
+                const float half = std::max(extent * size.y * 0.5f, 0.5f);
+                builder.quad(draw, math::Vec2{left, middle - half}, math::Vec2{left + width - gap, middle + half}, math::Vec2{0.0f},
+                             math::Vec2{1.0f}, tint(index));
             }
         }
+    };
+    series(plot.backValues, true);
+    series(plot.values, false);
+
+    // The lines of the values the series are measured against, over them.
+    for (const float guide : plot.guides)
+    {
+        if (guide < low || guide > high)
+        {
+            continue;
+        }
+        const float y = rect.max.y - height(guide) * size.y;
+        fill(builder, math::Vec2{rect.min.x, y - 0.5f}, math::Vec2{rect.max.x, y + 0.5f}, withOpacity(plot.guideColor, rect.opacity));
     }
     if (plot.marker >= 0.0f)
     {

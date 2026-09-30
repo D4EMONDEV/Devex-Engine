@@ -2278,6 +2278,25 @@ les assets s'écrivent au fil de leur lecture.
     d'ImGui passe de 16 à 64 jeux, une image par fenêtre et par image en vol. Limites : pas de
     bouton de retour à la valeur par défaut par réglage (seulement *Reset to Defaults* pour le
     thème), et la fenêtre d'événement ne prend les boutons de la souris que dans la liste.
+- **Puis les panneaux de mesure** (jalon 46). **Statistics devient des moniteurs, comme ceux de
+  Godot** : l'appareil en haut (GPU, pilote, présentation, swapchain), puis une carte repliable par
+  mesure avec sa courbe sur les 240 dernières images, sa valeur actuelle et son maximum — durée
+  d'image (avec les repères 60 et 30 FPS), draw calls, instances écartées, mémoire GPU, envois,
+  entités — et les ressources en dessous ; l'infobulle d'une courbe donne la valeur de l'image sous
+  le pointeur. Les mesures sont relevées à chaque image, panneau montré ou non (`Monitors`).
+  **Le Profiler** garde sa forme : une barre par image (le travail en couleur, l'attente pâle
+  au-dessus, verte, jaune ou rouge selon la durée ; un clic regarde l'image et met en pause), la
+  timeline des zones de l'image regardée (une ligne par thread, zones imbriquées, zoom à la
+  molette autour du pointeur, glisser pour se déplacer, double clic pour tout revoir, infobulle de
+  la zone sous le pointeur), et les onglets CPU (arbre repliable des temps, total, propre et
+  appels), GPU (passes du graphe de rendu) et Memory (assets chargés). Côte à côte dans un panneau
+  large, l'un au-dessus de l'autre dans un haut, avec une barre à glisser entre les deux.
+  - **Des entités réutilisées pour la timeline** : chaque zone visible prend un rectangle dans une
+    réserve et y est placée à chaque image ; seules les zones en vue en ont un. Les infobulles
+    viennent de Devex UI ; le zoom et le glisser sont lus à la main dans l'entrée du panneau. Le
+    temps d'attente de chaque image enregistrée est trouvé une fois, et seule la zone sous le
+    pointeur écrit son infobulle : le panneau ne coûte presque rien en Release.
+  - Le Profiler ouvert depuis le menu passe devant les autres onglets de son dock.
 
 ### Interfaces
 
@@ -2504,14 +2523,19 @@ les assets s'écrivent au fil de leur lecture.
 - **Graphes** : `UiPlot` dessine une suite de valeurs entre deux bornes, en ligne (un quad fin par
   segment), en barres ou en barres en miroir (la forme d'onde d'un son), avec un repère vertical
   (la tête de lecture) ; les valeurs au-delà des bornes restent au bord. Les jeux s'en servent pour
-  une jauge au fil du temps ; l'éditeur pour les sons et les courbes, bientôt les statistiques.
+  une jauge au fil du temps ; l'éditeur pour les sons, les courbes et les mesures. Chaque valeur
+  peut avoir sa couleur (`colors`), une seconde série se dessine derrière la première dans la
+  couleur de chaque valeur multipliée par `back_color` (l'attente derrière le travail), des lignes
+  de repère traversent le graphe à des valeurs données (`guides`), et une valeur peut être éclairée
+  de bas en haut (`highlighted`). `UiWorld::plotValueAt` (`Ui.PlotValueAt` en C#) dit quelle valeur
+  est sous le pointeur : la barre, ou le point de la ligne le plus proche.
 - **Double clic** : deux clics sur le même bouton à moins de 0,4 seconde ; le second compte aussi
   comme un clic (`wasDoubleClicked`). `startEditing` donne le clavier à un champ, son texte
   sélectionné, comme un formulaire à son premier champ.
 - **Jeu** : `SystemContext::ui` et `Application::ui()` donnent l'`UiWorld` ; en C#, la classe `Ui`
   offre `WasClicked(action)`, `WasClicked(entity)`, `WasDoubleClicked(action)`,
   `WasDoubleClicked(entity)`, `WasChanged(action)`, `WasSubmitted(action)`, `WasCancelled()`,
-  `OpenPopup(entity)`, `OpenPopup(entity, at)`, `ClosePopup`, `IsPopupOpen`, `ContextTarget`,
+  `OpenPopup(entity)`, `OpenPopup(entity, at)`, `ClosePopup`, `IsPopupOpen`, `ContextTarget`, `PlotValueAt`,
   `WasDropped(action)`, `WasDropped(entity)`, `Dropped` (un `UiDrop` : source, cible, type,
   données, endroit), `Carried`, `Hovered`, `Focused`, `EditedField` et `PointerOverInterface`, que le jeu lit
   avant d'agir sur un clic qui lui serait destiné. Les touches restent visibles des systèmes du
@@ -3094,6 +3118,11 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     avec sa fenêtre d'événement qui écoute la prochaine touche, fenêtres Export et C# Debugging,
     dialogues New Script, modifications non enregistrées et About ; pièces de formulaire communes
     (`FormUi`) à l'inspecteur et aux fenêtres.
+
+46. ✅ **Statistics et Profiler en Devex UI** — moniteurs à la Godot, une courbe par mesure ;
+    Profiler en barres, timeline zoomable et onglets CPU, GPU et Memory ; `UiPlot` avec une
+    couleur par valeur, une série derrière, des repères, une valeur éclairée et la valeur sous le
+    pointeur, en C++ et en C#.
 
 Ensuite, sans ordre figé : CI Linux, la suite du portage de l'éditeur.
 

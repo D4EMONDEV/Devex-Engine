@@ -18,6 +18,7 @@
 
 using devex::core::Duration;
 using devex::math::Vec2;
+using devex::math::Vec4;
 using devex::scene::Canvas;
 using devex::scene::CanvasScaleMode;
 using devex::scene::Entity;
@@ -994,4 +995,63 @@ TEST_CASE("A plot draws its values as a line or as bars, between its bounds", "[
     // The marker, one unit each side of a quarter of the width.
     CHECK(wave.uiVertices[4].position.x == Catch::Approx(24.0f));
     CHECK(wave.uiVertices[6].position.x == Catch::Approx(26.0f));
+}
+
+TEST_CASE("A plot colours each value, draws a second series behind, guides and the value looked at", "[ui][draw]")
+{
+    Scene scene;
+    const Entity element = placedElement(scene, {0.0f, 0.0f}, {100.0f, 50.0f});
+    const Vec4 red{1.0f, 0.0f, 0.0f, 1.0f};
+    const Vec4 green{0.0f, 1.0f, 0.0f, 1.0f};
+    scene.add<devex::scene::UiPlot>(element, devex::scene::UiPlot{.values = {0.5f, 0.25f},
+                                                                  .kind = devex::scene::UiPlotKind::Bars,
+                                                                  .colors = {red, green},
+                                                                  .backValues = {1.0f, 1.0f},
+                                                                  .backColor = {1.0f, 1.0f, 1.0f, 0.5f},
+                                                                  .guides = {0.5f, 2.0f},
+                                                                  .guideColor = {0.0f, 0.0f, 1.0f, 1.0f},
+                                                                  .highlighted = 1,
+                                                                  .highlightColor = {1.0f, 1.0f, 1.0f, 0.25f}});
+
+    // The value looked at first, then the series behind, the series, and the one guide in bounds.
+    const devex::render::RenderWorld drawn = drawOne(scene, element, devex::ui::DrawContext{});
+    REQUIRE(drawn.uiVertices.size() == 4 * (1 + 2 + 2 + 1));
+    const auto quad = [&](std::size_t index) { return &drawn.uiVertices[index * 4]; };
+    CHECK(quad(0)[0].position.x == Catch::Approx(50.0f));
+    CHECK(quad(0)[0].color.w == Catch::Approx(0.25f));
+    // Behind: the whole height, in the colour of each value at half its opacity.
+    CHECK(quad(1)[0].position.y == Catch::Approx(0.0f));
+    CHECK(quad(1)[0].color == Vec4{1.0f, 0.0f, 0.0f, 0.5f});
+    CHECK(quad(2)[0].color == Vec4{0.0f, 1.0f, 0.0f, 0.5f});
+    // In front: each bar in its colour.
+    CHECK(quad(3)[0].position.y == Catch::Approx(25.0f));
+    CHECK(quad(3)[0].color == red);
+    CHECK(quad(4)[0].color == green);
+    // The guide at half the height, a unit thick; the one past the top is left out.
+    CHECK(quad(5)[0].position.y == Catch::Approx(24.5f));
+    CHECK(quad(5)[2].position.y == Catch::Approx(25.5f));
+    CHECK(quad(5)[0].color == Vec4{0.0f, 0.0f, 1.0f, 1.0f});
+}
+
+TEST_CASE("The value of a plot under the pointer is the bar under it, or the nearest point of its line", "[ui][world]")
+{
+    Scene scene;
+    const Entity element = placedElement(scene, {100.0f, 100.0f}, {200.0f, 150.0f});
+    scene.add<devex::scene::UiPlot>(element, devex::scene::UiPlot{.values = {1.0f, 2.0f, 3.0f, 4.0f}, .kind = devex::scene::UiPlotKind::Bars});
+    UiWorld world;
+    const auto at = [&](Vec2 pointer) {
+        world.update(scene, window, UiInput{.pointer = pointer}, frame);
+        return world.plotValueAt(scene, element);
+    };
+    // Four bars of 25 units each.
+    CHECK(at({101.0f, 120.0f}) == 0);
+    CHECK(at({160.0f, 120.0f}) == 2);
+    CHECK(at({199.0f, 149.0f}) == 3);
+    CHECK(at({90.0f, 120.0f}) == -1);
+    // The points of a line stand at 0, 33, 67 and 100 units across.
+    scene.get<devex::scene::UiPlot>(element).kind = devex::scene::UiPlotKind::Line;
+    CHECK(at({110.0f, 120.0f}) == 0);
+    CHECK(at({160.0f, 120.0f}) == 2);
+    // An element that is not a plot has no value.
+    CHECK(world.plotValueAt(scene, scene.parent(element)) == -1);
 }

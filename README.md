@@ -109,7 +109,9 @@ Le détail, l'architecture des modules et les jalons sont dans
   leurs champs, une page par asset avec ses réglages d'import appliqués par *Reimport* comme dans
   Godot), Editor Settings et Project Settings (sections à gauche et filtre comme dans Godot,
   matrice de collision, Input Map dont chaque liaison écoute la prochaine touche), fenêtre Export,
-  dialogues New Script, modifications non enregistrées et About, FileSystem et Output déjà écrits
+  dialogues New Script, modifications non enregistrées et About, moniteurs de Statistics (une
+  courbe par mesure) et Profiler (barres des images, timeline zoomable des zones, arbre des temps
+  CPU, passes GPU, mémoire des assets), FileSystem et Output déjà écrits
   avec
   `Devex::Ui` (menus contextuels,
   infobulles, modales, listes virtuelles, texte de la sortie choisi et copié à la souris, fichiers

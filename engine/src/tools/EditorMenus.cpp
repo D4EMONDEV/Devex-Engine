@@ -219,7 +219,10 @@ void drawEditorMenu(ToolsState& state)
         ImGui::MenuItem(animatorWindow, nullptr, &state.showAnimator);
         ImGui::MenuItem(consoleWindow, nullptr, &state.showConsole);
         ImGui::MenuItem(statisticsWindow, nullptr, &state.showStatistics);
-        ImGui::MenuItem(profilerWindow, nullptr, &state.showProfiler);
+        if (ImGui::MenuItem(profilerWindow, nullptr, &state.showProfiler) && state.showProfiler)
+        {
+            state.focusProfiler = true;
+        }
         ImGui::EndMenu();
     }
     if (ImGui::MenuItem("Reset Layout"))
