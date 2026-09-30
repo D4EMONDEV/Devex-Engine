@@ -52,9 +52,8 @@ std::string assetLabel(const ToolsState& state, asset::AssetId id)
 void drawInspectorPanel(ToolsState& state, scene::Scene& scene)
 {
     DEVEX_PROFILE_SCOPE("Inspector");
-    if (!ImGui::Begin(inspectorWindow, nullptr, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse))
+    if (!beginDockedPanel(state, inspectorWindow))
     {
-        ImGui::End();
         return;
     }
     // The inspector shows one thing at a time: an entity chosen leaves the asset and the code file.

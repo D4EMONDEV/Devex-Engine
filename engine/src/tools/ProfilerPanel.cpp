@@ -1056,18 +1056,12 @@ void drawProfilerPanel(ToolsState& state)
     {
         return;
     }
-    // A layout saved before this panel existed has no place for it: it opens beside the output.
-    if (const ImGuiWindow* const output = ImGui::FindWindowByName(consoleWindow); output != nullptr && output->DockId != 0)
-    {
-        ImGui::SetNextWindowDockID(output->DockId, ImGuiCond_FirstUseEver);
-    }
     if (std::exchange(state.focusProfiler, false))
     {
-        ImGui::SetNextWindowFocus();
+        focusPanel(state, profilerWindow);
     }
-    if (!ImGui::Begin(profilerWindow, &state.showProfiler, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse))
+    if (!beginDockedPanel(state, profilerWindow))
     {
-        ImGui::End();
         return;
     }
     EditorUiKit& kit = editorUiKit(state);

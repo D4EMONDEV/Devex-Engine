@@ -3,6 +3,7 @@
 #include <devex/core/Export.hpp>
 
 #include "CodeArea.hpp"
+#include "EditorDock.hpp"
 #include "EditorCamera.hpp"
 #include "EditorView.hpp"
 #include "Gizmo.hpp"
@@ -95,6 +96,7 @@ struct ProfilerUi;
 struct AnimationUi;
 struct ScriptUi;
 struct ViewportOverlayUi;
+struct EditorDockUi;
 
 // What the editor draws over the image of the viewport this frame, in points of the screen as ImGui
 // places things; the overlay of the viewport draws it.
@@ -543,8 +545,13 @@ struct DEVEX_API ToolsState
     bool capturesKeyboard = false;
     bool capturesMouse = false;
     bool resetLayout = false;
-    // Frames before the output tab is brought to the front of a new layout, once its windows are docked.
-    int selectOutputTabFrames = 0;
+    // Where the panels stand, where the dock put them this frame, and the panel the keyboard goes to
+    // next; a change of the layout is saved once the mouse lets go.
+    DockLayout dock;
+    DockPlaces dockPlaces;
+    std::shared_ptr<EditorDockUi> dockUi;
+    std::string panelToFocus;
+    bool dockChanged = false;
 
     bool showHierarchy = true;
     bool showInspector = true;

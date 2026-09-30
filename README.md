@@ -12,10 +12,10 @@ et rendu avec Vulkan. Il est distribué sous licence [MIT](LICENSE).
 - repère Y-up main droite, formats de projet texte `.dvx*` ;
 - gameplay en C++ (composants et systèmes) **ou en C#** (.NET hébergé), compilé et rechargé à
   chaud par l'éditeur ;
-- éditeur Dear ImGui (docking) au style inspiré de Godot : gestionnaire de projets, onglets de
-  scènes, viewport, gizmos et mode Play ; il passe panneau par panneau sur l'interface des jeux,
-  pour n'avoir qu'un seul système d'interface : le gestionnaire de projets, l'arbre de scène,
-  FileSystem, Output et la fenêtre qui crée les entités et ajoute les composants le sont déjà.
+- éditeur au style inspiré de Godot : gestionnaire de projets, onglets de scènes, viewport,
+  gizmos et mode Play ; il passe sur l'interface des jeux, pour n'avoir qu'un seul système
+  d'interface : tous les panneaux et le dock (emplacements, onglets, barres) le sont déjà, et
+  Dear ImGui ne fait plus que lire l'entrée, tenir les fenêtres modales et afficher les images.
 
 Le détail, l'architecture des modules et les jalons sont dans
 [docs/decisions.md](docs/decisions.md).
@@ -94,8 +94,10 @@ Le détail, l'architecture des modules et les jalons sont dans
   fenêtres d'un outil), zones de texte colorées par morceaux, surlignées et marquées par ligne,
   en C++ comme en C# (`Ui.SetTextColors`), dessin en une passe après le tonemapping ou dans une image à part
   (les panneaux de l'éditeur), survol, clic et focus au clavier comme à la manette ;
-- `Devex::Tools` : interface ImGui au thème réglable inspiré de Godot (Noto Sans, JetBrains Mono,
-  icônes Lucide) : arbre de la scène, inspecteur, FileSystem, sortie, statistiques, annulation, en
+- `Devex::Tools` : interface au thème réglable inspiré de Godot (Noto Sans, JetBrains Mono,
+  icônes Lucide), panneaux rangés par un dock aux emplacements de Godot (onglets glissés d'un
+  emplacement à l'autre, gardés avec le projet) : arbre de la scène, inspecteur, FileSystem,
+  sortie, statistiques, annulation, en
   overlay (F1) ou dans l'éditeur : écrans 2D, 3D et Script au centre de la barre de menus comme
   dans Godot : chaque scène est 2D ou 3D et se voit dans l'écran de son type (l'autre reste vide),
   et les interfaces s'éditent dans l'écran 2D (canevas rendus pour de vrai dans le cadre de la

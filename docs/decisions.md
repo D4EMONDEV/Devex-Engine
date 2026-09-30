@@ -2337,6 +2337,36 @@ les assets s'écrivent au fil de leur lecture.
     d'accès aux menus par Alt ; l'appui qui ferme un menu n'agit pas sur ce qui est dessous ; pas
     de menu contextuel sur les onglets (ajouté depuis, voir le jalon 51) ; les onglets des panneaux
     ancrés restent ceux d'ImGui.
+- **Puis le dock** (jalon 52). ImGui ne place plus les panneaux. Il restait, pour quitter ImGui :
+  le dock, les fenêtres modales, l'entrée (clavier, souris, raccourcis, presse-papiers), le glisser
+  entre panneaux, et l'affichage des images. Le dock vient d'abord, le plus gros ; les modales,
+  l'entrée puis le retrait d'ImGui suivront.
+  - **Des emplacements comme ceux de Godot**, pas un arbre libre : deux à gauche, deux à droite, un
+    sous les écrans, et au milieu les écrans 2D, 3D et Script (ou le jeu derrière les outils, F1).
+    Chaque emplacement tient ses panneaux en onglets ; un emplacement sans panneau montré se ferme,
+    un côté sans aucun aussi, et les écrans prennent la place. Écartés : l'arbre libre d'ImGui (plus
+    souple, bien plus long, moins proche de Godot) et les fenêtres flottantes (*Make Floating* de
+    Godot 4), qui demandent plusieurs fenêtres et plusieurs swapchains.
+  - `DockLayout` dit où est chaque panneau, lequel est devant, et comment la place se partage, en
+    parts de la place du dock ; `placeDock` en tire les rectangles de la frame, et les tests les
+    vérifient sans GPU. Un panneau que la disposition ne connaît pas va où la disposition par
+    défaut le met (Output devant ses voisins sous les écrans).
+  - Le dock est un panneau Devex UI (surface 22), sur toute la place entre la barre de menus et
+    la barre d'état, derrière les panneaux : le fond autour d'eux, les onglets, et les barres
+    entre les emplacements, qui s'éclairent sous le pointeur et suivent un glisser. Un onglet
+    cliqué passe devant et donne le clavier à son panneau ; Profiler, Animation et Animator ont
+    une croix, comme avant. Un onglet se glisse sur un autre emplacement : pendant le glisser, le
+    dock passe devant les panneaux, qui se voient au travers, et montre où s'ouvrirait un
+    emplacement vide (le tiers de son côté, ou le bord des écrans quand le côté est fermé).
+  - Les panneaux restent des fenêtres ImGui, sans titre ni bord, que `beginDockedPanel` pose sur
+    leur emplacement ; un panneau derrière un onglet ne s'ouvre pas du tout, comme ImGui le
+    faisait. `focusPanel` remplace les `SetWindowFocus` qui amenaient un panneau devant. Le docking
+    d'ImGui est coupé.
+  - La disposition se garde avec le projet, dans `.devex/editor.dvx`, comme Godot la garde dans
+    celui du projet ; le menu *Reset Layout* la remet. Par-dessus un jeu (F1), la disposition par
+    défaut, et le milieu laisse passer le pointeur vers le jeu.
+  - Coût mesuré sur le banc caché : 0,17 ms par image en Debug, 0,017 ms en Release, pour le dock
+    lui-même.
 - **Puis le ménage avant le dock** (jalon 51). Ce qui reste d'ImGui dans l'éditeur, une fois tous
   les panneaux portés, est le dock lui-même et les fenêtres qui accueillent les images des
   panneaux. Avant de s'y attaquer :
@@ -3359,7 +3389,12 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     ancres des interfaces, indications) en Devex UI sur un panneau transparent ; widgets ImGui
     sans appelant retirés.
 
-Ensuite, sans ordre figé : CI Linux, le dock en Devex UI.
+52. ✅ **Le dock en Devex UI** — emplacements comme ceux de Godot (deux de chaque côté, un sous
+    les écrans), onglets, barres qui partagent la place, onglets glissés d'un emplacement à
+    l'autre, disposition gardée avec le projet.
+
+Ensuite, sans ordre figé : CI Linux, les fenêtres modales et l'entrée hors d'ImGui, puis le
+retrait d'ImGui.
 
 ## Questions ouvertes
 

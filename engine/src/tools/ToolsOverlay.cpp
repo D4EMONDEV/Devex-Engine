@@ -264,67 +264,6 @@ void applyWindowLayout(ToolsState& state, detail::WindowLayout layout)
     }
 }
 
-// Scene tree and file system on the left, inspector on the right, output and statistics under the view.
-void buildDefaultLayout(ImGuiID dockspace, const ImGuiViewport& viewport, ToolsMode mode)
-{
-    ImGui::DockBuilderRemoveNode(dockspace);
-    ImGui::DockBuilderAddNode(dockspace, ImGuiDockNodeFlags_DockSpace);
-    ImGui::DockBuilderSetNodeSize(dockspace, viewport.WorkSize);
-
-    ImGuiID center = dockspace;
-    ImGuiID leftTop = ImGui::DockBuilderSplitNode(center, ImGuiDir_Left, 0.19f, nullptr, &center);
-    const ImGuiID leftBottom = ImGui::DockBuilderSplitNode(leftTop, ImGuiDir_Down, 0.5f, nullptr, &leftTop);
-    const ImGuiID right = ImGui::DockBuilderSplitNode(center, ImGuiDir_Right, 0.27f, nullptr, &center);
-    const ImGuiID bottom = ImGui::DockBuilderSplitNode(center, ImGuiDir_Down, 0.26f, nullptr, &center);
-
-    ImGui::DockBuilderDockWindow(detail::hierarchyWindow, leftTop);
-    ImGui::DockBuilderDockWindow(detail::assetsWindow, leftBottom);
-    ImGui::DockBuilderDockWindow(detail::inspectorWindow, right);
-    ImGui::DockBuilderDockWindow(detail::consoleWindow, bottom);
-    ImGui::DockBuilderDockWindow(detail::statisticsWindow, bottom);
-    ImGui::DockBuilderDockWindow(detail::profilerWindow, bottom);
-    ImGui::DockBuilderDockWindow(detail::animationWindow, bottom);
-    ImGui::DockBuilderDockWindow(detail::animatorWindow, bottom);
-    if (mode == ToolsMode::Editor)
-    {
-        // The screens of the menu bar share the middle: the switch brings one to the front, and
-        // the node shows no tab bar, so that the screen fills it as in Godot.
-        ImGui::DockBuilderDockWindow(detail::viewportWindow, center);
-        ImGui::DockBuilderDockWindow(detail::textEditorWindow, center);
-        if (ImGuiDockNode* const node = ImGui::DockBuilderGetNode(center))
-        {
-            node->SetLocalFlags(node->LocalFlags | ImGuiDockNodeFlags_NoTabBar |
-                                ImGuiDockNodeFlags_NoWindowMenuButton | ImGuiDockNodeFlags_NoCloseButton);
-        }
-    }
-    else
-    {
-        ImGui::DockBuilderDockWindow(detail::textEditorWindow, bottom);
-    }
-    ImGui::DockBuilderFinish(dockspace);
-}
-
-void drawDockspace(ToolsState& state)
-{
-    const ImGuiViewport* const viewport = ImGui::GetMainViewport();
-    // The name carries a version, increased when panels change, so that saved layouts from before
-    // are rebuilt with the new panels docked.
-    const bool editor = state.mode == ToolsMode::Editor;
-    const ImGuiID dockspace = ImHashStr(editor ? "Devex editor dockspace 6" : "Devex tools dockspace 6");
-    if (state.resetLayout || ImGui::DockBuilderGetNode(dockspace) == nullptr)
-    {
-        buildDefaultLayout(dockspace, *viewport, state.mode);
-        state.resetLayout = false;
-        state.selectOutputTabFrames = 2;
-    }
-    // Over the game, the central node stays empty and transparent, showing the game behind the
-    // panels; the editor shows the game in its viewport panel instead. The gaps between panels
-    // show the outer color, as in Godot.
-    ImGui::PushStyleColor(ImGuiCol_WindowBg, detail::uiColor(detail::themeColors().outer));
-    ImGui::DockSpaceOverViewport(dockspace, viewport, editor ? ImGuiDockNodeFlags_None : ImGuiDockNodeFlags_PassthruCentralNode);
-    ImGui::PopStyleColor();
-}
-
 void finishFrame(ToolsState& state)
 {
     ImGui::Render();
@@ -401,10 +340,10 @@ void updateEditor(ToolsState& state, scene::Scene& scene, PlayState playState)
     detail::drawEditorMenus(state, scene);
     if (std::exchange(state.mainScreenChanged, false))
     {
-        ImGui::SetWindowFocus(detail::windowOf(state.mainScreen));
+        detail::focusPanel(state, detail::windowOf(state.mainScreen));
     }
     detail::drawStatusBar(state, scene);
-    drawDockspace(state);
+    detail::drawEditorDock(state);
     handleShortcuts(state, scene);
     detail::handleEditorShortcuts(state, scene);
     detail::drawViewportPanel(state, scene);
@@ -489,7 +428,8 @@ core::Result<std::unique_ptr<ToolsOverlay>> ToolsOverlay::create(
 
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
-    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable | ImGuiConfigFlags_NavEnableKeyboard;
+    // The dock of the editor places the panels itself.
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
     io.IniFilename = state->settingsFile.c_str();
     // Ctrl+Tab goes through scene tabs rather than ImGui's windows.
     ImGui::GetCurrentContext()->ConfigNavWindowingKeyNext = 0;
@@ -612,7 +552,7 @@ void ToolsOverlay::update(scene::Scene& scene, core::Duration frameDelta, PlaySt
 
     // The menu bar of the editor, with the menus the tools over a game have.
     detail::drawEditorMenus(state, scene);
-    drawDockspace(state);
+    detail::drawEditorDock(state);
     handleShortcuts(state, scene);
     if (state.showHierarchy)
     {
@@ -657,6 +597,7 @@ void ToolsOverlay::prepareRender(scene::Scene& scene, render::RenderWorld& world
     // The panels made with the interface of the engine draw into images of their own, in the
     // overlay of a game as in the editor.
     detail::renderProjectManager(state, world);
+    detail::renderEditorDock(state, world);
     detail::renderFileSystem(state, world);
     detail::renderOutput(state, world);
     detail::renderSceneTree(state, world);

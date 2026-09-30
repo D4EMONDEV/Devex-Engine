@@ -792,6 +792,8 @@ target_sources(devex_tools
         src/tools/TilesetInspector.cpp
         src/tools/EditorCamera.cpp
         src/tools/EditorCamera.hpp
+        src/tools/EditorDock.cpp
+        src/tools/EditorDock.hpp
         src/tools/EditorFrame.hpp
         src/tools/EditorLayer.cpp
         src/tools/EditorMenus.cpp

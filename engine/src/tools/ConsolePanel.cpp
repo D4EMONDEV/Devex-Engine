@@ -708,11 +708,6 @@ void OutputUi::update(ToolsState& state, EditorUiKit& kit, core::Duration delta)
 void drawConsolePanel(ToolsState& state)
 {
     DEVEX_PROFILE_SCOPE("Output");
-    // A new layout shows the output rather than the statistics docked with it.
-    if (state.selectOutputTabFrames > 0 && --state.selectOutputTabFrames == 0)
-    {
-        ImGui::SetNextWindowFocus();
-    }
     if (!state.uiKit)
     {
         state.uiKit = std::make_shared<EditorUiKit>(state.renderer, state.icons,
@@ -722,11 +717,11 @@ void drawConsolePanel(ToolsState& state)
     {
         state.outputUi = std::make_shared<OutputUi>();
     }
-    if (ImGui::Begin(consoleWindow, nullptr, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse))
+    if (beginDockedPanel(state, consoleWindow))
     {
         state.outputUi->update(state, *state.uiKit, core::Duration(ImGui::GetIO().DeltaTime));
+        ImGui::End();
     }
-    ImGui::End();
 }
 
 void renderOutput(ToolsState& state, render::RenderWorld& world)

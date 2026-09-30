@@ -299,8 +299,10 @@ TEST_CASE("The editor opens the project's scenes in tabs and renders its viewpor
         CHECK_FALSE(surfaces.contains(1));
         // The inspector, which says to choose something while nothing is selected.
         CHECK(surfaces.contains(6));
-        // The monitors of Statistics.
-        CHECK(surfaces.contains(12));
+        // Statistics waits behind Output, in the same place of the dock: a panel behind a tab is not
+        // drawn. The dock itself is, with the tabs of its places.
+        CHECK_FALSE(surfaces.contains(12));
+        CHECK(surfaces.contains(22));
         // The frame of the editor: its menu bar, its status bar, and the tabs of the scenes over the
         // toolbar of the view. Nothing opened a menu or rested on a button: the layer over them is
         // not drawn.

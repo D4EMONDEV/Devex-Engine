@@ -761,8 +761,7 @@ void StatusBarUi::update(ToolsState& state, EditorUiKit& kit, const scene::Scene
     const ui::UiWorld& world = panel.world();
     if (world.wasClicked(warnings.entity) || world.wasClicked(errors.entity))
     {
-        state.showConsole = true;
-        ImGui::SetWindowFocus(consoleWindow);
+        focusPanel(state, consoleWindow);
     }
 }
 

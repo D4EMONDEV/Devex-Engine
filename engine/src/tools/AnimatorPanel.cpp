@@ -2482,20 +2482,13 @@ void drawAnimatorPanel(ToolsState& state, scene::Scene& scene)
         editor.focused = false;
         return;
     }
-    // Where it opens the first time: beside the Output panel, whose space a graph needs.
-    if (const ImGuiWindow* const output = ImGui::FindWindowByName(consoleWindow); output != nullptr && output->DockId != 0)
-    {
-        ImGui::SetNextWindowDockID(output->DockId, ImGuiCond_FirstUseEver);
-    }
-    ImGui::SetNextWindowSize(ImVec2(ImGui::GetFontSize() * 60.0f, ImGui::GetFontSize() * 26.0f), ImGuiCond_FirstUseEver);
     if (std::exchange(state.focusAnimator, false))
     {
-        ImGui::SetNextWindowFocus();
+        focusPanel(state, animatorWindow);
     }
-    if (!ImGui::Begin(animatorWindow, &state.showAnimator, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse))
+    if (!beginDockedPanel(state, animatorWindow))
     {
         editor.focused = false;
-        ImGui::End();
         return;
     }
     EditorUiKit& kit = editorUiKit(state);

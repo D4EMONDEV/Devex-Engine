@@ -571,23 +571,17 @@ void drawViewportPanel(ToolsState& state, scene::Scene& scene)
 
     if (std::exchange(state.focusViewport, false))
     {
-        ImGui::SetNextWindowFocus();
+        focusPanel(state, viewportWindow);
     }
-    // The scene tabs take the place of the panel's own tab.
-    ImGuiWindowClass windowClass;
-    windowClass.DockNodeFlagsOverrideSet = ImGuiDockNodeFlags_AutoHideTabBar;
-    ImGui::SetNextWindowClass(&windowClass);
     const ThemeColors& colors = themeColors();
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
     ImGui::PushStyleColor(ImGuiCol_WindowBg, uiColor(colors.outer));
-    const bool open = ImGui::Begin(viewportWindow, nullptr,
-                                   ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+    const bool open = beginDockedPanel(state, viewportWindow);
     ImGui::PopStyleColor();
     ImGui::PopStyleVar();
     if (!open)
     {
         state.viewportPixels = {};
-        ImGui::End();
         return;
     }
 

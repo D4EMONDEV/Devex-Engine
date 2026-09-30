@@ -1254,14 +1254,12 @@ void drawTextEditorPanel(ToolsState& state, scene::Scene& scene)
     {
         return;
     }
-    ImGui::SetNextWindowSize(ImVec2(900.0f, 620.0f), ImGuiCond_FirstUseEver);
     if (std::exchange(state.focusTextEditor, false))
     {
-        ImGui::SetNextWindowFocus();
+        focusPanel(state, textEditorWindow);
     }
-    if (!ImGui::Begin(textEditorWindow, nullptr, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse))
+    if (!beginDockedPanel(state, textEditorWindow))
     {
-        ImGui::End();
         return;
     }
     EditorUiKit& kit = editorUiKit(state);

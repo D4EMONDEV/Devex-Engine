@@ -276,9 +276,8 @@ void StatisticsUi::update(ToolsState& state, EditorUiKit& kit, const scene::Scen
 void drawStatisticsPanel(ToolsState& state, const scene::Scene& scene)
 {
     DEVEX_PROFILE_SCOPE("Statistics");
-    if (!ImGui::Begin(statisticsWindow, nullptr, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse))
+    if (!beginDockedPanel(state, statisticsWindow))
     {
-        ImGui::End();
         return;
     }
     EditorUiKit& kit = editorUiKit(state);

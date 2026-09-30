@@ -335,7 +335,7 @@ namespace {
 // Whether a window is one of the frame of the editor rather than one a user works in.
 [[nodiscard]] bool isFrameWindow(const ImGuiWindow& window) noexcept
 {
-    for (const char* const name : {"##menu bar", "##status bar", "##editor menus", "##editor tooltips"})
+    for (const char* const name : {"##menu bar", "##status bar", "##editor menus", "##editor tooltips", "##dock"})
     {
         if (std::strcmp(window.Name, name) == 0)
         {

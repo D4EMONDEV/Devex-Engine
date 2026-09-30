@@ -588,8 +588,7 @@ void FileSystemUi::activate(ToolsState& state, scene::Scene& edited, const Node&
         break;
     case asset::AssetType::Animator:
         // Animators open in the Animator panel.
-        state.showAnimator = true;
-        ImGui::SetWindowFocus(animatorWindow);
+        focusPanel(state, animatorWindow);
         break;
     case asset::AssetType::Model:
         requestInstantiateModel(state, node.asset, core::Uuid{});
@@ -1076,9 +1075,8 @@ bool containsIgnoringCase(std::string_view text, std::string_view part)
 void drawAssetsPanel(ToolsState& state, scene::Scene& scene)
 {
     DEVEX_PROFILE_SCOPE("FileSystem");
-    if (!ImGui::Begin(assetsWindow, nullptr, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse))
+    if (!beginDockedPanel(state, assetsWindow))
     {
-        ImGui::End();
         return;
     }
     if (state.database == nullptr)
@@ -1103,8 +1101,7 @@ void drawAssetsPanel(ToolsState& state, scene::Scene& scene)
 void revealInFileSystem(ToolsState& state, std::string resource)
 {
     state.assetToReveal = std::move(resource);
-    state.showAssets = true;
-    ImGui::SetWindowFocus(assetsWindow);
+    focusPanel(state, assetsWindow);
 }
 
 void renderFileSystem(ToolsState& state, render::RenderWorld& world)

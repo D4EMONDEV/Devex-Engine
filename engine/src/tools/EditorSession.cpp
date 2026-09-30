@@ -148,6 +148,7 @@ void writeProjectSettings(ToolsState& state)
             tab.properties.push_back({"hidden", serialization::makeCall("list", std::move(entities))});
         }
     }
+    document.sections.push_back(state.dock.write());
     std::error_code error;
     std::filesystem::create_directories(project.cacheDirectory(), error);
     if (core::Result<void> written =
@@ -226,6 +227,22 @@ void openProjectScenes(ToolsState& state, scene::Scene& scene)
 {
     const asset::AssetDatabase& database = *state.database;
     state.tabs.clear(activeDocument(state, scene));
+
+    // Where the panels stood when the project was left, as Godot keeps it with the project.
+    state.dock = DockLayout::defaults(true);
+    if (const core::Result<std::string> text = core::readTextFile(projectSettingsFile(database)))
+    {
+        if (const core::Result<serialization::TextDocument> settings = serialization::parseText(*text))
+        {
+            for (const serialization::TextSection& section : settings->sections)
+            {
+                if (std::optional<DockLayout> dock = DockLayout::read(section))
+                {
+                    state.dock = std::move(*dock);
+                }
+            }
+        }
+    }
 
     // The application may have built its scene itself, which the editor keeps in an untitled tab.
     if (scene.entityCount() > 0)

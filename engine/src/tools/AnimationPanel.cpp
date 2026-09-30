@@ -627,11 +627,10 @@ void drawAnimationPanel(ToolsState& state, scene::Scene& scene)
     }
     if (std::exchange(state.focusAnimation, false))
     {
-        ImGui::SetNextWindowFocus();
+        focusPanel(state, animationWindow);
     }
-    if (!ImGui::Begin(animationWindow, &state.showAnimation, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse))
+    if (!beginDockedPanel(state, animationWindow))
     {
-        ImGui::End();
         return;
     }
     EditorUiKit& kit = editorUiKit(state);

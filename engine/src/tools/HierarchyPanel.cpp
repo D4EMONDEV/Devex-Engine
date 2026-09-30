@@ -1095,9 +1095,8 @@ void drawHierarchyPanel(ToolsState& state, scene::Scene& scene)
 {
     DEVEX_PROFILE_SCOPE("Scene tree");
     state.hierarchyFocused = false;
-    if (!ImGui::Begin(hierarchyWindow, nullptr, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse))
+    if (!beginDockedPanel(state, hierarchyWindow))
     {
-        ImGui::End();
         return;
     }
     if (!state.uiKit)
