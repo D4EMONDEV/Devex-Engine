@@ -675,6 +675,8 @@ void ToolsOverlay::prepareRender(scene::Scene& scene, render::RenderWorld& world
     detail::renderFormWindows(state, world);
     detail::renderStatistics(state, world);
     detail::renderProfiler(state, world);
+    detail::renderAnimationPanel(state, world);
+    detail::renderAnimatorPanel(state, world);
     detail::renderEditorFrame(state, world);
     if (state.mode != ToolsMode::Editor)
     {
@@ -853,6 +855,14 @@ void ToolsOverlay::openWindow(EditorWindow window)
     case EditorWindow::Profiler:
         m_state->showProfiler = true;
         m_state->focusProfiler = true;
+        break;
+    case EditorWindow::Animation:
+        m_state->showAnimation = true;
+        m_state->focusAnimation = true;
+        break;
+    case EditorWindow::Animator:
+        m_state->showAnimator = true;
+        m_state->focusAnimator = true;
         break;
     }
 }

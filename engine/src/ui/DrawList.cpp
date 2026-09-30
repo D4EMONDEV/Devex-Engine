@@ -667,6 +667,46 @@ void drawPlot(Builder& builder, const LaidOutRect& rect, const scene::UiPlot& pl
     // A hair between bars, while they are wide enough to spare it.
     const auto gapOf = [](float width) { return width > 3.0f ? 1.0f : 0.0f; };
 
+    // Marks: a diamond where each value falls between the two edges, the one looked at in the colour
+    // of the highlight.
+    if (plot.kind == scene::UiPlotKind::Marks)
+    {
+        const float half = std::max(plot.lineWidth, 1.0f);
+        const float middle = (rect.min.y + rect.max.y) * 0.5f;
+        const auto marks = [&](std::span<const float> values, bool back) {
+            if (values.empty() || high <= low)
+            {
+                return;
+            }
+            render::UiDraw& draw = builder.batch(render::UiDrawKind::Quad, render::TextureHandle{}, math::Vec4{0.0f}, 0.0f, 1.0f);
+            for (std::size_t index = 0; index < values.size(); ++index)
+            {
+                if (values[index] < low || values[index] > high)
+                {
+                    continue;
+                }
+                const float x = rect.min.x + (values[index] - low) / range * size.x;
+                const bool lit = !back && plot.highlighted >= 0 && static_cast<std::size_t>(plot.highlighted) == index;
+                const math::Vec4 tint = back  ? multiply(colorOf(index), plot.backColor)
+                                        : lit ? withOpacity(plot.highlightColor, rect.opacity)
+                                              : colorOf(index);
+                builder.quad(draw,
+                             std::array<math::Vec2, 4>{math::Vec2{x, middle - half}, math::Vec2{x + half, middle}, math::Vec2{x, middle + half},
+                                                       math::Vec2{x - half, middle}},
+                             math::Vec2{0.0f}, math::Vec2{1.0f}, tint);
+            }
+        };
+        marks(plot.backValues, true);
+        marks(plot.values, false);
+        if (plot.marker >= 0.0f)
+        {
+            const float x = rect.min.x + std::clamp(plot.marker, 0.0f, 1.0f) * size.x;
+            const float width = std::max(plot.lineWidth, 1.0f) * 0.5f;
+            fill(builder, math::Vec2{x - width, rect.min.y}, math::Vec2{x + width, rect.max.y}, withOpacity(plot.markerColor, rect.opacity));
+        }
+        return;
+    }
+
     // The value looked at, lit from the bottom to the top behind the series.
     if (plot.highlighted >= 0 && static_cast<std::size_t>(plot.highlighted) < count)
     {
@@ -761,6 +801,94 @@ void drawPlot(Builder& builder, const LaidOutRect& rect, const scene::UiPlot& pl
         const float half = std::max(plot.lineWidth, 1.0f) * 0.5f;
         fill(builder, math::Vec2{x - half, rect.min.y}, math::Vec2{x + half, rect.max.y}, withOpacity(plot.markerColor, rect.opacity));
     }
+}
+
+// A line through its points, from the top left corner of the element, and the head of its arrow.
+void drawLine(Builder& builder, const LaidOutRect& rect, const scene::UiLine& line)
+{
+    const std::size_t count = line.points.size();
+    const math::Vec4 color = withOpacity(line.color, rect.opacity);
+    if (count < 2 || color.w <= 0.0f)
+    {
+        return;
+    }
+    const float half = std::max(line.width, 0.5f) * 0.5f;
+    const auto point = [&](std::size_t index) { return rect.min + line.points[index % count]; };
+    const auto lengthOf = [](math::Vec2 vector) { return std::sqrt(vector.x * vector.x + vector.y * vector.y); };
+    const std::size_t segments = line.closed && count > 2 ? count : count - 1;
+    render::UiDraw& draw = builder.batch(render::UiDrawKind::Quad, render::TextureHandle{}, math::Vec4{0.0f}, 0.0f, 1.0f);
+    // Where two segments meet, the corner they leave open on the outside of the turn is filled.
+    const auto corner = [&](math::Vec2 at, math::Vec2 first, math::Vec2 second) {
+        const float outside = first.x * second.y - first.y * second.x > 0.0f ? -1.0f : 1.0f;
+        builder.quad(draw, std::array<math::Vec2, 4>{at, at + first * outside, at + second * outside, at}, math::Vec2{0.0f}, math::Vec2{1.0f},
+                     color);
+    };
+    float total = 0.0f;
+    math::Vec2 before{0.0f};
+    math::Vec2 opening{0.0f};
+    bool hasBefore = false;
+    for (std::size_t index = 0; index < segments; ++index)
+    {
+        const math::Vec2 from = point(index);
+        const math::Vec2 to = point(index + 1);
+        const math::Vec2 along = to - from;
+        const float length = lengthOf(along);
+        if (length <= 0.0f)
+        {
+            continue;
+        }
+        total += length;
+        const math::Vec2 side{-along.y / length * half, along.x / length * half};
+        builder.quad(draw, std::array<math::Vec2, 4>{from + side, to + side, to - side, from - side}, math::Vec2{0.0f}, math::Vec2{1.0f}, color);
+        if (hasBefore)
+        {
+            corner(from, before, side);
+        }
+        else
+        {
+            opening = side;
+        }
+        before = side;
+        hasBefore = true;
+    }
+    if (line.closed && count > 2 && hasBefore)
+    {
+        corner(point(0), before, opening);
+    }
+    if (line.arrow == scene::UiLineArrow::None || line.arrowSize <= 0.0f || total <= 0.0f)
+    {
+        return;
+    }
+    // The head: at the end of the line, or around the middle of its length.
+    math::Vec2 tip = point(segments);
+    math::Vec2 heading{1.0f, 0.0f};
+    float reached = 0.0f;
+    const float wanted = line.arrow == scene::UiLineArrow::Middle ? total * 0.5f : total;
+    for (std::size_t index = 0; index < segments; ++index)
+    {
+        const math::Vec2 from = point(index);
+        const math::Vec2 along = point(index + 1) - from;
+        const float length = lengthOf(along);
+        if (length <= 0.0f)
+        {
+            continue;
+        }
+        heading = along / length;
+        if (reached + length >= wanted)
+        {
+            tip = from + heading * (wanted - reached);
+            break;
+        }
+        reached += length;
+    }
+    if (line.arrow == scene::UiLineArrow::Middle)
+    {
+        tip = tip + heading * (line.arrowSize * 0.5f);
+    }
+    const math::Vec2 across{-heading.y, heading.x};
+    const math::Vec2 base = tip - heading * line.arrowSize;
+    const float wide = line.arrowSize * 0.625f;
+    builder.quad(draw, std::array<math::Vec2, 4>{tip, base + across * wide, base - across * wide, tip}, math::Vec2{0.0f}, math::Vec2{1.0f}, color);
 }
 
 // The mark of a toggle that is on, inside its box.
@@ -918,6 +1046,10 @@ void buildDrawList(const scene::Scene& scene, const LayoutResult& layout,
         if (const scene::UiPlot* const plot = scene.tryGet<scene::UiPlot>(rect.entity))
         {
             drawPlot(builder, rect, *plot);
+        }
+        if (const scene::UiLine* const line = scene.tryGet<scene::UiLine>(rect.entity))
+        {
+            drawLine(builder, rect, *line);
         }
         if (const scene::UiText* const text = scene.tryGet<scene::UiText>(rect.entity))
         {

@@ -82,7 +82,7 @@ Le détail, l'architecture des modules et les jalons sont dans
   (`TrailRenderer`) ;
 - `Devex::Ui` : interfaces faites d'entités (`Canvas`, `UiRect`, `UiImage`, `UiText`, `UiButton`,
   `UiInput`, `UiSlider`, `UiToggle`, `UiScroll`, `UiLayout`, `UiBinding`, `UiNumberField`,
-  `UiColorPicker`, `UiPlot`), placement par ancrages
+  `UiColorPicker`, `UiPlot`, `UiLine`), placement par ancrages
   et marges puis par conteneurs, texte tiré d'un atlas de distances signées avec crénage et texte
   riche, champs de saisie avec sélection, presse-papiers et mot de passe, curseurs et cases à
   cocher, listes qui défilent et se découpent avec leur barre de défilement, images en neuf
@@ -112,8 +112,9 @@ Le détail, l'architecture des modules et les jalons sont dans
   dialogues New Script, modifications non enregistrées et About, moniteurs de Statistics (une
   courbe par mesure) et Profiler (barres des images, timeline zoomable des zones, arbre des temps
   CPU, passes GPU, mémoire des assets), cadre de l'éditeur (barre de menus et ses menus, barre
-  d'état, onglets des scènes que l'on glisse pour les ranger, barre d'outils de la vue), FileSystem
-  et Output déjà écrits
+  d'état, onglets des scènes que l'on glisse pour les ranger, barre d'outils de la vue), panneaux
+  Animation (timeline qui zoome et défile) et Animator (graphe des états, paramètres suivis en
+  direct), FileSystem et Output déjà écrits
   avec
   `Devex::Ui` (menus contextuels,
   infobulles, modales, listes virtuelles, texte de la sortie choisi et copié à la souris, fichiers

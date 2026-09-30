@@ -433,6 +433,28 @@ std::int32_t plotValueAt(const LaidOutRect& rect, const scene::UiPlot& plot, mat
     {
         return -1;
     }
+    if (plot.kind == scene::UiPlotKind::Marks)
+    {
+        // The mark nearest across, when the pointer is on it.
+        const float low = std::min(plot.minValue, plot.maxValue);
+        const float high = std::max(plot.minValue, plot.maxValue);
+        std::int32_t nearest = -1;
+        float nearestDistance = std::max(plot.lineWidth, 1.0f) * 1.5f;
+        for (std::size_t index = 0; index < count && high > low; ++index)
+        {
+            if (plot.values[index] < low || plot.values[index] > high)
+            {
+                continue;
+            }
+            const float x = rect.min.x + (plot.values[index] - low) / (high - low) * size.x;
+            if (const float distance = std::abs(point.x - x); distance <= nearestDistance)
+            {
+                nearest = static_cast<std::int32_t>(index);
+                nearestDistance = distance;
+            }
+        }
+        return nearest;
+    }
     const float across = std::clamp((point.x - rect.min.x) / size.x, 0.0f, 1.0f);
     const std::size_t index =
         plot.kind == scene::UiPlotKind::Line

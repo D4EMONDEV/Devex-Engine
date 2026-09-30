@@ -152,6 +152,7 @@ ComponentRegistry& componentRegistry()
         builtins.add<UiNumberField>();
         builtins.add<UiColorPicker>();
         builtins.add<UiPlot>();
+        builtins.add<UiLine>();
         return builtins;
     }();
     return registry;

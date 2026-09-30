@@ -1118,6 +1118,90 @@ TEST_CASE("A plot colours each value, draws a second series behind, guides and t
     CHECK(quad(5)[0].color == Vec4{0.0f, 0.0f, 1.0f, 1.0f});
 }
 
+TEST_CASE("Marks stand where their values fall across a plot, and tell the one under the pointer", "[ui][draw]")
+{
+    Scene scene;
+    const Entity element = placedElement(scene, {100.0f, 100.0f}, {200.0f, 150.0f});
+    const Vec4 red{1.0f, 0.0f, 0.0f, 1.0f};
+    scene.add<devex::scene::UiPlot>(element, devex::scene::UiPlot{.values = {1.0f, 2.0f, 5.0f},
+                                                                  .minValue = 1.0f,
+                                                                  .maxValue = 3.0f,
+                                                                  .kind = devex::scene::UiPlotKind::Marks,
+                                                                  .highlighted = 1,
+                                                                  .highlightColor = red,
+                                                                  .lineWidth = 4.0f});
+
+    // The value past the right edge is left out.
+    const devex::render::RenderWorld drawn = drawOne(scene, element, devex::ui::DrawContext{});
+    REQUIRE(drawn.uiVertices.size() == 8);
+    // A diamond at the left edge, in the middle of the height: its top, its right, its bottom, its left.
+    CHECK(drawn.uiVertices[0].position == Vec2{100.0f, 121.0f});
+    CHECK(drawn.uiVertices[1].position == Vec2{104.0f, 125.0f});
+    CHECK(drawn.uiVertices[2].position == Vec2{100.0f, 129.0f});
+    CHECK(drawn.uiVertices[3].position == Vec2{96.0f, 125.0f});
+    // The second one half way across, in the colour of the one looked at.
+    CHECK(drawn.uiVertices[4].position.x == Catch::Approx(150.0f));
+    CHECK(drawn.uiVertices[4].color == red);
+
+    UiWorld world;
+    const auto at = [&](Vec2 pointer) {
+        world.update(scene, window, UiInput{.pointer = pointer}, frame);
+        return world.plotValueAt(scene, element);
+    };
+    CHECK(at({101.0f, 125.0f}) == 0);
+    CHECK(at({153.0f, 110.0f}) == 1);
+    CHECK(at({125.0f, 125.0f}) == -1);
+    CHECK(at({199.0f, 125.0f}) == -1);
+}
+
+TEST_CASE("A line goes through its points from the corner of its element, with the head of its arrow", "[ui][draw]")
+{
+    Scene scene;
+    const Entity element = placedElement(scene, {10.0f, 20.0f}, {110.0f, 70.0f});
+    scene.add<devex::scene::UiLine>(element, devex::scene::UiLine{.points = {{0.0f, 0.0f}, {100.0f, 0.0f}}, .width = 4.0f});
+
+    // A quad two units each side of the segment.
+    const devex::render::RenderWorld straight = drawOne(scene, element, devex::ui::DrawContext{});
+    REQUIRE(straight.uiVertices.size() == 4);
+    CHECK(straight.uiVertices[0].position == Vec2{10.0f, 22.0f});
+    CHECK(straight.uiVertices[1].position == Vec2{110.0f, 22.0f});
+    CHECK(straight.uiVertices[2].position == Vec2{110.0f, 18.0f});
+    CHECK(straight.uiVertices[3].position == Vec2{10.0f, 18.0f});
+
+    // Two segments, and the corner between them filled on the outside of the turn.
+    auto& line = scene.get<devex::scene::UiLine>(element);
+    line.points = {{0.0f, 0.0f}, {100.0f, 0.0f}, {100.0f, 50.0f}};
+    const devex::render::RenderWorld bent = drawOne(scene, element, devex::ui::DrawContext{});
+    REQUIRE(bent.uiVertices.size() == 12);
+    CHECK(bent.uiVertices[8].position == Vec2{110.0f, 20.0f});
+    CHECK(bent.uiVertices[9].position == Vec2{110.0f, 18.0f});
+    CHECK(bent.uiVertices[10].position == Vec2{112.0f, 20.0f});
+    // Closed: a third segment back to the first point, and a corner at each point.
+    line.closed = true;
+    CHECK(drawOne(scene, element, devex::ui::DrawContext{}).uiVertices.size() == 24);
+
+    // The head of the arrow at the end: its tip on the last point, its base behind it.
+    line.closed = false;
+    line.points = {{0.0f, 0.0f}, {100.0f, 0.0f}};
+    line.arrow = devex::scene::UiLineArrow::End;
+    line.arrowSize = 8.0f;
+    const devex::render::RenderWorld pointed = drawOne(scene, element, devex::ui::DrawContext{});
+    REQUIRE(pointed.uiVertices.size() == 8);
+    CHECK(pointed.uiVertices[4].position == Vec2{110.0f, 20.0f});
+    CHECK(pointed.uiVertices[5].position == Vec2{102.0f, 25.0f});
+    CHECK(pointed.uiVertices[6].position == Vec2{102.0f, 15.0f});
+    // Half way along, the head stands around the middle.
+    line.arrow = devex::scene::UiLineArrow::Middle;
+    const devex::render::RenderWorld linked = drawOne(scene, element, devex::ui::DrawContext{});
+    REQUIRE(linked.uiVertices.size() == 8);
+    CHECK(linked.uiVertices[4].position == Vec2{64.0f, 20.0f});
+    CHECK(linked.uiVertices[5].position.x == Catch::Approx(56.0f));
+
+    // A single point draws nothing.
+    line.points = {{5.0f, 5.0f}};
+    CHECK(drawOne(scene, element, devex::ui::DrawContext{}).uiVertices.empty());
+}
+
 TEST_CASE("The value of a plot under the pointer is the bar under it, or the nearest point of its line", "[ui][world]")
 {
     Scene scene;

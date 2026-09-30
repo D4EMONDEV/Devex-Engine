@@ -85,6 +85,16 @@ DEVEX_REFLECT(UiPlot)
         .field("marker_color", &UiPlot::markerColor, {.color = true});
 }
 
+DEVEX_REFLECT(UiLine)
+{
+    type.field("points", &UiLine::points)
+        .field("width", &UiLine::width)
+        .field("color", &UiLine::color, {.color = true})
+        .field("arrow", &UiLine::arrow)
+        .field("arrow_size", &UiLine::arrowSize)
+        .field("closed", &UiLine::closed);
+}
+
 DEVEX_REFLECT(UiNumberField)
 {
     type.field("value", &UiNumberField::value)

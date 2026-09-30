@@ -201,11 +201,10 @@ void addPanelEntries(ToolsState& state, std::vector<MenuEntry>& entries)
     const auto panel = [&](const char* name, bool ToolsState::* shown) {
         entries.push_back({.label = name, .checked = state.*shown, .action = [shown](ToolsState& tools, scene::Scene&) {
                                tools.*shown = !(tools.*shown);
-                               // The Profiler comes to the front of its dock when it opens.
-                               if (shown == &ToolsState::showProfiler && tools.showProfiler)
-                               {
-                                   tools.focusProfiler = true;
-                               }
+                               // The panels that open beside others come to the front of their dock.
+                               tools.focusProfiler |= shown == &ToolsState::showProfiler && tools.showProfiler;
+                               tools.focusAnimation |= shown == &ToolsState::showAnimation && tools.showAnimation;
+                               tools.focusAnimator |= shown == &ToolsState::showAnimator && tools.showAnimator;
                            }});
     };
     panel(hierarchyWindow, &ToolsState::showHierarchy);

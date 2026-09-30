@@ -461,6 +461,10 @@ enum class UiPlotKind : std::uint8_t
     Bars,
     // A bar each side of the middle, as the wave of a sound.
     MirroredBars,
+    // A diamond for each value, which is then a place across the plot rather than a height: the
+    // keys of a track along its time. `minValue` stands at the left edge and `maxValue` at the
+    // right one, the values beyond them are not drawn, and `lineWidth` is half the size of a mark.
+    Marks,
 };
 
 // A series of values drawn across the rectangle, the first at its left and the last at its right,
@@ -483,7 +487,8 @@ struct DEVEX_API UiPlot
     // Lines across the plot at these values: the time of a frame at 60 frames a second.
     std::vector<float> guides;
     math::Vec4 guideColor{1.0f, 1.0f, 1.0f, 0.3f};
-    // A value lit from the bottom to the top, from 0; -1 lights none: the frame looked at.
+    // A value lit from the bottom to the top, from 0; -1 lights none: the frame looked at. Of marks,
+    // the one drawn in the colour of the highlight.
     std::int32_t highlighted = -1;
     math::Vec4 highlightColor{1.0f, 1.0f, 1.0f, 0.18f};
     // The width of the line, in units.
@@ -493,6 +498,33 @@ struct DEVEX_API UiPlot
     math::Vec4 markerColor{1.0f, 1.0f, 1.0f, 1.0f};
 };
 DEVEX_DECLARE_ENGINE_REFLECTION(UiPlot);
+
+// Where a line draws the head of an arrow.
+enum class UiLineArrow : std::uint8_t
+{
+    None,
+    // At its last point, away from the one before.
+    End,
+    // Half way along it, towards its end: a link whose two ends are taken by what it joins.
+    Middle,
+};
+
+// A line through points, with the head of an arrow when it has one: the links of a graph or of a
+// tree of skills, a path on a map, the outline of a zone. The points are in units from the top left
+// corner of the rectangle of the element, which the line may leave.
+struct DEVEX_API UiLine
+{
+    std::vector<math::Vec2> points;
+    // In units.
+    float width = 2.0f;
+    math::Vec4 color{1.0f, 1.0f, 1.0f, 1.0f};
+    UiLineArrow arrow = UiLineArrow::None;
+    // The length of the head of the arrow, in units; it is a little wider than long.
+    float arrowSize = 10.0f;
+    // Joins the last point to the first.
+    bool closed = false;
+};
+DEVEX_DECLARE_ENGINE_REFLECTION(UiLine);
 
 // How the children of a container follow each other.
 enum class UiLayoutKind : std::uint8_t
@@ -553,7 +585,13 @@ struct devex::reflection::EnumNames<devex::scene::UiLayoutKind>
 template <>
 struct devex::reflection::EnumNames<devex::scene::UiPlotKind>
 {
-    static constexpr std::array<std::string_view, 3> names{"line", "bars", "mirrored_bars"};
+    static constexpr std::array<std::string_view, 4> names{"line", "bars", "mirrored_bars", "marks"};
+};
+
+template <>
+struct devex::reflection::EnumNames<devex::scene::UiLineArrow>
+{
+    static constexpr std::array<std::string_view, 3> names{"none", "end", "middle"};
 };
 
 template <>

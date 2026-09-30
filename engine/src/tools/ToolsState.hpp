@@ -93,6 +93,8 @@ struct DebuggingUi;
 struct EditorDialogsUi;
 struct StatisticsUi;
 struct ProfilerUi;
+struct AnimationUi;
+struct AnimatorUi;
 struct MenuBarUi;
 struct StatusBarUi;
 struct ViewportHeaderUi;
@@ -495,6 +497,8 @@ struct DEVEX_API ToolsState
     // The panels of measures.
     std::shared_ptr<StatisticsUi> statisticsUi;
     std::shared_ptr<ProfilerUi> profilerUi;
+    std::shared_ptr<AnimationUi> animationUi;
+    std::shared_ptr<AnimatorUi> animatorUi;
     // The frame of the editor: its bars, the header of the view, and the layer of their menus.
     std::shared_ptr<MenuBarUi> menuBarUi;
     // A menu of the menu bar to open at its next update, by the place of its title.
@@ -604,6 +608,9 @@ struct DEVEX_API ToolsState
     bool showProfiler = false;
     // The Profiler panel comes to the front of its dock at its next frame, as when it is opened.
     bool focusProfiler = false;
+    // The same for the panels of the clips and of the state machines.
+    bool focusAnimation = false;
+    bool focusAnimator = false;
     ProfilerView profiler;
     // What the Animation panel shows: the clip it last posed, and where its playhead stands.
     asset::AssetId previewedAnimation;
@@ -785,6 +792,7 @@ DEVEX_API void drawAssetsPanel(ToolsState& state, scene::Scene& scene);
 // The clips of the selected Animator: a timeline of their keys, played or scrubbed. Outside Play
 // the panel poses the skeleton itself; during Play it follows the game.
 DEVEX_API void drawAnimationPanel(ToolsState& state, scene::Scene& scene);
+DEVEX_API void renderAnimationPanel(ToolsState& state, render::RenderWorld& world);
 // Shows an asset of the FileSystem in the inspector, in place of the selected entity or code file.
 DEVEX_API void selectAsset(ToolsState& state, asset::AssetId id);
 // The sprites a texture was cut into, in the order of its cells.
@@ -797,6 +805,7 @@ DEVEX_API core::Result<std::filesystem::path> createTilesetFile(ToolsState& stat
 // parameters, followed live while the game plays. It edits the controller of the Animator of the
 // selected entity, or the animator selected in the FileSystem.
 DEVEX_API void drawAnimatorPanel(ToolsState& state, scene::Scene& scene);
+DEVEX_API void renderAnimatorPanel(ToolsState& state, render::RenderWorld& world);
 // Writes a new animator controller into a res:// folder of the assets, and selects it once imported.
 DEVEX_API core::Result<std::filesystem::path> createAnimatorFile(ToolsState& state, std::string_view folder);
 // Under the NavMeshSurface of the inspected entity: what its navigation mesh holds, and whether its

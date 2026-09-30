@@ -371,7 +371,7 @@ TEST_CASE("The editor opens the project's scenes in tabs and renders its viewpor
         // The windows of settings, the export, the debugging window and the dialogs are made with the
         // interface of the engine as well, each in its image; Project Settings makes every section.
         using devex::tools::EditorWindow;
-        for (const auto& [opened, surface] : std::array<std::pair<EditorWindow, std::uint32_t>, 7>{{
+        for (const auto& [opened, surface] : std::array<std::pair<EditorWindow, std::uint32_t>, 9>{{
                  {EditorWindow::EditorSettings, 7},
                  {EditorWindow::ProjectSettings, 8},
                  {EditorWindow::Export, 9},
@@ -379,12 +379,22 @@ TEST_CASE("The editor opens the project's scenes in tabs and renders its viewpor
                  {EditorWindow::NewScript, 11},
                  {EditorWindow::About, 11},
                  {EditorWindow::Profiler, 13},
+                 {EditorWindow::Animation, 18},
+                 {EditorWindow::Animator, 19},
              }})
         {
             INFO(static_cast<int>(opened));
             (*editor)->openWindow(opened);
             CHECK(inspectorFrames(3, surface));
         }
+
+        // The Animator panel shows the graph of the controller chosen in FileSystem, its states as nodes
+        // and its transitions as lines of that interface.
+        const std::optional<devex::asset::AssetId> controller = (*database)->findByPath("res://assets/art/states.dvxanimator");
+        REQUIRE(controller.has_value());
+        (*editor)->selectAsset(*controller);
+        CHECK(inspectorFrames(3, 19));
+        (*editor)->selectAsset({});
 
         // The menus of the menu bar are menus of that interface, in a layer over the whole window that
         // is drawn while one is open.

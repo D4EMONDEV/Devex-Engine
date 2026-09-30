@@ -2336,6 +2336,43 @@ les assets s'écrivent au fil de leur lecture.
     qu'elle ne montre rien. Limites : un seul niveau de sous-menu, toujours ouvert à droite ; pas
     d'accès aux menus par Alt ; l'appui qui ferme un menu n'agit pas sur ce qui est dessous ; pas
     de menu contextuel sur les onglets ; les onglets des panneaux ancrés restent ceux d'ImGui.
+- **Puis Animation et Animator** (jalon 49), les deux derniers panneaux ancrés encore en ImGui
+  (surfaces 18 et 19). Ils demandaient au moteur deux choses qu'il n'avait pas, et que les jeux
+  gagnent aussi : des traits et des marques.
+  - **`UiLine`, un composant du moteur pour les flèches du graphe.** Une ligne brisée entre des
+    points, donnés en unités depuis le coin haut gauche de son élément, avec son épaisseur, sa
+    couleur, une pointe de flèche au bout ou au milieu (`arrow`, `arrow_size`) et la fermeture sur
+    le premier point (`closed`) ; un quad par segment, et le coin que deux segments laissent ouvert
+    à l'extérieur du virage est comblé. Écarté : des rectangles tournés pris dans une réserve, qui
+    ne donnaient rien aux jeux et raccordaient mal. Les jeux s'en servent pour un arbre de
+    compétences, des liens entre des éléments, un tracé sur une carte ; en C# comme tout composant.
+  - **`UiPlot` avec des marques pour les clés.** Un clip a des milliers de clés : une entité par
+    losange était trop. `UiPlotKind::Marks` dessine un losange par valeur, qui est alors une
+    **place le long du tracé** entre `min_value` (bord gauche) et `max_value` (bord droit) ; ce qui
+    est au-delà n'est pas dessiné, `line_width` est la demi-taille d'une marque, `highlighted` en
+    dessine une dans la couleur d'éclairage, et `plotValueAt` rend la marque la plus proche sous
+    le pointeur. Une piste de la timeline est donc une seule entité, quel que soit son nombre de
+    clés, et zoomer ne fait que changer ses deux bornes.
+  - **La timeline d'Animation, comme celle de Godot** : la règle reste en haut, les noms des os à
+    gauche, les pistes défilent à la molette (avant, celles qui dépassaient étaient coupées) ;
+    Ctrl+molette zoome autour du pointeur, Maj+molette ou le bouton du milieu glisse le long du
+    clip, un double clic revoit tout le clip ; appuyer puis glisser sur la règle ou les pistes
+    déplace la tête de lecture. Le clip se choisit dans une liste, qui ne lit tous les clips du
+    projet que lorsqu'elle peut s'ouvrir.
+  - **Le graphe de l'Animator garde ses gestes**, lus à la main dans l'entrée du panneau comme
+    avant dans celle d'ImGui : clic pour choisir, glisser un état, bouton droit ou du milieu pour
+    déplacer la vue, molette pour zoomer autour du pointeur, clic droit pour le menu de ce qui est
+    dessous, *Make Transition* puis clic sur l'état d'arrivée, clips lâchés depuis FileSystem.
+    Les nœuds sont des entités prises dans une réserve et placées à chaque image (un cadre de la
+    couleur de la bordure, l'intérieur, deux textes, la progression de l'état en jeu) ; les liens
+    sont des `UiLine`, et l'infobulle d'un lien passe par la couche au-dessus de la fenêtre. Les
+    paramètres sont à gauche d'une barre qui se glisse (`UiSplitter`) : le nom se tape, la valeur
+    se glisse ou se tape, et pendant le jeu ce sont les valeurs du jeu que l'on voit et que l'on
+    change. Un changement est enregistré une fois lâché, en un pas de l'historique du panneau.
+  - Les panneaux ouverts depuis le menu passent devant les autres onglets de leur dock. Limites :
+    pas de barre de défilement horizontale sur la timeline zoomée ; les clés se lisent mais ne
+    s'éditent pas (les clips viennent des modèles importés) ; les liens sont droits ; les traits
+    ne sont pas lissés au-delà de ce que fait le rendu de l'interface.
 
 ### Interfaces
 
@@ -2581,7 +2618,12 @@ les assets s'écrivent au fil de leur lecture.
   couleur de chaque valeur multipliée par `back_color` (l'attente derrière le travail), des lignes
   de repère traversent le graphe à des valeurs données (`guides`), et une valeur peut être éclairée
   de bas en haut (`highlighted`). `UiWorld::plotValueAt` (`Ui.PlotValueAt` en C#) dit quelle valeur
-  est sous le pointeur : la barre, ou le point de la ligne le plus proche.
+  est sous le pointeur : la barre, ou le point de la ligne le plus proche. En marques (`marks`),
+  chaque valeur est une place le long du tracé où se dessine un losange : les clés d'une piste.
+- **Traits** : `UiLine` dessine une ligne brisée entre des points, en unités depuis le coin haut
+  gauche de son élément qu'elle peut quitter, avec une pointe de flèche au bout ou au milieu et la
+  fermeture sur le premier point : les liens d'un graphe ou d'un arbre de compétences, un tracé sur
+  une carte, le contour d'une zone.
 - **Double clic** : deux clics sur le même bouton à moins de 0,4 seconde ; le second compte aussi
   comme un clic (`wasDoubleClicked`). `startEditing` donne le clavier à un champ, son texte
   sélectionné, comme un formulaire à son premier champ.
@@ -3185,6 +3227,11 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     (glisser pour les ranger, croix et bouton du milieu, point des modifications, **+**, molette)
     et barre d'outils de la vue ; menus décrits en données et infobulles dans une couche au-dessus
     de la fenêtre ; même barre pour les outils par-dessus un jeu.
+
+49. ✅ **Animation et Animator en Devex UI** — timeline qui zoome et défile comme celle de Godot,
+    graphe des états avec ses nœuds, ses liens et ses menus, paramètres suivis en direct pendant le
+    jeu ; `UiLine` (lignes brisées et flèches) et les marques de `UiPlot` dans le moteur, en C++
+    et en C#.
 
 Ensuite, sans ordre figé : CI Linux, la suite du portage de l'éditeur.
 

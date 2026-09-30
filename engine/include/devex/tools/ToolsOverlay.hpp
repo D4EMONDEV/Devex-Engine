@@ -86,6 +86,9 @@ enum class EditorWindow : std::uint8_t
     About,
     // The Profiler panel, which records frames while it is open.
     Profiler,
+    // The panels of the clips and of the state machines, in front of the others of their dock.
+    Animation,
+    Animator,
 };
 
 // The menus of the menu bar of the editor, in the order of their titles. The tools over a game have
