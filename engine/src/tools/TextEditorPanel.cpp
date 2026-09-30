@@ -25,6 +25,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -384,6 +385,18 @@ struct ScriptUi : FormUi
     Entity completions;
     std::array<CompletionRow, completionsShown> completionRows{};
     std::size_t firstCompletion = 0;
+    // The words of the lines in view, found once and kept while a line says the same thing: the
+    // lines scrolled into view are the only ones read again.
+    struct ColoredLine
+    {
+        std::string text;
+        bool inComment = false;
+        CodeLanguage language = CodeLanguage::PlainText;
+        std::vector<Token> tokens;
+        bool used = false;
+    };
+    std::unordered_map<std::size_t, ColoredLine> coloredLines;
+    Entity coloredArea;
     Keys keys;
     // The file shown at the last update, and whether its text takes the keyboard at the next one.
     std::filesystem::path shownPath;
@@ -683,18 +696,44 @@ void ScriptUi::colorLines(ToolsState& state, const TextDocument& document, Entit
     const auto [first, count] = world.visibleTextLines(scene(), area);
     const std::size_t lineCount = edit.lineStarts.size();
 
-    // Only the lines in view are coloured.
+    // Only the lines in view are coloured, each kind of word in its colour, worked out once.
+    std::array<math::Vec4, 8> palette{};
+    for (std::size_t kind = 0; kind < palette.size(); ++kind)
+    {
+        palette[kind] = linearColor(colorOf(static_cast<TokenKind>(kind)));
+    }
+    if (coloredArea != area)
+    {
+        coloredLines.clear();
+        coloredArea = area;
+    }
     std::vector<ui::TextSpan> spans;
     for (std::size_t index = first; index < first + count && index < lineCount; ++index)
     {
         const auto begin = static_cast<std::size_t>(edit.lineStarts[index]);
         const std::size_t end = index + 1 < lineCount ? static_cast<std::size_t>(edit.lineStarts[index + 1]) - 1 : document.text.size();
-        HighlightState lineState{.inBlockComment = edit.lineInComment[index]};
-        for (const Token& token : highlightLine(std::string_view(document.text).substr(begin, end - begin), language, lineState))
+        const std::string_view text = std::string_view(document.text).substr(begin, end - begin);
+        const bool inComment = edit.lineInComment[index];
+        ColoredLine& kept = coloredLines[index];
+        kept.used = true;
+        if (kept.text != text || kept.inComment != inComment || kept.language != language)
         {
-            spans.push_back({.begin = begin + token.begin, .end = begin + token.end, .color = linearColor(colorOf(token.kind))});
+            kept.text.assign(text);
+            kept.inComment = inComment;
+            kept.language = language;
+            HighlightState lineState{.inBlockComment = inComment};
+            kept.tokens = highlightLine(text, language, lineState);
+        }
+        for (const Token& token : kept.tokens)
+        {
+            spans.push_back({.begin = begin + token.begin, .end = begin + token.end, .color = palette[static_cast<std::size_t>(token.kind) % palette.size()]});
         }
     }
+    std::erase_if(coloredLines, [](auto& entry) {
+        const bool used = entry.second.used;
+        entry.second.used = false;
+        return !used;
+    });
     world.setTextSpans(area, std::move(spans));
 
     // Everything the search found in view, and the match the panel is on.

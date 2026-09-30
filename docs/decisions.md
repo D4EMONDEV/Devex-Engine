@@ -2360,6 +2360,11 @@ les assets s'écrivent au fil de leur lecture.
     une ligne qui sort de la vue est oubliée. L'écran Script sur cinq mille lignes passe de 13,0 à
     10,5 ms par image en Debug (le dessin des panneaux de 4,8 à 2,6 ms), et de 0,32 à 0,23 ms de
     dessin en Release.
+  - **Puis l'écran Script garde les couleurs de ses lignes** : les mots de chaque ligne en vue sont
+    trouvés une fois et gardés tant que la ligne, son langage et le commentaire ouvert avant elle ne
+    changent pas ; les couleurs des sortes de mots sont calculées une fois par image. L'écran Script
+    passe de 10,5 à 9,5 ms par image en Debug, et le panneau de texte de 0,17 à 0,11 ms en Release
+    (l'éditeur de 0,60 à 0,52 ms).
 - **Puis l'éditeur de texte** (jalon 50), le dernier panneau en ImGui, qui reposait sur le champ
   multi-ligne d'ImGui (curseur, sélection, annulation, défilement). Le champ de Devex UI, `UiInput`,
   replace tout son texte à chaque image : bien pour une ligne, pas pour un fichier de code.
