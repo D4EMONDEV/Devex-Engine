@@ -53,7 +53,8 @@ uint pickFragment(VertexOutput input) : SV_Target
 [shader("vertex")]
 VertexOutput maskVertex(uint vertexIndex : SV_VertexID)
 {
-    return transformVertex(draw.scene->viewProjection, vertexIndex);
+    // The outline is composited after TAA, so its silhouette must not inherit the scene jitter.
+    return transformVertex(draw.scene->unjitteredViewProjection, vertexIndex);
 }
 
 [shader("fragment")]

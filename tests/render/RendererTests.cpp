@@ -5,8 +5,10 @@
 #include <devex/render/Renderer.hpp>
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <format>
@@ -1127,6 +1129,65 @@ TEST_CASE("Temporal antialiasing keeps distant orthographic sprites stationary",
                 CHECK(sumY / redPixels >= 118.5);
                 CHECK(sumY / redPixels <= 120.5);
             }
+        }
+    }
+    for (const std::string& error : capture.errors())
+    {
+        UNSCOPED_INFO(error);
+    }
+    CHECK(capture.errors().empty());
+}
+
+TEST_CASE("Picking at a stationary edge does not alternate with temporal antialiasing", "[render][gpu]")
+{
+    const bool orthographic = GENERATE(true, false);
+    const bool inside = GENERATE(true, false);
+    CAPTURE(orthographic, inside);
+    const ErrorCapture capture;
+    {
+        auto platform = devex::platform::Platform::create();
+        REQUIRE(platform.has_value());
+        auto window = platform->createWindow({.width = 320, .height = 240, .vulkan = true, .hidden = true});
+        REQUIRE(window.has_value());
+        auto renderer = devex::render::Renderer::create(*platform, *window, {.validation = true});
+        REQUIRE(renderer.has_value());
+
+        const float verticalFov = devex::math::radians(60.0f);
+        const float pixelsPerMeter = orthographic ? 60.0f : 120.0f / (std::tan(verticalFov * 0.5f) * 6.0f);
+        // The sprite spans x=100.25..120.25. The samples at 100.5 and 120.5 are a quarter
+        // pixel inside and outside. Picking must agree with the stable outline in every TAA phase.
+        const devex::math::Mat4 transform = devex::math::translate(
+            devex::math::Mat4{1.0f}, {(110.25f - 160.0f) / pixelsPerMeter, 0.0f, 0.0f});
+        std::vector<devex::render::PickResult> picks;
+        for (int frame = 0; frame < 19; ++frame)
+        {
+            devex::render::RenderWorld& world = renderer->beginFrame();
+            world.viewport = {320, 240};
+            world.camera.view = devex::math::translate(devex::math::Mat4{1.0f},
+                                                      {0.0f, 0.0f, orthographic ? -500.0f : -6.0f});
+            world.camera.projection = orthographic ? devex::render::Projection::Orthographic
+                                                   : devex::render::Projection::Perspective;
+            world.camera.orthographicSize = 2.0f;
+            world.camera.verticalFov = verticalFov;
+            world.camera.antialiasing = devex::render::Antialiasing::Temporal;
+            world.sprites.push_back({.transform = transform,
+                                     .size = {20.0f / pixelsPerMeter, 20.0f / pixelsPerMeter},
+                                     .objectId = 13,
+                                     .outlined = true});
+            if (frame < 16)
+            {
+                world.pick = devex::render::PickRequest{.x = inside ? 100u : 120u,
+                                                        .y = 120,
+                                                        .id = static_cast<std::uint64_t>(frame + 1)};
+            }
+            REQUIRE(renderer->endFrame());
+            std::ranges::copy(renderer->takePickResults(), std::back_inserter(picks));
+        }
+        REQUIRE(picks.size() == 16);
+        for (const devex::render::PickResult& pick : picks)
+        {
+            CAPTURE(pick.request);
+            CHECK(pick.objectId == (inside ? 13u : 0u));
         }
     }
     for (const std::string& error : capture.errors())

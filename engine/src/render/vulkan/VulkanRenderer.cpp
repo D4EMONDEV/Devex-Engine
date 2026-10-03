@@ -1137,7 +1137,7 @@ core::Result<void> VulkanRenderer::createScenePipelines()
     core::Result<Pipeline> spriteMask = createGraphicsPipeline(
         device, {
                     .shaderPath = m_shaderDirectory / "sprite.spv",
-                    .vertexEntry = "spriteVertex",
+                    .vertexEntry = "spriteMaskVertex",
                     .fragmentEntry = "spriteMaskFragment",
                     .setLayouts = globalOnly,
                     .pushConstantSize = sizeof(SpritePushConstants),
@@ -2043,7 +2043,8 @@ void VulkanRenderer::writeSceneData(FrameContext& frame,
     scene.clusterLights = frame.clusterLights->deviceAddress();
     if (frame.pickRequest)
     {
-        scene.pickViewProjection = regionSelectionMatrix(extent, frame.pickRect) * scene.viewProjection;
+        // Selection follows the stable editor view, including at the edges of outlined objects.
+        scene.pickViewProjection = regionSelectionMatrix(extent, frame.pickRect) * scene.unjitteredViewProjection;
     }
 
     std::memcpy(frame.sceneData->mappedBytes().data(), &scene, sizeof(scene));

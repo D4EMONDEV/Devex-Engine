@@ -209,6 +209,13 @@ uint spritePickFragment(VertexOutput input) : SV_Target
     return data.sprites[input.sprite].objectId;
 }
 
+[shader("vertex")]
+VertexOutput spriteMaskVertex(uint vertexIndex : SV_VertexID, uint instanceIndex : SV_InstanceID)
+{
+    // Sprites and tilemaps share this silhouette, displayed after TAA like mesh outlines.
+    return transform(data.scene->unjitteredViewProjection, vertexIndex, instanceIndex);
+}
+
 [shader("fragment")]
 float spriteMaskFragment(VertexOutput input) : SV_Target
 {
