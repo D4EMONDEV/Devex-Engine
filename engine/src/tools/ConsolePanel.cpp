@@ -530,9 +530,12 @@ void OutputUi::update(ToolsState& state, EditorUiKit& kit, core::Duration delta)
     };
     const auto clearAll = [&] {
         state.log.clear();
-        entries.clear();
+        // Keep this frame's snapshot intact: shown and the laid-out rows still index entries.
+        // The next sync removes the cleared messages and rebuilds their line indices together.
         anchor.reset();
         caret.reset();
+        selecting = false;
+        lastPressPoint.reset();
         dirty = true;
     };
     for (std::size_t index = 0; index < kinds.size(); ++index)

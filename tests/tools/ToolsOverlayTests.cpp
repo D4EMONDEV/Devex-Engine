@@ -1,3 +1,6 @@
+#include "tools/EditorDock.hpp"
+#include "tools/Theme.hpp"
+
 #include <devex/asset/Primitives.hpp>
 #include <devex/asset/Project.hpp>
 #include <devex/asset/import/AnimatorFile.hpp>
@@ -10,6 +13,7 @@
 #include <devex/core/Log.hpp>
 #include <devex/core/Uuid.hpp>
 #include <devex/platform/Platform.hpp>
+#include <devex/platform/Input.hpp>
 #include <devex/render/Renderer.hpp>
 #include <devex/scene/ComponentRegistry.hpp>
 #include <devex/scene/Components.hpp>
@@ -20,6 +24,7 @@
 
 #include <array>
 #include <chrono>
+#include <cmath>
 #include <filesystem>
 #include <set>
 #include <format>
@@ -101,6 +106,92 @@ TEST_CASE("The tools overlay renders over the scene without validation errors", 
         UNSCOPED_INFO(error);
     }
     CHECK(errors.empty());
+}
+
+TEST_CASE("Clearing a scrolled output keeps its current rows valid and shows new messages", "[tools][log][gpu]")
+{
+    auto platform = devex::platform::Platform::create();
+    REQUIRE(platform.has_value());
+    auto window = platform->createWindow({.width = 1000, .height = 800, .vulkan = true, .hidden = true});
+    REQUIRE(window.has_value());
+    auto renderer = devex::render::Renderer::create(*platform, *window, {.validation = true});
+    REQUIRE(renderer.has_value());
+    const std::filesystem::path settings = std::filesystem::temp_directory_path() /
+                                          ("devex-output-clear-" + devex::core::Uuid::generate().toString() + ".ini");
+    auto overlay = devex::tools::ToolsOverlay::create(*platform, *window, *renderer, settings);
+    REQUIRE(overlay.has_value());
+    (*overlay)->setVisible(true);
+    devex::scene::Scene scene;
+
+    // Locate Clear in the default dock: it is the penultimate icon of the Output toolbar.
+    const float scale = devex::tools::detail::effectiveInterfaceScale({}, window->displayScale());
+    const float font = devex::tools::detail::regularFontPixels(14.0f) * scale;
+    const float padding = std::floor(8.0f * scale);
+    const float framePadding = std::floor(4.0f * scale);
+    const auto dock = devex::tools::detail::placeDock(
+        devex::tools::detail::DockLayout::defaults(false), [](std::string_view) { return true; },
+        ImVec2(0.0f, std::round(font + framePadding * 3.2f)), ImVec2(1000.0f, 800.0f),
+        std::round(5.0f * scale), std::round(font + framePadding * 2.0f + 4.0f));
+    const auto& output = dock.contents[static_cast<std::size_t>(devex::tools::detail::DockSlot::Bottom)];
+    const devex::math::Vec2 clear{output.max.x - padding - (35.0f * 1.5f + 3.5f) * scale,
+                                output.min.y + padding + 14.0f * scale};
+
+    const auto frame = [&](bool pressed = false) {
+        platform->pollEvents([](const devex::platform::Event&) {});
+        // Inject input without moving the desktop pointer or showing the test window.
+        auto& input = const_cast<devex::platform::Input&>(platform->toolsInput());
+        input.moveMouse(clear, {});
+        input.setMouseButtonDown(devex::platform::MouseButton::Left, pressed);
+        (*overlay)->update(scene, std::chrono::milliseconds(16));
+        auto& world = renderer->beginFrame();
+        (*overlay)->prepareRender(scene, world, devex::tools::PlayState::Editing);
+        std::size_t textIndices = 0;
+        bool found = false;
+        for (const auto& surface : world.uiSurfaces)
+        {
+            if (surface.id == 3)
+            {
+                found = true;
+                for (const auto& draw : surface.draws)
+                {
+                    if (draw.kind == devex::render::UiDrawKind::Text)
+                    {
+                        textIndices += draw.indexCount;
+                    }
+                }
+            }
+        }
+        REQUIRE(found);
+        REQUIRE(renderer->endFrame());
+        return textIndices;
+    };
+    frame();
+    frame();
+    // Hundreds of lines, then enough to evict old entries from the bounded log buffer.
+    for (int count : {300, 2200})
+    {
+        CAPTURE(count);
+        for (int line = 0; line < count; ++line)
+        {
+            DEVEX_LOG_INFO("Output regression message {}: a line that can be selected and cleared", line);
+        }
+        frame();
+        const std::size_t filled = frame();
+        REQUIRE(filled > 1000);
+        frame(true);
+        frame(false); // Clear is handled here, after the visible rows were laid out.
+        const std::size_t emptied = frame();
+        CHECK(emptied < filled / 2);
+        DEVEX_LOG_INFO("A new message after clearing must still appear in the output");
+        CHECK(frame() > emptied);
+        frame(true);
+        frame(false);
+        frame();
+        // Clearing an already empty output must also be harmless.
+        frame(true);
+        frame(false);
+        CHECK(frame() <= emptied);
+    }
 }
 
 TEST_CASE("The editor opens the project's scenes in tabs and renders its viewport without validation errors",
