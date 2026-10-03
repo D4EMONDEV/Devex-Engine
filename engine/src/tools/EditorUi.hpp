@@ -164,6 +164,17 @@ private:
 };
 
 
+// A panel image occupies whole framebuffer pixels, even when its host uses fractional points.
+struct PanelImagePlacement
+{
+    ImVec2 origin;
+    ImVec2 size;
+    math::Extent2D pixels;
+};
+
+[[nodiscard]] DEVEX_API PanelImagePlacement placePanelImage(ImVec2 origin, ImVec2 size, ImVec2 viewport,
+                                                           float pixelsPerPoint) noexcept;
+
 // A panel made with the interface of the engine: a canvas of entities in a scene of its own, which an
 // interface world lays out and answers, drawn into an image that the ImGui window around it shows.
 // The panel works in units of the size of the editor's text, so that it follows the interface scale.

@@ -620,6 +620,20 @@ float UiPanel::zoomFor(float font) noexcept
     return pixelsPerPoint * ImGui::GetFontSize() / std::max(regularFontPixels(font), 1.0f);
 }
 
+PanelImagePlacement placePanelImage(ImVec2 origin, ImVec2 size, ImVec2 viewport, float pixelsPerPoint) noexcept
+{
+    // Round both edges, rather than flooring the size and stretching the image over the old room.
+    const ImVec2 first(std::round((origin.x - viewport.x) * pixelsPerPoint),
+                       std::round((origin.y - viewport.y) * pixelsPerPoint));
+    const ImVec2 last(std::round((origin.x + size.x - viewport.x) * pixelsPerPoint),
+                      std::round((origin.y + size.y - viewport.y) * pixelsPerPoint));
+    const math::Extent2D pixels{static_cast<std::uint32_t>(std::max(last.x - first.x, 1.0f)),
+                                static_cast<std::uint32_t>(std::max(last.y - first.y, 1.0f))};
+    return {.origin = ImVec2(viewport.x + first.x / pixelsPerPoint, viewport.y + first.y / pixelsPerPoint),
+            .size = ImVec2(static_cast<float>(pixels.width) / pixelsPerPoint, static_cast<float>(pixels.height) / pixelsPerPoint),
+            .pixels = pixels};
+}
+
 void UiPanel::update(EditorUiKit& kit, core::Duration delta, float zoom, float height)
 {
     DEVEX_PROFILE_SCOPE("Panel update");
@@ -629,13 +643,15 @@ void UiPanel::update(EditorUiKit& kit, core::Duration delta, float zoom, float h
     const float pixelsPerPoint = io.DisplayFramebufferScale.x > 0.0f ? io.DisplayFramebufferScale.x : 1.0f;
     const ImVec2 room = hosts.available();
     const ImVec2 available(std::max(room.x, 1.0f), std::max(height > 0.0f ? height : room.y, 1.0f));
-    const ImVec2 origin = hosts.cursor();
+    // A panel's texels must land on framebuffer pixels without a second, fractional resampling.
+    const PanelImagePlacement placement = placePanelImage(hosts.cursor(), available, ImGui::GetMainViewport()->Pos, pixelsPerPoint);
+    const ImVec2 origin = placement.origin;
     m_origin = origin;
     m_pixelsPerPoint = pixelsPerPoint;
     m_zoom = std::max(zoom, 0.1f);
-    m_pixels = {static_cast<std::uint32_t>(std::max(std::floor(available.x * pixelsPerPoint), 1.0f)),
-                static_cast<std::uint32_t>(std::max(std::floor(available.y * pixelsPerPoint), 1.0f))};
-    hosts.image(render::Renderer::uiSurfaceTexture(m_surface), available);
+    m_pixels = placement.pixels;
+    hosts.setCursor(origin);
+    hosts.image(render::Renderer::uiSurfaceTexture(m_surface), placement.size);
     m_hovered = hosts.itemHovered();
     m_focused = hosts.focused();
     if (!m_connected)

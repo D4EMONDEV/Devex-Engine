@@ -79,11 +79,11 @@ float4 fragmentMain(VertexOutput input) : SV_Target
     float4 color = input.color;
     if (ui.kind == kindText)
     {
-        // The atlas holds the distance to the outline, with the outline itself at one half. A
-        // pixel of the screen covers 0.5 / sharpness of that range, which is how far the edge is
-        // softened.
+        // The atlas encodes one spread of distance in half its range. One screen pixel covers
+        // 0.5 / sharpness, so the half-width of a one-pixel transition is 0.25 / sharpness.
+        // Using the full width on each side softened small letters over two pixels.
         const float distance = sampleTexture(ui.texture, input.uv).r;
-        const float softness = 0.5 / max(ui.sharpness, 0.0001);
+        const float softness = 0.25 / max(ui.sharpness, 0.0001);
         color.a *= smoothstep(0.5 - softness, 0.5 + softness, distance);
     }
     else

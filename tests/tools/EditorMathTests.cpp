@@ -1,4 +1,5 @@
 #include "tools/EditorCamera.hpp"
+#include "tools/EditorUi.hpp"
 #include "tools/EditorView.hpp"
 #include "tools/Gizmo.hpp"
 
@@ -37,6 +38,34 @@ void checkNear(Vec3 actual, Vec3 expected, float margin = 1e-3f)
 }
 
 } // namespace
+
+TEST_CASE("Panel images keep one texel per framebuffer pixel at fractional display scales", "[tools][editor][ui]")
+{
+    for (const float scale : {1.0f, 1.25f, 1.5f, 2.0f})
+    {
+        for (const ImVec2 viewport : {ImVec2(0.0f, 0.0f), ImVec2(-301.25f, 40.5f)})
+        {
+            CAPTURE(scale, viewport.x, viewport.y);
+            const ImVec2 origin(viewport.x + 12.3f, viewport.y + 27.7f);
+            const ImVec2 size(400.8f, 182.35f);
+            const auto placed = devex::tools::detail::placePanelImage(origin, size, viewport, scale);
+            const float x = (placed.origin.x - viewport.x) * scale;
+            const float y = (placed.origin.y - viewport.y) * scale;
+            CHECK_THAT(x, WithinAbs(std::round(x), 0.0001));
+            CHECK_THAT(y, WithinAbs(std::round(y), 0.0001));
+            // No stretch of the rendered image, nor a subpixel shift at composition time.
+            CHECK_THAT(placed.size.x * scale, WithinAbs(placed.pixels.width, 0.0001));
+            CHECK_THAT(placed.size.y * scale, WithinAbs(placed.pixels.height, 0.0001));
+            CHECK(std::abs((placed.origin.x - origin.x) * scale) <= 0.501f);
+            CHECK(std::abs((placed.origin.y - origin.y) * scale) <= 0.501f);
+            CHECK(std::abs((placed.origin.x + placed.size.x - origin.x - size.x) * scale) <= 0.501f);
+            CHECK(std::abs((placed.origin.y + placed.size.y - origin.y - size.y) * scale) <= 0.501f);
+        }
+    }
+    const auto tiny = devex::tools::detail::placePanelImage(ImVec2(0.0f, 0.0f), ImVec2(0.1f, 0.1f), ImVec2(0.0f, 0.0f), 1.0f);
+    CHECK(tiny.pixels.width == 1);
+    CHECK(tiny.pixels.height == 1);
+}
 
 TEST_CASE("Viewport views project points and cast rays through pixels", "[tools][editor]")
 {
