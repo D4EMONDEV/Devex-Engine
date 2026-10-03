@@ -18,7 +18,7 @@ namespace devex::runtime::detail {
 // Builds the C# files of a project into its managed game assembly with the .NET SDK, in the
 // background, whenever one of them changes. The project file it needs is generated, so that the
 // folder only holds the code the game is written in.
-class ManagedCodeBuilder
+class DEVEX_API ManagedCodeBuilder
 {
 public:
     // What the last build reported, parsed like the C++ one.

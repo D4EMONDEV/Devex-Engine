@@ -256,6 +256,7 @@ devex_add_tests(runtime
         runtime/GameCodeBuilderTests.cpp
         runtime/GameExportTests.cpp
         runtime/InputActionsTests.cpp
+        runtime/ManagedCodeBuilderTests.cpp
         runtime/ManagedGameTests.cpp
         runtime/SaveGamesTests.cpp
         runtime/GameModuleTests.cpp
