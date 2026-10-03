@@ -157,7 +157,7 @@ public:
     void record(float milliseconds) noexcept;
     [[nodiscard]] float average() const noexcept;
     [[nodiscard]] float maximum() const noexcept;
-    // Values in recording order starting at offset, as ImGui::PlotLines expects.
+    // Values in recording order starting at offset.
     [[nodiscard]] const float* values() const noexcept;
     [[nodiscard]] int count() const noexcept;
     [[nodiscard]] int offset() const noexcept;

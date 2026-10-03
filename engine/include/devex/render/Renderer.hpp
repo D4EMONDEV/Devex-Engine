@@ -179,9 +179,6 @@ public:
     // An ImGui texture identifier that shows the image of the RenderWorld::uiSurfaces entry of
     // that id, in the frame it is drawn in.
     [[nodiscard]] static std::uint64_t uiSurfaceTexture(std::uint32_t id) noexcept;
-    // An ImGui texture identifier that shows a texture, for the previews of the tools; 0 while the
-    // texture is not on the GPU or ImGui is not connected.
-    [[nodiscard]] std::uint64_t imguiTexture(TextureHandle texture);
 
 private:
     explicit Renderer(std::unique_ptr<vulkan::VulkanRenderer> implementation) noexcept;

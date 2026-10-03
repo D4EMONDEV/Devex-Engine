@@ -1837,8 +1837,7 @@ les assets s'écrivent au fil de leur lecture.
   Frames* crée à côté d'elle des animations de tous ses sprites. Des sprite frames montrent leurs
   animations (ajouter, retirer, renommer, cadence, boucle), un aperçu qui joue, et leurs images :
   un sprite ou une texture glissés du FileSystem s'ajoutent, un clic droit déplace, duplique ou
-  retire. Les aperçus passent par `Renderer::imguiTexture`, un set ImGui par texture créé à la
-  demande et libéré avec elle.
+  retire. Les aperçus font partie des panneaux rendus avec `Devex::Ui`.
 - **Versions** : l'API des jeux passe à 15 (la caméra a changé de disposition) ; l'amorce C# ne
   change pas, les vues des composants étant générées.
 - **Bac à sable** : la scène `platformer` (Tab depuis l'arène) est un petit jeu de plateformes en

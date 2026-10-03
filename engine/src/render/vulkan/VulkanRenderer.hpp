@@ -81,7 +81,6 @@ public:
 
     [[nodiscard]] core::Result<void> initializeImGui();
     void shutdownImGui() noexcept;
-    [[nodiscard]] std::uint64_t imguiTexture(TextureHandle texture);
     void beginImGuiFrame();
     void queueImGuiDrawData() noexcept;
     [[nodiscard]] bool imGuiNeedsLinearColors() const noexcept;
@@ -510,8 +509,6 @@ private:
     std::optional<GpuTexture> m_flatNormalTexture;
     core::SlotMap<GpuTexture, TextureTag> m_textures;
     std::vector<RetiredTexture> m_retiredTextures;
-    // The ImGui sets that show textures to the tools, by texture slot, with the view each shows.
-    std::unordered_map<std::uint32_t, std::pair<VkImageView, VkDescriptorSet>> m_imguiTextures;
     // Bindless slots released by destroyed textures, reused before new ones.
     std::vector<std::uint32_t> m_freeTextureSlots;
     std::uint32_t m_nextTextureSlot = flatNormalTextureSlot + 1;

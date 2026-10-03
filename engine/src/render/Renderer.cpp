@@ -176,10 +176,4 @@ std::uint64_t Renderer::viewportTexture() noexcept
     return vulkan::VulkanRenderer::viewportTextureId;
 }
 
-std::uint64_t Renderer::imguiTexture(TextureHandle texture)
-{
-    DEVEX_ASSERT(m_implementation != nullptr);
-    return m_implementation->imguiTexture(texture);
-}
-
 } // namespace devex::render

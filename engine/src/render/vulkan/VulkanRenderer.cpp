@@ -4142,39 +4142,17 @@ void VulkanRenderer::shutdownImGui() noexcept
     if (m_imguiInitialized)
     {
         vkDeviceWaitIdle(m_device.handle());
-        // The backend's descriptor pool holds the viewport sets and those of the textures.
+        // The backend's descriptor pool holds the viewport and panel surface sets.
         for (FrameContext& frame : m_frames)
         {
             frame.imguiViewport = VK_NULL_HANDLE;
             frame.imguiViewportView = VK_NULL_HANDLE;
             frame.imguiSurfaces.clear();
         }
-        m_imguiTextures.clear();
         ImGui_ImplVulkan_Shutdown();
         m_imguiInitialized = false;
         m_imguiDrawQueued = false;
     }
-}
-
-std::uint64_t VulkanRenderer::imguiTexture(TextureHandle handle)
-{
-    const GpuTexture* const texture = m_textures.find(handle);
-    if (!m_imguiInitialized || texture == nullptr || !texture->ready)
-    {
-        return 0;
-    }
-    auto& [view, set] = m_imguiTextures[texture->slot];
-    if (view != texture->image.view())
-    {
-        // A slot is used again only once the frames of its previous texture completed.
-        if (set != VK_NULL_HANDLE)
-        {
-            ImGui_ImplVulkan_RemoveTexture(set);
-        }
-        view = texture->image.view();
-        set = ImGui_ImplVulkan_AddTexture(view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-    }
-    return static_cast<std::uint64_t>(std::bit_cast<std::uintptr_t>(set));
 }
 
 void VulkanRenderer::beginImGuiFrame()
@@ -4211,14 +4189,6 @@ void VulkanRenderer::releaseRetiredResources() noexcept
         }
         // The slot must not keep pointing at a destroyed view.
         m_descriptors->setTexture(retired.texture.slot, m_whiteTexture->image.view());
-        if (const auto shown = m_imguiTextures.find(retired.texture.slot); shown != m_imguiTextures.end())
-        {
-            if (m_imguiInitialized && shown->second.first == retired.texture.image.view())
-            {
-                ImGui_ImplVulkan_RemoveTexture(shown->second.second);
-                m_imguiTextures.erase(shown);
-            }
-        }
         m_freeTextureSlots.push_back(retired.texture.slot);
         return true;
     });
