@@ -1045,6 +1045,97 @@ TEST_CASE("Sprites draw by layer and order through an orthographic camera, and a
     CHECK(capture.errors().empty());
 }
 
+TEST_CASE("Temporal antialiasing keeps distant orthographic sprites stationary", "[render][gpu]")
+{
+    const ErrorCapture capture;
+    {
+        auto platform = devex::platform::Platform::create();
+        REQUIRE(platform.has_value());
+        auto window = platform->createWindow({.width = 320, .height = 240, .vulkan = true, .hidden = true});
+        REQUIRE(window.has_value());
+        auto renderer = devex::render::Renderer::create(*platform, *window, {.validation = true});
+        REQUIRE(renderer.has_value());
+
+        // The editor's 2D camera stands 500 m from the XY plane. Jitter must still move the
+        // image by less than a pixel, not grow with that distance. Cover two full TAA cycles.
+        constexpr int capturedFrames = 16;
+        std::vector<devex::render::CapturedImage> captured;
+        std::vector<devex::render::PickResult> picks;
+        for (int frame = 0; frame < capturedFrames + 3; ++frame)
+        {
+            devex::render::RenderWorld& world = renderer->beginFrame();
+            world.viewport = devex::math::Extent2D{320, 240};
+            world.camera.view = devex::math::translate(devex::math::Mat4{1.0f}, {0.0f, 0.0f, -500.0f});
+            world.camera.projection = devex::render::Projection::Orthographic;
+            world.camera.orthographicSize = 5.0f;
+            world.camera.farPlane = 1000.0f;
+            world.camera.autoExposure = false;
+            world.camera.antialiasing = devex::render::Antialiasing::Temporal;
+            world.camera.tonemapper = devex::render::Tonemapper::None;
+            world.camera.ambientOcclusion = 0.0f;
+            world.camera.bloom = 0.0f;
+            world.environment.color = {0.0f, 0.0f, 0.0f};
+            world.sprites.push_back({.size = {1.0f, 1.0f}, .color = {1.0f, 0.0f, 0.0f, 1.0f}, .objectId = 13});
+            if (frame < capturedFrames)
+            {
+                static_cast<void>(renderer->requestCapture(320, 240));
+                world.pick = devex::render::PickRequest{.x = 160, .y = 120, .id = static_cast<std::uint64_t>(frame + 1)};
+            }
+            REQUIRE(renderer->endFrame());
+            std::ranges::copy(renderer->takePickResults(), std::back_inserter(picks));
+            for (devex::render::CapturedImage& image : renderer->takeCaptures())
+            {
+                captured.push_back(std::move(image));
+            }
+        }
+
+        REQUIRE(captured.size() == capturedFrames);
+        REQUIRE(picks.size() == capturedFrames);
+        for (const devex::render::PickResult& pick : picks)
+        {
+            CAPTURE(pick.request);
+            CHECK(pick.objectId == 13);
+        }
+        for (const devex::render::CapturedImage& image : captured)
+        {
+            CAPTURE(image.request);
+            REQUIRE(image.width == 320);
+            REQUIRE(image.height == 240);
+            REQUIRE(image.rgba.size() == std::size_t{320} * 240 * 4);
+            std::uint32_t redPixels = 0;
+            double sumX = 0.0;
+            double sumY = 0.0;
+            for (std::uint32_t y = 0; y < image.height; ++y)
+            {
+                for (std::uint32_t x = 0; x < image.width; ++x)
+                {
+                    const std::size_t pixel = (std::size_t{y} * image.width + x) * 4;
+                    if (image.rgba[pixel] > 200 && image.rgba[pixel + 1] < 40 && image.rgba[pixel + 2] < 40)
+                    {
+                        ++redPixels;
+                        sumX += x;
+                        sumY += y;
+                    }
+                }
+            }
+            // A 24 by 24 pixel square stays visible, centered within one pixel throughout.
+            CHECK(redPixels >= 500);
+            if (redPixels > 0)
+            {
+                CHECK(sumX / redPixels >= 158.5);
+                CHECK(sumX / redPixels <= 160.5);
+                CHECK(sumY / redPixels >= 118.5);
+                CHECK(sumY / redPixels <= 120.5);
+            }
+        }
+    }
+    for (const std::string& error : capture.errors())
+    {
+        UNSCOPED_INFO(error);
+    }
+    CHECK(capture.errors().empty());
+}
+
 TEST_CASE("Tilemaps draw their tiles in one batch among the sprites, and are picked", "[render][gpu]")
 {
     const ErrorCapture capture;

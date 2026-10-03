@@ -1970,11 +1970,11 @@ void VulkanRenderer::writeSceneData(FrameContext& frame,
     const float aspectRatio = static_cast<float>(extent.width) / static_cast<float>(extent.height);
     const RenderCamera& camera = m_world.camera;
     const math::Mat4 projection = projectionMatrix(camera, aspectRatio);
-    // The jitter moves the whole image by a fraction of a pixel, so that the frames that follow
-    // each other end up covering the pixel evenly.
-    math::Mat4 jittered = projection;
-    jittered[2][0] += m_jitter.x;
-    jittered[2][1] += m_jitter.y;
+    // Shift clip XY by a fraction of clip W so the screen-space offset is independent of depth
+    // for both projections. Changing the Z column directly only works for perspective: in an
+    // orthographic view it multiplies the jitter by the distance from the camera.
+    const math::Mat4 jittered =
+        math::translate(math::Mat4{1.0f}, math::Vec3{-m_jitter.x, -m_jitter.y, 0.0f}) * projection;
 
     math::Mat4 rotationOnly = camera.view;
     rotationOnly[3] = math::Vec4{0.0f, 0.0f, 0.0f, 1.0f};

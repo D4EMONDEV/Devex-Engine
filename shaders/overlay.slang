@@ -37,7 +37,9 @@ ColorVertexOutput colorVertex(uint vertexIndex : SV_VertexID)
 {
     const OverlayVertex vertex = overlay.vertices[vertexIndex];
     ColorVertexOutput output;
-    output.position = mul(overlay.scene->viewProjection, float4(vertex.position, 1.0));
+    // Tools draw after the temporal resolve: their lines must stay at the positions used by
+    // editor hit testing, without the scene's per-frame subpixel jitter.
+    output.position = mul(overlay.scene->unjitteredViewProjection, float4(vertex.position, 1.0));
     output.position.z *= overlay.depthScale;
     output.color = vertex.color;
     return output;
