@@ -5,6 +5,7 @@
 #include <devex/core/Uuid.hpp>
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include <array>
 #include <chrono>
@@ -53,6 +54,8 @@ TEST_CASE("C# source discovery ignores build outputs and hidden directories", "[
 #ifdef DEVEX_TEST_MANAGED_GAME
 TEST_CASE("C# builds in an IDE and in the Devex cache can follow each other", "[runtime][managed][build]")
 {
+    const auto platform = GENERATE(std::string("AnyCPU"), std::string("x64"));
+    CAPTURE(platform);
     const ManagedProject fixture;
     const auto managed = std::filesystem::path(DEVEX_TEST_MANAGED_GAME).parent_path().parent_path() / "managed";
     const auto generated = ManagedCodeBuilder::generatedDirectory(fixture.project);
@@ -71,9 +74,10 @@ TEST_CASE("C# builds in an IDE and in the Devex cache can follow each other", "[
     INFO(builder.message());
     REQUIRE(initial);
 
-    // Rider's design-time build leaves generated assembly attributes in code/obj/Debug.
-    const std::array<std::string, 6> arguments{"dotnet", "build", devex::core::toUtf8(fixture.project.codeDirectory() / "Game.csproj"),
-                                              "-c", "Debug", "--nologo"};
+    // Both IDE builds and the x64 developer environment used by CI leave assembly attributes
+    // under code/obj. Specify the platform so the test covers both layouts on every machine.
+    const std::array<std::string, 7> arguments{"dotnet", "build", devex::core::toUtf8(fixture.project.codeDirectory() / "Game.csproj"),
+                                              "-c", "Debug", "--nologo", "-p:Platform=" + platform};
     auto ide = devex::platform::Process::start(arguments, fixture.root);
     REQUIRE(ide);
     std::string output;
@@ -92,7 +96,12 @@ TEST_CASE("C# builds in an IDE and in the Devex cache can follow each other", "[
     }
     INFO(output);
     REQUIRE(ide->exitCode() == 0);
-    REQUIRE(std::filesystem::exists(fixture.project.codeDirectory() / "obj" / "Debug" / "Game.AssemblyInfo.cs"));
+    auto objects = fixture.project.codeDirectory() / "obj";
+    if (platform != "AnyCPU")
+    {
+        objects /= platform;
+    }
+    REQUIRE(std::filesystem::exists(objects / "Debug" / "Game.AssemblyInfo.cs"));
 
     const auto rebuilt = builder.buildAndWait();
     INFO(builder.message());
