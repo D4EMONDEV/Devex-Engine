@@ -258,7 +258,7 @@ asset::AssetId EditorUiKit::icon(Icon icon)
     }
     // Drawn once, white, with mip levels so that it stays smooth at the size of the text.
     render::TextureHandle texture;
-    if (const core::Result<SvgImage> drawn = renderSvg(m_icons.svg(icon), iconPixels, iconPixels))
+    if (const core::Result<SvgImage> drawn = m_icons.render(icon, iconPixels, iconPixels))
     {
         const asset::Image image{.width = drawn->width, .height = drawn->height, .rgba = drawn->rgba};
         if (const core::Result<asset::TextureData> built =

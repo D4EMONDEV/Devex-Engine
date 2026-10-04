@@ -9,3 +9,4 @@ set_target_properties(devex_editor PROPERTIES
     FOLDER "Applications"
 )
 devex_set_warnings(devex_editor)
+devex_set_application_icon(devex_editor)

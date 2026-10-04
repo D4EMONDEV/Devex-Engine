@@ -54,6 +54,7 @@ set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 include(DevexShowIncludes)
 include(DevexShaders)
 include(DevexWarnings)
+include(DevexBranding)
 
 add_subdirectory(shaders)
 add_subdirectory(engine)

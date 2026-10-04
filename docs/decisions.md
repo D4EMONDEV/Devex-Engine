@@ -918,11 +918,15 @@ les assets s'écrivent au fil de leur lecture.
   (1,362 pour Noto Sans). Une police absente est remplacée par celle d'ImGui avec un
   avertissement.
 - **Icônes** (`src/tools/Icons`) : 107 icônes Lucide 1.47.0 (licence ISC, `third_party/lucide`) et le
-  logo Devex (`engine/resources/icons/devex.svg`), copiés dans `bin/resources/icons`. Chaque icône
+  logo Devex (`engine/resources/icons/devex.png`), copiés dans `bin/resources/icons`. Chaque icône
   est un caractère de la zone à usage privé (U+E000 et suivants) : un chargeur de police ImGui
   (`ImFontLoader`) fusionné dans chaque police dessine le SVG avec plutosvg à la taille du texte.
   Les icônes s'écrivent donc dans n'importe quel texte ImGui (menus, onglets, boutons), restent
-  nettes à toute échelle et prennent la couleur du texte ; le logo garde ses couleurs. La liste
+  nettes à toute échelle et prennent la couleur du texte ; le logo PNG garde ses couleurs,
+  sa transparence et ses proportions. Le même logo est intégré aux exécutables Windows de
+  l'éditeur et du lecteur (`devex.ico`, groupe 1, langue neutre), puis chargé par SDL pour la
+  fenêtre et la barre des tâches. `tools/generate-brand-icon.ps1` régénère les sept tailles de
+  l'ICO à partir du PNG original. Un export avec une icône de projet remplace ce groupe. La liste
   `DEVEX_EDITOR_ICONS` fixe les noms et l'ordre ; un test vérifie que chaque fichier existe.
 - **Réglages de l'éditeur** : fenêtre *Editor Settings* (menu *Editor* ou bouton *Settings* du
   gestionnaire) : préréglage, couleurs de base et d'accent, contraste, échelle de l'interface

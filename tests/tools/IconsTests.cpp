@@ -41,7 +41,7 @@ TEST_CASE("SVG documents are drawn with currentColor as white", "[tools][icons]"
     CHECK_FALSE(devex::tools::detail::renderSvg("not an svg", 16, 16).has_value());
 }
 
-TEST_CASE("Every editor icon has its SVG file among the resources", "[tools][icons]")
+TEST_CASE("Every editor icon has its source among the resources", "[tools][icons]")
 {
     const IconSet icons = IconSet::load(std::filesystem::path(DEVEX_TEST_RESOURCES_DIRECTORY) / "icons");
     for (std::size_t index = 0; index < static_cast<std::size_t>(Icon::Count); ++index)
@@ -54,9 +54,15 @@ TEST_CASE("Every editor icon has its SVG file among the resources", "[tools][ico
     CHECK_FALSE(IconSet::isColored(Icon::Play));
 
     // The logo keeps its own colors.
-    const auto logo = devex::tools::detail::renderSvg(icons.svg(Icon::Logo), 24, 24);
+    const auto logo = icons.render(Icon::Logo, 64, 64);
     REQUIRE(logo.has_value());
-    const std::size_t center = (4 * 24 + 4) * 4;
-    CHECK(logo->rgba[center + 3] == 255);
-    CHECK(logo->rgba[center + 2] > logo->rgba[center]);
+    REQUIRE(logo->rgba.size() == 64u * 64u * 4u);
+    // Transparent padding preserves the tall logo's proportions inside square icons.
+    CHECK(logo->rgba[(32 * 64) * 4 + 3] == 0);
+    const std::size_t orange = (8 * 64 + 7) * 4;
+    CHECK(logo->rgba[orange + 3] > 240);
+    CHECK(logo->rgba[orange] > logo->rgba[orange + 2]);
+    const std::size_t teal = (55 * 64 + 30) * 4;
+    CHECK(logo->rgba[teal + 3] > 240);
+    CHECK(logo->rgba[teal + 1] > logo->rgba[teal]);
 }

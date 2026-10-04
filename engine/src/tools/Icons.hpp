@@ -16,7 +16,7 @@ struct ImFontLoader;
 
 namespace devex::tools::detail {
 
-// The icons of the editor: Lucide icons (third_party/lucide) and the Devex logo, by name and SVG file.
+// The icons of the editor: Lucide SVG icons (third_party/lucide) and the Devex PNG logo.
 // Each icon is a character of Unicode's private use area, in this order, so that it can be written
 // in any ImGui text and follows the size of the font.
 #define DEVEX_EDITOR_ICONS(ICON)                     \
@@ -196,8 +196,7 @@ struct DEVEX_API SvgImage
 // Renders an SVG document at a size in pixels, with CSS currentColor as white.
 [[nodiscard]] DEVEX_API core::Result<SvgImage> renderSvg(std::string_view svg, std::uint32_t width, std::uint32_t height);
 
-// The icon documents, loaded from the SVG files of a directory. Icons whose file is missing draw
-// nothing.
+// SVG icons and the original PNG logo, loaded once. Missing icons draw nothing.
 class DEVEX_API IconSet
 {
 public:
@@ -205,11 +204,14 @@ public:
 
     [[nodiscard]] bool contains(Icon icon) const noexcept;
     [[nodiscard]] std::string_view svg(Icon icon) const noexcept;
+    // Fits the logo inside the requested size without stretching it, on transparent pixels.
+    [[nodiscard]] core::Result<SvgImage> render(Icon icon, std::uint32_t width, std::uint32_t height) const;
     // Icons drawn with their own colors rather than the color of the text.
     [[nodiscard]] static bool isColored(Icon icon) noexcept;
 
 private:
     std::array<std::string, static_cast<std::size_t>(Icon::Count)> m_documents;
+    SvgImage m_logo;
 };
 
 // The ImGui font loader that draws the icons of a set as glyphs. A font source using it takes the

@@ -9,3 +9,4 @@ set_target_properties(devex_player PROPERTIES
     FOLDER "Applications"
 )
 devex_set_warnings(devex_player)
+devex_set_application_icon(devex_player)

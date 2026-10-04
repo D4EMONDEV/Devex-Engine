@@ -735,6 +735,7 @@ file(GLOB DEVEX_FONT_FILES CONFIGURE_DEPENDS "${PROJECT_SOURCE_DIR}/third_party/
 file(GLOB DEVEX_ICON_FILES CONFIGURE_DEPENDS
     "${PROJECT_SOURCE_DIR}/third_party/lucide/icons/*.svg"
     "${CMAKE_CURRENT_SOURCE_DIR}/resources/icons/*.svg"
+    "${CMAKE_CURRENT_SOURCE_DIR}/resources/icons/*.png"
 )
 set(DEVEX_RESOURCES_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/resources")
 set(DEVEX_RESOURCES_STAMP "${CMAKE_CURRENT_BINARY_DIR}/resources.stamp")
@@ -744,6 +745,7 @@ add_custom_command(
             "${DEVEX_RESOURCES_DIRECTORY}/licenses"
     COMMAND "${CMAKE_COMMAND}" -E copy_if_different ${DEVEX_FONT_FILES} "${DEVEX_RESOURCES_DIRECTORY}/fonts"
     COMMAND "${CMAKE_COMMAND}" -E copy_if_different ${DEVEX_ICON_FILES} "${DEVEX_RESOURCES_DIRECTORY}/icons"
+    COMMAND "${CMAKE_COMMAND}" -E rm -f "${DEVEX_RESOURCES_DIRECTORY}/icons/devex.svg"
     COMMAND "${CMAKE_COMMAND}" -E copy_if_different
             "${PROJECT_SOURCE_DIR}/third_party/fonts/NotoSans-OFL.txt"
             "${PROJECT_SOURCE_DIR}/third_party/fonts/JetBrainsMono-OFL.txt"

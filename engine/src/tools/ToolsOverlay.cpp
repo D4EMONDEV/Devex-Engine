@@ -430,7 +430,7 @@ void updateEditor(ToolsState& state, scene::Scene& scene, PlayState playState)
 void setWindowIcon(ToolsState& state)
 {
     constexpr std::uint32_t size = 64;
-    const core::Result<detail::SvgImage> image = detail::renderSvg(state.icons.svg(detail::Icon::Logo), size, size);
+    const core::Result<detail::SvgImage> image = state.icons.render(detail::Icon::Logo, size, size);
     if (image)
     {
         state.window.setIcon(image->rgba, image->width, image->height);

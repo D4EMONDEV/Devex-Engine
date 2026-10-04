@@ -467,6 +467,11 @@ core::Result<Platform> Platform::create()
     }
 
     SDL_SetMainReady();
+#ifdef _WIN32
+    // The executable's neutral icon group, also replaced when exporting a game's own icon.
+    SDL_SetHint(SDL_HINT_WINDOWS_INTRESOURCE_ICON, "1");
+    SDL_SetHint(SDL_HINT_WINDOWS_INTRESOURCE_ICON_SMALL, "1");
+#endif
     // Gamepads are optional: a machine without one, or without their driver, still runs.
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD))
     {
