@@ -123,6 +123,7 @@ struct NativeApi
     void (*setParent)(void* scene, Entity child, Entity parent);
     void* (*transformOf)(void* scene, Entity entity);
     const float* (*worldPositionOf)(void* scene, Entity entity);
+    const float* (*worldMatrixOf)(void* scene, Entity entity);
 
     int (*isKeyDown)(int key);
     int (*wasKeyPressed)(int key);
@@ -295,7 +296,7 @@ struct ManagedApi
 };
 
 // Devex.Managed's Bootstrap.Version: both sides change it with the function tables.
-constexpr int bootstrapVersion = 20;
+constexpr int bootstrapVersion = 21;
 
 struct BootstrapArguments
 {
@@ -637,6 +638,16 @@ const float* apiWorldPositionOf(void* scene, Entity entity)
     }
     const scene::WorldTransform* const world = toScene(scene)->tryGet<scene::WorldTransform>(entity);
     return world != nullptr ? &world->matrix[3][0] : nullptr;
+}
+
+const float* apiWorldMatrixOf(void* scene, Entity entity)
+{
+    if (scene == nullptr || !toScene(scene)->isAlive(entity))
+    {
+        return nullptr;
+    }
+    const scene::WorldTransform* const world = toScene(scene)->tryGet<scene::WorldTransform>(entity);
+    return world != nullptr ? &world->matrix[0][0] : nullptr;
 }
 
 [[nodiscard]] const platform::Input* input() noexcept
@@ -2226,6 +2237,7 @@ int apiParticleCount(Entity entity)
         .setParent = &apiSetParent,
         .transformOf = &apiTransformOf,
         .worldPositionOf = &apiWorldPositionOf,
+        .worldMatrixOf = &apiWorldMatrixOf,
         .isKeyDown = &apiIsKeyDown,
         .wasKeyPressed = &apiWasKeyPressed,
         .isMouseButtonDown = &apiIsMouseButtonDown,

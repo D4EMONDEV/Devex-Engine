@@ -722,7 +722,10 @@ les assets s'écrivent au fil de leur lecture.
   fenêtre, entrées) sont disponibles de `onStartup` à `onShutdown`, pas dans le
   constructeur.
 - Chaque frame : événements (`onEvent`), puis zéro ou plusieurs `onFixedUpdate` au pas
-  fixe (60 Hz par défaut), puis un `onUpdate` avec le temps réel écoulé.
+  fixe (60 Hz par défaut), puis un `onUpdate` avec le temps réel écoulé. Les systèmes
+  `LateUpdate` suivent l'animation et l'interpolation physique, avant le rendu ; les caméras
+  y suivent les positions réellement affichées. Cette phase ne tourne pas à l'arrêt ou en
+  pause, sauf une fois avec la durée du pas quand on avance d'une frame.
 - Le pas fixe accumule le temps en nanosecondes entières (aucune dérive) et borne une
   frame à 250 ms pour éviter la spirale de rattrapage. `interpolationAlpha()` donne la
   progression vers le pas suivant pour interpoler le rendu.
@@ -1437,7 +1440,11 @@ les assets s'écrivent au fil de leur lecture.
   Chaque pas fixe : `onFixedUpdate`, systèmes `FixedUpdate`, transformées, pas de physique. Avant le
   rendu, les corps dynamiques, les personnages et leurs descendants sont placés entre leurs deux
   derniers pas selon l'avancement vers le prochain (transformées du monde seulement), pour un
-  mouvement fluide à plus de 60 images par seconde. Les maillages des colliders viennent de
+  mouvement fluide à plus de 60 images par seconde. Les caméras lisent ces poses dans `LateUpdate` ;
+  leurs changements locaux sont propagés avant le rendu en conservant l'interpolation des parents.
+  Au début de chaque frame de gameplay, les transformées du monde retrouvent les poses simulées,
+  même sans pas fixe, pour ne pas laisser la pose affichée contaminer `Update` ou `FixedUpdate`.
+  Les maillages des colliders viennent de
   `AssetManager::meshData` (données du CPU, maillages intégrés compris).
 - **Jeu** : `SystemContext::physics` (nul sans physique) donne `raycast`, `sphereCast` et
   `overlapSphere` (masque de couches, entité ignorée), `addForce`, `addTorque`, `addImpulse` et
@@ -2852,8 +2859,9 @@ les assets s'écrivent au fil de leur lecture.
 - **Module de jeu** : une bibliothèque partagée, écrite en C++ contre `devex/runtime/Game.hpp`, dont
   le point d'entrée `DEVEX_GAME_MODULE(game)` enregistre composants et systèmes. Il exporte aussi
   la version de l'API (`gameApiVersion`) : un module compilé pour une autre version est refusé.
-- **Systèmes** : trois phases, `Start` (au lancement du jeu : Play dans l'éditeur, démarrage du
-  lecteur), `FixedUpdate` (au pas fixe) et `Update` (à chaque frame). Dans une phase, les systèmes
+- **Systèmes** : quatre phases, `Start` (au lancement du jeu : Play dans l'éditeur, démarrage du
+  lecteur), `FixedUpdate` (au pas fixe), `Update` (à chaque frame) et `LateUpdate` (après
+  l'animation et l'interpolation physique). Dans une phase, les systèmes
   s'exécutent par `order` croissant puis dans l'ordre d'enregistrement, après les fonctions
   virtuelles de l'`Application`. `SystemContext` donne la scène, les entrées, la fenêtre, les
   assets, la physique, l'audio, la durée du pas ou de la frame ; `quitRequested` termine le jeu (arrête Play
@@ -2905,7 +2913,10 @@ les assets s'écrivent au fil de leur lecture.
   C++, ensuite pour le code C#.
 - **Modèle** : une classe qui dérive de `Devex.Component` est un composant du moteur. Ses champs
   publics sont sauvegardés dans les scènes et édités dans l'inspecteur ; `Start`, `Update(delta)`
-  et `FixedUpdate(delta)` sont ses comportements. Un **système** est une méthode statique marquée
+  `FixedUpdate(delta)` et `LateUpdate(delta)` sont ses comportements. `Entity.WorldMatrix`
+  donne la matrice monde courante (`System.Numerics.Matrix4x4`), interpolée pendant `LateUpdate` :
+  une caméra enfant utilise l'inverse de celle de son parent pour convertir sa position monde
+  en `Transform.Position` locale. Un **système** est une méthode statique marquée
   `[GameSystem(SystemPhase.Update)]`, qui prend la scène (ou rien) et voit toutes les entités ;
   les systèmes d'une phase tournent après les composants de cette phase, par `Order` croissant.
 - **Le moteur possède les données** : chaque composant C# devient un *type décrit à l'exécution*

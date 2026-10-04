@@ -1,3 +1,4 @@
+using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
@@ -14,8 +15,8 @@ public struct Transform
 
 /// <summary>
 /// A component of an entity, written in C#: its public fields are saved in scenes and edited in the
-/// inspector, and Start, Update and FixedUpdate run for every entity that has it. Its other fields
-/// last as long as the component, reloads of the code included.
+/// inspector, and Start, Update, FixedUpdate and LateUpdate run for every entity that has it.
+/// Its other fields last as long as the component, reloads of the code included.
 /// </summary>
 public abstract class Component
 {
@@ -37,6 +38,15 @@ public abstract class Component
 
     /// <summary>Called at the fixed update rate, before each physics step.</summary>
     public virtual void FixedUpdate(float delta)
+    {
+    }
+
+    /// <summary>
+    /// Called once per played frame, after animation and physics interpolation. Use this for camera
+    /// follow: WorldPosition and WorldMatrix describe the poses displayed this frame. Change the
+    /// local Transform of cameras and other visuals here; move physics bodies in Update or FixedUpdate.
+    /// </summary>
+    public virtual void LateUpdate(float delta)
     {
     }
 
@@ -204,6 +214,14 @@ public sealed unsafe class Scene
     {
         float* position = Bootstrap.Native.WorldPositionOf(_scene, entity);
         return position == null ? Vec3.Zero : new Vec3(position[0], position[1], position[2]);
+    }
+
+    /// <summary>The current world pose, including physics interpolation during LateUpdate.</summary>
+    public Matrix4x4 WorldMatrix(Entity entity)
+    {
+        float* matrix = Bootstrap.Native.WorldMatrixOf(_scene, entity);
+        // GLM's column-major matrix has the same storage as Numerics' row-vector convention.
+        return matrix == null ? Matrix4x4.Identity : Unsafe.ReadUnaligned<Matrix4x4>(matrix);
     }
 
     /// <summary>The C# component of an entity, or null.</summary>

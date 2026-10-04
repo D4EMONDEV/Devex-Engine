@@ -610,6 +610,7 @@ public readonly struct Entity : IEquatable<Entity>
     public ref Transform Transform => ref Scene.Current.TransformOf(this);
     public bool HasTransform => Scene.Current.HasTransform(this);
     public Vec3 WorldPosition => Scene.Current.WorldPosition(this);
+    public System.Numerics.Matrix4x4 WorldMatrix => Scene.Current.WorldMatrix(this);
     public Entity Parent => Scene.Current.Parent(this);
     public IEnumerable<Entity> Children => Scene.Current.Children(this);
     public Uuid Uuid => Scene.Current.UuidOf(this);
@@ -663,6 +664,9 @@ public abstract class Component
     
     /// <summary>Appelé au rythme fixe avant la physique.</summary>
     public virtual void FixedUpdate(float delta) { }
+
+    /// <summary>Après animation et interpolation physique, pour le suivi de caméra et les visuels.</summary>
+    public virtual void LateUpdate(float delta) { }
     
     // Méthodes de collision
     public virtual void OnCollisionEnter(Entity other) { }
@@ -786,13 +790,19 @@ public static unsafe class GameRuntime
 #### 4.4.2. SystemPhase
 
 ```csharp
-public enum SystemPhase : byte
+public enum SystemPhase
 {
     Start,        // Une fois au démarrage
     FixedUpdate,  // À intervalle fixe (avant physique)
-    Update        // Chaque frame (input, caméras)
+    Update,       // Chaque frame (input, logique de jeu)
+    LateUpdate    // Après interpolation physique (caméras, visuels)
 }
 ```
+
+Dans `LateUpdate`, `WorldPosition` et `WorldMatrix` correspondent aux poses affichées.
+Une caméra enfant convertit sa position monde avec l'inverse de `Entity.Parent.WorldMatrix`
+avant d'écrire dans `Transform.Position`, qui reste une position locale. La physique continue
+d'utiliser `Update` et `FixedUpdate` ; `LateUpdate` reste suspendu pendant la pause.
 
 ### 4.5. Mathématiques
 

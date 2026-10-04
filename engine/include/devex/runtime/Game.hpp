@@ -50,8 +50,10 @@ enum class SystemPhase : std::uint8_t
     Start,
     // At the fixed update rate, for simulation, before each physics step.
     FixedUpdate,
-    // Once per frame, for input, cameras and anything that follows the display.
+    // Once per frame, for input and game logic, before animation and interpolation.
     Update,
+    // Once per played frame, after animation and physics interpolation, for cameras and visuals.
+    LateUpdate,
 };
 
 // What a system works on during one call.

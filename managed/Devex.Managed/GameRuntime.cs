@@ -55,6 +55,7 @@ internal static unsafe class GameRuntime
         public string StartZone => field ??= Name + ".Start";
         public string UpdateZone => field ??= Name + ".Update";
         public string FixedUpdateZone => field ??= Name + ".FixedUpdate";
+        public string LateUpdateZone => field ??= Name + ".LateUpdate";
     }
 
     private sealed class SystemInfo(SystemPhase phase, int order, int found, string name, Action<Scene> run)
@@ -228,7 +229,12 @@ internal static unsafe class GameRuntime
                 foreach (ComponentTypeInfo info in Types)
                 {
                     using ProfileScope zone = profiling && info.Order.Count > 0
-                        ? Profiler.Scope(phase == SystemPhase.Update ? info.UpdateZone : info.FixedUpdateZone)
+                        ? Profiler.Scope(phase switch
+                        {
+                            SystemPhase.Update => info.UpdateZone,
+                            SystemPhase.LateUpdate => info.LateUpdateZone,
+                            _ => info.FixedUpdateZone,
+                        })
                         : default;
                     foreach (Entity entity in info.Order)
                     {
@@ -240,7 +246,11 @@ internal static unsafe class GameRuntime
                         {
                             Call(info, instance, "Update", static (component, time) => component.Update(time), delta);
                         }
-                        else
+                        else if (phase == SystemPhase.LateUpdate)
+                        {
+                            Call(info, instance, "LateUpdate", static (component, time) => component.LateUpdate(time), delta);
+                        }
+                        else if (phase == SystemPhase.FixedUpdate)
                         {
                             Call(info, instance, "FixedUpdate", static (component, time) => component.FixedUpdate(time), delta);
                         }

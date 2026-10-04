@@ -1,4 +1,5 @@
 #include "runtime/ManagedGame.hpp"
+#include "runtime/ManagedCodeBuilder.hpp"
 
 #include <devex/animation/AnimationWorld.hpp>
 #include <devex/animation/TweenWorld.hpp>
@@ -16,6 +17,7 @@
 #include <devex/physics/PhysicsWorld.hpp>
 #include <devex/physics2d/Physics2DWorld.hpp>
 #include <devex/platform/Platform.hpp>
+#include <devex/runtime/Application.hpp>
 #include <devex/scene/AnimationComponents.hpp>
 #include <devex/scene/AudioComponents.hpp>
 #include <devex/scene/ComponentRegistry.hpp>
@@ -32,6 +34,7 @@
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include <algorithm>
 #include <filesystem>
@@ -81,10 +84,168 @@ void run(ManagedGame& game, Scene& scene, SystemPhase phase, double seconds = 0.
 
 } // namespace
 
+TEST_CASE("Late C# cameras follow interpolated parents at different frame rates", "[runtime][managed][camera]")
+{
+    const int frameRate = GENERATE(30, 60, 90, 144, 240);
+    CAPTURE(frameRate);
+    const auto game = startRuntime();
+    const auto* cameraType = devex::scene::componentRegistry().find("LateCamera");
+    REQUIRE(cameraType != nullptr);
+    Scene scene;
+    const Entity hero = scene.createEntity("Hero");
+    scene.add<devex::scene::Transform>(hero, devex::scene::Transform{
+        .rotation = devex::math::Quat{0.9238795f, 0.0f, 0.0f, 0.3826834f}, .scale = {1.5f, 0.75f, 1.0f}});
+    scene.add<devex::scene::CharacterController2D>(hero,
+        devex::scene::CharacterController2D{.gravityScale = 0.0f});
+    const Entity camera = scene.createEntity("Camera");
+    scene.add<devex::scene::Transform>(camera);
+    REQUIRE(scene.setParent(camera, hero));
+    void* const component = cameraType->emplace(scene, camera);
+    field<EntityRef>(*cameraType, component, "target") = {scene.uuid(hero)};
+    auto physics = devex::physics2d::Physics2DWorld::create({});
+    REQUIRE(physics);
+    run(*game, scene, SystemPhase::Start);
+    int remainder = 0;
+    int fixedUpdates = 0;
+    for (int frame = 1; frame <= frameRate; ++frame)
+    {
+        scene.updateTransforms();
+        remainder += 60;
+        while (remainder >= frameRate)
+        {
+            run(*game, scene, SystemPhase::FixedUpdate, 1.0 / 60.0);
+            scene.get<devex::scene::CharacterController2D>(hero).velocity = {6.0f, 0.0f};
+            (*physics)->step(scene, devex::core::Duration(1.0 / 60.0));
+            remainder -= frameRate;
+            ++fixedUpdates;
+        }
+        run(*game, scene, SystemPhase::Update, 1.0 / frameRate);
+        const float alpha = static_cast<float>(remainder) / static_cast<float>(frameRate);
+        scene.updateTransforms();
+        (*physics)->interpolate(scene, alpha);
+        const devex::math::Vec3 rendered = scene.get<devex::scene::WorldTransform>(hero).matrix[3];
+        run(*game, scene, SystemPhase::LateUpdate, 1.0 / frameRate);
+        scene.updateTransforms();
+        (*physics)->interpolate(scene, alpha);
+        const auto position = scene.get<devex::scene::WorldTransform>(camera).matrix[3];
+        CHECK(position.x == Catch::Approx(rendered.x).margin(1e-5f));
+        CHECK(position.y == Catch::Approx(rendered.y + 1.5f).margin(1e-5f));
+        CHECK(position.z == Catch::Approx(10.0f));
+        CHECK(field<float>(*cameraType, component, "observed_x") == rendered.x);
+        CHECK(field<int>(*cameraType, component, "updates") == frame);
+        CHECK(field<int>(*cameraType, component, "fixed_updates") == fixedUpdates);
+        CHECK(field<int>(*cameraType, component, "late_updates") == frame);
+        CHECK(field<int>(*cameraType, component, "systems") == frame);
+        CHECK(field<float>(*cameraType, component, "frame_delta") == Catch::Approx(1.0 / frameRate));
+        CHECK(field<float>(*cameraType, component, "elapsed") == Catch::Approx(static_cast<double>(frame) / frameRate));
+    }
+}
+
+namespace {
+
+class CameraApplication final : public devex::runtime::Application
+{
+public:
+    bool sawInterpolation = false;
+    bool sawFrameWithoutStep = false;
+
+    devex::core::Result<void> onStartup() override
+    {
+        m_cameraType = devex::scene::componentRegistry().find("LateCamera");
+        REQUIRE(m_cameraType != nullptr);
+        m_hero = scene().createEntity("Hero");
+        scene().add<devex::scene::Transform>(m_hero);
+        scene().add<devex::scene::CharacterController2D>(m_hero,
+            devex::scene::CharacterController2D{.gravityScale = 0.0f});
+        m_camera = scene().createEntity("Camera");
+        scene().add<devex::scene::Transform>(m_camera);
+        REQUIRE(scene().setParent(m_camera, m_hero));
+        m_component = m_cameraType->emplace(scene(), m_camera);
+        field<EntityRef>(*m_cameraType, m_component, "target") = {scene().uuid(m_hero)};
+        return {};
+    }
+
+    void onFixedUpdate(devex::core::Duration) override
+    {
+        ++m_fixedUpdates;
+        scene().get<devex::scene::CharacterController2D>(m_hero).velocity = {6.0f, 0.0f};
+    }
+
+    void onUpdate(devex::core::Duration) override
+    {
+        // LateUpdate ran exactly once after each preceding Update, even with no fixed step.
+        CHECK(field<int>(*m_cameraType, m_component, "late_updates") == m_updates);
+        if (m_updates > 0)
+        {
+            sawFrameWithoutStep |= m_previousFixed == m_fixedUpdates;
+            sawInterpolation |= field<float>(*m_cameraType, m_component, "observed_x") < m_previousSimulationX;
+        }
+        // Last frame's rendered pose must never leak into this frame's simulation.
+        const float x = scene().get<devex::scene::Transform>(m_hero).position.x;
+        CHECK(scene().get<devex::scene::WorldTransform>(m_hero).matrix[3].x == x);
+        m_previousSimulationX = x;
+        m_previousFixed = m_fixedUpdates;
+        if (++m_updates == 48)
+        {
+            requestQuit();
+        }
+    }
+
+    void onShutdown() override
+    {
+        const auto hero = scene().get<devex::scene::WorldTransform>(m_hero).matrix[3];
+        const auto camera = scene().get<devex::scene::WorldTransform>(m_camera).matrix[3];
+        CHECK(field<int>(*m_cameraType, m_component, "late_updates") == m_updates);
+        CHECK(field<int>(*m_cameraType, m_component, "fixed_updates") == m_fixedUpdates);
+        CHECK(field<int>(*m_cameraType, m_component, "systems") == m_updates);
+        CHECK(field<float>(*m_cameraType, m_component, "observed_x") == hero.x);
+        CHECK(camera.x == Catch::Approx(hero.x));
+        CHECK(camera.y == Catch::Approx(hero.y + 1.5f));
+        CHECK(camera.z == Catch::Approx(10.0f));
+    }
+
+private:
+    const devex::scene::ComponentType* m_cameraType = nullptr;
+    void* m_component = nullptr;
+    Entity m_hero;
+    Entity m_camera;
+    int m_updates = 0;
+    int m_fixedUpdates = 0;
+    int m_previousFixed = 0;
+    float m_previousSimulationX = 0.0f;
+};
+
+} // namespace
+
+TEST_CASE("The application runs late cameras after interpolation and restores simulation poses", "[runtime][managed][camera]")
+{
+    // Check .NET availability before starting the application's own managed runtime.
+    {
+        const auto game = startRuntime();
+        game->unloadAssembly();
+    }
+    const auto directory = std::filesystem::temp_directory_path() / ("devex-camera-" + devex::core::Uuid::generate().toString());
+    const auto project = devex::asset::createProject(directory, "Camera test");
+    REQUIRE(project);
+    const auto assembly = devex::runtime::detail::ManagedCodeBuilder::assemblyPath(*project);
+    std::filesystem::create_directories(assembly.parent_path());
+    std::filesystem::copy_file(DEVEX_TEST_MANAGED_GAME, assembly);
+    CameraApplication application;
+    const devex::runtime::ApplicationConfig config{
+        .title = "Camera test", .width = 320, .height = 240,
+        .fixedUpdateRate = 30, .maxFrameRate = 120, .enableRendering = false,
+        .loadGameCode = true, .project = project->file, .watchAssets = false,
+        .enableAudio = false, .workerThreads = 1, .userDirectory = directory / "user"};
+    CHECK(devex::runtime::run(application, config) == EXIT_SUCCESS);
+    CHECK(application.sawInterpolation);
+    CHECK(application.sawFrameWithoutStep);
+    std::filesystem::remove_all(directory);
+}
+
 TEST_CASE("The C# runtime registers components and runs them", "[runtime][managed]")
 {
     const std::unique_ptr<ManagedGame> game = startRuntime();
-    CHECK(game->componentTypes().size() == 21);
+    CHECK(game->componentTypes().size() == 22);
 
     devex::scene::ComponentRegistry& registry = devex::scene::componentRegistry();
     const devex::scene::ComponentType* const mover = registry.find("Mover");

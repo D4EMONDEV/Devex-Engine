@@ -1,3 +1,4 @@
+using System.Numerics;
 using System.Runtime.InteropServices;
 
 namespace Devex;
@@ -36,6 +37,9 @@ public readonly struct Entity(uint index, uint generation) : IEquatable<Entity>
 
     /// <summary>Where the entity is in the world, as of the last update of the transforms.</summary>
     public Vec3 WorldPosition => Scene.Current.WorldPosition(this);
+
+    /// <summary>The current world pose, including physics interpolation during LateUpdate.</summary>
+    public Matrix4x4 WorldMatrix => Scene.Current.WorldMatrix(this);
 
     /// <summary>The parent of the entity; None for a root.</summary>
     public Entity Parent => Scene.Current.Parent(this);

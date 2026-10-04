@@ -94,7 +94,8 @@ class ApplicationRunner;
 
 // Base class of every program driven by the engine loop. Each frame polls events, runs the fixed
 // updates that are due (each followed by a physics step), runs one variable update, updates the
-// scene transforms, then renders the scene. Engine services are available from onStartup to onShutdown, not in the constructor.
+// scene transforms and physics interpolation, runs LateUpdate game systems, then renders the scene.
+// Engine services are available from onStartup to onShutdown, not in the constructor.
 //
 // Inside the editor, onStartup and onShutdown run as usual, but the updates and onRender only run
 // in Play mode, between onPlayStarted and onPlayStopped, and scene() then returns the copy of the

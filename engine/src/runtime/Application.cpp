@@ -240,7 +240,9 @@ private:
     void runFrame();
     void runGameplay(std::chrono::nanoseconds frameTime);
     // Animation, interface, transforms, physics interpolation and audio, after the gameplay.
-    void updateFrameWorlds(std::chrono::nanoseconds frameTime, bool interpolate);
+    void updateFrameWorlds(std::chrono::nanoseconds frameTime, bool interpolate,
+                           std::optional<std::chrono::nanoseconds> gameplayTime);
+    void updateRenderTransforms(bool interpolate);
     // Loads the scene that game systems asked for, if any.
     void loadRequestedScene();
     void render(bool gameplay);
@@ -766,15 +768,18 @@ void ApplicationRunner::runFrame()
             m_services.tools->update(*m_application.m_scene, core::Duration(frameTime), m_playState);
         }
         handleEditorRequests(m_services.tools->takeRequests());
+        std::optional<std::chrono::nanoseconds> gameplayTime;
         if (m_playState == tools::PlayState::Playing)
         {
+            gameplayTime = frameTime;
             runGameplay(frameTime);
         }
         else if (m_playState == tools::PlayState::Paused && std::exchange(m_stepRequested, false))
         {
+            gameplayTime = m_timestep.step();
             runGameplay(m_timestep.step());
         }
-        updateFrameWorlds(frameTime, m_playScene.has_value());
+        updateFrameWorlds(frameTime, m_playScene.has_value(), m_playScene ? gameplayTime : std::nullopt);
         if (canRender && !m_application.m_quitRequested)
         {
             render(m_playScene.has_value());
@@ -783,7 +788,7 @@ void ApplicationRunner::runFrame()
     else
     {
         runGameplay(frameTime);
-        updateFrameWorlds(frameTime, true);
+        updateFrameWorlds(frameTime, true, frameTime);
         if (canRender && !m_application.m_quitRequested)
         {
             if (m_services.tools != nullptr)
@@ -807,7 +812,8 @@ void ApplicationRunner::runFrame()
     m_inFrame = false;
 }
 
-void ApplicationRunner::updateFrameWorlds(std::chrono::nanoseconds frameTime, bool interpolate)
+void ApplicationRunner::updateFrameWorlds(std::chrono::nanoseconds frameTime, bool interpolate,
+                                         std::optional<std::chrono::nanoseconds> gameplayTime)
 {
     // Animated tiles play in the editor too, and hold while the game is paused.
     if (!(isEditor() && m_playScene && m_playState != tools::PlayState::Playing))
@@ -826,6 +832,29 @@ void ApplicationRunner::updateFrameWorlds(std::chrono::nanoseconds frameTime, bo
             m_editedThemes.apply(*m_application.m_scene);
         }
     }
+    updateRenderTransforms(interpolate);
+    if (gameplayTime)
+    {
+        DEVEX_PROFILE_SCOPE("Late update");
+        // Cameras follow the same interpolated poses that the renderer displays. Paused frames do
+        // not advance them; a single step uses its gameplay delta, not the editor's wall time.
+        runSystems(SystemPhase::LateUpdate, core::Duration(*gameplayTime));
+        // Publish the changed local transforms, preserving interpolation of physics parents.
+        updateRenderTransforms(interpolate);
+    }
+    // Once the emitters stand where the frame shows them.
+    {
+        DEVEX_PROFILE_SCOPE("Particles");
+        updateParticles(frameTime);
+    }
+    {
+        DEVEX_PROFILE_SCOPE("Audio");
+        updateAudio(frameTime);
+    }
+}
+
+void ApplicationRunner::updateRenderTransforms(bool interpolate)
+{
     {
         DEVEX_PROFILE_SCOPE("Transforms");
         m_application.m_scene->updateTransforms();
@@ -840,20 +869,14 @@ void ApplicationRunner::updateFrameWorlds(std::chrono::nanoseconds frameTime, bo
         DEVEX_PROFILE_SCOPE("2D physics interpolation");
         m_physics2d->interpolate(*m_application.m_scene, static_cast<float>(m_timestep.alpha()));
     }
-    // Once the emitters stand where the frame shows them.
-    {
-        DEVEX_PROFILE_SCOPE("Particles");
-        updateParticles(frameTime);
-    }
-    {
-        DEVEX_PROFILE_SCOPE("Audio");
-        updateAudio(frameTime);
-    }
 }
 
 void ApplicationRunner::runGameplay(std::chrono::nanoseconds frameTime)
 {
     DEVEX_PROFILE_SCOPE("Gameplay");
+    // World poses left by rendering are interpolated. Gameplay always reads simulation poses,
+    // including frames with no fixed step, rather than alternating between the two timelines.
+    m_application.m_scene->updateTransforms();
     if (m_actions)
     {
         m_actions->update(m_services.platform.input(), m_ui && m_ui->isEditing());

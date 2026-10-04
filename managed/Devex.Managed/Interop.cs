@@ -41,6 +41,7 @@ internal unsafe struct NativeApi
     public delegate* unmanaged<void*, Entity, Entity, void> SetParent;
     public delegate* unmanaged<void*, Entity, void*> TransformOf;
     public delegate* unmanaged<void*, Entity, float*> WorldPositionOf;
+    public delegate* unmanaged<void*, Entity, float*> WorldMatrixOf;
 
     public delegate* unmanaged<int, int> IsKeyDown;
     public delegate* unmanaged<int, int> WasKeyPressed;
@@ -218,7 +219,7 @@ internal unsafe struct BootstrapArguments
 /// <summary>What the engine calls into: filling the function tables, then the game itself.</summary>
 public static unsafe class Bootstrap
 {
-    internal const int Version = 20;
+    internal const int Version = 21;
 
     internal static NativeApi Native;
     private static byte[]? _description;
@@ -409,4 +410,6 @@ public enum SystemPhase
     FixedUpdate = 1,
     /// <summary>Once per frame.</summary>
     Update = 2,
+    /// <summary>Once per played frame, after animation and physics interpolation, for cameras and visuals.</summary>
+    LateUpdate = 3,
 }
