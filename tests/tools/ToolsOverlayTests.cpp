@@ -323,6 +323,79 @@ TEST_CASE("FileSystem Create New asks for a type name and destination", "[tools]
     }
 }
 
+TEST_CASE("Output follows startup messages without toggling Follow", "[tools][log][gpu]")
+{
+    auto platform = devex::platform::Platform::create();
+    REQUIRE(platform);
+    auto window = platform->createWindow({.width = 1000, .height = 800, .vulkan = true, .hidden = true});
+    REQUIRE(window);
+    auto renderer = devex::render::Renderer::create(*platform, *window, {.validation = true});
+    REQUIRE(renderer);
+    const auto settings = std::filesystem::temp_directory_path() /
+                          ("devex-output-follow-" + devex::core::Uuid::generate().toString() + ".ini");
+    auto overlay = devex::tools::ToolsOverlay::create(*platform, *window, *renderer, settings);
+    REQUIRE(overlay);
+    (*overlay)->setVisible(true);
+    devex::scene::Scene scene;
+    const float scale = devex::tools::detail::effectiveInterfaceScale({}, window->displayScale());
+    const float font = devex::tools::detail::regularFontPixels(14.0f) * scale;
+    const float padding = std::floor(8.0f * scale);
+    const float framePadding = std::floor(4.0f * scale);
+    const auto dock = devex::tools::detail::placeDock(
+        devex::tools::detail::DockLayout::defaults(false), [](std::string_view) { return true; },
+        ImVec2(0.0f, std::round(font + framePadding * 3.2f)), ImVec2(1000.0f, 800.0f),
+        std::round(5.0f * scale), std::round(font + framePadding * 2.0f + 4.0f));
+    const auto& output = dock.contents[static_cast<std::size_t>(devex::tools::detail::DockSlot::Bottom)];
+    const devex::math::Vec2 follow{output.max.x - padding - 17.5f * scale,
+                                 output.min.y + padding + 14.0f * scale};
+    const auto frame = [&](bool pressed = false) {
+        platform->pollEvents([](const devex::platform::Event&) {});
+        auto& input = const_cast<devex::platform::Input&>(platform->toolsInput());
+        input.moveMouse(follow, {});
+        input.setMouseButtonDown(devex::platform::MouseButton::Left, pressed);
+        (*overlay)->update(scene, std::chrono::milliseconds(16));
+        auto& world = renderer->beginFrame();
+        (*overlay)->prepareRender(scene, world, devex::tools::PlayState::Editing);
+        std::size_t textIndices = 0;
+        for (const auto& surface : world.uiSurfaces)
+        {
+            if (surface.id != 3) continue;
+            for (const auto& draw : surface.draws)
+            {
+                if (draw.kind == devex::render::UiDrawKind::Text) textIndices += draw.indexCount;
+            }
+        }
+        REQUIRE(renderer->endFrame());
+        return textIndices;
+    };
+    const auto forceFollow = [&] {
+        frame(true);
+        frame(false);
+        frame(true);
+        frame(false);
+        return frame();
+    };
+    // Fill the log BEFORE the panel has a layout. Its last lines have recognizably more glyphs.
+    for (int line = 0; line < 300; ++line)
+    {
+        DEVEX_LOG_INFO("{}", line < 290 ? "x" : "Last startup messages must be visible immediately without clicking Follow");
+    }
+    frame();
+    frame();
+    const auto initiallyFollowed = frame();
+    const auto explicitlyFollowed = forceFollow();
+    REQUIRE(explicitlyFollowed > 1000);
+    CHECK(initiallyFollowed == explicitlyFollowed);
+    // Following also works when eviction keeps the bounded log at the same number of lines.
+    for (int line = 0; line < 2200; ++line) DEVEX_LOG_INFO("x");
+    frame();
+    frame();
+    for (int line = 0; line < 10; ++line) DEVEX_LOG_INFO("The newest messages still follow when the log is full");
+    frame();
+    const auto followedWhenFull = frame();
+    CHECK(followedWhenFull == forceFollow());
+}
+
 TEST_CASE("Clearing a scrolled output keeps its current rows valid and shows new messages", "[tools][log][gpu]")
 {
     auto platform = devex::platform::Platform::create();

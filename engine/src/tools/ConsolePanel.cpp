@@ -189,6 +189,8 @@ struct OutputUi : PanelBuilder
     std::vector<Line> shown;
     std::array<std::size_t, 4> counts{};
     bool dirty = true;
+    // Startup messages can arrive before the first layout gives the panel a height.
+    bool initialFollowPending = true;
     std::string shownFilter;
     std::array<bool, 4> shownFlags{};
     float contentWidth = 0.0f;
@@ -447,10 +449,13 @@ void OutputUi::update(ToolsState& state, EditorUiKit& kit, core::Duration delta)
     const bool atBottom = scrolled.offset.y >= bottom() - lineHeight * 0.5f;
     state.consoleFilter = scene().get<scene::UiText>(filter).text;
     const std::size_t before = shown.size();
+    const std::uint64_t previousLast = last;
     sync(state, kit);
-    if (state.consoleAutoScroll && atBottom && shown.size() != before && view != nullptr)
+    if (state.consoleAutoScroll && view != nullptr && viewHeight > 0.0f &&
+        (initialFollowPending || (atBottom && (shown.size() != before || last != previousLast))))
     {
         scrolled.offset.y = bottom();
+        initialFollowPending = false;
     }
 
     // The kinds of message, lit while they are shown.
