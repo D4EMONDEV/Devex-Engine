@@ -35,7 +35,7 @@ constexpr std::uint32_t fileSystemSurface = 2;
 // How often the folders of the code are read again, since nothing tells when they change.
 constexpr double codeListingSeconds = 1.0;
 
-// A folder of the project, built from the paths of the source files.
+// A folder of the project, including directories which have no imported source files.
 struct Folder
 {
     std::map<std::string, Folder, std::less<>> folders;
@@ -43,19 +43,18 @@ struct Folder
 };
 
 // The folder tree points into the sources, which must outlive it.
-[[nodiscard]] Folder buildTree(const std::vector<asset::SourceFile>& sources)
+[[nodiscard]] Folder buildTree(const std::vector<asset::SourceFile>& sources, const std::vector<std::string>& directories)
 {
     Folder root;
-    for (const asset::SourceFile& source : sources)
-    {
-        std::string_view path = source.path;
+    const auto directory = [&root](std::string_view path) {
         if (path.starts_with(asset::resourceScheme))
         {
             path.remove_prefix(asset::resourceScheme.size());
         }
         Folder* folder = &root;
-        for (std::size_t slash = path.find('/'); slash != std::string_view::npos; slash = path.find('/'))
+        while (!path.empty())
         {
+            const std::size_t slash = path.find('/');
             const std::string_view name = path.substr(0, slash);
             auto found = folder->folders.find(name);
             if (found == folder->folders.end())
@@ -63,9 +62,21 @@ struct Folder
                 found = folder->folders.emplace(std::string(name), Folder{}).first;
             }
             folder = &found->second;
+            if (slash == std::string_view::npos)
+            {
+                break;
+            }
             path.remove_prefix(slash + 1);
         }
-        folder->files.push_back(&source);
+        return folder;
+    };
+    for (const std::string& path : directories)
+    {
+        directory(path);
+    }
+    for (const asset::SourceFile& source : sources)
+    {
+        directory(std::string_view(source.path).substr(0, source.path.rfind('/')))->files.push_back(&source);
     }
     return root;
 }
@@ -511,7 +522,7 @@ void FileSystemUi::gather(ToolsState& state)
     sources = state.database->sources();
     if (state.assetFilter.empty())
     {
-        addFolder(state, "res://", std::string(asset::resourceScheme), buildTree(sources), 0);
+        addFolder(state, "res://", std::string(asset::resourceScheme), buildTree(sources, state.database->folders()), 0);
         return;
     }
     // A filter lists the matching files with their whole path.

@@ -120,6 +120,8 @@ public:
     [[nodiscard]] std::vector<AssetInfo> assets(std::optional<AssetType> type = std::nullopt) const override;
     // Sorted by path.
     [[nodiscard]] std::vector<SourceFile> sources() const;
+    // Sorted res:// paths, including empty asset folders. Updated by refresh and the watcher.
+    [[nodiscard]] const std::vector<std::string>& folders() const noexcept;
     // The source file of any asset it produced.
     [[nodiscard]] std::optional<SourceFile> sourceOf(AssetId id) const;
     // The main asset of a source file, by res:// path.

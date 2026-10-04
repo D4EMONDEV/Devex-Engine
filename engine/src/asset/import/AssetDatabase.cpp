@@ -579,6 +579,7 @@ public:
         }
 
         std::vector<std::filesystem::path> files;
+        std::vector<std::string> folders{m_project.resourcePath(m_project.assetsDirectory())};
         for (auto end = std::filesystem::recursive_directory_iterator(); iterator != end;
              iterator.increment(error))
         {
@@ -596,13 +597,19 @@ public:
                 }
                 continue;
             }
-            if (iterator->is_regular_file(error) && findImporterForExtension(lowercaseExtension(file)))
+            if (iterator->is_directory(error))
+            {
+                folders.push_back(m_project.resourcePath(file));
+            }
+            else if (iterator->is_regular_file(error) && findImporterForExtension(lowercaseExtension(file)))
             {
                 files.push_back(file.lexically_normal());
             }
         }
         // A stable order decides which of two files sharing an identifier keeps it.
         std::ranges::sort(files);
+        std::ranges::sort(folders);
+        m_folders = std::move(folders);
 
         for (const std::filesystem::path& file : files)
         {
@@ -810,6 +817,11 @@ public:
         }
         // Only the file: reading it takes nothing else from the database.
         return [path = artifactPath(id)] { return core::readBinaryFile(path); };
+    }
+
+    [[nodiscard]] const std::vector<std::string>& folders() const noexcept
+    {
+        return m_folders;
     }
 
     [[nodiscard]] core::Result<AssetId> addFile(const std::filesystem::path& file,
@@ -1270,6 +1282,7 @@ private:
     AssetDatabaseConfig m_config;
     std::shared_ptr<SharedState> m_shared;
     std::unordered_map<AssetId, Source> m_sources;
+    std::vector<std::string> m_folders;
     // Records read at startup whose source has not been scanned yet.
     std::unordered_map<AssetId, ImportRecord> m_records;
     std::unordered_map<AssetId, AssetInfo> m_assets;
@@ -1368,6 +1381,11 @@ std::vector<AssetInfo> AssetDatabase::assets(std::optional<AssetType> type) cons
 std::vector<SourceFile> AssetDatabase::sources() const
 {
     return m_impl->sources();
+}
+
+const std::vector<std::string>& AssetDatabase::folders() const noexcept
+{
+    return m_impl->folders();
 }
 
 std::optional<SourceFile> AssetDatabase::sourceOf(AssetId id) const

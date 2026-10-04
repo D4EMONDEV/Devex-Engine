@@ -86,6 +86,50 @@ constexpr std::string_view blueMaterial = "[material format=1]\nbase_color = vec
 
 } // namespace
 
+TEST_CASE("Asset folders include empty directories and track external changes", "[asset][database][filesystem]")
+{
+    TemporaryProject project;
+    std::filesystem::create_directories(project.assets() / "Empty" / "Nested");
+    std::filesystem::create_directories(project.assets() / ".hidden" / "Nested");
+    devex::core::JobSystem jobs(1);
+    auto database = AssetDatabase::open(project.project, jobs, {.watchFiles = false});
+    REQUIRE(database);
+    CHECK(std::ranges::contains((*database)->folders(), "res://assets"));
+    CHECK(std::ranges::contains((*database)->folders(), "res://assets/Empty"));
+    CHECK(std::ranges::contains((*database)->folders(), "res://assets/Empty/Nested"));
+    CHECK_FALSE(std::ranges::contains((*database)->folders(), "res://assets/.hidden"));
+    std::filesystem::remove(project.assets() / "Empty" / "Nested");
+    std::filesystem::create_directories(project.assets() / "New");
+    (*database)->refresh();
+    CHECK_FALSE(std::ranges::contains((*database)->folders(), "res://assets/Empty/Nested"));
+    CHECK(std::ranges::contains((*database)->folders(), "res://assets/Empty"));
+    CHECK(std::ranges::contains((*database)->folders(), "res://assets/New"));
+}
+
+TEST_CASE("Watched empty folders appear and disappear without an explicit refresh", "[asset][database][filesystem]")
+{
+    TemporaryProject project;
+    devex::core::JobSystem jobs(1);
+    auto database = AssetDatabase::open(project.project, jobs, {.watchFiles = true, .settleTime = std::chrono::milliseconds(20)});
+    REQUIRE(database);
+    const auto waitForFolder = [&](bool exists) {
+        for (int attempt = 0; attempt < 200; ++attempt)
+        {
+            static_cast<void>((*database)->update());
+            if (std::ranges::contains((*database)->folders(), "res://assets/Empty") == exists)
+            {
+                return true;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        }
+        return false;
+    };
+    std::filesystem::create_directory(project.assets() / "Empty");
+    REQUIRE(waitForFolder(true));
+    std::filesystem::remove(project.assets() / "Empty");
+    CHECK(waitForFolder(false));
+}
+
 TEST_CASE("New files get a .dvxmeta and are imported in the background", "[asset][database]")
 {
     TemporaryProject project;
