@@ -2392,7 +2392,7 @@ void ApplicationRunner::createScript(const tools::NewScript& script)
         // The first C# file of a project starts its builder.
         openManagedCode();
     }
-    m_services.tools->openTextFile(*file);
+    m_services.tools->openInPreferredEditor(*file);
 }
 
 void ApplicationRunner::updateExport()

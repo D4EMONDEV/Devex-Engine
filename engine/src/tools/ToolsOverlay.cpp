@@ -713,6 +713,11 @@ void ToolsOverlay::setGameCodeStatus(GameCodeStatus status)
     m_state->gameCode = std::move(status);
 }
 
+void ToolsOverlay::openInPreferredEditor(const std::filesystem::path& file)
+{
+    detail::openInPreferredEditor(*m_state, file);
+}
+
 void ToolsOverlay::setProjectCodeStatusProvider(std::function<ProjectCodeStatus(const asset::Project&)> provider)
 {
     m_state->projectCodeStatus = std::move(provider);

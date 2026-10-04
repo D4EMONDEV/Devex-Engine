@@ -975,7 +975,7 @@ void SceneTreeUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& edit
         {
             if (const std::optional<std::filesystem::path> file = sourceOf(state, node.gameComponent))
             {
-                openTextFile(state, *file);
+                openInPreferredEditor(state, *file);
             }
             else
             {

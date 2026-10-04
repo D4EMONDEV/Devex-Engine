@@ -276,6 +276,7 @@ public:
 
     // Editor only: the state of the game code, shown in the menu bar.
     void setGameCodeStatus(GameCodeStatus status);
+    void openInPreferredEditor(const std::filesystem::path& file);
     // Editor only: checks projects when the project manager refreshes its list. The application
     // supplies the check so that the tools do not load game code or depend on the runtime.
     void setProjectCodeStatusProvider(std::function<ProjectCodeStatus(const asset::Project&)> provider);

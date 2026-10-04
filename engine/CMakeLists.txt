@@ -781,6 +781,7 @@ target_sources(devex_tools
         src/tools/CodeOutline.cpp
         src/tools/CodeOutline.hpp
         src/tools/CodePanel.cpp
+        src/tools/ScriptSettings.cpp
         src/tools/CreationCatalog.cpp
         src/tools/CreationCatalog.hpp
         src/tools/CreationDialog.cpp

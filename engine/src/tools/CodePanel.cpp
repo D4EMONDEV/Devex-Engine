@@ -4,6 +4,7 @@
 #include <devex/core/File.hpp>
 #include <devex/core/Log.hpp>
 #include <devex/core/Path.hpp>
+#include <devex/platform/Process.hpp>
 #include <devex/scene/ComponentRegistry.hpp>
 #include <devex/tools/SceneCommands.hpp>
 
@@ -40,9 +41,33 @@ EntityIcon codeIcon(const std::filesystem::path& path)
 
 void openInCodeEditor(ToolsState& state, const std::filesystem::path& file)
 {
-    if (core::Result<void> opened = state.platform.openPath(file); !opened)
+    const ScriptEditorChoice& editor = scriptEditorFor(state.scripts, file);
+    core::Result<void> opened;
+    if (editor.editor == ScriptEditor::Custom)
+    {
+        const std::filesystem::path root = state.database != nullptr ? state.database->project().root : file.parent_path();
+        const auto command = scriptEditorCommand(editor, file, root);
+        opened = command ? platform::Process::launch(*command, root) : std::unexpected(command.error());
+    }
+    else
+    {
+        opened = state.platform.openPath(file);
+    }
+    if (!opened)
     {
         DEVEX_LOG_WARNING("Cannot open {}: {}", core::toUtf8(file.filename()), opened.error());
+    }
+}
+
+void openInPreferredEditor(ToolsState& state, const std::filesystem::path& file)
+{
+    if (scriptEditorFor(state.scripts, file).editor == ScriptEditor::Devex)
+    {
+        openTextFile(state, file);
+    }
+    else
+    {
+        openInCodeEditor(state, file);
     }
 }
 

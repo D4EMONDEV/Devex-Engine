@@ -244,6 +244,7 @@ struct FileSystemUi : PanelBuilder
     std::vector<std::optional<std::size_t>> rowNodes;
 
     Entity menu;
+    Button preferredEditor;
     Button editText;
     Button editMeta;
     Button openScene;
@@ -305,7 +306,8 @@ void FileSystemUi::build(ToolsState& state, EditorUiKit& kit)
     scene().add<scene::UiVirtualList>(lines);
 
     menu = PanelBuilder::menu("FileSystem menu", font * 15.0f);
-    editText = menuItem(kit, menu, Icon::FileText, "Edit as Text");
+    preferredEditor = menuItem(kit, menu, Icon::FileText, "Open as Text");
+    editText = menuItem(kit, menu, Icon::FileText, "Edit in Devex Script");
     editMeta = menuItem(kit, menu, Icon::FileText, "Edit Import Metadata");
     openScene = menuItem(kit, menu, Icon::FolderOpen, "Open Scene");
     place = menuItem(kit, menu, Icon::Plus, "Place in Scene");
@@ -538,7 +540,8 @@ void FileSystemUi::choose(ToolsState& state, const Node& node)
         {
             selectCodeFile(state, node.file);
         }
-        if (state.mode == ToolsMode::Editor || node.kind == NodeKind::ProjectFile)
+        if ((state.mode == ToolsMode::Editor || node.kind == NodeKind::ProjectFile) &&
+            scriptEditorFor(state.scripts, node.file).editor == ScriptEditor::Devex)
         {
             openTextFile(state, node.file);
         }
@@ -572,9 +575,12 @@ void FileSystemUi::activate(ToolsState& state, scene::Scene& edited, const Node&
         expanded[node.key] = !node.expanded;
         return;
     }
-    if (node.kind == NodeKind::CodeFile && state.mode != ToolsMode::Editor)
+    if (node.kind == NodeKind::CodeFile || node.kind == NodeKind::ProjectFile)
     {
-        openTextFile(state, node.file);
+        if (state.mode != ToolsMode::Editor || scriptEditorFor(state.scripts, node.file).editor != ScriptEditor::Devex)
+        {
+            openInPreferredEditor(state, node.file);
+        }
         return;
     }
     if (node.kind != NodeKind::Source || !node.hasAsset)
@@ -588,7 +594,7 @@ void FileSystemUi::activate(ToolsState& state, scene::Scene& edited, const Node&
     case asset::AssetType::Material:
         if (path && path->extension() == ".dvxmat")
         {
-            openTextFile(state, *path);
+            openInPreferredEditor(state, *path);
         }
         break;
     case asset::AssetType::Animator:
@@ -642,6 +648,7 @@ void FileSystemUi::openMenu(ToolsState& state, EditorUiKit& kit)
     const bool isScene = source && node.hasAsset && node.type == asset::AssetType::Scene;
     const auto show = [&](const Button& button, bool shown) { scene().get<UiRect>(button.entity).visible = shown; };
     show(editText, source || code);
+    show(preferredEditor, source || code);
     show(editMeta, source);
     show(openScene, isScene && state.mode == ToolsMode::Editor);
     show(place, source && node.hasAsset && node.type == asset::AssetType::Model);
@@ -654,7 +661,7 @@ void FileSystemUi::openMenu(ToolsState& state, EditorUiKit& kit)
                            (folder || source || node.kind == NodeKind::CodeFolder || node.kind == NodeKind::CodeFile);
     show(createNew, canCreate);
     scene().get<UiRect>(folderSeparator).visible = canCreate;
-    show(externalEditor, node.kind == NodeKind::CodeFile);
+    show(externalEditor, source || code);
     show(showFolder, source || folder || code || node.kind == NodeKind::CodeFolder);
     show(deleteFile, !removablePath(state, node).empty());
     static_cast<void>(kit);
@@ -673,7 +680,11 @@ void FileSystemUi::answerMenu(ToolsState& state, scene::Scene& edited)
         node.kind == NodeKind::Source ? database.project().absolutePath(node.path)
         : node.kind == NodeKind::Folder ? database.project().absolutePath(node.path)
                                         : std::optional<std::filesystem::path>(node.file);
-    if (world.wasClicked(editText.entity) && path)
+    if (world.wasClicked(preferredEditor.entity) && path)
+    {
+        openInPreferredEditor(state, *path);
+    }
+    else if (world.wasClicked(editText.entity) && path)
     {
         openTextFile(state, *path);
     }
@@ -681,7 +692,7 @@ void FileSystemUi::answerMenu(ToolsState& state, scene::Scene& edited)
     {
         std::filesystem::path meta = *path;
         meta += ".dvxmeta";
-        openTextFile(state, meta);
+        openInPreferredEditor(state, meta);
     }
     else if (world.wasClicked(openScene.entity) && path)
     {
@@ -722,9 +733,9 @@ void FileSystemUi::answerMenu(ToolsState& state, scene::Scene& edited)
         state.newScriptTarget = {};
         state.openCreateFilePopup = true;
     }
-    else if (world.wasClicked(externalEditor.entity))
+    else if (world.wasClicked(externalEditor.entity) && path)
     {
-        openInCodeEditor(state, node.file);
+        openInCodeEditor(state, *path);
     }
     else if (world.wasClicked(showFolder.entity) && path)
     {

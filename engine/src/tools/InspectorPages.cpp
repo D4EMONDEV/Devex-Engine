@@ -241,11 +241,11 @@ public:
         const Entity row = ui.actions(nullptr);
         if (state.mode == ToolsMode::Editor)
         {
-            m_edit = ui.action(kit, row, Icon::FileText, "Edit as Text");
+            m_edit = ui.action(kit, row, Icon::FileText, "Edit in Devex Script");
             ui.tooltip(m_edit.entity, "Opens the file in the Text Editor panel");
         }
         m_open = ui.action(kit, row, Icon::ExternalLink, "Open in External Editor");
-        ui.note(nullptr, "Edit this file in the Text Editor panel. Saved scripts are compiled automatically.", "dim", 2.0f);
+        ui.note(nullptr, "Choose the script editor in Editor Settings. Saved scripts are compiled automatically.", "dim", 2.0f);
     }
 
     void sync(InspectorUi&, ToolsState&, EditorUiKit&) override

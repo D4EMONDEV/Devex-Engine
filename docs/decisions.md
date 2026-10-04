@@ -3446,6 +3446,10 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     sont placées, annulation qui retient aussi ce que les outils écrivent, Tab et indentation,
     mots, pages, couleurs par morceau) ; écran Script comme celui de Godot : fichiers ouverts à
     gauche, menus File, Edit et Search, recherche, remplacement, aller à la ligne, complétion.
+    Editor Settings > Script Editors choisit séparément pour C#, C++ et les fichiers Devex entre
+    Devex Script, l'application du système et un exécutable externe ; ses arguments acceptent
+    `{file}` et `{project}`, sans passer par un shell. « Open as Text » suit ce choix, tandis que
+    « Edit in Devex Script » ouvre toujours l'éditeur intégré.
 
 51. ✅ **Ménage avant le dock** — dessins par-dessus la vue (sélection, cadre du jeu, poignées et
     ancres des interfaces, indications) en Devex UI sur un panneau transparent ; widgets ImGui

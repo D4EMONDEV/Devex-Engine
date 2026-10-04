@@ -1104,6 +1104,10 @@ void loadUserSettings(ToolsState& state, const std::filesystem::path& file)
         {
             state.theme = readThemeSettings(section);
         }
+        else if (section.type == "scripts")
+        {
+            state.scripts = readScriptSettings(section);
+        }
     }
 }
 
@@ -1115,6 +1119,7 @@ void saveUserSettings(const ToolsState& state)
     }
     serialization::TextDocument document;
     document.sections.push_back(writeThemeSettings(state.theme));
+    document.sections.push_back(writeScriptSettings(state.scripts));
     state.projects.write(document);
     std::error_code error;
     std::filesystem::create_directories(state.userSettingsFile.parent_path(), error);
@@ -1208,6 +1213,11 @@ void updateEditorSession(ToolsState& state, scene::Scene& scene)
     }
 
     DialogAnswers& answers = *state.dialogAnswers;
+    if (auto editor = std::exchange(answers.scriptEditor, std::nullopt))
+    {
+        state.scripts.editors[editor->first].executable = core::toUtf8(editor->second);
+        saveUserSettings(state);
+    }
     if (std::optional<std::filesystem::path> project = std::exchange(answers.importProject, std::nullopt))
     {
         state.projects.add(*project);

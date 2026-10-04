@@ -1717,7 +1717,7 @@ void InspectorUi::answer(ToolsState& state, EditorUiKit& kit, scene::Scene& edit
         }
         if (section.styleOpen.entity.isValid() && world.wasClicked(section.styleOpen.entity) && section.themeFile)
         {
-            openTextFile(state, *section.themeFile);
+            openInPreferredEditor(state, *section.themeFile);
         }
         if (section.restart.entity.isValid() && state.particleWorld != nullptr)
         {

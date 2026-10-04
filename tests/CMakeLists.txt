@@ -218,6 +218,7 @@ devex_add_tests(tools
         tools/TextDocumentTests.cpp
         tools/TextEditorTests.cpp
         tools/ThemeTests.cpp
+        tools/ScriptSettingsTests.cpp
         tools/ToolsOverlayTests.cpp
         tools/EditorBenchmark.cpp
         tools/TwoDScreenTests.cpp

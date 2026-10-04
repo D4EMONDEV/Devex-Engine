@@ -13,6 +13,51 @@
 using namespace devex;
 using namespace devex::tools::detail;
 
+TEST_CASE("Script preferences persist with user settings and explicit Devex editing overrides them", "[tools][scripts][gpu]")
+{
+    struct Directory
+    {
+        std::filesystem::path path = std::filesystem::temp_directory_path() / ("devex-script-settings-" + core::Uuid::generate().toString());
+        ~Directory() { std::error_code error; std::filesystem::remove_all(path, error); }
+    } directory;
+    auto platform = platform::Platform::create();
+    REQUIRE(platform);
+    auto window = platform->createWindow({.width = 800, .height = 600, .vulkan = true, .hidden = true});
+    REQUIRE(window);
+    auto renderer = render::Renderer::create(*platform, *window, {.validation = true});
+    REQUIRE(renderer);
+    ToolsState state(*platform, *window, *renderer, tools::ToolsMode::Editor);
+    loadUserSettings(state, directory.path / "editor.dvx");
+    state.scripts.editors[0] = {ScriptEditor::Custom, "chosen-editor.exe", "\"{file}\""};
+    state.scripts.editors[1].editor = ScriptEditor::System;
+    state.theme.fontSize = 17.0f;
+    saveUserSettings(state);
+    const ScriptSettings expected = state.scripts;
+    state.scripts = {};
+    loadUserSettings(state, state.userSettingsFile);
+    CHECK(state.scripts == expected);
+    CHECK(state.theme.fontSize == 17.0f);
+
+    const auto file = directory.path / "Player.cs";
+    REQUIRE(core::writeTextFile(file, "// unsaved edits stay in Devex Script\n"));
+    // Explicit internal editing must never launch the configured external application.
+    openTextFile(state, file);
+    REQUIRE(state.textDocuments.size() == 1);
+    CHECK(state.activeText == file);
+    state.textDocuments.front().text = "// changed";
+    state.scripts.editors[0].editor = ScriptEditor::Devex;
+    openInPreferredEditor(state, file);
+    REQUIRE(state.textDocuments.size() == 1);
+    CHECK(state.textDocuments.front().text == "// changed");
+    CHECK(state.textDocuments.front().modified());
+
+    const auto devex = directory.path / "Theme.dvxtheme";
+    REQUIRE(core::writeTextFile(devex, "# theme\n"));
+    openInPreferredEditor(state, devex);
+    REQUIRE(state.textDocuments.size() == 2);
+    CHECK(state.activeText == devex);
+}
+
 TEST_CASE("File creation lists content folders and writes named assets in their destination", "[tools][filesystem][gpu]")
 {
     struct Directory

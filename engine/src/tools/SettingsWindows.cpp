@@ -8,6 +8,7 @@
 
 #include <devex/core/Profiler.hpp>
 #include <devex/core/Log.hpp>
+#include <devex/core/Path.hpp>
 #include <devex/ui/Color.hpp>
 
 #include <algorithm>
@@ -31,7 +32,7 @@ namespace {
 
 constexpr std::array<std::string_view, 1> single = singleNumber;
 constexpr std::array interfaceScales{0.75f, 1.0f, 1.25f, 1.5f, 1.75f, 2.0f, 2.5f};
-constexpr std::array<std::string_view, 2> editorPages{"Theme", "Display"};
+constexpr std::array<std::string_view, 3> editorPages{"Theme", "Display", "Script Editors"};
 constexpr std::array<std::string_view, 7> projectPages{"Application",    "Window", "Physics",  "Collision Layers",
                                                        "Sorting Layers", "Audio",  "Input Map"};
 
@@ -282,6 +283,17 @@ struct EditorSettingsUi : SettingsUi
     Entity fontSize;
     Entity codeFontSize;
     Button reset;
+    struct EditorFields
+    {
+        std::size_t section = 0;
+        Entity mode;
+        FormRow executableRow;
+        Entity executable;
+        FormRow argumentsRow;
+        Entity arguments;
+        Button browse;
+    };
+    std::array<EditorFields, 3> editors;
     // The colour the picker edits: 0 the base, 1 the accent.
     std::optional<int> editedColor;
 
@@ -295,7 +307,7 @@ void EditorSettingsUi::build(EditorUiKit& kit)
     const float width = kit.textWidth(EditorUiKit::regularFont(), "Reset to Defaults", font) + font * 3.6f;
     reset = button(kit, top, Icon::Refresh, "Reset to Defaults", "button", width, line);
     placeRight(scene(), reset.entity, 0.0f, width);
-    tooltip(reset.entity, "Puts back the theme and the sizes the editor starts with");
+    tooltip(reset.entity, "Resets the settings of the selected page");
 
     Section& theme = pageCard(kit, 0, "Theme");
     const FormRow presetRow = formRow(theme, "Preset");
@@ -315,6 +327,27 @@ void EditorSettingsUi::build(EditorUiKit& kit)
     fontSize = numbers(formRow(display, "Font Size").editor, single, points).front();
     codeFontSize = numbers(formRow(display, "Code Font Size").editor, single, points).front();
     note(&display, "Code Font Size is that of the text editor and the output.", "dim");
+
+    constexpr std::array<std::string_view, 3> categories{"C#", "C++", "Devex Files"};
+    for (std::size_t i = 0; i < editors.size(); ++i)
+    {
+        EditorFields& fields = editors[i];
+        fields.section = sections.size();
+        Section& section = pageCard(kit, 2, std::string(categories[i]));
+        fields.mode = choice(formRow(section, "Open With").editor);
+        fields.executableRow = formRow(section, "Executable");
+        fields.executable = textField(fields.executableRow.editor, "Path to the editor executable");
+        scene().get<UiRect>(fields.executable).offsetMax.x -= line;
+        fields.browse = toolButton(kit, fields.executableRow.editor, Icon::FolderOpen, rightButton(line, 0.0f));
+        tooltip(fields.browse.entity, "Choose the external editor executable");
+        fields.argumentsRow = formRow(section, "Arguments");
+        fields.arguments = textField(fields.argumentsRow.editor);
+        tooltip(fields.arguments, "{file}: full file path; {project}: project folder. Quote arguments containing spaces. The file is appended if omitted.");
+    }
+    Section& help = pageCard(kit, 2, "Opening Files");
+    note(&help, "Double-click a script to open it with the chosen editor. Edit in Devex Script always uses the built-in editor.", "dim", 3.0f);
+    note(&help, "Devex Files selects the text editor for .dvx files. Scenes and assets keep their visual editors.", "dim", 3.0f);
+
 }
 
 void EditorSettingsUi::update(ToolsState& state, EditorUiKit& kit, core::Duration delta)
@@ -360,6 +393,16 @@ void EditorSettingsUi::update(ToolsState& state, EditorUiKit& kit, core::Duratio
     scene().get<scene::UiDropdown>(scale).placeholder = std::format("{:.0f} %", theme.interfaceScale * 100.0f);
     setNumber(fontSize, theme.fontSize);
     setNumber(codeFontSize, theme.codeFontSize);
+    for (std::size_t i = 0; i < editors.size(); ++i)
+    {
+        const EditorFields& fields = editors[i];
+        const ScriptEditorChoice& editor = state.scripts.editors[i];
+        setChoice(fields.mode, {"Devex Script", "System Default", "Custom External Editor"}, static_cast<std::int32_t>(editor.editor));
+        setText(fields.executable, editor.executable);
+        setText(fields.arguments, editor.arguments);
+        showLine(sections[fields.section], fields.executableRow.row, editor.editor == ScriptEditor::Custom);
+        showLine(sections[fields.section], fields.argumentsRow.row, editor.editor == ScriptEditor::Custom);
+    }
     if (editedColor && colorPopupOpen())
     {
         syncColorPopup(linearOf(*editedColor == 0 ? theme.baseColor : theme.accentColor), false);
@@ -370,6 +413,43 @@ void EditorSettingsUi::update(ToolsState& state, EditorUiKit& kit, core::Duratio
     panel.update(kit, delta, UiPanel::zoomFor(font));
     answerForm();
     answerFrame();
+
+    ScriptSettings scripts = state.scripts;
+    for (std::size_t i = 0; i < editors.size(); ++i)
+    {
+        const EditorFields& fields = editors[i];
+        ScriptEditorChoice& editor = scripts.editors[i];
+        if (world.wasChanged(fields.mode))
+        {
+            const auto index = scene().get<scene::UiDropdown>(fields.mode).selected;
+            if (index >= 0 && index < 3)
+            {
+                editor.editor = static_cast<ScriptEditor>(index);
+            }
+        }
+        if (endedField == fields.executable)
+        {
+            editor.executable = scene().get<scene::UiText>(fields.executable).text;
+        }
+        if (endedField == fields.arguments)
+        {
+            editor.arguments = scene().get<scene::UiText>(fields.arguments).text;
+        }
+        if (world.wasClicked(fields.browse.entity))
+        {
+            const std::weak_ptr<DialogAnswers> answers = state.dialogAnswers;
+            state.platform.showFileDialog(state.window,
+                {.type = platform::FileDialogType::OpenFile,
+                 .filters = {{"Executable", "exe"}, {"All files", "*"}},
+                 .defaultLocation = core::pathFromUtf8(editor.executable)},
+                [answers, i](std::optional<std::filesystem::path> chosen) {
+                    if (const auto inbox = answers.lock(); inbox && chosen)
+                    {
+                        inbox->scriptEditor = std::pair{i, std::move(*chosen)};
+                    }
+                });
+        }
+    }
 
     if (world.wasChanged(preset))
     {
@@ -415,7 +495,20 @@ void EditorSettingsUi::update(ToolsState& state, EditorUiKit& kit, core::Duratio
     }
     if (world.wasClicked(reset.entity))
     {
-        theme = ThemeSettings{};
+        if (selected == 2)
+        {
+            scripts.editors = ScriptSettings{}.editors;
+        }
+        else
+        {
+            theme = ThemeSettings{};
+        }
+    }
+
+    if (scripts != state.scripts)
+    {
+        state.scripts = std::move(scripts);
+        state.scriptSettingsUnsaved = true;
     }
 
     if (theme != state.theme)
@@ -425,9 +518,10 @@ void EditorSettingsUi::update(ToolsState& state, EditorUiKit& kit, core::Duratio
         state.themeUnsaved = true;
     }
     // Saved once a drag ends rather than at every step.
-    if (state.themeUnsaved && !world.held().isValid() && !world.isEditing())
+    if ((state.themeUnsaved || state.scriptSettingsUnsaved) && !world.held().isValid() && !world.isEditing())
     {
         state.themeUnsaved = false;
+        state.scriptSettingsUnsaved = false;
         saveUserSettings(state);
     }
     numberCursor(state, panel);
@@ -450,9 +544,10 @@ void drawSettingsWindow(ToolsState& state)
         state.editorSettingsUi->update(state, kit, core::Duration(state.input.delta()));
         endFormWindow(state);
     }
-    if (!state.showSettings && state.themeUnsaved)
+    if (!state.showSettings && (state.themeUnsaved || state.scriptSettingsUnsaved))
     {
         state.themeUnsaved = false;
+        state.scriptSettingsUnsaved = false;
         saveUserSettings(state);
     }
 }

@@ -12,6 +12,7 @@
 #include "Icons.hpp"
 #include "ProjectList.hpp"
 #include "SceneTabs.hpp"
+#include "ScriptSettings.hpp"
 #include "Selection.hpp"
 #include "TextDocument.hpp"
 #include "Theme.hpp"
@@ -302,6 +303,7 @@ struct DEVEX_API DialogAnswers
     std::optional<std::filesystem::path> saveSceneAs;
     std::optional<std::filesystem::path> saveAsPrefab;
     std::optional<std::filesystem::path> exportFolder;
+    std::optional<std::pair<std::size_t, std::filesystem::path>> scriptEditor;
 };
 
 // What the project manager shows of a project, read from its file.
@@ -538,6 +540,8 @@ struct DEVEX_API ToolsState
     std::optional<CreationRequest> creationRequest;
     EditorFonts fonts;
     ThemeSettings theme;
+    ScriptSettings scripts;
+    bool scriptSettingsUnsaved = false;
     // The theme changed and applies before the next frame.
     bool themeChanged = true;
     // The theme changed since the user's settings were last written.
@@ -839,6 +843,7 @@ DEVEX_API void drawDebuggingWindow(ToolsState& state);
 DEVEX_API void renderDebuggingWindow(ToolsState& state, render::RenderWorld& world);
 // Opens a file in the code editor of the system.
 DEVEX_API void openInCodeEditor(ToolsState& state, const std::filesystem::path& file);
+DEVEX_API void openInPreferredEditor(ToolsState& state, const std::filesystem::path& file);
 // The device and the monitors of the measures of the frames, a curve each, as Godot's Monitors.
 DEVEX_API void drawStatisticsPanel(ToolsState& state, const scene::Scene& scene);
 // Records the measures of the monitors, once a frame.
