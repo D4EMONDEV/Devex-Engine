@@ -72,7 +72,8 @@ public:
     [[nodiscard]] static core::Result<void> createCode(const asset::Project& project);
     // Writes a component in its own file of the code folder, which the module must register.
     [[nodiscard]] static core::Result<std::filesystem::path> createComponent(const asset::Project& project,
-                                                                             std::string_view componentName);
+                                                                             std::string_view componentName,
+                                                                             std::string_view folder = "res://code");
 
     // devexConfigDirectory holds the DevexConfig.cmake of the engine build, whose configuration
     // ("Debug", "Release") the module is built in.

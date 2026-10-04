@@ -177,6 +177,12 @@ struct DEVEX_API InputSettings
     bool operator==(const InputSettings&) const = default;
 };
 
+enum class ContentRoot : std::uint8_t
+{
+    Assets,
+    Code,
+};
+
 // A game project: a .dvxproj file whose directory holds the assets/ folder, the code/ folder of its
 // game module when it has one, and the .devex/ cache of imported data and builds, which is never
 // versioned.
@@ -216,6 +222,10 @@ struct DEVEX_API Project
     [[nodiscard]] std::string resourcePath(const std::filesystem::path& path) const;
     // The absolute path of a res:// path, or nothing when the text is not one.
     [[nodiscard]] std::optional<std::filesystem::path> absolutePath(std::string_view resource) const;
+    // Validates a new file in an existing res:// folder below the required content root.
+    // Rejects occupied names, ignored folders and paths escaping through directory links.
+    [[nodiscard]] core::Result<std::filesystem::path> newFilePath(std::string_view folder,
+                                                                  std::string_view fileName, ContentRoot content) const;
 };
 
 // Reads "[project format=1 name="My game" startup_scene="res://assets/scenes/Main.dvxscene"]" from

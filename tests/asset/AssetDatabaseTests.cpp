@@ -86,6 +86,57 @@ constexpr std::string_view blueMaterial = "[material format=1]\nbase_color = vec
 
 } // namespace
 
+TEST_CASE("New project files stay in their content root and preserve occupied names", "[asset][filesystem]")
+{
+    using devex::asset::ContentRoot;
+    TemporaryProject fixture;
+    const auto& project = fixture.project;
+    std::filesystem::create_directories(project.codeDirectory() / "Gameplay" / "Actors");
+    std::filesystem::create_directories(fixture.assets() / "Tiles");
+    const auto script = project.newFilePath("res://code/Gameplay/Actors", "Player.cs", ContentRoot::Code);
+    REQUIRE(script);
+    CHECK(*script == project.codeDirectory() / "Gameplay/Actors/Player.cs");
+    CHECK(project.newFilePath("res://assets/Tiles", "World tiles.dvxtileset", ContentRoot::Assets));
+    for (const auto* folder : {"res://", "res://assets", "res://code/../../outside", "res://code/../assets", "res://codeMissing", "res://code/Missing"})
+    {
+        CAPTURE(folder);
+        CHECK_FALSE(project.newFilePath(folder, "Player.cs", ContentRoot::Code));
+    }
+    for (const auto* folder : {"obj", "bin", ".hidden", "Gameplay/obj"})
+    {
+        std::filesystem::create_directories(project.codeDirectory() / folder);
+        CAPTURE(folder);
+        CHECK_FALSE(project.newFilePath(std::string("res://code/") + folder, "Player.cs", ContentRoot::Code));
+    }
+    for (const auto* name : {"", "../Escape.cs", "Nested/Player.cs", "Nested\\Player.cs", "C:Player.cs", ".Hidden.cs", "CON.cs", "lpt1.cs", "Player.cs.", "Player.cs ", "Bad?.cs"})
+    {
+        CAPTURE(name);
+        CHECK_FALSE(project.newFilePath("res://code", name, ContentRoot::Code));
+    }
+    REQUIRE(devex::core::writeTextFile(*script, "// keep this source\n"));
+    const auto duplicate = project.newFilePath("res://code/Gameplay/Actors", "Player.cs", ContentRoot::Code);
+    REQUIRE_FALSE(duplicate);
+    CHECK(duplicate.error().code == devex::core::ErrorCode::AlreadyExists);
+    CHECK(*devex::core::readTextFile(*script) == "// keep this source\n");
+    fixture.write("Tiles/World.dvxtileset.dvxmeta", "existing metadata");
+    CHECK_FALSE(project.newFilePath("res://assets/Tiles", "World.dvxtileset", ContentRoot::Assets));
+    CHECK_FALSE(project.newFilePath("res://code", "World.dvxtileset", ContentRoot::Assets));
+}
+
+TEST_CASE("New project files reject a directory link leaving code", "[asset][filesystem]")
+{
+    TemporaryProject fixture;
+    const auto link = fixture.project.codeDirectory() / "Outside";
+    std::error_code error;
+    std::filesystem::create_directory_symlink(fixture.assets(), link, error);
+    if (error)
+    {
+        SKIP("Creating directory links is not permitted on this machine.");
+    }
+    CHECK_FALSE(fixture.project.newFilePath("res://code/Outside", "Escaped.cs", devex::asset::ContentRoot::Code));
+    CHECK_FALSE(std::filesystem::exists(fixture.assets() / "Escaped.cs"));
+}
+
 TEST_CASE("Asset folders include empty directories and track external changes", "[asset][database][filesystem]")
 {
     TemporaryProject project;

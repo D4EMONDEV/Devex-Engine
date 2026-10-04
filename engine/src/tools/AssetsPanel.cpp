@@ -252,10 +252,7 @@ struct FileSystemUi : PanelBuilder
     Entity sourceSeparator;
     Button reimport;
     Button copyPath;
-    Button newCurve;
-    Button newFrames;
-    Button newTileset;
-    Button newAnimator;
+    Button createNew;
     Entity folderSeparator;
     Button externalEditor;
     Button showFolder;
@@ -316,14 +313,7 @@ void FileSystemUi::build(ToolsState& state, EditorUiKit& kit)
     sourceSeparator = menuSeparator(menu);
     reimport = menuItem(kit, menu, Icon::Refresh, "Reimport");
     copyPath = menuItem(kit, menu, Icon::Copy, "Copy Path");
-    newCurve = menuItem(kit, menu, Icon::Activity, "New Curve");
-    tooltip(newCurve.entity, "A curve drawn by hand, which eases tweens and Tweeners");
-    newFrames = menuItem(kit, menu, Icon::Clapperboard, "New Sprite Frames");
-    tooltip(newFrames.entity, "Named animations of sprites, which SpriteAnimator components play");
-    newTileset = menuItem(kit, menu, Icon::Grid, "New Tileset");
-    tooltip(newTileset.entity, "The tiles Tilemap components paint their cells with");
-    newAnimator = menuItem(kit, menu, Icon::Workflow, "New Animator");
-    tooltip(newAnimator.entity, "A state machine of animations, which Animator components play");
+    createNew = menuItem(kit, menu, Icon::FilePlus, "Create New...");
     folderSeparator = menuSeparator(menu);
     externalEditor = menuItem(kit, menu, Icon::ExternalLink, "Open in External Editor");
     showFolder = menuItem(kit, menu, Icon::FolderOpen, "Show in File Manager");
@@ -660,11 +650,10 @@ void FileSystemUi::openMenu(ToolsState& state, EditorUiKit& kit)
     scene().get<UiRect>(sourceSeparator).visible = source;
     show(reimport, source);
     show(copyPath, source);
-    show(newCurve, folder);
-    show(newFrames, folder);
-    show(newTileset, folder);
-    show(newAnimator, folder);
-    scene().get<UiRect>(folderSeparator).visible = folder;
+    const bool canCreate = state.mode == ToolsMode::Editor && state.playState == PlayState::Editing &&
+                           (folder || source || node.kind == NodeKind::CodeFolder || node.kind == NodeKind::CodeFile);
+    show(createNew, canCreate);
+    scene().get<UiRect>(folderSeparator).visible = canCreate;
     show(externalEditor, node.kind == NodeKind::CodeFile);
     show(showFolder, source || folder || code || node.kind == NodeKind::CodeFolder);
     show(deleteFile, !removablePath(state, node).empty());
@@ -684,12 +673,6 @@ void FileSystemUi::answerMenu(ToolsState& state, scene::Scene& edited)
         node.kind == NodeKind::Source ? database.project().absolutePath(node.path)
         : node.kind == NodeKind::Folder ? database.project().absolutePath(node.path)
                                         : std::optional<std::filesystem::path>(node.file);
-    const auto created = [](core::Result<std::filesystem::path> result, std::string_view what) {
-        if (!result)
-        {
-            DEVEX_LOG_ERROR("Cannot create the {}: {}", what, result.error());
-        }
-    };
     if (world.wasClicked(editText.entity) && path)
     {
         openTextFile(state, *path);
@@ -732,21 +715,12 @@ void FileSystemUi::answerMenu(ToolsState& state, scene::Scene& edited)
     {
         state.platform.setClipboardText(node.path.c_str());
     }
-    else if (world.wasClicked(newCurve.entity))
+    else if (world.wasClicked(createNew.entity) && path)
     {
-        created(createCurveFile(state, node.path), "curve");
-    }
-    else if (world.wasClicked(newFrames.entity))
-    {
-        created(createSpriteFramesFile(state, node.path), "sprite frames");
-    }
-    else if (world.wasClicked(newTileset.entity))
-    {
-        created(createTilesetFile(state, node.path), "tileset");
-    }
-    else if (world.wasClicked(newAnimator.entity))
-    {
-        created(createAnimatorFile(state, node.path), "animator");
+        const bool isFolder = node.kind == NodeKind::Folder || node.kind == NodeKind::CodeFolder;
+        state.newFileFolder = database.project().resourcePath(isFolder ? *path : path->parent_path());
+        state.newScriptTarget = {};
+        state.openCreateFilePopup = true;
     }
     else if (world.wasClicked(externalEditor.entity))
     {
@@ -813,6 +787,7 @@ void FileSystemUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& edi
         {
             selectAsset(state, *createdId);
             selected = "source:" + createdId->uuid.toString();
+            state.assetToReveal = state.assetToSelect;
             state.assetToSelect.clear();
         }
     }

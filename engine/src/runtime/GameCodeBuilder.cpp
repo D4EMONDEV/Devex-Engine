@@ -191,7 +191,7 @@ core::Result<void> GameCodeBuilder::createCode(const asset::Project& project)
 }
 
 core::Result<std::filesystem::path> GameCodeBuilder::createComponent(const asset::Project& project,
-                                                                     std::string_view componentName)
+                                                                     std::string_view componentName, std::string_view folder)
 {
     constexpr std::string_view componentTemplate = R"(// A component of the game, written in C++. Register it in the DEVEX_GAME_MODULE of the project:
 //
@@ -211,13 +211,12 @@ DEVEX_REFLECT({0})
     type.field("speed", &{0}::speed, {{.angle = true}});
 }}
 )";
-    std::filesystem::path file = project.codeDirectory() / core::pathFromUtf8(std::string(componentName) + ".cpp");
-    std::error_code error;
-    if (std::filesystem::exists(file, error))
+    const auto file = project.newFilePath(folder, std::string(componentName) + ".cpp", asset::ContentRoot::Code);
+    if (!file)
     {
-        return core::makeError(core::ErrorCode::AlreadyExists, "'{}' already exists", core::toUtf8(file.filename()));
+        return std::unexpected(file.error());
     }
-    if (core::Result<void> written = core::writeTextFile(file, std::format(componentTemplate, componentName)); !written)
+    if (core::Result<void> written = core::writeTextFile(*file, std::format(componentTemplate, componentName)); !written)
     {
         return std::unexpected(written.error());
     }

@@ -1,4 +1,5 @@
 #include "runtime/ManagedCodeBuilder.hpp"
+#include "runtime/GameCodeBuilder.hpp"
 
 #include <devex/core/File.hpp>
 #include <devex/core/Path.hpp>
@@ -37,6 +38,31 @@ struct ManagedProject
 };
 
 } // namespace
+
+TEST_CASE("New scripts use the chosen code folder without overwriting sources", "[runtime][filesystem]")
+{
+    const bool csharp = GENERATE(true, false);
+    CAPTURE(csharp);
+    const ManagedProject fixture;
+    const auto create = [&](std::string_view name, std::string_view folder) {
+        return csharp ? ManagedCodeBuilder::createScript(fixture.project, name, folder)
+                      : devex::runtime::detail::GameCodeBuilder::createComponent(fixture.project, name, folder);
+    };
+    std::filesystem::create_directories(fixture.project.codeDirectory() / "Gameplay/Actors");
+    const auto created = create("Player", "res://code/Gameplay/Actors");
+    REQUIRE(created);
+    CHECK(*created == fixture.project.codeDirectory() / "Gameplay/Actors" / (csharp ? "Player.cs" : "Player.cpp"));
+    const auto text = devex::core::readTextFile(*created);
+    REQUIRE(text);
+    CHECK(text->contains("Player"));
+    REQUIRE(devex::core::writeTextFile(*created, "// edited source\n"));
+    CHECK_FALSE(create("Player", "res://code/Gameplay/Actors"));
+    CHECK(*devex::core::readTextFile(*created) == "// edited source\n");
+    CHECK_FALSE(create("Escaped", "res://assets"));
+    CHECK_FALSE(create("Escaped", "res://code/../assets"));
+    CHECK_FALSE(create("../Escaped", "res://code"));
+    CHECK_FALSE(std::filesystem::exists(fixture.root / (csharp ? "Escaped.cs" : "Escaped.cpp")));
+}
 
 TEST_CASE("C# source discovery ignores build outputs and hidden directories", "[runtime][managed][build]")
 {

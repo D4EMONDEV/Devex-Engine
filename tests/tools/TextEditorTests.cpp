@@ -2,12 +2,86 @@
 
 #include <devex/core/File.hpp>
 #include <devex/core/JobSystem.hpp>
+#include <devex/asset/import/AnimatorFile.hpp>
+#include <devex/asset/import/CurveFile.hpp>
+#include <devex/asset/import/SpriteFramesFile.hpp>
+#include <devex/asset/import/TilesetFile.hpp>
 #include <devex/scene/SceneSerializer.hpp>
 #include <devex/tools/SceneCommands.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 using namespace devex;
 using namespace devex::tools::detail;
+
+TEST_CASE("File creation lists content folders and writes named assets in their destination", "[tools][filesystem][gpu]")
+{
+    struct Directory
+    {
+        std::filesystem::path path = std::filesystem::temp_directory_path() / ("devex-create-files-" + core::Uuid::generate().toString());
+        ~Directory() { std::error_code error; std::filesystem::remove_all(path, error); }
+    } directory;
+    auto project = asset::createProject(directory.path, "Creation test");
+    REQUIRE(project);
+    std::filesystem::create_directories(project->assetsDirectory() / "Art/Empty");
+    for (const auto* folder : {"Gameplay/Actors", "Gameplay/obj", "bin", ".idea"})
+    {
+        std::filesystem::create_directories(project->codeDirectory() / folder);
+    }
+    CHECK(creationFolders(*project, asset::ContentRoot::Code) ==
+          std::vector<std::string>{"res://code", "res://code/Gameplay", "res://code/Gameplay/Actors"});
+    CHECK(creationFolders(*project, asset::ContentRoot::Assets) ==
+          std::vector<std::string>{"res://assets", "res://assets/Art", "res://assets/Art/Empty"});
+    core::JobSystem jobs(1);
+    auto database = asset::AssetDatabase::open(*project, jobs, {.watchFiles = false});
+    REQUIRE(database);
+    auto platform = platform::Platform::create();
+    REQUIRE(platform);
+    auto window = platform->createWindow({.width = 800, .height = 600, .vulkan = true, .hidden = true});
+    REQUIRE(window);
+    auto renderer = render::Renderer::create(*platform, *window, {.validation = true});
+    REQUIRE(renderer);
+    ToolsState state(*platform, *window, *renderer, tools::ToolsMode::Editor);
+    state.database = database->get();
+    const std::string folder = "res://assets/Art/Empty";
+    const auto curve = createCurveFile(state, folder, "Jump curve");
+    const auto frames = createSpriteFramesFile(state, folder, {}, "Hero frames");
+    const auto tiles = createTilesetFile(state, folder, {}, "World tiles");
+    const auto animator = createAnimatorFile(state, folder, "Hero animator");
+    REQUIRE(curve);
+    REQUIRE(frames);
+    REQUIRE(tiles);
+    REQUIRE(animator);
+    for (const auto& file : {*curve, *frames, *tiles, *animator})
+    {
+        CHECK(file.parent_path() == project->assetsDirectory() / "Art/Empty");
+        CHECK(std::filesystem::is_regular_file(file));
+    }
+    CHECK(curve->filename() == "Jump curve.dvxcurve");
+    CHECK(frames->filename() == "Hero frames.dvxframes");
+    CHECK(tiles->filename() == "World tiles.dvxtileset");
+    CHECK(animator->filename() == "Hero animator.dvxanimator");
+    CHECK(asset::parseCurveFile(*core::readTextFile(*curve)));
+    CHECK(asset::parseSpriteFramesFile(*core::readTextFile(*frames)));
+    CHECK(asset::parseTilesetFile(*core::readTextFile(*tiles)));
+    CHECK(asset::parseAnimatorFile(*core::readTextFile(*animator)));
+    const auto original = core::readTextFile(*tiles);
+    REQUIRE(original);
+    CHECK_FALSE(createTilesetFile(state, folder, {}, "World tiles"));
+    CHECK(*core::readTextFile(*tiles) == *original);
+    CHECK_FALSE(createAnimatorFile(state, "res://code", "Escaped"));
+    CHECK_FALSE(createCurveFile(state, folder, "../Escaped"));
+    (*database)->waitForImports();
+    static_cast<void>((*database)->update());
+    CHECK(state.assetToSelect == "res://assets/Art/Empty/Hero animator.dvxanimator");
+
+    const auto selected = core::Uuid::generate();
+    state.selection.set(selected);
+    requestNewScript(state, true);
+    CHECK(state.newScriptTarget == selected);
+    requestNewScript(state);
+    CHECK(state.newScriptTarget.isNil());
+    CHECK(state.newFileFolder == "res://code");
+}
 
 TEST_CASE("FileSystem deletion closes affected documents and preserves other tabs", "[tools][filesystem][gpu]")
 {

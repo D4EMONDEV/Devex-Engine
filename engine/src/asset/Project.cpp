@@ -5,6 +5,7 @@
 #include <devex/serialization/Text.hpp>
 
 #include <algorithm>
+#include <cctype>
 #include <format>
 #include <string>
 #include <system_error>
@@ -407,6 +408,74 @@ std::optional<std::filesystem::path> Project::absolutePath(std::string_view reso
         return std::nullopt;
     }
     return absoluteNormal(root / relative);
+}
+
+core::Result<std::filesystem::path> Project::newFilePath(std::string_view folder, std::string_view fileName,
+                                                       ContentRoot content) const
+{
+    const std::string_view base = content == ContentRoot::Code ? "res://code" : "res://assets";
+    if (fileName.empty() || fileName.front() == '.' || fileName.front() == ' ' ||
+        fileName.back() == '.' || fileName.back() == ' ' ||
+        std::ranges::any_of(fileName, [](unsigned char ch) { return ch < 32 || std::string_view("<>:\"/\\|?*").contains(static_cast<char>(ch)); }))
+    {
+        return core::makeError(core::ErrorCode::InvalidArgument, "Enter a file name without path separators or reserved characters.");
+    }
+    std::string stem(fileName.substr(0, fileName.find('.')));
+    std::ranges::transform(stem, stem.begin(), [](unsigned char ch) { return static_cast<char>(std::toupper(ch)); });
+    if (stem == "CON" || stem == "PRN" || stem == "AUX" || stem == "NUL" ||
+        (stem.size() == 4 && (stem.starts_with("COM") || stem.starts_with("LPT")) && stem.back() >= '1' && stem.back() <= '9'))
+    {
+        return core::makeError(core::ErrorCode::InvalidArgument, "This name is reserved by the operating system.");
+    }
+    const auto directory = absolutePath(folder);
+    const std::string resource = directory ? resourcePath(*directory) : std::string{};
+    if (!directory || (resource != base && !resource.starts_with(std::string(base) + "/")))
+    {
+        return core::makeError(core::ErrorCode::InvalidArgument, "Choose a folder inside {}.", base);
+    }
+    const auto relative = directory->lexically_relative(content == ContentRoot::Code ? codeDirectory() : assetsDirectory());
+    for (const auto& part : relative)
+    {
+        const auto partName = core::toUtf8(part);
+        if (partName != "." && (partName.starts_with('.') || (content == ContentRoot::Code && (partName == "bin" || partName == "obj"))))
+        {
+            return core::makeError(core::ErrorCode::InvalidArgument, "Choose a content folder, outside hidden and build directories.");
+        }
+    }
+    std::error_code error;
+    const auto canonicalRoot = std::filesystem::canonical(root, error);
+    if (error)
+    {
+        return core::makeError(core::ErrorCode::Io, "Cannot read the project folder: {}", error.message());
+    }
+    const auto canonicalDirectory = std::filesystem::canonical(*directory, error);
+    if (error || !std::filesystem::is_directory(canonicalDirectory, error))
+    {
+        return core::makeError(core::ErrorCode::InvalidArgument, "The destination folder does not exist or cannot be read.");
+    }
+    const auto canonicalRelative = canonicalDirectory.lexically_relative(canonicalRoot / (content == ContentRoot::Code ? "code" : "assets"));
+    if (escapesBase(canonicalRelative))
+    {
+        return core::makeError(core::ErrorCode::InvalidArgument, "The destination points outside {}.", base);
+    }
+    const auto destination = *directory / core::pathFromUtf8(fileName);
+    const auto occupied = [&](const std::filesystem::path& path) {
+        const auto status = std::filesystem::symlink_status(path, error);
+        if (error == std::errc::no_such_file_or_directory)
+        {
+            error.clear();
+            return false;
+        }
+        return error || status.type() != std::filesystem::file_type::not_found;
+    };
+    auto meta = destination;
+    meta += ".dvxmeta";
+    if (occupied(destination) || (content == ContentRoot::Assets && occupied(meta)))
+    {
+        return core::makeError(error ? core::ErrorCode::Io : core::ErrorCode::AlreadyExists,
+                               "The file name is already used or cannot be accessed.");
+    }
+    return destination;
 }
 
 core::Result<Project> loadProject(const std::filesystem::path& projectFile)

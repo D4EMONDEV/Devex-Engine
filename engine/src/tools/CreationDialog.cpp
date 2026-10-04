@@ -454,7 +454,7 @@ void CreationDialogUi::choose(ToolsState& state, scene::Scene& edited, const Cre
     open = false;
     if (entry.key == newScriptKey)
     {
-        state.openNewScriptPopup = true;
+        requestNewScript(state, true);
         return;
     }
     rememberCreation(memory, entry.key);

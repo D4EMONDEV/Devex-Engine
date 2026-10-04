@@ -2517,45 +2517,12 @@ std::unique_ptr<InspectorPage> makeAnimatorPage()
     return std::make_unique<AnimatorPage>();
 }
 
-core::Result<std::filesystem::path> createAnimatorFile(ToolsState& state, std::string_view folder)
+core::Result<std::filesystem::path> createAnimatorFile(ToolsState& state, std::string_view folder, std::string_view name)
 {
-    if (state.database == nullptr)
-    {
-        return core::makeError(core::ErrorCode::InvalidArgument, "no project is open");
-    }
-    // Only the assets folder is imported.
-    const std::string assets = std::string(asset::resourceScheme) + "assets";
-    if (!folder.starts_with(assets))
-    {
-        folder = assets;
-    }
     AnimatorData animator;
     animator.entry = "Idle";
     animator.states.push_back({.name = "Idle", .graphPosition = {0.0f, 0.0f}});
-    const std::string base = std::string(folder) + (folder.ends_with('/') ? "" : "/");
-    for (int number = 1; number < 1000; ++number)
-    {
-        const std::string name = number == 1 ? std::string("Animator") : std::format("Animator {}", number);
-        const std::string resource = base + name + std::string(asset::animatorExtension);
-        const std::optional<std::filesystem::path> file = state.database->project().absolutePath(resource);
-        if (!file)
-        {
-            return core::makeError(core::ErrorCode::InvalidArgument, "{} is outside the project", resource);
-        }
-        std::error_code error;
-        if (std::filesystem::exists(*file, error))
-        {
-            continue;
-        }
-        if (core::Result<void> written = core::writeTextFile(*file, asset::writeAnimatorFile(animator)); !written)
-        {
-            return std::unexpected(written.error());
-        }
-        state.database->refresh();
-        state.assetToSelect = resource;
-        return *file;
-    }
-    return core::makeError(core::ErrorCode::AlreadyExists, "too many animators are named Animator in {}", folder);
+    return writeNewAssetFile(state, folder, name, "Animator", asset::animatorExtension, asset::writeAnimatorFile(animator));
 }
 
 } // namespace devex::tools::detail

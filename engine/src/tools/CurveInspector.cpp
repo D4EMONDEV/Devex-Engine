@@ -676,43 +676,9 @@ std::unique_ptr<InspectorPage> makeCurvePage()
     return std::make_unique<CurvePage>();
 }
 
-core::Result<std::filesystem::path> createCurveFile(ToolsState& state, std::string_view folder)
+core::Result<std::filesystem::path> createCurveFile(ToolsState& state, std::string_view folder, std::string_view name)
 {
-    if (state.database == nullptr)
-    {
-        return core::makeError(core::ErrorCode::InvalidArgument, "no project is open");
-    }
-    // Only the assets folder is imported.
-    const std::string assets = std::string(asset::resourceScheme) + "assets";
-    if (!folder.starts_with(assets))
-    {
-        folder = assets;
-    }
-    // res://folder/Curve.dvxcurve, then Curve 2, Curve 3...
-    const std::string base = std::string(folder) + (folder.ends_with('/') ? "" : "/");
-    for (int number = 1; number < 1000; ++number)
-    {
-        const std::string name = number == 1 ? "Curve" : std::format("Curve {}", number);
-        const std::string resource = base + name + std::string(asset::curveExtension);
-        const std::optional<std::filesystem::path> file = state.database->project().absolutePath(resource);
-        if (!file)
-        {
-            return core::makeError(core::ErrorCode::InvalidArgument, "{} is outside the project", resource);
-        }
-        std::error_code error;
-        if (std::filesystem::exists(*file, error))
-        {
-            continue;
-        }
-        if (core::Result<void> written = core::writeTextFile(*file, asset::writeCurveFile(defaultCurve())); !written)
-        {
-            return std::unexpected(written.error());
-        }
-        state.database->refresh();
-        state.assetToSelect = resource;
-        return *file;
-    }
-    return core::makeError(core::ErrorCode::AlreadyExists, "too many curves are named Curve in {}", folder);
+    return writeNewAssetFile(state, folder, name, "Curve", asset::curveExtension, asset::writeCurveFile(defaultCurve()));
 }
 
 } // namespace devex::tools::detail

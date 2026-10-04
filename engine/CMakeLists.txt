@@ -767,6 +767,7 @@ target_sources(devex_tools
         src/tools/AnimationPanel.cpp
         src/tools/AnimatorPanel.cpp
         src/tools/AssetsPanel.cpp
+        src/tools/FileCreation.cpp
         src/tools/AudioInspector.cpp
         src/tools/CommandHistory.cpp
         src/tools/CodeArea.cpp

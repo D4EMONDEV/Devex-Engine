@@ -461,49 +461,17 @@ std::unique_ptr<InspectorPage> makeTilesetPage()
     return std::make_unique<TilesetPage>();
 }
 
-core::Result<std::filesystem::path> createTilesetFile(ToolsState& state, std::string_view folder, asset::AssetId fromTexture)
+core::Result<std::filesystem::path> createTilesetFile(ToolsState& state, std::string_view folder,
+                                                    asset::AssetId fromTexture, std::string_view name)
 {
-    if (state.database == nullptr)
-    {
-        return core::makeError(core::ErrorCode::InvalidArgument, "no project is open");
-    }
-    // Only the assets folder is imported.
-    const std::string assets = std::string(asset::resourceScheme) + "assets";
-    if (!folder.starts_with(assets))
-    {
-        folder = assets;
-    }
-    const asset::AssetInfo* const texture = fromTexture.isValid() ? state.database->find(fromTexture) : nullptr;
+    const asset::AssetInfo* const texture = state.database && fromTexture.isValid() ? state.database->find(fromTexture) : nullptr;
     const std::string baseName = texture != nullptr ? std::format("{} Tiles", texture->name) : std::string("Tileset");
     asset::TilesetData tileset;
     if (texture != nullptr)
     {
         static_cast<void>(addTiles(tileset, spritesOfTexture(state, fromTexture)));
     }
-    const std::string base = std::string(folder) + (folder.ends_with('/') ? "" : "/");
-    for (int number = 1; number < 1000; ++number)
-    {
-        const std::string name = number == 1 ? baseName : std::format("{} {}", baseName, number);
-        const std::string resource = base + name + std::string(asset::tilesetExtension);
-        const std::optional<std::filesystem::path> file = state.database->project().absolutePath(resource);
-        if (!file)
-        {
-            return core::makeError(core::ErrorCode::InvalidArgument, "{} is outside the project", resource);
-        }
-        std::error_code error;
-        if (std::filesystem::exists(*file, error))
-        {
-            continue;
-        }
-        if (core::Result<void> written = core::writeTextFile(*file, asset::writeTilesetFile(tileset)); !written)
-        {
-            return std::unexpected(written.error());
-        }
-        state.database->refresh();
-        state.assetToSelect = resource;
-        return *file;
-    }
-    return core::makeError(core::ErrorCode::AlreadyExists, "too many tilesets are named {} in {}", baseName, folder);
+    return writeNewAssetFile(state, folder, name, baseName, asset::tilesetExtension, asset::writeTilesetFile(tileset));
 }
 
 } // namespace devex::tools::detail

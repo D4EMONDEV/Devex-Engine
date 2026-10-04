@@ -134,15 +134,14 @@ bool ManagedCodeBuilder::hasCode(const asset::Project& project)
 }
 
 core::Result<std::filesystem::path> ManagedCodeBuilder::createScript(const asset::Project& project,
-                                                                     std::string_view componentName)
+                                                                     std::string_view componentName, std::string_view folder)
 {
-    std::filesystem::path file = project.codeDirectory() / core::pathFromUtf8(std::string(componentName) + ".cs");
-    std::error_code error;
-    if (std::filesystem::exists(file, error))
+    const auto file = project.newFilePath(folder, std::string(componentName) + ".cs", asset::ContentRoot::Code);
+    if (!file)
     {
-        return core::makeError(core::ErrorCode::AlreadyExists, "'{}' already exists", core::toUtf8(file.filename()));
+        return std::unexpected(file.error());
     }
-    if (core::Result<void> written = core::writeTextFile(file, std::format(scriptTemplate, componentName)); !written)
+    if (core::Result<void> written = core::writeTextFile(*file, std::format(scriptTemplate, componentName)); !written)
     {
         return std::unexpected(written.error());
     }

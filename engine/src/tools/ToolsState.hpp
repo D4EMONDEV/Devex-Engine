@@ -742,6 +742,10 @@ struct DEVEX_API ToolsState
     bool openNewScriptPopup = false;
     std::string newScriptName = "NewComponent";
     bool newScriptCSharp = true;
+    core::Uuid newScriptTarget;
+    bool openCreateFilePopup = false;
+    std::string newFileFolder = "res://assets";
+    std::string newFileName;
 
     // The project changed since the last update: its scenes open.
     bool projectChanged = false;
@@ -847,6 +851,10 @@ DEVEX_API void renderProfiler(ToolsState& state, render::RenderWorld& world);
 DEVEX_API void drawConsolePanel(ToolsState& state);
 DEVEX_API void drawAssetsPanel(ToolsState& state, scene::Scene& scene);
 DEVEX_API void refreshFileSystem(ToolsState& state);
+DEVEX_API void requestNewScript(ToolsState& state, bool addToSelection = false);
+DEVEX_API std::vector<std::string> creationFolders(const asset::Project& project, asset::ContentRoot content);
+DEVEX_API core::Result<std::filesystem::path> writeNewAssetFile(ToolsState& state, std::string_view folder,
+    std::string_view requestedName, std::string_view defaultName, std::string_view extension, std::string_view text);
 DEVEX_API core::Result<void> deleteFileSystemPath(ToolsState& state, scene::Scene& scene, std::string_view resourcePath);
 // The clips of the selected Animator: a timeline of their keys, played or scrubbed. Outside Play
 // the panel poses the skeleton itself; during Play it follows the game.
@@ -862,14 +870,14 @@ DEVEX_API void revealInFileSystem(ToolsState& state, std::string resource);
 // Writes a new tileset into a res:// folder of the assets, and selects it once imported. From a
 // texture, it holds a tile for each of its sprites.
 DEVEX_API core::Result<std::filesystem::path> createTilesetFile(ToolsState& state, std::string_view folder,
-                                                                asset::AssetId fromTexture = {});
+                                                                asset::AssetId fromTexture = {}, std::string_view name = {});
 // The Animator panel: the graph of the states and transitions of an animator controller, with its
 // parameters, followed live while the game plays. It edits the controller of the Animator of the
 // selected entity, or the animator selected in the FileSystem.
 DEVEX_API void drawAnimatorPanel(ToolsState& state, scene::Scene& scene);
 DEVEX_API void renderAnimatorPanel(ToolsState& state, render::RenderWorld& world);
 // Writes a new animator controller into a res:// folder of the assets, and selects it once imported.
-DEVEX_API core::Result<std::filesystem::path> createAnimatorFile(ToolsState& state, std::string_view folder);
+DEVEX_API core::Result<std::filesystem::path> createAnimatorFile(ToolsState& state, std::string_view folder, std::string_view name = {});
 // Under the NavMeshSurface of the inspected entity: what its navigation mesh holds, and whether its
 // settings changed since it was baked.
 struct DEVEX_API NavMeshSummary
@@ -894,9 +902,9 @@ DEVEX_API void addTilePainterOverlay(ToolsState& state, scene::Scene& scene, ren
 // Writes new sprite frames into a res:// folder of the assets, and selects them once imported. From a
 // texture, they hold one animation of all its sprites.
 DEVEX_API core::Result<std::filesystem::path> createSpriteFramesFile(ToolsState& state, std::string_view folder,
-                                                                     asset::AssetId fromTexture = {});
+                                                                     asset::AssetId fromTexture = {}, std::string_view name = {});
 // Writes a new curve into a res:// folder of the assets, and selects it once imported.
-DEVEX_API core::Result<std::filesystem::path> createCurveFile(ToolsState& state, std::string_view folder);
+DEVEX_API core::Result<std::filesystem::path> createCurveFile(ToolsState& state, std::string_view folder, std::string_view name = {});
 DEVEX_API void previewAudioClip(ToolsState& state, asset::AssetId clip);
 DEVEX_API void stopAudioPreview(ToolsState& state);
 

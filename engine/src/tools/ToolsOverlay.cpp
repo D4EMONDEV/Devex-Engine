@@ -822,7 +822,7 @@ void ToolsOverlay::openWindow(EditorWindow window)
         m_state->showDebugging = true;
         break;
     case EditorWindow::NewScript:
-        m_state->openNewScriptPopup = true;
+        detail::requestNewScript(*m_state);
         break;
     case EditorWindow::About:
         m_state->openAboutPopup = true;

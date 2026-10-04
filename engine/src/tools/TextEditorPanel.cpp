@@ -205,7 +205,7 @@ void indexDocument(TextEditState& edit, const TextDocument& document)
     const TextDocument* const document = shownDocument(state);
     const bool any = std::ranges::any_of(state.textDocuments, [](const TextDocument& open) { return open.modified(); });
     std::vector<MenuEntry> entries;
-    entries.push_back({.icon = Icon::FilePlus, .label = "New Script...", .action = [](ToolsState& tools, scene::Scene&) { tools.openNewScriptPopup = true; }});
+    entries.push_back({.icon = Icon::FilePlus, .label = "New Script...", .action = [](ToolsState& tools, scene::Scene&) { requestNewScript(tools); }});
     entries.push_back({.icon = Icon::FolderOpen, .label = "Open...", .shortcut = "Ctrl+O",
                        .action = [](ToolsState& tools, scene::Scene&) { showOpenTextDialog(tools); }});
     entries.push_back(MenuEntry::line());

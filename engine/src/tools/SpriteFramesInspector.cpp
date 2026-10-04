@@ -511,50 +511,16 @@ std::unique_ptr<InspectorPage> makeSpriteFramesPage()
 }
 
 core::Result<std::filesystem::path> createSpriteFramesFile(ToolsState& state, std::string_view folder,
-                                                           asset::AssetId fromTexture)
+                                                           asset::AssetId fromTexture, std::string_view name)
 {
-    if (state.database == nullptr)
-    {
-        return core::makeError(core::ErrorCode::InvalidArgument, "no project is open");
-    }
-    // Only the assets folder is imported.
-    const std::string assets = std::string(asset::resourceScheme) + "assets";
-    if (!folder.starts_with(assets))
-    {
-        folder = assets;
-    }
-    // Named after the texture it animates, or Sprite Frames, then with a number.
-    const asset::AssetInfo* const texture = fromTexture.isValid() ? state.database->find(fromTexture) : nullptr;
+    const asset::AssetInfo* const texture = state.database && fromTexture.isValid() ? state.database->find(fromTexture) : nullptr;
     const std::string baseName = texture != nullptr ? std::format("{} Frames", texture->name) : std::string("Sprite Frames");
     asset::SpriteFramesData frames;
     if (texture != nullptr)
     {
         frames.animations.push_back({.name = "default", .fps = 10.0f, .loop = true, .frames = spritesOfTexture(state, fromTexture)});
     }
-    const std::string base = std::string(folder) + (folder.ends_with('/') ? "" : "/");
-    for (int number = 1; number < 1000; ++number)
-    {
-        const std::string name = number == 1 ? baseName : std::format("{} {}", baseName, number);
-        const std::string resource = base + name + std::string(asset::spriteFramesExtension);
-        const std::optional<std::filesystem::path> file = state.database->project().absolutePath(resource);
-        if (!file)
-        {
-            return core::makeError(core::ErrorCode::InvalidArgument, "{} is outside the project", resource);
-        }
-        std::error_code error;
-        if (std::filesystem::exists(*file, error))
-        {
-            continue;
-        }
-        if (core::Result<void> written = core::writeTextFile(*file, asset::writeSpriteFramesFile(frames)); !written)
-        {
-            return std::unexpected(written.error());
-        }
-        state.database->refresh();
-        state.assetToSelect = resource;
-        return *file;
-    }
-    return core::makeError(core::ErrorCode::AlreadyExists, "too many sprite frames are named {} in {}", baseName, folder);
+    return writeNewAssetFile(state, folder, name, baseName, asset::spriteFramesExtension, asset::writeSpriteFramesFile(frames));
 }
 
 } // namespace devex::tools::detail

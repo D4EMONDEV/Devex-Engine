@@ -43,7 +43,8 @@ public:
     [[nodiscard]] static bool hasCode(const asset::Project& project);
     // Writes a first C# component into the code folder, next to the C++ code when there is some.
     [[nodiscard]] static core::Result<std::filesystem::path> createScript(const asset::Project& project,
-                                                                          std::string_view componentName);
+                                                                          std::string_view componentName,
+                                                                          std::string_view folder = "res://code");
 
     // Where a build goes and the generated C# files it compiles, when not the editor's.
     struct Target

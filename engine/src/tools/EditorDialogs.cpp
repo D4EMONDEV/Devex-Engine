@@ -1,5 +1,5 @@
 // The dialogs of the editor, made with the interface of the engine: a card in the middle of the window
-// over a veil, as the Create window is. New Script asks for the name and the language of a component,
+// over a veil, as the Create window is. Create New asks for a type, a name and a destination folder,
 // the unsaved changes dialog asks what to do with the scenes and files an action would drop, and About
 // tells what the editor is made with.
 #include "SettingsUi.hpp"
@@ -30,6 +30,22 @@ namespace {
 
 constexpr const char* dialogPopup = "##editor dialog";
 
+struct FileType
+{
+    Icon icon;
+    std::string_view label;
+    std::string_view defaultName;
+    std::string_view extension;
+    std::string_view description;
+};
+constexpr std::array<FileType, 5> fileTypes{{
+    {Icon::FilePlus, "Script", "NewComponent", ".cs", "A game component written in C# or C++."},
+    {Icon::Activity, "Curve", "Curve", ".dvxcurve", "A curve for tweens and animation."},
+    {Icon::Clapperboard, "Sprite Frames", "Sprite Frames", ".dvxframes", "Named animations made from sprites."},
+    {Icon::Grid, "Tileset", "Tileset", ".dvxtileset", "Tiles for painting a tilemap."},
+    {Icon::Workflow, "Animator", "Animator", ".dvxanimator", "A state machine of animations."},
+}};
+
 // A component name is a C# or C++ identifier.
 [[nodiscard]] bool isIdentifier(std::string_view name)
 {
@@ -41,6 +57,8 @@ constexpr const char* dialogPopup = "##editor dialog";
 
 enum class DialogKind : std::uint8_t
 {
+    CreateNew,
+    NewAsset,
     NewScript,
     UnsavedChanges,
     DeleteFile,
@@ -70,6 +88,15 @@ struct EditorDialogsUi : FormUi
     Entity root;
     Entity language;
     Entity scriptName;
+    Entity folder;
+    std::vector<std::string> folders;
+    std::array<Button, fileTypes.size()> types;
+    std::size_t selectedType = 0;
+    bool fileSystemCreation = false;
+    std::optional<DialogKind> next;
+    Button back;
+    std::string writeError;
+    std::string validatedInput;
     Entity file;
     Entity status;
     Button confirm;
@@ -78,7 +105,7 @@ struct EditorDialogsUi : FormUi
     bool focusName = false;
     UnsavedChoice unsaved = UnsavedChoice::None;
 
-    void start(DialogKind which, ToolsState& state, EditorUiKit& kit, scene::Scene& edited);
+    void start(DialogKind which, ToolsState& state, EditorUiKit& kit, scene::Scene& edited, bool creationFlow = false);
     void update(ToolsState& state, EditorUiKit& kit, scene::Scene& edited, core::Duration delta);
     void titleRow(EditorUiKit& kit, Icon glyph, ImVec4 color, std::string title);
     // A row of a label and the editor at its right, returned.
@@ -134,7 +161,7 @@ void EditorDialogsUi::fit()
     size.y = std::round(height + layout.spacing * static_cast<float>(shown > 0 ? shown - 1 : 0));
 }
 
-void EditorDialogsUi::start(DialogKind which, ToolsState& state, EditorUiKit& kit, scene::Scene& edited)
+void EditorDialogsUi::start(DialogKind which, ToolsState& state, EditorUiKit& kit, scene::Scene& edited, bool creationFlow)
 {
     const ThemeColors& colors = themeColors();
     kit.refreshTheme(colors);
@@ -149,11 +176,16 @@ void EditorDialogsUi::start(DialogKind which, ToolsState& state, EditorUiKit& ki
     }
     setFont(state.theme.fontSize);
     kind = which;
+    fileSystemCreation = creationFlow;
+    next.reset();
+    writeError.clear();
+    validatedInput.clear();
     open = true;
     unsaved = UnsavedChoice::None;
     focusName = false;
-    language = scriptName = file = status = Entity{};
-    confirm = discard = cancel = Button{};
+    language = scriptName = file = status = folder = Entity{};
+    confirm = discard = cancel = back = Button{};
+    types = {};
     root = add({}, "Dialog", whole(), "dialog");
     scene().add<scene::UiImage>(root);
     scene().add<scene::UiLayout>(root, scene::UiLayout{.kind = scene::UiLayoutKind::Column,
@@ -167,6 +199,19 @@ void EditorDialogsUi::start(DialogKind which, ToolsState& state, EditorUiKit& ki
 
     switch (which)
     {
+    case DialogKind::CreateNew: {
+        size.x = std::round(font * 34.0f);
+        titleRow(kit, Icon::FilePlus, colors.accent, "Create New");
+        note(nullptr, "Choose what to create, then its name and destination folder.", "dim", 2.0f);
+        for (std::size_t index = 0; index < fileTypes.size(); ++index)
+        {
+            const auto& type = fileTypes[index];
+            types[index] = button(kit, root, type.icon, type.label, "button", size.x - std::round(font * 2.4f), std::round(font * 2.5f));
+            tooltip(types[index].entity, std::string(type.description));
+        }
+        cancel = button(kit, buttonLine(), Icon::Close, "Cancel", "button", buttonWidth, buttonHeight);
+        break;
+    }
     case DialogKind::DeleteFile: {
         size.x = std::round(font * 34.0f);
         titleRow(kit, Icon::Trash, colors.warning, "Delete permanently?");
@@ -180,17 +225,32 @@ void EditorDialogsUi::start(DialogKind which, ToolsState& state, EditorUiKit& ki
         confirm = button(kit, buttons, Icon::Trash, "Delete", "button", buttonWidth, buttonHeight);
         break;
     }
+    case DialogKind::NewAsset:
     case DialogKind::NewScript: {
-        size.x = std::round(font * 30.0f);
-        titleRow(kit, Icon::FilePlus, colors.gameCode, "New Script");
-        note(nullptr, "A component with fields shown in the inspector, written to the code folder of the project.", "dim", 2.0f);
-        language = choice(row("Language"), {"C#", "C++"});
-        scene().get<scene::UiDropdown>(language).selected = state.newScriptCSharp ? 0 : 1;
-        scriptName = field(row("Name"), whole(), state.newScriptName, "Component name");
-        file = text(row("File"), whole(math::Vec4{font * 0.3f, 0.0f, 0.0f, 0.0f}), "", "dim", false, scene::TextAlign::Left, std::round(font * 0.9f));
+        const bool script = which == DialogKind::NewScript;
+        const auto& type = fileTypes[script ? 0 : selectedType];
+        size.x = std::round(font * 38.0f);
+        titleRow(kit, type.icon, script ? colors.gameCode : colors.accent, std::format("New {}", type.label));
+        note(nullptr, std::string(type.description), "dim", 2.0f);
+        if (script)
+        {
+            language = choice(row("Language"), {"C#", "C++"});
+            scene().get<scene::UiDropdown>(language).selected = state.newScriptCSharp ? 0 : 1;
+        }
+        scriptName = field(row("Name"), whole(), script ? state.newScriptName : state.newFileName, script ? "Component name" : "File name");
+        folders = state.database ? creationFolders(state.database->project(), script ? asset::ContentRoot::Code : asset::ContentRoot::Assets)
+                                 : std::vector<std::string>{script ? "res://code" : "res://assets"};
+        folder = choice(row("Folder"), folders);
+        const auto found = std::ranges::find(folders, state.newFileFolder);
+        scene().get<scene::UiDropdown>(folder).selected = found == folders.end() ? 0 : static_cast<std::int32_t>(found - folders.begin());
+        file = note(nullptr, "", "dim", 2.0f);
         scene().get<scene::UiText>(file).font = EditorUiKit::monoFont();
         status = note(nullptr, "", "dim", 2.0f);
         const Entity buttons = buttonLine();
+        if (fileSystemCreation)
+        {
+            back = button(kit, buttons, std::nullopt, "Back", "button", buttonWidth, buttonHeight);
+        }
         confirm = button(kit, buttons, Icon::FilePlus, "Create", "primary", buttonWidth, buttonHeight);
         cancel = button(kit, buttons, Icon::Close, "Cancel", "button", buttonWidth, buttonHeight);
         focusName = true;
@@ -288,34 +348,55 @@ void EditorDialogsUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& 
     kit.refreshTheme(colors);
     styleTooltips(colors);
     ui::UiWorld& world = panel.world();
+    panel.update(kit, delta, UiPanel::zoomFor(font));
+    answerForm();
 
     std::string name;
     bool valid = false;
     bool csharp = true;
-    if (kind == DialogKind::NewScript)
+    if (kind == DialogKind::NewScript || kind == DialogKind::NewAsset)
     {
-        // Checked as it is typed.
+        const bool script = kind == DialogKind::NewScript;
         name = scene().get<scene::UiText>(scriptName).text;
-        csharp = scene().get<scene::UiDropdown>(language).selected != 1;
-        const std::string fileName = std::format("{}{}", name.empty() ? std::string("Name") : name, csharp ? ".cs" : ".cpp");
-        std::error_code error;
-        const bool exists = state.database != nullptr && isIdentifier(name) &&
-                            std::filesystem::exists(state.database->project().codeDirectory() / core::pathFromUtf8(fileName), error);
-        valid = isIdentifier(name) && scene::componentRegistry().find(name) == nullptr && !exists;
-        scene().get<scene::UiText>(file).text = std::format("res://code/{}", fileName);
-        scene().get<scene::UiText>(status).text =
-            name.empty()                                        ? "The component needs a name."
-            : !isIdentifier(name)                               ? "Use letters, digits and _, not starting with a digit."
-            : scene::componentRegistry().find(name) != nullptr ? "A component has this name already."
-            : exists                                            ? "A file of this name is in the code folder already."
-            : state.selection.active().isNil()                 ? "The file opens in the Text Editor once written."
-                                                                : "The component is added to the selected entity once its code is compiled.";
-        scene().get<UiRect>(status).style = valid ? "dim" : "warning";
+        csharp = !script || scene().get<scene::UiDropdown>(language).selected != 1;
+        const auto index = scene().get<scene::UiDropdown>(folder).selected;
+        state.newFileFolder = index >= 0 && static_cast<std::size_t>(index) < folders.size() ? folders[index] : std::string{};
+        const std::string fileName = name + std::string(script ? (csharp ? ".cs" : ".cpp") : fileTypes[selectedType].extension);
+        scene().get<scene::UiText>(file).text = state.newFileFolder + "/" + fileName;
+        if (const std::string input = state.newFileFolder + "/" + fileName; input != validatedInput)
+        {
+            validatedInput = input;
+            writeError.clear();
+        }
+        std::string error;
+        if (!state.database)
+        {
+            error = "No project is open.";
+        }
+        else if (name.empty())
+        {
+            error = "Enter a name.";
+        }
+        else if (script && !isIdentifier(name))
+        {
+            error = "Use letters, digits and _, not starting with a digit.";
+        }
+        else if (script && scene::componentRegistry().find(name))
+        {
+            error = "A component has this name already.";
+        }
+        else if (const auto path = state.database->project().newFilePath(state.newFileFolder, fileName,
+                         script ? asset::ContentRoot::Code : asset::ContentRoot::Assets); !path)
+        {
+            error = path.error().message;
+        }
+        valid = error.empty();
+        const std::string hint = script ? (state.newScriptTarget.isNil() ? "The script will open in the Text Editor. Scripts stay inside res://code."
+            : "The component will be added to the selected entity after compilation.") : "The asset will appear in FileSystem once created.";
+        scene().get<scene::UiText>(status).text = !error.empty() ? error : !writeError.empty() ? writeError : hint;
+        scene().get<UiRect>(status).style = valid && writeError.empty() ? "dim" : "warning";
         enable(confirm, valid);
     }
-
-    panel.update(kit, delta, UiPanel::zoomFor(font));
-    answerForm();
     if (focusName && scriptName.isValid())
     {
         focusName = false;
@@ -325,6 +406,53 @@ void EditorDialogsUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& 
     const bool escape = panel.input().cancelPressed || (panel.focused() && state.input.pressed(platform::Key::Escape, false));
     switch (kind)
     {
+    case DialogKind::CreateNew:
+        if (world.wasClicked(cancel.entity) || escape)
+        {
+            open = false;
+        }
+        for (std::size_t index = 0; index < types.size(); ++index)
+        {
+            if (world.wasClicked(types[index].entity))
+            {
+                selectedType = index;
+                state.newFileName = std::string(fileTypes[index].defaultName);
+                state.newScriptTarget = {};
+                next = index == 0 ? DialogKind::NewScript : DialogKind::NewAsset;
+            }
+        }
+        break;
+    case DialogKind::NewAsset:
+        state.newFileName = name;
+        if (world.wasClicked(cancel.entity) || escape)
+        {
+            open = false;
+        }
+        else if (world.wasClicked(back.entity))
+        {
+            next = DialogKind::CreateNew;
+        }
+        else if (valid && (world.wasClicked(confirm.entity) || world.wasSubmitted(scriptName)))
+        {
+            const auto created = [&]() -> core::Result<std::filesystem::path> {
+                switch (selectedType)
+                {
+                case 1: return createCurveFile(state, state.newFileFolder, name);
+                case 2: return createSpriteFramesFile(state, state.newFileFolder, {}, name);
+                case 3: return createTilesetFile(state, state.newFileFolder, {}, name);
+                default: return createAnimatorFile(state, state.newFileFolder, name);
+                }
+            }();
+            if (created)
+            {
+                open = false;
+            }
+            else
+            {
+                writeError = created.error().message;
+            }
+        }
+        break;
     case DialogKind::DeleteFile:
         if (world.wasClicked(cancel.entity) || escape)
         {
@@ -351,14 +479,18 @@ void EditorDialogsUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& 
         state.newScriptCSharp = csharp;
         if (valid && (world.wasClicked(confirm.entity) || world.wasSubmitted(scriptName)))
         {
-            state.requests.newScript = NewScript{.name = name, .csharp = csharp};
+            state.requests.newScript = NewScript{.name = name, .csharp = csharp, .folder = state.newFileFolder};
             state.pendingScript = name;
-            state.pendingScriptEntity = state.selection.active();
+            state.pendingScriptEntity = state.newScriptTarget;
             open = false;
         }
         else if (world.wasClicked(cancel.entity) || escape)
         {
             open = false;
+        }
+        else if (world.wasClicked(back.entity))
+        {
+            next = DialogKind::CreateNew;
         }
         break;
     case DialogKind::UnsavedChanges:
@@ -390,6 +522,17 @@ void drawEditorPopups(ToolsState& state, scene::Scene& scene)
 {
     DEVEX_PROFILE_SCOPE("Dialogs");
     std::optional<DialogKind> requested;
+    bool creationFlow = false;
+    if (state.dialogsUi && state.dialogsUi->next)
+    {
+        requested = std::exchange(state.dialogsUi->next, std::nullopt);
+        creationFlow = state.dialogsUi->fileSystemCreation;
+    }
+    if (std::exchange(state.openCreateFilePopup, false))
+    {
+        requested = DialogKind::CreateNew;
+        creationFlow = true;
+    }
     if (std::exchange(state.openDeleteFilePopup, false))
     {
         requested = DialogKind::DeleteFile;
@@ -397,6 +540,7 @@ void drawEditorPopups(ToolsState& state, scene::Scene& scene)
     if (std::exchange(state.openNewScriptPopup, false))
     {
         requested = DialogKind::NewScript;
+        creationFlow = false;
     }
     if (std::exchange(state.openAboutPopup, false))
     {
@@ -413,7 +557,7 @@ void drawEditorPopups(ToolsState& state, scene::Scene& scene)
         {
             state.dialogsUi = std::make_shared<EditorDialogsUi>();
         }
-        state.dialogsUi->start(*requested, state, kit, scene);
+        state.dialogsUi->start(*requested, state, kit, scene, creationFlow);
         openModal(state, dialogPopup);
     }
     EditorDialogsUi* const ui = state.dialogsUi.get();

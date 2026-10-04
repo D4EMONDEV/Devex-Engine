@@ -172,6 +172,7 @@ struct DEVEX_API NewScript
 {
     std::string name;
     bool csharp = true;
+    std::string folder = "res://code";
 };
 
 // One error or warning of the last build of the game code, shown in the margin of its file.

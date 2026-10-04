@@ -200,6 +200,129 @@ TEST_CASE("FileSystem shows empty folders and confirms their deletion", "[tools]
     CHECK(std::filesystem::is_directory(project->assetsDirectory()));
 }
 
+TEST_CASE("FileSystem Create New asks for a type name and destination", "[tools][filesystem][gpu]")
+{
+    using namespace devex;
+    struct Directory
+    {
+        std::filesystem::path path = std::filesystem::temp_directory_path() / ("devex-create-ui-" + core::Uuid::generate().toString());
+        ~Directory() { std::error_code error; std::filesystem::remove_all(path, error); }
+    } directory;
+    auto project = asset::createProject(directory.path, "Creation UI test");
+    REQUIRE(project);
+    std::filesystem::create_directory(project->assetsDirectory() / "Empty");
+    std::filesystem::create_directory(project->codeDirectory() / "Gameplay");
+    core::JobSystem jobs(1);
+    auto database = asset::AssetDatabase::open(*project, jobs, {.watchFiles = false});
+    REQUIRE(database);
+    auto platform = platform::Platform::create();
+    REQUIRE(platform);
+    auto window = platform->createWindow({.width = 1000, .height = 800, .vulkan = true, .hidden = true});
+    REQUIRE(window);
+    auto renderer = render::Renderer::create(*platform, *window, {.validation = true});
+    REQUIRE(renderer);
+    auto editor = tools::ToolsOverlay::create(*platform, *window, *renderer, directory.path / "layout.ini",
+                                               tools::ToolsMode::Editor, directory.path / "settings.dvx");
+    REQUIRE(editor);
+    (*editor)->setAssetDatabase(database->get());
+    scene::Scene scene;
+    math::Extent2D dialogSize{};
+    const auto frame = [&](math::Vec2 mouse = {}, bool left = false, bool right = false,
+                           std::string_view typed = {}, platform::Key key = platform::Key::Unknown) {
+        platform->pollEvents([](const platform::Event&) {});
+        auto& input = const_cast<platform::Input&>(platform->toolsInput());
+        input.moveMouse(mouse, {});
+        input.setMouseButtonDown(platform::MouseButton::Left, left);
+        input.setMouseButtonDown(platform::MouseButton::Right, right);
+        input.addTypedText(typed);
+        for (auto candidate : {platform::Key::Enter, platform::Key::Down, platform::Key::Escape})
+        {
+            input.setKeyDown(candidate, key == candidate);
+        }
+        (*editor)->update(scene, std::chrono::milliseconds(16), tools::PlayState::Editing);
+        auto& world = renderer->beginFrame();
+        (*editor)->prepareRender(scene, world, tools::PlayState::Editing);
+        bool dialog = false;
+        for (const auto& surface : world.uiSurfaces)
+        {
+            if (surface.id == 11 && !surface.draws.empty())
+            {
+                dialog = true;
+                dialogSize = surface.size;
+            }
+        }
+        REQUIRE(renderer->endFrame());
+        return dialog;
+    };
+    frame();
+    frame();
+    const float scale = tools::detail::effectiveInterfaceScale({}, window->displayScale());
+    const float font = tools::detail::regularFontPixels(14.0f) * scale;
+    const float padding = std::floor(8.0f * scale);
+    const float framePadding = std::floor(4.0f * scale);
+    const auto dock = tools::detail::placeDock(
+        tools::detail::DockLayout::defaults(true), [](std::string_view) { return true; },
+        ImVec2(0.0f, std::round(font + framePadding * 3.2f)),
+        ImVec2(1000.0f, 800.0f - std::round(font + framePadding * 3.2f)),
+        std::round(5.0f * scale), std::round(font + framePadding * 2.0f + 4.0f));
+    const auto& files = dock.contents[static_cast<std::size_t>(tools::detail::DockSlot::LeftBottom)];
+    const math::Vec2 row{files.min.x + padding + 110.0f * scale,
+                         files.min.y + padding + (28.0f + 5.6f + 2.0f + 2.5f * 26.0f) * scale};
+    frame(row, false, true);
+    frame(row);
+    const math::Vec2 createNew = row + math::Vec2{35.0f, 14.0f} * scale;
+    frame(createNew, true);
+    frame(createNew);
+    REQUIRE(frame());
+    const float pixelsPerPoint = static_cast<float>(window->pixelSize().width) / static_cast<float>(window->size().width);
+    const auto chooseType = [&](int index) {
+        const float unit = static_cast<float>(dialogSize.width) / pixelsPerPoint / 476.0f;
+        const float top = 400.0f - static_cast<float>(dialogSize.height) / pixelsPerPoint * 0.5f;
+        const math::Vec2 option{500.0f, top + (125.5f + static_cast<float>(index) * 43.0f) * unit};
+        frame(option, true);
+        frame(option);
+        REQUIRE(frame());
+    };
+    const auto confirm = [&] {
+        const float unit = static_cast<float>(dialogSize.width) / pixelsPerPoint / 532.0f;
+        const math::Vec2 point{500.0f + static_cast<float>(dialogSize.width) / pixelsPerPoint * 0.5f - 192.0f * unit,
+                               400.0f + static_cast<float>(dialogSize.height) / pixelsPerPoint * 0.5f - 32.5f * unit};
+        frame(point, true);
+        frame(point);
+        CHECK_FALSE(frame());
+    };
+    SECTION("An asset is named inside the folder used to open the menu")
+    {
+        chooseType(3); // Tileset
+        frame({}, false, false, "World tiles");
+        confirm();
+        const auto file = project->assetsDirectory() / "Empty/World tiles.dvxtileset";
+        REQUIRE(std::filesystem::is_regular_file(file));
+        CHECK(asset::parseTilesetFile(*core::readTextFile(file)));
+        CHECK_FALSE((*editor)->takeRequests().newScript);
+    }
+    SECTION("A script chooses a destination inside code")
+    {
+        chooseType(0); // Script
+        frame({}, false, false, "PlayerMovement");
+        const float unit = static_cast<float>(dialogSize.width) / pixelsPerPoint / 532.0f;
+        const float top = 400.0f - static_cast<float>(dialogSize.height) / pixelsPerPoint * 0.5f;
+        const math::Vec2 folder{550.0f, top + 191.5f * unit};
+        frame(folder, true);
+        frame(folder);
+        frame(folder, false, false, {}, platform::Key::Down);
+        frame(folder);
+        frame(folder, false, false, {}, platform::Key::Enter);
+        frame(folder);
+        confirm();
+        const auto request = (*editor)->takeRequests().newScript;
+        REQUIRE(request);
+        CHECK(request->name == "PlayerMovement");
+        CHECK(request->csharp);
+        CHECK(request->folder == "res://code/Gameplay");
+    }
+}
+
 TEST_CASE("Clearing a scrolled output keeps its current rows valid and shows new messages", "[tools][log][gpu]")
 {
     auto platform = devex::platform::Platform::create();

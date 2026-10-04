@@ -2352,8 +2352,8 @@ void ApplicationRunner::createScript(const tools::NewScript& script)
 {
     const asset::Project& project = m_services.database->project();
     const core::Result<std::filesystem::path> file =
-        script.csharp ? ManagedCodeBuilder::createScript(project, script.name)
-                      : GameCodeBuilder::createComponent(project, script.name);
+        script.csharp ? ManagedCodeBuilder::createScript(project, script.name, script.folder)
+                      : GameCodeBuilder::createComponent(project, script.name, script.folder);
     if (!file)
     {
         DEVEX_LOG_ERROR("Cannot create {}: {}", script.name, file.error());
