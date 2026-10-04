@@ -280,7 +280,7 @@ core::Result<void> GameCodeBuilder::buildAndWait()
     startBuild();
     while (m_process)
     {
-        static_cast<void>(update());
+        static_cast<void>(update(false));
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
     }
     if (m_state != State::Succeeded)
@@ -300,7 +300,7 @@ const std::string& GameCodeBuilder::message() const noexcept
     return m_message;
 }
 
-bool GameCodeBuilder::update()
+bool GameCodeBuilder::update(bool automaticCompilation)
 {
     const Clock::time_point now = Clock::now();
     if (now >= m_nextCheck)
@@ -312,12 +312,6 @@ bool GameCodeBuilder::update()
             m_changedAt = now;
         }
     }
-    if (m_changedAt && now - *m_changedAt >= settleTime)
-    {
-        m_changedAt.reset();
-        requestBuild();
-    }
-
     if (m_process)
     {
         for (const std::string& line : m_process->readLines())
@@ -338,8 +332,12 @@ bool GameCodeBuilder::update()
         return false;
     }
 
-    if (m_buildRequested)
+    if (m_buildRequested || (automaticCompilation && m_changedAt && now - *m_changedAt >= settleTime))
     {
+        if (!m_buildRequested)
+        {
+            m_retriedSymbols = false;
+        }
         m_buildRequested = false;
         startBuild();
     }
@@ -356,6 +354,8 @@ void useEnglishDiagnostics()
 
 void GameCodeBuilder::startBuild()
 {
+    m_sources = snapshotSources(m_project);
+    m_changedAt.reset();
     useEnglishDiagnostics();
 #ifdef _WIN32
     m_engineStamp = engineStamp(m_devexConfigDirectory);

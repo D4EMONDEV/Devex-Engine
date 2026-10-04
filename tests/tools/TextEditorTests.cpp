@@ -28,6 +28,7 @@ TEST_CASE("Script preferences persist with user settings and explicit Devex edit
     REQUIRE(renderer);
     ToolsState state(*platform, *window, *renderer, tools::ToolsMode::Editor);
     loadUserSettings(state, directory.path / "editor.dvx");
+    state.scripts.automaticCompilation = false;
     state.scripts.editors[0] = {ScriptEditor::Custom, "chosen-editor.exe", "\"{file}\""};
     state.scripts.editors[1].editor = ScriptEditor::System;
     state.theme.fontSize = 17.0f;

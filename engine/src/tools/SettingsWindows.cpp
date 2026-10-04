@@ -32,7 +32,7 @@ namespace {
 
 constexpr std::array<std::string_view, 1> single = singleNumber;
 constexpr std::array interfaceScales{0.75f, 1.0f, 1.25f, 1.5f, 1.75f, 2.0f, 2.5f};
-constexpr std::array<std::string_view, 3> editorPages{"Theme", "Display", "Script Editors"};
+constexpr std::array<std::string_view, 4> editorPages{"Theme", "Display", "Script Editors", "Compilation"};
 constexpr std::array<std::string_view, 7> projectPages{"Application",    "Window", "Physics",  "Collision Layers",
                                                        "Sorting Layers", "Audio",  "Input Map"};
 
@@ -294,6 +294,7 @@ struct EditorSettingsUi : SettingsUi
         Button browse;
     };
     std::array<EditorFields, 3> editors;
+    Entity automaticCompilation;
     // The colour the picker edits: 0 the base, 1 the accent.
     std::optional<int> editedColor;
 
@@ -348,6 +349,11 @@ void EditorSettingsUi::build(EditorUiKit& kit)
     note(&help, "Double-click a script to open it with the chosen editor. Edit in Devex Script always uses the built-in editor.", "dim", 3.0f);
     note(&help, "Devex Files selects the text editor for .dvx files. Scenes and assets keep their visual editors.", "dim", 3.0f);
 
+    Section& compilation = pageCard(kit, 3, "Game Code");
+    automaticCompilation = choice(formRow(compilation, "Compilation").editor);
+    note(&compilation, "Automatic compiles saved C# and C++ changes, including saves made by external editors.", "dim", 3.0f);
+    note(&compilation, "Manual keeps source changes pending until Project > Build Game Code (Ctrl+B). Saving in Devex Script also waits for Ctrl+B.", "dim", 4.0f);
+    note(&compilation, "Missing or outdated code is still built when opening a project. Successful builds reload the code; failed builds keep the previous version.", "dim", 4.0f);
 }
 
 void EditorSettingsUi::update(ToolsState& state, EditorUiKit& kit, core::Duration delta)
@@ -403,6 +409,7 @@ void EditorSettingsUi::update(ToolsState& state, EditorUiKit& kit, core::Duratio
         showLine(sections[fields.section], fields.executableRow.row, editor.editor == ScriptEditor::Custom);
         showLine(sections[fields.section], fields.argumentsRow.row, editor.editor == ScriptEditor::Custom);
     }
+    setChoice(automaticCompilation, {"Automatic", "Manual (Ctrl+B)"}, state.scripts.automaticCompilation ? 0 : 1);
     if (editedColor && colorPopupOpen())
     {
         syncColorPopup(linearOf(*editedColor == 0 ? theme.baseColor : theme.accentColor), false);
@@ -449,6 +456,10 @@ void EditorSettingsUi::update(ToolsState& state, EditorUiKit& kit, core::Duratio
                     }
                 });
         }
+    }
+    if (world.wasChanged(automaticCompilation))
+    {
+        scripts.automaticCompilation = scene().get<scene::UiDropdown>(automaticCompilation).selected == 0;
     }
 
     if (world.wasChanged(preset))
@@ -498,6 +509,10 @@ void EditorSettingsUi::update(ToolsState& state, EditorUiKit& kit, core::Duratio
         if (selected == 2)
         {
             scripts.editors = ScriptSettings{}.editors;
+        }
+        else if (selected == 3)
+        {
+            scripts.automaticCompilation = true;
         }
         else
         {

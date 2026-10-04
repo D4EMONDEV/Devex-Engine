@@ -1027,6 +1027,10 @@ void ApplicationRunner::handleEditorRequests(tools::EditorRequests requests)
     {
         m_gameBuilder->requestBuild();
     }
+    if (requests.buildCode && m_managedBuilder)
+    {
+        m_managedBuilder->requestBuild();
+    }
     if (requests.exportGame && m_services.database != nullptr && !m_export)
     {
         m_exportWaiting = true;
@@ -1306,7 +1310,8 @@ void ApplicationRunner::updateManagedCode()
     {
         return;
     }
-    bool reload = m_managedBuilder && m_managedBuilder->update();
+    const bool automatic = m_services.tools == nullptr || m_services.tools->automaticCodeCompilation();
+    bool reload = m_managedBuilder && m_managedBuilder->update(automatic);
     // A build made outside the editor is loaded too, but not the editor's own before it is over.
     const bool building = m_managedBuilder && m_managedBuilder->state() == ManagedCodeBuilder::State::Building;
     if (!reload && !building && m_services.database != nullptr)
@@ -1504,7 +1509,8 @@ void ApplicationRunner::updateGameCode()
     {
         return;
     }
-    bool reload = m_gameBuilder && m_gameBuilder->update();
+    const bool automatic = m_services.tools == nullptr || m_services.tools->automaticCodeCompilation();
+    bool reload = m_gameBuilder && m_gameBuilder->update(automatic);
     const Clock::time_point now = Clock::now();
     if (!reload && m_loadGameCode && now >= m_nextLibraryCheck &&
         (!m_gameBuilder || !m_gameBuilder->pending()))
@@ -2368,7 +2374,13 @@ tools::GameCodeStatus ApplicationRunner::gameCodeStatus() const
     {
         message += std::format("{}{} C# components", message.empty() ? "" : ", ", m_managed->componentTypes().size());
     }
-    return {.state = State::Ready, .message = std::move(message)};
+    const bool changed = (m_gameBuilder && m_gameBuilder->hasSourceChanges()) ||
+                         (m_managedBuilder && m_managedBuilder->hasSourceChanges());
+    if (changed)
+    {
+        message += "; source changes pending. Project > Build Game Code (Ctrl+B) compiles them.";
+    }
+    return {.state = State::Ready, .message = std::move(message), .changesPending = changed};
 }
 
 void ApplicationRunner::createScript(const tools::NewScript& script)

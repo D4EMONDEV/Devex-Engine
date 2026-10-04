@@ -78,6 +78,61 @@ TEST_CASE("C# source discovery ignores build outputs and hidden directories", "[
 }
 
 #ifdef DEVEX_TEST_MANAGED_GAME
+TEST_CASE("Manual C# compilation leaves IDE saves pending until explicitly built", "[runtime][managed][build][scripts]")
+{
+    const ManagedProject fixture;
+    const auto managed = std::filesystem::path(DEVEX_TEST_MANAGED_GAME).parent_path().parent_path() / "managed";
+    const auto source = fixture.project.codeDirectory() / "Player.cs";
+    REQUIRE(devex::core::writeTextFile(source, "public class Player : Devex.Component {}\n"));
+    ManagedCodeBuilder builder(fixture.project, managed);
+    REQUIRE(builder.buildAndWait());
+    const auto assemblyTime = std::filesystem::last_write_time(builder.builtAssembly());
+
+    // An IDE autosave of incomplete code must not launch the compiler in manual mode.
+    REQUIRE(devex::core::writeTextFile(source, "#error Still typing\n"));
+    const auto until = std::chrono::steady_clock::now() + std::chrono::milliseconds(1200);
+    while (std::chrono::steady_clock::now() < until)
+    {
+        REQUIRE_FALSE(builder.update(false));
+        REQUIRE(builder.state() == ManagedCodeBuilder::State::Succeeded);
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
+    REQUIRE(builder.hasSourceChanges());
+    CHECK(std::filesystem::last_write_time(builder.builtAssembly()) == assemblyTime);
+
+    // A manual build still runs, reports real errors and preserves the last successful DLL.
+    builder.requestBuild();
+    REQUIRE_FALSE(builder.update(false));
+    REQUIRE(builder.state() == ManagedCodeBuilder::State::Building);
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+    while (builder.state() == ManagedCodeBuilder::State::Building && std::chrono::steady_clock::now() < deadline)
+    {
+        static_cast<void>(builder.update(false));
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    }
+    REQUIRE(builder.state() == ManagedCodeBuilder::State::Failed);
+    CHECK(std::filesystem::last_write_time(builder.builtAssembly()) == assemblyTime);
+
+    REQUIRE(devex::core::writeTextFile(source, "public class Player : Devex.Component { public int Speed = 5; }\n"));
+    // Turning automatic compilation back on picks up pending edits, without needing a new save.
+    std::this_thread::sleep_for(std::chrono::milliseconds(550));
+    REQUIRE_FALSE(builder.update(false));
+    REQUIRE(builder.hasSourceChanges());
+    std::this_thread::sleep_for(std::chrono::milliseconds(350));
+    REQUIRE_FALSE(builder.update(true));
+    REQUIRE(builder.state() == ManagedCodeBuilder::State::Building);
+    deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+    bool built = false;
+    while (!built && std::chrono::steady_clock::now() < deadline)
+    {
+        built = builder.update(false);
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    }
+    REQUIRE(built);
+    CHECK_FALSE(builder.hasSourceChanges());
+    CHECK(std::filesystem::last_write_time(builder.builtAssembly()) != assemblyTime);
+}
+
 TEST_CASE("C# builds in an IDE and in the Devex cache can follow each other", "[runtime][managed][build]")
 {
     const auto platform = GENERATE(std::string("AnyCPU"), std::string("x64"));

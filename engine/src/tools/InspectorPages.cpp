@@ -245,7 +245,7 @@ public:
             ui.tooltip(m_edit.entity, "Opens the file in the Text Editor panel");
         }
         m_open = ui.action(kit, row, Icon::ExternalLink, "Open in External Editor");
-        ui.note(nullptr, "Choose the script editor in Editor Settings. Saved scripts are compiled automatically.", "dim", 2.0f);
+        ui.note(nullptr, "Choose the script editor and automatic or manual compilation in Editor Settings. Ctrl+B builds game code.", "dim", 3.0f);
     }
 
     void sync(InspectorUi&, ToolsState&, EditorUiKit&) override

@@ -65,7 +65,10 @@ public:
 
     // Checks the sources for changes, starts builds and forwards the output of a running build to
     // the log. Returns true once when a build has just succeeded.
-    [[nodiscard]] bool update();
+    // Manual mode still polls sources and finishes running builds, but keeps saved edits pending.
+    // Startup builds and explicit requests run in either mode.
+    [[nodiscard]] bool update(bool automaticCompilation = true);
+    [[nodiscard]] bool hasSourceChanges() const noexcept { return m_changedAt.has_value(); }
     void requestBuild() noexcept;
     // Builds now and returns once the build is over, as the export does.
     [[nodiscard]] core::Result<void> buildAndWait();

@@ -61,6 +61,10 @@ ScriptSettings readScriptSettings(const serialization::TextSection& section)
         choice.executable = stringOr(section, prefix + "_executable", {});
         choice.arguments = stringOr(section, prefix + "_arguments", choice.arguments);
     }
+    if (const auto* value = section.findAttribute("automatic_compilation"))
+    {
+        settings.automaticCompilation = serialization::asBool(*value).value_or(true);
+    }
     return settings;
 }
 
@@ -76,6 +80,7 @@ serialization::TextSection writeScriptSettings(const ScriptSettings& settings)
         section.attributes.push_back({prefix + "_executable", choice.executable});
         section.attributes.push_back({prefix + "_arguments", choice.arguments});
     }
+    section.attributes.push_back({"automatic_compilation", settings.automaticCompilation});
     return section;
 }
 

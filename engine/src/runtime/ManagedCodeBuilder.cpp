@@ -234,7 +234,7 @@ core::Result<void> ManagedCodeBuilder::writeProjectFile() const
                                            core::toUtf8(generatedDirectory(m_project))));
 }
 
-bool ManagedCodeBuilder::update()
+bool ManagedCodeBuilder::update(bool automaticCompilation)
 {
     const Clock::time_point now = Clock::now();
     if (now >= m_nextCheck)
@@ -246,12 +246,6 @@ bool ManagedCodeBuilder::update()
             m_changedAt = now;
         }
     }
-    if (m_changedAt && now - *m_changedAt >= settleTime)
-    {
-        m_changedAt.reset();
-        m_buildRequested = true;
-    }
-
     if (m_process)
     {
         for (const std::string& line : m_process->readLines())
@@ -291,7 +285,7 @@ bool ManagedCodeBuilder::update()
         return false;
     }
 
-    if (m_buildRequested)
+    if (m_buildRequested || (automaticCompilation && m_changedAt && now - *m_changedAt >= settleTime))
     {
         m_buildRequested = false;
         startBuild();
@@ -306,7 +300,7 @@ core::Result<void> ManagedCodeBuilder::buildAndWait()
     startBuild();
     while (m_process)
     {
-        static_cast<void>(update());
+        static_cast<void>(update(false));
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
     }
     if (m_state != State::Succeeded)
@@ -318,6 +312,8 @@ core::Result<void> ManagedCodeBuilder::buildAndWait()
 
 void ManagedCodeBuilder::startBuild()
 {
+    m_sources = snapshotSources();
+    m_changedAt.reset();
     useEnglishDiagnostics();
     // The project file is the editor's: other builds only write it when it is missing.
     std::error_code error;
@@ -331,6 +327,8 @@ void ManagedCodeBuilder::startBuild()
             return;
         }
     }
+    // Writing Game.csproj can change the code directory timestamp on the first build.
+    m_sources = snapshotSources();
     // The build artifacts go to the cache of the project, next to its imported assets.
     const std::array<std::string, 11> arguments{
         "dotnet",

@@ -81,8 +81,10 @@ public:
                     std::string configuration = std::string(core::buildType()));
 
     // Checks the sources for changes, starts builds, and forwards the output of a running build to
-    // the log. Returns true once when a build has just succeeded.
-    [[nodiscard]] bool update();
+    // the log. Returns true once when a build has just succeeded. With automaticCompilation off,
+    // source edits stay pending; startup builds and explicit requests still run.
+    [[nodiscard]] bool update(bool automaticCompilation = true);
+    [[nodiscard]] bool hasSourceChanges() const noexcept { return m_changedAt.has_value(); }
     void requestBuild() noexcept;
     // Rebuilds in a fresh generated folder, without touching sources or the last successful build.
     void requestRebuild() noexcept;

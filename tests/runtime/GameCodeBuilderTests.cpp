@@ -215,6 +215,32 @@ TEST_CASE("An engine update publishes its new game module only after a successfu
     CHECK(std::filesystem::last_write_time(source) == sourceTime);
 }
 
+TEST_CASE("Manual C++ compilation waits for a build request after saved edits", "[runtime][game][build][scripts]")
+{
+    const TemporaryGameProject fixture;
+    fixture.createBuildFixture();
+    GameCodeBuilder builder(fixture.project, fixture.engineConfig, "Debug");
+    REQUIRE(builder.buildAndWait());
+    const auto attempts = fixture.project.codeDirectory() / "attempts.txt";
+    const std::string previous = *devex::core::readTextFile(attempts);
+    REQUIRE(devex::core::writeTextFile(fixture.project.codeDirectory() / "Game.cpp", "// changed\n"));
+    const auto until = std::chrono::steady_clock::now() + std::chrono::milliseconds(1200);
+    while (std::chrono::steady_clock::now() < until)
+    {
+        REQUIRE_FALSE(builder.update(false));
+        REQUIRE_FALSE(builder.pending());
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
+    CHECK(builder.hasSourceChanges());
+    CHECK(*devex::core::readTextFile(attempts) == previous);
+    builder.requestBuild();
+    REQUIRE_FALSE(builder.update(false));
+    REQUIRE(builder.state() == GameCodeBuilder::State::Building);
+    REQUIRE(finishBuild(builder));
+    CHECK_FALSE(builder.hasSourceChanges());
+    CHECK(*devex::core::readTextFile(attempts) != previous);
+}
+
 TEST_CASE("Changed engine packages and build configurations make game builds pending", "[runtime][game][build]")
 {
     const TemporaryGameProject fixture;

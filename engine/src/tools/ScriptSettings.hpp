@@ -32,6 +32,7 @@ struct ScriptEditorChoice
 struct ScriptSettings
 {
     std::array<ScriptEditorChoice, 3> editors;
+    bool automaticCompilation = true;
 
     bool operator==(const ScriptSettings&) const = default;
 };

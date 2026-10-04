@@ -9,6 +9,7 @@ using namespace devex::tools::detail;
 TEST_CASE("Script editor preferences survive serialization independently for each language", "[tools][scripts]")
 {
     ScriptSettings settings;
+    settings.automaticCompilation = false;
     settings.editors[0] = {ScriptEditor::Custom, "C:/Program Files/Editor/rider64.exe", "\"{project}\" \"{file}\""};
     settings.editors[1].editor = ScriptEditor::System;
     settings.editors[2].editor = ScriptEditor::Devex;
@@ -17,7 +18,7 @@ TEST_CASE("Script editor preferences survive serialization independently for eac
     REQUIRE(parsed);
     CHECK(readScriptSettings(parsed->sections.front()) == settings);
 
-    const auto invalid = devex::serialization::parseText(R"([scripts csharp_editor="unknown"])");
+    const auto invalid = devex::serialization::parseText(R"([scripts csharp_editor="unknown" automatic_compilation=42])");
     REQUIRE(invalid);
     CHECK(readScriptSettings(invalid->sections.front()) == ScriptSettings{});
 }

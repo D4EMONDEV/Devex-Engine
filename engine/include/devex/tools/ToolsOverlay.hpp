@@ -118,6 +118,8 @@ struct DEVEX_API GameCodeStatus
     State state = State::None;
     // Details, such as the first compilation error.
     std::string message;
+    // Source edits since the last build, waiting for automatic compilation or Ctrl+B.
+    bool changesPending = false;
 };
 
 // Whether an unopened project's game code needs to be rebuilt for this engine.
@@ -276,6 +278,7 @@ public:
 
     // Editor only: the state of the game code, shown in the menu bar.
     void setGameCodeStatus(GameCodeStatus status);
+    [[nodiscard]] bool automaticCodeCompilation() const;
     void openInPreferredEditor(const std::filesystem::path& file);
     // Editor only: checks projects when the project manager refreshes its list. The application
     // supplies the check so that the tools do not load game code or depend on the runtime.

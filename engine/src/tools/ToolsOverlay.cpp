@@ -713,6 +713,11 @@ void ToolsOverlay::setGameCodeStatus(GameCodeStatus status)
     m_state->gameCode = std::move(status);
 }
 
+bool ToolsOverlay::automaticCodeCompilation() const
+{
+    return m_state->scripts.automaticCompilation;
+}
+
 void ToolsOverlay::openInPreferredEditor(const std::filesystem::path& file)
 {
     detail::openInPreferredEditor(*m_state, file);

@@ -576,9 +576,9 @@ void MenuBarUi::sync(ToolsState& state, EditorUiKit& kit)
         label = "Compiling";
         break;
     case GameCodeStatus::State::Ready:
-        glyph = Icon::CircleCheck;
-        color = colors.success;
-        label = "Code ready";
+        glyph = status.changesPending ? Icon::Code : Icon::CircleCheck;
+        color = status.changesPending ? colors.warning : colors.success;
+        label = status.changesPending ? "Code changed" : "Code ready";
         break;
     case GameCodeStatus::State::Failed:
         glyph = Icon::CircleX;

@@ -3449,7 +3449,10 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     Editor Settings > Script Editors choisit séparément pour C#, C++ et les fichiers Devex entre
     Devex Script, l'application du système et un exécutable externe ; ses arguments acceptent
     `{file}` et `{project}`, sans passer par un shell. « Open as Text » suit ce choix, tandis que
-    « Edit in Devex Script » ouvre toujours l'éditeur intégré.
+    « Edit in Devex Script » ouvre toujours l'éditeur intégré. Compilation propose Automatic ou
+    Manual : en manuel, les sauvegardes internes et externes restent en attente de Ctrl+B
+    (C++ et C#). Le chargement initial construit toujours les modules manquants ou périmés ;
+    après une erreur de compilation, la dernière version compilée reste chargée.
 
 51. ✅ **Ménage avant le dock** — dessins par-dessus la vue (sélection, cadre du jeu, poignées et
     ancres des interfaces, indications) en Devex UI sur un panneau transparent ; widgets ImGui
