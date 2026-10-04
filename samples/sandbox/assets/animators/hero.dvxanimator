@@ -9,7 +9,7 @@ any_state_position = vec2(-260, 150)
 [parameter name="VerticalSpeed" type="float" default=0]
 
 [state name="Idle"]
-position = vec2(0, 0)
+position = vec2(-23.270592, 6.070591)
 sprite = "idle"
 
 [state name="Run"]
@@ -21,7 +21,7 @@ position = vec2(0, 150)
 sprite = "jump"
 
 [state name="Fall"]
-position = vec2(280, 150)
+position = vec2(185.90564, 83.22354)
 sprite = "fall"
 
 [transition from="Idle" to="Run" duration=0]
