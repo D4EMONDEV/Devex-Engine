@@ -753,6 +753,9 @@ struct DEVEX_API ToolsState
     std::uint64_t savedState = 0;
     std::optional<PendingAction> pendingAction;
     bool openUnsavedChangesPopup = false;
+    // A res:// path captured when Delete was requested; acted on only after confirmation.
+    std::string fileToDelete;
+    bool openDeleteFilePopup = false;
     // The pending action waits for play to stop.
     bool resumeActionAfterPlay = false;
 
@@ -843,6 +846,8 @@ DEVEX_API void drawProfilerPanel(ToolsState& state);
 DEVEX_API void renderProfiler(ToolsState& state, render::RenderWorld& world);
 DEVEX_API void drawConsolePanel(ToolsState& state);
 DEVEX_API void drawAssetsPanel(ToolsState& state, scene::Scene& scene);
+DEVEX_API void refreshFileSystem(ToolsState& state);
+DEVEX_API core::Result<void> deleteFileSystemPath(ToolsState& state, scene::Scene& scene, std::string_view resourcePath);
 // The clips of the selected Animator: a timeline of their keys, played or scrubbed. Outside Play
 // the panel poses the skeleton itself; during Play it follows the game.
 DEVEX_API void drawAnimationPanel(ToolsState& state, scene::Scene& scene);

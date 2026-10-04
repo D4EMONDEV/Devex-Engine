@@ -824,6 +824,91 @@ public:
         return m_folders;
     }
 
+    [[nodiscard]] core::Result<void> removePath(std::string_view resourcePath)
+    {
+        const auto path = m_project.absolutePath(resourcePath);
+        const std::string normalized = path ? m_project.resourcePath(*path) : std::string{};
+        const bool asset = normalized.starts_with("res://assets/");
+        if (!path || (!asset && !normalized.starts_with("res://code/")))
+        {
+            return core::makeError(core::ErrorCode::InvalidArgument,
+                                   "Only files and folders inside assets or code can be deleted");
+        }
+        std::error_code error;
+        const auto projectRoot = std::filesystem::canonical(m_project.root, error);
+        const auto contentRoot = projectRoot / (asset ? "assets" : "code");
+        // Resolve every entry before removing anything. In particular, a link must never turn
+        // an operation inside the project into one on another folder or a protected root.
+        const auto allowed = [&](const std::filesystem::path& candidate) {
+            const auto resolved = std::filesystem::weakly_canonical(candidate, error);
+            if (error)
+            {
+                return false;
+            }
+            const auto relative = resolved.lexically_relative(contentRoot);
+            return !relative.empty() && relative != "." && !relative.is_absolute() &&
+                   *relative.begin() != "..";
+        };
+        if (error || !allowed(*path))
+        {
+            return core::makeError(core::ErrorCode::InvalidArgument, "Cannot delete a path outside its project content folder");
+        }
+        const bool directory = std::filesystem::exists(*path, error) && std::filesystem::is_directory(*path, error);
+        if (error)
+        {
+            return core::makeError(core::ErrorCode::Io, "Cannot inspect '{}': {}", normalized, error.message());
+        }
+        if (directory)
+        {
+            auto iterator = std::filesystem::recursive_directory_iterator(*path, error);
+            for (auto end = std::filesystem::recursive_directory_iterator(); !error && iterator != end; iterator.increment(error))
+            {
+                if (!allowed(iterator->path()))
+                {
+                    return core::makeError(core::ErrorCode::InvalidArgument, "The folder contains a link outside its project content folder");
+                }
+            }
+            if (error)
+            {
+                return core::makeError(core::ErrorCode::Io, "Cannot inspect '{}': {}", normalized, error.message());
+            }
+        }
+        std::filesystem::path meta = *path;
+        meta += ".dvxmeta";
+        if (asset && !directory)
+        {
+            if (!allowed(meta) || (std::filesystem::exists(meta, error) && std::filesystem::is_directory(meta, error)))
+            {
+                return core::makeError(core::ErrorCode::InvalidArgument, "Cannot delete the metadata associated with '{}'", normalized);
+            }
+            if (error)
+            {
+                return core::makeError(core::ErrorCode::Io, "Cannot inspect metadata for '{}': {}", normalized, error.message());
+            }
+        }
+        // remove_all does not follow directory symlinks. Refresh even on a partial failure so
+        // removed sources cannot remain available through their cached imports.
+        const bool importing = pendingImports() != 0;
+        std::filesystem::remove_all(*path, error);
+        if (!error && asset && !directory)
+        {
+            std::filesystem::remove(meta, error);
+        }
+        if (error && importing)
+        {
+            // Windows readers may deny deletion while an importer has the source open.
+            // Wait only after a failed removal, then validate the paths again before retrying.
+            waitForImports();
+            return removePath(resourcePath);
+        }
+        refresh();
+        if (error)
+        {
+            return core::makeError(core::ErrorCode::Io, "Cannot delete '{}': {}", normalized, error.message());
+        }
+        return {};
+    }
+
     [[nodiscard]] core::Result<AssetId> addFile(const std::filesystem::path& file,
                                                 std::string_view folder)
     {
@@ -1386,6 +1471,11 @@ std::vector<SourceFile> AssetDatabase::sources() const
 const std::vector<std::string>& AssetDatabase::folders() const noexcept
 {
     return m_impl->folders();
+}
+
+core::Result<void> AssetDatabase::removePath(std::string_view resourcePath)
+{
+    return m_impl->removePath(resourcePath);
 }
 
 std::optional<SourceFile> AssetDatabase::sourceOf(AssetId id) const

@@ -259,6 +259,7 @@ struct FileSystemUi : PanelBuilder
     Entity folderSeparator;
     Button externalEditor;
     Button showFolder;
+    Button deleteFile;
     // What the menu acts on, from the moment it opened.
     std::optional<Node> menuNode;
 
@@ -279,6 +280,8 @@ struct FileSystemUi : PanelBuilder
     void activate(ToolsState& state, scene::Scene& edited, const Node& node);
     void openMenu(ToolsState& state, EditorUiKit& kit);
     void answerMenu(ToolsState& state, scene::Scene& edited);
+    [[nodiscard]] std::string removablePath(const ToolsState& state, const Node& node) const;
+    void requestDelete(ToolsState& state, const Node& node);
     void dropEntity(ToolsState& state, const scene::Scene& edited, const Node& folder, const std::string& uuid);
 
     [[nodiscard]] bool isOpen(const std::string& key, bool byDefault) const
@@ -324,6 +327,7 @@ void FileSystemUi::build(ToolsState& state, EditorUiKit& kit)
     folderSeparator = menuSeparator(menu);
     externalEditor = menuItem(kit, menu, Icon::ExternalLink, "Open in External Editor");
     showFolder = menuItem(kit, menu, Icon::FolderOpen, "Show in File Manager");
+    deleteFile = menuItem(kit, menu, Icon::Trash, "Delete...");
 
     // The files leave for the other panels and the view; entities come in to be made prefabs.
     panel.setKeyboardNavigation(false);
@@ -618,6 +622,26 @@ void FileSystemUi::activate(ToolsState& state, scene::Scene& edited, const Node&
     }
 }
 
+std::string FileSystemUi::removablePath(const ToolsState& state, const Node& node) const
+{
+    if (state.mode != ToolsMode::Editor || state.playState != PlayState::Editing ||
+        node.kind == NodeKind::SubAsset || node.kind == NodeKind::ProjectFile)
+    {
+        return {};
+    }
+    const std::string path = node.file.empty() ? node.path : state.database->project().resourcePath(node.file);
+    return path.starts_with("res://assets/") || path.starts_with("res://code/") ? path : std::string{};
+}
+
+void FileSystemUi::requestDelete(ToolsState& state, const Node& node)
+{
+    if (std::string path = removablePath(state, node); !path.empty())
+    {
+        state.fileToDelete = std::move(path);
+        state.openDeleteFilePopup = true;
+    }
+}
+
 void FileSystemUi::openMenu(ToolsState& state, EditorUiKit& kit)
 {
     // The entries that act on what the menu opened on.
@@ -643,6 +667,7 @@ void FileSystemUi::openMenu(ToolsState& state, EditorUiKit& kit)
     scene().get<UiRect>(folderSeparator).visible = folder;
     show(externalEditor, node.kind == NodeKind::CodeFile);
     show(showFolder, source || folder || code || node.kind == NodeKind::CodeFolder);
+    show(deleteFile, !removablePath(state, node).empty());
     static_cast<void>(kit);
 }
 
@@ -731,6 +756,10 @@ void FileSystemUi::answerMenu(ToolsState& state, scene::Scene& edited)
     {
         const bool isFolder = node.kind == NodeKind::Folder || node.kind == NodeKind::CodeFolder;
         showInFileManager(state, isFolder ? *path : path->parent_path());
+    }
+    else if (world.wasClicked(deleteFile.entity))
+    {
+        requestDelete(state, node);
     }
 }
 
@@ -1023,6 +1052,10 @@ void FileSystemUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& edi
         {
             activate(state, edited, *current);
         }
+        else if (current != nodes.end() && state.input.pressed(platform::Key::Delete, false))
+        {
+            requestDelete(state, *current);
+        }
         if (moved)
         {
             choose(state, nodes[*moved]);
@@ -1106,6 +1139,16 @@ void drawAssetsPanel(ToolsState& state, scene::Scene& scene)
     }
     state.fileSystemUi->update(state, *state.uiKit, scene, core::Duration(state.input.delta()));
     endDockedPanel(state);
+}
+
+void refreshFileSystem(ToolsState& state)
+{
+    if (state.fileSystemUi)
+    {
+        state.fileSystemUi->codeListings.clear();
+        state.fileSystemUi->menuNode.reset();
+        state.fileSystemUi->selected.clear();
+    }
 }
 
 void revealInFileSystem(ToolsState& state, std::string resource)

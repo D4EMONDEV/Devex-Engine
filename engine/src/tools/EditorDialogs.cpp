@@ -43,6 +43,7 @@ enum class DialogKind : std::uint8_t
 {
     NewScript,
     UnsavedChanges,
+    DeleteFile,
     About,
 };
 
@@ -78,7 +79,7 @@ struct EditorDialogsUi : FormUi
     UnsavedChoice unsaved = UnsavedChoice::None;
 
     void start(DialogKind which, ToolsState& state, EditorUiKit& kit, scene::Scene& edited);
-    void update(ToolsState& state, EditorUiKit& kit, core::Duration delta);
+    void update(ToolsState& state, EditorUiKit& kit, scene::Scene& edited, core::Duration delta);
     void titleRow(EditorUiKit& kit, Icon glyph, ImVec4 color, std::string title);
     // A row of a label and the editor at its right, returned.
     Entity row(const char* label);
@@ -166,6 +167,19 @@ void EditorDialogsUi::start(DialogKind which, ToolsState& state, EditorUiKit& ki
 
     switch (which)
     {
+    case DialogKind::DeleteFile: {
+        size.x = std::round(font * 34.0f);
+        titleRow(kit, Icon::Trash, colors.warning, "Delete permanently?");
+        note(nullptr, state.fileToDelete, "text", 3.0f);
+        note(nullptr, "This removes the file or folder, its contents and associated import metadata. It cannot be undone.", "warning", 3.0f);
+        note(nullptr, "Affected scene and text tabs will close. Their unsaved changes will be lost.", "dim", 2.0f);
+        status = note(nullptr, "", "warning", 3.0f);
+        scene().get<UiRect>(status).visible = false;
+        const Entity buttons = buttonLine();
+        cancel = button(kit, buttons, Icon::Close, "Cancel", "button", buttonWidth, buttonHeight);
+        confirm = button(kit, buttons, Icon::Trash, "Delete", "button", buttonWidth, buttonHeight);
+        break;
+    }
     case DialogKind::NewScript: {
         size.x = std::round(font * 30.0f);
         titleRow(kit, Icon::FilePlus, colors.gameCode, "New Script");
@@ -268,7 +282,7 @@ void EditorDialogsUi::start(DialogKind which, ToolsState& state, EditorUiKit& ki
     fit();
 }
 
-void EditorDialogsUi::update(ToolsState& state, EditorUiKit& kit, core::Duration delta)
+void EditorDialogsUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& edited, core::Duration delta)
 {
     const ThemeColors& colors = themeColors();
     kit.refreshTheme(colors);
@@ -311,6 +325,27 @@ void EditorDialogsUi::update(ToolsState& state, EditorUiKit& kit, core::Duration
     const bool escape = panel.input().cancelPressed || (panel.focused() && state.input.pressed(platform::Key::Escape, false));
     switch (kind)
     {
+    case DialogKind::DeleteFile:
+        if (world.wasClicked(cancel.entity) || escape)
+        {
+            open = false;
+            state.fileToDelete.clear();
+        }
+        else if (world.wasClicked(confirm.entity))
+        {
+            if (auto result = deleteFileSystemPath(state, edited, state.fileToDelete); result)
+            {
+                open = false;
+                state.fileToDelete.clear();
+            }
+            else
+            {
+                scene().get<scene::UiText>(status).text = result.error().message;
+                scene().get<UiRect>(status).visible = true;
+                fit();
+            }
+        }
+        break;
     case DialogKind::NewScript:
         state.newScriptName = name;
         state.newScriptCSharp = csharp;
@@ -355,6 +390,10 @@ void drawEditorPopups(ToolsState& state, scene::Scene& scene)
 {
     DEVEX_PROFILE_SCOPE("Dialogs");
     std::optional<DialogKind> requested;
+    if (std::exchange(state.openDeleteFilePopup, false))
+    {
+        requested = DialogKind::DeleteFile;
+    }
     if (std::exchange(state.openNewScriptPopup, false))
     {
         requested = DialogKind::NewScript;
@@ -391,7 +430,7 @@ void drawEditorPopups(ToolsState& state, scene::Scene& scene)
     {
         return;
     }
-    ui->update(state, kit, core::Duration(state.input.delta()));
+    ui->update(state, kit, scene, core::Duration(state.input.delta()));
     endModal(state);
     if (!ui->open)
     {

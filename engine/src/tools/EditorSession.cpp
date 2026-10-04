@@ -594,6 +594,96 @@ std::string tabName(const std::filesystem::path& path)
     return path.empty() ? std::string("[unsaved]") : core::toUtf8(path.stem());
 }
 
+core::Result<void> deleteFileSystemPath(ToolsState& state, scene::Scene& scene, std::string_view resourcePath)
+{
+    if (state.database == nullptr || state.mode != ToolsMode::Editor || state.playState != PlayState::Editing)
+    {
+        return core::makeError(core::ErrorCode::InvalidState, "Files can only be deleted while editing a project");
+    }
+    const auto target = state.database->project().absolutePath(resourcePath);
+    if (!target)
+    {
+        return core::makeError(core::ErrorCode::InvalidArgument, "Invalid project path");
+    }
+    const std::string removed = state.database->project().resourcePath(*target);
+    const auto affected = [&](const std::filesystem::path& path) {
+        if (path.empty())
+        {
+            return false;
+        }
+        // sameTextPath accounts for Windows case and alternate spellings of the same path.
+        for (auto parent = path; !parent.empty(); parent = parent.parent_path())
+        {
+            if (sameTextPath(parent, *target))
+            {
+                return true;
+            }
+            if (parent == parent.parent_path())
+            {
+                break;
+            }
+        }
+        auto meta = *target;
+        meta += ".dvxmeta";
+        return sameTextPath(path, meta);
+    };
+    // Match while the files still exist, so equivalent paths (including case on Windows) work.
+    PendingAction close{.kind = PendingAction::Kind::CloseTab};
+    const ActiveDocument live = activeDocument(state, scene);
+    for (std::size_t index = 0; index < state.tabs.size(); ++index)
+    {
+        if (affected(state.tabs.path(index, live)))
+        {
+            close.tabs.push_back(state.tabs.id(index));
+        }
+    }
+    std::vector<std::filesystem::path> texts;
+    for (const TextDocument& document : state.textDocuments)
+    {
+        if (affected(document.path))
+        {
+            texts.push_back(document.path);
+        }
+    }
+    const bool selectedCodeRemoved = affected(state.selectedCode);
+    const auto result = state.database->removePath(removed);
+    const auto missing = [](const std::filesystem::path& path) {
+        std::error_code error;
+        return !std::filesystem::exists(path, error) && !error;
+    };
+    if (!result)
+    {
+        // A read-only file may stop a recursive deletion after some siblings were removed.
+        std::erase_if(close.tabs, [&](std::uint64_t id) { return !missing(state.tabs.path(*state.tabs.findById(id), live)); });
+        std::erase_if(texts, [&](const auto& path) { return !missing(path); });
+    }
+    if (!close.tabs.empty())
+    {
+        applyAction(state, scene, close);
+    }
+    std::erase_if(state.textDocuments, [&](const TextDocument& document) { return std::ranges::contains(texts, document.path); });
+    if (std::ranges::contains(texts, state.activeText))
+    {
+        state.activeText = state.textDocuments.empty() ? std::filesystem::path{} : state.textDocuments.back().path;
+        state.selectTextTab = true;
+    }
+    if (selectedCodeRemoved && (result || missing(state.selectedCode)))
+    {
+        state.selectedCode.clear();
+    }
+    if (state.database->find(state.selectedAsset) == nullptr)
+    {
+        state.selectedAsset = {};
+        state.selectedClipStale = true;
+    }
+    refreshFileSystem(state);
+    if (result)
+    {
+        DEVEX_LOG_INFO("Deleted {}", removed);
+    }
+    return result;
+}
+
 void activateSceneTab(ToolsState& state, scene::Scene& scene, std::size_t index)
 {
     if (state.playState == PlayState::Editing && index < state.tabs.size() && index != state.tabs.active())

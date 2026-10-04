@@ -122,6 +122,9 @@ public:
     [[nodiscard]] std::vector<SourceFile> sources() const;
     // Sorted res:// paths, including empty asset folders. Updated by refresh and the watcher.
     [[nodiscard]] const std::vector<std::string>& folders() const noexcept;
+    // Permanently removes a file or folder below assets/ or code/, including asset metadata.
+    // Project roots and paths through links outside their content folder are rejected.
+    [[nodiscard]] core::Result<void> removePath(std::string_view resourcePath);
     // The source file of any asset it produced.
     [[nodiscard]] std::optional<SourceFile> sourceOf(AssetId id) const;
     // The main asset of a source file, by res:// path.

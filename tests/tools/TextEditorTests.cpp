@@ -9,6 +9,64 @@
 using namespace devex;
 using namespace devex::tools::detail;
 
+TEST_CASE("FileSystem deletion closes affected documents and preserves other tabs", "[tools][filesystem][gpu]")
+{
+    struct Directory
+    {
+        std::filesystem::path path = std::filesystem::temp_directory_path() / ("devex-delete-session-" + core::Uuid::generate().toString());
+        ~Directory() { std::error_code error; std::filesystem::remove_all(path, error); }
+    } directory;
+    auto project = asset::createProject(directory.path, "Delete test");
+    REQUIRE(project);
+    const auto removed = project->assetsDirectory() / "Levels/Level.dvxscene";
+    const auto kept = project->assetsDirectory() / "LevelsSibling/Keep.dvxscene";
+    REQUIRE(core::writeTextFile(removed, "[scene format=1]\n"));
+    REQUIRE(core::writeTextFile(kept, "[scene format=1]\n"));
+    core::JobSystem jobs(1);
+    auto database = asset::AssetDatabase::open(*project, jobs, {.watchFiles = false});
+    REQUIRE(database);
+    auto platform = platform::Platform::create();
+    REQUIRE(platform);
+    auto window = platform->createWindow({.width = 800, .height = 600, .vulkan = true, .hidden = true});
+    REQUIRE(window);
+    auto renderer = render::Renderer::create(*platform, *window, {.validation = true});
+    REQUIRE(renderer);
+    ToolsState state(*platform, *window, *renderer, tools::ToolsMode::Editor);
+    state.database = database->get();
+    scene::Scene scene;
+    for (const auto& path : {kept, removed})
+    {
+        SceneDocument document;
+        document.path = path;
+        const auto tab = state.tabs.add(std::move(document));
+        activateSceneTab(state, scene, tab);
+        openTextFile(state, path);
+    }
+    const auto keptId = state.tabs.id(0);
+    const auto removedId = state.tabs.id(1);
+    findTextDocument(state, removed)->text += "# unsaved\n";
+    state.selectedCode = kept;
+    state.playState = tools::PlayState::Playing;
+    CHECK_FALSE(deleteFileSystemPath(state, scene, "res://assets/Levels"));
+    CHECK(std::filesystem::exists(removed));
+    state.playState = tools::PlayState::Editing;
+    REQUIRE(deleteFileSystemPath(state, scene, "res://assets/Levels"));
+    CHECK_FALSE(std::filesystem::exists(removed));
+    CHECK_FALSE(state.tabs.findById(removedId));
+    CHECK(state.tabs.findById(keptId));
+    CHECK(state.scenePath == kept);
+    CHECK_FALSE(findTextDocument(state, removed));
+    CHECK(findTextDocument(state, kept));
+    CHECK(state.activeText == kept);
+    CHECK(state.selectedCode == kept);
+    CHECK_FALSE(state.pendingAction);
+    REQUIRE(deleteFileSystemPath(state, scene, "res://assets/LevelsSibling"));
+    REQUIRE(state.tabs.size() == 1);
+    CHECK(state.scenePath.empty());
+    CHECK(state.textDocuments.empty());
+    CHECK(state.activeText.empty());
+}
+
 TEST_CASE("Text editor protects pending changes and synchronizes scene and project edits", "[tools][text][gpu]")
 {
     struct Directory

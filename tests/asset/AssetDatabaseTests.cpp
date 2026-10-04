@@ -130,6 +130,110 @@ TEST_CASE("Watched empty folders appear and disappear without an explicit refres
     CHECK(waitForFolder(false));
 }
 
+TEST_CASE("Deleting project content removes metadata and imports and keeps sibling files", "[asset][database][filesystem]")
+{
+    TemporaryProject project;
+    project.write("Group/red.dvxmat", redMaterial);
+    project.write("Group/notes.txt", "Also removed with the folder");
+    project.write("GroupSibling/keep.dvxmat", blueMaterial);
+    std::filesystem::create_directories(project.assets() / "Group" / "Empty");
+    devex::core::JobSystem jobs(1);
+    auto database = AssetDatabase::open(project.project, jobs, {.watchFiles = false});
+    REQUIRE(database);
+    static_cast<void>(settle(**database));
+    const auto id = (*database)->findByPath("res://assets/Group/red.dvxmat");
+    REQUIRE(id);
+    const auto artifact = (*database)->artifactPath(*id);
+    SECTION("One source file")
+    {
+        REQUIRE((*database)->removePath("res://assets/Group/red.dvxmat"));
+        CHECK(std::filesystem::exists(project.assets() / "Group/notes.txt"));
+        CHECK(std::ranges::contains((*database)->folders(), "res://assets/Group"));
+    }
+    SECTION("The whole folder")
+    {
+        REQUIRE((*database)->removePath("res://assets/Group"));
+        CHECK_FALSE(std::filesystem::exists(project.assets() / "Group"));
+        CHECK_FALSE(std::ranges::contains((*database)->folders(), "res://assets/Group"));
+        CHECK_FALSE(std::ranges::contains((*database)->folders(), "res://assets/Group/Empty"));
+    }
+    CHECK_FALSE(std::filesystem::exists(project.assets() / "Group/red.dvxmat"));
+    CHECK_FALSE(std::filesystem::exists(project.assets() / "Group/red.dvxmat.dvxmeta"));
+    CHECK_FALSE(std::filesystem::exists(artifact));
+    CHECK_FALSE((*database)->findByPath("res://assets/Group/red.dvxmat"));
+    CHECK(contains((*database)->update(), *id, AssetChange::Removed));
+    CHECK(std::filesystem::exists(project.assets() / "GroupSibling/keep.dvxmat"));
+    CHECK((*database)->findByPath("res://assets/GroupSibling/keep.dvxmat"));
+}
+
+TEST_CASE("Deleting code and empty folders preserves project roots", "[asset][database][filesystem]")
+{
+    TemporaryProject project;
+    REQUIRE(devex::core::writeTextFile(project.project.codeDirectory() / "Scripts/Test.cs", "// code"));
+    std::filesystem::create_directories(project.assets() / "Empty");
+    devex::core::JobSystem jobs(1);
+    auto database = AssetDatabase::open(project.project, jobs, {.watchFiles = false});
+    REQUIRE(database);
+    REQUIRE((*database)->removePath("res://code/Scripts/Test.cs"));
+    CHECK_FALSE(std::filesystem::exists(project.project.codeDirectory() / "Scripts/Test.cs"));
+    REQUIRE((*database)->removePath("res://code/Scripts"));
+    REQUIRE((*database)->removePath("res://assets/Empty"));
+    CHECK(std::filesystem::is_directory(project.assets()));
+    CHECK(std::filesystem::is_directory(project.project.codeDirectory()));
+    CHECK(std::filesystem::exists(project.project.file));
+}
+
+TEST_CASE("Deleting content rejects roots and paths outside content folders", "[asset][database][filesystem]")
+{
+    TemporaryProject project;
+    project.write("keep.dvxmat", redMaterial);
+    devex::core::JobSystem jobs(1);
+    auto database = AssetDatabase::open(project.project, jobs, {.watchFiles = false});
+    REQUIRE(database);
+    for (const auto path : {"res://", "res://assets", "res://assets/", "res://code", "res://assets/..",
+                            "res://assets/../../outside", "res://assets2", "res://.devex", "assets/keep.dvxmat"})
+    {
+        CAPTURE(path);
+        CHECK_FALSE((*database)->removePath(path));
+    }
+    CHECK(std::filesystem::exists(project.assets() / "keep.dvxmat"));
+    CHECK(std::filesystem::exists(project.project.file));
+}
+
+TEST_CASE("Deleting a source during its import does not bring it back", "[asset][database][filesystem]")
+{
+    TemporaryProject project;
+    project.copy(dataDirectory / "checker.png", "checker.png");
+    devex::core::JobSystem jobs(1);
+    auto database = AssetDatabase::open(project.project, jobs, {.watchFiles = false});
+    REQUIRE(database);
+    const auto removed = (*database)->removePath("res://assets/checker.png");
+    INFO((removed ? "Deleted" : removed.error().message));
+    REQUIRE(removed);
+    static_cast<void>(settle(**database));
+    CHECK((*database)->assets().empty());
+    CHECK((*database)->sources().empty());
+    CHECK_FALSE(std::filesystem::exists(project.assets() / "checker.png.dvxmeta"));
+}
+
+TEST_CASE("Deleting linked content cannot remove files outside the content folder", "[asset][database][filesystem]")
+{
+    TemporaryProject project;
+    REQUIRE(devex::core::writeTextFile(project.project.root / "Protected/keep.txt", "keep"));
+    std::error_code error;
+    std::filesystem::create_directory_symlink(project.project.root / "Protected", project.assets() / "Link", error);
+    if (error)
+    {
+        SKIP("Creating symbolic links is unavailable on this system");
+    }
+    devex::core::JobSystem jobs(1);
+    auto database = AssetDatabase::open(project.project, jobs, {.watchFiles = false});
+    REQUIRE(database);
+    CHECK_FALSE((*database)->removePath("res://assets/Link"));
+    CHECK_FALSE((*database)->removePath("res://assets/Link/keep.txt"));
+    CHECK(std::filesystem::exists(project.project.root / "Protected/keep.txt"));
+}
+
 TEST_CASE("New files get a .dvxmeta and are imported in the background", "[asset][database]")
 {
     TemporaryProject project;
