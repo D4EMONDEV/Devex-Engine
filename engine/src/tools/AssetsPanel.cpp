@@ -807,7 +807,33 @@ void FileSystemUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& edi
     if (!state.assetToReveal.empty())
     {
         const std::string resource = std::exchange(state.assetToReveal, std::string{});
-        if (const std::optional<asset::AssetId> id = state.database->findByPath(resource))
+        const auto& project = state.database->project();
+        const auto path = project.absolutePath(resource);
+        std::error_code error;
+        if (path && std::filesystem::is_directory(*path, error))
+        {
+            const auto folderKey = [&](const std::filesystem::path& directory) {
+                const std::string location = project.resourcePath(directory);
+                return location == "res://code" || location.starts_with("res://code/")
+                    ? "code:" + core::toUtf8(directory) : "folder:" + location;
+            };
+            expanded["folder:res://"] = true;
+            for (auto parent = *path; parent != project.root && !parent.empty(); parent = parent.parent_path())
+            {
+                if (project.resourcePath(parent).empty())
+                {
+                    break;
+                }
+                expanded[folderKey(parent)] = true;
+            }
+            // Empty directories have no imported asset, and the code tree caches its listings.
+            codeListings.clear();
+            scene().get<scene::UiText>(filter).text.clear();
+            selected = folderKey(*path);
+            selectAsset(state, {});
+            revealed = selected;
+        }
+        else if (const std::optional<asset::AssetId> id = state.database->findByPath(resource))
         {
             const std::size_t scheme = asset::resourceScheme.size();
             expanded["folder:" + resource.substr(0, scheme)] = true;

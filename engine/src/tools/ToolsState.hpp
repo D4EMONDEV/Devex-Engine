@@ -858,6 +858,7 @@ DEVEX_API void drawAssetsPanel(ToolsState& state, scene::Scene& scene);
 DEVEX_API void refreshFileSystem(ToolsState& state);
 DEVEX_API void requestNewScript(ToolsState& state, bool addToSelection = false);
 DEVEX_API std::vector<std::string> creationFolders(const asset::Project& project, asset::ContentRoot content);
+DEVEX_API core::Result<std::filesystem::path> createContentFolder(ToolsState& state, std::string_view parent, std::string_view name);
 DEVEX_API core::Result<std::filesystem::path> writeNewAssetFile(ToolsState& state, std::string_view folder,
     std::string_view requestedName, std::string_view defaultName, std::string_view extension, std::string_view text);
 DEVEX_API core::Result<void> deleteFileSystemPath(ToolsState& state, scene::Scene& scene, std::string_view resourcePath);

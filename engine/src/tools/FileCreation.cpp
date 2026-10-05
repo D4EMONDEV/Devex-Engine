@@ -48,6 +48,34 @@ std::vector<std::string> creationFolders(const asset::Project& project, asset::C
     return folders;
 }
 
+core::Result<std::filesystem::path> createContentFolder(ToolsState& state, std::string_view parent, std::string_view name)
+{
+    if (state.database == nullptr)
+    {
+        return core::makeError(core::ErrorCode::InvalidState, "No project is open.");
+    }
+    const auto& project = state.database->project();
+    const bool code = parent == "res://code" || parent.starts_with("res://code/");
+    if (code && (name == "bin" || name == "obj"))
+    {
+        return core::makeError(core::ErrorCode::InvalidArgument, "This folder name is reserved for build outputs.");
+    }
+    const auto folder = project.newFilePath(parent, name, code ? asset::ContentRoot::Code : asset::ContentRoot::Assets);
+    if (!folder)
+    {
+        return std::unexpected(folder.error());
+    }
+    std::error_code error;
+    if (!std::filesystem::create_directory(*folder, error))
+    {
+        return core::makeError(error ? core::ErrorCode::Io : core::ErrorCode::AlreadyExists,
+                               "Cannot create the folder: {}", error ? error.message() : "the name is already used.");
+    }
+    state.database->refresh();
+    state.assetToReveal = project.resourcePath(*folder);
+    return *folder;
+}
+
 core::Result<std::filesystem::path> writeNewAssetFile(ToolsState& state, std::string_view folder,
     std::string_view requestedName, std::string_view defaultName, std::string_view extension, std::string_view text)
 {

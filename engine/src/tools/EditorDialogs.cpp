@@ -38,13 +38,15 @@ struct FileType
     std::string_view extension;
     std::string_view description;
 };
-constexpr std::array<FileType, 5> fileTypes{{
+constexpr std::array<FileType, 6> fileTypes{{
     {Icon::FilePlus, "Script", "NewComponent", ".cs", "A game component written in C# or C++."},
     {Icon::Activity, "Curve", "Curve", ".dvxcurve", "A curve for tweens and animation."},
     {Icon::Clapperboard, "Sprite Frames", "Sprite Frames", ".dvxframes", "Named animations made from sprites."},
     {Icon::Grid, "Tileset", "Tileset", ".dvxtileset", "Tiles for painting a tilemap."},
     {Icon::Workflow, "Animator", "Animator", ".dvxanimator", "A state machine of animations."},
+    {Icon::Folder, "Folder", "New Folder", "", "An empty folder for organizing assets or scripts."},
 }};
+constexpr std::size_t folderType = fileTypes.size() - 1;
 
 // A component name is a C# or C++ identifier.
 [[nodiscard]] bool isIdentifier(std::string_view name)
@@ -228,6 +230,7 @@ void EditorDialogsUi::start(DialogKind which, ToolsState& state, EditorUiKit& ki
     case DialogKind::NewAsset:
     case DialogKind::NewScript: {
         const bool script = which == DialogKind::NewScript;
+        const bool directory = !script && selectedType == folderType;
         const auto& type = fileTypes[script ? 0 : selectedType];
         size.x = std::round(font * 38.0f);
         titleRow(kit, type.icon, script ? colors.gameCode : colors.accent, std::format("New {}", type.label));
@@ -237,10 +240,16 @@ void EditorDialogsUi::start(DialogKind which, ToolsState& state, EditorUiKit& ki
             language = choice(row("Language"), {"C#", "C++"});
             scene().get<scene::UiDropdown>(language).selected = state.newScriptCSharp ? 0 : 1;
         }
-        scriptName = field(row("Name"), whole(), script ? state.newScriptName : state.newFileName, script ? "Component name" : "File name");
+        scriptName = field(row("Name"), whole(), script ? state.newScriptName : state.newFileName,
+                           script ? "Component name" : directory ? "Folder name" : "File name");
         folders = state.database ? creationFolders(state.database->project(), script ? asset::ContentRoot::Code : asset::ContentRoot::Assets)
                                  : std::vector<std::string>{script ? "res://code" : "res://assets"};
-        folder = choice(row("Folder"), folders);
+        if (directory && state.database)
+        {
+            const auto codeFolders = creationFolders(state.database->project(), asset::ContentRoot::Code);
+            folders.insert(folders.end(), codeFolders.begin(), codeFolders.end());
+        }
+        folder = choice(row(directory ? "Parent Folder" : "Folder"), folders);
         const auto found = std::ranges::find(folders, state.newFileFolder);
         scene().get<scene::UiDropdown>(folder).selected = found == folders.end() ? 0 : static_cast<std::int32_t>(found - folders.begin());
         file = note(nullptr, "", "dim", 2.0f);
@@ -357,10 +366,12 @@ void EditorDialogsUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& 
     if (kind == DialogKind::NewScript || kind == DialogKind::NewAsset)
     {
         const bool script = kind == DialogKind::NewScript;
+        const bool directory = !script && selectedType == folderType;
         name = scene().get<scene::UiText>(scriptName).text;
         csharp = !script || scene().get<scene::UiDropdown>(language).selected != 1;
         const auto index = scene().get<scene::UiDropdown>(folder).selected;
         state.newFileFolder = index >= 0 && static_cast<std::size_t>(index) < folders.size() ? folders[index] : std::string{};
+        const bool inCode = state.newFileFolder == "res://code" || state.newFileFolder.starts_with("res://code/");
         const std::string fileName = name + std::string(script ? (csharp ? ".cs" : ".cpp") : fileTypes[selectedType].extension);
         scene().get<scene::UiText>(file).text = state.newFileFolder + "/" + fileName;
         if (const std::string input = state.newFileFolder + "/" + fileName; input != validatedInput)
@@ -385,14 +396,20 @@ void EditorDialogsUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& 
         {
             error = "A component has this name already.";
         }
+        else if (directory && inCode && (name == "bin" || name == "obj"))
+        {
+            error = "This folder name is reserved for build outputs.";
+        }
         else if (const auto path = state.database->project().newFilePath(state.newFileFolder, fileName,
-                         script ? asset::ContentRoot::Code : asset::ContentRoot::Assets); !path)
+                         script || (directory && inCode) ? asset::ContentRoot::Code : asset::ContentRoot::Assets); !path)
         {
             error = path.error().message;
         }
         valid = error.empty();
         const std::string hint = script ? (state.newScriptTarget.isNil() ? "The script will open in the Text Editor. Scripts stay inside res://code."
-            : "The component will be added to the selected entity after compilation.") : "The asset will appear in FileSystem once created.";
+            : "The component will be added to the selected entity after compilation.")
+            : directory ? "The empty folder will appear in FileSystem once created."
+                        : "The asset will appear in FileSystem once created.";
         scene().get<scene::UiText>(status).text = !error.empty() ? error : !writeError.empty() ? writeError : hint;
         scene().get<UiRect>(status).style = valid && writeError.empty() ? "dim" : "warning";
         enable(confirm, valid);
@@ -440,6 +457,7 @@ void EditorDialogsUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& 
                 case 1: return createCurveFile(state, state.newFileFolder, name);
                 case 2: return createSpriteFramesFile(state, state.newFileFolder, {}, name);
                 case 3: return createTilesetFile(state, state.newFileFolder, {}, name);
+                case folderType: return createContentFolder(state, state.newFileFolder, name);
                 default: return createAnimatorFile(state, state.newFileFolder, name);
                 }
             }();
