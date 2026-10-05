@@ -1,6 +1,7 @@
 # Builds the engine, the editor, the player and the tests, then runs every test that needs no GPU,
 # in Debug and in Release, on Windows and on Linux, on each push to main and on each pull request.
-# The machines of GitHub have no GPU: the tests tagged [gpu] run on developers' machines only.
+# The machines of GitHub have no GPU: the tests tagged [gpu] run on developers' machines only. The
+# Release builds are installed and kept as downloads: devex-windows-x64 and devex-linux-x64.
 name: CI
 
 on:
@@ -107,6 +108,20 @@ jobs:
       - name: Test
         id: test
         run: cmd /c "ctest --test-dir out/build/${{ matrix.preset }} --label-exclude gpu --output-on-failure --no-tests=error --timeout 600 2>&1" | Tee-Object -FilePath "$env:RUNNER_TEMP/test.log"
+
+      # The engine of this push, installed as a folder that works on its own (cmake --install): the
+      # summary of the run offers it to download, for 30 days.
+      - name: Pack the engine
+        if: matrix.preset == 'x64-release'
+        run: cmake --install out/build/${{ matrix.preset }} --prefix "$env:RUNNER_TEMP/devex-windows-x64"
+
+      - name: Keep the engine
+        if: matrix.preset == 'x64-release'
+        uses: actions/upload-artifact@v4
+        with:
+          name: devex-windows-x64
+          path: ${{ runner.temp }}/devex-windows-x64
+          retention-days: 30
 
       # Reading the logs of a run takes rights on the repository: what failed is also given as
       # annotations, which the summary of the run shows to everyone.
@@ -234,6 +249,21 @@ jobs:
       - name: Test
         id: test
         run: ctest --test-dir out/build/${{ matrix.preset }} --label-exclude gpu --output-on-failure --no-tests=error --timeout 600 2>&1 | tee "$RUNNER_TEMP/test.log"
+
+      # The same engine for Linux, packed in a tar.gz, which keeps the programs executable.
+      - name: Pack the engine
+        if: matrix.preset == 'linux-release'
+        run: |
+          cmake --install out/build/${{ matrix.preset }} --prefix "$RUNNER_TEMP/devex-linux-x64"
+          tar -czf "$RUNNER_TEMP/devex-linux-x64.tar.gz" -C "$RUNNER_TEMP" devex-linux-x64
+
+      - name: Keep the engine
+        if: matrix.preset == 'linux-release'
+        uses: actions/upload-artifact@v4
+        with:
+          name: devex-linux-x64
+          path: ${{ runner.temp }}/devex-linux-x64.tar.gz
+          retention-days: 30
 
       # The same annotations as on Windows, for those who cannot read the logs.
       - name: Show what failed

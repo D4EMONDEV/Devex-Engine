@@ -15,6 +15,7 @@
 #include <system_error>
 #include <thread>
 #include <utility>
+#include <vector>
 
 namespace devex::runtime::detail {
 namespace {
@@ -127,6 +128,46 @@ DEVEX_GAME_MODULE(game)
 {
     return text.find(part) != std::string_view::npos;
 }
+
+#ifndef _WIN32
+// The compiler the engine was built with, as the package names it: set(DEVEX_CXX_COMPILER "g++-14").
+[[nodiscard]] std::string engineCompiler(const std::filesystem::path& configDirectory)
+{
+    const core::Result<std::string> config = core::readTextFile(configDirectory / "DevexConfig.cmake");
+    constexpr std::string_view marker = "set(DEVEX_CXX_COMPILER \"";
+    const std::size_t start = config ? config->find(marker) : std::string::npos;
+    const std::size_t end = start == std::string::npos ? start : config->find('"', start + marker.size());
+    return end == std::string::npos ? std::string{} : config->substr(start + marker.size(), end - start - marker.size());
+}
+
+// Whether a program of that name is in one of the folders of PATH.
+[[nodiscard]] bool onPath(std::string_view program)
+{
+    const std::string path = platform::environmentVariable("PATH");
+    std::error_code error;
+    for (std::size_t start = 0; start <= path.size();)
+    {
+        const std::size_t end = std::min(path.find(':', start), path.size());
+        if (end > start && std::filesystem::is_regular_file(std::filesystem::path(path.substr(start, end - start)) / program, error))
+        {
+            return true;
+        }
+        start = end + 1;
+    }
+    return false;
+}
+
+// A text the shell reads as one word, whatever it holds.
+[[nodiscard]] std::string shellWord(std::string_view text)
+{
+    std::string word = "'";
+    for (const char character : text)
+    {
+        word += character == '\'' ? std::string("'\\''") : std::string(1, character);
+    }
+    return word + "'";
+}
+#endif
 
 } // namespace
 
@@ -357,7 +398,6 @@ void GameCodeBuilder::startBuild()
     m_sources = snapshotSources(m_project);
     m_changedAt.reset();
     useEnglishDiagnostics();
-#ifdef _WIN32
     m_engineStamp = engineStamp(m_devexConfigDirectory);
     const auto previous = core::readTextFile(m_buildDirectory / "devex-engine.txt");
     if (m_freshBuildRequested || (previous && *previous != m_engineStamp))
@@ -371,6 +411,7 @@ void GameCodeBuilder::startBuild()
     std::error_code error;
     const bool configure = !std::filesystem::exists(build / "CMakeCache.txt", error) || !previous ||
                            *previous != m_engineStamp;
+#ifdef _WIN32
     const std::string script = std::format(R"(@echo off
 setlocal
 if defined VCToolsInstallDir goto build
@@ -394,6 +435,29 @@ exit /b 1
                                            core::toUtf8(build), core::toUtf8(m_project.codeDirectory()),
                                            m_configuration, engine, configure ? "configure" : "build");
     const std::filesystem::path scriptPath = build / "devex-build.cmd";
+    const std::vector<std::string> arguments{"cmd.exe", "/d", "/c", core::toUtf8(scriptPath)};
+#else
+    // The compiler of the engine when the machine has it: game modules share its standard library.
+    const std::string compiler = engineCompiler(m_devexConfigDirectory);
+    const std::string compilerOption = !compiler.empty() && onPath(compiler) ? shellWord("-DCMAKE_CXX_COMPILER=" + compiler) : std::string{};
+    const std::string script = std::format(R"(#!/bin/sh
+for tool in cmake ninja; do
+    if ! command -v "$tool" >/dev/null 2>&1; then
+        echo "error: building game code needs CMake, Ninja and a C++ compiler; $tool is missing"
+        exit 1
+    fi
+done
+if [ "{4}" = configure ]; then
+    cmake -S {1} -B {0} -G Ninja -DCMAKE_BUILD_TYPE={2} {3} {5} || exit 1
+fi
+exec cmake --build {0}
+)",
+                                           shellWord(core::toUtf8(build)), shellWord(core::toUtf8(m_project.codeDirectory())),
+                                           shellWord(m_configuration), shellWord("-DDevex_DIR=" + engine),
+                                           configure ? "configure" : "build", compilerOption);
+    const std::filesystem::path scriptPath = build / "devex-build.sh";
+    const std::vector<std::string> arguments{"/bin/sh", core::toUtf8(scriptPath)};
+#endif
     if (core::Result<void> written = core::writeTextFile(scriptPath, script); !written)
     {
         m_state = State::Failed;
@@ -401,12 +465,7 @@ exit /b 1
         DEVEX_LOG_ERROR("Cannot build the game code: {}", written.error());
         return;
     }
-    const std::array<std::string, 4> arguments{"cmd.exe", "/d", "/c", core::toUtf8(scriptPath)};
     core::Result<platform::Process> process = platform::Process::start(arguments, m_project.root);
-#else
-    core::Result<platform::Process> process =
-        core::makeError(core::ErrorCode::Unsupported, "building game code is only supported on Windows for now");
-#endif
     if (!process)
     {
         m_state = State::Failed;
@@ -454,6 +513,19 @@ std::optional<bool> GameCodeBuilder::severityOf(const std::string& line)
             return true;
         }
         if (std::ranges::find(warnings, word) != warnings.end())
+        {
+            return false;
+        }
+    }
+    // gcc and clang: "file:12:5: error: message", "fatal error:" when a header is missing.
+    for (std::size_t colon = line.find(": "); colon != std::string::npos; colon = line.find(": ", colon + 1))
+    {
+        const std::string_view rest = std::string_view(line).substr(colon + 2);
+        if (rest.starts_with("error: ") || rest.starts_with("fatal error: "))
+        {
+            return true;
+        }
+        if (rest.starts_with("warning: "))
         {
             return false;
         }

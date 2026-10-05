@@ -52,7 +52,6 @@ struct TemporaryGameProject
         std::filesystem::last_write_time(library, sourceTime + std::chrono::hours(1));
     }
 
-#ifdef _WIN32
     void createBuildFixture() const
     {
         // Exercise the real process/configure/build path without compiling C++ or loading a DLL.
@@ -79,7 +78,11 @@ elseif(mode STREQUAL "symbols-once" OR mode STREQUAL "symbols-always")
     endif()
 endif()
 file(MAKE_DIRECTORY "${BUILD_DIRECTORY}/bin")
-file(WRITE "${BUILD_DIRECTORY}/bin/Game.dll" "updated game module")
+if(CMAKE_HOST_WIN32)
+    file(WRITE "${BUILD_DIRECTORY}/bin/Game.dll" "updated game module")
+else()
+    file(WRITE "${BUILD_DIRECTORY}/bin/libGame.so" "updated game module")
+endif()
 )"));
         std::filesystem::last_write_time(project.codeDirectory() / "Build.cmake",
                                         std::filesystem::file_time_type::clock::now() - std::chrono::hours(2));
@@ -90,10 +93,8 @@ file(WRITE "${BUILD_DIRECTORY}/bin/Game.dll" "updated game module")
     {
         REQUIRE(devex::core::writeTextFile(project.codeDirectory() / "mode.txt", mode));
     }
-#endif
 };
 
-#ifdef _WIN32
 [[nodiscard]] bool finishBuild(GameCodeBuilder& builder)
 {
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
@@ -112,7 +113,6 @@ file(WRITE "${BUILD_DIRECTORY}/bin/Game.dll" "updated game module")
     FAIL_CHECK("the fixture game build did not finish within 30 seconds");
     return false;
 }
-#endif
 
 } // namespace
 
@@ -183,7 +183,6 @@ TEST_CASE("An obsolete game module needs updating even when its sources have not
     CHECK(std::filesystem::last_write_time(source) == sourceTime);
 }
 
-#ifdef _WIN32
 TEST_CASE("An engine update publishes its new game module only after a successful build", "[runtime][game][build]")
 {
     const TemporaryGameProject fixture;
@@ -263,7 +262,11 @@ TEST_CASE("Changed engine packages and build configurations make game builds pen
     }
     SECTION("The engine binary was rebuilt")
     {
+#ifdef _WIN32
         REQUIRE(devex::core::writeTextFile(config / ".." / "bin" / "devex-engine.dll", "rebuilt engine"));
+#else
+        REQUIRE(devex::core::writeTextFile(config / ".." / "lib" / "libdevex-engine.so", "rebuilt engine"));
+#endif
     }
     SECTION("Another build configuration has no matching module")
     {
@@ -345,4 +348,3 @@ TEST_CASE("Debug symbol write failures get only one retry in a fresh build folde
     CHECK(attempts.substr(0, firstEnd) != attempts.substr(firstEnd + 1, secondEnd - firstEnd - 1));
     CHECK(GameCodeBuilder::buildStatus(fixture.project, fixture.engineConfig, "Debug").needsUpdate == !succeeds);
 }
-#endif

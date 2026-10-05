@@ -664,7 +664,9 @@ les assets s'écrivent au fil de leur lecture.
 - **Builds du moteur** : un jeu exporté embarque les binaires d'un build du moteur ; son code est
   compilé contre le même (`DevexConfig.cmake` donne sa configuration). L'éditeur liste les builds
   trouvés à côté du sien (`out/build/x64-debug`, `x64-release`...) ; l'export se fait en Release par
-  défaut, dans un dossier de build à part du code (`.devex/code/<configuration>`).
+  défaut, dans un dossier de build à part du code (`.devex/code/<configuration>`). Un moteur
+  installé (voir *Moteur installé*) en est un aussi : l'éditeur qu'il contient compile le code des
+  jeux et les exporte avec ses propres binaires.
 - **Réglages du jeu** : `[window]` du `.dvxproj` (taille, plein écran, vsync, limite d'images,
   icône) ouvre la fenêtre du lecteur et du jeu exporté ; `[export]`, `[export_scene]` et
   `[export_folder]` gardent le dossier de sortie, la configuration, les scènes et les dossiers
@@ -2915,16 +2917,22 @@ les assets s'écrivent au fil de leur lecture.
   dans l'éditeur). Chaque pas `FixedUpdate` est suivi d'un pas de physique.
 - **Projet** : le dossier `code/` d'un projet est un projet CMake (`find_package(Devex CONFIG)`,
   `devex_add_game_module(SOURCES …)`) ; *Code > Create game code* en crée un avec un composant
-  et un système d'exemple. `Devex_DIR` désigne `cmake/` du dossier de build du moteur, où
-  `DevexConfig.cmake` décrit `Devex::Engine` (bibliothèque, en-têtes, GLM, définitions) et
-  impose la configuration du moteur. Le module est produit dans
+  et un système d'exemple. `Devex_DIR` désigne `cmake/` du dossier de build du moteur ou d'un moteur
+  installé, où `DevexConfig.cmake` décrit `Devex::Engine` (bibliothèque, en-têtes, GLM, définitions)
+  et impose la configuration du moteur ; `devex_add_game_module` vient de `DevexGameModule.cmake`,
+  partagé par les deux. Le module est produit dans
   `.devex/code/<configuration>/builds/<UUID>/bin/Game.dll` ; `active-build.txt` désigne la
   dernière compilation réussie. Les anciens caches directement dans `<configuration>/bin`
   restent détectés et sont reconstruits à l'ouverture.
 - **Compilation par l'éditeur** : l'éditeur surveille `code/` (toutes les 500 ms) et, 300 ms
   après la dernière modification, compile en arrière-plan : un script lance `vcvars64` trouvé
   par vswhere (sauf si l'environnement a déjà le compilateur), configure le dossier de build si
-  besoin, puis `cmake --build`. Erreurs et avertissements du compilateur vont dans la console ;
+  besoin, puis `cmake --build`. Sous Linux (jalon 59), un script `sh` fait de même avec CMake et
+  Ninja, et donne à CMake le compilateur du moteur (`DEVEX_CXX_COMPILER` du paquet, `g++-14`) quand
+  la machine l'a ; les diagnostics de GCC (`fichier:ligne:colonne: error:`) sont lus comme ceux de
+  MSVC. Les instantanés des sources partent du plus ancien instant possible : l'origine de
+  l'horloge des fichiers de libstdc++ est en 2174, après tout fichier, et un instantané parti
+  d'elle faisait croire les sources toujours plus récentes que le module, et jamais modifiées. Erreurs et avertissements du compilateur vont dans la console ;
   *Code > Build game code* (Ctrl+B) relance une compilation, et la barre de menus indique
   l'état (compilation, prêt, échec avec la première erreur en infobulle).
 - **Mise à jour du moteur** : le cache mémorise l'API, le paquet CMake du moteur et sa bibliothèque.
@@ -3179,6 +3187,19 @@ les assets s'écrivent au fil de leur lecture.
   bibliothèques tournent sur les deux systèmes (`/bin/sh`, `libc.so.6`). Sans écran, les tests
   qui ne sont pas `[gpu]` passent : la boucle principale tourne sur le pilote vidéo factice de
   SDL. Pour reproduire la CI chez soi sous Windows : Ubuntu 24.04 dans WSL.
+- **Moteur installé** (jalon 59) : `cmake --install <build> --prefix <dossier>` (`cmake/DevexInstall.cmake`)
+  écrit un moteur qui marche seul, disposé comme un build : `bin/` (éditeur, lecteur,
+  `devex-bindgen`, bibliothèques, `resources/`, `shaders/`, `managed/`, et en Release Visual C++ le
+  runtime C++ à côté des programmes et dans `redist/` pour les exports), `lib/` (la bibliothèque du
+  moteur sous Linux, la bibliothèque d'import sous Windows), `include/` (en-têtes du moteur et de
+  GLM) et `cmake/` (`DevexConfig.cmake` dont les chemins partent de sa propre place,
+  `DevexGameModule.cmake`, `DevexShowIncludes.cmake`). Sous Windows, les DLL de vcpkg sont celles
+  dont les programmes dépendent vraiment (`RUNTIME_DEPENDENCY_SET`), pas tout `bin/`. Sous Linux,
+  les programmes trouvent la bibliothèque du moteur par `$ORIGIN/../lib`, dans un build comme une
+  fois installés (`CMAKE_BUILD_RPATH_USE_ORIGIN`). Rien n'y renvoie aux sources ni au build d'origine.
+- **Téléchargements** : la CI installe ses builds Release et les garde 30 jours en artefacts,
+  `devex-windows-x64` (le dossier) et `devex-linux-x64` (un `.tar.gz`, qui garde les droits
+  d'exécution), à prendre dans le résumé d'une exécution.
 - **Exigences** : les avertissements sont des erreurs (`DEVEX_WARNINGS_AS_ERRORS=ON`), et tous les
   tests passent, sauf ceux marqués `[gpu]` : les machines de GitHub n'ont pas de GPU. Les tags
   Catch2 deviennent des labels CTest (`ADD_TAGS_AS_LABELS`), et la CI lance
@@ -3547,6 +3568,10 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
 58. ✅ **Renommer et déplacer dans FileSystem** — F2 en place, glisser sur un dossier, *Move To...*
     avec une liste des dossiers en arbre ; UUID et imports gardés, chemins du projet, onglets et
     textes ouverts qui suivent.
+59. ✅ **Moteur installé et téléchargeable** — `cmake --install` écrit un moteur complet et
+    déplaçable (programmes, bibliothèques, en-têtes, paquet CMake relogeable) qui compile le code
+    C++ des jeux sans les sources du moteur ; la CI le publie pour Windows et Linux ; compilation du
+    code C++ des jeux par l'éditeur sous Linux.
 
 Ensuite, sans ordre figé : à choisir dans les pistes ci-dessous.
 

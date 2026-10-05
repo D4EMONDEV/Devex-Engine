@@ -106,7 +106,9 @@ private:
 
     struct DEVEX_API Snapshot
     {
-        std::filesystem::file_time_type newest{};
+        // From the earliest time: the epoch of the clock of files is in 2174 with libstdc++, after
+        // every file.
+        std::filesystem::file_time_type newest = std::filesystem::file_time_type::min();
         std::size_t files = 0;
 
         bool operator==(const Snapshot&) const = default;

@@ -975,9 +975,23 @@ target_compile_definitions(devex_engine PRIVATE DEVEX_BUILDING_ENGINE)
 devex_set_warnings(devex_engine)
 
 # The package that game modules find: cmake/DevexConfig.cmake in the build folder, next to bin/.
+get_filename_component(DEVEX_CXX_COMPILER_NAME "${CMAKE_CXX_COMPILER}" NAME)
 configure_file("${PROJECT_SOURCE_DIR}/cmake/DevexGameConfig.cmake.in"
     "${CMAKE_BINARY_DIR}/cmake/DevexConfig.cmake.in" @ONLY)
 file(GENERATE
     OUTPUT "${CMAKE_BINARY_DIR}/cmake/DevexConfig.cmake"
     INPUT "${CMAKE_BINARY_DIR}/cmake/DevexConfig.cmake.in"
+)
+# The same package in an installed engine, whose paths follow the place of the file (DevexInstall).
+if(WIN32)
+    set(DEVEX_PACKAGE_LIBRARY "bin/$<TARGET_FILE_NAME:devex_engine>")
+else()
+    set(DEVEX_PACKAGE_LIBRARY "lib/$<TARGET_FILE_NAME:devex_engine>")
+endif()
+set(DEVEX_PACKAGE_IMPORT_LIBRARY "lib/$<TARGET_LINKER_FILE_NAME:devex_engine>")
+configure_file("${PROJECT_SOURCE_DIR}/cmake/DevexPackageConfig.cmake.in"
+    "${CMAKE_BINARY_DIR}/package/DevexConfig.cmake.in" @ONLY)
+file(GENERATE
+    OUTPUT "${CMAKE_BINARY_DIR}/package/DevexConfig.cmake"
+    INPUT "${CMAKE_BINARY_DIR}/package/DevexConfig.cmake.in"
 )

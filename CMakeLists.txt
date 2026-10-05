@@ -49,6 +49,10 @@ if(MSVC)
 endif()
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib")
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib")
+# On Linux, the programs find the engine library in lib/ next to bin/ wherever the folder goes, in a
+# build as in an installed engine.
+set(CMAKE_BUILD_RPATH_USE_ORIGIN ON)
+set(CMAKE_INSTALL_RPATH "$ORIGIN/../lib")
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
 include(DevexShowIncludes)
@@ -76,6 +80,8 @@ if(DEVEX_BUILD_PLAYER)
         add_dependencies(devex_player devex_managed)
     endif()
 endif()
+
+include(DevexInstall)
 
 if(DEVEX_BUILD_TESTS)
     include(CTest)

@@ -1,0 +1,30 @@
+# The Devex engine for game modules, in an installed engine (cmake --install): find_package(Devex
+# CONFIG) with Devex_DIR set to this folder, as the editor does when it builds the code/ folder of a
+# project. The paths are taken from where this file is, so that the installed engine can be moved.
+# Game modules share the configuration of the engine (@CMAKE_BUILD_TYPE@): same compiler, same runtime.
+cmake_minimum_required(VERSION 3.25)
+
+set(DEVEX_BUILD_TYPE "@CMAKE_BUILD_TYPE@")
+# The compiler the engine was built with, which the editor gives CMake for game modules on Linux.
+set(DEVEX_CXX_COMPILER "@DEVEX_CXX_COMPILER_NAME@")
+if(CMAKE_BUILD_TYPE AND NOT CMAKE_BUILD_TYPE STREQUAL DEVEX_BUILD_TYPE)
+    message(FATAL_ERROR "Game modules are built in ${DEVEX_BUILD_TYPE}, like the engine, not in ${CMAKE_BUILD_TYPE}.")
+endif()
+
+get_filename_component(_devex_root "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
+if(NOT TARGET Devex::Engine)
+    add_library(Devex::Engine SHARED IMPORTED)
+    set_target_properties(Devex::Engine PROPERTIES
+        IMPORTED_LOCATION "${_devex_root}/@DEVEX_PACKAGE_LIBRARY@"
+        INTERFACE_INCLUDE_DIRECTORIES "${_devex_root}/include"
+        INTERFACE_COMPILE_DEFINITIONS "GLM_FORCE_DEPTH_ZERO_TO_ONE;$<$<NOT:$<CONFIG:Release,MinSizeRel>>:DEVEX_ENABLE_ASSERTS>"
+        INTERFACE_COMPILE_FEATURES "cxx_std_23"
+    )
+    if(WIN32)
+        set_target_properties(Devex::Engine PROPERTIES IMPORTED_IMPLIB "${_devex_root}/@DEVEX_PACKAGE_IMPORT_LIBRARY@")
+    endif()
+endif()
+
+# Keeps header dependencies working with a localized MSVC.
+include("${CMAKE_CURRENT_LIST_DIR}/DevexShowIncludes.cmake")
+include("${CMAKE_CURRENT_LIST_DIR}/DevexGameModule.cmake")

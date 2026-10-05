@@ -242,6 +242,21 @@ Chaque push sur `main` est construit et testé par GitHub Actions (Windows et Li
 Release, sans les tests qui demandent un GPU) : voir [.github/workflows/ci.yml](.github/workflows/ci.yml)
 et l'onglet *Actions* du dépôt. Les tests marqués `[gpu]` se lancent localement avec `ctest`.
 
+## Télécharger le moteur
+
+Chaque exécution de la CI garde 30 jours le moteur en Release, prêt à lancer : dans l'onglet
+*Actions*, ouvrir une exécution réussie et prendre `devex-windows-x64` ou `devex-linux-x64` (un
+`.tar.gz` à extraire). Le dossier contient l'éditeur et le lecteur (`bin/`), les en-têtes et le
+paquet CMake qui compilent le code C++ des jeux sans les sources du moteur. Le même dossier se
+produit depuis un build avec `cmake --install out/build/x64-release --prefix <dossier>`.
+
+Il faut un pilote graphique avec Vulkan 1.4 ; le SDK .NET 10 pour le code C# des jeux ; pour leur
+code C++, Visual Studio (outils C++), CMake et Ninja sous Windows, `cmake`, `ninja-build` et
+`g++-14` sous Linux. Sous Windows, le runtime C++ est fourni à côté des programmes. Sous Linux,
+il faut Ubuntu 24.04 ou plus récent (glibc 2.38) et `libvulkan1` : lancer `bin/devex-editor`.
+L'éditeur et le lecteur n'ont pas encore été essayés sur une vraie machine Linux, faute de GPU
+Vulkan dans WSL.
+
 Les programmes sont produits dans `out/build/x64-debug/bin` ; dans l'arène du bac à sable, un clic
 capture la souris, ZQSD (WASD) ou le stick gauche marchent, le stick droit regarde, Maj court,
 Espace ou le bouton du bas saute (ce sont les actions du projet), un clic lance une balle, C passe à
