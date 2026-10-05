@@ -37,16 +37,11 @@ namespace devex::render::vulkan {
 // Each frame is recorded as render graph passes: the sun's shadow cascades, the
 // high dynamic range scene (forward+ lighting, then the sky), the luminance measure for automatic
 // exposure, picking and the selection mask when the tools ask for them, tonemapping to the
-// swapchain or to the viewport image of the tools, the tools' overlay, and ImGui.
+// swapchain or to the viewport image of the tools, the tools' overlay, and the images of the tools
+// composed over the window.
 class VulkanRenderer
 {
 public:
-    // Stands for the viewport image in ImGui draw data. It is replaced while drawing by the ImGui
-    // descriptor set of the frame's image, and cannot collide with a real set, which is a pointer.
-    static constexpr std::uint64_t viewportTextureId = 0xFFFF'FFFF'DE7E'0001ull;
-    // The ImGui identifiers of the interface surfaces follow this one, by their id.
-    static constexpr std::uint64_t uiSurfaceTextureBase = 0xFFFF'FFFF'DE7F'0000ull;
-
     [[nodiscard]] static core::Result<std::unique_ptr<VulkanRenderer>> create(
         const platform::Platform& platform, platform::Window& window, const RendererConfig& config);
 
@@ -79,12 +74,6 @@ public:
 
     [[nodiscard]] RendererStats stats() const noexcept;
 
-    [[nodiscard]] core::Result<void> initializeImGui();
-    void shutdownImGui() noexcept;
-    void beginImGuiFrame();
-    void queueImGuiDrawData() noexcept;
-    [[nodiscard]] bool imGuiNeedsLinearColors() const noexcept;
-
 private:
     // Frames recorded before the oldest one must complete, which bounds the latency added by
     // the CPU running ahead of the GPU.
@@ -100,6 +89,9 @@ private:
     // Bindless slots of the textures that stand in for missing ones.
     static constexpr std::uint32_t whiteTextureSlot = 0;
     static constexpr std::uint32_t flatNormalTextureSlot = 1;
+    // The last slots of the texture array show the images the tools compose, a block for each frame
+    // context: the scene image first, then the interface surfaces in the order of the frame.
+    static constexpr std::uint32_t toolImageSlots = 32;
     static constexpr std::uint32_t shadowMapSize = 2048;
     static constexpr std::uint32_t luminanceGridWidth = 64;
     static constexpr std::uint32_t luminanceGridHeight = 36;
@@ -222,11 +214,6 @@ private:
         VkFormat captureFormat = VK_FORMAT_UNDEFINED;
         // The copies the frame recorded, whose staging buffers wait for the frame to complete.
         std::vector<PendingUpload> uploads;
-        // ImGui's descriptor set for the viewport image of this frame context.
-        VkDescriptorSet imguiViewport = VK_NULL_HANDLE;
-        VkImageView imguiViewportView = VK_NULL_HANDLE;
-        // And those of the interface surfaces, by id: the view each was made for, and the set.
-        std::unordered_map<std::uint32_t, std::pair<VkImageView, VkDescriptorSet>> imguiSurfaces;
     };
 
     struct SubmeshRange
@@ -308,7 +295,8 @@ private:
     [[nodiscard]] core::Result<void> uploadLights(FrameContext& frame, float aspectRatio);
     void writeSceneData(FrameContext& frame, const std::optional<ShadowCascades>& cascades) const noexcept;
     [[nodiscard]] core::Result<OverlayRanges> uploadOverlay(FrameContext& frame);
-    [[nodiscard]] core::Result<void> uploadUi(FrameContext& frame, std::vector<std::uint32_t>& surfaceIndexBases);
+    [[nodiscard]] core::Result<void> uploadUi(FrameContext& frame, bool tools, std::vector<std::uint32_t>& surfaceIndexBases,
+                                            std::uint32_t& toolsIndexBase);
     [[nodiscard]] core::Result<void> uploadPreviousBones(FrameContext& frame) const;
     // Gives the local lights that cast shadows a tile of the atlas, the most important first, and
     // builds the view each tile is drawn through. Lights that do not fit keep their light alone.
@@ -325,8 +313,7 @@ private:
     void readCapture(FrameContext& frame);
     // Returns the number of draw calls recorded.
     [[nodiscard]] core::Result<std::uint32_t> recordFrame(FrameContext& frame, std::uint32_t frameSlot,
-                                                          std::uint32_t imageIndex, bool drawImGui,
-                                                          bool drawShadows);
+                                                          std::uint32_t imageIndex, bool drawShadows);
     // Whether the instance blends with what is behind it, and so belongs to the transparent pass.
     [[nodiscard]] bool isBlended(const MeshInstance& instance) const noexcept;
     // The instances a pass draws, in the order it draws them: those its view can see.
@@ -365,10 +352,6 @@ private:
     // Copies the bone matrices of the frame's skinned instances into its buffer.
     [[nodiscard]] core::Result<void> uploadBones(FrameContext& frame) const;
     [[nodiscard]] core::Result<void> ensureHostBuffer(std::optional<Buffer>& buffer, VkDeviceSize bytes) const;
-    // Replaces the viewport placeholder of the ImGui draw data with the frame's viewport image.
-    void bindViewportTexture(FrameContext& frame, VkImageView viewport);
-    // Gives ImGui the images of the interface surfaces, by the ids its draws name them with.
-    void bindSurfaceTextures(FrameContext& frame, std::span<const std::pair<std::uint32_t, VkImageView>> surfaces);
     void releaseRetiredResources() noexcept;
     void destroyPresentSemaphores() noexcept;
 
@@ -512,6 +495,8 @@ private:
     // Bindless slots released by destroyed textures, reused before new ones.
     std::vector<std::uint32_t> m_freeTextureSlots;
     std::uint32_t m_nextTextureSlot = flatNormalTextureSlot + 1;
+    // Where the slots of the tools' images start; the textures take those before.
+    std::uint32_t m_toolImageSlotBase = 0;
     core::SlotMap<MaterialDesc, MaterialTag> m_materials;
     MaterialHandle m_defaultMaterial;
     // GPU form of every material slot, rebuilt when a material or a texture changes.
@@ -552,10 +537,6 @@ private:
     std::vector<CapturedImage> m_captures;
     std::uint32_t m_lastDrawCalls = 0;
     std::uint32_t m_lastLightCount = 0;
-    bool m_imguiInitialized = false;
-    bool m_imguiDrawQueued = false;
-    // ImGui's pipeline keeps a pointer to this format.
-    VkFormat m_imguiColorFormat = VK_FORMAT_UNDEFINED;
 };
 
 } // namespace devex::render::vulkan

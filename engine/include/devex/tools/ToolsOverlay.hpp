@@ -224,18 +224,17 @@ struct DEVEX_API InterfaceFrame
 
 // Docked Dear ImGui panels in a Godot-like theme: scene tree, inspector, file system, output and
 // statistics, over the game or around the editor's viewport. Only one instance may exist at a time,
-// since it owns the ImGui context.
+// since its panels share one theme.
 class DEVEX_API ToolsOverlay
 {
 public:
-    // Creates the ImGui context and connects it to the platform and the renderer, which must
-    // outlive the overlay. Fonts and icons come from resources/ next to the executable. The panel
-    // layout is saved to settingsFile. The editor keeps the theme and the projects of the user in
-    // userSettingsFile, by default in the user's data directory.
+    // Creates the tools over the platform and the renderer, which must outlive the overlay. Fonts and
+    // icons come from resources/ next to the executable. The editor keeps the theme and the
+    // projects of the user in userSettingsFile, by default in the user's data directory, and the
+    // layout of its panels in each project.
     [[nodiscard]] static core::Result<std::unique_ptr<ToolsOverlay>> create(
         platform::Platform& platform, platform::Window& window, render::Renderer& renderer,
-        const std::filesystem::path& settingsFile, ToolsMode mode = ToolsMode::Overlay,
-        const std::filesystem::path& userSettingsFile = {});
+        ToolsMode mode = ToolsMode::Overlay, const std::filesystem::path& userSettingsFile = {});
 
     ~ToolsOverlay();
 

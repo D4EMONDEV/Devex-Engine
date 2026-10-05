@@ -636,7 +636,7 @@ int ApplicationRunner::execute()
         // Devices used by the tools during the previous frame do not drive gameplay.
         if (m_services.tools != nullptr)
         {
-            m_services.platform.setImGuiInputCapture(m_services.tools->capturesKeyboard(),
+            m_services.platform.setToolsInputCapture(m_services.tools->capturesKeyboard(),
                                                      m_services.tools->capturesMouse());
         }
         {
@@ -2796,9 +2796,8 @@ int run(Application& application, const ApplicationConfig& config)
     if ((config.enableTools || config.editor) && renderer)
     {
         const tools::ToolsMode mode = config.editor ? tools::ToolsMode::Editor : tools::ToolsMode::Overlay;
-        core::Result<std::unique_ptr<tools::ToolsOverlay>> overlay = tools::ToolsOverlay::create(
-            *platform, *window, *renderer,
-            platform->baseDirectory() / (config.editor ? "devex-editor.ini" : "devex-tools.ini"), mode);
+        core::Result<std::unique_ptr<tools::ToolsOverlay>> overlay =
+            tools::ToolsOverlay::create(*platform, *window, *renderer, mode);
         if (overlay)
         {
             tools = std::move(*overlay);

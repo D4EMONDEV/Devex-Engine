@@ -11,14 +11,11 @@
 #include <string_view>
 #include <vector>
 
-struct ImFontConfig;
-struct ImFontLoader;
-
 namespace devex::tools::detail {
 
 // The icons of the editor: Lucide SVG icons (third_party/lucide) and the Devex PNG logo.
 // Each icon is a character of Unicode's private use area, in this order, so that it can be written
-// in any ImGui text and follows the size of the font.
+// in any text of the editor and follows the size of the font.
 #define DEVEX_EDITOR_ICONS(ICON)                     \
     ICON(Activity, "activity")                       \
     ICON(Anchor, "anchor")                           \
@@ -148,7 +145,7 @@ inline constexpr char32_t firstIconCodepoint = 0xE000;
     return firstIconCodepoint + static_cast<char32_t>(icon);
 }
 
-// The UTF-8 encoding of an icon's character, to write it in ImGui text.
+// The UTF-8 encoding of an icon's character, to write it in the text of the editor.
 class DEVEX_API IconText
 {
 public:
@@ -213,11 +210,5 @@ private:
     std::array<std::string, static_cast<std::size_t>(Icon::Count)> m_documents;
     SvgImage m_logo;
 };
-
-// The ImGui font loader that draws the icons of a set as glyphs. A font source using it takes the
-// set in FontLoaderData, which must outlive the font atlas.
-[[nodiscard]] DEVEX_API const ImFontLoader& iconFontLoader() noexcept;
-// A font source to merge into a font so that its text can show the icons.
-[[nodiscard]] DEVEX_API ImFontConfig iconFontSource(IconSet& icons);
 
 } // namespace devex::tools::detail

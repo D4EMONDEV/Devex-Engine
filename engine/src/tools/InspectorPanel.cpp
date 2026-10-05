@@ -7,8 +7,6 @@
 #include <devex/core/Profiler.hpp>
 #include <devex/asset/AssetId.hpp>
 
-#include <imgui_internal.h>
-
 #include <algorithm>
 #include <array>
 #include <string>

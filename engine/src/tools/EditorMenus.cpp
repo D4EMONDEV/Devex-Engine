@@ -10,7 +10,6 @@
 #include <devex/core/Path.hpp>
 #include <devex/tools/SceneCommands.hpp>
 
-#include <imgui_internal.h>
 #include <imgui_stdlib.h>
 
 #include <algorithm>

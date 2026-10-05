@@ -9,8 +9,6 @@
 
 #include <devex/core/Profiler.hpp>
 
-#include <imgui_internal.h>
-
 #include <algorithm>
 #include <cmath>
 #include <string>
@@ -488,8 +486,7 @@ void EditorDockUi::update(ToolsState& state, EditorUiKit& kit, core::Duration de
     ui::UiWorld& world = panel.world();
     const bool editor = state.mode == ToolsMode::Editor;
     const DockPlaces& places = state.dockPlaces;
-    const ImGuiIO& io = ImGui::GetIO();
-    const float pixelsPerPoint = io.DisplayFramebufferScale.x > 0.0f ? io.DisplayFramebufferScale.x : 1.0f;
+    const float pixelsPerPoint = editorScreen().pixelsPerPoint;
     const float zoom = UiPanel::zoomFor(font);
     const float unitsPerPoint = pixelsPerPoint / zoom;
     const auto units = [&](ImVec2 point) {
@@ -658,7 +655,8 @@ void drawEditorDock(ToolsState& state)
         return known != nullptr && state.*known->shown;
     };
     const auto placeAll = [&] {
-        state.dockPlaces = placeDock(state.dock, shown, state.workMin, state.workMax, std::round(ImGui::GetStyle().DockingSeparatorSize), std::round(ImGui::GetFrameHeight() + 4.0f));
+        const ThemeMetrics& metrics = themeMetrics();
+        state.dockPlaces = placeDock(state.dock, shown, state.workMin, state.workMax, metrics.dockGap, metrics.tabHeight);
     };
     placeAll();
 
@@ -701,7 +699,7 @@ void renderEditorDock(ToolsState& state, render::RenderWorld& world)
     }
 }
 
-bool beginDockedPanel(ToolsState& state, const char* name)
+bool beginDockedPanel(ToolsState& state, const char* name, bool bare)
 {
     const DockPlaces& places = state.dockPlaces;
     DockRect where;
@@ -732,10 +730,11 @@ bool beginDockedPanel(ToolsState& state, const char* name)
         state.hosts.focus(name);
         state.panelToFocus.clear();
     }
-    // As a window of the editor: the colour and the padding of the style, which a panel may push.
-    const ImGuiStyle& style = ImGui::GetStyle();
+    // On the colour of the panels and inside a margin, or edge to edge on the colour around them.
+    const ThemeColors& colors = themeColors();
     state.hosts.begin(name, where.min, where.max, HostLayer::Panels,
-                      HostOptions{.background = style.Colors[ImGuiCol_WindowBg], .padding = style.WindowPadding.x});
+                      HostOptions{.background = linearColor(bare ? colors.outer : colors.panel),
+                                  .padding = bare ? 0.0f : themeMetrics().panelPadding});
     return true;
 }
 

@@ -7,8 +7,6 @@
 #include <devex/core/Path.hpp>
 #include <devex/core/Profiler.hpp>
 
-#include <imgui_internal.h>
-
 #include <algorithm>
 #include <array>
 #include <charconv>
@@ -504,7 +502,7 @@ void ViewportHeaderUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene&
 
     // As tall as the tabs and the toolbar, whatever the window leaves under it for the view.
     const float zoom = UiPanel::zoomFor(font);
-    const float pixelsPerPoint = ImGui::GetIO().DisplayFramebufferScale.x > 0.0f ? ImGui::GetIO().DisplayFramebufferScale.x : 1.0f;
+    const float pixelsPerPoint = editorScreen().pixelsPerPoint;
     panel.update(kit, delta, zoom, (std::ceil((tabsHeight() + barHeight()) * zoom) + 0.01f) / pixelsPerPoint);
 
     if (editing)

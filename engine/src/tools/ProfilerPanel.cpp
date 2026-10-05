@@ -6,8 +6,6 @@
 
 #include <devex/core/Profiler.hpp>
 
-#include <imgui_internal.h>
-
 #include <algorithm>
 #include <array>
 #include <cmath>

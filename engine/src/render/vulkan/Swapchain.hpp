@@ -41,8 +41,8 @@ public:
     [[nodiscard]] VkImage image(std::uint32_t index) const noexcept;
     [[nodiscard]] VkImageView imageView(std::uint32_t index) const noexcept;
     // The format and views the tools draw through: the UNORM counterpart of an sRGB format when the
-    // device can view swapchain images in both, so that ImGui blends in display space as it
-    // expects. Otherwise the swapchain's own format and views.
+    // device can view swapchain images in both, so that the tools blend in display space, where
+    // their colours are chosen. Otherwise the swapchain's own format and views.
     [[nodiscard]] VkFormat toolsFormat() const noexcept;
     [[nodiscard]] VkImageView toolsImageView(std::uint32_t index) const noexcept;
 

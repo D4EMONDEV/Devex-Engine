@@ -16,8 +16,6 @@
 #include <devex/scene/UiComponents.hpp>
 #include <devex/tools/SceneCommands.hpp>
 
-#include <imgui_internal.h>
-
 #include <algorithm>
 #include <array>
 #include <cstring>

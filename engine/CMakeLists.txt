@@ -129,7 +129,6 @@ target_link_libraries(devex_platform
         Devex::Core
         Devex::Math
     PRIVATE
-        imgui::imgui
         SDL3::SDL3
         $<$<PLATFORM_ID:Windows>:dwmapi>
         $<$<PLATFORM_ID:Windows>:dbghelp>
@@ -323,24 +322,6 @@ set_target_properties(devex_asset_import PROPERTIES
 )
 devex_set_warnings(devex_asset_import)
 
-# Dear ImGui's Vulkan backend, vendored from the ImGui version pinned by vcpkg and compiled with
-# volk: the vcpkg build links vulkan-1 directly, whose symbols clash with volk's function pointers.
-add_library(devex_imgui_vulkan STATIC)
-target_sources(devex_imgui_vulkan
-    PRIVATE
-        "${PROJECT_SOURCE_DIR}/third_party/imgui/backends/imgui_impl_vulkan.cpp"
-)
-target_include_directories(devex_imgui_vulkan
-    SYSTEM PUBLIC "${PROJECT_SOURCE_DIR}/third_party/imgui/backends"
-)
-target_compile_definitions(devex_imgui_vulkan PUBLIC IMGUI_IMPL_VULKAN_USE_VOLK)
-target_link_libraries(devex_imgui_vulkan
-    PUBLIC
-        imgui::imgui
-        volk::volk_headers
-)
-set_target_properties(devex_imgui_vulkan PROPERTIES FOLDER "ThirdParty")
-
 # Render: Renderer facade over Vulkan, whose types stay inside src/render/vulkan.
 add_library(devex_render OBJECT)
 add_library(Devex::Render ALIAS devex_render)
@@ -397,7 +378,6 @@ target_link_libraries(devex_render
         Devex::Math
         Devex::Platform
     PRIVATE
-        devex_imgui_vulkan
         volk::volk
         volk::volk_headers
         GPUOpen::VulkanMemoryAllocator
@@ -760,7 +740,8 @@ add_custom_command(
 add_custom_target(devex_resources DEPENDS "${DEVEX_RESOURCES_STAMP}")
 set_target_properties(devex_resources PROPERTIES FOLDER "Engine")
 
-# Tools: docked ImGui panels over the game, with undoable scene editing.
+# Tools: docked panels made with the interface of the engine, over the game or around the editor's
+# view, with undoable scene editing.
 add_library(devex_tools OBJECT)
 add_library(Devex::Tools ALIAS devex_tools)
 

@@ -124,30 +124,36 @@ struct DEVEX_API ThemeColors
 
 [[nodiscard]] DEVEX_API ThemeColors deriveThemeColors(const ThemeSettings& settings);
 
-// Applies the settings to ImGui's style for a display scale. Colors are converted to linear values
-// when ImGui draws into sRGB targets. Must run between frames, since it changes font sizes.
-DEVEX_API void applyTheme(const ThemeSettings& settings, float displayScale, bool linearColors);
-
-// The colors of the theme last applied.
-[[nodiscard]] DEVEX_API const ThemeColors& themeColors() noexcept;
-// A color given in sRGB, as ImGui style colors are, converted for the renderer when needed.
-[[nodiscard]] DEVEX_API ImVec4 uiColor(ImVec4 srgb) noexcept;
-
-// The fonts of the editor, all of them able to draw the icons.
-struct DEVEX_API EditorFonts
+// The sizes of the frame of the editor in points, at the interface scale, on the spacing of Godot's
+// editor theme: a base margin of 4 the others follow from.
+struct DEVEX_API ThemeMetrics
 {
-    ImFont* regular = nullptr;
-    ImFont* bold = nullptr;
-    // For the console and code.
-    ImFont* mono = nullptr;
+    // The interface scale in effect.
+    float scale = 1.0f;
+    // A line of the regular font, from ascender to descender.
+    float lineHeight = 19.0f;
+    float margin = 4.0f;
+    float menuBarHeight = 34.0f;
+    float statusBarHeight = 30.0f;
+    // The strip of tabs above a docked panel.
+    float tabHeight = 31.0f;
+    // Between the places of the dock, and inside the edges of a docked panel.
+    float dockGap = 4.0f;
+    float panelPadding = 4.0f;
+    // The title of a modal window.
+    float titleHeight = 25.0f;
 };
 
-// Loads Noto Sans and JetBrains Mono from the fonts directory, merged with the icons, into ImGui's
-// atlas; missing files fall back to ImGui's own font with a warning. The icon set must outlive the
-// ImGui context.
-[[nodiscard]] DEVEX_API EditorFonts loadEditorFonts(const std::filesystem::path& fontsDirectory, IconSet& icons);
+[[nodiscard]] DEVEX_API ThemeMetrics deriveThemeMetrics(const ThemeSettings& settings, float displayScale) noexcept;
 
-// The ImGui size of a font of the editor for a size in points: ImGui sizes cover the whole line.
+// Makes the colors and sizes of the settings those of the editor, for a display scale.
+DEVEX_API void applyTheme(const ThemeSettings& settings, float displayScale);
+
+// The colors and sizes of the theme last applied.
+[[nodiscard]] DEVEX_API const ThemeColors& themeColors() noexcept;
+[[nodiscard]] DEVEX_API const ThemeMetrics& themeMetrics() noexcept;
+
+// The height of a line of a font of the editor in pixels, for its size in points.
 [[nodiscard]] DEVEX_API float regularFontPixels(float points) noexcept;
 [[nodiscard]] DEVEX_API float monoFontPixels(float points) noexcept;
 

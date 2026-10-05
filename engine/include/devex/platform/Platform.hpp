@@ -129,15 +129,9 @@ public:
     // blocks pollEvents, such as during a live resize on Windows. An empty function unregisters.
     void setLiveRedrawCallback(std::function<void()> callback);
 
-    // Connects Dear ImGui to the window: pollEvents then forwards every event to ImGui. An ImGui
-    // context must be current, and shutdownImGui must run before it is destroyed.
-    [[nodiscard]] core::Result<void> initializeImGui(Window& window);
-    void shutdownImGui() noexcept;
-    // Updates ImGui's display size, time and mouse state for a new ImGui frame.
-    void beginImGuiFrame();
-    // While ImGui uses a device, presses and motion on it no longer reach Input. Releases always
-    // do, so that no key stays down.
-    void setImGuiInputCapture(bool keyboard, bool mouse) noexcept;
+    // While the tools use a device, presses and motion on it no longer reach Input; toolsInput
+    // still sees them. Releases always do, so that no key stays down.
+    void setToolsInputCapture(bool keyboard, bool mouse) noexcept;
 
 private:
     Platform() = default;
@@ -145,9 +139,8 @@ private:
 
     bool m_initialized = false;
     bool m_textInputActive = false;
-    bool m_imguiInitialized = false;
-    bool m_imguiCapturesKeyboard = false;
-    bool m_imguiCapturesMouse = false;
+    bool m_toolsCaptureKeyboard = false;
+    bool m_toolsCaptureMouse = false;
     Cursor m_cursor = Cursor::Arrow;
     Input m_input;
     Input m_toolsInput;

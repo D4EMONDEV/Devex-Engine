@@ -587,7 +587,7 @@ void drawEditorPopups(ToolsState& state, scene::Scene& scene)
 
     // In the middle of the window, over the veil of a modal, the card at the size of what it holds;
     // under another modal, it waits.
-    const float unit = ImGui::GetFontSize() / std::max(regularFontPixels(ui->font), 1.0f);
+    const float unit = themeMetrics().lineHeight / std::max(regularFontPixels(ui->font), 1.0f);
     if (!beginModal(state, dialogPopup, ImVec2(ui->size.x * unit, ui->size.y * unit)))
     {
         return;

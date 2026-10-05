@@ -15,8 +15,6 @@
 #include <devex/scene/UiComponents.hpp>
 #include <devex/tools/SceneCommands.hpp>
 
-#include <imgui_internal.h>
-
 #include <algorithm>
 #include <array>
 #include <cstring>
@@ -571,13 +569,7 @@ void drawViewportPanel(ToolsState& state, scene::Scene& scene)
     {
         focusPanel(state, viewportWindow);
     }
-    const ThemeColors& colors = themeColors();
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
-    ImGui::PushStyleColor(ImGuiCol_WindowBg, uiColor(colors.outer));
-    const bool open = beginDockedPanel(state, viewportWindow);
-    ImGui::PopStyleColor();
-    ImGui::PopStyleVar();
-    if (!open)
+    if (!beginDockedPanel(state, viewportWindow, true))
     {
         state.viewportPixels = {};
         return;
@@ -587,9 +579,8 @@ void drawViewportPanel(ToolsState& state, scene::Scene& scene)
     // The tabs of the scenes, and the toolbar under them.
     drawViewportHeader(state, scene);
 
-    const ImGuiIO& io = ImGui::GetIO();
     const ImVec2 available = state.hosts.available();
-    state.pixelsPerPoint = io.DisplayFramebufferScale.x > 0.0f ? io.DisplayFramebufferScale.x : 1.0f;
+    state.pixelsPerPoint = editorScreen().pixelsPerPoint;
     const auto width = static_cast<std::uint32_t>(std::max(0.0f, std::floor(available.x * state.pixelsPerPoint)));
     const auto height = static_cast<std::uint32_t>(std::max(0.0f, std::floor(available.y * state.pixelsPerPoint)));
     if (width < 8 || height < 8)
@@ -602,7 +593,9 @@ void drawViewportPanel(ToolsState& state, scene::Scene& scene)
     const ImVec2 origin = state.hosts.cursor();
     state.viewportOrigin = {origin.x, origin.y};
 
-    state.hosts.image(static_cast<std::uint64_t>(state.renderer.viewportTexture()), available);
+    // The scene image, pixel for pixel.
+    state.hosts.image(HostImage{.source = render::UiSource::SceneImage},
+                      ImVec2(static_cast<float>(width) / state.pixelsPerPoint, static_cast<float>(height) / state.pixelsPerPoint));
     const bool hovered = state.hosts.itemHovered();
     state.viewportHovered = hovered;
     state.viewportFocused = state.hosts.focused();

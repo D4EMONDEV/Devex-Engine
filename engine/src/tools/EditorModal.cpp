@@ -1,5 +1,5 @@
 // The modal windows of the editor: the veil and the frame of the one on top, made with the interface of
-// the engine, and the ImGui window that holds them while ImGui still shows the images.
+// the engine.
 #include "EditorModal.hpp"
 
 #include "EditorFrame.hpp"
@@ -8,8 +8,6 @@
 #include "ToolsState.hpp"
 
 #include <devex/core/Profiler.hpp>
-
-#include <imgui_internal.h>
 
 #include <algorithm>
 #include <cmath>
@@ -82,8 +80,7 @@ struct ModalLayerUi : PanelBuilder
             build(kit);
         }
         styleTooltips(colors);
-        const ImGuiIO& io = ImGui::GetIO();
-        const float pixelsPerPoint = io.DisplayFramebufferScale.x > 0.0f ? io.DisplayFramebufferScale.x : 1.0f;
+        const float pixelsPerPoint = editorScreen().pixelsPerPoint;
         const float zoom = UiPanel::zoomFor(font);
         const float unitsPerPoint = pixelsPerPoint / zoom;
         const ImVec2 origin = state.hosts.cursor();
@@ -181,18 +178,19 @@ bool beginModal(ToolsState& state, std::string_view id, ImVec2 size, std::string
     ModalLayerUi& layer = *state.modalLayerUi;
 
     // In the middle of the window, as large as asked and as it holds; a title makes a frame around.
-    const ImGuiViewport* const viewport = ImGui::GetMainViewport();
-    const float titleHeight = title.empty() ? 0.0f : std::round(ImGui::GetFrameHeight() + 10.0f);
-    const float border = title.empty() ? 0.0f : 4.0f;
-    const ImVec2 card(std::round(std::min(size.x, viewport->WorkSize.x * 0.95f - border * 2.0f)),
-                      std::round(std::min(size.y, viewport->WorkSize.y * 0.95f - titleHeight - border)));
+    const ImVec2 screen = editorScreen().size;
+    const ThemeMetrics& metrics = themeMetrics();
+    const float titleHeight = title.empty() ? 0.0f : metrics.titleHeight;
+    const float border = title.empty() ? 0.0f : metrics.margin;
+    const ImVec2 card(std::round(std::min(size.x, screen.x * 0.95f - border * 2.0f)),
+                      std::round(std::min(size.y, screen.y * 0.95f - titleHeight - border)));
     const ImVec2 frameSize(card.x + border * 2.0f, card.y + titleHeight + border);
-    const ImVec2 center = viewport->GetWorkCenter();
+    const ImVec2 center(screen.x * 0.5f, screen.y * 0.5f);
     const ImVec2 frameMin(std::round(center.x - frameSize.x * 0.5f), std::round(center.y - frameSize.y * 0.5f));
 
     // The veil over everything takes the pointer and the keyboard; the card stands in it.
     const std::string window = "##modal " + std::string(id);
-    state.hosts.begin(window, viewport->Pos, ImVec2(viewport->Pos.x + viewport->Size.x, viewport->Pos.y + viewport->Size.y), HostLayer::Modal);
+    state.hosts.begin(window, ImVec2(0.0f, 0.0f), screen, HostLayer::Modal);
     if (layer.shown != id)
     {
         state.hosts.focus(window);

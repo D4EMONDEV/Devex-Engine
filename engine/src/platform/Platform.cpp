@@ -10,9 +10,6 @@
 #include <SDL3/SDL_main.h>
 #include <SDL3/SDL_vulkan.h>
 
-#include <imgui.h>
-#include <imgui_impl_sdl3.h>
-
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
@@ -243,7 +240,7 @@ void closeGamepads(Input& input)
     }
 }
 
-// Devices whose presses and motion are used by ImGui instead of gameplay.
+// Devices whose presses and motion are used by the tools instead of gameplay.
 struct InputCapture
 {
     bool keyboard = false;
@@ -524,7 +521,6 @@ void Platform::shutdown() noexcept
 {
     if (m_initialized)
     {
-        shutdownImGui();
         closeGamepads(m_input);
         SDL_RemoveEventWatch(&watchLiveRedraw, nullptr);
         liveRedrawCallback = nullptr;
@@ -627,14 +623,10 @@ void Platform::pollEvents(const EventCallback& callback)
 
     m_input.beginFrame();
     m_toolsInput.beginFrame();
-    const InputCapture capture{m_imguiCapturesKeyboard, m_imguiCapturesMouse};
+    const InputCapture capture{m_toolsCaptureKeyboard, m_toolsCaptureMouse};
     SDL_Event event;
     while (SDL_PollEvent(&event))
     {
-        if (m_imguiInitialized)
-        {
-            ImGui_ImplSDL3_ProcessEvent(&event);
-        }
         recordToolsInput(event, m_toolsInput);
         dispatchEvent(event, m_input, capture, callback);
     }
@@ -653,39 +645,10 @@ void Platform::pollEvents(const EventCallback& callback)
     }
 }
 
-core::Result<void> Platform::initializeImGui(Window& window)
+void Platform::setToolsInputCapture(bool keyboard, bool mouse) noexcept
 {
-    DEVEX_ASSERT(m_initialized && !m_imguiInitialized);
-    DEVEX_ASSERT_MSG(ImGui::GetCurrentContext() != nullptr, "create an ImGui context first");
-    if (!ImGui_ImplSDL3_InitForVulkan(detail::toSdlWindow(window.m_native)))
-    {
-        return core::makeError(core::ErrorCode::Platform, "cannot initialize ImGui for SDL3");
-    }
-    m_imguiInitialized = true;
-    return {};
-}
-
-void Platform::shutdownImGui() noexcept
-{
-    if (m_imguiInitialized)
-    {
-        ImGui_ImplSDL3_Shutdown();
-        m_imguiInitialized = false;
-        m_imguiCapturesKeyboard = false;
-        m_imguiCapturesMouse = false;
-    }
-}
-
-void Platform::beginImGuiFrame()
-{
-    DEVEX_ASSERT(m_imguiInitialized);
-    ImGui_ImplSDL3_NewFrame();
-}
-
-void Platform::setImGuiInputCapture(bool keyboard, bool mouse) noexcept
-{
-    m_imguiCapturesKeyboard = keyboard;
-    m_imguiCapturesMouse = mouse;
+    m_toolsCaptureKeyboard = keyboard;
+    m_toolsCaptureMouse = mouse;
 }
 
 const Input& Platform::input() const noexcept

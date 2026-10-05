@@ -17,9 +17,8 @@
 #include <devex/tools/SceneCommands.hpp>
 #include <devex/tools/ToolsOverlay.hpp>
 
-#include <imgui_internal.h>
-
 #include <algorithm>
+#include <atomic>
 #include <cctype>
 #include <cmath>
 #include <cstring>
@@ -197,6 +196,9 @@ namespace {
 
 using detail::ToolsState;
 
+// The theme and the measures of the screen are shared by the panels of the one overlay.
+std::atomic<bool> overlayExists{false};
+
 void logFailure(const core::Result<void>& result)
 {
     if (!result)
@@ -231,7 +233,7 @@ void refreshTheme(ToolsState& state)
     }
     state.themeChanged = false;
     state.appliedDisplayScale = displayScale;
-    detail::applyTheme(state.theme, displayScale, state.renderer.imGuiNeedsLinearColors());
+    detail::applyTheme(state.theme, displayScale);
     const detail::ThemeColors& colors = detail::themeColors();
     state.window.setTitleBarColors(colors.dark, math::Vec3(colors.outer.x, colors.outer.y, colors.outer.z));
 }
@@ -265,13 +267,20 @@ void applyWindowLayout(ToolsState& state, detail::WindowLayout layout)
 // Where the strips of the frame stand, and the room the dock or the project manager has between them.
 void layoutScreen(ToolsState& state)
 {
-    const ImGuiViewport* const viewport = ImGui::GetMainViewport();
-    const ImGuiStyle& style = ImGui::GetStyle();
-    const ImVec2 min = viewport->Pos;
-    const ImVec2 max(viewport->Pos.x + viewport->Size.x, viewport->Pos.y + viewport->Size.y);
+    // The window in points, as the pointer moves in it, and in pixels, as it is drawn.
+    const math::Extent2D points = state.window.size();
+    const math::Extent2D pixels = state.window.pixelSize();
+    const ImVec2 size(static_cast<float>(points.width), static_cast<float>(points.height));
+    detail::setEditorScreen({.size = size,
+                             .pixelsPerPoint = points.width > 0 && pixels.width > 0
+                                                   ? static_cast<float>(pixels.width) / static_cast<float>(points.width)
+                                                   : 1.0f});
+    const detail::ThemeMetrics& metrics = detail::themeMetrics();
+    const ImVec2 min(0.0f, 0.0f);
+    const ImVec2 max = size;
     const bool framed = state.mode != ToolsMode::Editor || state.database != nullptr;
-    const float menu = framed ? std::round(ImGui::GetFontSize() + style.FramePadding.y * 3.2f) : 0.0f;
-    const float status = state.mode == ToolsMode::Editor && framed ? std::round(ImGui::GetFrameHeight() + style.FramePadding.y * 1.2f) : 0.0f;
+    const float menu = framed ? metrics.menuBarHeight : 0.0f;
+    const float status = state.mode == ToolsMode::Editor && framed ? metrics.statusBarHeight : 0.0f;
     state.menuBarMin = min;
     state.menuBarMax = ImVec2(max.x, min.y + menu);
     state.statusBarMin = ImVec2(min.x, max.y - status);
@@ -282,9 +291,8 @@ void layoutScreen(ToolsState& state)
 
 void finishFrame(ToolsState& state)
 {
-    // The images of the frame, from the dock up; the shape of the pointer; and typing, on while a
-    // field takes it, with the input method of the system next to the field.
-    state.hosts.compose(*ImGui::GetBackgroundDrawList());
+    // The shape of the pointer; and typing, on while a field takes it, with the input method of the
+    // system next to the field. The images of the frame are composed once the panels drew them.
     state.platform.setCursor(state.input.cursor);
     const std::optional<std::pair<ImVec2, ImVec2>> typing = editorUiKit(state).takeTextInput();
     state.typing = typing.has_value();
@@ -294,8 +302,6 @@ void finishFrame(ToolsState& state)
                                         math::Vec2{typing->second.x, typing->second.y});
     }
     state.platform.setTextInput(state.window, state.typing);
-    ImGui::Render();
-    state.renderer.queueImGuiDrawData();
 }
 
 void handleShortcuts(ToolsState& state, scene::Scene& scene)
@@ -440,14 +446,13 @@ void setWindowIcon(ToolsState& state)
 } // namespace
 
 core::Result<std::unique_ptr<ToolsOverlay>> ToolsOverlay::create(
-    platform::Platform& platform, platform::Window& window, render::Renderer& renderer,
-    const std::filesystem::path& settingsFile, ToolsMode mode, const std::filesystem::path& userSettingsFile)
+    platform::Platform& platform, platform::Window& window, render::Renderer& renderer, ToolsMode mode,
+    const std::filesystem::path& userSettingsFile)
 {
-    DEVEX_ASSERT_MSG(ImGui::GetCurrentContext() == nullptr, "only one ToolsOverlay may exist");
-    IMGUI_CHECKVERSION();
+    const bool existed = overlayExists.exchange(true);
+    DEVEX_ASSERT_MSG(!existed, "only one ToolsOverlay may exist");
 
     auto state = std::make_unique<detail::ToolsState>(platform, window, renderer, mode);
-    state->settingsFile = core::toUtf8(settingsFile);
     const std::filesystem::path resources = platform.baseDirectory() / "resources";
     state->icons = detail::IconSet::load(resources / "icons");
     if (mode == ToolsMode::Editor)
@@ -455,29 +460,6 @@ core::Result<std::unique_ptr<ToolsOverlay>> ToolsOverlay::create(
         state->visible = true;
         detail::loadUserSettings(*state, userSettingsFile);
         setWindowIcon(*state);
-    }
-
-    ImGui::CreateContext();
-    ImGuiIO& io = ImGui::GetIO();
-    // The editor places its images, reads the devices and shapes the pointer itself: ImGui only
-    // draws the images where the editor puts them.
-    io.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
-    io.IniFilename = state->settingsFile.c_str();
-    // Ctrl+Tab goes through scene tabs rather than ImGui's windows.
-    ImGui::GetCurrentContext()->ConfigNavWindowingKeyNext = 0;
-    ImGui::GetCurrentContext()->ConfigNavWindowingKeyPrev = 0;
-    state->fonts = detail::loadEditorFonts(resources / "fonts", state->icons);
-
-    if (core::Result<void> connected = platform.initializeImGui(window); !connected)
-    {
-        ImGui::DestroyContext();
-        return std::unexpected(connected.error());
-    }
-    if (core::Result<void> connected = renderer.initializeImGui(); !connected)
-    {
-        platform.shutdownImGui();
-        ImGui::DestroyContext();
-        return std::unexpected(connected.error());
     }
     refreshTheme(*state);
     return std::unique_ptr<ToolsOverlay>(new ToolsOverlay(std::move(state)));
@@ -498,9 +480,7 @@ ToolsOverlay::~ToolsOverlay()
             m_state->window.setMouseCaptured(false);
         }
     }
-    m_state->renderer.shutdownImGui();
-    m_state->platform.shutdownImGui();
-    ImGui::DestroyContext();
+    overlayExists.store(false);
 }
 
 ToolsMode ToolsOverlay::mode() const noexcept
@@ -575,9 +555,6 @@ void ToolsOverlay::update(scene::Scene& scene, core::Duration frameDelta, PlaySt
     }
 
     refreshTheme(state);
-    state.platform.beginImGuiFrame();
-    state.renderer.beginImGuiFrame();
-    ImGui::NewFrame();
     state.clock += frameDelta.count();
     state.input.begin(state.platform.toolsInput(), state.clock, static_cast<float>(frameDelta.count()));
     // Where the strips and the panels stand, which host the pointer is over, and what the panels read.
@@ -635,8 +612,12 @@ void ToolsOverlay::update(scene::Scene& scene, core::Duration frameDelta, PlaySt
 void ToolsOverlay::prepareRender(scene::Scene& scene, render::RenderWorld& world, PlayState playState)
 {
     ToolsState& state = *m_state;
+    if (!state.visible)
+    {
+        return;
+    }
     // The panels made with the interface of the engine draw into images of their own, in the
-    // overlay of a game as in the editor.
+    // overlay of a game as in the editor, which the tools then place over the window.
     detail::renderProjectManager(state, world);
     detail::renderEditorDock(state, world);
     detail::renderModalLayer(state, world);
@@ -653,6 +634,7 @@ void ToolsOverlay::prepareRender(scene::Scene& scene, render::RenderWorld& world
     detail::renderTextEditor(state, world);
     detail::renderViewportOverlay(state, world);
     detail::renderEditorFrame(state, world);
+    state.hosts.compose(world);
     if (state.mode != ToolsMode::Editor)
     {
         return;

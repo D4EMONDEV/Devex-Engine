@@ -108,8 +108,8 @@ bool beginFormWindow(ToolsState& state, const char* title, bool* open, float wid
     {
         openModal(state, title);
     }
-    const float font = ImGui::GetFontSize();
-    return beginModal(state, title, ImVec2(font * width, font * height), title);
+    const float line = themeMetrics().lineHeight;
+    return beginModal(state, title, ImVec2(line * width, line * height), title);
 }
 
 void endFormWindow(ToolsState& state)

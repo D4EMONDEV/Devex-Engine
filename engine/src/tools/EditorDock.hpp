@@ -115,10 +115,10 @@ DEVEX_API void dragDockBar(DockLayout& layout, const DockPlaces& places, DockBar
 // The dock of the editor, drawn before the panels: its places, their tabs and the bars between them.
 DEVEX_API void drawEditorDock(ToolsState& state);
 DEVEX_API void renderEditorDock(ToolsState& state, render::RenderWorld& world);
-// Opens the host of a panel where its place puts it, over the background and inside the padding of
-// the style; false while the panel is behind another tab, or has no place. endDockedPanel follows a
-// true only.
-[[nodiscard]] DEVEX_API bool beginDockedPanel(ToolsState& state, const char* name);
+// Opens the host of a panel where its place puts it, on the colour of the panels and inside a margin;
+// a bare one fills its place edge to edge on the colour around the panels, as the view. False while
+// the panel is behind another tab, or has no place. endDockedPanel follows a true only.
+[[nodiscard]] DEVEX_API bool beginDockedPanel(ToolsState& state, const char* name, bool bare = false);
 DEVEX_API void endDockedPanel(ToolsState& state);
 // Shows a panel, in front of its place, and gives it the keyboard.
 DEVEX_API void focusPanel(ToolsState& state, std::string_view name);

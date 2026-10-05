@@ -7,8 +7,6 @@
 #include <devex/core/Profiler.hpp>
 #include <devex/ui/TextLayout.hpp>
 
-#include <imgui_internal.h>
-
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -224,7 +222,7 @@ void EditorLayerUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& ed
     }
     ui::UiWorld& world = panel.world();
     const float zoom = UiPanel::zoomFor(font);
-    const float unitsPerPoint = (ImGui::GetIO().DisplayFramebufferScale.x > 0.0f ? ImGui::GetIO().DisplayFramebufferScale.x : 1.0f) / zoom;
+    const float unitsPerPoint = editorScreen().pixelsPerPoint / zoom;
     const ImVec2 origin = state.hosts.cursor();
 
     // A menu asked for since the last frame: its entries, under where it was asked.
@@ -399,9 +397,8 @@ void drawEditorLayer(ToolsState& state, scene::Scene& scene)
 
     // Over the whole window and everything else; without a menu, the mouse goes through it. An open
     // menu takes the keyboard, and gives it back when it closes.
-    const ImGuiViewport* const viewport = ImGui::GetMainViewport();
-    state.hosts.begin(editorLayerHost, viewport->Pos, ImVec2(viewport->Pos.x + viewport->Size.x, viewport->Pos.y + viewport->Size.y),
-                      HostLayer::Menus, HostOptions{.focusable = menu, .takesPointer = menu});
+    state.hosts.begin(editorLayerHost, ImVec2(0.0f, 0.0f), editorScreen().size, HostLayer::Menus,
+                      HostOptions{.focusable = menu, .takesPointer = menu});
     if (menu && layer.pending)
     {
         state.hosts.focus(editorLayerHost);

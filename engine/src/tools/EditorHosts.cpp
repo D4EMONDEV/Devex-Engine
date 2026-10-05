@@ -1,10 +1,13 @@
 #include "EditorHosts.hpp"
 
 #include <algorithm>
+#include <cmath>
 
 namespace devex::tools::detail {
 
 namespace {
+
+EditorScreen g_screen;
 
 [[nodiscard]] bool inside(ImVec2 point, ImVec2 min, ImVec2 max) noexcept
 {
@@ -17,6 +20,16 @@ namespace {
 }
 
 } // namespace
+
+void setEditorScreen(const EditorScreen& screen) noexcept
+{
+    g_screen = screen;
+}
+
+const EditorScreen& editorScreen() noexcept
+{
+    return g_screen;
+}
 
 void EditorHosts::beginFrame(math::Vec2 pointer, bool pressed)
 {
@@ -67,7 +80,7 @@ void EditorHosts::begin(std::string_view id, ImVec2 min, ImVec2 max, HostLayer l
     if (options.background)
     {
         m_draws.push_back(Draw{.layer = layer, .order = host.order, .sequence = m_draws.size(), .min = host.min, .max = host.max,
-                               .color = ImGui::ColorConvertFloat4ToU32(*options.background)});
+                               .color = *options.background});
     }
     // A focus asked for by name before the host was ever placed finds its root now.
     if (m_focused == host.id)
@@ -117,7 +130,7 @@ ImVec2 EditorHosts::available() const noexcept
     return ImVec2(std::max(open.contentMax.x - open.cursor.x, 0.0f), std::max(open.contentMax.y - open.cursor.y, 0.0f));
 }
 
-void EditorHosts::image(std::uint64_t texture, ImVec2 size)
+void EditorHosts::image(HostImage shown, ImVec2 size)
 {
     const Host* const host = current();
     if (host == nullptr)
@@ -127,7 +140,7 @@ void EditorHosts::image(std::uint64_t texture, ImVec2 size)
     Open& open = m_stack.back();
     open.itemMin = open.cursor;
     open.itemMax = ImVec2(open.cursor.x + size.x, open.cursor.y + size.y);
-    m_draws.push_back(Draw{.layer = host->layer, .order = host->order, .sequence = m_draws.size(), .texture = texture, .min = open.itemMin, .max = open.itemMax});
+    m_draws.push_back(Draw{.layer = host->layer, .order = host->order, .sequence = m_draws.size(), .image = shown, .min = open.itemMin, .max = open.itemMax});
     open.cursor.y = open.itemMax.y;
 }
 
@@ -195,25 +208,59 @@ bool EditorHosts::pointerTaken() const noexcept
     return !m_hovered.empty();
 }
 
-void EditorHosts::compose(ImDrawList& list)
+void EditorHosts::compose(render::RenderWorld& world) const
 {
-    std::stable_sort(m_draws.begin(), m_draws.end(), [](const Draw& first, const Draw& second) {
-        if (first.layer != second.layer)
-        {
-            return first.layer < second.layer;
-        }
-        return first.order != second.order ? first.order < second.order : first.sequence < second.sequence;
-    });
+    std::vector<const Draw*> sorted;
+    sorted.reserve(m_draws.size());
     for (const Draw& draw : m_draws)
     {
-        if (draw.texture != 0)
+        sorted.push_back(&draw);
+    }
+    std::ranges::sort(sorted, [](const Draw* first, const Draw* second) {
+        if (first->layer != second->layer)
         {
-            list.AddImage(ImTextureRef(static_cast<ImTextureID>(draw.texture)), draw.min, draw.max);
+            return first->layer < second->layer;
         }
-        else
+        return first->order != second->order ? first->order < second->order : first->sequence < second->sequence;
+    });
+    // A quad for each, in pixels of the window. The colours meet their neighbours edge to edge; an
+    // image keeps its size in pixels, so that each of its pixels lands on one of the window.
+    const float pixels = g_screen.pixelsPerPoint;
+    for (const Draw* const draw : sorted)
+    {
+        const math::Vec2 min{std::round(draw->min.x * pixels), std::round(draw->min.y * pixels)};
+        const math::Vec2 max = draw->image ? min + math::Vec2{std::round((draw->max.x - draw->min.x) * pixels),
+                                                              std::round((draw->max.y - draw->min.y) * pixels)}
+                                           : math::Vec2{std::round(draw->max.x * pixels), std::round(draw->max.y * pixels)};
+        if (max.x <= min.x || max.y <= min.y)
         {
-            list.AddRectFilled(draw.min, draw.max, draw.color);
+            continue;
         }
+        const auto first = static_cast<std::uint32_t>(world.toolsVertices.size());
+        const math::Vec4 color = draw->image ? math::Vec4{1.0f} : draw->color;
+        world.toolsVertices.push_back({.position = min, .uv = {0.0f, 0.0f}, .color = color});
+        world.toolsVertices.push_back({.position = {max.x, min.y}, .uv = {1.0f, 0.0f}, .color = color});
+        world.toolsVertices.push_back({.position = max, .uv = {1.0f, 1.0f}, .color = color});
+        world.toolsVertices.push_back({.position = {min.x, max.y}, .uv = {0.0f, 1.0f}, .color = color});
+        const auto firstIndex = static_cast<std::uint32_t>(world.toolsIndices.size());
+        for (const std::uint32_t corner : {0u, 1u, 2u, 0u, 2u, 3u})
+        {
+            world.toolsIndices.push_back(first + corner);
+        }
+        render::UiDraw uiDraw{.firstIndex = firstIndex, .indexCount = 6};
+        if (draw->image)
+        {
+            uiDraw.source = draw->image->source;
+            uiDraw.surface = draw->image->surface;
+        }
+        // Colours follow one another in one batch, as long as nothing comes between them.
+        if (!draw->image && !world.toolsDraws.empty() && world.toolsDraws.back().source == render::UiSource::Texture &&
+            world.toolsDraws.back().firstIndex + world.toolsDraws.back().indexCount == firstIndex)
+        {
+            world.toolsDraws.back().indexCount += 6;
+            continue;
+        }
+        world.toolsDraws.push_back(uiDraw);
     }
 }
 

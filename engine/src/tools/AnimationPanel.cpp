@@ -11,8 +11,6 @@
 #include <devex/core/Profiler.hpp>
 #include <devex/scene/AnimationComponents.hpp>
 
-#include <imgui_internal.h>
-
 #include <algorithm>
 #include <cmath>
 #include <format>

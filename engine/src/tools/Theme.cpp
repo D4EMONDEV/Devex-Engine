@@ -17,8 +17,6 @@
 #include <devex/scene/Scene.hpp>
 #include <devex/scene/SceneSerializer.hpp>
 
-#include <imgui_freetype.h>
-
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -31,12 +29,12 @@ namespace {
 
 using serialization::TextValue;
 
-// ImGui sizes a font by its whole line, from ascender to descender: the ratio to the em size.
+// The whole line of a font, from ascender to descender: the ratio to its em size.
 constexpr float notoSansLineHeight = 1.362f;
 constexpr float jetBrainsMonoLineHeight = 1.32f;
 
 ThemeColors g_colors = deriveThemeColors(ThemeSettings{});
-bool g_linearColors = true;
+ThemeMetrics g_metrics = deriveThemeMetrics(ThemeSettings{}, 1.0f);
 
 [[nodiscard]] ImVec4 hex(std::uint32_t rgb, float alpha = 1.0f) noexcept
 {
@@ -63,14 +61,6 @@ bool g_linearColors = true;
 [[nodiscard]] float luminance(ImVec4 color) noexcept
 {
     return 0.2126f * color.x + 0.7152f * color.y + 0.0722f * color.z;
-}
-
-[[nodiscard]] ImVec4 toLinear(ImVec4 srgb) noexcept
-{
-    const auto channel = [](float value) {
-        return value <= 0.04045f ? value / 12.92f : std::pow((value + 0.055f) / 1.055f, 2.4f);
-    };
-    return {channel(srgb.x), channel(srgb.y), channel(srgb.z), srgb.w};
 }
 
 [[nodiscard]] float numberOr(const serialization::TextSection& section, std::string_view key, float fallback)
@@ -338,125 +328,31 @@ ThemeColors deriveThemeColors(const ThemeSettings& settings)
     return colors;
 }
 
-void applyTheme(const ThemeSettings& settings, float displayScale, bool linearColors)
+ThemeMetrics deriveThemeMetrics(const ThemeSettings& settings, float displayScale) noexcept
 {
-    const ThemeColors colors = deriveThemeColors(settings);
+    ThemeMetrics metrics;
     const float scale = effectiveInterfaceScale(settings, displayScale);
-    const ImVec4 mono = colors.dark ? hex(0xFFFFFF) : hex(0x000000);
-    const ImVec4 none{0.0f, 0.0f, 0.0f, 0.0f};
-    const ImVec4 raised = colors.raised;
-    const ImVec4 popup = colors.popup;
+    const float line = regularFontPixels(settings.fontSize) * scale;
+    const float margin = 4.0f * scale;
+    metrics.scale = scale;
+    metrics.lineHeight = line;
+    metrics.margin = margin;
+    // The flat buttons of the menus, with Godot's top bar separation around them.
+    metrics.menuBarHeight = std::round(line + margin * 1.8f + margin * 2.0f);
+    // The flat buttons of the bottom panels and a margin.
+    metrics.statusBarHeight = std::round(line + margin * 1.8f + margin);
+    // Godot's tabs: a line and one and a half margins above and below.
+    metrics.tabHeight = std::round(line + margin * 3.0f);
+    metrics.dockGap = std::round(margin);
+    metrics.panelPadding = std::round(margin);
+    metrics.titleHeight = std::round(line + margin * 1.5f);
+    return metrics;
+}
 
-    ImGuiStyle style;
-    style.WindowPadding = {8.0f, 8.0f};
-    style.FramePadding = {7.0f, 4.0f};
-    style.CellPadding = {6.0f, 3.0f};
-    style.ItemSpacing = {7.0f, 5.0f};
-    style.ItemInnerSpacing = {5.0f, 4.0f};
-    style.IndentSpacing = 24.0f;
-    style.ScrollbarSize = 11.0f;
-    style.ScrollbarRounding = 6.0f;
-    style.GrabMinSize = 10.0f;
-    style.GrabRounding = 3.0f;
-    style.WindowRounding = 6.0f;
-    style.ChildRounding = 4.0f;
-    style.FrameRounding = 4.0f;
-    style.PopupRounding = 5.0f;
-    style.TabRounding = 4.0f;
-    style.WindowBorderSize = 1.0f;
-    style.ChildBorderSize = 1.0f;
-    style.PopupBorderSize = 1.0f;
-    style.FrameBorderSize = 0.0f;
-    style.TabBorderSize = 0.0f;
-    style.TabBarBorderSize = 0.0f;
-    style.TabBarOverlineSize = 2.0f;
-    style.SeparatorTextBorderSize = 1.0f;
-    style.SeparatorTextPadding = {14.0f, 3.0f};
-    style.DockingSeparatorSize = 5.0f;
-    style.WindowMenuButtonPosition = ImGuiDir_None;
-    style.WindowTitleAlign = {0.5f, 0.5f};
-    style.ColorButtonPosition = ImGuiDir_Right;
-    style.TreeLinesFlags = ImGuiTreeNodeFlags_DrawLinesToNodes;
-    style.TreeLinesSize = 1.0f;
-
-    ImVec4* const c = style.Colors;
-    c[ImGuiCol_Text] = colors.text;
-    c[ImGuiCol_TextDisabled] = colors.textDim;
-    c[ImGuiCol_WindowBg] = colors.panel;
-    c[ImGuiCol_ChildBg] = none;
-    c[ImGuiCol_PopupBg] = popup;
-    c[ImGuiCol_Border] = colors.border;
-    c[ImGuiCol_BorderShadow] = none;
-    c[ImGuiCol_FrameBg] = colors.field;
-    c[ImGuiCol_FrameBgHovered] = mix(colors.field, mono, 0.05f);
-    c[ImGuiCol_FrameBgActive] = mix(colors.field, mono, 0.08f);
-    c[ImGuiCol_TitleBg] = colors.outer;
-    c[ImGuiCol_TitleBgActive] = colors.outer;
-    c[ImGuiCol_TitleBgCollapsed] = colors.outer;
-    c[ImGuiCol_MenuBarBg] = colors.outer;
-    c[ImGuiCol_ScrollbarBg] = none;
-    c[ImGuiCol_ScrollbarGrab] = withAlpha(mono, 0.16f);
-    c[ImGuiCol_ScrollbarGrabHovered] = withAlpha(mono, 0.26f);
-    c[ImGuiCol_ScrollbarGrabActive] = withAlpha(colors.accent, 0.8f);
-    c[ImGuiCol_CheckMark] = colors.accent;
-    c[ImGuiCol_SliderGrab] = withAlpha(colors.accent, 0.85f);
-    c[ImGuiCol_SliderGrabActive] = colors.accent;
-    c[ImGuiCol_Button] = raised;
-    c[ImGuiCol_ButtonHovered] = mix(raised, mono, 0.07f);
-    c[ImGuiCol_ButtonActive] = mix(raised, colors.accent, 0.35f);
-    c[ImGuiCol_Header] = withAlpha(colors.accent, 0.30f);
-    c[ImGuiCol_HeaderHovered] = withAlpha(mono, 0.07f);
-    c[ImGuiCol_HeaderActive] = withAlpha(colors.accent, 0.40f);
-    c[ImGuiCol_Separator] = colors.border;
-    c[ImGuiCol_SeparatorHovered] = withAlpha(colors.accent, 0.6f);
-    c[ImGuiCol_SeparatorActive] = colors.accent;
-    c[ImGuiCol_ResizeGrip] = none;
-    c[ImGuiCol_ResizeGripHovered] = withAlpha(colors.accent, 0.5f);
-    c[ImGuiCol_ResizeGripActive] = colors.accent;
-    c[ImGuiCol_InputTextCursor] = colors.text;
-    c[ImGuiCol_TabHovered] = withAlpha(mono, 0.08f);
-    c[ImGuiCol_Tab] = none;
-    c[ImGuiCol_TabSelected] = colors.panel;
-    c[ImGuiCol_TabSelectedOverline] = colors.accent;
-    c[ImGuiCol_TabDimmed] = none;
-    c[ImGuiCol_TabDimmedSelected] = colors.panel;
-    c[ImGuiCol_TabDimmedSelectedOverline] = none;
-    c[ImGuiCol_DockingPreview] = withAlpha(colors.accent, 0.45f);
-    c[ImGuiCol_DockingEmptyBg] = colors.outer;
-    c[ImGuiCol_PlotLines] = colors.accent;
-    c[ImGuiCol_PlotLinesHovered] = colors.warning;
-    c[ImGuiCol_PlotHistogram] = colors.accent;
-    c[ImGuiCol_PlotHistogramHovered] = colors.warning;
-    c[ImGuiCol_TableHeaderBg] = mix(colors.panel, colors.outer, 0.5f);
-    c[ImGuiCol_TableBorderStrong] = colors.border;
-    c[ImGuiCol_TableBorderLight] = withAlpha(mono, 0.05f);
-    c[ImGuiCol_TableRowBg] = none;
-    c[ImGuiCol_TableRowBgAlt] = withAlpha(mono, 0.025f);
-    c[ImGuiCol_TextLink] = colors.accent;
-    c[ImGuiCol_TextSelectedBg] = withAlpha(colors.accent, 0.35f);
-    c[ImGuiCol_TreeLines] = withAlpha(mono, 0.14f);
-    c[ImGuiCol_DragDropTarget] = colors.accent;
-    c[ImGuiCol_DragDropTargetBg] = withAlpha(colors.accent, 0.10f);
-    c[ImGuiCol_UnsavedMarker] = colors.text;
-    c[ImGuiCol_NavCursor] = colors.accent;
-    c[ImGuiCol_NavWindowingHighlight] = withAlpha(hex(0xFFFFFF), 0.7f);
-    c[ImGuiCol_NavWindowingDimBg] = withAlpha(hex(0x000000), 0.2f);
-    c[ImGuiCol_ModalWindowDimBg] = withAlpha(hex(0x000000), 0.45f);
-    if (linearColors)
-    {
-        for (int index = 0; index < ImGuiCol_COUNT; ++index)
-        {
-            c[index] = toLinear(c[index]);
-        }
-    }
-
-    style.ScaleAllSizes(scale);
-    style.FontSizeBase = regularFontPixels(settings.fontSize);
-    style.FontScaleDpi = scale;
-    ImGui::GetStyle() = style;
-
-    g_colors = colors;
-    g_linearColors = linearColors;
+void applyTheme(const ThemeSettings& settings, float displayScale)
+{
+    g_colors = deriveThemeColors(settings);
+    g_metrics = deriveThemeMetrics(settings, displayScale);
 }
 
 const ThemeColors& themeColors() noexcept
@@ -464,9 +360,9 @@ const ThemeColors& themeColors() noexcept
     return g_colors;
 }
 
-ImVec4 uiColor(ImVec4 srgb) noexcept
+const ThemeMetrics& themeMetrics() noexcept
 {
-    return g_linearColors ? toLinear(srgb) : srgb;
+    return g_metrics;
 }
 
 float regularFontPixels(float points) noexcept
@@ -477,41 +373,6 @@ float regularFontPixels(float points) noexcept
 float monoFontPixels(float points) noexcept
 {
     return std::round(points * jetBrainsMonoLineHeight);
-}
-
-EditorFonts loadEditorFonts(const std::filesystem::path& fontsDirectory, IconSet& icons)
-{
-    ImFontAtlas& atlas = *ImGui::GetIO().Fonts;
-    // Glyphs keep their shapes, snapped to pixels vertically only, as on Windows.
-    atlas.FontLoaderFlags = ImGuiFreeTypeLoaderFlags_LightHinting;
-
-    const auto add = [&](const char* fileName) -> ImFont* {
-        const std::filesystem::path file = fontsDirectory / fileName;
-        ImFont* font = nullptr;
-        std::error_code error;
-        if (std::filesystem::is_regular_file(file, error))
-        {
-            ImFontConfig config;
-            std::snprintf(config.Name, sizeof(config.Name), "%s", fileName);
-            font = atlas.AddFontFromFileTTF(core::toUtf8(file).c_str(), 0.0f, &config);
-        }
-        if (font == nullptr)
-        {
-            DEVEX_LOG_WARNING("Cannot load the font {}: the editor uses ImGui's font instead", core::toUtf8(file));
-            font = atlas.AddFontDefault();
-        }
-        ImFontConfig iconSource = iconFontSource(icons);
-        iconSource.DstFont = font;
-        atlas.AddFont(&iconSource);
-        return font;
-    };
-
-    EditorFonts fonts;
-    fonts.regular = add("NotoSans-Regular.ttf");
-    fonts.bold = add("NotoSans-Bold.ttf");
-    fonts.mono = add("JetBrainsMono-Regular.ttf");
-    ImGui::GetIO().FontDefault = fonts.regular;
-    return fonts;
 }
 
 EntityIcon entityIcon(const scene::Scene& scene, scene::Entity entity)

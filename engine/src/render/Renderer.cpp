@@ -136,44 +136,4 @@ RendererStats Renderer::stats() const noexcept
     return m_implementation->stats();
 }
 
-core::Result<void> Renderer::initializeImGui()
-{
-    DEVEX_ASSERT(m_implementation != nullptr);
-    return m_implementation->initializeImGui();
-}
-
-void Renderer::shutdownImGui() noexcept
-{
-    DEVEX_ASSERT(m_implementation != nullptr);
-    m_implementation->shutdownImGui();
-}
-
-void Renderer::beginImGuiFrame()
-{
-    DEVEX_ASSERT(m_implementation != nullptr);
-    m_implementation->beginImGuiFrame();
-}
-
-void Renderer::queueImGuiDrawData() noexcept
-{
-    DEVEX_ASSERT(m_implementation != nullptr);
-    m_implementation->queueImGuiDrawData();
-}
-
-bool Renderer::imGuiNeedsLinearColors() const noexcept
-{
-    DEVEX_ASSERT(m_implementation != nullptr);
-    return m_implementation->imGuiNeedsLinearColors();
-}
-
-std::uint64_t Renderer::uiSurfaceTexture(std::uint32_t id) noexcept
-{
-    return vulkan::VulkanRenderer::uiSurfaceTextureBase + id;
-}
-
-std::uint64_t Renderer::viewportTexture() noexcept
-{
-    return vulkan::VulkanRenderer::viewportTextureId;
-}
-
 } // namespace devex::render

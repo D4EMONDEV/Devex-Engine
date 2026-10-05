@@ -10,8 +10,6 @@
 #include <devex/core/Path.hpp>
 #include <devex/scene/UiComponents.hpp>
 
-#include <imgui_internal.h>
-
 #include <algorithm>
 #include <cctype>
 #include <chrono>

@@ -19,7 +19,7 @@ mais seulement explicitement ici : le code suit ce document, pas l'inverse.
 | Gameplay                 | C++ (DLL rechargeable) et C# (.NET hébergé), au choix, ensemble    |
 | Format source            |  Texte maison lisible, extensions `.dvx*`, binaire cooké à l'export|
 | Import 3D                | glTF 2.0 (fastgltf), FBX et OBJ (ufbx), convertis au repère moteur |
-| UI éditeur               | Dear ImGui, remplacé panneau par panneau par l'UI des jeux         |
+| UI éditeur               | L'UI des jeux (`Devex::Ui`), qui a remplacé Dear ImGui              |
 | Modules C++              | Headers classiques                                                 |
 | Erreurs                  | `std::expected`, pas d'exceptions dans le moteur                   |
 | Dépendances              | vcpkg en mode manifeste (`vcpkg.json`)                             |
@@ -85,11 +85,11 @@ mais seulement explicitement ici : le code suit ce document, pas l'inverse.
 | Rechargement du jeu      | Composants conservés en texte, en édition comme en Play            |
 | Lancement autonome       | `devex-player Projet.dvxproj` : scène de démarrage et code du jeu  |
 | Bac à sable              | Projet d'exemple `samples/sandbox`, son gameplay dans `code/`      |
-| Backend ImGui            | Officiels SDL3 + Vulkan, le backend Vulkan compilé avec volk       |
-| Multi-fenêtre ImGui      | Docking dans la fenêtre principale seulement                       |
+| Composition de l'éditeur | Couche d'interface sur le swapchain, images lues par des lots      |
+| Fenêtres de l'éditeur    | Dock dans la fenêtre principale seulement                          |
 | Thème de l'éditeur       | Inspiré de Godot, dérivé d'une base, d'un accent et d'un contraste |
-| Polices                  | Noto Sans (interface), JetBrains Mono (code), rendues par FreeType |
-| Icônes                   | Lucide (SVG) dessinées comme glyphes, colorées par type d'objet    |
+| Polices                  | Noto Sans (interface), JetBrains Mono (code), atlas de distances   |
+| Icônes                   | Lucide (SVG) dessinées en images, colorées par type d'objet        |
 | Scènes ouvertes          | Onglets, chacun avec son historique, sa sélection et sa caméra     |
 | Couleurs de l'interface  | Mélangées en espace d'affichage (vue UNORM de la swapchain)        |
 | Barre de titre           | Native, sombre et à la couleur du thème sous Windows               |
@@ -215,7 +215,7 @@ situé au-dessus de lui, et le graphe reste sans cycle.
 | `Physics2D`     | corps, colliders, tuiles et personnages 2D de la scène, simulés par Box2D | Core, Math, Asset, Scene, Box2D     |
 | `Navigation`    | cuisson des maillages de navigation, agents, obstacles et requêtes de chemin | Core, Math, Asset, Scene, Recast & Detour, zstd |
 | `Ui`            | placement des canevas, mise en page du texte, survol et focus, dessin    | Core, Math, Asset, Scene, Render     |
-| `Tools`         | panneaux ImGui, annulation, éditeur (viewport, gizmos, scènes, accueil)   | Core, Platform, Render, Scene, Audio, Animation, Particles, Physics2D, Navigation, Ui, AssetImport, ImGui |
+| `Tools`         | panneaux en `Devex::Ui`, annulation, éditeur (viewport, gizmos, scènes, accueil) | Core, Platform, Render, Scene, Audio, Animation, Particles, Physics2D, Navigation, Ui, AssetImport, ImGui (types seulement) |
 | `Runtime`       | `Application`, boucle, mode éditeur et Play, modules de jeu, coroutines, `AssetManager`, extraction | tous les modules ci-dessus |
 
 Au sommet : `devex-editor`, `devex-player` et les modules de jeu des projets.
@@ -247,7 +247,7 @@ samples/       projets d'exemple : sandbox, le bac à sable des jalons, avec son
 shaders/       sources Slang du moteur, compilées dans bin/shaders
 tests/         tests Catch2, un dossier par module, données dans tests/data
 scripts/       outils de développement (assets d'exemple, liaisons C# générées)
-third_party/   sources externes copiées (backend Vulkan d'ImGui), avec leur licence
+third_party/   sources externes copiées (polices, icônes Lucide, ufbx), avec leur licence
 cmake/         fonctions CMake partagées, outils de build (cmake/tools)
 docs/          décisions et documentation
 .github/       le workflow de l'intégration continue (GitHub Actions)
@@ -295,25 +295,30 @@ docs/          décisions et documentation
   puis le ciel, puis les surfaces transparentes triées, mesure de luminance (si exposition
   automatique), sélection (si demandée), masque des objets entourés (s'il y en a), anticrénelage
   temporel (si demandé), chaîne du bloom (si demandé), tonemapping et étalonnage vers la cible,
-  overlay des outils, interface du jeu, puis ImGui sur le swapchain.
+  overlay des outils, interface du jeu, puis la couche des outils sur le swapchain.
 - **Cible** : sans `RenderWorld::viewport`, la scène est dessinée sur tout le swapchain.
   Avec, elle l'est dans une image de cette taille (format du swapchain, au plus 8192²) que les
-  outils affichent dans un panneau : `Renderer::viewportTexture()` est un identifiant de
-  texture ImGui fixe, remplacé pendant le dessin par le descriptor set ImGui de l'image de la
-  frame (un par contexte de frame, recréé quand l'image change).
+  outils affichent dans un panneau, par un lot de leur couche qui lit `UiSource::SceneImage`.
 - **Surfaces d'interface** : `RenderWorld::uiSurfaces` porte des interfaces dessinées chacune dans
   une image à elle plutôt que sur la scène (`UiSurface` : identifiant, taille en pixels, couleur de
   fond, sommets, indices et lots, comme l'interface du jeu). Ce sont les panneaux de l'éditeur faits
   avec `Devex::Ui`. Chaque surface est une image transitoire du graphe (passe « Interface
   surface », au format de la cible avec une vue au format des outils), que les outils montrent par
-  `Renderer::uiSurfaceTexture(id)`, un identifiant ImGui fixe remplacé pendant le dessin comme
-  celui du viewport. Une commande ImGui dont la surface n'a pas été dessinée dans la frame est
-  sautée (rectangle de découpe vide) plutôt que de lier une texture qui n'existe pas. Les surfaces
-  ne sont dessinées qu'avec les outils. Elles sont écrites par la vue UNORM de leur image, le shader
-  encodant les couleurs pour l'écran avant le mélange (`displaySpace`) : le mélange se fait alors
-  en espace d'affichage, comme celui d'ImGui, et des lettres claires sur un panneau sombre gardent
-  la même finesse que celles d'ImGui à côté (mélangées en lumière, elles paraissaient plus
-  grasses). L'interface des jeux, elle, reste mélangée en lumière.
+  un lot qui lit `UiSource::Surface` et l'identifiant de la surface. Un lot dont l'image n'a pas été
+  dessinée dans la frame est sauté plutôt que de lire une texture qui n'existe pas. Les surfaces
+  ne sont dessinées qu'avec la couche des outils. Elles sont écrites par la vue UNORM de leur image,
+  le shader encodant les couleurs pour l'écran avant le mélange (`displaySpace`) : le mélange se
+  fait alors en espace d'affichage, et des lettres claires sur un panneau sombre gardent leur
+  finesse (mélangées en lumière, elles paraissaient plus grasses). L'interface des jeux, elle,
+  reste mélangée en lumière.
+- **Couche des outils** : `RenderWorld::toolsVertices`, `toolsIndices` et `toolsDraws`, une
+  interface comme celle du jeu, en pixels de la fenêtre, dessinée en dernier sur le swapchain
+  (passe « Tools ») avec le pipeline de l'interface : les fonds que pose l'éditeur, et ses images.
+  L'image de la scène et celles des surfaces occupent les derniers emplacements du tableau de
+  textures, un bloc de 32 par contexte de frame (la scène, puis les surfaces dans l'ordre de la
+  frame) réécrit à chaque frame, quand la frame précédente de ce contexte, la dernière à les lire,
+  est terminée : le shader ne change pas. Ces images tiennent déjà les couleurs de l'écran, qu'un
+  lot montre telles quelles, sans les encoder une seconde fois.
 - **Sélection à la souris** (*picking*) : `RenderWorld::pick` demande les objets visibles dans un
   rectangle de l'image, un pixel pour un clic. Une passe dessine tous les maillages dans une cible
   `R32_UINT` de la taille du rectangle (réduite à 512 pixels de côté au plus) avec une projection
@@ -855,9 +860,9 @@ les assets s'écrivent au fil de leur lecture.
 
 ### Outils
 
-- **Module `Tools`** : panneaux Dear ImGui indépendants de Vulkan, affichés en overlay dans
-  toute application avec **F1** (`ApplicationConfig::enableTools`, actif hors Release), ou
-  autour du viewport de l'éditeur (`ToolsMode::Editor`).
+- **Module `Tools`** : panneaux faits avec `Devex::Ui`, indépendants de Vulkan, affichés en
+  overlay dans toute application avec **F1** (`ApplicationConfig::enableTools`, actif hors
+  Release), ou autour du viewport de l'éditeur (`ToolsMode::Editor`).
 - **Panneaux** (noms de Godot) : *Scene*, l'arbre des entités (icône colorée selon les
   composants, guides fins des enfants à leur parent, filtre, bouton *+* qui ouvre la fenêtre de
   création, glisser-déposer avant, dans ou après une entité, double-clic pour cadrer, F2 pour
@@ -875,31 +880,28 @@ les assets s'écrivent au fil de leur lecture.
   souris sur plusieurs lignes et copié, double-clic sur un mot, menu Copy, Select All, Clear) ;
   ces deux-là sont faits avec `Devex::Ui` (voir *Une seule interface, deux usages*) ;
   *Statistics*. Les panneaux n'ont pas de bouton de fermeture : le menu *Editor > Panels* (ou
-  *View* sur l'overlay) les affiche. La disposition par défaut est construite au premier
-  lancement, puis sauvegardée dans `devex-tools.ini` ou `devex-editor.ini` à côté de
-  l'exécutable ; *Reset Layout* la restaure.
-- **Entrées** : quand ImGui utilise le clavier ou la souris, les appuis et mouvements de ce
-  périphérique n'atteignent plus `Input` (les relâchements si) ; les événements restent
-  transmis à `onEvent`. Ouvrir les outils libère la souris capturée.
+  *View* sur l'overlay) les affiche. La disposition du dock est sauvegardée dans chaque projet
+  (`.devex/editor.dvx`) ; *Reset Layout* la restaure.
+- **Entrées** : quand les outils utilisent le clavier ou la souris
+  (`Platform::setToolsInputCapture`), les appuis et mouvements de ce périphérique n'atteignent
+  plus `Input` (les relâchements si), alors que `Platform::toolsInput` les voit tous ; les
+  événements restent transmis à `onEvent`. Ouvrir les outils libère la souris capturée.
 - **Annulation** : chaque modification est une `Command` qui désigne les entités par UUID et
   les champs par leur nom enregistré ; les valeurs sont des `TextValue`. Un glissement
   continu devient une seule étape, enregistrée au relâchement. Supprimer une entité garde
   un instantané de son sous-arbre (`saveEntityTree`) pour la restaurer à la même place avec
   ses UUID. Ctrl+Z / Ctrl+Y (ou Ctrl+Maj+Z) ; une commande devenue impossible (entité
   disparue) est retirée de l'historique.
-- **Rendu d'ImGui** : backends officiels `imgui_impl_sdl3` (dans `Platform`) et
-  `imgui_impl_vulkan` (dans `Render`), sans multi-viewports. Le port vcpkg compile le
-  backend Vulkan contre `vulkan-1.lib`, dont les symboles entrent en conflit avec les
-  pointeurs de fonctions de volk : ses deux fichiers sont donc copiés dans
-  `third_party/imgui/backends` depuis la version épinglée par vcpkg et compilés avec
-  `IMGUI_IMPL_VULKAN_USE_VOLK`. **À recopier lors d'une mise à jour d'ImGui.** ImGui est
-  dessiné dans une seconde passe sur le backbuffer.
-- **Espace des couleurs** : ImGui pense ses couleurs et le lissage de ses glyphes en sRGB. Quand
-  le pilote le permet (`VK_KHR_swapchain_mutable_format`, présent sur les GPU de bureau), la
-  swapchain sRGB est aussi vue en UNORM : ImGui y dessine et y mélange en espace d'affichage,
-  et lit l'image du viewport par une vue UNORM de la même façon (`ImageConfig::alternateFormat`).
-  Le texte garde alors sa graisse et ses bords. Sinon, les couleurs sont converties en linéaire
-  comme avant (`Renderer::imGuiNeedsLinearColors`).
+- **Composition** : les outils posent leurs images (la vue, les panneaux) et leurs fonds dans la
+  couche des outils du `RenderWorld` (`EditorHosts::compose`), après que les panneaux ont dessiné
+  les leurs ; le renderer la dessine en dernier sur le backbuffer. Une image garde sa taille en
+  pixels, posée sur la grille de la fenêtre.
+- **Espace des couleurs** : les couleurs du thème et le lissage des lettres sont pensés en sRGB.
+  Quand le pilote le permet (`VK_KHR_swapchain_mutable_format`, présent sur les GPU de bureau), la
+  swapchain sRGB est aussi vue en UNORM : la couche des outils y dessine et y mélange en espace
+  d'affichage, et lit l'image du viewport et des surfaces par une vue UNORM de la même façon
+  (`ImageConfig::alternateFormat`). Le texte garde alors sa graisse et ses bords. Sinon, le
+  matériel encode les couleurs en écrivant dans la vue sRGB.
 - **Thème** (`src/tools/Theme`) : inspiré de Godot. Tout dérive d'une couleur de base, d'un accent
   et d'un contraste : fond extérieur (barres, espaces entre panneaux, barre d'onglets) plus foncé
   que les panneaux, champs et listes plus foncés encore (plus clairs sur fond noir ou clair),
@@ -907,22 +909,25 @@ les assets s'écrivent au fil de leur lecture.
   *Blue gray* (le thème classique de Godot 4), *Black (OLED)* et *Light*. Couleurs d'icônes par
   type comme les nœuds de Godot : entités et maillages rouges, lumières jaunes, caméras violettes,
   environnement cyan, code du jeu vert, dossiers bleus, matériaux orange. Arrondis de 4 px,
-  séparateurs de 5 px entre panneaux, lignes d'arbre, onglet actif surligné. L'échelle suit celle
-  de l'écran (`Window::displayScale`) ou un réglage, et s'applique entre deux frames, aussi quand
-  la fenêtre change d'écran.
+  lignes d'arbre, onglet actif surligné. L'échelle suit celle de l'écran (`Window::displayScale`)
+  ou un réglage, et s'applique entre deux frames, aussi quand la fenêtre change d'écran.
+- **Mesures** (`ThemeMetrics`) : l'espacement du thème de l'éditeur de Godot, une marge de base de
+  4 points d'où viennent les autres, multipliée par l'échelle. À 100 % et en 14 points : ligne de
+  texte 19, barre de menus 34 (boutons plats et séparation de la barre du haut de Godot), barre
+  d'état 30, onglets des docks 31, 4 entre les emplacements du dock et à l'intérieur des panneaux,
+  titre des modales 25 avec un bord de 4. Avant, ces tailles venaient du style d'ImGui : 32, 32,
+  31, 5, 8 et 37.
 - **Polices** : Noto Sans (normal et gras) et JetBrains Mono, versionnées dans `third_party/fonts`
-  (licence SIL OFL) et copiées dans `bin/resources/fonts`. FreeType les rend
-  (`imgui[freetype]`, hinting léger) aux tailles demandées grâce aux polices dynamiques d'ImGui
-  1.92. Les tailles se règlent en points comme dans Godot (14 par défaut) ; ImGui dimensionnant une
-  police par sa ligne entière, elles sont multipliées par la hauteur de ligne de la police
-  (1,362 pour Noto Sans). Une police absente est remplacée par celle d'ImGui avec un
-  avertissement.
+  (licence SIL OFL) et copiées dans `bin/resources/fonts`, importées comme les polices des jeux
+  (atlas de distances). Les tailles se règlent en points comme dans Godot (14 par défaut) ; la
+  ligne entière d'une police mesure sa taille multipliée par sa hauteur de ligne (1,362 pour Noto
+  Sans), ce qui donne l'unité des panneaux : un point de texte à l'échelle de l'interface.
 - **Icônes** (`src/tools/Icons`) : 107 icônes Lucide 1.47.0 (licence ISC, `third_party/lucide`) et le
   logo Devex (`engine/resources/icons/devex.png`), copiés dans `bin/resources/icons`. Chaque icône
-  est un caractère de la zone à usage privé (U+E000 et suivants) : un chargeur de police ImGui
-  (`ImFontLoader`) fusionné dans chaque police dessine le SVG avec plutosvg à la taille du texte.
-  Les icônes s'écrivent donc dans n'importe quel texte ImGui (menus, onglets, boutons), restent
-  nettes à toute échelle et prennent la couleur du texte ; le logo PNG garde ses couleurs,
+  est un caractère de la zone à usage privé (U+E000 et suivants), que les panneaux montrent comme
+  une image dessinée depuis le SVG avec plutosvg. Les icônes s'écrivent donc dans les textes de
+  l'éditeur (menus, onglets, boutons), restent nettes à toute échelle et prennent la couleur du
+  texte ; le logo PNG garde ses couleurs,
   sa transparence et ses proportions. Le même logo est intégré aux exécutables Windows de
   l'éditeur et du lecteur (`devex.ico`, groupe 1, langue neutre), puis chargé par SDL pour la
   fenêtre et la barre des tâches. `tools/generate-brand-icon.ps1` régénère les sept tailles de
@@ -2347,6 +2352,28 @@ les assets s'écrivent au fil de leur lecture.
     d'accès aux menus par Alt ; l'appui qui ferme un menu n'agit pas sur ce qui est dessous ; pas
     de menu contextuel sur les onglets (ajouté depuis, voir le jalon 51) ; les onglets des panneaux
     ancrés restent ceux d'ImGui.
+- **Puis le retrait d'ImGui, première étape** (jalon 55) : ImGui ne tourne plus. Plus de
+  contexte, plus de backends SDL3 et Vulkan, plus de style ni d'atlas de polices ; seuls ses types
+  de vecteurs restent dans les sources des outils, et la dépendance, jusqu'à la seconde étape.
+  - **Un compositeur à Devex UI** : la couche des outils est une interface de plus du
+    `RenderWorld`, faite des mêmes sommets, indices et lots que celle des jeux, dessinée par le même
+    pipeline. Un lot peut lire, au lieu d'une texture, l'image de la scène ou celle d'une surface
+    (`UiSource`) ; le renderer les loge dans des emplacements réservés du tableau de textures, un
+    bloc par frame en vol, si bien que le shader n'a pas changé. `EditorHosts::compose` y pose un
+    quad par fond et par image, les couleurs qui se suivent dans un seul lot. Écartés : une passe
+    à part qui ne saurait que copier des images (une seconde façon de dessiner), et un arbre unique
+    de `Devex::Ui` pour tout l'éditeur (une refonte de chaque panneau pour le même résultat).
+  - **Rien de plus par image** : l'éditeur posait déjà ses images ; elles ne passent plus par la
+    liste de dessin d'ImGui, ni par ses jeux de descripteurs (un par image et par frame en vol), ni
+    par sa passe. Une surface n'est plus dessinée quand les outils sont cachés (F1 fermé).
+  - **Des mesures à la Godot** (`ThemeMetrics`, voir *Thème*) : barre de menus et barre d'état,
+    onglets et espaces du dock, marge des panneaux et titre des modales suivent l'espacement de
+    Godot plutôt que le style d'ImGui. La fenêtre et l'échelle des points viennent de la fenêtre
+    elle-même (`setEditorScreen`).
+  - **Le filtre des entrées** du jeu devient `Platform::setToolsInputCapture`. Le fichier
+    `devex-editor.ini` (`devex-tools.ini` sur un jeu), qui ne tenait plus que la place des fenêtres
+    d'ImGui, n'est plus écrit : `ToolsOverlay::create` ne le prend plus. Le backend Vulkan copié
+    dans `third_party/imgui` part avec lui.
 - **Puis l'entrée et l'aiguillage** (jalon 54). L'éditeur lit lui-même le clavier et la souris, et
   décide lui-même qui les reçoit ; les fenêtres d'ImGui disparaissent. ImGui ne fait plus qu'afficher
   les images où l'éditeur les pose, et donne encore quelques mesures de son thème (taille du texte,
@@ -3469,9 +3496,12 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
 54. ✅ **Entrée et aiguillage hors d'ImGui** — l'éditeur lit le clavier et la souris depuis la
     plateforme et décide qui les reçoit (`EditorHosts`) ; plus de fenêtres ImGui, un compositeur pose
     les images ; glisser entre panneaux, curseur et saisie de texte sans ImGui.
+55. ✅ **ImGui ne tourne plus** — couche des outils composée par le renderer avec le pipeline de
+    `Devex::Ui` (image de la scène et surfaces lues par des lots) ; mesures du cadre à la Godot ;
+    plus de contexte, de backends, de style ni d'atlas d'ImGui.
 
-Ensuite, sans ordre figé : CI Linux, puis le retrait d'ImGui (l'affichage des images et les mesures
-du thème).
+Ensuite, sans ordre figé : la seconde étape du retrait d'ImGui (ses types de vecteurs dans les
+outils, la dépendance vcpkg et FreeType), puis CI Linux.
 
 ## Questions ouvertes
 

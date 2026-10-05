@@ -14,8 +14,6 @@
 #include <devex/scene/UiComponents.hpp>
 #include <devex/ui/TextLayout.hpp>
 
-#include <imgui_internal.h>
-
 #include <algorithm>
 #include <array>
 #include <chrono>

@@ -8,9 +8,6 @@
 #include <devex/core/Profiler.hpp>
 #include <devex/render/Photometry.hpp>
 
-#include <imgui.h>
-#include <imgui_impl_vulkan.h>
-
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -226,7 +223,6 @@ VulkanRenderer::VulkanRenderer(platform::Window& window, const RendererConfig& c
 
 VulkanRenderer::~VulkanRenderer()
 {
-    DEVEX_ASSERT_MSG(!m_imguiInitialized, "call shutdownImGui before destroying the renderer");
     const VkDevice device = m_device.handle();
     if (device != VK_NULL_HANDLE)
     {
@@ -389,14 +385,13 @@ core::Result<TextureHandle> VulkanRenderer::createTexture(const asset::TextureDa
     {
         slot = m_freeTextureSlots.back();
     }
-    else if (m_nextTextureSlot < m_descriptors->textureCapacity())
+    else if (m_nextTextureSlot < m_toolImageSlotBase)
     {
         slot = m_nextTextureSlot;
     }
     else
     {
-        return core::makeError(core::ErrorCode::OutOfMemory, "all {} texture slots are in use",
-                               m_descriptors->textureCapacity());
+        return core::makeError(core::ErrorCode::OutOfMemory, "all {} texture slots are in use", m_toolImageSlotBase);
     }
 
     core::Result<std::pair<GpuTexture, PendingUpload>> prepared = prepareTexture(texture, slot);
@@ -461,8 +456,6 @@ RenderWorld& VulkanRenderer::beginFrame() noexcept
 
 core::Result<void> VulkanRenderer::endFrame()
 {
-    // A queued ImGui frame is only valid for this frame, even if it ends up skipped.
-    const bool drawImGui = std::exchange(m_imguiDrawQueued, false);
     const math::Extent2D windowPixelSize = m_window.pixelSize();
     if (windowPixelSize.width == 0 || windowPixelSize.height == 0)
     {
@@ -628,7 +621,7 @@ core::Result<void> VulkanRenderer::endFrame()
     }
 
     DEVEX_PROFILE_SCOPE("Record and submit");
-    core::Result<std::uint32_t> recorded = recordFrame(frame, frameSlot, imageIndex, drawImGui, drawShadows);
+    core::Result<std::uint32_t> recorded = recordFrame(frame, frameSlot, imageIndex, drawShadows);
     if (!recorded)
     {
         return std::unexpected(recorded.error());
@@ -825,6 +818,7 @@ core::Result<void> VulkanRenderer::createDefaultResources()
         return std::unexpected(descriptors.error());
     }
     m_descriptors = std::move(*descriptors);
+    m_toolImageSlotBase = m_descriptors->textureCapacity() - toolImageSlots * static_cast<std::uint32_t>(framesInFlight);
 
     core::Result<GpuTexture> white = uploadTexture(solidTexture({255, 255, 255, 255}), whiteTextureSlot);
     if (!white)
@@ -2655,8 +2649,7 @@ core::Result<void> VulkanRenderer::uploadParticles(FrameContext& frame) const
 }
 
 core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std::uint32_t frameSlot,
-                                                        std::uint32_t imageIndex, bool drawImGui,
-                                                        bool drawShadows)
+                                                        std::uint32_t imageIndex, bool drawShadows)
 {
     const VkCommandBuffer commandBuffer = frame.commandBuffer;
     DEVEX_VK_TRY(vkResetCommandPool, m_device.handle(), frame.commandPool, 0);
@@ -2782,8 +2775,9 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
                                                    })
                                                  : 0;
     // The interface surfaces, for the tools only, sampled by them as the viewport is.
+    const bool drawTools = !m_world.toolsDraws.empty() && !m_world.toolsIndices.empty();
     std::vector<std::size_t> surfaceIndices;
-    if (drawImGui)
+    if (drawTools)
     {
         for (const UiSurface& surface : m_world.uiSurfaces)
         {
@@ -2845,9 +2839,10 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
 
     const bool drawUi = !m_world.uiDraws.empty() && !m_world.uiIndices.empty();
     std::vector<std::uint32_t> surfaceIndexBases;
-    if (drawUi || !surfaceIndices.empty())
+    std::uint32_t toolsIndexBase = 0;
+    if (drawUi || drawTools)
     {
-        if (core::Result<void> uploaded = uploadUi(frame, surfaceIndexBases); !uploaded)
+        if (core::Result<void> uploaded = uploadUi(frame, drawTools, surfaceIndexBases, toolsIndexBase); !uploaded)
         {
             return std::unexpected(uploaded.error());
         }
@@ -3585,11 +3580,38 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
         });
     }
 
+    // The slots the tools' images sit in, for this frame context: its previous frame, the last to
+    // read them, has completed.
+    const std::uint32_t toolSlots = m_toolImageSlotBase + frameSlot * toolImageSlots;
+    // The slot of the texture a batch reads, or nothing for an image this frame did not draw.
+    const auto textureSlot = [&](const UiDraw& uiDraw) -> std::optional<std::uint32_t> {
+        switch (uiDraw.source)
+        {
+        case UiSource::Texture:
+            break;
+        case UiSource::SceneImage:
+            return toViewport ? std::optional(toolSlots) : std::nullopt;
+        case UiSource::Surface:
+            for (std::size_t surface = 0; surface < surfaceIndices.size() && surface + 1 < toolImageSlots; ++surface)
+            {
+                if (m_world.uiSurfaces[surface].id == uiDraw.surface)
+                {
+                    return toolSlots + 1 + static_cast<std::uint32_t>(surface);
+                }
+            }
+            return std::nullopt;
+        }
+        const GpuTexture* const texture = m_textures.find(uiDraw.texture);
+        return texture != nullptr ? texture->slot : whiteTextureSlot;
+    };
     // Draws the batches of an interface into an image of `size`, their indices counted from
-    // `indexBase` in the index buffer of the frame.
+    // `indexBase` in the index buffer of the frame. Into an image of display colours, the colours of
+    // the batches are encoded, while the images of the tools, which already hold display colours,
+    // show as they are.
     const auto drawInterface = [&](VkCommandBuffer commands, VkImageView view, VkAttachmentLoadOp load,
                                    const math::Vec4& clearColor, math::Extent2D size,
-                                   std::span<const UiDraw> draws, std::uint32_t indexBase, bool displaySpace) {
+                                   std::span<const UiDraw> draws, std::uint32_t indexBase, const Pipeline& pipeline,
+                                   bool displaySpace) {
         // A view of display colours takes its clear colour encoded as well.
         const auto encode = [displaySpace](float value) {
             if (!displaySpace)
@@ -3608,7 +3630,6 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
             .clearValue = {.color = {.float32 = {encode(clearColor.x), encode(clearColor.y), encode(clearColor.z),
                                                  clearColor.w}}},
         };
-        const Pipeline& pipeline = displaySpace ? *m_uiDisplayPipeline : *m_uiPipeline;
         const VkRenderingInfo renderingInfo{
             .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
             .renderArea = {.extent = {size.width, size.height}},
@@ -3626,6 +3647,11 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
         }
         for (const UiDraw& uiDraw : draws)
         {
+            const std::optional<std::uint32_t> slot = textureSlot(uiDraw);
+            if (!slot)
+            {
+                continue;
+            }
             // A batch that names a rectangle is cut to it; the others cover the image.
             const bool clipped = uiDraw.clip.z > uiDraw.clip.x && uiDraw.clip.w > uiDraw.clip.y;
             const VkRect2D scissor =
@@ -3642,7 +3668,6 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
                         : VkRect2D{.offset = {0, 0}, .extent = {size.width, size.height}};
             vkCmdSetScissor(commands, 0, 1, &scissor);
 
-            const GpuTexture* const texture = m_textures.find(uiDraw.texture);
             // Slang's SV_VertexID does not include the first vertex of a draw: the batch gets
             // the address of its own first index instead.
             const UiPushConstants constants{
@@ -3652,11 +3677,11 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
                 .inverseViewport = math::Vec2{2.0f / static_cast<float>(size.width),
                                               2.0f / static_cast<float>(size.height)},
                 .kind = static_cast<std::uint32_t>(uiDraw.kind),
-                .texture = texture != nullptr ? texture->slot : whiteTextureSlot,
+                .texture = *slot,
                 .rect = uiDraw.rect,
                 .radius = uiDraw.radius,
                 .sharpness = uiDraw.sharpness,
-                .displaySpace = displaySpace ? 1u : 0u,
+                .displaySpace = displaySpace && uiDraw.source == UiSource::Texture ? 1u : 0u,
             };
             vkCmdPushConstants(commands, pipeline.layout(),
                                VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
@@ -3670,7 +3695,7 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
     {
         graph.addPass("Interface", {{target, ImageAccess::ColorAttachment}}, [&](VkCommandBuffer commands) {
             drawInterface(commands, graph.view(target), VK_ATTACHMENT_LOAD_OP_LOAD, math::Vec4{0.0f}, extent,
-                          m_world.uiDraws, 0, false);
+                          m_world.uiDraws, 0, *m_uiPipeline, false);
         });
     }
     for (std::size_t surface = 0; surface < surfaceIndices.size(); ++surface)
@@ -3682,62 +3707,40 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
             const VkImageView alternate = graph.image(image)->alternateView();
             drawInterface(commands, alternate != VK_NULL_HANDLE ? alternate : graph.view(image), VK_ATTACHMENT_LOAD_OP_CLEAR,
                           drawn.clearColor, math::Extent2D{std::max(drawn.size.width, 1u), std::max(drawn.size.height, 1u)},
-                          drawn.draws, surfaceIndexBases[surface], alternate != VK_NULL_HANDLE);
+                          drawn.draws, surfaceIndexBases[surface], alternate != VK_NULL_HANDLE ? *m_uiDisplayPipeline : *m_uiPipeline,
+                          alternate != VK_NULL_HANDLE);
         });
     }
 
-    if (toViewport || drawImGui)
+    if (toViewport || drawTools)
     {
+        // The images the tools show are read in the colours of the display, through the view of
+        // their image the tools read when the window has one.
         std::vector<std::pair<RenderGraph::ImageId, ImageAccess>> toolAccesses{
             {backbuffer, ImageAccess::ColorAttachment},
         };
-        std::vector<std::pair<std::uint32_t, VkImageView>> surfaceViews;
-        for (std::size_t surface = 0; surface < surfaceIndices.size(); ++surface)
-        {
-            const RenderGraph::ImageId image = *created[surfaceIndices[surface]];
-            toolAccesses.push_back({image, ImageAccess::FragmentRead});
+        const auto toolView = [&](RenderGraph::ImageId image) {
             const VkImageView alternate = graph.image(image)->alternateView();
-            surfaceViews.emplace_back(m_world.uiSurfaces[surface].id, alternate != VK_NULL_HANDLE ? alternate : graph.view(image));
-        }
-        if (drawImGui)
-        {
-            bindSurfaceTextures(frame, surfaceViews);
-        }
+            return alternate != VK_NULL_HANDLE ? alternate : graph.view(image);
+        };
         if (toViewport)
         {
             toolAccesses.push_back({target, ImageAccess::FragmentRead});
-            if (drawImGui)
-            {
-                const VkImageView alternate = graph.image(target)->alternateView();
-                bindViewportTexture(frame, alternate != VK_NULL_HANDLE ? alternate : graph.view(target));
-            }
+            m_descriptors->setTexture(toolSlots, toolView(target), true);
         }
+        for (std::size_t surface = 0; surface < surfaceIndices.size() && surface + 1 < toolImageSlots; ++surface)
+        {
+            const RenderGraph::ImageId image = *created[surfaceIndices[surface]];
+            toolAccesses.push_back({image, ImageAccess::FragmentRead});
+            m_descriptors->setTexture(toolSlots + 1 + static_cast<std::uint32_t>(surface), toolView(image), true);
+        }
+        // A window of display colours with an sRGB view encodes them itself.
+        const bool encodeTools = toolsFormat != VK_FORMAT_B8G8R8A8_SRGB && toolsFormat != VK_FORMAT_R8G8B8A8_SRGB;
         graph.addPass("Tools", std::move(toolAccesses), [&](VkCommandBuffer commands) {
             // Without a viewport, the tools are drawn over the tonemapped scene.
-            const VkRenderingAttachmentInfo colorAttachment{
-                .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-                .imageView = m_swapchain->toolsImageView(imageIndex),
-                .imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                .loadOp = toViewport ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD,
-                .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-                .clearValue = {.color = {.float32 = {0.0f, 0.0f, 0.0f, 1.0f}}},
-            };
-            const VkRenderingInfo renderingInfo{
-                .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
-                .renderArea = {.extent = {windowExtent.width, windowExtent.height}},
-                .layerCount = 1,
-                .colorAttachmentCount = 1,
-                .pColorAttachments = &colorAttachment,
-            };
-            vkCmdBeginRendering(commands, &renderingInfo);
-            setViewport(commands, windowExtent);
-            // Tools are drawn in display colors.
-            if (ImDrawData* const drawData = drawImGui ? ImGui::GetDrawData() : nullptr;
-                drawData != nullptr && drawData->Valid)
-            {
-                ImGui_ImplVulkan_RenderDrawData(drawData, commands);
-            }
-            vkCmdEndRendering(commands);
+            drawInterface(commands, m_swapchain->toolsImageView(imageIndex),
+                          toViewport ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD, math::Vec4{0.0f, 0.0f, 0.0f, 1.0f},
+                          windowExtent, m_world.toolsDraws, toolsIndexBase, *m_uiDisplayPipeline, encodeTools);
         });
     }
 
@@ -3889,12 +3892,15 @@ void VulkanRenderer::rememberFrame()
     m_previousBoneMatrices = m_world.boneMatrices;
 }
 
-core::Result<void> VulkanRenderer::uploadUi(FrameContext& frame, std::vector<std::uint32_t>& surfaceIndexBases)
+core::Result<void> VulkanRenderer::uploadUi(FrameContext& frame, bool tools, std::vector<std::uint32_t>& surfaceIndexBases,
+                                           std::uint32_t& toolsIndexBase)
 {
-    // The surfaces follow the interface of the scene in the same buffers.
-    std::size_t vertexCount = m_world.uiVertices.size();
-    std::size_t indexCount = m_world.uiIndices.size();
-    for (const UiSurface& surface : m_world.uiSurfaces)
+    // The surfaces and the layer of the tools, drawn only with the tools, follow the interface of the
+    // scene in the same buffers.
+    const std::span<const UiSurface> surfaces = tools ? std::span<const UiSurface>(m_world.uiSurfaces) : std::span<const UiSurface>();
+    std::size_t vertexCount = m_world.uiVertices.size() + (tools ? m_world.toolsVertices.size() : 0);
+    std::size_t indexCount = m_world.uiIndices.size() + (tools ? m_world.toolsIndices.size() : 0);
+    for (const UiSurface& surface : surfaces)
     {
         vertexCount += surface.vertices.size();
         indexCount += surface.indices.size();
@@ -3927,22 +3933,27 @@ core::Result<void> VulkanRenderer::uploadUi(FrameContext& frame, std::vector<std
     auto indexBase = static_cast<std::uint32_t>(m_world.uiIndices.size());
     surfaceIndexBases.clear();
     auto* const indices = reinterpret_cast<std::uint32_t*>(frame.uiIndices->mappedBytes().data());
-    for (const UiSurface& surface : m_world.uiSurfaces)
-    {
-        for (std::size_t index = 0; index < surface.vertices.size(); ++index)
+    const auto append = [&](std::span<const UiVertex> layerVertices, std::span<const std::uint32_t> layerIndices) {
+        for (std::size_t index = 0; index < layerVertices.size(); ++index)
         {
-            const UiVertex& vertex = surface.vertices[index];
+            const UiVertex& vertex = layerVertices[index];
             const GpuUiVertex gpuVertex{.position = vertex.position, .uv = vertex.uv, .color = vertex.color};
             std::memcpy(vertices.data() + (vertexBase + index) * sizeof(GpuUiVertex), &gpuVertex, sizeof(gpuVertex));
         }
-        for (std::size_t index = 0; index < surface.indices.size(); ++index)
+        for (std::size_t index = 0; index < layerIndices.size(); ++index)
         {
-            indices[indexBase + index] = vertexBase + surface.indices[index];
+            indices[indexBase + index] = vertexBase + layerIndices[index];
         }
-        surfaceIndexBases.push_back(indexBase);
-        vertexBase += static_cast<std::uint32_t>(surface.vertices.size());
-        indexBase += static_cast<std::uint32_t>(surface.indices.size());
+        const std::uint32_t first = indexBase;
+        vertexBase += static_cast<std::uint32_t>(layerVertices.size());
+        indexBase += static_cast<std::uint32_t>(layerIndices.size());
+        return first;
+    };
+    for (const UiSurface& surface : surfaces)
+    {
+        surfaceIndexBases.push_back(append(surface.vertices, surface.indices));
     }
+    toolsIndexBase = tools ? append(m_world.toolsVertices, m_world.toolsIndices) : indexBase;
     return {};
 }
 
@@ -3971,92 +3982,6 @@ core::Result<VulkanRenderer::OverlayRanges> VulkanRenderer::uploadOverlay(FrameC
     ranges.overlayLines = append(m_world.overlayLines);
     ranges.overlayTriangles = append(m_world.overlayTriangles);
     return ranges;
-}
-
-void VulkanRenderer::bindSurfaceTextures(FrameContext& frame,
-                                         std::span<const std::pair<std::uint32_t, VkImageView>> surfaces)
-{
-    if (!m_imguiInitialized)
-    {
-        return;
-    }
-    std::unordered_map<std::uint64_t, ImTextureID> sets;
-    for (const auto& [id, view] : surfaces)
-    {
-        auto& [boundView, set] = frame.imguiSurfaces[id];
-        if (boundView != view)
-        {
-            // The previous set was last used by this context's previous frame, which has completed.
-            if (set != VK_NULL_HANDLE)
-            {
-                ImGui_ImplVulkan_RemoveTexture(set);
-            }
-            set = ImGui_ImplVulkan_AddTexture(view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-            boundView = view;
-        }
-        sets[uiSurfaceTextureBase + id] = static_cast<ImTextureID>(std::bit_cast<std::uintptr_t>(set));
-    }
-    ImDrawData* const drawData = ImGui::GetDrawData();
-    if (drawData == nullptr)
-    {
-        return;
-    }
-    for (ImDrawList* const list : drawData->CmdLists)
-    {
-        for (ImDrawCmd& command : list->CmdBuffer)
-        {
-            if (command.TexRef._TexData != nullptr)
-            {
-                continue;
-            }
-            if (const auto found = sets.find(static_cast<std::uint64_t>(command.TexRef._TexID)); found != sets.end())
-            {
-                command.TexRef._TexID = found->second;
-            }
-            else if (command.TexRef._TexID >= uiSurfaceTextureBase && command.TexRef._TexID < uiSurfaceTextureBase + 0x10000)
-            {
-                // A surface that was not drawn this frame shows nothing rather than a stale image. An
-                // empty clip rectangle makes the backend skip the command before it binds the texture.
-                command.ElemCount = 0;
-                command.ClipRect = ImVec4(drawData->DisplayPos.x, drawData->DisplayPos.y, drawData->DisplayPos.x,
-                                          drawData->DisplayPos.y);
-            }
-        }
-    }
-}
-
-void VulkanRenderer::bindViewportTexture(FrameContext& frame, VkImageView viewport)
-{
-    if (!m_imguiInitialized)
-    {
-        return;
-    }
-    if (frame.imguiViewportView != viewport)
-    {
-        // The previous set was last used by this context's previous frame, which has completed.
-        if (frame.imguiViewport != VK_NULL_HANDLE)
-        {
-            ImGui_ImplVulkan_RemoveTexture(frame.imguiViewport);
-        }
-        frame.imguiViewport = ImGui_ImplVulkan_AddTexture(viewport, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-        frame.imguiViewportView = viewport;
-    }
-    ImDrawData* const drawData = ImGui::GetDrawData();
-    if (drawData == nullptr)
-    {
-        return;
-    }
-    const auto descriptorSet = static_cast<ImTextureID>(std::bit_cast<std::uintptr_t>(frame.imguiViewport));
-    for (ImDrawList* const list : drawData->CmdLists)
-    {
-        for (ImDrawCmd& command : list->CmdBuffer)
-        {
-            if (command.TexRef._TexData == nullptr && command.TexRef._TexID == viewportTextureId)
-            {
-                command.TexRef._TexID = descriptorSet;
-            }
-        }
-    }
 }
 
 RendererStats VulkanRenderer::stats() const noexcept
@@ -4090,86 +4015,6 @@ RendererStats VulkanRenderer::stats() const noexcept
         }
     }
     return stats;
-}
-
-core::Result<void> VulkanRenderer::initializeImGui()
-{
-    DEVEX_ASSERT(!m_imguiInitialized);
-    DEVEX_ASSERT_MSG(ImGui::GetCurrentContext() != nullptr, "create an ImGui context first");
-    if (!m_swapchain)
-    {
-        return core::makeError(core::ErrorCode::InvalidState,
-                               "ImGui needs a visible window to know the swapchain format");
-    }
-
-    m_imguiColorFormat = m_swapchain->toolsFormat();
-    ImGui_ImplVulkan_InitInfo info{};
-    info.ApiVersion = requiredApiVersion;
-    info.Instance = m_instance.handle();
-    info.PhysicalDevice = m_device.physicalDevice();
-    info.Device = m_device.handle();
-    info.QueueFamily = m_device.queueFamily();
-    info.Queue = m_device.queue();
-    // The backend creates a small pool for the textures it binds: the font, the viewport and each
-    // image of the panels made with the interface of the engine, once per frame in flight.
-    info.DescriptorPoolSize = 64;
-    info.MinImageCount = std::max(m_swapchain->imageCount(), 2u);
-    info.ImageCount = info.MinImageCount;
-    info.UseDynamicRendering = true;
-    info.PipelineInfoMain.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
-    info.PipelineInfoMain.PipelineRenderingCreateInfo = {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
-        .colorAttachmentCount = 1,
-        .pColorAttachmentFormats = &m_imguiColorFormat,
-    };
-    info.CheckVkResultFn = [](VkResult result) {
-        if (result < VK_SUCCESS)
-        {
-            DEVEX_LOG_ERROR("ImGui Vulkan backend: {}", toString(result));
-        }
-    };
-
-    if (!ImGui_ImplVulkan_Init(&info))
-    {
-        return core::makeError(core::ErrorCode::Graphics, "cannot initialize ImGui for Vulkan");
-    }
-    m_imguiInitialized = true;
-    return {};
-}
-
-void VulkanRenderer::shutdownImGui() noexcept
-{
-    if (m_imguiInitialized)
-    {
-        vkDeviceWaitIdle(m_device.handle());
-        // The backend's descriptor pool holds the viewport and panel surface sets.
-        for (FrameContext& frame : m_frames)
-        {
-            frame.imguiViewport = VK_NULL_HANDLE;
-            frame.imguiViewportView = VK_NULL_HANDLE;
-            frame.imguiSurfaces.clear();
-        }
-        ImGui_ImplVulkan_Shutdown();
-        m_imguiInitialized = false;
-        m_imguiDrawQueued = false;
-    }
-}
-
-void VulkanRenderer::beginImGuiFrame()
-{
-    DEVEX_ASSERT(m_imguiInitialized);
-    ImGui_ImplVulkan_NewFrame();
-}
-
-bool VulkanRenderer::imGuiNeedsLinearColors() const noexcept
-{
-    const VkFormat format = m_swapchain ? m_swapchain->toolsFormat() : m_imguiColorFormat;
-    return format == VK_FORMAT_B8G8R8A8_SRGB || format == VK_FORMAT_R8G8B8A8_SRGB;
-}
-
-void VulkanRenderer::queueImGuiDrawData() noexcept
-{
-    m_imguiDrawQueued = m_imguiInitialized;
 }
 
 void VulkanRenderer::releaseRetiredResources() noexcept

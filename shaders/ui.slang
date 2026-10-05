@@ -31,8 +31,8 @@ struct UiData
     // How much of the stored distances one pixel of the screen covers, for the letters.
     float sharpness;
     // 1 when the image stores the colours of the display rather than light, as the tools do: the
-    // colours are encoded before they are blended, as ImGui blends its own, so that light letters
-    // on a dark panel look as thin as the letters of ImGui beside them.
+    // colours are encoded before they are blended, in the space their values were chosen in, so
+    // that light letters on a dark panel keep the weight they were designed with.
     uint displaySpace;
 };
 

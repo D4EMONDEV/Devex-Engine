@@ -53,10 +53,7 @@ TEST_CASE("The tools overlay renders over the scene without validation errors", 
             FAIL(std::format("{}", renderer.error()));
         }
 
-        const std::filesystem::path settings =
-            std::filesystem::temp_directory_path() / "devex-tools-test.ini";
-        std::filesystem::remove(settings);
-        auto overlay = devex::tools::ToolsOverlay::create(*platform, *window, *renderer, settings);
+        auto overlay = devex::tools::ToolsOverlay::create(*platform, *window, *renderer);
         if (!overlay)
         {
             FAIL(std::format("{}", overlay.error()));
@@ -129,8 +126,7 @@ TEST_CASE("FileSystem shows empty folders and confirms their deletion", "[tools]
     REQUIRE(window);
     auto renderer = render::Renderer::create(*platform, *window, {.validation = true});
     REQUIRE(renderer);
-    auto editor = tools::ToolsOverlay::create(*platform, *window, *renderer, directory.path / "layout.ini",
-                                               tools::ToolsMode::Editor, directory.path / "settings.dvx");
+    auto editor = tools::ToolsOverlay::create(*platform, *window, *renderer, tools::ToolsMode::Editor, directory.path / "settings.dvx");
     REQUIRE(editor);
     (*editor)->setAssetDatabase(database->get());
     scene::Scene scene;
@@ -162,14 +158,13 @@ TEST_CASE("FileSystem shows empty folders and confirms their deletion", "[tools]
     frame();
     frame();
     const float scale = tools::detail::effectiveInterfaceScale({}, window->displayScale());
-    const float font = tools::detail::regularFontPixels(14.0f) * scale;
-    const float padding = std::floor(8.0f * scale);
-    const float framePadding = std::floor(4.0f * scale);
+    const auto metrics = tools::detail::deriveThemeMetrics({}, window->displayScale());
+    const float padding = metrics.panelPadding;
     const auto dock = tools::detail::placeDock(
         tools::detail::DockLayout::defaults(true), [](std::string_view) { return true; },
-        ImVec2(0.0f, std::round(font + framePadding * 3.2f)),
-        ImVec2(1000.0f, 800.0f - std::round(font + framePadding * 3.2f)),
-        std::round(5.0f * scale), std::round(font + framePadding * 2.0f + 4.0f));
+        ImVec2(0.0f, metrics.menuBarHeight),
+        ImVec2(1000.0f, 800.0f - metrics.statusBarHeight),
+        metrics.dockGap, metrics.tabHeight);
     const auto& files = dock.contents[static_cast<std::size_t>(tools::detail::DockSlot::LeftBottom)];
     // res://, assets, Empty: the third row is present even though no asset was imported.
     const math::Vec2 row{files.min.x + padding + 110.0f * scale,
@@ -221,8 +216,7 @@ TEST_CASE("FileSystem Create New asks for a type name and destination", "[tools]
     REQUIRE(window);
     auto renderer = render::Renderer::create(*platform, *window, {.validation = true});
     REQUIRE(renderer);
-    auto editor = tools::ToolsOverlay::create(*platform, *window, *renderer, directory.path / "layout.ini",
-                                               tools::ToolsMode::Editor, directory.path / "settings.dvx");
+    auto editor = tools::ToolsOverlay::create(*platform, *window, *renderer, tools::ToolsMode::Editor, directory.path / "settings.dvx");
     REQUIRE(editor);
     (*editor)->setAssetDatabase(database->get());
     scene::Scene scene;
@@ -257,14 +251,13 @@ TEST_CASE("FileSystem Create New asks for a type name and destination", "[tools]
     frame();
     frame();
     const float scale = tools::detail::effectiveInterfaceScale({}, window->displayScale());
-    const float font = tools::detail::regularFontPixels(14.0f) * scale;
-    const float padding = std::floor(8.0f * scale);
-    const float framePadding = std::floor(4.0f * scale);
+    const auto metrics = tools::detail::deriveThemeMetrics({}, window->displayScale());
+    const float padding = metrics.panelPadding;
     const auto dock = tools::detail::placeDock(
         tools::detail::DockLayout::defaults(true), [](std::string_view) { return true; },
-        ImVec2(0.0f, std::round(font + framePadding * 3.2f)),
-        ImVec2(1000.0f, 800.0f - std::round(font + framePadding * 3.2f)),
-        std::round(5.0f * scale), std::round(font + framePadding * 2.0f + 4.0f));
+        ImVec2(0.0f, metrics.menuBarHeight),
+        ImVec2(1000.0f, 800.0f - metrics.statusBarHeight),
+        metrics.dockGap, metrics.tabHeight);
     const auto& files = dock.contents[static_cast<std::size_t>(tools::detail::DockSlot::LeftBottom)];
     const math::Vec2 row{files.min.x + padding + 110.0f * scale,
                          files.min.y + padding + (28.0f + 5.6f + 2.0f + 2.5f * 26.0f) * scale};
@@ -331,20 +324,17 @@ TEST_CASE("Output follows startup messages without toggling Follow", "[tools][lo
     REQUIRE(window);
     auto renderer = devex::render::Renderer::create(*platform, *window, {.validation = true});
     REQUIRE(renderer);
-    const auto settings = std::filesystem::temp_directory_path() /
-                          ("devex-output-follow-" + devex::core::Uuid::generate().toString() + ".ini");
-    auto overlay = devex::tools::ToolsOverlay::create(*platform, *window, *renderer, settings);
+    auto overlay = devex::tools::ToolsOverlay::create(*platform, *window, *renderer);
     REQUIRE(overlay);
     (*overlay)->setVisible(true);
     devex::scene::Scene scene;
     const float scale = devex::tools::detail::effectiveInterfaceScale({}, window->displayScale());
-    const float font = devex::tools::detail::regularFontPixels(14.0f) * scale;
-    const float padding = std::floor(8.0f * scale);
-    const float framePadding = std::floor(4.0f * scale);
+    const auto metrics = devex::tools::detail::deriveThemeMetrics({}, window->displayScale());
+    const float padding = metrics.panelPadding;
     const auto dock = devex::tools::detail::placeDock(
         devex::tools::detail::DockLayout::defaults(false), [](std::string_view) { return true; },
-        ImVec2(0.0f, std::round(font + framePadding * 3.2f)), ImVec2(1000.0f, 800.0f),
-        std::round(5.0f * scale), std::round(font + framePadding * 2.0f + 4.0f));
+        ImVec2(0.0f, metrics.menuBarHeight), ImVec2(1000.0f, 800.0f),
+        metrics.dockGap, metrics.tabHeight);
     const auto& output = dock.contents[static_cast<std::size_t>(devex::tools::detail::DockSlot::Bottom)];
     const devex::math::Vec2 follow{output.max.x - padding - 17.5f * scale,
                                  output.min.y + padding + 14.0f * scale};
@@ -404,22 +394,19 @@ TEST_CASE("Clearing a scrolled output keeps its current rows valid and shows new
     REQUIRE(window.has_value());
     auto renderer = devex::render::Renderer::create(*platform, *window, {.validation = true});
     REQUIRE(renderer.has_value());
-    const std::filesystem::path settings = std::filesystem::temp_directory_path() /
-                                          ("devex-output-clear-" + devex::core::Uuid::generate().toString() + ".ini");
-    auto overlay = devex::tools::ToolsOverlay::create(*platform, *window, *renderer, settings);
+    auto overlay = devex::tools::ToolsOverlay::create(*platform, *window, *renderer);
     REQUIRE(overlay.has_value());
     (*overlay)->setVisible(true);
     devex::scene::Scene scene;
 
     // Locate Clear in the default dock: it is the penultimate icon of the Output toolbar.
     const float scale = devex::tools::detail::effectiveInterfaceScale({}, window->displayScale());
-    const float font = devex::tools::detail::regularFontPixels(14.0f) * scale;
-    const float padding = std::floor(8.0f * scale);
-    const float framePadding = std::floor(4.0f * scale);
+    const auto metrics = devex::tools::detail::deriveThemeMetrics({}, window->displayScale());
+    const float padding = metrics.panelPadding;
     const auto dock = devex::tools::detail::placeDock(
         devex::tools::detail::DockLayout::defaults(false), [](std::string_view) { return true; },
-        ImVec2(0.0f, std::round(font + framePadding * 3.2f)), ImVec2(1000.0f, 800.0f),
-        std::round(5.0f * scale), std::round(font + framePadding * 2.0f + 4.0f));
+        ImVec2(0.0f, metrics.menuBarHeight), ImVec2(1000.0f, 800.0f),
+        metrics.dockGap, metrics.tabHeight);
     const auto& output = dock.contents[static_cast<std::size_t>(devex::tools::detail::DockSlot::Bottom)];
     const devex::math::Vec2 clear{output.max.x - padding - (35.0f * 1.5f + 3.5f) * scale,
                                 output.min.y + padding + 14.0f * scale};
@@ -587,8 +574,7 @@ TEST_CASE("The editor opens the project's scenes in tabs and renders its viewpor
         auto cubeMesh = renderer->createMesh(devex::asset::makeCube());
         REQUIRE(cubeMesh.has_value());
 
-        auto editor = devex::tools::ToolsOverlay::create(*platform, *window, *renderer, root / "editor.ini",
-                                                         devex::tools::ToolsMode::Editor, root / "user.dvx");
+        auto editor = devex::tools::ToolsOverlay::create(*platform, *window, *renderer, devex::tools::ToolsMode::Editor, root / "user.dvx");
         if (!editor)
         {
             FAIL(std::format("{}", editor.error()));

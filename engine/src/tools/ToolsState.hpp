@@ -501,9 +501,6 @@ struct DEVEX_API ToolsState
     platform::Window& window;
     render::Renderer& renderer;
     ToolsMode mode;
-    // Kept alive for ImGuiIO::IniFilename.
-    std::string settingsFile;
-
     // Appearance.
     IconSet icons;
     // The fonts, icons and theme the panels made with the interface of the engine share, and the
@@ -538,7 +535,6 @@ struct DEVEX_API ToolsState
     std::shared_ptr<EditorLayerUi> editorLayerUi;
     // Opens the window at the next frame.
     std::optional<CreationRequest> creationRequest;
-    EditorFonts fonts;
     ThemeSettings theme;
     ScriptSettings scripts;
     bool scriptSettingsUnsaved = false;

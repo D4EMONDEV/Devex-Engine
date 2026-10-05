@@ -12,8 +12,6 @@
 #include <devex/scene/ComponentRegistry.hpp>
 #include <devex/tools/SceneCommands.hpp>
 
-#include <imgui_internal.h>
-
 #include <algorithm>
 #include <array>
 #include <format>
@@ -842,11 +840,11 @@ void drawCreationDialog(ToolsState& state, scene::Scene& scene)
     }
 
     // In the middle of the window, as large as it comfortably holds, over a veil.
-    const ImGuiViewport* const viewport = ImGui::GetMainViewport();
-    // Points of text, scaled as ImGui scales its own.
-    const float unit = ImGui::GetFontSize() / std::max(regularFontPixels(state.theme.fontSize), 1.0f);
-    const ImVec2 size(std::clamp(viewport->WorkSize.x * 0.68f, std::min(unit * 780.0f, viewport->WorkSize.x), unit * 1150.0f),
-                      std::clamp(viewport->WorkSize.y * 0.72f, std::min(unit * 520.0f, viewport->WorkSize.y), unit * 760.0f));
+    const ImVec2 screen = editorScreen().size;
+    // Points of text, at the scale of the interface.
+    const float unit = themeMetrics().lineHeight / std::max(regularFontPixels(state.theme.fontSize), 1.0f);
+    const ImVec2 size(std::clamp(screen.x * 0.68f, std::min(unit * 780.0f, screen.x), unit * 1150.0f),
+                      std::clamp(screen.y * 0.72f, std::min(unit * 520.0f, screen.y), unit * 760.0f));
     if (!beginModal(state, creationPopup, size))
     {
         return;

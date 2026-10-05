@@ -483,8 +483,77 @@ TEST_CASE("The scene renders into a viewport image with picking, outlines and ov
         CHECK(results[2].objectId == 0);
         CHECK(results[3].objectIds == std::vector<std::uint32_t>{7, 42});
         CHECK(results[4].objectIds == std::vector<std::uint32_t>{42});
-        CHECK(devex::render::Renderer::viewportTexture() != 0);
         renderer->destroyMesh(*cube);
+    }
+
+    for (const std::string& error : capture.errors())
+    {
+        UNSCOPED_INFO(error);
+    }
+    CHECK(capture.errors().empty());
+}
+
+TEST_CASE("The tools compose the scene image and interface surfaces over the window", "[render][gpu]")
+{
+    using devex::math::Vec2;
+    using devex::math::Vec4;
+    using devex::render::UiDraw;
+    using devex::render::UiSource;
+    using devex::render::UiVertex;
+
+    const ErrorCapture capture;
+    {
+        auto platform = devex::platform::Platform::create();
+        REQUIRE(platform.has_value());
+        auto window = platform->createWindow({.width = 320, .height = 240, .vulkan = true, .hidden = true});
+        REQUIRE(window.has_value());
+        auto renderer = devex::render::Renderer::create(*platform, *window, {.validation = true});
+        if (!renderer)
+        {
+            FAIL(std::format("{}", renderer.error()));
+        }
+        // A quad of the layer of the tools, read from an image or filled with a colour.
+        const auto quad = [](devex::render::RenderWorld& world, Vec2 min, Vec2 max, UiSource source, std::uint32_t surface,
+                             Vec4 color) {
+            const auto first = static_cast<std::uint32_t>(world.toolsVertices.size());
+            world.toolsVertices.push_back(UiVertex{.position = min, .uv = {0.0f, 0.0f}, .color = color});
+            world.toolsVertices.push_back(UiVertex{.position = {max.x, min.y}, .uv = {1.0f, 0.0f}, .color = color});
+            world.toolsVertices.push_back(UiVertex{.position = max, .uv = {1.0f, 1.0f}, .color = color});
+            world.toolsVertices.push_back(UiVertex{.position = {min.x, max.y}, .uv = {0.0f, 1.0f}, .color = color});
+            const auto firstIndex = static_cast<std::uint32_t>(world.toolsIndices.size());
+            for (const std::uint32_t corner : {0u, 1u, 2u, 0u, 2u, 3u})
+            {
+                world.toolsIndices.push_back(first + corner);
+            }
+            world.toolsDraws.push_back(UiDraw{.source = source, .surface = surface, .firstIndex = firstIndex, .indexCount = 6});
+        };
+        for (std::uint64_t frame = 0; frame < 6; ++frame)
+        {
+            devex::render::RenderWorld& world = renderer->beginFrame();
+            // The scene image only every other frame: a quad that shows it then shows nothing.
+            if (frame % 2 == 0)
+            {
+                world.viewport = devex::math::Extent2D{200, 150};
+            }
+            devex::render::UiSurface surface{.id = 7, .size = {80, 60}, .clearColor = Vec4{0.1f, 0.2f, 0.3f, 1.0f}};
+            surface.vertices = {UiVertex{.position = {4.0f, 4.0f}}, UiVertex{.position = {40.0f, 4.0f}},
+                                UiVertex{.position = {40.0f, 30.0f}}};
+            surface.indices = {0, 1, 2};
+            surface.draws.push_back(UiDraw{.indexCount = 3});
+            world.uiSurfaces.push_back(std::move(surface));
+
+            quad(world, {0.0f, 0.0f}, {320.0f, 240.0f}, UiSource::Texture, 0, Vec4{0.05f, 0.05f, 0.05f, 1.0f});
+            quad(world, {10.0f, 10.0f}, {210.0f, 160.0f}, UiSource::SceneImage, 0, Vec4{1.0f});
+            quad(world, {220.0f, 10.0f}, {300.0f, 70.0f}, UiSource::Surface, 7, Vec4{1.0f});
+            // A surface that was not drawn this frame shows nothing.
+            quad(world, {220.0f, 80.0f}, {300.0f, 140.0f}, UiSource::Surface, 9, Vec4{1.0f});
+            const devex::core::Result<void> presented = renderer->endFrame();
+            if (!presented)
+            {
+                FAIL(std::format("frame {}: {}", frame, presented.error()));
+            }
+        }
+        CHECK(renderer->stats().drawCalls > 0);
     }
 
     for (const std::string& error : capture.errors())

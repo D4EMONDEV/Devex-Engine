@@ -312,12 +312,27 @@ enum class UiDrawKind : std::uint8_t
     Text,
 };
 
+// What a batch of the interface reads its texture from: a texture of the renderer, or an image the
+// frame draws for the tools, which they place on the screen.
+enum class UiSource : std::uint8_t
+{
+    Texture,
+    // The scene drawn for the tools, when RenderWorld::viewport is set.
+    SceneImage,
+    // The image of the RenderWorld::uiSurfaces entry whose id is UiDraw::surface.
+    Surface,
+};
+
 // One batch of the interface: the triangles that share a texture and a shape.
 struct DEVEX_API UiDraw
 {
     UiDrawKind kind = UiDrawKind::Quad;
     // Invalid draws the color alone.
     TextureHandle texture;
+    // The images of the scene and of the surfaces hold the colours of the display, which a batch
+    // shows as they are; one whose image was not drawn this frame shows nothing.
+    UiSource source = UiSource::Texture;
+    std::uint32_t surface = 0;
     std::uint32_t firstIndex = 0;
     std::uint32_t indexCount = 0;
     // The rectangle the corners are rounded on, and by how much, in pixels.
@@ -330,9 +345,9 @@ struct DEVEX_API UiDraw
     math::Vec4 clip{0.0f};
 };
 
-// An interface drawn into an image of its own rather than over the scene, which the tools show as a
-// texture (Renderer::uiSurfaceTexture): the panels of the editor made with the interface of the
-// engine. Positions are in pixels of that image; indices count from its own first vertex.
+// An interface drawn into an image of its own rather than over the scene, which the tools show with
+// UiSource::Surface: the panels of the editor made with the interface of the engine. Positions are
+// in pixels of that image; indices count from its own first vertex.
 struct DEVEX_API UiSurface
 {
     std::uint32_t id = 0;
@@ -401,7 +416,7 @@ struct DEVEX_API RenderWorld
     std::vector<RenderTile> tiles;
 
     // Size in pixels of the image the scene is drawn into for the tools, which show it with
-    // Renderer::viewportTexture. Zero draws the scene over the whole window.
+    // UiSource::SceneImage. Zero draws the scene over the whole window.
     math::Extent2D viewport;
     // Pairs of vertices drawn as lines over the scene, hidden behind nearer surfaces.
     std::vector<OverlayVertex> sceneLines;
@@ -419,6 +434,12 @@ struct DEVEX_API RenderWorld
     std::vector<UiDraw> uiDraws;
     // Interfaces drawn into images of their own, for the tools; only drawn with them.
     std::vector<UiSurface> uiSurfaces;
+    // The tools over the whole window, drawn last in the colours of the display: the images of the
+    // scene and of the surfaces where the editor shows them, and what it paints around them.
+    // Positions are in pixels of the window.
+    std::vector<UiVertex> toolsVertices;
+    std::vector<std::uint32_t> toolsIndices;
+    std::vector<UiDraw> toolsDraws;
 
     // Restores the defaults while keeping allocated storage.
     void reset() noexcept
@@ -449,6 +470,12 @@ struct DEVEX_API RenderWorld
         uiVertexStorage.clear();
         uiIndexStorage.clear();
         uiDrawStorage.clear();
+        std::vector<UiVertex> toolsVertexStorage = std::move(toolsVertices);
+        std::vector<std::uint32_t> toolsIndexStorage = std::move(toolsIndices);
+        std::vector<UiDraw> toolsDrawStorage = std::move(toolsDraws);
+        toolsVertexStorage.clear();
+        toolsIndexStorage.clear();
+        toolsDrawStorage.clear();
         lightStorage.clear();
         meshStorage.clear();
         boneStorage.clear();
@@ -472,6 +499,9 @@ struct DEVEX_API RenderWorld
         uiVertices = std::move(uiVertexStorage);
         uiIndices = std::move(uiIndexStorage);
         uiDraws = std::move(uiDrawStorage);
+        toolsVertices = std::move(toolsVertexStorage);
+        toolsIndices = std::move(toolsIndexStorage);
+        toolsDraws = std::move(toolsDrawStorage);
     }
 };
 

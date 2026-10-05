@@ -1,10 +1,11 @@
-// The places of the screen the editor shows its images in, in place of ImGui's windows: which one the
-// pointer is over, which one has the keyboard, and the order they are drawn in. A host is declared at
-// every frame where it stands; the pointer finds it the next frame, as ImGui finds its windows.
+// The places of the screen the editor shows its images in: which one the pointer is over, which one
+// has the keyboard, and the order they are drawn in. A host is declared at every frame where it
+// stands; the pointer finds it the next frame.
 #pragma once
 
 #include <devex/core/Export.hpp>
 #include <devex/math/Math.hpp>
+#include <devex/render/RenderWorld.hpp>
 
 #include <imgui.h>
 
@@ -17,11 +18,29 @@
 
 namespace devex::tools::detail {
 
-// A point of the editor's input as ImGui's draw lists take it.
+// A point of the editor's input as its places take it.
 [[nodiscard]] inline ImVec2 pointOf(math::Vec2 point) noexcept
 {
     return ImVec2(point.x, point.y);
 }
+
+// The window the tools stand in, as the frame measured it: its size in points, and how many pixels
+// of the window a point covers.
+struct DEVEX_API EditorScreen
+{
+    ImVec2 size{0.0f, 0.0f};
+    float pixelsPerPoint = 1.0f;
+};
+
+DEVEX_API void setEditorScreen(const EditorScreen& screen) noexcept;
+[[nodiscard]] DEVEX_API const EditorScreen& editorScreen() noexcept;
+
+// An image a host shows: the scene drawn for the tools, or the image of an interface surface.
+struct DEVEX_API HostImage
+{
+    render::UiSource source = render::UiSource::Surface;
+    std::uint32_t surface = 0;
+};
 
 // From the bottom up: the dock behind the panels, the panels and the screens, the strips of the
 // frame, the modals, and the menus and tooltips over everything.
@@ -42,9 +61,8 @@ struct DEVEX_API HostOptions
     bool takesPointer = true;
     // Where the pointer goes through to what is behind the tools: the game under the panels.
     std::optional<std::pair<ImVec2, ImVec2>> hole;
-    // Painted under what the host shows, as the background of a window, and the room kept inside
-    // its edges.
-    std::optional<ImVec4> background;
+    // Painted under what the host shows, in linear colours, and the room kept inside its edges.
+    std::optional<math::Vec4> background;
     float padding = 0.0f;
 };
 
@@ -63,7 +81,7 @@ public:
     void setCursor(ImVec2 at) noexcept;
     [[nodiscard]] ImVec2 available() const noexcept;
     // Shows an image at the cursor and moves the cursor under it.
-    void image(std::uint64_t texture, ImVec2 size);
+    void image(HostImage shown, ImVec2 size);
     // Whether the pointer is over the last image, in the host it is over.
     [[nodiscard]] bool itemHovered() const noexcept;
     // Whether the host being declared is under the pointer, and has the keyboard, it or the host it
@@ -79,8 +97,9 @@ public:
     // Whether the pointer is over any host: the tools have it, not the game.
     [[nodiscard]] bool pointerTaken() const noexcept;
 
-    // Draws the backgrounds and the images of the frame, from the bottom layer up.
-    void compose(ImDrawList& list);
+    // Adds the backgrounds and the images of the frame to the layer of the tools, from the bottom
+    // layer up, in pixels of the window.
+    void compose(render::RenderWorld& world) const;
 
 private:
     struct Host
@@ -98,10 +117,11 @@ private:
         HostLayer layer = HostLayer::Panels;
         std::size_t order = 0;
         std::size_t sequence = 0;
-        std::uint64_t texture = 0;
+        // Without an image, the colour fills the place.
+        std::optional<HostImage> image;
         ImVec2 min{0.0f, 0.0f};
         ImVec2 max{0.0f, 0.0f};
-        ImU32 color = 0;
+        math::Vec4 color{1.0f};
     };
     struct Open
     {

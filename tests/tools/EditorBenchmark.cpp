@@ -50,7 +50,7 @@ void measureEditor(const std::function<void(devex::tools::ToolsOverlay&, const s
     REQUIRE(window.has_value());
     auto renderer = devex::render::Renderer::create(*platform, *window, {.validation = false});
     REQUIRE(renderer.has_value());
-    auto editor = devex::tools::ToolsOverlay::create(*platform, *window, *renderer, root / "editor.ini", devex::tools::ToolsMode::Editor,
+    auto editor = devex::tools::ToolsOverlay::create(*platform, *window, *renderer, devex::tools::ToolsMode::Editor,
                                                      root / "user.dvx");
     REQUIRE(editor.has_value());
     (*editor)->setAssetDatabase(database->get());

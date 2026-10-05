@@ -14,8 +14,6 @@
 #include <devex/core/Log.hpp>
 #include <devex/core/Path.hpp>
 
-#include <imgui_internal.h>
-
 #include <algorithm>
 #include <array>
 #include <charconv>

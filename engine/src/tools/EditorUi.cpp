@@ -1,7 +1,5 @@
 #include "EditorUi.hpp"
 
-#include <imgui_internal.h>
-
 #include <devex/asset/TextureData.hpp>
 #include <devex/asset/import/Importer.hpp>
 #include <devex/asset/import/TextureProcessing.hpp>
@@ -45,33 +43,6 @@ constexpr std::uint32_t iconPixels = 64;
 {
     return ImVec4(from.x + (to.x - from.x) * amount, from.y + (to.y - from.y) * amount, from.z + (to.z - from.z) * amount,
                   from.w + (to.w - from.w) * amount);
-}
-
-// The UTF-8 of a character ImGui queued as typed.
-void appendUtf8(std::string& text, unsigned int codepoint)
-{
-    if (codepoint < 0x80)
-    {
-        text.push_back(static_cast<char>(codepoint));
-    }
-    else if (codepoint < 0x800)
-    {
-        text.push_back(static_cast<char>(0xC0 | (codepoint >> 6)));
-        text.push_back(static_cast<char>(0x80 | (codepoint & 0x3F)));
-    }
-    else if (codepoint < 0x10000)
-    {
-        text.push_back(static_cast<char>(0xE0 | (codepoint >> 12)));
-        text.push_back(static_cast<char>(0x80 | ((codepoint >> 6) & 0x3F)));
-        text.push_back(static_cast<char>(0x80 | (codepoint & 0x3F)));
-    }
-    else
-    {
-        text.push_back(static_cast<char>(0xF0 | (codepoint >> 18)));
-        text.push_back(static_cast<char>(0x80 | ((codepoint >> 12) & 0x3F)));
-        text.push_back(static_cast<char>(0x80 | ((codepoint >> 6) & 0x3F)));
-        text.push_back(static_cast<char>(0x80 | (codepoint & 0x3F)));
-    }
 }
 
 } // namespace
@@ -613,11 +584,9 @@ math::Vec2 UiPanel::unitsOf(ImVec2 screen) const noexcept
 
 float UiPanel::zoomFor(float font) noexcept
 {
-    const float pixelsPerPoint =
-        ImGui::GetIO().DisplayFramebufferScale.x > 0.0f ? ImGui::GetIO().DisplayFramebufferScale.x : 1.0f;
-    // ImGui sizes its fonts by their whole line, the interface of the engine by their em: a unit
-    // is a point of text, scaled as ImGui scales its own.
-    return pixelsPerPoint * ImGui::GetFontSize() / std::max(regularFontPixels(font), 1.0f);
+    // A unit is a point of text at the scale of the interface: the line of the theme's font stands
+    // for the line of a font of that size.
+    return editorScreen().pixelsPerPoint * themeMetrics().lineHeight / std::max(regularFontPixels(font), 1.0f);
 }
 
 PanelImagePlacement placePanelImage(ImVec2 origin, ImVec2 size, ImVec2 viewport, float pixelsPerPoint) noexcept
@@ -639,19 +608,18 @@ void UiPanel::update(EditorUiKit& kit, core::Duration delta, float zoom, float h
     DEVEX_PROFILE_SCOPE("Panel update");
     EditorHosts& hosts = kit.hosts();
     const EditorInput& devices = kit.input();
-    const ImGuiIO& io = ImGui::GetIO();
-    const float pixelsPerPoint = io.DisplayFramebufferScale.x > 0.0f ? io.DisplayFramebufferScale.x : 1.0f;
+    const float pixelsPerPoint = editorScreen().pixelsPerPoint;
     const ImVec2 room = hosts.available();
     const ImVec2 available(std::max(room.x, 1.0f), std::max(height > 0.0f ? height : room.y, 1.0f));
     // A panel's texels must land on framebuffer pixels without a second, fractional resampling.
-    const PanelImagePlacement placement = placePanelImage(hosts.cursor(), available, ImGui::GetMainViewport()->Pos, pixelsPerPoint);
+    const PanelImagePlacement placement = placePanelImage(hosts.cursor(), available, ImVec2(0.0f, 0.0f), pixelsPerPoint);
     const ImVec2 origin = placement.origin;
     m_origin = origin;
     m_pixelsPerPoint = pixelsPerPoint;
     m_zoom = std::max(zoom, 0.1f);
     m_pixels = placement.pixels;
     hosts.setCursor(origin);
-    hosts.image(render::Renderer::uiSurfaceTexture(m_surface), placement.size);
+    hosts.image(HostImage{.source = render::UiSource::Surface, .surface = m_surface}, placement.size);
     m_hovered = hosts.itemHovered();
     m_focused = hosts.focused();
     if (!m_connected)
@@ -759,7 +727,7 @@ void UiPanel::update(EditorUiKit& kit, core::Duration delta, float zoom, float h
     // next to the field.
     if (m_focused && m_world.isEditing() && !m_world.canvases().empty())
     {
-        const float lineHeight = ImGui::GetFontSize();
+        const float lineHeight = themeMetrics().lineHeight;
         if (const ui::LaidOutRect* const field = m_world.canvases().front().layout.find(m_world.editedField()))
         {
             kit.requestTextInput(ImVec2(origin.x + field->min.x * m_zoom / pixelsPerPoint, origin.y + field->min.y * m_zoom / pixelsPerPoint),

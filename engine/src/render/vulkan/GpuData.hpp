@@ -188,7 +188,7 @@ struct UiPushConstants
     math::Vec4 rect{0.0f};
     float radius = 0.0f;
     float sharpness = 1.0f;
-    // 1 to write colours encoded for the display, blended as ImGui blends them.
+    // 1 to write colours encoded for the display, blended in display space as the tools blend them.
     std::uint32_t displaySpace = 0;
     float padding1 = 0.0f;
 };
