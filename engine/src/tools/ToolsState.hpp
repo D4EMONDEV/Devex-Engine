@@ -758,6 +758,9 @@ struct DEVEX_API ToolsState
     // A res:// path captured when Delete was requested; acted on only after confirmation.
     std::string fileToDelete;
     bool openDeleteFilePopup = false;
+    // A res:// path the Move To window asks a destination for.
+    std::string fileToMove;
+    bool openMoveFilePopup = false;
     // The pending action waits for play to stop.
     bool resumeActionAfterPlay = false;
 
@@ -856,6 +859,17 @@ DEVEX_API core::Result<std::filesystem::path> createContentFolder(ToolsState& st
 DEVEX_API core::Result<std::filesystem::path> writeNewAssetFile(ToolsState& state, std::string_view folder,
     std::string_view requestedName, std::string_view defaultName, std::string_view extension, std::string_view text);
 DEVEX_API core::Result<void> deleteFileSystemPath(ToolsState& state, scene::Scene& scene, std::string_view resourcePath);
+// Moves or renames a file or folder of FileSystem to `name` in the res:// `folder`. The scenes and
+// texts open from it, the selected code file and the folders open in FileSystem follow it, and its
+// new line is chosen. Returns the new res:// path.
+DEVEX_API core::Result<std::string> moveFileSystemPath(ToolsState& state, scene::Scene& scene, std::string_view resourcePath,
+                                                       std::string_view folder, std::string_view name);
+// What FileSystem keeps of a moved file or folder follows it: the folders open under it, and the
+// line chosen.
+DEVEX_API void fileSystemMoved(ToolsState& state, const std::string& from, const std::string& to,
+                               const std::filesystem::path& fromFile, const std::filesystem::path& toFile);
+// The text of a moved file stays open in the Script screen, with its cursor and its history.
+DEVEX_API void openTextMoved(ToolsState& state, const std::filesystem::path& from, const std::filesystem::path& to);
 // The clips of the selected Animator: a timeline of their keys, played or scrubbed. Outside Play
 // the panel poses the skeleton itself; during Play it follows the game.
 DEVEX_API void drawAnimationPanel(ToolsState& state, scene::Scene& scene);

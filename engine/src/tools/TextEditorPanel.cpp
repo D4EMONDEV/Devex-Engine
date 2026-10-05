@@ -1272,6 +1272,23 @@ void drawTextEditorPanel(ToolsState& state, scene::Scene& scene)
     }
 }
 
+void openTextMoved(ToolsState& state, const std::filesystem::path& from, const std::filesystem::path& to)
+{
+    if (!state.scriptUi)
+    {
+        return;
+    }
+    for (ScriptUi::OpenText& entry : state.scriptUi->open)
+    {
+        if (entry.path == from)
+        {
+            entry.path = to;
+        }
+    }
+    // The list of the files is made again with its new name.
+    state.scriptUi->filesKey.clear();
+}
+
 void renderTextEditor(ToolsState& state, render::RenderWorld& world)
 {
     if (state.scriptUi && state.uiKit)

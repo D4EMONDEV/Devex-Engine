@@ -684,6 +684,91 @@ core::Result<void> deleteFileSystemPath(ToolsState& state, scene::Scene& scene, 
     return result;
 }
 
+core::Result<std::string> moveFileSystemPath(ToolsState& state, scene::Scene& scene, std::string_view resourcePath,
+                                             std::string_view folder, std::string_view name)
+{
+    if (state.database == nullptr || state.mode != ToolsMode::Editor || state.playState != PlayState::Editing)
+    {
+        return core::makeError(core::ErrorCode::InvalidState, "Files can only be moved while editing a project");
+    }
+    const asset::Project& project = state.database->project();
+    const auto from = project.absolutePath(resourcePath);
+    if (!from)
+    {
+        return core::makeError(core::ErrorCode::InvalidArgument, "Invalid project path");
+    }
+    const std::string fromResource = project.resourcePath(*from);
+    // Where a document lies inside what moves: matched while the files are still there, so that
+    // equivalent spellings of a path (case on Windows) are found.
+    const auto within = [&](const std::filesystem::path& path) -> std::optional<std::filesystem::path> {
+        if (path.empty())
+        {
+            return std::nullopt;
+        }
+        for (auto parent = path; !parent.empty(); parent = parent.parent_path())
+        {
+            if (sameTextPath(parent, *from))
+            {
+                return path.lexically_relative(parent);
+            }
+            if (parent == parent.parent_path())
+            {
+                break;
+            }
+        }
+        return std::nullopt;
+    };
+    const ActiveDocument live = activeDocument(state, scene);
+    std::vector<std::pair<std::size_t, std::filesystem::path>> tabs;
+    for (std::size_t index = 0; index < state.tabs.size(); ++index)
+    {
+        if (std::optional<std::filesystem::path> inside = within(state.tabs.path(index, live)))
+        {
+            tabs.emplace_back(index, std::move(*inside));
+        }
+    }
+    std::vector<std::pair<TextDocument*, std::filesystem::path>> texts;
+    for (TextDocument& document : state.textDocuments)
+    {
+        if (std::optional<std::filesystem::path> inside = within(document.path))
+        {
+            texts.emplace_back(&document, std::move(*inside));
+        }
+    }
+    const std::optional<std::filesystem::path> activeText = within(state.activeText);
+    const std::optional<std::filesystem::path> selectedCode = within(state.selectedCode);
+
+    core::Result<std::string> moved = state.database->movePath(fromResource, folder, name);
+    if (!moved)
+    {
+        return moved;
+    }
+    const std::filesystem::path to = *project.absolutePath(*moved);
+    const auto follow = [&to](const std::filesystem::path& inside) { return inside == "." ? to : (to / inside).lexically_normal(); };
+    for (const auto& [index, inside] : tabs)
+    {
+        (state.tabs.active() == index ? state.scenePath : state.tabs.background(index).path) = follow(inside);
+    }
+    for (const auto& [document, inside] : texts)
+    {
+        const std::filesystem::path before = document->path;
+        document->path = follow(inside);
+        openTextMoved(state, before, document->path);
+    }
+    if (activeText)
+    {
+        state.activeText = follow(*activeText);
+    }
+    if (selectedCode)
+    {
+        state.selectedCode = follow(*selectedCode);
+    }
+    fileSystemMoved(state, fromResource, *moved, *from, to);
+    const bool renamed = from->parent_path() == to.parent_path();
+    DEVEX_LOG_INFO("{} {} to {}", renamed ? "Renamed" : "Moved", fromResource, renamed ? core::toUtf8(to.filename()) : *moved);
+    return moved;
+}
+
 void activateSceneTab(ToolsState& state, scene::Scene& scene, std::size_t index)
 {
     if (state.playState == PlayState::Editing && index < state.tabs.size() && index != state.tabs.active())

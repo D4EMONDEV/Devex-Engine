@@ -125,7 +125,9 @@ Le détail, l'architecture des modules et les jalons sont dans
   avec
   `Devex::Ui` (menus contextuels,
   infobulles, modales, listes virtuelles, texte de la sortie choisi et copié à la souris, fichiers
-  glissés vers la vue et l'inspecteur, entités lâchées sur un dossier qui deviennent des préfabs),
+  glissés vers la vue et l'inspecteur, entités lâchées sur un dossier qui deviennent des préfabs,
+  fichiers et dossiers créés, supprimés, renommés en place avec F2 et déplacés par un glisser sur un
+  dossier ou *Move To...*, leurs UUID gardés),
   onglets de scènes, viewport et sa
   barre d'outils, caméra libre, sélection multiple (Ctrl et Maj dans l'arbre, rectangle dans la
   vue), gizmos et inspecteur sur plusieurs entités, copier, coller et dupliquer par le

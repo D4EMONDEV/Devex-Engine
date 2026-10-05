@@ -1,6 +1,7 @@
 // FileSystem, made with the interface of the engine as Godot's dock is with its nodes: the files of the
 // project as a tree whose rows only exist for the lines on screen. Its files are dragged onto the
-// viewport and the properties, and an entity dropped on one of its folders becomes a prefab there.
+// viewport and the properties, or onto its folders to move them there, F2 renames a line in place,
+// and an entity dropped on one of its folders becomes a prefab there.
 #include "EditorUi.hpp"
 #include "ToolsState.hpp"
 
@@ -210,7 +211,31 @@ struct Row
     Entity label;
     Entity detail;
     Entity status;
+    // Where the name is typed while the line is renamed.
+    Entity field;
 };
+
+// What a line is called on disk: the name of its file or folder.
+[[nodiscard]] std::string diskName(const Node& node)
+{
+    return node.file.empty() ? std::string(fileName(node.path)) : core::toUtf8(node.file.filename());
+}
+
+// The part of a name a rename changes: a file keeps its extension, which chooses how it is imported.
+[[nodiscard]] std::pair<std::string, std::string> splitName(const Node& node)
+{
+    std::string name = diskName(node);
+    if (node.kind == NodeKind::Folder || node.kind == NodeKind::CodeFolder)
+    {
+        return {std::move(name), std::string{}};
+    }
+    const std::size_t dot = name.rfind('.');
+    if (dot == std::string::npos || dot == 0)
+    {
+        return {std::move(name), std::string{}};
+    }
+    return {name.substr(0, dot), name.substr(dot)};
+}
 
 // The entries of a folder of the code, read again once in a while.
 struct CodeListing
@@ -255,6 +280,8 @@ struct FileSystemUi : PanelBuilder
     Entity folderSeparator;
     Button externalEditor;
     Button showFolder;
+    Button renameFile;
+    Button moveFile;
     Button deleteFile;
     // What the menu acts on, from the moment it opened.
     std::optional<Node> menuNode;
@@ -263,6 +290,9 @@ struct FileSystemUi : PanelBuilder
     std::vector<Node> nodes;
     std::unordered_map<std::string, bool> expanded;
     std::string selected;
+    // The key of the line being renamed, and what its name keeps after the typed part.
+    std::string renaming;
+    std::string renamingExtension;
     std::map<std::filesystem::path, CodeListing> codeListings;
     double clock = 0.0;
 
@@ -278,6 +308,9 @@ struct FileSystemUi : PanelBuilder
     void answerMenu(ToolsState& state, scene::Scene& edited);
     [[nodiscard]] std::string removablePath(const ToolsState& state, const Node& node) const;
     void requestDelete(ToolsState& state, const Node& node);
+    void startRename(ToolsState& state, const Node& node);
+    // Moves a res:// file or folder into a res:// folder, keeping its name.
+    void moveInto(ToolsState& state, scene::Scene& edited, const std::string& path, const std::string& folder);
     void dropEntity(ToolsState& state, const scene::Scene& edited, const Node& folder, const std::string& uuid);
 
     [[nodiscard]] bool isOpen(const std::string& key, bool byDefault) const
@@ -317,6 +350,8 @@ void FileSystemUi::build(ToolsState& state, EditorUiKit& kit)
     folderSeparator = menuSeparator(menu);
     externalEditor = menuItem(kit, menu, Icon::ExternalLink, "Open in External Editor");
     showFolder = menuItem(kit, menu, Icon::FolderOpen, "Show in File Manager");
+    renameFile = menuItem(kit, menu, Icon::Pencil, "Rename", "F2");
+    moveFile = menuItem(kit, menu, Icon::Move, "Move To...");
     deleteFile = menuItem(kit, menu, Icon::Trash, "Delete...");
 
     // The files leave for the other panels and the view; entities come in to be made prefabs.
@@ -638,6 +673,29 @@ void FileSystemUi::requestDelete(ToolsState& state, const Node& node)
     }
 }
 
+void FileSystemUi::startRename(ToolsState& state, const Node& node)
+{
+    if (!removablePath(state, node).empty())
+    {
+        renaming = node.key;
+        renamingExtension = splitName(node).second;
+    }
+}
+
+void FileSystemUi::moveInto(ToolsState& state, scene::Scene& edited, const std::string& path, const std::string& folder)
+{
+    const std::size_t slash = path.rfind('/');
+    // A line let go where it was taken, or in its own folder, stays.
+    if (path.empty() || folder.empty() || slash == std::string::npos || path.substr(0, slash) == folder || folder == path)
+    {
+        return;
+    }
+    if (core::Result<std::string> moved = moveFileSystemPath(state, edited, path, folder, path.substr(slash + 1)); !moved)
+    {
+        DEVEX_LOG_WARNING("Cannot move {} to {}: {}", path, folder, moved.error().message);
+    }
+}
+
 void FileSystemUi::openMenu(ToolsState& state, EditorUiKit& kit)
 {
     // The entries that act on what the menu opened on.
@@ -663,7 +721,10 @@ void FileSystemUi::openMenu(ToolsState& state, EditorUiKit& kit)
     scene().get<UiRect>(folderSeparator).visible = canCreate;
     show(externalEditor, source || code);
     show(showFolder, source || folder || code || node.kind == NodeKind::CodeFolder);
-    show(deleteFile, !removablePath(state, node).empty());
+    const bool movable = !removablePath(state, node).empty();
+    show(renameFile, movable);
+    show(moveFile, movable);
+    show(deleteFile, movable);
     static_cast<void>(kit);
 }
 
@@ -742,6 +803,18 @@ void FileSystemUi::answerMenu(ToolsState& state, scene::Scene& edited)
         const bool isFolder = node.kind == NodeKind::Folder || node.kind == NodeKind::CodeFolder;
         showInFileManager(state, isFolder ? *path : path->parent_path());
     }
+    else if (world.wasClicked(renameFile.entity))
+    {
+        startRename(state, node);
+    }
+    else if (world.wasClicked(moveFile.entity))
+    {
+        if (std::string movable = removablePath(state, node); !movable.empty())
+        {
+            state.fileToMove = std::move(movable);
+            state.openMoveFilePopup = true;
+        }
+    }
     else if (world.wasClicked(deleteFile.entity))
     {
         requestDelete(state, node);
@@ -787,7 +860,8 @@ void FileSystemUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& edi
     ui::UiWorld& world = panel.world();
     tooltip(filter, state.mode == ToolsMode::Editor
                         ? "Drag a model into the viewport or the scene tree, or an asset onto a property. "
-                          "Double-click a scene to open it. Drop an entity on a folder to save it as a prefab."
+                          "Double-click a scene to open it. Drag a file onto a folder to move it, and press F2 to "
+                          "rename it. Drop an entity on a folder to save it as a prefab."
                         : "Drag a model into the scene tree, or an asset onto a property.");
 
     // A file created here is chosen once imported, and shows in the inspector.
@@ -817,8 +891,9 @@ void FileSystemUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& edi
                 return location == "res://code" || location.starts_with("res://code/")
                     ? "code:" + core::toUtf8(directory) : "folder:" + location;
             };
+            // The folders around it open; it stays as it was.
             expanded["folder:res://"] = true;
-            for (auto parent = *path; parent != project.root && !parent.empty(); parent = parent.parent_path())
+            for (auto parent = path->parent_path(); parent != project.root && !parent.empty(); parent = parent.parent_path())
             {
                 if (project.resourcePath(parent).empty())
                 {
@@ -892,6 +967,7 @@ void FileSystemUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& edi
         row.detail = text(row.row, UiRect{.anchorMin = {0.0f, 0.0f}, .anchorMax = {0.0f, 1.0f}}, "", "dim");
         row.status = icon(kit, row.row, UiRect{.anchorMin = {1.0f, 0.5f}, .anchorMax = {1.0f, 0.5f}}, Icon::Loader, "icon_warning");
         tooltip(row.status, "");
+        row.field = field(row.row, UiRect{.anchorMin = {0.0f, 0.0f}, .anchorMax = {1.0f, 1.0f}, .visible = false}, "", "Name");
         rows.push_back(row);
     }
     rowNodes.assign(rows.size(), std::nullopt);
@@ -939,6 +1015,14 @@ void FileSystemUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& edi
         UiRect& labelRect = scene().get<UiRect>(row.label);
         labelRect.offsetMin = {labelLeft, 0.0f};
         labelRect.offsetMax = {labelLeft + labelWidth, 0.0f};
+        // A line being renamed shows its field in place of its name.
+        const bool renamed = node.key == renaming;
+        labelRect.visible = !renamed;
+        scene().get<UiRect>(row.detail).visible = !renamed;
+        UiRect& fieldRect = scene().get<UiRect>(row.field);
+        fieldRect.visible = renamed;
+        fieldRect.offsetMin = {labelLeft - font * 0.3f, 2.0f};
+        fieldRect.offsetMax = {-font * 0.4f, -2.0f};
         scene::UiText& detail = scene().get<scene::UiText>(row.detail);
         if (detail.text != node.detail)
         {
@@ -962,17 +1046,71 @@ void FileSystemUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& edi
             tooltip(row.status, failed ? node.error : "Importing...");
         }
 
-        // Assets leave by their row; folders take the entities dropped on them.
+        // Assets leave by their row, for the other panels and the view; the other files and folders
+        // only move to a folder of this tree. The folders of the assets take the entities dropped on
+        // them, and the assets and files; those of the code take the files.
+        const std::string movable = removablePath(state, node);
         scene::UiDragSource& source = scene().get<scene::UiDragSource>(row.row);
-        source.interactable = node.hasAsset;
-        source.data = node.hasAsset ? node.asset.uuid.toString() : std::string{};
+        source.interactable = (node.hasAsset || !movable.empty()) && !renamed;
+        source.type = node.hasAsset ? "asset" : "file";
+        source.data = node.hasAsset ? node.asset.uuid.toString() : movable;
         source.label = node.label;
         scene::UiDropTarget& target = scene().get<scene::UiDropTarget>(row.row);
-        target.accepts.assign(node.kind == NodeKind::Folder ? 1 : 0, "entity");
+        target.accepts.clear();
+        if (node.kind == NodeKind::Folder)
+        {
+            target.accepts.emplace_back("entity");
+            if (node.path == "res://assets" || node.path.starts_with("res://assets/"))
+            {
+                target.accepts.emplace_back("asset");
+                target.accepts.emplace_back("file");
+            }
+        }
+        else if (node.kind == NodeKind::CodeFolder)
+        {
+            target.accepts.emplace_back("file");
+        }
         target.highlightColor = drop;
     }
 
+    // The field of the renamed line starts with the name, selected; a line that is gone ends the rename.
+    if (!renaming.empty() && std::ranges::find(nodes, renaming, &Node::key) == nodes.end())
+    {
+        renaming.clear();
+    }
+    std::optional<std::size_t> renameRow;
+    for (std::size_t index = 0; index < rows.size() && !renaming.empty(); ++index)
+    {
+        if (rowNodes[index] && nodes[*rowNodes[index]].key == renaming)
+        {
+            renameRow = index;
+        }
+    }
+    if (renameRow && world.editedField() != rows[*renameRow].field)
+    {
+        scene().get<scene::UiText>(rows[*renameRow].field).text = splitName(nodes[*rowNodes[*renameRow]]).first;
+        world.startEditing(scene(), rows[*renameRow].field, true);
+    }
+
     panel.update(kit, delta, UiPanel::zoomFor(font));
+
+    // The rename ends with Enter or when the field loses the keyboard, and is dropped on Escape.
+    if (renameRow && world.editedField() != rows[*renameRow].field)
+    {
+        const Node node = nodes[*rowNodes[*renameRow]];
+        const std::string typed = scene().get<scene::UiText>(rows[*renameRow].field).text;
+        const std::string name = typed + renamingExtension;
+        const std::string path = removablePath(state, node);
+        renaming.clear();
+        if (!panel.input().cancelPressed && !typed.empty() && name != diskName(node) && !path.empty())
+        {
+            if (core::Result<std::string> moved = moveFileSystemPath(state, edited, path, path.substr(0, path.rfind('/')), name);
+                !moved)
+            {
+                DEVEX_LOG_WARNING("Cannot rename {}: {}", path, moved.error().message);
+            }
+        }
+    }
 
     // What was done to the rows this frame.
     const auto nodeOf = [&](Entity entity) -> const Node* {
@@ -1068,6 +1206,10 @@ void FileSystemUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& edi
         {
             requestDelete(state, *current);
         }
+        else if (current != nodes.end() && state.input.pressed(platform::Key::F2, false))
+        {
+            startRename(state, *current);
+        }
         if (moved)
         {
             choose(state, nodes[*moved]);
@@ -1110,12 +1252,28 @@ void FileSystemUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& edi
         menuNode.reset();
     }
 
-    // An entity dropped on a folder.
-    if (const ui::Drop* const dropped = world.dropped(); dropped != nullptr && dropped->type == "entity")
+    // An entity dropped on a folder; a file or a folder dropped on another, which it moves into.
+    if (const ui::Drop* const dropped = world.dropped(); dropped != nullptr)
     {
-        if (const Node* const folder = nodeOf(dropped->target); folder != nullptr && folder->kind == NodeKind::Folder)
+        const Node* const folder = nodeOf(dropped->target);
+        if (dropped->type == "entity" && folder != nullptr && folder->kind == NodeKind::Folder)
         {
             dropEntity(state, edited, *folder, dropped->data);
+        }
+        else if ((dropped->type == "asset" || dropped->type == "file") && folder != nullptr &&
+                 (folder->kind == NodeKind::Folder || folder->kind == NodeKind::CodeFolder))
+        {
+            std::string path = dropped->data;
+            if (dropped->type == "asset")
+            {
+                // The source of a main asset moves; the assets inside a file stay in it.
+                const std::optional<core::Uuid> uuid = core::Uuid::parse(dropped->data);
+                const std::optional<asset::SourceFile> file = uuid ? state.database->sourceOf(asset::AssetId{*uuid}) : std::nullopt;
+                path = file && file->id.uuid == *uuid ? file->path : std::string{};
+            }
+            const std::string destination = folder->kind == NodeKind::Folder ? folder->path
+                                                                              : state.database->project().resourcePath(folder->file);
+            moveInto(state, edited, path, destination);
         }
     }
 }
@@ -1151,6 +1309,62 @@ void drawAssetsPanel(ToolsState& state, scene::Scene& scene)
     }
     state.fileSystemUi->update(state, *state.uiKit, scene, core::Duration(state.input.delta()));
     endDockedPanel(state);
+}
+
+void fileSystemMoved(ToolsState& state, const std::string& from, const std::string& to, const std::filesystem::path& fromFile,
+                     const std::filesystem::path& toFile)
+{
+    if (state.fileSystemUi)
+    {
+        FileSystemUi& ui = *state.fileSystemUi;
+        // The folders open inside what moved stay open at their new place.
+        const std::filesystem::path oldFile = fromFile.lexically_normal();
+        const std::filesystem::path newFile = toFile.lexically_normal();
+        std::unordered_map<std::string, bool> expanded;
+        for (auto& [key, open] : ui.expanded)
+        {
+            std::string moved = key;
+            if (key.starts_with("folder:"))
+            {
+                const std::string_view path = std::string_view(key).substr(7);
+                if (path == from || path.starts_with(from + "/"))
+                {
+                    moved = "folder:" + to + std::string(path.substr(from.size()));
+                }
+            }
+            else if (key.starts_with("code:"))
+            {
+                const std::filesystem::path path = core::pathFromUtf8(key.substr(5)).lexically_normal();
+                const std::filesystem::path inside = path.lexically_relative(oldFile);
+                if (!inside.empty() && (inside == "." || *inside.begin() != ".."))
+                {
+                    moved = "code:" + core::toUtf8(inside == "." ? newFile : (newFile / inside).lexically_normal());
+                }
+            }
+            expanded.insert_or_assign(std::move(moved), open);
+        }
+        ui.expanded = std::move(expanded);
+        ui.codeListings.clear();
+        ui.menuNode.reset();
+        ui.renaming.clear();
+        std::error_code error;
+        if (to.starts_with("res://code/") && !std::filesystem::is_directory(newFile, error))
+        {
+            // A file of the code is chosen in place, inside the folders around it, opened.
+            for (auto parent = newFile.parent_path(); !parent.empty() && parent != state.database->project().root.lexically_normal();
+                 parent = parent.parent_path())
+            {
+                ui.expanded["code:" + core::toUtf8(parent)] = true;
+                if (parent == parent.parent_path())
+                {
+                    break;
+                }
+            }
+            ui.selected = "code:" + core::toUtf8(newFile);
+            return;
+        }
+    }
+    state.assetToReveal = to;
 }
 
 void refreshFileSystem(ToolsState& state)

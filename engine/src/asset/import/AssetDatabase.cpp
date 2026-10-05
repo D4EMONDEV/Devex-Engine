@@ -909,6 +909,119 @@ public:
         return {};
     }
 
+    [[nodiscard]] core::Result<std::string> movePath(std::string_view resourcePath, std::string_view folder,
+                                                     std::string_view name)
+    {
+        const auto path = m_project.absolutePath(resourcePath);
+        const std::string normalized = path ? m_project.resourcePath(*path) : std::string{};
+        const bool asset = normalized.starts_with("res://assets/");
+        if (!path || (!asset && !normalized.starts_with("res://code/")))
+        {
+            return core::makeError(core::ErrorCode::InvalidArgument,
+                                   "Only files and folders inside assets or code can be moved");
+        }
+        std::error_code error;
+        if (!std::filesystem::exists(*path, error))
+        {
+            return core::makeError(core::ErrorCode::NotFound, "'{}' does not exist", normalized);
+        }
+        const auto inside = [](const std::filesystem::path& candidate, const std::filesystem::path& base) {
+            const auto relative = candidate.lexically_relative(base);
+            return !relative.empty() && relative != "." && !relative.is_absolute() && *relative.begin() != "..";
+        };
+        // As for a deletion, a link must not turn the move into one of a path outside the project.
+        const auto projectRoot = std::filesystem::canonical(m_project.root, error);
+        const auto source = std::filesystem::weakly_canonical(*path, error);
+        if (error || !inside(source, projectRoot / (asset ? "assets" : "code")))
+        {
+            return core::makeError(core::ErrorCode::InvalidArgument, "Cannot move a path outside its project content folder");
+        }
+        const ContentRoot content = asset ? ContentRoot::Assets : ContentRoot::Code;
+        core::Result<std::filesystem::path> destination = m_project.newFilePath(folder, name, content);
+        // A new case of the same name names the same file on Windows, which is renamed all the same.
+        if (!destination && destination.error().code == core::ErrorCode::AlreadyExists)
+        {
+            if (const auto directory = m_project.absolutePath(folder))
+            {
+                const std::filesystem::path candidate = *directory / core::pathFromUtf8(name);
+                if (std::filesystem::equivalent(candidate, *path, error) && candidate.filename() != path->filename())
+                {
+                    destination = candidate;
+                }
+            }
+        }
+        if (!destination)
+        {
+            return std::unexpected(destination.error());
+        }
+        const bool directory = std::filesystem::is_directory(*path, error);
+        if (directory)
+        {
+            const auto target = std::filesystem::weakly_canonical(destination->parent_path(), error);
+            if (target == source || inside(target, source))
+            {
+                return core::makeError(core::ErrorCode::InvalidArgument, "A folder cannot be moved inside itself");
+            }
+        }
+        std::filesystem::path meta = *path;
+        meta += std::filesystem::path(metaExtension);
+        std::filesystem::path movedMeta = *destination;
+        movedMeta += std::filesystem::path(metaExtension);
+        const bool withMeta = asset && !directory && std::filesystem::exists(meta, error);
+        const bool importing = pendingImports() != 0;
+        error.clear();
+        std::filesystem::rename(*path, *destination, error);
+        if (!error && withMeta)
+        {
+            std::filesystem::rename(meta, movedMeta, error);
+            if (error)
+            {
+                // Without its .dvxmeta, the source would receive new identifiers: it goes back.
+                std::error_code undone;
+                std::filesystem::rename(*destination, *path, undone);
+            }
+        }
+        if (error && importing)
+        {
+            // Windows readers may deny the move while an importer has the source open.
+            waitForImports();
+            return movePath(resourcePath, folder, name);
+        }
+        if (error)
+        {
+            return core::makeError(core::ErrorCode::Io, "Cannot move '{}': {}", normalized, error.message());
+        }
+
+        const std::string moved = m_project.resourcePath(*destination);
+        Project project = m_project;
+        bool followed = false;
+        const auto follow = [&](std::string& reference) {
+            if (reference == normalized || reference.starts_with(normalized + "/"))
+            {
+                reference = moved + reference.substr(normalized.size());
+                followed = true;
+            }
+        };
+        follow(project.startupScene);
+        for (std::string& scene : project.exportSettings.scenes)
+        {
+            follow(scene);
+        }
+        for (std::string& included : project.exportSettings.includeFolders)
+        {
+            follow(included);
+        }
+        if (followed)
+        {
+            if (core::Result<void> saved = updateProject(project); !saved)
+            {
+                DEVEX_LOG_WARNING("The project still names {}: {}", normalized, saved.error());
+            }
+        }
+        refresh();
+        return moved;
+    }
+
     [[nodiscard]] core::Result<AssetId> addFile(const std::filesystem::path& file,
                                                 std::string_view folder)
     {
@@ -1476,6 +1589,11 @@ const std::vector<std::string>& AssetDatabase::folders() const noexcept
 core::Result<void> AssetDatabase::removePath(std::string_view resourcePath)
 {
     return m_impl->removePath(resourcePath);
+}
+
+core::Result<std::string> AssetDatabase::movePath(std::string_view resourcePath, std::string_view folder, std::string_view name)
+{
+    return m_impl->movePath(resourcePath, folder, name);
 }
 
 std::optional<SourceFile> AssetDatabase::sourceOf(AssetId id) const

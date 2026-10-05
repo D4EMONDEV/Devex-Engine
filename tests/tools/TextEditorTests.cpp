@@ -187,6 +187,69 @@ TEST_CASE("FileSystem deletion closes affected documents and preserves other tab
     CHECK(state.activeText.empty());
 }
 
+TEST_CASE("FileSystem moves and renames carry the open documents with them", "[tools][filesystem][gpu]")
+{
+    struct Directory
+    {
+        std::filesystem::path path = std::filesystem::temp_directory_path() / ("devex-move-session-" + core::Uuid::generate().toString());
+        ~Directory() { std::error_code error; std::filesystem::remove_all(path, error); }
+    } directory;
+    auto project = asset::createProject(directory.path, "Move test");
+    REQUIRE(project);
+    const auto level = project->assetsDirectory() / "Levels/Level.dvxscene";
+    const auto kept = project->assetsDirectory() / "Keep.dvxscene";
+    const auto player = project->codeDirectory() / "Player.cs";
+    REQUIRE(core::writeTextFile(level, "[scene format=1]\n"));
+    REQUIRE(core::writeTextFile(kept, "[scene format=1]\n"));
+    REQUIRE(core::writeTextFile(player, "// player\n"));
+    std::filesystem::create_directories(project->assetsDirectory() / "Other");
+    core::JobSystem jobs(1);
+    auto database = asset::AssetDatabase::open(*project, jobs, {.watchFiles = false});
+    REQUIRE(database);
+    auto platform = platform::Platform::create();
+    REQUIRE(platform);
+    auto window = platform->createWindow({.width = 800, .height = 600, .vulkan = true, .hidden = true});
+    REQUIRE(window);
+    auto renderer = render::Renderer::create(*platform, *window, {.validation = true});
+    REQUIRE(renderer);
+    ToolsState state(*platform, *window, *renderer, tools::ToolsMode::Editor);
+    state.database = database->get();
+    scene::Scene scene;
+    for (const auto& path : {kept, level})
+    {
+        SceneDocument document;
+        document.path = path;
+        activateSceneTab(state, scene, state.tabs.add(std::move(document)));
+    }
+    openTextFile(state, level);
+    openTextFile(state, player);
+    findTextDocument(state, level)->text += "# unsaved\n";
+    state.selectedCode = player;
+
+    state.playState = tools::PlayState::Playing;
+    CHECK_FALSE(moveFileSystemPath(state, scene, "res://assets/Levels", "res://assets/Other", "Levels"));
+    state.playState = tools::PlayState::Editing;
+    const auto moved = moveFileSystemPath(state, scene, "res://assets/Levels", "res://assets/Other", "Levels");
+    REQUIRE(moved);
+    CHECK(*moved == "res://assets/Other/Levels");
+    const auto movedLevel = project->assetsDirectory() / "Other/Levels/Level.dvxscene";
+    CHECK(std::filesystem::exists(movedLevel));
+    // The active tab, its text with what was not saved, and the other tab.
+    CHECK(sameTextPath(state.scenePath, movedLevel));
+    CHECK(sameTextPath(state.tabs.background(0).path, kept));
+    TextDocument* const text = findTextDocument(state, movedLevel);
+    REQUIRE(text != nullptr);
+    CHECK(text->text.ends_with("# unsaved\n"));
+    CHECK(state.assetToReveal == "res://assets/Other/Levels");
+
+    REQUIRE(moveFileSystemPath(state, scene, "res://code/Player.cs", "res://code", "Hero.cs"));
+    const auto hero = project->codeDirectory() / "Hero.cs";
+    CHECK(sameTextPath(state.selectedCode, hero));
+    CHECK(sameTextPath(state.activeText, hero));
+    CHECK(findTextDocument(state, hero) != nullptr);
+    CHECK_FALSE(findTextDocument(state, player));
+}
+
 TEST_CASE("Text editor protects pending changes and synchronizes scene and project edits", "[tools][text][gpu]")
 {
     struct Directory

@@ -125,6 +125,13 @@ public:
     // Permanently removes a file or folder below assets/ or code/, including asset metadata.
     // Project roots and paths through links outside their content folder are rejected.
     [[nodiscard]] core::Result<void> removePath(std::string_view resourcePath);
+    // Moves or renames a file or folder below assets/ or code/ to `name` in `folder`, a res://
+    // folder of the same content root, with the .dvxmeta of a source: its assets keep their
+    // identifiers and their imports. The res:// paths of the project that pointed into it follow.
+    // A folder cannot go inside itself, and a name already used is refused, except a new case of
+    // the same name. Returns the new res:// path.
+    [[nodiscard]] core::Result<std::string> movePath(std::string_view resourcePath, std::string_view folder,
+                                                     std::string_view name);
     // The source file of any asset it produced.
     [[nodiscard]] std::optional<SourceFile> sourceOf(AssetId id) const;
     // The main asset of a source file, by res:// path.

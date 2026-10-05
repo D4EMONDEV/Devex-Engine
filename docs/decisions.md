@@ -875,7 +875,10 @@ les assets s'écrivent au fil de leur lecture.
   ouvrir, placer, scène de démarrage, réimporter, copier le chemin, afficher dans l'explorateur,
   créer une courbe, des animations de sprite, un tileset ou un animator dans un dossier ; les
   flèches parcourent l'arbre, Entrée ouvre ; une entité de l'arbre de scène lâchée sur un dossier
-  y devient un préfab, comme Godot enregistre une branche lâchée sur son FileSystem) ; *Output*
+  y devient un préfab, comme Godot enregistre une branche lâchée sur son FileSystem ; F2 ou
+  *Rename* renomme une ligne en place, l'extension gardée ; un fichier ou un dossier glissé sur un
+  dossier y va, et *Move To...* choisit le dossier dans une liste en arbre ; les scènes et textes
+  ouverts, le fichier de code choisi et les dossiers ouverts du panneau suivent) ; *Output*
   (police à chasse fixe, recherche, compteurs par niveau qui servent de filtres, texte choisi à la
   souris sur plusieurs lignes et copié, double-clic sur un mot, menu Copy, Select All, Clear) ;
   ces deux-là sont faits avec `Devex::Ui` (voir *Une seule interface, deux usages*) ;
@@ -1212,6 +1215,14 @@ les assets s'écrivent au fil de leur lecture.
   provoquent donc qu'un import.
 - **Suppression** : les assets d'une source supprimée disparaissent (`Removed`) avec leurs
   artefacts ; son `.dvxmeta` reste, et la source qui revient retrouve ses UUID.
+- **Déplacement** (`AssetDatabase::movePath`, jalon 58) : un fichier ou un dossier de `assets/` ou
+  de `code/` change de nom ou de dossier dans sa racine, avec le `.dvxmeta` d'une source : ses UUID
+  et son import restent, les scènes qui le citent par UUID n'ont rien à changer. Les chemins
+  `res://` du projet qui y menaient suivent (scène de démarrage, scènes et dossiers d'export). Le
+  nom passe par la validation des nouveaux fichiers (`Project::newFilePath`) ; un nom pris est
+  refusé, sauf une autre casse du même nom, un dossier ne va pas dans lui-même, et un `.dvxmeta`
+  qui ne suit pas ramène la source. Les chaînes `res://` écrites dans le code ne changent pas,
+  comme dans Godot.
 - **Chargement** : l'`AssetManager` de `Runtime` charge un asset la première fois qu'il sert
   (maillage et matériaux d'un `MeshRenderer`, textures d'un matériau, modèle placé). Avec le
   pool de jobs de l'application, les **maillages et textures se chargent en arrière-plan** :
@@ -3533,6 +3544,9 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
 57. ✅ **CI Linux** — Ubuntu 24.04 et GCC 14, Debug et Release, mêmes tests sans GPU que sous
     Windows ; code relogeable pour la bibliothèque du moteur, tests des processus et des bibliothèques
     sur les deux systèmes.
+58. ✅ **Renommer et déplacer dans FileSystem** — F2 en place, glisser sur un dossier, *Move To...*
+    avec une liste des dossiers en arbre ; UUID et imports gardés, chemins du projet, onglets et
+    textes ouverts qui suivent.
 
 Ensuite, sans ordre figé : à choisir dans les pistes ci-dessous.
 
@@ -3633,9 +3647,9 @@ Ensuite, sans ordre figé : à choisir dans les pistes ci-dessous.
   sélecteur de couleur, édition de plusieurs entités, inspecteurs d'assets), puis les autres
   panneaux, le
   dockspace et les menus de la fenêtre en dernier (voir *Une seule interface, deux usages*) ; des
-  popups et infobulles qui sortent du panneau (fenêtres à elles, comme chez Godot) ; déplacer et
-  renommer des fichiers dans FileSystem (glissés sur un dossier, F2), sélection de plusieurs
-  fichiers, vignettes ; dans la fenêtre de création, les descriptions et les icônes des composants
+  popups, listes déroulantes et infobulles qui sortent du panneau (fenêtres à elles, comme chez
+  Godot : la liste des dossiers de Create New est coupée par sa fenêtre) ; sélection de plusieurs
+  fichiers dans FileSystem, glissées ensemble, vignettes ; dans la fenêtre de création, les descriptions et les icônes des composants
   du jeu (tirées des commentaires de leur code), et des préréglages faits de préfabs du projet ; un
   panneau redessiné seulement quand il change ; les polices de l'éditeur
   cuites une fois et gardées en cache plutôt qu'à chaque lancement.

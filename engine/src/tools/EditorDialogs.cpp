@@ -1,7 +1,7 @@
 // The dialogs of the editor, made with the interface of the engine: a card in the middle of the window
 // over a veil, as the Create window is. Create New asks for a type, a name and a destination folder,
-// the unsaved changes dialog asks what to do with the scenes and files an action would drop, and About
-// tells what the editor is made with.
+// Move To for the folder a file of FileSystem goes to, the unsaved changes dialog asks what to do with
+// the scenes and files an action would drop, and About tells what the editor is made with.
 #include "SettingsUi.hpp"
 #include "EditorModal.hpp"
 
@@ -64,6 +64,7 @@ enum class DialogKind : std::uint8_t
     NewScript,
     UnsavedChanges,
     DeleteFile,
+    MoveFile,
     About,
 };
 
@@ -92,6 +93,9 @@ struct EditorDialogsUi : FormUi
     Entity scriptName;
     Entity folder;
     std::vector<std::string> folders;
+    // Move To shows the folders as a tree, one line each, and the one chosen.
+    std::vector<Entity> folderRows;
+    std::size_t chosenFolder = 0;
     std::array<Button, fileTypes.size()> types;
     std::size_t selectedType = 0;
     bool fileSystemCreation = false;
@@ -186,6 +190,7 @@ void EditorDialogsUi::start(DialogKind which, ToolsState& state, EditorUiKit& ki
     unsaved = UnsavedChoice::None;
     focusName = false;
     language = scriptName = file = status = folder = Entity{};
+    folderRows.clear();
     confirm = discard = cancel = back = Button{};
     types = {};
     root = add({}, "Dialog", whole(), "dialog");
@@ -225,6 +230,54 @@ void EditorDialogsUi::start(DialogKind which, ToolsState& state, EditorUiKit& ki
         const Entity buttons = buttonLine();
         cancel = button(kit, buttons, Icon::Close, "Cancel", "button", buttonWidth, buttonHeight);
         confirm = button(kit, buttons, Icon::Trash, "Delete", "button", buttonWidth, buttonHeight);
+        break;
+    }
+    case DialogKind::MoveFile: {
+        size.x = std::round(font * 38.0f);
+        titleRow(kit, Icon::Move, colors.accent, "Move To");
+        note(nullptr, state.fileToMove, "text", 3.0f);
+        // The folders of the same content root, outside what moves.
+        const bool code = state.fileToMove.starts_with("res://code/");
+        folders = state.database ? creationFolders(state.database->project(), code ? asset::ContentRoot::Code : asset::ContentRoot::Assets)
+                                 : std::vector<std::string>{};
+        std::erase_if(folders, [&](const std::string& candidate) {
+            return candidate == state.fileToMove || candidate.starts_with(state.fileToMove + "/");
+        });
+        // The folders as a tree in a list that scrolls, as Godot's chooser of folders shows them,
+        // the one that holds it chosen.
+        const float tall = std::round(font * 1.8f);
+        const float indent = std::round(font * 1.2f);
+        const Entity box = add(root, "Folders", wide(std::round((tall + 1.0f) * 9.0f) + 4.0f), "list");
+        scene().add<scene::UiImage>(box);
+        const Entity scrolled = add(box, "List",
+                                    UiRect{.anchorMin = {0.0f, 0.0f}, .anchorMax = {1.0f, 1.0f}, .offsetMin = {0.0f, 2.0f}, .offsetMax = {0.0f, -2.0f},
+                                           .clipChildren = true},
+                                    "scroll");
+        scene().add<scene::UiScroll>(scrolled, scene::UiScroll{.speed = tall * 3.0f});
+        const Entity lines = add(scrolled, "Rows", UiRect{.anchorMin = {0.0f, 0.0f}, .anchorMax = {1.0f, 0.0f}, .offsetMin = {2.0f, 0.0f}, .offsetMax = {-10.0f, 1.0f}});
+        scene().add<scene::UiLayout>(lines, scene::UiLayout{.kind = scene::UiLayoutKind::Column, .spacing = 1.0f, .align = scene::TextAlign::Left});
+        const std::string_view base = code ? "res://code" : "res://assets";
+        for (const std::string& path : folders)
+        {
+            const std::string_view inside = std::string_view(path).substr(std::min(base.size(), path.size()));
+            const auto depth = static_cast<float>(std::ranges::count(inside, '/'));
+            const std::string label = inside.empty() ? path : path.substr(path.rfind('/') + 1);
+            const Button made = button(kit, lines, Icon::Folder, label, "row", -1.0f, tall, scene::TextAlign::Left);
+            scene().get<scene::UiImage>(made.icon).color = linearColor(colors.folder);
+            scene().get<UiRect>(made.icon).style = {};
+            scene().get<UiRect>(made.label).style = "text";
+            scene().get<scene::UiLayout>(made.entity).padding.x += depth * indent;
+            tooltip(made.entity, path);
+            folderRows.push_back(made.entity);
+        }
+        scene().get<UiRect>(lines).offsetMax.y = (tall + 1.0f) * static_cast<float>(folderRows.size());
+        const auto found = std::ranges::find(folders, state.fileToMove.substr(0, state.fileToMove.rfind('/')));
+        chosenFolder = found == folders.end() ? 0 : static_cast<std::size_t>(found - folders.begin());
+        scene().get<scene::UiScroll>(scrolled).offset.y = std::max((static_cast<float>(chosenFolder) - 3.0f) * (tall + 1.0f), 0.0f);
+        status = note(nullptr, "", "dim", 2.0f);
+        const Entity buttons = buttonLine();
+        confirm = button(kit, buttons, Icon::Move, "Move", "primary", buttonWidth, buttonHeight);
+        cancel = button(kit, buttons, Icon::Close, "Cancel", "button", buttonWidth, buttonHeight);
         break;
     }
     case DialogKind::NewAsset:
@@ -413,6 +466,56 @@ void EditorDialogsUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& 
         scene().get<UiRect>(status).style = valid && writeError.empty() ? "dim" : "warning";
         enable(confirm, valid);
     }
+    // Where Move To sends the file, and whether it can go there.
+    std::string destination;
+    const std::string moved = state.fileToMove.substr(state.fileToMove.rfind('/') + 1);
+    bool chosenTwice = false;
+    if (kind == DialogKind::MoveFile)
+    {
+        for (std::size_t index = 0; index < folderRows.size(); ++index)
+        {
+            if (world.wasClicked(folderRows[index]) || world.wasDoubleClicked(folderRows[index]))
+            {
+                chosenFolder = index;
+                chosenTwice = world.wasDoubleClicked(folderRows[index]);
+            }
+        }
+        for (std::size_t index = 0; index < folderRows.size(); ++index)
+        {
+            scene().get<UiRect>(folderRows[index]).style = index == chosenFolder ? "row_selected" : "row";
+        }
+        destination = chosenFolder < folders.size() ? folders[chosenFolder] : std::string{};
+        if (destination != validatedInput)
+        {
+            validatedInput = destination;
+            writeError.clear();
+        }
+        std::string error;
+        if (!state.database)
+        {
+            error = "No project is open.";
+        }
+        else if (destination.empty())
+        {
+            error = "Choose a folder.";
+        }
+        else if (destination == state.fileToMove.substr(0, state.fileToMove.rfind('/')))
+        {
+            error = "It is in this folder already.";
+        }
+        else if (const auto path = state.database->project().newFilePath(
+                     destination, moved, state.fileToMove.starts_with("res://code/") ? asset::ContentRoot::Code : asset::ContentRoot::Assets);
+                 !path)
+        {
+            error = path.error().message;
+        }
+        valid = error.empty();
+        scene().get<scene::UiText>(status).text = !error.empty() ? error
+                                                  : !writeError.empty() ? writeError
+                                                                        : "The scenes and texts open from it, and the paths of the project, follow it.";
+        scene().get<UiRect>(status).style = valid && writeError.empty() ? "dim" : "warning";
+        enable(confirm, valid);
+    }
     if (focusName && scriptName.isValid())
     {
         focusName = false;
@@ -491,6 +594,25 @@ void EditorDialogsUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& 
             }
         }
         break;
+    case DialogKind::MoveFile:
+        if (world.wasClicked(cancel.entity) || escape)
+        {
+            open = false;
+            state.fileToMove.clear();
+        }
+        else if (valid && (world.wasClicked(confirm.entity) || chosenTwice))
+        {
+            if (core::Result<std::string> result = moveFileSystemPath(state, edited, state.fileToMove, destination, moved); result)
+            {
+                open = false;
+                state.fileToMove.clear();
+            }
+            else
+            {
+                writeError = result.error().message;
+            }
+        }
+        break;
     case DialogKind::NewScript:
         state.newScriptName = name;
         state.newScriptCSharp = csharp;
@@ -553,6 +675,10 @@ void drawEditorPopups(ToolsState& state, scene::Scene& scene)
     if (std::exchange(state.openDeleteFilePopup, false))
     {
         requested = DialogKind::DeleteFile;
+    }
+    if (std::exchange(state.openMoveFilePopup, false))
+    {
+        requested = DialogKind::MoveFile;
     }
     if (std::exchange(state.openNewScriptPopup, false))
     {

@@ -285,6 +285,114 @@ TEST_CASE("Deleting linked content cannot remove files outside the content folde
     CHECK(std::filesystem::exists(project.project.root / "Protected/keep.txt"));
 }
 
+TEST_CASE("Moving project content keeps identifiers, imports and the paths of the project", "[asset][database][filesystem]")
+{
+    TemporaryProject project;
+    project.write("Group/red.dvxmat", redMaterial);
+    project.write("Group/notes.txt", "Moves with the folder");
+    project.write("Sibling/keep.dvxmat", blueMaterial);
+    std::filesystem::create_directories(project.assets() / "Other");
+    devex::core::JobSystem jobs(1);
+    auto database = AssetDatabase::open(project.project, jobs, {.watchFiles = false});
+    REQUIRE(database);
+    static_cast<void>(settle(**database));
+    const auto id = (*database)->findByPath("res://assets/Group/red.dvxmat");
+    REQUIRE(id);
+    devex::asset::Project settings = (*database)->project();
+    settings.startupScene = "res://assets/Group/red.dvxmat";
+    settings.exportSettings.scenes = {"res://assets/Group/red.dvxmat", "res://assets/Sibling/keep.dvxmat"};
+    settings.exportSettings.includeFolders = {"res://assets/Group", "res://assets/GroupSibling"};
+    REQUIRE((*database)->updateProject(settings));
+
+    SECTION("A file renamed in its folder")
+    {
+        const auto moved = (*database)->movePath("res://assets/Group/red.dvxmat", "res://assets/Group", "crimson.dvxmat");
+        REQUIRE(moved);
+        CHECK(*moved == "res://assets/Group/crimson.dvxmat");
+        CHECK(std::filesystem::exists(project.assets() / "Group/crimson.dvxmat.dvxmeta"));
+        CHECK_FALSE(std::filesystem::exists(project.assets() / "Group/red.dvxmat"));
+        CHECK_FALSE(std::filesystem::exists(project.assets() / "Group/red.dvxmat.dvxmeta"));
+        CHECK((*database)->project().startupScene == "res://assets/Group/crimson.dvxmat");
+        CHECK((*database)->project().exportSettings.scenes.front() == "res://assets/Group/crimson.dvxmat");
+        CHECK((*database)->project().exportSettings.includeFolders.front() == "res://assets/Group");
+    }
+    SECTION("A folder moved into another")
+    {
+        const auto moved = (*database)->movePath("res://assets/Group", "res://assets/Other", "Group");
+        REQUIRE(moved);
+        CHECK(*moved == "res://assets/Other/Group");
+        CHECK(std::filesystem::exists(project.assets() / "Other/Group/notes.txt"));
+        CHECK(std::ranges::contains((*database)->folders(), "res://assets/Other/Group"));
+        CHECK_FALSE(std::ranges::contains((*database)->folders(), "res://assets/Group"));
+        CHECK((*database)->project().startupScene == "res://assets/Other/Group/red.dvxmat");
+        CHECK((*database)->project().exportSettings.includeFolders ==
+              std::vector<std::string>{"res://assets/Other/Group", "res://assets/GroupSibling"});
+        CHECK((*database)->project().exportSettings.scenes.back() == "res://assets/Sibling/keep.dvxmat");
+    }
+    // The source keeps its identifier and its import, and the project file says where it went.
+    CHECK((*database)->pendingImports() == 0);
+    const auto moved = (*database)->sourceOf(*id);
+    REQUIRE(moved);
+    CHECK((*database)->findByPath(moved->path) == id);
+    CHECK((*database)->loadArtifact(*id).has_value());
+    CHECK_FALSE(contains((*database)->update(), *id, AssetChange::Removed));
+    const auto reloaded = devex::asset::loadProject(project.project.file);
+    REQUIRE(reloaded);
+    CHECK(reloaded->startupScene == moved->path);
+}
+
+TEST_CASE("Moving content refuses used names, its own folders and the other content root", "[asset][database][filesystem]")
+{
+    TemporaryProject project;
+    project.write("a.dvxmat", redMaterial);
+    project.write("b.dvxmat", blueMaterial);
+    std::filesystem::create_directories(project.assets() / "Folder" / "Sub");
+    REQUIRE(devex::core::writeTextFile(project.project.codeDirectory() / "Player.cs", "// code"));
+    std::filesystem::create_directories(project.project.codeDirectory() / "Actors");
+    devex::core::JobSystem jobs(1);
+    auto database = AssetDatabase::open(project.project, jobs, {.watchFiles = false});
+    REQUIRE(database);
+    static_cast<void>(settle(**database));
+    const auto id = (*database)->findByPath("res://assets/a.dvxmat");
+    REQUIRE(id);
+
+    const auto used = (*database)->movePath("res://assets/a.dvxmat", "res://assets", "b.dvxmat");
+    REQUIRE_FALSE(used);
+    CHECK(used.error().code == devex::core::ErrorCode::AlreadyExists);
+    CHECK_FALSE((*database)->movePath("res://assets/Folder", "res://assets/Folder/Sub", "Folder"));
+    CHECK_FALSE((*database)->movePath("res://assets/Folder", "res://assets/Folder", "Copy"));
+    CHECK_FALSE((*database)->movePath("res://assets/a.dvxmat", "res://code", "a.dvxmat"));
+    CHECK_FALSE((*database)->movePath("res://code/Player.cs", "res://assets", "Player.cs"));
+    for (const auto path : {"res://", "res://assets", "res://code", "res://.devex", "res://assets/missing.dvxmat"})
+    {
+        CAPTURE(path);
+        CHECK_FALSE((*database)->movePath(path, "res://assets/Folder", "Moved"));
+    }
+    for (const auto name : {"", "../a.dvxmat", "Sub/a.dvxmat", "a?.dvxmat"})
+    {
+        CAPTURE(name);
+        CHECK_FALSE((*database)->movePath("res://assets/a.dvxmat", "res://assets/Folder", name));
+    }
+    CHECK(std::filesystem::exists(project.assets() / "a.dvxmat"));
+    CHECK(std::filesystem::exists(project.assets() / "b.dvxmat"));
+
+    // The code moves inside the code, and a name changes its case.
+    REQUIRE((*database)->movePath("res://code/Player.cs", "res://code/Actors", "Hero.cs"));
+    CHECK(std::filesystem::exists(project.project.codeDirectory() / "Actors/Hero.cs"));
+    const auto renamed = (*database)->movePath("res://assets/a.dvxmat", "res://assets", "A.dvxmat");
+    INFO((renamed ? *renamed : renamed.error().message));
+    REQUIRE(renamed);
+    CHECK(*renamed == "res://assets/A.dvxmat");
+    std::vector<std::string> names;
+    for (const auto& entry : std::filesystem::directory_iterator(project.assets()))
+    {
+        names.push_back(entry.path().filename().string());
+    }
+    CHECK(std::ranges::contains(names, "A.dvxmat"));
+    CHECK(std::ranges::contains(names, "A.dvxmat.dvxmeta"));
+    CHECK((*database)->findByPath("res://assets/A.dvxmat") == id);
+}
+
 TEST_CASE("New files get a .dvxmeta and are imported in the background", "[asset][database]")
 {
     TemporaryProject project;
