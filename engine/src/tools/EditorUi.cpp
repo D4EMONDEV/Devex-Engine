@@ -28,7 +28,7 @@ constexpr std::uint32_t iconPixels = 64;
 }
 
 // A color as a theme writes it: vec4(r, g, b, a), linear.
-[[nodiscard]] std::string written(ImVec4 srgb)
+[[nodiscard]] std::string written(math::Vec4 srgb)
 {
     const math::Vec4 color = linearColor(srgb);
     return std::format("vec4({}, {}, {}, {})", color.x, color.y, color.z, color.w);
@@ -39,15 +39,15 @@ constexpr std::uint32_t iconPixels = 64;
     return std::format("{}", value);
 }
 
-[[nodiscard]] ImVec4 mixed(ImVec4 from, ImVec4 to, float amount) noexcept
+[[nodiscard]] math::Vec4 mixed(math::Vec4 from, math::Vec4 to, float amount) noexcept
 {
-    return ImVec4(from.x + (to.x - from.x) * amount, from.y + (to.y - from.y) * amount, from.z + (to.z - from.z) * amount,
+    return math::Vec4(from.x + (to.x - from.x) * amount, from.y + (to.y - from.y) * amount, from.z + (to.z - from.z) * amount,
                   from.w + (to.w - from.w) * amount);
 }
 
 } // namespace
 
-math::Vec4 linearColor(ImVec4 srgb) noexcept
+math::Vec4 linearColor(math::Vec4 srgb) noexcept
 {
     return math::Vec4{linear(srgb.x), linear(srgb.y), linear(srgb.z), std::clamp(srgb.w, 0.0f, 1.0f)};
 }
@@ -99,7 +99,7 @@ void EditorUiKit::setAssetImages(std::function<render::TextureHandle(asset::Asse
     m_assetSprites = std::move(sprites);
 }
 
-void EditorUiKit::showTooltip(std::string text, ImVec2 at)
+void EditorUiKit::showTooltip(std::string text, math::Vec2 at)
 {
     m_tooltip = Tooltip{.text = std::move(text), .at = at};
 }
@@ -147,12 +147,12 @@ void EditorUiKit::forgetCarried() noexcept
     m_carried.reset();
 }
 
-void EditorUiKit::requestTextInput(ImVec2 min, ImVec2 max) noexcept
+void EditorUiKit::requestTextInput(math::Vec2 min, math::Vec2 max) noexcept
 {
     m_textInput = std::pair{min, max};
 }
 
-std::optional<std::pair<ImVec2, ImVec2>> EditorUiKit::takeTextInput() noexcept
+std::optional<std::pair<math::Vec2, math::Vec2>> EditorUiKit::takeTextInput() noexcept
 {
     return std::exchange(m_textInput, std::nullopt);
 }
@@ -359,7 +359,7 @@ float EditorUiKit::textWidth(asset::AssetId font, std::string_view text, float s
 
 void EditorUiKit::refreshTheme(const ThemeColors& colors)
 {
-    const auto same = [](ImVec4 first, ImVec4 second) {
+    const auto same = [](math::Vec4 first, math::Vec4 second) {
         return first.x == second.x && first.y == second.y && first.z == second.z && first.w == second.w;
     };
     if (m_theme != nullptr && same(m_themeAccent, colors.accent) && same(m_themePanel, colors.panel))
@@ -368,14 +368,14 @@ void EditorUiKit::refreshTheme(const ThemeColors& colors)
     }
     m_themeAccent = colors.accent;
     m_themePanel = colors.panel;
-    const ImVec4 mono = colors.dark ? ImVec4(1.0f, 1.0f, 1.0f, 1.0f) : ImVec4(0.0f, 0.0f, 0.0f, 1.0f);
+    const math::Vec4 mono = colors.dark ? math::Vec4(1.0f, 1.0f, 1.0f, 1.0f) : math::Vec4(0.0f, 0.0f, 0.0f, 1.0f);
     // A button lights up under the pointer, and takes the accent while pressed.
     const std::string hover = colors.dark ? "vec4(1.35, 1.35, 1.35, 1)" : "vec4(0.93, 0.93, 0.93, 1)";
     const std::string pressed = colors.dark ? "vec4(1.7, 1.7, 1.8, 1)" : "vec4(0.85, 0.85, 0.88, 1)";
     const auto image = [](const std::string& color, float radius) {
         return std::vector<asset::ThemeOverride>{{"UiImage", "color", color}, {"UiImage", "corner_radius", written(radius)}};
     };
-    const auto text = [](ImVec4 color) { return std::vector<asset::ThemeOverride>{{"UiText", "color", written(color)}}; };
+    const auto text = [](math::Vec4 color) { return std::vector<asset::ThemeOverride>{{"UiText", "color", written(color)}}; };
     const auto clickable = [&](std::vector<asset::ThemeOverride> values) {
         values.push_back({"UiButton", "hover_color", hover});
         values.push_back({"UiButton", "pressed_color", pressed});
@@ -393,7 +393,7 @@ void EditorUiKit::refreshTheme(const ThemeColors& colors)
     add("list", image(written(colors.field), 4.0f));
     add("popup", image(written(colors.popup), 5.0f));
     add("button", clickable(image(written(colors.raised), 4.0f)));
-    add("flat", clickable(image(written(ImVec4(colors.raised.x, colors.raised.y, colors.raised.z, 0.0f)), 4.0f)));
+    add("flat", clickable(image(written(math::Vec4(colors.raised.x, colors.raised.y, colors.raised.z, 0.0f)), 4.0f)));
     add("primary", clickable(image(written(colors.accent), 4.0f)));
     add("menu_item", clickable(image(written(colors.popup), 3.0f)));
     add("row", clickable(image(written(colors.field), 3.0f)));
@@ -402,7 +402,7 @@ void EditorUiKit::refreshTheme(const ThemeColors& colors)
         std::vector<asset::ThemeOverride> values = image(written(colors.field), 4.0f);
         values.push_back({"UiText", "color", written(colors.text)});
         values.push_back({"UiInput", "placeholder_color", written(colors.textDim)});
-        values.push_back({"UiInput", "selection_color", written(ImVec4(colors.accent.x, colors.accent.y, colors.accent.z, 0.45f))});
+        values.push_back({"UiInput", "selection_color", written(math::Vec4(colors.accent.x, colors.accent.y, colors.accent.z, 0.45f))});
         values.push_back({"UiInput", "caret_color", written(colors.text)});
         return values;
     }());
@@ -410,7 +410,7 @@ void EditorUiKit::refreshTheme(const ThemeColors& colors)
         std::vector<asset::ThemeOverride> values = clickable(image(written(colors.raised), 4.0f));
         values.push_back({"UiText", "color", written(colors.text)});
         values.push_back({"UiDropdown", "list_color", written(colors.popup)});
-        values.push_back({"UiDropdown", "highlight_color", written(ImVec4(colors.accent.x, colors.accent.y, colors.accent.z, 0.55f))});
+        values.push_back({"UiDropdown", "highlight_color", written(math::Vec4(colors.accent.x, colors.accent.y, colors.accent.z, 0.55f))});
         values.push_back({"UiDropdown", "arrow_color", written(colors.textDim)});
         return values;
     }());
@@ -423,14 +423,14 @@ void EditorUiKit::refreshTheme(const ThemeColors& colors)
     add("code", [&] {
         std::vector<asset::ThemeOverride> values = image(written(colors.field), 4.0f);
         values.push_back({"UiText", "color", written(colors.text)});
-        values.push_back({"UiTextArea", "selection_color", written(ImVec4(colors.accent.x, colors.accent.y, colors.accent.z, 0.45f))});
+        values.push_back({"UiTextArea", "selection_color", written(math::Vec4(colors.accent.x, colors.accent.y, colors.accent.z, 0.45f))});
         values.push_back({"UiTextArea", "caret_color", written(colors.text)});
         values.push_back({"UiTextArea", "line_number_color", written(colors.textDim)});
-        values.push_back({"UiTextArea", "current_line_color", written(ImVec4(mono.x, mono.y, mono.z, 0.05f))});
-        values.push_back({"UiTextArea", "scrollbar_color", written(ImVec4(mono.x, mono.y, mono.z, 0.2f))});
+        values.push_back({"UiTextArea", "current_line_color", written(math::Vec4(mono.x, mono.y, mono.z, 0.05f))});
+        values.push_back({"UiTextArea", "scrollbar_color", written(math::Vec4(mono.x, mono.y, mono.z, 0.2f))});
         return values;
     }());
-    add("scroll", {{"UiScroll", "scrollbar_color", written(ImVec4(mono.x, mono.y, mono.z, 0.2f))},
+    add("scroll", {{"UiScroll", "scrollbar_color", written(math::Vec4(mono.x, mono.y, mono.z, 0.2f))},
                    {"UiScroll", "scrollbar_size", "7"}});
     add("separator", image(written(colors.border), 0.0f));
     add("text", text(colors.text));
@@ -456,47 +456,47 @@ void EditorUiKit::refreshTheme(const ThemeColors& colors)
     add("side_selected", clickable(image(written(mixed(colors.panel, colors.accent, 0.28f)), 6.0f)));
     add("soft_row", clickable(image(written(colors.field), 6.0f)));
     add("soft_row_selected", clickable(image(written(mixed(colors.field, colors.accent, 0.30f)), 6.0f)));
-    add("chip", image(written(ImVec4(colors.accent.x, colors.accent.y, colors.accent.z, 0.18f)), 9.0f));
+    add("chip", image(written(math::Vec4(colors.accent.x, colors.accent.y, colors.accent.z, 0.18f)), 9.0f));
     // The scene tree: the names of prefab entities, the lines from children to their parent, and
     // where what is dragged would land.
     add("prefab", text(colors.prefab));
     // The buttons at the end of a row take its colour, so that only the pointer shows them.
     add("row_button", clickable(image(written(colors.field), 5.0f)));
     add("row_button_selected", clickable(image(written(mixed(colors.field, colors.accent, 0.30f)), 5.0f)));
-    add("guide", image(written(ImVec4(colors.textDim.x, colors.textDim.y, colors.textDim.z, 0.28f)), 0.0f));
+    add("guide", image(written(math::Vec4(colors.textDim.x, colors.textDim.y, colors.textDim.z, 0.28f)), 0.0f));
     add("drop_line", image(written(colors.accent), 1.0f));
-    add("drop_into", image(written(ImVec4(colors.accent.x, colors.accent.y, colors.accent.z, 0.22f)), 6.0f));
+    add("drop_into", image(written(math::Vec4(colors.accent.x, colors.accent.y, colors.accent.z, 0.22f)), 6.0f));
     // The inspector: a card per component under a header that lights up, labels a little dimmer than
     // the values, numbers the pointer lights and drags, swatches whose colour is the value's, and the
     // mark of a value that differs from its prefab's.
-    const ImVec4 card = mixed(colors.panel, colors.raised, 0.35f);
+    const math::Vec4 card = mixed(colors.panel, colors.raised, 0.35f);
     add("card", image(written(card), 6.0f));
     add("card_header", clickable(image(written(mixed(card, colors.raised, 0.55f)), 5.0f)));
-    add("group", clickable(image(written(ImVec4(card.x, card.y, card.z, 0.0f)), 4.0f)));
+    add("group", clickable(image(written(math::Vec4(card.x, card.y, card.z, 0.0f)), 4.0f)));
     add("label", text(mixed(colors.text, colors.textDim, 0.45f)));
     add("number", [&] {
         std::vector<asset::ThemeOverride> values = clickable(image(written(colors.field), 4.0f));
         values.push_back({"UiText", "color", written(colors.text)});
-        values.push_back({"UiInput", "selection_color", written(ImVec4(colors.accent.x, colors.accent.y, colors.accent.z, 0.45f))});
+        values.push_back({"UiInput", "selection_color", written(math::Vec4(colors.accent.x, colors.accent.y, colors.accent.z, 0.45f))});
         values.push_back({"UiInput", "caret_color", written(colors.text)});
         return values;
     }());
     add("swatch", clickable({{"UiImage", "corner_radius", "4"}}));
-    add("tool", clickable(image(written(ImVec4(colors.raised.x, colors.raised.y, colors.raised.z, 0.6f)), 4.0f)));
+    add("tool", clickable(image(written(math::Vec4(colors.raised.x, colors.raised.y, colors.raised.z, 0.6f)), 4.0f)));
     add("mark", image(written(colors.accent), 1.0f));
     // The frame of the editor: buttons that are clear until the pointer is on them, and tinted while
     // what they stand for is on; the tabs of the scenes, of which the one shown takes the colour of
     // the toolbar under it; and the tooltips shown over everything. A clear button has no colour for
     // the pointer to light, hence a style of its own under it.
-    add("bar_button", clickable(image(written(ImVec4(mono.x, mono.y, mono.z, 0.0f)), 4.0f)));
-    add("bar_hover", clickable(image(written(ImVec4(mono.x, mono.y, mono.z, 0.10f)), 4.0f)));
-    add("bar_selected", clickable(image(written(ImVec4(colors.accent.x, colors.accent.y, colors.accent.z, 0.28f)), 4.0f)));
-    add("tab", clickable(image(written(ImVec4(mono.x, mono.y, mono.z, 0.0f)), 5.0f)));
-    add("tab_hover", clickable(image(written(ImVec4(mono.x, mono.y, mono.z, 0.06f)), 5.0f)));
+    add("bar_button", clickable(image(written(math::Vec4(mono.x, mono.y, mono.z, 0.0f)), 4.0f)));
+    add("bar_hover", clickable(image(written(math::Vec4(mono.x, mono.y, mono.z, 0.10f)), 4.0f)));
+    add("bar_selected", clickable(image(written(math::Vec4(colors.accent.x, colors.accent.y, colors.accent.z, 0.28f)), 4.0f)));
+    add("tab", clickable(image(written(math::Vec4(mono.x, mono.y, mono.z, 0.0f)), 5.0f)));
+    add("tab_hover", clickable(image(written(math::Vec4(mono.x, mono.y, mono.z, 0.06f)), 5.0f)));
     add("tab_selected", clickable(image(written(colors.panel), 5.0f)));
     add("tooltip", image(written(colors.popup), 4.0f));
     // What is selected of a text that is only read.
-    add("selection", {{"UiImage", "color", written(ImVec4(colors.accent.x, colors.accent.y, colors.accent.z, 0.4f))},
+    add("selection", {{"UiImage", "color", written(math::Vec4(colors.accent.x, colors.accent.y, colors.accent.z, 0.4f))},
                       {"UiImage", "corner_radius", "0"}});
     m_theme = std::move(theme);
 }
@@ -570,13 +570,13 @@ void UiPanel::setTooltipsOutside(bool outside) noexcept
     m_world.setTooltipsDrawn(!outside);
 }
 
-ImVec2 UiPanel::screenOf(math::Vec2 units) const noexcept
+math::Vec2 UiPanel::screenOf(math::Vec2 units) const noexcept
 {
     const float pointsPerUnit = m_zoom / m_pixelsPerPoint;
-    return ImVec2(m_origin.x + units.x * pointsPerUnit, m_origin.y + units.y * pointsPerUnit);
+    return math::Vec2(m_origin.x + units.x * pointsPerUnit, m_origin.y + units.y * pointsPerUnit);
 }
 
-math::Vec2 UiPanel::unitsOf(ImVec2 screen) const noexcept
+math::Vec2 UiPanel::unitsOf(math::Vec2 screen) const noexcept
 {
     const float unitsPerPoint = m_pixelsPerPoint / m_zoom;
     return math::Vec2{(screen.x - m_origin.x) * unitsPerPoint, (screen.y - m_origin.y) * unitsPerPoint};
@@ -589,17 +589,17 @@ float UiPanel::zoomFor(float font) noexcept
     return editorScreen().pixelsPerPoint * themeMetrics().lineHeight / std::max(regularFontPixels(font), 1.0f);
 }
 
-PanelImagePlacement placePanelImage(ImVec2 origin, ImVec2 size, ImVec2 viewport, float pixelsPerPoint) noexcept
+PanelImagePlacement placePanelImage(math::Vec2 origin, math::Vec2 size, math::Vec2 viewport, float pixelsPerPoint) noexcept
 {
     // Round both edges, rather than flooring the size and stretching the image over the old room.
-    const ImVec2 first(std::round((origin.x - viewport.x) * pixelsPerPoint),
+    const math::Vec2 first(std::round((origin.x - viewport.x) * pixelsPerPoint),
                        std::round((origin.y - viewport.y) * pixelsPerPoint));
-    const ImVec2 last(std::round((origin.x + size.x - viewport.x) * pixelsPerPoint),
+    const math::Vec2 last(std::round((origin.x + size.x - viewport.x) * pixelsPerPoint),
                       std::round((origin.y + size.y - viewport.y) * pixelsPerPoint));
     const math::Extent2D pixels{static_cast<std::uint32_t>(std::max(last.x - first.x, 1.0f)),
                                 static_cast<std::uint32_t>(std::max(last.y - first.y, 1.0f))};
-    return {.origin = ImVec2(viewport.x + first.x / pixelsPerPoint, viewport.y + first.y / pixelsPerPoint),
-            .size = ImVec2(static_cast<float>(pixels.width) / pixelsPerPoint, static_cast<float>(pixels.height) / pixelsPerPoint),
+    return {.origin = math::Vec2(viewport.x + first.x / pixelsPerPoint, viewport.y + first.y / pixelsPerPoint),
+            .size = math::Vec2(static_cast<float>(pixels.width) / pixelsPerPoint, static_cast<float>(pixels.height) / pixelsPerPoint),
             .pixels = pixels};
 }
 
@@ -609,11 +609,11 @@ void UiPanel::update(EditorUiKit& kit, core::Duration delta, float zoom, float h
     EditorHosts& hosts = kit.hosts();
     const EditorInput& devices = kit.input();
     const float pixelsPerPoint = editorScreen().pixelsPerPoint;
-    const ImVec2 room = hosts.available();
-    const ImVec2 available(std::max(room.x, 1.0f), std::max(height > 0.0f ? height : room.y, 1.0f));
+    const math::Vec2 room = hosts.available();
+    const math::Vec2 available(std::max(room.x, 1.0f), std::max(height > 0.0f ? height : room.y, 1.0f));
     // A panel's texels must land on framebuffer pixels without a second, fractional resampling.
-    const PanelImagePlacement placement = placePanelImage(hosts.cursor(), available, ImVec2(0.0f, 0.0f), pixelsPerPoint);
-    const ImVec2 origin = placement.origin;
+    const PanelImagePlacement placement = placePanelImage(hosts.cursor(), available, math::Vec2(0.0f, 0.0f), pixelsPerPoint);
+    const math::Vec2 origin = placement.origin;
     m_origin = origin;
     m_pixelsPerPoint = pixelsPerPoint;
     m_zoom = std::max(zoom, 0.1f);
@@ -730,24 +730,24 @@ void UiPanel::update(EditorUiKit& kit, core::Duration delta, float zoom, float h
         const float lineHeight = themeMetrics().lineHeight;
         if (const ui::LaidOutRect* const field = m_world.canvases().front().layout.find(m_world.editedField()))
         {
-            kit.requestTextInput(ImVec2(origin.x + field->min.x * m_zoom / pixelsPerPoint, origin.y + field->min.y * m_zoom / pixelsPerPoint),
-                                 ImVec2(origin.x + field->max.x * m_zoom / pixelsPerPoint, origin.y + field->max.y * m_zoom / pixelsPerPoint));
+            kit.requestTextInput(math::Vec2(origin.x + field->min.x * m_zoom / pixelsPerPoint, origin.y + field->min.y * m_zoom / pixelsPerPoint),
+                                 math::Vec2(origin.x + field->max.x * m_zoom / pixelsPerPoint, origin.y + field->max.y * m_zoom / pixelsPerPoint));
         }
         else if (const std::optional<ui::UiWorld::CaretPlace> caret = m_world.textCaretPlace(m_scene, m_world.editedTextArea()))
         {
             // At the cursor of an area of text.
-            const ImVec2 at(origin.x + caret->position.x * m_zoom / pixelsPerPoint, origin.y + caret->position.y * m_zoom / pixelsPerPoint);
-            kit.requestTextInput(at, ImVec2(at.x + 1.0f, at.y + std::max(caret->height * m_zoom / pixelsPerPoint, lineHeight)));
+            const math::Vec2 at(origin.x + caret->position.x * m_zoom / pixelsPerPoint, origin.y + caret->position.y * m_zoom / pixelsPerPoint);
+            kit.requestTextInput(at, math::Vec2(at.x + 1.0f, at.y + std::max(caret->height * m_zoom / pixelsPerPoint, lineHeight)));
         }
         else
         {
-            kit.requestTextInput(origin, ImVec2(origin.x + available.x, origin.y + lineHeight));
+            kit.requestTextInput(origin, math::Vec2(origin.x + available.x, origin.y + lineHeight));
         }
     }
     m_shown = true;
 }
 
-void UiPanel::carryOut(EditorUiKit& kit, const ImVec2& origin, float pixelsPerPoint)
+void UiPanel::carryOut(EditorUiKit& kit, const math::Vec2& origin, float pixelsPerPoint)
 {
     // What the panel carries is carried for the whole editor as well, for as long as the button is
     // held, so that the other panels and the view take it; the panel draws its label while the
@@ -763,12 +763,12 @@ void UiPanel::carryOut(EditorUiKit& kit, const ImVec2& origin, float pixelsPerPo
         return;
     }
     const math::Vec2 mouse = kit.input().mouse();
-    const ImVec2 end(origin.x + static_cast<float>(m_pixels.width) / pixelsPerPoint,
+    const math::Vec2 end(origin.x + static_cast<float>(m_pixels.width) / pixelsPerPoint,
                      origin.y + static_cast<float>(m_pixels.height) / pixelsPerPoint);
     const bool inside = mouse.x >= origin.x && mouse.y >= origin.y && mouse.x < end.x && mouse.y < end.y;
     if (!inside && !drag->label.empty())
     {
-        kit.showTooltip(drag->label, ImVec2(mouse.x, mouse.y));
+        kit.showTooltip(drag->label, math::Vec2(mouse.x, mouse.y));
     }
     kit.carry(std::move(*drag));
 }

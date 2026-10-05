@@ -8,8 +8,6 @@
 #include <devex/scene/Entity.hpp>
 #include <devex/serialization/Text.hpp>
 
-#include <imgui.h>
-
 #include <cstdint>
 #include <filesystem>
 #include <optional>
@@ -74,52 +72,52 @@ struct DEVEX_API ThemeSettings
 struct DEVEX_API ThemeColors
 {
     bool dark = true;
-    ImVec4 accent;
-    ImVec4 text;
-    ImVec4 textDim;
+    math::Vec4 accent{0.0f};
+    math::Vec4 text{0.0f};
+    math::Vec4 textDim{0.0f};
     // Behind the panels: menu bar, status bar and the gaps between docked panels.
-    ImVec4 outer;
-    ImVec4 panel;
+    math::Vec4 outer{0.0f};
+    math::Vec4 panel{0.0f};
     // Text fields and lists.
-    ImVec4 field;
+    math::Vec4 field{0.0f};
     // Buttons, a little lighter than the panel; and what popups and menus stand on.
-    ImVec4 raised;
-    ImVec4 popup;
-    ImVec4 border;
-    ImVec4 success;
-    ImVec4 warning;
-    ImVec4 error;
-    ImVec4 axisX;
-    ImVec4 axisY;
-    ImVec4 axisZ;
+    math::Vec4 raised{0.0f};
+    math::Vec4 popup{0.0f};
+    math::Vec4 border{0.0f};
+    math::Vec4 success{0.0f};
+    math::Vec4 warning{0.0f};
+    math::Vec4 error{0.0f};
+    math::Vec4 axisX{0.0f};
+    math::Vec4 axisY{0.0f};
+    math::Vec4 axisZ{0.0f};
 
     // Icon colors by kind of object, like Godot's node colors.
-    ImVec4 entity;
-    ImVec4 light;
-    ImVec4 camera;
-    ImVec4 environment;
-    ImVec4 gameCode;
-    ImVec4 physics;
-    ImVec4 audio;
-    ImVec4 animation;
-    ImVec4 interface;
-    ImVec4 folder;
-    ImVec4 scene;
+    math::Vec4 entity{0.0f};
+    math::Vec4 light{0.0f};
+    math::Vec4 camera{0.0f};
+    math::Vec4 environment{0.0f};
+    math::Vec4 gameCode{0.0f};
+    math::Vec4 physics{0.0f};
+    math::Vec4 audio{0.0f};
+    math::Vec4 animation{0.0f};
+    math::Vec4 interface{0.0f};
+    math::Vec4 folder{0.0f};
+    math::Vec4 scene{0.0f};
     // Entities from prefabs, as in Unity.
-    ImVec4 prefab;
-    ImVec4 material;
-    ImVec4 texture;
-    ImVec4 neutral;
-    ImVec4 favorite;
+    math::Vec4 prefab{0.0f};
+    math::Vec4 material{0.0f};
+    math::Vec4 texture{0.0f};
+    math::Vec4 neutral{0.0f};
+    math::Vec4 favorite{0.0f};
 
     // Syntax colors of the text editor, by TokenKind.
-    ImVec4 codeKeyword;
-    ImVec4 codeType;
-    ImVec4 codeComment;
-    ImVec4 codeString;
-    ImVec4 codeNumber;
-    ImVec4 codeDirective;
-    ImVec4 codePunctuation;
+    math::Vec4 codeKeyword{0.0f};
+    math::Vec4 codeType{0.0f};
+    math::Vec4 codeComment{0.0f};
+    math::Vec4 codeString{0.0f};
+    math::Vec4 codeNumber{0.0f};
+    math::Vec4 codeDirective{0.0f};
+    math::Vec4 codePunctuation{0.0f};
 };
 
 [[nodiscard]] DEVEX_API ThemeColors deriveThemeColors(const ThemeSettings& settings);
@@ -161,7 +159,7 @@ DEVEX_API void applyTheme(const ThemeSettings& settings, float displayScale);
 struct DEVEX_API EntityIcon
 {
     IconText icon;
-    ImVec4 color;
+    math::Vec4 color{0.0f};
 };
 [[nodiscard]] DEVEX_API EntityIcon entityIcon(const scene::Scene& scene, scene::Entity entity);
 [[nodiscard]] DEVEX_API EntityIcon componentIcon(std::string_view componentName);

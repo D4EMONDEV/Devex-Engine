@@ -173,7 +173,7 @@ mais seulement explicitement ici : le code suit ce document, pas l'inverse.
 | Journal                  | Fichier par lancement, le précédent gardé, lisible pendant le jeu  |
 | Plantages                | Pile symbolisée dans le journal et minidump à côté                 |
 | Manettes                 | SDL Gamepad, quatre manettes, sticks avec zone morte               |
-| Éditeur de texte         | Coloration dessinée par-dessus le champ ImGui                     |
+| Éditeur de texte         | `UiTextArea` de `Devex::Ui`, couleurs par morceau                  |
 | Autocomplétion           | Mots-clés, noms du moteur et identifiants du fichier              |
 
 ## Architecture cible
@@ -215,7 +215,7 @@ situé au-dessus de lui, et le graphe reste sans cycle.
 | `Physics2D`     | corps, colliders, tuiles et personnages 2D de la scène, simulés par Box2D | Core, Math, Asset, Scene, Box2D     |
 | `Navigation`    | cuisson des maillages de navigation, agents, obstacles et requêtes de chemin | Core, Math, Asset, Scene, Recast & Detour, zstd |
 | `Ui`            | placement des canevas, mise en page du texte, survol et focus, dessin    | Core, Math, Asset, Scene, Render     |
-| `Tools`         | panneaux en `Devex::Ui`, annulation, éditeur (viewport, gizmos, scènes, accueil) | Core, Platform, Render, Scene, Audio, Animation, Particles, Physics2D, Navigation, Ui, AssetImport, ImGui (types seulement) |
+| `Tools`         | panneaux en `Devex::Ui`, annulation, éditeur (viewport, gizmos, scènes, accueil) | Core, Platform, Render, Scene, Audio, Animation, Particles, Physics2D, Navigation, Ui, AssetImport, plutosvg |
 | `Runtime`       | `Application`, boucle, mode éditeur et Play, modules de jeu, coroutines, `AssetManager`, extraction | tous les modules ci-dessus |
 
 Au sommet : `devex-editor`, `devex-player` et les modules de jeu des projets.
@@ -2352,6 +2352,11 @@ les assets s'écrivent au fil de leur lecture.
     d'accès aux menus par Alt ; l'appui qui ferme un menu n'agit pas sur ce qui est dessous ; pas
     de menu contextuel sur les onglets (ajouté depuis, voir le jalon 51) ; les onglets des panneaux
     ancrés restent ceux d'ImGui.
+- **Puis le retrait d'ImGui, seconde étape** (jalon 56) : ImGui n'est plus compilé. Les outils
+  écrivent leurs points et leurs couleurs en `math::Vec2` et `math::Vec4`, comme le reste du moteur ;
+  les déclarations sans valeur partent de zéro, comme `ImVec2` et `ImVec4`, puisque GLM ne
+  l'assure pas. `imgui` (avec ses features docking, freetype et sdl3-binding) quitte `vcpkg.json`,
+  FreeType avec lui ; la fenêtre *About* ne les cite plus.
 - **Puis le retrait d'ImGui, première étape** (jalon 55) : ImGui ne tourne plus. Plus de
   contexte, plus de backends SDL3 et Vulkan, plus de style ni d'atlas de polices ; seuls ses types
   de vecteurs restent dans les sources des outils, et la dépendance, jusqu'à la seconde étape.
@@ -3170,7 +3175,7 @@ les assets s'écrivent au fil de leur lecture.
 | volk (+ vulkan-headers) | Vulkan             | 2 ✅     |
 | VMA                   | mémoire GPU          | 3 ✅     |
 | fastgltf              | import glTF          | 3 ✅     |
-| Dear ImGui (docking, SDL3) | outils, éditeur | 5 ✅     |
+| Dear ImGui (docking, SDL3) | outils, éditeur | 5 ✅, retirée au 56 |
 | basisu (encodeurs BC7, BC5) | compression des textures | 6 ✅ |
 | stb (stb_image)       | décodage des images  | 6 ✅     |
 | miniaudio             | sortie, mixage et spatialisation audio | 16 ✅ |
@@ -3181,7 +3186,7 @@ les assets s'écrivent au fil de leur lecture.
 | box2d                 | physique 2D          | 37 ✅    |
 | recastnavigation      | navigation           | 39 ✅    |
 | zstd                  | paquets de jeux      | 13 ✅    |
-| FreeType (`imgui[freetype]`) | rendu des polices de l'éditeur | 10 ✅ |
+| FreeType (`imgui[freetype]`) | rendu des polices de l'éditeur | 10 ✅, retirée au 56 |
 | plutosvg              | icônes SVG de l'éditeur | 10 ✅  |
 | Catch2                | tests (feature `tests`) | 0 ✅  |
 
@@ -3499,9 +3504,10 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
 55. ✅ **ImGui ne tourne plus** — couche des outils composée par le renderer avec le pipeline de
     `Devex::Ui` (image de la scène et surfaces lues par des lots) ; mesures du cadre à la Godot ;
     plus de contexte, de backends, de style ni d'atlas d'ImGui.
+56. ✅ **Plus d'ImGui** — types des outils en `math::Vec2` et `math::Vec4`, dépendance `imgui` et
+    FreeType retirées de `vcpkg.json`.
 
-Ensuite, sans ordre figé : la seconde étape du retrait d'ImGui (ses types de vecteurs dans les
-outils, la dépendance vcpkg et FreeType), puis CI Linux.
+Ensuite, sans ordre figé : CI Linux.
 
 ## Questions ouvertes
 
@@ -3568,7 +3574,7 @@ outils, la dépendance vcpkg et FreeType), puis CI Linux.
   normal maps, ombres), découpe libre des sprites dans un éditeur de sprites et atlas regroupés à
   l'import, aimantation au pixel (pixel perfect), ordre par Y pour les vues de dessus, sprites
   écrits dans la profondeur (découpés à l'alpha), événements des animations, animations de
-  n'importe quel champ par des clips (comme Unity), aperçus ImGui au pixel près, culling des
+  n'importe quel champ par des clips (comme Unity), culling des
   sprites par lots plutôt qu'un à un.
 - **Particules, la suite** : simulation sur le GPU pour les très grands nombres, éditeur de
   dégradés de couleur plutôt que deux couleurs, particules faites de maillages, lumières portées
@@ -3605,8 +3611,7 @@ outils, la dépendance vcpkg et FreeType), puis CI Linux.
   fichiers, vignettes ; dans la fenêtre de création, les descriptions et les icônes des composants
   du jeu (tirées des commentaires de leur code), et des préréglages faits de préfabs du projet ; un
   panneau redessiné seulement quand il change ; les polices de l'éditeur
-  cuites une fois et gardées en cache plutôt qu'à chaque lancement ; un seul thème pour ImGui et
-  `Devex::Ui` tant qu'ils cohabitent.
+  cuites une fois et gardées en cache plutôt qu'à chaque lancement.
 - **CI, la suite** : Linux, puis macOS ; les tests `[gpu]` sur un rendu logiciel (lavapipe,
   SwiftShader) ou une machine avec GPU ; actions passées à Node.js 24 (celles en v4 tournent sur
   Node.js 20, déprécié) ; cache de compilation (sccache) ; éditeur et lecteur publiés en artefacts

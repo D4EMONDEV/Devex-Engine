@@ -570,7 +570,7 @@ void ViewportHeaderUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene&
             }
             const std::filesystem::path& file = state.tabs.path(*under, live);
             std::string resource = file.empty() || state.database == nullptr ? std::string{} : state.database->project().resourcePath(file);
-            openEditorMenu(state, tabMenu(ids, *under, *under == active, std::move(resource)), pointOf(state.input.mouse()), tabMenuOwner);
+            openEditorMenu(state, tabMenu(ids, *under, *under == active, std::move(resource)), state.input.mouse(), tabMenuOwner);
         }
     }
     const bool added = editing && world.wasClicked(newTab);

@@ -658,7 +658,7 @@ void InspectorUi::addProperty(EditorUiKit& kit, Section& section, const scene::C
                                                                  .spacing = font * 0.3f,
                                                                  .equalSize = true,
                                                                  .align = scene::TextAlign::Left});
-        const std::array<ImVec4, 4> axisColors{colors.axisX, colors.axisY, colors.axisZ, colors.textDim};
+        const std::array<math::Vec4, 4> axisColors{colors.axisX, colors.axisY, colors.axisZ, colors.textDim};
         const scene::UiNumberField settings = numberSettings(field);
         for (std::size_t index = 0; index < row.count; ++index)
         {

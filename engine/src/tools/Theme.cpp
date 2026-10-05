@@ -36,29 +36,29 @@ constexpr float jetBrainsMonoLineHeight = 1.32f;
 ThemeColors g_colors = deriveThemeColors(ThemeSettings{});
 ThemeMetrics g_metrics = deriveThemeMetrics(ThemeSettings{}, 1.0f);
 
-[[nodiscard]] ImVec4 hex(std::uint32_t rgb, float alpha = 1.0f) noexcept
+[[nodiscard]] math::Vec4 hex(std::uint32_t rgb, float alpha = 1.0f) noexcept
 {
     return {static_cast<float>((rgb >> 16) & 0xFF) / 255.0f, static_cast<float>((rgb >> 8) & 0xFF) / 255.0f,
             static_cast<float>(rgb & 0xFF) / 255.0f, alpha};
 }
 
-[[nodiscard]] ImVec4 mix(ImVec4 from, ImVec4 to, float amount) noexcept
+[[nodiscard]] math::Vec4 mix(math::Vec4 from, math::Vec4 to, float amount) noexcept
 {
     const auto channel = [amount](float a, float b) { return std::clamp(a + (b - a) * amount, 0.0f, 1.0f); };
     return {channel(from.x, to.x), channel(from.y, to.y), channel(from.z, to.z), channel(from.w, to.w)};
 }
 
-[[nodiscard]] ImVec4 withAlpha(ImVec4 color, float alpha) noexcept
+[[nodiscard]] math::Vec4 withAlpha(math::Vec4 color, float alpha) noexcept
 {
     return {color.x, color.y, color.z, alpha};
 }
 
-[[nodiscard]] ImVec4 toImVec4(math::Vec3 color) noexcept
+[[nodiscard]] math::Vec4 opaque(math::Vec3 color) noexcept
 {
     return {color.r, color.g, color.b, 1.0f};
 }
 
-[[nodiscard]] float luminance(ImVec4 color) noexcept
+[[nodiscard]] float luminance(math::Vec4 color) noexcept
 {
     return 0.2126f * color.x + 0.7152f * color.y + 0.0722f * color.z;
 }
@@ -96,7 +96,7 @@ ThemeMetrics g_metrics = deriveThemeMetrics(ThemeSettings{}, 1.0f);
         }
         value = value << 4 | static_cast<std::uint32_t>(nibble);
     }
-    const ImVec4 color = hex(value);
+    const math::Vec4 color = hex(value);
     return math::Vec3{color.x, color.y, color.z};
 }
 
@@ -251,15 +251,15 @@ float effectiveInterfaceScale(const ThemeSettings& settings, float displayScale)
 
 ThemeColors deriveThemeColors(const ThemeSettings& settings)
 {
-    const ImVec4 base = toImVec4(settings.baseColor);
-    const ImVec4 black = hex(0x000000);
-    const ImVec4 white = hex(0xFFFFFF);
+    const math::Vec4 base = opaque(settings.baseColor);
+    const math::Vec4 black = hex(0x000000);
+    const math::Vec4 white = hex(0xFFFFFF);
     const float contrast = settings.contrast;
 
     ThemeColors colors;
     colors.dark = luminance(base) < 0.5f;
-    const ImVec4 mono = colors.dark ? white : black;
-    colors.accent = toImVec4(settings.accentColor);
+    const math::Vec4 mono = colors.dark ? white : black;
+    colors.accent = opaque(settings.accentColor);
     colors.text = mix(mono, base, colors.dark ? 0.18f : 0.12f);
     colors.textDim = mix(mono, base, 0.5f);
     colors.panel = base;
@@ -287,7 +287,7 @@ ThemeColors deriveThemeColors(const ThemeSettings& settings)
     colors.axisY = hex(0x7ccf48);
     colors.axisZ = hex(0x4f8ff0);
 
-    const std::array<std::pair<ImVec4*, std::uint32_t>, 16> icons{{
+    const std::array<std::pair<math::Vec4*, std::uint32_t>, 16> icons{{
         {&colors.physics, 0x72d6c6},
         {&colors.audio, 0xf49ac1},
         {&colors.animation, 0xc3a6f5},
@@ -312,7 +312,7 @@ ThemeColors deriveThemeColors(const ThemeSettings& settings)
     }
 
     // Syntax colors, in the spirit of the icon colors: pale on dark, deepened on light.
-    const std::array<std::pair<ImVec4*, std::uint32_t>, 7> code{{
+    const std::array<std::pair<math::Vec4*, std::uint32_t>, 7> code{{
         {&colors.codeKeyword, 0x88b9f2},
         {&colors.codeType, 0x6fd1c0},
         {&colors.codeComment, 0x7f9163},

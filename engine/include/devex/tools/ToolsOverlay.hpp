@@ -222,9 +222,9 @@ struct DEVEX_API InterfaceFrame
     float scale = 1.0f;
 };
 
-// Docked Dear ImGui panels in a Godot-like theme: scene tree, inspector, file system, output and
-// statistics, over the game or around the editor's viewport. Only one instance may exist at a time,
-// since its panels share one theme.
+// Docked panels made with the interface of the engine, in a Godot-like theme: scene tree, inspector,
+// file system, output and statistics, over the game or around the editor's viewport. Only one
+// instance may exist at a time, since its panels share one theme.
 class DEVEX_API ToolsOverlay
 {
 public:

@@ -463,7 +463,7 @@ TEST_CASE("A drag from outside the interface is dropped on a target that accepts
     CHECK(screen.world.dropped()->data == "e1");
     CHECK_FALSE(screen.world.wasClicked("folder"));
 
-    // Announced once more after the release, as ImGui keeps its drag a frame longer, it drops nothing.
+    // Announced once more after the release, as a drag from another panel may be, it drops nothing.
     screen.world.carryFromOutside("entity", "e1");
     screen.update(UiInput{.pointer = {200.0f, 120.0f}});
     CHECK_FALSE(screen.world.wasDropped(folder));

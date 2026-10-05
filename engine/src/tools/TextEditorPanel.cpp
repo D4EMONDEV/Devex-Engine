@@ -123,7 +123,7 @@ constexpr std::uint32_t scriptSurface = 20;
 constexpr std::size_t scriptMenuOwner = 100;
 constexpr std::size_t completionsShown = 10;
 
-[[nodiscard]] ImVec4 colorOf(TokenKind kind)
+[[nodiscard]] math::Vec4 colorOf(TokenKind kind)
 {
     const ThemeColors& colors = themeColors();
     switch (kind)
@@ -741,10 +741,10 @@ void ScriptUi::colorLines(ToolsState& state, const TextDocument& document, Entit
         for (auto match = std::ranges::lower_bound(edit.matches, from); match != edit.matches.end() && *match < to; ++match)
         {
             const bool current = static_cast<int>(match - edit.matches.begin()) == edit.currentMatch;
-            const ImVec4 tint = current ? colors.accent : colors.warning;
+            const math::Vec4 tint = current ? colors.accent : colors.warning;
             found.push_back({.begin = static_cast<std::size_t>(*match),
                              .end = static_cast<std::size_t>(*match) + edit.find.size(),
-                             .color = linearColor(ImVec4(tint.x, tint.y, tint.z, current ? 0.6f : 0.35f))});
+                             .color = linearColor(math::Vec4(tint.x, tint.y, tint.z, current ? 0.6f : 0.35f))});
         }
     }
     world.setTextHighlights(scene(), area, std::move(found));
@@ -1028,7 +1028,7 @@ std::optional<PendingAction> ScriptUi::update(ToolsState& state, EditorUiKit& ki
 
     // The menus open under their titles, and the pointer on another title goes to its menu.
     const ui::LayoutResult* const layout = world.canvases().empty() ? nullptr : &world.canvases().front().layout;
-    const ImVec2 mouse = pointOf(state.input.mouse());
+    const math::Vec2 mouse = state.input.mouse();
     for (std::size_t index = 0; index < menus.size() && layout != nullptr; ++index)
     {
         const ui::LaidOutRect* const rect = layout->find(menus[index].entity);
@@ -1036,8 +1036,8 @@ std::optional<PendingAction> ScriptUi::update(ToolsState& state, EditorUiKit& ki
         {
             continue;
         }
-        const ImVec2 min = panel.screenOf(rect->min);
-        const ImVec2 max = panel.screenOf(rect->max);
+        const math::Vec2 min = panel.screenOf(rect->min);
+        const math::Vec2 max = panel.screenOf(rect->max);
         const bool pointed = mouse.x >= min.x && mouse.x < max.x && mouse.y >= min.y && mouse.y < max.y;
         const std::size_t owner = scriptMenuOwner + index;
         if ((world.wasClicked(menus[index].entity) && menuOpen != owner) ||
@@ -1046,7 +1046,7 @@ std::optional<PendingAction> ScriptUi::update(ToolsState& state, EditorUiKit& ki
             std::vector<MenuEntry> entries = index == 0   ? fileMenu(state)
                                              : index == 1 ? textEditMenu(state, area.isValid() && world.canUndoText(area), area.isValid() && world.canRedoText(area))
                                                           : searchMenu(state);
-            openEditorMenu(state, std::move(entries), ImVec2(min.x, max.y), owner);
+            openEditorMenu(state, std::move(entries), math::Vec2(min.x, max.y), owner);
         }
     }
 

@@ -250,7 +250,7 @@ public:
         ui.scene().get<scene::UiRect>(m_box).clipChildren = true;
         m_area = ui.add(m_box, "Area", rects::whole(math::Vec4{std::round(ui.font * 0.75f)}));
         const scene::UiRect corner{.anchorMin = {0.0f, 0.0f}, .anchorMax = {0.0f, 0.0f}, .offsetMin = {0.0f, 0.0f}, .offsetMax = {1.0f, 1.0f}};
-        const auto lineOf = [&](ImVec4 color) {
+        const auto lineOf = [&](math::Vec4 color) {
             const Entity made = ui.add(m_area, "Line", corner);
             ui.scene().add<scene::UiImage>(made, scene::UiImage{.color = linearColor(color), .raycastTarget = false});
             return made;
@@ -278,7 +278,7 @@ public:
         m_linear = ui.menuItem(kit, m_keyMenu, Icon::Move, "Linear");
         ui.menuSeparator(m_keyMenu);
         m_delete = ui.menuItem(kit, m_keyMenu, Icon::Trash, "Delete Key", "Del");
-        const auto circle = [&](ImVec4 color) {
+        const auto circle = [&](math::Vec4 color) {
             const Entity made = ui.add(m_area, "Key", corner);
             ui.scene().add<scene::UiImage>(made, scene::UiImage{.color = linearColor(color)});
             ui.scene().add<scene::UiButton>(made);

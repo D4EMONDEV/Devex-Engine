@@ -186,7 +186,7 @@ struct Node
     std::string key;
     std::string label;
     std::string detail;
-    EntityIcon icon{icons::File, ImVec4()};
+    EntityIcon icon{icons::File, math::Vec4(0.0f)};
     bool expandable = false;
     bool expanded = false;
     // Folders: their res:// path. Sources: their res:// path too.
@@ -898,7 +898,7 @@ void FileSystemUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& edi
     const std::size_t first = nodes.empty() ? 0
                                             : std::min(static_cast<std::size_t>(std::max(scrolled.offset.y, 0.0f) / rowHeight),
                                                        nodes.size() - 1);
-    const math::Vec4 drop = linearColor(ImVec4(colors.accent.x, colors.accent.y, colors.accent.z, 0.3f));
+    const math::Vec4 drop = linearColor(math::Vec4(colors.accent.x, colors.accent.y, colors.accent.z, 0.3f));
     for (std::size_t index = 0; index < rows.size(); ++index)
     {
         const Row& row = rows[index];

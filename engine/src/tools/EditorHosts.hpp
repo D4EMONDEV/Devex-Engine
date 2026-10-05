@@ -7,8 +7,6 @@
 #include <devex/math/Math.hpp>
 #include <devex/render/RenderWorld.hpp>
 
-#include <imgui.h>
-
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -18,17 +16,11 @@
 
 namespace devex::tools::detail {
 
-// A point of the editor's input as its places take it.
-[[nodiscard]] inline ImVec2 pointOf(math::Vec2 point) noexcept
-{
-    return ImVec2(point.x, point.y);
-}
-
 // The window the tools stand in, as the frame measured it: its size in points, and how many pixels
 // of the window a point covers.
 struct DEVEX_API EditorScreen
 {
-    ImVec2 size{0.0f, 0.0f};
+    math::Vec2 size{0.0f, 0.0f};
     float pixelsPerPoint = 1.0f;
 };
 
@@ -60,7 +52,7 @@ struct DEVEX_API HostOptions
     // Answers the pointer; what only shows, such as the tooltips, lets it through.
     bool takesPointer = true;
     // Where the pointer goes through to what is behind the tools: the game under the panels.
-    std::optional<std::pair<ImVec2, ImVec2>> hole;
+    std::optional<std::pair<math::Vec2, math::Vec2>> hole;
     // Painted under what the host shows, in linear colours, and the room kept inside its edges.
     std::optional<math::Vec4> background;
     float padding = 0.0f;
@@ -73,15 +65,15 @@ public:
     // it, or takes the keyboard from the tools when it lands on no host.
     void beginFrame(math::Vec2 pointer, bool pressed);
 
-    void begin(std::string_view id, ImVec2 min, ImVec2 max, HostLayer layer, const HostOptions& options = {});
+    void begin(std::string_view id, math::Vec2 min, math::Vec2 max, HostLayer layer, const HostOptions& options = {});
     void end();
 
     // Where the next image goes in the host being declared, and the room left from there.
-    [[nodiscard]] ImVec2 cursor() const noexcept;
-    void setCursor(ImVec2 at) noexcept;
-    [[nodiscard]] ImVec2 available() const noexcept;
+    [[nodiscard]] math::Vec2 cursor() const noexcept;
+    void setCursor(math::Vec2 at) noexcept;
+    [[nodiscard]] math::Vec2 available() const noexcept;
     // Shows an image at the cursor and moves the cursor under it.
-    void image(HostImage shown, ImVec2 size);
+    void image(HostImage shown, math::Vec2 size);
     // Whether the pointer is over the last image, in the host it is over.
     [[nodiscard]] bool itemHovered() const noexcept;
     // Whether the host being declared is under the pointer, and has the keyboard, it or the host it
@@ -106,8 +98,8 @@ private:
     {
         std::string id;
         std::string root;
-        ImVec2 min{0.0f, 0.0f};
-        ImVec2 max{0.0f, 0.0f};
+        math::Vec2 min{0.0f, 0.0f};
+        math::Vec2 max{0.0f, 0.0f};
         HostLayer layer = HostLayer::Panels;
         std::size_t order = 0;
         HostOptions options;
@@ -119,17 +111,17 @@ private:
         std::size_t sequence = 0;
         // Without an image, the colour fills the place.
         std::optional<HostImage> image;
-        ImVec2 min{0.0f, 0.0f};
-        ImVec2 max{0.0f, 0.0f};
+        math::Vec2 min{0.0f, 0.0f};
+        math::Vec2 max{0.0f, 0.0f};
         math::Vec4 color{1.0f};
     };
     struct Open
     {
         std::size_t host = 0;
-        ImVec2 cursor{0.0f, 0.0f};
-        ImVec2 contentMax{0.0f, 0.0f};
-        ImVec2 itemMin{0.0f, 0.0f};
-        ImVec2 itemMax{0.0f, 0.0f};
+        math::Vec2 cursor{0.0f, 0.0f};
+        math::Vec2 contentMax{0.0f, 0.0f};
+        math::Vec2 itemMin{0.0f, 0.0f};
+        math::Vec2 itemMax{0.0f, 0.0f};
     };
 
     [[nodiscard]] const Host* current() const noexcept;
@@ -142,7 +134,7 @@ private:
     std::string m_hoveredRoot;
     std::string m_focused;
     std::string m_focusedRoot;
-    ImVec2 m_pointer{-1.0e6f, -1.0e6f};
+    math::Vec2 m_pointer{-1.0e6f, -1.0e6f};
 };
 
 } // namespace devex::tools::detail

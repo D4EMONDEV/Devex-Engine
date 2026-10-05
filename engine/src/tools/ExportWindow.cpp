@@ -306,7 +306,7 @@ void ExportUi::sync(ToolsState& state, EditorUiKit& kit)
     showLine(run, statusLine, succeeded || failed);
     scene::UiSlider& bar = scene().get<scene::UiSlider>(progress);
     bar.value = std::clamp(status.fraction, 0.0f, 1.0f);
-    bar.fillColor = linearColor(ImVec4(colors.accent.x, colors.accent.y, colors.accent.z, 0.8f));
+    bar.fillColor = linearColor(math::Vec4(colors.accent.x, colors.accent.y, colors.accent.z, 0.8f));
     scene().get<scene::UiText>(progressText).text = status.message;
     scene().get<scene::UiText>(statusText).text = status.message;
     scene().get<UiRect>(statusText).style = failed ? "error" : "text";

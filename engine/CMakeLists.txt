@@ -4,7 +4,6 @@ find_package(recastnavigation CONFIG REQUIRED)
 find_package(efsw CONFIG REQUIRED)
 find_package(fastgltf CONFIG REQUIRED)
 find_package(glm CONFIG REQUIRED)
-find_package(imgui CONFIG REQUIRED)
 find_package(Jolt CONFIG REQUIRED)
 find_package(mikktspace CONFIG REQUIRED)
 find_package(plutosvg CONFIG REQUIRED)
@@ -858,10 +857,8 @@ target_link_libraries(devex_tools
         Devex::Scene
         Devex::Serialization
     PRIVATE
-        imgui::imgui
         plutosvg::plutosvg
 )
-target_compile_definitions(devex_tools PRIVATE IMGUI_DEFINE_MATH_OPERATORS)
 # The fonts and icons of the tools, loaded at runtime from resources/ next to the executables.
 add_dependencies(devex_tools devex_resources)
 set_target_properties(devex_tools PROPERTIES

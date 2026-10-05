@@ -43,11 +43,11 @@ TEST_CASE("Panel images keep one texel per framebuffer pixel at fractional displ
 {
     for (const float scale : {1.0f, 1.25f, 1.5f, 2.0f})
     {
-        for (const ImVec2 viewport : {ImVec2(0.0f, 0.0f), ImVec2(-301.25f, 40.5f)})
+        for (const devex::math::Vec2 viewport : {devex::math::Vec2(0.0f, 0.0f), devex::math::Vec2(-301.25f, 40.5f)})
         {
             CAPTURE(scale, viewport.x, viewport.y);
-            const ImVec2 origin(viewport.x + 12.3f, viewport.y + 27.7f);
-            const ImVec2 size(400.8f, 182.35f);
+            const devex::math::Vec2 origin(viewport.x + 12.3f, viewport.y + 27.7f);
+            const devex::math::Vec2 size(400.8f, 182.35f);
             const auto placed = devex::tools::detail::placePanelImage(origin, size, viewport, scale);
             const float x = (placed.origin.x - viewport.x) * scale;
             const float y = (placed.origin.y - viewport.y) * scale;
@@ -62,7 +62,7 @@ TEST_CASE("Panel images keep one texel per framebuffer pixel at fractional displ
             CHECK(std::abs((placed.origin.y + placed.size.y - origin.y - size.y) * scale) <= 0.501f);
         }
     }
-    const auto tiny = devex::tools::detail::placePanelImage(ImVec2(0.0f, 0.0f), ImVec2(0.1f, 0.1f), ImVec2(0.0f, 0.0f), 1.0f);
+    const auto tiny = devex::tools::detail::placePanelImage(devex::math::Vec2(0.0f, 0.0f), devex::math::Vec2(0.1f, 0.1f), devex::math::Vec2(0.0f, 0.0f), 1.0f);
     CHECK(tiny.pixels.width == 1);
     CHECK(tiny.pixels.height == 1);
 }

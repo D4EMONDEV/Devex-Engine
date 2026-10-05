@@ -28,7 +28,7 @@ public:
     std::string error;
     int line = 1;
     int column = 1;
-    // Changing the widget ID on reload discards ImGui's previous edit/undo buffer.
+    // Raised by a reload, which makes the editor that shows the document start over from it.
     unsigned revision = 0;
 
 private:

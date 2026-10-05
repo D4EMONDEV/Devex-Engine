@@ -81,10 +81,10 @@ void ViewportOverlayUi::update(ToolsState& state, EditorUiKit& kit, core::Durati
     const ViewportMarks& marks = state.viewportMarks;
     const float ppp = state.pixelsPerPoint > 0.0f ? state.pixelsPerPoint : 1.0f;
     // The marks are in points of the screen; the overlay counts in pixels of the viewport.
-    const auto pixel = [&](ImVec2 point) { return math::Vec2{(point.x - state.viewportOrigin.x) * ppp, (point.y - state.viewportOrigin.y) * ppp}; };
+    const auto pixel = [&](math::Vec2 point) { return math::Vec2{(point.x - state.viewportOrigin.x) * ppp, (point.y - state.viewportOrigin.y) * ppp}; };
     // A rectangle as a line around it; `inside` keeps the whole line within it, as the frame of the
     // view, whose edges would cut half of it.
-    const auto box = [&](Entity entity, const std::optional<std::pair<ImVec2, ImVec2>>& corners, ImVec4 color, float width, bool inside = false) {
+    const auto box = [&](Entity entity, const std::optional<std::pair<math::Vec2, math::Vec2>>& corners, math::Vec4 color, float width, bool inside = false) {
         UiRect& rect = scene().get<UiRect>(entity);
         rect.visible = corners.has_value();
         if (!corners)
@@ -99,12 +99,12 @@ void ViewportOverlayUi::update(ToolsState& state, EditorUiKit& kit, core::Durati
         drawn.color = linearColor(color);
         drawn.width = width * ppp;
     };
-    const ImVec4 accent = colors.accent;
-    box(gameFrame, marks.gameFrame, ImVec4(accent.x, accent.y, accent.z, 0.6f), 1.5f);
+    const math::Vec4 accent = colors.accent;
+    box(gameFrame, marks.gameFrame, math::Vec4(accent.x, accent.y, accent.z, 0.6f), 1.5f);
     // The game is framed in the accent colour while it runs.
     const math::Vec2 view{static_cast<float>(state.viewportPixels.width), static_cast<float>(state.viewportPixels.height)};
-    box(playFrame, marks.playing ? std::optional(std::pair{ImVec2(state.viewportOrigin.x, state.viewportOrigin.y),
-                                                           ImVec2(state.viewportOrigin.x + view.x / ppp, state.viewportOrigin.y + view.y / ppp)})
+    box(playFrame, marks.playing ? std::optional(std::pair{math::Vec2(state.viewportOrigin.x, state.viewportOrigin.y),
+                                                           math::Vec2(state.viewportOrigin.x + view.x / ppp, state.viewportOrigin.y + view.y / ppp)})
                                  : std::nullopt,
         accent, 2.0f, true);
     box(selectingLine, marks.selecting, accent, 1.0f);
@@ -115,7 +115,7 @@ void ViewportOverlayUi::update(ToolsState& state, EditorUiKit& kit, core::Durati
         {
             fill.offsetMin = pixel(marks.selecting->first);
             fill.offsetMax = pixel(marks.selecting->second);
-            scene().get<scene::UiImage>(selectingFill).color = linearColor(ImVec4(accent.x, accent.y, accent.z, 0.15f));
+            scene().get<scene::UiImage>(selectingFill).color = linearColor(math::Vec4(accent.x, accent.y, accent.z, 0.15f));
         }
     }
     box(element, marks.element, accent, 1.5f);
@@ -183,12 +183,12 @@ void ViewportOverlayUi::update(ToolsState& state, EditorUiKit& kit, core::Durati
         hint.offsetMin = math::Vec2{(view.x - width) * 0.5f, view.y - height * 2.0f};
         hint.offsetMax = hint.offsetMin + math::Vec2{width, height};
         scene::UiImage& image = scene().get<scene::UiImage>(hintBox);
-        image.color = linearColor(ImVec4(colors.panel.x, colors.panel.y, colors.panel.z, 0.85f));
+        image.color = linearColor(math::Vec4(colors.panel.x, colors.panel.y, colors.panel.z, 0.85f));
         image.cornerRadius = 4.0f * ppp;
     }
 
     // Over the image of the viewport, one unit to a pixel.
-    state.hosts.setCursor(ImVec2(state.viewportOrigin.x, state.viewportOrigin.y));
+    state.hosts.setCursor(math::Vec2(state.viewportOrigin.x, state.viewportOrigin.y));
     panel.update(kit, delta, 1.0f, view.y / ppp);
 }
 

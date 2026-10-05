@@ -83,7 +83,7 @@ void FormUi::buildColorPopup()
                                                              .spacing = font * 0.3f,
                                                              .equalSize = true,
                                                              .align = scene::TextAlign::Left});
-    const std::array<ImVec4, 4> channelColors{colors.axisX, colors.axisY, colors.axisZ, colors.textDim};
+    const std::array<math::Vec4, 4> channelColors{colors.axisX, colors.axisY, colors.axisZ, colors.textDim};
     for (std::size_t index = 0; index < channels.size(); ++index)
     {
         channels[index] = numberBox(channelRow, channelLetters[index], channelColors[index], {.dragSpeed = 0.005f, .decimals = 3});
@@ -121,7 +121,7 @@ void FormUi::clearForm()
     sections.clear();
 }
 
-Entity FormUi::numberBox(Entity parent, std::string_view letter, ImVec4 letterColor, const scene::UiNumberField& settings)
+Entity FormUi::numberBox(Entity parent, std::string_view letter, math::Vec4 letterColor, const scene::UiNumberField& settings)
 {
     const Entity box = add(parent, "Number", UiRect{.anchorMin = {0.0f, 0.0f}, .anchorMax = {0.0f, 1.0f}, .offsetMin = {0.0f, 0.0f}, .offsetMax = {0.0f, 0.0f}},
                            "number");
@@ -200,7 +200,7 @@ Section& FormUi::addSection(EditorUiKit& kit, std::string name, const EntityIcon
     return section;
 }
 
-FormUi::Heading FormUi::heading(EditorUiKit& kit, IconText glyph, ImVec4 color, std::string title, std::string subtitle)
+FormUi::Heading FormUi::heading(EditorUiKit& kit, IconText glyph, math::Vec4 color, std::string title, std::string subtitle)
 {
     const float iconSize = std::round(font * 1.3f);
     const Entity top = add(content, "Top", wide(std::round(line * 1.05f)));
@@ -307,7 +307,7 @@ std::vector<Entity> FormUi::numbers(Entity editor, std::span<const std::string_v
                                                          .equalSize = true,
                                                          .align = scene::TextAlign::Left});
     const ThemeColors& colors = themeColors();
-    const std::array<ImVec4, 4> tints{colors.axisX, colors.axisY, colors.axisZ, colors.textDim};
+    const std::array<math::Vec4, 4> tints{colors.axisX, colors.axisY, colors.axisZ, colors.textDim};
     std::vector<Entity> made;
     for (std::size_t index = 0; index < letters.size(); ++index)
     {

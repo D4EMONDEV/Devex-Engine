@@ -52,7 +52,7 @@ constexpr std::array<std::string_view, 4> waitingZones{"Frame limit", "Wait for 
     return static_cast<double>(nanoseconds) / nanosecondsPerMillisecond;
 }
 
-[[nodiscard]] ImVec4 withAlpha(ImVec4 color, float alpha) noexcept
+[[nodiscard]] math::Vec4 withAlpha(math::Vec4 color, float alpha) noexcept
 {
     color.w = alpha;
     return color;
@@ -76,7 +76,7 @@ constexpr std::array<std::string_view, 4> waitingZones{"Frame limit", "Wait for 
     return std::min(waiting, frame.duration());
 }
 
-[[nodiscard]] ImVec4 frameColor(double frameMilliseconds) noexcept
+[[nodiscard]] math::Vec4 frameColor(double frameMilliseconds) noexcept
 {
     const ThemeColors& colors = themeColors();
     if (frameMilliseconds <= onTimeMilliseconds)
@@ -87,7 +87,7 @@ constexpr std::array<std::string_view, 4> waitingZones{"Frame limit", "Wait for 
 }
 
 // The same name always has the same colour, among those of the kinds of objects.
-[[nodiscard]] ImVec4 zoneColor(const core::ProfileZone& zone)
+[[nodiscard]] math::Vec4 zoneColor(const core::ProfileZone& zone)
 {
     const ThemeColors& colors = themeColors();
     if (isWaiting(zone))

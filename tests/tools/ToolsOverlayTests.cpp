@@ -162,8 +162,8 @@ TEST_CASE("FileSystem shows empty folders and confirms their deletion", "[tools]
     const float padding = metrics.panelPadding;
     const auto dock = tools::detail::placeDock(
         tools::detail::DockLayout::defaults(true), [](std::string_view) { return true; },
-        ImVec2(0.0f, metrics.menuBarHeight),
-        ImVec2(1000.0f, 800.0f - metrics.statusBarHeight),
+        devex::math::Vec2(0.0f, metrics.menuBarHeight),
+        devex::math::Vec2(1000.0f, 800.0f - metrics.statusBarHeight),
         metrics.dockGap, metrics.tabHeight);
     const auto& files = dock.contents[static_cast<std::size_t>(tools::detail::DockSlot::LeftBottom)];
     // res://, assets, Empty: the third row is present even though no asset was imported.
@@ -255,8 +255,8 @@ TEST_CASE("FileSystem Create New asks for a type name and destination", "[tools]
     const float padding = metrics.panelPadding;
     const auto dock = tools::detail::placeDock(
         tools::detail::DockLayout::defaults(true), [](std::string_view) { return true; },
-        ImVec2(0.0f, metrics.menuBarHeight),
-        ImVec2(1000.0f, 800.0f - metrics.statusBarHeight),
+        devex::math::Vec2(0.0f, metrics.menuBarHeight),
+        devex::math::Vec2(1000.0f, 800.0f - metrics.statusBarHeight),
         metrics.dockGap, metrics.tabHeight);
     const auto& files = dock.contents[static_cast<std::size_t>(tools::detail::DockSlot::LeftBottom)];
     const math::Vec2 row{files.min.x + padding + 110.0f * scale,
@@ -333,7 +333,7 @@ TEST_CASE("Output follows startup messages without toggling Follow", "[tools][lo
     const float padding = metrics.panelPadding;
     const auto dock = devex::tools::detail::placeDock(
         devex::tools::detail::DockLayout::defaults(false), [](std::string_view) { return true; },
-        ImVec2(0.0f, metrics.menuBarHeight), ImVec2(1000.0f, 800.0f),
+        devex::math::Vec2(0.0f, metrics.menuBarHeight), devex::math::Vec2(1000.0f, 800.0f),
         metrics.dockGap, metrics.tabHeight);
     const auto& output = dock.contents[static_cast<std::size_t>(devex::tools::detail::DockSlot::Bottom)];
     const devex::math::Vec2 follow{output.max.x - padding - 17.5f * scale,
@@ -405,7 +405,7 @@ TEST_CASE("Clearing a scrolled output keeps its current rows valid and shows new
     const float padding = metrics.panelPadding;
     const auto dock = devex::tools::detail::placeDock(
         devex::tools::detail::DockLayout::defaults(false), [](std::string_view) { return true; },
-        ImVec2(0.0f, metrics.menuBarHeight), ImVec2(1000.0f, 800.0f),
+        devex::math::Vec2(0.0f, metrics.menuBarHeight), devex::math::Vec2(1000.0f, 800.0f),
         metrics.dockGap, metrics.tabHeight);
     const auto& output = dock.contents[static_cast<std::size_t>(devex::tools::detail::DockSlot::Bottom)];
     const devex::math::Vec2 clear{output.max.x - padding - (35.0f * 1.5f + 3.5f) * scale,
@@ -601,7 +601,7 @@ TEST_CASE("The editor opens the project's scenes in tabs and renders its viewpor
             devex::render::RenderWorld& world = renderer->beginFrame();
             (*editor)->prepareRender(scene, world, PlayState::Editing);
             // The project manager is made with the interface of the engine, drawn into an image
-            // of its own that ImGui shows.
+            // of its own that the tools show.
             REQUIRE(world.uiSurfaces.size() == 1);
             CHECK_FALSE(world.uiSurfaces.front().draws.empty());
             CHECK(world.uiSurfaces.front().size.width > 0);

@@ -1,5 +1,4 @@
 find_package(Catch2 3 CONFIG REQUIRED)
-find_package(imgui CONFIG REQUIRED)
 include(Catch)
 
 # devex_add_tests(<module> SOURCES <files...> LIBRARIES <targets...> [ENVIRONMENT <VAR=value...>])
@@ -225,10 +224,9 @@ devex_add_tests(tools
     LIBRARIES
         Devex::Engine
 )
-# The editor's internals are tested directly; their headers use ImGui's types.
+# The editor's internals are tested directly.
 target_include_directories(devex_tools_tests PRIVATE
     "${PROJECT_SOURCE_DIR}/engine/src"
-    $<TARGET_PROPERTY:imgui::imgui,INTERFACE_INCLUDE_DIRECTORIES>
 )
 target_compile_definitions(devex_tools_tests PRIVATE
     DEVEX_TEST_RESOURCES_DIRECTORY="${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/resources"

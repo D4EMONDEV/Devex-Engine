@@ -174,7 +174,7 @@ void StatisticsUi::build(EditorUiKit& kit)
         section.lines.push_back(Line{.entity = box});
         made.plot = add(box, "Plot", whole(math::Vec4{font * 0.3f, 3.0f, font * 0.3f, 3.0f}));
         scene().add<scene::UiPlot>(made.plot, scene::UiPlot{.color = linearColor(colors.accent),
-                                                            .guideColor = linearColor(ImVec4(colors.textDim.x, colors.textDim.y, colors.textDim.z, 0.45f)),
+                                                            .guideColor = linearColor(math::Vec4(colors.textDim.x, colors.textDim.y, colors.textDim.z, 0.45f)),
                                                             .lineWidth = 1.5f});
         // Where the pointer rests, the value of that frame.
         scene().get<scene::UiImage>(box).raycastTarget = true;

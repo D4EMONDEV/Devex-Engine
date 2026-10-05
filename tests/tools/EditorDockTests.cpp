@@ -14,8 +14,8 @@ using devex::tools::detail::placeDock;
 
 namespace {
 
-constexpr ImVec2 areaMin{0.0f, 20.0f};
-constexpr ImVec2 areaMax{1000.0f, 620.0f};
+constexpr devex::math::Vec2 areaMin{0.0f, 20.0f};
+constexpr devex::math::Vec2 areaMax{1000.0f, 620.0f};
 constexpr float gap = 5.0f;
 constexpr float tabHeight = 24.0f;
 
@@ -93,7 +93,7 @@ TEST_CASE("The places of the dock share the room, and the empty ones close", "[t
 
     // The bar at the left of the screens follows a drag.
     const DockPlaces before = placed(layout);
-    const ImVec2 bar = before.bars[static_cast<std::size_t>(DockBar::Left)].min;
-    devex::tools::detail::dragDockBar(layout, before, DockBar::Left, ImVec2(bar.x + 60.0f, bar.y), ImVec2(0.0f, 0.0f));
+    const devex::math::Vec2 bar = before.bars[static_cast<std::size_t>(DockBar::Left)].min;
+    devex::tools::detail::dragDockBar(layout, before, DockBar::Left, devex::math::Vec2(bar.x + 60.0f, bar.y), devex::math::Vec2(0.0f, 0.0f));
     CHECK(placed(layout).center.min.x == Catch::Approx(before.center.min.x + 60.0f).margin(1.0f));
 }

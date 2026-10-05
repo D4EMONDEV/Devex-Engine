@@ -270,23 +270,23 @@ void layoutScreen(ToolsState& state)
     // The window in points, as the pointer moves in it, and in pixels, as it is drawn.
     const math::Extent2D points = state.window.size();
     const math::Extent2D pixels = state.window.pixelSize();
-    const ImVec2 size(static_cast<float>(points.width), static_cast<float>(points.height));
+    const math::Vec2 size(static_cast<float>(points.width), static_cast<float>(points.height));
     detail::setEditorScreen({.size = size,
                              .pixelsPerPoint = points.width > 0 && pixels.width > 0
                                                    ? static_cast<float>(pixels.width) / static_cast<float>(points.width)
                                                    : 1.0f});
     const detail::ThemeMetrics& metrics = detail::themeMetrics();
-    const ImVec2 min(0.0f, 0.0f);
-    const ImVec2 max = size;
+    const math::Vec2 min(0.0f, 0.0f);
+    const math::Vec2 max = size;
     const bool framed = state.mode != ToolsMode::Editor || state.database != nullptr;
     const float menu = framed ? metrics.menuBarHeight : 0.0f;
     const float status = state.mode == ToolsMode::Editor && framed ? metrics.statusBarHeight : 0.0f;
     state.menuBarMin = min;
-    state.menuBarMax = ImVec2(max.x, min.y + menu);
-    state.statusBarMin = ImVec2(min.x, max.y - status);
+    state.menuBarMax = math::Vec2(max.x, min.y + menu);
+    state.statusBarMin = math::Vec2(min.x, max.y - status);
     state.statusBarMax = max;
-    state.workMin = ImVec2(min.x, min.y + menu);
-    state.workMax = ImVec2(max.x, max.y - status);
+    state.workMin = math::Vec2(min.x, min.y + menu);
+    state.workMax = math::Vec2(max.x, max.y - status);
 }
 
 void finishFrame(ToolsState& state)
@@ -294,7 +294,7 @@ void finishFrame(ToolsState& state)
     // The shape of the pointer; and typing, on while a field takes it, with the input method of the
     // system next to the field. The images of the frame are composed once the panels drew them.
     state.platform.setCursor(state.input.cursor);
-    const std::optional<std::pair<ImVec2, ImVec2>> typing = editorUiKit(state).takeTextInput();
+    const std::optional<std::pair<math::Vec2, math::Vec2>> typing = editorUiKit(state).takeTextInput();
     state.typing = typing.has_value();
     if (typing)
     {

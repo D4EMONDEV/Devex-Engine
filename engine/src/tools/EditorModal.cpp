@@ -69,7 +69,7 @@ struct ModalLayerUi : PanelBuilder
         tooltip(close, "Close (Escape)");
     }
 
-    void update(ToolsState& state, EditorUiKit& kit, std::string_view id, ImVec2 frameMin, ImVec2 frameSize, float titleHeight,
+    void update(ToolsState& state, EditorUiKit& kit, std::string_view id, math::Vec2 frameMin, math::Vec2 frameSize, float titleHeight,
                 std::string_view heading)
     {
         const ThemeColors& colors = themeColors();
@@ -83,9 +83,9 @@ struct ModalLayerUi : PanelBuilder
         const float pixelsPerPoint = editorScreen().pixelsPerPoint;
         const float zoom = UiPanel::zoomFor(font);
         const float unitsPerPoint = pixelsPerPoint / zoom;
-        const ImVec2 origin = state.hosts.cursor();
+        const math::Vec2 origin = state.hosts.cursor();
 
-        scene().get<scene::UiImage>(veil).color = linearColor(ImVec4(0.0f, 0.0f, 0.0f, 0.45f));
+        scene().get<scene::UiImage>(veil).color = linearColor(math::Vec4(0.0f, 0.0f, 0.0f, 0.45f));
         UiRect& framed = scene().get<UiRect>(frame);
         framed.visible = !heading.empty();
         framed.offsetMin = math::Vec2{std::round((frameMin.x - origin.x) * unitsPerPoint), std::round((frameMin.y - origin.y) * unitsPerPoint)};
@@ -159,7 +159,7 @@ void pruneModals(ToolsState& state)
     state.modalsAsked.clear();
 }
 
-bool beginModal(ToolsState& state, std::string_view id, ImVec2 size, std::string_view title)
+bool beginModal(ToolsState& state, std::string_view id, math::Vec2 size, std::string_view title)
 {
     if (std::ranges::find(state.modalsAsked, id) == state.modalsAsked.end())
     {
@@ -178,27 +178,27 @@ bool beginModal(ToolsState& state, std::string_view id, ImVec2 size, std::string
     ModalLayerUi& layer = *state.modalLayerUi;
 
     // In the middle of the window, as large as asked and as it holds; a title makes a frame around.
-    const ImVec2 screen = editorScreen().size;
+    const math::Vec2 screen = editorScreen().size;
     const ThemeMetrics& metrics = themeMetrics();
     const float titleHeight = title.empty() ? 0.0f : metrics.titleHeight;
     const float border = title.empty() ? 0.0f : metrics.margin;
-    const ImVec2 card(std::round(std::min(size.x, screen.x * 0.95f - border * 2.0f)),
+    const math::Vec2 card(std::round(std::min(size.x, screen.x * 0.95f - border * 2.0f)),
                       std::round(std::min(size.y, screen.y * 0.95f - titleHeight - border)));
-    const ImVec2 frameSize(card.x + border * 2.0f, card.y + titleHeight + border);
-    const ImVec2 center(screen.x * 0.5f, screen.y * 0.5f);
-    const ImVec2 frameMin(std::round(center.x - frameSize.x * 0.5f), std::round(center.y - frameSize.y * 0.5f));
+    const math::Vec2 frameSize(card.x + border * 2.0f, card.y + titleHeight + border);
+    const math::Vec2 center(screen.x * 0.5f, screen.y * 0.5f);
+    const math::Vec2 frameMin(std::round(center.x - frameSize.x * 0.5f), std::round(center.y - frameSize.y * 0.5f));
 
     // The veil over everything takes the pointer and the keyboard; the card stands in it.
     const std::string window = "##modal " + std::string(id);
-    state.hosts.begin(window, ImVec2(0.0f, 0.0f), screen, HostLayer::Modal);
+    state.hosts.begin(window, math::Vec2(0.0f, 0.0f), screen, HostLayer::Modal);
     if (layer.shown != id)
     {
         state.hosts.focus(window);
         layer.shown = std::string(id);
     }
     layer.update(state, kit, id, frameMin, frameSize, titleHeight, title);
-    const ImVec2 cardMin(frameMin.x + border, frameMin.y + titleHeight);
-    state.hosts.begin(window + " card", cardMin, ImVec2(cardMin.x + card.x, cardMin.y + card.y), HostLayer::Modal);
+    const math::Vec2 cardMin(frameMin.x + border, frameMin.y + titleHeight);
+    state.hosts.begin(window + " card", cardMin, math::Vec2(cardMin.x + card.x, cardMin.y + card.y), HostLayer::Modal);
     return true;
 }
 

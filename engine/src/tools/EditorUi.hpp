@@ -15,8 +15,6 @@
 #include <devex/scene/UiComponents.hpp>
 #include <devex/ui/UiWorld.hpp>
 
-#include <imgui.h>
-
 #include <cstddef>
 #include <filesystem>
 #include <functional>
@@ -29,14 +27,13 @@
 #include <vector>
 
 // The panels of the editor made with the interface of the engine, as Godot draws its editor with the
-// nodes its games use. They live beside the ImGui panels until the dock itself moves over.
+// nodes its games use.
 namespace devex::tools::detail {
 
-// A color of the editor theme, written in sRGB as ImGui's are, as the linear color of the interface
-// of the engine.
-[[nodiscard]] math::Vec4 linearColor(ImVec4 srgb) noexcept;
+// A color of the editor theme, written in sRGB, as the linear color of the interface of the engine.
+[[nodiscard]] math::Vec4 linearColor(math::Vec4 srgb) noexcept;
 
-// The icon an ImGui text of one icon writes.
+// The icon a text of one icon writes.
 [[nodiscard]] Icon iconOf(IconText text) noexcept;
 
 // What the panels share: the fonts of the editor baked into atlases of distances, its icons drawn as
@@ -98,9 +95,9 @@ public:
     struct Tooltip
     {
         std::string text;
-        ImVec2 at{0.0f, 0.0f};
+        math::Vec2 at{0.0f, 0.0f};
     };
-    void showTooltip(std::string text, ImVec2 at);
+    void showTooltip(std::string text, math::Vec2 at);
     [[nodiscard]] std::optional<Tooltip> takeTooltip() noexcept;
 
     // The places, the devices and the platform of the frame, which the panels read.
@@ -115,8 +112,8 @@ public:
     void forgetCarried() noexcept;
     // A field that takes what is typed, where it stands on the screen: the input method of the system
     // opens next to it.
-    void requestTextInput(ImVec2 min, ImVec2 max) noexcept;
-    [[nodiscard]] std::optional<std::pair<ImVec2, ImVec2>> takeTextInput() noexcept;
+    void requestTextInput(math::Vec2 min, math::Vec2 max) noexcept;
+    [[nodiscard]] std::optional<std::pair<math::Vec2, math::Vec2>> takeTextInput() noexcept;
 
 private:
     struct BakedFont
@@ -153,30 +150,30 @@ private:
     // The widths already measured, by font and size then by text: the panels ask for the same ones at
     // every frame.
     std::unordered_map<std::uint64_t, std::unordered_map<std::string, float, TextHash, std::equal_to<>>> m_widths;
-    ImVec4 m_themeAccent{-1.0f, 0.0f, 0.0f, 0.0f};
-    ImVec4 m_themePanel{-1.0f, 0.0f, 0.0f, 0.0f};
+    math::Vec4 m_themeAccent{-1.0f, 0.0f, 0.0f, 0.0f};
+    math::Vec4 m_themePanel{-1.0f, 0.0f, 0.0f, 0.0f};
     std::optional<Tooltip> m_tooltip;
     EditorHosts* m_hosts = nullptr;
     const EditorInput* m_input = nullptr;
     platform::Platform* m_platform = nullptr;
     std::optional<EditorDrag> m_carried;
-    std::optional<std::pair<ImVec2, ImVec2>> m_textInput;
+    std::optional<std::pair<math::Vec2, math::Vec2>> m_textInput;
 };
 
 
 // A panel image occupies whole framebuffer pixels, even when its host uses fractional points.
 struct PanelImagePlacement
 {
-    ImVec2 origin;
-    ImVec2 size;
+    math::Vec2 origin{0.0f};
+    math::Vec2 size{0.0f};
     math::Extent2D pixels;
 };
 
-[[nodiscard]] DEVEX_API PanelImagePlacement placePanelImage(ImVec2 origin, ImVec2 size, ImVec2 viewport,
+[[nodiscard]] DEVEX_API PanelImagePlacement placePanelImage(math::Vec2 origin, math::Vec2 size, math::Vec2 viewport,
                                                            float pixelsPerPoint) noexcept;
 
 // A panel made with the interface of the engine: a canvas of entities in a scene of its own, which an
-// interface world lays out and answers, drawn into an image that the ImGui window around it shows.
+// interface world lays out and answers, drawn into an image that the host around it shows.
 // The panel works in units of the size of the editor's text, so that it follows the interface scale.
 class UiPanel
 {
@@ -188,7 +185,7 @@ public:
     [[nodiscard]] scene::Entity canvas() const noexcept;
     // The size of the panel in its units, as the last update laid it out.
     [[nodiscard]] math::Vec2 size() const noexcept;
-    // Whether the ImGui window it stands in has the keyboard.
+    // Whether the host it stands in has the keyboard.
     [[nodiscard]] bool focused() const noexcept;
     // Whether the pointer is over the image of the panel.
     [[nodiscard]] bool hovered() const noexcept;
@@ -215,19 +212,19 @@ public:
     // the interface world the mouse and the keys the host receives, and shows the image of the
     // panel. `zoom` is how many pixels one unit of the panel takes.
     void update(EditorUiKit& kit, core::Duration delta, float zoom, float height = 0.0f);
-    // Where a point of the panel, in its units, is on the screen, as ImGui places things; and the
+    // Where a point of the panel, in its units, is on the screen, in points of the window; and the
     // point of the panel a place of the screen is.
-    [[nodiscard]] ImVec2 screenOf(math::Vec2 units) const noexcept;
-    [[nodiscard]] math::Vec2 unitsOf(ImVec2 screen) const noexcept;
+    [[nodiscard]] math::Vec2 screenOf(math::Vec2 units) const noexcept;
+    [[nodiscard]] math::Vec2 unitsOf(math::Vec2 screen) const noexcept;
     // Adds the image of the panel to the frame, over a color, when the last update showed it.
     void render(EditorUiKit& kit, render::RenderWorld& world, math::Vec4 background);
 
     // How many pixels a unit takes in a panel whose text is `font` units, its letters as large as
-    // those of ImGui.
+    // the text of the theme.
     [[nodiscard]] static float zoomFor(float font) noexcept;
 
 private:
-    void carryOut(EditorUiKit& kit, const ImVec2& origin, float pixelsPerPoint);
+    void carryOut(EditorUiKit& kit, const math::Vec2& origin, float pixelsPerPoint);
 
     scene::Scene m_scene;
     ui::UiWorld m_world;
@@ -241,7 +238,7 @@ private:
     bool m_connected = false;
     bool m_navigation = true;
     bool m_tooltipsOutside = false;
-    ImVec2 m_origin{0.0f, 0.0f};
+    math::Vec2 m_origin{0.0f, 0.0f};
     float m_pixelsPerPoint = 1.0f;
     ui::UiInput m_input;
     std::function<std::optional<EditorDrag>(const ui::Carried&)> m_dragOut;

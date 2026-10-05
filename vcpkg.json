@@ -11,14 +11,6 @@
         "efsw",
         "fastgltf",
         "glm",
-        {
-            "name": "imgui",
-            "features": [
-                "docking-experimental",
-                "freetype",
-                "sdl3-binding"
-            ]
-        },
         "joltphysics",
         "miniaudio",
         "mikktspace",

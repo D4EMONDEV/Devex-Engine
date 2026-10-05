@@ -11,8 +11,6 @@
 #include <devex/core/Log.hpp>
 #include <devex/scene/AnimationComponents.hpp>
 
-#include <imgui_stdlib.h>
-
 #include <algorithm>
 #include <array>
 #include <cfloat>
@@ -1649,7 +1647,7 @@ void AnimatorUi::build(EditorUiKit& kit)
     scene().add<scene::UiImage>(graph);
     const ThemeColors& colors = themeColors();
     scene().add<scene::UiDropTarget>(graph, scene::UiDropTarget{.accepts = {clipDrop()},
-                                                                .highlightColor = linearColor(ImVec4(colors.accent.x, colors.accent.y, colors.accent.z, 0.08f))});
+                                                                .highlightColor = linearColor(math::Vec4(colors.accent.x, colors.accent.y, colors.accent.z, 0.08f))});
     gridLayer = add(graph, "Grid", whole());
     arrowsLayer = add(graph, "Links", whole());
     nodesLayer = add(graph, "Nodes", whole());
@@ -1922,7 +1920,7 @@ void AnimatorUi::showGraph(ToolsState& state, const std::optional<animation::Ani
     {
         step *= 2.0f;
     }
-    const math::Vec4 gridColor = linearColor(ImVec4(colors.border.x, colors.border.y, colors.border.z, 0.16f));
+    const math::Vec4 gridColor = linearColor(math::Vec4(colors.border.x, colors.border.y, colors.border.z, 0.16f));
     std::size_t linesUsed = 0;
     const auto gridLine = [&](math::Vec2 from, math::Vec2 to) {
         if (linesUsed == gridLines.size())
@@ -1956,7 +1954,7 @@ void AnimatorUi::showGraph(ToolsState& state, const std::optional<animation::Ani
     const std::vector<Arrow> arrows = arrowsOf(animator, nodes, view.scale);
     const std::string current = status ? status->state : std::string{};
     const std::string previous = status ? status->previousState : std::string{};
-    const auto link = [&](Entity entity, math::Vec2 from, math::Vec2 to, ImVec4 color, float width) {
+    const auto link = [&](Entity entity, math::Vec2 from, math::Vec2 to, math::Vec4 color, float width) {
         scene().get<UiRect>(entity).visible = true;
         scene::UiLine& drawn = scene().get<scene::UiLine>(entity);
         drawn.points.assign({from, to});
@@ -1976,7 +1974,7 @@ void AnimatorUi::showGraph(ToolsState& state, const std::optional<animation::Ani
         const AnimatorTransition& transition = animator.transitions[static_cast<std::size_t>(arrow.transition)];
         const bool selected = editor.selected == AnimatorElement::Transition && editor.index == arrow.transition;
         const bool running = !previous.empty() && transition.to == current && (transition.from == previous || transition.from.empty());
-        const ImVec4 color = selected ? colors.accent : running ? colors.success : arrow.transition == pointedTransition ? colors.text : colors.textDim;
+        const math::Vec4 color = selected ? colors.accent : running ? colors.success : arrow.transition == pointedTransition ? colors.text : colors.textDim;
         link(arrowViews[index], arrow.start, arrow.end, color, (selected || running ? 2.5f : 1.5f) * view.scale);
     }
     for (std::size_t index = arrows.size(); index < arrowViews.size(); ++index)
@@ -2039,18 +2037,18 @@ void AnimatorUi::showGraph(ToolsState& state, const std::optional<animation::Ani
         const bool selected = editor.selected == node.element && (node.element != AnimatorElement::State || editor.index == node.index);
         std::string_view name;
         std::string summary;
-        ImVec4 fill = colors.panel;
-        ImVec4 border = colors.border;
+        math::Vec4 fill = colors.panel;
+        math::Vec4 border = colors.border;
         float progress = -1.0f;
         if (node.element == AnimatorElement::Entry)
         {
             name = "Entry";
-            fill = ImVec4(colors.warning.x * 0.45f, colors.warning.y * 0.45f, colors.warning.z * 0.45f, 1.0f);
+            fill = math::Vec4(colors.warning.x * 0.45f, colors.warning.y * 0.45f, colors.warning.z * 0.45f, 1.0f);
         }
         else if (node.element == AnimatorElement::AnyState)
         {
             name = "Any State";
-            fill = ImVec4(colors.animation.x * 0.4f, colors.animation.y * 0.4f, colors.animation.z * 0.4f, 1.0f);
+            fill = math::Vec4(colors.animation.x * 0.4f, colors.animation.y * 0.4f, colors.animation.z * 0.4f, 1.0f);
         }
         else
         {
@@ -2063,7 +2061,7 @@ void AnimatorUi::showGraph(ToolsState& state, const std::optional<animation::Ani
             }
             if (status && animatorState.name == current)
             {
-                fill = ImVec4(colors.success.x * 0.35f, colors.success.y * 0.35f, colors.success.z * 0.35f, 1.0f);
+                fill = math::Vec4(colors.success.x * 0.35f, colors.success.y * 0.35f, colors.success.z * 0.35f, 1.0f);
                 progress = animatorState.loop ? status->normalizedTime - std::floor(status->normalizedTime) : std::min(status->normalizedTime, 1.0f);
             }
         }
@@ -2138,7 +2136,7 @@ void AnimatorUi::answerGraph(ToolsState& state, EditorUiKit& kit, const ui::Laid
     // A menu takes the pointer while it is open, and the press that closes it.
     const bool hovered = pointed && !menuWasOpen && !menuOpen();
     const Graph view{editor.pan, editor.zoom * graphUnit()};
-    const float unitsPerPoint = panel.unitsOf(ImVec2(1.0f, 0.0f)).x - panel.unitsOf(ImVec2(0.0f, 0.0f)).x;
+    const float unitsPerPoint = panel.unitsOf(math::Vec2(1.0f, 0.0f)).x - panel.unitsOf(math::Vec2(0.0f, 0.0f)).x;
 
     const std::vector<Node> nodes = nodesOf(animator, view);
     const std::vector<Arrow> arrows = arrowsOf(animator, nodes, view.scale);
@@ -2309,7 +2307,7 @@ void AnimatorUi::answerGraph(ToolsState& state, EditorUiKit& kit, const ui::Laid
     {
         const AnimatorTransition& transition = animator.transitions[static_cast<std::size_t>(hoveredArrow->transition)];
         kit.showTooltip(std::format("{} to {}\n{}", transition.from.empty() ? "Any State" : transition.from, transition.to, transitionText(transition)),
-                        pointOf(state.input.mouse()));
+                        state.input.mouse());
     }
 
     // The menu of the graph.

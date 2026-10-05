@@ -109,7 +109,7 @@ bool beginFormWindow(ToolsState& state, const char* title, bool* open, float wid
         openModal(state, title);
     }
     const float line = themeMetrics().lineHeight;
-    return beginModal(state, title, ImVec2(line * width, line * height), title);
+    return beginModal(state, title, math::Vec2(line * width, line * height), title);
 }
 
 void endFormWindow(ToolsState& state)
@@ -739,7 +739,7 @@ void ProjectSettingsUi::buildCards(ToolsState& state, EditorUiKit& kit)
     cells.clear();
     for (std::size_t column = 0; column < count; ++column)
     {
-        // The names of the columns lean over them, as ImGui's angled headers do.
+        // The names of the columns lean over them, as angled headers do.
         const std::string title = nameOf(named[count - 1 - column]);
         const float x = labels + static_cast<float>(column) * cellSize + cellSize * 0.5f;
         const float y = header - font * 0.5f;

@@ -109,7 +109,7 @@ struct EditorDialogsUi : FormUi
 
     void start(DialogKind which, ToolsState& state, EditorUiKit& kit, scene::Scene& edited, bool creationFlow = false);
     void update(ToolsState& state, EditorUiKit& kit, scene::Scene& edited, core::Duration delta);
-    void titleRow(EditorUiKit& kit, Icon glyph, ImVec4 color, std::string title);
+    void titleRow(EditorUiKit& kit, Icon glyph, math::Vec4 color, std::string title);
     // A row of a label and the editor at its right, returned.
     Entity row(const char* label);
     // Buttons at the bottom right of the card.
@@ -118,7 +118,7 @@ struct EditorDialogsUi : FormUi
     void fit();
 };
 
-void EditorDialogsUi::titleRow(EditorUiKit& kit, Icon glyph, ImVec4 color, std::string title)
+void EditorDialogsUi::titleRow(EditorUiKit& kit, Icon glyph, math::Vec4 color, std::string title)
 {
     const float iconSize = std::round(font * 1.4f);
     const Entity top = add(root, "Title", wide(std::round(line * 1.1f)));
@@ -272,7 +272,7 @@ void EditorDialogsUi::start(DialogKind which, ToolsState& state, EditorUiKit& ki
         const std::vector<TextDocument*> texts = state.pendingAction ? affectedTextDocuments(state, *state.pendingAction) : std::vector<TextDocument*>{};
         const ActiveDocument live = activeDocument(state, edited);
         const float iconSize = std::round(font * 1.1f);
-        const auto listed = [&](Icon glyph, ImVec4 color, std::string name, bool bold) {
+        const auto listed = [&](Icon glyph, math::Vec4 color, std::string name, bool bold) {
             const Entity entry = add(root, "File", wide(std::round(font * 1.7f)));
             const Entity mark = icon(kit, entry,
                                      UiRect{.anchorMin = {0.0f, 0.5f}, .anchorMax = {0.0f, 0.5f}, .offsetMin = {font * 1.6f, -iconSize * 0.5f},
@@ -298,12 +298,11 @@ void EditorDialogsUi::start(DialogKind which, ToolsState& state, EditorUiKit& ki
         break;
     }
     case DialogKind::About: {
-        constexpr std::array<std::pair<const char*, const char*>, 8> credits{{
-            {"Dear ImGui", "MIT"},
+        constexpr std::array<std::pair<const char*, const char*>, 7> credits{{
             {"SDL 3", "zlib"},
             {"Vulkan, volk, Vulkan Memory Allocator", "Apache 2.0, MIT"},
             {"GLM, fastgltf, ufbx, Basis Universal", "MIT, MIT, MIT, Apache 2.0"},
-            {"FreeType, plutosvg", "FreeType License, MIT"},
+            {"plutosvg", "MIT"},
             {"Noto Sans, JetBrains Mono", "SIL Open Font License 1.1"},
             {"Lucide icons", "ISC"},
             {"Slang", "Apache 2.0"},
@@ -588,7 +587,7 @@ void drawEditorPopups(ToolsState& state, scene::Scene& scene)
     // In the middle of the window, over the veil of a modal, the card at the size of what it holds;
     // under another modal, it waits.
     const float unit = themeMetrics().lineHeight / std::max(regularFontPixels(ui->font), 1.0f);
-    if (!beginModal(state, dialogPopup, ImVec2(ui->size.x * unit, ui->size.y * unit)))
+    if (!beginModal(state, dialogPopup, math::Vec2(ui->size.x * unit, ui->size.y * unit)))
     {
         return;
     }

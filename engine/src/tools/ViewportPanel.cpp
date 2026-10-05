@@ -377,11 +377,11 @@ void handleGizmoAndSelection(ToolsState& state, scene::Scene& scene, const Viewp
         state.drawingRectangle |= math::length(mouse - *state.clickStart) > tolerance;
         if (state.drawingRectangle)
         {
-            const ImVec2 from(state.viewportOrigin.x + state.clickStart->x / state.pixelsPerPoint,
+            const math::Vec2 from(state.viewportOrigin.x + state.clickStart->x / state.pixelsPerPoint,
                               state.viewportOrigin.y + state.clickStart->y / state.pixelsPerPoint);
-            const ImVec2 to = pointOf(state.input.mouse());
+            const math::Vec2 to = state.input.mouse();
             state.viewportMarks.selecting =
-                std::pair{ImVec2(std::min(from.x, to.x), std::min(from.y, to.y)), ImVec2(std::max(from.x, to.x), std::max(from.y, to.y))};
+                std::pair{math::Vec2(std::min(from.x, to.x), std::min(from.y, to.y)), math::Vec2(std::max(from.x, to.x), std::max(from.y, to.y))};
         }
         return;
     }
@@ -579,7 +579,7 @@ void drawViewportPanel(ToolsState& state, scene::Scene& scene)
     // The tabs of the scenes, and the toolbar under them.
     drawViewportHeader(state, scene);
 
-    const ImVec2 available = state.hosts.available();
+    const math::Vec2 available = state.hosts.available();
     state.pixelsPerPoint = editorScreen().pixelsPerPoint;
     const auto width = static_cast<std::uint32_t>(std::max(0.0f, std::floor(available.x * state.pixelsPerPoint)));
     const auto height = static_cast<std::uint32_t>(std::max(0.0f, std::floor(available.y * state.pixelsPerPoint)));
@@ -590,12 +590,12 @@ void drawViewportPanel(ToolsState& state, scene::Scene& scene)
         return;
     }
     state.viewportPixels = {width, height};
-    const ImVec2 origin = state.hosts.cursor();
+    const math::Vec2 origin = state.hosts.cursor();
     state.viewportOrigin = {origin.x, origin.y};
 
     // The scene image, pixel for pixel.
     state.hosts.image(HostImage{.source = render::UiSource::SceneImage},
-                      ImVec2(static_cast<float>(width) / state.pixelsPerPoint, static_cast<float>(height) / state.pixelsPerPoint));
+                      math::Vec2(static_cast<float>(width) / state.pixelsPerPoint, static_cast<float>(height) / state.pixelsPerPoint));
     const bool hovered = state.hosts.itemHovered();
     state.viewportHovered = hovered;
     state.viewportFocused = state.hosts.focused();
@@ -603,7 +603,7 @@ void drawViewportPanel(ToolsState& state, scene::Scene& scene)
     state.viewportMarks.playing = !editing;
 
     const math::Vec2 size{static_cast<float>(width), static_cast<float>(height)};
-    const math::Vec2 mouse = (math::Vec2(pointOf(state.input.mouse()).x, pointOf(state.input.mouse()).y) - state.viewportOrigin) * state.pixelsPerPoint;
+    const math::Vec2 mouse = (state.input.mouse() - state.viewportOrigin) * state.pixelsPerPoint;
     const ScreenContent content = screenContent(state.camera.isTwoD(), scene);
     const ViewportView view{.view = state.camera.view(),
                             .verticalFov = EditorCamera::verticalFov,

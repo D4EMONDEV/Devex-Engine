@@ -73,7 +73,7 @@ constexpr std::array<const char*, dockSlotCount> slotNames{"left_top", "left_bot
 
 [[nodiscard]] DockRect rectOf(float left, float top, float right, float bottom, bool visible = true) noexcept
 {
-    return DockRect{.min = ImVec2(left, top), .max = ImVec2(std::max(right, left), std::max(bottom, top)), .visible = visible};
+    return DockRect{.min = math::Vec2(left, top), .max = math::Vec2(std::max(right, left), std::max(bottom, top)), .visible = visible};
 }
 
 } // namespace
@@ -203,7 +203,7 @@ std::optional<DockLayout> DockLayout::read(const serialization::TextSection& sec
     return layout;
 }
 
-DockPlaces placeDock(const DockLayout& layout, const std::function<bool(std::string_view)>& shown, ImVec2 min, ImVec2 max, float gap,
+DockPlaces placeDock(const DockLayout& layout, const std::function<bool(std::string_view)>& shown, math::Vec2 min, math::Vec2 max, float gap,
                      float tabHeight)
 {
     DockPlaces places;
@@ -314,7 +314,7 @@ DockPlaces placeDock(const DockLayout& layout, const std::function<bool(std::str
     return places;
 }
 
-void dragDockBar(DockLayout& layout, const DockPlaces& places, DockBar bar, ImVec2 point, ImVec2 grab)
+void dragDockBar(DockLayout& layout, const DockPlaces& places, DockBar bar, math::Vec2 point, math::Vec2 grab)
 {
     const float gap = places.gap;
     const float x0 = places.area.min.x + gap;
@@ -375,7 +375,7 @@ struct EditorDockUi : PanelBuilder
     std::vector<Tab> tabs;
     std::string tabsKey;
     std::optional<DockBar> dragged;
-    ImVec2 grab{0.0f, 0.0f};
+    math::Vec2 grab{0.0f, 0.0f};
 
     void build();
     void fillTabs(ToolsState& state, EditorUiKit& kit);
@@ -489,7 +489,7 @@ void EditorDockUi::update(ToolsState& state, EditorUiKit& kit, core::Duration de
     const float pixelsPerPoint = editorScreen().pixelsPerPoint;
     const float zoom = UiPanel::zoomFor(font);
     const float unitsPerPoint = pixelsPerPoint / zoom;
-    const auto units = [&](ImVec2 point) {
+    const auto units = [&](math::Vec2 point) {
         return math::Vec2{std::round((point.x - places.area.min.x) * unitsPerPoint), std::round((point.y - places.area.min.y) * unitsPerPoint)};
     };
     const auto place = [&](Entity entity, const DockRect& rect) {
@@ -533,7 +533,7 @@ void EditorDockUi::update(ToolsState& state, EditorUiKit& kit, core::Duration de
     for (std::size_t slot = 0; slot < dockSlotCount; ++slot)
     {
         const DockRect& whole = places.slots[slot];
-        place(strips[slot], DockRect{.min = whole.min, .max = ImVec2(whole.max.x, whole.min.y + places.tabHeight), .visible = whole.visible && !editor});
+        place(strips[slot], DockRect{.min = whole.min, .max = math::Vec2(whole.max.x, whole.min.y + places.tabHeight), .visible = whole.visible && !editor});
         scene().get<scene::UiImage>(strips[slot]).color = linearColor(colors.outer);
     }
     for (const Tab& tab : tabs)
@@ -559,7 +559,7 @@ void EditorDockUi::update(ToolsState& state, EditorUiKit& kit, core::Duration de
     }
 
     // The bars light up under the pointer, and while they are dragged.
-    const ImVec2 mouse(state.input.mouse().x, state.input.mouse().y);
+    const math::Vec2 mouse(state.input.mouse().x, state.input.mouse().y);
     std::optional<DockBar> pointed;
     for (std::size_t bar = 0; bar < dockBarCount; ++bar)
     {
@@ -569,7 +569,7 @@ void EditorDockUi::update(ToolsState& state, EditorUiKit& kit, core::Duration de
             pointed = static_cast<DockBar>(bar);
         }
         const bool lit = dragged == static_cast<DockBar>(bar) || pointed == static_cast<DockBar>(bar);
-        scene().get<scene::UiImage>(bars[bar]).color = linearColor(ImVec4(colors.accent.x, colors.accent.y, colors.accent.z, lit ? 0.45f : 0.0f));
+        scene().get<scene::UiImage>(bars[bar]).color = linearColor(math::Vec4(colors.accent.x, colors.accent.y, colors.accent.z, lit ? 0.45f : 0.0f));
     }
 
     // Where a carried tab would go: the places, and where the empty ones would open.
@@ -578,8 +578,8 @@ void EditorDockUi::update(ToolsState& state, EditorUiKit& kit, core::Duration de
         place(zones[slot], places.targets[slot]);
         scene().get<UiRect>(zones[slot]).visible = carried && places.targets[slot].visible;
         scene().get<scene::UiImage>(zones[slot]).color =
-            linearColor(ImVec4(colors.accent.x, colors.accent.y, colors.accent.z, places.slots[slot].visible ? 0.0f : 0.12f));
-        scene().get<scene::UiDropTarget>(zones[slot]).highlightColor = linearColor(ImVec4(colors.accent.x, colors.accent.y, colors.accent.z, 0.25f));
+            linearColor(math::Vec4(colors.accent.x, colors.accent.y, colors.accent.z, places.slots[slot].visible ? 0.0f : 0.12f));
+        scene().get<scene::UiDropTarget>(zones[slot]).highlightColor = linearColor(math::Vec4(colors.accent.x, colors.accent.y, colors.accent.z, 0.25f));
     }
 
     panel.update(kit, delta, zoom);
@@ -615,7 +615,7 @@ void EditorDockUi::update(ToolsState& state, EditorUiKit& kit, core::Duration de
     if (!dragged && pointed && state.input.clicked(Mouse::Left))
     {
         dragged = pointed;
-        grab = ImVec2(mouse.x - places.bars[static_cast<std::size_t>(*pointed)].min.x, mouse.y - places.bars[static_cast<std::size_t>(*pointed)].min.y);
+        grab = math::Vec2(mouse.x - places.bars[static_cast<std::size_t>(*pointed)].min.x, mouse.y - places.bars[static_cast<std::size_t>(*pointed)].min.y);
     }
     if (dragged)
     {

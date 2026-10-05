@@ -206,7 +206,7 @@ public:
 
     void sync(InspectorUi& ui, ToolsState&, EditorUiKit&) override
     {
-        // A third of the way down, as the hint of ImGui stood.
+        // A third of the way down.
         scene::UiRect& room = ui.scene().get<UiRect>(m_room);
         room.offsetMax.y = std::max(std::round(ui.panel.size().y * 0.3f), 1.0f);
     }

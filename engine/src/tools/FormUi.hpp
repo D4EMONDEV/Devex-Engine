@@ -151,7 +151,7 @@ struct FormUi : PanelBuilder
     // Forgets the cards and what the pages made, the colour picker closed.
     void clearForm();
 
-    scene::Entity numberBox(scene::Entity parent, std::string_view letter, ImVec4 letterColor, const scene::UiNumberField& settings);
+    scene::Entity numberBox(scene::Entity parent, std::string_view letter, math::Vec4 letterColor, const scene::UiNumberField& settings);
     PanelButton toolButton(EditorUiKit& kit, scene::Entity parent, Icon glyph, scene::UiRect rect);
     // Sets a text and makes its rectangle as wide as it.
     void fitText(EditorUiKit& kit, scene::Entity entity, std::string value, bool bold = false);
@@ -164,7 +164,7 @@ struct FormUi : PanelBuilder
         scene::Entity subtitle;
     };
     // The icon and the name of what the page shows, and its file under them.
-    Heading heading(EditorUiKit& kit, IconText glyph, ImVec4 color, std::string title, std::string subtitle);
+    Heading heading(EditorUiKit& kit, IconText glyph, math::Vec4 color, std::string title, std::string subtitle);
     // A card folded from its header, which the rows of the page go into.
     Section& card(EditorUiKit& kit, std::string name, std::optional<EntityIcon> look = std::nullopt);
     FormRow formRow(Section& section, std::string label, float height = 0.0f);

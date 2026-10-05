@@ -1,12 +1,11 @@
 // Where the panels of the editor stand, as in Godot: two places on each side of the screens, one
-// under them, each holding its panels as tabs. The places are made with the interface of the engine;
-// the panels still stand in ImGui windows, which the dock puts where their place is.
+// under them, each holding its panels as tabs. The places are made with the interface of the engine,
+// and each panel stands in the host the dock opens where its place is.
 #pragma once
 
 #include <devex/core/Export.hpp>
+#include <devex/math/Math.hpp>
 #include <devex/serialization/Text.hpp>
-
-#include <imgui.h>
 
 #include <array>
 #include <cstddef>
@@ -75,14 +74,14 @@ struct DEVEX_API DockLayout
     [[nodiscard]] static std::optional<DockLayout> read(const serialization::TextSection& section);
 };
 
-// A rectangle of the screen, in the points ImGui places things in.
+// A rectangle of the screen, in points of the window.
 struct DEVEX_API DockRect
 {
-    ImVec2 min{0.0f, 0.0f};
-    ImVec2 max{0.0f, 0.0f};
+    math::Vec2 min{0.0f, 0.0f};
+    math::Vec2 max{0.0f, 0.0f};
     bool visible = false;
 
-    [[nodiscard]] bool contains(ImVec2 point) const noexcept
+    [[nodiscard]] bool contains(math::Vec2 point) const noexcept
     {
         return visible && point.x >= min.x && point.y >= min.y && point.x < max.x && point.y < max.y;
     }
@@ -107,10 +106,10 @@ struct DEVEX_API DockPlaces
 
 // Shares the room between `min` and `max` among the places that show a panel: a place without one
 // closes, a side without either of its places too.
-[[nodiscard]] DEVEX_API DockPlaces placeDock(const DockLayout& layout, const std::function<bool(std::string_view)>& shown, ImVec2 min,
-                                             ImVec2 max, float gap, float tabHeight);
+[[nodiscard]] DEVEX_API DockPlaces placeDock(const DockLayout& layout, const std::function<bool(std::string_view)>& shown, math::Vec2 min,
+                                             math::Vec2 max, float gap, float tabHeight);
 // Moves a bar to a point, as a drag that grabbed it `grab` points from its start does.
-DEVEX_API void dragDockBar(DockLayout& layout, const DockPlaces& places, DockBar bar, ImVec2 point, ImVec2 grab);
+DEVEX_API void dragDockBar(DockLayout& layout, const DockPlaces& places, DockBar bar, math::Vec2 point, math::Vec2 grab);
 
 // The dock of the editor, drawn before the panels: its places, their tabs and the bars between them.
 DEVEX_API void drawEditorDock(ToolsState& state);

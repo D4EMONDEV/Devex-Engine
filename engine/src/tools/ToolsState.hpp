@@ -42,8 +42,6 @@
 #include <devex/tools/LogBuffer.hpp>
 #include <devex/tools/ToolsOverlay.hpp>
 
-#include <imgui.h>
-
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -102,18 +100,18 @@ struct ViewportOverlayUi;
 struct EditorDockUi;
 struct ModalLayerUi;
 
-// What the editor draws over the image of the viewport this frame, in points of the screen as ImGui
-// places things; the overlay of the viewport draws it.
+// What the editor draws over the image of the viewport this frame, in points of the window; the
+// overlay of the viewport draws it.
 struct DEVEX_API ViewportMarks
 {
     // The rectangle a drag selects in.
-    std::optional<std::pair<ImVec2, ImVec2>> selecting;
+    std::optional<std::pair<math::Vec2, math::Vec2>> selecting;
     // What the game shows, when no camera draws its own box.
-    std::optional<std::pair<ImVec2, ImVec2>> gameFrame;
+    std::optional<std::pair<math::Vec2, math::Vec2>> gameFrame;
     // The element of an interface that is selected, its handles and its anchors.
-    std::optional<std::pair<ImVec2, ImVec2>> element;
-    std::vector<ImVec2> handles;
-    std::vector<ImVec2> anchors;
+    std::optional<std::pair<math::Vec2, math::Vec2>> element;
+    std::vector<math::Vec2> handles;
+    std::vector<math::Vec2> anchors;
     float handleRadius = 5.0f;
     // A word on what the screen shows, at its bottom.
     std::string hint;
@@ -555,12 +553,12 @@ struct DEVEX_API ToolsState
     // The places of the screen the editor shows its images in, and where the strips of the frame and
     // the room between them stand this frame, in points.
     EditorHosts hosts;
-    ImVec2 menuBarMin{0.0f, 0.0f};
-    ImVec2 menuBarMax{0.0f, 0.0f};
-    ImVec2 statusBarMin{0.0f, 0.0f};
-    ImVec2 statusBarMax{0.0f, 0.0f};
-    ImVec2 workMin{0.0f, 0.0f};
-    ImVec2 workMax{0.0f, 0.0f};
+    math::Vec2 menuBarMin{0.0f, 0.0f};
+    math::Vec2 menuBarMax{0.0f, 0.0f};
+    math::Vec2 statusBarMin{0.0f, 0.0f};
+    math::Vec2 statusBarMax{0.0f, 0.0f};
+    math::Vec2 workMin{0.0f, 0.0f};
+    math::Vec2 workMax{0.0f, 0.0f};
     // Whether a field took what is typed at the last frame: the shortcuts without Ctrl leave it the
     // letters.
     bool typing = false;
@@ -778,7 +776,7 @@ struct DEVEX_API ToolsState
     std::optional<scene::SceneKind> shownSceneKind;
     bool showProjectSettings = false;
     // The key pressed since the previous frame, whatever window had the keyboard, and the one of
-    // this frame: the input settings bind it by its place, which ImGui does not tell.
+    // this frame: the input settings bind it by its place, which the letters typed do not tell.
     std::optional<platform::Key> notifiedKey;
     std::optional<platform::Key> pressedKey;
     // Export.
@@ -789,7 +787,7 @@ struct DEVEX_API ToolsState
     // The view of the last rendered frame, which mouse interactions refer to.
     ViewportView view;
     math::Extent2D viewportPixels;
-    // Position of the viewport image on screen, in ImGui coordinates, and pixels per coordinate.
+    // Position of the viewport image in points of the window, and pixels per point.
     math::Vec2 viewportOrigin{0.0f};
     float pixelsPerPoint = 1.0f;
     bool viewportHovered = false;

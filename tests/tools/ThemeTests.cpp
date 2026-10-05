@@ -8,7 +8,7 @@ using devex::tools::detail::ThemeSettings;
 
 namespace {
 
-[[nodiscard]] float brightness(ImVec4 color)
+[[nodiscard]] float brightness(devex::math::Vec4 color)
 {
     return (color.x + color.y + color.z) / 3.0f;
 }
@@ -82,7 +82,7 @@ TEST_CASE("Theme colors derive from the base, accent and contrast", "[tools][the
     CHECK(brightness(flat.outer) == Catch::Approx(brightness(flat.panel)));
 }
 
-TEST_CASE("Font sizes in points become ImGui line heights", "[tools][theme]")
+TEST_CASE("Font sizes in points become line heights", "[tools][theme]")
 {
     CHECK(devex::tools::detail::regularFontPixels(14.0f) == 19.0f);
     CHECK(devex::tools::detail::monoFontPixels(13.0f) == 17.0f);

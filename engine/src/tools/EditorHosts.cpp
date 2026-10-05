@@ -9,7 +9,7 @@ namespace {
 
 EditorScreen g_screen;
 
-[[nodiscard]] bool inside(ImVec2 point, ImVec2 min, ImVec2 max) noexcept
+[[nodiscard]] bool inside(math::Vec2 point, math::Vec2 min, math::Vec2 max) noexcept
 {
     return point.x >= min.x && point.y >= min.y && point.x < max.x && point.y < max.y;
 }
@@ -33,7 +33,7 @@ const EditorScreen& editorScreen() noexcept
 
 void EditorHosts::beginFrame(math::Vec2 pointer, bool pressed)
 {
-    m_pointer = ImVec2(pointer.x, pointer.y);
+    m_pointer = math::Vec2(pointer.x, pointer.y);
     m_last = std::move(m_hosts);
     m_hosts.clear();
     m_draws.clear();
@@ -72,9 +72,9 @@ void EditorHosts::beginFrame(math::Vec2 pointer, bool pressed)
     }
 }
 
-void EditorHosts::begin(std::string_view id, ImVec2 min, ImVec2 max, HostLayer layer, const HostOptions& options)
+void EditorHosts::begin(std::string_view id, math::Vec2 min, math::Vec2 max, HostLayer layer, const HostOptions& options)
 {
-    Host host{.id = std::string(id), .min = min, .max = ImVec2(std::max(max.x, min.x), std::max(max.y, min.y)), .layer = layer,
+    Host host{.id = std::string(id), .min = min, .max = math::Vec2(std::max(max.x, min.x), std::max(max.y, min.y)), .layer = layer,
               .order = m_hosts.size(), .options = options};
     host.root = m_stack.empty() ? host.id : m_hosts[m_stack.back().host].root;
     if (options.background)
@@ -89,8 +89,8 @@ void EditorHosts::begin(std::string_view id, ImVec2 min, ImVec2 max, HostLayer l
     }
     const float padding = options.padding;
     m_stack.push_back(Open{.host = m_hosts.size(),
-                           .cursor = ImVec2(host.min.x + padding, host.min.y + padding),
-                           .contentMax = ImVec2(host.max.x - padding, host.max.y - padding)});
+                           .cursor = math::Vec2(host.min.x + padding, host.min.y + padding),
+                           .contentMax = math::Vec2(host.max.x - padding, host.max.y - padding)});
     m_hosts.push_back(std::move(host));
 }
 
@@ -107,12 +107,12 @@ const EditorHosts::Host* EditorHosts::current() const noexcept
     return m_stack.empty() ? nullptr : &m_hosts[m_stack.back().host];
 }
 
-ImVec2 EditorHosts::cursor() const noexcept
+math::Vec2 EditorHosts::cursor() const noexcept
 {
-    return m_stack.empty() ? ImVec2(0.0f, 0.0f) : m_stack.back().cursor;
+    return m_stack.empty() ? math::Vec2(0.0f, 0.0f) : m_stack.back().cursor;
 }
 
-void EditorHosts::setCursor(ImVec2 at) noexcept
+void EditorHosts::setCursor(math::Vec2 at) noexcept
 {
     if (!m_stack.empty())
     {
@@ -120,17 +120,17 @@ void EditorHosts::setCursor(ImVec2 at) noexcept
     }
 }
 
-ImVec2 EditorHosts::available() const noexcept
+math::Vec2 EditorHosts::available() const noexcept
 {
     if (m_stack.empty())
     {
-        return ImVec2(0.0f, 0.0f);
+        return math::Vec2(0.0f, 0.0f);
     }
     const Open& open = m_stack.back();
-    return ImVec2(std::max(open.contentMax.x - open.cursor.x, 0.0f), std::max(open.contentMax.y - open.cursor.y, 0.0f));
+    return math::Vec2(std::max(open.contentMax.x - open.cursor.x, 0.0f), std::max(open.contentMax.y - open.cursor.y, 0.0f));
 }
 
-void EditorHosts::image(HostImage shown, ImVec2 size)
+void EditorHosts::image(HostImage shown, math::Vec2 size)
 {
     const Host* const host = current();
     if (host == nullptr)
@@ -139,7 +139,7 @@ void EditorHosts::image(HostImage shown, ImVec2 size)
     }
     Open& open = m_stack.back();
     open.itemMin = open.cursor;
-    open.itemMax = ImVec2(open.cursor.x + size.x, open.cursor.y + size.y);
+    open.itemMax = math::Vec2(open.cursor.x + size.x, open.cursor.y + size.y);
     m_draws.push_back(Draw{.layer = host->layer, .order = host->order, .sequence = m_draws.size(), .image = shown, .min = open.itemMin, .max = open.itemMax});
     open.cursor.y = open.itemMax.y;
 }

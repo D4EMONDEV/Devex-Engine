@@ -840,10 +840,10 @@ void drawCreationDialog(ToolsState& state, scene::Scene& scene)
     }
 
     // In the middle of the window, as large as it comfortably holds, over a veil.
-    const ImVec2 screen = editorScreen().size;
+    const math::Vec2 screen = editorScreen().size;
     // Points of text, at the scale of the interface.
     const float unit = themeMetrics().lineHeight / std::max(regularFontPixels(state.theme.fontSize), 1.0f);
-    const ImVec2 size(std::clamp(screen.x * 0.68f, std::min(unit * 780.0f, screen.x), unit * 1150.0f),
+    const math::Vec2 size(std::clamp(screen.x * 0.68f, std::min(unit * 780.0f, screen.x), unit * 1150.0f),
                       std::clamp(screen.y * 0.72f, std::min(unit * 520.0f, screen.y), unit * 760.0f));
     if (!beginModal(state, creationPopup, size))
     {

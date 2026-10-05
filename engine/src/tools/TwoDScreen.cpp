@@ -9,8 +9,6 @@
 #include <devex/tools/SceneCommands.hpp>
 #include <devex/ui/Layout.hpp>
 
-#include <imgui.h>
-
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -39,15 +37,15 @@ constexpr float handleRadius = 5.0f;
 // Where a point of a canvas lands on the screen, in points of the window.
 struct CanvasView
 {
-    ImVec2 origin{0.0f, 0.0f};
+    math::Vec2 origin{0.0f, 0.0f};
     float zoom = 1.0f;
 
-    [[nodiscard]] ImVec2 toScreen(math::Vec2 point) const noexcept
+    [[nodiscard]] math::Vec2 toScreen(math::Vec2 point) const noexcept
     {
-        return ImVec2(origin.x + point.x * zoom, origin.y + point.y * zoom);
+        return math::Vec2(origin.x + point.x * zoom, origin.y + point.y * zoom);
     }
 
-    [[nodiscard]] math::Vec2 toCanvas(ImVec2 point) const noexcept
+    [[nodiscard]] math::Vec2 toCanvas(math::Vec2 point) const noexcept
     {
         return math::Vec2{(point.x - origin.x) / zoom, (point.y - origin.y) / zoom};
     }
@@ -78,7 +76,7 @@ void layoutCanvases(const scene::Scene& scene, math::Vec2 size, std::vector<Laid
 [[nodiscard]] CanvasView viewOf(const ToolsState& state, const InterfaceFrame& frame, const ui::LayoutResult& layout)
 {
     return CanvasView{
-        .origin = ImVec2(state.viewportOrigin.x + frame.offset.x / state.pixelsPerPoint,
+        .origin = math::Vec2(state.viewportOrigin.x + frame.offset.x / state.pixelsPerPoint,
                          state.viewportOrigin.y + frame.offset.y / state.pixelsPerPoint),
         .zoom = frame.scale * layout.scale / state.pixelsPerPoint,
     };
@@ -119,7 +117,7 @@ void layoutCanvases(const scene::Scene& scene, math::Vec2 size, std::vector<Laid
 // What a click at that point selects: the element the player would touch, and one step deeper
 // every time the same spot is clicked again, so that the label inside a button stays reachable.
 [[nodiscard]] core::Uuid pickAt(const ToolsState& state, const scene::Scene& scene, const InterfaceFrame& frame,
-                                std::span<const LaidOutCanvas> canvases, ImVec2 mouse, core::Uuid selected)
+                                std::span<const LaidOutCanvas> canvases, math::Vec2 mouse, core::Uuid selected)
 {
     // The elements under the point, the one drawn last first.
     std::vector<scene::Entity> hits;
@@ -157,24 +155,24 @@ void layoutCanvases(const scene::Scene& scene, math::Vec2 size, std::vector<Laid
 }
 
 // The eight handles of a rectangle, and the middle of each side.
-[[nodiscard]] std::array<std::pair<Handle, ImVec2>, 8> handlesOf(const CanvasView& view, const ui::LaidOutRect& rect)
+[[nodiscard]] std::array<std::pair<Handle, math::Vec2>, 8> handlesOf(const CanvasView& view, const ui::LaidOutRect& rect)
 {
-    const ImVec2 min = view.toScreen(rect.min);
-    const ImVec2 max = view.toScreen(rect.max);
-    const ImVec2 middle((min.x + max.x) * 0.5f, (min.y + max.y) * 0.5f);
+    const math::Vec2 min = view.toScreen(rect.min);
+    const math::Vec2 max = view.toScreen(rect.max);
+    const math::Vec2 middle((min.x + max.x) * 0.5f, (min.y + max.y) * 0.5f);
     return {{
         {Handle::TopLeft, min},
-        {Handle::Top, ImVec2(middle.x, min.y)},
-        {Handle::TopRight, ImVec2(max.x, min.y)},
-        {Handle::Right, ImVec2(max.x, middle.y)},
+        {Handle::Top, math::Vec2(middle.x, min.y)},
+        {Handle::TopRight, math::Vec2(max.x, min.y)},
+        {Handle::Right, math::Vec2(max.x, middle.y)},
         {Handle::BottomRight, max},
-        {Handle::Bottom, ImVec2(middle.x, max.y)},
-        {Handle::BottomLeft, ImVec2(min.x, max.y)},
-        {Handle::Left, ImVec2(min.x, middle.y)},
+        {Handle::Bottom, math::Vec2(middle.x, max.y)},
+        {Handle::BottomLeft, math::Vec2(min.x, max.y)},
+        {Handle::Left, math::Vec2(min.x, middle.y)},
     }};
 }
 
-[[nodiscard]] Handle handleUnder(const CanvasView& view, const ui::LaidOutRect& rect, ImVec2 mouse)
+[[nodiscard]] Handle handleUnder(const CanvasView& view, const ui::LaidOutRect& rect, math::Vec2 mouse)
 {
     for (const auto& [handle, point] : handlesOf(view, rect))
     {
@@ -183,8 +181,8 @@ void layoutCanvases(const scene::Scene& scene, math::Vec2 size, std::vector<Laid
             return handle;
         }
     }
-    const ImVec2 min = view.toScreen(rect.min);
-    const ImVec2 max = view.toScreen(rect.max);
+    const math::Vec2 min = view.toScreen(rect.min);
+    const math::Vec2 max = view.toScreen(rect.max);
     const bool inside = mouse.x >= min.x && mouse.x <= max.x && mouse.y >= min.y && mouse.y <= max.y;
     return inside ? Handle::Body : Handle::None;
 }
@@ -405,7 +403,7 @@ bool handleInterfaceEditing(ToolsState& state, scene::Scene& scene, bool hovered
     }
     std::vector<LaidOutCanvas> canvases;
     layoutCanvases(scene, frame->layoutSize, canvases);
-    const ImVec2 pointer = pointOf(state.input.mouse());
+    const math::Vec2 pointer = state.input.mouse();
 
     // A drag under way: the element follows the mouse, and the change is recorded once let go.
     if (!state.interfaceDragEntity.isNil())
@@ -491,15 +489,15 @@ void drawInterfaceOverlay(ToolsState& state, const scene::Scene& scene)
     {
         return;
     }
-    const ImVec2 corner(state.viewportOrigin.x, state.viewportOrigin.y);
+    const math::Vec2 corner(state.viewportOrigin.x, state.viewportOrigin.y);
 
     std::vector<LaidOutCanvas> canvases;
     layoutCanvases(scene, frame->layoutSize, canvases);
     // The screen of the game, as Godot outlines its viewport, when no camera outlines it.
     if (!canvases.empty() && !gameFrame(scene, frame->layoutSize.x / std::max(frame->layoutSize.y, 1.0f)).camera)
     {
-        const ImVec2 min(corner.x + frame->offset.x / state.pixelsPerPoint, corner.y + frame->offset.y / state.pixelsPerPoint);
-        const ImVec2 max(min.x + frame->layoutSize.x * frame->scale / state.pixelsPerPoint,
+        const math::Vec2 min(corner.x + frame->offset.x / state.pixelsPerPoint, corner.y + frame->offset.y / state.pixelsPerPoint);
+        const math::Vec2 max(min.x + frame->layoutSize.x * frame->scale / state.pixelsPerPoint,
                          min.y + frame->layoutSize.y * frame->scale / state.pixelsPerPoint);
         state.viewportMarks.gameFrame = std::pair{min, max};
     }

@@ -144,7 +144,7 @@ public:
         ui.scene().add<scene::UiImage>(m_checker, scene::UiImage{.texture = kit.checker(), .raycastTarget = false});
         m_image = ui.add(m_preview, "Image", corner);
         ui.scene().add<scene::UiImage>(m_image, scene::UiImage{.texture = state.selectedAsset, .raycastTarget = false});
-        const math::Vec4 line = linearColor(ImVec4(colors.accent.x, colors.accent.y, colors.accent.z, 0.8f));
+        const math::Vec4 line = linearColor(math::Vec4(colors.accent.x, colors.accent.y, colors.accent.z, 0.8f));
         const std::uint32_t across = m_mode == "grid" ? std::min(columns(state), maxLines) : 1;
         const std::uint32_t down = m_mode == "grid" ? std::min(rows(state), maxLines) : 1;
         if (m_mode != "none")

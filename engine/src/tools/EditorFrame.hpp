@@ -54,7 +54,7 @@ struct MenuEntry
 
 // Opens a menu over the whole window, its top left corner at a place of the screen. `owner` says
 // what opened it, such as the title of a menu bar, which then knows its menu is the one open.
-DEVEX_API void openEditorMenu(ToolsState& state, std::vector<MenuEntry> entries, ImVec2 at, std::size_t owner);
+DEVEX_API void openEditorMenu(ToolsState& state, std::vector<MenuEntry> entries, math::Vec2 at, std::size_t owner);
 // What opened the menu that is open, if one is.
 [[nodiscard]] DEVEX_API std::optional<std::size_t> editorMenuOwner(const ToolsState& state);
 DEVEX_API void closeEditorMenu(ToolsState& state);

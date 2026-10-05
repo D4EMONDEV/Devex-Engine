@@ -10,8 +10,6 @@
 #include <devex/core/Path.hpp>
 #include <devex/tools/SceneCommands.hpp>
 
-#include <imgui_stdlib.h>
-
 #include <algorithm>
 #include <array>
 #include <cfloat>
@@ -268,7 +266,7 @@ struct LogCounts
 
 // A strip along an edge of the window, which the dock leaves room for, its content filling it. It
 // leaves the keyboard where it was.
-void beginStrip(ToolsState& state, const char* name, ImVec2 min, ImVec2 max)
+void beginStrip(ToolsState& state, const char* name, math::Vec2 min, math::Vec2 max)
 {
     state.hosts.begin(name, min, max, HostLayer::Strips, HostOptions{.focusable = false});
 }
@@ -486,7 +484,7 @@ void MenuBarUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& edited
     // A title opens its menu under itself, or closes it; while one is open, the pointer on another
     // title goes to its menu, as in every menu bar.
     const ui::LayoutResult* const layout = world.canvases().empty() ? nullptr : &world.canvases().front().layout;
-    const ImVec2 mouse = pointOf(state.input.mouse());
+    const math::Vec2 mouse = state.input.mouse();
     for (std::size_t index = 0; index < titles.size() && layout != nullptr; ++index)
     {
         const ui::LaidOutRect* const rect = layout->find(titles[index].entity);
@@ -494,8 +492,8 @@ void MenuBarUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& edited
         {
             continue;
         }
-        const ImVec2 min = panel.screenOf(rect->min);
-        const ImVec2 max = panel.screenOf(rect->max);
+        const math::Vec2 min = panel.screenOf(rect->min);
+        const math::Vec2 max = panel.screenOf(rect->max);
         const bool pointed = mouse.x >= min.x && mouse.x < max.x && mouse.y >= min.y && mouse.y < max.y;
         const bool clicked = world.wasClicked(titles[index].entity);
         if ((clicked && open != index) || (open && *open != index && pointed) || state.menuRequest == index)
@@ -563,7 +561,7 @@ void MenuBarUi::sync(ToolsState& state, EditorUiKit& kit)
     // The state of the game code: an icon in its colour, with details in the tooltip.
     const GameCodeStatus& status = state.gameCode;
     Icon glyph = Icon::Code;
-    ImVec4 color = colors.textDim;
+    math::Vec4 color = colors.textDim;
     const char* label = "";
     switch (status.state)
     {
@@ -699,7 +697,7 @@ void StatusBarUi::update(ToolsState& state, EditorUiKit& kit, const scene::Scene
     const std::size_t loading = (state.pendingLoads ? state.pendingLoads() : 0) + state.renderer.stats().pendingUploads;
     const std::size_t pending = state.database != nullptr ? state.database->pendingImports() : 0;
     std::string message;
-    ImVec4 color = colors.textDim;
+    math::Vec4 color = colors.textDim;
     std::optional<Icon> glyph;
     if (pending > 0)
     {
@@ -731,7 +729,7 @@ void StatusBarUi::update(ToolsState& state, EditorUiKit& kit, const scene::Scene
     shownState.color = linearColor(color);
 
     const LogCounts counts = countLog(state);
-    const auto counter = [&](const Button& target, std::size_t count, ImVec4 lit) {
+    const auto counter = [&](const Button& target, std::size_t count, math::Vec4 lit) {
         relabel(kit, target, std::format("{}", count));
         scene().get<UiRect>(target.entity).style = barStyle(panel.world(), target.entity, false);
         const math::Vec4 tint = linearColor(count > 0 ? lit : colors.textDim);

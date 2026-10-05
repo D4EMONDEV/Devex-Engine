@@ -1,6 +1,6 @@
 // The Inspector window, made with the interface of the engine: the entities in InspectorUi.cpp, and the
-// assets, the code files and the elements of the Animator panel in the pages of their kinds. Here are
-// the window, and the pickers of assets other panels still draw with ImGui.
+// assets, the code files and the elements of the Animator panel in the pages of their kinds. Here is
+// the window.
 #include "EditorUi.hpp"
 #include "ToolsState.hpp"
 

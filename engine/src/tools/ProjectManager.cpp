@@ -1,5 +1,5 @@
 // The project manager, the first screen of the editor, made with the interface of the engine: a
-// canvas of entities in a panel of its own, drawn into an image that its ImGui window shows.
+// canvas of entities in a panel of its own, drawn into an image that its host shows.
 #include "EditorUi.hpp"
 #include "ToolsState.hpp"
 
@@ -785,8 +785,7 @@ void ProjectManagerUi::update(ToolsState& state, EditorUiKit& kit, core::Duratio
         opened = manager.selected;
     }
 
-    // The dialogs. Escape cancels one at once, even while its field has the keyboard, as in the
-    // dialogs of ImGui.
+    // The dialogs. Escape cancels one at once, even while its field has the keyboard.
     const bool escaped = panel.focused() && state.input.pressed(platform::Key::Escape, false);
     if (std::exchange(manager.openCreate, false))
     {

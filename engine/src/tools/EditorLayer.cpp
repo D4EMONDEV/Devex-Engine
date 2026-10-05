@@ -59,7 +59,7 @@ struct EditorLayerUi : PanelBuilder
     std::optional<std::size_t> openSub;
     // A menu asked for, shown at the next update of the layer.
     bool pending = false;
-    ImVec2 pendingAt{0.0f, 0.0f};
+    math::Vec2 pendingAt{0.0f, 0.0f};
     // Where the open menu stands, in units of the layer.
     math::Vec2 placedAt{0.0f};
     Entity tip;
@@ -223,7 +223,7 @@ void EditorLayerUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& ed
     ui::UiWorld& world = panel.world();
     const float zoom = UiPanel::zoomFor(font);
     const float unitsPerPoint = editorScreen().pixelsPerPoint / zoom;
-    const ImVec2 origin = state.hosts.cursor();
+    const math::Vec2 origin = state.hosts.cursor();
 
     // A menu asked for since the last frame: its entries, under where it was asked.
     if (std::exchange(pending, false))
@@ -335,7 +335,7 @@ void EditorLayerUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& ed
     }
 }
 
-void openEditorMenu(ToolsState& state, std::vector<MenuEntry> entries, ImVec2 at, std::size_t owner)
+void openEditorMenu(ToolsState& state, std::vector<MenuEntry> entries, math::Vec2 at, std::size_t owner)
 {
     if (!state.editorLayerUi)
     {
@@ -397,7 +397,7 @@ void drawEditorLayer(ToolsState& state, scene::Scene& scene)
 
     // Over the whole window and everything else; without a menu, the mouse goes through it. An open
     // menu takes the keyboard, and gives it back when it closes.
-    state.hosts.begin(editorLayerHost, ImVec2(0.0f, 0.0f), editorScreen().size, HostLayer::Menus,
+    state.hosts.begin(editorLayerHost, math::Vec2(0.0f, 0.0f), editorScreen().size, HostLayer::Menus,
                       HostOptions{.focusable = menu, .takesPointer = menu});
     if (menu && layer.pending)
     {

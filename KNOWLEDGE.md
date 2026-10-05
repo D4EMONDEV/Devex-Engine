@@ -68,7 +68,7 @@
 - **Physique 3D et 2D** : Jolt Physics pour 3D, Box2D pour 2D
 - **Animation avancée** : Système d'animation par clips et states
 - **Audio** : Système audio complet avec Miniaudio
-- **UI Immediate Mode** : Interface utilisateur basée sur ImGui
+- **Une seule interface** : `Devex::Ui` dessine les interfaces des jeux et l'éditeur
 - **Asset Management** : Pipeline de chargement et gestion des ressources
 - **Hot Reloading** : Rechargement à chaud des modules de jeu
 

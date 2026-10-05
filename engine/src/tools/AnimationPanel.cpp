@@ -572,7 +572,7 @@ void AnimationUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& edit
         }
         if (inside && state.input.down(Mouse::Middle))
         {
-            begin = std::clamp(begin - state.input.mouseDelta().x * (panel.unitsOf(ImVec2(1.0f, 0.0f)).x - panel.unitsOf(ImVec2(0.0f, 0.0f)).x) / areaWidth * span, 0.0f,
+            begin = std::clamp(begin - state.input.mouseDelta().x * (panel.unitsOf(math::Vec2(1.0f, 0.0f)).x - panel.unitsOf(math::Vec2(0.0f, 0.0f)).x) / areaWidth * span, 0.0f,
                                duration - span);
         }
         // A double click shows the whole clip again.
