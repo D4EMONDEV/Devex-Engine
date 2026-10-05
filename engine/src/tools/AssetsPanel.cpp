@@ -274,7 +274,7 @@ struct FileSystemUi : PanelBuilder
     void addSource(ToolsState& state, const asset::SourceFile& source, int depth, bool wholePath);
     void addCode(const std::filesystem::path& path, bool directory, int depth);
     void update(ToolsState& state, EditorUiKit& kit, scene::Scene& edited, core::Duration delta);
-    void choose(ToolsState& state, const Node& node);
+    void choose(ToolsState& state, const Node& node, bool openText = true);
     void activate(ToolsState& state, scene::Scene& edited, const Node& node);
     void openMenu(ToolsState& state, EditorUiKit& kit);
     void answerMenu(ToolsState& state, scene::Scene& edited);
@@ -531,16 +531,18 @@ void FileSystemUi::gather(ToolsState& state)
     }
 }
 
-void FileSystemUi::choose(ToolsState& state, const Node& node)
+void FileSystemUi::choose(ToolsState& state, const Node& node, bool openText)
 {
     selected = node.key;
+    // The tree and the inspector share a single selection, including folders and unimported files.
+    selectAsset(state, {});
     if (node.kind == NodeKind::CodeFile || node.kind == NodeKind::ProjectFile)
     {
         if (node.kind == NodeKind::CodeFile)
         {
             selectCodeFile(state, node.file);
         }
-        if ((state.mode == ToolsMode::Editor || node.kind == NodeKind::ProjectFile) &&
+        if (openText && (state.mode == ToolsMode::Editor || node.kind == NodeKind::ProjectFile) &&
             scriptEditorFor(state.scripts, node.file).editor == ScriptEditor::Devex)
         {
             openTextFile(state, node.file);
@@ -1098,7 +1100,7 @@ void FileSystemUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& edi
             }
             else
             {
-                selected = target->key;
+                choose(state, *target, false);
                 openMenu(state, kit);
             }
         }
