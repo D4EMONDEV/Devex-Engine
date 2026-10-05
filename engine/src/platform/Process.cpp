@@ -19,6 +19,13 @@
 
 namespace devex::platform {
 
+std::string environmentVariable(std::string_view name)
+{
+    const std::string variable(name);
+    const char* value = SDL_GetEnvironmentVariable(SDL_GetEnvironment(), variable.c_str());
+    return value != nullptr ? value : "";
+}
+
 void setEnvironmentVariable(std::string_view name, std::string_view value)
 {
     // The environment SDL keeps is the one the programs started below inherit, so it is the one

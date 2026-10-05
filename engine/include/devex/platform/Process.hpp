@@ -16,6 +16,8 @@ namespace devex::platform {
 // Sets a variable of this process's environment, which the programs it starts inherit. An empty
 // value removes it.
 DEVEX_API void setEnvironmentVariable(std::string_view name, std::string_view value);
+// UTF-8, like the environment inherited by Process. Missing variables return an empty string.
+[[nodiscard]] DEVEX_API std::string environmentVariable(std::string_view name);
 
 // A program run in the background with its output captured and read without blocking, such as a
 // compiler. Standard error is merged into standard output.

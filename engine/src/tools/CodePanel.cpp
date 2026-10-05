@@ -51,7 +51,9 @@ void openInCodeEditor(ToolsState& state, const std::filesystem::path& file)
     }
     else
     {
-        opened = state.platform.openPath(file);
+        // File associations alone often start an IDE without loading its project model.
+        const auto projectFile = state.database != nullptr ? scriptProjectFile(file, state.database->project().root) : std::filesystem::path{};
+        opened = state.platform.openPath(projectFile.empty() ? file : projectFile);
     }
     if (!opened)
     {

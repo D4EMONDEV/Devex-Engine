@@ -287,13 +287,23 @@ struct EditorSettingsUi : SettingsUi
     {
         std::size_t section = 0;
         Entity mode;
-        FormRow executableRow;
+        Entity executableLabel;
+        Entity executableRow;
         Entity executable;
-        FormRow argumentsRow;
+        Entity argumentsLabel;
+        Entity argumentsRow;
         Entity arguments;
+        Entity pathRow;
+        Entity path;
+        Entity explanation;
         Button browse;
+        bool custom = false;
     };
     std::array<EditorFields, 3> editors;
+    std::vector<InstalledScriptEditor> installedEditors;
+    bool detectedEditors = false;
+    Button detectEditors;
+    Entity detectionStatus;
     Entity automaticCompilation;
     // The colour the picker edits: 0 the base, 1 the accent.
     std::optional<int> editedColor;
@@ -330,20 +340,36 @@ void EditorSettingsUi::build(EditorUiKit& kit)
     note(&display, "Code Font Size is that of the text editor and the output.", "dim");
 
     constexpr std::array<std::string_view, 3> categories{"C#", "C++", "Devex Files"};
+    Section& detection = pageCard(kit, 2, "Installed Editors");
+    detectEditors = action(kit, actions(&detection), Icon::Refresh, "Detect Editors");
+    detectionStatus = note(&detection, "", "dim", 2.0f);
     for (std::size_t i = 0; i < editors.size(); ++i)
     {
         EditorFields& fields = editors[i];
         fields.section = sections.size();
         Section& section = pageCard(kit, 2, std::string(categories[i]));
         fields.mode = choice(formRow(section, "Open With").editor);
-        fields.executableRow = formRow(section, "Executable");
-        fields.executable = textField(fields.executableRow.editor, "Path to the editor executable");
-        scene().get<UiRect>(fields.executable).offsetMax.x -= line;
-        fields.browse = toolButton(kit, fields.executableRow.editor, Icon::FolderOpen, rightButton(line, 0.0f));
+        fields.pathRow = actions(&section);
+        scene().remove<scene::UiLayout>(fields.pathRow);
+        scene().get<UiRect>(fields.pathRow).clipChildren = true;
+        fields.path = text(fields.pathRow, whole(), "", "dim");
+        fields.explanation = note(&section, "", "dim", 2.0f);
+        fields.executableLabel = note(&section, "Executable", "dim");
+        fields.executableRow = actions(&section);
+        scene().remove<scene::UiLayout>(fields.executableRow);
+        auto executableRect = whole();
+        executableRect.offsetMax.x -= line + gap;
+        const Entity executableClip = add(fields.executableRow, "Executable", executableRect);
+        scene().get<UiRect>(executableClip).clipChildren = true;
+        fields.executable = textField(executableClip, "Path to the editor executable");
+        fields.browse = toolButton(kit, fields.executableRow, Icon::FolderOpen, rightButton(line, 0.0f));
         tooltip(fields.browse.entity, "Choose the external editor executable");
-        fields.argumentsRow = formRow(section, "Arguments");
-        fields.arguments = textField(fields.argumentsRow.editor);
-        tooltip(fields.arguments, "{file}: full file path; {project}: project folder. Quote arguments containing spaces. The file is appended if omitted.");
+        fields.argumentsLabel = note(&section, "Arguments (optional)", "dim");
+        fields.argumentsRow = actions(&section);
+        scene().remove<scene::UiLayout>(fields.argumentsRow);
+        scene().get<UiRect>(fields.argumentsRow).clipChildren = true;
+        fields.arguments = textField(fields.argumentsRow);
+        tooltip(fields.arguments, "{file}: full file path; {project}: Devex project folder; {project_file}: Game.csproj or CMakeLists.txt; {project_dir}: code folder. Default arguments load the project in recognized IDEs.");
     }
     Section& help = pageCard(kit, 2, "Opening Files");
     note(&help, "Double-click a script to open it with the chosen editor. Edit in Devex Script always uses the built-in editor.", "dim", 3.0f);
@@ -371,6 +397,11 @@ void EditorSettingsUi::update(ToolsState& state, EditorUiKit& kit, core::Duratio
     {
         clearAll();
         build(kit);
+    }
+    if (!detectedEditors)
+    {
+        installedEditors = detectScriptEditors();
+        detectedEditors = true;
     }
     styleTooltips(colors);
     labelWidth = std::clamp(std::round((panel.size().x - font * 12.0f) * 0.42f), font * 7.0f, font * 12.0f);
@@ -403,12 +434,47 @@ void EditorSettingsUi::update(ToolsState& state, EditorUiKit& kit, core::Duratio
     {
         const EditorFields& fields = editors[i];
         const ScriptEditorChoice& editor = state.scripts.editors[i];
-        setChoice(fields.mode, {"Devex Script", "System Default", "Custom External Editor"}, static_cast<std::int32_t>(editor.editor));
+        std::vector<std::string> options{"Devex Script", "System Default"};
+        std::int32_t selectedEditor = editor.editor == ScriptEditor::Custom ? static_cast<std::int32_t>(installedEditors.size() + 2) : static_cast<std::int32_t>(editor.editor);
+        for (std::size_t index = 0; index < installedEditors.size(); ++index)
+        {
+            const auto& installed = installedEditors[index];
+            options.push_back(installed.name);
+            if (editor.editor == ScriptEditor::Custom && !fields.custom &&
+                (editor.arguments.empty() || editor.arguments == "\"{file}\"" || editor.arguments == "{file}") &&
+                sameEditorPath(core::pathFromUtf8(editor.executable), installed.executable))
+            {
+                selectedEditor = static_cast<std::int32_t>(index + 2);
+            }
+        }
+        const bool custom = selectedEditor == static_cast<std::int32_t>(options.size());
+        options.emplace_back("Custom External Editor...");
+        setChoice(fields.mode, std::move(options), selectedEditor);
         setText(fields.executable, editor.executable);
         setText(fields.arguments, editor.arguments);
-        showLine(sections[fields.section], fields.executableRow.row, editor.editor == ScriptEditor::Custom);
-        showLine(sections[fields.section], fields.argumentsRow.row, editor.editor == ScriptEditor::Custom);
+        for (const Entity row : {fields.executableLabel, fields.executableRow, fields.argumentsLabel, fields.argumentsRow})
+        {
+            showLine(sections[fields.section], row, custom);
+        }
+        showLine(sections[fields.section], fields.pathRow, editor.editor == ScriptEditor::Custom && !custom);
+        // Keep the readable end of long paths; the tooltip retains the complete executable path.
+        std::string path = core::toUtf8(core::pathFromUtf8(editor.executable));
+        const float room = std::max(panel.size().x - font * 16.0f, font * 8.0f);
+        while (path.size() > 4 && kit.textWidth(EditorUiKit::regularFont(), path, font) > room)
+        {
+            const auto slash = path.find('/', path.starts_with(".../") ? 4 : 0);
+            if (slash == std::string::npos) { break; }
+            path = ".../" + path.substr(slash + 1);
+        }
+        scene().get<scene::UiText>(fields.path).text = path;
+        tooltip(fields.pathRow, editor.executable);
+        scene().get<scene::UiText>(fields.explanation).text = editor.editor == ScriptEditor::Devex ? "Opens in the built-in Devex Script editor." :
+            i == 0 ? "Opens scripts with Game.csproj so the IDE can resolve the Devex C# API." :
+            i == 1 ? "Opens the code folder as a CMake project, together with the selected script." :
+                     "Opens Devex text files with the selected editor.";
     }
+    scene().get<scene::UiText>(detectionStatus).text = installedEditors.empty() ? "No supported IDE found. You can choose a custom executable below." :
+        std::format("{} installed editors found. Choose one for each file type below.", installedEditors.size());
     setChoice(automaticCompilation, {"Automatic", "Manual (Ctrl+B)"}, state.scripts.automaticCompilation ? 0 : 1);
     if (editedColor && colorPopupOpen())
     {
@@ -424,14 +490,23 @@ void EditorSettingsUi::update(ToolsState& state, EditorUiKit& kit, core::Duratio
     ScriptSettings scripts = state.scripts;
     for (std::size_t i = 0; i < editors.size(); ++i)
     {
-        const EditorFields& fields = editors[i];
+        EditorFields& fields = editors[i];
         ScriptEditorChoice& editor = scripts.editors[i];
         if (world.wasChanged(fields.mode))
         {
             const auto index = scene().get<scene::UiDropdown>(fields.mode).selected;
-            if (index >= 0 && index < 3)
+            fields.custom = index == static_cast<std::int32_t>(installedEditors.size() + 2);
+            if (index >= 0 && index < 2)
             {
                 editor.editor = static_cast<ScriptEditor>(index);
+            }
+            else if (index >= 2 && static_cast<std::size_t>(index - 2) < installedEditors.size())
+            {
+                editor = {ScriptEditor::Custom, core::toUtf8(installedEditors[static_cast<std::size_t>(index - 2)].executable)};
+            }
+            else if (fields.custom)
+            {
+                editor.editor = ScriptEditor::Custom;
             }
         }
         if (endedField == fields.executable)
@@ -456,6 +531,10 @@ void EditorSettingsUi::update(ToolsState& state, EditorUiKit& kit, core::Duratio
                     }
                 });
         }
+    }
+    if (world.wasClicked(detectEditors.entity))
+    {
+        installedEditors = detectScriptEditors();
     }
     if (world.wasChanged(automaticCompilation))
     {

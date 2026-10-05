@@ -91,6 +91,39 @@ core::Result<std::vector<std::string>> scriptEditorCommand(const ScriptEditorCho
     {
         return core::makeError(core::ErrorCode::InvalidArgument, "Choose an executable in Editor Settings > Script Editors");
     }
+    const auto projectFile = scriptProjectFile(file, project);
+    const auto projectDirectory = projectFile.empty() ? project : projectFile.parent_path();
+    const ExternalEditor kind = externalEditorKind(core::pathFromUtf8(editor.executable));
+    // Existing settings used "{file}" for Rider and CLion too. Upgrade that default automatically;
+    // explicitly customized templates still have full control over their arguments.
+    if (editor.arguments.empty() || editor.arguments == "\"{file}\"" || editor.arguments == "{file}")
+    {
+        std::vector<std::string> command{editor.executable};
+        if (kind == ExternalEditor::Rider || kind == ExternalEditor::CLion)
+        {
+            if (!projectFile.empty())
+            {
+                command.push_back(core::toUtf8(kind == ExternalEditor::Rider ? projectFile : projectDirectory));
+                if (sameEditorPath(file, projectFile)) { return command; }
+            }
+            command.insert(command.end(), {"--line", "1", core::toUtf8(file)});
+            return command;
+        }
+        if (kind == ExternalEditor::VSCode)
+        {
+            command.insert(command.end(), {core::toUtf8(projectDirectory), "--goto", core::toUtf8(file) + ":1"});
+            return command;
+        }
+        if (kind == ExternalEditor::VisualStudio && !projectFile.empty())
+        {
+            command.push_back(core::toUtf8(scriptEditorCategory(file) == 0 ? projectFile : projectDirectory));
+            if (!sameEditorPath(file, projectFile))
+            {
+                command.insert(command.end(), {"/Command", "File.OpenFile \"" + core::toUtf8(file) + "\""});
+            }
+            return command;
+        }
+    }
     std::vector<std::string> command{editor.executable};
     std::string token;
     bool quoted = false;
@@ -143,6 +176,16 @@ core::Result<std::vector<std::string>> scriptEditorCommand(const ScriptEditorCho
             {
                 expanded += core::toUtf8(project);
                 at += 9;
+            }
+            else if (tail.starts_with("{project_file}"))
+            {
+                expanded += core::toUtf8(projectFile.empty() ? project : projectFile);
+                at += 14;
+            }
+            else if (tail.starts_with("{project_dir}"))
+            {
+                expanded += core::toUtf8(projectDirectory);
+                at += 13;
             }
             else
             {

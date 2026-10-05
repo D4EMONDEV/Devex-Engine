@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <optional>
 #include <string>
+#include <span>
 #include <vector>
 
 namespace devex::tools::detail {
@@ -36,6 +37,22 @@ struct ScriptSettings
 
     bool operator==(const ScriptSettings&) const = default;
 };
+
+enum class ExternalEditor : std::uint8_t { Unknown, Rider, CLion, VisualStudio, VSCode };
+
+struct InstalledScriptEditor
+{
+    std::string name;
+    std::filesystem::path executable;
+};
+
+[[nodiscard]] DEVEX_API ExternalEditor externalEditorKind(const std::filesystem::path& executable);
+[[nodiscard]] DEVEX_API bool sameEditorPath(const std::filesystem::path& left, const std::filesystem::path& right);
+// Only known installation locations and PATH are inspected; discovery never launches an IDE.
+[[nodiscard]] DEVEX_API std::vector<InstalledScriptEditor> detectScriptEditors();
+[[nodiscard]] DEVEX_API std::vector<InstalledScriptEditor> findScriptEditors(std::span<const std::filesystem::path> candidates);
+[[nodiscard]] DEVEX_API std::filesystem::path scriptProjectFile(const std::filesystem::path& file,
+                                                              const std::filesystem::path& project);
 
 [[nodiscard]] DEVEX_API std::optional<std::size_t> scriptEditorCategory(const std::filesystem::path& file);
 [[nodiscard]] DEVEX_API const ScriptEditorChoice& scriptEditorFor(const ScriptSettings& settings,
