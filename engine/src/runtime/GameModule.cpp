@@ -75,8 +75,8 @@ core::Result<std::unique_ptr<GameModule>> GameModule::loadLibrary(const std::fil
     {
         return std::unexpected(loaded.error());
     }
-    const auto apiVersion = static_cast<ApiVersionFunction>(loaded->function("devexGameApiVersion"));
-    const auto registerGame = static_cast<RegisterFunction>(loaded->function("devexRegisterGameModule"));
+    const auto apiVersion = reinterpret_cast<ApiVersionFunction>(loaded->function("devexGameApiVersion"));
+    const auto registerGame = reinterpret_cast<RegisterFunction>(loaded->function("devexRegisterGameModule"));
     if (apiVersion == nullptr || registerGame == nullptr)
     {
         return core::makeError(core::ErrorCode::InvalidArgument,

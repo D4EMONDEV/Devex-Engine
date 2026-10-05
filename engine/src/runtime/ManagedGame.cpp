@@ -333,7 +333,7 @@ struct BootstrapArguments
     core::Uuid uuid;
     if (bytes != nullptr)
     {
-        std::memcpy(&uuid, bytes, sizeof(uuid));
+        std::memcpy(static_cast<void*>(&uuid), bytes, sizeof(uuid));
     }
     return uuid;
 }

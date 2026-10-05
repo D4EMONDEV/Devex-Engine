@@ -210,13 +210,13 @@ VulkanRenderer::VulkanRenderer(platform::Window& window, const RendererConfig& c
                                UploadContext upload) noexcept
     : m_window(window)
     , m_requestedPresentMode(config.presentMode)
-    , m_uploadBytesPerFrame(config.uploadBytesPerFrame)
     , m_shaderDirectory(std::move(shaderDirectory))
     , m_instance(std::move(instance))
     , m_surface(std::move(surface))
     , m_device(std::move(device))
     , m_allocator(std::move(allocator))
     , m_upload(std::move(upload))
+    , m_uploadBytesPerFrame(config.uploadBytesPerFrame)
 {
     rendererExists.store(true);
 }

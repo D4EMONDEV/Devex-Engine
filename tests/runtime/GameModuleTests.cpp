@@ -206,8 +206,7 @@ TEST_CASE("Libraries that are not game modules are refused", "[runtime][game]")
 {
     const TemporaryDirectory copies;
     CHECK_FALSE(GameModule::load(copies.path / "missing.dll", copies.path).has_value());
-    const std::filesystem::path engine = testModule.parent_path() / "devex-engine.dll";
-    const auto module = GameModule::load(engine, copies.path);
+    const auto module = GameModule::load(DEVEX_TEST_PLAIN_LIBRARY, copies.path);
     REQUIRE_FALSE(module.has_value());
     CHECK(module.error().message.find("not a game module") != std::string::npos);
 }

@@ -135,7 +135,7 @@ void MappedFile::close() noexcept
 #else
     if (m_data != nullptr)
     {
-        munmap(const_cast<void*>(m_data), m_size);
+        munmap(const_cast<std::byte*>(m_data), m_size);
     }
     if (m_descriptor >= 0)
     {

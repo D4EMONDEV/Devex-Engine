@@ -1,6 +1,6 @@
 # Builds the engine, the editor, the player and the tests, then runs every test that needs no GPU,
-# in Debug and in Release, on each push to main and on each pull request. The machines of GitHub
-# have no GPU: the tests tagged [gpu] run on developers' machines only.
+# in Debug and in Release, on Windows and on Linux, on each push to main and on each pull request.
+# The machines of GitHub have no GPU: the tests tagged [gpu] run on developers' machines only.
 name: CI
 
 on:
@@ -140,6 +140,131 @@ jobs:
             $text = (($lines | Select-Object -Last 60) -join "`n").Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
             Write-Output "::error title=$(Split-Path $log.Path -Leaf)::$text"
           }
+
+      - name: Keep the logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs-${{ matrix.preset }}
+          path: |
+            out/build/${{ matrix.preset }}/Testing/Temporary/LastTest*.log
+            out/build/${{ matrix.preset }}/vcpkg-manifest-install.log
+            ${{ runner.temp }}/vcpkg/buildtrees/**/*.log
+          if-no-files-found: ignore
+
+  linux:
+    name: Linux ${{ matrix.preset }}
+    # Ubuntu 24.04 with GCC 14, the compiler of the distributions.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      matrix:
+        preset: [linux-debug, linux-release]
+    env:
+      CC: gcc-14
+      CXX: g++-14
+      DOTNET_CLI_TELEMETRY_OPTOUT: 1
+      DOTNET_NOLOGO: 1
+      VCPKG_DISABLE_METRICS: 1
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      # The compiler, the generator, what vcpkg needs to build its ports, and the headers SDL3 is
+      # built against for X11, Wayland and the sound.
+      - name: Install the packages of the system
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq gcc-14 g++-14 ninja-build pkg-config autoconf autoconf-archive \
+            automake libtool bison flex nasm libx11-dev libxext-dev libxrandr-dev libxcursor-dev \
+            libxfixes-dev libxi-dev libxss-dev libxtst-dev libxkbcommon-dev libwayland-dev \
+            wayland-protocols libegl-dev libgl-dev libdrm-dev libgbm-dev libdbus-1-dev libudev-dev \
+            libibus-1.0-dev libpulse-dev libasound2-dev libdecor-0-dev
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      # Only slangc is taken from the SDK: the headers and volk come from vcpkg.
+      - name: Set up the Vulkan SDK
+        uses: jakoch/install-vulkan-sdk-action@v1
+        with:
+          vulkan_version: 1.4.350.0
+          install_runtime: false
+          cache: true
+
+      # A whole clone of vcpkg, as on Windows, and a folder for the packages it builds.
+      - name: Set up vcpkg
+        run: |
+          root="$RUNNER_TEMP/vcpkg"
+          archives="$RUNNER_TEMP/vcpkg-archives"
+          git clone --quiet https://github.com/microsoft/vcpkg.git "$root"
+          "$root/bootstrap-vcpkg.sh" -disableMetrics
+          mkdir -p "$archives"
+          echo "VCPKG_ROOT=$root" >> "$GITHUB_ENV"
+          echo "VCPKG_DEFAULT_BINARY_CACHE=$archives" >> "$GITHUB_ENV"
+
+      - name: Restore the packages vcpkg built
+        id: vcpkg-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/vcpkg-archives
+          key: vcpkg-${{ matrix.preset }}-${{ hashFiles('vcpkg.json') }}
+
+      - name: Configure
+        id: configure
+        run: cmake --preset ${{ matrix.preset }} -DDEVEX_WARNINGS_AS_ERRORS=ON 2>&1 | tee "$RUNNER_TEMP/configure.log"
+
+      - name: Keep the packages vcpkg built
+        if: steps.vcpkg-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/vcpkg-archives
+          key: vcpkg-${{ matrix.preset }}-${{ hashFiles('vcpkg.json') }}
+
+      - name: Build
+        id: build
+        run: cmake --build out/build/${{ matrix.preset }} 2>&1 | tee "$RUNNER_TEMP/build.log"
+
+      # No display: the tests that open a window are tagged [gpu], and the main loop runs on SDL's
+      # dummy video driver.
+      - name: Test
+        id: test
+        run: ctest --test-dir out/build/${{ matrix.preset }} --label-exclude gpu --output-on-failure --no-tests=error --timeout 600 2>&1 | tee "$RUNNER_TEMP/test.log"
+
+      # The same annotations as on Windows, for those who cannot read the logs.
+      - name: Show what failed
+        if: failure()
+        env:
+          CONFIGURE: ${{ steps.configure.outcome }}
+          BUILD: ${{ steps.build.outcome }}
+          TEST: ${{ steps.test.outcome }}
+        run: |
+          annotate() {
+            local path="$1" errors="$2" text
+            [ -f "$path" ] || return 0
+            if [ "$errors" = yes ] && grep -qE "error|FAILED|Failed" "$path"; then
+              text=$(grep -E "error|FAILED|Failed" "$path" | head -40 | tail -60)
+            else
+              text=$(tail -60 "$path")
+            fi
+            text=${text//'%'/'%25'}
+            text=${text//$'\r'/'%0D'}
+            text=${text//$'\n'/'%0A'}
+            echo "::error title=$(basename "$path")::$text"
+          }
+          if [ "$CONFIGURE" = failure ]; then
+            annotate "$RUNNER_TEMP/configure.log" no
+            annotate "out/build/${{ matrix.preset }}/vcpkg-manifest-install.log" no
+            port=$(find "$RUNNER_TEMP/vcpkg/buildtrees" -name "*-err.log" -size +0 -printf "%T@ %p\n" 2>/dev/null | sort -n | tail -1 | cut -d' ' -f2-)
+            [ -n "$port" ] && annotate "$port" no
+          fi
+          [ "$BUILD" = failure ] && annotate "$RUNNER_TEMP/build.log" yes
+          [ "$TEST" = failure ] && annotate "$RUNNER_TEMP/test.log" yes
+          true
 
       - name: Keep the logs
         if: failure()

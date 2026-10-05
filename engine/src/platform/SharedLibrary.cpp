@@ -74,7 +74,7 @@ void* SharedLibrary::function(const std::string& name) const
     {
         return nullptr;
     }
-    return static_cast<void*>(SDL_LoadFunction(static_cast<SDL_SharedObject*>(m_handle), name.c_str()));
+    return reinterpret_cast<void*>(SDL_LoadFunction(static_cast<SDL_SharedObject*>(m_handle), name.c_str()));
 }
 
 bool SharedLibrary::contains(const void* address) const noexcept
@@ -89,13 +89,20 @@ bool SharedLibrary::contains(const void* address) const noexcept
     return GetModuleHandleExW(flags, static_cast<LPCWSTR>(address), &module) != 0 &&
            module == static_cast<HMODULE>(m_handle);
 #else
+    // The library loaded from the file the address belongs to, if it is loaded: a library opened by
+    // its short name, such as libc.so.6, has no path to compare with.
     Dl_info info{};
     if (dladdr(address, &info) == 0 || info.dli_fname == nullptr)
     {
         return false;
     }
-    std::error_code error;
-    return std::filesystem::equivalent(info.dli_fname, m_path, error);
+    void* const found = dlopen(info.dli_fname, RTLD_LAZY | RTLD_NOLOAD);
+    if (found == nullptr)
+    {
+        return false;
+    }
+    dlclose(found);
+    return found == m_handle;
 #endif
 }
 

@@ -16,11 +16,6 @@
 namespace devex::tools::detail {
 namespace {
 
-[[nodiscard]] bool isIdentifierPart(char value) noexcept
-{
-    return std::isalnum(static_cast<unsigned char>(value)) != 0 || value == '_';
-}
-
 // The byte offset where a line starts, counting from zero.
 [[nodiscard]] std::size_t offsetOfLine(std::string_view text, int line)
 {

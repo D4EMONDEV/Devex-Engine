@@ -17,6 +17,9 @@ find_package(zstd CONFIG REQUIRED)
 # Every module is an object library, compiled into the single devex-engine shared library at the
 # end of this file. Programs, tests and game modules link Devex::Engine, never a module directly,
 # so that they all share one engine state: registries, logging, the renderer.
+# The objects of a shared library are compiled as position-independent code, which CMake only does
+# by itself for the shared library's own sources.
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 # Core: vocabulary types, errors, logging and assertions. Depends only on the standard library.
 add_library(devex_core OBJECT)

@@ -4,10 +4,14 @@
 #include <devex/core/Log.hpp>
 #include <devex/core/Path.hpp>
 
+#if defined(_MSC_VER)
 #pragma warning(push, 0)
+#endif
 #define STB_TRUETYPE_IMPLEMENTATION
 #include <stb_truetype.h>
+#if defined(_MSC_VER)
 #pragma warning(pop)
+#endif
 
 #include <algorithm>
 #include <array>

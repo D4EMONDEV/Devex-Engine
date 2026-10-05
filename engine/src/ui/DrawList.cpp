@@ -314,18 +314,18 @@ void drawTextLayout(Builder& builder, const DrawContext& context, const LaidOutR
     const bool plainRect = isPlain(rect);
     const float sharpness = textSharpness(*font.data, text.size) * builder.scale *
                             (plainRect ? 1.0f : std::sqrt(std::abs(rect.scale.x * rect.scale.y)));
-    const auto drawGlyphs = [&](math::Vec4 color, math::Vec2 shift, bool plain) {
+    const auto drawGlyphs = [&](math::Vec4 shade, math::Vec2 shift, bool plain) {
         render::UiDraw& draw =
             builder.batch(render::UiDrawKind::Text, font.atlas, math::Vec4{0.0f}, 0.0f, sharpness);
         for (const GlyphQuad& glyph : letters.glyphs)
         {
-            const math::Vec4 tint = plain ? color : multiply(color, glyph.color);
+            const math::Vec4 tint = plain ? shade : multiply(shade, glyph.color);
             // A bold face the font does not carry is drawn twice, a hair apart.
             const float lean = glyph.italic ? (glyph.max.y - glyph.min.y) * 0.21f : 0.0f;
             const int passes = glyph.bold && plain == false ? 2 : 1;
             for (int pass = 0; pass < passes; ++pass)
             {
-                const math::Vec2 step = origin + shift + math::Vec2{pass * text.size * 0.04f, 0.0f};
+                const math::Vec2 step = origin + shift + math::Vec2{static_cast<float>(pass) * text.size * 0.04f, 0.0f};
                 if (lean > 0.0f || !plainRect)
                 {
                     std::array<math::Vec2, 4> corners{

@@ -42,7 +42,7 @@ TEST_CASE("Reading past the end fails without huge allocations", "[serialization
     // Once failed, reads return zeroed values.
     CHECK(reader.read<std::uint32_t>() == 0);
 
-    BinaryReader truncated(std::span(bytes).first(3));
+    BinaryReader truncated{std::span(bytes).first(3)};
     CHECK(truncated.read<std::uint32_t>() == 0);
     CHECK(truncated.failed());
 }

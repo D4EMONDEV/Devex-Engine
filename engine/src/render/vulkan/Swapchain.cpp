@@ -140,7 +140,7 @@ core::Result<Swapchain> Swapchain::create(const Device& device, VkSurfaceKHR sur
     const VkSwapchainCreateInfoKHR createInfo{
         .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
         .pNext = toolsView ? &formatList : nullptr,
-        .flags = toolsView ? VK_SWAPCHAIN_CREATE_MUTABLE_FORMAT_BIT_KHR : VkSwapchainCreateFlagsKHR{0},
+        .flags = toolsView ? VkSwapchainCreateFlagsKHR{VK_SWAPCHAIN_CREATE_MUTABLE_FORMAT_BIT_KHR} : VkSwapchainCreateFlagsKHR{0},
         .surface = surface,
         .minImageCount = chooseImageCount(capabilities.minImageCount, capabilities.maxImageCount),
         .imageFormat = surfaceFormat.format,

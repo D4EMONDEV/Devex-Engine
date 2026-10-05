@@ -77,7 +77,7 @@ TEST_CASE("Failed text reads never drop local edits or recreate a deleted file",
 TEST_CASE("Text editor rejects binary, malformed UTF-8 and oversized files", "[tools][text]")
 {
     TextFile file;
-    for (const std::string bytes : {std::string("a\0b", 3), std::string("\xFF\xFE"), std::string("\xC0\xAF"),
+    for (const std::string& bytes : {std::string("a\0b", 3), std::string("\xFF\xFE"), std::string("\xC0\xAF"),
                                     std::string("\xED\xA0\x80"), std::string("\xF4\x90\x80\x80"),
                                     std::string("\xE2\x82"), std::string(TextDocument::maximumBytes + 1, 'a')})
     {

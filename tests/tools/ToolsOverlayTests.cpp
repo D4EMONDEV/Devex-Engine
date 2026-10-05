@@ -541,7 +541,11 @@ TEST_CASE("The editor opens the project's scenes in tabs and renders its viewpor
         REQUIRE((*database)->setImportOptions(*checker, grid).has_value());
         settleAssets();
         std::vector<devex::asset::AssetId> sprites;
-        for (const devex::asset::AssetId id : (*database)->sourceOf(*checker)->assets)
+        // Kept while the loop reads it: a member reached through the arrow of a temporary does not
+        // extend its life.
+        const std::optional<devex::asset::SourceFile> checkerSource = (*database)->sourceOf(*checker);
+        REQUIRE(checkerSource.has_value());
+        for (const devex::asset::AssetId id : checkerSource->assets)
         {
             if ((*database)->find(id)->type == devex::asset::AssetType::Sprite)
             {

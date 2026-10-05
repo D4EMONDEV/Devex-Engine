@@ -80,11 +80,6 @@ public class {0} : Component
 }}
 )";
 
-[[nodiscard]] bool contains(std::string_view text, std::string_view part)
-{
-    return text.find(part) != std::string_view::npos;
-}
-
 [[nodiscard]] std::filesystem::path buildDirectory(const asset::Project& project)
 {
     return project.cacheDirectory() / "code" / "csharp";

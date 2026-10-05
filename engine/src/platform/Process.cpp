@@ -42,6 +42,7 @@ void setEnvironmentVariable(std::string_view name, std::string_view value)
 }
 namespace {
 
+#ifdef _WIN32
 [[nodiscard]] bool isValidUtf8(std::string_view text) noexcept
 {
     std::size_t index = 0;
@@ -64,6 +65,7 @@ namespace {
     }
     return true;
 }
+#endif
 
 // Console programs such as compilers write in the console code page, not always UTF-8.
 [[nodiscard]] std::string toUtf8Line(std::string line)

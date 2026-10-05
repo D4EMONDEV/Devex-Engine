@@ -478,7 +478,7 @@ void SceneTreeUi::fillRows(ToolsState& state, EditorUiKit& kit, const scene::Sce
     const bool editor = state.mode == ToolsMode::Editor;
     const float iconSize = font * 1.15f;
     const float button = rowHeight * 0.85f;
-    while (rows.size() * rowHeight < std::max(panel.size().y, 300.0f) + rowHeight * 2.0f)
+    while (static_cast<float>(rows.size()) * rowHeight < std::max(panel.size().y, 300.0f) + rowHeight * 2.0f)
     {
         TreeRow row;
         row.row = add(lines, "Row", fixed({1.0f, rowHeight}), "soft_row");
@@ -628,8 +628,8 @@ void SceneTreeUi::fillRows(ToolsState& state, EditorUiKit& kit, const scene::Sce
         }
 
         // The buttons at the end: the eye, the prefab of an instance, the code of the game.
-        const auto show = [&](const Button& button, bool visible) {
-            UiRect& rect = scene().get<UiRect>(button.entity);
+        const auto show = [&](const Button& rowButton, bool visible) {
+            UiRect& rect = scene().get<UiRect>(rowButton.entity);
             rect.visible = visible;
             rect.style = selected ? "row_button_selected" : "row_button";
         };

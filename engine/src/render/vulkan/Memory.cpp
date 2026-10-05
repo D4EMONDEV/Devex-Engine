@@ -175,8 +175,8 @@ core::Result<Image> Image::create(const Device& device, const Allocator& allocat
     const VkImageCreateInfo imageInfo{
         .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
         .pNext = alternate ? &formatList : nullptr,
-        .flags = (config.cube ? VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT : VkImageCreateFlags{0}) |
-                 (alternate ? VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT : VkImageCreateFlags{0}),
+        .flags = (config.cube ? VkImageCreateFlags{VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT} : VkImageCreateFlags{0}) |
+                 (alternate ? VkImageCreateFlags{VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT} : VkImageCreateFlags{0}),
         .imageType = VK_IMAGE_TYPE_2D,
         .format = config.format,
         .extent = {config.extent.width, config.extent.height, 1},

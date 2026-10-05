@@ -5,7 +5,6 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-#include <array>
 #include <chrono>
 #include <string>
 #include <thread>
@@ -42,11 +41,27 @@ namespace {
 
 } // namespace
 
+// A command that writes a line to each output and exits with 3, one that writes its working
+// directory, and a library of the system with one of its functions.
 #ifdef _WIN32
+const std::vector<std::string> twoLines{"cmd.exe", "/d", "/c", "echo first& echo second 1>&2& exit /b 3"};
+const std::vector<std::string> workingDirectory{"cmd.exe", "/d", "/c", "cd"};
+constexpr const char* systemDirectory = "C:\\Windows";
+constexpr const char* systemLibrary = "kernel32.dll";
+constexpr const char* systemFunction = "GetTickCount64";
+constexpr const char* missingLibrary = "devex-missing-library.dll";
+#else
+const std::vector<std::string> twoLines{"/bin/sh", "-c", "echo first; echo second 1>&2; exit 3"};
+const std::vector<std::string> workingDirectory{"/bin/sh", "-c", "pwd"};
+constexpr const char* systemDirectory = "/usr";
+constexpr const char* systemLibrary = "libc.so.6";
+constexpr const char* systemFunction = "getpid";
+constexpr const char* missingLibrary = "libdevex-missing-library.so";
+#endif
+
 TEST_CASE("Processes run in the background with their output captured by line", "[platform][process]")
 {
-    const std::array<std::string, 4> arguments{"cmd.exe", "/d", "/c", "echo first& echo second 1>&2& exit /b 3"};
-    auto process = devex::platform::Process::start(arguments);
+    auto process = devex::platform::Process::start(twoLines);
     REQUIRE(process.has_value());
     int exitCode = 0;
     const std::vector<std::string> lines = readUntilExit(*process, exitCode);
@@ -59,22 +74,21 @@ TEST_CASE("Processes run in the background with their output captured by line", 
 
 TEST_CASE("Processes run in a working directory", "[platform][process]")
 {
-    const std::array<std::string, 4> arguments{"cmd.exe", "/d", "/c", "cd"};
-    auto process = devex::platform::Process::start(arguments, "C:\\Windows");
+    auto process = devex::platform::Process::start(workingDirectory, systemDirectory);
     REQUIRE(process.has_value());
     int exitCode = -1;
     const std::vector<std::string> lines = readUntilExit(*process, exitCode);
     CHECK(exitCode == 0);
     REQUIRE_FALSE(lines.empty());
-    CHECK(lines.front() == "C:\\Windows");
+    CHECK(lines.front() == systemDirectory);
 }
 
 TEST_CASE("Shared libraries export functions and know their addresses", "[platform][library]")
 {
-    CHECK_FALSE(devex::platform::SharedLibrary::load("devex-missing-library.dll").has_value());
-    auto library = devex::platform::SharedLibrary::load("kernel32.dll");
+    CHECK_FALSE(devex::platform::SharedLibrary::load(missingLibrary).has_value());
+    auto library = devex::platform::SharedLibrary::load(systemLibrary);
     REQUIRE(library.has_value());
-    const void* const function = library->function("GetTickCount64");
+    const void* const function = library->function(systemFunction);
     CHECK(function != nullptr);
     CHECK(library->function("NoSuchFunction") == nullptr);
     CHECK(library->contains(function));
@@ -82,7 +96,6 @@ TEST_CASE("Shared libraries export functions and know their addresses", "[platfo
     static const int local = 0;
     CHECK_FALSE(library->contains(&local));
 }
-#endif
 
 TEST_CASE("Processes need a program", "[platform][process]")
 {

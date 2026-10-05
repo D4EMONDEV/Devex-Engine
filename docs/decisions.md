@@ -26,7 +26,7 @@ mais seulement explicitement ici : le code suit ce document, pas l'inverse.
 | Maths                    | GLM derrière `devex::math`                                         |
 | Coordonnées              | Y-up, main droite, -Z avant, 1 unité = 1 mètre                     |
 | Tests                    | Catch2 v3 via CTest                                                |
-| Intégration continue     | GitHub Actions, Windows, Debug et Release, tests sans GPU          |
+| Intégration continue     | GitHub Actions, Windows et Linux, Debug et Release, tests sans GPU |
 | Boucle de jeu            | Pas fixe (60 Hz par défaut) + mise à jour variable par frame       |
 | Point d'entrée           | Le moteur possède la boucle, le jeu dérive de `Application`        |
 | Entrées                  | État interrogeable + événements, clavier, souris et manettes       |
@@ -3144,7 +3144,30 @@ les assets s'écrivent au fil de leur lecture.
   request, et à la demande. Deux jobs en parallèle sur `windows-2025`, `x64-debug` et
   `x64-release`, avec les presets du dépôt, Visual Studio 2026 (MSVC 19.51), le SDK .NET 10 pour
   le C#, `slangc` du SDK Vulkan 1.4.350 et Ninja, que l'image ne fournit pas (téléchargé des
-  versions publiées). Un push plus récent sur la même branche annule l'exécution en cours.
+  versions publiées). Deux autres sur `ubuntu-24.04`, `linux-debug` et `linux-release`, avec
+  GCC 14, Ninja et les en-têtes contre lesquels vcpkg construit SDL3 (X11, Wayland, son), le même
+  SDK .NET et le même SDK Vulkan. Un push plus récent sur la même branche annule l'exécution en
+  cours.
+- **Linux** (jalon 57) : GCC 14 et libstdc++ 14, pour C++23 (`std::expected`, `std::format`,
+  ranges). Les modules du moteur, des bibliothèques objet réunies dans `libdevex-engine.so`, sont
+  compilés en code relogeable (`CMAKE_POSITION_INDEPENDENT_CODE`) : Ubuntu compile par défaut en
+  PIE, presque relogeable, si bien que seules les variables `thread_local` le trahissaient.
+  `-Wmissing-field-initializers` est coupé pour GCC : les initialisations désignées laissent de
+  côté les champs dont la valeur par défaut convient, c'est la façon du moteur de remplir ses
+  structures (Clang et MSVC ne le signalent pas). `-Wmaybe-uninitialized` l'est aussi : une fois le
+  code optimisé, GCC y soupçonnait des `std::optional` lus après vérification. `-Wdangling-pointer`
+  reste, et a trouvé un test qui parcourait un membre d'un `optional` temporaire déjà détruit (la
+  flèche d'un temporaire ne prolonge pas sa vie dans une boucle `for`). Une fonction d'une
+  bibliothèque partagée se convertit par `reinterpret_cast`. `SharedLibrary::contains` compare la
+  bibliothèque qui contient une adresse à la sienne par leur handle (`dladdr`, puis `dlopen` avec
+  `RTLD_NOLOAD`), une bibliothèque ouverte par son nom court comme `libc.so.6` n'ayant pas de
+  chemin à comparer. Le
+  test d'une bibliothèque qui n'est pas un module de jeu charge une petite bibliothèque à lui, plus
+  une copie du moteur : sous Linux, les symboles d'une seconde copie se résolvent vers la première,
+  et ses initialisations statiques s'enregistraient deux fois. Les tests des processus et des
+  bibliothèques tournent sur les deux systèmes (`/bin/sh`, `libc.so.6`). Sans écran, les tests
+  qui ne sont pas `[gpu]` passent : la boucle principale tourne sur le pilote vidéo factice de
+  SDL. Pour reproduire la CI chez soi sous Windows : Ubuntu 24.04 dans WSL.
 - **Exigences** : les avertissements sont des erreurs (`DEVEX_WARNINGS_AS_ERRORS=ON`), et tous les
   tests passent, sauf ceux marqués `[gpu]` : les machines de GitHub n'ont pas de GPU. Les tags
   Catch2 deviennent des labels CTest (`ADD_TAGS_AS_LABELS`), et la CI lance
@@ -3507,7 +3530,11 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
 56. ✅ **Plus d'ImGui** — types des outils en `math::Vec2` et `math::Vec4`, dépendance `imgui` et
     FreeType retirées de `vcpkg.json`.
 
-Ensuite, sans ordre figé : CI Linux.
+57. ✅ **CI Linux** — Ubuntu 24.04 et GCC 14, Debug et Release, mêmes tests sans GPU que sous
+    Windows ; code relogeable pour la bibliothèque du moteur, tests des processus et des bibliothèques
+    sur les deux systèmes.
+
+Ensuite, sans ordre figé : à choisir dans les pistes ci-dessous.
 
 ## Questions ouvertes
 
@@ -3612,7 +3639,7 @@ Ensuite, sans ordre figé : CI Linux.
   du jeu (tirées des commentaires de leur code), et des préréglages faits de préfabs du projet ; un
   panneau redessiné seulement quand il change ; les polices de l'éditeur
   cuites une fois et gardées en cache plutôt qu'à chaque lancement.
-- **CI, la suite** : Linux, puis macOS ; les tests `[gpu]` sur un rendu logiciel (lavapipe,
+- **CI, la suite** : macOS ; Clang à côté de GCC sous Linux ; les tests `[gpu]` sur un rendu logiciel (lavapipe,
   SwiftShader) ou une machine avec GPU ; actions passées à Node.js 24 (celles en v4 tournent sur
   Node.js 20, déprécié) ; cache de compilation (sccache) ; éditeur et lecteur publiés en artefacts
   à chaque version ; badge d'état dans le README.

@@ -18,7 +18,15 @@ function(devex_set_warnings target)
             -Wpedantic
             -Wconversion
             -Wshadow
+            # Designated initializers leave out the fields whose default member initializers fit,
+            # which is how the engine fills its structures; GCC would report each of them.
+            -Wno-missing-field-initializers
         )
+        # GCC's guess that a value may be read uninitialized, once it optimizes, reports values
+        # of std::optional read only after they were checked. MSVC warns of the real cases.
+        if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+            target_compile_options(${target} PRIVATE -Wno-maybe-uninitialized)
+        endif()
     endif()
 
     if(DEVEX_WARNINGS_AS_ERRORS)

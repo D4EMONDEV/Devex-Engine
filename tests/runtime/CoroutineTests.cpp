@@ -84,8 +84,8 @@ Coroutine countFrames(CoroutineContext& co, std::vector<std::string>& log)
 // Tells when its frame is destroyed, as the destructors of its locals run.
 struct Witness
 {
-    explicit Witness(bool& destroyed)
-        : destroyed(destroyed)
+    explicit Witness(bool& flag)
+        : destroyed(flag)
     {
     }
     ~Witness()

@@ -56,6 +56,14 @@
             }
         },
         {
+            "name": "linux-release",
+            "displayName": "Linux Release",
+            "inherits": "linux-debug",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release"
+            }
+        },
+        {
             "name": "macos-debug",
             "displayName": "macOS Debug",
             "generator": "Ninja",
@@ -85,6 +93,10 @@
             "configurePreset": "linux-debug"
         },
         {
+            "name": "build-linux-release",
+            "configurePreset": "linux-release"
+        },
+        {
             "name": "build-macos-debug",
             "configurePreset": "macos-debug"
         }
@@ -100,6 +112,13 @@
         {
             "name": "test-linux-debug",
             "configurePreset": "linux-debug",
+            "output": {
+                "outputOnFailure": true
+            }
+        },
+        {
+            "name": "test-linux-release",
+            "configurePreset": "linux-release",
             "output": {
                 "outputOnFailure": true
             }

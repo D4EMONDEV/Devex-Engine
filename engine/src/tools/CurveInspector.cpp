@@ -441,11 +441,11 @@ public:
         {
             const CurveKey& key = editor.curve.keys[static_cast<std::size_t>(selected)];
             const bool middleKey = !isEndKey(editor, selected);
-            const auto number = [&](Entity box, float value, bool open) {
-                scene::UiNumberField& field = ui.scene().get<scene::UiNumberField>(box);
+            const auto number = [&](Entity numberBox, float value, bool open) {
+                scene::UiNumberField& field = ui.scene().get<scene::UiNumberField>(numberBox);
                 field.interactable = open;
-                ui.scene().get<scene::UiRect>(box).opacity = open ? 1.0f : 0.5f;
-                if (world.editedField() != box && world.held() != box)
+                ui.scene().get<scene::UiRect>(numberBox).opacity = open ? 1.0f : 0.5f;
+                if (world.editedField() != numberBox && world.held() != numberBox)
                 {
                     field.value = value;
                 }
