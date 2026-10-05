@@ -150,6 +150,33 @@ TEST_CASE("IDE discovery ignores missing executables and deduplicates installati
     REQUIRE(found.size() == 2);
     CHECK(found[0].name == "JetBrains CLion");
     CHECK(found[1].name == "JetBrains Rider");
+    CAPTURE(found[1].executable, rider);
     CHECK(sameEditorPath(found[1].executable, rider));
     CHECK(externalEditorKind("RIDER64.EXE") == ExternalEditor::Rider);
+}
+
+TEST_CASE("Editor paths recognize filesystem aliases and keep distinct files separate", "[tools][scripts]")
+{
+    using namespace devex;
+    ScriptDirectory directory;
+    const auto executable = directory.path / "Installation/bin/rider64.exe";
+    const auto alias = directory.path / "Alias/bin/rider64.exe";
+    const auto other = directory.path / "Other/bin/rider64.exe";
+    for (const auto& file : {executable, alias, other})
+    {
+        std::filesystem::create_directories(file.parent_path());
+    }
+    REQUIRE(core::writeTextFile(executable, ""));
+    REQUIRE(core::writeTextFile(other, ""));
+    // Hard links need no symlink privilege on Windows and exercise identity, not path spelling.
+    std::error_code error;
+    std::filesystem::create_hard_link(executable, alias, error);
+    REQUIRE_FALSE(error);
+    CHECK(sameEditorPath(executable, alias));
+    CHECK(sameEditorPath(alias, executable));
+    CHECK_FALSE(sameEditorPath(executable, other));
+    CHECK_FALSE(sameEditorPath(executable, directory.path / "missing.exe"));
+    CHECK_FALSE(sameEditorPath(directory.path / "missing.exe", directory.path / "absent.exe"));
+    const std::array candidates{executable, alias, other};
+    CHECK(findScriptEditors(candidates).size() == 2);
 }

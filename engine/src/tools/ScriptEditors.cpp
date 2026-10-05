@@ -107,10 +107,18 @@ ExternalEditor externalEditorKind(const std::filesystem::path& executable)
 bool sameEditorPath(const std::filesystem::path& left, const std::filesystem::path& right)
 {
 #ifdef _WIN32
-    return lower(core::toUtf8(left.lexically_normal())) == lower(core::toUtf8(right.lexically_normal()));
+    const bool sameSpelling = lower(core::toUtf8(left.lexically_normal())) == lower(core::toUtf8(right.lexically_normal()));
 #else
-    return left.lexically_normal() == right.lexically_normal();
+    const bool sameSpelling = left.lexically_normal() == right.lexically_normal();
 #endif
+    if (sameSpelling)
+    {
+        return true;
+    }
+    // Discovery returns canonical paths, but settings and TEMP can use short Windows names
+    // (RUNNER~1 on CI) or filesystem links to the same installation.
+    std::error_code error;
+    return std::filesystem::equivalent(left, right, error) && !error;
 }
 
 std::vector<InstalledScriptEditor> findScriptEditors(std::span<const std::filesystem::path> candidates)
