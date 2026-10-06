@@ -23,6 +23,9 @@ et rendu avec Vulkan. Il est distribué sous licence [MIT](LICENSE).
 Le détail, l'architecture des modules et les jalons sont dans
 [docs/decisions.md](docs/decisions.md).
 
+Pour créer un premier jeu, suivre le [guide de démarrage 2D et 3D](docs/guide-demarrage-2d-3d.md) :
+captures de l'éditeur, scènes de base, entrées, scripts C#, animations, collisions et export.
+
 ## État actuel
 
 - `Devex::Core` : `Result`/`Error`, journal `DEVEX_LOG_*`, assertions, `SlotMap`, `Uuid`,
