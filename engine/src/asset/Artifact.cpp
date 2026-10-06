@@ -103,6 +103,7 @@ std::uint32_t artifactVersion(AssetType type) noexcept
     case AssetType::Tileset:
     case AssetType::Animator:
     case AssetType::NavMesh:
+    case AssetType::Translation:
         return 1;
     }
     return 0;
@@ -112,7 +113,7 @@ std::uint32_t artifactLayouts() noexcept
 {
     std::uint32_t combined = 0;
     for (std::uint8_t value = static_cast<std::uint8_t>(AssetType::Mesh);
-         value <= static_cast<std::uint8_t>(AssetType::NavMesh); ++value)
+         value <= static_cast<std::uint8_t>(AssetType::Translation); ++value)
     {
         combined = combined * 31 + artifactVersion(static_cast<AssetType>(value));
     }
@@ -932,6 +933,48 @@ core::Result<NavMeshData> decodeNavMesh(std::span<const std::byte> bytes)
         return std::unexpected(valid.error());
     }
     return navMesh;
+}
+
+std::vector<std::byte> encodeTranslation(const TranslationData& translation)
+{
+    BinaryWriter writer = beginArtifact(AssetType::Translation);
+    for (const std::vector<std::string>* const texts : {&translation.languages, &translation.keys, &translation.messages})
+    {
+        writer.write(static_cast<std::uint32_t>(texts->size()));
+        for (const std::string& text : *texts)
+        {
+            writer.writeString(text);
+        }
+    }
+    return writer.take();
+}
+
+core::Result<TranslationData> decodeTranslation(std::span<const std::byte> bytes)
+{
+    BinaryReader reader(bytes);
+    if (core::Result<void> header = readHeader(reader, AssetType::Translation); !header)
+    {
+        return std::unexpected(header.error());
+    }
+    TranslationData translation;
+    for (std::vector<std::string>* const texts : {&translation.languages, &translation.keys, &translation.messages})
+    {
+        const auto count = reader.read<std::uint32_t>();
+        for (std::uint32_t index = 0; index < count && !reader.failed(); ++index)
+        {
+            texts->push_back(reader.readString());
+        }
+    }
+    if (reader.failed())
+    {
+        return std::unexpected(truncated(AssetType::Translation));
+    }
+    if (translation.messages.size() != translation.keys.size() * translation.languages.size())
+    {
+        return core::makeError(core::ErrorCode::Parse, "a table of translations has {} messages for {} keys in {} languages",
+                               translation.messages.size(), translation.keys.size(), translation.languages.size());
+    }
+    return translation;
 }
 
 core::Result<ThemeData> decodeTheme(std::span<const std::byte> bytes)

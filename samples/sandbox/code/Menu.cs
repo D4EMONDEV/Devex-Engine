@@ -11,7 +11,9 @@ public class SandboxSave
 // The interface of the sandbox: a main menu, a settings panel, a pause menu and a HUD, all built
 // from Canvas and UiRect entities in the scene. This script only shows one of them at a time and
 // answers the buttons by the action they carry. The settings the player changes stay from one game
-// to the next, and the pause menu saves the game, which the main menu continues.
+// to the next, and the pause menu saves the game, which the main menu continues. The texts of the
+// interface are written in French and are the keys of translations/sandbox.csv, which also says
+// them in English: the list of languages of the settings switches between the two.
 public class MenuController : Component
 {
     // The only slot of the sandbox.
@@ -35,6 +37,8 @@ public class MenuController : Component
     public Entity FullscreenToggle;
     // The list of the difficulty, whose choice the player keeps too.
     public Entity DifficultyDropdown;
+    // The list of the languages of the translations, each named in itself.
+    public Entity LanguageDropdown;
 
     // The last save beside the main menu, its picture and what it holds; the button that continues
     // it, and the text of the one that saves.
@@ -55,6 +59,8 @@ public class MenuController : Component
     // What says the game was saved, and the fade of the text of the button it plays.
     private Coroutine? _confirmation;
     private TweenHandle _fade;
+    // The codes of the languages the list shows, in its order.
+    private string[] _languages = [];
 
     public override void Start()
     {
@@ -149,6 +155,12 @@ public class MenuController : Component
             DifficultyDropdown.TryGet(out UiDropdown difficulty))
         {
             PlayerSettings.SetInt("difficulty", difficulty.Selected);
+        }
+        // Another language: every text of the interface follows at once, and the player keeps it.
+        if (Ui.WasChanged("language") && LanguageDropdown.IsAlive &&
+            LanguageDropdown.TryGet(out UiDropdown language) && language.Selected >= 0 && language.Selected < _languages.Length)
+        {
+            Localization.Language = _languages[language.Selected];
         }
         // Enter ends the edit of the field, and hands over what was typed.
         if (Ui.WasSubmitted("name") && NameField.IsAlive && NameField.TryGet(out UiText typed))
@@ -305,6 +317,21 @@ public class MenuController : Component
         {
             difficulty.Selected = PlayerSettings.GetInt("difficulty", 1);
         }
+        // The languages of the tables, each in itself, the one shown chosen.
+        _languages = Localization.Languages;
+        if (LanguageDropdown.IsAlive && LanguageDropdown.TryGet(out UiDropdown language))
+        {
+            language.Options.Clear();
+            foreach (string code in _languages)
+            {
+                language.Options.Add(Localization.LanguageName(code));
+            }
+            language.Selected = Array.IndexOf(_languages, Localization.Language);
+        }
+        if (LanguageDropdown.IsAlive && LanguageDropdown.TryGet(out UiText chosen))
+        {
+            chosen.Text = Localization.LanguageName(Localization.Language);
+        }
         PlayerName = PlayerSettings.GetString("player_name", PlayerName);
         if (NameField.IsAlive && NameField.TryGet(out UiText name))
         {
@@ -333,7 +360,8 @@ public class MenuController : Component
         if (SaveInfo.IsAlive && SaveInfo.TryGet(out UiText info))
         {
             var played = TimeSpan.FromSeconds(last.PlayTime);
-            info.Text = $"{last.Label}, le {last.Time:dd/MM à HH:mm}\n{(int)played.TotalMinutes} min {played.Seconds:00} s de jeu";
+            info.Text = Localization.Tr("SAVE_INFO", ("label", last.Label), ("date", last.Time.ToString("dd/MM HH:mm")),
+                                        ("minutes", (int)played.TotalMinutes), ("seconds", played.Seconds.ToString("00")));
         }
     }
 

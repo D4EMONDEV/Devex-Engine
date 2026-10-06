@@ -27,6 +27,10 @@ public:
     void setFullscreen(bool fullscreen);
     [[nodiscard]] std::optional<bool> vsync() const noexcept;
     void setVsync(bool vsync);
+    // The language the player chose, a code such as "fr"; nothing while they have not chosen, so
+    // that the language of the system decides.
+    [[nodiscard]] const std::optional<std::string>& language() const noexcept;
+    void setLanguage(std::string language);
 
     // From 0 to 1, for Master or an audio group; 1 while the player has not chosen.
     [[nodiscard]] float volume(std::string_view group) const;
@@ -51,6 +55,7 @@ public:
 private:
     std::optional<bool> m_fullscreen;
     std::optional<bool> m_vsync;
+    std::optional<std::string> m_language;
     std::map<std::string, float, std::less<>> m_volumes;
     std::map<std::string, serialization::TextValue, std::less<>> m_values;
     bool m_changed = false;

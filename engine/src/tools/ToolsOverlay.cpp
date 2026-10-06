@@ -417,6 +417,7 @@ void updateEditor(ToolsState& state, scene::Scene& scene, PlayState playState)
     detail::drawTextEditorPanel(state, scene);
     detail::drawAnimationPanel(state, scene);
     detail::drawAnimatorPanel(state, scene);
+    detail::drawTranslationsPanel(state);
     detail::drawEditorPopups(state, scene);
     detail::handleEntityShortcuts(state, scene);
     // Over every window: the menus of the menu bar, and the tooltips of the strips.
@@ -517,6 +518,11 @@ void ToolsOverlay::setVisible(bool visible) noexcept
 bool ToolsOverlay::capturesKeyboard() const noexcept
 {
     return m_state->capturesKeyboard;
+}
+
+const std::string& ToolsOverlay::previewLanguage() const noexcept
+{
+    return m_state->previewLanguage;
 }
 
 bool ToolsOverlay::isAnimating() const noexcept
@@ -657,6 +663,7 @@ void ToolsOverlay::prepareRender(scene::Scene& scene, render::RenderWorld& world
     detail::renderProfiler(state, world);
     detail::renderAnimationPanel(state, world);
     detail::renderAnimatorPanel(state, world);
+    detail::renderTranslationsPanel(state, world);
     detail::renderTextEditor(state, world);
     detail::renderViewportOverlay(state, world);
     detail::renderEditorFrame(state, world);
@@ -856,6 +863,10 @@ void ToolsOverlay::openWindow(EditorWindow window)
     case EditorWindow::Animator:
         m_state->showAnimator = true;
         m_state->focusAnimator = true;
+        break;
+    case EditorWindow::Translations:
+        m_state->showTranslations = true;
+        m_state->focusTranslations = true;
         break;
     }
 }

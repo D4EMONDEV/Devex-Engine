@@ -2932,6 +2932,69 @@ les assets s'écrivent au fil de leur lecture.
   l'interface ne capture plus la souris, et les touches du bac à sable (N, C, Tab, Échap) se
   taisent pendant la saisie.
 
+### Traductions
+
+Jalon 62, comme la localisation de Godot.
+
+- **Tables** : une table de traductions est un fichier `.csv`, importé en asset `Translation` (type
+  16) : la première colonne tient les clés, les suivantes une langue chacune (`en`, `fr`, `pt_BR`,
+  `zh_Hant`… ; `fr-fr` s'écrit `fr_FR`). Les colonnes dont le nom commence par `_` sont des notes,
+  laissées de côté ; une ligne sans clé est sautée, et une clé écrite deux fois garde sa première
+  ligne. Dans les messages, `\n`, `\t` et `\\` valent un saut de ligne, une tabulation et une barre
+  oblique inverse. Le séparateur se devine sur la première ligne : la virgule, le point-virgule que
+  les tableurs écrivent en français, ou la tabulation ; l'option d'import `delimiter` le fixe. Une
+  colonne qui ne nomme pas une langue fait échouer l'import plutôt que d'être prise pour une. Le CSV
+  s'ouvre dans un tableur ; le format PO (gettext) viendra plus tard.
+- **Recherche** (`asset::Localization`) : toutes les tables du projet sont fusionnées, dans l'ordre
+  de leurs noms ; un message manquant dans l'une est pris dans la suivante. Une clé se cherche dans
+  la langue montrée, puis dans la **langue de repli** du projet ; sans message, la clé s'affiche
+  telle quelle, si bien qu'un texte qui n'est pas une clé reste ce qu'il est. Une langue demandée
+  prend la plus proche des tables : elle-même, sa langue de base (`fr` pour `fr_CA`), ou la même
+  langue d'une autre région. `translate(clé, valeurs)` remplace chaque `{nom}` par sa valeur ;
+  `{{` et `}}` écrivent des accolades. Rien n'est traduit tant qu'aucune langue n'est choisie : ce
+  que montre l'éditeur avant un aperçu.
+- **Interfaces** : comme chez Godot, le texte d'un `UiText` sert de clé et s'affiche traduit quand
+  une table l'a, au dessin, sans changer le composant. La case `translate` (cochée par défaut)
+  l'empêche, pour un texte que le jeu écrit lui-même (un nom, un score). Les options d'une liste
+  déroulante et les infobulles suivent le texte de leur élément ; un champ ne traduit jamais ce qu'on
+  y tape, seulement son texte d'attente. La mise en page ne mesure pas les textes : changer de langue
+  ne déplace rien.
+- **Langue du jeu** : au lancement, celle que le joueur a choisie (`PlayerSettings::language`,
+  gardée dans `settings.dvx`), sinon la première langue préférée du système que les tables ont
+  (`Platform::preferredLanguages`, `SDL_GetPreferredLocales`), sinon la langue de repli. Une langue
+  que le code choisit pendant le jeu devient celle du joueur. Joué depuis l'éditeur, le jeu prend la
+  **langue de test** du projet quand elle est réglée.
+- **Code** : `SystemContext::localization` et `Application::localization()` en C++ (`translate`,
+  `setLanguage`, `languages`) ; en C#, la classe `Localization` : `Language` (lu et écrit),
+  `Languages`, `FallbackLanguage`, `Tr("CLÉ")`, `Tr("SCORE", ("points", 12))` et `LanguageName("fr")`
+  (« Français », le nom d'une langue en elle-même, pour un menu de langues). L'API des jeux passe à
+  19, l'amorce C# à 22.
+- **Polices** : une police cuit, en plus de l'alphabet latin, tous les caractères qu'écrivent les
+  tables du projet, et les noms de leurs langues en elles-mêmes : le russe, le grec ou le japonais
+  s'affichent sans réglage, et l'atlas ne grossit que de ce qui sert (plus large, 2048 à 8192
+  pixels, pour les milliers de caractères du chinois ou du japonais, qui ne sont pas crénés). Les
+  tables sont des dépendances de l'import des polices (`Importer::readsTranslations`) : une table
+  modifiée, ajoutée ou retirée fait recuire les polices.
+- **Export** : les tables partent toujours avec le jeu, puisque n'importe quel texte peut être une
+  clé.
+- **Éditeur** : le panneau **Translations** (en bas, *Editor > Panels*, ou double-clic sur un
+  `.csv`) montre une table comme un tableur : les clés en lignes, les langues en colonnes, dans une
+  liste virtuelle (`UiVirtualList`) aux colonnes de `UiTable`. Un clic sur une case l'édite en
+  place ; Entrée valide et descend à la case du dessous, Échap annule ; un clic sur l'en-tête d'une
+  colonne change son code de langue. Les cases manquantes sont teintées et comptées dans l'en-tête ;
+  *+ Key* ajoute une clé, *+ Language* une colonne (les langues courantes, une autre, ou des notes),
+  *Missing* ne garde que les clés incomplètes, le filtre cherche dans toutes les cases. Le menu d'une
+  ligne la monte, la descend ou la supprime, celui d'un en-tête retire la colonne. Chaque changement
+  réécrit le fichier (en gardant son séparateur et sa marque UTF-8), annulable par Ctrl+Z et Ctrl+Y
+  quand le panneau a le clavier ; un fichier changé ailleurs, par un tableur, est relu. L'inspecteur
+  d'un `.csv` donne ses langues et ce qui manque à chacune, et le séparateur. *Create New* propose
+  *Translation Table* ; *Project Settings > Localization* règle la langue de repli et la langue de
+  test ; le bouton de langue de la barre de la vue (en 2D, ou en 3D quand les interfaces s'y
+  montrent) prévisualise les interfaces dans une langue, comme *Preview Translation* de Godot.
+- **Bac à sable** : ses textes, écrits en français, sont les clés de `translations/sandbox.csv`,
+  qui les donne aussi en anglais (à la façon de gettext) ; l'écran des réglages a une liste des
+  langues, chacune nommée en elle-même, et la dernière sauvegarde se décrit par `Localization.Tr`.
+
 ### Gameplay
 
 - **Modèle** : les données du jeu sont des **composants** réfléchis (sauvegardés, éditables dans
@@ -3612,6 +3675,10 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
 61. ✅ **Éditeur au repos** — plein régime tant que quelque chose bouge et une demi-seconde après,
     puis une image à chaque événement ou toutes les 250 ms ; *Update Continuously* pour tout
     redessiner, comme dans Godot.
+62. ✅ **Traductions** — tables CSV importées, textes des interfaces traduits d'eux-mêmes, `tr()` en
+    C++ et `Localization.Tr` en C#, langue du joueur ou du système, polices qui cuisent les
+    caractères des traductions ; panneau Translations en tableur, aperçu d'une langue dans la vue et
+    réglages Localization du projet.
 
 Ensuite, sans ordre figé : à choisir dans les pistes ci-dessous.
 
@@ -3699,6 +3766,10 @@ Ensuite, sans ordre figé : à choisir dans les pistes ci-dessous.
   souris et molette comme axes (regarder, zoomer), modificateurs (inverser, échelle, courbe),
   combinaisons (Ctrl+S) et appuis longs ou doubles, navigation de l'interface par les actions,
   conflits signalés à la réaffectation, glyphes des boutons selon la manette, vibrations.
+- **Traductions, la suite** : fichiers PO (gettext) et pluriels, contextes d'une même clé, texte
+  bidirectionnel pour l'arabe et l'hébreu, assets remplacés par langue (images, sons), pseudo-
+  localisation pour repérer les textes non traduits, extraction des clés des scènes et du code vers
+  une table, polices de repli quand une police n'a pas les caractères d'une langue.
 - **UI des jeux, la suite** : transitions et animations d'éléments, position de la fenêtre de la
   méthode de saisie sous le curseur dans les jeux, polices de repli pour les écritures non cuites,
   texte bidirectionnel et écritures complexes, sélection d'un mot au double clic, annulation dans

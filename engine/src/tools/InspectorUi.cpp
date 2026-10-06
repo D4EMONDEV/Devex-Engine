@@ -1817,6 +1817,9 @@ void InspectorUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& edit
         case asset::AssetType::Animator:
             kind = "animator";
             break;
+        case asset::AssetType::Translation:
+            kind = "translation";
+            break;
         default:
             kind = "asset";
             break;
@@ -1896,6 +1899,7 @@ void InspectorUi::updatePage(ToolsState& state, EditorUiKit& kit, const scene::S
                : kind == "sprite frames"  ? makeSpriteFramesPage()
                : kind == "tileset"        ? makeTilesetPage()
                : kind == "animator"       ? makeAnimatorPage()
+               : kind == "translation"    ? makeTranslationPage()
                : kind == "asset"          ? makeAssetPage()
                                           : makeEmptyPage();
         pageKind = kind;

@@ -188,6 +188,11 @@ struct ProjectSettingsUi : SettingsUi
     PanelButton addSortingLayer;
     // Audio.
     scene::Entity masterVolume;
+    // The languages of the translations: the fallback one, and the one played in from the editor.
+    scene::Entity fallbackLanguage;
+    scene::Entity testLanguage;
+    std::vector<std::string> fallbackCodes;
+    std::vector<std::string> testCodes;
     std::array<scene::Entity, asset::audioGroupCount> groupNames{};
     std::array<scene::Entity, asset::audioGroupCount> groupVolumes{};
     InputMapUi input;

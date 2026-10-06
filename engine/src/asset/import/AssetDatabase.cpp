@@ -1,4 +1,5 @@
 #include <devex/asset/Artifact.hpp>
+#include <devex/asset/TranslationData.hpp>
 #include <devex/asset/import/AssetDatabase.hpp>
 #include <devex/asset/import/Importer.hpp>
 #include <devex/asset/import/MetaFile.hpp>
@@ -117,6 +118,8 @@ struct ImportRecord
     // The artifact layouts the cooked files follow, as artifactLayouts() numbers them.
     std::uint32_t layouts = 0;
     std::uint64_t settingsHash = 0;
+    // For an importer that reads the tables of translations: the characters they wrote.
+    std::uint64_t translationsHash = 0;
     FileStamp source;
     std::vector<Dependency> dependencies;
     std::vector<AssetInfo> artifacts;
@@ -144,6 +147,10 @@ void addStamp(std::vector<serialization::TextProperty>& properties, const FileSt
         {"version", TextValue(static_cast<std::int64_t>(record.importerVersion))});
     header.attributes.push_back({"layouts", TextValue(static_cast<std::int64_t>(record.layouts))});
     header.attributes.push_back({"settings", TextValue(core::toHex(record.settingsHash))});
+    if (record.translationsHash != 0)
+    {
+        header.attributes.push_back({"translations", TextValue(core::toHex(record.translationsHash))});
+    }
     addStamp(header.properties, record.source);
     if (!record.error.empty())
     {
@@ -247,6 +254,7 @@ void addStamp(std::vector<serialization::TextProperty>& properties, const FileSt
         record.layouts = static_cast<std::uint32_t>(serialization::asInteger(*layouts).value_or(0));
     }
     record.settingsHash = *settings;
+    record.translationsHash = parseHex(header.findAttribute("translations")).value_or(0);
     record.source = *source;
     if (const TextValue* const error = header.findProperty("error"))
     {
@@ -281,6 +289,29 @@ void addStamp(std::vector<serialization::TextProperty>& properties, const FileSt
         }
     }
     return record;
+}
+
+// The characters the tables of translations write, as one number: the fonts bake them, and import
+// again only when it changes, not at every change of a message.
+[[nodiscard]] std::uint64_t translationCharactersHash(std::span<const std::filesystem::path> tables)
+{
+    std::vector<std::uint32_t> characters;
+    for (const std::filesystem::path& table : tables)
+    {
+        const core::Result<std::string> text = core::readTextFile(table);
+        const core::Result<TranslationData> translation =
+            text ? parseTranslationCsv(*text) : core::Result<TranslationData>(std::unexpected(text.error()));
+        if (translation)
+        {
+            const std::vector<std::uint32_t> written = translationCharacters(*translation);
+            characters.insert(characters.end(), written.begin(), written.end());
+        }
+    }
+    std::ranges::sort(characters);
+    const auto [repeated, end] = std::ranges::unique(characters);
+    characters.erase(repeated, end);
+    // Never 0, which records without tables keep.
+    return core::hash64(std::as_bytes(std::span(characters))) | 1u;
 }
 
 [[nodiscard]] std::string lowercaseExtension(const std::filesystem::path& file)
@@ -350,6 +381,8 @@ struct ImportJob
     std::filesystem::path importedDirectory;
     std::filesystem::path recordFile;
     std::vector<AssetInfo> previousArtifacts;
+    // The tables of translations of the project, for an importer that reads them.
+    std::vector<std::filesystem::path> translations;
     core::JobSystem* jobs = nullptr;
 };
 
@@ -399,6 +432,10 @@ void runImport(const ImportJob& job, const std::shared_ptr<SharedState>& shared)
     record.importerVersion = job.importer->version;
     record.layouts = artifactLayouts();
     record.settingsHash = importSettingsHash(job.meta);
+    if (job.importer->readsTranslations)
+    {
+        record.translationsHash = translationCharactersHash(job.translations);
+    }
     // Stamped before reading, so that a change during the import is seen by the next scan.
     record.source = fullStamp(job.file);
 
@@ -408,6 +445,7 @@ void runImport(const ImportJob& job, const std::shared_ptr<SharedState>& shared)
         .name = core::toUtf8(job.file.stem()),
         .options = job.meta.options,
         .subAssets = SubAssetIds(job.meta.subAssets),
+        .translations = job.translations,
         .jobs = job.jobs,
         .cancelled = &shared->cancelled,
     };
@@ -627,6 +665,15 @@ public:
         for (const AssetId id : deleted)
         {
             removeSource(id);
+        }
+
+        // Last, once every table of translations is known: the fonts bake their characters.
+        for (auto& [id, source] : m_sources)
+        {
+            if (source.importer->readsTranslations && !source.importing && needsImport(source))
+            {
+                queueImport(source);
+            }
         }
     }
 
@@ -1270,10 +1317,26 @@ private:
         {
             source.changedWhileImporting = true;
         }
-        else if (needsImport(source))
+        // What reads the translations waits for the end of the scan, which knows them all.
+        else if (!source.importer->readsTranslations && needsImport(source))
         {
             queueImport(source);
         }
+    }
+
+    // The tables of translations of the project, sorted.
+    [[nodiscard]] std::vector<std::filesystem::path> translationFiles() const
+    {
+        std::vector<std::filesystem::path> files;
+        for (const auto& [id, source] : m_sources)
+        {
+            if (source.importer->mainType == AssetType::Translation)
+            {
+                files.push_back(source.file.lexically_normal());
+            }
+        }
+        std::ranges::sort(files);
+        return files;
     }
 
     [[nodiscard]] bool needsImport(Source& source)
@@ -1290,14 +1353,42 @@ private:
         {
             return true;
         }
-
         const std::uint64_t previousTime = static_cast<std::uint64_t>(record.source.time);
         bool changed = !isUnchanged(source.file, record.source);
+        bool tablesChanged = false;
         for (Dependency& dependency : record.dependencies)
         {
-            changed = changed || !isUnchanged(core::pathFromUtf8(dependency.path), dependency.stamp);
+            bool& seen = source.importer->readsTranslations ? tablesChanged : changed;
+            seen = seen || !isUnchanged(core::pathFromUtf8(dependency.path), dependency.stamp);
         }
-        if (!changed && static_cast<std::uint64_t>(record.source.time) != previousTime)
+        // The tables of translations it read are its dependencies. Changed, come or gone, they import
+        // it again only when the characters they write change: a font bakes nothing else of them. A
+        // failed import kept none, and waits for a change of its own.
+        bool restamped = false;
+        if (source.importer->readsTranslations && record.error.empty() && !changed)
+        {
+            std::vector<std::filesystem::path> read;
+            for (const Dependency& dependency : record.dependencies)
+            {
+                read.push_back(core::pathFromUtf8(dependency.path).lexically_normal());
+            }
+            std::ranges::sort(read);
+            const std::vector<std::filesystem::path> tables = translationFiles();
+            if (tablesChanged || read != tables)
+            {
+                if (translationCharactersHash(tables) != record.translationsHash)
+                {
+                    return true;
+                }
+                record.dependencies.clear();
+                for (const std::filesystem::path& table : tables)
+                {
+                    record.dependencies.push_back({core::toUtf8(table), fullStamp(table)});
+                }
+                restamped = true;
+            }
+        }
+        if (!changed && (restamped || static_cast<std::uint64_t>(record.source.time) != previousTime))
         {
             static_cast<void>(writeText(recordFile(source.id), writeRecord(record)));
         }
@@ -1332,6 +1423,7 @@ private:
             .importedDirectory = importedDirectory(),
             .recordFile = recordFile(source.id),
             .previousArtifacts = source.record ? source.record->artifacts : std::vector<AssetInfo>{},
+            .translations = source.importer->readsTranslations ? translationFiles() : std::vector<std::filesystem::path>{},
             .jobs = &m_jobs,
         };
         {

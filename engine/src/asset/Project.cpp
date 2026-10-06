@@ -1,4 +1,5 @@
 #include <devex/asset/Project.hpp>
+#include <devex/asset/TranslationData.hpp>
 #include <devex/core/File.hpp>
 #include <devex/core/Path.hpp>
 #include <devex/core/Uuid.hpp>
@@ -285,6 +286,17 @@ void readWindowAndExport(const serialization::TextDocument& document, Project& p
             {
                 (section.type == "export_scene" ? project.exportSettings.scenes : project.exportSettings.includeFolders)
                     .push_back(*path);
+            }
+        }
+        else if (section.type == "localization")
+        {
+            if (const std::string* const fallback = stringAttribute(section, "fallback"); fallback != nullptr && isLanguageCode(*fallback))
+            {
+                project.localization.fallbackLanguage = normalizeLanguage(*fallback);
+            }
+            if (const std::string* const test = stringAttribute(section, "test"); test != nullptr && isLanguageCode(*test))
+            {
+                project.localization.testLanguage = normalizeLanguage(*test);
             }
         }
     }
@@ -619,6 +631,17 @@ std::string writeProjectText(const Project& project)
             serialization::TextSection& layerSection = document.sections.emplace_back();
             layerSection.type = "sorting_layer";
             layerSection.attributes.push_back({"name", serialization::TextValue(layer)});
+        }
+    }
+
+    if (project.localization != LocalizationSettings{})
+    {
+        serialization::TextSection& localization = document.sections.emplace_back();
+        localization.type = "localization";
+        localization.attributes.push_back({"fallback", serialization::TextValue(project.localization.fallbackLanguage)});
+        if (!project.localization.testLanguage.empty())
+        {
+            localization.attributes.push_back({"test", serialization::TextValue(project.localization.testLanguage)});
         }
     }
 

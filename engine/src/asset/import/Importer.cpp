@@ -423,6 +423,25 @@ core::Result<ImportResult> importCurveFile(ImportContext& context)
     return result;
 }
 
+core::Result<ImportResult> importTranslationFile(ImportContext& context)
+{
+    const core::Result<std::string> text = core::readTextFile(context.source);
+    if (!text)
+    {
+        return std::unexpected(text.error());
+    }
+    const std::string delimiter = context.stringOption("delimiter", "auto");
+    const char character = delimiter == "comma" ? ',' : delimiter == "semicolon" ? ';' : delimiter == "tab" ? '\t' : '\0';
+    const core::Result<TranslationData> translation = parseTranslationCsv(*text, character);
+    if (!translation)
+    {
+        return std::unexpected(translation.error());
+    }
+    ImportResult result;
+    result.artifacts.push_back({context.mainId, AssetType::Translation, context.name, encodeTranslation(*translation)});
+    return result;
+}
+
 core::Result<ImportResult> importSpriteFramesFile(ImportContext& context)
 {
     const core::Result<std::string> text = core::readTextFile(context.source);
@@ -594,7 +613,8 @@ std::span<const Importer> importers()
         Importer{
             .name = "font",
             // 2: central European letters, the punctuation of running text and the euro sign.
-            .version = 2,
+            // 3: the characters of the translations.
+            .version = 3,
             .mainType = AssetType::Font,
             .extensions = {".ttf", ".otf"},
             .defaultOptions =
@@ -603,6 +623,15 @@ std::span<const Importer> importers()
                     {"spread", TextValue(6.0)},
                 },
             .run = &importFontFile,
+            .readsTranslations = true,
+        },
+        Importer{
+            .name = "translation",
+            .version = 1,
+            .mainType = AssetType::Translation,
+            .extensions = {translationExtension},
+            .defaultOptions = {{"delimiter", TextValue(std::string("auto"))}},
+            .run = &importTranslationFile,
         },
         Importer{
             .name = "theme",

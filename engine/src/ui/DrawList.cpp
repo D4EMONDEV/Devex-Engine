@@ -242,7 +242,8 @@ void drawTextLayout(Builder& builder, const DrawContext& context, const LaidOutR
 void drawText(Builder& builder, const DrawContext& context, const LaidOutRect& rect,
               const scene::UiText& text)
 {
-    if (!context.fonts || text.text.empty())
+    const std::string_view shown = context.translated(text.text, text.translate);
+    if (!context.fonts || shown.empty())
     {
         return;
     }
@@ -262,12 +263,12 @@ void drawText(Builder& builder, const DrawContext& context, const LaidOutRect& r
     if (context.textCache != nullptr)
     {
         // The letters kept from the last frames, placed from the corner of the element.
-        drawTextLayout(builder, context, rect, text, context.textCache->layout(rect.entity, 0, *font.data, text.text, style, rect.size()),
+        drawTextLayout(builder, context, rect, text, context.textCache->layout(rect.entity, 0, *font.data, shown, style, rect.size()),
                        font, text.color, rect.min);
         return;
     }
     TextLayoutResult letters;
-    layoutText(*font.data, text.text, style, rect.min, rect.max, letters);
+    layoutText(*font.data, shown, style, rect.min, rect.max, letters);
     drawTextLayout(builder, context, rect, text, letters, font, text.color);
 }
 
@@ -953,7 +954,7 @@ void drawField(Builder& builder, const DrawContext& context, const LaidOutRect& 
         if (!field.placeholder.empty())
         {
             math::Vec2 origin{0.0f};
-            const TextLayoutResult& letters = lettersOf(2, field.placeholder, origin);
+            const TextLayoutResult& letters = lettersOf(2, context.translated(field.placeholder, text.translate), origin);
             drawTextLayout(builder, context, rect, text, letters, font, field.placeholderColor, origin);
         }
         if (edit != nullptr && edit->caretVisible)
@@ -1349,6 +1350,11 @@ void drawOverlayText(render::RenderWorld& world, const DrawContext& context, mat
     const scene::UiText style{.text = std::string(text.text), .size = text.size, .color = text.color};
     drawTextLayout(builder, context, LaidOutRect{.min = min, .max = max}, style, letters, font, text.color);
     std::erase_if(world.uiDraws, [](const render::UiDraw& batch) { return batch.indexCount == 0; });
+}
+
+std::string_view DrawContext::translated(std::string_view text, bool translate) const
+{
+    return translate && localization != nullptr ? localization->translate(text) : text;
 }
 
 math::Vec2 measureOverlayText(const DrawContext& context, const OverlayText& text)

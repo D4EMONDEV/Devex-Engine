@@ -177,6 +177,19 @@ struct DEVEX_API InputSettings
     bool operator==(const InputSettings&) const = default;
 };
 
+// The languages of a game: the one that shows where a translation is missing, and the one the
+// editor plays it in.
+struct DEVEX_API LocalizationSettings
+{
+    // What shows where the language of the player has no message, as a code such as "en".
+    std::string fallbackLanguage = "en";
+    // The language the game plays in from the editor, whatever the player or the system chose; empty
+    // to choose as the exported game does.
+    std::string testLanguage;
+
+    bool operator==(const LocalizationSettings&) const = default;
+};
+
 enum class ContentRoot : std::uint8_t
 {
     Assets,
@@ -201,6 +214,7 @@ struct DEVEX_API Project
     WindowSettings window;
     ExportSettings exportSettings;
     InputSettings input;
+    LocalizationSettings localization;
 
     [[nodiscard]] std::filesystem::path assetsDirectory() const
     {
@@ -230,8 +244,8 @@ struct DEVEX_API Project
 
 // Reads "[project format=1 name="My game" startup_scene="res://assets/scenes/Main.dvxscene"]" from
 // the .dvxproj file, followed by optional [physics], [physics_layer], [audio], [audio_group],
-// [sorting_layer], [window], [export], [export_scene], [export_folder], [input_context] and
-// [input_action] sections.
+// [sorting_layer], [window], [export], [export_scene], [export_folder], [input_context],
+// [input_action] and [localization] sections.
 [[nodiscard]] DEVEX_API core::Result<Project> loadProject(const std::filesystem::path& projectFile);
 // The same from the text of a project file, as exported games keep it; projectFile gives the
 // project its root.

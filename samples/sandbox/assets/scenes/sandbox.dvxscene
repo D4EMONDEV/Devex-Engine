@@ -911,7 +911,7 @@ visible = true
 
 [component type="UiLayout"]
 kind = "column"
-spacing = 10
+spacing = 8
 padding = vec4(0, 0, 0, 0)
 align = "center"
 
@@ -1271,6 +1271,80 @@ action = "difficulty"
 
 [component type="UiTooltip"]
 text = "Le nombre de robots et leur vitesse"
+
+[entity uuid="7e1b0a00-0001-4000-9000-000000000073" name="Langue"]
+parent = "7e1b0a00-0001-4000-9000-00000000000d"
+
+[component type="UiRect"]
+anchor_min = vec2(0, 0)
+anchor_max = vec2(1, 0)
+offset_min = vec2(0, 0)
+offset_max = vec2(0, 56)
+opacity = 1.0
+visible = true
+
+[entity uuid="7e1b0a00-0001-4000-9000-000000000074" name="Label"]
+parent = "7e1b0a00-0001-4000-9000-000000000073"
+
+[component type="UiRect"]
+anchor_min = vec2(0, 0)
+anchor_max = vec2(0, 1)
+offset_min = vec2(0, 0)
+offset_max = vec2(210, 0)
+opacity = 1.0
+visible = true
+style = "label"
+
+[component type="UiText"]
+text = "Langue"
+font = asset("3f5c9a10-8d21-4b77-9d3e-6a41c0f2e510")
+size = 26
+color = vec4(0.84687, 0.86316, 0.88792, 1.0)
+align = "left"
+vertical_align = "middle"
+wrap = false
+outline_width = 0.0
+raycast_target = false
+
+[entity uuid="7e1b0a00-0001-4000-9000-000000000075" name="Liste"]
+parent = "7e1b0a00-0001-4000-9000-000000000073"
+
+[component type="UiRect"]
+anchor_min = vec2(0, 0)
+anchor_max = vec2(0, 1)
+offset_min = vec2(220, 4)
+offset_max = vec2(480, -4)
+opacity = 1.0
+visible = true
+style = "choice"
+
+[component type="UiImage"]
+color = vec4(0.00754, 0.00913, 0.01298, 1.0)
+corner_radius = 8.0
+raycast_target = true
+
+[component type="UiText"]
+text = "Français"
+translate = false
+font = asset("3f5c9a10-8d21-4b77-9d3e-6a41c0f2e510")
+size = 26
+color = vec4(0.84687, 0.86316, 0.88792, 1.0)
+align = "left"
+vertical_align = "middle"
+wrap = false
+outline_width = 0.0
+raycast_target = false
+
+[component type="UiDropdown"]
+options = list("Français", "English")
+selected = 0
+list_color = vec4(0.01521, 0.01938, 0.02956, 1.0)
+highlight_color = vec4(0.09084, 0.23074, 0.52711, 1.0)
+arrow_color = vec4(0.62396, 0.65837, 0.70110, 1.0)
+action = "language"
+
+[component type="UiTooltip"]
+text = "La langue de tout le jeu"
 
 [entity uuid="7e1b0a00-0001-4000-9000-000000000050" name="Sauter"]
 parent = "7e1b0a00-0001-4000-9000-00000000000d"
@@ -2322,5 +2396,6 @@ save_info = entity("7e1b0a00-0001-4000-9000-000000000066")
 save_label = entity("7e1b0a00-0001-4000-9000-000000000063")
 fullscreen_toggle = entity("7e1b0a00-0001-4000-9000-00000000003c")
 difficulty_dropdown = entity("7e1b0a00-0001-4000-9000-000000000072")
+language_dropdown = entity("7e1b0a00-0001-4000-9000-000000000075")
 continue_button = entity("7e1b0a00-0001-4000-9000-000000000060")
 player_name = ""

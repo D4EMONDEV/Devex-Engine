@@ -289,6 +289,30 @@ public class Archivist : Component
     }
 }
 
+// Reads the translations of the game, and changes its language.
+public class Translator : Component
+{
+    public string Before = "";
+    public string Language = "";
+    public string Greeting = "";
+    public string Score = "";
+    public string Missing = "";
+    public string Languages = "";
+    public string Native = "";
+
+    public override void Update(float delta)
+    {
+        Before = Localization.Tr("HELLO");
+        Localization.Language = "fr_CA";
+        Language = Localization.Language;
+        Greeting = Localization.Tr("HELLO");
+        Score = Localization.Tr("SCORE", ("points", 12));
+        Missing = Localization.Tr("Not a key");
+        Languages = string.Join(",", Localization.Languages);
+        Native = Localization.LanguageName("fr");
+    }
+}
+
 // Asks for a scene in the background, and reads how far it is.
 public class Loader : Component
 {

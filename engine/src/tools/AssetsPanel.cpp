@@ -120,6 +120,8 @@ struct Folder
         return {icons::Workflow, colors.animation};
     case asset::AssetType::NavMesh:
         return {icons::Footprints, colors.physics};
+    case asset::AssetType::Translation:
+        return {icons::Languages, colors.scene};
     default:
         break;
     }
@@ -596,6 +598,7 @@ void FileSystemUi::choose(ToolsState& state, const Node& node, bool openText)
     case asset::AssetType::Animator:
     case asset::AssetType::Model:
     case asset::AssetType::AudioClip:
+    case asset::AssetType::Translation:
         selectAsset(state, node.asset);
         break;
     default:
@@ -635,6 +638,9 @@ void FileSystemUi::activate(ToolsState& state, scene::Scene& edited, const Node&
     case asset::AssetType::Animator:
         // Animators open in the Animator panel.
         focusPanel(state, animatorWindow);
+        break;
+    case asset::AssetType::Translation:
+        openTranslationTable(state, node.asset);
         break;
     case asset::AssetType::Model:
         requestInstantiateModel(state, node.asset, core::Uuid{});

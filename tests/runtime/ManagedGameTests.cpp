@@ -4,6 +4,7 @@
 #include <devex/animation/AnimationWorld.hpp>
 #include <devex/animation/TweenWorld.hpp>
 #include <devex/asset/Artifact.hpp>
+#include <devex/asset/Localization.hpp>
 #include <devex/asset/Primitives.hpp>
 #include <devex/asset/import/Importer.hpp>
 #include <devex/audio/AudioWorld.hpp>
@@ -37,6 +38,7 @@
 #include <catch2/generators/catch_generators.hpp>
 
 #include <algorithm>
+#include <array>
 #include <filesystem>
 #include <format>
 #include <memory>
@@ -245,7 +247,7 @@ TEST_CASE("The application runs late cameras after interpolation and restores si
 TEST_CASE("The C# runtime registers components and runs them", "[runtime][managed]")
 {
     const std::unique_ptr<ManagedGame> game = startRuntime();
-    CHECK(game->componentTypes().size() == 22);
+    CHECK(game->componentTypes().size() == 23);
 
     devex::scene::ComponentRegistry& registry = devex::scene::componentRegistry();
     const devex::scene::ComponentType* const mover = registry.find("Mover");
@@ -946,6 +948,39 @@ TEST_CASE("C# code saves objects into slots and keeps the settings of the player
     game->unloadAssembly();
     std::error_code error;
     std::filesystem::remove_all(folder, error);
+}
+
+TEST_CASE("C# code reads the translations of the game and changes its language", "[runtime][managed][translation]")
+{
+    const std::unique_ptr<ManagedGame> game = startRuntime();
+    const devex::scene::ComponentType* const translator = devex::scene::componentRegistry().find("Translator");
+    REQUIRE(translator != nullptr);
+    Scene scene;
+    const Entity entity = scene.createEntity("Translator");
+    REQUIRE(translator->emplace(scene, entity) != nullptr);
+    const auto value = [&](const char* name) -> std::string& {
+        return field<std::string>(*translator, const_cast<void*>(translator->find(scene, entity)), name);
+    };
+
+    const auto table = devex::asset::parseTranslationCsv("keys,en,fr\nHELLO,Hello,Bonjour\nSCORE,{points} points,{points} points gagnés\n");
+    REQUIRE(table.has_value());
+    const std::array tables{std::make_shared<const devex::asset::TranslationData>(*table)};
+    devex::asset::Localization localization;
+    localization.setTables(tables);
+    localization.setLanguage("en");
+    ManagedGame::Frame frame{.scene = &scene, .localization = &localization};
+    game->runPhase(frame, SystemPhase::Update);
+
+    CHECK(value("before") == "Hello");
+    // The closest language the tables have.
+    CHECK(value("language") == "fr");
+    CHECK(localization.language() == "fr");
+    CHECK(value("greeting") == "Bonjour");
+    CHECK(value("score") == "12 points gagnés");
+    CHECK(value("missing") == "Not a key");
+    CHECK(value("languages") == "en,fr");
+    CHECK(value("native") == "Français");
+    game->unloadAssembly();
 }
 
 TEST_CASE("C# coroutines wait for frames, time, tweens and tasks, and end with their component", "[runtime][managed][coroutine]")

@@ -15,6 +15,7 @@
 #include <devex/asset/NavMeshData.hpp>
 #include <devex/asset/TilesetData.hpp>
 #include <devex/asset/ThemeData.hpp>
+#include <devex/asset/TranslationData.hpp>
 #include <devex/asset/AssetSource.hpp>
 #include <devex/asset/import/AssetDatabase.hpp>
 #include <devex/render/Renderer.hpp>
@@ -147,6 +148,8 @@ public:
     [[nodiscard]] std::shared_ptr<const asset::AnimatorData> animator(asset::AssetId id);
     // A baked navigation mesh, read once and shared; null when it cannot be loaded.
     [[nodiscard]] std::shared_ptr<const asset::NavMeshData> navMesh(asset::AssetId id);
+    // A table of translations, read once and shared; null when it cannot be loaded.
+    [[nodiscard]] std::shared_ptr<const asset::TranslationData> translation(asset::AssetId id);
 
     // What the loaded assets take, by type and for the heaviest ones. Read when asked: the
     // profiler of the editor asks a few times a second at most.
@@ -245,6 +248,7 @@ private:
     std::unordered_map<asset::AssetId, std::shared_ptr<const animation::Clip>> m_animationClips;
     std::unordered_map<asset::AssetId, std::shared_ptr<const asset::ThemeData>> m_themes;
     std::unordered_map<asset::AssetId, std::shared_ptr<const asset::CurveData>> m_curves;
+    std::unordered_map<asset::AssetId, std::shared_ptr<const asset::TranslationData>> m_translations;
     std::unordered_map<asset::AssetId, std::shared_ptr<const asset::SpriteData>> m_sprites;
     std::unordered_map<asset::AssetId, std::shared_ptr<const asset::SpriteFramesData>> m_spriteFrames;
     std::unordered_map<asset::AssetId, std::shared_ptr<const asset::TilesetData>> m_tilesets;

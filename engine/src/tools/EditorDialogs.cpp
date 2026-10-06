@@ -38,12 +38,13 @@ struct FileType
     std::string_view extension;
     std::string_view description;
 };
-constexpr std::array<FileType, 6> fileTypes{{
+constexpr std::array<FileType, 7> fileTypes{{
     {Icon::FilePlus, "Script", "NewComponent", ".cs", "A game component written in C# or C++."},
     {Icon::Activity, "Curve", "Curve", ".dvxcurve", "A curve for tweens and animation."},
     {Icon::Clapperboard, "Sprite Frames", "Sprite Frames", ".dvxframes", "Named animations made from sprites."},
     {Icon::Grid, "Tileset", "Tileset", ".dvxtileset", "Tiles for painting a tilemap."},
     {Icon::Workflow, "Animator", "Animator", ".dvxanimator", "A state machine of animations."},
+    {Icon::Languages, "Translation Table", "Translations", ".csv", "The texts of the game in several languages."},
     {Icon::Folder, "Folder", "New Folder", "", "An empty folder for organizing assets or scripts."},
 }};
 constexpr std::size_t folderType = fileTypes.size() - 1;
@@ -559,6 +560,7 @@ void EditorDialogsUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& 
                 case 1: return createCurveFile(state, state.newFileFolder, name);
                 case 2: return createSpriteFramesFile(state, state.newFileFolder, {}, name);
                 case 3: return createTilesetFile(state, state.newFileFolder, {}, name);
+                case 5: return createTranslationFile(state, state.newFileFolder, name);
                 case folderType: return createContentFolder(state, state.newFileFolder, name);
                 default: return createAnimatorFile(state, state.newFileFolder, name);
                 }

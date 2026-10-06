@@ -578,6 +578,9 @@ TEST_CASE("The editor opens the project's scenes in tabs and renders its viewpor
         states.transitions.push_back(
             {.from = "Idle", .to = "Run", .conditions = {{.parameter = "Speed", .test = devex::asset::AnimatorTest::Greater, .value = 0.1f}}});
         REQUIRE(devex::core::writeTextFile(art / "states.dvxanimator", devex::asset::writeAnimatorFile(states)));
+        // A table of translations, which French does not finish.
+        const std::string translations = "keys,en,fr\nPLAY,Play,Jouer\nQUIT,Quit,\n";
+        REQUIRE(devex::core::writeTextFile(art / "menu.csv", translations));
         const auto settleAssets = [&] {
             (*database)->refresh();
             (*database)->waitForImports();
@@ -782,7 +785,7 @@ TEST_CASE("The editor opens the project's scenes in tabs and renders its viewpor
         // A page for each kind of asset, and for the others their name and their file.
         for (const char* path : {"res://assets/art/checker.png", "res://assets/art/tone.wav", "res://assets/art/ease.dvxcurve",
                                  "res://assets/art/states.dvxanimator", "res://assets/art/spin.dvxframes", "res://assets/art/tiles.dvxtileset",
-                                 "res://assets/scenes/menu.dvxscene"})
+                                 "res://assets/art/menu.csv", "res://assets/scenes/menu.dvxscene"})
         {
             const std::optional<devex::asset::AssetId> id = (*database)->findByPath(path);
             REQUIRE(id.has_value());
@@ -795,7 +798,7 @@ TEST_CASE("The editor opens the project's scenes in tabs and renders its viewpor
         // The windows of settings, the export, the debugging window and the dialogs are made with the
         // interface of the engine as well, each in its image; Project Settings makes every section.
         using devex::tools::EditorWindow;
-        for (const auto& [opened, surface] : std::array<std::pair<EditorWindow, std::uint32_t>, 9>{{
+        for (const auto& [opened, surface] : std::array<std::pair<EditorWindow, std::uint32_t>, 10>{{
                  {EditorWindow::EditorSettings, 7},
                  {EditorWindow::ProjectSettings, 8},
                  {EditorWindow::Export, 9},
@@ -803,6 +806,7 @@ TEST_CASE("The editor opens the project's scenes in tabs and renders its viewpor
                  {EditorWindow::NewScript, 11},
                  {EditorWindow::About, 11},
                  {EditorWindow::Profiler, 13},
+                 {EditorWindow::Translations, 24},
                  {EditorWindow::Animation, 18},
                  {EditorWindow::Animator, 19},
              }})
@@ -821,6 +825,17 @@ TEST_CASE("The editor opens the project's scenes in tabs and renders its viewpor
         REQUIRE(controller.has_value());
         (*editor)->selectAsset(*controller);
         CHECK(inspectorFrames(3, 19));
+        (*editor)->selectAsset({});
+
+        // The Translations panel shows the table chosen in FileSystem, its keys down and its languages
+        // across, and leaves its file as it was written until a cell changes.
+        const std::optional<devex::asset::AssetId> table = (*database)->findByPath("res://assets/art/menu.csv");
+        REQUIRE(table.has_value());
+        CHECK((*database)->find(*table)->type == devex::asset::AssetType::Translation);
+        (*editor)->selectAsset(*table);
+        (*editor)->openWindow(EditorWindow::Translations);
+        CHECK(inspectorFrames(3, 24));
+        CHECK(devex::core::readTextFile(art / "menu.csv").value_or("") == translations);
         (*editor)->selectAsset({});
 
         // The Script screen shows the file it is given in an area of text of that interface.

@@ -199,6 +199,7 @@ target_sources(devex_asset
         src/asset/AssetType.cpp
         src/asset/CurveData.cpp
         src/asset/FontData.cpp
+        src/asset/Localization.cpp
         src/asset/MaterialData.cpp
         src/asset/MeshData.cpp
         src/asset/ModelData.cpp
@@ -208,6 +209,7 @@ target_sources(devex_asset
         src/asset/SpriteData.cpp
         src/asset/TextureData.cpp
         src/asset/TilesetData.cpp
+        src/asset/TranslationData.cpp
         src/asset/AnimatorData.cpp
         src/asset/NavMeshData.cpp
         src/asset/ThemeData.cpp
@@ -224,6 +226,7 @@ target_sources(devex_asset
             include/devex/asset/AudioClipData.hpp
             include/devex/asset/CurveData.hpp
             include/devex/asset/FontData.hpp
+            include/devex/asset/Localization.hpp
             include/devex/asset/ThemeData.hpp
             include/devex/asset/MaterialData.hpp
             include/devex/asset/MeshData.hpp
@@ -234,6 +237,7 @@ target_sources(devex_asset
             include/devex/asset/SpriteData.hpp
             include/devex/asset/TextureData.hpp
             include/devex/asset/TilesetData.hpp
+            include/devex/asset/TranslationData.hpp
             include/devex/asset/AnimatorData.hpp
             include/devex/asset/NavMeshData.hpp
 )
@@ -778,6 +782,7 @@ target_sources(devex_tools
         src/tools/TextureInspector.cpp
         src/tools/TilePainter.cpp
         src/tools/TilesetInspector.cpp
+        src/tools/TranslationsPanel.cpp
         src/tools/EditorCamera.cpp
         src/tools/EditorCamera.hpp
         src/tools/EditorDock.cpp

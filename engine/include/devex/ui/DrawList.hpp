@@ -4,6 +4,7 @@
 
 #include <devex/asset/AssetId.hpp>
 #include <devex/asset/FontData.hpp>
+#include <devex/asset/Localization.hpp>
 #include <devex/render/RenderWorld.hpp>
 #include <devex/scene/Entity.hpp>
 #include <devex/ui/Layout.hpp>
@@ -77,6 +78,11 @@ struct DEVEX_API DrawContext
     // Where the texts keep their letters from a frame to the next; without it, the letters of every
     // text are placed again at every drawing.
     TextCache* textCache = nullptr;
+    // The translations the texts that ask for one show; without it, texts show as they are written.
+    const asset::Localization* localization = nullptr;
+
+    // What a text shows: its translation when it asks for one and a table has it, or itself.
+    [[nodiscard]] std::string_view translated(std::string_view text, bool translate = true) const;
 };
 
 // Appends the elements of one canvas to the interface of the frame, in the order they were laid

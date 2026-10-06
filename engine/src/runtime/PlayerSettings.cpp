@@ -32,6 +32,17 @@ void PlayerSettings::setVsync(bool vsync)
     m_vsync = vsync;
 }
 
+const std::optional<std::string>& PlayerSettings::language() const noexcept
+{
+    return m_language;
+}
+
+void PlayerSettings::setLanguage(std::string language)
+{
+    m_changed = m_changed || m_language != language;
+    m_language = std::move(language);
+}
+
 float PlayerSettings::volume(std::string_view group) const
 {
     const auto found = m_volumes.find(group);
@@ -145,6 +156,10 @@ std::string PlayerSettings::write() const
     {
         header.attributes.push_back({"vsync", serialization::TextValue(*m_vsync)});
     }
+    if (m_language)
+    {
+        header.attributes.push_back({"language", serialization::TextValue(*m_language)});
+    }
     for (const auto& [group, volume] : m_volumes)
     {
         serialization::TextSection& section = document.sections.emplace_back();
@@ -179,6 +194,13 @@ void PlayerSettings::read(std::string_view text)
     if (const serialization::TextValue* const vsync = header.findAttribute("vsync"))
     {
         m_vsync = serialization::asBool(*vsync);
+    }
+    if (const serialization::TextValue* const language = header.findAttribute("language"))
+    {
+        if (const std::string* const code = serialization::asString(*language); code != nullptr && !code->empty())
+        {
+            m_language = *code;
+        }
     }
     for (const serialization::TextSection& section : document->sections)
     {

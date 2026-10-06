@@ -584,9 +584,11 @@ core::Result<std::vector<asset::AssetId>> assetReferences(asset::AssetType type,
     case asset::AssetType::AnimationClip:
     // A font carries its own atlas: the scenes that write with it bring it along.
     case asset::AssetType::Font:
-    // A theme is a list of values, a curve a list of keys: they need nothing else.
+    // A theme is a list of values, a curve a list of keys, a translation a list of texts: they need
+    // nothing else.
     case asset::AssetType::Theme:
     case asset::AssetType::Curve:
+    case asset::AssetType::Translation:
         break;
     }
     std::erase_if(ids, [](asset::AssetId id) { return !id.isValid(); });
@@ -699,6 +701,12 @@ core::Result<ExportPlan> planExport(const asset::AssetDatabase& database, const 
                 }
             }
         }
+    }
+
+    // The translations go with the game whatever uses them: any text may be a key.
+    for (const asset::AssetInfo& info : database.assets(asset::AssetType::Translation))
+    {
+        plan.includedAssets.push_back(info.id);
     }
 
     plan.managed = detail::ManagedCodeBuilder::hasCode(project);

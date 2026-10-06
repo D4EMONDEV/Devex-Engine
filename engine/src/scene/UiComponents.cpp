@@ -206,6 +206,7 @@ DEVEX_REFLECT(UiImage)
 DEVEX_REFLECT(UiText)
 {
     type.field("text", &UiText::text)
+        .field("translate", &UiText::translate)
         .field("font", &UiText::font, {.assetType = "font"})
         .field("size", &UiText::size)
         .field("color", &UiText::color, {.color = true})

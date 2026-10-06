@@ -121,6 +121,10 @@ enum class TextVerticalAlign : std::uint8_t
 struct DEVEX_API UiText
 {
     std::string text = "Text";
+    // Shows the translation of the text when a table of the game has it as a key, as Godot does; off
+    // for a text the game writes itself, such as the name of the player. A field never translates
+    // what is typed in it, only its placeholder.
+    bool translate = true;
     asset::AssetId font;
     // In units; the font is baked once and drawn at any size.
     float size = 24.0f;

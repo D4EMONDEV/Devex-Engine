@@ -237,6 +237,12 @@ private:
     static constexpr std::chrono::milliseconds restBeat{250};
 
     [[nodiscard]] bool isEditor() const noexcept;
+    // Loads the tables of translations again when they changed, follows the language the editor
+    // previews while editing, and keeps the language the game chose as the player's.
+    void updateLocalization();
+    // The language a game starts in: the one the editor tests, the player's, the system's, or the
+    // fallback language of the project.
+    void chooseLanguage();
     // Editor only: whether what the last frame showed moves on its own, or the editor is asked to
     // draw every frame, so that it does not rest.
     [[nodiscard]] bool isAnimating() const;
@@ -383,6 +389,15 @@ private:
     std::filesystem::path m_userDirectory;
     std::unique_ptr<SaveGames> m_saves;
     std::unique_ptr<PlayerSettings> m_settings;
+    // The translations of the project and the language shown.
+    asset::Localization m_localization;
+    // The tables are read again before the next frame: an import or another project changed them.
+    bool m_translationsChanged = true;
+    // The language the engine last chose for the game: another one comes from the game, and is kept
+    // as the player's choice.
+    std::string m_chosenLanguage;
+    // The language the editor last previewed; nothing once the game has shown another.
+    std::optional<std::string> m_previewedLanguage;
     // The scene asset that plays, and the files the captures in flight go to.
     asset::AssetId m_sceneAsset;
     std::map<std::uint64_t, std::filesystem::path> m_thumbnailCaptures;
@@ -451,6 +466,7 @@ ApplicationRunner::ApplicationRunner(Application& application, const Application
     m_application.m_scene = &services.scene;
     m_application.m_assets = &services.assets;
     m_application.m_jobs = &services.jobs;
+    m_application.m_localization = &m_localization;
     m_application.m_interpolationAlpha = 0.0;
     m_application.m_quitRequested = false;
     m_application.m_editor = isEditor();
@@ -487,6 +503,7 @@ ApplicationRunner::~ApplicationRunner()
     m_application.m_scene = nullptr;
     m_application.m_assets = nullptr;
     m_application.m_jobs = nullptr;
+    m_application.m_localization = nullptr;
 }
 
 asset::AssetDatabase* ApplicationRunner::database() const noexcept
@@ -607,6 +624,83 @@ bool ApplicationRunner::isEditor() const noexcept
     return m_services.tools != nullptr && m_services.tools->mode() == tools::ToolsMode::Editor;
 }
 
+void ApplicationRunner::updateLocalization()
+{
+    const asset::AssetSource* const source = assetSource();
+    if (std::exchange(m_translationsChanged, false))
+    {
+        // In the order of their names, which decides between two tables writing the same key.
+        std::vector<std::shared_ptr<const asset::TranslationData>> tables;
+        if (source != nullptr)
+        {
+            for (const asset::AssetInfo& info : source->assets(asset::AssetType::Translation))
+            {
+                if (std::shared_ptr<const asset::TranslationData> table = m_services.assets.translation(info.id))
+                {
+                    tables.push_back(std::move(table));
+                }
+            }
+        }
+        m_localization.setTables(tables);
+    }
+    const std::string fallback = source != nullptr ? source->project().localization.fallbackLanguage : std::string("en");
+    if (m_localization.fallbackLanguage() != fallback)
+    {
+        m_localization.setFallbackLanguage(fallback);
+    }
+    if (isEditor() && !m_playScene)
+    {
+        // While editing, the 2D screen shows the interfaces in the language the editor previews.
+        const std::string& preview = m_services.tools->previewLanguage();
+        if (m_previewedLanguage != preview)
+        {
+            m_previewedLanguage = preview;
+            m_localization.setLanguage(preview);
+        }
+        return;
+    }
+    if (m_settings && m_localization.language() != m_chosenLanguage)
+    {
+        m_chosenLanguage = m_localization.language();
+        m_settings->setLanguage(m_chosenLanguage);
+    }
+}
+
+void ApplicationRunner::chooseLanguage()
+{
+    updateLocalization();
+    const asset::AssetSource* const source = assetSource();
+    std::vector<std::string> wanted;
+    if (isEditor() && source != nullptr && !source->project().localization.testLanguage.empty())
+    {
+        wanted.push_back(source->project().localization.testLanguage);
+    }
+    if (m_settings && m_settings->language())
+    {
+        wanted.push_back(*m_settings->language());
+    }
+    for (std::string& language : m_services.platform.preferredLanguages())
+    {
+        wanted.push_back(std::move(language));
+    }
+    std::string chosen = m_localization.fallbackLanguage();
+    for (const std::string& language : wanted)
+    {
+        if (std::optional<std::string> closest = m_localization.closestLanguage(language))
+        {
+            chosen = std::move(*closest);
+            break;
+        }
+    }
+    m_localization.setLanguage(chosen);
+    m_chosenLanguage = m_localization.language();
+    m_previewedLanguage.reset();
+    if (!m_localization.languages().empty())
+    {
+        DEVEX_LOG_INFO("Playing in {}", asset::languageName(m_chosenLanguage));
+    }
+}
+
 bool ApplicationRunner::isAnimating() const
 {
     // The game, the emitters and the animated tiles the editor plays, and what is loading.
@@ -637,6 +731,7 @@ int ApplicationRunner::execute()
         createUi();
         createInput();
         createGameData();
+        chooseLanguage();
         m_gameStarted = true;
         runSystems(SystemPhase::Start, core::Duration::zero());
         loadRequestedScene();
@@ -789,6 +884,7 @@ void ApplicationRunner::runFrame()
         DEVEX_PROFILE_SCOPE("Game code");
         updateGameCode();
     }
+    updateLocalization();
 
     const bool minimized = m_services.window.isMinimized();
     const bool canRender = m_services.renderer != nullptr && !minimized;
@@ -1156,6 +1252,7 @@ void ApplicationRunner::startPlaying()
         m_sceneAsset = edited.empty() ? asset::AssetId{} : m_services.database->findByPath(edited).value_or(asset::AssetId{});
     }
     createGameData();
+    chooseLanguage();
     DEVEX_LOG_INFO("Playing");
     m_application.onPlayStarted();
     m_gameStarted = true;
@@ -1183,6 +1280,8 @@ void ApplicationRunner::stopPlaying()
     m_playState = tools::PlayState::Editing;
     m_playScene.reset();
     m_stepRequested = false;
+    // The editor previews its own language again.
+    m_previewedLanguage.reset();
     if (m_services.window.isMouseCaptured())
     {
         m_services.window.setMouseCaptured(false);
@@ -1205,6 +1304,7 @@ void ApplicationRunner::closeProject()
     m_services.assets.setSource(nullptr);
     m_services.database.reset();
     m_services.scene = scene::Scene{};
+    m_translationsChanged = true;
 }
 
 void ApplicationRunner::forEachScene(const std::function<void(scene::Scene&)>& function)
@@ -1230,6 +1330,7 @@ void ApplicationRunner::handleAssetEvents(asset::AssetDatabase& database)
         {
             scenes.push_back(event.id);
         }
+        m_translationsChanged = m_translationsChanged || event.type == asset::AssetType::Translation;
     }
 
     struct EditedScene
@@ -1276,6 +1377,7 @@ void ApplicationRunner::switchProject(const std::filesystem::path& projectFile)
     }
     m_services.database = std::move(*opened);
     m_services.assets.setSource(m_services.database.get());
+    m_translationsChanged = true;
     openGameCode();
     m_services.tools->setAssetDatabase(m_services.database.get());
 }
@@ -1595,6 +1697,7 @@ void ApplicationRunner::runSystems(SystemPhase phase, core::Duration delta)
         .actions = m_actions.get(),
         .saves = m_saves.get(),
         .settings = m_settings.get(),
+        .localization = &m_localization,
         .physics = m_physics.get(),
         .physics2d = m_physics2d.get(),
         .navigation = m_navigation.get(),
@@ -1637,6 +1740,7 @@ void ApplicationRunner::runSystems(SystemPhase phase, core::Duration delta)
             .actions = m_actions.get(),
             .saves = m_saves.get(),
             .settings = m_settings.get(),
+            .localization = &m_localization,
             .assets = m_services.assets.source(),
             .assetManager = &m_services.assets,
             .loadingScene = context.loadingScene,
@@ -2211,6 +2315,7 @@ void ApplicationRunner::buildUi(render::RenderWorld& world)
                 const math::Extent2D size = m_services.assets.textureSize(id);
                 return math::Vec2{static_cast<float>(size.width), static_cast<float>(size.height)};
             },
+        .localization = &m_localization,
     };
     if (m_ui)
     {
@@ -2654,6 +2759,11 @@ SaveGames* Application::saves() noexcept
 PlayerSettings* Application::playerSettings() noexcept
 {
     return m_settings;
+}
+
+asset::Localization& Application::localization() noexcept
+{
+    return *m_localization;
 }
 
 bool Application::isEditor() const noexcept

@@ -74,6 +74,7 @@ namespace devex::tools::detail {
     ICON(Image, "image")                             \
     ICON(Info, "info")                               \
     ICON(Keyboard, "keyboard")                       \
+    ICON(Languages, "languages")                     \
     ICON(Layers, "layers")                           \
     ICON(LayoutDashboard, "layout-dashboard")        \
     ICON(Lightbulb, "lightbulb")                     \

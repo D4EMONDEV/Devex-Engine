@@ -1,6 +1,7 @@
 #include "ManagedGame.hpp"
 
 #include <devex/asset/AssetId.hpp>
+#include <devex/asset/Localization.hpp>
 #include <devex/core/File.hpp>
 #include <devex/core/Log.hpp>
 #include <devex/core/Profiler.hpp>
@@ -282,6 +283,13 @@ struct NativeApi
     void (*uiSetTextSpans)(void* scene, Entity area, int behind, const NativeTextSpan* spans, int count);
     void (*uiSetTextMarks)(void* scene, Entity area, const NativeTextLineMark* marks, int count);
     void (*uiVisibleTextLines)(void* scene, Entity area, int* first, int* count);
+    const char* (*language)();
+    void (*setLanguage)(const char* language);
+    int (*languageCount)();
+    const char* (*languageAt)(int index);
+    const char* (*fallbackLanguage)();
+    const char* (*translate)(const char* key);
+    const char* (*languageName)(const char* code);
 };
 
 // The functions the engine calls, in the order of Devex.Managed's ManagedApi.
@@ -296,7 +304,7 @@ struct ManagedApi
 };
 
 // Devex.Managed's Bootstrap.Version: both sides change it with the function tables.
-constexpr int bootstrapVersion = 21;
+constexpr int bootstrapVersion = 22;
 
 struct BootstrapArguments
 {
@@ -1643,6 +1651,11 @@ void apiResetBindings()
     return currentFrame() != nullptr ? currentFrame()->settings : nullptr;
 }
 
+[[nodiscard]] asset::Localization* localization() noexcept
+{
+    return currentFrame() != nullptr ? currentFrame()->localization : nullptr;
+}
+
 // A message C# reads before the next call, on the thread of the game.
 [[nodiscard]] const char* keepMessage(std::string message)
 {
@@ -1956,6 +1969,49 @@ void apiSetSettingsString(const char* key, const char* value)
 int apiRemoveSettingsValue(const char* key)
 {
     return settings() != nullptr && key != nullptr && settings()->removeValue(key) ? 1 : 0;
+}
+
+const char* apiLanguage()
+{
+    return localization() != nullptr ? localization()->language().c_str() : "";
+}
+
+void apiSetLanguage(const char* language)
+{
+    if (localization() != nullptr && language != nullptr)
+    {
+        localization()->setLanguage(language);
+    }
+}
+
+int apiLanguageCount()
+{
+    return localization() != nullptr ? static_cast<int>(localization()->languages().size()) : 0;
+}
+
+const char* apiLanguageAt(int index)
+{
+    const asset::Localization* const found = localization();
+    return found != nullptr && index >= 0 && static_cast<std::size_t>(index) < found->languages().size()
+               ? found->languages()[static_cast<std::size_t>(index)].c_str()
+               : nullptr;
+}
+
+const char* apiFallbackLanguage()
+{
+    return localization() != nullptr ? localization()->fallbackLanguage().c_str() : "en";
+}
+
+// Null when no table has the key: C# keeps the key itself.
+const char* apiTranslate(const char* key)
+{
+    const std::string* const message = localization() != nullptr && key != nullptr ? localization()->find(key) : nullptr;
+    return message != nullptr ? message->c_str() : nullptr;
+}
+
+const char* apiLanguageName(const char* code)
+{
+    return keepMessage(asset::nativeLanguageName(code != nullptr ? code : ""));
 }
 
 [[nodiscard]] animation::TweenWorld* tweenWorld() noexcept
@@ -2382,6 +2438,13 @@ int apiParticleCount(Entity entity)
         .uiSetTextSpans = &apiUiSetTextSpans,
         .uiSetTextMarks = &apiUiSetTextMarks,
         .uiVisibleTextLines = &apiUiVisibleTextLines,
+        .language = &apiLanguage,
+        .setLanguage = &apiSetLanguage,
+        .languageCount = &apiLanguageCount,
+        .languageAt = &apiLanguageAt,
+        .fallbackLanguage = &apiFallbackLanguage,
+        .translate = &apiTranslate,
+        .languageName = &apiLanguageName,
     };
 }
 

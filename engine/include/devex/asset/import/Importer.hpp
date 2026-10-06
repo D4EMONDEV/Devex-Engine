@@ -61,6 +61,8 @@ struct DEVEX_API ImportContext
     std::string name;
     std::vector<serialization::TextProperty> options;
     SubAssetIds subAssets;
+    // The tables of translations of the project, for an importer that reads them.
+    std::vector<std::filesystem::path> translations;
     // Available for parallel work when set.
     core::JobSystem* jobs = nullptr;
     const std::atomic<bool>* cancelled = nullptr;
@@ -94,6 +96,9 @@ struct DEVEX_API Importer
     // Written into new .dvxmeta files.
     std::vector<serialization::TextProperty> defaultOptions;
     core::Result<ImportResult> (*run)(ImportContext& context) = nullptr;
+    // Whether the importer reads the tables of translations of the project, which the context
+    // gives: a source imports again when one of them changes, comes or goes.
+    bool readsTranslations = false;
     // The other files a source reads, found without importing it, such as the images next to a
     // model; they are copied with it into the project. Null for formats that read none.
     core::Result<std::vector<std::filesystem::path>> (*findDependencies)(const std::filesystem::path& file) = nullptr;
@@ -122,12 +127,15 @@ struct DEVEX_API Importer
 // Sounds keep their file; the "loading" option chooses "decoded", "streamed" or "auto".
 [[nodiscard]] DEVEX_API core::Result<ImportResult> importAudioFile(ImportContext& context);
 // Fonts are baked into an atlas of distances at the "size" of the option, with the "spread" of the
-// distances around each outline.
+// distances around each outline, and the characters of the translations of the project.
 [[nodiscard]] DEVEX_API core::Result<ImportResult> importFontFile(ImportContext& context);
+// Tables of translations, .csv files: the "delimiter" option is "auto", "comma", "semicolon" or "tab".
+[[nodiscard]] DEVEX_API core::Result<ImportResult> importTranslationFile(ImportContext& context);
 // Bakes the letters of a TrueType font into an atlas of distances, as the font importer does: the
-// em at `size` pixels, the distances spread over `spread` pixels. The editor bakes its own fonts so.
+// em at `size` pixels, the distances spread over `spread` pixels, the Latin alphabet with the
+// `characters` asked for. The editor bakes its own fonts so.
 [[nodiscard]] DEVEX_API core::Result<FontData> bakeFont(std::span<const std::byte> file, std::string family, float size = 48.0f,
-                                                        float spread = 6.0f);
+                                                        float spread = 6.0f, std::span<const std::uint32_t> characters = {});
 
 // Local files that a .gltf or .glb file refers to, such as external buffers and images.
 [[nodiscard]] DEVEX_API core::Result<std::vector<std::filesystem::path>> findGltfDependencies(

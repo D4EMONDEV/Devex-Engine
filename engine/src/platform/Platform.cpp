@@ -682,6 +682,24 @@ void Platform::wake()
     SDL_PushEvent(&event);
 }
 
+std::vector<std::string> Platform::preferredLanguages() const
+{
+    std::vector<std::string> languages;
+    int count = 0;
+    SDL_Locale** const locales = SDL_GetPreferredLocales(&count);
+    for (int index = 0; locales != nullptr && index < count; ++index)
+    {
+        const SDL_Locale* const locale = locales[index];
+        if (locale != nullptr && locale->language != nullptr)
+        {
+            languages.push_back(locale->country != nullptr ? std::string(locale->language) + "_" + locale->country
+                                                           : std::string(locale->language));
+        }
+    }
+    SDL_free(locales);
+    return languages;
+}
+
 void Platform::setToolsInputCapture(bool keyboard, bool mouse) noexcept
 {
     m_toolsCaptureKeyboard = keyboard;

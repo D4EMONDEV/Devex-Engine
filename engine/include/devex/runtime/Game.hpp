@@ -3,6 +3,7 @@
 #include <devex/core/Export.hpp>
 
 #include <devex/animation/AnimationWorld.hpp>
+#include <devex/asset/Localization.hpp>
 #include <devex/animation/TweenWorld.hpp>
 #include <devex/audio/AudioWorld.hpp>
 #include <devex/core/Time.hpp>
@@ -42,7 +43,7 @@ class CoroutineScheduler;
 // 13: SystemContext gained the tweens and the coroutines.
 // 14: SystemContext gained the particles.
 // 15: Camera gained its orthographic projection, which moved its fields; sprites.
-inline constexpr std::uint32_t gameApiVersion = 18;
+inline constexpr std::uint32_t gameApiVersion = 19;
 
 enum class SystemPhase : std::uint8_t
 {
@@ -72,6 +73,9 @@ struct DEVEX_API SystemContext
     SaveGames* saves = nullptr;
     // What the player chose: volumes, window, and the values the game keeps. Null likewise.
     PlayerSettings* settings = nullptr;
+    // The translations of the game and the language it shows: translate gives the text of a key,
+    // and a language set here is kept as the player's choice. Null outside a game.
+    asset::Localization* localization = nullptr;
     // The simulation of the scene: queries, forces, and the contacts of the steps of this frame,
     // which Update systems see once. Null when the application runs without physics.
     physics::PhysicsWorld* physics = nullptr;

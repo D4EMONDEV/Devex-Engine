@@ -119,6 +119,7 @@ struct DEVEX_API ViewportMarks
     bool playing = false;
 };
 struct AnimatorUi;
+struct TranslationsUi;
 struct MenuBarUi;
 struct StatusBarUi;
 struct ViewportHeaderUi;
@@ -134,6 +135,7 @@ inline constexpr const char* viewportWindow = "Viewport";
 inline constexpr const char* settingsWindow = "Editor Settings";
 inline constexpr const char* debuggingWindow = "C# Debugging";
 inline constexpr const char* animationWindow = "Animation";
+inline constexpr const char* translationsWindow = "Translations";
 inline constexpr const char* animatorWindow = "Animator";
 inline constexpr const char* textEditorWindow = "Text Editor";
 inline constexpr const char* profilerWindow = "Profiler";
@@ -524,6 +526,7 @@ struct DEVEX_API ToolsState
     std::shared_ptr<ViewportOverlayUi> viewportOverlayUi;
     ViewportMarks viewportMarks;
     std::shared_ptr<AnimatorUi> animatorUi;
+    std::shared_ptr<TranslationsUi> translationsUi;
     // The frame of the editor: its bars, the header of the view, and the layer of their menus.
     std::shared_ptr<MenuBarUi> menuBarUi;
     // A menu of the menu bar to open at its next update, by the place of its title.
@@ -655,6 +658,12 @@ struct DEVEX_API ToolsState
     particles::ParticleWorld* particleWorld = nullptr;
     bool showAnimation = false;
     bool showAnimator = false;
+    bool showTranslations = false;
+    // The table of translations the Translations panel shows.
+    asset::AssetId translationTable;
+    // The languages of the tables of the project, read again at most once a second.
+    std::vector<std::string> projectLanguages;
+    double projectLanguagesTime = -1.0;
     // The profiler records while its panel is open.
     bool showProfiler = false;
     // The Profiler panel comes to the front of its dock at its next frame, as when it is opened.
@@ -662,6 +671,7 @@ struct DEVEX_API ToolsState
     // The same for the panels of the clips and of the state machines.
     bool focusAnimation = false;
     bool focusAnimator = false;
+    bool focusTranslations = false;
     ProfilerView profiler;
     // What the Animation panel shows: the clip it last posed, and where its playhead stands.
     asset::AssetId previewedAnimation;
@@ -800,6 +810,8 @@ struct DEVEX_API ToolsState
     bool flying = false;
     bool orbiting = false;
     bool panning = false;
+    // The language the 2D screen previews the interfaces in; empty for their texts as written.
+    std::string previewLanguage;
     // Something the editor shows moved on its own this frame, a preview playing for one: the next
     // frame follows at once rather than at the next event. Set by what moves, during an update.
     bool animating = false;
@@ -895,6 +907,17 @@ DEVEX_API core::Result<std::filesystem::path> createTilesetFile(ToolsState& stat
 // selected entity, or the animator selected in the FileSystem.
 DEVEX_API void drawAnimatorPanel(ToolsState& state, scene::Scene& scene);
 DEVEX_API void renderAnimatorPanel(ToolsState& state, render::RenderWorld& world);
+// The Translations panel: a table of translations, its keys down and its languages across, edited in
+// place as in a spreadsheet and written back to its .csv file.
+DEVEX_API void drawTranslationsPanel(ToolsState& state);
+DEVEX_API void renderTranslationsPanel(ToolsState& state, render::RenderWorld& world);
+// Shows a table of translations in the Translations panel, which comes to the front.
+DEVEX_API void openTranslationTable(ToolsState& state, asset::AssetId table);
+// Writes a new table of translations into a res:// folder of the assets, with a column for the
+// fallback language of the project, and shows it once imported.
+DEVEX_API core::Result<std::filesystem::path> createTranslationFile(ToolsState& state, std::string_view folder, std::string_view name = {});
+// The languages the tables of translations of the project have, sorted.
+[[nodiscard]] DEVEX_API std::vector<std::string> projectLanguages(ToolsState& state);
 // Writes a new animator controller into a res:// folder of the assets, and selects it once imported.
 DEVEX_API core::Result<std::filesystem::path> createAnimatorFile(ToolsState& state, std::string_view folder, std::string_view name = {});
 // Under the NavMeshSurface of the inspected entity: what its navigation mesh holds, and whether its

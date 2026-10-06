@@ -57,6 +57,8 @@ public:
         // The saves and the settings of the player; null outside a game.
         SaveGames* saves = nullptr;
         PlayerSettings* settings = nullptr;
+        // The translations and the language of the game; null outside a game.
+        asset::Localization* localization = nullptr;
         // Where assets are found by path; null without a project or package.
         const asset::AssetSource* assets = nullptr;
         // What preloads assets and tells whether they are ready; null in tests.

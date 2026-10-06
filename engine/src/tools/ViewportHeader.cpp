@@ -4,6 +4,7 @@
 #include "EditorFrame.hpp"
 #include "SettingsUi.hpp"
 
+#include <devex/asset/TranslationData.hpp>
 #include <devex/core/Path.hpp>
 #include <devex/core/Profiler.hpp>
 
@@ -34,6 +35,7 @@ constexpr float tabOverlap = 6.0f;
 // Who opened the menu of the layer over the editor: the menu bar counts from 0, the Script screen
 // from 100.
 constexpr std::size_t tabMenuOwner = 200;
+constexpr std::size_t languageMenuOwner = 201;
 
 // The menu of a scene tab, as Godot's: closing it, the others, those at its right or all of them,
 // and finding its file. It holds the tabs by their ids, which stay the same when tabs move.
@@ -59,6 +61,34 @@ constexpr std::size_t tabMenuOwner = 200;
                        .label = "Show in FileSystem",
                        .enabled = saved,
                        .action = [resource = std::move(resource)](ToolsState& tools, scene::Scene&) { revealInFileSystem(tools, resource); }});
+    return entries;
+}
+
+// The languages the interfaces may be previewed in, as Godot's Preview Translation lists them: their
+// texts as they are written, which are the keys, or each language of the tables of the project.
+[[nodiscard]] std::vector<MenuEntry> languageMenu(ToolsState& state)
+{
+    const auto preview = [](std::string language) {
+        return [language = std::move(language)](ToolsState& tools, scene::Scene&) { tools.previewLanguage = language; };
+    };
+    std::vector<MenuEntry> entries;
+    entries.push_back({.label = "Keys (no translation)", .checked = state.previewLanguage.empty(), .action = preview({})});
+    const std::vector<std::string> languages = projectLanguages(state);
+    if (!languages.empty())
+    {
+        entries.push_back(MenuEntry::line());
+    }
+    for (const std::string& language : languages)
+    {
+        entries.push_back({.label = std::format("{} ({})", asset::languageName(language), language),
+                           .checked = state.previewLanguage == language,
+                           .action = preview(language)});
+    }
+    entries.push_back(MenuEntry::line());
+    entries.push_back({.icon = Icon::Languages, .label = "Edit Translations...", .action = [](ToolsState& tools, scene::Scene&) {
+                           tools.showTranslations = true;
+                           tools.focusTranslations = true;
+                       }});
     return entries;
 }
 
@@ -111,6 +141,7 @@ struct ViewportHeaderUi : PanelBuilder
     Button colliders;
     Button frame;
     Button interfaces;
+    Button language;
     Button help;
     Entity speed;
     Entity speedText;
@@ -228,6 +259,8 @@ void ViewportHeaderUi::build(EditorUiKit& kit)
     // The interfaces of a 3D scene show over its 3D screen, as the game will draw them; a menu that
     // covers the whole screen hides the scene, hence the button.
     interfaces = tool(tools, Icon::LayoutDashboard, "Interfaces over the scene, as the game draws them (they are edited in the 2D screen)");
+    // The language the interfaces show in, as Godot's Preview Translation.
+    language = tool(tools, Icon::Languages, nullptr);
 
     // What the view moves by and exposes for, and how it is driven, at the right.
     viewSide = add(bar, "View", whole(math::Vec4{side, 0.0f, side, 0.0f}));
@@ -461,6 +494,11 @@ void ViewportHeaderUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene&
         enable(frame, edited.findEntity(state.selection.active()).isValid());
         scene().get<UiRect>(interfaces.entity).visible = !twoD && edited.kind() == scene::SceneKind::ThreeD;
         light(interfaces, state.showInterfaces);
+        scene().get<UiRect>(language.entity).visible = twoD || (edited.kind() == scene::SceneKind::ThreeD && state.showInterfaces);
+        light(language, !state.previewLanguage.empty());
+        tooltip(language.entity, state.previewLanguage.empty()
+                                     ? "Preview the interfaces in a language: they show their keys"
+                                     : std::format("The interfaces show in {}: preview another language", asset::languageName(state.previewLanguage)));
 
         if (std::string moves = twoD ? std::format("{:.3g} m", state.camera.orthographicSize() * 2.0f) : std::format("{:.1f} m/s", state.camera.speed());
             scene().get<scene::UiText>(speedText).text != moves)
@@ -532,6 +570,10 @@ void ViewportHeaderUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene&
         if (world.wasClicked(frame.entity))
         {
             frameSelection(state, edited);
+        }
+        if (world.wasClicked(language.entity))
+        {
+            openEditorMenu(state, languageMenu(state), state.input.mouse(), languageMenuOwner);
         }
     }
 

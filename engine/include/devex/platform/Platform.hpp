@@ -123,6 +123,10 @@ public:
     [[nodiscard]] std::string clipboardText() const;
     void setClipboardText(std::string_view text);
 
+    // The languages the user prefers, the first first, as codes such as "fr_FR": what a game shows
+    // before the player chooses one.
+    [[nodiscard]] std::vector<std::string> preferredLanguages() const;
+
     // Name of the key position, independent of the layout ("W").
     [[nodiscard]] std::string keyName(Key key) const;
     // Label of the key under the current keyboard layout ("Z" for Key::W on AZERTY).

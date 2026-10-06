@@ -1,0 +1,45 @@
+keys,fr,en,_notes
+Jouer,Jouer,Play,Main menu
+Continuer,Continuer,Continue,
+Réglages,Réglages,Settings,
+Quitter,Quitter,Quit,
+Nom,Nom,Name,Settings
+Votre nom,Votre nom,Your name,
+Mot de passe,Mot de passe,Password,
+Secret,Secret,Secret,
+Volume,Volume,Volume,
+Le volume de tout le jeu,Le volume de tout le jeu,The volume of the whole game,
+Plein écran,Plein écran,Fullscreen,
+Prend effet au prochain lancement,Prend effet au prochain lancement,Takes effect at the next launch,
+Difficulté,Difficulté,Difficulty,
+Facile,Facile,Easy,
+Normale,Normale,Normal,
+Difficile,Difficile,Hard,
+Le nombre de robots et leur vitesse,Le nombre de robots et leur vitesse,The number of robots and their speed,
+Langue,Langue,Language,
+La langue de tout le jeu,La langue de tout le jeu,The language of the whole game,
+Sauter,Sauter,Jump,
+Appuyez sur une touche,Appuyez sur une touche,Press a key,Written by Menu.cs
+Touches,Touches,Keys,
+Réinitialiser,Réinitialiser,Reset,
+Retour,Retour,Back,
+[b]Aide[/b] — la molette fait défiler cette liste.,[b]Aide[/b] — la molette fait défiler cette liste.,[b]Help[/b] — the wheel scrolls this list.,Help list
+Cliquez dans le monde pour marquer [color=#7fd4ff]10 points[/color].,Cliquez dans le monde pour marquer [color=#7fd4ff]10 points[/color].,Click in the world to score [color=#7fd4ff]10 points[/color].,
+[i]Échap[/i] met le jeu en pause.,[i]Échap[/i] met le jeu en pause.,[i]Escape[/i] pauses the game.,
+Le volume se règle au [b]curseur[/b] ou aux flèches.,Le volume se règle au [b]curseur[/b] ou aux flèches.,The volume follows the [b]slider[/b] or the arrows.,
+Le champ [color=#9fe6a0]Nom[/color] prend ce qui est tapé.,Le champ [color=#9fe6a0]Nom[/color] prend ce qui est tapé.,The [color=#9fe6a0]Name[/color] field takes what is typed.,
+Le mot de passe s'affiche en points.,Le mot de passe s'affiche en points.,The password shows as dots.,
+"Ctrl+A, Ctrl+C, Ctrl+X et Ctrl+V fonctionnent.","Ctrl+A, Ctrl+C, Ctrl+X et Ctrl+V fonctionnent.","Ctrl+A, Ctrl+C, Ctrl+X and Ctrl+V work.",
+Ce cadre est une image de 64 pixels.,Ce cadre est une image de 64 pixels.,This frame is an image of 64 pixels.,
+Ses coins gardent leur taille (9-slice).,Ses coins gardent leur taille (9-slice).,Its corners keep their size (9-slice).,
+[size=20]Les couleurs viennent du thème du projet.[/size],[size=20]Les couleurs viennent du thème du projet.[/size],[size=20]The colours come from the theme of the project.[/size],
+Pause,Pause,Pause,Pause menu
+Reprendre,Reprendre,Resume,
+Sauvegarder,Sauvegarder,Save,
+Sauvegardé,Sauvegardé,Saved,Written by Menu.cs
+Menu principal,Menu principal,Main menu,
+Sac,Sac,Bag,
+Torche : glissez-la dans une autre case,Torche : glissez-la dans une autre case,Torch: drag it to another slot,
+Caisse : glissez-la dans une autre case,Caisse : glissez-la dans une autre case,Crate: drag it to another slot,
+Devex : glissez-la dans une autre case,Devex : glissez-la dans une autre case,Devex: drag it to another slot,
+SAVE_INFO,"{label}, le {date}\n{minutes} min {seconds} s de jeu","{label}, {date}\n{minutes} min {seconds} s played","The last save, by Menu.cs"

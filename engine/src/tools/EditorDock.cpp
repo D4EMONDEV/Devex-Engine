@@ -40,7 +40,7 @@ struct DockPanel
     DockSlot slot;
 };
 
-const std::array<DockPanel, 8> dockPanels{{
+const std::array<DockPanel, 9> dockPanels{{
     {hierarchyWindow, &ToolsState::showHierarchy, false, false, DockSlot::LeftTop},
     {assetsWindow, &ToolsState::showAssets, false, false, DockSlot::LeftBottom},
     {inspectorWindow, &ToolsState::showInspector, false, false, DockSlot::RightTop},
@@ -49,6 +49,7 @@ const std::array<DockPanel, 8> dockPanels{{
     {profilerWindow, &ToolsState::showProfiler, true, false, DockSlot::Bottom},
     {animationWindow, &ToolsState::showAnimation, true, true, DockSlot::Bottom},
     {animatorWindow, &ToolsState::showAnimator, true, true, DockSlot::Bottom},
+    {translationsWindow, &ToolsState::showTranslations, true, true, DockSlot::Bottom},
 }};
 
 constexpr std::array<const char*, dockSlotCount> slotNames{"left_top", "left_bottom", "right_top", "right_bottom", "bottom"};

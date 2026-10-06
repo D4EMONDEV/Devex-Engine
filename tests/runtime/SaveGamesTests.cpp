@@ -224,8 +224,10 @@ TEST_CASE("The settings of the player keep volumes, the window and the values of
     CHECK(settings.volume(PlayerSettings::master) == 1.0f);
     CHECK_FALSE(settings.takeChanges());
 
+    CHECK_FALSE(settings.language().has_value());
     settings.setFullscreen(true);
     settings.setVsync(false);
+    settings.setLanguage("pt_BR");
     settings.setVolume("Master", 0.5f);
     settings.setVolume("Music", 2.0f);
     settings.setValue("language", devex::serialization::TextValue(std::string("fr")));
@@ -243,6 +245,7 @@ TEST_CASE("The settings of the player keep volumes, the window and the values of
     read.read(settings.write());
     CHECK(read.fullscreen() == true);
     CHECK(read.vsync() == false);
+    CHECK(read.language() == "pt_BR");
     CHECK(read.volume("Master") == 0.5f);
     CHECK(read.stringValue("language", "en") == "fr");
     CHECK(read.numberValue("sensitivity", 1.0) == 0.25);

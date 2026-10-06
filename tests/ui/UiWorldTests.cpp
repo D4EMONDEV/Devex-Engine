@@ -1,4 +1,5 @@
 #include <devex/asset/Artifact.hpp>
+#include <devex/asset/Localization.hpp>
 #include <devex/asset/ThemeData.hpp>
 #include <devex/asset/import/Importer.hpp>
 #include <devex/scene/Components.hpp>
@@ -12,6 +13,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <filesystem>
 #include <memory>
@@ -1223,4 +1225,44 @@ TEST_CASE("The value of a plot under the pointer is the bar under it, or the nea
     CHECK(at({160.0f, 120.0f}) == 2);
     // An element that is not a plot has no value.
     CHECK(world.plotValueAt(scene, scene.parent(element)) == -1);
+}
+
+TEST_CASE("Texts show their translation unless they ask not to, and fields keep what is typed", "[ui][draw][translation]")
+{
+    // The letters a drawing shows: four corners each.
+    const auto letters = [](const devex::render::RenderWorld& drawn) {
+        std::size_t corners = 0;
+        for (const devex::render::UiDraw& draw : drawn.uiDraws)
+        {
+            corners += draw.kind == devex::render::UiDrawKind::Text ? draw.indexCount / 6 : 0;
+        }
+        return corners;
+    };
+    devex::asset::Localization localization;
+    const auto table = devex::asset::parseTranslationCsv("keys,en,fr\nPLAY,Play,Commencer\nNAME,Name,Votre nom\n");
+    REQUIRE(table.has_value());
+    const std::array tables{std::make_shared<const devex::asset::TranslationData>(*table)};
+    localization.setTables(tables);
+    localization.setLanguage("fr");
+    const devex::ui::DrawContext translated{.fonts = &fontRef, .localization = &localization};
+    const devex::ui::DrawContext plain{.fonts = &fontRef};
+
+    Scene scene;
+    const Entity label = placedElement(scene, {0.0f, 0.0f}, {600.0f, 100.0f});
+    scene.add<devex::scene::UiText>(label, devex::scene::UiText{.text = "PLAY", .size = 24.0f, .wrap = false});
+    CHECK(letters(drawOne(scene, label, plain)) == 4);
+    CHECK(letters(drawOne(scene, label, translated)) == 9);
+    // A text the game writes itself stays as it is.
+    scene.get<devex::scene::UiText>(label).translate = false;
+    CHECK(letters(drawOne(scene, label, translated)) == 4);
+
+    // What is typed in a field is never a key; its placeholder is.
+    Scene form;
+    const Entity field = placedElement(form, {0.0f, 0.0f}, {600.0f, 100.0f});
+    form.add<devex::scene::UiText>(field, devex::scene::UiText{.text = "PLAY", .size = 24.0f, .wrap = false});
+    form.add<devex::scene::UiInput>(field, devex::scene::UiInput{.placeholder = "NAME"});
+    CHECK(letters(drawOne(form, field, translated)) == 4);
+    form.get<devex::scene::UiText>(field).text.clear();
+    CHECK(letters(drawOne(form, field, plain)) == 4);
+    CHECK(letters(drawOne(form, field, translated)) == 8);
 }

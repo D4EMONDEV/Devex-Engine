@@ -140,6 +140,8 @@ public:
 [[nodiscard]] std::unique_ptr<InspectorPage> makeTilesetPage();
 [[nodiscard]] std::unique_ptr<InspectorPage> makeAnimatorPage();
 [[nodiscard]] std::unique_ptr<InspectorPage> makeAnimatorElementPage();
+// A table of translations: its languages and what each misses, and the panel that edits it.
+[[nodiscard]] std::unique_ptr<InspectorPage> makeTranslationPage();
 
 // The painting of the tilemap of the inspected entity, under its card: in TilePainter.cpp.
 void addTilePainter(InspectorUi& ui, EditorUiKit& kit, Section& section);

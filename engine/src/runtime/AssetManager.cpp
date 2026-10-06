@@ -610,6 +610,12 @@ std::shared_ptr<const asset::NavMeshData> AssetManager::navMesh(asset::AssetId i
                                           [](std::span<const std::byte> bytes) { return asset::decodeNavMesh(bytes); });
 }
 
+std::shared_ptr<const asset::TranslationData> AssetManager::translation(asset::AssetId id)
+{
+    return loadShared<asset::TranslationData>(id, m_source, m_failed, m_translations, "translation table",
+                                              [](std::span<const std::byte> bytes) { return asset::decodeTranslation(bytes); });
+}
+
 const LoadedFont* AssetManager::font(asset::AssetId id)
 {
     auto found = m_fonts.find(id);
@@ -726,6 +732,9 @@ void AssetManager::handleEvents(std::span<const asset::AssetEvent> events)
             break;
         case asset::AssetType::NavMesh:
             m_navMeshes.erase(event.id);
+            break;
+        case asset::AssetType::Translation:
+            m_translations.erase(event.id);
             break;
         }
     }

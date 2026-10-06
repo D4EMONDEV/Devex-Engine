@@ -4,6 +4,7 @@
 
 #include <devex/animation/AnimationWorld.hpp>
 #include <devex/animation/TweenWorld.hpp>
+#include <devex/asset/Localization.hpp>
 #include <devex/particles/ParticleWorld.hpp>
 #include <devex/ui/UiWorld.hpp>
 #include <devex/asset/AssetSource.hpp>
@@ -204,6 +205,9 @@ protected:
     // The saves and the settings of the player while gameplay runs; null otherwise.
     [[nodiscard]] SaveGames* saves() noexcept;
     [[nodiscard]] PlayerSettings* playerSettings() noexcept;
+    // The translations of the project and the language shown: the one the game plays in, or the one
+    // the editor previews while editing.
+    [[nodiscard]] asset::Localization& localization() noexcept;
 
     // True when the application runs inside the editor.
     [[nodiscard]] bool isEditor() const noexcept;
@@ -234,6 +238,7 @@ private:
     InputActions* m_actions = nullptr;
     SaveGames* m_saves = nullptr;
     PlayerSettings* m_settings = nullptr;
+    asset::Localization* m_localization = nullptr;
     double m_interpolationAlpha = 0.0;
     bool m_quitRequested = false;
     bool m_editor = false;

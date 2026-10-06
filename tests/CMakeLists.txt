@@ -134,6 +134,7 @@ devex_add_tests(asset
         asset/SpriteTests.cpp
         asset/TilesetTests.cpp
         asset/TextureProcessingTests.cpp
+        asset/TranslationTests.cpp
     LIBRARIES
         Devex::Engine
 )

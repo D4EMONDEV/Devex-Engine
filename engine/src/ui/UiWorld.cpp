@@ -1326,7 +1326,7 @@ void UiWorld::build(const scene::Scene& scene, const DrawContext& context,
             {
                 drawOverlayBox(list, rowMin, rowMax, dropdown.highlightColor, 3.0f * scale);
             }
-            const OverlayText label{.text = dropdown.options[option],
+            const OverlayText label{.text = withTints.translated(dropdown.options[option], text == nullptr || text->translate),
                                     .font = text != nullptr ? text->font : asset::AssetId{},
                                     .size = (text != nullptr ? text->size : 18.0f) * scale,
                                     .color = text != nullptr ? text->color : math::Vec4{1.0f}};
@@ -1344,8 +1344,10 @@ void UiWorld::build(const scene::Scene& scene, const DrawContext& context,
             const asset::AssetId font = m_tooltipStyle.font.isValid() || withTints.defaultFont.isValid()
                                             ? m_tooltipStyle.font
                                             : fontAround(scene, m_tooltip.entity);
-            // Long lines go on to the next one, so that the tooltip stays inside the image.
-            const OverlayText label{.text = tooltip->text,
+            // Long lines go on to the next one, so that the tooltip stays inside the image. It is
+            // translated as the text of its element is.
+            const scene::UiText* const owner = scene.tryGet<scene::UiText>(m_tooltip.entity);
+            const OverlayText label{.text = withTints.translated(tooltip->text, owner == nullptr || owner->translate),
                                     .font = font,
                                     .size = m_tooltipStyle.size,
                                     .color = m_tooltipStyle.text,

@@ -200,6 +200,7 @@ void addPanelEntries(ToolsState& state, std::vector<MenuEntry>& entries)
                                tools.focusProfiler |= shown == &ToolsState::showProfiler && tools.showProfiler;
                                tools.focusAnimation |= shown == &ToolsState::showAnimation && tools.showAnimation;
                                tools.focusAnimator |= shown == &ToolsState::showAnimator && tools.showAnimator;
+                               tools.focusTranslations |= shown == &ToolsState::showTranslations && tools.showTranslations;
                            }});
     };
     panel(hierarchyWindow, &ToolsState::showHierarchy);
@@ -207,6 +208,7 @@ void addPanelEntries(ToolsState& state, std::vector<MenuEntry>& entries)
     panel(assetsWindow, &ToolsState::showAssets);
     panel(animationWindow, &ToolsState::showAnimation);
     panel(animatorWindow, &ToolsState::showAnimator);
+    panel(translationsWindow, &ToolsState::showTranslations);
     panel(consoleWindow, &ToolsState::showConsole);
     panel(statisticsWindow, &ToolsState::showStatistics);
     panel(profilerWindow, &ToolsState::showProfiler);

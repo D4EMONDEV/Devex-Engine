@@ -89,6 +89,8 @@ enum class EditorWindow : std::uint8_t
     // The panels of the clips and of the state machines, in front of the others of their dock.
     Animation,
     Animator,
+    // The panel of the tables of translations.
+    Translations,
 };
 
 // The menus of the menu bar of the editor, in the order of their titles. The tools over a game have
@@ -252,6 +254,10 @@ public:
     [[nodiscard]] bool capturesMouse() const noexcept;
     // True while a field of the panels takes what is typed: typing stays on for it.
     [[nodiscard]] bool wantsTextInput() const noexcept;
+
+    // Editor only: the language the 2D screen shows the interfaces of the scene in, while editing;
+    // empty shows their texts as they are written, which are the keys of the translations.
+    [[nodiscard]] const std::string& previewLanguage() const noexcept;
 
     // Editor only: whether what the last update showed moves on its own, or follows a button held:
     // a camera flying, a preview playing, a click awaiting the renderer. The editor then draws the

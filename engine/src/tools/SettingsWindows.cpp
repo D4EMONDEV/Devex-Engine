@@ -6,6 +6,7 @@
 
 #include "EditorModal.hpp"
 
+#include <devex/asset/TranslationData.hpp>
 #include <devex/core/Profiler.hpp>
 #include <devex/core/Log.hpp>
 #include <devex/core/Path.hpp>
@@ -33,8 +34,8 @@ namespace {
 constexpr std::array<std::string_view, 1> single = singleNumber;
 constexpr std::array interfaceScales{0.75f, 1.0f, 1.25f, 1.5f, 1.75f, 2.0f, 2.5f};
 constexpr std::array<std::string_view, 4> editorPages{"Theme", "Display", "Script Editors", "Compilation"};
-constexpr std::array<std::string_view, 7> projectPages{"Application",    "Window", "Physics",  "Collision Layers",
-                                                       "Sorting Layers", "Audio",  "Input Map"};
+constexpr std::array<std::string_view, 8> projectPages{"Application",    "Window", "Physics",   "Collision Layers",
+                                                       "Sorting Layers", "Audio",  "Input Map", "Localization"};
 
 [[nodiscard]] math::Vec4 linearOf(math::Vec3 srgb)
 {
@@ -829,6 +830,18 @@ void ProjectSettingsUi::buildCards(ToolsState& state, EditorUiKit& kit)
     note(&groups, "Volumes apply at once, and each time the game starts.");
 
     buildInputMap(*this, kit, 6);
+
+    Section& localization = pageCard(kit, 7, "Localization");
+    const FormRow fallbackRow = formRow(localization, "Fallback Language");
+    fallbackLanguage = choice(fallbackRow.editor);
+    tooltip(fallbackRow.row, "What shows where the language of the player has no translation");
+    const FormRow testRow = formRow(localization, "Test Language");
+    testLanguage = choice(testRow.editor);
+    tooltip(testRow.row, "The language the game plays in from the editor. Auto plays as the exported game does: the player's choice, "
+                         "then the language of the system, then the fallback one");
+    note(&localization, "The tables of translations are the .csv files of the project: Editor > Panels > Translations edits them. "
+                        "The texts of the interfaces whose text is a key show its translation.",
+         "dim", 3.0f);
 }
 
 void ProjectSettingsUi::sync(ToolsState& state, EditorUiKit& kit)
@@ -895,6 +908,32 @@ void ProjectSettingsUi::sync(ToolsState& state, EditorUiKit& kit)
         enable(row.down, index + 1 < layers.size());
     }
     setNumber(masterVolume, project.audio.masterVolume);
+
+    // Localization: the languages of the tables, with those chosen even when no table has them.
+    const std::vector<std::string> languages = projectLanguages(state);
+    const auto listed = [&](std::vector<std::string>& codes, const std::string& chosen) {
+        codes = languages;
+        if (!chosen.empty() && std::ranges::find(codes, chosen) == codes.end())
+        {
+            codes.push_back(chosen);
+            std::ranges::sort(codes);
+        }
+    };
+    const auto named = [](const std::vector<std::string>& codes) {
+        std::vector<std::string> names;
+        for (const std::string& code : codes)
+        {
+            names.push_back(code.empty() ? std::string("Auto (the player's, or the system's)") : std::format("{} ({})", asset::languageName(code), code));
+        }
+        return names;
+    };
+    listed(fallbackCodes, project.localization.fallbackLanguage);
+    const auto fallback = std::ranges::find(fallbackCodes, project.localization.fallbackLanguage);
+    setChoice(fallbackLanguage, named(fallbackCodes), fallback != fallbackCodes.end() ? static_cast<std::int32_t>(fallback - fallbackCodes.begin()) : -1);
+    listed(testCodes, project.localization.testLanguage);
+    testCodes.insert(testCodes.begin(), std::string{});
+    const auto test = std::ranges::find(testCodes, project.localization.testLanguage);
+    setChoice(testLanguage, named(testCodes), test != testCodes.end() ? static_cast<std::int32_t>(test - testCodes.begin()) : 0);
     for (std::size_t index = 0; index < asset::audioGroupCount; ++index)
     {
         setText(groupNames[index], project.audio.groupNames[index]);
@@ -1024,6 +1063,16 @@ void ProjectSettingsUi::answer(ToolsState& state, EditorUiKit& kit)
             layer = std::format("Layer {}", suffix);
         }
         layers.push_back(std::move(layer));
+    }
+
+    // Localization.
+    if (const std::optional<std::size_t> index = chosen(fallbackLanguage); index && *index < fallbackCodes.size())
+    {
+        project.localization.fallbackLanguage = fallbackCodes[*index];
+    }
+    if (const std::optional<std::size_t> index = chosen(testLanguage); index && *index < testCodes.size())
+    {
+        project.localization.testLanguage = testCodes[*index];
     }
 
     // Audio.

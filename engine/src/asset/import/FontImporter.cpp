@@ -1,4 +1,5 @@
 #include <devex/asset/Artifact.hpp>
+#include <devex/asset/TranslationData.hpp>
 #include <devex/asset/import/Importer.hpp>
 #include <devex/core/File.hpp>
 #include <devex/core/Log.hpp>
@@ -25,8 +26,8 @@ namespace {
 
 // The characters every font is baked with: the Latin letters, digits and punctuation, the
 // accented letters of western and central Europe with the œ of French, the punctuation of running
-// text (dashes, curly quotes, the ellipsis, and the dot a password shows) and the euro sign. Other
-// writings need a font baked for them, which the engine cannot do yet.
+// text (dashes, curly quotes, the ellipsis, and the dot a password shows) and the euro sign. The
+// characters of the translations of the project are baked with them: other writings come so.
 constexpr std::array<std::pair<std::uint32_t, std::uint32_t>, 5> bakedRanges{{
     {0x0020, 0x00FF},
     {0x0100, 0x017F},
@@ -36,7 +37,7 @@ constexpr std::array<std::pair<std::uint32_t, std::uint32_t>, 5> bakedRanges{{
 }};
 
 // Where glyphs are placed in the atlas: rows filled from left to right, each as tall as its
-// tallest glyph. Simple, and tight enough for a few hundred letters.
+// tallest glyph. Simple, and tight enough for letters of about the same size.
 class ShelfPacker
 {
 public:
@@ -76,6 +77,8 @@ private:
 struct BakedGlyph
 {
     std::uint32_t codepoint = 0;
+    // In the font, which finds the kerning of two glyphs without looking their characters up.
+    int index = 0;
     std::vector<std::uint8_t> pixels;
     int width = 0;
     int height = 0;
@@ -93,19 +96,35 @@ core::Result<ImportResult> importFontFile(ImportContext& context)
     {
         return std::unexpected(file.error());
     }
+    // The characters the translations write, whatever their writing: a table that cannot be read
+    // brings none, and says why when it imports itself.
+    ImportResult result;
+    std::vector<std::uint32_t> characters;
+    for (const std::filesystem::path& table : context.translations)
+    {
+        result.dependencies.push_back(table);
+        const core::Result<std::string> text = core::readTextFile(table);
+        const core::Result<TranslationData> translation =
+            text ? parseTranslationCsv(*text) : core::Result<TranslationData>(std::unexpected(text.error()));
+        if (translation)
+        {
+            const std::vector<std::uint32_t> written = translationCharacters(*translation);
+            characters.insert(characters.end(), written.begin(), written.end());
+        }
+    }
     core::Result<FontData> font = bakeFont(*file, core::toUtf8(context.source.stem()),
                                            static_cast<float>(context.numberOption("size", 48.0)),
-                                           static_cast<float>(context.numberOption("spread", 6.0)));
+                                           static_cast<float>(context.numberOption("spread", 6.0)), characters);
     if (!font)
     {
         return std::unexpected(font.error());
     }
-    ImportResult result;
     result.artifacts.push_back({context.mainId, AssetType::Font, context.name, encodeFont(*font)});
     return result;
 }
 
-core::Result<FontData> bakeFont(std::span<const std::byte> file, std::string family, float wantedSize, float wantedSpread)
+core::Result<FontData> bakeFont(std::span<const std::byte> file, std::string family, float wantedSize, float wantedSpread,
+                               std::span<const std::uint32_t> characters)
 {
     const auto* const bytes = reinterpret_cast<const unsigned char*>(file.data());
 
@@ -139,6 +158,10 @@ core::Result<FontData> bakeFont(std::span<const std::byte> file, std::string fam
             codepoints.push_back(codepoint);
         }
     }
+    codepoints.insert(codepoints.end(), characters.begin(), characters.end());
+    std::ranges::sort(codepoints);
+    const auto [repeated, end] = std::ranges::unique(codepoints);
+    codepoints.erase(repeated, end);
     std::vector<BakedGlyph> baked;
     for (const std::uint32_t codepoint : codepoints)
     {
@@ -151,7 +174,7 @@ core::Result<FontData> bakeFont(std::span<const std::byte> file, std::string fam
         int bearing = 0;
         stbtt_GetGlyphHMetrics(&info, index, &advance, &bearing);
 
-        BakedGlyph glyph{.codepoint = codepoint, .advance = static_cast<float>(advance) * scale};
+        BakedGlyph glyph{.codepoint = codepoint, .index = index, .advance = static_cast<float>(advance) * scale};
         unsigned char* const pixels =
             stbtt_GetGlyphSDF(&info, scale, index, padding, 128, 128.0f / spread, &glyph.width,
                               &glyph.height, &glyph.offsetX, &glyph.offsetY);
@@ -173,8 +196,18 @@ core::Result<FontData> bakeFont(std::span<const std::byte> file, std::string fam
         return core::makeError(core::ErrorCode::Parse, "the font holds no usable glyph");
     }
 
-    // Wider atlases waste less room; 1024 pixels hold the whole Latin range at a usual size.
-    constexpr std::uint32_t atlasWidth = 1024;
+    // Wider atlases waste less room; 1024 pixels hold the whole Latin range at a usual size, and the
+    // thousands of characters of Chinese or Japanese ask for a wider one, kept about square.
+    std::size_t area = 0;
+    for (const BakedGlyph& glyph : baked)
+    {
+        area += static_cast<std::size_t>(glyph.width + 1) * static_cast<std::size_t>(glyph.height + 1);
+    }
+    std::uint32_t atlasWidth = 1024;
+    while (atlasWidth < 8192 && area * 5 / 4 > static_cast<std::size_t>(atlasWidth) * atlasWidth)
+    {
+        atlasWidth *= 2;
+    }
     ShelfPacker packer(atlasWidth);
     FontData font;
     font.family = std::move(family);
@@ -225,17 +258,26 @@ core::Result<FontData> bakeFont(std::span<const std::byte> file, std::string fam
         return std::unexpected(valid.error());
     }
     // The pairs that move when one letter follows another, which is what keeps an A from drifting
-    // away from a V. Only the pairs the font actually moves are kept.
-    for (const FontGlyph& first : font.glyphs)
+    // away from a V. Only the pairs the font actually moves are kept, among the alphabets: the
+    // characters of Chinese, Japanese and Korean, from U+2E80 on, are not kerned.
+    constexpr std::uint32_t firstIdeograph = 0x2E80;
+    std::vector<std::pair<std::uint32_t, int>> kerned;
+    for (const BakedGlyph& glyph : baked)
     {
-        for (const FontGlyph& second : font.glyphs)
+        if (glyph.codepoint < firstIdeograph)
         {
-            const int amount = stbtt_GetCodepointKernAdvance(&info, static_cast<int>(first.codepoint),
-                                                             static_cast<int>(second.codepoint));
+            kerned.emplace_back(glyph.codepoint, glyph.index);
+        }
+    }
+    std::ranges::sort(kerned);
+    for (const auto& [first, firstIndex] : kerned)
+    {
+        for (const auto& [second, secondIndex] : kerned)
+        {
+            const int amount = stbtt_GetGlyphKernAdvance(&info, firstIndex, secondIndex);
             if (amount != 0)
             {
-                font.kerning.push_back({first.codepoint, second.codepoint,
-                                        static_cast<float>(amount) * scale});
+                font.kerning.push_back({first, second, static_cast<float>(amount) * scale});
             }
         }
     }
