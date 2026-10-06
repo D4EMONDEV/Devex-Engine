@@ -139,11 +139,23 @@ float4 spriteColor(Sprite sprite, float2 local)
     // Texture rows run from the top.
     const float2 uv = float2(lerp(sprite.uvRect.x, sprite.uvRect.z, fraction.x),
                              lerp(sprite.uvRect.w, sprite.uvRect.y, fraction.y));
+    // Clamp to this sprite's texel centres, not to the full atlas. Raster coverage can
+    // interpolate just beyond a quad edge, and a mirrored edge may land exactly on the
+    // next tile even with nearest filtering. Clamping the sample (rather than shrinking
+    // the UV rectangle) preserves the pixel spacing and the sliced/tiled mapping.
+    uint textureWidth;
+    uint textureHeight;
+    textures[NonUniformResourceIndex(sprite.texture)].GetDimensions(textureWidth, textureHeight);
+    const float2 halfTexel = 0.5 / float2(textureWidth, textureHeight);
+    const float2 low = min(sprite.uvRect.xy, sprite.uvRect.zw);
+    const float2 high = max(sprite.uvRect.xy, sprite.uvRect.zw);
+    const float2 inset = min(halfTexel, (high - low) * 0.5);
+    const float2 sampleUv = clamp(uv, low + inset, high - inset);
     // The slope of an unbroken mapping, so that the seams of the borders and of the tiles pick the
     // same mip level as the rest.
     const float2 uvPerMeter = float2(sprite.uvRect.z - sprite.uvRect.x, sprite.uvRect.y - sprite.uvRect.w) /
                               max(sprite.naturalSize, float2(1e-6));
-    return color * sampleTextureGrad(sprite.texture, uv, ddx(local) * uvPerMeter, ddy(local) * uvPerMeter);
+    return color * sampleTextureGrad(sprite.texture, sampleUv, ddx(local) * uvPerMeter, ddy(local) * uvPerMeter);
 }
 
 [shader("vertex")]

@@ -1373,3 +1373,110 @@ TEST_CASE("Tilemaps draw their tiles in one batch among the sprites, and are pic
     }
     CHECK(capture.errors().empty());
 }
+
+TEST_CASE("Scrolling tilemaps do not sample neighbouring atlas cells", "[render][gpu][tilemap]")
+{
+    const auto filter = GENERATE(devex::asset::TextureFilter::Nearest, devex::asset::TextureFilter::Linear);
+    const ErrorCapture capture;
+    {
+        auto platform = devex::platform::Platform::create();
+        REQUIRE(platform);
+        auto window = platform->createWindow({.width = 320, .height = 240, .vulkan = true, .hidden = true});
+        REQUIRE(window);
+        auto renderer = devex::render::Renderer::create(*platform, *window, {.validation = true});
+        REQUIRE(renderer);
+
+        // A green 16x16 tile within a 17x8 atlas. Its neighbours are red, so that even a
+        // single sample across its edges is visible. No mipmaps: test atlas boundaries,
+        // including nearest sampling at pixel centres exactly on a mirrored cell edge.
+        devex::asset::TextureData atlas{.format = devex::asset::TextureFormat::Rgba8Srgb, .filter = filter};
+        auto& mip = atlas.mips.emplace_back(devex::asset::TextureMip{
+            .width = 272, .height = 128, .bytes = std::vector<std::byte>(272 * 128 * 4)});
+        for (std::uint32_t y = 0; y < mip.height; ++y)
+        {
+            for (std::uint32_t x = 0; x < mip.width; ++x)
+            {
+                const bool green = x >= 128 && x < 144 && y >= 48 && y < 64;
+                const std::size_t pixel = (std::size_t{y} * mip.width + x) * 4;
+                mip.bytes[pixel] = green ? std::byte{0} : std::byte{255};
+                mip.bytes[pixel + 1] = green ? std::byte{255} : std::byte{0};
+                mip.bytes[pixel + 2] = std::byte{0};
+                mip.bytes[pixel + 3] = std::byte{255};
+            }
+        }
+        const auto texture = renderer->createTexture(atlas);
+        REQUIRE(texture);
+
+        constexpr int capturedFrames = 32;
+        std::vector<devex::render::CapturedImage> captured;
+        for (int frame = 0; frame < capturedFrames + 7; ++frame)
+        {
+            auto& world = renderer->beginFrame();
+            world.viewport = devex::math::Extent2D{320, 240};
+            // One pixel of camera travel, in small steps, with exactly half-pixel phases.
+            const float phase = static_cast<float>(std::max(frame - 4, 0)) / 32.0f;
+            world.camera.view = devex::math::translate(devex::math::Mat4{1.0f}, {-phase / 24.0f, phase / 24.0f, -10.0f});
+            world.camera.projection = devex::render::Projection::Orthographic;
+            world.camera.orthographicSize = 5.0f;
+            world.camera.autoExposure = false;
+            world.camera.antialiasing = devex::render::Antialiasing::None;
+            world.camera.tonemapper = devex::render::Tonemapper::None;
+            world.camera.ambientOcclusion = 0.0f;
+            world.camera.bloom = 0.0f;
+            world.environment.color = {0.0f, 0.0f, 0.0f};
+            for (int y = -6; y < 6; ++y)
+            {
+                for (int x = -8; x < 8; ++x)
+                {
+                    devex::math::Vec4 uv{128.0f / 272.0f, 48.0f / 128.0f, 144.0f / 272.0f, 64.0f / 128.0f};
+                    if (x % 2 != 0)
+                    {
+                        std::swap(uv.x, uv.z);
+                    }
+                    if (y % 2 != 0)
+                    {
+                        std::swap(uv.y, uv.w);
+                    }
+                    world.tiles.push_back({.cell = {x, y}, .uvRect = uv, .texture = *texture});
+                }
+            }
+            world.tilemaps.push_back({.cellSize = {1.0f, 1.0f}, .tileCount = static_cast<std::uint32_t>(world.tiles.size()),
+                                      .objectId = 17});
+            if (frame >= 4 && frame < capturedFrames + 4)
+            {
+                static_cast<void>(renderer->requestCapture(320, 240));
+            }
+            REQUIRE(renderer->endFrame());
+            for (auto& image : renderer->takeCaptures())
+            {
+                captured.push_back(std::move(image));
+            }
+        }
+        REQUIRE(captured.size() == capturedFrames);
+        for (const auto& image : captured)
+        {
+            CAPTURE(filter, image.request);
+            REQUIRE(image.width == 320);
+            REQUIRE(image.height == 240);
+            std::size_t seams = 0;
+            for (std::uint32_t y = 8; y < image.height - 8; ++y)
+            {
+                for (std::uint32_t x = 8; x < image.width - 8; ++x)
+                {
+                    const std::size_t pixel = (std::size_t{y} * image.width + x) * 4;
+                    if (image.rgba[pixel] > 8 || image.rgba[pixel + 1] < 245 || image.rgba[pixel + 2] > 8)
+                    {
+                        ++seams;
+                    }
+                }
+            }
+            CHECK(seams == 0);
+        }
+        renderer->destroyTexture(*texture);
+    }
+    for (const auto& error : capture.errors())
+    {
+        UNSCOPED_INFO(error);
+    }
+    CHECK(capture.errors().empty());
+}
