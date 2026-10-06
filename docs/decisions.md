@@ -737,7 +737,8 @@ les assets s'écrivent au fil de leur lecture.
   frame à 250 ms pour éviter la spirale de rattrapage. `interpolationAlpha()` donne la
   progression vers le pas suivant pour interpoler le rendu.
 - Fermer la fenêtre principale ou recevoir une demande de l'OS termine la boucle.
-  `maxFrameRate` limite les FPS ; une fenêtre minimisée tourne à 20 Hz au plus.
+  `maxFrameRate` limite les FPS ; une fenêtre minimisée tourne à 20 Hz au plus. L'éditeur se
+  repose quand rien ne bouge (voir *Au repos* dans *Éditeur*).
 - **Éditeur** (`ApplicationConfig::editor`) : l'éditeur est un mode de `Application`, pas un
   programme à part. `devex-editor` est une application vide lancée dans ce mode ; le code d'un
   jeu y arrive par son module de jeu. Une `Application` compilée avec son propre code peut aussi
@@ -942,7 +943,8 @@ les assets s'écrivent au fil de leur lecture.
   gestionnaire) : préréglage, couleurs de base et d'accent, contraste, échelle de l'interface
   (automatique ou de 75 à 250 %), tailles des polices, retour aux valeurs par défaut. Appliqués en
   direct et enregistrés pour l'utilisateur dans `%APPDATA%/Devex/Editor/editor.dvx` (section
-  `[theme]`, avec la liste des projets). L'overlay F1 des jeux prend le thème par défaut.
+  `[theme]`, avec la liste des projets). L'overlay F1 des jeux prend le thème par défaut. La page
+  *Display* a aussi *Update Continuously* (voir *Au repos*).
 
 ### Profileur
 
@@ -1111,6 +1113,32 @@ les assets s'écrivent au fil de leur lecture.
   revient au gestionnaire de projets, Ctrl+Q quitte.
 - **Pendant le jeu** : l'historique des modifications est mis de côté ; les modifications faites
   à la copie jouée ont leur propre historique, oublié à l'arrêt.
+- **Au repos** (jalon 61) : comme le mode basse consommation de Godot, l'éditeur ne dessine que
+  lorsque quelque chose change. Il dessine chaque image tant que quelque chose bouge ou que
+  l'utilisateur agit, et une demi-seconde après. Ensuite, il attend un événement avant chaque image
+  (`Platform::waitEvents`, sur `SDL_WaitEventTimeout`), et en dessine quand même une toutes les
+  250 ms : pour le curseur du texte, les infobulles et le travail des autres fils (imports,
+  compilation, sortie). Comptent comme activité :
+  - un événement du système (souris, clavier, fenêtre), la réponse d'un dialogue de fichiers, ou
+    `Platform::wake` depuis un autre fil ;
+  - un bouton de la souris tenu, et la caméra qui vole, tourne ou glisse ;
+  - un aperçu qui joue (panneau Animation, SpriteFrames, son), ou une sélection au clic qui attend
+    la réponse du GPU ;
+  - le mode Play, pause comprise ;
+  - des particules vivantes, des tuiles animées à l'écran, des assets en chargement, une scène
+    chargée en arrière-plan.
+
+  `ToolsOverlay::isAnimating` donne ce qui bouge dans les outils, et les panneaux le signalent
+  pendant leur mise à jour. *Editor Settings > Display > Update Continuously* (décoché par défaut,
+  comme chez Godot ; `update_continuously` dans `[theme]`) dessine chaque image, pour mesurer. Les
+  images qui suivent une attente ne comptent pas dans les FPS de la barre d'état ni dans la courbe
+  des temps d'image : on y lit le rythme des images enchaînées, pas celui du repos. Rien ne
+  l'indique à l'écran. Le jeu et le lecteur ne sont pas concernés. `pollEvents` lit les manettes
+  lui-même (`SDL_UpdateJoysticks`, avec `SDL_HINT_AUTO_UPDATE_JOYSTICKS` à 0). Si SDL s'en
+  chargeait, l'attente se réveillerait toutes les 3 ms dès qu'une manette est branchée : 23 ms de
+  processeur par seconde pour rien. Mesures sur le projet d'exemple (scène 3D, Release, une
+  manette branchée) : au repos, l'éditeur dessine 4 images par seconde et prend 17 à 20 ms de
+  processeur par seconde et 6,5 % du GPU, contre 336 ms et 39 % en continu.
 
 ### Sélection et édition des entités
 
@@ -3581,6 +3609,9 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     déroulante d'un panneau ou d'une fenêtre se placent dans toute la fenêtre de l'éditeur et se
     montrent dans la couche des menus, dans une image à eux ; les infobulles passent par la couche
     au-dessus de l'éditeur.
+61. ✅ **Éditeur au repos** — plein régime tant que quelque chose bouge et une demi-seconde après,
+    puis une image à chaque événement ou toutes les 250 ms ; *Update Continuously* pour tout
+    redessiner, comme dans Godot.
 
 Ensuite, sans ordre figé : à choisir dans les pistes ci-dessous.
 

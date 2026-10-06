@@ -118,9 +118,10 @@ void extractSprites(scene::Scene& scene, AssetManager& assets, const asset::Sort
     }
 }
 
-void extractTilemaps(scene::Scene& scene, AssetManager& assets, const asset::SortingSettings& sorting, double seconds,
+bool extractTilemaps(scene::Scene& scene, AssetManager& assets, const asset::SortingSettings& sorting, double seconds,
                      render::RenderWorld& world)
 {
+    bool animated = false;
     // Where the sprite of a tile lies on its texture, found once per tilemap.
     struct ResolvedTile
     {
@@ -144,6 +145,7 @@ void extractTilemaps(scene::Scene& scene, AssetManager& assets, const asset::Sor
                 return found->second;
             }
             const asset::TileData* const tile = tileset->find(id);
+            animated = animated || (tile != nullptr && tile->frames.size() > 1 && tile->fps > 0.0f);
             const std::shared_ptr<const asset::SpriteData> sprite = tile != nullptr ? assets.sprite(tile->spriteAt(seconds)) : nullptr;
             const render::TextureHandle texture = sprite != nullptr ? assets.texture(sprite->texture) : render::TextureHandle{};
             if (texture.isValid())
@@ -188,6 +190,7 @@ void extractTilemaps(scene::Scene& scene, AssetManager& assets, const asset::Sor
             .objectId = entity.index + 1,
         });
     }
+    return animated;
 }
 
 void extractScene(scene::Scene& scene, AssetManager& assets, render::RenderWorld& world)

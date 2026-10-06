@@ -22,6 +22,9 @@ TEST_CASE("Theme settings are written and read back", "[tools][theme]")
     settings.accentColor = {1.0f, 0.5f, 0.0f};
     settings.interfaceScale = 1.25f;
     settings.fontSize = 16.0f;
+    // The editor rests unless asked to draw every frame.
+    CHECK_FALSE(settings.updateContinuously);
+    settings.updateContinuously = true;
 
     const devex::serialization::TextSection section = devex::tools::detail::writeThemeSettings(settings);
     CHECK(section.type == "theme");
@@ -31,6 +34,7 @@ TEST_CASE("Theme settings are written and read back", "[tools][theme]")
     CHECK(read.accentColor.g == Catch::Approx(0.5f).margin(1.0 / 255.0));
     CHECK(read.interfaceScale == 1.25f);
     CHECK(read.fontSize == 16.0f);
+    CHECK(read.updateContinuously);
 }
 
 TEST_CASE("Invalid theme settings fall back to usable values", "[tools][theme]")
@@ -46,6 +50,7 @@ TEST_CASE("Invalid theme settings fall back to usable values", "[tools][theme]")
     CHECK(settings.contrast == 1.0f);
     CHECK(settings.interfaceScale == 3.0f);
     CHECK(settings.fontSize == 8.0f);
+    CHECK_FALSE(settings.updateContinuously);
 }
 
 TEST_CASE("The interface follows the display unless its scale is set", "[tools][theme]")

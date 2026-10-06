@@ -282,6 +282,7 @@ struct EditorSettingsUi : SettingsUi
     Entity scale;
     Entity fontSize;
     Entity codeFontSize;
+    Entity updateContinuously;
     Button reset;
     struct EditorFields
     {
@@ -338,6 +339,11 @@ void EditorSettingsUi::build(EditorUiKit& kit)
     fontSize = numbers(formRow(display, "Font Size").editor, single, points).front();
     codeFontSize = numbers(formRow(display, "Code Font Size").editor, single, points).front();
     note(&display, "Code Font Size is that of the text editor and the output.", "dim");
+    Section& performance = pageCard(kit, 1, "Performance");
+    const FormRow updateRow = formRow(performance, "Update Continuously");
+    updateContinuously = toggle(updateRow.editor);
+    tooltip(updateRow.row, "Draws the editor at every frame, even when nothing changes: for measuring performance");
+    note(&performance, "Off, the editor draws only while something moves or the user acts, and rests in between.", "dim", 2.0f);
 
     constexpr std::array<std::string_view, 3> categories{"C#", "C++", "Devex Files"};
     Section& detection = pageCard(kit, 2, "Installed Editors");
@@ -430,6 +436,7 @@ void EditorSettingsUi::update(ToolsState& state, EditorUiKit& kit, core::Duratio
     scene().get<scene::UiDropdown>(scale).placeholder = std::format("{:.0f} %", theme.interfaceScale * 100.0f);
     setNumber(fontSize, theme.fontSize);
     setNumber(codeFontSize, theme.codeFontSize);
+    setToggle(updateContinuously, theme.updateContinuously);
     for (std::size_t i = 0; i < editors.size(); ++i)
     {
         const EditorFields& fields = editors[i];
@@ -582,6 +589,10 @@ void EditorSettingsUi::update(ToolsState& state, EditorUiKit& kit, core::Duratio
     if (world.wasChanged(codeFontSize))
     {
         theme.codeFontSize = std::round(scene().get<scene::UiNumberField>(codeFontSize).value);
+    }
+    if (world.wasChanged(updateContinuously))
+    {
+        theme.updateContinuously = scene().get<scene::UiToggle>(updateContinuously).value;
     }
     if (world.wasClicked(reset.entity))
     {

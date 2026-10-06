@@ -6,6 +6,7 @@
 #include "TwoDScreen.hpp"
 
 #include <devex/asset/Artifact.hpp>
+#include <devex/audio/AudioEngine.hpp>
 #include <devex/core/Assert.hpp>
 #include <devex/core/Log.hpp>
 #include <devex/core/Path.hpp>
@@ -362,6 +363,7 @@ void updateEditor(ToolsState& state, scene::Scene& scene, PlayState playState)
         state.viewportPixels = {};
         detail::updateWindowTitle(state, scene);
         finishFrame(state);
+        state.animating = state.animating || state.input.anyDown();
         state.capturesKeyboard = true;
         state.capturesMouse = state.hosts.pointerTaken();
         return;
@@ -425,6 +427,11 @@ void updateEditor(ToolsState& state, scene::Scene& scene, PlayState playState)
     }
     detail::updateWindowTitle(state, scene);
     finishFrame(state);
+    // The camera moves while its buttons and keys are held, and the click of a pick is answered a
+    // few frames later.
+    state.animating = state.animating || state.flying || state.orbiting || state.panning || state.input.anyDown() ||
+                      state.animationPreviewPlaying || state.pickQuery.has_value() || state.awaitedPick != 0 ||
+                      (state.audio != nullptr && state.audio->isPreviewing());
 
     // Gameplay receives the devices the game view uses, and the editor camera flies with them.
     const bool playing = playState != PlayState::Editing;
@@ -512,6 +519,21 @@ bool ToolsOverlay::capturesKeyboard() const noexcept
     return m_state->capturesKeyboard;
 }
 
+bool ToolsOverlay::isAnimating() const noexcept
+{
+    return m_state->animating;
+}
+
+bool ToolsOverlay::updatesContinuously() const noexcept
+{
+    return m_state->mode != ToolsMode::Editor || m_state->theme.updateContinuously;
+}
+
+void ToolsOverlay::setResting(bool resting) noexcept
+{
+    m_state->resting = resting;
+}
+
 bool ToolsOverlay::capturesMouse() const noexcept
 {
     return m_state->capturesMouse;
@@ -545,7 +567,10 @@ void ToolsOverlay::update(scene::Scene& scene, core::Duration frameDelta, PlaySt
 {
     ToolsState& state = *m_state;
     state.pressedKey = std::exchange(state.notifiedKey, std::nullopt);
-    state.frameTimes.record(static_cast<float>(frameDelta.count() * 1000.0));
+    if (!state.resting)
+    {
+        state.frameTimes.record(static_cast<float>(frameDelta.count() * 1000.0));
+    }
     detail::recordMonitors(state, scene, frameDelta);
     // Frames are measured only for someone to look at them.
     core::profiler::setEnabled(state.visible && state.showProfiler);
@@ -555,6 +580,7 @@ void ToolsOverlay::update(scene::Scene& scene, core::Duration frameDelta, PlaySt
     }
 
     refreshTheme(state);
+    state.animating = false;
     state.clock += frameDelta.count();
     state.input.begin(state.platform.toolsInput(), state.clock, static_cast<float>(frameDelta.count()));
     // Where the strips and the panels stand, which host the pointer is over, and what the panels read.

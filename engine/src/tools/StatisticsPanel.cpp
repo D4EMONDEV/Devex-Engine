@@ -102,7 +102,10 @@ void recordMonitors(ToolsState& state, const scene::Scene& scene, core::Duration
 {
     const render::RendererStats stats = state.renderer.stats();
     Monitors& monitors = state.monitors;
-    monitors.frameTime.record(static_cast<float>(frameDelta.count() * 1000.0));
+    if (!state.resting)
+    {
+        monitors.frameTime.record(static_cast<float>(frameDelta.count() * 1000.0));
+    }
     monitors.drawCalls.record(static_cast<float>(stats.drawCalls));
     monitors.culled.record(static_cast<float>(stats.culledInstances));
     monitors.gpuMemory.record(static_cast<float>(static_cast<double>(stats.gpuMemoryUsage) / bytesPerMegabyte));

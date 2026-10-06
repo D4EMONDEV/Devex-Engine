@@ -230,8 +230,16 @@ private:
 
     // A minimized window shows nothing: keep simulating in real time without spinning the CPU.
     static constexpr std::chrono::milliseconds minimizedFrameTime{50};
+    // The editor rests while nothing moves, as the low processor mode of Godot does: it draws every
+    // frame while something moves or the user acts, and for restDelay after; then one frame at each
+    // event, and one every restBeat for the caret, the tooltips and the work of other threads.
+    static constexpr std::chrono::milliseconds restDelay{500};
+    static constexpr std::chrono::milliseconds restBeat{250};
 
     [[nodiscard]] bool isEditor() const noexcept;
+    // Editor only: whether what the last frame showed moves on its own, or the editor is asked to
+    // draw every frame, so that it does not rest.
+    [[nodiscard]] bool isAnimating() const;
     void handleEvent(const platform::Event& event);
     // Asks to quit, which the editor may postpone to ask about unsaved changes.
     void requestClose();
@@ -341,6 +349,10 @@ private:
     core::Duration m_fixedDelta;
     std::chrono::nanoseconds m_frameBudget;
     Clock::time_point m_previousFrame;
+    // The last event or frame that moved something, after which the editor rests.
+    Clock::time_point m_lastActivity;
+    // The last frame showed animated tiles, which the editor plays.
+    bool m_animatedTiles = false;
     bool m_inFrame = false;
     int m_exitCode = EXIT_SUCCESS;
     tools::PlayState m_playState = tools::PlayState::Editing;
@@ -595,6 +607,14 @@ bool ApplicationRunner::isEditor() const noexcept
     return m_services.tools != nullptr && m_services.tools->mode() == tools::ToolsMode::Editor;
 }
 
+bool ApplicationRunner::isAnimating() const
+{
+    // The game, the emitters and the animated tiles the editor plays, and what is loading.
+    return m_services.tools->updatesContinuously() || m_services.tools->isAnimating() || m_playScene.has_value() ||
+           (m_particles != nullptr && m_particles->particleCount() > 0) || m_animatedTiles ||
+           m_services.assets.pendingLoads() > 0 || m_backgroundScene.has_value() || !m_thumbnailCaptures.empty();
+}
+
 int ApplicationRunner::execute()
 {
     if (core::Result<void> built = buildOutdatedGameCode(); !built)
@@ -630,8 +650,19 @@ int ApplicationRunner::execute()
     });
 
     m_previousFrame = Clock::now();
+    m_lastActivity = m_previousFrame;
     while (!m_application.m_quitRequested)
     {
+        // At rest, the editor waits for an event, or for the next beat.
+        if (isEditor())
+        {
+            const bool resting = Clock::now() - m_lastActivity >= restDelay;
+            if (resting)
+            {
+                m_services.platform.waitEvents(restBeat);
+            }
+            m_services.tools->setResting(resting);
+        }
         core::profiler::beginFrame();
         // Devices used by the tools during the previous frame do not drive gameplay.
         if (m_services.tools != nullptr)
@@ -641,8 +672,10 @@ int ApplicationRunner::execute()
         }
         {
             DEVEX_PROFILE_SCOPE("Events");
-            m_services.platform.pollEvents(
-                [this](const platform::Event& event) { handleEvent(event); });
+            if (m_services.platform.pollEvents([this](const platform::Event& event) { handleEvent(event); }))
+            {
+                m_lastActivity = Clock::now();
+            }
         }
         if (m_application.m_quitRequested)
         {
@@ -650,6 +683,10 @@ int ApplicationRunner::execute()
             break;
         }
         runFrame();
+        if (isEditor() && isAnimating())
+        {
+            m_lastActivity = Clock::now();
+        }
         core::profiler::endFrame();
     }
 
@@ -966,7 +1003,7 @@ void ApplicationRunner::render(bool gameplay)
         const asset::AssetSource* const source = assetSource();
         const asset::SortingSettings sorting = source != nullptr ? source->project().sorting : asset::SortingSettings{};
         extractSprites(scene, m_services.assets, sorting, world);
-        extractTilemaps(scene, m_services.assets, sorting, m_tileClock, world);
+        m_animatedTiles = extractTilemaps(scene, m_services.assets, sorting, m_tileClock, world);
         extractParticles(*m_particles, m_services.assets, world);
         if (gameplay)
         {

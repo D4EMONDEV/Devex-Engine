@@ -81,7 +81,14 @@ public:
     [[nodiscard]] core::Result<Window> createWindow(const WindowConfig& config);
 
     // Starts a new input frame, then updates the input state and forwards every pending event.
-    void pollEvents(const EventCallback& callback);
+    // True when there was any, or when a file dialog answered.
+    bool pollEvents(const EventCallback& callback);
+    // Waits until an event comes, a file dialog answers or wake is called, at most `timeout`,
+    // without taking the event: the next pollEvents forwards it. False when the time ran out. The
+    // editor rests on it while nothing moves.
+    bool waitEvents(std::chrono::milliseconds timeout);
+    // Ends a waitEvents as an event would. Safe from any thread.
+    static void wake();
 
     [[nodiscard]] const Input& input() const noexcept;
     // Everything the devices did this frame, whatever the tools keep from the game: what the tools

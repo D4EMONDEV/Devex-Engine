@@ -25,8 +25,8 @@ DEVEX_API void extractSprites(scene::Scene& scene, AssetManager& assets, const a
 
 // Adds the Tilemap components whose tileset is loaded, with the tiles whose sprite and texture
 // are, animated tiles on their frame at `seconds`. Tilemaps are identified for picking as mesh
-// instances are.
-DEVEX_API void extractTilemaps(scene::Scene& scene, AssetManager& assets, const asset::SortingSettings& sorting, double seconds,
+// instances are. True when an animated tile is shown: later times show it otherwise.
+DEVEX_API bool extractTilemaps(scene::Scene& scene, AssetManager& assets, const asset::SortingSettings& sorting, double seconds,
                                render::RenderWorld& world);
 
 // Adds the particles of the emitters, in the world, one batch per emitter, and the ribbons of

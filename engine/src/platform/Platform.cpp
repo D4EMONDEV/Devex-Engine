@@ -21,6 +21,7 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdlib>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -72,8 +73,12 @@ void SDLCALL answerDialog(void* userData, const char* const* files, int /*filter
     {
         dialog->chosen = core::pathFromUtf8(files[0]);
     }
-    const std::scoped_lock lock(answeredDialogsMutex);
-    answeredDialogs.push_back(std::move(dialog));
+    {
+        const std::scoped_lock lock(answeredDialogsMutex);
+        answeredDialogs.push_back(std::move(dialog));
+    }
+    // A thread waiting for events answers it now.
+    Platform::wake();
 }
 
 bool SDLCALL watchLiveRedraw(void* /*userData*/, SDL_Event* event)
@@ -469,6 +474,9 @@ core::Result<Platform> Platform::create()
     SDL_SetHint(SDL_HINT_WINDOWS_INTRESOURCE_ICON, "1");
     SDL_SetHint(SDL_HINT_WINDOWS_INTRESOURCE_ICON_SMALL, "1");
 #endif
+    // The gamepads are read once a poll, by pollEvents: when SDL reads them itself, a wait for events
+    // wakes every few milliseconds to do so while one is open.
+    SDL_SetHint(SDL_HINT_AUTO_UPDATE_JOYSTICKS, "0");
     // Gamepads are optional: a machine without one, or without their driver, still runs.
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD))
     {
@@ -617,16 +625,22 @@ core::Result<Window> Platform::createWindow(const WindowConfig& config)
     return Window(detail::toNativeWindow(window));
 }
 
-void Platform::pollEvents(const EventCallback& callback)
+bool Platform::pollEvents(const EventCallback& callback)
 {
     DEVEX_ASSERT(m_initialized);
 
     m_input.beginFrame();
     m_toolsInput.beginFrame();
     const InputCapture capture{m_toolsCaptureKeyboard, m_toolsCaptureMouse};
+    // The messages of the system first, which bring the state of some gamepads, then the gamepads,
+    // in the order SDL keeps when it reads them itself.
+    SDL_PumpEvents();
+    SDL_UpdateJoysticks();
+    bool any = false;
     SDL_Event event;
     while (SDL_PollEvent(&event))
     {
+        any = true;
         recordToolsInput(event, m_toolsInput);
         dispatchEvent(event, m_input, capture, callback);
     }
@@ -643,6 +657,29 @@ void Platform::pollEvents(const EventCallback& callback)
             dialog->callback(std::move(dialog->chosen));
         }
     }
+    return any || !answered.empty();
+}
+
+bool Platform::waitEvents(std::chrono::milliseconds timeout)
+{
+    DEVEX_ASSERT(m_initialized);
+    {
+        const std::scoped_lock lock(answeredDialogsMutex);
+        if (!answeredDialogs.empty())
+        {
+            return true;
+        }
+    }
+    const auto milliseconds = std::clamp<std::chrono::milliseconds::rep>(timeout.count(), 0, std::numeric_limits<Sint32>::max());
+    return SDL_WaitEventTimeout(nullptr, static_cast<Sint32>(milliseconds));
+}
+
+void Platform::wake()
+{
+    // An event of the application's own, which pollEvents ignores.
+    SDL_Event event{};
+    event.type = SDL_EVENT_USER;
+    SDL_PushEvent(&event);
 }
 
 void Platform::setToolsInputCapture(bool keyboard, bool mouse) noexcept

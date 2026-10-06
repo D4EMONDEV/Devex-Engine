@@ -224,6 +224,10 @@ ThemeSettings readThemeSettings(const serialization::TextSection& section)
     }
     settings.fontSize = std::clamp(numberOr(section, "font_size", settings.fontSize), 8.0f, 32.0f);
     settings.codeFontSize = std::clamp(numberOr(section, "code_font_size", settings.codeFontSize), 8.0f, 32.0f);
+    if (const TextValue* const value = section.findAttribute("update_continuously"))
+    {
+        settings.updateContinuously = serialization::asBool(*value).value_or(false);
+    }
     return settings;
 }
 
@@ -239,6 +243,7 @@ serialization::TextSection writeThemeSettings(const ThemeSettings& settings)
         {"interface_scale", TextValue(static_cast<double>(settings.interfaceScale))},
         {"font_size", TextValue(static_cast<double>(settings.fontSize))},
         {"code_font_size", TextValue(static_cast<double>(settings.codeFontSize))},
+        {"update_continuously", TextValue(settings.updateContinuously)},
     };
     return section;
 }

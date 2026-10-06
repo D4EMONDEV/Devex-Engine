@@ -253,6 +253,18 @@ public:
     // True while a field of the panels takes what is typed: typing stays on for it.
     [[nodiscard]] bool wantsTextInput() const noexcept;
 
+    // Editor only: whether what the last update showed moves on its own, or follows a button held:
+    // a camera flying, a preview playing, a click awaiting the renderer. The editor then draws the
+    // next frame without waiting for an event.
+    [[nodiscard]] bool isAnimating() const noexcept;
+    // Whether the editor draws every frame even when nothing changes, as Editor Settings > Display >
+    // Update Continuously asks. The tools over a game always do.
+    [[nodiscard]] bool updatesContinuously() const noexcept;
+    // Editor only: whether the next update follows a wait for events. Its frame time, which the wait
+    // lengthens, is left out of the statistics: the frame rate shown stays that of the frames drawn
+    // one after the other.
+    void setResting(bool resting) noexcept;
+
     // Editor only: the size of the image the game is drawn into, in pixels, and where the mouse
     // sits inside it. The position is nothing while the pointer is outside the viewport, which the
     // interface of the game reads so that its buttons answer where the game is shown.

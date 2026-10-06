@@ -53,6 +53,9 @@ struct DEVEX_API ThemeSettings
     // Sizes of the fonts in points, as in text editors, before the interface scale.
     float fontSize = 14.0f;
     float codeFontSize = 13.0f;
+    // Whether the editor draws every frame even when nothing changes. Off, it rests between events
+    // once nothing moves, as the low processor mode of Godot does.
+    bool updateContinuously = false;
 
     // The colors and contrast of a preset, with the other settings left as they are.
     void applyPreset(ThemePreset newPreset) noexcept;

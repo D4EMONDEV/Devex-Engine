@@ -800,6 +800,11 @@ struct DEVEX_API ToolsState
     bool flying = false;
     bool orbiting = false;
     bool panning = false;
+    // Something the editor shows moved on its own this frame, a preview playing for one: the next
+    // frame follows at once rather than at the next event. Set by what moves, during an update.
+    bool animating = false;
+    // The frame follows a wait for events, which its time includes: the statistics leave it out.
+    bool resting = false;
     std::optional<math::Vec2> clickStart;
     // A click that moved became a rectangle, drawn until the button is released.
     bool drawingRectangle = false;

@@ -255,6 +255,7 @@ public:
         if (editor.previewPlaying)
         {
             editor.previewTime += state.input.delta();
+            state.animating = state.animating || count > 1;
         }
         std::size_t shown = 0;
         if (count > 0)

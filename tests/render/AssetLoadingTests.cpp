@@ -354,8 +354,8 @@ TEST_CASE("Extraction draws the tiles of tilemaps, animated and mirrored", "[run
     scene.updateTransforms();
 
     devex::render::RenderWorld world;
-    // Water on its second frame: 2 frames a second, at 0.6 s.
-    devex::runtime::extractTilemaps(scene, assets, {.layers = {"Back", "Default"}}, 0.6, world);
+    // Water on its second frame: 2 frames a second, at 0.6 s. It moves, so the editor keeps drawing.
+    CHECK(devex::runtime::extractTilemaps(scene, assets, {.layers = {"Back", "Default"}}, 0.6, world));
     REQUIRE(world.tilemaps.size() == 1);
     const devex::render::RenderTilemap& drawn = world.tilemaps.front();
     CHECK(drawn.objectId == level.index + 1);
@@ -371,4 +371,10 @@ TEST_CASE("Extraction draws the tiles of tilemaps, animated and mirrored", "[run
     CHECK(tileAt(1).uvRect == devex::math::Vec4{0.25f, 0.0f, 0.0f, 1.0f});
     CHECK(tileAt(2).uvRect.x == 0.5f);
     CHECK(tileAt(0).texture.isValid());
+
+    // Without the water, nothing moves.
+    devex::scene::setTile(scene.get<devex::scene::Tilemap>(level), {2, 0}, 0);
+    devex::render::RenderWorld still;
+    CHECK_FALSE(devex::runtime::extractTilemaps(scene, assets, {.layers = {"Back", "Default"}}, 0.6, still));
+    CHECK(still.tiles.size() == 2);
 }

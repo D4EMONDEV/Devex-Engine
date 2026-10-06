@@ -17,7 +17,8 @@ et rendu avec Vulkan. Il est distribué sous licence [MIT](LICENSE).
   d'interface : tous les panneaux, le dock (emplacements, onglets, barres) et les modales le sont,
   l'éditeur lit lui-même le clavier et la souris et décide qui les reçoit, et le renderer compose
   ses images avec le pipeline de cette interface, aux espacements du thème de Godot. Dear ImGui
-  n'est plus une dépendance.
+  n'est plus une dépendance. Quand rien ne bouge, l'éditeur se repose : une image à chaque
+  événement, ou toutes les 250 ms, comme le mode basse consommation de Godot.
 
 Le détail, l'architecture des modules et les jalons sont dans
 [docs/decisions.md](docs/decisions.md).

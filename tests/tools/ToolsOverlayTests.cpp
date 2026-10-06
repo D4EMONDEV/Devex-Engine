@@ -105,6 +105,57 @@ TEST_CASE("The tools overlay renders over the scene without validation errors", 
     CHECK(errors.empty());
 }
 
+TEST_CASE("The editor lets the application rest while nothing moves, unless asked to update continuously", "[tools][gpu]")
+{
+    const std::filesystem::path root =
+        std::filesystem::temp_directory_path() / ("devex-rest-" + devex::core::Uuid::generate().toString());
+    std::filesystem::create_directories(root);
+    const std::filesystem::path settings = root / "editor.dvx";
+    {
+        auto platform = devex::platform::Platform::create();
+        REQUIRE(platform.has_value());
+        auto window = platform->createWindow({.title = "Devex rest tests", .width = 800, .height = 600, .vulkan = true, .hidden = true});
+        REQUIRE(window.has_value());
+        auto renderer = devex::render::Renderer::create(*platform, *window, {});
+        REQUIRE(renderer.has_value());
+        devex::scene::Scene scene;
+        const auto draw = [&](devex::tools::ToolsOverlay& tools, int frames) {
+            for (int frame = 0; frame < frames; ++frame)
+            {
+                platform->pollEvents([](const devex::platform::Event&) {});
+                tools.update(scene, std::chrono::milliseconds(16));
+                devex::render::RenderWorld& world = renderer->beginFrame();
+                tools.prepareRender(scene, world, devex::tools::PlayState::Editing);
+                REQUIRE(renderer->endFrame());
+            }
+        };
+        {
+            // The project manager, untouched: nothing moves, and frames after waits leave the
+            // statistics alone.
+            auto editor = devex::tools::ToolsOverlay::create(*platform, *window, *renderer, devex::tools::ToolsMode::Editor, settings);
+            REQUIRE(editor.has_value());
+            CHECK_FALSE((*editor)->updatesContinuously());
+            draw(**editor, 2);
+            (*editor)->setResting(true);
+            draw(**editor, 2);
+            CHECK_FALSE((*editor)->isAnimating());
+        }
+        // Asked to draw every frame, as Editor Settings wrote it.
+        REQUIRE(devex::core::writeTextFile(settings, "[theme update_continuously=true]\n"));
+        {
+            auto editor = devex::tools::ToolsOverlay::create(*platform, *window, *renderer, devex::tools::ToolsMode::Editor, settings);
+            REQUIRE(editor.has_value());
+            CHECK((*editor)->updatesContinuously());
+        }
+        // The tools over a game draw with it.
+        auto overlay = devex::tools::ToolsOverlay::create(*platform, *window, *renderer);
+        REQUIRE(overlay.has_value());
+        CHECK((*overlay)->updatesContinuously());
+    }
+    std::error_code ignored;
+    std::filesystem::remove_all(root, ignored);
+}
+
 TEST_CASE("FileSystem shows empty folders and confirms their deletion", "[tools][filesystem][gpu]")
 {
     using namespace devex;
