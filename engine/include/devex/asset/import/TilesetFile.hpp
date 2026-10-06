@@ -11,8 +11,9 @@
 namespace devex::asset {
 
 // A tileset written by the editor: its terrain sets, each followed by its terrains, then one section
-// per tile; frames, fps, data, terrains and probability only when set. The bits of a tile are the
-// terrains of its sides and corners, counterclockwise from the right (see TileNeighbor), -1 for none:
+// per tile; occluder, frames, fps, data, terrains and probability only when set. The bits of a tile
+// are the terrains of its sides and corners, counterclockwise from the right (see TileNeighbor), -1
+// for none:
 //
 //     [tileset format=2]
 //

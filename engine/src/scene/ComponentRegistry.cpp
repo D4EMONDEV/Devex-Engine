@@ -6,6 +6,7 @@
 #include <devex/scene/NavigationComponents.hpp>
 #include <devex/scene/Physics2DComponents.hpp>
 #include <devex/scene/PhysicsComponents.hpp>
+#include <devex/scene/Light2DComponents.hpp>
 #include <devex/scene/SpriteComponents.hpp>
 #include <devex/scene/TilemapComponents.hpp>
 #include <devex/scene/UiComponents.hpp>
@@ -103,6 +104,10 @@ ComponentRegistry& componentRegistry()
         builtins.add<SpriteRenderer>();
         builtins.add<SpriteAnimator>();
         builtins.add<Tilemap>();
+        builtins.add<PointLight2D>();
+        builtins.add<DirectionalLight2D>();
+        builtins.add<LightOccluder2D>();
+        builtins.add<CanvasModulate>();
         builtins.add<Camera>();
         builtins.add<DirectionalLight>();
         builtins.add<PointLight>();

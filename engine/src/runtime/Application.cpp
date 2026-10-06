@@ -1100,6 +1100,7 @@ void ApplicationRunner::render(bool gameplay)
         const asset::SortingSettings sorting = source != nullptr ? source->project().sorting : asset::SortingSettings{};
         extractSprites(scene, m_services.assets, sorting, world);
         m_animatedTiles = extractTilemaps(scene, m_services.assets, sorting, m_tileClock, world);
+        extractLights2D(scene, m_services.assets, world);
         extractParticles(*m_particles, m_services.assets, world);
         if (gameplay)
         {

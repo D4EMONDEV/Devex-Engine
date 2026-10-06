@@ -50,6 +50,7 @@ mais seulement explicitement ici : le code suit ce document, pas l'inverse.
 | Tilesets                 | Asset `.dvxtileset` : sprite, collision, animation, données par tuile |
 | Peinture des tuiles      | Outils sous la `Tilemap` dans l'inspecteur, un trait par annulation |
 | Terrains des tuiles      | Ensembles de Godot 4, bits peints sur les tuiles, Connect ou Path   |
+| Éclairage 2D             | Lumières 2D de Godot, ombres en distances par direction, CanvasModulate |
 | Physique 2D              | Box2D 3.1 (MIT), module `Physics2D`, à côté du monde 3D            |
 | Corps 2D                 | `RigidBody2D` + colliders 2D (boîte, cercle, capsule, polygone)    |
 | Collisions des tuiles    | `TilemapCollider2D` : rectangles fusionnés et corniches du tileset |
@@ -2009,6 +2010,74 @@ les assets s'écrivent au fil de leur lecture.
   tileset (`code/Platformer.cs`) ; il bute contre les tuiles et se pose sur les corniches par la
   physique 2D depuis le jalon 37.
 
+### Éclairage 2D
+
+Jalon 64, comme l'éclairage 2D de Godot : à part des lumières 3D, qui n'éclairent que ce qui est
+*lit* comme une surface mate.
+
+- **Composants** :
+  - `PointLight2D` éclaire autour de son entité jusqu'à son rayon, avec une couleur, une énergie,
+    une décroissance et une hauteur (lue par les normal maps) ;
+  - `DirectionalLight2D` éclaire de loin, le long de l'axe -Y de son entité (le soleil, la lune),
+    avec une hauteur de 0 (rasante) à 1 (d'aplomb) ;
+  - `LightOccluder2D` porte un contour, fermé ou non, dans le plan XY de son entité ;
+  - `CanvasModulate` teinte tout le 2D (nuit, grotte) ; le premier trouvé compte.
+
+  Les lumières 2D et leurs ombres valent dans le plan XY du monde, quelle que soit la profondeur
+  des sprites.
+- **Ce qu'elles éclairent** : chaque sprite et chaque tilemap ont un masque de lumière, et
+  chaque lumière un masque des éléments qu'elle éclaire, comme `light_mask` et
+  `range_item_cull_mask` chez Godot. Un sprite ou une tilemap *unshaded* échappe aux lumières 2D
+  et à la teinte. Le réglage *lit* (surface mate éclairée en 3D) reste tel quel : la lumière 2D
+  s'ajoute à son résultat. Les particules gardent leurs couleurs (une flamme reste vive).
+- **Couleur d'un pixel** : sa couleur (déjà éclairée en 3D s'il est *lit*) fois la teinte du
+  canevas, plus sa couleur fois la somme des lumières 2D. Une lumière ponctuelle s'éteint en
+  `(1 - d / rayon)^décroissance`. Avec une normal map, la lumière est multipliée par N·L, la
+  lumière posée à sa hauteur au-dessus du plan ; sans normal map, rien de plus, comme chez Godot.
+- **Normal maps** (le `CanvasTexture` de Godot) : un réglage d'import de la planche,
+  `normal_texture = asset(...)`, nomme une texture de même disposition, importée avec *Normal
+  map*. Tous les sprites de la planche la partagent : leurs tuiles et leurs animations sans rien
+  régler d'autre. Le vert monte, le rouge va à droite. Un sprite retourné, ou une tuile dont les
+  coordonnées sont échangées, retourne ses normales.
+- **Ombres**, comme les cartes d'ombre 1D de Godot :
+  - une lumière qui a des ombres garde 1024 distances jusqu'à l'occulteur le plus proche : une
+    par direction autour d'une lumière ponctuelle, une par bande parallèle pour une lumière
+    directionnelle ;
+  - ces bandes couvrent ce que voit la caméra, et partent assez loin en amont pour que les
+    occulteurs hors de la vue y jettent leurs ombres ;
+  - les arêtes des occulteurs y sont tracées sur le CPU, à chaque image (`render::pointShadow2D`,
+    `directionalShadow2D`, `Light2D.hpp`) ;
+  - un pixel plus loin que la distance gardée est dans l'ombre. Ses bords se floutent d'autant
+    plus qu'il est loin derrière l'occulteur (cinq lectures) ;
+  - l'ombre d'une lumière directionnelle s'arrête à sa portée derrière l'occulteur.
+
+  Le masque d'ombre d'une lumière choisit ses occulteurs (`shadow_item_cull_mask` de Godot). Un
+  occulteur fait de l'ombre à ce qui est derrière son bord, lui compris. Au plus 64 lumières 2D
+  par image, dont 16 avec des ombres.
+- **Tuiles qui occultent** : un réglage *Occluder* par tuile du tileset (`occluder=true` ; artefact
+  version 3) fait de toute la case un occulteur, comme une couche d'occlusion de Godot. Les côtés
+  de ces cases qui donnent sur une case qui n'occulte pas sont joints le long des lignes et des
+  colonnes (`runtime::tileOccluderOutline`). Le masque d'occultation est sur la `Tilemap`.
+- **Rendu** : les lumières vues (cercle contre le rectangle du plan que voit la caméra) et leurs
+  distances partent dans deux tampons par image, lus par adresse dans le shader des sprites. Les
+  sprites portent leur masque et leur normal map dans le bourrage de leur structure. La teinte et
+  le nombre de lumières passent par les constantes poussées, qui passent à 64 octets.
+- **Éditeur** :
+  - les quatre composants dans la fenêtre de création (2D), avec leurs icônes ;
+  - un soleil pour chaque lumière dans la vue, avec son rayon une fois sélectionnée, ou la
+    direction de sa lumière ;
+  - les contours des occulteurs toujours dessinés, plus vifs une fois sélectionnés ;
+  - les masques en huit boutons numérotés (nouvel indice de réflexion `bits`) ;
+  - la ligne *Normal Map* d'une texture découpée, et l'interrupteur *Occluder* d'une tuile.
+- **Code** : C++ `render::RenderLight2D`, `RenderOccluder2D` et `RenderWorld::canvasModulate`
+  pour qui remplit le monde à la main. En C#, les vues générées des composants (`PointLight2D`,
+  `SpriteRenderer.LightMask`…). Un Tweener peut animer `PointLight2D.energy`. L'API des jeux
+  passe à 21.
+- **Bac à sable** : le jeu de plateformes passe au soir. Un `CanvasModulate` le teinte, et la
+  torche devient une `PointLight2D` à ombres dont le Tweener fait vaciller l'énergie. Le mur de
+  briques a une normal map générée de son motif (`bricks_n.png`). Les corniches et le pilier
+  occultent : la corniche jette un coin d'ombre, et le pilier assombrit sa gauche.
+
 ### Physique 2D
 
 - **Moteur** : Box2D 3.1 (MIT), par vcpkg (`box2d`), derrière le module `Physics2D` : son API
@@ -3734,6 +3803,10 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     probabilité des variantes ; pinceau de terrain en Connect ou Path qui accorde les voisines,
     remplissage, pipette et aperçu ; `Tilemaps.SetTerrain` en C#, et les bords, colonnes et
     blocs du sol du bac à sable choisis par le pinceau.
+64. ✅ **Éclairage 2D** — `PointLight2D`, `DirectionalLight2D`, `LightOccluder2D` et `CanvasModulate`
+    comme dans Godot ; masques de lumière et d'ombre, sprites et tilemaps *unshaded* ; normal maps
+    réglées sur la planche ; ombres douces en distances par direction, tuiles qui occultent ;
+    gizmos, masques en boutons et réglages dans l'éditeur ; le soir et la torche du bac à sable.
 
 Ensuite, sans ordre figé : à choisir dans les pistes ci-dessous.
 
@@ -3799,8 +3872,12 @@ Ensuite, sans ordre figé : à choisir dans les pistes ci-dessous.
   et hexagonales, formes de collision par tuile (pentes, demi-tuiles), cartes découpées en morceaux pour le
   culling et l'envoi au GPU gardé d'une image à l'autre, calques de la même carte, tuiles faites de
   préfabs.
-- **2D, la suite** : physique 2D, éclairage 2D (lumières 2D,
-  normal maps, ombres), découpe libre des sprites dans un éditeur de sprites et atlas regroupés à
+- **Éclairage 2D, la suite** : textures de lumière (formes autres qu'un disque), lumières qui
+  soustraient ou mélangent, couleur des ombres, formes d'occultation par tuile autres que la case
+  entière, occulteurs qui ne s'ombrent pas eux-mêmes, cartes spéculaires, particules éclairées et
+  qui font de l'ombre, édition des contours des occulteurs à la souris, distances d'ombre tracées
+  sur le GPU pour les grandes cartes, contours des tuiles gardés d'une image à l'autre.
+- **2D, la suite** : découpe libre des sprites dans un éditeur de sprites et atlas regroupés à
   l'import, aimantation au pixel (pixel perfect), ordre par Y pour les vues de dessus, sprites
   écrits dans la profondeur (découpés à l'alpha), événements des animations, animations de
   n'importe quel champ par des clips (comme Unity), culling des

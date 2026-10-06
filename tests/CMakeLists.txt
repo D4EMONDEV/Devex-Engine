@@ -194,6 +194,7 @@ devex_add_tests(render
     SOURCES
         render/AssetLoadingTests.cpp
         render/CullingTests.cpp
+        render/Light2DTests.cpp
         render/LightingTests.cpp
         render/PhotometryTests.cpp
         render/RendererTests.cpp

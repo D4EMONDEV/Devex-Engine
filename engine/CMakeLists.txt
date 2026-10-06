@@ -335,6 +335,7 @@ add_library(Devex::Render ALIAS devex_render)
 target_sources(devex_render
     PRIVATE
         src/render/Culling.cpp
+        src/render/Light2D.cpp
         src/render/Lighting.cpp
         src/render/Lighting.hpp
         src/render/Photometry.cpp
@@ -371,6 +372,7 @@ target_sources(devex_render
         BASE_DIRS include
         FILES
             include/devex/render/Culling.hpp
+            include/devex/render/Light2D.hpp
             include/devex/render/Gpu.hpp
             include/devex/render/Photometry.hpp
             include/devex/render/Renderer.hpp
@@ -421,6 +423,7 @@ target_sources(devex_scene
         src/scene/AnimationComponents.cpp
         src/scene/ParticleComponents.cpp
         src/scene/SpriteComponents.cpp
+        src/scene/Light2DComponents.cpp
         src/scene/TilemapComponents.cpp
         src/scene/TileTerrain.cpp
         src/scene/AssetReferences.cpp
@@ -448,6 +451,7 @@ target_sources(devex_scene
             include/devex/scene/AnimationComponents.hpp
             include/devex/scene/ParticleComponents.hpp
             include/devex/scene/SpriteComponents.hpp
+            include/devex/scene/Light2DComponents.hpp
             include/devex/scene/TilemapComponents.hpp
             include/devex/scene/TileTerrain.hpp
             include/devex/scene/AssetReferences.hpp
@@ -471,6 +475,11 @@ set_target_properties(devex_scene PROPERTIES
     FOLDER "Engine"
 )
 devex_set_warnings(devex_scene)
+# The registry of the components of the engine makes more sections than an object file of MSVC
+# holds by default.
+if(MSVC)
+    set_source_files_properties(src/scene/ComponentRegistry.cpp PROPERTIES COMPILE_OPTIONS /bigobj)
+endif()
 
 # Physics: rigid bodies, colliders and characters simulated with Jolt Physics from scene components.
 add_library(devex_physics OBJECT)

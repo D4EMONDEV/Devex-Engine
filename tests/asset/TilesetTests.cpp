@@ -41,6 +41,7 @@ namespace {
     tileset.tiles[1].terrainSet = 1;
     tileset.tiles[1].terrain = 0;
     tileset.tiles[1].terrainBits = {0, -1, -1, -1, 0, -1, -1, -1};
+    tileset.tiles[2].occluder = true;
     return tileset;
 }
 
@@ -105,6 +106,7 @@ TEST_CASE("Tilesets keep their terrain sets and the terrains of their tiles", "[
     CHECK(text.find("terrain_set=0 terrain=0]") != std::string::npos);
     CHECK(text.find("bits = list(0, 1, 0, -1, -1, -1, 1, 1)") != std::string::npos);
     CHECK(text.find("probability = 0.25") != std::string::npos);
+    CHECK(text.find("collision=\"top\" occluder=true]") != std::string::npos);
     const auto parsed = devex::asset::parseTilesetFile(text);
     REQUIRE(parsed.has_value());
     CHECK(*parsed == tileset);

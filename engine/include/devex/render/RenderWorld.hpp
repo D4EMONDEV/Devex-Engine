@@ -250,6 +250,11 @@ struct DEVEX_API RenderSprite
     bool additive = false;
     // Lit as a matte surface by the sun, the sky and the lights; otherwise shines alone.
     bool lit = false;
+    // Out of reach of the 2D lights and of the canvas modulation; otherwise lit by the 2D lights whose
+    // item mask shares a bit with its light mask, through its normal map when it has one.
+    bool unshaded = false;
+    std::uint32_t lightMask = 1;
+    TextureHandle normalTexture;
     // The sorting layer, counted from the one of the blended surfaces and the particles, then the
     // order within it: higher ones draw over lower ones, whatever their distance.
     std::int32_t layer = 0;
@@ -266,6 +271,7 @@ struct DEVEX_API RenderTile
     // Texture coordinates of the top-left corner, then of the bottom-right one; swapped to mirror.
     math::Vec4 uvRect{0.0f, 0.0f, 1.0f, 1.0f};
     TextureHandle texture;
+    TextureHandle normalTexture;
 };
 
 // A grid of tiles in the XY plane of its transform, cell (x, y) covering [x, x + 1) by [y, y + 1)
@@ -280,10 +286,44 @@ struct DEVEX_API RenderTilemap
     std::uint32_t firstTile = 0;
     std::uint32_t tileCount = 0;
     bool lit = false;
+    bool unshaded = false;
+    std::uint32_t lightMask = 1;
     std::int32_t layer = 0;
     std::int32_t order = 0;
     std::uint32_t objectId = 0;
     bool outlined = false;
+};
+
+// A light of the 2D plane: it shines on the sprites and the tilemaps in the XY plane of the world,
+// whatever their depth.
+struct DEVEX_API RenderLight2D
+{
+    // A point light shines around its position to its radius; a directional one, along its direction.
+    bool directional = false;
+    math::Vec2 position{0.0f};
+    math::Vec2 direction{0.0f, -1.0f};
+    // Linear colour times its energy, relative to the exposure as the sprites it shines on.
+    math::Vec3 color{1.0f};
+    float radius = 4.0f;
+    float falloff = 1.0f;
+    // Meters above the plane for a point light, from 0 to 1 for a directional one: the normal maps
+    // read it.
+    float height = 0.5f;
+    std::uint32_t itemMask = 1;
+    // Hidden by the occluders whose mask shares a bit with its shadow mask.
+    bool shadows = false;
+    std::uint32_t shadowMask = 1;
+    float shadowSoftness = 0.05f;
+    // How far beyond an occluder the shadows of a directional light reach, in meters.
+    float shadowDistance = 20.0f;
+};
+
+// An edge of what hides the 2D lights, in the XY plane of the world.
+struct DEVEX_API RenderOccluder2D
+{
+    math::Vec2 from{0.0f};
+    math::Vec2 to{0.0f};
+    std::uint32_t mask = 1;
 };
 
 // A vertex of the lines and triangles the tools draw over the scene, such as grids and gizmos.
@@ -414,6 +454,11 @@ struct DEVEX_API RenderWorld
     std::vector<RenderSprite> sprites;
     std::vector<RenderTilemap> tilemaps;
     std::vector<RenderTile> tiles;
+    // The light of the 2D plane: its lights, the edges that hide them, and the tint of every sprite
+    // and tilemap that is not unshaded.
+    std::vector<RenderLight2D> lights2D;
+    std::vector<RenderOccluder2D> occluders2D;
+    math::Vec3 canvasModulate{1.0f};
 
     // Size in pixels of the image the scene is drawn into for the tools, which show it with
     // UiSource::SceneImage. Zero draws the scene over the whole window.

@@ -7,6 +7,10 @@
 #include <devex/render/RenderWorld.hpp>
 #include <devex/runtime/AssetManager.hpp>
 #include <devex/scene/Scene.hpp>
+#include <devex/scene/TilemapComponents.hpp>
+
+#include <utility>
+#include <vector>
 
 namespace devex::runtime {
 
@@ -28,6 +32,15 @@ DEVEX_API void extractSprites(scene::Scene& scene, AssetManager& assets, const a
 // instances are. True when an animated tile is shown: later times show it otherwise.
 DEVEX_API bool extractTilemaps(scene::Scene& scene, AssetManager& assets, const asset::SortingSettings& sorting, double seconds,
                                render::RenderWorld& world);
+
+// Adds the 2D lights, the first CanvasModulate, and when a light casts shadows the edges of the
+// LightOccluder2D components and the outlines of the tiles that occlude, as their tileset says.
+DEVEX_API void extractLights2D(scene::Scene& scene, AssetManager& assets, render::RenderWorld& world);
+
+// The outline of the cells whose tile occludes, in cells of the tilemap: the sides of those cells
+// that face a cell that does not, joined along rows and columns.
+[[nodiscard]] DEVEX_API std::vector<std::pair<math::IVec2, math::IVec2>> tileOccluderOutline(const scene::TileGrid& grid,
+                                                                                         const asset::TilesetData& tileset);
 
 // Adds the particles of the emitters, in the world, one batch per emitter, and the ribbons of
 // their trails and of the TrailRenderer components, one batch each.

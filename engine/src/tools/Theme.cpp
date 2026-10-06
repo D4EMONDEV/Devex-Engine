@@ -3,6 +3,7 @@
 #include <devex/core/Log.hpp>
 #include <devex/core/Path.hpp>
 #include <devex/scene/AnimationComponents.hpp>
+#include <devex/scene/Light2DComponents.hpp>
 #include <devex/scene/ParticleComponents.hpp>
 #include <devex/scene/SpriteComponents.hpp>
 #include <devex/scene/TilemapComponents.hpp>
@@ -109,7 +110,7 @@ ThemeMetrics g_metrics = deriveThemeMetrics(ThemeSettings{}, 1.0f);
 
 [[nodiscard]] bool isEngineComponent(std::string_view name) noexcept
 {
-    constexpr std::array<std::string_view, 61> engineComponents{
+    constexpr std::array<std::string_view, 65> engineComponents{
         "Transform",       "MeshRenderer",        "Camera",       "DirectionalLight",
         "PointLight",      "SpotLight",           "Environment",  "RigidBody",
         "BoxCollider",     "SphereCollider",      "CapsuleCollider", "CylinderCollider",
@@ -124,7 +125,8 @@ ThemeMetrics g_metrics = deriveThemeMetrics(ThemeSettings{}, 1.0f);
         "UiPopup",         "UiContextMenu",       "UiTooltip",    "UiDropdown",
         "UiSplitter",      "UiFoldout",           "UiVirtualList", "UiTable",
         "UiTableRow",      "UiDragSource",        "UiDropTarget", "UiNumberField",
-        "UiColorPicker",   "UiPlot",              "UiLine",       "UiTextArea"};
+        "UiColorPicker",   "UiPlot",              "UiLine",       "UiTextArea",
+        "PointLight2D",    "DirectionalLight2D",  "LightOccluder2D", "CanvasModulate"};
     return std::ranges::find(engineComponents, name) != engineComponents.end();
 }
 
@@ -399,9 +401,17 @@ EntityIcon entityIcon(const scene::Scene& scene, scene::Entity entity)
     {
         return {icons::Flashlight, colors.light};
     }
-    if (scene.has<scene::PointLight>(entity))
+    if (scene.has<scene::PointLight>(entity) || scene.has<scene::PointLight2D>(entity))
     {
         return {icons::Lightbulb, colors.light};
+    }
+    if (scene.has<scene::DirectionalLight2D>(entity))
+    {
+        return {icons::Sun, colors.light};
+    }
+    if (scene.has<scene::CanvasModulate>(entity))
+    {
+        return {icons::Palette, colors.environment};
     }
     if (scene.has<scene::Environment>(entity))
     {
@@ -422,6 +432,10 @@ EntityIcon entityIcon(const scene::Scene& scene, scene::Entity entity)
     if (scene.has<scene::Tilemap>(entity))
     {
         return {icons::Grid, colors.texture};
+    }
+    if (scene.has<scene::LightOccluder2D>(entity))
+    {
+        return {icons::Shapes, colors.light};
     }
     if (scene.has<scene::Canvas>(entity))
     {
@@ -517,13 +531,21 @@ EntityIcon componentIcon(std::string_view componentName)
     {
         return {icons::Video, colors.camera};
     }
-    if (componentName == "DirectionalLight")
+    if (componentName == "DirectionalLight" || componentName == "DirectionalLight2D")
     {
         return {icons::Sun, colors.light};
     }
-    if (componentName == "PointLight")
+    if (componentName == "PointLight" || componentName == "PointLight2D")
     {
         return {icons::Lightbulb, colors.light};
+    }
+    if (componentName == "LightOccluder2D")
+    {
+        return {icons::Shapes, colors.light};
+    }
+    if (componentName == "CanvasModulate")
+    {
+        return {icons::Palette, colors.environment};
     }
     if (componentName == "SpotLight")
     {

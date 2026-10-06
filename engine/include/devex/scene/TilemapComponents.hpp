@@ -42,6 +42,13 @@ struct DEVEX_API Tilemap
     // Lit as matte surfaces by the sun, the sky and the lights; otherwise shows its colors as they
     // are.
     bool lit = false;
+    // Out of reach of the 2D lights and of the CanvasModulate.
+    bool unshaded = false;
+    // The 2D lights whose item mask shares a bit with it shine on it.
+    std::uint32_t lightMask = 1;
+    // The tiles that occlude, as their tileset says, hide the 2D lights whose shadow mask shares a
+    // bit with it.
+    std::uint32_t occluderMask = 1;
     // The painted cells, 16 by 16 per block, as the scene saves them: "x,y:" the block, then its
     // cells in base64, two bytes each, row by row from the bottom. TileGrid reads and writes them.
     std::vector<std::string> blocks;

@@ -114,6 +114,7 @@ public:
         m_grid = {};
         m_pivotNumbers.clear();
         m_border.clear();
+        m_normal = {};
         m_count = {};
         m_newFrames = m_newTileset = Button{};
         const asset::AssetInfo* const info = state.database->find(state.selectedAsset);
@@ -221,6 +222,13 @@ public:
                 const std::array<std::string_view, 4> sides{"l", "b", "r", "t"};
                 m_border = ui.numbers(m_borderRow.editor, sides, {.minValue = 0.0f, .maxValue = 100000.0f, .step = 1.0f, .dragSpeed = 0.2f, .decimals = 0});
                 ui.tooltip(m_borderRow.editor, "Pixels kept at their size by sliced and tiled sprites: left, bottom, right, top");
+                m_normalRow = ui.formRow(sprites, "Normal Map");
+                m_normal = ui.choice(m_normalRow.editor);
+                const math::Vec4 accent = linearColor(colors.accent);
+                ui.scene().add<scene::UiDropTarget>(m_normal, scene::UiDropTarget{.accepts = {"asset:texture"},
+                                                                                  .highlightColor = math::Vec4{accent.x, accent.y, accent.z, 0.35f}});
+                ui.tooltip(m_normalRow.editor, "The normal map the 2D lights read on the sprites of this texture, laid out as it; "
+                                               "import it with Normal map on");
             }
         }
         m_footer = importFooter(ui, kit, *last);
@@ -286,6 +294,8 @@ public:
                 number(m_border[index], border[static_cast<math::Vec4::length_type>(index)]);
             }
             ui.scene().get<UiRect>(m_borderRow.mark).visible = m_settings.waits("border");
+            fillNormalChoice(ui, state);
+            ui.scene().get<UiRect>(m_normalRow.mark).visible = m_settings.waits("normal_texture");
         }
         if (m_grid[0].isValid())
         {
@@ -373,6 +383,21 @@ public:
                 }
                 m_settings.set(state, "border", vectorValue(border.data(), 4));
             }
+            if (world.wasChanged(m_normal))
+            {
+                const std::int32_t selected = ui.scene().get<scene::UiDropdown>(m_normal).selected;
+                if (selected >= 0 && static_cast<std::size_t>(selected) < m_normals.size())
+                {
+                    setNormal(state, m_normals[static_cast<std::size_t>(selected)]);
+                }
+            }
+            if (world.wasDropped(m_normal) && world.dropped() != nullptr)
+            {
+                if (const std::optional<core::Uuid> uuid = core::Uuid::parse(world.dropped()->data))
+                {
+                    setNormal(state, asset::AssetId{*uuid});
+                }
+            }
         }
         answerImportFooter(ui, state, m_footer, m_settings);
 
@@ -407,6 +432,60 @@ private:
         std::span<const Choice> choices;
         std::string fallback;
     };
+
+    // The normal map of the sprites, as the import option names it.
+    [[nodiscard]] asset::AssetId normal(const ToolsState& state) const
+    {
+        const std::optional<serialization::TextValue> value = m_settings.value(state, "normal_texture");
+        const serialization::TextCall* const call = value ? serialization::asCall(*value, "asset") : nullptr;
+        const std::string* const text =
+            call != nullptr && call->arguments.size() == 1 ? serialization::asString(call->arguments.front()) : nullptr;
+        const std::optional<core::Uuid> uuid = text != nullptr ? core::Uuid::parse(*text) : std::nullopt;
+        return uuid ? asset::AssetId{*uuid} : asset::AssetId{};
+    }
+
+    void setNormal(const ToolsState& state, asset::AssetId texture)
+    {
+        m_settings.set(state, "normal_texture",
+                       serialization::makeCall("asset", {serialization::TextValue(texture.isValid() ? texture.uuid.toString() : std::string())}));
+    }
+
+    // None, then every other texture while the list may open; the one chosen otherwise.
+    void fillNormalChoice(InspectorUi& ui, const ToolsState& state)
+    {
+        const ui::UiWorld& world = ui.panel.world();
+        const asset::AssetId current = normal(state);
+        const bool full = world.hovered() == m_normal || world.focused() == m_normal || world.listedDropdown() == m_normal;
+        m_normals.assign(1, asset::AssetId{});
+        if (full)
+        {
+            for (const asset::AssetInfo& info : state.database->assets(asset::AssetType::Texture))
+            {
+                if (info.id != state.selectedAsset)
+                {
+                    m_normals.push_back(info.id);
+                }
+            }
+        }
+        else if (current.isValid())
+        {
+            m_normals.push_back(current);
+        }
+        std::vector<std::string> options;
+        std::int32_t selected = -1;
+        for (const asset::AssetId texture : m_normals)
+        {
+            selected = texture == current ? static_cast<std::int32_t>(options.size()) : selected;
+            options.push_back(assetLabel(state, texture));
+        }
+        scene::UiDropdown& dropdown = ui.scene().get<scene::UiDropdown>(m_normal);
+        if (dropdown.options != options)
+        {
+            dropdown.options = std::move(options);
+        }
+        dropdown.selected = selected;
+        dropdown.placeholder = assetLabel(state, current);
+    }
 
     [[nodiscard]] std::string mode(const ToolsState& state, bool highDynamicRange) const
     {
@@ -520,6 +599,9 @@ private:
     Entity m_pivotPreset;
     std::vector<Entity> m_pivotNumbers;
     FormRow m_borderRow;
+    FormRow m_normalRow;
+    Entity m_normal;
+    std::vector<asset::AssetId> m_normals;
     std::vector<Entity> m_border;
     ImportFooter m_footer;
     Entity m_count;

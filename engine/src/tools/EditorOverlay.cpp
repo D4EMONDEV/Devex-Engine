@@ -4,6 +4,7 @@
 #include <devex/physics2d/Physics2DWorld.hpp>
 #include <devex/scene/AudioComponents.hpp>
 #include <devex/scene/Components.hpp>
+#include <devex/scene/Light2DComponents.hpp>
 #include <devex/scene/Physics2DComponents.hpp>
 #include <devex/scene/PhysicsComponents.hpp>
 #include <devex/scene/TilemapComponents.hpp>
@@ -36,6 +37,8 @@ constexpr math::Vec4 selectedIconColor{1.0f, 0.6f, 0.1f, 1.0f};
 // Collision shapes, as in Godot: solid ones in green, triggers in blue.
 constexpr math::Vec4 colliderColor{0.35f, 0.95f, 0.5f, 0.95f};
 constexpr math::Vec4 triggerColor{0.35f, 0.7f, 1.0f, 0.95f};
+// The occluders of the 2D lights.
+constexpr math::Vec4 occluderColor{0.75f, 0.45f, 1.0f, 0.95f};
 
 void addLine(std::vector<OverlayVertex>& lines, math::Vec3 start, math::Vec3 end, math::Vec4 color)
 {
@@ -535,6 +538,90 @@ void addIcons(scene::Scene& scene, const ViewportView& view, const std::unordere
     }
 }
 
+// The lights of the 2D plane, drawn in it: a point light as a sun with its radius once selected, a
+// directional one with the way its light goes.
+void addLights2D(scene::Scene& scene, const ViewportView& view, const std::unordered_set<std::uint32_t>& selected,
+                 const std::unordered_set<std::uint32_t>& hidden, std::vector<OverlayVertex>& lines)
+{
+    const math::Vec3 x{1.0f, 0.0f, 0.0f};
+    const math::Vec3 y{0.0f, 1.0f, 0.0f};
+    const auto sun = [&](math::Vec3 position, float size, math::Vec4 color) {
+        addCircle(lines, position, x, y, size * 0.45f, color, 16);
+        for (int ray = 0; ray < 8; ++ray)
+        {
+            const float angle = twoPi * static_cast<float>(ray) / 8.0f;
+            const math::Vec3 direction = x * std::cos(angle) + y * std::sin(angle);
+            addLine(lines, position + direction * size * 0.65f, position + direction * size * 0.95f, color);
+        }
+    };
+    for ([[maybe_unused]] auto [entity, transform, light] : scene.view<scene::WorldTransform, scene::PointLight2D>())
+    {
+        if (hidden.contains(entity.index))
+        {
+            continue;
+        }
+        const math::Vec3 position(transform.matrix[3]);
+        const float size = view.worldSize(position, iconSizeInPixels);
+        math::Vec4 color(math::min(light.color, math::Vec3{1.0f}), 0.95f);
+        sun(position, size, color);
+        if (selected.contains(entity.index))
+        {
+            color.a = 0.6f;
+            addCircle(lines, position, x, y, std::max(light.radius, 0.0f), color, 64);
+        }
+    }
+    for ([[maybe_unused]] auto [entity, transform, light] : scene.view<scene::WorldTransform, scene::DirectionalLight2D>())
+    {
+        if (hidden.contains(entity.index))
+        {
+            continue;
+        }
+        const math::Vec3 position(transform.matrix[3]);
+        const float size = view.worldSize(position, iconSizeInPixels);
+        const math::Vec4 color = selected.contains(entity.index) ? math::Vec4{1.0f, 0.6f, 0.1f, 1.0f}
+                                                                 : math::Vec4(math::min(light.color, math::Vec3{1.0f}), 0.95f);
+        sun(position, size, color);
+        math::Vec3 down = math::Mat3(transform.matrix) * math::Vec3{0.0f, -1.0f, 0.0f};
+        down.z = 0.0f;
+        down = math::length(down) > 1e-6f ? math::normalize(down) : math::Vec3{0.0f, -1.0f, 0.0f};
+        const math::Vec3 side{-down.y, down.x, 0.0f};
+        const math::Vec3 tip = position + down * size * 3.0f;
+        addLine(lines, position + down * size, tip, color);
+        addLine(lines, tip, tip - down * size * 0.5f + side * size * 0.35f, color);
+        addLine(lines, tip, tip - down * size * 0.5f - side * size * 0.35f, color);
+    }
+}
+
+// The outlines of the occluders of the 2D lights, always shown as Godot shows them, brighter when
+// selected; an open one is a line.
+void addOccluders2D(scene::Scene& scene, const std::unordered_set<std::uint32_t>& selection,
+                    const std::unordered_set<std::uint32_t>& hidden, std::vector<OverlayVertex>& lines)
+{
+    for ([[maybe_unused]] auto [entity, transform, occluder] : scene.view<scene::WorldTransform, scene::LightOccluder2D>())
+    {
+        if (hidden.contains(entity.index) || occluder.points.size() < 2)
+        {
+            continue;
+        }
+        math::Vec4 color = occluderColor;
+        color.a = selection.contains(entity.index) ? 1.0f : 0.5f;
+        std::vector<math::Vec3> points;
+        for (const math::Vec2 point : occluder.points)
+        {
+            points.push_back(math::Vec3(transform.matrix * math::Vec4(point, 0.0f, 1.0f)));
+        }
+        if (occluder.closed && points.size() > 2)
+        {
+            addLoop(lines, points, color);
+            continue;
+        }
+        for (std::size_t index = 0; index + 1 < points.size(); ++index)
+        {
+            addLine(lines, points[index], points[index + 1], color);
+        }
+    }
+}
+
 // Speakers for sound sources, with the distances where a selected one starts to fade and stops
 // fading; an ear for the listener.
 void addAudioIcons(scene::Scene& scene, const ViewportView& view, const std::unordered_set<std::uint32_t>& selected,
@@ -681,8 +768,10 @@ void addEditorOverlay(ToolsState& state, scene::Scene& scene, render::RenderWorl
     if (state.showIcons)
     {
         addIcons(scene, view, selected, hidden, world);
+        addLights2D(scene, view, selected, hidden, world.overlayLines);
         addAudioIcons(scene, view, selected, hidden, world.overlayLines);
     }
+    addOccluders2D(scene, selection, hidden, world.overlayLines);
     addColliders(state, scene, selection, hidden, world.overlayLines);
     addNavigationLines(state, scene, selection, state.showColliders, world.overlayLines);
 

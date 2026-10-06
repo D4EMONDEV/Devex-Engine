@@ -255,9 +255,11 @@ struct GpuSprite
     // The mode in the two lowest bits, then the flags below.
     std::uint32_t flags = 0;
     std::uint32_t objectId = 0;
-    std::uint32_t padding0 = 0;
-    std::uint32_t padding1 = 0;
-    std::uint32_t padding2 = 0;
+    // The 2D lights whose item mask shares a bit with it shine on it, through its normal map, an
+    // index of the texture array, or noParticleTexture for none.
+    std::uint32_t lightMask = 1;
+    std::uint32_t normalTexture = 0xFFFFFFFFU;
+    std::uint32_t padding = 0;
 };
 
 // The flags of GpuSprite, above its mode.
@@ -265,16 +267,48 @@ inline constexpr std::uint32_t spriteFlipX = 4;
 inline constexpr std::uint32_t spriteFlipY = 8;
 inline constexpr std::uint32_t spriteAdditive = 16;
 inline constexpr std::uint32_t spriteLit = 32;
+inline constexpr std::uint32_t spriteUnshaded = 64;
+
+// At most this many 2D lights shine in a frame, and this many of them cast shadows.
+inline constexpr std::size_t maxLights2D = 64;
+inline constexpr std::uint32_t maxShadowedLights2D = 16;
+
+// A light of the 2D plane as shaders/sprite.slang reads it.
+struct GpuLight2D
+{
+    // A point light: its position, its height and its radius. A directional one: the middle of the
+    // line its shadow strips start from, its height, and the width of the strips.
+    math::Vec4 position{0.0f};
+    // Linear colour times energy, and how fast a point light fades.
+    math::Vec4 color{0.0f};
+    // A directional light: the way it goes, then the line across it.
+    math::Vec4 direction{0.0f};
+    // How much its shadows blur, how far those of a directional light reach, and the length of its
+    // strips.
+    math::Vec4 shadow{0.0f};
+    // 0 for a point light, 1 for a directional one.
+    std::uint32_t kind = 0;
+    std::uint32_t itemMask = 1;
+    // Where its distances start in the shadow buffer, in distances; -1 without shadows.
+    std::int32_t shadowOffset = -1;
+    std::uint32_t padding = 0;
+};
 
 struct SpritePushConstants
 {
     VkDeviceAddress scene = 0;
     VkDeviceAddress sprites = 0;
+    // The 2D lights of the frame, and the distances of their shadows.
+    VkDeviceAddress lights2D = 0;
+    VkDeviceAddress shadows2D = 0;
+    // The tint of the canvas, over every sprite that is not unshaded.
+    math::Vec4 canvasModulate{1.0f};
     // The first sprite of the draw, in the buffer the frame sorted them into.
     std::uint32_t first = 0;
-    std::uint32_t padding0 = 0;
-    std::uint32_t padding1 = 0;
-    std::uint32_t padding2 = 0;
+    std::uint32_t lightCount = 0;
+    // How many distances each shadowed light keeps.
+    std::uint32_t shadowResolution = 0;
+    std::uint32_t padding = 0;
 };
 
 struct SkyPushConstants
@@ -384,7 +418,8 @@ static_assert(sizeof(GpuParticle) == 64);
 static_assert(sizeof(GpuTrailPoint) == 48);
 static_assert(sizeof(ParticlePushConstants) == 64);
 static_assert(sizeof(GpuSprite) == 160);
-static_assert(sizeof(SpritePushConstants) == 32);
+static_assert(sizeof(SpritePushConstants) == 64);
+static_assert(sizeof(GpuLight2D) == 80);
 static_assert(sizeof(LuminancePushConstants) == 16);
 static_assert(sizeof(BakePushConstants) == 24);
 

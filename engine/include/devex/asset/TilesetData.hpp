@@ -112,6 +112,8 @@ struct DEVEX_API TileData
     std::uint32_t id = 0;
     AssetId sprite;
     TileCollision collision = TileCollision::None;
+    // Hides the 2D lights, the whole cell, as the occluders do.
+    bool occluder = false;
     // An animated tile shows these sprites in turn, fps a second, in place of its sprite: water,
     // lava, torches.
     std::vector<AssetId> frames;

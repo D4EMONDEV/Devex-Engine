@@ -62,7 +62,8 @@ captures de l'éditeur, scènes de base, entrées, scripts C#, animations, colli
   dans un budget par image ;
 - `Devex::Scene` : entités à UUID, composants en sparse sets, hiérarchie, `.dvxscene`,
   instanciation de modèles, composants de physique, d'animation et d'interface, cartes de
-  tuiles (`Tilemap`, cellules par blocs, tilesets `.dvxtileset` et leurs terrains), préfabs liés
+  tuiles (`Tilemap`, cellules par blocs, tilesets `.dvxtileset` et leurs terrains), éclairage 2D
+  (`PointLight2D`, `DirectionalLight2D`, `LightOccluder2D`, `CanvasModulate`), préfabs liés
   (scènes imbriquées avec leurs modifications) ;
 - `Devex::Physics` : simulation Jolt Physics des corps rigides, colliders (primitives, maillages,
   déclencheurs) et personnages, couches de collision, requêtes, forces, contacts, interpolation ;
@@ -151,6 +152,7 @@ captures de l'éditeur, scènes de base, entrées, scripts C#, animations, colli
   de sprites, couches de tri du projet, peinture des tuiles dans la vue (pinceau, gomme,
   rectangle, remplissage, pipette, et terrains qui choisissent chaque tuile d'après ses
   voisines, comme ceux de Godot) et inspecteur des tilesets (terrains peints sur les tuiles),
+  lumières 2D et occulteurs dessinés dans la vue, masques en boutons numérotés,
   formes de la physique 2D
   dessinées dans la vue, cuisson du maillage de navigation depuis l'inspecteur et son dessin dans
   la vue avec les agents, les obstacles et les chemins,
@@ -196,7 +198,8 @@ captures de l'éditeur, scènes de base, entrées, scripts C#, animations, colli
   caisses poussées découpent le maillage ;
   Tab passe à la scène `platformer`, un jeu de plateformes en pixel art (un chevalier animé qui
   court et saute sur un niveau de tuiles simulé par la physique 2D, dont une île flottante
-  peinte au pinceau de terrain, traverse les corniches
+  peinte au pinceau de terrain, au soir, sous une torche qui vacille et dont les corniches font
+  de l'ombre sur un mur à normal map, traverse les corniches
   par-dessous, pousse des caisses, prend une plateforme mobile au-dessus de l'eau animée et
   revient au départ s'il y tombe, des pièces qui tournent ramassées par déclencheur, un
   coucher de soleil qui défile plus lentement, un mur éclairé par une torche,

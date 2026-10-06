@@ -125,6 +125,8 @@ void spreadColorsUnderTransparency(Image& image)
     const math::Vec4 pivot = context.vectorOption("pivot", math::Vec4{0.5f, 0.5f, 0.0f, 0.0f});
     base.pivot = math::Vec2{pivot.x, pivot.y};
     base.border = context.vectorOption("border", math::Vec4{0.0f});
+    // The normal map the 2D lights read, laid out as the texture: its sprites share it.
+    base.normalTexture = context.assetOption("normal_texture");
 
     std::vector<ImportedArtifact> sprites;
     const auto add = [&](std::string_view key, std::string name, std::uint32_t x, std::uint32_t y, std::uint32_t width,
@@ -529,14 +531,32 @@ core::Result<ImportResult> importSceneFile(ImportContext& context)
     return result;
 }
 
+AssetId ImportContext::assetOption(std::string_view key) const noexcept
+{
+    for (const serialization::TextProperty& property : options)
+    {
+        if (property.key != key)
+        {
+            continue;
+        }
+        const serialization::TextCall* const call = serialization::asCall(property.value, "asset");
+        const std::string* const text =
+            call != nullptr && call->arguments.size() == 1 ? serialization::asString(call->arguments.front()) : nullptr;
+        const std::optional<core::Uuid> uuid = text != nullptr ? core::Uuid::parse(*text) : std::nullopt;
+        return uuid ? AssetId{*uuid} : AssetId{};
+    }
+    return {};
+}
+
 std::span<const Importer> importers()
 {
     using serialization::TextValue;
     static const std::vector<Importer> all{
         Importer{
             .name = "texture",
-            // 2: high dynamic range images. 3: the filter and the sprites.
-            .version = 3,
+            // 2: high dynamic range images. 3: the filter and the sprites. 4: the normal map of the
+            // sprites.
+            .version = 4,
             .mainType = AssetType::Texture,
             .extensions = {".png", ".jpg", ".jpeg", ".tga", ".bmp", ".hdr"},
             .defaultOptions =

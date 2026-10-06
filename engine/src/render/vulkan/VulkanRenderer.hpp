@@ -182,8 +182,11 @@ private:
         std::optional<Buffer> particles;
         std::optional<Buffer> trailPoints;
         std::optional<Buffer> trailSegments;
-        // The sprites of the frame the camera can see, in the order they are drawn.
+        // The sprites of the frame the camera can see, in the order they are drawn, and the 2D lights
+        // that reach them with the distances of their shadows.
         std::optional<Buffer> sprites;
+        std::optional<Buffer> lights2D;
+        std::optional<Buffer> shadows2D;
         std::optional<Buffer> clusters;
         std::optional<Buffer> clusterLights;
         // Exposed luminance measured on a grid by the last frame recorded with this context.
@@ -342,6 +345,8 @@ private:
     [[nodiscard]] core::Result<void> uploadParticles(FrameContext& frame) const;
     // Copies the sprites the camera sees into the buffer of the frame, in the order they are drawn.
     [[nodiscard]] core::Result<void> uploadSprites(FrameContext& frame) const;
+    // The 2D lights that reach what the camera sees, and the shadows of those that cast them.
+    void gatherLights2D() const;
     // Sprites [first, first + count) of the sorted buffer, with the pipeline of a pass.
     std::uint32_t drawSprites(VkCommandBuffer commandBuffer, VkDeviceAddress sceneData, const FrameContext& frame,
                               std::uint32_t frameSlot, const Pipeline& pipeline, std::uint32_t first,
@@ -409,6 +414,8 @@ private:
     mutable std::vector<SpriteBatch> m_spriteBatches;
     mutable std::vector<GpuSprite> m_gpuSprites;
     mutable std::vector<std::uint8_t> m_spriteOutlined;
+    mutable std::vector<GpuLight2D> m_gpuLights2D;
+    mutable std::vector<float> m_shadows2D;
     mutable std::vector<TransparentItem> m_transparentItems;
     // Scratch for the particles of the frame, kept between frames to avoid allocating.
     mutable std::vector<GpuParticle> m_gpuParticles;

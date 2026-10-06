@@ -1,11 +1,17 @@
 #include <devex/asset/AssetId.hpp>
 #include <devex/runtime/SceneExtraction.hpp>
 #include <devex/scene/Components.hpp>
+#include <devex/scene/Light2DComponents.hpp>
+#include <devex/scene/TilemapComponents.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
+#include <algorithm>
+#include <array>
 #include <numbers>
+#include <utility>
+#include <vector>
 
 using Catch::Matchers::WithinAbs;
 using devex::math::Vec3;
@@ -177,4 +183,78 @@ TEST_CASE("Extraction adds the particles of the emitters and the ribbons of the 
     CHECK(batches == 1);
     // The trails of the particles, and the ribbon of the ball.
     CHECK(ribbons == 2);
+}
+
+TEST_CASE("Extraction adds the 2D lights, the tint of the canvas and the occluders", "[runtime][extraction][light2d]")
+{
+    Scene scene;
+    devex::runtime::AssetManager assets(nullptr, nullptr);
+    const Entity lamp = scene.createEntity("Lamp");
+    scene.add<Transform>(lamp, Transform{.position = {1.0f, 2.0f, 3.0f}});
+    scene.add<devex::scene::PointLight2D>(lamp, devex::scene::PointLight2D{.color = {1.0f, 0.5f, 0.25f}, .energy = 2.0f, .radius = 3.0f});
+    // Turned a quarter of a turn, the light that goes down goes to the right.
+    const Entity moon = scene.createEntity("Moon");
+    scene.add<Transform>(moon, Transform{.rotation = devex::math::angleAxis(devex::math::radians(90.0f), Vec3{0.0f, 0.0f, 1.0f})});
+    scene.add<devex::scene::DirectionalLight2D>(moon, devex::scene::DirectionalLight2D{.height = 0.25f});
+    const Entity box = scene.createEntity("Box");
+    scene.add<Transform>(box, Transform{.position = {5.0f, 0.0f, 0.0f}});
+    scene.add<devex::scene::LightOccluder2D>(box);
+    const Entity night = scene.createEntity("Night");
+    scene.add<devex::scene::CanvasModulate>(night, devex::scene::CanvasModulate{.color = {0.2f, 0.3f, 0.4f}});
+    scene.add<devex::scene::CanvasModulate>(scene.createEntity("Second"), devex::scene::CanvasModulate{.color = {1.0f, 0.0f, 0.0f}});
+    scene.updateTransforms();
+
+    devex::render::RenderWorld world;
+    devex::runtime::extractLights2D(scene, assets, world);
+    REQUIRE(world.lights2D.size() == 2);
+    const devex::render::RenderLight2D& point = world.lights2D[0];
+    CHECK_FALSE(point.directional);
+    CHECK(point.position == devex::math::Vec2{1.0f, 2.0f});
+    CHECK(point.color == Vec3{2.0f, 1.0f, 0.5f});
+    CHECK(point.radius == 3.0f);
+    const devex::render::RenderLight2D& directional = world.lights2D[1];
+    CHECK(directional.directional);
+    CHECK_THAT(directional.direction.x, WithinAbs(1.0, 1e-5));
+    CHECK_THAT(directional.direction.y, WithinAbs(0.0, 1e-5));
+    CHECK(directional.height == 0.25f);
+    CHECK(world.canvasModulate == Vec3{0.2f, 0.3f, 0.4f});
+    // No light casts shadows: the occluders are left out.
+    CHECK(world.occluders2D.empty());
+
+    // Once one does, the square gives its four edges where its entity stands; open, it gives three.
+    scene.get<devex::scene::PointLight2D>(lamp).shadows = true;
+    world = {};
+    devex::runtime::extractLights2D(scene, assets, world);
+    REQUIRE(world.occluders2D.size() == 4);
+    CHECK(world.occluders2D[0].from == devex::math::Vec2{4.5f, -0.5f});
+    CHECK(world.occluders2D[0].to == devex::math::Vec2{5.5f, -0.5f});
+    CHECK(world.occluders2D[3].to == devex::math::Vec2{4.5f, -0.5f});
+    scene.get<devex::scene::LightOccluder2D>(box).closed = false;
+    scene.get<devex::scene::LightOccluder2D>(box).mask = 6;
+    world = {};
+    devex::runtime::extractLights2D(scene, assets, world);
+    REQUIRE(world.occluders2D.size() == 3);
+    CHECK(world.occluders2D[0].mask == 6);
+}
+
+TEST_CASE("The tiles that occlude make one outline, joined along rows and columns", "[runtime][extraction][light2d]")
+{
+    devex::asset::TilesetData tileset;
+    tileset.tiles = {{.id = 1, .occluder = true}, {.id = 2}};
+    // An L of occluding tiles, with a tile that does not in its corner.
+    devex::scene::TileGrid grid;
+    for (const devex::math::IVec2 cell : {devex::math::IVec2{0, 0}, devex::math::IVec2{1, 0}, devex::math::IVec2{2, 0}, devex::math::IVec2{0, 1}})
+    {
+        grid.set(cell, 1);
+    }
+    grid.set({1, 1}, 2);
+    std::vector<std::pair<devex::math::IVec2, devex::math::IVec2>> outline = devex::runtime::tileOccluderOutline(grid, tileset);
+    const auto key = [](const std::pair<devex::math::IVec2, devex::math::IVec2>& edge) {
+        return std::array{edge.first.x, edge.first.y, edge.second.x, edge.second.y};
+    };
+    std::ranges::sort(outline, {}, key);
+    const std::vector<std::pair<devex::math::IVec2, devex::math::IVec2>> expected{
+        {{0, 0}, {0, 2}}, {{0, 0}, {3, 0}}, {{0, 2}, {1, 2}}, {{1, 1}, {1, 2}}, {{1, 1}, {3, 1}}, {{3, 0}, {3, 1}},
+    };
+    CHECK(outline == expected);
 }

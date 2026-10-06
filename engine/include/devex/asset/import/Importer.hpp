@@ -74,6 +74,8 @@ struct DEVEX_API ImportContext
     // The numbers of a vec2(...), vec3(...) or vec4(...) option, in order; the components the
     // option does not give keep those of the fallback.
     [[nodiscard]] math::Vec4 vectorOption(std::string_view key, math::Vec4 fallback) const noexcept;
+    // The asset an asset("uuid") option names; invalid without one.
+    [[nodiscard]] AssetId assetOption(std::string_view key) const noexcept;
 };
 
 struct DEVEX_API ImportResult

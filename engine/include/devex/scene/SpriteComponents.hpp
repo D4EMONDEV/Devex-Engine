@@ -57,6 +57,10 @@ struct DEVEX_API SpriteRenderer
     // Lit as a matte surface by the sun, the sky and the lights; otherwise shows its colors as they
     // are, whatever the exposure.
     bool lit = false;
+    // Out of reach of the 2D lights and of the CanvasModulate: an interface in the world, a glow.
+    bool unshaded = false;
+    // The 2D lights whose item mask shares a bit with it shine on it.
+    std::uint32_t lightMask = 1;
 };
 DEVEX_DECLARE_ENGINE_REFLECTION(SpriteRenderer);
 

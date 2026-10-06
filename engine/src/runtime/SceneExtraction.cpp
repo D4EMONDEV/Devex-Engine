@@ -3,6 +3,7 @@
 #include <devex/runtime/SceneExtraction.hpp>
 #include <devex/scene/AnimationComponents.hpp>
 #include <devex/scene/Components.hpp>
+#include <devex/scene/Light2DComponents.hpp>
 #include <devex/scene/SpriteComponents.hpp>
 #include <devex/scene/TilemapComponents.hpp>
 
@@ -10,8 +11,11 @@
 #include <cmath>
 #include <cstdint>
 #include <limits>
+#include <map>
 #include <optional>
+#include <set>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace devex::runtime {
@@ -111,6 +115,9 @@ void extractSprites(scene::Scene& scene, AssetManager& assets, const asset::Sort
             .flipY = sprite.flipY,
             .additive = sprite.blend == scene::SpriteBlend::Additive,
             .lit = sprite.lit,
+            .unshaded = sprite.unshaded,
+            .lightMask = sprite.lightMask,
+            .normalTexture = data->normalTexture.isValid() ? assets.texture(data->normalTexture) : render::TextureHandle{},
             .layer = sorting.rank(sprite.sortingLayer),
             .order = sprite.order,
             .objectId = entity.index + 1,
@@ -127,6 +134,7 @@ bool extractTilemaps(scene::Scene& scene, AssetManager& assets, const asset::Sor
     {
         math::Vec4 uvRect{0.0f};
         render::TextureHandle texture;
+        render::TextureHandle normalTexture;
     };
     std::unordered_map<std::uint32_t, std::optional<ResolvedTile>> resolved;
     for ([[maybe_unused]] auto [entity, transform, tilemap] : scene.view<scene::WorldTransform, scene::Tilemap>())
@@ -150,7 +158,11 @@ bool extractTilemaps(scene::Scene& scene, AssetManager& assets, const asset::Sor
             const render::TextureHandle texture = sprite != nullptr ? assets.texture(sprite->texture) : render::TextureHandle{};
             if (texture.isValid())
             {
-                found->second = ResolvedTile{.uvRect = sprite->uvRect(), .texture = texture};
+                found->second = ResolvedTile{
+                    .uvRect = sprite->uvRect(),
+                    .texture = texture,
+                    .normalTexture = sprite->normalTexture.isValid() ? assets.texture(sprite->normalTexture) : render::TextureHandle{},
+                };
             }
             return found->second;
         };
@@ -171,7 +183,7 @@ bool extractTilemaps(scene::Scene& scene, AssetManager& assets, const asset::Sor
             {
                 std::swap(uv.y, uv.w);
             }
-            world.tiles.push_back({.cell = cell.cell, .uvRect = uv, .texture = tile->texture});
+            world.tiles.push_back({.cell = cell.cell, .uvRect = uv, .texture = tile->texture, .normalTexture = tile->normalTexture});
         }
         const auto count = static_cast<std::uint32_t>(world.tiles.size()) - first;
         if (count == 0)
@@ -185,12 +197,150 @@ bool extractTilemaps(scene::Scene& scene, AssetManager& assets, const asset::Sor
             .firstTile = first,
             .tileCount = count,
             .lit = tilemap.lit,
+            .unshaded = tilemap.unshaded,
+            .lightMask = tilemap.lightMask,
             .layer = sorting.rank(tilemap.sortingLayer),
             .order = tilemap.order,
             .objectId = entity.index + 1,
         });
     }
     return animated;
+}
+
+std::vector<std::pair<math::IVec2, math::IVec2>> tileOccluderOutline(const scene::TileGrid& grid, const asset::TilesetData& tileset)
+{
+    std::set<std::pair<std::int32_t, std::int32_t>> occluding;
+    for (const scene::TileCell& cell : grid.cells())
+    {
+        const asset::TileData* const tile = tileset.find(scene::tileIdOf(cell.value));
+        if (tile != nullptr && tile->occluder)
+        {
+            occluding.insert({cell.cell.x, cell.cell.y});
+        }
+    }
+    // The sides facing out, by the line they lie on, from where they start along it.
+    std::map<std::int32_t, std::vector<std::int32_t>> rows;
+    std::map<std::int32_t, std::vector<std::int32_t>> columns;
+    for (const auto& [x, y] : occluding)
+    {
+        if (!occluding.contains({x, y - 1}))
+        {
+            rows[y].push_back(x);
+        }
+        if (!occluding.contains({x, y + 1}))
+        {
+            rows[y + 1].push_back(x);
+        }
+        if (!occluding.contains({x - 1, y}))
+        {
+            columns[x].push_back(y);
+        }
+        if (!occluding.contains({x + 1, y}))
+        {
+            columns[x + 1].push_back(y);
+        }
+    }
+    std::vector<std::pair<math::IVec2, math::IVec2>> outline;
+    const auto join = [&](std::map<std::int32_t, std::vector<std::int32_t>>& lines, bool horizontal) {
+        for (auto& [line, starts] : lines)
+        {
+            std::ranges::sort(starts);
+            for (std::size_t index = 0; index < starts.size();)
+            {
+                std::size_t end = index + 1;
+                while (end < starts.size() && starts[end] <= starts[end - 1] + 1)
+                {
+                    ++end;
+                }
+                const std::int32_t from = starts[index];
+                const std::int32_t to = starts[end - 1] + 1;
+                outline.emplace_back(horizontal ? math::IVec2{from, line} : math::IVec2{line, from},
+                                     horizontal ? math::IVec2{to, line} : math::IVec2{line, to});
+                index = end;
+            }
+        }
+    };
+    join(rows, true);
+    join(columns, false);
+    return outline;
+}
+
+void extractLights2D(scene::Scene& scene, AssetManager& assets, render::RenderWorld& world)
+{
+    bool tinted = false;
+    for ([[maybe_unused]] auto [entity, modulate] : scene.view<scene::CanvasModulate>())
+    {
+        if (!std::exchange(tinted, true))
+        {
+            world.canvasModulate = math::max(modulate.color, math::Vec3{0.0f});
+        }
+    }
+    bool shadows = false;
+    for ([[maybe_unused]] auto [entity, transform, light] : scene.view<scene::WorldTransform, scene::PointLight2D>())
+    {
+        world.lights2D.push_back({
+            .position = math::Vec2(transform.matrix[3]),
+            .color = math::max(light.color, math::Vec3{0.0f}) * std::max(light.energy, 0.0f),
+            .radius = light.radius,
+            .falloff = light.falloff,
+            .height = light.height,
+            .itemMask = light.itemMask,
+            .shadows = light.shadows,
+            .shadowMask = light.shadowMask,
+            .shadowSoftness = light.shadowSoftness,
+        });
+        shadows = shadows || light.shadows;
+    }
+    for ([[maybe_unused]] auto [entity, transform, light] : scene.view<scene::WorldTransform, scene::DirectionalLight2D>())
+    {
+        // Down the Y axis of its entity, in the plane.
+        const math::Vec2 down = math::Vec2(math::Mat3(transform.matrix) * math::Vec3{0.0f, -1.0f, 0.0f});
+        world.lights2D.push_back({
+            .directional = true,
+            .direction = math::length(down) > 1e-6f ? math::normalize(down) : math::Vec2{0.0f, -1.0f},
+            .color = math::max(light.color, math::Vec3{0.0f}) * std::max(light.energy, 0.0f),
+            .height = light.height,
+            .itemMask = light.itemMask,
+            .shadows = light.shadows,
+            .shadowMask = light.shadowMask,
+            .shadowSoftness = light.shadowSoftness,
+            .shadowDistance = light.shadowDistance,
+        });
+        shadows = shadows || light.shadows;
+    }
+    if (!shadows)
+    {
+        return;
+    }
+    for ([[maybe_unused]] auto [entity, transform, occluder] : scene.view<scene::WorldTransform, scene::LightOccluder2D>())
+    {
+        const std::vector<math::Vec2>& points = occluder.points;
+        const auto at = [&](std::size_t index) { return math::Vec2(transform.matrix * math::Vec4(points[index], 0.0f, 1.0f)); };
+        for (std::size_t index = 0; index + 1 < points.size(); ++index)
+        {
+            world.occluders2D.push_back({.from = at(index), .to = at(index + 1), .mask = occluder.mask});
+        }
+        if (occluder.closed && points.size() > 2)
+        {
+            world.occluders2D.push_back({.from = at(points.size() - 1), .to = at(0), .mask = occluder.mask});
+        }
+    }
+    for ([[maybe_unused]] auto [entity, transform, tilemap] : scene.view<scene::WorldTransform, scene::Tilemap>())
+    {
+        const std::shared_ptr<const asset::TilesetData> tileset =
+            tilemap.blocks.empty() || !tilemap.tileset.isValid() ? nullptr : assets.tileset(tilemap.tileset);
+        if (tileset == nullptr || std::ranges::none_of(tileset->tiles, &asset::TileData::occluder))
+        {
+            continue;
+        }
+        const auto at = [&](math::IVec2 corner) {
+            return math::Vec2(transform.matrix * math::Vec4(math::Vec2(corner) * tilemap.cellSize, 0.0f, 1.0f));
+        };
+        for (const auto& [from, to] : tileOccluderOutline(scene::TileGrid::read(tilemap), *tileset))
+        {
+            world.occluders2D.push_back({.from = at(from), .to = at(to), .mask = tilemap.occluderMask});
+        }
+    }
 }
 
 void extractScene(scene::Scene& scene, AssetManager& assets, render::RenderWorld& world)

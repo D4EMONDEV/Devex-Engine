@@ -24,15 +24,15 @@ bits = list(0, -1, -1, -1, -1, -1, 0, -1)
 [tile id=4 sprite=asset("be0a1ca8-6ed0-5216-8d6d-7e554e8910ba") collision="full" terrain_set=0 terrain=0]
 bits = list(0, -1, 0, -1, -1, -1, 0, -1)
 
-[tile id=5 sprite=asset("b1a3955e-5004-57a8-a28a-14df9834db97") collision="top" terrain_set=1 terrain=0]
+[tile id=5 sprite=asset("b1a3955e-5004-57a8-a28a-14df9834db97") collision="top" occluder=true terrain_set=1 terrain=0]
 bits = list(0, -1, -1, -1, -1, -1, -1, -1)
 
-[tile id=6 sprite=asset("4f0b166e-82fa-5846-9a34-8a8b5bf6bd01") collision="top" terrain_set=1 terrain=0]
+[tile id=6 sprite=asset("4f0b166e-82fa-5846-9a34-8a8b5bf6bd01") collision="top" occluder=true terrain_set=1 terrain=0]
 bits = list(0, -1, -1, -1, 0, -1, -1, -1)
 
 [tile id=7 sprite=asset("404453dc-0fb4-5632-a6cc-47facf605078") collision="full"]
 
-[tile id=8 sprite=asset("83ec99c0-4e03-53ff-b86e-4e2af532fcca") collision="full"]
+[tile id=8 sprite=asset("83ec99c0-4e03-53ff-b86e-4e2af532fcca") collision="full" occluder=true]
 
 [tile id=9 sprite=asset("93891a03-bb72-5ee4-977f-20f37586fd27") collision="none" terrain_set=2 terrain=0]
 frames = list(asset("93891a03-bb72-5ee4-977f-20f37586fd27"), asset("8315aa1c-38ef-5e52-9a97-c1c60f82539c"), asset("baef9485-bd84-53f7-bc7f-4a61e83ae0dd"), asset("fbc22501-2319-5919-8a7a-796aa2aa7794"))

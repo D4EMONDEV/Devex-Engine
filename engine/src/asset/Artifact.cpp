@@ -96,12 +96,14 @@ std::uint32_t artifactVersion(AssetType type) noexcept
     // 2: the kerning pairs.
     case AssetType::Font:
         return 2;
-    // 2: terrain sets, the terrains of the tiles and their probability.
+    // 2: terrain sets, the terrains of the tiles and their probability. 3: the tiles that occlude.
     case AssetType::Tileset:
+        return 3;
+    // 2: the normal map.
+    case AssetType::Sprite:
         return 2;
     case AssetType::Theme:
     case AssetType::Curve:
-    case AssetType::Sprite:
     case AssetType::SpriteFrames:
     case AssetType::Animator:
     case AssetType::NavMesh:
@@ -633,6 +635,7 @@ std::vector<std::byte> encodeSprite(const SpriteData& sprite)
     writer.write(sprite.pixelsPerUnit);
     writer.write(sprite.pivot);
     writer.write(sprite.border);
+    writer.write(sprite.normalTexture);
     return writer.take();
 }
 
@@ -652,6 +655,7 @@ core::Result<SpriteData> decodeSprite(std::span<const std::byte> bytes)
     sprite.pixelsPerUnit = reader.read<float>();
     sprite.pivot = reader.read<math::Vec2>();
     sprite.border = reader.read<math::Vec4>();
+    sprite.normalTexture = reader.read<AssetId>();
     if (reader.failed())
     {
         return std::unexpected(truncated(AssetType::Sprite));
@@ -734,6 +738,7 @@ std::vector<std::byte> encodeTileset(const TilesetData& tileset)
         writer.write(tile.terrain);
         writer.write(tile.terrainBits);
         writer.write(tile.probability);
+        writer.write(static_cast<std::uint8_t>(tile.occluder ? 1 : 0));
     }
     return writer.take();
 }
@@ -776,6 +781,7 @@ core::Result<TilesetData> decodeTileset(std::span<const std::byte> bytes)
         tile.terrain = reader.read<std::int32_t>();
         tile.terrainBits = reader.read<TerrainBits>();
         tile.probability = reader.read<float>();
+        tile.occluder = reader.read<std::uint8_t>() != 0;
         tileset.tiles.push_back(std::move(tile));
     }
     if (reader.failed())

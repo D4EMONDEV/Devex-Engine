@@ -6,6 +6,7 @@
 #include <devex/core/Assert.hpp>
 #include <devex/core/Log.hpp>
 #include <devex/core/Profiler.hpp>
+#include <devex/render/Light2D.hpp>
 #include <devex/render/Photometry.hpp>
 
 #include <algorithm>
@@ -2470,6 +2471,7 @@ core::Result<void> VulkanRenderer::uploadSprites(FrameContext& frame) const
             std::uint32_t flags = static_cast<std::uint32_t>(sprite.mode) & 3U;
             flags |= (sprite.flipX ? spriteFlipX : 0U) | (sprite.flipY ? spriteFlipY : 0U);
             flags |= (sprite.additive ? spriteAdditive : 0U) | (sprite.lit ? spriteLit : 0U);
+            flags |= sprite.unshaded ? spriteUnshaded : 0U;
             GpuSprite& gpu = m_gpuSprites.emplace_back(GpuSprite{
                 .world = sprite.transform,
                 .uvRect = sprite.uvRect,
@@ -2481,6 +2483,8 @@ core::Result<void> VulkanRenderer::uploadSprites(FrameContext& frame) const
                 .texture = slotOf(sprite.texture),
                 .flags = flags,
                 .objectId = sprite.objectId,
+                .lightMask = sprite.lightMask,
+                .normalTexture = slotOf(sprite.normalTexture),
             });
             // A sprite whose texture is still loading waits for it rather than showing a plain rectangle.
             if (sprite.texture.isValid() && gpu.texture == noParticleTexture)
@@ -2510,8 +2514,10 @@ core::Result<void> VulkanRenderer::uploadSprites(FrameContext& frame) const
                 .pivot = math::Vec2{0.0f},
                 .naturalSize = tilemap.cellSize,
                 .texture = slotOf(tile.texture),
-                .flags = tilemap.lit ? spriteLit : 0U,
+                .flags = (tilemap.lit ? spriteLit : 0U) | (tilemap.unshaded ? spriteUnshaded : 0U),
                 .objectId = tilemap.objectId,
+                .lightMask = tilemap.lightMask,
+                .normalTexture = slotOf(tile.normalTexture),
             });
             if (tile.texture.isValid() && gpu.texture == noParticleTexture)
             {
@@ -2531,7 +2537,91 @@ core::Result<void> VulkanRenderer::uploadSprites(FrameContext& frame) const
     {
         std::memcpy(frame.sprites->mappedBytes().data(), m_gpuSprites.data(), m_gpuSprites.size() * sizeof(GpuSprite));
     }
+    gatherLights2D();
+    const VkDeviceSize lightBytes = std::max<std::size_t>(m_gpuLights2D.size(), 1) * sizeof(GpuLight2D);
+    if (core::Result<void> ensured = ensureHostBuffer(frame.lights2D, lightBytes); !ensured)
+    {
+        return ensured;
+    }
+    if (!m_gpuLights2D.empty())
+    {
+        std::memcpy(frame.lights2D->mappedBytes().data(), m_gpuLights2D.data(), m_gpuLights2D.size() * sizeof(GpuLight2D));
+    }
+    const VkDeviceSize shadowBytes = std::max<std::size_t>(m_shadows2D.size(), 1) * sizeof(float);
+    if (core::Result<void> ensured = ensureHostBuffer(frame.shadows2D, shadowBytes); !ensured)
+    {
+        return ensured;
+    }
+    if (!m_shadows2D.empty())
+    {
+        std::memcpy(frame.shadows2D->mappedBytes().data(), m_shadows2D.data(), m_shadows2D.size() * sizeof(float));
+    }
     return {};
+}
+
+void VulkanRenderer::gatherLights2D() const
+{
+    m_gpuLights2D.clear();
+    m_shadows2D.clear();
+    if (m_gpuSprites.empty())
+    {
+        return;
+    }
+    // What the camera sees of the plane of the sprites: lights beyond it light nothing seen, and the
+    // shadows of directional lights cover it. A camera looking along the plane keeps a wide square.
+    std::pair<math::Vec2, math::Vec2> view{math::Vec2(m_cameraPosition) - math::Vec2{100.0f},
+                                           math::Vec2(m_cameraPosition) + math::Vec2{100.0f}};
+    if (const std::optional<std::pair<math::Vec2, math::Vec2>> seen = visiblePlane2D(m_unjitteredViewProjection))
+    {
+        view = *seen;
+    }
+    std::uint32_t shadowed = 0;
+    const auto shadowSpan = [this, &shadowed]() -> std::span<float> {
+        ++shadowed;
+        m_shadows2D.resize(m_shadows2D.size() + shadow2DResolution);
+        return std::span(m_shadows2D).last(shadow2DResolution);
+    };
+    for (const RenderLight2D& light : m_world.lights2D)
+    {
+        if (m_gpuLights2D.size() >= maxLights2D)
+        {
+            break;
+        }
+        GpuLight2D gpu{.color = math::Vec4(light.color, std::max(light.falloff, 0.01f)), .itemMask = light.itemMask};
+        const bool shadows = light.shadows && shadowed < maxShadowedLights2D;
+        if (!light.directional)
+        {
+            const float radius = std::max(light.radius, 0.0f);
+            if (radius <= 0.0f || light.position.x + radius < view.first.x || light.position.y + radius < view.first.y ||
+                light.position.x - radius > view.second.x || light.position.y - radius > view.second.y)
+            {
+                continue;
+            }
+            gpu.kind = 0;
+            gpu.position = math::Vec4(light.position, std::max(light.height, 0.0f), radius);
+            gpu.shadow = math::Vec4(std::max(light.shadowSoftness, 0.0f), 0.0f, 0.0f, 0.0f);
+            if (shadows)
+            {
+                gpu.shadowOffset = static_cast<std::int32_t>(m_shadows2D.size());
+                pointShadow2D(light.position, radius, m_world.occluders2D, light.shadowMask, shadowSpan());
+            }
+        }
+        else
+        {
+            const DirectionalShadowFrame2D frame =
+                directionalShadowFrame(light.direction, view.first, view.second, shadows ? std::max(light.shadowDistance, 0.0f) : 0.0f);
+            gpu.kind = 1;
+            gpu.position = math::Vec4(frame.origin, std::clamp(light.height, 0.0f, 1.0f), frame.width);
+            gpu.direction = math::Vec4(frame.direction, frame.across);
+            gpu.shadow = math::Vec4(std::max(light.shadowSoftness, 0.0f), std::max(light.shadowDistance, 0.0f), frame.length, 0.0f);
+            if (shadows)
+            {
+                gpu.shadowOffset = static_cast<std::int32_t>(m_shadows2D.size());
+                directionalShadow2D(frame, m_world.occluders2D, light.shadowMask, shadowSpan());
+            }
+        }
+        m_gpuLights2D.push_back(gpu);
+    }
 }
 
 std::uint32_t VulkanRenderer::drawSprites(VkCommandBuffer commandBuffer, VkDeviceAddress sceneData,
@@ -2551,7 +2641,12 @@ std::uint32_t VulkanRenderer::drawSprites(VkCommandBuffer commandBuffer, VkDevic
     const SpritePushConstants constants{
         .scene = sceneData,
         .sprites = frame.sprites->deviceAddress(),
+        .lights2D = frame.lights2D ? frame.lights2D->deviceAddress() : 0,
+        .shadows2D = frame.shadows2D ? frame.shadows2D->deviceAddress() : 0,
+        .canvasModulate = math::Vec4(m_world.canvasModulate, 1.0f),
         .first = first,
+        .lightCount = frame.lights2D ? static_cast<std::uint32_t>(m_gpuLights2D.size()) : 0U,
+        .shadowResolution = shadow2DResolution,
     };
     vkCmdPushConstants(commandBuffer, pipeline.layout(), VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
                        sizeof(constants), &constants);

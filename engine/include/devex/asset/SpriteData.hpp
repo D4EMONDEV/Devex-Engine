@@ -35,6 +35,8 @@ struct DEVEX_API SpriteData
     math::Vec2 pivot{0.5f, 0.5f};
     // The pixels a sliced sprite keeps at their size at each side: left, bottom, right and top.
     math::Vec4 border{0.0f};
+    // The normal map of its texture, laid out as it, which the 2D lights read; invalid for none.
+    AssetId normalTexture;
 
     // Its width and height in meters.
     [[nodiscard]] math::Vec2 size() const noexcept;

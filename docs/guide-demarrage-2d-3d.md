@@ -390,6 +390,17 @@ Peindre chaque bord et chaque coin à la main devient vite long. Les terrains ch
 
 En C#, `Tilemaps.SetTerrain(map, cells, set, terrain)` fait la même chose depuis le code ; `Tilemaps.FindTerrain(map, "Ground")` retrouve l'ensemble et le terrain par leur nom.
 
+#### Éclairer le niveau en 2D
+
+Comme dans Godot, l'éclairage 2D ne dépend pas des lumières 3D :
+
+1. Ajouter une entité **Canvas modulate** et choisir une teinte sombre (bleu nuit) : tout le 2D s'assombrit.
+2. Ajouter une **Point light 2D** près d'une torche : elle éclaire les sprites et les tiles dans son **Radius**. Activer **Shadows** pour qu'elle projette des ombres.
+3. Ajouter des **Light occluder 2D** autour de ce qui doit faire de l'ombre, ou cocher **Occluder** sur les tiles concernées dans l'Inspector du tileset.
+4. Pour du relief, importer une normal map avec **Normal map** activé, puis la choisir dans la ligne **Normal Map** de la planche de sprites et cliquer **Reimport**.
+
+Un sprite marqué **Unshaded** garde ses couleurs, et les masques (boutons 1 à 8) choisissent quelles lumières éclairent quoi.
+
 ## 6. Construire le premier jeu 3D
 
 ![La scène arena de Sandbox dans l'éditeur 3D](images/guide-demarrage/06-editeur-3d.png)

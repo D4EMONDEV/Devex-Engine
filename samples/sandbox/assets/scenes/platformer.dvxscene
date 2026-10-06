@@ -108,7 +108,7 @@ size = vec2(5, 4)
 sorting_layer = "Background"
 order = 1
 blend = "alpha"
-lit = true
+lit = false
 
 [entity uuid="6d1a4ad2-6381-590b-a559-86af8d221b42" name="Torch"]
 
@@ -203,9 +203,9 @@ rotation = quat(0, 0, 0, 1)
 scale = vec3(1, 1, 1)
 
 [component type="Tweener"]
-field = "PointLight.intensity"
-from = vec4(520, 0, 0, 0)
-to = vec4(760, 0, 0, 0)
+field = "PointLight2D.energy"
+from = vec4(1.5, 0, 0, 0)
+to = vec4(1.9, 0, 0, 0)
 from_current = false
 relative = false
 duration = 0.14
@@ -216,12 +216,16 @@ loop = "ping_pong"
 repeats = -1
 play_on_start = true
 
-[component type="PointLight"]
+[component type="PointLight2D"]
 color = vec3(1, 0.62, 0.3)
-temperature = 6500
-intensity = 700
-range = 6
-cast_shadows = false
+energy = 1.7
+radius = 8
+falloff = 1.2
+height = 0.6
+item_mask = 1
+shadows = true
+shadow_mask = 1
+shadow_softness = 0.06
 
 [entity uuid="4a7dac21-2b21-52b6-8184-fb0ae4824884" name="Hero"]
 
@@ -1298,3 +1302,8 @@ icons = list()
 
 [component type="SceneSwitch"]
 scene = asset("4bd5feef-9c35-4dfe-88fe-a66b488e9f9e")
+
+[entity uuid="5676ca37-5b58-5a33-9f95-54c434a9b71a" name="Dusk"]
+
+[component type="CanvasModulate"]
+color = vec3(0.38, 0.36, 0.55)

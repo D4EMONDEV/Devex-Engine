@@ -625,6 +625,19 @@ void InspectorUi::addProperty(EditorUiKit& kit, Section& section, const scene::C
                           "", "dim", false, scene::TextAlign::Right, hexSize);
         scene().get<scene::UiText>(row.detail).font = EditorUiKit::monoFont();
     }
+    else if (field.bits && field.kind == ValueKind::UInt32)
+    {
+        row.kind = ControlKind::Bits;
+        scene().add<scene::UiLayout>(row.editor, scene::UiLayout{.kind = scene::UiLayoutKind::Row,
+                                                                 .spacing = 2.0f,
+                                                                 .equalSize = true,
+                                                                 .align = scene::TextAlign::Left});
+        for (std::size_t bit = 0; bit < shownBits; ++bit)
+        {
+            row.bits[bit] = PanelBuilder::button(kit, row.editor, std::nullopt, std::to_string(bit + 1), "button", 0.0f, line - 4.0f);
+            tooltip(row.bits[bit].entity, std::format("Layer {}", bit + 1));
+        }
+    }
     else if (isChoice(field))
     {
         row.kind = ControlKind::Choice;
@@ -961,6 +974,24 @@ void InspectorUi::syncRow(const ToolsState& state, const scene::Scene& edited, s
     case ControlKind::ListHeader: {
         const std::size_t count = field.list->size(address);
         scene().get<scene::UiText>(row.control).text = std::format("{} {}", count, count == 1 ? "element" : "elements");
+        break;
+    }
+    case ControlKind::Bits: {
+        // A layer some of the entities have and others not shows as off.
+        const std::uint32_t value = *static_cast<const std::uint32_t*>(address);
+        std::uint32_t common = value;
+        for (const Entity entity : inspected)
+        {
+            if (const void* const other = valueAddress(edited, entity, row))
+            {
+                common &= *static_cast<const std::uint32_t*>(other);
+            }
+        }
+        for (std::size_t bit = 0; bit < shownBits; ++bit)
+        {
+            scene().get<UiRect>(row.bits[bit].entity).style = (common & (1u << bit)) != 0 ? "primary" : "button";
+            scene().get<scene::UiButton>(row.bits[bit].entity).interactable = open;
+        }
         break;
     }
     }
@@ -1478,6 +1509,23 @@ void InspectorUi::answerRow(ToolsState& state, scene::Scene& edited, std::span<c
         }
         break;
     case ControlKind::ReadOnly:
+        break;
+    case ControlKind::Bits:
+        for (std::size_t bit = 0; bit < shownBits; ++bit)
+        {
+            if (!world.wasClicked(row.bits[bit].entity))
+            {
+                continue;
+            }
+            // Every entity takes the layer the active one did not have, or loses it.
+            const void* const active = valueAddress(edited, inspected.back(), row);
+            const std::uint32_t mask = 1u << bit;
+            const bool on = active == nullptr || (*static_cast<const std::uint32_t*>(active) & mask) == 0;
+            set([&](void* address, bool) {
+                std::uint32_t& value = *static_cast<std::uint32_t*>(address);
+                value = on ? value | mask : value & ~mask;
+            });
+        }
         break;
     }
     // An element removed from its list.

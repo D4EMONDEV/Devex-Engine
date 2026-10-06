@@ -235,6 +235,10 @@ core::Result<TilesetData> parseTilesetFile(std::string_view text)
                 tile.data = *value;
             }
         }
+        if (const serialization::TextValue* const occluder = section.findAttribute("occluder"))
+        {
+            tile.occluder = serialization::asBool(*occluder).value_or(false);
+        }
         if (core::Result<void> terrains = readTileTerrains(section, tile); !terrains)
         {
             return std::unexpected(terrains.error());
@@ -285,6 +289,10 @@ std::string writeTilesetFile(const TilesetData& tileset)
         section.attributes.push_back({"id", serialization::TextValue(static_cast<std::int64_t>(tile.id))});
         section.attributes.push_back({"sprite", assetValue(tile.sprite)});
         section.attributes.push_back({"collision", serialization::TextValue(std::string(toString(tile.collision)))});
+        if (tile.occluder)
+        {
+            section.attributes.push_back({"occluder", serialization::TextValue(true)});
+        }
         if (tile.terrainSet != noTerrain)
         {
             section.attributes.push_back({"terrain_set", serialization::TextValue(static_cast<std::int64_t>(tile.terrainSet))});

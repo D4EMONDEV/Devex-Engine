@@ -137,7 +137,8 @@ TEST_CASE("Sprites and sprite frames survive their cooked files", "[asset][sprit
                             .textureHeight = 16,
                             .pixelsPerUnit = 8.0f,
                             .pivot = {0.5f, 0.0f},
-                            .border = {1.0f, 2.0f, 3.0f, 1.0f}};
+                            .border = {1.0f, 2.0f, 3.0f, 1.0f},
+                            .normalTexture = AssetId::generate()};
     const auto decodedSprite = devex::asset::decodeSprite(devex::asset::encodeSprite(sprite));
     REQUIRE(decodedSprite.has_value());
     CHECK(*decodedSprite == sprite);
@@ -179,6 +180,7 @@ TEST_CASE("Sprite frames files keep their animations and refuse broken ones", "[
 TEST_CASE("A texture cut into a grid imports its visible cells as sprites", "[asset][sprite]")
 {
     const TemporaryImage image(spriteSheet());
+    const AssetId normals = AssetId::generate();
     using devex::serialization::TextValue;
     devex::asset::ImportContext context =
         contextFor(image.path, {{"sprite_mode", TextValue(std::string("grid"))},
@@ -188,7 +190,8 @@ TEST_CASE("A texture cut into a grid imports its visible cells as sprites", "[as
                                 {"pivot", devex::serialization::makeCall("vec2", {TextValue(0.5), TextValue(0.0)})},
                                 {"filter", TextValue(std::string("nearest"))},
                                 {"compress", TextValue(false)},
-                                {"mipmaps", TextValue(false)}});
+                                {"mipmaps", TextValue(false)},
+                                {"normal_texture", devex::serialization::makeCall("asset", {TextValue(normals.uuid.toString())})}});
     const auto result = devex::asset::importTextureFile(context);
     REQUIRE(result.has_value());
     // The texture, then the seven cells with a visible pixel: the last one is left out.
@@ -204,6 +207,8 @@ TEST_CASE("A texture cut into a grid imports its visible cells as sprites", "[as
     const auto sprite = devex::asset::decodeSprite(fifth.bytes);
     REQUIRE(sprite.has_value());
     CHECK(sprite->texture == context.mainId);
+    // Every sprite shares the normal map of the texture.
+    CHECK(sprite->normalTexture == normals);
     CHECK(sprite->x == 0);
     CHECK(sprite->y == 8);
     CHECK(sprite->width == 8);

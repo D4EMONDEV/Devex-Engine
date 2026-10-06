@@ -14,7 +14,9 @@ DEVEX_REFLECT(SpriteRenderer)
         .field("sorting_layer", &SpriteRenderer::sortingLayer, {.sortingLayer = true})
         .field("order", &SpriteRenderer::order)
         .field("blend", &SpriteRenderer::blend)
-        .field("lit", &SpriteRenderer::lit);
+        .field("lit", &SpriteRenderer::lit)
+        .field("unshaded", &SpriteRenderer::unshaded)
+        .field("light_mask", &SpriteRenderer::lightMask, {.bits = true});
 }
 
 DEVEX_REFLECT(SpriteAnimator)

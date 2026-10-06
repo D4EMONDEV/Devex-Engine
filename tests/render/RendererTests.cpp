@@ -1480,3 +1480,107 @@ TEST_CASE("Scrolling tilemaps do not sample neighbouring atlas cells", "[render]
     }
     CHECK(capture.errors().empty());
 }
+
+TEST_CASE("2D lights shine on sprites over the tint of the canvas, through normal maps, hidden by occluders",
+          "[render][gpu][light2d]")
+{
+    const ErrorCapture capture;
+    {
+        auto platform = devex::platform::Platform::create();
+        REQUIRE(platform.has_value());
+        auto window = platform->createWindow({.width = 320, .height = 240, .vulkan = true, .hidden = true});
+        REQUIRE(window.has_value());
+        auto renderer = devex::render::Renderer::create(*platform, *window, {.validation = true});
+        REQUIRE(renderer.has_value());
+        // A white pixel, and a normal map facing +X.
+        devex::asset::TextureData white{.format = devex::asset::TextureFormat::Rgba8Srgb, .filter = devex::asset::TextureFilter::Nearest};
+        white.mips.push_back({.width = 1, .height = 1, .bytes = {std::byte{255}, std::byte{255}, std::byte{255}, std::byte{255}}});
+        devex::asset::TextureData facing{.format = devex::asset::TextureFormat::Rgba8Unorm, .filter = devex::asset::TextureFilter::Nearest};
+        facing.mips.push_back({.width = 1, .height = 1, .bytes = {std::byte{255}, std::byte{128}, std::byte{255}, std::byte{255}}});
+        const auto texture = renderer->createTexture(white);
+        const auto normals = renderer->createTexture(facing);
+        REQUIRE(texture.has_value());
+        REQUIRE(normals.has_value());
+
+        const auto at = [](float x, float y) { return devex::math::translate(devex::math::Mat4(1.0f), devex::math::Vec3{x, y, 0.0f}); };
+        std::vector<devex::render::CapturedImage> captured;
+        for (int frame = 0; frame < 8; ++frame)
+        {
+            devex::render::RenderWorld& world = renderer->beginFrame();
+            world.camera.view = devex::math::inverse(devex::math::translate(devex::math::Mat4(1.0f), devex::math::Vec3{0.0f, 0.0f, 10.0f}));
+            world.camera.projection = devex::render::Projection::Orthographic;
+            world.camera.orthographicSize = 2.0f;
+            world.camera.farPlane = 100.0f;
+            world.camera.autoExposure = false;
+            world.camera.antialiasing = devex::render::Antialiasing::None;
+            world.camera.tonemapper = devex::render::Tonemapper::None;
+            world.camera.bloom = 0.0f;
+            world.environment.color = {0.0f, 0.0f, 0.0f};
+            // A grey wall behind everything, darkened by the canvas; an unshaded green square on it.
+            world.sprites.push_back({.size = {8.0f, 6.0f}, .naturalSize = {8.0f, 6.0f}, .color = {0.5f, 0.5f, 0.5f, 1.0f}});
+            world.sprites.push_back({.transform = at(2.0f, 1.5f), .size = {0.5f, 0.5f}, .color = {0.0f, 0.5f, 0.0f, 1.0f}, .unshaded = true, .order = 1});
+            // Two squares facing +X by their normal map, the second one flipped, lit by a blue light
+            // on their right that shines on their light mask alone.
+            for (const bool flipped : {false, true})
+            {
+                world.sprites.push_back({.transform = at(flipped ? 1.4f : 0.6f, -1.2f),
+                                         .size = {0.6f, 0.6f},
+                                         .naturalSize = {0.6f, 0.6f},
+                                         .texture = *texture,
+                                         .flipX = flipped,
+                                         .lightMask = 2,
+                                         .normalTexture = *normals,
+                                         .order = 1});
+            }
+            world.canvasModulate = {0.2f, 0.2f, 0.2f};
+            world.lights2D.push_back({.position = {-1.5f, 0.0f}, .color = {1.0f, 0.0f, 0.0f}, .radius = 2.0f, .shadows = true});
+            world.lights2D.push_back(
+                {.position = {3.0f, -1.2f}, .color = {0.0f, 0.0f, 1.0f}, .radius = 4.0f, .height = 0.1f, .itemMask = 2});
+            // A wall between the red light and what lies right of it.
+            world.occluders2D.push_back({.from = {-1.0f, -0.5f}, .to = {-1.0f, 0.5f}});
+            if (frame == 5)
+            {
+                static_cast<void>(renderer->requestCapture(64, 48));
+            }
+            REQUIRE(renderer->endFrame());
+            for (devex::render::CapturedImage& image : renderer->takeCaptures())
+            {
+                captured.push_back(std::move(image));
+            }
+        }
+        REQUIRE(captured.size() == 1);
+        const devex::render::CapturedImage& image = captured[0];
+        const auto pixel = [&](int x, int y) {
+            const std::size_t index = (static_cast<std::size_t>(y) * image.width + static_cast<std::size_t>(x)) * 4;
+            return std::array<int, 3>{image.rgba[index], image.rgba[index + 1], image.rgba[index + 2]};
+        };
+        // Above the red light: reddened. Behind the wall, out of its reach, and beyond its radius: only
+        // the tint of the canvas.
+        const auto lit = pixel(14, 12);
+        const auto shadowed = pixel(25, 23);
+        const auto far = pixel(55, 23);
+        CAPTURE(lit, shadowed, far);
+        CHECK(lit[0] > lit[1] + 40);
+        CHECK(std::abs(shadowed[0] - shadowed[1]) < 8);
+        CHECK(std::abs(far[0] - far[1]) < 8);
+        CHECK(std::abs(shadowed[1] - far[1]) < 8);
+        CHECK(lit[1] == far[1]);
+        // The unshaded square keeps its colour, brighter than the tinted wall.
+        const auto unshaded = pixel(55, 5);
+        CAPTURE(unshaded);
+        CHECK(unshaded[1] > far[1] + 60);
+        // The square facing the blue light turns blue, the flipped one facing away does not.
+        const auto facingLight = pixel(38, 37);
+        const auto facingAway = pixel(48, 37);
+        CAPTURE(facingLight, facingAway);
+        CHECK(facingLight[2] > facingLight[0] + 40);
+        CHECK(std::abs(facingAway[2] - facingAway[0]) < 8);
+        renderer->destroyTexture(*texture);
+        renderer->destroyTexture(*normals);
+    }
+    for (const std::string& error : capture.errors())
+    {
+        UNSCOPED_INFO(error);
+    }
+    CHECK(capture.errors().empty());
+}

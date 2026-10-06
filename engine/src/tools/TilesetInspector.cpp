@@ -201,8 +201,8 @@ void fillSpriteChoice(InspectorUi& ui, const ToolsState& state, Entity list, ass
 [[nodiscard]] std::string tileTooltip(const ToolsState& state, const asset::TilesetData& tileset, const asset::TileData& tile)
 {
     const asset::AssetInfo* const info = state.database != nullptr ? state.database->find(tile.sprite) : nullptr;
-    return std::format("Tile {}: {}\nCollision: {}{}{}{}", tile.id, info != nullptr ? info->name : std::string("(no sprite)"),
-                       asset::toString(tile.collision), tile.frames.empty() ? "" : "\nAnimated",
+    return std::format("Tile {}: {}\nCollision: {}{}{}{}{}", tile.id, info != nullptr ? info->name : std::string("(no sprite)"),
+                       asset::toString(tile.collision), tile.occluder ? "\nOccludes the 2D lights" : "", tile.frames.empty() ? "" : "\nAnimated",
                        tile.data.empty() ? std::string{} : std::format("\nData: {}", tile.data),
                        tile.terrainSet == asset::noTerrain ? std::string{}
                                                            : std::format("\nTerrain: {}", terrainLabel(tileset, tile.terrainSet, tile.terrain)));
@@ -326,6 +326,10 @@ public:
                 labels.emplace_back(choice.label);
             }
             m_collision = ui.choice(collisionRow.editor, std::move(labels));
+            const FormRow occluderRow = ui.formRow(card, "Occluder");
+            m_occluder = ui.toggle(occluderRow.editor);
+            ui.tooltip(occluderRow.editor, "The whole cell hides the 2D lights, its outline joined to those of the cells around: "
+                                           "the lights whose shadow mask meets the occluder mask of the Tilemap");
             const FormRow dataRow = ui.formRow(card, "Data");
             m_data = ui.textField(dataRow.editor, "water, damage=5...");
             ui.tooltip(dataRow.editor, "Anything the game reads of the tile with Tilemaps.GetData");
@@ -396,6 +400,7 @@ public:
         ui.scene().get<scene::UiDropdown>(m_collision).selected =
             chosen != collisionChoices.end() ? static_cast<std::int32_t>(chosen - collisionChoices.begin()) : -1;
         ui.tooltip(m_collision, chosen != collisionChoices.end() ? std::string(chosen->tooltip) : std::string{});
+        ui.setToggle(m_occluder, tile->occluder);
         if (world.editedField() != m_data)
         {
             ui.scene().get<scene::UiText>(m_data).text = tile->data;
@@ -803,6 +808,11 @@ private:
                 m_dirty = true;
             }
         }
+        if (world.wasChanged(m_occluder))
+        {
+            tile.occluder = ui.scene().get<scene::UiToggle>(m_occluder).value;
+            m_dirty = true;
+        }
         if (world.editedField() == m_data)
         {
             m_typing = true;
@@ -869,6 +879,7 @@ private:
     Entity m_sprite;
     std::vector<asset::AssetId> m_sprites;
     Entity m_collision;
+    Entity m_occluder;
     Entity m_data;
     bool m_typing = false;
     Entity m_terrainText;

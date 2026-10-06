@@ -38,7 +38,12 @@ enum class ControlKind : std::uint8_t
     Choice,
     ReadOnly,
     ListHeader,
+    // The layers of a mask, as numbered toggles.
+    Bits,
 };
+
+// How many layers of a mask the inspector shows; the others are kept as they are.
+inline constexpr std::size_t shownBits = 8;
 
 // A property of a component: its row, and what shows and changes its value.
 struct PropertyRow
@@ -58,6 +63,8 @@ struct PropertyRow
     std::size_t count = 0;
     // The toggle, the field, the list of choices, the colour, or the text that is only read.
     scene::Entity control;
+    // The layers of a mask.
+    std::array<PanelButton, shownBits> bits{};
     // The word beside a toggle, or the hexadecimal of a colour, and the opacity under a colour.
     scene::Entity detail;
     scene::Entity opacity;

@@ -93,6 +93,9 @@ DEVEX_REFLECT(Tilemap)
         .field("sorting_layer", &Tilemap::sortingLayer, {.sortingLayer = true})
         .field("order", &Tilemap::order)
         .field("lit", &Tilemap::lit)
+        .field("unshaded", &Tilemap::unshaded)
+        .field("light_mask", &Tilemap::lightMask, {.bits = true})
+        .field("occluder_mask", &Tilemap::occluderMask, {.bits = true})
         .field("blocks", &Tilemap::blocks, {.hidden = true});
 }
 

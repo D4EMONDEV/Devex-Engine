@@ -196,6 +196,8 @@ struct DEVEX_API FieldHints
     bool audioGroup = false;
     // A std::string naming a sorting layer of the project, chosen among them.
     bool sortingLayer = false;
+    // A std::uint32_t whose bits are layers, shown as toggles numbered from 1: the light masks.
+    bool bits = false;
     // Saved, copied and seen by code, but not shown in the inspector: data that tools edit their
     // own way, such as the cells of a tilemap.
     bool hidden = false;
@@ -217,6 +219,7 @@ struct DEVEX_API FieldInfo
     bool physicsLayer = false;
     bool audioGroup = false;
     bool sortingLayer = false;
+    bool bits = false;
     bool hidden = false;
     bool runtime = false;
     // The section the field starts, empty when it continues the previous one.
@@ -293,6 +296,7 @@ public:
             .physicsLayer = hints.physicsLayer,
             .audioGroup = hints.audioGroup,
             .sortingLayer = hints.sortingLayer,
+            .bits = hints.bits,
             .hidden = hints.hidden,
             .runtime = hints.runtime,
             .group = std::string(hints.group),
@@ -325,6 +329,7 @@ public:
             .physicsLayer = hints.physicsLayer,
             .audioGroup = hints.audioGroup,
             .sortingLayer = hints.sortingLayer,
+            .bits = hints.bits,
             .hidden = hints.hidden,
             .runtime = hints.runtime,
             .group = std::string(hints.group),
