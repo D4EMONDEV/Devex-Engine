@@ -201,6 +201,58 @@ TEST_CASE("A dropdown lists its options and writes the chosen one", "[ui][contro
     CHECK(screen.scene.get<devex::scene::UiDropdown>(quality).selected == 1);
 }
 
+TEST_CASE("Menus and dropdown lists go past the image into the area given for popups", "[ui][controls]")
+{
+    Screen screen;
+    const Entity row = screen.button({}, {100.0f, 100.0f}, {500.0f, 140.0f}, "row");
+    const Entity menu = screen.element({}, {0.0f, 0.0f}, {200.0f, 60.0f}, "Menu");
+    screen.scene.add<devex::scene::UiPopup>(menu);
+    screen.scene.get<UiRect>(menu).visible = false;
+    screen.scene.add<UiImage>(menu);
+    const Entity rename = screen.button(menu, {0.0f, 0.0f}, {200.0f, 30.0f}, "rename");
+    const Entity quality = screen.element({}, {100.0f, window.y - 50.0f}, {400.0f, window.y - 10.0f}, "Quality");
+    screen.scene.add<UiText>(quality);
+    screen.scene.add<devex::scene::UiDropdown>(quality, devex::scene::UiDropdown{.options = {"Low", "Medium", "High"}});
+    screen.update();
+    CHECK_FALSE(screen.world.overBounds(screen.scene));
+
+    // Without an area, a menu opened near the edge stays inside the image.
+    screen.world.openPopup(screen.scene, menu, Vec2{window.x - 50.0f, 120.0f});
+    screen.update();
+    CHECK(screen.rectOf(menu)->max.x == Catch::Approx(window.x));
+    screen.world.closePopup(screen.scene, menu);
+
+    // With an area larger than the image, it stands where it was opened, past the edge, and answers
+    // the pointer there; the dropdown at the bottom opens its list under it, below the image.
+    screen.world.setPopupArea(Vec2{-300.0f, -300.0f}, window + Vec2{300.0f, 300.0f});
+    screen.world.openPopup(screen.scene, menu, Vec2{window.x - 50.0f, 120.0f});
+    screen.update();
+    CHECK(screen.rectOf(menu)->min.x == Catch::Approx(window.x - 50.0f));
+    const auto menuBounds = screen.world.overBounds(screen.scene);
+    REQUIRE(menuBounds);
+    CHECK(menuBounds->second.x == Catch::Approx(window.x + 150.0f));
+    screen.click({window.x + 100.0f, 135.0f});
+    CHECK(screen.world.wasClicked(rename));
+    screen.click({250.0f, window.y - 30.0f});
+    const auto listBounds = screen.world.overBounds(screen.scene);
+    REQUIRE(listBounds);
+    CHECK(listBounds->first.y > window.y - 10.0f);
+    CHECK(listBounds->second.y > window.y);
+
+    // Drawn apart: the list goes to what stands over the image, the rest stays in it.
+    devex::render::RenderWorld drawn;
+    devex::render::RenderWorld over;
+    screen.world.build(screen.scene, devex::ui::DrawContext{}, drawn, &over);
+    CHECK_FALSE(over.uiDraws.empty());
+    for (const devex::render::UiVertex& vertex : drawn.uiVertices)
+    {
+        CHECK(vertex.position.y <= window.y);
+    }
+    screen.update(UiInput{.cancelPressed = true});
+    CHECK_FALSE(screen.world.overBounds(screen.scene));
+    static_cast<void>(row);
+}
+
 TEST_CASE("Two quick clicks on a button are a double click", "[ui][controls]")
 {
     Screen screen;

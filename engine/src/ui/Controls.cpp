@@ -458,7 +458,13 @@ void UiWorld::openPopup(scene::Scene& scene, scene::Entity popup, std::optional<
         {
             scale = std::max(canvasScale(*canvas, m_windowSize), 0.0001f);
         }
-        m_popupPlacements.push_back(PopupPlacement{.popup = popup, .point = *at / scale});
+        PopupPlacement placement{.popup = popup, .point = *at / scale};
+        if (m_popupArea)
+        {
+            placement.areaMin = m_popupArea->first / scale;
+            placement.areaMax = m_popupArea->second / scale;
+        }
+        m_popupPlacements.push_back(placement);
     }
 }
 
@@ -607,8 +613,10 @@ bool UiWorld::dropdownList(const scene::Scene& scene, math::Vec2& min, math::Vec
     item = rect->size().y * scale;
     shown = std::min(dropdown->options.size(), dropdownRows);
     const float height = item * static_cast<float>(shown);
+    const math::Vec2 areaMin = m_popupArea ? m_popupArea->first : math::Vec2{0.0f};
+    const math::Vec2 areaMax = m_popupArea ? m_popupArea->second : m_windowSize;
     min = math::Vec2{rect->min.x * scale, rect->max.y * scale + 2.0f};
-    if (min.y + height > m_windowSize.y && rect->min.y * scale - 2.0f - height >= 0.0f)
+    if (min.y + height > areaMax.y && rect->min.y * scale - 2.0f - height >= areaMin.y)
     {
         min.y = rect->min.y * scale - 2.0f - height;
     }

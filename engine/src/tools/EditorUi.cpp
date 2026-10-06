@@ -45,6 +45,9 @@ constexpr std::uint32_t iconPixels = 64;
                   from.w + (to.w - from.w) * amount);
 }
 
+// The surface of what stands past the edges of a panel follows the panel's own.
+constexpr std::uint32_t overSurfaceOffset = 1000;
+
 } // namespace
 
 math::Vec4 linearColor(math::Vec4 srgb) noexcept
@@ -503,7 +506,9 @@ void EditorUiKit::refreshTheme(const ThemeColors& colors)
 
 UiPanel::UiPanel(std::uint32_t surface)
     : m_surface(surface)
+    , m_overHost(std::format("##over {}", surface))
 {
+    m_world.setTooltipsDrawn(!m_tooltipsOutside);
     m_canvas = m_scene.createEntity("Canvas");
     m_scene.add<scene::Canvas>(m_canvas, scene::Canvas{.scaleMode = scene::CanvasScaleMode::ConstantPixels,
                                                        .theme = EditorUiKit::themeId()});
@@ -557,6 +562,11 @@ void UiPanel::setDragIn(std::function<std::optional<std::pair<std::string, std::
 void UiPanel::setKeyboardNavigation(bool enabled) noexcept
 {
     m_navigation = enabled;
+}
+
+void UiPanel::setPopupsOutside(bool outside) noexcept
+{
+    m_popupsOutside = outside;
 }
 
 void UiPanel::setInputFilter(std::function<void(ui::UiInput&)> filter)
@@ -620,7 +630,9 @@ void UiPanel::update(EditorUiKit& kit, core::Duration delta, float zoom, float h
     m_pixels = placement.pixels;
     hosts.setCursor(origin);
     hosts.image(HostImage{.source = render::UiSource::Surface, .surface = m_surface}, placement.size);
-    m_hovered = hosts.itemHovered();
+    // Its image, or what stood past its edges at the last frame.
+    const bool overOpen = m_over.has_value();
+    m_hovered = hosts.itemHovered() || (overOpen && hosts.hoveredId() == m_overHost);
     m_focused = hosts.focused();
     if (!m_connected)
     {
@@ -635,10 +647,11 @@ void UiPanel::update(EditorUiKit& kit, core::Duration delta, float zoom, float h
     const math::Vec2 mouse = devices.mouse();
     input.pointer = math::Vec2{(mouse.x - origin.x) * pixelsPerPoint, (mouse.y - origin.y) * pixelsPerPoint} / m_zoom;
     input.pointerDown = devices.down(Mouse::Left);
-    input.pointerPressed = m_hovered && devices.clicked(Mouse::Left);
+    // A press anywhere else closes an open menu or list, as it does in the panel.
+    input.pointerPressed = (m_hovered || overOpen) && devices.clicked(Mouse::Left);
     input.pointerReleased = devices.released(Mouse::Left);
     input.pointerMoved = devices.mouseDelta().x != 0.0f || devices.mouseDelta().y != 0.0f;
-    input.secondaryPressed = m_hovered && devices.clicked(Mouse::Right);
+    input.secondaryPressed = (m_hovered || overOpen) && devices.clicked(Mouse::Right);
     input.wheel = m_hovered ? devices.wheel().y : 0.0f;
     if (!m_hovered && !input.pointerDown && !input.pointerReleased)
     {
@@ -708,8 +721,31 @@ void UiPanel::update(EditorUiKit& kit, core::Duration delta, float zoom, float h
     {
         m_filter(input);
     }
+    // Menus and lists may stand anywhere in the window.
+    const math::Vec2 screen = editorScreen().size;
+    if (m_popupsOutside)
+    {
+        m_world.setPopupArea((math::Vec2(0.0f) - origin) * pixelsPerPoint / m_zoom, (screen - origin) * pixelsPerPoint / m_zoom);
+    }
     m_world.update(m_scene, size(), input, delta);
     m_input = input;
+    // What stands past the edges, in an image on the pixels of the window, over the editor.
+    m_over.reset();
+    if (const std::optional<std::pair<math::Vec2, math::Vec2>> bounds = m_popupsOutside ? m_world.overBounds(m_scene) : std::nullopt)
+    {
+        const math::Vec2 first = math::floor(bounds->first * m_zoom);
+        const math::Vec2 last = -math::floor(-bounds->second * m_zoom);
+        if (last.x > first.x && last.y > first.y)
+        {
+            m_over = OverImage{.pixels = first,
+                               .size = {static_cast<std::uint32_t>(last.x - first.x), static_cast<std::uint32_t>(last.y - first.y)}};
+            const math::Vec2 at = origin + first / pixelsPerPoint;
+            const math::Vec2 extent = (last - first) / pixelsPerPoint;
+            hosts.begin(m_overHost, at, at + extent, HostLayer::Menus);
+            hosts.image(HostImage{.source = render::UiSource::Surface, .surface = m_surface + overSurfaceOffset}, extent);
+            hosts.end();
+        }
+    }
     // A tooltip the image has no room for goes to the layer over the editor.
     if (m_tooltipsOutside)
     {
@@ -781,16 +817,29 @@ void UiPanel::render(EditorUiKit& kit, render::RenderWorld& world, math::Vec4 ba
         return;
     }
     // Laid out in units, drawn in pixels.
-    m_scratch.uiVertices.clear();
-    m_scratch.uiIndices.clear();
-    m_scratch.uiDraws.clear();
-    m_world.build(m_scene, kit.drawContext(), m_scratch);
+    for (render::RenderWorld* const drawn : {&m_scratch, &m_overScratch})
+    {
+        drawn->uiVertices.clear();
+        drawn->uiIndices.clear();
+        drawn->uiDraws.clear();
+    }
+    m_world.build(m_scene, kit.drawContext(), m_scratch, m_over ? &m_overScratch : nullptr);
     ui::placeDrawList(m_scratch, ui::DrawListMark{}, math::Vec2{0.0f}, m_zoom);
     render::UiSurface surface{.id = m_surface, .size = m_pixels, .clearColor = background};
     surface.vertices = m_scratch.uiVertices;
     surface.indices = m_scratch.uiIndices;
     surface.draws = m_scratch.uiDraws;
     world.uiSurfaces.push_back(std::move(surface));
+    if (m_over)
+    {
+        // On nothing: only the menus and the list show.
+        ui::placeDrawList(m_overScratch, ui::DrawListMark{}, math::Vec2{0.0f} - m_over->pixels, m_zoom);
+        render::UiSurface over{.id = m_surface + overSurfaceOffset, .size = m_over->size, .clearColor = math::Vec4{0.0f}};
+        over.vertices = m_overScratch.uiVertices;
+        over.indices = m_overScratch.uiIndices;
+        over.draws = m_overScratch.uiDraws;
+        world.uiSurfaces.push_back(std::move(over));
+    }
 }
 
 namespace rects {

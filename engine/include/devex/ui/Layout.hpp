@@ -73,11 +73,14 @@ struct DEVEX_API PopupPlacement
 {
     scene::Entity popup;
     math::Vec2 point{0.0f};
+    // Where it may stand, in units of its canvas; an empty area keeps it inside the canvas.
+    math::Vec2 areaMin{0.0f};
+    math::Vec2 areaMax{0.0f};
 };
 
 // Open popups are laid out after the rest of their canvas, so that they are drawn over it and
 // answer the pointer first, and nothing above them cuts or scrolls them. Those opened at a point
-// stand there, inside the canvas.
+// stand there, inside the canvas or the area of their placement.
 DEVEX_API void layoutCanvas(const scene::Scene& scene, scene::Entity canvas, math::Vec2 windowSize,
                             LayoutResult& result, std::span<const PopupPlacement> popups = {});
 

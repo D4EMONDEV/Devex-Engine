@@ -2778,7 +2778,12 @@ les assets s'écrivent au fil de leur lecture.
   tant qu'il est ouvert (son `UiRect` n'est visible que pendant ce temps). Un popup ouvert est
   placé après tout son canevas, donc dessiné au-dessus, servi le premier par le pointeur, et ni
   découpé ni défilé par ce qui l'entoure ; ouvert en un point (`openPopup(scene, popup, at)`), il y
-  pose son coin haut gauche en restant dans le canevas. Un **menu** (`kind = menu`) se ferme quand
+  pose son coin haut gauche en restant dans le canevas, ou dans la zone des popups quand on en a
+  donné une (`setPopupArea`, en pixels de l'image, qui peut déborder de l'image). La liste d'une
+  liste déroulante passe au-dessus de son élément quand cette zone n'a plus de place dessous.
+  `overBounds` donne ce que couvrent les menus ouverts et la liste, et `build(..., over)` les dessine
+  dans une liste à part, pour qu'un outil les montre par-dessus ce qui entoure l'image (jalon 60).
+  Un **menu** (`kind = menu`) se ferme quand
   un de ses boutons est choisi (avec les menus d'où il a été ouvert), quand le pointeur appuie
   ailleurs — cet appui ne fait rien d'autre — ou sur Échap. Une **modale** reste jusqu'à ce que le
   jeu la ferme et garde le reste de son canevas du pointeur et du clavier sous un voile
@@ -3572,6 +3577,10 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     déplaçable (programmes, bibliothèques, en-têtes, paquet CMake relogeable) qui compile le code
     C++ des jeux sans les sources du moteur ; la CI le publie pour Windows et Linux ; compilation du
     code C++ des jeux par l'éditeur sous Linux.
+60. ✅ **Menus, listes et infobulles hors des panneaux** — les menus ouverts et la liste d'une liste
+    déroulante d'un panneau ou d'une fenêtre se placent dans toute la fenêtre de l'éditeur et se
+    montrent dans la couche des menus, dans une image à eux ; les infobulles passent par la couche
+    au-dessus de l'éditeur.
 
 Ensuite, sans ordre figé : à choisir dans les pistes ci-dessous.
 
@@ -3672,8 +3681,7 @@ Ensuite, sans ordre figé : à choisir dans les pistes ci-dessous.
   sélecteur de couleur, édition de plusieurs entités, inspecteurs d'assets), puis les autres
   panneaux, le
   dockspace et les menus de la fenêtre en dernier (voir *Une seule interface, deux usages*) ; des
-  popups, listes déroulantes et infobulles qui sortent du panneau (fenêtres à elles, comme chez
-  Godot : la liste des dossiers de Create New est coupée par sa fenêtre) ; sélection de plusieurs
+  popups qui sortent de la fenêtre de l'éditeur (fenêtres du système, comme chez Godot) ; sélection de plusieurs
   fichiers dans FileSystem, glissées ensemble, vignettes ; dans la fenêtre de création, les descriptions et les icônes des composants
   du jeu (tirées des commentaires de leur code), et des préréglages faits de préfabs du projet ; un
   panneau redessiné seulement quand il change ; les polices de l'éditeur

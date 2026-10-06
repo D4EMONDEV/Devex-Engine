@@ -83,6 +83,9 @@ struct DEVEX_API DrawContext
 // out: parents first, then their children over them.
 DEVEX_API void buildDrawList(const scene::Scene& scene, const LayoutResult& layout,
                              const DrawContext& context, render::RenderWorld& world);
+// The same for some of its elements only: the ranges of their indices in the layout, in order.
+DEVEX_API void buildDrawList(const scene::Scene& scene, const LayoutResult& layout, const DrawContext& context,
+                             render::RenderWorld& world, std::span<const std::pair<std::size_t, std::size_t>> ranges);
 
 // A line of text drawn over the canvases, in pixels: the list of a dropdown and the tooltips.
 struct DEVEX_API OverlayText

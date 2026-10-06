@@ -271,6 +271,13 @@ struct FieldHit
     return {};
 }
 
+// An open menu, which a drawing `over` the image takes with what it holds.
+[[nodiscard]] bool isOpenMenu(const scene::Scene& scene, const LaidOutRect& rect)
+{
+    const scene::UiPopup* const popup = scene.tryGet<scene::UiPopup>(rect.entity);
+    return popup != nullptr && popup->kind == scene::UiPopupKind::Menu && rect.visible;
+}
+
 } // namespace
 
 void UiWorld::update(scene::Scene& scene, math::Vec2 windowSize, const UiInput& input,
@@ -1169,8 +1176,42 @@ void UiWorld::submit(const scene::Scene& scene, scene::Entity entity)
     }
 }
 
+void UiWorld::setPopupArea(math::Vec2 min, math::Vec2 max) noexcept
+{
+    m_popupArea = std::pair{min, max};
+}
+
+std::optional<std::pair<math::Vec2, math::Vec2>> UiWorld::overBounds(const scene::Scene& scene) const
+{
+    std::optional<std::pair<math::Vec2, math::Vec2>> bounds;
+    const auto cover = [&bounds](math::Vec2 min, math::Vec2 max) {
+        bounds = bounds ? std::pair{math::min(bounds->first, min), math::max(bounds->second, max)} : std::pair{min, max};
+    };
+    for (const CanvasLayout& canvas : m_canvases)
+    {
+        const std::vector<LaidOutRect>& rects = canvas.layout.rects;
+        for (std::size_t index = 0; index < rects.size(); ++index)
+        {
+            if (isOpenMenu(scene, rects[index]))
+            {
+                cover(rects[index].min * canvas.layout.scale, rects[index].max * canvas.layout.scale);
+                index = subtreeEnd(rects, index) - 1;
+            }
+        }
+    }
+    math::Vec2 listMin{0.0f};
+    math::Vec2 listMax{0.0f};
+    float item = 0.0f;
+    std::size_t shown = 0;
+    if (m_dropdown && dropdownList(scene, listMin, listMax, item, shown))
+    {
+        cover(listMin, listMax);
+    }
+    return bounds;
+}
+
 void UiWorld::build(const scene::Scene& scene, const DrawContext& context,
-                    render::RenderWorld& world) const
+                    render::RenderWorld& world, render::RenderWorld* over) const
 {
     DEVEX_PROFILE_SCOPE("UI draw list");
     DrawContext withTints = context;
@@ -1202,9 +1243,44 @@ void UiWorld::build(const scene::Scene& scene, const DrawContext& context,
     {
         withTints.textCache = &m_textCache;
     }
+    // With somewhere to draw them over the edges of the image, the open menus are drawn there.
+    std::vector<std::pair<std::size_t, std::size_t>> below;
+    std::vector<std::pair<std::size_t, std::size_t>> menus;
     for (const CanvasLayout& canvas : m_canvases)
     {
-        buildDrawList(scene, canvas.layout, withTints, world);
+        if (over == nullptr)
+        {
+            buildDrawList(scene, canvas.layout, withTints, world);
+            continue;
+        }
+        below.clear();
+        menus.clear();
+        const std::vector<LaidOutRect>& rects = canvas.layout.rects;
+        std::size_t start = 0;
+        for (std::size_t index = 0; index < rects.size();)
+        {
+            if (!isOpenMenu(scene, rects[index]))
+            {
+                ++index;
+                continue;
+            }
+            const std::size_t end = subtreeEnd(rects, index);
+            if (index > start)
+            {
+                below.emplace_back(start, index);
+            }
+            menus.emplace_back(index, end);
+            index = start = end;
+        }
+        if (start < rects.size())
+        {
+            below.emplace_back(start, rects.size());
+        }
+        buildDrawList(scene, canvas.layout, withTints, world, below);
+        if (!menus.empty())
+        {
+            buildDrawList(scene, canvas.layout, withTints, *over, menus);
+        }
     }
     if (ownTexts)
     {
@@ -1231,11 +1307,12 @@ void UiWorld::build(const scene::Scene& scene, const DrawContext& context,
     std::size_t shown = 0;
     if (m_dropdown && dropdownList(scene, listMin, listMax, item, shown))
     {
+        render::RenderWorld& list = over != nullptr ? *over : world;
         const scene::UiDropdown& dropdown = scene.get<scene::UiDropdown>(m_dropdown->entity);
         const scene::UiText* const text = scene.tryGet<scene::UiText>(m_dropdown->entity);
         const CanvasLayout* const canvas = canvasOf(m_dropdown->entity);
         const float scale = canvas != nullptr ? canvas->layout.scale : 1.0f;
-        drawOverlayBox(world, listMin, listMax, dropdown.listColor, 4.0f * scale);
+        drawOverlayBox(list, listMin, listMax, dropdown.listColor, 4.0f * scale);
         for (std::size_t row = 0; row < shown; ++row)
         {
             const std::size_t option = m_dropdown->first + row;
@@ -1247,13 +1324,13 @@ void UiWorld::build(const scene::Scene& scene, const DrawContext& context,
             const math::Vec2 rowMax{listMax.x, rowMin.y + item};
             if (static_cast<std::int32_t>(option) == m_dropdown->highlighted)
             {
-                drawOverlayBox(world, rowMin, rowMax, dropdown.highlightColor, 3.0f * scale);
+                drawOverlayBox(list, rowMin, rowMax, dropdown.highlightColor, 3.0f * scale);
             }
             const OverlayText label{.text = dropdown.options[option],
                                     .font = text != nullptr ? text->font : asset::AssetId{},
                                     .size = (text != nullptr ? text->size : 18.0f) * scale,
                                     .color = text != nullptr ? text->color : math::Vec4{1.0f}};
-            drawOverlayText(world, withTints, math::Vec2{rowMin.x + 10.0f * scale, rowMin.y},
+            drawOverlayText(list, withTints, math::Vec2{rowMin.x + 10.0f * scale, rowMin.y},
                             math::Vec2{rowMax.x - 6.0f * scale, rowMax.y}, label);
         }
     }

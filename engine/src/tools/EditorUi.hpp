@@ -187,7 +187,7 @@ public:
     [[nodiscard]] math::Vec2 size() const noexcept;
     // Whether the host it stands in has the keyboard.
     [[nodiscard]] bool focused() const noexcept;
-    // Whether the pointer is over the image of the panel.
+    // Whether the pointer is over the image of the panel, or over what stands past its edges.
     [[nodiscard]] bool hovered() const noexcept;
     // What the last update gave the interface world, in units of the panel.
     [[nodiscard]] const ui::UiInput& input() const noexcept;
@@ -201,22 +201,27 @@ public:
     // Whether the arrows, Enter and Space move the focus between the buttons and press them, as in a
     // menu; a panel that answers the keys itself, as a tree does, turns it off.
     void setKeyboardNavigation(bool enabled) noexcept;
-    // Whether the tooltips show outside the image of the panel, in the layer over the editor: a strip
-    // such as a menu bar has no room for them.
+    // Whether the tooltips show outside the image of the panel, in the layer over the editor, as they
+    // do by default: inside, the edge of the panel would cut them.
     void setTooltipsOutside(bool outside) noexcept;
+    // Whether the open menus and the list of a dropdown go past the edges of the image, as they do
+    // by default, or stay inside it.
+    void setPopupsOutside(bool outside) noexcept;
     // Sees what the interface world is about to be given, and may take keys from it: a list of
     // completions takes the arrows and Enter from the text under it.
     void setInputFilter(std::function<void(ui::UiInput&)> filter);
 
     // Inside the host it stands in: takes the room left in it, or only `height` points of it, gives
     // the interface world the mouse and the keys the host receives, and shows the image of the
-    // panel. `zoom` is how many pixels one unit of the panel takes.
+    // panel. Its open menus and the list of a dropdown go past its edges, in an image of their own
+    // shown in the layer of the menus. `zoom` is how many pixels one unit of the panel takes.
     void update(EditorUiKit& kit, core::Duration delta, float zoom, float height = 0.0f);
     // Where a point of the panel, in its units, is on the screen, in points of the window; and the
     // point of the panel a place of the screen is.
     [[nodiscard]] math::Vec2 screenOf(math::Vec2 units) const noexcept;
     [[nodiscard]] math::Vec2 unitsOf(math::Vec2 screen) const noexcept;
-    // Adds the image of the panel to the frame, over a color, when the last update showed it.
+    // Adds the image of the panel to the frame, over a color, when the last update showed it, and the
+    // image of what stands past its edges.
     void render(EditorUiKit& kit, render::RenderWorld& world, math::Vec4 background);
 
     // How many pixels a unit takes in a panel whose text is `font` units, its letters as large as
@@ -237,7 +242,8 @@ private:
     bool m_hovered = false;
     bool m_connected = false;
     bool m_navigation = true;
-    bool m_tooltipsOutside = false;
+    bool m_tooltipsOutside = true;
+    bool m_popupsOutside = true;
     math::Vec2 m_origin{0.0f, 0.0f};
     float m_pixelsPerPoint = 1.0f;
     ui::UiInput m_input;
@@ -246,6 +252,16 @@ private:
     std::function<void(ui::UiInput&)> m_filter;
     // Where the last frame was drawn, kept to reuse its storage.
     render::RenderWorld m_scratch;
+    // What stands past the edges of the image: the open menus and the list of a dropdown, drawn into
+    // a surface of their own, from `pixels` of the image of the panel, `size` pixels large.
+    struct OverImage
+    {
+        math::Vec2 pixels{0.0f};
+        math::Extent2D size;
+    };
+    std::optional<OverImage> m_over;
+    std::string m_overHost;
+    render::RenderWorld m_overScratch;
 };
 
 // Rectangles as the panels lay them out, in units.

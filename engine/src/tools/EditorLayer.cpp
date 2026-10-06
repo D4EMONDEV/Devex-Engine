@@ -36,6 +36,10 @@ struct EditorLayerUi : PanelBuilder
     EditorLayerUi()
         : PanelBuilder(editorLayerSurface)
     {
+        // The layer covers the window and stands over everything: its menus and tooltips stay in its
+        // own image.
+        panel.setPopupsOutside(false);
+        panel.setTooltipsOutside(false);
     }
 
     // An entry of a menu as it shows.

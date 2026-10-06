@@ -158,9 +158,18 @@ public:
     [[nodiscard]] const EditState* editStateOf(scene::Entity entity) const noexcept;
 
     // Appends the canvases of the last update to the frame, the lowest sort order first, then what
-    // stands over all of them: the list of an open dropdown, and the tooltip.
+    // stands over all of them: the list of an open dropdown, and the tooltip. With `over`, the open
+    // menus and the list of a dropdown go there instead, to be shown over what surrounds the image.
     void build(const scene::Scene& scene, const DrawContext& context,
-               render::RenderWorld& world) const;
+               render::RenderWorld& world, render::RenderWorld* over = nullptr) const;
+
+    // Where the menus opened at a point and the lists of dropdowns may stand, in pixels of the image:
+    // by default the image itself. The tools give the whole window around a panel, so that a menu or
+    // a list goes past the edge of its panel.
+    void setPopupArea(math::Vec2 min, math::Vec2 max) noexcept;
+    // What the open menus and the list of a dropdown cover, in pixels of the image, as `build` draws
+    // them into `over`; nothing while none is open.
+    [[nodiscard]] std::optional<std::pair<math::Vec2, math::Vec2>> overBounds(const scene::Scene& scene) const;
 
     // Opens a popup where its anchors put it, or with its top left corner at a point of the image,
     // in pixels. Menus close by themselves; a modal stays until it is closed.
@@ -429,6 +438,7 @@ private:
     // Seconds since the world started, which tells a double click from two clicks.
     double m_clock = 0.0;
     std::vector<PopupPlacement> m_popupPlacements;
+    std::optional<std::pair<math::Vec2, math::Vec2>> m_popupArea;
     std::optional<ModalRange> m_modal;
     scene::Entity m_contextTarget;
     // The last click, for the next one to be a double click.

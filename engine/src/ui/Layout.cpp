@@ -321,10 +321,12 @@ void layoutChildren(const scene::Scene& scene, scene::Entity parent, math::Vec2 
         const auto opened = std::ranges::find(popups, child, &PopupPlacement::popup);
         if (popup && opened != popups.end())
         {
-            // Opened at a point: its own size from there, kept inside the canvas.
+            // Opened at a point: its own size from there, kept inside the canvas or its area.
             const math::Vec2 size = placement.size();
-            const math::Vec2 room = math::max(result.canvasSize - size, math::Vec2{0.0f});
-            placement.min = math::clamp(opened->point, math::Vec2{0.0f}, room);
+            const bool area = opened->areaMax.x > opened->areaMin.x && opened->areaMax.y > opened->areaMin.y;
+            const math::Vec2 low = area ? opened->areaMin : math::Vec2{0.0f};
+            const math::Vec2 high = area ? opened->areaMax : result.canvasSize;
+            placement.min = math::clamp(opened->point, low, math::max(high - size, low));
             placement.max = placement.min + size;
         }
         else if (!popup)

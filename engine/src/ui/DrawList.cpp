@@ -1197,6 +1197,13 @@ void drawTextArea(Builder& builder, const DrawContext& context, const LaidOutRec
 void buildDrawList(const scene::Scene& scene, const LayoutResult& layout,
                    const DrawContext& context, render::RenderWorld& world)
 {
+    const std::pair<std::size_t, std::size_t> all{0, layout.rects.size()};
+    buildDrawList(scene, layout, context, world, std::span(&all, 1));
+}
+
+void buildDrawList(const scene::Scene& scene, const LayoutResult& layout, const DrawContext& context,
+                   render::RenderWorld& world, std::span<const std::pair<std::size_t, std::size_t>> ranges)
+{
     Builder builder{.world = world, .scale = layout.scale};
     // What scrolls draws its bars once what it holds is drawn, over it: the elements waiting for
     // the end of their subtree, the innermost last.
@@ -1210,9 +1217,23 @@ void buildDrawList(const scene::Scene& scene, const LayoutResult& layout,
             waiting.pop_back();
         }
     };
+    std::size_t range = 0;
     for (std::size_t index = 0; index < layout.rects.size(); ++index)
     {
         drawWaiting(index);
+        // Only the elements of the ranges asked for.
+        while (range < ranges.size() && index >= ranges[range].second)
+        {
+            ++range;
+        }
+        if (range == ranges.size())
+        {
+            break;
+        }
+        if (index < ranges[range].first)
+        {
+            continue;
+        }
         const LaidOutRect& rect = layout.rects[index];
         if (!rect.visible || rect.opacity <= 0.0f || rect.size().x <= 0.0f ||
             rect.size().y <= 0.0f)
