@@ -379,6 +379,17 @@ Le sol rectangulaire précédent suffit pour apprendre. Pour dessiner une carte 
 
 Faire correspondre la taille des cellules, les Pixels per unit et l'échelle du personnage. Une tile visible avec Collision = None ne bloque pas le joueur. Éviter de superposer l'ancien Ground et une seconde surface de collision au même endroit : déplacer l'ancien sol hors du niveau ou le retirer une fois la Tilemap vérifiée.
 
+#### Laisser les terrains choisir les tiles
+
+Peindre chaque bord et chaque coin à la main devient vite long. Les terrains choisissent la bonne tile d'après les cellules voisines, comme dans Godot :
+
+1. Dans l'Inspector du tileset, carte **Terrains**, cliquer **Add Terrain Set**. Choisir le mode **Match Sides** (16 tiles suffisent) ou **Match Corners and Sides** (coins intérieurs compris), puis nommer le terrain, par exemple `Ground`.
+2. Activer **Flip X** si les bords gauche et droit sont symétriques : un seul bord dessiné sert des deux côtés.
+3. En haut de la carte **Tiles**, choisir `Ground` dans **Paint Terrain**, puis cliquer sur le milieu, les côtés et les coins de chaque tile pour indiquer où elle continue le terrain. Le clic droit efface une part.
+4. Sous la **Tilemap**, passer sur l'onglet **Terrains**, choisir `Ground`, puis peindre avec **Paint** ou **Rectangle** : chaque cellule prend la tile qui convient, et les voisines suivent. **Path** relie seulement les cellules successives du trait (routes, rivières).
+
+En C#, `Tilemaps.SetTerrain(map, cells, set, terrain)` fait la même chose depuis le code ; `Tilemaps.FindTerrain(map, "Ground")` retrouve l'ensemble et le terrain par leur nom.
+
 ## 6. Construire le premier jeu 3D
 
 ![La scène arena de Sandbox dans l'éditeur 3D](images/guide-demarrage/06-editeur-3d.png)

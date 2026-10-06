@@ -366,6 +366,9 @@ struct DEVEX_API TilesetEditor
     std::string error;
     // The tile the inspector shows, 0 for none.
     std::uint32_t selectedTile = 0;
+    // The terrain painted on the tiles of the palette; noTerrain while clicks select tiles.
+    std::int32_t paintSet = asset::noTerrain;
+    std::int32_t paintTerrain = asset::noTerrain;
 };
 
 // What the graph of the Animator panel has selected.
@@ -439,6 +442,12 @@ struct DEVEX_API TilePainter
     std::uint32_t tile = 0;
     bool flipX = false;
     bool flipY = false;
+    // Painting terrains rather than tiles: the terrain set and the terrain of the brush, and whether a
+    // stroke joins only the cells that follow each other, as a path.
+    bool terrains = false;
+    std::int32_t terrainSet = 0;
+    std::int32_t terrain = 0;
+    bool path = false;
     // While the mouse is held: the tilemap painted, its cells before, the cell the stroke reached,
     // and where a rectangle started.
     bool stroking = false;

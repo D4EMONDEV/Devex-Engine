@@ -19,6 +19,7 @@
 #include <devex/physics2d/Physics2DWorld.hpp>
 #include <devex/platform/Platform.hpp>
 #include <devex/runtime/Application.hpp>
+#include <devex/runtime/AssetManager.hpp>
 #include <devex/scene/AnimationComponents.hpp>
 #include <devex/scene/AudioComponents.hpp>
 #include <devex/scene/ComponentRegistry.hpp>
@@ -247,7 +248,7 @@ TEST_CASE("The application runs late cameras after interpolation and restores si
 TEST_CASE("The C# runtime registers components and runs them", "[runtime][managed]")
 {
     const std::unique_ptr<ManagedGame> game = startRuntime();
-    CHECK(game->componentTypes().size() == 23);
+    CHECK(game->componentTypes().size() == 24);
 
     devex::scene::ComponentRegistry& registry = devex::scene::componentRegistry();
     const devex::scene::ComponentType* const mover = registry.find("Mover");
@@ -1143,6 +1144,107 @@ TEST_CASE("C# code paints and reads the cells of a tilemap", "[runtime][managed]
     CHECK(value("cell_x", std::int32_t{}) == 1);
     CHECK(value("cell_y", std::int32_t{}) == -1);
     CHECK(value("center", devex::math::Vec3{}) == devex::math::Vec3{13.0f, 3.0f, 0.0f});
+    game->unloadAssembly();
+}
+
+namespace {
+
+// One tileset, without a project on disk: a terrain matched by its sides, a tile for each pattern.
+class OneTileset final : public devex::asset::AssetSource
+{
+public:
+    OneTileset()
+    {
+        m_info = {.id = id, .type = devex::asset::AssetType::Tileset, .name = "ground", .source = id};
+        devex::asset::TilesetData tileset;
+        tileset.terrainSets.push_back({.mode = devex::asset::TerrainMode::Sides, .terrains = {{.name = "Ground"}}});
+        for (std::uint32_t mask = 0; mask < 16; ++mask)
+        {
+            devex::asset::TileData tile{.id = mask + 1, .terrainSet = 0, .terrain = 0};
+            for (std::size_t side = 0; side < 4; ++side)
+            {
+                tile.terrainBits[side * 2] = (mask & (1u << side)) != 0 ? 0 : devex::asset::noTerrain;
+            }
+            tileset.tiles.push_back(tile);
+        }
+        m_bytes = devex::asset::encodeTileset(tileset);
+    }
+
+    [[nodiscard]] const devex::asset::Project& project() const noexcept override
+    {
+        return m_project;
+    }
+
+    [[nodiscard]] const devex::asset::AssetInfo* find(devex::asset::AssetId asset) const override
+    {
+        return asset == id ? &m_info : nullptr;
+    }
+
+    [[nodiscard]] std::vector<devex::asset::AssetInfo> assets(std::optional<devex::asset::AssetType> /*type*/) const override
+    {
+        return {m_info};
+    }
+
+    [[nodiscard]] std::optional<devex::asset::AssetId> findByPath(std::string_view /*resourcePath*/) const override
+    {
+        return std::nullopt;
+    }
+
+    [[nodiscard]] devex::core::Result<std::vector<std::byte>> loadArtifact(devex::asset::AssetId asset) const override
+    {
+        if (asset != id)
+        {
+            return devex::core::makeError(devex::core::ErrorCode::NotFound, "no such asset");
+        }
+        return m_bytes;
+    }
+
+    [[nodiscard]] devex::core::Result<std::string> sceneText(devex::asset::AssetId /*asset*/) const override
+    {
+        return devex::core::makeError(devex::core::ErrorCode::NotFound, "no scenes here");
+    }
+
+    const devex::asset::AssetId id = devex::asset::AssetId::generate();
+
+private:
+    devex::asset::Project m_project;
+    devex::asset::AssetInfo m_info;
+    std::vector<std::byte> m_bytes;
+};
+
+} // namespace
+
+TEST_CASE("C# code paints terrains on a tilemap and reads them", "[runtime][managed][tilemap][terrain]")
+{
+    const std::unique_ptr<ManagedGame> game = startRuntime();
+    const devex::scene::ComponentType* const type = devex::scene::componentRegistry().find("TerrainPainter");
+    REQUIRE(type != nullptr);
+    OneTileset source;
+    devex::runtime::AssetManager assets(nullptr, &source);
+    Scene scene;
+    const Entity entity = scene.createEntity("Level");
+    scene.add<devex::scene::Tilemap>(entity, devex::scene::Tilemap{.tileset = source.id});
+    REQUIRE(type->emplace(scene, entity) != nullptr);
+    const auto value = [&](const char* name) -> std::int32_t& {
+        return field<std::int32_t>(*type, const_cast<void*>(type->find(scene, entity)), name);
+    };
+
+    ManagedGame::Frame frame{.scene = &scene, .delta = devex::core::Duration(0.1), .assetManager = &assets};
+    game->runPhase(frame, SystemPhase::Update);
+    CHECK(value("ground_set") == 0);
+    CHECK(value("ground") == 0);
+    CHECK(value("missing_set") == -1);
+    CHECK(value("read_set") == 0);
+    CHECK(value("read_terrain") == 0);
+    CHECK(value("empty_set") == -1);
+    // A row of three, its right end erased: the first opens to the right, the second to the left.
+    const devex::scene::Tilemap& tilemap = scene.get<devex::scene::Tilemap>(entity);
+    CHECK(devex::scene::tileAt(tilemap, {0, 0}) == 1 + 0b0001);
+    CHECK(value("middle") == 1 + 0b0100);
+    CHECK(devex::scene::tileAt(tilemap, {2, 0}) == 0);
+    // A path upwards, apart from the row.
+    CHECK(devex::scene::tileAt(tilemap, {0, 2}) == 1 + 0b0010);
+    CHECK(devex::scene::tileAt(tilemap, {0, 3}) == 1 + 0b1000);
     game->unloadAssembly();
 }
 

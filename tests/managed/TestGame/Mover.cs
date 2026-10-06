@@ -497,6 +497,30 @@ public class Tiler : Component
     }
 }
 
+// Paints terrains on the tilemap of its entity, and reads them back.
+public class TerrainPainter : Component
+{
+    public int GroundSet = -2;
+    public int Ground = -2;
+    public int MissingSet = -2;
+    public int ReadSet = -2;
+    public int ReadTerrain = -2;
+    public int EmptySet = -2;
+    public int Middle;
+
+    public override void Update(float delta)
+    {
+        (GroundSet, Ground) = Tilemaps.FindTerrain(Entity, "Ground");
+        (MissingSet, _) = Tilemaps.FindTerrain(Entity, "Lava");
+        Tilemaps.SetTerrain(Entity, [(0, 0), (1, 0), (2, 0)], GroundSet, Ground);
+        Tilemaps.SetTerrainPath(Entity, [(0, 2), (0, 3)], GroundSet, Ground);
+        Tilemaps.SetTerrain(Entity, 2, 0, GroundSet, -1);
+        (ReadSet, ReadTerrain) = Tilemaps.GetTerrain(Entity, 1, 0);
+        (EmptySet, _) = Tilemaps.GetTerrain(Entity, 2, 0);
+        Middle = Tilemaps.GetTile(Entity, 1, 0);
+    }
+}
+
 // Counts the 2D bodies that hit it and pass through it, and looks around with 2D queries.
 public class Bumper2D : Component
 {

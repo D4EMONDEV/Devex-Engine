@@ -14,6 +14,7 @@
 #include <devex/scene/EntityRef.hpp>
 #include <devex/scene/Prefab.hpp>
 #include <devex/scene/SceneSerializer.hpp>
+#include <devex/scene/TileTerrain.hpp>
 #include <devex/scene/TilemapComponents.hpp>
 #include <devex/scene/UiComponents.hpp>
 #include <devex/serialization/Text.hpp>
@@ -290,6 +291,9 @@ struct NativeApi
     const char* (*fallbackLanguage)();
     const char* (*translate)(const char* key);
     const char* (*languageName)(const char* code);
+    void (*tileTerrain)(void* scene, Entity tilemap, int x, int y, int* set, int* terrain);
+    void (*findTerrain)(void* scene, Entity tilemap, const char* name, int* set, int* terrain);
+    void (*paintTerrain)(void* scene, Entity tilemap, const int* cells, int count, int set, int terrain, int path);
 };
 
 // The functions the engine calls, in the order of Devex.Managed's ManagedApi.
@@ -304,7 +308,7 @@ struct ManagedApi
 };
 
 // Devex.Managed's Bootstrap.Version: both sides change it with the function tables.
-constexpr int bootstrapVersion = 22;
+constexpr int bootstrapVersion = 23;
 
 struct BootstrapArguments
 {
@@ -2256,6 +2260,50 @@ const char* apiTileData(void* scene, Entity entity, int x, int y)
     return data.c_str();
 }
 
+// The tileset of a tilemap; null without one, or before its asset loaded.
+[[nodiscard]] std::shared_ptr<const asset::TilesetData> tilesetOf(const scene::Tilemap& tilemap)
+{
+    AssetManager* const assets = currentFrame() != nullptr ? currentFrame()->assetManager : nullptr;
+    return assets != nullptr && tilemap.tileset.isValid() ? assets->tileset(tilemap.tileset) : nullptr;
+}
+
+void apiTileTerrain(void* scene, Entity entity, int x, int y, int* set, int* terrain)
+{
+    const scene::Tilemap* const tilemap = tilemapOf(scene, entity);
+    const std::shared_ptr<const asset::TilesetData> tileset = tilemap != nullptr ? tilesetOf(*tilemap) : nullptr;
+    const auto [found, kind] = tileset != nullptr ? scene::terrainOf(*tileset, scene::tileAt(*tilemap, {x, y}))
+                                                  : std::pair{asset::noTerrain, asset::noTerrain};
+    *set = found;
+    *terrain = kind;
+}
+
+void apiFindTerrain(void* scene, Entity entity, const char* name, int* set, int* terrain)
+{
+    const scene::Tilemap* const tilemap = tilemapOf(scene, entity);
+    const std::shared_ptr<const asset::TilesetData> tileset = tilemap != nullptr ? tilesetOf(*tilemap) : nullptr;
+    const auto found = tileset != nullptr && name != nullptr ? tileset->findTerrain(name) : std::nullopt;
+    *set = found ? found->first : asset::noTerrain;
+    *terrain = found ? found->second : asset::noTerrain;
+}
+
+void apiPaintTerrain(void* scene, Entity entity, const int* cells, int count, int set, int terrain, int path)
+{
+    scene::Tilemap* const tilemap = tilemapOf(scene, entity);
+    const std::shared_ptr<const asset::TilesetData> tileset = tilemap != nullptr ? tilesetOf(*tilemap) : nullptr;
+    if (tileset == nullptr || cells == nullptr || count <= 0)
+    {
+        return;
+    }
+    std::vector<math::IVec2> painted;
+    painted.reserve(static_cast<std::size_t>(count));
+    for (int index = 0; index < count; ++index)
+    {
+        painted.push_back({cells[index * 2], cells[index * 2 + 1]});
+    }
+    static_cast<void>(scene::paintTerrain(*tilemap, *tileset, painted, set, terrain,
+                                          path != 0 ? scene::TerrainPaint::Path : scene::TerrainPaint::Connect));
+}
+
 int apiParticleCount(Entity entity)
 {
     return particleWorld() != nullptr ? static_cast<int>(particleWorld()->particleCount(entity)) : 0;
@@ -2445,6 +2493,9 @@ int apiParticleCount(Entity entity)
         .fallbackLanguage = &apiFallbackLanguage,
         .translate = &apiTranslate,
         .languageName = &apiLanguageName,
+        .tileTerrain = &apiTileTerrain,
+        .findTerrain = &apiFindTerrain,
+        .paintTerrain = &apiPaintTerrain,
     };
 }
 

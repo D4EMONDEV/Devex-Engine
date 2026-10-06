@@ -43,7 +43,8 @@ class CoroutineScheduler;
 // 13: SystemContext gained the tweens and the coroutines.
 // 14: SystemContext gained the particles.
 // 15: Camera gained its orthographic projection, which moved its fields; sprites.
-inline constexpr std::uint32_t gameApiVersion = 19;
+// 20: TilesetData gained its terrain sets, and its tiles their terrains.
+inline constexpr std::uint32_t gameApiVersion = 20;
 
 enum class SystemPhase : std::uint8_t
 {

@@ -49,6 +49,7 @@ mais seulement explicitement ici : le code suit ce document, pas l'inverse.
 | Tuiles                   | Composant `Tilemap`, cellules par blocs de 16×16 dans la scène     |
 | Tilesets                 | Asset `.dvxtileset` : sprite, collision, animation, données par tuile |
 | Peinture des tuiles      | Outils sous la `Tilemap` dans l'inspecteur, un trait par annulation |
+| Terrains des tuiles      | Ensembles de Godot 4, bits peints sur les tuiles, Connect ou Path   |
 | Physique 2D              | Box2D 3.1 (MIT), module `Physics2D`, à côté du monde 3D            |
 | Corps 2D                 | `RigidBody2D` + colliders 2D (boîte, cercle, capsule, polygone)    |
 | Collisions des tuiles    | `TilemapCollider2D` : rectangles fusionnés et corniches du tileset |
@@ -1952,6 +1953,55 @@ les assets s'écrivent au fil de leur lecture.
 - **Code** : C++ par `scene::TileGrid`, `tileAt`, `setTile`, `cellAt`, `cellCenter` et
   `AssetManager::tileset` ; C# par `Tilemaps.GetTile`, `SetTile` (retournée ou non), `CellAt`,
   `CellCenter`, `GetCollision` et `GetData`. L'amorce C# passe à 12.
+- **Terrains** (jalon 63, comme ceux de Godot 4) : un tileset a des **ensembles de terrains**,
+  chacun dans un mode : *coins et côtés* (47 tuiles pour un terrain complet, coins intérieurs
+  compris), *coins* ou *côtés* (16 tuiles). Chaque ensemble a ses terrains, nommés et colorés
+  (herbe, terre, eau). Une tuile d'un ensemble nomme le terrain de son milieu et celui de chaque
+  côté et coin que le mode lit (ses « bits », -1 pour rien). Un bit qui nomme un autre terrain
+  de l'ensemble fait une transition (de la terre bordée d'herbe). Sa **probabilité** départage
+  les variantes qui ont le même motif.
+- **Retournements** : un ensemble peut permettre aux pinceaux de **retourner** ses tuiles,
+  horizontalement et/ou verticalement, ce que les cellules savent déjà faire. Un bord dessiné une
+  fois sert ainsi des deux côtés. Une tuile retournée ne sert qu'aux motifs qu'aucune tuile ne
+  dessine telle quelle.
+- **Format** : le `.dvxtileset` passe au format 2 : des sections `[terrain_set mode= mirror_x=
+  mirror_y=]` suivies de leurs `[terrain name= color=]`, et `terrain_set=`, `terrain=`, `bits =
+  list(...)` et `probability` sur les tuiles. Les fichiers au format 1 se lisent toujours, et
+  l'artefact passe à la version 2.
+- **Pinceau de terrain** (`scene::paintTerrain`, l'algorithme de Godot 4). Les points où les cases
+  se rencontrent (milieux, côtés, coins) reçoivent des demandes :
+  - le milieu de chaque case peinte demande le terrain peint ;
+  - en **Connect**, un côté le demande quand la case d'en face est peinte ou de ce terrain, et un
+    coin quand les trois autres cases le sont ;
+  - en **Path**, seul le côté entre une case et la suivante le demande (routes, rivières) ;
+  - les autres points prennent le terrain que nomment le plus de cases qui s'y touchent ; à
+    égalité, celui d'une case qui ne change pas, puis un terrain plutôt que rien.
+
+  Les cases peintes, puis leurs voisines, choisissent chacune le motif qui froisse les demandes
+  les plus légères sans toucher à ce que rien ne demande. Ce choix lie les cases suivantes.
+  Gommer avec le pinceau vide la case de tous côtés, et ses voisines se ferment. Parmi les tuiles
+  d'un même motif, la probabilité choisit, toujours la même pour une même case. Une case dont la
+  tuile montre déjà le motif la garde, même une variante choisie à la main. Un terrain sans tuile
+  ne peint rien. Les tuiles hors des terrains restent en place et comptent comme un bord.
+- **Éditeur, peinture** : sous la `Tilemap`, des onglets **Tiles** et **Terrains**. En terrains,
+  la palette montre chaque terrain par sa tuile pleine et sa couleur, avec **Connect** ou
+  **Path**. Paint, Erase et Rectangle peignent des terrains, Fill les cases du même terrain, et
+  Pick prend le terrain de la case. La vue montre, pâles, les tuiles qui vont changer, voisines
+  comprises.
+- **Éditeur, tileset** : l'inspecteur d'un tileset a une carte **Terrains** (les ensembles avec
+  leur mode et leurs retournements, les terrains avec leur nom et leur couleur). Au-dessus de la
+  palette, **Paint Terrain** choisit un terrain, qui se peint au clic et au glissé sur les neuf
+  parts des tuiles (milieu, côtés, coins), le clic droit effaçant. La carte d'une tuile montre son
+  terrain et sa probabilité.
+- **Code des terrains** : C++ `scene::paintTerrain` sur une `TileGrid` ou une `Tilemap`,
+  `terrainOf`, `terrainPattern` et `TilesetData::findTerrain` ; C# `Tilemaps.SetTerrain` (des
+  cases ou une seule), `SetTerrainPath`, `GetTerrain` et `FindTerrain`. L'API des jeux passe
+  à 20, l'amorce C# à 23.
+- **Bac à sable, terrains** : la planche `tiles.png` gagne une rangée (bas du sol, bouts de
+  plateforme fine, colonne, bloc seul), faite à partir des quatre tuiles de sol. Le tileset a
+  trois ensembles en mode côtés, retournés horizontalement : le sol (12 tuiles couvrent les 16
+  motifs), les corniches et l'eau. Une île flottante et un bloc seul du niveau sont peints au
+  pinceau de terrain.
 - **Bac à sable** : le niveau du jeu de plateformes est une `Tilemap` (`assets/tiles/platformer`,
   planche `assets/textures/2d/tiles.png`) : herbe et terre (bords retournés), corniches de pierre
   qu'on traverse par-dessous, caisses, piliers de pierre, fleurs, panneau, et un bassin d'eau
@@ -3679,6 +3729,11 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     C++ et `Localization.Tr` en C#, langue du joueur ou du système, polices qui cuisent les
     caractères des traductions ; panneau Translations en tableur, aperçu d'une langue dans la vue et
     réglages Localization du projet.
+63. ✅ **Tuiles automatiques** — ensembles de terrains de Godot 4 (coins et côtés, coins ou côtés),
+    bits des tuiles peints sur la palette de l'inspecteur, retournements permis par ensemble,
+    probabilité des variantes ; pinceau de terrain en Connect ou Path qui accorde les voisines,
+    remplissage, pipette et aperçu ; `Tilemaps.SetTerrain` en C#, et les bords, colonnes et
+    blocs du sol du bac à sable choisis par le pinceau.
 
 Ensuite, sans ordre figé : à choisir dans les pistes ci-dessous.
 
@@ -3738,7 +3793,8 @@ Ensuite, sans ordre figé : à choisir dans les pistes ci-dessous.
   cours de la physique et des animations, champs privés marqués à garder, migrations déclarées
   par version, plusieurs miniatures ou une taille choisie, entreprise (`organization`) dans les
   réglages du projet pour le dossier du joueur.
-- **Tuiles, la suite** : tuiles automatiques (terrains, règles de voisinage), tuiles tournées d'un
+- **Tuiles, la suite** : terrains qui partagent une tuile entre deux ensembles, annulation dans
+  l'inspecteur d'un tileset, aperçu du remplissage par terrain, tuiles tournées d'un
   quart de tour, tampons de plusieurs tuiles et palette de morceaux de carte, grilles isométriques
   et hexagonales, formes de collision par tuile (pentes, demi-tuiles), cartes découpées en morceaux pour le
   culling et l'envoi au GPU gardé d'une image à l'autre, calques de la même carte, tuiles faites de

@@ -80,6 +80,7 @@ devex_add_tests(scene
         scene/SceneSerializerTests.cpp
         scene/SceneTests.cpp
         scene/TilemapTests.cpp
+        scene/TileTerrainTests.cpp
     LIBRARIES
         Devex::Engine
 )

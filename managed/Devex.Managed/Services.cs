@@ -545,6 +545,65 @@ public static unsafe class Tilemaps
     /// <summary>What the tileset tells the game of the tile of a cell, such as "water"; empty for none.</summary>
     public static string GetData(Entity tilemap, int x, int y)
         => Utf8.ToString(Bootstrap.Native.TileData(Scene.Current.Pointer, tilemap, x, y)) ?? string.Empty;
+
+    /// <summary>
+    /// The terrain set of the tile of a cell and the terrain of its middle, as its tileset names
+    /// them; (-1, -1) for an empty cell or a tile outside the terrains.
+    /// </summary>
+    public static (int Set, int Terrain) GetTerrain(Entity tilemap, int x, int y)
+    {
+        int set = -1;
+        int terrain = -1;
+        Bootstrap.Native.TileTerrain(Scene.Current.Pointer, tilemap, x, y, &set, &terrain);
+        return (set, terrain);
+    }
+
+    /// <summary>The terrain set and the terrain of that name in the tileset of the tilemap; (-1, -1) when none has it.</summary>
+    public static (int Set, int Terrain) FindTerrain(Entity tilemap, string name)
+    {
+        using var text = new Utf8Buffer(name);
+        int set = -1;
+        int terrain = -1;
+        Bootstrap.Native.FindTerrain(Scene.Current.Pointer, tilemap, text.Pointer, &set, &terrain);
+        return (set, terrain);
+    }
+
+    /// <summary>
+    /// Paints cells with a terrain of a terrain set, or empties them with -1: each cell takes the tile
+    /// that matches the cells around it, which change their tiles to match in turn, as the Terrain
+    /// brush of the editor paints.
+    /// </summary>
+    public static void SetTerrain(Entity tilemap, ReadOnlySpan<(int X, int Y)> cells, int set, int terrain)
+        => PaintTerrain(tilemap, cells, set, terrain, false);
+
+    public static void SetTerrain(Entity tilemap, int x, int y, int set, int terrain)
+        => PaintTerrain(tilemap, new[] { (x, y) }, set, terrain, false);
+
+    /// <summary>
+    /// The same along a path: each cell joins only the one before it and the one after it, in the
+    /// order given, as a road or a river does.
+    /// </summary>
+    public static void SetTerrainPath(Entity tilemap, ReadOnlySpan<(int X, int Y)> cells, int set, int terrain)
+        => PaintTerrain(tilemap, cells, set, terrain, true);
+
+    private static void PaintTerrain(Entity tilemap, ReadOnlySpan<(int X, int Y)> cells, int set, int terrain, bool path)
+    {
+        if (cells.IsEmpty)
+        {
+            return;
+        }
+        // Two numbers a cell, whatever the layout of the tuples.
+        var packed = new int[cells.Length * 2];
+        for (int index = 0; index < cells.Length; ++index)
+        {
+            packed[index * 2] = cells[index].X;
+            packed[index * 2 + 1] = cells[index].Y;
+        }
+        fixed (int* pointer = packed)
+        {
+            Bootstrap.Native.PaintTerrain(Scene.Current.Pointer, tilemap, pointer, cells.Length, set, terrain, path ? 1 : 0);
+        }
+    }
 }
 
 /// <summary>

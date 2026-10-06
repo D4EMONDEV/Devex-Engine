@@ -62,7 +62,7 @@ captures de l'éditeur, scènes de base, entrées, scripts C#, animations, colli
   dans un budget par image ;
 - `Devex::Scene` : entités à UUID, composants en sparse sets, hiérarchie, `.dvxscene`,
   instanciation de modèles, composants de physique, d'animation et d'interface, cartes de
-  tuiles (`Tilemap`, cellules par blocs, tilesets `.dvxtileset`), préfabs liés
+  tuiles (`Tilemap`, cellules par blocs, tilesets `.dvxtileset` et leurs terrains), préfabs liés
   (scènes imbriquées avec leurs modifications) ;
 - `Devex::Physics` : simulation Jolt Physics des corps rigides, colliders (primitives, maillages,
   déclencheurs) et personnages, couches de collision, requêtes, forces, contacts, interpolation ;
@@ -149,7 +149,9 @@ captures de l'éditeur, scènes de base, entrées, scripts C#, animations, colli
   composants rangés en sections repliables, grille et gizmos 2D dans l'écran 2D, textures
   découpées en sprites dans l'inspecteur, éditeur des animations
   de sprites, couches de tri du projet, peinture des tuiles dans la vue (pinceau, gomme,
-  rectangle, remplissage, pipette) et inspecteur des tilesets, formes de la physique 2D
+  rectangle, remplissage, pipette, et terrains qui choisissent chaque tuile d'après ses
+  voisines, comme ceux de Godot) et inspecteur des tilesets (terrains peints sur les tuiles),
+  formes de la physique 2D
   dessinées dans la vue, cuisson du maillage de navigation depuis l'inspecteur et son dessin dans
   la vue avec les agents, les obstacles et les chemins,
   volumes du projet, icônes et distances des sources audio, panneau Animation
@@ -193,7 +195,8 @@ captures de l'éditeur, scènes de base, entrées, scripts C#, animations, colli
   drones suivent le joueur en se contournant (`code/Follower.cs`), et la porte fermée comme les
   caisses poussées découpent le maillage ;
   Tab passe à la scène `platformer`, un jeu de plateformes en pixel art (un chevalier animé qui
-  court et saute sur un niveau de tuiles simulé par la physique 2D, traverse les corniches
+  court et saute sur un niveau de tuiles simulé par la physique 2D, dont une île flottante
+  peinte au pinceau de terrain, traverse les corniches
   par-dessous, pousse des caisses, prend une plateforme mobile au-dessus de l'eau animée et
   revient au départ s'il y tombe, des pièces qui tournent ramassées par déclencheur, un
   coucher de soleil qui défile plus lentement, un mur éclairé par une torche,

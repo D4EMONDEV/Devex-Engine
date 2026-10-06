@@ -10,7 +10,7 @@ sprite_mode = "grid"
 pixels_per_unit = 16
 pivot = vec2(0.5, 0.5)
 columns = 8
-rows = 2
+rows = 3
 
 [subasset type="sprite" key="0" uuid="e9d82d09-cb12-56da-a593-8fa5b99aed6f"]
 
@@ -41,3 +41,19 @@ rows = 2
 [subasset type="sprite" key="13" uuid="fd7cfa77-fba2-5692-a577-00a0605c0d88"]
 
 [subasset type="sprite" key="14" uuid="50c76fed-f990-5cb6-afca-6e7daba086cd"]
+
+[subasset type="sprite" key="16" uuid="bc432479-ef52-5f4b-bd28-0c567471e6eb"]
+
+[subasset type="sprite" key="17" uuid="13d60d5d-8255-5ed0-b9b2-2311585b6244"]
+
+[subasset type="sprite" key="18" uuid="ff60087f-fe16-5d82-8bb5-997906a6e1bb"]
+
+[subasset type="sprite" key="19" uuid="2b0313b8-4800-5037-ab9c-da2faface9ba"]
+
+[subasset type="sprite" key="20" uuid="c289d626-0738-5310-81af-849040446ab9"]
+
+[subasset type="sprite" key="21" uuid="7333f85b-e135-5747-ab49-13d1f822a85d"]
+
+[subasset type="sprite" key="22" uuid="09082cc5-dd6d-57bb-87ef-5c79854a7ae5"]
+
+[subasset type="sprite" key="23" uuid="d2bb5d3f-fd30-5fd6-b6af-5b06dcbab413"]

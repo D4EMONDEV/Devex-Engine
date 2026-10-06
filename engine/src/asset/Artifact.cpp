@@ -96,11 +96,13 @@ std::uint32_t artifactVersion(AssetType type) noexcept
     // 2: the kerning pairs.
     case AssetType::Font:
         return 2;
+    // 2: terrain sets, the terrains of the tiles and their probability.
+    case AssetType::Tileset:
+        return 2;
     case AssetType::Theme:
     case AssetType::Curve:
     case AssetType::Sprite:
     case AssetType::SpriteFrames:
-    case AssetType::Tileset:
     case AssetType::Animator:
     case AssetType::NavMesh:
     case AssetType::Translation:
@@ -707,6 +709,18 @@ core::Result<SpriteFramesData> decodeSpriteFrames(std::span<const std::byte> byt
 std::vector<std::byte> encodeTileset(const TilesetData& tileset)
 {
     BinaryWriter writer = beginArtifact(AssetType::Tileset);
+    writer.write(static_cast<std::uint32_t>(tileset.terrainSets.size()));
+    for (const TerrainSetData& set : tileset.terrainSets)
+    {
+        writer.write(set.mode);
+        writer.write(static_cast<std::uint8_t>((set.mirrorX ? 1 : 0) | (set.mirrorY ? 2 : 0)));
+        writer.write(static_cast<std::uint32_t>(set.terrains.size()));
+        for (const TerrainData& terrain : set.terrains)
+        {
+            writer.writeString(terrain.name);
+            writer.write(terrain.color);
+        }
+    }
     writer.write(static_cast<std::uint32_t>(tileset.tiles.size()));
     for (const TileData& tile : tileset.tiles)
     {
@@ -716,6 +730,10 @@ std::vector<std::byte> encodeTileset(const TilesetData& tileset)
         writer.writeArray(std::span<const AssetId>(tile.frames));
         writer.write(tile.fps);
         writer.writeString(tile.data);
+        writer.write(tile.terrainSet);
+        writer.write(tile.terrain);
+        writer.write(tile.terrainBits);
+        writer.write(tile.probability);
     }
     return writer.take();
 }
@@ -728,6 +746,22 @@ core::Result<TilesetData> decodeTileset(std::span<const std::byte> bytes)
         return std::unexpected(header.error());
     }
     TilesetData tileset;
+    const auto sets = reader.read<std::uint32_t>();
+    for (std::uint32_t index = 0; index < sets && index <= maxTerrainSets && !reader.failed(); ++index)
+    {
+        TerrainSetData& set = tileset.terrainSets.emplace_back();
+        set.mode = reader.read<TerrainMode>();
+        const auto mirror = reader.read<std::uint8_t>();
+        set.mirrorX = (mirror & 1) != 0;
+        set.mirrorY = (mirror & 2) != 0;
+        const auto terrains = reader.read<std::uint32_t>();
+        for (std::uint32_t terrain = 0; terrain < terrains && terrain <= maxTerrains && !reader.failed(); ++terrain)
+        {
+            TerrainData& added = set.terrains.emplace_back();
+            added.name = reader.readString();
+            added.color = reader.read<math::Vec4>();
+        }
+    }
     const auto count = reader.read<std::uint32_t>();
     for (std::uint32_t index = 0; index < count && !reader.failed(); ++index)
     {
@@ -738,6 +772,10 @@ core::Result<TilesetData> decodeTileset(std::span<const std::byte> bytes)
         tile.frames = reader.readArray<AssetId>();
         tile.fps = reader.read<float>();
         tile.data = reader.readString();
+        tile.terrainSet = reader.read<std::int32_t>();
+        tile.terrain = reader.read<std::int32_t>();
+        tile.terrainBits = reader.read<TerrainBits>();
+        tile.probability = reader.read<float>();
         tileset.tiles.push_back(std::move(tile));
     }
     if (reader.failed())

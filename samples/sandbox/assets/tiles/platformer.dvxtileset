@@ -1,29 +1,72 @@
-[tileset format=1]
+[tileset format=2]
 
-[tile id=1 sprite=asset("e9d82d09-cb12-56da-a593-8fa5b99aed6f") collision="full"]
+[terrain_set mode="sides" mirror_x=true mirror_y=false]
 
-[tile id=2 sprite=asset("c24d6dca-17c8-5469-b2d4-b21f38366a8f") collision="full"]
+[terrain name="Ground" color=vec4(0.18, 0.55, 0.1, 1)]
 
-[tile id=3 sprite=asset("881a6f59-41b4-5f1d-a0cb-c9a0bb337b2f") collision="full"]
+[terrain_set mode="sides" mirror_x=true mirror_y=false]
 
-[tile id=4 sprite=asset("be0a1ca8-6ed0-5216-8d6d-7e554e8910ba") collision="full"]
+[terrain name="Ledge" color=vec4(0.35, 0.35, 0.4, 1)]
 
-[tile id=5 sprite=asset("b1a3955e-5004-57a8-a28a-14df9834db97") collision="top"]
+[terrain_set mode="sides" mirror_x=true mirror_y=false]
 
-[tile id=6 sprite=asset("4f0b166e-82fa-5846-9a34-8a8b5bf6bd01") collision="top"]
+[terrain name="Water" color=vec4(0.05, 0.25, 0.8, 1)]
+
+[tile id=1 sprite=asset("e9d82d09-cb12-56da-a593-8fa5b99aed6f") collision="full" terrain_set=0 terrain=0]
+bits = list(0, -1, -1, -1, 0, -1, 0, -1)
+
+[tile id=2 sprite=asset("c24d6dca-17c8-5469-b2d4-b21f38366a8f") collision="full" terrain_set=0 terrain=0]
+bits = list(0, -1, 0, -1, 0, -1, 0, -1)
+
+[tile id=3 sprite=asset("881a6f59-41b4-5f1d-a0cb-c9a0bb337b2f") collision="full" terrain_set=0 terrain=0]
+bits = list(0, -1, -1, -1, -1, -1, 0, -1)
+
+[tile id=4 sprite=asset("be0a1ca8-6ed0-5216-8d6d-7e554e8910ba") collision="full" terrain_set=0 terrain=0]
+bits = list(0, -1, 0, -1, -1, -1, 0, -1)
+
+[tile id=5 sprite=asset("b1a3955e-5004-57a8-a28a-14df9834db97") collision="top" terrain_set=1 terrain=0]
+bits = list(0, -1, -1, -1, -1, -1, -1, -1)
+
+[tile id=6 sprite=asset("4f0b166e-82fa-5846-9a34-8a8b5bf6bd01") collision="top" terrain_set=1 terrain=0]
+bits = list(0, -1, -1, -1, 0, -1, -1, -1)
 
 [tile id=7 sprite=asset("404453dc-0fb4-5632-a6cc-47facf605078") collision="full"]
 
 [tile id=8 sprite=asset("83ec99c0-4e03-53ff-b86e-4e2af532fcca") collision="full"]
 
-[tile id=9 sprite=asset("93891a03-bb72-5ee4-977f-20f37586fd27") collision="none"]
+[tile id=9 sprite=asset("93891a03-bb72-5ee4-977f-20f37586fd27") collision="none" terrain_set=2 terrain=0]
 frames = list(asset("93891a03-bb72-5ee4-977f-20f37586fd27"), asset("8315aa1c-38ef-5e52-9a97-c1c60f82539c"), asset("baef9485-bd84-53f7-bc7f-4a61e83ae0dd"), asset("fbc22501-2319-5919-8a7a-796aa2aa7794"))
 fps = 4
 data = "water"
+bits = list(0, -1, -1, -1, 0, -1, 0, -1)
 
 [tile id=10 sprite=asset("448ca5a1-c505-5e3a-bc77-356e22c94705") collision="none"]
 
 [tile id=11 sprite=asset("fd7cfa77-fba2-5692-a577-00a0605c0d88") collision="none"]
 
-[tile id=12 sprite=asset("50c76fed-f990-5cb6-afca-6e7daba086cd") collision="none"]
+[tile id=12 sprite=asset("50c76fed-f990-5cb6-afca-6e7daba086cd") collision="none" terrain_set=2 terrain=0]
 data = "water"
+bits = list(0, -1, 0, -1, 0, -1, 0, -1)
+
+[tile id=13 sprite=asset("bc432479-ef52-5f4b-bd28-0c567471e6eb") collision="full" terrain_set=0 terrain=0]
+bits = list(0, -1, -1, -1, 0, -1, -1, -1)
+
+[tile id=14 sprite=asset("13d60d5d-8255-5ed0-b9b2-2311585b6244") collision="full" terrain_set=0 terrain=0]
+bits = list(0, -1, -1, -1, -1, -1, -1, -1)
+
+[tile id=15 sprite=asset("ff60087f-fe16-5d82-8bb5-997906a6e1bb") collision="full" terrain_set=0 terrain=0]
+bits = list(-1, -1, -1, -1, -1, -1, 0, -1)
+
+[tile id=16 sprite=asset("2b0313b8-4800-5037-ab9c-da2faface9ba") collision="full" terrain_set=0 terrain=0]
+bits = list(-1, -1, 0, -1, -1, -1, 0, -1)
+
+[tile id=17 sprite=asset("c289d626-0738-5310-81af-849040446ab9") collision="full" terrain_set=0 terrain=0]
+bits = list(0, -1, 0, -1, 0, -1, -1, -1)
+
+[tile id=18 sprite=asset("7333f85b-e135-5747-ab49-13d1f822a85d") collision="full" terrain_set=0 terrain=0]
+bits = list(0, -1, 0, -1, -1, -1, -1, -1)
+
+[tile id=19 sprite=asset("09082cc5-dd6d-57bb-87ef-5c79854a7ae5") collision="full" terrain_set=0 terrain=0]
+bits = list(-1, -1, 0, -1, -1, -1, -1, -1)
+
+[tile id=20 sprite=asset("d2bb5d3f-fd30-5fd6-b6af-5b06dcbab413") collision="full" terrain_set=0 terrain=0]
