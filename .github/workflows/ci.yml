@@ -112,8 +112,9 @@ jobs:
       # The engine of this push, installed as a folder that works on its own (cmake --install): the
       # summary of the run offers it to download, for 30 days.
       - name: Pack the engine
+        id: pack
         if: matrix.preset == 'x64-release'
-        run: cmake --install out/build/${{ matrix.preset }} --prefix "$env:RUNNER_TEMP/devex-windows-x64"
+        run: cmd /c "cmake --install out/build/${{ matrix.preset }} --prefix ""$env:RUNNER_TEMP/devex-windows-x64"" 2>&1" | Tee-Object -FilePath "$env:RUNNER_TEMP/pack.log"
 
       - name: Keep the engine
         if: matrix.preset == 'x64-release'
@@ -132,9 +133,10 @@ jobs:
           CONFIGURE: ${{ steps.configure.outcome }}
           BUILD: ${{ steps.build.outcome }}
           TEST: ${{ steps.test.outcome }}
+          PACK: ${{ steps.pack.outcome }}
         run: |
           # The logs of the step that failed: the configuration with vcpkg and the port it failed to
-          # build last, or the errors of the build, or those of the tests.
+          # build last, or the errors of the build, or those of the tests, or the end of the install.
           $logs = @()
           if ($env:CONFIGURE -eq "failure") {
             $logs += @{ Path = "$env:RUNNER_TEMP/configure.log"; Errors = $false }
@@ -145,6 +147,7 @@ jobs:
           }
           if ($env:BUILD -eq "failure") { $logs += @{ Path = "$env:RUNNER_TEMP/build.log"; Errors = $true } }
           if ($env:TEST -eq "failure") { $logs += @{ Path = "$env:RUNNER_TEMP/test.log"; Errors = $true } }
+          if ($env:PACK -eq "failure") { $logs += @{ Path = "$env:RUNNER_TEMP/pack.log"; Errors = $false } }
           foreach ($log in $logs) {
             if (-not (Test-Path $log.Path)) { continue }
             $lines = Get-Content $log.Path
@@ -252,10 +255,11 @@ jobs:
 
       # The same engine for Linux, packed in a tar.gz, which keeps the programs executable.
       - name: Pack the engine
+        id: pack
         if: matrix.preset == 'linux-release'
         run: |
-          cmake --install out/build/${{ matrix.preset }} --prefix "$RUNNER_TEMP/devex-linux-x64"
-          tar -czf "$RUNNER_TEMP/devex-linux-x64.tar.gz" -C "$RUNNER_TEMP" devex-linux-x64
+          cmake --install out/build/${{ matrix.preset }} --prefix "$RUNNER_TEMP/devex-linux-x64" 2>&1 | tee "$RUNNER_TEMP/pack.log"
+          tar -czf "$RUNNER_TEMP/devex-linux-x64.tar.gz" -C "$RUNNER_TEMP" devex-linux-x64 2>&1 | tee -a "$RUNNER_TEMP/pack.log"
 
       - name: Keep the engine
         if: matrix.preset == 'linux-release'
@@ -272,6 +276,7 @@ jobs:
           CONFIGURE: ${{ steps.configure.outcome }}
           BUILD: ${{ steps.build.outcome }}
           TEST: ${{ steps.test.outcome }}
+          PACK: ${{ steps.pack.outcome }}
         run: |
           annotate() {
             local path="$1" errors="$2" text
@@ -294,6 +299,11 @@ jobs:
           fi
           [ "$BUILD" = failure ] && annotate "$RUNNER_TEMP/build.log" yes
           [ "$TEST" = failure ] && annotate "$RUNNER_TEMP/test.log" yes
+          # The end of the install, and the room left on the disks it writes to.
+          if [ "$PACK" = failure ]; then
+            df -h . "$RUNNER_TEMP" >> "$RUNNER_TEMP/pack.log" 2>&1
+            annotate "$RUNNER_TEMP/pack.log" no
+          fi
           true
 
       - name: Keep the logs
