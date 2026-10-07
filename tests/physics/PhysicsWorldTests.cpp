@@ -1,6 +1,7 @@
 #include <devex/asset/Primitives.hpp>
 #include <devex/physics/PhysicsWorld.hpp>
 #include <devex/scene/Components.hpp>
+#include <devex/scene/JointComponents.hpp>
 #include <devex/scene/PhysicsComponents.hpp>
 #include <devex/scene/Scene.hpp>
 #include <devex/scene/SceneSerializer.hpp>
@@ -10,6 +11,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <memory>
 #include <unordered_map>
 
@@ -386,4 +388,180 @@ TEST_CASE("Physics components are saved in scenes", "[physics]")
     CHECK(loaded->get<devex::scene::RigidBody>(copy).layer == 2);
     CHECK(loaded->get<devex::scene::CapsuleCollider>(copy).trigger);
     CHECK(loaded->get<devex::scene::CharacterController>(copy).stepHeight == 0.2f);
+}
+
+namespace {
+
+// A joint entity at a place, turned by an angle around Z, whose component names its bodies.
+template <typename Joint>
+Entity addJoint(Scene& scene, Vec3 position, Joint joint, float angle = 0.0f)
+{
+    const Entity entity = scene.createEntity("Joint");
+    scene.add<devex::scene::Transform>(
+        entity, devex::scene::Transform{.position = position, .rotation = devex::math::angleAxis(angle, Vec3{0.0f, 0.0f, 1.0f})});
+    scene.add<Joint>(entity, joint);
+    return entity;
+}
+
+[[nodiscard]] devex::scene::EntityRef referenceOf(const Scene& scene, Entity entity)
+{
+    return devex::scene::EntityRef{scene.uuid(entity)};
+}
+
+[[nodiscard]] Vec3 positionOf(const Scene& scene, Entity entity)
+{
+    return scene.get<devex::scene::Transform>(entity).position;
+}
+
+} // namespace
+
+TEST_CASE("Hinges swing bodies around their axis, within their limits, turned by their motor", "[physics][joints]")
+{
+    // A ball two meters right of a hinge on the world swings down around it, in the XY plane.
+    Scene scene;
+    const Entity ball = addBall(scene, {2.0f, 4.0f, 0.0f});
+    const Entity hinge = addJoint(scene, {0.0f, 4.0f, 0.0f}, devex::scene::HingeJoint{.bodyA = referenceOf(scene, ball)});
+    const auto world = makeWorld();
+    simulate(*world, scene, 0.6);
+    CHECK(world->jointCount() == 1);
+    const Vec3 swung = positionOf(scene, ball);
+    CHECK(swung.y < 3.0f);
+    CHECK(devex::math::length(swung - Vec3{0.0f, 4.0f, 0.0f}) == Catch::Approx(2.0f).margin(0.03f));
+    CHECK(std::abs(swung.z) < 0.01f);
+
+    // With limits, it stops where they say: a third of a radian down.
+    auto& joint = scene.get<devex::scene::HingeJoint>(hinge);
+    scene.get<devex::scene::Transform>(ball).position = {2.0f, 4.0f, 0.0f};
+    scene.get<devex::scene::RigidBody>(ball).linearVelocity = Vec3{0.0f};
+    scene.get<devex::scene::RigidBody>(ball).angularVelocity = Vec3{0.0f};
+    joint.useLimits = true;
+    joint.lowerAngle = -0.3f;
+    joint.upperAngle = 0.3f;
+    simulate(*world, scene, 2.0);
+    const Vec3 limited = positionOf(scene, ball) - Vec3{0.0f, 4.0f, 0.0f};
+    CHECK(std::atan2(limited.y, limited.x) == Catch::Approx(-0.3f).margin(0.05f));
+
+    // Without gravity, the motor turns it at its speed.
+    Scene still;
+    const Entity wheel = addBall(still, {0.0f, 0.0f, 0.0f});
+    addJoint(still, {0.0f, 0.0f, 0.0f},
+             devex::scene::HingeJoint{.bodyA = referenceOf(still, wheel), .useMotor = true, .motorSpeed = 2.0f});
+    const auto weightless = makeWorld(devex::asset::PhysicsSettings{.gravity = Vec3{0.0f}});
+    simulate(*weightless, still, 1.0);
+    CHECK(still.get<devex::scene::RigidBody>(wheel).angularVelocity.z == Catch::Approx(2.0f).margin(0.05f));
+}
+
+TEST_CASE("Sliders keep bodies on their axis, between their limits, moved by their motor", "[physics][joints]")
+{
+    Scene scene;
+    const Entity box = addBall(scene, {0.0f, 4.0f, 0.0f});
+    const Entity slider = addJoint(scene, {0.0f, 4.0f, 0.0f},
+                                   devex::scene::SliderJoint{.bodyA = referenceOf(scene, box), .useMotor = true, .motorSpeed = 1.0f});
+    const auto world = makeWorld();
+    simulate(*world, scene, 1.0);
+    // Gravity cannot pull it off its axis; the motor carries it along.
+    CHECK(positionOf(scene, box).y == Catch::Approx(4.0f).margin(0.02f));
+    CHECK(positionOf(scene, box).x == Catch::Approx(1.0f).margin(0.1f));
+
+    scene.get<devex::scene::SliderJoint>(slider).useLimits = true;
+    scene.get<devex::scene::SliderJoint>(slider).upperLimit = 0.5f;
+    scene.get<devex::scene::Transform>(box).position = {0.0f, 4.0f, 0.0f};
+    simulate(*world, scene, 1.5);
+    CHECK(positionOf(scene, box).x == Catch::Approx(0.5f).margin(0.03f));
+}
+
+TEST_CASE("Distance joints hold bodies as rods and ropes", "[physics][joints]")
+{
+    // A rod from the ball to a point of the world two meters above and half a meter aside: the ball
+    // swings at its end.
+    Scene scene;
+    const Entity ball = addBall(scene, {0.5f, 2.0f, 0.0f});
+    addJoint(scene, {0.5f, 2.0f, 0.0f}, devex::scene::DistanceJoint{.bodyA = referenceOf(scene, ball), .anchor = {-0.5f, 2.0f, 0.0f}});
+    // A rope of two meters a meter above the other ball: it falls a meter, then hangs.
+    const Entity dropped = addBall(scene, {5.0f, 3.0f, 0.0f});
+    addJoint(scene, {5.0f, 3.0f, 0.0f},
+             devex::scene::DistanceJoint{.bodyA = referenceOf(scene, dropped), .anchor = {0.0f, 1.0f, 0.0f}, .length = 2.0f, .rope = true});
+    const auto world = makeWorld();
+    simulate(*world, scene, 4.0);
+    CHECK(devex::math::length(positionOf(scene, ball) - Vec3{0.0f, 4.0f, 0.0f}) == Catch::Approx(std::sqrt(4.25f)).margin(0.03f));
+    CHECK(positionOf(scene, ball).y < 2.01f);
+    CHECK(positionOf(scene, dropped).y == Catch::Approx(2.0f).margin(0.05f));
+    CHECK(world->jointCount() == 2);
+}
+
+TEST_CASE("Fixed joints weld bodies until they break, and connected bodies collide only when asked", "[physics][joints]")
+{
+    Scene scene;
+    const Entity box = addBall(scene, {0.0f, 4.0f, 0.0f});
+    const Entity weld = addJoint(scene, {0.0f, 4.0f, 0.0f}, devex::scene::FixedJoint{.bodyA = referenceOf(scene, box)});
+    const auto world = makeWorld();
+    simulate(*world, scene, 1.0);
+    CHECK(positionOf(scene, box).y == Catch::Approx(4.0f).margin(0.02f));
+
+    // Too weak for the weight of the ball, it breaks at once, and the ball falls.
+    scene.get<devex::scene::FixedJoint>(weld).breakForce = 2.0f;
+    scene.updateTransforms();
+    world->step(scene, devex::core::Duration(stepSeconds));
+    world->step(scene, devex::core::Duration(stepSeconds));
+    REQUIRE(world->brokenJoints().size() == 1);
+    CHECK(world->brokenJoints().front().joint == weld);
+    CHECK(world->brokenJoints().front().bodyA == box);
+    CHECK_FALSE(world->brokenJoints().front().bodyB.isValid());
+    CHECK(scene.get<devex::scene::FixedJoint>(weld).broken);
+    world->clearContacts();
+    CHECK(world->brokenJoints().empty());
+    simulate(*world, scene, 0.5);
+    CHECK(positionOf(scene, box).y < 3.5f);
+    CHECK(scene.get<devex::scene::FixedJoint>(weld).broken);
+    CHECK(world->jointCount() == 0);
+
+    // Changed, it holds again from where the ball is.
+    scene.get<devex::scene::FixedJoint>(weld).breakForce = 0.0f;
+    simulate(*world, scene, 0.1);
+    const float held = positionOf(scene, box).y;
+    simulate(*world, scene, 0.5);
+    CHECK_FALSE(scene.get<devex::scene::FixedJoint>(weld).broken);
+    CHECK(positionOf(scene, box).y == Catch::Approx(held).margin(0.05f));
+
+    // Two balls that overlap, tied by a hinge: they never touch, unless the joint lets them collide.
+    for (const bool collide : {false, true})
+    {
+        Scene pair;
+        const Entity first = addBall(pair, {0.0f, 1.0f, 0.0f});
+        const Entity second = addBall(pair, {0.6f, 1.0f, 0.0f});
+        addJoint(pair, {0.3f, 1.0f, 0.0f},
+                 devex::scene::HingeJoint{.bodyA = referenceOf(pair, first), .bodyB = referenceOf(pair, second), .collideConnected = collide});
+        const auto paired = makeWorld(devex::asset::PhysicsSettings{.gravity = Vec3{0.0f}});
+        std::vector<devex::physics::Contact> contacts;
+        simulate(*paired, pair, 0.2, &contacts);
+        CAPTURE(collide);
+        CHECK(paired->jointCount() == 1);
+        CHECK(hasContact(contacts, ContactPhase::Begin, first, second, false) == collide);
+    }
+}
+
+TEST_CASE("A body shaped by the colliders of its children swings around a hinge at its origin", "[physics][joints]")
+{
+    // A pendulum: the body stands at the pivot, its bob three meters below it, let go from 40 degrees.
+    Scene scene;
+    const Entity pendulum = scene.createEntity("Pendulum");
+    scene.add<devex::scene::Transform>(
+        pendulum, devex::scene::Transform{.position = {0.0f, 4.5f, 0.0f},
+                                          .rotation = devex::math::angleAxis(devex::math::radians(40.0f), Vec3{1.0f, 0.0f, 0.0f})});
+    scene.add<devex::scene::RigidBody>(pendulum, devex::scene::RigidBody{.mass = 8.0f});
+    const Entity bob = scene.createEntity("Bob");
+    REQUIRE(scene.setParent(bob, pendulum).has_value());
+    scene.add<devex::scene::Transform>(bob, devex::scene::Transform{.position = {0.0f, -3.0f, 0.0f}});
+    scene.add<devex::scene::SphereCollider>(bob);
+    // Its Z axis turned along X, the hinge lets it swing in the YZ plane.
+    const Entity hinge = addJoint(scene, {0.0f, 4.5f, 0.0f}, devex::scene::HingeJoint{.bodyA = referenceOf(scene, pendulum)});
+    scene.get<devex::scene::Transform>(hinge).rotation = devex::math::angleAxis(devex::math::radians(90.0f), Vec3{0.0f, 1.0f, 0.0f});
+    const auto world = makeWorld();
+    simulate(*world, scene, 0.4);
+    const Vec3 bobAt(scene.get<devex::scene::WorldTransform>(bob).matrix[3]);
+    CAPTURE(bobAt.x, bobAt.y, bobAt.z);
+    // It swung down from z = -1.93 towards the bottom.
+    CHECK(bobAt.z > -1.6f);
+    CHECK(std::abs(bobAt.x) < 0.01f);
+    CHECK(devex::math::length(bobAt - Vec3{0.0f, 4.5f, 0.0f}) == Catch::Approx(3.0f).margin(0.03f));
 }

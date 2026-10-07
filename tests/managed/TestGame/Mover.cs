@@ -104,9 +104,12 @@ public class Bumper : Component
     public int Hits;
     public int Entered;
     public int Left;
+    public int Breaks;
     public string Below = "";
 
     public override void OnCollisionEnter(Entity other) => ++Hits;
+
+    public override void OnJointBreak(Entity joint) => ++Breaks;
 
     public override void OnTriggerEnter(Entity other) => ++Entered;
 

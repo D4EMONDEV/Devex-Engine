@@ -424,6 +424,7 @@ target_sources(devex_scene
         src/scene/ParticleComponents.cpp
         src/scene/SpriteComponents.cpp
         src/scene/Light2DComponents.cpp
+        src/scene/JointComponents.cpp
         src/scene/TilemapComponents.cpp
         src/scene/TileTerrain.cpp
         src/scene/AssetReferences.cpp
@@ -452,6 +453,7 @@ target_sources(devex_scene
             include/devex/scene/ParticleComponents.hpp
             include/devex/scene/SpriteComponents.hpp
             include/devex/scene/Light2DComponents.hpp
+            include/devex/scene/JointComponents.hpp
             include/devex/scene/TilemapComponents.hpp
             include/devex/scene/TileTerrain.hpp
             include/devex/scene/AssetReferences.hpp

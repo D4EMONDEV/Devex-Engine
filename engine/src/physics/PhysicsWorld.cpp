@@ -21,6 +21,10 @@
 #include <Jolt/Physics/Collision/Shape/SphereShape.h>
 #include <Jolt/Physics/Collision/Shape/StaticCompoundShape.h>
 #include <Jolt/Physics/Collision/ShapeCast.h>
+#include <Jolt/Physics/Constraints/DistanceConstraint.h>
+#include <Jolt/Physics/Constraints/FixedConstraint.h>
+#include <Jolt/Physics/Constraints/HingeConstraint.h>
+#include <Jolt/Physics/Constraints/SliderConstraint.h>
 #include <Jolt/Physics/PhysicsSystem.h>
 #include <Jolt/RegisterTypes.h>
 
@@ -28,6 +32,7 @@
 #include <devex/core/Log.hpp>
 #include <devex/physics/PhysicsWorld.hpp>
 #include <devex/scene/Components.hpp>
+#include <devex/scene/JointComponents.hpp>
 #include <devex/scene/PhysicsComponents.hpp>
 #include <devex/scene/Scene.hpp>
 
@@ -328,11 +333,30 @@ public:
         m_contacts.push_back({bodyKey(pair.GetBody1ID()), bodyKey(pair.GetBody2ID()), false});
     }
 
+    // Bodies tied by a joint that keeps them from colliding never touch: the pairs are only changed
+    // between steps, while no worker reads them.
+    JPH::ValidateResult OnContactValidate(const JPH::Body& first, const JPH::Body& second, JPH::RVec3Arg /*offset*/,
+                                          const JPH::CollideShapeResult& /*result*/) override
+    {
+        return ignored.contains(pairKey(first.GetID(), second.GetID())) ? JPH::ValidateResult::RejectAllContactsForThisBodyPair
+                                                                        : JPH::ValidateResult::AcceptAllContactsForThisBodyPair;
+    }
+
     [[nodiscard]] std::vector<RawContact> take()
     {
         const std::lock_guard lock(m_mutex);
         return std::exchange(m_contacts, {});
     }
+
+    [[nodiscard]] static std::uint64_t pairKey(const JPH::BodyID& first, const JPH::BodyID& second) noexcept
+    {
+        // Values, not std::minmax, whose references to temporaries would dangle.
+        const std::uint64_t a = bodyKey(first);
+        const std::uint64_t b = bodyKey(second);
+        return (std::max(a, b) << 32) | std::min(a, b);
+    }
+
+    std::unordered_set<std::uint64_t> ignored;
 
 private:
     std::mutex m_mutex;
@@ -565,6 +589,80 @@ struct BodyOwner
     bool sensor = false;
 };
 
+enum class JointKind : std::uint8_t
+{
+    Hinge,
+    Slider,
+    Distance,
+    Fixed,
+};
+
+// A joint of the scene, tying body A to body B or to the world.
+struct JointRecord
+{
+    Entity owner;
+    // The entities of its bodies; B is invalid for the world.
+    Entity entityA;
+    Entity entityB;
+    JointKind kind = JointKind::Hinge;
+    // Null once broken.
+    JPH::Ref<JPH::TwoBodyConstraint> constraint;
+    JPH::BodyID bodyA;
+    JPH::BodyID bodyB;
+    bool collideConnected = false;
+    float breakForce = 0.0f;
+    float breakTorque = 0.0f;
+    std::uint64_t signature = 0;
+    bool broken = false;
+    bool seen = false;
+};
+
+// What a joint asks of the bodies, read from its component: its frame in the world, and the settings
+// of its kind.
+struct JointDescription
+{
+    JointKind kind = JointKind::Hinge;
+    math::Mat4 frame{1.0f};
+    const scene::EntityRef* bodyA = nullptr;
+    const scene::EntityRef* bodyB = nullptr;
+    bool collideConnected = false;
+    bool useLimits = false;
+    float lower = 0.0f;
+    float upper = 0.0f;
+    bool useMotor = false;
+    float motorSpeed = 0.0f;
+    float motorLimit = 0.0f;
+    math::Vec3 anchor{0.0f};
+    float length = 0.0f;
+    bool rope = false;
+    float spring = 0.0f;
+    float damping = 0.0f;
+    float breakForce = 0.0f;
+    float breakTorque = 0.0f;
+    bool* broken = nullptr;
+};
+
+[[nodiscard]] std::uint64_t signatureOf(const JointDescription& joint, const JPH::BodyID& bodyA, const JPH::BodyID& bodyB) noexcept
+{
+    Signature signature;
+    signature.add(joint.kind);
+    signature.add(bodyKey(bodyA));
+    signature.add(bodyKey(bodyB));
+    for (const float value : {joint.lower, joint.upper, joint.motorSpeed, joint.motorLimit, joint.length, joint.spring, joint.damping,
+                              joint.breakForce, joint.breakTorque, joint.anchor.x, joint.anchor.y, joint.anchor.z})
+    {
+        signature.add(value);
+    }
+    signature.add(static_cast<std::uint8_t>((joint.collideConnected ? 1 : 0) | (joint.useLimits ? 2 : 0) | (joint.useMotor ? 4 : 0) |
+                                            (joint.rope ? 8 : 0)));
+    return signature.value();
+}
+
+[[nodiscard]] float lengthOf(const JPH::Vector<2>& vector) noexcept
+{
+    return std::sqrt(vector[0] * vector[0] + vector[1] * vector[1]);
+}
+
 } // namespace
 
 struct PhysicsWorld::Implementation
@@ -597,6 +695,10 @@ struct PhysicsWorld::Implementation
 
     std::unordered_map<std::uint64_t, BodyRecord> bodies;
     std::unordered_map<std::uint64_t, CharacterRecord> characters;
+    // The joints, by the key of their entity and kind, and the entities of those that broke since
+    // the contacts were cleared.
+    std::unordered_map<std::uint64_t, JointRecord> joints;
+    std::vector<JointBreak> brokenJoints;
     // The entity of each body by BodyID, including bodies removed since the last step, whose contacts
     // end during the next one.
     std::unordered_map<std::uint64_t, BodyOwner> owners;
@@ -627,6 +729,16 @@ struct PhysicsWorld::Implementation
 
     void clear()
     {
+        for (auto& [key, joint] : joints)
+        {
+            if (joint.constraint != nullptr)
+            {
+                system.RemoveConstraint(joint.constraint);
+            }
+        }
+        joints.clear();
+        brokenJoints.clear();
+        contactCollector.ignored.clear();
         for (auto& [key, record] : characters)
         {
             characterCollisions.Remove(record.character);
@@ -934,6 +1046,22 @@ struct PhysicsWorld::Implementation
 
     void removeBody(std::unordered_map<std::uint64_t, BodyRecord>::iterator record)
     {
+        // A joint never outlives its bodies; it is made again with them.
+        for (auto joint = joints.begin(); joint != joints.end();)
+        {
+            if (joint->second.bodyA == record->second.body || joint->second.bodyB == record->second.body)
+            {
+                if (joint->second.constraint != nullptr)
+                {
+                    system.RemoveConstraint(joint->second.constraint);
+                }
+                joint = joints.erase(joint);
+            }
+            else
+            {
+                ++joint;
+            }
+        }
         bodyInterface().RemoveBody(record->second.body);
         bodyInterface().DestroyBody(record->second.body);
         retire(record->second.body);
@@ -1225,6 +1353,315 @@ struct PhysicsWorld::Implementation
         }
     }
 
+    // ---- Joints ----
+
+    // The joint components of the scene, by the key of their entity and kind.
+    [[nodiscard]] std::unordered_map<std::uint64_t, JointDescription> describeJoints(scene::Scene& scene) const
+    {
+        std::unordered_map<std::uint64_t, JointDescription> descriptions;
+        const auto add = [&](Entity entity, JointKind kind, const scene::WorldTransform& transform, auto& component) {
+            JointDescription& joint = descriptions[keyOf(entity) * 4 + static_cast<std::uint64_t>(kind)];
+            joint.kind = kind;
+            joint.frame = transform.matrix;
+            joint.bodyA = &component.bodyA;
+            joint.bodyB = &component.bodyB;
+            joint.collideConnected = component.collideConnected;
+            joint.breakForce = component.breakForce;
+            joint.broken = &component.broken;
+            return &joint;
+        };
+        for ([[maybe_unused]] auto [entity, transform, hinge] : scene.view<scene::WorldTransform, scene::HingeJoint>())
+        {
+            JointDescription& joint = *add(entity, JointKind::Hinge, transform, hinge);
+            joint.useLimits = hinge.useLimits;
+            joint.lower = hinge.lowerAngle;
+            joint.upper = hinge.upperAngle;
+            joint.useMotor = hinge.useMotor;
+            joint.motorSpeed = hinge.motorSpeed;
+            joint.motorLimit = hinge.maxMotorTorque;
+            joint.breakTorque = hinge.breakTorque;
+        }
+        for ([[maybe_unused]] auto [entity, transform, slider] : scene.view<scene::WorldTransform, scene::SliderJoint>())
+        {
+            JointDescription& joint = *add(entity, JointKind::Slider, transform, slider);
+            joint.useLimits = slider.useLimits;
+            joint.lower = slider.lowerLimit;
+            joint.upper = slider.upperLimit;
+            joint.useMotor = slider.useMotor;
+            joint.motorSpeed = slider.motorSpeed;
+            joint.motorLimit = slider.maxMotorForce;
+            joint.breakTorque = slider.breakTorque;
+        }
+        for ([[maybe_unused]] auto [entity, transform, distance] : scene.view<scene::WorldTransform, scene::DistanceJoint>())
+        {
+            JointDescription& joint = *add(entity, JointKind::Distance, transform, distance);
+            joint.anchor = distance.anchor;
+            joint.length = distance.length;
+            joint.rope = distance.rope;
+            joint.spring = distance.spring;
+            joint.damping = distance.damping;
+        }
+        for ([[maybe_unused]] auto [entity, transform, fixed] : scene.view<scene::WorldTransform, scene::FixedJoint>())
+        {
+            add(entity, JointKind::Fixed, transform, fixed)->breakTorque = fixed.breakTorque;
+        }
+        return descriptions;
+    }
+
+    // The settings of a joint in the world, body 1 being B, or the world, and body 2 being A, so that
+    // its angle, its position and its motor are those of A against B.
+    [[nodiscard]] static JPH::Ref<JPH::TwoBodyConstraintSettings> settingsOf(const JointDescription& joint)
+    {
+        const JPH::RVec3 point = toJoltPosition(math::Vec3(joint.frame[3]));
+        const auto axis = [&](int column) {
+            const math::Vec3 direction(joint.frame[column]);
+            return toJolt(math::length(direction) > 1e-6f ? math::normalize(direction) : math::Vec3(column == 0, column == 1, column == 2));
+        };
+        switch (joint.kind)
+        {
+        case JointKind::Hinge: {
+            auto* const settings = new JPH::HingeConstraintSettings();
+            settings->mPoint1 = settings->mPoint2 = point;
+            settings->mHingeAxis1 = settings->mHingeAxis2 = axis(2);
+            settings->mNormalAxis1 = settings->mNormalAxis2 = axis(0);
+            if (joint.useLimits)
+            {
+                settings->mLimitsMin = std::clamp(std::min(joint.lower, joint.upper), -JPH::JPH_PI, 0.0f);
+                settings->mLimitsMax = std::clamp(std::max(joint.lower, joint.upper), 0.0f, JPH::JPH_PI);
+            }
+            settings->mMotorSettings.SetTorqueLimit(std::max(joint.motorLimit, 0.0f));
+            return settings;
+        }
+        case JointKind::Slider: {
+            auto* const settings = new JPH::SliderConstraintSettings();
+            settings->mPoint1 = settings->mPoint2 = point;
+            settings->mSliderAxis1 = settings->mSliderAxis2 = axis(0);
+            settings->mNormalAxis1 = settings->mNormalAxis2 = axis(1);
+            if (joint.useLimits)
+            {
+                settings->mLimitsMin = std::min(std::min(joint.lower, joint.upper), 0.0f);
+                settings->mLimitsMax = std::max(std::max(joint.lower, joint.upper), 0.0f);
+            }
+            settings->mMotorSettings.SetForceLimit(std::max(joint.motorLimit, 0.0f));
+            return settings;
+        }
+        case JointKind::Distance: {
+            auto* const settings = new JPH::DistanceConstraintSettings();
+            const math::Vec3 end(joint.frame * math::Vec4(joint.anchor, 1.0f));
+            settings->mPoint1 = toJoltPosition(end);
+            settings->mPoint2 = point;
+            const float length = joint.length > 0.0f ? joint.length : math::length(end - math::Vec3(joint.frame[3]));
+            settings->mMinDistance = joint.rope ? 0.0f : length;
+            settings->mMaxDistance = length;
+            if (joint.spring > 0.0f)
+            {
+                settings->mLimitsSpringSettings = JPH::SpringSettings(JPH::ESpringMode::FrequencyAndDamping, joint.spring,
+                                                                      std::max(joint.damping, 0.0f));
+            }
+            return settings;
+        }
+        case JointKind::Fixed: {
+            auto* const settings = new JPH::FixedConstraintSettings();
+            settings->mAutoDetectPoint = true;
+            return settings;
+        }
+        }
+        return nullptr;
+    }
+
+    void removeJoint(std::unordered_map<std::uint64_t, JointRecord>::iterator joint)
+    {
+        if (joint->second.constraint != nullptr)
+        {
+            system.RemoveConstraint(joint->second.constraint);
+        }
+        joints.erase(joint);
+    }
+
+    // Makes the joints of new components and of new bodies, makes again those whose component changed,
+    // and removes those whose component or bodies are gone. A broken joint stays broken.
+    void syncJoints(scene::Scene& scene)
+    {
+        for (auto& [key, joint] : joints)
+        {
+            joint.seen = false;
+        }
+        for (auto& [key, description] : describeJoints(scene))
+        {
+            const Entity owner = entityOf(key / 4);
+            const auto solid = [&](const scene::EntityRef& reference) -> const BodyRecord* {
+                const Entity entity = reference.isNil() ? Entity{} : scene.resolve(reference);
+                const auto record = entity.isValid() ? bodies.find(keyOf(entity) * 2) : bodies.end();
+                return record != bodies.end() ? &record->second : nullptr;
+            };
+            const BodyRecord* const bodyA = solid(*description.bodyA);
+            const BodyRecord* const bodyB = solid(*description.bodyB);
+            if (bodyA == nullptr || (!description.bodyB->isNil() && bodyB == nullptr) || bodyA == bodyB)
+            {
+                warnOnce(owner, "joint",
+                         std::format("the joint of '{}' needs a body A, and a body B other than A when it names one: entities with "
+                                     "a RigidBody or colliders",
+                                     scene.name(owner)));
+                continue;
+            }
+            const JPH::BodyID idB = bodyB != nullptr ? bodyB->body : JPH::BodyID();
+            const std::uint64_t signature = signatureOf(description, bodyA->body, idB);
+            const auto found = joints.find(key);
+            if (found != joints.end() && found->second.signature == signature)
+            {
+                found->second.seen = true;
+                *description.broken = found->second.broken;
+                continue;
+            }
+            if (found != joints.end())
+            {
+                removeJoint(found);
+            }
+            // Made again when its component or its bodies change, unbroken.
+            *description.broken = false;
+            const JPH::Ref<JPH::TwoBodyConstraintSettings> settings = settingsOf(description);
+            JPH::TwoBodyConstraint* const constraint = bodyInterface().CreateConstraint(settings, idB, bodyA->body);
+            if (constraint == nullptr)
+            {
+                continue;
+            }
+            system.AddConstraint(constraint);
+            if (description.useMotor && description.kind == JointKind::Hinge)
+            {
+                auto* const hinge = static_cast<JPH::HingeConstraint*>(constraint);
+                hinge->SetMotorState(JPH::EMotorState::Velocity);
+                hinge->SetTargetAngularVelocity(description.motorSpeed);
+            }
+            if (description.useMotor && description.kind == JointKind::Slider)
+            {
+                auto* const slider = static_cast<JPH::SliderConstraint*>(constraint);
+                slider->SetMotorState(JPH::EMotorState::Velocity);
+                slider->SetTargetVelocity(description.motorSpeed);
+            }
+            bodyInterface().ActivateConstraint(constraint);
+            joints[key] = JointRecord{
+                .owner = owner,
+                .entityA = bodyA->owner,
+                .entityB = bodyB != nullptr ? bodyB->owner : Entity{},
+                .kind = description.kind,
+                .constraint = constraint,
+                .bodyA = bodyA->body,
+                .bodyB = idB,
+                .collideConnected = description.collideConnected,
+                .breakForce = description.breakForce,
+                .breakTorque = description.breakTorque,
+                .signature = signature,
+                .seen = true,
+            };
+        }
+        for (auto joint = joints.begin(); joint != joints.end();)
+        {
+            if (!joint->second.seen)
+            {
+                const auto next = std::next(joint);
+                removeJoint(joint);
+                joint = next;
+            }
+            else
+            {
+                ++joint;
+            }
+        }
+        contactCollector.ignored.clear();
+        for (const auto& [key, joint] : joints)
+        {
+            if (joint.constraint != nullptr && !joint.collideConnected && !joint.bodyB.IsInvalid())
+            {
+                contactCollector.ignored.insert(ContactCollector::pairKey(joint.bodyA, joint.bodyB));
+            }
+        }
+    }
+
+    // The joints that held more than they bear during the step come undone.
+    void breakJoints(scene::Scene& scene, float seconds)
+    {
+        for (auto& [key, joint] : joints)
+        {
+            if (joint.constraint == nullptr || (joint.breakForce <= 0.0f && joint.breakTorque <= 0.0f))
+            {
+                continue;
+            }
+            // What the joint gave during the step, as impulses.
+            float force = 0.0f;
+            float torque = 0.0f;
+            switch (joint.kind)
+            {
+            case JointKind::Hinge: {
+                const auto* const hinge = static_cast<const JPH::HingeConstraint*>(joint.constraint.GetPtr());
+                force = hinge->GetTotalLambdaPosition().Length();
+                torque = lengthOf(hinge->GetTotalLambdaRotation());
+                break;
+            }
+            case JointKind::Slider: {
+                const auto* const slider = static_cast<const JPH::SliderConstraint*>(joint.constraint.GetPtr());
+                force = lengthOf(slider->GetTotalLambdaPosition());
+                torque = slider->GetTotalLambdaRotation().Length();
+                break;
+            }
+            case JointKind::Distance:
+                force = std::abs(static_cast<const JPH::DistanceConstraint*>(joint.constraint.GetPtr())->GetTotalLambdaPosition());
+                break;
+            case JointKind::Fixed: {
+                const auto* const fixed = static_cast<const JPH::FixedConstraint*>(joint.constraint.GetPtr());
+                force = fixed->GetTotalLambdaPosition().Length();
+                torque = fixed->GetTotalLambdaRotation().Length();
+                break;
+            }
+            }
+            force /= seconds;
+            torque /= seconds;
+            if ((joint.breakForce > 0.0f && force > joint.breakForce) || (joint.breakTorque > 0.0f && torque > joint.breakTorque))
+            {
+                system.RemoveConstraint(joint.constraint);
+                joint.constraint = nullptr;
+                joint.broken = true;
+                brokenJoints.push_back({joint.owner, joint.entityA, joint.entityB});
+                contactCollector.ignored.erase(ContactCollector::pairKey(joint.bodyA, joint.bodyB));
+                markBroken(scene, joint);
+            }
+        }
+    }
+
+    static void markBroken(scene::Scene& scene, const JointRecord& joint)
+    {
+        if (!scene.isAlive(joint.owner))
+        {
+            return;
+        }
+        switch (joint.kind)
+        {
+        case JointKind::Hinge:
+            if (auto* const hinge = scene.tryGet<scene::HingeJoint>(joint.owner))
+            {
+                hinge->broken = true;
+            }
+            break;
+        case JointKind::Slider:
+            if (auto* const slider = scene.tryGet<scene::SliderJoint>(joint.owner))
+            {
+                slider->broken = true;
+            }
+            break;
+        case JointKind::Distance:
+            if (auto* const distance = scene.tryGet<scene::DistanceJoint>(joint.owner))
+            {
+                distance->broken = true;
+            }
+            break;
+        case JointKind::Fixed:
+            if (auto* const fixed = scene.tryGet<scene::FixedJoint>(joint.owner))
+            {
+                fixed->broken = true;
+            }
+            break;
+        }
+    }
+
     [[nodiscard]] const BodyRecord* dynamicBody(Entity entity) const
     {
         const auto record = bodies.find(keyOf(entity) * 2);
@@ -1275,6 +1712,7 @@ void PhysicsWorld::step(scene::Scene& scene, core::Duration delta)
     }
     world.syncBodies(scene, seconds);
     world.syncCharacters(scene);
+    world.syncJoints(scene);
     world.moveCharacters(scene, seconds);
     if (const JPH::EPhysicsUpdateError error = world.system.Update(seconds, 1, world.temporaryAllocator.get(), world.jobs.get());
         error != JPH::EPhysicsUpdateError::None)
@@ -1282,6 +1720,7 @@ void PhysicsWorld::step(scene::Scene& scene, core::Duration delta)
         world.warnOnce(Entity{}, "update", "the simulation ran out of room for contacts; some collisions were missed");
     }
     world.gatherContacts();
+    world.breakJoints(scene, seconds);
     world.writeBodies(scene);
 }
 
@@ -1327,8 +1766,14 @@ std::span<const Contact> PhysicsWorld::contacts() const noexcept
     return m_implementation->contacts;
 }
 
+std::span<const JointBreak> PhysicsWorld::brokenJoints() const noexcept
+{
+    return m_implementation->brokenJoints;
+}
+
 void PhysicsWorld::clearContacts() noexcept
 {
+    m_implementation->brokenJoints.clear();
     m_implementation->contacts.clear();
 }
 
@@ -1472,6 +1917,13 @@ void PhysicsWorld::addImpulseAt(Entity entity, math::Vec3 impulse, math::Vec3 po
 std::size_t PhysicsWorld::bodyCount() const noexcept
 {
     return m_implementation->system.GetNumBodies();
+}
+
+std::size_t PhysicsWorld::jointCount() const noexcept
+{
+    return static_cast<std::size_t>(std::ranges::count_if(m_implementation->joints, [](const auto& joint) {
+        return joint.second.constraint != nullptr;
+    }));
 }
 
 const asset::PhysicsSettings& PhysicsWorld::settings() const noexcept

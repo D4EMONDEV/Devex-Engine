@@ -24,6 +24,7 @@
 #include <devex/scene/AudioComponents.hpp>
 #include <devex/scene/ComponentRegistry.hpp>
 #include <devex/scene/Components.hpp>
+#include <devex/scene/JointComponents.hpp>
 #include <devex/scene/NavigationComponents.hpp>
 #include <devex/scene/ParticleComponents.hpp>
 #include <devex/scene/SpriteComponents.hpp>
@@ -476,6 +477,15 @@ TEST_CASE("C# components hear collisions and triggers and query the physics", "[
         scene.add<devex::scene::RigidBody>(ball);
         scene.add<devex::scene::SphereCollider>(ball, devex::scene::SphereCollider{.radius = 0.25f});
     }
+    // A ball welded to the world by a joint too weak for it, which hears of the break.
+    const Entity hanger = scene.createEntity("Hanger");
+    scene.add<devex::scene::Transform>(hanger, devex::scene::Transform{.position = {20.0f, 3.0f, 0.0f}});
+    scene.add<devex::scene::RigidBody>(hanger);
+    scene.add<devex::scene::SphereCollider>(hanger, devex::scene::SphereCollider{.radius = 0.25f});
+    static_cast<void>(bumper->emplace(scene, hanger));
+    const Entity weld = scene.createEntity("Weld");
+    scene.add<devex::scene::Transform>(weld, devex::scene::Transform{.position = {20.0f, 3.0f, 0.0f}});
+    scene.add<devex::scene::FixedJoint>(weld, devex::scene::FixedJoint{.bodyA = {scene.uuid(hanger)}, .breakForce = 1.0f});
 
     ManagedGame::Frame frame{.scene = &scene, .physics = world->get()};
     game->runPhase(frame, SystemPhase::Start);
@@ -496,6 +506,8 @@ TEST_CASE("C# components hear collisions and triggers and query the physics", "[
     CHECK(field<int>(*bumper, bumperOf(zone), "hits") == 0);
     // The ray from above the block finds the ball resting on it.
     CHECK(field<std::string>(*bumper, bumperOf(block), "below") == "Ball");
+    CHECK(field<int>(*bumper, bumperOf(hanger), "breaks") == 1);
+    CHECK(field<int>(*bumper, bumperOf(block), "breaks") == 0);
     game->unloadAssembly();
 }
 

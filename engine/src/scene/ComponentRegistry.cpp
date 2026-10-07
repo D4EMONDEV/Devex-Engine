@@ -6,6 +6,7 @@
 #include <devex/scene/NavigationComponents.hpp>
 #include <devex/scene/Physics2DComponents.hpp>
 #include <devex/scene/PhysicsComponents.hpp>
+#include <devex/scene/JointComponents.hpp>
 #include <devex/scene/Light2DComponents.hpp>
 #include <devex/scene/SpriteComponents.hpp>
 #include <devex/scene/TilemapComponents.hpp>
@@ -127,6 +128,14 @@ ComponentRegistry& componentRegistry()
         builtins.add<PolygonCollider2D>();
         builtins.add<TilemapCollider2D>();
         builtins.add<CharacterController2D>();
+        builtins.add<HingeJoint>();
+        builtins.add<SliderJoint>();
+        builtins.add<DistanceJoint>();
+        builtins.add<FixedJoint>();
+        builtins.add<HingeJoint2D>();
+        builtins.add<SliderJoint2D>();
+        builtins.add<DistanceJoint2D>();
+        builtins.add<FixedJoint2D>();
         builtins.add<NavMeshSurface>();
         builtins.add<NavMeshAgent>();
         builtins.add<NavMeshObstacle>();

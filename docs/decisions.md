@@ -52,6 +52,7 @@ mais seulement explicitement ici : le code suit ce document, pas l'inverse.
 | Terrains des tuiles      | Ensembles de Godot 4, bits peints sur les tuiles, Connect ou Path   |
 | Éclairage 2D             | Lumières 2D de Godot, ombres en distances par direction, CanvasModulate |
 | Physique 2D              | Box2D 3.1 (MIT), module `Physics2D`, à côté du monde 3D            |
+| Articulations            | Entités à part comme Godot : charnière, glissière, distance, fixe, cassables |
 | Corps 2D                 | `RigidBody2D` + colliders 2D (boîte, cercle, capsule, polygone)    |
 | Collisions des tuiles    | `TilemapCollider2D` : rectangles fusionnés et corniches du tileset |
 | Personnages 2D           | `CharacterController2D` « move and slide » sur le mover de Box2D   |
@@ -2163,6 +2164,48 @@ Jalon 64, comme l'éclairage 2D de Godot : à part des lumières 3D, qui n'écla
   plateforme cinématique (`Shuttle2D`) fait traverser l'eau. Le code de collision écrit à la main
   a disparu de `code/Platformer.cs`.
 
+### Articulations
+
+Jalon 65, comme les `Joint3D` et `Joint2D` de Godot :
+
+- **Une entité à part** : une articulation est un composant sur sa propre entité, placée où les
+  corps se tiennent. Elle nomme le corps A et le corps B : les entités de leur `RigidBody` (ou
+  `RigidBody2D`), ou de leurs colliders. Sans corps B, A est tenu au monde. Les angles, la position
+  le long d'un axe et le moteur sont ceux de A par rapport à B. Son repère est celui de son entité
+  au moment où l'articulation se fait.
+- **Quatre types**, en 3D (Jolt) et en 2D (Box2D) :
+  - `HingeJoint` et `HingeJoint2D` : une charnière, autour de l'axe Z de l'entité (portes, roues,
+    leviers). Des angles limites, et un moteur qui la tourne à une vitesse avec un couple au plus ;
+    un moteur à vitesse nulle sert de frottement.
+  - `SliderJoint` et `SliderJoint2D` : une glissière, le long de l'axe X de l'entité (ascenseurs,
+    pistons), avec ses limites et son moteur.
+  - `DistanceJoint` et `DistanceJoint2D` : deux points à distance, l'origine de l'entité sur A et
+    `anchor` sur B. Rigide comme une tige, souple comme un ressort (fréquence et amortissement), ou
+    corde qui empêche seulement de s'écarter davantage. La longueur 0 garde celle de départ.
+  - `FixedJoint` et `FixedJoint2D` : une soudure des deux corps tels qu'ils sont.
+- **Collisions** : deux corps reliés ne se heurtent pas, sauf avec *Collide Connected*. Jolt les
+  écarte à la validation des contacts, Box2D de lui-même.
+- **Rupture** : une force et un couple de rupture, 0 pour jamais. Au-delà, mesuré à chaque pas sur
+  les impulsions de Jolt et les forces de Box2D, l'articulation se défait. Elle reste défaite, son
+  champ `broken` levé, jusqu'à ce que son composant ou ses corps changent. Le C++ lit
+  `PhysicsWorld::brokenJoints()` et `Physics2DWorld::brokenJoints()` (l'articulation et ses deux
+  corps). Le C# a `Physics.BrokenJoints` et `OnJointBreak(joint)`, appelé sur l'entité de
+  l'articulation et sur ses deux corps.
+- **Vie** : une articulation se fait dès que ses corps existent, et se refait quand son composant
+  ou ses corps changent (un corps reconstruit l'emporte avec lui). En Box2D, un corps statique sans
+  forme tient le rôle du monde.
+- **Éditeur** :
+  - les huit composants dans la fenêtre de création (*Physique* et *Physique 2D*), avec l'icône
+    d'un maillon ;
+  - dans la vue, toujours, le point d'attache, l'axe et l'arc des limites d'une charnière, la
+    course d'une glissière, la tige d'une distance et le carré d'une soudure ;
+  - une fois sélectionnée, des traits vers ses corps ; rouge une fois cassée.
+- **Bac à sable** :
+  - dans l'arène, une porte battante sur gonds, freinée par son moteur, que le joueur pousse ;
+  - un pendule lâché de 40°, que les balles relancent ;
+  - un panneau soudé en l'air qu'une balle lancée assez fort décroche ;
+  - dans le jeu de plateformes, une porte de pierre suspendue que le chevalier pousse en passant.
+
 ### Navigation
 
 - **Bibliothèque** : Recast & Detour 1.6 (zlib), par vcpkg (`recastnavigation`), derrière le module
@@ -3807,6 +3850,10 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     comme dans Godot ; masques de lumière et d'ombre, sprites et tilemaps *unshaded* ; normal maps
     réglées sur la planche ; ombres douces en distances par direction, tuiles qui occultent ;
     gizmos, masques en boutons et réglages dans l'éditeur ; le soir et la torche du bac à sable.
+65. ✅ **Articulations** — charnière, glissière, distance (tige, ressort, corde) et fixe, en 3D et en 2D,
+    sur une entité à part comme dans Godot ; limites, moteurs, corps reliés qui ne se heurtent pas,
+    rupture par force ou couple prévenue en C++ et en C# (`OnJointBreak`) ; gizmos dans la vue ;
+    porte, pendule et panneau dans l'arène, porte de pierre dans le jeu de plateformes.
 
 Ensuite, sans ordre figé : à choisir dans les pistes ci-dessous.
 
@@ -3822,10 +3869,11 @@ Ensuite, sans ordre figé : à choisir dans les pistes ci-dessous.
   phases, export vers d'autres plateformes du runtime .NET.
 - **Isolation du code du jeu** : protéger l'éditeur d'un plantage du module (processus séparé,
   gestion structurée des exceptions).
-- **Physique** : articulations (charnières, ressorts), véhicules, ragdolls, matériaux physiques par
+- **Physique** : articulations en rotule et à six degrés de liberté, moteurs vers une position,
+  articulations éditées à la souris dans la vue, véhicules, ragdolls, matériaux physiques par
   collider, marqueurs de modification pour les grandes scènes, simulation dans l'éditeur (mode
   Simulate), débogage visuel des contacts, pool de jobs de Jolt fusionné avec `core::JobSystem`.
-- **Physique 2D, la suite** : articulations (charnière, ressort, distance, souris), chaînes de
+- **Physique 2D, la suite** : articulations roue et souris, chaînes de
   segments pour les contours, polygones concaves découpés, matériaux par forme et par tuile,
   descendre d'une corniche (bas + saut), contacts des personnages avec le décor statique, lancers
   de formes et requêtes par boîte, vitesse horizontale constante sur les pentes, saut à hauteur

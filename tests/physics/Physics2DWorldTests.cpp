@@ -1,5 +1,6 @@
 #include <devex/physics2d/Physics2DWorld.hpp>
 #include <devex/scene/Components.hpp>
+#include <devex/scene/JointComponents.hpp>
 #include <devex/scene/Physics2DComponents.hpp>
 #include <devex/scene/Scene.hpp>
 #include <devex/scene/TilemapComponents.hpp>
@@ -646,4 +647,117 @@ TEST_CASE("A 2D character jumping just short of a one-way ledge falls back, and 
     simulate(*world, scene, 0.4, nullptr, [&] { controller.velocity.x = 5.0f; });
     CHECK(positionOf(scene, hero).x > 1.5f);
     CHECK(positionOf(scene, hero).y == Catch::Approx(0.0f).margin(restingMargin));
+}
+
+namespace {
+
+template <typename Joint>
+Entity addJoint2D(Scene& scene, Vec2 position, Joint joint)
+{
+    const Entity entity = scene.createEntity("Joint");
+    scene.add<devex::scene::Transform>(entity, devex::scene::Transform{.position = {position, 0.0f}});
+    scene.add<Joint>(entity, joint);
+    return entity;
+}
+
+Entity addDisc(Scene& scene, Vec2 position)
+{
+    const Entity disc = scene.createEntity("Disc");
+    scene.add<devex::scene::Transform>(disc, devex::scene::Transform{.position = {position, 0.0f}});
+    scene.add<devex::scene::RigidBody2D>(disc);
+    scene.add<devex::scene::CircleCollider2D>(disc);
+    return disc;
+}
+
+[[nodiscard]] devex::scene::EntityRef referenceOf(const Scene& scene, Entity entity)
+{
+    return devex::scene::EntityRef{scene.uuid(entity)};
+}
+
+} // namespace
+
+TEST_CASE("2D hinges swing bodies within their limits, turned by their motor", "[physics2d][joints]")
+{
+    Scene scene;
+    const Entity disc = addDisc(scene, {2.0f, 4.0f});
+    const Entity hinge = addJoint2D(scene, {0.0f, 4.0f}, devex::scene::HingeJoint2D{.bodyA = referenceOf(scene, disc)});
+    const auto world = makeWorld();
+    simulate(*world, scene, 0.6);
+    CHECK(world->jointCount() == 1);
+    CHECK(positionOf(scene, disc).y < 3.0f);
+    CHECK(devex::math::length(positionOf(scene, disc) - Vec2{0.0f, 4.0f}) == Catch::Approx(2.0f).margin(0.03f));
+
+    scene.get<devex::scene::Transform>(disc).position = {2.0f, 4.0f, 0.0f};
+    scene.get<devex::scene::RigidBody2D>(disc).linearVelocity = Vec2{0.0f};
+    scene.get<devex::scene::RigidBody2D>(disc).angularVelocity = 0.0f;
+    auto& joint = scene.get<devex::scene::HingeJoint2D>(hinge);
+    joint.useLimits = true;
+    joint.lowerAngle = -0.3f;
+    joint.upperAngle = 0.3f;
+    simulate(*world, scene, 2.0);
+    const Vec2 limited = positionOf(scene, disc) - Vec2{0.0f, 4.0f};
+    CHECK(std::atan2(limited.y, limited.x) == Catch::Approx(-0.3f).margin(0.05f));
+
+    Scene still;
+    const Entity wheel = addDisc(still, {0.0f, 0.0f});
+    addJoint2D(still, {0.0f, 0.0f}, devex::scene::HingeJoint2D{.bodyA = referenceOf(still, wheel), .useMotor = true, .motorSpeed = 2.0f});
+    const auto weightless = makeWorld(devex::asset::PhysicsSettings{.gravity = devex::math::Vec3{0.0f}});
+    simulate(*weightless, still, 1.0);
+    CHECK(still.get<devex::scene::RigidBody2D>(wheel).angularVelocity == Catch::Approx(2.0f).margin(0.05f));
+}
+
+TEST_CASE("2D sliders, distance joints and welds hold bodies, and break past their force", "[physics2d][joints]")
+{
+    Scene scene;
+    const Entity carried = addDisc(scene, {0.0f, 4.0f});
+    addJoint2D(scene, {0.0f, 4.0f},
+               devex::scene::SliderJoint2D{.bodyA = referenceOf(scene, carried), .useMotor = true, .motorSpeed = 1.0f});
+    const Entity dropped = addDisc(scene, {5.0f, 3.0f});
+    addJoint2D(scene, {5.0f, 3.0f},
+               devex::scene::DistanceJoint2D{.bodyA = referenceOf(scene, dropped), .anchor = {0.0f, 1.0f}, .length = 2.0f, .rope = true});
+    const Entity welded = addDisc(scene, {-5.0f, 4.0f});
+    const Entity weld = addJoint2D(scene, {-5.0f, 4.0f}, devex::scene::FixedJoint2D{.bodyA = referenceOf(scene, welded)});
+    const auto world = makeWorld();
+    simulate(*world, scene, 2.0);
+    CHECK(positionOf(scene, carried).y == Catch::Approx(4.0f).margin(0.02f));
+    CHECK(positionOf(scene, carried).x == Catch::Approx(2.0f).margin(0.15f));
+    CHECK(positionOf(scene, dropped).y == Catch::Approx(2.0f).margin(0.05f));
+    CHECK(positionOf(scene, welded).y == Catch::Approx(4.0f).margin(0.02f));
+    CHECK(world->jointCount() == 3);
+
+    scene.get<devex::scene::FixedJoint2D>(weld).breakForce = 2.0f;
+    std::vector<Entity> broken;
+    for (int step = 0; step < 3; ++step)
+    {
+        scene.updateTransforms();
+        world->step(scene, devex::core::Duration(stepSeconds));
+        for (const devex::physics2d::JointBreak& joint : world->brokenJoints())
+        {
+            broken.push_back(joint.joint);
+            CHECK(joint.bodyA == welded);
+        }
+        world->clearContacts();
+    }
+    CHECK(broken == std::vector<Entity>{weld});
+    CHECK(scene.get<devex::scene::FixedJoint2D>(weld).broken);
+    simulate(*world, scene, 0.5);
+    CHECK(positionOf(scene, welded).y < 3.5f);
+    CHECK(world->jointCount() == 2);
+
+    // Two discs that overlap, tied by a hinge: they collide only when the joint lets them.
+    for (const bool collide : {false, true})
+    {
+        Scene pair;
+        const Entity first = addDisc(pair, {0.0f, 1.0f});
+        const Entity second = addDisc(pair, {0.6f, 1.0f});
+        addJoint2D(pair, {0.3f, 1.0f},
+                   devex::scene::HingeJoint2D{.bodyA = referenceOf(pair, first), .bodyB = referenceOf(pair, second), .collideConnected = collide});
+        const auto paired = makeWorld(devex::asset::PhysicsSettings{.gravity = devex::math::Vec3{0.0f}});
+        std::vector<devex::physics2d::Contact> contacts;
+        simulate(*paired, pair, 0.2, &contacts);
+        CAPTURE(collide);
+        CHECK(std::ranges::any_of(contacts, [&](const devex::physics2d::Contact& contact) {
+                  return contact.phase == devex::physics2d::ContactPhase::Begin && contact.involves(first) && contact.other(first) == second;
+              }) == collide);
+    }
 }

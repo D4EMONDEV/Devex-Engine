@@ -3,6 +3,7 @@
 #include <devex/core/Hash.hpp>
 #include <devex/core/Log.hpp>
 #include <devex/scene/Components.hpp>
+#include <devex/scene/JointComponents.hpp>
 #include <devex/scene/Physics2DComponents.hpp>
 #include <devex/scene/Scene.hpp>
 #include <devex/scene/TilemapComponents.hpp>
@@ -337,6 +338,57 @@ struct CharacterRecord
     bool seen = false;
 };
 
+enum class JointKind : std::uint8_t
+{
+    Hinge,
+    Slider,
+    Distance,
+    Fixed,
+};
+
+// A joint of the scene, tying body A to body B or to the ground of the world.
+struct JointRecord
+{
+    Entity owner;
+    // The entities of its bodies; B is invalid for the world.
+    Entity entityA;
+    Entity entityB;
+    JointKind kind = JointKind::Hinge;
+    // Null once broken, or once Box2D destroyed it with one of its bodies.
+    b2JointId joint = b2_nullJointId;
+    float breakForce = 0.0f;
+    float breakTorque = 0.0f;
+    std::uint64_t signature = 0;
+    bool broken = false;
+    bool seen = false;
+};
+
+// What a joint asks of the bodies, read from its component: its frame in the plane, and the settings
+// of its kind.
+struct JointDescription
+{
+    JointKind kind = JointKind::Hinge;
+    math::Vec2 position{0.0f};
+    math::Vec2 axis{1.0f, 0.0f};
+    math::Vec2 anchor{0.0f};
+    const scene::EntityRef* bodyA = nullptr;
+    const scene::EntityRef* bodyB = nullptr;
+    bool collideConnected = false;
+    bool useLimits = false;
+    float lower = 0.0f;
+    float upper = 0.0f;
+    bool useMotor = false;
+    float motorSpeed = 0.0f;
+    float motorLimit = 0.0f;
+    float length = 0.0f;
+    bool rope = false;
+    float spring = 0.0f;
+    float damping = 0.0f;
+    float breakForce = 0.0f;
+    float breakTorque = 0.0f;
+    bool* broken = nullptr;
+};
+
 // The rectangles of a tilemap collider, kept while its cells and its tileset stay the same.
 struct TileCache
 {
@@ -547,6 +599,11 @@ struct Physics2DWorld::Implementation
     b2WorldId world = b2_nullWorldId;
     std::unordered_map<std::uint64_t, BodyRecord> bodies;
     std::unordered_map<std::uint64_t, CharacterRecord> characters;
+    // The joints, by the key of their entity and kind, the entities of those that broke since the
+    // contacts were cleared, and the static body without shapes that joints tie to the world.
+    std::unordered_map<std::uint64_t, JointRecord> joints;
+    std::vector<JointBreak> brokenJoints;
+    b2BodyId worldBody = b2_nullBodyId;
     std::unordered_map<std::uint64_t, TileCache> tileCaches;
     // The entity of each shape, by its stored id.
     std::unordered_map<std::uint64_t, Entity> shapeOwners;
@@ -628,6 +685,14 @@ struct Physics2DWorld::Implementation
         }
         bodies.clear();
         characters.clear();
+        // Their joints went with the bodies.
+        joints.clear();
+        brokenJoints.clear();
+        if (b2Body_IsValid(worldBody))
+        {
+            b2DestroyBody(worldBody);
+        }
+        worldBody = b2_nullBodyId;
         tileCaches.clear();
         shapeOwners.clear();
         touches.clear();
@@ -984,6 +1049,291 @@ struct Physics2DWorld::Implementation
                 rigidBody->linearVelocity = record.linearVelocity;
                 rigidBody->angularVelocity = record.angularVelocity;
             }
+        }
+    }
+
+    // ---- Joints ----
+
+    // The joint components of the scene, by the key of their entity and kind.
+    [[nodiscard]] static std::unordered_map<std::uint64_t, JointDescription> describeJoints(scene::Scene& scene)
+    {
+        std::unordered_map<std::uint64_t, JointDescription> descriptions;
+        const auto add = [&](Entity entity, JointKind kind, const scene::WorldTransform& transform, auto& component) {
+            JointDescription& joint = descriptions[keyOf(entity) * 4 + static_cast<std::uint64_t>(kind)];
+            joint.kind = kind;
+            joint.position = math::Vec2(transform.matrix[3]);
+            const math::Vec2 across(transform.matrix[0]);
+            joint.axis = math::length(across) > 1e-6f ? math::normalize(across) : math::Vec2{1.0f, 0.0f};
+            joint.bodyA = &component.bodyA;
+            joint.bodyB = &component.bodyB;
+            joint.collideConnected = component.collideConnected;
+            joint.breakForce = component.breakForce;
+            joint.broken = &component.broken;
+            return &joint;
+        };
+        for ([[maybe_unused]] auto [entity, transform, hinge] : scene.view<scene::WorldTransform, scene::HingeJoint2D>())
+        {
+            JointDescription& joint = *add(entity, JointKind::Hinge, transform, hinge);
+            joint.useLimits = hinge.useLimits;
+            joint.lower = hinge.lowerAngle;
+            joint.upper = hinge.upperAngle;
+            joint.useMotor = hinge.useMotor;
+            joint.motorSpeed = hinge.motorSpeed;
+            joint.motorLimit = hinge.maxMotorTorque;
+            joint.breakTorque = hinge.breakTorque;
+        }
+        for ([[maybe_unused]] auto [entity, transform, slider] : scene.view<scene::WorldTransform, scene::SliderJoint2D>())
+        {
+            JointDescription& joint = *add(entity, JointKind::Slider, transform, slider);
+            joint.useLimits = slider.useLimits;
+            joint.lower = slider.lowerLimit;
+            joint.upper = slider.upperLimit;
+            joint.useMotor = slider.useMotor;
+            joint.motorSpeed = slider.motorSpeed;
+            joint.motorLimit = slider.maxMotorForce;
+            joint.breakTorque = slider.breakTorque;
+        }
+        for ([[maybe_unused]] auto [entity, transform, distance] : scene.view<scene::WorldTransform, scene::DistanceJoint2D>())
+        {
+            JointDescription& joint = *add(entity, JointKind::Distance, transform, distance);
+            joint.anchor = math::Vec2(transform.matrix * math::Vec4(distance.anchor, 0.0f, 1.0f));
+            joint.length = distance.length;
+            joint.rope = distance.rope;
+            joint.spring = distance.spring;
+            joint.damping = distance.damping;
+        }
+        for ([[maybe_unused]] auto [entity, transform, fixed] : scene.view<scene::WorldTransform, scene::FixedJoint2D>())
+        {
+            add(entity, JointKind::Fixed, transform, fixed)->breakTorque = fixed.breakTorque;
+        }
+        return descriptions;
+    }
+
+    [[nodiscard]] static std::uint64_t jointSignature(const JointDescription& joint, b2BodyId bodyA, b2BodyId bodyB) noexcept
+    {
+        std::uint64_t signature = core::hash64(std::as_bytes(std::span(&joint.kind, 1)));
+        const auto add = [&](const auto& value) { signature = core::hash64(std::as_bytes(std::span(&value, 1)), signature); };
+        add(b2StoreBodyId(bodyA));
+        add(b2StoreBodyId(bodyB));
+        for (const float value : {joint.lower, joint.upper, joint.motorSpeed, joint.motorLimit, joint.length, joint.spring, joint.damping,
+                                  joint.breakForce, joint.breakTorque, joint.anchor.x, joint.anchor.y})
+        {
+            add(value);
+        }
+        add(static_cast<std::uint8_t>((joint.collideConnected ? 1 : 0) | (joint.useLimits ? 2 : 0) | (joint.useMotor ? 4 : 0) |
+                                      (joint.rope ? 8 : 0)));
+        return signature;
+    }
+
+    // Makes a joint in the world, body A of Box2D being B or the ground and its body B being A, so that
+    // its angle, its translation and its motor are those of A against B.
+    [[nodiscard]] b2JointId createJoint(const JointDescription& joint, b2BodyId bodyA, b2BodyId bodyB) const
+    {
+        const b2Vec2 point = toBox(joint.position);
+        const float relativeAngle = b2RelativeAngle(b2Body_GetRotation(bodyA), b2Body_GetRotation(bodyB));
+        switch (joint.kind)
+        {
+        case JointKind::Hinge: {
+            b2RevoluteJointDef definition = b2DefaultRevoluteJointDef();
+            definition.bodyIdA = bodyB;
+            definition.bodyIdB = bodyA;
+            definition.localAnchorA = b2Body_GetLocalPoint(bodyB, point);
+            definition.localAnchorB = b2Body_GetLocalPoint(bodyA, point);
+            definition.referenceAngle = relativeAngle;
+            definition.enableLimit = joint.useLimits;
+            definition.lowerAngle = std::clamp(std::min(joint.lower, joint.upper), -B2_PI, B2_PI);
+            definition.upperAngle = std::clamp(std::max(joint.lower, joint.upper), -B2_PI, B2_PI);
+            definition.enableMotor = joint.useMotor;
+            definition.motorSpeed = joint.motorSpeed;
+            definition.maxMotorTorque = std::max(joint.motorLimit, 0.0f);
+            definition.collideConnected = joint.collideConnected;
+            return b2CreateRevoluteJoint(world, &definition);
+        }
+        case JointKind::Slider: {
+            b2PrismaticJointDef definition = b2DefaultPrismaticJointDef();
+            definition.bodyIdA = bodyB;
+            definition.bodyIdB = bodyA;
+            definition.localAnchorA = b2Body_GetLocalPoint(bodyB, point);
+            definition.localAnchorB = b2Body_GetLocalPoint(bodyA, point);
+            definition.localAxisA = b2Normalize(b2Body_GetLocalVector(bodyB, toBox(joint.axis)));
+            definition.referenceAngle = relativeAngle;
+            definition.enableLimit = joint.useLimits;
+            definition.lowerTranslation = std::min(joint.lower, joint.upper);
+            definition.upperTranslation = std::max(joint.lower, joint.upper);
+            definition.enableMotor = joint.useMotor;
+            definition.motorSpeed = joint.motorSpeed;
+            definition.maxMotorForce = std::max(joint.motorLimit, 0.0f);
+            definition.collideConnected = joint.collideConnected;
+            return b2CreatePrismaticJoint(world, &definition);
+        }
+        case JointKind::Distance: {
+            b2DistanceJointDef definition = b2DefaultDistanceJointDef();
+            definition.bodyIdA = bodyB;
+            definition.bodyIdB = bodyA;
+            definition.localAnchorA = b2Body_GetLocalPoint(bodyB, toBox(joint.anchor));
+            definition.localAnchorB = b2Body_GetLocalPoint(bodyA, point);
+            const float length = std::max(joint.length > 0.0f ? joint.length : math::length(joint.anchor - joint.position), 0.01f);
+            definition.length = length;
+            // A rope is soft within its limits, from nothing to its length.
+            definition.enableLimit = joint.rope;
+            definition.minLength = 0.0f;
+            definition.maxLength = length;
+            definition.enableSpring = joint.rope || joint.spring > 0.0f;
+            definition.hertz = std::max(joint.spring, 0.0f);
+            definition.dampingRatio = std::max(joint.damping, 0.0f);
+            definition.collideConnected = joint.collideConnected;
+            return b2CreateDistanceJoint(world, &definition);
+        }
+        case JointKind::Fixed: {
+            b2WeldJointDef definition = b2DefaultWeldJointDef();
+            definition.bodyIdA = bodyB;
+            definition.bodyIdB = bodyA;
+            definition.localAnchorA = b2Body_GetLocalPoint(bodyB, point);
+            definition.localAnchorB = b2Body_GetLocalPoint(bodyA, point);
+            definition.referenceAngle = relativeAngle;
+            definition.collideConnected = joint.collideConnected;
+            return b2CreateWeldJoint(world, &definition);
+        }
+        }
+        return b2_nullJointId;
+    }
+
+    // Makes the joints of new components and of new bodies, makes again those whose component changed,
+    // and removes those whose component or bodies are gone. A broken joint stays broken.
+    void syncJoints(scene::Scene& scene)
+    {
+        for (auto& [key, joint] : joints)
+        {
+            joint.seen = false;
+        }
+        for (auto& [key, description] : describeJoints(scene))
+        {
+            const Entity owner = entityOf(key / 4);
+            const auto body = [&](const scene::EntityRef& reference) -> const BodyRecord* {
+                const Entity entity = reference.isNil() ? Entity{} : scene.resolve(reference);
+                const auto record = entity.isValid() ? bodies.find(keyOf(entity)) : bodies.end();
+                return record != bodies.end() ? &record->second : nullptr;
+            };
+            const BodyRecord* const bodyA = body(*description.bodyA);
+            const BodyRecord* const bodyB = body(*description.bodyB);
+            if (bodyA == nullptr || (!description.bodyB->isNil() && bodyB == nullptr) || bodyA == bodyB)
+            {
+                warnOnce(owner, "joint",
+                         std::format("the 2D joint of '{}' needs a body A, and a body B other than A when it names one: entities "
+                                     "with a RigidBody2D or 2D colliders",
+                                     scene.name(owner)));
+                continue;
+            }
+            if (bodyB == nullptr && !b2Body_IsValid(worldBody))
+            {
+                b2BodyDef definition = b2DefaultBodyDef();
+                worldBody = b2CreateBody(world, &definition);
+            }
+            const b2BodyId idB = bodyB != nullptr ? bodyB->body : worldBody;
+            const std::uint64_t signature = jointSignature(description, bodyA->body, idB);
+            const auto found = joints.find(key);
+            if (found != joints.end() && found->second.signature == signature &&
+                (found->second.broken || b2Joint_IsValid(found->second.joint)))
+            {
+                found->second.seen = true;
+                *description.broken = found->second.broken;
+                continue;
+            }
+            if (found != joints.end())
+            {
+                if (b2Joint_IsValid(found->second.joint))
+                {
+                    b2DestroyJoint(found->second.joint);
+                }
+                joints.erase(found);
+            }
+            // Made again when its component or its bodies change, unbroken.
+            *description.broken = false;
+            const b2JointId joint = createJoint(description, bodyA->body, idB);
+            b2Body_SetAwake(bodyA->body, true);
+            joints[key] = JointRecord{
+                .owner = owner,
+                .entityA = bodyA->owner,
+                .entityB = bodyB != nullptr ? bodyB->owner : Entity{},
+                .kind = description.kind,
+                .joint = joint,
+                .breakForce = description.breakForce,
+                .breakTorque = description.breakTorque,
+                .signature = signature,
+                .seen = true,
+            };
+        }
+        for (auto joint = joints.begin(); joint != joints.end();)
+        {
+            if (!joint->second.seen)
+            {
+                if (b2Joint_IsValid(joint->second.joint))
+                {
+                    b2DestroyJoint(joint->second.joint);
+                }
+                joint = joints.erase(joint);
+            }
+            else
+            {
+                ++joint;
+            }
+        }
+    }
+
+    // The joints that held more than they bear during the step come undone.
+    void breakJoints(scene::Scene& scene)
+    {
+        for (auto& [key, joint] : joints)
+        {
+            if (joint.broken || !b2Joint_IsValid(joint.joint) || (joint.breakForce <= 0.0f && joint.breakTorque <= 0.0f))
+            {
+                continue;
+            }
+            const float force = b2Length(b2Joint_GetConstraintForce(joint.joint));
+            const float torque = std::abs(b2Joint_GetConstraintTorque(joint.joint));
+            if ((joint.breakForce > 0.0f && force > joint.breakForce) || (joint.breakTorque > 0.0f && torque > joint.breakTorque))
+            {
+                b2DestroyJoint(joint.joint);
+                joint.joint = b2_nullJointId;
+                joint.broken = true;
+                brokenJoints.push_back({joint.owner, joint.entityA, joint.entityB});
+                markBroken(scene, joint);
+            }
+        }
+    }
+
+    static void markBroken(scene::Scene& scene, const JointRecord& joint)
+    {
+        if (!scene.isAlive(joint.owner))
+        {
+            return;
+        }
+        switch (joint.kind)
+        {
+        case JointKind::Hinge:
+            if (auto* const hinge = scene.tryGet<scene::HingeJoint2D>(joint.owner))
+            {
+                hinge->broken = true;
+            }
+            break;
+        case JointKind::Slider:
+            if (auto* const slider = scene.tryGet<scene::SliderJoint2D>(joint.owner))
+            {
+                slider->broken = true;
+            }
+            break;
+        case JointKind::Distance:
+            if (auto* const distance = scene.tryGet<scene::DistanceJoint2D>(joint.owner))
+            {
+                distance->broken = true;
+            }
+            break;
+        case JointKind::Fixed:
+            if (auto* const fixed = scene.tryGet<scene::FixedJoint2D>(joint.owner))
+            {
+                fixed->broken = true;
+            }
+            break;
         }
     }
 
@@ -1465,9 +1815,11 @@ void Physics2DWorld::step(scene::Scene& scene, core::Duration delta)
     }
     world.syncBodies(scene, seconds);
     world.syncCharacters(scene);
+    world.syncJoints(scene);
     // Characters move against the bodies where the last step left them.
     world.moveCharacters(scene, seconds);
     b2World_Step(world.world, seconds, world.config.subSteps);
+    world.breakJoints(scene);
     world.writeBodies(scene);
     world.gatherContacts();
 }
@@ -1515,8 +1867,14 @@ std::span<const Contact> Physics2DWorld::contacts() const noexcept
     return m_implementation->contacts;
 }
 
+std::span<const JointBreak> Physics2DWorld::brokenJoints() const noexcept
+{
+    return m_implementation->brokenJoints;
+}
+
 void Physics2DWorld::clearContacts() noexcept
 {
+    m_implementation->brokenJoints.clear();
     m_implementation->contacts.clear();
 }
 
@@ -1618,6 +1976,13 @@ void Physics2DWorld::addImpulse(scene::Entity entity, math::Vec2 impulse)
 std::size_t Physics2DWorld::bodyCount() const noexcept
 {
     return m_implementation->bodies.size() + m_implementation->characters.size();
+}
+
+std::size_t Physics2DWorld::jointCount() const noexcept
+{
+    return static_cast<std::size_t>(std::ranges::count_if(m_implementation->joints, [](const auto& joint) {
+        return b2Joint_IsValid(joint.second.joint);
+    }));
 }
 
 math::Vec2 Physics2DWorld::gravity() const noexcept

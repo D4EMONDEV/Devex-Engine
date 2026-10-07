@@ -70,6 +70,14 @@ public abstract class Component
     {
     }
 
+    /// <summary>
+    /// Called, before Update, when a joint broke past its force or torque: on the entity of the joint,
+    /// and on the bodies it tied.
+    /// </summary>
+    public virtual void OnJointBreak(Entity joint)
+    {
+    }
+
     /// <summary>The Transform of the entity, changed in place.</summary>
     public ref Transform Transform => ref Entity.Transform;
 

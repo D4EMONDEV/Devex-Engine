@@ -294,6 +294,7 @@ struct NativeApi
     void (*tileTerrain)(void* scene, Entity tilemap, int x, int y, int* set, int* terrain);
     void (*findTerrain)(void* scene, Entity tilemap, const char* name, int* set, int* terrain);
     void (*paintTerrain)(void* scene, Entity tilemap, const int* cells, int count, int set, int terrain, int path);
+    int (*brokenJoints)(const physics::JointBreak** joints);
 };
 
 // The functions the engine calls, in the order of Devex.Managed's ManagedApi.
@@ -308,7 +309,7 @@ struct ManagedApi
 };
 
 // Devex.Managed's Bootstrap.Version: both sides change it with the function tables.
-constexpr int bootstrapVersion = 23;
+constexpr int bootstrapVersion = 24;
 
 struct BootstrapArguments
 {
@@ -876,6 +877,24 @@ int apiContacts(const physics::Contact** contacts)
                           contact.first, contact.second, contact.trigger});
     }
     *contacts = merged.data();
+    return static_cast<int>(merged.size());
+}
+
+// The joints of both worlds that broke, which C# sees as one list.
+int apiBrokenJoints(const physics::JointBreak** joints)
+{
+    const std::span<const physics::JointBreak> joints3d =
+        physicsWorld() != nullptr ? physicsWorld()->brokenJoints() : std::span<const physics::JointBreak>{};
+    const std::span<const physics2d::JointBreak> joints2d =
+        physics2dWorld() != nullptr ? physics2dWorld()->brokenJoints() : std::span<const physics2d::JointBreak>{};
+    // Kept until the next call, while C# reads it.
+    static std::vector<physics::JointBreak> merged;
+    merged.assign(joints3d.begin(), joints3d.end());
+    for (const physics2d::JointBreak& joint : joints2d)
+    {
+        merged.push_back({joint.joint, joint.bodyA, joint.bodyB});
+    }
+    *joints = merged.data();
     return static_cast<int>(merged.size());
 }
 
@@ -2496,6 +2515,7 @@ int apiParticleCount(Entity entity)
         .tileTerrain = &apiTileTerrain,
         .findTerrain = &apiFindTerrain,
         .paintTerrain = &apiPaintTerrain,
+        .brokenJoints = &apiBrokenJoints,
     };
 }
 

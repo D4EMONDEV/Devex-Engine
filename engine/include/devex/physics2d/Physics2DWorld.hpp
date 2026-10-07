@@ -64,6 +64,15 @@ struct DEVEX_API Contact
     }
 };
 
+// A joint that broke: its entity, and those of the bodies it tied; body B is invalid for the world.
+// The same layout as the breaks of 3D physics.
+struct DEVEX_API JointBreak
+{
+    scene::Entity joint;
+    scene::Entity bodyA;
+    scene::Entity bodyB;
+};
+
 // Cells a tilemap collides with: from the bottom-left cell, so many cells across and up. A one-way
 // rectangle is a ledge along the top of its cells.
 struct DEVEX_API TileRectangle
@@ -118,8 +127,10 @@ public:
     // steps, by alpha from the previous one, in world transforms only.
     void interpolate(scene::Scene& scene, float alpha);
 
-    // The contacts that began or ended during the steps since clearContacts.
+    // The contacts that began or ended during the steps since clearContacts, and the joints that broke
+    // during them, which clearContacts forgets too.
     [[nodiscard]] std::span<const Contact> contacts() const noexcept;
+    [[nodiscard]] std::span<const JointBreak> brokenJoints() const noexcept;
     void clearContacts() noexcept;
 
     // The closest body along a ray within the distance, among the layers of the mask, through
@@ -137,8 +148,9 @@ public:
     void addTorque(scene::Entity entity, float torque);
     void addImpulse(scene::Entity entity, math::Vec2 impulse);
 
-    // Bodies in the simulation, the ones of characters included.
+    // Bodies in the simulation, the ones of characters included, and joints holding them.
     [[nodiscard]] std::size_t bodyCount() const noexcept;
+    [[nodiscard]] std::size_t jointCount() const noexcept;
     [[nodiscard]] math::Vec2 gravity() const noexcept;
 
 private:

@@ -51,6 +51,7 @@ internal static unsafe class GameRuntime
         public List<Entity> Order { get; } = [];
         public bool HandlesCollisions { get; init; }
         public bool HandlesTriggers { get; init; }
+        public bool HandlesJointBreaks { get; init; }
         // The zones of the profiler its methods run in, named once.
         public string StartZone => field ??= Name + ".Start";
         public string UpdateZone => field ??= Name + ".Update";
@@ -117,6 +118,7 @@ internal static unsafe class GameRuntime
                                     Overrides(type, nameof(Component.OnCollisionExit)),
                 HandlesTriggers = Overrides(type, nameof(Component.OnTriggerEnter)) ||
                                   Overrides(type, nameof(Component.OnTriggerExit)),
+                HandlesJointBreaks = Overrides(type, nameof(Component.OnJointBreak)),
             };
             if (Types.Any(other => other.Name == info.Name))
             {
@@ -223,6 +225,7 @@ internal static unsafe class GameRuntime
             if (phase == SystemPhase.Update)
             {
                 DispatchContacts();
+                DispatchJointBreaks();
             }
             if (phase != SystemPhase.Start)
             {
@@ -475,6 +478,51 @@ internal static unsafe class GameRuntime
                 Notify(info, contact.First, contact.Second, contact);
                 Notify(info, contact.Second, contact.First, contact);
             }
+        }
+    }
+
+    private static void DispatchJointBreaks()
+    {
+        ReadOnlySpan<JointBreak> broken = Physics.BrokenJoints;
+        if (broken.IsEmpty)
+        {
+            return;
+        }
+        // Copied, since the handlers may change the scene.
+        JointBreak[] copy = broken.ToArray();
+        foreach (ComponentTypeInfo info in Types)
+        {
+            if (!info.HandlesJointBreaks)
+            {
+                continue;
+            }
+            foreach (JointBreak joint in copy)
+            {
+                NotifyBreak(info, joint.Joint, joint.Joint);
+                NotifyBreak(info, joint.BodyA, joint.Joint);
+                NotifyBreak(info, joint.BodyB, joint.Joint);
+            }
+        }
+    }
+
+    private static void NotifyBreak(ComponentTypeInfo info, Entity self, Entity joint)
+    {
+        if (!info.Instances.TryGetValue(self.Key, out Component? instance))
+        {
+            return;
+        }
+        Coroutines.CurrentOwner = instance;
+        try
+        {
+            instance.OnJointBreak(joint);
+        }
+        catch (Exception exception)
+        {
+            Report($"{info.Name} of '{self.Name}'", $"{info.Name}.joint", exception);
+        }
+        finally
+        {
+            Coroutines.CurrentOwner = null;
         }
     }
 

@@ -66,11 +66,12 @@ captures de l'éditeur, scènes de base, entrées, scripts C#, animations, colli
   (`PointLight2D`, `DirectionalLight2D`, `LightOccluder2D`, `CanvasModulate`), préfabs liés
   (scènes imbriquées avec leurs modifications) ;
 - `Devex::Physics` : simulation Jolt Physics des corps rigides, colliders (primitives, maillages,
-  déclencheurs) et personnages, couches de collision, requêtes, forces, contacts, interpolation ;
+  déclencheurs) et personnages, couches de collision, requêtes, forces, contacts, interpolation,
+  articulations (charnière, glissière, distance, fixe) avec limites, moteurs et rupture ;
 - `Devex::Physics2D` : simulation Box2D dans le plan XY des corps rigides 2D, colliders (boîte,
   cercle, capsule, polygone, déclencheurs, à sens unique), collider généré des tuiles et
   personnages « move and slide » (pentes, marches, corniches, plateformes mobiles, poussée),
-  requêtes, forces et contacts, partagés avec le C# ;
+  requêtes, forces et contacts, partagés avec le C#, et les mêmes articulations qu'en 3D ;
 - `Devex::Navigation` : Recast & Detour, maillage de navigation cuit depuis les colliders statiques
   (`.dvxnavmesh`, tuiles compressées), agents `NavMeshAgent` qui marchent en foule en s'évitant,
   obstacles `NavMeshObstacle` qui découpent le maillage pendant le jeu, chemins, échantillonnage
@@ -195,12 +196,14 @@ captures de l'éditeur, scènes de base, entrées, scripts C#, animations, colli
   groupe Music ; un robot rigué patrouille par le maillage de navigation, attend et salue le
   joueur par sa machine à états (`assets/animators/robot.dvxanimator`, `code/Robot.cs`), deux
   drones suivent le joueur en se contournant (`code/Follower.cs`), et la porte fermée comme les
-  caisses poussées découpent le maillage ;
+  caisses poussées découpent le maillage ; des articulations y tiennent une porte battante sur
+  gonds, un pendule et un panneau soudé qu'une balle décroche ;
   Tab passe à la scène `platformer`, un jeu de plateformes en pixel art (un chevalier animé qui
   court et saute sur un niveau de tuiles simulé par la physique 2D, dont une île flottante
   peinte au pinceau de terrain, au soir, sous une torche qui vacille et dont les corniches font
   de l'ombre sur un mur à normal map, traverse les corniches
-  par-dessous, pousse des caisses, prend une plateforme mobile au-dessus de l'eau animée et
+  par-dessous, pousse des caisses et une porte de pierre suspendue à une charnière, prend une
+  plateforme mobile au-dessus de l'eau animée et
   revient au départ s'il y tombe, des pièces qui tournent ramassées par déclencheur, un
   coucher de soleil qui défile plus lentement, un mur éclairé par une torche,
   `code/Platformer.cs`), d'où Tab mène à la

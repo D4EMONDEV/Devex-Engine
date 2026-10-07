@@ -21,8 +21,8 @@ namespace devex::scene {
 class Scene;
 }
 
-// Rigid bodies, colliders and characters simulated with Jolt Physics, from the physics components
-// of a scene.
+// Rigid bodies, colliders, joints and characters simulated with Jolt Physics, from the physics
+// components of a scene.
 namespace devex::physics {
 
 // A mask of collision layers with every layer.
@@ -65,6 +65,14 @@ struct DEVEX_API Contact
     }
 };
 
+// A joint that broke: its entity, and those of the bodies it tied; body B is invalid for the world.
+struct DEVEX_API JointBreak
+{
+    scene::Entity joint;
+    scene::Entity bodyA;
+    scene::Entity bodyB;
+};
+
 // The triangles of a mesh asset, for mesh colliders; null when the mesh cannot be loaded. The data
 // must stay valid while the world exists.
 using MeshSource = std::function<const asset::MeshData*(asset::AssetId mesh)>;
@@ -103,8 +111,10 @@ public:
     // on displays faster than the fixed step. Call after Scene::updateTransforms, before rendering.
     void interpolate(scene::Scene& scene, float alpha);
 
-    // The contacts that began or ended during the steps since clearContacts.
+    // The contacts that began or ended during the steps since clearContacts, and the joints that broke
+    // during them, which clearContacts forgets too.
     [[nodiscard]] std::span<const Contact> contacts() const noexcept;
+    [[nodiscard]] std::span<const JointBreak> brokenJoints() const noexcept;
     void clearContacts() noexcept;
 
     // The closest body along a ray within the distance, among the layers of the mask, ignoring the
@@ -131,8 +141,9 @@ public:
     void addImpulse(scene::Entity entity, math::Vec3 impulse);
     void addImpulseAt(scene::Entity entity, math::Vec3 impulse, math::Vec3 point);
 
-    // Bodies in the simulation, including the ones inside characters.
+    // Bodies in the simulation, including the ones inside characters, and joints holding them.
     [[nodiscard]] std::size_t bodyCount() const noexcept;
+    [[nodiscard]] std::size_t jointCount() const noexcept;
     [[nodiscard]] const asset::PhysicsSettings& settings() const noexcept;
 
 private:

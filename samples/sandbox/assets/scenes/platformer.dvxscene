@@ -1307,3 +1307,65 @@ scene = asset("4bd5feef-9c35-4dfe-88fe-a66b488e9f9e")
 
 [component type="CanvasModulate"]
 color = vec3(0.38, 0.36, 0.55)
+
+[entity uuid="0602e21f-5fcc-50b2-a9fc-8b21e7d89ce6" name="Swing gate"]
+
+[component type="Transform"]
+position = vec3(17.5, -1.6, 0.2)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="SpriteRenderer"]
+sprite = asset("83ec99c0-4e03-53ff-b86e-4e2af532fcca")
+color = vec4(1, 1, 1, 1)
+intensity = 1
+flip_x = false
+flip_y = false
+draw_mode = "tiled"
+size = vec2(0.5, 2)
+sorting_layer = "Default"
+order = 0
+blend = "alpha"
+lit = false
+unshaded = false
+light_mask = 1
+
+[component type="RigidBody2D"]
+type = "dynamic"
+mass = 3
+friction = 0.6
+restitution = 0
+linear_damping = 0
+angular_damping = 0.3
+gravity_scale = 3
+layer = 0
+fixed_rotation = false
+continuous_collision = false
+linear_velocity = vec2(0, 0)
+angular_velocity = 0
+
+[component type="BoxCollider2D"]
+size = vec2(0.5, 2)
+center = vec2(0, 0)
+trigger = false
+one_way = false
+
+[entity uuid="e0509dab-be68-52d8-a242-24ae14c27492" name="Gate hinge"]
+
+[component type="Transform"]
+position = vec3(17.5, -0.6, 0.2)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="HingeJoint2D"]
+body_a = entity("0602e21f-5fcc-50b2-a9fc-8b21e7d89ce6")
+body_b = entity()
+collide_connected = false
+use_limits = true
+lower_angle = -1.3
+upper_angle = 1.3
+use_motor = true
+motor_speed = 0
+max_motor_torque = 2
+break_force = 0
+break_torque = 0

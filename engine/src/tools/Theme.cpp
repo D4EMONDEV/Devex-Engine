@@ -3,6 +3,7 @@
 #include <devex/core/Log.hpp>
 #include <devex/core/Path.hpp>
 #include <devex/scene/AnimationComponents.hpp>
+#include <devex/scene/JointComponents.hpp>
 #include <devex/scene/Light2DComponents.hpp>
 #include <devex/scene/ParticleComponents.hpp>
 #include <devex/scene/SpriteComponents.hpp>
@@ -110,7 +111,7 @@ ThemeMetrics g_metrics = deriveThemeMetrics(ThemeSettings{}, 1.0f);
 
 [[nodiscard]] bool isEngineComponent(std::string_view name) noexcept
 {
-    constexpr std::array<std::string_view, 65> engineComponents{
+    constexpr std::array<std::string_view, 73> engineComponents{
         "Transform",       "MeshRenderer",        "Camera",       "DirectionalLight",
         "PointLight",      "SpotLight",           "Environment",  "RigidBody",
         "BoxCollider",     "SphereCollider",      "CapsuleCollider", "CylinderCollider",
@@ -126,7 +127,9 @@ ThemeMetrics g_metrics = deriveThemeMetrics(ThemeSettings{}, 1.0f);
         "UiSplitter",      "UiFoldout",           "UiVirtualList", "UiTable",
         "UiTableRow",      "UiDragSource",        "UiDropTarget", "UiNumberField",
         "UiColorPicker",   "UiPlot",              "UiLine",       "UiTextArea",
-        "PointLight2D",    "DirectionalLight2D",  "LightOccluder2D", "CanvasModulate"};
+        "PointLight2D",    "DirectionalLight2D",  "LightOccluder2D", "CanvasModulate",
+        "HingeJoint",      "SliderJoint",         "DistanceJoint", "FixedJoint",
+        "HingeJoint2D",    "SliderJoint2D",       "DistanceJoint2D", "FixedJoint2D"};
     return std::ranges::find(engineComponents, name) != engineComponents.end();
 }
 
@@ -473,6 +476,12 @@ EntityIcon entityIcon(const scene::Scene& scene, scene::Entity entity)
     {
         return {icons::PersonStanding, colors.physics};
     }
+    if (scene.has<scene::HingeJoint>(entity) || scene.has<scene::SliderJoint>(entity) || scene.has<scene::DistanceJoint>(entity) ||
+        scene.has<scene::FixedJoint>(entity) || scene.has<scene::HingeJoint2D>(entity) || scene.has<scene::SliderJoint2D>(entity) ||
+        scene.has<scene::DistanceJoint2D>(entity) || scene.has<scene::FixedJoint2D>(entity))
+    {
+        return {icons::Link, colors.physics};
+    }
     if (scene.has<scene::NavMeshSurface>(entity) || scene.has<scene::NavMeshAgent>(entity))
     {
         return {icons::Footprints, colors.physics};
@@ -578,6 +587,10 @@ EntityIcon componentIcon(std::string_view componentName)
     if (componentName == "CharacterController" || componentName == "CharacterController2D")
     {
         return {icons::PersonStanding, colors.physics};
+    }
+    if (componentName.find("Joint") != std::string_view::npos)
+    {
+        return {icons::Link, colors.physics};
     }
     if (componentName == "Animator")
     {

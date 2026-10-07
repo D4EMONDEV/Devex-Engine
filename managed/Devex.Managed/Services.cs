@@ -156,6 +156,15 @@ public readonly struct Contact
     public Entity Other(Entity entity) => First == entity ? Second : First;
 }
 
+/// <summary>A joint that broke during the frame, and the bodies it tied; BodyB is not valid for the world.</summary>
+[StructLayout(LayoutKind.Sequential)]
+public readonly struct JointBreak
+{
+    public readonly Entity Joint;
+    public readonly Entity BodyA;
+    public readonly Entity BodyB;
+}
+
 /// <summary>The simulation of the scene: queries, forces, and the contacts of the frame.</summary>
 public static unsafe class Physics
 {
@@ -212,6 +221,20 @@ public static unsafe class Physics
             Contact* contacts;
             int count = Bootstrap.Native.Contacts(&contacts);
             return count == 0 ? [] : new ReadOnlySpan<Contact>(contacts, count);
+        }
+    }
+
+    /// <summary>
+    /// The joints, of 3D and 2D physics, that broke past their force or torque during the physics steps
+    /// of the frame, seen during Update. A broken joint stays broken until its component changes.
+    /// </summary>
+    public static ReadOnlySpan<JointBreak> BrokenJoints
+    {
+        get
+        {
+            JointBreak* joints;
+            int count = Bootstrap.Native.BrokenJoints(&joints);
+            return count == 0 ? [] : new ReadOnlySpan<JointBreak>(joints, count);
         }
     }
 }

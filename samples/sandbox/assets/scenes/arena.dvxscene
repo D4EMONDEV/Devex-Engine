@@ -1028,3 +1028,186 @@ scale = vec3(1, 1, 1)
 [component type="SkinnedMeshRenderer"]
 mesh = asset("6666e9b6-13db-41d2-84f0-503c34c1760a")
 bones = list(entity("0fc39f7f-23fa-5a3f-b187-69da16b5c43f"), entity("784f64df-47e9-5f6e-a85b-9ae60436c013"), entity("fade1901-4e0e-5df2-a8e2-b11844bc42ba"), entity("7723bbbc-2bdc-59ee-b591-f7c10c01e4d0"), entity("d12458ab-0790-55da-b5c8-875f94366d5e"), entity("a2521bcf-20ad-57c0-b02f-3b4889e248c1"), entity("787044a7-8576-5bd4-ab7e-6690833de44f"), entity("b952e15f-d457-5fd3-a2c1-e4d70a88c836"), entity("df43d481-6eba-562b-b40a-456417597f45"), entity("c65d2aa9-73e1-5c78-92e4-bffbf2cd2b83"), entity("3753dd05-46eb-5991-bea9-2554dd17aaa3"))
+
+[entity uuid="3184333b-8f1a-5e52-b032-2fd4a16e1450" name="Joints"]
+
+[component type="Transform"]
+position = vec3(0, 0, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="2110c93a-8e4e-5daf-99f9-52bdcb1f431b" name="Swing door"]
+parent = "3184333b-8f1a-5e52-b032-2fd4a16e1450"
+
+[component type="Transform"]
+position = vec3(6.7, 1.2, 6)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.4, 2.4, 0.12)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("4b8f2d61-9c0e-4a7b-b3d5-18e6f0a9c247")
+
+[component type="RigidBody"]
+type = "dynamic"
+mass = 15
+friction = 0.5
+restitution = 0
+linear_damping = 0.05
+angular_damping = 0.5
+gravity_scale = 1
+layer = 0
+lock_rotation_x = false
+lock_rotation_y = false
+lock_rotation_z = false
+continuous_collision = false
+linear_velocity = vec3(0, 0, 0)
+angular_velocity = vec3(0, 0, 0)
+
+[component type="BoxCollider"]
+size = vec3(1, 1, 1)
+center = vec3(0, 0, 0)
+trigger = false
+
+[entity uuid="fb93b6ae-24a4-5dd4-82e8-ee8fc59bcc8d" name="Door hinge"]
+parent = "3184333b-8f1a-5e52-b032-2fd4a16e1450"
+
+[component type="Transform"]
+position = vec3(6, 1.2, 6)
+rotation = quat(-0.707107, 0, 0, 0.707107)
+scale = vec3(1, 1, 1)
+
+[component type="HingeJoint"]
+body_a = entity("2110c93a-8e4e-5daf-99f9-52bdcb1f431b")
+body_b = entity()
+collide_connected = false
+use_limits = true
+lower_angle = -1.7453293
+upper_angle = 1.7453293
+use_motor = true
+motor_speed = 0
+max_motor_torque = 12
+break_force = 0
+break_torque = 0
+
+[entity uuid="f30742f9-b1de-5463-ab65-e3324bb62295" name="Pendulum"]
+parent = "3184333b-8f1a-5e52-b032-2fd4a16e1450"
+
+[component type="Transform"]
+position = vec3(-5, 4.5, 3)
+rotation = quat(0.3420201, 0, 0, 0.9396926)
+scale = vec3(1, 1, 1)
+
+[component type="RigidBody"]
+type = "dynamic"
+mass = 8
+friction = 0.5
+restitution = 0
+linear_damping = 0.05
+angular_damping = 0.1
+gravity_scale = 1
+layer = 0
+lock_rotation_x = false
+lock_rotation_y = false
+lock_rotation_z = false
+continuous_collision = false
+linear_velocity = vec3(0, 0, 0)
+angular_velocity = vec3(0, 0, 0)
+
+[entity uuid="809215ee-afbe-52c0-8c0f-661b79a68302" name="Rod"]
+parent = "f30742f9-b1de-5463-ab65-e3324bb62295"
+
+[component type="Transform"]
+position = vec3(0, -1.5, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(0.08, 3, 0.08)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("576ad271-2890-5687-907e-a283236fea5d")
+
+[entity uuid="3a97d38b-5bbb-5771-86b4-03de5d6ded3d" name="Bob"]
+parent = "f30742f9-b1de-5463-ab65-e3324bb62295"
+
+[component type="Transform"]
+position = vec3(0, -3, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000002")
+material = asset("1d33c123-a5ff-50a6-9192-d19568c5f130")
+
+[component type="SphereCollider"]
+radius = 0.5
+center = vec3(0, 0, 0)
+trigger = false
+
+[entity uuid="9110a2bc-8109-51eb-b8c8-155918e3b1ee" name="Pendulum hinge"]
+parent = "3184333b-8f1a-5e52-b032-2fd4a16e1450"
+
+[component type="Transform"]
+position = vec3(-5, 4.5, 3)
+rotation = quat(0, 0.707107, 0, 0.707107)
+scale = vec3(1, 1, 1)
+
+[component type="HingeJoint"]
+body_a = entity("f30742f9-b1de-5463-ab65-e3324bb62295")
+body_b = entity()
+collide_connected = false
+use_limits = false
+lower_angle = -1.5707964
+upper_angle = 1.5707964
+use_motor = false
+motor_speed = 0
+max_motor_torque = 1000
+break_force = 0
+break_torque = 0
+
+[entity uuid="40c4db40-1b82-57b3-b373-fa53aa4d36d2" name="Sign"]
+parent = "3184333b-8f1a-5e52-b032-2fd4a16e1450"
+
+[component type="Transform"]
+position = vec3(2, 2.4, -4)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.6, 0.9, 0.12)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("7c1e5a90-3b2d-4f68-9a41-5e0d2c7b8a13")
+
+[component type="RigidBody"]
+type = "dynamic"
+mass = 5
+friction = 0.5
+restitution = 0
+linear_damping = 0.05
+angular_damping = 0.05
+gravity_scale = 1
+layer = 0
+lock_rotation_x = false
+lock_rotation_y = false
+lock_rotation_z = false
+continuous_collision = false
+linear_velocity = vec3(0, 0, 0)
+angular_velocity = vec3(0, 0, 0)
+
+[component type="BoxCollider"]
+size = vec3(1, 1, 1)
+center = vec3(0, 0, 0)
+trigger = false
+
+[entity uuid="c5584e24-52bc-5030-8e5b-42f754c080f8" name="Sign weld"]
+parent = "3184333b-8f1a-5e52-b032-2fd4a16e1450"
+
+[component type="Transform"]
+position = vec3(2, 2.4, -4)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="FixedJoint"]
+body_a = entity("40c4db40-1b82-57b3-b373-fa53aa4d36d2")
+body_b = entity()
+collide_connected = false
+break_force = 600
+break_torque = 300

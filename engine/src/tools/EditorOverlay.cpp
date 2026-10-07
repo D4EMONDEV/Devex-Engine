@@ -4,6 +4,7 @@
 #include <devex/physics2d/Physics2DWorld.hpp>
 #include <devex/scene/AudioComponents.hpp>
 #include <devex/scene/Components.hpp>
+#include <devex/scene/JointComponents.hpp>
 #include <devex/scene/Light2DComponents.hpp>
 #include <devex/scene/Physics2DComponents.hpp>
 #include <devex/scene/PhysicsComponents.hpp>
@@ -39,6 +40,8 @@ constexpr math::Vec4 colliderColor{0.35f, 0.95f, 0.5f, 0.95f};
 constexpr math::Vec4 triggerColor{0.35f, 0.7f, 1.0f, 0.95f};
 // The occluders of the 2D lights.
 constexpr math::Vec4 occluderColor{0.75f, 0.45f, 1.0f, 0.95f};
+// Joints, and the lines to the bodies they tie.
+constexpr math::Vec4 jointColor{1.0f, 0.75f, 0.2f, 0.95f};
 
 void addLine(std::vector<OverlayVertex>& lines, math::Vec3 start, math::Vec3 end, math::Vec4 color)
 {
@@ -622,6 +625,162 @@ void addOccluders2D(scene::Scene& scene, const std::unordered_set<std::uint32_t>
     }
 }
 
+// Joints, always shown, brighter when selected: where they tie the bodies, lines to the bodies, and
+// what they let them do: the axis and the limits of a hinge, the travel of a slider, the rod of a
+// distance joint, the square of a weld.
+void addJoints(scene::Scene& scene, const ViewportView& view, const std::unordered_set<std::uint32_t>& selection,
+               const std::unordered_set<std::uint32_t>& hidden, std::vector<OverlayVertex>& lines)
+{
+    const auto colorOf = [&](scene::Entity entity, bool broken) {
+        math::Vec4 color = broken ? math::Vec4{1.0f, 0.3f, 0.25f, 0.95f} : jointColor;
+        color.a = selection.contains(entity.index) ? 1.0f : 0.5f;
+        return color;
+    };
+    const auto axesOf = [](const math::Mat4& matrix) {
+        std::array<math::Vec3, 3> axes{};
+        for (int column = 0; column < 3; ++column)
+        {
+            const math::Vec3 axis(matrix[column]);
+            axes[static_cast<std::size_t>(column)] = math::length(axis) > 1e-6f ? math::normalize(axis)
+                                                                                  : math::Vec3(column == 0, column == 1, column == 2);
+        }
+        return axes;
+    };
+    // The point that ties, and a line to each body it ties.
+    const auto common = [&](scene::Entity entity, const math::Mat4& matrix, const scene::EntityRef& bodyA, const scene::EntityRef& bodyB,
+                            math::Vec4 color) {
+        const math::Vec3 position(matrix[3]);
+        const float size = view.worldSize(position, iconSizeInPixels) * 0.35f;
+        addLine(lines, position - math::Vec3{size, 0.0f, 0.0f}, position + math::Vec3{size, 0.0f, 0.0f}, color);
+        addLine(lines, position - math::Vec3{0.0f, size, 0.0f}, position + math::Vec3{0.0f, size, 0.0f}, color);
+        if (!selection.contains(entity.index))
+        {
+            return size;
+        }
+        math::Vec4 faint = color;
+        faint.a = 0.45f;
+        for (const scene::EntityRef* reference : {&bodyA, &bodyB})
+        {
+            const scene::Entity body = reference->isNil() ? scene::Entity{} : scene.resolve(*reference);
+            if (const scene::WorldTransform* const transform = body.isValid() ? scene.tryGet<scene::WorldTransform>(body) : nullptr)
+            {
+                addLine(lines, position, math::Vec3(transform->matrix[3]), faint);
+            }
+        }
+        return size;
+    };
+    const auto hinge = [&](scene::Entity entity, const math::Mat4& matrix, bool useLimits, float lower, float upper, math::Vec4 color,
+                           float size) {
+        const math::Vec3 position(matrix[3]);
+        const auto [x, y, z] = axesOf(matrix);
+        addLine(lines, position - z * size * 3.0f, position + z * size * 3.0f, color);
+        const float radius = size * 4.0f;
+        if (useLimits)
+        {
+            addArc(lines, position, x, y, radius, std::min(lower, upper), std::max(lower, upper), color);
+            addLine(lines, position, position + (x * std::cos(lower) + y * std::sin(lower)) * radius, color);
+            addLine(lines, position, position + (x * std::cos(upper) + y * std::sin(upper)) * radius, color);
+        }
+        else if (selection.contains(entity.index))
+        {
+            addCircle(lines, position, x, y, radius, color, 32);
+        }
+    };
+    const auto slider = [&](const math::Mat4& matrix, bool useLimits, float lower, float upper, math::Vec4 color, float size) {
+        const math::Vec3 position(matrix[3]);
+        const auto [x, y, z] = axesOf(matrix);
+        const float from = useLimits ? std::min(lower, upper) : -size * 6.0f;
+        const float to = useLimits ? std::max(lower, upper) : size * 6.0f;
+        addLine(lines, position + x * from, position + x * to, color);
+        for (const float end : {from, to})
+        {
+            addLine(lines, position + x * end - y * size, position + x * end + y * size, color);
+        }
+    };
+    const auto rod = [&](const math::Mat4& matrix, math::Vec3 anchor, math::Vec4 color, float size) {
+        const math::Vec3 position(matrix[3]);
+        const math::Vec3 end(matrix * math::Vec4(anchor, 1.0f));
+        addLine(lines, position, end, color);
+        addCircle(lines, end, math::Vec3{1.0f, 0.0f, 0.0f}, math::Vec3{0.0f, 1.0f, 0.0f}, size * 0.8f, color, 12);
+    };
+    const auto weld = [&](const math::Mat4& matrix, math::Vec4 color, float size) {
+        const math::Vec3 position(matrix[3]);
+        const std::array<math::Vec3, 4> corners{position + math::Vec3{-size, -size, 0.0f}, position + math::Vec3{size, -size, 0.0f},
+                                                position + math::Vec3{size, size, 0.0f}, position + math::Vec3{-size, size, 0.0f}};
+        addLoop(lines, corners, color);
+    };
+
+    const auto shown = [&](scene::Entity entity) { return !hidden.contains(entity.index); };
+    for ([[maybe_unused]] auto [entity, transform, joint] : scene.view<scene::WorldTransform, scene::HingeJoint>())
+    {
+        if (shown(entity))
+        {
+            const math::Vec4 color = colorOf(entity, joint.broken);
+            const float size = common(entity, transform.matrix, joint.bodyA, joint.bodyB, color);
+            hinge(entity, transform.matrix, joint.useLimits, joint.lowerAngle, joint.upperAngle, color, size);
+        }
+    }
+    for ([[maybe_unused]] auto [entity, transform, joint] : scene.view<scene::WorldTransform, scene::HingeJoint2D>())
+    {
+        if (shown(entity))
+        {
+            const math::Vec4 color = colorOf(entity, joint.broken);
+            const float size = common(entity, transform.matrix, joint.bodyA, joint.bodyB, color);
+            hinge(entity, transform.matrix, joint.useLimits, joint.lowerAngle, joint.upperAngle, color, size);
+        }
+    }
+    for ([[maybe_unused]] auto [entity, transform, joint] : scene.view<scene::WorldTransform, scene::SliderJoint>())
+    {
+        if (shown(entity))
+        {
+            const math::Vec4 color = colorOf(entity, joint.broken);
+            const float size = common(entity, transform.matrix, joint.bodyA, joint.bodyB, color);
+            slider(transform.matrix, joint.useLimits, joint.lowerLimit, joint.upperLimit, color, size);
+        }
+    }
+    for ([[maybe_unused]] auto [entity, transform, joint] : scene.view<scene::WorldTransform, scene::SliderJoint2D>())
+    {
+        if (shown(entity))
+        {
+            const math::Vec4 color = colorOf(entity, joint.broken);
+            const float size = common(entity, transform.matrix, joint.bodyA, joint.bodyB, color);
+            slider(transform.matrix, joint.useLimits, joint.lowerLimit, joint.upperLimit, color, size);
+        }
+    }
+    for ([[maybe_unused]] auto [entity, transform, joint] : scene.view<scene::WorldTransform, scene::DistanceJoint>())
+    {
+        if (shown(entity))
+        {
+            const math::Vec4 color = colorOf(entity, joint.broken);
+            rod(transform.matrix, joint.anchor, color, common(entity, transform.matrix, joint.bodyA, joint.bodyB, color));
+        }
+    }
+    for ([[maybe_unused]] auto [entity, transform, joint] : scene.view<scene::WorldTransform, scene::DistanceJoint2D>())
+    {
+        if (shown(entity))
+        {
+            const math::Vec4 color = colorOf(entity, joint.broken);
+            rod(transform.matrix, math::Vec3(joint.anchor, 0.0f), color, common(entity, transform.matrix, joint.bodyA, joint.bodyB, color));
+        }
+    }
+    for ([[maybe_unused]] auto [entity, transform, joint] : scene.view<scene::WorldTransform, scene::FixedJoint>())
+    {
+        if (shown(entity))
+        {
+            const math::Vec4 color = colorOf(entity, joint.broken);
+            weld(transform.matrix, color, common(entity, transform.matrix, joint.bodyA, joint.bodyB, color));
+        }
+    }
+    for ([[maybe_unused]] auto [entity, transform, joint] : scene.view<scene::WorldTransform, scene::FixedJoint2D>())
+    {
+        if (shown(entity))
+        {
+            const math::Vec4 color = colorOf(entity, joint.broken);
+            weld(transform.matrix, color, common(entity, transform.matrix, joint.bodyA, joint.bodyB, color));
+        }
+    }
+}
+
 // Speakers for sound sources, with the distances where a selected one starts to fade and stops
 // fading; an ear for the listener.
 void addAudioIcons(scene::Scene& scene, const ViewportView& view, const std::unordered_set<std::uint32_t>& selected,
@@ -772,6 +931,7 @@ void addEditorOverlay(ToolsState& state, scene::Scene& scene, render::RenderWorl
         addAudioIcons(scene, view, selected, hidden, world.overlayLines);
     }
     addOccluders2D(scene, selection, hidden, world.overlayLines);
+    addJoints(scene, view, selection, hidden, world.overlayLines);
     addColliders(state, scene, selection, hidden, world.overlayLines);
     addNavigationLines(state, scene, selection, state.showColliders, world.overlayLines);
 
