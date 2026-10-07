@@ -250,7 +250,7 @@ void InspectorUi::each(const scene::Scene& edited, std::span<const Entity> inspe
     }
 }
 
-void InspectorUi::build(ToolsState& state, EditorUiKit& kit)
+void InspectorUi::build(EditorUiKit& kit)
 {
     built = true;
     const Entity root = add({}, "Inspector", whole());
@@ -280,30 +280,6 @@ void InspectorUi::build(ToolsState& state, EditorUiKit& kit)
         }
         return std::nullopt;
     });
-
-    // The previews of the pages: the textures of the project, and the sprites cut from them.
-    kit.setAssetImages(
-        [&state](asset::AssetId id) { return state.textures ? state.textures(id) : render::TextureHandle{}; },
-        [&state](asset::AssetId id) {
-            const math::Extent2D size = state.textureSizes ? state.textureSizes(id) : math::Extent2D{};
-            return math::Vec2{static_cast<float>(size.width), static_cast<float>(size.height)};
-        },
-        [&state](asset::AssetId id) -> std::optional<ui::SpriteImage> {
-            // Only a sprite is read as one, which the database tells.
-            const asset::AssetInfo* const info = state.database != nullptr ? state.database->find(id) : nullptr;
-            if (info == nullptr || info->type != asset::AssetType::Sprite || !state.sprites)
-            {
-                return std::nullopt;
-            }
-            const std::shared_ptr<const asset::SpriteData> sprite = state.sprites(id);
-            if (sprite == nullptr || !state.textures)
-            {
-                return ui::SpriteImage{};
-            }
-            return ui::SpriteImage{.texture = state.textures(sprite->texture),
-                                   .uv = sprite->uvRect(),
-                                   .size = math::Vec2{static_cast<float>(sprite->width), static_cast<float>(sprite->height)}};
-        });
 }
 
 std::string InspectorUi::signatureOf(const scene::Scene& edited, std::span<const Entity> inspected) const
@@ -1810,7 +1786,7 @@ void InspectorUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& edit
     setFont(state.theme.fontSize);
     if (!built)
     {
-        build(state, kit);
+        build(kit);
     }
     styleTooltips(colors);
 

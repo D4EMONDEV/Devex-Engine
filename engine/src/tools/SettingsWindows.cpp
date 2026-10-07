@@ -89,6 +89,28 @@ EditorUiKit& editorUiKit(ToolsState& state)
     if (!state.uiKit)
     {
         state.uiKit = std::make_shared<EditorUiKit>(state.renderer, state.icons, state.platform.baseDirectory() / "resources" / "fonts");
+        // Every panel can preview project images, even when the inspector has never been opened.
+        state.uiKit->setAssetImages(
+            [&state](asset::AssetId id) { return state.textures ? state.textures(id) : render::TextureHandle{}; },
+            [&state](asset::AssetId id) {
+                const math::Extent2D size = state.textureSizes ? state.textureSizes(id) : math::Extent2D{};
+                return math::Vec2{static_cast<float>(size.width), static_cast<float>(size.height)};
+            },
+            [&state](asset::AssetId id) -> std::optional<ui::SpriteImage> {
+                const asset::AssetInfo* const info = state.database != nullptr ? state.database->find(id) : nullptr;
+                if (info == nullptr || info->type != asset::AssetType::Sprite || !state.sprites)
+                {
+                    return std::nullopt;
+                }
+                const std::shared_ptr<const asset::SpriteData> sprite = state.sprites(id);
+                if (sprite == nullptr || !state.textures)
+                {
+                    return ui::SpriteImage{};
+                }
+                return ui::SpriteImage{.texture = state.textures(sprite->texture),
+                                       .uv = sprite->uvRect(),
+                                       .size = math::Vec2{static_cast<float>(sprite->width), static_cast<float>(sprite->height)}};
+            });
     }
     return *state.uiKit;
 }

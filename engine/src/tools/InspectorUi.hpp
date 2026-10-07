@@ -219,7 +219,7 @@ struct InspectorUi : FormUi
     std::string pageKind;
     std::string pageTarget;
 
-    void build(ToolsState& state, EditorUiKit& kit);
+    void build(EditorUiKit& kit);
     [[nodiscard]] std::string signatureOf(const scene::Scene& edited, std::span<const scene::Entity> inspected) const;
     // Forgets what the panel shows, the edits under way ending as they stand.
     void clear(ToolsState& state, const scene::Scene& edited);

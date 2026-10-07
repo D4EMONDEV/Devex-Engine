@@ -96,8 +96,10 @@ public:
     {
         std::string text;
         math::Vec2 at{0.0f, 0.0f};
+        // An optional texture or sliced sprite, shown above the text on a checkerboard.
+        asset::AssetId image;
     };
-    void showTooltip(std::string text, math::Vec2 at);
+    void showTooltip(std::string text, math::Vec2 at, asset::AssetId image = {});
     [[nodiscard]] std::optional<Tooltip> takeTooltip() noexcept;
 
     // The places, the devices and the platform of the frame, which the panels read.

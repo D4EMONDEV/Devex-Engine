@@ -102,9 +102,9 @@ void EditorUiKit::setAssetImages(std::function<render::TextureHandle(asset::Asse
     m_assetSprites = std::move(sprites);
 }
 
-void EditorUiKit::showTooltip(std::string text, math::Vec2 at)
+void EditorUiKit::showTooltip(std::string text, math::Vec2 at, asset::AssetId image)
 {
-    m_tooltip = Tooltip{.text = std::move(text), .at = at};
+    m_tooltip = Tooltip{.text = std::move(text), .at = at, .image = image};
 }
 
 void EditorUiKit::setFrame(EditorHosts& hosts, const EditorInput& input, platform::Platform& platform) noexcept

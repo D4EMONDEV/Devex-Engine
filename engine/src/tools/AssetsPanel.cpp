@@ -15,6 +15,7 @@
 #include <cctype>
 #include <chrono>
 #include <cstring>
+#include <format>
 #include <map>
 #include <string>
 #include <string_view>
@@ -209,13 +210,39 @@ struct Row
 {
     Entity row;
     Entity arrow;
+    Entity checker;
     Entity icon;
     Entity label;
     Entity detail;
     Entity status;
     // Where the name is typed while the line is renamed.
     Entity field;
+    math::Vec2 previewSize{0.0f};
 };
+
+// Only the visible rows request images. Sprites share the source texture, with their own crop;
+// while an import or upload is pending the usual file icon stays in place.
+[[nodiscard]] math::Vec2 previewSize(ToolsState& state, const Node& node)
+{
+    if (!node.hasAsset || node.status != asset::ImportStatus::Ready || !state.textures)
+    {
+        return math::Vec2{0.0f};
+    }
+    if (node.type == asset::AssetType::Sprite && state.sprites)
+    {
+        const auto sprite = state.sprites(node.asset);
+        if (sprite && state.textures(sprite->texture).isValid())
+        {
+            return {static_cast<float>(sprite->width), static_cast<float>(sprite->height)};
+        }
+    }
+    else if (node.type == asset::AssetType::Texture && state.textureSizes && state.textures(node.asset).isValid())
+    {
+        const math::Extent2D size = state.textureSizes(node.asset);
+        return {static_cast<float>(size.width), static_cast<float>(size.height)};
+    }
+    return math::Vec2{0.0f};
+}
 
 // What a line is called on disk: the name of its file or folder.
 [[nodiscard]] std::string diskName(const Node& node)
@@ -956,6 +983,7 @@ void FileSystemUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& edi
     }
     const std::size_t needed = static_cast<std::size_t>(std::ceil(std::max(viewHeight, 300.0f) / rowHeight)) + 2;
     const float iconSize = font * 1.15f;
+    const float thumbnailSize = std::min(rowHeight - 4.0f, font * 1.6f);
     const float arrow = font * 1.5f;
     while (rows.size() < needed)
     {
@@ -968,7 +996,11 @@ void FileSystemUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& edi
         scene().add<scene::UiContextMenu>(row.row, scene::UiContextMenu{.popup = scene().reference(menu)});
         row.arrow = add(row.row, "Arrow", UiRect{.anchorMin = {0.0f, 0.0f}, .anchorMax = {0.0f, 1.0f}});
         scene().add<scene::UiFoldout>(row.arrow);
+        row.checker = add(row.row, "Thumbnail background", UiRect{.anchorMin = {0.0f, 0.5f}, .anchorMax = {0.0f, 0.5f}});
+        scene().add<scene::UiImage>(row.checker, scene::UiImage{.texture = kit.checker(), .raycastTarget = false});
         row.icon = icon(kit, row.row, UiRect{.anchorMin = {0.0f, 0.5f}, .anchorMax = {0.0f, 0.5f}}, Icon::File, {});
+        scene().get<scene::UiImage>(row.icon).preserveAspect = true;
+        tooltip(row.row, "");
         row.label = text(row.row, UiRect{.anchorMin = {0.0f, 0.0f}, .anchorMax = {0.0f, 1.0f}}, "", "text");
         row.detail = text(row.row, UiRect{.anchorMin = {0.0f, 0.0f}, .anchorMax = {0.0f, 1.0f}}, "", "dim");
         row.status = icon(kit, row.row, UiRect{.anchorMin = {1.0f, 0.5f}, .anchorMax = {1.0f, 0.5f}}, Icon::Loader, "icon_warning");
@@ -983,7 +1015,7 @@ void FileSystemUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& edi
     const math::Vec4 drop = linearColor(math::Vec4(colors.accent.x, colors.accent.y, colors.accent.z, 0.3f));
     for (std::size_t index = 0; index < rows.size(); ++index)
     {
-        const Row& row = rows[index];
+        Row& row = rows[index];
         const std::size_t at = first + index;
         if (at >= nodes.size())
         {
@@ -1004,14 +1036,23 @@ void FileSystemUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& edi
         scene().get<scene::UiFoldout>(row.arrow).arrowColor = linearColor(colors.textDim);
 
         const float iconLeft = left + arrow;
+        row.previewSize = previewSize(state, node);
+        const bool preview = row.previewSize.x > 0.0f && row.previewSize.y > 0.0f;
+        const float shownSize = preview ? thumbnailSize : iconSize;
+        const float iconPadding = (thumbnailSize - shownSize) * 0.5f;
         UiRect& iconRect = scene().get<UiRect>(row.icon);
-        iconRect.offsetMin = {iconLeft, -iconSize * 0.5f};
-        iconRect.offsetMax = {iconLeft + iconSize, iconSize * 0.5f};
+        iconRect.offsetMin = {iconLeft + iconPadding, -shownSize * 0.5f};
+        iconRect.offsetMax = {iconLeft + iconPadding + shownSize, shownSize * 0.5f};
+        UiRect& checkerRect = scene().get<UiRect>(row.checker);
+        checkerRect.visible = preview;
+        checkerRect.offsetMin = {iconLeft, -thumbnailSize * 0.5f};
+        checkerRect.offsetMax = {iconLeft + thumbnailSize, thumbnailSize * 0.5f};
         scene::UiImage& iconImage = scene().get<scene::UiImage>(row.icon);
-        iconImage.texture = kit.icon(iconOf(node.icon.icon));
-        iconImage.color = linearColor(node.icon.color);
+        iconImage.texture = preview ? node.asset : kit.icon(iconOf(node.icon.icon));
+        iconImage.color = preview ? math::Vec4{1.0f} : linearColor(node.icon.color);
+        tooltip(row.row, preview ? node.label : std::string{});
 
-        const float labelLeft = iconLeft + iconSize + font * 0.45f;
+        const float labelLeft = iconLeft + thumbnailSize + font * 0.45f;
         const float labelWidth = kit.textWidth(EditorUiKit::regularFont(), node.label, font) + 2.0f;
         scene::UiText& label = scene().get<scene::UiText>(row.label);
         if (label.text != node.label)
@@ -1099,6 +1140,26 @@ void FileSystemUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& edi
     }
 
     panel.update(kit, delta, UiPanel::zoomFor(font));
+
+    // The preview stands over the editor, so that a narrow dock never cuts it off. It does not
+    // catch the mouse, and the usual tooltip delay and drag suppression still apply.
+    if (panel.hovered() && renaming.empty() && !world.isPopupOpen(scene(), menu) && !kit.carried())
+    {
+        if (const auto shown = world.shownTooltip(scene()))
+        {
+            for (std::size_t index = 0; index < rows.size(); ++index)
+            {
+                const Row& row = rows[index];
+                if (rowNodes[index] && row.row == world.hovered() && row.previewSize.x > 0.0f && row.previewSize.y > 0.0f)
+                {
+                    const Node& node = nodes[*rowNodes[index]];
+                    kit.showTooltip(std::format("{}\n{} x {} px", node.label, static_cast<int>(row.previewSize.x),
+                                                static_cast<int>(row.previewSize.y)), panel.screenOf(shown->at), node.asset);
+                    break;
+                }
+            }
+        }
+    }
 
     // The rename ends with Enter or when the field loses the keyboard, and is dropped on Escape.
     if (renameRow && world.editedField() != rows[*renameRow].field)

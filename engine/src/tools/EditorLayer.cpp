@@ -68,6 +68,8 @@ struct EditorLayerUi : PanelBuilder
     math::Vec2 placedAt{0.0f};
     Entity tip;
     Entity tipText;
+    Entity tipChecker;
+    Entity tipImage;
     // The window the keyboard was in before a strip or a menu took it, which takes it back once the
     // menu closes or the strip is let go.
     std::string working;
@@ -122,6 +124,10 @@ void EditorLayerUi::build()
     tipText = text(tip, whole(math::Vec4{std::round(font * 0.45f)}), "", "text");
     scene().get<scene::UiText>(tipText).wrap = true;
     scene().get<scene::UiText>(tipText).verticalAlign = scene::TextVerticalAlign::Top;
+    tipChecker = add(tip, "Preview background", whole());
+    scene().add<scene::UiImage>(tipChecker, scene::UiImage{.raycastTarget = false});
+    tipImage = add(tipChecker, "Preview", whole());
+    scene().add<scene::UiImage>(tipImage, scene::UiImage{.raycastTarget = false, .preserveAspect = true});
 }
 
 void EditorLayerUi::giveFocusBack(EditorHosts& hosts)
@@ -249,10 +255,15 @@ void EditorLayerUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& ed
         const float padding = std::round(font * 0.45f);
         const asset::FontData* const letters = kit.fontData(EditorUiKit::regularFont());
         const math::Vec2 room{state.hosts.available().x * unitsPerPoint, state.hosts.available().y * unitsPerPoint};
-        const float wrapWidth = std::max(std::min(room.x - padding * 2.0f - 8.0f, font * 56.0f), font * 4.0f);
+        const bool preview = tooltip->image.isValid();
+        const float wrapWidth = std::max(std::min(room.x - padding * 2.0f - 8.0f, font * (preview ? 18.0f : 56.0f)), font * 4.0f);
         const math::Vec2 measured =
             letters != nullptr ? ui::measureText(*letters, tooltip->text, ui::TextStyle{.size = font, .wrap = true}, wrapWidth) : math::Vec2{0.0f};
-        const math::Vec2 size{std::ceil(measured.x) + padding * 2.0f + 1.0f, std::ceil(measured.y) + padding * 2.0f};
+        const float imageSize = preview ? std::max(0.0f, std::min({font * 12.0f, wrapWidth,
+            room.y - std::ceil(measured.y) - padding * 3.0f - 8.0f})) : 0.0f;
+        const float textTop = padding + (preview ? imageSize + padding : 0.0f);
+        const math::Vec2 size{std::max(std::ceil(measured.x) + 1.0f, imageSize) + padding * 2.0f,
+                               textTop + std::ceil(measured.y) + padding};
         const math::Vec2 rested{(tooltip->at.x - origin.x) * unitsPerPoint, (tooltip->at.y - origin.y) * unitsPerPoint};
         math::Vec2 at = rested + math::Vec2{font * 0.9f, font * 1.3f};
         at.x = std::clamp(at.x, 0.0f, std::max(room.x - size.x, 0.0f));
@@ -260,6 +271,14 @@ void EditorLayerUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& ed
         tipRect.offsetMin = at;
         tipRect.offsetMax = at + size;
         scene().get<scene::UiText>(tipText).text = tooltip->text;
+        scene().get<UiRect>(tipText).offsetMin = {padding, textTop};
+        UiRect& checkerRect = scene().get<UiRect>(tipChecker);
+        checkerRect.visible = preview;
+        checkerRect.anchorMin = checkerRect.anchorMax = {0.5f, 0.0f};
+        checkerRect.offsetMin = {-imageSize * 0.5f, padding};
+        checkerRect.offsetMax = {imageSize * 0.5f, padding + imageSize};
+        scene().get<scene::UiImage>(tipChecker).texture = preview ? kit.checker() : asset::AssetId{};
+        scene().get<scene::UiImage>(tipImage).texture = tooltip->image;
     }
 
     panel.update(kit, delta, zoom);
