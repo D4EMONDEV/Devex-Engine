@@ -255,6 +255,7 @@ sorting_layer = "Default"
 order = 1
 blend = "alpha"
 lit = false
+material = asset("4523504f-bb92-5f85-b123-f298615d2126")
 
 [component type="SpriteAnimator"]
 frames = asset("3ee33835-95ed-5b9c-9a6d-f2c7a8b7eb48")
@@ -1388,3 +1389,11 @@ motor_speed = 0
 max_motor_torque = 2
 break_force = 0
 break_torque = 0
+
+[entity uuid="d1171b01-7452-5f8b-b07f-83546e74db2f" name="Wind"]
+
+[component type="Wind2D"]
+grass = asset("6d3d9c98-c23c-52c4-a50a-13291b6abc80")
+calm = 0.12
+gust = 0.35
+period = 7

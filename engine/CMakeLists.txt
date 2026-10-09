@@ -426,6 +426,7 @@ target_sources(devex_scene
         src/scene/DynamicComponent.cpp
         src/scene/EntityCopy.cpp
         src/scene/FieldValue.cpp
+        src/scene/InstanceShaderParameters.cpp
         src/scene/ModelInstantiation.cpp
         src/scene/PhysicsComponents.cpp
         src/scene/Physics2DComponents.cpp
@@ -455,6 +456,7 @@ target_sources(devex_scene
             include/devex/scene/Entity.hpp
             include/devex/scene/EntityCopy.hpp
             include/devex/scene/FieldValue.hpp
+            include/devex/scene/InstanceShaderParameters.hpp
             include/devex/scene/ModelInstantiation.hpp
             include/devex/scene/PhysicsComponents.hpp
             include/devex/scene/Physics2DComponents.hpp
@@ -841,6 +843,7 @@ target_sources(devex_tools
         src/tools/InspectorPanel.cpp
         src/tools/InspectorUi.cpp
         src/tools/LogBuffer.cpp
+        src/tools/InstanceParametersUi.cpp
         src/tools/MaterialInspector.cpp
         src/tools/ShaderGraphPanel.cpp
         src/tools/ModelInspector.cpp

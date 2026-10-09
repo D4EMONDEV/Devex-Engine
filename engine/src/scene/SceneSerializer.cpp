@@ -41,16 +41,22 @@ core::Result<core::Uuid> readUuid(const TextValue& value)
     return *uuid;
 }
 
-TextSection writeComponent(const ComponentType& componentType, const void* component)
+TextSection writeComponent(const ComponentType& componentType, const void* component, bool complete)
 {
     TextSection componentSection{.type = "component"};
     componentSection.attributes.push_back({"type", TextValue(std::string(componentType.name()))});
     for (const reflection::FieldInfo& field : componentType.type->fields)
     {
-        if (!field.runtime)
+        if (field.runtime)
         {
-            componentSection.properties.push_back({field.name, writeFieldValue(field, field.address(component))});
+            continue;
         }
+        const void* const address = field.address(component);
+        if (!complete && field.hidden && field.list != nullptr && field.list->size(address) == 0)
+        {
+            continue;
+        }
+        componentSection.properties.push_back({field.name, writeFieldValue(field, address)});
     }
     return componentSection;
 }
@@ -213,15 +219,16 @@ namespace {
     return section;
 }
 
-// The component sections of an entity, in the order they are saved.
-[[nodiscard]] std::vector<TextSection> componentSections(const Scene& scene, Entity entity)
+// The component sections of an entity, in the order they are saved. Complete ones keep the empty
+// hidden lists, which an instance compares with its prefab.
+[[nodiscard]] std::vector<TextSection> componentSections(const Scene& scene, Entity entity, bool complete = false)
 {
     std::vector<TextSection> sections;
     for (const ComponentType& componentType : componentRegistry().types())
     {
         if (const void* const component = componentType.find(scene, entity))
         {
-            sections.push_back(writeComponent(componentType, component));
+            sections.push_back(writeComponent(componentType, component, complete));
         }
     }
     if (const PreservedComponents* const preserved = scene.tryGet<PreservedComponents>(entity))
@@ -313,8 +320,8 @@ void writeInstance(const Scene& scene, Entity root, bool writeParent, TextDocume
         }
 
         const std::vector<TextSection> baseSections =
-            baseEntity.isValid() ? componentSections(*base, baseEntity) : std::vector<TextSection>{};
-        for (TextSection& section : componentSections(scene, entity))
+            baseEntity.isValid() ? componentSections(*base, baseEntity, true) : std::vector<TextSection>{};
+        for (TextSection& section : componentSections(scene, entity, true))
         {
             const std::string* const typeName = componentTypeName(section);
             if (typeName == nullptr || (!allOverrides && *typeName != "Transform"))

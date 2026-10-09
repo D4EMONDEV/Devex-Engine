@@ -8,12 +8,15 @@
 #include <devex/core/Path.hpp>
 #include <devex/platform/SharedLibrary.hpp>
 #include <devex/runtime/ComponentViews.hpp>
+#include <devex/scene/AnimationComponents.hpp>
 #include <devex/scene/ComponentRegistry.hpp>
 #include <devex/scene/Components.hpp>
 #include <devex/scene/DynamicComponent.hpp>
 #include <devex/scene/EntityRef.hpp>
+#include <devex/scene/InstanceShaderParameters.hpp>
 #include <devex/scene/Prefab.hpp>
 #include <devex/scene/SceneSerializer.hpp>
+#include <devex/scene/SpriteComponents.hpp>
 #include <devex/scene/TileTerrain.hpp>
 #include <devex/scene/TilemapComponents.hpp>
 #include <devex/scene/UiComponents.hpp>
@@ -295,6 +298,12 @@ struct NativeApi
     void (*findTerrain)(void* scene, Entity tilemap, const char* name, int* set, int* terrain);
     void (*paintTerrain)(void* scene, Entity tilemap, const int* cells, int count, int set, int terrain, int path);
     int (*brokenJoints)(const physics::JointBreak** joints);
+    int (*setShaderParameter)(const UuidBytes* material, const char* name, const math::Vec4* value, const char** error);
+    int (*setShaderTexture)(const UuidBytes* material, const char* name, const UuidBytes* texture, const char** error);
+    int (*shaderParameter)(const UuidBytes* material, const char* name, math::Vec4* value);
+    int (*setInstanceShaderParameter)(void* scene, Entity entity, const char* name, const math::Vec4* value);
+    int (*instanceShaderParameter)(void* scene, Entity entity, const char* name, math::Vec4* value);
+    int (*resetInstanceShaderParameter)(void* scene, Entity entity, const char* name);
 };
 
 // The functions the engine calls, in the order of Devex.Managed's ManagedApi.
@@ -1485,6 +1494,105 @@ int apiIsAssetReady(const UuidBytes* asset)
     return assets == nullptr || assets->isReady(asset::AssetId{toUuid(asset)}) ? 1 : 0;
 }
 
+// A message C# reads before the next call, on the thread of the game.
+[[nodiscard]] const char* keepMessage(std::string message)
+{
+    static std::string kept;
+    kept = std::move(message);
+    return kept.c_str();
+}
+
+[[nodiscard]] AssetManager* assetManager() noexcept
+{
+    return currentFrame() != nullptr ? currentFrame()->assetManager : nullptr;
+}
+
+int apiSetShaderParameter(const UuidBytes* material, const char* name, const math::Vec4* value, const char** error)
+{
+    if (assetManager() == nullptr || name == nullptr)
+    {
+        *error = keepMessage("materials change only while the game plays");
+        return 0;
+    }
+    const core::Result<void> set = assetManager()->setShaderParameter(asset::AssetId{toUuid(material)}, name, *value);
+    if (!set)
+    {
+        *error = keepMessage(set.error().message);
+    }
+    return set ? 1 : 0;
+}
+
+int apiSetShaderTexture(const UuidBytes* material, const char* name, const UuidBytes* texture, const char** error)
+{
+    if (assetManager() == nullptr || name == nullptr)
+    {
+        *error = keepMessage("materials change only while the game plays");
+        return 0;
+    }
+    const core::Result<void> set =
+        assetManager()->setShaderTexture(asset::AssetId{toUuid(material)}, name, asset::AssetId{toUuid(texture)});
+    if (!set)
+    {
+        *error = keepMessage(set.error().message);
+    }
+    return set ? 1 : 0;
+}
+
+int apiShaderParameter(const UuidBytes* material, const char* name, math::Vec4* value)
+{
+    const std::optional<math::Vec4> found =
+        assetManager() != nullptr && name != nullptr ? assetManager()->shaderParameter(asset::AssetId{toUuid(material)}, name)
+                                                     : std::nullopt;
+    *value = found.value_or(math::Vec4{0.0f});
+    return found ? 1 : 0;
+}
+
+int apiSetInstanceShaderParameter(void* scene, Entity entity, const char* name, const math::Vec4* value)
+{
+    return scene != nullptr && name != nullptr && scene::setInstanceShaderParameter(*toScene(scene), entity, name, *value) ? 1 : 0;
+}
+
+// The value the renderers of the entity give the uniform, else the default of the shader of their
+// material.
+int apiInstanceShaderParameter(void* scene, Entity entity, const char* name, math::Vec4* value)
+{
+    *value = math::Vec4{0.0f};
+    if (scene == nullptr || name == nullptr)
+    {
+        return 0;
+    }
+    scene::Scene& edited = *toScene(scene);
+    if (const std::optional<math::Vec4> given = scene::instanceShaderParameter(edited, entity, name))
+    {
+        *value = *given;
+        return 1;
+    }
+    if (assetManager() == nullptr || !edited.isAlive(entity))
+    {
+        return 0;
+    }
+    for (const asset::AssetId material : {edited.has<scene::MeshRenderer>(entity) ? edited.get<scene::MeshRenderer>(entity).material : asset::AssetId{},
+                                          edited.has<scene::SkinnedMeshRenderer>(entity) ? edited.get<scene::SkinnedMeshRenderer>(entity).material
+                                                                                         : asset::AssetId{},
+                                          edited.has<scene::SpriteRenderer>(entity) ? edited.get<scene::SpriteRenderer>(entity).material
+                                                                                    : asset::AssetId{},
+                                          edited.has<scene::Tilemap>(entity) ? edited.get<scene::Tilemap>(entity).material : asset::AssetId{}})
+    {
+        const std::shared_ptr<const asset::ShaderData> shader = material.isValid() ? assetManager()->materialShader(material) : nullptr;
+        if (const asset::ShaderParameter* const uniform = shader != nullptr ? shader->findParameter(name) : nullptr; uniform != nullptr && uniform->instance)
+        {
+            *value = uniform->defaultValue;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+int apiResetInstanceShaderParameter(void* scene, Entity entity, const char* name)
+{
+    return scene != nullptr && name != nullptr && scene::resetInstanceShaderParameter(*toScene(scene), entity, name) ? 1 : 0;
+}
+
 [[nodiscard]] InputActions* actions() noexcept
 {
     return currentFrame() != nullptr ? currentFrame()->actions : nullptr;
@@ -1677,14 +1785,6 @@ void apiResetBindings()
 [[nodiscard]] asset::Localization* localization() noexcept
 {
     return currentFrame() != nullptr ? currentFrame()->localization : nullptr;
-}
-
-// A message C# reads before the next call, on the thread of the game.
-[[nodiscard]] const char* keepMessage(std::string message)
-{
-    static std::string kept;
-    kept = std::move(message);
-    return kept.c_str();
 }
 
 int apiRegisterSaveType(const char* description, std::size_t* offsets, int capacity)
@@ -2516,6 +2616,12 @@ int apiParticleCount(Entity entity)
         .findTerrain = &apiFindTerrain,
         .paintTerrain = &apiPaintTerrain,
         .brokenJoints = &apiBrokenJoints,
+        .setShaderParameter = &apiSetShaderParameter,
+        .setShaderTexture = &apiSetShaderTexture,
+        .shaderParameter = &apiShaderParameter,
+        .setInstanceShaderParameter = &apiSetInstanceShaderParameter,
+        .instanceShaderParameter = &apiInstanceShaderParameter,
+        .resetInstanceShaderParameter = &apiResetInstanceShaderParameter,
     };
 }
 

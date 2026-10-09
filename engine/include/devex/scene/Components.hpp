@@ -8,7 +8,9 @@
 
 #include <array>
 #include <cstdint>
+#include <string>
 #include <string_view>
+#include <vector>
 
 // Components provided by the engine. Game code defines its own the same way: a plain struct and
 // its reflection, then registerComponent<T>() to make it saveable.
@@ -39,6 +41,10 @@ struct DEVEX_API MeshRenderer
 {
     asset::AssetId mesh;
     asset::AssetId material;
+    // The values it gives the instance uniforms of the shader of its material, by name; the others
+    // keep their defaults. Edited under Instance Shader Parameters, or by setInstanceShaderParameter.
+    std::vector<std::string> instanceShaderParameters;
+    std::vector<math::Vec4> instanceShaderValues;
 };
 DEVEX_DECLARE_ENGINE_REFLECTION(MeshRenderer);
 

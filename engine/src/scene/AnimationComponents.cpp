@@ -6,7 +6,9 @@ DEVEX_REFLECT(SkinnedMeshRenderer)
 {
     type.field("mesh", &SkinnedMeshRenderer::mesh, {.assetType = "mesh"})
         .field("material", &SkinnedMeshRenderer::material, {.assetType = "material"})
-        .field("bones", &SkinnedMeshRenderer::bones);
+        .field("bones", &SkinnedMeshRenderer::bones)
+        .field("instance_shader_parameters", &SkinnedMeshRenderer::instanceShaderParameters, {.hidden = true})
+        .field("instance_shader_values", &SkinnedMeshRenderer::instanceShaderValues, {.hidden = true});
 }
 
 DEVEX_REFLECT(Animator)

@@ -63,6 +63,16 @@ public float4 materialSlot(SceneData* scene, uint material, uint slot)
     return scene->materialParameters[scene->materials[material].parameterOffset + slot];
 }
 
+// An object that gives no values to the instance uniforms of its shader.
+public static const uint noInstanceParameters = 0xFFFFFFFFu;
+
+// An instance uniform: the value the object gives, the `index`th of its values, or the default the
+// slot of the material holds when it gives none.
+public float4 instanceSlot(SceneData* scene, uint material, uint instance, uint slot, uint index)
+{
+    return instance != noInstanceParameters ? scene->instanceParameters[instance + index] : materialSlot(scene, material, slot);
+}
+
 // The texture a slot names: its index, as the bits of the first number.
 public sampler2D slotTexture(float4 slot)
 {

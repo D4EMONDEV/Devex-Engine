@@ -280,10 +280,11 @@ public:
         }
     }
 
-    void readUniform(Statement statement)
+    // `instance uniform ...;` reads as a uniform that objects give values to.
+    void readUniform(Statement statement, bool instance = false)
     {
-        const std::span<const Token> tokens = statement.tokens;
-        requireKind(tokens.front());
+        const std::span<const Token> tokens = instance ? statement.tokens.subspan(1) : statement.tokens;
+        requireKind(statement.tokens.front());
         if (tokens.size() < 4 || tokens[1].kind != TokenKind::Identifier || tokens[2].kind != TokenKind::Identifier)
         {
             error(tokens.front(), "a uniform reads: uniform <type> <name> [: hints] [= value];");
@@ -296,9 +297,20 @@ public:
                                          tokens[1].text));
             return;
         }
-        ShaderParameter parameter{.name = std::string(tokens[2].text), .type = *type};
+        ShaderParameter parameter{.name = std::string(tokens[2].text), .type = *type, .instance = instance};
         if (!checkName(tokens[2]))
         {
+            return;
+        }
+        if (instance && m_kindRead && m_source.shader.kind != ShaderKind::Spatial && m_source.shader.kind != ShaderKind::CanvasItem)
+        {
+            error(statement.tokens.front(), std::format("{} shaders have no instance uniforms: their objects all draw alike",
+                                                        toString(m_source.shader.kind)));
+            return;
+        }
+        if (instance && parameter.type == ShaderParameterType::Texture)
+        {
+            error(tokens[1], "instance uniforms hold numbers: a texture is given by the material");
             return;
         }
 
@@ -640,9 +652,14 @@ void replaceAll(std::string& text, std::string_view marker, std::string_view val
 {
     std::string text;
     std::uint32_t slot = 0;
+    std::uint32_t instanceIndex = 0;
     for (const ShaderParameter& parameter : source.shader.parameters)
     {
-        const std::string read = std::format("materialSlot(scene, material, {})", slot++);
+        // An instance uniform: the value of the object when it gives one, else the default the
+        // material holds.
+        const std::string read = parameter.instance
+                                     ? std::format("instanceSlot(scene, material, instance, {}, {})", slot++, instanceIndex++)
+                                     : std::format("materialSlot(scene, material, {})", slot++);
         switch (parameter.type)
         {
         case ShaderParameterType::Float:
@@ -757,7 +774,7 @@ static float3 SPECULAR_LIGHT;
 @CODE@
 #line default
 
-void devexReadUniforms(SceneData* scene, uint material)
+void devexReadUniforms(SceneData* scene, uint material, uint instance)
 {
 @READ_UNIFORMS@}
 
@@ -769,7 +786,7 @@ void devexBegin(DrawData draw)
     MODEL_MATRIX = draw.world;
     VIEW_MATRIX = scene->view;
     CAMERA_POSITION_WORLD = scene->cameraPosition;
-    devexReadUniforms(scene, draw.material);
+    devexReadUniforms(scene, draw.material, draw.instanceParameters);
 }
 
 struct DevexVertexOutput
@@ -1056,7 +1073,7 @@ static sampler2D NORMAL_TEXTURE;
 @CODE@
 #line default
 
-void devexReadUniforms(SceneData* scene, uint material)
+void devexReadUniforms(SceneData* scene, uint material, uint instance)
 {
 @READ_UNIFORMS@}
 
@@ -1071,7 +1088,7 @@ void devexBegin(Sprite sprite, uint index)
     TEXTURE = sampler2D(sprite.texture != noTexture ? sprite.texture : 0u);
     TEXTURE_PIXEL_SIZE = 1.0 / float2(max(textureSize(TEXTURE, 0), int2(1)));
     NORMAL_TEXTURE = sampler2D(sprite.normalTexture != noTexture ? sprite.normalTexture : 1u);
-    devexReadUniforms(scene, sprite.material);
+    devexReadUniforms(scene, sprite.material, sprite.instanceParameters);
 }
 
 struct DevexVertexOutput
@@ -1214,7 +1231,7 @@ static float2 SCREEN_UV;
 @CODE@
 #line default
 
-void devexReadUniforms(SceneData* scene, uint material)
+void devexReadUniforms(SceneData* scene, uint material, uint instance)
 {
 @READ_UNIFORMS@}
 
@@ -1226,7 +1243,7 @@ void devexBegin()
     CAMERA_POSITION_WORLD = scene->cameraPosition;
     // Particles without a texture sample white.
     TEXTURE = sampler2D(data.texture != noTexture ? data.texture : 0u);
-    devexReadUniforms(scene, data.material);
+    devexReadUniforms(scene, data.material, noInstanceParameters);
 }
 
 struct DevexVertexOutput
@@ -1313,7 +1330,7 @@ static bool AT_CUBEMAP_PASS;
 @CODE@
 #line default
 
-void devexReadUniforms(SceneData* scene, uint material)
+void devexReadUniforms(SceneData* scene, uint material, uint instance)
 {
 @READ_UNIFORMS@}
 
@@ -1334,7 +1351,7 @@ void devexShadeSky(float3 direction)
     LIGHT0_COLOR = energy > 0.0 ? scene->sunIlluminance / energy : float3(0.0);
     // 1 in full sunlight.
     LIGHT0_ENERGY = LIGHT0_ENABLED ? energy / 100000.0 : 0.0;
-    devexReadUniforms(scene, devexSky.material);
+    devexReadUniforms(scene, devexSky.material, noInstanceParameters);
 @CALL_SKY@
 }
 
@@ -1438,7 +1455,12 @@ ShaderSource parseShaderSource(std::string_view text)
         const Token& token = tokens[at];
         const bool statement = depth == 0 && token.kind == TokenKind::Identifier &&
                                (token.text == "shader_type" || token.text == "render_mode" || token.text == "uniform" ||
-                                token.text == "varying");
+                                token.text == "varying" ||
+                                (token.text == "instance" && at + 1 < tokens.size() && tokens[at + 1].text == "uniform"));
+        if (depth == 0 && token.kind == TokenKind::Identifier && token.text == "instance" && !statement)
+        {
+            reader.error(token, "instance qualifies a uniform: instance uniform <type> <name> [: hints] [= value];");
+        }
         if (statement)
         {
             std::size_t end = at;
@@ -1461,9 +1483,9 @@ ShaderSource parseShaderSource(std::string_view text)
             {
                 reader.readRenderModes(read);
             }
-            else if (token.text == "uniform")
+            else if (token.text == "uniform" || token.text == "instance")
             {
-                reader.readUniform(read);
+                reader.readUniform(read, token.text == "instance");
             }
             else
             {

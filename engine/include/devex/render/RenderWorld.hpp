@@ -136,6 +136,10 @@ struct DEVEX_API RenderEnvironment
     MaterialHandle skyMaterial;
 };
 
+// What an instance gives the instance uniforms of the shader of its material: nothing, so that
+// they keep their defaults.
+inline constexpr std::uint32_t noInstanceParameters = 0xFFFFFFFFU;
+
 // One submesh of a mesh, drawn with a material.
 struct DEVEX_API MeshInstance
 {
@@ -152,6 +156,9 @@ struct DEVEX_API MeshInstance
     std::uint32_t objectId = 0;
     // Draws an outline around the instance, as the editor does for the selection.
     bool outlined = false;
+    // Where the values it gives the instance uniforms of its shader start in
+    // RenderWorld::instanceParameters, one for each in the order the shader declares them.
+    std::uint32_t instanceParameters = noInstanceParameters;
 };
 
 // A particle as the renderer draws it: a quad facing the camera, or lying as its batch says.
@@ -272,6 +279,8 @@ struct DEVEX_API RenderSprite
     // As for a mesh instance: reported by picking, and outlined for the selection.
     std::uint32_t objectId = 0;
     bool outlined = false;
+    // As for a mesh instance: the values it gives the instance uniforms of its shader.
+    std::uint32_t instanceParameters = noInstanceParameters;
 };
 
 // A tile of a tilemap: a rectangle of a texture filling a cell.
@@ -304,6 +313,8 @@ struct DEVEX_API RenderTilemap
     std::int32_t order = 0;
     std::uint32_t objectId = 0;
     bool outlined = false;
+    // The values its tiles give the instance uniforms of its shader.
+    std::uint32_t instanceParameters = noInstanceParameters;
 };
 
 // A light of the 2D plane: it shines on the sprites and the tilemaps in the XY plane of the world,
@@ -457,6 +468,8 @@ struct DEVEX_API RenderWorld
     // The bones of the skinned instances of the frame, each already holding the transform from the
     // space of its mesh to the world.
     std::vector<math::Mat4> boneMatrices;
+    // The values instances, sprites and tilemaps give the instance uniforms of their shaders.
+    std::vector<math::Vec4> instanceParameters;
     // Particles and ribbons, drawn batch by batch among the blended surfaces. A ribbon segment is
     // the index of the trail point it starts at; it ends at the next one.
     std::vector<RenderParticle> particles;
@@ -504,6 +517,8 @@ struct DEVEX_API RenderWorld
         std::vector<RenderLight> lightStorage = std::move(lights);
         std::vector<MeshInstance> meshStorage = std::move(meshes);
         std::vector<math::Mat4> boneStorage = std::move(boneMatrices);
+        std::vector<math::Vec4> instanceParameterStorage = std::move(instanceParameters);
+        instanceParameterStorage.clear();
         std::vector<RenderParticle> particleStorage = std::move(particles);
         std::vector<RenderTrailPoint> trailPointStorage = std::move(trailPoints);
         std::vector<std::uint32_t> trailSegmentStorage = std::move(trailSegments);
@@ -543,6 +558,7 @@ struct DEVEX_API RenderWorld
         lights = std::move(lightStorage);
         meshes = std::move(meshStorage);
         boneMatrices = std::move(boneStorage);
+        instanceParameters = std::move(instanceParameterStorage);
         particles = std::move(particleStorage);
         trailPoints = std::move(trailPointStorage);
         trailSegments = std::move(trailSegmentStorage);

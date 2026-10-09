@@ -184,6 +184,8 @@ private:
         std::optional<Buffer> lights;
         // The bone matrices of every skinned instance of the frame.
         std::optional<Buffer> bones;
+        // The values objects give the instance uniforms of their shaders.
+        std::optional<Buffer> instanceParameters;
         // The particles of the frame, those of a blended batch farthest first, and the points and
         // segments of its ribbons.
         std::optional<Buffer> particles;
@@ -414,7 +416,8 @@ private:
     // How far a point is, for the order of the blended draws: its squared distance from a
     // perspective camera, its depth along an orthographic one. Greater is drawn first.
     [[nodiscard]] float sortDistance(math::Vec3 point, math::Vec3 cameraPosition) const noexcept;
-    // Copies the bone matrices of the frame's skinned instances into its buffer.
+    // Copies the bone matrices of the frame's skinned instances into its buffer, and the values of
+    // the instance uniforms into theirs.
     [[nodiscard]] core::Result<void> uploadBones(FrameContext& frame) const;
     [[nodiscard]] core::Result<void> ensureHostBuffer(std::optional<Buffer>& buffer, VkDeviceSize bytes) const;
     void releaseRetiredResources() noexcept;

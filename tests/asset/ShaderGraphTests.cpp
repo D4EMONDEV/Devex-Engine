@@ -310,3 +310,32 @@ TEST_CASE("The shader graphs of the sandbox compile without warnings", "[asset][
     }
     CHECK(count == 1);
 }
+
+TEST_CASE("Parameters of shader graphs can be given per instance", "[asset][shader][graph]")
+{
+    ShaderGraphData graph = devex::asset::makeShaderGraph(ShaderKind::Spatial);
+    const std::uint32_t glow = add(graph, "Color Parameter");
+    graph.find(glow)->setText("name", "glow");
+    graph.find(glow)->setVector("instance", {1.0f, 0.0f, 0.0f, 0.0f});
+    link(graph, glow, 0, graph.outputOf(ShaderFunction::Fragment)->id, outputPort(graph, ShaderFunction::Fragment, "Albedo"));
+    CHECK(devex::asset::nodeTitle(*graph.find(glow)) == "Instance Parameter: glow");
+    const auto settings = devex::asset::settingsOf(*graph.find(glow), graph.kind);
+    CHECK(std::ranges::find(settings, "instance", &devex::asset::ShaderSettingInfo::name) != settings.end());
+
+    const devex::asset::GeneratedShader generated = devex::asset::generateShaderGraph(graph, "glow.dvxshadergraph");
+    INFO(generated.code);
+    CHECK(generated.code.find("instance uniform float4 glow : source_color") != std::string::npos);
+    const ShaderData shader = devex::asset::compileShaderGraph(graph, "glow.dvxshadergraph");
+    INFO(messages(shader));
+    REQUIRE(shader.compiled());
+    CHECK(shader.instanceParameters().size() == 1);
+
+    // Textures and the kinds that draw their objects alike take no instance values.
+    const std::uint32_t texture = add(graph, "Texture Parameter");
+    const auto textureSettings = devex::asset::settingsOf(*graph.find(texture), graph.kind);
+    CHECK(std::ranges::find(textureSettings, "instance", &devex::asset::ShaderSettingInfo::name) == textureSettings.end());
+    ShaderGraphData sky = devex::asset::makeShaderGraph(ShaderKind::Sky);
+    const std::uint32_t tint = add(sky, "Color Parameter", ShaderFunction::Sky);
+    const auto skySettings = devex::asset::settingsOf(*sky.find(tint), sky.kind);
+    CHECK(std::ranges::find(skySettings, "instance", &devex::asset::ShaderSettingInfo::name) == skySettings.end());
+}

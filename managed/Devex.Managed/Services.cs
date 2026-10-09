@@ -396,6 +396,118 @@ public static unsafe class Audio
 }
 
 /// <summary>
+/// The uniforms of the materials drawn by shaders of the project, changed while the game runs, as
+/// Godot's set_shader_parameter: every object drawn with the material changes. Its file keeps its
+/// values, which come back when the editor stops playing. Instance uniforms are given by each object,
+/// with <see cref="InstanceShaderParameters"/>.
+/// </summary>
+public static unsafe class Materials
+{
+    public static void SetShaderParameter(AssetId material, string name, float value) => Set(material, name, new Vec4(value, 0.0f, 0.0f, 0.0f));
+
+    public static void SetShaderParameter(AssetId material, string name, Vec2 value) => Set(material, name, new Vec4(value.X, value.Y, 0.0f, 0.0f));
+
+    public static void SetShaderParameter(AssetId material, string name, Vec3 value) =>
+        Set(material, name, new Vec4(value.X, value.Y, value.Z, 0.0f));
+
+    public static void SetShaderParameter(AssetId material, string name, Vec4 value) => Set(material, name, value);
+
+    public static void SetShaderParameter(AssetId material, string name, int value) => Set(material, name, new Vec4(value, 0.0f, 0.0f, 0.0f));
+
+    public static void SetShaderParameter(AssetId material, string name, bool value) => Set(material, name, new Vec4(value ? 1.0f : 0.0f, 0.0f, 0.0f, 0.0f));
+
+    /// <summary>Gives a texture uniform of the material another texture of the project.</summary>
+    public static void SetShaderParameter(AssetId material, string name, AssetId texture)
+    {
+        Uuid uuid = material.Uuid;
+        Uuid textureUuid = texture.Uuid;
+        using var text = new Utf8Buffer(name);
+        byte* error = null;
+        if (Bootstrap.Native.SetShaderTexture(&uuid, text.Pointer, &textureUuid, &error) == 0)
+        {
+            throw new ArgumentException(Utf8.ToString(error));
+        }
+    }
+
+    /// <summary>
+    /// The value of a uniform of the material, in as many components as it has: the one it was given,
+    /// else the default of its shader.
+    /// </summary>
+    public static Vec4 GetShaderParameter(AssetId material, string name)
+    {
+        Uuid uuid = material.Uuid;
+        using var text = new Utf8Buffer(name);
+        Vec4 value;
+        return Bootstrap.Native.ShaderParameter(&uuid, text.Pointer, &value) != 0
+            ? value
+            : throw new ArgumentException($"the material has no shader uniform {name}");
+    }
+
+    private static void Set(AssetId material, string name, Vec4 value)
+    {
+        Uuid uuid = material.Uuid;
+        using var text = new Utf8Buffer(name);
+        byte* error = null;
+        if (Bootstrap.Native.SetShaderParameter(&uuid, text.Pointer, &value, &error) == 0)
+        {
+            throw new ArgumentException(Utf8.ToString(error));
+        }
+    }
+}
+
+/// <summary>
+/// The instance uniforms of the shader an object draws with, as Godot's set_instance_shader_parameter:
+/// its renderer (MeshRenderer, SkinnedMeshRenderer, SpriteRenderer, Tilemap) gives them its own values,
+/// the flash of one enemy that was hit, and the objects that give none keep the defaults of the
+/// shader. Tweens reach them as "SpriteRenderer.instance_shader_parameters/flash".
+/// </summary>
+public static unsafe class InstanceShaderParameters
+{
+    public static void SetInstanceShaderParameter(this Entity entity, string name, float value) =>
+        Set(entity, name, new Vec4(value, 0.0f, 0.0f, 0.0f));
+
+    public static void SetInstanceShaderParameter(this Entity entity, string name, Vec2 value) =>
+        Set(entity, name, new Vec4(value.X, value.Y, 0.0f, 0.0f));
+
+    public static void SetInstanceShaderParameter(this Entity entity, string name, Vec3 value) =>
+        Set(entity, name, new Vec4(value.X, value.Y, value.Z, 0.0f));
+
+    public static void SetInstanceShaderParameter(this Entity entity, string name, Vec4 value) => Set(entity, name, value);
+
+    public static void SetInstanceShaderParameter(this Entity entity, string name, int value) =>
+        Set(entity, name, new Vec4(value, 0.0f, 0.0f, 0.0f));
+
+    public static void SetInstanceShaderParameter(this Entity entity, string name, bool value) =>
+        Set(entity, name, new Vec4(value ? 1.0f : 0.0f, 0.0f, 0.0f, 0.0f));
+
+    /// <summary>The value the object gives the uniform, else the default of its shader.</summary>
+    public static Vec4 GetInstanceShaderParameter(this Entity entity, string name)
+    {
+        using var text = new Utf8Buffer(name);
+        Vec4 value;
+        return Bootstrap.Native.InstanceShaderParameter(Scene.Current.Pointer, entity, text.Pointer, &value) != 0
+            ? value
+            : throw new ArgumentException($"'{entity.Name}' draws with no instance uniform {name}");
+    }
+
+    /// <summary>Lets the object take the default of the shader again.</summary>
+    public static void ResetInstanceShaderParameter(this Entity entity, string name)
+    {
+        using var text = new Utf8Buffer(name);
+        Bootstrap.Native.ResetInstanceShaderParameter(Scene.Current.Pointer, entity, text.Pointer);
+    }
+
+    private static void Set(Entity entity, string name, Vec4 value)
+    {
+        using var text = new Utf8Buffer(name);
+        if (Bootstrap.Native.SetInstanceShaderParameter(Scene.Current.Pointer, entity, text.Pointer, &value) == 0)
+        {
+            throw new InvalidOperationException($"'{entity.Name}' has no renderer to give {name} to");
+        }
+    }
+}
+
+/// <summary>
 /// The animations of the game: the clips the Animator components play on the bones of their entity.
 /// </summary>
 public static unsafe class Animation

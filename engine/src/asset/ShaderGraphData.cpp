@@ -913,7 +913,7 @@ std::string nodeTitle(const ShaderGraphNode& node)
     }
     if (type == "parameter")
     {
-        return std::format("Parameter: {}", node.text("name"));
+        return std::format("{}: {}", node.vector("instance").x != 0.0f ? "Instance Parameter" : "Parameter", node.text("name"));
     }
     if (type == "constant")
     {
@@ -998,6 +998,13 @@ std::vector<ShaderSettingInfo> settingsOf(const ShaderGraphNode& node, ShaderKin
                                 .label = type == "parameter" ? "Default" : "Value",
                                 .kind = ShaderSettingKind::Numbers,
                                 .count = componentCount(value)});
+        }
+        // Godot's instance qualifier: each object gives its own value, in its renderer.
+        if (type == "parameter" && typeName != "texture" && (kind == ShaderKind::Spatial || kind == ShaderKind::CanvasItem))
+        {
+            settings.push_back({.name = "instance", .label = "Per Instance", .kind = ShaderSettingKind::Toggle,
+                                .tooltip = "Each object drawn with the material gives its own value, in its renderer; the "
+                                           "default is the value of the others"});
         }
         if (type == "parameter" && (typeName == "float" || typeName == "int"))
         {
@@ -1146,6 +1153,9 @@ private:
             }
             const std::string_view type = node.text("type", "float");
             const math::Vec4 value = node.vector("value");
+            // Per instance, where the kind and the type allow it.
+            const bool instance = node.vector("instance").x != 0.0f && type != "texture" &&
+                                  (m_graph.kind == ShaderKind::Spatial || m_graph.kind == ShaderKind::CanvasItem);
             std::string declaration;
             if (type == "texture")
             {
@@ -1169,7 +1179,7 @@ private:
                 }
                 declaration = std::format("uniform {} {}{} = {};", typeName(parameterType), name, hints, literal(parameterType, value));
             }
-            line(declaration, node.id);
+            line(instance ? "instance " + declaration : declaration, node.id);
         }
         line("");
     }

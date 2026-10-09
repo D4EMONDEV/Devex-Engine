@@ -1,0 +1,10 @@
+shader_type canvas_item;
+
+// The knight of the platformer: white for an instant when the water sends it back, or when it picks
+// up a coin. flash is an instance uniform, which code tweens on the SpriteRenderer of the knight.
+instance uniform float flash : hint_range(0.0, 1.0) = 0.0;
+
+void fragment()
+{
+    COLOR.rgb = lerp(COLOR.rgb, float3(1.0), flash);
+}

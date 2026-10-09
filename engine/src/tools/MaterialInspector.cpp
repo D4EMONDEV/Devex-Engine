@@ -68,7 +68,7 @@ using Button = PanelButton;
 
 [[nodiscard]] std::string uniformLabel(const asset::ShaderParameter& parameter)
 {
-    std::string text = std::format("{} {}", asset::toString(parameter.type), parameter.name);
+    std::string text = std::format("{}{} {}", parameter.instance ? "instance " : "", asset::toString(parameter.type), parameter.name);
     switch (parameter.hint)
     {
     case asset::ShaderHint::Range:
@@ -428,6 +428,11 @@ struct FieldRow
     std::vector<Field> fields;
     for (const asset::ShaderParameter& parameter : shader.parameters)
     {
+        // Instance uniforms are given by each object, in its renderer.
+        if (parameter.instance)
+        {
+            continue;
+        }
         Field field{
             .label = parameter.name,
             .type = parameter.type,
@@ -529,6 +534,19 @@ public:
         if (m_fields.empty())
         {
             ui.note(&card, "The shader has no uniforms.");
+        }
+        if (m_shader)
+        {
+            std::string instances;
+            for (const asset::ShaderParameter* const uniform : m_shader->instanceParameters())
+            {
+                instances += std::format("{}{}", instances.empty() ? "" : ", ", uniform->name);
+            }
+            if (!instances.empty())
+            {
+                ui.note(&card, std::format("Instance uniforms ({}) are given by each object, under Instance Shader Parameters in its renderer.", instances),
+                        "dim", 2.0f);
+            }
         }
         static constexpr std::array<std::string_view, 4> letters{"X", "Y", "Z", "W"};
         static constexpr std::array<std::string_view, 1> one{""};

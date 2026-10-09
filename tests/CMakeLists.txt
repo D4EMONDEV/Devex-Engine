@@ -76,6 +76,7 @@ devex_add_tests(scene
         scene/DynamicComponentTests.cpp
         scene/EntityCopyTests.cpp
         scene/EntityRefAndListTests.cpp
+        scene/InstanceShaderParameterTests.cpp
         scene/PrefabTests.cpp
         scene/SceneSerializerTests.cpp
         scene/SceneTests.cpp

@@ -2,6 +2,7 @@
 
 #include <devex/core/Log.hpp>
 #include <devex/scene/ComponentRegistry.hpp>
+#include <devex/scene/InstanceShaderParameters.hpp>
 #include <devex/scene/Scene.hpp>
 
 #include <algorithm>
@@ -83,10 +84,20 @@ void writeValue(ValueKind kind, void* address, math::Vec4 value) noexcept
                                          : std::pair{path.substr(0, dot), path.substr(dot + 1)};
 }
 
+// "instance_shader_parameters/flash" names the instance uniform flash.
+[[nodiscard]] std::string_view uniformOf(std::string_view fieldName) noexcept
+{
+    const std::string_view field = scene::instanceShaderParametersField;
+    return fieldName.size() > field.size() + 1 && fieldName.starts_with(field) && fieldName[field.size()] == '/'
+               ? fieldName.substr(field.size() + 1)
+               : std::string_view{};
+}
+
 } // namespace
 
-TweenWorld::TweenWorld(CurveSource curves)
+TweenWorld::TweenWorld(CurveSource curves, ShaderDefaults shaderDefaults)
     : m_curves(std::move(curves))
+    , m_shaderDefaults(std::move(shaderDefaults))
 {
 }
 
@@ -99,6 +110,19 @@ core::Result<TweenWorld::Target> TweenWorld::resolve(scene::Scene& scene, scene:
     if (component == nullptr)
     {
         return core::makeError(core::ErrorCode::NotFound, "no component {} for '{}'", componentName, field);
+    }
+    if (const std::string_view uniform = uniformOf(fieldName); !uniform.empty())
+    {
+        void* const found = scene.isAlive(entity) ? component->findMutable(scene, entity) : nullptr;
+        if (found == nullptr)
+        {
+            return core::makeError(core::ErrorCode::NotFound, "the entity has no {}", componentName);
+        }
+        if (!scene::instanceShaderValues(*component, found).isValid())
+        {
+            return core::makeError(core::ErrorCode::InvalidArgument, "{} gives no instance uniforms to a shader", componentName);
+        }
+        return Target{.component = component, .uniform = std::string(uniform)};
     }
     const reflection::FieldInfo* const info = component->type->findField(fieldName);
     if (info == nullptr || info->list != nullptr || !isAnimatable(info->kind))
@@ -211,6 +235,10 @@ bool TweenWorld::write(scene::Scene& scene, Tween& tween, float progress) const
     {
         return false;
     }
+    if (!target->uniform.empty())
+    {
+        return writeUniform(*target, component, tween, progress);
+    }
     const reflection::FieldInfo& field = *target->field;
     void* const address = field.address(component);
 
@@ -233,14 +261,7 @@ bool TweenWorld::write(scene::Scene& scene, Tween& tween, float progress) const
         }
     }
 
-    float eased = math::ease(tween.spec.ease, progress);
-    if (tween.spec.curve.isValid() && m_curves)
-    {
-        if (const std::shared_ptr<const asset::CurveData> curve = m_curves(tween.spec.curve))
-        {
-            eased = curve->evaluate(progress);
-        }
-    }
+    const float eased = easedProgress(tween, progress);
     if (field.kind == ValueKind::Quat)
     {
         *static_cast<math::Quat*>(address) = math::normalize(math::slerp(tween.startRotation, tween.endRotation, eased));
@@ -249,6 +270,46 @@ bool TweenWorld::write(scene::Scene& scene, Tween& tween, float progress) const
     {
         writeValue(field.kind, address, tween.start + (tween.end - tween.start) * eased);
     }
+    return true;
+}
+
+float TweenWorld::easedProgress(const Tween& tween, float progress) const
+{
+    if (tween.spec.curve.isValid() && m_curves)
+    {
+        if (const std::shared_ptr<const asset::CurveData> curve = m_curves(tween.spec.curve))
+        {
+            return curve->evaluate(progress);
+        }
+    }
+    return math::ease(tween.spec.ease, progress);
+}
+
+bool TweenWorld::writeUniform(const Target& target, void* component, Tween& tween, float progress) const
+{
+    const scene::InstanceShaderValues values = scene::instanceShaderValues(*target.component, component);
+    if (!values.isValid())
+    {
+        return false;
+    }
+    if (!tween.started)
+    {
+        // A uniform the renderer gives no value yet starts from the default of its shader.
+        tween.started = true;
+        std::optional<math::Vec4> current = values.find(target.uniform);
+        if (!current && m_shaderDefaults)
+        {
+            const reflection::FieldInfo* const material = target.component->type->findField("material");
+            if (material != nullptr && material->kind == ValueKind::AssetId && material->list == nullptr)
+            {
+                current = m_shaderDefaults(*static_cast<const asset::AssetId*>(material->address(component)), target.uniform);
+            }
+        }
+        tween.start = tween.spec.from.value_or(current.value_or(math::Vec4{0.0f}));
+        tween.end = tween.spec.relative ? tween.start + tween.spec.to : tween.spec.to;
+    }
+    const float eased = easedProgress(tween, progress);
+    values.set(target.uniform, tween.start + (tween.end - tween.start) * eased);
     return true;
 }
 

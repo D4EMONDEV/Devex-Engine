@@ -122,6 +122,8 @@ struct GpuSceneData
     VkDeviceAddress shadowViews = 0;
     // The uniforms of the materials drawn by shaders of projects, four numbers a slot.
     VkDeviceAddress materialParameters = 0;
+    // The values objects give the instance uniforms of their shaders, four numbers each.
+    VkDeviceAddress instanceParameters = 0;
 };
 
 // How a vertex of a skinned mesh follows its bones, beside the vertex itself.
@@ -145,6 +147,12 @@ struct DrawPushConstants
     std::uint32_t skinned = 0;
     VkDeviceAddress skin = 0;
     VkDeviceAddress bones = 0;
+    // Where the values of the instance uniforms of the instance start in
+    // GpuSceneData::instanceParameters, or noInstanceParameters.
+    std::uint32_t instanceParameters = 0xFFFFFFFFU;
+    std::uint32_t padding0 = 0;
+    std::uint32_t padding1 = 0;
+    std::uint32_t padding2 = 0;
 };
 
 // The prepass also needs where the instance stood on the previous frame. Vulkan 1.4 guarantees
@@ -266,6 +274,11 @@ struct GpuSprite
     std::uint32_t normalTexture = 0xFFFFFFFFU;
     // The material whose shader draws it, for the uniforms of a shader of a project.
     std::uint32_t material = 0;
+    // Where the values it gives the instance uniforms of that shader start, or 0xFFFFFFFF for none.
+    std::uint32_t instanceParameters = 0xFFFFFFFFU;
+    std::uint32_t padding0 = 0;
+    std::uint32_t padding1 = 0;
+    std::uint32_t padding2 = 0;
 };
 
 // The flags of GpuSprite, above its mode.
@@ -411,10 +424,13 @@ static_assert(offsetof(GpuSceneData, materials) == 592);
 static_assert(offsetof(GpuSceneData, pickViewProjection) == 624);
 static_assert(offsetof(GpuSceneData, unjitteredViewProjection) == 688);
 static_assert(offsetof(GpuSceneData, materialParameters) == 888);
-static_assert(sizeof(GpuSceneData) == 896);
+static_assert(offsetof(GpuSceneData, instanceParameters) == 896);
+static_assert(sizeof(GpuSceneData) == 904);
 
 // Vulkan guarantees 128 bytes of push constants on every device.
-static_assert(sizeof(DrawPushConstants) == 112);
+static_assert(sizeof(DrawPushConstants) == 128);
+static_assert(offsetof(DrawPushConstants, instanceParameters) == 112);
+static_assert(offsetof(PrepassPushConstants, previousWorld) == 128);
 static_assert(offsetof(DrawPushConstants, world) == 16);
 static_assert(offsetof(DrawPushConstants, material) == 80);
 static_assert(offsetof(DrawPushConstants, objectId) == 88);
@@ -427,7 +443,8 @@ static_assert(sizeof(OverlayPushConstants) == 48);
 static_assert(sizeof(GpuParticle) == 64);
 static_assert(sizeof(GpuTrailPoint) == 48);
 static_assert(sizeof(ParticlePushConstants) == 64);
-static_assert(sizeof(GpuSprite) == 160);
+static_assert(sizeof(GpuSprite) == 176);
+static_assert(offsetof(GpuSprite, instanceParameters) == 160);
 static_assert(sizeof(SpritePushConstants) == 64);
 static_assert(sizeof(GpuLight2D) == 80);
 static_assert(sizeof(LuminancePushConstants) == 16);

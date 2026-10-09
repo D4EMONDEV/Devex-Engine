@@ -23,7 +23,11 @@ namespace devex::scene::detail {
 [[nodiscard]] std::unexpected<core::Error> errorAt(std::uint32_t line, const core::Error& error);
 [[nodiscard]] core::Result<core::Uuid> readUuid(const serialization::TextValue& value);
 
-[[nodiscard]] serialization::TextSection writeComponent(const ComponentType& componentType, const void* component);
+// Hidden lists left empty are not written unless `complete`, so that data tools keep their own way,
+// such as the instance values of a renderer, adds nothing to the files of the components that hold
+// none; they read back empty.
+[[nodiscard]] serialization::TextSection writeComponent(const ComponentType& componentType, const void* component,
+                                                        bool complete = false);
 // The type attribute of a component or override section.
 [[nodiscard]] const std::string* componentTypeName(const serialization::TextSection& section);
 // Reads the fields of a component section into a component. Unknown fields are skipped with a warning.

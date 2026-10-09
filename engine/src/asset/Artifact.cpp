@@ -111,9 +111,9 @@ std::uint32_t artifactVersion(AssetType type) noexcept
     case AssetType::NavMesh:
     case AssetType::Translation:
         return 1;
-    // 2: the nodes of shader graphs that diagnostics name.
+    // 2: the nodes of shader graphs that diagnostics name. 3: instance uniforms.
     case AssetType::Shader:
-        return 2;
+        return 3;
     }
     return 0;
 }
@@ -1097,6 +1097,7 @@ std::vector<std::byte> encodeShader(const ShaderData& shader)
         writer.write(parameter.hint);
         writer.write(parameter.defaultValue);
         writer.write(parameter.range);
+        writer.write(static_cast<std::uint8_t>(parameter.instance ? 1 : 0));
     }
     writer.writeArray(std::span<const std::uint32_t>(shader.code));
     writer.write(static_cast<std::uint32_t>(shader.diagnostics.size()));
@@ -1137,6 +1138,7 @@ core::Result<ShaderData> decodeShader(std::span<const std::byte> bytes)
         parameter.hint = reader.read<ShaderHint>();
         parameter.defaultValue = reader.read<math::Vec4>();
         parameter.range = reader.read<math::Vec3>();
+        parameter.instance = reader.read<std::uint8_t>() != 0;
         valid = valid && toString(parameter.type) != "unknown" && static_cast<std::uint8_t>(parameter.hint) <= 5;
     }
     shader.code = reader.readArray<std::uint32_t>();

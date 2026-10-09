@@ -28,6 +28,11 @@ public struct Sprite
     public uint normalTexture;
     // The material whose shader draws it; its uniforms, for a shader of the project.
     public uint material;
+    // Where the values it gives the instance uniforms of that shader start, or 0xFFFFFFFF for none.
+    public uint instanceParameters;
+    public uint padding0;
+    public uint padding1;
+    public uint padding2;
 };
 
 // A light of the 2D plane, as render::vulkan::GpuLight2D.

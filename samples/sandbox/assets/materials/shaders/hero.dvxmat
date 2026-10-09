@@ -1,0 +1,3 @@
+# Drawn by the shader hero.dvxshader: the knight flashes by its own flash.
+[material format=2]
+shader = asset("902da0e8-eae1-5955-bddd-2eca7302e23c")

@@ -57,7 +57,7 @@ constexpr std::array cmakeKeywords{
 };
 
 constexpr std::array shaderKeywords{
-    "shader_type", "render_mode", "uniform", "varying", "if", "else", "for", "while", "do", "return", "break",
+    "shader_type", "render_mode", "uniform", "instance", "varying", "if", "else", "for", "while", "do", "return", "break",
     "continue", "discard", "switch", "case", "default", "static", "const", "struct", "in", "out", "inout",
     "true", "false", "let", "var", "void", "import", "typealias", "interface", "extension", "public",
 };

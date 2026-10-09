@@ -159,6 +159,50 @@ TEST_CASE("Mistakes in the statements of a shader are reported on their lines", 
     CHECK(particles.diagnostics.size() == 1);
 }
 
+TEST_CASE("Instance uniforms are numbers that spatial and canvas item shaders read per object", "[asset][shader]")
+{
+    const ShaderData spatial = devex::asset::compileShader(R"(shader_type spatial;
+uniform float3 tint : source_color = float3(1.0, 1.0, 1.0);
+instance uniform float flash : hint_range(0.0, 1.0) = 0.0;
+instance uniform float4 glow : source_color = float4(1.0, 0.5, 0.2, 1.0);
+void fragment()
+{
+    ALBEDO = lerp(tint, float3(1.0), flash);
+    EMISSION = glow.rgb * glow.a;
+}
+)",
+                                                           "flash.dvxshader");
+    INFO((spatial.diagnostics.empty() ? std::string{} : spatial.diagnostics.front().message));
+    REQUIRE(spatial.compiled());
+    REQUIRE(spatial.parameters.size() == 3);
+    CHECK_FALSE(spatial.parameters[0].instance);
+    CHECK(spatial.parameters[1].instance);
+    CHECK(spatial.parameters[1].hint == ShaderHint::Range);
+    CHECK(spatial.parameters[2].instance);
+    CHECK(spatial.parameters[2].defaultValue.y == 0.5f);
+    REQUIRE(spatial.instanceParameters().size() == 2);
+    CHECK(spatial.instanceParameters().back()->name == "glow");
+    const auto decoded = devex::asset::decodeShader(devex::asset::encodeShader(spatial));
+    REQUIRE(decoded);
+    CHECK(*decoded == spatial);
+
+    const ShaderData canvas = devex::asset::compileShader(R"(shader_type canvas_item;
+instance uniform float flash = 0.0;
+void fragment() { COLOR.rgb = lerp(COLOR.rgb, float3(1.0), flash); }
+)",
+                                                          "hit.dvxshader");
+    INFO((canvas.diagnostics.empty() ? std::string{} : canvas.diagnostics.front().message));
+    REQUIRE(canvas.compiled());
+    CHECK(canvas.parameters.front().instance);
+
+    // Particles and skies draw all their objects alike, and textures come from the material.
+    const auto errorsOf = [](std::string_view text) { return devex::asset::parseShaderSource(text).shader; };
+    CHECK(hasError(errorsOf("shader_type particles;\ninstance uniform float x;\n"), 2));
+    CHECK(hasError(errorsOf("shader_type sky;\ninstance uniform float x;\n"), 2));
+    CHECK(hasError(errorsOf("shader_type spatial;\ninstance uniform sampler2D t;\n"), 2));
+    CHECK(hasError(errorsOf("shader_type spatial;\ninstance float x;\nvoid fragment() {}\n"), 2));
+}
+
 TEST_CASE("Every kind of shader compiles into the entry points of its passes", "[asset][shader]")
 {
     const ShaderData spatial = devex::asset::compileShader(water, "water.dvxshader");
@@ -358,5 +402,5 @@ TEST_CASE("The shaders of the sandbox compile without warnings", "[asset][shader
         CHECK(shader.diagnostics.empty());
         ++count;
     }
-    CHECK(count == 7);
+    CHECK(count == 9);
 }

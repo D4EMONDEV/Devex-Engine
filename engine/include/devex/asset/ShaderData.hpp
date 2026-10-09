@@ -78,6 +78,10 @@ struct DEVEX_API ShaderParameter
     math::Vec4 defaultValue{0.0f};
     // hint_range: the lowest value, the highest, and the step of the slider, 0 for any.
     math::Vec3 range{0.0f, 1.0f, 0.0f};
+    // instance uniform: each object drawn with the material may give its own value, in its
+    // renderer, and those that give none take the default value; materials never set it. Numbers
+    // only, as in Godot.
+    bool instance = false;
 
     bool operator==(const ShaderParameter&) const = default;
 };
@@ -144,6 +148,8 @@ struct DEVEX_API ShaderData
     }
     // The uniform of that name, or null.
     [[nodiscard]] const ShaderParameter* findParameter(std::string_view name) const noexcept;
+    // The instance uniforms, in the order they are declared: the values an object gives follow it.
+    [[nodiscard]] std::vector<const ShaderParameter*> instanceParameters() const;
 
     bool operator==(const ShaderData&) const = default;
 };

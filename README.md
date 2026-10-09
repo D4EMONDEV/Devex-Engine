@@ -51,8 +51,9 @@ captures de l'éditeur, scènes de base, entrées, scripts C#, animations, colli
   (WAV, FLAC, MP3, Ogg Vorbis), de polices (`.ttf`, `.otf` cuites en atlas de distances), de
   thèmes `.dvxtheme` et de courbes `.dvxcurve` ;
 - `Devex::Render` : renderer Vulkan 1.4 (volk, VMA), shaders Slang, shaders des projets à la
-  Godot (`spatial`, `canvas_item`, `particles`, `sky`, avec `light()` et un ciel qui éclaire la
-  scène), render graph, PBR
+  Godot (`spatial`, `canvas_item`, `particles`, `sky`, avec `light()`, un ciel qui éclaire la
+  scène, des uniforms changés par le code et des `instance uniform` donnés par chaque objet),
+  render graph, PBR
   forward+ clustered avec prépasse de profondeur, culling par tronc de vue, ombres en cascades pour
   le soleil et en atlas pour les lumières locales, ciel HDR et IBL, surfaces transparentes triées,
   anticrénelage temporel, occlusion ambiante en espace écran, bloom, exposition automatique,
@@ -178,7 +179,8 @@ captures de l'éditeur, scènes de base, entrées, scripts C#, animations, colli
   frames, d'une condition ou d'un tween, arrêtées avec leur entité), rendu automatique de la
   scène, export d'un jeu ;
 - `Devex.Managed` : l'API C# du moteur (`Component`, `Entity`, `Scene`, `Input`, `Physics`, `Audio`,
-  `Animation`, `Navigation`, `Tween`, `Particles`, `Tilemaps`, `Ui`, `Prefabs`, `Assets`, `Saves`, `PlayerSettings`, `Time`, `Log`,
+  `Animation`, `Navigation`, `Tween`, `Particles`, `Tilemaps`, `Ui`, `Prefabs`, `Assets`, `Materials`,
+  `InstanceShaderParameters`, `Saves`, `PlayerSettings`, `Time`, `Log`,
   `Profiler`, maths), les coroutines `async Coroutine` (`Wait.Seconds`, `Wait.Until`, tweens et
   tâches attendus sur le thread du jeu) et les vues des composants du
   moteur, compilée dans `bin/managed` quand le SDK .NET est installé ;
@@ -211,7 +213,8 @@ captures de l'éditeur, scènes de base, entrées, scripts C#, animations, colli
   de l'ombre sur un mur à normal map, traverse les corniches
   par-dessous, pousse des caisses et une porte de pierre suspendue à une charnière, prend une
   plateforme mobile au-dessus de l'eau animée et
-  revient au départ s'il y tombe, des pièces qui tournent ramassées par déclencheur, un
+  revient au départ s'il y tombe en clignotant de blanc, des pièces qui tournent ramassées par
+  déclencheur, de l'herbe que le vent couche par rafales, un
   coucher de soleil qui défile plus lentement, un mur éclairé par une torche,
   `code/Platformer.cs`), d'où Tab mène à la
   scène `sandbox` ; la

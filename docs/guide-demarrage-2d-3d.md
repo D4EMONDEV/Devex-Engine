@@ -543,7 +543,23 @@ Sans écrire de code, un **graphe de shader** donne le même résultat, avec des
 4. Pour le faire pulser, ajouter **Input** (réglé sur `TIME`), **Math > Function** (`sin`) et **Math > Vector Operator** (`multiply`) : TIME dans le sinus, la couleur et le sinus dans le produit, le produit dans Albedo. Ctrl+Z annule un geste, **Code** montre le shader produit.
 5. Comme pour un shader écrit, **New Material** puis glisser le matériau sur l'objet.
 
-La scène `shaders.dvxscene` du bac à sable montre de l'eau, une statue qui se dissout, un éclairage toon, des braises, un ciel procédural et un champ de force fait d'un graphe (`force_field.dvxshadergraph`).
+Pour qu'un seul objet change, par exemple l'ennemi touché qui clignote, le shader déclare un **uniform par instance**, comme dans Godot :
+
+```text
+instance uniform float flash : hint_range(0.0, 1.0) = 0.0;
+void fragment() { COLOR.rgb = lerp(COLOR.rgb, float3(1.0), flash); }
+```
+
+Chaque objet dessiné avec le matériau règle alors sa propre valeur, dans la section **Instance Shader Parameters** de son renderer, ou depuis le code :
+
+```csharp
+entity.SetInstanceShaderParameter("flash", 1.0f);
+new TweenSpec(entity, "SpriteRenderer.instance_shader_parameters/flash", new Vec4(0, 0, 0, 0), 0.4f).Play();
+```
+
+`Materials.SetShaderParameter(material, "strength", 0.3f)` change au contraire le matériau, donc tous ses objets à la fois ; l'éditeur lui rend la valeur de son fichier quand le jeu s'arrête.
+
+La scène `shaders.dvxscene` du bac à sable montre de l'eau, une statue qui se dissout, un éclairage toon, des braises, un ciel procédural, un champ de force fait d'un graphe (`force_field.dvxshadergraph`) et trois cristaux qui partagent un matériau en brillant chacun de sa couleur.
 
 ## 7. Ajouter un objectif au prototype
 

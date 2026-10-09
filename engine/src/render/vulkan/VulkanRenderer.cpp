@@ -38,6 +38,12 @@ constexpr math::Vec4 outlineColor{1.0f, 0.42f, 0.05f, 1.0f};
 
 static_assert(sizeof(ClusterRange) == sizeof(GpuCluster));
 
+// Where the values of an instance start, when the frame has them; none otherwise.
+[[nodiscard]] std::uint32_t instanceParametersOf(const RenderWorld& world, std::uint32_t first) noexcept
+{
+    return first < world.instanceParameters.size() ? first : noInstanceParameters;
+}
+
 [[nodiscard]] VkFormat toVulkanFormat(asset::TextureFormat format) noexcept
 {
     switch (format)
@@ -1855,6 +1861,16 @@ core::Result<void> VulkanRenderer::uploadBones(FrameContext& frame) const
         std::memcpy(frame.bones->mappedBytes().data(), m_world.boneMatrices.data(),
                     m_world.boneMatrices.size() * sizeof(math::Mat4));
     }
+    const VkDeviceSize parameterBytes = std::max<std::size_t>(m_world.instanceParameters.size(), 1) * sizeof(math::Vec4);
+    if (core::Result<void> ensured = ensureHostBuffer(frame.instanceParameters, parameterBytes); !ensured)
+    {
+        return ensured;
+    }
+    if (!m_world.instanceParameters.empty())
+    {
+        std::memcpy(frame.instanceParameters->mappedBytes().data(), m_world.instanceParameters.data(),
+                    m_world.instanceParameters.size() * sizeof(math::Vec4));
+    }
     return {};
 }
 
@@ -2479,6 +2495,7 @@ void VulkanRenderer::writeSceneData(FrameContext& frame,
 
     scene.materials = frame.materials->deviceAddress();
     scene.materialParameters = frame.materialParameters ? frame.materialParameters->deviceAddress() : 0;
+    scene.instanceParameters = frame.instanceParameters ? frame.instanceParameters->deviceAddress() : 0;
     scene.time = m_time;
     scene.previousTime = m_previousTime;
     scene.shadowViews = frame.shadowViews ? frame.shadowViews->deviceAddress() : 0;
@@ -2710,6 +2727,7 @@ std::uint32_t VulkanRenderer::drawMeshes(VkCommandBuffer commandBuffer, VkDevice
             .skinned = skinned ? 1u : 0u,
             .skin = skinned ? mesh->skin->deviceAddress() : 0,
             .bones = skinned ? boneMatrices + instance.firstBone * sizeof(math::Mat4) : 0,
+            .instanceParameters = instanceParametersOf(m_world, instance.instanceParameters),
         };
         if (pass == MeshPass::Prepass)
         {
@@ -2992,6 +3010,7 @@ core::Result<void> VulkanRenderer::uploadSprites(FrameContext& frame) const
                 .lightMask = sprite.lightMask,
                 .normalTexture = slotOf(sprite.normalTexture),
                 .material = materialIndex(sprite.material),
+                .instanceParameters = instanceParametersOf(m_world, sprite.instanceParameters),
             });
             // A sprite whose texture is still loading waits for it rather than showing a plain rectangle.
             if (sprite.texture.isValid() && gpu.texture == noParticleTexture)
@@ -3027,6 +3046,7 @@ core::Result<void> VulkanRenderer::uploadSprites(FrameContext& frame) const
                 .lightMask = tilemap.lightMask,
                 .normalTexture = slotOf(tile.normalTexture),
                 .material = materialIndex(tilemap.material),
+                .instanceParameters = instanceParametersOf(m_world, tilemap.instanceParameters),
             });
             if (tile.texture.isValid() && gpu.texture == noParticleTexture)
             {

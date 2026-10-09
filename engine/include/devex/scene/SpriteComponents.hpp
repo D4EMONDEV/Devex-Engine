@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace devex::scene {
 
@@ -63,6 +64,10 @@ struct DEVEX_API SpriteRenderer
     std::uint32_t lightMask = 1;
     // A material whose canvas_item shader draws the sprite; none draws it as it is.
     asset::AssetId material;
+    // The values it gives the instance uniforms of the shader of its material, by name; the others
+    // keep their defaults. Edited under Instance Shader Parameters, or by setInstanceShaderParameter.
+    std::vector<std::string> instanceShaderParameters;
+    std::vector<math::Vec4> instanceShaderValues;
 };
 DEVEX_DECLARE_ENGINE_REFLECTION(SpriteRenderer);
 

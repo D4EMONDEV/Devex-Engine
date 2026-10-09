@@ -103,4 +103,17 @@ const ShaderParameter* ShaderData::findParameter(std::string_view name) const no
     return nullptr;
 }
 
+std::vector<const ShaderParameter*> ShaderData::instanceParameters() const
+{
+    std::vector<const ShaderParameter*> found;
+    for (const ShaderParameter& parameter : parameters)
+    {
+        if (parameter.instance)
+        {
+            found.push_back(&parameter);
+        }
+    }
+    return found;
+}
+
 } // namespace devex::asset

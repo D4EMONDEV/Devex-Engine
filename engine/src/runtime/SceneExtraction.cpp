@@ -9,17 +9,56 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
+#include <iterator>
 #include <limits>
 #include <map>
+#include <memory>
 #include <optional>
 #include <set>
+#include <string>
 #include <unordered_map>
 #include <utility>
 #include <vector>
 
 namespace devex::runtime {
 namespace {
+
+// The values a renderer gives the instance uniforms of the shader of a material, written into the
+// frame: one for each instance uniform, in the order the shader declares them, the uniforms it gives
+// nothing at their defaults. None when it gives no value to that shader.
+[[nodiscard]] std::uint32_t instanceValues(AssetManager& assets, asset::AssetId material, const std::vector<std::string>& names,
+                                           const std::vector<math::Vec4>& values, render::RenderWorld& world)
+{
+    if (names.empty() || !material.isValid())
+    {
+        return render::noInstanceParameters;
+    }
+    const std::shared_ptr<const asset::ShaderData> shader = assets.materialShader(material);
+    if (shader == nullptr)
+    {
+        return render::noInstanceParameters;
+    }
+    const auto first = static_cast<std::uint32_t>(world.instanceParameters.size());
+    bool given = false;
+    for (const asset::ShaderParameter& uniform : shader->parameters)
+    {
+        if (!uniform.instance)
+        {
+            continue;
+        }
+        const auto found = static_cast<std::size_t>(std::distance(names.begin(), std::ranges::find(names, uniform.name)));
+        given = given || found < values.size();
+        world.instanceParameters.push_back(found < values.size() ? values[found] : uniform.defaultValue);
+    }
+    if (!given)
+    {
+        world.instanceParameters.resize(first);
+        return render::noInstanceParameters;
+    }
+    return first;
+}
 
 // A point of a ribbon before it is turned into the points of the renderer.
 struct RibbonPoint
@@ -122,6 +161,8 @@ void extractSprites(scene::Scene& scene, AssetManager& assets, const asset::Sort
             .layer = sorting.rank(sprite.sortingLayer),
             .order = sprite.order,
             .objectId = entity.index + 1,
+            .instanceParameters = instanceValues(assets, sprite.material, sprite.instanceShaderParameters,
+                                                 sprite.instanceShaderValues, world),
         });
     }
 }
@@ -204,6 +245,8 @@ bool extractTilemaps(scene::Scene& scene, AssetManager& assets, const asset::Sor
             .layer = sorting.rank(tilemap.sortingLayer),
             .order = tilemap.order,
             .objectId = entity.index + 1,
+            .instanceParameters = instanceValues(assets, tilemap.material, tilemap.instanceShaderParameters,
+                                                 tilemap.instanceShaderValues, world),
         });
     }
     return animated;
@@ -454,13 +497,15 @@ void extractScene(scene::Scene& scene, AssetManager& assets, render::RenderWorld
         for (std::uint32_t submesh = 0; submesh < mesh->submeshMaterials.size(); ++submesh)
         {
             const asset::AssetId material = mesh->submeshMaterials[submesh];
+            const bool overridden = override.isValid() || !material.isValid();
             world.meshes.push_back({
                 .mesh = mesh->handle,
                 .submesh = submesh,
-                .material = override.isValid() || !material.isValid() ? override
-                                                                       : assets.material(material),
+                .material = overridden ? override : assets.material(material),
                 .transform = transform.matrix,
                 .objectId = entity.index + 1,
+                .instanceParameters = instanceValues(assets, overridden ? renderer.material : material,
+                                                     renderer.instanceShaderParameters, renderer.instanceShaderValues, world),
             });
         }
     }
@@ -493,16 +538,18 @@ void extractScene(scene::Scene& scene, AssetManager& assets, render::RenderWorld
         for (std::uint32_t submesh = 0; submesh < mesh->submeshMaterials.size(); ++submesh)
         {
             const asset::AssetId material = mesh->submeshMaterials[submesh];
+            const bool overridden = override.isValid() || !material.isValid();
             world.meshes.push_back({
                 .mesh = mesh->handle,
                 .submesh = submesh,
-                .material = override.isValid() || !material.isValid() ? override
-                                                                       : assets.material(material),
+                .material = overridden ? override : assets.material(material),
                 // Bones reach the world on their own; vertices without weights follow the entity.
                 .transform = transform.matrix,
                 .firstBone = firstBone,
                 .boneCount = static_cast<std::uint32_t>(data->inverseBind.size()),
                 .objectId = entity.index + 1,
+                .instanceParameters = instanceValues(assets, overridden ? renderer.material : material,
+                                                     renderer.instanceShaderParameters, renderer.instanceShaderValues, world),
             });
         }
     }

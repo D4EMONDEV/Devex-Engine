@@ -1,0 +1,17 @@
+shader_type spatial;
+
+// Crystals that share one material and glow each in its own colour: glow and pulse are instance
+// uniforms, which each crystal gives in its MeshRenderer, under Instance Shader Parameters.
+uniform float3 body : source_color = float3(0.04, 0.05, 0.07);
+uniform float shine : hint_range(0.0, 8.0) = 2.5;
+instance uniform float4 glow : source_color = float4(0.25, 0.6, 1.0, 1.0);
+instance uniform float pulse : hint_range(0.0, 1.0) = 0.0;
+
+void fragment()
+{
+    // Brighter at the edges, as light caught inside the stone.
+    const float rim = pow(1.0 - saturate(dot(normalize(NORMAL), normalize(VIEW))), 2.0);
+    ALBEDO = body;
+    ROUGHNESS = 0.15;
+    EMISSION = glow.rgb * glow.a * (0.35 + rim * shine + pulse * 2.0);
+}

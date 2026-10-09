@@ -248,3 +248,110 @@ void sky() { COLOR = color; }
     }
     CHECK(capture.errors().empty());
 }
+
+TEST_CASE("Instance uniforms give each object drawn with a material its own value", "[render][gpu][shader]")
+{
+    using devex::math::Mat4;
+    using devex::math::Vec3;
+    using devex::math::Vec4;
+
+    const devex::asset::ShaderData tinted = compiled(R"(shader_type spatial;
+render_mode unshaded;
+instance uniform float3 tint : source_color = float3(0.0, 0.0, 1.0);
+void fragment() { ALBEDO = tint; }
+)",
+                                                     "tinted.dvxshader");
+    const devex::asset::ShaderData flashed = compiled(R"(shader_type canvas_item;
+instance uniform float4 color : source_color = float4(0.0, 0.0, 1.0, 1.0);
+void fragment() { COLOR = color; }
+)",
+                                                      "flashed.dvxshader");
+
+    const ErrorCapture capture;
+    {
+        auto platform = devex::platform::Platform::create();
+        REQUIRE(platform.has_value());
+        auto window = platform->createWindow({.width = 320, .height = 240, .vulkan = true, .hidden = true});
+        REQUIRE(window.has_value());
+        auto renderer = devex::render::Renderer::create(*platform, *window, {.validation = true});
+        if (!renderer)
+        {
+            FAIL(std::format("{}", renderer.error()));
+        }
+        const auto cube = renderer->createMesh(devex::asset::makeCube());
+        REQUIRE(cube.has_value());
+        const auto tintedShader = renderer->createShader(tinted);
+        const auto flashedShader = renderer->createShader(flashed);
+        REQUIRE(tintedShader.has_value());
+        REQUIRE(flashedShader.has_value());
+        // The slots of the materials hold the defaults, as the asset manager gives them.
+        const devex::render::MaterialHandle shared =
+            renderer->createMaterial({.shader = *tintedShader, .parameters = {Vec4{0.0f, 0.0f, 1.0f, 0.0f}}});
+        const devex::render::MaterialHandle sprites =
+            renderer->createMaterial({.shader = *flashedShader, .parameters = {Vec4{0.0f, 0.0f, 1.0f, 1.0f}}});
+
+        const Mat4 cameraTransform = devex::math::translate(Mat4(1.0f), Vec3{0.0f, 0.0f, 6.0f});
+        std::vector<devex::render::CapturedImage> captured;
+        for (int frame = 0; frame < 8; ++frame)
+        {
+            devex::render::RenderWorld& world = renderer->beginFrame();
+            world.camera.view = devex::math::inverse(cameraTransform);
+            world.camera.autoExposure = false;
+            world.camera.ev100 = 0.0f;
+            world.environment.intensity = 0.05f;
+            world.instanceParameters = {Vec4{1.0f, 0.0f, 0.0f, 0.0f}, Vec4{0.0f, 1.0f, 0.0f, 1.0f}};
+            // The left cube is red by its own value, the right one keeps the blue of the shader.
+            world.meshes.push_back({.mesh = *cube,
+                                    .material = shared,
+                                    .transform = devex::math::translate(Mat4(1.0f), Vec3{-1.5f, 0.0f, 0.0f}),
+                                    .objectId = 1,
+                                    .instanceParameters = 0});
+            world.meshes.push_back({.mesh = *cube,
+                                    .material = shared,
+                                    .transform = devex::math::translate(Mat4(1.0f), Vec3{1.5f, 0.0f, 0.0f}),
+                                    .objectId = 2});
+            // The sprite above is green by its own.
+            world.sprites.push_back({.transform = devex::math::translate(Mat4(1.0f), Vec3{0.0f, 2.0f, 0.0f}),
+                                     .size = {1.0f, 1.0f},
+                                     .material = sprites,
+                                     .objectId = 3,
+                                     .instanceParameters = 1});
+            if (frame == 5)
+            {
+                static_cast<void>(renderer->requestCapture(64, 48));
+            }
+            const devex::core::Result<void> presented = renderer->endFrame();
+            if (!presented)
+            {
+                FAIL(std::format("frame {}: {}", frame, presented.error()));
+            }
+            for (devex::render::CapturedImage& image : renderer->takeCaptures())
+            {
+                captured.push_back(std::move(image));
+            }
+        }
+
+        REQUIRE(captured.size() == 1);
+        const devex::render::CapturedImage& image = captured.front();
+        const auto pixel = [&](std::uint32_t x, std::uint32_t y) {
+            const std::size_t at = (std::size_t{y} * image.width + x) * 4;
+            return Vec3{static_cast<float>(image.rgba[at]), static_cast<float>(image.rgba[at + 1]),
+                        static_cast<float>(image.rgba[at + 2])};
+        };
+        const Vec3 left = pixel(image.width / 2 - 10, image.height / 2);
+        const Vec3 right = pixel(image.width / 2 + 10, image.height / 2);
+        const Vec3 above = pixel(image.width / 2, image.height / 2 - 14);
+        INFO(std::format("left {} {} {}, right {} {} {}, above {} {} {}", left.r, left.g, left.b, right.r, right.g, right.b, above.r,
+                         above.g, above.b));
+        CHECK(left.r > left.b + 60.0f);
+        CHECK(right.b > right.r + 60.0f);
+        CHECK(above.g > above.r + 60.0f);
+        CHECK(above.g > above.b + 60.0f);
+    }
+
+    for (const std::string& error : capture.errors())
+    {
+        UNSCOPED_INFO(error);
+    }
+    CHECK(capture.errors().empty());
+}

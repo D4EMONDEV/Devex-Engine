@@ -685,6 +685,8 @@ struct DEVEX_API ToolsState
     TilesetEditor tilesetEditor;
     AnimatorEditor animatorEditor;
     ShaderGraphEditor shaderGraphEditor;
+    // Counts the imports of materials and shaders, for what the panels read from their artifacts.
+    std::uint64_t materialRevision = 0;
     TilePainter tilePainter;
     // A file just created, selected once it is imported, as a res:// path.
     std::string assetToSelect;

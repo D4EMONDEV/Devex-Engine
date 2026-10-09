@@ -30,6 +30,7 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <unordered_set>
 #include <variant>
@@ -95,6 +96,22 @@ public:
     // A shader of the project, read once and shared, with its pipelines when it compiled; null when
     // it cannot be loaded. A new import replaces it, and the materials using it follow.
     [[nodiscard]] std::shared_ptr<const asset::ShaderData> shader(asset::AssetId id);
+    // The shader of the project a material draws with; null for the standard surface, and for a
+    // material or a shader that cannot be loaded.
+    [[nodiscard]] std::shared_ptr<const asset::ShaderData> materialShader(asset::AssetId material);
+    // Changes a uniform of a material while the game runs, as Godot's set_shader_parameter: every
+    // object drawn with the material changes. Its file keeps its value, which resetShaderParameters
+    // puts back. Fails for a material that cannot be loaded, a uniform its shader does not have, a
+    // value of the wrong kind, and an instance uniform, which each object gives.
+    core::Result<void> setShaderParameter(asset::AssetId material, std::string_view name, math::Vec4 value);
+    // The same for a texture uniform.
+    core::Result<void> setShaderTexture(asset::AssetId material, std::string_view name, asset::AssetId texture);
+    // The value of a uniform of the material: the one it was given, else the default of the shader;
+    // nullopt for a uniform its shader does not have and for textures.
+    [[nodiscard]] std::optional<math::Vec4> shaderParameter(asset::AssetId material, std::string_view name);
+    // Puts back the materials code changed as their files have them, as the editor does when the game
+    // stops.
+    void resetShaderParameters();
     // Makes a texture of pixels the game produced, such as the thumbnail of a save, known under the
     // identifier, in place of any texture it named. It reaches the GPU as loaded textures do.
     [[nodiscard]] core::Result<void> setTexture(asset::AssetId id, const asset::TextureData& data);
@@ -271,6 +288,8 @@ private:
     std::unordered_map<asset::AssetId, LoadedFont> m_fonts;
     // Assets whose loading failed, retried once an import changes them.
     std::unordered_set<asset::AssetId> m_failed;
+    // The materials code changed while the game ran.
+    std::unordered_set<asset::AssetId> m_changedMaterials;
 };
 
 } // namespace devex::runtime

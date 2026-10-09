@@ -25,6 +25,10 @@ struct DEVEX_API SkinnedMeshRenderer
     // Overrides the materials of the mesh; invalid keeps them.
     asset::AssetId material;
     std::vector<EntityRef> bones;
+    // The values it gives the instance uniforms of the shader of its material, by name; the others
+    // keep their defaults. Edited under Instance Shader Parameters, or by setInstanceShaderParameter.
+    std::vector<std::string> instanceShaderParameters;
+    std::vector<math::Vec4> instanceShaderValues;
 };
 DEVEX_DECLARE_ENGINE_REFLECTION(SkinnedMeshRenderer);
 

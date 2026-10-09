@@ -129,6 +129,8 @@ public struct SceneData
     public ShadowView* shadowViews;
     // The uniforms of the materials drawn with shaders of the project.
     public float4* materialParameters;
+    // The values objects give the instance uniforms of their shaders, those of each object together.
+    public float4* instanceParameters;
 };
 
 // A normal folded into two numbers on an octahedron, which keeps its precision where it matters.
@@ -167,6 +169,12 @@ public struct DrawData
     public uint skinned;
     public VertexSkin* skin;
     public float4x4* bones;
+    // Where the values the instance gives its instance uniforms start in
+    // SceneData::instanceParameters, or noInstanceParameters when it gives none.
+    public uint instanceParameters;
+    public uint padding0;
+    public uint padding1;
+    public uint padding2;
 };
 
 // Normals transform with the cofactor matrix, which stays correct under non-uniform scales. Its

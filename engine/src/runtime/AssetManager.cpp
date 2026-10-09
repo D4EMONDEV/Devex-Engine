@@ -5,6 +5,7 @@
 #include <devex/asset/Primitives.hpp>
 #include <devex/runtime/AssetManager.hpp>
 
+#include <algorithm>
 #include <limits>
 #include <utility>
 
@@ -349,6 +350,90 @@ render::MaterialHandle AssetManager::material(asset::AssetId id)
         found = m_materials.find(id);
     }
     return found != m_materials.end() ? found->second.handle : render::MaterialHandle{};
+}
+
+std::shared_ptr<const asset::ShaderData> AssetManager::materialShader(asset::AssetId id)
+{
+    if (!material(id).isValid())
+    {
+        return nullptr;
+    }
+    const asset::AssetId shaderId = m_materials.at(id).data.shader;
+    return shaderId.isValid() ? shader(shaderId) : nullptr;
+}
+
+core::Result<void> AssetManager::setShaderParameter(asset::AssetId id, std::string_view name, math::Vec4 value)
+{
+    const std::shared_ptr<const asset::ShaderData> data = materialShader(id);
+    const asset::ShaderParameter* const uniform = data != nullptr ? data->findParameter(name) : nullptr;
+    if (uniform == nullptr)
+    {
+        return core::makeError(core::ErrorCode::NotFound, "the material {} has no shader uniform '{}'", id.uuid, name);
+    }
+    if (uniform->type == asset::ShaderParameterType::Texture)
+    {
+        return core::makeError(core::ErrorCode::InvalidArgument, "'{}' is a texture: give it a texture", name);
+    }
+    if (uniform->instance)
+    {
+        return core::makeError(core::ErrorCode::InvalidArgument,
+                               "'{}' is an instance uniform: each object gives it with setInstanceShaderParameter", name);
+    }
+    LoadedMaterial& loaded = m_materials.at(id);
+    asset::MaterialParameter* given = nullptr;
+    for (asset::MaterialParameter& parameter : loaded.data.parameters)
+    {
+        given = parameter.name == name ? &parameter : given;
+    }
+    if (given == nullptr)
+    {
+        given = &loaded.data.parameters.emplace_back(asset::MaterialParameter{.name = std::string(name)});
+    }
+    given->value = value;
+    given->components = static_cast<std::uint8_t>(asset::componentCount(uniform->type));
+    given->texture = {};
+    m_renderer->updateMaterial(loaded.handle, describe(loaded.data));
+    m_changedMaterials.insert(id);
+    return {};
+}
+
+core::Result<void> AssetManager::setShaderTexture(asset::AssetId id, std::string_view name, asset::AssetId textureId)
+{
+    const std::shared_ptr<const asset::ShaderData> data = materialShader(id);
+    const asset::ShaderParameter* const uniform = data != nullptr ? data->findParameter(name) : nullptr;
+    if (uniform == nullptr || uniform->type != asset::ShaderParameterType::Texture)
+    {
+        return core::makeError(core::ErrorCode::NotFound, "the material {} has no texture uniform '{}'", id.uuid, name);
+    }
+    LoadedMaterial& loaded = m_materials.at(id);
+    std::erase_if(loaded.data.parameters, [&](const asset::MaterialParameter& parameter) { return parameter.name == name; });
+    loaded.data.parameters.push_back({.name = std::string(name), .texture = textureId});
+    m_renderer->updateMaterial(loaded.handle, describe(loaded.data));
+    m_changedMaterials.insert(id);
+    return {};
+}
+
+std::optional<math::Vec4> AssetManager::shaderParameter(asset::AssetId id, std::string_view name)
+{
+    const std::shared_ptr<const asset::ShaderData> data = materialShader(id);
+    const asset::ShaderParameter* const uniform = data != nullptr ? data->findParameter(name) : nullptr;
+    if (uniform == nullptr || uniform->type == asset::ShaderParameterType::Texture)
+    {
+        return std::nullopt;
+    }
+    const asset::MaterialParameter* const given = m_materials.at(id).data.findParameter(name);
+    return given != nullptr && !given->texture.isValid() && !uniform->instance ? given->value : uniform->defaultValue;
+}
+
+void AssetManager::resetShaderParameters()
+{
+    for (const asset::AssetId id : std::exchange(m_changedMaterials, {}))
+    {
+        if (m_materials.contains(id) && canLoad(id))
+        {
+            static_cast<void>(loadMaterial(id));
+        }
+    }
 }
 
 render::TextureHandle AssetManager::texture(asset::AssetId id)
@@ -1075,7 +1160,8 @@ render::MaterialDesc AssetManager::describe(const asset::MaterialData& material)
             for (std::uint32_t slot = 0; slot < data->parameters.size(); ++slot)
             {
                 const asset::ShaderParameter& uniform = data->parameters[slot];
-                const asset::MaterialParameter* const given = material.findParameter(uniform.name);
+                // An instance uniform: the default of the objects that give it nothing.
+                const asset::MaterialParameter* const given = uniform.instance ? nullptr : material.findParameter(uniform.name);
                 if (uniform.type != asset::ShaderParameterType::Texture)
                 {
                     parameters.push_back(given != nullptr && !given->texture.isValid() ? given->value : uniform.defaultValue);

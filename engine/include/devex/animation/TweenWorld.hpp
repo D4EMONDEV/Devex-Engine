@@ -17,6 +17,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 
@@ -36,7 +37,8 @@ struct DEVEX_API TweenSpec
 {
     scene::Entity entity;
     // "Component.field": "Transform.position", "UiRect.opacity", "UiImage.color". The field holds a
-    // number, a vector, a color or a rotation.
+    // number, a vector, a color or a rotation. An instance uniform of the shader of a renderer is
+    // "SpriteRenderer.instance_shader_parameters/flash", as Godot names it, in four components.
     std::string field;
     // As many components as the field has: x for a number, xyz for a position, all four for a
     // color. A rotation is given in degrees around x, y and z.
@@ -84,8 +86,11 @@ class DEVEX_API TweenWorld
 public:
     // The curve of an asset, loaded once and shared; null when it cannot be loaded.
     using CurveSource = std::function<std::shared_ptr<const asset::CurveData>(asset::AssetId curve)>;
+    // The default value of a uniform of the shader of a material, where a tween of an instance
+    // uniform the renderer gives no value starts; nullopt starts it at zero.
+    using ShaderDefaults = std::function<std::optional<math::Vec4>(asset::AssetId material, std::string_view uniform)>;
 
-    explicit TweenWorld(CurveSource curves = {});
+    explicit TweenWorld(CurveSource curves = {}, ShaderDefaults shaderDefaults = {});
     ~TweenWorld();
 
     TweenWorld(const TweenWorld&) = delete;
@@ -120,7 +125,9 @@ private:
     struct DEVEX_API Target
     {
         const scene::ComponentType* component = nullptr;
+        // Null for an instance uniform, which `uniform` names.
         const reflection::FieldInfo* field = nullptr;
+        std::string uniform;
     };
 
     struct DEVEX_API Tween
@@ -157,10 +164,14 @@ private:
     // Writes the value at a progress, from 0 at the start to 1 at the end; false once the entity,
     // its component or the field is gone.
     bool write(scene::Scene& scene, Tween& tween, float progress) const;
+    bool writeUniform(const Target& target, void* component, Tween& tween, float progress) const;
+    // The progress along the ease or the curve of the tween.
+    [[nodiscard]] float easedProgress(const Tween& tween, float progress) const;
     // Starts the next step of a sequence; false once it has none.
     bool advance(scene::Scene& scene, Sequence& sequence);
 
     CurveSource m_curves;
+    ShaderDefaults m_shaderDefaults;
     std::unordered_map<std::uint64_t, Tween> m_tweens;
     std::unordered_map<std::uint64_t, Sequence> m_sequences;
     // The tween of each Tweener that started, by entity.

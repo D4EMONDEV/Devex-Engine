@@ -14,7 +14,8 @@ public class Coin2D : Component
 // The hero: Move runs, Jump jumps. Its CharacterController2D moves it against the tiles, the crates
 // and the platform, through ledges from below and onto them from above; water brings it back to
 // where it started. It faces where it runs; its Animator (assets/animators/hero.dvxanimator) turns
-// the Speed, Grounded and VerticalSpeed it is given into idle, run, jump and fall.
+// the Speed, Grounded and VerticalSpeed it is given into idle, run, jump and fall. It flashes white
+// through the instance uniform of its shader (assets/shaders/hero.dvxshader).
 public class Hero2D : Component
 {
     public float Speed = 5.0f;
@@ -55,6 +56,7 @@ public class Hero2D : Component
         {
             Transform.Position = _start;
             controller.Velocity = default;
+            Flash(1.0f, 0.6f);
         }
 
         Animation.SetFloat(Entity, "Speed", MathF.Abs(run));
@@ -79,6 +81,7 @@ public class Hero2D : Component
         Vec3 at = coin.Entity.WorldPosition;
         coin.Entity.Destroy();
         ++_collected;
+        Flash(0.5f, 0.25f);
         if (Sparkles.IsAlive)
         {
             Sparkles.Transform.Position = at;
@@ -94,6 +97,44 @@ public class Hero2D : Component
             int left = Scene.Components<Coin2D>().Count(other => other.Entity.IsAlive);
             Counter.Get<UiText>().Text = left > 0 ? $"Coins {_collected}   ({left} left)" : $"All {_collected} coins!";
         }
+    }
+
+    // White for an instant, then back to its colours: the flash its SpriteRenderer gives the shader,
+    // which the other sprites drawn with the same material do not share.
+    private void Flash(float strength, float duration)
+    {
+        new TweenSpec(Entity, "SpriteRenderer.instance_shader_parameters/flash", new Vec4(0.0f, 0.0f, 0.0f, 0.0f), duration)
+        {
+            From = new Vec4(strength, 0.0f, 0.0f, 0.0f),
+            Ease = Ease.OutQuad,
+        }.Play();
+    }
+}
+
+// The wind over the grass: every tuft of the level sways with the material it names, whose strength
+// gusts now and then. Changing the material changes all the tufts at once, as Godot's
+// set_shader_parameter does; the editor gives it back the value of its file when it stops playing.
+public class Wind2D : Component
+{
+    [AssetType("material")]
+    public AssetId Grass;
+    public float Calm = 0.12f;
+    public float Gust = 0.35f;
+    // Seconds from a gust to the next.
+    public float Period = 7.0f;
+
+    private float _time;
+
+    public override void Update(float delta)
+    {
+        if (!Grass.IsValid)
+        {
+            return;
+        }
+        _time += delta;
+        // The gust rises and falls during the first half of the period; the air is calm the rest.
+        float wave = MathF.Max(MathF.Sin(_time * MathF.Tau / Period), 0.0f);
+        Materials.SetShaderParameter(Grass, "strength", Calm + (Gust - Calm) * wave * wave * wave);
     }
 }
 

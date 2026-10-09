@@ -3,6 +3,7 @@
 #include <devex/asset/Primitives.hpp>
 #include <devex/asset/Project.hpp>
 #include <devex/asset/import/AssetDatabase.hpp>
+#include <devex/asset/import/ShaderFile.hpp>
 #include <devex/core/JobSystem.hpp>
 #include <devex/core/Log.hpp>
 #include <devex/platform/Platform.hpp>
@@ -10,6 +11,7 @@
 #include <devex/runtime/AssetManager.hpp>
 #include <devex/runtime/SceneExtraction.hpp>
 #include <devex/scene/Components.hpp>
+#include <devex/scene/InstanceShaderParameters.hpp>
 #include <devex/scene/SpriteComponents.hpp>
 #include <devex/scene/TilemapComponents.hpp>
 
@@ -377,4 +379,80 @@ TEST_CASE("Extraction draws the tiles of tilemaps, animated and mirrored", "[run
     devex::render::RenderWorld still;
     CHECK_FALSE(devex::runtime::extractTilemaps(scene, assets, {.layers = {"Back", "Default"}}, 0.6, still));
     CHECK(still.tiles.size() == 2);
+}
+
+TEST_CASE("Code changes materials while the game runs, and objects give their instance uniforms", "[runtime][assets][gpu][shader]")
+{
+    using devex::math::Vec4;
+    auto platform = devex::platform::Platform::create();
+    REQUIRE(platform.has_value());
+    auto window = platform->createWindow({.width = 320, .height = 240, .vulkan = true, .hidden = true});
+    REQUIRE(window.has_value());
+    auto renderer = devex::render::Renderer::create(*platform, *window, {});
+    REQUIRE(renderer.has_value());
+
+    const devex::asset::ShaderData shader = devex::asset::compileShader(R"(shader_type spatial;
+uniform float3 tint : source_color = float3(1.0, 1.0, 1.0);
+instance uniform float flash : hint_range(0.0, 1.0) = 0.0;
+instance uniform float4 glow : source_color = float4(1.0, 0.5, 0.2, 1.0);
+void fragment()
+{
+    ALBEDO = lerp(tint, float3(1.0), flash);
+    EMISSION = glow.rgb;
+}
+)",
+                                                                        "glow.dvxshader");
+    INFO((shader.diagnostics.empty() ? std::string{} : shader.diagnostics.front().message));
+    REQUIRE(shader.compiled());
+    MemorySource source;
+    const AssetId shaderId = AssetId::generate();
+    source.set(shaderId, AssetType::Shader, devex::asset::encodeShader(shader));
+    devex::asset::MaterialData material;
+    material.shader = shaderId;
+    material.parameters = {{.name = "tint", .value = {0.2f, 0.4f, 0.6f, 0.0f}, .components = 3}};
+    const AssetId materialId = AssetId::generate();
+    source.set(materialId, AssetType::Material, devex::asset::encodeMaterial(material));
+    devex::runtime::AssetManager assets(&*renderer, &source);
+    const auto cube = renderer->createMesh(devex::asset::makeCube());
+    REQUIRE(cube.has_value());
+    assets.registerMesh(devex::asset::builtin::cubeMesh, *cube);
+
+    // Code changes the material for every object, until the editor stops playing.
+    CHECK(assets.materialShader(materialId) != nullptr);
+    CHECK(assets.shaderParameter(materialId, "tint") == Vec4{0.2f, 0.4f, 0.6f, 0.0f});
+    REQUIRE(assets.setShaderParameter(materialId, "tint", {1.0f, 0.0f, 0.0f, 0.0f}));
+    CHECK(assets.shaderParameter(materialId, "tint") == Vec4{1.0f, 0.0f, 0.0f, 0.0f});
+    CHECK(assets.shaderParameter(materialId, "flash") == Vec4{0.0f});
+    // Instance uniforms are given by objects, textures by textures, and unknown uniforms by no one.
+    CHECK_FALSE(assets.setShaderParameter(materialId, "flash", Vec4{1.0f}));
+    CHECK_FALSE(assets.setShaderParameter(materialId, "missing", Vec4{1.0f}));
+    CHECK_FALSE(assets.setShaderTexture(materialId, "tint", AssetId::generate()));
+    CHECK_FALSE(assets.shaderParameter(materialId, "missing"));
+    assets.resetShaderParameters();
+    CHECK(assets.shaderParameter(materialId, "tint") == Vec4{0.2f, 0.4f, 0.6f, 0.0f});
+
+    // One cube gives its own glow, the other keeps the defaults.
+    devex::scene::Scene scene;
+    const auto lit = scene.createEntity("Lit");
+    scene.add<devex::scene::Transform>(lit);
+    scene.add<devex::scene::MeshRenderer>(lit, devex::scene::MeshRenderer{.mesh = devex::asset::builtin::cubeMesh, .material = materialId});
+    REQUIRE(devex::scene::setInstanceShaderParameter(scene, lit, "glow", {0.0f, 1.0f, 0.0f, 1.0f}));
+    const auto plain = scene.createEntity("Plain");
+    scene.add<devex::scene::Transform>(plain);
+    scene.add<devex::scene::MeshRenderer>(plain, devex::scene::MeshRenderer{.mesh = devex::asset::builtin::cubeMesh, .material = materialId});
+    // A value for a uniform the shader does not have changes nothing.
+    REQUIRE(devex::scene::setInstanceShaderParameter(scene, plain, "unknown", Vec4{1.0f}));
+    scene.updateTransforms();
+
+    devex::render::RenderWorld world;
+    devex::runtime::extractScene(scene, assets, world);
+    REQUIRE(world.meshes.size() == 2);
+    const auto shown = [&](devex::scene::Entity entity) -> const devex::render::MeshInstance& {
+        const auto found = std::ranges::find(world.meshes, entity.index + 1, &devex::render::MeshInstance::objectId);
+        REQUIRE(found != world.meshes.end());
+        return *found;
+    };
+    REQUIRE(shown(lit).instanceParameters == 0);
+    CHECK(world.instanceParameters == std::vector<Vec4>{Vec4{0.0f}, Vec4{0.0f, 1.0f, 0.0f, 1.0f}});
+    CHECK(shown(plain).instanceParameters == devex::render::noInstanceParameters);
 }

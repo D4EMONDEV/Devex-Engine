@@ -97,7 +97,9 @@ DEVEX_REFLECT(Tilemap)
         .field("light_mask", &Tilemap::lightMask, {.bits = true})
         .field("occluder_mask", &Tilemap::occluderMask, {.bits = true})
         .field("material", &Tilemap::material, {.assetType = "material"})
-        .field("blocks", &Tilemap::blocks, {.hidden = true});
+        .field("blocks", &Tilemap::blocks, {.hidden = true})
+        .field("instance_shader_parameters", &Tilemap::instanceShaderParameters, {.hidden = true})
+        .field("instance_shader_values", &Tilemap::instanceShaderValues, {.hidden = true});
 }
 
 TileGrid TileGrid::read(const Tilemap& tilemap)

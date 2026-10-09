@@ -21,6 +21,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
@@ -176,6 +177,29 @@ void answerImportFooter(InspectorUi& ui, ToolsState& state, const ImportFooter& 
 [[nodiscard]] std::vector<std::string> spriteDrops();
 [[nodiscard]] std::vector<asset::AssetId> droppedSprites(const ToolsState& state, const ui::Drop& dropped);
 
+// A row of the instance uniforms of the shader a renderer draws with: the value the entity gives
+// it, else the default of the shader, and a button that takes the default again.
+struct InstanceRow
+{
+    const scene::ComponentType* type = nullptr;
+    asset::ShaderParameter uniform;
+    FormRow form;
+    std::vector<scene::Entity> numbers;
+    // The toggle, or the swatch of a colour.
+    scene::Entity control;
+    PanelButton revert;
+};
+
+// An edit of the instance values of a renderer under way: its two fields when it began, which one
+// step of the history goes back to.
+struct InstanceEdit
+{
+    const scene::ComponentType* type = nullptr;
+    core::Uuid entity;
+    serialization::TextValue names;
+    serialization::TextValue values;
+};
+
 // The panel and the entities the code reads and changes.
 struct InspectorUi : FormUi
 {
@@ -219,6 +243,15 @@ struct InspectorUi : FormUi
     bool revertName = false;
     std::optional<std::size_t> colorRow;
 
+    // The instance uniforms of the renderers of the entity, under their fields, as Godot shows its
+    // Instance Shader Parameters; those of the shader of each material, read once from its artifact
+    // until an import changes materials or shaders.
+    std::vector<InstanceRow> instanceRows;
+    std::optional<std::size_t> instanceColorRow;
+    std::optional<InstanceEdit> instanceEdit;
+    std::unordered_map<asset::AssetId, std::vector<asset::ShaderParameter>> instanceUniforms;
+    std::uint64_t instanceUniformsRevision = 0;
+
     // The page shown in place of the entities, and what it is for.
     std::unique_ptr<InspectorPage> page;
     std::string pageKind;
@@ -235,6 +268,14 @@ struct InspectorUi : FormUi
     void addProperty(EditorUiKit& kit, Section& section, const scene::ComponentType& type, const reflection::FieldInfo& field,
                      std::optional<std::size_t> element, int group, bool shared);
     void addExtras(EditorUiKit& kit, Section& section, int group);
+    // In InstanceParametersUi.cpp.
+    [[nodiscard]] const std::vector<asset::ShaderParameter>& instanceUniformsOf(const ToolsState& state, asset::AssetId material);
+    [[nodiscard]] std::string instanceSignature(const ToolsState& state, const scene::Scene& edited, std::span<const scene::Entity> inspected);
+    void addInstanceParameters(EditorUiKit& kit, ToolsState& state, Section& section, const scene::ComponentType& type, const scene::Scene& edited,
+                               scene::Entity active);
+    void syncInstanceRows(const scene::Scene& edited, scene::Entity active);
+    void answerInstanceRows(ToolsState& state, scene::Scene& edited, scene::Entity active);
+    void commitInstanceEdit(ToolsState& state, const scene::Scene& edited);
 
     void sync(ToolsState& state, EditorUiKit& kit, scene::Scene& edited, std::span<const scene::Entity> inspected);
     void syncRow(const ToolsState& state, const scene::Scene& edited, std::span<const scene::Entity> inspected, PropertyRow& row,

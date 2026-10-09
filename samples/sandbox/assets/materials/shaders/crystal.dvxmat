@@ -1,0 +1,3 @@
+# Drawn by the shader crystal.dvxshader: each crystal gives its own glow.
+[material format=2]
+shader = asset("b28de587-6960-5582-acef-60edb59fdf1d")

@@ -68,6 +68,7 @@ mais seulement explicitement ici : le code suit ce document, pas l'inverse.
 | Compilation des shaders  | Au build par `slangc`, fichiers `.spv` à côté de l'exécutable      |
 | Shaders des projets      | `.dvxshader` : structure de Godot, syntaxe Slang, compilés à l'import |
 | Graphes de shaders       | `.dvxshadergraph` changé en code de shader à l'import, panneau du bas |
+| Shaders pilotés par le code | `setShaderParameter` sur le matériau partagé, `instance uniform` par renderer |
 | Accès aux données GPU    | Bindless + vertex pulling par buffer device address                |
 | Projection               | Reverse-Z, far plane infini                                        |
 | glTF                     | Modèle (hiérarchie de nœuds) et sous-assets importés par la base   |
@@ -643,6 +644,17 @@ uniform sampler2D noise : hint_default_white;
 
 void vertex() { VERTEX.y += sin(TIME * speed + VERTEX.x) * 0.1; }
 void fragment() { ALBEDO = tint * texture(noise, UV).rgb; }
+```
+
+Un `instance uniform` prend une valeur par objet. Le renderer de l'objet la garde dans deux listes
+cachées de son composant, écrites seulement quand elles ne sont pas vides :
+
+```text
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("56258943-f32a-5b75-b0b6-b7ecc1eda5ee")
+instance_shader_parameters = list("glow")
+instance_shader_values = list(vec4(0.3, 1, 0.45, 1))
 ```
 
 Graphe de shader (`.dvxshadergraph`, format 1) : son type et ses modes de rendu, puis ses nœuds,
@@ -2527,6 +2539,53 @@ Jalon 67, comme les shaders visuels de Godot :
 - **Bac à sable** : un champ de force s'ajoute à `shaders.dvxscene`, en 15 nœuds. C'est un fresnel
   bleu traversé de bandes de bruit qui montent avec le temps, additif et vu des deux côtés.
 
+### Shaders pilotés par le code
+
+Jalon 68, comme Godot, en deux portées :
+
+- **Le matériau, partagé** : `setShaderParameter` change un uniform du matériau, donc tous les
+  objets qu'il dessine, comme le `set_shader_parameter` d'un `ShaderMaterial` (le vent sur toute
+  l'herbe). En C++, `AssetManager::setShaderParameter`, `setShaderTexture` et `shaderParameter` ; en
+  C#, `Materials.SetShaderParameter` (nombre, vecteur, entier, booléen ou texture) et
+  `GetShaderParameter`. Le fichier `.dvxmat` garde sa valeur : quand l'éditeur arrête le jeu, les
+  matériaux changés reprennent celle de leur fichier. Changer un uniform inconnu, un uniform par
+  instance ou une texture avec un nombre est une erreur, une exception en C#.
+- **L'objet, avec `instance uniform`** : un shader `spatial` ou `canvas_item` déclare
+  `instance uniform float flash : hint_range(0.0, 1.0) = 0.0;`. Chaque objet dessiné avec le
+  matériau peut lui donner sa propre valeur (le flash d'un seul ennemi touché), et les autres
+  gardent la valeur par défaut du shader ; le matériau ne la règle jamais.
+  - Les valeurs vivent dans le renderer : `MeshRenderer`, `SkinnedMeshRenderer`, `SpriteRenderer`
+    et `Tilemap` gardent les noms et les valeurs dans deux listes cachées, enregistrées avec la
+    scène, copiées et annulées comme le reste du composant.
+  - En C++, `setInstanceShaderParameter`, `instanceShaderParameter` et
+    `resetInstanceShaderParameter` (`devex/scene/InstanceShaderParameters.hpp`) ; en C#, les mêmes
+    sur `Entity` (`entity.SetInstanceShaderParameter("flash", 1.0f)`).
+  - Les tweens les atteignent par `"SpriteRenderer.instance_shader_parameters/flash"`, le chemin de
+    Godot, depuis le code comme depuis un `Tweener`. Une valeur que l'objet ne donne pas encore part
+    du défaut du shader.
+  - Comme Godot, pas de texture par instance ; les shaders `particles` et `sky` n'en ont pas non
+    plus, leurs objets se dessinent tous pareil.
+  - Dans les graphes, un nœud *Parameter* a une case *Per Instance*, et son titre devient
+    *Instance Parameter*.
+- **Rendu** : chaque image, l'extraction écrit les valeurs de chaque objet, dans l'ordre des
+  `instance uniform` du shader, dans un tampon de la frame ; le dessin d'un maillage (constantes
+  poussées) et chaque sprite ou tuile portent l'endroit où elles commencent. Un objet qui ne donne
+  aucune valeur ne coûte rien : le shader lit alors le défaut dans le tampon du matériau.
+- **Éditeur** :
+  - les renderers ont une section *Instance Shader Parameters* dans l'inspecteur, avec un réglage
+    par `instance uniform` du shader de leur matériau, selon ses indications (curseur, couleur,
+    case), une marque sur les valeurs données et un bouton qui reprend le défaut ;
+  - l'inspecteur d'un matériau ne montre pas les `instance uniform`, il les nomme ;
+  - l'éditeur de texte colore `instance`.
+- **Fichiers des scènes** : une liste cachée vide n'est plus écrite, pour que les renderers sans
+  valeur gardent leurs fichiers d'avant ; elle se relit vide. Les surcharges des préfabs comparent
+  toujours les listes complètes.
+- **Bac à sable** : trois cristaux de `shaders.dvxscene` partagent un matériau et brillent chacun
+  de sa couleur, l'un pulsant par un `Tweener` ; dans le jeu de plateformes, le chevalier
+  clignote en blanc quand l'eau le renvoie au départ et quand il prend une pièce (un tween de son
+  `flash` depuis `code/Platformer.cs`), et le vent souffle par rafales sur toute l'herbe
+  (`Wind2D`, qui change le matériau).
+
 ### Une seule interface, deux usages
 
 - **La question** : l'éditeur est en Dear ImGui, les jeux ont `Devex::Ui`. Écrire deux systèmes
@@ -4046,6 +4105,11 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     maths, vecteurs, interpolation, texture, fresnel, bruit, expression) ; erreurs ramenées à
     leurs nœuds ; panneau Shader Graph dans le dock du bas, avec annuler et refaire, et page des
     nœuds dans l'inspecteur ; champ de force dans la scène des shaders.
+68. ✅ **Shaders pilotés par le code** — uniforms des matériaux changés pendant le jeu
+    (`setShaderParameter`, `Materials.SetShaderParameter`) et rétablis à l'arrêt ; `instance uniform`
+    de Godot pour les shaders `spatial` et `canvas_item`, valeurs gardées par les renderers et
+    réglées dans l'inspecteur, par le code ou par les tweens ; case *Per Instance* des graphes ;
+    cristaux, chevalier qui clignote et rafales de vent dans le bac à sable.
 
 Ensuite, sans ordre figé : à choisir dans les pistes ci-dessous.
 
@@ -4193,10 +4257,15 @@ Ensuite, sans ordre figé : à choisir dans les pistes ci-dessous.
   de l'écran), occlusion ambiante par cônes plutôt que par points.
 - **Ciel procédural** : atmosphère physique liée à la lumière directionnelle (un shader `sky`
   peut déjà dessiner un ciel calculé).
-- **Shaders, la suite** : paramètres de shaders réglés depuis le code (`SetShaderParameter`), `light()` pour les `canvas_item`, simulation des
+- **Shaders, la suite** : `light()` pour les `canvas_item`, simulation des
   particules sur le GPU (`start()` et `process()`), traînées dessinées par un shader, lecture de
-  l'image et de la profondeur de la scène (réfraction, `hint_screen_texture`), uniforms globaux et
-  par instance, `#include` et modules partagés entre shaders, matrices en uniforms.
+  l'image et de la profondeur de la scène (réfraction, `hint_screen_texture`), uniforms globaux
+  (`global uniform` et réglages du projet), `#include` et modules partagés entre shaders, matrices
+  en uniforms.
+- **Valeurs par objet, la suite** : `instance uniform` pour les émetteurs de particules, valeurs
+  par instance montrées pour plusieurs entités choisies ensemble, matériau propre à un objet
+  (copie à la Unity, ou `material_override` de Godot), valeurs d'un sous-maillage seul, uniforms
+  qu'un matériau a reçus du code montrés dans son inspecteur pendant le jeu.
 - **Graphes de shaders, la suite** : aperçu du résultat sur chaque nœud, varyings entre
   `vertex` et `fragment`, sous-graphes réutilisables, commentaires et cadres, nœuds de plus
   (triplanaire, dérivées, transformations entre espaces, textures de la scène), sélection de

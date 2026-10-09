@@ -176,3 +176,54 @@ scale = vec3(2.2, 2.2, 2.2)
 [component type="MeshRenderer"]
 mesh = asset("00000000-0000-0000-0000-000000000002")
 material = asset("ca2bb24e-03ae-58be-8955-80fb13972a4f")
+
+[entity uuid="df21418b-b3d5-51e9-8ce5-ffd624f2c7ad" name="Crystal (blue)"]
+
+[component type="Transform"]
+position = vec3(2.6, 0.55, 2.2)
+rotation = quat(0, 0.382683, 0, 0.92388)
+scale = vec3(0.42, 1.1, 0.42)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("56258943-f32a-5b75-b0b6-b7ecc1eda5ee")
+
+[entity uuid="ddf71189-8641-5a00-bda3-bc493ad0b6db" name="Crystal (green)"]
+
+[component type="Transform"]
+position = vec3(3.4, 0.75, 2.5)
+rotation = quat(0, 0.173648, 0, 0.984808)
+scale = vec3(0.5, 1.5, 0.5)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("56258943-f32a-5b75-b0b6-b7ecc1eda5ee")
+instance_shader_parameters = list("glow")
+instance_shader_values = list(vec4(0.3, 1, 0.45, 1))
+
+[entity uuid="49ed9fbe-8c7d-5793-a7a8-aa532419384b" name="Crystal (pink)"]
+
+[component type="Transform"]
+position = vec3(4.2, 0.5, 2.1)
+rotation = quat(0, 0.5373, 0, 0.843391)
+scale = vec3(0.4, 1.0, 0.4)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("56258943-f32a-5b75-b0b6-b7ecc1eda5ee")
+instance_shader_parameters = list("glow")
+instance_shader_values = list(vec4(1, 0.3, 0.7, 1))
+
+[component type="Tweener"]
+field = "MeshRenderer.instance_shader_parameters/pulse"
+from = vec4(0, 0, 0, 0)
+to = vec4(1, 0, 0, 0)
+from_current = false
+relative = false
+duration = 0.9
+delay = 0
+ease = "in_out_sine"
+curve = asset("00000000-0000-0000-0000-000000000000")
+loop = "ping_pong"
+repeats = -1
+play_on_start = true

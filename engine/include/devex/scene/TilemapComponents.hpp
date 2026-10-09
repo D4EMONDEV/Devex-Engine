@@ -54,6 +54,10 @@ struct DEVEX_API Tilemap
     // The painted cells, 16 by 16 per block, as the scene saves them: "x,y:" the block, then its
     // cells in base64, two bytes each, row by row from the bottom. TileGrid reads and writes them.
     std::vector<std::string> blocks;
+    // The values its tiles give the instance uniforms of the shader of its material, by name; the
+    // others keep their defaults. Edited under Instance Shader Parameters, or by setInstanceShaderParameter.
+    std::vector<std::string> instanceShaderParameters;
+    std::vector<math::Vec4> instanceShaderValues;
 };
 DEVEX_DECLARE_ENGINE_REFLECTION(Tilemap);
 

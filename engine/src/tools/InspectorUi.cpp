@@ -338,6 +338,13 @@ void InspectorUi::clear(ToolsState& state, const scene::Scene& edited)
             commit(state, edited, row);
         }
     }
+    if (sameTypes)
+    {
+        commitInstanceEdit(state, edited);
+    }
+    instanceEdit.reset();
+    instanceRows.clear();
+    instanceColorRow.reset();
     generation = scene::componentRegistry().generation();
     ui::UiWorld& world = panel.world();
     for (const Entity popup : {componentMenu, revertMenu})
@@ -408,6 +415,10 @@ void InspectorUi::rebuild(ToolsState& state, EditorUiKit& kit, scene::Scene& edi
         if (!shared && (name == "ParticleEmitter" || name == "NavMeshSurface"))
         {
             addExtras(kit, section, -1);
+        }
+        if (!shared)
+        {
+            addInstanceParameters(kit, state, section, type, edited, active);
         }
         if (!shared && name == "Tilemap")
         {
@@ -797,6 +808,10 @@ void InspectorUi::sync(ToolsState& state, EditorUiKit& kit, scene::Scene& edited
     for (PropertyRow& row : rows)
     {
         syncRow(state, edited, inspected, row, style, base.get(), prefabEntity, editing);
+    }
+    if (single)
+    {
+        syncInstanceRows(edited, active);
     }
     syncEntityColor(edited, inspected);
     layoutCards();
@@ -1702,6 +1717,10 @@ void InspectorUi::answer(ToolsState& state, EditorUiKit& kit, scene::Scene& edit
         answerRow(state, edited, inspected, index);
     }
     answerEntityColor(edited, inspected);
+    if (inspected.size() == 1)
+    {
+        answerInstanceRows(state, edited, active);
+    }
     // A drag, a typed number or a colour ends as one step once nothing holds it anymore.
     for (std::size_t index = 0; index < rows.size(); ++index)
     {
@@ -1896,7 +1915,7 @@ void InspectorUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& edit
     }
     inspected.push_back(active);
 
-    if (std::string wanted = signatureOf(edited, inspected); wanted != signature)
+    if (std::string wanted = signatureOf(edited, inspected) + instanceSignature(state, edited, inspected); wanted != signature)
     {
         std::vector<core::Uuid> uuids;
         for (const Entity entity : inspected)

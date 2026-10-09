@@ -901,6 +901,10 @@ void ToolsOverlay::assetsChanged(std::span<const asset::AssetEvent> events)
 {
     for (const asset::AssetEvent& event : events)
     {
+        if (event.type == asset::AssetType::Material || event.type == asset::AssetType::Shader)
+        {
+            ++m_state->materialRevision;
+        }
         if (event.type != asset::AssetType::Shader)
         {
             continue;

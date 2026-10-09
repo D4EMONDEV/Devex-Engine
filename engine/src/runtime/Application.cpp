@@ -1264,6 +1264,8 @@ void ApplicationRunner::startPlaying()
 void ApplicationRunner::stopPlaying()
 {
     m_application.onPlayStopped();
+    // The materials the game changed take the values of their files again.
+    m_services.assets.resetShaderParameters();
     m_coroutines.clear();
     m_particles->clear();
     destroyGameData();
@@ -1873,7 +1875,12 @@ void ApplicationRunner::createAnimation()
         m_services.tools->setAnimationWorld(m_animation.get());
     }
     m_tweens = std::make_unique<animation::TweenWorld>(
-        [this](asset::AssetId curve) { return m_services.assets.curve(curve); });
+        [this](asset::AssetId curve) { return m_services.assets.curve(curve); },
+        [this](asset::AssetId material, std::string_view uniform) -> std::optional<math::Vec4> {
+            const std::shared_ptr<const asset::ShaderData> shader = m_services.assets.materialShader(material);
+            const asset::ShaderParameter* const found = shader != nullptr ? shader->findParameter(uniform) : nullptr;
+            return found != nullptr ? std::optional(found->defaultValue) : std::nullopt;
+        });
     m_application.m_tweens = m_tweens.get();
 }
 

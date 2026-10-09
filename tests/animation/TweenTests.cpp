@@ -2,13 +2,17 @@
 #include <devex/asset/CurveData.hpp>
 #include <devex/scene/AnimationComponents.hpp>
 #include <devex/scene/Components.hpp>
+#include <devex/scene/InstanceShaderParameters.hpp>
 #include <devex/scene/Scene.hpp>
+#include <devex/scene/SpriteComponents.hpp>
 #include <devex/scene/UiComponents.hpp>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include <memory>
+#include <optional>
+#include <string_view>
 
 using Catch::Approx;
 using devex::animation::SequenceStep;
@@ -364,4 +368,39 @@ TEST_CASE("A curve asset eases a tween in place of its ease", "[animation][tween
                          .curve = devex::asset::AssetId{devex::core::Uuid::generate()}});
     step(tweens, scene, 0.5);
     CHECK(scene.get<Transform>(entity).position.x == Approx(5.0f));
+}
+
+TEST_CASE("Tweens reach the instance uniforms of renderers, from the default of their shader", "[animation][tween][shader]")
+{
+    Scene scene;
+    const Entity knight = scene.createEntity("Knight");
+    const devex::asset::AssetId material = devex::asset::AssetId::generate();
+    scene.add<devex::scene::SpriteRenderer>(knight).material = material;
+    TweenWorld tweens({}, [&](devex::asset::AssetId given, std::string_view uniform) -> std::optional<Vec4> {
+        return given == material && uniform == "flash" ? std::optional(Vec4{0.5f, 0.0f, 0.0f, 0.0f}) : std::nullopt;
+    });
+    play(tweens, scene, {.entity = knight,
+                         .field = "SpriteRenderer.instance_shader_parameters/flash",
+                         .to = Vec4{1.0f, 0.0f, 0.0f, 0.0f},
+                         .duration = 1.0f,
+                         .ease = Ease::Linear});
+    step(tweens, scene, 0.5);
+    REQUIRE(devex::scene::instanceShaderParameter(scene, knight, "flash"));
+    CHECK(devex::scene::instanceShaderParameter(scene, knight, "flash")->x == Approx(0.75f));
+    step(tweens, scene, 0.5);
+    CHECK(devex::scene::instanceShaderParameter(scene, knight, "flash")->x == Approx(1.0f));
+
+    // A value the renderer gives is where the next tween starts.
+    play(tweens, scene, {.entity = knight,
+                         .field = "SpriteRenderer.instance_shader_parameters/flash",
+                         .to = Vec4{0.0f},
+                         .duration = 1.0f,
+                         .ease = Ease::Linear});
+    step(tweens, scene, 0.25);
+    CHECK(devex::scene::instanceShaderParameter(scene, knight, "flash")->x == Approx(0.75f));
+
+    // Components that give no instance uniforms cannot be tweened so.
+    const Entity crate = box(scene);
+    CHECK_FALSE(tweens.play(scene, {.entity = crate, .field = "Transform.instance_shader_parameters/flash"}));
+    CHECK_FALSE(tweens.play(scene, {.entity = knight, .field = "SpriteRenderer.instance_shader_parameters/"}));
 }

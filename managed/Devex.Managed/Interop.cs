@@ -203,6 +203,12 @@ internal unsafe struct NativeApi
     public delegate* unmanaged<void*, Entity, byte*, int*, int*, void> FindTerrain;
     public delegate* unmanaged<void*, Entity, int*, int, int, int, int, void> PaintTerrain;
     public delegate* unmanaged<JointBreak**, int> BrokenJoints;
+    public delegate* unmanaged<Uuid*, byte*, Vec4*, byte**, int> SetShaderParameter;
+    public delegate* unmanaged<Uuid*, byte*, Uuid*, byte**, int> SetShaderTexture;
+    public delegate* unmanaged<Uuid*, byte*, Vec4*, int> ShaderParameter;
+    public delegate* unmanaged<void*, Entity, byte*, Vec4*, int> SetInstanceShaderParameter;
+    public delegate* unmanaged<void*, Entity, byte*, Vec4*, int> InstanceShaderParameter;
+    public delegate* unmanaged<void*, Entity, byte*, int> ResetInstanceShaderParameter;
 }
 
 /// <summary>The C# functions the engine calls. Filled by the runtime when it starts.</summary>
