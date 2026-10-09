@@ -38,7 +38,7 @@ struct FileType
     std::string_view extension;
     std::string_view description;
 };
-constexpr std::array<FileType, 9> fileTypes{{
+constexpr std::array<FileType, 10> fileTypes{{
     {Icon::FilePlus, "Script", "NewComponent", ".cs", "A game component written in C# or C++."},
     {Icon::Activity, "Curve", "Curve", ".dvxcurve", "A curve for tweens and animation."},
     {Icon::Clapperboard, "Sprite Frames", "Sprite Frames", ".dvxframes", "Named animations made from sprites."},
@@ -47,10 +47,12 @@ constexpr std::array<FileType, 9> fileTypes{{
     {Icon::Languages, "Translation Table", "Translations", ".csv", "The texts of the game in several languages."},
     {Icon::Palette, "Material", "Material", ".dvxmat", "The look of a surface: the standard one, or a shader with its values."},
     {Icon::FileCode, "Shader", "Shader", ".dvxshader", "Code that draws surfaces, sprites, particles or the sky, in Slang."},
+    {Icon::Workflow, "Shader Graph", "Shader Graph", ".dvxshadergraph", "Nodes linked into a shader, as Godot's visual shaders."},
     {Icon::Folder, "Folder", "New Folder", "", "An empty folder for organizing assets or scripts."},
 }};
 constexpr std::size_t materialType = 6;
 constexpr std::size_t shaderType = 7;
+constexpr std::size_t shaderGraphType = 8;
 constexpr std::size_t folderType = fileTypes.size() - 1;
 // The kinds of shaders, in the order of their choice.
 constexpr std::array<asset::ShaderKind, 4> shaderKinds{asset::ShaderKind::Spatial, asset::ShaderKind::CanvasItem,
@@ -303,7 +305,7 @@ void EditorDialogsUi::start(DialogKind which, ToolsState& state, EditorUiKit& ki
             language = choice(row("Language"), {"C#", "C++"});
             scene().get<scene::UiDropdown>(language).selected = state.newScriptCSharp ? 0 : 1;
         }
-        if (!script && selectedType == shaderType)
+        if (!script && (selectedType == shaderType || selectedType == shaderGraphType))
         {
             // What the shader draws, as the shader_type of its first line says.
             shaderKind = choice(row("Type"), {"Spatial (meshes)", "Canvas Item (sprites)", "Particles", "Sky"});
@@ -577,10 +579,12 @@ void EditorDialogsUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& 
                 case 3: return createTilesetFile(state, state.newFileFolder, {}, name);
                 case 5: return createTranslationFile(state, state.newFileFolder, name);
                 case materialType: return createMaterialFile(state, state.newFileFolder, name);
-                case shaderType: {
+                case shaderType:
+                case shaderGraphType: {
                     const std::int32_t chosenKind = shaderKind.isValid() ? scene().get<scene::UiDropdown>(shaderKind).selected : 0;
-                    return createShaderFile(state, state.newFileFolder, name,
-                                            shaderKinds[static_cast<std::size_t>(std::clamp(chosenKind, 0, 3))]);
+                    const asset::ShaderKind newKind = shaderKinds[static_cast<std::size_t>(std::clamp(chosenKind, 0, 3))];
+                    return selectedType == shaderType ? createShaderFile(state, state.newFileFolder, name, newKind)
+                                                      : createShaderGraphFile(state, state.newFileFolder, name, newKind);
                 }
                 case folderType: return createContentFolder(state, state.newFileFolder, name);
                 default: return createAnimatorFile(state, state.newFileFolder, name);

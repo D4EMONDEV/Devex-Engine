@@ -1797,6 +1797,12 @@ void InspectorUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& edit
     {
         animator.inspecting = false;
     }
+    ShaderGraphEditor& shaderGraph = state.shaderGraphEditor;
+    if (shaderGraph.inspecting &&
+        (state.selection.active() != shaderGraph.inspectedEntity || state.selectedAsset != shaderGraph.inspectedAsset))
+    {
+        shaderGraph.inspecting = false;
+    }
     const Entity active = edited.findEntity(state.selection.active());
     if (state.selectedAsset.isValid() && (state.database == nullptr || state.database->find(state.selectedAsset) == nullptr))
     {
@@ -1807,6 +1813,10 @@ void InspectorUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& edit
         (animator.selected == AnimatorElement::State || animator.selected == AnimatorElement::Transition))
     {
         kind = "animator element";
+    }
+    else if (shaderGraph.inspecting && state.showShaderGraph && shaderGraph.graph.find(shaderGraph.selected) != nullptr)
+    {
+        kind = "shader node";
     }
     else if (active.isValid())
     {
@@ -1921,6 +1931,7 @@ void InspectorUi::updatePage(ToolsState& state, EditorUiKit& kit, const scene::S
     if (!page || pageKind != kind)
     {
         page = kind == "animator element" ? makeAnimatorElementPage()
+               : kind == "shader node"    ? makeShaderNodePage()
                : kind == "code"           ? makeCodePage()
                : kind == "texture"        ? makeTexturePage()
                : kind == "model"          ? makeModelPage()

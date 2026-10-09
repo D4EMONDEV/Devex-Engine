@@ -134,6 +134,8 @@ struct DEVEX_API Importer
 // Shaders of the project, .dvxshader files, compiled by slangc. One that does not compile imports
 // with its errors and without code.
 [[nodiscard]] DEVEX_API core::Result<ImportResult> importShaderFile(ImportContext& context);
+// Shader graphs, .dvxshadergraph files, turned into code and compiled as a shader is.
+[[nodiscard]] DEVEX_API core::Result<ImportResult> importShaderGraphFile(ImportContext& context);
 // Tables of translations, .csv files: the "delimiter" option is "auto", "comma", "semicolon" or "tab".
 [[nodiscard]] DEVEX_API core::Result<ImportResult> importTranslationFile(ImportContext& context);
 // Bakes the letters of a TrueType font into an atlas of distances, as the font importer does: the

@@ -110,8 +110,10 @@ std::uint32_t artifactVersion(AssetType type) noexcept
     case AssetType::Animator:
     case AssetType::NavMesh:
     case AssetType::Translation:
-    case AssetType::Shader:
         return 1;
+    // 2: the nodes of shader graphs that diagnostics name.
+    case AssetType::Shader:
+        return 2;
     }
     return 0;
 }
@@ -1104,6 +1106,7 @@ std::vector<std::byte> encodeShader(const ShaderData& shader)
         writer.write(diagnostic.column);
         writer.writeString(diagnostic.message);
         writer.write(static_cast<std::uint8_t>(diagnostic.error ? 1 : 0));
+        writer.write(diagnostic.node);
     }
     return writer.take();
 }
@@ -1145,6 +1148,7 @@ core::Result<ShaderData> decodeShader(std::span<const std::byte> bytes)
         diagnostic.column = reader.read<std::uint32_t>();
         diagnostic.message = reader.readString();
         diagnostic.error = reader.read<std::uint8_t>() != 0;
+        diagnostic.node = reader.read<std::uint32_t>();
     }
     if (reader.failed() || !valid)
     {

@@ -165,3 +165,14 @@ size_curve = asset("42b991eb-dcc4-4f10-b700-88eb08cbae28")
 material = asset("4910ca08-505f-5730-ba49-c5d0a1d2767d")
 blend = "additive"
 softness = 0.3
+
+[entity uuid="f70330f5-695d-517c-bd97-568e175d10a2" name="Force field"]
+
+[component type="Transform"]
+position = vec3(-3.9, 1.1, 0.4)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(2.2, 2.2, 2.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000002")
+material = asset("ca2bb24e-03ae-58be-8955-80fb13972a4f")

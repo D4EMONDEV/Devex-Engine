@@ -3,6 +3,7 @@
 #include <devex/asset/import/CurveFile.hpp>
 #include <devex/asset/import/MaterialFile.hpp>
 #include <devex/asset/import/ShaderFile.hpp>
+#include <devex/asset/import/ShaderGraphFile.hpp>
 #include <devex/asset/import/SpriteFramesFile.hpp>
 #include <devex/asset/import/AnimatorFile.hpp>
 #include <devex/asset/import/TilesetFile.hpp>
@@ -409,6 +410,29 @@ core::Result<ImportResult> importShaderFile(ImportContext& context)
     return result;
 }
 
+core::Result<ImportResult> importShaderGraphFile(ImportContext& context)
+{
+    const core::Result<std::string> text = core::readTextFile(context.source);
+    if (!text)
+    {
+        return std::unexpected(text.error());
+    }
+    const core::Result<ShaderGraphData> graph = parseShaderGraphFile(*text);
+    if (!graph)
+    {
+        return std::unexpected(graph.error());
+    }
+    // As a shader written by hand: a graph that does not compile still imports, with its errors.
+    const ShaderData shader = compileShaderGraph(*graph, context.source, shaderCompiler(), context.cancelled);
+    if (context.isCancelled())
+    {
+        return core::makeError(core::ErrorCode::InvalidState, "the import was cancelled");
+    }
+    ImportResult result;
+    result.artifacts.push_back({context.mainId, AssetType::Shader, context.name, encodeShader(shader)});
+    return result;
+}
+
 core::Result<ImportResult> importThemeFile(ImportContext& context)
 {
     const core::Result<std::string> text = core::readTextFile(context.source);
@@ -722,6 +746,14 @@ std::span<const Importer> importers()
             .mainType = AssetType::Shader,
             .extensions = {shaderExtension},
             .run = &importShaderFile,
+        },
+        Importer{
+            .name = "shader_graph",
+            // Increased whenever the code of the nodes or the Slang modules change.
+            .version = 1,
+            .mainType = AssetType::Shader,
+            .extensions = {shaderGraphExtension},
+            .run = &importShaderGraphFile,
         },
         Importer{
             .name = "scene",

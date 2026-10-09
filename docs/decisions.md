@@ -67,6 +67,7 @@ mais seulement explicitement ici : le code suit ce document, pas l'inverse.
 | Passes de rendu          | Render graph léger : barrières calculées, images transitoires      |
 | Compilation des shaders  | Au build par `slangc`, fichiers `.spv` à côté de l'exécutable      |
 | Shaders des projets      | `.dvxshader` : structure de Godot, syntaxe Slang, compilés à l'import |
+| Graphes de shaders       | `.dvxshadergraph` changé en code de shader à l'import, panneau du bas |
 | Accès aux données GPU    | Bindless + vertex pulling par buffer device address                |
 | Projection               | Reverse-Z, far plane infini                                        |
 | glTF                     | Modèle (hiérarchie de nœuds) et sous-assets importés par la base   |
@@ -209,7 +210,7 @@ situé au-dessus de lui, et le graphe reste sans cycle.
 | `Reflection`    | description des champs (`TypeInfo`, `DEVEX_REFLECT`, `ValueKind`)         | Core, Math                    |
 | `Serialization` | format texte `.dvx*` (sections, valeurs) ; plus tard archives cookées     | Core                          |
 | `Asset`         | `AssetId`, données CPU (maillages, textures, matériaux, modèles, clips audio et d'animation, polices), `.dvxasset`, projet, paquet `.dvxpak` | Core, Math, Reflection, Serialization, zstd |
-| `AssetImport`   | base d'assets, `.dvxmeta`, importeurs (textures, `.dvxmat`, `.dvxshader` par `slangc`, glTF, FBX, OBJ, sons, polices, courbes) | Asset, Scene, Audio, Platform, fastgltf, ufbx, basisu, stb, efsw |
+| `AssetImport`   | base d'assets, `.dvxmeta`, importeurs (textures, `.dvxmat`, `.dvxshader` et `.dvxshadergraph` par `slangc`, glTF, FBX, OBJ, sons, polices, courbes) | Asset, Scene, Audio, Platform, fastgltf, ufbx, basisu, stb, efsw |
 | `Render`        | façade `Renderer` / `RenderWorld` ; tout `Vk*` reste dans `src/render/vulkan` | Core, Math, Platform, Asset, Vulkan |
 | `Scene`         | entités, sparse sets, hiérarchie, composants intégrés, `.dvxscene`, sous-arbres, préfabs | Core, Math, Reflection, Serialization, Asset |
 | `Audio`         | clips, mixage et groupes, sources et écouteur de la scène                | Core, Math, Asset, Scene, miniaudio, stb |
@@ -642,6 +643,27 @@ uniform sampler2D noise : hint_default_white;
 
 void vertex() { VERTEX.y += sin(TIME * speed + VERTEX.x) * 0.1; }
 void fragment() { ALBEDO = tint * texture(noise, UV).rgb; }
+```
+
+Graphe de shader (`.dvxshadergraph`, format 1) : son type et ses modes de rendu, puis ses nœuds,
+chacun avec sa fonction, sa position, ses réglages et les valeurs de ses entrées sans lien, puis
+ses liens, d'une sortie (`from_port`) vers une entrée (`to_port`) :
+
+```text
+[shader_graph format=1 type="spatial"]
+render_modes = list("unshaded", "blend_add")
+
+[node id=2 type="output" function="fragment"]
+position = vec2(900, 40)
+values = list(vec4(0, 0, 0, 0), vec4(1, 0, 0, 0))
+
+[node id=4 type="parameter" function="fragment"]
+position = vec2(360, -160)
+type = "color"
+name = "glow"
+value = vec4(0.25, 0.7, 1, 1)
+
+[link from=4 from_port=0 to=2 to_port=0]
 ```
 
 Courbe (`.dvxcurve`, format 1), deux clés au moins, dans l'ordre du temps ; le temps va de 0 au
@@ -1246,7 +1268,8 @@ les assets s'écrivent au fil de leur lecture.
   `texture` (`.png`, `.jpg`, `.tga`, `.bmp`, `.hdr`, décodés par stb_image), `material`
   (`.dvxmat`), `gltf` (`.gltf`, `.glb`), `fbx` (`.fbx`), `obj` (`.obj`), `scene` (`.dvxscene`),
   `curve` (`.dvxcurve`), `frames` (`.dvxframes`), `tileset` (`.dvxtileset`), `animator`
-  (`.dvxanimator`), `navmesh` (`.dvxnavmesh`) et `shader` (`.dvxshader`), entre autres. Les fichiers et dossiers cachés (`.`) sont ignorés.
+  (`.dvxanimator`), `navmesh` (`.dvxnavmesh`), `shader` (`.dvxshader`) et `shader_graph`
+  (`.dvxshadergraph`), entre autres. Les fichiers et dossiers cachés (`.`) sont ignorés.
 - **`.dvxmeta`** : créé au premier scan avec un UUID aléatoire et les options par défaut de
   l'importeur. Il porte l'identité de l'asset : il se versionne avec la source. Un `.dvxmeta`
   illisible est signalé et laissé tel quel, jamais remplacé. Une source copiée avec son
@@ -2442,6 +2465,67 @@ Jalon 66, comme le langage de shaders de Godot, mais écrit en Slang :
   ondule, une statue qui brûle et revient (avec son ombre trouée), une sphère toon à côté d'une
   sphère standard et un brasero aux braises qui scintillent ; dans le jeu de plateformes, l'herbe
   ondule au vent et une lueur passe sur les pièces.
+
+### Graphes de shaders
+
+Jalon 67, comme les shaders visuels de Godot :
+
+- **Un asset changé en code à l'import** : un `.dvxshadergraph` s'importe comme un shader (même
+  type d'asset, importeur `shader_graph`). L'importeur écrit le code d'un `.dvxshader` à partir du
+  graphe et le compile comme un shader écrit à la main. Les matériaux le désignent de la même façon,
+  et le renderer comme un jeu exporté n'en voient pas la différence.
+- **Un graphe par fonction** : le graphe a le type d'un shader (`spatial`, `canvas_item`,
+  `particles`, `sky`) et des nœuds pour chacune de ses fonctions : `vertex`, `fragment` et `light`
+  pour `spatial`, `vertex` et `fragment` pour `canvas_item` et `particles`, `sky` pour le ciel.
+  Chaque fonction a son nœud de sortie. Ses entrées sont les built-ins que la fonction écrit :
+  *Albedo*, *Alpha*, *Metallic*, *Roughness*, *Emission*, *Normal Map*... pour un `fragment`
+  `spatial`, *Diffuse Light* et *Specular Light* pour `light`. Une entrée sans lien garde la valeur
+  par défaut du built-in. Un lien ne quitte pas sa fonction et ne fait jamais de boucle, et un lien
+  posé sur une entrée remplace celui qu'elle avait.
+- **Catalogue, l'essentiel de Godot** :
+  - *Input* : les built-ins que la fonction lit (`UV`, `TIME`, `NORMAL`, `VIEW`, `VERTEX`,
+    `COLOR`...) ;
+  - *Constant* : *Float*, *Int*, *Bool*, *Vector2* à *Vector4*, *Color* ;
+  - *Parameter* : les mêmes types et *Texture*, qui deviennent des uniforms que les matériaux
+    renseignent, avec leur valeur par défaut et leurs bornes ;
+  - *Math* : *Operator* et *Function* (`sin`, `abs`, `floor`...), en nombre ou en vecteur, et
+    *Remap* ;
+  - *Vector* : produits scalaire et vectoriel, longueur, distance, composer et décomposer ;
+  - *Interpolation* : *Mix*, *Clamp*, *Step*, *Smoothstep* ;
+  - *Texture* : lit une *Texture Parameter* ou la texture du sprite ;
+  - *Special* : *Fresnel*, *Noise* (un bruit de valeur lisse, de 0 à 1) et *Expression*, quelques
+    lignes de Slang avec leurs entrées et leurs sorties typées.
+- **Types des ports** : ceux des uniforms (`float`, `int`, `bool`, `vec2` à `vec4`), chacun avec
+  sa couleur. Un lien entre deux types les convertit comme Godot : un nombre remplit un vecteur,
+  un vecteur plus long est tronqué, un plus court complété (avec un alpha de 1). Une entrée sans
+  lien prend la valeur que le nœud lui donne.
+- **Code produit** : chaque sortie de nœud devient une constante locale (`n12_0`), chaque
+  paramètre un `uniform`, et le bruit ajoute ses fonctions. Chaque ligne garde le nœud qui l'a
+  écrite : une erreur de `slangc` revient à son nœud (le diagnostic porte son numéro), qui
+  s'encadre en rouge dans le graphe, et l'inspecteur du shader le nomme. Le graphe trouve
+  lui-même une partie des erreurs, sans compiler : paramètre au nom invalide ou en double,
+  *Texture* sans texture, *Expression* sans sortie. *Code* ouvre le code produit dans l'éditeur
+  de texte, en lecture seule.
+- **Panneau Shader Graph**, dans le dock du bas comme l'Animator :
+  - les onglets des fonctions, annuler et refaire (aussi Ctrl+Z, Ctrl+Y), cadrer le graphe, et
+    *Code* ;
+  - un clic droit ajoute un nœud au point cliqué, par catégorie ; le menu ne propose que les nœuds
+    que la fonction ouverte accepte ;
+  - glisser d'un port à un autre crée un lien, et glisser depuis une entrée liée détache son lien ;
+  - les nœuds se déplacent à la souris ; la vue glisse au bouton du milieu ou au bouton droit et
+    zoome à la molette ;
+  - Ctrl+D duplique le nœud choisi, Suppr l'efface ;
+  - une infobulle donne le nom et le type de chaque port.
+
+  Chaque geste terminé écrit le fichier et le réimporte, et la scène suit. Un double-clic sur un
+  graphe dans FileSystem ouvre le panneau.
+- **Inspecteur** : le nœud choisi y montre ses réglages et les valeurs de ses entrées sans lien,
+  jusqu'au choix d'une autre entité ou d'un autre asset. L'inspecteur du graphe a *Open Graph*,
+  *Code*, *New Material*, et ses modes de rendu en cases à cocher.
+- *Create New* propose **Shader Graph**, avec son type, et ouvre le panneau sur le nouveau
+  graphe ; un nouveau `.dvxshader` s'ouvre de même dans l'éditeur de texte.
+- **Bac à sable** : un champ de force s'ajoute à `shaders.dvxscene`, en 15 nœuds. C'est un fresnel
+  bleu traversé de bandes de bruit qui montent avec le temps, additif et vu des deux côtés.
 
 ### Une seule interface, deux usages
 
@@ -3957,6 +4041,11 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     livré avec l'éditeur ; uniforms renseignés par les matériaux (format 2), erreurs sur leurs
     lignes, rechargement à chaud ; inspecteurs des shaders et des matériaux ; ciel qui éclaire la
     scène ; scène de démonstration et effets du jeu de plateformes.
+67. ✅ **Graphes de shaders** — `.dvxshadergraph` des quatre types, changés en code de shader et
+    compilés à l'import ; catalogue de l'essentiel de Godot (entrées, constantes, paramètres,
+    maths, vecteurs, interpolation, texture, fresnel, bruit, expression) ; erreurs ramenées à
+    leurs nœuds ; panneau Shader Graph dans le dock du bas, avec annuler et refaire, et page des
+    nœuds dans l'inspecteur ; champ de force dans la scène des shaders.
 
 Ensuite, sans ordre figé : à choisir dans les pistes ci-dessous.
 
@@ -4104,11 +4193,15 @@ Ensuite, sans ordre figé : à choisir dans les pistes ci-dessous.
   de l'écran), occlusion ambiante par cônes plutôt que par points.
 - **Ciel procédural** : atmosphère physique liée à la lumière directionnelle (un shader `sky`
   peut déjà dessiner un ciel calculé).
-- **Shaders, la suite** : graphe visuel de nœuds (prochain jalon), paramètres de shaders réglés
-  depuis le code (`SetShaderParameter`), `light()` pour les `canvas_item`, simulation des
+- **Shaders, la suite** : paramètres de shaders réglés depuis le code (`SetShaderParameter`), `light()` pour les `canvas_item`, simulation des
   particules sur le GPU (`start()` et `process()`), traînées dessinées par un shader, lecture de
   l'image et de la profondeur de la scène (réfraction, `hint_screen_texture`), uniforms globaux et
   par instance, `#include` et modules partagés entre shaders, matrices en uniforms.
+- **Graphes de shaders, la suite** : aperçu du résultat sur chaque nœud, varyings entre
+  `vertex` et `fragment`, sous-graphes réutilisables, commentaires et cadres, nœuds de plus
+  (triplanaire, dérivées, transformations entre espaces, textures de la scène), sélection de
+  plusieurs nœuds, copier-coller entre graphes, erreurs montrées sur les ports plutôt que sur le
+  nœud, éditeur de code multiligne pour les expressions.
 - **Écran 2D, la suite** : poignées des éléments tournés ou mis à l'échelle, aimantation et
   repères, sélection des éléments au rectangle, aperçu à plusieurs résolutions, textes liés
   (`UiBinding`) montrés hors du jeu, canevas cachés montrés à la demande, gizmos au-dessus de

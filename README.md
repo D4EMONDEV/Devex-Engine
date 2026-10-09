@@ -45,7 +45,8 @@ captures de l'éditeur, scènes de base, entrées, scripts C#, animations, colli
   `.dvxasset`, projets `.dvxproj`, paquets de jeux exportés `.dvxpak` ;
 - `Devex::AssetImport` : base d'assets (`.dvxmeta`, cache `.devex/`, imports en arrière-plan,
   réimport à chaud), importeurs de textures (BC7/BC5), de `.dvxmat`, de shaders `.dvxshader`
-  (compilés par le `slangc` livré avec l'éditeur), de modèles glTF, FBX et OBJ
+  et de graphes de shaders `.dvxshadergraph` (compilés par le `slangc` livré avec l'éditeur, les
+  erreurs des graphes ramenées à leurs nœuds), de modèles glTF, FBX et OBJ
   (ufbx, convertis en mètres et Y-up avec une échelle réglable), de scènes, de sons
   (WAV, FLAC, MP3, Ogg Vorbis), de polices (`.ttf`, `.otf` cuites en atlas de distances), de
   thèmes `.dvxtheme` et de courbes `.dvxcurve` ;
@@ -131,8 +132,9 @@ captures de l'éditeur, scènes de base, entrées, scripts C#, animations, colli
   CPU, passes GPU, mémoire des assets), cadre de l'éditeur (barre de menus et ses menus, barre
   d'état, onglets des scènes que l'on glisse pour les ranger et dont le clic droit ferme les autres
   ou montre le fichier dans FileSystem, barre d'outils de la vue), panneaux
-  Animation (timeline qui zoome et défile) et Animator (graphe des états, paramètres suivis en
-  direct), écran Script (fichiers ouverts, menus File, Edit et Search, recherche, complétion, sur
+  Animation (timeline qui zoome et défile), Animator (graphe des états, paramètres suivis en
+  direct) et Shader Graph (nœuds des shaders visuels à la Godot, liens, annuler et refaire),
+  écran Script (fichiers ouverts, menus File, Edit et Search, recherche, complétion, sur
   une zone de texte qui ne place que les lignes en vue), FileSystem et Output déjà écrits
   avec
   `Devex::Ui` (menus contextuels,
@@ -162,7 +164,9 @@ captures de l'éditeur, scènes de base, entrées, scripts C#, animations, colli
   la vue avec les agents, les obstacles et les chemins,
   volumes du projet, icônes et distances des sources audio, panneau Animation
   avec piste temporelle et images clés, panneau Animator (graphe de nœuds des machines à états,
-  suivi en direct pendant le jeu), panneau Profiler (barres des images, chronologie par
+  suivi en direct pendant le jeu), panneau Shader Graph (une fonction par onglet, nœuds ajoutés
+  au clic droit, liens tirés d'un port, code produit montré en lecture seule, nœud choisi réglé
+  dans l'inspecteur), panneau Profiler (barres des images, chronologie par
   thread et GPU, tableaux des zones, des passes et de la mémoire des assets) ;
 - `Devex::Runtime` : `Application`, boucle à pas fixe, mode éditeur et mode Play, modules de jeu
   (composants et systèmes rechargeables à chaud), code C# sur .NET hébergé (composants, systèmes,

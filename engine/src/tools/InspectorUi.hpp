@@ -152,6 +152,8 @@ public:
 // A shader: what it draws, its uniforms and its errors. A material: its shader and its values.
 [[nodiscard]] std::unique_ptr<InspectorPage> makeShaderPage();
 [[nodiscard]] std::unique_ptr<InspectorPage> makeMaterialPage();
+// A node of the graph of the Shader Graph panel: its settings and the values of its inputs.
+[[nodiscard]] std::unique_ptr<InspectorPage> makeShaderNodePage();
 
 // The painting of the tilemap of the inspected entity, under its card: in TilePainter.cpp.
 void addTilePainter(InspectorUi& ui, EditorUiKit& kit, Section& section);

@@ -124,7 +124,8 @@ struct Folder
     case asset::AssetType::Translation:
         return {icons::Languages, colors.scene};
     case asset::AssetType::Shader:
-        return {icons::FileCode, colors.material};
+        return source.path.ends_with(asset::shaderGraphExtension) ? EntityIcon{icons::Workflow, colors.material}
+                                                                  : EntityIcon{icons::FileCode, colors.material};
     default:
         break;
     }
@@ -667,8 +668,15 @@ void FileSystemUi::activate(ToolsState& state, scene::Scene& edited, const Node&
         }
         break;
     case asset::AssetType::Shader:
-        // Shaders open in the text editor, which shows the errors of their import on their lines.
-        if (path && state.mode == ToolsMode::Editor)
+        // Graphs open in their panel; shaders in the text editor, which shows the errors of their
+        // import on their lines.
+        if (path && path->extension() == asset::shaderGraphExtension)
+        {
+            selectAsset(state, node.asset);
+            state.showShaderGraph = true;
+            state.focusShaderGraph = true;
+        }
+        else if (path && state.mode == ToolsMode::Editor)
         {
             openTextFile(state, *path);
         }

@@ -535,7 +535,15 @@ Les matériaux standard suffisent au prototype. Pour un effet (eau, objet qui se
 3. Sélectionner le shader puis **New Material**, ou **Create New > Material** puis choisir le shader dans l'inspecteur du matériau. Les `uniform` du shader y apparaissent comme réglages.
 4. Glisser le matériau sur le MeshRenderer de l'objet. Un shader **Canvas Item** se donne de la même façon au champ Material d'un SpriteRenderer en 2D.
 
-La scène `shaders.dvxscene` du bac à sable montre de l'eau, une statue qui se dissout, un éclairage toon, des braises et un ciel procédural.
+Sans écrire de code, un **graphe de shader** donne le même résultat, avec des nœuds comme les shaders visuels de Godot :
+
+1. **Create New > Shader Graph**, type **Spatial (meshes)**. Le panneau **Shader Graph** s'ouvre en bas, sur l'onglet **Fragment** et son nœud de sortie.
+2. Clic droit dans le panneau : **Parameter > Color Parameter**. Dans l'inspecteur, le nommer `albedo` et choisir sa couleur.
+3. Glisser de la sortie **color** du paramètre vers l'entrée **Albedo** du nœud de sortie. Chaque lien recompile le shader ; une erreur encadre son nœud en rouge et s'affiche dans l'inspecteur du graphe.
+4. Pour le faire pulser, ajouter **Input** (réglé sur `TIME`), **Math > Function** (`sin`) et **Math > Vector Operator** (`multiply`) : TIME dans le sinus, la couleur et le sinus dans le produit, le produit dans Albedo. Ctrl+Z annule un geste, **Code** montre le shader produit.
+5. Comme pour un shader écrit, **New Material** puis glisser le matériau sur l'objet.
+
+La scène `shaders.dvxscene` du bac à sable montre de l'eau, une statue qui se dissout, un éclairage toon, des braises, un ciel procédural et un champ de force fait d'un graphe (`force_field.dvxshadergraph`).
 
 ## 7. Ajouter un objectif au prototype
 

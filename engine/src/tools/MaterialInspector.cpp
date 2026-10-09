@@ -18,6 +18,7 @@
 #include <format>
 #include <functional>
 #include <optional>
+#include <span>
 #include <string>
 #include <system_error>
 #include <vector>
@@ -91,6 +92,35 @@ using Button = PanelButton;
     return text;
 }
 
+// The render modes a graph turns on, as toggles: the defaults (cull_back, blend_mix) are left out.
+[[nodiscard]] std::span<const std::pair<std::string_view, std::string_view>> graphModes(asset::ShaderKind kind)
+{
+    static constexpr std::array<std::pair<std::string_view, std::string_view>, 7> spatial{{
+        {"unshaded", "Unshaded"},
+        {"cull_front", "Back Faces Only"},
+        {"cull_disabled", "Both Faces"},
+        {"blend_add", "Additive"},
+        {"shadows_disabled", "No Shadows"},
+        {"ambient_light_disabled", "No Ambient Light"},
+        {"world_vertex_coords", "World Vertex Coordinates"},
+    }};
+    static constexpr std::array<std::pair<std::string_view, std::string_view>, 2> flat{{
+        {"unshaded", "Unshaded"},
+        {"blend_add", "Additive"},
+    }};
+    switch (kind)
+    {
+    case asset::ShaderKind::Spatial:
+        return spatial;
+    case asset::ShaderKind::CanvasItem:
+    case asset::ShaderKind::Particles:
+        return flat;
+    case asset::ShaderKind::Sky:
+        break;
+    }
+    return {};
+}
+
 // ---- A shader ----
 
 class ShaderPage final : public InspectorPage
@@ -120,9 +150,17 @@ public:
             return;
         }
         const ThemeColors& colors = themeColors();
-        ui.heading(kit, icons::FileCode, colors.material, info->name, source->path);
+        m_graph = isShaderGraph(state, state.selectedAsset);
+        m_modes.clear();
+        m_code = {};
+        ui.heading(kit, m_graph ? icons::Workflow : icons::FileCode, colors.material, info->name, source->path);
         const Entity row = ui.actions(nullptr);
-        m_edit = ui.action(kit, row, Icon::Pencil, "Edit");
+        m_edit = ui.action(kit, row, Icon::Pencil, m_graph ? "Open Graph" : "Edit");
+        if (m_graph)
+        {
+            m_code = ui.action(kit, row, Icon::FileCode, "Code");
+            ui.tooltip(m_code.entity, "The code the graph turns into, read only, in the text editor");
+        }
         m_material = ui.action(kit, row, Icon::Palette, "New Material");
         ui.tooltip(m_material.entity, "A material drawn by this shader, beside it, to give it values");
         if (!m_shader)
@@ -149,6 +187,23 @@ public:
         }
         fact("State", shader.compiled() ? "Compiled" : "Not compiled: its materials draw as the default one");
 
+        // The render modes of a graph, which its file keeps; those of code are written in it.
+        if (m_graph)
+        {
+            loadShaderGraph(state, state.selectedAsset);
+            const std::span<const std::pair<std::string_view, std::string_view>> modes = graphModes(shader.kind);
+            if (!modes.empty())
+            {
+                Section& modeCard = ui.card(kit, "Render Modes");
+                for (const auto& [mode, label] : modes)
+                {
+                    const FormRow line = ui.formRow(modeCard, std::string(label));
+                    ui.tooltip(line.editor, std::string(mode));
+                    m_modes.emplace_back(std::string(mode), ui.toggle(line.editor));
+                }
+            }
+        }
+
         Section& uniforms = ui.card(kit, std::format("Uniforms ({})", shader.parameters.size()));
         if (shader.parameters.empty())
         {
@@ -164,7 +219,14 @@ public:
             Section& errors = ui.card(kit, std::format("Errors and warnings ({})", shader.diagnostics.size()));
             for (const asset::ShaderDiagnostic& diagnostic : shader.diagnostics)
             {
-                const std::string where = diagnostic.line > 0 ? std::format("Line {}: ", diagnostic.line) : std::string{};
+                std::string where = diagnostic.line > 0 ? std::format("Line {}: ", diagnostic.line) : std::string{};
+                if (diagnostic.node != 0)
+                {
+                    const asset::ShaderGraphNode* const node = state.shaderGraphEditor.asset == state.selectedAsset
+                                                                   ? state.shaderGraphEditor.graph.find(diagnostic.node)
+                                                                   : nullptr;
+                    where = node != nullptr ? std::format("{}: ", asset::nodeTitle(*node)) : std::format("Node {}: ", diagnostic.node);
+                }
                 ui.note(&errors, where + diagnostic.message, diagnostic.error ? "error" : "warning", 2.0f);
             }
         }
@@ -180,6 +242,11 @@ public:
             ui.enable(m_edit, state.mode == ToolsMode::Editor);
             ui.enable(m_material, state.mode == ToolsMode::Editor && m_shader.has_value());
         }
+        const std::vector<std::string>& modes = state.shaderGraphEditor.graph.renderModes;
+        for (const auto& [mode, toggle] : m_modes)
+        {
+            ui.setToggle(toggle, std::ranges::find(modes, mode) != modes.end());
+        }
     }
 
     void answer(InspectorUi& ui, ToolsState& state, EditorUiKit&) override
@@ -187,10 +254,40 @@ public:
         const ui::UiWorld& world = ui.panel.world();
         if (m_edit.entity.isValid() && world.wasClicked(m_edit.entity))
         {
-            if (const std::optional<std::filesystem::path> file = sourceFile(state, state.selectedAsset))
+            if (m_graph)
+            {
+                state.showShaderGraph = true;
+                state.focusShaderGraph = true;
+            }
+            else if (const std::optional<std::filesystem::path> file = sourceFile(state, state.selectedAsset))
             {
                 openTextFile(state, *file);
             }
+        }
+        if (m_code.entity.isValid() && world.wasClicked(m_code.entity))
+        {
+            loadShaderGraph(state, state.selectedAsset);
+            showShaderGraphCode(state);
+        }
+        for (const auto& [mode, toggle] : m_modes)
+        {
+            if (!world.wasChanged(toggle))
+            {
+                continue;
+            }
+            loadShaderGraph(state, state.selectedAsset);
+            std::vector<std::string>& modes = state.shaderGraphEditor.graph.renderModes;
+            std::erase(modes, mode);
+            if (ui.scene().get<scene::UiToggle>(toggle).value)
+            {
+                // The faces drawn are one choice.
+                if (mode == "cull_front" || mode == "cull_disabled")
+                {
+                    std::erase(modes, mode == "cull_front" ? "cull_disabled" : "cull_front");
+                }
+                modes.push_back(mode);
+            }
+            commitShaderGraph(state);
         }
         if (m_material.entity.isValid() && world.wasClicked(m_material.entity))
         {
@@ -216,6 +313,9 @@ private:
     std::optional<asset::ShaderData> m_shader;
     Button m_edit;
     Button m_material;
+    Button m_code;
+    bool m_graph = false;
+    std::vector<std::pair<std::string, Entity>> m_modes;
 };
 
 // ---- A material ----
@@ -784,7 +884,14 @@ const std::vector<CodeDiagnostic>& shaderDiagnosticsOf(ToolsState& state, const 
 core::Result<std::filesystem::path> createShaderFile(ToolsState& state, std::string_view folder, std::string_view name,
                                                      asset::ShaderKind kind)
 {
-    return writeNewAssetFile(state, folder, name, "Shader", asset::shaderExtension, asset::shaderTemplate(kind));
+    // A new shader opens in the text editor, to be written.
+    core::Result<std::filesystem::path> created =
+        writeNewAssetFile(state, folder, name, "Shader", asset::shaderExtension, asset::shaderTemplate(kind));
+    if (created)
+    {
+        openTextFile(state, *created);
+    }
+    return created;
 }
 
 core::Result<std::filesystem::path> createMaterialFile(ToolsState& state, std::string_view folder, std::string_view name,

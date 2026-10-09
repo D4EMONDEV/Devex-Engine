@@ -26,6 +26,7 @@
 #include <devex/asset/AudioClipData.hpp>
 #include <devex/asset/CurveData.hpp>
 #include <devex/asset/ShaderData.hpp>
+#include <devex/asset/ShaderGraphData.hpp>
 #include <devex/asset/SpriteData.hpp>
 #include <devex/asset/TilesetData.hpp>
 #include <devex/asset/Project.hpp>
@@ -120,6 +121,7 @@ struct DEVEX_API ViewportMarks
     bool playing = false;
 };
 struct AnimatorUi;
+struct ShaderGraphUi;
 struct TranslationsUi;
 struct MenuBarUi;
 struct StatusBarUi;
@@ -138,6 +140,7 @@ inline constexpr const char* debuggingWindow = "C# Debugging";
 inline constexpr const char* animationWindow = "Animation";
 inline constexpr const char* translationsWindow = "Translations";
 inline constexpr const char* animatorWindow = "Animator";
+inline constexpr const char* shaderGraphWindow = "Shader Graph";
 inline constexpr const char* textEditorWindow = "Text Editor";
 inline constexpr const char* profilerWindow = "Profiler";
 
@@ -421,6 +424,48 @@ struct DEVEX_API AnimatorEditor
     bool focused = false;
 };
 
+// The shader graph the Shader Graph panel edits: a copy of its file, saved when a change is over, with
+// its own undo history, as the Animator panel keeps its controller.
+struct DEVEX_API ShaderGraphEditor
+{
+    asset::AssetId asset;
+    std::filesystem::path file;
+    std::filesystem::file_time_type fileTime{};
+    asset::ShaderGraphData graph;
+    // As the file holds it: what an undo step goes back to.
+    asset::ShaderGraphData saved;
+    std::vector<asset::ShaderGraphData> undo;
+    std::vector<asset::ShaderGraphData> redo;
+    // Why the file could not be read or saved.
+    std::string error;
+    // The errors and warnings of the last import, which name their nodes, and the import they come from.
+    std::vector<asset::ShaderDiagnostic> diagnostics;
+    std::int32_t importStatus = -2;
+    // The function whose nodes show.
+    asset::ShaderFunction function = asset::ShaderFunction::Fragment;
+    // The node selected, 0 for none; the inspector shows it until another entity or asset is chosen.
+    std::uint32_t selected = 0;
+    bool inspecting = false;
+    core::Uuid inspectedEntity;
+    asset::AssetId inspectedAsset;
+    // Where the origin of the graph sits in the panel, and how large it is drawn.
+    math::Vec2 pan{120.0f, 120.0f};
+    float zoom = 1.0f;
+    bool frame = true;
+    // A link being drawn from a port, an output or an input, to the port released on.
+    std::uint32_t linkingNode = 0;
+    std::uint32_t linkingPort = 0;
+    bool linkingFromOutput = true;
+    // A link taken off an input while it is drawn elsewhere: saved even when released on nothing.
+    bool detached = false;
+    // A node being dragged, and whether it moved.
+    std::uint32_t dragged = 0;
+    bool moved = false;
+    bool panning = false;
+    // The panel had the keyboard focus last frame: its undo takes Ctrl+Z.
+    bool focused = false;
+};
+
 // How the viewport paints the cells of the selected tilemap.
 enum class TileTool : std::uint8_t
 {
@@ -536,6 +581,7 @@ struct DEVEX_API ToolsState
     std::shared_ptr<ViewportOverlayUi> viewportOverlayUi;
     ViewportMarks viewportMarks;
     std::shared_ptr<AnimatorUi> animatorUi;
+    std::shared_ptr<ShaderGraphUi> shaderGraphUi;
     std::shared_ptr<TranslationsUi> translationsUi;
     // The frame of the editor: its bars, the header of the view, and the layer of their menus.
     std::shared_ptr<MenuBarUi> menuBarUi;
@@ -638,6 +684,7 @@ struct DEVEX_API ToolsState
     SpriteFramesEditor spriteFramesEditor;
     TilesetEditor tilesetEditor;
     AnimatorEditor animatorEditor;
+    ShaderGraphEditor shaderGraphEditor;
     TilePainter tilePainter;
     // A file just created, selected once it is imported, as a res:// path.
     std::string assetToSelect;
@@ -671,6 +718,7 @@ struct DEVEX_API ToolsState
     particles::ParticleWorld* particleWorld = nullptr;
     bool showAnimation = false;
     bool showAnimator = false;
+    bool showShaderGraph = false;
     bool showTranslations = false;
     // The table of translations the Translations panel shows.
     asset::AssetId translationTable;
@@ -684,6 +732,7 @@ struct DEVEX_API ToolsState
     // The same for the panels of the clips and of the state machines.
     bool focusAnimation = false;
     bool focusAnimator = false;
+    bool focusShaderGraph = false;
     bool focusTranslations = false;
     ProfilerView profiler;
     // What the Animation panel shows: the clip it last posed, and where its playhead stands.
@@ -920,6 +969,21 @@ DEVEX_API core::Result<std::filesystem::path> createTilesetFile(ToolsState& stat
 // selected entity, or the animator selected in the FileSystem.
 DEVEX_API void drawAnimatorPanel(ToolsState& state, scene::Scene& scene);
 DEVEX_API void renderAnimatorPanel(ToolsState& state, render::RenderWorld& world);
+// The Shader Graph panel: the nodes of a shader graph, function by function, linked from their
+// outputs to the inputs of others. It edits the graph selected in the FileSystem.
+DEVEX_API void drawShaderGraphPanel(ToolsState& state);
+DEVEX_API void renderShaderGraphPanel(ToolsState& state, render::RenderWorld& world);
+// Reads a graph into the editor of the panel, when another one is asked for or its file changed.
+DEVEX_API void loadShaderGraph(ToolsState& state, asset::AssetId id);
+// Saves the graph of the panel as one step of its undo history, once a change is over.
+DEVEX_API void commitShaderGraph(ToolsState& state);
+// Opens the code the graph of the panel turns into, read only, in the text editor.
+DEVEX_API void showShaderGraphCode(ToolsState& state);
+// A new graph of a kind, with the output node of each of its functions.
+DEVEX_API core::Result<std::filesystem::path> createShaderGraphFile(ToolsState& state, std::string_view folder, std::string_view name,
+                                                                    asset::ShaderKind kind);
+// Whether an asset is a shader graph rather than a shader written as code.
+[[nodiscard]] DEVEX_API bool isShaderGraph(const ToolsState& state, asset::AssetId id);
 // The Translations panel: a table of translations, its keys down and its languages across, edited in
 // place as in a spreadsheet and written back to its .csv file.
 DEVEX_API void drawTranslationsPanel(ToolsState& state);

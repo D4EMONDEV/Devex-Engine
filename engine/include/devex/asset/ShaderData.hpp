@@ -110,6 +110,8 @@ struct DEVEX_API ShaderDiagnostic
     std::uint32_t column = 0;
     std::string message;
     bool error = true;
+    // The node of a shader graph it is about, 0 for none.
+    std::uint32_t node = 0;
 
     bool operator==(const ShaderDiagnostic&) const = default;
 };

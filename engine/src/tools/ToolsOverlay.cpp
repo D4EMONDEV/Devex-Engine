@@ -417,6 +417,7 @@ void updateEditor(ToolsState& state, scene::Scene& scene, PlayState playState)
     detail::drawTextEditorPanel(state, scene);
     detail::drawAnimationPanel(state, scene);
     detail::drawAnimatorPanel(state, scene);
+    detail::drawShaderGraphPanel(state);
     detail::drawTranslationsPanel(state);
     detail::drawEditorPopups(state, scene);
     detail::handleEntityShortcuts(state, scene);
@@ -663,6 +664,7 @@ void ToolsOverlay::prepareRender(scene::Scene& scene, render::RenderWorld& world
     detail::renderProfiler(state, world);
     detail::renderAnimationPanel(state, world);
     detail::renderAnimatorPanel(state, world);
+    detail::renderShaderGraphPanel(state, world);
     detail::renderTranslationsPanel(state, world);
     detail::renderTextEditor(state, world);
     detail::renderViewportOverlay(state, world);

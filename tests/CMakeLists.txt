@@ -132,6 +132,7 @@ devex_add_tests(asset
         asset/MeshDataTests.cpp
         asset/MetaFileTests.cpp
         asset/PackageTests.cpp
+        asset/ShaderGraphTests.cpp
         asset/ShaderTests.cpp
         asset/SpriteTests.cpp
         asset/TilesetTests.cpp
