@@ -1,4 +1,5 @@
 #include <devex/animation/AnimationWorld.hpp>
+#include <devex/animation/SpriteAnimation.hpp>
 #include <devex/core/Log.hpp>
 #include <devex/scene/AnimationComponents.hpp>
 #include <devex/scene/Components.hpp>
@@ -156,6 +157,8 @@ struct AnimationWorld::Implementation
     AnimatorSource animators;
     SpriteFramesSource spriteFrames;
     std::unordered_map<std::uint64_t, Playback> playbacks;
+    // The events of the last update.
+    std::vector<FiredAnimationEvent> events;
     // Scratch space of one sampling, kept to avoid an allocation per animator per frame.
     std::vector<JointPose> sampled;
     const Scene* scene = nullptr;
@@ -295,10 +298,13 @@ struct AnimationWorld::Implementation
         bool wrapped = false;
         if (playback.playing && !paused && delta > 0.0f)
         {
+            const float before = playback.time;
             playback.time += delta * animator.speed;
+            const float reached = playback.time;
+            const bool loops = animator.loop && duration > 0.0f;
             if (playback.time >= duration || playback.time < 0.0f)
             {
-                if (animator.loop && duration > 0.0f)
+                if (loops)
                 {
                     playback.time -= std::floor(playback.time / duration) * duration;
                     wrapped = true;
@@ -309,6 +315,8 @@ struct AnimationWorld::Implementation
                     playback.playing = false;
                 }
             }
+            passEvents(playback.clip->data(), before, loops ? reached : playback.time, loops, !loops && !playback.playing,
+                       playback.entity);
             if (playback.fadeRemaining > 0.0f)
             {
                 playback.fadeRemaining = std::max(0.0f, playback.fadeRemaining - delta);
@@ -737,7 +745,9 @@ struct AnimationWorld::Implementation
         {
             takeTransition(sceneToWrite, playback);
         }
+        const float before = playback.current.normalized;
         advanceState(sceneToWrite, playback, playback.current, animator, step, &playback.stateDuration);
+        passStateEvents(playback, playback.current, before);
         if (playback.fadeRemaining > 0.0f)
         {
             advanceState(sceneToWrite, playback, playback.previousState, animator, step, nullptr);
@@ -758,6 +768,76 @@ struct AnimationWorld::Implementation
         }
         applyRootMotion(sceneToWrite, playback, animator, rootJoints, playback.current.wrapped, delta);
         applyPose(sceneToWrite, playback.bones, playback.pose);
+    }
+
+    // The events of a clip between two of its times, as its playback goes: from `from`, included, to
+    // `to`, left out, forward, and the other way backward. Around a clip that loops, `to` goes past
+    // its end or before its start, and a long step passes a few loops at most; a clip that does not
+    // loop passes the events at the end it reaches.
+    void passEvents(const asset::AnimationClipData& clip, float from, float to, bool loop, bool reachedEnd, Entity entity)
+    {
+        if (clip.events.empty() || from == to)
+        {
+            return;
+        }
+        const float duration = std::max(clip.duration, 1e-6f);
+        const bool forward = to > from;
+        if (!loop)
+        {
+            for (std::size_t index = 0; index < clip.events.size(); ++index)
+            {
+                const asset::AnimationEvent& event = clip.events[forward ? index : clip.events.size() - 1 - index];
+                const bool passed = forward ? event.time >= from && (event.time < to || (reachedEnd && event.time <= to))
+                                            : event.time <= from && (event.time > to || (reachedEnd && event.time >= to));
+                if (passed)
+                {
+                    events.push_back({entity, event.name});
+                }
+            }
+            return;
+        }
+        constexpr float maxLoops = 4.0f;
+        const float low = std::max(std::min(from, to), std::max(from, to) - duration * maxLoops);
+        const float high = std::max(from, to);
+        const auto first = static_cast<std::int64_t>(std::floor(low / duration));
+        const auto last = static_cast<std::int64_t>(std::floor(high / duration));
+        for (std::int64_t cycle = forward ? first : last; forward ? cycle <= last : cycle >= first; cycle += forward ? 1 : -1)
+        {
+            for (std::size_t index = 0; index < clip.events.size(); ++index)
+            {
+                const asset::AnimationEvent& event = clip.events[forward ? index : clip.events.size() - 1 - index];
+                const float at = static_cast<float>(cycle) * duration + event.time;
+                if (forward ? at >= low && at < high : at > low && at <= high)
+                {
+                    events.push_back({entity, event.name});
+                }
+            }
+        }
+    }
+
+    // The events of the clip that weighs the most in a state, as it moved on from `before`, in cycles.
+    void passStateEvents(Playback& playback, const StateRun& run, float before)
+    {
+        if (run.state < 0 || run.normalized == before)
+        {
+            return;
+        }
+        const AnimatorState& state = playback.controller->states[static_cast<std::size_t>(run.state)];
+        weightsOf(playback, state, playback.weights);
+        const auto heaviest = std::ranges::max_element(playback.weights);
+        if (heaviest == playback.weights.end() || *heaviest <= 0.0f)
+        {
+            return;
+        }
+        const ClipBinding* const binding =
+            bindingOf(playback, state.motions[static_cast<std::size_t>(heaviest - playback.weights.begin())].clip);
+        if (binding == nullptr)
+        {
+            return;
+        }
+        const float duration = binding->clip->duration();
+        passEvents(binding->clip->data(), before * duration, run.normalized * duration, state.loop, !state.loop && run.normalized >= 1.0f,
+                   playback.entity);
     }
 
     // Starts the state machine over from its entry state.
@@ -807,6 +887,7 @@ void AnimationWorld::update(scene::Scene& scene, core::Duration delta)
         world.scene = &scene;
     }
 
+    world.events.clear();
     std::unordered_set<std::uint64_t> seen;
     seen.reserve(world.playbacks.size());
     for ([[maybe_unused]] auto [entity, animator] : scene.view<Animator>())
@@ -860,6 +941,17 @@ void AnimationWorld::update(scene::Scene& scene, core::Duration delta)
     }
 
     std::erase_if(world.playbacks, [&seen](const auto& entry) { return !seen.contains(entry.first); });
+
+    // Sprites move from frame to frame while the game plays.
+    if (!world.paused && world.spriteFrames)
+    {
+        updateSpriteAnimators(scene, world.spriteFrames, static_cast<float>(delta.count()), &world.events);
+    }
+}
+
+std::span<const FiredAnimationEvent> AnimationWorld::events() const noexcept
+{
+    return m_implementation->events;
 }
 
 void AnimationWorld::play(scene::Scene& scene, scene::Entity entity, asset::AssetId clip, float fade)

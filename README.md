@@ -133,7 +133,8 @@ captures de l'éditeur, scènes de base, entrées, scripts C#, animations, colli
   CPU, passes GPU, mémoire des assets), cadre de l'éditeur (barre de menus et ses menus, barre
   d'état, onglets des scènes que l'on glisse pour les ranger et dont le clic droit ferme les autres
   ou montre le fichier dans FileSystem, barre d'outils de la vue), panneaux
-  Animation (timeline qui zoome et défile), Animator (graphe des états, paramètres suivis en
+  Animation (timeline qui zoome et défile, événements du clip ajoutés, déplacés et nommés),
+  Animator (graphe des états, paramètres suivis en
   direct) et Shader Graph (nœuds des shaders visuels à la Godot, liens, annuler et refaire),
   écran Script (fichiers ouverts, menus File, Edit et Search, recherche, complétion, sur
   une zone de texte qui ne place que les lignes en vue), FileSystem et Output déjà écrits
@@ -179,7 +180,8 @@ captures de l'éditeur, scènes de base, entrées, scripts C#, animations, colli
   frames, d'une condition ou d'un tween, arrêtées avec leur entité), rendu automatique de la
   scène, export d'un jeu ;
 - `Devex.Managed` : l'API C# du moteur (`Component`, `Entity`, `Scene`, `Input`, `Physics`, `Audio`,
-  `Animation`, `Navigation`, `Tween`, `Particles`, `Tilemaps`, `Ui`, `Prefabs`, `Assets`, `Materials`,
+  `Animation` (avec ses événements et `OnAnimationEvent`), `Navigation`, `Tween`, `Particles`,
+  `Tilemaps`, `Ui`, `Prefabs`, `Assets`, `Materials`,
   `InstanceShaderParameters`, `Saves`, `PlayerSettings`, `Time`, `Log`,
   `Profiler`, maths), les coroutines `async Coroutine` (`Wait.Seconds`, `Wait.Until`, tweens et
   tâches attendus sur le thread du jeu) et les vues des composants du
@@ -202,13 +204,15 @@ captures de l'éditeur, scènes de base, entrées, scripts C#, animations, colli
   caisses (`code/Dispenser.cs`) et un cube qui flotte
   (`code/Bobber.cs`) ; le lanceur C++ et les cibles C# jouent leurs sons, la porte sa source audio,
   le cube flottant émet un bourdonnement spatialisé et une ambiance Ogg tourne en boucle dans le
-  groupe Music ; un robot rigué patrouille par le maillage de navigation, attend et salue le
+  groupe Music ; un robot rigué patrouille par le maillage de navigation, au bruit de ses pas
+  (des événements de son clip de marche), attend et salue le
   joueur par sa machine à états (`assets/animators/robot.dvxanimator`, `code/Robot.cs`), deux
   drones suivent le joueur en se contournant (`code/Follower.cs`), et la porte fermée comme les
   caisses poussées découpent le maillage ; des articulations y tiennent une porte battante sur
   gonds, un pendule et un panneau soudé qu'une balle décroche ;
   Tab passe à la scène `platformer`, un jeu de plateformes en pixel art (un chevalier animé qui
-  court et saute sur un niveau de tuiles simulé par la physique 2D, dont une île flottante
+  court, au bruit de ses pas, et saute sur un niveau de tuiles simulé par la physique 2D, dont une
+  île flottante
   peinte au pinceau de terrain, au soir, sous une torche qui vacille et dont les corniches font
   de l'ombre sur un mur à normal map, traverse les corniches
   par-dessous, pousse des caisses et une porte de pierre suspendue à une charnière, prend une

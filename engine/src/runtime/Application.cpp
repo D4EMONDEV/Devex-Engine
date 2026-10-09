@@ -2374,14 +2374,8 @@ void ApplicationRunner::updateAnimation(std::chrono::nanoseconds frameTime)
     }
     const bool paused = isEditor() && m_playState != tools::PlayState::Playing;
     m_animation->setPaused(paused);
+    // Sprites move from frame to frame too, while the game plays.
     m_animation->update(*m_application.m_scene, core::Duration(frameTime));
-    // Sprites move from frame to frame while the game plays.
-    if (!paused)
-    {
-        animation::updateSpriteAnimators(
-            *m_application.m_scene, [this](asset::AssetId frames) { return m_services.assets.spriteFrames(frames); },
-            std::chrono::duration<float>(frameTime).count());
-    }
     // After the clips, so that a tween moves an animated entity as a whole.
     if (m_tweens)
     {

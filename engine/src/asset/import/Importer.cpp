@@ -1,5 +1,6 @@
 #include <devex/asset/Artifact.hpp>
 #include <devex/asset/import/Importer.hpp>
+#include <devex/asset/AnimationEvents.hpp>
 #include <devex/asset/import/CurveFile.hpp>
 #include <devex/asset/import/MaterialFile.hpp>
 #include <devex/asset/import/ShaderFile.hpp>
@@ -10,6 +11,7 @@
 #include <devex/asset/import/ThemeFile.hpp>
 #include <devex/asset/import/TextureProcessing.hpp>
 #include <devex/core/File.hpp>
+#include <devex/core/Log.hpp>
 #include <devex/core/Path.hpp>
 #include <devex/scene/SceneSerializer.hpp>
 
@@ -218,6 +220,37 @@ AssetId SubAssetIds::acquire(AssetType type, std::string_view key)
     m_entries.push_back({type, std::string(key), AssetId::generate()});
     m_hasNewEntries = true;
     return m_entries.back().id;
+}
+
+const MetaSubAsset* SubAssetIds::find(AssetType type, std::string_view key) const noexcept
+{
+    const auto found = std::ranges::find_if(m_entries, [&](const MetaSubAsset& entry) { return entry.type == type && entry.key == key; });
+    return found != m_entries.end() ? &*found : nullptr;
+}
+
+std::vector<AnimationEvent> ImportContext::animationEvents(std::string_view key, float duration) const
+{
+    const MetaSubAsset* const entry = subAssets.find(AssetType::AnimationClip, key);
+    const auto option = entry != nullptr ? std::ranges::find(entry->options, std::string_view("events"), &serialization::TextProperty::key)
+                                         : std::vector<serialization::TextProperty>::const_iterator{};
+    if (entry == nullptr || option == entry->options.end())
+    {
+        return {};
+    }
+    core::Result<std::vector<AnimationEvent>> events = readAnimationEvents(option->value);
+    if (!events)
+    {
+        DEVEX_LOG_WARNING("The events of the animation '{}' of {} are left out: {}", key, source.filename().string(), events.error());
+        return {};
+    }
+    const auto outside = std::ranges::remove_if(*events, [&](const AnimationEvent& event) { return event.time > duration; });
+    if (!outside.empty())
+    {
+        DEVEX_LOG_WARNING("{} event(s) of the animation '{}' of {} come after its end, at {} s, and are left out", outside.size(), key,
+                          source.filename().string(), duration);
+        events->erase(outside.begin(), outside.end());
+    }
+    return std::move(*events);
 }
 
 const std::vector<MetaSubAsset>& SubAssetIds::entries() const noexcept
@@ -624,8 +657,8 @@ std::span<const Importer> importers()
         },
         Importer{
             .name = "gltf",
-            // 2: tangents.
-            .version = 2,
+            // 2: tangents. 3: the events of the clips.
+            .version = 3,
             .mainType = AssetType::Model,
             .extensions = {".gltf", ".glb"},
             .defaultOptions =
@@ -638,7 +671,8 @@ std::span<const Importer> importers()
         },
         Importer{
             .name = "fbx",
-            .version = 1,
+            // 2: the events of the clips.
+            .version = 2,
             .mainType = AssetType::Model,
             .extensions = {".fbx"},
             .defaultOptions =
@@ -713,7 +747,8 @@ std::span<const Importer> importers()
         },
         Importer{
             .name = "frames",
-            .version = 1,
+            // 2: the events of the animations.
+            .version = 2,
             .mainType = AssetType::SpriteFrames,
             .extensions = {spriteFramesExtension},
             .run = &importSpriteFramesFile,

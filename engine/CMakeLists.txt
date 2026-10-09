@@ -195,6 +195,7 @@ add_library(Devex::Asset ALIAS devex_asset)
 target_sources(devex_asset
     PRIVATE
         src/asset/AnimationData.cpp
+        src/asset/AnimationEvents.cpp
         src/asset/Artifact.cpp
         src/asset/AssetType.cpp
         src/asset/CurveData.cpp
@@ -220,6 +221,7 @@ target_sources(devex_asset
         BASE_DIRS include
         FILES
             include/devex/asset/AnimationData.hpp
+            include/devex/asset/AnimationEvents.hpp
             include/devex/asset/Artifact.hpp
             include/devex/asset/AssetId.hpp
             include/devex/asset/AssetMemory.hpp

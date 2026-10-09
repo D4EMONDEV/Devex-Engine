@@ -456,6 +456,19 @@ def slide(rate=44100, length=1.1):
     return samples
 
 
+def footstep(rate=44100, length=0.16):
+    """A footstep: a soft low thump under a short scuff of noise."""
+    rng = random.Random(31)
+    samples, low = [], 0.0
+    for index in range(int(rate * length)):
+        t = index / rate
+        thump = math.sin(2 * math.pi * (70.0 * t - 60.0 * t * t)) * math.exp(-t * 38.0)
+        low += (rng.uniform(-1.0, 1.0) - low) * 0.18
+        scuff = low * math.exp(-t * 55.0)
+        samples.append((thump * 0.7 + scuff * 0.5) * min(1.0, t / 0.002))
+    return samples
+
+
 def hum(rate=44100, length=2.0):
     """A loop: whole periods of every partial and of the tremolo, so that it joins seamlessly."""
     samples = []
@@ -518,6 +531,7 @@ def audio_assets():
     write(sounds / "throw.wav", wav_bytes([whoosh()], 44100))
     write(sounds / "hit.wav", wav_bytes([ding()], 44100))
     write(sounds / "door.wav", wav_bytes([slide()], 44100))
+    write(sounds / "step.wav", wav_bytes([footstep()], 44100))
     write(sounds / "hum.wav", wav_bytes([hum()], 44100))
     encode(wav_bytes(ambience(), 22050), sounds / "ambience.ogg", ["-c:a", "libvorbis", "-q:a", "3"])
 

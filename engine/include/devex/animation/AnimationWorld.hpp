@@ -26,6 +26,14 @@ class Scene;
 
 namespace devex::animation {
 
+// An event an animation played past during the last update: the entity of its Animator, or of its
+// SpriteAnimator, and the name the animation gives the event.
+struct DEVEX_API FiredAnimationEvent
+{
+    scene::Entity entity;
+    std::string name;
+};
+
 // What an animator with a controller is doing, for the tools.
 struct DEVEX_API AnimatorStatus
 {
@@ -51,6 +59,8 @@ struct DEVEX_API AnimatorStatus
 // under their entity every frame. Clips drive bones by name, so a clip plays on any skeleton whose
 // bones carry the same names. An Animator with a controller plays its state machine: game code sets
 // its parameters, and its transitions choose the states, whose clips and blend trees pose the bones.
+// With sprite frames, the SpriteAnimator components move from frame to frame too. The events the
+// clips and the frames pass are gathered for game code.
 class DEVEX_API AnimationWorld
 {
 public:
@@ -70,9 +80,16 @@ public:
 
     // Once per frame, before the world transforms are updated: animators that appear with
     // playOnStart start, state machines take their transitions, clips advance and pose their bones,
-    // and animators that are gone are forgotten. Using the world with another scene starts over
-    // from that scene.
+    // sprite animators move on, and animators that are gone are forgotten. Using the world with
+    // another scene starts over from that scene.
     void update(scene::Scene& scene, core::Duration delta);
+
+    // The events the animations played past during the last update, in the order they came. A clip
+    // passes the events from where it was to where it is, around its loop, and backwards when it
+    // plays backwards; a state machine passes those of the clip that weighs the most in its state,
+    // and a crossfade only those of the clip it fades to; a sprite animator passes those of the
+    // frames it comes to, and of the first frame of an animation that starts.
+    [[nodiscard]] std::span<const FiredAnimationEvent> events() const noexcept;
 
     // Plays a clip on the animator of the entity, crossfading over fade seconds (its blendTime
     // when fade is negative). The clip becomes the one the Animator holds. An animator with a

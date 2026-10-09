@@ -52,6 +52,7 @@ internal static unsafe class GameRuntime
         public bool HandlesCollisions { get; init; }
         public bool HandlesTriggers { get; init; }
         public bool HandlesJointBreaks { get; init; }
+        public bool HandlesAnimationEvents { get; init; }
         // The zones of the profiler its methods run in, named once.
         public string StartZone => field ??= Name + ".Start";
         public string UpdateZone => field ??= Name + ".Update";
@@ -119,6 +120,7 @@ internal static unsafe class GameRuntime
                 HandlesTriggers = Overrides(type, nameof(Component.OnTriggerEnter)) ||
                                   Overrides(type, nameof(Component.OnTriggerExit)),
                 HandlesJointBreaks = Overrides(type, nameof(Component.OnJointBreak)),
+                HandlesAnimationEvents = Overrides(type, nameof(Component.OnAnimationEvent)),
             };
             if (Types.Any(other => other.Name == info.Name))
             {
@@ -226,6 +228,10 @@ internal static unsafe class GameRuntime
             {
                 DispatchContacts();
                 DispatchJointBreaks();
+            }
+            else if (phase == SystemPhase.LateUpdate)
+            {
+                DispatchAnimationEvents();
             }
             if (phase != SystemPhase.Start)
             {
@@ -501,6 +507,39 @@ internal static unsafe class GameRuntime
                 NotifyBreak(info, joint.Joint, joint.Joint);
                 NotifyBreak(info, joint.BodyA, joint.Joint);
                 NotifyBreak(info, joint.BodyB, joint.Joint);
+            }
+        }
+    }
+
+    private static void DispatchAnimationEvents()
+    {
+        if (!Types.Any(info => info.HandlesAnimationEvents))
+        {
+            return;
+        }
+        // Read once, since the handlers may change the scene.
+        AnimationEvent[] passed = Animation.Events;
+        foreach (AnimationEvent passedEvent in passed)
+        {
+            foreach (ComponentTypeInfo info in Types)
+            {
+                if (!info.HandlesAnimationEvents || !info.Instances.TryGetValue(passedEvent.Entity.Key, out Component? instance))
+                {
+                    continue;
+                }
+                Coroutines.CurrentOwner = instance;
+                try
+                {
+                    instance.OnAnimationEvent(passedEvent.Name);
+                }
+                catch (Exception exception)
+                {
+                    Report($"{info.Name} of '{passedEvent.Entity.Name}'", $"{info.Name}.animation", exception);
+                }
+                finally
+                {
+                    Coroutines.CurrentOwner = null;
+                }
             }
         }
     }

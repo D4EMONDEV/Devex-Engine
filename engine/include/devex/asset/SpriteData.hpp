@@ -50,6 +50,17 @@ struct DEVEX_API SpriteData
 [[nodiscard]] DEVEX_API core::Result<void> validate(const SpriteData& sprite);
 
 // An animation of sprites: the frames it shows one after the other.
+// A frame of a sprite animation that game code hears of when the animator comes to it: a step, a
+// blow that lands.
+struct DEVEX_API SpriteAnimationEvent
+{
+    // From 0.
+    std::uint32_t frame = 0;
+    std::string name;
+
+    bool operator==(const SpriteAnimationEvent&) const = default;
+};
+
 struct DEVEX_API SpriteAnimationData
 {
     std::string name;
@@ -58,6 +69,8 @@ struct DEVEX_API SpriteAnimationData
     // Starts again after its last frame; otherwise stays on it.
     bool loop = true;
     std::vector<AssetId> frames;
+    // In the order of their frames.
+    std::vector<SpriteAnimationEvent> events;
 
     bool operator==(const SpriteAnimationData&) const = default;
 };
@@ -73,7 +86,7 @@ struct DEVEX_API SpriteFramesData
     bool operator==(const SpriteFramesData&) const = default;
 };
 
-// Names that are not empty and differ, positive frame rates.
+// Names that are not empty and differ, positive frame rates, named events on frames that exist.
 [[nodiscard]] DEVEX_API core::Result<void> validate(const SpriteFramesData& frames);
 
 } // namespace devex::asset

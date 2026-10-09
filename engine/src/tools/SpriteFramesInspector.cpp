@@ -10,6 +10,7 @@
 #include <cfloat>
 #include <cmath>
 #include <format>
+#include <ranges>
 #include <string>
 #include <system_error>
 #include <utility>
@@ -99,6 +100,56 @@ void saveFrames(ToolsState& state)
     return name;
 }
 
+// The events of an animation follow their frames when frames move, come and go.
+void insertFrames(asset::SpriteAnimationData& animation, std::size_t at, std::size_t count)
+{
+    for (asset::SpriteAnimationEvent& event : animation.events)
+    {
+        if (event.frame >= at)
+        {
+            event.frame += static_cast<std::uint32_t>(count);
+        }
+    }
+}
+
+void removeFrame(asset::SpriteAnimationData& animation, std::size_t index)
+{
+    std::erase_if(animation.events, [&](const asset::SpriteAnimationEvent& event) { return event.frame == index; });
+    for (asset::SpriteAnimationEvent& event : animation.events)
+    {
+        if (event.frame > index)
+        {
+            --event.frame;
+        }
+    }
+}
+
+void swapFrames(asset::SpriteAnimationData& animation, std::size_t first, std::size_t second)
+{
+    std::swap(animation.frames[first], animation.frames[second]);
+    for (asset::SpriteAnimationEvent& event : animation.events)
+    {
+        event.frame = event.frame == first ? static_cast<std::uint32_t>(second)
+                      : event.frame == second ? static_cast<std::uint32_t>(first)
+                                              : event.frame;
+    }
+    std::ranges::stable_sort(animation.events, {}, &asset::SpriteAnimationEvent::frame);
+}
+
+// The names of the events of a frame, as one text.
+[[nodiscard]] std::string eventsOf(const asset::SpriteAnimationData& animation, std::size_t frame)
+{
+    std::string names;
+    for (const asset::SpriteAnimationEvent& event : animation.events)
+    {
+        if (event.frame == frame)
+        {
+            names += names.empty() ? event.name : ", " + event.name;
+        }
+    }
+    return names;
+}
+
 class SpriteFramesPage final : public InspectorPage
 {
 public:
@@ -125,6 +176,7 @@ public:
         m_rows.clear();
         m_grid.reset();
         m_name = {};
+        m_event = {};
         const asset::AssetInfo* const info = state.database->find(state.selectedAsset);
         const std::optional<asset::SourceFile> source = state.database->sourceOf(state.selectedAsset);
         if (info == nullptr || !source)
@@ -211,6 +263,11 @@ public:
         {
             ui.scene().get<scene::UiContextMenu>(cell).popup = ui.scene().reference(m_frameMenu);
         }
+        // The event of the frame chosen, which code hears as the animator comes to it.
+        const FormRow eventRow = ui.formRow(frames, "Event");
+        m_event = ui.textField(eventRow.editor, "Choose a frame");
+        ui.tooltip(eventRow.editor, "The event of the frame chosen: code hears it in OnAnimationEvent when the animator comes to the "
+                                    "frame (a step, a blow that lands). Empty for none.");
         footnote(ui);
     }
 
@@ -282,9 +339,16 @@ public:
                 ui.scene().get<scene::UiRect>(m_grid->cells[index]).style =
                     static_cast<int>(index) == editor.selectedFrame ? "row_selected" : "row";
                 const asset::AssetInfo* const frameInfo = state.database->find(animation.frames[index]);
-                ui.tooltip(m_grid->cells[index], std::format("{}: {}\nRight-click for more; drop sprites here to insert them after it", index + 1,
-                                                             frameInfo != nullptr ? frameInfo->name : std::string("(missing sprite)")));
+                const std::string events = eventsOf(animation, index);
+                ui.tooltip(m_grid->cells[index], std::format("{}: {}{}\nRight-click for more; drop sprites here to insert them after it", index + 1,
+                                                             frameInfo != nullptr ? frameInfo->name : std::string("(missing sprite)"),
+                                                             events.empty() ? std::string{} : "\nEvent: " + events));
             }
+        }
+        if (m_event.isValid() && world.editedField() != m_event)
+        {
+            const bool chosen = editor.selectedFrame >= 0 && static_cast<std::size_t>(editor.selectedFrame) < count;
+            ui.scene().get<scene::UiText>(m_event).text = chosen ? eventsOf(animation, static_cast<std::size_t>(editor.selectedFrame)) : std::string{};
         }
         const std::optional<std::size_t> target = m_menuFrame;
         ui.enable(m_left, target && *target > 0);
@@ -429,13 +493,13 @@ private:
             const std::size_t index = *m_menuFrame;
             if (world.wasClicked(m_left.entity) && index > 0)
             {
-                std::swap(animation.frames[index - 1], animation.frames[index]);
+                swapFrames(animation, index - 1, index);
                 editor.selectedFrame = static_cast<int>(index - 1);
                 m_dirty = true;
             }
             else if (world.wasClicked(m_right.entity) && index + 1 < count)
             {
-                std::swap(animation.frames[index], animation.frames[index + 1]);
+                swapFrames(animation, index, index + 1);
                 editor.selectedFrame = static_cast<int>(index + 1);
                 m_dirty = true;
             }
@@ -446,6 +510,7 @@ private:
             else if (world.wasClicked(m_removeFrame.entity))
             {
                 animation.frames.erase(animation.frames.begin() + static_cast<std::ptrdiff_t>(index));
+                removeFrame(animation, index);
                 editor.selectedFrame = -1;
                 m_dirty = true;
             }
@@ -458,7 +523,37 @@ private:
         {
             animation.frames.insert(animation.frames.begin() + static_cast<std::ptrdiff_t>(inserted->first), inserted->second.begin(),
                                     inserted->second.end());
+            insertFrames(animation, inserted->first, inserted->second.size());
             m_dirty = true;
+        }
+
+        // The event of the frame chosen, once the field is left: its names, separated by commas,
+        // replace those the frame had.
+        if (world.editedField() == m_event)
+        {
+            m_namingEvent = true;
+        }
+        else if (std::exchange(m_namingEvent, false) && !ui.panel.input().cancelPressed && editor.selectedFrame >= 0 &&
+                 static_cast<std::size_t>(editor.selectedFrame) < animation.frames.size())
+        {
+            const auto frame = static_cast<std::uint32_t>(editor.selectedFrame);
+            const std::string typed = ui.scene().get<scene::UiText>(m_event).text;
+            if (typed != eventsOf(animation, frame))
+            {
+                std::erase_if(animation.events, [&](const asset::SpriteAnimationEvent& event) { return event.frame == frame; });
+                for (const auto part : std::views::split(typed, ','))
+                {
+                    std::string name(part.begin(), part.end());
+                    name.erase(0, name.find_first_not_of(' '));
+                    name.erase(name.find_last_not_of(' ') + 1);
+                    if (!name.empty())
+                    {
+                        animation.events.push_back({.frame = frame, .name = std::move(name)});
+                    }
+                }
+                std::ranges::stable_sort(animation.events, {}, &asset::SpriteAnimationEvent::frame);
+                m_dirty = true;
+            }
         }
     }
 
@@ -468,6 +563,8 @@ private:
     std::size_t m_card = 0;
     Entity m_name;
     bool m_naming = false;
+    Entity m_event;
+    bool m_namingEvent = false;
     Entity m_fps;
     Entity m_loop;
     Entity m_preview;

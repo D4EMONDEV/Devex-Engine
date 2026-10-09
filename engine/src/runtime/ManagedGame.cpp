@@ -304,6 +304,7 @@ struct NativeApi
     int (*setInstanceShaderParameter)(void* scene, Entity entity, const char* name, const math::Vec4* value);
     int (*instanceShaderParameter)(void* scene, Entity entity, const char* name, math::Vec4* value);
     int (*resetInstanceShaderParameter)(void* scene, Entity entity, const char* name);
+    int (*animationEvents)(const struct NativeAnimationEvent** events);
 };
 
 // The functions the engine calls, in the order of Devex.Managed's ManagedApi.
@@ -1129,6 +1130,29 @@ void apiSetAnimatorParameter(Entity entity, const char* name, int kind, float va
         world->resetTrigger(entity, name);
         break;
     }
+}
+
+// An event an animation passed, as C# reads it: its name stays the world's until the next update.
+struct NativeAnimationEvent
+{
+    Entity entity;
+    const char* name;
+};
+
+int apiAnimationEvents(const NativeAnimationEvent** events)
+{
+    // Kept until the next call, while C# reads it.
+    static std::vector<NativeAnimationEvent> passed;
+    passed.clear();
+    if (animationWorld() != nullptr)
+    {
+        for (const animation::FiredAnimationEvent& event : animationWorld()->events())
+        {
+            passed.push_back({event.entity, event.name.c_str()});
+        }
+    }
+    *events = passed.data();
+    return static_cast<int>(passed.size());
 }
 
 int apiAnimatorParameter(Entity entity, const char* name, float* value)
@@ -2622,6 +2646,7 @@ int apiParticleCount(Entity entity)
         .setInstanceShaderParameter = &apiSetInstanceShaderParameter,
         .instanceShaderParameter = &apiInstanceShaderParameter,
         .resetInstanceShaderParameter = &apiResetInstanceShaderParameter,
+        .animationEvents = &apiAnimationEvents,
     };
 }
 

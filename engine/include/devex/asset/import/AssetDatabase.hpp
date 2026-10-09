@@ -114,6 +114,11 @@ public:
     [[nodiscard]] core::Result<void> setImportOptions(AssetId id, std::span<const serialization::TextProperty> options);
     // An import option in the .dvxmeta of the source file of the asset; nullopt when it is not set.
     [[nodiscard]] std::optional<serialization::TextValue> importOption(AssetId id, std::string_view key) const;
+    // An option of a sub-asset alone, in the [subasset] section of the .dvxmeta of its source file,
+    // such as the events of an animation clip of a model; nullopt when it is not set.
+    [[nodiscard]] std::optional<serialization::TextValue> subAssetOption(AssetId id, std::string_view key) const;
+    // Sets it, or removes it without a value, and imports the file again when it changed.
+    [[nodiscard]] core::Result<void> setSubAssetOption(AssetId id, std::string_view key, std::optional<serialization::TextValue> value);
 
     [[nodiscard]] const AssetInfo* find(AssetId id) const override;
     // Sorted by name, optionally of one type.

@@ -12,5 +12,6 @@ texture_quality = "normal"
 [subasset type="animation" key="Idle" uuid="b0742248-4cbb-4d75-9e8d-f9ff4c9efa5c"]
 
 [subasset type="animation" key="Walk" uuid="905859b5-6eb4-4bd7-9280-c73e4dee07f2"]
+events = list(event(0.25, "step"), event(0.75, "step"))
 
 [subasset type="animation" key="Wave" uuid="c89b91c7-df3b-49f2-ba28-ead218f0b781"]

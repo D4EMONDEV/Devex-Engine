@@ -919,6 +919,7 @@ apply_root_motion = false
 patrol = vec3(0, 0, -11)
 wait_time = 1.5
 greet_distance = 4.5
+step_sound = asset("5879e0df-a607-5fd0-afce-22e08a930cfd")
 
 [component type="NavMeshAgent"]
 speed = 1.6

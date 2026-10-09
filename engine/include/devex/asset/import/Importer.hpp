@@ -2,6 +2,7 @@
 
 #include <devex/core/Export.hpp>
 
+#include <devex/asset/AnimationData.hpp>
 #include <devex/asset/AssetId.hpp>
 #include <devex/asset/AssetType.hpp>
 #include <devex/asset/FontData.hpp>
@@ -41,6 +42,8 @@ public:
     explicit SubAssetIds(std::vector<MetaSubAsset> entries) noexcept;
 
     [[nodiscard]] AssetId acquire(AssetType type, std::string_view key);
+    // The entry of a sub-asset, with its options; null when the file never had it.
+    [[nodiscard]] const MetaSubAsset* find(AssetType type, std::string_view key) const noexcept;
 
     // Known entries first, in their original order, then the ones added by acquire. Entries that
     // an import no longer uses are kept, so that a key coming back finds its identifier again.
@@ -76,6 +79,9 @@ struct DEVEX_API ImportContext
     [[nodiscard]] math::Vec4 vectorOption(std::string_view key, math::Vec4 fallback) const noexcept;
     // The asset an asset("uuid") option names; invalid without one.
     [[nodiscard]] AssetId assetOption(std::string_view key) const noexcept;
+    // The events the import settings give the animation clip of that key, those within its duration,
+    // in order; the others are left out with a warning.
+    [[nodiscard]] std::vector<AnimationEvent> animationEvents(std::string_view key, float duration) const;
 };
 
 struct DEVEX_API ImportResult

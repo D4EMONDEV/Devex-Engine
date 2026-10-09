@@ -85,7 +85,7 @@ core::Result<MetaFile> parseMetaFile(std::string_view text)
                                    "line {}: [subasset] needs a type, a key and a valid uuid",
                                    section.line);
         }
-        meta.subAssets.push_back({*type, *key, *subId});
+        meta.subAssets.push_back({*type, *key, *subId, section.properties});
     }
     return meta;
 }
@@ -107,6 +107,7 @@ std::string writeMetaFile(const MetaFile& meta)
         section.attributes.push_back({"type", TextValue(std::string(toString(subAsset.type)))});
         section.attributes.push_back({"key", TextValue(subAsset.key)});
         section.attributes.push_back({"uuid", TextValue(subAsset.id.uuid.toString())});
+        section.properties = subAsset.options;
     }
     return "# Devex import settings: keep this file next to its asset in version control.\n" +
            serialization::writeText(document);
@@ -118,6 +119,14 @@ std::uint64_t importSettingsHash(const MetaFile& meta)
     for (const serialization::TextProperty& option : meta.options)
     {
         settings += std::format("\n{}={}", option.key, serialization::formatValue(option.value));
+    }
+    for (const MetaSubAsset& subAsset : meta.subAssets)
+    {
+        for (const serialization::TextProperty& option : subAsset.options)
+        {
+            settings += std::format("\n{}.{}.{}={}", toString(subAsset.type), subAsset.key, option.key,
+                                    serialization::formatValue(option.value));
+        }
     }
     return core::hash64(settings);
 }

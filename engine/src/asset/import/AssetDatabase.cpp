@@ -771,6 +771,62 @@ public:
         return reimport(id);
     }
 
+    [[nodiscard]] std::optional<serialization::TextValue> subAssetOption(AssetId id, std::string_view key) const
+    {
+        const AssetInfo* const info = find(id);
+        const auto found = info != nullptr ? m_sources.find(info->source) : m_sources.end();
+        if (found == m_sources.end())
+        {
+            return std::nullopt;
+        }
+        const std::vector<MetaSubAsset>& entries = found->second.meta.subAssets;
+        const auto entry = std::ranges::find(entries, id, &MetaSubAsset::id);
+        if (entry == entries.end())
+        {
+            return std::nullopt;
+        }
+        const auto option = std::ranges::find(entry->options, key, &serialization::TextProperty::key);
+        return option != entry->options.end() ? std::optional(option->value) : std::nullopt;
+    }
+
+    [[nodiscard]] core::Result<void> setSubAssetOption(AssetId id, std::string_view key, std::optional<serialization::TextValue> value)
+    {
+        const AssetInfo* const info = find(id);
+        const auto found = info != nullptr ? m_sources.find(info->source) : m_sources.end();
+        const auto entry = found != m_sources.end() ? std::ranges::find(found->second.meta.subAssets, id, &MetaSubAsset::id)
+                                                    : std::vector<MetaSubAsset>::iterator{};
+        if (found == m_sources.end() || entry == found->second.meta.subAssets.end())
+        {
+            return core::makeError(core::ErrorCode::NotFound, "asset {} is not inside a source file", id.uuid);
+        }
+        const auto option = std::ranges::find(entry->options, key, &serialization::TextProperty::key);
+        if (!value)
+        {
+            if (option == entry->options.end())
+            {
+                return {};
+            }
+            entry->options.erase(option);
+        }
+        else if (option == entry->options.end())
+        {
+            entry->options.push_back({std::string(key), std::move(*value)});
+        }
+        else if (option->value != *value)
+        {
+            option->value = std::move(*value);
+        }
+        else
+        {
+            return {};
+        }
+        if (core::Result<void> written = writeText(metaFileOf(found->second.file), writeMetaFile(found->second.meta)); !written)
+        {
+            return written;
+        }
+        return reimport(id);
+    }
+
     [[nodiscard]] std::optional<serialization::TextValue> importOption(AssetId id, std::string_view key) const
     {
         const AssetInfo* const info = find(id);
@@ -1492,6 +1548,15 @@ private:
 
         if (outcome.hasNewSubAssets)
         {
+            // The options of the entries may have changed while the file imported.
+            for (MetaSubAsset& entry : outcome.subAssets)
+            {
+                const auto kept = std::ranges::find(source.meta.subAssets, entry.id, &MetaSubAsset::id);
+                if (kept != source.meta.subAssets.end())
+                {
+                    entry.options = kept->options;
+                }
+            }
             source.meta.subAssets = std::move(outcome.subAssets);
             if (core::Result<void> written =
                     writeText(metaFileOf(source.file), writeMetaFile(source.meta));
@@ -1656,6 +1721,16 @@ core::Result<void> AssetDatabase::setImportOptions(AssetId id, std::span<const s
 std::optional<serialization::TextValue> AssetDatabase::importOption(AssetId id, std::string_view key) const
 {
     return m_impl->importOption(id, key);
+}
+
+std::optional<serialization::TextValue> AssetDatabase::subAssetOption(AssetId id, std::string_view key) const
+{
+    return m_impl->subAssetOption(id, key);
+}
+
+core::Result<void> AssetDatabase::setSubAssetOption(AssetId id, std::string_view key, std::optional<serialization::TextValue> value)
+{
+    return m_impl->setSubAssetOption(id, key, std::move(value));
 }
 
 const AssetInfo* AssetDatabase::find(AssetId id) const

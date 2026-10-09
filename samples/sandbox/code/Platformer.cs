@@ -26,6 +26,9 @@ public class Hero2D : Component
     public Entity Sparkles;
     [AssetType("audio")]
     public AssetId PickupSound;
+    // Played on the steps of its run, which assets/sprites/hero.dvxframes marks with events.
+    [AssetType("audio")]
+    public AssetId StepSound;
     // Tells how many coins are left.
     public Entity Counter;
 
@@ -73,6 +76,14 @@ public class Hero2D : Component
         if (other.IsAlive && other.Get<Coin2D>() is Coin2D coin)
         {
             Collect(coin);
+        }
+    }
+
+    public override void OnAnimationEvent(string name)
+    {
+        if (name == "step" && StepSound.IsValid && Entity.Get<CharacterController2D>().Grounded)
+        {
+            Audio.PlayOneShot(StepSound, Transform.Position, 0.35f);
         }
     }
 

@@ -279,6 +279,7 @@ jump_speed = 14
 level = entity("92709f9d-28a4-55d8-a4eb-dd715690d166")
 sparkles = entity("41c964b7-8a9c-5b75-ba3e-0a4a4d964b3a")
 pickup_sound = asset("a19e4f7c-3d52-4c8b-b0e6-7f2d9a1c5b83")
+step_sound = asset("5879e0df-a607-5fd0-afce-22e08a930cfd")
 counter = entity("a0aece7b-e6ae-5a95-a5d5-416ab56490ba")
 
 [entity uuid="41c964b7-8a9c-5b75-ba3e-0a4a4d964b3a" name="Sparkles"]

@@ -73,6 +73,16 @@ core::Result<void> validate(const SpriteFramesData& frames)
                                        animation.name);
             }
         }
+        for (std::size_t event = 0; event < animation.events.size(); ++event)
+        {
+            const SpriteAnimationEvent& passed = animation.events[event];
+            if (passed.name.empty() || passed.frame >= animation.frames.size() ||
+                (event > 0 && passed.frame < animation.events[event - 1].frame))
+            {
+                return core::makeError(core::ErrorCode::InvalidArgument,
+                                       "the events of the animation \"{}\" need names, on its frames, in order", animation.name);
+            }
+        }
     }
     return {};
 }

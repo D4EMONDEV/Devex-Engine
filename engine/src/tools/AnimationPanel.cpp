@@ -1,18 +1,20 @@
 // The Animation panel, made with the interface of the engine: the clip of the selected Animator, played
 // or scrubbed over the skeleton in the viewport, and its keys on a timeline that zooms and scrolls as
-// the one of Godot does.
+// the one of Godot does, under the events of the clip, which the panel adds, moves, names and removes.
 #include "FormUi.hpp"
 #include "SettingsUi.hpp"
 #include "ToolsState.hpp"
 
 #include <devex/animation/AnimationWorld.hpp>
 #include <devex/asset/AnimationData.hpp>
+#include <devex/asset/AnimationEvents.hpp>
 #include <devex/core/Log.hpp>
 #include <devex/core/Profiler.hpp>
 #include <devex/scene/AnimationComponents.hpp>
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <format>
 #include <optional>
 #include <string>
@@ -123,6 +125,10 @@ struct AnimationUi : FormUi
     Entity loopLabel;
     Entity speed;
     Entity time;
+    // The name of the event chosen, and what removes it.
+    Entity eventBox;
+    Entity eventName;
+    Button eventDelete;
     Entity message;
 
     Entity timeline;
@@ -133,6 +139,18 @@ struct AnimationUi : FormUi
     std::vector<MarkView> marks;
     // The marks of the keys of each track, whose bounds follow what is in view.
     std::vector<Entity> keyPlots;
+    // The row of the events above the tracks, their marks and the mark of the one chosen.
+    Entity eventsRow;
+    Entity eventPlot;
+    Entity chosenPlot;
+    // The events of the clip as the panel edits them, kept in the import settings of its model, and
+    // the one chosen.
+    asset::AssetId eventsClip;
+    std::vector<asset::AnimationEvent> events;
+    std::optional<std::size_t> chosenEvent;
+    bool draggingEvent = false;
+    bool movedEvent = false;
+    bool namingEvent = false;
     std::vector<asset::AssetId> clips;
     // The clip whose tracks are shown.
     const animation::Clip* shownClip = nullptr;
@@ -174,6 +192,8 @@ struct AnimationUi : FormUi
     // Shows a sentence in the place of the controls and of the timeline, or of the timeline alone.
     void say(const char* sentence, bool withBar);
     void layoutRuler(float begin, float end, float width);
+    // Writes the events into the import settings of the model of the clip, which imports again.
+    void writeEvents(ToolsState& state);
     void update(ToolsState& state, EditorUiKit& kit, scene::Scene& edited, core::Duration delta);
 };
 
@@ -226,6 +246,11 @@ void AnimationUi::build(EditorUiKit& kit)
     }
     tooltip(speed, "How fast the clip plays; a negative speed plays it backwards");
     time = text(bar, middle({font * 11.0f, tall}), "", "dim");
+    eventBox = add(bar, "Event", middle({font * 9.0f, tall}));
+    eventName = textField(eventBox, "Event name");
+    tooltip(eventName, "The name of the event chosen, which code hears in OnAnimationEvent");
+    eventDelete = button(kit, bar, Icon::Trash, "Delete", "button", 0.0f, tall);
+    tooltip(eventDelete.entity, "Removes the event chosen (Delete)");
 
     message = text({}, whole(math::Vec4{side, barHeight(), side, side}), "", "dim", false, scene::TextAlign::Center);
     scene().get<scene::UiText>(message).wrap = true;
@@ -306,6 +331,21 @@ void AnimationUi::fillTracks(const animation::Clip& clip)
     keyPlots.clear();
     const std::vector<Track> made = tracksOf(clip.data());
     const math::Vec4 tint = linearColor(themeColors().animation);
+    // The events first, in the colour of game code, which hears of them.
+    eventsRow = add(trackRows, "Events", wide(rowHeight()));
+    scene().add<scene::UiImage>(eventsRow, scene::UiImage{.color = {1.0f, 1.0f, 1.0f, 0.06f}});
+    tooltip(eventsRow, "The events of the clip, which code hears in OnAnimationEvent as the clip plays past them. Right-click adds one, "
+                       "a drag moves it, Delete removes it.");
+    text(eventsRow, UiRect{.anchorMin = {0.0f, 0.0f}, .anchorMax = {0.0f, 1.0f}, .offsetMin = {font * 0.5f, 0.0f}, .offsetMax = {namesWidth() - 4.0f, 0.0f}},
+         "Events", "text", true);
+    const UiRect eventArea{.anchorMin = {0.0f, 0.0f}, .anchorMax = {1.0f, 1.0f}, .offsetMin = {namesWidth(), 0.0f}, .offsetMax = {-rightPad(), 0.0f}};
+    const float eventWidth = std::max(std::round(font * 0.4f), 3.0f);
+    eventPlot = add(eventsRow, "Marks", eventArea);
+    scene().add<scene::UiPlot>(eventPlot, scene::UiPlot{.kind = scene::UiPlotKind::Marks, .color = linearColor(themeColors().gameCode), .lineWidth = eventWidth});
+    chosenPlot = add(eventsRow, "Chosen", eventArea);
+    scene().add<scene::UiPlot>(chosenPlot, scene::UiPlot{.kind = scene::UiPlotKind::Marks, .color = linearColor(themeColors().text), .lineWidth = eventWidth});
+    keyPlots.push_back(eventPlot);
+    keyPlots.push_back(chosenPlot);
     for (std::size_t index = 0; index < made.size(); ++index)
     {
         // One line in two a little lighter, so that the eye follows a track across.
@@ -323,7 +363,7 @@ void AnimationUi::fillTracks(const animation::Clip& clip)
                                                        .lineWidth = std::max(std::round(font * 0.26f), 2.0f)});
         keyPlots.push_back(keys);
     }
-    scene().get<UiRect>(trackRows).offsetMax.y = rowHeight() * static_cast<float>(made.size());
+    scene().get<UiRect>(trackRows).offsetMax.y = rowHeight() * static_cast<float>(made.size() + 1);
     scene().get<scene::UiScroll>(tracks).offset = {0.0f, 0.0f};
 }
 
@@ -333,7 +373,7 @@ void AnimationUi::say(const char* sentence, bool withBar)
     scene().get<UiRect>(timeline).visible = false;
     scene().get<UiRect>(bar).visible = withBar;
     // With the bar, only what chooses the clip stays.
-    for (const Entity control : {play.entity, stop.entity, loop, loopLabel, speed, time})
+    for (const Entity control : {play.entity, stop.entity, loop, loopLabel, speed, time, eventBox, eventDelete.entity})
     {
         scene().get<UiRect>(control).visible = false;
     }
@@ -385,6 +425,28 @@ void AnimationUi::layoutRuler(float begin, float end, float width)
     {
         scene().get<UiRect>(marks[index].rule).visible = false;
         scene().get<UiRect>(marks[index].label).visible = false;
+    }
+}
+
+void AnimationUi::writeEvents(ToolsState& state)
+{
+    if (state.database == nullptr || !eventsClip.isValid())
+    {
+        return;
+    }
+    // In the order of their times, the one chosen staying chosen.
+    const std::optional<asset::AnimationEvent> chosen = chosenEvent && *chosenEvent < events.size() ? std::optional(events[*chosenEvent]) : std::nullopt;
+    std::ranges::stable_sort(events, {}, &asset::AnimationEvent::time);
+    if (chosen)
+    {
+        const auto found = std::ranges::find(events, *chosen);
+        chosenEvent = found != events.end() ? std::optional(static_cast<std::size_t>(found - events.begin())) : std::nullopt;
+    }
+    const core::Result<void> written = state.database->setSubAssetOption(
+        eventsClip, "events", events.empty() ? std::nullopt : std::optional(asset::writeAnimationEvents(events)));
+    if (!written)
+    {
+        DEVEX_LOG_ERROR("Cannot keep the events of the clip: {}", written.error());
     }
 }
 
@@ -446,11 +508,29 @@ void AnimationUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& edit
     const float duration = std::max(clip->duration(), 1e-3f);
     if (shownClip != clip.get())
     {
+        // A clip imported again, as after its events changed, keeps the view and the event chosen.
+        const bool sameClip = eventsClip == animator.clip;
         shownClip = clip.get();
         fillTracks(*clip);
-        visibleBegin = 0.0f;
-        visibleEnd = 0.0f;
+        if (!draggingEvent)
+        {
+            events = clip->data().events;
+        }
+        if (!sameClip)
+        {
+            visibleBegin = 0.0f;
+            visibleEnd = 0.0f;
+            chosenEvent.reset();
+            draggingEvent = false;
+        }
+        eventsClip = animator.clip;
     }
+    if (chosenEvent && *chosenEvent >= events.size())
+    {
+        chosenEvent.reset();
+    }
+    // The events belong to the model the clip comes from; the game that plays only reads them.
+    const bool editable = !playing && state.database != nullptr && state.database->sourceOf(animator.clip).has_value();
 
     // While the game plays, the panel follows the animation instead of driving it.
     if (playing && state.animationWorld != nullptr)
@@ -503,6 +583,22 @@ void AnimationUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& edit
         plot.maxValue = end;
     }
     {
+        std::vector<float> times;
+        for (const asset::AnimationEvent& event : events)
+        {
+            times.push_back(event.time);
+        }
+        scene().get<scene::UiPlot>(eventPlot).values = std::move(times);
+        scene().get<scene::UiPlot>(chosenPlot).values =
+            chosenEvent ? std::vector<float>{events[*chosenEvent].time} : std::vector<float>{};
+        scene().get<UiRect>(eventBox).visible = chosenEvent.has_value();
+        scene().get<UiRect>(eventDelete.entity).visible = chosenEvent.has_value() && editable;
+        if (chosenEvent)
+        {
+            setText(eventName, events[*chosenEvent].name);
+        }
+    }
+    {
         UiRect& head = scene().get<UiRect>(playhead);
         const float at = (state.animationPreviewTime - begin) / (end - begin);
         head.visible = at >= 0.0f && at <= 1.0f;
@@ -515,6 +611,30 @@ void AnimationUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& edit
 
     panel.update(kit, delta, zoom);
     answerClip();
+
+    // The name of the event chosen, kept once the field lets go of it; Escape drops what was typed.
+    if (world.editedField() == eventName)
+    {
+        namingEvent = true;
+    }
+    else if (std::exchange(namingEvent, false) && !panel.input().cancelPressed && chosenEvent && editable)
+    {
+        const std::string typed = scene().get<scene::UiText>(eventName).text;
+        if (!typed.empty() && typed != events[*chosenEvent].name)
+        {
+            events[*chosenEvent].name = typed;
+            writeEvents(state);
+        }
+    }
+    const bool removing = chosenEvent && editable &&
+                          (world.wasClicked(eventDelete.entity) ||
+                           (panel.focused() && !world.isEditing() && state.input.pressed(platform::Key::Delete, false)));
+    if (removing)
+    {
+        events.erase(events.begin() + static_cast<std::ptrdiff_t>(*chosenEvent));
+        chosenEvent.reset();
+        writeEvents(state);
+    }
 
     if (world.wasClicked(play.entity))
     {
@@ -586,8 +706,53 @@ void AnimationUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& edit
         visibleBegin = entire ? 0.0f : begin;
         visibleEnd = entire ? 0.0f : end;
 
+        // The row of the events: a press on one chooses it and drags it, a press beside them chooses
+        // none, and a right click adds one there.
+        const ui::LaidOutRect* const row = world.canvases().front().layout.find(eventsRow);
+        const bool onEvents = inside && row != nullptr && input.pointer.y >= row->min.y && input.pointer.y <= row->max.y;
+        // To the millisecond, which keeps the times of the file short.
+        const float pointed = std::clamp(std::round((begin + across * span) * 1000.0f) / 1000.0f, 0.0f, clip->duration());
+        if (onEvents && input.pointerPressed)
+        {
+            std::optional<std::size_t> nearest;
+            float closest = std::max(font * 0.5f, 5.0f) * span / areaWidth;
+            for (std::size_t index = 0; index < events.size(); ++index)
+            {
+                if (const float away = std::abs(events[index].time - pointed); away <= closest)
+                {
+                    closest = away;
+                    nearest = index;
+                }
+            }
+            chosenEvent = nearest;
+            draggingEvent = nearest.has_value() && editable;
+        }
+        if (onEvents && editable && state.input.clicked(Mouse::Right))
+        {
+            events.push_back({.time = pointed, .name = "event"});
+            chosenEvent = events.size() - 1;
+            writeEvents(state);
+        }
+        if (draggingEvent && chosenEvent)
+        {
+            // A click chooses the event; only a drag moves it.
+            if (input.pointerDown && state.input.dragging(Mouse::Left, 3.0f))
+            {
+                events[*chosenEvent].time = pointed;
+                movedEvent = true;
+            }
+            else if (!input.pointerDown)
+            {
+                draggingEvent = false;
+                if (std::exchange(movedEvent, false))
+                {
+                    writeEvents(state);
+                }
+            }
+        }
+
         // Pressing on the ruler or on the tracks, then dragging, moves along the clip.
-        if (input.pointerPressed && inside)
+        if (input.pointerPressed && inside && !onEvents)
         {
             scrubbing = true;
         }

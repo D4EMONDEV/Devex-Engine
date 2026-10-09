@@ -2,6 +2,7 @@
 
 #include <devex/core/Export.hpp>
 
+#include <devex/animation/AnimationWorld.hpp>
 #include <devex/asset/AssetId.hpp>
 #include <devex/asset/SpriteData.hpp>
 #include <devex/scene/Scene.hpp>
@@ -9,6 +10,8 @@
 
 #include <functional>
 #include <memory>
+#include <string_view>
+#include <vector>
 
 // The frame by frame animation of sprites: SpriteAnimator components moving through the frames of
 // their sprite frames while the game plays.
@@ -28,10 +31,13 @@ using SpriteFramesSource = std::function<std::shared_ptr<const asset::SpriteFram
 
 // Moves an animator through its animation by a duration. Naming another animation starts it from
 // its first frame; a paused animator stays where it is; an animation that does not loop stops on
-// its last frame (its first, backwards) and turns playing off.
-DEVEX_API void advance(scene::SpriteAnimator& animator, const asset::SpriteAnimationData& animation, float seconds) noexcept;
+// its last frame (its first, backwards) and turns playing off. The names of the events of the frames
+// it comes to go into `passed`, and those of the first frame of an animation that starts.
+DEVEX_API void advance(scene::SpriteAnimator& animator, const asset::SpriteAnimationData& animation, float seconds,
+                       std::vector<std::string_view>* passed = nullptr);
 
-// Advances every SpriteAnimator of the scene.
-DEVEX_API void updateSpriteAnimators(scene::Scene& scene, const SpriteFramesSource& frames, float seconds);
+// Advances every SpriteAnimator of the scene, with the events they pass.
+DEVEX_API void updateSpriteAnimators(scene::Scene& scene, const SpriteFramesSource& frames, float seconds,
+                                     std::vector<FiredAnimationEvent>* fired = nullptr);
 
 } // namespace devex::animation

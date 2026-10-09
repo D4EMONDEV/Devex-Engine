@@ -76,6 +76,17 @@ core::Result<void> validate(const AnimationClipData& clip)
                                    channel.values.size(), channel.times.size());
         }
     }
+    for (std::size_t index = 0; index < clip.events.size(); ++index)
+    {
+        const AnimationEvent& event = clip.events[index];
+        if (event.name.empty() || !(event.time >= 0.0f && event.time <= clip.duration) ||
+            (index > 0 && event.time < clip.events[index - 1].time))
+        {
+            return core::makeError(core::ErrorCode::InvalidArgument,
+                                   "event {} of the clip needs a name and a time in order within its {} seconds", index + 1,
+                                   clip.duration);
+        }
+    }
     return {};
 }
 

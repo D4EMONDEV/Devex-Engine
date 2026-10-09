@@ -157,6 +157,7 @@ mais seulement explicitement ici : le code suit ce document, pas l'inverse.
 | Os                       | Une entité par os, pilotée par nom                                |
 | Lecture                  | Composant `Animator` : un clip, fondu croisé, root motion en option |
 | Machines à états         | Asset `.dvxanimator` (paramètres, états, transitions) joué par `Animator` |
+| Événements d'animation   | Dans les réglages d'import des clips et le `.dvxframes`, `OnAnimationEvent` |
 | Arbres de mélange        | 1D (seuils) et 2D (bandes de gradient), clips synchronisés        |
 | Éditeur d'animator       | Panneau de graphe de nœuds, réglages dans l'inspecteur, annulation propre |
 | Skinning                 | Dans le vertex shader, matrices d'os en buffer par frame          |
@@ -655,6 +656,19 @@ mesh = asset("00000000-0000-0000-0000-000000000001")
 material = asset("56258943-f32a-5b75-b0b6-b7ecc1eda5ee")
 instance_shader_parameters = list("glow")
 instance_shader_values = list(vec4(0.3, 1, 0.45, 1))
+```
+
+Les événements d'une animation sont une liste d'`event(instant, "nom")`. Ceux d'un clip d'un
+modèle vont dans la section de son sous-asset du `.dvxmeta`, en secondes ; ceux d'une animation de
+sprite dans sa section du `.dvxframes`, sur ses images :
+
+```text
+[subasset type="animation" key="Walk" uuid="905859b5-6eb4-4bd7-9280-c73e4dee07f2"]
+events = list(event(0.25, "step"), event(0.75, "step"))
+
+[animation name="run" fps=12 loop=true]
+frames = list(asset("15aecb0a-409c-5861-8269-c5c6d77c1769"), ...)
+events = list(event(1, "step"), event(4, "step"))
 ```
 
 Graphe de shader (`.dvxshadergraph`, format 1) : son type et ses modes de rendu, puis ses nœuds,
@@ -1737,6 +1751,43 @@ les assets s'écrivent au fil de leur lecture.
   et `Greeting` fond vers *Wave* quand le joueur approche. Le chevalier du jeu de plateformes joue
   `hero.dvxanimator` : ses états *Idle*, *Run*, *Jump* et *Fall* nomment ses animations de sprite,
   et `Hero2D` ne donne plus que `Speed`, `Grounded` et `VerticalSpeed`.
+
+### Événements d'animation
+
+Jalon 69, comme les pistes d'appel de méthode de Godot :
+
+- **Un événement** est un nom à un instant d'une animation : un pas, un coup qui porte, un son. Le
+  code l'entend quand l'animation passe dessus.
+- **Rangés avec l'animation** :
+  - un clip d'un modèle reste en lecture seule ; ses événements vont dans les réglages d'import du
+    modèle, dans la section de son sous-asset du `.dvxmeta`, comme les pistes gardées à l'import de
+    Godot. Les sections `[subasset]` prennent pour cela des propriétés, que leur importeur lit. Le
+    clip les reçoit à l'import, et les suit partout où il joue ;
+  - une animation de sprite les porte dans son `.dvxframes`, sur ses images.
+- **Ce qui passe** :
+  - un clip passe les événements depuis là où il était jusqu'à là où il est : autour de sa boucle,
+    à l'envers quand il joue à l'envers, et celui de sa fin quand il s'y arrête. Un très long pas
+    n'en passe que quelques boucles ;
+  - une machine à états passe ceux du clip qui pèse le plus dans son état (dans un arbre de
+    mélange). Pendant un fondu, seuls ceux de l'état vers lequel elle fond passent ;
+  - un `SpriteAnimator` passe ceux des images où il arrive, et de la première image d'une
+    animation qui commence. L'`AnimationWorld` fait maintenant avancer les sprites aussi.
+- **Le code** :
+  - les composants C# de l'entité de l'`Animator` ou du `SpriteAnimator` reçoivent
+    `OnAnimationEvent(name)`, juste avant `LateUpdate`, quand les os sont déjà posés pour l'image ;
+  - le C# lit aussi `Animation.Events`, et le C++ `context.animation->events()`, la liste de
+    l'image dans l'ordre où les événements sont venus, avec leur entité.
+- **Éditeur** :
+  - le panneau Animation a une ligne *Events* au-dessus des pistes du clip. Un clic droit y ajoute
+    un événement, un glisser le déplace, Suppr ou *Delete* l'efface, et son nom se change dans la
+    barre ;
+  - chaque changement est écrit dans le `.dvxmeta` du modèle, qui se réimporte ;
+  - l'inspecteur d'un `.dvxframes` a un champ *Event* pour l'image choisie (des noms séparés par
+    des virgules). Les événements suivent leurs images quand celles-ci bougent, arrivent ou
+    partent.
+- **Bac à sable** : un bruit de pas (`step.wav`, fait par le script des assets) suit le robot de
+  l'arène (événements de *Walk* dans `robot.glb.dvxmeta`, joués par `RobotGuide`) et la course du
+  chevalier (images 2 et 5 de *run*, jouées par `Hero2D` quand il touche le sol).
 
 ### Tweens et coroutines
 
@@ -4110,6 +4161,11 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     de Godot pour les shaders `spatial` et `canvas_item`, valeurs gardées par les renderers et
     réglées dans l'inspecteur, par le code ou par les tweens ; case *Per Instance* des graphes ;
     cristaux, chevalier qui clignote et rafales de vent dans le bac à sable.
+69. ✅ **Événements d'animation** — noms placés à un instant des clips des modèles (dans leurs
+    réglages d'import) et sur les images des animations de sprites (dans leur `.dvxframes`), passés
+    en boucle, à l'envers et par les machines à états ; `OnAnimationEvent` en C#, liste de l'image
+    en C++ et en C# ; ligne *Events* du panneau Animation et champ *Event* des images ; pas du
+    robot et du chevalier dans le bac à sable.
 
 Ensuite, sans ordre figé : à choisir dans les pistes ci-dessous.
 
@@ -4161,8 +4217,7 @@ Ensuite, sans ordre figé : à choisir dans les pistes ci-dessous.
   boucle, arbres 2D directionnels simples, courbes de fondu, aperçu d'un état dans l'éditeur hors
   jeu, états communs à plusieurs contrôleurs (overrides d'Unity), valeurs des paramètres gardées
   dans les sauvegardes.
-- **Animation** : couches et masques d'os,
-  événements de clip, cinématique inverse, morph targets, pré-skinning en compute (colliders et
+- **Animation** : couches et masques d'os, cinématique inverse, morph targets, pré-skinning en compute (colliders et
   rayons suivant la pose), réutilisation d'un clip entre squelettes différents (retargeting),
   compression des courbes.
 - **Sauvegardes, la suite** : écriture sur un worker pour les grosses scènes, compression et
@@ -4183,7 +4238,7 @@ Ensuite, sans ordre figé : à choisir dans les pistes ci-dessous.
   sur le GPU pour les grandes cartes, contours des tuiles gardés d'une image à l'autre.
 - **2D, la suite** : découpe libre des sprites dans un éditeur de sprites et atlas regroupés à
   l'import, aimantation au pixel (pixel perfect), ordre par Y pour les vues de dessus, sprites
-  écrits dans la profondeur (découpés à l'alpha), événements des animations, animations de
+  écrits dans la profondeur (découpés à l'alpha), animations de
   n'importe quel champ par des clips (comme Unity), culling des
   sprites par lots plutôt qu'un à un.
 - **Particules, la suite** : simulation sur le GPU pour les très grands nombres, éditeur de
@@ -4262,6 +4317,11 @@ Ensuite, sans ordre figé : à choisir dans les pistes ci-dessous.
   l'image et de la profondeur de la scène (réfraction, `hint_screen_texture`), uniforms globaux
   (`global uniform` et réglages du projet), `#include` et modules partagés entre shaders, matrices
   en uniforms.
+- **Événements d'animation, la suite** : valeurs passées avec le nom (un nombre, un texte, comme
+  les arguments des pistes de Godot), événements posés sur les états d'une machine plutôt que sur
+  les clips, composant qui les reçoit choisi ailleurs que sur l'entité de l'animateur, annulation
+  dans le panneau Animation, événements des clips qui s'estompent pendant un fondu, page des
+  événements d'un clip dans l'inspecteur de son modèle.
 - **Valeurs par objet, la suite** : `instance uniform` pour les émetteurs de particules, valeurs
   par instance montrées pour plusieurs entités choisies ensemble, matériau propre à un objet
   (copie à la Unity, ou `material_override` de Godot), valeurs d'un sous-maillage seul, uniforms

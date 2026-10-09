@@ -249,7 +249,7 @@ TEST_CASE("The application runs late cameras after interpolation and restores si
 TEST_CASE("The C# runtime registers components and runs them", "[runtime][managed]")
 {
     const std::unique_ptr<ManagedGame> game = startRuntime();
-    CHECK(game->componentTypes().size() == 24);
+    CHECK(game->componentTypes().size() == 25);
 
     devex::scene::ComponentRegistry& registry = devex::scene::componentRegistry();
     const devex::scene::ComponentType* const mover = registry.find("Mover");
@@ -1130,6 +1130,40 @@ TEST_CASE("C# code plays the animations of sprites and flips them", "[runtime][m
     CHECK(value("shown", std::string{}) == "run 2");
     run(*game, scene, SystemPhase::Update, 0.1);
     CHECK(value("restarted", bool{}));
+    game->unloadAssembly();
+}
+
+TEST_CASE("C# components hear the events of their animations", "[runtime][managed][animation]")
+{
+    const std::unique_ptr<ManagedGame> game = startRuntime();
+    const devex::scene::ComponentType* const listener = devex::scene::componentRegistry().find("Listener");
+    REQUIRE(listener != nullptr);
+    const devex::asset::AssetId framesId = devex::asset::AssetId::generate();
+    const auto frames = std::make_shared<const devex::asset::SpriteFramesData>(devex::asset::SpriteFramesData{
+        .animations = {{.name = "run",
+                        .fps = 10.0f,
+                        .frames = {devex::asset::AssetId::generate(), devex::asset::AssetId::generate(), devex::asset::AssetId::generate()},
+                        .events = {{.frame = 0, .name = "start"}, {.frame = 2, .name = "step"}}}}});
+    devex::animation::AnimationWorld world([](devex::asset::AssetId) { return nullptr; }, {},
+                                           [&](devex::asset::AssetId id) { return id == framesId ? frames : nullptr; });
+
+    Scene scene;
+    const Entity knight = scene.createEntity("Knight");
+    scene.add<devex::scene::Transform>(knight);
+    scene.add<devex::scene::SpriteAnimator>(knight, devex::scene::SpriteAnimator{.frames = framesId, .animation = "run"});
+    void* const component = listener->emplace(scene, knight);
+    // Another entity hears nothing of the knight's.
+    const Entity other = scene.createEntity("Other");
+    void* const deaf = listener->emplace(scene, other);
+
+    ManagedGame::Frame frame{.scene = &scene, .animation = &world};
+    game->runPhase(frame, SystemPhase::Start);
+    world.update(scene, devex::core::Duration(0.25));
+    frame.delta = devex::core::Duration(0.25);
+    game->runPhase(frame, SystemPhase::LateUpdate);
+    CHECK(field<std::string>(*listener, component, "heard") == "start;step;");
+    CHECK(field<int>(*listener, component, "listed") == 2);
+    CHECK(field<std::string>(*listener, deaf, "heard").empty());
     game->unloadAssembly();
 }
 

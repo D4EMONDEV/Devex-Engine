@@ -50,6 +50,17 @@ struct DEVEX_API AnimationChannel
     std::vector<float> values;
 };
 
+// A moment of a clip that game code hears of when the clip plays past it, as the method tracks of
+// Godot: a step, a blow that lands, a sound.
+struct DEVEX_API AnimationEvent
+{
+    // Seconds from the start of the clip.
+    float time = 0.0f;
+    std::string name;
+
+    bool operator==(const AnimationEvent&) const = default;
+};
+
 // An animation of a skeleton: what each joint does over time. Joints are named rather than
 // numbered, so that a clip plays on any skeleton whose bones carry the same names.
 struct DEVEX_API AnimationClipData
@@ -59,9 +70,13 @@ struct DEVEX_API AnimationClipData
     float duration = 0.0f;
     std::vector<std::string> joints;
     std::vector<AnimationChannel> channels;
+    // In the order of their times, which lie within the clip. The import settings of the model give
+    // them, since its file has none.
+    std::vector<AnimationEvent> events;
 };
 
-// Checks that joints exist, that times increase and that values match the keys and the path.
+// Checks that joints exist, that times increase and that values match the keys and the path, and
+// that events are named, in order, and within the clip.
 [[nodiscard]] DEVEX_API core::Result<void> validate(const AnimationClipData& clip);
 
 } // namespace devex::asset

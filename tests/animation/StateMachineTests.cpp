@@ -327,3 +327,39 @@ TEST_CASE("Animators take a new version of their controller and keep their state
     CHECK(world.state(rig.character).empty());
     CHECK(rig.rootX() == Catch::Approx(30.0f));
 }
+
+TEST_CASE("State machines pass the events of the clip that weighs the most", "[animation][statemachine][events]")
+{
+    Clips clips;
+    // The walk takes a step at the half of its second.
+    AnimationClipData walk;
+    walk.name = "Walk";
+    walk.duration = 1.0f;
+    walk.joints = {"Root"};
+    walk.channels.push_back({.joint = 0, .path = AnimationPath::Translation, .times = {0.0f, 1.0f},
+                             .values = {10.0f, 0.0f, 0.0f, 10.0f, 0.0f, 0.0f}});
+    walk.events = {{.time = 0.5f, .name = "step"}};
+    devex::core::Result<std::shared_ptr<const Clip>> walking = Clip::create(std::move(walk));
+    REQUIRE(walking.has_value());
+    clips.loaded[clips.walk] = *walking;
+    Rig rig;
+    const auto controller = std::make_shared<const AnimatorData>(locomotion(clips));
+    AnimationWorld world(std::ref(clips), [&](AssetId id) { return id == rig.controllerId ? controller : nullptr; });
+
+    world.update(rig.scene, Duration(0.0));
+    world.setFloat(rig.character, "Speed", 1.0f);
+    world.update(rig.scene, Duration(0.25));
+    CHECK(world.state(rig.character) == "Walk");
+    CHECK(world.events().empty());
+    world.update(rig.scene, Duration(0.5));
+    REQUIRE(world.events().size() == 1);
+    CHECK(world.events().front().name == "step");
+    CHECK(world.events().front().entity == rig.character);
+    // Around the loop of the state.
+    world.update(rig.scene, Duration(1.0));
+    CHECK(world.events().size() == 1);
+    // The idle clip has none.
+    world.setFloat(rig.character, "Speed", 0.0f);
+    world.update(rig.scene, Duration(1.0));
+    CHECK(world.events().empty());
+}

@@ -23,6 +23,9 @@ struct DEVEX_API MetaSubAsset
     AssetType type = AssetType::Mesh;
     std::string key;
     AssetId id;
+    // What the importer does with this asset alone, the properties of its section: the events of an
+    // animation clip of a model.
+    std::vector<serialization::TextProperty> options;
 
     bool operator==(const MetaSubAsset&) const = default;
 };
@@ -33,6 +36,9 @@ struct DEVEX_API MetaSubAsset
 //     srgb = true
 //
 //     [subasset type="mesh" key="Crate" uuid="b41e7c02-9d3a-4f6e-8c11-5a2e9b7d0f44"]
+//
+//     [subasset type="animation" key="Walk" uuid="905859b5-6eb4-4bd7-9280-c73e4dee07f2"]
+//     events = list(event(0.42, "step"), event(0.92, "step"))
 struct DEVEX_API MetaFile
 {
     AssetId id;

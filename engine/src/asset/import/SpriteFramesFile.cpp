@@ -1,5 +1,6 @@
 #include <devex/asset/import/SpriteFramesFile.hpp>
 
+#include <devex/asset/AnimationEvents.hpp>
 #include <devex/serialization/Text.hpp>
 
 #include <format>
@@ -85,6 +86,15 @@ core::Result<SpriteFramesData> parseSpriteFramesFile(std::string_view text)
                 animation.frames.push_back(*sprite);
             }
         }
+        if (const serialization::TextValue* const events = section.findProperty("events"))
+        {
+            core::Result<std::vector<SpriteAnimationEvent>> read = readSpriteAnimationEvents(*events);
+            if (!read)
+            {
+                return core::makeError(core::ErrorCode::Parse, "line {}: {}", section.line, read.error().message);
+            }
+            animation.events = std::move(*read);
+        }
         frames.animations.push_back(std::move(animation));
     }
     if (core::Result<void> valid = validate(frames); !valid)
@@ -114,6 +124,10 @@ std::string writeSpriteFramesFile(const SpriteFramesData& frames)
             list.push_back(serialization::makeCall("asset", {serialization::TextValue(frame.uuid.toString())}));
         }
         section.properties.push_back({"frames", serialization::makeCall("list", std::move(list))});
+        if (!animation.events.empty())
+        {
+            section.properties.push_back({"events", writeSpriteAnimationEvents(animation.events)});
+        }
     }
     return serialization::writeText(document);
 }

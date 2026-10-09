@@ -709,3 +709,14 @@ public class Drops : Component
         }
     }
 }
+
+// Hears the events of the animations of its entity, and counts those of the frame.
+public class Listener : Component
+{
+    public string Heard = "";
+    public int Listed;
+
+    public override void OnAnimationEvent(string name) => Heard += name + ";";
+
+    public override void LateUpdate(float delta) => Listed += Animation.Events.Length;
+}

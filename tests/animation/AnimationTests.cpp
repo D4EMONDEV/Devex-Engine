@@ -373,3 +373,59 @@ TEST_CASE("A rigged FBX model plays its animations on its instantiated skeleton"
     const float cosine = std::abs(devex::math::dot(bind, scene.get<Transform>(knee).rotation));
     CHECK(2.0f * std::acos(std::min(cosine, 1.0f)) == Catch::Approx(devex::math::radians(45.0f)).margin(1e-2));
 }
+
+TEST_CASE("Clips pass their events as they play, around their loop and backwards", "[animation][world][events]")
+{
+    Skeleton skeleton = makeSkeleton();
+    const AssetId clipId = AssetId::generate();
+    AnimationClipData data = slideClip();
+    data.events = {{.time = 0.0f, .name = "start"}, {.time = 0.25f, .name = "left"}, {.time = 0.75f, .name = "right"}};
+    const std::shared_ptr<const Clip> clip = clipOf(std::move(data));
+    AnimationWorld world([&](AssetId id) { return id == clipId ? clip : nullptr; });
+    skeleton.scene.add<Animator>(skeleton.animator, Animator{.clip = clipId});
+    const auto passed = [&] {
+        std::vector<std::string> names;
+        for (const devex::animation::FiredAnimationEvent& event : world.events())
+        {
+            CHECK(event.entity == skeleton.animator);
+            names.push_back(event.name);
+        }
+        return names;
+    };
+
+    world.update(skeleton.scene, Duration(0.0));
+    CHECK(world.events().empty());
+    world.update(skeleton.scene, Duration(0.3));
+    CHECK(passed() == std::vector<std::string>{"start", "left"});
+    world.update(skeleton.scene, Duration(0.3));
+    CHECK(passed().empty());
+    // Past the end, around to the start.
+    world.update(skeleton.scene, Duration(0.6));
+    CHECK(passed() == std::vector<std::string>{"right", "start"});
+
+    // Backwards, the other way.
+    skeleton.scene.get<Animator>(skeleton.animator).speed = -1.0f;
+    world.update(skeleton.scene, Duration(0.1));
+    CHECK(passed().empty());
+    world.update(skeleton.scene, Duration(0.2));
+    CHECK(passed() == std::vector<std::string>{"start"});
+
+    SECTION("A clip that does not loop passes the event at its end, once")
+    {
+        AnimationClipData ending = slideClip();
+        ending.events = {{.time = 1.0f, .name = "end"}};
+        const std::shared_ptr<const Clip> once = clipOf(std::move(ending));
+        const AssetId onceId = AssetId::generate();
+        AnimationWorld other([&](AssetId id) { return id == onceId ? once : nullptr; });
+        Skeleton second = makeSkeleton();
+        second.scene.add<Animator>(second.animator, Animator{.clip = onceId, .loop = false});
+        other.update(second.scene, Duration(0.0));
+        other.update(second.scene, Duration(0.6));
+        CHECK(other.events().empty());
+        other.update(second.scene, Duration(0.6));
+        REQUIRE(other.events().size() == 1);
+        CHECK(other.events().front().name == "end");
+        other.update(second.scene, Duration(0.6));
+        CHECK(other.events().empty());
+    }
+}

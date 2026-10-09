@@ -15,6 +15,11 @@ public class RobotGuide : Component
     // The robot greets the player closer than this, in meters.
     public float GreetDistance = 4.5f;
 
+    // Played where it stands on the steps of its walk, which the import settings of the model mark
+    // with events (assets/models/robot.glb.dvxmeta).
+    [AssetType("audio")]
+    public AssetId StepSound;
+
     private Vec3 _start;
     private Vec3 _target;
     private float _wait;
@@ -67,6 +72,14 @@ public class RobotGuide : Component
                 _target = (_target - _start).Length < 0.5f ? _start + Patrol : _start;
                 Navigation.SetDestination(Entity, _target);
             }
+        }
+    }
+
+    public override void OnAnimationEvent(string name)
+    {
+        if (name == "step" && StepSound.IsValid)
+        {
+            Audio.PlayOneShot(StepSound, Transform.Position, 0.6f);
         }
     }
 

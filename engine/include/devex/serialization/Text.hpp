@@ -57,6 +57,12 @@ struct DEVEX_API TextProperty
     TextValue value;
     // 1-based line in the parsed source, 0 for properties built in code.
     std::uint32_t line = 0;
+
+    // The same key and value, wherever they were read.
+    bool operator==(const TextProperty& other) const
+    {
+        return key == other.key && value == other.value;
+    }
 };
 
 struct DEVEX_API TextSection

@@ -209,6 +209,15 @@ internal unsafe struct NativeApi
     public delegate* unmanaged<void*, Entity, byte*, Vec4*, int> SetInstanceShaderParameter;
     public delegate* unmanaged<void*, Entity, byte*, Vec4*, int> InstanceShaderParameter;
     public delegate* unmanaged<void*, Entity, byte*, int> ResetInstanceShaderParameter;
+    public delegate* unmanaged<NativeAnimationEvent**, int> AnimationEvents;
+}
+
+/// <summary>An event an animation passed, as the engine gives it: its name lives until the next frame.</summary>
+[StructLayout(LayoutKind.Sequential)]
+internal unsafe struct NativeAnimationEvent
+{
+    public Entity Entity;
+    public byte* Name;
 }
 
 /// <summary>The C# functions the engine calls. Filled by the runtime when it starts.</summary>

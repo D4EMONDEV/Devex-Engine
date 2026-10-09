@@ -6,6 +6,8 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <memory>
+#include <string>
+#include <string_view>
 #include <vector>
 
 using devex::asset::AssetId;
@@ -108,4 +110,39 @@ TEST_CASE("The animators of a scene advance with the frames they name", "[animat
     devex::animation::updateSpriteAnimators(scene, source, 0.25f);
     CHECK(scene.get<SpriteAnimator>(coin).frame == 1);
     CHECK(scene.get<SpriteAnimator>(broken).frame == 0);
+}
+
+TEST_CASE("Sprite animations pass the events of the frames they come to", "[animation][sprite][events]")
+{
+    const SpriteAnimationData run{.name = "run",
+                                  .fps = 10.0f,
+                                  .frames = sprites(4),
+                                  .events = {{.frame = 0, .name = "start"}, {.frame = 2, .name = "step"}}};
+    SpriteAnimator animator{.animation = "run"};
+    std::vector<std::string_view> passed;
+    // An animation that starts passes its first frame.
+    devex::animation::advance(animator, run, 0.0f, &passed);
+    CHECK(passed == std::vector<std::string_view>{"start"});
+    passed.clear();
+    devex::animation::advance(animator, run, 0.15f, &passed);
+    CHECK(passed.empty());
+    devex::animation::advance(animator, run, 0.1f, &passed);
+    CHECK(passed == std::vector<std::string_view>{"step"});
+    passed.clear();
+    // Around the loop.
+    devex::animation::advance(animator, run, 0.2f, &passed);
+    CHECK(passed == std::vector<std::string_view>{"start"});
+
+    // The scene's animators give their entity with the events.
+    devex::scene::Scene scene;
+    const devex::scene::Entity knight = scene.createEntity("Knight");
+    const AssetId framesId = AssetId::generate();
+    scene.add<SpriteAnimator>(knight, SpriteAnimator{.frames = framesId, .animation = "run"});
+    const auto frames = std::make_shared<const SpriteFramesData>(SpriteFramesData{.animations = {run}});
+    std::vector<devex::animation::FiredAnimationEvent> fired;
+    devex::animation::updateSpriteAnimators(scene, [&](AssetId id) { return id == framesId ? frames : nullptr; }, 0.25f, &fired);
+    REQUIRE(fired.size() == 2);
+    CHECK(fired[0].entity == knight);
+    CHECK(fired[0].name == "start");
+    CHECK(fired[1].name == "step");
 }

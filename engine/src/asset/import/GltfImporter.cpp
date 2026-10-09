@@ -726,6 +726,7 @@ private:
                 clip.channels.push_back(std::move(imported));
             }
 
+            clip.events = m_context.animationEvents(keys[index], clip.duration);
             if (core::Result<void> valid = validate(clip); !valid)
             {
                 DEVEX_LOG_WARNING("Skipping animation '{}' of '{}': {}", keys[index], fileName,

@@ -510,8 +510,31 @@ public static unsafe class InstanceShaderParameters
 /// <summary>
 /// The animations of the game: the clips the Animator components play on the bones of their entity.
 /// </summary>
+/// <summary>An event an animation played past: the entity of its Animator or SpriteAnimator, and the name the animation gives it.</summary>
+public readonly record struct AnimationEvent(Entity Entity, string Name);
+
 public static unsafe class Animation
 {
+    /// <summary>
+    /// The events the animations played past this frame, in the order they came: those of the clips
+    /// of Animators, set in the import settings of their model, and of the frames of SpriteAnimators,
+    /// set in their .dvxframes. They also reach the OnAnimationEvent of the components of the entity.
+    /// </summary>
+    public static AnimationEvent[] Events
+    {
+        get
+        {
+            NativeAnimationEvent* events = null;
+            int count = Bootstrap.Native.AnimationEvents(&events);
+            var passed = new AnimationEvent[count];
+            for (int index = 0; index < count; ++index)
+            {
+                passed[index] = new AnimationEvent(events[index].Entity, Utf8.ToString(events[index].Name) ?? string.Empty);
+            }
+            return passed;
+        }
+    }
+
     /// <summary>
     /// Plays a clip on the animator of the entity, crossfading over fade seconds; a negative fade
     /// takes the blend time of the Animator. The clip becomes the one the Animator holds.

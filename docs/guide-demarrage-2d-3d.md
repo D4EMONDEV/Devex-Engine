@@ -361,6 +361,20 @@ Ajouter **SpriteAnimator** sur **Visual**, affecter **Frames = PlayerFrames**, c
 
 Ne pas ajouter un **Animator** qui pilote simultanément ces mêmes animations : pour ce premier jeu, le script et SpriteAnimator suffisent. L'asset Animator sert à construire une machine à états plus avancée, avec paramètres et transitions.
 
+Pour qu'un pas fasse du bruit, marquer l'image où le pied touche le sol : choisir `run` dans l'Inspector de `PlayerFrames`, cliquer l'image dans **Frames** et écrire `step` dans **Event**. Les composants C# de l'entité du SpriteAnimator l'entendent quand l'animation arrive sur cette image (le script doit donc être sur la même entité que le SpriteAnimator) :
+
+```csharp
+public override void OnAnimationEvent(string name)
+{
+    if (name == "step")
+    {
+        Audio.PlayOneShot(StepSound, Transform.Position, 0.4f);
+    }
+}
+```
+
+Un clip 3D reçoit ses événements de la même façon, placés d'un clic droit sur la ligne **Events** du panneau Animation.
+
 ### 5.2 Construire un niveau avec une Tilemap
 
 Le sol rectangulaire précédent suffit pour apprendre. Pour dessiner une carte :

@@ -94,9 +94,14 @@ std::uint32_t artifactVersion(AssetType type) noexcept
         return 3;
     case AssetType::Scene:
     case AssetType::AudioClip:
-    case AssetType::AnimationClip:
     // 2: the kerning pairs.
     case AssetType::Font:
+        return 2;
+    // 3: the events.
+    case AssetType::AnimationClip:
+        return 3;
+    // 2: the events.
+    case AssetType::SpriteFrames:
         return 2;
     // 2: terrain sets, the terrains of the tiles and their probability. 3: the tiles that occlude.
     case AssetType::Tileset:
@@ -106,7 +111,6 @@ std::uint32_t artifactVersion(AssetType type) noexcept
         return 2;
     case AssetType::Theme:
     case AssetType::Curve:
-    case AssetType::SpriteFrames:
     case AssetType::Animator:
     case AssetType::NavMesh:
     case AssetType::Translation:
@@ -506,6 +510,12 @@ std::vector<std::byte> encodeAnimation(const AnimationClipData& clip)
         writer.writeArray(std::span<const float>(channel.times));
         writer.writeArray(std::span<const float>(channel.values));
     }
+    writer.write(static_cast<std::uint32_t>(clip.events.size()));
+    for (const AnimationEvent& event : clip.events)
+    {
+        writer.write(event.time);
+        writer.writeString(event.name);
+    }
     return writer.take();
 }
 
@@ -543,6 +553,18 @@ core::Result<AnimationClipData> decodeAnimation(std::span<const std::byte> bytes
         channel.interpolation = static_cast<AnimationInterpolation>(reader.read<std::uint8_t>());
         channel.times = reader.readArray<float>();
         channel.values = reader.readArray<float>();
+    }
+    const auto eventCount = reader.read<std::uint32_t>();
+    // Each event takes at least its time and an empty name.
+    if (eventCount > reader.remaining() / 8)
+    {
+        reader.fail();
+    }
+    for (std::uint32_t index = 0; index < eventCount && !reader.failed(); ++index)
+    {
+        AnimationEvent& event = clip.events.emplace_back();
+        event.time = reader.read<float>();
+        event.name = reader.readString();
     }
     if (reader.failed())
     {
@@ -701,6 +723,12 @@ std::vector<std::byte> encodeSpriteFrames(const SpriteFramesData& frames)
         writer.write(animation.fps);
         writer.write(static_cast<std::uint8_t>(animation.loop ? 1 : 0));
         writer.writeArray(std::span<const AssetId>(animation.frames));
+        writer.write(static_cast<std::uint32_t>(animation.events.size()));
+        for (const SpriteAnimationEvent& event : animation.events)
+        {
+            writer.write(event.frame);
+            writer.writeString(event.name);
+        }
     }
     return writer.take();
 }
@@ -721,6 +749,17 @@ core::Result<SpriteFramesData> decodeSpriteFrames(std::span<const std::byte> byt
         animation.fps = reader.read<float>();
         animation.loop = reader.read<std::uint8_t>() != 0;
         animation.frames = reader.readArray<AssetId>();
+        const auto eventCount = reader.read<std::uint32_t>();
+        if (eventCount > reader.remaining() / 8)
+        {
+            reader.fail();
+        }
+        for (std::uint32_t event = 0; event < eventCount && !reader.failed(); ++event)
+        {
+            SpriteAnimationEvent& passed = animation.events.emplace_back();
+            passed.frame = reader.read<std::uint32_t>();
+            passed.name = reader.readString();
+        }
         frames.animations.push_back(std::move(animation));
     }
     if (reader.failed())

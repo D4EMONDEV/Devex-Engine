@@ -78,6 +78,15 @@ public abstract class Component
     {
     }
 
+    /// <summary>
+    /// Called, before LateUpdate, when an animation of the entity, played by its Animator or its
+    /// SpriteAnimator, came to an event: a step, a blow that lands. The bones already stand where
+    /// the frame shows them.
+    /// </summary>
+    public virtual void OnAnimationEvent(string name)
+    {
+    }
+
     /// <summary>The Transform of the entity, changed in place.</summary>
     public ref Transform Transform => ref Entity.Transform;
 

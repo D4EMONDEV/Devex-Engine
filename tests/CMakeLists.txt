@@ -134,6 +134,7 @@ devex_add_tests(asset
         asset/MetaFileTests.cpp
         asset/PackageTests.cpp
         asset/ShaderGraphTests.cpp
+        asset/AnimationEventTests.cpp
         asset/ShaderTests.cpp
         asset/SpriteTests.cpp
         asset/TilesetTests.cpp
