@@ -1,0 +1,15 @@
+shader_type canvas_item;
+
+// A glint that sweeps across the screen every few seconds, lighting the coins it passes, as light on
+// gold.
+uniform float4 glint : source_color = float4(1.0, 0.95, 0.75, 1.0);
+uniform float period : hint_range(0.5, 10.0) = 2.5;
+uniform float width : hint_range(0.01, 0.5) = 0.06;
+
+void fragment()
+{
+    // A diagonal band, from the left of the screen to its right once a period.
+    const float sweep = frac(TIME / period) * 2.0 - 0.5;
+    const float band = 1.0 - smoothstep(0.0, width, abs(SCREEN_UV.x + SCREEN_UV.y * 0.5 - sweep));
+    COLOR.rgb += glint.rgb * glint.a * band * COLOR.a;
+}

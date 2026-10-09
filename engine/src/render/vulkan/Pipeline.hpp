@@ -36,6 +36,8 @@ struct GraphicsPipelineConfig
 {
     // A compiled Slang module holding the entry points.
     std::filesystem::path shaderPath;
+    // Or its code, which replaces the file when it is not empty: the shaders of projects.
+    std::span<const std::uint32_t> code;
     const char* vertexEntry = "vertexMain";
     // Null for a pipeline that only writes depth.
     const char* fragmentEntry = "fragmentMain";

@@ -2,6 +2,7 @@
 #include <devex/asset/import/Importer.hpp>
 #include <devex/asset/import/CurveFile.hpp>
 #include <devex/asset/import/MaterialFile.hpp>
+#include <devex/asset/import/ShaderFile.hpp>
 #include <devex/asset/import/SpriteFramesFile.hpp>
 #include <devex/asset/import/AnimatorFile.hpp>
 #include <devex/asset/import/TilesetFile.hpp>
@@ -389,6 +390,25 @@ core::Result<ImportResult> importMaterialFile(ImportContext& context)
     return result;
 }
 
+core::Result<ImportResult> importShaderFile(ImportContext& context)
+{
+    const core::Result<std::string> text = core::readTextFile(context.source);
+    if (!text)
+    {
+        return std::unexpected(text.error());
+    }
+    // A shader that does not compile still imports, with its errors and without code: its
+    // materials keep their values and draw as the default material until it is fixed.
+    const ShaderData shader = compileShader(*text, context.source, shaderCompiler(), context.cancelled);
+    if (context.isCancelled())
+    {
+        return core::makeError(core::ErrorCode::InvalidState, "the import was cancelled");
+    }
+    ImportResult result;
+    result.artifacts.push_back({context.mainId, AssetType::Shader, context.name, encodeShader(shader)});
+    return result;
+}
+
 core::Result<ImportResult> importThemeFile(ImportContext& context)
 {
     const core::Result<std::string> text = core::readTextFile(context.source);
@@ -694,6 +714,14 @@ std::span<const Importer> importers()
             .mainType = AssetType::NavMesh,
             .extensions = {navMeshExtension},
             .run = &importNavMeshFile,
+        },
+        Importer{
+            .name = "shader",
+            // Increased whenever the generated code or the Slang modules it imports change.
+            .version = 1,
+            .mainType = AssetType::Shader,
+            .extensions = {shaderExtension},
+            .run = &importShaderFile,
         },
         Importer{
             .name = "scene",

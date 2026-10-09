@@ -1,0 +1,3 @@
+# Drawn by the shader water.dvxshader, with its default values.
+[material format=2]
+shader = asset("a7a3a41f-7f3c-53b2-a3f9-05d8f9fcaac7")

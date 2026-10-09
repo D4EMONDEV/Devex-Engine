@@ -66,6 +66,10 @@ public:
     void updateMaterial(MaterialHandle handle, const MaterialDesc& material);
     void destroyMaterial(MaterialHandle material);
 
+    [[nodiscard]] core::Result<ShaderHandle> createShader(const asset::ShaderData& shader);
+    [[nodiscard]] core::Result<void> updateShader(ShaderHandle handle, const asset::ShaderData& shader);
+    void destroyShader(ShaderHandle shader);
+
     [[nodiscard]] RenderWorld& beginFrame() noexcept;
     [[nodiscard]] core::Result<void> endFrame();
     [[nodiscard]] std::vector<PickResult> takePickResults();
@@ -89,6 +93,7 @@ private:
     // Bindless slots of the textures that stand in for missing ones.
     static constexpr std::uint32_t whiteTextureSlot = 0;
     static constexpr std::uint32_t flatNormalTextureSlot = 1;
+    static constexpr std::uint32_t blackTextureSlot = 2;
     // The last slots of the texture array show the images the tools compose, a block for each frame
     // context: the scene image first, then the interface surfaces in the order of the frame.
     static constexpr std::uint32_t toolImageSlots = 32;
@@ -173,6 +178,8 @@ private:
         // writing them never touches memory a frame in flight reads.
         std::optional<Buffer> sceneData;
         std::optional<Buffer> materials;
+        // The uniforms of the materials drawn by shaders of projects.
+        std::optional<Buffer> materialParameters;
         std::uint64_t materialVersion = 0;
         std::optional<Buffer> lights;
         // The bone matrices of every skinned instance of the frame.
@@ -265,6 +272,43 @@ private:
     {
         EnvironmentMaps maps;
         std::uint64_t retiredAtFrame = 0;
+        // The sky a sky shader drew, which the maps were baked from.
+        std::optional<Image> sky;
+    };
+
+    // The pipelines of a shader of a project, for the passes its kind draws in: a spatial one has
+    // them all but the prepass when it blends, and no shadows when it casts none; a canvas_item one
+    // has scene, pick and mask; a particles one scene; a sky one scene and bake.
+    struct GpuShader
+    {
+        asset::ShaderKind kind = asset::ShaderKind::Spatial;
+        // Increased by every build, so that what was baked from an older one is baked again.
+        std::uint64_t revision = 0;
+        bool transparent = false;
+        bool castsShadows = false;
+        // The slots of four numbers its uniforms take.
+        std::uint32_t parameterCount = 0;
+        std::optional<Pipeline> scene;
+        std::optional<Pipeline> prepass;
+        std::optional<Pipeline> shadow;
+        std::optional<Pipeline> localShadow;
+        std::optional<Pipeline> pick;
+        std::optional<Pipeline> mask;
+        std::optional<Pipeline> bake;
+    };
+
+    struct RetiredShader
+    {
+        GpuShader shader;
+        std::uint64_t retiredAtFrame = 0;
+    };
+
+    // The passes sprites are drawn in.
+    enum class SpritePass : std::uint8_t
+    {
+        Scene,
+        Pick,
+        Mask,
     };
 
     VulkanRenderer(platform::Window& window, const RendererConfig& config,
@@ -290,10 +334,22 @@ private:
     // Records the copies selected for the frame.
     void recordUploads(VkCommandBuffer commandBuffer, const FrameContext& frame) const;
     [[nodiscard]] GpuMaterial toGpuMaterial(const MaterialDesc& material) const noexcept;
+    // The pipelines of a compiled shader.
+    [[nodiscard]] core::Result<GpuShader> buildShader(const asset::ShaderData& shader) const;
+    // The shader of a kind that draws a material, or null for the standard one.
+    [[nodiscard]] const GpuShader* shaderOf(MaterialHandle material, asset::ShaderKind kind) const noexcept;
+    [[nodiscard]] const GpuShader* shaderOf(const MaterialDesc* material, asset::ShaderKind kind) const noexcept;
+    // The index of a material in the buffer of the frame: the default one for a missing material.
+    [[nodiscard]] std::uint32_t materialIndex(MaterialHandle material) const noexcept;
     // Refreshes the frame's copy of the materials when it is older than the current ones.
     [[nodiscard]] core::Result<void> updateFrameMaterials(FrameContext& frame);
     // Bakes image based lighting when the sky texture changed.
     [[nodiscard]] core::Result<void> updateEnvironment();
+    // Bakes it from the sky shader of the frame, once its scene data is written, when the shader,
+    // its uniforms or the sun changed: the sun at most twice a second.
+    [[nodiscard]] core::Result<void> updateSkyShaderEnvironment(const FrameContext& frame);
+    // The sky shader of the frame that lights the scene, or null.
+    [[nodiscard]] const GpuShader* skyShader() const noexcept;
     void updateExposure(FrameContext& frame);
     [[nodiscard]] core::Result<void> uploadLights(FrameContext& frame, float aspectRatio);
     void writeSceneData(FrameContext& frame, const std::optional<ShadowCascades>& cascades) const noexcept;
@@ -347,10 +403,14 @@ private:
     [[nodiscard]] core::Result<void> uploadSprites(FrameContext& frame) const;
     // The 2D lights that reach what the camera sees, and the shadows of those that cast them.
     void gatherLights2D() const;
-    // Sprites [first, first + count) of the sorted buffer, with the pipeline of a pass.
+    // Sprites [first, first + count) of the sorted buffer, in runs drawn by the same shader, each with
+    // its pipeline for the pass.
     std::uint32_t drawSprites(VkCommandBuffer commandBuffer, VkDeviceAddress sceneData, const FrameContext& frame,
-                              std::uint32_t frameSlot, const Pipeline& pipeline, std::uint32_t first,
-                              std::uint32_t count) const;
+                              std::uint32_t frameSlot, SpritePass pass, std::uint32_t first, std::uint32_t count) const;
+    // One run of them, with one pipeline.
+    std::uint32_t drawSpriteRun(VkCommandBuffer commandBuffer, VkDeviceAddress sceneData, const FrameContext& frame,
+                                std::uint32_t frameSlot, const Pipeline& pipeline, bool frameSet, std::uint32_t first,
+                                std::uint32_t count) const;
     // How far a point is, for the order of the blended draws: its squared distance from a
     // perspective camera, its depth along an orthographic one. Greater is drawn first.
     [[nodiscard]] float sortDistance(math::Vec3 point, math::Vec3 cameraPosition) const noexcept;
@@ -413,6 +473,8 @@ private:
     // same order, and which of those are outlined.
     mutable std::vector<SpriteBatch> m_spriteBatches;
     mutable std::vector<GpuSprite> m_gpuSprites;
+    // The canvas_item shader of each sprite of the buffer; invalid for the standard one.
+    mutable std::vector<ShaderHandle> m_spriteShaders;
     mutable std::vector<std::uint8_t> m_spriteOutlined;
     mutable std::vector<GpuLight2D> m_gpuLights2D;
     mutable std::vector<float> m_shadows2D;
@@ -497,17 +559,27 @@ private:
     std::vector<RetiredMesh> m_retiredMeshes;
     std::optional<GpuTexture> m_whiteTexture;
     std::optional<GpuTexture> m_flatNormalTexture;
+    std::optional<GpuTexture> m_blackTexture;
     core::SlotMap<GpuTexture, TextureTag> m_textures;
     std::vector<RetiredTexture> m_retiredTextures;
     // Bindless slots released by destroyed textures, reused before new ones.
     std::vector<std::uint32_t> m_freeTextureSlots;
-    std::uint32_t m_nextTextureSlot = flatNormalTextureSlot + 1;
+    std::uint32_t m_nextTextureSlot = blackTextureSlot + 1;
     // Where the slots of the tools' images start; the textures take those before.
     std::uint32_t m_toolImageSlotBase = 0;
     core::SlotMap<MaterialDesc, MaterialTag> m_materials;
     MaterialHandle m_defaultMaterial;
     // GPU form of every material slot, rebuilt when a material or a texture changes.
     std::vector<GpuMaterial> m_gpuMaterials;
+    // The uniforms of the materials drawn by shaders of projects, rebuilt with them.
+    std::vector<math::Vec4> m_gpuMaterialParameters;
+    // The shaders of projects, and those destroyed or replaced that frames in flight may still use.
+    core::SlotMap<GpuShader, ShaderTag> m_shaders;
+    std::vector<RetiredShader> m_retiredShaders;
+    // The TIME of shaders: seconds since the renderer started, on this frame and the previous one.
+    std::chrono::steady_clock::time_point m_startTime = std::chrono::steady_clock::now();
+    float m_time = 0.0f;
+    float m_previousTime = 0.0f;
     std::uint64_t m_materialVersion = 1;
     bool m_materialsChanged = true;
 
@@ -517,6 +589,14 @@ private:
     TextureHandle m_environmentSource;
     TextureHandle m_failedEnvironment;
     bool m_environmentBound = false;
+    // Image based lighting baked from a sky shader, the sky it drew, and what they were baked from:
+    // the shader, its material and uniforms; then the sun, which may change every frame.
+    std::optional<EnvironmentMaps> m_shaderEnvironment;
+    std::optional<Image> m_shaderSky;
+    std::uint64_t m_shaderSkyKey = 0;
+    std::uint64_t m_shaderSkyLight = 0;
+    std::chrono::steady_clock::time_point m_shaderSkyBaked;
+    std::uint64_t m_shaderRevisions = 0;
     std::vector<RetiredEnvironment> m_retiredEnvironments;
 
     std::uint64_t m_frameIndex = 0;

@@ -1,0 +1,26 @@
+shader_type sky;
+
+// A clear day: the sky darkens from the horizon to the zenith, the ground fades below it, and the sun
+// shines where the light comes from. The light of the environment is baked from it without the disc
+// of the sun, which the sun itself already lights.
+uniform float3 zenith : source_color = float3(0.03, 0.14, 0.62);
+uniform float3 horizon : source_color = float3(0.42, 0.6, 0.9);
+uniform float3 ground : source_color = float3(0.22, 0.2, 0.18);
+uniform float sun_size : hint_range(0.0, 0.1) = 0.012;
+uniform float sun_glow : hint_range(0.0, 2.0) = 0.6;
+
+void sky()
+{
+    const float up = EYEDIR.y;
+    float3 color = up >= 0.0 ? lerp(horizon, zenith, pow(saturate(up), 0.45)) : lerp(horizon, ground, saturate(-up * 6.0));
+    if (LIGHT0_ENABLED)
+    {
+        const float facing = saturate(dot(EYEDIR, LIGHT0_DIRECTION));
+        color += LIGHT0_COLOR * pow(facing, 48.0) * sun_glow * LIGHT0_ENERGY;
+        if (!AT_CUBEMAP_PASS && facing > cos(sun_size))
+        {
+            color += LIGHT0_COLOR * 30.0 * LIGHT0_ENERGY;
+        }
+    }
+    COLOR = color;
+}

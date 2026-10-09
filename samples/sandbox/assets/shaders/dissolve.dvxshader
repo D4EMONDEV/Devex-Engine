@@ -1,0 +1,49 @@
+shader_type spatial;
+
+// A statue that burns away and comes back: below a threshold that rises and falls, its pixels are
+// gone, from its shadow too, and the edge of what remains glows.
+uniform float3 albedo : source_color = float3(0.72, 0.7, 0.66);
+uniform float3 glow : source_color = float3(1.0, 0.35, 0.08);
+uniform float glow_energy : hint_range(0.0, 20.0) = 8.0;
+uniform float speed : hint_range(0.0, 2.0) = 0.15;
+uniform float scale : hint_range(0.5, 16.0) = 4.0;
+uniform float edge : hint_range(0.0, 0.2) = 0.05;
+
+varying float3 local;
+
+float hash(float3 p)
+{
+    p = frac(p * 0.3183099 + 0.1) * 17.0;
+    return frac(p.x * p.y * p.z * (p.x + p.y + p.z));
+}
+
+// Value noise, from 0 to 1, smooth across space.
+float valueNoise(float3 x)
+{
+    const float3 i = floor(x);
+    const float3 f = frac(x);
+    const float3 u = f * f * (3.0 - 2.0 * f);
+    return lerp(lerp(lerp(hash(i), hash(i + float3(1, 0, 0)), u.x), lerp(hash(i + float3(0, 1, 0)), hash(i + float3(1, 1, 0)), u.x), u.y),
+                lerp(lerp(hash(i + float3(0, 0, 1)), hash(i + float3(1, 0, 1)), u.x), lerp(hash(i + float3(0, 1, 1)), hash(i + float3(1, 1, 1)), u.x), u.y),
+                u.z);
+}
+
+void vertex()
+{
+    // In the space of the mesh, so that the pattern stays on the statue.
+    local = VERTEX;
+}
+
+void fragment()
+{
+    const float pattern = valueNoise(local * scale) * 0.65 + valueNoise(local * scale * 2.3) * 0.35;
+    // From a little below 0 to a little above 1: wholly there, then wholly gone.
+    const float threshold = 0.5 - 0.6 * cos(TIME * speed * TAU);
+    if (pattern < threshold)
+    {
+        discard;
+    }
+    ALBEDO = albedo;
+    ROUGHNESS = 0.55;
+    EMISSION = glow * glow_energy * (1.0 - smoothstep(0.0, edge, pattern - threshold));
+}

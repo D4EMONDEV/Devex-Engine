@@ -376,6 +376,7 @@ sorting_layer = "Default"
 order = 0
 blend = "alpha"
 lit = false
+material = asset("2fd41196-0dc9-5df3-a88f-8a7be3593c51")
 
 [component type="SpriteAnimator"]
 frames = asset("24109346-ee52-5a6b-b719-e8d4ad48ef3b")
@@ -424,6 +425,7 @@ sorting_layer = "Default"
 order = 0
 blend = "alpha"
 lit = false
+material = asset("2fd41196-0dc9-5df3-a88f-8a7be3593c51")
 
 [component type="SpriteAnimator"]
 frames = asset("24109346-ee52-5a6b-b719-e8d4ad48ef3b")
@@ -472,6 +474,7 @@ sorting_layer = "Default"
 order = 0
 blend = "alpha"
 lit = false
+material = asset("2fd41196-0dc9-5df3-a88f-8a7be3593c51")
 
 [component type="SpriteAnimator"]
 frames = asset("24109346-ee52-5a6b-b719-e8d4ad48ef3b")
@@ -520,6 +523,7 @@ sorting_layer = "Default"
 order = 0
 blend = "alpha"
 lit = false
+material = asset("2fd41196-0dc9-5df3-a88f-8a7be3593c51")
 
 [component type="SpriteAnimator"]
 frames = asset("24109346-ee52-5a6b-b719-e8d4ad48ef3b")
@@ -568,6 +572,7 @@ sorting_layer = "Default"
 order = 0
 blend = "alpha"
 lit = false
+material = asset("2fd41196-0dc9-5df3-a88f-8a7be3593c51")
 
 [component type="SpriteAnimator"]
 frames = asset("24109346-ee52-5a6b-b719-e8d4ad48ef3b")
@@ -616,6 +621,7 @@ sorting_layer = "Default"
 order = 0
 blend = "alpha"
 lit = false
+material = asset("2fd41196-0dc9-5df3-a88f-8a7be3593c51")
 
 [component type="SpriteAnimator"]
 frames = asset("24109346-ee52-5a6b-b719-e8d4ad48ef3b")
@@ -664,6 +670,7 @@ sorting_layer = "Default"
 order = 0
 blend = "alpha"
 lit = false
+material = asset("2fd41196-0dc9-5df3-a88f-8a7be3593c51")
 
 [component type="SpriteAnimator"]
 frames = asset("24109346-ee52-5a6b-b719-e8d4ad48ef3b")
@@ -712,6 +719,7 @@ sorting_layer = "Default"
 order = 0
 blend = "alpha"
 lit = false
+material = asset("2fd41196-0dc9-5df3-a88f-8a7be3593c51")
 
 [component type="SpriteAnimator"]
 frames = asset("24109346-ee52-5a6b-b719-e8d4ad48ef3b")
@@ -760,6 +768,7 @@ sorting_layer = "Default"
 order = 0
 blend = "alpha"
 lit = false
+material = asset("2fd41196-0dc9-5df3-a88f-8a7be3593c51")
 
 [component type="SpriteAnimator"]
 frames = asset("24109346-ee52-5a6b-b719-e8d4ad48ef3b")
@@ -808,6 +817,7 @@ sorting_layer = "Default"
 order = 0
 blend = "alpha"
 lit = false
+material = asset("2fd41196-0dc9-5df3-a88f-8a7be3593c51")
 
 [component type="SpriteAnimator"]
 frames = asset("24109346-ee52-5a6b-b719-e8d4ad48ef3b")
@@ -856,6 +866,7 @@ sorting_layer = "Default"
 order = 0
 blend = "alpha"
 lit = false
+material = asset("2fd41196-0dc9-5df3-a88f-8a7be3593c51")
 
 [component type="SpriteAnimator"]
 frames = asset("24109346-ee52-5a6b-b719-e8d4ad48ef3b")
@@ -904,6 +915,7 @@ sorting_layer = "Default"
 order = 0
 blend = "alpha"
 lit = false
+material = asset("2fd41196-0dc9-5df3-a88f-8a7be3593c51")
 
 [component type="SpriteAnimator"]
 frames = asset("24109346-ee52-5a6b-b719-e8d4ad48ef3b")
@@ -1102,6 +1114,7 @@ sorting_layer = "Foreground"
 order = 0
 blend = "alpha"
 lit = false
+material = asset("6d3d9c98-c23c-52c4-a50a-13291b6abc80")
 
 [entity uuid="cb02f80d-b790-5bd1-be8b-40726c76632d" name="Tufts 2"]
 
@@ -1122,6 +1135,7 @@ sorting_layer = "Foreground"
 order = 0
 blend = "alpha"
 lit = false
+material = asset("6d3d9c98-c23c-52c4-a50a-13291b6abc80")
 
 [entity uuid="93c9dc31-32c9-5c5d-9ad2-4b9e56e9c853" name="Tufts 3"]
 
@@ -1142,6 +1156,7 @@ sorting_layer = "Foreground"
 order = 0
 blend = "alpha"
 lit = false
+material = asset("6d3d9c98-c23c-52c4-a50a-13291b6abc80")
 
 [entity uuid="754bfeda-6a80-57f9-922d-4ea95ebefda7" name="Tufts 4"]
 
@@ -1162,6 +1177,7 @@ sorting_layer = "Foreground"
 order = 0
 blend = "alpha"
 lit = false
+material = asset("6d3d9c98-c23c-52c4-a50a-13291b6abc80")
 
 [entity uuid="8eaf8305-cd81-5089-acfc-f2f9484e5a6c" name="Tufts 5"]
 
@@ -1182,6 +1198,7 @@ sorting_layer = "Foreground"
 order = 0
 blend = "alpha"
 lit = false
+material = asset("6d3d9c98-c23c-52c4-a50a-13291b6abc80")
 
 [entity uuid="82924880-6d31-52a3-a329-b5720e8a54fd" name="Tufts 6"]
 
@@ -1202,6 +1219,7 @@ sorting_layer = "Foreground"
 order = 0
 blend = "alpha"
 lit = false
+material = asset("6d3d9c98-c23c-52c4-a50a-13291b6abc80")
 
 [entity uuid="5df9b381-71ba-57de-93ee-6513db1c916d" name="Tufts 7"]
 
@@ -1222,6 +1240,7 @@ sorting_layer = "Foreground"
 order = 0
 blend = "alpha"
 lit = false
+material = asset("6d3d9c98-c23c-52c4-a50a-13291b6abc80")
 
 [entity uuid="2975b166-28b4-5384-96dc-6b58ef278974" name="Interface"]
 

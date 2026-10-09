@@ -895,6 +895,42 @@ void ToolsOverlay::setCodeDiagnostics(std::vector<CodeDiagnostic> diagnostics)
     m_state->codeDiagnostics = std::move(diagnostics);
 }
 
+void ToolsOverlay::assetsChanged(std::span<const asset::AssetEvent> events)
+{
+    for (const asset::AssetEvent& event : events)
+    {
+        if (event.type != asset::AssetType::Shader)
+        {
+            continue;
+        }
+        // Read again when the text editor shows it.
+        m_state->shaderDiagnostics.clear();
+        if (event.change != asset::AssetChange::Imported || m_state->database == nullptr)
+        {
+            continue;
+        }
+        const std::optional<asset::SourceFile> source = m_state->database->sourceOf(event.id);
+        const core::Result<std::vector<std::byte>> bytes = m_state->database->loadArtifact(event.id);
+        const core::Result<asset::ShaderData> shader =
+            bytes ? asset::decodeShader(*bytes) : core::Result<asset::ShaderData>(std::unexpected(bytes.error()));
+        if (!source || !shader)
+        {
+            continue;
+        }
+        for (const asset::ShaderDiagnostic& diagnostic : shader->diagnostics)
+        {
+            if (diagnostic.error)
+            {
+                DEVEX_LOG_ERROR("{}:{}: {}", source->path, diagnostic.line, diagnostic.message);
+            }
+            else
+            {
+                DEVEX_LOG_WARNING("{}:{}: {}", source->path, diagnostic.line, diagnostic.message);
+            }
+        }
+    }
+}
+
 void ToolsOverlay::setAnimationClips(std::function<std::shared_ptr<const animation::Clip>(asset::AssetId)> clips)
 {
     m_state->animationClips = std::move(clips);

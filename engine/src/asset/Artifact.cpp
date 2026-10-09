@@ -89,7 +89,9 @@ std::uint32_t artifactVersion(AssetType type) noexcept
     // 3: the filter.
     case AssetType::Texture:
         return 3;
+    // 3: the shader and the values of its uniforms.
     case AssetType::Material:
+        return 3;
     case AssetType::Scene:
     case AssetType::AudioClip:
     case AssetType::AnimationClip:
@@ -108,6 +110,7 @@ std::uint32_t artifactVersion(AssetType type) noexcept
     case AssetType::Animator:
     case AssetType::NavMesh:
     case AssetType::Translation:
+    case AssetType::Shader:
         return 1;
     }
     return 0;
@@ -117,7 +120,7 @@ std::uint32_t artifactLayouts() noexcept
 {
     std::uint32_t combined = 0;
     for (std::uint8_t value = static_cast<std::uint8_t>(AssetType::Mesh);
-         value <= static_cast<std::uint8_t>(AssetType::Translation); ++value)
+         value <= static_cast<std::uint8_t>(AssetType::Shader); ++value)
     {
         combined = combined * 31 + artifactVersion(static_cast<AssetType>(value));
     }
@@ -260,6 +263,15 @@ std::vector<std::byte> encodeMaterial(const MaterialData& material)
     writer.write(material.alphaMode);
     writer.write(material.alphaCutoff);
     writer.write(static_cast<std::uint8_t>(material.doubleSided ? 1 : 0));
+    writer.write(material.shader);
+    writer.write(static_cast<std::uint32_t>(material.parameters.size()));
+    for (const MaterialParameter& parameter : material.parameters)
+    {
+        writer.writeString(parameter.name);
+        writer.write(parameter.value);
+        writer.write(parameter.components);
+        writer.write(parameter.texture);
+    }
     return writer.take();
 }
 
@@ -287,6 +299,16 @@ core::Result<MaterialData> decodeMaterial(std::span<const std::byte> bytes)
     material.alphaCutoff = reader.read<float>();
     const auto doubleSided = reader.read<std::uint8_t>();
     material.doubleSided = doubleSided != 0;
+    material.shader = reader.read<AssetId>();
+    const auto parameterCount = reader.read<std::uint32_t>();
+    for (std::uint32_t index = 0; index < parameterCount && !reader.failed(); ++index)
+    {
+        MaterialParameter& parameter = material.parameters.emplace_back();
+        parameter.name = reader.readString();
+        parameter.value = reader.read<math::Vec4>();
+        parameter.components = reader.read<std::uint8_t>();
+        parameter.texture = reader.read<AssetId>();
+    }
 
     if (reader.failed() || doubleSided > 1 || toString(material.alphaMode) == "unknown")
     {
@@ -1055,6 +1077,80 @@ core::Result<ThemeData> decodeTheme(std::span<const std::byte> bytes)
         return std::unexpected(valid.error());
     }
     return theme;
+}
+
+std::vector<std::byte> encodeShader(const ShaderData& shader)
+{
+    BinaryWriter writer = beginArtifact(AssetType::Shader);
+    writer.write(shader.kind);
+    writer.write(shader.cull);
+    writer.write(shader.blend);
+    writer.write(static_cast<std::uint8_t>((shader.transparent ? 1 : 0) | (shader.castsShadows ? 2 : 0) |
+                                           (shader.discards ? 4 : 0)));
+    writer.write(static_cast<std::uint32_t>(shader.parameters.size()));
+    for (const ShaderParameter& parameter : shader.parameters)
+    {
+        writer.writeString(parameter.name);
+        writer.write(parameter.type);
+        writer.write(parameter.hint);
+        writer.write(parameter.defaultValue);
+        writer.write(parameter.range);
+    }
+    writer.writeArray(std::span<const std::uint32_t>(shader.code));
+    writer.write(static_cast<std::uint32_t>(shader.diagnostics.size()));
+    for (const ShaderDiagnostic& diagnostic : shader.diagnostics)
+    {
+        writer.write(diagnostic.line);
+        writer.write(diagnostic.column);
+        writer.writeString(diagnostic.message);
+        writer.write(static_cast<std::uint8_t>(diagnostic.error ? 1 : 0));
+    }
+    return writer.take();
+}
+
+core::Result<ShaderData> decodeShader(std::span<const std::byte> bytes)
+{
+    BinaryReader reader(bytes);
+    if (core::Result<void> header = readHeader(reader, AssetType::Shader); !header)
+    {
+        return std::unexpected(header.error());
+    }
+    ShaderData shader;
+    shader.kind = reader.read<ShaderKind>();
+    shader.cull = reader.read<ShaderCull>();
+    shader.blend = reader.read<ShaderBlend>();
+    const auto flags = reader.read<std::uint8_t>();
+    shader.transparent = (flags & 1) != 0;
+    shader.castsShadows = (flags & 2) != 0;
+    shader.discards = (flags & 4) != 0;
+    bool valid = toString(shader.kind) != "unknown" && static_cast<std::uint8_t>(shader.cull) <= 2 &&
+                 static_cast<std::uint8_t>(shader.blend) <= 1 && flags < 8;
+    const auto parameterCount = reader.read<std::uint32_t>();
+    for (std::uint32_t index = 0; index < parameterCount && !reader.failed(); ++index)
+    {
+        ShaderParameter& parameter = shader.parameters.emplace_back();
+        parameter.name = reader.readString();
+        parameter.type = reader.read<ShaderParameterType>();
+        parameter.hint = reader.read<ShaderHint>();
+        parameter.defaultValue = reader.read<math::Vec4>();
+        parameter.range = reader.read<math::Vec3>();
+        valid = valid && toString(parameter.type) != "unknown" && static_cast<std::uint8_t>(parameter.hint) <= 5;
+    }
+    shader.code = reader.readArray<std::uint32_t>();
+    const auto diagnosticCount = reader.read<std::uint32_t>();
+    for (std::uint32_t index = 0; index < diagnosticCount && !reader.failed(); ++index)
+    {
+        ShaderDiagnostic& diagnostic = shader.diagnostics.emplace_back();
+        diagnostic.line = reader.read<std::uint32_t>();
+        diagnostic.column = reader.read<std::uint32_t>();
+        diagnostic.message = reader.readString();
+        diagnostic.error = reader.read<std::uint8_t>() != 0;
+    }
+    if (reader.failed() || !valid)
+    {
+        return std::unexpected(truncated(AssetType::Shader));
+    }
+    return shader;
 }
 
 } // namespace devex::asset

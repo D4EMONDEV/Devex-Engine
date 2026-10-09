@@ -1,3 +1,4 @@
+#include <devex/asset/import/ShaderFile.hpp>
 #include "CodeCompletion.hpp"
 
 #include <devex/reflection/Reflection.hpp>
@@ -72,6 +73,27 @@ void addWords(std::vector<CompletionItem>& items, std::span<const char* const> w
 std::vector<CompletionItem> engineNames(CodeLanguage language)
 {
     std::vector<CompletionItem> items;
+    if (language == CodeLanguage::Shader)
+    {
+        // The built-ins of every kind: the file says which it is only once it is read.
+        for (const asset::ShaderKind kind : {asset::ShaderKind::Spatial, asset::ShaderKind::CanvasItem,
+                                             asset::ShaderKind::Particles, asset::ShaderKind::Sky})
+        {
+            for (const std::string_view name : asset::shaderBuiltins(kind))
+            {
+                if (std::ranges::none_of(items, [&](const CompletionItem& item) { return item.text == name; }))
+                {
+                    items.push_back({std::string(name), "built-in"});
+                }
+            }
+        }
+        for (const char* const function : {"texture", "textureLod", "textureSize", "texelFetch", "lerp", "saturate",
+                                           "smoothstep", "normalize", "dot", "cross", "length", "frac", "sin", "cos"})
+        {
+            items.push_back({function, "function"});
+        }
+        return items;
+    }
     if (language != CodeLanguage::Cpp && language != CodeLanguage::CSharp)
     {
         return items;

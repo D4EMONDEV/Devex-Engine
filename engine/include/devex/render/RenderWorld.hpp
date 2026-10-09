@@ -15,12 +15,15 @@ namespace devex::render {
 struct MeshTag;
 struct TextureTag;
 struct MaterialTag;
+struct ShaderTag;
 // Refers to a mesh uploaded with Renderer::createMesh.
 using MeshHandle = core::Handle<MeshTag>;
 // Refers to a texture uploaded with Renderer::createTexture.
 using TextureHandle = core::Handle<TextureTag>;
 // Refers to a material created with Renderer::createMaterial.
 using MaterialHandle = core::Handle<MaterialTag>;
+// Refers to a shader of a project created with Renderer::createShader.
+using ShaderHandle = core::Handle<ShaderTag>;
 
 // How the jagged edges of the image are smoothed.
 enum class Antialiasing : std::uint8_t
@@ -128,6 +131,9 @@ struct DEVEX_API RenderEnvironment
     float intensity = 8000.0f;
     // Rotation around the vertical axis, in radians.
     float rotation = 0.0f;
+    // A material whose sky shader draws the sky in place of the texture or the colour, which still
+    // tint it.
+    MaterialHandle skyMaterial;
 };
 
 // One submesh of a mesh, drawn with a material.
@@ -212,6 +218,8 @@ struct DEVEX_API ParticleDraw
     float softness = 0.0f;
     // Where the batch stands, to order it among the blended surfaces.
     math::Vec3 center{0.0f};
+    // A material whose particles shader draws the particles; ribbons keep the standard one.
+    MaterialHandle material;
 };
 
 enum class SpriteMode : std::uint8_t
@@ -255,6 +263,8 @@ struct DEVEX_API RenderSprite
     bool unshaded = false;
     std::uint32_t lightMask = 1;
     TextureHandle normalTexture;
+    // A material whose canvas_item shader draws the sprite.
+    MaterialHandle material;
     // The sorting layer, counted from the one of the blended surfaces and the particles, then the
     // order within it: higher ones draw over lower ones, whatever their distance.
     std::int32_t layer = 0;
@@ -288,6 +298,8 @@ struct DEVEX_API RenderTilemap
     bool lit = false;
     bool unshaded = false;
     std::uint32_t lightMask = 1;
+    // A material whose canvas_item shader draws the tiles.
+    MaterialHandle material;
     std::int32_t layer = 0;
     std::int32_t order = 0;
     std::uint32_t objectId = 0;

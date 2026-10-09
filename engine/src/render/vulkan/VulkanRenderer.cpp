@@ -3,6 +3,7 @@
 #include "Commands.hpp"
 #include "GpuData.hpp"
 
+#include <devex/asset/ShaderData.hpp>
 #include <devex/core/Assert.hpp>
 #include <devex/core/Log.hpp>
 #include <devex/core/Profiler.hpp>
@@ -449,6 +450,258 @@ void VulkanRenderer::destroyMaterial(MaterialHandle material)
     }
 }
 
+core::Result<ShaderHandle> VulkanRenderer::createShader(const asset::ShaderData& shader)
+{
+    core::Result<GpuShader> built = buildShader(shader);
+    if (!built)
+    {
+        return std::unexpected(built.error());
+    }
+    built->revision = ++m_shaderRevisions;
+    m_materialsChanged = true;
+    return m_shaders.insert(std::move(*built));
+}
+
+core::Result<void> VulkanRenderer::updateShader(ShaderHandle handle, const asset::ShaderData& shader)
+{
+    GpuShader* const existing = m_shaders.find(handle);
+    if (existing == nullptr)
+    {
+        return {};
+    }
+    core::Result<GpuShader> built = buildShader(shader);
+    if (!built)
+    {
+        return std::unexpected(built.error());
+    }
+    // Frames in flight may still draw with the old pipelines.
+    built->revision = ++m_shaderRevisions;
+    m_retiredShaders.push_back({.shader = std::move(*existing), .retiredAtFrame = m_frameIndex});
+    *existing = std::move(*built);
+    m_materialsChanged = true;
+    return {};
+}
+
+void VulkanRenderer::destroyShader(ShaderHandle shader)
+{
+    if (std::optional<GpuShader> removed = m_shaders.remove(shader))
+    {
+        m_retiredShaders.push_back({.shader = std::move(*removed), .retiredAtFrame = m_frameIndex});
+        m_materialsChanged = true;
+    }
+}
+
+core::Result<VulkanRenderer::GpuShader> VulkanRenderer::buildShader(const asset::ShaderData& shader) const
+{
+    if (!shader.compiled())
+    {
+        return core::makeError(core::ErrorCode::InvalidArgument, "the shader did not compile");
+    }
+    const VkDevice device = m_device.handle();
+    const std::array bothSets{m_descriptors->globalLayout(), m_descriptors->frameLayout()};
+    static constexpr std::array<VkFormat, 2> prepassFormats{velocityFormat, normalFormat};
+    GpuShader built{
+        .kind = shader.kind,
+        .transparent = shader.transparent,
+        .castsShadows = shader.castsShadows,
+        .parameterCount = static_cast<std::uint32_t>(shader.parameters.size()),
+    };
+    // Each pipeline the kind needs, in turn; the first that fails fails the shader.
+    std::optional<core::Error> failure;
+    const auto make = [&](std::optional<Pipeline>& target, const GraphicsPipelineConfig& config) {
+        if (failure)
+        {
+            return;
+        }
+        core::Result<Pipeline> pipeline = createGraphicsPipeline(device, config);
+        if (!pipeline)
+        {
+            failure = pipeline.error();
+            return;
+        }
+        target = std::move(*pipeline);
+    };
+
+    switch (shader.kind)
+    {
+    case asset::ShaderKind::Spatial: {
+        const VkCullModeFlags cull = shader.cull == asset::ShaderCull::Front      ? VK_CULL_MODE_FRONT_BIT
+                                     : shader.cull == asset::ShaderCull::Disabled ? VK_CULL_MODE_NONE
+                                                                                  : VK_CULL_MODE_BACK_BIT;
+        // Every pass pushes the constants of the prepass, of which the others read the start.
+        const GraphicsPipelineConfig scene{
+            .code = shader.code,
+            .vertexEntry = "sceneVertex",
+            .fragmentEntry = "sceneFragment",
+            .setLayouts = bothSets,
+            .pushConstantSize = sizeof(PrepassPushConstants),
+            .colorFormat = sceneFormat,
+            .depthFormat = depthFormat,
+            // Blended surfaces leave their colour premultiplied, with an alpha of zero to add.
+            .premultipliedBlend = shader.transparent,
+            .cullMode = cull,
+            // The prepass already wrote the depth of opaque ones; blended ones write none.
+            .depthWrite = false,
+        };
+        make(built.scene, scene);
+        if (!shader.transparent)
+        {
+            make(built.prepass, {
+                                    .code = shader.code,
+                                    .vertexEntry = "prepassVertex",
+                                    .fragmentEntry = "prepassFragment",
+                                    .setLayouts = bothSets,
+                                    .pushConstantSize = sizeof(PrepassPushConstants),
+                                    .colorFormats = prepassFormats,
+                                    .depthFormat = depthFormat,
+                                    .cullMode = cull,
+                                });
+        }
+        if (shader.castsShadows)
+        {
+            GraphicsPipelineConfig shadow{
+                .code = shader.code,
+                .vertexEntry = "shadowVertex",
+                // Depth alone, unless fragment() may discard pixels.
+                .fragmentEntry = shader.discards ? "shadowFragment" : nullptr,
+                .setLayouts = bothSets,
+                .pushConstantSize = sizeof(PrepassPushConstants),
+                .depthFormat = depthFormat,
+                .cullMode = VK_CULL_MODE_NONE,
+                .depthCompare = VK_COMPARE_OP_LESS_OR_EQUAL,
+                .depthBias = true,
+                .depthClamp = m_device.supportsDepthClamp(),
+            };
+            make(built.shadow, shadow);
+            shadow.vertexEntry = "localShadowVertex";
+            make(built.localShadow, shadow);
+        }
+        make(built.pick, {
+                             .code = shader.code,
+                             .vertexEntry = "pickVertex",
+                             .fragmentEntry = "pickFragment",
+                             .setLayouts = bothSets,
+                             .pushConstantSize = sizeof(PrepassPushConstants),
+                             .colorFormat = pickFormat,
+                             .depthFormat = depthFormat,
+                             .cullMode = VK_CULL_MODE_NONE,
+                         });
+        make(built.mask, {
+                             .code = shader.code,
+                             .vertexEntry = "maskVertex",
+                             .fragmentEntry = "maskFragment",
+                             .setLayouts = bothSets,
+                             .pushConstantSize = sizeof(PrepassPushConstants),
+                             .colorFormat = selectionMaskFormat,
+                             .cullMode = VK_CULL_MODE_NONE,
+                             .depthTest = false,
+                             .depthWrite = false,
+                         });
+        break;
+    }
+    case asset::ShaderKind::CanvasItem:
+        make(built.scene, {
+                              .code = shader.code,
+                              .vertexEntry = "spriteVertex",
+                              .fragmentEntry = "spriteFragment",
+                              .setLayouts = bothSets,
+                              .pushConstantSize = sizeof(SpritePushConstants),
+                              .colorFormat = sceneFormat,
+                              .depthFormat = depthFormat,
+                              .premultipliedBlend = true,
+                              .cullMode = VK_CULL_MODE_NONE,
+                              .depthWrite = false,
+                          });
+        make(built.pick, {
+                             .code = shader.code,
+                             .vertexEntry = "spritePickVertex",
+                             .fragmentEntry = "spritePickFragment",
+                             .setLayouts = bothSets,
+                             .pushConstantSize = sizeof(SpritePushConstants),
+                             .colorFormat = pickFormat,
+                             .depthFormat = depthFormat,
+                             .cullMode = VK_CULL_MODE_NONE,
+                             .depthWrite = false,
+                         });
+        make(built.mask, {
+                             .code = shader.code,
+                             .vertexEntry = "spriteMaskVertex",
+                             .fragmentEntry = "spriteMaskFragment",
+                             .setLayouts = bothSets,
+                             .pushConstantSize = sizeof(SpritePushConstants),
+                             .colorFormat = selectionMaskFormat,
+                             .cullMode = VK_CULL_MODE_NONE,
+                             .depthTest = false,
+                             .depthWrite = false,
+                         });
+        break;
+    case asset::ShaderKind::Particles:
+        make(built.scene, {
+                              .code = shader.code,
+                              .vertexEntry = "particleVertex",
+                              .fragmentEntry = "particleFragment",
+                              .setLayouts = bothSets,
+                              .pushConstantSize = sizeof(ParticlePushConstants),
+                              .colorFormat = sceneFormat,
+                              .depthFormat = depthFormat,
+                              .premultipliedBlend = true,
+                              .cullMode = VK_CULL_MODE_NONE,
+                              .depthWrite = false,
+                          });
+        break;
+    case asset::ShaderKind::Sky:
+        make(built.scene, {
+                              .code = shader.code,
+                              .vertexEntry = "skyVertex",
+                              .fragmentEntry = "skyFragment",
+                              .setLayouts = bothSets,
+                              .pushConstantSize = sizeof(SkyPushConstants),
+                              .colorFormat = sceneFormat,
+                              .depthFormat = depthFormat,
+                              .cullMode = VK_CULL_MODE_NONE,
+                              .depthWrite = false,
+                          });
+        make(built.bake, {
+                             .code = shader.code,
+                             .vertexEntry = "skyVertex",
+                             .fragmentEntry = "bakeFragment",
+                             .setLayouts = bothSets,
+                             .pushConstantSize = sizeof(SkyPushConstants),
+                             .colorFormat = EnvironmentBaker::format,
+                             .cullMode = VK_CULL_MODE_NONE,
+                             .depthTest = false,
+                             .depthWrite = false,
+                         });
+        break;
+    }
+    if (failure)
+    {
+        return std::unexpected(*failure);
+    }
+    return built;
+}
+
+const VulkanRenderer::GpuShader* VulkanRenderer::shaderOf(const MaterialDesc* material,
+                                                          asset::ShaderKind kind) const noexcept
+{
+    if (material == nullptr || !material->shader.isValid())
+    {
+        return nullptr;
+    }
+    const GpuShader* const shader = m_shaders.find(material->shader);
+    return shader != nullptr && shader->kind == kind ? shader : nullptr;
+}
+
+const VulkanRenderer::GpuShader* VulkanRenderer::shaderOf(MaterialHandle material, asset::ShaderKind kind) const noexcept
+{
+    return shaderOf(m_materials.find(material), kind);
+}
+
+std::uint32_t VulkanRenderer::materialIndex(MaterialHandle material) const noexcept
+{
+    return m_materials.contains(material) ? material.index : m_defaultMaterial.index;
+}
+
 RenderWorld& VulkanRenderer::beginFrame() noexcept
 {
     m_world.reset();
@@ -489,6 +742,10 @@ core::Result<void> VulkanRenderer::endFrame()
     readCapture(frame);
     releaseRetiredResources();
     updateExposure(frame);
+    // The TIME of shaders, which starts over every hour so that it keeps its precision.
+    m_previousTime = m_time;
+    m_time = static_cast<float>(
+        std::fmod(std::chrono::duration<double>(std::chrono::steady_clock::now() - m_startTime).count(), 3600.0));
     {
         DEVEX_PROFILE_SCOPE("Environment");
         if (core::Result<void> environment = updateEnvironment(); !environment)
@@ -612,6 +869,13 @@ core::Result<void> VulkanRenderer::endFrame()
     {
         DEVEX_PROFILE_SCOPE("Scene data");
         writeSceneData(frame, m_cascades);
+    }
+    {
+        DEVEX_PROFILE_SCOPE("Sky shader");
+        if (core::Result<void> sky = updateSkyShaderEnvironment(frame); !sky)
+        {
+            return sky;
+        }
     }
     {
         DEVEX_PROFILE_SCOPE("Sprites");
@@ -836,6 +1100,14 @@ core::Result<void> VulkanRenderer::createDefaultResources()
         return std::unexpected(flatNormal.error());
     }
     m_flatNormalTexture = std::move(*flatNormal);
+
+    // What the textures of shaders sample when their hint asks for black.
+    core::Result<GpuTexture> blackTexture = uploadTexture(solidTexture({0, 0, 0, 255}), blackTextureSlot);
+    if (!blackTexture)
+    {
+        return std::unexpected(blackTexture.error());
+    }
+    m_blackTexture = std::move(*blackTexture);
 
     core::Result<Image> emptyMask = Image::create(m_device, m_allocator,
                                                   {
@@ -1615,8 +1887,33 @@ core::Result<void> VulkanRenderer::updateFrameMaterials(FrameContext& frame)
     {
         const GpuMaterial defaultMaterial = toGpuMaterial(*m_materials.find(m_defaultMaterial));
         m_gpuMaterials.assign(m_materials.slotCount(), defaultMaterial);
+        m_gpuMaterialParameters.clear();
         m_materials.forEach([this](MaterialHandle handle, const MaterialDesc& material) {
-            m_gpuMaterials[handle.index] = toGpuMaterial(material);
+            GpuMaterial gpu = toGpuMaterial(material);
+            // The uniforms of its shader: as many slots as the shader reads, those not given at zero.
+            if (const GpuShader* const shader = material.shader.isValid() ? m_shaders.find(material.shader) : nullptr)
+            {
+                gpu.parameterOffset = static_cast<std::uint32_t>(m_gpuMaterialParameters.size());
+                const std::size_t count = std::max<std::size_t>(shader->parameterCount, material.parameters.size());
+                m_gpuMaterialParameters.resize(m_gpuMaterialParameters.size() + count, math::Vec4{0.0f});
+                std::ranges::copy(material.parameters, m_gpuMaterialParameters.begin() + gpu.parameterOffset);
+                for (const MaterialTexture& texture : material.textures)
+                {
+                    if (texture.slot >= count)
+                    {
+                        continue;
+                    }
+                    // A texture still waiting for its copy samples as its fallback.
+                    const GpuTexture* const found = m_textures.find(texture.texture);
+                    const std::uint32_t fallback = texture.fallback == TextureFallback::Black    ? blackTextureSlot
+                                                   : texture.fallback == TextureFallback::Normal ? flatNormalTextureSlot
+                                                                                                 : whiteTextureSlot;
+                    const std::uint32_t slot = found != nullptr && found->ready ? found->slot : fallback;
+                    m_gpuMaterialParameters[gpu.parameterOffset + texture.slot] =
+                        math::Vec4{std::bit_cast<float>(slot), 0.0f, 0.0f, 0.0f};
+                }
+            }
+            m_gpuMaterials[handle.index] = gpu;
         });
         ++m_materialVersion;
         m_materialsChanged = false;
@@ -1632,12 +1929,161 @@ core::Result<void> VulkanRenderer::updateFrameMaterials(FrameContext& frame)
         return ensured;
     }
     std::memcpy(frame.materials->mappedBytes().data(), m_gpuMaterials.data(), requiredBytes);
+    const VkDeviceSize parameterBytes = std::max<std::size_t>(m_gpuMaterialParameters.size(), 1) * sizeof(math::Vec4);
+    if (core::Result<void> ensured = ensureHostBuffer(frame.materialParameters, parameterBytes); !ensured)
+    {
+        return ensured;
+    }
+    if (!m_gpuMaterialParameters.empty())
+    {
+        std::memcpy(frame.materialParameters->mappedBytes().data(), m_gpuMaterialParameters.data(),
+                    m_gpuMaterialParameters.size() * sizeof(math::Vec4));
+    }
     frame.materialVersion = m_materialVersion;
+    return {};
+}
+
+const VulkanRenderer::GpuShader* VulkanRenderer::skyShader() const noexcept
+{
+    const GpuShader* const shader = shaderOf(m_world.environment.skyMaterial, asset::ShaderKind::Sky);
+    return shader != nullptr && shader->bake ? shader : nullptr;
+}
+
+core::Result<void> VulkanRenderer::updateSkyShaderEnvironment(const FrameContext& frame)
+{
+    const GpuShader* const shader = skyShader();
+    if (shader == nullptr)
+    {
+        return {};
+    }
+    // What the sky is drawn from, and the light it shows, as numbers that change when they do.
+    const auto mix = [](std::uint64_t hash, const void* data, std::size_t size) {
+        const auto* const bytes = static_cast<const unsigned char*>(data);
+        for (std::size_t index = 0; index < size; ++index)
+        {
+            hash = (hash ^ bytes[index]) * 1099511628211ULL;
+        }
+        return hash;
+    };
+    const MaterialHandle material = m_world.environment.skyMaterial;
+    const MaterialDesc* const description = m_materials.find(material);
+    std::uint64_t key = 14695981039346656037ULL;
+    key = mix(key, &material, sizeof(material));
+    key = mix(key, &shader->revision, sizeof(shader->revision));
+    if (description != nullptr && !description->parameters.empty())
+    {
+        key = mix(key, description->parameters.data(), description->parameters.size() * sizeof(math::Vec4));
+    }
+    for (const MaterialTexture& texture : description != nullptr ? description->textures : std::vector<MaterialTexture>{})
+    {
+        key = mix(key, &texture.texture, sizeof(texture.texture));
+    }
+    std::uint64_t light = 14695981039346656037ULL;
+    light = mix(light, &m_world.sun.direction, sizeof(m_world.sun.direction));
+    light = mix(light, &m_world.sun.illuminance, sizeof(m_world.sun.illuminance));
+    light = mix(light, &m_world.environment.rotation, sizeof(m_world.environment.rotation));
+    const auto now = std::chrono::steady_clock::now();
+    if (m_shaderEnvironment && key == m_shaderSkyKey &&
+        (light == m_shaderSkyLight || now - m_shaderSkyBaked < std::chrono::milliseconds(500)))
+    {
+        return {};
+    }
+
+    // The whole sky laid out as an equirectangular image, as a sky texture is.
+    constexpr math::Extent2D skySize{512, 256};
+    core::Result<Image> sky = Image::create(m_device, m_allocator,
+                                            {
+                                                .format = EnvironmentBaker::format,
+                                                .extent = skySize,
+                                                .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+                                            });
+    if (!sky)
+    {
+        return std::unexpected(sky.error());
+    }
+    const Pipeline& pipeline = *shader->bake;
+    const VkDescriptorSet global = m_descriptors->global();
+    const SkyPushConstants constants{.scene = frame.sceneData->deviceAddress(), .material = materialIndex(material)};
+    const VkImage image = sky->handle();
+    const VkImageView view = sky->view();
+    if (core::Result<void> drawn = m_upload.submit([&](VkCommandBuffer commands) {
+            transitionImage(commands, image, ImageState::Undefined, ImageState::ColorAttachment);
+            const VkRenderingAttachmentInfo colorAttachment{
+                .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+                .imageView = view,
+                .imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                .loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+                .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+            };
+            const VkRenderingInfo renderingInfo{
+                .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
+                .renderArea = {.extent = {skySize.width, skySize.height}},
+                .layerCount = 1,
+                .colorAttachmentCount = 1,
+                .pColorAttachments = &colorAttachment,
+            };
+            vkCmdBeginRendering(commands, &renderingInfo);
+            const VkViewport viewport{
+                .width = static_cast<float>(skySize.width),
+                .height = static_cast<float>(skySize.height),
+                .maxDepth = 1.0f,
+            };
+            vkCmdSetViewport(commands, 0, 1, &viewport);
+            const VkRect2D scissor{.extent = {skySize.width, skySize.height}};
+            vkCmdSetScissor(commands, 0, 1, &scissor);
+            vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.handle());
+            vkCmdBindDescriptorSets(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.layout(), 0, 1, &global, 0, nullptr);
+            vkCmdPushConstants(commands, pipeline.layout(), VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+                               sizeof(constants), &constants);
+            vkCmdDraw(commands, 3, 1, 0, 0);
+            vkCmdEndRendering(commands);
+            transitionImage(commands, image, ImageState::ColorAttachment, ImageState::ComputeReadOnly);
+        });
+        !drawn)
+    {
+        return drawn;
+    }
+    core::Result<EnvironmentMaps> maps = m_baker->bake(view, skySize.width);
+    if (!maps)
+    {
+        DEVEX_LOG_ERROR("Cannot bake the light of the sky shader: {}", maps.error());
+        // Not tried again until the sky changes.
+        m_shaderSkyKey = key;
+        m_shaderSkyLight = light;
+        return {};
+    }
+    // Frames in flight may still read the previous ones.
+    if (m_shaderEnvironment)
+    {
+        m_retiredEnvironments.push_back(
+            {.maps = std::move(*m_shaderEnvironment), .retiredAtFrame = m_frameIndex, .sky = std::move(m_shaderSky)});
+    }
+    m_shaderEnvironment = std::move(*maps);
+    m_shaderSky = std::move(*sky);
+    m_descriptors->setEnvironment(m_shaderEnvironment->specular.view(), m_shaderEnvironment->irradiance.view(),
+                                  m_shaderSky->view());
+    m_shaderSkyKey = key;
+    m_shaderSkyLight = light;
+    m_shaderSkyBaked = now;
     return {};
 }
 
 core::Result<void> VulkanRenderer::updateEnvironment()
 {
+    // A sky shader lights the scene once the frame has its scene data; without one any more, the
+    // texture or the colour light it again.
+    if (skyShader() != nullptr)
+    {
+        return {};
+    }
+    if (m_shaderEnvironment)
+    {
+        m_retiredEnvironments.push_back(
+            {.maps = std::move(*m_shaderEnvironment), .retiredAtFrame = m_frameIndex, .sky = std::move(m_shaderSky)});
+        m_shaderEnvironment.reset();
+        m_shaderSky.reset();
+        m_environmentBound = false;
+    }
     const TextureHandle requested =
         m_textures.contains(m_world.environment.sky) ? m_world.environment.sky : TextureHandle{};
     if (m_environmentBound && requested == m_environmentSource)
@@ -2032,6 +2478,9 @@ void VulkanRenderer::writeSceneData(FrameContext& frame,
     scene.clusterSliceBias = m_clusters.sliceBias;
 
     scene.materials = frame.materials->deviceAddress();
+    scene.materialParameters = frame.materialParameters ? frame.materialParameters->deviceAddress() : 0;
+    scene.time = m_time;
+    scene.previousTime = m_previousTime;
     scene.shadowViews = frame.shadowViews ? frame.shadowViews->deviceAddress() : 0;
     scene.lights = frame.lights->deviceAddress();
     scene.clusters = frame.clusters->deviceAddress();
@@ -2048,6 +2497,10 @@ void VulkanRenderer::writeSceneData(FrameContext& frame,
 bool VulkanRenderer::isBlended(const MeshInstance& instance) const noexcept
 {
     const MaterialDesc* const material = m_materials.find(instance.material);
+    if (const GpuShader* const shader = shaderOf(material, asset::ShaderKind::Spatial))
+    {
+        return shader->transparent;
+    }
     return material != nullptr && material->alphaMode == asset::AlphaMode::Blend;
 }
 
@@ -2093,15 +2546,22 @@ std::span<const std::uint32_t> VulkanRenderer::instancesOf(MeshPass pass,
         return m_cameraFrustum.intersects(bounds);
     };
 
+    const auto castsNoShadow = [this](const MeshInstance& instance) {
+        const GpuShader* const shader = shaderOf(instance.material, asset::ShaderKind::Spatial);
+        return shader != nullptr && !shader->castsShadows;
+    };
     if (pass != MeshPass::Transparent)
     {
         for (std::uint32_t index = 0; index < m_world.meshes.size(); ++index)
         {
             // Blended surfaces have their own pass, and cast no shadow: a pane of glass that
             // darkened the ground under it would look like a wall.
-            const bool skipped = (pass == MeshPass::Scene || pass == MeshPass::Shadow ||
-                                  pass == MeshPass::LocalShadow || pass == MeshPass::Prepass) &&
-                                 isBlended(m_world.meshes[index]);
+            const bool skipped = ((pass == MeshPass::Scene || pass == MeshPass::Shadow ||
+                                   pass == MeshPass::LocalShadow || pass == MeshPass::Prepass) &&
+                                  isBlended(m_world.meshes[index])) ||
+                                 // Shaders with shadows_disabled cast none.
+                                 ((pass == MeshPass::Shadow || pass == MeshPass::LocalShadow) &&
+                                  castsNoShadow(m_world.meshes[index]));
             if (skipped)
             {
                 continue;
@@ -2166,31 +2626,66 @@ std::uint32_t VulkanRenderer::drawMeshes(VkCommandBuffer commandBuffer, VkDevice
         const MaterialDesc* const material = m_materials.find(instance.material);
         const MaterialHandle materialHandle = material != nullptr ? instance.material : m_defaultMaterial;
         const Pipeline* pipeline = nullptr;
-        switch (pass)
+        // A spatial shader of the project has its own pipelines; a pass it has none for draws nothing.
+        if (const GpuShader* const shader = shaderOf(material, asset::ShaderKind::Spatial))
         {
-        case MeshPass::Prepass:
-            pipeline = material != nullptr && material->doubleSided ? &*m_prepassDoubleSidedPipeline
-                                                                    : &*m_prepassPipeline;
-            break;
-        case MeshPass::Scene:
-            pipeline = material != nullptr && material->doubleSided ? &*m_doubleSidedPipeline : &*m_meshPipeline;
-            break;
-        case MeshPass::Transparent:
-            pipeline = material != nullptr && material->doubleSided ? &*m_transparentDoubleSidedPipeline
-                                                                    : &*m_transparentPipeline;
-            break;
-        case MeshPass::Shadow:
-            pipeline = &*m_shadowPipeline;
-            break;
-        case MeshPass::LocalShadow:
-            pipeline = &*m_localShadowPipeline;
-            break;
-        case MeshPass::Pick:
-            pipeline = &*m_pickPipeline;
-            break;
-        case MeshPass::SelectionMask:
-            pipeline = &*m_selectionMaskPipeline;
-            break;
+            const std::optional<Pipeline>* own = nullptr;
+            switch (pass)
+            {
+            case MeshPass::Prepass:
+                own = &shader->prepass;
+                break;
+            case MeshPass::Scene:
+            case MeshPass::Transparent:
+                own = &shader->scene;
+                break;
+            case MeshPass::Shadow:
+                own = &shader->shadow;
+                break;
+            case MeshPass::LocalShadow:
+                own = &shader->localShadow;
+                break;
+            case MeshPass::Pick:
+                own = &shader->pick;
+                break;
+            case MeshPass::SelectionMask:
+                own = &shader->mask;
+                break;
+            }
+            if (own == nullptr || !own->has_value())
+            {
+                continue;
+            }
+            pipeline = &**own;
+        }
+        else
+        {
+            switch (pass)
+            {
+            case MeshPass::Prepass:
+                pipeline = material != nullptr && material->doubleSided ? &*m_prepassDoubleSidedPipeline
+                                                                        : &*m_prepassPipeline;
+                break;
+            case MeshPass::Scene:
+                pipeline = material != nullptr && material->doubleSided ? &*m_doubleSidedPipeline : &*m_meshPipeline;
+                break;
+            case MeshPass::Transparent:
+                pipeline = material != nullptr && material->doubleSided ? &*m_transparentDoubleSidedPipeline
+                                                                        : &*m_transparentPipeline;
+                break;
+            case MeshPass::Shadow:
+                pipeline = &*m_shadowPipeline;
+                break;
+            case MeshPass::LocalShadow:
+                pipeline = &*m_localShadowPipeline;
+                break;
+            case MeshPass::Pick:
+                pipeline = &*m_pickPipeline;
+                break;
+            case MeshPass::SelectionMask:
+                pipeline = &*m_selectionMaskPipeline;
+                break;
+            }
         }
         if (pipeline != boundPipeline)
         {
@@ -2301,7 +2796,7 @@ std::uint32_t VulkanRenderer::drawTransparent(VkCommandBuffer commandBuffer, VkD
         }
         if (spriteCount > 0)
         {
-            drawCalls += drawSprites(commandBuffer, sceneData, frame, frameSlot, *m_spritePipeline, firstSprite, spriteCount);
+            drawCalls += drawSprites(commandBuffer, sceneData, frame, frameSlot, SpritePass::Scene, firstSprite, spriteCount);
             spriteCount = 0;
         }
     };
@@ -2345,7 +2840,11 @@ std::uint32_t VulkanRenderer::drawParticles(VkCommandBuffer commandBuffer, VkDev
     {
         return 0;
     }
-    const Pipeline& pipeline = draw.ribbons ? *m_ribbonPipeline : *m_particlePipeline;
+    // A particles shader of the project draws the particles; ribbons keep the standard pipeline.
+    const GpuShader* const shader = draw.ribbons ? nullptr : shaderOf(draw.material, asset::ShaderKind::Particles);
+    const Pipeline& pipeline = shader != nullptr && shader->scene ? *shader->scene
+                               : draw.ribbons                     ? *m_ribbonPipeline
+                                                                  : *m_particlePipeline;
     const std::array sets{m_descriptors->global(), m_descriptors->frame(frameSlot)};
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.handle());
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.layout(), 0,
@@ -2363,6 +2862,7 @@ std::uint32_t VulkanRenderer::drawParticles(VkCommandBuffer commandBuffer, VkDev
         .sheet = math::Vec2{static_cast<float>(std::max(draw.sheetColumns, 1U)),
                             static_cast<float>(std::max(draw.sheetRows, 1U))},
         .softness = std::max(draw.softness, 0.0f),
+        .material = materialIndex(draw.material),
     };
     vkCmdPushConstants(commandBuffer, pipeline.layout(), VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                        0, sizeof(constants), &constants);
@@ -2386,6 +2886,12 @@ core::Result<void> VulkanRenderer::uploadSprites(FrameContext& frame) const
     m_spriteBatches.clear();
     m_gpuSprites.clear();
     m_spriteOutlined.clear();
+    m_spriteShaders.clear();
+    // The canvas_item shader of a material, which draws its sprites.
+    const auto shaderHandleOf = [this](MaterialHandle material) {
+        const MaterialDesc* const description = m_materials.find(material);
+        return shaderOf(description, asset::ShaderKind::CanvasItem) != nullptr ? description->shader : ShaderHandle{};
+    };
     const auto boxOf = [](const math::Mat4& transform, math::Vec2 low, math::Vec2 high) {
         math::Aabb bounds;
         for (const float x : {low.x, high.x})
@@ -2485,6 +2991,7 @@ core::Result<void> VulkanRenderer::uploadSprites(FrameContext& frame) const
                 .objectId = sprite.objectId,
                 .lightMask = sprite.lightMask,
                 .normalTexture = slotOf(sprite.normalTexture),
+                .material = materialIndex(sprite.material),
             });
             // A sprite whose texture is still loading waits for it rather than showing a plain rectangle.
             if (sprite.texture.isValid() && gpu.texture == noParticleTexture)
@@ -2492,6 +2999,7 @@ core::Result<void> VulkanRenderer::uploadSprites(FrameContext& frame) const
                 gpu.color.a = 0.0f;
             }
             m_spriteOutlined.push_back(sprite.outlined ? 1 : 0);
+            m_spriteShaders.push_back(shaderHandleOf(sprite.material));
             continue;
         }
         // The tiles the camera sees, each filling its cell.
@@ -2518,12 +3026,14 @@ core::Result<void> VulkanRenderer::uploadSprites(FrameContext& frame) const
                 .objectId = tilemap.objectId,
                 .lightMask = tilemap.lightMask,
                 .normalTexture = slotOf(tile.normalTexture),
+                .material = materialIndex(tilemap.material),
             });
             if (tile.texture.isValid() && gpu.texture == noParticleTexture)
             {
                 gpu.color.a = 0.0f;
             }
             m_spriteOutlined.push_back(tilemap.outlined ? 1 : 0);
+            m_spriteShaders.push_back(shaderHandleOf(tilemap.material));
         }
         batch.count = static_cast<std::uint32_t>(m_gpuSprites.size()) - batch.first;
     }
@@ -2625,19 +3135,48 @@ void VulkanRenderer::gatherLights2D() const
 }
 
 std::uint32_t VulkanRenderer::drawSprites(VkCommandBuffer commandBuffer, VkDeviceAddress sceneData,
-                                          const FrameContext& frame, std::uint32_t frameSlot, const Pipeline& pipeline,
+                                          const FrameContext& frame, std::uint32_t frameSlot, SpritePass pass,
                                           std::uint32_t first, std::uint32_t count) const
+{
+    std::uint32_t drawCalls = 0;
+    const std::uint32_t end = std::min(first + count, static_cast<std::uint32_t>(m_spriteShaders.size()));
+    for (std::uint32_t position = first; position < end;)
+    {
+        std::uint32_t next = position + 1;
+        while (next < end && m_spriteShaders[next] == m_spriteShaders[position])
+        {
+            ++next;
+        }
+        const Pipeline* pipeline = pass == SpritePass::Scene  ? &*m_spritePipeline
+                                   : pass == SpritePass::Pick ? &*m_spritePickPipeline
+                                                              : &*m_spriteMaskPipeline;
+        if (const GpuShader* const shader = m_spriteShaders[position].isValid() ? m_shaders.find(m_spriteShaders[position]) : nullptr)
+        {
+            const std::optional<Pipeline>& own = pass == SpritePass::Scene  ? shader->scene
+                                                 : pass == SpritePass::Pick ? shader->pick
+                                                                            : shader->mask;
+            pipeline = own ? &*own : pipeline;
+        }
+        // The picking and the mask read the global set alone.
+        drawCalls += drawSpriteRun(commandBuffer, sceneData, frame, frameSlot, *pipeline, pass == SpritePass::Scene, position,
+                                   next - position);
+        position = next;
+    }
+    return drawCalls;
+}
+
+std::uint32_t VulkanRenderer::drawSpriteRun(VkCommandBuffer commandBuffer, VkDeviceAddress sceneData,
+                                            const FrameContext& frame, std::uint32_t frameSlot, const Pipeline& pipeline,
+                                            bool frameSet, std::uint32_t first, std::uint32_t count) const
 {
     if (count == 0 || !frame.sprites)
     {
         return 0;
     }
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.handle());
-    // The picking and the mask read the global set alone.
-    const bool blended = &pipeline == &*m_spritePipeline;
     const std::array sets{m_descriptors->global(), m_descriptors->frame(frameSlot)};
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.layout(), 0,
-                            blended ? 2U : 1U, sets.data(), 0, nullptr);
+                            frameSet ? 2U : 1U, sets.data(), 0, nullptr);
     const SpritePushConstants constants{
         .scene = sceneData,
         .sprites = frame.sprites->deviceAddress(),
@@ -3213,11 +3752,14 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
         setViewport(commands, extent);
         drawCalls += drawMeshes(commands, sceneData, boneMatrices, MeshPass::Scene, 0, frameSlot);
 
-        vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, m_skyPipeline->handle());
-        vkCmdBindDescriptorSets(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, m_skyPipeline->layout(), 0, 1,
+        // A sky shader of the project draws the sky in place of the texture.
+        const GpuShader* const skyShader = shaderOf(m_world.environment.skyMaterial, asset::ShaderKind::Sky);
+        const Pipeline& skyPipeline = skyShader != nullptr && skyShader->scene ? *skyShader->scene : *m_skyPipeline;
+        vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, skyPipeline.handle());
+        vkCmdBindDescriptorSets(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, skyPipeline.layout(), 0, 1,
                                 sets.data(), 0, nullptr);
-        const SkyPushConstants sky{.scene = sceneData};
-        vkCmdPushConstants(commands, m_skyPipeline->layout(),
+        const SkyPushConstants sky{.scene = sceneData, .material = materialIndex(m_world.environment.skyMaterial)};
+        vkCmdPushConstants(commands, skyPipeline.layout(),
                            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(sky), &sky);
         vkCmdDraw(commands, 3, 1, 0, 0);
 
@@ -3319,7 +3861,7 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
                           vkCmdBeginRendering(commands, &renderingInfo);
                           setViewport(commands, frame.pickExtent);
                           drawMeshes(commands, sceneData, boneMatrices, MeshPass::Pick, 0, frameSlot);
-                          static_cast<void>(drawSprites(commands, sceneData, frame, frameSlot, *m_spritePickPipeline, 0,
+                          static_cast<void>(drawSprites(commands, sceneData, frame, frameSlot, SpritePass::Pick, 0,
                                                         static_cast<std::uint32_t>(m_gpuSprites.size())));
                           vkCmdEndRendering(commands);
                       });
@@ -3371,7 +3913,7 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
                               {
                                   ++end;
                               }
-                              static_cast<void>(drawSprites(commands, sceneData, frame, frameSlot, *m_spriteMaskPipeline,
+                              static_cast<void>(drawSprites(commands, sceneData, frame, frameSlot, SpritePass::Mask,
                                                             position, end - position));
                               position = end;
                           }
@@ -4088,6 +4630,7 @@ RendererStats VulkanRenderer::stats() const noexcept
         .textureCount = m_textures.size(),
         // The default material is not counted.
         .materialCount = m_materials.size() - 1,
+        .shaderCount = m_shaders.size(),
         .lightCount = m_lastLightCount,
         .ev100 = m_ev100,
         .swapchainExtent = m_swapchain ? m_swapchain->extent() : math::Extent2D{},
@@ -4120,6 +4663,7 @@ void VulkanRenderer::releaseRetiredResources() noexcept
         return m_frameIndex >= retiredAtFrame + framesInFlight;
     };
     std::erase_if(m_retiredMeshes, [&](const RetiredMesh& retired) { return expired(retired.retiredAtFrame); });
+    std::erase_if(m_retiredShaders, [&](const RetiredShader& retired) { return expired(retired.retiredAtFrame); });
     std::erase_if(m_retiredEnvironments,
                   [&](const RetiredEnvironment& retired) { return expired(retired.retiredAtFrame); });
     std::erase_if(m_retiredTextures, [&](const RetiredTexture& retired) {

@@ -132,6 +132,7 @@ devex_add_tests(asset
         asset/MeshDataTests.cpp
         asset/MetaFileTests.cpp
         asset/PackageTests.cpp
+        asset/ShaderTests.cpp
         asset/SpriteTests.cpp
         asset/TilesetTests.cpp
         asset/TextureProcessingTests.cpp
@@ -141,6 +142,7 @@ devex_add_tests(asset
 )
 target_compile_definitions(devex_asset_tests
     PRIVATE DEVEX_TEST_DATA_DIRECTORY="${CMAKE_CURRENT_SOURCE_DIR}/data"
+            DEVEX_SANDBOX_DIRECTORY="${PROJECT_SOURCE_DIR}/samples/sandbox"
 )
 
 devex_add_tests(audio
@@ -199,6 +201,7 @@ devex_add_tests(render
         render/PhotometryTests.cpp
         render/RendererTests.cpp
         render/SelectionTests.cpp
+        render/ShaderRenderTests.cpp
     LIBRARIES
         Devex::Engine
 )

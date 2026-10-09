@@ -41,7 +41,9 @@ public struct Material
     public float occlusionStrength;
     public uint alphaMode;
     public uint doubleSided;
-    public float padding;
+    // Where the uniforms of its shader start in SceneData::materialParameters, one slot of four
+    // numbers each.
+    public uint parameterOffset;
 };
 
 public struct Light
@@ -108,8 +110,9 @@ public struct SceneData
     public uint lightCount;
     public float clusterSliceScale;
     public float clusterSliceBias;
-    public float padding0;
-    public float padding1;
+    // Seconds since the renderer started, as the TIME of shaders, and on the previous frame.
+    public float time;
+    public float previousTime;
     public Material* materials;
     public Light* lights;
     public Cluster* clusters;
@@ -124,6 +127,8 @@ public struct SceneData
     public float4x4 inverseViewProjection;
     // The views the local lights were given in the shadow atlas.
     public ShadowView* shadowViews;
+    // The uniforms of the materials drawn with shaders of the project.
+    public float4* materialParameters;
 };
 
 // A normal folded into two numbers on an octahedron, which keeps its precision where it matters.
@@ -163,6 +168,23 @@ public struct DrawData
     public VertexSkin* skin;
     public float4x4* bones;
 };
+
+// Normals transform with the cofactor matrix, which stays correct under non-uniform scales. Its
+// sign follows the determinant so that mirrored transforms keep outward normals.
+public float3 transformNormal(float4x4 world, float3 normal)
+{
+    const float3x3 columns = transpose(float3x3(world));
+    const float3 transformed = cross(columns[1], columns[2]) * normal.x + cross(columns[2], columns[0]) * normal.y +
+                               cross(columns[0], columns[1]) * normal.z;
+    return dot(columns[0], cross(columns[1], columns[2])) < 0.0 ? -transformed : transformed;
+}
+
+// -1 for a transform that mirrors, which turns the bitangents of tangents around.
+public float handedness(float4x4 world)
+{
+    const float3x3 columns = transpose(float3x3(world));
+    return sign(dot(columns[0], cross(columns[1], columns[2])) + 1e-12);
+}
 
 // The transform a vertex follows: the world matrix of the instance, or the blend of the bones of a
 // skinned mesh, which already reach the world.
@@ -245,6 +267,13 @@ public Texture2D bloomChain[5];
 public float4 sampleTexture(uint index, float2 uv)
 {
     return textures[NonUniformResourceIndex(index)].Sample(textureSamplers[NonUniformResourceIndex(index)], uv);
+}
+
+// The same at a mip level, where the slopes of the coordinates are unknown, as in vertex shaders.
+public float4 sampleTextureLevel(uint index, float2 uv, float level)
+{
+    return textures[NonUniformResourceIndex(index)].SampleLevel(textureSamplers[NonUniformResourceIndex(index)], uv,
+                                                                level);
 }
 
 // The same with the slopes of the coordinates given, for mappings that jump.

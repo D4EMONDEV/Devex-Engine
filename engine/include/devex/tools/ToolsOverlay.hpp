@@ -371,6 +371,9 @@ public:
     // Editor only: what the last build of the game code reported, shown in the margin of the text
     // editor on the lines the compiler named.
     void setCodeDiagnostics(std::vector<CodeDiagnostic> diagnostics);
+    // Editor only: what the last update of the asset database imported. The errors of shaders go to
+    // the console and to the margin of the text editor.
+    void assetsChanged(std::span<const asset::AssetEvent> events);
 
     [[nodiscard]] CommandHistory& history() noexcept;
 

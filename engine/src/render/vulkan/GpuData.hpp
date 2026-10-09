@@ -39,7 +39,8 @@ struct GpuMaterial
     // 0 opaque, 1 mask, 2 blend.
     std::uint32_t alphaMode = 0;
     std::uint32_t doubleSided = 0;
-    float padding = 0.0f;
+    // Where the uniforms of its shader start in GpuSceneData::materialParameters.
+    std::uint32_t parameterOffset = 0;
 };
 
 struct GpuLight
@@ -102,8 +103,9 @@ struct GpuSceneData
     std::uint32_t lightCount = 0;
     float clusterSliceScale = 0.0f;
     float clusterSliceBias = 0.0f;
-    float padding0 = 0.0f;
-    float padding1 = 0.0f;
+    // Seconds since the renderer started, the TIME of shaders, and on the previous frame.
+    float time = 0.0f;
+    float previousTime = 0.0f;
     VkDeviceAddress materials = 0;
     VkDeviceAddress lights = 0;
     VkDeviceAddress clusters = 0;
@@ -118,6 +120,8 @@ struct GpuSceneData
     math::Mat4 inverseViewProjection{1.0f};
     // The views the local lights were given in the shadow atlas.
     VkDeviceAddress shadowViews = 0;
+    // The uniforms of the materials drawn by shaders of projects, four numbers a slot.
+    VkDeviceAddress materialParameters = 0;
 };
 
 // How a vertex of a skinned mesh follows its bones, beside the vertex itself.
@@ -235,7 +239,8 @@ struct ParticlePushConstants
     std::uint32_t texture = 0;
     math::Vec2 sheet{1.0f};
     float softness = 0.0f;
-    float padding = 0.0f;
+    // The material whose shader draws them, for the uniforms of a shader of a project.
+    std::uint32_t material = 0;
 };
 
 inline constexpr std::uint32_t noParticleTexture = 0xFFFFFFFFU;
@@ -259,7 +264,8 @@ struct GpuSprite
     // index of the texture array, or noParticleTexture for none.
     std::uint32_t lightMask = 1;
     std::uint32_t normalTexture = 0xFFFFFFFFU;
-    std::uint32_t padding = 0;
+    // The material whose shader draws it, for the uniforms of a shader of a project.
+    std::uint32_t material = 0;
 };
 
 // The flags of GpuSprite, above its mode.
@@ -314,6 +320,9 @@ struct SpritePushConstants
 struct SkyPushConstants
 {
     VkDeviceAddress scene = 0;
+    // The material of a sky shader of a project.
+    std::uint32_t material = 0;
+    std::uint32_t padding = 0;
 };
 
 struct AoPushConstants
@@ -401,7 +410,8 @@ static_assert(offsetof(GpuSceneData, clusterSliceScale) == 576);
 static_assert(offsetof(GpuSceneData, materials) == 592);
 static_assert(offsetof(GpuSceneData, pickViewProjection) == 624);
 static_assert(offsetof(GpuSceneData, unjitteredViewProjection) == 688);
-static_assert(sizeof(GpuSceneData) == 888);
+static_assert(offsetof(GpuSceneData, materialParameters) == 888);
+static_assert(sizeof(GpuSceneData) == 896);
 
 // Vulkan guarantees 128 bytes of push constants on every device.
 static_assert(sizeof(DrawPushConstants) == 112);

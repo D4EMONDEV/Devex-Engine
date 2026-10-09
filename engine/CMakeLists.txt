@@ -206,6 +206,7 @@ target_sources(devex_asset
         src/asset/Package.cpp
         src/asset/Primitives.cpp
         src/asset/Project.cpp
+        src/asset/ShaderData.cpp
         src/asset/SpriteData.cpp
         src/asset/TextureData.cpp
         src/asset/TilesetData.cpp
@@ -234,6 +235,7 @@ target_sources(devex_asset
             include/devex/asset/Package.hpp
             include/devex/asset/Primitives.hpp
             include/devex/asset/Project.hpp
+            include/devex/asset/ShaderData.hpp
             include/devex/asset/SpriteData.hpp
             include/devex/asset/TextureData.hpp
             include/devex/asset/TilesetData.hpp
@@ -286,6 +288,7 @@ target_sources(devex_asset_import
         src/asset/import/MetaFile.cpp
         src/asset/import/ModelImport.cpp
         src/asset/import/ModelImport.hpp
+        src/asset/import/ShaderFile.cpp
         src/asset/import/SpriteFramesFile.cpp
         src/asset/import/StbImage.cpp
         src/asset/import/TextureProcessing.cpp
@@ -302,6 +305,7 @@ target_sources(devex_asset_import
             include/devex/asset/import/MaterialFile.hpp
             include/devex/asset/import/ThemeFile.hpp
             include/devex/asset/import/MetaFile.hpp
+            include/devex/asset/import/ShaderFile.hpp
             include/devex/asset/import/SpriteFramesFile.hpp
             include/devex/asset/import/TextureProcessing.hpp
             include/devex/asset/import/TilesetFile.hpp
@@ -316,6 +320,7 @@ target_link_libraries(devex_asset_import
         Devex::Serialization
     PRIVATE
         Devex::Audio
+        Devex::Platform
         Devex::Scene
         basisu::basisu_encoder
         devex_ufbx
@@ -403,6 +408,8 @@ set_target_properties(devex_render PROPERTIES
 devex_set_warnings(devex_render)
 # The renderer loads the compiled shaders at runtime.
 add_dependencies(devex_render devex_shaders)
+# Imports compile the shaders of projects with the slangc and the modules shipped beside the editor.
+add_dependencies(devex_asset_import devex_shader_modules devex_slangc)
 
 # Scene: entities, components in sparse sets, hierarchy, .dvxscene files and prefabs.
 add_library(devex_scene OBJECT)
@@ -830,6 +837,7 @@ target_sources(devex_tools
         src/tools/InspectorPanel.cpp
         src/tools/InspectorUi.cpp
         src/tools/LogBuffer.cpp
+        src/tools/MaterialInspector.cpp
         src/tools/ModelInspector.cpp
         src/tools/NavigationTools.cpp
         src/tools/ProjectList.cpp

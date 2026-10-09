@@ -66,6 +66,7 @@ mais seulement explicitement ici : le code suit ce document, pas l'inverse.
 | Redimensionnement        | Rendu continu pendant le redimensionnement modal de Windows        |
 | Passes de rendu          | Render graph léger : barrières calculées, images transitoires      |
 | Compilation des shaders  | Au build par `slangc`, fichiers `.spv` à côté de l'exécutable      |
+| Shaders des projets      | `.dvxshader` : structure de Godot, syntaxe Slang, compilés à l'import |
 | Accès aux données GPU    | Bindless + vertex pulling par buffer device address                |
 | Projection               | Reverse-Z, far plane infini                                        |
 | glTF                     | Modèle (hiérarchie de nœuds) et sous-assets importés par la base   |
@@ -107,7 +108,7 @@ mais seulement explicitement ici : le code suit ce document, pas l'inverse.
 | Scènes des jeux          | Chargement en arrière-plan avec progression, ou immédiat           |
 | Textures                 | BC7 (couleurs, données) et BC5 (normales) à l'import, via basisu   |
 | Modèles dans une scène   | Copie d'entités ; préfabs liés dans un jalon dédié                 |
-| Matériaux                | Paramètres PBR glTF ; sous-assets en lecture seule + `.dvxmat`     |
+| Matériaux                | Paramètres PBR glTF ou shader du projet ; sous-assets + `.dvxmat`  |
 | Textures côté GPU        | Bindless : un descriptor set global, une table de matériaux        |
 | Unités de lumière        | Physiques : lux, lumens, nits, exposition EV100, kelvins           |
 | Lumières                 | Directionnelle, ponctuelles et spots en clusters calculés sur CPU  |
@@ -208,7 +209,7 @@ situé au-dessus de lui, et le graphe reste sans cycle.
 | `Reflection`    | description des champs (`TypeInfo`, `DEVEX_REFLECT`, `ValueKind`)         | Core, Math                    |
 | `Serialization` | format texte `.dvx*` (sections, valeurs) ; plus tard archives cookées     | Core                          |
 | `Asset`         | `AssetId`, données CPU (maillages, textures, matériaux, modèles, clips audio et d'animation, polices), `.dvxasset`, projet, paquet `.dvxpak` | Core, Math, Reflection, Serialization, zstd |
-| `AssetImport`   | base d'assets, `.dvxmeta`, importeurs (textures, `.dvxmat`, glTF, FBX, OBJ, sons, polices, courbes) | Asset, Scene, Audio, fastgltf, ufbx, basisu, stb, efsw |
+| `AssetImport`   | base d'assets, `.dvxmeta`, importeurs (textures, `.dvxmat`, `.dvxshader` par `slangc`, glTF, FBX, OBJ, sons, polices, courbes) | Asset, Scene, Audio, Platform, fastgltf, ufbx, basisu, stb, efsw |
 | `Render`        | façade `Renderer` / `RenderWorld` ; tout `Vk*` reste dans `src/render/vulkan` | Core, Math, Platform, Asset, Vulkan |
 | `Scene`         | entités, sparse sets, hiérarchie, composants intégrés, `.dvxscene`, sous-arbres, préfabs | Core, Math, Reflection, Serialization, Asset |
 | `Audio`         | clips, mixage et groupes, sources et écouteur de la scène                | Core, Math, Asset, Scene, miniaudio, stb |
@@ -599,10 +600,11 @@ texture_quality = "normal"
 [subasset type="mesh" key="Crate" uuid="0a4571b3-aa2e-4421-a385-09466c6dee9c"]
 ```
 
-Matériau (`.dvxmat`, format 1), toutes les propriétés sont facultatives :
+Matériau (`.dvxmat`, format 2 ; le format 1 se lit toujours), toutes les propriétés sont
+facultatives :
 
 ```text
-[material format=1]
+[material format=2]
 base_color = vec4(1, 1, 1, 1)
 base_color_texture = asset("0d958a7c-6376-440a-bd9b-4276675c6896")
 metallic = 0
@@ -615,6 +617,32 @@ double_sided = false
 Les autres propriétés sont `metallic_roughness_texture`, `normal_texture`, `normal_scale`,
 `occlusion_texture`, `occlusion_strength`, `emissive_texture` et `alpha_cutoff`. Sans texture,
 métal 0 et rugosité 1 par défaut (un import glTF écrit ses propres valeurs).
+
+Un matériau dessiné par un shader du projet le nomme, et donne ses uniforms dans une section à
+part : nombres, `vec2(...)` à `vec4(...)`, `true` ou `false`, `asset("...")` pour les textures.
+
+```text
+[material format=2]
+shader = asset("a7a3a41f-7f3c-53b2-a3f9-05d8f9fcaac7")
+
+[parameters]
+wave_height = 0.08
+shallow_color = vec3(0.03, 0.3, 0.38)
+```
+
+Shader (`.dvxshader`), en Slang, son type d'abord :
+
+```text
+shader_type spatial;
+render_mode cull_disabled;
+
+uniform float3 tint : source_color = float3(0.2, 0.5, 0.9);
+uniform float speed : hint_range(0.0, 4.0) = 1.0;
+uniform sampler2D noise : hint_default_white;
+
+void vertex() { VERTEX.y += sin(TIME * speed + VERTEX.x) * 0.1; }
+void fragment() { ALBEDO = tint * texture(noise, UV).rgb; }
+```
 
 Courbe (`.dvxcurve`, format 1), deux clés au moins, dans l'ordre du temps ; le temps va de 0 au
 début du tween à 1 à sa fin, la valeur de 0 à la valeur de départ à 1 à la valeur d'arrivée, et
@@ -1218,7 +1246,7 @@ les assets s'écrivent au fil de leur lecture.
   `texture` (`.png`, `.jpg`, `.tga`, `.bmp`, `.hdr`, décodés par stb_image), `material`
   (`.dvxmat`), `gltf` (`.gltf`, `.glb`), `fbx` (`.fbx`), `obj` (`.obj`), `scene` (`.dvxscene`),
   `curve` (`.dvxcurve`), `frames` (`.dvxframes`), `tileset` (`.dvxtileset`), `animator`
-  (`.dvxanimator`) et `navmesh` (`.dvxnavmesh`), entre autres. Les fichiers et dossiers cachés (`.`) sont ignorés.
+  (`.dvxanimator`), `navmesh` (`.dvxnavmesh`) et `shader` (`.dvxshader`), entre autres. Les fichiers et dossiers cachés (`.`) sont ignorés.
 - **`.dvxmeta`** : créé au premier scan avec un UUID aléatoire et les options par défaut de
   l'importeur. Il porte l'identité de l'asset : il se versionne avec la source. Un `.dvxmeta`
   illisible est signalé et laissé tel quel, jamais remplacé. Une source copiée avec son
@@ -2345,6 +2373,76 @@ Jalon 65, comme les `Joint3D` et `Joint2D` de Godot :
 - **Bac à sable** : trois panneaux de verre teinté (`assets/materials/glass.dvxmat`) se croisent
   devant les sphères, et les satellites du plateau tournant brillent assez pour laisser un halo.
 
+### Shaders des projets
+
+Jalon 66, comme le langage de shaders de Godot, mais écrit en Slang :
+
+- **Un fichier `.dvxshader`** commence par son type : `shader_type spatial;` (les surfaces des
+  maillages), `canvas_item` (sprites et tilemaps), `particles` (les particules d'un émetteur) ou
+  `sky` (le ciel). Viennent ensuite les `render_mode`, les `uniform` que les matériaux renseignent,
+  les `varying` que `vertex()` passe à `fragment()`, puis les fonctions de Godot : `vertex()`,
+  `fragment()`, `light()` pour `spatial`, `sky()` pour le ciel. Le corps est du Slang (`float3`,
+  `lerp`, `saturate`), pas du GLSL : une idée de Godot se recopie, la syntaxe se traduit.
+- **Les built-ins de Godot**, sous leurs noms : `TIME`, `VERTEX`, `NORMAL`, `UV`, `COLOR`,
+  `ALBEDO`, `ALPHA`, `METALLIC`, `ROUGHNESS`, `SPECULAR`, `EMISSION`, `AO`, `NORMAL_MAP`,
+  `ALPHA_SCISSOR_THRESHOLD`, `LIGHT`, `LIGHT_COLOR`, `ATTENUATION`, `DIFFUSE_LIGHT`,
+  `SPECULAR_LIGHT`, `TEXTURE`, `SCREEN_UV`, `EYEDIR`, `LIGHT0_DIRECTION`, `AT_CUBEMAP_PASS`...
+  Une différence assumée : dans `fragment()`, `VERTEX`, `NORMAL` et `VIEW` sont dans le **monde**,
+  là où Godot les donne dans la vue ; le moteur entier éclaire dans le monde. `texture(t, uv)`
+  marche aussi dans `vertex()`, au plus grand niveau de mip.
+- **Uniforms** : `float`, `float2` à `float4`, `int`, `bool` et `sampler2D`, avec les indications
+  de Godot : `hint_range(min, max, pas)`, `source_color` (sélecteur de couleur, linéaire comme
+  toutes les couleurs du moteur), `hint_default_white`, `hint_default_black`, `hint_normal`. Les
+  indications d'échantillonnage (`filter_nearest`...) sont ignorées avec un avertissement : une
+  texture garde le filtre choisi à son import. Chaque uniform prend quatre nombres dans un tampon
+  de paramètres que le matériau désigne.
+- **Compilation à l'import** : Devex déclare les built-ins, lit les uniforms, enveloppe les
+  fonctions dans les points d'entrée de chaque passe du type (scène, prépasse avec le mouvement des
+  sommets animés, ombres, sélection, contour ; sprites ; particules ; ciel et sa cuisson) et passe
+  le tout à `slangc`, livré avec l'éditeur dans `slang/` avec les modules `common`, `pbr`,
+  `custom`, `canvas` et `particles` dans `shaders/modules/`. L'artefact garde le SPIR-V : un jeu
+  exporté n'a pas besoin du compilateur. Les erreurs arrivent sur les lignes du fichier (directives
+  `#line`), dans la console et dans la marge de l'éditeur de texte ; un shader qui ne compile pas
+  s'importe quand même, sans code, et ses matériaux se dessinent comme le matériau par défaut.
+  Une sauvegarde recompile en moins d'une seconde et la scène suit (rechargement à chaud).
+- **Ce que le code décide** : un shader `spatial` qui écrit `ALPHA` (sans seuil) ou ajoute sa
+  lumière rejoint les surfaces transparentes ; `discard` ou `ALPHA_SCISSOR_THRESHOLD` font tourner
+  `fragment()` aussi dans la prépasse, les ombres et la sélection, pour que les trous se voient
+  partout. `light()` remplace le modèle physique pour chaque lumière (soleil et lumières locales),
+  par une interface Slang que `pbr` spécialise à la compilation.
+- **Modes de rendu** : `unshaded`, `cull_back`, `cull_front`, `cull_disabled`, `blend_mix`,
+  `blend_add`, `shadows_disabled`, `ambient_light_disabled`, `world_vertex_coords`,
+  `depth_draw_opaque` pour `spatial` ; `unshaded`, `blend_mix`, `blend_add` pour `canvas_item` et
+  `particles`. Un mode inconnu est une erreur à sa ligne.
+- **Particules** : la simulation reste celle de l'émetteur, sur le CPU ; un shader `particles`
+  dessine ses particules (`VERTEX` dans le monde, `COLOR`, `UV`, `INSTANCE_ID`). C'est l'écart
+  principal avec Godot, dont les shaders de particules simulent sur le GPU (`start()` et
+  `process()`, signalés par un avertissement). Les traînées gardent le dessin standard.
+- **Ciel** : un shader `sky` dessine le fond et **éclaire la scène** : le renderer le dessine sur
+  une image équirectangulaire, cuite ensuite comme une texture de ciel, quand le shader, ses valeurs
+  ou le soleil changent (le soleil au plus deux fois par seconde). `AT_CUBEMAP_PASS` permet de
+  laisser le disque du soleil hors de cette cuisson, puisque le soleil éclaire déjà.
+- **Matériaux** : `.dvxmat` au format 2 nomme un `shader` et donne ses valeurs dans une section
+  `[parameters]` ; celles qu'il omet gardent les défauts du shader, celles que le shader n'a plus
+  sont gardées sans servir. `SpriteRenderer`, `Tilemap`, `ParticleEmitter` (champ `material`) et
+  `Environment` (`sky_material`) prennent un matériau, dont le shader doit être du bon type ; un
+  matériau d'un autre type laisse le dessin standard.
+- **Éditeur** :
+  - *Create New* propose **Material** et **Shader** (avec son type) ;
+  - l'inspecteur d'un shader montre ce qu'il dessine, ses uniforms et ses erreurs, avec *Edit* et
+    *New Material* ;
+  - l'inspecteur d'un matériau `.dvxmat` choisit son shader (standard ou du projet) et règle ses
+    valeurs, selon leurs indications : curseurs bornés, couleurs, cases, textures. Chaque
+    changement est écrit et réimporté, et la scène suit ;
+  - l'éditeur de texte colore les `.dvxshader` (mots-clés, types et built-ins), liste leurs
+    fonctions et propose les built-ins en complétion.
+- **Plan subdivisé** : le plan intégré est maintenant une grille de 32×32 cellules, pour que les
+  shaders puissent en déformer les sommets (eau, drapeaux).
+- **Bac à sable** : la scène `shaders.dvxscene` réunit un ciel procédural, un bassin d'eau qui
+  ondule, une statue qui brûle et revient (avec son ombre trouée), une sphère toon à côté d'une
+  sphère standard et un brasero aux braises qui scintillent ; dans le jeu de plateformes, l'herbe
+  ondule au vent et une lueur passe sur les pièces.
+
 ### Une seule interface, deux usages
 
 - **La question** : l'éditeur est en Dear ImGui, les jeux ont `Devex::Ui`. Écrire deux systèmes
@@ -3360,7 +3458,7 @@ Jalon 62, comme la localisation de Godot.
 - **Édition des fichiers Devex** : le menu contextuel des assets propose **Edit as Text** et
   **Edit Import Metadata** (`.dvxmeta`) ; le fichier `.dvxproj` apparaît aussi dans FileSystem.
   Double-cliquer une scène conserve son ouverture dans le viewport ; un `.dvxmat` s'ouvre en
-  texte. Les fichiers UTF-8 jusqu'à 2 Mio sont acceptés ; BOM et fins de ligne LF/CRLF sont
+  texte, un `.dvxshader` dans l'éditeur de texte de Devex, qui montre ses erreurs. Les fichiers UTF-8 jusqu'à 2 Mio sont acceptés ; BOM et fins de ligne LF/CRLF sont
   conservés. La sauvegarde remplace le fichier atomiquement et refuse d'écraser une version
   modifiée sur disque. Fermer/recharger un fichier modifié, changer de projet ou quitter demande
   Save / Don't Save / Cancel. Une scène enregistrée en texte est validée puis actualisée dans
@@ -3854,6 +3952,11 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     sur une entité à part comme dans Godot ; limites, moteurs, corps reliés qui ne se heurtent pas,
     rupture par force ou couple prévenue en C++ et en C# (`OnJointBreak`) ; gizmos dans la vue ;
     porte, pendule et panneau dans l'arène, porte de pierre dans le jeu de plateformes.
+66. ✅ **Shaders des projets** — `.dvxshader` de quatre types (`spatial`, `canvas_item`,
+    `particles`, `sky`), structure de Godot et syntaxe Slang, compilés à l'import par le `slangc`
+    livré avec l'éditeur ; uniforms renseignés par les matériaux (format 2), erreurs sur leurs
+    lignes, rechargement à chaud ; inspecteurs des shaders et des matériaux ; ciel qui éclaire la
+    scène ; scène de démonstration et effets du jeu de plateformes.
 
 Ensuite, sans ordre figé : à choisir dans les pistes ci-dessous.
 
@@ -3999,7 +4102,13 @@ Ensuite, sans ordre figé : à choisir dans les pistes ci-dessous.
 - **Post-traitements** : profondeur de champ, flou de mouvement, volumes qui mélangent leurs
   réglages selon la position de la caméra, mise à l'échelle temporelle (rendu sous la résolution
   de l'écran), occlusion ambiante par cônes plutôt que par points.
-- **Ciel procédural** : atmosphère physique liée à la lumière directionnelle.
+- **Ciel procédural** : atmosphère physique liée à la lumière directionnelle (un shader `sky`
+  peut déjà dessiner un ciel calculé).
+- **Shaders, la suite** : graphe visuel de nœuds (prochain jalon), paramètres de shaders réglés
+  depuis le code (`SetShaderParameter`), `light()` pour les `canvas_item`, simulation des
+  particules sur le GPU (`start()` et `process()`), traînées dessinées par un shader, lecture de
+  l'image et de la profondeur de la scène (réfraction, `hint_screen_texture`), uniforms globaux et
+  par instance, `#include` et modules partagés entre shaders, matrices en uniforms.
 - **Écran 2D, la suite** : poignées des éléments tournés ou mis à l'échelle, aimantation et
   repères, sélection des éléments au rectangle, aperçu à plusieurs résolutions, textes liés
   (`UiBinding`) montrés hors du jeu, canevas cachés montrés à la demande, gizmos au-dessus de

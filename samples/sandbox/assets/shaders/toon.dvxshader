@@ -1,0 +1,23 @@
+shader_type spatial;
+
+// Lit in bands, as in a cartoon: each light reaches the surface in a few steps, and a rim brightens
+// the edges that turn away from the viewer.
+uniform float3 albedo : source_color = float3(0.95, 0.42, 0.3);
+uniform float bands : hint_range(1.0, 6.0, 1.0) = 3.0;
+uniform float3 rim_color : source_color = float3(1.0, 0.92, 0.85);
+uniform float rim_width : hint_range(0.0, 1.0) = 0.3;
+
+void fragment()
+{
+    ALBEDO = albedo;
+    ROUGHNESS = 1.0;
+    const float rim = smoothstep(1.0 - rim_width, 1.0, 1.0 - saturate(dot(NORMAL, VIEW)));
+    EMISSION = rim_color * rim * 0.5;
+}
+
+void light()
+{
+    const float lambert = saturate(dot(NORMAL, LIGHT)) * ATTENUATION;
+    const float stepped = ceil(lambert * bands - 0.25) / bands;
+    DIFFUSE_LIGHT += saturate(stepped) * LIGHT_COLOR / PI;
+}

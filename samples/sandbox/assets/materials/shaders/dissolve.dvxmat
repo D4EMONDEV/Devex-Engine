@@ -1,0 +1,3 @@
+# Drawn by the shader dissolve.dvxshader, with its default values.
+[material format=2]
+shader = asset("e7689b84-5088-513a-ab72-5d5605f39b56")

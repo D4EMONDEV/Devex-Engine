@@ -526,6 +526,17 @@ Un modèle 3D importé remplace ensuite le cube Visual. Garder la physique sur P
 
 **Point de contrôle :** le joueur reste debout, saute, touche le sol, heurte l'obstacle et reste dans le champ de la caméra.
 
+### 6.7 Donner un shader à un objet
+
+Les matériaux standard suffisent au prototype. Pour un effet (eau, objet qui se dissout, contour, éclairage en aplats), Devex reprend les shaders de Godot, écrits en Slang :
+
+1. Dans FileSystem, **Create New > Shader**, type **Spatial (meshes)**. Le fichier `.dvxshader` s'ouvre dans l'éditeur de texte.
+2. Dans `fragment()`, écrire par exemple `ALBEDO = albedo * (0.5 + 0.5 * sin(TIME));`. Chaque sauvegarde recompile le shader : une erreur s'affiche dans la console et dans la marge, sur sa ligne.
+3. Sélectionner le shader puis **New Material**, ou **Create New > Material** puis choisir le shader dans l'inspecteur du matériau. Les `uniform` du shader y apparaissent comme réglages.
+4. Glisser le matériau sur le MeshRenderer de l'objet. Un shader **Canvas Item** se donne de la même façon au champ Material d'un SpriteRenderer en 2D.
+
+La scène `shaders.dvxscene` du bac à sable montre de l'eau, une statue qui se dissout, un éclairage toon, des braises et un ciel procédural.
+
 ## 7. Ajouter un objectif au prototype
 
 Une fois le mouvement maîtrisé, ajouter une zone d'arrivée permet de donner une règle simple au jeu, sans menu ni interface complexe.

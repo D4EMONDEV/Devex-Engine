@@ -118,6 +118,7 @@ void extractSprites(scene::Scene& scene, AssetManager& assets, const asset::Sort
             .unshaded = sprite.unshaded,
             .lightMask = sprite.lightMask,
             .normalTexture = data->normalTexture.isValid() ? assets.texture(data->normalTexture) : render::TextureHandle{},
+            .material = sprite.material.isValid() ? assets.material(sprite.material) : render::MaterialHandle{},
             .layer = sorting.rank(sprite.sortingLayer),
             .order = sprite.order,
             .objectId = entity.index + 1,
@@ -199,6 +200,7 @@ bool extractTilemaps(scene::Scene& scene, AssetManager& assets, const asset::Sor
             .lit = tilemap.lit,
             .unshaded = tilemap.unshaded,
             .lightMask = tilemap.lightMask,
+            .material = tilemap.material.isValid() ? assets.material(tilemap.material) : render::MaterialHandle{},
             .layer = sorting.rank(tilemap.sortingLayer),
             .order = tilemap.order,
             .objectId = entity.index + 1,
@@ -434,6 +436,7 @@ void extractScene(scene::Scene& scene, AssetManager& assets, render::RenderWorld
             .color = environment.color,
             .intensity = environment.intensity,
             .rotation = environment.rotation,
+            .skyMaterial = environment.skyMaterial.isValid() ? assets.material(environment.skyMaterial) : render::MaterialHandle{},
         };
     }
 
@@ -529,6 +532,7 @@ void extractParticles(const particles::ParticleWorld& particles, AssetManager& a
             .sheetRows = static_cast<std::uint32_t>(std::max(settings.sheetRows, 1)),
             .lit = settings.lit,
             .softness = settings.softness,
+            .material = settings.material.isValid() ? assets.material(settings.material) : render::MaterialHandle{},
         };
         math::Vec3 low{std::numeric_limits<float>::max()};
         math::Vec3 high{std::numeric_limits<float>::lowest()};
@@ -558,6 +562,7 @@ void extractParticles(const particles::ParticleWorld& particles, AssetManager& a
         render::ParticleDraw ribbons = draw;
         ribbons.ribbons = true;
         ribbons.texture = {};
+        ribbons.material = {};
         ribbons.first = static_cast<std::uint32_t>(world.trailSegments.size());
         const float life = std::max(settings.trailTime, 0.01f);
         for (const particles::Particle& particle : emitter.particles)

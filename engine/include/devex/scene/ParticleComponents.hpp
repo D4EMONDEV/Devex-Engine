@@ -162,6 +162,9 @@ struct DEVEX_API ParticleEmitter
     // Rendering.
     // None draws a soft disc.
     asset::AssetId texture;
+    // A material whose particles shader draws the particles; none draws them as they are. Trails
+    // keep the standard look.
+    asset::AssetId material;
     ParticleBlend blend = ParticleBlend::Alpha;
     ParticleRenderMode renderMode = ParticleRenderMode::Billboard;
     // Stretched particles: how many seconds of their motion their length covers.

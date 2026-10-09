@@ -25,6 +25,7 @@
 #include <devex/asset/AssetType.hpp>
 #include <devex/asset/AudioClipData.hpp>
 #include <devex/asset/CurveData.hpp>
+#include <devex/asset/ShaderData.hpp>
 #include <devex/asset/SpriteData.hpp>
 #include <devex/asset/TilesetData.hpp>
 #include <devex/asset/Project.hpp>
@@ -611,6 +612,9 @@ struct DEVEX_API ToolsState
     TextEditState textEdit;
     // The errors and warnings of the last build of the game code, shown in the margin.
     std::vector<CodeDiagnostic> codeDiagnostics;
+    // Those of the last import of each shader the text editor showed, by its file; forgotten when
+    // a shader imports again.
+    std::unordered_map<std::string, std::vector<CodeDiagnostic>> shaderDiagnostics;
     // The file the Script screen shows, among those that are open.
     std::filesystem::path activeText;
     std::string textOpenError;
@@ -956,6 +960,14 @@ DEVEX_API core::Result<std::filesystem::path> createSpriteFramesFile(ToolsState&
                                                                      asset::AssetId fromTexture = {}, std::string_view name = {});
 // Writes a new curve into a res:// folder of the assets, and selects it once imported.
 DEVEX_API core::Result<std::filesystem::path> createCurveFile(ToolsState& state, std::string_view folder, std::string_view name = {});
+// A new shader of the kind, from its template, and a new material, of the standard surface or drawn
+// by a shader: in MaterialInspector.cpp.
+DEVEX_API core::Result<std::filesystem::path> createShaderFile(ToolsState& state, std::string_view folder, std::string_view name,
+                                                               asset::ShaderKind kind);
+DEVEX_API core::Result<std::filesystem::path> createMaterialFile(ToolsState& state, std::string_view folder,
+                                                                 std::string_view name = {}, asset::AssetId shader = {});
+// The errors and warnings of the last import of the shader in a file, read once.
+[[nodiscard]] DEVEX_API const std::vector<CodeDiagnostic>& shaderDiagnosticsOf(ToolsState& state, const std::filesystem::path& file);
 DEVEX_API void previewAudioClip(ToolsState& state, asset::AssetId clip);
 DEVEX_API void stopAudioPreview(ToolsState& state);
 

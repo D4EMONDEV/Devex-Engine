@@ -1,0 +1,3 @@
+# Drawn by the shader day_sky.dvxshader, with its default values.
+[material format=2]
+shader = asset("26827648-c0b1-5029-b784-95e311be1608")

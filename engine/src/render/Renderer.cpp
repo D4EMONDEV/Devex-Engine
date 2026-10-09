@@ -100,6 +100,24 @@ void Renderer::destroyMaterial(MaterialHandle material)
     m_implementation->destroyMaterial(material);
 }
 
+core::Result<ShaderHandle> Renderer::createShader(const asset::ShaderData& shader)
+{
+    DEVEX_ASSERT(m_implementation != nullptr);
+    return m_implementation->createShader(shader);
+}
+
+core::Result<void> Renderer::updateShader(ShaderHandle handle, const asset::ShaderData& shader)
+{
+    DEVEX_ASSERT(m_implementation != nullptr);
+    return m_implementation->updateShader(handle, shader);
+}
+
+void Renderer::destroyShader(ShaderHandle shader)
+{
+    DEVEX_ASSERT(m_implementation != nullptr);
+    m_implementation->destroyShader(shader);
+}
+
 RenderWorld& Renderer::beginFrame() noexcept
 {
     DEVEX_ASSERT(m_implementation != nullptr);

@@ -1,0 +1,42 @@
+shader_type spatial;
+render_mode cull_disabled, shadows_disabled;
+
+// Water: the plane rises and falls in waves that cross each other, its colour deepens where it is
+// seen from above, and it lets through what lies under it at grazing angles less than from above.
+uniform float3 deep_color : source_color = float3(0.01, 0.07, 0.12);
+uniform float3 shallow_color : source_color = float3(0.03, 0.3, 0.38);
+uniform float wave_height : hint_range(0.0, 0.5) = 0.08;
+uniform float wave_speed : hint_range(0.0, 4.0) = 1.1;
+uniform float opacity : hint_range(0.0, 1.0) = 0.8;
+
+varying float crest;
+
+// The height of the waves at a place of the world, from -1 to 1.
+float waves(float2 at, float time)
+{
+    return sin(at.x * 1.9 + time * wave_speed) * 0.5 + sin(at.y * 1.6 - time * wave_speed * 0.8) * 0.35 +
+           sin((at.x + at.y) * 3.3 + time * wave_speed * 1.7) * 0.15;
+}
+
+void vertex()
+{
+    // Measured in the world, so that pieces of water side by side join.
+    const float3 world = mul(MODEL_MATRIX, float4(VERTEX, 1.0)).xyz;
+    crest = waves(world.xz, TIME);
+    VERTEX.y += crest * wave_height;
+}
+
+void fragment()
+{
+    // The slopes of the waves tilt the normal.
+    const float2 at = VERTEX.xz;
+    const float step = 0.05;
+    const float dx = (waves(at + float2(step, 0.0), TIME) - waves(at - float2(step, 0.0), TIME)) / (2.0 * step);
+    const float dz = (waves(at + float2(0.0, step), TIME) - waves(at - float2(0.0, step), TIME)) / (2.0 * step);
+    NORMAL = normalize(float3(-dx * wave_height, 1.0, -dz * wave_height));
+    const float facing = saturate(dot(NORMAL, VIEW));
+    ALBEDO = lerp(shallow_color, deep_color, facing) + crest * 0.02;
+    ROUGHNESS = 0.04;
+    SPECULAR = 0.6;
+    ALPHA = lerp(1.0, opacity, facing);
+}

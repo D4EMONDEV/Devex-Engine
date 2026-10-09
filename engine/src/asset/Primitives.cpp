@@ -49,11 +49,41 @@ MeshData makeCube(float size)
     return mesh;
 }
 
-MeshData makePlane(float size)
+MeshData makePlane(float size, std::uint32_t subdivisions)
 {
     const float half = size * 0.5f;
     MeshData mesh;
-    addQuad(mesh, math::Vec3{0.0f}, {half, 0.0f, 0.0f}, {0.0f, 0.0f, -half});
+    if (subdivisions == 0)
+    {
+        addQuad(mesh, math::Vec3{0.0f}, {half, 0.0f, 0.0f}, {0.0f, 0.0f, -half});
+    }
+    else
+    {
+        // A grid of cells, U along +X and V along +Z, wound as the single quad is.
+        const std::uint32_t side = subdivisions + 1;
+        mesh.vertices.reserve(static_cast<std::size_t>(side + 1) * (side + 1));
+        for (std::uint32_t row = 0; row <= side; ++row)
+        {
+            const float v = static_cast<float>(row) / static_cast<float>(side);
+            for (std::uint32_t column = 0; column <= side; ++column)
+            {
+                const float u = static_cast<float>(column) / static_cast<float>(side);
+                mesh.vertices.push_back({{u * size - half, 0.0f, v * size - half}, {0.0f, 1.0f, 0.0f}, {u, v}});
+            }
+        }
+        for (std::uint32_t row = 0; row < side; ++row)
+        {
+            for (std::uint32_t column = 0; column < side; ++column)
+            {
+                const std::uint32_t low = row * (side + 1) + column;
+                const std::uint32_t high = low + side + 1;
+                for (const std::uint32_t corner : {high, high + 1, low + 1, high, low + 1, low})
+                {
+                    mesh.indices.push_back(corner);
+                }
+            }
+        }
+    }
     computeTangents(mesh);
     mesh.bounds = computeBounds(mesh);
     return mesh;
@@ -112,7 +142,8 @@ std::optional<MeshData> makeBuiltinMesh(AssetId id)
     }
     if (id == builtin::planeMesh)
     {
-        return makePlane();
+        // Cells enough for vertex shaders to bend it, as waves.
+        return makePlane(1.0f, 31);
     }
     return std::nullopt;
 }

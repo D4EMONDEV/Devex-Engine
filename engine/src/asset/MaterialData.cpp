@@ -16,6 +16,18 @@ std::string_view toString(AlphaMode mode) noexcept
     return "unknown";
 }
 
+const MaterialParameter* MaterialData::findParameter(std::string_view name) const noexcept
+{
+    for (const MaterialParameter& parameter : parameters)
+    {
+        if (parameter.name == name)
+        {
+            return &parameter;
+        }
+    }
+    return nullptr;
+}
+
 std::optional<AlphaMode> parseAlphaMode(std::string_view text) noexcept
 {
     for (const AlphaMode mode : {AlphaMode::Opaque, AlphaMode::Mask, AlphaMode::Blend})

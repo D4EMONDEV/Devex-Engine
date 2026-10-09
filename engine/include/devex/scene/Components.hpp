@@ -171,6 +171,9 @@ struct DEVEX_API Environment
 {
     // An equirectangular high dynamic range texture; without one, the sky is a uniform color.
     asset::AssetId sky;
+    // A material whose sky shader draws the sky in place of the texture; the color and the
+    // intensity still tint and scale it.
+    asset::AssetId skyMaterial;
     // Linear color of the uniform sky, and tint of the texture.
     math::Vec3 color{1.0f};
     // Luminance of a texel of value 1, in nits: about 10000 for a daylight sky.

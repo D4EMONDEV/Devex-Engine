@@ -1,5 +1,6 @@
 #include "CodeHighlight.hpp"
 
+#include <devex/asset/import/ShaderFile.hpp>
 #include <devex/core/Path.hpp>
 
 #include <algorithm>
@@ -7,6 +8,7 @@
 #include <cctype>
 #include <span>
 #include <string>
+#include <vector>
 
 namespace devex::tools::detail {
 namespace {
@@ -53,6 +55,40 @@ constexpr std::array cmakeKeywords{
     "endfunction", "macro", "endmacro", "return", "break", "set", "unset", "list", "string",
     "PUBLIC", "PRIVATE", "INTERFACE", "REQUIRED", "NOT", "AND", "OR", "TRUE", "FALSE",
 };
+
+constexpr std::array shaderKeywords{
+    "shader_type", "render_mode", "uniform", "varying", "if", "else", "for", "while", "do", "return", "break",
+    "continue", "discard", "switch", "case", "default", "static", "const", "struct", "in", "out", "inout",
+    "true", "false", "let", "var", "void", "import", "typealias", "interface", "extension", "public",
+};
+
+constexpr std::array shaderTypeNames{
+    "bool", "int", "uint", "float", "half", "double", "float2", "float3", "float4", "int2", "int3", "int4", "uint2",
+    "uint3", "uint4", "bool2", "bool3", "bool4", "half2", "half3", "half4", "float2x2", "float3x3", "float4x4",
+    "sampler2D",
+};
+
+// The types of Slang and the built-ins of every kind of shader, which the editor colours as types.
+[[nodiscard]] std::span<const char* const> shaderTypes()
+{
+    static const std::vector<const char*> names = [] {
+        std::vector<const char*> all(shaderTypeNames.begin(), shaderTypeNames.end());
+        for (const asset::ShaderKind kind : {asset::ShaderKind::Spatial, asset::ShaderKind::CanvasItem,
+                                             asset::ShaderKind::Particles, asset::ShaderKind::Sky})
+        {
+            for (const std::string_view name : asset::shaderBuiltins(kind))
+            {
+                // The built-ins are literals, ended by a null character.
+                if (std::ranges::none_of(all, [&](const char* known) { return name == known; }))
+                {
+                    all.push_back(name.data());
+                }
+            }
+        }
+        return all;
+    }();
+    return names;
+}
 
 [[nodiscard]] bool isIdentifierStart(char value) noexcept
 {
@@ -330,6 +366,10 @@ CodeLanguage languageOf(const std::filesystem::path& path)
     {
         return CodeLanguage::Json;
     }
+    if (extension == ".dvxshader")
+    {
+        return CodeLanguage::Shader;
+    }
     if (extension.starts_with(".dvx"))
     {
         return CodeLanguage::DevexText;
@@ -351,6 +391,8 @@ std::string_view toString(CodeLanguage language) noexcept
         return "JSON";
     case CodeLanguage::DevexText:
         return "Devex";
+    case CodeLanguage::Shader:
+        return "Shader";
     case CodeLanguage::PlainText:
         break;
     }
@@ -377,6 +419,9 @@ std::vector<Token> highlightLine(std::string_view line, CodeLanguage language, H
     case CodeLanguage::DevexText:
         highlightData(line, true, tokens);
         break;
+    case CodeLanguage::Shader:
+        highlightCurly(line, shaderKeywords, shaderTypes(), false, state, tokens);
+        break;
     case CodeLanguage::PlainText:
         break;
     }
@@ -389,6 +434,7 @@ std::string_view lineCommentOf(CodeLanguage language) noexcept
     {
     case CodeLanguage::Cpp:
     case CodeLanguage::CSharp:
+    case CodeLanguage::Shader:
         return "//";
     case CodeLanguage::CMake:
     case CodeLanguage::DevexText:

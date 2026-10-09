@@ -149,6 +149,9 @@ public:
 [[nodiscard]] std::unique_ptr<InspectorPage> makeAnimatorElementPage();
 // A table of translations: its languages and what each misses, and the panel that edits it.
 [[nodiscard]] std::unique_ptr<InspectorPage> makeTranslationPage();
+// A shader: what it draws, its uniforms and its errors. A material: its shader and its values.
+[[nodiscard]] std::unique_ptr<InspectorPage> makeShaderPage();
+[[nodiscard]] std::unique_ptr<InspectorPage> makeMaterialPage();
 
 // The painting of the tilemap of the inspected entity, under its card: in TilePainter.cpp.
 void addTilePainter(InspectorUi& ui, EditorUiKit& kit, Section& section);

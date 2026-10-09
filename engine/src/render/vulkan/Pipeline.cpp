@@ -47,10 +47,22 @@ public:
         {
             return std::unexpected(spirv.error());
         }
+        return create(device, *spirv);
+    }
+
+    // The code of a config, or the file it names.
+    [[nodiscard]] static core::Result<ShaderModule> load(VkDevice device, const std::filesystem::path& path,
+                                                         std::span<const std::uint32_t> code)
+    {
+        return code.empty() ? load(device, path) : create(device, code);
+    }
+
+    [[nodiscard]] static core::Result<ShaderModule> create(VkDevice device, std::span<const std::uint32_t> spirv)
+    {
         const VkShaderModuleCreateInfo moduleInfo{
             .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-            .codeSize = spirv->size() * sizeof(std::uint32_t),
-            .pCode = spirv->data(),
+            .codeSize = spirv.size() * sizeof(std::uint32_t),
+            .pCode = spirv.data(),
         };
         VkShaderModule module = VK_NULL_HANDLE;
         DEVEX_VK_TRY(vkCreateShaderModule, device, &moduleInfo, nullptr, &module);
@@ -171,7 +183,7 @@ VkPipeline Pipeline::handle() const noexcept
 
 core::Result<Pipeline> createGraphicsPipeline(VkDevice device, const GraphicsPipelineConfig& config)
 {
-    const core::Result<ShaderModule> shaderModule = ShaderModule::load(device, config.shaderPath);
+    const core::Result<ShaderModule> shaderModule = ShaderModule::load(device, config.shaderPath, config.code);
     if (!shaderModule)
     {
         return std::unexpected(shaderModule.error());

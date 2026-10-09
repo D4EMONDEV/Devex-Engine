@@ -1354,6 +1354,10 @@ void ApplicationRunner::handleAssetEvents(asset::AssetDatabase& database)
     }
 
     m_services.assets.handleEvents(events);
+    if (isEditor() && m_services.tools != nullptr)
+    {
+        m_services.tools->assetsChanged(events);
+    }
 
     std::size_t rebuilt = 0;
     for (EditedScene& scene : edited)

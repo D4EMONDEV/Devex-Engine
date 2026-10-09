@@ -4,6 +4,7 @@
 
 #include <devex/asset/MaterialData.hpp>
 #include <devex/asset/MeshData.hpp>
+#include <devex/asset/ShaderData.hpp>
 #include <devex/asset/TextureData.hpp>
 #include <devex/core/Assert.hpp>
 #include <devex/core/Error.hpp>
@@ -49,6 +50,23 @@ struct DEVEX_API RendererConfig
     std::uint64_t uploadBytesPerFrame = std::uint64_t{64} << 20;
 };
 
+// What a sampler2D uniform samples while its texture is missing or still loading.
+enum class TextureFallback : std::uint8_t
+{
+    White,
+    Black,
+    // A flat normal.
+    Normal,
+};
+
+// A texture a uniform of a shader samples: the slot of the uniform in MaterialDesc::parameters.
+struct DEVEX_API MaterialTexture
+{
+    std::uint32_t slot = 0;
+    TextureHandle texture;
+    TextureFallback fallback = TextureFallback::White;
+};
+
 // Parameters of a material, with textures already uploaded. Invalid or destroyed textures sample as
 // white, or as a flat normal for the normal texture.
 struct DEVEX_API MaterialDesc
@@ -68,6 +86,14 @@ struct DEVEX_API MaterialDesc
     asset::AlphaMode alphaMode = asset::AlphaMode::Opaque;
     float alphaCutoff = 0.5f;
     bool doubleSided = false;
+    // A shader of the project that draws the material in place of the standard one, for what its
+    // kind draws: meshes, sprites, particles or the sky. An invalid or destroyed shader, or one of
+    // another kind than what the material draws, leaves the standard one.
+    ShaderHandle shader;
+    // The values of its uniforms, one slot each in the order of asset::ShaderData::parameters; the
+    // slots it leaves out read zero. Textures take theirs from `textures`.
+    std::vector<math::Vec4> parameters;
+    std::vector<MaterialTexture> textures;
 };
 
 struct DEVEX_API RendererStats
@@ -79,6 +105,7 @@ struct DEVEX_API RendererStats
     std::size_t meshCount = 0;
     std::size_t textureCount = 0;
     std::size_t materialCount = 0;
+    std::size_t shaderCount = 0;
     std::uint32_t lightCount = 0;
     // Exposure of the last frame, including automatic exposure.
     float ev100 = 0.0f;
@@ -141,6 +168,15 @@ public:
     // Changes a material from the next frame on. Stale handles are ignored.
     void updateMaterial(MaterialHandle handle, const MaterialDesc& material);
     void destroyMaterial(MaterialHandle material);
+
+    // Builds the pipelines of a compiled shader of a project, for every pass its kind draws in.
+    [[nodiscard]] core::Result<ShaderHandle> createShader(const asset::ShaderData& shader);
+    // Replaces them, as a new import of the shader does: the materials using it draw with the new
+    // ones from the next frame on. On failure the shader keeps its pipelines.
+    [[nodiscard]] core::Result<void> updateShader(ShaderHandle handle, const asset::ShaderData& shader);
+    // Releases the pipelines once no frame in flight uses them; materials using the shader then
+    // draw with the standard one. Stale handles are ignored.
+    void destroyShader(ShaderHandle shader);
 
     // Starts a frame with an empty snapshot to fill.
     [[nodiscard]] RenderWorld& beginFrame() noexcept;

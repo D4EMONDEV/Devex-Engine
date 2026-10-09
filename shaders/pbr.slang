@@ -174,7 +174,25 @@ float localShadow(SceneData* scene, Surface surface, Light light, float3 toSurfa
     return lit / 9.0;
 }
 
-float3 localLights(SceneData* scene, Surface surface)
+// What a light gives a surface. The physical one is the default; the light() of a shader of the
+// project replaces it.
+public interface ILightModel
+{
+    // The luminance a light adds: it comes from `toLight`, with `color` the illuminance it brings at
+    // normal incidence, of which `attenuation` reaches the surface past its range, its cone and the
+    // shadows.
+    float3 shade(Surface surface, float3 toLight, float3 color, float attenuation, bool directional);
+};
+
+public struct PhysicalLight : ILightModel
+{
+    public float3 shade(Surface surface, float3 toLight, float3 color, float attenuation, bool directional)
+    {
+        return shadeLight(surface, toLight, color * attenuation);
+    }
+};
+
+float3 localLights<Model : ILightModel>(SceneData* scene, Surface surface, Model model)
 {
     if (scene.lightCount == 0)
     {
@@ -210,12 +228,13 @@ float3 localLights(SceneData* scene, Surface surface)
             continue;
         }
         attenuation *= localShadow(scene, surface, light, -toLight);
-        luminance += shadeLight(surface, direction, light.intensity * attenuation);
+        luminance += model.shade(surface, direction, light.intensity, attenuation, false);
     }
     return luminance;
 }
 
-float3 environmentLight(SceneData* scene, Surface surface)
+// The light of the sky, ambient and reflected.
+public float3 environmentLight(SceneData* scene, Surface surface)
 {
     const float NoV = saturate(dot(surface.normal, surface.view));
     const float3 reflected = reflect(-surface.view, surface.normal);
@@ -233,14 +252,19 @@ float3 environmentLight(SceneData* scene, Surface surface)
     return (diffuse + specular) * surface.occlusion * scene.environmentColor * scene.environmentIntensity;
 }
 
+// The luminance the sun and the local lights give the surface through a light model.
+public float3 shadeLights<Model : ILightModel>(SceneData* scene, Surface surface, Model model)
+{
+    float3 luminance = localLights(scene, surface, model);
+    if ((scene.sunFlags & sunEnabled) != 0)
+    {
+        luminance += model.shade(surface, -scene.sunDirection, scene.sunIlluminance, sunShadow(scene, surface), true);
+    }
+    return luminance;
+}
+
 // Luminance leaving the surface towards the viewer, before exposure.
 public float3 shadeSurface(SceneData* scene, Surface surface)
 {
-    float3 luminance = environmentLight(scene, surface) + localLights(scene, surface);
-    if ((scene.sunFlags & sunEnabled) != 0)
-    {
-        luminance += shadeLight(surface, -scene.sunDirection, scene.sunIlluminance) *
-                     sunShadow(scene, surface);
-    }
-    return luminance;
+    return environmentLight(scene, surface) + shadeLights(scene, surface, PhysicalLight());
 }

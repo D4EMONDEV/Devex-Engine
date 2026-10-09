@@ -42,6 +42,8 @@ enum class CodeLanguage : std::uint8_t
     Json,
     // Scenes, materials, projects and import settings: the .dvx* text format.
     DevexText,
+    // .dvxshader: Slang, with the statements and the built-ins of the shaders of Devex.
+    Shader,
 };
 
 // The language of a file, from its name and extension.

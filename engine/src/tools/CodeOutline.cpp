@@ -220,6 +220,7 @@ std::vector<CodeSymbol> outlineOf(std::string_view text, CodeLanguage language)
     switch (language)
     {
     case CodeLanguage::Cpp:
+    case CodeLanguage::Shader:
         readCurly(text, false, symbols);
         break;
     case CodeLanguage::CSharp:

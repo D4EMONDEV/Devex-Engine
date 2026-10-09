@@ -736,6 +736,17 @@ void AssetManager::handleEvents(std::span<const asset::AssetEvent> events)
         case asset::AssetType::Translation:
             m_translations.erase(event.id);
             break;
+        case asset::AssetType::Shader:
+            if (m_shaders.contains(event.id))
+            {
+                // Its pipelines are rebuilt under the same handle, and its materials follow its uniforms.
+                if (removed || !loadShader(event.id))
+                {
+                    releaseShader(event.id);
+                }
+                texturesChanged = true;
+            }
+            break;
         }
     }
     if (texturesChanged)
@@ -871,6 +882,10 @@ void AssetManager::setSource(asset::AssetSource* source)
     {
         releaseFont(m_fonts.begin()->first);
     }
+    while (!m_shaders.empty())
+    {
+        releaseShader(m_shaders.begin()->first);
+    }
     m_models.clear();
     m_meshData.clear();
     m_sceneTexts.clear();
@@ -974,8 +989,109 @@ bool AssetManager::loadModel(asset::AssetId id)
     return true;
 }
 
+std::shared_ptr<const asset::ShaderData> AssetManager::shader(asset::AssetId id)
+{
+    auto found = m_shaders.find(id);
+    if (found == m_shaders.end() && id.isValid() && m_source != nullptr && !m_failed.contains(id) &&
+        m_source->find(id) != nullptr && loadShader(id))
+    {
+        found = m_shaders.find(id);
+    }
+    return found != m_shaders.end() ? found->second.data : nullptr;
+}
+
+bool AssetManager::loadShader(asset::AssetId id)
+{
+    const core::Result<std::vector<std::byte>> bytes = m_source->loadArtifact(id);
+    core::Result<asset::ShaderData> data =
+        bytes ? asset::decodeShader(*bytes) : core::Result<asset::ShaderData>(std::unexpected(bytes.error()));
+    if (!data)
+    {
+        DEVEX_LOG_ERROR("Cannot load shader {}: {}", id.uuid, data.error());
+        m_failed.insert(id);
+        return false;
+    }
+    const asset::AssetInfo* const info = m_source->find(id);
+    const std::string name = info != nullptr ? info->name : id.uuid.toString();
+    if (!data->compiled())
+    {
+        DEVEX_LOG_WARNING("Shader {} does not compile: its materials draw as the default material", name);
+    }
+
+    LoadedShader& loaded = m_shaders[id];
+    if (m_renderer != nullptr && data->compiled())
+    {
+        if (loaded.handle.isValid())
+        {
+            if (core::Result<void> updated = m_renderer->updateShader(loaded.handle, *data); !updated)
+            {
+                DEVEX_LOG_ERROR("Cannot build the pipelines of shader {}: {}", name, updated.error());
+            }
+        }
+        else if (core::Result<render::ShaderHandle> created = m_renderer->createShader(*data))
+        {
+            loaded.handle = *created;
+        }
+        else
+        {
+            DEVEX_LOG_ERROR("Cannot build the pipelines of shader {}: {}", name, created.error());
+        }
+    }
+    else if (loaded.handle.isValid())
+    {
+        // It no longer compiles: its materials draw as the default one until it does again.
+        m_renderer->destroyShader(loaded.handle);
+        loaded.handle = {};
+    }
+    loaded.data = std::make_shared<const asset::ShaderData>(std::move(*data));
+    return true;
+}
+
+void AssetManager::releaseShader(asset::AssetId id)
+{
+    if (const auto found = m_shaders.find(id); found != m_shaders.end())
+    {
+        if (m_renderer != nullptr && found->second.handle.isValid())
+        {
+            m_renderer->destroyShader(found->second.handle);
+        }
+        m_shaders.erase(found);
+    }
+}
+
 render::MaterialDesc AssetManager::describe(const asset::MaterialData& material)
 {
+    // A shader of the project: its uniforms, by name, or their defaults.
+    render::ShaderHandle shaderHandle;
+    std::vector<math::Vec4> parameters;
+    std::vector<render::MaterialTexture> textures;
+    if (material.shader.isValid())
+    {
+        const std::shared_ptr<const asset::ShaderData> data = shader(material.shader);
+        const auto found = m_shaders.find(material.shader);
+        if (data != nullptr && found != m_shaders.end() && found->second.handle.isValid())
+        {
+            shaderHandle = found->second.handle;
+            for (std::uint32_t slot = 0; slot < data->parameters.size(); ++slot)
+            {
+                const asset::ShaderParameter& uniform = data->parameters[slot];
+                const asset::MaterialParameter* const given = material.findParameter(uniform.name);
+                if (uniform.type != asset::ShaderParameterType::Texture)
+                {
+                    parameters.push_back(given != nullptr && !given->texture.isValid() ? given->value : uniform.defaultValue);
+                    continue;
+                }
+                parameters.emplace_back(0.0f);
+                textures.push_back({
+                    .slot = slot,
+                    .texture = given != nullptr ? texture(given->texture) : render::TextureHandle{},
+                    .fallback = uniform.hint == asset::ShaderHint::Black    ? render::TextureFallback::Black
+                                : uniform.hint == asset::ShaderHint::Normal ? render::TextureFallback::Normal
+                                                                            : render::TextureFallback::White,
+                });
+            }
+        }
+    }
     return render::MaterialDesc{
         .baseColorFactor = material.baseColorFactor,
         .baseColorTexture = texture(material.baseColorTexture),
@@ -991,6 +1107,9 @@ render::MaterialDesc AssetManager::describe(const asset::MaterialData& material)
         .alphaMode = material.alphaMode,
         .alphaCutoff = material.alphaCutoff,
         .doubleSided = material.doubleSided,
+        .shader = shaderHandle,
+        .parameters = std::move(parameters),
+        .textures = std::move(textures),
     };
 }
 

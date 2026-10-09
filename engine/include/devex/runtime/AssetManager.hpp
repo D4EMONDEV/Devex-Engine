@@ -8,6 +8,7 @@
 #include <devex/asset/AssetMemory.hpp>
 #include <devex/asset/FontData.hpp>
 #include <devex/asset/MaterialData.hpp>
+#include <devex/asset/ShaderData.hpp>
 #include <devex/asset/ModelData.hpp>
 #include <devex/asset/CurveData.hpp>
 #include <devex/asset/SpriteData.hpp>
@@ -91,6 +92,9 @@ public:
     [[nodiscard]] render::MaterialHandle material(asset::AssetId id);
     // Invalid when the texture cannot be loaded, and while it loads.
     [[nodiscard]] render::TextureHandle texture(asset::AssetId id);
+    // A shader of the project, read once and shared, with its pipelines when it compiled; null when
+    // it cannot be loaded. A new import replaces it, and the materials using it follow.
+    [[nodiscard]] std::shared_ptr<const asset::ShaderData> shader(asset::AssetId id);
     // Makes a texture of pixels the game produced, such as the thumbnail of a save, known under the
     // identifier, in place of any texture it named. It reaches the GPU as loaded textures do.
     [[nodiscard]] core::Result<void> setTexture(asset::AssetId id, const asset::TextureData& data);
@@ -203,6 +207,13 @@ private:
         asset::MaterialData data;
     };
 
+    struct DEVEX_API LoadedShader
+    {
+        std::shared_ptr<const asset::ShaderData> data;
+        // Invalid when it did not compile, or without a renderer.
+        render::ShaderHandle handle;
+    };
+
     [[nodiscard]] bool canLoad(asset::AssetId id) const;
     // Reads and decodes the mesh or texture on a worker, or right away without a job system. A new
     // request makes the result of an older one of the same asset stale.
@@ -216,6 +227,8 @@ private:
     [[nodiscard]] bool loadMaterial(asset::AssetId id);
     [[nodiscard]] bool loadModel(asset::AssetId id);
     [[nodiscard]] bool loadFont(asset::AssetId id);
+    [[nodiscard]] bool loadShader(asset::AssetId id);
+    void releaseShader(asset::AssetId id);
     [[nodiscard]] render::MaterialDesc describe(const asset::MaterialData& material);
     void releaseMesh(asset::AssetId id);
     void releaseTexture(asset::AssetId id);
@@ -241,6 +254,7 @@ private:
     std::unordered_map<asset::AssetId, std::size_t> m_animationBytes;
     std::unordered_map<asset::AssetId, math::Extent2D> m_textureSizes;
     std::unordered_map<asset::AssetId, LoadedMaterial> m_materials;
+    std::unordered_map<asset::AssetId, LoadedShader> m_shaders;
     std::unordered_map<asset::AssetId, asset::ModelData> m_models;
     std::unordered_map<asset::AssetId, asset::MeshData> m_meshData;
     std::unordered_map<asset::AssetId, std::string> m_sceneTexts;

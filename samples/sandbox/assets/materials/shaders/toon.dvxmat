@@ -1,0 +1,3 @@
+# Drawn by the shader toon.dvxshader, with its default values.
+[material format=2]
+shader = asset("8cfad36f-6c3f-51bf-9c5a-1879da869aa0")

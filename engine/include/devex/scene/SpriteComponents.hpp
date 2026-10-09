@@ -61,6 +61,8 @@ struct DEVEX_API SpriteRenderer
     bool unshaded = false;
     // The 2D lights whose item mask shares a bit with it shine on it.
     std::uint32_t lightMask = 1;
+    // A material whose canvas_item shader draws the sprite; none draws it as it is.
+    asset::AssetId material;
 };
 DEVEX_DECLARE_ENGINE_REFLECTION(SpriteRenderer);
 

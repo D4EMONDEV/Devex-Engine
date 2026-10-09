@@ -73,6 +73,7 @@ DEVEX_REFLECT(SpotLight)
 DEVEX_REFLECT(Environment)
 {
     type.field("sky", &Environment::sky, {.assetType = "texture"})
+        .field("sky_material", &Environment::skyMaterial, {.assetType = "material"})
         .field("color", &Environment::color, {.color = true})
         .field("intensity", &Environment::intensity)
         .field("rotation", &Environment::rotation, {.angle = true});

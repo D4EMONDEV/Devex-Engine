@@ -1844,6 +1844,12 @@ void InspectorUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& edit
         case asset::AssetType::Translation:
             kind = "translation";
             break;
+        case asset::AssetType::Shader:
+            kind = "shader";
+            break;
+        case asset::AssetType::Material:
+            kind = "material";
+            break;
         default:
             kind = "asset";
             break;
@@ -1924,6 +1930,8 @@ void InspectorUi::updatePage(ToolsState& state, EditorUiKit& kit, const scene::S
                : kind == "tileset"        ? makeTilesetPage()
                : kind == "animator"       ? makeAnimatorPage()
                : kind == "translation"    ? makeTranslationPage()
+               : kind == "shader"         ? makeShaderPage()
+               : kind == "material"       ? makeMaterialPage()
                : kind == "asset"          ? makeAssetPage()
                                           : makeEmptyPage();
         pageKind = kind;

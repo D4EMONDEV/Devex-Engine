@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <format>
+#include <string_view>
 #include <string>
 #include <utility>
 #include <vector>
@@ -18,6 +19,13 @@ VkBool32 VKAPI_CALL forwardDebugMessage(VkDebugUtilsMessageSeverityFlagBitsEXT s
                                         const VkDebugUtilsMessengerCallbackDataEXT* data,
                                         void* /*userData*/)
 {
+    // Outputs of a vertex shader that the fragment shader of the same pipeline leaves unread, which
+    // the layer itself calls valid: the shaders of projects share one output between all their
+    // passes, and those of picking read less than the others.
+    if (data->pMessageIdName != nullptr && std::string_view(data->pMessageIdName).find("OutputNotConsumed") != std::string_view::npos)
+    {
+        return VK_FALSE;
+    }
     // General warnings mostly come from the loader about third-party layers such as overlays and
     // capture tools, which the application cannot fix.
     const bool isError = (severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) != 0;

@@ -123,6 +123,8 @@ struct Folder
         return {icons::Footprints, colors.physics};
     case asset::AssetType::Translation:
         return {icons::Languages, colors.scene};
+    case asset::AssetType::Shader:
+        return {icons::FileCode, colors.material};
     default:
         break;
     }
@@ -626,6 +628,8 @@ void FileSystemUi::choose(ToolsState& state, const Node& node, bool openText)
     case asset::AssetType::Model:
     case asset::AssetType::AudioClip:
     case asset::AssetType::Translation:
+    case asset::AssetType::Shader:
+    case asset::AssetType::Material:
         selectAsset(state, node.asset);
         break;
     default:
@@ -660,6 +664,13 @@ void FileSystemUi::activate(ToolsState& state, scene::Scene& edited, const Node&
         if (path && path->extension() == ".dvxmat")
         {
             openInPreferredEditor(state, *path);
+        }
+        break;
+    case asset::AssetType::Shader:
+        // Shaders open in the text editor, which shows the errors of their import on their lines.
+        if (path && state.mode == ToolsMode::Editor)
+        {
+            openTextFile(state, *path);
         }
         break;
     case asset::AssetType::Animator:

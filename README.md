@@ -44,11 +44,14 @@ captures de l'éditeur, scènes de base, entrées, scripts C#, animations, colli
   clips audio, animations, polices (avec leur crénage), thèmes d'interface et courbes, fichiers
   `.dvxasset`, projets `.dvxproj`, paquets de jeux exportés `.dvxpak` ;
 - `Devex::AssetImport` : base d'assets (`.dvxmeta`, cache `.devex/`, imports en arrière-plan,
-  réimport à chaud), importeurs de textures (BC7/BC5), de `.dvxmat`, de modèles glTF, FBX et OBJ
+  réimport à chaud), importeurs de textures (BC7/BC5), de `.dvxmat`, de shaders `.dvxshader`
+  (compilés par le `slangc` livré avec l'éditeur), de modèles glTF, FBX et OBJ
   (ufbx, convertis en mètres et Y-up avec une échelle réglable), de scènes, de sons
   (WAV, FLAC, MP3, Ogg Vorbis), de polices (`.ttf`, `.otf` cuites en atlas de distances), de
   thèmes `.dvxtheme` et de courbes `.dvxcurve` ;
-- `Devex::Render` : renderer Vulkan 1.4 (volk, VMA), shaders Slang, render graph, PBR
+- `Devex::Render` : renderer Vulkan 1.4 (volk, VMA), shaders Slang, shaders des projets à la
+  Godot (`spatial`, `canvas_item`, `particles`, `sky`, avec `light()` et un ciel qui éclaire la
+  scène), render graph, PBR
   forward+ clustered avec prépasse de profondeur, culling par tronc de vue, ombres en cascades pour
   le soleil et en atlas pour les lumières locales, ciel HDR et IBL, surfaces transparentes triées,
   anticrénelage temporel, occlusion ambiante en espace écran, bloom, exposition automatique,
@@ -222,7 +225,9 @@ captures de l'éditeur, scènes de base, entrées, scripts C#, animations, colli
   miniature, et un HUD, tous habillés
   par le thème `assets/ui/sandbox.dvxtheme` et pilotés par `code/Menu.cs`.
 
-Le SDK Vulkan fournit `slangc`, qui compile les shaders pendant le build. Les assets
+Le SDK Vulkan fournit `slangc`, qui compile les shaders pendant le build ; le build le copie
+avec ses bibliothèques dans `bin/slang/`, à côté de l'éditeur, qui s'en sert pour compiler les
+`.dvxshader` des projets. Les assets
 d'exemple et les données de test sont produits par `scripts/generate_sample_assets.py`.
 L'option `--audio-only` régénère seulement les sons ; leur encodage en Ogg, MP3 et FLAC demande
 `ffmpeg` dans le `PATH`.

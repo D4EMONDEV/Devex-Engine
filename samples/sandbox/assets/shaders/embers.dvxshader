@@ -1,0 +1,13 @@
+shader_type particles;
+render_mode blend_add;
+
+// Embers that flicker: each particle pulses at its own pace, and reddens as it fades.
+uniform float flicker : hint_range(0.0, 1.0) = 0.55;
+uniform float3 hot : source_color = float3(1.0, 0.85, 0.45);
+uniform float3 cold : source_color = float3(1.0, 0.2, 0.04);
+
+void fragment()
+{
+    const float pulse = 1.0 - flicker * (0.5 + 0.5 * sin(TIME * 13.0 + float(INSTANCE_ID) * 1.7));
+    COLOR.rgb *= lerp(cold, hot, saturate(COLOR.a)) * pulse;
+}

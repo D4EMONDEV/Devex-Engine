@@ -38,16 +38,23 @@ struct FileType
     std::string_view extension;
     std::string_view description;
 };
-constexpr std::array<FileType, 7> fileTypes{{
+constexpr std::array<FileType, 9> fileTypes{{
     {Icon::FilePlus, "Script", "NewComponent", ".cs", "A game component written in C# or C++."},
     {Icon::Activity, "Curve", "Curve", ".dvxcurve", "A curve for tweens and animation."},
     {Icon::Clapperboard, "Sprite Frames", "Sprite Frames", ".dvxframes", "Named animations made from sprites."},
     {Icon::Grid, "Tileset", "Tileset", ".dvxtileset", "Tiles for painting a tilemap."},
     {Icon::Workflow, "Animator", "Animator", ".dvxanimator", "A state machine of animations."},
     {Icon::Languages, "Translation Table", "Translations", ".csv", "The texts of the game in several languages."},
+    {Icon::Palette, "Material", "Material", ".dvxmat", "The look of a surface: the standard one, or a shader with its values."},
+    {Icon::FileCode, "Shader", "Shader", ".dvxshader", "Code that draws surfaces, sprites, particles or the sky, in Slang."},
     {Icon::Folder, "Folder", "New Folder", "", "An empty folder for organizing assets or scripts."},
 }};
+constexpr std::size_t materialType = 6;
+constexpr std::size_t shaderType = 7;
 constexpr std::size_t folderType = fileTypes.size() - 1;
+// The kinds of shaders, in the order of their choice.
+constexpr std::array<asset::ShaderKind, 4> shaderKinds{asset::ShaderKind::Spatial, asset::ShaderKind::CanvasItem,
+                                                       asset::ShaderKind::Particles, asset::ShaderKind::Sky};
 
 // A component name is a C# or C++ identifier.
 [[nodiscard]] bool isIdentifier(std::string_view name)
@@ -91,6 +98,8 @@ struct EditorDialogsUi : FormUi
     math::Vec2 size{400.0f, 300.0f};
     Entity root;
     Entity language;
+    // The kind of a new shader.
+    Entity shaderKind;
     Entity scriptName;
     Entity folder;
     std::vector<std::string> folders;
@@ -190,7 +199,7 @@ void EditorDialogsUi::start(DialogKind which, ToolsState& state, EditorUiKit& ki
     open = true;
     unsaved = UnsavedChoice::None;
     focusName = false;
-    language = scriptName = file = status = folder = Entity{};
+    language = shaderKind = scriptName = file = status = folder = Entity{};
     folderRows.clear();
     confirm = discard = cancel = back = Button{};
     types = {};
@@ -293,6 +302,12 @@ void EditorDialogsUi::start(DialogKind which, ToolsState& state, EditorUiKit& ki
         {
             language = choice(row("Language"), {"C#", "C++"});
             scene().get<scene::UiDropdown>(language).selected = state.newScriptCSharp ? 0 : 1;
+        }
+        if (!script && selectedType == shaderType)
+        {
+            // What the shader draws, as the shader_type of its first line says.
+            shaderKind = choice(row("Type"), {"Spatial (meshes)", "Canvas Item (sprites)", "Particles", "Sky"});
+            scene().get<scene::UiDropdown>(shaderKind).selected = 0;
         }
         scriptName = field(row("Name"), whole(), script ? state.newScriptName : state.newFileName,
                            script ? "Component name" : directory ? "Folder name" : "File name");
@@ -561,6 +576,12 @@ void EditorDialogsUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& 
                 case 2: return createSpriteFramesFile(state, state.newFileFolder, {}, name);
                 case 3: return createTilesetFile(state, state.newFileFolder, {}, name);
                 case 5: return createTranslationFile(state, state.newFileFolder, name);
+                case materialType: return createMaterialFile(state, state.newFileFolder, name);
+                case shaderType: {
+                    const std::int32_t chosenKind = shaderKind.isValid() ? scene().get<scene::UiDropdown>(shaderKind).selected : 0;
+                    return createShaderFile(state, state.newFileFolder, name,
+                                            shaderKinds[static_cast<std::size_t>(std::clamp(chosenKind, 0, 3))]);
+                }
                 case folderType: return createContentFolder(state, state.newFileFolder, name);
                 default: return createAnimatorFile(state, state.newFileFolder, name);
                 }

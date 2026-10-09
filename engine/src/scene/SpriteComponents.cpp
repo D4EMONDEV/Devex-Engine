@@ -16,7 +16,8 @@ DEVEX_REFLECT(SpriteRenderer)
         .field("blend", &SpriteRenderer::blend)
         .field("lit", &SpriteRenderer::lit)
         .field("unshaded", &SpriteRenderer::unshaded)
-        .field("light_mask", &SpriteRenderer::lightMask, {.bits = true});
+        .field("light_mask", &SpriteRenderer::lightMask, {.bits = true})
+        .field("material", &SpriteRenderer::material, {.assetType = "material"});
 }
 
 DEVEX_REFLECT(SpriteAnimator)

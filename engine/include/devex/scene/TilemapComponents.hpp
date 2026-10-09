@@ -49,6 +49,8 @@ struct DEVEX_API Tilemap
     // The tiles that occlude, as their tileset says, hide the 2D lights whose shadow mask shares a
     // bit with it.
     std::uint32_t occluderMask = 1;
+    // A material whose canvas_item shader draws the tiles; none draws them as they are.
+    asset::AssetId material;
     // The painted cells, 16 by 16 per block, as the scene saves them: "x,y:" the block, then its
     // cells in base64, two bytes each, row by row from the bottom. TileGrid reads and writes them.
     std::vector<std::string> blocks;

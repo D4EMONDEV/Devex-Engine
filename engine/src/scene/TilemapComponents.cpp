@@ -96,6 +96,7 @@ DEVEX_REFLECT(Tilemap)
         .field("unshaded", &Tilemap::unshaded)
         .field("light_mask", &Tilemap::lightMask, {.bits = true})
         .field("occluder_mask", &Tilemap::occluderMask, {.bits = true})
+        .field("material", &Tilemap::material, {.assetType = "material"})
         .field("blocks", &Tilemap::blocks, {.hidden = true});
 }
 

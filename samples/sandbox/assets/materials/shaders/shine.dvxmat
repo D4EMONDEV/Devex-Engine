@@ -1,0 +1,3 @@
+# Drawn by the shader shine.dvxshader, with its default values.
+[material format=2]
+shader = asset("03736a69-66bc-5115-899f-39daa184cff7")

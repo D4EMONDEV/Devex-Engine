@@ -131,6 +131,9 @@ struct DEVEX_API Importer
 // Fonts are baked into an atlas of distances at the "size" of the option, with the "spread" of the
 // distances around each outline, and the characters of the translations of the project.
 [[nodiscard]] DEVEX_API core::Result<ImportResult> importFontFile(ImportContext& context);
+// Shaders of the project, .dvxshader files, compiled by slangc. One that does not compile imports
+// with its errors and without code.
+[[nodiscard]] DEVEX_API core::Result<ImportResult> importShaderFile(ImportContext& context);
 // Tables of translations, .csv files: the "delimiter" option is "auto", "comma", "semicolon" or "tab".
 [[nodiscard]] DEVEX_API core::Result<ImportResult> importTranslationFile(ImportContext& context);
 // Bakes the letters of a TrueType font into an atlas of distances, as the font importer does: the

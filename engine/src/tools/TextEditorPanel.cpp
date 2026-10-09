@@ -749,13 +749,19 @@ void ScriptUi::colorLines(ToolsState& state, const TextDocument& document, Entit
     }
     world.setTextHighlights(scene(), area, std::move(found));
 
-    // The diagnostics of the last build of the game code, on the lines they name.
+    // The diagnostics of the last build of the game code, and those of the last import of a shader,
+    // on the lines they name.
     std::vector<ui::TextLineMark> marks;
-    for (const CodeDiagnostic& diagnostic : state.codeDiagnostics)
+    const std::array<const std::vector<CodeDiagnostic>*, 2> lists{&state.codeDiagnostics, &shaderDiagnosticsOf(state, document.path)};
+    for (const std::vector<CodeDiagnostic>* const list : lists)
     {
-        if (diagnostic.line >= 1 && sameTextPath(diagnostic.path, document.path))
+        for (const CodeDiagnostic& diagnostic : *list)
         {
-            marks.push_back({.line = static_cast<std::uint32_t>(diagnostic.line - 1), .color = linearColor(diagnostic.error ? colors.error : colors.warning)});
+            if (diagnostic.line >= 1 && sameTextPath(diagnostic.path, document.path))
+            {
+                marks.push_back(
+                    {.line = static_cast<std::uint32_t>(diagnostic.line - 1), .color = linearColor(diagnostic.error ? colors.error : colors.warning)});
+            }
         }
     }
     world.setTextMarks(scene(), area, std::move(marks));
@@ -1223,16 +1229,22 @@ std::optional<PendingAction> ScriptUi::update(ToolsState& state, EditorUiKit& ki
         edit.completing = false;
     }
 
-    // What a line of the last build says, next to the pointer on it.
-    if (panel.hovered() && !state.codeDiagnostics.empty())
+    // What a line of the last build, or of the last import of a shader, says, next to the pointer on it.
+    const std::vector<CodeDiagnostic>& shaderErrors = shaderDiagnosticsOf(state, document->path);
+    if (panel.hovered() && (!state.codeDiagnostics.empty() || !shaderErrors.empty()))
     {
         const std::int32_t pointed = world.textLineAt(scene(), area, panel.input().pointer);
-        for (const CodeDiagnostic& diagnostic : state.codeDiagnostics)
+        bool told = false;
+        const std::array<const std::vector<CodeDiagnostic>*, 2> lists{&state.codeDiagnostics, &shaderErrors};
+        for (const std::vector<CodeDiagnostic>* const list : lists)
         {
-            if (pointed >= 0 && diagnostic.line - 1 == pointed && sameTextPath(diagnostic.path, document->path))
+            for (const CodeDiagnostic& diagnostic : *list)
             {
-                kit.showTooltip(diagnostic.message, mouse);
-                break;
+                if (!told && pointed >= 0 && diagnostic.line - 1 == pointed && sameTextPath(diagnostic.path, document->path))
+                {
+                    kit.showTooltip(diagnostic.message, mouse);
+                    told = true;
+                }
             }
         }
     }

@@ -1,0 +1,14 @@
+shader_type canvas_item;
+
+// Grass in the wind: the top of the sprite leans from side to side, its foot stays where it grows,
+// and tufts side by side sway one after the other.
+uniform float strength : hint_range(0.0, 0.5) = 0.12;
+uniform float speed : hint_range(0.0, 5.0) = 1.6;
+
+void vertex()
+{
+    // VERTEX is in meters from the pivot, at the bottom of the tufts: the higher, the further. The
+    // rows of MODEL_MATRIX end with the place of the sprite.
+    const float place = MODEL_MATRIX[0].w;
+    VERTEX.x += sin(TIME * speed + place * 0.9) * strength * max(VERTEX.y, 0.0);
+}

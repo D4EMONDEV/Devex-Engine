@@ -500,6 +500,12 @@ core::Result<std::vector<asset::AssetId>> assetReferences(asset::AssetType type,
         {
             ids.push_back(texture);
         }
+        // Its shader, and the textures of its uniforms.
+        ids.push_back(material->shader);
+        for (const asset::MaterialParameter& parameter : material->parameters)
+        {
+            ids.push_back(parameter.texture);
+        }
         break;
     }
     case asset::AssetType::Mesh: {
@@ -589,6 +595,8 @@ core::Result<std::vector<asset::AssetId>> assetReferences(asset::AssetType type,
     case asset::AssetType::Theme:
     case asset::AssetType::Curve:
     case asset::AssetType::Translation:
+    // A shader carries its compiled code.
+    case asset::AssetType::Shader:
         break;
     }
     std::erase_if(ids, [](asset::AssetId id) { return !id.isValid(); });
