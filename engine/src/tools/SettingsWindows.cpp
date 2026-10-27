@@ -715,6 +715,10 @@ void ProjectSettingsUi::buildCards(ToolsState& state, EditorUiKit& kit)
     icon = choice(iconRow.editor);
     scene().add<scene::UiDropTarget>(icon, scene::UiDropTarget{.accepts = {"asset:texture"}, .highlightColor = math::Vec4{accent.x, accent.y, accent.z, 0.35f}});
     tooltip(iconRow.row, "An image of the project, square and 256 pixels or more: the icon of the window and of the exported game");
+    const FormRow desktopRow = formRow(application, "Linux Desktop Entry");
+    desktopEntry = toggle(desktopRow.editor);
+    tooltip(desktopRow.row, "On Linux, the exported game lists itself among the applications when it starts: the dock "
+                            "shows its name and icon. The export also gives the entry to install by hand.");
 
     // Window.
     Section& window = pageCard(kit, 1, "Window");
@@ -895,6 +899,7 @@ void ProjectSettingsUi::sync(ToolsState& state, EditorUiKit& kit)
     const auto chosenIcon = std::ranges::find(icons, project.window.icon);
     setChoice(icon, std::move(textures), chosenIcon != icons.end() ? static_cast<std::int32_t>(chosenIcon - icons.begin()) : -1);
     scene().get<scene::UiDropdown>(icon).placeholder = assetLabel(state, project.window.icon);
+    setToggle(desktopEntry, project.window.desktopEntry);
 
     // Window and physics.
     setNumber(size[0], static_cast<float>(project.window.width));
@@ -999,6 +1004,10 @@ void ProjectSettingsUi::answer(ToolsState& state, EditorUiKit& kit)
         {
             project.window.icon = asset::AssetId{*uuid};
         }
+    }
+    if (world.wasChanged(desktopEntry))
+    {
+        project.window.desktopEntry = scene().get<scene::UiToggle>(desktopEntry).value;
     }
 
     // Window and physics.

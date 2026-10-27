@@ -86,6 +86,9 @@ struct DEVEX_API WindowSettings
     std::uint32_t maxFrameRate = 0;
     // A texture of the project, the icon of the window and of the exported executable.
     AssetId icon;
+    // On Linux, the exported game lists itself among the applications of the desktop when it
+    // starts, where the dock and the window switcher take its name and icon.
+    bool desktopEntry = true;
 
     bool operator==(const WindowSettings&) const = default;
 };
@@ -98,8 +101,15 @@ struct DEVEX_API ExportSettings
     std::vector<std::string> scenes;
     // res:// folders whose assets are always exported, for those that code loads by identifier.
     std::vector<std::string> includeFolders;
-    // The folder the game is exported to, relative to the project or absolute.
+    // The folder the game is exported to, relative to the project or absolute: by default, named
+    // after the system the game is exported for, which is the one the editor runs on.
+#if defined(_WIN32)
     std::string output = "export/windows";
+#elif defined(__APPLE__)
+    std::string output = "export/macos";
+#else
+    std::string output = "export/linux";
+#endif
     // The configuration of the engine build the game is exported with: "Release" or "Debug".
     std::string configuration = "Release";
 

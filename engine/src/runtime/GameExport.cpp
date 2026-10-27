@@ -9,6 +9,7 @@
 #include <devex/core/JobSystem.hpp>
 #include <devex/core/Log.hpp>
 #include <devex/core/Path.hpp>
+#include <devex/platform/DesktopEntry.hpp>
 #include <devex/platform/Executable.hpp>
 #include <devex/runtime/GameExport.hpp>
 #include <devex/serialization/Text.hpp>
@@ -36,6 +37,24 @@ constexpr std::string_view libraryExtension = ".dll";
 #else
 constexpr std::string_view executableSuffix = "";
 constexpr std::string_view libraryExtension = ".so";
+// In lib/ next to bin/, where the libraries of vcpkg are linked into it.
+constexpr std::string_view engineLibrary = "libdevex-engine.so";
+#endif
+
+// The .NET runtime published with a game in C#: the one of the system and the processor the game
+// is exported for, which are those the editor runs on.
+#if defined(_WIN32) && defined(_M_ARM64)
+constexpr std::string_view dotnetRuntime = "win-arm64";
+#elif defined(_WIN32)
+constexpr std::string_view dotnetRuntime = "win-x64";
+#elif defined(__APPLE__) && defined(__aarch64__)
+constexpr std::string_view dotnetRuntime = "osx-arm64";
+#elif defined(__APPLE__)
+constexpr std::string_view dotnetRuntime = "osx-x64";
+#elif defined(__aarch64__)
+constexpr std::string_view dotnetRuntime = "linux-arm64";
+#else
+constexpr std::string_view dotnetRuntime = "linux-x64";
 #endif
 
 [[nodiscard]] bool equalsIgnoringCase(std::string_view left, std::string_view right)
@@ -217,7 +236,7 @@ void collectAssetIds(const serialization::TextValue& value, std::vector<asset::A
     <TargetFramework>net10.0</TargetFramework>
     <AssemblyName>Devex.Host</AssemblyName>
     <OutputType>Exe</OutputType>
-    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <RuntimeIdentifier>{1}</RuntimeIdentifier>
     <SelfContained>true</SelfContained>
     <InvariantGlobalization>true</InvariantGlobalization>
     <EnableDynamicLoading>true</EnableDynamicLoading>
@@ -246,7 +265,7 @@ void collectAssetIds(const serialization::TextValue& value, std::vector<asset::A
     const std::filesystem::path host = plan.project.cacheDirectory() / "export" / "dotnet";
     const std::filesystem::path managedSource = plan.engine.binDirectory() / "managed";
     if (core::Result<void> written =
-            core::writeTextFile(host / "Devex.Host.csproj", std::format(hostTemplate, core::toUtf8(managedSource)));
+            core::writeTextFile(host / "Devex.Host.csproj", std::format(hostTemplate, core::toUtf8(managedSource), dotnetRuntime));
         !written)
     {
         return written;
@@ -338,6 +357,14 @@ void collectAssetIds(const serialization::TextValue& value, std::vector<asset::A
     {
         return std::unexpected(copied.error());
     }
+#ifndef _WIN32
+    // The game finds it beside itself ($ORIGIN in the search path of the player).
+    const std::filesystem::path engine = plan.engine.directory / "lib" / engineLibrary;
+    if (core::Result<void> copied = copyFile(engine, plan.output / engineLibrary); !copied)
+    {
+        return std::unexpected(copied.error());
+    }
+#endif
     // The C++ runtime, which the engine build copies there when it may be redistributed.
     if (std::filesystem::is_directory(bin / "redist", error))
     {
@@ -383,6 +410,8 @@ void collectAssetIds(const serialization::TextValue& value, std::vector<asset::A
     return asset::resizeImage(*image, packageIconSize, packageIconSize);
 }
 
+#ifdef _WIN32
+// The icon of the executable, in its resources. Linux desktops take it from the desktop entry.
 [[nodiscard]] core::Result<void> setIcon(const std::filesystem::path& executable, const asset::Image& icon)
 {
     std::vector<platform::IconImage> images;
@@ -398,6 +427,30 @@ void collectAssetIds(const serialization::TextValue& value, std::vector<asset::A
     }
     return platform::setExecutableIcon(executable, images);
 }
+#endif
+
+#ifdef __linux__
+// What a Linux desktop needs to list the game, for whoever installs it (Flatpak, a store, or a copy
+// into ~/.local/share/applications and the icons of the theme): <game>.desktop, which starts the game
+// found in PATH, and its icon, <game>.png. The game also lists itself when it starts, with that icon
+// (WindowSettings::desktopEntry).
+[[nodiscard]] core::Result<void> writeDesktopFiles(const std::filesystem::path& output, const std::string& name,
+                                                   const asset::Project& project, const std::optional<asset::Image>& icon)
+{
+    platform::DesktopEntry entry{.name = project.name, .categories = "Game;"};
+    if (icon)
+    {
+        const std::vector<std::byte> png = asset::encodePng(*icon);
+        if (core::Result<void> written = core::writeFileAtomically(output / core::pathFromUtf8(name + ".png"), png); !written)
+        {
+            return written;
+        }
+        entry.icon = core::pathFromUtf8(name);
+    }
+    return core::writeTextFile(output / core::pathFromUtf8(name + ".desktop"),
+                               platform::desktopEntryText(entry, core::pathFromUtf8(name)));
+}
+#endif
 
 } // namespace
 
@@ -928,6 +981,7 @@ core::Result<ExportResult> exportGame(const ExportPlan& plan, const std::functio
                 return std::unexpected(copied.error());
             }
         }
+#ifdef _WIN32
         if (icon)
         {
             if (core::Result<void> set = setIcon(result.executable, *icon); !set)
@@ -935,6 +989,13 @@ core::Result<ExportResult> exportGame(const ExportPlan& plan, const std::functio
                 DEVEX_LOG_WARNING("The executable keeps the default icon: {}", set.error());
             }
         }
+#endif
+#ifdef __linux__
+        if (core::Result<void> written = writeDesktopFiles(plan.output, name, project, icon); !written)
+        {
+            return std::unexpected(written.error());
+        }
+#endif
     }
     if (core::Result<void> marked = core::writeTextFile(
             plan.output / exportMarker,

@@ -161,7 +161,7 @@ void ExportUi::buildCards(ToolsState& state, EditorUiKit& kit)
     tooltip(executableRow.row, "Named after the game: rename it in Project > Project Settings");
     const FormRow outputRow = formRow(game, "Output Folder");
     output = field(outputRow.editor, UiRect{.anchorMin = {0.0f, 0.0f}, .anchorMax = {1.0f, 1.0f}, .offsetMin = {0.0f, 0.0f}, .offsetMax = {-tool - gap * 2.0f, 0.0f}},
-                   "", "export/windows");
+                   "", asset::ExportSettings{}.output);
     tooltip(outputRow.row, "Relative to the project folder, or absolute. A previous export there is replaced.");
     browse = toolButton(kit, outputRow.editor, Icon::FolderOpen, rightButton(tool, 0.0f));
     tooltip(browse.entity, "Choose the folder");

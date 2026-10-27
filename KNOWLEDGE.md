@@ -1809,13 +1809,14 @@ namespace devex::asset {
         bool vsync = true;
         std::uint32_t maxFrameRate = 0;
         AssetId icon;
+        bool desktopEntry = true;  // Linux : le jeu exporté s'inscrit parmi les applications
     };
     
     // Configuration d'export
     struct DEVEX_API ExportSettings {
         std::vector<std::string> scenes;
         std::vector<std::string> includeFolders;
-        std::string output = "export/windows";
+        std::string output = "export/linux";  // "export/windows" sous Windows, "export/macos" sous macOS
         std::string configuration = "Release";
     };
     

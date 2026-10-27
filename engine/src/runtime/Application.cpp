@@ -18,6 +18,7 @@
 #include "ManagedCodeBuilder.hpp"
 #include "ManagedGame.hpp"
 
+#include <devex/platform/DesktopEntry.hpp>
 #include <devex/platform/Process.hpp>
 #include <devex/runtime/Application.hpp>
 #include <devex/runtime/ComponentViews.hpp>
@@ -2824,6 +2825,24 @@ int run(Application& application, const ApplicationConfig& config)
         package = std::move(*opened);
         launchSettings = package->project();
         DEVEX_LOG_INFO("Game {}: {} assets", launchSettings->name, package->assetCount());
+
+        // On Linux, the dock takes the name and the icon of the window from the entry of the game
+        // among the applications, with the icon the export put beside the package.
+        if (launchSettings->window.desktopEntry)
+        {
+            std::filesystem::path icon = packagePath;
+            icon.replace_extension(".png");
+            std::error_code error;
+            const platform::DesktopEntry entry{
+                .name = launchSettings->name,
+                .icon = std::filesystem::exists(icon, error) ? icon : std::filesystem::path(),
+                .categories = "Game;",
+            };
+            if (const core::Result<void> registered = platform::registerDesktopEntry(entry); !registered)
+            {
+                DEVEX_LOG_WARNING("The game is not listed among the applications of the desktop: {}", registered.error());
+            }
+        }
     }
     else if (!config.project.empty())
     {

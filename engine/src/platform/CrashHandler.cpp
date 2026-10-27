@@ -582,10 +582,12 @@ void nameFrames(const char* module)
     }
 
     // The debug information of a library takes addr2line a second or so to read; a stuck one is let go.
+    // A local length, which no call in the loop can change behind the bounds checked.
     const std::size_t start = state.namesLength;
+    std::size_t length = start;
     const long long deadline = millisecondsNow() + 30'000;
     bool finished = false;
-    while (!finished && state.namesLength < state.names.size() && millisecondsNow() < deadline)
+    while (!finished && length < state.names.size() && millisecondsNow() < deadline)
     {
         pollfd readable{.fd = ends[0], .events = POLLIN, .revents = 0};
         const int ready = poll(&readable, 1, 100);
@@ -597,17 +599,17 @@ void nameFrames(const char* module)
         {
             continue;
         }
-        const ssize_t received =
-            read(ends[0], state.names.data() + state.namesLength, state.names.size() - state.namesLength);
+        const ssize_t received = read(ends[0], state.names.data() + length, state.names.size() - length);
         if (received > 0)
         {
-            state.namesLength += static_cast<std::size_t>(received);
+            length += static_cast<std::size_t>(received);
         }
         else
         {
             finished = true;
         }
     }
+    state.namesLength = length;
     close(ends[0]);
     if (!finished)
     {

@@ -10,7 +10,6 @@
 
 namespace devex::platform {
 
-#ifdef __linux__
 namespace {
 
 // A value on one line, its backslashes and control characters escaped.
@@ -63,6 +62,7 @@ namespace {
     return quoted;
 }
 
+#ifdef __linux__
 [[nodiscard]] core::Result<std::filesystem::path> applicationsDirectory()
 {
     if (const char* const data = std::getenv("XDG_DATA_HOME"); data != nullptr && *data != '\0')
@@ -75,9 +75,34 @@ namespace {
     }
     return core::makeError(core::ErrorCode::Platform, "no folder for the applications of the user");
 }
+#endif
 
 } // namespace
 
+std::string desktopEntryText(const DesktopEntry& entry, const std::filesystem::path& executable)
+{
+    std::string text = "[Desktop Entry]\nType=Application\n";
+    text += "Name=" + escapeValue(entry.name) + "\n";
+    if (!entry.comment.empty())
+    {
+        text += "Comment=" + escapeValue(entry.comment) + "\n";
+    }
+    text += "Exec=" + escapeValue(execArgument(core::toUtf8(executable))) + (entry.opensFiles ? " %f\n" : "\n");
+    if (!entry.icon.empty())
+    {
+        text += "Icon=" + escapeValue(core::toUtf8(entry.icon.lexically_normal())) + "\n";
+    }
+    text += "Terminal=false\n";
+    if (!entry.categories.empty())
+    {
+        text += "Categories=" + escapeValue(entry.categories) + "\n";
+    }
+    // SDL names the windows after the executable, as the app_id of Wayland and the class of X11.
+    text += "StartupWMClass=" + escapeValue(core::toUtf8(executable.filename())) + "\n";
+    return text;
+}
+
+#ifdef __linux__
 core::Result<void> registerDesktopEntry(const DesktopEntry& entry)
 {
     std::error_code error;
@@ -92,27 +117,9 @@ core::Result<void> registerDesktopEntry(const DesktopEntry& entry)
         return std::unexpected(applications.error());
     }
 
-    // SDL names the windows after the executable, as the app_id of Wayland and the class of X11, and
-    // the desktop looks for the entry of that name.
+    // The desktop looks for the entry named as the windows of the program.
     const std::string name = core::toUtf8(executable.filename());
-    std::string text = "[Desktop Entry]\nType=Application\n";
-    text += "Name=" + escapeValue(entry.name) + "\n";
-    if (!entry.comment.empty())
-    {
-        text += "Comment=" + escapeValue(entry.comment) + "\n";
-    }
-    text += "Exec=" + escapeValue(execArgument(core::toUtf8(executable))) + " %f\n";
-    if (!entry.icon.empty())
-    {
-        text += "Icon=" + escapeValue(core::toUtf8(entry.icon.lexically_normal())) + "\n";
-    }
-    text += "Terminal=false\n";
-    if (!entry.categories.empty())
-    {
-        text += "Categories=" + escapeValue(entry.categories) + "\n";
-    }
-    text += "StartupWMClass=" + escapeValue(name) + "\n";
-
+    const std::string text = desktopEntryText(entry, executable);
     const std::filesystem::path file = *applications / core::pathFromUtf8(name + ".desktop");
     if (const core::Result<std::string> written = core::readTextFile(file); written && *written == text)
     {

@@ -27,7 +27,7 @@ mais seulement explicitement ici : le code suit ce document, pas l'inverse.
 | Maths                    | GLM derrière `devex::math`                                         |
 | Coordonnées              | Y-up, main droite, -Z avant, 1 unité = 1 mètre                     |
 | Tests                    | Catch2 v3 via CTest                                                |
-| Intégration continue     | GitHub Actions, Windows et Linux, Debug et Release, tests sans GPU |
+| Intégration continue     | GitHub Actions, Windows et Linux, Debug et Release ; `[gpu]` sur lavapipe sous Linux |
 | Boucle de jeu            | Pas fixe (60 Hz par défaut) + mise à jour variable par frame       |
 | Point d'entrée           | Le moteur possède la boucle, le jeu dérive de `Application`        |
 | Entrées                  | État interrogeable + événements, clavier, souris et manettes       |
@@ -726,6 +726,35 @@ les assets s'écrivent au fil de leur lecture.
   runtime C++ quand le build du moteur le fournit (`bin/redist`, copié par CMake en Release), et
   `devex-export.txt` qui marque le dossier comme un export. Un export Debug emporte aussi
   `resources/` pour la surcouche d'outils (F1).
+- **Sous Linux** : `<Jeu>` (le lecteur renommé), `<Jeu>.dvxpak`, `libGame.so`,
+  `libdevex-engine.so`, les shaders, `managed/` avec le runtime .NET de Linux, et `<Jeu>.desktop` et
+  `<Jeu>.png` pour l'installer dans un bureau (voir *Bureaux Linux*). Le lecteur cherche ses
+  bibliothèques dans son propre dossier puis dans `lib/` à côté de `bin/` (`RUNPATH
+  $ORIGIN:$ORIGIN/../lib`), ce qui sert le jeu exporté comme le build et le moteur installé ; le
+  module du jeu, chargé après le moteur, ne cherche qu'à côté de lui (`$ORIGIN`), plutôt que dans le
+  moteur de la machine qui l'a compilé. Le dossier de sortie par défaut est `export/linux`
+  (`export/windows` sous Windows, `export/macos` sous macOS). Jusqu'au jalon 71, un jeu exporté
+  sous Linux ne démarrait pas : la bibliothèque du moteur, rangée dans `lib/`, n'était pas copiée,
+  et le .NET publié était celui de Windows (`win-x64` écrit en dur), que le jeu n'aurait de toute
+  façon pas pu charger. Le runtime .NET est maintenant celui du système et du processeur de
+  l'éditeur (`linux-x64`, `linux-arm64`, `win-x64`...).
+- **Ce qu'un jeu Linux demande au système** : il ne lie que la glibc, `libm`, `libgcc_s` et
+  `libstdc++` de GCC 14 (`GLIBCXX_3.4.32`, Ubuntu 24.04 ou plus récent). Le reste est chargé au
+  lancement s'il est là : le chargeur Vulkan (`libvulkan1`) et un pilote Vulkan 1.4, indispensables ;
+  Wayland ou X11 et leurs extensions, libdecor, le son (PulseAudio, PipeWire, ALSA, JACK), tous
+  présents sur un bureau. Le .NET livré se passe d'ICU (`InvariantGlobalization`) ; il ne lui manque
+  que `liblttng-ust`, que son traceur facultatif cherche. La glibc est la limite : un binaire
+  demande les versions des fonctions de la glibc qui l'a compilé, et la 2.43 a donné de nouvelles
+  versions à `acosf`, `sqrtf` et quelques autres. Exporté d'une Ubuntu 26.04, un jeu demande donc la
+  glibc 2.43 ; exporté du moteur de la CI, construit sous Ubuntu 24.04, la 2.39. Le moteur de la CI
+  est celui qui exporte pour le plus de systèmes.
+- **Vérifié de bout en bout** : la CI exporte le bac à sable avec le moteur qu'elle vient
+  d'empaqueter, comme depuis le téléchargement (code C++ et C# et shaders du projet compilés par
+  lui), puis le joue une minute dans un conteneur `ubuntu:24.04` qui n'a que `libvulkan1` et
+  `mesa-vulkan-drivers`, le dossier du jeu en lecture seule comme une fois installé :
+  `scripts/play_exported_game.sh` liste ce que le jeu prend au système, le lance sans écran sur
+  lavapipe, et vérifie qu'il joue sa scène de démarrage sans erreur ni plantage. Le jeu exporté est
+  gardé 14 jours (`sandbox-linux-x64`), pour l'essayer sur d'autres machines.
 - **Source des assets** : `asset::AssetSource` est l'interface que le jeu voit (réglages du projet,
   `find`, `assets`, `findByPath`, `loadArtifact`, `sceneText`). La base d'assets l'implémente
   pendant le développement, `asset::PackageReader` une fois le jeu exporté. Le lecteur mappe le
@@ -3768,17 +3797,42 @@ Jalon 62, comme la localisation de Godot.
   `devex-windows-x64` (le dossier) et `devex-linux-x64` (un `.tar.gz`, qui garde les droits
   d'exécution), à prendre dans le résumé d'une exécution.
 - **Exigences** : les avertissements sont des erreurs (`DEVEX_WARNINGS_AS_ERRORS=ON`), et tous les
-  tests passent, sauf ceux marqués `[gpu]` : les machines de GitHub n'ont pas de GPU. Les tags
-  Catch2 deviennent des labels CTest (`ADD_TAGS_AS_LABELS`), et la CI lance
-  `ctest --label-exclude gpu` ; les tests `[gpu]` (rendu, éditeur) restent à lancer sur les
+  tests passent. Les tags Catch2 deviennent des labels CTest (`ADD_TAGS_AS_LABELS`) : la CI lance
+  d'abord `ctest --label-exclude gpu`, puis, sous Linux, les tests `[gpu]` (rendu, éditeur) à part.
+  Les machines de GitHub n'ont pas de GPU : sous Windows, ces tests restent à lancer sur les
   machines des développeurs.
+- **Tests `[gpu]` sur lavapipe** : sous Linux, ils tournent sur lavapipe, le Vulkan de Mesa qui
+  dessine sur le processeur (`mesa-vulkan-drivers`, choisi par `VK_DRIVER_FILES`), dans des
+  fenêtres sans écran : le pilote vidéo `offscreen` de SDL (`SDL_VIDEO_DRIVER=offscreen`) donne à
+  Vulkan une surface sans affichage (`VK_EXT_headless_surface`), sur laquelle le swapchain se crée
+  comme ailleurs. `vulkaninfo --summary` ouvre le journal de l'étape, pour le cas où la version de
+  Vulkan de lavapipe serait trop ancienne (le moteur demande 1.4). Les 41 tests passent ainsi
+  sur une machine sans écran, en un peu plus de cinq minutes en Debug avec la validation ; ils ne
+  remplacent pas un vrai GPU, dont les pilotes ont leurs propres défauts, mais ils voient les
+  erreurs de validation, les plantages et les images fausses. Pour les lancer ainsi chez soi :
+  `SDL_VIDEO_DRIVER=offscreen VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json ctest
+  --preset test-linux-debug --label-regex gpu`.
+- **Faux succès sous Linux** : depuis leur arrivée (5 octobre 2026), les jobs Linux s'affichaient
+  en vert sans avoir jamais construit le moteur : leur étape Build durait de 0 à 1 seconde, et
+  l'artefact `devex-linux-x64` pesait 196 octets, une archive vide. Les étapes passent leur sortie
+  à `tee`, et le shell par défaut des étapes Linux, `bash -e` sans `pipefail`, ne gardait que le
+  statut de `tee`. La configuration s'arrêtait sur libxcrypt, que vcpkg construit pour libmount et
+  GLib, et dont les autotools demandent `libltdl-dev`, absent de l'image de GitHub. Les étapes
+  Linux tournent maintenant sous `bash -eo pipefail` (`defaults.run.shell: bash`), sauf celle des
+  annotations, qui fait de son mieux ; `libltdl-dev` est installé. Avant d'archiver le moteur,
+  `scripts/check_engine_package.sh` vérifie qu'il est entier : programmes, bibliothèque du moteur,
+  ressources, shaders, `slangc`, C#, paquet CMake, et bibliothèques que `ldd` résout. Il a trouvé
+  que `cmake --install` oubliait `bin/slang` : un moteur installé ne compilait pas les shaders des
+  projets, ni donc les jeux qui en ont, comme le bac à sable.
 - **vcpkg** : un clone **complet** de vcpkg, dont l'historique contient les ports fixés par la
   `builtin-baseline` (un clone partiel lui faisait chercher ces versions pendant l'installation,
   ce qui échouait sur le réseau de la CI). Les paquets construits sont gardés dans le cache de
   GitHub, par configuration et par empreinte de `vcpkg.json` et des ports overlay
   (`cmake/vcpkg-ports`), et sauvés dès la configuration :
   la première exécution construit les dépendances (une dizaine de minutes), les suivantes les
-  reprennent ; une exécution complète dure environ un quart d'heure.
+  reprennent ; une exécution complète dure environ un quart d'heure. Sans cache pour cette
+  empreinte, celui d'une empreinte précédente est repris (`restore-keys`) : vcpkg nomme chaque
+  paquet par l'empreinte de ce qui l'a construit, et ne reconstruit que ceux qui ont changé.
 - **Échecs lisibles par tous** : les journaux d'une exécution ne se lisent qu'avec des droits sur
   le dépôt. Chaque étape garde donc ce qu'elle écrit dans un fichier, et une exécution qui échoue
   publie en **annotations d'erreur** la fin des journaux de l'étape en faute : la configuration
@@ -3824,6 +3878,17 @@ Jalon 62, comme la localisation de Godot.
   rien : l'exécutable et la fenêtre portent déjà l'icône. Sous Wayland, l'échec de
   `SDL_SetWindowIcon` n'est plus qu'un message de débogage : c'était un avertissement à chaque
   lancement, compté dans la barre d'état de l'éditeur.
+- **Jeux exportés** : les deux à la fois. L'export écrit à côté du jeu `<Jeu>.desktop` (qui lance
+  `<Jeu>` trouvé dans le `PATH`, avec l'icône `<Jeu>` du thème) et `<Jeu>.png` (l'icône du projet en
+  256 pixels), pour qui installe le jeu : Flatpak, une boutique, ou une copie dans
+  `~/.local/share/applications` et `~/.local/share/icons/hicolor/256x256/apps`. Et le jeu s'inscrit
+  lui-même à son lancement, comme l'éditeur, avec son chemin et celui de son icône, avant d'ouvrir sa
+  fenêtre : un `.tar.gz` décompressé n'importe où montre son nom et son icône dans le dock dès la
+  première partie. La case *Linux Desktop Entry* des réglages du projet (*Application*,
+  `desktop_entry` de `[window]`, écrit seulement quand il est coupé) l'en empêche, pour un jeu
+  qu'une boutique installe. `platform::desktopEntryText` écrit les deux entrées ; le lecteur lancé
+  sur un projet, pendant le développement, ne s'inscrit pas. Sous Linux, l'exécutable n'a pas
+  d'icône à lui : l'export ne tente plus de la lui donner.
 - **Plantages** : voir *Journal et plantages*.
 
 ### Dépendances prévues (vcpkg)
@@ -4226,6 +4291,11 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
 70. ✅ **Bureaux Linux** — barre de titre de libdecor sous GNOME Wayland et extensions X11, par un
     port overlay de SDL3 ; éditeur listé parmi les applications du bureau, avec son nom et son icône
     dans le dock ; rapport de plantage sous Linux, appels nommés par `addr2line`.
+71. ✅ **Linux vérifié par la CI** — étapes Linux sous `pipefail` (elles n'avaient jamais construit le
+    moteur), `libltdl-dev`, moteur empaqueté vérifié entier et avec `slangc` ; tests `[gpu]` sur
+    lavapipe sans écran ; export Linux réparé (bibliothèque du moteur, .NET de Linux, module du jeu
+    sans chemin de la machine, dossier `export/linux`) et joué dans une Ubuntu vierge ; entrées
+    `.desktop` des jeux exportés.
 
 Ensuite, sans ordre figé : à choisir dans les pistes ci-dessous.
 
@@ -4340,10 +4410,11 @@ Ensuite, sans ordre figé : à choisir dans les pistes ci-dessous.
   du jeu (tirées des commentaires de leur code), et des préréglages faits de préfabs du projet ; un
   panneau redessiné seulement quand il change ; les polices de l'éditeur
   cuites une fois et gardées en cache plutôt qu'à chaque lancement.
-- **Bureaux Linux, la suite** : entrée `.desktop` et icône des jeux exportés et du lecteur, écrites
-  par l'export plutôt qu'au lancement ; couleur du thème sur la barre de libdecor (greffon à soi ou
-  barre intégrée) ; minidumps (Breakpad, Crashpad) ; noms des fonctions et des lignes sans
-  binutils ; association des `.dvxproj` à l'éditeur (type MIME).
+- **Bureaux Linux, la suite** : entrée retirée quand un jeu est supprimé ou déplacé, identifiant
+  d'application plus sûr que le nom de l'exécutable (deux jeux nommés pareil partagent l'entrée) ;
+  paquets Flatpak et AppImage écrits par l'export ; couleur du thème sur la barre de libdecor
+  (greffon à soi ou barre intégrée) ; minidumps (Breakpad, Crashpad) ; noms des fonctions et des
+  lignes sans binutils ; association des `.dvxproj` à l'éditeur (type MIME).
 - **CI, la suite** : macOS ; Clang à côté de GCC sous Linux ; les tests `[gpu]` sur un rendu logiciel (lavapipe,
   SwiftShader) ou une machine avec GPU ; actions passées à Node.js 24 (celles en v4 tournent sur
   Node.js 20, déprécié) ; cache de compilation (sccache) ; éditeur et lecteur publiés en artefacts

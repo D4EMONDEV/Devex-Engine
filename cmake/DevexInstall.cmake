@@ -2,8 +2,9 @@
 # a build is, so that the editor builds game code and exports games from it as it does from a build.
 #
 #   bin/      the editor, the player, devex-bindgen and the libraries, with resources/, shaders/,
-#             managed/ (the C# runtime) and, with Visual C++ in Release, the C++ runtime beside the
-#             programs and in redist/ for exported games
+#             slang/ (the compiler of the projects' shaders), managed/ (the C# runtime) and, with
+#             Visual C++ in Release, the C++ runtime beside the programs and in redist/ for exported
+#             games
 #   lib/      the engine library on Linux, its import library on Windows
 #   include/  the headers of the engine and of GLM, which they use
 #   cmake/    the package that game modules are built against, with paths taken from its own place
@@ -53,6 +54,8 @@ if(CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS)
 endif()
 
 install(DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/resources" "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/shaders" DESTINATION bin)
+# slangc and its libraries, which the editor runs to compile the shaders of projects.
+install(DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/slang" DESTINATION bin USE_SOURCE_PERMISSIONS)
 if(TARGET devex_managed)
     install(DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/managed" DESTINATION bin)
 endif()

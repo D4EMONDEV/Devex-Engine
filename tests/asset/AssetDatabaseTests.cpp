@@ -569,8 +569,11 @@ TEST_CASE("Window and export settings of projects are saved and read back", "[as
     CHECK(devex::asset::writeProjectText(project).find("[window") == std::string::npos);
     CHECK(devex::asset::writeProjectText(project).find("[export") == std::string::npos);
 
+    // The desktop entry is written only when it is turned off.
+    project.window.width = 1920;
+    CHECK(devex::asset::writeProjectText(project).find("desktop_entry") == std::string::npos);
     project.window = {.width = 1920, .height = 1080, .fullscreen = true, .vsync = false, .maxFrameRate = 144,
-                      .icon = AssetId::generate()};
+                      .icon = AssetId::generate(), .desktopEntry = false};
     project.exportSettings = {.scenes = {"res://assets/scenes/a.dvxscene", "res://assets/scenes/b.dvxscene"},
                               .includeFolders = {"res://assets/data"},
                               .output = "builds/game",

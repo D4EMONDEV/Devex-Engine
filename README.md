@@ -244,7 +244,13 @@ d'exemple et les données de test sont produits par `scripts/generate_sample_ass
 L'option `--audio-only` régénère seulement les sons ; leur encodage en Ogg, MP3 et FLAC demande
 `ffmpeg` dans le `PATH`.
 
-Les tests marqués `[gpu]` ouvrent une fenêtre masquée et nécessitent un GPU Vulkan 1.4.
+Les tests marqués `[gpu]` ouvrent une fenêtre masquée et nécessitent Vulkan 1.4 : un GPU, ou sous
+Linux lavapipe (`mesa-vulkan-drivers`), le Vulkan de Mesa qui dessine sur le processeur, sans écran
+grâce au pilote vidéo `offscreen` de SDL :
+
+```bash
+SDL_VIDEO_DRIVER=offscreen VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json ctest --preset test-linux-debug --label-regex gpu
+```
 
 ## Construire
 
@@ -272,15 +278,19 @@ cmake --build --preset build-linux-debug
 ctest --preset test-linux-debug --label-exclude gpu
 ```
 
-Chaque push sur `main` est construit et testé par GitHub Actions (Windows et Linux, Debug et
-Release, sans les tests qui demandent un GPU) : voir [.github/workflows/ci.yml](.github/workflows/ci.yml)
-et l'onglet *Actions* du dépôt. Les tests marqués `[gpu]` se lancent localement avec `ctest`.
+Chaque push sur `main` ou `ci` est construit et testé par GitHub Actions (Windows et Linux, Debug
+et Release) : voir [.github/workflows/ci.yml](.github/workflows/ci.yml) et l'onglet *Actions* du
+dépôt. Sous Linux, les tests marqués `[gpu]` y tournent sur lavapipe, et le bac à sable, exporté par
+le moteur empaqueté, est joué dans une Ubuntu 24.04 vierge ; sous Windows, ils se lancent
+localement avec `ctest`.
 
 ## Télécharger le moteur
 
 Chaque exécution de la CI garde 30 jours le moteur en Release, prêt à lancer : dans l'onglet
 *Actions*, ouvrir une exécution réussie et prendre `devex-windows-x64` ou `devex-linux-x64` (un
-`.tar.gz` à extraire). Le dossier contient l'éditeur et le lecteur (`bin/`), les en-têtes et le
+`.tar.gz` à extraire, vérifié complet avant d'être gardé par `scripts/check_engine_package.sh`), et,
+pendant 14 jours, `sandbox-linux-x64`, le bac à sable exporté pour Linux, à essayer sur d'autres
+machines. Le dossier contient l'éditeur et le lecteur (`bin/`), les en-têtes et le
 paquet CMake qui compilent le code C++ des jeux sans les sources du moteur. Le même dossier se
 produit depuis un build avec `cmake --install out/build/x64-release --prefix <dossier>`.
 
@@ -312,6 +322,24 @@ moteur (`cmake --build --preset build-x64-release`). La même chose sans fenêtr
 out/build/x64-debug/bin/devex-editor.exe --export samples/sandbox/Sandbox.dvxproj
 samples/sandbox/export/windows/Sandbox.exe
 ```
+
+Sous Linux, le jeu va dans `export/linux`, avec `<Jeu>.desktop` et `<Jeu>.png` pour l'installer
+dans un bureau, et s'inscrit lui-même parmi les applications à son lancement (case *Linux Desktop
+Entry* des réglages du projet). `scripts/play_exported_game.sh` le joue quelques secondes sans écran
+et liste ce qu'il prend au système :
+
+```bash
+out/build/linux-release/bin/devex-editor --export samples/sandbox/Sandbox.dvxproj
+samples/sandbox/export/linux/Sandbox
+```
+
+Un jeu exporté pour Linux ne lie que la glibc et la bibliothèque C++ de GCC 14 (`libstdc++6`,
+Ubuntu 24.04 ou plus récent) ; il charge à son lancement le chargeur Vulkan (`libvulkan1`) et un
+pilote Vulkan 1.4, puis ce que le bureau a déjà : Wayland ou X11, libdecor, le son (PulseAudio,
+PipeWire ou ALSA). Son .NET est livré avec lui, sans ICU. Il demande la glibc de la machine dont le
+moteur l'a exporté : 2.39 depuis le moteur de la CI (Ubuntu 24.04), 2.43 depuis une Ubuntu 26.04.
+Pour qu'un jeu tourne sur le plus de systèmes, l'exporter avec le moteur construit sur le plus
+ancien, celui de la CI.
 
 À l'ouverture d'un projet qui a un dossier `code/`, l'éditeur le compile en arrière-plan (Visual
 Studio avec ses outils C++ est nécessaire, trouvé automatiquement), puis le recompile et le

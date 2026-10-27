@@ -1,7 +1,9 @@
 # Builds the engine, the editor, the player and the tests, then runs every test that needs no GPU,
 # in Debug and in Release, on Windows and on Linux, on each push to main and on each pull request.
-# The machines of GitHub have no GPU: the tests tagged [gpu] run on developers' machines only. The
-# Release builds are installed and kept as downloads: devex-windows-x64 and devex-linux-x64.
+# The machines of GitHub have no GPU: on Linux, the tests tagged [gpu] run on lavapipe, the Vulkan of
+# Mesa that draws on the processor; on Windows, on developers' machines only. The Release builds are
+# installed and kept as downloads: devex-windows-x64 and devex-linux-x64. The Linux one then exports
+# the sandbox, which plays on a bare Ubuntu and is kept too: sandbox-linux-x64.
 name: CI
 
 on:
@@ -79,12 +81,15 @@ jobs:
           "VCPKG_ROOT=$root" >> $env:GITHUB_ENV
           "VCPKG_DEFAULT_BINARY_CACHE=$archives" >> $env:GITHUB_ENV
 
+      # A cache of other dependencies serves too: vcpkg names each package by the hash of what built
+      # it, and rebuilds only those that changed.
       - name: Restore the packages vcpkg built
         id: vcpkg-cache
         uses: actions/cache/restore@v4
         with:
           path: ${{ runner.temp }}/vcpkg-archives
           key: vcpkg-${{ matrix.preset }}-${{ hashFiles('vcpkg.json', 'cmake/vcpkg-ports/**') }}
+          restore-keys: vcpkg-${{ matrix.preset }}-
 
       # vcpkg builds the dependencies here, the first time for hours, then from its cache. What the
       # steps print is also kept in a file (cmd merges the errors in), for the failure to be shown.
@@ -185,21 +190,29 @@ jobs:
       DOTNET_CLI_TELEMETRY_OPTOUT: 1
       DOTNET_NOLOGO: 1
       VCPKG_DISABLE_METRICS: 1
+    # bash -eo pipefail: a command piped into tee fails its step. The default shell of the steps,
+    # bash -e, kept the status of tee alone, and showed configurations and builds that had failed
+    # as passed, with an empty engine to download.
+    defaults:
+      run:
+        shell: bash
 
     steps:
       - name: Check out
         uses: actions/checkout@v4
 
-      # The compiler, the generator, what vcpkg needs to build its ports, and the headers SDL3 is
-      # built against for X11, Wayland and the sound.
+      # The compiler, the generator, what vcpkg needs to build its ports (libltdl-dev for the
+      # autotools of libxcrypt), the headers SDL3 is built against for X11, Wayland, libdecor and the
+      # sound, and lavapipe with the Vulkan loader for the tests tagged [gpu].
       - name: Install the packages of the system
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq gcc-14 g++-14 ninja-build pkg-config autoconf autoconf-archive \
-            automake libtool bison flex nasm libx11-dev libxext-dev libxrandr-dev libxcursor-dev \
-            libxfixes-dev libxi-dev libxss-dev libxtst-dev libxkbcommon-dev libwayland-dev \
-            wayland-protocols libegl-dev libgl-dev libdrm-dev libgbm-dev libdbus-1-dev libudev-dev \
-            libibus-1.0-dev libpulse-dev libasound2-dev libdecor-0-dev
+            automake libtool libltdl-dev bison flex nasm libx11-dev libxext-dev libxrandr-dev \
+            libxcursor-dev libxfixes-dev libxi-dev libxss-dev libxtst-dev libxkbcommon-dev \
+            libwayland-dev wayland-protocols libegl-dev libgl-dev libdrm-dev libgbm-dev libdbus-1-dev \
+            libudev-dev libibus-1.0-dev libpulse-dev libasound2-dev libdecor-0-dev libvulkan1 \
+            mesa-vulkan-drivers vulkan-tools
 
       - name: Set up .NET
         uses: actions/setup-dotnet@v4
@@ -225,12 +238,15 @@ jobs:
           echo "VCPKG_ROOT=$root" >> "$GITHUB_ENV"
           echo "VCPKG_DEFAULT_BINARY_CACHE=$archives" >> "$GITHUB_ENV"
 
+      # A cache of other dependencies serves too: vcpkg names each package by the hash of what built
+      # it, and rebuilds only those that changed.
       - name: Restore the packages vcpkg built
         id: vcpkg-cache
         uses: actions/cache/restore@v4
         with:
           path: ${{ runner.temp }}/vcpkg-archives
           key: vcpkg-${{ matrix.preset }}-${{ hashFiles('vcpkg.json', 'cmake/vcpkg-ports/**') }}
+          restore-keys: vcpkg-${{ matrix.preset }}-
 
       - name: Configure
         id: configure
@@ -247,19 +263,34 @@ jobs:
         id: build
         run: cmake --build out/build/${{ matrix.preset }} 2>&1 | tee "$RUNNER_TEMP/build.log"
 
-      # No display: the tests that open a window are tagged [gpu], and the main loop runs on SDL's
-      # dummy video driver.
+      # No display: the tests that open a window are tagged [gpu], and run in the next step.
       - name: Test
         id: test
         run: ctest --test-dir out/build/${{ matrix.preset }} --label-exclude gpu --output-on-failure --no-tests=error --timeout 600 2>&1 | tee "$RUNNER_TEMP/test.log"
 
-      # The same engine for Linux, packed in a tar.gz, which keeps the programs executable.
+      # The tests tagged [gpu] on lavapipe, in windows without a screen: SDL's offscreen video driver
+      # gives Vulkan a headless surface (VK_EXT_headless_surface). The summary of the device comes
+      # first in the log, for when its version of Vulkan is too old.
+      - name: Test on Vulkan drawn by the processor
+        id: test-gpu
+        env:
+          SDL_VIDEO_DRIVER: offscreen
+        run: |
+          VK_DRIVER_FILES=$(ls /usr/share/vulkan/icd.d/lvp_icd*.json | head -n 1)
+          export VK_DRIVER_FILES
+          vulkaninfo --summary 2>&1 | tee "$RUNNER_TEMP/test-gpu.log"
+          ctest --test-dir out/build/${{ matrix.preset }} --label-regex gpu --output-on-failure --no-tests=error --timeout 1200 2>&1 | tee -a "$RUNNER_TEMP/test-gpu.log"
+
+      # The same engine for Linux, packed in a tar.gz, which keeps the programs executable, once it
+      # is checked whole: programs, libraries, resources, shaders, slangc, C# and CMake package.
       - name: Pack the engine
         id: pack
         if: matrix.preset == 'linux-release'
         run: |
           cmake --install out/build/${{ matrix.preset }} --prefix "$RUNNER_TEMP/devex-linux-x64" 2>&1 | tee "$RUNNER_TEMP/pack.log"
+          scripts/check_engine_package.sh "$RUNNER_TEMP/devex-linux-x64" 2>&1 | tee -a "$RUNNER_TEMP/pack.log"
           tar -czf "$RUNNER_TEMP/devex-linux-x64.tar.gz" -C "$RUNNER_TEMP" devex-linux-x64 2>&1 | tee -a "$RUNNER_TEMP/pack.log"
+          du -h "$RUNNER_TEMP/devex-linux-x64.tar.gz" | tee -a "$RUNNER_TEMP/pack.log"
 
       - name: Keep the engine
         if: matrix.preset == 'linux-release'
@@ -269,6 +300,30 @@ jobs:
           path: ${{ runner.temp }}/devex-linux-x64.tar.gz
           retention-days: 30
 
+      # The sandbox, exported by the engine just packed as from the download (C++, C# and shaders of
+      # the project built by it), then played without the editor on a bare Ubuntu: a container with
+      # the Vulkan loader and Mesa, nothing to build with, the folder of the game read only as once
+      # installed. The script lists what the game takes from the system.
+      - name: Export the sandbox and play it on a bare Ubuntu
+        id: export
+        if: matrix.preset == 'linux-release'
+        run: |
+          "$RUNNER_TEMP/devex-linux-x64/bin/devex-editor" --export samples/sandbox/Sandbox.dvxproj \
+            --output "$RUNNER_TEMP/sandbox-linux-x64" 2>&1 | tee "$RUNNER_TEMP/export.log"
+          docker run --rm -v "$RUNNER_TEMP/sandbox-linux-x64:/game:ro" -v "$PWD/scripts:/scripts:ro" ubuntu:24.04 \
+            sh -c "apt-get update -qq && apt-get install -y -qq --no-install-recommends libvulkan1 mesa-vulkan-drivers > /dev/null && /scripts/play_exported_game.sh /game 60" \
+            2>&1 | tee -a "$RUNNER_TEMP/export.log"
+          tar -czf "$RUNNER_TEMP/sandbox-linux-x64.tar.gz" -C "$RUNNER_TEMP" sandbox-linux-x64
+
+      # The exported sandbox, to try on other machines.
+      - name: Keep the exported sandbox
+        if: matrix.preset == 'linux-release'
+        uses: actions/upload-artifact@v4
+        with:
+          name: sandbox-linux-x64
+          path: ${{ runner.temp }}/sandbox-linux-x64.tar.gz
+          retention-days: 14
+
       # The same annotations as on Windows, for those who cannot read the logs.
       - name: Show what failed
         if: failure()
@@ -277,7 +332,11 @@ jobs:
           BUILD: ${{ steps.build.outcome }}
           TEST: ${{ steps.test.outcome }}
           PACK: ${{ steps.pack.outcome }}
+          TEST_GPU: ${{ steps.test-gpu.outcome }}
+          EXPORT: ${{ steps.export.outcome }}
         run: |
+          # The annotations do their best: a grep cut short by head is no failure here.
+          set +e +o pipefail
           annotate() {
             local path="$1" errors="$2" text
             [ -f "$path" ] || return 0
@@ -299,6 +358,8 @@ jobs:
           fi
           [ "$BUILD" = failure ] && annotate "$RUNNER_TEMP/build.log" yes
           [ "$TEST" = failure ] && annotate "$RUNNER_TEMP/test.log" yes
+          [ "$TEST_GPU" = failure ] && annotate "$RUNNER_TEMP/test-gpu.log" yes
+          [ "$EXPORT" = failure ] && annotate "$RUNNER_TEMP/export.log" no
           # The end of the install, and the room left on the disks it writes to.
           if [ "$PACK" = failure ]; then
             df -h . "$RUNNER_TEMP" >> "$RUNNER_TEMP/pack.log" 2>&1

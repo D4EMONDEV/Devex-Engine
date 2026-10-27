@@ -161,6 +161,7 @@ struct ProjectSettingsUi : SettingsUi
     std::vector<std::string> startupScenes;
     scene::Entity icon;
     std::vector<asset::AssetId> icons;
+    scene::Entity desktopEntry;
     // Window.
     std::vector<scene::Entity> size;
     scene::Entity fullscreen;

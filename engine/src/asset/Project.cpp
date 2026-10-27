@@ -258,6 +258,7 @@ void readWindowAndExport(const serialization::TextDocument& document, Project& p
             readBool(section, "fullscreen", window.fullscreen);
             readBool(section, "vsync", window.vsync);
             readUnsigned(section, "max_frame_rate", window.maxFrameRate);
+            readBool(section, "desktop_entry", window.desktopEntry);
             const serialization::TextValue* const icon = section.findAttribute("icon");
             const serialization::TextCall* const call = icon != nullptr ? serialization::asCall(*icon, "asset") : nullptr;
             const std::string* const uuid =
@@ -621,6 +622,11 @@ std::string writeProjectText(const Project& project)
         if (settings.icon.isValid())
         {
             window.attributes.push_back({"icon", serialization::makeCall("asset", {serialization::TextValue(settings.icon.uuid.toString())})});
+        }
+        // Written when turned off only: the projects that keep it as it is keep their files.
+        if (!settings.desktopEntry)
+        {
+            window.attributes.push_back({"desktop_entry", serialization::TextValue(false)});
         }
     }
 

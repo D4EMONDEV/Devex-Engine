@@ -8,6 +8,23 @@
 #include <filesystem>
 #include <string>
 
+TEST_CASE("Desktop entries start their program and name its windows", "[platform][desktop]")
+{
+    // What an export gives a game to install: found in PATH, with an icon of the theme.
+    const devex::platform::DesktopEntry game{.name = "Space $hip", .icon = "Space $hip", .categories = "Game;"};
+    CHECK(devex::platform::desktopEntryText(game, "Space $hip") ==
+          "[Desktop Entry]\nType=Application\nName=Space $hip\nExec=\"Space \\\\$hip\"\nIcon=Space $hip\n"
+          "Terminal=false\nCategories=Game;\nStartupWMClass=Space $hip\n");
+
+    // Quotes keep the spaces of a path, and backslashes escape what they leave special, escaped
+    // again as any value; a percent sign is doubled.
+    const devex::platform::DesktopEntry editor{.name = "Devex", .opensFiles = true};
+    const std::string text = devex::platform::desktopEntryText(editor, "/opt/My \"Games\"/100%/devex-editor");
+    CHECK(text.find("\nExec=\"/opt/My \\\\\"Games\\\\\"/100%%/devex-editor\" %f\n") != std::string::npos);
+    CHECK(text.find("Icon=") == std::string::npos);
+    CHECK(text.find("\nStartupWMClass=devex-editor\n") != std::string::npos);
+}
+
 #ifdef __linux__
 TEST_CASE("A program is listed among the applications of the desktop", "[platform][desktop]")
 {
@@ -23,6 +40,7 @@ TEST_CASE("A program is listed among the applications of the desktop", "[platfor
         .comment = "Checks the engine",
         .icon = "/opt/devex/bin/resources/icons/devex.png",
         .categories = "Development;",
+        .opensFiles = true,
     };
     REQUIRE(devex::platform::registerDesktopEntry(entry).has_value());
 

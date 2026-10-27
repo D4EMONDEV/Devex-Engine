@@ -68,6 +68,7 @@ int main(int argc, char** argv)
         .comment = "Make 2D and 3D games",
         .icon = devex::platform::executableDirectory() / "resources" / "icons" / "devex.png",
         .categories = "Development;IDE;",
+        .opensFiles = true,
     };
     if (const devex::core::Result<void> registered = devex::platform::registerDesktopEntry(entry); !registered)
     {

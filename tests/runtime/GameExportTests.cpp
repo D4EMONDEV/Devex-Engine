@@ -188,7 +188,8 @@ TEST_CASE("An export packages the scenes and every asset they need", "[runtime][
     devex::core::Result<devex::runtime::ExportPlan> plan = devex::runtime::planExport(**database, engine);
     REQUIRE(plan.has_value());
     CHECK(plan->scenes == std::vector{main});
-    CHECK(plan->output == (created->root / "export" / "windows").lexically_normal());
+    // Named after the system the game is exported for.
+    CHECK(plan->output == (created->root / devex::asset::ExportSettings{}.output).lexically_normal());
     REQUIRE(plan->icon.has_value());
     plan->packageOnly = true;
     plan->output = directory.path / "game";

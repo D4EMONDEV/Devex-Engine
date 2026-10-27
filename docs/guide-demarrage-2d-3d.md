@@ -629,7 +629,7 @@ Ne pas utiliser le dossier de sortie de l'export comme dossier de travail du pro
 2. Compiler le code ; résoudre les erreurs avant d'exporter.
 3. Définir la bonne scène de démarrage.
 4. Ouvrir **Project > Export Game…**.
-5. Choisir un dossier de sortie dédié, par exemple `export/windows`.
+5. Choisir un dossier de sortie dédié, par exemple `export/windows` (`export/linux` sous Linux, le dossier proposé).
 6. Choisir **Release** pour distribuer le jeu. Devex doit disposer d'un build Release du moteur ; consulter le README pour le produire si seul le build Debug existe.
 7. Inclure les autres scènes utilisées par le jeu. Pour les assets chargés uniquement par chemin à l'exécution, utiliser les dossiers à inclure afin de ne pas dépendre seulement des références directes.
 8. Lancer l'export et consulter son résultat dans la fenêtre et Output.

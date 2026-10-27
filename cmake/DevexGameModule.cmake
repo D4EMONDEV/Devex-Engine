@@ -16,4 +16,13 @@ function(devex_add_game_module)
         # The classes of the engine hold members of the standard library, built the same way.
         target_compile_options(Game PRIVATE /W4 /permissive- /utf-8 /Zc:__cplusplus /Zc:preprocessor /wd4251 /wd4275)
     endif()
+    # The module is loaded once the engine is, in the editor, the player and an exported game, beside
+    # whose executable it then lies with the engine library: it looks for its libraries there only,
+    # rather than in the engine folder of the machine it was built on.
+    if(UNIX AND NOT APPLE)
+        set_target_properties(Game PROPERTIES
+            BUILD_WITH_INSTALL_RPATH ON
+            INSTALL_RPATH "$ORIGIN"
+        )
+    endif()
 endfunction()
