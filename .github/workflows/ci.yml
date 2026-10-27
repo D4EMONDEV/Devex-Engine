@@ -37,10 +37,10 @@ jobs:
 
     steps:
       - name: Check out
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: 10.0.x
 
@@ -52,6 +52,8 @@ jobs:
           install_runtime: false
           cache: true
 
+      # The last action still on Node.js 20, which GitHub runs on Node.js 24 regardless: it has no
+      # newer version yet.
       - name: Set up the compiler
         uses: ilammy/msvc-dev-cmd@v1
         with:
@@ -85,7 +87,7 @@ jobs:
       # it, and rebuilds only those that changed.
       - name: Restore the packages vcpkg built
         id: vcpkg-cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: ${{ runner.temp }}/vcpkg-archives
           key: vcpkg-${{ matrix.preset }}-${{ hashFiles('vcpkg.json', 'cmake/vcpkg-ports/**') }}
@@ -101,7 +103,7 @@ jobs:
       # lose them.
       - name: Keep the packages vcpkg built
         if: steps.vcpkg-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: ${{ runner.temp }}/vcpkg-archives
           key: vcpkg-${{ matrix.preset }}-${{ hashFiles('vcpkg.json', 'cmake/vcpkg-ports/**') }}
@@ -123,7 +125,7 @@ jobs:
 
       - name: Keep the engine
         if: matrix.preset == 'x64-release'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: devex-windows-x64
           path: ${{ runner.temp }}/devex-windows-x64
@@ -166,7 +168,7 @@ jobs:
 
       - name: Keep the logs
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: logs-${{ matrix.preset }}
           path: |
@@ -199,7 +201,7 @@ jobs:
 
     steps:
       - name: Check out
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # The compiler, the generator, what vcpkg needs to build its ports (libltdl-dev for the
       # autotools of libxcrypt), the headers SDL3 is built against for X11, Wayland, libdecor and the
@@ -215,7 +217,7 @@ jobs:
             mesa-vulkan-drivers vulkan-tools
 
       - name: Set up .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: 10.0.x
 
@@ -242,7 +244,7 @@ jobs:
       # it, and rebuilds only those that changed.
       - name: Restore the packages vcpkg built
         id: vcpkg-cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: ${{ runner.temp }}/vcpkg-archives
           key: vcpkg-${{ matrix.preset }}-${{ hashFiles('vcpkg.json', 'cmake/vcpkg-ports/**') }}
@@ -254,7 +256,7 @@ jobs:
 
       - name: Keep the packages vcpkg built
         if: steps.vcpkg-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: ${{ runner.temp }}/vcpkg-archives
           key: vcpkg-${{ matrix.preset }}-${{ hashFiles('vcpkg.json', 'cmake/vcpkg-ports/**') }}
@@ -294,7 +296,7 @@ jobs:
 
       - name: Keep the engine
         if: matrix.preset == 'linux-release'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: devex-linux-x64
           path: ${{ runner.temp }}/devex-linux-x64.tar.gz
@@ -318,7 +320,7 @@ jobs:
       # The exported sandbox, to try on other machines.
       - name: Keep the exported sandbox
         if: matrix.preset == 'linux-release'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: sandbox-linux-x64
           path: ${{ runner.temp }}/sandbox-linux-x64.tar.gz
@@ -369,7 +371,7 @@ jobs:
 
       - name: Keep the logs
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: logs-${{ matrix.preset }}
           path: |

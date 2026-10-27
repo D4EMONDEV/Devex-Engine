@@ -1,5 +1,7 @@
 # Devex Engine
 
+[![CI](https://github.com/D4EMONDEV/Devex-Engine/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/D4EMONDEV/Devex-Engine/actions/workflows/ci.yml)
+
 Devex est un moteur de jeu open source conçu d'abord pour la 3D, écrit en C++ moderne
 et rendu avec Vulkan. Il est distribué sous licence [MIT](LICENSE).
 

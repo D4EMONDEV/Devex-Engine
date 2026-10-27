@@ -3769,7 +3769,9 @@ Jalon 62, comme la localisation de Godot.
   versions publiées). Deux autres sur `ubuntu-24.04`, `linux-debug` et `linux-release`, avec
   GCC 14, Ninja et les en-têtes contre lesquels vcpkg construit SDL3 (X11, Wayland, son), le même
   SDK .NET et le même SDK Vulkan. Un push plus récent sur la même branche annule l'exécution en
-  cours.
+  cours. Les actions sont dans leurs versions Node.js 24 (`checkout` v7, `cache` v6, `setup-dotnet`
+  v6, `upload-artifact` v7), sauf `ilammy/msvc-dev-cmd`, qui n'en a pas encore ; le README montre
+  l'état de `main` par un badge.
 - **Linux** (jalon 57) : GCC 14 et libstdc++ 14, pour C++23 (`std::expected`, `std::format`,
   ranges). Les modules du moteur, des bibliothèques objet réunies dans `libdevex-engine.so`, sont
   compilés en code relogeable (`CMAKE_POSITION_INDEPENDENT_CODE`) : Ubuntu compile par défaut en
@@ -4339,7 +4341,7 @@ Ensuite, sans ordre figé : à choisir dans les pistes ci-dessous.
   d'une instance avec son contexte, édition des entités d'une instance sur place (Godot *Editable
   Children*), mise à jour des instances pendant le jeu, modifications vers des entités retirées
   gardées au lieu d'être abandonnées.
-- **Export** : autres plateformes (Linux, macOS), export incrémental et paquets de mise à jour ou de
+- **Export** : macOS, export vers un autre système que celui de l'éditeur, export incrémental et paquets de mise à jour ou de
   contenu additionnel, signature de l'exécutable et installeur, retrait des bibliothèques qu'un jeu
   n'utilise pas, cuisson des textures par plateforme, export sans build Release du moteur (paquet
   d'un moteur distribué).
@@ -4422,10 +4424,10 @@ Ensuite, sans ordre figé : à choisir dans les pistes ci-dessous.
   paquets Flatpak et AppImage écrits par l'export ; couleur du thème sur la barre de libdecor
   (greffon à soi ou barre intégrée) ; minidumps (Breakpad, Crashpad) ; noms des fonctions et des
   lignes sans binutils ; association des `.dvxproj` à l'éditeur (type MIME).
-- **CI, la suite** : macOS ; Clang à côté de GCC sous Linux ; les tests `[gpu]` sur un rendu logiciel (lavapipe,
-  SwiftShader) ou une machine avec GPU ; actions passées à Node.js 24 (celles en v4 tournent sur
-  Node.js 20, déprécié) ; cache de compilation (sccache) ; éditeur et lecteur publiés en artefacts
-  à chaque version ; badge d'état dans le README.
+- **CI, la suite** : macOS ; Clang à côté de GCC sous Linux ; les tests `[gpu]` de Windows sur un
+  rendu logiciel (WARP n'a pas Vulkan : SwiftShader) ou une machine avec GPU ; remplacer
+  `ilammy/msvc-dev-cmd`, la dernière action sur Node.js 20, s'il ne passe pas à Node.js 24 ; cache de
+  compilation (sccache) ; éditeur et lecteur publiés en artefacts à chaque version.
 - **Profileur** : export vers Perfetto (format de trace de Chrome), compteurs dans la chronologie
   (draw calls, mémoire, images par seconde), mémoire réellement allouée (VMA, tas du processus,
   GC de .NET), recherche d'une zone et moyenne sur plusieurs images, comparaison de deux captures,
