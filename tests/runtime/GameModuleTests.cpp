@@ -12,6 +12,7 @@
 
 #include <filesystem>
 #include <format>
+#include <stdexcept>
 #include <vector>
 
 using devex::runtime::GameModule;
@@ -61,6 +62,12 @@ void first(SystemContext&)
     order.emplace_back("first");
 }
 
+void throwing(SystemContext&)
+{
+    order.emplace_back("throwing");
+    throw std::runtime_error("broken on purpose");
+}
+
 void second(SystemContext&)
 {
     order.emplace_back("second");
@@ -77,11 +84,12 @@ TEST_CASE("Systems run by phase, order and registration", "[runtime][game]")
 {
     GameRegistry registry;
     registry.system("First", SystemPhase::Update, &first);
+    registry.system("Throwing", SystemPhase::Update, &throwing);
     registry.system("Second", SystemPhase::Update, &second);
     registry.system("Early", SystemPhase::Update, &early, -1);
     registry.system("Fixed", SystemPhase::FixedUpdate, &first);
     registry.system("Ignored", SystemPhase::Update, nullptr);
-    REQUIRE(registry.systems().size() == 4);
+    REQUIRE(registry.systems().size() == 5);
     CHECK(registry.systems()[0].name == "Fixed");
 
     auto platform = devex::platform::Platform::create();
@@ -92,8 +100,9 @@ TEST_CASE("Systems run by phase, order and registration", "[runtime][game]")
     Scene scene;
     SystemContext context{.scene = scene, .input = platform->input(), .window = *window, .assets = assets};
     order.clear();
+    // The exception of a system is reported, and the systems after it run, as in C#.
     registry.run(SystemPhase::Update, context);
-    CHECK(order == std::vector<std::string>{"early", "first", "second"});
+    CHECK(order == std::vector<std::string>{"early", "first", "throwing", "second"});
 }
 
 TEST_CASE("Unloading a game module forgets the prefabs that held its components", "[runtime][game]")

@@ -79,6 +79,46 @@ TEST_CASE("A crash leaves its report in the log and a minidump beside it", "[pla
         std::filesystem::remove_all(folder, error);
     }
 }
+
+TEST_CASE("A guard turns a crash into its report, and the process lives on", "[platform][crash]")
+{
+    for (const std::string how : {"access", "abort", "exception"})
+    {
+        CAPTURE(how);
+        const std::filesystem::path folder = std::filesystem::temp_directory_path() / ("devex-crash-guard-" + how);
+        std::error_code error;
+        std::filesystem::remove_all(folder, error);
+
+        CHECK(runProbe(folder, "guarded-" + how) == 0);
+
+        const devex::core::Result<std::string> log = devex::core::readTextFile(folder / "probe.log");
+        REQUIRE(log.has_value());
+        // Twice, as the handlers are armed again after a crash they caught.
+        const std::size_t first = log->find("Caught: ");
+        REQUIRE(first != std::string::npos);
+        CHECK(log->find("Caught: ", first + 1) != std::string::npos);
+        CHECK(log->find(how == "access" ? "access violation" : how == "abort" ? "abort" : "thrown on purpose") !=
+              std::string::npos);
+        if (how != "exception")
+        {
+            CHECK(log->find("crashHere") != std::string::npos);
+        }
+        CHECK(log->find("The probe lives on") != std::string::npos);
+        CHECK(log->find("The process crashed") == std::string::npos);
+        std::filesystem::remove_all(folder, error);
+    }
+
+    // Under a barrier, the crash ends the process with its report.
+    const std::filesystem::path folder = std::filesystem::temp_directory_path() / "devex-crash-guard-barrier";
+    std::error_code error;
+    std::filesystem::remove_all(folder, error);
+    CHECK(runProbe(folder, "barrier") != 0);
+    const devex::core::Result<std::string> log = devex::core::readTextFile(folder / "probe.log");
+    REQUIRE(log.has_value());
+    CHECK(log->find("The process crashed") != std::string::npos);
+    CHECK(log->find("access violation") != std::string::npos);
+    std::filesystem::remove_all(folder, error);
+}
 #endif
 
 #ifdef _WIN32

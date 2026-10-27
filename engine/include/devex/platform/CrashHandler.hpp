@@ -5,6 +5,9 @@
 #include <devex/core/LogFile.hpp>
 
 #include <filesystem>
+#include <optional>
+#include <string>
+#include <type_traits>
 
 namespace devex::platform {
 
@@ -27,5 +30,32 @@ struct DEVEX_API CrashReporting
 // SIGBUS, SIGILL, SIGFPE, SIGTRAP), SIGABRT and std::terminate; the process then dies of its
 // signal, as it would have. Elsewhere the process dies as it did.
 DEVEX_API void installCrashHandler(CrashReporting reporting);
+
+// Runs a function on this thread, as the editor runs the code of a game it plays: a crash inside it,
+// which would end the process, ends the function instead, and so does an exception that nobody
+// caught. Their report comes back, as the crash handler would have written it; nothing does when the
+// function returned. What the function left half done stays so: the destructors of its frames do
+// not run, and a lock it held stays held. Crashes on other threads still end the process. On Linux,
+// the crash handler must be installed: the guard catches the signals it receives.
+[[nodiscard]] DEVEX_API std::optional<std::string> runGuarded(void (*function)(void*), void* data);
+
+template <typename Function>
+[[nodiscard]] std::optional<std::string> runGuarded(Function&& function)
+{
+    using Callable = std::remove_reference_t<Function>;
+    return runGuarded([](void* data) { (*static_cast<Callable*>(data))(); }, static_cast<void*>(&function));
+}
+
+// While one lives on a thread, crashes there end the process even inside runGuarded: jumping back
+// over the frames of a runtime that unwinds its own, as .NET, would leave it broken.
+class DEVEX_API CrashGuardBarrier
+{
+public:
+    CrashGuardBarrier() noexcept;
+    ~CrashGuardBarrier();
+
+    CrashGuardBarrier(const CrashGuardBarrier&) = delete;
+    CrashGuardBarrier& operator=(const CrashGuardBarrier&) = delete;
+};
 
 } // namespace devex::platform

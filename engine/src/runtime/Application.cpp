@@ -18,6 +18,7 @@
 #include "ManagedCodeBuilder.hpp"
 #include "ManagedGame.hpp"
 
+#include <devex/platform/CrashHandler.hpp>
 #include <devex/platform/DesktopEntry.hpp>
 #include <devex/platform/Process.hpp>
 #include <devex/runtime/Application.hpp>
@@ -254,6 +255,9 @@ private:
     // modal loop while the window is being resized, where events cannot be polled.
     void runFrame();
     void runGameplay(std::chrono::nanoseconds frameTime);
+    // In the editor, the gameplay of Play runs under a guard: a crash of the game stops it rather
+    // than the editor.
+    void runGuardedGameplay(std::chrono::nanoseconds frameTime);
     // Animation, interface, transforms, physics interpolation and audio, after the gameplay.
     void updateFrameWorlds(std::chrono::nanoseconds frameTime, bool interpolate,
                            std::optional<std::chrono::nanoseconds> gameplayTime);
@@ -266,6 +270,14 @@ private:
     // Starts Play once a C# debugger attaches, and tells the editor about the debugger.
     void updateDebugger();
     void stopPlaying();
+    // Stops under a guard: stopping runs code of the game too (OnDestroy, the destructors of its
+    // components), and a crash there leaves the game as it is.
+    void stopPlayingSafely();
+    // After a crash of the game in Play: stops it, loads its module again and tells the editor.
+    void stopAfterCrash(const std::string& report);
+    // The edited scene comes back, and what the game had (its scene, its worlds) is kept rather than
+    // destroyed: its code may still point into it, or be what broke.
+    void abandonPlay();
     void switchProject(const std::filesystem::path& projectFile);
     // Drops the project and everything loaded from it; the editor shows its project manager.
     void closeProject();
@@ -788,7 +800,7 @@ int ApplicationRunner::execute()
 
     if (m_playScene)
     {
-        stopPlaying();
+        stopPlayingSafely();
     }
     m_services.platform.setLiveRedrawCallback({});
     m_application.onShutdown();
@@ -906,12 +918,12 @@ void ApplicationRunner::runFrame()
         if (m_playState == tools::PlayState::Playing)
         {
             gameplayTime = frameTime;
-            runGameplay(frameTime);
+            runGuardedGameplay(frameTime);
         }
         else if (m_playState == tools::PlayState::Paused && std::exchange(m_stepRequested, false))
         {
             gameplayTime = m_timestep.step();
-            runGameplay(m_timestep.step());
+            runGuardedGameplay(m_timestep.step());
         }
         updateFrameWorlds(frameTime, m_playScene.has_value(), m_playScene ? gameplayTime : std::nullopt);
         if (canRender && !m_application.m_quitRequested)
@@ -1194,7 +1206,7 @@ void ApplicationRunner::handleEditorRequests(tools::EditorRequests requests)
     }
     else if (requests.stop && m_playScene)
     {
-        stopPlaying();
+        stopPlayingSafely();
     }
     if (requests.togglePause && m_playScene)
     {
@@ -1258,8 +1270,13 @@ void ApplicationRunner::startPlaying()
     DEVEX_LOG_INFO("Playing");
     m_application.onPlayStarted();
     m_gameStarted = true;
-    runSystems(SystemPhase::Start, core::Duration::zero());
-    loadRequestedScene();
+    if (std::optional<std::string> crash = platform::runGuarded([this] {
+            runSystems(SystemPhase::Start, core::Duration::zero());
+            loadRequestedScene();
+        }))
+    {
+        stopAfterCrash(*crash);
+    }
 }
 
 void ApplicationRunner::stopPlaying()
@@ -1293,11 +1310,100 @@ void ApplicationRunner::stopPlaying()
     DEVEX_LOG_INFO("Stopped playing");
 }
 
+void ApplicationRunner::runGuardedGameplay(std::chrono::nanoseconds frameTime)
+{
+    if (std::optional<std::string> crash = platform::runGuarded([this, frameTime] { runGameplay(frameTime); }))
+    {
+        stopAfterCrash(*crash);
+    }
+}
+
+void ApplicationRunner::stopPlayingSafely()
+{
+    if (std::optional<std::string> crash = platform::runGuarded([this] { stopPlaying(); }))
+    {
+        DEVEX_LOG_ERROR("The game crashed while it stopped, and is left as it was: {}", *crash);
+        abandonPlay();
+    }
+}
+
+void ApplicationRunner::stopAfterCrash(const std::string& report)
+{
+    DEVEX_LOG_ERROR("The game crashed, and stopped playing: {}", report);
+    // A crash in a system that stopped the game leaves nothing to stop.
+    if (m_playScene)
+    {
+        stopPlayingSafely();
+    }
+    // The module starts again from its file: its globals may be what broke.
+    if (m_game)
+    {
+        if (std::optional<std::string> again = platform::runGuarded([this] {
+                unloadGameModule();
+                loadGameModule();
+            }))
+        {
+            DEVEX_LOG_ERROR("Loading the game code again crashed too: {}", *again);
+        }
+    }
+    if (m_services.tools != nullptr)
+    {
+        m_services.tools->reportGameCrash(report);
+    }
+}
+
+void ApplicationRunner::abandonPlay()
+{
+    if (m_services.tools != nullptr)
+    {
+        m_services.tools->setNavigationWorld(nullptr);
+        m_services.tools->setAnimationWorld(nullptr);
+    }
+    m_application.m_physics = nullptr;
+    m_application.m_physics2d = nullptr;
+    m_application.m_navigation = nullptr;
+    m_application.m_audio = nullptr;
+    m_application.m_animation = nullptr;
+    m_application.m_tweens = nullptr;
+    m_application.m_ui = nullptr;
+    m_application.m_actions = nullptr;
+    m_application.m_saves = nullptr;
+    m_application.m_settings = nullptr;
+    static_cast<void>(m_physics.release());
+    static_cast<void>(m_physics2d.release());
+    static_cast<void>(m_navigation.release());
+    static_cast<void>(m_audio.release());
+    static_cast<void>(m_animation.release());
+    static_cast<void>(m_tweens.release());
+    static_cast<void>(m_ui.release());
+    static_cast<void>(m_actions.release());
+    static_cast<void>(m_saves.release());
+    static_cast<void>(m_settings.release());
+    if (m_playScene)
+    {
+        static_cast<void>(new scene::Scene(std::move(*m_playScene)));
+        m_playScene.reset();
+    }
+    m_gameStarted = false;
+    m_sceneToLoad.reset();
+    m_backgroundScene.reset();
+    m_application.m_scene = &m_services.scene;
+    m_application.m_playing = false;
+    m_application.m_stopRequested = false;
+    m_playState = tools::PlayState::Editing;
+    m_stepRequested = false;
+    m_previewedLanguage.reset();
+    if (m_services.window.isMouseCaptured())
+    {
+        m_services.window.setMouseCaptured(false);
+    }
+}
+
 void ApplicationRunner::closeProject()
 {
     if (m_playScene)
     {
-        stopPlaying();
+        stopPlayingSafely();
     }
     // Everything loaded from the project goes before its database.
     m_export.reset();

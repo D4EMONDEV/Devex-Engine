@@ -180,6 +180,7 @@ mais seulement explicitement ici : le code suit ce document, pas l'inverse.
 | Liaison de données       | `UiBinding` écrit un champ de composant dans un texte              |
 | Journal                  | Fichier par lancement, le précédent gardé, lisible pendant le jeu  |
 | Plantages                | Pile symbolisée dans le journal, minidump à côté sous Windows      |
+| Plantages du jeu en Play | Contenus par une garde : la partie s'arrête, l'éditeur prévient    |
 | Manettes                 | SDL Gamepad, quatre manettes, sticks avec zone morte               |
 | Éditeur de texte         | `UiTextArea` de `Devex::Ui`, couleurs par morceau                  |
 | Autocomplétion           | Mots-clés, noms du moteur et identifiants du fichier              |
@@ -844,6 +845,30 @@ les assets s'écrivent au fil de leur lecture.
 - **Symboles** : les builds Release écrivent aussi leurs `.pdb` (`/Zi`, `/DEBUG` avec `/OPT:REF` et
   `/OPT:ICF`, donc le même code optimisé), sans que l'export les copie : les rapports des jeux livrés
   ne donnent que modules et décalages, que les `.pdb` gardés du build permettent de retrouver.
+- **Plantages du jeu dans l'éditeur** : pendant Play, le code du jeu tourne sous une garde,
+  `platform::runGuarded` : un plantage (accès mémoire invalide, division par zéro, `abort`,
+  assertion, `std::terminate`) ou une exception que personne n'attrape termine la fonction gardée
+  au lieu du processus, et rend le rapport que le gestionnaire de plantages aurait écrit, avec la pile
+  nommée. Sous Linux, le gestionnaire de signaux saute à la garde (`sigsetjmp`/`siglongjmp`, que la
+  glibc permet aussi pour sortir d'`abort`) et se réarme ; sous Windows, `__try`/`__except`, et les
+  gestionnaires du runtime C (`abort`, `std::terminate`, appels virtuels purs, paramètres
+  invalides) lèvent une exception que la garde attrape, le gestionnaire d'`abort`, que le runtime
+  retire avant de l'appeler, étant remis ensuite. L'éditeur garde le gameplay de Play
+  (`runGameplay` : pas fixes, Update, coroutines, systèmes C# et C++) et ses systèmes `Start` ; un
+  plantage arrête la partie, la scène éditée revient intacte, le rapport va dans Output, le module
+  C++ est rechargé depuis son fichier (ses variables globales ont pu être ce qui a cassé), et une
+  fenêtre *The game crashed* dit ce qui s'est passé, prévient que l'éditeur a pu être atteint et
+  propose *Save All Scenes*. Arrêter la partie fait tourner du code du jeu (`OnDestroy`,
+  destructeurs des composants) : l'arrêt est gardé lui aussi, et s'il plante, la scène et les mondes
+  du jeu sont laissés tels quels, jamais détruits, et le prochain Play en refait. Hors de
+  l'éditeur, rien ne change : un lecteur ou un jeu exporté qui plante meurt avec son rapport.
+- **Ce que la garde ne peut pas** : ce qui reste à moitié fait, puisque les destructeurs des frames
+  quittées ne tournent pas et qu'un verrou tenu reste tenu (un plantage au milieu d'une allocation
+  peut laisser le tas fragile, d'où l'avertissement) ; les plantages des autres threads (workers,
+  audio), qui arrêtent toujours le processus ; et ceux du code natif appelé depuis le C# :
+  `ManagedGame` pose un `CrashGuardBarrier` autour de ses appels au runtime .NET, car sauter
+  par-dessus ses frames le laisserait cassé. Ces plantages-là arrêtent le processus avec leur
+  rapport, comme avant. Les exceptions du C# restent attrapées par le C# lui-même.
 - **Code du jeu périmé** : le lecteur vérifie, comme l'éditeur, que le module C++ a été compilé
   pour ce moteur (l'empreinte tient compte de la date de `devex-engine.dll`) et que l'assemblage C#
   est plus récent que ses sources et que `Devex.Managed.dll`. Sinon il les recompile avant d'ouvrir
@@ -3559,9 +3584,11 @@ Jalon 62, comme la localisation de Godot.
 - **Lecteur** : `devex-player Projet.dvxproj` ouvre la scène de démarrage du projet (*Set as
   startup scene* dans le panneau Assets, sinon la première scène) avec son module de jeu, sans
   éditeur ; il compile d'abord le code s'il est périmé (voir *Journal et plantages*).
-- **Limites** : un plantage du code du jeu arrête l'éditeur ; les variables globales d'un module
-  sont perdues au rechargement ; la compilation du code ne fonctionne que sous Windows pour
-  l'instant.
+- **Exceptions des systèmes** : une exception qui sort d'un système C++ est notée en erreur avec
+  son nom, et les systèmes suivants tournent, comme ceux du C# et comme dans Unity (dans l'éditeur,
+  le lecteur et les jeux exportés). Elle sortait auparavant jusqu'à `std::terminate`.
+- **Limites** : un plantage du code du jeu n'arrête plus l'éditeur, mais la partie (voir *Journal et
+  plantages*) ; les variables globales d'un module sont perdues au rechargement.
 
 ### Gameplay en C#
 
@@ -3731,8 +3758,8 @@ Jalon 62, comme la localisation de Godot.
 - **Limites** : un composant qui lève une exception finit sa phase dans un état partiel ; pas de
   listes de structures ni de dictionnaires dans les champs ; les vues C++ ne connaissent que les
   champs réfléchis ; le changement de phase copie tous les champs de tous les composants C# (à
-  surveiller pour des milliers de composants) ; la compilation demande le **SDK .NET 10** et ne
-  tourne, comme le C++, que sous Windows. `Devex.Environment` (le composant `Environment`) masque
+  surveiller pour des milliers de composants) ; la compilation demande le **SDK .NET 10**.
+  `Devex.Environment` (le composant `Environment`) masque
   `System.Environment` dans le code qui importe les deux espaces de noms.
 
 ### Code C++
@@ -4305,6 +4332,10 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     lavapipe sans écran ; export Linux réparé (bibliothèque du moteur, .NET de Linux, module du jeu
     sans chemin de la machine, dossier `export/linux`) et joué dans une Ubuntu vierge ; entrées
     `.desktop` des jeux exportés.
+72. ✅ **Isolation du code du jeu** — Play sous une garde (`platform::runGuarded`, signaux sous
+    Linux, SEH sous Windows) : un plantage du jeu arrête la partie, rend la scène éditée, recharge le
+    module et ouvre *The game crashed* avec *Save All Scenes* ; exceptions des systèmes C++ notées
+    comme celles du C#.
 
 Ensuite, sans ordre figé : à choisir dans les pistes ci-dessous.
 
@@ -4318,8 +4349,10 @@ Ensuite, sans ordre figé : à choisir dans les pistes ci-dessous.
   systèmes C++ appelant du code C#, bouton Debug qui lance l'IDE, `dotnet` embarqué pour les
   machines sans SDK, édition du code dans l'éditeur, copie limitée aux champs changés entre les
   phases, export vers d'autres plateformes du runtime .NET.
-- **Isolation du code du jeu** : protéger l'éditeur d'un plantage du module (processus séparé,
-  gestion structurée des exceptions).
+- **Isolation du code du jeu, la suite** : le jeu dans un processus séparé, comme Godot (la garde
+  du jalon 72 ne contient que les plantages du thread principal, hors du code appelé depuis le C#) ;
+  pause du jeu sur la première exception, comme le débogueur de Godot ; rapport d'un plantage
+  ouvert à sa ligne dans l'éditeur de code.
 - **Physique** : articulations en rotule et à six degrés de liberté, moteurs vers une position,
   articulations éditées à la souris dans la vue, véhicules, ragdolls, matériaux physiques par
   collider, marqueurs de modification pour les grandes scènes, simulation dans l'éditeur (mode

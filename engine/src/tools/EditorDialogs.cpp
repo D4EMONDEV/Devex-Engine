@@ -1,7 +1,8 @@
 // The dialogs of the editor, made with the interface of the engine: a card in the middle of the window
 // over a veil, as the Create window is. Create New asks for a type, a name and a destination folder,
 // Move To for the folder a file of FileSystem goes to, the unsaved changes dialog asks what to do with
-// the scenes and files an action would drop, and About tells what the editor is made with.
+// the scenes and files an action would drop, About tells what the editor is made with, and Game
+// Crashed what stopped the game.
 #include "SettingsUi.hpp"
 #include "EditorModal.hpp"
 
@@ -76,6 +77,7 @@ enum class DialogKind : std::uint8_t
     DeleteFile,
     MoveFile,
     About,
+    GameCrashed,
 };
 
 // What the unsaved changes dialog was answered.
@@ -417,6 +419,33 @@ void EditorDialogsUi::start(DialogKind which, ToolsState& state, EditorUiKit& ki
         confirm = button(kit, buttons, std::nullopt, "Close", "primary", buttonWidth, buttonHeight);
         break;
     }
+    case DialogKind::GameCrashed: {
+        size.x = std::round(font * 34.0f);
+        titleRow(kit, Icon::TriangleAlert, colors.error, "The game crashed");
+        // What went wrong, and the first call of the report that names a function.
+        std::string_view report = state.gameCrash;
+        std::string summary(report.substr(0, report.find('\n')));
+        for (std::size_t start = 0; start < report.size();)
+        {
+            const std::size_t end = std::min(report.find('\n', start), report.size());
+            const std::string_view call = report.substr(start, end - start);
+            if (call.starts_with("  #"))
+            {
+                summary += "\nin " + std::string(call.substr(call.find_first_not_of(' ', 5)));
+                break;
+            }
+            start = end + 1;
+        }
+        note(nullptr, std::move(summary), "error", 3.0f);
+        note(nullptr,
+             "Play stopped, and the scene is back as it was before Play. The crash may have damaged the editor: save "
+             "your work, and restart the editor if it misbehaves. The whole report is in Output.",
+             "dim", 3.0f);
+        const Entity buttons = buttonLine();
+        confirm = button(kit, buttons, Icon::Save, "Save All Scenes", "primary", buttonWidth, buttonHeight);
+        cancel = button(kit, buttons, std::nullopt, "Continue", "button", buttonWidth, buttonHeight);
+        break;
+    }
     }
     fit();
 }
@@ -681,6 +710,17 @@ void EditorDialogsUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& 
             open = false;
         }
         break;
+    case DialogKind::GameCrashed:
+        if (world.wasClicked(confirm.entity))
+        {
+            saveAllScenes(state, edited);
+            open = false;
+        }
+        else if (world.wasClicked(cancel.entity) || escape)
+        {
+            open = false;
+        }
+        break;
     }
 }
 
@@ -715,6 +755,10 @@ void drawEditorPopups(ToolsState& state, scene::Scene& scene)
     if (std::exchange(state.openAboutPopup, false))
     {
         requested = DialogKind::About;
+    }
+    if (std::exchange(state.openGameCrashPopup, false))
+    {
+        requested = DialogKind::GameCrashed;
     }
     if (std::exchange(state.openUnsavedChangesPopup, false))
     {

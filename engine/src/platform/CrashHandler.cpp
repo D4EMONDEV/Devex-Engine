@@ -17,6 +17,8 @@
 #include <cstring>
 #include <cwchar>
 #include <exception>
+#include <format>
+#include <malloc.h>
 #include <string>
 #include <string_view>
 #elif defined(__linux__)
@@ -26,6 +28,7 @@
 #include <fcntl.h>
 #include <link.h>
 #include <poll.h>
+#include <setjmp.h>
 #include <signal.h>
 #include <sys/auxv.h>
 #include <sys/wait.h>
@@ -44,8 +47,12 @@
 #include <cstdlib>
 #include <cstring>
 #include <exception>
+#include <format>
 #include <string>
 #include <string_view>
+#else
+#include <exception>
+#include <format>
 #endif
 
 namespace devex::platform {
@@ -65,7 +72,16 @@ struct CrashState
     CONTEXT walked{};
     std::array<wchar_t, 1100> dumpPath{};
     std::array<char, 2048> dumpPathUtf8{};
+    bool symbols = false;
+    bool installed = false;
 };
+
+// Inside runGuarded on this thread, and under CrashGuardBarrier.
+thread_local int guardDepth = 0;
+thread_local int guardBarriers = 0;
+// Raised by the handlers of the C runtime inside a guard, once they described what went wrong, for
+// the guard to catch.
+constexpr DWORD guardedFatalError = 0xE0445658;
 
 CrashState& crash()
 {
@@ -265,21 +281,33 @@ void writeMinidump(HANDLE process, EXCEPTION_POINTERS* exception)
     }
 }
 
-void report(const char* what, const CONTEXT& context, EXCEPTION_POINTERS* exception)
+[[nodiscard]] bool guarding() noexcept
+{
+    return guardDepth > 0 && guardBarriers == 0;
+}
+
+// What went wrong, where, and the calls that led there, into the report: the header of a crash
+// that ends the process, or of one a guard caught.
+void describe(bool fatal, const char* what, const CONTEXT& context, EXCEPTION_POINTERS* exception)
 {
     CrashState& state = crash();
-    // A crash inside the report itself ends the process quietly rather than looping.
-    if (state.handling.exchange(true))
-    {
-        return;
-    }
     const HANDLE process = GetCurrentProcess();
-    SymSetOptions(SYMOPT_UNDNAME | SYMOPT_LOAD_LINES | SYMOPT_DEFERRED_LOADS | SYMOPT_FAIL_CRITICAL_ERRORS |
-                  SYMOPT_NO_PROMPTS);
-    SymInitialize(process, nullptr, TRUE);
+    if (!state.symbols)
+    {
+        SymSetOptions(SYMOPT_UNDNAME | SYMOPT_LOAD_LINES | SYMOPT_DEFERRED_LOADS | SYMOPT_FAIL_CRITICAL_ERRORS |
+                      SYMOPT_NO_PROMPTS);
+        state.symbols = SymInitialize(process, nullptr, TRUE) != FALSE;
+    }
 
     state.length = 0;
-    append("\n*** The process crashed: %s\n", what);
+    if (fatal)
+    {
+        append("\n*** The process crashed: %s\n", what);
+    }
+    else
+    {
+        append("%s\n", what);
+    }
     if (exception != nullptr && exception->ExceptionRecord->ExceptionCode == EXCEPTION_ACCESS_VIOLATION &&
         exception->ExceptionRecord->NumberParameters >= 2)
     {
@@ -289,7 +317,18 @@ void report(const char* what, const CONTEXT& context, EXCEPTION_POINTERS* except
     }
     append("Calls, the last one first:\n");
     walkStack(process, context);
-    writeMinidump(process, exception);
+}
+
+void report(const char* what, const CONTEXT& context, EXCEPTION_POINTERS* exception)
+{
+    CrashState& state = crash();
+    // A crash inside the report itself ends the process quietly rather than looping.
+    if (state.handling.exchange(true))
+    {
+        return;
+    }
+    describe(true, what, context, exception);
+    writeMinidump(GetCurrentProcess(), exception);
 
     const std::string_view text(state.report.data(), state.length);
     DWORD written = 0;
@@ -301,11 +340,17 @@ void report(const char* what, const CONTEXT& context, EXCEPTION_POINTERS* except
 }
 
 // Reports what the C runtime or the C++ library calls a fatal error, then ends the process with
-// the code abort uses.
+// the code abort uses; inside a guard, raises the exception that takes the guard back.
 [[noreturn]] void reportHere(const char* what)
 {
     CONTEXT context{};
     RtlCaptureContext(&context);
+    if (guarding() && !crash().handling.exchange(true))
+    {
+        describe(false, what, context, nullptr);
+        crash().handling = false;
+        RaiseException(guardedFatalError, EXCEPTION_NONCONTINUABLE, 0, nullptr);
+    }
     report(what, context, nullptr);
     TerminateProcess(GetCurrentProcess(), 3);
     std::_Exit(3);
@@ -341,12 +386,47 @@ void __cdecl onInvalidParameter(const wchar_t*, const wchar_t*, const wchar_t*, 
     reportHere("invalid parameter given to the C runtime");
 }
 
+// Catches the crashes of a guard with their report; C++ exceptions go on to its catch.
+int guardFilter(EXCEPTION_POINTERS* exception) noexcept
+{
+    const DWORD code = exception->ExceptionRecord->ExceptionCode;
+    if (code == 0xE06D7363 || guardBarriers > 0)
+    {
+        return EXCEPTION_CONTINUE_SEARCH;
+    }
+    // The handlers of the C runtime described theirs before raising it.
+    if (code != guardedFatalError && !crash().handling.exchange(true))
+    {
+        std::array<char, 160> what{};
+        std::snprintf(what.data(), what.size(), "%s (0x%08lX)", exceptionName(code), code);
+        describe(false, what.data(), *exception->ContextRecord, exception);
+        crash().handling = false;
+    }
+    return EXCEPTION_EXECUTE_HANDLER;
+}
+
+// The code of the exception that ended the function, 0 when it returned. No C++ object with a
+// destructor may live in a function with __try.
+DWORD runCaught(void (*function)(void*), void* data)
+{
+    __try
+    {
+        function(data);
+    }
+    __except (guardFilter(GetExceptionInformation()))
+    {
+        return GetExceptionCode();
+    }
+    return 0;
+}
+
 } // namespace
 
 void installCrashHandler(CrashReporting reporting)
 {
     CrashState& state = crash();
     state.log = reporting.log;
+    state.installed = true;
     state.directory.fill(L'\0');
     if (!reporting.directory.empty())
     {
@@ -367,6 +447,53 @@ void installCrashHandler(CrashReporting reporting)
     std::set_terminate(&onTerminate);
     _set_purecall_handler(&onPureCall);
     _set_invalid_parameter_handler(&onInvalidParameter);
+}
+
+std::optional<std::string> runGuarded(void (*function)(void*), void* data)
+{
+    ++guardDepth;
+    DWORD code = 0;
+    try
+    {
+        code = runCaught(function, data);
+    }
+    catch (const std::exception& error)
+    {
+        --guardDepth;
+        return std::format("an exception that nobody caught: {}", error.what());
+    }
+    catch (...)
+    {
+        --guardDepth;
+        return std::string("an exception that nobody caught");
+    }
+    --guardDepth;
+    if (code == 0)
+    {
+        return std::nullopt;
+    }
+    // The page that guards the end of the stack is put back for the next overflow, and the handler of
+    // abort, which the C runtime takes away before calling it.
+    if (code == EXCEPTION_STACK_OVERFLOW)
+    {
+        _resetstkoflw();
+    }
+    const CrashState& state = crash();
+    if (code == guardedFatalError && state.installed)
+    {
+        std::signal(SIGABRT, &onAbort);
+    }
+    return std::string(state.report.data(), state.length);
+}
+
+CrashGuardBarrier::CrashGuardBarrier() noexcept
+{
+    ++guardBarriers;
+}
+
+CrashGuardBarrier::~CrashGuardBarrier()
+{
+    --guardBarriers;
 }
 #elif defined(__linux__)
 namespace {
@@ -410,6 +537,8 @@ struct CrashState
     std::size_t namesLength = 0;
     // The stack the handlers run on when the thread died of its own.
     alignas(16) std::array<std::byte, 256 * 1024> signalStack{};
+    // How the signals are handled, put back after a guard caught one: SA_RESETHAND took it away.
+    struct sigaction action{};
 };
 
 CrashState& crash()
@@ -417,6 +546,17 @@ CrashState& crash()
     static CrashState state;
     return state;
 }
+
+// Where a crash under runGuarded jumps back to, the guard around it next.
+struct Guard
+{
+    sigjmp_buf jump;
+    Guard* previous = nullptr;
+};
+
+// Read by the signal handler: in the static block of thread storage, which reading never allocates.
+[[gnu::tls_model("initial-exec")]] thread_local Guard* activeGuard = nullptr;
+[[gnu::tls_model("initial-exec")]] thread_local int guardBarriers = 0;
 
 [[gnu::format(printf, 1, 2)]] void append(const char* format, ...)
 {
@@ -682,18 +822,21 @@ void writeFrames()
     }
 }
 
-void report(const char* what, const siginfo_t* info, const ucontext_t* context)
+// What went wrong, where, and the calls that led there, into the report: the header of a crash
+// that ends the process, or of one a guard caught.
+void describe(bool fatal, const char* what, const siginfo_t* info, const ucontext_t* context)
 {
     CrashState& state = crash();
-    // A crash inside the report itself ends the process quietly rather than looping.
-    if (state.handling.exchange(true))
-    {
-        return;
-    }
-
     state.length = 0;
     state.namesLength = 0;
-    append("\n*** The process crashed: %s\n", what);
+    if (fatal)
+    {
+        append("\n*** The process crashed: %s\n", what);
+    }
+    else
+    {
+        append("%s\n", what);
+    }
     if (info != nullptr && (info->si_signo == SIGSEGV || info->si_signo == SIGBUS) && info->si_code > 0)
     {
         append("While %s address 0x%016llx\n", accessKind(*info, context),
@@ -734,6 +877,17 @@ void report(const char* what, const siginfo_t* info, const ucontext_t* context)
         }
     }
     writeFrames();
+}
+
+void report(const char* what, const siginfo_t* info, const ucontext_t* context)
+{
+    CrashState& state = crash();
+    // A crash inside the report itself ends the process quietly rather than looping.
+    if (state.handling.exchange(true))
+    {
+        return;
+    }
+    describe(true, what, info, context);
 
     const std::string_view text(state.report.data(), state.length);
     for (std::size_t written = 0; written < text.size();)
@@ -751,9 +905,31 @@ void report(const char* what, const siginfo_t* info, const ucontext_t* context)
     }
 }
 
+// The guard a crash on this thread goes back to, taken from the guards: none under a barrier, or
+// while a report is being written.
+[[nodiscard]] Guard* takeGuard() noexcept
+{
+    Guard* const guard = activeGuard;
+    if (guard == nullptr || guardBarriers > 0 || crash().handling.exchange(true))
+    {
+        return nullptr;
+    }
+    activeGuard = guard->previous;
+    return guard;
+}
+
 void onSignal(int number, siginfo_t* info, void* context)
 {
-    report(signalName(number, info), info, static_cast<const ucontext_t*>(context));
+    const auto* const interrupted = static_cast<const ucontext_t*>(context);
+    if (Guard* const guard = takeGuard())
+    {
+        describe(false, signalName(number, info), info, interrupted);
+        sigaction(number, &crash().action, nullptr);
+        crash().handling = false;
+        // glibc lets a handler of SIGABRT leave abort this way too, when the jump was set by sigsetjmp.
+        siglongjmp(guard->jump, 1);
+    }
+    report(signalName(number, info), info, interrupted);
     // SA_RESETHAND gave the signal back to the system, which ends the process with it once the
     // handler returns, as it would have without the handler.
     raise(number);
@@ -761,9 +937,34 @@ void onSignal(int number, siginfo_t* info, void* context)
 
 void onTerminate()
 {
-    report("std::terminate, after an exception that nobody caught", nullptr, nullptr);
+    constexpr const char* what = "std::terminate, after an exception that nobody caught";
+    if (Guard* const guard = takeGuard())
+    {
+        describe(false, what, nullptr, nullptr);
+        crash().handling = false;
+        siglongjmp(guard->jump, 1);
+    }
+    report(what, nullptr, nullptr);
     // The handler of abort finds the report written, and lets the process end.
     std::abort();
+}
+
+// An exception that leaves the function of a guard, as the report of a crash.
+[[nodiscard]] std::optional<std::string> callCatching(void (*function)(void*), void* data)
+{
+    try
+    {
+        function(data);
+    }
+    catch (const std::exception& error)
+    {
+        return std::format("an exception that nobody caught: {}", error.what());
+    }
+    catch (...)
+    {
+        return std::string("an exception that nobody caught");
+    }
+    return std::nullopt;
 }
 
 // addr2line, from binutils, looked for while the process is well.
@@ -816,7 +1017,8 @@ void installCrashHandler(CrashReporting reporting)
     stack.ss_size = state.signalStack.size();
     sigaltstack(&stack, nullptr);
 
-    struct sigaction action{};
+    struct sigaction& action = state.action;
+    action = {};
     action.sa_sigaction = &onSignal;
     sigemptyset(&action.sa_mask);
     action.sa_flags = SA_SIGINFO | SA_ONSTACK | SA_RESETHAND;
@@ -826,10 +1028,56 @@ void installCrashHandler(CrashReporting reporting)
     }
     std::set_terminate(&onTerminate);
 }
+
+std::optional<std::string> runGuarded(void (*function)(void*), void* data)
+{
+    Guard guard{.previous = activeGuard};
+    // A crash comes back here, its guard already taken away, with the signals blocked by the handler
+    // unblocked again.
+    if (sigsetjmp(guard.jump, 1) != 0)
+    {
+        const CrashState& state = crash();
+        return std::string(state.report.data(), state.length);
+    }
+    activeGuard = &guard;
+    std::optional<std::string> thrown = callCatching(function, data);
+    activeGuard = guard.previous;
+    return thrown;
+}
+
+CrashGuardBarrier::CrashGuardBarrier() noexcept
+{
+    ++guardBarriers;
+}
+
+CrashGuardBarrier::~CrashGuardBarrier()
+{
+    --guardBarriers;
+}
 #else
 void installCrashHandler(CrashReporting /*reporting*/)
 {
 }
+
+std::optional<std::string> runGuarded(void (*function)(void*), void* data)
+{
+    try
+    {
+        function(data);
+    }
+    catch (const std::exception& error)
+    {
+        return std::format("an exception that nobody caught: {}", error.what());
+    }
+    catch (...)
+    {
+        return std::string("an exception that nobody caught");
+    }
+    return std::nullopt;
+}
+
+CrashGuardBarrier::CrashGuardBarrier() noexcept = default;
+CrashGuardBarrier::~CrashGuardBarrier() = default;
 #endif
 
 } // namespace devex::platform

@@ -730,6 +730,12 @@ void ToolsOverlay::setGameCodeStatus(GameCodeStatus status)
     m_state->gameCode = std::move(status);
 }
 
+void ToolsOverlay::reportGameCrash(std::string report)
+{
+    m_state->gameCrash = std::move(report);
+    m_state->openGameCrashPopup = true;
+}
+
 bool ToolsOverlay::automaticCodeCompilation() const
 {
     return m_state->scripts.automaticCompilation;

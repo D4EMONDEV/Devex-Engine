@@ -295,6 +295,9 @@ public:
 
     // Editor only: the state of the game code, shown in the menu bar.
     void setGameCodeStatus(GameCodeStatus status);
+    // Editor only: the game crashed and stopped. A dialog tells what went wrong, warns that the crash
+    // may have damaged the editor and offers to save the scenes.
+    void reportGameCrash(std::string report);
     [[nodiscard]] bool automaticCodeCompilation() const;
     void openInPreferredEditor(const std::filesystem::path& file);
     // Editor only: checks projects when the project manager refreshes its list. The application

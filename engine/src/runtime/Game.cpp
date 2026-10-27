@@ -1,7 +1,9 @@
+#include <devex/core/Log.hpp>
 #include <devex/core/Profiler.hpp>
 #include <devex/runtime/Game.hpp>
 
 #include <algorithm>
+#include <exception>
 #include <utility>
 
 namespace devex::runtime {
@@ -38,7 +40,19 @@ void GameRegistry::run(SystemPhase phase, SystemContext& context) const
         {
             // Every system has its zone, under the name it was registered with.
             const core::ProfileScope scope(core::profiler::isEnabled() ? core::profiler::intern(system.name) : "");
-            system.function(context);
+            // An exception is reported and the other systems run, as with the systems of C#.
+            try
+            {
+                system.function(context);
+            }
+            catch (const std::exception& error)
+            {
+                DEVEX_LOG_ERROR("The system {} threw an exception: {}", system.name, error.what());
+            }
+            catch (...)
+            {
+                DEVEX_LOG_ERROR("The system {} threw an exception", system.name);
+            }
         }
     }
 }

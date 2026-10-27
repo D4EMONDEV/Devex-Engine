@@ -6,6 +6,7 @@
 #include <devex/core/Log.hpp>
 #include <devex/core/Profiler.hpp>
 #include <devex/core/Path.hpp>
+#include <devex/platform/CrashHandler.hpp>
 #include <devex/platform/SharedLibrary.hpp>
 #include <devex/runtime/ComponentViews.hpp>
 #include <devex/scene/AnimationComponents.hpp>
@@ -2942,6 +2943,8 @@ core::Result<void> ManagedGame::loadAssembly(const std::filesystem::path& assemb
     unloadAssembly();
     const std::string path = core::toUtf8(assembly);
     const char* description = nullptr;
+    // A guard of the editor never jumps back over the frames of .NET, which would be left broken.
+    const platform::CrashGuardBarrier barrier;
     if (m_impl->managed.loadGame(path.c_str(), &description) != 0 || description == nullptr)
     {
         return core::makeError(core::ErrorCode::InvalidState, "cannot load '{}'", path);
@@ -3025,7 +3028,10 @@ void ManagedGame::unloadAssembly()
         static_cast<void>(scene::componentRegistry().remove(name));
     }
     m_impl->types.clear();
-    m_impl->managed.unloadGame();
+    {
+        const platform::CrashGuardBarrier barrier;
+        m_impl->managed.unloadGame();
+    }
     m_impl->assemblyLoaded = false;
 }
 
@@ -3046,7 +3052,10 @@ void ManagedGame::runPhase(Frame& frame, SystemPhase phase)
         return;
     }
     currentFrame() = &frame;
-    m_impl->managed.runPhase(frame.scene, static_cast<int>(phase), static_cast<float>(frame.delta.count()));
+    {
+        const platform::CrashGuardBarrier barrier;
+        m_impl->managed.runPhase(frame.scene, static_cast<int>(phase), static_cast<float>(frame.delta.count()));
+    }
     currentFrame() = nullptr;
 }
 

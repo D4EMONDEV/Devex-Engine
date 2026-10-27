@@ -804,6 +804,9 @@ struct DEVEX_API ToolsState
     ProjectList projects;
     ProjectManagerState projectManager;
     bool openAboutPopup = false;
+    // The report of the crash that stopped the game, which a dialog tells about.
+    bool openGameCrashPopup = false;
+    std::string gameCrash;
 
     // Code.
     // The file of the code folder shown in the inspector, empty when an entity is selected.

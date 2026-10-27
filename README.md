@@ -173,7 +173,8 @@ captures de l'éditeur, scènes de base, entrées, scripts C#, animations, colli
   au clic droit, liens tirés d'un port, code produit montré en lecture seule, nœud choisi réglé
   dans l'inspecteur), panneau Profiler (barres des images, chronologie par
   thread et GPU, tableaux des zones, des passes et de la mémoire des assets) ;
-- `Devex::Runtime` : `Application`, boucle à pas fixe, mode éditeur et mode Play, modules de jeu
+- `Devex::Runtime` : `Application`, boucle à pas fixe, mode éditeur et mode Play (un plantage du
+  code du jeu arrête la partie, pas l'éditeur, qui le dit et propose d'enregistrer), modules de jeu
   (composants et systèmes rechargeables à chaud), code C# sur .NET hébergé (composants, systèmes,
   compilation et rechargement à chaud), chargement des maillages et textures en arrière-plan,
   préchargement, changement de scène immédiat ou en arrière-plan avec progression, actions
