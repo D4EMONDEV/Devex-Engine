@@ -266,7 +266,11 @@ docs/          décisions et documentation
 ### Rendu
 
 - **Vulkan 1.4** : dynamic rendering, synchronization2, descriptor indexing et push
-  descriptors sans extension optionnelle. Aucun `VkRenderPass` legacy.
+  descriptors sans extension optionnelle. Aucun `VkRenderPass` legacy. C'est le pilote du GPU qui
+  doit offrir 1.4 ; le chargeur Vulkan peut s'arrêter à 1.3 (`requiredLoaderVersion`) : 1.4 n'a
+  ajouté que des commandes de device, que le moteur prend au pilote (`volkLoadDevice`), et un
+  chargeur 1.1 ou plus récent accepte toute version demandée. Le chargeur d'Ubuntu 24.04
+  (`libvulkan1` 1.3.275) faisait refuser tous les jeux, alors que Mesa y offre Vulkan 1.4.
 - **volk** charge Vulkan, **VMA** gère la mémoire GPU, des wrappers RAII minces maison
   encapsulent les objets Vulkan.
 - Couche de validation Khronos active hors Release, **validation de synchronisation
@@ -740,7 +744,8 @@ les assets s'écrivent au fil de leur lecture.
   l'éditeur (`linux-x64`, `linux-arm64`, `win-x64`...).
 - **Ce qu'un jeu Linux demande au système** : il ne lie que la glibc, `libm`, `libgcc_s` et
   `libstdc++` de GCC 14 (`GLIBCXX_3.4.32`, Ubuntu 24.04 ou plus récent). Le reste est chargé au
-  lancement s'il est là : le chargeur Vulkan (`libvulkan1`) et un pilote Vulkan 1.4, indispensables ;
+  lancement s'il est là : le chargeur Vulkan (`libvulkan1`, 1.3 ou plus récent) et un pilote
+  Vulkan 1.4, indispensables ;
   Wayland ou X11 et leurs extensions, libdecor, le son (PulseAudio, PipeWire, ALSA, JACK), tous
   présents sur un bureau. Le .NET livré se passe d'ICU (`InvariantGlobalization`) ; il ne lui manque
   que `liblttng-ust`, que son traceur facultatif cherche. La glibc est la limite : un binaire
@@ -754,7 +759,9 @@ les assets s'écrivent au fil de leur lecture.
   `mesa-vulkan-drivers`, le dossier du jeu en lecture seule comme une fois installé :
   `scripts/play_exported_game.sh` liste ce que le jeu prend au système, le lance sans écran sur
   lavapipe, et vérifie qu'il joue sa scène de démarrage sans erreur ni plantage. Le jeu exporté est
-  gardé 14 jours (`sandbox-linux-x64`), pour l'essayer sur d'autres machines.
+  gardé 14 jours (`sandbox-linux-x64`), pour l'essayer sur d'autres machines. Sa première exécution
+  a trouvé que le jeu refusait le chargeur Vulkan 1.3 d'Ubuntu 24.04 : sur la machine de la CI, les
+  tests prenaient celui du SDK Vulkan, en 1.4 (voir *Rendu*).
 - **Source des assets** : `asset::AssetSource` est l'interface que le jeu voit (réglages du projet,
   `find`, `assets`, `findByPath`, `loadArtifact`, `sceneText`). La base d'assets l'implémente
   pendant le développement, `asset::PackageReader` une fois le jeu exporté. Le lecteur mappe le

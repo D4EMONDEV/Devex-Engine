@@ -294,7 +294,8 @@ machines. Le dossier contient l'éditeur et le lecteur (`bin/`), les en-têtes e
 paquet CMake qui compilent le code C++ des jeux sans les sources du moteur. Le même dossier se
 produit depuis un build avec `cmake --install out/build/x64-release --prefix <dossier>`.
 
-Il faut un pilote graphique avec Vulkan 1.4 ; le SDK .NET 10 pour le code C# des jeux ; pour leur
+Il faut un pilote graphique avec Vulkan 1.4 (le chargeur Vulkan, lui, peut être en 1.3, celui
+d'Ubuntu 24.04) ; le SDK .NET 10 pour le code C# des jeux ; pour leur
 code C++, Visual Studio (outils C++), CMake et Ninja sous Windows, `cmake`, `ninja-build` et
 `g++-14` sous Linux. Sous Windows, le runtime C++ est fourni à côté des programmes. Sous Linux,
 il faut Ubuntu 24.04 ou plus récent (glibc 2.38) et `libvulkan1` : lancer `bin/devex-editor`, qui
@@ -334,8 +335,8 @@ samples/sandbox/export/linux/Sandbox
 ```
 
 Un jeu exporté pour Linux ne lie que la glibc et la bibliothèque C++ de GCC 14 (`libstdc++6`,
-Ubuntu 24.04 ou plus récent) ; il charge à son lancement le chargeur Vulkan (`libvulkan1`) et un
-pilote Vulkan 1.4, puis ce que le bureau a déjà : Wayland ou X11, libdecor, le son (PulseAudio,
+Ubuntu 24.04 ou plus récent) ; il charge à son lancement le chargeur Vulkan (`libvulkan1`, 1.3 ou
+plus récent) et un pilote Vulkan 1.4, puis ce que le bureau a déjà : Wayland ou X11, libdecor, le son (PulseAudio,
 PipeWire ou ALSA). Son .NET est livré avec lui, sans ICU. Il demande la glibc de la machine dont le
 moteur l'a exporté : 2.39 depuis le moteur de la CI (Ubuntu 24.04), 2.43 depuis une Ubuntu 26.04.
 Pour qu'un jeu tourne sur le plus de systèmes, l'exporter avec le moteur construit sur le plus

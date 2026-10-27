@@ -75,10 +75,10 @@ core::Result<Instance> Instance::create(const InstanceConfig& config)
     }
 
     const std::uint32_t loaderVersion = volkGetInstanceVersion();
-    if (loaderVersion < requiredApiVersion)
+    if (loaderVersion < requiredLoaderVersion)
     {
         return core::makeError(core::ErrorCode::Unsupported,
-                               "the Vulkan loader supports version {}.{}, Devex needs 1.4",
+                               "the Vulkan loader supports version {}.{}, Devex needs 1.3",
                                VK_API_VERSION_MAJOR(loaderVersion),
                                VK_API_VERSION_MINOR(loaderVersion));
     }
