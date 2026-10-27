@@ -7,6 +7,7 @@
 #include <SDL3/SDL_mouse.h>
 #include <SDL3/SDL_properties.h>
 #include <SDL3/SDL_surface.h>
+#include <SDL3/SDL_video.h>
 #include <SDL3/SDL_vulkan.h>
 
 #ifdef _WIN32
@@ -19,6 +20,7 @@
 #include <algorithm>
 #include <bit>
 #include <string>
+#include <string_view>
 #include <utility>
 
 namespace devex::platform {
@@ -173,7 +175,17 @@ void Window::setIcon(std::span<const std::uint8_t> rgba, std::uint32_t width, st
     }
     if (!SDL_SetWindowIcon(detail::toSdlWindow(m_native), surface))
     {
-        DEVEX_LOG_WARNING("Cannot set the window icon: {}", SDL_GetError());
+        // Wayland compositors without the protocol of window icons, as GNOME, show the icon of the
+        // program's desktop entry instead (registerDesktopEntry).
+        const char* const driver = SDL_GetCurrentVideoDriver();
+        if (driver != nullptr && std::string_view(driver) == "wayland")
+        {
+            DEVEX_LOG_DEBUG("The window has the icon of the desktop entry: {}", SDL_GetError());
+        }
+        else
+        {
+            DEVEX_LOG_WARNING("Cannot set the window icon: {}", SDL_GetError());
+        }
     }
     SDL_DestroySurface(surface);
 }

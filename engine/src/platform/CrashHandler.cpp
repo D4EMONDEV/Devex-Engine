@@ -19,6 +19,33 @@
 #include <exception>
 #include <string>
 #include <string_view>
+#elif defined(__linux__)
+#include <dlfcn.h>
+#include <elf.h>
+#include <execinfo.h>
+#include <fcntl.h>
+#include <link.h>
+#include <poll.h>
+#include <signal.h>
+#include <sys/auxv.h>
+#include <sys/wait.h>
+#include <time.h>
+#include <ucontext.h>
+#include <unistd.h>
+
+#include <algorithm>
+#include <array>
+#include <atomic>
+#include <cerrno>
+#include <cstdarg>
+#include <cstddef>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <exception>
+#include <string>
+#include <string_view>
 #endif
 
 namespace devex::platform {
@@ -340,6 +367,462 @@ void installCrashHandler(CrashReporting reporting)
     std::set_terminate(&onTerminate);
     _set_purecall_handler(&onPureCall);
     _set_invalid_parameter_handler(&onInvalidParameter);
+}
+#elif defined(__linux__)
+namespace {
+
+constexpr std::size_t maxFrames = 64;
+
+// A call on the stack.
+struct Frame
+{
+    std::uintptr_t address = 0;
+    // The library or the program it is in, and where in it.
+    const char* module = nullptr;
+    std::uintptr_t moduleOffset = 0;
+    // The address addr2line reads in the module: from its start, or as it is in a program that is not
+    // position independent. The line of a return address is the one of the call before it.
+    std::uintptr_t lookup = 0;
+    // The closest symbol the module exports, for when addr2line names nothing.
+    const char* symbol = nullptr;
+    std::uintptr_t symbolOffset = 0;
+    // "function at file:line", as addr2line answered.
+    std::string_view named;
+};
+
+// Everything the handlers use is set aside beforehand: once the process is crashing, the heap may
+// be what broke, and the stack may be what ran out.
+struct CrashState
+{
+    core::LogFile* log = nullptr;
+    std::atomic<bool> handling{false};
+    std::array<char, 32768> report{};
+    std::size_t length = 0;
+    std::array<void*, maxFrames + 16> addresses{};
+    std::array<Frame, maxFrames> frames{};
+    std::size_t frameCount = 0;
+    // The program, which dladdr names as it was started rather than where it is.
+    const void* programBase = nullptr;
+    std::array<char, 4096> program{};
+    std::array<char, 4096> addr2line{};
+    std::array<std::array<char, 24>, maxFrames> lookups{};
+    std::array<char, 65536> names{};
+    std::size_t namesLength = 0;
+    // The stack the handlers run on when the thread died of its own.
+    alignas(16) std::array<std::byte, 256 * 1024> signalStack{};
+};
+
+CrashState& crash()
+{
+    static CrashState state;
+    return state;
+}
+
+[[gnu::format(printf, 1, 2)]] void append(const char* format, ...)
+{
+    CrashState& state = crash();
+    if (state.length + 1 >= state.report.size())
+    {
+        return;
+    }
+    va_list arguments;
+    va_start(arguments, format);
+    const int written = std::vsnprintf(state.report.data() + state.length,
+                                       state.report.size() - state.length, format, arguments);
+    va_end(arguments);
+    if (written > 0)
+    {
+        state.length = std::min(state.length + static_cast<std::size_t>(written), state.report.size() - 1);
+    }
+}
+
+[[nodiscard]] std::string_view afterLastSlash(std::string_view path) noexcept
+{
+    const std::size_t slash = path.rfind('/');
+    return slash == std::string_view::npos ? path : path.substr(slash + 1);
+}
+
+[[nodiscard]] const char* signalName(int number, const siginfo_t* info) noexcept
+{
+    switch (number)
+    {
+    case SIGSEGV:
+        return "access violation (SIGSEGV)";
+    case SIGBUS:
+        return "memory that could not be read (SIGBUS)";
+    case SIGILL:
+        // GCC ends a failed assertion with __builtin_trap, an illegal instruction.
+        return "illegal instruction, as a failed assertion stops (SIGILL)";
+    case SIGTRAP:
+        return "breakpoint, as a failed assertion stops (SIGTRAP)";
+    case SIGFPE:
+        return info != nullptr && info->si_code == FPE_INTDIV ? "integer division by zero (SIGFPE)"
+                                                              : "floating point exception (SIGFPE)";
+    case SIGABRT:
+        return "abort (SIGABRT)";
+    default:
+        return "signal";
+    }
+}
+
+[[nodiscard]] std::uintptr_t programCounter(const ucontext_t& context) noexcept
+{
+#if defined(__x86_64__)
+    return static_cast<std::uintptr_t>(context.uc_mcontext.gregs[REG_RIP]);
+#elif defined(__aarch64__)
+    return static_cast<std::uintptr_t>(context.uc_mcontext.pc);
+#else
+    return 0;
+#endif
+}
+
+[[nodiscard]] const char* accessKind([[maybe_unused]] const siginfo_t& info,
+                                     [[maybe_unused]] const ucontext_t* context) noexcept
+{
+#if defined(__x86_64__)
+    if (info.si_signo == SIGSEGV && context != nullptr)
+    {
+        if (reinterpret_cast<std::uintptr_t>(info.si_addr) == programCounter(*context))
+        {
+            return "executing";
+        }
+        // The error code of the page fault: its second bit is set by writes.
+        return (context->uc_mcontext.gregs[REG_ERR] & 2) != 0 ? "writing" : "reading";
+    }
+#endif
+    return "accessing";
+}
+
+// Finds the module of each call from `first` on; the first one is where a fault stopped rather than a
+// return address when `fault` says so.
+void locateFrames(std::size_t first, std::size_t count, bool fault)
+{
+    CrashState& state = crash();
+    state.frameCount = 0;
+    for (std::size_t index = first; index < count && state.frameCount < maxFrames; ++index)
+    {
+        const bool returnAddress = !(fault && state.frameCount == 0);
+        Frame& frame = state.frames[state.frameCount++];
+        frame = Frame{.address = reinterpret_cast<std::uintptr_t>(state.addresses[index])};
+        Dl_info info{};
+        if (dladdr(state.addresses[index], &info) == 0 || info.dli_fbase == nullptr || info.dli_fname == nullptr)
+        {
+            continue;
+        }
+        const auto base = reinterpret_cast<std::uintptr_t>(info.dli_fbase);
+        const std::uintptr_t looked = returnAddress ? frame.address - 1 : frame.address;
+        const auto* const header = static_cast<const ElfW(Ehdr)*>(info.dli_fbase);
+        frame.module = info.dli_fbase == state.programBase && state.program[0] != '\0' ? state.program.data()
+                                                                                      : info.dli_fname;
+        frame.moduleOffset = frame.address - base;
+        frame.lookup = header->e_type == ET_EXEC ? looked : looked - base;
+        frame.symbol = info.dli_sname;
+        frame.symbolOffset =
+            info.dli_saddr != nullptr ? frame.address - reinterpret_cast<std::uintptr_t>(info.dli_saddr) : 0;
+    }
+}
+
+[[nodiscard]] long long millisecondsNow() noexcept
+{
+    timespec now{};
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    return static_cast<long long>(now.tv_sec) * 1000 + now.tv_nsec / 1'000'000;
+}
+
+// Names the calls of one module with addr2line, in a process of its own: from the debug information
+// of the module, or at least from all its symbols, where dladdr only sees those it exports.
+void nameFrames(const char* module)
+{
+    CrashState& state = crash();
+    std::array<char*, maxFrames + 8> arguments{};
+    std::size_t argumentCount = 0;
+    arguments[argumentCount++] = state.addr2line.data();
+    for (const char* const option : {"--demangle", "--functions", "--pretty-print", "--exe"})
+    {
+        arguments[argumentCount++] = const_cast<char*>(option);
+    }
+    arguments[argumentCount++] = const_cast<char*>(module);
+    std::array<std::size_t, maxFrames> asked{};
+    std::size_t askedCount = 0;
+    for (std::size_t index = 0; index < state.frameCount; ++index)
+    {
+        if (state.frames[index].module != module)
+        {
+            continue;
+        }
+        std::snprintf(state.lookups[index].data(), state.lookups[index].size(), "0x%llx",
+                      static_cast<unsigned long long>(state.frames[index].lookup));
+        arguments[argumentCount++] = state.lookups[index].data();
+        asked[askedCount++] = index;
+    }
+
+    std::array<int, 2> ends{};
+    if (pipe2(ends.data(), O_CLOEXEC) != 0)
+    {
+        return;
+    }
+    const pid_t child = fork();
+    if (child == 0)
+    {
+        dup2(ends[1], STDOUT_FILENO);
+        if (const int nothing = open("/dev/null", O_WRONLY); nothing >= 0)
+        {
+            dup2(nothing, STDERR_FILENO);
+        }
+        // In English whatever the language of the user: " at " stands between the function and the line.
+        std::array<char*, 2> environment{const_cast<char*>("LC_ALL=C"), nullptr};
+        execve(arguments[0], arguments.data(), environment.data());
+        _exit(127);
+    }
+    close(ends[1]);
+    if (child < 0)
+    {
+        close(ends[0]);
+        return;
+    }
+
+    // The debug information of a library takes addr2line a second or so to read; a stuck one is let go.
+    const std::size_t start = state.namesLength;
+    const long long deadline = millisecondsNow() + 30'000;
+    bool finished = false;
+    while (!finished && state.namesLength < state.names.size() && millisecondsNow() < deadline)
+    {
+        pollfd readable{.fd = ends[0], .events = POLLIN, .revents = 0};
+        const int ready = poll(&readable, 1, 100);
+        if (ready < 0 && errno != EINTR)
+        {
+            break;
+        }
+        if (ready <= 0)
+        {
+            continue;
+        }
+        const ssize_t received =
+            read(ends[0], state.names.data() + state.namesLength, state.names.size() - state.namesLength);
+        if (received > 0)
+        {
+            state.namesLength += static_cast<std::size_t>(received);
+        }
+        else
+        {
+            finished = true;
+        }
+    }
+    close(ends[0]);
+    if (!finished)
+    {
+        kill(child, SIGKILL);
+    }
+    int status = 0;
+    waitpid(child, &status, 0);
+
+    // One line for each address, in the order they were given.
+    std::string_view answer(state.names.data() + start, state.namesLength - start);
+    for (std::size_t index = 0; index < askedCount; ++index)
+    {
+        const std::size_t end = answer.find('\n');
+        if (end == std::string_view::npos)
+        {
+            break;
+        }
+        state.frames[asked[index]].named = answer.substr(0, end);
+        answer.remove_prefix(end + 1);
+    }
+}
+
+// "libdevex-engine.so+0x1a2b3c devex::ui::UiWorld::update(float) (UiWorld.cpp:123)": the module
+// always, the function and the line when addr2line finds them.
+void writeFrames()
+{
+    CrashState& state = crash();
+    for (std::size_t index = 0; index < state.frameCount; ++index)
+    {
+        const Frame& frame = state.frames[index];
+        append("  #%-2zu ", index);
+        if (frame.module != nullptr)
+        {
+            const std::string_view module = afterLastSlash(frame.module);
+            append("%.*s+0x%llx", static_cast<int>(module.size()), module.data(),
+                   static_cast<unsigned long long>(frame.moduleOffset));
+        }
+        else
+        {
+            append("0x%016llx", static_cast<unsigned long long>(frame.address));
+        }
+
+        // "function at file:line", "function at ??:?" without debug information, "?? ??:0" when
+        // nothing is known.
+        std::string_view function = frame.named;
+        std::string_view location;
+        if (const std::size_t at = frame.named.find(" at "); at != std::string_view::npos)
+        {
+            function = frame.named.substr(0, at);
+            location = frame.named.substr(at + 4);
+        }
+        if (!function.empty() && !function.starts_with("??"))
+        {
+            append(" %.*s", static_cast<int>(function.size()), function.data());
+        }
+        else if (frame.symbol != nullptr)
+        {
+            append(" %s+0x%llx", frame.symbol, static_cast<unsigned long long>(frame.symbolOffset));
+        }
+        if (const std::size_t discriminator = location.find(" (discriminator"); discriminator != std::string_view::npos)
+        {
+            location = location.substr(0, discriminator);
+        }
+        if (!location.empty() && !location.starts_with("??"))
+        {
+            location = afterLastSlash(location);
+            append(" (%.*s)", static_cast<int>(location.size()), location.data());
+        }
+        append("\n");
+    }
+}
+
+void report(const char* what, const siginfo_t* info, const ucontext_t* context)
+{
+    CrashState& state = crash();
+    // A crash inside the report itself ends the process quietly rather than looping.
+    if (state.handling.exchange(true))
+    {
+        return;
+    }
+
+    state.length = 0;
+    state.namesLength = 0;
+    append("\n*** The process crashed: %s\n", what);
+    if (info != nullptr && (info->si_signo == SIGSEGV || info->si_signo == SIGBUS) && info->si_code > 0)
+    {
+        append("While %s address 0x%016llx\n", accessKind(*info, context),
+               static_cast<unsigned long long>(reinterpret_cast<std::uintptr_t>(info->si_addr)));
+    }
+    append("Calls, the last one first:\n");
+
+    // The report and the frame of the signal come first: the calls start where the fault stopped, or
+    // after the report when nothing faulted.
+    const int captured = backtrace(state.addresses.data(), static_cast<int>(state.addresses.size()));
+    const std::size_t count = captured > 0 ? static_cast<std::size_t>(captured) : 0;
+    std::size_t first = std::min<std::size_t>(1, count);
+    bool fault = false;
+    if (const std::uintptr_t stopped = context != nullptr ? programCounter(*context) : 0; stopped != 0)
+    {
+        for (std::size_t index = 0; index < count; ++index)
+        {
+            if (reinterpret_cast<std::uintptr_t>(state.addresses[index]) == stopped)
+            {
+                first = index;
+                fault = true;
+                break;
+            }
+        }
+    }
+    locateFrames(first, count, fault);
+    if (state.addr2line[0] != '\0')
+    {
+        for (std::size_t index = 0; index < state.frameCount; ++index)
+        {
+            const char* const module = state.frames[index].module;
+            const bool named = std::any_of(state.frames.begin(), state.frames.begin() + static_cast<std::ptrdiff_t>(index),
+                                           [module](const Frame& frame) { return frame.module == module; });
+            if (module != nullptr && *module != '\0' && !named)
+            {
+                nameFrames(module);
+            }
+        }
+    }
+    writeFrames();
+
+    const std::string_view text(state.report.data(), state.length);
+    for (std::size_t written = 0; written < text.size();)
+    {
+        const ssize_t wrote = write(STDERR_FILENO, text.data() + written, text.size() - written);
+        if (wrote <= 0)
+        {
+            break;
+        }
+        written += static_cast<std::size_t>(wrote);
+    }
+    if (state.log != nullptr)
+    {
+        state.log->writeRaw(text);
+    }
+}
+
+void onSignal(int number, siginfo_t* info, void* context)
+{
+    report(signalName(number, info), info, static_cast<const ucontext_t*>(context));
+    // SA_RESETHAND gave the signal back to the system, which ends the process with it once the
+    // handler returns, as it would have without the handler.
+    raise(number);
+}
+
+void onTerminate()
+{
+    report("std::terminate, after an exception that nobody caught", nullptr, nullptr);
+    // The handler of abort finds the report written, and lets the process end.
+    std::abort();
+}
+
+// addr2line, from binutils, looked for while the process is well.
+void findAddr2line(CrashState& state)
+{
+    state.addr2line[0] = '\0';
+    const char* const variable = std::getenv("PATH");
+    std::string_view folders = variable != nullptr ? variable : "/usr/bin:/bin";
+    while (true)
+    {
+        const std::size_t colon = folders.find(':');
+        if (const std::string_view folder = folders.substr(0, colon); !folder.empty())
+        {
+            const std::string candidate = std::string(folder) + "/addr2line";
+            if (candidate.size() < state.addr2line.size() && access(candidate.c_str(), X_OK) == 0)
+            {
+                std::memcpy(state.addr2line.data(), candidate.c_str(), candidate.size() + 1);
+                return;
+            }
+        }
+        if (colon == std::string_view::npos)
+        {
+            return;
+        }
+        folders.remove_prefix(colon + 1);
+    }
+}
+
+} // namespace
+
+void installCrashHandler(CrashReporting reporting)
+{
+    CrashState& state = crash();
+    state.log = reporting.log;
+    const ssize_t length = readlink("/proc/self/exe", state.program.data(), state.program.size() - 1);
+    state.program[length > 0 ? static_cast<std::size_t>(length) : 0] = '\0';
+    Dl_info program{};
+    if (dladdr(reinterpret_cast<void*>(getauxval(AT_ENTRY)), &program) != 0)
+    {
+        state.programBase = program.dli_fbase;
+    }
+    findAddr2line(state);
+    // The first backtrace loads the unwinder of libgcc, which allocates: not during a crash.
+    std::array<void*, 4> warm{};
+    static_cast<void>(backtrace(warm.data(), static_cast<int>(warm.size())));
+
+    // Room for the handlers when the thread dies of its stack.
+    stack_t stack{};
+    stack.ss_sp = state.signalStack.data();
+    stack.ss_size = state.signalStack.size();
+    sigaltstack(&stack, nullptr);
+
+    struct sigaction action{};
+    action.sa_sigaction = &onSignal;
+    sigemptyset(&action.sa_mask);
+    action.sa_flags = SA_SIGINFO | SA_ONSTACK | SA_RESETHAND;
+    for (const int number : {SIGSEGV, SIGBUS, SIGILL, SIGFPE, SIGABRT, SIGTRAP})
+    {
+        sigaction(number, &action, nullptr);
+    }
+    std::set_terminate(&onTerminate);
 }
 #else
 void installCrashHandler(CrashReporting /*reporting*/)

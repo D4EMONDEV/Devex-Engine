@@ -36,7 +36,8 @@ captures de l'éditeur, scènes de base, entrées, scripts C#, animations, colli
 - `Devex::Math` : types GLM sous `devex::math`, projection reverse-Z infinie, TRS ;
 - `Devex::Platform` : fenêtre, événements et entrées clavier, souris et manette (sources nommées
   pour les actions), saisie de texte et presse-papiers, dialogues de fichiers, bibliothèques
-  partagées et processus sur SDL3 ;
+  partagées et processus sur SDL3 (barre de titre de libdecor sous GNOME, extensions X11), entrée
+  des programmes parmi les applications d'un bureau Linux ;
 - `Devex::Reflection` : description des champs des composants (`DEVEX_REFLECT`), listes et
   références d'entités comprises ;
 - `Devex::Serialization` : format texte commun des fichiers `.dvx*`, flux binaires ;
@@ -191,7 +192,7 @@ captures de l'éditeur, scènes de base, entrées, scripts C#, animations, colli
 - `devex-player` : lance un projet hors de l'éditeur, en recompilant d'abord son code s'il est
   périmé, ou le paquet d'un jeu exporté (scène de démarrage, réglages de fenêtre et code du jeu) ;
   le lecteur, les jeux exportés et l'éditeur tiennent un journal dans un fichier et, s'ils
-  plantent, y ajoutent la pile d'appels avec un minidump à côté ;
+  plantent, y ajoutent la pile d'appels, avec un minidump à côté sous Windows ;
 - `devex-bindgen` : outil de build qui génère les vues C# des composants C++ ;
 - `samples/sandbox` : le bac à sable, un projet dont le gameplay mêle un module C++ et du C# dans
   `code/` :
@@ -261,8 +262,9 @@ cmake --build --preset build-x64-debug
 ctest --preset test-x64-debug
 ```
 
-Sous Linux (Ubuntu 24.04, GCC 14), avec les paquets de développement d'X11, de Wayland et du son
-qu'installe la CI :
+Sous Linux (Ubuntu 24.04, GCC 14), avec les paquets de développement d'X11 et de ses extensions,
+de Wayland, de libdecor et du son qu'installe la CI (`libdecor-0-dev` donne sa barre de titre à la
+fenêtre sous GNOME ; sans lui, le build s'arrête) :
 
 ```bash
 CC=gcc-14 CXX=g++-14 cmake --preset linux-debug
@@ -285,9 +287,11 @@ produit depuis un build avec `cmake --install out/build/x64-release --prefix <do
 Il faut un pilote graphique avec Vulkan 1.4 ; le SDK .NET 10 pour le code C# des jeux ; pour leur
 code C++, Visual Studio (outils C++), CMake et Ninja sous Windows, `cmake`, `ninja-build` et
 `g++-14` sous Linux. Sous Windows, le runtime C++ est fourni à côté des programmes. Sous Linux,
-il faut Ubuntu 24.04 ou plus récent (glibc 2.38) et `libvulkan1` : lancer `bin/devex-editor`.
-L'éditeur et le lecteur n'ont pas encore été essayés sur une vraie machine Linux, faute de GPU
-Vulkan dans WSL.
+il faut Ubuntu 24.04 ou plus récent (glibc 2.38) et `libvulkan1` : lancer `bin/devex-editor`, qui
+s'inscrit parmi les applications du bureau (nom et icône dans le dock). Sous GNOME, sa barre de
+titre vient de libdecor et de son greffon GTK, installés avec le bureau d'Ubuntu ; `addr2line`
+(binutils) nomme les appels du rapport d'un plantage. L'éditeur tourne sous Ubuntu 26.04 (GNOME 50,
+Wayland).
 
 Les programmes sont produits dans `out/build/x64-debug/bin` ; dans l'arène du bac à sable, un clic
 capture la souris, ZQSD (WASD) ou le stick gauche marchent, le stick droit regarde, Maj court,

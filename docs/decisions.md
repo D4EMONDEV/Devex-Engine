@@ -13,6 +13,7 @@ mais seulement explicitement ici : le code suit ce document, pas l'inverse.
 | Licence                  | MIT                                                                |
 | Modèle de scène          | Hybride : entités + composants visibles, stockage ECS contigu      |
 | Fenêtre / entrées        | SDL3                                                               |
+| Bureaux Linux            | SDL3 avec libdecor et les extensions X11, entrée `.desktop`        |
 | Graphique                | Vulkan 1.4 minimum, API C + volk + VMA, sans RHI pour l'instant    |
 | Shaders                  | Slang → SPIR-V                                                     |
 | Architecture de rendu    | Forward+ clustered avec prépasse, PBR métal-rugosité (GGX)         |
@@ -98,7 +99,7 @@ mais seulement explicitement ici : le code suit ce document, pas l'inverse.
 | Icônes                   | Lucide (SVG) dessinées en images, colorées par type d'objet        |
 | Scènes ouvertes          | Onglets, chacun avec son historique, sa sélection et sa caméra     |
 | Couleurs de l'interface  | Mélangées en espace d'affichage (vue UNORM de la swapchain)        |
-| Barre de titre           | Native, sombre et à la couleur du thème sous Windows               |
+| Barre de titre           | Native : sombre et à la couleur du thème sous Windows, libdecor sous GNOME |
 | Annulation               | Commandes basées sur la réflexion (UUID, composant, champ, valeurs) |
 | Base d'assets            | `.dvxmeta` versionné à côté de chaque source, cache `.devex/` local |
 | Sous-assets              | UUID listés dans le `.dvxmeta`, retrouvés par clé à la réimportation |
@@ -178,7 +179,7 @@ mais seulement explicitement ici : le code suit ce document, pas l'inverse.
 | Thèmes d'interface       | Asset `.dvxtheme` de styles nommés, référencé par le canevas       |
 | Liaison de données       | `UiBinding` écrit un champ de composant dans un texte              |
 | Journal                  | Fichier par lancement, le précédent gardé, lisible pendant le jeu  |
-| Plantages                | Pile symbolisée dans le journal et minidump à côté                 |
+| Plantages                | Pile symbolisée dans le journal, minidump à côté sous Windows      |
 | Manettes                 | SDL Gamepad, quatre manettes, sticks avec zone morte               |
 | Éditeur de texte         | `UiTextArea` de `Devex::Ui`, couleurs par morceau                  |
 | Autocomplétion           | Mots-clés, noms du moteur et identifiants du fichier              |
@@ -790,6 +791,20 @@ les assets s'écrivent au fil de leur lecture.
   réservé d'avance, et 64 Kio de pile lui sont garantis pour survivre à un débordement de pile.
   Le message du runtime C sur `abort` est coupé (`_set_abort_behavior`) : le rapport le remplace,
   et en Debug c'était une boîte de dialogue qui retenait le processus avant lui.
+- **Plantages sous Linux** : le même rapport, par les signaux des fautes (`SIGSEGV`, `SIGBUS`,
+  `SIGILL`, que lève le `__builtin_trap` d'une assertion avec GCC, `SIGFPE`, `SIGTRAP`), `SIGABRT` et
+  `std::set_terminate`, sur une pile de signal de 256 Kio réservée d'avance. `backtrace` (glibc)
+  donne les appels, à partir de l'instruction fautive lue dans le contexte du signal ; `dladdr`, le
+  module et le décalage de chacun ; `addr2line` (binutils), la fonction et la ligne d'après les
+  informations de débogage, ou au moins la fonction d'après tous les symboles du module : `dladdr` ne
+  voit que ceux qu'il exporte, et rien des fonctions du programme lui-même. `addr2line` est cherché
+  dans le `PATH` à l'installation du gestionnaire, puis lancé une fois par module dans un processus
+  à part (`fork`, `execve` avec `LC_ALL=C`, car il traduit sinon « at » entre la fonction et la
+  ligne) ; il lit en une seconde environ les 335 Mo de `libdevex-engine.so` en Debug. Sans lui, le
+  rapport donne le symbole exporté le plus proche. Pas de minidump : le processus meurt ensuite de
+  son signal, comme sans gestionnaire, et le système garde un core dump s'il est réglé pour
+  (`ulimit -c`, apport, `coredumpctl`). Les journaux sont dans `~/.local/share` (`XDG_DATA_HOME`) :
+  `Devex/Editor/logs/editor.log` pour l'éditeur.
 - **Symboles** : les builds Release écrivent aussi leurs `.pdb` (`/Zi`, `/DEBUG` avec `/OPT:REF` et
   `/OPT:ICF`, donc le même code optimisé), sans que l'export les copie : les rapports des jeux livrés
   ne donnent que modules et décalages, que les `.pdb` gardés du build permettent de retrouver.
@@ -1102,6 +1117,8 @@ les assets s'écrivent au fil de leur lecture.
   en cours ou nombre d'entités, avertissements et erreurs de la sortie, FPS, version). Le titre
   donne la scène, `*` si elle a des modifications non enregistrées, le projet et l'état de jeu.
   La barre de titre du système passe en sombre et prend la couleur du fond (DWM, Windows 11).
+  Sous Linux, c'est celle du bureau, ou celle que libdecor dessine sous GNOME, claire ou sombre
+  comme le système (voir *Bureaux Linux*).
 - **Gestionnaire de projets** : sans projet, la fenêtre prend une taille compacte (1160 × 820 à
   100 %) et montre la liste des projets de l'utilisateur, comme celui de Godot : étoile des
   favoris (toujours en tête), logo, nom en gras, dossier, date de dernière ouverture ; filtre,
@@ -3758,7 +3775,8 @@ Jalon 62, comme la localisation de Godot.
 - **vcpkg** : un clone **complet** de vcpkg, dont l'historique contient les ports fixés par la
   `builtin-baseline` (un clone partiel lui faisait chercher ces versions pendant l'installation,
   ce qui échouait sur le réseau de la CI). Les paquets construits sont gardés dans le cache de
-  GitHub, par configuration et par empreinte de `vcpkg.json`, et sauvés dès la configuration :
+  GitHub, par configuration et par empreinte de `vcpkg.json` et des ports overlay
+  (`cmake/vcpkg-ports`), et sauvés dès la configuration :
   la première exécution construit les dépendances (une dizaine de minutes), les suivantes les
   reprennent ; une exécution complète dure environ un quart d'heure.
 - **Échecs lisibles par tous** : les journaux d'une exécution ne se lisent qu'avec des droits sur
@@ -3771,11 +3789,48 @@ Jalon 62, comme la localisation de Godot.
   qu'écrit alors qu'elle le range sous sa forme canonique ; un dossier au nom court de Windows,
   comme le dossier temporaire des machines de GitHub (`RUNNER~1`), le manquait.
 
+### Bureaux Linux
+
+- **Le problème** : essayé pour la première fois sur une vraie machine Linux (Ubuntu 26.04, GNOME 50
+  sous Wayland), l'éditeur s'ouvrait sans barre de titre, donc sans boutons pour réduire, agrandir
+  ou fermer sa fenêtre, et le dock lui donnait une icône générique.
+- **Barres de titre** : sous Wayland, le compositeur ne dessine la barre d'une fenêtre que s'il
+  offre `xdg-decoration` (KDE, les compositeurs wlroots) ; GNOME ne l'offre pas et laisse chaque
+  application dessiner la sienne, ce que SDL fait avec libdecor. Le port `sdl3` de vcpkg coupe
+  libdecor (`SDL_WAYLAND_LIBDECOR=OFF`), pour que les bibliothèques de la machine de build ne
+  changent pas ce que SDL sait faire. Un **port overlay**, `cmake/vcpkg-ports/sdl3`, déclaré par
+  `vcpkg-configuration` dans `vcpkg.json`, reprend celui de la `builtin-baseline` (SDL 3.4.16) et
+  l'active : SDL charge `libdecor-0.so.0` au lancement s'il est là, comme il charge Wayland et X11,
+  et préfère toujours les décorations du compositeur quand il en offre. libdecor dessine la barre
+  avec son greffon GTK (`libdecor-0-plugin-1-gtk`, installé avec le bureau d'Ubuntu), claire ou
+  sombre comme le système, sans la couleur du thème de l'éditeur : `Window::setTitleBarColors` ne
+  fait rien hors de Windows. Godot fait de même sous Wayland. Le build demande `libdecor-0-dev` et
+  échoue sans lui, plutôt que de rendre un éditeur sans barre de titre : SDL ne fait qu'avertir,
+  et le port vérifie ce qu'il a trouvé dans son `SDL_build_config.h`. Forcer X11 (XWayland) aurait
+  donné la barre de GNOME, mais une image floue avec une mise à l'échelle fractionnaire ; une barre
+  de titre intégrée à l'éditeur reste une piste (voir *Apparence*).
+- **Extensions X11** : le même port active celles que vcpkg coupe aussi : XInput2 (mouvements bruts
+  de la souris pour les caméras, défilement fin du pavé tactile), Xcursor (thème et taille du
+  pointeur), XRandR (modes d'affichage et écrans), XFixes (pointeur confiné), XScrnSaver, XShape,
+  XSync, Xdbe et XTest, chargées au lancement elles aussi. Elles ne servent que dans une session
+  X11. Leurs paquets de développement sont ceux que la CI installait déjà.
+- **Nom et icône dans le dock** : GNOME sous Wayland ignore l'icône d'une fenêtre
+  (`SDL_SetWindowIcon`) : il prend le nom et l'icône dans l'entrée `.desktop` qui porte l'`app_id`
+  de la fenêtre, que SDL tire du nom de l'exécutable (sous X11, la classe de la fenêtre). Au
+  lancement, l'éditeur écrit donc `~/.local/share/applications/devex-editor.desktop`
+  (`platform::registerDesktopEntry`), qui lance l'éditeur ouvert en dernier, avec l'icône de
+  `bin/resources/icons/devex.png`, et ne la réécrit que si elle change. L'éditeur apparaît du même
+  coup parmi les applications du bureau, et s'épingle au dock. Hors de Linux, la fonction ne fait
+  rien : l'exécutable et la fenêtre portent déjà l'icône. Sous Wayland, l'échec de
+  `SDL_SetWindowIcon` n'est plus qu'un message de débogage : c'était un avertissement à chaque
+  lancement, compté dans la barre d'état de l'éditeur.
+- **Plantages** : voir *Journal et plantages*.
+
 ### Dépendances prévues (vcpkg)
 
 | Bibliothèque          | Usage                | Jalon    |
 | --------------------- | -------------------- | -------- |
-| SDL3 (feature `vulkan`) | fenêtre, entrées   | 1 ✅     |
+| SDL3 (feature `vulkan`, port overlay) | fenêtre, entrées | 1 ✅, libdecor et X11 au 70 |
 | GLM (header-only)     | maths                | 1 ✅     |
 | volk (+ vulkan-headers) | Vulkan             | 2 ✅     |
 | VMA                   | mémoire GPU          | 3 ✅     |
@@ -3811,7 +3866,9 @@ Hors vcpkg :
 
 CMake trouve vcpkg via la variable `VCPKG_ROOT`, sinon via l'exécutable `vcpkg` du
 `PATH` (voir `cmake/DevexVcpkg.cmake`). La version des ports est figée par
-`builtin-baseline` dans `vcpkg.json`.
+`builtin-baseline` dans `vcpkg.json`, sauf celle de `sdl3`, que son port overlay
+(`cmake/vcpkg-ports/sdl3`, voir *Bureaux Linux*) copie de la baseline : il se met à jour avec elle,
+en reprenant le port de la nouvelle baseline et ses changements.
 
 ## Jalons
 
@@ -4166,6 +4223,9 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     en boucle, à l'envers et par les machines à états ; `OnAnimationEvent` en C#, liste de l'image
     en C++ et en C# ; ligne *Events* du panneau Animation et champ *Event* des images ; pas du
     robot et du chevalier dans le bac à sable.
+70. ✅ **Bureaux Linux** — barre de titre de libdecor sous GNOME Wayland et extensions X11, par un
+    port overlay de SDL3 ; éditeur listé parmi les applications du bureau, avec son nom et son icône
+    dans le dock ; rapport de plantage sous Linux, appels nommés par `addr2line`.
 
 Ensuite, sans ordre figé : à choisir dans les pistes ci-dessous.
 
@@ -4280,6 +4340,10 @@ Ensuite, sans ordre figé : à choisir dans les pistes ci-dessous.
   du jeu (tirées des commentaires de leur code), et des préréglages faits de préfabs du projet ; un
   panneau redessiné seulement quand il change ; les polices de l'éditeur
   cuites une fois et gardées en cache plutôt qu'à chaque lancement.
+- **Bureaux Linux, la suite** : entrée `.desktop` et icône des jeux exportés et du lecteur, écrites
+  par l'export plutôt qu'au lancement ; couleur du thème sur la barre de libdecor (greffon à soi ou
+  barre intégrée) ; minidumps (Breakpad, Crashpad) ; noms des fonctions et des lignes sans
+  binutils ; association des `.dvxproj` à l'éditeur (type MIME).
 - **CI, la suite** : macOS ; Clang à côté de GCC sous Linux ; les tests `[gpu]` sur un rendu logiciel (lavapipe,
   SwiftShader) ou une machine avec GPU ; actions passées à Node.js 24 (celles en v4 tournent sur
   Node.js 20, déprécié) ; cache de compilation (sccache) ; éditeur et lecteur publiés en artefacts

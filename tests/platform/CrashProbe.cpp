@@ -13,6 +13,8 @@ namespace {
 
 #ifdef _MSC_VER
 __declspec(noinline)
+#else
+[[gnu::noinline]]
 #endif
 void crashHere(std::string_view how)
 {
@@ -20,7 +22,8 @@ void crashHere(std::string_view how)
     {
         std::abort();
     }
-    volatile int* nowhere = nullptr;
+    // A null the optimizer cannot see, which GCC would otherwise turn into a trap.
+    volatile int* volatile nowhere = nullptr;
     *nowhere = 42;
 }
 

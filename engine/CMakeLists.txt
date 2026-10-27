@@ -102,6 +102,7 @@ add_library(Devex::Platform ALIAS devex_platform)
 target_sources(devex_platform
     PRIVATE
         src/platform/CrashHandler.cpp
+        src/platform/DesktopEntry.cpp
         src/platform/Executable.cpp
         src/platform/Input.cpp
         src/platform/InputSource.cpp
@@ -115,6 +116,7 @@ target_sources(devex_platform
         BASE_DIRS include
         FILES
             include/devex/platform/CrashHandler.hpp
+            include/devex/platform/DesktopEntry.hpp
             include/devex/platform/Event.hpp
             include/devex/platform/Executable.hpp
             include/devex/platform/Input.hpp

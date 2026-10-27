@@ -11,7 +11,7 @@
 #include <string>
 #include <thread>
 
-#ifdef _WIN32
+#if defined(_WIN32) || defined(__linux__)
 namespace {
 
 // Runs the probe until it dies, and answers its exit code.
@@ -34,6 +34,7 @@ namespace {
     return 0;
 }
 
+#ifdef _WIN32
 [[nodiscard]] bool hasMinidump(const std::filesystem::path& folder)
 {
     std::error_code error;
@@ -46,9 +47,11 @@ namespace {
     }
     return false;
 }
+#endif
 
 } // namespace
 
+// Linux writes no minidump: the system keeps a core dump if it is set to.
 TEST_CASE("A crash leaves its report in the log and a minidump beside it", "[platform][crash]")
 {
     for (const std::string how : {"access", "abort"})
@@ -66,15 +69,19 @@ TEST_CASE("A crash leaves its report in the log and a minidump beside it", "[pla
         CHECK(log->find("The probe is about to crash") != std::string::npos);
         CHECK(log->find("The process crashed") != std::string::npos);
         CHECK(log->find(how == "access" ? "access violation" : "abort") != std::string::npos);
-        // The symbols sit beside the probe: the function that crashed is named.
+        // The symbols sit beside the probe, or in it: the function that crashed is named.
         CHECK(log->find("crashHere") != std::string::npos);
+#ifdef _WIN32
         CHECK(log->find("Minidump: ") != std::string::npos);
         CHECK(hasMinidump(folder));
+#endif
 
         std::filesystem::remove_all(folder, error);
     }
 }
+#endif
 
+#ifdef _WIN32
 TEST_CASE("An executable becomes a windowed application", "[platform][executable]")
 {
     const std::filesystem::path folder = std::filesystem::temp_directory_path() / "devex-windowed";

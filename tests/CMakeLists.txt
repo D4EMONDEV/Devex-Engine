@@ -167,6 +167,7 @@ devex_set_warnings(devex_crash_probe)
 devex_add_tests(platform
     SOURCES
         platform/CrashHandlerTests.cpp
+        platform/DesktopEntryTests.cpp
         platform/EventWaitTests.cpp
         platform/InputTests.cpp
         platform/ProcessTests.cpp

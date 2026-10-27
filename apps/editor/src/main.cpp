@@ -1,6 +1,7 @@
 #include <devex/core/Log.hpp>
 #include <devex/core/LogFile.hpp>
 #include <devex/platform/CrashHandler.hpp>
+#include <devex/platform/DesktopEntry.hpp>
 #include <devex/platform/Platform.hpp>
 #include <devex/runtime/Application.hpp>
 #include <devex/runtime/GameExport.hpp>
@@ -59,5 +60,18 @@ int main(int argc, char** argv)
         }
     }
     devex::platform::installCrashHandler({.directory = logs, .log = log.get()});
+
+    // The dock of a Linux desktop shows the name and the icon of the editor's entry among the
+    // applications, not those of its window.
+    const devex::platform::DesktopEntry entry{
+        .name = "Devex Engine",
+        .comment = "Make 2D and 3D games",
+        .icon = devex::platform::executableDirectory() / "resources" / "icons" / "devex.png",
+        .categories = "Development;IDE;",
+    };
+    if (const devex::core::Result<void> registered = devex::platform::registerDesktopEntry(entry); !registered)
+    {
+        DEVEX_LOG_WARNING("The editor is not listed among the applications of the desktop: {}", registered.error());
+    }
     return devex::runtime::run<EditorApplication>(config);
 }

@@ -1,1 +1,3 @@
 * text=auto
+# vcpkg applies the patches of overlay ports as they are written.
+*.patch text eol=lf
