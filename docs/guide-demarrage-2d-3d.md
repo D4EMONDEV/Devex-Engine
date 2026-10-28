@@ -538,6 +538,8 @@ Ensuite, ajouter quelques **Static box** pour construire un petit parcours. Rég
 
 Un modèle 3D importé remplace ensuite le cube Visual. Garder la physique sur Player et régler position, rotation et échelle de l'enfant visuel pour aligner le modèle avec les pieds. Le mesh visible et la forme physique sont deux réglages distincts ; un modèle importé ne garantit pas la présence d'un collider.
 
+Pour qu'une pièce fermée se reflète elle-même plutôt que le ciel (un sol poli, une boule métallique), ajouter une entité **Reflection probe** au centre de la pièce, régler sa boîte (**Size**) sur les murs, puis cliquer **Bake** dans l'Inspector : la sonde est capturée depuis son point de capture et écrite à côté de la scène, qu'il faut avoir enregistrée. À refaire quand la pièce change. La salle aux miroirs de l'arène de Sandbox en montre une.
+
 Un modèle rigué s'anime avec un **Animator** et un contrôleur (**New Animator** dans un dossier du FileSystem) : la couche de base mêle par exemple `Idle` et `Walk` selon un paramètre `Speed` que le script donne avec `Animation.SetFloat`. Pour qu'un geste ne joue que sur une partie du corps (saluer, viser en courant), ouvrir l'onglet **Layers** du panneau Animator, ajouter une couche avec **+**, lui donner ses états et ses transitions, puis cocher dans l'Inspector les os de son **Mask** (l'entité animée doit être sélectionnée pour voir son squelette). `Animation.SetLayerWeight` règle ensuite la part du geste depuis le code. Le robot de Sandbox (`assets/animators/robot.dvxanimator`) salue ainsi en marchant.
 
 **Point de contrôle :** le joueur reste debout, saute, touche le sol, heurte l'obstacle et reste dans le champ de la caméra.

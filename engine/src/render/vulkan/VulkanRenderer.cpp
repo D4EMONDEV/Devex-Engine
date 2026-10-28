@@ -10,6 +10,8 @@
 #include <devex/render/Light2D.hpp>
 #include <devex/render/Photometry.hpp>
 
+#include <glm/gtc/packing.hpp>
+
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -447,6 +449,43 @@ void VulkanRenderer::destroyTexture(TextureHandle texture)
     {
         m_retiredTextures.push_back({.texture = std::move(*removed), .retiredAtFrame = m_frameIndex});
         m_materialsChanged = true;
+    }
+}
+
+core::Result<ReflectionProbeHandle> VulkanRenderer::createReflectionProbe(const asset::ReflectionProbeData& probe)
+{
+    if (core::Result<void> valid = asset::validate(probe); !valid)
+    {
+        return std::unexpected(valid.error());
+    }
+    if (m_freeProbeSlots.empty() && m_nextProbeSlot == maxReflectionProbes)
+    {
+        return core::makeError(core::ErrorCode::OutOfMemory, "all {} reflection probes are in use", maxReflectionProbes);
+    }
+    core::Result<Image> reflections = m_baker->bakeProbe(probe.size, probe.pixels);
+    if (!reflections)
+    {
+        return std::unexpected(reflections.error());
+    }
+    std::uint32_t slot = m_nextProbeSlot;
+    if (!m_freeProbeSlots.empty())
+    {
+        slot = m_freeProbeSlots.back();
+        m_freeProbeSlots.pop_back();
+    }
+    else
+    {
+        ++m_nextProbeSlot;
+    }
+    m_descriptors->setReflectionProbe(slot, reflections->view());
+    return m_probeMaps.insert(ProbeMap{.reflections = std::move(*reflections), .slot = slot, .scale = probe.scale});
+}
+
+void VulkanRenderer::destroyReflectionProbe(ReflectionProbeHandle probe)
+{
+    if (std::optional<ProbeMap> removed = m_probeMaps.remove(probe))
+    {
+        m_retiredProbeMaps.push_back({.map = std::move(*removed), .retiredAtFrame = m_frameIndex});
     }
 }
 
@@ -978,6 +1017,13 @@ core::Result<bool> VulkanRenderer::prepareScene(FrameContext& frame, bool main)
                                         (haltonPoint(sample + 1, 3) - 0.5f) * 2.0f / static_cast<float>(m_sceneExtent.height)}
                            : math::Vec2{0.0f};
     {
+        DEVEX_PROFILE_SCOPE("Reflection probes");
+        if (core::Result<void> probes = uploadReflectionProbes(frame); !probes)
+        {
+            return std::unexpected(probes.error());
+        }
+    }
+    {
         DEVEX_PROFILE_SCOPE("Scene data");
         writeSceneData(frame, m_cascades);
     }
@@ -1130,6 +1176,7 @@ core::Result<void> VulkanRenderer::renderView(ExtraView& view, const RenderView&
             }
             renderer.swapViewState(view.state);
             renderer.m_setBase = 0;
+            renderer.m_radianceView = false;
         }
     };
     swapViewState(view.state);
@@ -1143,6 +1190,8 @@ core::Result<void> VulkanRenderer::renderView(ExtraView& view, const RenderView&
     }
     m_setBase = view.setBase;
     view.interface = wanted.interface;
+    view.radiance = wanted.radiance;
+    m_radianceView = wanted.radiance;
     m_sceneExtent = extent;
     updateExposure(frame);
 
@@ -1158,6 +1207,24 @@ core::Result<void> VulkanRenderer::renderView(ExtraView& view, const RenderView&
         frame.captureRequest = request.id;
         frame.captureExtent = {std::max(1u, static_cast<std::uint32_t>(std::lround(static_cast<float>(extent.width) * scale))),
                                std::max(1u, static_cast<std::uint32_t>(std::lround(static_cast<float>(extent.height) * scale)))};
+        // The light of a radiance view is copied whole, as it was drawn.
+        frame.captureRadiance = wanted.radiance;
+        if (wanted.radiance)
+        {
+            frame.captureExtent = extent;
+            const VkDeviceSize bytes = VkDeviceSize{8} * extent.width * extent.height;
+            if (!frame.radianceReadback || frame.radianceReadback->size() < bytes)
+            {
+                frame.radianceReadback.reset();
+                core::Result<Buffer> readback =
+                    Buffer::create(m_allocator, {.size = bytes, .usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT, .hostVisible = true});
+                if (!readback)
+                {
+                    return std::unexpected(readback.error());
+                }
+                frame.radianceReadback = std::move(*readback);
+            }
+        }
     }
 
     if (core::Result<void> materials = updateFrameMaterials(frame); !materials)
@@ -1332,7 +1399,7 @@ core::Result<void> VulkanRenderer::createDefaultResources()
     // A bank of frame sets for the main frame, and one for each view drawn beside it.
     core::Result<DescriptorSets> descriptors = DescriptorSets::create(
         m_device, std::min(m_device.maxBindlessTextures(), maxTextures),
-        static_cast<std::uint32_t>(framesInFlight * (1 + maxViews)));
+        static_cast<std::uint32_t>(framesInFlight * (1 + maxViews)), maxReflectionProbes);
     if (!descriptors)
     {
         return std::unexpected(descriptors.error());
@@ -1497,6 +1564,11 @@ core::Result<void> VulkanRenderer::createDefaultResources()
                                   m_uniformEnvironment->irradiance.view(),
                                   m_whiteTexture->image.view());
     m_environmentBound = true;
+    // The slots of the probes point at a cube map that exists until a probe takes them.
+    for (std::uint32_t slot = 0; slot < maxReflectionProbes; ++slot)
+    {
+        m_descriptors->setReflectionProbe(slot, m_uniformEnvironment->specular.view());
+    }
 
     return createScenePipelines();
 }
@@ -2673,6 +2745,81 @@ core::Result<void> VulkanRenderer::uploadLights(FrameContext& frame, float aspec
     return {};
 }
 
+core::Result<void> VulkanRenderer::uploadReflectionProbes(FrameContext& frame)
+{
+    m_frameProbeCount = 0;
+    m_gpuProbes.clear();
+    if (m_radianceView || m_world.reflectionProbes.empty())
+    {
+        return {};
+    }
+    const float aspectRatio = static_cast<float>(m_sceneExtent.width) / static_cast<float>(m_sceneExtent.height);
+    const Frustum frustum = frustumOf(projectionMatrix(m_world.camera, aspectRatio) * m_world.camera.view);
+    for (const RenderReflectionProbe& probe : m_world.reflectionProbes)
+    {
+        const ProbeMap* const map = m_probeMaps.find(probe.probe);
+        if (map == nullptr)
+        {
+            continue;
+        }
+        // The box turns with the transform, and its scale grows it.
+        const math::Vec3 scale{math::length(math::Vec3(probe.transform[0])), math::length(math::Vec3(probe.transform[1])),
+                               math::length(math::Vec3(probe.transform[2]))};
+        const math::Vec3 halfSize = probe.size * scale * 0.5f;
+        if (!(std::min({scale.x, scale.y, scale.z}) > 1e-6f) || !(std::min({halfSize.x, halfSize.y, halfSize.z}) > 0.0f))
+        {
+            continue;
+        }
+        math::Mat4 boxToWorld{1.0f};
+        boxToWorld[0] = math::Vec4(math::Vec3(probe.transform[0]) / scale.x, 0.0f);
+        boxToWorld[1] = math::Vec4(math::Vec3(probe.transform[1]) / scale.y, 0.0f);
+        boxToWorld[2] = math::Vec4(math::Vec3(probe.transform[2]) / scale.z, 0.0f);
+        boxToWorld[3] = probe.transform[3];
+        // Its corners, for the camera to tell whether it may see it.
+        math::Aabb bounds;
+        for (int corner = 0; corner < 8; ++corner)
+        {
+            const math::Vec3 local{(corner & 1) != 0 ? halfSize.x : -halfSize.x, (corner & 2) != 0 ? halfSize.y : -halfSize.y,
+                                   (corner & 4) != 0 ? halfSize.z : -halfSize.z};
+            const math::Vec3 world = math::Vec3(boxToWorld * math::Vec4(local, 1.0f));
+            bounds.min = math::min(bounds.min, world);
+            bounds.max = math::max(bounds.max, world);
+        }
+        if (!frustum.intersects(bounds))
+        {
+            continue;
+        }
+        const GpuReflectionProbe gpu{
+            .worldToBox = math::inverse(boxToWorld),
+            .halfSize = halfSize,
+            .blendDistance = std::max(probe.blendDistance, 0.0f),
+            .capturePosition = probe.captureOffset * scale,
+            .intensity = std::max(probe.intensity, 0.0f) / map->scale,
+            .map = map->slot,
+            .boxProjection = probe.boxProjection ? 1u : 0u,
+        };
+        m_gpuProbes.emplace_back(halfSize.x * halfSize.y * halfSize.z, gpu);
+    }
+    // The smallest box comes first: the most local light wins where boxes overlap.
+    std::ranges::stable_sort(m_gpuProbes, {}, &std::pair<float, GpuReflectionProbe>::first);
+    const std::size_t count = std::min(m_gpuProbes.size(), maxFrameReflectionProbes);
+    if (count == 0)
+    {
+        return {};
+    }
+    if (core::Result<void> buffer = ensureHostBuffer(frame.reflectionProbes, count * sizeof(GpuReflectionProbe)); !buffer)
+    {
+        return buffer;
+    }
+    auto* const destination = reinterpret_cast<GpuReflectionProbe*>(frame.reflectionProbes->mappedBytes().data());
+    for (std::size_t index = 0; index < count; ++index)
+    {
+        destination[index] = m_gpuProbes[index].second;
+    }
+    m_frameProbeCount = static_cast<std::uint32_t>(count);
+    return {};
+}
+
 void VulkanRenderer::writeSceneData(FrameContext& frame,
                                     const std::optional<ShadowCascades>& cascades) const noexcept
 {
@@ -2752,6 +2899,8 @@ void VulkanRenderer::writeSceneData(FrameContext& frame,
     scene.time = m_time;
     scene.previousTime = m_previousTime;
     scene.shadowViews = frame.shadowViews ? frame.shadowViews->deviceAddress() : 0;
+    scene.reflectionProbes = m_frameProbeCount > 0 ? frame.reflectionProbes->deviceAddress() : 0;
+    scene.reflectionProbeCount = m_frameProbeCount;
     scene.lights = frame.lights->deviceAddress();
     scene.clusters = frame.clusters->deviceAddress();
     scene.clusterLights = frame.clusterLights->deviceAddress();
@@ -3636,7 +3785,8 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
     const std::size_t sceneColorIndex = create({
         .format = sceneFormat,
         .extent = extent,
-        .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+        .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT |
+                 (frame.captureRequest && frame.captureRadiance ? VkImageUsageFlags{VK_IMAGE_USAGE_TRANSFER_SRC_BIT} : VkImageUsageFlags{0}),
     });
     const std::size_t depthIndex = create({
         .format = depthFormat,
@@ -3725,8 +3875,10 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
                                                   .usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
                                               })
                                             : 0;
-    // A capture tonemaps the scene a second time, into a small image copied to the CPU.
-    const bool capture = frame.captureRequest.has_value();
+    // A capture tonemaps the scene a second time, into a small image copied to the CPU; that of a
+    // radiance view copies the light of the scene as it was drawn.
+    const bool radianceCapture = frame.captureRequest.has_value() && frame.captureRadiance;
+    const bool capture = frame.captureRequest.has_value() && !frame.captureRadiance;
     frame.captureFormat = targetFormat;
     const std::size_t captureIndex = capture ? create({
                                                    .format = targetFormat,
@@ -4100,6 +4252,18 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
         drawCalls += drawTransparent(commands, sceneData, boneMatrices, frame, frameSlot);
         vkCmdEndRendering(commands);
     });
+
+    if (radianceCapture)
+    {
+        graph.addPass("Radiance readback", {{sceneColor, ImageAccess::TransferRead}}, [&](VkCommandBuffer commands) {
+            const VkBufferImageCopy copy{
+                .imageSubresource = {.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .layerCount = 1},
+                .imageExtent = {extent.width, extent.height, 1},
+            };
+            vkCmdCopyImageToBuffer(commands, graph.handle(sceneColor), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                                   frame.radianceReadback->handle(), 1, &copy);
+        });
+    }
 
     if (m_world.camera.autoExposure)
     {
@@ -4750,6 +4914,26 @@ void VulkanRenderer::readCapture(FrameContext& frame)
     }
     const math::Extent2D extent = frame.captureExtent;
     CapturedImage image{.request = *frame.captureRequest, .width = extent.width, .height = extent.height};
+    if (frame.captureRadiance)
+    {
+        // Half floats of exposed light: back to nits.
+        const std::size_t pixels = std::size_t{extent.width} * extent.height;
+        std::vector<std::uint16_t> halves(pixels * 4);
+        std::memcpy(halves.data(), frame.radianceReadback->mappedBytes().data(), halves.size() * sizeof(std::uint16_t));
+        const float unexposed = frame.exposure > 0.0f ? 1.0f / frame.exposure : 1.0f;
+        image.radiance.resize(pixels * 3);
+        for (std::size_t pixel = 0; pixel < pixels; ++pixel)
+        {
+            for (std::size_t channel = 0; channel < 3; ++channel)
+            {
+                image.radiance[pixel * 3 + channel] = glm::unpackHalf1x16(halves[pixel * 4 + channel]) * unexposed;
+            }
+        }
+        m_captures.push_back(std::move(image));
+        frame.captureRequest.reset();
+        frame.captureRadiance = false;
+        return;
+    }
     image.rgba.resize(std::size_t{4} * extent.width * extent.height);
     std::memcpy(image.rgba.data(), frame.captureReadback->mappedBytes().data(), image.rgba.size());
     // The target keeps blue first on most displays; the picture has red first, and no transparency.
@@ -4987,6 +5171,15 @@ void VulkanRenderer::releaseRetiredResources() noexcept
     std::erase_if(m_retiredShaders, [&](const RetiredShader& retired) { return expired(retired.retiredAtFrame); });
     std::erase_if(m_retiredEnvironments,
                   [&](const RetiredEnvironment& retired) { return expired(retired.retiredAtFrame); });
+    std::erase_if(m_retiredProbeMaps, [&](const RetiredProbeMap& retired) {
+        if (!expired(retired.retiredAtFrame))
+        {
+            return false;
+        }
+        m_descriptors->setReflectionProbe(retired.map.slot, m_uniformEnvironment->specular.view());
+        m_freeProbeSlots.push_back(retired.map.slot);
+        return true;
+    });
     std::erase_if(m_retiredTextures, [&](const RetiredTexture& retired) {
         if (!expired(retired.retiredAtFrame))
         {

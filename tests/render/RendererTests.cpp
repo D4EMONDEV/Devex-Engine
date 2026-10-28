@@ -2,12 +2,15 @@
 #include <devex/core/Log.hpp>
 #include <devex/core/Profiler.hpp>
 #include <devex/platform/Platform.hpp>
+#include <devex/render/CubeMaps.hpp>
 #include <devex/render/Renderer.hpp>
 
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -991,6 +994,121 @@ TEST_CASE("Views draw the scene through other cameras into images the tools show
         CHECK(view.rgba[0] > 100);
         CHECK_FALSE(isSky(view, middle(view)));
         CHECK(renderer->stats().drawCalls > 0);
+    }
+
+    for (const std::string& error : capture.errors())
+    {
+        UNSCOPED_INFO(error);
+    }
+    CHECK(capture.errors().empty());
+}
+
+TEST_CASE("Radiance views capture light in nits, and reflection probes take the place of the sky", "[render][gpu][probe]")
+{
+    const ErrorCapture capture;
+    {
+        auto platform = devex::platform::Platform::create();
+        REQUIRE(platform.has_value());
+        auto window = platform->createWindow({.width = 320, .height = 240, .vulkan = true, .hidden = true});
+        REQUIRE(window.has_value());
+        auto renderer = devex::render::Renderer::create(*platform, *window, {.validation = true});
+        if (!renderer)
+        {
+            FAIL(std::format("{}", renderer.error()));
+        }
+        // A polished white metal cube 3 m in front of the camera reflects what is behind the camera.
+        auto cube = renderer->createMesh(devex::asset::makeCube());
+        REQUIRE(cube.has_value());
+        const devex::render::MaterialHandle metal =
+            renderer->createMaterial({.metallicFactor = 1.0f, .roughnessFactor = 0.05f});
+        const devex::math::Mat4 cubeTransform =
+            devex::math::translate(devex::math::Mat4{1.0f}, devex::math::Vec3{0.0f, 0.0f, -3.0f});
+        // A probe that captured a red room of 1000 nits all around.
+        constexpr std::uint32_t probeSize = 32;
+        std::vector<float> red(std::size_t{probeSize} * probeSize * 6 * 3, 0.0f);
+        for (std::size_t pixel = 0; pixel < red.size(); pixel += 3)
+        {
+            red[pixel] = 1000.0f;
+        }
+        auto probe = renderer->createReflectionProbe(devex::asset::makeReflectionProbe(probeSize, red));
+        REQUIRE(probe.has_value());
+
+        // A camera that shows light as it is: exposed by hand, without anything that changes it.
+        devex::render::RenderCamera camera;
+        camera.autoExposure = false;
+        camera.ev100 = 12.0f;
+        camera.tonemapper = devex::render::Tonemapper::None;
+        camera.antialiasing = devex::render::Antialiasing::None;
+        camera.ambientOcclusion = 0.0f;
+        camera.bloom = 0.0f;
+        devex::render::RenderCamera behind = camera;
+        behind.verticalFov = devex::math::radians(90.0f);
+        behind.view = devex::render::cubeFaceView(devex::math::Vec3{0.0f}, 4);
+
+        std::uint64_t radianceRequest = 0;
+        std::array<std::uint64_t, 3> requests{};
+        std::vector<devex::render::CapturedImage> captured;
+        for (int frame = 0; frame < 18; ++frame)
+        {
+            devex::render::RenderWorld& world = renderer->beginFrame();
+            world.camera = camera;
+            world.environment.intensity = 2000.0f;
+            world.meshes.push_back({.mesh = *cube, .material = metal, .transform = cubeTransform, .objectId = 1});
+            // Without a probe, then with one around the cube, then with one elsewhere.
+            if (frame >= 6)
+            {
+                const devex::math::Vec3 where = frame < 12 ? devex::math::Vec3{0.0f, 0.0f, -3.0f} : devex::math::Vec3{50.0f, 0.0f, 0.0f};
+                world.reflectionProbes.push_back({.probe = *probe,
+                                                  .transform = devex::math::translate(devex::math::Mat4{1.0f}, where),
+                                                  .size = devex::math::Vec3{10.0f}});
+            }
+            // A radiance view of the sky behind the camera.
+            world.views.push_back({.id = 30, .camera = behind, .extent = {64, 64}, .radiance = true});
+            REQUIRE(renderer->endFrame());
+            if (frame == 1)
+            {
+                radianceRequest = renderer->requestViewCapture(30, 64, 64);
+            }
+            if (frame % 6 == 2)
+            {
+                requests[static_cast<std::size_t>(frame / 6)] = renderer->requestCapture(160, 160);
+            }
+            for (devex::render::CapturedImage& image : renderer->takeCaptures())
+            {
+                captured.push_back(std::move(image));
+            }
+        }
+        const auto byRequest = [&](std::uint64_t request) -> const devex::render::CapturedImage* {
+            const auto found = std::ranges::find(captured, request, &devex::render::CapturedImage::request);
+            return found != captured.end() ? &*found : nullptr;
+        };
+
+        // The light of the sky, in nits, whatever the exposure it was drawn at.
+        const devex::render::CapturedImage* const radiance = byRequest(radianceRequest);
+        REQUIRE(radiance != nullptr);
+        CHECK(radiance->rgba.empty());
+        REQUIRE(radiance->radiance.size() == std::size_t{64} * 64 * 3);
+        const std::size_t centre = (std::size_t{32} * 64 + 32) * 3;
+        CHECK(radiance->radiance[centre] == Catch::Approx(2000.0f).epsilon(0.02));
+        CHECK(radiance->radiance[centre + 2] == Catch::Approx(2000.0f).epsilon(0.02));
+
+        // The middle of the cube: white sky, red probe, then white sky again outside its box.
+        std::array<std::array<std::uint8_t, 3>, 3> middles{};
+        for (std::size_t index = 0; index < requests.size(); ++index)
+        {
+            const devex::render::CapturedImage* const image = byRequest(requests[index]);
+            REQUIRE(image != nullptr);
+            REQUIRE(image->width == 160);
+            const std::size_t middle = (std::size_t{60} * 160 + 80) * 4;
+            middles[index] = {image->rgba[middle], image->rgba[middle + 1], image->rgba[middle + 2]};
+        }
+        CHECK(middles[0][0] > 100);
+        CHECK(std::abs(int{middles[0][0]} - int{middles[0][1]}) < 8);
+        CHECK(middles[1][0] > 80);
+        CHECK(middles[1][1] < 20);
+        CHECK(middles[1][2] < 20);
+        CHECK(middles[2] == middles[0]);
+        renderer->destroyReflectionProbe(*probe);
     }
 
     for (const std::string& error : capture.errors())

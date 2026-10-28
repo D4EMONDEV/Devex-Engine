@@ -217,6 +217,7 @@ target_sources(devex_asset
         src/asset/TranslationData.cpp
         src/asset/AnimatorData.cpp
         src/asset/NavMeshData.cpp
+        src/asset/ReflectionProbeData.cpp
         src/asset/ThemeData.cpp
     PUBLIC
         FILE_SET HEADERS
@@ -248,6 +249,7 @@ target_sources(devex_asset
             include/devex/asset/TranslationData.hpp
             include/devex/asset/AnimatorData.hpp
             include/devex/asset/NavMeshData.hpp
+            include/devex/asset/ReflectionProbeData.hpp
 )
 
 target_link_libraries(devex_asset
@@ -348,6 +350,7 @@ add_library(Devex::Render ALIAS devex_render)
 target_sources(devex_render
     PRIVATE
         src/render/Culling.cpp
+        src/render/CubeMaps.cpp
         src/render/Light2D.cpp
         src/render/Lighting.cpp
         src/render/Lighting.hpp
@@ -385,6 +388,7 @@ target_sources(devex_render
         BASE_DIRS include
         FILES
             include/devex/render/Culling.hpp
+            include/devex/render/CubeMaps.hpp
             include/devex/render/Light2D.hpp
             include/devex/render/Gpu.hpp
             include/devex/render/Photometry.hpp
@@ -852,6 +856,7 @@ target_sources(devex_tools
         src/tools/ShaderGraphPanel.cpp
         src/tools/ModelInspector.cpp
         src/tools/NavigationTools.cpp
+        src/tools/LightingTools.cpp
         src/tools/ProjectList.cpp
         src/tools/ProjectList.hpp
         src/tools/ProfilerPanel.cpp

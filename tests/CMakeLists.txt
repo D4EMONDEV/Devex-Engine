@@ -124,6 +124,7 @@ target_compile_definitions(devex_ui_tests
 devex_add_tests(asset
     SOURCES
         asset/AnimatorTests.cpp
+        asset/ReflectionProbeTests.cpp
         asset/ArtifactTests.cpp
         asset/AssetDatabaseTests.cpp
         asset/CurveTests.cpp
@@ -199,6 +200,7 @@ devex_add_tests(physics
 devex_add_tests(render
     SOURCES
         render/AssetLoadingTests.cpp
+        render/CubeMapTests.cpp
         render/CullingTests.cpp
         render/Light2DTests.cpp
         render/LightingTests.cpp

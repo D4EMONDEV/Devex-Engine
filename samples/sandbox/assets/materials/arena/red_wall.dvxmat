@@ -1,0 +1,5 @@
+# The red back wall of the mirror room.
+[material format=1]
+base_color = vec4(0.62, 0.06, 0.05, 1)
+metallic = 0
+roughness = 0.8

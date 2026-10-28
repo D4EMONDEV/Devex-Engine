@@ -1,6 +1,7 @@
 #include "tools/EditorDock.hpp"
 #include "tools/Theme.hpp"
 
+#include <devex/asset/Artifact.hpp>
 #include <devex/asset/Primitives.hpp>
 #include <devex/asset/Project.hpp>
 #include <devex/asset/import/AnimatorFile.hpp>
@@ -915,6 +916,116 @@ TEST_CASE("The editor opens the project's scenes in tabs and renders its viewpor
     std::error_code ignored;
     std::filesystem::remove_all(root, ignored);
 
+    for (const std::string& error : errors)
+    {
+        UNSCOPED_INFO(error);
+    }
+    CHECK(errors.empty());
+}
+
+TEST_CASE("Reflection probes are baked from the edited scene into files next to it", "[tools][gpu][probe]")
+{
+    std::vector<std::string> errors;
+    const devex::core::LogSinkId sink = devex::core::addLogSink([&errors](const devex::core::LogRecord& record) {
+        if (record.level >= devex::core::LogLevel::Error)
+        {
+            errors.emplace_back(record.message);
+        }
+    });
+    const std::filesystem::path root = std::filesystem::temp_directory_path() / ("devex-probes-" + devex::core::Uuid::generate().toString());
+    {
+        // A room: a cube 3 m in front of a probe, under the sky.
+        const devex::asset::Project project = *devex::asset::createProject(root, "Probe test");
+        devex::scene::Scene authored;
+        const devex::scene::Entity cube = authored.createEntity("Cube");
+        authored.add<devex::scene::Transform>(cube, devex::scene::Transform{.position = {0.0f, 0.0f, -3.0f}});
+        authored.add<devex::scene::MeshRenderer>(cube, devex::scene::MeshRenderer{.mesh = devex::asset::builtin::cubeMesh});
+        const devex::scene::Entity probe = authored.createEntity("Room/Probe");
+        authored.add<devex::scene::Transform>(probe);
+        authored.add<devex::scene::ReflectionProbe>(probe, devex::scene::ReflectionProbe{.resolution = devex::scene::ProbeResolution::Low});
+        const devex::core::Uuid probeId = authored.uuid(probe);
+        REQUIRE(devex::scene::saveSceneFile(authored, project.assetsDirectory() / "scenes" / "room.dvxscene"));
+        REQUIRE(devex::core::writeTextFile(project.cacheDirectory() / "editor.dvx",
+                                           "[editor format=2 active_scene=\"res://assets/scenes/room.dvxscene\"]\n"
+                                           "[scene path=\"res://assets/scenes/room.dvxscene\"]\n"));
+        devex::core::JobSystem jobs(1);
+        auto database = devex::asset::AssetDatabase::open(project, jobs, {.watchFiles = false});
+        REQUIRE(database.has_value());
+        (*database)->refresh();
+        (*database)->waitForImports();
+
+        auto platform = devex::platform::Platform::create();
+        REQUIRE(platform.has_value());
+        auto window = platform->createWindow({.width = 640, .height = 480, .vulkan = true, .hidden = true});
+        REQUIRE(window.has_value());
+        auto renderer = devex::render::Renderer::create(*platform, *window, {.validation = true});
+        if (!renderer)
+        {
+            FAIL(std::format("{}", renderer.error()));
+        }
+        auto cubeMesh = renderer->createMesh(devex::asset::makeCube());
+        REQUIRE(cubeMesh.has_value());
+        auto editor = devex::tools::ToolsOverlay::create(*platform, *window, *renderer, devex::tools::ToolsMode::Editor, root / "user.dvx");
+        if (!editor)
+        {
+            FAIL(std::format("{}", editor.error()));
+        }
+        (*editor)->setAssetDatabase(database->get());
+
+        devex::scene::Scene scene;
+        using devex::tools::PlayState;
+        bool asked = false;
+        int frames = 0;
+        for (; frames < 200 && (!asked || (*editor)->isBakingProbes() || frames < 8); ++frames)
+        {
+            platform->pollEvents([](const devex::platform::Event&) {});
+            (*editor)->update(scene, std::chrono::milliseconds(16), PlayState::Editing);
+            scene.updateTransforms();
+            // The editor opened the scene: its probes are baked from the next frames.
+            if (!asked && scene.findEntity(probeId).isValid())
+            {
+                (*editor)->bakeReflectionProbes(scene);
+                CHECK((*editor)->isBakingProbes());
+                asked = true;
+            }
+            devex::render::RenderWorld& world = renderer->beginFrame();
+            for ([[maybe_unused]] auto [entity, transform, mesh] : scene.view<devex::scene::WorldTransform, devex::scene::MeshRenderer>())
+            {
+                world.meshes.push_back({.mesh = *cubeMesh, .transform = transform.matrix, .objectId = entity.index + 1});
+            }
+            (*editor)->prepareRender(scene, world, PlayState::Editing);
+            REQUIRE(renderer->endFrame());
+            std::vector<devex::render::CapturedImage> captures = renderer->takeCaptures();
+            (*editor)->receiveCaptures(captures);
+        }
+        REQUIRE(asked);
+        CHECK_FALSE((*editor)->isBakingProbes());
+        INFO((*editor)->probeBakeStatus());
+        CHECK((*editor)->probeBakeStatus().starts_with("Baked 1 probe"));
+
+        // One file next to the scene, named after it and the probe, which the probe now points at.
+        const std::filesystem::path file = project.assetsDirectory() / "scenes" / "room Room Probe.dvxprobe";
+        REQUIRE(std::filesystem::exists(file));
+        const devex::core::Result<std::vector<std::byte>> bytes = devex::core::readBinaryFile(file);
+        REQUIRE(bytes.has_value());
+        const devex::core::Result<devex::asset::ReflectionProbeData> baked = devex::asset::decodeReflectionProbe(*bytes);
+        REQUIRE(baked.has_value());
+        CHECK(baked->size == 128);
+        const std::optional<devex::asset::AssetId> id = (*database)->findByPath("res://assets/scenes/room Room Probe.dvxprobe");
+        REQUIRE(id.has_value());
+        const devex::scene::Entity bakedProbe = scene.findEntity(probeId);
+        REQUIRE(bakedProbe.isValid());
+        CHECK(scene.get<devex::scene::ReflectionProbe>(bakedProbe).capture == *id);
+
+        // The sky above, the cube in front: the face that looks at the cube is darker there.
+        const devex::asset::ProbeTexel up = devex::asset::probeTexel(*baked, 2, 64, 64);
+        const devex::asset::ProbeTexel front = devex::asset::probeTexel(*baked, 5, 64, 64);
+        CHECK(up.green > 1000.0f);
+        CHECK(front.green < up.green * 0.95f);
+    }
+    devex::core::removeLogSink(sink);
+    std::error_code ignored;
+    std::filesystem::remove_all(root, ignored);
     for (const std::string& error : errors)
     {
         UNSCOPED_INFO(error);

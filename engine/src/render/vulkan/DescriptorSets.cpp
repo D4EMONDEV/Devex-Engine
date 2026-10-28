@@ -15,7 +15,8 @@ constexpr VkDescriptorBindingFlags updatedInFlight =
 
 core::Result<DescriptorSets> DescriptorSets::create(const Device& device,
                                                     std::uint32_t textureCapacity,
-                                                    std::uint32_t frameCount)
+                                                    std::uint32_t frameCount,
+                                                    std::uint32_t probeCapacity)
 {
     DescriptorSets sets;
     sets.m_device = device.handle();
@@ -99,9 +100,10 @@ core::Result<DescriptorSets> DescriptorSets::create(const Device& device,
             .descriptorCount = textureCapacity,
             .stageFlags = shaderStages,
         },
+        image(reflectionProbesBinding, probeCapacity),
     };
-    const std::array<VkDescriptorBindingFlags, 9> globalFlags{
-        updatedInFlight, 0, updatedInFlight, updatedInFlight, updatedInFlight, 0, updatedInFlight, 0, updatedInFlight,
+    const std::array<VkDescriptorBindingFlags, 10> globalFlags{
+        updatedInFlight, 0, updatedInFlight, updatedInFlight, updatedInFlight, 0, updatedInFlight, 0, updatedInFlight, updatedInFlight,
     };
     const VkDescriptorSetLayoutBindingFlagsCreateInfo globalFlagsInfo{
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO,
@@ -147,7 +149,7 @@ core::Result<DescriptorSets> DescriptorSets::create(const Device& device,
                  &sets.m_frameLayout);
 
     const std::array globalPoolSizes{
-        VkDescriptorPoolSize{.type = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, .descriptorCount = textureCapacity + 4},
+        VkDescriptorPoolSize{.type = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, .descriptorCount = textureCapacity + 4 + probeCapacity},
         VkDescriptorPoolSize{.type = VK_DESCRIPTOR_TYPE_SAMPLER, .descriptorCount = 3 + textureCapacity},
     };
     const VkDescriptorPoolCreateInfo globalPoolInfo{
@@ -347,6 +349,11 @@ void DescriptorSets::setFrameImages(std::uint32_t frame, const FrameImages& imag
     }
     writeImage(m_frames[frame], localShadowBinding, 0, images.localShadowMap);
     writeImage(m_frames[frame], depthReadOnlyBinding, 0, images.depth, VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL);
+}
+
+void DescriptorSets::setReflectionProbe(std::uint32_t slot, VkImageView view) noexcept
+{
+    writeImage(m_global, reflectionProbesBinding, slot, view);
 }
 
 } // namespace devex::render::vulkan

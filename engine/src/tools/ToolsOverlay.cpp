@@ -431,11 +431,11 @@ void updateEditor(ToolsState& state, scene::Scene& scene, PlayState playState)
     }
     detail::updateWindowTitle(state, scene);
     finishFrame(state);
-    // The camera moves while its buttons and keys are held, and the click of a pick is answered a
-    // few frames later.
+    // The camera moves while its buttons and keys are held, the click of a pick is answered a few
+    // frames later, and the faces of the probes being baked come back some frames after they are drawn.
     state.animating = state.animating || state.flying || state.orbiting || state.panning || state.input.anyDown() ||
                       state.animationPreviewPlaying || state.pickQuery.has_value() || state.awaitedPick != 0 ||
-                      (state.audio != nullptr && state.audio->isPreviewing());
+                      (state.audio != nullptr && state.audio->isPreviewing()) || state.probeBake.has_value();
 
     // Gameplay receives the devices the view of the game uses, and the editor camera flies with them.
     const bool playing = playState != PlayState::Editing;
@@ -746,6 +746,27 @@ void ToolsOverlay::prepareRender(scene::Scene& scene, render::RenderWorld& world
             detail::addEditorOverlay(state, scene, world);
         }
     }
+    detail::prepareProbeBake(state, scene, world);
+}
+
+void ToolsOverlay::receiveCaptures(std::vector<render::CapturedImage>& captures)
+{
+    detail::receiveProbeFaces(*m_state, captures);
+}
+
+void ToolsOverlay::bakeReflectionProbes(scene::Scene& scene)
+{
+    detail::bakeReflectionProbes(*m_state, scene);
+}
+
+bool ToolsOverlay::isBakingProbes() const noexcept
+{
+    return m_state->probeBake.has_value();
+}
+
+const std::string& ToolsOverlay::probeBakeStatus() const noexcept
+{
+    return m_state->probeBakeStatus;
 }
 
 EditorRequests ToolsOverlay::takeRequests() noexcept

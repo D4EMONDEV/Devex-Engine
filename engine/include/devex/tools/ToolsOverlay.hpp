@@ -296,6 +296,16 @@ public:
     // transforms of the scene must be up to date.
     void prepareRender(scene::Scene& scene, render::RenderWorld& world, PlayState playState);
 
+    // Editor only: takes the pictures the tools asked the renderer for out of those it answered,
+    // such as the faces of the reflection probes they bake; the others stay.
+    void receiveCaptures(std::vector<render::CapturedImage>& captures);
+    // Editor only: bakes every reflection probe of the edited scene over the next frames, as Bake All
+    // of their inspector does; the probes then point at their captures, as one undoable step.
+    void bakeReflectionProbes(scene::Scene& scene);
+    [[nodiscard]] bool isBakingProbes() const noexcept;
+    // How the last bake went, or "Baking..." while one runs.
+    [[nodiscard]] const std::string& probeBakeStatus() const noexcept;
+
     // Editor only: the requests made since the last call.
     [[nodiscard]] EditorRequests takeRequests() noexcept;
 

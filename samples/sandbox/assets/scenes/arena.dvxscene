@@ -1212,3 +1212,194 @@ body_b = entity()
 collide_connected = false
 break_force = 600
 break_torque = 300
+
+[entity uuid="55b48e2c-ec82-43af-ac22-35424d5e12ed" name="Mirror room"]
+
+[component type="Transform"]
+position = vec3(-14, 0, -14)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="1498fb55-501d-45c8-839a-6c7d1178e180" name="Room floor"]
+parent = "55b48e2c-ec82-43af-ac22-35424d5e12ed"
+
+[component type="Transform"]
+position = vec3(0, 0.02, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(8, 0.04, 8)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("05acf0bc-07ad-4d12-9d10-dc6dec026309")
+
+[component type="BoxCollider"]
+size = vec3(1, 1, 1)
+center = vec3(0, 0, 0)
+trigger = false
+
+[entity uuid="31aa60c1-b477-48d9-bf90-784662c15c0f" name="Room back wall"]
+parent = "55b48e2c-ec82-43af-ac22-35424d5e12ed"
+
+[component type="Transform"]
+position = vec3(0, 2, -4.1)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(8.4, 4, 0.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("177b4925-264a-464b-a7f4-dd80e79e527c")
+
+[component type="BoxCollider"]
+size = vec3(1, 1, 1)
+center = vec3(0, 0, 0)
+trigger = false
+
+[entity uuid="8cf4b62a-c891-4ab7-96a2-a5329d8108f1" name="Room west wall"]
+parent = "55b48e2c-ec82-43af-ac22-35424d5e12ed"
+
+[component type="Transform"]
+position = vec3(-4.1, 2, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(0.2, 4, 8.4)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("576ad271-2890-5687-907e-a283236fea5d")
+
+[component type="BoxCollider"]
+size = vec3(1, 1, 1)
+center = vec3(0, 0, 0)
+trigger = false
+
+[entity uuid="5fbeaacc-7d56-42f4-971d-16519fd7060e" name="Room east wall"]
+parent = "55b48e2c-ec82-43af-ac22-35424d5e12ed"
+
+[component type="Transform"]
+position = vec3(4.1, 2, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(0.2, 4, 8.4)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("576ad271-2890-5687-907e-a283236fea5d")
+
+[component type="BoxCollider"]
+size = vec3(1, 1, 1)
+center = vec3(0, 0, 0)
+trigger = false
+
+[entity uuid="b6b162b5-2abb-448f-99d8-293dd6dc94f7" name="Room front wall left"]
+parent = "55b48e2c-ec82-43af-ac22-35424d5e12ed"
+
+[component type="Transform"]
+position = vec3(-2.6, 2, 4.1)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(3.2, 4, 0.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("576ad271-2890-5687-907e-a283236fea5d")
+
+[component type="BoxCollider"]
+size = vec3(1, 1, 1)
+center = vec3(0, 0, 0)
+trigger = false
+
+[entity uuid="62aa13cd-ea15-481f-96b3-01859a39ce5f" name="Room front wall right"]
+parent = "55b48e2c-ec82-43af-ac22-35424d5e12ed"
+
+[component type="Transform"]
+position = vec3(2.6, 2, 4.1)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(3.2, 4, 0.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("576ad271-2890-5687-907e-a283236fea5d")
+
+[component type="BoxCollider"]
+size = vec3(1, 1, 1)
+center = vec3(0, 0, 0)
+trigger = false
+
+[entity uuid="0ef8d927-998a-4867-aa16-b5e7ecfd16f7" name="Room lintel"]
+parent = "55b48e2c-ec82-43af-ac22-35424d5e12ed"
+
+[component type="Transform"]
+position = vec3(0, 3.5, 4.1)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(2, 1, 0.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("576ad271-2890-5687-907e-a283236fea5d")
+
+[component type="BoxCollider"]
+size = vec3(1, 1, 1)
+center = vec3(0, 0, 0)
+trigger = false
+
+[entity uuid="2fe1f421-1519-4fa0-b9ba-4baa0b368426" name="Room roof"]
+parent = "55b48e2c-ec82-43af-ac22-35424d5e12ed"
+
+[component type="Transform"]
+position = vec3(0, 4.1, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(8.4, 0.2, 8.4)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("576ad271-2890-5687-907e-a283236fea5d")
+
+[component type="BoxCollider"]
+size = vec3(1, 1, 1)
+center = vec3(0, 0, 0)
+trigger = false
+
+[entity uuid="c9186d6d-12c8-48a2-9479-86e34cf5b3e9" name="Golden ball"]
+parent = "55b48e2c-ec82-43af-ac22-35424d5e12ed"
+
+[component type="Transform"]
+position = vec3(0, 0.64, -0.5)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000002")
+material = asset("54d61445-4b2a-4c79-8a8e-b9853aa2527d")
+
+[component type="SphereCollider"]
+radius = 0.5
+center = vec3(0, 0, 0)
+trigger = false
+
+[entity uuid="f0ce7e57-f48a-4eb2-8054-eeabbc2d8a17" name="Room lamp"]
+parent = "55b48e2c-ec82-43af-ac22-35424d5e12ed"
+
+[component type="Transform"]
+position = vec3(0, 3.6, 0.5)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="PointLight"]
+color = vec3(1, 1, 1)
+temperature = 3200
+intensity = 2500
+range = 10
+cast_shadows = true
+
+[entity uuid="d8e000be-3b5c-4136-986b-34fa4f4bb1af" name="Room probe"]
+parent = "55b48e2c-ec82-43af-ac22-35424d5e12ed"
+
+[component type="Transform"]
+position = vec3(0, 2, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="ReflectionProbe"]
+size = vec3(8, 4, 8)
+capture_offset = vec3(0, -0.6, 0.8)
+blend_distance = 0.4
+intensity = 1
+box_projection = true
+resolution = "256"

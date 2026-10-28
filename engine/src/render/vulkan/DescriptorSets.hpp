@@ -31,6 +31,8 @@ public:
     static constexpr std::uint32_t skySamplerBinding = 7;
     // The sampler of each texture, at the same index: smooth, or the nearest pixel.
     static constexpr std::uint32_t textureSamplersBinding = 8;
+    // The reflections of the probes, each prefiltered for every roughness.
+    static constexpr std::uint32_t reflectionProbesBinding = 9;
     // Frame set bindings.
     static constexpr std::uint32_t shadowMapBinding = 0;
     static constexpr std::uint32_t shadowSamplerBinding = 1;
@@ -72,7 +74,8 @@ public:
 
     [[nodiscard]] static core::Result<DescriptorSets> create(const Device& device,
                                                              std::uint32_t textureCapacity,
-                                                             std::uint32_t frameCount);
+                                                             std::uint32_t frameCount,
+                                                             std::uint32_t probeCapacity);
 
     DescriptorSets(DescriptorSets&& other) noexcept;
     DescriptorSets& operator=(DescriptorSets&& other) noexcept;
@@ -92,6 +95,8 @@ public:
     void setTexture(std::uint32_t slot, VkImageView view, bool nearest = false) noexcept;
     void setEnvironment(VkImageView specular, VkImageView irradiance, VkImageView sky) noexcept;
     void setBrdfLut(VkImageView view) noexcept;
+    // A cube map in the shader read-only layout.
+    void setReflectionProbe(std::uint32_t slot, VkImageView view) noexcept;
     // Only while no frame using the set is in flight.
     void setFrameImages(std::uint32_t frame, const FrameImages& images) noexcept;
 

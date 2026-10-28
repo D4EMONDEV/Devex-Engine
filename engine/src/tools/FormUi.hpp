@@ -78,6 +78,13 @@ struct Section
     scene::Entity navStatus;
     PanelButton bake;
     PanelButton clear;
+    // The capture of a reflection probe, the buttons that bake it or every probe of the scene, and
+    // what the last bake said.
+    scene::Entity probeInfo;
+    scene::Entity probeStatus;
+    std::optional<std::size_t> probeStatusLine;
+    PanelButton bakeProbe;
+    PanelButton bakeProbes;
     std::shared_ptr<TilePainterUi> painter;
 };
 

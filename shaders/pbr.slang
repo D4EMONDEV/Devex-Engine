@@ -233,23 +233,68 @@ float3 localLights<Model : ILightModel>(SceneData* scene, Surface surface, Model
     return luminance;
 }
 
-// The light of the sky, ambient and reflected.
+// What the reflection probes around a surface reflect towards a direction, in nits, and how much of
+// the reflection they cover, from 0 to 1. The smallest box comes first; each fades out over its blend
+// distance, and lets what it leaves to the next ones and to the sky.
+public float4 probeReflection(SceneData* scene, float3 position, float3 reflected, float lod)
+{
+    float3 light = float3(0.0);
+    float covered = 0.0;
+    for (uint index = 0; index < scene.reflectionProbeCount && covered < 0.999; ++index)
+    {
+        const ReflectionProbe probe = scene.reflectionProbes[index];
+        const float3 local = mul(probe.worldToBox, float4(position, 1.0)).xyz;
+        const float3 inside = probe.halfSize - abs(local);
+        const float edge = min(inside.x, min(inside.y, inside.z));
+        if (edge <= 0.0)
+        {
+            continue;
+        }
+        const float weight = probe.blendDistance > 0.0 ? saturate(edge / probe.blendDistance) : 1.0;
+        float3 direction = reflected;
+        if (probe.boxProjection != 0)
+        {
+            // Where the reflected ray leaves the box, seen from where the probe captured it.
+            const float3x3 rotation = (float3x3)probe.worldToBox;
+            const float3 localDirection = mul(rotation, reflected);
+            const float3 safe = select(abs(localDirection) < 1e-5, float3(1e-5), localDirection);
+            const float3 far = max((probe.halfSize - local) / safe, (-probe.halfSize - local) / safe);
+            const float distance = min(far.x, min(far.y, far.z));
+            direction = mul(transpose(rotation), local + localDirection * distance - probe.capturePosition);
+        }
+        const float3 sampled =
+            reflectionProbeMaps[NonUniformResourceIndex(probe.map)].SampleLevel(clampSampler, direction, lod).rgb;
+        const float share = (1.0 - covered) * weight;
+        light += sampled * probe.intensity * share;
+        covered += share;
+    }
+    return float4(light, covered);
+}
+
+// The light of the sky, ambient and reflected; the reflection probes around the surface take the
+// place of the sky in its reflections.
 public float3 environmentLight(SceneData* scene, Surface surface)
 {
     const float NoV = saturate(dot(surface.normal, surface.view));
     const float3 reflected = reflect(-surface.view, surface.normal);
     const float angle = -scene.environmentRotation;
+    const float3 sky = scene.environmentColor * scene.environmentIntensity;
 
     const float3 irradiance =
         irradianceEnvironment.SampleLevel(clampSampler, rotateAroundY(surface.normal, angle), 0.0).rgb;
     const float lod = surface.roughness * (scene.specularMipCount - 1.0);
-    const float3 prefiltered =
-        specularEnvironment.SampleLevel(clampSampler, rotateAroundY(reflected, angle), lod).rgb;
+    const float4 probes = probeReflection(scene, surface.position, reflected, lod);
+    float3 prefiltered = probes.rgb;
+    if (probes.a < 0.999)
+    {
+        prefiltered += specularEnvironment.SampleLevel(clampSampler, rotateAroundY(reflected, angle), lod).rgb * sky *
+                       (1.0 - probes.a);
+    }
     const float2 brdf = brdfLut.SampleLevel(clampSampler, float2(NoV, surface.roughness), 0.0).rg;
 
-    const float3 diffuse = surface.diffuseColor * irradiance;
+    const float3 diffuse = surface.diffuseColor * irradiance * sky;
     const float3 specular = prefiltered * (surface.f0 * brdf.x + brdf.y);
-    return (diffuse + specular) * surface.occlusion * scene.environmentColor * scene.environmentIntensity;
+    return (diffuse + specular) * surface.occlusion;
 }
 
 // The luminance the sun and the local lights give the surface through a light model.

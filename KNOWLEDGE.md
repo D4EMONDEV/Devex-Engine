@@ -1560,6 +1560,8 @@ public class Health : Component
 - `PointLight` : Lumière ponctuelle
 - `SpotLight` : Lumière directionnelle conique
 - `Environment` : Environnement et ciel
+- `ReflectionProbe` : Sonde de réflexion cuite dans l'éditeur (boîte, point de capture, fondu,
+  correction de parallaxe, résolution, capture `.dvxprobe`)
 
 **Physique 3D :**
 - `RigidBody` : Corps physique 3D
@@ -1912,6 +1914,8 @@ namespace devex::runtime {
         [[nodiscard]] const LoadedMesh* mesh(asset::AssetId id);
         [[nodiscard]] render::MaterialHandle material(asset::AssetId id);
         [[nodiscard]] render::TextureHandle texture(asset::AssetId id);
+        // Capture d'une sonde de réflexion, préfiltrée sur le GPU au premier appel
+        [[nodiscard]] render::ReflectionProbeHandle reflectionProbe(asset::AssetId id);
         [[nodiscard]] core::Result<void> setTexture(asset::AssetId id, const asset::TextureData& data);
         
         // Gestion du chargement
@@ -2442,7 +2446,10 @@ Le système de rendu de Devex Engine utilise **Vulkan** comme backend principal 
 **Classes principales :**
 - `Renderer` : Rendeur principal
 - `VulkanRenderer` : Implémentation Vulkan
-- `RenderWorld` : Monde de rendu avec toutes les entités visibles
+- `RenderWorld` : Monde de rendu avec toutes les entités visibles (dont `reflectionProbes`, et
+  les `views` dont les vues `radiance` capturent la lumière en nits pour la cuisson des sondes)
+- `EnvironmentBaker` : Préfiltrage GGX du ciel et des sondes de réflexion (`bakeProbe`)
+- `CubeMaps` : Orientation des faces de cube (`cubeFaceView`, `cubeFaceDirection`)
 - `RenderGraph` : Graphique de passe de rendu
 - `Pipeline` : Pipeline graphique
 - `Device` : Appareil Vulkan

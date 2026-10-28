@@ -82,6 +82,18 @@ void Renderer::destroyTexture(TextureHandle texture)
     m_implementation->destroyTexture(texture);
 }
 
+core::Result<ReflectionProbeHandle> Renderer::createReflectionProbe(const asset::ReflectionProbeData& probe)
+{
+    DEVEX_ASSERT(m_implementation != nullptr);
+    return m_implementation->createReflectionProbe(probe);
+}
+
+void Renderer::destroyReflectionProbe(ReflectionProbeHandle probe)
+{
+    DEVEX_ASSERT(m_implementation != nullptr);
+    m_implementation->destroyReflectionProbe(probe);
+}
+
 MaterialHandle Renderer::createMaterial(const MaterialDesc& material)
 {
     DEVEX_ASSERT(m_implementation != nullptr);

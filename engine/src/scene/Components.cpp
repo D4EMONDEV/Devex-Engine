@@ -81,4 +81,15 @@ DEVEX_REFLECT(Environment)
         .field("rotation", &Environment::rotation, {.angle = true});
 }
 
+DEVEX_REFLECT(ReflectionProbe)
+{
+    type.field("size", &ReflectionProbe::size)
+        .field("capture_offset", &ReflectionProbe::captureOffset)
+        .field("blend_distance", &ReflectionProbe::blendDistance)
+        .field("intensity", &ReflectionProbe::intensity)
+        .field("box_projection", &ReflectionProbe::boxProjection)
+        .field("resolution", &ReflectionProbe::resolution)
+        .field("capture", &ReflectionProbe::capture, {.assetType = "reflection_probe"});
+}
+
 } // namespace devex::scene

@@ -289,6 +289,8 @@ private:
         return {icons::Film, colors.animation};
     case asset::AssetType::NavMesh:
         return {icons::Footprints, colors.physics};
+    case asset::AssetType::ReflectionProbe:
+        return {icons::Globe, colors.environment};
     default:
         return {icons::File, colors.neutral};
     }

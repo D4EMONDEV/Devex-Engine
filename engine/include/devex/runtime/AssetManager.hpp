@@ -169,6 +169,9 @@ public:
     [[nodiscard]] std::shared_ptr<const asset::AnimatorData> animator(asset::AssetId id);
     // A baked navigation mesh, read once and shared; null when it cannot be loaded.
     [[nodiscard]] std::shared_ptr<const asset::NavMeshData> navMesh(asset::AssetId id);
+    // The reflections a probe captured, prefiltered on the GPU the first time they are asked for;
+    // invalid when they cannot be loaded. A new import replaces them.
+    [[nodiscard]] render::ReflectionProbeHandle reflectionProbe(asset::AssetId id);
     // A table of translations, read once and shared; null when it cannot be loaded.
     [[nodiscard]] std::shared_ptr<const asset::TranslationData> translation(asset::AssetId id);
 
@@ -285,6 +288,7 @@ private:
     std::unordered_map<asset::AssetId, std::shared_ptr<const asset::TilesetData>> m_tilesets;
     std::unordered_map<asset::AssetId, std::shared_ptr<const asset::AnimatorData>> m_animators;
     std::unordered_map<asset::AssetId, std::shared_ptr<const asset::NavMeshData>> m_navMeshes;
+    std::unordered_map<asset::AssetId, render::ReflectionProbeHandle> m_reflectionProbes;
     std::unordered_map<asset::AssetId, LoadedFont> m_fonts;
     // Assets whose loading failed, retried once an import changes them.
     std::unordered_set<asset::AssetId> m_failed;

@@ -935,6 +935,7 @@ void addEditorOverlay(ToolsState& state, scene::Scene& scene, render::RenderWorl
     addJoints(scene, view, selection, hidden, world.overlayLines);
     addColliders(state, scene, selection, hidden, world.overlayLines);
     addNavigationLines(state, scene, selection, state.showColliders, world.overlayLines);
+    addReflectionProbeLines(scene, selection, false, world.overlayLines);
 
     // The selection is outlined, and so is the entity a dragged material would go to.
     const scene::Entity materialTarget = scene.findEntity(state.materialTarget);

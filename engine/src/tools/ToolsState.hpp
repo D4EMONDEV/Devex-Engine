@@ -45,6 +45,7 @@
 #include <devex/tools/ToolsOverlay.hpp>
 
 #include <array>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
@@ -103,6 +104,36 @@ enum class GameAspect : std::uint8_t
 
 // The view the game is drawn into while it plays, beside the scene (render::RenderView::id).
 inline constexpr std::uint32_t gameViewId = 1;
+// The six views a reflection probe is captured through, one per face of its cube.
+inline constexpr std::uint32_t probeViewBase = 16;
+
+// The reflection probes being baked one after the other, each through six radiance views drawn until
+// the renderer answers with their light; the files are written at once, and the probes pointed at them
+// together once they are imported, as one undoable step.
+struct DEVEX_API ProbeBake
+{
+    struct Probe
+    {
+        core::Uuid entity;
+        std::string name;
+        asset::AssetId previous;
+        std::uint32_t size = 256;
+    };
+    std::vector<Probe> probes;
+    // The probe being captured, its position in the world, and the requests of its faces.
+    std::size_t current = 0;
+    math::Vec3 position{0.0f};
+    std::array<std::uint64_t, 6> requests{};
+    std::array<std::vector<float>, 6> faces;
+    bool sent = false;
+    // The exposure the faces are drawn at, which keeps their light within half floats.
+    float ev100 = 12.0f;
+    // The files written so far, by probe.
+    std::vector<std::filesystem::path> files;
+    std::chrono::steady_clock::time_point started;
+    // Frames since the faces were asked for, to give up on a renderer that does not answer.
+    std::uint32_t waited = 0;
+};
 
 class EditorUiKit;
 struct ProjectManagerUi;
@@ -747,6 +778,10 @@ struct DEVEX_API ToolsState
     navigation::NavMeshLines navMeshLines;
     std::string navMeshBakeStatus;
     bool navMeshBakeFailed = false;
+    // The bake of the reflection probes under way, and what the last one said.
+    std::optional<ProbeBake> probeBake;
+    std::string probeBakeStatus;
+    bool probeBakeFailed = false;
     // What the loaded assets take, for the Profiler panel.
     std::function<asset::MemoryReport()> memoryReport;
     // The meshes and textures loading in the background, for the status bar.
@@ -1066,6 +1101,19 @@ struct DEVEX_API NavMeshSummary
 // file, or forgets it, each as one undoable step; state.navMeshBakeStatus says how it went.
 DEVEX_API void bakeNavMesh(ToolsState& state, scene::Scene& scene, scene::Entity entity);
 DEVEX_API void clearNavMesh(ToolsState& state, scene::Scene& scene, scene::Entity entity);
+// Bakes the reflection probes of the scene, or that of one entity, over the next frames: each is
+// captured from where it stands, written next to the scene file, and pointed at its capture, all
+// as one undoable step; state.probeBakeStatus says how it went. Only while editing.
+DEVEX_API void bakeReflectionProbes(ToolsState& state, scene::Scene& scene, std::optional<scene::Entity> only = std::nullopt);
+// Draws the faces of the probe being baked: six radiance views of the frame.
+DEVEX_API void prepareProbeBake(ToolsState& state, scene::Scene& scene, render::RenderWorld& world);
+// Takes the faces of the probes out of the pictures the renderer answered with, and moves the bake on.
+DEVEX_API void receiveProbeFaces(ToolsState& state, std::vector<render::CapturedImage>& captures);
+// The capture of a probe in a few words, for its inspector.
+[[nodiscard]] DEVEX_API std::string reflectionProbeSummary(ToolsState& state, const scene::ReflectionProbe& probe);
+// The boxes of the reflection probes shown, and where each captures from, as lines of the overlay.
+DEVEX_API void addReflectionProbeLines(scene::Scene& scene, const std::unordered_set<std::uint32_t>& shown, bool showAll,
+                                       std::vector<render::OverlayVertex>& lines);
 // The navigation meshes of the surfaces shown, the agents and obstacles, and the paths agents walk
 // while the game plays, as lines of the overlay.
 DEVEX_API void addNavigationLines(ToolsState& state, scene::Scene& scene, const std::unordered_set<std::uint32_t>& shown, bool showAll,

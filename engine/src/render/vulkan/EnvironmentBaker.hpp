@@ -11,6 +11,7 @@
 #include <filesystem>
 #include <memory>
 #include <optional>
+#include <span>
 
 namespace devex::render::vulkan {
 
@@ -50,6 +51,11 @@ public:
     // From an equirectangular image in the shader read-only layout, with its mip levels.
     [[nodiscard]] core::Result<EnvironmentMaps> bake(VkImageView equirectangular,
                                                      std::uint32_t equirectangularWidth);
+
+    // From the faces of a reflection probe as it was captured, size × size pixels of four half floats
+    // each in the order of cube maps: its reflections prefiltered for each roughness as the sky's
+    // are, at the size of its faces, in the shader read-only layout.
+    [[nodiscard]] core::Result<Image> bakeProbe(std::uint32_t size, std::span<const std::uint16_t> pixels);
 
 private:
     EnvironmentBaker(const Device& device, const Allocator& allocator, UploadContext& upload) noexcept;

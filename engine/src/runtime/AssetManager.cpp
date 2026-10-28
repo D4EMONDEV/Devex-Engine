@@ -695,6 +695,31 @@ std::shared_ptr<const asset::NavMeshData> AssetManager::navMesh(asset::AssetId i
                                           [](std::span<const std::byte> bytes) { return asset::decodeNavMesh(bytes); });
 }
 
+render::ReflectionProbeHandle AssetManager::reflectionProbe(asset::AssetId id)
+{
+    if (const auto found = m_reflectionProbes.find(id); found != m_reflectionProbes.end())
+    {
+        return found->second;
+    }
+    if (!canLoad(id))
+    {
+        return {};
+    }
+    const core::Result<std::vector<std::byte>> bytes = m_source->loadArtifact(id);
+    const core::Result<asset::ReflectionProbeData> data =
+        bytes ? asset::decodeReflectionProbe(*bytes) : core::Result<asset::ReflectionProbeData>(std::unexpected(bytes.error()));
+    core::Result<render::ReflectionProbeHandle> probe =
+        data ? m_renderer->createReflectionProbe(*data) : core::Result<render::ReflectionProbeHandle>(std::unexpected(data.error()));
+    if (!probe)
+    {
+        DEVEX_LOG_ERROR("Cannot load reflection probe {}: {}", id.uuid, probe.error());
+        m_failed.insert(id);
+        return {};
+    }
+    m_reflectionProbes.emplace(id, *probe);
+    return *probe;
+}
+
 std::shared_ptr<const asset::TranslationData> AssetManager::translation(asset::AssetId id)
 {
     return loadShared<asset::TranslationData>(id, m_source, m_failed, m_translations, "translation table",
@@ -817,6 +842,14 @@ void AssetManager::handleEvents(std::span<const asset::AssetEvent> events)
             break;
         case asset::AssetType::NavMesh:
             m_navMeshes.erase(event.id);
+            break;
+        case asset::AssetType::ReflectionProbe:
+            // Loaded again when a frame draws it.
+            if (const auto found = m_reflectionProbes.find(event.id); found != m_reflectionProbes.end())
+            {
+                m_renderer->destroyReflectionProbe(found->second);
+                m_reflectionProbes.erase(found);
+            }
             break;
         case asset::AssetType::Translation:
             m_translations.erase(event.id);
@@ -971,6 +1004,11 @@ void AssetManager::setSource(asset::AssetSource* source)
     {
         releaseShader(m_shaders.begin()->first);
     }
+    for (const auto& [id, probe] : m_reflectionProbes)
+    {
+        m_renderer->destroyReflectionProbe(probe);
+    }
+    m_reflectionProbes.clear();
     m_models.clear();
     m_meshData.clear();
     m_sceneTexts.clear();

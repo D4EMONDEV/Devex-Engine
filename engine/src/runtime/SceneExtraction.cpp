@@ -483,6 +483,24 @@ void extractScene(scene::Scene& scene, AssetManager& assets, render::RenderWorld
         };
     }
 
+    for ([[maybe_unused]] auto [entity, transform, probe] : scene.view<scene::WorldTransform, scene::ReflectionProbe>())
+    {
+        const render::ReflectionProbeHandle captured = probe.capture.isValid() ? assets.reflectionProbe(probe.capture) : render::ReflectionProbeHandle{};
+        if (!captured.isValid())
+        {
+            continue;
+        }
+        world.reflectionProbes.push_back({
+            .probe = captured,
+            .transform = transform.matrix,
+            .size = probe.size,
+            .captureOffset = probe.captureOffset,
+            .blendDistance = probe.blendDistance,
+            .intensity = probe.intensity,
+            .boxProjection = probe.boxProjection,
+        });
+    }
+
     for ([[maybe_unused]] auto [entity, transform, renderer] :
          scene.view<scene::WorldTransform, scene::MeshRenderer>())
     {

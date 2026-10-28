@@ -121,6 +121,8 @@ struct Folder
         return {icons::Workflow, colors.animation};
     case asset::AssetType::NavMesh:
         return {icons::Footprints, colors.physics};
+    case asset::AssetType::ReflectionProbe:
+        return {icons::Globe, colors.environment};
     case asset::AssetType::Translation:
         return {icons::Languages, colors.scene};
     case asset::AssetType::Shader:

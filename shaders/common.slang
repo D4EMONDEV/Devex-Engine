@@ -79,6 +79,24 @@ public struct Cluster
     public uint count;
 };
 
+// A reflection probe of the frame, in the space of its box.
+public struct ReflectionProbe
+{
+    // From the world into the box, in meters along its axes, from its center.
+    public float4x4 worldToBox;
+    public float3 halfSize;
+    public float blendDistance;
+    // Where it was captured from, in the box.
+    public float3 capturePosition;
+    // Turns the values of its map into nits.
+    public float intensity;
+    // Its slot among reflectionProbeMaps.
+    public uint map;
+    public uint boxProjection;
+    public float padding0;
+    public float padding1;
+};
+
 public struct SceneData
 {
     public float4x4 viewProjection;
@@ -131,6 +149,10 @@ public struct SceneData
     public float4* materialParameters;
     // The values objects give the instance uniforms of their shaders, those of each object together.
     public float4* instanceParameters;
+    // The reflection probes of the frame, the smallest first.
+    public ReflectionProbe* reflectionProbes;
+    public uint reflectionProbeCount;
+    public float padding;
 };
 
 // A normal folded into two numbers on an octahedron, which keeps its precision where it matters.
@@ -232,6 +254,9 @@ public SamplerState skySampler;
 // The sampler of each texture, beside it: smooth, or the nearest pixel for pixel art.
 [[vk::binding(8, 0)]]
 public SamplerState textureSamplers[];
+// The reflections of the reflection probes, prefiltered for each roughness as the sky's are.
+[[vk::binding(9, 0)]]
+public TextureCube reflectionProbeMaps[];
 
 // Set 1: images produced earlier in the frame.
 [[vk::binding(0, 1)]]

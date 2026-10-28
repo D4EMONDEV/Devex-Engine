@@ -412,7 +412,7 @@ void InspectorUi::rebuild(ToolsState& state, EditorUiKit& kit, scene::Scene& edi
                 addExtras(kit, section, group);
             }
         }
-        if (!shared && (name == "ParticleEmitter" || name == "NavMeshSurface"))
+        if (!shared && (name == "ParticleEmitter" || name == "NavMeshSurface" || name == "ReflectionProbe"))
         {
             addExtras(kit, section, -1);
         }
@@ -728,6 +728,25 @@ void InspectorUi::addExtras(EditorUiKit& kit, Section& section, int group)
         scene().get<scene::UiText>(section.navStatus).wrap = true;
         section.navStatusLine = section.lines.size();
         section.lines.push_back(Line{.entity = section.navStatus, .group = group});
+    }
+    if (section.name == "ReflectionProbe")
+    {
+        section.probeInfo = text(section.card, wide(line), "", "dim");
+        section.lines.push_back(Line{.entity = section.probeInfo, .group = group});
+        const Entity actions = add(section.card, "Bake", wide(line));
+        scene().add<scene::UiLayout>(actions, scene::UiLayout{.kind = scene::UiLayoutKind::Row,
+                                                              .spacing = font * 0.4f,
+                                                              .padding = {font * 0.35f, 0.0f, 0.0f, 0.0f},
+                                                              .align = scene::TextAlign::Left});
+        section.bakeProbe = button(kit, actions, Icon::Globe, "Bake", "primary", 0.0f, line - 4.0f);
+        tooltip(section.bakeProbe.entity, "Captures the light around the probe, and writes it next to the scene");
+        section.bakeProbes = button(kit, actions, std::nullopt, "Bake All", "button", 0.0f, line - 4.0f);
+        tooltip(section.bakeProbes.entity, "Captures every reflection probe of the scene");
+        section.lines.push_back(Line{.entity = actions, .group = group});
+        section.probeStatus = text(section.card, wide(std::round(line * 1.6f)), "", "dim");
+        scene().get<scene::UiText>(section.probeStatus).wrap = true;
+        section.probeStatusLine = section.lines.size();
+        section.lines.push_back(Line{.entity = section.probeStatus, .group = group});
     }
 }
 
@@ -1247,6 +1266,16 @@ void InspectorUi::syncExtras(ToolsState& state, EditorUiKit& kit, scene::Scene& 
         const bool editing = state.playState == PlayState::Editing;
         enable(section.bake, editing);
         enable(section.clear, editing && edited.get<scene::NavMeshSurface>(active).navMesh.isValid());
+    }
+    if (section.probeInfo.isValid())
+    {
+        scene().get<scene::UiText>(section.probeInfo).text = reflectionProbeSummary(state, edited.get<scene::ReflectionProbe>(active));
+        section.lines[*section.probeStatusLine].shown = !state.probeBakeStatus.empty() && !state.probeBake;
+        scene().get<scene::UiText>(section.probeStatus).text = state.probeBakeStatus;
+        scene().get<UiRect>(section.probeStatus).style = state.probeBakeFailed ? "error" : "dim";
+        const bool ready = state.playState == PlayState::Editing && !state.probeBake;
+        enable(section.bakeProbe, ready);
+        enable(section.bakeProbes, ready);
     }
 }
 
@@ -1782,6 +1811,17 @@ void InspectorUi::answer(ToolsState& state, EditorUiKit& kit, scene::Scene& edit
             else if (world.wasClicked(section.clear.entity))
             {
                 clearNavMesh(state, edited, active);
+            }
+        }
+        if (section.bakeProbe.entity.isValid())
+        {
+            if (world.wasClicked(section.bakeProbe.entity))
+            {
+                bakeReflectionProbes(state, edited, active);
+            }
+            else if (world.wasClicked(section.bakeProbes.entity))
+            {
+                bakeReflectionProbes(state, edited);
             }
         }
     }

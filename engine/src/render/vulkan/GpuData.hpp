@@ -68,6 +68,24 @@ struct GpuShadowView
     math::Vec4 tile{0.0f};
 };
 
+// A reflection probe of the frame, in the space of its box.
+struct GpuReflectionProbe
+{
+    // From the world into the box, in meters along its axes, from its center.
+    math::Mat4 worldToBox{1.0f};
+    math::Vec3 halfSize{0.0f};
+    float blendDistance = 0.0f;
+    // Where it was captured from, in the box.
+    math::Vec3 capturePosition{0.0f};
+    // Times the values of its map, which turns them into nits.
+    float intensity = 1.0f;
+    // Its slot among the probe maps of the global set.
+    std::uint32_t map = 0;
+    std::uint32_t boxProjection = 0;
+    float padding0 = 0.0f;
+    float padding1 = 0.0f;
+};
+
 struct GpuCluster
 {
     std::uint32_t offset = 0;
@@ -124,6 +142,10 @@ struct GpuSceneData
     VkDeviceAddress materialParameters = 0;
     // The values objects give the instance uniforms of their shaders, four numbers each.
     VkDeviceAddress instanceParameters = 0;
+    // The reflection probes of the frame, the smallest first.
+    VkDeviceAddress reflectionProbes = 0;
+    std::uint32_t reflectionProbeCount = 0;
+    float padding = 0.0f;
 };
 
 // How a vertex of a skinned mesh follows its bones, beside the vertex itself.
@@ -425,7 +447,11 @@ static_assert(offsetof(GpuSceneData, pickViewProjection) == 624);
 static_assert(offsetof(GpuSceneData, unjitteredViewProjection) == 688);
 static_assert(offsetof(GpuSceneData, materialParameters) == 888);
 static_assert(offsetof(GpuSceneData, instanceParameters) == 896);
-static_assert(sizeof(GpuSceneData) == 904);
+static_assert(offsetof(GpuSceneData, reflectionProbes) == 904);
+static_assert(sizeof(GpuSceneData) == 920);
+static_assert(sizeof(GpuReflectionProbe) == 112);
+static_assert(offsetof(GpuReflectionProbe, capturePosition) == 80);
+static_assert(offsetof(GpuReflectionProbe, map) == 96);
 
 // Vulkan guarantees 128 bytes of push constants on every device.
 static_assert(sizeof(DrawPushConstants) == 128);

@@ -4,6 +4,7 @@
 
 #include <devex/asset/MaterialData.hpp>
 #include <devex/asset/MeshData.hpp>
+#include <devex/asset/ReflectionProbeData.hpp>
 #include <devex/asset/ShaderData.hpp>
 #include <devex/asset/TextureData.hpp>
 #include <devex/core/Assert.hpp>
@@ -163,6 +164,11 @@ public:
     // Releases the texture once no frame in flight uses it. Materials using it sample the
     // default texture from the next frame on. Stale handles are ignored.
     void destroyTexture(TextureHandle texture);
+
+    // Prefilters the reflections of a captured probe for every roughness, at once, as the sky's are.
+    [[nodiscard]] core::Result<ReflectionProbeHandle> createReflectionProbe(const asset::ReflectionProbeData& probe);
+    // Releases the probe once no frame in flight uses it. Stale handles are ignored.
+    void destroyReflectionProbe(ReflectionProbeHandle probe);
 
     [[nodiscard]] MaterialHandle createMaterial(const MaterialDesc& material);
     // Changes a material from the next frame on. Stale handles are ignored.

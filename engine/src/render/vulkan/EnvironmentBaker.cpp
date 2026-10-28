@@ -6,6 +6,7 @@
 #include <array>
 #include <bit>
 #include <cmath>
+#include <cstring>
 
 namespace devex::render::vulkan {
 namespace {
@@ -383,6 +384,128 @@ core::Result<EnvironmentMaps> EnvironmentBaker::bake(VkImageView equirectangular
         return std::unexpected(done.error());
     }
     return EnvironmentMaps{.specular = std::move(*specular), .irradiance = std::move(*irradiance)};
+}
+
+core::Result<Image> EnvironmentBaker::bakeProbe(std::uint32_t size, std::span<const std::uint16_t> pixels)
+{
+    const std::uint32_t radianceMips = std::bit_width(size);
+    core::Result<Image> radiance = Image::create(m_device, m_allocator,
+                                                 {
+                                                     .format = format,
+                                                     .extent = {size, size},
+                                                     .usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT |
+                                                              VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
+                                                     .mipLevels = radianceMips,
+                                                     .layers = 6,
+                                                     .cube = true,
+                                                 });
+    core::Result<Image> specular = Image::create(m_device, m_allocator,
+                                                 {
+                                                     .format = format,
+                                                     .extent = {size, size},
+                                                     .usage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+                                                     .mipLevels = specularMipCount,
+                                                     .layers = 6,
+                                                     .cube = true,
+                                                 });
+    const VkDeviceSize bytes = pixels.size_bytes();
+    core::Result<Buffer> staging = Buffer::create(m_allocator, {.size = bytes, .usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT, .hostVisible = true});
+    if (!radiance || !specular || !staging)
+    {
+        return std::unexpected(!radiance ? radiance.error() : !specular ? specular.error() : staging.error());
+    }
+    std::memcpy(staging->mappedBytes().data(), pixels.data(), bytes);
+
+    // The faces go into the first level, and each level is the one above it halved: the prefiltering
+    // reads the level whose pixels cover the solid angle of a sample.
+    const VkImage image = radiance->handle();
+    const auto barrier = [image](VkCommandBuffer commands, std::uint32_t level, std::uint32_t levels, VkImageLayout from, VkImageLayout to,
+                                 VkPipelineStageFlags2 sourceStage, VkAccessFlags2 sourceAccess, VkPipelineStageFlags2 destinationStage,
+                                 VkAccessFlags2 destinationAccess) {
+        const VkImageMemoryBarrier2 imageBarrier{
+            .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+            .srcStageMask = sourceStage,
+            .srcAccessMask = sourceAccess,
+            .dstStageMask = destinationStage,
+            .dstAccessMask = destinationAccess,
+            .oldLayout = from,
+            .newLayout = to,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .image = image,
+            .subresourceRange = {.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .baseMipLevel = level, .levelCount = levels, .layerCount = 6},
+        };
+        const VkDependencyInfo dependencies{
+            .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+            .imageMemoryBarrierCount = 1,
+            .pImageMemoryBarriers = &imageBarrier,
+        };
+        vkCmdPipelineBarrier2(commands, &dependencies);
+    };
+    const VkBuffer source = staging->handle();
+    if (core::Result<void> filled = m_upload.submit([&](VkCommandBuffer commands) {
+            transitionImage(commands, image, ImageState::Undefined, ImageState::TransferDestination);
+            const VkBufferImageCopy copy{
+                .imageSubresource = {.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .layerCount = 6},
+                .imageExtent = {size, size, 1},
+            };
+            vkCmdCopyBufferToImage(commands, source, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy);
+            for (std::uint32_t level = 1; level < radianceMips; ++level)
+            {
+                barrier(commands, level - 1, 1, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                        VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+                        VK_ACCESS_2_TRANSFER_READ_BIT);
+                const auto from = static_cast<std::int32_t>(std::max(size >> (level - 1), 1u));
+                const auto to = static_cast<std::int32_t>(std::max(size >> level, 1u));
+                const VkImageBlit blit{
+                    .srcSubresource = {.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .mipLevel = level - 1, .layerCount = 6},
+                    .srcOffsets = {{0, 0, 0}, {from, from, 1}},
+                    .dstSubresource = {.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .mipLevel = level, .layerCount = 6},
+                    .dstOffsets = {{0, 0, 0}, {to, to, 1}},
+                };
+                vkCmdBlitImage(commands, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit,
+                               VK_FILTER_LINEAR);
+            }
+            // Every level but the last was read by the next one.
+            if (radianceMips > 1)
+            {
+                barrier(commands, 0, radianceMips - 1, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                        VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_READ_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+                        VK_ACCESS_2_SHADER_SAMPLED_READ_BIT);
+            }
+            barrier(commands, radianceMips - 1, 1, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                    VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+                    VK_ACCESS_2_SHADER_SAMPLED_READ_BIT);
+            transitionImage(commands, specular->handle(), ImageState::Undefined, ImageState::ComputeStorage);
+        });
+        !filled)
+    {
+        return std::unexpected(filled.error());
+    }
+
+    for (std::uint32_t mip = 0; mip < specularMipCount; ++mip)
+    {
+        writeSet(VK_NULL_HANDLE, radiance->view(), specular->subview(VK_IMAGE_VIEW_TYPE_2D_ARRAY, mip, 1, 0, 6), VK_NULL_HANDLE);
+        const BakePushConstants constants{
+            .size = std::max(size >> mip, 1u),
+            .roughness = static_cast<float>(mip) / static_cast<float>(specularMipCount - 1),
+            .sampleCount = prefilterSamples,
+            .sourceSize = static_cast<float>(size),
+        };
+        if (core::Result<void> baked = dispatch(*m_prefilter, constants, 6); !baked)
+        {
+            return std::unexpected(baked.error());
+        }
+    }
+    const VkImage result = specular->handle();
+    if (core::Result<void> done = m_upload.submit([result](VkCommandBuffer commands) {
+            transitionImage(commands, result, ImageState::ComputeStorage, ImageState::ShaderReadOnly);
+        });
+        !done)
+    {
+        return std::unexpected(done.error());
+    }
+    return std::move(*specular);
 }
 
 } // namespace devex::render::vulkan

@@ -2216,11 +2216,17 @@ void ApplicationRunner::updateGameData()
 
 void ApplicationRunner::writeThumbnails()
 {
-    if (m_services.renderer == nullptr || m_thumbnailCaptures.empty())
+    if (m_services.renderer == nullptr)
     {
         return;
     }
-    for (render::CapturedImage& captured : m_services.renderer->takeCaptures())
+    std::vector<render::CapturedImage> captures = m_services.renderer->takeCaptures();
+    // The tools keep the pictures they asked for, such as the faces of the reflection probes they bake.
+    if (m_services.tools != nullptr && !captures.empty())
+    {
+        m_services.tools->receiveCaptures(captures);
+    }
+    for (render::CapturedImage& captured : captures)
     {
         const auto found = m_thumbnailCaptures.find(captured.request);
         if (found == m_thumbnailCaptures.end())

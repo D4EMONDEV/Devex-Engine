@@ -189,6 +189,46 @@ struct DEVEX_API Environment
 };
 DEVEX_DECLARE_ENGINE_REFLECTION(Environment);
 
+// The width of each face of the capture of a reflection probe. The values are stored in scenes: never
+// reorder them.
+enum class ProbeResolution : std::uint8_t
+{
+    // 128 pixels: rough surfaces, small rooms.
+    Low,
+    // 256 pixels.
+    Medium,
+    // 512 pixels: mirrors and polished floors.
+    High,
+};
+
+[[nodiscard]] constexpr std::uint32_t probePixels(ProbeResolution resolution) noexcept
+{
+    return resolution == ProbeResolution::Low ? 128 : resolution == ProbeResolution::High ? 512 : 256;
+}
+
+// The light around a point, captured by the editor as a cube map, which the surfaces inside the box
+// of the probe reflect in place of the sky: a room reflects its walls rather than the sky outside,
+// as Godot's ReflectionProbe. Where boxes overlap, the smallest one wins, and each fades towards its
+// edges into the probes around it and the sky. Baking writes the capture next to the scene.
+struct DEVEX_API ReflectionProbe
+{
+    // The box it reaches, in meters, centered on its entity and turned with it.
+    math::Vec3 size{10.0f, 5.0f, 10.0f};
+    // Where it captures from, from the center of the box, in its axes.
+    math::Vec3 captureOffset{0.0f};
+    // How far inside its box it fades out, in meters.
+    float blendDistance = 1.0f;
+    // Times the light it reflects.
+    float intensity = 1.0f;
+    // Corrects what it reflects for the walls of its box (parallax), as for a room; off, reflections
+    // seem infinitely far, as for an open space.
+    bool boxProjection = true;
+    ProbeResolution resolution = ProbeResolution::Medium;
+    // The capture baked by the editor.
+    asset::AssetId capture;
+};
+DEVEX_DECLARE_ENGINE_REFLECTION(ReflectionProbe);
+
 } // namespace devex::scene
 
 template <>
@@ -207,4 +247,10 @@ template <>
 struct devex::reflection::EnumNames<devex::scene::Projection>
 {
     static constexpr std::array<std::string_view, 2> names{"perspective", "orthographic"};
+};
+
+template <>
+struct devex::reflection::EnumNames<devex::scene::ProbeResolution>
+{
+    static constexpr std::array<std::string_view, 3> names{"128", "256", "512"};
 };

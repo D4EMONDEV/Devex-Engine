@@ -63,6 +63,9 @@ public:
     [[nodiscard]] core::Result<TextureHandle> createTexture(const asset::TextureData& texture);
     void destroyTexture(TextureHandle texture);
 
+    [[nodiscard]] core::Result<ReflectionProbeHandle> createReflectionProbe(const asset::ReflectionProbeData& probe);
+    void destroyReflectionProbe(ReflectionProbeHandle probe);
+
     [[nodiscard]] MaterialHandle createMaterial(const MaterialDesc& material);
     void updateMaterial(MaterialHandle handle, const MaterialDesc& material);
     void destroyMaterial(MaterialHandle material);
@@ -117,8 +120,12 @@ private:
     static constexpr std::size_t largeShadowLights = 2;
     // Larger viewports are clamped, since images this large would exhaust memory.
     static constexpr std::uint32_t maxViewportSize = 8192;
-    // The views a frame draws beside the main image; more are left out.
-    static constexpr std::size_t maxViews = 4;
+    // The views a frame draws beside the main image; more are left out. A reflection probe is
+    // captured six faces at a time.
+    static constexpr std::size_t maxViews = 8;
+    // The reflection probes the renderer keeps, and the most a frame reflects, the smallest first.
+    static constexpr std::uint32_t maxReflectionProbes = 64;
+    static constexpr std::size_t maxFrameReflectionProbes = 32;
 
     enum class MeshPass : std::uint8_t
     {
@@ -203,6 +210,8 @@ private:
         std::optional<Buffer> shadows2D;
         std::optional<Buffer> clusters;
         std::optional<Buffer> clusterLights;
+        // The reflection probes the frame reflects, the smallest first.
+        std::optional<Buffer> reflectionProbes;
         // Exposed luminance measured on a grid by the last frame recorded with this context.
         std::optional<Buffer> luminance;
         bool luminanceMeasured = false;
@@ -226,6 +235,9 @@ private:
         math::Extent2D pickExtent{1, 1};
         // The picture of the scene the frame drew for a capture, in the format of the target.
         std::optional<Buffer> captureReadback;
+        // The light a radiance view drew for a capture, as half floats, and the exposure it was drawn at.
+        std::optional<Buffer> radianceReadback;
+        bool captureRadiance = false;
         std::optional<std::uint64_t> captureRequest;
         math::Extent2D captureExtent{1, 1};
         VkFormat captureFormat = VK_FORMAT_UNDEFINED;
@@ -261,6 +273,8 @@ private:
         std::array<ImageState, framesInFlight> imageStates{ImageState::Undefined, ImageState::Undefined};
         math::Extent2D imageExtent;
         bool interface = false;
+        // Draws the light for a capture: RenderView::radiance.
+        bool radiance = false;
         // The frame it was last drawn in: the tools show it only in that frame.
         std::uint64_t drawnFrame = ~std::uint64_t{0};
     };
@@ -304,6 +318,21 @@ private:
     struct RetiredTexture
     {
         GpuTexture texture;
+        std::uint64_t retiredAtFrame = 0;
+    };
+
+    // The reflections of a probe, prefiltered for every roughness, and its place in the global set.
+    struct ProbeMap
+    {
+        Image reflections;
+        std::uint32_t slot = 0;
+        // The values of the capture are its light in nits times this.
+        float scale = 1.0f;
+    };
+
+    struct RetiredProbeMap
+    {
+        ProbeMap map;
         std::uint64_t retiredAtFrame = 0;
     };
 
@@ -416,6 +445,9 @@ private:
     // builds the view each tile is drawn through. Lights that do not fit keep their light alone.
     void assignShadowViews();
     [[nodiscard]] core::Result<void> uploadShadowViews(FrameContext& frame) const;
+    // The reflection probes the camera may see, the smallest first, into the buffer of the frame;
+    // none for a radiance view.
+    [[nodiscard]] core::Result<void> uploadReflectionProbes(FrameContext& frame);
     // Creates the two images the antialiasing carries from frame to frame, when the scene changed
     // size or they do not exist yet.
     [[nodiscard]] core::Result<void> ensureHistory();
@@ -631,6 +663,14 @@ private:
     std::uint32_t m_nextTextureSlot = blackTextureSlot + 1;
     // Where the slots of the tools' images start; the textures take those before.
     std::uint32_t m_toolImageSlotBase = 0;
+    core::SlotMap<ProbeMap, ReflectionProbeTag> m_probeMaps;
+    std::vector<RetiredProbeMap> m_retiredProbeMaps;
+    std::vector<std::uint32_t> m_freeProbeSlots;
+    std::uint32_t m_nextProbeSlot = 0;
+    // The reflection probes of the frame being recorded, and whether it draws a radiance view.
+    std::uint32_t m_frameProbeCount = 0;
+    bool m_radianceView = false;
+    mutable std::vector<std::pair<float, GpuReflectionProbe>> m_gpuProbes;
     core::SlotMap<MaterialDesc, MaterialTag> m_materials;
     MaterialHandle m_defaultMaterial;
     // GPU form of every material slot, rebuilt when a material or a texture changes.

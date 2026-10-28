@@ -58,7 +58,8 @@ captures de l'éditeur, scènes de base, entrées, scripts C#, animations, colli
   scène, des uniforms changés par le code et des `instance uniform` donnés par chaque objet),
   render graph, PBR
   forward+ clustered avec prépasse de profondeur, culling par tronc de vue, ombres en cascades pour
-  le soleil et en atlas pour les lumières locales, ciel HDR et IBL, surfaces transparentes triées,
+  le soleil et en atlas pour les lumières locales, ciel HDR et IBL, sondes de réflexion cuites dans
+  l'éditeur (correction de parallaxe, fondu entre sondes), surfaces transparentes triées,
   anticrénelage temporel, occlusion ambiante en espace écran, bloom, exposition automatique,
   tonemapping AgX, table de couleurs, vignette et grain, particules et rubans (face à la caméra,
   étirés, doux au contact des surfaces, éclairés ou non, triés avec la transparence), sprites
@@ -217,7 +218,8 @@ captures de l'éditeur, scènes de base, entrées, scripts C#, animations, colli
   `code/Robot.cs`), deux
   drones suivent le joueur en se contournant (`code/Follower.cs`), et la porte fermée comme les
   caisses poussées découpent le maillage ; des articulations y tiennent une porte battante sur
-  gonds, un pendule et un panneau soudé qu'une balle décroche ;
+  gonds, un pendule et un panneau soudé qu'une balle décroche ; une salle aux miroirs (sol poli,
+  mur rouge, boule dorée) se reflète d'elle-même par sa sonde de réflexion ;
   Tab passe à la scène `platformer`, un jeu de plateformes en pixel art (un chevalier animé qui
   court, au bruit de ses pas, et saute sur un niveau de tuiles simulé par la physique 2D, dont une
   île flottante

@@ -115,6 +115,7 @@ std::uint32_t artifactVersion(AssetType type) noexcept
     case AssetType::Theme:
     case AssetType::Curve:
     case AssetType::NavMesh:
+    case AssetType::ReflectionProbe:
     case AssetType::Translation:
         return 1;
     // 2: the nodes of shader graphs that diagnostics name. 3: instance uniforms.
@@ -1083,6 +1084,37 @@ core::Result<NavMeshData> decodeNavMesh(std::span<const std::byte> bytes)
         return std::unexpected(valid.error());
     }
     return navMesh;
+}
+
+std::vector<std::byte> encodeReflectionProbe(const ReflectionProbeData& probe)
+{
+    BinaryWriter writer = beginArtifact(AssetType::ReflectionProbe);
+    writer.write(probe.size);
+    writer.write(probe.scale);
+    writer.writeArray(std::span<const std::uint16_t>(probe.pixels));
+    return writer.take();
+}
+
+core::Result<ReflectionProbeData> decodeReflectionProbe(std::span<const std::byte> bytes)
+{
+    BinaryReader reader(bytes);
+    if (core::Result<void> header = readHeader(reader, AssetType::ReflectionProbe); !header)
+    {
+        return std::unexpected(header.error());
+    }
+    ReflectionProbeData probe;
+    probe.size = reader.read<std::uint32_t>();
+    probe.scale = reader.read<float>();
+    probe.pixels = reader.readArray<std::uint16_t>();
+    if (reader.failed())
+    {
+        return std::unexpected(truncated(AssetType::ReflectionProbe));
+    }
+    if (core::Result<void> valid = validate(probe); !valid)
+    {
+        return std::unexpected(valid.error());
+    }
+    return probe;
 }
 
 std::vector<std::byte> encodeTranslation(const TranslationData& translation)

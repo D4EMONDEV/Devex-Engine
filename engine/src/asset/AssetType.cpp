@@ -6,7 +6,7 @@
 namespace devex::asset {
 namespace {
 
-constexpr std::array<std::pair<AssetType, std::string_view>, 17> typeNames{{
+constexpr std::array<std::pair<AssetType, std::string_view>, 18> typeNames{{
     {AssetType::Mesh, "mesh"},
     {AssetType::Texture, "texture"},
     {AssetType::Material, "material"},
@@ -24,6 +24,7 @@ constexpr std::array<std::pair<AssetType, std::string_view>, 17> typeNames{{
     {AssetType::NavMesh, "navmesh"},
     {AssetType::Translation, "translation"},
     {AssetType::Shader, "shader"},
+    {AssetType::ReflectionProbe, "reflection_probe"},
 }};
 
 } // namespace

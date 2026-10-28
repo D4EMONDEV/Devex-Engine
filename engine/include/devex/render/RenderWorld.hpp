@@ -16,6 +16,7 @@ struct MeshTag;
 struct TextureTag;
 struct MaterialTag;
 struct ShaderTag;
+struct ReflectionProbeTag;
 // Refers to a mesh uploaded with Renderer::createMesh.
 using MeshHandle = core::Handle<MeshTag>;
 // Refers to a texture uploaded with Renderer::createTexture.
@@ -24,6 +25,8 @@ using TextureHandle = core::Handle<TextureTag>;
 using MaterialHandle = core::Handle<MaterialTag>;
 // Refers to a shader of a project created with Renderer::createShader.
 using ShaderHandle = core::Handle<ShaderTag>;
+// Refers to the reflections of a probe created with Renderer::createReflectionProbe.
+using ReflectionProbeHandle = core::Handle<ReflectionProbeTag>;
 
 // How the jagged edges of the image are smoothed.
 enum class Antialiasing : std::uint8_t
@@ -134,6 +137,24 @@ struct DEVEX_API RenderEnvironment
     // A material whose sky shader draws the sky in place of the texture or the colour, which still
     // tint it.
     MaterialHandle skyMaterial;
+};
+
+// The light captured around a point, which the surfaces inside the box of the probe reflect in place
+// of the sky. Where boxes overlap, the smallest one comes first; each fades towards its edges over its
+// blend distance into the probes around it and the sky.
+struct DEVEX_API RenderReflectionProbe
+{
+    ReflectionProbeHandle probe;
+    // Where the box stands and how it is turned; a scale grows it.
+    math::Mat4 transform{1.0f};
+    // In meters along the axes of the transform, centered on it.
+    math::Vec3 size{10.0f};
+    // Where it was captured from, in the space of the box.
+    math::Vec3 captureOffset{0.0f};
+    float blendDistance = 1.0f;
+    float intensity = 1.0f;
+    // Reflects what the walls of the box hold where they stand, rather than infinitely far.
+    bool boxProjection = true;
 };
 
 // What an instance gives the instance uniforms of the shader of its material: nothing, so that
@@ -437,6 +458,10 @@ struct DEVEX_API RenderView
     math::Extent2D extent;
     // Draws the interface of RenderWorld::uiDraws over this view rather than over the main image.
     bool interface = false;
+    // Draws the light of the scene for the reflection probes the tools capture: without the
+    // reflection probes, and captured in nits rather than as the screen shows it. The camera
+    // should leave the antialiasing, the ambient occlusion and the bloom off.
+    bool radiance = false;
 };
 
 // Asks which objects are visible in a rectangle of the scene image, one pixel for a click.
@@ -470,6 +495,9 @@ struct DEVEX_API CapturedImage
     std::uint32_t height = 0;
     // Four bytes per pixel, red first, in sRGB as the display shows them; opaque.
     std::vector<std::uint8_t> rgba;
+    // For a radiance view, at its size: the light of each pixel in nits, red, green and blue, from
+    // the top row down; rgba is then empty.
+    std::vector<float> radiance;
 };
 
 // Snapshot of everything the renderer draws in one frame. Gameplay fills it between
@@ -481,6 +509,7 @@ struct DEVEX_API RenderWorld
     RenderSun sun;
     std::vector<RenderLight> lights;
     RenderEnvironment environment;
+    std::vector<RenderReflectionProbe> reflectionProbes;
     std::vector<MeshInstance> meshes;
     // The bones of the skinned instances of the frame, each already holding the transform from the
     // space of its mesh to the world.
@@ -535,6 +564,8 @@ struct DEVEX_API RenderWorld
     void reset() noexcept
     {
         std::vector<RenderLight> lightStorage = std::move(lights);
+        std::vector<RenderReflectionProbe> probeStorage = std::move(reflectionProbes);
+        probeStorage.clear();
         std::vector<MeshInstance> meshStorage = std::move(meshes);
         std::vector<math::Mat4> boneStorage = std::move(boneMatrices);
         std::vector<math::Vec4> instanceParameterStorage = std::move(instanceParameters);
@@ -576,6 +607,7 @@ struct DEVEX_API RenderWorld
         overlayTriangleStorage.clear();
         *this = RenderWorld{};
         lights = std::move(lightStorage);
+        reflectionProbes = std::move(probeStorage);
         meshes = std::move(meshStorage);
         boneMatrices = std::move(boneStorage);
         instanceParameters = std::move(instanceParameterStorage);

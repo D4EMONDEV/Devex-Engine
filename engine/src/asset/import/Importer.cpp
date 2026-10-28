@@ -572,6 +572,23 @@ core::Result<ImportResult> importAnimatorFile(ImportContext& context)
     return result;
 }
 
+core::Result<ImportResult> importReflectionProbeFile(ImportContext& context)
+{
+    core::Result<std::vector<std::byte>> bytes = core::readBinaryFile(context.source);
+    if (!bytes)
+    {
+        return std::unexpected(bytes.error());
+    }
+    // The file is the cooked asset already: checked, then taken as it is.
+    if (const core::Result<ReflectionProbeData> probe = decodeReflectionProbe(*bytes); !probe)
+    {
+        return std::unexpected(probe.error());
+    }
+    ImportResult result;
+    result.artifacts.push_back({context.mainId, AssetType::ReflectionProbe, context.name, std::move(*bytes)});
+    return result;
+}
+
 core::Result<ImportResult> importNavMeshFile(ImportContext& context)
 {
     core::Result<std::vector<std::byte>> bytes = core::readBinaryFile(context.source);
@@ -775,17 +792,26 @@ std::span<const Importer> importers()
             .run = &importNavMeshFile,
         },
         Importer{
-            .name = "shader",
-            // Increased whenever the generated code or the Slang modules it imports change.
+            .name = "reflection_probe",
             .version = 1,
+            .mainType = AssetType::ReflectionProbe,
+            .extensions = {reflectionProbeExtension},
+            .run = &importReflectionProbeFile,
+        },
+        Importer{
+            .name = "shader",
+            // Increased whenever the generated code or the Slang modules it imports change. 2: the
+            // reflection probes.
+            .version = 2,
             .mainType = AssetType::Shader,
             .extensions = {shaderExtension},
             .run = &importShaderFile,
         },
         Importer{
             .name = "shader_graph",
-            // Increased whenever the code of the nodes or the Slang modules change.
-            .version = 1,
+            // Increased whenever the code of the nodes or the Slang modules change. 2: the reflection
+            // probes.
+            .version = 2,
             .mainType = AssetType::Shader,
             .extensions = {shaderGraphExtension},
             .run = &importShaderGraphFile,

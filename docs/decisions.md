@@ -445,7 +445,8 @@ docs/          décisions et documentation
     intégré en irradiance 32², par des compute shaders exécutés quand la texture du ciel
     change ; la table BRDF split-sum (128²) est calculée au démarrage. `color`, `intensity`
     (nits) et `rotation` s'appliquent sans nouveau calcul. Le ciel est dessiné derrière la
-    scène depuis la texture elle-même.
+    scène depuis la texture elle-même. Dans la boîte d'une sonde de réflexion, la sonde prend sa
+    place dans les reflets (voir *Sondes de réflexion*).
 - **Ombres** : 4 cascades réparties entre découpage logarithmique et uniforme (λ = 0,75) jusqu'à
   `shadowDistance`, chacune ajustée sur la sphère englobante de sa tranche et alignée sur les
   texels pour ne pas scintiller ; biais de pente dynamique, décalage le long de la normale d'un
@@ -463,8 +464,9 @@ docs/          décisions et documentation
   par le swapchain. La même passe ajoute le bloom et applique l'étalonnage (voir *Transparence
   et post-traitements*).
 - **Limites actuelles** : culling par tronc de vue seulement (rien n'est enlevé parce qu'il est
-  caché derrière autre chose, et chaque instance est testée une par une sur le CPU), pas de
-  réflexions locales, transparence triée par instance (deux surfaces qui s'entrecroisent restent
+  caché derrière autre chose, et chaque instance est testée une par une sur le CPU), lumière
+  diffuse indirecte venue du seul ciel (les sondes de réflexion ne remplacent que ses reflets),
+  transparence triée par instance (deux surfaces qui s'entrecroisent restent
   fausses), et traînées possibles derrière un objet très rapide, que l'anticrénelage temporel ne
   rattrape pas toujours.
 - **GPU requis en plus** : descriptor indexing (tableaux runtime, partially bound, update after
@@ -2578,6 +2580,45 @@ Jalon 65, comme les `Joint3D` et `Joint2D` de Godot :
 - **Bac à sable** : la première lampe de la scène `sandbox` projette tout autour d'elle et le
   projecteur dans son cône ; la nuit (touche N), les caisses et les cubes portent leur ombre.
 
+### Sondes de réflexion
+
+- **Composant** : `ReflectionProbe`, comme celui de Godot : une boîte (`size`, centrée sur l'entité
+  et tournée avec elle, agrandie par son échelle), un point de capture (`capture_offset`), une
+  distance de fondu vers ses bords, une intensité, la **correction de parallaxe** par la boîte
+  (`box_projection`, pour une pièce ; sans elle, les reflets semblent infiniment loin), une
+  résolution de 128, 256 ou 512 pixels par face, et la capture cuite (`capture`).
+- **Asset** : `.dvxprobe` (type `ReflectionProbe`, importeur `reflection_probe`), écrit par l'éditeur
+  à côté de la scène et pris tel quel comme sa version cuite, comme le maillage de navigation : les
+  six faces dans l'ordre des cubemaps de Vulkan, en demi-flottants, avec une échelle en puissance de
+  deux qui garde un soleil très brillant dans leur plage (la lumière en nits est la valeur divisée par
+  l'échelle). Les faces brutes plutôt que préfiltrées : le préfiltrage se fait au chargement.
+- **Cuisson** : *Bake* (la sonde) et *Bake All* (toutes celles de la scène) dans l'inspecteur, en
+  édition seulement, scène enregistrée. Chaque sonde est capturée par six **vues radiance** du
+  renderer (`RenderView::radiance`, celles du jalon 73), à 90 degrés depuis son point de capture,
+  sans anticrénelage, occlusion ni bloom, et sans les sondes elles-mêmes : un seul rebond, et un
+  résultat qui ne dépend pas de la cuisson d'avant. La capture d'une vue radiance renvoie la lumière
+  en nits (`CapturedImage::radiance`), lue dans l'image HDR de la scène avant le tonemapping, puis
+  divisée par l'exposition. Les faces sont dessinées à l'exposition de la vue de l'éditeur : ce qui
+  brille à l'écran brille autant dans les reflets (l'émission des matériaux est relative à
+  l'exposition). Un appareil qui regarde une face la voit en miroir de gauche à droite, ce que la
+  cuisson rétablit (`render::cubeFaceView`, `cubeFaceDirection`, vérifiés sans GPU). Les vues sont
+  redessinées jusqu'à ce que leurs faces reviennent, et la cuisson attend que les maillages et
+  textures de la scène soient sur le GPU, sans quoi les vues les laisseraient de côté. Les fichiers
+  écrits, la base est rafraîchie, puis toutes les sondes sont pointées vers leur capture en une seule
+  étape d'annulation. Les captures passent de l'application aux outils
+  (`ToolsOverlay::receiveCaptures`) avant les miniatures des sauvegardes.
+- **Rendu** : au chargement, l'`AssetManager` donne la capture au renderer, qui copie les faces,
+  en fait les mips par blit puis la préfiltre en GGX pour six rugosités, comme le ciel
+  (`EnvironmentBaker::bakeProbe`), dans un tableau de 64 cubemaps du set global (binding 9). Chaque
+  image, les sondes que la caméra peut voir sont envoyées, les plus petites d'abord, 32 au plus
+  (`GpuSceneData::reflectionProbes`). Le shader parcourt la liste : dans une boîte, avec son fondu, il
+  lit la sonde dans la direction corrigée par la boîte, et laisse aux suivantes et au ciel ce qu'elle
+  ne couvre pas. Seuls les reflets changent ; la lumière diffuse indirecte vient encore du ciel,
+  jusqu'aux volumes d'irradiance. Les shaders des projets sont réimportés (importeurs `shader` et
+  `shader_graph` en version 2), l'API des jeux passe à 22.
+- **Bac à sable** : la *Mirror room*, dans le coin nord-ouest de l'arène, a un sol poli, un mur
+  rouge, une boule dorée, une lampe au plafond et une ouverture au sud ; sa sonde couvre la pièce.
+
 ### Transparence et post-traitements
 
 - **Passes** : une frame dessine maintenant la **prépasse** (profondeur, mouvement et normales),
@@ -4434,6 +4475,11 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     en remplacement ou en ajout, poids par l'asset, le code et un paramètre, masques d'os par noms
     avec leurs branches ; retour à la pose de repos des os laissés libres ; onglet *Layers* du
     panneau Animator et masque coché sur l'arbre du squelette ; le robot salue en marchant.
+75. ✅ **Sondes de réflexion** — composant `ReflectionProbe` et asset `.dvxprobe` cuit dans
+    l'éditeur par six vues radiance du renderer (lumière en nits, faces remises à l'endroit) ;
+    préfiltrage GGX au chargement, sondes de la frame les plus petites d'abord, fondu et correction
+    de parallaxe par la boîte ; *Bake* et *Bake All* dans l'inspecteur, boîte dans la vue ; la salle
+    aux miroirs de l'arène.
 
 Ensuite, sans ordre figé : à choisir dans les pistes ci-dessous.
 
@@ -4580,7 +4626,9 @@ Ensuite, sans ordre figé : à choisir dans les pistes ci-dessous.
   les grandes scènes (aujourd'hui chaque instance est testée une par une).
 - **Ombres locales** : filtrage plus doux (PCSS), tuiles gardées d'une frame à l'autre quand rien
   ne bouge, et ombres des surfaces transparentes.
-- **Réflexions locales** : sondes de réflexion placées dans la scène, SSR.
+- **Réflexions locales** : sondes recapturées pendant le jeu (au chargement, à la demande), plusieurs
+  rebonds entre sondes, sondes en clusters pour les grandes scènes, compression BC6H des captures,
+  SSR.
 - **Transparence** : résolution sans tri (OIT pondéré) pour les surfaces qui s'entrecroisent,
   ombres des surfaces transparentes, réfraction, tri par triangle plutôt que par instance.
 - **Post-traitements** : profondeur de champ, flou de mouvement, volumes qui mélangent leurs

@@ -1,0 +1,5 @@
+# The polished floor of the mirror room, which reflects the room around it.
+[material format=1]
+base_color = vec4(0.08, 0.085, 0.09, 1)
+metallic = 0
+roughness = 0.08
