@@ -14,6 +14,7 @@
 #include <devex/core/Path.hpp>
 #include <devex/core/Profiler.hpp>
 #include <devex/platform/Platform.hpp>
+#include <devex/platform/Process.hpp>
 #include <devex/render/Renderer.hpp>
 #include <devex/scene/Scene.hpp>
 #include <devex/tools/ToolsOverlay.hpp>
@@ -24,7 +25,6 @@
 #include <array>
 #include <chrono>
 #include <cstdio>
-#include <cstdlib>
 #include <filesystem>
 #include <format>
 #include <functional>
@@ -155,8 +155,9 @@ void measureEditor(const EditorSetup& setup)
 // Writes a picture of the editor's window, as the next frame draws it, into DEVEX_PICTURES.
 void picture(EditorRun& running, const std::string& name)
 {
-    const char* const folder = std::getenv("DEVEX_PICTURES");
-    const std::filesystem::path file = (folder != nullptr ? std::filesystem::path(folder) : std::filesystem::temp_directory_path()) / (name + ".png");
+    const std::string folder = devex::platform::environmentVariable("DEVEX_PICTURES");
+    const std::filesystem::path file =
+        (!folder.empty() ? devex::core::pathFromUtf8(folder) : std::filesystem::temp_directory_path()) / (name + ".png");
     const std::uint64_t request = running.renderer.requestWindowCapture();
     for (int index = 0; index < 10; ++index)
     {
