@@ -270,6 +270,8 @@ public:
     // lengthens, is left out of the statistics: the frame rate shown stays that of the frames drawn
     // one after the other.
     void setResting(bool resting) noexcept;
+    // Keeps the profiler measuring with its panel closed, for a report the application writes.
+    void setProfiling(bool profiling) noexcept;
 
     // Editor only: the size of the image the game is drawn into, in pixels, and where the mouse
     // sits inside it: the viewport while editing, the view of the game beside the scene while it

@@ -1027,7 +1027,11 @@ les assets s'écrivent au fil de leur lecture.
   --screenshot <image.png>` l'écrit une fois les assets chargés et dessinés, puis quitte, et le test
   caché *Editor pictures* photographie l'éditeur dans plusieurs états : de quoi juger l'apparence de
   l'éditeur sans personne devant (avec `SDL_VIDEO_DRIVER=offscreen`, sans fenêtre à l'écran).
-  Elle a montré que sur un écran sans sRGB (surface hors écran en `R8G8B8A8_UNORM`), les panneaux
+  `devex-editor <projet> --profile <rapport.txt>` (jalon 79) mesure 240 frames de la fenêtre au
+  repos et écrit la moyenne des zones du CPU et des passes du GPU, puis quitte : où passe le temps
+  d'une frame sur la machine qui l'exécute, scène dessinée comprise, ce que le banc d'essai des
+  tests (sans assets) ne voit pas.
+  L'image de la fenêtre a montré que sur un écran sans sRGB (surface hors écran en `R8G8B8A8_UNORM`), les panneaux
   dessinaient leurs couleurs comme de la lumière sans les encoder, presque noires : l'interface les
   encode désormais elle-même dès que l'image ne le fait pas.
 - **Sûreté** : écriture atomique ; la sauvegarde précédente de l'emplacement reste à côté
@@ -2588,7 +2592,16 @@ Jalon 65, comme les `Joint3D` et `Joint2D` de Godot :
   qu'une ombre ne bave pas sur sa voisine.
 - **Bac à sable** : la première lampe de la scène `sandbox` projette tout autour d'elle et le
   projecteur dans son cône ; la nuit (touche N), les caisses et les cubes portent leur ombre.
-
+- **Ombres gardées** (jalon 79) : mesurées dans l'éditeur sur l'arène (Iris Xe, 1600×900), les
+  ombres prenaient 9 ms des 14 ms de GPU d'une frame, redessinées alors que rien ne bougeait.
+  L'image principale garde maintenant ses cascades et son atlas dans des images à elle d'une frame
+  à l'autre, et ne les redessine que si ce dont elles sont faites change : une clé hache les
+  instances (maillage, sous-maillage, matériau, transformation, os), les matrices des os et la
+  version des matériaux, plus les matrices des cascades (qui suivent la caméra) ou les vues de
+  l'atlas (qui n'en dépendent pas). L'éditeur au repos passe à 5,5 ms de GPU ; quand seule la
+  caméra bouge, l'atlas reste gardé. Un shader du projet pouvant bouger ses sommets avec `TIME`,
+  ses ombres sont redessinées à chaque frame, et les vues des outils (autres caméras, cuissons)
+  dessinent toujours les leurs. `RendererStats::keptShadowPasses` dit ce que la frame a gardé.
 ### Sondes de réflexion
 
 - **Composant** : `ReflectionProbe`, comme celui de Godot : une boîte (`size`, centrée sur l'entité
@@ -4572,6 +4585,9 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     (menus, dialogues, infobulles, listes déroulantes), anneau de focus des champs ; image de la
     fenêtre entière (`Renderer::requestWindowCapture`, `devex-editor --screenshot`, test *Editor
     pictures*) ; couleurs de l'interface encodées sur les écrans sans sRGB ; API des jeux 23.
+79. ✅ **Fluidité de l'éditeur** — cascades et atlas d'ombres gardés d'une frame à l'autre tant que
+    rien de ce qui les dessine ne change (14,3 → 5,5 ms de GPU pour l'éditeur au repos sur l'arène,
+    Iris Xe) ; `devex-editor --profile` écrit où passe le temps d'une frame ; API des jeux 24.
 
 Ensuite, sans ordre figé : à choisir dans les pistes ci-dessous.
 
@@ -4716,8 +4732,8 @@ Ensuite, sans ordre figé : à choisir dans les pistes ci-dessous.
 - **Autres plateformes de textures** : ASTC ou Basis Universal pour le mobile, produits à l'export.
 - **Culling** : sur GPU avec dessin indirect, culling par occlusion, et hiérarchie spatiale pour
   les grandes scènes (aujourd'hui chaque instance est testée une par une).
-- **Ombres locales** : filtrage plus doux (PCSS), tuiles gardées d'une frame à l'autre quand rien
-  ne bouge, et ombres des surfaces transparentes.
+- **Ombres locales** : filtrage plus doux (PCSS), tuiles gardées une à une (aujourd'hui l'atlas est
+  gardé entier ou redessiné entier), et ombres des surfaces transparentes.
 - **Réflexions locales** : sondes recapturées pendant le jeu (au chargement, à la demande), plusieurs
   rebonds entre sondes, sondes en clusters pour les grandes scènes, compression BC6H des captures,
   SSR.

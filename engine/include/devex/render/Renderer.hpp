@@ -123,6 +123,9 @@ struct DEVEX_API RendererStats
     std::size_t pendingUploads = 0;
     std::uint64_t pendingUploadBytes = 0;
     std::uint64_t uploadedBytes = 0;
+    // Passes of shadows (the cascades of the sun, the atlas of the local lights) the last frame
+    // kept from the frame before rather than drawing them again: nothing they depend on changed.
+    std::uint32_t keptShadowPasses = 0;
 };
 
 namespace vulkan {

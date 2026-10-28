@@ -691,6 +691,71 @@ TEST_CASE("A window capture pictures the whole window with the tools over it", "
     CHECK(capture.errors().empty());
 }
 
+TEST_CASE("Shadows are kept from a frame to the next until what casts them moves", "[render][gpu]")
+{
+    const ErrorCapture capture;
+    {
+        auto platform = devex::platform::Platform::create();
+        REQUIRE(platform.has_value());
+        auto window = platform->createWindow({.width = 320, .height = 240, .vulkan = true, .hidden = true});
+        REQUIRE(window.has_value());
+        auto renderer = devex::render::Renderer::create(*platform, *window, {.validation = true});
+        if (!renderer)
+        {
+            FAIL(std::format("{}", renderer.error()));
+        }
+        auto ground = renderer->createMesh(devex::asset::makePlane(10.0f));
+        auto sphere = renderer->createMesh(devex::asset::makeUvSphere());
+        REQUIRE(ground.has_value());
+        REQUIRE(sphere.has_value());
+
+        // The sun and a spot light that casts a shadow, over a ball that rises from the fifth frame.
+        const auto draw = [&](devex::math::Mat4 camera, float ball) {
+            devex::render::RenderWorld& world = renderer->beginFrame();
+            world.camera.view = devex::math::inverse(camera);
+            world.sun = {.direction = {-0.3f, -1.0f, -0.2f}, .illuminance = devex::math::Vec3{50000.0f}};
+            world.lights.push_back({
+                .type = devex::render::LightType::Spot,
+                .position = {0.0f, 3.0f, 0.0f},
+                .direction = {0.0f, -1.0f, 0.0f},
+                .intensity = devex::math::Vec3{500.0f},
+                .range = 8.0f,
+                .innerAngle = 0.3f,
+                .outerAngle = 0.5f,
+                .castShadows = true,
+            });
+            world.meshes.push_back({.mesh = *ground});
+            world.meshes.push_back({.mesh = *sphere, .transform = devex::math::translate(devex::math::Mat4{1.0f}, {0.0f, ball, 0.0f})});
+            const devex::core::Result<void> presented = renderer->endFrame();
+            if (!presented)
+            {
+                FAIL(std::format("{}", presented.error()));
+            }
+            return renderer->stats().keptShadowPasses;
+        };
+        const devex::math::Mat4 camera = devex::math::translate(devex::math::Mat4{1.0f}, {0.0f, 2.0f, 6.0f});
+        // Uploads first: the meshes join the frames once copied.
+        for (int frame = 0; frame < 4; ++frame)
+        {
+            static_cast<void>(draw(camera, 0.5f));
+        }
+        // Nothing changed: the cascades and the atlas are both kept.
+        CHECK(draw(camera, 0.5f) == 2);
+        CHECK(draw(camera, 0.5f) == 2);
+        // The ball moves: both are drawn again, then kept once it stops.
+        CHECK(draw(camera, 0.8f) == 0);
+        CHECK(draw(camera, 0.8f) == 2);
+        // The camera moves: the cascades follow it, the spot light's shadow stays.
+        CHECK(draw(devex::math::translate(camera, {0.5f, 0.0f, 0.0f}), 0.8f) == 1);
+    }
+
+    for (const std::string& error : capture.errors())
+    {
+        UNSCOPED_INFO(error);
+    }
+    CHECK(capture.errors().empty());
+}
+
 TEST_CASE("Only one renderer can exist at a time", "[render][gpu]")
 {
     auto platform = devex::platform::Platform::create();
@@ -848,7 +913,10 @@ TEST_CASE("Local lights that cast shadows are drawn into the atlas", "[render][g
             devex::render::RenderWorld& world = renderer->beginFrame();
             world.camera.view = devex::math::inverse(cameraTransform);
             world.sun.illuminance = {0.0f, 0.0f, 0.0f};
-            world.meshes.push_back({.mesh = *cube, .objectId = 1});
+            // A millimetre further every frame, so that the atlas is drawn again rather than kept.
+            world.meshes.push_back({.mesh = *cube,
+                                    .transform = devex::math::translate(devex::math::Mat4(1.0f), devex::math::Vec3{0.0f, 0.0f, 0.001f * static_cast<float>(frame)}),
+                                    .objectId = 1});
             // A spot takes one view of the atlas, a point light the six of its cube.
             world.lights.push_back({
                 .type = devex::render::LightType::Spot,

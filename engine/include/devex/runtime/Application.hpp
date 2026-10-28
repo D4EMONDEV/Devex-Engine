@@ -91,6 +91,10 @@ struct DEVEX_API ApplicationConfig
     // included, before the application quits: pictures of the editor for its documentation, and
     // for checking how it looks without a person in front of it.
     std::filesystem::path screenshot;
+    // A text file the average zones of the profiler are written to, on the CPU and the GPU, over 240
+    // frames once the assets are loaded and drawn, before the application quits (after the picture,
+    // with both): where the time of a frame goes, on the machine it runs on.
+    std::filesystem::path profileReport;
 };
 
 namespace detail {

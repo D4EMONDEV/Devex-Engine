@@ -849,6 +849,8 @@ struct DEVEX_API ToolsState
     double projectLanguagesTime = -1.0;
     // The profiler records while its panel is open.
     bool showProfiler = false;
+    // The application measures frames for a report of its own, panel or not.
+    bool profiling = false;
     // The Profiler panel comes to the front of its dock at its next frame, as when it is opened.
     bool focusProfiler = false;
     // The same for the panels of the clips and of the state machines.

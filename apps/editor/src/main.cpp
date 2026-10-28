@@ -21,8 +21,9 @@ class EditorApplication final : public devex::runtime::Application
 
 } // namespace
 
-// devex-editor [project.dvxproj] [--screenshot <picture.png>]: opens the project, or the welcome
-// screen without one; with --screenshot, writes a picture of the window once it is drawn, and quits.
+// devex-editor [project.dvxproj] [--screenshot <picture.png>] [--profile <report.txt>]: opens the
+// project, or the welcome screen without one; with --profile, writes where the time of a frame goes
+// once the project is drawn, with --screenshot a picture of the window, and quits.
 // devex-editor --export <project.dvxproj> [--output <folder>] [--configuration <Release|Debug>]:
 // exports the game without opening a window.
 int main(int argc, char** argv)
@@ -44,6 +45,10 @@ int main(int argc, char** argv)
         if (std::string_view(argv[index]) == "--screenshot" && index + 1 < argc)
         {
             config.screenshot = std::filesystem::path(argv[++index]);
+        }
+        else if (std::string_view(argv[index]) == "--profile" && index + 1 < argc)
+        {
+            config.profileReport = std::filesystem::path(argv[++index]);
         }
         else if (config.project.empty())
         {

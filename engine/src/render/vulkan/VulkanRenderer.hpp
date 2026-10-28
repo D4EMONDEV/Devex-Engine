@@ -490,6 +490,10 @@ private:
     // Keeps the picture the frame captured, now that it completed.
     void readCapture(FrameContext& frame);
     void readWindowCapture(FrameContext& frame);
+    // What the shadows of the frame are drawn from, hashed: the instances, their bones and the
+    // materials. None when a shader of the project draws them, which may move them every frame.
+    [[nodiscard]] std::optional<std::uint64_t> shadowCastersKey() const;
+    [[nodiscard]] core::Result<void> ensureKeptShadows();
     // Returns the number of draw calls recorded. With a view, records it into its image rather than
     // the main frame with its tools.
     [[nodiscard]] core::Result<std::uint32_t> recordFrame(FrameContext& frame, std::uint32_t frameSlot,
@@ -615,6 +619,16 @@ private:
     // What the camera and each shadow cascade can see, rebuilt every frame.
     mutable Frustum m_cameraFrustum;
     mutable std::array<Frustum, cascadeCount> m_cascadeFrustums{};
+    mutable std::array<math::Mat4, cascadeCount> m_cascadeViewProjections{};
+    // The shadows of the main image, kept from a frame to the next and drawn again only when what
+    // they are drawn from changed: the key of what drew them, none while they must be drawn.
+    std::optional<Image> m_keptCascades;
+    std::optional<Image> m_keptAtlas;
+    ImageState m_keptCascadesState = ImageState::Undefined;
+    ImageState m_keptAtlasState = ImageState::Undefined;
+    std::optional<std::uint64_t> m_keptCascadesKey;
+    std::optional<std::uint64_t> m_keptAtlasKey;
+    std::uint32_t m_keptShadowPasses = 0;
     // Instances kept and dropped by the culling of the frame, for the statistics.
     mutable std::uint32_t m_culledInstances = 0;
     // The views the local lights were given this frame, and what each one draws.

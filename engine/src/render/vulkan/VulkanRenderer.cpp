@@ -3043,6 +3043,7 @@ void VulkanRenderer::writeSceneData(FrameContext& frame,
             scene.cascadeTexelSizes[static_cast<int>(cascade)] = cascades->texelSizes[cascade];
             scene.cascadeViewProjections[cascade] = cascades->viewProjections[cascade];
             m_cascadeFrustums[cascade] = frustumOf(cascades->viewProjections[cascade]);
+            m_cascadeViewProjections[cascade] = cascades->viewProjections[cascade];
         }
         scene.shadowDistance = sun.shadowDistance;
     }
@@ -3939,15 +3940,26 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
         created.push_back(graph.createImage(config));
         return created.size() - 1;
     };
-    const std::size_t shadowMapIndex = create({
-        .format = depthFormat,
-        .extent = {shadowMapSize, shadowMapSize},
-        .usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-        .layers = cascadeCount,
-    });
+    // The main image keeps its shadows from a frame to the next, in images of its own; the views of
+    // the tools draw theirs every time, from their own cameras.
+    const bool keepShadows = extraView == nullptr;
+    if (keepShadows)
+    {
+        if (core::Result<void> ensured = ensureKeptShadows(); !ensured)
+        {
+            return std::unexpected(ensured.error());
+        }
+    }
+    const std::size_t shadowMapIndex = keepShadows ? 0
+                                                   : create({
+                                                         .format = depthFormat,
+                                                         .extent = {shadowMapSize, shadowMapSize},
+                                                         .usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+                                                         .layers = cascadeCount,
+                                                     });
     // One image holds the shadows of every local light that was given a tile.
     const bool localShadows = !m_shadowViews.empty();
-    const std::size_t shadowAtlasIndex = localShadows ? create({
+    const std::size_t shadowAtlasIndex = localShadows && !keepShadows ? create({
                                                             .format = depthFormat,
                                                             .extent = {shadowAtlasSize, shadowAtlasSize},
                                                             .usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT |
@@ -4066,7 +4078,50 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
             return std::unexpected(image.error());
         }
     }
-    const RenderGraph::ImageId shadowMap = *created[shadowMapIndex];
+    const RenderGraph::ImageId shadowMap =
+        keepShadows ? graph.importImage(m_keptCascades->handle(), m_keptCascades->view(), depthFormat, m_keptCascadesState)
+                    : *created[shadowMapIndex];
+    const Image* const shadowImage = keepShadows ? &*m_keptCascades : graph.image(shadowMap);
+    const std::optional<RenderGraph::ImageId> shadowAtlas =
+        !localShadows ? std::nullopt
+        : keepShadows ? std::optional(graph.importImage(m_keptAtlas->handle(), m_keptAtlas->view(), depthFormat, m_keptAtlasState))
+                      : std::optional(*created[shadowAtlasIndex]);
+    // Shadows drawn from the same instances, materials and views of the lights as the ones kept are
+    // the ones kept: the editor at rest, or a scene whose camera alone moves for the local lights.
+    bool drawCascades = drawShadows;
+    bool drawAtlas = localShadows;
+    if (keepShadows)
+    {
+        const std::optional<std::uint64_t> casters = shadowCastersKey();
+        const auto keyed = [&casters](const void* data, std::size_t size) -> std::optional<std::uint64_t> {
+            if (!casters)
+            {
+                return std::nullopt;
+            }
+            std::uint64_t hash = *casters;
+            const auto* const bytes = static_cast<const std::byte*>(data);
+            for (std::size_t index = 0; index < size; ++index)
+            {
+                hash = (hash ^ static_cast<std::uint64_t>(bytes[index])) * 1099511628211ull;
+            }
+            return hash;
+        };
+        m_keptShadowPasses = 0;
+        if (drawCascades)
+        {
+            const std::optional<std::uint64_t> key = keyed(m_cascadeViewProjections.data(), sizeof(m_cascadeViewProjections));
+            drawCascades = !key || key != m_keptCascadesKey;
+            m_keptShadowPasses += drawCascades ? 0u : 1u;
+            m_keptCascadesKey = key;
+        }
+        if (drawAtlas)
+        {
+            const std::optional<std::uint64_t> key = keyed(m_shadowViews.data(), m_shadowViews.size() * sizeof(GpuShadowView));
+            drawAtlas = !key || key != m_keptAtlasKey;
+            m_keptShadowPasses += drawAtlas ? 0u : 1u;
+            m_keptAtlasKey = key;
+        }
+    }
     const RenderGraph::ImageId sceneColor = *created[sceneColorIndex];
     const RenderGraph::ImageId depth = *created[depthIndex];
     const RenderGraph::ImageId velocity = *created[velocityIndex];
@@ -4123,7 +4178,7 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
         .depth = graph.view(depth),
         .resolved = antialiased ? m_history[writeSlot]->view() : graph.view(sceneColor),
         .localShadowMap =
-            localShadows ? graph.view(*created[shadowAtlasIndex]) : m_emptyShadowAtlas->view(),
+            shadowAtlas ? graph.view(*shadowAtlas) : m_emptyShadowAtlas->view(),
     };
     for (std::uint32_t level = 0; level < DescriptorSets::bloomLevels; ++level)
     {
@@ -4151,9 +4206,8 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
         vkCmdSetScissor(commands, 0, 1, &scissor);
     };
 
-    if (drawShadows)
+    if (drawCascades)
     {
-        const Image* const shadowImage = graph.image(shadowMap);
         graph.addPass("Shadow cascades", {{shadowMap, ImageAccess::DepthAttachment}},
                       [&, shadowImage](VkCommandBuffer commands) {
                           for (std::uint32_t cascade = 0; cascade < cascadeCount; ++cascade)
@@ -4182,9 +4236,9 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
                       });
     }
 
-    if (localShadows)
+    if (drawAtlas)
     {
-        const RenderGraph::ImageId atlas = *created[shadowAtlasIndex];
+        const RenderGraph::ImageId atlas = *shadowAtlas;
         graph.addPass("Local shadows", {{atlas, ImageAccess::DepthAttachment}},
                       [&, atlas](VkCommandBuffer commands) {
             const VkRenderingAttachmentInfo depthAttachment{
@@ -4332,7 +4386,7 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
     };
     if (localShadows)
     {
-        sceneAccesses.push_back({*created[shadowAtlasIndex], ImageAccess::FragmentRead});
+        sceneAccesses.push_back({*shadowAtlas, ImageAccess::FragmentRead});
     }
     if (occluded)
     {
@@ -4390,7 +4444,7 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
     };
     if (localShadows)
     {
-        transparentAccesses.push_back({*created[shadowAtlasIndex], ImageAccess::FragmentRead});
+        transparentAccesses.push_back({*shadowAtlas, ImageAccess::FragmentRead});
     }
     if (occluded)
     {
@@ -5219,6 +5273,79 @@ void VulkanRenderer::readPickResult(FrameContext& frame)
     frame.pickRequest.reset();
 }
 
+core::Result<void> VulkanRenderer::ensureKeptShadows()
+{
+    if (m_keptCascades && m_keptAtlas)
+    {
+        return {};
+    }
+    core::Result<Image> cascades = Image::create(m_device, m_allocator,
+                                                 {
+                                                     .format = depthFormat,
+                                                     .extent = {shadowMapSize, shadowMapSize},
+                                                     .usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+                                                     .layers = cascadeCount,
+                                                 });
+    if (!cascades)
+    {
+        return std::unexpected(cascades.error());
+    }
+    core::Result<Image> atlas = Image::create(m_device, m_allocator,
+                                              {
+                                                  .format = depthFormat,
+                                                  .extent = {shadowAtlasSize, shadowAtlasSize},
+                                                  .usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+                                              });
+    if (!atlas)
+    {
+        return std::unexpected(atlas.error());
+    }
+    m_keptCascades = std::move(*cascades);
+    m_keptAtlas = std::move(*atlas);
+    m_keptCascadesState = ImageState::Undefined;
+    m_keptAtlasState = ImageState::Undefined;
+    m_keptCascadesKey.reset();
+    m_keptAtlasKey.reset();
+    return {};
+}
+
+std::optional<std::uint64_t> VulkanRenderer::shadowCastersKey() const
+{
+    // Eight bytes at a time: a scene of thousands of instances hashes in a fraction of a millisecond.
+    std::uint64_t hash = 14695981039346656037ull;
+    const auto add = [&hash](const void* data, std::size_t size) {
+        const auto* const bytes = static_cast<const std::byte*>(data);
+        std::size_t index = 0;
+        for (; index + 8 <= size; index += 8)
+        {
+            std::uint64_t word = 0;
+            std::memcpy(&word, bytes + index, 8);
+            hash = (hash ^ word) * 1099511628211ull;
+            hash ^= hash >> 29;
+        }
+        for (; index < size; ++index)
+        {
+            hash = (hash ^ static_cast<std::uint64_t>(bytes[index])) * 1099511628211ull;
+        }
+    };
+    for (const MeshInstance& instance : m_world.meshes)
+    {
+        // A shader of the project may move its vertices with TIME: its shadows are drawn every frame.
+        if (shaderOf(instance.material, asset::ShaderKind::Spatial) != nullptr)
+        {
+            return std::nullopt;
+        }
+        const std::array<std::uint32_t, 7> fields{instance.mesh.index, instance.mesh.generation, instance.submesh,
+                                                  instance.material.index, instance.material.generation, instance.firstBone,
+                                                  instance.boneCount};
+        add(fields.data(), sizeof(fields));
+        add(&instance.transform, sizeof(instance.transform));
+    }
+    add(m_world.boneMatrices.data(), m_world.boneMatrices.size() * sizeof(math::Mat4));
+    add(&m_materialVersion, sizeof(m_materialVersion));
+    return hash;
+}
+
 core::Result<void> VulkanRenderer::ensureHistory()
 {
     if (m_historyExtent == m_sceneExtent && m_history[0] && m_history[1])
@@ -5392,6 +5519,7 @@ RendererStats VulkanRenderer::stats() const noexcept
         .pendingUploads = m_pendingUploads.size(),
         .pendingUploadBytes = m_pendingUploadBytes,
         .uploadedBytes = m_lastUploadedBytes,
+        .keptShadowPasses = m_keptShadowPasses,
     };
 
     const VkPhysicalDeviceMemoryProperties* memory = nullptr;

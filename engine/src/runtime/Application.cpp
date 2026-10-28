@@ -344,6 +344,7 @@ private:
     // The picture of the window the configuration asks for, then the end of the application.
     void requestScreenshot();
     void writeScreenshot(render::CapturedImage& captured);
+    void writeProfileReport();
     void updateUi(std::chrono::nanoseconds frameTime);
     // Appends the canvases of the scene to the frame, over the game.
     void buildUi(render::RenderWorld& world);
@@ -425,6 +426,9 @@ private:
     std::filesystem::path m_screenshot;
     std::uint32_t m_screenshotSettled = 0;
     std::optional<std::uint64_t> m_screenshotRequest;
+    // The report of the profiler asked for by the configuration, and the frames measured so far.
+    std::filesystem::path m_profileReport;
+    std::optional<std::uint32_t> m_profiledFrames;
     // The themes of the scene being edited, applied outside Play so that the 2D screen and the
     // inspector show the interface as the game will.
     ui::ThemeApplier m_editedThemes;
@@ -475,6 +479,7 @@ ApplicationRunner::ApplicationRunner(Application& application, const Application
     , m_enablePhysics(config.enablePhysics)
     , m_userDirectory(config.userDirectory)
     , m_screenshot(config.screenshot)
+    , m_profileReport(config.profileReport)
 {
     m_application.m_runner = this;
     m_editedThemes.setThemes([this](asset::AssetId id) { return m_services.assets.theme(id); });
@@ -732,7 +737,7 @@ bool ApplicationRunner::isAnimating() const
     return m_services.tools->updatesContinuously() || m_services.tools->isAnimating() || m_playScene.has_value() ||
            (m_particles != nullptr && m_particles->particleCount() > 0) || m_animatedTiles ||
            m_services.assets.pendingLoads() > 0 || m_backgroundScene.has_value() || !m_thumbnailCaptures.empty() ||
-           !m_screenshot.empty();
+           !m_screenshot.empty() || !m_profileReport.empty();
 }
 
 int ApplicationRunner::execute()
@@ -2264,7 +2269,7 @@ void ApplicationRunner::writeThumbnails()
 
 void ApplicationRunner::requestScreenshot()
 {
-    if (m_screenshot.empty() || m_screenshotRequest || m_services.renderer == nullptr)
+    if ((m_screenshot.empty() && m_profileReport.empty()) || m_screenshotRequest || m_services.renderer == nullptr)
     {
         return;
     }
@@ -2273,10 +2278,100 @@ void ApplicationRunner::requestScreenshot()
     const bool loading = m_services.assets.pendingLoads() > 0 || m_services.renderer->stats().pendingUploads > 0 ||
                          m_backgroundScene.has_value() || !m_thumbnailCaptures.empty();
     m_screenshotSettled = loading ? 0 : m_screenshotSettled + 1;
-    if (m_screenshotSettled >= 60)
+    if (m_screenshotSettled < 60)
     {
-        m_screenshotRequest = m_services.renderer->requestWindowCapture();
+        return;
     }
+    // The profile first, frames of a settled window; the picture after it.
+    if (!m_profileReport.empty())
+    {
+        if (!m_profiledFrames)
+        {
+            core::profiler::setEnabled(true);
+            core::profiler::setPaused(false);
+            if (m_services.tools != nullptr)
+            {
+                m_services.tools->setProfiling(true);
+            }
+            core::profiler::clear();
+            m_profiledFrames = 0;
+        }
+        else if (++*m_profiledFrames >= 240)
+        {
+            writeProfileReport();
+        }
+        return;
+    }
+    m_screenshotRequest = m_services.renderer->requestWindowCapture();
+}
+
+void ApplicationRunner::writeProfileReport()
+{
+    // The zones of the frames, averaged: those of the main thread down to four levels, and the
+    // passes of the GPU.
+    std::map<std::string, double> cpu;
+    std::map<std::string, double> gpu;
+    double frames = 0.0;
+    double frameTime = 0.0;
+    double gpuFrames = 0.0;
+    double gpuTime = 0.0;
+    for (const std::shared_ptr<const core::ProfileFrame>& frame : core::profiler::history())
+    {
+        frames += 1.0;
+        frameTime += static_cast<double>(frame->duration());
+        for (const core::ProfileZone& zone : frame->cpu)
+        {
+            if (zone.thread == 0 && zone.depth < 4)
+            {
+                cpu[std::format("{}{}", std::string(zone.depth * 2, ' '), zone.name)] += static_cast<double>(zone.duration());
+            }
+        }
+        if (frame->gpuMeasured)
+        {
+            gpuFrames += 1.0;
+            gpuTime += static_cast<double>(frame->gpuDuration);
+            for (const core::ProfileZone& zone : frame->gpu)
+            {
+                gpu[zone.name] += static_cast<double>(zone.duration());
+            }
+        }
+    }
+    const auto milliseconds = [](double nanoseconds, double count) { return count > 0.0 ? nanoseconds / count / 1.0e6 : 0.0; };
+    const auto lines = [&](const std::map<std::string, double>& zones, double count) {
+        std::vector<std::pair<std::string, double>> sorted(zones.begin(), zones.end());
+        std::ranges::sort(sorted, [](const auto& first, const auto& second) { return first.second > second.second; });
+        std::string written;
+        for (const auto& [name, total] : sorted)
+        {
+            if (milliseconds(total, count) >= 0.005)
+            {
+                written += std::format("{:8.3f} ms  {}\n", milliseconds(total, count), name);
+            }
+        }
+        return written;
+    };
+    const math::Extent2D window = m_services.window.pixelSize();
+    std::string report = std::format("{} frames at {}x{}: {:.2f} ms a frame on the CPU, {:.2f} ms on the GPU\n\nCPU\n",
+                                     frames, window.width, window.height, milliseconds(frameTime, frames),
+                                     milliseconds(gpuTime, gpuFrames));
+    report += lines(cpu, frames);
+    report += "\nGPU\n";
+    report += lines(gpu, gpuFrames);
+    if (core::Result<void> written = core::writeTextFile(m_profileReport, report); !written)
+    {
+        DEVEX_LOG_ERROR("Cannot write the report of the profiler: {}", written.error());
+        m_exitCode = EXIT_FAILURE;
+    }
+    else
+    {
+        DEVEX_LOG_INFO("Wrote the report of the profiler to {}", core::toUtf8(m_profileReport));
+    }
+    m_profileReport.clear();
+    if (m_services.tools != nullptr)
+    {
+        m_services.tools->setProfiling(false);
+    }
+    m_application.m_quitRequested = m_screenshot.empty();
 }
 
 void ApplicationRunner::writeScreenshot(render::CapturedImage& captured)

@@ -539,6 +539,11 @@ bool ToolsOverlay::updatesContinuously() const noexcept
     return m_state->mode != ToolsMode::Editor || m_state->theme.updateContinuously;
 }
 
+void ToolsOverlay::setProfiling(bool profiling) noexcept
+{
+    m_state->profiling = profiling;
+}
+
 void ToolsOverlay::setResting(bool resting) noexcept
 {
     m_state->resting = resting;
@@ -603,7 +608,7 @@ void ToolsOverlay::update(scene::Scene& scene, core::Duration frameDelta, PlaySt
     }
     detail::recordMonitors(state, scene, frameDelta);
     // Frames are measured only for someone to look at them.
-    core::profiler::setEnabled(state.visible && state.showProfiler);
+    core::profiler::setEnabled((state.visible && state.showProfiler) || state.profiling);
     if (!state.visible)
     {
         return;

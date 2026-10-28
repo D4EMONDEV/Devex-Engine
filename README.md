@@ -435,7 +435,8 @@ ou mettre à l'échelle (Ctrl aimante), clic droit maintenu + ZQSD pour voler, A
 tourner autour, F pour cadrer, Ctrl+S pour enregistrer la scène, Ctrl+N / Ctrl+W pour ouvrir ou
 fermer un onglet de scène et F5 pour jouer (F8 arrête). Le thème, l'échelle et les polices se
 règlent dans *Editor > Editor Settings*. `devex-editor <projet> --screenshot image.png` écrit une
-image de la fenêtre une fois le projet chargé, puis quitte.
+image de la fenêtre une fois le projet chargé, puis quitte ; `--profile rapport.txt` y écrit le
+temps moyen d'une frame, zone par zone, sur le CPU et le GPU.
 
 Les polices (Noto Sans, JetBrains Mono : SIL OFL 1.1) et les icônes (Lucide : ISC) de l'éditeur sont
 dans `third_party` avec leurs licences, comme ufbx (MIT ou domaine public), qui lit les fichiers FBX
