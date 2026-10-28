@@ -324,7 +324,11 @@ docs/          décisions et documentation
   contours, ni sélection ; l'interface du jeu va sur celle qui la demande (`RenderView::interface`),
   et plus sur l'image principale. Les mouvements et les poses précédentes restent ceux de la frame :
   seule l'image principale les retient. `Renderer::requestViewCapture` en fait une capture. Une
-  cinquième vue prend la place de celle dessinée il y a le plus longtemps.
+  cinquième vue prend la place de celle dessinée il y a le plus longtemps. Les copies vers le GPU de
+  la frame sont enregistrées par l'image principale, après les vues : une vue laisse de côté, sur une
+  copie des listes, ce qui attend la sienne, et un maillage tout juste créé y paraît une frame après
+  l'image principale. lavapipe l'a trouvé sur la CI : il dessine sur le processeur, et lisait hors de
+  buffers pas encore remplis, là où un vrai GPU lisait n'importe quoi sans planter.
 - **Cible** : sans `RenderWorld::viewport`, la scène est dessinée sur tout le swapchain.
   Avec, elle l'est dans une image de cette taille (format du swapchain, au plus 8192²) que les
   outils affichent dans un panneau, par un lot de leur couche qui lit `UiSource::SceneImage`.

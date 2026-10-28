@@ -383,6 +383,9 @@ private:
     // Moves the waiting copies that fit the budget of the frame into it, and makes their meshes
     // and textures ready; then leaves out what the frame would draw with what is still waiting.
     void selectUploads(FrameContext& frame);
+    // Leaves out of RenderWorld the meshes that are not on the GPU, and the batches of interfaces and
+    // particles that read textures that are not there yet.
+    void leaveOutWaiting();
     // Records the copies selected for the frame.
     void recordUploads(VkCommandBuffer commandBuffer, const FrameContext& frame) const;
     [[nodiscard]] GpuMaterial toGpuMaterial(const MaterialDesc& material) const noexcept;

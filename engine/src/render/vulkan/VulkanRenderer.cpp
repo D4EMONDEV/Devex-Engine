@@ -17,6 +17,7 @@
 #include <cmath>
 #include <cstring>
 #include <limits>
+#include <tuple>
 #include <utility>
 
 namespace devex::render::vulkan {
@@ -1114,17 +1115,32 @@ core::Result<void> VulkanRenderer::renderView(ExtraView& view, const RenderView&
         ExtraView& view;
         RenderCamera camera;
         math::Extent2D viewport;
+        // The lists of the frame, whole, while the view draws them without what waits for its copy.
+        std::optional<std::tuple<std::vector<MeshInstance>, std::vector<UiDraw>, std::vector<ParticleDraw>>> whole;
 
         ~ViewScope()
         {
             renderer.m_world.camera = camera;
             renderer.m_world.viewport = viewport;
+            if (whole)
+            {
+                renderer.m_world.meshes = std::move(std::get<0>(*whole));
+                renderer.m_world.uiDraws = std::move(std::get<1>(*whole));
+                renderer.m_world.particleDraws = std::move(std::get<2>(*whole));
+            }
             renderer.swapViewState(view.state);
             renderer.m_setBase = 0;
         }
     };
     swapViewState(view.state);
-    const ViewScope scope{*this, view, std::exchange(m_world.camera, wanted.camera), std::exchange(m_world.viewport, extent)};
+    ViewScope scope{*this, view, std::exchange(m_world.camera, wanted.camera), std::exchange(m_world.viewport, extent), std::nullopt};
+    // The copies to the GPU of this frame are recorded by the main frame, after the views: a view leaves
+    // out what waits for one, as the main frame leaves out what still waits after its own.
+    if (!m_pendingUploads.empty())
+    {
+        scope.whole.emplace(m_world.meshes, m_world.uiDraws, m_world.particleDraws);
+        leaveOutWaiting();
+    }
     m_setBase = view.setBase;
     view.interface = wanted.interface;
     m_sceneExtent = extent;
@@ -1989,7 +2005,11 @@ void VulkanRenderer::selectUploads(FrameContext& frame)
         m_pendingUploads.pop_front();
     }
     m_lastUploadedBytes = spent;
+    leaveOutWaiting();
+}
 
+void VulkanRenderer::leaveOutWaiting()
+{
     // What waits is left out of the frame: meshes are not drawn, and interfaces skip the images and
     // letters of textures that are not there yet.
     std::erase_if(m_world.meshes, [this](const MeshInstance& instance) { return !isReady(instance.mesh); });
