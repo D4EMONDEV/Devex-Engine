@@ -38,7 +38,8 @@ namespace devex::render::vulkan {
 // high dynamic range scene (forward+ lighting, then the sky), the luminance measure for automatic
 // exposure, picking and the selection mask when the tools ask for them, tonemapping to the
 // swapchain or to the viewport image of the tools, the tools' overlay, and the images of the tools
-// composed over the window.
+// composed over the window. The other views of the frame (RenderWorld::views) are recorded before,
+// each in its own submission, with the same passes into an image of its own.
 class VulkanRenderer
 {
 public:
@@ -73,7 +74,9 @@ public:
     [[nodiscard]] RenderWorld& beginFrame() noexcept;
     [[nodiscard]] core::Result<void> endFrame();
     [[nodiscard]] std::vector<PickResult> takePickResults();
-    [[nodiscard]] std::uint64_t requestCapture(std::uint32_t maxWidth, std::uint32_t maxHeight);
+    // Of the main image, or of the view of that id.
+    [[nodiscard]] std::uint64_t requestCapture(std::uint32_t maxWidth, std::uint32_t maxHeight,
+                                               std::optional<std::uint32_t> view = std::nullopt);
     [[nodiscard]] std::vector<CapturedImage> takeCaptures();
 
     [[nodiscard]] RendererStats stats() const noexcept;
@@ -114,6 +117,8 @@ private:
     static constexpr std::size_t largeShadowLights = 2;
     // Larger viewports are clamped, since images this large would exhaust memory.
     static constexpr std::uint32_t maxViewportSize = 8192;
+    // The views a frame draws beside the main image; more are left out.
+    static constexpr std::size_t maxViews = 4;
 
     enum class MeshPass : std::uint8_t
     {
@@ -228,6 +233,38 @@ private:
         std::vector<PendingUpload> uploads;
     };
 
+    // What a view carries from one frame to the next. The renderer holds that of the view it records;
+    // the others wait here, swapped in while theirs are recorded.
+    struct ViewState
+    {
+        std::array<std::optional<Image>, 2> history;
+        std::array<ImageState, 2> historyStates{ImageState::Undefined, ImageState::Undefined};
+        math::Extent2D historyExtent;
+        bool historyValid = false;
+        math::Mat4 previousViewProjection{1.0f};
+        float ev100 = 14.0f;
+        float targetEv100 = 14.0f;
+        bool exposureInitialized = false;
+        std::chrono::steady_clock::time_point lastExposureUpdate;
+    };
+
+    // A view of RenderWorld::views: its state, its own frame contexts and descriptor sets, and the
+    // image it is drawn into for each frame context, which the main frame of that context shows.
+    struct ExtraView
+    {
+        std::uint32_t id = 0;
+        // Its descriptor sets come after those of the main frame and of the views before it.
+        std::uint32_t setBase = 0;
+        ViewState state;
+        std::array<FrameContext, framesInFlight> frames{};
+        std::array<std::optional<Image>, framesInFlight> images;
+        std::array<ImageState, framesInFlight> imageStates{ImageState::Undefined, ImageState::Undefined};
+        math::Extent2D imageExtent;
+        bool interface = false;
+        // The frame it was last drawn in: the tools show it only in that frame.
+        std::uint64_t drawnFrame = ~std::uint64_t{0};
+    };
+
     struct SubmeshRange
     {
         std::uint32_t firstIndex = 0;
@@ -318,6 +355,19 @@ private:
                    Device device, Allocator allocator, UploadContext upload) noexcept;
 
     [[nodiscard]] core::Result<void> createFrameContexts();
+    [[nodiscard]] core::Result<void> createFrameContext(FrameContext& frame);
+    void destroyFrameContext(FrameContext& frame) noexcept;
+    // Exchanges what the renderer carries for the view it records with what a view waits with.
+    void swapViewState(ViewState& state) noexcept;
+    // Everything a view needs before it is recorded, for the camera of RenderWorld::camera at the size
+    // of m_sceneExtent: lights and their clusters, bones, particles, shadow cascades, history, jitter,
+    // scene data and sprites. Answers whether the sun casts shadows.
+    [[nodiscard]] core::Result<bool> prepareScene(FrameContext& frame, bool main);
+    // Draws the views of the frame, each in its own submission, before the main frame shows them.
+    [[nodiscard]] core::Result<void> renderViews(std::uint32_t frameSlot);
+    [[nodiscard]] core::Result<void> renderView(ExtraView& view, const RenderView& wanted, std::uint32_t frameSlot);
+    // The descriptor set of the frame context for the view being recorded.
+    [[nodiscard]] VkDescriptorSet frameDescriptors(std::uint32_t frameSlot) const noexcept;
     // Hands the GPU times of the passes of a finished frame to the profiler.
     void reportPassTimes(FrameContext& frame);
     [[nodiscard]] core::Result<void> createDefaultResources();
@@ -372,9 +422,11 @@ private:
     void readPickResult(FrameContext& frame);
     // Keeps the picture the frame captured, now that it completed.
     void readCapture(FrameContext& frame);
-    // Returns the number of draw calls recorded.
+    // Returns the number of draw calls recorded. With a view, records it into its image rather than
+    // the main frame with its tools.
     [[nodiscard]] core::Result<std::uint32_t> recordFrame(FrameContext& frame, std::uint32_t frameSlot,
-                                                          std::uint32_t imageIndex, bool drawShadows);
+                                                          std::uint32_t imageIndex, bool drawShadows,
+                                                          ExtraView* extraView = nullptr);
     // Whether the instance blends with what is behind it, and so belongs to the transparent pass.
     [[nodiscard]] bool isBlended(const MeshInstance& instance) const noexcept;
     // The instances a pass draws, in the order it draws them: those its view can see.
@@ -549,6 +601,12 @@ private:
     math::Extent2D m_sceneExtent;
     bool m_swapchainOutdated = false;
     std::array<FrameContext, framesInFlight> m_frames{};
+    // The views drawn beside the main image, kept by their identifiers from frame to frame.
+    std::vector<std::unique_ptr<ExtraView>> m_extraViews;
+    // Where the descriptor sets of the view being recorded start: 0 for the main frame.
+    std::uint32_t m_setBase = 0;
+    // The draw calls of the views of the frame, counted with those of the main frame.
+    std::uint32_t m_viewDrawCalls = 0;
     // One per swapchain image: a presented image keeps its semaphore busy until it is replaced.
     std::vector<VkSemaphore> m_presentSemaphores;
 
@@ -621,6 +679,8 @@ private:
         std::uint64_t id = 0;
         std::uint32_t maxWidth = 0;
         std::uint32_t maxHeight = 0;
+        // A view of RenderWorld::views, or the main image.
+        std::optional<std::uint32_t> view;
     };
     std::deque<CaptureRequest> m_captureRequests;
     std::uint64_t m_nextCapture = 1;

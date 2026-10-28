@@ -2188,7 +2188,12 @@ void ApplicationRunner::updateGameData()
     {
         if (m_services.renderer != nullptr)
         {
-            m_thumbnailCaptures.emplace(m_services.renderer->requestCapture(320, 180), std::move(file));
+            // In the editor, the game may be drawn beside the scene, into a view of its own.
+            const std::optional<std::uint32_t> view =
+                isEditor() && m_services.tools != nullptr ? m_services.tools->gameView() : std::nullopt;
+            const std::uint64_t request = view ? m_services.renderer->requestViewCapture(*view, 320, 180)
+                                               : m_services.renderer->requestCapture(320, 180);
+            m_thumbnailCaptures.emplace(request, std::move(file));
         }
     }
     if (std::optional<SaveGames::Restore> restore = m_saves->takeRestore())
@@ -2254,7 +2259,7 @@ void ApplicationRunner::updateUi(std::chrono::nanoseconds frameTime)
         return;
     }
     // The interface answers where the game is shown: the whole window in the player, the viewport
-    // image in the editor.
+    // image in the editor, or the view of the game beside the scene while it plays there.
     math::Vec2 size{static_cast<float>(m_services.window.pixelSize().width),
                     static_cast<float>(m_services.window.pixelSize().height)};
     // Far outside every canvas, so that nothing is hovered while the pointer is elsewhere.
@@ -2262,13 +2267,13 @@ void ApplicationRunner::updateUi(std::chrono::nanoseconds frameTime)
     bool pointerAvailable = false;
     if (isEditor())
     {
-        const math::Extent2D viewport = m_services.tools->viewportPixels();
-        if (viewport.width == 0 || viewport.height == 0)
+        const math::Extent2D shown = m_services.tools->gamePixels();
+        if (shown.width == 0 || shown.height == 0)
         {
             return;
         }
-        size = math::Vec2{static_cast<float>(viewport.width), static_cast<float>(viewport.height)};
-        if (const std::optional<math::Vec2> inside = m_services.tools->viewportPointer())
+        size = math::Vec2{static_cast<float>(shown.width), static_cast<float>(shown.height)};
+        if (const std::optional<math::Vec2> inside = m_services.tools->gamePointer())
         {
             pointer = *inside;
             pointerAvailable = true;
@@ -2401,6 +2406,11 @@ void ApplicationRunner::buildUi(render::RenderWorld& world)
     const std::optional<tools::InterfaceFrame> edited =
         !m_ui && isEditor() ? m_services.tools->interfaceFrame() : std::nullopt;
     if (!m_ui && !edited)
+    {
+        return;
+    }
+    // The center shows the scene alone: the interface of the game would be drawn over it.
+    if (m_ui && isEditor() && !m_services.tools->gameShown())
     {
         return;
     }

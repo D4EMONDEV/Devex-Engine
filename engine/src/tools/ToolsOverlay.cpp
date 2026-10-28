@@ -351,6 +351,8 @@ void updateEditor(ToolsState& state, scene::Scene& scene, PlayState playState)
         state.panning = false;
         // The game receives the keyboard right away.
         state.focusViewport = playState != PlayState::Editing;
+        state.gameHasKeyboard = true;
+        state.draggingPlaySplit = false;
     }
     state.playState = playState;
 
@@ -435,10 +437,10 @@ void updateEditor(ToolsState& state, scene::Scene& scene, PlayState playState)
                       state.animationPreviewPlaying || state.pickQuery.has_value() || state.awaitedPick != 0 ||
                       (state.audio != nullptr && state.audio->isPreviewing());
 
-    // Gameplay receives the devices the game view uses, and the editor camera flies with them.
+    // Gameplay receives the devices the view of the game uses, and the editor camera flies with them.
     const bool playing = playState != PlayState::Editing;
-    state.capturesKeyboard = !state.hosts.focusedId().empty() && !state.flying && !(playing && state.viewportFocused);
-    state.capturesMouse = state.hosts.pointerTaken() && !state.flying && !(playing && state.viewportHovered);
+    state.capturesKeyboard = !state.hosts.focusedId().empty() && !state.flying && !(playing && state.gameFocused);
+    state.capturesMouse = state.hosts.pointerTaken() && !state.flying && !(playing && state.gameHovered);
 }
 
 // The Devex logo as the icon of the window and its taskbar button.
@@ -551,9 +553,20 @@ bool ToolsOverlay::wantsTextInput() const noexcept
     return m_state->visible && m_state->typing;
 }
 
-math::Extent2D ToolsOverlay::viewportPixels() const noexcept
+math::Extent2D ToolsOverlay::gamePixels() const noexcept
 {
-    return m_state->viewportPixels;
+    return m_state->playState == PlayState::Editing ? m_state->viewportPixels : m_state->gamePixels;
+}
+
+bool ToolsOverlay::gameShown() const noexcept
+{
+    return m_state->playState == PlayState::Editing || m_state->playLayout != detail::PlayLayout::Scene;
+}
+
+std::optional<std::uint32_t> ToolsOverlay::gameView() const noexcept
+{
+    const bool drawn = m_state->playState != PlayState::Editing && m_state->playLayout != detail::PlayLayout::Scene;
+    return drawn ? std::optional(detail::gameViewId) : std::nullopt;
 }
 
 std::optional<InterfaceFrame> ToolsOverlay::interfaceFrame() const noexcept
@@ -561,13 +574,22 @@ std::optional<InterfaceFrame> ToolsOverlay::interfaceFrame() const noexcept
     return m_state->playState == PlayState::Editing && m_state->showViewport ? m_state->interfaceFrame : std::nullopt;
 }
 
-std::optional<math::Vec2> ToolsOverlay::viewportPointer() const noexcept
+std::optional<math::Vec2> ToolsOverlay::gamePointer() const noexcept
 {
-    if (!m_state->viewportHovered || m_state->viewportPixels.width == 0)
+    const ToolsState& state = *m_state;
+    if (state.playState != PlayState::Editing)
+    {
+        if (!state.gameHovered || state.gamePixels.width == 0)
+        {
+            return std::nullopt;
+        }
+        return (state.input.mouse() - state.gameOrigin) * state.pixelsPerPoint;
+    }
+    if (!state.viewportHovered || state.viewportPixels.width == 0)
     {
         return std::nullopt;
     }
-    return (m_state->input.mouse() - m_state->viewportOrigin) * m_state->pixelsPerPoint;
+    return (state.input.mouse() - state.viewportOrigin) * state.pixelsPerPoint;
 }
 
 void ToolsOverlay::update(scene::Scene& scene, core::Duration frameDelta, PlayState playState)
@@ -676,7 +698,14 @@ void ToolsOverlay::prepareRender(scene::Scene& scene, render::RenderWorld& world
     }
     // A hidden viewport still renders, at a size too small to cost anything.
     world.viewport = state.viewportPixels.width > 0 ? state.viewportPixels : math::Extent2D{16, 16};
-    if (playState == PlayState::Editing)
+    // While it plays, the game is drawn through its camera into a view of its own, with its interface,
+    // and the viewport shows the scene through the editor camera as when editing.
+    const bool playing = playState != PlayState::Editing;
+    if (playing && state.playLayout != detail::PlayLayout::Scene && state.gamePixels.width > 0 && state.gamePixels.height > 0)
+    {
+        world.views.push_back(render::RenderView{.id = detail::gameViewId, .camera = world.camera, .extent = state.gamePixels, .interface = true});
+    }
+    if (!playing || state.playLayout != detail::PlayLayout::Game)
     {
         world.camera.view = state.camera.view();
         world.camera.verticalFov = detail::EditorCamera::verticalFov;
@@ -689,7 +718,8 @@ void ToolsOverlay::prepareRender(scene::Scene& scene, render::RenderWorld& world
         state.gizmo.twoD = twoD;
         // The screen of the other kind shows nothing of the scene, as the 3D view of Godot shows
         // nothing of a 2D scene: a neutral sky and the grid, and the interfaces of a 3D scene in 2D.
-        if (detail::screenContent(twoD, scene) != detail::ScreenContent::Scene)
+        // Not while the game plays, which draws from the same lists.
+        if (!playing && detail::screenContent(twoD, scene) != detail::ScreenContent::Scene)
         {
             world.sun = render::RenderSun{};
             world.lights.clear();

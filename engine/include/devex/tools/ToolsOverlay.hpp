@@ -272,10 +272,16 @@ public:
     void setResting(bool resting) noexcept;
 
     // Editor only: the size of the image the game is drawn into, in pixels, and where the mouse
-    // sits inside it. The position is nothing while the pointer is outside the viewport, which the
-    // interface of the game reads so that its buttons answer where the game is shown.
-    [[nodiscard]] math::Extent2D viewportPixels() const noexcept;
-    [[nodiscard]] std::optional<math::Vec2> viewportPointer() const noexcept;
+    // sits inside it: the viewport while editing, the view of the game beside the scene while it
+    // plays. The position is nothing while the pointer is outside it, which the interface of the
+    // game reads so that its buttons answer where the game is shown.
+    [[nodiscard]] math::Extent2D gamePixels() const noexcept;
+    [[nodiscard]] std::optional<math::Vec2> gamePointer() const noexcept;
+    // Editor only: false while the game plays and the center shows the scene alone.
+    [[nodiscard]] bool gameShown() const noexcept;
+    // Editor only: the render::RenderView the game is drawn into while it plays beside the scene,
+    // whose pictures are those of the game (the thumbnails of its saves); nothing otherwise.
+    [[nodiscard]] std::optional<std::uint32_t> gameView() const noexcept;
     // Editor only: while the 2D screen edits a scene, where its interfaces are drawn. Nothing
     // otherwise: the 3D screen does not show them, and a game that plays draws its own.
     [[nodiscard]] std::optional<InterfaceFrame> interfaceFrame() const noexcept;

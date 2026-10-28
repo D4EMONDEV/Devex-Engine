@@ -893,6 +893,113 @@ TEST_CASE("Captures picture the scene of a frame at a small size, without its in
     CHECK(capture.errors().empty());
 }
 
+TEST_CASE("Views draw the scene through other cameras into images the tools show", "[render][gpu]")
+{
+    using devex::math::Vec2;
+    using devex::math::Vec4;
+    using devex::render::UiDraw;
+    using devex::render::UiSource;
+    using devex::render::UiVertex;
+
+    const ErrorCapture capture;
+    {
+        auto platform = devex::platform::Platform::create();
+        REQUIRE(platform.has_value());
+        auto window = platform->createWindow({.width = 320, .height = 240, .vulkan = true, .hidden = true});
+        REQUIRE(window.has_value());
+        auto renderer = devex::render::Renderer::create(*platform, *window, {.validation = true});
+        if (!renderer)
+        {
+            FAIL(std::format("{}", renderer.error()));
+        }
+        auto cube = renderer->createMesh(devex::asset::makeCube());
+        REQUIRE(cube.has_value());
+        const devex::math::Mat4 cubeTransform =
+            devex::math::translate(devex::math::Mat4{1.0f}, devex::math::Vec3{0.0f, 0.0f, -3.0f});
+        // The main camera turns its back on the cube, which the view looks at.
+        const devex::math::Mat4 away =
+            devex::math::rotate(devex::math::Mat4{1.0f}, devex::math::radians(180.0f), devex::math::Vec3{0.0f, 1.0f, 0.0f});
+
+        // A quad of the layer of the tools, read from an image.
+        const auto quad = [](devex::render::RenderWorld& world, Vec2 min, Vec2 max, UiSource source, std::uint32_t surface) {
+            const auto first = static_cast<std::uint32_t>(world.toolsVertices.size());
+            world.toolsVertices.push_back(UiVertex{.position = min, .uv = {0.0f, 0.0f}, .color = Vec4{1.0f}});
+            world.toolsVertices.push_back(UiVertex{.position = {max.x, min.y}, .uv = {1.0f, 0.0f}, .color = Vec4{1.0f}});
+            world.toolsVertices.push_back(UiVertex{.position = max, .uv = {1.0f, 1.0f}, .color = Vec4{1.0f}});
+            world.toolsVertices.push_back(UiVertex{.position = {min.x, max.y}, .uv = {0.0f, 1.0f}, .color = Vec4{1.0f}});
+            const auto firstIndex = static_cast<std::uint32_t>(world.toolsIndices.size());
+            for (const std::uint32_t corner : {0u, 1u, 2u, 0u, 2u, 3u})
+            {
+                world.toolsIndices.push_back(first + corner);
+            }
+            world.toolsDraws.push_back(UiDraw{.source = source, .surface = surface, .firstIndex = firstIndex, .indexCount = 6});
+        };
+
+        std::uint64_t mainCapture = 0;
+        std::uint64_t viewCapture = 0;
+        std::vector<devex::render::CapturedImage> captured;
+        for (int frame = 0; frame < 10; ++frame)
+        {
+            devex::render::RenderWorld& world = renderer->beginFrame();
+            world.environment.color = {1.0f, 0.0f, 0.0f};
+            world.meshes.push_back({.mesh = *cube, .transform = cubeTransform, .objectId = 1, .outlined = true});
+            world.viewport = devex::math::Extent2D{200, 100};
+            world.camera.view = away;
+            // The view changes size once, and takes the interface of the game.
+            world.views.push_back({.id = 7, .extent = frame < 5 ? devex::math::Extent2D{120, 90} : devex::math::Extent2D{90, 120},
+                                   .interface = true});
+            world.uiVertices = {UiVertex{.position = {4.0f, 4.0f}, .color = Vec4{1.0f}}, UiVertex{.position = {40.0f, 4.0f}, .color = Vec4{1.0f}},
+                                UiVertex{.position = {40.0f, 30.0f}, .color = Vec4{1.0f}}};
+            world.uiIndices = {0, 1, 2};
+            world.uiDraws.push_back(UiDraw{.indexCount = 3});
+            quad(world, {0.0f, 0.0f}, {200.0f, 100.0f}, UiSource::SceneImage, 0);
+            quad(world, {200.0f, 0.0f}, {320.0f, 90.0f}, UiSource::View, 7);
+            // A view that is not drawn shows nothing.
+            quad(world, {200.0f, 100.0f}, {320.0f, 240.0f}, UiSource::View, 8);
+            REQUIRE(renderer->endFrame());
+            if (frame == 6)
+            {
+                mainCapture = renderer->requestCapture(160, 160);
+                viewCapture = renderer->requestViewCapture(7, 160, 160);
+            }
+            for (devex::render::CapturedImage& image : renderer->takeCaptures())
+            {
+                captured.push_back(std::move(image));
+            }
+        }
+
+        REQUIRE(captured.size() == 2);
+        const auto byRequest = [&](std::uint64_t request) -> const devex::render::CapturedImage& {
+            return captured[0].request == request ? captured[0] : captured[1];
+        };
+        const devex::render::CapturedImage& main = byRequest(mainCapture);
+        const devex::render::CapturedImage& view = byRequest(viewCapture);
+        CHECK(main.width == 160);
+        CHECK(main.height == 80);
+        // The view keeps its own shape.
+        CHECK(view.width == 90);
+        CHECK(view.height == 120);
+        const auto middle = [](const devex::render::CapturedImage& image) {
+            return (std::size_t{image.height / 2} * image.width + image.width / 2) * 4;
+        };
+        const auto isSky = [](const devex::render::CapturedImage& image, std::size_t pixel) {
+            return image.rgba[pixel] == image.rgba[0] && image.rgba[pixel + 1] == image.rgba[1] && image.rgba[pixel + 2] == image.rgba[2];
+        };
+        // The main image shows the red sky alone; the view, the cube in its middle.
+        CHECK(main.rgba[0] > 100);
+        CHECK(isSky(main, middle(main)));
+        CHECK(view.rgba[0] > 100);
+        CHECK_FALSE(isSky(view, middle(view)));
+        CHECK(renderer->stats().drawCalls > 0);
+    }
+
+    for (const std::string& error : capture.errors())
+    {
+        UNSCOPED_INFO(error);
+    }
+    CHECK(capture.errors().empty());
+}
+
 TEST_CASE("Particles and ribbons blend among the blended surfaces without validation errors", "[render][gpu]")
 {
     const ErrorCapture capture;

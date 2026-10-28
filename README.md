@@ -65,7 +65,8 @@ captures de l'éditeur, scènes de base, entrées, scripts C#, animations, colli
   (simples, découpés en neuf, répétés, retournés, éclairés ou non, triés par couche et par
   ordre), cartes de tuiles en un lot, caméra orthographique, textures filtrées au pixel près,
   rendu dans
-  une texture, sélection sur le
+  une texture, d'autres caméras dessinées dans des images à elles dans la même image (le jeu à
+  côté de la scène dans l'éditeur), sélection sur le
   GPU, contours et lignes d'outils, temps GPU de chaque passe, copies vers le GPU sans attente et
   dans un budget par image ;
 - `Devex::Scene` : entités à UUID, composants en sparse sets, hiérarchie, `.dvxscene`,
@@ -148,7 +149,8 @@ captures de l'éditeur, scènes de base, entrées, scripts C#, animations, colli
   fichiers et dossiers créés, supprimés, renommés en place avec F2 et déplacés par un glisser sur un
   dossier ou *Move To...*, leurs UUID gardés),
   onglets de scènes, viewport et sa
-  barre d'outils, caméra libre, sélection multiple (Ctrl et Maj dans l'arbre, rectangle dans la
+  barre d'outils, scène et jeu côte à côte pendant Play (la partie se change dans la scène, le jeu a
+  sa caméra, son interface et la forme choisie), caméra libre, sélection multiple (Ctrl et Maj dans l'arbre, rectangle dans la
   vue), gizmos et inspecteur sur plusieurs entités, copier, coller et dupliquer par le
   presse-papiers, renommage dans l'arbre, entités masquées dans la vue, matériaux glissés sur les
   objets, préfabs (glisser-déposer, valeurs

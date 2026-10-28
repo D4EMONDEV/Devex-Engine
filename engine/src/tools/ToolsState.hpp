@@ -82,6 +82,28 @@ class Clip;
 
 namespace devex::tools::detail {
 
+// What the center shows while the game plays.
+enum class PlayLayout : std::uint8_t
+{
+    // The scene through the editor camera beside the game.
+    Split,
+    Scene,
+    Game,
+};
+
+// The shape of the image of the game: the room of its view, the window of the project, or a ratio.
+enum class GameAspect : std::uint8_t
+{
+    Free,
+    Project,
+    Wide,
+    Wider,
+    Standard,
+};
+
+// The view the game is drawn into while it plays, beside the scene (render::RenderView::id).
+inline constexpr std::uint32_t gameViewId = 1;
+
 class EditorUiKit;
 struct ProjectManagerUi;
 struct FileSystemUi;
@@ -874,6 +896,21 @@ struct DEVEX_API ToolsState
     bool viewportFocused = false;
     // Gives the viewport the keyboard on its next frame, as when play starts.
     bool focusViewport = false;
+    // While the game plays, the center shows the scene through the editor camera beside the game,
+    // or one of them alone. The scene keeps the viewport fields above; the game has these.
+    PlayLayout playLayout = PlayLayout::Split;
+    GameAspect gameAspect = GameAspect::Free;
+    // The share of the width the scene takes beside the game, and whether the bar between them is
+    // being dragged.
+    float playSplit = 0.5f;
+    bool draggingPlaySplit = false;
+    // Which of the two was clicked last: it has the keyboard when the viewport has it.
+    bool gameHasKeyboard = true;
+    // The image of the game: its size in pixels, its top left corner in points of the window.
+    math::Extent2D gamePixels;
+    math::Vec2 gameOrigin{0.0f};
+    bool gameHovered = false;
+    bool gameFocused = false;
     bool flying = false;
     bool orbiting = false;
     bool panning = false;

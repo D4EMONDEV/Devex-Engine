@@ -36,6 +36,7 @@ constexpr float tabOverlap = 6.0f;
 // from 100.
 constexpr std::size_t tabMenuOwner = 200;
 constexpr std::size_t languageMenuOwner = 201;
+constexpr std::size_t aspectMenuOwner = 202;
 
 // The menu of a scene tab, as Godot's: closing it, the others, those at its right or all of them,
 // and finding its file. It holds the tabs by their ids, which stay the same when tabs move.
@@ -92,6 +93,50 @@ constexpr std::size_t languageMenuOwner = 201;
     return entries;
 }
 
+// What the shape of the game is called in the toolbar.
+[[nodiscard]] std::string aspectLabel(const ToolsState& state)
+{
+    switch (state.gameAspect)
+    {
+    case GameAspect::Free:
+        break;
+    case GameAspect::Project:
+        if (state.database != nullptr)
+        {
+            const asset::WindowSettings& window = state.database->project().window;
+            return std::format("{} \u00d7 {}", window.width, window.height);
+        }
+        return "Project";
+    case GameAspect::Wide:
+        return "16:9";
+    case GameAspect::Wider:
+        return "16:10";
+    case GameAspect::Standard:
+        return "4:3";
+    }
+    return "Free Aspect";
+}
+
+// The shapes the game may be shown in, with bands around it.
+[[nodiscard]] std::vector<MenuEntry> aspectMenu(const ToolsState& state)
+{
+    const auto choose = [](GameAspect aspect) { return [aspect](ToolsState& tools, scene::Scene&) { tools.gameAspect = aspect; }; };
+    std::vector<MenuEntry> entries;
+    entries.push_back({.label = "Free Aspect", .checked = state.gameAspect == GameAspect::Free, .action = choose(GameAspect::Free)});
+    std::string project = "Window of the project";
+    if (state.database != nullptr)
+    {
+        const asset::WindowSettings& window = state.database->project().window;
+        project = std::format("Window of the project ({} \u00d7 {})", window.width, window.height);
+    }
+    entries.push_back({.label = std::move(project), .checked = state.gameAspect == GameAspect::Project, .action = choose(GameAspect::Project)});
+    entries.push_back(MenuEntry::line());
+    entries.push_back({.label = "16:9", .checked = state.gameAspect == GameAspect::Wide, .action = choose(GameAspect::Wide)});
+    entries.push_back({.label = "16:10", .checked = state.gameAspect == GameAspect::Wider, .action = choose(GameAspect::Wider)});
+    entries.push_back({.label = "4:3", .checked = state.gameAspect == GameAspect::Standard, .action = choose(GameAspect::Standard)});
+    return entries;
+}
+
 } // namespace
 
 struct ViewportHeaderUi : PanelBuilder
@@ -133,6 +178,12 @@ struct ViewportHeaderUi : PanelBuilder
     Entity banner;
     Entity bannerIcon;
     Entity bannerText;
+    // While the game plays, at the right: whether it runs, how the center shows it, and its shape.
+    Entity playSide;
+    Entity playIcon;
+    std::array<Button, 3> layoutButtons{};
+    Button aspect;
+    Entity aspectText;
     std::array<Button, 4> toolButtons{};
     Button space;
     Button snap;
@@ -280,6 +331,21 @@ void ViewportHeaderUi::build(EditorUiKit& kit)
     scene().add<scene::UiLayout>(banner, scene::UiLayout{.kind = scene::UiLayoutKind::Row, .spacing = font * 0.5f, .align = scene::TextAlign::Left});
     bannerIcon = icon(kit, banner, middle({iconSize, iconSize}), Icon::Play, "icon_accent");
     bannerText = text(banner, middle({font * 40.0f, size}), "", "accent");
+
+    playSide = add(bar, "Play", whole(math::Vec4{side, 0.0f, side, 0.0f}));
+    scene().add<scene::UiLayout>(playSide, scene::UiLayout{.kind = scene::UiLayoutKind::Row, .spacing = 2.0f, .align = scene::TextAlign::Right});
+    playIcon = icon(kit, playSide, middle({iconSize, iconSize}), Icon::Play, "icon_accent");
+    gap(playSide);
+    layoutButtons[0] = tool(playSide, Icon::Columns, "The scene and the game side by side: drag the bar between them");
+    layoutButtons[1] = tool(playSide, Icon::Cuboid, "The scene alone, through the editor camera");
+    layoutButtons[2] = tool(playSide, Icon::Monitor, "The game alone");
+    gap(playSide);
+    aspect.entity = add(playSide, "Aspect", middle({font * 6.0f, size}), "bar_button");
+    scene().add<scene::UiImage>(aspect.entity);
+    scene().add<scene::UiButton>(aspect.entity);
+    aspectText = text(aspect.entity, UiRect{.anchorMin = {0.0f, 0.0f}, .anchorMax = {0.0f, 1.0f}, .offsetMin = {font * 0.5f, 0.0f}, .offsetMax = {font * 5.5f, 0.0f}},
+                      "", "text");
+    tooltip(aspect.entity, "The shape of the game: the room of its view, the window of the project, or a ratio, with bands around it");
 }
 
 void ViewportHeaderUi::fillTabs(ToolsState& state, EditorUiKit& kit, const ActiveDocument& live, bool editing)
@@ -464,15 +530,33 @@ void ViewportHeaderUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene&
         scroll.offset.x = std::clamp(scroll.offset.x, 0.0f, std::max(tabsWidth - room, 0.0f));
     }
 
-    // The toolbar, or what the game is doing.
+    // The toolbar, or what the game is doing; while it plays beside the scene, the tools of the scene too.
     scene().get<scene::UiImage>(bar).color = linearColor(colors.panel);
-    scene().get<UiRect>(tools).visible = editing;
+    const bool sceneTools = editing || state.playLayout != PlayLayout::Game;
+    scene().get<UiRect>(tools).visible = sceneTools;
     scene().get<UiRect>(viewSide).visible = editing;
-    scene().get<UiRect>(banner).visible = !editing;
+    scene().get<UiRect>(banner).visible = !editing && !sceneTools;
+    scene().get<UiRect>(playSide).visible = !editing;
     const bool twoD = state.camera.isTwoD();
     const bool local = state.gizmo.space == GizmoSpace::Local;
     const std::array<EditorTool, 4> kinds{EditorTool::Select, EditorTool::Move, EditorTool::Rotate, EditorTool::Scale};
-    if (editing)
+    const std::array<PlayLayout, 3> layouts{PlayLayout::Split, PlayLayout::Scene, PlayLayout::Game};
+    if (!editing)
+    {
+        const bool paused = state.playState == PlayState::Paused;
+        scene().get<scene::UiImage>(playIcon).texture = kit.icon(paused ? Icon::Pause : Icon::Play);
+        for (std::size_t index = 0; index < layoutButtons.size(); ++index)
+        {
+            light(layoutButtons[index], state.playLayout == layouts[index]);
+        }
+        const std::string label = aspectLabel(state);
+        fit(kit, aspectText, label);
+        UiRect& button = scene().get<UiRect>(aspect.entity);
+        button.offsetMax.x = button.offsetMin.x + scene().get<UiRect>(aspectText).offsetMax.x + font * 0.5f;
+        button.style = barStyle(world, aspect.entity, false);
+        scene().get<UiRect>(aspect.entity).visible = state.playLayout != PlayLayout::Scene;
+    }
+    if (sceneTools)
     {
         for (std::size_t index = 0; index < toolButtons.size(); ++index)
         {
@@ -531,7 +615,7 @@ void ViewportHeaderUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene&
         const bool paused = state.playState == PlayState::Paused;
         scene().get<scene::UiImage>(bannerIcon).texture = kit.icon(paused ? Icon::Pause : Icon::Play);
         scene::UiText& word = scene().get<scene::UiText>(bannerText);
-        const std::string_view said = paused ? "Paused" : "Playing: click the view to give the game the keyboard";
+        const std::string_view said = paused ? "Paused" : "Playing: click the game to give it the keyboard";
         if (word.text != said)
         {
             word.text = std::string(said);
@@ -543,7 +627,21 @@ void ViewportHeaderUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene&
     const float pixelsPerPoint = editorScreen().pixelsPerPoint;
     panel.update(kit, delta, zoom, (std::ceil((tabsHeight() + barHeight()) * zoom) + 0.01f) / pixelsPerPoint);
 
-    if (editing)
+    if (!editing)
+    {
+        for (std::size_t index = 0; index < layoutButtons.size(); ++index)
+        {
+            if (world.wasClicked(layoutButtons[index].entity))
+            {
+                state.playLayout = layouts[index];
+            }
+        }
+        if (world.wasClicked(aspect.entity))
+        {
+            openEditorMenu(state, aspectMenu(state), state.input.mouse(), aspectMenuOwner);
+        }
+    }
+    if (sceneTools)
     {
         for (std::size_t index = 0; index < toolButtons.size(); ++index)
         {

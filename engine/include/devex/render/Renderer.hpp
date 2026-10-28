@@ -192,6 +192,8 @@ public:
     // shape of the scene, with the scene alone: no interface, no tools. Returns the request the
     // answer carries.
     [[nodiscard]] std::uint64_t requestCapture(std::uint32_t maxWidth, std::uint32_t maxHeight);
+    // The same, of the RenderWorld::views entry of that id, the next frame that draws it.
+    [[nodiscard]] std::uint64_t requestViewCapture(std::uint32_t view, std::uint32_t maxWidth, std::uint32_t maxHeight);
     // The pictures received since the last call, once the GPU has completed their frames, usually
     // two frames later.
     [[nodiscard]] std::vector<CapturedImage> takeCaptures();

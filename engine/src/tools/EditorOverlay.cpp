@@ -905,8 +905,9 @@ void addEditorOverlay(ToolsState& state, scene::Scene& scene, render::RenderWorl
             collectSubtree(scene, entity, hidden);
         }
     }
-    // What is hidden is neither drawn nor picked; the game still shows it when it runs.
-    if (!hidden.empty())
+    // What is hidden is neither drawn nor picked; the game still shows it when it runs, and so does
+    // the scene beside it, which draws from the same lists.
+    if (!hidden.empty() && state.playState == PlayState::Editing)
     {
         std::erase_if(world.sprites, [&hidden](const render::RenderSprite& sprite) {
             return sprite.objectId > 0 && hidden.contains(sprite.objectId - 1);

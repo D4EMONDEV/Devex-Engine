@@ -384,6 +384,8 @@ enum class UiSource : std::uint8_t
     SceneImage,
     // The image of the RenderWorld::uiSurfaces entry whose id is UiDraw::surface.
     Surface,
+    // The image of the RenderWorld::views entry whose id is UiDraw::surface.
+    View,
 };
 
 // One batch of the interface: the triangles that share a texture and a shape.
@@ -420,6 +422,21 @@ struct DEVEX_API UiSurface
     std::vector<UiVertex> vertices;
     std::vector<std::uint32_t> indices;
     std::vector<UiDraw> draws;
+};
+
+// The scene seen through another camera, into an image of its own that the tools show with
+// UiSource::View: the game the editor plays, beside the scene its viewport shows. The view draws
+// the scene as the main image does, without the lines, outlines and picking of the tools.
+struct DEVEX_API RenderView
+{
+    // Chosen by the caller and kept from frame to frame: a view keeps what it carries between
+    // frames by it, such as the history of its antialiasing and its exposure.
+    std::uint32_t id = 0;
+    RenderCamera camera;
+    // In pixels, at most 8192 on each side.
+    math::Extent2D extent;
+    // Draws the interface of RenderWorld::uiDraws over this view rather than over the main image.
+    bool interface = false;
 };
 
 // Asks which objects are visible in a rectangle of the scene image, one pixel for a click.
@@ -488,6 +505,9 @@ struct DEVEX_API RenderWorld
     // Size in pixels of the image the scene is drawn into for the tools, which show it with
     // UiSource::SceneImage. Zero draws the scene over the whole window.
     math::Extent2D viewport;
+    // Other cameras, each drawn into an image of its own before the main image, for the tools: at
+    // most four.
+    std::vector<RenderView> views;
     // Pairs of vertices drawn as lines over the scene, hidden behind nearer surfaces.
     std::vector<OverlayVertex> sceneLines;
     // Pairs of vertices drawn as lines over everything.

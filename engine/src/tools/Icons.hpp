@@ -43,6 +43,7 @@ namespace devex::tools::detail {
     ICON(Close, "x")                                 \
     ICON(CloudSun, "cloud-sun")                      \
     ICON(Code, "code")                               \
+    ICON(Columns, "columns-2")                       \
     ICON(Copy, "copy")                               \
     ICON(CopyPlus, "copy-plus")                      \
     ICON(Crosshair, "crosshair")                     \

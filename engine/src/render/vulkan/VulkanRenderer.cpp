@@ -238,13 +238,30 @@ VulkanRenderer::~VulkanRenderer()
         destroyPresentSemaphores();
         for (FrameContext& frame : m_frames)
         {
-            vkDestroySemaphore(device, frame.imageAcquired, nullptr);
-            vkDestroyFence(device, frame.completed, nullptr);
-            vkDestroyQueryPool(device, frame.timestamps, nullptr);
-            vkDestroyCommandPool(device, frame.commandPool, nullptr);
+            destroyFrameContext(frame);
+        }
+        for (const std::unique_ptr<ExtraView>& view : m_extraViews)
+        {
+            for (FrameContext& frame : view->frames)
+            {
+                destroyFrameContext(frame);
+            }
         }
     }
     rendererExists.store(false);
+}
+
+void VulkanRenderer::destroyFrameContext(FrameContext& frame) noexcept
+{
+    const VkDevice device = m_device.handle();
+    vkDestroySemaphore(device, frame.imageAcquired, nullptr);
+    vkDestroyFence(device, frame.completed, nullptr);
+    vkDestroyQueryPool(device, frame.timestamps, nullptr);
+    vkDestroyCommandPool(device, frame.commandPool, nullptr);
+    frame.imageAcquired = VK_NULL_HANDLE;
+    frame.completed = VK_NULL_HANDLE;
+    frame.timestamps = VK_NULL_HANDLE;
+    frame.commandPool = VK_NULL_HANDLE;
 }
 
 const GpuInfo& VulkanRenderer::gpu() const noexcept
@@ -759,6 +776,16 @@ core::Result<void> VulkanRenderer::endFrame()
             return environment;
         }
     }
+    // The views first, each in its own submission, before the frame that shows them.
+    m_viewDrawCalls = 0;
+    if (!m_world.views.empty())
+    {
+        DEVEX_PROFILE_SCOPE("Views");
+        if (core::Result<void> views = renderViews(frameSlot); !views)
+        {
+            return views;
+        }
+    }
 
     std::uint32_t imageIndex = 0;
     VkResult acquired = VK_SUCCESS;
@@ -799,28 +826,6 @@ core::Result<void> VulkanRenderer::endFrame()
                         ? math::Extent2D{std::min(viewport.width, maxViewportSize),
                                          std::min(viewport.height, maxViewportSize)}
                         : m_swapchain->extent();
-    const float aspectRatio = static_cast<float>(m_sceneExtent.width) / static_cast<float>(m_sceneExtent.height);
-    {
-        DEVEX_PROFILE_SCOPE("Lights");
-        if (core::Result<void> lights = uploadLights(frame, aspectRatio); !lights)
-        {
-            return lights;
-        }
-    }
-    {
-        DEVEX_PROFILE_SCOPE("Bones");
-        if (core::Result<void> bones = uploadBones(frame); !bones)
-        {
-            return bones;
-        }
-    }
-    {
-        DEVEX_PROFILE_SCOPE("Particles");
-        if (core::Result<void> particles = uploadParticles(frame); !particles)
-        {
-            return particles;
-        }
-    }
     if (const std::optional<PickRequest>& pick = m_world.pick; pick)
     {
         // A pixel outside the image shows nothing, which needs no GPU work.
@@ -839,11 +844,12 @@ core::Result<void> VulkanRenderer::endFrame()
             m_pickResults.push_back({.request = pick->id});
         }
     }
-    // One capture a frame, the oldest first, fitted to the shape of the scene.
-    if (!m_captureRequests.empty() && m_sceneExtent.width > 0 && m_sceneExtent.height > 0)
+    // One capture a frame, the oldest of the main image first, fitted to the shape of the scene.
+    const auto captured = std::ranges::find_if(m_captureRequests, [](const CaptureRequest& request) { return !request.view; });
+    if (captured != m_captureRequests.end() && m_sceneExtent.width > 0 && m_sceneExtent.height > 0)
     {
-        const CaptureRequest request = m_captureRequests.front();
-        m_captureRequests.pop_front();
+        const CaptureRequest request = *captured;
+        m_captureRequests.erase(captured);
         const float scale = std::min({1.0f,
                                       static_cast<float>(std::min(request.maxWidth, maxCaptureSize)) / static_cast<float>(m_sceneExtent.width),
                                       static_cast<float>(std::min(request.maxHeight, maxCaptureSize)) / static_cast<float>(m_sceneExtent.height)});
@@ -852,44 +858,13 @@ core::Result<void> VulkanRenderer::endFrame()
                                std::max(1u, static_cast<std::uint32_t>(std::lround(static_cast<float>(m_sceneExtent.height) * scale)))};
     }
 
-    const RenderSun& sun = m_world.sun;
-    const bool sunEnabled = std::max({sun.illuminance.r, sun.illuminance.g, sun.illuminance.b}) > 0.0f;
-    const bool drawShadows = sunEnabled && sun.castShadows && sun.shadowDistance > m_world.camera.nearPlane;
-    m_cascades.reset();
-    if (drawShadows)
+    core::Result<bool> prepared = prepareScene(frame, true);
+    if (!prepared)
     {
-        m_cascades = computeShadowCascades(math::inverse(m_world.camera.view),
-                                           ViewVolume::of(m_world.camera, aspectRatio), m_world.camera.nearPlane,
-                                           sun.shadowDistance, sun.direction, shadowMapSize);
+        return std::unexpected(prepared.error());
     }
-    if (core::Result<void> history = ensureHistory(); !history)
-    {
-        return history;
-    }
-    // Halton points cover a pixel evenly, whatever the number of frames that are kept.
+    const bool drawShadows = *prepared;
     const bool antialiased = m_world.camera.antialiasing == Antialiasing::Temporal;
-    const auto sample = static_cast<std::uint32_t>(m_frameIndex % taaSampleCount);
-    m_jitter = antialiased ? math::Vec2{(haltonPoint(sample + 1, 2) - 0.5f) * 2.0f / static_cast<float>(m_sceneExtent.width),
-                                        (haltonPoint(sample + 1, 3) - 0.5f) * 2.0f / static_cast<float>(m_sceneExtent.height)}
-                           : math::Vec2{0.0f};
-    {
-        DEVEX_PROFILE_SCOPE("Scene data");
-        writeSceneData(frame, m_cascades);
-    }
-    {
-        DEVEX_PROFILE_SCOPE("Sky shader");
-        if (core::Result<void> sky = updateSkyShaderEnvironment(frame); !sky)
-        {
-            return sky;
-        }
-    }
-    {
-        DEVEX_PROFILE_SCOPE("Sprites");
-        if (core::Result<void> sprites = uploadSprites(frame); !sprites)
-        {
-            return sprites;
-        }
-    }
 
     DEVEX_PROFILE_SCOPE("Record and submit");
     core::Result<std::uint32_t> recorded = recordFrame(frame, frameSlot, imageIndex, drawShadows);
@@ -897,7 +872,7 @@ core::Result<void> VulkanRenderer::endFrame()
     {
         return std::unexpected(recorded.error());
     }
-    m_lastDrawCalls = *recorded;
+    m_lastDrawCalls = *recorded + m_viewDrawCalls;
     m_lastCulledInstances = m_culledInstances;
     m_lastLightCount = static_cast<std::uint32_t>(m_world.lights.size());
     m_historyValid = antialiased;
@@ -956,6 +931,252 @@ core::Result<void> VulkanRenderer::endFrame()
     return {};
 }
 
+core::Result<bool> VulkanRenderer::prepareScene(FrameContext& frame, bool main)
+{
+    const float aspectRatio = static_cast<float>(m_sceneExtent.width) / static_cast<float>(m_sceneExtent.height);
+    {
+        DEVEX_PROFILE_SCOPE("Lights");
+        if (core::Result<void> lights = uploadLights(frame, aspectRatio); !lights)
+        {
+            return std::unexpected(lights.error());
+        }
+    }
+    {
+        DEVEX_PROFILE_SCOPE("Bones");
+        if (core::Result<void> bones = uploadBones(frame); !bones)
+        {
+            return std::unexpected(bones.error());
+        }
+    }
+    {
+        DEVEX_PROFILE_SCOPE("Particles");
+        if (core::Result<void> particles = uploadParticles(frame); !particles)
+        {
+            return std::unexpected(particles.error());
+        }
+    }
+
+    const RenderSun& sun = m_world.sun;
+    const bool sunEnabled = std::max({sun.illuminance.r, sun.illuminance.g, sun.illuminance.b}) > 0.0f;
+    const bool drawShadows = sunEnabled && sun.castShadows && sun.shadowDistance > m_world.camera.nearPlane;
+    m_cascades.reset();
+    if (drawShadows)
+    {
+        m_cascades = computeShadowCascades(math::inverse(m_world.camera.view),
+                                           ViewVolume::of(m_world.camera, aspectRatio), m_world.camera.nearPlane,
+                                           sun.shadowDistance, sun.direction, shadowMapSize);
+    }
+    if (core::Result<void> history = ensureHistory(); !history)
+    {
+        return std::unexpected(history.error());
+    }
+    // Halton points cover a pixel evenly, whatever the number of frames that are kept.
+    const bool antialiased = m_world.camera.antialiasing == Antialiasing::Temporal;
+    const auto sample = static_cast<std::uint32_t>(m_frameIndex % taaSampleCount);
+    m_jitter = antialiased ? math::Vec2{(haltonPoint(sample + 1, 2) - 0.5f) * 2.0f / static_cast<float>(m_sceneExtent.width),
+                                        (haltonPoint(sample + 1, 3) - 0.5f) * 2.0f / static_cast<float>(m_sceneExtent.height)}
+                           : math::Vec2{0.0f};
+    {
+        DEVEX_PROFILE_SCOPE("Scene data");
+        writeSceneData(frame, m_cascades);
+    }
+    // The light a sky shader gives the scene is baked once a frame, from the main image.
+    if (main)
+    {
+        DEVEX_PROFILE_SCOPE("Sky shader");
+        if (core::Result<void> sky = updateSkyShaderEnvironment(frame); !sky)
+        {
+            return std::unexpected(sky.error());
+        }
+    }
+    {
+        DEVEX_PROFILE_SCOPE("Sprites");
+        if (core::Result<void> sprites = uploadSprites(frame); !sprites)
+        {
+            return std::unexpected(sprites.error());
+        }
+    }
+    return drawShadows;
+}
+
+VkDescriptorSet VulkanRenderer::frameDescriptors(std::uint32_t frameSlot) const noexcept
+{
+    return m_descriptors->frame(m_setBase + frameSlot);
+}
+
+void VulkanRenderer::swapViewState(ViewState& state) noexcept
+{
+    std::swap(m_history, state.history);
+    std::swap(m_historyStates, state.historyStates);
+    std::swap(m_historyExtent, state.historyExtent);
+    std::swap(m_historyValid, state.historyValid);
+    std::swap(m_previousViewProjection, state.previousViewProjection);
+    std::swap(m_ev100, state.ev100);
+    std::swap(m_targetEv100, state.targetEv100);
+    std::swap(m_exposureInitialized, state.exposureInitialized);
+    std::swap(m_lastExposureUpdate, state.lastExposureUpdate);
+}
+
+core::Result<void> VulkanRenderer::renderViews(std::uint32_t frameSlot)
+{
+    std::size_t drawn = 0;
+    for (const RenderView& wanted : m_world.views)
+    {
+        if (drawn == maxViews || wanted.extent.width == 0 || wanted.extent.height == 0)
+        {
+            continue;
+        }
+        auto found = std::ranges::find_if(m_extraViews, [&](const std::unique_ptr<ExtraView>& view) { return view->id == wanted.id; });
+        if (found == m_extraViews.end() && m_extraViews.size() < maxViews)
+        {
+            auto created = std::make_unique<ExtraView>();
+            created->id = wanted.id;
+            created->setBase = static_cast<std::uint32_t>((m_extraViews.size() + 1) * framesInFlight);
+            for (FrameContext& frame : created->frames)
+            {
+                if (core::Result<void> made = createFrameContext(frame); !made)
+                {
+                    return made;
+                }
+            }
+            m_extraViews.push_back(std::move(created));
+            found = m_extraViews.end() - 1;
+        }
+        else if (found == m_extraViews.end())
+        {
+            // All the places are taken: the one drawn the longest ago is given to the new view, which
+            // starts without anything carried from previous frames.
+            found = std::ranges::min_element(m_extraViews, {}, [&](const std::unique_ptr<ExtraView>& view) {
+                return view->drawnFrame == m_frameIndex ? m_frameIndex : view->drawnFrame + 1;
+            });
+            if ((*found)->drawnFrame == m_frameIndex)
+            {
+                continue;
+            }
+            DEVEX_VK_TRY(vkDeviceWaitIdle, m_device.handle());
+            (*found)->id = wanted.id;
+            (*found)->state = ViewState{};
+        }
+        if (core::Result<void> rendered = renderView(**found, wanted, frameSlot); !rendered)
+        {
+            return rendered;
+        }
+        ++drawn;
+    }
+    return {};
+}
+
+core::Result<void> VulkanRenderer::renderView(ExtraView& view, const RenderView& wanted, std::uint32_t frameSlot)
+{
+    const VkDevice device = m_device.handle();
+    FrameContext& frame = view.frames[frameSlot];
+    {
+        DEVEX_PROFILE_SCOPE("Wait for the GPU");
+        DEVEX_VK_TRY(vkWaitForFences, device, 1, &frame.completed, VK_TRUE, noTimeout);
+    }
+    frame.uploads.clear();
+    reportPassTimes(frame);
+    readCapture(frame);
+
+    // The images the view is drawn into, at its size; the frames in flight may still show the old ones.
+    const math::Extent2D extent{std::min(wanted.extent.width, maxViewportSize), std::min(wanted.extent.height, maxViewportSize)};
+    if (view.imageExtent != extent || !view.images[frameSlot])
+    {
+        DEVEX_VK_TRY(vkDeviceWaitIdle, device);
+        const VkFormat format = m_swapchain->format();
+        const VkFormat toolsFormat = m_swapchain->toolsFormat();
+        for (std::size_t index = 0; index < view.images.size(); ++index)
+        {
+            core::Result<Image> image = Image::create(m_device, m_allocator,
+                                                      {
+                                                          .format = format,
+                                                          .extent = extent,
+                                                          .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+                                                                   VK_IMAGE_USAGE_SAMPLED_BIT,
+                                                          .alternateFormat = toolsFormat != format ? toolsFormat
+                                                                                                   : VK_FORMAT_UNDEFINED,
+                                                      });
+            if (!image)
+            {
+                return std::unexpected(image.error());
+            }
+            view.images[index] = std::move(*image);
+            view.imageStates[index] = ImageState::Undefined;
+        }
+        view.imageExtent = extent;
+    }
+
+    // The renderer records the view as it records its main image: with the camera, the size and what
+    // the view carries between frames, all given back once it is submitted, whatever happens.
+    struct ViewScope
+    {
+        VulkanRenderer& renderer;
+        ExtraView& view;
+        RenderCamera camera;
+        math::Extent2D viewport;
+
+        ~ViewScope()
+        {
+            renderer.m_world.camera = camera;
+            renderer.m_world.viewport = viewport;
+            renderer.swapViewState(view.state);
+            renderer.m_setBase = 0;
+        }
+    };
+    swapViewState(view.state);
+    const ViewScope scope{*this, view, std::exchange(m_world.camera, wanted.camera), std::exchange(m_world.viewport, extent)};
+    m_setBase = view.setBase;
+    view.interface = wanted.interface;
+    m_sceneExtent = extent;
+    updateExposure(frame);
+
+    // One capture of this view a frame, the oldest first.
+    const auto captured = std::ranges::find_if(m_captureRequests, [&](const CaptureRequest& request) { return request.view == wanted.id; });
+    if (captured != m_captureRequests.end())
+    {
+        const CaptureRequest request = *captured;
+        m_captureRequests.erase(captured);
+        const float scale = std::min({1.0f,
+                                      static_cast<float>(std::min(request.maxWidth, maxCaptureSize)) / static_cast<float>(extent.width),
+                                      static_cast<float>(std::min(request.maxHeight, maxCaptureSize)) / static_cast<float>(extent.height)});
+        frame.captureRequest = request.id;
+        frame.captureExtent = {std::max(1u, static_cast<std::uint32_t>(std::lround(static_cast<float>(extent.width) * scale))),
+                               std::max(1u, static_cast<std::uint32_t>(std::lround(static_cast<float>(extent.height) * scale)))};
+    }
+
+    if (core::Result<void> materials = updateFrameMaterials(frame); !materials)
+    {
+        return materials;
+    }
+    core::Result<bool> prepared = prepareScene(frame, false);
+    if (!prepared)
+    {
+        return std::unexpected(prepared.error());
+    }
+    core::Result<std::uint32_t> recorded = recordFrame(frame, frameSlot, 0, *prepared, &view);
+    if (!recorded)
+    {
+        return std::unexpected(recorded.error());
+    }
+    m_viewDrawCalls += *recorded;
+    m_historyValid = m_world.camera.antialiasing == Antialiasing::Temporal;
+    m_previousViewProjection = m_unjitteredViewProjection;
+
+    const VkCommandBufferSubmitInfo commandBufferInfo{
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO,
+        .commandBuffer = frame.commandBuffer,
+    };
+    const VkSubmitInfo2 submitInfo{
+        .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2,
+        .commandBufferInfoCount = 1,
+        .pCommandBufferInfos = &commandBufferInfo,
+    };
+    DEVEX_VK_TRY(vkResetFences, device, 1, &frame.completed);
+    DEVEX_VK_TRY(vkQueueSubmit2, m_device.queue(), 1, &submitInfo, frame.completed);
+    view.drawnFrame = m_frameIndex;
+    return {};
+}
+
 void VulkanRenderer::reportPassTimes(FrameContext& frame)
 {
     const std::uint32_t count = std::exchange(frame.timestampCount, 0);
@@ -988,7 +1209,6 @@ void VulkanRenderer::reportPassTimes(FrameContext& frame)
 
 core::Result<void> VulkanRenderer::createFrameContexts()
 {
-    const VkDevice device = m_device.handle();
     // The queue must write timestamps for the passes to be timed on the GPU; most do.
     std::uint32_t familyCount = 0;
     vkGetPhysicalDeviceQueueFamilyProperties(m_device.physicalDevice(), &familyCount, nullptr);
@@ -1001,6 +1221,18 @@ core::Result<void> VulkanRenderer::createFrameContexts()
     m_timestampPeriod = validBits > 0 ? static_cast<double>(properties.limits.timestampPeriod) : 0.0;
     m_timestampMask = validBits >= 64 ? ~std::uint64_t{0} : (std::uint64_t{1} << validBits) - 1;
     for (FrameContext& frame : m_frames)
+    {
+        if (core::Result<void> created = createFrameContext(frame); !created)
+        {
+            return created;
+        }
+    }
+    return {};
+}
+
+core::Result<void> VulkanRenderer::createFrameContext(FrameContext& frame)
+{
+    const VkDevice device = m_device.handle();
     {
         const VkCommandPoolCreateInfo poolInfo{
             .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
@@ -1081,9 +1313,10 @@ core::Result<void> VulkanRenderer::createFrameContexts()
 core::Result<void> VulkanRenderer::createDefaultResources()
 {
 
+    // A bank of frame sets for the main frame, and one for each view drawn beside it.
     core::Result<DescriptorSets> descriptors = DescriptorSets::create(
         m_device, std::min(m_device.maxBindlessTextures(), maxTextures),
-        static_cast<std::uint32_t>(framesInFlight));
+        static_cast<std::uint32_t>(framesInFlight * (1 + maxViews)));
     if (!descriptors)
     {
         return std::unexpected(descriptors.error());
@@ -2623,7 +2856,7 @@ std::uint32_t VulkanRenderer::drawMeshes(VkCommandBuffer commandBuffer, VkDevice
                                          std::uint32_t cascade, std::uint32_t frameSlot,
                                          VkDeviceAddress previousBones, std::span<const std::uint32_t> only) const
 {
-    const std::array sets{m_descriptors->global(), m_descriptors->frame(frameSlot)};
+    const std::array sets{m_descriptors->global(), frameDescriptors(frameSlot)};
     const Pipeline* boundPipeline = nullptr;
     std::uint32_t drawCalls = 0;
     for (const std::uint32_t index : only.empty() ? instancesOf(pass, cascade) : only)
@@ -2863,7 +3096,7 @@ std::uint32_t VulkanRenderer::drawParticles(VkCommandBuffer commandBuffer, VkDev
     const Pipeline& pipeline = shader != nullptr && shader->scene ? *shader->scene
                                : draw.ribbons                     ? *m_ribbonPipeline
                                                                   : *m_particlePipeline;
-    const std::array sets{m_descriptors->global(), m_descriptors->frame(frameSlot)};
+    const std::array sets{m_descriptors->global(), frameDescriptors(frameSlot)};
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.handle());
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.layout(), 0,
                             static_cast<std::uint32_t>(sets.size()), sets.data(), 0, nullptr);
@@ -3194,7 +3427,7 @@ std::uint32_t VulkanRenderer::drawSpriteRun(VkCommandBuffer commandBuffer, VkDev
         return 0;
     }
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.handle());
-    const std::array sets{m_descriptors->global(), m_descriptors->frame(frameSlot)};
+    const std::array sets{m_descriptors->global(), frameDescriptors(frameSlot)};
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.layout(), 0,
                             frameSet ? 2U : 1U, sets.data(), 0, nullptr);
     const SpritePushConstants constants{
@@ -3303,7 +3536,7 @@ core::Result<void> VulkanRenderer::uploadParticles(FrameContext& frame) const
 }
 
 core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std::uint32_t frameSlot,
-                                                        std::uint32_t imageIndex, bool drawShadows)
+                                                        std::uint32_t imageIndex, bool drawShadows, ExtraView* extraView)
 {
     const VkCommandBuffer commandBuffer = frame.commandBuffer;
     DEVEX_VK_TRY(vkResetCommandPool, m_device.handle(), frame.commandPool, 0);
@@ -3324,12 +3557,26 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
     const math::Extent2D extent = m_sceneExtent;
     const math::Extent2D windowExtent = m_swapchain->extent();
     const VkFormat targetFormat = m_swapchain->format();
-    const bool toViewport = m_world.viewport.width > 0 && m_world.viewport.height > 0;
-    const bool outlines = std::ranges::any_of(m_world.meshes, &MeshInstance::outlined) ||
-                          std::ranges::any_of(m_world.sprites, &RenderSprite::outlined) ||
-                          std::ranges::any_of(m_world.tilemaps, &RenderTilemap::outlined);
-    const bool drawOverlay = outlines || !m_world.sceneLines.empty() || !m_world.overlayLines.empty() ||
-                             !m_world.overlayTriangles.empty();
+    // A view draws into its own image, without what the tools draw over the scene.
+    const bool toViewport = extraView != nullptr || (m_world.viewport.width > 0 && m_world.viewport.height > 0);
+    const bool outlines = extraView == nullptr && (std::ranges::any_of(m_world.meshes, &MeshInstance::outlined) ||
+                                              std::ranges::any_of(m_world.sprites, &RenderSprite::outlined) ||
+                                              std::ranges::any_of(m_world.tilemaps, &RenderTilemap::outlined));
+    const bool drawOverlay = extraView == nullptr && (outlines || !m_world.sceneLines.empty() || !m_world.overlayLines.empty() ||
+                                                 !m_world.overlayTriangles.empty());
+    // The views drawn this frame, which the main frame shows; the interface goes over the one that asks for it.
+    std::vector<ExtraView*> shownViews;
+    if (extraView == nullptr)
+    {
+        for (const std::unique_ptr<ExtraView>& drawn : m_extraViews)
+        {
+            if (drawn->drawnFrame == m_frameIndex)
+            {
+                shownViews.push_back(drawn.get());
+            }
+        }
+    }
+    const bool interfaceElsewhere = std::ranges::any_of(shownViews, &ExtraView::interface);
     const bool pick = frame.pickRequest.has_value();
     m_culledInstances = 0;
     RenderGraph graph(m_device, m_allocator, frame.images);
@@ -3341,8 +3588,10 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
 
     ImageState backbufferState = ImageState::AcquiredBackbuffer;
     const RenderGraph::ImageId backbuffer =
-        graph.importImage(m_swapchain->image(imageIndex), m_swapchain->imageView(imageIndex),
-                          targetFormat, backbufferState);
+        extraView != nullptr ? graph.importImage(extraView->images[frameSlot]->handle(), extraView->images[frameSlot]->view(), targetFormat,
+                                            extraView->imageStates[frameSlot])
+                        : graph.importImage(m_swapchain->image(imageIndex), m_swapchain->imageView(imageIndex),
+                                            targetFormat, backbufferState);
 
     std::vector<core::Result<RenderGraph::ImageId>> created;
     const auto create = [&](const ImageConfig& config) -> std::size_t {
@@ -3418,7 +3667,7 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
                                                     : 0;
     // The tools sample the viewport image in the format they draw in.
     const VkFormat toolsFormat = m_swapchain->toolsFormat();
-    const std::size_t viewportIndex = toViewport ? create({
+    const std::size_t viewportIndex = toViewport && extraView == nullptr ? create({
                                                        .format = targetFormat,
                                                        .extent = extent,
                                                        .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
@@ -3429,7 +3678,7 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
                                                    })
                                                  : 0;
     // The interface surfaces, for the tools only, sampled by them as the viewport is.
-    const bool drawTools = !m_world.toolsDraws.empty() && !m_world.toolsIndices.empty();
+    const bool drawTools = extraView == nullptr && !m_world.toolsDraws.empty() && !m_world.toolsIndices.empty();
     std::vector<std::size_t> surfaceIndices;
     if (drawTools)
     {
@@ -3479,7 +3728,8 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
     const RenderGraph::ImageId velocity = *created[velocityIndex];
     const RenderGraph::ImageId normal = *created[normalIndex];
     const RenderGraph::ImageId sceneDepth = depth;
-    const RenderGraph::ImageId target = toViewport ? *created[viewportIndex] : backbuffer;
+    // A view is drawn straight into its image, imported as the backbuffer is.
+    const RenderGraph::ImageId target = toViewport && extraView == nullptr ? *created[viewportIndex] : backbuffer;
 
     core::Result<OverlayRanges> overlayRanges = OverlayRanges{};
     if (drawOverlay)
@@ -3491,7 +3741,8 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
         }
     }
 
-    const bool drawUi = !m_world.uiDraws.empty() && !m_world.uiIndices.empty();
+    const bool drawUi = !m_world.uiDraws.empty() && !m_world.uiIndices.empty() &&
+                        (extraView != nullptr ? extraView->interface : !interfaceElsewhere);
     std::vector<std::uint32_t> surfaceIndexBases;
     std::uint32_t toolsIndexBase = 0;
     if (drawUi || drawTools)
@@ -3538,12 +3789,12 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
     if (frame.boundImages != images)
     {
         frame.boundImages = images;
-        m_descriptors->setFrameImages(frameSlot, images);
+        m_descriptors->setFrameImages(m_setBase + frameSlot, images);
     }
 
     const VkDeviceAddress sceneData = frame.sceneData->deviceAddress();
     const VkDeviceAddress boneMatrices = frame.bones ? frame.bones->deviceAddress() : 0;
-    const std::array sets{m_descriptors->global(), m_descriptors->frame(frameSlot)};
+    const std::array sets{m_descriptors->global(), frameDescriptors(frameSlot)};
     std::uint32_t drawCalls = 0;
     const auto setViewport = [](VkCommandBuffer commands, math::Extent2D size) {
         const VkViewport viewport{
@@ -4257,6 +4508,16 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
                 }
             }
             return std::nullopt;
+        case UiSource::View:
+            for (std::size_t shown = 0; shown < shownViews.size(); ++shown)
+            {
+                const std::size_t place = 1 + surfaceIndices.size() + shown;
+                if (shownViews[shown]->id == uiDraw.surface && place < toolImageSlots)
+                {
+                    return toolSlots + static_cast<std::uint32_t>(place);
+                }
+            }
+            return std::nullopt;
         }
         const GpuTexture* const texture = m_textures.find(uiDraw.texture);
         return texture != nullptr ? texture->slot : whiteTextureSlot;
@@ -4369,7 +4630,7 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
         });
     }
 
-    if (toViewport || drawTools)
+    if (extraView == nullptr && (toViewport || drawTools))
     {
         // The images the tools show are read in the colours of the display, through the view of
         // their image the tools read when the window has one.
@@ -4391,6 +4652,22 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
             toolAccesses.push_back({image, ImageAccess::FragmentRead});
             m_descriptors->setTexture(toolSlots + 1 + static_cast<std::uint32_t>(surface), toolView(image), true);
         }
+        // The images of the views, drawn before this frame by their own submissions.
+        for (std::size_t shown = 0; shown < shownViews.size(); ++shown)
+        {
+            const std::size_t place = 1 + surfaceIndices.size() + shown;
+            if (place >= toolImageSlots)
+            {
+                break;
+            }
+            const Image& image = *shownViews[shown]->images[frameSlot];
+            toolAccesses.push_back({graph.importImage(image.handle(), image.view(), targetFormat,
+                                                      shownViews[shown]->imageStates[frameSlot]),
+                                    ImageAccess::FragmentRead});
+            const VkImageView alternate = image.alternateView();
+            m_descriptors->setTexture(toolSlots + static_cast<std::uint32_t>(place),
+                                      alternate != VK_NULL_HANDLE ? alternate : image.view(), true);
+        }
         // A window of display colours with an sRGB view encodes them itself.
         const bool encodeTools = toolsFormat != VK_FORMAT_B8G8R8A8_SRGB && toolsFormat != VK_FORMAT_R8G8B8A8_SRGB;
         graph.addPass("Tools", std::move(toolAccesses), [&](VkCommandBuffer commands) {
@@ -4401,7 +4678,10 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
         });
     }
 
-    graph.addPass("Present", {{backbuffer, ImageAccess::Present}}, {});
+    if (extraView == nullptr)
+    {
+        graph.addPass("Present", {{backbuffer, ImageAccess::Present}}, {});
+    }
     RenderGraph::PassMarker marker;
     if (timed)
     {
@@ -4429,10 +4709,11 @@ std::vector<PickResult> VulkanRenderer::takePickResults()
     return std::exchange(m_pickResults, {});
 }
 
-std::uint64_t VulkanRenderer::requestCapture(std::uint32_t maxWidth, std::uint32_t maxHeight)
+std::uint64_t VulkanRenderer::requestCapture(std::uint32_t maxWidth, std::uint32_t maxHeight,
+                                             std::optional<std::uint32_t> view)
 {
     const std::uint64_t id = m_nextCapture++;
-    m_captureRequests.push_back({id, std::max(maxWidth, 1u), std::max(maxHeight, 1u)});
+    m_captureRequests.push_back({id, std::max(maxWidth, 1u), std::max(maxHeight, 1u), view});
     return id;
 }
 

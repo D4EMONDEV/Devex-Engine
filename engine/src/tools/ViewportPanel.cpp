@@ -516,6 +516,154 @@ void markOtherKindHint(ToolsState& state, const scene::Scene& scene, ScreenConte
     }
 }
 
+// The ratio of width to height the game is shown in, or nothing for the room of its view.
+[[nodiscard]] std::optional<float> gameAspectRatio(const ToolsState& state)
+{
+    switch (state.gameAspect)
+    {
+    case GameAspect::Free:
+        return std::nullopt;
+    case GameAspect::Project:
+        if (state.database != nullptr)
+        {
+            const asset::WindowSettings& window = state.database->project().window;
+            if (window.width > 0 && window.height > 0)
+            {
+                return static_cast<float>(window.width) / static_cast<float>(window.height);
+            }
+        }
+        return std::nullopt;
+    case GameAspect::Wide:
+        return 16.0f / 9.0f;
+    case GameAspect::Wider:
+        return 16.0f / 10.0f;
+    case GameAspect::Standard:
+        return 4.0f / 3.0f;
+    }
+    return std::nullopt;
+}
+
+// While the game plays, the center shows the scene through the editor camera beside the game, with a
+// bar between them that a drag moves, or one of them alone. The scene is edited as when the game
+// does not run, on the played copy; the game takes the keyboard and the mouse once it is clicked.
+void drawPlayViews(ToolsState& state, scene::Scene& scene, math::Vec2 available)
+{
+    const float pixelsPerPoint = state.pixelsPerPoint;
+    const math::Vec2 origin = state.hosts.cursor();
+    const float bar = 6.0f;
+    float sceneWidth = 0.0f;
+    float gameWidth = 0.0f;
+    switch (state.playLayout)
+    {
+    case PlayLayout::Scene:
+        sceneWidth = available.x;
+        break;
+    case PlayLayout::Game:
+        gameWidth = available.x;
+        break;
+    case PlayLayout::Split:
+        sceneWidth = std::round(std::clamp(state.playSplit, 0.1f, 0.9f) * std::max(available.x - bar, 0.0f));
+        gameWidth = std::max(available.x - bar - sceneWidth, 0.0f);
+        break;
+    }
+
+    // The bar between them follows the mouse that holds it.
+    if (state.playLayout == PlayLayout::Split)
+    {
+        const math::Vec2 mouse = state.input.mouse();
+        const float left = origin.x + sceneWidth;
+        const bool overBar = state.hosts.hovered() && mouse.x >= left - 2.0f && mouse.x <= left + bar + 2.0f &&
+                             mouse.y >= origin.y && mouse.y <= origin.y + available.y;
+        if (overBar && state.input.clicked(Mouse::Left))
+        {
+            state.draggingPlaySplit = true;
+        }
+        if (state.draggingPlaySplit && !state.input.down(Mouse::Left))
+        {
+            state.draggingPlaySplit = false;
+        }
+        if (state.draggingPlaySplit && available.x > bar)
+        {
+            state.playSplit = std::clamp((mouse.x - origin.x - bar * 0.5f) / (available.x - bar), 0.1f, 0.9f);
+        }
+        if (overBar || state.draggingPlaySplit)
+        {
+            state.input.cursor = platform::Cursor::ResizeHorizontal;
+        }
+    }
+
+    // The scene, through the editor camera.
+    const auto sceneWide = static_cast<std::uint32_t>(std::max(0.0f, std::floor(sceneWidth * pixelsPerPoint)));
+    const auto sceneHigh = static_cast<std::uint32_t>(std::max(0.0f, std::floor(available.y * pixelsPerPoint)));
+    if (sceneWide >= 8 && sceneHigh >= 8)
+    {
+        state.viewportPixels = {sceneWide, sceneHigh};
+        state.viewportOrigin = origin;
+        state.hosts.image(HostImage{.source = render::UiSource::SceneImage},
+                          math::Vec2(static_cast<float>(sceneWide) / pixelsPerPoint, static_cast<float>(sceneHigh) / pixelsPerPoint));
+        const bool hovered = state.hosts.itemHovered() && !state.draggingPlaySplit;
+        if (hovered && (state.input.clicked(Mouse::Left) || state.input.clicked(Mouse::Middle) || state.input.clicked(Mouse::Right)))
+        {
+            state.hosts.focusCurrent();
+            state.gameHasKeyboard = false;
+        }
+        state.viewportHovered = hovered;
+        state.viewportFocused = state.hosts.focused() && !state.gameHasKeyboard;
+        // Framed in the accent colour: what is changed here is the game that runs.
+        state.viewportMarks.playing = true;
+
+        const math::Vec2 size{static_cast<float>(sceneWide), static_cast<float>(sceneHigh)};
+        const math::Vec2 mouse = (state.input.mouse() - state.viewportOrigin) * pixelsPerPoint;
+        const ViewportView view{.view = state.camera.view(),
+                                .verticalFov = EditorCamera::verticalFov,
+                                .size = size,
+                                .orthographic = state.camera.isTwoD(),
+                                .orthographicSize = state.camera.orthographicSize()};
+        state.gizmo.twoD = state.camera.isTwoD();
+        handleCamera(state, hovered, size, mouse);
+        if (screenContent(state.camera.isTwoD(), scene) == ScreenContent::Scene)
+        {
+            handleGizmoAndSelection(state, scene, view, mouse, hovered);
+        }
+        if (state.viewportFocused || (hovered && !state.gameFocused))
+        {
+            handleKeys(state, scene);
+        }
+    }
+    else
+    {
+        state.viewportPixels = {};
+    }
+
+    // The game, in the shape asked for, in the middle of its room.
+    if (gameWidth >= 8.0f && available.y >= 8.0f)
+    {
+        const math::Vec2 room{gameWidth, available.y};
+        const math::Vec2 roomOrigin{origin.x + (state.playLayout == PlayLayout::Split ? sceneWidth + bar : 0.0f), origin.y};
+        math::Vec2 shown = room;
+        if (const std::optional<float> ratio = gameAspectRatio(state))
+        {
+            shown = room.x / room.y > *ratio ? math::Vec2{room.y * *ratio, room.y} : math::Vec2{room.x, room.x / *ratio};
+        }
+        const auto gameWide = static_cast<std::uint32_t>(std::max(1.0f, std::floor(shown.x * pixelsPerPoint)));
+        const auto gameHigh = static_cast<std::uint32_t>(std::max(1.0f, std::floor(shown.y * pixelsPerPoint)));
+        const math::Vec2 at = roomOrigin + math::Vec2{std::round((room.x - shown.x) * 0.5f), std::round((room.y - shown.y) * 0.5f)};
+        state.hosts.setCursor(at);
+        state.hosts.image(HostImage{.source = render::UiSource::View, .surface = gameViewId},
+                          math::Vec2(static_cast<float>(gameWide) / pixelsPerPoint, static_cast<float>(gameHigh) / pixelsPerPoint));
+        state.gamePixels = {gameWide, gameHigh};
+        state.gameOrigin = at;
+        state.gameHovered = state.hosts.itemHovered() && !state.draggingPlaySplit;
+        // Clicking the game gives it the keyboard.
+        if (state.gameHovered && state.input.clicked(Mouse::Left))
+        {
+            state.hosts.focusCurrent();
+            state.gameHasKeyboard = true;
+        }
+        state.gameFocused = state.hosts.focused() && state.gameHasKeyboard;
+    }
+}
+
 } // namespace
 
 void frameSelection(ToolsState& state, const scene::Scene& scene)
@@ -559,6 +707,9 @@ void drawViewportPanel(ToolsState& state, scene::Scene& scene)
     state.viewportHovered = false;
     state.viewportFocused = false;
     state.interfaceFrame.reset();
+    state.gamePixels = {};
+    state.gameHovered = false;
+    state.gameFocused = false;
     if (!state.showViewport)
     {
         state.viewportPixels = {};
@@ -581,6 +732,13 @@ void drawViewportPanel(ToolsState& state, scene::Scene& scene)
 
     const math::Vec2 available = state.hosts.available();
     state.pixelsPerPoint = editorScreen().pixelsPerPoint;
+    if (!editing)
+    {
+        drawPlayViews(state, scene, available);
+        drawViewportOverlay(state);
+        endDockedPanel(state);
+        return;
+    }
     const auto width = static_cast<std::uint32_t>(std::max(0.0f, std::floor(available.x * state.pixelsPerPoint)));
     const auto height = static_cast<std::uint32_t>(std::max(0.0f, std::floor(available.y * state.pixelsPerPoint)));
     if (width < 8 || height < 8)
@@ -599,8 +757,6 @@ void drawViewportPanel(ToolsState& state, scene::Scene& scene)
     const bool hovered = state.hosts.itemHovered();
     state.viewportHovered = hovered;
     state.viewportFocused = state.hosts.focused();
-    // The game is framed in the accent colour while it runs.
-    state.viewportMarks.playing = !editing;
 
     const math::Vec2 size{static_cast<float>(width), static_cast<float>(height)};
     const math::Vec2 mouse = (state.input.mouse() - state.viewportOrigin) * state.pixelsPerPoint;
@@ -672,11 +828,6 @@ void drawViewportPanel(ToolsState& state, scene::Scene& scene)
         {
             handleKeys(state, scene);
         }
-    }
-    else if (hovered && state.input.clicked(Mouse::Left))
-    {
-        // Clicking the game gives it the keyboard.
-        state.hosts.focusCurrent();
     }
     // Over everything that answered the mouse over the view.
     drawViewportOverlay(state);

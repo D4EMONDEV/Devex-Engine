@@ -79,7 +79,8 @@ mais seulement explicitement ici : le code suit ce document, pas l'inverse.
 | Références d'assets      | `AssetId` (UUID) dès maintenant, primitives à UUID réservés        |
 | Premiers outils          | Module `Tools` + overlay (F1), réutilisable par le futur éditeur   |
 | Éditeur                  | Mode du runtime : `devex-editor`, ou un jeu lancé dans l'éditeur   |
-| Mode Play                | Copie de la scène (mêmes handles), une vue, Pause et pas à pas     |
+| Mode Play                | Copie de la scène, la scène et le jeu côte à côte, Pause et pas à pas |
+| Vues du renderer         | `RenderWorld::views` : d'autres caméras, chacune dans sa soumission |
 | Sélection à la souris    | Identifiants d'objets lus sur le GPU, icônes des lumières sur CPU  |
 | Gizmos                   | Maison : déplacement, rotation, échelle, local/global, magnétisme  |
 | Projets dans l'éditeur   | Gestionnaire de projets dans une fenêtre compacte, ou argument     |
@@ -309,6 +310,21 @@ docs/          décisions et documentation
   automatique), sélection (si demandée), masque des objets entourés (s'il y en a), anticrénelage
   temporel (si demandé), chaîne du bloom (si demandé), tonemapping et étalonnage vers la cible,
   overlay des outils, interface du jeu, puis la couche des outils sur le swapchain.
+- **Vues** : `RenderWorld::views` (au plus quatre) dessine la scène par d'autres caméras, chacune dans
+  une image à elle que les outils montrent par un lot qui lit `UiSource::View` et l'identifiant de la
+  vue : le jeu que l'éditeur joue à côté de la scène. Une vue est enregistrée avant l'image principale,
+  dans sa propre soumission, avec les mêmes passes : ses contextes de frame à elle (commandes, buffers
+  de la caméra, lumières et clusters, particules triées, sprites vus, luminance), un banc à elle des
+  descriptor sets de frame, que les passes lisent et qu'on ne peut pas réécrire pendant qu'une frame
+  les utilise, et ce qu'elle garde d'une frame à l'autre (historique de l'anticrénelage, matrice
+  précédente, exposition), échangé avec celui du renderer le temps de l'enregistrer. Les maillages,
+  textures, matériaux, pipelines et le ciel sont partagés. Son image, en double comme l'historique,
+  une par contexte de frame, est lue par la frame principale du même contexte, qui l'importe dans son
+  graphe : la barrière suit l'ordre des soumissions sur la file. Une vue ne dessine ni lignes, ni
+  contours, ni sélection ; l'interface du jeu va sur celle qui la demande (`RenderView::interface`),
+  et plus sur l'image principale. Les mouvements et les poses précédentes restent ceux de la frame :
+  seule l'image principale les retient. `Renderer::requestViewCapture` en fait une capture. Une
+  cinquième vue prend la place de celle dessinée il y a le plus longtemps.
 - **Cible** : sans `RenderWorld::viewport`, la scène est dessinée sur tout le swapchain.
   Avec, elle l'est dans une image de cette taille (format du swapchain, au plus 8192²) que les
   outils affichent dans un panneau, par un lot de leur couche qui lit `UiSource::SceneImage`.
@@ -902,7 +918,8 @@ les assets s'écrivent au fil de leur lecture.
   `onPlayStarted` et `onPlayStopped`. `isEditor()` et `isPlaying()` le disent au jeu ;
   `requestQuit()` arrête alors le mode Play.
 - **Mode Play** : Play copie la scène éditée (`Scene::clone`) et joue la copie, vue par sa caméra
-  principale ; Stop la jette et retrouve la scène éditée intacte. Pause suspend les mises à jour,
+  principale dans une vue à elle, à côté de la scène vue par la caméra de l'éditeur (voir
+  *Viewport*) ; Stop la jette et retrouve la scène éditée intacte. Pause suspend les mises à jour,
   le pas à pas exécute un pas fixe. Le pas fixe repart de zéro à chaque Play.
 - **Projets** : `Runtime` possède la base d'assets et en change quand l'éditeur ouvre un autre
   projet : les assets chargés sont libérés (`AssetManager::setDatabase`), la scène est vidée,
@@ -1222,8 +1239,23 @@ les assets s'écrivent au fil de leur lecture.
   caméras de la scène : clic droit maintenu pour regarder et voler (ZQSD/WASD, A/E pour
   descendre et monter, Maj accélère, molette règle la vitesse), Alt + clic gauche pour tourner
   autour du pivot, clic milieu pour se déplacer, molette pour avancer, F pour cadrer la
-  sélection. En Play, le viewport montre la caméra du jeu, qui reçoit clavier et souris quand
-  le panneau a le focus ; grille, icônes et gizmos disparaissent.
+  sélection.
+- **Scène et jeu en Play** : le centre se partage, comme le font Unity et Godot avec leurs vues de
+  scène et de jeu : à gauche, la scène par la caméra de l'éditeur, avec sa grille, ses icônes, la
+  sélection et les gizmos, sur la copie jouée ; à droite, le jeu par sa caméra, dans une vue du
+  renderer (`render::RenderView`), avec son interface ; une barre entre eux, qu'un glisser déplace.
+  Les boutons de la barre d'outils rendent tout le centre à l'un ou à l'autre ; un menu donne au jeu
+  la forme de la fenêtre du projet, 16:9, 16:10 ou 4:3, avec des bandes autour, ou toute la place de
+  sa vue. Un clic sur le jeu lui donne le clavier et la souris, un clic sur la scène les rend à
+  l'éditeur ; Play donne le clavier au jeu. Ce qu'on change sur la scène pendant le jeu (déplacer,
+  régler dans l'inspecteur, supprimer) change la partie qui tourne, avec son propre historique, et
+  disparaît au Stop comme la copie. La taille et le pointeur que l'interface du jeu lit sont ceux de
+  sa vue (`ToolsOverlay::gamePixels`, `gamePointer`) ; quand le centre ne montre que la scène, le
+  jeu tourne sans être dessiné, ni son interface. Les entités masquées par l'œil restent dessinées
+  pendant le jeu, et l'écran de l'autre type ne vide plus la scène : la scène et le jeu tirent leurs
+  maillages et leurs sprites des mêmes listes. Les miniatures des sauvegardes prennent l'image du jeu
+  (`ToolsOverlay::gameView`). Le choix du partage et de la forme ne dure que la session, comme ceux de
+  la grille et des icônes.
 - **Sélection** : un clic choisit la lumière ou la caméra dont l'icône est sous la souris (sur
   le CPU), sinon demande au GPU l'objet visible sous le pixel ; les entités sélectionnées et leurs
   descendants sont entourés. Voir *Sélection et édition des entités*.
@@ -1241,8 +1273,9 @@ les assets s'écrivent au fil de leur lecture.
 - **Barre d'outils du viewport** : sélection seule (Q, sans gizmo), déplacement (W), rotation (E),
   échelle (R), axes locaux ou du monde, aimantation permanente (Ctrl l'inverse), grille, icônes
   des lumières et caméras, cadrage ; à droite, vitesse de vol, EV de la caméra de l'éditeur et
-  aide des contrôles en infobulle. En Play, elle annonce l'état du jeu et le viewport est encadré
-  à la couleur d'accent.
+  aide des contrôles en infobulle. En Play, elle garde les outils de la scène quand elle est montrée,
+  et ajoute à droite l'état du jeu, le partage du centre (côte à côte, scène, jeu) et la forme du jeu ;
+  la scène est encadrée à la couleur d'accent, puisqu'on y change la partie qui tourne.
 - **Création** : le *+* de *Scene* (sous l'entité choisie, comme chez Godot), *Edit > Create
   Entity…* et *Create Child…*, ou le menu contextuel de l'arbre ouvrent la fenêtre **Create
   Entity**, l'équivalent du *Create New Node* de Godot. Devex ayant des entités et des composants
@@ -4336,6 +4369,10 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     Linux, SEH sous Windows) : un plantage du jeu arrête la partie, rend la scène éditée, recharge le
     module et ouvre *The game crashed* avec *Save All Scenes* ; exceptions des systèmes C++ notées
     comme celles du C#.
+73. ✅ **La scène et le jeu côte à côte** — vues du renderer (`RenderWorld::views`, chacune dans sa
+    soumission, avec ses contextes, ses descriptor sets et son historique) ; en Play, le centre montre
+    la scène par la caméra de l'éditeur, où l'on change la partie en cours, à côté du jeu, avec une
+    barre déplaçable, les boutons qui rendent le centre à l'un ou à l'autre et la forme du jeu.
 
 Ensuite, sans ordre figé : à choisir dans les pistes ci-dessous.
 
@@ -4512,8 +4549,8 @@ Ensuite, sans ordre figé : à choisir dans les pistes ci-dessous.
   repères, sélection des éléments au rectangle, aperçu à plusieurs résolutions, textes liés
   (`UiBinding`) montrés hors du jeu, canevas cachés montrés à la demande, gizmos au-dessus de
   l'interface, interfaces placées dans le monde 3D (canevas en espace monde).
-- **Éditeur** : vues Scène et Jeu simultanées (plusieurs vues par frame dans le renderer), jeu
-  dans un processus séparé, lignes épaisses, pivot au centre de la sélection (mode *Center* de
+- **Éditeur** : jeu dans un processus séparé, partage et forme du jeu gardés d'une session à
+  l'autre, statistiques par vue, lignes épaisses, pivot au centre de la sélection (mode *Center* de
   Unity), listes éditées à plusieurs, entités masquées aussi dans l'écran 2D, entité active ou
   non pour le jeu (`SetActive` de Unity), déplacement au clavier dans l'arbre.
 - **Apparence** : thèmes enregistrables en fichiers, icône de projet choisie par projet, polices

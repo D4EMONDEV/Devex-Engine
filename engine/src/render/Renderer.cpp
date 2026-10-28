@@ -142,6 +142,12 @@ std::uint64_t Renderer::requestCapture(std::uint32_t maxWidth, std::uint32_t max
     return m_implementation->requestCapture(maxWidth, maxHeight);
 }
 
+std::uint64_t Renderer::requestViewCapture(std::uint32_t view, std::uint32_t maxWidth, std::uint32_t maxHeight)
+{
+    DEVEX_ASSERT(m_implementation != nullptr);
+    return m_implementation->requestCapture(maxWidth, maxHeight, view);
+}
+
 std::vector<CapturedImage> Renderer::takeCaptures()
 {
     DEVEX_ASSERT(m_implementation != nullptr);

@@ -702,7 +702,13 @@ TEST_CASE("The editor opens the project's scenes in tabs and renders its viewpor
             }
             else
             {
-                CHECK(world.sceneLines.empty());
+                // The scene beside the game, through the editor camera with its grid; the game in a view of
+                // its own, which takes its interface.
+                CHECK_FALSE(world.sceneLines.empty());
+                REQUIRE(world.views.size() == 1);
+                CHECK(world.views[0].interface);
+                CHECK(world.views[0].extent.width > 0);
+                CHECK(world.views[0].extent.height > 0);
             }
             const devex::core::Result<void> presented = renderer->endFrame();
             if (!presented)
