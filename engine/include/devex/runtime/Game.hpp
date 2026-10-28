@@ -51,7 +51,8 @@ class CoroutineScheduler;
 // focus ring, UiDropdown the shadow of its list.
 // 24: RendererStats gained the shadow passes a frame kept.
 // 25: UiToggle gained the colour of its tick.
-inline constexpr std::uint32_t gameApiVersion = 25;
+// 26: the atmosphere and the fog: RenderWorld, RenderSun and DirectionalLight gained what they need.
+inline constexpr std::uint32_t gameApiVersion = 26;
 
 enum class SystemPhase : std::uint8_t
 {

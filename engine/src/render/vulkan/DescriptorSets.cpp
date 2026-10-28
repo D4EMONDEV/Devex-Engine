@@ -101,9 +101,13 @@ core::Result<DescriptorSets> DescriptorSets::create(const Device& device,
             .stageFlags = shaderStages,
         },
         image(reflectionProbesBinding, probeCapacity),
+        image(atmosphereTransmittanceBinding),
+        image(skyViewBinding),
+        image(aerialPerspectiveBinding),
     };
-    const std::array<VkDescriptorBindingFlags, 10> globalFlags{
+    const std::array<VkDescriptorBindingFlags, 13> globalFlags{
         updatedInFlight, 0, updatedInFlight, updatedInFlight, updatedInFlight, 0, updatedInFlight, 0, updatedInFlight, updatedInFlight,
+        updatedInFlight, updatedInFlight, updatedInFlight,
     };
     const VkDescriptorSetLayoutBindingFlagsCreateInfo globalFlagsInfo{
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO,
@@ -149,7 +153,7 @@ core::Result<DescriptorSets> DescriptorSets::create(const Device& device,
                  &sets.m_frameLayout);
 
     const std::array globalPoolSizes{
-        VkDescriptorPoolSize{.type = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, .descriptorCount = textureCapacity + 4 + probeCapacity},
+        VkDescriptorPoolSize{.type = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, .descriptorCount = textureCapacity + 7 + probeCapacity},
         VkDescriptorPoolSize{.type = VK_DESCRIPTOR_TYPE_SAMPLER, .descriptorCount = 3 + textureCapacity},
     };
     const VkDescriptorPoolCreateInfo globalPoolInfo{
@@ -317,12 +321,19 @@ void DescriptorSets::setTexture(std::uint32_t slot, VkImageView view, bool neare
     vkUpdateDescriptorSets(m_device, 1, &write, 0, nullptr);
 }
 
-void DescriptorSets::setEnvironment(VkImageView specular, VkImageView irradiance,
-                                    VkImageView sky) noexcept
+void DescriptorSets::setEnvironment(VkImageView specular, VkImageView irradiance, VkImageView sky,
+                                    VkImageLayout layout) noexcept
 {
-    writeImage(m_global, specularBinding, 0, specular);
-    writeImage(m_global, irradianceBinding, 0, irradiance);
+    writeImage(m_global, specularBinding, 0, specular, layout);
+    writeImage(m_global, irradianceBinding, 0, irradiance, layout);
     writeImage(m_global, skyBinding, 0, sky);
+}
+
+void DescriptorSets::setAtmosphere(VkImageView transmittance, VkImageView skyView, VkImageView aerialPerspective) noexcept
+{
+    writeImage(m_global, atmosphereTransmittanceBinding, 0, transmittance, VK_IMAGE_LAYOUT_GENERAL);
+    writeImage(m_global, skyViewBinding, 0, skyView, VK_IMAGE_LAYOUT_GENERAL);
+    writeImage(m_global, aerialPerspectiveBinding, 0, aerialPerspective, VK_IMAGE_LAYOUT_GENERAL);
 }
 
 void DescriptorSets::setBrdfLut(VkImageView view) noexcept

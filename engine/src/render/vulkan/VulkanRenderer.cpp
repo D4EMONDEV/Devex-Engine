@@ -7,6 +7,7 @@
 #include <devex/core/Assert.hpp>
 #include <devex/core/Log.hpp>
 #include <devex/core/Profiler.hpp>
+#include <devex/render/Atmosphere.hpp>
 #include <devex/render/Light2D.hpp>
 #include <devex/render/Photometry.hpp>
 
@@ -1480,6 +1481,7 @@ core::Result<void> VulkanRenderer::createFrameContext(FrameContext& frame)
 
         for (const auto& [buffer, bytes] :
              {std::pair<std::optional<Buffer>*, VkDeviceSize>{&frame.sceneData, sizeof(GpuSceneData)},
+              {&frame.atmosphere, sizeof(GpuAtmosphere)},
               {&frame.luminance, VkDeviceSize{luminanceGridWidth} * luminanceGridHeight * sizeof(float)}})
         {
             core::Result<Buffer> created =
@@ -1658,6 +1660,15 @@ core::Result<void> VulkanRenderer::createDefaultResources()
     }
     m_brdfTable = std::move(*brdfTable);
     m_descriptors->setBrdfLut(m_brdfTable->view());
+
+    core::Result<std::unique_ptr<AtmosphereRenderer>> atmosphere =
+        AtmosphereRenderer::create(m_device, m_allocator, m_upload, *m_descriptors, m_shaderDirectory);
+    if (!atmosphere)
+    {
+        return std::unexpected(atmosphere.error());
+    }
+    m_atmosphere = std::move(*atmosphere);
+    m_descriptors->setAtmosphere(m_atmosphere->transmittanceView(), m_atmosphere->skyViewView(), m_atmosphere->aerialPerspectiveView());
 
     // A white sky, tinted and scaled by the environment settings, stands in for sky textures.
     core::Result<EnvironmentMaps> uniform = m_baker->bake(m_whiteTexture->image.view(), 1);
@@ -2401,7 +2412,7 @@ const VulkanRenderer::GpuShader* VulkanRenderer::skyShader() const noexcept
 core::Result<void> VulkanRenderer::updateSkyShaderEnvironment(const FrameContext& frame)
 {
     const GpuShader* const shader = skyShader();
-    if (shader == nullptr)
+    if (shader == nullptr || m_world.atmosphere.enabled)
     {
         return {};
     }
@@ -2519,6 +2530,24 @@ core::Result<void> VulkanRenderer::updateSkyShaderEnvironment(const FrameContext
 
 core::Result<void> VulkanRenderer::updateEnvironment()
 {
+    // An atmosphere lights the scene with the maps its frames fill; once it goes, what lit the scene
+    // before is bound again.
+    if (m_world.atmosphere.enabled)
+    {
+        if (!m_atmosphereBound)
+        {
+            m_descriptors->setEnvironment(m_atmosphere->specularView(), m_atmosphere->irradianceView(), m_whiteTexture->image.view(),
+                                          VK_IMAGE_LAYOUT_GENERAL);
+            m_atmosphereBound = true;
+        }
+        return {};
+    }
+    if (m_atmosphereBound)
+    {
+        m_atmosphereBound = false;
+        m_environmentBound = false;
+        m_shaderSkyKey = 0;
+    }
     // A sky shader lights the scene once the frame has its scene data; without one any more, the
     // texture or the colour light it again.
     if (skyShader() != nullptr)
@@ -3082,8 +3111,86 @@ void VulkanRenderer::writeSceneData(FrameContext& frame,
         // Selection follows the stable editor view, including at the edges of outlined objects.
         scene.pickViewProjection = regionSelectionMatrix(extent, frame.pickRect) * scene.unjitteredViewProjection;
     }
+    writeAtmosphere(frame, scene);
 
     std::memcpy(frame.sceneData->mappedBytes().data(), &scene, sizeof(scene));
+}
+
+void VulkanRenderer::writeAtmosphere(FrameContext& frame, GpuSceneData& scene) const noexcept
+{
+    const RenderAtmosphere& air = m_world.atmosphere;
+    const RenderFog& fog = m_world.fog;
+    scene.atmosphereFlags = (air.enabled ? atmosphereAir : 0u) | (fog.enabled ? atmosphereFog : 0u);
+    if (scene.atmosphereFlags == 0)
+    {
+        return;
+    }
+    GpuAtmosphere gpu;
+    gpu.bottomRadius = std::max(air.planetRadius, 1.0f);
+    gpu.topRadius = gpu.bottomRadius + std::max(air.height, 1.0f);
+    gpu.rayleighHeight = air.rayleighHeight;
+    gpu.mieHeight = air.mieHeight;
+    gpu.rayleighScattering = air.rayleighScattering;
+    gpu.mieScattering = air.mieScattering;
+    gpu.ozoneAbsorption = air.ozoneAbsorption;
+    gpu.mieAbsorption = air.mieAbsorption;
+    gpu.groundAlbedo = air.groundAlbedo;
+    gpu.mieAnisotropy = std::clamp(air.mieAnisotropy, -0.99f, 0.99f);
+    // The camera stands in the air, a meter above the ground at least; the ground of the scene is
+    // the planet's.
+    const float altitude = std::clamp(m_cameraPosition.y * 0.001f, 0.001f, gpu.topRadius - gpu.bottomRadius - 0.01f);
+    gpu.cameraRadius = gpu.bottomRadius + altitude;
+    const float sunLength = math::length(m_world.sun.direction);
+    gpu.sunDirection = sunLength > 0.0f ? -m_world.sun.direction / sunLength : math::Vec3{0.0f, 1.0f, 0.0f};
+    gpu.sunIlluminance = m_world.sun.illuminance * air.intensity;
+    gpu.sunCosRadius = std::cos(std::clamp(air.sunDiskSize, 0.0f, 0.5f) * 0.5f);
+    gpu.sunDiskIntensity = air.sunDiskIntensity;
+    gpu.aerialScale = std::max(air.aerialPerspective, 0.0f);
+    gpu.aerialDistance = 32.0f;
+    gpu.fogColor = fog.color;
+    gpu.fogDensity = fog.enabled ? std::max(fog.density, 0.0f) : 0.0f;
+    gpu.fogHeight = fog.height;
+    gpu.fogFalloff = std::max(fog.falloff, 0.01f);
+    gpu.fogStart = std::max(fog.startDistance, 0.0f);
+    gpu.fogMaxOpacity = std::clamp(fog.maxOpacity, 0.0f, 1.0f);
+    gpu.fogSunScattering = std::max(fog.sunScattering, 0.0f);
+    gpu.fogSunAnisotropy = std::clamp(fog.sunAnisotropy, -0.99f, 0.99f);
+    gpu.fogSkyBlend = std::clamp(fog.skyBlend, 0.0f, 1.0f);
+    std::memcpy(frame.atmosphere->mappedBytes().data(), &gpu, sizeof(gpu));
+    scene.atmosphere = frame.atmosphere->deviceAddress();
+    if (!air.enabled)
+    {
+        return;
+    }
+    // The sky of the air lights the scene with its own maps, already in nits.
+    scene.environmentColor = math::Vec3{1.0f};
+    scene.environmentIntensity = 1.0f;
+    scene.environmentRotation = 0.0f;
+    scene.specularMipCount = static_cast<float>(AtmosphereRenderer::cubeMipCount);
+    // The sun reaches the scene through the air: orange and faint at sunset, gone below the horizon.
+    if (m_world.sun.followAtmosphere)
+    {
+        scene.sunIlluminance *= atmosphereTransmittance(air, altitude, gpu.sunDirection.y);
+    }
+    // What the tables of the air and the maps of its light were filled for: the air alone, then the
+    // sun and the height of the camera, to a few tens of meters.
+    const auto hash = [](std::uint64_t value, const void* data, std::size_t size) {
+        const auto* const bytes = static_cast<const unsigned char*>(data);
+        for (std::size_t index = 0; index < size; ++index)
+        {
+            value = (value ^ bytes[index]) * 1099511628211ULL;
+        }
+        return value;
+    };
+    m_airKey = hash(14695981039346656037ULL, &gpu, offsetof(GpuAtmosphere, sunIlluminance));
+    const auto height = static_cast<std::int64_t>(std::lround(altitude * 20.0f));
+    std::uint64_t sky = hash(m_airKey, &gpu.sunIlluminance, sizeof(gpu.sunIlluminance));
+    sky = hash(sky, &gpu.sunDirection, sizeof(gpu.sunDirection));
+    m_skyKey = hash(sky, &height, sizeof(height));
+    // And the sky and the haze around the camera, for where it stands and how it looks.
+    std::uint64_t view = hash(m_skyKey, &gpu.cameraRadius, sizeof(gpu.cameraRadius));
+    view = hash(view, &gpu.aerialScale, sizeof(gpu.aerialScale));
+    m_viewKey = hash(view, &scene.inverseViewProjection, sizeof(scene.inverseViewProjection));
 }
 
 bool VulkanRenderer::isBlended(const MeshInstance& instance) const noexcept
@@ -3927,6 +4034,14 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
     {
         graph.addPass("Uploads", {}, [&](VkCommandBuffer commands) { recordUploads(commands, frame); });
     }
+    // The tables of the air and the light of its sky, before anything samples them.
+    if (m_world.atmosphere.enabled)
+    {
+        graph.addPass("Atmosphere", {}, [&](VkCommandBuffer commands) {
+            m_atmosphere->record(commands, m_descriptors->global(), frame.atmosphere->deviceAddress(), frame.sceneData->deviceAddress(),
+                                 m_airKey, m_skyKey, m_viewKey);
+        });
+    }
 
     ImageState backbufferState = ImageState::AcquiredBackbuffer;
     const RenderGraph::ImageId backbuffer =
@@ -4421,8 +4536,9 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
         setViewport(commands, extent);
         drawCalls += drawMeshes(commands, sceneData, boneMatrices, MeshPass::Scene, 0, frameSlot);
 
-        // A sky shader of the project draws the sky in place of the texture.
-        const GpuShader* const skyShader = shaderOf(m_world.environment.skyMaterial, asset::ShaderKind::Sky);
+        // A sky shader of the project draws the sky in place of the texture; an atmosphere draws its own.
+        const GpuShader* const skyShader =
+            m_world.atmosphere.enabled ? nullptr : shaderOf(m_world.environment.skyMaterial, asset::ShaderKind::Sky);
         const Pipeline& skyPipeline = skyShader != nullptr && skyShader->scene ? *skyShader->scene : *m_skyPipeline;
         vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, skyPipeline.handle());
         vkCmdBindDescriptorSets(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, skyPipeline.layout(), 0, 1,
@@ -4798,6 +4914,7 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
                                   : 0.0f,
             .targetWidth = static_cast<float>(size.width),
             .targetHeight = static_cast<float>(size.height),
+            .encode = targetFormat == VK_FORMAT_B8G8R8A8_SRGB || targetFormat == VK_FORMAT_R8G8B8A8_SRGB ? 0u : 1u,
         };
         vkCmdPushConstants(commands, m_tonemapPipeline->layout(),
                            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,

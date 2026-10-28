@@ -1,5 +1,5 @@
-// Maps the exposed high dynamic range scene color to the display. The swapchain encodes sRGB, so
-// the output stays linear.
+// Maps the exposed high dynamic range scene color to the display. An sRGB swapchain encodes the
+// output itself; for one that does not, it is encoded here.
 
 import common;
 
@@ -23,7 +23,14 @@ struct TonemapData
     // The size of the image drawn into, smaller than the scene for a capture.
     float targetWidth;
     float targetHeight;
+    // 1 when the image drawn into does not encode sRGB itself.
+    uint encode;
 };
+
+float encodeChannel(float value)
+{
+    return value <= 0.0031308 ? value * 12.92 : 1.055 * pow(value, 1.0 / 2.4) - 0.055;
+}
 
 [[vk::push_constant]]
 ConstantBuffer<TonemapData> settings;
@@ -191,5 +198,10 @@ float4 fragmentMain(VertexOutput input) : SV_Target
         const float luminance = dot(mapped, float3(0.2126, 0.7152, 0.0722));
         mapped += noise * settings.grain * (1.0 - luminance * 0.7);
     }
-    return float4(saturate(mapped), 1.0);
+    mapped = saturate(mapped);
+    if (settings.encode != 0)
+    {
+        mapped = float3(encodeChannel(mapped.r), encodeChannel(mapped.g), encodeChannel(mapped.b));
+    }
+    return float4(mapped, 1.0);
 }

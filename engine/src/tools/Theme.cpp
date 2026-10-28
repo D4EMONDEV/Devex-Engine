@@ -111,9 +111,9 @@ ThemeMetrics g_metrics = deriveThemeMetrics(ThemeSettings{}, 1.0f);
 
 [[nodiscard]] bool isEngineComponent(std::string_view name) noexcept
 {
-    constexpr std::array<std::string_view, 75> engineComponents{
+    constexpr std::array<std::string_view, 77> engineComponents{
         "Transform",       "MeshRenderer",        "Camera",       "DirectionalLight",
-        "PointLight",      "SpotLight",           "Environment",  "ReflectionProbe", "LightProbeVolume", "RigidBody",
+        "PointLight",      "SpotLight",           "Environment",  "Atmosphere", "Fog", "ReflectionProbe", "LightProbeVolume", "RigidBody",
         "BoxCollider",     "SphereCollider",      "CapsuleCollider", "CylinderCollider",
         "MeshCollider",    "CharacterController", "AudioSource",  "AudioListener",
         "SkinnedMeshRenderer", "Animator",        "Canvas",       "UiRect",
@@ -571,6 +571,14 @@ EntityIcon componentIcon(std::string_view componentName)
     if (componentName == "Environment")
     {
         return {icons::CloudSun, colors.environment};
+    }
+    if (componentName == "Atmosphere")
+    {
+        return {icons::Globe, colors.environment};
+    }
+    if (componentName == "Fog")
+    {
+        return {icons::Mountain, colors.environment};
     }
     if (componentName == "ReflectionProbe")
     {

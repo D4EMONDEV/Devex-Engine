@@ -973,9 +973,11 @@ float4 sceneFragment(DevexVertexOutput input, bool frontFacing : SV_IsFrontFace)
     // A blended surface leaves its colour premultiplied, and an additive one an alpha of zero.
     const float alpha = @TRANSPARENT@ ? saturate(ALPHA) : 1.0;
     const float coverage = @ADDITIVE@ ? 0.0 : alpha;
+    // Hazed by the air and veiled by the fog, unless added over what is behind.
     if (@UNSHADED@)
     {
-        return float4((ALBEDO + EMISSION) * alpha, coverage);
+        const float3 unshaded = ALBEDO + EMISSION;
+        return float4((@ADDITIVE@ ? unshaded : applyAtmosphere(scene, unshaded, VERTEX)) * alpha, coverage);
     }
 
     float3 normal = normalize(NORMAL);
@@ -1011,7 +1013,8 @@ float4 sceneFragment(DevexVertexOutput input, bool frontFacing : SV_IsFrontFace)
         luminance += environmentLight(scene, surface);
     }
     // Emission is relative to the exposure, as that of materials.
-    return float4((luminance * scene->exposure + EMISSION) * alpha, coverage);
+    const float3 shaded = luminance * scene->exposure + EMISSION;
+    return float4((@ADDITIVE@ ? shaded : applyAtmosphere(scene, shaded, VERTEX)) * alpha, coverage);
 }
 
 struct DevexPrepassTargets

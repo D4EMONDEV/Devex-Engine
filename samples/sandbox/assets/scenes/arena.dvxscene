@@ -14,6 +14,12 @@ illuminance = 1e+05
 cast_shadows = true
 shadow_distance = 60
 
+[component type="TimeOfDay"]
+hour = 11.333333
+noon_elevation = 0.98231494
+heading = 4.0600152
+speed = 2
+
 [entity uuid="63466931-a705-5b0f-89f4-e61ca7497d4e" name="Sky"]
 
 [component type="Environment"]
@@ -22,6 +28,13 @@ sky_material = asset("00000000-0000-0000-0000-000000000000")
 color = vec3(1, 1, 1)
 intensity = 25000
 rotation = 0
+
+[component type="Atmosphere"]
+
+[component type="Fog"]
+density = 0.0015
+falloff = 15
+sky_blend = 0.6
 
 [entity uuid="28731b8a-099b-5570-a313-8c1297a52194" name="Ground"]
 

@@ -201,6 +201,7 @@ devex_add_tests(physics
 devex_add_tests(render
     SOURCES
         render/AssetLoadingTests.cpp
+        render/AtmosphereTests.cpp
         render/CubeMapTests.cpp
         render/CullingTests.cpp
         render/Light2DTests.cpp

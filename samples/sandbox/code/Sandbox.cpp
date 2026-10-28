@@ -117,6 +117,29 @@ DEVEX_REFLECT(DayNight)
     type.field("night_sky_intensity", &DayNight::nightSkyIntensity);
 }
 
+// On the entity of the sun: the hour of the day, which the sun follows across the sky, rising in the
+// east, highest at noon, setting in the west, its path turned around the vertical by its heading
+// (east is +X without one). Holding T moves the time on, a few hours a second, and Shift with it
+// moves it back; with an Atmosphere in the scene, the sky, the colour of the light and the haze
+// follow.
+struct TimeOfDay
+{
+    // From 0 to 24.
+    float hour = 15.0f;
+    float noonElevation = devex::math::radians(60.0f);
+    float heading = 0.0f;
+    // Hours a second while T is held.
+    float speed = 2.0f;
+};
+DEVEX_DECLARE_REFLECTION(TimeOfDay);
+DEVEX_REFLECT(TimeOfDay)
+{
+    type.field("hour", &TimeOfDay::hour);
+    type.field("noon_elevation", &TimeOfDay::noonElevation, {.angle = true});
+    type.field("heading", &TimeOfDay::heading, {.angle = true});
+    type.field("speed", &TimeOfDay::speed);
+}
+
 // A first-person character, on an entity with a CharacterController and a camera child: the mouse
 // looks around once captured by a click, W A S D walk, Shift runs, Space jumps.
 struct Player
@@ -598,6 +621,28 @@ devex::runtime::Coroutine fadeDayAndNight(devex::runtime::CoroutineContext& co, 
     }
 }
 
+// The sun where the hour puts it, the hour moving while T is held.
+void moveTheSun(SystemContext& context)
+{
+    const bool held = context.input.isKeyDown(Key::T) && !typing(context);
+    const bool back = context.input.isKeyDown(Key::LeftShift) || context.input.isKeyDown(Key::RightShift);
+    const auto seconds = static_cast<float>(context.delta.count());
+    for ([[maybe_unused]] auto [entity, time, transform] : context.scene.view<TimeOfDay, devex::scene::Transform>())
+    {
+        if (held)
+        {
+            time.hour = std::fmod(time.hour + (back ? -time.speed : time.speed) * seconds + 24.0f, 24.0f);
+        }
+        // Half a turn across the sky from sunrise at 6 to sunset at 18, below the ground the rest of it.
+        const float angle = (time.hour - 6.0f) / 12.0f * std::numbers::pi_v<float>;
+        const Vec3 towardsSun = devex::math::angleAxis(time.heading, up) *
+                                devex::math::normalize(Vec3{std::cos(angle), std::sin(angle) * std::sin(time.noonElevation),
+                                                            -std::sin(angle) * std::cos(time.noonElevation)});
+        // The light shines along its -Z axis, away from the sun.
+        transform.rotation = glm::quatLookAt(-towardsSun, std::abs(towardsSun.y) > 0.999f ? Vec3{0.0f, 0.0f, 1.0f} : up);
+    }
+}
+
 // The transition that plays, which pressing N again replaces from where it is.
 devex::runtime::CoroutineHandle dayNightTransition;
 
@@ -626,6 +671,7 @@ DEVEX_GAME_MODULE(game)
     game.component<FlyCamera>();
     game.component<Turntable>();
     game.component<DayNight>();
+    game.component<TimeOfDay>();
     game.component<Player>();
     game.component<BallLauncher>();
     game.component<Ball>();
@@ -641,5 +687,6 @@ DEVEX_GAME_MODULE(game)
     game.system("Switch lamps", SystemPhase::Update, &switchLamps);
     game.system("Turn turntables", SystemPhase::Update, &turnTurntables);
     game.system("Switch day and night", SystemPhase::Update, &switchDayAndNight);
+    game.system("Move the sun", SystemPhase::Update, &moveTheSun);
     game.system("Switch scenes", SystemPhase::Update, &switchScenes);
 }

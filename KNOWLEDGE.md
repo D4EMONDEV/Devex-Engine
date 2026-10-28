@@ -2189,6 +2189,11 @@ namespace devex::ui {
   `UiDropdown::list_shadow_color` / `list_shadow_size` ; `TooltipStyle::shadowColor` / `shadowSize`.
 - `Renderer::requestWindowCapture()` : image de la fenêtre entière, interface comprise (réponse vide
   si la surface ne se relit pas) ; `ApplicationConfig::screenshot` et `devex-editor --screenshot`.
+- `Atmosphere` (composant) : ciel physique de Hillaire, remplace celui de l'`Environment` ; `Fog` :
+  brouillard de hauteur (`density`, `height`, `falloff`, `sky_blend`...) ;
+  `DirectionalLight::followAtmosphere` teinte le soleil par l'air (`render::atmosphereTransmittance`
+  sur CPU). Côté renderer : `RenderWorld::atmosphere` / `fog`, `AtmosphereRenderer` (tables et
+  cubemaps, `shaders/atmosphere.slang`), `applyAtmosphere` dans `common.slang`.
 - `ApplicationConfig::profileReport` / `devex-editor --profile rapport.txt` : moyenne des zones CPU
   et des passes GPU sur 240 frames une fois la fenêtre au repos (`ToolsOverlay::setProfiling` garde
   le profileur allumé). `RendererStats::keptShadowPasses` : passes d'ombres gardées de la frame

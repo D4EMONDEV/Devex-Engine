@@ -58,7 +58,9 @@ captures de l'éditeur, scènes de base, entrées, scripts C#, animations, colli
   scène, des uniforms changés par le code et des `instance uniform` donnés par chaque objet),
   render graph, PBR
   forward+ clustered avec prépasse de profondeur, culling par tronc de vue, ombres en cascades pour
-  le soleil et en atlas pour les lumières locales, ciel HDR et IBL, sondes de réflexion cuites dans
+  le soleil et en atlas pour les lumières locales, ciel HDR et IBL, atmosphère physique (ciel bleu,
+  couchers rouges, soleil teinté par l'air, brume du lointain) et brouillard de hauteur, sondes de
+  réflexion cuites dans
   l'éditeur (correction de parallaxe, fondu entre sondes), volumes d'irradiance cuits en
   harmoniques sphériques avec plusieurs rebonds de lumière, surfaces transparentes triées,
   anticrénelage temporel, occlusion ambiante en espace écran, bloom, exposition automatique,
@@ -223,7 +225,8 @@ captures de l'éditeur, scènes de base, entrées, scripts C#, animations, colli
   caisses poussées découpent le maillage ; des articulations y tiennent une porte battante sur
   gonds, un pendule et un panneau soudé qu'une balle décroche ; une salle aux miroirs (sol poli,
   mur rouge, boule dorée) se reflète d'elle-même par sa sonde de réflexion, et la lumière y
-  rebondit par son volume d'irradiance ;
+  rebondit par son volume d'irradiance ; son ciel est une atmosphère physique avec un léger
+  brouillard, et T maintenu fait avancer l'heure (Maj+T la recule) jusqu'au coucher du soleil ;
   Tab passe à la scène `platformer`, un jeu de plateformes en pixel art (un chevalier animé qui
   court, au bruit de ses pas, et saute sur un niveau de tuiles simulé par la physique 2D, dont une
   île flottante
@@ -320,7 +323,7 @@ Wayland).
 Les programmes sont produits dans `out/build/x64-debug/bin` ; dans l'arène du bac à sable, un clic
 capture la souris, ZQSD (WASD) ou le stick gauche marchent, le stick droit regarde, Maj court,
 Espace ou le bouton du bas saute (ce sont les actions du projet), un clic lance une balle, C passe à
-la caméra libre et Échap libère la souris :
+la caméra libre, T maintenu fait avancer l'heure du jour et Échap libère la souris :
 
 ```powershell
 out/build/x64-debug/bin/devex-editor.exe                                # gestionnaire de projets

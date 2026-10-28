@@ -2,6 +2,7 @@ devex_add_shaders(devex_shaders
     OUTPUT_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/shaders"
     SOURCES
         ao.slang
+        atmosphere.slang
         bloom.slang
         ibl.slang
         luminance.slang

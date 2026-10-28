@@ -107,5 +107,6 @@ float4 fragmentMain(VertexOutput input, bool frontFacing : SV_IsFrontFace) : SV_
         material.emissiveFactor * sampleTexture(material.emissiveTexture, input.uv).rgb;
     // A blended surface lets (1 - alpha) of what is behind it through; everything else covers it.
     const float alpha = material.alphaMode == alphaModeBlend ? saturate(baseColor.a) : 1.0;
-    return float4(luminance + emission, alpha);
+    // Hazed by the air and veiled by the fog between it and the camera.
+    return float4(applyAtmosphere(scene, luminance + emission, surface.position), alpha);
 }

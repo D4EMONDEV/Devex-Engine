@@ -41,6 +41,9 @@ constexpr std::array engineComponents{
     ComponentInfo{"SpotLight", "Spot light", Category::ThreeD, "Light from a point within a cone, as a torch gives."},
     ComponentInfo{"Environment", "Environment", Category::ThreeD,
                   "The sky, the light it gives the scene, and how the image is exposed and finished."},
+    ComponentInfo{"Atmosphere", "Atmosphere", Category::ThreeD,
+                  "The air of a planet lit by the sun: the sky, its light on the scene, and the haze of what is far away."},
+    ComponentInfo{"Fog", "Fog", Category::ThreeD, "Fog thickening towards the ground, lit by the sky and the sun."},
     ComponentInfo{"ReflectionProbe", "Reflection probe", Category::ThreeD,
                   "The light around a point, baked in the editor, which the surfaces inside its box reflect in place of the sky."},
     ComponentInfo{"LightProbeVolume", "Light probe volume", Category::ThreeD,
@@ -290,7 +293,8 @@ std::vector<CreationEntry> creationCatalog(const scene::ComponentRegistry& regis
                             .component = std::string(info.type),
                             .category = info.category,
                             .description = std::string(info.description)};
-        const bool placed = info.type != "Environment" && info.type != "Canvas" && !isInterface(info.type);
+        const bool placed = info.type != "Environment" && info.type != "Atmosphere" && info.type != "Fog" && info.type != "Canvas" &&
+                            !isInterface(info.type);
         if (placed && info.type != "Transform")
         {
             entry.components.emplace_back("Transform");

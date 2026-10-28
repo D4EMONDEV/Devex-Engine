@@ -756,6 +756,129 @@ TEST_CASE("Shadows are kept from a frame to the next until what casts them moves
     CHECK(capture.errors().empty());
 }
 
+TEST_CASE("An atmosphere draws a blue sky by day and a red horizon at sunset", "[render][gpu][atmosphere]")
+{
+    const ErrorCapture capture;
+    {
+        auto platform = devex::platform::Platform::create();
+        REQUIRE(platform.has_value());
+        auto window = platform->createWindow({.width = 320, .height = 240, .vulkan = true, .hidden = true});
+        REQUIRE(window.has_value());
+        auto renderer = devex::render::Renderer::create(*platform, *window, {.validation = true});
+        if (!renderer)
+        {
+            FAIL(std::format("{}", renderer.error()));
+        }
+        devex::render::RenderCamera camera;
+        camera.autoExposure = false;
+        camera.ev100 = 14.0f;
+        camera.antialiasing = devex::render::Antialiasing::None;
+        camera.ambientOcclusion = 0.0f;
+        camera.bloom = 0.0f;
+        // Radiance views looking up, and along the horizon towards the sun.
+        devex::render::RenderCamera up = camera;
+        up.verticalFov = devex::math::radians(90.0f);
+        up.view = devex::render::cubeFaceView(devex::math::Vec3{0.0f, 2.0f, 0.0f}, 2);
+        devex::render::RenderCamera east = up;
+        east.view = devex::render::cubeFaceView(devex::math::Vec3{0.0f, 2.0f, 0.0f}, 0);
+
+        // The average light of a capture in nits, and of its upper half alone.
+        const auto average = [](const devex::render::CapturedImage& image, bool upperHalf) {
+            devex::math::Vec3 sum{0.0f};
+            std::size_t count = 0;
+            for (std::uint32_t y = 0; y < (upperHalf ? image.height / 2 : image.height); ++y)
+            {
+                for (std::uint32_t x = 0; x < image.width; ++x)
+                {
+                    const std::size_t pixel = (std::size_t{y} * image.width + x) * 3;
+                    sum += devex::math::Vec3{image.radiance[pixel], image.radiance[pixel + 1], image.radiance[pixel + 2]};
+                    ++count;
+                }
+            }
+            return sum / static_cast<float>(std::max<std::size_t>(count, 1));
+        };
+        bool foggy = false;
+        const auto measure = [&](devex::math::Vec3 sunDirection, const devex::render::RenderCamera& view, bool upperHalf) {
+            std::uint64_t request = 0;
+            for (int frame = 0; frame < 8; ++frame)
+            {
+                devex::render::RenderWorld& world = renderer->beginFrame();
+                world.camera = camera;
+                world.sun = {.direction = sunDirection, .illuminance = devex::math::Vec3{100000.0f}};
+                world.atmosphere.enabled = true;
+                world.fog.enabled = foggy;
+                world.views.push_back({.id = 31, .camera = view, .extent = {32, 32}, .radiance = true});
+                REQUIRE(renderer->endFrame());
+                if (frame == 2)
+                {
+                    request = renderer->requestViewCapture(31, 32, 32);
+                }
+                for (devex::render::CapturedImage& image : renderer->takeCaptures())
+                {
+                    if (image.request == request)
+                    {
+                        REQUIRE(image.radiance.size() == std::size_t{32} * 32 * 3);
+                        return average(image, upperHalf);
+                    }
+                }
+            }
+            FAIL("the sky was not captured");
+            return devex::math::Vec3{0.0f};
+        };
+
+        // Noon: the sky overhead is blue, thousands of nits under a sun of 100000 lux.
+        const devex::math::Vec3 noon = measure({0.1f, -1.0f, 0.0f}, up, false);
+        UNSCOPED_INFO("noon " << noon.x << " " << noon.y << " " << noon.z);
+        CHECK(noon.z > noon.x * 1.5f);
+        CHECK(noon.z > 500.0f);
+        CHECK(noon.z < 30000.0f);
+        // Sunset: towards the sun, just above the horizon, the sky is red.
+        const devex::math::Vec3 sunset = measure(devex::math::normalize(devex::math::Vec3{-1.0f, -0.05f, 0.0f}), east, true);
+        UNSCOPED_INFO("sunset " << sunset.x << " " << sunset.y << " " << sunset.z);
+        CHECK(sunset.x > sunset.z);
+        // The fog hides the horizon in a light as bright as the sky around it, lit by it and the sun.
+        foggy = true;
+        const devex::math::Vec3 fog = measure({0.1f, -1.0f, 0.0f}, east, true);
+        UNSCOPED_INFO("fog " << fog.x << " " << fog.y << " " << fog.z);
+        CHECK(fog.z > 1000.0f);
+        CHECK(fog.z > fog.x);
+        foggy = false;
+
+        // The main image, as the display shows it: a blue sky.
+        std::uint64_t request = 0;
+        std::vector<std::uint8_t> shown;
+        for (int frame = 0; frame < 8 && shown.empty(); ++frame)
+        {
+            devex::render::RenderWorld& world = renderer->beginFrame();
+            world.camera = up;
+            world.sun = {.direction = {0.1f, -1.0f, 0.0f}, .illuminance = devex::math::Vec3{100000.0f}};
+            world.atmosphere.enabled = true;
+            REQUIRE(renderer->endFrame());
+            if (frame == 2)
+            {
+                request = renderer->requestCapture(32, 32);
+            }
+            for (devex::render::CapturedImage& image : renderer->takeCaptures())
+            {
+                if (image.request == request)
+                {
+                    shown = std::move(image.rgba);
+                }
+            }
+        }
+        REQUIRE(shown.size() >= 4);
+        UNSCOPED_INFO("shown " << int(shown[0]) << " " << int(shown[1]) << " " << int(shown[2]));
+        CHECK(shown[2] > shown[0]);
+        CHECK(shown[2] > 60);
+    }
+
+    for (const std::string& error : capture.errors())
+    {
+        UNSCOPED_INFO(error);
+    }
+    CHECK(capture.errors().empty());
+}
+
 TEST_CASE("Only one renderer can exist at a time", "[render][gpu]")
 {
     auto platform = devex::platform::Platform::create();

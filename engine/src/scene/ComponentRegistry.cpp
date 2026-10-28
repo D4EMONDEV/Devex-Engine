@@ -114,6 +114,8 @@ ComponentRegistry& componentRegistry()
         builtins.add<PointLight>();
         builtins.add<SpotLight>();
         builtins.add<Environment>();
+        builtins.add<Atmosphere>();
+        builtins.add<Fog>();
         builtins.add<ReflectionProbe>();
         builtins.add<LightProbeVolume>();
         builtins.add<RigidBody>();

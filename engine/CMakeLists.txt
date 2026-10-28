@@ -352,6 +352,7 @@ add_library(Devex::Render ALIAS devex_render)
 
 target_sources(devex_render
     PRIVATE
+        src/render/Atmosphere.cpp
         src/render/Culling.cpp
         src/render/CubeMaps.cpp
         src/render/SphericalHarmonics.cpp
@@ -362,6 +363,8 @@ target_sources(devex_render
         src/render/Renderer.cpp
         src/render/Selection.cpp
         src/render/Selection.hpp
+        src/render/vulkan/Atmosphere.cpp
+        src/render/vulkan/Atmosphere.hpp
         src/render/vulkan/Commands.cpp
         src/render/vulkan/Commands.hpp
         src/render/vulkan/DescriptorSets.cpp
@@ -393,6 +396,7 @@ target_sources(devex_render
         FILES
             include/devex/render/Culling.hpp
             include/devex/render/CubeMaps.hpp
+            include/devex/render/Atmosphere.hpp
             include/devex/render/SphericalHarmonics.hpp
             include/devex/render/Light2D.hpp
             include/devex/render/Gpu.hpp

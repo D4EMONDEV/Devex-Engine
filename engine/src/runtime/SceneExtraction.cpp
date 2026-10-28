@@ -439,6 +439,7 @@ void extractScene(scene::Scene& scene, AssetManager& assets, render::RenderWorld
             .illuminance = light.color * render::colorFromTemperature(light.temperature) * light.illuminance,
             .castShadows = light.castShadows,
             .shadowDistance = light.shadowDistance,
+            .followAtmosphere = light.followAtmosphere,
         };
     }
 
@@ -480,6 +481,46 @@ void extractScene(scene::Scene& scene, AssetManager& assets, render::RenderWorld
             .intensity = environment.intensity,
             .rotation = environment.rotation,
             .skyMaterial = environment.skyMaterial.isValid() ? assets.material(environment.skyMaterial) : render::MaterialHandle{},
+        };
+    }
+
+    const auto atmospheres = scene.view<scene::Atmosphere>();
+    if (const auto first = atmospheres.begin(); first != atmospheres.end())
+    {
+        [[maybe_unused]] const auto [entity, atmosphere] = *first;
+        world.atmosphere = {
+            .enabled = true,
+            .planetRadius = atmosphere.planetRadius,
+            .height = atmosphere.height,
+            .rayleighScattering = atmosphere.rayleighScattering,
+            .rayleighHeight = atmosphere.rayleighHeight,
+            .mieScattering = atmosphere.mieScattering,
+            .mieAbsorption = atmosphere.mieAbsorption,
+            .mieAnisotropy = atmosphere.mieAnisotropy,
+            .mieHeight = atmosphere.mieHeight,
+            .ozoneAbsorption = atmosphere.ozoneAbsorption,
+            .groundAlbedo = atmosphere.groundAlbedo,
+            .sunDiskSize = atmosphere.sunDiskSize,
+            .sunDiskIntensity = atmosphere.sunDiskIntensity,
+            .aerialPerspective = atmosphere.aerialPerspective,
+            .intensity = atmosphere.intensity,
+        };
+    }
+    const auto fogs = scene.view<scene::Fog>();
+    if (const auto first = fogs.begin(); first != fogs.end())
+    {
+        [[maybe_unused]] const auto [entity, fog] = *first;
+        world.fog = {
+            .enabled = true,
+            .color = fog.color,
+            .density = fog.density,
+            .height = fog.height,
+            .falloff = fog.falloff,
+            .startDistance = fog.startDistance,
+            .maxOpacity = fog.maxOpacity,
+            .sunScattering = fog.sunScattering,
+            .sunAnisotropy = fog.sunAnisotropy,
+            .skyBlend = fog.skyBlend,
         };
     }
 

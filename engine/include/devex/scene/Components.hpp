@@ -137,6 +137,10 @@ struct DEVEX_API DirectionalLight
     bool castShadows = true;
     // Distance from the camera, in meters, beyond which nothing is shadowed.
     float shadowDistance = 80.0f;
+    // With an Atmosphere in the scene, the light takes the colour and the strength the air lets
+    // through towards the camera: white at noon, orange and faint at sunset, gone at night. Its
+    // illuminance is then the one above the air.
+    bool followAtmosphere = true;
 };
 DEVEX_DECLARE_ENGINE_REFLECTION(DirectionalLight);
 
@@ -188,6 +192,66 @@ struct DEVEX_API Environment
     float rotation = 0.0f;
 };
 DEVEX_DECLARE_ENGINE_REFLECTION(Environment);
+
+// The air of a planet lit by the sun (the first DirectionalLight), as Unreal's SkyAtmosphere: it
+// draws the sky in place of the Environment's, lights the scene with it, and hazes what is far
+// away. The air scatters the light by its molecules (Rayleigh: blue sky, red sunsets) and its
+// aerosols (Mie: the glow around the sun), and its ozone absorbs some, each thinning with
+// altitude. The defaults are the Earth's; the ground of the scene, at height 0, is the planet's.
+struct DEVEX_API Atmosphere
+{
+    // In kilometers: the radius of the planet, and how high the air reaches above its ground.
+    float planetRadius = 6360.0f;
+    float height = 100.0f;
+    // Scattering by the molecules at the ground, per kilometer, for red, green and blue, and the
+    // altitude in kilometers over which it falls by e.
+    math::Vec3 rayleighScattering{0.005802f, 0.013558f, 0.0331f};
+    float rayleighHeight = 8.0f;
+    // Scattering and absorption by the aerosols at the ground, per kilometer, how much they throw
+    // the light forward (from 0, in every direction, towards 1) and the altitude of their fall.
+    float mieScattering = 0.003996f;
+    float mieAbsorption = 0.000444f;
+    float mieAnisotropy = 0.8f;
+    float mieHeight = 1.2f;
+    // Absorption by the ozone at the middle of its layer, per kilometer, which keeps the zenith
+    // blue at dusk.
+    math::Vec3 ozoneAbsorption{0.00065f, 0.001881f, 0.000085f};
+    // The colour of the ground seen from above, which lights the air from below.
+    math::Vec3 groundAlbedo{0.3f};
+    // The disk of the sun in the sky: its angular diameter, and a factor of its brightness.
+    float sunDiskSize = 0.0095f;
+    float sunDiskIntensity = 1.0f;
+    // Times the distance over which what is far away is hazed: above 1 for a scene smaller than
+    // the world it shows; 0 hazes nothing.
+    float aerialPerspective = 1.0f;
+    // Times the light of the sky.
+    float intensity = 1.0f;
+};
+DEVEX_DECLARE_ENGINE_REFLECTION(Atmosphere);
+
+// Fog thickening towards the ground, lit by the sky and the sun, as Godot's and Unreal's height fog:
+// what is far away fades into it, and the sky near the horizon too.
+struct DEVEX_API Fog
+{
+    // The share of the light falling on the fog that it sends on, for red, green and blue.
+    math::Vec3 color{0.75f, 0.8f, 0.9f};
+    // How much of the light it stops per meter at `height`, and the height in meters over which
+    // it thins out by e above it.
+    float density = 0.01f;
+    float height = 0.0f;
+    float falloff = 20.0f;
+    // Meters from the camera before which there is no fog.
+    float startDistance = 0.0f;
+    // The most of the view it can hide, from 0 to 1.
+    float maxOpacity = 1.0f;
+    // How much it glows around the sun, and how tightly (from 0, evenly, towards 1).
+    float sunScattering = 1.0f;
+    float sunAnisotropy = 0.6f;
+    // How much it takes the colour of the sky behind it, from 0 to 1, as Godot's aerial perspective:
+    // far away, it melts into the horizon.
+    float skyBlend = 0.5f;
+};
+DEVEX_DECLARE_ENGINE_REFLECTION(Fog);
 
 // The width of each face of the capture of a reflection probe. The values are stored in scenes: never
 // reorder them.

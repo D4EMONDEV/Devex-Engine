@@ -33,6 +33,10 @@ public:
     static constexpr std::uint32_t textureSamplersBinding = 8;
     // The reflections of the probes, each prefiltered for every roughness.
     static constexpr std::uint32_t reflectionProbesBinding = 9;
+    // The tables of the atmosphere, in the general layout their passes write them in.
+    static constexpr std::uint32_t atmosphereTransmittanceBinding = 10;
+    static constexpr std::uint32_t skyViewBinding = 11;
+    static constexpr std::uint32_t aerialPerspectiveBinding = 12;
     // Frame set bindings.
     static constexpr std::uint32_t shadowMapBinding = 0;
     static constexpr std::uint32_t shadowSamplerBinding = 1;
@@ -93,7 +97,12 @@ public:
     // Views must be in the shader read-only layout whenever a frame samples them. Nearest textures
     // are read at their nearest pixel, which keeps pixel art sharp.
     void setTexture(std::uint32_t slot, VkImageView view, bool nearest = false) noexcept;
-    void setEnvironment(VkImageView specular, VkImageView irradiance, VkImageView sky) noexcept;
+    // The maps of the light of the environment: in the shader read-only layout, or in the general one
+    // for those the frames write themselves.
+    void setEnvironment(VkImageView specular, VkImageView irradiance, VkImageView sky,
+                        VkImageLayout layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) noexcept;
+    // The tables of the atmosphere, in the general layout.
+    void setAtmosphere(VkImageView transmittance, VkImageView skyView, VkImageView aerialPerspective) noexcept;
     void setBrdfLut(VkImageView view) noexcept;
     // A cube map in the shader read-only layout.
     void setReflectionProbe(std::uint32_t slot, VkImageView view) noexcept;

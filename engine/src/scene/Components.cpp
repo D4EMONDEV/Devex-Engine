@@ -52,7 +52,8 @@ DEVEX_REFLECT(DirectionalLight)
         .field("temperature", &DirectionalLight::temperature)
         .field("illuminance", &DirectionalLight::illuminance)
         .field("cast_shadows", &DirectionalLight::castShadows)
-        .field("shadow_distance", &DirectionalLight::shadowDistance);
+        .field("shadow_distance", &DirectionalLight::shadowDistance)
+        .field("follow_atmosphere", &DirectionalLight::followAtmosphere);
 }
 
 DEVEX_REFLECT(PointLight)
@@ -82,6 +83,37 @@ DEVEX_REFLECT(Environment)
         .field("color", &Environment::color, {.color = true})
         .field("intensity", &Environment::intensity)
         .field("rotation", &Environment::rotation, {.angle = true});
+}
+
+DEVEX_REFLECT(Atmosphere)
+{
+    type.field("planet_radius", &Atmosphere::planetRadius)
+        .field("height", &Atmosphere::height)
+        .field("rayleigh_scattering", &Atmosphere::rayleighScattering)
+        .field("rayleigh_height", &Atmosphere::rayleighHeight)
+        .field("mie_scattering", &Atmosphere::mieScattering)
+        .field("mie_absorption", &Atmosphere::mieAbsorption)
+        .field("mie_anisotropy", &Atmosphere::mieAnisotropy)
+        .field("mie_height", &Atmosphere::mieHeight)
+        .field("ozone_absorption", &Atmosphere::ozoneAbsorption)
+        .field("ground_albedo", &Atmosphere::groundAlbedo, {.color = true})
+        .field("sun_disk_size", &Atmosphere::sunDiskSize, {.angle = true})
+        .field("sun_disk_intensity", &Atmosphere::sunDiskIntensity)
+        .field("aerial_perspective", &Atmosphere::aerialPerspective)
+        .field("intensity", &Atmosphere::intensity);
+}
+
+DEVEX_REFLECT(Fog)
+{
+    type.field("color", &Fog::color, {.color = true})
+        .field("density", &Fog::density)
+        .field("height", &Fog::height)
+        .field("falloff", &Fog::falloff)
+        .field("start_distance", &Fog::startDistance)
+        .field("max_opacity", &Fog::maxOpacity)
+        .field("sun_scattering", &Fog::sunScattering)
+        .field("sun_anisotropy", &Fog::sunAnisotropy)
+        .field("sky_blend", &Fog::skyBlend);
 }
 
 DEVEX_REFLECT(ReflectionProbe)

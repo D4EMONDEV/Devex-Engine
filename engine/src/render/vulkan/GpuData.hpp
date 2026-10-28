@@ -169,6 +169,51 @@ struct GpuSceneData
     // The irradiance volumes of the frame, the smallest first.
     std::uint32_t irradianceVolumeCount = 0;
     VkDeviceAddress irradianceVolumes = 0;
+    // The air and the fog of the frame, and which of them there are (atmosphereAir, atmosphereFog).
+    VkDeviceAddress atmosphere = 0;
+    std::uint32_t atmosphereFlags = 0;
+    std::uint32_t padding = 0;
+};
+
+inline constexpr std::uint32_t atmosphereAir = 1;
+inline constexpr std::uint32_t atmosphereFog = 2;
+
+// The air of the frame, in kilometers and per kilometer, with the sun above it and the camera in it,
+// and the fog, in meters. Read by the sky, by the surfaces it hazes, and by the passes that fill the
+// tables of the atmosphere.
+struct GpuAtmosphere
+{
+    float bottomRadius = 6360.0f;
+    float topRadius = 6460.0f;
+    float rayleighHeight = 8.0f;
+    float mieHeight = 1.2f;
+    math::Vec3 rayleighScattering{0.0f};
+    float mieScattering = 0.0f;
+    math::Vec3 ozoneAbsorption{0.0f};
+    float mieAbsorption = 0.0f;
+    math::Vec3 groundAlbedo{0.0f};
+    float mieAnisotropy = 0.8f;
+    // Above the air, in lux, times the intensity of the sky; and the cosine of the radius of its disk.
+    math::Vec3 sunIlluminance{0.0f};
+    float sunCosRadius = 1.0f;
+    // Towards the sun, and how far the camera stands from the center of the planet.
+    math::Vec3 sunDirection{0.0f, 1.0f, 0.0f};
+    float cameraRadius = 6360.0f;
+    float sunDiskIntensity = 1.0f;
+    // Kilometers of haze per kilometer of the scene, and the farthest the haze is kept.
+    float aerialScale = 1.0f;
+    float aerialDistance = 32.0f;
+    float padding0 = 0.0f;
+    math::Vec3 fogColor{0.0f};
+    float fogDensity = 0.0f;
+    float fogHeight = 0.0f;
+    float fogFalloff = 1.0f;
+    float fogStart = 0.0f;
+    float fogMaxOpacity = 1.0f;
+    float fogSunScattering = 0.0f;
+    float fogSunAnisotropy = 0.0f;
+    float fogSkyBlend = 0.0f;
+    float padding1 = 0.0f;
 };
 
 // How a vertex of a skinned mesh follows its bones, beside the vertex itself.
@@ -422,6 +467,8 @@ struct TonemapPushConstants
     // The size of the image drawn into, smaller than the scene for a capture.
     float targetWidth = 0.0f;
     float targetHeight = 0.0f;
+    // 1 when the image drawn into does not encode sRGB itself, as the swapchain of some displays.
+    std::uint32_t encode = 0;
 };
 
 struct LuminancePushConstants
@@ -472,7 +519,11 @@ static_assert(offsetof(GpuSceneData, materialParameters) == 888);
 static_assert(offsetof(GpuSceneData, instanceParameters) == 896);
 static_assert(offsetof(GpuSceneData, reflectionProbes) == 904);
 static_assert(offsetof(GpuSceneData, irradianceVolumes) == 920);
-static_assert(sizeof(GpuSceneData) == 928);
+static_assert(offsetof(GpuSceneData, atmosphere) == 928);
+static_assert(sizeof(GpuSceneData) == 944);
+static_assert(offsetof(GpuAtmosphere, sunIlluminance) == 64);
+static_assert(offsetof(GpuAtmosphere, fogColor) == 112);
+static_assert(sizeof(GpuAtmosphere) == 160);
 static_assert(sizeof(GpuIrradianceVolume) == 112);
 static_assert(offsetof(GpuIrradianceVolume, probes) == 96);
 static_assert(sizeof(GpuReflectionProbe) == 112);

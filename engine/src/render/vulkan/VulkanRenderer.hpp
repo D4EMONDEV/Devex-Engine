@@ -3,6 +3,7 @@
 #include "../Lighting.hpp"
 #include "DescriptorSets.hpp"
 #include "Device.hpp"
+#include "Atmosphere.hpp"
 #include "EnvironmentBaker.hpp"
 #include "GpuData.hpp"
 #include "Instance.hpp"
@@ -244,6 +245,8 @@ private:
         std::array<std::uint32_t, 4> pickRect{};
         math::Extent2D pickExtent{1, 1};
         // The picture of the scene the frame drew for a capture, in the format of the target.
+        // The air and the fog of the frame, which the shaders read through the scene data.
+        std::optional<Buffer> atmosphere;
         std::optional<Buffer> captureReadback;
         // The light a radiance view drew for a capture, as half floats, and the exposure it was drawn at.
         std::optional<Buffer> radianceReadback;
@@ -467,6 +470,8 @@ private:
     void updateExposure(FrameContext& frame);
     [[nodiscard]] core::Result<void> uploadLights(FrameContext& frame, float aspectRatio);
     void writeSceneData(FrameContext& frame, const std::optional<ShadowCascades>& cascades) const noexcept;
+    // The air and the fog of the frame into its buffer and the scene data, with what they were made of.
+    void writeAtmosphere(FrameContext& frame, GpuSceneData& scene) const noexcept;
     [[nodiscard]] core::Result<OverlayRanges> uploadOverlay(FrameContext& frame);
     [[nodiscard]] core::Result<void> uploadUi(FrameContext& frame, bool tools, std::vector<std::uint32_t>& surfaceIndexBases,
                                             std::uint32_t& toolsIndexBase);
@@ -558,6 +563,13 @@ private:
     UploadContext m_upload;
     std::optional<DescriptorSets> m_descriptors;
     std::unique_ptr<EnvironmentBaker> m_baker;
+    // The tables and the light of the sky of an atmosphere; whether a frame drew one, and what its
+    // air and its sky were made of.
+    std::unique_ptr<AtmosphereRenderer> m_atmosphere;
+    bool m_atmosphereBound = false;
+    mutable std::uint64_t m_airKey = 0;
+    mutable std::uint64_t m_skyKey = 0;
+    mutable std::uint64_t m_viewKey = 0;
     std::optional<Image> m_brdfTable;
     // Absent while the window has no drawable area.
     std::optional<Swapchain> m_swapchain;

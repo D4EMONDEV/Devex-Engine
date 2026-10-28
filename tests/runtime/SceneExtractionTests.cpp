@@ -114,6 +114,36 @@ TEST_CASE("Extraction copies the camera, the lights and the loaded meshes", "[ru
     CHECK(world.meshes[2].submesh == 1);
 }
 
+TEST_CASE("Extraction copies the atmosphere and the fog, and tells the sun to follow the air", "[runtime][extraction][atmosphere]")
+{
+    devex::runtime::AssetManager assets(nullptr, nullptr);
+    Scene scene;
+    devex::render::RenderWorld world;
+    devex::runtime::extractScene(scene, assets, world);
+    CHECK_FALSE(world.atmosphere.enabled);
+    CHECK_FALSE(world.fog.enabled);
+
+    const Entity sky = scene.createEntity("Sky");
+    scene.add<devex::scene::Atmosphere>(sky, devex::scene::Atmosphere{.mieAnisotropy = 0.7f, .aerialPerspective = 3.0f});
+    scene.add<devex::scene::Fog>(sky, devex::scene::Fog{.density = 0.02f, .height = 5.0f, .skyBlend = 0.25f});
+    const Entity sun = scene.createEntity("Sun");
+    scene.add<Transform>(sun);
+    scene.add<devex::scene::DirectionalLight>(sun, devex::scene::DirectionalLight{.followAtmosphere = false});
+    scene.updateTransforms();
+    world = devex::render::RenderWorld{};
+    devex::runtime::extractScene(scene, assets, world);
+
+    CHECK(world.atmosphere.enabled);
+    CHECK(world.atmosphere.planetRadius == 6360.0f);
+    CHECK(world.atmosphere.mieAnisotropy == 0.7f);
+    CHECK(world.atmosphere.aerialPerspective == 3.0f);
+    CHECK(world.fog.enabled);
+    CHECK(world.fog.density == 0.02f);
+    CHECK(world.fog.height == 5.0f);
+    CHECK(world.fog.skyBlend == 0.25f);
+    CHECK_FALSE(world.sun.followAtmosphere);
+}
+
 TEST_CASE("Extraction adds the particles of the emitters and the ribbons of the trails", "[runtime][extraction][particles]")
 {
     Scene scene;

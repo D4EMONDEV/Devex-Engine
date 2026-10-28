@@ -118,6 +118,7 @@ mais seulement explicitement ici : le code suit ce document, pas l'inverse.
 | Lumières                 | Directionnelle, ponctuelles et spots en clusters calculés sur CPU  |
 | Ombres                   | Cascades (CSM, 4 × 2048²) pour la lumière directionnelle           |
 | Lumière indirecte        | Ciel HDR équirectangulaire, IBL précalculée sur GPU                |
+| Ciel                     | Atmosphère de Hillaire en tables GPU, brouillard de hauteur        |
 | Exposition               | Manuelle ou automatique (mesure GPU, adaptation CPU)               |
 | Tonemapping              | AgX par défaut, Khronos PBR Neutral, ACES                          |
 | Réglages d'environnement | Composant `Environment`, exposition sur le composant `Camera`      |
@@ -2679,6 +2680,51 @@ Jalon 65, comme les `Joint3D` et `Joint2D` de Godot :
 - **Bac à sable** : la salle aux miroirs a un volume de 9 × 5 × 9 sondes à deux rebonds, en retrait
   de ses murs ; à cuire avant sa sonde de réflexion.
 
+### Atmosphère et brouillard
+
+- **Modèle** : celui de Hillaire (*A Scalable and Production Ready Sky and Atmosphere Rendering
+  Technique*, 2020), comme le `SkyAtmosphere` d'Unreal : l'air d'une planète (rayon et hauteur en
+  kilomètres, Terre par défaut, le sol de la scène à la surface) diffuse la lumière du soleil par ses
+  molécules (Rayleigh : ciel bleu, couchers rouges), ses aérosols (Mie, phase de Cornette-Shanks :
+  halo autour du soleil) et l'ozone l'absorbe, chacun s'amincissant avec l'altitude. Le calcul tient
+  dans de petites tables remplies sur le GPU par `shaders/atmosphere.slang` : la **transmittance**
+  (256 × 64, paramétrée comme Bruneton) et la **diffusion multiple** (32 × 32, l'ordre deux sur 64
+  directions sommé en série géométrique) quand l'air change ; la **table du ciel** autour de la
+  caméra (192 × 108, plus fine vers le soleil et vers l'horizon, le sol éclairé de la planète sous
+  l'horizon) et la **brume** en 32 tranches de distance de la vue (32 × 32 × 32, jusqu'à 32 km)
+  quand la caméra ou le soleil bougent ; rien quand rien ne bouge. Valeurs mesurées en nits par une
+  vue radiance : zénith de midi (1 100, 2 200, 4 700) sous un soleil de 100 000 lux.
+- **Composants** : `Atmosphere` remplace le ciel de l'`Environment` (texture ou shader) ; ses
+  champs sont ceux du modèle, plus le disque du soleil (diamètre, éclat), un facteur de brume
+  (`aerial_perspective`, pour une scène plus petite que le monde qu'elle montre) et une intensité.
+  `DirectionalLight::follow_atmosphere` (vrai par défaut) fait passer le soleil par l'air jusqu'à la
+  caméra : la transmittance, calculée aussi sur le CPU (`render::atmosphereTransmittance`, testée
+  sans GPU), le teinte et l'affaiblit ; son éclairement est alors celui d'au-dessus de l'air.
+- **Lumière du ciel** : recuire les cubemaps de l'IBL à chaque mouvement du soleil coûterait trop.
+  L'atmosphère remplit donc ses propres cartes dans la frame, quand le soleil ou l'altitude de la
+  caméra changent : le ciel en cubemap de 64², préfiltré GGX sur cinq niveaux de rugosité, et son
+  irradiance en 16². Elles prennent la place de celles de l'environnement (liées en layout général)
+  : sondes, volumes, matériaux et shaders des projets continuent tels quels.
+- **Brouillard** : `Fog`, comme celui de hauteur de Godot et d'Unreal : densité par mètre à une
+  hauteur, qui décroît d'un facteur e tous les `falloff` mètres au-dessus, intégrée analytiquement
+  le long du rayon ; distance de départ, opacité maximale, éclat autour du soleil (phase de
+  Henyey-Greenstein). Il est éclairé par le ciel (son irradiance) et le soleil traversant l'air, et
+  prend en partie la couleur du ciel derrière lui (`sky_blend`, comme la perspective aérienne de
+  Godot) : au loin, il se fond dans l'horizon. Il voile aussi le ciel près de l'horizon.
+- **Application** : les surfaces (maillages, shaders des projets, sauf ceux en mélange additif) se
+  voilent de la brume de l'air puis du brouillard, après l'exposition (`applyAtmosphere`) ; le ciel
+  ajoute le disque du soleil, tenu sous la limite des demi-flottants. Les importeurs de shaders
+  passent à la version 3 pour recompiler ceux des projets.
+- **Coût** : 0,5 ms de GPU par frame qui bouge (Iris Xe, Release), rien au repos ; environ 0,6 ms de
+  plus pour la brume et le brouillard des surfaces.
+- **Écrans sans sRGB** : le tonemapping encode lui-même l'image quand la cible ne le fait pas
+  (`encode`), comme l'interface depuis le jalon 78 : sur une surface hors écran en UNORM, la vue 3D
+  sortait aussi trop sombre.
+- **Bac à sable** : l'arène a une `Atmosphere` et un léger `Fog` ; son soleil porte un `TimeOfDay`
+  (code C++ du projet) : T maintenu avance l'heure, Maj+T la recule, et le ciel, la couleur de la
+  lumière et la brume suivent, du midi au crépuscule. Sa course part de la direction où le soleil
+  était cuit, si bien que la sonde et le volume de la salle aux miroirs restent justes à cette
+  heure-là (ils ne suivent pas l'heure : il faudrait les recuire).
 ### Transparence et post-traitements
 
 - **Passes** : une frame dessine maintenant la **prépasse** (profondeur, mouvement et normales),
@@ -4594,10 +4640,17 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     le pointeur, défilement doux de la molette et de la piste ; bordures et ombres douces des images
     (menus, dialogues, infobulles, listes déroulantes), anneau de focus des champs ; image de la
     fenêtre entière (`Renderer::requestWindowCapture`, `devex-editor --screenshot`, test *Editor
-    pictures*) ; couleurs de l'interface encodées sur les écrans sans sRGB ; API des jeux 23.
+    pictures*) ; couleurs de l'interface encodées sur les écrans sans sRGB ; API des jeux 23 ;
+    ensuite, cases à cocher façon Godot 4 (case d'accent, coche tracée) et dialogues ajustés à leur
+    contenu (API 25).
 79. ✅ **Fluidité de l'éditeur** — cascades et atlas d'ombres gardés d'une frame à l'autre tant que
     rien de ce qui les dessine ne change (14,3 → 5,5 ms de GPU pour l'éditeur au repos sur l'arène,
     Iris Xe) ; `devex-editor --profile` écrit où passe le temps d'une frame ; API des jeux 24.
+80. ✅ **Ciel et atmosphère** — atmosphère physique de Hillaire (Rayleigh, Mie, ozone, diffusion
+    multiple) en tables remplies sur le GPU, soleil teinté par l'air, lumière du ciel en cubemaps
+    préfiltrées dans la frame, brume du lointain et brouillard de hauteur qui se fond dans l'horizon ;
+    composants `Atmosphere` et `Fog` ; tonemapping encodé sur les écrans sans sRGB ; heure du jour
+    (T) dans l'arène ; API des jeux 26.
 
 Ensuite, sans ordre figé : à choisir dans les pistes ci-dessous.
 

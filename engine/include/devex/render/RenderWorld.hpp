@@ -103,6 +103,9 @@ struct DEVEX_API RenderSun
     math::Vec3 illuminance{0.0f};
     bool castShadows = true;
     float shadowDistance = 80.0f;
+    // With an atmosphere, the illuminance is the one above the air, and the light that reaches the
+    // scene takes the colour and the strength the air lets through.
+    bool followAtmosphere = true;
 };
 
 enum class LightType : std::uint8_t
@@ -140,6 +143,43 @@ struct DEVEX_API RenderEnvironment
     // A material whose sky shader draws the sky in place of the texture or the colour, which still
     // tint it.
     MaterialHandle skyMaterial;
+};
+
+// The air of a planet lit by the sun, which draws the sky, lights the scene and hazes the distance;
+// lengths in kilometers, scattering and absorption per kilometer. See scene::Atmosphere.
+struct DEVEX_API RenderAtmosphere
+{
+    bool enabled = false;
+    float planetRadius = 6360.0f;
+    float height = 100.0f;
+    math::Vec3 rayleighScattering{0.005802f, 0.013558f, 0.0331f};
+    float rayleighHeight = 8.0f;
+    float mieScattering = 0.003996f;
+    float mieAbsorption = 0.000444f;
+    float mieAnisotropy = 0.8f;
+    float mieHeight = 1.2f;
+    math::Vec3 ozoneAbsorption{0.00065f, 0.001881f, 0.000085f};
+    math::Vec3 groundAlbedo{0.3f};
+    // Angular diameter, in radians.
+    float sunDiskSize = 0.0095f;
+    float sunDiskIntensity = 1.0f;
+    float aerialPerspective = 1.0f;
+    float intensity = 1.0f;
+};
+
+// Fog thickening towards the ground; lengths in meters. See scene::Fog.
+struct DEVEX_API RenderFog
+{
+    bool enabled = false;
+    math::Vec3 color{0.75f, 0.8f, 0.9f};
+    float density = 0.01f;
+    float height = 0.0f;
+    float falloff = 20.0f;
+    float startDistance = 0.0f;
+    float maxOpacity = 1.0f;
+    float sunScattering = 1.0f;
+    float sunAnisotropy = 0.6f;
+    float skyBlend = 0.5f;
 };
 
 // The light captured around a point, which the surfaces inside the box of the probe reflect in place
@@ -536,6 +576,8 @@ struct DEVEX_API RenderWorld
     RenderSun sun;
     std::vector<RenderLight> lights;
     RenderEnvironment environment;
+    RenderAtmosphere atmosphere;
+    RenderFog fog;
     std::vector<RenderReflectionProbe> reflectionProbes;
     std::vector<RenderIrradianceVolume> irradianceVolumes;
     std::vector<MeshInstance> meshes;
