@@ -1809,8 +1809,9 @@ void InspectorUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& edit
     }
     styleTooltips(colors);
 
-    // What the inspector shows: a state or a transition of the Animator panel until another entity or
-    // asset is chosen, the entities selected, a code file, an asset, or a word to choose something.
+    // What the inspector shows: a state, a transition or a layer of the Animator panel until another
+    // entity or asset is chosen, the entities selected, a code file, an asset, or a word to choose
+    // something.
     AnimatorEditor& animator = state.animatorEditor;
     if (animator.inspecting && (state.selection.active() != animator.inspectedEntity || state.selectedAsset != animator.inspectedAsset))
     {
@@ -1829,7 +1830,8 @@ void InspectorUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& edit
     }
     std::string_view kind;
     if (animator.inspecting && state.showAnimator &&
-        (animator.selected == AnimatorElement::State || animator.selected == AnimatorElement::Transition))
+        (animator.selected == AnimatorElement::State || animator.selected == AnimatorElement::Transition ||
+         animator.selected == AnimatorElement::Layer))
     {
         kind = "animator element";
     }

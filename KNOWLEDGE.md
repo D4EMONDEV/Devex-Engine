@@ -2135,12 +2135,19 @@ namespace devex::animation {
             float value = 0.0f;  // Bools et triggers sont 0 ou 1
         };
         
-        std::string state;
-        float normalizedTime = 0.0f;  // Depuis le début de l'état
-        std::string previousState;       // État précédent
-        float transitionProgress = 1.0f;
+        // Ce que fait une couche du contrôleur
+        struct DEVEX_API Layer {
+            std::string name;
+            std::string state;
+            float normalizedTime = 0.0f;     // Depuis le début de l'état
+            std::string previousState;       // État dont il part en fondu
+            float transitionProgress = 1.0f;
+            float weight = 1.0f;             // Paramètre de poids compris ; 1 pour la base
+        };
+
         bool playing = false;
         std::vector<Parameter> parameters;
+        std::vector<Layer> layers;           // La couche de base d'abord
     };
     
     class DEVEX_API AnimationWorld {
@@ -2173,8 +2180,12 @@ namespace devex::animation {
         void setTrigger(scene::Entity entity, std::string_view parameter);
         void resetTrigger(scene::Entity entity, std::string_view parameter);
         [[nodiscard]] std::optional<float> parameter(scene::Entity entity, std::string_view parameter) const;
-        [[nodiscard]] std::string_view state(scene::Entity entity) const;
-        [[nodiscard]] float stateTime(scene::Entity entity) const;
+        // Sans nom de couche : la couche de base
+        [[nodiscard]] std::string_view state(scene::Entity entity, std::string_view layer = {}) const;
+        [[nodiscard]] float stateTime(scene::Entity entity, std::string_view layer = {}) const;
+        // Poids d'une couche (0 à 1), à la place de celui du contrôleur
+        void setLayerWeight(scene::Entity entity, std::string_view layer, float weight);
+        [[nodiscard]] std::optional<float> layerWeight(scene::Entity entity, std::string_view layer) const;
         [[nodiscard]] std::optional<AnimatorStatus> status(scene::Entity entity) const;
         
         // Pause globale
@@ -2198,6 +2209,10 @@ namespace devex::animation {
 - **Animation par clips** : Système de clips d'animation
 - **State machines** : Machines d'état avec transitions
 - **Blend trees** : Arbres de mélange linéaires et planaires
+- **Couches** : Machines à états par couche, en remplacement (Override) ou en ajout (Additive),
+  avec masque d'os et poids (valeur, code, paramètre)
+- **Pose de repos** : Les os qu'un clip du contrôleur anime reviennent au repos quand les états
+  joués les laissent libres
 - **Paramètres** : Contrôle via paramètres float, int, bool, trigger
 - **Crossfading** : Transitions douces entre animations
 - **Synchronisation** : Animation des os et des sprites
@@ -2208,7 +2223,7 @@ namespace devex::animation {
 - `Animator` : Lecteur d'animations avec state machine
 - `SpriteAnimator` : Lecteur d'animations de sprites
 
-**Types de paramètres :**
+**Types de paramètres et couches :**
 ```cpp
 // Dans asset/AnimatorData.hpp
 namespace devex::asset {
@@ -2217,6 +2232,27 @@ namespace devex::asset {
         Integer,
         Bool,
         Trigger
+    };
+
+    enum class AnimatorLayerBlend : std::uint8_t { Override, Additive };
+
+    // Une machine à états du contrôleur ; la première est la couche de base
+    struct DEVEX_API AnimatorLayer {
+        std::string name = "Base Layer";
+        std::string entry;
+        std::vector<AnimatorState> states;
+        std::vector<AnimatorTransition> transitions;
+        AnimatorLayerBlend blending = AnimatorLayerBlend::Override;
+        float weight = 1.0f;
+        std::string weightParameter;          // Multiplie le poids
+        std::vector<std::string> mask;        // Os mis dans le masque, avec ceux en dessous
+        std::vector<std::string> maskExcluded; // Os laissés dehors, avec ceux en dessous
+        math::Vec2 entryPosition, anyStatePosition;
+    };
+
+    struct DEVEX_API AnimatorData {
+        std::vector<AnimatorParameter> parameters;
+        std::vector<AnimatorLayer> layers;    // Jamais vide
     };
 }
 ```

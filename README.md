@@ -90,7 +90,8 @@ captures de l'éditeur, scènes de base, entrées, scripts C#, animations, colli
   chargement ou pendant la lecture ;
 - `Devex::Animation` : clips d'animation importés des modèles glTF et FBX, squelettes faits d'entités,
   `Animator` qui joue un clip avec fondu croisé ou une machine à états `.dvxanimator` (paramètres,
-  transitions conditionnelles, arbres de mélange 1D et 2D, états de sprites), root motion
+  transitions conditionnelles, arbres de mélange 1D et 2D, états de sprites, couches en
+  remplacement ou en ajout sur les os de leur masque), root motion
   optionnel, skinning des maillages
   dans le vertex shader ; tweens de tout champ numérique, vectoriel, de couleur ou de rotation
   d'un composant (délai, boucles, aller-retour, séquences), par code ou par le composant
@@ -138,8 +139,8 @@ captures de l'éditeur, scènes de base, entrées, scripts C#, animations, colli
   d'état, onglets des scènes que l'on glisse pour les ranger et dont le clic droit ferme les autres
   ou montre le fichier dans FileSystem, barre d'outils de la vue), panneaux
   Animation (timeline qui zoome et défile, événements du clip ajoutés, déplacés et nommés),
-  Animator (graphe des états, paramètres suivis en
-  direct) et Shader Graph (nœuds des shaders visuels à la Godot, liens, annuler et refaire),
+  Animator (graphe des états, couches et leurs masques choisis sur le squelette, paramètres
+  suivis en direct) et Shader Graph (nœuds des shaders visuels à la Godot, liens, annuler et refaire),
   écran Script (fichiers ouverts, menus File, Edit et Search, recherche, complétion, sur
   une zone de texte qui ne place que les lignes en vue), FileSystem et Output déjà écrits
   avec
@@ -211,8 +212,9 @@ captures de l'éditeur, scènes de base, entrées, scripts C#, animations, colli
   (`code/Bobber.cs`) ; le lanceur C++ et les cibles C# jouent leurs sons, la porte sa source audio,
   le cube flottant émet un bourdonnement spatialisé et une ambiance Ogg tourne en boucle dans le
   groupe Music ; un robot rigué patrouille par le maillage de navigation, au bruit de ses pas
-  (des événements de son clip de marche), attend et salue le
-  joueur par sa machine à états (`assets/animators/robot.dvxanimator`, `code/Robot.cs`), deux
+  (des événements de son clip de marche), attend et salue le joueur sans s'arrêter, du bras droit
+  et de la tête, par une couche de sa machine à états (`assets/animators/robot.dvxanimator`,
+  `code/Robot.cs`), deux
   drones suivent le joueur en se contournant (`code/Follower.cs`), et la porte fermée comme les
   caisses poussées découpent le maillage ; des articulations y tiennent une porte battante sur
   gonds, un pendule et un panneau soudé qu'une balle décroche ;

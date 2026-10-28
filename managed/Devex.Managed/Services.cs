@@ -599,14 +599,47 @@ public static unsafe class Animation
     /// <summary>The state the state machine of the entity is in; empty without a controller.</summary>
     public static string GetState(Entity entity) => ReadState(entity, out _);
 
+    /// <summary>The state a layer of the state machine is in; empty without that layer.</summary>
+    public static string GetState(Entity entity, string layer) => ReadLayerState(entity, layer, out _);
+
     /// <summary>Whether the state machine of the entity is in a state.</summary>
     public static bool IsInState(Entity entity, string state) => GetState(entity) == state;
+
+    /// <summary>Whether a layer of the state machine of the entity is in a state.</summary>
+    public static bool IsInState(Entity entity, string state, string layer) => GetState(entity, layer) == state;
 
     /// <summary>How far into its state the state machine is: 1 at its end, more for a state that loops.</summary>
     public static float GetStateTime(Entity entity)
     {
         ReadState(entity, out float time);
         return time;
+    }
+
+    /// <summary>How far into its state a layer of the state machine is.</summary>
+    public static float GetStateTime(Entity entity, string layer)
+    {
+        ReadLayerState(entity, layer, out float time);
+        return time;
+    }
+
+    /// <summary>
+    /// Sets how much of the pose of a layer of the state machine shows, from 0 to 1, in place of the
+    /// weight its controller gives it: an arm that aims only while the character holds a weapon. The
+    /// weight parameter of the layer, when it names one, still multiplies it.
+    /// </summary>
+    public static void SetLayerWeight(Entity entity, string layer, float weight)
+    {
+        using var text = new Utf8Buffer(layer);
+        Bootstrap.Native.SetAnimatorLayerWeight(entity, text.Pointer, weight);
+    }
+
+    /// <summary>The weight code or the controller gives a layer; 0 for a layer neither knows.</summary>
+    public static float GetLayerWeight(Entity entity, string layer)
+    {
+        using var text = new Utf8Buffer(layer);
+        float weight;
+        Bootstrap.Native.AnimatorLayerWeight(entity, text.Pointer, &weight);
+        return weight;
     }
 
     private static void SetParameter(Entity entity, string parameter, int kind, float value)
@@ -619,6 +652,15 @@ public static unsafe class Animation
     {
         float read;
         byte* state = Bootstrap.Native.AnimatorState(entity, &read);
+        time = read;
+        return Utf8.ToString(state) ?? "";
+    }
+
+    private static string ReadLayerState(Entity entity, string layer, out float time)
+    {
+        using var text = new Utf8Buffer(layer);
+        float read;
+        byte* state = Bootstrap.Native.AnimatorLayerState(entity, text.Pointer, &read);
         time = read;
         return Utf8.ToString(state) ?? "";
     }

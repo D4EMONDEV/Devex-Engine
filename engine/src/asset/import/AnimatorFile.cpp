@@ -4,6 +4,8 @@
 
 #include <format>
 #include <optional>
+#include <string>
+#include <vector>
 
 namespace devex::asset {
 namespace {
@@ -11,7 +13,8 @@ namespace {
 using serialization::TextSection;
 using serialization::TextValue;
 
-constexpr std::int64_t animatorFormat = 1;
+// 2: layers.
+constexpr std::int64_t animatorFormat = 2;
 
 // The shortest text that reads back as the same float, rather than the digits of its double.
 [[nodiscard]] TextValue number(float value)
@@ -64,6 +67,41 @@ constexpr std::int64_t animatorFormat = 1;
     const TextValue* const value = attribute ? section.findAttribute(key) : section.findProperty(key);
     const std::string* const text = value != nullptr ? serialization::asString(*value) : nullptr;
     return text != nullptr ? *text : std::string{};
+}
+
+// A list of names, as the masks of layers hold them; nothing when it is not one.
+[[nodiscard]] std::optional<std::vector<std::string>> namesOf(const TextSection& section, std::string_view key)
+{
+    std::vector<std::string> names;
+    if (section.findProperty(key) == nullptr)
+    {
+        return names;
+    }
+    const serialization::TextCall* const list = readList(section, key);
+    if (list == nullptr)
+    {
+        return std::nullopt;
+    }
+    for (const TextValue& value : list->arguments)
+    {
+        const std::string* const name = serialization::asString(value);
+        if (name == nullptr)
+        {
+            return std::nullopt;
+        }
+        names.push_back(*name);
+    }
+    return names;
+}
+
+[[nodiscard]] TextValue namesValue(const std::vector<std::string>& names)
+{
+    std::vector<TextValue> values;
+    for (const std::string& name : names)
+    {
+        values.emplace_back(name);
+    }
+    return serialization::makeCall("list", std::move(values));
 }
 
 [[nodiscard]] std::optional<float> numberOf(const TextSection& section, std::string_view key, bool attribute)
@@ -222,133 +260,44 @@ constexpr std::int64_t animatorFormat = 1;
     return serialization::makeCall(std::string(toString(condition.test)), {parameter, number(condition.value)});
 }
 
-} // namespace
-
-core::Result<AnimatorData> parseAnimatorFile(std::string_view text)
+[[nodiscard]] core::Result<AnimatorLayer> readLayer(const TextSection& section)
 {
-    const core::Result<serialization::TextDocument> document = serialization::parseText(text);
-    if (!document)
+    AnimatorLayer layer{.name = stringOr(section, "name", true), .entry = stringOr(section, "entry", true)};
+    const std::string blending = stringOr(section, "blending", true);
+    if (!blending.empty())
     {
-        return std::unexpected(document.error());
-    }
-    if (document->sections.empty() || document->sections.front().type != "animator")
-    {
-        return core::makeError(core::ErrorCode::Parse, "an animator file starts with [animator]");
-    }
-    const TextSection& header = document->sections.front();
-    const TextValue* const format = header.findAttribute("format");
-    if (format == nullptr || serialization::asInteger(*format).value_or(animatorFormat + 1) > animatorFormat)
-    {
-        return core::makeError(core::ErrorCode::Unsupported, "the animator needs a newer version of Devex");
-    }
-    AnimatorData animator;
-    animator.entry = stringOr(header, "entry", true);
-    if (const TextValue* const position = header.findProperty("entry_position"))
-    {
-        animator.entryPosition = readVector(*position).value_or(animator.entryPosition);
-    }
-    if (const TextValue* const position = header.findProperty("any_state_position"))
-    {
-        animator.anyStatePosition = readVector(*position).value_or(animator.anyStatePosition);
-    }
-
-    for (const TextSection& section : document->sections)
-    {
-        if (section.type == "parameter")
+        const std::optional<AnimatorLayerBlend> parsed = parseAnimatorLayerBlend(blending);
+        if (!parsed)
         {
-            AnimatorParameter parameter{.name = stringOr(section, "name", true)};
-            const std::string type = stringOr(section, "type", true);
-            const std::optional<AnimatorParameterType> parsed = parseAnimatorParameterType(type.empty() ? "float" : type);
-            if (!parsed)
-            {
-                return std::unexpected(parseError(section, "type is \"float\", \"int\", \"bool\" or \"trigger\""));
-            }
-            parameter.type = *parsed;
-            if (const TextValue* const value = section.findAttribute("default"))
-            {
-                if (const std::optional<bool> flag = serialization::asBool(*value))
-                {
-                    parameter.defaultValue = *flag ? 1.0f : 0.0f;
-                }
-                else
-                {
-                    parameter.defaultValue = static_cast<float>(serialization::asNumber(*value).value_or(0.0));
-                }
-            }
-            animator.parameters.push_back(std::move(parameter));
+            return std::unexpected(parseError(section, "blending is \"override\" or \"additive\""));
         }
-        else if (section.type == "state")
-        {
-            core::Result<AnimatorState> state = readState(section);
-            if (!state)
-            {
-                return std::unexpected(state.error());
-            }
-            animator.states.push_back(std::move(*state));
-        }
-        else if (section.type == "transition")
-        {
-            AnimatorTransition transition{
-                .from = stringOr(section, "from", true),
-                .to = stringOr(section, "to", true),
-                .duration = numberOf(section, "duration", true).value_or(0.2f),
-                .exitTime = numberOf(section, "exit_time", false).value_or(-1.0f),
-            };
-            if (const serialization::TextCall* const conditions = readList(section, "conditions"))
-            {
-                for (const TextValue& value : conditions->arguments)
-                {
-                    core::Result<AnimatorCondition> condition = readCondition(section, value);
-                    if (!condition)
-                    {
-                        return std::unexpected(condition.error());
-                    }
-                    transition.conditions.push_back(std::move(*condition));
-                }
-            }
-            animator.transitions.push_back(std::move(transition));
-        }
+        layer.blending = *parsed;
     }
-    if (core::Result<void> valid = validate(animator); !valid)
+    layer.weight = numberOf(section, "weight", true).value_or(1.0f);
+    layer.weightParameter = stringOr(section, "weight_parameter", false);
+    std::optional<std::vector<std::string>> mask = namesOf(section, "mask");
+    std::optional<std::vector<std::string>> excluded = namesOf(section, "mask_excluded");
+    if (!mask || !excluded)
     {
-        return std::unexpected(valid.error());
+        return std::unexpected(parseError(section, "a mask is a list(\"bone\", ...)"));
     }
-    return animator;
+    layer.mask = std::move(*mask);
+    layer.maskExcluded = std::move(*excluded);
+    if (const TextValue* const position = section.findProperty("entry_position"))
+    {
+        layer.entryPosition = readVector(*position).value_or(layer.entryPosition);
+    }
+    if (const TextValue* const position = section.findProperty("any_state_position"))
+    {
+        layer.anyStatePosition = readVector(*position).value_or(layer.anyStatePosition);
+    }
+    return layer;
 }
 
-std::string writeAnimatorFile(const AnimatorData& animator)
+// The states and the transitions of a layer, each a section.
+void writeGraph(serialization::TextDocument& document, const AnimatorLayer& layer)
 {
-    serialization::TextDocument document;
-    TextSection& header = document.sections.emplace_back();
-    header.type = "animator";
-    header.attributes.push_back({"format", TextValue(animatorFormat)});
-    header.attributes.push_back({"entry", TextValue(animator.entry)});
-    header.properties.push_back({"entry_position", vector(animator.entryPosition)});
-    header.properties.push_back({"any_state_position", vector(animator.anyStatePosition)});
-
-    for (const AnimatorParameter& parameter : animator.parameters)
-    {
-        TextSection& section = document.sections.emplace_back();
-        section.type = "parameter";
-        section.attributes.push_back({"name", TextValue(parameter.name)});
-        section.attributes.push_back({"type", TextValue(std::string(toString(parameter.type)))});
-        switch (parameter.type)
-        {
-        case AnimatorParameterType::Float:
-            section.attributes.push_back({"default", number(parameter.defaultValue)});
-            break;
-        case AnimatorParameterType::Integer:
-            section.attributes.push_back({"default", TextValue(static_cast<std::int64_t>(parameter.defaultValue))});
-            break;
-        case AnimatorParameterType::Bool:
-            section.attributes.push_back({"default", TextValue(parameter.defaultValue != 0.0f)});
-            break;
-        case AnimatorParameterType::Trigger:
-            break;
-        }
-    }
-
-    for (const AnimatorState& state : animator.states)
+    for (const AnimatorState& state : layer.states)
     {
         TextSection& section = document.sections.emplace_back();
         section.type = "state";
@@ -402,7 +351,7 @@ std::string writeAnimatorFile(const AnimatorData& animator)
         }
     }
 
-    for (const AnimatorTransition& transition : animator.transitions)
+    for (const AnimatorTransition& transition : layer.transitions)
     {
         TextSection& section = document.sections.emplace_back();
         section.type = "transition";
@@ -425,6 +374,173 @@ std::string writeAnimatorFile(const AnimatorData& animator)
             }
             section.properties.push_back({"conditions", serialization::makeCall("list", std::move(conditions))});
         }
+    }
+}
+
+} // namespace
+
+core::Result<AnimatorData> parseAnimatorFile(std::string_view text)
+{
+    const core::Result<serialization::TextDocument> document = serialization::parseText(text);
+    if (!document)
+    {
+        return std::unexpected(document.error());
+    }
+    if (document->sections.empty() || document->sections.front().type != "animator")
+    {
+        return core::makeError(core::ErrorCode::Parse, "an animator file starts with [animator]");
+    }
+    const TextSection& header = document->sections.front();
+    const TextValue* const format = header.findAttribute("format");
+    if (format == nullptr || serialization::asInteger(*format).value_or(animatorFormat + 1) > animatorFormat)
+    {
+        return core::makeError(core::ErrorCode::Unsupported, "the animator needs a newer version of Devex");
+    }
+    // The header holds the base layer; each [layer] section starts another, which the states and
+    // the transitions after it belong to.
+    AnimatorData animator;
+    AnimatorLayer& base = animator.layers.front();
+    base.entry = stringOr(header, "entry", true);
+    if (const TextValue* const position = header.findProperty("entry_position"))
+    {
+        base.entryPosition = readVector(*position).value_or(base.entryPosition);
+    }
+    if (const TextValue* const position = header.findProperty("any_state_position"))
+    {
+        base.anyStatePosition = readVector(*position).value_or(base.anyStatePosition);
+    }
+
+    for (const TextSection& section : document->sections)
+    {
+        if (section.type == "parameter")
+        {
+            AnimatorParameter parameter{.name = stringOr(section, "name", true)};
+            const std::string type = stringOr(section, "type", true);
+            const std::optional<AnimatorParameterType> parsed = parseAnimatorParameterType(type.empty() ? "float" : type);
+            if (!parsed)
+            {
+                return std::unexpected(parseError(section, "type is \"float\", \"int\", \"bool\" or \"trigger\""));
+            }
+            parameter.type = *parsed;
+            if (const TextValue* const value = section.findAttribute("default"))
+            {
+                if (const std::optional<bool> flag = serialization::asBool(*value))
+                {
+                    parameter.defaultValue = *flag ? 1.0f : 0.0f;
+                }
+                else
+                {
+                    parameter.defaultValue = static_cast<float>(serialization::asNumber(*value).value_or(0.0));
+                }
+            }
+            animator.parameters.push_back(std::move(parameter));
+        }
+        else if (section.type == "state")
+        {
+            core::Result<AnimatorState> state = readState(section);
+            if (!state)
+            {
+                return std::unexpected(state.error());
+            }
+            animator.layers.back().states.push_back(std::move(*state));
+        }
+        else if (section.type == "transition")
+        {
+            AnimatorTransition transition{
+                .from = stringOr(section, "from", true),
+                .to = stringOr(section, "to", true),
+                .duration = numberOf(section, "duration", true).value_or(0.2f),
+                .exitTime = numberOf(section, "exit_time", false).value_or(-1.0f),
+            };
+            if (const serialization::TextCall* const conditions = readList(section, "conditions"))
+            {
+                for (const TextValue& value : conditions->arguments)
+                {
+                    core::Result<AnimatorCondition> condition = readCondition(section, value);
+                    if (!condition)
+                    {
+                        return std::unexpected(condition.error());
+                    }
+                    transition.conditions.push_back(std::move(*condition));
+                }
+            }
+            animator.layers.back().transitions.push_back(std::move(transition));
+        }
+        else if (section.type == "layer")
+        {
+            core::Result<AnimatorLayer> layer = readLayer(section);
+            if (!layer)
+            {
+                return std::unexpected(layer.error());
+            }
+            animator.layers.push_back(std::move(*layer));
+        }
+    }
+    if (core::Result<void> valid = validate(animator); !valid)
+    {
+        return std::unexpected(valid.error());
+    }
+    return animator;
+}
+
+std::string writeAnimatorFile(const AnimatorData& animator)
+{
+    const AnimatorLayer base = animator.layers.empty() ? AnimatorLayer{} : animator.layers.front();
+    serialization::TextDocument document;
+    TextSection& header = document.sections.emplace_back();
+    header.type = "animator";
+    header.attributes.push_back({"format", TextValue(animatorFormat)});
+    header.attributes.push_back({"entry", TextValue(base.entry)});
+    header.properties.push_back({"entry_position", vector(base.entryPosition)});
+    header.properties.push_back({"any_state_position", vector(base.anyStatePosition)});
+
+    for (const AnimatorParameter& parameter : animator.parameters)
+    {
+        TextSection& section = document.sections.emplace_back();
+        section.type = "parameter";
+        section.attributes.push_back({"name", TextValue(parameter.name)});
+        section.attributes.push_back({"type", TextValue(std::string(toString(parameter.type)))});
+        switch (parameter.type)
+        {
+        case AnimatorParameterType::Float:
+            section.attributes.push_back({"default", number(parameter.defaultValue)});
+            break;
+        case AnimatorParameterType::Integer:
+            section.attributes.push_back({"default", TextValue(static_cast<std::int64_t>(parameter.defaultValue))});
+            break;
+        case AnimatorParameterType::Bool:
+            section.attributes.push_back({"default", TextValue(parameter.defaultValue != 0.0f)});
+            break;
+        case AnimatorParameterType::Trigger:
+            break;
+        }
+    }
+
+    writeGraph(document, base);
+    for (std::size_t index = 1; index < animator.layers.size(); ++index)
+    {
+        const AnimatorLayer& layer = animator.layers[index];
+        TextSection& section = document.sections.emplace_back();
+        section.type = "layer";
+        section.attributes.push_back({"name", TextValue(layer.name)});
+        section.attributes.push_back({"entry", TextValue(layer.entry)});
+        section.attributes.push_back({"blending", TextValue(std::string(toString(layer.blending)))});
+        section.attributes.push_back({"weight", number(layer.weight)});
+        if (!layer.weightParameter.empty())
+        {
+            section.properties.push_back({"weight_parameter", TextValue(layer.weightParameter)});
+        }
+        if (!layer.mask.empty())
+        {
+            section.properties.push_back({"mask", namesValue(layer.mask)});
+        }
+        if (!layer.maskExcluded.empty())
+        {
+            section.properties.push_back({"mask_excluded", namesValue(layer.maskExcluded)});
+        }
+        section.properties.push_back({"entry_position", vector(layer.entryPosition)});
+        section.properties.push_back({"any_state_position", vector(layer.anyStatePosition)});
+        writeGraph(document, layer);
     }
     return serialization::writeText(document);
 }

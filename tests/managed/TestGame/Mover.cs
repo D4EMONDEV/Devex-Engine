@@ -580,6 +580,9 @@ public class Conductor : Component
     public string State = "";
     public float Speed;
     public bool Waved;
+    // The layer that raises an arm over the base layer.
+    public string GestureState = "";
+    public float GestureWeight;
     private int _frames;
 
     public override void Update(float delta)
@@ -589,6 +592,10 @@ public class Conductor : Component
         {
             Animation.SetFloat(Entity, "Speed", 2.0f);
         }
+        if (_frames == 2)
+        {
+            Animation.SetLayerWeight(Entity, "Gestures", 0.4f);
+        }
         if (_frames == 3)
         {
             Animation.SetTrigger(Entity, "Wave");
@@ -596,6 +603,8 @@ public class Conductor : Component
         State = Animation.GetState(Entity);
         Speed = Animation.GetFloat(Entity, "Speed");
         Waved = Waved || Animation.IsInState(Entity, "Waving");
+        GestureState = Animation.GetState(Entity, "Gestures");
+        GestureWeight = Animation.GetLayerWeight(Entity, "Gestures");
     }
 }
 

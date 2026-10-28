@@ -306,6 +306,9 @@ struct NativeApi
     int (*instanceShaderParameter)(void* scene, Entity entity, const char* name, math::Vec4* value);
     int (*resetInstanceShaderParameter)(void* scene, Entity entity, const char* name);
     int (*animationEvents)(const struct NativeAnimationEvent** events);
+    void (*setAnimatorLayerWeight)(Entity entity, const char* layer, float weight);
+    int (*animatorLayerWeight)(Entity entity, const char* layer, float* weight);
+    const char* (*animatorLayerState)(Entity entity, const char* layer, float* normalizedTime);
 };
 
 // The functions the engine calls, in the order of Devex.Managed's ManagedApi.
@@ -320,7 +323,7 @@ struct ManagedApi
 };
 
 // Devex.Managed's Bootstrap.Version: both sides change it with the function tables.
-constexpr int bootstrapVersion = 24;
+constexpr int bootstrapVersion = 25;
 
 struct BootstrapArguments
 {
@@ -1224,6 +1227,32 @@ const char* apiAnimatorState(Entity entity, float* normalizedTime)
     static std::string state;
     state = animationWorld() != nullptr ? std::string(animationWorld()->state(entity)) : std::string{};
     *normalizedTime = animationWorld() != nullptr ? animationWorld()->stateTime(entity) : 0.0f;
+    return state.c_str();
+}
+
+void apiSetAnimatorLayerWeight(Entity entity, const char* layer, float weight)
+{
+    if (animationWorld() != nullptr && layer != nullptr)
+    {
+        animationWorld()->setLayerWeight(entity, layer, weight);
+    }
+}
+
+int apiAnimatorLayerWeight(Entity entity, const char* layer, float* weight)
+{
+    const std::optional<float> found =
+        animationWorld() != nullptr && layer != nullptr ? animationWorld()->layerWeight(entity, layer) : std::nullopt;
+    *weight = found.value_or(0.0f);
+    return found ? 1 : 0;
+}
+
+const char* apiAnimatorLayerState(Entity entity, const char* layer, float* normalizedTime)
+{
+    // Kept until the next call, while C# copies it.
+    static std::string state;
+    const std::string_view name = layer != nullptr ? std::string_view(layer) : std::string_view{};
+    state = animationWorld() != nullptr ? std::string(animationWorld()->state(entity, name)) : std::string{};
+    *normalizedTime = animationWorld() != nullptr ? animationWorld()->stateTime(entity, name) : 0.0f;
     return state.c_str();
 }
 
@@ -2648,6 +2677,9 @@ int apiParticleCount(Entity entity)
         .instanceShaderParameter = &apiInstanceShaderParameter,
         .resetInstanceShaderParameter = &apiResetInstanceShaderParameter,
         .animationEvents = &apiAnimationEvents,
+        .setAnimatorLayerWeight = &apiSetAnimatorLayerWeight,
+        .animatorLayerWeight = &apiAnimatorLayerWeight,
+        .animatorLayerState = &apiAnimatorLayerState,
     };
 }
 

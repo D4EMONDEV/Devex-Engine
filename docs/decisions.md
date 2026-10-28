@@ -1863,9 +1863,62 @@ les assets s'écrivent au fil de leur lecture.
   (un bouton lève les déclencheurs). *New Animator* dans un dossier du FileSystem en crée un.
 - **Bac à sable** : le robot de l'arène joue `assets/animators/robot.dvxanimator` : un arbre 1D
   mêle *Idle* et *Walk* selon `Speed`, que `RobotGuide` fait monter et descendre (accélération),
-  et `Greeting` fond vers *Wave* quand le joueur approche. Le chevalier du jeu de plateformes joue
+  et `Greeting` fait passer la couche *Gestures* à *Waving* quand le joueur approche (voir les
+  couches ci-dessous). Le chevalier du jeu de plateformes joue
   `hero.dvxanimator` : ses états *Idle*, *Run*, *Jump* et *Fall* nomment ses animations de sprite,
   et `Hero2D` ne donne plus que `Speed`, `Grounded` et `VerticalSpeed`.
+
+### Couches et masques d'os
+
+- **Couches** : comme les *layers* d'Unity, un `.dvxanimator` porte plusieurs machines à états qui
+  partagent ses paramètres (`asset::AnimatorLayer`, `AnimatorData::layers`). La première est la
+  **couche de base** (*Base Layer*) : elle joue sur tout le squelette, à plein poids, et c'est le
+  graphe d'avant (l'en-tête garde son état d'entrée, ses états et transitions viennent avant la
+  première couche). Chaque autre couche est une section `[layer name=… entry=… blending=…
+  weight=…]` suivie de ses propres états et transitions ; les noms d'états sont uniques dans leur
+  couche. Le format passe à 2 (les fichiers en 1 se lisent comme leur seule couche de base), l'asset
+  cuit à 2.
+- **Mélange** : *Override* prend la place de la pose du dessous, os par os, selon le poids ;
+  *Additive* lui ajoute l'écart de ses clips à leur première image (translation ajoutée, rotation
+  composée en local, échelle multipliée), comme la pose de référence par défaut d'Unity : une
+  respiration, le recul d'une arme. Les couches se posent dans l'ordre, chacune sur le résultat des
+  précédentes ; le root motion ne vient que de la base.
+- **Poids** : de 0 à 1 dans l'asset, remplacé par `setLayerWeight` (C++) ou
+  `Animation.SetLayerWeight` (C#), puis multiplié par un **paramètre de poids** s'il en nomme un,
+  comme la vitesse d'un état par son paramètre. Une couche de poids nul n'est pas évaluée et ne
+  passe pas ses événements ; les autres passent ceux du clip le plus lourd de leur état.
+- **Masques** : `mask` nomme des os mis dans le masque, `mask_excluded` des os laissés dehors,
+  chacun avec les os sous lui ; l'os nommé le plus proche (lui-même ou au-dessus) décide. Un os
+  qu'aucun ne nomme est dedans si `mask` est vide : sans liste, tout le squelette ;
+  `mask_excluded = list("LegLeft")` seul, tout sauf la jambe. Les noms d'os plutôt qu'un asset
+  `.dvxmask` à part : un masque sert d'ordinaire à une seule couche, et les clips désignent déjà
+  les os par leur nom.
+- **Couverture et fondus** : chaque pose porte, propriété par propriété, la part de poids des clips
+  qui l'animent. Un état qui ne joue rien (l'*Empty* habituel d'une couche) ne couvre rien : le
+  fondu vers *Waving* fait monter le bras de la pose du dessous vers le salut, au lieu de le prendre
+  d'un coup.
+- **Pose de repos** (*Write Defaults* d'Unity, *deterministic* de Godot) : les os dont un clip du
+  contrôleur, toutes couches comprises, anime une propriété y reviennent à leur pose de repos (celle
+  de l'entité au premier passage, avant tout clip) dans la mesure où les états joués les laissent
+  libres. Avant, une propriété qu'un seul côté d'un fondu ou d'un arbre animait était prise entière
+  de ce côté et restait où le dernier clip l'avait laissée : les jambes du robot restaient en pleine
+  foulée après *Walk* → *Idle*, et un arbre à `Speed = 0.1` balançait déjà les jambes en entier.
+  Tous les clips du contrôleur sont liés à son chargement, pour connaître ces os d'emblée.
+- **Jeu** : `state(entity, layer)`, `stateTime(entity, layer)`, `setLayerWeight`, `layerWeight` ;
+  `AnimatorStatus` décrit chaque couche (état, fondu, poids). En C#, `Animation.SetLayerWeight`,
+  `GetLayerWeight`, `GetState(entity, layer)`, `IsInState(entity, state, layer)` et
+  `GetStateTime(entity, layer)` ; l'amorce C# passe à 25.
+- **Éditeur** : la colonne gauche du panneau Animator a deux onglets, *Parameters* et *Layers*. La
+  liste des couches montre leur mélange (B, O, A), leur nom et leur poids (de départ, ou celui du
+  jeu en direct, modifiable) ; un clic montre le graphe de la couche (son nom suit l'asset dans la
+  barre d'outils) et la règle dans l'inspecteur : nom, mélange, poids, paramètre de poids, ordre,
+  suppression, et le **masque** en arbre du squelette de l'entité suivie, cases cochées par os. Un
+  clic sur un os l'applique à sa branche, et les listes sont réécrites au plus simple (rien pour
+  tout le squelette, des branches laissées dehors, sinon les os mis dedans) ; *Whole Skeleton* les
+  vide. Le + ajoute une couche qui commence dans un état *Empty*.
+- **Bac à sable** : le salut du robot passe dans la couche *Gestures* (masque `ArmRight` et
+  `Head`) : il salue le joueur en continuant sa patrouille, les jambes marchent, le bras droit et
+  la tête saluent ; `RobotGuide.GestureWeight` règle la part du salut.
 
 ### Événements d'animation
 
@@ -4377,6 +4430,10 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     soumission, avec ses contextes, ses descriptor sets et son historique) ; en Play, le centre montre
     la scène par la caméra de l'éditeur, où l'on change la partie en cours, à côté du jeu, avec une
     barre déplaçable, les boutons qui rendent le centre à l'un ou à l'autre et la forme du jeu.
+74. ✅ **Couches et masques d'os** — machines à états par couche dans un `.dvxanimator` (format 2),
+    en remplacement ou en ajout, poids par l'asset, le code et un paramètre, masques d'os par noms
+    avec leurs branches ; retour à la pose de repos des os laissés libres ; onglet *Layers* du
+    panneau Animator et masque coché sur l'arbre du squelette ; le robot salue en marchant.
 
 Ensuite, sans ordre figé : à choisir dans les pistes ci-dessous.
 
@@ -4425,12 +4482,13 @@ Ensuite, sans ordre figé : à choisir dans les pistes ci-dessous.
   direct et l'aller à la définition ; repli de code, multi-curseur, sélection par colonnes,
   retour à la ligne automatique, tabulations alignées sur des colonnes plutôt que d'une largeur
   fixe, et recherche dans tout le projet.
-- **Machines à états, la suite** : sous-machines et arbres imbriqués, couches et masques d'os,
-  transitions interrompues par d'autres, conditions sur la fin d'un état, temps de sortie par
+- **Machines à états, la suite** : sous-machines et arbres imbriqués, couches synchronisées (les
+  états d'une autre couche, à leur rythme), poses de référence choisies des couches additives,
+  masques partagés entre contrôleurs, transitions interrompues par d'autres, conditions sur la fin d'un état, temps de sortie par
   boucle, arbres 2D directionnels simples, courbes de fondu, aperçu d'un état dans l'éditeur hors
   jeu, états communs à plusieurs contrôleurs (overrides d'Unity), valeurs des paramètres gardées
   dans les sauvegardes.
-- **Animation** : couches et masques d'os, cinématique inverse, morph targets, pré-skinning en compute (colliders et
+- **Animation** : cinématique inverse, morph targets, pré-skinning en compute (colliders et
   rayons suivant la pose), réutilisation d'un clip entre squelettes différents (retargeting),
   compression des courbes.
 - **Sauvegardes, la suite** : écriture sur un worker pour les grosses scènes, compression et

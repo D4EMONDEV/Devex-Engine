@@ -570,13 +570,14 @@ TEST_CASE("The editor opens the project's scenes in tabs and renders its viewpor
         std::filesystem::copy_file(data / "audio" / "tone.wav", art / "tone.wav");
         REQUIRE(devex::core::writeTextFile(art / "ease.dvxcurve", devex::asset::writeCurveFile(devex::asset::linearCurve())));
         devex::asset::AnimatorData states;
-        states.entry = "Idle";
+        states.layers[0].entry = "Idle";
         states.parameters.push_back({.name = "Speed"});
-        states.states.push_back({.name = "Idle"});
-        states.states.push_back({.name = "Run", .blend = devex::asset::AnimatorBlend::Linear, .motions = {{}, {.threshold = 1.0f}},
-                                 .parameter = "Speed"});
-        states.transitions.push_back(
+        states.layers[0].states.push_back({.name = "Idle"});
+        states.layers[0].states.push_back({.name = "Run", .blend = devex::asset::AnimatorBlend::Linear, .motions = {{}, {.threshold = 1.0f}},
+                                           .parameter = "Speed"});
+        states.layers[0].transitions.push_back(
             {.from = "Idle", .to = "Run", .conditions = {{.parameter = "Speed", .test = devex::asset::AnimatorTest::Greater, .value = 0.1f}}});
+        states.layers.push_back({.name = "Arms", .entry = "Empty", .states = {{.name = "Empty"}}, .mask = {"Arm"}});
         REQUIRE(devex::core::writeTextFile(art / "states.dvxanimator", devex::asset::writeAnimatorFile(states)));
         // A table of translations, which French does not finish.
         const std::string translations = "keys,en,fr\nPLAY,Play,Jouer\nQUIT,Quit,\n";

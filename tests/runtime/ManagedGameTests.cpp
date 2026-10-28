@@ -578,7 +578,7 @@ TEST_CASE("C# components hear 2D collisions and triggers and drive 2D characters
     game->unloadAssembly();
 }
 
-TEST_CASE("C# components set the parameters of state machines and read their states", "[runtime][managed][animation]")
+TEST_CASE("C# components set the parameters of state machines and read the states of their layers", "[runtime][managed][animation]")
 {
     const std::unique_ptr<ManagedGame> game = startRuntime();
     const devex::scene::ComponentType* const conductor = devex::scene::componentRegistry().find("Conductor");
@@ -586,14 +586,22 @@ TEST_CASE("C# components set the parameters of state machines and read their sta
 
     const devex::asset::AssetId controllerId = devex::asset::AssetId::generate();
     devex::asset::AnimatorData data;
-    data.entry = "Idle";
+    data.layers[0].entry = "Idle";
     data.parameters = {{.name = "Speed"}, {.name = "Wave", .type = devex::asset::AnimatorParameterType::Trigger}};
-    data.states = {{.name = "Idle"}, {.name = "Walk"}, {.name = "Waving"}};
-    data.transitions = {
+    data.layers[0].states = {{.name = "Idle"}, {.name = "Walk"}, {.name = "Waving"}};
+    data.layers[0].transitions = {
         {.from = "Idle", .to = "Walk", .duration = 0.0f,
          .conditions = {{.parameter = "Speed", .test = devex::asset::AnimatorTest::Greater, .value = 1.0f}}},
         {.to = "Waving", .duration = 0.0f, .conditions = {{.parameter = "Wave", .test = devex::asset::AnimatorTest::Triggered}}},
     };
+    // A layer that raises an arm once the dancer walks.
+    data.layers.push_back(devex::asset::AnimatorLayer{
+        .name = "Gestures",
+        .entry = "Rest",
+        .states = {{.name = "Rest"}, {.name = "Raised"}},
+        .transitions = {{.from = "Rest", .to = "Raised", .duration = 0.0f,
+                         .conditions = {{.parameter = "Speed", .test = devex::asset::AnimatorTest::Greater, .value = 1.0f}}}},
+    });
     const auto controller = std::make_shared<const devex::asset::AnimatorData>(data);
     devex::animation::AnimationWorld world([](devex::asset::AssetId) { return nullptr; },
                                            [&](devex::asset::AssetId id) { return id == controllerId ? controller : nullptr; });
@@ -616,6 +624,9 @@ TEST_CASE("C# components set the parameters of state machines and read their sta
     CHECK(field<float>(*conductor, component, "speed") == 2.0f);
     CHECK(field<bool>(*conductor, component, "waved"));
     CHECK(world.parameter(dancer, "Wave") == 0.0f);
+    CHECK(field<std::string>(*conductor, component, "gesture_state") == "Raised");
+    CHECK(field<float>(*conductor, component, "gesture_weight") == Catch::Approx(0.4f));
+    CHECK(world.layerWeight(dancer, "Gestures") == Catch::Approx(0.4f));
     game->unloadAssembly();
 }
 

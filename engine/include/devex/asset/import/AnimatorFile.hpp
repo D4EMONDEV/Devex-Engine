@@ -12,7 +12,7 @@ namespace devex::asset {
 
 // A .dvxanimator file:
 //
-//     [animator format=1 entry="Locomotion"]
+//     [animator format=2 entry="Locomotion"]
 //     entry_position = vec2(-240, 0)
 //
 //     [parameter name="Speed" type="float" default=0]
@@ -26,9 +26,18 @@ namespace devex::asset {
 //     [transition from="Locomotion" to="Waving" duration=0.25]
 //     conditions = list(trigger("Wave"), less("Speed", 0.1))
 //
+//     [layer name="Gestures" entry="Empty" blending="override" weight=1]
+//     weight_parameter = "Aim"
+//     mask = list("ArmRight", "Head")
+//     mask_excluded = list("HandRight")
+//
+//     [state name="Empty"]
+//     ...
+//
 // Conditions are greater(), less(), equals() and not_equals() of a parameter and a number,
 // is() of a bool parameter and true or false, and trigger() of a trigger. A transition without
-// from leaves any state.
+// from leaves any state. The header holds the entry of the base layer, and the states and the
+// transitions before the first [layer] are its own; those after a [layer] are that layer's.
 [[nodiscard]] DEVEX_API core::Result<AnimatorData> parseAnimatorFile(std::string_view text);
 [[nodiscard]] DEVEX_API std::string writeAnimatorFile(const AnimatorData& animator);
 

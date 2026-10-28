@@ -109,9 +109,11 @@ std::uint32_t artifactVersion(AssetType type) noexcept
     // 2: the normal map.
     case AssetType::Sprite:
         return 2;
+    // 2: layers.
+    case AssetType::Animator:
+        return 2;
     case AssetType::Theme:
     case AssetType::Curve:
-    case AssetType::Animator:
     case AssetType::NavMesh:
     case AssetType::Translation:
         return 1;
@@ -868,9 +870,6 @@ core::Result<TilesetData> decodeTileset(std::span<const std::byte> bytes)
 std::vector<std::byte> encodeAnimator(const AnimatorData& animator)
 {
     BinaryWriter writer = beginArtifact(AssetType::Animator);
-    writer.writeString(animator.entry);
-    writer.write(animator.entryPosition);
-    writer.write(animator.anyStatePosition);
     writer.write(static_cast<std::uint32_t>(animator.parameters.size()));
     for (const AnimatorParameter& parameter : animator.parameters)
     {
@@ -878,39 +877,60 @@ std::vector<std::byte> encodeAnimator(const AnimatorData& animator)
         writer.write(parameter.type);
         writer.write(parameter.defaultValue);
     }
-    writer.write(static_cast<std::uint32_t>(animator.states.size()));
-    for (const AnimatorState& state : animator.states)
+    writer.write(static_cast<std::uint32_t>(animator.layers.size()));
+    for (const AnimatorLayer& layer : animator.layers)
     {
-        writer.writeString(state.name);
-        writer.write(state.blend);
-        writer.write(static_cast<std::uint32_t>(state.motions.size()));
-        for (const AnimatorMotion& motion : state.motions)
+        writer.writeString(layer.name);
+        writer.writeString(layer.entry);
+        writer.write(layer.blending);
+        writer.write(layer.weight);
+        writer.writeString(layer.weightParameter);
+        writer.write(static_cast<std::uint32_t>(layer.mask.size()));
+        for (const std::string& bone : layer.mask)
         {
-            writer.write(motion.clip);
-            writer.write(motion.threshold);
-            writer.write(motion.position);
+            writer.writeString(bone);
         }
-        writer.writeString(state.parameter);
-        writer.writeString(state.parameterY);
-        writer.writeString(state.spriteAnimation);
-        writer.write(state.speed);
-        writer.writeString(state.speedParameter);
-        writer.write(state.loop);
-        writer.write(state.graphPosition);
-    }
-    writer.write(static_cast<std::uint32_t>(animator.transitions.size()));
-    for (const AnimatorTransition& transition : animator.transitions)
-    {
-        writer.writeString(transition.from);
-        writer.writeString(transition.to);
-        writer.write(transition.duration);
-        writer.write(transition.exitTime);
-        writer.write(static_cast<std::uint32_t>(transition.conditions.size()));
-        for (const AnimatorCondition& condition : transition.conditions)
+        writer.write(static_cast<std::uint32_t>(layer.maskExcluded.size()));
+        for (const std::string& bone : layer.maskExcluded)
         {
-            writer.writeString(condition.parameter);
-            writer.write(condition.test);
-            writer.write(condition.value);
+            writer.writeString(bone);
+        }
+        writer.write(layer.entryPosition);
+        writer.write(layer.anyStatePosition);
+        writer.write(static_cast<std::uint32_t>(layer.states.size()));
+        for (const AnimatorState& state : layer.states)
+        {
+            writer.writeString(state.name);
+            writer.write(state.blend);
+            writer.write(static_cast<std::uint32_t>(state.motions.size()));
+            for (const AnimatorMotion& motion : state.motions)
+            {
+                writer.write(motion.clip);
+                writer.write(motion.threshold);
+                writer.write(motion.position);
+            }
+            writer.writeString(state.parameter);
+            writer.writeString(state.parameterY);
+            writer.writeString(state.spriteAnimation);
+            writer.write(state.speed);
+            writer.writeString(state.speedParameter);
+            writer.write(state.loop);
+            writer.write(state.graphPosition);
+        }
+        writer.write(static_cast<std::uint32_t>(layer.transitions.size()));
+        for (const AnimatorTransition& transition : layer.transitions)
+        {
+            writer.writeString(transition.from);
+            writer.writeString(transition.to);
+            writer.write(transition.duration);
+            writer.write(transition.exitTime);
+            writer.write(static_cast<std::uint32_t>(transition.conditions.size()));
+            for (const AnimatorCondition& condition : transition.conditions)
+            {
+                writer.writeString(condition.parameter);
+                writer.write(condition.test);
+                writer.write(condition.value);
+            }
         }
     }
     return writer.take();
@@ -924,9 +944,7 @@ core::Result<AnimatorData> decodeAnimator(std::span<const std::byte> bytes)
         return std::unexpected(header.error());
     }
     AnimatorData animator;
-    animator.entry = reader.readString();
-    animator.entryPosition = reader.read<math::Vec2>();
-    animator.anyStatePosition = reader.read<math::Vec2>();
+    animator.layers.clear();
     const auto parameters = reader.read<std::uint32_t>();
     for (std::uint32_t index = 0; index < parameters && !reader.failed(); ++index)
     {
@@ -935,56 +953,81 @@ core::Result<AnimatorData> decodeAnimator(std::span<const std::byte> bytes)
         parameter.type = reader.read<AnimatorParameterType>();
         parameter.defaultValue = reader.read<float>();
     }
-    const auto states = reader.read<std::uint32_t>();
-    for (std::uint32_t index = 0; index < states && !reader.failed(); ++index)
+    const auto layers = reader.read<std::uint32_t>();
+    for (std::uint32_t layerIndex = 0; layerIndex < layers && !reader.failed(); ++layerIndex)
     {
-        AnimatorState& state = animator.states.emplace_back();
-        state.name = reader.readString();
-        state.blend = reader.read<AnimatorBlend>();
-        const auto motions = reader.read<std::uint32_t>();
-        for (std::uint32_t motion = 0; motion < motions && !reader.failed(); ++motion)
+        AnimatorLayer& layer = animator.layers.emplace_back();
+        layer.name = reader.readString();
+        layer.entry = reader.readString();
+        layer.blending = reader.read<AnimatorLayerBlend>();
+        layer.weight = reader.read<float>();
+        layer.weightParameter = reader.readString();
+        const auto masked = reader.read<std::uint32_t>();
+        for (std::uint32_t bone = 0; bone < masked && !reader.failed(); ++bone)
         {
-            AnimatorMotion& read = state.motions.emplace_back();
-            read.clip = reader.read<AssetId>();
-            read.threshold = reader.read<float>();
-            read.position = reader.read<math::Vec2>();
+            layer.mask.push_back(reader.readString());
         }
-        state.parameter = reader.readString();
-        state.parameterY = reader.readString();
-        state.spriteAnimation = reader.readString();
-        state.speed = reader.read<float>();
-        state.speedParameter = reader.readString();
-        state.loop = reader.read<bool>();
-        state.graphPosition = reader.read<math::Vec2>();
-    }
-    const auto transitions = reader.read<std::uint32_t>();
-    for (std::uint32_t index = 0; index < transitions && !reader.failed(); ++index)
-    {
-        AnimatorTransition& transition = animator.transitions.emplace_back();
-        transition.from = reader.readString();
-        transition.to = reader.readString();
-        transition.duration = reader.read<float>();
-        transition.exitTime = reader.read<float>();
-        const auto conditions = reader.read<std::uint32_t>();
-        for (std::uint32_t condition = 0; condition < conditions && !reader.failed(); ++condition)
+        const auto excluded = reader.read<std::uint32_t>();
+        for (std::uint32_t bone = 0; bone < excluded && !reader.failed(); ++bone)
         {
-            AnimatorCondition& read = transition.conditions.emplace_back();
-            read.parameter = reader.readString();
-            read.test = reader.read<AnimatorTest>();
-            read.value = reader.read<float>();
+            layer.maskExcluded.push_back(reader.readString());
+        }
+        layer.entryPosition = reader.read<math::Vec2>();
+        layer.anyStatePosition = reader.read<math::Vec2>();
+        const auto states = reader.read<std::uint32_t>();
+        for (std::uint32_t index = 0; index < states && !reader.failed(); ++index)
+        {
+            AnimatorState& state = layer.states.emplace_back();
+            state.name = reader.readString();
+            state.blend = reader.read<AnimatorBlend>();
+            const auto motions = reader.read<std::uint32_t>();
+            for (std::uint32_t motion = 0; motion < motions && !reader.failed(); ++motion)
+            {
+                AnimatorMotion& read = state.motions.emplace_back();
+                read.clip = reader.read<AssetId>();
+                read.threshold = reader.read<float>();
+                read.position = reader.read<math::Vec2>();
+            }
+            state.parameter = reader.readString();
+            state.parameterY = reader.readString();
+            state.spriteAnimation = reader.readString();
+            state.speed = reader.read<float>();
+            state.speedParameter = reader.readString();
+            state.loop = reader.read<bool>();
+            state.graphPosition = reader.read<math::Vec2>();
+        }
+        const auto transitions = reader.read<std::uint32_t>();
+        for (std::uint32_t index = 0; index < transitions && !reader.failed(); ++index)
+        {
+            AnimatorTransition& transition = layer.transitions.emplace_back();
+            transition.from = reader.readString();
+            transition.to = reader.readString();
+            transition.duration = reader.read<float>();
+            transition.exitTime = reader.read<float>();
+            const auto conditions = reader.read<std::uint32_t>();
+            for (std::uint32_t condition = 0; condition < conditions && !reader.failed(); ++condition)
+            {
+                AnimatorCondition& read = transition.conditions.emplace_back();
+                read.parameter = reader.readString();
+                read.test = reader.read<AnimatorTest>();
+                read.value = reader.read<float>();
+            }
         }
     }
     if (reader.failed())
     {
         return std::unexpected(truncated(AssetType::Animator));
     }
-    for (const AnimatorTransition& transition : animator.transitions)
+    for (const AnimatorLayer& layer : animator.layers)
     {
-        for (const AnimatorCondition& condition : transition.conditions)
+        for (const AnimatorTransition& transition : layer.transitions)
         {
-            if (condition.test > AnimatorTest::Triggered)
+            for (const AnimatorCondition& condition : transition.conditions)
             {
-                return std::unexpected(truncated(AssetType::Animator));
+                if (condition.test > AnimatorTest::Triggered)
+                {
+                    return std::unexpected(truncated(AssetType::Animator));
+                }
             }
         }
     }

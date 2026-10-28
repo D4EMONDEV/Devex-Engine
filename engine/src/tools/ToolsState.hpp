@@ -397,7 +397,7 @@ struct DEVEX_API TilesetEditor
     std::int32_t paintTerrain = asset::noTerrain;
 };
 
-// What the graph of the Animator panel has selected.
+// What the graph of the Animator panel has selected, or the layer chosen in its list.
 enum class AnimatorElement : std::uint8_t
 {
     None,
@@ -405,6 +405,15 @@ enum class AnimatorElement : std::uint8_t
     Transition,
     Entry,
     AnyState,
+    Layer,
+};
+
+// A bone under the entity the Animator panel follows, for the masks of the layers.
+struct DEVEX_API AnimatorBone
+{
+    std::string name;
+    // How many bones above it, under the entity.
+    std::int32_t depth = 0;
 };
 
 // The animator controller the Animator panel edits: a copy of its file, saved when a change is over,
@@ -423,8 +432,12 @@ struct DEVEX_API AnimatorEditor
     // Why the file could not be read, or why the last change is not saved.
     std::string error;
     AnimatorElement selected = AnimatorElement::None;
-    // The state or the transition selected.
+    // The state or the transition selected in the layer that shows, or the layer selected.
     std::int32_t index = -1;
+    // The layer whose graph shows.
+    std::size_t layer = 0;
+    // The list at the left shows the layers rather than the parameters.
+    bool showLayers = false;
     // The inspector shows the element selected, until another entity or asset is selected.
     bool inspecting = false;
     core::Uuid inspectedEntity;
@@ -440,8 +453,10 @@ struct DEVEX_API AnimatorEditor
     AnimatorElement dragged = AnimatorElement::None;
     std::int32_t draggedIndex = -1;
     bool panning = false;
-    // The entity whose Animator the panel follows, for its state while the game plays.
+    // The entity whose Animator the panel follows, for its state while the game plays, and its bones,
+    // which the masks of the layers are chosen on.
     core::Uuid entity;
+    std::vector<AnimatorBone> skeleton;
     // The panel had the keyboard focus last frame: its undo takes Ctrl+Z.
     bool focused = false;
 };

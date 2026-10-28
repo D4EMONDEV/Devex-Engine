@@ -45,20 +45,33 @@ struct DEVEX_API AnimatorStatus
         float value = 0.0f;
     };
 
-    std::string state;
-    // Since the state started: 1 at its end, more for a state that loops.
-    float normalizedTime = 0.0f;
-    // The state it crossfades from, empty when none, and how far the crossfade is, from 0 to 1.
-    std::string previousState;
-    float transitionProgress = 1.0f;
+    // What a layer of the controller is doing.
+    struct DEVEX_API Layer
+    {
+        std::string name;
+        std::string state;
+        // Since the state started: 1 at its end, more for a state that loops.
+        float normalizedTime = 0.0f;
+        // The state it crossfades from, empty when none, and how far the crossfade is, from 0 to 1.
+        std::string previousState;
+        float transitionProgress = 1.0f;
+        // How much of its pose shows, its weight parameter included: 1 for the base layer.
+        float weight = 1.0f;
+    };
+
     bool playing = false;
     std::vector<Parameter> parameters;
+    // The base layer first, in the order of the controller.
+    std::vector<Layer> layers;
 };
 
 // The animations of a game that plays: the Animator components of its scene, which pose the bones
 // under their entity every frame. Clips drive bones by name, so a clip plays on any skeleton whose
 // bones carry the same names. An Animator with a controller plays its state machine: game code sets
 // its parameters, and its transitions choose the states, whose clips and blend trees pose the bones.
+// The other layers of the controller play their own state machines over the base layer, on the bones
+// of their masks: in place of its pose, or added to it. A bone that a clip of the controller drives
+// goes back to the pose it had before any played, by as much as the states playing leave it free.
 // With sprite frames, the SpriteAnimator components move from frame to frame too. The events the
 // clips and the frames pass are gathered for game code.
 class DEVEX_API AnimationWorld
@@ -87,7 +100,7 @@ public:
     // The events the animations played past during the last update, in the order they came. A clip
     // passes the events from where it was to where it is, around its loop, and backwards when it
     // plays backwards; a state machine passes those of the clip that weighs the most in its state,
-    // and a crossfade only those of the clip it fades to; a sprite animator passes those of the
+    // in each layer whose weight is not 0, and a crossfade only those of the clip it fades to; a sprite animator passes those of the
     // frames it comes to, and of the first frame of an animation that starts.
     [[nodiscard]] std::span<const FiredAnimationEvent> events() const noexcept;
 
@@ -103,7 +116,7 @@ public:
     void pause(scene::Entity entity);
     void resume(scene::Entity entity);
     [[nodiscard]] bool isPlaying(scene::Entity entity) const;
-    // Seconds into the clip, or into the state, and where to continue from.
+    // Seconds into the clip, or into the state of the base layer, and where to continue from.
     [[nodiscard]] float time(scene::Entity entity) const;
     void setTime(scene::Scene& scene, scene::Entity entity, float seconds);
 
@@ -117,9 +130,15 @@ public:
     void resetTrigger(scene::Entity entity, std::string_view parameter);
     // Bools and triggers read as 0 or 1; nothing when the parameter is neither set nor known.
     [[nodiscard]] std::optional<float> parameter(scene::Entity entity, std::string_view parameter) const;
-    // The state the machine is in, empty without one; how far into it, 1 at its end.
-    [[nodiscard]] std::string_view state(scene::Entity entity) const;
-    [[nodiscard]] float stateTime(scene::Entity entity) const;
+    // The state the machine is in, empty without one; how far into it, 1 at its end. Without a
+    // layer, those of the base layer.
+    [[nodiscard]] std::string_view state(scene::Entity entity, std::string_view layer = {}) const;
+    [[nodiscard]] float stateTime(scene::Entity entity, std::string_view layer = {}) const;
+    // Sets how much of the pose of a layer shows, from 0 to 1, in place of the weight the controller
+    // gives it; its weight parameter still multiplies it. It may be set before the controller loads.
+    void setLayerWeight(scene::Entity entity, std::string_view layer, float weight);
+    // The weight code gave the layer, or else the controller; nothing for a layer neither knows.
+    [[nodiscard]] std::optional<float> layerWeight(scene::Entity entity, std::string_view layer) const;
     [[nodiscard]] std::optional<AnimatorStatus> status(scene::Entity entity) const;
 
     // Pauses every animator, as the editor does when the game pauses.

@@ -210,6 +210,9 @@ internal unsafe struct NativeApi
     public delegate* unmanaged<void*, Entity, byte*, Vec4*, int> InstanceShaderParameter;
     public delegate* unmanaged<void*, Entity, byte*, int> ResetInstanceShaderParameter;
     public delegate* unmanaged<NativeAnimationEvent**, int> AnimationEvents;
+    public delegate* unmanaged<Entity, byte*, float, void> SetAnimatorLayerWeight;
+    public delegate* unmanaged<Entity, byte*, float*, int> AnimatorLayerWeight;
+    public delegate* unmanaged<Entity, byte*, float*, byte*> AnimatorLayerState;
 }
 
 /// <summary>An event an animation passed, as the engine gives it: its name lives until the next frame.</summary>
@@ -245,7 +248,7 @@ internal unsafe struct BootstrapArguments
 /// <summary>What the engine calls into: filling the function tables, then the game itself.</summary>
 public static unsafe class Bootstrap
 {
-    internal const int Version = 24;
+    internal const int Version = 25;
 
     internal static NativeApi Native;
     private static byte[]? _description;

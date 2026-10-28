@@ -6,6 +6,7 @@
 #include <devex/core/Error.hpp>
 #include <devex/math/Math.hpp>
 
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -15,6 +16,7 @@
 // Animator controllers: the state machines Animator components play, as Unity's Animator
 // Controller and Godot's AnimationTree. States play clips, blend trees or sprite animations, and
 // transitions move between them when the parameters that game code sets meet their conditions.
+// Layers play state machines of their own over the base layer, on the bones of their masks.
 namespace devex::asset {
 
 inline constexpr std::string_view animatorExtension = ".dvxanimator";
@@ -125,20 +127,60 @@ struct DEVEX_API AnimatorTransition
     bool operator==(const AnimatorTransition&) const = default;
 };
 
-struct DEVEX_API AnimatorData
+// How a layer lays its pose over the layers before it. The values are stored in cooked files: never
+// reorder them.
+enum class AnimatorLayerBlend : std::uint8_t
 {
-    // The state the animator starts in.
+    // Takes the place of the pose below, by its weight, on the bones of its mask: an arm that waves
+    // while the legs walk.
+    Override = 0,
+    // Adds to the pose below how far its clips move from their first frame: a breath, a recoil.
+    Additive = 1,
+};
+
+inline constexpr std::string_view baseLayerName = "Base Layer";
+
+// A state machine of a controller, as Unity's layers: its states play on the bones of its mask, over
+// the layers before it. The first layer is the base, which plays on the whole skeleton at full weight;
+// the blending, the weight and the mask of the others say how much of their pose shows.
+struct DEVEX_API AnimatorLayer
+{
+    // Unique in its animator; code names layers by it.
+    std::string name = std::string(baseLayerName);
+    // The state the layer starts in.
     std::string entry;
-    std::vector<AnimatorParameter> parameters;
     std::vector<AnimatorState> states;
     // Checked in this order: the first one whose conditions are met is taken.
     std::vector<AnimatorTransition> transitions;
+    AnimatorLayerBlend blending = AnimatorLayerBlend::Override;
+    // How much of its pose shows, from 0 to 1, until code sets another; a weight parameter, when
+    // named, multiplies it.
+    float weight = 1.0f;
+    std::string weightParameter;
+    // The bones the layer poses, by name, each with the bones under it, and those it leaves out, with
+    // the bones under them: the closest of a bone and the bones above it that a list names decides.
+    // A bone that neither names, nor any bone above it, is in the mask when no bone is put in it:
+    // with both lists empty, the mask holds the whole skeleton.
+    std::vector<std::string> mask;
+    std::vector<std::string> maskExcluded;
     // Where the Entry and Any State nodes sit in the graph of the editor.
     math::Vec2 entryPosition{-240.0f, 0.0f};
     math::Vec2 anyStatePosition{-240.0f, 120.0f};
 
-    [[nodiscard]] const AnimatorState* findState(std::string_view name) const noexcept;
+    [[nodiscard]] const AnimatorState* findState(std::string_view stateName) const noexcept;
+
+    bool operator==(const AnimatorLayer&) const = default;
+};
+
+struct DEVEX_API AnimatorData
+{
+    std::vector<AnimatorParameter> parameters;
+    // The base layer first, then the layers that play over it, in the order they do.
+    std::vector<AnimatorLayer> layers{AnimatorLayer{}};
+
     [[nodiscard]] const AnimatorParameter* findParameter(std::string_view name) const noexcept;
+    // The index of a layer by its name; an empty name is the base layer.
+    [[nodiscard]] std::optional<std::size_t> findLayer(std::string_view name) const noexcept;
 
     bool operator==(const AnimatorData&) const = default;
 };
@@ -149,14 +191,21 @@ struct DEVEX_API AnimatorData
 [[nodiscard]] DEVEX_API std::optional<AnimatorBlend> parseAnimatorBlend(std::string_view text) noexcept;
 [[nodiscard]] DEVEX_API std::string_view toString(AnimatorTest test) noexcept;
 [[nodiscard]] DEVEX_API std::optional<AnimatorTest> parseAnimatorTest(std::string_view text) noexcept;
+[[nodiscard]] DEVEX_API std::string_view toString(AnimatorLayerBlend blending) noexcept;
+[[nodiscard]] DEVEX_API std::optional<AnimatorLayerBlend> parseAnimatorLayerBlend(std::string_view text) noexcept;
+
+// Whether the mask of a layer names a bone: true when it puts it in, false when it leaves it out,
+// nothing when it names it in neither list, and the bone takes what its parent has.
+[[nodiscard]] DEVEX_API std::optional<bool> maskNames(const AnimatorLayer& layer, std::string_view bone) noexcept;
 
 // Whether a test applies to a type of parameter: greater and less to numbers, equals to integers,
 // is true and is false to bools, triggered to triggers.
 [[nodiscard]] DEVEX_API bool testFits(AnimatorTest test, AnimatorParameterType type) noexcept;
 
-// States and parameters with unique names that are not empty, an entry state that exists when there
-// are states, transitions between existing states, conditions and blends on existing parameters of a
-// fitting type, and durations that are not negative.
+// A base layer, layers and parameters with unique names that are not empty, states with unique names
+// in their layer, an entry state that exists in a layer with states, transitions between existing
+// states of their layer, conditions, blends and weights on existing parameters of a fitting type,
+// weights from 0 to 1 and durations that are not negative.
 [[nodiscard]] DEVEX_API core::Result<void> validate(const AnimatorData& animator);
 
 } // namespace devex::asset

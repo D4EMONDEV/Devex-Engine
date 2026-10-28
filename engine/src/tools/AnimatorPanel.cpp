@@ -10,6 +10,7 @@
 #include <devex/core/File.hpp>
 #include <devex/core/Log.hpp>
 #include <devex/scene/AnimationComponents.hpp>
+#include <devex/scene/Components.hpp>
 
 #include <algorithm>
 #include <array>
@@ -19,6 +20,7 @@
 #include <format>
 #include <iterator>
 #include <optional>
+#include <span>
 #include <string>
 #include <system_error>
 #include <utility>
@@ -28,6 +30,7 @@ namespace {
 
 using asset::AnimatorBlend;
 using asset::AnimatorData;
+using asset::AnimatorLayer;
 using asset::AnimatorParameterType;
 using asset::AnimatorState;
 using asset::AnimatorTest;
@@ -59,6 +62,20 @@ constexpr std::size_t maxUndo = 200;
     return {};
 }
 
+// The bones under an entity and the entity itself, in the order the animators find them, each with
+// how deep it sits.
+void skeletonOf(const scene::Scene& scene, scene::Entity entity, std::int32_t depth, std::vector<AnimatorBone>& bones)
+{
+    if (scene.has<scene::Transform>(entity))
+    {
+        bones.push_back({std::string(scene.name(entity)), depth++});
+    }
+    for (scene::Entity child = scene.firstChild(entity); child.isValid(); child = scene.nextSibling(child))
+    {
+        skeletonOf(scene, child, depth, bones);
+    }
+}
+
 [[nodiscard]] bool isNumber(AnimatorParameterType type) noexcept
 {
     return type == AnimatorParameterType::Float || type == AnimatorParameterType::Integer;
@@ -88,21 +105,37 @@ template <typename Items, typename Projection>
     return parameter.name;
 }
 
-void renameState(AnimatorData& animator, const std::string& from, const std::string& to)
+[[nodiscard]] std::string layerName(const AnimatorLayer& layer)
 {
-    for (AnimatorState& state : animator.states)
+    return layer.name;
+}
+
+// The layer whose graph the panel shows, kept on one that exists.
+[[nodiscard]] AnimatorLayer& editedLayer(AnimatorEditor& editor)
+{
+    if (editor.animator.layers.empty())
+    {
+        editor.animator.layers.emplace_back();
+    }
+    editor.layer = std::min(editor.layer, editor.animator.layers.size() - 1);
+    return editor.animator.layers[editor.layer];
+}
+
+void renameState(AnimatorLayer& layer, const std::string& from, const std::string& to)
+{
+    for (AnimatorState& state : layer.states)
     {
         if (state.name == from)
         {
             state.name = to;
         }
     }
-    for (AnimatorTransition& transition : animator.transitions)
+    for (AnimatorTransition& transition : layer.transitions)
     {
         transition.from = transition.from == from ? to : transition.from;
         transition.to = transition.to == from ? to : transition.to;
     }
-    animator.entry = animator.entry == from ? to : animator.entry;
+    layer.entry = layer.entry == from ? to : layer.entry;
 }
 
 void renameParameter(AnimatorData& animator, const std::string& from, const std::string& to)
@@ -111,49 +144,146 @@ void renameParameter(AnimatorData& animator, const std::string& from, const std:
     {
         parameter.name = parameter.name == from ? to : parameter.name;
     }
-    for (AnimatorState& state : animator.states)
+    for (AnimatorLayer& layer : animator.layers)
     {
-        state.parameter = state.parameter == from ? to : state.parameter;
-        state.parameterY = state.parameterY == from ? to : state.parameterY;
-        state.speedParameter = state.speedParameter == from ? to : state.speedParameter;
-    }
-    for (AnimatorTransition& transition : animator.transitions)
-    {
-        for (asset::AnimatorCondition& condition : transition.conditions)
+        layer.weightParameter = layer.weightParameter == from ? to : layer.weightParameter;
+        for (AnimatorState& state : layer.states)
         {
-            condition.parameter = condition.parameter == from ? to : condition.parameter;
+            state.parameter = state.parameter == from ? to : state.parameter;
+            state.parameterY = state.parameterY == from ? to : state.parameterY;
+            state.speedParameter = state.speedParameter == from ? to : state.speedParameter;
+        }
+        for (AnimatorTransition& transition : layer.transitions)
+        {
+            for (asset::AnimatorCondition& condition : transition.conditions)
+            {
+                condition.parameter = condition.parameter == from ? to : condition.parameter;
+            }
         }
     }
 }
 
 // Removes a state, the transitions that reach or leave it, and moves the entry elsewhere.
-void removeState(AnimatorData& animator, std::size_t index)
+void removeState(AnimatorLayer& layer, std::size_t index)
 {
-    const std::string name = animator.states[index].name;
-    std::erase_if(animator.transitions, [&](const AnimatorTransition& transition) {
+    const std::string name = layer.states[index].name;
+    std::erase_if(layer.transitions, [&](const AnimatorTransition& transition) {
         return transition.from == name || transition.to == name;
     });
-    animator.states.erase(animator.states.begin() + static_cast<std::ptrdiff_t>(index));
-    if (animator.entry == name)
+    layer.states.erase(layer.states.begin() + static_cast<std::ptrdiff_t>(index));
+    if (layer.entry == name)
     {
-        animator.entry = animator.states.empty() ? std::string{} : animator.states.front().name;
+        layer.entry = layer.states.empty() ? std::string{} : layer.states.front().name;
     }
 }
 
-// Removes a parameter and the conditions on it; blends and speeds on it are left for the user to
-// point elsewhere.
+// Removes a parameter and the conditions on it, and the speeds and weights it multiplied; blends on it
+// are left for the user to point elsewhere.
 void removeParameter(AnimatorData& animator, std::size_t index)
 {
     const std::string name = animator.parameters[index].name;
     animator.parameters.erase(animator.parameters.begin() + static_cast<std::ptrdiff_t>(index));
-    for (AnimatorTransition& transition : animator.transitions)
+    for (AnimatorLayer& layer : animator.layers)
     {
-        std::erase_if(transition.conditions, [&](const asset::AnimatorCondition& condition) { return condition.parameter == name; });
+        layer.weightParameter = layer.weightParameter == name ? std::string{} : layer.weightParameter;
+        for (AnimatorTransition& transition : layer.transitions)
+        {
+            std::erase_if(transition.conditions, [&](const asset::AnimatorCondition& condition) { return condition.parameter == name; });
+        }
+        for (AnimatorState& state : layer.states)
+        {
+            state.speedParameter = state.speedParameter == name ? std::string{} : state.speedParameter;
+        }
     }
-    for (AnimatorState& state : animator.states)
+}
+
+[[nodiscard]] bool wholeSkeleton(const AnimatorLayer& layer) noexcept
+{
+    return layer.mask.empty() && layer.maskExcluded.empty();
+}
+
+// Whether each bone of the skeleton is in the mask of a layer, as the animators find it.
+[[nodiscard]] std::vector<bool> maskOf(const AnimatorLayer& layer, std::span<const AnimatorBone> skeleton)
+{
+    std::vector<bool> inside(skeleton.size(), true);
+    // What the bones above the one being read decided, by their depth.
+    std::vector<bool> decided;
+    for (std::size_t bone = 0; bone < skeleton.size(); ++bone)
     {
-        state.speedParameter = state.speedParameter == name ? std::string{} : state.speedParameter;
+        const auto depth = static_cast<std::size_t>(std::max(skeleton[bone].depth, 0));
+        decided.resize(depth, false);
+        inside[bone] = asset::maskNames(layer, skeleton[bone].name).value_or(depth > 0 ? decided[depth - 1] : layer.mask.empty());
+        decided.push_back(inside[bone]);
     }
+    return inside;
+}
+
+// Writes the lists of a mask so that it holds the bones of the skeleton it is asked to, as one would
+// write them: nothing for the whole skeleton, the bones left out when they are whole branches, and
+// otherwise the bones put in, with those left out under them. The names of bones the skeleton lacks
+// stay where they can.
+void setMask(AnimatorLayer& layer, std::span<const AnimatorBone> skeleton, const std::vector<bool>& wanted)
+{
+    const auto known = [&](const std::string& name) {
+        return std::ranges::any_of(skeleton, [&](const AnimatorBone& bone) { return bone.name == name; });
+    };
+    std::vector<std::string> otherIn;
+    std::vector<std::string> otherOut;
+    std::ranges::copy_if(layer.mask, std::back_inserter(otherIn), [&](const std::string& name) { return !known(name); });
+    std::ranges::copy_if(layer.maskExcluded, std::back_inserter(otherOut), [&](const std::string& name) { return !known(name); });
+    layer.mask.clear();
+    layer.maskExcluded = otherOut;
+
+    // Whether each bone sits under one that is wanted, by the depths of the bones above it.
+    const auto parentsWanted = [&](bool top) {
+        std::vector<bool> parents(skeleton.size(), top);
+        std::vector<bool> above;
+        for (std::size_t bone = 0; bone < skeleton.size(); ++bone)
+        {
+            const auto depth = static_cast<std::size_t>(std::max(skeleton[bone].depth, 0));
+            above.resize(depth, top);
+            parents[bone] = depth > 0 ? above[depth - 1] : top;
+            above.push_back(wanted[bone]);
+        }
+        return parents;
+    };
+    const std::vector<bool> underWhole = parentsWanted(true);
+    bool branches = true;
+    for (std::size_t bone = 0; bone < skeleton.size(); ++bone)
+    {
+        branches = branches && !(wanted[bone] && !underWhole[bone]);
+    }
+    if (branches)
+    {
+        for (std::size_t bone = 0; bone < skeleton.size(); ++bone)
+        {
+            if (!wanted[bone] && underWhole[bone])
+            {
+                layer.maskExcluded.push_back(skeleton[bone].name);
+            }
+        }
+        return;
+    }
+    const std::vector<bool> underNothing = parentsWanted(false);
+    for (std::size_t bone = 0; bone < skeleton.size(); ++bone)
+    {
+        if (wanted[bone] != underNothing[bone])
+        {
+            (wanted[bone] ? layer.mask : layer.maskExcluded).push_back(skeleton[bone].name);
+        }
+    }
+    layer.mask.insert(layer.mask.end(), otherIn.begin(), otherIn.end());
+}
+
+// Puts a bone of the skeleton in the mask of a layer, or out of it, with the bones under it.
+void maskBone(AnimatorLayer& layer, std::span<const AnimatorBone> skeleton, std::size_t bone, bool inside)
+{
+    std::vector<bool> wanted = maskOf(layer, skeleton);
+    for (std::size_t under = bone; under < skeleton.size() && (under == bone || skeleton[under].depth > skeleton[bone].depth); ++under)
+    {
+        wanted[under] = inside;
+    }
+    setMask(layer, skeleton, wanted);
 }
 
 // The first parameter that holds a number, made when there is none.
@@ -327,6 +457,7 @@ void loadAnimator(ToolsState& state, asset::AssetId id)
         editor.redo.clear();
         editor.selected = AnimatorElement::None;
         editor.index = -1;
+        editor.layer = 0;
         editor.inspecting = false;
         editor.connectingFrom.reset();
         editor.frame = true;
@@ -373,15 +504,18 @@ void commit(ToolsState& state)
     writeAnimator(state);
 }
 
-// Keeps the selection on something that still exists.
+// Keeps the layer that shows and the selection on something that still exists.
 void clampSelection(AnimatorEditor& editor)
 {
-    const std::size_t count = editor.selected == AnimatorElement::State        ? editor.animator.states.size()
-                              : editor.selected == AnimatorElement::Transition ? editor.animator.transitions.size()
+    const AnimatorLayer& layer = editedLayer(editor);
+    const std::size_t count = editor.selected == AnimatorElement::State        ? layer.states.size()
+                              : editor.selected == AnimatorElement::Transition ? layer.transitions.size()
+                              : editor.selected == AnimatorElement::Layer      ? editor.animator.layers.size()
                                                                                : 1;
     if (editor.index < 0 || static_cast<std::size_t>(editor.index) >= count)
     {
-        if (editor.selected == AnimatorElement::State || editor.selected == AnimatorElement::Transition)
+        if (editor.selected == AnimatorElement::State || editor.selected == AnimatorElement::Transition ||
+            editor.selected == AnimatorElement::Layer)
         {
             editor.selected = AnimatorElement::None;
             editor.index = -1;
@@ -432,13 +566,21 @@ void select(ToolsState& state, AnimatorElement element, std::int32_t index)
 void deleteSelection(ToolsState& state)
 {
     AnimatorEditor& editor = state.animatorEditor;
+    AnimatorLayer& layer = editedLayer(editor);
     if (editor.selected == AnimatorElement::State && editor.index >= 0)
     {
-        removeState(editor.animator, static_cast<std::size_t>(editor.index));
+        removeState(layer, static_cast<std::size_t>(editor.index));
     }
     else if (editor.selected == AnimatorElement::Transition && editor.index >= 0)
     {
-        editor.animator.transitions.erase(editor.animator.transitions.begin() + editor.index);
+        layer.transitions.erase(layer.transitions.begin() + editor.index);
+    }
+    // The base layer stays.
+    else if (editor.selected == AnimatorElement::Layer && editor.index > 0)
+    {
+        editor.animator.layers.erase(editor.animator.layers.begin() + editor.index);
+        editor.layer = static_cast<std::size_t>(editor.index - 1);
+        editor.frame = true;
     }
     else
     {
@@ -453,7 +595,8 @@ void addState(ToolsState& state, math::Vec2 position, AnimatorBlend blend, asset
               std::string_view name = {})
 {
     AnimatorData& animator = state.animatorEditor.animator;
-    AnimatorState added{.name = uniqueName(animator.states, stateName,
+    AnimatorLayer& layer = editedLayer(state.animatorEditor);
+    AnimatorState added{.name = uniqueName(layer.states, stateName,
                                             !name.empty() ? name : blend == AnimatorBlend::None ? "New State" : "Blend Tree"),
                         .blend = blend,
                         .graphPosition = position};
@@ -474,12 +617,37 @@ void addState(ToolsState& state, math::Vec2 position, AnimatorBlend blend, asset
     {
         added.motions = {{.threshold = 0.0f}, {.threshold = 1.0f}};
     }
-    if (animator.states.empty())
+    if (layer.states.empty())
     {
-        animator.entry = added.name;
+        layer.entry = added.name;
     }
-    animator.states.push_back(std::move(added));
-    select(state, AnimatorElement::State, static_cast<std::int32_t>(animator.states.size() - 1));
+    layer.states.push_back(std::move(added));
+    select(state, AnimatorElement::State, static_cast<std::int32_t>(layer.states.size() - 1));
+    commit(state);
+}
+
+// Shows the graph of a layer, and the layer in the inspector.
+void showLayer(ToolsState& state, std::size_t index)
+{
+    AnimatorEditor& editor = state.animatorEditor;
+    if (editor.layer != index)
+    {
+        editor.layer = index;
+        editor.frame = true;
+        editor.connectingFrom.reset();
+    }
+    select(state, AnimatorElement::Layer, static_cast<std::int32_t>(index));
+}
+
+// Adds a layer over the others, with a state that plays nothing to start in: the layer shows once a
+// transition leaves it.
+void addLayer(ToolsState& state)
+{
+    AnimatorData& animator = state.animatorEditor.animator;
+    AnimatorLayer added{.name = uniqueName(animator.layers, layerName, "New Layer"), .entry = "Empty"};
+    added.states.push_back({.name = "Empty", .graphPosition = {0.0f, 0.0f}});
+    animator.layers.push_back(std::move(added));
+    showLayer(state, animator.layers.size() - 1);
     commit(state);
 }
 
@@ -540,8 +708,8 @@ struct Arrow
     return math::length(point - (start + segment * along));
 }
 
-// The nodes of a controller, where the graph puts them in its area: Entry, Any State, then its states.
-[[nodiscard]] std::vector<Node> nodesOf(const AnimatorData& animator, const Graph& graph)
+// The nodes of a layer, where the graph puts them in its area: Entry, Any State, then its states.
+[[nodiscard]] std::vector<Node> nodesOf(const AnimatorLayer& animator, const Graph& graph)
 {
     std::vector<Node> nodes;
     nodes.reserve(animator.states.size() + 2);
@@ -555,9 +723,9 @@ struct Arrow
     return nodes;
 }
 
-// Where the transitions of the controller run, from node to node. Two transitions that join the same
-// states both ways sit side by side.
-[[nodiscard]] std::vector<Arrow> arrowsOf(const AnimatorData& animator, const std::vector<Node>& nodes, float scale)
+// Where the transitions of a layer run, from node to node. Two transitions that join the same states
+// both ways sit side by side.
+[[nodiscard]] std::vector<Arrow> arrowsOf(const AnimatorLayer& animator, const std::vector<Node>& nodes, float scale)
 {
     std::vector<Arrow> arrows;
     const auto nodeOf = [&](const std::string& name, bool any) -> const Node* {
@@ -701,7 +869,7 @@ public:
         const Entity row = ui.actions(nullptr);
         m_open = ui.action(kit, row, Icon::Workflow, "Open in the Animator Panel");
         ui.note(nullptr, "An Animator component plays it when its Controller names it; game code sets its parameters (Animation.SetFloat, "
-                         "SetBool, SetTrigger in C#).",
+                         "SetBool, SetTrigger in C#) and the weights of its layers (Animation.SetLayerWeight).",
                 "dim", 3.0f);
     }
 
@@ -712,10 +880,18 @@ public:
             return;
         }
         const AnimatorData& animator = state.animatorEditor.animator;
+        std::size_t states = 0;
+        std::size_t transitions = 0;
+        for (const AnimatorLayer& layer : animator.layers)
+        {
+            states += layer.states.size();
+            transitions += layer.transitions.size();
+        }
         ui.scene().get<scene::UiText>(m_counts).text =
-            std::format("{} states, {} transitions, {} parameters", animator.states.size(), animator.transitions.size(),
-                        animator.parameters.size());
-        ui.scene().get<scene::UiText>(m_entry).text = animator.entry.empty() ? std::string{} : std::format("Starts in {}", animator.entry);
+            std::format("{} states, {} transitions, {} parameters{}", states, transitions, animator.parameters.size(),
+                        animator.layers.size() > 1 ? std::format(", {} layers", animator.layers.size()) : std::string{});
+        const std::string_view entry = animator.layers.empty() ? std::string_view{} : std::string_view(animator.layers.front().entry);
+        ui.scene().get<scene::UiText>(m_entry).text = entry.empty() ? std::string{} : std::format("Starts in {}", entry);
     }
 
     void answer(InspectorUi& ui, ToolsState& state, EditorUiKit&) override
@@ -733,7 +909,7 @@ private:
     Button m_open;
 };
 
-// A state or a transition chosen in the graph of the Animator panel.
+// A state or a transition chosen in the graph of the Animator panel, or a layer chosen in its list.
 class AnimatorElementPage final : public InspectorPage
 {
 public:
@@ -742,20 +918,30 @@ public:
         AnimatorEditor& editor = state.animatorEditor;
         clampSelection(editor);
         const AnimatorData& animator = editor.animator;
-        std::string text = std::format("{}|{}|{}", static_cast<int>(editor.selected), editor.index, animator.parameters.empty());
+        const AnimatorLayer& layer = editedLayer(editor);
+        std::string text = std::format("{}|{}|{}|{}", static_cast<int>(editor.selected), editor.index, editor.layer, animator.parameters.empty());
         if (editor.selected == AnimatorElement::State && editor.index >= 0)
         {
-            const AnimatorState& node = animator.states[static_cast<std::size_t>(editor.index)];
+            const AnimatorState& node = layer.states[static_cast<std::size_t>(editor.index)];
             text += std::format("|{}|{}|", static_cast<int>(node.blend), node.motions.size());
-            for (const AnimatorTransition& leaving : animator.transitions)
+            for (const AnimatorTransition& leaving : layer.transitions)
             {
                 text += leaving.from == node.name ? leaving.to + "," : std::string{};
             }
         }
         else if (editor.selected == AnimatorElement::Transition && editor.index >= 0)
         {
-            const AnimatorTransition& transition = animator.transitions[static_cast<std::size_t>(editor.index)];
+            const AnimatorTransition& transition = layer.transitions[static_cast<std::size_t>(editor.index)];
             text += std::format("|{}|{}|{}|{}", transition.from, transition.to, transition.conditions.size(), transition.exitTime >= 0.0f);
+        }
+        else if (editor.selected == AnimatorElement::Layer && editor.index >= 0)
+        {
+            // The rows of the mask follow the bones of the entity followed.
+            text += std::format("|{}|", animator.layers.size());
+            for (const AnimatorBone& bone : editor.skeleton)
+            {
+                text += std::format("{}:{},", bone.depth, bone.name);
+            }
         }
         return text;
     }
@@ -766,22 +952,32 @@ public:
         AnimatorEditor& editor = state.animatorEditor;
         *this = AnimatorElementPage{};
         const asset::AssetInfo* const info = state.database != nullptr ? state.database->find(editor.asset) : nullptr;
-        const bool isState = editor.selected == AnimatorElement::State;
-        if (editor.index < 0 || (!isState && editor.selected != AnimatorElement::Transition))
+        if (editor.index < 0 || (editor.selected != AnimatorElement::State && editor.selected != AnimatorElement::Transition &&
+                                 editor.selected != AnimatorElement::Layer))
         {
             return;
         }
-        ui.heading(kit, icons::Workflow, colors.animation, isState ? "State" : "Transition",
-                   std::format("in {}", info != nullptr ? info->name : std::string("the animator")));
+        const AnimatorLayer& layer = editedLayer(editor);
+        const std::string_view kind = editor.selected == AnimatorElement::State        ? "State"
+                                      : editor.selected == AnimatorElement::Transition ? "Transition"
+                                                                                       : "Layer";
+        const std::string where = info != nullptr ? info->name : std::string("the animator");
+        ui.heading(kit, icons::Workflow, colors.animation, std::string(kind),
+                   editor.selected == AnimatorElement::Layer || editor.layer == 0 ? std::format("in {}", where)
+                                                                                  : std::format("in {}, layer {}", where, layer.name));
         const Entity top = ui.actions(nullptr);
         m_back = ui.action(kit, top, Icon::Close, "Show the Selection Again");
-        if (isState)
+        if (editor.selected == AnimatorElement::State)
         {
-            buildState(ui, state, kit, editor.animator.states[static_cast<std::size_t>(editor.index)]);
+            buildState(ui, state, kit, layer.states[static_cast<std::size_t>(editor.index)]);
+        }
+        else if (editor.selected == AnimatorElement::Transition)
+        {
+            buildTransition(ui, state, kit, layer.transitions[static_cast<std::size_t>(editor.index)]);
         }
         else
         {
-            buildTransition(ui, state, kit, editor.animator.transitions[static_cast<std::size_t>(editor.index)]);
+            buildLayer(ui, state, kit, static_cast<std::size_t>(editor.index));
         }
         m_error = ui.note(nullptr, "", "error", 2.0f);
         m_built = true;
@@ -796,13 +992,18 @@ public:
         }
         ui.scene().get<scene::UiText>(m_error).text = editor.error;
         ui.scene().get<scene::UiRect>(m_error).visible = !editor.error.empty();
+        const AnimatorLayer& layer = editedLayer(editor);
         if (editor.selected == AnimatorElement::State)
         {
-            syncState(ui, state, editor.animator.states[static_cast<std::size_t>(editor.index)]);
+            syncState(ui, state, layer.states[static_cast<std::size_t>(editor.index)]);
         }
         else if (editor.selected == AnimatorElement::Transition)
         {
-            syncTransition(ui, editor.animator, editor.animator.transitions[static_cast<std::size_t>(editor.index)]);
+            syncTransition(ui, editor.animator, layer.transitions[static_cast<std::size_t>(editor.index)]);
+        }
+        else if (editor.selected == AnimatorElement::Layer)
+        {
+            syncLayer(ui, state, static_cast<std::size_t>(editor.index));
         }
     }
 
@@ -819,9 +1020,20 @@ public:
             editor.inspecting = false;
             return;
         }
-        const bool done = editor.selected == AnimatorElement::State
-                              ? answerState(ui, state, editor.animator.states[static_cast<std::size_t>(editor.index)])
-                              : answerTransition(ui, state, editor.animator.transitions[static_cast<std::size_t>(editor.index)]);
+        AnimatorLayer& layer = editedLayer(editor);
+        bool done = false;
+        if (editor.selected == AnimatorElement::State)
+        {
+            done = answerState(ui, state, layer.states[static_cast<std::size_t>(editor.index)]);
+        }
+        else if (editor.selected == AnimatorElement::Transition)
+        {
+            done = answerTransition(ui, state, layer.transitions[static_cast<std::size_t>(editor.index)]);
+        }
+        else if (editor.selected == AnimatorElement::Layer)
+        {
+            done = answerLayer(ui, state, static_cast<std::size_t>(editor.index));
+        }
         if (done)
         {
             return;
@@ -951,10 +1163,10 @@ private:
 
         // The ways out of the state, in the order they are checked.
         Section& transitions = ui.card(kit, "Transitions");
-        const AnimatorData& animator = state.animatorEditor.animator;
-        for (std::size_t index = 0; index < animator.transitions.size(); ++index)
+        const AnimatorLayer& layer = editedLayer(state.animatorEditor);
+        for (std::size_t index = 0; index < layer.transitions.size(); ++index)
         {
-            const AnimatorTransition& leaving = animator.transitions[index];
+            const AnimatorTransition& leaving = layer.transitions[index];
             if (leaving.from != node.name)
             {
                 continue;
@@ -978,13 +1190,14 @@ private:
     void syncState(InspectorUi& ui, ToolsState& state, const AnimatorState& node)
     {
         const AnimatorData& animator = state.animatorEditor.animator;
+        const AnimatorLayer& layer = editedLayer(state.animatorEditor);
         const ui::UiWorld& world = ui.panel.world();
         ui.scene().get<scene::UiText>(ui.sections[m_card].title).text = node.name;
         if (world.editedField() != m_name)
         {
             ui.scene().get<scene::UiText>(m_name).text = node.name;
         }
-        ui.setToggle(m_entry, node.name == animator.entry);
+        ui.setToggle(m_entry, node.name == layer.entry);
         ui.scene().get<scene::UiDropdown>(m_blend).selected = static_cast<std::int32_t>(node.blend);
         if (m_clip.isValid())
         {
@@ -1028,6 +1241,7 @@ private:
     [[nodiscard]] bool answerState(InspectorUi& ui, ToolsState& state, AnimatorState& node)
     {
         AnimatorData& animator = state.animatorEditor.animator;
+        AnimatorLayer& layer = editedLayer(state.animatorEditor);
         const ui::UiWorld& world = ui.panel.world();
         const auto chosen = [&](Entity list) { return ui.scene().get<scene::UiDropdown>(list).selected; };
         if (world.editedField() == m_name)
@@ -1037,15 +1251,15 @@ private:
         else if (std::exchange(m_naming, false) && !ui.panel.input().cancelPressed)
         {
             const std::string typed = ui.scene().get<scene::UiText>(m_name).text;
-            if (!typed.empty() && typed != node.name && animator.findState(typed) == nullptr)
+            if (!typed.empty() && typed != node.name && layer.findState(typed) == nullptr)
             {
-                renameState(animator, node.name, typed);
+                renameState(layer, node.name, typed);
                 m_dirty = true;
             }
         }
         if (world.wasChanged(m_entry) && ui.scene().get<scene::UiToggle>(m_entry).value)
         {
-            animator.entry = node.name;
+            layer.entry = node.name;
             m_dirty = true;
         }
         if (world.wasChanged(m_blend) && chosen(m_blend) >= 0)
@@ -1315,6 +1529,7 @@ private:
     {
         AnimatorEditor& editor = state.animatorEditor;
         AnimatorData& animator = editor.animator;
+        AnimatorLayer& layer = editedLayer(editor);
         const ui::UiWorld& world = ui.panel.world();
         const auto value = [&](Entity box) { return ui.scene().get<scene::UiNumberField>(box).value; };
         if (world.wasChanged(m_duration))
@@ -1377,18 +1592,209 @@ private:
         }
         const auto index = static_cast<std::size_t>(editor.index);
         ui.enable(m_earlier, index > 0);
-        ui.enable(m_later, index + 1 < animator.transitions.size());
+        ui.enable(m_later, index + 1 < layer.transitions.size());
         if (world.wasClicked(m_earlier.entity) && index > 0)
         {
-            std::swap(animator.transitions[index], animator.transitions[index - 1]);
+            std::swap(layer.transitions[index], layer.transitions[index - 1]);
             editor.index = static_cast<std::int32_t>(index - 1);
             commit(state);
             return true;
         }
-        if (world.wasClicked(m_later.entity) && index + 1 < animator.transitions.size())
+        if (world.wasClicked(m_later.entity) && index + 1 < layer.transitions.size())
         {
-            std::swap(animator.transitions[index], animator.transitions[index + 1]);
+            std::swap(layer.transitions[index], layer.transitions[index + 1]);
             editor.index = static_cast<std::int32_t>(index + 1);
+            commit(state);
+            return true;
+        }
+        if (world.wasClicked(m_delete.entity))
+        {
+            deleteSelection(state);
+            return true;
+        }
+        return false;
+    }
+
+    // A layer: its name, how it lays its pose over the layers before it, its weight, and the bones of
+    // its mask, on the skeleton of the entity the panel follows.
+    void buildLayer(InspectorUi& ui, ToolsState& state, EditorUiKit& kit, std::size_t index)
+    {
+        const AnimatorEditor& editor = state.animatorEditor;
+        const std::array<std::string_view, 1> one{""};
+        Section& card = ui.card(kit, "Layer", EntityIcon{icons::Layers, themeColors().animation});
+        m_card = ui.sections.size() - 1;
+        if (index == 0)
+        {
+            ui.note(&card, "The base layer plays on the whole skeleton, at full weight. The layers after it play over it, on the bones of "
+                           "their masks.",
+                    "dim", 3.0f);
+            return;
+        }
+        const FormRow nameRow = ui.formRow(card, "Name");
+        m_name = ui.textField(nameRow.editor);
+        ui.tooltip(nameRow.editor, "Code names the layer by it: Animation.SetLayerWeight");
+        const FormRow blendingRow = ui.formRow(card, "Blending");
+        m_blending = ui.choice(blendingRow.editor, {"Override", "Additive"});
+        ui.tooltip(blendingRow.editor, "Override takes the place of the pose below; Additive adds how far its clips move from their first frame");
+        const FormRow weightRow = ui.formRow(card, "Weight");
+        m_weight = ui.numbers(weightRow.editor, one, {.minValue = 0.0f, .maxValue = 1.0f, .dragSpeed = 0.01f, .decimals = 2}).front();
+        ui.tooltip(weightRow.editor, "How much of its pose shows, until code sets another");
+        const FormRow parameterRow = ui.formRow(card, "Weight Parameter");
+        m_weightParameter = ui.choice(parameterRow.editor);
+        ui.tooltip(parameterRow.editor, "Multiplies the weight");
+
+        // The bones of the mask, as a tree of the skeleton of the entity followed.
+        Section& mask = ui.card(kit, "Mask", EntityIcon{icons::Bone, themeColors().animation});
+        if (editor.skeleton.empty())
+        {
+            ui.note(&mask, "Select an entity whose Animator plays this controller to choose the bones of the mask on its skeleton.", "dim",
+                    2.0f);
+            m_maskNames = ui.note(&mask, "", "text", 2.0f);
+        }
+        else
+        {
+            ui.note(&mask, "A bone brings the bones under it. The layer poses the bones checked.", "dim", 2.0f);
+            const float size = std::round(ui.font * 1.1f);
+            const float indent = std::round(ui.font * 1.1f);
+            for (const AnimatorBone& bone : editor.skeleton)
+            {
+                const Entity row = controlRow(ui, mask);
+                const float left = ui.font * 0.35f + indent * static_cast<float>(bone.depth);
+                const Entity box = ui.add(row, "Toggle",
+                                          scene::UiRect{.anchorMin = {0.0f, 0.5f}, .anchorMax = {0.0f, 0.5f}, .offsetMin = {left, -size * 0.5f},
+                                                        .offsetMax = {left + size, size * 0.5f}},
+                                          "toggle");
+                ui.scene().add<scene::UiImage>(box);
+                ui.scene().add<scene::UiToggle>(box);
+                ui.scene().add<scene::UiButton>(box);
+                const Entity name =
+                    ui.text(row, scene::UiRect{.anchorMin = {0.0f, 0.0f}, .anchorMax = {1.0f, 1.0f}, .offsetMin = {left + size + ui.font * 0.45f, 0.0f}},
+                            bone.name, "text");
+                m_bones.push_back({box, name});
+            }
+        }
+        const Entity maskActions = ui.actions(&mask);
+        m_wholeSkeleton = ui.action(kit, maskActions, Icon::Bone, "Whole Skeleton");
+
+        Section& order = ui.card(kit, "Order");
+        ui.note(&order, "Layers play in order, each over the ones before it.", "dim", 2.0f);
+        const Entity moves = ui.actions(&order);
+        m_earlier = ui.action(kit, moves, Icon::ArrowUpDown, "Earlier");
+        m_later = ui.action(kit, moves, Icon::ArrowUpDown, "Later");
+        const Entity actions = ui.actions(nullptr);
+        m_delete = ui.action(kit, actions, Icon::Trash, "Delete Layer");
+    }
+
+    void syncLayer(InspectorUi& ui, ToolsState& state, std::size_t index)
+    {
+        const AnimatorEditor& editor = state.animatorEditor;
+        const AnimatorLayer& layer = editor.animator.layers[index];
+        const ui::UiWorld& world = ui.panel.world();
+        ui.scene().get<scene::UiText>(ui.sections[m_card].title).text = layer.name;
+        if (index == 0)
+        {
+            return;
+        }
+        if (world.editedField() != m_name)
+        {
+            ui.scene().get<scene::UiText>(m_name).text = layer.name;
+        }
+        ui.scene().get<scene::UiDropdown>(m_blending).selected = static_cast<std::int32_t>(layer.blending);
+        ui.setNumber(m_weight, layer.weight);
+        fillParameters(ui, m_weightParameter, editor.animator, layer.weightParameter, true, "none", m_weightParameters);
+        if (m_maskNames.isValid())
+        {
+            std::string names;
+            for (const std::string& bone : layer.mask)
+            {
+                names += (names.empty() ? "" : ", ") + bone;
+            }
+            for (const std::string& bone : layer.maskExcluded)
+            {
+                names += (names.empty() ? "but " : ", but ") + bone;
+            }
+            ui.scene().get<scene::UiText>(m_maskNames).text = names.empty() ? std::string("The whole skeleton") : std::format("Bones: {}", names);
+        }
+        // A bone the lists name shows bright, one that takes what is above it dim.
+        const std::vector<bool> inside = maskOf(layer, editor.skeleton);
+        for (std::size_t bone = 0; bone < m_bones.size() && bone < editor.skeleton.size(); ++bone)
+        {
+            ui.scene().get<scene::UiToggle>(m_bones[bone].toggle).value = inside[bone];
+            ui.scene().get<scene::UiRect>(m_bones[bone].name).style =
+                asset::maskNames(layer, editor.skeleton[bone].name).has_value() ? "text" : "dim";
+        }
+        ui.enable(m_wholeSkeleton, !wholeSkeleton(layer));
+        ui.enable(m_earlier, index > 1);
+        ui.enable(m_later, index + 1 < editor.animator.layers.size());
+    }
+
+    // Answers whether the layer moved or went, which ends the page.
+    [[nodiscard]] bool answerLayer(InspectorUi& ui, ToolsState& state, std::size_t index)
+    {
+        AnimatorEditor& editor = state.animatorEditor;
+        AnimatorData& animator = editor.animator;
+        if (index == 0)
+        {
+            return false;
+        }
+        AnimatorLayer& layer = animator.layers[index];
+        const ui::UiWorld& world = ui.panel.world();
+        if (world.editedField() == m_name)
+        {
+            m_naming = true;
+        }
+        else if (std::exchange(m_naming, false) && !ui.panel.input().cancelPressed)
+        {
+            const std::string typed = ui.scene().get<scene::UiText>(m_name).text;
+            if (!typed.empty() && typed != layer.name && !animator.findLayer(typed))
+            {
+                layer.name = typed;
+                m_dirty = true;
+            }
+        }
+        const std::int32_t blending = ui.scene().get<scene::UiDropdown>(m_blending).selected;
+        if (world.wasChanged(m_blending) && blending >= 0 && blending <= static_cast<std::int32_t>(asset::AnimatorLayerBlend::Additive))
+        {
+            layer.blending = static_cast<asset::AnimatorLayerBlend>(blending);
+            m_dirty = true;
+        }
+        if (world.wasChanged(m_weight))
+        {
+            layer.weight = std::clamp(ui.scene().get<scene::UiNumberField>(m_weight).value, 0.0f, 1.0f);
+            m_dirty = true;
+        }
+        const std::int32_t parameter = ui.scene().get<scene::UiDropdown>(m_weightParameter).selected;
+        if (world.wasChanged(m_weightParameter) && parameter >= 0 && static_cast<std::size_t>(parameter) < m_weightParameters.size())
+        {
+            layer.weightParameter = m_weightParameters[static_cast<std::size_t>(parameter)];
+            m_dirty = true;
+        }
+        for (std::size_t bone = 0; bone < m_bones.size() && bone < editor.skeleton.size(); ++bone)
+        {
+            if (world.wasChanged(m_bones[bone].toggle))
+            {
+                maskBone(layer, editor.skeleton, bone, ui.scene().get<scene::UiToggle>(m_bones[bone].toggle).value);
+                m_dirty = true;
+            }
+        }
+        if (world.wasClicked(m_wholeSkeleton.entity))
+        {
+            layer.mask.clear();
+            layer.maskExcluded.clear();
+            m_dirty = true;
+        }
+        // The base layer stays first.
+        if (world.wasClicked(m_earlier.entity) && index > 1)
+        {
+            std::swap(animator.layers[index], animator.layers[index - 1]);
+            showLayer(state, index - 1);
+            commit(state);
+            return true;
+        }
+        if (world.wasClicked(m_later.entity) && index + 1 < animator.layers.size())
+        {
+            std::swap(animator.layers[index], animator.layers[index + 1]);
+            showLayer(state, index + 1);
             commit(state);
             return true;
         }
@@ -1434,6 +1840,19 @@ private:
     Button m_addCondition;
     Button m_earlier;
     Button m_later;
+    // A layer.
+    struct BoneRow
+    {
+        Entity toggle;
+        Entity name;
+    };
+    Entity m_blending;
+    Entity m_weight;
+    Entity m_weightParameter;
+    std::vector<std::string> m_weightParameters;
+    Entity m_maskNames;
+    std::vector<BoneRow> m_bones;
+    Button m_wholeSkeleton;
 };
 
 } // namespace
@@ -1469,6 +1888,14 @@ struct AnimatorUi : FormUi
         Entity flag;
         Button fire;
     };
+    // A layer in the list: its name, how it blends, and its weight.
+    struct LayerRow
+    {
+        Entity row;
+        Entity name;
+        Entity blending;
+        Entity weight;
+    };
 
     bool built = false;
     float builtFont = 0.0f;
@@ -1485,10 +1912,13 @@ struct AnimatorUi : FormUi
 
     Entity body;
     Entity side;
+    Button parametersTab;
+    Button layersTab;
     Button addParameter;
     Entity liveNote;
     Entity list;
     Entity rows;
+    Entity layerRows;
     Entity emptyNote;
     Entity addMenu;
     std::array<Button, 4> addItems{};
@@ -1496,6 +1926,8 @@ struct AnimatorUi : FormUi
     Button removeItem;
     std::vector<ParameterRow> parameterRows;
     std::string parametersKey;
+    std::vector<LayerRow> layerRowViews;
+    std::string layersKey;
     // A value dragged or typed, saved once the pointer and the keys let go of it.
     bool valuesDirty = false;
 
@@ -1549,6 +1981,9 @@ struct AnimatorUi : FormUi
     void fillParameters(ToolsState& state, EditorUiKit& kit, bool live);
     void showParameters(ToolsState& state, EditorUiKit& kit, const std::optional<animation::AnimatorStatus>& status);
     void answerParameters(ToolsState& state, const std::optional<animation::AnimatorStatus>& status, scene::Entity followed);
+    void fillLayers(ToolsState& state, bool live);
+    void showLayers(ToolsState& state, EditorUiKit& kit, const std::optional<animation::AnimatorStatus>& status);
+    void answerLayers(ToolsState& state, const std::optional<animation::AnimatorStatus>& status, scene::Entity followed);
     void showGraph(ToolsState& state, const std::optional<animation::AnimatorStatus>& status);
     void answerGraph(ToolsState& state, EditorUiKit& kit, const ui::LaidOutRect& area, bool menuWasOpen);
     void update(ToolsState& state, EditorUiKit& kit, scene::Scene& edited, core::Duration delta);
@@ -1571,6 +2006,8 @@ void AnimatorUi::build(EditorUiKit& kit)
     builtFont = font;
     parameterRows.clear();
     parametersKey.clear();
+    layerRowViews.clear();
+    layersKey.clear();
     gridLines.clear();
     arrowViews.clear();
     nodeViews.clear();
@@ -1611,9 +2048,14 @@ void AnimatorUi::build(EditorUiKit& kit)
     // The parameters at the left of a bar that is dragged, the graph at its right.
     body = add({}, "Body", whole(math::Vec4{0.0f, barHeight(), 0.0f, 0.0f}));
     scene().add<scene::UiSplitter>(body, scene::UiSplitter{.position = std::round(font * 16.0f), .minSize = std::round(font * 9.0f)});
+    // The list at the left: the parameters, or the layers, as the tabs of its header choose.
     side = add(body, "Parameters", whole());
     const Entity header = add(side, "Header", UiRect{.anchorMin = {0.0f, 0.0f}, .anchorMax = {1.0f, 0.0f}, .offsetMin = {edge, 0.0f}, .offsetMax = {-edge, tall}});
-    text(header, whole(), "Parameters", "text", true);
+    const Entity tabs = add(header, "Tabs", UiRect{.anchorMin = {0.0f, 0.0f}, .anchorMax = {1.0f, 1.0f}, .offsetMax = {-tool - 4.0f, 0.0f}});
+    scene().add<scene::UiLayout>(tabs, scene::UiLayout{.kind = scene::UiLayoutKind::Row, .spacing = font * 0.3f, .align = scene::TextAlign::Left});
+    parametersTab = button(kit, tabs, std::nullopt, "Parameters", "primary", std::round(font * 6.2f), tall - 4.0f);
+    layersTab = button(kit, tabs, std::nullopt, "Layers", "button", std::round(font * 4.6f), tall - 4.0f);
+    tooltip(layersTab.entity, "State machines that play over the base layer, on the bones of their masks");
     addParameter = toolButton(kit, header, Icon::Plus,
                               UiRect{.anchorMin = {1.0f, 0.5f}, .anchorMax = {1.0f, 0.5f}, .offsetMin = {-tool, -tool * 0.5f}, .offsetMax = {0.0f, tool * 0.5f}});
     tooltip(addParameter.entity, "Add a parameter that game code sets");
@@ -1624,6 +2066,8 @@ void AnimatorUi::build(EditorUiKit& kit)
     scene().add<scene::UiScroll>(list, scene::UiScroll{});
     rows = add(list, "Rows", UiRect{.anchorMin = {0.0f, 0.0f}, .anchorMax = {1.0f, 0.0f}, .offsetMin = {edge, 0.0f}, .offsetMax = {-edge - 6.0f, 1.0f}});
     scene().add<scene::UiLayout>(rows, scene::UiLayout{.kind = scene::UiLayoutKind::Column, .spacing = 2.0f, .align = scene::TextAlign::Left});
+    layerRows = add(list, "Layers", UiRect{.anchorMin = {0.0f, 0.0f}, .anchorMax = {1.0f, 0.0f}, .offsetMin = {edge, 0.0f}, .offsetMax = {-edge - 6.0f, 1.0f}});
+    scene().add<scene::UiLayout>(layerRows, scene::UiLayout{.kind = scene::UiLayoutKind::Column, .spacing = 2.0f, .align = scene::TextAlign::Left});
     emptyNote = text(side, UiRect{.anchorMin = {0.0f, 0.0f}, .anchorMax = {1.0f, 0.0f}, .offsetMin = {edge, tall + 6.0f}, .offsetMax = {-edge, tall + 6.0f + font * 5.0f}},
                      "Game code sets parameters, and transitions check them: add one with +.", "dim");
     scene().get<scene::UiText>(emptyNote).wrap = true;
@@ -1756,9 +2200,11 @@ void AnimatorUi::showParameters(ToolsState& state, EditorUiKit& kit, const std::
         parametersKey = std::move(key);
     }
     const float tall = std::round(font * 1.85f);
+    const bool shown = !state.animatorEditor.showLayers;
     scene().get<UiRect>(liveNote).visible = status.has_value();
     scene().get<UiRect>(list).offsetMin.y = tall + 4.0f + (status ? tall * 0.9f : 0.0f);
-    scene().get<UiRect>(emptyNote).visible = animator.parameters.empty();
+    scene().get<UiRect>(rows).visible = shown;
+    scene().get<UiRect>(emptyNote).visible = shown && animator.parameters.empty();
 
     for (std::size_t index = 0; index < parameterRows.size() && index < animator.parameters.size(); ++index)
     {
@@ -1793,6 +2239,10 @@ void AnimatorUi::answerParameters(ToolsState& state, const std::optional<animati
     AnimatorData& animator = editor.animator;
     ui::UiWorld& world = panel.world();
     const bool live = status.has_value() && state.animationWorld != nullptr;
+    if (editor.showLayers)
+    {
+        return;
+    }
 
     // The + opens the list of the types under itself.
     if (world.wasClicked(addParameter.entity))
@@ -1887,10 +2337,152 @@ void AnimatorUi::answerParameters(ToolsState& state, const std::optional<animati
     }
 }
 
+void AnimatorUi::fillLayers(ToolsState& state, bool live)
+{
+    std::vector<Entity> children;
+    for (Entity child = scene().firstChild(layerRows); child.isValid(); child = scene().nextSibling(child))
+    {
+        children.push_back(child);
+    }
+    for (const Entity child : children)
+    {
+        scene().destroyEntity(child);
+    }
+    layerRowViews.clear();
+    const ThemeColors& colors = themeColors();
+    const AnimatorData& animator = state.animatorEditor.animator;
+    const float tall = line - 4.0f;
+    const float valueWidth = std::round(font * 4.0f);
+    for (std::size_t index = 0; index < animator.layers.size(); ++index)
+    {
+        const AnimatorLayer& layer = animator.layers[index];
+        LayerRow made;
+        made.row = add(layerRows, "Layer", wide(line), "soft_row");
+        scene().add<scene::UiImage>(made.row);
+        scene().add<scene::UiButton>(made.row);
+        scene().add<scene::UiLayout>(made.row, scene::UiLayout{.kind = scene::UiLayoutKind::Row, .spacing = font * 0.35f, .align = scene::TextAlign::Left});
+        const bool additive = layer.blending == asset::AnimatorLayerBlend::Additive;
+        made.blending = text(made.row, middle({font * 1.1f, tall}), index == 0 ? "B" : additive ? "A" : "O", "dim", false, scene::TextAlign::Center);
+        tooltip(made.blending, index == 0 ? "The base layer" : additive ? "Additive" : "Override");
+        made.name = text(made.row, grow(tall), layer.name, "text");
+        if (index > 0)
+        {
+            // Its menu removes it; the base layer stays.
+            scene().add<scene::UiContextMenu>(made.row, scene::UiContextMenu{.popup = scene().reference(rowMenu)});
+            const Entity value = add(made.row, "Weight", middle({valueWidth, tall}));
+            made.weight = numberBox(value, {}, colors.textDim, scene::UiNumberField{.minValue = 0.0f, .maxValue = 1.0f, .dragSpeed = 0.01f, .decimals = 2});
+            scene().get<UiRect>(made.weight).anchorMax = {1.0f, 1.0f};
+            tooltip(made.weight, live ? "The weight it plays with" : "The weight it starts with");
+        }
+        layerRowViews.push_back(made);
+    }
+    scene().get<UiRect>(layerRows).offsetMax.y = (line + 2.0f) * static_cast<float>(animator.layers.size());
+}
+
+void AnimatorUi::showLayers(ToolsState& state, EditorUiKit& kit, const std::optional<animation::AnimatorStatus>& status)
+{
+    static_cast<void>(kit);
+    const AnimatorEditor& editor = state.animatorEditor;
+    const AnimatorData& animator = editor.animator;
+    const bool live = status.has_value() && state.animationWorld != nullptr;
+    scene().get<UiRect>(parametersTab.entity).style = editor.showLayers ? "button" : "primary";
+    scene().get<UiRect>(layersTab.entity).style = editor.showLayers ? "primary" : "button";
+    tooltip(addParameter.entity, editor.showLayers ? "Add a layer that plays over the others" : "Add a parameter that game code sets");
+    // The rows are made again when the layers, their names or their blendings change.
+    std::string key = live ? "live" : "file";
+    for (const AnimatorLayer& layer : animator.layers)
+    {
+        std::format_to(std::back_inserter(key), "|{}:{}", static_cast<int>(layer.blending), layer.name);
+    }
+    if (key != layersKey)
+    {
+        fillLayers(state, live);
+        layersKey = std::move(key);
+    }
+    scene().get<UiRect>(layerRows).visible = editor.showLayers;
+    for (std::size_t index = 0; index < layerRowViews.size() && index < animator.layers.size(); ++index)
+    {
+        const LayerRow& row = layerRowViews[index];
+        scene().get<UiRect>(row.row).style = index == editor.layer ? "soft_row_selected" : "soft_row";
+        if (row.weight.isValid())
+        {
+            // The weight it starts with, or the one it plays with while the game plays.
+            float value = animator.layers[index].weight;
+            if (live && index < status->layers.size())
+            {
+                value = status->layers[index].weight;
+            }
+            setNumber(row.weight, value);
+        }
+    }
+}
+
+void AnimatorUi::answerLayers(ToolsState& state, const std::optional<animation::AnimatorStatus>& status, scene::Entity followed)
+{
+    AnimatorEditor& editor = state.animatorEditor;
+    AnimatorData& animator = editor.animator;
+    ui::UiWorld& world = panel.world();
+    const bool live = status.has_value() && state.animationWorld != nullptr;
+    if (world.wasClicked(parametersTab.entity))
+    {
+        editor.showLayers = false;
+    }
+    else if (world.wasClicked(layersTab.entity))
+    {
+        editor.showLayers = true;
+    }
+    if (!editor.showLayers)
+    {
+        return;
+    }
+    if (world.wasClicked(addParameter.entity))
+    {
+        addLayer(state);
+        return;
+    }
+    const Entity target = world.contextTarget();
+    for (std::size_t index = 0; index < layerRowViews.size() && index < animator.layers.size(); ++index)
+    {
+        AnimatorLayer& layer = animator.layers[index];
+        const LayerRow& row = layerRowViews[index];
+        if (index > 0 && world.wasClicked(removeItem.entity) && target == row.row)
+        {
+            select(state, AnimatorElement::Layer, static_cast<std::int32_t>(index));
+            deleteSelection(state);
+            return;
+        }
+        if (world.wasClicked(row.row))
+        {
+            showLayer(state, index);
+        }
+        if (row.weight.isValid() && world.wasChanged(row.weight))
+        {
+            const float value = std::clamp(scene().get<scene::UiNumberField>(row.weight).value, 0.0f, 1.0f);
+            if (live)
+            {
+                state.animationWorld->setLayerWeight(followed, layer.name, value);
+            }
+            else
+            {
+                layer.weight = value;
+                valuesDirty = true;
+            }
+        }
+    }
+    // One step of the history for a value, once it is let go.
+    if (valuesDirty && !world.held().isValid() && !world.isEditing())
+    {
+        valuesDirty = false;
+        commit(state);
+    }
+}
+
 void AnimatorUi::showGraph(ToolsState& state, const std::optional<animation::AnimatorStatus>& status)
 {
     AnimatorEditor& editor = state.animatorEditor;
-    const AnimatorData& animator = editor.animator;
+    const AnimatorLayer& animator = editedLayer(editor);
+    // What the layer that shows does while the game plays.
+    const animation::AnimatorStatus::Layer* const live = status && editor.layer < status->layers.size() ? &status->layers[editor.layer] : nullptr;
     const ThemeColors& colors = themeColors();
     const float unit = graphUnit();
     if (editor.frame && areaSize.x > 1.0f && areaSize.y > 1.0f)
@@ -1952,8 +2544,8 @@ void AnimatorUi::showGraph(ToolsState& state, const std::optional<animation::Ani
     // The links: the one selected in the accent, the one the game takes in green.
     const std::vector<Node> nodes = nodesOf(animator, view);
     const std::vector<Arrow> arrows = arrowsOf(animator, nodes, view.scale);
-    const std::string current = status ? status->state : std::string{};
-    const std::string previous = status ? status->previousState : std::string{};
+    const std::string current = live != nullptr ? live->state : std::string{};
+    const std::string previous = live != nullptr ? live->previousState : std::string{};
     const auto link = [&](Entity entity, math::Vec2 from, math::Vec2 to, math::Vec4 color, float width) {
         scene().get<UiRect>(entity).visible = true;
         scene::UiLine& drawn = scene().get<scene::UiLine>(entity);
@@ -2059,10 +2651,10 @@ void AnimatorUi::showGraph(ToolsState& state, const std::optional<animation::Ani
             {
                 border = colors.warning;
             }
-            if (status && animatorState.name == current)
+            if (live != nullptr && animatorState.name == current)
             {
                 fill = math::Vec4(colors.success.x * 0.35f, colors.success.y * 0.35f, colors.success.z * 0.35f, 1.0f);
-                progress = animatorState.loop ? status->normalizedTime - std::floor(status->normalizedTime) : std::min(status->normalizedTime, 1.0f);
+                progress = animatorState.loop ? live->normalizedTime - std::floor(live->normalizedTime) : std::min(live->normalizedTime, 1.0f);
             }
         }
         if (selected)
@@ -2125,7 +2717,7 @@ void AnimatorUi::showGraph(ToolsState& state, const std::optional<animation::Ani
 void AnimatorUi::answerGraph(ToolsState& state, EditorUiKit& kit, const ui::LaidOutRect& area, bool menuWasOpen)
 {
     AnimatorEditor& editor = state.animatorEditor;
-    AnimatorData& animator = editor.animator;
+    AnimatorLayer& animator = editedLayer(editor);
     ui::UiWorld& world = panel.world();
     const ui::UiInput& input = panel.input();
     areaSize = area.size();
@@ -2395,23 +2987,40 @@ void AnimatorUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& edite
     scene().get<UiRect>(toolbar).visible = true;
     scene().get<UiRect>(body).visible = true;
 
-    // While the game plays, the state machine of the entity followed shows live.
+    // While the game plays, the state machine of the entity followed shows live. Its bones are those
+    // the masks of the layers are chosen on.
     std::optional<animation::AnimatorStatus> status;
-    const scene::Entity followed = edited.findEntity(editor.entity);
-    if (state.playState != PlayState::Editing && state.animationWorld != nullptr && followed.isValid() && edited.has<scene::Animator>(followed) &&
-        edited.get<scene::Animator>(followed).controller == editor.asset)
+    scene::Entity followed = edited.findEntity(editor.entity);
+    if (!followed.isValid() || !edited.has<scene::Animator>(followed) || edited.get<scene::Animator>(followed).controller != editor.asset)
+    {
+        followed = {};
+    }
+    if (state.playState != PlayState::Editing && state.animationWorld != nullptr && followed.isValid())
     {
         status = state.animationWorld->status(followed);
     }
+    std::vector<AnimatorBone> skeleton;
+    if (followed.isValid())
+    {
+        skeletonOf(edited, followed, 0, skeleton);
+    }
+    if (skeleton.size() != editor.skeleton.size() ||
+        !std::ranges::equal(skeleton, editor.skeleton, [](const AnimatorBone& a, const AnimatorBone& b) { return a.name == b.name && a.depth == b.depth; }))
+    {
+        editor.skeleton = std::move(skeleton);
+    }
+    const AnimatorLayer& shownLayer = editedLayer(editor);
 
-    // The toolbar: the asset, undo, and why it is not saved.
+    // The toolbar: the asset and the layer that shows, undo, and why it is not saved.
     const asset::AssetInfo* const info = state.database->find(editor.asset);
     scene().get<scene::UiImage>(glyph).color = linearColor(colors.animation);
-    fitText(kit, title, info != nullptr ? info->name : std::string("Animator"), true);
-    scene().get<UiRect>(liveText).visible = followed.isValid() && status.has_value();
-    if (followed.isValid() && status)
+    const std::string assetName = info != nullptr ? info->name : std::string("Animator");
+    fitText(kit, title, editor.layer == 0 ? assetName : std::format("{}  /  {}", assetName, shownLayer.name), true);
+    const animation::AnimatorStatus::Layer* const liveLayer = status && editor.layer < status->layers.size() ? &status->layers[editor.layer] : nullptr;
+    scene().get<UiRect>(liveText).visible = followed.isValid() && liveLayer != nullptr;
+    if (followed.isValid() && liveLayer != nullptr)
     {
-        fitText(kit, liveText, std::format("{}: {}", edited.name(followed), status->state));
+        fitText(kit, liveText, std::format("{}: {}", edited.name(followed), liveLayer->state));
     }
     enable(undo, !editor.undo.empty());
     enable(redo, !editor.redo.empty());
@@ -2426,6 +3035,7 @@ void AnimatorUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& edite
         scene().get<UiRect>(hint).style = editor.error.empty() ? "dim" : "error";
     }
     showParameters(state, kit, status);
+    showLayers(state, kit, status);
     showGraph(state, status);
 
     const bool menuWasOpen = menuOpen();
@@ -2446,6 +3056,7 @@ void AnimatorUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& edite
         editor.frame = true;
     }
     answerParameters(state, status, followed);
+    answerLayers(state, status, followed);
     if (const ui::LaidOutRect* const area = world.canvases().empty() ? nullptr : world.canvases().front().layout.find(graph))
     {
         answerGraph(state, kit, *area, menuWasOpen);
@@ -2517,8 +3128,8 @@ std::unique_ptr<InspectorPage> makeAnimatorPage()
 core::Result<std::filesystem::path> createAnimatorFile(ToolsState& state, std::string_view folder, std::string_view name)
 {
     AnimatorData animator;
-    animator.entry = "Idle";
-    animator.states.push_back({.name = "Idle", .graphPosition = {0.0f, 0.0f}});
+    animator.layers.front().entry = "Idle";
+    animator.layers.front().states.push_back({.name = "Idle", .graphPosition = {0.0f, 0.0f}});
     return writeNewAssetFile(state, folder, name, "Animator", asset::animatorExtension, asset::writeAnimatorFile(animator));
 }
 

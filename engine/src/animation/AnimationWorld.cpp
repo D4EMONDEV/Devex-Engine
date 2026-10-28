@@ -88,6 +88,156 @@ void applyPose(Scene& scene, std::span<const Entity> bones, std::span<const Join
     return value - std::floor(value);
 }
 
+// The properties of a bone that a clip drives.
+constexpr std::uint8_t drivesTranslation = 1;
+constexpr std::uint8_t drivesRotation = 2;
+constexpr std::uint8_t drivesScale = 4;
+
+// How much of each property of a bone a mix of poses holds, from 0 to 1: the weights of the poses
+// that drive it.
+struct Coverage
+{
+    float translation = 0.0f;
+    float rotation = 0.0f;
+    float scale = 0.0f;
+};
+
+// Mixes a pose into the poses gathered before it by a weight, times the coverage of each of its
+// properties when it has one: each pose keeps its share of what drives a property, and a property
+// no pose drives stays out of the mix.
+void gather(std::span<JointPose> mix, std::span<Coverage> covered, std::span<const JointPose> pose, float weight,
+            std::span<const Coverage> poseCovered = {})
+{
+    if (weight <= 0.0f)
+    {
+        return;
+    }
+    for (std::size_t index = 0; index < mix.size() && index < pose.size(); ++index)
+    {
+        const JointPose& from = pose[index];
+        JointPose& into = mix[index];
+        Coverage& total = covered[index];
+        const Coverage share = poseCovered.empty() ? Coverage{1.0f, 1.0f, 1.0f} : poseCovered[index];
+        if (from.hasTranslation && share.translation > 0.0f)
+        {
+            const float added = weight * share.translation;
+            into.translation = total.translation > 0.0f
+                                   ? math::mix(into.translation, from.translation, added / (total.translation + added))
+                                   : from.translation;
+            total.translation += added;
+            into.hasTranslation = true;
+        }
+        if (from.hasRotation && share.rotation > 0.0f)
+        {
+            const float added = weight * share.rotation;
+            into.rotation = total.rotation > 0.0f
+                                ? math::normalize(math::slerp(into.rotation, from.rotation, added / (total.rotation + added)))
+                                : from.rotation;
+            total.rotation += added;
+            into.hasRotation = true;
+        }
+        if (from.hasScale && share.scale > 0.0f)
+        {
+            const float added = weight * share.scale;
+            into.scale = total.scale > 0.0f ? math::mix(into.scale, from.scale, added / (total.scale + added)) : from.scale;
+            total.scale += added;
+            into.hasScale = true;
+        }
+    }
+}
+
+// Brings the properties that the clips of a controller drive back towards the rest pose of their
+// bones, by as much as the mix leaves them free: a leg that the walk moved stands again in the idle.
+void restFill(std::span<JointPose> pose, std::span<const Coverage> covered, std::span<const JointPose> rest,
+              std::span<const std::uint8_t> driven)
+{
+    for (std::size_t index = 0; index < pose.size() && index < rest.size() && index < driven.size(); ++index)
+    {
+        JointPose& into = pose[index];
+        const JointPose& still = rest[index];
+        const Coverage& total = covered[index];
+        if ((driven[index] & drivesTranslation) != 0 && total.translation < 1.0f)
+        {
+            into.translation = into.hasTranslation ? math::mix(still.translation, into.translation, total.translation) : still.translation;
+            into.hasTranslation = true;
+        }
+        if ((driven[index] & drivesRotation) != 0 && total.rotation < 1.0f)
+        {
+            into.rotation = into.hasRotation ? math::normalize(math::slerp(still.rotation, into.rotation, total.rotation)) : still.rotation;
+            into.hasRotation = true;
+        }
+        if ((driven[index] & drivesScale) != 0 && total.scale < 1.0f)
+        {
+            into.scale = into.hasScale ? math::mix(still.scale, into.scale, total.scale) : still.scale;
+            into.hasScale = true;
+        }
+    }
+}
+
+// How far a pose moves from a reference, property by property: what an additive layer adds.
+void subtractPose(std::span<JointPose> pose, std::span<const JointPose> reference)
+{
+    for (std::size_t index = 0; index < pose.size() && index < reference.size(); ++index)
+    {
+        JointPose& moved = pose[index];
+        const JointPose& from = reference[index];
+        if (moved.hasTranslation)
+        {
+            moved.translation = from.hasTranslation ? moved.translation - from.translation : math::Vec3{0.0f};
+        }
+        if (moved.hasRotation)
+        {
+            moved.rotation = from.hasRotation ? math::normalize(math::inverse(from.rotation) * moved.rotation) : math::Quat{1.0f, 0.0f, 0.0f, 0.0f};
+        }
+        if (moved.hasScale)
+        {
+            for (int axis = 0; axis < 3; ++axis)
+            {
+                moved.scale[axis] = from.hasScale && std::abs(from.scale[axis]) > 1e-6f ? moved.scale[axis] / from.scale[axis] : 1.0f;
+            }
+        }
+    }
+}
+
+// Lays the pose of a layer over the pose below it: on each bone by its mask, the weight of the layer
+// and the coverage of the pose, in place of what is below or, additive, added to it. A property the
+// pose below leaves alone starts from the rest pose.
+void layOver(std::span<JointPose> pose, std::span<const JointPose> layer, std::span<const Coverage> covered,
+             std::span<const float> mask, std::span<const JointPose> rest, float weight, bool additive)
+{
+    const math::Quat identity{1.0f, 0.0f, 0.0f, 0.0f};
+    for (std::size_t index = 0; index < pose.size() && index < layer.size() && index < mask.size() && index < rest.size(); ++index)
+    {
+        const float amount = mask[index] * weight;
+        if (amount <= 0.0f)
+        {
+            continue;
+        }
+        JointPose& into = pose[index];
+        const JointPose& from = layer[index];
+        const JointPose& still = rest[index];
+        const Coverage& total = covered[index];
+        if (const float share = amount * std::min(total.translation, 1.0f); from.hasTranslation && share > 0.0f)
+        {
+            const math::Vec3 below = into.hasTranslation ? into.translation : still.translation;
+            into.translation = additive ? below + from.translation * share : math::mix(below, from.translation, share);
+            into.hasTranslation = true;
+        }
+        if (const float share = amount * std::min(total.rotation, 1.0f); from.hasRotation && share > 0.0f)
+        {
+            const math::Quat below = into.hasRotation ? into.rotation : still.rotation;
+            into.rotation = math::normalize(additive ? below * math::slerp(identity, from.rotation, share) : math::slerp(below, from.rotation, share));
+            into.hasRotation = true;
+        }
+        if (const float share = amount * std::min(total.scale, 1.0f); from.hasScale && share > 0.0f)
+        {
+            const math::Vec3 below = into.hasScale ? into.scale : still.scale;
+            into.scale = additive ? below * math::mix(math::Vec3{1.0f}, from.scale, share) : math::mix(below, from.scale, share);
+            into.hasScale = true;
+        }
+    }
+}
+
 } // namespace
 
 // What one Animator is doing: the clip that plays, or the states of its controller, what fades out,
@@ -110,6 +260,20 @@ struct AnimationWorld::Implementation
         bool wrapped = false;
     };
 
+    // What a layer of a controller is doing: its state, the one it crossfades from, and the bones of
+    // its mask.
+    struct LayerRun
+    {
+        StateRun current;
+        StateRun previous;
+        float fadeRemaining = 0.0f;
+        float fadeLength = 0.0f;
+        // The length of the current state in seconds, as last computed.
+        float stateDuration = 1.0f;
+        // For each bone, 1 in the mask and 0 out of it.
+        std::vector<float> mask;
+    };
+
     struct Playback
     {
         Entity entity;
@@ -119,23 +283,29 @@ struct AnimationWorld::Implementation
         std::shared_ptr<const Clip> clip;
         float time = 0.0f;
         bool playing = false;
-        // The clip left behind by the last crossfade.
+        // The clip left behind by the last crossfade of a clip.
         std::shared_ptr<const Clip> previous;
         std::vector<std::int32_t> previousJoints;
         float previousTime = 0.0f;
         float fadeRemaining = 0.0f;
         float fadeLength = 0.0f;
 
-        // The state machine, when the Animator has a controller.
+        // The state machine, when the Animator has a controller: a run of each of its layers.
         asset::AssetId controllerId;
         std::shared_ptr<const AnimatorData> controller;
-        StateRun current;
-        StateRun previousState;
-        // The length of the current state in seconds, as last computed.
-        float stateDuration = 1.0f;
+        std::vector<LayerRun> layers;
         // The values of the parameters, set by code or from the controller.
         std::unordered_map<std::string, float> parameters;
+        // The weights code gave layers, by name, in place of those of the controller.
+        std::unordered_map<std::string, float> layerWeights;
         std::unordered_map<asset::AssetId, ClipBinding> bindings;
+        // The properties of each bone that a clip of the controller drives, and the pose the bones had
+        // before anything played, kept by entity when the bones are found again.
+        std::vector<std::uint8_t> driven;
+        std::vector<JointPose> rest;
+        std::unordered_map<std::uint64_t, JointPose> rests;
+        // The masks of the layers are found again once the bones or the controller change.
+        bool masksStale = true;
 
         std::vector<Entity> bones;
         std::unordered_map<std::string, std::uint32_t> boneIndex;
@@ -150,6 +320,13 @@ struct AnimationWorld::Implementation
         std::vector<JointPose> pose;
         std::vector<JointPose> fading;
         std::vector<JointPose> motion;
+        std::vector<JointPose> layerPose;
+        std::vector<JointPose> layered;
+        std::vector<JointPose> reference;
+        std::vector<Coverage> covered;
+        std::vector<Coverage> fadingCovered;
+        std::vector<Coverage> layerCovered;
+        std::vector<Coverage> layeredCovered;
         std::vector<float> weights;
     };
 
@@ -206,8 +383,27 @@ struct AnimationWorld::Implementation
         playback.joints = mapJoints(playback, playback.clip.get());
         playback.previousJoints = mapJoints(playback, playback.previous.get());
         playback.bindings.clear();
+        playback.driven.assign(playback.bones.size(), 0);
+        playback.masksStale = true;
         playback.rootBone = -1;
         playback.hasRootTranslation = false;
+        // The rest pose of a bone is the one it had when it was first found, before the clips moved it.
+        playback.rest.clear();
+        for (const Entity bone : playback.bones)
+        {
+            const auto [found, created] = playback.rests.try_emplace(keyOf(bone));
+            if (created)
+            {
+                const Transform& transform = sceneToRead.get<Transform>(bone);
+                found->second = JointPose{.translation = transform.position,
+                                          .rotation = transform.rotation,
+                                          .scale = transform.scale,
+                                          .hasTranslation = true,
+                                          .hasRotation = true,
+                                          .hasScale = true};
+            }
+            playback.rest.push_back(found->second);
+        }
     }
 
     [[nodiscard]] static std::vector<std::int32_t> mapJoints(const Playback& playback, const Clip* clip)
@@ -414,10 +610,10 @@ struct AnimationWorld::Implementation
 
     // ---- State machines ----
 
-    [[nodiscard]] static std::int32_t stateIndex(const AnimatorData& controller, std::string_view name) noexcept
+    [[nodiscard]] static std::int32_t stateIndex(const asset::AnimatorLayer& layer, std::string_view name) noexcept
     {
-        const auto found = std::ranges::find(controller.states, name, &AnimatorState::name);
-        return found != controller.states.end() ? static_cast<std::int32_t>(found - controller.states.begin()) : -1;
+        const auto found = std::ranges::find(layer.states, name, &AnimatorState::name);
+        return found != layer.states.end() ? static_cast<std::int32_t>(found - layer.states.begin()) : -1;
     }
 
     [[nodiscard]] static float valueOf(const Playback& playback, std::string_view name) noexcept
@@ -426,9 +622,33 @@ struct AnimationWorld::Implementation
         return found != playback.parameters.end() ? found->second : 0.0f;
     }
 
+    [[nodiscard]] static const AnimatorState* stateOf(const asset::AnimatorLayer& layer, const StateRun& run) noexcept
+    {
+        return run.state >= 0 && static_cast<std::size_t>(run.state) < layer.states.size() ? &layer.states[static_cast<std::size_t>(run.state)]
+                                                                                           : nullptr;
+    }
+
+    // How much of the pose of a layer shows: the weight code gave it, or the controller's, times its
+    // weight parameter. The base layer shows whole.
+    [[nodiscard]] static float weightOf(const Playback& playback, std::size_t index) noexcept
+    {
+        if (index == 0)
+        {
+            return 1.0f;
+        }
+        const asset::AnimatorLayer& layer = playback.controller->layers[index];
+        const auto set = playback.layerWeights.find(layer.name);
+        float weight = set != playback.layerWeights.end() ? set->second : layer.weight;
+        if (!layer.weightParameter.empty())
+        {
+            weight *= valueOf(playback, layer.weightParameter);
+        }
+        return std::clamp(weight, 0.0f, 1.0f);
+    }
+
     // Takes the controller the Animator names, or its new version once the asset changed: the
-    // parameters it adds start from their values, and the machine keeps its state when the new
-    // version still has it.
+    // parameters it adds start from their values, and each layer keeps its state when the new
+    // version still has both.
     void loadController(Scene& sceneToWrite, Playback& playback, const Animator& animator)
     {
         std::shared_ptr<const AnimatorData> loaded =
@@ -438,19 +658,26 @@ struct AnimationWorld::Implementation
         {
             return;
         }
-        const std::string kept =
-            sameAsset && playback.controller != nullptr && playback.current.state >= 0 &&
-                    static_cast<std::size_t>(playback.current.state) < playback.controller->states.size()
-                ? playback.controller->states[static_cast<std::size_t>(playback.current.state)].name
-                : std::string{};
+        std::unordered_map<std::string, std::string> kept;
+        if (sameAsset && playback.controller != nullptr)
+        {
+            for (std::size_t index = 0; index < playback.layers.size() && index < playback.controller->layers.size(); ++index)
+            {
+                const asset::AnimatorLayer& layer = playback.controller->layers[index];
+                if (const AnimatorState* const state = stateOf(layer, playback.layers[index].current))
+                {
+                    kept.emplace(layer.name, state->name);
+                }
+            }
+        }
         playback.controllerId = animator.controller;
         playback.controller = std::move(loaded);
-        playback.previousState = {};
-        playback.fadeRemaining = 0.0f;
+        playback.layers.clear();
         playback.bindings.clear();
+        std::ranges::fill(playback.driven, std::uint8_t{0});
+        playback.masksStale = true;
         if (playback.controller == nullptr)
         {
-            playback.current = {};
             return;
         }
         for (const asset::AnimatorParameter& parameter : playback.controller->parameters)
@@ -458,50 +685,56 @@ struct AnimationWorld::Implementation
             playback.parameters.try_emplace(parameter.name,
                                             parameter.type == AnimatorParameterType::Trigger ? 0.0f : parameter.defaultValue);
         }
-        const std::int32_t state = stateIndex(*playback.controller, kept);
-        if (state >= 0)
+        playback.layers.resize(playback.controller->layers.size());
+        for (std::size_t index = 0; index < playback.layers.size(); ++index)
         {
-            playback.current.state = state;
-        }
-        else
-        {
-            enterState(sceneToWrite, playback, stateIndex(*playback.controller, playback.controller->entry));
+            const asset::AnimatorLayer& layer = playback.controller->layers[index];
+            const auto found = kept.find(layer.name);
+            const std::int32_t state = found != kept.end() ? stateIndex(layer, found->second) : -1;
+            if (state >= 0)
+            {
+                playback.layers[index].current.state = state;
+            }
+            else
+            {
+                enterState(sceneToWrite, playback, index, stateIndex(layer, layer.entry));
+            }
         }
     }
 
-    // Starts a state from its beginning, and the sprite animation it names.
-    void enterState(Scene& sceneToWrite, Playback& playback, std::int32_t state)
+    // Starts a state of a layer from its beginning, and the sprite animation it names.
+    void enterState(Scene& sceneToWrite, Playback& playback, std::size_t layer, std::int32_t state)
     {
-        playback.current = {.state = state};
-        playback.hasRootTranslation = false;
-        if (playback.controller == nullptr || state < 0)
+        playback.layers[layer].current = {.state = state};
+        if (layer == 0)
         {
-            return;
+            playback.hasRootTranslation = false;
         }
-        const AnimatorState& entered = playback.controller->states[static_cast<std::size_t>(state)];
-        if (entered.spriteAnimation.empty())
+        const AnimatorState* const entered =
+            playback.controller != nullptr ? stateOf(playback.controller->layers[layer], playback.layers[layer].current) : nullptr;
+        if (entered == nullptr || entered->spriteAnimation.empty())
         {
             return;
         }
         if (scene::SpriteAnimator* const sprite = sceneToWrite.tryGet<scene::SpriteAnimator>(playback.entity))
         {
-            if (sprite->animation == entered.spriteAnimation)
+            if (sprite->animation == entered->spriteAnimation)
             {
                 // The same animation again starts over from its first frame.
                 sprite->frame = sprite->speed < 0.0f ? std::numeric_limits<std::int32_t>::max() : 0;
                 sprite->frameTime = 0.0f;
             }
-            sprite->animation = entered.spriteAnimation;
+            sprite->animation = entered->spriteAnimation;
             sprite->playing = true;
         }
     }
 
     // Whether every condition of a transition is met, and the state far enough for its exit time.
     // A transition without conditions leaves at its exit time, or at the end of the state.
-    [[nodiscard]] static bool canLeave(const Playback& playback, const AnimatorTransition& transition) noexcept
+    [[nodiscard]] static bool canLeave(const Playback& playback, const StateRun& run, const AnimatorTransition& transition) noexcept
     {
         const float exitTime = transition.exitTime >= 0.0f ? transition.exitTime : transition.conditions.empty() ? 1.0f : -1.0f;
-        if (exitTime >= 0.0f && playback.current.normalized < exitTime)
+        if (exitTime >= 0.0f && run.normalized < exitTime)
         {
             return false;
         }
@@ -539,25 +772,26 @@ struct AnimationWorld::Implementation
         return true;
     }
 
-    // Takes the first transition that may leave the current state, in the order of the controller;
-    // the triggers it checks are reset. None is taken during a crossfade.
-    void takeTransition(Scene& sceneToWrite, Playback& playback)
+    // Takes the first transition of a layer that may leave its current state, in the order of the
+    // controller; the triggers it checks are reset. None is taken during a crossfade.
+    void takeTransition(Scene& sceneToWrite, Playback& playback, std::size_t index)
     {
-        const AnimatorData& controller = *playback.controller;
-        if (playback.current.state < 0 || playback.fadeRemaining > 0.0f)
+        const asset::AnimatorLayer& layer = playback.controller->layers[index];
+        LayerRun& run = playback.layers[index];
+        const AnimatorState* const state = stateOf(layer, run.current);
+        if (state == nullptr || run.fadeRemaining > 0.0f)
         {
             return;
         }
-        const std::string& current = controller.states[static_cast<std::size_t>(playback.current.state)].name;
-        for (const AnimatorTransition& transition : controller.transitions)
+        for (const AnimatorTransition& transition : layer.transitions)
         {
             const bool fromAny = transition.from.empty();
-            if ((!fromAny && transition.from != current) || (fromAny && transition.to == current) ||
-                !canLeave(playback, transition))
+            if ((!fromAny && transition.from != state->name) || (fromAny && transition.to == state->name) ||
+                !canLeave(playback, run.current, transition))
             {
                 continue;
             }
-            const std::int32_t target = stateIndex(controller, transition.to);
+            const std::int32_t target = stateIndex(layer, transition.to);
             if (target < 0)
             {
                 continue;
@@ -569,14 +803,10 @@ struct AnimationWorld::Implementation
                     playback.parameters[condition.parameter] = 0.0f;
                 }
             }
-            playback.previousState = playback.current;
-            playback.fadeLength = transition.duration;
-            playback.fadeRemaining = transition.duration;
-            if (transition.duration <= 0.0f)
-            {
-                playback.previousState = {};
-            }
-            enterState(sceneToWrite, playback, target);
+            run.previous = transition.duration > 0.0f ? run.current : StateRun{};
+            run.fadeLength = transition.duration;
+            run.fadeRemaining = transition.duration;
+            enterState(sceneToWrite, playback, index, target);
             return;
         }
     }
@@ -588,8 +818,71 @@ struct AnimationWorld::Implementation
         {
             found->second.clip = clipOf(clip);
             found->second.joints = mapJoints(playback, found->second.clip.get());
+            // The properties it drives, as its first frame has them.
+            if (found->second.clip != nullptr)
+            {
+                sampled.assign(found->second.clip->joints().size(), JointPose{});
+                found->second.clip->sample(0.0f, sampled);
+                for (std::size_t joint = 0; joint < found->second.joints.size() && joint < sampled.size(); ++joint)
+                {
+                    const std::int32_t bone = found->second.joints[joint];
+                    if (bone >= 0 && static_cast<std::size_t>(bone) < playback.driven.size())
+                    {
+                        std::uint8_t& drives = playback.driven[static_cast<std::size_t>(bone)];
+                        drives = static_cast<std::uint8_t>(drives | (sampled[joint].hasTranslation ? drivesTranslation : 0) |
+                                                           (sampled[joint].hasRotation ? drivesRotation : 0) |
+                                                           (sampled[joint].hasScale ? drivesScale : 0));
+                    }
+                }
+            }
         }
         return found->second.clip != nullptr ? &found->second : nullptr;
+    }
+
+    // Binds every clip of the controller at once, so that the bones they drive are known before
+    // they play.
+    void bindAll(Playback& playback)
+    {
+        for (const asset::AnimatorLayer& layer : playback.controller->layers)
+        {
+            for (const AnimatorState& state : layer.states)
+            {
+                for (const asset::AnimatorMotion& motion : state.motions)
+                {
+                    static_cast<void>(bindingOf(playback, motion.clip));
+                }
+            }
+        }
+    }
+
+    // The mask of each layer on the bones: the closest of a bone and the bones above it that the mask
+    // names decides.
+    void findMasks(const Scene& sceneToRead, Playback& playback)
+    {
+        playback.masksStale = false;
+        for (std::size_t index = 0; index < playback.layers.size(); ++index)
+        {
+            const asset::AnimatorLayer& layer = playback.controller->layers[index];
+            std::vector<float>& mask = playback.layers[index].mask;
+            mask.assign(playback.bones.size(), 1.0f);
+            if (layer.mask.empty() && layer.maskExcluded.empty())
+            {
+                continue;
+            }
+            for (std::size_t bone = 0; bone < playback.bones.size(); ++bone)
+            {
+                std::optional<bool> named;
+                for (Entity entity = playback.bones[bone]; entity.isValid() && !named; entity = sceneToRead.parent(entity))
+                {
+                    named = asset::maskNames(layer, sceneToRead.name(entity));
+                    if (entity == playback.entity)
+                    {
+                        break;
+                    }
+                }
+                mask[bone] = named.value_or(layer.mask.empty()) ? 1.0f : 0.0f;
+            }
+        }
     }
 
     // The weight of each clip of a state, from its blend and its parameters.
@@ -668,45 +961,47 @@ struct AnimationWorld::Implementation
     }
 
     // Moves a state on by a duration, in cycles of its length.
-    void advanceState(Scene& sceneToRead, Playback& playback, StateRun& run, const Animator& animator, float delta,
-                      float* duration)
+    void advanceState(Scene& sceneToRead, Playback& playback, const asset::AnimatorLayer& layer, StateRun& run,
+                      const Animator& animator, float delta, float* duration)
     {
-        if (run.state < 0)
+        const AnimatorState* const state = stateOf(layer, run);
+        if (state == nullptr)
         {
             return;
         }
-        const AnimatorState& state = playback.controller->states[static_cast<std::size_t>(run.state)];
-        const float length = durationOf(sceneToRead, playback, state);
+        const float length = durationOf(sceneToRead, playback, *state);
         if (duration != nullptr)
         {
             *duration = length;
         }
         const float before = run.normalized;
-        run.normalized = std::max(0.0f, run.normalized + delta * speedOf(playback, state, animator) / length);
-        if (!state.loop)
+        run.normalized = std::max(0.0f, run.normalized + delta * speedOf(playback, *state, animator) / length);
+        if (!state->loop)
         {
             run.normalized = std::min(run.normalized, 1.0f);
         }
-        run.wrapped = state.loop && std::floor(run.normalized) != std::floor(before);
+        run.wrapped = state->loop && std::floor(run.normalized) != std::floor(before);
     }
 
-    // The pose of a state: its clips at the same place of their cycle, mixed by their weights.
-    void statePose(Playback& playback, const StateRun& run, std::vector<JointPose>& pose,
-                   std::vector<std::int32_t>* rootJoints)
+    // The pose of a state: its clips at the same place of their cycle, or at their first frame for the
+    // reference of an additive layer, mixed by their weights. The coverage says how much of each
+    // property its clips drive.
+    void statePose(Playback& playback, const asset::AnimatorLayer& layer, const StateRun& run, bool reference,
+                   std::vector<JointPose>& pose, std::vector<Coverage>& covered, std::vector<std::int32_t>* rootJoints)
     {
         pose.assign(playback.bones.size(), JointPose{});
-        if (run.state < 0)
+        covered.assign(playback.bones.size(), Coverage{});
+        const AnimatorState* const state = stateOf(layer, run);
+        if (state == nullptr)
         {
             return;
         }
-        const AnimatorState& state = playback.controller->states[static_cast<std::size_t>(run.state)];
-        weightsOf(playback, state, playback.weights);
-        const float cycle = state.loop ? fraction(run.normalized) : std::min(run.normalized, 1.0f);
-        float total = 0.0f;
-        for (std::size_t index = 0; index < state.motions.size(); ++index)
+        weightsOf(playback, *state, playback.weights);
+        const float cycle = reference ? 0.0f : state->loop ? fraction(run.normalized) : std::min(run.normalized, 1.0f);
+        for (std::size_t index = 0; index < state->motions.size(); ++index)
         {
             const float weight = playback.weights[index];
-            ClipBinding* const binding = weight > 1e-4f ? bindingOf(playback, state.motions[index].clip) : nullptr;
+            ClipBinding* const binding = weight > 1e-4f ? bindingOf(playback, state->motions[index].clip) : nullptr;
             if (binding == nullptr)
             {
                 continue;
@@ -715,24 +1010,54 @@ struct AnimationWorld::Implementation
             {
                 *rootJoints = binding->joints;
             }
-            if (total == 0.0f)
-            {
-                samplePose(*binding->clip, binding->joints, cycle * binding->clip->duration(), pose);
-                total = weight;
-                continue;
-            }
             playback.motion.assign(playback.bones.size(), JointPose{});
             samplePose(*binding->clip, binding->joints, cycle * binding->clip->duration(), playback.motion);
-            total += weight;
-            blendPoses(pose, playback.motion, weight / total);
+            gather(pose, covered, playback.motion, weight);
         }
     }
 
-    // Advances one animator that plays a controller, and writes the pose of its bones.
+    // The pose of a layer and its coverage: its state, crossfaded from the one before, and for an
+    // additive layer how far each moves from its first frame.
+    void layerPose(Playback& playback, std::size_t index, std::vector<JointPose>& pose, std::vector<Coverage>& covered,
+                   std::vector<std::int32_t>* rootJoints)
+    {
+        const asset::AnimatorLayer& layer = playback.controller->layers[index];
+        const LayerRun& run = playback.layers[index];
+        const bool additive = index > 0 && layer.blending == asset::AnimatorLayerBlend::Additive;
+        statePose(playback, layer, run.current, false, pose, covered, rootJoints);
+        if (additive)
+        {
+            statePose(playback, layer, run.current, true, playback.reference, playback.fadingCovered, nullptr);
+            subtractPose(pose, playback.reference);
+        }
+        if (run.fadeRemaining <= 0.0f || run.fadeLength <= 0.0f || run.previous.state < 0)
+        {
+            return;
+        }
+        // The crossfade: each state by its share of the time, so that a state that leaves a property
+        // free fades it in or out.
+        statePose(playback, layer, run.previous, false, playback.fading, playback.fadingCovered, nullptr);
+        if (additive)
+        {
+            // The coverage of the reference is not needed, and the crossfade below takes its place.
+            statePose(playback, layer, run.previous, true, playback.reference, playback.layerCovered, nullptr);
+            subtractPose(playback.fading, playback.reference);
+        }
+        const float progress = 1.0f - run.fadeRemaining / run.fadeLength;
+        playback.layerPose.assign(playback.bones.size(), JointPose{});
+        playback.layerCovered.assign(playback.bones.size(), Coverage{});
+        gather(playback.layerPose, playback.layerCovered, playback.fading, 1.0f - progress, playback.fadingCovered);
+        gather(playback.layerPose, playback.layerCovered, pose, progress, covered);
+        pose.swap(playback.layerPose);
+        covered.swap(playback.layerCovered);
+    }
+
+    // Advances one animator that plays a controller, and writes the pose of its bones: the base
+    // layer, which brings the bones its states leave free back to rest, then each other layer over it.
     void advanceController(Scene& sceneToWrite, Playback& playback, const Animator& animator, float delta)
     {
         loadController(sceneToWrite, playback, animator);
-        if (playback.controller == nullptr || playback.current.state < 0)
+        if (playback.controller == nullptr || playback.layers.empty())
         {
             return;
         }
@@ -740,33 +1065,55 @@ struct AnimationWorld::Implementation
         {
             bindBones(sceneToWrite, playback);
         }
-        const float step = playback.playing && !paused ? std::max(delta, 0.0f) : 0.0f;
-        if (playback.playing && !paused)
+        if (playback.bindings.empty())
         {
-            takeTransition(sceneToWrite, playback);
+            bindAll(playback);
         }
-        const float before = playback.current.normalized;
-        advanceState(sceneToWrite, playback, playback.current, animator, step, &playback.stateDuration);
-        passStateEvents(playback, playback.current, before);
-        if (playback.fadeRemaining > 0.0f)
+        if (playback.masksStale)
         {
-            advanceState(sceneToWrite, playback, playback.previousState, animator, step, nullptr);
-            playback.fadeRemaining = std::max(0.0f, playback.fadeRemaining - step);
+            findMasks(sceneToWrite, playback);
+        }
+        const float step = playback.playing && !paused ? std::max(delta, 0.0f) : 0.0f;
+        for (std::size_t index = 0; index < playback.layers.size(); ++index)
+        {
+            const asset::AnimatorLayer& layer = playback.controller->layers[index];
+            LayerRun& run = playback.layers[index];
+            if (playback.playing && !paused)
+            {
+                takeTransition(sceneToWrite, playback, index);
+            }
+            const float before = run.current.normalized;
+            advanceState(sceneToWrite, playback, layer, run.current, animator, step, &run.stateDuration);
+            if (weightOf(playback, index) > 0.0f)
+            {
+                passStateEvents(playback, layer, run.current, before);
+            }
+            if (run.fadeRemaining > 0.0f)
+            {
+                advanceState(sceneToWrite, playback, layer, run.previous, animator, step, nullptr);
+                run.fadeRemaining = std::max(0.0f, run.fadeRemaining - step);
+            }
+            if (run.fadeRemaining <= 0.0f)
+            {
+                run.previous = {};
+            }
         }
 
         std::vector<std::int32_t> rootJoints;
-        statePose(playback, playback.current, playback.pose, &rootJoints);
-        if (playback.fadeRemaining > 0.0f && playback.fadeLength > 0.0f && playback.previousState.state >= 0)
+        layerPose(playback, 0, playback.pose, playback.covered, &rootJoints);
+        restFill(playback.pose, playback.covered, playback.rest, playback.driven);
+        applyRootMotion(sceneToWrite, playback, animator, rootJoints, playback.layers.front().current.wrapped, delta);
+        for (std::size_t index = 1; index < playback.layers.size(); ++index)
         {
-            statePose(playback, playback.previousState, playback.fading, nullptr);
-            blendPoses(playback.fading, playback.pose, 1.0f - playback.fadeRemaining / playback.fadeLength);
-            playback.pose.swap(playback.fading);
+            const float weight = weightOf(playback, index);
+            if (weight <= 0.0f)
+            {
+                continue;
+            }
+            layerPose(playback, index, playback.layered, playback.layeredCovered, nullptr);
+            layOver(playback.pose, playback.layered, playback.layeredCovered, playback.layers[index].mask, playback.rest, weight,
+                    playback.controller->layers[index].blending == asset::AnimatorLayerBlend::Additive);
         }
-        else
-        {
-            playback.previousState = {};
-        }
-        applyRootMotion(sceneToWrite, playback, animator, rootJoints, playback.current.wrapped, delta);
         applyPose(sceneToWrite, playback.bones, playback.pose);
     }
 
@@ -816,40 +1163,44 @@ struct AnimationWorld::Implementation
     }
 
     // The events of the clip that weighs the most in a state, as it moved on from `before`, in cycles.
-    void passStateEvents(Playback& playback, const StateRun& run, float before)
+    void passStateEvents(Playback& playback, const asset::AnimatorLayer& layer, const StateRun& run, float before)
     {
-        if (run.state < 0 || run.normalized == before)
+        const AnimatorState* const state = stateOf(layer, run);
+        if (state == nullptr || run.normalized == before)
         {
             return;
         }
-        const AnimatorState& state = playback.controller->states[static_cast<std::size_t>(run.state)];
-        weightsOf(playback, state, playback.weights);
+        weightsOf(playback, *state, playback.weights);
         const auto heaviest = std::ranges::max_element(playback.weights);
         if (heaviest == playback.weights.end() || *heaviest <= 0.0f)
         {
             return;
         }
         const ClipBinding* const binding =
-            bindingOf(playback, state.motions[static_cast<std::size_t>(heaviest - playback.weights.begin())].clip);
+            bindingOf(playback, state->motions[static_cast<std::size_t>(heaviest - playback.weights.begin())].clip);
         if (binding == nullptr)
         {
             return;
         }
         const float duration = binding->clip->duration();
-        passEvents(binding->clip->data(), before * duration, run.normalized * duration, state.loop, !state.loop && run.normalized >= 1.0f,
+        passEvents(binding->clip->data(), before * duration, run.normalized * duration, state->loop, !state->loop && run.normalized >= 1.0f,
                    playback.entity);
     }
 
-    // Starts the state machine over from its entry state.
+    // Starts the state machine over: each layer from its entry state.
     void restart(Scene& sceneToWrite, Playback& playback, const Animator& animator)
     {
         loadController(sceneToWrite, playback, animator);
-        playback.previousState = {};
-        playback.fadeRemaining = 0.0f;
         playback.playing = true;
-        if (playback.controller != nullptr)
+        if (playback.controller == nullptr)
         {
-            enterState(sceneToWrite, playback, stateIndex(*playback.controller, playback.controller->entry));
+            return;
+        }
+        for (std::size_t index = 0; index < playback.layers.size(); ++index)
+        {
+            const asset::AnimatorLayer& layer = playback.controller->layers[index];
+            playback.layers[index] = LayerRun{.mask = std::move(playback.layers[index].mask)};
+            enterState(sceneToWrite, playback, index, stateIndex(layer, layer.entry));
         }
     }
 
@@ -917,6 +1268,7 @@ void AnimationWorld::update(scene::Scene& scene, core::Duration delta)
             // The controller was taken away: the Animator plays its clip again.
             playback.controller.reset();
             playback.controllerId = {};
+            playback.layers.clear();
             playback.clipId = {};
         }
         if (created)
@@ -1000,11 +1352,13 @@ void AnimationWorld::stop(scene::Entity entity)
     playback->playing = false;
     playback->time = 0.0f;
     playback->hasRootTranslation = false;
-    if (playback->controller != nullptr)
+    for (std::size_t index = 0; playback->controller != nullptr && index < playback->layers.size(); ++index)
     {
-        playback->current = {.state = Implementation::stateIndex(*playback->controller, playback->controller->entry)};
-        playback->previousState = {};
-        playback->fadeRemaining = 0.0f;
+        const asset::AnimatorLayer& layer = playback->controller->layers[index];
+        Implementation::LayerRun& run = playback->layers[index];
+        run.current = {.state = Implementation::stateIndex(layer, layer.entry)};
+        run.previous = {};
+        run.fadeRemaining = 0.0f;
     }
 }
 
@@ -1039,7 +1393,7 @@ float AnimationWorld::time(scene::Entity entity) const
     }
     if (playback->controller != nullptr)
     {
-        return std::min(playback->current.normalized, 1.0f) * playback->stateDuration;
+        return playback->layers.empty() ? 0.0f : std::min(playback->layers.front().current.normalized, 1.0f) * playback->layers.front().stateDuration;
     }
     return playback->time;
 }
@@ -1055,7 +1409,11 @@ void AnimationWorld::setTime(scene::Scene& scene, scene::Entity entity, float se
     playback->hasRootTranslation = false;
     if (playback->controller != nullptr)
     {
-        playback->current.normalized = std::max(seconds, 0.0f) / std::max(playback->stateDuration, 1e-3f);
+        if (!playback->layers.empty())
+        {
+            Implementation::LayerRun& base = playback->layers.front();
+            base.current.normalized = std::max(seconds, 0.0f) / std::max(base.stateDuration, 1e-3f);
+        }
         m_implementation->advanceController(scene, *playback, *animator, 0.0f);
         return;
     }
@@ -1103,20 +1461,51 @@ std::optional<float> AnimationWorld::parameter(scene::Entity entity, std::string
     return found != playback->parameters.end() ? std::optional(found->second) : std::nullopt;
 }
 
-std::string_view AnimationWorld::state(scene::Entity entity) const
+std::string_view AnimationWorld::state(scene::Entity entity, std::string_view layer) const
 {
     const Implementation::Playback* const playback = m_implementation->find(entity);
-    if (playback == nullptr || playback->controller == nullptr || playback->current.state < 0)
+    const std::optional<std::size_t> index =
+        playback != nullptr && playback->controller != nullptr ? playback->controller->findLayer(layer) : std::nullopt;
+    if (!index || *index >= playback->layers.size())
     {
         return {};
     }
-    return playback->controller->states[static_cast<std::size_t>(playback->current.state)].name;
+    const asset::AnimatorState* const state =
+        Implementation::stateOf(playback->controller->layers[*index], playback->layers[*index].current);
+    return state != nullptr ? std::string_view(state->name) : std::string_view{};
 }
 
-float AnimationWorld::stateTime(scene::Entity entity) const
+float AnimationWorld::stateTime(scene::Entity entity, std::string_view layer) const
 {
     const Implementation::Playback* const playback = m_implementation->find(entity);
-    return playback != nullptr && playback->controller != nullptr ? playback->current.normalized : 0.0f;
+    const std::optional<std::size_t> index =
+        playback != nullptr && playback->controller != nullptr ? playback->controller->findLayer(layer) : std::nullopt;
+    return index && *index < playback->layers.size() ? playback->layers[*index].current.normalized : 0.0f;
+}
+
+void AnimationWorld::setLayerWeight(scene::Entity entity, std::string_view layer, float weight)
+{
+    Implementation::Playback& playback = m_implementation->playbackOf(entity);
+    if (playback.controller != nullptr && !playback.controller->findLayer(layer))
+    {
+        m_implementation->warnOnce(std::format("the animator controller has no layer named '{}'", layer));
+    }
+    playback.layerWeights[std::string(layer)] = std::isfinite(weight) ? std::clamp(weight, 0.0f, 1.0f) : 0.0f;
+}
+
+std::optional<float> AnimationWorld::layerWeight(scene::Entity entity, std::string_view layer) const
+{
+    const Implementation::Playback* const playback = m_implementation->find(entity);
+    if (playback == nullptr)
+    {
+        return std::nullopt;
+    }
+    if (const auto set = playback->layerWeights.find(std::string(layer)); set != playback->layerWeights.end())
+    {
+        return set->second;
+    }
+    const std::optional<std::size_t> index = playback->controller != nullptr ? playback->controller->findLayer(layer) : std::nullopt;
+    return index ? std::optional(*index == 0 ? 1.0f : playback->controller->layers[*index].weight) : std::nullopt;
 }
 
 std::optional<AnimatorStatus> AnimationWorld::status(scene::Entity entity) const
@@ -1128,13 +1517,25 @@ std::optional<AnimatorStatus> AnimationWorld::status(scene::Entity entity) const
     }
     const AnimatorData& controller = *playback->controller;
     AnimatorStatus status;
-    status.state = std::string(state(entity));
-    status.normalizedTime = playback->current.normalized;
     status.playing = playback->playing;
-    if (playback->previousState.state >= 0 && playback->fadeRemaining > 0.0f && playback->fadeLength > 0.0f)
+    for (std::size_t index = 0; index < playback->layers.size() && index < controller.layers.size(); ++index)
     {
-        status.previousState = controller.states[static_cast<std::size_t>(playback->previousState.state)].name;
-        status.transitionProgress = 1.0f - playback->fadeRemaining / playback->fadeLength;
+        const asset::AnimatorLayer& layer = controller.layers[index];
+        const Implementation::LayerRun& run = playback->layers[index];
+        AnimatorStatus::Layer& shown = status.layers.emplace_back();
+        shown.name = layer.name;
+        if (const asset::AnimatorState* const state = Implementation::stateOf(layer, run.current))
+        {
+            shown.state = state->name;
+        }
+        shown.normalizedTime = run.current.normalized;
+        const asset::AnimatorState* const previous = Implementation::stateOf(layer, run.previous);
+        if (previous != nullptr && run.fadeRemaining > 0.0f && run.fadeLength > 0.0f)
+        {
+            shown.previousState = previous->name;
+            shown.transitionProgress = 1.0f - run.fadeRemaining / run.fadeLength;
+        }
+        shown.weight = Implementation::weightOf(*playback, index);
     }
     for (const asset::AnimatorParameter& parameter : controller.parameters)
     {

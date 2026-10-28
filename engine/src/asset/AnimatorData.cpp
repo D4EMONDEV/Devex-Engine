@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <format>
 #include <unordered_set>
 #include <utility>
 
@@ -20,6 +21,11 @@ constexpr std::array<std::pair<AnimatorBlend, std::string_view>, 3> blendNames{{
     {AnimatorBlend::None, "none"},
     {AnimatorBlend::Linear, "1d"},
     {AnimatorBlend::Planar, "2d"},
+}};
+
+constexpr std::array<std::pair<AnimatorLayerBlend, std::string_view>, 2> layerBlendNames{{
+    {AnimatorLayerBlend::Override, "override"},
+    {AnimatorLayerBlend::Additive, "additive"},
 }};
 
 constexpr std::array<std::pair<AnimatorTest, std::string_view>, 7> testNames{{
@@ -66,10 +72,20 @@ template <typename T, std::size_t Count>
 
 } // namespace
 
-const AnimatorState* AnimatorData::findState(std::string_view name) const noexcept
+const AnimatorState* AnimatorLayer::findState(std::string_view stateName) const noexcept
 {
-    const auto found = std::ranges::find(states, name, &AnimatorState::name);
+    const auto found = std::ranges::find(states, stateName, &AnimatorState::name);
     return found != states.end() ? &*found : nullptr;
+}
+
+std::optional<std::size_t> AnimatorData::findLayer(std::string_view name) const noexcept
+{
+    if (name.empty() && !layers.empty())
+    {
+        return 0;
+    }
+    const auto found = std::ranges::find(layers, name, &AnimatorLayer::name);
+    return found != layers.end() ? std::optional(static_cast<std::size_t>(found - layers.begin())) : std::nullopt;
 }
 
 const AnimatorParameter* AnimatorData::findParameter(std::string_view name) const noexcept
@@ -108,6 +124,29 @@ std::optional<AnimatorTest> parseAnimatorTest(std::string_view text) noexcept
     return valueOf(testNames, text);
 }
 
+std::string_view toString(AnimatorLayerBlend blending) noexcept
+{
+    return nameOf(layerBlendNames, blending);
+}
+
+std::optional<AnimatorLayerBlend> parseAnimatorLayerBlend(std::string_view text) noexcept
+{
+    return valueOf(layerBlendNames, text);
+}
+
+std::optional<bool> maskNames(const AnimatorLayer& layer, std::string_view bone) noexcept
+{
+    if (std::ranges::find(layer.maskExcluded, bone) != layer.maskExcluded.end())
+    {
+        return false;
+    }
+    if (std::ranges::find(layer.mask, bone) != layer.mask.end())
+    {
+        return true;
+    }
+    return std::nullopt;
+}
+
 bool testFits(AnimatorTest test, AnimatorParameterType type) noexcept
 {
     switch (test)
@@ -127,6 +166,92 @@ bool testFits(AnimatorTest test, AnimatorParameterType type) noexcept
     return false;
 }
 
+namespace {
+
+// The states and transitions of one layer; `where` names the layer in the errors of the others.
+core::Result<void> validateGraph(const AnimatorData& animator, const AnimatorLayer& layer, std::string_view where)
+{
+    const auto numberParameter = [&](std::string_view name) {
+        const AnimatorParameter* const parameter = animator.findParameter(name);
+        return parameter != nullptr && isNumber(parameter->type);
+    };
+    std::unordered_set<std::string_view> names;
+    for (const AnimatorState& state : layer.states)
+    {
+        if (state.name.empty())
+        {
+            return core::makeError(core::ErrorCode::InvalidArgument, "a state{} has no name", where);
+        }
+        if (!names.insert(state.name).second)
+        {
+            return core::makeError(core::ErrorCode::InvalidArgument, "two states{} are named {}", where, state.name);
+        }
+        if (state.blend > AnimatorBlend::Planar)
+        {
+            return core::makeError(core::ErrorCode::InvalidArgument, "the state {}{} blends in an unknown way", state.name, where);
+        }
+        if (state.blend != AnimatorBlend::None && !numberParameter(state.parameter))
+        {
+            return core::makeError(core::ErrorCode::InvalidArgument, "the blend of {}{} needs a float or int parameter",
+                                   state.name, where);
+        }
+        if (state.blend == AnimatorBlend::Planar && !numberParameter(state.parameterY))
+        {
+            return core::makeError(core::ErrorCode::InvalidArgument, "the 2D blend of {}{} needs a second parameter",
+                                   state.name, where);
+        }
+        if (!state.speedParameter.empty() && !numberParameter(state.speedParameter))
+        {
+            return core::makeError(core::ErrorCode::InvalidArgument, "the speed of {}{} is multiplied by an unknown parameter",
+                                   state.name, where);
+        }
+        if (!std::isfinite(state.speed))
+        {
+            return core::makeError(core::ErrorCode::InvalidArgument, "the speed of {}{} is not a number", state.name, where);
+        }
+    }
+    if (!layer.states.empty() && layer.findState(layer.entry) == nullptr)
+    {
+        return core::makeError(core::ErrorCode::InvalidArgument, "the entry state {}{} does not exist", layer.entry, where);
+    }
+
+    for (const AnimatorTransition& transition : layer.transitions)
+    {
+        if (!transition.from.empty() && layer.findState(transition.from) == nullptr)
+        {
+            return core::makeError(core::ErrorCode::InvalidArgument, "a transition{} leaves the unknown state {}", where,
+                                   transition.from);
+        }
+        if (layer.findState(transition.to) == nullptr)
+        {
+            return core::makeError(core::ErrorCode::InvalidArgument, "a transition{} goes to the unknown state {}", where,
+                                   transition.to);
+        }
+        if (!(transition.duration >= 0.0f) || !std::isfinite(transition.duration) || !std::isfinite(transition.exitTime))
+        {
+            return core::makeError(core::ErrorCode::InvalidArgument, "the transition from {} to {}{} lasts no valid time",
+                                   transition.from.empty() ? "any state" : transition.from, transition.to, where);
+        }
+        for (const AnimatorCondition& condition : transition.conditions)
+        {
+            const AnimatorParameter* const parameter = animator.findParameter(condition.parameter);
+            if (parameter == nullptr)
+            {
+                return core::makeError(core::ErrorCode::InvalidArgument, "a condition{} checks the unknown parameter {}", where,
+                                       condition.parameter);
+            }
+            if (!testFits(condition.test, parameter->type))
+            {
+                return core::makeError(core::ErrorCode::InvalidArgument, "the {} test does not apply to the {} parameter {}",
+                                       toString(condition.test), toString(parameter->type), parameter->name);
+            }
+        }
+    }
+    return {};
+}
+
+} // namespace
+
 core::Result<void> validate(const AnimatorData& animator)
 {
     std::unordered_set<std::string_view> names;
@@ -145,81 +270,44 @@ core::Result<void> validate(const AnimatorData& animator)
             return core::makeError(core::ErrorCode::InvalidArgument, "the parameter {} is not valid", parameter.name);
         }
     }
-    const auto numberParameter = [&](std::string_view name) {
-        const AnimatorParameter* const parameter = animator.findParameter(name);
-        return parameter != nullptr && isNumber(parameter->type);
-    };
 
+    if (animator.layers.empty())
+    {
+        return core::makeError(core::ErrorCode::InvalidArgument, "the animator has no base layer");
+    }
     names.clear();
-    for (const AnimatorState& state : animator.states)
+    for (std::size_t index = 0; index < animator.layers.size(); ++index)
     {
-        if (state.name.empty())
+        const AnimatorLayer& layer = animator.layers[index];
+        if (layer.name.empty())
         {
-            return core::makeError(core::ErrorCode::InvalidArgument, "a state has no name");
+            return core::makeError(core::ErrorCode::InvalidArgument, "a layer has no name");
         }
-        if (!names.insert(state.name).second)
+        if (!names.insert(layer.name).second)
         {
-            return core::makeError(core::ErrorCode::InvalidArgument, "two states are named {}", state.name);
+            return core::makeError(core::ErrorCode::InvalidArgument, "two layers are named {}", layer.name);
         }
-        if (state.blend > AnimatorBlend::Planar)
+        if (layer.blending > AnimatorLayerBlend::Additive)
         {
-            return core::makeError(core::ErrorCode::InvalidArgument, "the state {} blends in an unknown way", state.name);
+            return core::makeError(core::ErrorCode::InvalidArgument, "the layer {} blends in an unknown way", layer.name);
         }
-        if (state.blend != AnimatorBlend::None && !numberParameter(state.parameter))
+        if (!(layer.weight >= 0.0f && layer.weight <= 1.0f))
         {
-            return core::makeError(core::ErrorCode::InvalidArgument, "the blend of {} needs a float or int parameter",
-                                   state.name);
+            return core::makeError(core::ErrorCode::InvalidArgument, "the weight of the layer {} is not from 0 to 1", layer.name);
         }
-        if (state.blend == AnimatorBlend::Planar && !numberParameter(state.parameterY))
+        if (!layer.weightParameter.empty())
         {
-            return core::makeError(core::ErrorCode::InvalidArgument, "the 2D blend of {} needs a second parameter",
-                                   state.name);
-        }
-        if (!state.speedParameter.empty() && !numberParameter(state.speedParameter))
-        {
-            return core::makeError(core::ErrorCode::InvalidArgument, "the speed of {} is multiplied by an unknown parameter",
-                                   state.name);
-        }
-        if (!std::isfinite(state.speed))
-        {
-            return core::makeError(core::ErrorCode::InvalidArgument, "the speed of {} is not a number", state.name);
-        }
-    }
-    if (!animator.states.empty() && animator.findState(animator.entry) == nullptr)
-    {
-        return core::makeError(core::ErrorCode::InvalidArgument, "the entry state {} does not exist", animator.entry);
-    }
-
-    for (const AnimatorTransition& transition : animator.transitions)
-    {
-        if (!transition.from.empty() && animator.findState(transition.from) == nullptr)
-        {
-            return core::makeError(core::ErrorCode::InvalidArgument, "a transition leaves the unknown state {}",
-                                   transition.from);
-        }
-        if (animator.findState(transition.to) == nullptr)
-        {
-            return core::makeError(core::ErrorCode::InvalidArgument, "a transition goes to the unknown state {}",
-                                   transition.to);
-        }
-        if (!(transition.duration >= 0.0f) || !std::isfinite(transition.duration) || !std::isfinite(transition.exitTime))
-        {
-            return core::makeError(core::ErrorCode::InvalidArgument, "the transition from {} to {} lasts no valid time",
-                                   transition.from.empty() ? "any state" : transition.from, transition.to);
-        }
-        for (const AnimatorCondition& condition : transition.conditions)
-        {
-            const AnimatorParameter* const parameter = animator.findParameter(condition.parameter);
-            if (parameter == nullptr)
+            const AnimatorParameter* const parameter = animator.findParameter(layer.weightParameter);
+            if (parameter == nullptr || !isNumber(parameter->type))
             {
-                return core::makeError(core::ErrorCode::InvalidArgument, "a condition checks the unknown parameter {}",
-                                       condition.parameter);
+                return core::makeError(core::ErrorCode::InvalidArgument, "the weight of the layer {} is multiplied by an unknown parameter",
+                                       layer.name);
             }
-            if (!testFits(condition.test, parameter->type))
-            {
-                return core::makeError(core::ErrorCode::InvalidArgument, "the {} test does not apply to the {} parameter {}",
-                                       toString(condition.test), toString(parameter->type), parameter->name);
-            }
+        }
+        const std::string where = index == 0 ? std::string{} : std::format(" of the layer {}", layer.name);
+        if (core::Result<void> graph = validateGraph(animator, layer, where); !graph)
+        {
+            return graph;
         }
     }
     return {};

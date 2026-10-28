@@ -627,11 +627,14 @@ core::Result<std::vector<asset::AssetId>> assetReferences(asset::AssetType type,
         {
             return std::unexpected(animator.error());
         }
-        for (const asset::AnimatorState& state : animator->states)
+        for (const asset::AnimatorLayer& layer : animator->layers)
         {
-            for (const asset::AnimatorMotion& motion : state.motions)
+            for (const asset::AnimatorState& state : layer.states)
             {
-                ids.push_back(motion.clip);
+                for (const asset::AnimatorMotion& motion : state.motions)
+                {
+                    ids.push_back(motion.clip);
+                }
             }
         }
         break;

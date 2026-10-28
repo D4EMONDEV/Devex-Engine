@@ -19,6 +19,8 @@ using devex::asset::AnimationClipData;
 using devex::asset::AnimationPath;
 using devex::asset::AnimatorBlend;
 using devex::asset::AnimatorData;
+using devex::asset::AnimatorLayer;
+using devex::asset::AnimatorLayerBlend;
 using devex::asset::AnimatorParameterType;
 using devex::asset::AnimatorTest;
 using devex::asset::AssetId;
@@ -90,20 +92,88 @@ struct Rig
 [[nodiscard]] AnimatorData locomotion(const Clips& clips)
 {
     AnimatorData controller;
-    controller.entry = "Idle";
+    controller.layers[0].entry = "Idle";
     controller.parameters = {{.name = "Speed"}, {.name = "Jump", .type = AnimatorParameterType::Trigger}};
-    controller.states = {
+    controller.layers[0].states = {
         {.name = "Idle", .motions = {{.clip = clips.idle}}},
         {.name = "Walk", .motions = {{.clip = clips.walk}}},
         {.name = "Jump", .motions = {{.clip = clips.jump}}, .loop = false},
     };
-    controller.transitions = {
+    controller.layers[0].transitions = {
         {.from = "Idle", .to = "Walk", .duration = 0.0f, .conditions = {{.parameter = "Speed", .test = AnimatorTest::Greater, .value = 0.5f}}},
         {.from = "Walk", .to = "Idle", .duration = 0.0f, .conditions = {{.parameter = "Speed", .test = AnimatorTest::Less, .value = 0.5f}}},
         {.to = "Jump", .duration = 0.0f, .conditions = {{.parameter = "Jump", .test = AnimatorTest::Triggered}}},
         // No condition: it leaves at the end of the jump.
         {.from = "Jump", .to = "Idle", .duration = 0.0f},
     };
+    return controller;
+}
+
+// A clip that moves bones along X, each from where it starts to where it ends, in a straight line.
+[[nodiscard]] std::shared_ptr<const Clip> moveClip(std::vector<std::string> joints, std::vector<float> from, std::vector<float> to)
+{
+    AnimationClipData data;
+    data.name = "Move";
+    data.duration = 1.0f;
+    for (std::size_t joint = 0; joint < joints.size(); ++joint)
+    {
+        data.channels.push_back({.joint = static_cast<std::uint32_t>(joint), .path = AnimationPath::Translation, .times = {0.0f, 1.0f},
+                                 .values = {from[joint], 0.0f, 0.0f, to[joint], 0.0f, 0.0f}});
+    }
+    data.joints = std::move(joints);
+    devex::core::Result<std::shared_ptr<const Clip>> clip = Clip::create(std::move(data));
+    REQUIRE(clip.has_value());
+    return *clip;
+}
+
+// A character with a root bone, and an arm under it 2 m along X at rest.
+struct Body
+{
+    Scene scene;
+    Entity character;
+    Entity root;
+    Entity arm;
+    AssetId controllerId = AssetId::generate();
+
+    Body()
+    {
+        character = scene.createEntity("Character");
+        scene.add<Transform>(character);
+        scene.add<devex::scene::Animator>(character, devex::scene::Animator{.controller = controllerId});
+        root = scene.createEntity("Root");
+        scene.add<Transform>(root);
+        REQUIRE(scene.setParent(root, character));
+        arm = scene.createEntity("Arm");
+        scene.add<Transform>(arm, Transform{.position = {2.0f, 0.0f, 0.0f}});
+        REQUIRE(scene.setParent(arm, root));
+    }
+
+    [[nodiscard]] float rootX() const
+    {
+        return scene.get<Transform>(root).position.x;
+    }
+
+    [[nodiscard]] float armX() const
+    {
+        return scene.get<Transform>(arm).position.x;
+    }
+};
+
+// A walk that holds the root and the arm at 10, and a layer that waves the arm at 50 while Greeting.
+[[nodiscard]] AnimatorData waving(AssetId walk, AssetId wave)
+{
+    AnimatorData controller;
+    controller.parameters = {{.name = "Greeting", .type = AnimatorParameterType::Bool}, {.name = "Aim", .defaultValue = 1.0f}};
+    controller.layers[0].entry = "Walk";
+    controller.layers[0].states = {{.name = "Walk", .motions = {{.clip = walk}}}};
+    controller.layers.push_back(AnimatorLayer{
+        .name = "Gestures",
+        .entry = "Empty",
+        .states = {{.name = "Empty"}, {.name = "Waving", .motions = {{.clip = wave}}}},
+        .transitions = {{.from = "Empty", .to = "Waving", .duration = 0.5f, .conditions = {{.parameter = "Greeting", .test = AnimatorTest::IsTrue}}},
+                        {.from = "Waving", .to = "Empty", .duration = 0.0f, .conditions = {{.parameter = "Greeting", .test = AnimatorTest::IsFalse}}}},
+        .mask = {"Arm"},
+    });
     return controller;
 }
 
@@ -156,9 +226,9 @@ TEST_CASE("Transitions crossfade between states and wait for their exit time", "
     const Clips clips;
     Rig rig;
     AnimatorData data = locomotion(clips);
-    data.transitions[0].duration = 0.5f;
+    data.layers[0].transitions[0].duration = 0.5f;
     // Walking stops only past the middle of the walk.
-    data.transitions[1].exitTime = 0.5f;
+    data.layers[0].transitions[1].exitTime = 0.5f;
     const auto controller = std::make_shared<const AnimatorData>(data);
     AnimationWorld world(std::ref(clips), [&](AssetId id) { return id == rig.controllerId ? controller : nullptr; });
     world.update(rig.scene, Duration(0.0));
@@ -169,15 +239,15 @@ TEST_CASE("Transitions crossfade between states and wait for their exit time", "
     CHECK(rig.rootX() == Catch::Approx(5.0f).margin(1e-3f));
     const std::optional<devex::animation::AnimatorStatus> status = world.status(rig.character);
     REQUIRE(status);
-    CHECK(status->previousState == "Idle");
-    CHECK(status->transitionProgress == Catch::Approx(0.5f));
+    CHECK(status->layers[0].previousState == "Idle");
+    CHECK(status->layers[0].transitionProgress == Catch::Approx(0.5f));
     REQUIRE(status->parameters.size() == 2);
     CHECK(status->parameters[0].name == "Speed");
     CHECK(status->parameters[0].value == 1.0f);
 
     world.update(rig.scene, Duration(0.25));
     CHECK(rig.rootX() == Catch::Approx(10.0f));
-    CHECK(world.status(rig.character)->previousState.empty());
+    CHECK(world.status(rig.character)->layers[0].previousState.empty());
 
     // Walking again, from its start: it may stop only past the middle of its cycle.
     world.stop(rig.character);
@@ -204,9 +274,9 @@ TEST_CASE("Linear blend trees mix their clips by a parameter", "[animation][stat
     const Clips clips;
     Rig rig;
     AnimatorData data;
-    data.entry = "Locomotion";
+    data.layers[0].entry = "Locomotion";
     data.parameters = {{.name = "Speed"}};
-    data.states = {{.name = "Locomotion",
+    data.layers[0].states = {{.name = "Locomotion",
                     .blend = AnimatorBlend::Linear,
                     .motions = {{.clip = clips.idle, .threshold = 0.0f},
                                 {.clip = clips.walk, .threshold = 1.0f},
@@ -249,9 +319,9 @@ TEST_CASE("Planar blend trees weigh their clips by where they sit", "[animation]
     const Clips clips;
     Rig rig;
     AnimatorData data;
-    data.entry = "Move";
+    data.layers[0].entry = "Move";
     data.parameters = {{.name = "X"}, {.name = "Y"}};
-    data.states = {{.name = "Move",
+    data.layers[0].states = {{.name = "Move",
                     .blend = AnimatorBlend::Planar,
                     .motions = {{.clip = clips.idle, .position = {0.0f, 0.0f}},
                                 {.clip = clips.walk, .position = {1.0f, 0.0f}},
@@ -279,10 +349,10 @@ TEST_CASE("States play the sprite animations they name", "[animation][statemachi
     frames->animations = {{.name = "idle", .fps = 4.0f, .frames = {AssetId::generate()}},
                           {.name = "run", .fps = 8.0f, .frames = {AssetId::generate(), AssetId::generate(), AssetId::generate(), AssetId::generate()}}};
     AnimatorData data;
-    data.entry = "Idle";
+    data.layers[0].entry = "Idle";
     data.parameters = {{.name = "Running", .type = AnimatorParameterType::Bool}};
-    data.states = {{.name = "Idle", .spriteAnimation = "idle"}, {.name = "Run", .spriteAnimation = "run"}};
-    data.transitions = {{.from = "Idle", .to = "Run", .duration = 0.0f, .conditions = {{.parameter = "Running", .test = AnimatorTest::IsTrue}}},
+    data.layers[0].states = {{.name = "Idle", .spriteAnimation = "idle"}, {.name = "Run", .spriteAnimation = "run"}};
+    data.layers[0].transitions = {{.from = "Idle", .to = "Run", .duration = 0.0f, .conditions = {{.parameter = "Running", .test = AnimatorTest::IsTrue}}},
                         {.from = "Run", .to = "Idle", .duration = 0.0f, .conditions = {{.parameter = "Running", .test = AnimatorTest::IsFalse}}}};
     const auto controller = std::make_shared<const AnimatorData>(data);
     AnimationWorld world(std::ref(clips), [&](AssetId id) { return id == rig.controllerId ? controller : nullptr; },
@@ -311,7 +381,7 @@ TEST_CASE("Animators take a new version of their controller and keep their state
 
     // The walk now plays the run clip, and a parameter appears with its value.
     AnimatorData changed = locomotion(clips);
-    changed.states[1].motions[0].clip = clips.run;
+    changed.layers[0].states[1].motions[0].clip = clips.run;
     changed.parameters.push_back({.name = "Weight", .defaultValue = 0.25f});
     controller = std::make_shared<const AnimatorData>(changed);
     world.update(rig.scene, Duration(0.1));
@@ -362,4 +432,145 @@ TEST_CASE("State machines pass the events of the clip that weighs the most", "[a
     world.setFloat(rig.character, "Speed", 0.0f);
     world.update(rig.scene, Duration(1.0));
     CHECK(world.events().empty());
+}
+
+TEST_CASE("Layers play over the base layer on the bones of their masks", "[animation][statemachine][layers]")
+{
+    Clips clips;
+    const AssetId walk = AssetId::generate();
+    const AssetId wave = AssetId::generate();
+    clips.loaded[walk] = moveClip({"Root", "Arm"}, {10.0f, 10.0f}, {10.0f, 10.0f});
+    clips.loaded[wave] = moveClip({"Root", "Arm"}, {50.0f, 50.0f}, {50.0f, 50.0f});
+    Body body;
+    std::shared_ptr<const AnimatorData> controller = std::make_shared<const AnimatorData>(waving(walk, wave));
+    AnimationWorld world(std::ref(clips), [&](AssetId id) { return id == body.controllerId ? controller : nullptr; });
+
+    // The layer starts in a state that plays nothing: the walk shows whole.
+    world.update(body.scene, Duration(0.0));
+    CHECK(world.state(body.character, "Gestures") == "Empty");
+    CHECK(world.state(body.character) == "Walk");
+    CHECK(body.rootX() == Catch::Approx(10.0f));
+    CHECK(body.armX() == Catch::Approx(10.0f));
+
+    // The wave fades in on the arm only, as the crossfade of its layer goes.
+    world.setBool(body.character, "Greeting", true);
+    world.update(body.scene, Duration(0.25));
+    CHECK(world.state(body.character, "Gestures") == "Waving");
+    CHECK(body.armX() == Catch::Approx(30.0f));
+    CHECK(body.rootX() == Catch::Approx(10.0f));
+    const std::optional<devex::animation::AnimatorStatus> status = world.status(body.character);
+    REQUIRE(status);
+    REQUIRE(status->layers.size() == 2);
+    CHECK(status->layers[1].name == "Gestures");
+    CHECK(status->layers[1].previousState == "Empty");
+    CHECK(status->layers[1].transitionProgress == Catch::Approx(0.5f));
+    world.update(body.scene, Duration(0.25));
+    CHECK(body.armX() == Catch::Approx(50.0f));
+    CHECK(body.rootX() == Catch::Approx(10.0f));
+
+    // Code weighs the layer, and its weight parameter multiplies what code gave it.
+    world.setLayerWeight(body.character, "Gestures", 0.5f);
+    world.update(body.scene, Duration(0.0));
+    CHECK(world.layerWeight(body.character, "Gestures") == 0.5f);
+    CHECK(body.armX() == Catch::Approx(30.0f));
+    AnimatorData weighed = waving(walk, wave);
+    weighed.layers[1].weightParameter = "Aim";
+    controller = std::make_shared<const AnimatorData>(weighed);
+    world.setFloat(body.character, "Aim", 0.5f);
+    world.update(body.scene, Duration(0.0));
+    // The new version of the controller keeps the state of each layer.
+    CHECK(world.state(body.character, "Gestures") == "Waving");
+    CHECK(body.armX() == Catch::Approx(20.0f));
+    CHECK(world.status(body.character)->layers[1].weight == Catch::Approx(0.25f));
+
+    // A mask that leaves the arm out takes the rest of the skeleton.
+    AnimatorData inverted = waving(walk, wave);
+    inverted.layers[1].mask.clear();
+    inverted.layers[1].maskExcluded = {"Arm"};
+    inverted.layers[1].weightParameter.clear();
+    controller = std::make_shared<const AnimatorData>(inverted);
+    world.setLayerWeight(body.character, "Gestures", 1.0f);
+    world.update(body.scene, Duration(0.0));
+    CHECK(body.rootX() == Catch::Approx(50.0f));
+    CHECK(body.armX() == Catch::Approx(10.0f));
+
+    // Stopping takes every layer back to its entry state.
+    world.stop(body.character);
+    CHECK(world.state(body.character, "Gestures") == "Empty");
+    CHECK(world.state(body.character, "Nowhere").empty());
+    CHECK_FALSE(world.layerWeight(body.character, "Nowhere").has_value());
+}
+
+TEST_CASE("Additive layers add how far their clips move from their first frame", "[animation][statemachine][layers]")
+{
+    Clips clips;
+    const AssetId walk = AssetId::generate();
+    const AssetId breath = AssetId::generate();
+    clips.loaded[walk] = moveClip({"Root", "Arm"}, {10.0f, 10.0f}, {10.0f, 10.0f});
+    // From 1 to 5 in a second: 2 past its first frame at its half.
+    clips.loaded[breath] = moveClip({"Arm"}, {1.0f}, {5.0f});
+    Body body;
+    AnimatorData data = waving(walk, breath);
+    data.layers[1] = AnimatorLayer{.name = "Breath",
+                                   .entry = "Breathing",
+                                   .states = {{.name = "Breathing", .motions = {{.clip = breath}}}},
+                                   .blending = AnimatorLayerBlend::Additive};
+    const auto controller = std::make_shared<const AnimatorData>(data);
+    AnimationWorld world(std::ref(clips), [&](AssetId id) { return id == body.controllerId ? controller : nullptr; });
+
+    world.update(body.scene, Duration(0.0));
+    CHECK(body.armX() == Catch::Approx(10.0f));
+    world.update(body.scene, Duration(0.5));
+    CHECK(body.armX() == Catch::Approx(12.0f));
+    CHECK(body.rootX() == Catch::Approx(10.0f));
+    world.setLayerWeight(body.character, "Breath", 0.5f);
+    world.update(body.scene, Duration(0.0));
+    CHECK(body.armX() == Catch::Approx(11.0f));
+}
+
+TEST_CASE("Bones the states leave free go back to their rest pose", "[animation][statemachine][layers]")
+{
+    Clips clips;
+    const AssetId idle = AssetId::generate();
+    const AssetId walk = AssetId::generate();
+    // The idle holds the root still, and leaves the arm alone; the walk swings both to 10.
+    clips.loaded[idle] = moveClip({"Root"}, {0.0f}, {0.0f});
+    clips.loaded[walk] = moveClip({"Root", "Arm"}, {10.0f, 10.0f}, {10.0f, 10.0f});
+    Body body;
+    AnimatorData data;
+    data.parameters = {{.name = "Speed"}};
+    data.layers[0].entry = "Idle";
+    data.layers[0].states = {{.name = "Idle", .motions = {{.clip = idle}}},
+                             {.name = "Walk", .motions = {{.clip = walk}}},
+                             {.name = "Blend",
+                              .blend = AnimatorBlend::Linear,
+                              .motions = {{.clip = idle, .threshold = 0.0f}, {.clip = walk, .threshold = 1.0f}},
+                              .parameter = "Speed"}};
+    data.layers[0].transitions = {
+        {.from = "Idle", .to = "Walk", .duration = 0.0f, .conditions = {{.parameter = "Speed", .test = AnimatorTest::Greater, .value = 0.5f}}},
+        {.from = "Walk", .to = "Idle", .duration = 0.5f, .conditions = {{.parameter = "Speed", .test = AnimatorTest::Less, .value = 0.5f}}},
+        {.from = "Idle", .to = "Blend", .duration = 0.0f, .conditions = {{.parameter = "Speed", .test = AnimatorTest::Less, .value = 0.0f}}}};
+    const auto controller = std::make_shared<const AnimatorData>(data);
+    AnimationWorld world(std::ref(clips), [&](AssetId id) { return id == body.controllerId ? controller : nullptr; });
+
+    world.update(body.scene, Duration(0.0));
+    CHECK(body.armX() == Catch::Approx(2.0f));
+    world.setFloat(body.character, "Speed", 1.0f);
+    world.update(body.scene, Duration(0.1));
+    CHECK(body.armX() == Catch::Approx(10.0f));
+    // The arm goes back to rest as the walk fades out, rather than staying where the walk left it.
+    world.setFloat(body.character, "Speed", 0.0f);
+    world.update(body.scene, Duration(0.25));
+    CHECK(body.rootX() == Catch::Approx(5.0f));
+    CHECK(body.armX() == Catch::Approx(6.0f));
+    world.update(body.scene, Duration(0.25));
+    CHECK(body.armX() == Catch::Approx(2.0f));
+
+    // A blend tree shares the arm between the walk and the rest that the idle leaves it in.
+    world.setFloat(body.character, "Speed", -0.5f);
+    world.update(body.scene, Duration(0.0));
+    REQUIRE(world.state(body.character) == "Blend");
+    world.setFloat(body.character, "Speed", 0.5f);
+    world.update(body.scene, Duration(0.0));
+    CHECK(body.armX() == Catch::Approx(6.0f));
 }
