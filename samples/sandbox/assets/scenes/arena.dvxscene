@@ -1484,4 +1484,4 @@ spacing = 0.9
 blend_distance = 0.3
 intensity = 1
 bounces = 2
-irradiance = asset("00000000-0000-0000-0000-000000000000")
+irradiance = asset("bb7d1127-0385-47dc-8af6-0c736241ccf6")
