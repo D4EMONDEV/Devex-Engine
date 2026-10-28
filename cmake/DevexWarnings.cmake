@@ -6,6 +6,8 @@ function(devex_set_warnings target)
             /utf-8
             /Zc:__cplusplus
             /Zc:preprocessor
+            # The largest files of the tools hold more sections than an object file allows by default.
+            /bigobj
             # The classes the engine library shares hold members of the standard library, which
             # every side builds with the same compiler and runtime.
             /wd4251

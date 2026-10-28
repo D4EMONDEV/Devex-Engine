@@ -240,13 +240,15 @@ public float4 probeReflection(SceneData* scene, float3 position, float3 reflecte
 {
     float3 light = float3(0.0);
     float covered = 0.0;
-    for (uint index = 0; index < scene.reflectionProbeCount && covered < 0.999; ++index)
+    // The loop ends with the list, the same for every pixel: lavapipe samples the maps wrongly in a
+    // loop that each pixel leaves at its own time.
+    for (uint index = 0; index < scene.reflectionProbeCount; ++index)
     {
         const ReflectionProbe probe = scene.reflectionProbes[index];
         const float3 local = mul(probe.worldToBox, float4(position, 1.0)).xyz;
         const float3 inside = probe.halfSize - abs(local);
         const float edge = min(inside.x, min(inside.y, inside.z));
-        if (edge <= 0.0)
+        if (edge <= 0.0 || covered >= 0.999)
         {
             continue;
         }

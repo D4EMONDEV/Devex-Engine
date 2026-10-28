@@ -1102,11 +1102,13 @@ TEST_CASE("Radiance views capture light in nits, and reflection probes take the 
             const std::size_t middle = (std::size_t{60} * 160 + 80) * 4;
             middles[index] = {image->rgba[middle], image->rgba[middle + 1], image->rgba[middle + 2]};
         }
-        CHECK(middles[0][0] > 100);
+        // The picture keeps the bytes of the target: sRGB on a screen, linear on lavapipe's offscreen
+        // images, where the probe, half as bright as the sky, comes out darker.
+        CHECK(middles[0][0] > 90);
         CHECK(std::abs(int{middles[0][0]} - int{middles[0][1]}) < 8);
-        CHECK(middles[1][0] > 80);
-        CHECK(middles[1][1] < 20);
-        CHECK(middles[1][2] < 20);
+        CHECK(middles[1][0] > 40);
+        CHECK(middles[1][1] * 4 < middles[1][0]);
+        CHECK(middles[1][2] * 4 < middles[1][0]);
         CHECK(middles[2] == middles[0]);
         renderer->destroyReflectionProbe(*probe);
     }
