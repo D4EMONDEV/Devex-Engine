@@ -123,6 +123,8 @@ struct Folder
         return {icons::Footprints, colors.physics};
     case asset::AssetType::ReflectionProbe:
         return {icons::Globe, colors.environment};
+    case asset::AssetType::IrradianceVolume:
+        return {icons::Grid, colors.environment};
     case asset::AssetType::Translation:
         return {icons::Languages, colors.scene};
     case asset::AssetType::Shader:

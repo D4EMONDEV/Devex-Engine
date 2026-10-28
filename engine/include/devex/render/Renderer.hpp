@@ -3,6 +3,7 @@
 #include <devex/core/Export.hpp>
 
 #include <devex/asset/MaterialData.hpp>
+#include <devex/asset/IrradianceVolumeData.hpp>
 #include <devex/asset/MeshData.hpp>
 #include <devex/asset/ReflectionProbeData.hpp>
 #include <devex/asset/ShaderData.hpp>
@@ -169,6 +170,10 @@ public:
     [[nodiscard]] core::Result<ReflectionProbeHandle> createReflectionProbe(const asset::ReflectionProbeData& probe);
     // Releases the probe once no frame in flight uses it. Stale handles are ignored.
     void destroyReflectionProbe(ReflectionProbeHandle probe);
+    // Copies the light of the probes of a volume for the shaders, at once.
+    [[nodiscard]] core::Result<IrradianceVolumeHandle> createIrradianceVolume(const asset::IrradianceVolumeData& volume);
+    // Releases the volume once no frame in flight uses it. Stale handles are ignored.
+    void destroyIrradianceVolume(IrradianceVolumeHandle volume);
 
     [[nodiscard]] MaterialHandle createMaterial(const MaterialDesc& material);
     // Changes a material from the next frame on. Stale handles are ignored.

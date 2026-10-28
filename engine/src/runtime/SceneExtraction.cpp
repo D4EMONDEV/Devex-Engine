@@ -501,6 +501,23 @@ void extractScene(scene::Scene& scene, AssetManager& assets, render::RenderWorld
         });
     }
 
+    for ([[maybe_unused]] auto [entity, transform, volume] : scene.view<scene::WorldTransform, scene::LightProbeVolume>())
+    {
+        const render::IrradianceVolumeHandle baked =
+            volume.irradiance.isValid() ? assets.irradianceVolume(volume.irradiance) : render::IrradianceVolumeHandle{};
+        if (!baked.isValid())
+        {
+            continue;
+        }
+        world.irradianceVolumes.push_back({
+            .volume = baked,
+            .transform = transform.matrix,
+            .size = volume.size,
+            .blendDistance = volume.blendDistance,
+            .intensity = volume.intensity,
+        });
+    }
+
     for ([[maybe_unused]] auto [entity, transform, renderer] :
          scene.view<scene::WorldTransform, scene::MeshRenderer>())
     {

@@ -85,6 +85,11 @@ struct Section
     std::optional<std::size_t> probeStatusLine;
     PanelButton bakeProbe;
     PanelButton bakeProbes;
+    // The same for a light probe volume, whose bake takes every volume of the scene.
+    scene::Entity volumeInfo;
+    scene::Entity volumeStatus;
+    std::optional<std::size_t> volumeStatusLine;
+    PanelButton bakeVolumes;
     std::shared_ptr<TilePainterUi> painter;
 };
 

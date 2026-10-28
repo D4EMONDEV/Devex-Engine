@@ -115,6 +115,7 @@ ComponentRegistry& componentRegistry()
         builtins.add<SpotLight>();
         builtins.add<Environment>();
         builtins.add<ReflectionProbe>();
+        builtins.add<LightProbeVolume>();
         builtins.add<RigidBody>();
         builtins.add<BoxCollider>();
         builtins.add<SphereCollider>();

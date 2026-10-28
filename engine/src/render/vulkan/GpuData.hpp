@@ -86,6 +86,27 @@ struct GpuReflectionProbe
     float padding1 = 0.0f;
 };
 
+// An irradiance volume of the frame, in the space of its box.
+struct GpuIrradianceVolume
+{
+    // From the world into the box, in meters along its axes, from its center.
+    math::Mat4 worldToBox{1.0f};
+    math::Vec3 halfSize{0.0f};
+    float blendDistance = 0.0f;
+    std::uint32_t countX = 2;
+    std::uint32_t countY = 2;
+    std::uint32_t countZ = 2;
+    float intensity = 1.0f;
+    // Seven groups of four numbers a probe: its 27 coefficients, and one unused.
+    VkDeviceAddress probes = 0;
+    // How far a surface reads the volume off itself along its normal, in cells of the grid.
+    float normalBias = 0.0f;
+    float padding = 0.0f;
+};
+
+// The groups of four numbers each probe of a volume takes.
+inline constexpr std::uint32_t irradianceProbeVectors = 7;
+
 struct GpuCluster
 {
     std::uint32_t offset = 0;
@@ -145,7 +166,9 @@ struct GpuSceneData
     // The reflection probes of the frame, the smallest first.
     VkDeviceAddress reflectionProbes = 0;
     std::uint32_t reflectionProbeCount = 0;
-    float padding = 0.0f;
+    // The irradiance volumes of the frame, the smallest first.
+    std::uint32_t irradianceVolumeCount = 0;
+    VkDeviceAddress irradianceVolumes = 0;
 };
 
 // How a vertex of a skinned mesh follows its bones, beside the vertex itself.
@@ -448,7 +471,10 @@ static_assert(offsetof(GpuSceneData, unjitteredViewProjection) == 688);
 static_assert(offsetof(GpuSceneData, materialParameters) == 888);
 static_assert(offsetof(GpuSceneData, instanceParameters) == 896);
 static_assert(offsetof(GpuSceneData, reflectionProbes) == 904);
-static_assert(sizeof(GpuSceneData) == 920);
+static_assert(offsetof(GpuSceneData, irradianceVolumes) == 920);
+static_assert(sizeof(GpuSceneData) == 928);
+static_assert(sizeof(GpuIrradianceVolume) == 112);
+static_assert(offsetof(GpuIrradianceVolume, probes) == 96);
 static_assert(sizeof(GpuReflectionProbe) == 112);
 static_assert(offsetof(GpuReflectionProbe, capturePosition) == 80);
 static_assert(offsetof(GpuReflectionProbe, map) == 96);

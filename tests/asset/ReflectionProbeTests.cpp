@@ -4,6 +4,7 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include <limits>
 #include <vector>
 
 using devex::asset::ReflectionProbeData;
@@ -41,5 +42,30 @@ TEST_CASE("Reflection probes keep the light of their faces in nits, however brig
     CHECK_FALSE(devex::asset::validate(broken).has_value());
     broken = probe;
     broken.scale = 0.0f;
+    CHECK_FALSE(devex::asset::validate(broken).has_value());
+}
+
+TEST_CASE("Irradiance volumes keep the harmonics of every probe of their grid", "[asset][probe]")
+{
+    devex::asset::IrradianceVolumeData volume{.countX = 3, .countY = 2, .countZ = 2};
+    volume.coefficients.resize(volume.probeCount() * devex::asset::irradianceCoefficients);
+    for (std::size_t index = 0; index < volume.coefficients.size(); ++index)
+    {
+        volume.coefficients[index] = static_cast<float>(index) * 0.5f;
+    }
+    REQUIRE(devex::asset::validate(volume).has_value());
+    const devex::core::Result<devex::asset::IrradianceVolumeData> decoded =
+        devex::asset::decodeIrradianceVolume(devex::asset::encodeIrradianceVolume(volume));
+    REQUIRE(decoded.has_value());
+    CHECK(*decoded == volume);
+
+    devex::asset::IrradianceVolumeData broken = volume;
+    broken.countY = 1;
+    CHECK_FALSE(devex::asset::validate(broken).has_value());
+    broken = volume;
+    broken.coefficients.pop_back();
+    CHECK_FALSE(devex::asset::validate(broken).has_value());
+    broken = volume;
+    broken.coefficients[4] = std::numeric_limits<float>::quiet_NaN();
     CHECK_FALSE(devex::asset::validate(broken).has_value());
 }

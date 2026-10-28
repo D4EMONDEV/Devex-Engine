@@ -944,6 +944,11 @@ TEST_CASE("Reflection probes are baked from the edited scene into files next to 
         authored.add<devex::scene::Transform>(probe);
         authored.add<devex::scene::ReflectionProbe>(probe, devex::scene::ReflectionProbe{.resolution = devex::scene::ProbeResolution::Low});
         const devex::core::Uuid probeId = authored.uuid(probe);
+        // And a volume of eight probes around the probe, whose light bounces twice.
+        const devex::scene::Entity volume = authored.createEntity("Room volume");
+        authored.add<devex::scene::Transform>(volume);
+        authored.add<devex::scene::LightProbeVolume>(volume, devex::scene::LightProbeVolume{.size = {2.0f, 2.0f, 2.0f}, .spacing = 2.0f});
+        const devex::core::Uuid volumeId = authored.uuid(volume);
         REQUIRE(devex::scene::saveSceneFile(authored, project.assetsDirectory() / "scenes" / "room.dvxscene"));
         REQUIRE(devex::core::writeTextFile(project.cacheDirectory() / "editor.dvx",
                                            "[editor format=2 active_scene=\"res://assets/scenes/room.dvxscene\"]\n"
@@ -1022,6 +1027,43 @@ TEST_CASE("Reflection probes are baked from the edited scene into files next to 
         const devex::asset::ProbeTexel front = devex::asset::probeTexel(*baked, 5, 64, 64);
         CHECK(up.green > 1000.0f);
         CHECK(front.green < up.green * 0.95f);
+
+        // The volume, baked bounce after bounce, a few probes a frame.
+        (*editor)->bakeIrradianceVolumes(scene);
+        REQUIRE((*editor)->isBakingVolumes());
+        for (int frame = 0; frame < 300 && (*editor)->isBakingVolumes(); ++frame)
+        {
+            platform->pollEvents([](const devex::platform::Event&) {});
+            (*editor)->update(scene, std::chrono::milliseconds(16), PlayState::Editing);
+            scene.updateTransforms();
+            devex::render::RenderWorld& world = renderer->beginFrame();
+            for ([[maybe_unused]] auto [entity, transform, mesh] : scene.view<devex::scene::WorldTransform, devex::scene::MeshRenderer>())
+            {
+                world.meshes.push_back({.mesh = *cubeMesh, .transform = transform.matrix, .objectId = entity.index + 1});
+            }
+            (*editor)->prepareRender(scene, world, PlayState::Editing);
+            REQUIRE(renderer->endFrame());
+            std::vector<devex::render::CapturedImage> captures = renderer->takeCaptures();
+            (*editor)->receiveCaptures(captures);
+        }
+        for (int frame = 0; frame < 3; ++frame)
+        {
+            (*editor)->update(scene, std::chrono::milliseconds(16), PlayState::Editing);
+        }
+        INFO((*editor)->volumeBakeStatus());
+        CHECK((*editor)->volumeBakeStatus().starts_with("Baked 1 volume of 8 probes, 2 bounces"));
+        const std::filesystem::path volumeFile = project.assetsDirectory() / "scenes" / "room Room volume.dvxirradiance";
+        REQUIRE(std::filesystem::exists(volumeFile));
+        const devex::core::Result<std::vector<std::byte>> volumeBytes = devex::core::readBinaryFile(volumeFile);
+        REQUIRE(volumeBytes.has_value());
+        const devex::core::Result<devex::asset::IrradianceVolumeData> light = devex::asset::decodeIrradianceVolume(*volumeBytes);
+        REQUIRE(light.has_value());
+        CHECK(light->probeCount() == 8);
+        // Under the sky, every probe takes light.
+        CHECK(light->coefficients[1] > 100.0f);
+        const std::optional<devex::asset::AssetId> volumeAsset = (*database)->findByPath("res://assets/scenes/room Room volume.dvxirradiance");
+        REQUIRE(volumeAsset.has_value());
+        CHECK(scene.get<devex::scene::LightProbeVolume>(scene.findEntity(volumeId)).irradiance == *volumeAsset);
     }
     devex::core::removeLogSink(sink);
     std::error_code ignored;

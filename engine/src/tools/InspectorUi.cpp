@@ -412,7 +412,7 @@ void InspectorUi::rebuild(ToolsState& state, EditorUiKit& kit, scene::Scene& edi
                 addExtras(kit, section, group);
             }
         }
-        if (!shared && (name == "ParticleEmitter" || name == "NavMeshSurface" || name == "ReflectionProbe"))
+        if (!shared && (name == "ParticleEmitter" || name == "NavMeshSurface" || name == "ReflectionProbe" || name == "LightProbeVolume"))
         {
             addExtras(kit, section, -1);
         }
@@ -747,6 +747,24 @@ void InspectorUi::addExtras(EditorUiKit& kit, Section& section, int group)
         scene().get<scene::UiText>(section.probeStatus).wrap = true;
         section.probeStatusLine = section.lines.size();
         section.lines.push_back(Line{.entity = section.probeStatus, .group = group});
+    }
+    if (section.name == "LightProbeVolume")
+    {
+        section.volumeInfo = text(section.card, wide(std::round(line * 1.6f)), "", "dim");
+        scene().get<scene::UiText>(section.volumeInfo).wrap = true;
+        section.lines.push_back(Line{.entity = section.volumeInfo, .group = group});
+        const Entity actions = add(section.card, "Bake", wide(line));
+        scene().add<scene::UiLayout>(actions, scene::UiLayout{.kind = scene::UiLayoutKind::Row,
+                                                              .spacing = font * 0.4f,
+                                                              .padding = {font * 0.35f, 0.0f, 0.0f, 0.0f},
+                                                              .align = scene::TextAlign::Left});
+        section.bakeVolumes = button(kit, actions, Icon::Grid, "Bake", "primary", 0.0f, line - 4.0f);
+        tooltip(section.bakeVolumes.entity, "Captures the light at every probe of every volume of the scene, bounce after bounce, and writes it next to the scene");
+        section.lines.push_back(Line{.entity = actions, .group = group});
+        section.volumeStatus = text(section.card, wide(std::round(line * 1.6f)), "", "dim");
+        scene().get<scene::UiText>(section.volumeStatus).wrap = true;
+        section.volumeStatusLine = section.lines.size();
+        section.lines.push_back(Line{.entity = section.volumeStatus, .group = group});
     }
 }
 
@@ -1273,9 +1291,17 @@ void InspectorUi::syncExtras(ToolsState& state, EditorUiKit& kit, scene::Scene& 
         section.lines[*section.probeStatusLine].shown = !state.probeBakeStatus.empty() && !state.probeBake;
         scene().get<scene::UiText>(section.probeStatus).text = state.probeBakeStatus;
         scene().get<UiRect>(section.probeStatus).style = state.probeBakeFailed ? "error" : "dim";
-        const bool ready = state.playState == PlayState::Editing && !state.probeBake;
+        const bool ready = state.playState == PlayState::Editing && !state.probeBake && !state.volumeBake;
         enable(section.bakeProbe, ready);
         enable(section.bakeProbes, ready);
+    }
+    if (section.volumeInfo.isValid())
+    {
+        scene().get<scene::UiText>(section.volumeInfo).text = irradianceVolumeSummary(state, edited.get<scene::LightProbeVolume>(active));
+        section.lines[*section.volumeStatusLine].shown = !state.volumeBakeStatus.empty() && !state.volumeBake;
+        scene().get<scene::UiText>(section.volumeStatus).text = state.volumeBakeStatus;
+        scene().get<UiRect>(section.volumeStatus).style = state.volumeBakeFailed ? "error" : "dim";
+        enable(section.bakeVolumes, state.playState == PlayState::Editing && !state.probeBake && !state.volumeBake);
     }
 }
 
@@ -1812,6 +1838,10 @@ void InspectorUi::answer(ToolsState& state, EditorUiKit& kit, scene::Scene& edit
             {
                 clearNavMesh(state, edited, active);
             }
+        }
+        if (section.bakeVolumes.entity.isValid() && world.wasClicked(section.bakeVolumes.entity))
+        {
+            bakeIrradianceVolumes(state, edited);
         }
         if (section.bakeProbe.entity.isValid())
         {

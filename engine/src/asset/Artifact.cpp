@@ -116,6 +116,7 @@ std::uint32_t artifactVersion(AssetType type) noexcept
     case AssetType::Curve:
     case AssetType::NavMesh:
     case AssetType::ReflectionProbe:
+    case AssetType::IrradianceVolume:
     case AssetType::Translation:
         return 1;
     // 2: the nodes of shader graphs that diagnostics name. 3: instance uniforms.
@@ -1115,6 +1116,39 @@ core::Result<ReflectionProbeData> decodeReflectionProbe(std::span<const std::byt
         return std::unexpected(valid.error());
     }
     return probe;
+}
+
+std::vector<std::byte> encodeIrradianceVolume(const IrradianceVolumeData& volume)
+{
+    BinaryWriter writer = beginArtifact(AssetType::IrradianceVolume);
+    writer.write(volume.countX);
+    writer.write(volume.countY);
+    writer.write(volume.countZ);
+    writer.writeArray(std::span<const float>(volume.coefficients));
+    return writer.take();
+}
+
+core::Result<IrradianceVolumeData> decodeIrradianceVolume(std::span<const std::byte> bytes)
+{
+    BinaryReader reader(bytes);
+    if (core::Result<void> header = readHeader(reader, AssetType::IrradianceVolume); !header)
+    {
+        return std::unexpected(header.error());
+    }
+    IrradianceVolumeData volume;
+    volume.countX = reader.read<std::uint32_t>();
+    volume.countY = reader.read<std::uint32_t>();
+    volume.countZ = reader.read<std::uint32_t>();
+    volume.coefficients = reader.readArray<float>();
+    if (reader.failed())
+    {
+        return std::unexpected(truncated(AssetType::IrradianceVolume));
+    }
+    if (core::Result<void> valid = validate(volume); !valid)
+    {
+        return std::unexpected(valid.error());
+    }
+    return volume;
 }
 
 std::vector<std::byte> encodeTranslation(const TranslationData& translation)

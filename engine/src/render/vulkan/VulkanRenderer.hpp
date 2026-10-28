@@ -65,6 +65,8 @@ public:
 
     [[nodiscard]] core::Result<ReflectionProbeHandle> createReflectionProbe(const asset::ReflectionProbeData& probe);
     void destroyReflectionProbe(ReflectionProbeHandle probe);
+    [[nodiscard]] core::Result<IrradianceVolumeHandle> createIrradianceVolume(const asset::IrradianceVolumeData& volume);
+    void destroyIrradianceVolume(IrradianceVolumeHandle volume);
 
     [[nodiscard]] MaterialHandle createMaterial(const MaterialDesc& material);
     void updateMaterial(MaterialHandle handle, const MaterialDesc& material);
@@ -120,12 +122,13 @@ private:
     static constexpr std::size_t largeShadowLights = 2;
     // Larger viewports are clamped, since images this large would exhaust memory.
     static constexpr std::uint32_t maxViewportSize = 8192;
-    // The views a frame draws beside the main image; more are left out. A reflection probe is
-    // captured six faces at a time.
-    static constexpr std::size_t maxViews = 8;
+    // The views a frame draws beside the main image; more are left out. The tools capture the probes
+    // they bake six faces at a time, a few probes a frame.
+    static constexpr std::size_t maxViews = 24;
     // The reflection probes the renderer keeps, and the most a frame reflects, the smallest first.
     static constexpr std::uint32_t maxReflectionProbes = 64;
     static constexpr std::size_t maxFrameReflectionProbes = 32;
+    static constexpr std::size_t maxFrameIrradianceVolumes = 16;
 
     enum class MeshPass : std::uint8_t
     {
@@ -210,8 +213,9 @@ private:
         std::optional<Buffer> shadows2D;
         std::optional<Buffer> clusters;
         std::optional<Buffer> clusterLights;
-        // The reflection probes the frame reflects, the smallest first.
+        // The reflection probes the frame reflects, the smallest first, and its irradiance volumes.
         std::optional<Buffer> reflectionProbes;
+        std::optional<Buffer> irradianceVolumes;
         // Exposed luminance measured on a grid by the last frame recorded with this context.
         std::optional<Buffer> luminance;
         bool luminanceMeasured = false;
@@ -336,6 +340,21 @@ private:
         std::uint64_t retiredAtFrame = 0;
     };
 
+    // The light of the probes of an irradiance volume, as the shaders read it.
+    struct VolumeProbes
+    {
+        Buffer probes;
+        std::uint32_t countX = 2;
+        std::uint32_t countY = 2;
+        std::uint32_t countZ = 2;
+    };
+
+    struct RetiredVolumeProbes
+    {
+        VolumeProbes volume;
+        std::uint64_t retiredAtFrame = 0;
+    };
+
     struct RetiredEnvironment
     {
         EnvironmentMaps maps;
@@ -448,6 +467,8 @@ private:
     // The reflection probes the camera may see, the smallest first, into the buffer of the frame;
     // none for a radiance view.
     [[nodiscard]] core::Result<void> uploadReflectionProbes(FrameContext& frame);
+    // The irradiance volumes the camera may see, the smallest first, into the buffer of the frame.
+    [[nodiscard]] core::Result<void> uploadIrradianceVolumes(FrameContext& frame);
     // Creates the two images the antialiasing carries from frame to frame, when the scene changed
     // size or they do not exist yet.
     [[nodiscard]] core::Result<void> ensureHistory();
@@ -671,6 +692,10 @@ private:
     std::uint32_t m_frameProbeCount = 0;
     bool m_radianceView = false;
     mutable std::vector<std::pair<float, GpuReflectionProbe>> m_gpuProbes;
+    core::SlotMap<VolumeProbes, IrradianceVolumeTag> m_volumes;
+    std::vector<RetiredVolumeProbes> m_retiredVolumes;
+    std::uint32_t m_frameVolumeCount = 0;
+    std::vector<std::pair<float, GpuIrradianceVolume>> m_gpuVolumes;
     core::SlotMap<MaterialDesc, MaterialTag> m_materials;
     MaterialHandle m_defaultMaterial;
     // GPU form of every material slot, rebuilt when a material or a texture changes.

@@ -79,6 +79,24 @@ public struct Cluster
     public uint count;
 };
 
+// An irradiance volume of the frame, in the space of its box.
+public struct IrradianceVolume
+{
+    // From the world into the box, in meters along its axes, from its center.
+    public float4x4 worldToBox;
+    public float3 halfSize;
+    public float blendDistance;
+    public uint countX;
+    public uint countY;
+    public uint countZ;
+    public float intensity;
+    // Seven groups of four numbers a probe: nine harmonics of red, green and blue, then one unused.
+    public float4* probes;
+    // How far a surface reads the volume off itself along its normal, in cells of the grid.
+    public float normalBias;
+    public float padding;
+};
+
 // A reflection probe of the frame, in the space of its box.
 public struct ReflectionProbe
 {
@@ -152,7 +170,9 @@ public struct SceneData
     // The reflection probes of the frame, the smallest first.
     public ReflectionProbe* reflectionProbes;
     public uint reflectionProbeCount;
-    public float padding;
+    // The irradiance volumes of the frame, the smallest first.
+    public uint irradianceVolumeCount;
+    public IrradianceVolume* irradianceVolumes;
 };
 
 // A normal folded into two numbers on an octahedron, which keeps its precision where it matters.

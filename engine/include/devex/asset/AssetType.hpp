@@ -44,13 +44,15 @@ enum class AssetType : std::uint8_t
     Shader = 17,
     // The light around a point of a scene, baked by the editor into a .dvxprobe file.
     ReflectionProbe = 18,
+    // The light at the points of a grid of a scene, baked by the editor into a .dvxirradiance file.
+    IrradianceVolume = 19,
 };
 
 // Whether a stored value is one of the types above: update it with them.
 [[nodiscard]] constexpr bool isAssetType(std::uint8_t value) noexcept
 {
     return value >= static_cast<std::uint8_t>(AssetType::Mesh) &&
-           value <= static_cast<std::uint8_t>(AssetType::ReflectionProbe);
+           value <= static_cast<std::uint8_t>(AssetType::IrradianceVolume);
 }
 
 // "mesh", "texture", "material", "model", "scene", "audio", "animation" or "font", as written in

@@ -589,6 +589,23 @@ core::Result<ImportResult> importReflectionProbeFile(ImportContext& context)
     return result;
 }
 
+core::Result<ImportResult> importIrradianceVolumeFile(ImportContext& context)
+{
+    core::Result<std::vector<std::byte>> bytes = core::readBinaryFile(context.source);
+    if (!bytes)
+    {
+        return std::unexpected(bytes.error());
+    }
+    // The file is the cooked asset already: checked, then taken as it is.
+    if (const core::Result<IrradianceVolumeData> volume = decodeIrradianceVolume(*bytes); !volume)
+    {
+        return std::unexpected(volume.error());
+    }
+    ImportResult result;
+    result.artifacts.push_back({context.mainId, AssetType::IrradianceVolume, context.name, std::move(*bytes)});
+    return result;
+}
+
 core::Result<ImportResult> importNavMeshFile(ImportContext& context)
 {
     core::Result<std::vector<std::byte>> bytes = core::readBinaryFile(context.source);
@@ -797,6 +814,13 @@ std::span<const Importer> importers()
             .mainType = AssetType::ReflectionProbe,
             .extensions = {reflectionProbeExtension},
             .run = &importReflectionProbeFile,
+        },
+        Importer{
+            .name = "irradiance_volume",
+            .version = 1,
+            .mainType = AssetType::IrradianceVolume,
+            .extensions = {irradianceVolumeExtension},
+            .run = &importIrradianceVolumeFile,
         },
         Importer{
             .name = "shader",

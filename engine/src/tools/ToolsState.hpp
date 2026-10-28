@@ -106,6 +106,50 @@ enum class GameAspect : std::uint8_t
 inline constexpr std::uint32_t gameViewId = 1;
 // The six views a reflection probe is captured through, one per face of its cube.
 inline constexpr std::uint32_t probeViewBase = 16;
+// The views the probes of irradiance volumes are captured through, six for each probe of a frame.
+inline constexpr std::uint32_t volumeViewBase = 32;
+inline constexpr std::uint32_t volumeProbesPerFrame = 3;
+// The width of the faces of the probes of a volume: their light is kept as smooth harmonics.
+inline constexpr std::uint32_t volumeFaceSize = 16;
+
+// The irradiance volumes of a scene being baked: every probe of every volume captured through six
+// radiance views, a few a frame, then turned into harmonics; once all are, the light bounces again
+// with the volumes of that pass in the scene, as many times as the volumes ask.
+struct DEVEX_API VolumeBake
+{
+    struct Volume
+    {
+        core::Uuid entity;
+        std::string name;
+        asset::AssetId previous;
+        math::Mat4 transform{1.0f};
+        math::Vec3 size{1.0f};
+        float blendDistance = 0.5f;
+        std::array<std::uint32_t, 3> counts{2, 2, 2};
+        std::vector<float> coefficients;
+    };
+    // A probe whose six faces were asked for.
+    struct Cube
+    {
+        std::size_t volume = 0;
+        std::size_t probe = 0;
+        std::array<std::uint64_t, 6> requests{};
+        std::array<std::vector<float>, 6> faces;
+    };
+    std::vector<Volume> volumes;
+    // Every probe of every volume, by volume and index.
+    std::vector<std::pair<std::size_t, std::size_t>> probes;
+    std::size_t next = 0;
+    std::size_t received = 0;
+    std::vector<Cube> cubes;
+    std::int32_t bounce = 1;
+    std::int32_t bounces = 1;
+    // The light of the previous bounce, which the faces of this one see.
+    std::vector<render::IrradianceVolumeHandle> previous;
+    float ev100 = 12.0f;
+    std::chrono::steady_clock::time_point started;
+    std::uint32_t waited = 0;
+};
 
 // The reflection probes being baked one after the other, each through six radiance views drawn until
 // the renderer answers with their light; the files are written at once, and the probes pointed at them
@@ -782,6 +826,10 @@ struct DEVEX_API ToolsState
     std::optional<ProbeBake> probeBake;
     std::string probeBakeStatus;
     bool probeBakeFailed = false;
+    // The same for the irradiance volumes.
+    std::optional<VolumeBake> volumeBake;
+    std::string volumeBakeStatus;
+    bool volumeBakeFailed = false;
     // What the loaded assets take, for the Profiler panel.
     std::function<asset::MemoryReport()> memoryReport;
     // The meshes and textures loading in the background, for the status bar.
@@ -1114,6 +1162,19 @@ DEVEX_API void receiveProbeFaces(ToolsState& state, std::vector<render::Captured
 // The boxes of the reflection probes shown, and where each captures from, as lines of the overlay.
 DEVEX_API void addReflectionProbeLines(scene::Scene& scene, const std::unordered_set<std::uint32_t>& shown, bool showAll,
                                        std::vector<render::OverlayVertex>& lines);
+// Bakes every irradiance volume of the scene over the next frames, bounce after bounce, writes their
+// light next to the scene file and points them at it, as one undoable step; state.volumeBakeStatus
+// says how it went. Only while editing.
+DEVEX_API void bakeIrradianceVolumes(ToolsState& state, scene::Scene& scene);
+// Draws the faces of the probes being baked, and the volumes of the previous bounce.
+DEVEX_API void prepareVolumeBake(ToolsState& state, render::RenderWorld& world);
+// Takes the faces of the probes out of the pictures the renderer answered with, and moves the bake on.
+DEVEX_API void receiveVolumeFaces(ToolsState& state, std::vector<render::CapturedImage>& captures);
+// The probes of a volume and its bake in a few words, for its inspector.
+[[nodiscard]] DEVEX_API std::string irradianceVolumeSummary(ToolsState& state, const scene::LightProbeVolume& volume);
+// The boxes of the irradiance volumes shown, and their probes, as lines of the overlay.
+DEVEX_API void addIrradianceVolumeLines(scene::Scene& scene, const std::unordered_set<std::uint32_t>& shown,
+                                        std::vector<render::OverlayVertex>& lines);
 // The navigation meshes of the surfaces shown, the agents and obstacles, and the paths agents walk
 // while the game plays, as lines of the overlay.
 DEVEX_API void addNavigationLines(ToolsState& state, scene::Scene& scene, const std::unordered_set<std::uint32_t>& shown, bool showAll,

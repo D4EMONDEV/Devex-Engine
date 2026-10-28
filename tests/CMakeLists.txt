@@ -206,6 +206,7 @@ devex_add_tests(render
         render/LightingTests.cpp
         render/PhotometryTests.cpp
         render/RendererTests.cpp
+        render/SphericalHarmonicsTests.cpp
         render/SelectionTests.cpp
         render/ShaderRenderTests.cpp
     LIBRARIES

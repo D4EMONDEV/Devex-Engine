@@ -43,6 +43,8 @@ constexpr std::array engineComponents{
                   "The sky, the light it gives the scene, and how the image is exposed and finished."},
     ComponentInfo{"ReflectionProbe", "Reflection probe", Category::ThreeD,
                   "The light around a point, baked in the editor, which the surfaces inside its box reflect in place of the sky."},
+    ComponentInfo{"LightProbeVolume", "Light probe volume", Category::ThreeD,
+                  "The light bouncing in a box, baked in the editor on a grid, which lights the surfaces inside in place of the sky."},
     ComponentInfo{"SpriteRenderer", "Sprite", Category::TwoD, "Draws a sprite of a texture, flat in the XY plane."},
     ComponentInfo{"SpriteAnimator", "Sprite animator", Category::TwoD,
                   "Plays the animations of a sprite frames file on the sprite of its entity.", {"SpriteRenderer"}},

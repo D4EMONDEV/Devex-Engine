@@ -305,6 +305,12 @@ public:
     [[nodiscard]] bool isBakingProbes() const noexcept;
     // How the last bake went, or "Baking..." while one runs.
     [[nodiscard]] const std::string& probeBakeStatus() const noexcept;
+    // Editor only: bakes every light probe volume of the edited scene over the next frames, bounce
+    // after bounce, as Bake in their inspector does; the volumes then point at their light, as one
+    // undoable step.
+    void bakeIrradianceVolumes(scene::Scene& scene);
+    [[nodiscard]] bool isBakingVolumes() const noexcept;
+    [[nodiscard]] const std::string& volumeBakeStatus() const noexcept;
 
     // Editor only: the requests made since the last call.
     [[nodiscard]] EditorRequests takeRequests() noexcept;

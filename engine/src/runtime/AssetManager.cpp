@@ -720,6 +720,31 @@ render::ReflectionProbeHandle AssetManager::reflectionProbe(asset::AssetId id)
     return *probe;
 }
 
+render::IrradianceVolumeHandle AssetManager::irradianceVolume(asset::AssetId id)
+{
+    if (const auto found = m_irradianceVolumes.find(id); found != m_irradianceVolumes.end())
+    {
+        return found->second;
+    }
+    if (!canLoad(id))
+    {
+        return {};
+    }
+    const core::Result<std::vector<std::byte>> bytes = m_source->loadArtifact(id);
+    const core::Result<asset::IrradianceVolumeData> data =
+        bytes ? asset::decodeIrradianceVolume(*bytes) : core::Result<asset::IrradianceVolumeData>(std::unexpected(bytes.error()));
+    core::Result<render::IrradianceVolumeHandle> volume =
+        data ? m_renderer->createIrradianceVolume(*data) : core::Result<render::IrradianceVolumeHandle>(std::unexpected(data.error()));
+    if (!volume)
+    {
+        DEVEX_LOG_ERROR("Cannot load irradiance volume {}: {}", id.uuid, volume.error());
+        m_failed.insert(id);
+        return {};
+    }
+    m_irradianceVolumes.emplace(id, *volume);
+    return *volume;
+}
+
 std::shared_ptr<const asset::TranslationData> AssetManager::translation(asset::AssetId id)
 {
     return loadShared<asset::TranslationData>(id, m_source, m_failed, m_translations, "translation table",
@@ -849,6 +874,13 @@ void AssetManager::handleEvents(std::span<const asset::AssetEvent> events)
             {
                 m_renderer->destroyReflectionProbe(found->second);
                 m_reflectionProbes.erase(found);
+            }
+            break;
+        case asset::AssetType::IrradianceVolume:
+            if (const auto found = m_irradianceVolumes.find(event.id); found != m_irradianceVolumes.end())
+            {
+                m_renderer->destroyIrradianceVolume(found->second);
+                m_irradianceVolumes.erase(found);
             }
             break;
         case asset::AssetType::Translation:
@@ -1009,6 +1041,11 @@ void AssetManager::setSource(asset::AssetSource* source)
         m_renderer->destroyReflectionProbe(probe);
     }
     m_reflectionProbes.clear();
+    for (const auto& [id, volume] : m_irradianceVolumes)
+    {
+        m_renderer->destroyIrradianceVolume(volume);
+    }
+    m_irradianceVolumes.clear();
     m_models.clear();
     m_meshData.clear();
     m_sceneTexts.clear();

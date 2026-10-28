@@ -465,7 +465,7 @@ docs/          décisions et documentation
   et post-traitements*).
 - **Limites actuelles** : culling par tronc de vue seulement (rien n'est enlevé parce qu'il est
   caché derrière autre chose, et chaque instance est testée une par une sur le CPU), lumière
-  diffuse indirecte venue du seul ciel (les sondes de réflexion ne remplacent que ses reflets),
+  indirecte cuite seulement (sondes et volumes ne suivent pas la scène pendant le jeu),
   transparence triée par instance (deux surfaces qui s'entrecroisent restent
   fausses), et traînées possibles derrière un objet très rapide, que l'anticrénelage temporel ne
   rattrape pas toujours.
@@ -2602,7 +2602,8 @@ Jalon 65, comme les `Joint3D` et `Joint2D` de Godot :
   brille à l'écran brille autant dans les reflets (l'émission des matériaux est relative à
   l'exposition). Un appareil qui regarde une face la voit en miroir de gauche à droite, ce que la
   cuisson rétablit (`render::cubeFaceView`, `cubeFaceDirection`, vérifiés sans GPU). Les vues sont
-  redessinées jusqu'à ce que leurs faces reviennent, et la cuisson attend que les maillages et
+  dessinées une fois, et le renderer rend les captures d'une vue même quand elle ne l'est plus (il
+  les lisait seulement quand la vue était redessinée à la même place) ; la cuisson attend que les maillages et
   textures de la scène soient sur le GPU, sans quoi les vues les laisseraient de côté. Les fichiers
   écrits, la base est rafraîchie, puis toutes les sondes sont pointées vers leur capture en une seule
   étape d'annulation. Les captures passent de l'application aux outils
@@ -2613,11 +2614,48 @@ Jalon 65, comme les `Joint3D` et `Joint2D` de Godot :
   image, les sondes que la caméra peut voir sont envoyées, les plus petites d'abord, 32 au plus
   (`GpuSceneData::reflectionProbes`). Le shader parcourt la liste : dans une boîte, avec son fondu, il
   lit la sonde dans la direction corrigée par la boîte, et laisse aux suivantes et au ciel ce qu'elle
-  ne couvre pas. Seuls les reflets changent ; la lumière diffuse indirecte vient encore du ciel,
-  jusqu'aux volumes d'irradiance. Les shaders des projets sont réimportés (importeurs `shader` et
+  ne couvre pas. Seuls les reflets changent ; la lumière diffuse vient des volumes d'irradiance
+  (ci-dessous) ou du ciel. Une boucle dont chaque pixel sortait à son heure (dès sa réflexion
+  couverte) faisait lire les cubes de travers à lavapipe : la boucle parcourt toute la liste pour
+  tous les pixels, et saute les sondes une fois la réflexion couverte. Les shaders des projets sont réimportés (importeurs `shader` et
   `shader_graph` en version 2), l'API des jeux passe à 22.
 - **Bac à sable** : la *Mirror room*, dans le coin nord-ouest de l'arène, a un sol poli, un mur
   rouge, une boule dorée, une lampe au plafond et une ouverture au sud ; sa sonde couvre la pièce.
+
+### Volumes d'irradiance
+
+- **Composant** : `LightProbeVolume`, comme les *Adaptive Probe Volumes* d'Unity : une boîte tournée
+  avec son entité, un espacement entre sondes (la boîte en prend autant qu'il en tient, deux au
+  moins et 64 au plus par axe, 16 384 en tout), une distance de fondu, une intensité, un nombre de
+  rebonds (1 à 4) et la lumière cuite (`irradiance`). La grille va d'un coin de la boîte à l'autre :
+  une boîte un peu en retrait des murs garde ses sondes dans la pièce.
+- **Asset** : `.dvxirradiance` (type `IrradianceVolume`, importeur `irradiance_volume`), écrit par
+  l'éditeur à côté de la scène et pris tel quel : la grille et, pour chaque sonde, l'éclairement en
+  **harmoniques sphériques d'ordre 2** (neuf coefficients de rouge, vert et bleu, en flottants),
+  déjà convolué par le lobe en cosinus et divisé par pi, comme l'irradiance du ciel est gardée
+  (`render::projectIrradiance`, `evaluateIrradiance`, testés sans GPU : un ciel uniforme rend partout
+  sa valeur, un ciel par-dessus éclaire le dessus et presque pas le dessous).
+- **Cuisson** : *Bake* dans l'inspecteur d'un volume cuit tous ceux de la scène. Chaque sonde est
+  capturée par six vues radiance de 16 pixels, trois sondes par image sur un jeu fixe de vues (le
+  renderer en garde 24), puis projetée en harmoniques sur le CPU. Une fois toutes les sondes d'un
+  passage faites, leur lumière part sur le GPU, et le passage suivant les voit : la lumière
+  rebondit autant de fois que les volumes le demandent. Pendant la cuisson, les volumes de la scène
+  sont remplacés par ceux du passage précédent (aucun au premier), et l'éditeur reste animé. Les
+  fichiers écrits, les volumes pointent vers leur lumière en une seule étape d'annulation. Les vues
+  radiance gardent les volumes (pas les sondes de réflexion) : une sonde de réflexion cuite après
+  un volume reflète la lumière qui a rebondi.
+- **Rendu** : `Renderer::createIrradianceVolume` copie les coefficients dans un buffer lu par
+  adresse, sept groupes de quatre nombres par sonde. Chaque image, les volumes que la caméra peut
+  voir sont envoyés, les plus petits d'abord, 16 au plus (`GpuSceneData::irradianceVolumes`). Dans
+  une boîte, le shader mêle les huit sondes autour de la surface : lue un peu au-dessus d'elle le
+  long de sa normale (0,3 cellule), pondérée en trilinéaire, et moins par les sondes qui se
+  trouvent derrière elle, qui peuvent être de l'autre côté d'un mur (`(cos + 1)² / 4 + 0,05`). Ce que
+  les volumes ne couvrent pas vient du ciel. Là où un volume assombrit la lumière ambiante sans
+  qu'une sonde de réflexion couvre la surface, le reflet du ciel s'assombrit d'autant : une pièce
+  fermée ne reflète pas un ciel éclatant. Les shaders des projets en profitent sans réimport de
+  plus (ils l'ont été au jalon 75).
+- **Bac à sable** : la salle aux miroirs a un volume de 9 × 5 × 9 sondes à deux rebonds, en retrait
+  de ses murs ; à cuire avant sa sonde de réflexion.
 
 ### Transparence et post-traitements
 
@@ -4480,6 +4518,11 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     préfiltrage GGX au chargement, sondes de la frame les plus petites d'abord, fondu et correction
     de parallaxe par la boîte ; *Bake* et *Bake All* dans l'inspecteur, boîte dans la vue ; la salle
     aux miroirs de l'arène.
+76. ✅ **Volumes d'irradiance** — composant `LightProbeVolume` et asset `.dvxirradiance` : sondes en
+    grille cuites dans l'éditeur en harmoniques sphériques d'ordre 2, plusieurs rebonds, trois
+    sondes par image ; lumière diffuse du volume à la place du ciel, sondes derrière la surface
+    moins écoutées, reflets du ciel assombris dans les pièces ; captures rendues par les vues qui
+    ne sont plus dessinées ; CI réparée (lavapipe, `/bigobj`) ; volume dans la salle aux miroirs.
 
 Ensuite, sans ordre figé : à choisir dans les pistes ci-dessous.
 
@@ -4629,6 +4672,11 @@ Ensuite, sans ordre figé : à choisir dans les pistes ci-dessous.
 - **Réflexions locales** : sondes recapturées pendant le jeu (au chargement, à la demande), plusieurs
   rebonds entre sondes, sondes en clusters pour les grandes scènes, compression BC6H des captures,
   SSR.
+- **Lumière indirecte, la suite** : validité des sondes cuites dans un mur (part de faces arrière
+  vues), visibilité par profondeur des sondes (comme DDGI), volumes et sondes mis à jour pendant le
+  jeu, lightmaps (second jeu d'UV à l'import, dépliage), objets émissifs qui éclairent par la
+  cuisson avec leur propre réglage, cuisson sur un worker avec sa progression dans la barre
+  d'état.
 - **Transparence** : résolution sans tri (OIT pondéré) pour les surfaces qui s'entrecroisent,
   ombres des surfaces transparentes, réfraction, tri par triangle plutôt que par instance.
 - **Post-traitements** : profondeur de champ, flou de mouvement, volumes qui mélangent leurs

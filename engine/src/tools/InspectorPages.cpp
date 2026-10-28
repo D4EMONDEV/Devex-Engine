@@ -291,6 +291,8 @@ private:
         return {icons::Footprints, colors.physics};
     case asset::AssetType::ReflectionProbe:
         return {icons::Globe, colors.environment};
+    case asset::AssetType::IrradianceVolume:
+        return {icons::Grid, colors.environment};
     default:
         return {icons::File, colors.neutral};
     }

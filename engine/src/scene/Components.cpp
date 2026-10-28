@@ -1,5 +1,8 @@
 #include <devex/scene/Components.hpp>
 
+#include <algorithm>
+#include <cmath>
+
 namespace devex::scene {
 
 DEVEX_REFLECT(Transform)
@@ -90,6 +93,28 @@ DEVEX_REFLECT(ReflectionProbe)
         .field("box_projection", &ReflectionProbe::boxProjection)
         .field("resolution", &ReflectionProbe::resolution)
         .field("capture", &ReflectionProbe::capture, {.assetType = "reflection_probe"});
+}
+
+DEVEX_REFLECT(LightProbeVolume)
+{
+    type.field("size", &LightProbeVolume::size)
+        .field("spacing", &LightProbeVolume::spacing)
+        .field("blend_distance", &LightProbeVolume::blendDistance)
+        .field("intensity", &LightProbeVolume::intensity)
+        .field("bounces", &LightProbeVolume::bounces)
+        .field("irradiance", &LightProbeVolume::irradiance, {.assetType = "irradiance_volume"});
+}
+
+std::array<std::uint32_t, 3> probeCounts(const LightProbeVolume& volume) noexcept
+{
+    const float spacing = std::max(volume.spacing, 0.05f);
+    std::array<std::uint32_t, 3> counts{};
+    for (int axis = 0; axis < 3; ++axis)
+    {
+        const float probes = std::round(std::max(volume.size[axis], 0.0f) / spacing) + 1.0f;
+        counts[static_cast<std::size_t>(axis)] = static_cast<std::uint32_t>(std::clamp(probes, 2.0f, 64.0f));
+    }
+    return counts;
 }
 
 } // namespace devex::scene

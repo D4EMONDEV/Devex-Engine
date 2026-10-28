@@ -45,7 +45,8 @@ class CoroutineScheduler;
 // 15: Camera gained its orthographic projection, which moved its fields; sprites.
 // 20: TilesetData gained its terrain sets, and its tiles their terrains.
 // 21: the 2D lights: sprites, tiles and fields of reflection gained what they need.
-// 22: the reflection probes: RenderWorld, RenderView and CapturedImage gained what they need.
+// 22: the reflection probes and the irradiance volumes: RenderWorld, RenderView and CapturedImage
+// gained what they need.
 inline constexpr std::uint32_t gameApiVersion = 22;
 
 enum class SystemPhase : std::uint8_t

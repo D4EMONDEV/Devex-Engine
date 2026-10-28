@@ -17,6 +17,7 @@ struct TextureTag;
 struct MaterialTag;
 struct ShaderTag;
 struct ReflectionProbeTag;
+struct IrradianceVolumeTag;
 // Refers to a mesh uploaded with Renderer::createMesh.
 using MeshHandle = core::Handle<MeshTag>;
 // Refers to a texture uploaded with Renderer::createTexture.
@@ -27,6 +28,8 @@ using MaterialHandle = core::Handle<MaterialTag>;
 using ShaderHandle = core::Handle<ShaderTag>;
 // Refers to the reflections of a probe created with Renderer::createReflectionProbe.
 using ReflectionProbeHandle = core::Handle<ReflectionProbeTag>;
+// Refers to the light of a volume created with Renderer::createIrradianceVolume.
+using IrradianceVolumeHandle = core::Handle<IrradianceVolumeTag>;
 
 // How the jagged edges of the image are smoothed.
 enum class Antialiasing : std::uint8_t
@@ -155,6 +158,20 @@ struct DEVEX_API RenderReflectionProbe
     float intensity = 1.0f;
     // Reflects what the walls of the box hold where they stand, rather than infinitely far.
     bool boxProjection = true;
+};
+
+// The light baked at the points of a grid in a box, which lights the surfaces inside it in place of the
+// sky. The grid spans the box from corner to corner. Where boxes overlap, the smallest one comes first;
+// each fades towards its edges over its blend distance into the volumes around it and the sky.
+struct DEVEX_API RenderIrradianceVolume
+{
+    IrradianceVolumeHandle volume;
+    // Where the box stands and how it is turned; a scale grows it.
+    math::Mat4 transform{1.0f};
+    // In meters along the axes of the transform, centered on it.
+    math::Vec3 size{10.0f};
+    float blendDistance = 0.5f;
+    float intensity = 1.0f;
 };
 
 // What an instance gives the instance uniforms of the shader of its material: nothing, so that
@@ -510,6 +527,7 @@ struct DEVEX_API RenderWorld
     std::vector<RenderLight> lights;
     RenderEnvironment environment;
     std::vector<RenderReflectionProbe> reflectionProbes;
+    std::vector<RenderIrradianceVolume> irradianceVolumes;
     std::vector<MeshInstance> meshes;
     // The bones of the skinned instances of the frame, each already holding the transform from the
     // space of its mesh to the world.
@@ -566,6 +584,8 @@ struct DEVEX_API RenderWorld
         std::vector<RenderLight> lightStorage = std::move(lights);
         std::vector<RenderReflectionProbe> probeStorage = std::move(reflectionProbes);
         probeStorage.clear();
+        std::vector<RenderIrradianceVolume> volumeStorage = std::move(irradianceVolumes);
+        volumeStorage.clear();
         std::vector<MeshInstance> meshStorage = std::move(meshes);
         std::vector<math::Mat4> boneStorage = std::move(boneMatrices);
         std::vector<math::Vec4> instanceParameterStorage = std::move(instanceParameters);
@@ -608,6 +628,7 @@ struct DEVEX_API RenderWorld
         *this = RenderWorld{};
         lights = std::move(lightStorage);
         reflectionProbes = std::move(probeStorage);
+        irradianceVolumes = std::move(volumeStorage);
         meshes = std::move(meshStorage);
         boneMatrices = std::move(boneStorage);
         instanceParameters = std::move(instanceParameterStorage);

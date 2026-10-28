@@ -218,6 +218,7 @@ target_sources(devex_asset
         src/asset/AnimatorData.cpp
         src/asset/NavMeshData.cpp
         src/asset/ReflectionProbeData.cpp
+        src/asset/IrradianceVolumeData.cpp
         src/asset/ThemeData.cpp
     PUBLIC
         FILE_SET HEADERS
@@ -250,6 +251,7 @@ target_sources(devex_asset
             include/devex/asset/AnimatorData.hpp
             include/devex/asset/NavMeshData.hpp
             include/devex/asset/ReflectionProbeData.hpp
+            include/devex/asset/IrradianceVolumeData.hpp
 )
 
 target_link_libraries(devex_asset
@@ -351,6 +353,7 @@ target_sources(devex_render
     PRIVATE
         src/render/Culling.cpp
         src/render/CubeMaps.cpp
+        src/render/SphericalHarmonics.cpp
         src/render/Light2D.cpp
         src/render/Lighting.cpp
         src/render/Lighting.hpp
@@ -389,6 +392,7 @@ target_sources(devex_render
         FILES
             include/devex/render/Culling.hpp
             include/devex/render/CubeMaps.hpp
+            include/devex/render/SphericalHarmonics.hpp
             include/devex/render/Light2D.hpp
             include/devex/render/Gpu.hpp
             include/devex/render/Photometry.hpp

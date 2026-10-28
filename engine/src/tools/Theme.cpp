@@ -111,9 +111,9 @@ ThemeMetrics g_metrics = deriveThemeMetrics(ThemeSettings{}, 1.0f);
 
 [[nodiscard]] bool isEngineComponent(std::string_view name) noexcept
 {
-    constexpr std::array<std::string_view, 74> engineComponents{
+    constexpr std::array<std::string_view, 75> engineComponents{
         "Transform",       "MeshRenderer",        "Camera",       "DirectionalLight",
-        "PointLight",      "SpotLight",           "Environment",  "ReflectionProbe", "RigidBody",
+        "PointLight",      "SpotLight",           "Environment",  "ReflectionProbe", "LightProbeVolume", "RigidBody",
         "BoxCollider",     "SphereCollider",      "CapsuleCollider", "CylinderCollider",
         "MeshCollider",    "CharacterController", "AudioSource",  "AudioListener",
         "SkinnedMeshRenderer", "Animator",        "Canvas",       "UiRect",
@@ -424,6 +424,10 @@ EntityIcon entityIcon(const scene::Scene& scene, scene::Entity entity)
     {
         return {icons::Globe, colors.environment};
     }
+    if (scene.has<scene::LightProbeVolume>(entity))
+    {
+        return {icons::Grid, colors.environment};
+    }
     if (scene.has<scene::Animator>(entity))
     {
         return {icons::Film, colors.animation};
@@ -571,6 +575,10 @@ EntityIcon componentIcon(std::string_view componentName)
     if (componentName == "ReflectionProbe")
     {
         return {icons::Globe, colors.environment};
+    }
+    if (componentName == "LightProbeVolume")
+    {
+        return {icons::Grid, colors.environment};
     }
     if (componentName == "RigidBody" || componentName == "RigidBody2D")
     {

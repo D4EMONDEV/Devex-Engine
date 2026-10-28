@@ -229,6 +229,32 @@ struct DEVEX_API ReflectionProbe
 };
 DEVEX_DECLARE_ENGINE_REFLECTION(ReflectionProbe);
 
+// The light at the points of a grid in a box, baked by the editor, which lights the surfaces inside
+// the box in place of the sky: a closed room grows dark, a red wall reddens the floor, as Unity's light
+// probe volumes. Where boxes overlap, the smallest one wins, and each fades towards its edges into the
+// volumes around it and the sky. Baking writes the light next to the scene.
+struct DEVEX_API LightProbeVolume
+{
+    // The box it fills, in meters, centered on its entity and turned with it.
+    math::Vec3 size{10.0f, 4.0f, 10.0f};
+    // Meters between two probes: the box takes as many as fit, two at least along each axis. Closer
+    // probes follow light that changes quickly, and take longer to bake.
+    float spacing = 1.0f;
+    // How far inside its box it fades out, in meters.
+    float blendDistance = 0.5f;
+    // Times the light it gives.
+    float intensity = 1.0f;
+    // How many times the light bounces off the surfaces when baked: 1 brings the light that reached a
+    // surface once, each more one bake of every probe more.
+    std::int32_t bounces = 2;
+    // The light baked by the editor.
+    asset::AssetId irradiance;
+};
+DEVEX_DECLARE_ENGINE_REFLECTION(LightProbeVolume);
+
+// The probes of a volume along each axis, for its box and its spacing, as baking places them.
+[[nodiscard]] DEVEX_API std::array<std::uint32_t, 3> probeCounts(const LightProbeVolume& volume) noexcept;
+
 } // namespace devex::scene
 
 template <>

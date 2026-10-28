@@ -1469,3 +1469,19 @@ intensity = 1
 box_projection = true
 resolution = "256"
 capture = asset("94ef8ee8-7747-41d0-a4f9-3c7c448819dd")
+
+[entity uuid="f9dcfb1e-64ac-41ec-9326-cab1c203e11e" name="Room light volume"]
+parent = "55b48e2c-ec82-43af-ac22-35424d5e12ed"
+
+[component type="Transform"]
+position = vec3(0, 1.9, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="LightProbeVolume"]
+size = vec3(7.4, 3.6, 7.4)
+spacing = 0.9
+blend_distance = 0.3
+intensity = 1
+bounces = 2
+irradiance = asset("00000000-0000-0000-0000-000000000000")

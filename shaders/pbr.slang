@@ -273,8 +273,85 @@ public float4 probeReflection(SceneData* scene, float3 position, float3 reflecte
     return float4(light, covered);
 }
 
+// What the harmonics of a probe of a volume give a surface facing a direction of unit length.
+float3 probeIrradiance(float4* probe, float3 n)
+{
+    float c[28];
+    for (uint group = 0; group < 7; ++group)
+    {
+        const float4 values = probe[group];
+        c[group * 4] = values.x;
+        c[group * 4 + 1] = values.y;
+        c[group * 4 + 2] = values.z;
+        c[group * 4 + 3] = values.w;
+    }
+    const float basis[9] = {0.282095, 0.488603 * n.y, 0.488603 * n.z, 0.488603 * n.x, 1.092548 * n.x * n.y,
+                            1.092548 * n.y * n.z, 0.315392 * (3.0 * n.z * n.z - 1.0), 1.092548 * n.x * n.z,
+                            0.546274 * (n.x * n.x - n.y * n.y)};
+    float3 light = float3(0.0);
+    for (uint index = 0; index < 9; ++index)
+    {
+        light += float3(c[index * 3], c[index * 3 + 1], c[index * 3 + 2]) * basis[index];
+    }
+    return max(light, float3(0.0));
+}
+
+// The light the irradiance volumes around a surface give it, divided by pi as the irradiance of the
+// sky is, and how much of it they cover, from 0 to 1. Each volume mixes the eight probes around the
+// surface, read a little off it along its normal, and gives less weight to those behind it, which may
+// stand on the other side of a wall.
+public float4 volumeIrradiance(SceneData* scene, float3 position, float3 normal)
+{
+    float3 light = float3(0.0);
+    float covered = 0.0;
+    // The loop ends with the list, the same for every pixel, as that of the reflection probes.
+    for (uint index = 0; index < scene.irradianceVolumeCount; ++index)
+    {
+        const IrradianceVolume volume = scene.irradianceVolumes[index];
+        const float3 local = mul(volume.worldToBox, float4(position, 1.0)).xyz;
+        const float3 inside = volume.halfSize - abs(local);
+        const float edge = min(inside.x, min(inside.y, inside.z));
+        if (edge <= 0.0 || covered >= 0.999)
+        {
+            continue;
+        }
+        const float weight = volume.blendDistance > 0.0 ? saturate(edge / volume.blendDistance) : 1.0;
+        const float3 counts = float3(float(volume.countX), float(volume.countY), float(volume.countZ));
+        const float3 cell = volume.halfSize * 2.0 / (counts - 1.0);
+        const float3 localNormal = mul((float3x3)volume.worldToBox, normal);
+        const float3 moved = local + localNormal * volume.normalBias * min(cell.x, min(cell.y, cell.z));
+        const float3 grid = clamp((moved + volume.halfSize) / cell, float3(0.0), counts - 1.0);
+        const uint3 base = min(uint3(floor(grid)), uint3(volume.countX, volume.countY, volume.countZ) - 2);
+        const float3 fraction = grid - float3(base);
+        float3 sum = float3(0.0);
+        float total = 0.0;
+        for (uint corner = 0; corner < 8; ++corner)
+        {
+            const uint3 offset = uint3(corner & 1, (corner >> 1) & 1, (corner >> 2) & 1);
+            const uint3 at = base + offset;
+            const float3 trilinear = select(offset == uint3(1), fraction, 1.0 - fraction);
+            const float3 toProbe = (-volume.halfSize + float3(at) * cell) - local;
+            const float distance = length(toProbe);
+            const float facing = distance > 1e-4 ? (dot(toProbe / distance, localNormal) + 1.0) * 0.5 : 1.0;
+            const float probeWeight = trilinear.x * trilinear.y * trilinear.z * (facing * facing + 0.05);
+            const uint probe = at.x + volume.countX * (at.y + volume.countY * at.z);
+            sum += probeIrradiance(volume.probes + probe * 7, normal) * probeWeight;
+            total += probeWeight;
+        }
+        const float share = (1.0 - covered) * weight;
+        light += (total > 0.0 ? sum / total : float3(0.0)) * volume.intensity * share;
+        covered += share;
+    }
+    return float4(light, covered);
+}
+
+float luminanceOf(float3 color)
+{
+    return dot(color, float3(0.2126, 0.7152, 0.0722));
+}
+
 // The light of the sky, ambient and reflected; the reflection probes around the surface take the
-// place of the sky in its reflections.
+// place of the sky in its reflections, and the irradiance volumes in its ambient light.
 public float3 environmentLight(SceneData* scene, Surface surface)
 {
     const float NoV = saturate(dot(surface.normal, surface.view));
@@ -282,19 +359,24 @@ public float3 environmentLight(SceneData* scene, Surface surface)
     const float angle = -scene.environmentRotation;
     const float3 sky = scene.environmentColor * scene.environmentIntensity;
 
-    const float3 irradiance =
-        irradianceEnvironment.SampleLevel(clampSampler, rotateAroundY(surface.normal, angle), 0.0).rgb;
+    const float3 skyIrradiance =
+        irradianceEnvironment.SampleLevel(clampSampler, rotateAroundY(surface.normal, angle), 0.0).rgb * sky;
+    const float4 volumes = volumeIrradiance(scene, surface.position, surface.normal);
+    const float3 irradiance = volumes.rgb + skyIrradiance * (1.0 - volumes.a);
     const float lod = surface.roughness * (scene.specularMipCount - 1.0);
     const float4 probes = probeReflection(scene, surface.position, reflected, lod);
     float3 prefiltered = probes.rgb;
     if (probes.a < 0.999)
     {
+        // Where a volume darkens the ambient light and no probe reflects the room, the sky it still
+        // reflects darkens as much: a closed room does not mirror a bright sky.
+        const float darkened = volumes.a > 0.0 ? saturate(luminanceOf(irradiance) / max(luminanceOf(skyIrradiance), 1e-4)) : 1.0;
         prefiltered += specularEnvironment.SampleLevel(clampSampler, rotateAroundY(reflected, angle), lod).rgb * sky *
-                       (1.0 - probes.a);
+                       (1.0 - probes.a) * darkened;
     }
     const float2 brdf = brdfLut.SampleLevel(clampSampler, float2(NoV, surface.roughness), 0.0).rg;
 
-    const float3 diffuse = surface.diffuseColor * irradiance * sky;
+    const float3 diffuse = surface.diffuseColor * irradiance;
     const float3 specular = prefiltered * (surface.f0 * brdf.x + brdf.y);
     return (diffuse + specular) * surface.occlusion;
 }

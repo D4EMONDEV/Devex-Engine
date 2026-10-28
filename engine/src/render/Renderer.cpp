@@ -94,6 +94,18 @@ void Renderer::destroyReflectionProbe(ReflectionProbeHandle probe)
     m_implementation->destroyReflectionProbe(probe);
 }
 
+core::Result<IrradianceVolumeHandle> Renderer::createIrradianceVolume(const asset::IrradianceVolumeData& volume)
+{
+    DEVEX_ASSERT(m_implementation != nullptr);
+    return m_implementation->createIrradianceVolume(volume);
+}
+
+void Renderer::destroyIrradianceVolume(IrradianceVolumeHandle volume)
+{
+    DEVEX_ASSERT(m_implementation != nullptr);
+    m_implementation->destroyIrradianceVolume(volume);
+}
+
 MaterialHandle Renderer::createMaterial(const MaterialDesc& material)
 {
     DEVEX_ASSERT(m_implementation != nullptr);

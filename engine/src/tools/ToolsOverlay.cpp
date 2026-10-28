@@ -435,7 +435,8 @@ void updateEditor(ToolsState& state, scene::Scene& scene, PlayState playState)
     // frames later, and the faces of the probes being baked come back some frames after they are drawn.
     state.animating = state.animating || state.flying || state.orbiting || state.panning || state.input.anyDown() ||
                       state.animationPreviewPlaying || state.pickQuery.has_value() || state.awaitedPick != 0 ||
-                      (state.audio != nullptr && state.audio->isPreviewing()) || state.probeBake.has_value();
+                      (state.audio != nullptr && state.audio->isPreviewing()) || state.probeBake.has_value() ||
+                      state.volumeBake.has_value();
 
     // Gameplay receives the devices the view of the game uses, and the editor camera flies with them.
     const bool playing = playState != PlayState::Editing;
@@ -747,11 +748,28 @@ void ToolsOverlay::prepareRender(scene::Scene& scene, render::RenderWorld& world
         }
     }
     detail::prepareProbeBake(state, scene, world);
+    detail::prepareVolumeBake(state, world);
 }
 
 void ToolsOverlay::receiveCaptures(std::vector<render::CapturedImage>& captures)
 {
     detail::receiveProbeFaces(*m_state, captures);
+    detail::receiveVolumeFaces(*m_state, captures);
+}
+
+void ToolsOverlay::bakeIrradianceVolumes(scene::Scene& scene)
+{
+    detail::bakeIrradianceVolumes(*m_state, scene);
+}
+
+bool ToolsOverlay::isBakingVolumes() const noexcept
+{
+    return m_state->volumeBake.has_value();
+}
+
+const std::string& ToolsOverlay::volumeBakeStatus() const noexcept
+{
+    return m_state->volumeBakeStatus;
 }
 
 void ToolsOverlay::bakeReflectionProbes(scene::Scene& scene)

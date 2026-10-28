@@ -654,6 +654,7 @@ core::Result<std::vector<asset::AssetId>> assetReferences(asset::AssetType type,
     // A shader carries its compiled code, a reflection probe its faces.
     case asset::AssetType::Shader:
     case asset::AssetType::ReflectionProbe:
+    case asset::AssetType::IrradianceVolume:
         break;
     }
     std::erase_if(ids, [](asset::AssetId id) { return !id.isValid(); });

@@ -14,6 +14,7 @@
 #include <devex/asset/SpriteData.hpp>
 #include <devex/asset/TextureData.hpp>
 #include <devex/asset/AnimatorData.hpp>
+#include <devex/asset/IrradianceVolumeData.hpp>
 #include <devex/asset/NavMeshData.hpp>
 #include <devex/asset/ReflectionProbeData.hpp>
 #include <devex/asset/ShaderData.hpp>
@@ -62,6 +63,7 @@ inline constexpr std::string_view artifactExtension = ".dvxasset";
 // Also the contents of a .dvxnavmesh file.
 [[nodiscard]] DEVEX_API std::vector<std::byte> encodeNavMesh(const NavMeshData& navMesh);
 [[nodiscard]] DEVEX_API std::vector<std::byte> encodeReflectionProbe(const ReflectionProbeData& probe);
+[[nodiscard]] DEVEX_API std::vector<std::byte> encodeIrradianceVolume(const IrradianceVolumeData& volume);
 [[nodiscard]] DEVEX_API std::vector<std::byte> encodeTranslation(const TranslationData& translation);
 [[nodiscard]] DEVEX_API std::vector<std::byte> encodeShader(const ShaderData& shader);
 
@@ -84,6 +86,7 @@ inline constexpr std::string_view artifactExtension = ".dvxasset";
 [[nodiscard]] DEVEX_API core::Result<AnimatorData> decodeAnimator(std::span<const std::byte> bytes);
 [[nodiscard]] DEVEX_API core::Result<NavMeshData> decodeNavMesh(std::span<const std::byte> bytes);
 [[nodiscard]] DEVEX_API core::Result<ReflectionProbeData> decodeReflectionProbe(std::span<const std::byte> bytes);
+[[nodiscard]] DEVEX_API core::Result<IrradianceVolumeData> decodeIrradianceVolume(std::span<const std::byte> bytes);
 [[nodiscard]] DEVEX_API core::Result<TranslationData> decodeTranslation(std::span<const std::byte> bytes);
 [[nodiscard]] DEVEX_API core::Result<ShaderData> decodeShader(std::span<const std::byte> bytes);
 

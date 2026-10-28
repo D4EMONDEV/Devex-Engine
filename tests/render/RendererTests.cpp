@@ -1120,6 +1120,94 @@ TEST_CASE("Radiance views capture light in nits, and reflection probes take the 
     CHECK(capture.errors().empty());
 }
 
+TEST_CASE("Irradiance volumes take the place of the sky in the light surfaces take around", "[render][gpu][probe]")
+{
+    const ErrorCapture capture;
+    {
+        auto platform = devex::platform::Platform::create();
+        REQUIRE(platform.has_value());
+        auto window = platform->createWindow({.width = 320, .height = 240, .vulkan = true, .hidden = true});
+        REQUIRE(window.has_value());
+        auto renderer = devex::render::Renderer::create(*platform, *window, {.validation = true});
+        if (!renderer)
+        {
+            FAIL(std::format("{}", renderer.error()));
+        }
+        // A rough white cube 3 m in front of the camera, under a white sky.
+        auto cube = renderer->createMesh(devex::asset::makeCube());
+        REQUIRE(cube.has_value());
+        const devex::render::MaterialHandle white = renderer->createMaterial({.roughnessFactor = 1.0f});
+        const devex::math::Mat4 cubeTransform =
+            devex::math::translate(devex::math::Mat4{1.0f}, devex::math::Vec3{0.0f, 0.0f, -3.0f});
+        // A volume whose probes all saw a dim red room: 400 nits of red, whichever way a surface faces.
+        devex::asset::IrradianceVolumeData red{.countX = 2, .countY = 2, .countZ = 2};
+        red.coefficients.assign(red.probeCount() * devex::asset::irradianceCoefficients, 0.0f);
+        for (std::size_t probe = 0; probe < red.probeCount(); ++probe)
+        {
+            red.coefficients[probe * devex::asset::irradianceCoefficients] = 400.0f / 0.282095f;
+        }
+        auto volume = renderer->createIrradianceVolume(red);
+        REQUIRE(volume.has_value());
+
+        devex::render::RenderCamera camera;
+        camera.autoExposure = false;
+        camera.ev100 = 12.0f;
+        camera.tonemapper = devex::render::Tonemapper::None;
+        camera.antialiasing = devex::render::Antialiasing::None;
+        camera.ambientOcclusion = 0.0f;
+        camera.bloom = 0.0f;
+
+        std::array<std::uint64_t, 3> requests{};
+        std::vector<devex::render::CapturedImage> captured;
+        for (int frame = 0; frame < 18; ++frame)
+        {
+            devex::render::RenderWorld& world = renderer->beginFrame();
+            world.camera = camera;
+            world.environment.intensity = 2000.0f;
+            world.meshes.push_back({.mesh = *cube, .material = white, .transform = cubeTransform, .objectId = 1});
+            // Without a volume, then with one around the cube, then with one elsewhere.
+            if (frame >= 6)
+            {
+                const devex::math::Vec3 where = frame < 12 ? devex::math::Vec3{0.0f, 0.0f, -3.0f} : devex::math::Vec3{50.0f, 0.0f, 0.0f};
+                world.irradianceVolumes.push_back({.volume = *volume,
+                                                   .transform = devex::math::translate(devex::math::Mat4{1.0f}, where),
+                                                   .size = devex::math::Vec3{6.0f}});
+            }
+            REQUIRE(renderer->endFrame());
+            if (frame % 6 == 2)
+            {
+                requests[static_cast<std::size_t>(frame / 6)] = renderer->requestCapture(160, 160);
+            }
+            for (devex::render::CapturedImage& image : renderer->takeCaptures())
+            {
+                captured.push_back(std::move(image));
+            }
+        }
+        std::array<std::array<std::uint8_t, 3>, 3> middles{};
+        for (std::size_t index = 0; index < requests.size(); ++index)
+        {
+            const auto found = std::ranges::find(captured, requests[index], &devex::render::CapturedImage::request);
+            REQUIRE(found != captured.end());
+            const std::size_t middle = (std::size_t{60} * 160 + 80) * 4;
+            middles[index] = {found->rgba[middle], found->rgba[middle + 1], found->rgba[middle + 2]};
+        }
+        // Lit by the white sky, then by the dim red of the volume, then by the sky again.
+        CHECK(middles[0][0] > 90);
+        CHECK(std::abs(int{middles[0][0]} - int{middles[0][1]}) < 8);
+        CHECK(middles[1][0] > 10);
+        CHECK(middles[1][0] < middles[0][0]);
+        CHECK(middles[1][1] * 3 < middles[1][0]);
+        CHECK(middles[2] == middles[0]);
+        renderer->destroyIrradianceVolume(*volume);
+    }
+
+    for (const std::string& error : capture.errors())
+    {
+        UNSCOPED_INFO(error);
+    }
+    CHECK(capture.errors().empty());
+}
+
 TEST_CASE("Particles and ribbons blend among the blended surfaces without validation errors", "[render][gpu]")
 {
     const ErrorCapture capture;
