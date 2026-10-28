@@ -21,7 +21,8 @@ class EditorApplication final : public devex::runtime::Application
 
 } // namespace
 
-// devex-editor [project.dvxproj]: opens the project, or the welcome screen without one.
+// devex-editor [project.dvxproj] [--screenshot <picture.png>]: opens the project, or the welcome
+// screen without one; with --screenshot, writes a picture of the window once it is drawn, and quits.
 // devex-editor --export <project.dvxproj> [--output <folder>] [--configuration <Release|Debug>]:
 // exports the game without opening a window.
 int main(int argc, char** argv)
@@ -37,10 +38,17 @@ int main(int argc, char** argv)
         .height = 900,
         .editor = true,
     };
-    if (argc > 1)
+    // Arguments come in the system code page, which std::filesystem::path converts.
+    for (int index = 1; index < argc; ++index)
     {
-        // Arguments come in the system code page, which std::filesystem::path converts.
-        config.project = std::filesystem::path(argv[1]);
+        if (std::string_view(argv[index]) == "--screenshot" && index + 1 < argc)
+        {
+            config.screenshot = std::filesystem::path(argv[++index]);
+        }
+        else if (config.project.empty())
+        {
+            config.project = std::filesystem::path(argv[index]);
+        }
     }
 
     // The log of the editor stays beside its settings, with the report and the minidump of a crash.

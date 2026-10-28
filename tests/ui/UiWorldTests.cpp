@@ -13,6 +13,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
+#include <iterator>
 #include <array>
 #include <chrono>
 #include <filesystem>
@@ -571,6 +572,34 @@ TEST_CASE("A field being edited draws its selection, its letters and its cursor"
     }
 }
 
+TEST_CASE("A field being edited rings itself with its focus colour", "[ui][world][field]")
+{
+    Form form;
+    form.scene.get<UiImage>(form.field).cornerRadius = 4.0f;
+    form.scene.get<devex::scene::UiInput>(form.field).focusColor = Vec4{0.3f, 0.6f, 1.0f, 1.0f};
+    form.scene.get<devex::scene::UiInput>(form.field).focusWidth = 2.0f;
+    UiWorld world;
+    world.setFonts(&fontRef);
+    world.update(form.scene, window, UiInput{}, frame);
+    const auto rings = [&] {
+        devex::render::RenderWorld drawn;
+        world.build(form.scene, devex::ui::DrawContext{.fonts = &fontRef}, drawn);
+        std::vector<devex::render::UiDraw> found;
+        std::ranges::copy_if(drawn.uiDraws, std::back_inserter(found),
+                             [](const devex::render::UiDraw& draw) { return draw.kind == devex::render::UiDrawKind::Outline; });
+        return found;
+    };
+    CHECK(rings().empty());
+
+    clickAt(world, form.scene, Vec2{300.0f, 120.0f});
+    const std::vector<devex::render::UiDraw> ringed = rings();
+    REQUIRE(ringed.size() == 1);
+    // Along the edges of the field and the curve of its corners, two units wide.
+    CHECK(ringed[0].rect == Vec4{100.0f, 100.0f, 500.0f, 150.0f});
+    CHECK(ringed[0].radius == Catch::Approx(4.0f));
+    CHECK(ringed[0].sharpness == Catch::Approx(2.0f));
+}
+
 TEST_CASE("The text of a dropdown stands off its left edge and leaves room for its arrow", "[ui][world][controls]")
 {
     // Where the letters of the chosen option start and end, aligned one way or the other.
@@ -1042,6 +1071,37 @@ TEST_CASE("An image shows a sprite, the part of its texture it covers, in its sh
     CHECK(sliced.uiVertices[2].position.x == Catch::Approx(8.0f));
     CHECK(sliced.uiVertices[2].uv.x == Catch::Approx(0.25f + 0.25f * 0.25f));
     CHECK(sliced.uiVertices[2].uv.y == Catch::Approx(0.5f * 0.25f));
+}
+
+TEST_CASE("An image casts its shadow under it and draws its outline over it", "[ui][draw]")
+{
+    Scene scene;
+    const Entity panel = placedElement(scene, {10.0f, 20.0f}, {110.0f, 70.0f});
+    scene.add<UiImage>(panel, UiImage{.color = {0.2f, 0.2f, 0.2f, 1.0f},
+                                      .cornerRadius = 4.0f,
+                                      .outlineColor = {1.0f, 1.0f, 1.0f, 0.1f},
+                                      .outlineWidth = 1.0f,
+                                      .shadowColor = {0.0f, 0.0f, 0.0f, 0.5f},
+                                      .shadowSize = 8.0f,
+                                      .shadowOffset = {0.0f, 3.0f}});
+    const devex::render::RenderWorld drawn = drawOne(scene, panel, devex::ui::DrawContext{});
+    REQUIRE(drawn.uiDraws.size() == 3);
+    // The shadow, moved down, fades over eight units each side of its outline: its quad reaches as far.
+    CHECK(drawn.uiDraws[0].kind == devex::render::UiDrawKind::Shadow);
+    CHECK(drawn.uiDraws[0].rect == Vec4{10.0f, 23.0f, 110.0f, 73.0f});
+    CHECK(drawn.uiDraws[0].radius == Catch::Approx(4.0f));
+    CHECK(drawn.uiDraws[0].sharpness == Catch::Approx(8.0f));
+    CHECK(drawn.uiVertices[0].position == Vec2{2.0f, 15.0f});
+    CHECK(drawn.uiVertices[2].position == Vec2{118.0f, 81.0f});
+    // The panel over it, then its border.
+    CHECK(drawn.uiDraws[1].kind == devex::render::UiDrawKind::RoundedQuad);
+    CHECK(drawn.uiDraws[2].kind == devex::render::UiDrawKind::Outline);
+    CHECK(drawn.uiDraws[2].rect == Vec4{10.0f, 20.0f, 110.0f, 70.0f});
+    CHECK(drawn.uiDraws[2].sharpness == Catch::Approx(1.0f));
+
+    // Without colours, neither.
+    scene.get<UiImage>(panel) = UiImage{.cornerRadius = 4.0f, .outlineWidth = 1.0f, .shadowSize = 8.0f};
+    CHECK(drawOne(scene, panel, devex::ui::DrawContext{}).uiDraws.size() == 1);
 }
 
 TEST_CASE("A plot draws its values as a line or as bars, between its bounds", "[ui][draw]")

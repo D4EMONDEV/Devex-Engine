@@ -85,6 +85,7 @@ public:
     // Of the main image, or of the view of that id.
     [[nodiscard]] std::uint64_t requestCapture(std::uint32_t maxWidth, std::uint32_t maxHeight,
                                                std::optional<std::uint32_t> view = std::nullopt);
+    [[nodiscard]] std::uint64_t requestWindowCapture();
     [[nodiscard]] std::vector<CapturedImage> takeCaptures();
 
     [[nodiscard]] RendererStats stats() const noexcept;
@@ -250,6 +251,11 @@ private:
         std::optional<std::uint64_t> captureRequest;
         math::Extent2D captureExtent{1, 1};
         VkFormat captureFormat = VK_FORMAT_UNDEFINED;
+        // The whole window the frame presents, interface and tools included, for a window capture.
+        std::optional<Buffer> windowReadback;
+        std::optional<std::uint64_t> windowRequest;
+        math::Extent2D windowExtent{1, 1};
+        VkFormat windowFormat = VK_FORMAT_UNDEFINED;
         // The copies the frame recorded, whose staging buffers wait for the frame to complete.
         std::vector<PendingUpload> uploads;
     };
@@ -483,6 +489,7 @@ private:
     void readPickResult(FrameContext& frame);
     // Keeps the picture the frame captured, now that it completed.
     void readCapture(FrameContext& frame);
+    void readWindowCapture(FrameContext& frame);
     // Returns the number of draw calls recorded. With a view, records it into its image rather than
     // the main frame with its tools.
     [[nodiscard]] core::Result<std::uint32_t> recordFrame(FrameContext& frame, std::uint32_t frameSlot,
@@ -756,6 +763,8 @@ private:
         std::optional<std::uint32_t> view;
     };
     std::deque<CaptureRequest> m_captureRequests;
+    // A picture of the whole window, taken by the next frame presented.
+    std::optional<std::uint64_t> m_windowCaptureRequest;
     std::uint64_t m_nextCapture = 1;
     std::vector<CapturedImage> m_captures;
     std::uint32_t m_lastDrawCalls = 0;

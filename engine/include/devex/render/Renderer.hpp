@@ -211,6 +211,9 @@ public:
     [[nodiscard]] std::uint64_t requestCapture(std::uint32_t maxWidth, std::uint32_t maxHeight);
     // The same, of the RenderWorld::views entry of that id, the next frame that draws it.
     [[nodiscard]] std::uint64_t requestViewCapture(std::uint32_t view, std::uint32_t maxWidth, std::uint32_t maxHeight);
+    // A picture of the whole window as the next frame presents it, interface and tools included, at
+    // its size; an empty picture where the display cannot be read back.
+    [[nodiscard]] std::uint64_t requestWindowCapture();
     // The pictures received since the last call, once the GPU has completed their frames, usually
     // two frames later.
     [[nodiscard]] std::vector<CapturedImage> takeCaptures();

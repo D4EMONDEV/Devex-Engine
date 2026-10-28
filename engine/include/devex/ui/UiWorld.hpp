@@ -92,6 +92,9 @@ struct DEVEX_API TooltipStyle
     float size = 15.0f;
     float padding = 6.0f;
     float cornerRadius = 4.0f;
+    // A soft shadow under it, fading over `shadowSize` pixels; clear, none.
+    math::Vec4 shadowColor{0.0f, 0.0f, 0.0f, 0.0f};
+    float shadowSize = 0.0f;
 };
 
 // What the pointer carries to the drop targets: a UiDragSource taken away, or what a drag that
@@ -351,6 +354,14 @@ private:
     void updateBindings(scene::Scene& scene);
     void updateHover(const scene::Scene& scene, const UiInput& input);
     void updateScroll(scene::Scene& scene, const UiInput& input);
+    // Sends a list (or an area of text) gliding to an offset, from where it is or from where it
+    // was already going.
+    void glide(scene::Scene& scene, scene::Entity entity, bool area, math::Vec2 to);
+    // Moves what glides a step closer to where it goes; something else that moved it stops it.
+    void updateGlides(scene::Scene& scene, float seconds);
+    // Eases the scrollbars towards the pointer, wider on the bar it is on.
+    void updateScrollbars(const scene::Scene& scene, const UiInput& input, float seconds);
+    [[nodiscard]] ScrollbarLook scrollbarLook(scene::Entity entity, int axis) const;
     void updateNavigation(const scene::Scene& scene, const UiInput& input);
     void updateFields(scene::Scene& scene, const UiInput& input, core::Duration delta);
     // Drags the slider under the pointer and moves the one that has the focus. Answers whether
@@ -449,6 +460,26 @@ private:
     Drag m_drag;
     // The splitter whose bar the pointer rests on, which lights up.
     scene::Entity m_barHover;
+    // The scrollbars the pointer is on or has just left (axis 1 vertical, 0 horizontal), and how
+    // far they have widened.
+    struct ScrollbarHover
+    {
+        scene::Entity entity;
+        int axis = 1;
+        float amount = 0.0f;
+        bool on = false;
+    };
+    std::vector<ScrollbarHover> m_scrollbarHovers;
+    // The lists and areas of text gliding to where the wheel or their track sent them: their
+    // offset as last written, and where it goes.
+    struct Glide
+    {
+        scene::Entity entity;
+        bool area = false;
+        math::Vec2 shown{0.0f};
+        math::Vec2 target{0.0f};
+    };
+    std::vector<Glide> m_glides;
     // The header cell pressed, which sorts its table if the pointer is let go on it.
     scene::Entity m_headerPressed;
     std::size_t m_headerColumn = 0;

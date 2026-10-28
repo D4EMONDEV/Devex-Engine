@@ -887,6 +887,7 @@ core::Result<void> VulkanRenderer::endFrame()
     reportPassTimes(frame);
     readPickResult(frame);
     readCapture(frame);
+    readWindowCapture(frame);
     releaseRetiredResources();
     updateExposure(frame);
     // The TIME of shaders, which starts over every hour so that it keeps its precision.
@@ -4964,11 +4965,14 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
         }
         vkCmdEndRendering(commands);
     };
+    // An image of a display that does not encode its colours itself takes them encoded by the
+    // interface: drawn as light, they would come out far too dark.
+    const bool targetEncodes = targetFormat == VK_FORMAT_B8G8R8A8_SRGB || targetFormat == VK_FORMAT_R8G8B8A8_SRGB;
     if (drawUi)
     {
         graph.addPass("Interface", {{target, ImageAccess::ColorAttachment}}, [&](VkCommandBuffer commands) {
             drawInterface(commands, graph.view(target), VK_ATTACHMENT_LOAD_OP_LOAD, math::Vec4{0.0f}, extent,
-                          m_world.uiDraws, 0, *m_uiPipeline, false);
+                          m_world.uiDraws, 0, *m_uiPipeline, !targetEncodes);
         });
     }
     for (std::size_t surface = 0; surface < surfaceIndices.size(); ++surface)
@@ -4976,12 +4980,13 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
         const RenderGraph::ImageId image = *created[surfaceIndices[surface]];
         graph.addPass("Interface surface", {{image, ImageAccess::ColorAttachment}}, [&, surface, image](VkCommandBuffer commands) {
             const UiSurface& drawn = m_world.uiSurfaces[surface];
-            // Written through the view the tools read, in the colours of the display.
+            // Written in the colours of the display, through the view the tools read, or straight into
+            // an image that does not encode them.
             const VkImageView alternate = graph.image(image)->alternateView();
             drawInterface(commands, alternate != VK_NULL_HANDLE ? alternate : graph.view(image), VK_ATTACHMENT_LOAD_OP_CLEAR,
                           drawn.clearColor, math::Extent2D{std::max(drawn.size.width, 1u), std::max(drawn.size.height, 1u)},
                           drawn.draws, surfaceIndexBases[surface], alternate != VK_NULL_HANDLE ? *m_uiDisplayPipeline : *m_uiPipeline,
-                          alternate != VK_NULL_HANDLE);
+                          alternate != VK_NULL_HANDLE || !targetEncodes);
         });
     }
 
@@ -5033,6 +5038,45 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
         });
     }
 
+    // The window as it will be shown, read back after everything is drawn into it.
+    if (extraView == nullptr && m_windowCaptureRequest)
+    {
+        const VkDeviceSize bytes = VkDeviceSize{4} * windowExtent.width * windowExtent.height;
+        if (m_swapchain->readable() && (!frame.windowReadback || frame.windowReadback->size() < bytes))
+        {
+            core::Result<Buffer> readback =
+                Buffer::create(m_allocator, {.size = bytes, .usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT, .hostVisible = true});
+            if (readback)
+            {
+                frame.windowReadback = std::move(*readback);
+            }
+            else
+            {
+                DEVEX_LOG_WARNING("The window cannot be read back: {}", readback.error());
+                frame.windowReadback.reset();
+            }
+        }
+        frame.windowRequest = std::exchange(m_windowCaptureRequest, std::nullopt);
+        frame.windowExtent = windowExtent;
+        frame.windowFormat = targetFormat;
+        if (m_swapchain->readable() && frame.windowReadback)
+        {
+            graph.addPass("Window readback", {{backbuffer, ImageAccess::TransferRead}}, [&](VkCommandBuffer commands) {
+                const VkBufferImageCopy copy{
+                    .imageSubresource = {.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .layerCount = 1},
+                    .imageExtent = {windowExtent.width, windowExtent.height, 1},
+                };
+                vkCmdCopyImageToBuffer(commands, graph.handle(backbuffer), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                                       frame.windowReadback->handle(), 1, &copy);
+            });
+        }
+        else
+        {
+            // Nothing to read: the request is answered with an empty picture.
+            frame.windowReadback.reset();
+        }
+    }
+
     if (extraView == nullptr)
     {
         graph.addPass("Present", {{backbuffer, ImageAccess::Present}}, {});
@@ -5069,6 +5113,14 @@ std::uint64_t VulkanRenderer::requestCapture(std::uint32_t maxWidth, std::uint32
 {
     const std::uint64_t id = m_nextCapture++;
     m_captureRequests.push_back({id, std::max(maxWidth, 1u), std::max(maxHeight, 1u), view});
+    return id;
+}
+
+std::uint64_t VulkanRenderer::requestWindowCapture()
+{
+    const std::uint64_t id = m_nextCapture++;
+    // A request not yet taken by a frame is answered along with this one.
+    m_windowCaptureRequest = id;
     return id;
 }
 
@@ -5119,6 +5171,32 @@ void VulkanRenderer::readCapture(FrameContext& frame)
     }
     m_captures.push_back(std::move(image));
     frame.captureRequest.reset();
+}
+
+void VulkanRenderer::readWindowCapture(FrameContext& frame)
+{
+    if (!frame.windowRequest)
+    {
+        return;
+    }
+    CapturedImage image{.request = *std::exchange(frame.windowRequest, std::nullopt)};
+    if (frame.windowReadback)
+    {
+        image.width = frame.windowExtent.width;
+        image.height = frame.windowExtent.height;
+        image.rgba.resize(std::size_t{4} * image.width * image.height);
+        std::memcpy(image.rgba.data(), frame.windowReadback->mappedBytes().data(), image.rgba.size());
+        const bool blueFirst = frame.windowFormat == VK_FORMAT_B8G8R8A8_SRGB || frame.windowFormat == VK_FORMAT_B8G8R8A8_UNORM;
+        for (std::size_t pixel = 0; pixel < image.rgba.size(); pixel += 4)
+        {
+            if (blueFirst)
+            {
+                std::swap(image.rgba[pixel], image.rgba[pixel + 2]);
+            }
+            image.rgba[pixel + 3] = 255;
+        }
+    }
+    m_captures.push_back(std::move(image));
 }
 
 void VulkanRenderer::readPickResult(FrameContext& frame)

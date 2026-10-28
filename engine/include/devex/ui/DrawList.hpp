@@ -51,6 +51,14 @@ struct DEVEX_API EditState
     bool caretVisible = true;
 };
 
+// How a scrollbar shows: how far the pointer is on its bar, from 0 to 1 as it eases in and out,
+// and whether its thumb is held.
+struct DEVEX_API ScrollbarLook
+{
+    float hover = 0.0f;
+    bool held = false;
+};
+
 // What the drawing needs from outside the scene: the assets, the tint a button gives its image
 // while the pointer is on it, and the state of the field being edited.
 struct DEVEX_API DrawContext
@@ -68,6 +76,9 @@ struct DEVEX_API DrawContext
     std::function<const EditState*(scene::Entity)> editing;
     // Whether the pointer holds or rests on the bar of a splitter, which then lights up.
     std::function<bool(scene::Entity)> grabbed;
+    // How the vertical (axis 1) or horizontal (axis 0) scrollbar of an element shows; without it,
+    // every bar rests thin.
+    std::function<ScrollbarLook(scene::Entity, int axis)> scrollbars;
     // The hue, saturation and value a colour picker shows, which its colour gives when this says
     // nothing: a grey loses its hue.
     std::function<bool(scene::Entity, math::Vec3&)> pickerHsv;
@@ -110,6 +121,8 @@ struct DEVEX_API OverlayText
 };
 
 // A rectangle of one color over the canvases, in pixels, its corners rounded by `radius`.
+// The soft shadow of a box drawn over the canvases, in pixels, fading over `spread` around it.
+DEVEX_API void drawOverlayShadow(render::RenderWorld& world, math::Vec2 min, math::Vec2 max, float radius, math::Vec4 color, float spread);
 DEVEX_API void drawOverlayBox(render::RenderWorld& world, math::Vec2 min, math::Vec2 max, math::Vec4 color,
                               float radius = 0.0f);
 // Text in a box, in pixels: from its left edge, centred on its height, and cut to it.

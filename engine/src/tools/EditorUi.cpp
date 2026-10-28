@@ -401,7 +401,17 @@ void EditorUiKit::refreshTheme(const ThemeColors& colors)
     add("window", image(written(colors.outer), 0.0f));
     add("panel", image(written(colors.panel), 4.0f));
     add("list", image(written(colors.field), 4.0f));
-    add("popup", image(written(colors.popup), 5.0f));
+    // What stands over the panels, menus and dialogs, keeps a hairline edge and casts a soft shadow,
+    // as in Godot 4.
+    const auto raisedOver = [&](std::vector<asset::ThemeOverride> values, float shadow) {
+        values.push_back({"UiImage", "outline_color", written(math::Vec4(mono.x, mono.y, mono.z, colors.dark ? 0.08f : 0.12f))});
+        values.push_back({"UiImage", "outline_width", "1"});
+        values.push_back({"UiImage", "shadow_color", written(math::Vec4(0.0f, 0.0f, 0.0f, colors.dark ? 0.45f : 0.2f))});
+        values.push_back({"UiImage", "shadow_size", written(shadow)});
+        values.push_back({"UiImage", "shadow_offset", "vec2(0, 3)"});
+        return values;
+    };
+    add("popup", raisedOver(image(written(colors.popup), 5.0f), 12.0f));
     add("button", clickable(image(written(colors.raised), 4.0f)));
     add("flat", clickable(image(written(math::Vec4(colors.raised.x, colors.raised.y, colors.raised.z, 0.0f)), 4.0f)));
     add("primary", clickable(image(written(colors.accent), 4.0f)));
@@ -414,6 +424,8 @@ void EditorUiKit::refreshTheme(const ThemeColors& colors)
         values.push_back({"UiInput", "placeholder_color", written(colors.textDim)});
         values.push_back({"UiInput", "selection_color", written(math::Vec4(colors.accent.x, colors.accent.y, colors.accent.z, 0.45f))});
         values.push_back({"UiInput", "caret_color", written(colors.text)});
+        // Ringed with the accent while typed into.
+        values.push_back({"UiInput", "focus_color", written(math::Vec4(colors.accent.x, colors.accent.y, colors.accent.z, 0.9f))});
         return values;
     }());
     add("dropdown", [&] {
@@ -422,6 +434,8 @@ void EditorUiKit::refreshTheme(const ThemeColors& colors)
         values.push_back({"UiDropdown", "list_color", written(colors.popup)});
         values.push_back({"UiDropdown", "highlight_color", written(math::Vec4(colors.accent.x, colors.accent.y, colors.accent.z, 0.55f))});
         values.push_back({"UiDropdown", "arrow_color", written(colors.textDim)});
+        values.push_back({"UiDropdown", "list_shadow_color", written(math::Vec4(0.0f, 0.0f, 0.0f, colors.dark ? 0.45f : 0.2f))});
+        values.push_back({"UiDropdown", "list_shadow_size", "10"});
         return values;
     }());
     add("toggle", [&] {
@@ -437,11 +451,13 @@ void EditorUiKit::refreshTheme(const ThemeColors& colors)
         values.push_back({"UiTextArea", "caret_color", written(colors.text)});
         values.push_back({"UiTextArea", "line_number_color", written(colors.textDim)});
         values.push_back({"UiTextArea", "current_line_color", written(math::Vec4(mono.x, mono.y, mono.z, 0.05f))});
-        values.push_back({"UiTextArea", "scrollbar_color", written(math::Vec4(mono.x, mono.y, mono.z, 0.2f))});
+        values.push_back({"UiTextArea", "scrollbar_color", written(math::Vec4(mono.x, mono.y, mono.z, 0.25f))});
+        values.push_back({"UiTextArea", "scrollbar_size", "10"});
         return values;
     }());
-    add("scroll", {{"UiScroll", "scrollbar_color", written(math::Vec4(mono.x, mono.y, mono.z, 0.2f))},
-                   {"UiScroll", "scrollbar_size", "7"}});
+    // Thin capsules that widen under the pointer, as Godot 4 draws its scrollbars.
+    add("scroll", {{"UiScroll", "scrollbar_color", written(math::Vec4(mono.x, mono.y, mono.z, 0.25f))},
+                   {"UiScroll", "scrollbar_size", "10"}});
     add("separator", image(written(colors.border), 0.0f));
     add("text", text(colors.text));
     add("dim", text(colors.textDim));
@@ -458,7 +474,7 @@ void EditorUiKit::refreshTheme(const ThemeColors& colors)
     add("icon_success", {{"UiImage", "color", written(colors.success)}});
     // The palette that creates entities and adds components: a card with rounded corners, lists of
     // soft rows, and pills that name a category.
-    add("dialog", image(written(colors.panel), 10.0f));
+    add("dialog", raisedOver(image(written(colors.panel), 10.0f), 20.0f));
     add("dialog_list", image(written(colors.field), 8.0f));
     add("dialog_card", image(written(mixed(colors.panel, colors.raised, 0.55f)), 8.0f));
     // The colour of the card, so that only the pointer lights it up.
@@ -489,6 +505,7 @@ void EditorUiKit::refreshTheme(const ThemeColors& colors)
         values.push_back({"UiText", "color", written(colors.text)});
         values.push_back({"UiInput", "selection_color", written(math::Vec4(colors.accent.x, colors.accent.y, colors.accent.z, 0.45f))});
         values.push_back({"UiInput", "caret_color", written(colors.text)});
+        values.push_back({"UiInput", "focus_color", written(math::Vec4(colors.accent.x, colors.accent.y, colors.accent.z, 0.9f))});
         return values;
     }());
     add("swatch", clickable({{"UiImage", "corner_radius", "4"}}));
@@ -504,7 +521,7 @@ void EditorUiKit::refreshTheme(const ThemeColors& colors)
     add("tab", clickable(image(written(math::Vec4(mono.x, mono.y, mono.z, 0.0f)), 5.0f)));
     add("tab_hover", clickable(image(written(math::Vec4(mono.x, mono.y, mono.z, 0.06f)), 5.0f)));
     add("tab_selected", clickable(image(written(colors.panel), 5.0f)));
-    add("tooltip", image(written(colors.popup), 4.0f));
+    add("tooltip", raisedOver(image(written(colors.popup), 4.0f), 8.0f));
     // What is selected of a text that is only read.
     add("selection", {{"UiImage", "color", written(math::Vec4(colors.accent.x, colors.accent.y, colors.accent.z, 0.4f))},
                       {"UiImage", "corner_radius", "0"}});
@@ -1123,7 +1140,9 @@ void PanelBuilder::styleTooltips(const ThemeColors& colors)
                                                    .font = EditorUiKit::regularFont(),
                                                    .size = font,
                                                    .padding = font * 0.45f,
-                                                   .cornerRadius = 4.0f});
+                                                   .cornerRadius = 4.0f,
+                                                   .shadowColor = math::Vec4(0.0f, 0.0f, 0.0f, colors.dark ? 0.45f : 0.2f),
+                                                   .shadowSize = 8.0f});
 }
 
 } // namespace devex::tools::detail

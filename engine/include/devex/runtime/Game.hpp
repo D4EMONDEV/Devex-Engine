@@ -47,7 +47,9 @@ class CoroutineScheduler;
 // 21: the 2D lights: sprites, tiles and fields of reflection gained what they need.
 // 22: the reflection probes and the irradiance volumes: RenderWorld, RenderView and CapturedImage
 // gained what they need.
-inline constexpr std::uint32_t gameApiVersion = 22;
+// 23: the interface: FontData keeps its file, UiImage gained its outline and its shadow, UiInput its
+// focus ring, UiDropdown the shadow of its list.
+inline constexpr std::uint32_t gameApiVersion = 23;
 
 enum class SystemPhase : std::uint8_t
 {

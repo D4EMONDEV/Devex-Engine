@@ -357,9 +357,15 @@ bool UiWorld::scrollTextArea(scene::Scene& scene, const UiInput& input)
     {
         return false;
     }
+    // Three lines a notch, from where the last notches sent the text, gliding there.
     const TextAreaState* const state = areaState(entity);
-    area->scroll.y -= input.wheel * metrics.lineHeight * 3.0f;
-    clampScroll(*area, textAreaBars(metrics, scene.get<scene::UiText>(entity), *area, *rect, state != nullptr ? std::max(state->contentWidth, 0.0f) : 0.0f));
+    const auto going = std::ranges::find_if(m_glides, [&](const Glide& glide) { return glide.entity == entity && glide.shown == area->scroll; });
+    const TextAreaBars bars =
+        textAreaBars(metrics, scene.get<scene::UiText>(entity), *area, *rect, state != nullptr ? std::max(state->contentWidth, 0.0f) : 0.0f);
+    math::Vec2 to = going != m_glides.end() ? going->target : area->scroll;
+    to.x = std::clamp(to.x, 0.0f, bars.maxScroll.x);
+    to.y = std::clamp(to.y - input.wheel * metrics.lineHeight * 3.0f, 0.0f, bars.maxScroll.y);
+    glide(scene, entity, true, to);
     return true;
 }
 

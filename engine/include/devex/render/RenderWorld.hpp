@@ -413,6 +413,11 @@ enum class UiDrawKind : std::uint8_t
     Text,
     // Letters drawn at their size, whose texture holds how much of each pixel they cover.
     Glyph,
+    // The soft shadow of a rectangle with rounded corners, fading over `sharpness` pixels each side
+    // of its outline.
+    Shadow,
+    // The inner border of a rectangle with rounded corners, `sharpness` pixels wide.
+    Outline,
 };
 
 // What a batch of the interface reads its texture from: a texture of the renderer, or an image the

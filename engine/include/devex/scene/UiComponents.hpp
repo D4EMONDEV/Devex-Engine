@@ -95,6 +95,14 @@ struct DEVEX_API UiImage
     math::Vec4 border{0.0f, 0.0f, 0.0f, 0.0f};
     // Rounds the corners, in units. A rectangle with no texture then draws a rounded panel.
     float cornerRadius = 0.0f;
+    // A border along the inside of the edges, in units, over the image.
+    math::Vec4 outlineColor{0.0f, 0.0f, 0.0f, 0.0f};
+    float outlineWidth = 0.0f;
+    // A soft shadow under the image, fading over `shadowSize` units around its edges and moved by
+    // `shadowOffset`: what stands over the rest, as popups and menus do.
+    math::Vec4 shadowColor{0.0f, 0.0f, 0.0f, 0.0f};
+    float shadowSize = 0.0f;
+    math::Vec2 shadowOffset{0.0f, 0.0f};
     // Whether the mouse and the pad stop on it, rather than passing through.
     bool raycastTarget = true;
     // Fits the whole texture inside the rectangle, keeping its shape, in the middle of it.
@@ -156,6 +164,10 @@ struct DEVEX_API UiInput
     math::Vec4 placeholderColor{0.5f, 0.5f, 0.5f, 1.0f};
     math::Vec4 selectionColor{0.2f, 0.4f, 0.9f, 0.5f};
     math::Vec4 caretColor{1.0f, 1.0f, 1.0f, 1.0f};
+    // A ring along the inside of the field while it is edited, as wide as `focusWidth` units; clear,
+    // none.
+    math::Vec4 focusColor{0.0f, 0.0f, 0.0f, 0.0f};
+    float focusWidth = 1.0f;
     // The room between the edges of the field and its letters: across, then down.
     math::Vec2 padding{12.0f, 0.0f};
     // Takes new lines rather than ending the edit on Enter.
@@ -349,6 +361,9 @@ struct DEVEX_API UiDropdown
     math::Vec4 listColor{0.14f, 0.15f, 0.18f, 1.0f};
     math::Vec4 highlightColor{0.35f, 0.6f, 1.0f, 1.0f};
     math::Vec4 arrowColor{1.0f, 1.0f, 1.0f, 0.7f};
+    // A soft shadow under the open list, fading over `listShadowSize` units; clear, none.
+    math::Vec4 listShadowColor{0.0f, 0.0f, 0.0f, 0.0f};
+    float listShadowSize = 0.0f;
     bool interactable = true;
     // What a script asks for: Ui.WasChanged("quality").
     std::string action;

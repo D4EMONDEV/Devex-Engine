@@ -318,9 +318,62 @@ TEST_CASE("A scrollbar shows what scrolls and moves it", "[ui][controls]")
     CHECK(screen.scene.get<devex::scene::UiScroll>(list).offset.y == Catch::Approx(600.0f));
     screen.release({496.0f, 260.0f});
 
-    // The track moves a page.
+    // The track moves a page, gliding there.
     screen.click({496.0f, 120.0f});
+    CHECK(screen.scene.get<devex::scene::UiScroll>(list).offset.y < 600.0f);
+    CHECK(screen.scene.get<devex::scene::UiScroll>(list).offset.y > 400.0f);
+    for (int step = 0; step < 30; ++step)
+    {
+        screen.update();
+    }
     CHECK(screen.scene.get<devex::scene::UiScroll>(list).offset.y == Catch::Approx(400.0f));
+}
+
+TEST_CASE("A scrollbar rests thin and widens while the pointer is on it", "[ui][controls]")
+{
+    Screen screen;
+    const Entity list = screen.element({}, {100.0f, 100.0f}, {500.0f, 300.0f}, "List");
+    screen.scene.add<devex::scene::UiScroll>(list, devex::scene::UiScroll{.scrollbarSize = 10.0f});
+    screen.element(list, {0.0f, 0.0f}, {380.0f, 800.0f}, "Content");
+    // The width of the thumb, a rounded capsule along the right edge, and of the track beside it.
+    const auto thumbs = [&] {
+        devex::render::RenderWorld drawn;
+        screen.world.build(screen.scene, devex::ui::DrawContext{}, drawn);
+        std::vector<float> widths;
+        for (const devex::render::UiDraw& draw : drawn.uiDraws)
+        {
+            if (draw.kind == devex::render::UiDrawKind::RoundedQuad)
+            {
+                widths.push_back(draw.rect.z - draw.rect.x);
+                CHECK(draw.radius == Catch::Approx((draw.rect.z - draw.rect.x) * 0.5f));
+                CHECK(draw.rect.z <= 500.0f - 1.0f + 1e-3f);
+            }
+        }
+        return widths;
+    };
+    screen.update(UiInput{.pointer = {300.0f, 200.0f}});
+    std::vector<float> resting = thumbs();
+    REQUIRE(resting.size() == 1);
+    CHECK(resting[0] == Catch::Approx(4.0f));
+
+    // On the bar, it widens over a few frames, over its track.
+    for (int step = 0; step < 20; ++step)
+    {
+        screen.update(UiInput{.pointer = {496.0f, 200.0f}, .pointerMoved = step == 0});
+    }
+    const std::vector<float> hovered = thumbs();
+    REQUIRE(hovered.size() == 2);
+    CHECK(hovered[0] == Catch::Approx(8.0f).margin(0.05f));
+    CHECK(hovered[1] == Catch::Approx(8.0f).margin(0.05f));
+
+    // Away from it, it narrows back and the track goes.
+    for (int step = 0; step < 40; ++step)
+    {
+        screen.update(UiInput{.pointer = {300.0f, 200.0f}});
+    }
+    resting = thumbs();
+    REQUIRE(resting.size() == 1);
+    CHECK(resting[0] == Catch::Approx(4.0f));
 }
 
 TEST_CASE("A splitter shares its room between two children and its bar moves", "[ui][controls]")

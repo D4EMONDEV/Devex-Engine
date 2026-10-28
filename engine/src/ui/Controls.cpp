@@ -763,10 +763,13 @@ bool UiWorld::startDrag(scene::Scene& scene, const UiInput& input)
                     }
                     else
                     {
+                        // The track moves a page, gliding there as the wheel does.
                         const float page = axis == 1 ? rect.size().y : rect.size().x;
                         const float room = std::max((axis == 1 ? rect.content.y : rect.content.x) - page, 0.0f);
-                        float& offset = axis == 1 ? scroll->offset.y : scroll->offset.x;
+                        math::Vec2 to = scroll->offset;
+                        float& offset = axis == 1 ? to.y : to.x;
                         offset = std::clamp(offset + (at < start ? -page : page), 0.0f, room);
+                        glide(scene, rect.entity, false, to);
                     }
                     return true;
                 }

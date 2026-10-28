@@ -109,7 +109,8 @@ captures de l'éditeur, scènes de base, entrées, scripts C#, animations, colli
   et marges puis par conteneurs, texte dessiné à sa taille par FreeType (net, sur des pixels
   entiers) ou tiré d'un atlas de distances signées quand il est contourné ou agrandi, avec
   crénage et texte riche, champs de saisie avec sélection, presse-papiers et mot de passe, curseurs et cases à
-  cocher, listes qui défilent et se découpent avec leur barre de défilement, images en neuf
+  cocher, listes qui défilent en douceur et se découpent avec leur barre de défilement (capsule
+  qui s'élargit sous le pointeur), bordures et ombres douces, images en neuf
   parts ou tirées d'un sprite d'atlas, graphes en ligne ou en barres, liaison d'un texte à un champ de composant, thèmes `.dvxtheme` de styles nommés, popups,
   menus et modales (`UiPopup`), menus contextuels au clic droit, infobulles, listes déroulantes,
   séparateurs déplaçables, dépliants, listes virtuelles et tableaux aux colonnes redimensionnables
@@ -433,7 +434,8 @@ Dans l'éditeur : clic gauche pour sélectionner, Q / W / E / R pour sélectionn
 ou mettre à l'échelle (Ctrl aimante), clic droit maintenu + ZQSD pour voler, Alt + clic gauche pour
 tourner autour, F pour cadrer, Ctrl+S pour enregistrer la scène, Ctrl+N / Ctrl+W pour ouvrir ou
 fermer un onglet de scène et F5 pour jouer (F8 arrête). Le thème, l'échelle et les polices se
-règlent dans *Editor > Editor Settings*.
+règlent dans *Editor > Editor Settings*. `devex-editor <projet> --screenshot image.png` écrit une
+image de la fenêtre une fois le projet chargé, puis quitte.
 
 Les polices (Noto Sans, JetBrains Mono : SIL OFL 1.1) et les icônes (Lucide : ISC) de l'éditeur sont
 dans `third_party` avec leurs licences, comme ufbx (MIT ou domaine public), qui lit les fichiers FBX

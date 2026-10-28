@@ -3,10 +3,15 @@
 //     devex_tools_tests "Editor frame benchmark"
 //     devex_tools_tests "Script screen benchmark"
 //     devex_tools_tests "Animator panel benchmark"
+// And how the editor looks, in pictures of its window written to DEVEX_PICTURES (the temporary
+// directory without it):
+//     devex_tools_tests "Editor pictures"
 #include <devex/asset/Project.hpp>
+#include <devex/asset/import/TextureProcessing.hpp>
 #include <devex/asset/import/AssetDatabase.hpp>
 #include <devex/core/File.hpp>
 #include <devex/core/JobSystem.hpp>
+#include <devex/core/Path.hpp>
 #include <devex/core/Profiler.hpp>
 #include <devex/platform/Platform.hpp>
 #include <devex/render/Renderer.hpp>
@@ -19,6 +24,7 @@
 #include <array>
 #include <chrono>
 #include <cstdio>
+#include <cstdlib>
 #include <filesystem>
 #include <format>
 #include <functional>
@@ -28,9 +34,22 @@
 
 namespace {
 
-// Runs the editor on a copy of the sandbox, lets `setup` open what is measured once the project is
-// loaded and its camera selected, then prints the time of a frame and its zones.
-void measureEditor(const std::function<void(devex::tools::ToolsOverlay&, const std::filesystem::path&, const devex::asset::AssetDatabase&)>& setup)
+using EditorSetup = std::function<void(devex::tools::ToolsOverlay&, const std::filesystem::path&, const devex::asset::AssetDatabase&)>;
+
+// The editor running, for what is done with it once its project is loaded.
+struct EditorRun
+{
+    devex::tools::ToolsOverlay& editor;
+    devex::render::Renderer& renderer;
+    devex::platform::Platform& platform;
+    devex::scene::Scene& scene;
+    // One frame of the editor: its update and its drawing.
+    std::function<void()> frame;
+};
+
+// Runs the editor on a copy of the sandbox in a hidden window of a size, lets `setup` open what is
+// wanted once the project is loaded and its camera selected, then hands it to `run` a few frames later.
+void runEditor(const EditorSetup& setup, const std::function<void(EditorRun&)>& run, devex::math::Extent2D size = {2560, 1369})
 {
     const std::filesystem::path source = std::filesystem::path(DEVEX_TEST_DATA_DIRECTORY) / ".." / ".." / "samples" / "sandbox";
     const std::filesystem::path root = std::filesystem::temp_directory_path() / "devex-bench-sandbox";
@@ -46,7 +65,7 @@ void measureEditor(const std::function<void(devex::tools::ToolsOverlay&, const s
 
     auto platform = devex::platform::Platform::create();
     REQUIRE(platform.has_value());
-    auto window = platform->createWindow({.width = 2560, .height = 1369, .vulkan = true, .hidden = true});
+    auto window = platform->createWindow({.width = size.width, .height = size.height, .vulkan = true, .hidden = true});
     REQUIRE(window.has_value());
     auto renderer = devex::render::Renderer::create(*platform, *window, {.validation = false});
     REQUIRE(renderer.has_value());
@@ -93,35 +112,81 @@ void measureEditor(const std::function<void(devex::tools::ToolsOverlay&, const s
     {
         frame();
     }
-    devex::core::profiler::clear();
-    const auto start = std::chrono::steady_clock::now();
-    constexpr int frames = 100;
-    for (int index = 0; index < frames; ++index)
-    {
-        frame();
-    }
-    const double total = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+    EditorRun running{.editor = **editor, .renderer = *renderer, .platform = *platform, .scene = scene, .frame = frame};
+    run(running);
+    (*editor)->setAssetDatabase(nullptr);
+}
 
-    std::map<std::string, double> zones;
-    const auto history = devex::core::profiler::history();
-    for (const auto& kept : history)
-    {
-        for (const devex::core::ProfileZone& zone : kept->cpu)
+// Prints the time of a frame of the editor and its zones, once `setup` opened what is measured.
+void measureEditor(const EditorSetup& setup)
+{
+    runEditor(setup, [](EditorRun& running) {
+        devex::core::profiler::clear();
+        const auto start = std::chrono::steady_clock::now();
+        constexpr int frames = 100;
+        for (int index = 0; index < frames; ++index)
         {
-            if (zone.thread == 0)
+            running.frame();
+        }
+        const double total = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+
+        std::map<std::string, double> zones;
+        const auto history = devex::core::profiler::history();
+        for (const auto& kept : history)
+        {
+            for (const devex::core::ProfileZone& zone : kept->cpu)
             {
-                zones[std::string(zone.name) + "@" + std::to_string(zone.depth)] += static_cast<double>(zone.duration()) / 1.0e6;
+                if (zone.thread == 0)
+                {
+                    zones[std::string(zone.name) + "@" + std::to_string(zone.depth)] += static_cast<double>(zone.duration()) / 1.0e6;
+                }
             }
         }
-    }
-    std::vector<std::pair<std::string, double>> sorted(zones.begin(), zones.end());
-    std::ranges::sort(sorted, [](const auto& first, const auto& second) { return first.second > second.second; });
-    std::printf("frames %zu, %.2f ms a frame, %zu entities\n", history.size(), total / frames, scene.entityCount());
-    for (std::size_t index = 0; index < std::min<std::size_t>(sorted.size(), 40); ++index)
+        std::vector<std::pair<std::string, double>> sorted(zones.begin(), zones.end());
+        std::ranges::sort(sorted, [](const auto& first, const auto& second) { return first.second > second.second; });
+        std::printf("frames %zu, %.2f ms a frame, %zu entities\n", history.size(), total / frames, running.scene.entityCount());
+        for (std::size_t index = 0; index < std::min<std::size_t>(sorted.size(), 40); ++index)
+        {
+            std::printf("%8.3f ms  %s\n", sorted[index].second / static_cast<double>(history.size()), sorted[index].first.c_str());
+        }
+    });
+}
+
+// Writes a picture of the editor's window, as the next frame draws it, into DEVEX_PICTURES.
+void picture(EditorRun& running, const std::string& name)
+{
+    const char* const folder = std::getenv("DEVEX_PICTURES");
+    const std::filesystem::path file = (folder != nullptr ? std::filesystem::path(folder) : std::filesystem::temp_directory_path()) / (name + ".png");
+    const std::uint64_t request = running.renderer.requestWindowCapture();
+    for (int index = 0; index < 10; ++index)
     {
-        std::printf("%8.3f ms  %s\n", sorted[index].second / static_cast<double>(history.size()), sorted[index].first.c_str());
+        running.frame();
+        for (devex::render::CapturedImage& captured : running.renderer.takeCaptures())
+        {
+            if (captured.request != request)
+            {
+                continue;
+            }
+            REQUIRE_FALSE(captured.rgba.empty());
+            const devex::asset::Image image{.width = captured.width, .height = captured.height, .rgba = std::move(captured.rgba)};
+            REQUIRE(devex::core::writeFileAtomically(file, devex::asset::encodePng(image)).has_value());
+            std::printf("%s\n", devex::core::toUtf8(file).c_str());
+            return;
+        }
     }
-    (*editor)->setAssetDatabase(nullptr);
+    FAIL("the window was not captured");
+}
+
+// Moves the pointer of the tools to a point of the window and lets a few frames show it there.
+void pointAt(EditorRun& running, devex::math::Vec2 point, int frames = 12)
+{
+    auto& input = const_cast<devex::platform::Input&>(running.platform.toolsInput());
+    for (int index = 0; index < frames; ++index)
+    {
+        running.platform.pollEvents([](const devex::platform::Event&) {});
+        input.moveMouse(point, {});
+        running.frame();
+    }
 }
 
 } // namespace
@@ -156,4 +221,33 @@ TEST_CASE("Animator panel benchmark", "[.][benchmark]")
         editor.selectAsset(*controller);
         editor.openWindow(devex::tools::EditorWindow::Animator);
     });
+}
+
+// The editor at the size of a laptop screen: its camera in the inspector, a scrollbar and a button
+// under the pointer, and an open menu.
+TEST_CASE("Editor pictures", "[.][pictures]")
+{
+    runEditor([](devex::tools::ToolsOverlay&, const std::filesystem::path&, const devex::asset::AssetDatabase&) {},
+              [](EditorRun& running) {
+                  // The player in the inspector: its transform, its physics and its code.
+                  for (devex::scene::Entity entity = running.scene.firstRoot(); entity.isValid(); entity = running.scene.nextSibling(entity))
+                  {
+                      if (running.scene.name(entity) == "Player")
+                      {
+                          const std::array<devex::core::Uuid, 1> selected{running.scene.uuid(entity)};
+                          running.editor.select(selected);
+                      }
+                  }
+                  pointAt(running, {800.0f, 400.0f});
+                  picture(running, "editor");
+                  pointAt(running, {296.0f, 130.0f});
+                  picture(running, "editor-scrollbar");
+                  pointAt(running, {975.0f, 660.0f});
+                  picture(running, "editor-button");
+                  running.editor.openMenu(devex::tools::EditorMenu::Scene);
+                  pointAt(running, {80.0f, 60.0f});
+                  picture(running, "editor-menu");
+                  running.editor.closeMenu();
+              },
+              {1600, 900});
 }

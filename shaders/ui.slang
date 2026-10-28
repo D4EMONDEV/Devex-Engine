@@ -16,6 +16,8 @@ static const uint kindQuad = 0;
 static const uint kindRoundedQuad = 1;
 static const uint kindText = 2;
 static const uint kindGlyph = 3;
+static const uint kindShadow = 4;
+static const uint kindOutline = 5;
 
 struct UiData
 {
@@ -92,6 +94,23 @@ float4 fragmentMain(VertexOutput input) : SV_Target
     {
         // How much of the pixel the letter covers, drawn by FreeType at this very size.
         color.a *= sampleTexture(ui.texture, input.uv).r;
+    }
+    else if (ui.kind == kindShadow || ui.kind == kindOutline)
+    {
+        const float2 middle = (ui.rect.xy + ui.rect.zw) * 0.5;
+        const float2 halfSize = (ui.rect.zw - ui.rect.xy) * 0.5;
+        const float radius = min(ui.radius, min(halfSize.x, halfSize.y));
+        const float distance = roundedBoxDistance(input.pixel - middle, halfSize, radius);
+        if (ui.kind == kindShadow)
+        {
+            // Fading from inside the outline to as far outside it.
+            color.a *= 1.0 - smoothstep(-ui.sharpness, ui.sharpness, distance);
+        }
+        else
+        {
+            // Inside the outline, and not yet as far inside as the border is wide.
+            color.a *= (1.0 - smoothstep(-0.5, 0.5, distance)) * smoothstep(-0.5, 0.5, distance + ui.sharpness);
+        }
     }
     else
     {

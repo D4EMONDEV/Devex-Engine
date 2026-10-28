@@ -93,6 +93,14 @@ struct Notes
     {
         world.update(scene, window, input, frame);
     }
+    // Frames without input, long enough for what glides to arrive.
+    void settle()
+    {
+        for (int step = 0; step < 30; ++step)
+        {
+            send(UiInput{});
+        }
+    }
     // A press and a release at a point of the window.
     void click(Vec2 point)
     {
@@ -371,14 +379,22 @@ TEST_CASE("An area draws the lines in view only, and scrolls to its cursor and w
     const devex::render::RenderWorld drawn = notes.draw();
     CHECK(drawn.uiVertices.size() == top.second * 4 * 4 + 4);
 
-    // The wheel moves three lines a notch, and never past the ends.
+    // The wheel moves three lines a notch, and never past the ends, gliding there over a few frames.
     const Vec2 inside{300.0f, 200.0f};
-    notes.send(UiInput{.pointer = inside, .wheel = -2.0f});
+    notes.send(UiInput{.pointer = inside, .wheel = -1.0f});
+    const float started = notes.settings().scroll.y;
+    CHECK(started > 0.0f);
+    // A second notch before the first arrived adds to it.
+    notes.send(UiInput{.pointer = inside, .wheel = -1.0f});
+    CHECK(notes.settings().scroll.y > started);
+    notes.settle();
     CHECK(notes.world.visibleTextLines(notes.scene, notes.area).first == 6);
     notes.send(UiInput{.pointer = inside, .wheel = 100.0f});
+    notes.settle();
     CHECK(notes.settings().scroll.y == Catch::Approx(0.0f));
     // The wheel elsewhere leaves it alone.
     notes.send(UiInput{.pointer = Vec2{900.0f, 900.0f}, .wheel = -2.0f});
+    notes.settle();
     CHECK(notes.settings().scroll.y == Catch::Approx(0.0f));
 
     // The cursor is brought into view wherever it goes.

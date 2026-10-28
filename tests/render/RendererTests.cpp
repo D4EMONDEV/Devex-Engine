@@ -622,6 +622,75 @@ TEST_CASE("Rows of a texture are replaced while interfaces draw from it", "[rend
     CHECK(capture.errors().empty());
 }
 
+TEST_CASE("A window capture pictures the whole window with the tools over it", "[render][gpu]")
+{
+    using devex::math::Vec4;
+    using devex::render::UiDraw;
+    using devex::render::UiVertex;
+
+    const ErrorCapture capture;
+    {
+        auto platform = devex::platform::Platform::create();
+        REQUIRE(platform.has_value());
+        auto window = platform->createWindow({.width = 320, .height = 240, .vulkan = true, .hidden = true});
+        REQUIRE(window.has_value());
+        auto renderer = devex::render::Renderer::create(*platform, *window, {.validation = true});
+        if (!renderer)
+        {
+            FAIL(std::format("{}", renderer.error()));
+        }
+        std::uint64_t request = 0;
+        std::vector<devex::render::CapturedImage> captured;
+        for (int frame = 0; frame < 6 && captured.empty(); ++frame)
+        {
+            devex::render::RenderWorld& world = renderer->beginFrame();
+            world.environment.color = {0.0f, 0.0f, 0.0f};
+            // A blue-green rectangle of the tools over the left half of the window.
+            const Vec4 color{0.1f, 0.5f, 0.9f, 1.0f};
+            world.toolsVertices = {UiVertex{.position = {0.0f, 0.0f}, .color = color}, UiVertex{.position = {160.0f, 0.0f}, .color = color},
+                                   UiVertex{.position = {160.0f, 240.0f}, .color = color}, UiVertex{.position = {0.0f, 240.0f}, .color = color}};
+            world.toolsIndices = {0, 1, 2, 0, 2, 3};
+            world.toolsDraws.push_back(UiDraw{.indexCount = 6});
+            if (frame == 1)
+            {
+                request = renderer->requestWindowCapture();
+            }
+            REQUIRE(renderer->endFrame());
+            for (devex::render::CapturedImage& image : renderer->takeCaptures())
+            {
+                CHECK(image.request == request);
+                captured.push_back(std::move(image));
+            }
+        }
+        // The frames in flight end with the renderer; a picture still to come is read then.
+        REQUIRE(captured.size() <= 1);
+        if (captured.empty() || captured.front().rgba.empty())
+        {
+            WARN("This display cannot be read back: the picture is empty");
+        }
+        else
+        {
+            const devex::render::CapturedImage& image = captured.front();
+            CHECK(image.width == 320);
+            CHECK(image.height == 240);
+            REQUIRE(image.rgba.size() == std::size_t{4} * 320 * 240);
+            // The tools on the left, red first; the scene, black, on the right.
+            const std::size_t left = (std::size_t{120} * 320 + 40) * 4;
+            CHECK(image.rgba[left] < image.rgba[left + 1]);
+            CHECK(image.rgba[left + 1] < image.rgba[left + 2]);
+            CHECK(image.rgba[left + 3] == 255);
+            const std::size_t right = (std::size_t{120} * 320 + 280) * 4;
+            CHECK(image.rgba[right + 2] < image.rgba[left + 2]);
+        }
+    }
+
+    for (const std::string& error : capture.errors())
+    {
+        UNSCOPED_INFO(error);
+    }
+    CHECK(capture.errors().empty());
+}
+
 TEST_CASE("Only one renderer can exist at a time", "[render][gpu]")
 {
     auto platform = devex::platform::Platform::create();

@@ -2175,6 +2175,19 @@ namespace devex::ui {
 - hinting léger de FreeType (`FT_LOAD_TARGET_LIGHT`) : les lettres ne bougent que verticalement,
   les avances restent celles de la mise en page.
 
+#### 9.2.3. Barres, ombres et focus
+
+- `UiScroll` et `UiTextArea` dessinent leur pouce en capsule fine qui s'élargit sous le pointeur ;
+  `DrawContext::scrollbars` (`ScrollbarLook{hover, held}`) dit au dessin où en est chaque barre,
+  `UiWorld::build` le remplit. La molette et la piste font **glisser** l'offset vers sa cible
+  (`UiWorld::glide`, `updateGlides`) : un test qui fait défiler laisse passer quelques frames.
+- `UiImage` : `outline_color` / `outline_width` (bordure intérieure), `shadow_color` /
+  `shadow_size` / `shadow_offset` (ombre douce, lots `UiDrawKind::Outline` et `Shadow`).
+- `UiInput::focus_color` / `focus_width` : anneau du champ en cours d'édition ;
+  `UiDropdown::list_shadow_color` / `list_shadow_size` ; `TooltipStyle::shadowColor` / `shadowSize`.
+- `Renderer::requestWindowCapture()` : image de la fenêtre entière, interface comprise (réponse vide
+  si la surface ne se relit pas) ; `ApplicationConfig::screenshot` et `devex-editor --screenshot`.
+
 
 ### 9.3. Animation
 

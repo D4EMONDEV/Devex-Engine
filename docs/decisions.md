@@ -1021,6 +1021,15 @@ les assets s'écrivent au fil de leur lecture.
   au plus, sans l'interface ni les outils, copiée vers le CPU et écrite en PNG à côté de la
   sauvegarde deux frames plus tard. `SaveGames::thumbnail` (`SaveSlot.Thumbnail`) en fait une
   texture qu'une `UiImage` affiche (`AssetManager::setTexture`), refaite quand la sauvegarde change.
+- **Image de la fenêtre** (jalon 78) : `Renderer::requestWindowCapture` copie la fenêtre entière
+  telle que la frame suivante la présente, interface et outils compris, quand la surface le permet
+  (images du swapchain en `TRANSFER_SRC`), sinon répond d'une image vide. `devex-editor <projet>
+  --screenshot <image.png>` l'écrit une fois les assets chargés et dessinés, puis quitte, et le test
+  caché *Editor pictures* photographie l'éditeur dans plusieurs états : de quoi juger l'apparence de
+  l'éditeur sans personne devant (avec `SDL_VIDEO_DRIVER=offscreen`, sans fenêtre à l'écran).
+  Elle a montré que sur un écran sans sRGB (surface hors écran en `R8G8B8A8_UNORM`), les panneaux
+  dessinaient leurs couleurs comme de la lumière sans les encoder, presque noires : l'interface les
+  encode désormais elle-même dès que l'image ne le fait pas.
 - **Sûreté** : écriture atomique ; la sauvegarde précédente de l'emplacement reste à côté
   (`.bak`), et un fichier abîmé la fait charger à sa place. Les noms d'emplacements sont limités
   (lettres, chiffres, espaces, tirets, points, soulignés). `slots()` liste les sauvegardes, la plus
@@ -3557,6 +3566,21 @@ Jalon 68, comme Godot, en deux portées :
   lequel : sections d'un inspecteur, ou branches d'un arbre quand les dépliants s'emboîtent. Ce
   qui est caché ne compte pas dans le contenu d'une zone qui défile, et une zone dont le contenu a
   rétréci revient d'elle-même à sa fin plutôt que de montrer du vide.
+- **Barres et défilement doux** (jalon 78) : comme dans Godot 4 et les systèmes, le pouce d'une
+  barre (d'un `UiScroll` comme d'une `UiTextArea`) est une **capsule** arrondie, fine au repos (40 %
+  de `scrollbar_size`), à une unité du bord ; sous le pointeur, elle s'élargit à toute la barre,
+  s'éclaircit et montre sa piste, plus encore tant qu'on la tient, en un dixième de seconde
+  (`UiWorld` adoucit le survol de chaque barre, que `DrawContext::scrollbars` donne au dessin). La
+  molette et la piste ne sautent plus : la liste **glisse** vers la cible en ralentissant (environ
+  un dixième de seconde), les crans qui se suivent s'ajoutent à la cible, et ce qui change l'offset
+  pendant le glissement (le pouce tiré, le curseur ramené à l'écran, le jeu) l'emporte.
+- **Bordures, ombres, focus** (jalon 78) : une `UiImage` peut porter une bordure intérieure
+  (`outline_color`, `outline_width`) et une **ombre douce** (`shadow_color`, `shadow_size`,
+  `shadow_offset`), deux nouveaux lots du shader (`UiDrawKind::Outline` et `Shadow`, distance au
+  rectangle arrondi). La liste ouverte d'un `UiDropdown` (`list_shadow_color`, `list_shadow_size`) et
+  les infobulles (`TooltipStyle::shadowColor`) ont la leur. Un champ en cours d'édition s'entoure
+  de `UiInput::focus_color` (`focus_width`). L'éditeur en habille ses menus, ses dialogues et ses
+  infobulles (liseré et ombre) et ses champs (anneau de l'accent), comme Godot 4.
 - **Listes virtuelles et tableaux** : `UiVirtualList`, dans un `UiScroll`, prend la hauteur de
   `item_count` éléments de `item_size` unités mais n'a que les lignes visibles pour enfants :
   l'interface les place aux éléments qu'elles montrent et écrit dans `first` le premier, qu'un
@@ -4543,6 +4567,11 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     pixel entier) dans un atlas de pages remplies au fil de l'eau et mises à jour en place
     (`Renderer::updateTexture`) ; police qui garde son fichier ; distances signées gardées pour le
     texte contourné ou agrandi.
+78. ✅ **Contrôles façon Godot 4** — barres de défilement en capsules fines qui s'élargissent sous
+    le pointeur, défilement doux de la molette et de la piste ; bordures et ombres douces des images
+    (menus, dialogues, infobulles, listes déroulantes), anneau de focus des champs ; image de la
+    fenêtre entière (`Renderer::requestWindowCapture`, `devex-editor --screenshot`, test *Editor
+    pictures*) ; couleurs de l'interface encodées sur les écrans sans sRGB ; API des jeux 23.
 
 Ensuite, sans ordre figé : à choisir dans les pistes ci-dessous.
 

@@ -87,6 +87,10 @@ struct DEVEX_API ApplicationConfig
     // Where what the player keeps goes: their settings, key bindings and saves; empty uses a
     // folder of the user named after the game: %APPDATA%\<game> on Windows.
     std::filesystem::path userDirectory;
+    // A PNG the whole window is written to once the assets are loaded and drawn, interface and tools
+    // included, before the application quits: pictures of the editor for its documentation, and
+    // for checking how it looks without a person in front of it.
+    std::filesystem::path screenshot;
 };
 
 namespace detail {

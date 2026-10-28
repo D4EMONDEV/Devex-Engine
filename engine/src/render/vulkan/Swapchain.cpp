@@ -137,6 +137,7 @@ core::Result<Swapchain> Swapchain::create(const Device& device, VkSurfaceKHR sur
         .pViewFormats = viewFormats.data(),
     };
 
+    const bool readable = (capabilities.supportedUsageFlags & VK_IMAGE_USAGE_TRANSFER_SRC_BIT) != 0;
     const VkSwapchainCreateInfoKHR createInfo{
         .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
         .pNext = toolsView ? &formatList : nullptr,
@@ -147,7 +148,8 @@ core::Result<Swapchain> Swapchain::create(const Device& device, VkSurfaceKHR sur
         .imageColorSpace = surfaceFormat.colorSpace,
         .imageExtent = {extent.width, extent.height},
         .imageArrayLayers = 1,
-        .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+        // Copied from too where the surface allows it, for a picture of the window.
+        .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | (readable ? VkImageUsageFlags{VK_IMAGE_USAGE_TRANSFER_SRC_BIT} : VkImageUsageFlags{0}),
         .imageSharingMode = VK_SHARING_MODE_EXCLUSIVE,
         .preTransform = capabilities.currentTransform,
         .compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
@@ -159,6 +161,7 @@ core::Result<Swapchain> Swapchain::create(const Device& device, VkSurfaceKHR sur
     Swapchain swapchain;
     swapchain.m_device = device.handle();
     swapchain.m_format = surfaceFormat.format;
+    swapchain.m_readable = readable;
     swapchain.m_toolsFormat = toolsView ? unormFormat : surfaceFormat.format;
     swapchain.m_extent = extent;
     swapchain.m_presentMode = presentMode;
@@ -210,6 +213,7 @@ Swapchain::Swapchain(Swapchain&& other) noexcept
     , m_imageViews(std::move(other.m_imageViews))
     , m_toolsFormat(other.m_toolsFormat)
     , m_toolsImageViews(std::move(other.m_toolsImageViews))
+    , m_readable(other.m_readable)
 {
     other.m_imageViews.clear();
     other.m_toolsImageViews.clear();
@@ -229,6 +233,7 @@ Swapchain& Swapchain::operator=(Swapchain&& other) noexcept
         m_imageViews = std::move(other.m_imageViews);
         m_toolsFormat = other.m_toolsFormat;
         m_toolsImageViews = std::move(other.m_toolsImageViews);
+        m_readable = other.m_readable;
         other.m_imageViews.clear();
         other.m_toolsImageViews.clear();
     }
@@ -299,6 +304,11 @@ VkImageView Swapchain::imageView(std::uint32_t index) const noexcept
 VkFormat Swapchain::toolsFormat() const noexcept
 {
     return m_toolsFormat;
+}
+
+bool Swapchain::readable() const noexcept
+{
+    return m_readable;
 }
 
 VkImageView Swapchain::toolsImageView(std::uint32_t index) const noexcept

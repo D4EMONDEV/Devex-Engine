@@ -32,7 +32,9 @@ struct Builder
     [[nodiscard]] render::UiDraw& batch(render::UiDrawKind kind, render::TextureHandle texture,
                                         math::Vec4 rect, float radius, float sharpness)
     {
-        const bool mergeable = kind != render::UiDrawKind::RoundedQuad;
+        // A shape has its own rectangle: it never joins another.
+        const bool mergeable = kind != render::UiDrawKind::RoundedQuad && kind != render::UiDrawKind::Shadow &&
+                               kind != render::UiDrawKind::Outline;
         if (!world.uiDraws.empty())
         {
             render::UiDraw& last = world.uiDraws.back();
@@ -188,6 +190,10 @@ void nineSlice(Builder& builder, render::UiDraw& draw, const LaidOutRect& rect,
     }
 }
 
+void drawOutline(Builder& builder, const LaidOutRect& rect, float radius, float width, math::Vec4 color);
+void drawFill(Builder& builder, const LaidOutRect& rect, const scene::UiImage& image, render::TextureHandle texture, math::Vec4 uv,
+              math::Vec2 pixels, math::Vec4 color);
+
 void drawImage(Builder& builder, const DrawContext& context, const LaidOutRect& placed,
                const scene::UiImage& image)
 {
@@ -229,6 +235,42 @@ void drawImage(Builder& builder, const DrawContext& context, const LaidOutRect& 
         return;
     }
 
+    // The shadow first, under the image, as far around it as it fades.
+    if (image.shadowColor.w > 0.0f && image.shadowSize > 0.0f && isPlain(rect))
+    {
+        const math::Vec2 min = rect.min + image.shadowOffset;
+        const math::Vec2 max = rect.max + image.shadowOffset;
+        const float spread = image.shadowSize;
+        render::UiDraw& shadow = builder.batch(render::UiDrawKind::Shadow, render::TextureHandle{},
+                                               math::Vec4{min.x, min.y, max.x, max.y} * builder.scale,
+                                               image.cornerRadius * builder.scale, spread * builder.scale);
+        builder.quad(shadow, min - math::Vec2{spread}, max + math::Vec2{spread}, math::Vec2{0.0f}, math::Vec2{1.0f},
+                     withOpacity(image.shadowColor, rect.opacity));
+    }
+    drawFill(builder, rect, image, texture, uv, pixels, color);
+    if (image.outlineColor.w > 0.0f && image.outlineWidth > 0.0f)
+    {
+        drawOutline(builder, rect, image.cornerRadius, image.outlineWidth, withOpacity(image.outlineColor, rect.opacity));
+    }
+}
+
+// The inside border of an element of the interface, upright and unscaled ones only.
+void drawOutline(Builder& builder, const LaidOutRect& rect, float radius, float width, math::Vec4 color)
+{
+    if (color.w <= 0.0f || width <= 0.0f || !isPlain(rect))
+    {
+        return;
+    }
+    const math::Vec4 shape{rect.min.x * builder.scale, rect.min.y * builder.scale, rect.max.x * builder.scale, rect.max.y * builder.scale};
+    render::UiDraw& draw = builder.batch(render::UiDrawKind::Outline, render::TextureHandle{}, shape, radius * builder.scale,
+                                         std::max(width * builder.scale, 1.0f));
+    builder.quad(draw, rect.min, rect.max, math::Vec2{0.0f}, math::Vec2{1.0f}, color);
+}
+
+// The rectangle of an image, filled with its colour and its texture.
+void drawFill(Builder& builder, const LaidOutRect& rect, const scene::UiImage& image, render::TextureHandle texture, math::Vec4 uv,
+              math::Vec2 pixels, math::Vec4 color)
+{
     const bool rounded = image.cornerRadius > 0.0f && isPlain(rect);
     const math::Vec4 shape{rect.min.x * builder.scale, rect.min.y * builder.scale,
                            rect.max.x * builder.scale, rect.max.y * builder.scale};
@@ -484,8 +526,39 @@ void arrow(Builder& builder, math::Vec2 centre, float size, bool right, bool up,
     }
 }
 
+void roundedBox(Builder& builder, math::Vec2 min, math::Vec2 max, float radius, math::Vec4 color);
+
+// The thumb of a scrollbar, as Godot 4 and the systems draw theirs: a capsule along the edge of its
+// bar, thin while the pointer is elsewhere, as wide as the bar and brighter over a faint track
+// while it is on it, brighter still while held. The bar is `bar` wide inside `edge`, the track runs
+// from `track.x` to `track.y` along it, and the thumb covers `thumb.x` to `thumb.y`; axis 1 is the
+// vertical bar, 0 the horizontal one.
+void drawThumb(Builder& builder, const DrawContext& context, scene::Entity entity, int axis, float edge, float bar,
+               math::Vec2 track, math::Vec2 thumb, math::Vec4 color)
+{
+    const ScrollbarLook look = context.scrollbars ? context.scrollbars(entity, axis) : ScrollbarLook{};
+    const float hover = look.held ? 1.0f : std::clamp(look.hover, 0.0f, 1.0f);
+    const float rest = std::max(bar * 0.4f, 2.0f);
+    const float full = std::max(bar - 2.0f, rest);
+    const float width = rest + (full - rest) * hover;
+    // Its outer side a unit inside the edge, growing inwards; its ends a little short of the track's.
+    const float outer = edge - std::min(1.0f, bar * 0.15f);
+    const float gap = std::min(2.0f, std::max(thumb.y - thumb.x - width, 0.0f) * 0.5f);
+    const auto capsule = [&](float from, float to, math::Vec4 shade) {
+        const math::Vec2 min = axis == 1 ? math::Vec2{outer - width, from} : math::Vec2{from, outer - width};
+        const math::Vec2 max = axis == 1 ? math::Vec2{outer, to} : math::Vec2{to, outer};
+        roundedBox(builder, min, max, width * 0.5f, shade);
+    };
+    if (hover > 0.0f)
+    {
+        capsule(track.x + gap, track.y - gap, math::Vec4{color.x, color.y, color.z, color.w * 0.3f * hover});
+    }
+    const float brightness = look.held ? 2.2f : 1.0f + 0.9f * hover;
+    capsule(thumb.x + gap, thumb.y - gap, math::Vec4{color.x, color.y, color.z, std::min(color.w * brightness, 1.0f)});
+}
+
 // The thumbs of what scrolls, over what it holds, while the content is longer than the element.
-void drawScrollbars(Builder& builder, const LaidOutRect& rect, const scene::UiScroll& scroll)
+void drawScrollbars(Builder& builder, const DrawContext& context, const LaidOutRect& rect, const scene::UiScroll& scroll)
 {
     const math::Vec2 size = rect.size();
     const float bar = std::max(scroll.scrollbarSize, 1.0f);
@@ -495,14 +568,16 @@ void drawScrollbars(Builder& builder, const LaidOutRect& rect, const scene::UiSc
         const float thumb = std::max(size.y * size.y / rect.content.y, bar * 2.0f);
         const float room = std::max(rect.content.y - size.y, 1.0f);
         const float top = rect.min.y + (size.y - thumb) * std::clamp(scroll.offset.y / room, 0.0f, 1.0f);
-        fill(builder, math::Vec2{rect.max.x - bar, top}, math::Vec2{rect.max.x - 1.0f, top + thumb}, color);
+        drawThumb(builder, context, rect.entity, 1, rect.max.x, bar, math::Vec2{rect.min.y, rect.max.y}, math::Vec2{top, top + thumb},
+                  color);
     }
     if (scroll.horizontal && rect.content.x > size.x + 0.5f)
     {
         const float thumb = std::max(size.x * size.x / rect.content.x, bar * 2.0f);
         const float room = std::max(rect.content.x - size.x, 1.0f);
         const float left = rect.min.x + (size.x - thumb) * std::clamp(scroll.offset.x / room, 0.0f, 1.0f);
-        fill(builder, math::Vec2{left, rect.max.y - bar}, math::Vec2{left + thumb, rect.max.y - 1.0f}, color);
+        drawThumb(builder, context, rect.entity, 0, rect.max.y, bar, math::Vec2{rect.min.x, rect.max.x}, math::Vec2{left, left + thumb},
+                  color);
     }
 }
 
@@ -1255,13 +1330,16 @@ void drawTextArea(Builder& builder, const DrawContext& context, const LaidOutRec
         }
     }
     const math::Vec4 barColor = withOpacity(area.scrollbarColor, rect.opacity);
+    const float bar = std::max(area.scrollbarSize, 1.0f);
     if (bars.vertical())
     {
-        fill(builder, bars.verticalMin, bars.verticalMax, barColor);
+        drawThumb(builder, context, rect.entity, 1, rect.max.x, bar, math::Vec2{rect.min.y, rect.max.y},
+                  math::Vec2{bars.verticalMin.y, bars.verticalMax.y}, barColor);
     }
     if (bars.horizontal())
     {
-        fill(builder, bars.horizontalMin, bars.horizontalMax, barColor);
+        drawThumb(builder, context, rect.entity, 0, rect.max.y, bar, math::Vec2{rect.min.x + metrics.gutter, rect.max.x - bar},
+                  math::Vec2{bars.horizontalMin.x, bars.horizontalMax.x}, barColor);
     }
     builder.clip = outer;
 }
@@ -1285,7 +1363,7 @@ void buildDrawList(const scene::Scene& scene, const LayoutResult& layout, const 
         {
             const LaidOutRect& scrolling = layout.rects[waiting.back()];
             builder.clip = isClipped(scrolling.clip) ? scrolling.clip * layout.scale : math::Vec4{0.0f};
-            drawScrollbars(builder, scrolling, scene.get<scene::UiScroll>(scrolling.entity));
+            drawScrollbars(builder, context, scrolling, scene.get<scene::UiScroll>(scrolling.entity));
             waiting.pop_back();
         }
     };
@@ -1328,9 +1406,17 @@ void buildDrawList(const scene::Scene& scene, const LayoutResult& layout, const 
         {
             continue;
         }
-        if (const scene::UiImage* const image = scene.tryGet<scene::UiImage>(rect.entity))
+        const scene::UiImage* const image = scene.tryGet<scene::UiImage>(rect.entity);
+        if (image != nullptr)
         {
             drawImage(builder, context, rect, *image);
+        }
+        // A field being edited rings itself, along the curve of its corners.
+        if (const scene::UiInput* const field = scene.tryGet<scene::UiInput>(rect.entity);
+            field != nullptr && field->focusColor.w > 0.0f && context.editing && context.editing(rect.entity) != nullptr)
+        {
+            drawOutline(builder, rect, image != nullptr ? image->cornerRadius : 0.0f, field->focusWidth,
+                        withOpacity(field->focusColor, rect.opacity));
         }
         if (const scene::UiSlider* const slider = scene.tryGet<scene::UiSlider>(rect.entity))
         {
@@ -1385,6 +1471,18 @@ void buildDrawList(const scene::Scene& scene, const LayoutResult& layout, const 
     drawWaiting(layout.rects.size());
     // Batches that ended up empty would draw nothing; they are dropped so the renderer skips them.
     std::erase_if(world.uiDraws, [](const render::UiDraw& draw) { return draw.indexCount == 0; });
+}
+
+void drawOverlayShadow(render::RenderWorld& world, math::Vec2 min, math::Vec2 max, float radius, math::Vec4 color, float spread)
+{
+    if (color.w <= 0.0f || spread <= 0.0f || max.x <= min.x || max.y <= min.y)
+    {
+        return;
+    }
+    Builder builder{.world = world};
+    render::UiDraw& draw =
+        builder.batch(render::UiDrawKind::Shadow, render::TextureHandle{}, math::Vec4{min.x, min.y, max.x, max.y}, radius, spread);
+    builder.quad(draw, min - math::Vec2{spread}, max + math::Vec2{spread}, math::Vec2{0.0f}, math::Vec2{1.0f}, color);
 }
 
 void drawOverlayBox(render::RenderWorld& world, math::Vec2 min, math::Vec2 max, math::Vec4 color, float radius)

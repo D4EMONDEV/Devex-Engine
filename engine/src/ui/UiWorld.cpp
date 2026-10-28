@@ -360,6 +360,8 @@ void UiWorld::update(scene::Scene& scene, math::Vec2 windowSize, const UiInput& 
         rest.wheel = 0.0f;
     }
     updateScroll(scene, rest);
+    updateGlides(scene, seconds);
+    updateScrollbars(scene, input, seconds);
     const bool editedBefore = m_editing.entity.isValid() || m_areaFocus.isValid();
     updateFields(scene, rest, delta);
     updateTextAreas(scene, rest, delta);
@@ -529,22 +531,177 @@ void UiWorld::updateScroll(scene::Scene& scene, const UiInput& input)
             {
                 continue;
             }
-            // The content cannot be moved further than what it hides.
+            // The content cannot be moved further than what it hides. Notches in a row add up: the
+            // list glides on from where the last one sent it.
             const math::Vec2 room{std::max(rect->content.x - rect->size().x, 0.0f),
                                   std::max(rect->content.y - rect->size().y, 0.0f)};
+            const auto going = std::ranges::find_if(m_glides, [&](const Glide& glide) {
+                return glide.entity == rect->entity && glide.shown == scroll->offset;
+            });
+            math::Vec2 to = going != m_glides.end() ? going->target : scroll->offset;
             if (scroll->vertical)
             {
-                scroll->offset.y = std::clamp(scroll->offset.y - input.wheel * scroll->speed, 0.0f,
-                                              room.y);
+                to.y = std::clamp(to.y - input.wheel * scroll->speed, 0.0f, room.y);
             }
             if (scroll->horizontal)
             {
-                scroll->offset.x = std::clamp(scroll->offset.x - input.wheel * scroll->speed, 0.0f,
-                                              room.x);
+                to.x = std::clamp(to.x - input.wheel * scroll->speed, 0.0f, room.x);
             }
+            glide(scene, rect->entity, false, to);
             return;
         }
     }
+}
+
+void UiWorld::glide(scene::Scene& scene, scene::Entity entity, bool area, math::Vec2 to)
+{
+    math::Vec2 current{0.0f};
+    if (area)
+    {
+        const auto* const component = scene.tryGet<scene::UiTextArea>(entity);
+        if (component == nullptr)
+        {
+            return;
+        }
+        current = component->scroll;
+    }
+    else
+    {
+        const auto* const component = scene.tryGet<scene::UiScroll>(entity);
+        if (component == nullptr)
+        {
+            return;
+        }
+        current = component->offset;
+    }
+    const auto found = std::ranges::find(m_glides, entity, &Glide::entity);
+    if (found != m_glides.end())
+    {
+        found->shown = current;
+        found->target = to;
+        return;
+    }
+    m_glides.push_back({.entity = entity, .area = area, .shown = current, .target = to});
+}
+
+void UiWorld::updateGlides(scene::Scene& scene, float seconds)
+{
+    // About a tenth of a second to get there, slowing down as it arrives.
+    const float step = 1.0f - std::exp(-std::max(seconds, 0.0f) * 22.0f);
+    std::erase_if(m_glides, [&](Glide& glide) {
+        if (!scene.isAlive(glide.entity))
+        {
+            return true;
+        }
+        math::Vec2* const offset = glide.area ? (scene.has<scene::UiTextArea>(glide.entity) ? &scene.get<scene::UiTextArea>(glide.entity).scroll : nullptr)
+                                              : (scene.has<scene::UiScroll>(glide.entity) ? &scene.get<scene::UiScroll>(glide.entity).offset : nullptr);
+        // Dragged, revealed or set by the game meanwhile: that wins.
+        if (offset == nullptr || *offset != glide.shown)
+        {
+            return true;
+        }
+        glide.shown += (glide.target - glide.shown) * step;
+        const bool arrived = std::abs(glide.target.x - glide.shown.x) < 0.25f && std::abs(glide.target.y - glide.shown.y) < 0.25f;
+        if (arrived)
+        {
+            glide.shown = glide.target;
+        }
+        *offset = glide.shown;
+        return arrived;
+    });
+}
+
+void UiWorld::updateScrollbars(const scene::Scene& scene, const UiInput& input, float seconds)
+{
+    for (ScrollbarHover& hover : m_scrollbarHovers)
+    {
+        hover.on = false;
+    }
+    const auto mark = [&](scene::Entity entity, int axis) {
+        const auto found = std::ranges::find_if(m_scrollbarHovers, [&](const ScrollbarHover& hover) {
+            return hover.entity == entity && hover.axis == axis;
+        });
+        if (found != m_scrollbarHovers.end())
+        {
+            found->on = true;
+            return;
+        }
+        m_scrollbarHovers.push_back({.entity = entity, .axis = axis, .on = true});
+    };
+    // The bar the pointer is on, in the element that answers it; nothing while a list is open.
+    if (!m_dropdown)
+    {
+        for (std::size_t canvasIndex = m_canvases.size(); canvasIndex-- > 0;)
+        {
+            const CanvasLayout& canvas = m_canvases[canvasIndex];
+            if (!canvas.interactive || canvas.layout.scale <= 0.0f)
+            {
+                continue;
+            }
+            const math::Vec2 point = input.pointer / canvas.layout.scale;
+            for (std::size_t rectIndex = 0; rectIndex < canvas.layout.rects.size(); ++rectIndex)
+            {
+                const LaidOutRect& rect = canvas.layout.rects[rectIndex];
+                if (!rect.visible || !contains(rect, point) || !reachable(canvasIndex, rectIndex))
+                {
+                    continue;
+                }
+                float bar = 0.0f;
+                bool vertical = false;
+                bool horizontal = false;
+                if (const auto* const scroll = scene.tryGet<scene::UiScroll>(rect.entity); scroll != nullptr && scroll->scrollbar)
+                {
+                    bar = std::max(scroll->scrollbarSize, 1.0f);
+                    vertical = scroll->vertical && rect.content.y > rect.size().y + 0.5f;
+                    horizontal = scroll->horizontal && rect.content.x > rect.size().x + 0.5f;
+                }
+                else if (const auto* const area = scene.tryGet<scene::UiTextArea>(rect.entity))
+                {
+                    bar = std::max(area->scrollbarSize, 0.0f);
+                    vertical = horizontal = bar > 0.0f;
+                }
+                if (vertical && point.x >= rect.max.x - bar)
+                {
+                    mark(rect.entity, 1);
+                }
+                else if (horizontal && point.y >= rect.max.y - bar)
+                {
+                    mark(rect.entity, 0);
+                }
+            }
+        }
+    }
+    // A thumb held stays wide wherever the pointer goes.
+    if (m_drag.kind == DragKind::ScrollVertical || m_drag.kind == DragKind::ScrollHorizontal)
+    {
+        mark(m_drag.entity, m_drag.kind == DragKind::ScrollVertical ? 1 : 0);
+    }
+    if (m_areaBar != AreaBar::None && m_areaFocus.isValid())
+    {
+        mark(m_areaFocus, m_areaBar == AreaBar::Vertical ? 1 : 0);
+    }
+    // Widening takes a tenth of a second, and narrowing a little longer.
+    const float widen = 1.0f - std::exp(-std::max(seconds, 0.0f) * 24.0f);
+    const float narrow = 1.0f - std::exp(-std::max(seconds, 0.0f) * 12.0f);
+    std::erase_if(m_scrollbarHovers, [&](ScrollbarHover& hover) {
+        hover.amount += ((hover.on ? 1.0f : 0.0f) - hover.amount) * (hover.on ? widen : narrow);
+        return !hover.on && hover.amount < 0.01f;
+    });
+}
+
+ScrollbarLook UiWorld::scrollbarLook(scene::Entity entity, int axis) const
+{
+    ScrollbarLook look;
+    const auto found = std::ranges::find_if(m_scrollbarHovers, [&](const ScrollbarHover& hover) {
+        return hover.entity == entity && hover.axis == axis;
+    });
+    if (found != m_scrollbarHovers.end())
+    {
+        look.hover = found->amount;
+    }
+    look.held = (m_drag.entity == entity && m_drag.kind == (axis == 1 ? DragKind::ScrollVertical : DragKind::ScrollHorizontal)) ||
+                (m_areaFocus == entity && m_areaBar == (axis == 1 ? AreaBar::Vertical : AreaBar::Horizontal));
+    return look;
 }
 
 void UiWorld::updateNavigation(const scene::Scene& scene, const UiInput& input)
@@ -1233,6 +1390,10 @@ void UiWorld::build(const scene::Scene& scene, const DrawContext& context,
     {
         withTints.textAreas = [this](scene::Entity entity) { return textAreaView(entity); };
     }
+    if (!withTints.scrollbars)
+    {
+        withTints.scrollbars = [this](scene::Entity entity, int axis) { return scrollbarLook(entity, axis); };
+    }
     if (!withTints.pickerHsv)
     {
         withTints.pickerHsv = [this, &scene](scene::Entity entity, math::Vec3& hsv) { return pickerHsv(scene, entity, hsv); };
@@ -1312,6 +1473,8 @@ void UiWorld::build(const scene::Scene& scene, const DrawContext& context,
         const scene::UiText* const text = scene.tryGet<scene::UiText>(m_dropdown->entity);
         const CanvasLayout* const canvas = canvasOf(m_dropdown->entity);
         const float scale = canvas != nullptr ? canvas->layout.scale : 1.0f;
+        drawOverlayShadow(list, listMin + math::Vec2{0.0f, 2.0f * scale}, listMax + math::Vec2{0.0f, 2.0f * scale}, 4.0f * scale,
+                          dropdown.listShadowColor, dropdown.listShadowSize * scale);
         drawOverlayBox(list, listMin, listMax, dropdown.listColor, 4.0f * scale);
         for (std::size_t row = 0; row < shown; ++row)
         {
@@ -1359,6 +1522,8 @@ void UiWorld::build(const scene::Scene& scene, const DrawContext& context,
             math::Vec2 at = m_tooltip.at + math::Vec2{12.0f, 18.0f};
             at.x = std::clamp(at.x, 0.0f, std::max(m_windowSize.x - size.x, 0.0f));
             at.y = at.y + size.y > m_windowSize.y ? std::max(m_tooltip.at.y - size.y - 4.0f, 0.0f) : at.y;
+            drawOverlayShadow(world, at + math::Vec2{0.0f, 2.0f}, at + size + math::Vec2{0.0f, 2.0f}, m_tooltipStyle.cornerRadius,
+                              m_tooltipStyle.shadowColor, m_tooltipStyle.shadowSize);
             drawOverlayBox(world, at, at + size, m_tooltipStyle.background, m_tooltipStyle.cornerRadius);
             drawOverlayText(world, withTints, at + math::Vec2{m_tooltipStyle.padding}, at + size, label);
         }

@@ -341,6 +341,9 @@ private:
     void updateGameData();
     // Writes the pictures of the saves the renderer captured.
     void writeThumbnails();
+    // The picture of the window the configuration asks for, then the end of the application.
+    void requestScreenshot();
+    void writeScreenshot(render::CapturedImage& captured);
     void updateUi(std::chrono::nanoseconds frameTime);
     // Appends the canvases of the scene to the frame, over the game.
     void buildUi(render::RenderWorld& world);
@@ -417,6 +420,11 @@ private:
     // The scene asset that plays, and the files the captures in flight go to.
     asset::AssetId m_sceneAsset;
     std::map<std::uint64_t, std::filesystem::path> m_thumbnailCaptures;
+    // The picture of the window asked for by the configuration, the frames it has waited for the
+    // assets to settle, and its request once made.
+    std::filesystem::path m_screenshot;
+    std::uint32_t m_screenshotSettled = 0;
+    std::optional<std::uint64_t> m_screenshotRequest;
     // The themes of the scene being edited, applied outside Play so that the 2D screen and the
     // inspector show the interface as the game will.
     ui::ThemeApplier m_editedThemes;
@@ -466,6 +474,7 @@ ApplicationRunner::ApplicationRunner(Application& application, const Application
     , m_loadGameCode(config.loadGameCode || config.editor)
     , m_enablePhysics(config.enablePhysics)
     , m_userDirectory(config.userDirectory)
+    , m_screenshot(config.screenshot)
 {
     m_application.m_runner = this;
     m_editedThemes.setThemes([this](asset::AssetId id) { return m_services.assets.theme(id); });
@@ -722,7 +731,8 @@ bool ApplicationRunner::isAnimating() const
     // The game, the emitters and the animated tiles the editor plays, and what is loading.
     return m_services.tools->updatesContinuously() || m_services.tools->isAnimating() || m_playScene.has_value() ||
            (m_particles != nullptr && m_particles->particleCount() > 0) || m_animatedTiles ||
-           m_services.assets.pendingLoads() > 0 || m_backgroundScene.has_value() || !m_thumbnailCaptures.empty();
+           m_services.assets.pendingLoads() > 0 || m_backgroundScene.has_value() || !m_thumbnailCaptures.empty() ||
+           !m_screenshot.empty();
 }
 
 int ApplicationRunner::execute()
@@ -1134,6 +1144,7 @@ void ApplicationRunner::render(bool gameplay)
         DEVEX_PROFILE_SCOPE("Interface drawing");
         buildUi(world);
     }
+    requestScreenshot();
     if (core::Result<void> rendered = renderer->endFrame(); !rendered)
     {
         DEVEX_LOG_FATAL("Rendering failed: {}", rendered.error());
@@ -2231,6 +2242,11 @@ void ApplicationRunner::writeThumbnails()
     }
     for (render::CapturedImage& captured : captures)
     {
+        if (captured.request == m_screenshotRequest)
+        {
+            writeScreenshot(captured);
+            continue;
+        }
         const auto found = m_thumbnailCaptures.find(captured.request);
         if (found == m_thumbnailCaptures.end())
         {
@@ -2244,6 +2260,47 @@ void ApplicationRunner::writeThumbnails()
         }
         m_thumbnailCaptures.erase(found);
     }
+}
+
+void ApplicationRunner::requestScreenshot()
+{
+    if (m_screenshot.empty() || m_screenshotRequest || m_services.renderer == nullptr)
+    {
+        return;
+    }
+    // Once nothing has been loading or uploading for a second of frames: what the window shows has
+    // stopped changing.
+    const bool loading = m_services.assets.pendingLoads() > 0 || m_services.renderer->stats().pendingUploads > 0 ||
+                         m_backgroundScene.has_value() || !m_thumbnailCaptures.empty();
+    m_screenshotSettled = loading ? 0 : m_screenshotSettled + 1;
+    if (m_screenshotSettled >= 60)
+    {
+        m_screenshotRequest = m_services.renderer->requestWindowCapture();
+    }
+}
+
+void ApplicationRunner::writeScreenshot(render::CapturedImage& captured)
+{
+    if (captured.rgba.empty())
+    {
+        DEVEX_LOG_ERROR("The window cannot be read back: no picture is written to {}", core::toUtf8(m_screenshot));
+        m_exitCode = EXIT_FAILURE;
+    }
+    else
+    {
+        const asset::Image image{.width = captured.width, .height = captured.height, .rgba = std::move(captured.rgba)};
+        if (core::Result<void> written = core::writeFileAtomically(m_screenshot, asset::encodePng(image)); !written)
+        {
+            DEVEX_LOG_ERROR("Cannot write the picture of the window: {}", written.error());
+            m_exitCode = EXIT_FAILURE;
+        }
+        else
+        {
+            DEVEX_LOG_INFO("Wrote a picture of the window to {}", core::toUtf8(m_screenshot));
+        }
+    }
+    m_screenshot.clear();
+    m_application.m_quitRequested = true;
 }
 
 void ApplicationRunner::saveBindings()

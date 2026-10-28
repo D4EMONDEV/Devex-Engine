@@ -45,6 +45,8 @@ public:
     // their colours are chosen. Otherwise the swapchain's own format and views.
     [[nodiscard]] VkFormat toolsFormat() const noexcept;
     [[nodiscard]] VkImageView toolsImageView(std::uint32_t index) const noexcept;
+    // Whether the images can be copied to a buffer, for a picture of the whole window.
+    [[nodiscard]] bool readable() const noexcept;
 
 private:
     Swapchain() = default;
@@ -60,6 +62,7 @@ private:
     VkFormat m_toolsFormat = VK_FORMAT_UNDEFINED;
     // Empty when the tools draw through the image views.
     std::vector<VkImageView> m_toolsImageViews;
+    bool m_readable = false;
 };
 
 } // namespace devex::render::vulkan
