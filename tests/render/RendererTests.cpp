@@ -566,6 +566,62 @@ TEST_CASE("The tools compose the scene image and interface surfaces over the win
     CHECK(capture.errors().empty());
 }
 
+TEST_CASE("Rows of a texture are replaced while interfaces draw from it", "[render][gpu][glyphs]")
+{
+    using devex::math::Vec2;
+    using devex::render::UiDraw;
+    using devex::render::UiVertex;
+
+    const ErrorCapture capture;
+    {
+        auto platform = devex::platform::Platform::create();
+        REQUIRE(platform.has_value());
+        auto window = platform->createWindow({.width = 320, .height = 240, .vulkan = true, .hidden = true});
+        REQUIRE(window.has_value());
+        auto renderer = devex::render::Renderer::create(*platform, *window, {.validation = true});
+        if (!renderer)
+        {
+            FAIL(std::format("{}", renderer.error()));
+        }
+        // A page of letters: one channel, read at its nearest pixel.
+        devex::asset::TextureData image{.format = devex::asset::TextureFormat::R8Unorm, .filter = devex::asset::TextureFilter::Nearest};
+        image.mips.push_back({.width = 64, .height = 64, .bytes = std::vector<std::byte>(std::size_t{64} * 64)});
+        auto page = renderer->createTexture(image);
+        REQUIRE(page.has_value());
+
+        // Rows outside the texture, or of the wrong length, are refused.
+        const std::vector<std::byte> rows(std::size_t{64} * 4, std::byte{255});
+        CHECK_FALSE(renderer->updateTexture(*page, 62, 4, rows).has_value());
+        CHECK_FALSE(renderer->updateTexture(*page, 0, 3, rows).has_value());
+        CHECK_FALSE(renderer->updateTexture(devex::render::TextureHandle{}, 0, 4, rows).has_value());
+
+        for (std::uint32_t frame = 0; frame < 6; ++frame)
+        {
+            // New rows every frame, while the frames before still draw from the page.
+            REQUIRE(renderer->updateTexture(*page, frame * 8, 4, rows).has_value());
+            devex::render::RenderWorld& world = renderer->beginFrame();
+            world.uiVertices = {UiVertex{.position = {10.0f, 10.0f}, .uv = {0.0f, 0.0f}, .color = {1.0f, 1.0f, 1.0f, 1.0f}},
+                                UiVertex{.position = {74.0f, 10.0f}, .uv = {1.0f, 0.0f}, .color = {1.0f, 1.0f, 1.0f, 1.0f}},
+                                UiVertex{.position = {74.0f, 74.0f}, .uv = {1.0f, 1.0f}, .color = {1.0f, 1.0f, 1.0f, 1.0f}}};
+            world.uiIndices = {0, 1, 2};
+            world.uiDraws.push_back(UiDraw{.kind = devex::render::UiDrawKind::Glyph, .texture = *page, .indexCount = 3});
+            const devex::core::Result<void> presented = renderer->endFrame();
+            if (!presented)
+            {
+                FAIL(std::format("frame {}: {}", frame, presented.error()));
+            }
+        }
+        CHECK(renderer->stats().pendingUploads == 0);
+        renderer->destroyTexture(*page);
+    }
+
+    for (const std::string& error : capture.errors())
+    {
+        UNSCOPED_INFO(error);
+    }
+    CHECK(capture.errors().empty());
+}
+
 TEST_CASE("Only one renderer can exist at a time", "[render][gpu]")
 {
     auto platform = devex::platform::Platform::create();

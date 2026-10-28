@@ -35,6 +35,7 @@
 #include <devex/scene/UiComponents.hpp>
 #include <devex/tools/ToolsOverlay.hpp>
 #include <devex/ui/DrawList.hpp>
+#include <devex/ui/GlyphAtlas.hpp>
 #include <devex/ui/Layout.hpp>
 
 #include <algorithm>
@@ -398,6 +399,8 @@ private:
     // The coroutines of the game module, whose frames are destroyed before it unloads.
     CoroutineScheduler m_coroutines;
     std::unique_ptr<ui::UiWorld> m_ui;
+    // The letters of the interface of the game, drawn at the size they are shown.
+    std::unique_ptr<ui::GlyphAtlas> m_glyphs;
     std::unique_ptr<InputActions> m_actions;
     std::filesystem::path m_userDirectory;
     std::unique_ptr<SaveGames> m_saves;
@@ -2420,6 +2423,10 @@ void ApplicationRunner::buildUi(render::RenderWorld& world)
     {
         return;
     }
+    if (!m_glyphs)
+    {
+        m_glyphs = std::make_unique<ui::GlyphAtlas>(ui::rendererPages(*m_services.renderer));
+    }
     ui::DrawContext context{
         .fonts =
             [this](asset::AssetId id) {
@@ -2451,13 +2458,17 @@ void ApplicationRunner::buildUi(render::RenderWorld& world)
                 return math::Vec2{static_cast<float>(size.width), static_cast<float>(size.height)};
             },
         .localization = &m_localization,
+        .glyphs = m_glyphs.get(),
     };
     if (m_ui)
     {
         m_ui->build(*m_application.m_scene, context, world);
+        m_glyphs->flush();
         return;
     }
-    // Laid out as the game lays them out on the viewport, drawn smaller inside the frame.
+    // Laid out as the game lays them out on the viewport, drawn smaller inside the frame: the letters
+    // are scaled with the rest, which their distances do sharply.
+    context.glyphs = nullptr;
     const scene::Scene& scene = *m_application.m_scene;
     std::vector<std::pair<std::int32_t, scene::Entity>> canvases;
     for (auto [entity, canvas] : scene.view<scene::Canvas>())

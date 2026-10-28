@@ -443,6 +443,53 @@ core::Result<TextureHandle> VulkanRenderer::createTexture(const asset::TextureDa
     return handle;
 }
 
+core::Result<void> VulkanRenderer::updateTexture(TextureHandle handle, std::uint32_t top, std::uint32_t height,
+                                                 std::span<const std::byte> rows)
+{
+    const GpuTexture* const texture = m_textures.find(handle);
+    if (texture == nullptr)
+    {
+        return core::makeError(core::ErrorCode::InvalidArgument, "the texture to update does not exist");
+    }
+    std::uint32_t pixelBytes = 0;
+    switch (texture->image.format())
+    {
+    case VK_FORMAT_R8_UNORM:
+        pixelBytes = 1;
+        break;
+    case VK_FORMAT_R8G8B8A8_UNORM:
+    case VK_FORMAT_R8G8B8A8_SRGB:
+        pixelBytes = 4;
+        break;
+    case VK_FORMAT_R16G16B16A16_SFLOAT:
+        pixelBytes = 8;
+        break;
+    default:
+        return core::makeError(core::ErrorCode::Unsupported, "only uncompressed textures are updated");
+    }
+    const math::Extent2D extent = texture->image.extent();
+    if (texture->image.mipLevels() != 1 || height == 0 || top + height > extent.height ||
+        rows.size() != std::size_t{extent.width} * height * pixelBytes)
+    {
+        return core::makeError(core::ErrorCode::InvalidArgument, "the rows do not fit the texture");
+    }
+    core::Result<Buffer> staging = Buffer::create(m_allocator, {.size = rows.size(), .usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT, .hostVisible = true});
+    if (!staging)
+    {
+        return std::unexpected(staging.error());
+    }
+    std::memcpy(staging->mappedBytes().data(), rows.data(), rows.size());
+    PendingUpload upload{.staging = std::move(*staging), .bytes = rows.size(), .texture = handle, .update = true};
+    upload.levels.push_back({
+        .imageSubresource = {.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .layerCount = 1},
+        .imageOffset = {0, static_cast<std::int32_t>(top), 0},
+        .imageExtent = {extent.width, height, 1},
+    });
+    m_pendingUploadBytes += upload.bytes;
+    m_pendingUploads.push_back(std::move(upload));
+    return {};
+}
+
 void VulkanRenderer::destroyTexture(TextureHandle texture)
 {
     if (std::optional<GpuTexture> removed = m_textures.remove(texture))
@@ -2124,7 +2171,7 @@ void VulkanRenderer::selectUploads(FrameContext& frame)
         {
             mesh->ready = true;
         }
-        if (texture != nullptr)
+        if (texture != nullptr && !next.update)
         {
             texture->ready = true;
             // Recorded before any draw of the frame, which is the first to sample it.
@@ -2181,7 +2228,9 @@ void VulkanRenderer::recordUploads(VkCommandBuffer commandBuffer, const FrameCon
         else if (const GpuTexture* const texture = m_textures.find(upload.texture))
         {
             const VkImage image = texture->image.handle();
-            transitionImage(commandBuffer, image, ImageState::Undefined, ImageState::TransferDestination);
+            // Rows of a texture the frames before read wait for them, and keep the rest.
+            transitionImage(commandBuffer, image, upload.update ? ImageState::ShaderReadOnly : ImageState::Undefined,
+                            ImageState::TransferDestination);
             vkCmdCopyBufferToImage(commandBuffer, upload.staging.handle(), image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                                    static_cast<std::uint32_t>(upload.levels.size()), upload.levels.data());
             transitionImage(commandBuffer, image, ImageState::TransferDestination, ImageState::ShaderReadOnly);

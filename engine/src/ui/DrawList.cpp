@@ -1,4 +1,5 @@
 #include <devex/ui/DrawList.hpp>
+#include <devex/ui/GlyphAtlas.hpp>
 
 #include <devex/scene/Scene.hpp>
 #include <devex/scene/UiComponents.hpp>
@@ -66,6 +67,24 @@ struct Builder
             {.position = math::Vec2{min.x, max.y} * scale,
              .uv = math::Vec2{uvMin.x, uvMax.y},
              .color = color});
+        for (const std::uint32_t corner : {0u, 1u, 2u, 0u, 2u, 3u})
+        {
+            world.uiIndices.push_back(first + corner);
+        }
+        draw.indexCount += 6;
+    }
+
+    // Points already in pixels of the image, as the letters drawn at their size are placed: a round
+    // trip through units would move them off the pixels they were snapped to.
+    void pixelQuad(render::UiDraw& draw, const std::array<math::Vec2, 4>& points, math::Vec2 uvMin, math::Vec2 uvMax,
+                   math::Vec4 color)
+    {
+        const auto first = static_cast<std::uint32_t>(world.uiVertices.size());
+        const std::array<math::Vec2, 4> uvs{uvMin, math::Vec2{uvMax.x, uvMin.y}, uvMax, math::Vec2{uvMin.x, uvMax.y}};
+        for (std::size_t index = 0; index < points.size(); ++index)
+        {
+            world.uiVertices.push_back({.position = points[index], .uv = uvs[index], .color = color});
+        }
         for (const std::uint32_t corner : {0u, 1u, 2u, 0u, 2u, 3u})
         {
             world.uiIndices.push_back(first + corner);
@@ -239,6 +258,44 @@ void drawTextLayout(Builder& builder, const DrawContext& context, const LaidOutR
                     const scene::UiText& text, const TextLayoutResult& letters, const FontRef& font,
                     math::Vec4 color, math::Vec2 origin = math::Vec2{0.0f});
 
+// One upright letter of a text already laid out, moved by `step` in units: drawn at its size from the
+// file of its font when the context can, its baseline on a whole pixel, or else read from the
+// distances. `pass` moves the pen a hair to the right, for a bold face drawn twice.
+void drawLetter(Builder& builder, const DrawContext& context, const FontRef& font, const GlyphQuad& glyph, math::Vec2 step,
+                math::Vec4 color, float sharpness, int pass = 0)
+{
+    if (context.glyphs != nullptr && !font.data->source.empty())
+    {
+        const float pixels = glyph.size * builder.scale;
+        const math::Vec2 pen = (glyph.pen + step) * builder.scale;
+        const SnappedPen snapped = snapPen(pen.x + static_cast<float>(pass) * std::max(pixels * 0.04f, 0.5f));
+        const RasterGlyph* const image = context.glyphs->glyph(*font.data, pixels, glyph.codepoint, snapped.subpixel);
+        if (image == nullptr)
+        {
+            return;
+        }
+        render::UiDraw& draw = builder.batch(render::UiDrawKind::Glyph, image->page, math::Vec4{0.0f}, 0.0f, 1.0f);
+        const math::Vec2 min = math::Vec2{snapped.whole, std::round(pen.y)} + image->offset;
+        const math::Vec2 max = min + image->size;
+        const float lean = glyph.italic ? image->size.y * 0.21f : 0.0f;
+        builder.pixelQuad(draw, {math::Vec2{min.x + lean, min.y}, math::Vec2{max.x + lean, min.y}, max, math::Vec2{min.x, max.y}},
+                          image->uvMin, image->uvMax, color);
+        return;
+    }
+    render::UiDraw& draw = builder.batch(render::UiDrawKind::Text, font.atlas, math::Vec4{0.0f}, 0.0f, sharpness);
+    const float lean = glyph.italic ? (glyph.max.y - glyph.min.y) * 0.21f : 0.0f;
+    const math::Vec2 shift = step + math::Vec2{static_cast<float>(pass) * glyph.size * 0.04f, 0.0f};
+    if (lean > 0.0f)
+    {
+        builder.quad(draw,
+                     std::array<math::Vec2, 4>{math::Vec2{glyph.min.x + lean, glyph.min.y} + shift, math::Vec2{glyph.max.x + lean, glyph.min.y} + shift,
+                                               glyph.max + shift, math::Vec2{glyph.min.x, glyph.max.y} + shift},
+                     glyph.uvMin, glyph.uvMax, color);
+        return;
+    }
+    builder.quad(draw, glyph.min + shift, glyph.max + shift, glyph.uvMin, glyph.uvMax, color);
+}
+
 void drawText(Builder& builder, const DrawContext& context, const LaidOutRect& rect,
               const scene::UiText& text)
 {
@@ -351,6 +408,22 @@ void drawTextLayout(Builder& builder, const DrawContext& context, const LaidOutR
             }
         }
     };
+
+    // Upright letters without an outline are drawn at their size from the file of the font, their
+    // baseline on a whole pixel and their pen at a quarter of one; the others keep their distances,
+    // which turn, scale and outline.
+    if (context.glyphs != nullptr && !font.data->source.empty() && plainRect && text.outlineWidth <= 0.0f)
+    {
+        const math::Vec4 shade = withOpacity(color, rect.opacity);
+        for (const GlyphQuad& glyph : letters.glyphs)
+        {
+            for (int pass = 0; pass < (glyph.bold ? 2 : 1); ++pass)
+            {
+                drawLetter(builder, context, font, glyph, origin, multiply(shade, glyph.color), sharpness, pass);
+            }
+        }
+        return;
+    }
 
     if (text.outlineWidth > 0.0f)
     {
@@ -1109,7 +1182,6 @@ void drawTextArea(Builder& builder, const DrawContext& context, const LaidOutRec
     const std::span<const TextSpan> spans = view != nullptr ? view->spans : std::span<const TextSpan>{};
     std::size_t span = 0;
     {
-        render::UiDraw& draw = builder.batch(render::UiDrawKind::Text, font.atlas, math::Vec4{0.0f}, 0.0f, sharpness);
         for (std::size_t line = first; line < last; ++line)
         {
             const TextAreaLine& placed = *lines[line - first];
@@ -1130,8 +1202,8 @@ void drawTextArea(Builder& builder, const DrawContext& context, const LaidOutRec
                     ++span;
                 }
                 const bool coloured = span < spans.size() && spans[span].begin <= offset;
-                builder.quad(draw, glyph.min + step, glyph.max + step, glyph.uvMin, glyph.uvMax,
-                             coloured ? withOpacity(spans[span].color, rect.opacity) : plain);
+                drawLetter(builder, context, font, glyph, step, coloured ? withOpacity(spans[span].color, rect.opacity) : plain,
+                           sharpness);
             }
         }
     }
@@ -1161,7 +1233,6 @@ void drawTextArea(Builder& builder, const DrawContext& context, const LaidOutRec
         static thread_local TextAreaLine number;
         static thread_local std::string digits;
         const float digit = metrics.gutter / static_cast<float>(std::to_string(starts.size()).size() + 2);
-        render::UiDraw& draw = builder.batch(render::UiDrawKind::Text, font.atlas, math::Vec4{0.0f}, 0.0f, sharpness);
         for (std::size_t line = first; line < last; ++line)
         {
             digits = std::to_string(line + 1);
@@ -1179,7 +1250,7 @@ void drawTextArea(Builder& builder, const DrawContext& context, const LaidOutRec
             const math::Vec4 color = view != nullptr && view->focused && line == caretLine ? plain : withOpacity(area.lineNumberColor, rect.opacity);
             for (const GlyphQuad& glyph : placed->layout.glyphs)
             {
-                builder.quad(draw, glyph.min + step, glyph.max + step, glyph.uvMin, glyph.uvMax, color);
+                drawLetter(builder, context, font, glyph, step, color, sharpness);
             }
         }
     }

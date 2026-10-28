@@ -28,6 +28,7 @@
 #include <filesystem>
 #include <memory>
 #include <optional>
+#include <span>
 #include <vector>
 
 namespace devex::render::vulkan {
@@ -62,6 +63,8 @@ public:
 
     [[nodiscard]] core::Result<TextureHandle> createTexture(const asset::TextureData& texture);
     void destroyTexture(TextureHandle texture);
+    [[nodiscard]] core::Result<void> updateTexture(TextureHandle texture, std::uint32_t top, std::uint32_t height,
+                                                   std::span<const std::byte> rows);
 
     [[nodiscard]] core::Result<ReflectionProbeHandle> createReflectionProbe(const asset::ReflectionProbeData& probe);
     void destroyReflectionProbe(ReflectionProbeHandle probe);
@@ -165,6 +168,8 @@ private:
         std::array<VkDeviceSize, 3> bufferBytes{};
         // For a texture, one copy per mip level.
         std::vector<VkBufferImageCopy> levels;
+        // Rows of a texture already on the GPU, which frames before still read.
+        bool update = false;
     };
 
     // Timestamps a frame can write: one per pass of the render graph, and one more.

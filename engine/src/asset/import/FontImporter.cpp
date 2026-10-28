@@ -284,6 +284,8 @@ core::Result<FontData> bakeFont(std::span<const std::byte> file, std::string fam
     DEVEX_LOG_DEBUG("Baked {} glyphs and {} kerning pairs of '{}' into a {}x{} atlas at {} pixels",
                     font.glyphs.size(), font.kerning.size(), font.family, font.atlasWidth,
                     font.atlasHeight, font.bakedSize);
+    const auto* const fileBytes = reinterpret_cast<const std::uint8_t*>(file.data());
+    font.source.assign(fileBytes, fileBytes + file.size());
     return font;
 }
 

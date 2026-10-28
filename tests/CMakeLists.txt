@@ -110,6 +110,7 @@ devex_add_tests(ui
     SOURCES
         ui/ColorTests.cpp
         ui/ControlsTests.cpp
+        ui/GlyphAtlasTests.cpp
         ui/LayoutTests.cpp
         ui/TextAreaTests.cpp
         ui/TextLayoutTests.cpp

@@ -82,6 +82,13 @@ void Renderer::destroyTexture(TextureHandle texture)
     m_implementation->destroyTexture(texture);
 }
 
+core::Result<void> Renderer::updateTexture(TextureHandle texture, std::uint32_t top, std::uint32_t height,
+                                           std::span<const std::byte> rows)
+{
+    DEVEX_ASSERT(m_implementation != nullptr);
+    return m_implementation->updateTexture(texture, top, height, rows);
+}
+
 core::Result<ReflectionProbeHandle> Renderer::createReflectionProbe(const asset::ReflectionProbeData& probe)
 {
     DEVEX_ASSERT(m_implementation != nullptr);

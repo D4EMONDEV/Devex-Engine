@@ -371,10 +371,11 @@ void EditorDialogsUi::start(DialogKind which, ToolsState& state, EditorUiKit& ki
         break;
     }
     case DialogKind::About: {
-        constexpr std::array<std::pair<const char*, const char*>, 7> credits{{
+        constexpr std::array<std::pair<const char*, const char*>, 8> credits{{
             {"SDL 3", "zlib"},
             {"Vulkan, volk, Vulkan Memory Allocator", "Apache 2.0, MIT"},
             {"GLM, fastgltf, ufbx, Basis Universal", "MIT, MIT, MIT, Apache 2.0"},
+            {"FreeType", "FreeType License"},
             {"plutosvg", "MIT"},
             {"Noto Sans, JetBrains Mono", "SIL Open Font License 1.1"},
             {"Lucide icons", "ISC"},

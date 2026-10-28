@@ -3,6 +3,7 @@ find_package(box2d CONFIG REQUIRED)
 find_package(recastnavigation CONFIG REQUIRED)
 find_package(efsw CONFIG REQUIRED)
 find_package(fastgltf CONFIG REQUIRED)
+find_package(Freetype REQUIRED)
 find_package(glm CONFIG REQUIRED)
 find_package(Jolt CONFIG REQUIRED)
 find_package(mikktspace CONFIG REQUIRED)
@@ -711,6 +712,7 @@ target_sources(devex_ui
         src/ui/Color.cpp
         src/ui/Controls.cpp
         src/ui/DrawList.cpp
+        src/ui/GlyphAtlas.cpp
         src/ui/Layout.cpp
         src/ui/TextArea.cpp
         src/ui/TextAreas.cpp
@@ -724,6 +726,7 @@ target_sources(devex_ui
         FILES
             include/devex/ui/Color.hpp
             include/devex/ui/DrawList.hpp
+            include/devex/ui/GlyphAtlas.hpp
             include/devex/ui/Layout.hpp
             include/devex/ui/TextArea.hpp
             include/devex/ui/TextCache.hpp
@@ -739,6 +742,8 @@ target_link_libraries(devex_ui
         Devex::Math
         Devex::Render
         Devex::Scene
+    PRIVATE
+        Freetype::Freetype
 )
 set_target_properties(devex_ui PROPERTIES
     EXPORT_NAME Ui

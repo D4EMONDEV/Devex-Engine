@@ -18,6 +18,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <memory>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -165,6 +166,11 @@ public:
     // Releases the texture once no frame in flight uses it. Materials using it sample the
     // default texture from the next frame on. Stale handles are ignored.
     void destroyTexture(TextureHandle texture);
+    // Replaces whole rows of the first level of a texture of one level, as the glyphs of fonts fill
+    // their pages: they reach the GPU before the next frame draws, which keeps showing the texture
+    // meanwhile. Only for uncompressed formats.
+    [[nodiscard]] core::Result<void> updateTexture(TextureHandle texture, std::uint32_t top, std::uint32_t height,
+                                                   std::span<const std::byte> rows);
 
     // Prefilters the reflections of a captured probe for every roughness, at once, as the sky's are.
     [[nodiscard]] core::Result<ReflectionProbeHandle> createReflectionProbe(const asset::ReflectionProbeData& probe);

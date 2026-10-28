@@ -411,6 +411,8 @@ enum class UiDrawKind : std::uint8_t
     RoundedQuad,
     // Letters read from the atlas of distances of a font.
     Text,
+    // Letters drawn at their size, whose texture holds how much of each pixel they cover.
+    Glyph,
 };
 
 // What a batch of the interface reads its texture from: a texture of the renderer, or an image the

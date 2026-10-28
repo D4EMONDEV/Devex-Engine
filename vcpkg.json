@@ -15,6 +15,10 @@
         "box2d",
         "efsw",
         "fastgltf",
+        {
+            "name": "freetype",
+            "default-features": false
+        },
         "glm",
         "joltphysics",
         "miniaudio",

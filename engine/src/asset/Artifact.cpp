@@ -92,10 +92,11 @@ std::uint32_t artifactVersion(AssetType type) noexcept
     // 3: the shader and the values of its uniforms.
     case AssetType::Material:
         return 3;
+    // 2: the kerning pairs. 3: the file of the font.
+    case AssetType::Font:
+        return 3;
     case AssetType::Scene:
     case AssetType::AudioClip:
-    // 2: the kerning pairs.
-    case AssetType::Font:
         return 2;
     // 3: the events.
     case AssetType::AnimationClip:
@@ -595,6 +596,7 @@ std::vector<std::byte> encodeFont(const FontData& font)
     writer.writeArray(std::span<const std::uint8_t>(font.atlas));
     writer.writeArray(std::span<const FontGlyph>(font.glyphs));
     writer.writeArray(std::span<const FontKerning>(font.kerning));
+    writer.writeArray(std::span<const std::uint8_t>(font.source));
     return writer.take();
 }
 
@@ -618,6 +620,7 @@ core::Result<FontData> decodeFont(std::span<const std::byte> bytes)
     font.atlas = reader.readArray<std::uint8_t>();
     font.glyphs = reader.readArray<FontGlyph>();
     font.kerning = reader.readArray<FontKerning>();
+    font.source = reader.readArray<std::uint8_t>();
     if (reader.failed())
     {
         return std::unexpected(truncated(AssetType::Font));

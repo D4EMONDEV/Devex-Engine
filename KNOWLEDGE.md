@@ -2126,6 +2126,55 @@ namespace devex::ui {
 - **Système de focus** : Gestion avancée du focus
 - **Histogrammes et sélecteurs** : Contrôles spécialisés
 
+#### 9.2.2. GlyphAtlas (`devex::ui::GlyphAtlas`)
+
+Les lettres dessinées à la taille exacte où elles s'affichent, par FreeType, plutôt que tirées de
+l'atlas de distances : plus nettes aux petites tailles des outils, avec leurs fûts sur des pixels
+entiers. Un `DrawContext` qui porte un atlas (`glyphs`) dessine ainsi le texte simple (sans
+contour, élément ni tourné ni mis à l'échelle) des polices qui gardent leur fichier
+(`FontData::source`) ; le reste garde les distances.
+
+```cpp
+// Dans: engine/include/devex/ui/GlyphAtlas.hpp
+
+namespace devex::ui {
+    // Ce que les pages demandent au renderer (textures R8 de pageSize², lignes remplacées en place).
+    struct DEVEX_API GlyphPages {
+        std::function<render::TextureHandle(std::uint32_t size)> create;
+        std::function<void(render::TextureHandle, std::uint32_t top, std::uint32_t height,
+                           std::span<const std::byte> rows)> update;
+        std::function<void(render::TextureHandle)> destroy;
+    };
+    // Pages d'un renderer (qui doit survivre à l'atlas), lues au pixel le plus proche.
+    [[nodiscard]] DEVEX_API GlyphPages rendererPages(render::Renderer& renderer);
+
+    class DEVEX_API GlyphAtlas {
+    public:
+        static constexpr std::uint32_t pageSize = 1024;
+        static constexpr std::size_t maxPages = 8;   // au-delà, l'atlas repart de zéro
+        static constexpr int subpixelSteps = 4;      // le stylo se pose au quart de pixel
+
+        explicit GlyphAtlas(GlyphPages pages);
+        // Image d'un caractère à une taille en pixels ; null si rien à dessiner.
+        [[nodiscard]] const RasterGlyph* glyph(const asset::FontData& font, float pixels,
+                                               std::uint32_t codepoint, int subpixel);
+        void flush();   // envoie les lignes changées, avant la frame qui les montre
+        void clear();
+    };
+    // Pixel entier à gauche du stylo et quart de pixel au-delà.
+    [[nodiscard]] DEVEX_API SnappedPen snapPen(float x) noexcept;
+}
+```
+
+**Utilisation :**
+- L'éditeur (`EditorUiKit`) et l'application (interface du jeu) possèdent chacun un atlas et
+  appellent `flush()` après avoir construit leurs listes de dessin ;
+- les lots de lettres sont de type `UiDrawKind::Glyph` (la couverture lue dans le canal rouge de
+  la page) ; `Renderer::updateTexture` remplace des lignes d'une texture non compressée sans
+  recréer l'image ;
+- hinting léger de FreeType (`FT_LOAD_TARGET_LIGHT`) : les lettres ne bougent que verticalement,
+  les avances restent celles de la mise en page.
+
 
 ### 9.3. Animation
 

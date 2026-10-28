@@ -28,6 +28,11 @@ struct DEVEX_API GlyphQuad
     bool bold = false;
     // Leaned to the right, to stand in for an italic face.
     bool italic = false;
+    // The character, the pen on the baseline it was placed from, and the height of its em: what
+    // draws it from the file of the font, at the size it is shown.
+    std::uint32_t codepoint = 0;
+    math::Vec2 pen{0.0f};
+    float size = 0.0f;
 };
 
 // An image asked for between two words, by its place in the list the text carries.

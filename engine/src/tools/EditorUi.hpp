@@ -13,6 +13,7 @@
 #include <devex/render/RenderWorld.hpp>
 #include <devex/scene/Scene.hpp>
 #include <devex/scene/UiComponents.hpp>
+#include <devex/ui/GlyphAtlas.hpp>
 #include <devex/ui/UiWorld.hpp>
 
 #include <cstddef>
@@ -82,6 +83,8 @@ public:
 
     // The styles follow the colors of the editor, made again when they change.
     void refreshTheme(const ThemeColors& colors);
+    // Sends the letters the panels drew at their size this frame to the renderer.
+    void flushGlyphs();
 
     // The textures of the project and the sprites cut from them, which the previews of the panels show.
     void setAssetImages(std::function<render::TextureHandle(asset::AssetId)> textures,
@@ -131,6 +134,8 @@ private:
     const IconSet& m_icons;
     std::filesystem::path m_fontsDirectory;
     bool m_fontsBaked = false;
+    // The letters of the panels, drawn at the size they are shown.
+    std::unique_ptr<ui::GlyphAtlas> m_glyphs;
     BakedFont m_regular;
     BakedFont m_bold;
     BakedFont m_mono;

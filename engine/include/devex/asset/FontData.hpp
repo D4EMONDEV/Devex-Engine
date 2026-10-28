@@ -58,6 +58,9 @@ struct DEVEX_API FontData
     std::vector<FontGlyph> glyphs;
     // Sorted by the pair they join, and holding only the pairs that move.
     std::vector<FontKerning> kerning;
+    // The file of the font, which draws its letters at the very size they are shown, sharper than
+    // the distances at the small sizes of tools; empty for a font baked without it.
+    std::vector<std::uint8_t> source;
 
     // The height of one line of text at the baked size.
     [[nodiscard]] float lineHeight() const noexcept

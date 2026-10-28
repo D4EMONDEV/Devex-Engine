@@ -404,7 +404,7 @@ TEST_CASE("Output follows startup messages without toggling Follow", "[tools][lo
             if (surface.id != 3) continue;
             for (const auto& draw : surface.draws)
             {
-                if (draw.kind == devex::render::UiDrawKind::Text) textIndices += draw.indexCount;
+                if (draw.kind == devex::render::UiDrawKind::Text || draw.kind == devex::render::UiDrawKind::Glyph) textIndices += draw.indexCount;
             }
         }
         REQUIRE(renderer->endFrame());
@@ -481,7 +481,7 @@ TEST_CASE("Clearing a scrolled output keeps its current rows valid and shows new
                 found = true;
                 for (const auto& draw : surface.draws)
                 {
-                    if (draw.kind == devex::render::UiDrawKind::Text)
+                    if (draw.kind == devex::render::UiDrawKind::Text || draw.kind == devex::render::UiDrawKind::Glyph)
                     {
                         textIndices += draw.indexCount;
                     }

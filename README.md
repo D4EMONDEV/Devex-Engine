@@ -106,8 +106,9 @@ captures de l'éditeur, scènes de base, entrées, scripts C#, animations, colli
 - `Devex::Ui` : interfaces faites d'entités (`Canvas`, `UiRect`, `UiImage`, `UiText`, `UiButton`,
   `UiInput`, `UiSlider`, `UiToggle`, `UiScroll`, `UiLayout`, `UiBinding`, `UiNumberField`,
   `UiColorPicker`, `UiPlot`, `UiLine`, `UiTextArea`), placement par ancrages
-  et marges puis par conteneurs, texte tiré d'un atlas de distances signées avec crénage et texte
-  riche, champs de saisie avec sélection, presse-papiers et mot de passe, curseurs et cases à
+  et marges puis par conteneurs, texte dessiné à sa taille par FreeType (net, sur des pixels
+  entiers) ou tiré d'un atlas de distances signées quand il est contourné ou agrandi, avec
+  crénage et texte riche, champs de saisie avec sélection, presse-papiers et mot de passe, curseurs et cases à
   cocher, listes qui défilent et se découpent avec leur barre de défilement, images en neuf
   parts ou tirées d'un sprite d'atlas, graphes en ligne ou en barres, liaison d'un texte à un champ de composant, thèmes `.dvxtheme` de styles nommés, popups,
   menus et modales (`UiPopup`), menus contextuels au clic droit, infobulles, listes déroulantes,
@@ -436,7 +437,7 @@ règlent dans *Editor > Editor Settings*.
 
 Les polices (Noto Sans, JetBrains Mono : SIL OFL 1.1) et les icônes (Lucide : ISC) de l'éditeur sont
 dans `third_party` avec leurs licences, comme ufbx (MIT ou domaine public), qui lit les fichiers FBX
-et OBJ.
+et OBJ. Les lettres sont dessinées par FreeType (FreeType License), que vcpkg fournit.
 
 Avec Visual Studio en français sans le pack de langue anglais, la configuration fait passer le
 compilateur par un petit lanceur qui traduit ses notes `/showIncludes` pour Ninja (voir

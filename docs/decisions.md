@@ -96,7 +96,7 @@ mais seulement explicitement ici : le code suit ce document, pas l'inverse.
 | Composition de l'éditeur | Couche d'interface sur le swapchain, images lues par des lots      |
 | Fenêtres de l'éditeur    | Dock dans la fenêtre principale seulement                          |
 | Thème de l'éditeur       | Inspiré de Godot, dérivé d'une base, d'un accent et d'un contraste |
-| Polices                  | Noto Sans (interface), JetBrains Mono (code), atlas de distances   |
+| Polices                  | Noto Sans (interface), JetBrains Mono (code), FreeType, distances  |
 | Icônes                   | Lucide (SVG) dessinées en images, colorées par type d'objet        |
 | Scènes ouvertes          | Onglets, chacun avec son historique, sa sélection et sa caméra     |
 | Couleurs de l'interface  | Mélangées en espace d'affichage (vue UNORM de la swapchain)        |
@@ -174,7 +174,7 @@ mais seulement explicitement ici : le code suit ce document, pas l'inverse.
 | Réglages de l'image      | Sur le composant Camera, à côté de l'exposition                   |
 | Interfaces               | Entités et composants : `Canvas`, `UiRect`, `UiImage`, `UiText`... |
 | Placement                | Ancrages et marges, puis conteneurs ligne, colonne et grille       |
-| Texte                    | Police cuite en atlas de distances signées, nette à toute taille   |
+| Texte                    | Lettres dessinées à leur taille par FreeType, distances au-delà    |
 | Entrées de l'interface   | Souris, clavier et manette, actions nommées lues par le jeu        |
 | Saisie de texte          | `UiInput` : sélection, presse-papiers, mot de passe, multiligne    |
 | Thèmes d'interface       | Asset `.dvxtheme` de styles nommés, référencé par le canevas       |
@@ -3378,6 +3378,20 @@ Jalon 68, comme Godot, en deux portées :
   écritures demanderont une police cuite pour elles. Les **paires de crénage** de la police (table
   `kern` lue par stb_truetype) sont cuites avec l'atlas, seulement celles qui bougent, triées pour
   être trouvées par dichotomie.
+- **Lettres à leur taille** (jalon 77) : aux petites tailles des outils, les distances bavent
+  (barres horizontales grises, fûts entre deux pixels). Comme Godot et Dear ImGui, les lettres sont
+  donc dessinées par **FreeType** à la taille exacte où elles s'affichent : la police garde son
+  fichier (`FontData::source`, artifact de police en version 3) et un `ui::GlyphAtlas` remplit au
+  fil de l'eau des pages R8 de 1024² (rangées en étagères, une marge d'un pixel), dont il envoie
+  à chaque frame les seules lignes changées par `Renderer::updateTexture`. Hinting **léger**
+  (`FT_LOAD_TARGET_LIGHT`, comme FreeType le conseille pour l'écran) : les lettres se calent
+  verticalement sans que les avances changent, si bien que la mise en page, le curseur et le clic
+  entre deux lettres restent ceux des distances. Le stylo se pose au **quart de pixel** (le contour
+  décalé avant d'être rempli) et la ligne de base sur un pixel entier ; les pages se lisent au
+  pixel le plus proche, en lots `UiDrawKind::Glyph`. Au-delà de huit pages, l'atlas repart de zéro
+  après la frame qui l'a rempli. Les distances restent pour le texte contourné, celui d'un élément
+  tourné ou mis à l'échelle, l'aperçu agrandi des interfaces dans l'écran 2D et les lettres de plus
+  de 256 pixels. Le gras simulé repasse la lettre décalée d'un pixel ou de 4 % de sa taille.
 - **Texte** : `UiText` porte son texte, sa police, sa taille en unités, son alignement, le retour à
   la ligne (coupé aux espaces, sinon au caractère), l'interligne et un contour dessiné en
   repassant les lettres autour d'elles. La mise en page est pure (`ui::layoutText`) : elle rend des
@@ -4117,6 +4131,7 @@ Jalon 62, comme la localisation de Godot.
 | recastnavigation      | navigation           | 39 ✅    |
 | zstd                  | paquets de jeux      | 13 ✅    |
 | FreeType (`imgui[freetype]`) | rendu des polices de l'éditeur | 10 ✅, retirée au 56 |
+| FreeType (sans features) | lettres des interfaces à leur taille | 77 ✅ |
 | plutosvg              | icônes SVG de l'éditeur | 10 ✅  |
 | Catch2                | tests (feature `tests`) | 0 ✅  |
 
@@ -4523,6 +4538,11 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     sondes par image ; lumière diffuse du volume à la place du ciel, sondes derrière la surface
     moins écoutées, reflets du ciel assombris dans les pièces ; captures rendues par les vues qui
     ne sont plus dessinées ; CI réparée (lavapipe, `/bigobj`) ; volume dans la salle aux miroirs.
+77. ✅ **Lettres à leur taille** — texte des interfaces et de l'éditeur dessiné par FreeType à la
+    taille exacte où il s'affiche (hinting léger, stylo au quart de pixel, ligne de base sur un
+    pixel entier) dans un atlas de pages remplies au fil de l'eau et mises à jour en place
+    (`Renderer::updateTexture`) ; police qui garde son fichier ; distances signées gardées pour le
+    texte contourné ou agrandi.
 
 Ensuite, sans ordre figé : à choisir dans les pistes ci-dessous.
 

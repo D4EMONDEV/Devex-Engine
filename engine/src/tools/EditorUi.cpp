@@ -68,6 +68,7 @@ EditorUiKit::EditorUiKit(render::Renderer& renderer, const IconSet& icons, std::
     : m_renderer(renderer)
     , m_icons(icons)
     , m_fontsDirectory(std::move(fontsDirectory))
+    , m_glyphs(std::make_unique<ui::GlyphAtlas>(ui::rendererPages(renderer)))
 {
 }
 
@@ -327,7 +328,13 @@ ui::DrawContext EditorUiKit::drawContext()
                 return m_assetSizes ? m_assetSizes(id) : math::Vec2{0.0f};
             },
         .defaultFont = regularFont(),
+        .glyphs = m_glyphs.get(),
     };
+}
+
+void EditorUiKit::flushGlyphs()
+{
+    m_glyphs->flush();
 }
 
 const asset::FontData* EditorUiKit::fontData(asset::AssetId font)

@@ -1,5 +1,6 @@
 // Draws the interface over the tonemapped scene: coloured rectangles, textured ones, panels with
-// rounded corners, and the letters of a font read from its atlas of distances. Positions arrive in
+// rounded corners, and the letters of a font, read from its atlas of distances or drawn at their
+// size. Positions arrive in
 // pixels of the image, and colours are blended over it with straight alpha.
 
 import common;
@@ -14,6 +15,7 @@ public struct UiVertex
 static const uint kindQuad = 0;
 static const uint kindRoundedQuad = 1;
 static const uint kindText = 2;
+static const uint kindGlyph = 3;
 
 struct UiData
 {
@@ -85,6 +87,11 @@ float4 fragmentMain(VertexOutput input) : SV_Target
         const float distance = sampleTexture(ui.texture, input.uv).r;
         const float softness = 0.25 / max(ui.sharpness, 0.0001);
         color.a *= smoothstep(0.5 - softness, 0.5 + softness, distance);
+    }
+    else if (ui.kind == kindGlyph)
+    {
+        // How much of the pixel the letter covers, drawn by FreeType at this very size.
+        color.a *= sampleTexture(ui.texture, input.uv).r;
     }
     else
     {

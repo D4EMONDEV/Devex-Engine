@@ -520,6 +520,9 @@ void layoutText(const asset::FontData& font, std::string_view text, const TextSt
                 .color = item.color,
                 .bold = item.bold,
                 .italic = item.italic,
+                .codepoint = item.codepoint,
+                .pen = math::Vec2{pen - item.advance, baseline},
+                .size = item.size,
             });
         }
         // The end of the line, where the cursor stands after the last letter.

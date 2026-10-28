@@ -19,6 +19,7 @@ class Scene;
 // Turns the placed elements of an interface into the triangles the renderer draws.
 namespace devex::ui {
 
+class GlyphAtlas;
 class TextCache;
 struct TextAreaView;
 
@@ -80,6 +81,9 @@ struct DEVEX_API DrawContext
     TextCache* textCache = nullptr;
     // The translations the texts that ask for one show; without it, texts show as they are written.
     const asset::Localization* localization = nullptr;
+    // Draws upright letters at their size from the files of their fonts; without it, every letter
+    // is read from the distances of its font.
+    GlyphAtlas* glyphs = nullptr;
 
     // What a text shows: its translation when it asks for one and a table has it, or itself.
     [[nodiscard]] std::string_view translated(std::string_view text, bool translate = true) const;

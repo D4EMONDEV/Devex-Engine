@@ -693,6 +693,11 @@ void ToolsOverlay::prepareRender(scene::Scene& scene, render::RenderWorld& world
     detail::renderViewportOverlay(state, world);
     detail::renderEditorFrame(state, world);
     state.hosts.compose(world);
+    // The letters the panels drew at a new size reach their pages before the frame shows them.
+    if (state.uiKit)
+    {
+        state.uiKit->flushGlyphs();
+    }
     if (state.mode != ToolsMode::Editor)
     {
         return;
