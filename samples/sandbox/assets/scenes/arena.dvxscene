@@ -18,6 +18,7 @@ shadow_distance = 60
 
 [component type="Environment"]
 sky = asset("060d85bd-f1c5-45bb-ad48-8c1e3e659f71")
+sky_material = asset("00000000-0000-0000-0000-000000000000")
 color = vec3(1, 1, 1)
 intensity = 25000
 rotation = 0
@@ -154,8 +155,11 @@ rotation = quat(0, 0, 0, 1)
 scale = vec3(1, 1, 1)
 
 [component type="Camera"]
+projection = "perspective"
 vertical_fov = 1.2217305
+orthographic_size = 5
 near_plane = 0.05
+far_plane = 1000
 primary = true
 auto_exposure = true
 ev100 = 14
@@ -164,6 +168,15 @@ min_ev100 = -2
 max_ev100 = 18
 adaptation_speed = 1.5
 tonemapper = "agx"
+antialiasing = "temporal"
+ambient_occlusion = 1
+ambient_occlusion_radius = 0.5
+bloom = 0.05
+bloom_threshold = 1
+vignette = 0
+grain = 0
+chromatic_aberration = 0
+color_table = asset("00000000-0000-0000-0000-000000000000")
 
 [entity uuid="4a44b2a7-7e74-5496-9352-e5b1593a5c9e" name="Overview camera"]
 
@@ -173,8 +186,11 @@ rotation = quat(-0.230725, 0.29177356, 0.07274732, 0.9253875)
 scale = vec3(1, 1, 1)
 
 [component type="Camera"]
+projection = "perspective"
 vertical_fov = 1.0471976
+orthographic_size = 5
 near_plane = 0.1
+far_plane = 1000
 primary = false
 auto_exposure = true
 ev100 = 14
@@ -183,6 +199,15 @@ min_ev100 = -2
 max_ev100 = 18
 adaptation_speed = 1.5
 tonemapper = "agx"
+antialiasing = "temporal"
+ambient_occlusion = 1
+ambient_occlusion_radius = 0.5
+bloom = 0.05
+bloom_threshold = 1
+vignette = 0
+grain = 0
+chromatic_aberration = 0
+color_table = asset("00000000-0000-0000-0000-000000000000")
 
 [component type="FlyCamera"]
 speed = 6
@@ -511,8 +536,8 @@ lamp = entity("ee1909d0-7530-5c09-b3dc-fb1c991c1e42")
 flash_intensity = 6000
 flash_time = 0.5
 hit_sound = asset("a19e4f7c-3d52-4c8b-b0e6-7f2d9a1c5b83")
-hits = 0
 sparks = entity("e91d548e-d783-4b33-9b8e-5dc732cc6425")
+hits = 0
 
 [entity uuid="ee1909d0-7530-5c09-b3dc-fb1c991c1e42" name="Target 1 lamp"]
 parent = "d0cfd4c9-118f-5fb2-9ed7-7f3c483a2526"
@@ -531,6 +556,7 @@ color = vec3(1, 0.35, 0.2)
 temperature = 6500
 intensity = 0
 range = 8
+cast_shadows = false
 
 [entity uuid="4d71a6bd-475f-55c1-a940-acf630011eef" name="Target 2"]
 parent = "d0cfd4c9-118f-5fb2-9ed7-7f3c483a2526"
@@ -554,8 +580,8 @@ lamp = entity("7cd21d8e-5d8d-520b-bb21-b5a602aa6b2d")
 flash_intensity = 6000
 flash_time = 0.5
 hit_sound = asset("a19e4f7c-3d52-4c8b-b0e6-7f2d9a1c5b83")
-hits = 0
 sparks = entity("e91d548e-d783-4b33-9b8e-5dc732cc6425")
+hits = 0
 
 [entity uuid="7cd21d8e-5d8d-520b-bb21-b5a602aa6b2d" name="Target 2 lamp"]
 parent = "d0cfd4c9-118f-5fb2-9ed7-7f3c483a2526"
@@ -574,6 +600,7 @@ color = vec3(1, 0.35, 0.2)
 temperature = 6500
 intensity = 0
 range = 8
+cast_shadows = false
 
 [entity uuid="70bae702-088d-572d-9d0f-a000123d8768" name="Target 3"]
 parent = "d0cfd4c9-118f-5fb2-9ed7-7f3c483a2526"
@@ -597,8 +624,8 @@ lamp = entity("772f2fa4-0bcc-5ba2-a351-7a566ec7cd1f")
 flash_intensity = 6000
 flash_time = 0.5
 hit_sound = asset("a19e4f7c-3d52-4c8b-b0e6-7f2d9a1c5b83")
-hits = 0
 sparks = entity("e91d548e-d783-4b33-9b8e-5dc732cc6425")
+hits = 0
 
 [entity uuid="772f2fa4-0bcc-5ba2-a351-7a566ec7cd1f" name="Target 3 lamp"]
 parent = "d0cfd4c9-118f-5fb2-9ed7-7f3c483a2526"
@@ -617,6 +644,7 @@ color = vec3(1, 0.35, 0.2)
 temperature = 6500
 intensity = 0
 range = 8
+cast_shadows = false
 
 [entity uuid="e91d548e-d783-4b33-9b8e-5dc732cc6425" name="Hit sparks"]
 
@@ -629,25 +657,58 @@ scale = vec3(1, 1, 1)
 play_on_start = false
 looping = false
 duration = 1
+prewarm = false
 max_particles = 600
+space = "world"
+seed = 0
 rate = 0
+rate_over_distance = 0
 burst = 60
 shape = "sphere"
 radius = 0.1
+angle = 0.4363323
+box_size = vec3(1, 1, 1)
+from_shell = false
+random_direction = 0
 lifetime = vec2(0.5, 1)
 speed = vec2(4, 9)
 size = vec2(0.06, 0.12)
+rotation = vec2(0, 360)
+spin = vec2(0, 0)
 color = vec4(1, 0.7, 0.3, 1)
 end_color = vec4(1, 0.2, 0.05, 0)
 intensity = 4
 gravity = 1
+acceleration = vec3(0, 0, 0)
 drag = 0.5
+inherit_velocity = 0
+noise = 0
+noise_frequency = 1
+noise_speed = 0.5
+size_curve = asset("00000000-0000-0000-0000-000000000000")
+alpha_curve = asset("00000000-0000-0000-0000-000000000000")
+speed_curve = asset("00000000-0000-0000-0000-000000000000")
 collide = true
 bounce = 0.4
 friction = 0.3
+lifetime_loss = 0
+sub_emitter = entity()
+sub_emit_on = "death"
+sub_emit_count = 8
+texture = asset("00000000-0000-0000-0000-000000000000")
+material = asset("00000000-0000-0000-0000-000000000000")
 blend = "additive"
 render_mode = "stretched"
 stretch = 0.04
+sheet_columns = 1
+sheet_rows = 1
+sheet_cycles = 1
+random_frame = false
+lit = false
+softness = 0.3
+trails = false
+trail_time = 0.3
+trail_width = 0.5
 
 [entity uuid="2ab11a81-f608-5958-88e9-4fd8cc1be643" name="Gate"]
 
@@ -723,6 +784,11 @@ size = vec3(1, 1, 1)
 center = vec3(0, 0, 0)
 trigger = false
 
+[component type="NavMeshObstacle"]
+shape = "box"
+size = vec3(1, 1, 1)
+center = vec3(0, 0, 0)
+
 [component type="AudioSource"]
 clip = asset("c47b2e90-1f6a-4d3e-8b95-3a0c7e2d9f14")
 volume = 0.9
@@ -741,11 +807,6 @@ group = 0
 open_offset = vec3(0, 2.8, 0)
 speed = 3
 open = false
-
-[component type="NavMeshObstacle"]
-shape = "box"
-size = vec3(1, 1, 1)
-center = vec3(0, 0, 0)
 
 [entity uuid="02ad646d-3822-57dd-acfe-42ff6f5f23ef" name="Door zone"]
 parent = "2ab11a81-f608-5958-88e9-4fd8cc1be643"
@@ -855,6 +916,7 @@ scale = vec3(0.3, 0.1, 0.05)
 
 [component type="MeshRenderer"]
 mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("00000000-0000-0000-0000-000000000000")
 
 [entity uuid="17aea4f9-83d3-5680-94b6-95ba14da4974" name="Drone 2"]
 
@@ -898,6 +960,7 @@ scale = vec3(0.3, 0.1, 0.05)
 
 [component type="MeshRenderer"]
 mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("00000000-0000-0000-0000-000000000000")
 
 [entity uuid="70176674-bbb5-5fa2-9885-0442304385ab" name="Robot"]
 
@@ -915,12 +978,6 @@ play_on_start = true
 blend_time = 0.25
 apply_root_motion = false
 
-[component type="RobotGuide"]
-patrol = vec3(0, 0, -11)
-wait_time = 1.5
-greet_distance = 4.5
-step_sound = asset("5879e0df-a607-5fd0-afce-22e08a930cfd")
-
 [component type="NavMeshAgent"]
 speed = 1.6
 acceleration = 3
@@ -929,6 +986,13 @@ radius = 0.35
 height = 1.8
 stopping_distance = 0.2
 avoidance = "good"
+
+[component type="RobotGuide"]
+patrol = vec3(0, 0, -11)
+wait_time = 1.5
+greet_distance = 4.5
+gesture_weight = 1
+step_sound = asset("5879e0df-a607-5fd0-afce-22e08a930cfd")
 
 [entity uuid="0fc39f7f-23fa-5a3f-b187-69da16b5c43f" name="Hips"]
 parent = "70176674-bbb5-5fa2-9885-0442304385ab"
@@ -1028,6 +1092,7 @@ scale = vec3(1, 1, 1)
 
 [component type="SkinnedMeshRenderer"]
 mesh = asset("6666e9b6-13db-41d2-84f0-503c34c1760a")
+material = asset("00000000-0000-0000-0000-000000000000")
 bones = list(entity("0fc39f7f-23fa-5a3f-b187-69da16b5c43f"), entity("784f64df-47e9-5f6e-a85b-9ae60436c013"), entity("fade1901-4e0e-5df2-a8e2-b11844bc42ba"), entity("7723bbbc-2bdc-59ee-b591-f7c10c01e4d0"), entity("d12458ab-0790-55da-b5c8-875f94366d5e"), entity("a2521bcf-20ad-57c0-b02f-3b4889e248c1"), entity("787044a7-8576-5bd4-ab7e-6690833de44f"), entity("b952e15f-d457-5fd3-a2c1-e4d70a88c836"), entity("df43d481-6eba-562b-b40a-456417597f45"), entity("c65d2aa9-73e1-5c78-92e4-bffbf2cd2b83"), entity("3753dd05-46eb-5991-bea9-2554dd17aaa3"))
 
 [entity uuid="3184333b-8f1a-5e52-b032-2fd4a16e1450" name="Joints"]
@@ -1403,3 +1468,4 @@ blend_distance = 0.4
 intensity = 1
 box_projection = true
 resolution = "256"
+capture = asset("94ef8ee8-7747-41d0-a4f9-3c7c448819dd")
