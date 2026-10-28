@@ -34,7 +34,7 @@ struct Builder
     {
         // A shape has its own rectangle: it never joins another.
         const bool mergeable = kind != render::UiDrawKind::RoundedQuad && kind != render::UiDrawKind::Shadow &&
-                               kind != render::UiDrawKind::Outline;
+                               kind != render::UiDrawKind::Outline && kind != render::UiDrawKind::Check;
         if (!world.uiDraws.empty())
         {
             render::UiDraw& last = world.uiDraws.back();
@@ -1042,19 +1042,39 @@ void drawLine(Builder& builder, const LaidOutRect& rect, const scene::UiLine& li
     builder.quad(draw, std::array<math::Vec2, 4>{tip, base + across * wide, base - across * wide, tip}, math::Vec2{0.0f}, math::Vec2{1.0f}, color);
 }
 
-// The mark of a toggle that is on, inside its box.
-void drawToggle(Builder& builder, const LaidOutRect& rect, const scene::UiToggle& toggle)
+// A toggle that is on: its box filled, rounded as the image under it, and a tick over it. Just
+// flipped, the box fades in as the tick is drawn, and out as it is taken back.
+void drawToggle(Builder& builder, const DrawContext& context, const LaidOutRect& rect, const scene::UiToggle& toggle, float radius)
 {
-    if (!toggle.value)
+    const std::optional<float> moving = context.toggles ? context.toggles(rect.entity) : std::nullopt;
+    const float on = std::clamp(moving.value_or(toggle.value ? 1.0f : 0.0f), 0.0f, 1.0f);
+    if (on <= 0.0f)
     {
         return;
     }
-    const float fraction = std::clamp(toggle.checkSize, 0.0f, 1.0f);
-    const math::Vec2 inset{rect.size().x * (1.0f - fraction) * 0.5f,
-                           rect.size().y * (1.0f - fraction) * 0.5f};
-    fill(builder, math::Vec2{rect.min.x + inset.x, rect.min.y + inset.y},
-         math::Vec2{rect.max.x - inset.x, rect.max.y - inset.y},
-         withOpacity(toggle.checkColor, rect.opacity));
+    const math::Vec4 box = withOpacity(toggle.checkColor, rect.opacity * std::min(on * 2.5f, 1.0f));
+    if (!isPlain(rect))
+    {
+        // Turned or scaled, the box alone says it is on.
+        builder.quad(builder.batch(render::UiDrawKind::Quad, render::TextureHandle{}, math::Vec4{0.0f}, 0.0f, 1.0f), corners(rect),
+                     math::Vec2{0.0f}, math::Vec2{1.0f}, box);
+        return;
+    }
+    roundedBox(builder, rect.min, rect.max, std::max(radius, 0.001f), box);
+    // The tick in a square of the middle of the box, a little thicker than an eighth of it.
+    const float side = std::min(rect.size().x, rect.size().y) * std::clamp(toggle.checkSize, 0.0f, 1.0f);
+    const math::Vec2 middle = (rect.min + rect.max) * 0.5f;
+    const math::Vec2 min = middle - math::Vec2{side * 0.5f};
+    const math::Vec2 max = middle + math::Vec2{side * 0.5f};
+    const float progress = std::clamp((on - 0.15f) / 0.85f, 0.0f, 1.0f);
+    if (progress <= 0.0f || side <= 0.0f)
+    {
+        return;
+    }
+    render::UiDraw& draw = builder.batch(render::UiDrawKind::Check, render::TextureHandle{},
+                                         math::Vec4{min.x, min.y, max.x, max.y} * builder.scale, progress,
+                                         std::max(side * builder.scale * 0.15f, 1.5f));
+    builder.quad(draw, rect.min, rect.max, math::Vec2{0.0f}, math::Vec2{1.0f}, withOpacity(toggle.markColor, rect.opacity));
 }
 
 // A field: its text or one dot per letter, its placeholder while it is empty and untouched, and
@@ -1424,7 +1444,7 @@ void buildDrawList(const scene::Scene& scene, const LayoutResult& layout, const 
         }
         if (const scene::UiToggle* const toggle = scene.tryGet<scene::UiToggle>(rect.entity))
         {
-            drawToggle(builder, rect, *toggle);
+            drawToggle(builder, context, rect, *toggle, image != nullptr ? image->cornerRadius : 0.0f);
         }
         if (const scene::UiColorPicker* const picker = scene.tryGet<scene::UiColorPicker>(rect.entity))
         {

@@ -3594,6 +3594,16 @@ Jalon 68, comme Godot, en deux portées :
   les infobulles (`TooltipStyle::shadowColor`) ont la leur. Un champ en cours d'édition s'entoure
   de `UiInput::focus_color` (`focus_width`). L'éditeur en habille ses menus, ses dialogues et ses
   infobulles (liseré et ombre) et ses champs (anneau de l'accent), comme Godot 4.
+- **Cases à cocher** : comme celles de Godot 4, une `UiToggle` cochée remplit sa case de
+  `check_color`, arrondie comme l'image dessous, et y trace une coche de `mark_color` sur
+  `check_size` de la case : un lot `UiDrawKind::Check`, deux traits à bouts ronds que le shader
+  lisse par leur distance, tracés jusqu'où `radius` le dit. Cliquée, la case se remplit en fondu
+  pendant que la coche se dessine, en un sixième de seconde, et se défait de même (`UiWorld` suit les
+  cases qui basculent, `DrawContext::toggles`). Décochée, l'éditeur la cerne d'un liseré.
+- **Dialogues de l'éditeur** : leur hauteur était choisie à la main et le contenu la dépassait
+  (*Create New Project* demandait 21 tailles de police pour 19,5) : les boutons touchaient le bord.
+  Posés en dernier par `PanelBuilder::dialogButtons`, ils agrandissent maintenant le dialogue à ce
+  qu'il contient, marges comprises, sans jamais le rétrécir.
 - **Listes virtuelles et tableaux** : `UiVirtualList`, dans un `UiScroll`, prend la hauteur de
   `item_count` éléments de `item_size` unités mais n'a que les lignes visibles pour enfants :
   l'interface les place aux éléments qu'elles montrent et écrit dans `first` le premier, qu'un

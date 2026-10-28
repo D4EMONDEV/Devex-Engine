@@ -362,6 +362,7 @@ void UiWorld::update(scene::Scene& scene, math::Vec2 windowSize, const UiInput& 
     updateScroll(scene, rest);
     updateGlides(scene, seconds);
     updateScrollbars(scene, input, seconds);
+    updateToggles(scene, seconds);
     const bool editedBefore = m_editing.entity.isValid() || m_areaFocus.isValid();
     updateFields(scene, rest, delta);
     updateTextAreas(scene, rest, delta);
@@ -687,6 +688,28 @@ void UiWorld::updateScrollbars(const scene::Scene& scene, const UiInput& input, 
         hover.amount += ((hover.on ? 1.0f : 0.0f) - hover.amount) * (hover.on ? widen : narrow);
         return !hover.on && hover.amount < 0.01f;
     });
+}
+
+void UiWorld::updateToggles(const scene::Scene& scene, float seconds)
+{
+    // A sixth of a second from one end to the other.
+    const float step = std::max(seconds, 0.0f) * 6.0f;
+    std::erase_if(m_toggleFlips, [&](ToggleFlip& flip) {
+        const scene::UiToggle* const toggle = scene.isAlive(flip.entity) ? scene.tryGet<scene::UiToggle>(flip.entity) : nullptr;
+        if (toggle == nullptr)
+        {
+            return true;
+        }
+        const float target = toggle->value ? 1.0f : 0.0f;
+        flip.amount = flip.amount < target ? std::min(flip.amount + step, target) : std::max(flip.amount - step, target);
+        return flip.amount == target;
+    });
+}
+
+std::optional<float> UiWorld::toggleProgress(scene::Entity entity) const
+{
+    const auto found = std::ranges::find(m_toggleFlips, entity, &ToggleFlip::entity);
+    return found != m_toggleFlips.end() ? std::optional(found->amount) : std::nullopt;
 }
 
 ScrollbarLook UiWorld::scrollbarLook(scene::Entity entity, int axis) const
@@ -1238,6 +1261,12 @@ void UiWorld::click(scene::Scene& scene, scene::Entity entity)
     if (scene::UiToggle* const toggle = scene.tryGet<scene::UiToggle>(entity);
         toggle != nullptr && toggle->interactable)
     {
+        // From where it shows now, which may be on its way already.
+        const auto flipping = std::ranges::find(m_toggleFlips, entity, &ToggleFlip::entity);
+        if (flipping == m_toggleFlips.end())
+        {
+            m_toggleFlips.push_back({.entity = entity, .amount = toggle->value ? 1.0f : 0.0f});
+        }
         toggle->value = !toggle->value;
         m_changed.push_back(entity);
         if (!toggle->action.empty())
@@ -1393,6 +1422,10 @@ void UiWorld::build(const scene::Scene& scene, const DrawContext& context,
     if (!withTints.scrollbars)
     {
         withTints.scrollbars = [this](scene::Entity entity, int axis) { return scrollbarLook(entity, axis); };
+    }
+    if (!withTints.toggles)
+    {
+        withTints.toggles = [this](scene::Entity entity) { return toggleProgress(entity); };
     }
     if (!withTints.pickerHsv)
     {

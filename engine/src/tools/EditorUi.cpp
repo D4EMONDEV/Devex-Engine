@@ -440,7 +440,12 @@ void EditorUiKit::refreshTheme(const ThemeColors& colors)
     }());
     add("toggle", [&] {
         std::vector<asset::ThemeOverride> values = image(written(colors.field), 3.0f);
+        // A hairline edge while off; on, the accent with a white tick, as Godot 4 draws them.
+        values.push_back({"UiImage", "outline_color", written(math::Vec4(mono.x, mono.y, mono.z, colors.dark ? 0.22f : 0.3f))});
+        values.push_back({"UiImage", "outline_width", "1"});
         values.push_back({"UiToggle", "check_color", written(colors.accent)});
+        values.push_back({"UiToggle", "mark_color", written(math::Vec4(1.0f, 1.0f, 1.0f, 1.0f))});
+        values.push_back({"UiToggle", "check_size", "0.7"});
         return values;
     }());
     // The text of a file: the colours of its cursor, of what is selected and of its gutter.
@@ -1065,6 +1070,26 @@ std::pair<PanelButton, PanelButton> PanelBuilder::dialogButtons(EditorUiKit& kit
                                                        .align = scene::TextAlign::Right});
     const PanelButton first = button(kit, line, glyph, confirm, "primary", width);
     const PanelButton second = button(kit, line, std::nullopt, "Cancel", "button", width * 0.75f);
+    // The buttons come last: the dialog grows to hold what it holds, so that they keep its padding
+    // under them rather than touching its edge when a height chosen by hand falls short.
+    const scene::UiLayout& layout = scene().get<scene::UiLayout>(dialog);
+    float height = layout.padding.y + layout.padding.w;
+    int rows = 0;
+    for (scene::Entity child = scene().firstChild(dialog); child.isValid(); child = scene().nextSibling(child))
+    {
+        if (const scene::UiRect* const rect = scene().tryGet<scene::UiRect>(child))
+        {
+            height += rect->offsetMax.y - rect->offsetMin.y;
+            ++rows;
+        }
+    }
+    height += layout.spacing * static_cast<float>(std::max(rows - 1, 0));
+    scene::UiRect& rect = scene().get<scene::UiRect>(dialog);
+    if (height > rect.offsetMax.y - rect.offsetMin.y)
+    {
+        rect.offsetMin.y = -std::ceil(height * 0.5f);
+        rect.offsetMax.y = std::ceil(height * 0.5f);
+    }
     return {first, second};
 }
 

@@ -79,6 +79,9 @@ struct DEVEX_API DrawContext
     // How the vertical (axis 1) or horizontal (axis 0) scrollbar of an element shows; without it,
     // every bar rests thin.
     std::function<ScrollbarLook(scene::Entity, int axis)> scrollbars;
+    // How far a toggle that was just flipped is on its way, from 0 off to 1 on; nothing for one
+    // at rest, which shows its value.
+    std::function<std::optional<float>(scene::Entity)> toggles;
     // The hue, saturation and value a colour picker shows, which its colour gives when this says
     // nothing: a grey loses its hue.
     std::function<bool(scene::Entity, math::Vec3&)> pickerHsv;

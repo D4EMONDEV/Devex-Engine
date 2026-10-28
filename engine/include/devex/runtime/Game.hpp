@@ -50,7 +50,8 @@ class CoroutineScheduler;
 // 23: the interface: FontData keeps its file, UiImage gained its outline and its shadow, UiInput its
 // focus ring, UiDropdown the shadow of its list.
 // 24: RendererStats gained the shadow passes a frame kept.
-inline constexpr std::uint32_t gameApiVersion = 24;
+// 25: UiToggle gained the colour of its tick.
+inline constexpr std::uint32_t gameApiVersion = 25;
 
 enum class SystemPhase : std::uint8_t
 {

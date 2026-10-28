@@ -281,6 +281,7 @@ DEVEX_REFLECT(UiToggle)
 {
     type.field("value", &UiToggle::value)
         .field("check_color", &UiToggle::checkColor, {.color = true})
+        .field("mark_color", &UiToggle::markColor, {.color = true})
         .field("check_size", &UiToggle::checkSize)
         .field("interactable", &UiToggle::interactable)
         .field("action", &UiToggle::action);

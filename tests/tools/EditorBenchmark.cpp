@@ -6,6 +6,7 @@
 // And how the editor looks, in pictures of its window written to DEVEX_PICTURES (the temporary
 // directory without it):
 //     devex_tools_tests "Editor pictures"
+//     devex_tools_tests "Project manager pictures"
 #include <devex/asset/Project.hpp>
 #include <devex/asset/import/TextureProcessing.hpp>
 #include <devex/asset/import/AssetDatabase.hpp>
@@ -251,4 +252,47 @@ TEST_CASE("Editor pictures", "[.][pictures]")
                   running.editor.closeMenu();
               },
               {1600, 900});
+}
+
+// The project manager the editor opens on without a project, and its dialog that creates one.
+TEST_CASE("Project manager pictures", "[.][pictures]")
+{
+    const std::filesystem::path root = std::filesystem::temp_directory_path() / "devex-pictures-projects";
+    std::filesystem::remove_all(root);
+    std::filesystem::create_directories(root);
+    auto platform = devex::platform::Platform::create();
+    REQUIRE(platform.has_value());
+    auto window = platform->createWindow({.width = 1600, .height = 900, .vulkan = true, .hidden = true});
+    REQUIRE(window.has_value());
+    auto renderer = devex::render::Renderer::create(*platform, *window, {.validation = false});
+    REQUIRE(renderer.has_value());
+    auto editor = devex::tools::ToolsOverlay::create(*platform, *window, *renderer, devex::tools::ToolsMode::Editor, root / "user.dvx");
+    REQUIRE(editor.has_value());
+    devex::scene::Scene scene;
+    const auto frame = [&] {
+        platform->pollEvents([](const devex::platform::Event&) {});
+        (*editor)->update(scene, std::chrono::milliseconds(16), devex::tools::PlayState::Editing);
+        devex::render::RenderWorld& world = renderer->beginFrame();
+        (*editor)->prepareRender(scene, world, devex::tools::PlayState::Editing);
+        REQUIRE(renderer->endFrame());
+    };
+    EditorRun running{.editor = **editor, .renderer = *renderer, .platform = *platform, .scene = scene, .frame = frame};
+    // Where the Create button of the toolbar stands at this size.
+    const devex::math::Vec2 create{58.0f, 69.0f};
+    pointAt(running, {800.0f, 450.0f}, 20);
+    picture(running, "projects");
+    auto& input = const_cast<devex::platform::Input&>(platform->toolsInput());
+    // A press and a release, each given after the events of its frame are read.
+    for (const bool down : {true, false})
+    {
+        platform->pollEvents([](const devex::platform::Event&) {});
+        input.moveMouse(create, {});
+        input.setMouseButtonDown(devex::platform::MouseButton::Left, down);
+        (*editor)->update(scene, std::chrono::milliseconds(16), devex::tools::PlayState::Editing);
+        devex::render::RenderWorld& world = renderer->beginFrame();
+        (*editor)->prepareRender(scene, world, devex::tools::PlayState::Editing);
+        REQUIRE(renderer->endFrame());
+    }
+    pointAt(running, {800.0f, 450.0f}, 20);
+    picture(running, "projects-create");
 }

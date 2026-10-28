@@ -283,8 +283,11 @@ DEVEX_DECLARE_ENGINE_REFLECTION(UiSlider);
 struct DEVEX_API UiToggle
 {
     bool value = false;
-    math::Vec4 checkColor{1.0f, 1.0f, 1.0f, 1.0f};
-    // The mark fills this much of the box.
+    // While on, the box fills with this colour, rounded as the image under it, and a tick of
+    // `markColor` is drawn over it, as Godot 4 draws its check boxes.
+    math::Vec4 checkColor{0.3f, 0.53f, 0.91f, 1.0f};
+    math::Vec4 markColor{1.0f, 1.0f, 1.0f, 1.0f};
+    // The tick spans this much of the box.
     float checkSize = 0.55f;
     bool interactable = true;
     // What a script asks for: Ui.WasChanged("fullscreen").

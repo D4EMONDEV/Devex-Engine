@@ -418,6 +418,9 @@ enum class UiDrawKind : std::uint8_t
     Shadow,
     // The inner border of a rectangle with rounded corners, `sharpness` pixels wide.
     Outline,
+    // The tick of a check box in the square of its rectangle, `sharpness` pixels thick, drawn along
+    // its two strokes as far as `radius` says, from 0 to 1.
+    Check,
 };
 
 // What a batch of the interface reads its texture from: a texture of the renderer, or an image the

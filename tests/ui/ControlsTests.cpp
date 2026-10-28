@@ -376,6 +376,69 @@ TEST_CASE("A scrollbar rests thin and widens while the pointer is on it", "[ui][
     CHECK(resting[0] == Catch::Approx(4.0f));
 }
 
+TEST_CASE("A toggle fills its box and draws its tick as it turns on, and takes them back as it turns off", "[ui][controls]")
+{
+    Screen screen;
+    const Entity box = screen.element({}, {100.0f, 100.0f}, {120.0f, 120.0f}, "Box");
+    screen.scene.add<UiImage>(box, UiImage{.cornerRadius = 3.0f});
+    screen.scene.add<devex::scene::UiToggle>(box);
+    screen.update();
+    // The filled box and the tick over it, and how far the tick is drawn.
+    const auto drawn = [&] {
+        devex::render::RenderWorld world;
+        screen.world.build(screen.scene, devex::ui::DrawContext{}, world);
+        float fill = -1.0f;
+        float tick = -1.0f;
+        for (const devex::render::UiDraw& draw : world.uiDraws)
+        {
+            if (draw.kind == devex::render::UiDrawKind::Check)
+            {
+                tick = draw.radius;
+                // In the middle of the box, as wide as the share of it the tick takes.
+                CHECK((draw.rect.z - draw.rect.x) == Catch::Approx(20.0f * 0.55f));
+            }
+            else if (draw.kind == devex::render::UiDrawKind::RoundedQuad && draw.indexCount > 0)
+            {
+                fill = world.uiVertices[world.uiIndices[draw.firstIndex]].color.w;
+            }
+        }
+        return std::pair{fill, tick};
+    };
+    // Off: the box alone, from its image.
+    CHECK(drawn().second < 0.0f);
+
+    screen.click({110.0f, 110.0f});
+    REQUIRE(screen.scene.get<devex::scene::UiToggle>(box).value);
+    // On its way, three frames later: the tick drawn part of the way.
+    for (int step = 0; step < 3; ++step)
+    {
+        screen.update();
+    }
+    const auto [halfFill, halfTick] = drawn();
+    CHECK(halfFill > 0.0f);
+    CHECK(halfTick > 0.0f);
+    CHECK(halfTick < 1.0f);
+    for (int step = 0; step < 20; ++step)
+    {
+        screen.update();
+    }
+    CHECK(drawn().second == Catch::Approx(1.0f));
+    CHECK(drawn().first == Catch::Approx(1.0f));
+
+    // Off again, it is taken back over a few frames, then nothing is drawn over the box.
+    screen.click({110.0f, 110.0f});
+    for (int step = 0; step < 3; ++step)
+    {
+        screen.update();
+    }
+    CHECK(drawn().second < 1.0f);
+    for (int step = 0; step < 20; ++step)
+    {
+        screen.update();
+    }
+    CHECK(drawn().second < 0.0f);
+}
+
 TEST_CASE("A splitter shares its room between two children and its bar moves", "[ui][controls]")
 {
     Screen screen;

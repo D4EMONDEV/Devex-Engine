@@ -362,6 +362,9 @@ private:
     // Eases the scrollbars towards the pointer, wider on the bar it is on.
     void updateScrollbars(const scene::Scene& scene, const UiInput& input, float seconds);
     [[nodiscard]] ScrollbarLook scrollbarLook(scene::Entity entity, int axis) const;
+    // Moves the toggles just flipped towards their value.
+    void updateToggles(const scene::Scene& scene, float seconds);
+    [[nodiscard]] std::optional<float> toggleProgress(scene::Entity entity) const;
     void updateNavigation(const scene::Scene& scene, const UiInput& input);
     void updateFields(scene::Scene& scene, const UiInput& input, core::Duration delta);
     // Drags the slider under the pointer and moves the one that has the focus. Answers whether
@@ -480,6 +483,13 @@ private:
         math::Vec2 target{0.0f};
     };
     std::vector<Glide> m_glides;
+    // The toggles clicked a moment ago, and how far they are from off (0) to on (1).
+    struct ToggleFlip
+    {
+        scene::Entity entity;
+        float amount = 0.0f;
+    };
+    std::vector<ToggleFlip> m_toggleFlips;
     // The header cell pressed, which sorts its table if the pointer is let go on it.
     scene::Entity m_headerPressed;
     std::size_t m_headerColumn = 0;

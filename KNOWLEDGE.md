@@ -2183,6 +2183,8 @@ namespace devex::ui {
   (`UiWorld::glide`, `updateGlides`) : un test qui fait défiler laisse passer quelques frames.
 - `UiImage` : `outline_color` / `outline_width` (bordure intérieure), `shadow_color` /
   `shadow_size` / `shadow_offset` (ombre douce, lots `UiDrawKind::Outline` et `Shadow`).
+- `UiToggle` : cochée, la case se remplit de `check_color` et porte une coche de `mark_color`
+  (`check_size` de la case, lot `UiDrawKind::Check`), animée par `DrawContext::toggles` ;
 - `UiInput::focus_color` / `focus_width` : anneau du champ en cours d'édition ;
   `UiDropdown::list_shadow_color` / `list_shadow_size` ; `TooltipStyle::shadowColor` / `shadowSize`.
 - `Renderer::requestWindowCapture()` : image de la fenêtre entière, interface comprise (réponse vide

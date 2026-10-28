@@ -18,6 +18,7 @@ static const uint kindText = 2;
 static const uint kindGlyph = 3;
 static const uint kindShadow = 4;
 static const uint kindOutline = 5;
+static const uint kindCheck = 6;
 
 struct UiData
 {
@@ -70,6 +71,14 @@ float encodeChannel(float value)
     return clamped <= 0.0031308 ? clamped * 12.92 : 1.055 * pow(clamped, 1.0 / 2.4) - 0.055;
 }
 
+// How far a point is from a segment.
+float segmentDistance(float2 point, float2 from, float2 to)
+{
+    const float2 along = to - from;
+    const float t = saturate(dot(point - from, along) / max(dot(along, along), 1e-8));
+    return length(point - from - along * t);
+}
+
 // How far a point is from the outline of a rectangle with rounded corners: negative inside.
 float roundedBoxDistance(float2 point, float2 halfSize, float radius)
 {
@@ -94,6 +103,31 @@ float4 fragmentMain(VertexOutput input) : SV_Target
     {
         // How much of the pixel the letter covers, drawn by FreeType at this very size.
         color.a *= sampleTexture(ui.texture, input.uv).r;
+    }
+    else if (ui.kind == kindCheck)
+    {
+        // A tick in the square of the rectangle: a short stroke down, a long one up, with round
+        // ends, drawn along as far as the radius says.
+        const float2 size = ui.rect.zw - ui.rect.xy;
+        const float side = max(min(size.x, size.y), 1e-4);
+        const float2 corner = (ui.rect.xy + ui.rect.zw - side) * 0.5;
+        const float2 point = (input.pixel - corner) / side;
+        const float2 start = float2(0.12, 0.52);
+        const float2 bend = float2(0.39, 0.79);
+        const float2 end = float2(0.9, 0.24);
+        const float first = length(bend - start);
+        const float second = length(end - bend);
+        const float drawn = saturate(ui.radius) * (first + second);
+        float distance = 1e4;
+        if (drawn > 0.0)
+        {
+            distance = segmentDistance(point, start, start + (bend - start) * saturate(drawn / first));
+            if (drawn > first)
+            {
+                distance = min(distance, segmentDistance(point, bend, bend + (end - bend) * saturate((drawn - first) / second)));
+            }
+        }
+        color.a *= 1.0 - smoothstep(-0.5, 0.5, distance * side - ui.sharpness * 0.5);
     }
     else if (ui.kind == kindShadow || ui.kind == kindOutline)
     {
