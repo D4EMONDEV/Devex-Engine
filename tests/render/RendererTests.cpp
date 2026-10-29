@@ -16,6 +16,7 @@
 #include <cstdint>
 #include <format>
 #include <iterator>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -800,7 +801,8 @@ TEST_CASE("An atmosphere draws a blue sky by day and a red horizon at sunset", "
         bool foggy = false;
         const auto measure = [&](devex::math::Vec3 sunDirection, const devex::render::RenderCamera& view, bool upperHalf) {
             std::uint64_t request = 0;
-            for (int frame = 0; frame < 8; ++frame)
+            std::optional<devex::math::Vec3> measured;
+            for (int frame = 0; frame < 8 && !measured; ++frame)
             {
                 devex::render::RenderWorld& world = renderer->beginFrame();
                 world.camera = camera;
@@ -818,12 +820,12 @@ TEST_CASE("An atmosphere draws a blue sky by day and a red horizon at sunset", "
                     if (image.request == request)
                     {
                         REQUIRE(image.radiance.size() == std::size_t{32} * 32 * 3);
-                        return average(image, upperHalf);
+                        measured = average(image, upperHalf);
                     }
                 }
             }
-            FAIL("the sky was not captured");
-            return devex::math::Vec3{0.0f};
+            REQUIRE(measured.has_value());
+            return *measured;
         };
 
         // Noon: the sky overhead is blue, thousands of nits under a sun of 100000 lux.
