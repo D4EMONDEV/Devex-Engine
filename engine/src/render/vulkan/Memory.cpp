@@ -75,8 +75,9 @@ core::Result<Buffer> Buffer::create(const Allocator& allocator, const BufferConf
     allocationInfo.usage = VMA_MEMORY_USAGE_AUTO;
     if (config.hostVisible)
     {
-        allocationInfo.flags =
-            VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
+        allocationInfo.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT |
+                               (config.hostReads ? VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT
+                                                 : VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT);
     }
 
     Buffer buffer;

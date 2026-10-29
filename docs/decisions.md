@@ -168,7 +168,7 @@ mais seulement explicitement ici : le code suit ce document, pas l'inverse.
 | Éditeur d'animator       | Panneau de graphe de nœuds, réglages dans l'inspecteur, annulation propre |
 | Skinning                 | Dans le vertex shader, matrices d'os en buffer par frame          |
 | Écrans de l'éditeur      | 2D, 3D et Script au centre de la barre de menus                    |
-| Culling                  | Tronc de vue sur CPU, pour la caméra, les cascades et chaque vue   |
+| Culling                  | Tronc de vue sur GPU par compute, dessin indirect par lots         |
 | Boîtes englobantes       | Cuites dans le maillage à l'import, transformées par instance      |
 | Ombres locales           | Un atlas de 4096², tuiles réparties par importance                 |
 | Transparence             | Tri par distance, passe après l'opaque, sans écrire la profondeur  |
@@ -470,14 +470,15 @@ docs/          décisions et documentation
   par le swapchain. La même passe ajoute le bloom et applique l'étalonnage (voir *Transparence
   et post-traitements*).
 - **Limites actuelles** : culling par tronc de vue seulement (rien n'est enlevé parce qu'il est
-  caché derrière autre chose, et chaque instance est testée une par une sur le CPU), lumière
+  caché derrière autre chose), lumière
   indirecte cuite seulement (sondes et volumes ne suivent pas la scène pendant le jeu),
   transparence triée par instance (deux surfaces qui s'entrecroisent restent
   fausses), et traînées possibles derrière un objet très rapide, que l'anticrénelage temporel ne
   rattrape pas toujours.
 - **GPU requis en plus** : descriptor indexing (tableaux runtime, partially bound, update after
   bind, indexation non uniforme), compression BC, et une file graphique qui fait aussi du
-  compute.
+  compute. `drawIndirectFirstInstance` est pris quand il est là : sans lui, le CPU culle et
+  dessine chaque instance, comme avant le jalon 85.
 - Une RHI ne sera extraite que lorsqu'un second backend (DX12, Metal) aura un besoin
   réel.
 
@@ -2627,6 +2628,44 @@ Jalon 65, comme les `Joint3D` et `Joint2D` de Godot :
   caméra bouge, l'atlas reste gardé. Un shader du projet pouvant bouger ses sommets avec `TIME`,
   ses ombres sont redessinées à chaque frame, et les vues des outils (autres caméras, cuissons)
   dessinent toujours les leurs. `RendererStats::keptShadowPasses` dit ce que la frame a gardé.
+- **Culling sur GPU** (jalon 85) : mesuré sur une scène de 20 000 objets (3 maillages, 8
+  matériaux, 256 lumières, Iris Xe en Release), le CPU passait 17 à 28 ms selon l'état de la
+  machine à enregistrer près de 40 000 draw calls, un par instance et par passe, pendant que le GPU
+  attendait. Les instances que les matériaux standard dessinent opaques ou découpées, sans os, sont
+  maintenant confiées au GPU : le CPU les range en **lots** (même sous-maillage, même matériau) et
+  copie chaque frame un `GpuInstance` par instance (matrices de cette frame et de la précédente,
+  boîte du maillage, objet, lot) avec les **vues** de la frame : la caméra (six plans), chaque
+  cascade dessinée (ses quatre côtés), chaque vue de l'atlas dessinée (six plans) et le picking
+  demandé (aucun plan, il regarde tout). Une passe compute (`shaders/cull.slang`, passe *Culling*
+  du graphe) teste la boîte de chaque instance dans chaque vue, comme `Frustum` sur le CPU, et
+  ajoute celles qui y sont au dessin indirect de leur lot dans cette vue (`instanceCount`
+  incrémenté atomiquement) en écrivant leur indice dans les places de la vue. Chaque passe dessine
+  alors un `vkCmdDrawIndexedIndirect` par lot ; le vertex shader (`shaders/instanced.slang`) lit
+  l'instance par `SV_VulkanInstanceID`, qui compte depuis `firstInstance`, et calcule le reste avec
+  les mêmes fonctions que les dessins d'une instance (module `shaders/geometry.slang`) : l'image
+  est identique au pixel près. Le matériau d'un lot est une constante de son dessin : un matériau
+  par fragment rendait ses lectures et l'indexation de ses textures non uniformes, ce qui coûtait
+  près de 3 ms de GPU sur l'Iris Xe (prépasse et ombrage).
+- **Ce qui reste au CPU** : les matériaux d'un shader du projet (leurs pipelines et leurs uniforms
+  d'instance), les surfaces transparentes (triées), les maillages animés (os) et le masque de la
+  sélection. Les passes du CPU ne parcourent plus que ces instances-là ; les positions de la frame
+  précédente sont gardées dans l'ordre de la scène plutôt que dans une table refaite chaque frame.
+  `RendererStats::culledInstances` ne compte que ce que le CPU a écarté.
+- **Résultat** : sur la même machine et le même binaire, 24,6 ms par frame quand le CPU culle,
+  18,3 ms quand le GPU culle (48 draw calls, 3,3 ms de CPU) : la frame est maintenant limitée par
+  le GPU. La prépasse y perd 0,7 ms, l'ordre des dessins n'étant plus celui des instances (des
+  lots entiers plutôt que du plus proche au plus loin) ; le culling par occlusion la regagnera. Sur
+  un GPU dédié, bien plus rapide que l'Iris Xe, c'était le CPU qui limitait de loin.
+  `devex_render_tests "Renderer stress benchmark"` (caché, en Release) imprime ces mesures ;
+  `DEVEX_GPU_CULLING=0` le fait culler par le CPU, `DEVEX_STRESS_OBJECTS` et `DEVEX_STRESS_LIGHTS`
+  changent la scène. `RendererConfig::gpuCulling` permet de s'en passer.
+- **Mémoire visible par le CPU** : les buffers que le CPU écrit chaque frame pour le GPU sont
+  alloués en écriture séquentielle (`VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT`), ce
+  qui permet à VMA de les mettre en mémoire vidéo quand le CPU peut y écrire (Resizable BAR des
+  cartes dédiées) ; seuls ceux que le CPU relit (picking, captures, luminance mesurée) gardent une
+  mémoire en cache côté CPU (`BufferConfig::hostReads`). Avant, tous étaient en mémoire système,
+  que le GPU d'une carte dédiée lit à travers le PCIe. Sur l'Iris Xe, dont la mémoire est partagée,
+  rien ne change.
 ### Sondes de réflexion
 
 - **Composant** : `ReflectionProbe`, comme celui de Godot : une boîte (`size`, centrée sur l'entité
@@ -4855,6 +4894,11 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     état, échelle), sol des terrains (`Terrains`, et `runtime/TerrainQueries.hpp` pour le C++),
     données des assets (`Meshes`, `Curves`, `Textures`, `Sprites`, `Audio.ClipLength`, nom et type),
     gravité des particules, `Physics.RaycastSolid` ; table de parité à tenir à jour ; API des jeux 29.
+85. ✅ **Culling sur GPU** — les instances des matériaux standard sont cullées par une passe compute
+    dans la caméra, les cascades, les vues des lumières locales et le picking, puis dessinées par
+    lots en dessin indirect (40 000 → 48 draw calls sur une scène de 20 000 objets, 24,6 → 18,3 ms
+    par frame sur l'Iris Xe, image identique) ; buffers écrits par le CPU placés en mémoire vidéo
+    quand la carte le permet ; banc de mesure `Renderer stress benchmark`.
 
 Ensuite, sans ordre figé : à choisir dans les pistes ci-dessous.
 
@@ -4997,8 +5041,11 @@ Ensuite, sans ordre figé : à choisir dans les pistes ci-dessous.
   des images, modèles placés qui suivent leur fichier (préfabs de modèles), options d'import
   des animations (découpage d'une pile en clips, fréquence d'échantillonnage).
 - **Autres plateformes de textures** : ASTC ou Basis Universal pour le mobile, produits à l'export.
-- **Culling** : sur GPU avec dessin indirect, culling par occlusion, et hiérarchie spatiale pour
-  les grandes scènes (aujourd'hui chaque instance est testée une par une).
+- **Culling** : par occlusion (pyramide de profondeur de la frame précédente, en deux phases),
+  dessin indirect compté (`vkCmdDrawIndexedIndirectCount`) dans un buffer d'indices partagé pour un
+  seul dessin par vue, instances gardées sur le GPU d'une frame à l'autre plutôt que recopiées, et
+  hiérarchie spatiale pour les très grandes scènes ; les maillages animés confiés eux aussi au
+  GPU, avec un skinning en compute.
 - **Ombres locales** : filtrage plus doux (PCSS), tuiles gardées une à une (aujourd'hui l'atlas est
   gardé entier ou redessiné entier), et ombres des surfaces transparentes.
 - **Réflexions locales** : sondes recapturées pendant le jeu (au chargement, à la demande), plusieurs

@@ -44,6 +44,10 @@ struct BufferConfig
     VkBufferUsageFlags usage = 0;
     // Mapped for the whole lifetime of the buffer, for data written by the CPU.
     bool hostVisible = false;
+    // The CPU reads what the GPU wrote in it: host-visible memory the CPU caches. Otherwise the CPU
+    // only writes it, in order, and what the GPU reads stays in video memory when the device lets
+    // the CPU write there.
+    bool hostReads = false;
 };
 
 class Buffer

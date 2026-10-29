@@ -245,6 +245,8 @@ core::Result<Device> Device::create(VkInstance instance, VkSurfaceKHR surface,
     enabled.features.features.samplerAnisotropy = supported.features.features.samplerAnisotropy;
     enabled.features.features.depthClamp = supported.features.features.depthClamp;
     device.m_depthClamp = supported.features.features.depthClamp == VK_TRUE;
+    enabled.features.features.drawIndirectFirstInstance = supported.features.features.drawIndirectFirstInstance;
+    device.m_drawIndirectFirstInstance = supported.features.features.drawIndirectFirstInstance == VK_TRUE;
 
     VkPhysicalDeviceVulkan12Properties properties12{
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_PROPERTIES,
@@ -306,6 +308,7 @@ Device::Device(Device&& other) noexcept
     , m_maxBindlessTextures(other.m_maxBindlessTextures)
     , m_sampleCounts(other.m_sampleCounts)
     , m_depthClamp(other.m_depthClamp)
+    , m_drawIndirectFirstInstance(other.m_drawIndirectFirstInstance)
     , m_mutableSwapchainFormat(other.m_mutableSwapchainFormat)
 {
 }
@@ -324,6 +327,7 @@ Device& Device::operator=(Device&& other) noexcept
         m_maxBindlessTextures = other.m_maxBindlessTextures;
         m_sampleCounts = other.m_sampleCounts;
         m_depthClamp = other.m_depthClamp;
+        m_drawIndirectFirstInstance = other.m_drawIndirectFirstInstance;
         m_mutableSwapchainFormat = other.m_mutableSwapchainFormat;
     }
     return *this;
@@ -393,6 +397,11 @@ VkSampleCountFlagBits Device::sampleCount(std::uint32_t requested) const noexcep
 bool Device::supportsDepthClamp() const noexcept
 {
     return m_depthClamp;
+}
+
+bool Device::supportsDrawIndirectFirstInstance() const noexcept
+{
+    return m_drawIndirectFirstInstance;
 }
 
 bool Device::supportsMutableSwapchainFormat() const noexcept

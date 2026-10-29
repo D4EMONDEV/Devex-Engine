@@ -226,6 +226,14 @@ private:
         // The reflection probes the frame reflects, the smallest first, and its irradiance volumes.
         std::optional<Buffer> reflectionProbes;
         std::optional<Buffer> irradianceVolumes;
+        // The instances the GPU culls and the views it culls them in; the indirect draw of each batch
+        // in each view, copied from the host before the culling counts its instances; and the slots
+        // of the instances each view kept, a row of them per view.
+        std::optional<Buffer> cullInstances;
+        std::optional<Buffer> cullViews;
+        std::optional<Buffer> cullCommandUpload;
+        std::optional<Buffer> cullCommands;
+        std::optional<Buffer> cullVisible;
         // The terrains of the frame, the blocks of them it draws and the tiles of their grass.
         std::optional<Buffer> terrains;
         std::optional<Buffer> terrainNodes;
@@ -519,11 +527,34 @@ private:
     // The box an instance takes in the world, grown for a skinned mesh whose pose has left its
     // bind pose behind.
     [[nodiscard]] math::Aabb worldBounds(const MeshInstance& instance) const noexcept;
+    // Where an instance of the previous frame stood, and where its bones were.
+    struct PreviousInstance
+    {
+        std::uint64_t key = 0;
+        math::Mat4 transform{1.0f};
+        std::uint32_t firstBone = 0;
+        bool skinned = false;
+    };
+    // Where the instance at this index of the world stood on the previous frame; none if it was not there.
+    [[nodiscard]] const PreviousInstance* previousInstance(std::uint32_t index) const;
     // The key an instance keeps between frames: its entity and the submesh it draws.
     [[nodiscard]] static std::uint64_t instanceKey(const MeshInstance& instance) noexcept
     {
         return (static_cast<std::uint64_t>(instance.objectId) << 32) | instance.submesh;
     }
+    // Whether the GPU culls and draws the instance: a mesh without bones, drawn opaque or cut out by
+    // a standard material.
+    [[nodiscard]] bool isGpuDriven(const MeshInstance& instance) const noexcept;
+    // The instances the GPU culls this frame, in batches of the same submesh and material, and the views
+    // it culls them in: the camera, the cascades and the local lights drawn, and the pick requested.
+    // Nothing when the GPU culls nothing, the CPU then culling and drawing every instance.
+    [[nodiscard]] core::Result<void> prepareCulling(FrameContext& frame, bool drawCascades, bool drawAtlas,
+                                                    bool pick);
+    // Copies the draws of the batches to the GPU and culls the instances in every view.
+    void recordCulling(VkCommandBuffer commandBuffer, const FrameContext& frame) const;
+    // The batches of the pass, each drawn at once with the instances its view kept.
+    std::uint32_t drawCulled(VkCommandBuffer commandBuffer, const FrameContext& frame, VkDeviceAddress sceneData,
+                             MeshPass pass, std::uint32_t cascade, std::uint32_t frameSlot) const;
     // The instances of the pass, or only those given, in their order.
     std::uint32_t drawMeshes(VkCommandBuffer commandBuffer, VkDeviceAddress sceneData,
                              VkDeviceAddress boneMatrices, MeshPass pass, std::uint32_t cascade,
@@ -564,6 +595,9 @@ private:
     // the instance uniforms into theirs.
     [[nodiscard]] core::Result<void> uploadBones(FrameContext& frame) const;
     [[nodiscard]] core::Result<void> ensureHostBuffer(std::optional<Buffer>& buffer, VkDeviceSize bytes) const;
+    // The same with the use given, mapped or only in video memory.
+    [[nodiscard]] core::Result<void> ensureBuffer(std::optional<Buffer>& buffer, VkDeviceSize bytes, VkBufferUsageFlags usage,
+                                                  bool hostVisible) const;
     void releaseRetiredResources() noexcept;
     void destroyPresentSemaphores() noexcept;
 
@@ -662,10 +696,13 @@ private:
     std::vector<GpuShadowView> m_shadowViews;
     std::vector<Frustum> m_shadowViewFrustums;
     std::uint32_t m_lastCulledInstances = 0;
-    // Where each instance stood on the previous frame, by entity and submesh, and where its bones
-    // were. An instance that was not there yet simply does not move.
-    std::unordered_map<std::uint64_t, math::Mat4> m_previousTransforms;
-    std::unordered_map<std::uint64_t, std::uint32_t> m_previousFirstBone;
+    // Where each instance stood on the previous frame, in the order the scene listed them. A scene
+    // usually lists its instances in the same order from a frame to the next, which finds each at its
+    // own index; the others are looked for by key, in a map built the first time one is. An instance
+    // that was not there yet simply does not move.
+    std::vector<PreviousInstance> m_previousInstances;
+    mutable std::unordered_map<std::uint64_t, std::uint32_t> m_previousIndices;
+    mutable bool m_previousIndexed = false;
     std::vector<math::Mat4> m_previousBoneMatrices;
     // The view and projection of the previous frame, without its jitter.
     math::Mat4 m_previousViewProjection{1.0f};
@@ -718,6 +755,57 @@ private:
     std::optional<Pipeline> m_taaPipeline;
     std::optional<Pipeline> m_aoPipeline;
     std::optional<Pipeline> m_localShadowPipeline;
+    // The culling of the instances on the GPU, and the passes that draw what it kept.
+    std::optional<Pipeline> m_cullPipeline;
+    std::optional<Pipeline> m_culledScenePipeline;
+    std::optional<Pipeline> m_culledSceneDoubleSidedPipeline;
+    std::optional<Pipeline> m_culledPrepassPipeline;
+    std::optional<Pipeline> m_culledPrepassDoubleSidedPipeline;
+    std::optional<Pipeline> m_culledShadowPipeline;
+    std::optional<Pipeline> m_culledLocalShadowPipeline;
+    std::optional<Pipeline> m_culledPickPipeline;
+    // Whether the GPU culls the instances it can draw: asked by RendererConfig::gpuCulling, and
+    // possible on the device.
+    bool m_gpuCulling = false;
+    // What the culling of the frame being recorded found: the instances it took from the CPU, its
+    // batches, and the row of each of its views, none for a view it does not cull.
+    struct CullBatch
+    {
+        VkBuffer indices = VK_NULL_HANDLE;
+        std::uint32_t firstIndex = 0;
+        std::uint32_t indexCount = 0;
+        std::uint32_t material = 0;
+        bool doubleSided = false;
+    };
+    struct CullBatchKey
+    {
+        std::uint32_t mesh = 0;
+        std::uint32_t submesh = 0;
+        std::uint32_t material = 0;
+
+        bool operator==(const CullBatchKey&) const = default;
+    };
+    struct CullBatchHash
+    {
+        [[nodiscard]] std::size_t operator()(const CullBatchKey& key) const noexcept
+        {
+            return std::hash<std::uint64_t>{}(((std::uint64_t{key.mesh} << 32) | key.material) * 31 + key.submesh);
+        }
+    };
+    static constexpr std::uint32_t noCullView = 0xFFFFFFFFU;
+    std::vector<std::uint8_t> m_gpuDriven;
+    // The instances left to the CPU, in their order.
+    std::vector<std::uint32_t> m_cpuInstances;
+    std::vector<CullBatch> m_cullBatches;
+    std::vector<GpuInstance> m_gpuInstances;
+    std::vector<GpuCullView> m_cullViews;
+    std::vector<VkDrawIndexedIndirectCommand> m_cullCommands;
+    std::unordered_map<CullBatchKey, std::uint32_t, CullBatchHash> m_batchIndices;
+    std::uint32_t m_culledCount = 0;
+    std::uint32_t m_cameraCullView = noCullView;
+    std::uint32_t m_cascadeCullView = noCullView;
+    std::uint32_t m_localCullView = noCullView;
+    std::uint32_t m_pickCullView = noCullView;
     std::optional<Pipeline> m_bloomThresholdPipeline;
     std::optional<Pipeline> m_bloomDownsamplePipeline;
     // The depth of field and the motion blur, in the order of their passes.

@@ -1187,7 +1187,8 @@ TEST_CASE("Instances the camera cannot see are not drawn", "[render][gpu]")
         REQUIRE(platform.has_value());
         auto window = platform->createWindow({.width = 320, .height = 240, .vulkan = true, .hidden = true});
         REQUIRE(window.has_value());
-        auto renderer = devex::render::Renderer::create(*platform, *window, {.validation = true});
+        // The CPU culls, as it does for the shaders of projects and skinned meshes, and counts what it drops.
+        auto renderer = devex::render::Renderer::create(*platform, *window, {.validation = true, .gpuCulling = false});
         if (!renderer)
         {
             FAIL(std::format("{}", renderer.error()));
@@ -1237,7 +1238,8 @@ TEST_CASE("Local lights that cast shadows are drawn into the atlas", "[render][g
         REQUIRE(platform.has_value());
         auto window = platform->createWindow({.width = 320, .height = 240, .vulkan = true, .hidden = true});
         REQUIRE(window.has_value());
-        auto renderer = devex::render::Renderer::create(*platform, *window, {.validation = true});
+        // The CPU culls, as it does for the shaders of projects and skinned meshes, and counts what it drops.
+        auto renderer = devex::render::Renderer::create(*platform, *window, {.validation = true, .gpuCulling = false});
         if (!renderer)
         {
             FAIL(std::format("{}", renderer.error()));

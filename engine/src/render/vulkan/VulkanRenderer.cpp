@@ -235,6 +235,7 @@ VulkanRenderer::VulkanRenderer(platform::Window& window, const RendererConfig& c
     , m_uploadBytesPerFrame(config.uploadBytesPerFrame)
 {
     rendererExists.store(true);
+    m_gpuCulling = config.gpuCulling && m_device.supportsDrawIndirectFirstInstance();
 }
 
 VulkanRenderer::~VulkanRenderer()
@@ -1339,7 +1340,7 @@ core::Result<void> VulkanRenderer::renderView(ExtraView& view, const RenderView&
             {
                 frame.radianceReadback.reset();
                 core::Result<Buffer> readback =
-                    Buffer::create(m_allocator, {.size = bytes, .usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT, .hostVisible = true});
+                    Buffer::create(m_allocator, {.size = bytes, .usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT, .hostVisible = true, .hostReads = true});
                 if (!readback)
                 {
                     return std::unexpected(readback.error());
@@ -1476,6 +1477,7 @@ core::Result<void> VulkanRenderer::createFrameContext(FrameContext& frame)
                                                                              .size = sizeof(std::uint32_t) * maxPickSize * maxPickSize,
                                                                              .usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                                                                              .hostVisible = true,
+            .hostReads = true,
                                                                          });
         if (!pickReadback)
         {
@@ -1487,6 +1489,7 @@ core::Result<void> VulkanRenderer::createFrameContext(FrameContext& frame)
                                                                                    .size = VkDeviceSize{4} * maxCaptureSize * maxCaptureSize,
                                                                                    .usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                                                                                    .hostVisible = true,
+            .hostReads = true,
                                                                                });
         if (!captureReadback)
         {
@@ -1505,6 +1508,8 @@ core::Result<void> VulkanRenderer::createFrameContext(FrameContext& frame)
                                                 .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
                                                          VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
                                                 .hostVisible = true,
+                                                // The exposure reads what the compute measured.
+                                                .hostReads = buffer == &frame.luminance,
                                             });
             if (!created)
             {
@@ -1802,6 +1807,41 @@ core::Result<void> VulkanRenderer::createScenePipelines()
     localShadowConfig.vertexEntry = "localVertex";
     core::Result<Pipeline> localShadow = createGraphicsPipeline(device, localShadowConfig);
 
+    // The instances the GPU culled draw the same way, reading what each needs from the instances of
+    // the frame rather than from their push constants.
+    const std::filesystem::path culledShader = m_shaderDirectory / "instanced.spv";
+    GraphicsPipelineConfig culledSceneConfig = meshConfig;
+    culledSceneConfig.shaderPath = culledShader;
+    culledSceneConfig.vertexEntry = "sceneVertex";
+    culledSceneConfig.fragmentEntry = "sceneFragment";
+    culledSceneConfig.pushConstantSize = sizeof(InstancedPushConstants);
+    culledSceneConfig.cullMode = VK_CULL_MODE_BACK_BIT;
+    core::Result<Pipeline> culledScene = createGraphicsPipeline(device, culledSceneConfig);
+    culledSceneConfig.cullMode = VK_CULL_MODE_NONE;
+    core::Result<Pipeline> culledSceneDoubleSided = createGraphicsPipeline(device, culledSceneConfig);
+    GraphicsPipelineConfig culledPrepassConfig = prepassConfig;
+    culledPrepassConfig.shaderPath = culledShader;
+    culledPrepassConfig.vertexEntry = "prepassVertex";
+    culledPrepassConfig.fragmentEntry = "prepassFragment";
+    culledPrepassConfig.pushConstantSize = sizeof(InstancedPushConstants);
+    culledPrepassConfig.cullMode = VK_CULL_MODE_BACK_BIT;
+    core::Result<Pipeline> culledPrepass = createGraphicsPipeline(device, culledPrepassConfig);
+    culledPrepassConfig.cullMode = VK_CULL_MODE_NONE;
+    core::Result<Pipeline> culledPrepassDoubleSided = createGraphicsPipeline(device, culledPrepassConfig);
+    GraphicsPipelineConfig culledShadowConfig = shadowConfig;
+    culledShadowConfig.shaderPath = culledShader;
+    culledShadowConfig.vertexEntry = "shadowVertex";
+    culledShadowConfig.fragmentEntry = "shadowFragment";
+    culledShadowConfig.pushConstantSize = sizeof(InstancedPushConstants);
+    core::Result<Pipeline> culledShadow = createGraphicsPipeline(device, culledShadowConfig);
+    culledShadowConfig.vertexEntry = "localShadowVertex";
+    core::Result<Pipeline> culledLocalShadow = createGraphicsPipeline(device, culledShadowConfig);
+    core::Result<Pipeline> cull = createComputePipeline(device, {
+                                                                    .shaderPath = m_shaderDirectory / "cull.spv",
+                                                                    .entry = "cullMain",
+                                                                    .pushConstantSize = sizeof(CullPushConstants),
+                                                                });
+
     // The sky covers what no geometry wrote, at the infinitely far depth 0.
     core::Result<Pipeline> sky = createGraphicsPipeline(
         device, {
@@ -1830,6 +1870,17 @@ core::Result<void> VulkanRenderer::createScenePipelines()
                     .fragmentEntry = "pickFragment",
                     .setLayouts = globalOnly,
                     .pushConstantSize = sizeof(DrawPushConstants),
+                    .colorFormat = pickFormat,
+                    .depthFormat = depthFormat,
+                    .cullMode = VK_CULL_MODE_NONE,
+                });
+    core::Result<Pipeline> culledPick = createGraphicsPipeline(
+        device, {
+                    .shaderPath = culledShader,
+                    .vertexEntry = "pickVertex",
+                    .fragmentEntry = "pickFragment",
+                    .setLayouts = globalOnly,
+                    .pushConstantSize = sizeof(InstancedPushConstants),
                     .colorFormat = pickFormat,
                     .depthFormat = depthFormat,
                     .cullMode = VK_CULL_MODE_NONE,
@@ -1931,7 +1982,9 @@ core::Result<void> VulkanRenderer::createScenePipelines()
                                           &particle, &ribbon, &sprite, &spritePick, &spriteMask,
                                           &prepass, &prepassDoubleSided, &ambientOcclusion, &shadow,
                                           &localShadow, &sky, &luminance, &pick, &selectionMask, &terrainPrepass,
-                                          &terrainScene, &terrainShadow, &terrainLocalShadow, &terrainPick, &grass})
+                                          &terrainScene, &terrainShadow, &terrainLocalShadow, &terrainPick, &grass,
+                                          &culledScene, &culledSceneDoubleSided, &culledPrepass, &culledPrepassDoubleSided,
+                                          &culledShadow, &culledLocalShadow, &culledPick, &cull})
     {
         if (!*result)
         {
@@ -1962,6 +2015,14 @@ core::Result<void> VulkanRenderer::createScenePipelines()
     m_terrainLocalShadowPipeline = std::move(*terrainLocalShadow);
     m_terrainPickPipeline = std::move(*terrainPick);
     m_grassPipeline = std::move(*grass);
+    m_culledScenePipeline = std::move(*culledScene);
+    m_culledSceneDoubleSidedPipeline = std::move(*culledSceneDoubleSided);
+    m_culledPrepassPipeline = std::move(*culledPrepass);
+    m_culledPrepassDoubleSidedPipeline = std::move(*culledPrepassDoubleSided);
+    m_culledShadowPipeline = std::move(*culledShadow);
+    m_culledLocalShadowPipeline = std::move(*culledLocalShadow);
+    m_culledPickPipeline = std::move(*culledPick);
+    m_cullPipeline = std::move(*cull);
 
     // A block is a grid of terrainBlockCells cells on a side, its four quarters one after the other,
     // so that a block can draw a quarter of itself where its smaller blocks are not drawn.
@@ -2465,6 +2526,12 @@ core::Result<void> VulkanRenderer::uploadBones(FrameContext& frame) const
 
 core::Result<void> VulkanRenderer::ensureHostBuffer(std::optional<Buffer>& buffer, VkDeviceSize bytes) const
 {
+    return ensureBuffer(buffer, bytes, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, true);
+}
+
+core::Result<void> VulkanRenderer::ensureBuffer(std::optional<Buffer>& buffer, VkDeviceSize bytes, VkBufferUsageFlags usage,
+                                                bool hostVisible) const
+{
     if (buffer && buffer->size() >= bytes)
     {
         return {};
@@ -2474,9 +2541,8 @@ core::Result<void> VulkanRenderer::ensureHostBuffer(std::optional<Buffer>& buffe
     core::Result<Buffer> created =
         Buffer::create(m_allocator, {
                                         .size = std::max<VkDeviceSize>(bytes * 2, 4096),
-                                        .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
-                                                 VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-                                        .hostVisible = true,
+                                        .usage = usage,
+                                        .hostVisible = hostVisible,
                                     });
     if (!created)
     {
@@ -3703,6 +3769,277 @@ math::Aabb VulkanRenderer::worldBounds(const MeshInstance& instance) const noexc
     return math::transform(instance.transform, bounds);
 }
 
+bool VulkanRenderer::isGpuDriven(const MeshInstance& instance) const noexcept
+{
+    const GpuMesh* const mesh = m_meshes.find(instance.mesh);
+    if (mesh == nullptr || instance.submesh >= mesh->submeshes.size() || (mesh->skin && instance.boneCount > 0))
+    {
+        return false;
+    }
+    const MaterialDesc* const material = m_materials.find(instance.material);
+    return shaderOf(material, asset::ShaderKind::Spatial) == nullptr &&
+           (material == nullptr || material->alphaMode != asset::AlphaMode::Blend);
+}
+
+core::Result<void> VulkanRenderer::prepareCulling(FrameContext& frame, bool drawCascades, bool drawAtlas, bool pick)
+{
+    m_gpuDriven.assign(m_world.meshes.size(), 0);
+    m_cpuInstances.clear();
+    m_cullBatches.clear();
+    m_gpuInstances.clear();
+    m_cullViews.clear();
+    m_cullCommands.clear();
+    m_batchIndices.clear();
+    m_culledCount = 0;
+    m_cameraCullView = noCullView;
+    m_cascadeCullView = noCullView;
+    m_localCullView = noCullView;
+    m_pickCullView = noCullView;
+    // The instances by batch, each batch counting those it has before the slots of its first.
+    std::vector<std::uint32_t> batchSizes;
+    for (std::uint32_t index = 0; index < m_world.meshes.size(); ++index)
+    {
+        const MeshInstance& instance = m_world.meshes[index];
+        if (!m_gpuCulling || !isGpuDriven(instance))
+        {
+            m_cpuInstances.push_back(index);
+            continue;
+        }
+        const GpuMesh& mesh = *m_meshes.find(instance.mesh);
+        const MaterialDesc* const material = m_materials.find(instance.material);
+        const std::uint32_t materialIndex = material != nullptr ? instance.material.index : m_defaultMaterial.index;
+        // A batch draws one material, which every fragment of its draw then reads the same way.
+        const auto [found, added] = m_batchIndices.try_emplace(
+            CullBatchKey{.mesh = instance.mesh.index, .submesh = instance.submesh, .material = materialIndex},
+            static_cast<std::uint32_t>(m_cullBatches.size()));
+        if (added)
+        {
+            const SubmeshRange& submesh = mesh.submeshes[instance.submesh];
+            m_cullBatches.push_back({.indices = mesh.indices.handle(),
+                                     .firstIndex = submesh.firstIndex,
+                                     .indexCount = submesh.indexCount,
+                                     .material = materialIndex,
+                                     .doubleSided = material != nullptr && material->doubleSided});
+            batchSizes.push_back(0);
+        }
+        ++batchSizes[found->second];
+
+        const PreviousInstance* const previous = previousInstance(index);
+        // An empty box stands for a mesh the culling keeps everywhere.
+        const math::Aabb bounds = mesh.bounds.isEmpty() ? math::Aabb{.min = math::Vec3{1.0f}, .max = math::Vec3{-1.0f}} : mesh.bounds;
+        m_gpuInstances.push_back({
+            .world = instance.transform,
+            .previousWorld = previous != nullptr ? previous->transform : instance.transform,
+            .boundsMin = bounds.min,
+            .objectId = instance.objectId,
+            .boundsMax = bounds.max,
+            .batch = found->second,
+            .vertices = mesh.vertices.deviceAddress(),
+            .flags = cullCamera | cullShadows,
+        });
+        m_gpuDriven[index] = 1;
+    }
+    m_culledCount = static_cast<std::uint32_t>(m_gpuInstances.size());
+    if (m_culledCount == 0)
+    {
+        return {};
+    }
+
+    const auto addView = [this](const Frustum& frustum, std::uint32_t planeCount, std::uint32_t flags) {
+        GpuCullView& view = m_cullViews.emplace_back();
+        std::copy_n(frustum.planes.begin(), planeCount, view.planes.begin());
+        view.planeCount = planeCount;
+        view.flags = flags;
+    };
+    m_cameraCullView = 0;
+    addView(m_cameraFrustum, 6, cullCamera);
+    if (drawCascades)
+    {
+        m_cascadeCullView = static_cast<std::uint32_t>(m_cullViews.size());
+        // A cascade looks along its own depth: only its sides cull.
+        for (const Frustum& frustum : m_cascadeFrustums)
+        {
+            addView(frustum, 4, cullShadows);
+        }
+    }
+    if (drawAtlas && !m_shadowViewFrustums.empty())
+    {
+        m_localCullView = static_cast<std::uint32_t>(m_cullViews.size());
+        for (const Frustum& frustum : m_shadowViewFrustums)
+        {
+            addView(frustum, 6, cullShadows);
+        }
+    }
+    if (pick)
+    {
+        // Picking answers about a pixel anywhere: nothing culls it.
+        m_pickCullView = static_cast<std::uint32_t>(m_cullViews.size());
+        addView({}, 0, cullCamera);
+    }
+
+    // The same draws in every view, which the culling then counts the instances of.
+    std::uint32_t firstInstance = 0;
+    std::vector<VkDrawIndexedIndirectCommand> draws;
+    draws.reserve(m_cullBatches.size());
+    for (std::size_t batch = 0; batch < m_cullBatches.size(); ++batch)
+    {
+        draws.push_back({.indexCount = m_cullBatches[batch].indexCount,
+                         .instanceCount = 0,
+                         .firstIndex = m_cullBatches[batch].firstIndex,
+                         .vertexOffset = 0,
+                         .firstInstance = firstInstance});
+        firstInstance += batchSizes[batch];
+    }
+    for (std::size_t view = 0; view < m_cullViews.size(); ++view)
+    {
+        m_cullCommands.insert(m_cullCommands.end(), draws.begin(), draws.end());
+    }
+
+    constexpr VkBufferUsageFlags storage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+    const VkDeviceSize instanceBytes = m_gpuInstances.size() * sizeof(GpuInstance);
+    const VkDeviceSize viewBytes = m_cullViews.size() * sizeof(GpuCullView);
+    const VkDeviceSize commandBytes = m_cullCommands.size() * sizeof(VkDrawIndexedIndirectCommand);
+    const VkDeviceSize visibleBytes = VkDeviceSize{m_culledCount} * m_cullViews.size() * sizeof(std::uint32_t);
+    for (const auto& [buffer, bytes, usage, hostVisible] :
+         {std::tuple<std::optional<Buffer>*, VkDeviceSize, VkBufferUsageFlags, bool>{&frame.cullInstances, instanceBytes, storage, true},
+          {&frame.cullViews, viewBytes, storage, true},
+          {&frame.cullCommandUpload, commandBytes, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, true},
+          {&frame.cullCommands, commandBytes,
+           storage | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, false},
+          {&frame.cullVisible, visibleBytes, storage, false}})
+    {
+        if (core::Result<void> ensured = ensureBuffer(*buffer, bytes, usage, hostVisible); !ensured)
+        {
+            return ensured;
+        }
+    }
+    std::memcpy(frame.cullInstances->mappedBytes().data(), m_gpuInstances.data(), instanceBytes);
+    std::memcpy(frame.cullViews->mappedBytes().data(), m_cullViews.data(), viewBytes);
+    std::memcpy(frame.cullCommandUpload->mappedBytes().data(), m_cullCommands.data(), commandBytes);
+    return {};
+}
+
+void VulkanRenderer::recordCulling(VkCommandBuffer commandBuffer, const FrameContext& frame) const
+{
+    if (m_culledCount == 0)
+    {
+        return;
+    }
+    const auto barrier = [commandBuffer](VkPipelineStageFlags2 sourceStages, VkAccessFlags2 sourceAccess,
+                                         VkPipelineStageFlags2 destinationStages, VkAccessFlags2 destinationAccess) {
+        const VkMemoryBarrier2 memory{
+            .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
+            .srcStageMask = sourceStages,
+            .srcAccessMask = sourceAccess,
+            .dstStageMask = destinationStages,
+            .dstAccessMask = destinationAccess,
+        };
+        const VkDependencyInfo dependency{
+            .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+            .memoryBarrierCount = 1,
+            .pMemoryBarriers = &memory,
+        };
+        vkCmdPipelineBarrier2(commandBuffer, &dependency);
+    };
+
+    const VkBufferCopy copy{.size = m_cullCommands.size() * sizeof(VkDrawIndexedIndirectCommand)};
+    vkCmdCopyBuffer(commandBuffer, frame.cullCommandUpload->handle(), frame.cullCommands->handle(), 1, &copy);
+    barrier(VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+            VK_ACCESS_2_SHADER_STORAGE_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT);
+
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_cullPipeline->handle());
+    const CullPushConstants constants{
+        .instances = frame.cullInstances->deviceAddress(),
+        .views = frame.cullViews->deviceAddress(),
+        .commands = frame.cullCommands->deviceAddress(),
+        .visible = frame.cullVisible->deviceAddress(),
+        .instanceCount = m_culledCount,
+        .batchCount = static_cast<std::uint32_t>(m_cullBatches.size()),
+    };
+    vkCmdPushConstants(commandBuffer, m_cullPipeline->layout(), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(constants), &constants);
+    vkCmdDispatch(commandBuffer, (m_culledCount + 63) / 64, static_cast<std::uint32_t>(m_cullViews.size()), 1);
+
+    // The passes after read the counts as their draws and the slots as their instances.
+    barrier(VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
+            VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT | VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT,
+            VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_READ_BIT);
+}
+
+std::uint32_t VulkanRenderer::drawCulled(VkCommandBuffer commandBuffer, const FrameContext& frame, VkDeviceAddress sceneData,
+                                         MeshPass pass, std::uint32_t cascade, std::uint32_t frameSlot) const
+{
+    std::uint32_t view = noCullView;
+    const Pipeline* single = nullptr;
+    const Pipeline* doubled = nullptr;
+    switch (pass)
+    {
+    case MeshPass::Prepass:
+        view = m_cameraCullView;
+        single = &*m_culledPrepassPipeline;
+        doubled = &*m_culledPrepassDoubleSidedPipeline;
+        break;
+    case MeshPass::Scene:
+        view = m_cameraCullView;
+        single = &*m_culledScenePipeline;
+        doubled = &*m_culledSceneDoubleSidedPipeline;
+        break;
+    case MeshPass::Shadow:
+        view = m_cascadeCullView != noCullView && cascade < cascadeCount ? m_cascadeCullView + cascade : noCullView;
+        single = &*m_culledShadowPipeline;
+        doubled = single;
+        break;
+    case MeshPass::LocalShadow:
+        view = m_localCullView != noCullView && cascade < m_shadowViewFrustums.size() ? m_localCullView + cascade : noCullView;
+        single = &*m_culledLocalShadowPipeline;
+        doubled = single;
+        break;
+    case MeshPass::Pick:
+        view = m_pickCullView;
+        single = &*m_culledPickPipeline;
+        doubled = single;
+        break;
+    case MeshPass::Transparent:
+    case MeshPass::SelectionMask:
+        break;
+    }
+    if (view == noCullView)
+    {
+        return 0;
+    }
+
+    const std::array sets{m_descriptors->global(), frameDescriptors(frameSlot)};
+    // Only the scene and the prepass read the images of the frame set.
+    const bool lit = pass == MeshPass::Scene || pass == MeshPass::Prepass;
+    InstancedPushConstants constants{
+        .scene = sceneData,
+        .instances = frame.cullInstances->deviceAddress(),
+        .visible = frame.cullVisible->deviceAddress() + VkDeviceSize{view} * m_culledCount * sizeof(std::uint32_t),
+        .cascade = cascade,
+    };
+    const Pipeline* bound = nullptr;
+    std::uint32_t drawCalls = 0;
+    for (std::size_t batch = 0; batch < m_cullBatches.size(); ++batch)
+    {
+        const Pipeline* const pipeline = m_cullBatches[batch].doubleSided ? doubled : single;
+        if (pipeline != bound)
+        {
+            vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->handle());
+            vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->layout(), 0, lit ? 2u : 1u,
+                                    sets.data(), 0, nullptr);
+            bound = pipeline;
+        }
+        constants.material = m_cullBatches[batch].material;
+        vkCmdPushConstants(commandBuffer, pipeline->layout(), VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+                           sizeof(constants), &constants);
+        vkCmdBindIndexBuffer(commandBuffer, m_cullBatches[batch].indices, 0, VK_INDEX_TYPE_UINT32);
+        vkCmdDrawIndexedIndirect(commandBuffer, frame.cullCommands->handle(),
+                                 (VkDeviceSize{view} * m_cullBatches.size() + batch) * sizeof(VkDrawIndexedIndirectCommand), 1,
+                                 sizeof(VkDrawIndexedIndirectCommand));
+        ++drawCalls;
+    }
+    return drawCalls;
+}
+
 std::span<const std::uint32_t> VulkanRenderer::instancesOf(MeshPass pass,
                                                            std::uint32_t cascade) const
 {
@@ -3738,8 +4075,7 @@ std::span<const std::uint32_t> VulkanRenderer::instancesOf(MeshPass pass,
     };
     if (pass != MeshPass::Transparent)
     {
-        for (std::uint32_t index = 0; index < m_world.meshes.size(); ++index)
-        {
+        const auto consider = [&](std::uint32_t index) {
             // Blended surfaces have their own pass, and cast no shadow: a pane of glass that
             // darkened the ground under it would look like a wall.
             const bool skipped = ((pass == MeshPass::Scene || pass == MeshPass::Shadow ||
@@ -3750,21 +4086,34 @@ std::span<const std::uint32_t> VulkanRenderer::instancesOf(MeshPass pass,
                                   castsNoShadow(m_world.meshes[index]));
             if (skipped)
             {
-                continue;
+                return;
             }
             if (!visible(m_world.meshes[index]))
             {
                 ++m_culledInstances;
-                continue;
+                return;
             }
             m_passInstances.push_back(index);
+        };
+        // The GPU culls and draws the instances it took, except in the mask of the selection.
+        if (pass == MeshPass::SelectionMask)
+        {
+            for (std::uint32_t index = 0; index < m_world.meshes.size(); ++index)
+            {
+                consider(index);
+            }
+        }
+        else
+        {
+            std::ranges::for_each(m_cpuInstances, consider);
         }
         return m_passInstances;
     }
 
     // Farthest first: with no depth written, the order of the draws is the order of the blending.
+    // Blended instances are all left to the CPU.
     m_transparentOrder.clear();
-    for (std::uint32_t index = 0; index < m_world.meshes.size(); ++index)
+    for (const std::uint32_t index : m_cpuInstances)
     {
         if (!isBlended(m_world.meshes[index]))
         {
@@ -3900,15 +4249,12 @@ std::uint32_t VulkanRenderer::drawMeshes(VkCommandBuffer commandBuffer, VkDevice
         };
         if (pass == MeshPass::Prepass)
         {
-            const std::uint64_t key = instanceKey(instance);
-            const auto previous = m_previousTransforms.find(key);
-            const auto previousBone = m_previousFirstBone.find(key);
+            const PreviousInstance* const previous = previousInstance(index);
             const PrepassPushConstants prepassConstants{
                 .draw = constants,
-                .previousWorld = previous != m_previousTransforms.end() ? previous->second
-                                                                        : instance.transform,
-                .previousBones = skinned && previousBones != 0 && previousBone != m_previousFirstBone.end()
-                                     ? previousBones + previousBone->second * sizeof(math::Mat4)
+                .previousWorld = previous != nullptr ? previous->transform : instance.transform,
+                .previousBones = skinned && previousBones != 0 && previous != nullptr && previous->skinned
+                                     ? previousBones + previous->firstBone * sizeof(math::Mat4)
                                      : constants.bones,
             };
             vkCmdPushConstants(commandBuffer, pipeline->layout(),
@@ -4845,6 +5191,18 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
         vkCmdSetScissor(commands, 0, 1, &scissor);
     };
 
+    {
+        DEVEX_PROFILE_SCOPE("Culling");
+        if (core::Result<void> prepared = prepareCulling(frame, drawCascades, drawAtlas, pick); !prepared)
+        {
+            return std::unexpected(prepared.error());
+        }
+    }
+    if (m_culledCount > 0)
+    {
+        graph.addPass("Culling", {}, [&](VkCommandBuffer commands) { recordCulling(commands, frame); });
+    }
+
     if (drawCascades)
     {
         graph.addPass("Shadow cascades", {{shadowMap, ImageAccess::DepthAttachment}},
@@ -4870,6 +5228,7 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
                               // Steep surfaces need more bias than those facing the light.
                               vkCmdSetDepthBias(commands, 0.0f, 0.0f, 1.5f);
                               drawMeshes(commands, sceneData, boneMatrices, MeshPass::Shadow, cascade, frameSlot);
+                              drawCulled(commands, frame, sceneData, MeshPass::Shadow, cascade, frameSlot);
                               drawTerrains(commands, sceneData, MeshPass::Shadow, cascade, frameSlot);
                               vkCmdEndRendering(commands);
                           }
@@ -4919,6 +5278,7 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
                 vkCmdSetDepthBias(commands, 0.0f, 0.0f, 2.0f);
                 drawCalls += drawMeshes(commands, sceneData, boneMatrices, MeshPass::LocalShadow,
                                         view, frameSlot);
+                drawCalls += drawCulled(commands, frame, sceneData, MeshPass::LocalShadow, view, frameSlot);
                 drawCalls += drawTerrains(commands, sceneData, MeshPass::LocalShadow, view, frameSlot);
             }
             vkCmdEndRendering(commands);
@@ -4974,6 +5334,7 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
         setViewport(commands, extent);
         drawCalls += drawMeshes(commands, sceneData, boneMatrices, MeshPass::Prepass, 0, frameSlot,
                                 previousBones);
+        drawCalls += drawCulled(commands, frame, sceneData, MeshPass::Prepass, 0, frameSlot);
         drawCalls += drawTerrains(commands, sceneData, MeshPass::Prepass, 0, frameSlot);
         vkCmdEndRendering(commands);
     });
@@ -5062,6 +5423,7 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
         vkCmdBeginRendering(commands, &renderingInfo);
         setViewport(commands, extent);
         drawCalls += drawMeshes(commands, sceneData, boneMatrices, MeshPass::Scene, 0, frameSlot);
+        drawCalls += drawCulled(commands, frame, sceneData, MeshPass::Scene, 0, frameSlot);
         drawCalls += drawTerrains(commands, sceneData, MeshPass::Scene, 0, frameSlot);
         drawCalls += drawGrass(commands, sceneData, frameSlot);
 
@@ -5187,6 +5549,7 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
                           vkCmdBeginRendering(commands, &renderingInfo);
                           setViewport(commands, frame.pickExtent);
                           drawMeshes(commands, sceneData, boneMatrices, MeshPass::Pick, 0, frameSlot);
+                          drawCulled(commands, frame, sceneData, MeshPass::Pick, 0, frameSlot);
                           drawTerrains(commands, sceneData, MeshPass::Pick, 0, frameSlot);
                           static_cast<void>(drawSprites(commands, sceneData, frame, frameSlot, SpritePass::Pick, 0,
                                                         static_cast<std::uint32_t>(m_gpuSprites.size())));
@@ -5853,7 +6216,7 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
         if (m_swapchain->readable() && (!frame.windowReadback || frame.windowReadback->size() < bytes))
         {
             core::Result<Buffer> readback =
-                Buffer::create(m_allocator, {.size = bytes, .usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT, .hostVisible = true});
+                Buffer::create(m_allocator, {.size = bytes, .usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT, .hostVisible = true, .hostReads = true});
             if (readback)
             {
                 frame.windowReadback = std::move(*readback);
@@ -6156,19 +6519,39 @@ core::Result<void> VulkanRenderer::uploadPreviousBones(FrameContext& frame) cons
 void VulkanRenderer::rememberFrame()
 {
     m_previousViewProjection = m_unjitteredViewProjection;
-    // Instances that are gone are forgotten, so that the map follows the scene.
-    m_previousTransforms.clear();
-    m_previousFirstBone.clear();
-    for (const MeshInstance& instance : m_world.meshes)
+    // Instances that are gone are forgotten, so that the list follows the scene.
+    m_previousInstances.resize(m_world.meshes.size());
+    for (std::size_t index = 0; index < m_world.meshes.size(); ++index)
     {
-        const std::uint64_t key = instanceKey(instance);
-        m_previousTransforms.insert_or_assign(key, instance.transform);
-        if (instance.boneCount > 0)
-        {
-            m_previousFirstBone.insert_or_assign(key, instance.firstBone);
-        }
+        const MeshInstance& instance = m_world.meshes[index];
+        m_previousInstances[index] = {.key = instanceKey(instance),
+                                      .transform = instance.transform,
+                                      .firstBone = instance.firstBone,
+                                      .skinned = instance.boneCount > 0};
     }
+    m_previousIndexed = false;
     m_previousBoneMatrices = m_world.boneMatrices;
+}
+
+const VulkanRenderer::PreviousInstance* VulkanRenderer::previousInstance(std::uint32_t index) const
+{
+    const std::uint64_t key = instanceKey(m_world.meshes[index]);
+    if (index < m_previousInstances.size() && m_previousInstances[index].key == key)
+    {
+        return &m_previousInstances[index];
+    }
+    if (!m_previousIndexed)
+    {
+        // The last instance of a key wins, as several without an entity share theirs.
+        m_previousIndices.clear();
+        for (std::uint32_t previous = 0; previous < m_previousInstances.size(); ++previous)
+        {
+            m_previousIndices.insert_or_assign(m_previousInstances[previous].key, previous);
+        }
+        m_previousIndexed = true;
+    }
+    const auto found = m_previousIndices.find(key);
+    return found != m_previousIndices.end() ? &m_previousInstances[found->second] : nullptr;
 }
 
 core::Result<void> VulkanRenderer::uploadUi(FrameContext& frame, bool tools, std::vector<std::uint32_t>& surfaceIndexBases,

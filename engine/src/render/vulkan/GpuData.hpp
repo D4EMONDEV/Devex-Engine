@@ -316,6 +316,60 @@ struct PrepassPushConstants
     VkDeviceAddress previousBones = 0;
 };
 
+// An instance the GPU culls and draws, as shaders/geometry.slang reads it.
+struct GpuInstance
+{
+    math::Mat4 world{1.0f};
+    // Where it stood on the previous frame, for the motion of its pixels.
+    math::Mat4 previousWorld{1.0f};
+    // The box of its mesh, in the space of the mesh.
+    math::Vec3 boundsMin{0.0f};
+    std::uint32_t objectId = 0;
+    math::Vec3 boundsMax{0.0f};
+    // Its batch: the submesh, the material and the sides drawn.
+    std::uint32_t batch = 0;
+    VkDeviceAddress vertices = 0;
+    // The views it is culled in: cullCamera, cullShadows.
+    std::uint32_t flags = 0;
+    std::uint32_t padding = 0;
+};
+
+inline constexpr std::uint32_t cullCamera = 1;
+inline constexpr std::uint32_t cullShadows = 2;
+
+// A view the instances are culled in: the planes they must stand in front of, and the instances
+// it keeps.
+struct GpuCullView
+{
+    std::array<math::Vec4, 6> planes{};
+    std::uint32_t planeCount = 0;
+    std::uint32_t flags = 0;
+    std::uint32_t padding0 = 0;
+    std::uint32_t padding1 = 0;
+};
+
+struct CullPushConstants
+{
+    VkDeviceAddress instances = 0;
+    VkDeviceAddress views = 0;
+    VkDeviceAddress commands = 0;
+    VkDeviceAddress visible = 0;
+    std::uint32_t instanceCount = 0;
+    std::uint32_t batchCount = 0;
+    std::uint32_t padding0 = 0;
+    std::uint32_t padding1 = 0;
+};
+
+// What the draws of the culled instances read, with the material of their batch.
+struct InstancedPushConstants
+{
+    VkDeviceAddress scene = 0;
+    VkDeviceAddress instances = 0;
+    VkDeviceAddress visible = 0;
+    std::uint32_t cascade = 0;
+    std::uint32_t material = 0;
+};
+
 struct GpuOverlayVertex
 {
     math::Vec3 position{0.0f};
@@ -642,6 +696,16 @@ static_assert(offsetof(GpuSprite, instanceParameters) == 160);
 static_assert(sizeof(SpritePushConstants) == 64);
 static_assert(sizeof(GpuLight2D) == 80);
 static_assert(sizeof(LuminancePushConstants) == 16);
+static_assert(sizeof(GpuInstance) == 176);
+static_assert(offsetof(GpuInstance, boundsMin) == 128);
+static_assert(offsetof(GpuInstance, boundsMax) == 144);
+static_assert(offsetof(GpuInstance, vertices) == 160);
+static_assert(offsetof(GpuInstance, batch) == 156);
+static_assert(offsetof(GpuInstance, flags) == 168);
+static_assert(sizeof(GpuCullView) == 112);
+static_assert(sizeof(CullPushConstants) == 48);
+static_assert(sizeof(InstancedPushConstants) == 32);
+static_assert(sizeof(VkDrawIndexedIndirectCommand) == 20);
 static_assert(sizeof(BakePushConstants) == 24);
 
 } // namespace devex::render::vulkan

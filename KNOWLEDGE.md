@@ -2209,6 +2209,15 @@ namespace devex::ui {
   `Physics.RaycastSolid` ; C++ `runtime::terrainHeightAt`, `terrainNormalAt`, `isTerrainHoleAt`,
   `raycastTerrain` (`devex/runtime/TerrainQueries.hpp`). Nouvelle fonction native : à la fin de
   `NativeApi` des deux côtés (ManagedGame.cpp, Interop.cs) et `bootstrapVersion` + 1.
+- Culling sur GPU (jalon 85) : `VulkanRenderer::prepareCulling` (lots, `GpuInstance`, vues
+  `GpuCullView`), `recordCulling` (passe *Culling* : copie des dessins, `shaders/cull.slang`,
+  barrières), `drawCulled` (un `vkCmdDrawIndexedIndirect` par lot, `shaders/instanced.slang`) ;
+  `isGpuDriven` dit ce qui reste au CPU (shader du projet, transparence, os) ; module
+  `shaders/geometry.slang` partagé avec `mesh`, `prepass`, `shadow` et `pick`. Désactivable par
+  `RendererConfig::gpuCulling` ; exige `drawIndirectFirstInstance`
+  (`Device::supportsDrawIndirectFirstInstance`). Mémoire : `BufferConfig::hostReads` pour ce que le
+  CPU relit, écriture séquentielle sinon. Mesure : `devex_render_tests "Renderer stress benchmark"`
+  en Release (`DEVEX_GPU_CULLING=0` pour comparer).
 - Terrains : `asset::TerrainMaps` (`devex/asset/TerrainMaps.hpp` : `makeFlatTerrain`,
   `terrainHeight`, `terrainNormal`, `raycastTerrain`, `applyTerrainBrush`, `copyTerrainRegion`),
   `encodeTerrain`/`decodeTerrain`, asset `terrain` (`.dvxterrain`) ; composant `scene::Terrain`

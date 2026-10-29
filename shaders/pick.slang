@@ -2,64 +2,36 @@
 // silhouettes of selected objects, which the overlay outlines.
 
 import common;
+import geometry;
 
 [[vk::push_constant]]
 ConstantBuffer<DrawData> draw;
 
-struct VertexOutput
+// The pick projection maps the requested pixel to the whole 1x1 target.
+[shader("vertex")]
+ShadowVertex pickVertex(uint vertexIndex : SV_VertexID)
 {
-    float4 position : SV_Position;
-    float2 uv : TEXCOORD0;
-};
-
-VertexOutput transformVertex(float4x4 viewProjection, uint vertexIndex)
-{
-    const Vertex vertex = draw.vertices[vertexIndex];
-    VertexOutput output;
-    output.position =
-        mul(viewProjection, mul(vertexTransform(draw, vertexIndex), float4(vertex.position, 1.0)));
-    output.uv = float2(vertex.u, vertex.v);
-    return output;
+    return viewVertex(draw, draw.scene->pickViewProjection, vertexIndex);
 }
 
 // Cut-out materials are only picked and outlined where they are opaque.
-void discardTransparent(float2 uv)
-{
-    let material = draw.scene->materials[draw.material];
-    if (material.alphaMode == alphaModeMask)
-    {
-        const float alpha = material.baseColorFactor.a * sampleTexture(material.baseColorTexture, uv).a;
-        if (alpha < material.alphaCutoff)
-        {
-            discard;
-        }
-    }
-}
-
-// The pick projection maps the requested pixel to the whole 1x1 target.
-[shader("vertex")]
-VertexOutput pickVertex(uint vertexIndex : SV_VertexID)
-{
-    return transformVertex(draw.scene->pickViewProjection, vertexIndex);
-}
-
 [shader("fragment")]
-uint pickFragment(VertexOutput input) : SV_Target
+uint pickFragment(ShadowVertex input) : SV_Target
 {
-    discardTransparent(input.uv);
-    return draw.objectId;
+    discardCutout(draw.scene, draw.material, input.uv);
+    return input.objectId;
 }
 
 [shader("vertex")]
-VertexOutput maskVertex(uint vertexIndex : SV_VertexID)
+ShadowVertex maskVertex(uint vertexIndex : SV_VertexID)
 {
     // The outline is composited after TAA, so its silhouette must not inherit the scene jitter.
-    return transformVertex(draw.scene->unjitteredViewProjection, vertexIndex);
+    return viewVertex(draw, draw.scene->unjitteredViewProjection, vertexIndex);
 }
 
 [shader("fragment")]
-float maskFragment(VertexOutput input) : SV_Target
+float maskFragment(ShadowVertex input) : SV_Target
 {
-    discardTransparent(input.uv);
+    discardCutout(draw.scene, draw.material, input.uv);
     return 1.0;
 }

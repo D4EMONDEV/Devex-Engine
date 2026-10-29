@@ -4,7 +4,9 @@ devex_add_shaders(devex_shaders
         ao.slang
         atmosphere.slang
         bloom.slang
+        cull.slang
         ibl.slang
+        instanced.slang
         lens.slang
         luminance.slang
         mesh.slang
@@ -23,6 +25,7 @@ devex_add_shaders(devex_shaders
         canvas.slang
         common.slang
         custom.slang
+        geometry.slang
         particles.slang
         pbr.slang
 )

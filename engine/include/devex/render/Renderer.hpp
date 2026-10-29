@@ -51,6 +51,10 @@ struct DEVEX_API RendererConfig
     // What a frame copies to the GPU at most for the meshes and textures created since the
     // previous one. The first copy of a frame always goes, so that a larger texture never waits.
     std::uint64_t uploadBytesPerFrame = std::uint64_t{64} << 20;
+    // The GPU culls the instances drawn by the standard materials and draws them by batches of the
+    // same mesh, when the device can: the CPU then records a few draws rather than one per instance.
+    // Off, or on a device without drawIndirectFirstInstance, the CPU culls and draws each.
+    bool gpuCulling = true;
 };
 
 // What a sampler2D uniform samples while its texture is missing or still loading.
