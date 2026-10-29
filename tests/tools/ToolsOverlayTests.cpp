@@ -487,10 +487,11 @@ TEST_CASE("Output follows startup messages without toggling Follow", "[tools][lo
         frame(false);
         return frame();
     };
-    // Fill the log BEFORE the panel has a layout. Its last lines have recognizably more glyphs.
+    // Fill the log BEFORE the panel has a layout. Its last lines have recognizably more glyphs. Each
+    // line differs from the one before, which the panel would otherwise count on one line.
     for (int line = 0; line < 300; ++line)
     {
-        DEVEX_LOG_INFO("{}", line < 290 ? "x" : "Last startup messages must be visible immediately without clicking Follow");
+        DEVEX_LOG_INFO("{} {}", line < 290 ? "x" : "Last startup messages must be visible immediately without clicking Follow", line);
     }
     frame();
     frame();
@@ -499,10 +500,10 @@ TEST_CASE("Output follows startup messages without toggling Follow", "[tools][lo
     REQUIRE(explicitlyFollowed > 1000);
     CHECK(initiallyFollowed == explicitlyFollowed);
     // Following also works when eviction keeps the bounded log at the same number of lines.
-    for (int line = 0; line < 2200; ++line) DEVEX_LOG_INFO("x");
+    for (int line = 0; line < 2200; ++line) DEVEX_LOG_INFO("x {}", line);
     frame();
     frame();
-    for (int line = 0; line < 10; ++line) DEVEX_LOG_INFO("The newest messages still follow when the log is full");
+    for (int line = 0; line < 10; ++line) DEVEX_LOG_INFO("The newest messages still follow when the log is full {}", line);
     frame();
     const auto followedWhenFull = frame();
     CHECK(followedWhenFull == forceFollow());
