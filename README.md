@@ -59,7 +59,7 @@ captures de l'éditeur, scènes de base, entrées, scripts C#, animations, colli
   scène, des uniforms changés par le code et des `instance uniform` donnés par chaque objet),
   render graph, PBR
   forward+ clustered avec prépasse de profondeur, culling par tronc de vue sur le GPU (compute et
-  dessin indirect par lots), ombres en cascades pour
+  dessin indirect par lots, [performances mesurées](docs/performances.md)), ombres en cascades pour
   le soleil et en atlas pour les lumières locales, ciel HDR et IBL, atmosphère physique (ciel bleu,
   couchers rouges, soleil teinté par l'air, brume du lointain) et brouillard de hauteur, sondes de
   réflexion cuites dans

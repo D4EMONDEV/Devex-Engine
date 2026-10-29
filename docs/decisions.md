@@ -2651,9 +2651,10 @@ Jalon 65, comme les `Joint3D` et `Joint2D` de Godot :
   sélection. Les passes du CPU ne parcourent plus que ces instances-là ; les positions de la frame
   précédente sont gardées dans l'ordre de la scène plutôt que dans une table refaite chaque frame.
   `RendererStats::culledInstances` ne compte que ce que le CPU a écarté.
-- **Résultat** : sur la même machine et le même binaire, 24,6 ms par frame quand le CPU culle,
-  18,3 ms quand le GPU culle (48 draw calls, 3,3 ms de CPU) : la frame est maintenant limitée par
-  le GPU. La prépasse y perd 0,7 ms, l'ordre des dessins n'étant plus celui des instances (des
+- **Résultat** (détail dans [performances.md](performances.md)) : le CPU passe de 16,6 à 2,4 ms
+  par frame (48 draw calls). Sur l'Iris Xe, le GPU met déjà environ 17 ms à dessiner cette scène :
+  la frame passe de 17,4 à 17,2 ms quand le CPU est rapide, et de 24,6 à 18,3 ms quand il l'est
+  moins ; elle est maintenant limitée par le GPU. La prépasse y perd 0,7 ms, l'ordre des dessins n'étant plus celui des instances (des
   lots entiers plutôt que du plus proche au plus loin) ; le culling par occlusion la regagnera. Sur
   un GPU dédié, bien plus rapide que l'Iris Xe, c'était le CPU qui limitait de loin.
   `devex_render_tests "Renderer stress benchmark"` (caché, en Release) imprime ces mesures ;
@@ -4896,8 +4897,8 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     gravité des particules, `Physics.RaycastSolid` ; table de parité à tenir à jour ; API des jeux 29.
 85. ✅ **Culling sur GPU** — les instances des matériaux standard sont cullées par une passe compute
     dans la caméra, les cascades, les vues des lumières locales et le picking, puis dessinées par
-    lots en dessin indirect (40 000 → 48 draw calls sur une scène de 20 000 objets, 24,6 → 18,3 ms
-    par frame sur l'Iris Xe, image identique) ; buffers écrits par le CPU placés en mémoire vidéo
+    lots en dessin indirect (40 000 → 48 draw calls sur une scène de 20 000 objets, 16,6 → 2,4 ms
+    de CPU par frame sur l'Iris Xe, image identique ; mesures dans `docs/performances.md`) ; buffers écrits par le CPU placés en mémoire vidéo
     quand la carte le permet ; banc de mesure `Renderer stress benchmark`.
 
 Ensuite, sans ordre figé : à choisir dans les pistes ci-dessous.
