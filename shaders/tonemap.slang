@@ -25,7 +25,38 @@ struct TonemapData
     float targetHeight;
     // 1 when the image drawn into does not encode sRGB itself.
     uint encode;
+    // The colour grading: saturation and contrast (1 leaves them), the filter the colours are
+    // multiplied by, and the factors of the white balance on the cones of the eye.
+    float saturation;
+    float contrast;
+    float filterRed;
+    float filterGreen;
+    float filterBlue;
+    float balanceLong;
+    float balanceMedium;
+    float balanceShort;
 };
+
+// The colour grading of the exposed light, before the tonemapping, as Unity's Color Adjustments and
+// White Balance: the white balance on the cones of the eye (LMS), the filter, the contrast around
+// middle grey in a logarithmic space, then the saturation around the luminance.
+float3 grade(float3 color)
+{
+    const float3x3 toCones = float3x3(0.390405, 0.549941, 0.00892632, 0.0708416, 0.963172, 0.00135775, 0.0231082, 0.128021, 0.936245);
+    const float3x3 fromCones = float3x3(2.85847, -1.62879, -0.024891, -0.210182, 1.1582, 0.000324281, -0.041812, -0.118169, 1.06867);
+    const float3 balance = float3(settings.balanceLong, settings.balanceMedium, settings.balanceShort);
+    if (any(balance != float3(1.0)))
+    {
+        color = max(mul(fromCones, mul(toCones, color) * balance), float3(0.0));
+    }
+    color *= float3(settings.filterRed, settings.filterGreen, settings.filterBlue);
+    if (settings.contrast != 1.0)
+    {
+        color = 0.18 * pow(max(color, float3(0.0)) / 0.18, float3(settings.contrast));
+    }
+    const float luminance = dot(color, float3(0.2126, 0.7152, 0.0722));
+    return max(luminance + (color - luminance) * settings.saturation, float3(0.0));
+}
 
 float encodeChannel(float value)
 {
@@ -162,6 +193,7 @@ float4 fragmentMain(VertexOutput input) : SV_Target
     {
         color += max(bloomChain[0].Sample(clampSampler, imageUv).rgb, float3(0.0)) * settings.bloom;
     }
+    color = grade(color);
     float3 mapped;
     switch (settings.tonemapper)
     {

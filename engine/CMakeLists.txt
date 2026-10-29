@@ -360,6 +360,7 @@ target_sources(devex_render
         src/render/Lighting.cpp
         src/render/Lighting.hpp
         src/render/Photometry.cpp
+        src/render/PostProcess.cpp
         src/render/Renderer.cpp
         src/render/Selection.cpp
         src/render/Selection.hpp
@@ -401,6 +402,7 @@ target_sources(devex_render
             include/devex/render/Light2D.hpp
             include/devex/render/Gpu.hpp
             include/devex/render/Photometry.hpp
+            include/devex/render/PostProcess.hpp
             include/devex/render/Renderer.hpp
             include/devex/render/RenderWorld.hpp
 )

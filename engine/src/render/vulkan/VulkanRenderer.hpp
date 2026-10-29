@@ -119,6 +119,9 @@ private:
     static constexpr VkFormat velocityFormat = VK_FORMAT_R16G16_SFLOAT;
     static constexpr VkFormat normalFormat = VK_FORMAT_R16G16_SFLOAT;
     static constexpr VkFormat occlusionFormat = VK_FORMAT_R8_UNORM;
+    // The circle of confusion of each pixel, and the motion of each tile.
+    static constexpr VkFormat confusionFormat = VK_FORMAT_R16_SFLOAT;
+    static constexpr VkFormat tileMotionFormat = VK_FORMAT_R16G16_SFLOAT;
     // The shadows of the local lights share one image, cut into square tiles.
     static constexpr std::uint32_t shadowAtlasSize = 4096;
     static constexpr std::uint32_t shadowAtlasCell = 512;
@@ -675,6 +678,15 @@ private:
     std::optional<Pipeline> m_localShadowPipeline;
     std::optional<Pipeline> m_bloomThresholdPipeline;
     std::optional<Pipeline> m_bloomDownsamplePipeline;
+    // The depth of field and the motion blur, in the order of their passes.
+    std::optional<Pipeline> m_circleOfConfusionPipeline;
+    std::optional<Pipeline> m_dofPrefilterPipeline;
+    std::optional<Pipeline> m_bokehPipeline;
+    std::optional<Pipeline> m_dofFilterPipeline;
+    std::optional<Pipeline> m_dofCombinePipeline;
+    std::optional<Pipeline> m_motionTilesPipeline;
+    std::optional<Pipeline> m_motionNeighboursPipeline;
+    std::optional<Pipeline> m_motionBlurPipeline;
     std::optional<Pipeline> m_bloomUpsamplePipeline;
     // Bound as the selection mask of frames that outline nothing.
     std::optional<Image> m_emptySelectionMask;

@@ -419,6 +419,16 @@ void extractScene(scene::Scene& scene, AssetManager& assets, render::RenderWorld
                 .chromaticAberration = camera.chromaticAberration,
                 .colorTable = camera.colorTable.isValid() ? assets.texture(camera.colorTable)
                                                           : render::TextureHandle{},
+                .depthOfField = camera.depthOfField ? 1.0f : 0.0f,
+                .focusDistance = camera.focusDistance,
+                .aperture = camera.aperture,
+                .autoFocus = camera.autoFocus,
+                .motionBlur = camera.motionBlur,
+                .saturation = camera.saturation,
+                .contrast = camera.contrast,
+                .colorFilter = camera.colorFilter,
+                .temperature = camera.temperature,
+                .tint = camera.tint,
             };
             break;
         }
@@ -506,6 +516,51 @@ void extractScene(scene::Scene& scene, AssetManager& assets, render::RenderWorld
             .intensity = atmosphere.intensity,
         };
     }
+    // The volumes, the lowest priority first: the blending goes through them in that order.
+    // A global volume needs no place; a box without one stands at the origin.
+    for (auto [entity, volume] : scene.view<scene::PostProcessVolume>())
+    {
+        using render::PostOverride;
+        const auto bit = [](bool on, PostOverride what) { return on ? static_cast<std::uint32_t>(what) : 0u; };
+        const scene::WorldTransform* const transform = scene.tryGet<scene::WorldTransform>(entity);
+        const math::Mat4 matrix = transform != nullptr ? transform->matrix : math::Mat4{1.0f};
+        render::RenderPostVolume& added = world.postVolumes.emplace_back();
+        added.worldToBox = math::inverse(matrix);
+        added.halfSize = math::max(volume.size, math::Vec3{0.0f}) * 0.5f;
+        added.scale = math::length(math::Vec3(matrix[0]));
+        added.global = volume.global;
+        added.blendDistance = std::max(volume.blendDistance, 0.0f);
+        added.weight = std::clamp(volume.weight, 0.0f, 1.0f);
+        added.priority = volume.priority;
+        added.overrides = bit(volume.overrideExposure, PostOverride::Exposure) | bit(volume.overrideBloom, PostOverride::Bloom) |
+                          bit(volume.overrideVignette, PostOverride::Vignette) | bit(volume.overrideGrain, PostOverride::Grain) |
+                          bit(volume.overrideChromaticAberration, PostOverride::ChromaticAberration) |
+                          bit(volume.overrideAmbientOcclusion, PostOverride::AmbientOcclusion) |
+                          bit(volume.overrideDepthOfField, PostOverride::DepthOfField) | bit(volume.overrideMotionBlur, PostOverride::MotionBlur) |
+                          bit(volume.overrideSaturation, PostOverride::Saturation) | bit(volume.overrideContrast, PostOverride::Contrast) |
+                          bit(volume.overrideColorFilter, PostOverride::ColorFilter) |
+                          bit(volume.overrideWhiteBalance, PostOverride::WhiteBalance);
+        render::RenderCamera& settings = added.settings;
+        settings.exposureCompensation = volume.exposureCompensation;
+        settings.bloom = volume.bloom;
+        settings.bloomThreshold = volume.bloomThreshold;
+        settings.vignette = volume.vignette;
+        settings.grain = volume.grain;
+        settings.chromaticAberration = volume.chromaticAberration;
+        settings.ambientOcclusion = volume.ambientOcclusion;
+        settings.depthOfField = volume.depthOfField ? 1.0f : 0.0f;
+        settings.focusDistance = volume.focusDistance;
+        settings.aperture = volume.aperture;
+        settings.autoFocus = volume.autoFocus;
+        settings.motionBlur = volume.motionBlur;
+        settings.saturation = volume.saturation;
+        settings.contrast = volume.contrast;
+        settings.colorFilter = volume.colorFilter;
+        settings.temperature = volume.temperature;
+        settings.tint = volume.tint;
+    }
+    std::ranges::stable_sort(world.postVolumes, {}, &render::RenderPostVolume::priority);
+
     const auto fogs = scene.view<scene::Fog>();
     if (const auto first = fogs.begin(); first != fogs.end())
     {

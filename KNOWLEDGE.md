@@ -2194,6 +2194,14 @@ namespace devex::ui {
   `DirectionalLight::followAtmosphere` teinte le soleil par l'air (`render::atmosphereTransmittance`
   sur CPU). Côté renderer : `RenderWorld::atmosphere` / `fog`, `AtmosphereRenderer` (tables et
   cubemaps, `shaders/atmosphere.slang`), `applyAtmosphere` dans `common.slang`.
+- `Camera` : `depth_of_field`, `focus_distance`, `aperture` (nombre f), `auto_focus`,
+  `motion_blur` (part d'obturation), `saturation`, `contrast`, `color_filter`, `temperature`,
+  `tint`. `PostProcessVolume` (composant) : `global` ou boîte `size` + `blend_distance`, `weight`,
+  `priority`, et pour chaque effet une case `override_*` suivie de ses réglages. Côté renderer :
+  `RenderWorld::postVolumes` (`RenderPostVolume`, bits `PostOverride`), `render::blendPostVolumes`,
+  `postVolumeInfluence`, `whiteBalanceFactors` (`devex/render/PostProcess.hpp`) ;
+  `RenderCamera::lensEffects` (faux pour la caméra de l'éditeur) ; passes de `shaders/lens.slang`
+  (liaisons 13 `postSource` et 14 `postChain[7]` du set de frame).
 - `ApplicationConfig::profileReport` / `devex-editor --profile rapport.txt` : moyenne des zones CPU
   et des passes GPU sur 240 frames une fois la fenêtre au repos (`ToolsOverlay::setProfiling` garde
   le profileur allumé). `RendererStats::keptShadowPasses` : passes d'ombres gardées de la frame

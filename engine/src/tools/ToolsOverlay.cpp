@@ -726,6 +726,9 @@ void ToolsOverlay::prepareRender(scene::Scene& scene, render::RenderWorld& world
         world.camera.projection = twoD ? render::Projection::Orthographic : render::Projection::Perspective;
         world.camera.orthographicSize = state.camera.orthographicSize();
         world.camera.farPlane = detail::EditorCamera::twoDFarPlane;
+        // The scene is edited sharp and still, as the volumes around the editor camera would not
+        // focus it where it looks nor blur it as it flies.
+        world.camera.lensEffects = false;
         state.gizmo.twoD = twoD;
         // The screen of the other kind shows nothing of the scene, as the 3D view of Godot shows
         // nothing of a 2D scene: a neutral sky and the grid, and the interfaces of a 3D scene in 2D.

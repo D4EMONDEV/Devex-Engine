@@ -367,6 +367,12 @@ public Texture2D resolvedTexture;
 // The halved images the bloom is built from, the largest first.
 [[vk::binding(10, 1)]]
 public Texture2D bloomChain[5];
+// What the depth of field and the motion blur read: the resolved image, and the images they pass
+// along between them (see shaders/lens.slang), kept in the general layout.
+[[vk::binding(13, 1)]]
+public Texture2D postSource;
+[[vk::binding(14, 1)]]
+public Texture2D postChain[7];
 
 public float4 sampleTexture(uint index, float2 uv)
 {

@@ -64,7 +64,9 @@ captures de l'éditeur, scènes de base, entrées, scripts C#, animations, colli
   l'éditeur (correction de parallaxe, fondu entre sondes), volumes d'irradiance cuits en
   harmoniques sphériques avec plusieurs rebonds de lumière, surfaces transparentes triées,
   anticrénelage temporel, occlusion ambiante en espace écran, bloom, exposition automatique,
-  tonemapping AgX, table de couleurs, vignette et grain, particules et rubans (face à la caméra,
+  tonemapping AgX, table de couleurs, vignette et grain, profondeur de champ physique avec bokeh,
+  flou de mouvement des objets et de la caméra, étalonnage (balance des blancs, filtre, contraste,
+  saturation) et volumes de post-traitement qui se fondent selon la place de la caméra, particules et rubans (face à la caméra,
   étirés, doux au contact des surfaces, éclairés ou non, triés avec la transparence), sprites
   (simples, découpés en neuf, répétés, retournés, éclairés ou non, triés par couche et par
   ordre), cartes de tuiles en un lot, caméra orthographique, textures filtrées au pixel près,
@@ -226,7 +228,9 @@ captures de l'éditeur, scènes de base, entrées, scripts C#, animations, colli
   gonds, un pendule et un panneau soudé qu'une balle décroche ; une salle aux miroirs (sol poli,
   mur rouge, boule dorée) se reflète d'elle-même par sa sonde de réflexion, et la lumière y
   rebondit par son volume d'irradiance ; son ciel est une atmosphère physique avec un léger
-  brouillard, et T maintenu fait avancer l'heure (Maj+T la recule) jusqu'au coucher du soleil ;
+  brouillard, et T maintenu fait avancer l'heure (Maj+T la recule) jusqu'au coucher du soleil ; le
+  regard du joueur a un flou de mouvement, et sur le belvédère un volume de post-traitement
+  réchauffe l'image et fait la mise au point sur ce qu'il regarde ;
   Tab passe à la scène `platformer`, un jeu de plateformes en pixel art (un chevalier animé qui
   court, au bruit de ses pas, et saute sur un niveau de tuiles simulé par la physique 2D, dont une
   île flottante

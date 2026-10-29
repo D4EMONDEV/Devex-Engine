@@ -121,6 +121,25 @@ struct DEVEX_API Camera
     // A table of colors, kept as a strip of squares, applied to the image once it is tonemapped.
     // The texture must be imported without the sRGB encoding.
     asset::AssetId colorTable;
+    // Depth of field, as a lens gives it: sharp at the focus distance, in meters, blurred before and
+    // after it, the more so the wider the aperture (the smaller its f-number), bright points spread
+    // into disks. The focal length follows the field of view, on a full-frame sensor. With auto
+    // focus, it focuses on what the middle of the image shows.
+    bool depthOfField = false;
+    float focusDistance = 10.0f;
+    float aperture = 2.8f;
+    bool autoFocus = false;
+    // Blurs what moves across the image while the shutter is open, the camera included: the share of
+    // a frame it stays open, 0.5 for a shutter of 180 degrees; 0 turns it off.
+    float motionBlur = 0.0f;
+    // The colour grading, before the tonemapping. A saturation and a contrast of 1 and a white filter
+    // leave the image as it is; the temperature cools (towards -1) or warms (towards 1) its white
+    // balance, the tint greens (towards -1) or purples (towards 1) it.
+    float saturation = 1.0f;
+    float contrast = 1.0f;
+    math::Vec3 colorFilter{1.0f};
+    float temperature = 0.0f;
+    float tint = 0.0f;
 };
 DEVEX_DECLARE_ENGINE_REFLECTION(Camera);
 
@@ -252,6 +271,51 @@ struct DEVEX_API Fog
     float skyBlend = 0.5f;
 };
 DEVEX_DECLARE_ENGINE_REFLECTION(Fog);
+
+// Settings of the image that take the place of the camera's where the camera stands in its box,
+// fading in over the blend distance around it, as Unreal's PostProcessVolume and Unity's Volume: a
+// cave greyer and bluer, a hall warmer. A global one acts everywhere. Each setting it changes has an
+// override that says so; where volumes overlap, those of higher priority come over the others.
+struct DEVEX_API PostProcessVolume
+{
+    bool global = false;
+    // The box, in meters along the axes of its entity, centered on it; a scale grows it.
+    math::Vec3 size{10.0f};
+    float blendDistance = 2.0f;
+    // How much of its settings it gives at most, from 0 to 1.
+    float weight = 1.0f;
+    std::int32_t priority = 0;
+    bool overrideExposure = false;
+    float exposureCompensation = 0.0f;
+    bool overrideBloom = false;
+    float bloom = 0.05f;
+    float bloomThreshold = 1.0f;
+    bool overrideVignette = false;
+    float vignette = 0.0f;
+    bool overrideGrain = false;
+    float grain = 0.0f;
+    bool overrideChromaticAberration = false;
+    float chromaticAberration = 0.0f;
+    bool overrideAmbientOcclusion = false;
+    float ambientOcclusion = 1.0f;
+    bool overrideDepthOfField = false;
+    bool depthOfField = true;
+    float focusDistance = 10.0f;
+    float aperture = 2.8f;
+    bool autoFocus = false;
+    bool overrideMotionBlur = false;
+    float motionBlur = 0.5f;
+    bool overrideSaturation = false;
+    float saturation = 1.0f;
+    bool overrideContrast = false;
+    float contrast = 1.0f;
+    bool overrideColorFilter = false;
+    math::Vec3 colorFilter{1.0f};
+    bool overrideWhiteBalance = false;
+    float temperature = 0.0f;
+    float tint = 0.0f;
+};
+DEVEX_DECLARE_ENGINE_REFLECTION(PostProcessVolume);
 
 // The width of each face of the capture of a reflection probe. The values are stored in scenes: never
 // reorder them.

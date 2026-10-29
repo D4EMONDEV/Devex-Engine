@@ -469,6 +469,35 @@ struct TonemapPushConstants
     float targetHeight = 0.0f;
     // 1 when the image drawn into does not encode sRGB itself, as the swapchain of some displays.
     std::uint32_t encode = 0;
+    // The colour grading; see shaders/tonemap.slang.
+    float saturation = 1.0f;
+    float contrast = 1.0f;
+    float filterRed = 1.0f;
+    float filterGreen = 1.0f;
+    float filterBlue = 1.0f;
+    float balanceLong = 1.0f;
+    float balanceMedium = 1.0f;
+    float balanceShort = 1.0f;
+};
+
+// What the passes of the depth of field and the motion blur need; see shaders/lens.slang.
+struct LensPushConstants
+{
+    VkDeviceAddress scene = 0;
+    float targetWidth = 1.0f;
+    float targetHeight = 1.0f;
+    float imageWidth = 1.0f;
+    float imageHeight = 1.0f;
+    float aperture = 0.0f;
+    float focalLength = 0.05f;
+    float focusDistance = 10.0f;
+    float amount = 0.0f;
+    float maxRadius = 0.0f;
+    std::uint32_t autoFocus = 0;
+    float shutter = 0.0f;
+    float tileSize = 16.0f;
+    std::uint32_t fromDepthOfField = 0;
+    std::uint32_t frame = 0;
 };
 
 struct LuminancePushConstants

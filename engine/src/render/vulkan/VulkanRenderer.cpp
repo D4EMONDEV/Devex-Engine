@@ -9,6 +9,7 @@
 #include <devex/core/Profiler.hpp>
 #include <devex/render/Atmosphere.hpp>
 #include <devex/render/Light2D.hpp>
+#include <devex/render/PostProcess.hpp>
 #include <devex/render/Photometry.hpp>
 
 #include <glm/gtc/packing.hpp>
@@ -890,6 +891,8 @@ core::Result<void> VulkanRenderer::endFrame()
     readCapture(frame);
     readWindowCapture(frame);
     releaseRetiredResources();
+    // The settings of the image where the camera stands, under the volumes around it.
+    m_world.camera = blendPostVolumes(m_world.camera, m_world.postVolumes);
     updateExposure(frame);
     // The TIME of shaders, which starts over every hour so that it keeps its precision.
     m_previousTime = m_time;
@@ -1287,7 +1290,8 @@ core::Result<void> VulkanRenderer::renderView(ExtraView& view, const RenderView&
         }
     };
     swapViewState(view.state);
-    ViewScope scope{*this, view, std::exchange(m_world.camera, wanted.camera), std::exchange(m_world.viewport, extent), std::nullopt};
+    ViewScope scope{*this, view, std::exchange(m_world.camera, blendPostVolumes(wanted.camera, m_world.postVolumes)),
+                    std::exchange(m_world.viewport, extent), std::nullopt};
     // The copies to the GPU of this frame are recorded by the main frame, after the views: a view leaves
     // out what waits for one, as the main frame leaves out what still waits after its own.
     if (!m_pendingUploads.empty())
@@ -2001,6 +2005,34 @@ core::Result<void> VulkanRenderer::createTargetPipelines(VkFormat format)
     m_bloomThresholdPipeline = std::move(*bloomThreshold);
     m_bloomDownsamplePipeline = std::move(*bloomDown);
     m_bloomUpsamplePipeline = std::move(*bloomUp);
+
+    // The lens: depth of field and motion blur, full-screen passes of one module.
+    for (const auto& [entry, lensFormat, pipeline] :
+         {std::tuple<const char*, VkFormat, std::optional<Pipeline>*>{"circleOfConfusionFragment", confusionFormat, &m_circleOfConfusionPipeline},
+          {"prefilterFragment", sceneFormat, &m_dofPrefilterPipeline},
+          {"bokehFragment", sceneFormat, &m_bokehPipeline},
+          {"filterFragment", sceneFormat, &m_dofFilterPipeline},
+          {"combineFragment", sceneFormat, &m_dofCombinePipeline},
+          {"tilesFragment", tileMotionFormat, &m_motionTilesPipeline},
+          {"neighboursFragment", tileMotionFormat, &m_motionNeighboursPipeline},
+          {"motionFragment", sceneFormat, &m_motionBlurPipeline}})
+    {
+        core::Result<Pipeline> created = createGraphicsPipeline(device, {
+                                                                           .shaderPath = m_shaderDirectory / "lens.spv",
+                                                                           .fragmentEntry = entry,
+                                                                           .setLayouts = bothSets,
+                                                                           .pushConstantSize = sizeof(LensPushConstants),
+                                                                           .colorFormat = lensFormat,
+                                                                           .cullMode = VK_CULL_MODE_NONE,
+                                                                           .depthTest = false,
+                                                                           .depthWrite = false,
+                                                                       });
+        if (!created)
+        {
+            return std::unexpected(created.error());
+        }
+        *pipeline = std::move(*created);
+    }
     return {};
 }
 
@@ -4119,6 +4151,38 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
                                       : 0;
     }
 
+    // The lens, between the resolved image and the bloom: the depth of field, its circles of confusion
+    // and its halved images, and the motion blur, its tiles; not for the captures of light.
+    const RenderCamera& lensCamera = m_world.camera;
+    const bool focusing = !m_radianceView && lensCamera.depthOfField > 0.0f && lensCamera.aperture > 0.0f &&
+                          lensCamera.projection == Projection::Perspective;
+    const bool blurring = !m_radianceView && lensCamera.motionBlur > 0.0f;
+    const bool lensed = focusing || blurring;
+    const math::Extent2D halfExtent{std::max((extent.width + 1) / 2, 1u), std::max((extent.height + 1) / 2, 1u)};
+    // A tile is as wide as the longest blur: a fifty-sixth of the height of the image.
+    const auto tileSize = static_cast<std::uint32_t>(std::max(8.0f, std::round(static_cast<float>(extent.height) / 56.0f)));
+    const math::Extent2D tileExtent{(extent.width + tileSize - 1) / tileSize, (extent.height + tileSize - 1) / tileSize};
+    constexpr VkImageUsageFlags drawnAndRead = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+    const std::size_t lensOutputIndex = lensed ? create({.format = sceneFormat, .extent = extent, .usage = drawnAndRead}) : 0;
+    std::array<std::optional<std::size_t>, DescriptorSets::postChainLength> lensIndices{};
+    if (focusing)
+    {
+        lensIndices[0] = create({.format = confusionFormat, .extent = extent, .usage = drawnAndRead});
+        for (std::size_t index = 1; index <= 3; ++index)
+        {
+            lensIndices[index] = create({.format = sceneFormat, .extent = halfExtent, .usage = drawnAndRead});
+        }
+        if (blurring)
+        {
+            lensIndices[4] = create({.format = sceneFormat, .extent = extent, .usage = drawnAndRead});
+        }
+    }
+    if (blurring)
+    {
+        lensIndices[5] = create({.format = tileMotionFormat, .extent = tileExtent, .usage = drawnAndRead});
+        lensIndices[6] = create({.format = tileMotionFormat, .extent = tileExtent, .usage = drawnAndRead});
+    }
+
     const bool occluded = m_world.camera.ambientOcclusion > 0.0f;
     const std::size_t occlusionIndex = occluded ? create({
                                                       .format = occlusionFormat,
@@ -4291,14 +4355,19 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
         .ambientOcclusion = occluded ? graph.view(*created[occlusionIndex]) : m_whiteImage->view(),
         .history = m_history[readSlot]->view(),
         .depth = graph.view(depth),
-        .resolved = antialiased ? m_history[writeSlot]->view() : graph.view(sceneColor),
+        .resolved = lensed ? graph.view(*created[lensOutputIndex]) : antialiased ? m_history[writeSlot]->view() : graph.view(sceneColor),
         .localShadowMap =
             shadowAtlas ? graph.view(*shadowAtlas) : m_emptyShadowAtlas->view(),
+        .postSource = antialiased ? m_history[writeSlot]->view() : graph.view(sceneColor),
     };
     for (std::uint32_t level = 0; level < DescriptorSets::bloomLevels; ++level)
     {
         images.bloom[level] =
             bloomed ? graph.view(*created[bloomIndices[level]]) : m_whiteGeneralImage->view();
+    }
+    for (std::size_t index = 0; index < DescriptorSets::postChainLength; ++index)
+    {
+        images.post[index] = lensIndices[index] ? graph.view(*created[*lensIndices[index]]) : m_whiteGeneralImage->view();
     }
     if (frame.boundImages != images)
     {
@@ -4760,6 +4829,105 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
         });
     }
 
+    // What the antialiasing resolved, then what the lens made of it: the image the bloom and the
+    // tonemapping read.
+    const RenderGraph::ImageId resolved = antialiased ? historyWrite : sceneColor;
+    const RenderGraph::ImageId finished = lensed ? *created[lensOutputIndex] : resolved;
+    if (lensed)
+    {
+        // As the bloom's, the images of the chain are named by one descriptor: all in the general
+        // layout before any pass binds it.
+        std::array<std::optional<RenderGraph::ImageId>, DescriptorSets::postChainLength> chain{};
+        std::vector<std::pair<RenderGraph::ImageId, ImageAccess>> chainAccesses;
+        for (std::size_t index = 0; index < chain.size(); ++index)
+        {
+            if (lensIndices[index])
+            {
+                chain[index] = *created[*lensIndices[index]];
+                chainAccesses.push_back({*chain[index], ImageAccess::GeneralRead});
+            }
+        }
+        graph.addPass("Lens chain", std::move(chainAccesses), {});
+        // A full-frame sensor, 24 mm high, behind a lens whose focal length gives the field of view.
+        const float focalLength = 0.012f / std::tan(std::max(lensCamera.verticalFov, 1e-3f) * 0.5f);
+        const LensPushConstants base{
+            .scene = sceneData,
+            .imageWidth = static_cast<float>(extent.width),
+            .imageHeight = static_cast<float>(extent.height),
+            .aperture = focalLength / std::max(lensCamera.aperture, 0.5f),
+            .focalLength = focalLength,
+            .focusDistance = std::max(lensCamera.focusDistance, 0.01f),
+            .amount = std::clamp(lensCamera.depthOfField, 0.0f, 1.0f),
+            .maxRadius = static_cast<float>(extent.height) / 60.0f,
+            .autoFocus = lensCamera.autoFocus ? 1u : 0u,
+            .shutter = std::clamp(lensCamera.motionBlur, 0.0f, 1.0f),
+            .tileSize = static_cast<float>(tileSize),
+            .fromDepthOfField = focusing ? 1u : 0u,
+            .frame = static_cast<std::uint32_t>(m_frameIndex),
+        };
+        // A full-screen pass into one image: of the chain, in the general layout, or the output.
+        const auto lensPass = [&](const char* name, const Pipeline& pipeline, RenderGraph::ImageId into, math::Extent2D size, bool general,
+                                  std::vector<std::pair<RenderGraph::ImageId, ImageAccess>> accesses) {
+            accesses.push_back({into, general ? ImageAccess::GeneralAttachment : ImageAccess::ColorAttachment});
+            LensPushConstants constants = base;
+            constants.targetWidth = static_cast<float>(size.width);
+            constants.targetHeight = static_cast<float>(size.height);
+            graph.addPass(name, std::move(accesses),
+                          [&graph, &sets, &setViewport, used = &pipeline, into, size, general, constants](VkCommandBuffer commands) {
+                const VkRenderingAttachmentInfo colorAttachment{
+                    .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+                    .imageView = graph.view(into),
+                    .imageLayout = general ? VK_IMAGE_LAYOUT_GENERAL : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                    .loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+                    .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+                };
+                const VkRenderingInfo renderingInfo{
+                    .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
+                    .renderArea = {.extent = {size.width, size.height}},
+                    .layerCount = 1,
+                    .colorAttachmentCount = 1,
+                    .pColorAttachments = &colorAttachment,
+                };
+                vkCmdBeginRendering(commands, &renderingInfo);
+                setViewport(commands, size);
+                vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, used->handle());
+                vkCmdBindDescriptorSets(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, used->layout(), 0, 2, sets.data(), 0, nullptr);
+                vkCmdPushConstants(commands, used->layout(), VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(constants),
+                                   &constants);
+                vkCmdDraw(commands, 3, 1, 0, 0);
+                vkCmdEndRendering(commands);
+            });
+        };
+        const RenderGraph::ImageId lensOutput = *created[lensOutputIndex];
+        if (focusing)
+        {
+            lensPass("Depth of field", *m_circleOfConfusionPipeline, *chain[0], extent, true, {{depth, ImageAccess::FragmentRead}});
+            lensPass("Depth of field", *m_dofPrefilterPipeline, *chain[1], halfExtent, true,
+                     {{resolved, ImageAccess::FragmentRead}, {*chain[0], ImageAccess::GeneralRead}});
+            lensPass("Depth of field", *m_bokehPipeline, *chain[2], halfExtent, true, {{*chain[1], ImageAccess::GeneralRead}});
+            lensPass("Depth of field", *m_dofFilterPipeline, *chain[3], halfExtent, true, {{*chain[2], ImageAccess::GeneralRead}});
+            lensPass("Depth of field", *m_dofCombinePipeline, blurring ? *chain[4] : lensOutput, extent, blurring,
+                     {{resolved, ImageAccess::FragmentRead}, {*chain[0], ImageAccess::GeneralRead}, {*chain[3], ImageAccess::GeneralRead}});
+        }
+        if (blurring)
+        {
+            lensPass("Motion blur", *m_motionTilesPipeline, *chain[5], tileExtent, true,
+                     {{depth, ImageAccess::FragmentRead}, {velocity, ImageAccess::FragmentRead}});
+            lensPass("Motion blur", *m_motionNeighboursPipeline, *chain[6], tileExtent, true, {{*chain[5], ImageAccess::GeneralRead}});
+            std::vector<std::pair<RenderGraph::ImageId, ImageAccess>> reads{
+                {resolved, ImageAccess::FragmentRead},
+                {depth, ImageAccess::FragmentRead},
+                {velocity, ImageAccess::FragmentRead},
+                {*chain[6], ImageAccess::GeneralRead},
+            };
+            if (focusing)
+            {
+                reads.push_back({*chain[4], ImageAccess::GeneralRead});
+            }
+            lensPass("Motion blur", *m_motionBlurPipeline, lensOutput, extent, false, std::move(reads));
+        }
+    }
+
     if (bloomed)
     {
         // Every level of the chain is named by one descriptor, so they all have to be in the
@@ -4772,7 +4940,6 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
         graph.addPass("Bloom chain", std::move(chainAccesses), {});
 
         // Each step reads the level above it, and the last ones add themselves back into it.
-        const RenderGraph::ImageId resolved = antialiased ? historyWrite : sceneColor;
         const auto blur = [&](const Pipeline& pipeline, RenderGraph::ImageId source,
                               RenderGraph::ImageId destination, math::Extent2D sourceExtent,
                               math::Extent2D destinationExtent, std::uint32_t sourceLevel,
@@ -4818,9 +4985,9 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
             });
         };
 
-        // The first step reads the resolved image, which the chain does not hold.
+        // The first step reads the finished image, which the chain does not hold.
         graph.addPass("Bloom",
-                      {{resolved, ImageAccess::FragmentRead},
+                      {{finished, ImageAccess::FragmentRead},
                        {*created[bloomIndices[0]], ImageAccess::GeneralAttachment}},
                       [&](VkCommandBuffer commands) {
             const VkRenderingAttachmentInfo colorAttachment{
@@ -4870,7 +5037,7 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
     }
 
     std::vector<std::pair<RenderGraph::ImageId, ImageAccess>> tonemapAccesses{
-        {antialiased ? historyWrite : sceneColor, ImageAccess::FragmentRead},
+        {finished, ImageAccess::FragmentRead},
         {target, ImageAccess::ColorAttachment},
     };
     if (bloomed)
@@ -4900,6 +5067,7 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
                                 m_tonemapPipeline->layout(), 0, 2, sets.data(), 0, nullptr);
         const GpuTexture* const colorTable =
             isReady(m_world.camera.colorTable) ? m_textures.find(m_world.camera.colorTable) : nullptr;
+        const math::Vec3 balance = whiteBalanceFactors(m_world.camera.temperature, m_world.camera.tint);
         const TonemapPushConstants tonemap{
             .tonemapper = static_cast<std::uint32_t>(m_world.camera.tonemapper),
             .bloom = bloomed ? m_world.camera.bloom : 0.0f,
@@ -4915,6 +5083,14 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
             .targetWidth = static_cast<float>(size.width),
             .targetHeight = static_cast<float>(size.height),
             .encode = targetFormat == VK_FORMAT_B8G8R8A8_SRGB || targetFormat == VK_FORMAT_R8G8B8A8_SRGB ? 0u : 1u,
+            .saturation = std::max(m_world.camera.saturation, 0.0f),
+            .contrast = std::max(m_world.camera.contrast, 0.01f),
+            .filterRed = std::max(m_world.camera.colorFilter.r, 0.0f),
+            .filterGreen = std::max(m_world.camera.colorFilter.g, 0.0f),
+            .filterBlue = std::max(m_world.camera.colorFilter.b, 0.0f),
+            .balanceLong = balance.x,
+            .balanceMedium = balance.y,
+            .balanceShort = balance.z,
         };
         vkCmdPushConstants(commands, m_tonemapPipeline->layout(),
                            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,

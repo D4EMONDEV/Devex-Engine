@@ -144,6 +144,69 @@ TEST_CASE("Extraction copies the atmosphere and the fog, and tells the sun to fo
     CHECK_FALSE(world.sun.followAtmosphere);
 }
 
+TEST_CASE("Extraction copies the lens and the grading of the camera, and the post-process volumes by priority", "[runtime][extraction][post]")
+{
+    devex::runtime::AssetManager assets(nullptr, nullptr);
+    Scene scene;
+    const Entity eye = scene.createEntity("Eye");
+    scene.add<Transform>(eye);
+    scene.add<devex::scene::Camera>(eye, devex::scene::Camera{.depthOfField = true,
+                                                              .focusDistance = 4.0f,
+                                                              .aperture = 1.8f,
+                                                              .motionBlur = 0.5f,
+                                                              .saturation = 1.2f,
+                                                              .colorFilter = {1.0f, 0.9f, 0.8f},
+                                                              .temperature = 0.3f});
+
+    const Entity room = scene.createEntity("Room");
+    scene.add<Transform>(room, Transform{.position = {5.0f, 0.0f, 0.0f}, .scale = Vec3{2.0f}});
+    scene.add<devex::scene::PostProcessVolume>(room, devex::scene::PostProcessVolume{.size = {4.0f, 3.0f, 6.0f},
+                                                                                      .priority = 2,
+                                                                                      .overrideContrast = true,
+                                                                                      .contrast = 1.3f,
+                                                                                      .overrideWhiteBalance = true,
+                                                                                      .tint = -0.2f});
+    // A global volume, with no place in the world.
+    const Entity everywhere = scene.createEntity("Everywhere");
+    scene.add<devex::scene::PostProcessVolume>(everywhere, devex::scene::PostProcessVolume{.global = true,
+                                                                                            .weight = 1.5f,
+                                                                                            .priority = -1,
+                                                                                            .overrideSaturation = true,
+                                                                                            .saturation = 0.0f});
+    scene.updateTransforms();
+    devex::render::RenderWorld world;
+    devex::runtime::extractScene(scene, assets, world);
+
+    CHECK(world.camera.depthOfField == 1.0f);
+    CHECK(world.camera.focusDistance == 4.0f);
+    CHECK(world.camera.aperture == 1.8f);
+    CHECK(world.camera.motionBlur == 0.5f);
+    CHECK(world.camera.saturation == 1.2f);
+    CHECK(world.camera.colorFilter == Vec3{1.0f, 0.9f, 0.8f});
+    CHECK(world.camera.temperature == 0.3f);
+
+    REQUIRE(world.postVolumes.size() == 2);
+    const devex::render::RenderPostVolume& first = world.postVolumes[0];
+    CHECK(first.global);
+    CHECK(first.weight == 1.0f);
+    CHECK(first.overrides == static_cast<std::uint32_t>(devex::render::PostOverride::Saturation));
+    CHECK(first.settings.saturation == 0.0f);
+    const devex::render::RenderPostVolume& second = world.postVolumes[1];
+    CHECK_FALSE(second.global);
+    CHECK(second.priority == 2);
+    CHECK(second.halfSize == Vec3{2.0f, 1.5f, 3.0f});
+    CHECK_THAT(second.scale, WithinAbs(2.0, 1e-5));
+    CHECK(second.overrides == (static_cast<std::uint32_t>(devex::render::PostOverride::Contrast) |
+                               static_cast<std::uint32_t>(devex::render::PostOverride::WhiteBalance)));
+    CHECK(second.settings.contrast == 1.3f);
+    CHECK(second.settings.tint == -0.2f);
+    // The box in its own space: the corner of the room at its half size.
+    const Vec3 corner = Vec3(second.worldToBox * devex::math::Vec4(9.0f, 3.0f, 6.0f, 1.0f));
+    CHECK_THAT(corner.x, WithinAbs(2.0, 1e-4));
+    CHECK_THAT(corner.y, WithinAbs(1.5, 1e-4));
+    CHECK_THAT(corner.z, WithinAbs(3.0, 1e-4));
+}
+
 TEST_CASE("Extraction adds the particles of the emitters and the ribbons of the trails", "[runtime][extraction][particles]")
 {
     Scene scene;

@@ -5,6 +5,7 @@ devex_add_shaders(devex_shaders
         atmosphere.slang
         bloom.slang
         ibl.slang
+        lens.slang
         luminance.slang
         mesh.slang
         overlay.slang

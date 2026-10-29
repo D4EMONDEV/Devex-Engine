@@ -190,6 +190,7 @@ vignette = 0
 grain = 0
 chromatic_aberration = 0
 color_table = asset("00000000-0000-0000-0000-000000000000")
+motion_blur = 0.4
 
 [entity uuid="4a44b2a7-7e74-5496-9352-e5b1593a5c9e" name="Overview camera"]
 
@@ -326,6 +327,29 @@ prefab = asset("2d890df6-dadc-5763-a660-b73e5522ef89")
 
 [override type="Transform"]
 position = vec3(-8, 3.2, -6)
+
+[entity uuid="7bb171f8-7847-4add-a0f3-fd201052779d" name="Lookout mood"]
+
+[component type="Transform"]
+position = vec3(-8, 3.4, -5.9)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="PostProcessVolume"]
+size = vec3(4.5, 2.6, 4.5)
+blend_distance = 2
+override_vignette = true
+vignette = 0.35
+override_depth_of_field = true
+aperture = 1.4
+auto_focus = true
+override_saturation = true
+saturation = 1.2
+override_contrast = true
+contrast = 1.15
+override_white_balance = true
+temperature = 0.3
+tint = 0.05
 
 [entity uuid="1eb4295a-367d-5ccd-912d-b2e78c8f91d4" name="Stairs"]
 

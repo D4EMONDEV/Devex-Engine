@@ -121,6 +121,8 @@ mais seulement explicitement ici : le code suit ce document, pas l'inverse.
 | Ciel                     | Atmosphère de Hillaire en tables GPU, brouillard de hauteur        |
 | Exposition               | Manuelle ou automatique (mesure GPU, adaptation CPU)               |
 | Tonemapping              | AgX par défaut, Khronos PBR Neutral, ACES                          |
+| Objectif                 | Profondeur de champ physique (bokeh), flou de mouvement de McGuire |
+| Volumes de post-traitement | Composant `PostProcessVolume`, réglages surchargés un à un, fondus |
 | Réglages d'environnement | Composant `Environment`, exposition sur le composant `Camera`      |
 | Tangentes                | MikkTSpace à l'import, convention glTF                             |
 | Physique                 | Jolt Physics 5.6 (MIT), module `Physics`, simulée pendant le jeu   |
@@ -309,7 +311,8 @@ docs/          décisions et documentation
   ombres du soleil (4 couches d'une image `D32` 2048²), scène HDR `RGBA16F` avec les maillages
   puis le ciel, puis les surfaces transparentes triées, mesure de luminance (si exposition
   automatique), sélection (si demandée), masque des objets entourés (s'il y en a), anticrénelage
-  temporel (si demandé), chaîne du bloom (si demandé), tonemapping et étalonnage vers la cible,
+  temporel (si demandé), objectif (profondeur de champ et flou de mouvement, si demandés), chaîne
+  du bloom (si demandé), tonemapping et étalonnage vers la cible,
   overlay des outils, interface du jeu, puis la couche des outils sur le swapchain.
 - **Vues** : `RenderWorld::views` (au plus quatre) dessine la scène par d'autres caméras, chacune dans
   une image à elle que les outils montrent par un lot qui lit `UiSource::View` et l'identifiant de la
@@ -2774,6 +2777,59 @@ Jalon 65, comme les `Joint3D` et `Joint2D` de Godot :
 - **Bac à sable** : trois panneaux de verre teinté (`assets/materials/glass.dvxmat`) se croisent
   devant les sphères, et les satellites du plateau tournant brillent assez pour laisser un halo.
 
+### Objectif, volumes et étalonnage
+
+Jalon 81 :
+
+- **Profondeur de champ** : physique, comme celle d'Unity (post-processing v2) et d'Unreal. La
+  focale vient du champ de vision de la caméra sur un capteur plein format de 24 mm de haut ;
+  l'ouverture (`aperture`, en nombre f) et la distance de mise au point (`focus_distance`, ou
+  `auto_focus` : la profondeur au milieu de l'image, sur cinq points) donnent à chaque pixel son
+  **cercle de confusion**, signé (devant ou derrière le plan net) et borné à un soixantième de la
+  hauteur de l'image. L'image, réduite de moitié et pondérée par ce cercle, est floutée par un
+  **disque de 49 points** en anneaux (le bokeh) qui garde le fond derrière les bords nets et laisse
+  le premier plan déborder sur eux, lissée par un filtre en tente, puis remélangée à l'image nette :
+  derrière le plan net selon le cercle du pixel, devant selon ce que le premier plan couvre.
+  `depth_of_field` est un booléen sur la caméra ; un grand-angle à f/2.8 ne floute presque rien au
+  loin, comme un vrai objectif.
+- **Flou de mouvement** : la reconstruction de McGuire et al. (*A Reconstruction Filter for
+  Plausible Motion Blur*, 2012). Le déplacement de chaque pixel pendant que l'obturateur est ouvert
+  (`motion_blur` : la part de la frame, 0,5 pour un obturateur à 180°) vient du mouvement de la
+  prépasse, ou pour le ciel de la rotation de la caméra. Le plus rapide de chaque tuile (de
+  max(8, H/56) pixels), puis de ses voisines, donne la direction de douze échantillons par pixel,
+  chacun compté jusqu'où son propre mouvement l'étale, ceux de devant sur ceux de derrière : un
+  objet qui passe traîne sur le fond, le fond ne traîne pas sur lui. Le flou est borné à une tuile
+  de chaque côté ; la direction des échantillons varie d'un pixel à l'autre et le TAA lisse le bruit.
+- **Où** : entre l'anticrénelage et le bloom, sur l'image résolue en HDR (le bloom étale donc aussi
+  le bokeh). Les images de la chaîne sont nommées par un seul descripteur, comme celles du bloom,
+  dans la disposition générale. Une caméra orthographique n'a pas de profondeur de champ. La vue
+  radiance (les mesures) n'en a aucune.
+- **Étalonnage** : après le bloom, avant le tonemapping, comme Unity : **balance des blancs**
+  (`temperature`, `tint` de -1 à 1, le blanc de référence déplacé le long du lieu des lumières du
+  jour depuis D65 puis ramené, dans l'espace LMS des cônes, avec les mêmes matrices qu'Unity ;
+  `render::whiteBalanceFactors` sur le CPU), **filtre de couleur** (multiplie), **contraste** (en
+  log autour du gris moyen à 18 %) et **saturation** (autour de la luminance). Tout est neutre par
+  défaut et ne coûte rien.
+- **Volumes** : le composant `PostProcessVolume`, comme les volumes d'Unity et d'Unreal, porte ses
+  propres réglages, chacun avec sa case `override_*` (exposition, bloom, vignette, grain,
+  aberration chromatique, occlusion ambiante, profondeur de champ, flou de mouvement, saturation,
+  contraste, filtre, balance des blancs) : les autres restent ceux de la caméra. Une boîte (`size`,
+  à l'échelle de sa transformation) donne son poids (`weight`) à l'intérieur et s'efface sur
+  `blend_distance` mètres autour ; un volume `global` vaut partout. Le renderer mélange les volumes
+  du plus bas `priority` au plus haut, chaque réglage surchargé avançant vers celui du volume selon
+  son influence là où se tient la caméra (`render::blendPostVolumes`), pour l'image principale et
+  pour chaque vue. La mise au point d'un volume arrive entière dès qu'il commence à compter, sans
+  glisser depuis celle, inutilisée, de la caméra.
+- **Éditeur** : sa caméra garde une image nette et immobile (`RenderCamera::lensEffects`) : les
+  volumes qui l'entourent l'étalonnent mais ne la floutent pas. La boîte d'un volume sélectionné et
+  celle de son fondu sont tracées comme celles des sondes ; l'inspecteur range les réglages par
+  effet, en sections repliables.
+- **Coût** : à 930 × 500 (la vue de l'éditeur, Iris Xe, Release), environ 1,05 ms pour la
+  profondeur de champ et 0,45 ms pour le flou de mouvement au repos ; rien quand ils sont éteints.
+- **Bac à sable** : la caméra du joueur a un flou de mouvement de 0,4 ; un volume sur le belvédère
+  (`Lookout mood`) y réchauffe et sature l'image, assombrit ses bords et met au point sur ce que le
+  joueur regarde, à f/1.4, en s'effaçant sur 2 m autour.
+
 ### Shaders des projets
 
 Jalon 66, comme le langage de shaders de Godot, mais écrit en Slang :
@@ -4651,6 +4707,11 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     préfiltrées dans la frame, brume du lointain et brouillard de hauteur qui se fond dans l'horizon ;
     composants `Atmosphere` et `Fog` ; tonemapping encodé sur les écrans sans sRGB ; heure du jour
     (T) dans l'arène ; API des jeux 26.
+81. ✅ **Objectif et étalonnage** — profondeur de champ physique avec bokeh (ouverture, mise au
+    point manuelle ou automatique, focale tirée du champ de vision), flou de mouvement des objets et
+    de la caméra (reconstruction de McGuire, part d'obturation), volumes de post-traitement
+    (`PostProcessVolume` : boîte ou global, fondu, poids, priorité, réglages surchargés un à un),
+    étalonnage (balance des blancs, filtre, contraste, saturation) ; API des jeux 27.
 
 Ensuite, sans ordre figé : à choisir dans les pistes ci-dessous.
 
@@ -4807,11 +4868,9 @@ Ensuite, sans ordre figé : à choisir dans les pistes ci-dessous.
   d'état.
 - **Transparence** : résolution sans tri (OIT pondéré) pour les surfaces qui s'entrecroisent,
   ombres des surfaces transparentes, réfraction, tri par triangle plutôt que par instance.
-- **Post-traitements** : profondeur de champ, flou de mouvement, volumes qui mélangent leurs
-  réglages selon la position de la caméra, mise à l'échelle temporelle (rendu sous la résolution
-  de l'écran), occlusion ambiante par cônes plutôt que par points.
-- **Ciel procédural** : atmosphère physique liée à la lumière directionnelle (un shader `sky`
-  peut déjà dessiner un ciel calculé).
+- **Post-traitements** : mise à l'échelle temporelle (rendu sous la résolution de l'écran),
+  occlusion ambiante par cônes plutôt que par points, bokeh en forme de lames du diaphragme,
+  profondeur de champ de premier plan en pleine résolution, courbes et roues de couleurs.
 - **Shaders, la suite** : `light()` pour les `canvas_item`, simulation des
   particules sur le GPU (`start()` et `process()`), traînées dessinées par un shader, lecture de
   l'image et de la profondeur de la scène (réfraction, `hint_screen_texture`), uniforms globaux

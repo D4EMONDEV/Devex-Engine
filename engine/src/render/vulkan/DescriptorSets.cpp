@@ -143,6 +143,8 @@ core::Result<DescriptorSets> DescriptorSets::create(const Device& device,
         },
         image(localShadowBinding),
         image(depthReadOnlyBinding),
+        image(postSourceBinding),
+        image(postChainBinding, postChainLength),
     };
     const VkDescriptorSetLayoutCreateInfo frameLayoutInfo{
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
@@ -167,7 +169,7 @@ core::Result<DescriptorSets> DescriptorSets::create(const Device& device,
 
     const std::array framePoolSizes{
         VkDescriptorPoolSize{.type = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
-                             .descriptorCount = (11 + bloomLevels) * frameCount},
+                             .descriptorCount = (12 + bloomLevels + postChainLength) * frameCount},
         VkDescriptorPoolSize{.type = VK_DESCRIPTOR_TYPE_SAMPLER, .descriptorCount = frameCount},
     };
     const VkDescriptorPoolCreateInfo framePoolInfo{
@@ -360,6 +362,11 @@ void DescriptorSets::setFrameImages(std::uint32_t frame, const FrameImages& imag
     }
     writeImage(m_frames[frame], localShadowBinding, 0, images.localShadowMap);
     writeImage(m_frames[frame], depthReadOnlyBinding, 0, images.depth, VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL);
+    writeImage(m_frames[frame], postSourceBinding, 0, images.postSource);
+    for (std::uint32_t index = 0; index < postChainLength; ++index)
+    {
+        writeImage(m_frames[frame], postChainBinding, index, images.post[index], VK_IMAGE_LAYOUT_GENERAL);
+    }
 }
 
 void DescriptorSets::setReflectionProbe(std::uint32_t slot, VkImageView view) noexcept

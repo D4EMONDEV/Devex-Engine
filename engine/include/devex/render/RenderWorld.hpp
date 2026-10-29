@@ -92,6 +92,59 @@ struct DEVEX_API RenderCamera
     // A table of colors kept as a strip of squares, applied to the tonemapped image. The texture
     // must be imported without the sRGB encoding, so that its values pass through untouched.
     TextureHandle colorTable;
+    // Depth of field: how much of it, from 0 to 1, the focus distance in meters, the f-number of the
+    // aperture, and whether it focuses on what the middle of the image shows.
+    float depthOfField = 0.0f;
+    float focusDistance = 10.0f;
+    float aperture = 2.8f;
+    bool autoFocus = false;
+    // The share of a frame the shutter stays open for the motion blur; 0 turns it off.
+    float motionBlur = 0.0f;
+    // Off for the editor's own camera, which goes without depth of field and motion blur, as the
+    // post-process volumes would give them.
+    bool lensEffects = true;
+    // The colour grading, before the tonemapping; see scene::Camera.
+    float saturation = 1.0f;
+    float contrast = 1.0f;
+    math::Vec3 colorFilter{1.0f};
+    float temperature = 0.0f;
+    float tint = 0.0f;
+};
+
+// What a post-process volume changes of the camera's settings.
+enum class PostOverride : std::uint32_t
+{
+    Exposure = 1u << 0,
+    Bloom = 1u << 1,
+    Vignette = 1u << 2,
+    Grain = 1u << 3,
+    ChromaticAberration = 1u << 4,
+    AmbientOcclusion = 1u << 5,
+    DepthOfField = 1u << 6,
+    MotionBlur = 1u << 7,
+    Saturation = 1u << 8,
+    Contrast = 1u << 9,
+    ColorFilter = 1u << 10,
+    WhiteBalance = 1u << 11,
+};
+
+// Settings that take the place of the camera's where the camera stands in or near the box. See
+// scene::PostProcessVolume.
+struct DEVEX_API RenderPostVolume
+{
+    // From the world into the box, in the units of its entity, centered on it.
+    math::Mat4 worldToBox{1.0f};
+    math::Vec3 halfSize{5.0f};
+    // Meters in a unit of the box, which the blend distance is measured in.
+    float scale = 1.0f;
+    bool global = false;
+    float blendDistance = 2.0f;
+    float weight = 1.0f;
+    std::int32_t priority = 0;
+    // PostOverride bits.
+    std::uint32_t overrides = 0;
+    // The values of what it overrides, in the fields of a camera.
+    RenderCamera settings;
 };
 
 // The directional light, which may cast shadows.
@@ -578,6 +631,8 @@ struct DEVEX_API RenderWorld
     RenderEnvironment environment;
     RenderAtmosphere atmosphere;
     RenderFog fog;
+    // The post-process volumes of the scene, the lowest priority first.
+    std::vector<RenderPostVolume> postVolumes;
     std::vector<RenderReflectionProbe> reflectionProbes;
     std::vector<RenderIrradianceVolume> irradianceVolumes;
     std::vector<MeshInstance> meshes;

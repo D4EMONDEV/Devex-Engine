@@ -14,6 +14,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <format>
 #include <iterator>
 #include <optional>
@@ -872,6 +873,220 @@ TEST_CASE("An atmosphere draws a blue sky by day and a red horizon at sunset", "
         UNSCOPED_INFO("shown " << int(shown[0]) << " " << int(shown[1]) << " " << int(shown[2]));
         CHECK(shown[2] > shown[0]);
         CHECK(shown[2] > 60);
+    }
+
+    for (const std::string& error : capture.errors())
+    {
+        UNSCOPED_INFO(error);
+    }
+    CHECK(capture.errors().empty());
+}
+
+TEST_CASE("The lens blurs what stands away from the focus, and what moves while the shutter is open", "[render][gpu][lens]")
+{
+    const ErrorCapture capture;
+    {
+        auto platform = devex::platform::Platform::create();
+        REQUIRE(platform.has_value());
+        auto window = platform->createWindow({.width = 320, .height = 240, .vulkan = true, .hidden = true});
+        REQUIRE(window.has_value());
+        auto renderer = devex::render::Renderer::create(*platform, *window, {.validation = true});
+        if (!renderer)
+        {
+            FAIL(std::format("{}", renderer.error()));
+        }
+        auto cube = renderer->createMesh(devex::asset::makeCube());
+        REQUIRE(cube.has_value());
+        // A lit white cube 10 m away in front of a black sky, seen through a lens.
+        const auto edges = [&](devex::render::RenderCamera camera, float speed) {
+            camera.autoExposure = false;
+            camera.ev100 = 13.0f;
+            camera.antialiasing = devex::render::Antialiasing::None;
+            camera.ambientOcclusion = 0.0f;
+            camera.bloom = 0.0f;
+            std::uint64_t request = 0;
+            std::vector<std::uint8_t> shown;
+            std::uint32_t width = 0;
+            for (int frame = 0; frame < 10 && shown.empty(); ++frame)
+            {
+                devex::render::RenderWorld& world = renderer->beginFrame();
+                world.camera = camera;
+                world.sun = {.direction = {0.0f, -0.5f, -1.0f}, .illuminance = devex::math::Vec3{100000.0f}};
+                world.environment.intensity = 0.0f;
+                // In the middle of the image at the frame captured, its sides out of sight.
+                const float x = speed * static_cast<float>(frame - 5);
+                world.meshes.push_back({.mesh = *cube,
+                                        .transform = devex::math::scale(devex::math::translate(devex::math::Mat4{1.0f}, {x, 0.0f, -10.0f}),
+                                                                        devex::math::Vec3{3.0f}),
+                                        .objectId = 1});
+                REQUIRE(renderer->endFrame());
+                if (frame == 5)
+                {
+                    request = renderer->requestCapture(320, 240);
+                }
+                for (devex::render::CapturedImage& image : renderer->takeCaptures())
+                {
+                    if (image.request == request)
+                    {
+                        width = image.width;
+                        shown = std::move(image.rgba);
+                    }
+                }
+            }
+            REQUIRE_FALSE(shown.empty());
+            // Along the middle row: the pixels between the black of the sky and the light of the cube.
+            int between = 0;
+            const std::size_t row = std::size_t{120} * width * 4;
+            for (std::uint32_t pixel = 0; pixel < width; ++pixel)
+            {
+                const int value = shown[row + pixel * 4 + 1];
+                between += value > 40 && value < 190 ? 1 : 0;
+            }
+            return between;
+        };
+        devex::render::RenderCamera camera;
+        const int plain = edges(camera, 0.0f);
+        UNSCOPED_INFO("plain " << plain);
+        CHECK(plain <= 4);
+
+        // Through a lens of 68 mm, focused on the cube, it stays sharp; focused half a meter away, it
+        // blurs, as far as the largest blur.
+        camera.verticalFov = devex::math::radians(20.0f);
+        camera.depthOfField = 1.0f;
+        camera.aperture = 1.4f;
+        camera.focusDistance = 10.0f;
+        const int focused = edges(camera, 0.0f);
+        UNSCOPED_INFO("focused " << focused);
+        CHECK(focused <= 6);
+        camera.focusDistance = 0.5f;
+        const int blurred = edges(camera, 0.0f);
+        UNSCOPED_INFO("blurred " << blurred);
+        CHECK(blurred >= 10);
+        // Focused on what the middle shows: the cube again.
+        camera.autoFocus = true;
+        const int autoFocused = edges(camera, 0.0f);
+        UNSCOPED_INFO("auto " << autoFocused);
+        CHECK(autoFocused <= 6);
+
+        // Moving fast across the image, it streaks with the shutter open, and only then.
+        camera = devex::render::RenderCamera{};
+        const int still = edges(camera, 1.0f);
+        camera.motionBlur = 0.5f;
+        const int streaked = edges(camera, 1.0f);
+        UNSCOPED_INFO("still " << still << " streaked " << streaked);
+        CHECK(still <= 4);
+        CHECK(streaked >= still + 6);
+    }
+
+    for (const std::string& error : capture.errors())
+    {
+        UNSCOPED_INFO(error);
+    }
+    CHECK(capture.errors().empty());
+}
+
+TEST_CASE("The grading and the volumes around the camera change the colours of the image", "[render][gpu][post]")
+{
+    const ErrorCapture capture;
+    {
+        auto platform = devex::platform::Platform::create();
+        REQUIRE(platform.has_value());
+        auto window = platform->createWindow({.width = 320, .height = 240, .vulkan = true, .hidden = true});
+        REQUIRE(window.has_value());
+        auto renderer = devex::render::Renderer::create(*platform, *window, {.validation = true});
+        if (!renderer)
+        {
+            FAIL(std::format("{}", renderer.error()));
+        }
+        auto cube = renderer->createMesh(devex::asset::makeCube());
+        REQUIRE(cube.has_value());
+        const devex::render::MaterialHandle red = renderer->createMaterial({.baseColorFactor = {0.8f, 0.25f, 0.2f, 1.0f}});
+        // The middle of a lit red cube 10 m away, through a camera and the volumes around it.
+        const auto middle = [&](devex::render::RenderCamera camera, std::vector<devex::render::RenderPostVolume> volumes) {
+            camera.autoExposure = false;
+            camera.ev100 = 15.0f;
+            camera.antialiasing = devex::render::Antialiasing::None;
+            camera.ambientOcclusion = 0.0f;
+            camera.bloom = 0.0f;
+            std::uint64_t request = 0;
+            std::vector<std::uint8_t> shown;
+            std::uint32_t width = 0;
+            for (int frame = 0; frame < 6 && shown.empty(); ++frame)
+            {
+                devex::render::RenderWorld& world = renderer->beginFrame();
+                world.camera = camera;
+                world.sun = {.direction = {0.0f, -0.5f, -1.0f}, .illuminance = devex::math::Vec3{100000.0f}};
+                world.environment.intensity = 0.0f;
+                world.postVolumes = volumes;
+                world.meshes.push_back({.mesh = *cube,
+                                        .material = red,
+                                        .transform = devex::math::scale(devex::math::translate(devex::math::Mat4{1.0f}, {0.0f, 0.0f, -10.0f}),
+                                                                        devex::math::Vec3{3.0f}),
+                                        .objectId = 1});
+                REQUIRE(renderer->endFrame());
+                if (frame == 2)
+                {
+                    request = renderer->requestCapture(320, 240);
+                }
+                for (devex::render::CapturedImage& image : renderer->takeCaptures())
+                {
+                    if (image.request == request)
+                    {
+                        width = image.width;
+                        shown = std::move(image.rgba);
+                    }
+                }
+            }
+            REQUIRE_FALSE(shown.empty());
+            const std::size_t pixel = (std::size_t{120} * width + 160) * 4;
+            return std::array<int, 3>{shown[pixel], shown[pixel + 1], shown[pixel + 2]};
+        };
+        const auto describe = [](std::array<int, 3> color) { return std::format("{} {} {}", color[0], color[1], color[2]); };
+
+        const devex::render::RenderCamera camera;
+        const std::array<int, 3> plain = middle(camera, {});
+        UNSCOPED_INFO("plain " << describe(plain));
+        CHECK(plain[0] > plain[1] + 40);
+
+        // Without saturation, gray; through a cyan filter, without red.
+        devex::render::RenderCamera grey = camera;
+        grey.saturation = 0.0f;
+        const std::array<int, 3> greyed = middle(grey, {});
+        UNSCOPED_INFO("grey " << describe(greyed));
+        CHECK(std::abs(greyed[0] - greyed[1]) <= 3);
+        CHECK(std::abs(greyed[1] - greyed[2]) <= 3);
+        devex::render::RenderCamera cyan = camera;
+        cyan.colorFilter = {0.0f, 1.0f, 1.0f};
+        const std::array<int, 3> filtered = middle(cyan, {});
+        UNSCOPED_INFO("cyan " << describe(filtered));
+        CHECK(filtered[0] < plain[0] / 4);
+
+        // Warmer, more red against blue; cooler, less.
+        devex::render::RenderCamera warm = camera;
+        warm.temperature = 0.8f;
+        const std::array<int, 3> warmed = middle(warm, {});
+        devex::render::RenderCamera cool = camera;
+        cool.temperature = -0.8f;
+        const std::array<int, 3> cooled = middle(cool, {});
+        UNSCOPED_INFO("warm " << describe(warmed) << " cool " << describe(cooled));
+        CHECK(warmed[0] - warmed[2] > plain[0] - plain[2] + 5);
+        CHECK(cooled[0] - cooled[2] < plain[0] - plain[2] - 5);
+
+        // A global volume that takes the colours away; a box elsewhere, which does nothing here.
+        devex::render::RenderPostVolume everywhere{.global = true, .overrides = static_cast<std::uint32_t>(devex::render::PostOverride::Saturation)};
+        everywhere.settings.saturation = 0.0f;
+        const std::array<int, 3> inGrey = middle(camera, {everywhere});
+        UNSCOPED_INFO("global " << describe(inGrey));
+        CHECK(std::abs(inGrey[0] - inGrey[1]) <= 3);
+        devex::render::RenderPostVolume away = everywhere;
+        away.global = false;
+        away.worldToBox = devex::math::inverse(devex::math::translate(devex::math::Mat4{1.0f}, {50.0f, 0.0f, 0.0f}));
+        away.halfSize = devex::math::Vec3{5.0f};
+        away.blendDistance = 1.0f;
+        const std::array<int, 3> outside = middle(camera, {away});
+        UNSCOPED_INFO("outside " << describe(outside));
+        CHECK(std::abs(outside[0] - plain[0]) <= 2);
+        CHECK(std::abs(outside[1] - plain[1]) <= 2);
     }
 
     for (const std::string& error : capture.errors())

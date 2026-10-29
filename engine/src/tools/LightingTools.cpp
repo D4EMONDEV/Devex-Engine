@@ -691,6 +691,25 @@ std::string irradianceVolumeSummary(ToolsState& state, const scene::LightProbeVo
     return info != nullptr ? std::format("{}, baked in {}", probes, info->name) : std::format("{}: the bake cannot be found, bake again.", probes);
 }
 
+void addPostVolumeLines(scene::Scene& scene, const std::unordered_set<std::uint32_t>& shown, std::vector<render::OverlayVertex>& lines)
+{
+    for ([[maybe_unused]] auto [entity, transform, volume] : scene.view<scene::WorldTransform, scene::PostProcessVolume>())
+    {
+        if (volume.global || !shown.contains(entity.index))
+        {
+            continue;
+        }
+        const math::Vec3 half = math::max(volume.size, math::Vec3{0.0f}) * 0.5f;
+        addBox(lines, transform.matrix, half, boxColor);
+        // The blend distance is in meters of the world, around the box as it is scaled.
+        const float scale = math::length(math::Vec3(transform.matrix[0]));
+        if (volume.blendDistance > 0.0f && scale > 0.0f)
+        {
+            addBox(lines, transform.matrix, half + math::Vec3{volume.blendDistance / scale}, blendColor);
+        }
+    }
+}
+
 void addIrradianceVolumeLines(scene::Scene& scene, const std::unordered_set<std::uint32_t>& shown, std::vector<render::OverlayVertex>& lines)
 {
     for ([[maybe_unused]] auto [entity, transform, volume] : scene.view<scene::WorldTransform, scene::LightProbeVolume>())

@@ -53,6 +53,11 @@ public:
     // The depth of the scene again, while the blended surfaces and the particles test against it:
     // the depth attachment in its read-only layout, which particles read to fade into surfaces.
     static constexpr std::uint32_t depthReadOnlyBinding = 12;
+    // What the depth of field and the motion blur read, and the images they pass along, in the
+    // general layout (see shaders/lens.slang).
+    static constexpr std::uint32_t postSourceBinding = 13;
+    static constexpr std::uint32_t postChainBinding = 14;
+    static constexpr std::uint32_t postChainLength = 7;
     // How many halvings the bloom is built from.
     static constexpr std::uint32_t bloomLevels = 5;
 
@@ -72,6 +77,8 @@ public:
         std::array<VkImageView, bloomLevels> bloom{};
         // The shadows of the local lights, side by side in one image.
         VkImageView localShadowMap = VK_NULL_HANDLE;
+        VkImageView postSource = VK_NULL_HANDLE;
+        std::array<VkImageView, postChainLength> post{};
 
         [[nodiscard]] bool operator==(const FrameImages&) const noexcept = default;
     };
