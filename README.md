@@ -13,7 +13,8 @@ et rendu avec Vulkan. Il est distribué sous licence [MIT](LICENSE).
 - scènes en entités + composants, stockées de façon data-oriented ;
 - repère Y-up main droite, formats de projet texte `.dvx*` ;
 - gameplay en C++ (composants et systèmes) **ou en C#** (.NET hébergé), compilé et rechargé à
-  chaud par l'éditeur ;
+  chaud par l'éditeur ; le C# atteint ce que le C++ d'un jeu atteint (composants, mondes, fenêtre,
+  terrains, données des assets) ;
 - éditeur au style inspiré de Godot : gestionnaire de projets, onglets de scènes, viewport,
   gizmos et mode Play ; il passe sur l'interface des jeux, pour n'avoir qu'un seul système
   d'interface : tous les panneaux, le dock (emplacements, onglets, barres) et les modales le sont,

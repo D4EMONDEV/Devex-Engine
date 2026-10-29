@@ -41,6 +41,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <filesystem>
 #include <format>
 #include <memory>
@@ -249,7 +250,7 @@ TEST_CASE("The application runs late cameras after interpolation and restores si
 TEST_CASE("The C# runtime registers components and runs them", "[runtime][managed]")
 {
     const std::unique_ptr<ManagedGame> game = startRuntime();
-    CHECK(game->componentTypes().size() == 25);
+    CHECK(game->componentTypes().size() == 26);
 
     devex::scene::ComponentRegistry& registry = devex::scene::componentRegistry();
     const devex::scene::ComponentType* const mover = registry.find("Mover");
@@ -1302,6 +1303,129 @@ TEST_CASE("C# code paints terrains on a tilemap and reads them", "[runtime][mana
     // A path upwards, apart from the row.
     CHECK(devex::scene::tileAt(tilemap, {0, 2}) == 1 + 0b0010);
     CHECK(devex::scene::tileAt(tilemap, {0, 3}) == 1 + 0b1000);
+    game->unloadAssembly();
+}
+
+namespace {
+
+// A terrain and a curve, without a project on disk.
+class GroundAndCurve final : public devex::asset::AssetSource
+{
+public:
+    GroundAndCurve()
+    {
+        // 16 m on 33 samples, rising half a meter a meter along X, with a hole at (4, 8).
+        devex::asset::TerrainMaps maps = devex::asset::makeFlatTerrain(33);
+        for (std::uint32_t z = 0; z < 33; ++z)
+        {
+            for (std::uint32_t x = 0; x < 33; ++x)
+            {
+                maps.heights[std::size_t{z} * 33 + x] = static_cast<float>(x) * 0.25f;
+            }
+        }
+        maps.holes[std::size_t{16} * 33 + 8] = 255;
+        m_infos[0] = {.id = terrain, .type = devex::asset::AssetType::Terrain, .name = "ground", .source = terrain};
+        m_infos[1] = {.id = curve, .type = devex::asset::AssetType::Curve, .name = "ease", .source = curve};
+        m_bytes = {devex::asset::encodeTerrain(maps), devex::asset::encodeCurve(devex::asset::linearCurve())};
+    }
+
+    [[nodiscard]] const devex::asset::Project& project() const noexcept override
+    {
+        return m_project;
+    }
+
+    [[nodiscard]] const devex::asset::AssetInfo* find(devex::asset::AssetId asset) const override
+    {
+        const auto found = std::ranges::find(m_infos, asset, &devex::asset::AssetInfo::id);
+        return found != m_infos.end() ? &*found : nullptr;
+    }
+
+    [[nodiscard]] std::vector<devex::asset::AssetInfo> assets(std::optional<devex::asset::AssetType> /*type*/) const override
+    {
+        return {m_infos.begin(), m_infos.end()};
+    }
+
+    [[nodiscard]] std::optional<devex::asset::AssetId> findByPath(std::string_view /*resourcePath*/) const override
+    {
+        return std::nullopt;
+    }
+
+    [[nodiscard]] devex::core::Result<std::vector<std::byte>> loadArtifact(devex::asset::AssetId asset) const override
+    {
+        for (std::size_t index = 0; index < m_infos.size(); ++index)
+        {
+            if (m_infos[index].id == asset)
+            {
+                return m_bytes[index];
+            }
+        }
+        return devex::core::makeError(devex::core::ErrorCode::NotFound, "no such asset");
+    }
+
+    [[nodiscard]] devex::core::Result<std::string> sceneText(devex::asset::AssetId /*asset*/) const override
+    {
+        return devex::core::makeError(devex::core::ErrorCode::NotFound, "no scenes here");
+    }
+
+    const devex::asset::AssetId terrain = devex::asset::AssetId::generate();
+    const devex::asset::AssetId curve = devex::asset::AssetId::generate();
+
+private:
+    devex::asset::Project m_project;
+    std::array<devex::asset::AssetInfo, 2> m_infos;
+    std::array<std::vector<std::byte>, 2> m_bytes;
+};
+
+} // namespace
+
+TEST_CASE("C# code reaches what C++ code does: the entities of a component, the ground, the data of assets",
+          "[runtime][managed][terrain]")
+{
+    const std::unique_ptr<ManagedGame> game = startRuntime();
+    const devex::scene::ComponentType* const type = devex::scene::componentRegistry().find("Surveyor");
+    REQUIRE(type != nullptr);
+    GroundAndCurve source;
+    devex::runtime::AssetManager assets(nullptr, &source);
+    Scene scene;
+    // Two bodies, one of them a box, and a terrain of 16 m centered on the origin.
+    const Entity ball = scene.createEntity("Ball");
+    scene.add<devex::scene::RigidBody>(ball);
+    scene.add<devex::scene::SphereCollider>(ball);
+    const Entity crate = scene.createEntity("Crate");
+    scene.add<devex::scene::RigidBody>(crate);
+    scene.add<devex::scene::BoxCollider>(crate);
+    const Entity ground = scene.createEntity("Ground");
+    scene.add<devex::scene::Transform>(ground, devex::scene::Transform{.position = {-8.0f, 0.0f, -8.0f}});
+    scene.add<devex::scene::Terrain>(ground, devex::scene::Terrain{.data = source.terrain, .size = 16.0f});
+    scene.updateTransforms();
+    const Entity surveyor = scene.createEntity("Surveyor");
+    REQUIRE(type->emplace(scene, surveyor) != nullptr);
+    const auto value = [&]<typename T>(const char* name, T) -> T& {
+        return field<T>(*type, const_cast<void*>(type->find(scene, surveyor)), name);
+    };
+    value("curve", devex::asset::AssetId{}) = source.curve;
+    value("mesh", devex::asset::AssetId{}) = devex::asset::builtin::cubeMesh;
+
+    devex::particles::ParticleWorld particles;
+    ManagedGame::Frame frame{
+        .scene = &scene, .delta = devex::core::Duration(0.1), .particles = &particles, .assets = &source, .assetManager = &assets};
+    game->runPhase(frame, SystemPhase::Update);
+    CHECK(value("bodies", std::int32_t{}) == 2);
+    CHECK(value("boxes", std::int32_t{}) == 1);
+    // At x = 4, 12 m into the terrain: 6 m up, on a slope of one in two.
+    CHECK(value("height", float{}) == Catch::Approx(6.0f));
+    CHECK(value("normal_y", float{}) == Catch::Approx(1.0f / std::sqrt(1.25f)).margin(1e-3f));
+    CHECK(value("hole", bool{}));
+    CHECK_FALSE(value("outside", bool{}));
+    CHECK(value("ray_distance", float{}) == Catch::Approx(44.0f).margin(0.01f));
+    CHECK(value("curve_middle", float{}) == Catch::Approx(0.5f).margin(0.01f));
+    CHECK(value("mesh_vertices", std::int32_t{}) == 24);
+    CHECK(value("mesh_indices", std::int32_t{}) == 36);
+    CHECK(value("mesh_width", float{}) == Catch::Approx(1.0f));
+    CHECK(value("curve_name", std::string{}) == "ease");
+    CHECK(value("curve_type", std::string{}) == "curve");
+    CHECK(value("gravity_y", float{}) == Catch::Approx(-2.0f));
+    CHECK(particles.gravity().y == Catch::Approx(-2.0f));
     game->unloadAssembly();
 }
 

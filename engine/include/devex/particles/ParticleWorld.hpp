@@ -119,6 +119,10 @@ public:
     void setCollisionQuery(CollisionQuery query);
     // What pulls particles down, times the gravity of each emitter.
     void setGravity(math::Vec3 gravity) noexcept;
+    [[nodiscard]] math::Vec3 gravity() const noexcept
+    {
+        return m_gravity;
+    }
 
     // Once per frame, once the world transforms are up to date: emitters that appear start,
     // particles are born, move and die, and ribbons follow their entities.

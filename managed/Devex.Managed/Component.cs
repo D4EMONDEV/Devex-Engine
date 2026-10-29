@@ -251,4 +251,24 @@ public sealed unsafe class Scene
 
     /// <summary>Every C# component of this type in the scene.</summary>
     public IEnumerable<T> Components<T>() where T : Component => GameRuntime.Instances<T>();
+
+    /// <summary>
+    /// The entities that have a component of the engine, or of the C++ code of the game, as they are
+    /// when it is called: <c>foreach (Entity body in scene.EntitiesWith&lt;RigidBody&gt;())</c>.
+    /// </summary>
+    public Entity[] EntitiesWith<T>() where T : IComponentView<T>, allows ref struct
+    {
+        Entity* entities;
+        int count = Bootstrap.Native.ComponentEntities(_scene, Internal.ViewSupport.IndexOf<T>(), &entities);
+        return count == 0 ? [] : new ReadOnlySpan<Entity>(entities, count).ToArray();
+    }
+
+    /// <summary>The entities that have both components.</summary>
+    public Entity[] EntitiesWith<T1, T2>()
+        where T1 : IComponentView<T1>, allows ref struct
+        where T2 : IComponentView<T2>, allows ref struct
+    {
+        Entity[] first = EntitiesWith<T1>();
+        return Array.FindAll(first, entity => entity.Has<T2>());
+    }
 }

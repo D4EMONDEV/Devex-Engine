@@ -4180,6 +4180,47 @@ Jalon 62, comme la localisation de Godot.
   `Devex.Environment` (le composant `Environment`) masque
   `System.Environment` dans le code qui importe les deux espaces de noms.
 
+### Parité du C# et du C++
+
+Jalon 84. Ce qu'un jeu fait en C++, il le fait en C# : le code C++ d'un jeu est lié au moteur entier,
+le C# ne voit que ce qui lui est exposé, ce que cette table suit. Chaque nouveauté donnée au C++ d'un
+jeu (le `SystemContext`, un monde, un composant) l'est aussi au C#, dans le même jalon.
+
+| Besoin du jeu                         | C++ (`SystemContext`, moteur)                        | C#                                               |
+|---------------------------------------|------------------------------------------------------|--------------------------------------------------|
+| Composants du moteur et du jeu        | les types eux-mêmes                                   | vues générées (`entity.Get<PointLight>()`)       |
+| Entités qui ont un composant          | `scene.view<RigidBody, BoxCollider>()`                | `Scene.EntitiesWith<RigidBody, BoxCollider>()`, `Scene.Components<T>()` |
+| Hiérarchie, transformations           | `scene::Scene`                                        | `Entity`, `Scene`                                |
+| Entrées et actions                    | `context.input`, `context.actions`                    | `Input`                                          |
+| Fenêtre                               | `context.window`                                      | `Screen` (taille, titre, plein écran, état, échelle) |
+| Physique 3D et 2D                     | `context.physics`, `context.physics2d`                | `Physics` (dont `RaycastSolid`), `Physics2D`     |
+| Navigation                            | `context.navigation`                                  | `Navigation`                                     |
+| Sons                                  | `context.audio`                                       | `Audio` (dont `ClipLength`)                      |
+| Animations, sprites animés            | `context.animation`                                   | `Animation`, `SpriteAnimations`                  |
+| Tweens, coroutines                    | `context.tweens`, `context.coroutines`                | `Tween`, `Coroutine`, `Wait`                     |
+| Particules                            | `context.particles`                                   | `Particles` (dont `Gravity`)                     |
+| Interfaces                            | `context.ui`                                          | `Ui`                                             |
+| Sauvegardes, réglages, traductions    | `context.saves`, `settings`, `localization`           | `Saves`, `PlayerSettings`, `Localization`        |
+| Scènes, préfabs                       | `Application`, `scene::instantiatePrefab`             | `Game`, `Prefabs`                                |
+| Terrains                              | `runtime::terrainHeightAt`, `raycastTerrain`...        | `Terrains` (`HeightAt`, `NormalAt`, `IsHole`, `Raycast`) |
+| Données des assets                    | `context.assets` (`AssetManager`)                     | `Assets.NameOf`/`TypeOf`, `Curves`, `Meshes`, `Textures`, `Sprites` |
+| Matériaux, valeurs par objet          | `AssetManager`, composants                            | `Materials`, `InstanceShaderParameters`          |
+| Tilemaps                              | `scene::setTile`, `paintTerrain`...                    | `Tilemaps`                                       |
+| Profileur                             | `DEVEX_PROFILE_SCOPE`                                 | `Profiler.Scope`                                 |
+
+- **Ce qui reste au C++** : ce qui n'a de sens que lié au moteur : le renderer (un jeu C++ ne le
+  touche pas non plus par le `SystemContext`), les mondes eux-mêmes (créer un `PhysicsWorld` à
+  part), et la modification des cartes d'un terrain pendant le jeu (que la physique ne suit pas
+  encore, dans aucun des deux langages).
+- **Requêtes des terrains** : `runtime/TerrainQueries.hpp`, dans le monde, servent les deux
+  langages : la hauteur du sol sous un point, sa normale, ses trous et le lancer de rayon, pour un
+  terrain ou pour tous ceux de la scène (le plus proche). Au-dessus d'un trou, il n'y a pas de sol.
+- **Données des assets** en C# : les sommets (`MeshVertex` : position, normale, UV, tangente) et les
+  indices d'un maillage, copiés, et sa boîte ; la valeur d'une courbe ; la taille d'une texture et
+  celle d'un sprite avec son pivot ; la durée d'un son ; le nom et le type d'un asset.
+- **Table des fonctions** : 22 fonctions de plus pour le C#, à la fin de `NativeApi`, et la version
+  de l'amorce passe à 26 des deux côtés ; l'API des jeux passe à 29.
+
 ### Code C++
 
 - C++23 obligatoire, C++26 seulement en expérimentation (`DEVEX_CXX_STANDARD`).
@@ -4809,6 +4850,11 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     trous ; herbe en brins qui ondule au vent ; collisions Jolt ; pinceaux de l'éditeur (élever,
     abaisser, lisser, aplanir, bruit, peindre, trous, herbe) annulables ; collines autour de l'arène ;
     API des jeux 28.
+84. ✅ **Parité du C# et du C++** — le C# atteint ce que le C++ d'un jeu atteint : entités qui ont un
+    composant du moteur (`Scene.EntitiesWith`), fenêtre (`Screen` : taille, titre, plein écran,
+    état, échelle), sol des terrains (`Terrains`, et `runtime/TerrainQueries.hpp` pour le C++),
+    données des assets (`Meshes`, `Curves`, `Textures`, `Sprites`, `Audio.ClipLength`, nom et type),
+    gravité des particules, `Physics.RaycastSolid` ; table de parité à tenir à jour ; API des jeux 29.
 
 Ensuite, sans ordre figé : à choisir dans les pistes ci-dessous.
 

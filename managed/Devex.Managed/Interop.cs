@@ -213,6 +213,29 @@ internal unsafe struct NativeApi
     public delegate* unmanaged<Entity, byte*, float, void> SetAnimatorLayerWeight;
     public delegate* unmanaged<Entity, byte*, float*, int> AnimatorLayerWeight;
     public delegate* unmanaged<Entity, byte*, float*, byte*> AnimatorLayerState;
+
+    public delegate* unmanaged<int, int, void> SetWindowSize;
+    public delegate* unmanaged<byte*, void> SetWindowTitle;
+    public delegate* unmanaged<int> WindowState;
+    public delegate* unmanaged<int, void> SetWindowFullscreen;
+    public delegate* unmanaged<void> MaximizeWindow;
+    public delegate* unmanaged<void> RestoreWindow;
+    public delegate* unmanaged<void> CenterWindow;
+    public delegate* unmanaged<float> WindowDisplayScale;
+    public delegate* unmanaged<void*, Entity, Vec3*, float*, int> TerrainHeight;
+    public delegate* unmanaged<void*, Entity, Vec3*, Vec3*, int> TerrainNormal;
+    public delegate* unmanaged<void*, Entity, Vec3*, int> TerrainHole;
+    public delegate* unmanaged<void*, Entity, Vec3*, Vec3*, float, TerrainHit*, int> TerrainRaycast;
+    public delegate* unmanaged<Uuid*, byte*> AssetName;
+    public delegate* unmanaged<Uuid*, byte*> AssetTypeName;
+    public delegate* unmanaged<Uuid*, float, float*, int> CurveValue;
+    public delegate* unmanaged<Uuid*, MeshVertex**, int*, uint**, int*, int> MeshData;
+    public delegate* unmanaged<Uuid*, int*, int> TextureSize;
+    public delegate* unmanaged<Uuid*, float*, int> SpriteSize;
+    public delegate* unmanaged<Uuid*, double> AudioClipLength;
+    public delegate* unmanaged<Vec3*, void> ParticleGravity;
+    public delegate* unmanaged<Vec3*, void> SetParticleGravity;
+    public delegate* unmanaged<Vec3*, Vec3*, float, uint, RayHit*, int> RaycastSolid;
 }
 
 /// <summary>An event an animation passed, as the engine gives it: its name lives until the next frame.</summary>
@@ -248,7 +271,7 @@ internal unsafe struct BootstrapArguments
 /// <summary>What the engine calls into: filling the function tables, then the game itself.</summary>
 public static unsafe class Bootstrap
 {
-    internal const int Version = 25;
+    internal const int Version = 26;
 
     internal static NativeApi Native;
     private static byte[]? _description;

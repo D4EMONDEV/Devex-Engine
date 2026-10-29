@@ -65,6 +65,44 @@ public static unsafe class Screen
             return new Vec2(values[0], values[1]);
         }
     }
+
+    /// <summary>
+    /// Resizes the window, in the coordinates of the window (which differ from pixels on a display
+    /// scaled by the system), first putting it back to its normal state.
+    /// </summary>
+    public static void SetSize(int width, int height) => Bootstrap.Native.SetWindowSize(width, height);
+
+    /// <summary>The words in the title bar of the window.</summary>
+    public static void SetTitle(string title)
+    {
+        using var text = new Utf8Buffer(title);
+        Bootstrap.Native.SetWindowTitle(text.Pointer);
+    }
+
+    /// <summary>
+    /// Borderless over the whole display. PlayerSettings.Fullscreen does the same and keeps the choice
+    /// of the player for the next time the game starts.
+    /// </summary>
+    public static bool Fullscreen
+    {
+        get => (Bootstrap.Native.WindowState() & 1) != 0;
+        set => Bootstrap.Native.SetWindowFullscreen(value ? 1 : 0);
+    }
+
+    public static bool IsMaximized => (Bootstrap.Native.WindowState() & 2) != 0;
+
+    public static bool IsMinimized => (Bootstrap.Native.WindowState() & 4) != 0;
+
+    /// <summary>The scale the system gives the display of the window: 1.5 at 150 %.</summary>
+    public static float DisplayScale => Bootstrap.Native.WindowDisplayScale();
+
+    public static void Maximize() => Bootstrap.Native.MaximizeWindow();
+
+    /// <summary>Leaves the maximized or minimized state.</summary>
+    public static void Restore() => Bootstrap.Native.RestoreWindow();
+
+    /// <summary>Centers the window on its display.</summary>
+    public static void Center() => Bootstrap.Native.CenterWindow();
 }
 
 /// <summary>The assets of the game, which fields refer to by AssetId.</summary>
@@ -97,6 +135,181 @@ public static unsafe class Assets
     {
         Uuid uuid = asset.Uuid;
         return Bootstrap.Native.IsAssetReady(&uuid) != 0;
+    }
+
+    /// <summary>The name of the asset, as FileSystem shows it; null for an asset the game does not have.</summary>
+    public static string? NameOf(AssetId asset)
+    {
+        Uuid uuid = asset.Uuid;
+        return Utf8.ToString(Bootstrap.Native.AssetName(&uuid));
+    }
+
+    /// <summary>The type of the asset: "mesh", "texture", "material", "scene", "audio"...; null for none.</summary>
+    public static string? TypeOf(AssetId asset)
+    {
+        Uuid uuid = asset.Uuid;
+        return Utf8.ToString(Bootstrap.Native.AssetTypeName(&uuid));
+    }
+}
+
+/// <summary>The curves drawn by hand in the editor, read as tweens read them.</summary>
+public static unsafe class Curves
+{
+    /// <summary>The value of the curve at a time; 0 for a curve that cannot be loaded.</summary>
+    public static float Evaluate(AssetId curve, float time)
+    {
+        Uuid uuid = curve.Uuid;
+        float value;
+        Bootstrap.Native.CurveValue(&uuid, time, &value);
+        return value;
+    }
+}
+
+/// <summary>A vertex of a mesh, as the engine holds it.</summary>
+[StructLayout(LayoutKind.Sequential)]
+public struct MeshVertex
+{
+    public Vec3 Position;
+    public Vec3 Normal;
+    /// <summary>Texture coordinates, with the origin at the top-left corner.</summary>
+    public Vec2 Uv;
+    /// <summary>The direction of increasing U; W is the sign of the bitangent.</summary>
+    public Vec4 Tangent;
+}
+
+/// <summary>The triangles of meshes, read as mesh colliders and the navigation read them.</summary>
+public static unsafe class Meshes
+{
+    /// <summary>The vertices of a mesh, copied; empty when it cannot be loaded.</summary>
+    public static MeshVertex[] Vertices(AssetId mesh)
+    {
+        Uuid uuid = mesh.Uuid;
+        MeshVertex* vertices;
+        uint* indices;
+        int vertexCount;
+        int indexCount;
+        return Bootstrap.Native.MeshData(&uuid, &vertices, &vertexCount, &indices, &indexCount) != 0 && vertexCount > 0
+            ? new ReadOnlySpan<MeshVertex>(vertices, vertexCount).ToArray()
+            : [];
+    }
+
+    /// <summary>The indices of its triangles, three by three, copied.</summary>
+    public static uint[] Indices(AssetId mesh)
+    {
+        Uuid uuid = mesh.Uuid;
+        MeshVertex* vertices;
+        uint* indices;
+        int vertexCount;
+        int indexCount;
+        return Bootstrap.Native.MeshData(&uuid, &vertices, &vertexCount, &indices, &indexCount) != 0 && indexCount > 0
+            ? new ReadOnlySpan<uint>(indices, indexCount).ToArray()
+            : [];
+    }
+
+    /// <summary>The box around its vertices, in the space of the mesh; false when it cannot be loaded.</summary>
+    public static bool Bounds(AssetId mesh, out Vec3 min, out Vec3 max)
+    {
+        Uuid uuid = mesh.Uuid;
+        MeshVertex* vertices;
+        uint* indices;
+        int vertexCount;
+        int indexCount;
+        min = default;
+        max = default;
+        if (Bootstrap.Native.MeshData(&uuid, &vertices, &vertexCount, &indices, &indexCount) == 0 || vertexCount == 0)
+        {
+            return false;
+        }
+        min = max = vertices[0].Position;
+        for (int index = 1; index < vertexCount; ++index)
+        {
+            Vec3 position = vertices[index].Position;
+            min = new Vec3(Math.Min(min.X, position.X), Math.Min(min.Y, position.Y), Math.Min(min.Z, position.Z));
+            max = new Vec3(Math.Max(max.X, position.X), Math.Max(max.Y, position.Y), Math.Max(max.Z, position.Z));
+        }
+        return true;
+    }
+}
+
+/// <summary>The images of the game.</summary>
+public static unsafe class Textures
+{
+    /// <summary>Its width and height in pixels, once it is loaded; zero before.</summary>
+    public static Vec2 Size(AssetId texture)
+    {
+        Uuid uuid = texture.Uuid;
+        int* size = stackalloc int[2];
+        Bootstrap.Native.TextureSize(&uuid, size);
+        return new Vec2(size[0], size[1]);
+    }
+}
+
+/// <summary>The sprites cut from textures.</summary>
+public static unsafe class Sprites
+{
+    /// <summary>Its width and height in meters, as it is drawn; zero for a sprite that cannot be loaded.</summary>
+    public static Vec2 Size(AssetId sprite)
+    {
+        Uuid uuid = sprite.Uuid;
+        float* values = stackalloc float[4];
+        Bootstrap.Native.SpriteSize(&uuid, values);
+        return new Vec2(values[0], values[1]);
+    }
+
+    /// <summary>The point it stands on, from (0, 0) at its bottom-left corner to (1, 1) at its top-right one.</summary>
+    public static Vec2 Pivot(AssetId sprite)
+    {
+        Uuid uuid = sprite.Uuid;
+        float* values = stackalloc float[4];
+        Bootstrap.Native.SpriteSize(&uuid, values);
+        return new Vec2(values[2], values[3]);
+    }
+}
+
+/// <summary>Where a ray met the ground of a terrain.</summary>
+[StructLayout(LayoutKind.Sequential)]
+public struct TerrainHit
+{
+    public Vec3 Point;
+    public Vec3 Normal;
+    public float Distance;
+}
+
+/// <summary>
+/// The ground of the terrains of the scene: its height under a point, which way it faces, its holes,
+/// and where a ray meets it. Without a terrain entity, every terrain of the scene is looked at.
+/// </summary>
+public static unsafe class Terrains
+{
+    /// <summary>The height in the world of the ground above or below a point; false outside it, or over a hole.</summary>
+    public static bool HeightAt(Vec3 point, out float height, Entity terrain = default)
+    {
+        float found;
+        bool hit = Bootstrap.Native.TerrainHeight(Scene.Current.Pointer, terrain, &point, &found) != 0;
+        height = found;
+        return hit;
+    }
+
+    /// <summary>Which way the ground faces there.</summary>
+    public static bool NormalAt(Vec3 point, out Vec3 normal, Entity terrain = default)
+    {
+        Vec3 found;
+        bool hit = Bootstrap.Native.TerrainNormal(Scene.Current.Pointer, terrain, &point, &found) != 0;
+        normal = found;
+        return hit;
+    }
+
+    /// <summary>Whether the ground has a hole there, which nothing stands on.</summary>
+    public static bool IsHole(Vec3 point, Entity terrain = default) =>
+        Bootstrap.Native.TerrainHole(Scene.Current.Pointer, terrain, &point) != 0;
+
+    /// <summary>Where a ray first meets the ground within the distance, passing through its holes.</summary>
+    public static bool Raycast(Vec3 origin, Vec3 direction, float maxDistance, out TerrainHit hit, Entity terrain = default)
+    {
+        TerrainHit found;
+        bool met = Bootstrap.Native.TerrainRaycast(Scene.Current.Pointer, terrain, &origin, &direction, maxDistance, &found) != 0;
+        hit = met ? found : default;
+        return met;
     }
 }
 
@@ -187,6 +400,17 @@ public static unsafe class Physics
     {
         RayHit result;
         bool found = Bootstrap.Native.SphereCast(&origin, radius, &direction, maxDistance, layers, ignore, &result) != 0;
+        hit = found ? result : default;
+        return found;
+    }
+
+    /// <summary>
+    /// The closest solid body along a ray, passing through triggers, as particles bounce off what they meet.
+    /// </summary>
+    public static bool RaycastSolid(Vec3 origin, Vec3 direction, float maxDistance, out RayHit hit, uint layers = AllLayers)
+    {
+        RayHit result;
+        bool found = Bootstrap.Native.RaycastSolid(&origin, &direction, maxDistance, layers, &result) != 0;
         hit = found ? result : default;
         return found;
     }
@@ -357,6 +581,13 @@ public static unsafe class Audio
     public static void Resume(Entity entity) => Bootstrap.Native.ResumeSound(entity);
 
     public static bool IsPlaying(Entity entity) => Bootstrap.Native.IsSoundPlaying(entity) != 0;
+
+    /// <summary>The length of a clip in seconds; 0 for a clip that cannot be loaded.</summary>
+    public static double ClipLength(AssetId clip)
+    {
+        Uuid uuid = clip.Uuid;
+        return Bootstrap.Native.AudioClipLength(&uuid);
+    }
 
     /// <summary>Plays a clip once at a position of the world, in an audio group.</summary>
     public static void PlayOneShot(AssetId clip, Vec3 position, float volume = 1.0f, uint group = 0)
@@ -831,6 +1062,18 @@ public static unsafe class Particles
 
     /// <summary>The particles alive.</summary>
     public static int Count(Entity emitter) => Bootstrap.Native.ParticleCount(emitter);
+
+    /// <summary>What pulls every particle down, times the gravity of its emitter: (0, -9.81, 0) at first.</summary>
+    public static Vec3 Gravity
+    {
+        get
+        {
+            Vec3 gravity;
+            Bootstrap.Native.ParticleGravity(&gravity);
+            return gravity;
+        }
+        set => Bootstrap.Native.SetParticleGravity(&value);
+    }
 }
 
 /// <summary>

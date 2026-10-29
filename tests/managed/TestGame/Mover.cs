@@ -729,3 +729,56 @@ public class Listener : Component
 
     public override void LateUpdate(float delta) => Listed += Animation.Events.Length;
 }
+
+// Reads what C++ code reads: the bodies of the scene, the ground of its terrain, a curve, a mesh and
+// the names of assets, and pulls particles less.
+public class Surveyor : Component
+{
+    public AssetId Curve;
+    public AssetId Mesh;
+    public int Bodies = -1;
+    public int Boxes = -1;
+    public float Height = -1.0f;
+    public float NormalY;
+    public bool Hole;
+    public bool Outside = true;
+    public float RayDistance = -1.0f;
+    public float CurveMiddle = -1.0f;
+    public int MeshVertices;
+    public int MeshIndices;
+    public float MeshWidth;
+    public string CurveName = "";
+    public string CurveType = "";
+    public float GravityY;
+
+    public override void Update(float delta)
+    {
+        Bodies = Scene.Current.EntitiesWith<RigidBody>().Length;
+        Boxes = Scene.Current.EntitiesWith<RigidBody, BoxCollider>().Length;
+        if (Terrains.HeightAt(new Vec3(4.0f, 50.0f, 0.0f), out float height))
+        {
+            Height = height;
+        }
+        if (Terrains.NormalAt(new Vec3(4.0f, 50.0f, 0.0f), out Vec3 normal))
+        {
+            NormalY = normal.Y;
+        }
+        Hole = Terrains.IsHole(new Vec3(-4.0f, 0.0f, 0.0f));
+        Outside = Terrains.HeightAt(new Vec3(100.0f, 0.0f, 0.0f), out _);
+        if (Terrains.Raycast(new Vec3(4.0f, 50.0f, 0.0f), new Vec3(0.0f, -1.0f, 0.0f), 100.0f, out TerrainHit hit))
+        {
+            RayDistance = hit.Distance;
+        }
+        CurveMiddle = Curves.Evaluate(Curve, 0.5f);
+        MeshVertices = Meshes.Vertices(Mesh).Length;
+        MeshIndices = Meshes.Indices(Mesh).Length;
+        if (Meshes.Bounds(Mesh, out Vec3 min, out Vec3 max))
+        {
+            MeshWidth = max.X - min.X;
+        }
+        CurveName = Assets.NameOf(Curve) ?? "";
+        CurveType = Assets.TypeOf(Curve) ?? "";
+        Particles.Gravity = new Vec3(0.0f, -2.0f, 0.0f);
+        GravityY = Particles.Gravity.Y;
+    }
+}

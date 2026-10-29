@@ -283,6 +283,7 @@ devex_add_tests(runtime
         runtime/SaveGamesTests.cpp
         runtime/GameModuleTests.cpp
         runtime/SceneExtractionTests.cpp
+        runtime/TerrainQueriesTests.cpp
     LIBRARIES
         Devex::Engine
     ENVIRONMENT

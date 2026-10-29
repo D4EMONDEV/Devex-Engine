@@ -9,6 +9,7 @@
 #include <devex/platform/CrashHandler.hpp>
 #include <devex/platform/SharedLibrary.hpp>
 #include <devex/runtime/ComponentViews.hpp>
+#include <devex/runtime/TerrainQueries.hpp>
 #include <devex/scene/AnimationComponents.hpp>
 #include <devex/scene/ComponentRegistry.hpp>
 #include <devex/scene/Components.hpp>
@@ -309,6 +310,35 @@ struct NativeApi
     void (*setAnimatorLayerWeight)(Entity entity, const char* layer, float weight);
     int (*animatorLayerWeight)(Entity entity, const char* layer, float* weight);
     const char* (*animatorLayerState)(Entity entity, const char* layer, float* normalizedTime);
+
+    // The window, as the Window of C++ code: its size, title, state and scale.
+    void (*setWindowSize)(int width, int height);
+    void (*setWindowTitle)(const char* title);
+    int (*windowState)();
+    void (*setWindowFullscreen)(int fullscreen);
+    void (*maximizeWindow)();
+    void (*restoreWindow)();
+    void (*centerWindow)();
+    float (*windowDisplayScale)();
+    // The ground of terrains (runtime/TerrainQueries.hpp); an invalid entity looks at every terrain.
+    int (*terrainHeight)(void* scene, Entity terrain, const math::Vec3* point, float* height);
+    int (*terrainNormal)(void* scene, Entity terrain, const math::Vec3* point, math::Vec3* normal);
+    int (*terrainHole)(void* scene, Entity terrain, const math::Vec3* point);
+    int (*terrainRaycast)(void* scene, Entity terrain, const math::Vec3* origin, const math::Vec3* direction, float maxDistance,
+                          TerrainHit* hit);
+    // What the assets hold, as the AssetManager of C++ code reads it.
+    const char* (*assetName)(const UuidBytes* asset);
+    const char* (*assetTypeName)(const UuidBytes* asset);
+    int (*curveValue)(const UuidBytes* curve, float time, float* value);
+    int (*meshData)(const UuidBytes* mesh, const asset::Vertex** vertices, int* vertexCount, const std::uint32_t** indices,
+                    int* indexCount);
+    int (*textureSize)(const UuidBytes* texture, int* size);
+    int (*spriteSize)(const UuidBytes* sprite, float* sizeAndPivot);
+    double (*audioClipLength)(const UuidBytes* clip);
+    void (*particleGravity)(math::Vec3* gravity);
+    void (*setParticleGravity)(const math::Vec3* gravity);
+    int (*raycastSolid)(const math::Vec3* origin, const math::Vec3* direction, float maxDistance, std::uint32_t layers,
+                        physics::RayHit* hit);
 };
 
 // The functions the engine calls, in the order of Devex.Managed's ManagedApi.
@@ -323,7 +353,7 @@ struct ManagedApi
 };
 
 // Devex.Managed's Bootstrap.Version: both sides change it with the function tables.
-constexpr int bootstrapVersion = 25;
+constexpr int bootstrapVersion = 26;
 
 struct BootstrapArguments
 {
@@ -2482,6 +2512,224 @@ int apiParticleCount(Entity entity)
     return particleWorld() != nullptr ? static_cast<int>(particleWorld()->particleCount(entity)) : 0;
 }
 
+void apiSetWindowSize(int width, int height)
+{
+    if (window() != nullptr && width > 0 && height > 0)
+    {
+        window()->setSize({static_cast<std::uint32_t>(width), static_cast<std::uint32_t>(height)});
+    }
+}
+
+void apiSetWindowTitle(const char* title)
+{
+    if (window() != nullptr && title != nullptr)
+    {
+        window()->setTitle(title);
+    }
+}
+
+// 1 when fullscreen, 2 when maximized, 4 when minimized.
+int apiWindowState()
+{
+    const platform::Window* const shown = window();
+    return shown == nullptr ? 0 : (shown->isFullscreen() ? 1 : 0) | (shown->isMaximized() ? 2 : 0) | (shown->isMinimized() ? 4 : 0);
+}
+
+void apiSetWindowFullscreen(int fullscreen)
+{
+    if (window() != nullptr)
+    {
+        window()->setFullscreen(fullscreen != 0);
+    }
+}
+
+void apiMaximizeWindow()
+{
+    if (window() != nullptr)
+    {
+        window()->maximize();
+    }
+}
+
+void apiRestoreWindow()
+{
+    if (window() != nullptr)
+    {
+        window()->restore();
+    }
+}
+
+void apiCenterWindow()
+{
+    if (window() != nullptr)
+    {
+        window()->center();
+    }
+}
+
+float apiWindowDisplayScale()
+{
+    return window() != nullptr ? window()->displayScale() : 1.0f;
+}
+
+int apiTerrainHeight(void* scene, Entity terrain, const math::Vec3* point, float* height)
+{
+    if (scene == nullptr || assetManager() == nullptr)
+    {
+        return 0;
+    }
+    const std::optional<float> found = optionalEntity(terrain).isValid() ? terrainHeightAt(*toScene(scene), *assetManager(), terrain, *point)
+                                                         : terrainHeightAt(*toScene(scene), *assetManager(), *point);
+    *height = found.value_or(0.0f);
+    return found ? 1 : 0;
+}
+
+int apiTerrainNormal(void* scene, Entity terrain, const math::Vec3* point, math::Vec3* normal)
+{
+    if (scene == nullptr || assetManager() == nullptr)
+    {
+        return 0;
+    }
+    std::optional<math::Vec3> found;
+    if (optionalEntity(terrain).isValid())
+    {
+        found = terrainNormalAt(*toScene(scene), *assetManager(), terrain, *point);
+    }
+    else
+    {
+        // The first terrain that covers the point.
+        for ([[maybe_unused]] auto [entity, component] : toScene(scene)->view<scene::Terrain>())
+        {
+            if ((found = terrainNormalAt(*toScene(scene), *assetManager(), entity, *point)))
+            {
+                break;
+            }
+        }
+    }
+    *normal = found.value_or(math::Vec3{0.0f, 1.0f, 0.0f});
+    return found ? 1 : 0;
+}
+
+int apiTerrainHole(void* scene, Entity terrain, const math::Vec3* point)
+{
+    if (scene == nullptr || assetManager() == nullptr)
+    {
+        return 0;
+    }
+    if (optionalEntity(terrain).isValid())
+    {
+        return isTerrainHoleAt(*toScene(scene), *assetManager(), terrain, *point) ? 1 : 0;
+    }
+    for ([[maybe_unused]] auto [entity, component] : toScene(scene)->view<scene::Terrain>())
+    {
+        if (isTerrainHoleAt(*toScene(scene), *assetManager(), entity, *point))
+        {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+int apiTerrainRaycast(void* scene, Entity terrain, const math::Vec3* origin, const math::Vec3* direction, float maxDistance, TerrainHit* hit)
+{
+    if (scene == nullptr || assetManager() == nullptr)
+    {
+        return 0;
+    }
+    const std::optional<TerrainHit> found =
+        optionalEntity(terrain).isValid() ? raycastTerrain(*toScene(scene), *assetManager(), terrain, *origin, *direction, maxDistance)
+                          : raycastTerrain(*toScene(scene), *assetManager(), *origin, *direction, maxDistance);
+    if (found)
+    {
+        *hit = *found;
+    }
+    return found ? 1 : 0;
+}
+
+const char* apiAssetName(const UuidBytes* asset)
+{
+    const asset::AssetSource* const assets = currentFrame() != nullptr ? currentFrame()->assets : nullptr;
+    const asset::AssetInfo* const info = assets != nullptr ? assets->find(asset::AssetId{toUuid(asset)}) : nullptr;
+    return info != nullptr ? keepMessage(info->name) : nullptr;
+}
+
+const char* apiAssetTypeName(const UuidBytes* asset)
+{
+    const asset::AssetSource* const assets = currentFrame() != nullptr ? currentFrame()->assets : nullptr;
+    const asset::AssetInfo* const info = assets != nullptr ? assets->find(asset::AssetId{toUuid(asset)}) : nullptr;
+    return info != nullptr ? keepMessage(std::string(asset::toString(info->type))) : nullptr;
+}
+
+int apiCurveValue(const UuidBytes* curve, float time, float* value)
+{
+    const std::shared_ptr<const asset::CurveData> data =
+        assetManager() != nullptr ? assetManager()->curve(asset::AssetId{toUuid(curve)}) : nullptr;
+    *value = data != nullptr ? data->evaluate(time) : 0.0f;
+    return data != nullptr ? 1 : 0;
+}
+
+int apiMeshData(const UuidBytes* mesh, const asset::Vertex** vertices, int* vertexCount, const std::uint32_t** indices, int* indexCount)
+{
+    const asset::MeshData* const data = assetManager() != nullptr ? assetManager()->meshData(asset::AssetId{toUuid(mesh)}) : nullptr;
+    *vertices = data != nullptr ? data->vertices.data() : nullptr;
+    *vertexCount = data != nullptr ? static_cast<int>(data->vertices.size()) : 0;
+    *indices = data != nullptr ? data->indices.data() : nullptr;
+    *indexCount = data != nullptr ? static_cast<int>(data->indices.size()) : 0;
+    return data != nullptr ? 1 : 0;
+}
+
+int apiTextureSize(const UuidBytes* texture, int* size)
+{
+    const math::Extent2D extent = assetManager() != nullptr ? assetManager()->textureSize(asset::AssetId{toUuid(texture)}) : math::Extent2D{};
+    size[0] = static_cast<int>(extent.width);
+    size[1] = static_cast<int>(extent.height);
+    return extent.width > 0 ? 1 : 0;
+}
+
+int apiSpriteSize(const UuidBytes* sprite, float* sizeAndPivot)
+{
+    const std::shared_ptr<const asset::SpriteData> data =
+        assetManager() != nullptr ? assetManager()->sprite(asset::AssetId{toUuid(sprite)}) : nullptr;
+    const math::Vec2 size = data != nullptr ? data->size() : math::Vec2{0.0f};
+    const math::Vec2 pivot = data != nullptr ? data->pivot : math::Vec2{0.5f};
+    sizeAndPivot[0] = size.x;
+    sizeAndPivot[1] = size.y;
+    sizeAndPivot[2] = pivot.x;
+    sizeAndPivot[3] = pivot.y;
+    return data != nullptr ? 1 : 0;
+}
+
+double apiAudioClipLength(const UuidBytes* clip)
+{
+    const std::shared_ptr<const audio::Clip> data =
+        assetManager() != nullptr ? assetManager()->audioClip(asset::AssetId{toUuid(clip)}) : nullptr;
+    return data != nullptr ? data->data().seconds() : 0.0;
+}
+
+void apiParticleGravity(math::Vec3* gravity)
+{
+    *gravity = particleWorld() != nullptr ? particleWorld()->gravity() : math::Vec3{0.0f, -9.81f, 0.0f};
+}
+
+void apiSetParticleGravity(const math::Vec3* gravity)
+{
+    if (particleWorld() != nullptr)
+    {
+        particleWorld()->setGravity(*gravity);
+    }
+}
+
+int apiRaycastSolid(const math::Vec3* origin, const math::Vec3* direction, float maxDistance, std::uint32_t layers, physics::RayHit* hit)
+{
+    const std::optional<physics::RayHit> found =
+        physicsWorld() != nullptr ? physicsWorld()->raycastSolid(*origin, *direction, maxDistance, layerMask(layers)) : std::nullopt;
+    if (found)
+    {
+        *hit = *found;
+    }
+    return found ? 1 : 0;
+}
+
 [[nodiscard]] NativeApi makeNativeApi() noexcept
 {
     return NativeApi{
@@ -2680,6 +2928,28 @@ int apiParticleCount(Entity entity)
         .setAnimatorLayerWeight = &apiSetAnimatorLayerWeight,
         .animatorLayerWeight = &apiAnimatorLayerWeight,
         .animatorLayerState = &apiAnimatorLayerState,
+        .setWindowSize = &apiSetWindowSize,
+        .setWindowTitle = &apiSetWindowTitle,
+        .windowState = &apiWindowState,
+        .setWindowFullscreen = &apiSetWindowFullscreen,
+        .maximizeWindow = &apiMaximizeWindow,
+        .restoreWindow = &apiRestoreWindow,
+        .centerWindow = &apiCenterWindow,
+        .windowDisplayScale = &apiWindowDisplayScale,
+        .terrainHeight = &apiTerrainHeight,
+        .terrainNormal = &apiTerrainNormal,
+        .terrainHole = &apiTerrainHole,
+        .terrainRaycast = &apiTerrainRaycast,
+        .assetName = &apiAssetName,
+        .assetTypeName = &apiAssetTypeName,
+        .curveValue = &apiCurveValue,
+        .meshData = &apiMeshData,
+        .textureSize = &apiTextureSize,
+        .spriteSize = &apiSpriteSize,
+        .audioClipLength = &apiAudioClipLength,
+        .particleGravity = &apiParticleGravity,
+        .setParticleGravity = &apiSetParticleGravity,
+        .raycastSolid = &apiRaycastSolid,
     };
 }
 

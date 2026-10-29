@@ -2202,6 +2202,13 @@ namespace devex::ui {
   `postVolumeInfluence`, `whiteBalanceFactors` (`devex/render/PostProcess.hpp`) ;
   `RenderCamera::lensEffects` (faux pour la caméra de l'éditeur) ; passes de `shaders/lens.slang`
   (liaisons 13 `postSource` et 14 `postChain[7]` du set de frame).
+- Parité C#/C++ (jalon 84, table dans decisions.md) : C# `Scene.EntitiesWith<T>()` / `<T1, T2>()`,
+  `Screen.SetSize/SetTitle/Fullscreen/Maximize/Restore/Center/DisplayScale`, `Terrains.HeightAt/
+  NormalAt/IsHole/Raycast`, `Assets.NameOf/TypeOf`, `Curves.Evaluate`, `Meshes.Vertices/Indices/
+  Bounds`, `Textures.Size`, `Sprites.Size/Pivot`, `Audio.ClipLength`, `Particles.Gravity`,
+  `Physics.RaycastSolid` ; C++ `runtime::terrainHeightAt`, `terrainNormalAt`, `isTerrainHoleAt`,
+  `raycastTerrain` (`devex/runtime/TerrainQueries.hpp`). Nouvelle fonction native : à la fin de
+  `NativeApi` des deux côtés (ManagedGame.cpp, Interop.cs) et `bootstrapVersion` + 1.
 - Terrains : `asset::TerrainMaps` (`devex/asset/TerrainMaps.hpp` : `makeFlatTerrain`,
   `terrainHeight`, `terrainNormal`, `raycastTerrain`, `applyTerrainBrush`, `copyTerrainRegion`),
   `encodeTerrain`/`decodeTerrain`, asset `terrain` (`.dvxterrain`) ; composant `scene::Terrain`
