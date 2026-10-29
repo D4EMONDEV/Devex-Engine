@@ -16,6 +16,7 @@
 #include <Jolt/Physics/Collision/Shape/CapsuleShape.h>
 #include <Jolt/Physics/Collision/Shape/ConvexHullShape.h>
 #include <Jolt/Physics/Collision/Shape/CylinderShape.h>
+#include <Jolt/Physics/Collision/Shape/HeightFieldShape.h>
 #include <Jolt/Physics/Collision/Shape/MeshShape.h>
 #include <Jolt/Physics/Collision/Shape/RotatedTranslatedShape.h>
 #include <Jolt/Physics/Collision/Shape/SphereShape.h>
@@ -372,6 +373,8 @@ enum class ShapeKind : std::uint8_t
     Capsule,
     Cylinder,
     Mesh,
+    // The ground of a terrain: its asset in `mesh`, its size in meters in dimensions.x.
+    HeightField,
 };
 
 // One collider of a body, placed relative to the body's entity without its scale.
@@ -797,6 +800,33 @@ struct PhysicsWorld::Implementation
             const float halfHeight = std::max(part.dimensions.y * scale.y * 0.5f, 0.001f);
             return create(JPH::CylinderShapeSettings(halfHeight, radius, std::min(JPH::cDefaultConvexRadius, std::min(halfHeight, radius) * 0.5f)));
         }
+        case ShapeKind::HeightField: {
+            const asset::TerrainMaps* const maps = config.terrains ? config.terrains(part.mesh) : nullptr;
+            if (maps == nullptr || maps->heights.size() != maps->sampleCount() || maps->holes.size() != maps->sampleCount() ||
+                maps->resolution < 2 || part.dimensions.x <= 0.0f)
+            {
+                warnOnce(part.entity, "terrain", std::format("the terrain of '{}' cannot be loaded", scene.name(part.entity)));
+                return nullptr;
+            }
+            if (dynamic)
+            {
+                warnOnce(part.entity, "dynamic terrain", std::format("the terrain of '{}' is static ground: it cannot be a dynamic body",
+                                                                     scene.name(part.entity)));
+                return nullptr;
+            }
+            // As the terrain is drawn: over its size from its position, whatever the scale of its entity.
+            std::vector<float> samples = maps->heights;
+            for (std::size_t sample = 0; sample < samples.size(); ++sample)
+            {
+                if (maps->holes[sample] > 127)
+                {
+                    samples[sample] = JPH::HeightFieldShapeConstants::cNoCollisionValue;
+                }
+            }
+            const float spacing = part.dimensions.x / static_cast<float>(maps->resolution - 1);
+            return create(JPH::HeightFieldShapeSettings(samples.data(), JPH::Vec3::sZero(), JPH::Vec3(spacing, 1.0f, spacing),
+                                                        maps->resolution));
+        }
         case ShapeKind::Mesh: {
             const asset::MeshData* const mesh = config.meshes ? config.meshes(part.mesh) : nullptr;
             if (mesh == nullptr || mesh->indices.size() < 3)
@@ -960,6 +990,14 @@ struct PhysicsWorld::Implementation
             }
             describeCollider(scene, descriptions, entity, collider.trigger,
                              {.kind = ShapeKind::Mesh, .mesh = mesh, .convex = collider.convex});
+        }
+        for ([[maybe_unused]] auto [entity, terrain] : scene.view<scene::Terrain>())
+        {
+            if (terrain.collision && terrain.data.isValid())
+            {
+                describeCollider(scene, descriptions, entity, false,
+                                 {.kind = ShapeKind::HeightField, .dimensions = {terrain.size, 0.0f, 0.0f}, .mesh = terrain.data});
+            }
         }
         for ([[maybe_unused]] auto [entity, rigidBody] : scene.view<scene::RigidBody>())
         {

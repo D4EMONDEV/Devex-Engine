@@ -5,7 +5,10 @@
 #include <devex/asset/Primitives.hpp>
 #include <devex/runtime/AssetManager.hpp>
 
+#include <glm/gtc/packing.hpp>
+
 #include <algorithm>
+#include <cstring>
 #include <limits>
 #include <utility>
 
@@ -751,6 +754,233 @@ std::shared_ptr<const asset::TranslationData> AssetManager::translation(asset::A
                                               [](std::span<const std::byte> bytes) { return asset::decodeTranslation(bytes); });
 }
 
+namespace {
+
+// Rows of the textures of a terrain, from `first` for `count` of them.
+[[nodiscard]] std::vector<std::byte> terrainHeightRows(const asset::TerrainMaps& maps, std::uint32_t first, std::uint32_t count)
+{
+    std::vector<std::byte> rows(std::size_t{maps.resolution} * count * sizeof(float));
+    std::memcpy(rows.data(), maps.heights.data() + std::size_t{first} * maps.resolution, rows.size());
+    return rows;
+}
+
+// The slopes between the samples around each one, in meters of height per cell, as half floats.
+[[nodiscard]] std::vector<std::byte> terrainSlopeRows(const asset::TerrainMaps& maps, std::uint32_t first, std::uint32_t count)
+{
+    const std::uint32_t resolution = maps.resolution;
+    const std::uint32_t last = resolution - 1;
+    std::vector<std::uint16_t> halves(std::size_t{resolution} * count * 4);
+    const auto height = [&maps, resolution](std::uint32_t x, std::uint32_t z) { return maps.heights[std::size_t{z} * resolution + x]; };
+    for (std::uint32_t row = 0; row < count; ++row)
+    {
+        const std::uint32_t z = first + row;
+        const std::uint32_t back = z > 0 ? z - 1 : z;
+        const std::uint32_t front = std::min(z + 1, last);
+        for (std::uint32_t x = 0; x < resolution; ++x)
+        {
+            const std::uint32_t left = x > 0 ? x - 1 : x;
+            const std::uint32_t right = std::min(x + 1, last);
+            const float slopeX = (height(right, z) - height(left, z)) / static_cast<float>(right - left);
+            const float slopeZ = (height(x, front) - height(x, back)) / static_cast<float>(front - back);
+            std::uint16_t* const texel = halves.data() + (std::size_t{row} * resolution + x) * 4;
+            texel[0] = glm::packHalf1x16(slopeX);
+            texel[1] = glm::packHalf1x16(slopeZ);
+            texel[2] = 0;
+            texel[3] = glm::packHalf1x16(1.0f);
+        }
+    }
+    std::vector<std::byte> rows(halves.size() * sizeof(std::uint16_t));
+    std::memcpy(rows.data(), halves.data(), rows.size());
+    return rows;
+}
+
+// The shares of four layers painted, from firstLayer.
+[[nodiscard]] std::vector<std::byte> terrainPaintRows(const asset::TerrainMaps& maps, std::uint32_t first, std::uint32_t count,
+                                                      std::uint32_t firstLayer)
+{
+    std::vector<std::byte> rows(std::size_t{maps.resolution} * count * 4);
+    for (std::size_t texel = 0; texel < std::size_t{maps.resolution} * count; ++texel)
+    {
+        const std::size_t sample = std::size_t{first} * maps.resolution + texel;
+        for (std::uint32_t channel = 0; channel < 4; ++channel)
+        {
+            rows[texel * 4 + channel] = static_cast<std::byte>(maps.paint[sample * asset::maxTerrainLayers + firstLayer + channel]);
+        }
+    }
+    return rows;
+}
+
+// The holes in red, the grass in green.
+[[nodiscard]] std::vector<std::byte> terrainDetailRows(const asset::TerrainMaps& maps, std::uint32_t first, std::uint32_t count)
+{
+    std::vector<std::byte> rows(std::size_t{maps.resolution} * count * 4);
+    for (std::size_t texel = 0; texel < std::size_t{maps.resolution} * count; ++texel)
+    {
+        const std::size_t sample = std::size_t{first} * maps.resolution + texel;
+        rows[texel * 4] = static_cast<std::byte>(maps.holes[sample]);
+        rows[texel * 4 + 1] = static_cast<std::byte>(maps.grass[sample]);
+        rows[texel * 4 + 2] = std::byte{0};
+        rows[texel * 4 + 3] = std::byte{255};
+    }
+    return rows;
+}
+
+[[nodiscard]] asset::TextureData terrainTexture(asset::TextureFormat format, asset::TextureFilter filter, std::uint32_t resolution,
+                                                std::vector<std::byte> bytes)
+{
+    asset::TextureData texture{.format = format, .filter = filter};
+    texture.mips.push_back({.width = resolution, .height = resolution, .bytes = std::move(bytes)});
+    return texture;
+}
+
+// The lowest and highest heights and the most grass of the blocks a region of samples touches.
+void updateBlocks(AssetManager::LoadedTerrain& terrain, const asset::TerrainRegion& region)
+{
+    const asset::TerrainMaps& maps = terrain.maps;
+    const std::uint32_t cells = render::terrainBlockCells;
+    const std::uint32_t blocks = (maps.resolution - 1) / cells;
+    terrain.blockHeights.resize(std::size_t{blocks} * blocks);
+    terrain.blockGrass.resize(std::size_t{blocks} * blocks);
+    // A sample on the edge of a block belongs to the blocks on both sides.
+    const std::uint32_t firstX = region.x > 0 ? (region.x - 1) / cells : 0;
+    const std::uint32_t firstZ = region.z > 0 ? (region.z - 1) / cells : 0;
+    const std::uint32_t lastX = std::min((region.x + region.width) / cells, blocks - 1);
+    const std::uint32_t lastZ = std::min((region.z + region.height) / cells, blocks - 1);
+    for (std::uint32_t blockZ = firstZ; blockZ <= lastZ; ++blockZ)
+    {
+        for (std::uint32_t blockX = firstX; blockX <= lastX; ++blockX)
+        {
+            math::Vec2 range{std::numeric_limits<float>::max(), std::numeric_limits<float>::lowest()};
+            std::uint8_t grass = 0;
+            for (std::uint32_t z = blockZ * cells; z <= (blockZ + 1) * cells; ++z)
+            {
+                for (std::uint32_t x = blockX * cells; x <= (blockX + 1) * cells; ++x)
+                {
+                    const std::size_t sample = std::size_t{z} * maps.resolution + x;
+                    range = {std::min(range.x, maps.heights[sample]), std::max(range.y, maps.heights[sample])};
+                    grass = std::max(grass, maps.grass[sample]);
+                }
+            }
+            terrain.blockHeights[std::size_t{blockZ} * blocks + blockX] = range;
+            terrain.blockGrass[std::size_t{blockZ} * blocks + blockX] = grass;
+        }
+    }
+}
+
+} // namespace
+
+AssetManager::LoadedTerrain* AssetManager::terrain(asset::AssetId id)
+{
+    if (const auto found = m_terrains.find(id); found != m_terrains.end())
+    {
+        return &found->second;
+    }
+    // The maps load without a renderer as well, for the physics of headless tools and tests.
+    if (!id.isValid() || m_source == nullptr || m_failed.contains(id) || m_source->find(id) == nullptr)
+    {
+        return nullptr;
+    }
+    const core::Result<std::vector<std::byte>> bytes = m_source->loadArtifact(id);
+    core::Result<asset::TerrainMaps> maps =
+        bytes ? asset::decodeTerrain(*bytes) : core::Result<asset::TerrainMaps>(std::unexpected(bytes.error()));
+    if (!maps)
+    {
+        DEVEX_LOG_ERROR("Cannot load terrain {}: {}", id.uuid, maps.error());
+        m_failed.insert(id);
+        return nullptr;
+    }
+    LoadedTerrain& loaded = m_terrains[id];
+    loaded.maps = std::move(*maps);
+    updateBlocks(loaded, {.width = loaded.maps.resolution, .height = loaded.maps.resolution});
+    if (m_renderer != nullptr)
+    {
+        const asset::TerrainMaps& data = loaded.maps;
+        const std::uint32_t size = data.resolution;
+        render::TerrainTextures& textures = loaded.textures;
+        const auto create = [this, id](asset::TextureData texture) {
+            core::Result<render::TextureHandle> created = m_renderer->createTexture(texture);
+            if (!created)
+            {
+                DEVEX_LOG_ERROR("Cannot upload terrain {}: {}", id.uuid, created.error());
+                return render::TextureHandle{};
+            }
+            return *created;
+        };
+        textures.heights = create(terrainTexture(asset::TextureFormat::R32Float, asset::TextureFilter::Nearest, size,
+                                                 terrainHeightRows(data, 0, size)));
+        textures.slopes = create(terrainTexture(asset::TextureFormat::Rgba16Float, asset::TextureFilter::Linear, size,
+                                                terrainSlopeRows(data, 0, size)));
+        textures.paint0 = create(terrainTexture(asset::TextureFormat::Rgba8Unorm, asset::TextureFilter::Linear, size,
+                                                terrainPaintRows(data, 0, size, 0)));
+        textures.paint1 = create(terrainTexture(asset::TextureFormat::Rgba8Unorm, asset::TextureFilter::Linear, size,
+                                                terrainPaintRows(data, 0, size, 4)));
+        textures.detail = create(terrainTexture(asset::TextureFormat::Rgba8Unorm, asset::TextureFilter::Linear, size,
+                                                terrainDetailRows(data, 0, size)));
+    }
+    return &loaded;
+}
+
+void AssetManager::terrainChanged(asset::AssetId id, const asset::TerrainRegion& region)
+{
+    const auto found = m_terrains.find(id);
+    if (found == m_terrains.end() || region.empty())
+    {
+        return;
+    }
+    LoadedTerrain& terrain = found->second;
+    ++terrain.version;
+    terrain.edited = true;
+    updateBlocks(terrain, region);
+    if (m_renderer == nullptr)
+    {
+        return;
+    }
+    const asset::TerrainMaps& maps = terrain.maps;
+    const std::uint32_t last = maps.resolution - 1;
+    const std::uint32_t first = std::min(region.z, last);
+    const std::uint32_t count = std::min(region.height, maps.resolution - first);
+    // The slopes of the rows around the region change with it.
+    const std::uint32_t slopeFirst = first > 0 ? first - 1 : 0;
+    const std::uint32_t slopeCount = std::min(first + count + 1, maps.resolution) - slopeFirst;
+    const auto update = [this, id](render::TextureHandle texture, std::uint32_t top, std::uint32_t rows, const std::vector<std::byte>& bytes) {
+        if (core::Result<void> updated = m_renderer->updateTexture(texture, top, rows, bytes); !updated && texture.isValid())
+        {
+            DEVEX_LOG_ERROR("Cannot update terrain {}: {}", id.uuid, updated.error());
+        }
+    };
+    update(terrain.textures.heights, first, count, terrainHeightRows(maps, first, count));
+    update(terrain.textures.slopes, slopeFirst, slopeCount, terrainSlopeRows(maps, slopeFirst, slopeCount));
+    update(terrain.textures.paint0, first, count, terrainPaintRows(maps, first, count, 0));
+    update(terrain.textures.paint1, first, count, terrainPaintRows(maps, first, count, 4));
+    update(terrain.textures.detail, first, count, terrainDetailRows(maps, first, count));
+}
+
+void AssetManager::terrainSaved(asset::AssetId id)
+{
+    if (const auto found = m_terrains.find(id); found != m_terrains.end())
+    {
+        found->second.edited = false;
+    }
+}
+
+void AssetManager::releaseTerrain(asset::AssetId id)
+{
+    const auto found = m_terrains.find(id);
+    if (found == m_terrains.end())
+    {
+        return;
+    }
+    if (m_renderer != nullptr)
+    {
+        const render::TerrainTextures& textures = found->second.textures;
+        for (const render::TextureHandle texture : {textures.heights, textures.slopes, textures.paint0, textures.paint1, textures.detail})
+        {
+            m_renderer->destroyTexture(texture);
+        }
+    }
+    m_terrains.erase(found);
+}
+
 const LoadedFont* AssetManager::font(asset::AssetId id)
 {
     auto found = m_fonts.find(id);
@@ -885,6 +1115,13 @@ void AssetManager::handleEvents(std::span<const asset::AssetEvent> events)
             break;
         case asset::AssetType::Translation:
             m_translations.erase(event.id);
+            break;
+        case asset::AssetType::Terrain:
+            // Loaded again when a frame draws it, unless the editor changed it since it was saved.
+            if (const auto found = m_terrains.find(event.id); found != m_terrains.end() && (removed || !found->second.edited))
+            {
+                releaseTerrain(event.id);
+            }
             break;
         case asset::AssetType::Shader:
             if (m_shaders.contains(event.id))
@@ -1046,6 +1283,10 @@ void AssetManager::setSource(asset::AssetSource* source)
         m_renderer->destroyIrradianceVolume(volume);
     }
     m_irradianceVolumes.clear();
+    while (!m_terrains.empty())
+    {
+        releaseTerrain(m_terrains.begin()->first);
+    }
     m_models.clear();
     m_meshData.clear();
     m_sceneTexts.clear();

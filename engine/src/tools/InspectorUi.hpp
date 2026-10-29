@@ -161,6 +161,10 @@ void addTilePainter(InspectorUi& ui, EditorUiKit& kit, Section& section);
 void syncTilePainter(InspectorUi& ui, ToolsState& state, EditorUiKit& kit, scene::Scene& edited, scene::Entity entity,
                      Section& section);
 void answerTilePainter(InspectorUi& ui, ToolsState& state, Section& section);
+// The brushes that sculpt and paint a terrain, under its card.
+void addTerrainPainter(InspectorUi& ui, EditorUiKit& kit, Section& section);
+void syncTerrainPainter(InspectorUi& ui, ToolsState& state, scene::Scene& edited, scene::Entity entity, Section& section);
+void answerTerrainPainter(InspectorUi& ui, ToolsState& state, Section& section);
 
 // The end of the card of the import options: what waits, and the buttons that apply it or forget it.
 struct ImportFooter

@@ -164,6 +164,32 @@ DEVEX_REFLECT(PostProcessVolume)
         .field("tint", &PostProcessVolume::tint);
 }
 
+DEVEX_REFLECT(Terrain)
+{
+    type.field("data", &Terrain::data, {.assetType = "terrain"})
+        .field("size", &Terrain::size)
+        .field("collision", &Terrain::collision)
+        .field("cast_shadows", &Terrain::castShadows)
+        .field("layers", &Terrain::layers, {.assetType = "material", .group = "Layers"})
+        .field("texture_size", &Terrain::textureSize)
+        .field("blend_sharpness", &Terrain::blendSharpness)
+        .field("triplanar", &Terrain::triplanar)
+        .field("auto_base_layer", &Terrain::autoBaseLayer, {.group = "Automatic layers"})
+        .field("auto_slope_layer", &Terrain::autoSlopeLayer)
+        .field("auto_slope", &Terrain::autoSlope, {.angle = true})
+        .field("auto_height_layer", &Terrain::autoHeightLayer)
+        .field("auto_height", &Terrain::autoHeight)
+        .field("auto_blend", &Terrain::autoBlend)
+        .field("grass_color", &Terrain::grassColor, {.color = true, .group = "Grass"})
+        .field("grass_tip_color", &Terrain::grassTipColor, {.color = true})
+        .field("grass_height", &Terrain::grassHeight)
+        .field("grass_width", &Terrain::grassWidth)
+        .field("grass_density", &Terrain::grassDensity)
+        .field("grass_distance", &Terrain::grassDistance)
+        .field("wind_strength", &Terrain::windStrength)
+        .field("wind_speed", &Terrain::windSpeed);
+}
+
 DEVEX_REFLECT(ReflectionProbe)
 {
     type.field("size", &ReflectionProbe::size)

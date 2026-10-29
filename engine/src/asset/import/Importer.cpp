@@ -606,6 +606,23 @@ core::Result<ImportResult> importIrradianceVolumeFile(ImportContext& context)
     return result;
 }
 
+core::Result<ImportResult> importTerrainFile(ImportContext& context)
+{
+    core::Result<std::vector<std::byte>> bytes = core::readBinaryFile(context.source);
+    if (!bytes)
+    {
+        return std::unexpected(bytes.error());
+    }
+    // The file is the cooked asset already: checked, then taken as it is.
+    if (const core::Result<TerrainMaps> terrain = decodeTerrain(*bytes); !terrain)
+    {
+        return std::unexpected(terrain.error());
+    }
+    ImportResult result;
+    result.artifacts.push_back({context.mainId, AssetType::Terrain, context.name, std::move(*bytes)});
+    return result;
+}
+
 core::Result<ImportResult> importNavMeshFile(ImportContext& context)
 {
     core::Result<std::vector<std::byte>> bytes = core::readBinaryFile(context.source);
@@ -821,6 +838,13 @@ std::span<const Importer> importers()
             .mainType = AssetType::IrradianceVolume,
             .extensions = {irradianceVolumeExtension},
             .run = &importIrradianceVolumeFile,
+        },
+        Importer{
+            .name = "terrain",
+            .version = 1,
+            .mainType = AssetType::Terrain,
+            .extensions = {terrainExtension},
+            .run = &importTerrainFile,
         },
         Importer{
             .name = "shader",

@@ -617,6 +617,44 @@ struct DEVEX_API TilePainter
     std::optional<math::IVec2> hovered;
 };
 
+// How the viewport sculpts and paints the selected terrain.
+enum class TerrainBrushTool : std::uint8_t
+{
+    // The viewport selects and moves entities, as usual.
+    None,
+    Raise,
+    Lower,
+    Smooth,
+    Flatten,
+    Noise,
+    Paint,
+    Hole,
+    Grass,
+};
+
+struct DEVEX_API TerrainPainter
+{
+    TerrainBrushTool tool = TerrainBrushTool::None;
+    // The radius of the brush in meters, how much it does from 0 to 1, and how softly it fades to its
+    // edge.
+    float size = 6.0f;
+    float strength = 0.5f;
+    float softness = 0.6f;
+    // The layer painted, and the height Flatten brings the ground to (Ctrl picks it).
+    std::uint32_t layer = 0;
+    float flattenHeight = 0.0f;
+    // While the mouse is held: the terrain changed, its maps before the stroke, and what it changed.
+    bool stroking = false;
+    core::Uuid target;
+    asset::AssetId data;
+    std::optional<asset::TerrainMaps> before;
+    asset::TerrainRegion changed;
+    // Where the brush is on the ground, in the world.
+    std::optional<math::Vec3> hovered;
+    // Why the terrain cannot be sculpted, when it cannot.
+    std::string message;
+};
+
 // The sprite frames the inspector edits: a copy of their file, saved when a change is over.
 struct DEVEX_API SpriteFramesEditor
 {
@@ -800,6 +838,8 @@ struct DEVEX_API ToolsState
     // Counts the imports of materials and shaders, for what the panels read from their artifacts.
     std::uint64_t materialRevision = 0;
     TilePainter tilePainter;
+    TerrainPainter terrainPainter;
+    std::shared_ptr<TerrainAccess> terrains;
     // A file just created, selected once it is imported, as a res:// path.
     std::string assetToSelect;
     // A file the FileSystem shows at its next update, as a res:// path: revealInFileSystem.
@@ -1197,6 +1237,13 @@ DEVEX_API void addNavigationLines(ToolsState& state, scene::Scene& scene, const 
 // Paints the selected tilemap with the mouse when a tool is chosen. Returns whether it took the
 // mouse, which the selection and the gizmo then leave alone.
 DEVEX_API bool handleTilePainting(ToolsState& state, scene::Scene& scene, const ViewportView& view, math::Vec2 mouse, bool hovered);
+// Sculpts and paints the selected terrain with the brush of the terrain painter, while a tool is
+// chosen; true when the viewport input went to it.
+DEVEX_API bool handleTerrainPainting(ToolsState& state, scene::Scene& scene, const ViewportView& view, math::Vec2 mouse, bool hovered);
+// The circle of the brush on the ground.
+DEVEX_API void addTerrainPainterOverlay(ToolsState& state, scene::Scene& scene, render::RenderWorld& world);
+// Writes the maps of the terrains of a scene that changed since they were saved to their files.
+DEVEX_API void saveTerrains(ToolsState& state, const scene::Scene& scene);
 // The cells around the mouse and the tile about to be painted.
 DEVEX_API void addTilePainterOverlay(ToolsState& state, scene::Scene& scene, render::RenderWorld& world);
 // Writes new sprite frames into a res:// folder of the assets, and selects them once imported. From a

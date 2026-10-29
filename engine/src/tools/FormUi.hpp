@@ -27,6 +27,7 @@ struct ComponentType;
 namespace devex::tools::detail {
 
 struct TilePainterUi;
+struct TerrainPainterUi;
 
 // A line of a card under its header: a property, the header of a group, or what a card adds.
 struct Line
@@ -91,6 +92,7 @@ struct Section
     std::optional<std::size_t> volumeStatusLine;
     PanelButton bakeVolumes;
     std::shared_ptr<TilePainterUi> painter;
+    std::shared_ptr<TerrainPainterUi> terrainPainter;
 };
 
 // A row of a page: a label at the left, and the editor that holds its controls at the right.

@@ -46,6 +46,8 @@ constexpr std::array engineComponents{
     ComponentInfo{"Fog", "Fog", Category::ThreeD, "Fog thickening towards the ground, lit by the sky and the sun."},
     ComponentInfo{"PostProcessVolume", "Post-process volume", Category::ThreeD,
                   "Settings of the image that take the place of the camera's inside its box, fading in around it."},
+    ComponentInfo{"Terrain", "Terrain", Category::ThreeD,
+                  "Ground sculpted and painted in the editor, with layers of materials and grass, which the physics stands on."},
     ComponentInfo{"ReflectionProbe", "Reflection probe", Category::ThreeD,
                   "The light around a point, baked in the editor, which the surfaces inside its box reflect in place of the sky."},
     ComponentInfo{"LightProbeVolume", "Light probe volume", Category::ThreeD,
@@ -323,6 +325,14 @@ std::vector<CreationEntry> creationCatalog(const scene::ComponentRegistry& regis
         {
             entry.adjust = [](scene::Scene& scene, scene::Entity entity) {
                 scene.get<scene::Transform>(entity).rotation = math::angleAxis(math::radians(-90.0f), math::Vec3{1.0f, 0.0f, 0.0f});
+            };
+        }
+        else if (info.type == "Terrain")
+        {
+            // Its square spreads from its position: centered on the origin.
+            entry.adjust = [](scene::Scene& scene, scene::Entity entity) {
+                const float size = scene.get<scene::Terrain>(entity).size;
+                scene.get<scene::Transform>(entity).position = {-size * 0.5f, 0.0f, -size * 0.5f};
             };
         }
         else if (info.type == "Camera")

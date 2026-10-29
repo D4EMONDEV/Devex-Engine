@@ -111,9 +111,9 @@ ThemeMetrics g_metrics = deriveThemeMetrics(ThemeSettings{}, 1.0f);
 
 [[nodiscard]] bool isEngineComponent(std::string_view name) noexcept
 {
-    constexpr std::array<std::string_view, 78> engineComponents{
+    constexpr std::array<std::string_view, 79> engineComponents{
         "Transform",       "MeshRenderer",        "Camera",       "DirectionalLight",
-        "PointLight",      "SpotLight",           "Environment",  "Atmosphere", "Fog", "PostProcessVolume", "ReflectionProbe", "LightProbeVolume", "RigidBody",
+        "PointLight",      "SpotLight",           "Environment",  "Atmosphere", "Fog", "PostProcessVolume", "Terrain", "ReflectionProbe", "LightProbeVolume", "RigidBody",
         "BoxCollider",     "SphereCollider",      "CapsuleCollider", "CylinderCollider",
         "MeshCollider",    "CharacterController", "AudioSource",  "AudioListener",
         "SkinnedMeshRenderer", "Animator",        "Canvas",       "UiRect",
@@ -420,6 +420,14 @@ EntityIcon entityIcon(const scene::Scene& scene, scene::Entity entity)
     {
         return {icons::CloudSun, colors.environment};
     }
+    if (scene.has<scene::Terrain>(entity))
+    {
+        return {icons::Mountain, colors.environment};
+    }
+    if (scene.has<scene::PostProcessVolume>(entity))
+    {
+        return {icons::Film, colors.environment};
+    }
     if (scene.has<scene::ReflectionProbe>(entity))
     {
         return {icons::Globe, colors.environment};
@@ -583,6 +591,10 @@ EntityIcon componentIcon(std::string_view componentName)
     if (componentName == "PostProcessVolume")
     {
         return {icons::Film, colors.environment};
+    }
+    if (componentName == "Terrain")
+    {
+        return {icons::Mountain, colors.environment};
     }
     if (componentName == "ReflectionProbe")
     {

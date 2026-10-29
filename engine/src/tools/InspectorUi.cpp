@@ -424,6 +424,10 @@ void InspectorUi::rebuild(ToolsState& state, EditorUiKit& kit, scene::Scene& edi
         {
             addTilePainter(*this, kit, section);
         }
+        if (!shared && name == "Terrain")
+        {
+            addTerrainPainter(*this, kit, section);
+        }
     }
 
     // Components whose type is not registered, such as those of game code that is not loaded.
@@ -1273,6 +1277,10 @@ void InspectorUi::syncExtras(ToolsState& state, EditorUiKit& kit, scene::Scene& 
     {
         syncTilePainter(*this, state, kit, edited, active, section);
     }
+    if (section.terrainPainter != nullptr)
+    {
+        syncTerrainPainter(*this, state, edited, active, section);
+    }
     if (section.navInfo.isValid())
     {
         const NavMeshSummary summary = navMeshSummary(state, edited.get<scene::NavMeshSurface>(active));
@@ -1812,6 +1820,10 @@ void InspectorUi::answer(ToolsState& state, EditorUiKit& kit, scene::Scene& edit
         if (section.painter != nullptr)
         {
             answerTilePainter(*this, state, section);
+        }
+        if (section.terrainPainter != nullptr)
+        {
+            answerTerrainPainter(*this, state, section);
         }
         if (section.styleOpen.entity.isValid() && world.wasClicked(section.styleOpen.entity) && section.themeFile)
         {

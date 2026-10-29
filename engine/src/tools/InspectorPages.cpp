@@ -293,6 +293,8 @@ private:
         return {icons::Globe, colors.environment};
     case asset::AssetType::IrradianceVolume:
         return {icons::Grid, colors.environment};
+    case asset::AssetType::Terrain:
+        return {icons::Mountain, colors.environment};
     default:
         return {icons::File, colors.neutral};
     }

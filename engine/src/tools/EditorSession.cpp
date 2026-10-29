@@ -413,6 +413,7 @@ void applyAction(ToolsState& state, scene::Scene& scene, const PendingAction& ac
         DEVEX_LOG_ERROR("Cannot save the scene: {}", saved.error());
         return false;
     }
+    saveTerrains(state, document.scene);
     document.savedState = document.history.stateId();
     DEVEX_LOG_INFO("Saved {} ({} entities)", core::toUtf8(document.path.filename()), document.scene.entityCount());
     return true;
@@ -1046,6 +1047,7 @@ bool saveScene(ToolsState& state, scene::Scene& scene)
         DEVEX_LOG_ERROR("Cannot save the scene: {}", saved.error());
         return false;
     }
+    saveTerrains(state, scene);
     state.savedState = state.history.stateId();
     writeProjectSettings(state);
     // Imports the scene now rather than when the file watcher notices it.

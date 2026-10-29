@@ -8,6 +8,9 @@ namespace devex::render::vulkan {
 namespace {
 
 constexpr VkShaderStageFlags shaderStages = VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT;
+// The textures and the samplers vertices read too, as those of terrains read their heights and the
+// shaders of projects texture() in vertex().
+constexpr VkShaderStageFlags vertexStages = shaderStages | VK_SHADER_STAGE_VERTEX_BIT;
 constexpr VkDescriptorBindingFlags updatedInFlight =
     VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT;
 
@@ -67,38 +70,38 @@ core::Result<DescriptorSets> DescriptorSets::create(const Device& device,
     shadowSamplerInfo.maxLod = 0.0f;
     DEVEX_VK_TRY(vkCreateSampler, sets.m_device, &shadowSamplerInfo, nullptr, &sets.m_shadowSampler);
 
-    const auto image = [](std::uint32_t binding, std::uint32_t count = 1) {
+    const auto image = [](std::uint32_t binding, std::uint32_t count = 1, VkShaderStageFlags stages = shaderStages) {
         return VkDescriptorSetLayoutBinding{
             .binding = binding,
             .descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
             .descriptorCount = count,
-            .stageFlags = shaderStages,
+            .stageFlags = stages,
         };
     };
-    const auto sampler = [](std::uint32_t binding, const VkSampler* immutable) {
+    const auto sampler = [](std::uint32_t binding, const VkSampler* immutable, VkShaderStageFlags stages = shaderStages) {
         return VkDescriptorSetLayoutBinding{
             .binding = binding,
             .descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER,
             .descriptorCount = 1,
-            .stageFlags = shaderStages,
+            .stageFlags = stages,
             .pImmutableSamplers = immutable,
         };
     };
 
     const std::array globalBindings{
-        image(texturesBinding, textureCapacity),
-        sampler(materialSamplerBinding, &sets.m_materialSampler),
+        image(texturesBinding, textureCapacity, vertexStages),
+        sampler(materialSamplerBinding, &sets.m_materialSampler, vertexStages),
         image(specularBinding),
         image(irradianceBinding),
         image(brdfBinding),
-        sampler(clampSamplerBinding, &sets.m_clampSampler),
+        sampler(clampSamplerBinding, &sets.m_clampSampler, vertexStages),
         image(skyBinding),
         sampler(skySamplerBinding, &sets.m_skySampler),
         VkDescriptorSetLayoutBinding{
             .binding = textureSamplersBinding,
             .descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER,
             .descriptorCount = textureCapacity,
-            .stageFlags = shaderStages,
+            .stageFlags = vertexStages,
         },
         image(reflectionProbesBinding, probeCapacity),
         image(atmosphereTransmittanceBinding),

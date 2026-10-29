@@ -20,6 +20,7 @@
 #include <bit>
 #include <cmath>
 #include <cstring>
+#include <span>
 #include <limits>
 #include <tuple>
 #include <utility>
@@ -67,6 +68,8 @@ static_assert(sizeof(ClusterRange) == sizeof(GpuCluster));
         return VK_FORMAT_R16G16B16A16_SFLOAT;
     case asset::TextureFormat::R8Unorm:
         return VK_FORMAT_R8_UNORM;
+    case asset::TextureFormat::R32Float:
+        return VK_FORMAT_R32_SFLOAT;
     }
     return VK_FORMAT_UNDEFINED;
 }
@@ -461,6 +464,7 @@ core::Result<void> VulkanRenderer::updateTexture(TextureHandle handle, std::uint
         break;
     case VK_FORMAT_R8G8B8A8_UNORM:
     case VK_FORMAT_R8G8B8A8_SRGB:
+    case VK_FORMAT_R32_SFLOAT:
         pixelBytes = 4;
         break;
     case VK_FORMAT_R16G16B16A16_SFLOAT:
@@ -1115,6 +1119,13 @@ core::Result<bool> VulkanRenderer::prepareScene(FrameContext& frame, bool main)
         if (core::Result<void> volumes = uploadIrradianceVolumes(frame); !volumes)
         {
             return std::unexpected(volumes.error());
+        }
+    }
+    {
+        DEVEX_PROFILE_SCOPE("Terrains");
+        if (core::Result<void> terrains = uploadTerrains(frame); !terrains)
+        {
+            return std::unexpected(terrains.error());
         }
     }
     {
@@ -1862,10 +1873,65 @@ core::Result<void> VulkanRenderer::createScenePipelines()
                     .depthWrite = false,
                 });
 
+    // Terrains draw in the passes of meshes, with their own vertices: both sides, since the ground
+    // seen from below through a hole would otherwise vanish.
+    const std::filesystem::path terrainShader = m_shaderDirectory / "terrain.spv";
+    core::Result<Pipeline> terrainPrepass = createGraphicsPipeline(device, {
+                                                                               .shaderPath = terrainShader,
+                                                                               .vertexEntry = "prepassVertex",
+                                                                               .fragmentEntry = "prepassFragment",
+                                                                               .setLayouts = bothSets,
+                                                                               .pushConstantSize = sizeof(TerrainPushConstants),
+                                                                               .colorFormats = prepassFormats,
+                                                                               .depthFormat = depthFormat,
+                                                                               .cullMode = VK_CULL_MODE_NONE,
+                                                                           });
+    core::Result<Pipeline> terrainScene = createGraphicsPipeline(device, {
+                                                                             .shaderPath = terrainShader,
+                                                                             .vertexEntry = "sceneVertex",
+                                                                             .fragmentEntry = "sceneFragment",
+                                                                             .setLayouts = bothSets,
+                                                                             .pushConstantSize = sizeof(TerrainPushConstants),
+                                                                             .colorFormat = sceneFormat,
+                                                                             .depthFormat = depthFormat,
+                                                                             .cullMode = VK_CULL_MODE_NONE,
+                                                                             .depthWrite = false,
+                                                                         });
+    GraphicsPipelineConfig terrainShadowConfig = shadowConfig;
+    terrainShadowConfig.shaderPath = terrainShader;
+    terrainShadowConfig.vertexEntry = "shadowVertex";
+    terrainShadowConfig.fragmentEntry = "shadowFragment";
+    terrainShadowConfig.pushConstantSize = sizeof(TerrainPushConstants);
+    core::Result<Pipeline> terrainShadow = createGraphicsPipeline(device, terrainShadowConfig);
+    terrainShadowConfig.vertexEntry = "localShadowVertex";
+    core::Result<Pipeline> terrainLocalShadow = createGraphicsPipeline(device, terrainShadowConfig);
+    core::Result<Pipeline> terrainPick = createGraphicsPipeline(device, {
+                                                                            .shaderPath = terrainShader,
+                                                                            .vertexEntry = "pickVertex",
+                                                                            .fragmentEntry = "pickFragment",
+                                                                            .setLayouts = globalOnly,
+                                                                            .pushConstantSize = sizeof(TerrainPushConstants),
+                                                                            .colorFormat = pickFormat,
+                                                                            .depthFormat = depthFormat,
+                                                                            .cullMode = VK_CULL_MODE_NONE,
+                                                                        });
+    // Grass is not in the prepass: it writes its depth as it is shaded, over the ground.
+    core::Result<Pipeline> grass = createGraphicsPipeline(device, {
+                                                                      .shaderPath = terrainShader,
+                                                                      .vertexEntry = "grassVertex",
+                                                                      .fragmentEntry = "grassFragment",
+                                                                      .setLayouts = bothSets,
+                                                                      .pushConstantSize = sizeof(TerrainPushConstants),
+                                                                      .colorFormat = sceneFormat,
+                                                                      .depthFormat = depthFormat,
+                                                                      .cullMode = VK_CULL_MODE_NONE,
+                                                                  });
+
     for (core::Result<Pipeline>* result : {&mesh, &doubleSided, &transparent, &transparentDoubleSided,
                                           &particle, &ribbon, &sprite, &spritePick, &spriteMask,
                                           &prepass, &prepassDoubleSided, &ambientOcclusion, &shadow,
-                                          &localShadow, &sky, &luminance, &pick, &selectionMask})
+                                          &localShadow, &sky, &luminance, &pick, &selectionMask, &terrainPrepass,
+                                          &terrainScene, &terrainShadow, &terrainLocalShadow, &terrainPick, &grass})
     {
         if (!*result)
         {
@@ -1890,6 +1956,53 @@ core::Result<void> VulkanRenderer::createScenePipelines()
     m_luminancePipeline = std::move(*luminance);
     m_pickPipeline = std::move(*pick);
     m_selectionMaskPipeline = std::move(*selectionMask);
+    m_terrainPrepassPipeline = std::move(*terrainPrepass);
+    m_terrainPipeline = std::move(*terrainScene);
+    m_terrainShadowPipeline = std::move(*terrainShadow);
+    m_terrainLocalShadowPipeline = std::move(*terrainLocalShadow);
+    m_terrainPickPipeline = std::move(*terrainPick);
+    m_grassPipeline = std::move(*grass);
+
+    // A block is a grid of terrainBlockCells cells on a side, its four quarters one after the other,
+    // so that a block can draw a quarter of itself where its smaller blocks are not drawn.
+    if (!m_terrainGrid)
+    {
+        constexpr std::uint32_t cells = terrainBlockCells;
+        constexpr std::uint32_t half = cells / 2;
+        std::vector<std::uint32_t> indices;
+        indices.reserve(std::size_t{cells} * cells * 6);
+        for (std::uint32_t quarter = 0; quarter < 4; ++quarter)
+        {
+            const std::uint32_t firstX = (quarter & 1u) * half;
+            const std::uint32_t firstZ = (quarter >> 1u) * half;
+            for (std::uint32_t z = firstZ; z < firstZ + half; ++z)
+            {
+                for (std::uint32_t x = firstX; x < firstX + half; ++x)
+                {
+                    const std::uint32_t corner = z * (cells + 1) + x;
+                    const std::uint32_t right = corner + 1;
+                    const std::uint32_t below = corner + cells + 1;
+                    indices.insert(indices.end(), {corner, below, right, right, below, below + 1});
+                }
+            }
+        }
+        // A blade of grass: two vertices at each of three heights, then its tip; far away, one
+        // triangle from its foot to its tip.
+        constexpr std::array<std::uint32_t, 18> blade{0, 1, 2, 2, 1, 3, 2, 3, 4, 4, 3, 5, 4, 5, 6, 0, 1, 6};
+        for (const auto& [buffer, data] : {std::pair{&m_terrainGrid, std::span<const std::uint32_t>(indices)},
+                                           std::pair{&m_grassBlade, std::span<const std::uint32_t>(blade)}})
+        {
+            core::Result<Buffer> created = Buffer::create(m_allocator, {.size = data.size_bytes(),
+                                                                        .usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+                                                                        .hostVisible = true});
+            if (!created)
+            {
+                return std::unexpected(created.error());
+            }
+            std::memcpy(created->mappedBytes().data(), data.data(), data.size_bytes());
+            buffer->emplace(std::move(*created));
+        }
+    }
     return {};
 }
 
@@ -3049,6 +3162,348 @@ core::Result<void> VulkanRenderer::uploadIrradianceVolumes(FrameContext& frame)
     }
     m_frameVolumeCount = static_cast<std::uint32_t>(count);
     return {};
+}
+
+core::Result<void> VulkanRenderer::uploadTerrains(FrameContext& frame)
+{
+    m_terrainDraws.clear();
+    m_gpuTerrains.clear();
+    m_terrainNodes.clear();
+    m_grassTiles.clear();
+    m_frameTerrains = m_frameTerrainNodes = m_frameGrassTiles = 0;
+    if (m_world.terrains.empty() || !m_terrainGrid)
+    {
+        return {};
+    }
+    const float aspectRatio = static_cast<float>(m_sceneExtent.width) / static_cast<float>(m_sceneExtent.height);
+    const Frustum frustum = frustumOf(projectionMatrix(m_world.camera, aspectRatio) * m_world.camera.view);
+    const math::Vec3 eye = math::Vec3(math::inverse(m_world.camera.view)[3]);
+    const auto ready = [this](TextureHandle texture) {
+        const GpuTexture* const found = m_textures.find(texture);
+        return found != nullptr && found->ready;
+    };
+    const auto slot = [this](TextureHandle texture) { return m_textures.find(texture)->slot; };
+    // Whether any part of a box lies within a distance of the eye.
+    const auto reaches = [&eye](const math::Aabb& box, float distance) {
+        const math::Vec3 nearest = math::clamp(eye, box.min, box.max);
+        const math::Vec3 offset = nearest - eye;
+        return math::dot(offset, offset) <= distance * distance;
+    };
+    for (const RenderTerrain& terrain : m_world.terrains)
+    {
+        const TerrainTextures& textures = terrain.textures;
+        const std::uint32_t cells = terrain.resolution > 0 ? terrain.resolution - 1 : 0;
+        const std::uint32_t blocks = cells / terrainBlockCells;
+        if (blocks == 0 || !std::has_single_bit(blocks) || terrain.blockHeights.size() != std::size_t{blocks} * blocks ||
+            !ready(textures.heights) || !ready(textures.slopes) || !ready(textures.paint0) || !ready(textures.paint1) ||
+            !ready(textures.detail))
+        {
+            continue;
+        }
+        const float blockSize = terrain.size / static_cast<float>(blocks);
+        const auto levels = static_cast<std::uint32_t>(std::countr_zero(blocks)) + 1;
+        // Three times the side of the finest blocks keeps the levels of neighbouring blocks within one
+        // of each other, with their vertices slid together before they meet.
+        const float leafRange = blockSize * 3.0f;
+
+        // The lowest and highest heights of the blocks of every level, the finest first.
+        std::vector<std::vector<math::Vec2>> heights{terrain.blockHeights};
+        for (std::uint32_t level = 1; level < levels; ++level)
+        {
+            const std::uint32_t side = blocks >> level;
+            const std::vector<math::Vec2>& finer = heights.back();
+            std::vector<math::Vec2> coarser(std::size_t{side} * side);
+            for (std::uint32_t z = 0; z < side; ++z)
+            {
+                for (std::uint32_t x = 0; x < side; ++x)
+                {
+                    math::Vec2 range{std::numeric_limits<float>::max(), std::numeric_limits<float>::lowest()};
+                    for (std::uint32_t child = 0; child < 4; ++child)
+                    {
+                        const math::Vec2& part = finer[std::size_t{z * 2 + (child >> 1u)} * (side * 2) + x * 2 + (child & 1u)];
+                        range = {std::min(range.x, part.x), std::max(range.y, part.y)};
+                    }
+                    coarser[std::size_t{z} * side + x] = range;
+                }
+            }
+            heights.push_back(std::move(coarser));
+        }
+        const auto bounds = [&](std::uint32_t level, std::uint32_t x, std::uint32_t z) {
+            const float side = blockSize * static_cast<float>(1u << level);
+            const math::Vec2 range = heights[level][std::size_t{z} * (blocks >> level) + x];
+            const math::Vec3 corner = terrain.origin + math::Vec3{static_cast<float>(x) * side, 0.0f, static_cast<float>(z) * side};
+            return math::Aabb{.min = corner + math::Vec3{0.0f, range.x, 0.0f}, .max = corner + math::Vec3{side, range.y, side}};
+        };
+        // The coarsest level reaches everywhere: the whole terrain is drawn, however far.
+        const auto range = [&](std::uint32_t level) {
+            return level + 1 == levels ? std::numeric_limits<float>::max() : leafRange * static_cast<float>(1u << level);
+        };
+
+        // The blocks drawn whole, then the quarters drawn by their block.
+        std::array<std::vector<GpuTerrainNode>, 5> selected;
+        const auto add = [&](std::size_t group, std::uint32_t level, std::uint32_t x, std::uint32_t z) {
+            const float side = blockSize * static_cast<float>(1u << level);
+            selected[group].push_back({.corner = {static_cast<float>(x) * side, static_cast<float>(z) * side}, .size = side, .level = level});
+        };
+        // Strugar's selection: a block within the range of the level below splits into its four
+        // smaller ones, and draws itself the quarters of those beyond their range. Returns false when
+        // the block lies beyond the range of its own level, for its parent to draw its area.
+        const auto select = [&](const auto& self, std::uint32_t level, std::uint32_t x, std::uint32_t z) -> bool {
+            const math::Aabb box = bounds(level, x, z);
+            if (!reaches(box, range(level)))
+            {
+                return false;
+            }
+            if (!frustum.intersects(box))
+            {
+                return true;
+            }
+            if (level == 0 || !reaches(box, range(level - 1)))
+            {
+                add(0, level, x, z);
+                return true;
+            }
+            for (std::uint32_t quarter = 0; quarter < 4; ++quarter)
+            {
+                if (!self(self, level - 1, x * 2 + (quarter & 1u), z * 2 + (quarter >> 1u)))
+                {
+                    add(1 + quarter, level, x, z);
+                }
+            }
+            return true;
+        };
+        static_cast<void>(select(select, levels - 1, 0, 0));
+
+        TerrainDraw draw{.terrain = static_cast<std::uint32_t>(m_gpuTerrains.size()), .castShadows = terrain.castShadows};
+        for (std::size_t group = 0; group < selected.size(); ++group)
+        {
+            draw.firstNode[group] = static_cast<std::uint32_t>(m_terrainNodes.size());
+            draw.nodeCount[group] = static_cast<std::uint32_t>(selected[group].size());
+            m_terrainNodes.insert(m_terrainNodes.end(), selected[group].begin(), selected[group].end());
+        }
+
+        // Grass grows on the tiles around the camera that were painted with some, fewer blades on
+        // those farther away.
+        if (terrain.grassDensity > 0.0f && terrain.grassHeight > 0.0f && terrain.grassDistance > 0.0f &&
+            terrain.blockGrass.size() == terrain.blockHeights.size())
+        {
+            constexpr float tile = 4.0f;
+            const float reach = terrain.grassDistance;
+            const math::Vec3 local = eye - terrain.origin;
+            const auto firstTile = [tile](float value) { return static_cast<std::int32_t>(std::floor(value / tile)); };
+            const auto full = static_cast<std::uint32_t>(std::clamp(std::round(terrain.grassDensity * tile * tile), 1.0f, 4096.0f));
+            std::array<std::vector<GpuTerrainNode>, 3> tiles;
+            for (std::int32_t z = firstTile(local.z - reach); z <= firstTile(local.z + reach); ++z)
+            {
+                for (std::int32_t x = firstTile(local.x - reach); x <= firstTile(local.x + reach); ++x)
+                {
+                    const math::Vec2 corner{static_cast<float>(x) * tile, static_cast<float>(z) * tile};
+                    if (corner.x < 0.0f || corner.y < 0.0f || corner.x >= terrain.size || corner.y >= terrain.size)
+                    {
+                        continue;
+                    }
+                    const math::Vec2 center = corner + math::Vec2{tile * 0.5f};
+                    const float distance = math::length(center - math::Vec2{local.x, local.z});
+                    if (distance > reach + tile * 0.71f)
+                    {
+                        continue;
+                    }
+                    const auto blockX = std::min(static_cast<std::uint32_t>(center.x / blockSize), blocks - 1);
+                    const auto blockZ = std::min(static_cast<std::uint32_t>(center.y / blockSize), blocks - 1);
+                    const std::size_t block = std::size_t{blockZ} * blocks + blockX;
+                    if (terrain.blockGrass[block] == 0)
+                    {
+                        continue;
+                    }
+                    const math::Vec2 height = terrain.blockHeights[block];
+                    const math::Vec3 low = terrain.origin + math::Vec3{corner.x, height.x, corner.y};
+                    if (!frustum.intersects({.min = low, .max = low + math::Vec3{tile, height.y - height.x + terrain.grassHeight * 1.5f, tile}}))
+                    {
+                        continue;
+                    }
+                    const std::size_t band = distance < reach * 0.35f ? 0 : distance < reach * 0.65f ? 1 : 2;
+                    tiles[band].push_back({.corner = corner, .size = tile});
+                }
+            }
+            for (std::size_t band = 0; band < tiles.size(); ++band)
+            {
+                draw.firstTile[band] = static_cast<std::uint32_t>(m_grassTiles.size());
+                draw.tileCount[band] = static_cast<std::uint32_t>(tiles[band].size());
+                draw.blades[band] = std::max(full >> band, 1u);
+                draw.bladeWidth[band] = band == 0 ? 1.0f : band == 1 ? 1.4f : 2.0f;
+                m_grassTiles.insert(m_grassTiles.end(), tiles[band].begin(), tiles[band].end());
+            }
+        }
+
+        GpuTerrain gpu{
+            .origin = terrain.origin,
+            .size = terrain.size,
+            .heights = slot(textures.heights),
+            .slopes = slot(textures.slopes),
+            .paint0 = slot(textures.paint0),
+            .paint1 = slot(textures.paint1),
+            .detail = slot(textures.detail),
+            .resolution = terrain.resolution,
+            .layerCount = std::min(terrain.layerCount, static_cast<std::uint32_t>(terrain.layers.size())),
+            .objectId = terrain.objectId,
+            .textureSize = terrain.textureSize,
+            .blendSharpness = terrain.blendSharpness,
+            .triplanar = terrain.triplanar ? 1u : 0u,
+            .autoBaseLayer = terrain.autoBaseLayer,
+            .autoSlopeLayer = terrain.autoSlopeLayer,
+            .autoSlope = terrain.autoSlope,
+            .autoHeightLayer = terrain.autoHeightLayer,
+            .autoHeight = terrain.autoHeight,
+            .autoBlend = terrain.autoBlend,
+            .windStrength = terrain.windStrength,
+            .windSpeed = terrain.windSpeed,
+            .grassDistance = terrain.grassDistance,
+            .grassColor = terrain.grassColor,
+            .grassHeight = terrain.grassHeight,
+            .grassTipColor = terrain.grassTipColor,
+            .grassWidth = terrain.grassWidth,
+            .grassDensity = terrain.grassDensity,
+            .leafRange = leafRange,
+        };
+        for (std::uint32_t layer = 0; layer < gpu.layerCount; ++layer)
+        {
+            gpu.layers[layer] = materialIndex(terrain.layers[layer]);
+        }
+        m_gpuTerrains.push_back(gpu);
+        m_terrainDraws.push_back(draw);
+    }
+    if (m_gpuTerrains.empty())
+    {
+        return {};
+    }
+    const auto upload = [this](std::optional<Buffer>& buffer, const auto& items, VkDeviceAddress& address) -> core::Result<void> {
+        if (items.empty())
+        {
+            return {};
+        }
+        const std::size_t bytes = items.size() * sizeof(items.front());
+        if (core::Result<void> ensured = ensureHostBuffer(buffer, bytes); !ensured)
+        {
+            return ensured;
+        }
+        std::memcpy(buffer->mappedBytes().data(), items.data(), bytes);
+        address = buffer->deviceAddress();
+        return {};
+    };
+    if (core::Result<void> uploaded = upload(frame.terrains, m_gpuTerrains, m_frameTerrains); !uploaded)
+    {
+        return uploaded;
+    }
+    if (core::Result<void> uploaded = upload(frame.terrainNodes, m_terrainNodes, m_frameTerrainNodes); !uploaded)
+    {
+        return uploaded;
+    }
+    return upload(frame.grassTiles, m_grassTiles, m_frameGrassTiles);
+}
+
+std::uint32_t VulkanRenderer::drawTerrains(VkCommandBuffer commandBuffer, VkDeviceAddress sceneData, MeshPass pass,
+                                           std::uint32_t cascade, std::uint32_t frameSlot) const
+{
+    if (m_terrainDraws.empty())
+    {
+        return 0;
+    }
+    const Pipeline* pipeline = nullptr;
+    switch (pass)
+    {
+    case MeshPass::Prepass:
+        pipeline = &*m_terrainPrepassPipeline;
+        break;
+    case MeshPass::Scene:
+        pipeline = &*m_terrainPipeline;
+        break;
+    case MeshPass::Shadow:
+        pipeline = &*m_terrainShadowPipeline;
+        break;
+    case MeshPass::LocalShadow:
+        pipeline = &*m_terrainLocalShadowPipeline;
+        break;
+    case MeshPass::Pick:
+        pipeline = &*m_terrainPickPipeline;
+        break;
+    case MeshPass::Transparent:
+    case MeshPass::SelectionMask:
+        return 0;
+    }
+    const bool shadow = pass == MeshPass::Shadow || pass == MeshPass::LocalShadow;
+    const bool lit = pass == MeshPass::Scene || pass == MeshPass::Prepass;
+    const std::array sets{m_descriptors->global(), frameDescriptors(frameSlot)};
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->handle());
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->layout(), 0, lit ? 2u : 1u, sets.data(), 0,
+                            nullptr);
+    vkCmdBindIndexBuffer(commandBuffer, m_terrainGrid->handle(), 0, VK_INDEX_TYPE_UINT32);
+    constexpr std::uint32_t quarterIndices = terrainBlockCells * terrainBlockCells / 4 * 6;
+    std::uint32_t drawCalls = 0;
+    for (const TerrainDraw& draw : m_terrainDraws)
+    {
+        if (shadow && !draw.castShadows)
+        {
+            continue;
+        }
+        for (std::size_t group = 0; group < draw.nodeCount.size(); ++group)
+        {
+            if (draw.nodeCount[group] == 0)
+            {
+                continue;
+            }
+            const TerrainPushConstants constants{
+                .scene = sceneData,
+                .terrain = m_frameTerrains + draw.terrain * sizeof(GpuTerrain),
+                .nodes = m_frameTerrainNodes + draw.firstNode[group] * sizeof(GpuTerrainNode),
+                .cascade = cascade,
+                .gridCells = terrainBlockCells,
+            };
+            vkCmdPushConstants(commandBuffer, pipeline->layout(), VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+                               sizeof(constants), &constants);
+            // A whole block, or one of its quarters.
+            const std::uint32_t indexCount = group == 0 ? quarterIndices * 4 : quarterIndices;
+            const std::uint32_t firstIndex = group == 0 ? 0 : static_cast<std::uint32_t>(group - 1) * quarterIndices;
+            vkCmdDrawIndexed(commandBuffer, indexCount, draw.nodeCount[group], firstIndex, 0, 0);
+            ++drawCalls;
+        }
+    }
+    return drawCalls;
+}
+
+std::uint32_t VulkanRenderer::drawGrass(VkCommandBuffer commandBuffer, VkDeviceAddress sceneData, std::uint32_t frameSlot) const
+{
+    if (m_grassTiles.empty())
+    {
+        return 0;
+    }
+    const std::array sets{m_descriptors->global(), frameDescriptors(frameSlot)};
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_grassPipeline->handle());
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_grassPipeline->layout(), 0, 2, sets.data(), 0, nullptr);
+    vkCmdBindIndexBuffer(commandBuffer, m_grassBlade->handle(), 0, VK_INDEX_TYPE_UINT32);
+    std::uint32_t drawCalls = 0;
+    for (const TerrainDraw& draw : m_terrainDraws)
+    {
+        for (std::size_t band = 0; band < draw.tileCount.size(); ++band)
+        {
+            if (draw.tileCount[band] == 0)
+            {
+                continue;
+            }
+            const TerrainPushConstants constants{
+                .scene = sceneData,
+                .terrain = m_frameTerrains + draw.terrain * sizeof(GpuTerrain),
+                .tiles = m_frameGrassTiles + draw.firstTile[band] * sizeof(GpuTerrainNode),
+                .bladesPerTile = draw.blades[band],
+                .bladeWidthScale = draw.bladeWidth[band],
+            };
+            vkCmdPushConstants(commandBuffer, m_grassPipeline->layout(), VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+                               sizeof(constants), &constants);
+            const bool far = band + 1 == draw.tileCount.size();
+            vkCmdDrawIndexed(commandBuffer, far ? 3 : 15, draw.tileCount[band] * draw.blades[band], far ? 15 : 0, 0, 0);
+            ++drawCalls;
+        }
+    }
+    return drawCalls;
 }
 
 void VulkanRenderer::writeSceneData(FrameContext& frame,
@@ -4415,6 +4870,7 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
                               // Steep surfaces need more bias than those facing the light.
                               vkCmdSetDepthBias(commands, 0.0f, 0.0f, 1.5f);
                               drawMeshes(commands, sceneData, boneMatrices, MeshPass::Shadow, cascade, frameSlot);
+                              drawTerrains(commands, sceneData, MeshPass::Shadow, cascade, frameSlot);
                               vkCmdEndRendering(commands);
                           }
                       });
@@ -4463,6 +4919,7 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
                 vkCmdSetDepthBias(commands, 0.0f, 0.0f, 2.0f);
                 drawCalls += drawMeshes(commands, sceneData, boneMatrices, MeshPass::LocalShadow,
                                         view, frameSlot);
+                drawCalls += drawTerrains(commands, sceneData, MeshPass::LocalShadow, view, frameSlot);
             }
             vkCmdEndRendering(commands);
         });
@@ -4517,6 +4974,7 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
         setViewport(commands, extent);
         drawCalls += drawMeshes(commands, sceneData, boneMatrices, MeshPass::Prepass, 0, frameSlot,
                                 previousBones);
+        drawCalls += drawTerrains(commands, sceneData, MeshPass::Prepass, 0, frameSlot);
         vkCmdEndRendering(commands);
     });
 
@@ -4604,6 +5062,8 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
         vkCmdBeginRendering(commands, &renderingInfo);
         setViewport(commands, extent);
         drawCalls += drawMeshes(commands, sceneData, boneMatrices, MeshPass::Scene, 0, frameSlot);
+        drawCalls += drawTerrains(commands, sceneData, MeshPass::Scene, 0, frameSlot);
+        drawCalls += drawGrass(commands, sceneData, frameSlot);
 
         // A sky shader of the project draws the sky in place of the texture; an atmosphere draws its own.
         const GpuShader* const skyShader =
@@ -4727,6 +5187,7 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
                           vkCmdBeginRendering(commands, &renderingInfo);
                           setViewport(commands, frame.pickExtent);
                           drawMeshes(commands, sceneData, boneMatrices, MeshPass::Pick, 0, frameSlot);
+                          drawTerrains(commands, sceneData, MeshPass::Pick, 0, frameSlot);
                           static_cast<void>(drawSprites(commands, sceneData, frame, frameSlot, SpritePass::Pick, 0,
                                                         static_cast<std::uint32_t>(m_gpuSprites.size())));
                           vkCmdEndRendering(commands);
@@ -5636,6 +6097,13 @@ std::optional<std::uint64_t> VulkanRenderer::shadowCastersKey() const
     }
     add(m_world.boneMatrices.data(), m_world.boneMatrices.size() * sizeof(math::Mat4));
     add(&m_materialVersion, sizeof(m_materialVersion));
+    // The blocks of the terrains drawn follow the camera, and their maps change as they are sculpted.
+    add(m_gpuTerrains.data(), m_gpuTerrains.size() * sizeof(GpuTerrain));
+    add(m_terrainNodes.data(), m_terrainNodes.size() * sizeof(GpuTerrainNode));
+    for (const RenderTerrain& terrain : m_world.terrains)
+    {
+        add(&terrain.version, sizeof(terrain.version));
+    }
     return hash;
 }
 

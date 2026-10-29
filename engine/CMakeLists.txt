@@ -219,6 +219,7 @@ target_sources(devex_asset
         src/asset/AnimatorData.cpp
         src/asset/NavMeshData.cpp
         src/asset/ReflectionProbeData.cpp
+        src/asset/TerrainMaps.cpp
         src/asset/IrradianceVolumeData.cpp
         src/asset/ThemeData.cpp
     PUBLIC
@@ -829,6 +830,7 @@ target_sources(devex_tools
         src/tools/CurveInspector.cpp
         src/tools/SpriteFramesInspector.cpp
         src/tools/TextureInspector.cpp
+        src/tools/TerrainPainter.cpp
         src/tools/TilePainter.cpp
         src/tools/TilesetInspector.cpp
         src/tools/TranslationsPanel.cpp

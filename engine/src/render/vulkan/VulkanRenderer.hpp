@@ -226,6 +226,10 @@ private:
         // The reflection probes the frame reflects, the smallest first, and its irradiance volumes.
         std::optional<Buffer> reflectionProbes;
         std::optional<Buffer> irradianceVolumes;
+        // The terrains of the frame, the blocks of them it draws and the tiles of their grass.
+        std::optional<Buffer> terrains;
+        std::optional<Buffer> terrainNodes;
+        std::optional<Buffer> grassTiles;
         // Exposed luminance measured on a grid by the last frame recorded with this context.
         std::optional<Buffer> luminance;
         bool luminanceMeasured = false;
@@ -525,6 +529,14 @@ private:
                              VkDeviceAddress boneMatrices, MeshPass pass, std::uint32_t cascade,
                              std::uint32_t frameSlot, VkDeviceAddress previousBones = 0,
                              std::span<const std::uint32_t> only = {}) const;
+    // The blocks of the terrains the camera sees, each with the detail its distance calls for, and the
+    // tiles of their grass around the camera, copied into the buffers of the frame.
+    [[nodiscard]] core::Result<void> uploadTerrains(FrameContext& frame);
+    // The terrains in a pass that draws meshes: their blocks; nothing in passes they are not in.
+    std::uint32_t drawTerrains(VkCommandBuffer commandBuffer, VkDeviceAddress sceneData, MeshPass pass, std::uint32_t cascade,
+                               std::uint32_t frameSlot) const;
+    // Their grass, in the scene pass.
+    std::uint32_t drawGrass(VkCommandBuffer commandBuffer, VkDeviceAddress sceneData, std::uint32_t frameSlot) const;
     // The blended instances and the particle batches, farthest first, over the opaque scene.
     std::uint32_t drawTransparent(VkCommandBuffer commandBuffer, VkDeviceAddress sceneData,
                                   VkDeviceAddress boneMatrices, const FrameContext& frame,
@@ -661,6 +673,36 @@ private:
     // How far the projection of this frame is moved, in clip space.
     math::Vec2 m_jitter{0.0f};
     std::optional<Pipeline> m_shadowPipeline;
+    std::optional<Pipeline> m_terrainPrepassPipeline;
+    std::optional<Pipeline> m_terrainPipeline;
+    std::optional<Pipeline> m_terrainShadowPipeline;
+    std::optional<Pipeline> m_terrainLocalShadowPipeline;
+    std::optional<Pipeline> m_terrainPickPipeline;
+    std::optional<Pipeline> m_grassPipeline;
+    // The triangles of a block of a terrain, a quarter after another, and those of a blade of grass.
+    std::optional<Buffer> m_terrainGrid;
+    std::optional<Buffer> m_grassBlade;
+    // What the frame being recorded draws of each terrain: its blocks drawn whole, then those of
+    // which one quarter is drawn, by quarter; its tiles of grass near, farther and far, with their
+    // blades and how wide these are to cover for the fewer of them.
+    struct TerrainDraw
+    {
+        std::uint32_t terrain = 0;
+        std::array<std::uint32_t, 5> firstNode{};
+        std::array<std::uint32_t, 5> nodeCount{};
+        bool castShadows = true;
+        std::array<std::uint32_t, 3> firstTile{};
+        std::array<std::uint32_t, 3> tileCount{};
+        std::array<std::uint32_t, 3> blades{};
+        std::array<float, 3> bladeWidth{};
+    };
+    std::vector<TerrainDraw> m_terrainDraws;
+    std::vector<GpuTerrain> m_gpuTerrains;
+    std::vector<GpuTerrainNode> m_terrainNodes;
+    std::vector<GpuTerrainNode> m_grassTiles;
+    VkDeviceAddress m_frameTerrains = 0;
+    VkDeviceAddress m_frameTerrainNodes = 0;
+    VkDeviceAddress m_frameGrassTiles = 0;
     std::optional<Pipeline> m_skyPipeline;
     std::optional<Pipeline> m_luminancePipeline;
     std::optional<Pipeline> m_pickPipeline;

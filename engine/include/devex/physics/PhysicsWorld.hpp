@@ -5,6 +5,7 @@
 #include <devex/asset/AssetId.hpp>
 #include <devex/asset/MeshData.hpp>
 #include <devex/asset/Project.hpp>
+#include <devex/asset/TerrainMaps.hpp>
 #include <devex/core/Error.hpp>
 #include <devex/core/Time.hpp>
 #include <devex/math/Math.hpp>
@@ -76,11 +77,15 @@ struct DEVEX_API JointBreak
 // The triangles of a mesh asset, for mesh colliders; null when the mesh cannot be loaded. The data
 // must stay valid while the world exists.
 using MeshSource = std::function<const asset::MeshData*(asset::AssetId mesh)>;
+// The heights and holes of a terrain asset, for the ground of terrains; null when they cannot be
+// loaded. The data must stay valid while the world exists.
+using TerrainSource = std::function<const asset::TerrainMaps*(asset::AssetId terrain)>;
 
 struct DEVEX_API PhysicsWorldConfig
 {
     asset::PhysicsSettings settings;
     MeshSource meshes;
+    TerrainSource terrains;
     std::uint32_t maxBodies = 65536;
     // Worker threads of the simulation; 0 uses the hardware threads but one, at most 8.
     std::uint32_t threads = 0;

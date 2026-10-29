@@ -517,6 +517,49 @@ void extractScene(scene::Scene& scene, AssetManager& assets, render::RenderWorld
         };
     }
     // The volumes, the lowest priority first: the blending goes through them in that order.
+    for (auto [entity, terrain] : scene.view<scene::Terrain>())
+    {
+        AssetManager::LoadedTerrain* const loaded = terrain.data.isValid() ? assets.terrain(terrain.data) : nullptr;
+        if (loaded == nullptr || !loaded->textures.heights.isValid())
+        {
+            continue;
+        }
+        // Laid from the position of its entity, as Unity's terrains are, whatever its rotation and scale.
+        const scene::WorldTransform* const transform = scene.tryGet<scene::WorldTransform>(entity);
+        render::RenderTerrain& added = world.terrains.emplace_back();
+        added.textures = loaded->textures;
+        added.resolution = loaded->maps.resolution;
+        added.origin = transform != nullptr ? math::Vec3(transform->matrix[3]) : math::Vec3{0.0f};
+        added.size = std::max(terrain.size, 1.0f);
+        added.blockHeights = loaded->blockHeights;
+        added.blockGrass = loaded->blockGrass;
+        added.version = loaded->version;
+        added.layerCount = static_cast<std::uint32_t>(std::min(terrain.layers.size(), added.layers.size()));
+        for (std::uint32_t layer = 0; layer < added.layerCount; ++layer)
+        {
+            added.layers[layer] = terrain.layers[layer].isValid() ? assets.material(terrain.layers[layer]) : render::MaterialHandle{};
+        }
+        added.textureSize = std::max(terrain.textureSize, 0.01f);
+        added.blendSharpness = std::clamp(terrain.blendSharpness, 0.0f, 1.0f);
+        added.triplanar = terrain.triplanar;
+        added.autoBaseLayer = terrain.autoBaseLayer;
+        added.autoSlopeLayer = terrain.autoSlopeLayer;
+        added.autoSlope = terrain.autoSlope;
+        added.autoHeightLayer = terrain.autoHeightLayer;
+        added.autoHeight = terrain.autoHeight;
+        added.autoBlend = std::max(terrain.autoBlend, 0.0f);
+        added.grassColor = terrain.grassColor;
+        added.grassTipColor = terrain.grassTipColor;
+        added.grassHeight = std::max(terrain.grassHeight, 0.0f);
+        added.grassWidth = std::max(terrain.grassWidth, 0.0f);
+        added.grassDensity = std::max(terrain.grassDensity, 0.0f);
+        added.grassDistance = std::max(terrain.grassDistance, 0.0f);
+        added.windStrength = terrain.windStrength;
+        added.windSpeed = terrain.windSpeed;
+        added.castShadows = terrain.castShadows;
+        added.objectId = entity.index + 1;
+    }
+
     // A global volume needs no place; a box without one stands at the origin.
     for (auto [entity, volume] : scene.view<scene::PostProcessVolume>())
     {

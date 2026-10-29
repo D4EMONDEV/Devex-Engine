@@ -16,6 +16,7 @@ devex_add_shaders(devex_shaders
         sprite.slang
         sky.slang
         taa.slang
+        terrain.slang
         tonemap.slang
         ui.slang
     MODULES

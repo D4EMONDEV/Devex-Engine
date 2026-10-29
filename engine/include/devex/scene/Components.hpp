@@ -317,6 +317,48 @@ struct DEVEX_API PostProcessVolume
 };
 DEVEX_DECLARE_ENGINE_REFLECTION(PostProcessVolume);
 
+// A terrain: the relief and the paint of its data, a .dvxterrain file the editor sculpts, laid over
+// a square of `size` meters from the position of its entity along +X and +Z; its rotation and scale
+// are ignored, as Unity's terrains do. Its layers are materials, painted or laid by rules on what is
+// not painted; grass grows where it was painted. It collides as static ground.
+struct DEVEX_API Terrain
+{
+    asset::AssetId data;
+    float size = 256.0f;
+    bool collision = true;
+    bool castShadows = true;
+    // The materials of the layers, at most eight: their colour, textures, roughness and normal
+    // strength. The first one covers what nothing else does.
+    std::vector<asset::AssetId> layers;
+    // The meters one repeat of the textures of the layers covers.
+    float textureSize = 4.0f;
+    // How sharply two layers meet, the brighter texels of each showing through first.
+    float blendSharpness = 0.5f;
+    // On slopes, the textures are projected along the three axes rather than stretched.
+    bool triplanar = true;
+    // What lies where nothing is painted: the slope layer on slopes steeper than the angle, the
+    // height layer above the height, the base layer elsewhere; -1 leaves a rule out. The transition
+    // takes autoBlend of the angle or of the height.
+    std::int32_t autoBaseLayer = 0;
+    std::int32_t autoSlopeLayer = 1;
+    float autoSlope = math::radians(32.0f);
+    std::int32_t autoHeightLayer = -1;
+    float autoHeight = 60.0f;
+    float autoBlend = 0.25f;
+    // Blades of grass where it was painted, each as tall and wide as this, from the colour at its
+    // foot to the colour at its tip, so many per square meter where it was painted fully, as far
+    // as this from the camera, bending in the wind.
+    math::Vec3 grassColor{0.06f, 0.16f, 0.03f};
+    math::Vec3 grassTipColor{0.32f, 0.48f, 0.12f};
+    float grassHeight = 0.5f;
+    float grassWidth = 0.05f;
+    float grassDensity = 24.0f;
+    float grassDistance = 30.0f;
+    float windStrength = 0.25f;
+    float windSpeed = 1.2f;
+};
+DEVEX_DECLARE_ENGINE_REFLECTION(Terrain);
+
 // The width of each face of the capture of a reflection probe. The values are stored in scenes: never
 // reorder them.
 enum class ProbeResolution : std::uint8_t

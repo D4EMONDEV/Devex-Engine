@@ -23,6 +23,8 @@ std::string_view toString(TextureFormat format) noexcept
         return "rgba16f";
     case TextureFormat::R8Unorm:
         return "r8";
+    case TextureFormat::R32Float:
+        return "r32f";
     }
     return "unknown";
 }

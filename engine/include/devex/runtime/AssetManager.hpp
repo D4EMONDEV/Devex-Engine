@@ -14,6 +14,7 @@
 #include <devex/asset/SpriteData.hpp>
 #include <devex/asset/AnimatorData.hpp>
 #include <devex/asset/NavMeshData.hpp>
+#include <devex/asset/TerrainMaps.hpp>
 #include <devex/asset/TilesetData.hpp>
 #include <devex/asset/ThemeData.hpp>
 #include <devex/asset/TranslationData.hpp>
@@ -178,6 +179,30 @@ public:
     // A table of translations, read once and shared; null when it cannot be loaded.
     [[nodiscard]] std::shared_ptr<const asset::TranslationData> translation(asset::AssetId id);
 
+    // A terrain loaded: its maps, their textures and the heights of its blocks. The editor changes
+    // the maps in place, then says which samples with terrainChanged.
+    struct DEVEX_API LoadedTerrain
+    {
+        asset::TerrainMaps maps;
+        // Invalid without a renderer.
+        render::TerrainTextures textures;
+        // The lowest and the highest height of each block of render::terrainBlockCells cells, and
+        // the most grass painted in it.
+        std::vector<math::Vec2> blockHeights;
+        std::vector<std::uint8_t> blockGrass;
+        // Grows with every change.
+        std::uint64_t version = 1;
+        // Changed since it was loaded or saved: a new import of its file does not replace it then.
+        bool edited = false;
+    };
+    // A terrain, loaded the first time it is asked for; null when it cannot be loaded. A new import
+    // replaces it, unless it was edited since.
+    [[nodiscard]] LoadedTerrain* terrain(asset::AssetId id);
+    // Copies the samples of the region of its maps that changed to its textures, and marks it edited.
+    void terrainChanged(asset::AssetId id, const asset::TerrainRegion& region);
+    // Its maps were written to its file.
+    void terrainSaved(asset::AssetId id);
+
     // What the loaded assets take, by type and for the heaviest ones. Read when asked: the
     // profiler of the editor asks a few times a second at most.
     [[nodiscard]] asset::MemoryReport memoryReport(std::size_t largest = 12) const;
@@ -257,6 +282,7 @@ private:
     void releaseTexture(asset::AssetId id);
     void releaseMaterial(asset::AssetId id);
     void releaseFont(asset::AssetId id);
+    void releaseTerrain(asset::AssetId id);
     // Points every loaded material at the current handles of its textures.
     void refreshMaterials();
 
@@ -293,6 +319,7 @@ private:
     std::unordered_map<asset::AssetId, std::shared_ptr<const asset::NavMeshData>> m_navMeshes;
     std::unordered_map<asset::AssetId, render::ReflectionProbeHandle> m_reflectionProbes;
     std::unordered_map<asset::AssetId, render::IrradianceVolumeHandle> m_irradianceVolumes;
+    std::unordered_map<asset::AssetId, LoadedTerrain> m_terrains;
     std::unordered_map<asset::AssetId, LoadedFont> m_fonts;
     // Assets whose loading failed, retried once an import changes them.
     std::unordered_set<asset::AssetId> m_failed;

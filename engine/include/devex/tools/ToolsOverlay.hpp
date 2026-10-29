@@ -5,6 +5,7 @@
 #include <devex/asset/MeshData.hpp>
 #include <devex/asset/NavMeshData.hpp>
 #include <devex/asset/SpriteData.hpp>
+#include <devex/asset/TerrainMaps.hpp>
 #include <devex/asset/TilesetData.hpp>
 #include <devex/asset/import/AssetDatabase.hpp>
 #include <devex/core/Error.hpp>
@@ -127,6 +128,17 @@ struct DEVEX_API GameCodeStatus
     std::string step;
     std::optional<float> progress;
     std::string lastLine;
+};
+
+// What the editor reads and changes of the terrains of the project: their maps, loaded once and
+// changed in place, then told which samples changed; whether they changed since they were saved, and
+// that they were.
+struct DEVEX_API TerrainAccess
+{
+    std::function<asset::TerrainMaps*(asset::AssetId terrain)> maps;
+    std::function<void(asset::AssetId terrain, const asset::TerrainRegion& region)> changed;
+    std::function<bool(asset::AssetId terrain)> edited;
+    std::function<void(asset::AssetId terrain)> saved;
 };
 
 // Whether an unopened project's game code needs to be rebuilt for this engine.
@@ -323,6 +335,8 @@ public:
     [[nodiscard]] EditorRequests takeRequests() noexcept;
 
     // Editor only: the state of the game code, shown in the menu bar.
+    // How the editor reaches the maps of terrains, to sculpt and paint them.
+    void setTerrains(TerrainAccess access);
     void setGameCodeStatus(GameCodeStatus status);
     // Editor only: the game crashed and stopped. A dialog tells what went wrong, warns that the crash
     // may have damaged the editor and offers to save the scenes.

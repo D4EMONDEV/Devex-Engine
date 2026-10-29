@@ -250,8 +250,39 @@ TEST_CASE("Editor pictures", "[.][pictures]")
                   pointAt(running, {80.0f, 60.0f});
                   picture(running, "editor-menu");
                   running.editor.closeMenu();
+                  // The hills around the arena, with their brushes under their card.
+                  for (devex::scene::Entity entity = running.scene.firstRoot(); entity.isValid(); entity = running.scene.nextSibling(entity))
+                  {
+                      if (running.scene.name(entity) == "Hills")
+                      {
+                          const std::array<devex::core::Uuid, 1> selected{running.scene.uuid(entity)};
+                          running.editor.select(selected);
+                      }
+                  }
+                  pointAt(running, {800.0f, 400.0f});
+                  picture(running, "editor-terrain");
               },
               {1600, 900});
+}
+
+// The hills of the arena selected, in a window tall enough for the brushes under the card of their
+// terrain.
+TEST_CASE("Terrain editor pictures", "[.][pictures]")
+{
+    runEditor([](devex::tools::ToolsOverlay&, const std::filesystem::path&, const devex::asset::AssetDatabase&) {},
+              [](EditorRun& running) {
+                  for (devex::scene::Entity entity = running.scene.firstRoot(); entity.isValid(); entity = running.scene.nextSibling(entity))
+                  {
+                      if (running.scene.name(entity) == "Hills")
+                      {
+                          const std::array<devex::core::Uuid, 1> selected{running.scene.uuid(entity)};
+                          running.editor.select(selected);
+                      }
+                  }
+                  pointAt(running, {800.0f, 400.0f});
+                  picture(running, "editor-terrain-brushes");
+              },
+              {1600, 1700});
 }
 
 // The project manager the editor opens on without a project, and its dialog that creates one.

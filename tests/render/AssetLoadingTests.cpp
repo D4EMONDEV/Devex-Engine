@@ -19,6 +19,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <format>
 #include <mutex>
 #include <string>
@@ -455,4 +456,107 @@ void fragment()
     REQUIRE(shown(lit).instanceParameters == 0);
     CHECK(world.instanceParameters == std::vector<Vec4>{Vec4{0.0f}, Vec4{0.0f, 1.0f, 0.0f, 1.0f}});
     CHECK(shown(plain).instanceParameters == devex::render::noInstanceParameters);
+}
+
+TEST_CASE("Extraction draws terrains in every pass, picked where their ground is and not through their holes",
+          "[runtime][assets][gpu][terrain]")
+{
+    std::vector<std::string> errors;
+    const devex::core::LogSinkId sink = devex::core::addLogSink([&errors](const devex::core::LogRecord& record) {
+        if (record.level >= devex::core::LogLevel::Error)
+        {
+            errors.emplace_back(record.message);
+        }
+    });
+    {
+        auto platform = devex::platform::Platform::create();
+        REQUIRE(platform.has_value());
+        auto window = platform->createWindow({.width = 320, .height = 240, .vulkan = true, .hidden = true});
+        REQUIRE(window.has_value());
+        auto renderer = devex::render::Renderer::create(*platform, *window, {.validation = true});
+        REQUIRE(renderer.has_value());
+
+        // Hills of 128 m around a hollow, a hole at its middle, grass and a painted layer around it.
+        devex::asset::TerrainMaps maps = devex::asset::makeFlatTerrain(129);
+        for (std::uint32_t z = 0; z < 129; ++z)
+        {
+            for (std::uint32_t x = 0; x < 129; ++x)
+            {
+                const float dx = static_cast<float>(x) - 64.0f;
+                const float dz = static_cast<float>(z) - 64.0f;
+                const std::size_t sample = std::size_t{z} * 129 + x;
+                maps.heights[sample] = std::min((dx * dx + dz * dz) / 200.0f, 30.0f);
+                maps.grass[sample] = dx * dx + dz * dz < 400.0f ? 255 : 0;
+                maps.paint[sample * devex::asset::maxTerrainLayers + 1] = dz > 10.0f ? 255 : 0;
+                maps.holes[sample] = std::abs(dx) <= 2.0f && std::abs(dz) <= 2.0f ? 255 : 0;
+            }
+        }
+        MemorySource source;
+        const AssetId terrainId = AssetId::generate();
+        source.set(terrainId, AssetType::Terrain, devex::asset::encodeTerrain(maps));
+        devex::runtime::AssetManager assets(&*renderer, &source);
+
+        devex::scene::Scene scene;
+        const auto camera = scene.createEntity("Camera");
+        // High above the hollow, looking straight down at it.
+        scene.add<devex::scene::Transform>(
+            camera, devex::scene::Transform{.position = {0.0f, 40.0f, 0.0f},
+                                            .rotation = devex::math::angleAxis(devex::math::radians(-90.0f), devex::math::Vec3{1.0f, 0.0f, 0.0f})});
+        scene.add<devex::scene::Camera>(camera, devex::scene::Camera{.antialiasing = devex::scene::Antialiasing::None});
+        const auto sun = scene.createEntity("Sun");
+        scene.add<devex::scene::Transform>(
+            sun, devex::scene::Transform{.rotation = devex::math::angleAxis(devex::math::radians(-60.0f), devex::math::Vec3{1.0f, 0.0f, 0.0f})});
+        scene.add<devex::scene::DirectionalLight>(sun);
+        const auto hills = scene.createEntity("Hills");
+        scene.add<devex::scene::Transform>(hills, devex::scene::Transform{.position = {-64.0f, 0.0f, -64.0f}});
+        scene.add<devex::scene::Terrain>(hills, devex::scene::Terrain{.data = terrainId, .size = 128.0f});
+        scene.updateTransforms();
+
+        // The middle of the image sees the hole; a little aside, the ground.
+        std::vector<devex::render::PickResult> picks;
+        for (int frame = 0; frame < 40 && picks.size() < 2; ++frame)
+        {
+            devex::render::RenderWorld& world = renderer->beginFrame();
+            devex::runtime::extractScene(scene, assets, world);
+            REQUIRE(world.terrains.size() == 1);
+            CHECK(world.terrains.front().objectId == hills.index + 1);
+            if (frame >= 20)
+            {
+                world.pick = frame % 2 == 0 ? devex::render::PickRequest{.x = 160, .y = 120, .id = 1}
+                                            : devex::render::PickRequest{.x = 200, .y = 120, .id = 2};
+            }
+            REQUIRE(renderer->endFrame());
+            for (devex::render::PickResult& pick : renderer->takePickResults())
+            {
+                if (std::ranges::none_of(picks, [&pick](const auto& other) { return other.request == pick.request; }))
+                {
+                    picks.push_back(std::move(pick));
+                }
+            }
+        }
+        REQUIRE(picks.size() == 2);
+        for (const devex::render::PickResult& pick : picks)
+        {
+            CHECK(pick.objectId == (pick.request == 1 ? 0u : hills.index + 1));
+        }
+
+        // Sculpted, its textures follow.
+        devex::runtime::AssetManager::LoadedTerrain* const loaded = assets.terrain(terrainId);
+        REQUIRE(loaded != nullptr);
+        const std::uint64_t version = loaded->version;
+        const devex::asset::TerrainRegion region = devex::asset::applyTerrainBrush(
+            loaded->maps, 128.0f, devex::asset::TerrainBrush{.tool = devex::asset::TerrainTool::Raise, .center = {80.0f, 64.0f}, .amount = 4.0f});
+        assets.terrainChanged(terrainId, region);
+        CHECK(loaded->version > version);
+        CHECK(loaded->edited);
+        devex::render::RenderWorld& world = renderer->beginFrame();
+        devex::runtime::extractScene(scene, assets, world);
+        REQUIRE(renderer->endFrame());
+    }
+    devex::core::removeLogSink(sink);
+    for (const std::string& error : errors)
+    {
+        UNSCOPED_INFO(error);
+    }
+    CHECK(errors.empty());
 }

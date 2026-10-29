@@ -807,6 +807,11 @@ EditorRequests ToolsOverlay::takeRequests() noexcept
     return requests;
 }
 
+void ToolsOverlay::setTerrains(TerrainAccess access)
+{
+    m_state->terrains = std::make_shared<TerrainAccess>(std::move(access));
+}
+
 void ToolsOverlay::setGameCodeStatus(GameCodeStatus status)
 {
     m_state->gameCode = std::move(status);

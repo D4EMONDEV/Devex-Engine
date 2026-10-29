@@ -52,6 +52,25 @@ size = vec3(1, 1, 1)
 center = vec3(0, -0.5, 0)
 trigger = false
 
+[entity uuid="5f0b7d2e-9c41-4b8a-a3e6-2d71c84f9b10" name="Hills"]
+
+[component type="Transform"]
+position = vec3(-128, 0, -128)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="Terrain"]
+data = asset("06c74fe6-ee78-55d0-ad6b-1235f4ab4cdc")
+size = 256
+layers = list(asset("8ffc6b6e-abfd-540a-b066-ed7e191c8e6f"), asset("1c7660df-5fe6-5ccb-a984-e5042e0a27ac"), asset("3c921512-8fb6-5c0e-9bc0-2335f913d90b"))
+texture_size = 4
+auto_base_layer = 0
+auto_slope_layer = 1
+auto_slope = 0.5235988
+auto_height_layer = 2
+auto_height = 26
+auto_blend = 0.2
+
 [entity uuid="cb2a8549-acd6-508b-8a91-50498fc70d60" name="Walls"]
 
 [component type="Transform"]

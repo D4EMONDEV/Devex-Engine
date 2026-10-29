@@ -655,6 +655,7 @@ core::Result<std::vector<asset::AssetId>> assetReferences(asset::AssetType type,
     case asset::AssetType::Shader:
     case asset::AssetType::ReflectionProbe:
     case asset::AssetType::IrradianceVolume:
+    case asset::AssetType::Terrain:
         break;
     }
     std::erase_if(ids, [](asset::AssetId id) { return !id.isValid(); });

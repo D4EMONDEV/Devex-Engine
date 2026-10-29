@@ -123,6 +123,7 @@ mais seulement explicitement ici : le code suit ce document, pas l'inverse.
 | Tonemapping              | AgX par défaut, Khronos PBR Neutral, ACES                          |
 | Objectif                 | Profondeur de champ physique (bokeh), flou de mouvement de McGuire |
 | Volumes de post-traitement | Composant `PostProcessVolume`, réglages surchargés un à un, fondus |
+| Terrains                 | Hauteurs en texture, LOD continu de Strugar (CDLOD), herbe en brins |
 | Réglages d'environnement | Composant `Environment`, exposition sur le composant `Camera`      |
 | Tangentes                | MikkTSpace à l'import, convention glTF                             |
 | Physique                 | Jolt Physics 5.6 (MIT), module `Physics`, simulée pendant le jeu   |
@@ -2850,6 +2851,58 @@ Jalon 81 :
   (`Lookout mood`) y réchauffe et sature l'image, assombrit ses bords et met au point sur ce que le
   joueur regarde, à f/1.4, en s'effaçant sur 2 m autour.
 
+### Terrains
+
+Jalon 83, comme les terrains d'Unity et Terrain3D de Godot :
+
+- **Données** : un fichier `.dvxterrain` (asset `terrain`, son propre artefact) tient les cartes
+  d'un terrain sur une grille carrée d'une puissance de deux plus un échantillons de côté (33 à
+  4097) : les hauteurs en mètres (flottants), la part de chacune des huit couches peintes (un octet
+  chacune, 255 pour tout), les trous et la densité de l'herbe (`asset::TerrainMaps`, la hauteur et
+  la normale entre les échantillons, le lancer de rayon, les pinceaux, testés sans GPU). Le
+  composant `Terrain` les étend sur `size` mètres depuis la position de son entité, le long de +X
+  et +Z ; sa rotation et son échelle sont ignorées, comme chez Unity.
+- **Dessin** : le LOD continu de Strugar (*Continuous Distance-Dependent Level of Detail*, 2009),
+  de la famille des clipmaps : une grille de 32 × 32 cellules par bloc, dont les sommets prennent leur
+  hauteur dans la carte (lue sans filtrage, en quatre points, que tous les GPU ne filtrent pas en
+  flottants) dans le vertex shader. Le CPU choisit les blocs d'après la distance de la caméra à leur
+  boîte (les hauteurs de chaque bloc de 32 cellules, puis de leurs parents) et le tronc de vue :
+  les plus fins jusqu'à trois fois leur côté, chaque niveau deux fois plus loin, le plus grossier
+  partout. Un bloc dessine lui-même les quarts de ceux de ses enfants hors de leur portée (la grille
+  est rangée par quarts). Les sommets impairs glissent vers les pairs à l'approche de la portée de
+  leur niveau : aux joints, les deux côtés ont la même grille et aucune fente ne s'ouvre. Le terrain
+  passe dans la prépasse (le sol ne bouge pas : ses pixels bougent avec la caméra), les ombres des
+  cascades et des lumières locales, la scène et la sélection ; il compte dans la clé des ombres
+  gardées.
+- **Couches** : jusqu'à huit matériaux (couleur, textures, rugosité, normales). Ce qui n'est pas
+  peint suit des règles, comme l'*auto shader* de Terrain3D : la couche de pente au-delà d'un angle,
+  la couche de hauteur au-dessus d'une altitude, la couche de base ailleurs, avec un fondu. Où deux
+  couches se rencontrent, les texels les plus clairs de chacune passent d'abord (le sommet des
+  pierres à travers le sable). Sur les pentes, les textures sont projetées selon les trois axes
+  (triplanaire, normales mêlées à la façon « UDN » de Golus) plutôt qu'étirées.
+- **Herbe** : des brins de sept sommets (un triangle au loin), éparpillés sur des tuiles de 4 m autour
+  de la caméra à des places qui ne dépendent que de la tuile, si bien qu'ils ne bougent pas avec
+  elle ; autant poussent que la densité peinte le dit, moins vers la fin de leur distance, moins par
+  tuile au loin mais plus larges. Ils ondulent au vent, de la couleur du pied à celle de la pointe,
+  éclairés comme le sol ; pas dans la prépasse (ils écrivent leur profondeur dans la scène), et ils
+  ne projettent pas d'ombre.
+- **Collisions** : une `HeightFieldShape` de Jolt, statique, depuis les hauteurs ; les trous n'y ont
+  pas de triangles (`PhysicsWorldConfig::terrains`).
+- **Éditeur** : sous la carte du terrain, *Sculpt and Paint* : Raise, Lower, Smooth, Flatten, Noise,
+  Paint (la couche choisie), Holes et Grass, avec la taille, la force et la douceur du pinceau. Le
+  glisser applique le pinceau dans la vue, autant chaque seconde que la force le dit ; Maj fait
+  l'inverse, Ctrl+clic prend la hauteur d'aplanissement, [ et ] changent la taille, Échap pose le
+  pinceau. Un cercle suit le sol sous la souris. Chaque coup de pinceau est un pas d'annulation (les
+  échantillons changés, avant et après) ; enregistrer la scène enregistre le terrain. *Create Data*
+  écrit un sol plat à environ un échantillon par mètre à côté de la scène. L'`AssetManager` garde
+  les cartes chargées, les copie dans les textures ligne à ligne à chaque changement, et ne les
+  recharge pas à la réimportation tant qu'elles ont changé depuis leur enregistrement.
+- **Coût** (Iris Xe, Release, vue de 930 × 500 couverte par les collines) : environ 3 ms pour le
+  sol et 1,4 ms pour l'herbe.
+- **Bac à sable** : des collines de 256 m entourent l'arène (`assets/terrains/hills.dvxterrain`),
+  herbe en bas, roche sur les pentes, neige au-dessus de 26 m, avec de l'herbe en touffes au pied ;
+  leurs textures, tirées d'un bruit qui se répète, sont dans `assets/textures/terrain`.
+
 ### Shaders des projets
 
 Jalon 66, comme le langage de shaders de Godot, mais écrit en Slang :
@@ -4750,6 +4803,12 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     n'est plus chargé deux fois ; catégories du journal tirées du dossier de chaque message, niveaux
     par catégorie (`DEVEX_LOG`, `--log-level`), couleurs dans le terminal, messages répétés
     regroupés, sortie des compilateurs repliée dans *Output* ; temps de l'ouverture dans le journal.
+83. ✅ **Terrains** — composant `Terrain` et fichier `.dvxterrain` ; dessin par blocs à LOD continu
+    autour de la caméra (CDLOD), hauteurs lues dans le vertex shader ; jusqu'à huit couches de
+    matériaux, peintes ou posées par des règles de pente et de hauteur, triplanaires sur les pentes ;
+    trous ; herbe en brins qui ondule au vent ; collisions Jolt ; pinceaux de l'éditeur (élever,
+    abaisser, lisser, aplanir, bruit, peindre, trous, herbe) annulables ; collines autour de l'arène ;
+    API des jeux 28.
 
 Ensuite, sans ordre figé : à choisir dans les pistes ci-dessous.
 

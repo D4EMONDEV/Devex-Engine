@@ -125,6 +125,8 @@ struct Folder
         return {icons::Globe, colors.environment};
     case asset::AssetType::IrradianceVolume:
         return {icons::Grid, colors.environment};
+    case asset::AssetType::Terrain:
+        return {icons::Mountain, colors.environment};
     case asset::AssetType::Translation:
         return {icons::Languages, colors.scene};
     case asset::AssetType::Shader:

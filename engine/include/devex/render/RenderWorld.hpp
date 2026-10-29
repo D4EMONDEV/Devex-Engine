@@ -5,6 +5,7 @@
 #include <devex/core/SlotMap.hpp>
 #include <devex/math/Math.hpp>
 
+#include <array>
 #include <cstdint>
 #include <optional>
 #include <utility>
@@ -233,6 +234,61 @@ struct DEVEX_API RenderFog
     float sunScattering = 1.0f;
     float sunAnisotropy = 0.6f;
     float skyBlend = 0.5f;
+};
+
+// The maps of a terrain on the GPU, which the asset manager keeps: its heights (one float a sample),
+// the slopes between them (meters of height per cell along X and Z, in half floats), the shares of
+// layers 0 to 3 and 4 to 7 painted, and its holes and grass (red and green).
+struct DEVEX_API TerrainTextures
+{
+    TextureHandle heights;
+    TextureHandle slopes;
+    TextureHandle paint0;
+    TextureHandle paint1;
+    TextureHandle detail;
+};
+
+// The cells on a side of the smallest blocks a terrain is drawn by, whose heights it is culled by.
+inline constexpr std::uint32_t terrainBlockCells = 32;
+
+// A terrain to draw: its maps over a square of `size` meters from `origin` along +X and +Z, shaded by
+// up to eight material layers, with grass where it was painted.
+struct DEVEX_API RenderTerrain
+{
+    TerrainTextures textures;
+    // Samples on a side: a power of two plus one.
+    std::uint32_t resolution = 0;
+    math::Vec3 origin{0.0f};
+    float size = 256.0f;
+    // The lowest and the highest height of each block of terrainBlockCells cells, row after row, and
+    // the most grass painted in it.
+    std::vector<math::Vec2> blockHeights;
+    std::vector<std::uint8_t> blockGrass;
+    // Changes whenever its maps change, for the shadows kept from a frame to the next.
+    std::uint64_t version = 0;
+    std::array<MaterialHandle, 8> layers{};
+    std::uint32_t layerCount = 0;
+    float textureSize = 4.0f;
+    float blendSharpness = 0.5f;
+    bool triplanar = true;
+    // The rules where nothing is painted, as scene::Terrain has them; -1 leaves a rule out.
+    std::int32_t autoBaseLayer = 0;
+    std::int32_t autoSlopeLayer = -1;
+    float autoSlope = 0.55f;
+    std::int32_t autoHeightLayer = -1;
+    float autoHeight = 60.0f;
+    float autoBlend = 0.25f;
+    math::Vec3 grassColor{0.06f, 0.16f, 0.03f};
+    math::Vec3 grassTipColor{0.32f, 0.48f, 0.12f};
+    float grassHeight = 0.5f;
+    float grassWidth = 0.05f;
+    float grassDensity = 24.0f;
+    float grassDistance = 30.0f;
+    float windStrength = 0.25f;
+    float windSpeed = 1.2f;
+    bool castShadows = true;
+    // Reported by picking; 0 for none.
+    std::uint32_t objectId = 0;
 };
 
 // The light captured around a point, which the surfaces inside the box of the probe reflect in place
@@ -635,6 +691,7 @@ struct DEVEX_API RenderWorld
     std::vector<RenderPostVolume> postVolumes;
     std::vector<RenderReflectionProbe> reflectionProbes;
     std::vector<RenderIrradianceVolume> irradianceVolumes;
+    std::vector<RenderTerrain> terrains;
     std::vector<MeshInstance> meshes;
     // The bones of the skinned instances of the frame, each already holding the transform from the
     // space of its mesh to the world.

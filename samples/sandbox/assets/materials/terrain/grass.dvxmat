@@ -1,0 +1,7 @@
+# A layer of the hills around the arena.
+[material format=1]
+base_color = vec4(1, 1, 1, 1)
+base_color_texture = asset("36ee1187-bab5-580c-a139-c949ccb7d217")
+normal_texture = asset("473badee-e8ee-594c-a88e-da69f16d2cf7")
+normal_scale = 0.8
+roughness = 0.92

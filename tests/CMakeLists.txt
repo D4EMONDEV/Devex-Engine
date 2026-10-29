@@ -126,6 +126,7 @@ devex_add_tests(asset
     SOURCES
         asset/AnimatorTests.cpp
         asset/ReflectionProbeTests.cpp
+        asset/TerrainMapsTests.cpp
         asset/ArtifactTests.cpp
         asset/AssetDatabaseTests.cpp
         asset/CurveTests.cpp
@@ -232,6 +233,7 @@ devex_add_tests(tools
         tools/SceneTabsTests.cpp
         tools/SelectionTests.cpp
         tools/TextDocumentTests.cpp
+        tools/TerrainPainterTests.cpp
         tools/TextEditorTests.cpp
         tools/ThemeTests.cpp
         tools/ScriptSettingsTests.cpp

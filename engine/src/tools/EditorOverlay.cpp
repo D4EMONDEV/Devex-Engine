@@ -970,6 +970,7 @@ void addEditorOverlay(ToolsState& state, scene::Scene& scene, render::RenderWorl
     }
 
     addTilePainterOverlay(state, scene, world);
+    addTerrainPainterOverlay(state, scene, world);
 
     if (state.pickQuery)
     {

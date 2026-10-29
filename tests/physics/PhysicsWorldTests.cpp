@@ -115,6 +115,46 @@ TEST_CASE("A dynamic body falls onto static colliders and rests on them", "[phys
     CHECK(world->bodyCount() == 2);
 }
 
+TEST_CASE("Bodies fall onto the ground of a terrain, and through its holes", "[physics][terrain]")
+{
+    // A slope of 64 m rising one meter in eight along X, from x = -32, with a hole at its middle.
+    devex::asset::TerrainMaps maps = devex::asset::makeFlatTerrain(65);
+    for (std::uint32_t z = 0; z < 65; ++z)
+    {
+        for (std::uint32_t x = 0; x < 65; ++x)
+        {
+            maps.heights[std::size_t{z} * 65 + x] = static_cast<float>(x) / 8.0f;
+        }
+    }
+    for (std::uint32_t z = 30; z <= 34; ++z)
+    {
+        for (std::uint32_t x = 46; x <= 50; ++x)
+        {
+            maps.holes[std::size_t{z} * 65 + x] = 255;
+        }
+    }
+    const devex::asset::AssetId data = devex::asset::AssetId::generate();
+    auto world = PhysicsWorld::create({
+        .terrains = [&maps, data](devex::asset::AssetId id) { return id == data ? &maps : nullptr; },
+        .threads = 2,
+    });
+    REQUIRE(world.has_value());
+    Scene scene;
+    const Entity ground = scene.createEntity("Hills");
+    scene.add<devex::scene::Transform>(ground, devex::scene::Transform{.position = {-32.0f, 0.0f, -32.0f}});
+    scene.add<devex::scene::Terrain>(ground, devex::scene::Terrain{.data = data, .size = 64.0f});
+    // On the slope, where it is 2 m high; above the hole, 2 m higher up it.
+    const Entity resting = addBall(scene, {-16.0f, 6.0f, 0.0f});
+    const Entity falling = addBall(scene, {16.0f, 9.0f, 0.0f});
+    simulate(**world, scene, 0.5);
+    CHECK((*world)->bodyCount() == 3);
+    // Settled on the slope it rolls down: on the ground wherever it went.
+    simulate(**world, scene, 1.0);
+    const Vec3 rolled = scene.get<devex::scene::Transform>(resting).position;
+    CHECK(rolled.y == Catch::Approx((rolled.x + 32.0f) / 8.0f + 0.5f / std::cos(std::atan(1.0f / 8.0f))).margin(0.1f));
+    CHECK(scene.get<devex::scene::Transform>(falling).position.y < 0.0f);
+}
+
 TEST_CASE("Spinning bodies stay the same bodies, even beyond the speed limits of Jolt", "[physics]")
 {
     // A crate turned on two axes, spinning on the ground faster than Jolt allows: the rounding of its

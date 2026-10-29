@@ -2202,6 +2202,13 @@ namespace devex::ui {
   `postVolumeInfluence`, `whiteBalanceFactors` (`devex/render/PostProcess.hpp`) ;
   `RenderCamera::lensEffects` (faux pour la caméra de l'éditeur) ; passes de `shaders/lens.slang`
   (liaisons 13 `postSource` et 14 `postChain[7]` du set de frame).
+- Terrains : `asset::TerrainMaps` (`devex/asset/TerrainMaps.hpp` : `makeFlatTerrain`,
+  `terrainHeight`, `terrainNormal`, `raycastTerrain`, `applyTerrainBrush`, `copyTerrainRegion`),
+  `encodeTerrain`/`decodeTerrain`, asset `terrain` (`.dvxterrain`) ; composant `scene::Terrain`
+  (`data`, `size`, `layers` de matériaux, `auto_*`, `grass_*`) ; `AssetManager::terrain` /
+  `terrainChanged` / `terrainSaved` ; `RenderWorld::terrains` (`RenderTerrain`,
+  `terrainBlockCells`), `shaders/terrain.slang` ; `PhysicsWorldConfig::terrains` ;
+  `tools::TerrainAccess`, `TerrainPainter` et `TerrainPainter.cpp` dans l'éditeur.
 - Journal : `LogRecord::category` (dossier du fichier, `core::logCategoryOf`, ou nommée par
   `DEVEX_LOG_INFO_IN("build", ...)` et ses voisins) ; `core::setLogLevel(catégorie, niveau)`,
   `core::configureLog("info,render=trace")`, `runtime::configureLogging` (variable `DEVEX_LOG` puis

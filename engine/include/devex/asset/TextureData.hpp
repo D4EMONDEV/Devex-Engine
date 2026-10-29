@@ -25,6 +25,8 @@ enum class TextureFormat : std::uint8_t
     Rgba16Float = 6,
     // One channel, such as the distances of a font atlas.
     R8Unorm = 7,
+    // One channel of 32-bit floats, such as the heights of a terrain; read without filtering.
+    R32Float = 8,
 };
 
 [[nodiscard]] DEVEX_API std::string_view toString(TextureFormat format) noexcept;

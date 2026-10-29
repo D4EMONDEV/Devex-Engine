@@ -118,6 +118,7 @@ std::uint32_t artifactVersion(AssetType type) noexcept
     case AssetType::NavMesh:
     case AssetType::ReflectionProbe:
     case AssetType::IrradianceVolume:
+    case AssetType::Terrain:
     case AssetType::Translation:
         return 1;
     // 2: the nodes of shader graphs that diagnostics name. 3: instance uniforms.
@@ -1152,6 +1153,41 @@ core::Result<IrradianceVolumeData> decodeIrradianceVolume(std::span<const std::b
         return std::unexpected(valid.error());
     }
     return volume;
+}
+
+std::vector<std::byte> encodeTerrain(const TerrainMaps& terrain)
+{
+    BinaryWriter writer = beginArtifact(AssetType::Terrain);
+    writer.write(terrain.resolution);
+    writer.writeArray(std::span<const float>(terrain.heights));
+    writer.writeArray(std::span<const std::uint8_t>(terrain.paint));
+    writer.writeArray(std::span<const std::uint8_t>(terrain.holes));
+    writer.writeArray(std::span<const std::uint8_t>(terrain.grass));
+    return writer.take();
+}
+
+core::Result<TerrainMaps> decodeTerrain(std::span<const std::byte> bytes)
+{
+    BinaryReader reader(bytes);
+    if (core::Result<void> header = readHeader(reader, AssetType::Terrain); !header)
+    {
+        return std::unexpected(header.error());
+    }
+    TerrainMaps terrain;
+    terrain.resolution = reader.read<std::uint32_t>();
+    terrain.heights = reader.readArray<float>();
+    terrain.paint = reader.readArray<std::uint8_t>();
+    terrain.holes = reader.readArray<std::uint8_t>();
+    terrain.grass = reader.readArray<std::uint8_t>();
+    if (reader.failed())
+    {
+        return std::unexpected(truncated(AssetType::Terrain));
+    }
+    if (core::Result<void> valid = validate(terrain); !valid)
+    {
+        return std::unexpected(valid.error());
+    }
+    return terrain;
 }
 
 std::vector<std::byte> encodeTranslation(const TranslationData& translation)

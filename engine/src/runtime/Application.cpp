@@ -1924,6 +1924,11 @@ void ApplicationRunner::createPhysics()
     core::Result<std::unique_ptr<physics::PhysicsWorld>> world = physics::PhysicsWorld::create({
         .settings = assetSource() != nullptr ? assetSource()->project().physics : asset::PhysicsSettings{},
         .meshes = [this](asset::AssetId mesh) { return m_services.assets.meshData(mesh); },
+        .terrains =
+            [this](asset::AssetId terrain) {
+                AssetManager::LoadedTerrain* const loaded = m_services.assets.terrain(terrain);
+                return loaded != nullptr ? &loaded->maps : nullptr;
+            },
     });
     if (!world)
     {
@@ -3310,6 +3315,20 @@ int run(Application& application, const ApplicationConfig& config)
                                     [&assets](asset::AssetId texture) { return assets.textureSize(texture); },
                                     [&assets](asset::AssetId sprite) { return assets.sprite(sprite); },
                                     [&assets](asset::AssetId tileset) { return assets.tileset(tileset); });
+            tools->setTerrains({
+                .maps =
+                    [&assets](asset::AssetId terrain) {
+                        AssetManager::LoadedTerrain* const loaded = assets.terrain(terrain);
+                        return loaded != nullptr ? &loaded->maps : nullptr;
+                    },
+                .changed = [&assets](asset::AssetId terrain, const asset::TerrainRegion& region) { assets.terrainChanged(terrain, region); },
+                .edited =
+                    [&assets](asset::AssetId terrain) {
+                        const AssetManager::LoadedTerrain* const loaded = assets.terrain(terrain);
+                        return loaded != nullptr && loaded->edited;
+                    },
+                .saved = [&assets](asset::AssetId terrain) { assets.terrainSaved(terrain); },
+            });
             tools->setNavigationSources([&assets](asset::AssetId mesh) { return assets.meshData(mesh); },
                                         [&assets](asset::AssetId navMesh) { return assets.navMesh(navMesh); });
             tools->setMemoryReport([&assets] { return assets.memoryReport(); });

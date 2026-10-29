@@ -223,6 +223,68 @@ struct GpuVertexSkin
     math::Vec4 weights{0.0f};
 };
 
+// A terrain of the frame, as shaders/terrain.slang reads it.
+struct GpuTerrain
+{
+    math::Vec3 origin{0.0f};
+    float size = 1.0f;
+    std::uint32_t heights = 0;
+    std::uint32_t slopes = 0;
+    std::uint32_t paint0 = 0;
+    std::uint32_t paint1 = 0;
+    std::uint32_t detail = 0;
+    std::uint32_t resolution = 0;
+    std::uint32_t layerCount = 0;
+    std::uint32_t objectId = 0;
+    // The materials of its layers.
+    std::array<std::uint32_t, 8> layers{};
+    float textureSize = 4.0f;
+    float blendSharpness = 0.5f;
+    std::uint32_t triplanar = 1;
+    std::int32_t autoBaseLayer = 0;
+    std::int32_t autoSlopeLayer = -1;
+    float autoSlope = 0.55f;
+    std::int32_t autoHeightLayer = -1;
+    float autoHeight = 60.0f;
+    float autoBlend = 0.25f;
+    float windStrength = 0.25f;
+    float windSpeed = 1.2f;
+    float grassDistance = 30.0f;
+    math::Vec3 grassColor{0.0f};
+    float grassHeight = 0.5f;
+    math::Vec3 grassTipColor{0.0f};
+    float grassWidth = 0.05f;
+    float grassDensity = 24.0f;
+    // Within it, the finest blocks; each coarser level reaches twice as far.
+    float leafRange = 96.0f;
+    float padding0 = 0.0f;
+    float padding1 = 0.0f;
+};
+static_assert(sizeof(GpuTerrain) == 176);
+
+// A block of a terrain drawn, in the space of the terrain, or a tile of its grass.
+struct GpuTerrainNode
+{
+    math::Vec2 corner{0.0f};
+    float size = 0.0f;
+    // The level of detail of a block; the blades of a tile.
+    std::uint32_t level = 0;
+};
+static_assert(sizeof(GpuTerrainNode) == 16);
+
+struct TerrainPushConstants
+{
+    VkDeviceAddress scene = 0;
+    VkDeviceAddress terrain = 0;
+    VkDeviceAddress nodes = 0;
+    VkDeviceAddress tiles = 0;
+    std::uint32_t cascade = 0;
+    std::uint32_t gridCells = 0;
+    std::uint32_t bladesPerTile = 0;
+    float bladeWidthScale = 1.0f;
+};
+static_assert(sizeof(TerrainPushConstants) == 48);
+
 struct DrawPushConstants
 {
     VkDeviceAddress scene = 0;
