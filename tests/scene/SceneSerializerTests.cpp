@@ -10,6 +10,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <string>
+#include <string_view>
 #include <vector>
 
 using devex::math::Quat;
@@ -19,6 +20,31 @@ using devex::scene::Entity;
 using devex::scene::MeshRenderer;
 using devex::scene::Scene;
 using devex::scene::Transform;
+
+TEST_CASE("The components a scene keeps for code not loaded yet are told about in one message", "[scene][serializer]")
+{
+    const devex::core::LogLevel previous = devex::core::logLevel();
+    devex::core::setLogLevel(devex::core::LogLevel::Debug);
+    std::vector<std::string> told;
+    const devex::core::LogSinkId sink = devex::core::addLogSink([&told](const devex::core::LogRecord& record) {
+        if (std::string_view(record.message).find("no code has registered") != std::string_view::npos)
+        {
+            told.emplace_back(record.message);
+        }
+    });
+    auto scene = devex::scene::loadScene(R"([scene format=1]
+[entity uuid="6f1c2a9e-3b7d-4e21-9a55-0c8d7e4f1b24" name="Player"]
+[component type="Walker"]
+[component type="Shooter"]
+[entity uuid="6f1c2a9e-3b7d-4e21-9a55-0c8d7e4f1b25" name="Enemy"]
+[component type="Walker"]
+)");
+    devex::core::removeLogSink(sink);
+    devex::core::setLogLevel(previous);
+    REQUIRE(scene.has_value());
+    REQUIRE(told.size() == 1);
+    CHECK(told[0] == "Keeping 3 components of types no code has registered, until it loads: Walker, Shooter");
+}
 
 namespace test {
 

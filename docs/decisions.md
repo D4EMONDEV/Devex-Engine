@@ -183,6 +183,7 @@ mais seulement explicitement ici : le code suit ce document, pas l'inverse.
 | Thèmes d'interface       | Asset `.dvxtheme` de styles nommés, référencé par le canevas       |
 | Liaison de données       | `UiBinding` écrit un champ de composant dans un texte              |
 | Journal                  | Fichier par lancement, le précédent gardé, lisible pendant le jeu  |
+| Catégories du journal    | Dossier du moteur d'où vient le message, niveaux par `DEVEX_LOG`   |
 | Plantages                | Pile symbolisée dans le journal, minidump à côté sous Windows      |
 | Plantages du jeu en Play | Contenus par une garde : la partie s'arrête, l'éditeur prévient    |
 | Manettes                 | SDL Gamepad, quatre manettes, sticks avec zone morte               |
@@ -902,6 +903,25 @@ les assets s'écrivent au fil de leur lecture.
   seulement faux mais dangereux : un module enregistre ses composants par un modèle C++ compilé
   chez lui (`ComponentRegistry::add<T>`), qui écrit la structure `ComponentType` telle qu'il la
   connaît dans le registre du moteur. La version de l'API des jeux passe à 9 pour la même raison.
+- **Catégories** (jalon 82) : chaque message porte la partie du moteur d'où il vient, qu'aucun appel
+  n'a à nommer : le dossier de son fichier sous `engine/src/` (`render`, `asset`, `scene`,
+  `runtime`, `tools`...), le programme sous `apps/` (`editor`, `player`), et `game` pour le code des
+  projets et le C#. Un appel peut en nommer une autre (`DEVEX_LOG_INFO_IN("build", ...)`) : la
+  sortie des compilateurs et ce que disent les builds vont dans `build`, les messages du chargeur
+  Vulkan dans `vulkan`. Console et fichiers l'écrivent en colonne, après le niveau.
+- **Niveaux** : `DEVEX_LOG` puis `--log-level` (éditeur et lecteur) donnent un niveau pour tout et
+  des niveaux par catégorie : `debug`, `info,build=warning`, `warning,render=trace`
+  (`core::configureLog`, qui ne change rien s'il ne comprend pas tout). Le test des macros, avant de
+  formater quoi que ce soit, compare au plus bas niveau gardé quelque part ; une catégorie nommée
+  par l'appel est testée exactement. Debug reste le défaut d'un build Debug, Info d'un Release.
+- **Console** : en couleurs sur un terminal qui les montre (gris pour debug, jaune pour les
+  avertissements, rouge pour les erreurs), jamais dans un fichier ou un tube ni quand `NO_COLOR`
+  est défini ; pas sous Windows. Le même message revenu dans la seconde n'est écrit qu'une fois,
+  suivi de « (the same, 2 more times) ». Le bruit du chargeur Vulkan (une couche installée deux
+  fois) et l'icône que Wayland refuse passent en `trace`.
+- **Output** : le filtre trouve aussi une catégorie par son nom (« render », « build ») ; la sortie
+  d'une compilation se replie sous une ligne « Build output, 12 lines » qu'un clic déplie, ses
+  avertissements et erreurs restant à part ; un message répété porte « (x3) ».
 
 ### Boucle de jeu et application
 
@@ -3902,6 +3922,19 @@ Jalon 62, comme la localisation de Godot.
   le module et son empreinte ne sont publiés, atomiquement, qu'après réussite. L'accueil affiche
   *Code update required* et propose *Update & Edit* ; Run y attend la mise à jour, et Play reste
   indisponible tant que le code n'est pas prêt. Les sources et les données des scènes sont conservées.
+- **Ouverture d'un projet** (jalon 82) : quand son code compile à l'ouverture (nouveau moteur,
+  sources changées, jamais compilé), ses scènes attendent qu'il soit chargé, comme Unity compile
+  les scripts avant d'ouvrir une scène. Elles s'ouvraient avant, gardaient chaque composant du jeu
+  en texte (une ligne de journal par composant), puis les remettaient en place quelques secondes
+  plus tard. Un dialogue *Opening Sandbox* dit ce qui compile (C++ puis C#), depuis combien de
+  temps, la part faite d'après les étapes que compte Ninja (« [1/3] »), et la dernière ligne du
+  compilateur ; *Open Now* ouvre les scènes sans attendre, à l'ancienne. Si la compilation échoue,
+  elles s'ouvrent avec l'erreur. Le C# n'est plus chargé périmé puis rechargé : un assemblage à
+  recompiler l'est avant d'être chargé. Le journal dit d'où vient l'ouverture (ligne de commande,
+  gestionnaire de projets), pourquoi le code recompile, et le temps de chaque étape : « Sandbox is
+  open after 8.4 s: 8.3 s for its game code, 2 scenes opened in 0.04 s ». Une scène qui garde des
+  composants de types inconnus le dit en une ligne qui les nomme. `--screenshot` et `--profile`
+  attendent aussi la fin de la compilation.
 - **Chargement et rechargement** : le runtime charge le module d'un projet à son ouverture, avant
   la première scène, depuis une **copie** (`.devex/code/modules`) pour que l'original puisse être
   recompilé. Quand une nouvelle build apparaît (compilée par l'éditeur ou par un IDE), il
@@ -4712,6 +4745,11 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     de la caméra (reconstruction de McGuire, part d'obturation), volumes de post-traitement
     (`PostProcessVolume` : boîte ou global, fondu, poids, priorité, réglages surchargés un à un),
     étalonnage (balance des blancs, filtre, contraste, saturation) ; API des jeux 27.
+82. ✅ **Ouverture des projets et journal** — les scènes d'un projet attendent que son code soit
+    compilé, derrière un dialogue qui suit la compilation (*Open Now* pour ne pas attendre) ; le C#
+    n'est plus chargé deux fois ; catégories du journal tirées du dossier de chaque message, niveaux
+    par catégorie (`DEVEX_LOG`, `--log-level`), couleurs dans le terminal, messages répétés
+    regroupés, sortie des compilateurs repliée dans *Output* ; temps de l'ouverture dans le journal.
 
 Ensuite, sans ordre figé : à choisir dans les pistes ci-dessous.
 

@@ -946,6 +946,15 @@ struct DEVEX_API ToolsState
 
     // The project changed since the last update: its scenes open.
     bool projectChanged = false;
+    // The scenes of the project just opened wait for its code to be built, as Unity compiles the
+    // scripts before it opens a scene: they open with the components of the game rather than keep
+    // them as text until the code loads. A dialog tells how the build goes, and opens them at once
+    // on request (openScenesNow).
+    bool scenesWaitForCode = false;
+    bool openScenesNow = false;
+    bool openOpeningProjectPopup = false;
+    // When the project opened, for the log of how long it took.
+    std::chrono::steady_clock::time_point projectOpenedAt;
     // Scene tabs. The active tab's document is made of scenePath, the edited scene, history,
     // savedState, selection and camera.
     SceneTabs tabs;

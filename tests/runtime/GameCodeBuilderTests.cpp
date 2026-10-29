@@ -151,8 +151,20 @@ TEST_CASE("Game code status distinguishes an initial build from an engine update
     CHECK(status.needsBuild);
     CHECK_FALSE(status.needsUpdate);
     CHECK_FALSE(status.message.empty());
+    CHECK(status.reason == "it was never built");
     const GameCodeBuilder builder(fixture.project, fixture.engineConfig, "Debug");
     CHECK(builder.pending());
+}
+
+TEST_CASE("A build tells how far it is from the steps Ninja counts", "[runtime][game]")
+{
+    CHECK(GameCodeBuilder::stepsOf("[1/4] Building CXX object CMakeFiles/Game.dir/Game.cpp.o") == 0.25f);
+    CHECK(GameCodeBuilder::stepsOf("[0/2] Re-checking globbed directories...") == 0.0f);
+    CHECK(GameCodeBuilder::stepsOf("[3/3] Linking CXX shared library bin/libGame.so") == 1.0f);
+    CHECK_FALSE(GameCodeBuilder::stepsOf("-- Configuring done (0.1s)").has_value());
+    CHECK_FALSE(GameCodeBuilder::stepsOf("[5/3] more done than there is").has_value());
+    CHECK_FALSE(GameCodeBuilder::stepsOf("[a/3] not a count").has_value());
+    CHECK_FALSE(GameCodeBuilder::stepsOf("[2/0]").has_value());
 }
 
 TEST_CASE("An obsolete game module needs updating even when its sources have not changed", "[runtime][game]")

@@ -245,6 +245,10 @@ bool ManagedCodeBuilder::update(bool automaticCompilation)
     {
         for (const std::string& line : m_process->readLines())
         {
+            if (!line.empty())
+            {
+                m_lastLine = line;
+            }
             if (std::optional<GameCodeBuilder::Diagnostic> diagnostic = GameCodeBuilder::parseDiagnostic(line))
             {
                 m_diagnostics.push_back(std::move(*diagnostic));
@@ -252,7 +256,7 @@ bool ManagedCodeBuilder::update(bool automaticCompilation)
             const std::optional<bool> severity = GameCodeBuilder::severityOf(line);
             if (severity.value_or(false) || line.starts_with("error"))
             {
-                DEVEX_LOG_ERROR("{}", line);
+                DEVEX_LOG_ERROR_IN(buildLogCategory, "{}", line);
                 if (m_message.empty())
                 {
                     m_message = line;
@@ -260,18 +264,18 @@ bool ManagedCodeBuilder::update(bool automaticCompilation)
             }
             else if (severity == false)
             {
-                DEVEX_LOG_WARNING("{}", line);
+                DEVEX_LOG_WARNING_IN(buildLogCategory, "{}", line);
             }
             else if (!line.empty())
             {
-                DEVEX_LOG_DEBUG("{}", line);
+                DEVEX_LOG_DEBUG_IN(buildLogCategory, "{}", line);
             }
         }
         if (const std::optional<int> exitCode = m_process->exitCode())
         {
             for (const std::string& line : m_process->readLines())
             {
-                DEVEX_LOG_DEBUG("{}", line);
+                DEVEX_LOG_DEBUG_IN(buildLogCategory, "{}", line);
             }
             m_process.reset();
             finishBuild(*exitCode);
@@ -309,6 +313,7 @@ void ManagedCodeBuilder::startBuild()
 {
     m_sources = snapshotSources();
     m_changedAt.reset();
+    m_lastLine.clear();
     useEnglishDiagnostics();
     // The project file is the editor's: other builds only write it when it is missing.
     std::error_code error;
@@ -318,7 +323,7 @@ void ManagedCodeBuilder::startBuild()
         {
             m_state = State::Failed;
             m_message = written.error().message;
-            DEVEX_LOG_ERROR("Cannot build the C# code: {}", written.error());
+            DEVEX_LOG_ERROR_IN(buildLogCategory, "Cannot build the C# code: {}", written.error());
             return;
         }
     }
@@ -343,7 +348,7 @@ void ManagedCodeBuilder::startBuild()
     {
         m_state = State::Failed;
         m_message = std::format("the .NET SDK is needed to build C# code: {}", process.error().message);
-        DEVEX_LOG_ERROR("Cannot build the C# code: {}", m_message);
+        DEVEX_LOG_ERROR_IN(buildLogCategory, "Cannot build the C# code: {}", m_message);
         return;
     }
     m_process = std::move(*process);
@@ -351,7 +356,7 @@ void ManagedCodeBuilder::startBuild()
     m_message.clear();
     m_diagnostics.clear();
     m_buildStart = Clock::now();
-    DEVEX_LOG_INFO("Building the C# code...");
+    DEVEX_LOG_INFO_IN(buildLogCategory, "Building the C# code...");
 }
 
 void ManagedCodeBuilder::finishBuild(int exitCode)
@@ -361,7 +366,7 @@ void ManagedCodeBuilder::finishBuild(int exitCode)
     {
         m_state = State::Succeeded;
         m_message = std::format("built in {:.1f} s", seconds);
-        DEVEX_LOG_INFO("C# code built in {:.1f} s", seconds);
+        DEVEX_LOG_INFO_IN(buildLogCategory, "C# code built in {:.1f} s", seconds);
         return;
     }
     m_state = State::Failed;
@@ -369,7 +374,7 @@ void ManagedCodeBuilder::finishBuild(int exitCode)
     {
         m_message = std::format("the build failed with code {}", exitCode);
     }
-    DEVEX_LOG_ERROR("C# build failed: see the errors above");
+    DEVEX_LOG_ERROR_IN(buildLogCategory, "C# build failed: see the errors above");
 }
 
 } // namespace devex::runtime::detail

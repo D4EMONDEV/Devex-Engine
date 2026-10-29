@@ -335,6 +335,11 @@ out/build/x64-debug/bin/devex-editor.exe samples/sandbox/Sandbox.dvxproj
 out/build/x64-debug/bin/devex-player.exe samples/sandbox/Sandbox.dvxproj
 ```
 
+Le journal range chaque message dans une catégorie (`render`, `asset`, `build`, `game`...) ; la
+variable `DEVEX_LOG` ou l'option `--log-level` choisissent ce qu'il garde, pour tout et par
+catégorie : `--log-level info,build=warning` cache la sortie des compilateurs,
+`DEVEX_LOG=debug,render=trace` montre tout du renderer.
+
 *Project > Export Game…* produit un dossier qui tourne seul : l'exécutable du jeu, son paquet
 d'assets, son code et les bibliothèques du moteur. Un export en Release demande un build Release du
 moteur (`cmake --build --preset build-x64-release`). La même chose sans fenêtre :

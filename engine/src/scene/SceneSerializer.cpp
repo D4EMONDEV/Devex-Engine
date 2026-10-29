@@ -15,6 +15,8 @@
 
 #include <algorithm>
 #include <optional>
+#include <string>
+#include <string_view>
 #include <vector>
 
 namespace devex::scene {
@@ -113,6 +115,10 @@ core::Result<std::vector<Entity>> createEntities(Scene& scene, const FlatScene& 
         return error;
     };
 
+    // The types no code has registered, such as those of a game whose code is not loaded: their
+    // components are kept as text, and told about once.
+    std::vector<std::string_view> unknownTypes;
+    std::size_t kept = 0;
     for (const FlatEntity& flatEntity : flat.entities)
     {
         core::Result<Entity> entity = scene.createEntity(flatEntity.uuid, flatEntity.name);
@@ -132,7 +138,11 @@ core::Result<std::vector<Entity>> createEntities(Scene& scene, const FlatScene& 
             const ComponentType* const componentType = componentRegistry().find(*typeName);
             if (componentType == nullptr)
             {
-                DEVEX_LOG_DEBUG("Scene line {}: keeping component of unknown type '{}'", section.line, *typeName);
+                ++kept;
+                if (std::ranges::find(unknownTypes, *typeName) == unknownTypes.end())
+                {
+                    unknownTypes.emplace_back(*typeName);
+                }
                 if (!scene.has<PreservedComponents>(*entity))
                 {
                     scene.add<PreservedComponents>(*entity);
@@ -163,6 +173,18 @@ core::Result<std::vector<Entity>> createEntities(Scene& scene, const FlatScene& 
         {
             pendingParents.push_back({*entity, flatEntity.parent, flatEntity.fallbackParent, flatEntity.line});
         }
+    }
+
+    if (kept > 0)
+    {
+        std::string names;
+        for (const std::string_view type : unknownTypes)
+        {
+            names += names.empty() ? "" : ", ";
+            names += type;
+        }
+        DEVEX_LOG_DEBUG("Keeping {} component{} of types no code has registered, until it loads: {}", kept, kept == 1 ? "" : "s",
+                        names);
     }
 
     for (const PendingParent& pending : pendingParents)

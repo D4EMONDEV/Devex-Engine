@@ -11,9 +11,14 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <chrono>
 #include <format>
 #include <optional>
+#include <string>
+#include <string_view>
+#include <unordered_set>
 #include <utility>
+#include <vector>
 
 namespace devex::tools::detail {
 
@@ -72,11 +77,22 @@ enum class Severity : std::uint8_t
     return state.consoleShowInfo;
 }
 
-// A message as the panel keeps it: its text with tabs made spaces, and where each of its lines is.
+// The same message again within this time of the last one counts on it rather than adding a line.
+constexpr std::chrono::milliseconds repeatWindow{1000};
+
+// The category of the output of compilers, whose lines fold under one.
+constexpr std::string_view buildCategory = "build";
+
+// A message as the panel keeps it: its text with tabs made spaces, how many times it came in a row,
+// and where each of its lines is.
 struct Entry
 {
     std::uint64_t sequence = 0;
     Severity severity = Severity::Info;
+    std::string message;
+    std::string category;
+    std::chrono::steady_clock::time_point time;
+    std::uint32_t repeats = 1;
     std::string text;
     std::vector<std::pair<std::uint32_t, std::uint32_t>> lines;
     // The widest of its lines, at the size it was measured at.
@@ -84,12 +100,29 @@ struct Entry
     float measuredAt = 0.0f;
 };
 
-// A line on screen: a line of an entry.
+// A line on screen: a line of an entry, or the header of the output of a build that starts at it,
+// whose text is the label-th of the headers.
 struct Line
 {
     std::uint32_t entry = 0;
     std::uint32_t line = 0;
+    bool header = false;
+    std::uint32_t label = 0;
 };
+
+// The order of the lines shown: by entry, the header of a build before the lines of its first entry.
+[[nodiscard]] bool shownBefore(const Line& left, const Line& right) noexcept
+{
+    if (left.entry != right.entry)
+    {
+        return left.entry < right.entry;
+    }
+    if (left.header != right.header)
+    {
+        return left.header;
+    }
+    return left.line < right.line;
+}
 
 // A place in the text, which stays put as messages come and go: a line of a message, and a byte of it.
 struct TextPoint
@@ -97,6 +130,7 @@ struct TextPoint
     std::uint64_t sequence = 0;
     std::uint32_t line = 0;
     std::uint32_t byte = 0;
+    bool header = false;
 };
 
 // A place in the lines shown, which orders two places.
@@ -117,11 +151,14 @@ struct Row
     Entity text;
 };
 
-[[nodiscard]] Entry makeEntry(const LogEntry& logged)
+// The text of an entry and its lines, from its message and how many times it came.
+void layEntry(Entry& entry)
 {
-    Entry entry{.sequence = logged.sequence, .severity = severityOf(logged.level)};
-    entry.text.reserve(logged.message.size());
-    for (const char character : logged.message)
+    entry.text.clear();
+    entry.lines.clear();
+    entry.measuredAt = 0.0f;
+    entry.text.reserve(entry.message.size() + 8);
+    for (const char character : entry.message)
     {
         if (character == '\t')
         {
@@ -131,6 +168,10 @@ struct Row
         {
             entry.text.push_back(character);
         }
+    }
+    if (entry.repeats > 1)
+    {
+        entry.text += std::format("  (x{})", entry.repeats);
     }
     std::size_t begin = 0;
     for (;;)
@@ -144,7 +185,23 @@ struct Row
         }
         begin = end + 1;
     }
+}
+
+[[nodiscard]] Entry makeEntry(const LogEntry& logged)
+{
+    Entry entry{.sequence = logged.sequence,
+                .severity = severityOf(logged.level),
+                .message = logged.message,
+                .category = logged.category,
+                .time = logged.time};
+    layEntry(entry);
     return entry;
+}
+
+// The output of a compiler, which folds under a header; its warnings and errors stay apart.
+[[nodiscard]] bool foldable(const Entry& entry) noexcept
+{
+    return entry.category == buildCategory && entry.severity == Severity::Debug;
 }
 
 [[nodiscard]] bool isWordCharacter(char character) noexcept
@@ -185,6 +242,9 @@ struct OutputUi : PanelBuilder
     std::vector<Entry> entries;
     std::uint64_t last = 0;
     std::vector<Line> shown;
+    // The texts of the headers of the builds shown, and the builds unfolded, by their first message.
+    std::vector<std::string> headers;
+    std::unordered_set<std::uint64_t> unfolded;
     std::array<std::size_t, 4> counts{};
     bool dirty = true;
     // Startup messages can arrive before the first layout gives the panel a height.
@@ -207,6 +267,10 @@ struct OutputUi : PanelBuilder
 
     [[nodiscard]] std::string_view lineText(const Line& line) const
     {
+        if (line.header)
+        {
+            return headers[line.label];
+        }
         const Entry& entry = entries[line.entry];
         const auto [begin, end] = entry.lines[line.line];
         return std::string_view(entry.text).substr(begin, end - begin);
@@ -220,11 +284,9 @@ struct OutputUi : PanelBuilder
         {
             return std::nullopt;
         }
-        const Line wanted{.entry = static_cast<std::uint32_t>(entry - entries.begin()), .line = point.line};
-        const auto found = std::ranges::lower_bound(shown, wanted, [](const Line& left, const Line& right) {
-            return left.entry != right.entry ? left.entry < right.entry : left.line < right.line;
-        });
-        if (found == shown.end() || found->entry != wanted.entry || found->line != wanted.line)
+        const Line wanted{.entry = static_cast<std::uint32_t>(entry - entries.begin()), .line = point.line, .header = point.header};
+        const auto found = std::ranges::lower_bound(shown, wanted, shownBefore);
+        if (found == shown.end() || found->entry != wanted.entry || found->line != wanted.line || found->header != wanted.header)
         {
             return std::nullopt;
         }
@@ -234,7 +296,7 @@ struct OutputUi : PanelBuilder
     [[nodiscard]] TextPoint pointOf(std::size_t index, std::uint32_t byte) const
     {
         const Line& line = shown[index];
-        return TextPoint{.sequence = entries[line.entry].sequence, .line = line.line, .byte = byte};
+        return TextPoint{.sequence = entries[line.entry].sequence, .line = line.line, .byte = byte, .header = line.header};
     }
 
     // The chosen part of the text, from its start to its end, if it is shown.
@@ -304,6 +366,11 @@ struct OutputUi : PanelBuilder
             return std::nullopt;
         }
         const float y = point.y - area->min.y;
+        // Below the last line, the end of the text; a header only takes the pointer on its own line.
+        if (y >= static_cast<float>(shown.size()) * lineHeight && shown.back().header)
+        {
+            return std::nullopt;
+        }
         const std::size_t index = y < 0.0f ? 0
                                             : std::min(static_cast<std::size_t>(y / std::max(lineHeight, 1.0f)),
                                                        shown.size() - 1);
@@ -369,9 +436,22 @@ void OutputUi::sync(ToolsState& state, EditorUiKit& kit)
         dirty = true;
     }
     state.log.forEachAfter(last, [&](const LogEntry& logged) {
-        entries.push_back(makeEntry(logged));
         last = logged.sequence;
         dirty = true;
+        // The same message again, soon after: counted on the line it already has.
+        if (!entries.empty())
+        {
+            Entry& previous = entries.back();
+            if (previous.severity == severityOf(logged.level) && previous.category == logged.category &&
+                previous.message == logged.message && logged.time - previous.time <= repeatWindow)
+            {
+                ++previous.repeats;
+                previous.time = logged.time;
+                layEntry(previous);
+                return;
+            }
+        }
+        entries.push_back(makeEntry(logged));
     });
 
     // The widths make the list scroll sideways as far as the longest line.
@@ -404,21 +484,57 @@ void OutputUi::sync(ToolsState& state, EditorUiKit& kit)
     shownFlags = flags;
     shownFilter = state.consoleFilter;
     shown.clear();
+    headers.clear();
     counts = {};
     contentWidth = 0.0f;
+    // The filter finds a word of the messages, or names their category: "render", "build".
+    const auto named = [&state](const Entry& entry) {
+        return !state.consoleFilter.empty() && entry.category.size() == state.consoleFilter.size() &&
+               containsIgnoringCase(entry.category, state.consoleFilter);
+    };
+    std::vector<std::uint32_t> passing;
     for (std::size_t index = 0; index < entries.size(); ++index)
     {
         const Entry& entry = entries[index];
         ++counts[static_cast<std::size_t>(entry.severity)];
-        if (!shownFlag(state, entry.severity) || !containsIgnoringCase(entry.text, state.consoleFilter))
+        if (shownFlag(state, entry.severity) && (containsIgnoringCase(entry.text, state.consoleFilter) || named(entry)))
         {
-            continue;
+            passing.push_back(static_cast<std::uint32_t>(index));
         }
+    }
+    const auto showEntry = [this](std::uint32_t index) {
+        const Entry& entry = entries[index];
         for (std::size_t line = 0; line < entry.lines.size(); ++line)
         {
-            shown.push_back(Line{.entry = static_cast<std::uint32_t>(index), .line = static_cast<std::uint32_t>(line)});
+            shown.push_back(Line{.entry = index, .line = static_cast<std::uint32_t>(line)});
         }
         contentWidth = std::max(contentWidth, entry.width);
+    };
+    for (std::size_t at = 0; at < passing.size();)
+    {
+        // The output of a build folds under one line, unless the filter looks for something in it.
+        if (!state.consoleFilter.empty() || !foldable(entries[passing[at]]))
+        {
+            showEntry(passing[at++]);
+            continue;
+        }
+        std::size_t end = at;
+        std::size_t count = 0;
+        while (end < passing.size() && foldable(entries[passing[end]]))
+        {
+            count += entries[passing[end]].lines.size();
+            ++end;
+        }
+        const bool open = unfolded.contains(entries[passing[at]].sequence);
+        headers.push_back(std::format("Build output, {} line{}{}", count, count == 1 ? "" : "s", open ? "" : " (click to show)"));
+        shown.push_back(Line{.entry = passing[at], .header = true, .label = static_cast<std::uint32_t>(headers.size() - 1)});
+        for (; at < end; ++at)
+        {
+            if (open)
+            {
+                showEntry(passing[at]);
+            }
+        }
     }
 }
 
@@ -590,7 +706,17 @@ void OutputUi::update(ToolsState& state, EditorUiKit& kit, core::Duration delta)
                             input.pointer.x < view->max.x - bar && input.pointer.y < view->max.y - bar;
         if (input.pointerPressed && onText && !world.isPopupOpen(scene(), menu))
         {
-            if (const std::optional<TextPoint> point = pointAt(kit, input.pointer))
+            const std::optional<TextPoint> point = pointAt(kit, input.pointer);
+            if (point && point->header)
+            {
+                // The header of a build shows or hides its output.
+                if (unfolded.erase(point->sequence) == 0)
+                {
+                    unfolded.insert(point->sequence);
+                }
+                dirty = true;
+            }
+            else if (point)
             {
                 const bool again = lastPressPoint && clock - lastPress <= doubleClickSeconds &&
                                    lastPressPoint->sequence == point->sequence && lastPressPoint->line == point->line &&
@@ -677,8 +803,9 @@ void OutputUi::update(ToolsState& state, EditorUiKit& kit, core::Duration delta)
         const Kind& kind = kinds[3 - static_cast<std::size_t>(entry.severity)];
         textRect.style = kind.style;
 
-        // Warnings and errors carry their mark in the gutter, on their first line.
-        const bool marked = line.line == 0 && (entry.severity == Severity::Warning || entry.severity == Severity::Error);
+        // Warnings and errors carry their mark in the gutter, on their first line; the header of a
+        // build, whether its output is shown.
+        const bool marked = line.header || (line.line == 0 && (entry.severity == Severity::Warning || entry.severity == Severity::Error));
         UiRect& iconRect = scene().get<UiRect>(row.icon);
         iconRect.visible = marked;
         if (marked)
@@ -688,7 +815,9 @@ void OutputUi::update(ToolsState& state, EditorUiKit& kit, core::Duration delta)
             iconRect.offsetMax = {gutter * 0.15f + size, size * 0.5f};
             iconRect.style = kind.iconStyle;
             scene().get<scene::UiImage>(row.icon).texture =
-                kit.icon(entry.severity == Severity::Error ? Icon::CircleX : Icon::TriangleAlert);
+                kit.icon(line.header                         ? (unfolded.contains(entry.sequence) ? Icon::ChevronDown : Icon::ChevronRight)
+                         : entry.severity == Severity::Error ? Icon::CircleX
+                                                             : Icon::TriangleAlert);
         }
 
         UiRect& selected = scene().get<UiRect>(row.selection);

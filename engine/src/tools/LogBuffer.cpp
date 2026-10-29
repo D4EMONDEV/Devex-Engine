@@ -9,7 +9,7 @@ LogBuffer::LogBuffer(std::size_t capacity)
 {
     m_sink = core::addLogSink([this](const core::LogRecord& record) {
         const std::scoped_lock lock(m_mutex);
-        m_entries.push_back({record.level, std::string(record.message), record.time, m_next++});
+        m_entries.push_back({record.level, std::string(record.message), record.time, m_next++, std::string(record.category)});
         if (m_entries.size() > m_capacity)
         {
             m_entries.pop_front();

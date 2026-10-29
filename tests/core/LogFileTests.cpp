@@ -29,7 +29,7 @@ TEST_CASE("A log file keeps the run before it, and every line reaches the disk a
         const devex::core::Result<std::string> open = devex::core::readTextFile(path);
         REQUIRE(open.has_value());
         CHECK(open->starts_with("Devex Engine"));
-        CHECK(open->find("warning the second run") != std::string::npos);
+        CHECK(open->find("warning core      the second run") != std::string::npos);
         (*log)->writeRaw("a report written as it is\n");
     }
 
@@ -40,7 +40,8 @@ TEST_CASE("A log file keeps the run before it, and every line reaches the disk a
     REQUIRE(previous.has_value());
     CHECK(current->find("the first run") == std::string::npos);
     CHECK(current->find("a report written as it is") != std::string::npos);
-    CHECK(previous->find("info    the first run") != std::string::npos);
+    // With the category of the message: the folder of the tests it comes from.
+    CHECK(previous->find("info    core      the first run") != std::string::npos);
 
     // Once closed, the file no longer receives the log.
     DEVEX_LOG_WARNING("after the file");

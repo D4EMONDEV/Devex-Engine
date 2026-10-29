@@ -21,9 +21,11 @@ class EditorApplication final : public devex::runtime::Application
 
 } // namespace
 
-// devex-editor [project.dvxproj] [--screenshot <picture.png>] [--profile <report.txt>]: opens the
-// project, or the welcome screen without one; with --profile, writes where the time of a frame goes
-// once the project is drawn, with --screenshot a picture of the window, and quits.
+// devex-editor [project.dvxproj] [--screenshot <picture.png>] [--profile <report.txt>]
+// [--log-level <levels>]: opens the project, or the welcome screen without one; with --profile,
+// writes where the time of a frame goes once the project is drawn, with --screenshot a picture of the
+// window, and quits. --log-level sets what the log keeps, as the DEVEX_LOG variable does: "debug",
+// or "info,build=warning,render=trace".
 // devex-editor --export <project.dvxproj> [--output <folder>] [--configuration <Release|Debug>]:
 // exports the game without opening a window.
 int main(int argc, char** argv)
@@ -40,9 +42,14 @@ int main(int argc, char** argv)
         .editor = true,
     };
     // Arguments come in the system code page, which std::filesystem::path converts.
+    std::string_view logLevels;
     for (int index = 1; index < argc; ++index)
     {
-        if (std::string_view(argv[index]) == "--screenshot" && index + 1 < argc)
+        if (std::string_view(argv[index]) == "--log-level" && index + 1 < argc)
+        {
+            logLevels = argv[++index];
+        }
+        else if (std::string_view(argv[index]) == "--screenshot" && index + 1 < argc)
         {
             config.screenshot = std::filesystem::path(argv[++index]);
         }
@@ -55,6 +62,8 @@ int main(int argc, char** argv)
             config.project = std::filesystem::path(argv[index]);
         }
     }
+
+    devex::runtime::configureLogging(logLevels);
 
     // The log of the editor stays beside its settings, with the report and the minidump of a crash.
     std::unique_ptr<devex::core::LogFile> log;

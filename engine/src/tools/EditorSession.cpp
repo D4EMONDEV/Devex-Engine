@@ -222,13 +222,10 @@ void addAndActivate(ToolsState& state, scene::Scene& scene, SceneDocument docume
     return state.tabs.path(index, live).empty() && !state.tabs.isModified(index, live);
 }
 
-// Opens the scenes the project was left with, or its first scene, or a new one.
-void openProjectScenes(ToolsState& state, scene::Scene& scene)
+// Where the panels stood when the project was left, as Godot keeps it with the project.
+void restoreProjectDock(ToolsState& state)
 {
     const asset::AssetDatabase& database = *state.database;
-    state.tabs.clear(activeDocument(state, scene));
-
-    // Where the panels stood when the project was left, as Godot keeps it with the project.
     state.dock = DockLayout::defaults(true);
     if (const core::Result<std::string> text = core::readTextFile(projectSettingsFile(database)))
     {
@@ -243,6 +240,14 @@ void openProjectScenes(ToolsState& state, scene::Scene& scene)
             }
         }
     }
+}
+
+// Opens the scenes the project was left with, or its first scene, or a new one.
+void openProjectScenes(ToolsState& state, scene::Scene& scene)
+{
+    const asset::AssetDatabase& database = *state.database;
+    state.tabs.clear(activeDocument(state, scene));
+    restoreProjectDock(state);
 
     // The application may have built its scene itself, which the editor keeps in an untitled tab.
     if (scene.entityCount() > 0)
@@ -1288,13 +1293,53 @@ void applyPick(ToolsState& state, const scene::Scene& scene, const render::PickR
 
 void updateEditorSession(ToolsState& state, scene::Scene& scene)
 {
+    using Clock = std::chrono::steady_clock;
+    // The scenes open, and the log says how long the project took to open, and why.
+    const auto openScenes = [&state, &scene](bool waited) {
+        const Clock::time_point start = Clock::now();
+        openProjectScenes(state, scene);
+        const Clock::time_point end = Clock::now();
+        const std::size_t scenes = state.tabs.size();
+        const std::string opened = std::format("{} scene{} opened in {:.2f} s", scenes, scenes == 1 ? "" : "s",
+                                               std::chrono::duration<double>(end - start).count());
+        const std::string& name = state.database->project().name;
+        if (waited)
+        {
+            DEVEX_LOG_INFO("{} is open after {:.1f} s: {:.1f} s for its game code, {}", name,
+                           std::chrono::duration<double>(end - state.projectOpenedAt).count(),
+                           std::chrono::duration<double>(start - state.projectOpenedAt).count(), opened);
+        }
+        else
+        {
+            DEVEX_LOG_INFO("{} is open: {}", name, opened);
+        }
+    };
     if (state.projectChanged && state.database != nullptr)
     {
         state.projectChanged = false;
         state.projects.add(state.database->project().file, secondsSinceEpoch());
         state.projectManager.refresh = true;
         saveUserSettings(state);
-        openProjectScenes(state, scene);
+        state.projectOpenedAt = Clock::now();
+        if (state.gameCode.state == GameCodeStatus::State::Building)
+        {
+            restoreProjectDock(state);
+            state.scenesWaitForCode = true;
+            state.openScenesNow = false;
+            state.openOpeningProjectPopup = true;
+            DEVEX_LOG_INFO("The scenes of {} open once its game code is compiled", state.database->project().name);
+        }
+        else
+        {
+            state.scenesWaitForCode = false;
+            openScenes(false);
+        }
+    }
+    if (state.scenesWaitForCode && state.database != nullptr &&
+        (state.gameCode.state != GameCodeStatus::State::Building || std::exchange(state.openScenesNow, false)))
+    {
+        state.scenesWaitForCode = false;
+        openScenes(true);
     }
 
     DialogAnswers& answers = *state.dialogAnswers;

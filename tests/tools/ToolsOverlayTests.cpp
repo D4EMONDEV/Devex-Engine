@@ -23,6 +23,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <cmath>
@@ -155,6 +156,75 @@ TEST_CASE("The editor lets the application rest while nothing moves, unless aske
     }
     std::error_code ignored;
     std::filesystem::remove_all(root, ignored);
+}
+
+TEST_CASE("The scenes of a project wait for its game code to compile before they open", "[tools][code][gpu]")
+{
+    using namespace devex;
+    struct Directory
+    {
+        std::filesystem::path path = std::filesystem::temp_directory_path() / ("devex-opening-" + core::Uuid::generate().toString());
+        ~Directory() { std::error_code error; std::filesystem::remove_all(path, error); }
+    } directory;
+    auto project = asset::createProject(directory.path, "Opening test");
+    REQUIRE(project);
+    scene::Scene authored;
+    const core::Uuid thing = authored.uuid(authored.createEntity("Thing"));
+    REQUIRE(scene::saveSceneFile(authored, project->assetsDirectory() / "scenes" / "level.dvxscene"));
+    core::JobSystem jobs(1);
+    auto database = asset::AssetDatabase::open(*project, jobs, {.watchFiles = false});
+    REQUIRE(database);
+    (*database)->waitForImports();
+    auto platform = platform::Platform::create();
+    REQUIRE(platform);
+    auto window = platform->createWindow({.width = 1000, .height = 800, .vulkan = true, .hidden = true});
+    REQUIRE(window);
+    auto renderer = render::Renderer::create(*platform, *window, {.validation = true});
+    REQUIRE(renderer);
+    auto editor = tools::ToolsOverlay::create(*platform, *window, *renderer, tools::ToolsMode::Editor, directory.path / "settings.dvx");
+    REQUIRE(editor);
+    scene::Scene scene;
+    // A frame of the editor, and whether it shows a dialog.
+    const auto frame = [&] {
+        platform->pollEvents([](const platform::Event&) {});
+        (*editor)->update(scene, std::chrono::milliseconds(16), tools::PlayState::Editing);
+        auto& world = renderer->beginFrame();
+        (*editor)->prepareRender(scene, world, tools::PlayState::Editing);
+        const bool dialog = std::ranges::any_of(world.uiSurfaces, [](const auto& surface) { return surface.id == 11 && !surface.draws.empty(); });
+        REQUIRE(renderer->endFrame());
+        return dialog;
+    };
+
+    // The code compiles as the project opens: its scene waits, and a dialog tells how it goes.
+    (*editor)->setGameCodeStatus({.state = tools::GameCodeStatus::State::Building, .step = "C++", .progress = 0.5f,
+                                  .lastLine = "[1/2] Building CXX object CMakeFiles/Game.dir/Game.cpp.o"});
+    (*editor)->setAssetDatabase(database->get());
+    bool shown = false;
+    for (int index = 0; index < 4; ++index)
+    {
+        shown = frame() || shown;
+    }
+    CHECK(shown);
+    CHECK_FALSE(scene.findEntity(thing).isValid());
+
+    // Once it is loaded, the scene opens with it, and the dialog goes.
+    (*editor)->setGameCodeStatus({.state = tools::GameCodeStatus::State::Ready});
+    frame();
+    CHECK(scene.findEntity(thing).isValid());
+    bool still = false;
+    for (int index = 0; index < 3; ++index)
+    {
+        still = frame();
+    }
+    CHECK_FALSE(still);
+
+    // Without code to wait for, the scenes of a project open at once.
+    (*editor)->setAssetDatabase(nullptr);
+    frame();
+    (*editor)->setGameCodeStatus({.state = tools::GameCodeStatus::State::None});
+    (*editor)->setAssetDatabase(database->get());
+    frame();
+    CHECK(scene.findEntity(thing).isValid());
 }
 
 TEST_CASE("FileSystem shows empty folders and confirms their deletion", "[tools][filesystem][gpu]")

@@ -902,6 +902,7 @@ void ToolsOverlay::setAssetDatabase(asset::AssetDatabase* database) noexcept
     state.selectedClipInfo.reset();
     state.database = database;
     state.projectChanged = database != nullptr;
+    state.scenesWaitForCode = false;
     state.projectManager.refresh = true;
 }
 

@@ -77,6 +77,11 @@ public:
 
     [[nodiscard]] State state() const noexcept;
     [[nodiscard]] const std::string& message() const noexcept;
+    // The last line the running build printed.
+    [[nodiscard]] const std::string& lastLine() const noexcept
+    {
+        return m_lastLine;
+    }
 
 private:
     using Clock = std::chrono::steady_clock;
@@ -109,6 +114,7 @@ private:
     Clock::time_point m_buildStart{};
     bool m_buildRequested = false;
     std::vector<GameCodeBuilder::Diagnostic> m_diagnostics;
+    std::string m_lastLine;
 };
 
 } // namespace devex::runtime::detail

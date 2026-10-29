@@ -254,6 +254,11 @@ private:
     bool m_stopRequested = false;
 };
 
+// Sets the levels of the log from the DEVEX_LOG variable, then from what --log-level gave on the
+// command line, as core::configureLog reads them ("debug", "info,render=trace"...). A mistake is
+// told and leaves the levels as they were.
+DEVEX_API void configureLogging(std::string_view commandLine = {});
+
 // Runs the application until it requests to quit or its main window is closed. Returns a process
 // exit code.
 [[nodiscard]] DEVEX_API int run(Application& application, const ApplicationConfig& config);

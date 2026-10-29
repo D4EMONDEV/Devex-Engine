@@ -12,6 +12,7 @@
 #include <filesystem>
 #include <optional>
 #include <string>
+#include <string_view>
 
 namespace devex::runtime::detail {
 
@@ -21,6 +22,9 @@ namespace devex::runtime::detail {
 // Asks the compilers for English diagnostics, whatever the language of the system, so that the
 // editor reads them the same way everywhere.
 DEVEX_API void useEnglishDiagnostics();
+
+// The category of the log that the builds of game code write to: their output, and how they went.
+inline constexpr std::string_view buildLogCategory = "build";
 
 class DEVEX_API GameCodeBuilder
 {
@@ -56,13 +60,19 @@ public:
     [[nodiscard]] static std::optional<Diagnostic> parseDiagnostic(const std::string& line);
     // Whether a line of build output reports an error (true) or a warning (false).
     [[nodiscard]] static std::optional<bool> severityOf(const std::string& line);
+    // The share of its steps a build has done, as a line of Ninja counts them: "[3/12] Building..."
+    // is 3 of 12. Nothing for another line.
+    [[nodiscard]] static std::optional<float> stepsOf(std::string_view line);
 
     struct DEVEX_API BuildStatus
     {
         bool needsBuild = false;
         // The cached module belongs to another engine, or predates build tracking.
         bool needsUpdate = false;
+        // What the project manager says of a project not open yet.
         std::string message;
+        // Why it builds, as the log of an opening project says it: "it was built for another engine".
+        std::string reason;
     };
     // Reads build metadata only: never loads or executes the project's DLL.
     [[nodiscard]] static BuildStatus buildStatus(const asset::Project& project,
@@ -100,6 +110,21 @@ public:
     [[nodiscard]] State state() const noexcept;
     // The first error of the last failed build, or a summary.
     [[nodiscard]] const std::string& message() const noexcept;
+    // Why the code builds when the project opens, empty when it does not.
+    [[nodiscard]] const std::string& reason() const noexcept
+    {
+        return m_reason;
+    }
+    // Where the running build is: the share of its steps done, once Ninja has counted them, and the
+    // last line it printed.
+    [[nodiscard]] std::optional<float> progress() const noexcept
+    {
+        return m_progress;
+    }
+    [[nodiscard]] const std::string& lastLine() const noexcept
+    {
+        return m_lastLine;
+    }
 
 private:
     using Clock = std::chrono::steady_clock;
@@ -133,6 +158,9 @@ private:
     Clock::time_point m_buildStart{};
     bool m_buildRequested = false;
     bool m_freshBuildRequested = false;
+    std::optional<float> m_progress;
+    std::string m_lastLine;
+    std::string m_reason;
     bool m_symbolFailure = false;
     bool m_retriedSymbols = false;
     std::vector<Diagnostic> m_diagnostics;

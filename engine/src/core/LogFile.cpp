@@ -104,12 +104,12 @@ void LogFile::write(const LogRecord& record)
     // The same lines as the console, so that both read alike.
     if (record.level >= LogLevel::Error && record.location.line() != 0)
     {
-        std::println(m_file, "[{:9.3f}] {:<7} {} ({}:{})", elapsed.count(), toString(record.level),
+        std::println(m_file, "[{:9.3f}] {:<7} {:<9} {} ({}:{})", elapsed.count(), toString(record.level), record.category,
                      record.message, fileName(record.location.file_name()), record.location.line());
     }
     else
     {
-        std::println(m_file, "[{:9.3f}] {:<7} {}", elapsed.count(), toString(record.level),
+        std::println(m_file, "[{:9.3f}] {:<7} {:<9} {}", elapsed.count(), toString(record.level), record.category,
                      record.message);
     }
     // Every line reaches the disk as it is written: a process killed from outside, which no

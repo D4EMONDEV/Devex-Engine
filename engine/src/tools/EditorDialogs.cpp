@@ -1,8 +1,9 @@
 // The dialogs of the editor, made with the interface of the engine: a card in the middle of the window
 // over a veil, as the Create window is. Create New asks for a type, a name and a destination folder,
 // Move To for the folder a file of FileSystem goes to, the unsaved changes dialog asks what to do with
-// the scenes and files an action would drop, About tells what the editor is made with, and Game
-// Crashed what stopped the game.
+// the scenes and files an action would drop, About tells what the editor is made with, Game Crashed
+// what stopped the game, and Opening how the code of a project just opened compiles before its scenes
+// open.
 #include "SettingsUi.hpp"
 #include "EditorModal.hpp"
 
@@ -14,6 +15,7 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <chrono>
 #include <format>
 #include <string>
 #include <system_error>
@@ -78,6 +80,7 @@ enum class DialogKind : std::uint8_t
     MoveFile,
     About,
     GameCrashed,
+    OpeningProject,
 };
 
 // What the unsaved changes dialog was answered.
@@ -124,6 +127,10 @@ struct EditorDialogsUi : FormUi
     Button cancel;
     bool focusName = false;
     UnsavedChoice unsaved = UnsavedChoice::None;
+    // The build that the scenes of a project just opened wait for: a bar, and what the compiler said last.
+    Entity buildBar;
+    Entity buildText;
+    Entity buildLine;
 
     void start(DialogKind which, ToolsState& state, EditorUiKit& kit, scene::Scene& edited, bool creationFlow = false);
     void update(ToolsState& state, EditorUiKit& kit, scene::Scene& edited, core::Duration delta);
@@ -203,7 +210,7 @@ void EditorDialogsUi::start(DialogKind which, ToolsState& state, EditorUiKit& ki
     open = true;
     unsaved = UnsavedChoice::None;
     focusName = false;
-    language = shaderKind = scriptName = file = status = folder = Entity{};
+    language = shaderKind = scriptName = file = status = folder = buildBar = buildText = buildLine = Entity{};
     folderRows.clear();
     confirm = discard = cancel = back = Button{};
     types = {};
@@ -445,6 +452,24 @@ void EditorDialogsUi::start(DialogKind which, ToolsState& state, EditorUiKit& ki
         const Entity buttons = buttonLine();
         confirm = button(kit, buttons, Icon::Save, "Save All Scenes", "primary", buttonWidth, buttonHeight);
         cancel = button(kit, buttons, std::nullopt, "Continue", "button", buttonWidth, buttonHeight);
+        break;
+    }
+    case DialogKind::OpeningProject: {
+        size.x = std::round(font * 34.0f);
+        titleRow(kit, Icon::Hammer, colors.gameCode,
+                 std::format("Opening {}", state.database != nullptr ? state.database->project().name : std::string("the project")));
+        note(nullptr, "The game code is compiled for this engine first, so that the scenes open with all their components.", "dim", 2.0f);
+        // As the export shows its progress: a bar that does not take the pointer, its words inside.
+        const Entity barLine = add(root, "Progress", wide(line));
+        buildBar = add(barLine, "Bar", whole(), "list");
+        scene().add<scene::UiImage>(buildBar);
+        scene().add<scene::UiSlider>(buildBar, scene::UiSlider{.handleSize = 0.0f, .interactable = false});
+        buildText = text(buildBar, whole(), "", "text", false, scene::TextAlign::Center);
+        buildLine = note(nullptr, "", "dim", 2.0f);
+        scene().get<scene::UiText>(buildLine).font = EditorUiKit::monoFont();
+        const Entity buttons = buttonLine();
+        confirm = button(kit, buttons, std::nullopt, "Open Now", "button", buttonWidth, buttonHeight);
+        tooltip(confirm.entity, "Opens the scenes without waiting: the components of the game are kept, and come back once its code is loaded.");
         break;
     }
     }
@@ -722,6 +747,29 @@ void EditorDialogsUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& 
             open = false;
         }
         break;
+    case DialogKind::OpeningProject: {
+        if (world.wasClicked(confirm.entity))
+        {
+            state.openScenesNow = true;
+        }
+        // Gone once the scenes are open, or the project closed.
+        open = state.scenesWaitForCode && !state.openScenesNow && state.database != nullptr;
+        const GameCodeStatus& code = state.gameCode;
+        const double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - state.projectOpenedAt).count();
+        const std::string what = code.step.empty() ? std::string("the game code") : std::format("the {} code", code.step);
+        scene().get<scene::UiSlider>(buildBar).value = std::clamp(code.progress.value_or(0.0f), 0.0f, 1.0f);
+        scene().get<scene::UiText>(buildText).text =
+            code.progress ? std::format("Compiling {}: {:.0f} %, {:.0f} s", what, *code.progress * 100.0f, seconds)
+                          : std::format("Compiling {}: {:.0f} s", what, seconds);
+        // The last line of the compiler, cut to what two lines of the card hold.
+        constexpr std::size_t longest = 160;
+        std::string last = code.lastLine.size() > longest ? code.lastLine.substr(0, longest) + "..." : code.lastLine;
+        if (scene().get<scene::UiText>(buildLine).text != last)
+        {
+            scene().get<scene::UiText>(buildLine).text = std::move(last);
+        }
+        break;
+    }
     }
 }
 
@@ -764,6 +812,10 @@ void drawEditorPopups(ToolsState& state, scene::Scene& scene)
     if (std::exchange(state.openUnsavedChangesPopup, false))
     {
         requested = DialogKind::UnsavedChanges;
+    }
+    if (std::exchange(state.openOpeningProjectPopup, false))
+    {
+        requested = DialogKind::OpeningProject;
     }
     EditorUiKit& kit = editorUiKit(state);
     if (requested)

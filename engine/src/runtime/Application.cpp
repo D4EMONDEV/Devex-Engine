@@ -49,6 +49,7 @@
 #include <mutex>
 #include <optional>
 #include <thread>
+#include <utility>
 #include <variant>
 
 namespace devex::runtime {
@@ -108,9 +109,12 @@ void applyWindowIcon(platform::Window& window, const asset::AssetDatabase* datab
     window.setIcon(image->rgba, image->width, image->height);
 }
 
+// `origin` says in the log who asked for the project: "the command line", "the project manager".
 [[nodiscard]] core::Result<std::unique_ptr<asset::AssetDatabase>> openProject(const std::filesystem::path& projectFile,
-                                                                             core::JobSystem& jobs, bool watchAssets)
+                                                                             core::JobSystem& jobs, bool watchAssets,
+                                                                             std::string_view origin)
 {
+    const auto start = std::chrono::steady_clock::now();
     const core::Result<asset::Project> project = asset::loadProject(projectFile);
     if (!project)
     {
@@ -123,8 +127,9 @@ void applyWindowIcon(platform::Window& window, const asset::AssetDatabase* datab
         return core::makeError(opened.error().code, "cannot open the assets of {}: {}", project->name,
                                opened.error().message);
     }
-    DEVEX_LOG_INFO("Project {} at {}: {} source files, {} imports queued", project->name,
-                   core::toUtf8(project->root), (*opened)->sources().size(), (*opened)->pendingImports());
+    DEVEX_LOG_INFO("Project {} at {}, from {}: {} source files, {} imports queued, read in {:.2f} s", project->name,
+                   core::toUtf8(project->root), origin, (*opened)->sources().size(), (*opened)->pendingImports(),
+                   std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count());
     return opened;
 }
 
@@ -301,8 +306,10 @@ private:
     void loadGameModule();
     void unloadGameModule();
     void updateGameCode();
-    // C#: the runtime of the process, then the assembly a project builds from its C# files.
-    void openManagedCode();
+    // C#: the runtime of the process, then the assembly a project builds from its C# files. With
+    // rebuild, or when it is out of date, the assembly is built before it loads rather than loaded
+    // old first.
+    void openManagedCode(bool rebuild = false);
     // Gives the C# code of the project views of its C++ components, and builds it again when they change.
     void writeGameComponentViews();
     void loadManagedAssembly();
@@ -1502,7 +1509,7 @@ void ApplicationRunner::switchProject(const std::filesystem::path& projectFile)
 {
     closeProject();
 
-    core::Result<std::unique_ptr<asset::AssetDatabase>> opened = openProject(projectFile, m_services.jobs, m_watchAssets);
+    core::Result<std::unique_ptr<asset::AssetDatabase>> opened = openProject(projectFile, m_services.jobs, m_watchAssets, "the project manager");
     if (!opened)
     {
         DEVEX_LOG_ERROR("Cannot open the project: {}", opened.error());
@@ -1515,7 +1522,7 @@ void ApplicationRunner::switchProject(const std::filesystem::path& projectFile)
     m_services.tools->setAssetDatabase(m_services.database.get());
 }
 
-void ApplicationRunner::openManagedCode()
+void ApplicationRunner::openManagedCode(bool rebuild)
 {
     const asset::Project& project = assetSource()->project();
     if (!m_managed)
@@ -1533,8 +1540,15 @@ void ApplicationRunner::openManagedCode()
     if (isEditor() && m_services.database != nullptr && ManagedCodeBuilder::hasCode(project))
     {
         m_managedBuilder.emplace(project, m_services.platform.baseDirectory() / "managed");
+        if (rebuild)
+        {
+            m_managedBuilder->requestBuild();
+        }
     }
-    loadManagedAssembly();
+    if (!m_managedBuilder || !m_managedBuilder->needsBuild())
+    {
+        loadManagedAssembly();
+    }
 }
 
 void ApplicationRunner::loadManagedAssembly()
@@ -1654,7 +1668,7 @@ void ApplicationRunner::openGameCode()
     }
     if (m_gameBuilder && m_gameBuilder->pending())
     {
-        DEVEX_LOG_INFO("{}", m_gameBuilder->message());
+        DEVEX_LOG_INFO_IN(buildLogCategory, "The game code of {} builds again: {}", project.name, m_gameBuilder->reason());
         // Components remain preserved as scene data until the new module is ready.
         // Start the rebuild before attempting to load an old ABI or its C# component views.
         std::error_code error;
@@ -1801,13 +1815,10 @@ void ApplicationRunner::updateGameCode()
         if (m_game && m_openManagedAfterBuild)
         {
             m_openManagedAfterBuild = false;
-            openManagedCode();
+            // The engine and the native views may have changed even when no .cs file did: the C#
+            // code is built again, then loaded.
+            openManagedCode(true);
             writeGameComponentViews();
-            if (m_managedBuilder)
-            {
-                // The engine and the native views may have changed even when no .cs file did.
-                m_managedBuilder->requestBuild();
-            }
         }
     }
     if (!m_gameBuilder || (!m_gameBuilder->pending() && m_game))
@@ -2276,7 +2287,8 @@ void ApplicationRunner::requestScreenshot()
     // Once nothing has been loading or uploading for a second of frames: what the window shows has
     // stopped changing.
     const bool loading = m_services.assets.pendingLoads() > 0 || m_services.renderer->stats().pendingUploads > 0 ||
-                         m_backgroundScene.has_value() || !m_thumbnailCaptures.empty();
+                         m_backgroundScene.has_value() || !m_thumbnailCaptures.empty() ||
+                         (isEditor() && gameCodeStatus().state == tools::GameCodeStatus::State::Building);
     m_screenshotSettled = loading ? 0 : m_screenshotSettled + 1;
     if (m_screenshotSettled < 60)
     {
@@ -2777,10 +2789,25 @@ tools::GameCodeStatus ApplicationRunner::gameCodeStatus() const
     {
         return {.state = State::None};
     }
-    if ((m_gameBuilder && m_gameBuilder->pending()) ||
-        (m_managedBuilder && m_managedBuilder->state() == ManagedCodeBuilder::State::Building))
+    // A C# build asked for starts at the next update: the code is building already.
+    const bool cppBuilding = m_gameBuilder && m_gameBuilder->pending();
+    const bool csharpBuilding =
+        m_managedBuilder && (m_managedBuilder->state() == ManagedCodeBuilder::State::Building || m_managedBuilder->needsBuild());
+    if (cppBuilding || csharpBuilding)
     {
-        return {.state = State::Building, .message = "Compiling the game code..."};
+        tools::GameCodeStatus building{.state = State::Building, .message = "Compiling the game code..."};
+        if (cppBuilding)
+        {
+            building.step = "C++";
+            building.progress = m_gameBuilder->progress();
+            building.lastLine = m_gameBuilder->lastLine();
+        }
+        else
+        {
+            building.step = "C#";
+            building.lastLine = m_managedBuilder->lastLine();
+        }
+        return building;
     }
     if (m_gameBuilder && m_gameBuilder->state() == GameCodeBuilder::State::Failed)
     {
@@ -3078,6 +3105,22 @@ void Application::requestQuit() noexcept
     m_quitRequested = true;
 }
 
+void configureLogging(std::string_view commandLine)
+{
+    for (const auto& [settings, from] : {std::pair{platform::environmentVariable("DEVEX_LOG"), "DEVEX_LOG"},
+                                         std::pair{std::string(commandLine), "--log-level"}})
+    {
+        if (settings.empty())
+        {
+            continue;
+        }
+        if (const std::optional<std::string> mistake = core::configureLog(settings))
+        {
+            DEVEX_LOG_WARNING("{} is not read: {}", from, *mistake);
+        }
+    }
+}
+
 int run(Application& application, const ApplicationConfig& config)
 {
     DEVEX_LOG_INFO("Devex Engine {}", core::version());
@@ -3190,7 +3233,7 @@ int run(Application& application, const ApplicationConfig& config)
     if (!config.project.empty())
     {
         core::Result<std::unique_ptr<asset::AssetDatabase>> opened =
-            detail::openProject(config.project, jobs, config.watchAssets);
+            detail::openProject(config.project, jobs, config.watchAssets, "the command line");
         if (!opened)
         {
             DEVEX_LOG_FATAL("Cannot open the project: {}", opened.error());

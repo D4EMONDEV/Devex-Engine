@@ -27,14 +27,14 @@ VkBool32 VKAPI_CALL forwardDebugMessage(VkDebugUtilsMessageSeverityFlagBitsEXT s
         return VK_FALSE;
     }
     // General warnings mostly come from the loader about third-party layers such as overlays and
-    // capture tools, which the application cannot fix.
+    // capture tools, or a layer installed twice, which the application cannot fix: kept for those
+    // who ask (DEVEX_LOG=vulkan=trace).
     const bool isError = (severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) != 0;
     const bool isGeneralOnly = types == VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT;
     const core::LogLevel level = isError         ? core::LogLevel::Error
-                                 : isGeneralOnly ? core::LogLevel::Debug
+                                 : isGeneralOnly ? core::LogLevel::Trace
                                                  : core::LogLevel::Warning;
-    core::logMessage(level, std::format("Vulkan: {}", data->pMessage != nullptr ? data->pMessage
-                                                                                : "(no message)"));
+    core::logMessage(level, data->pMessage != nullptr ? data->pMessage : "(no message)", std::source_location::current(), "vulkan");
     return VK_FALSE;
 }
 

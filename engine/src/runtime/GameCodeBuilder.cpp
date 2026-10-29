@@ -203,16 +203,18 @@ GameCodeBuilder::BuildStatus GameCodeBuilder::buildStatus(const asset::Project& 
     const auto built = std::filesystem::last_write_time(libraryPath(project, configuration), error);
     if (error)
     {
-        return {true, false, "The game code needs to be built. Open the project to build it automatically."};
+        return {true, false, "The game code needs to be built. Open the project to build it automatically.", "it was never built"};
     }
     const auto stamp = core::readTextFile(buildDirectory(project, configuration) / "devex-engine.txt");
     if (!stamp || *stamp != engineStamp(devexConfigDirectory))
     {
-        return {true, true, "The game code needs updating for this engine. Open the project to rebuild it automatically; your sources and scenes are kept."};
+        return {true, true, "The game code needs updating for this engine. Open the project to rebuild it automatically; your sources and scenes are kept.",
+                "it was built for another engine"};
     }
     if (built < snapshotSources(project).newest)
     {
-        return {true, false, "The game sources have changed. Open the project to rebuild them automatically."};
+        return {true, false, "The game sources have changed. Open the project to rebuild them automatically.",
+                "its sources changed since it was built"};
     }
     return {};
 }
@@ -278,6 +280,7 @@ GameCodeBuilder::GameCodeBuilder(asset::Project project, std::filesystem::path d
     m_freshBuildRequested = status.needsUpdate ||
                             (status.needsBuild && !std::filesystem::is_regular_file(libraryPath(m_project, m_configuration), error));
     m_message = status.message;
+    m_reason = status.reason;
 }
 
 GameCodeBuilder::Snapshot GameCodeBuilder::snapshotSources(const asset::Project& project)
@@ -397,6 +400,8 @@ void GameCodeBuilder::startBuild()
 {
     m_sources = snapshotSources(m_project);
     m_changedAt.reset();
+    m_progress.reset();
+    m_lastLine.clear();
     useEnglishDiagnostics();
     m_engineStamp = engineStamp(m_devexConfigDirectory);
     const auto previous = core::readTextFile(m_buildDirectory / "devex-engine.txt");
@@ -404,7 +409,7 @@ void GameCodeBuilder::startBuild()
     {
         m_buildDirectory = buildRoot(m_project, m_configuration) / "builds" / core::Uuid::generate().toString();
         m_freshBuildRequested = false;
-        DEVEX_LOG_INFO("Rebuilding the game code in a fresh cache for this engine; project sources are unchanged");
+        DEVEX_LOG_DEBUG_IN(buildLogCategory, "Building in a fresh cache for this engine; the sources of the project are unchanged");
     }
     const std::filesystem::path& build = m_buildDirectory;
     const std::string engine = m_devexConfigDirectory.generic_string();
@@ -462,7 +467,7 @@ exec cmake --build {0}
     {
         m_state = State::Failed;
         m_message = written.error().message;
-        DEVEX_LOG_ERROR("Cannot build the game code: {}", written.error());
+        DEVEX_LOG_ERROR_IN(buildLogCategory, "Cannot build the game code: {}", written.error());
         return;
     }
     core::Result<platform::Process> process = platform::Process::start(arguments, m_project.root);
@@ -470,7 +475,7 @@ exec cmake --build {0}
     {
         m_state = State::Failed;
         m_message = process.error().message;
-        DEVEX_LOG_ERROR("Cannot build the game code: {}", process.error());
+        DEVEX_LOG_ERROR_IN(buildLogCategory, "Cannot build the game code: {}", process.error());
         return;
     }
     m_process = std::move(*process);
@@ -479,7 +484,7 @@ exec cmake --build {0}
     m_symbolFailure = false;
     m_diagnostics.clear();
     m_buildStart = Clock::now();
-    DEVEX_LOG_INFO("Building the game code...");
+    DEVEX_LOG_INFO_IN(buildLogCategory, "Building the game code...");
 }
 
 std::optional<bool> GameCodeBuilder::severityOf(const std::string& line)
@@ -591,8 +596,53 @@ std::optional<GameCodeBuilder::Diagnostic> GameCodeBuilder::parseDiagnostic(cons
     };
 }
 
+std::optional<float> GameCodeBuilder::stepsOf(std::string_view line)
+{
+    if (!line.starts_with('['))
+    {
+        return std::nullopt;
+    }
+    const std::size_t slash = line.find('/');
+    const std::size_t close = line.find(']');
+    if (slash == std::string_view::npos || close == std::string_view::npos || slash > close)
+    {
+        return std::nullopt;
+    }
+    const auto number = [](std::string_view digits) -> std::optional<int> {
+        int value = 0;
+        if (digits.empty())
+        {
+            return std::nullopt;
+        }
+        for (const char digit : digits)
+        {
+            if (digit < '0' || digit > '9' || value > 1'000'000)
+            {
+                return std::nullopt;
+            }
+            value = value * 10 + (digit - '0');
+        }
+        return value;
+    };
+    const std::optional<int> done = number(line.substr(1, slash - 1));
+    const std::optional<int> total = number(line.substr(slash + 1, close - slash - 1));
+    if (!done || !total || *total <= 0 || *done > *total)
+    {
+        return std::nullopt;
+    }
+    return static_cast<float>(*done) / static_cast<float>(*total);
+}
+
 void GameCodeBuilder::readBuildLine(const std::string& line)
 {
+    if (!line.empty())
+    {
+        m_lastLine = line;
+    }
+    if (const std::optional<float> steps = stepsOf(line))
+    {
+        m_progress = steps;
+    }
     if (std::optional<Diagnostic> diagnostic = parseDiagnostic(line))
     {
         m_diagnostics.push_back(std::move(*diagnostic));
@@ -603,7 +653,7 @@ void GameCodeBuilder::readBuildLine(const std::string& line)
     if (severity.value_or(false) || contains(line, "CMake Error") || line.starts_with("FAILED:") ||
         line.starts_with("error:"))
     {
-        DEVEX_LOG_ERROR("{}", line);
+        DEVEX_LOG_ERROR_IN(buildLogCategory, "{}", line);
         if (m_message.empty() || contains(line, "LNK1201"))
         {
             m_message = line;
@@ -611,11 +661,11 @@ void GameCodeBuilder::readBuildLine(const std::string& line)
     }
     else if (severity == false || contains(line, "CMake Warning"))
     {
-        DEVEX_LOG_WARNING("{}", line);
+        DEVEX_LOG_WARNING_IN(buildLogCategory, "{}", line);
     }
     else if (!line.empty())
     {
-        DEVEX_LOG_DEBUG("{}", line);
+        DEVEX_LOG_DEBUG_IN(buildLogCategory, "{}", line);
     }
 }
 
@@ -629,7 +679,7 @@ void GameCodeBuilder::finishBuild(int exitCode)
         {
             m_state = State::Failed;
             m_message = "The build did not produce the game module";
-            DEVEX_LOG_ERROR("{}", m_message);
+            DEVEX_LOG_ERROR_IN(buildLogCategory, "{}", m_message);
             return;
         }
         // Publish only a successful build. Failed configuration/linking must not mark an old DLL
@@ -646,19 +696,19 @@ void GameCodeBuilder::finishBuild(int exitCode)
         {
             m_state = State::Failed;
             m_message = saved.error().message;
-            DEVEX_LOG_ERROR("Cannot record the game build: {}", saved.error());
+            DEVEX_LOG_ERROR_IN(buildLogCategory, "Cannot record the game build: {}", saved.error());
             return;
         }
         m_state = State::Succeeded;
         m_message = std::format("built in {:.1f} s", seconds);
-        DEVEX_LOG_INFO("Game code built in {:.1f} s", seconds);
+        DEVEX_LOG_INFO_IN(buildLogCategory, "Game code built in {:.1f} s", seconds);
         return;
     }
     if (m_symbolFailure && !m_retriedSymbols)
     {
         m_retriedSymbols = true;
         m_freshBuildRequested = true;
-        DEVEX_LOG_WARNING("The debug-symbol file could not be written (LNK1201); retrying once in a fresh build folder");
+        DEVEX_LOG_WARNING_IN(buildLogCategory, "The debug-symbol file could not be written (LNK1201); retrying once in a fresh build folder");
         startBuild();
         return;
     }
@@ -667,7 +717,7 @@ void GameCodeBuilder::finishBuild(int exitCode)
     {
         m_message = std::format("the build failed with code {}", exitCode);
     }
-    DEVEX_LOG_ERROR("Game code build failed: see the errors above");
+    DEVEX_LOG_ERROR_IN(buildLogCategory, "Game code build failed: see the errors above");
 }
 
 } // namespace devex::runtime::detail

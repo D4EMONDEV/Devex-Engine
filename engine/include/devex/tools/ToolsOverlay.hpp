@@ -122,6 +122,11 @@ struct DEVEX_API GameCodeStatus
     std::string message;
     // Source edits since the last build, waiting for automatic compilation or Ctrl+B.
     bool changesPending = false;
+    // While it builds: the code being compiled ("C++", "C#"), the share of the build done when the
+    // build counts its steps, and the last line the compiler printed.
+    std::string step;
+    std::optional<float> progress;
+    std::string lastLine;
 };
 
 // Whether an unopened project's game code needs to be rebuilt for this engine.

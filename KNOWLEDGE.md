@@ -2202,6 +2202,13 @@ namespace devex::ui {
   `postVolumeInfluence`, `whiteBalanceFactors` (`devex/render/PostProcess.hpp`) ;
   `RenderCamera::lensEffects` (faux pour la caméra de l'éditeur) ; passes de `shaders/lens.slang`
   (liaisons 13 `postSource` et 14 `postChain[7]` du set de frame).
+- Journal : `LogRecord::category` (dossier du fichier, `core::logCategoryOf`, ou nommée par
+  `DEVEX_LOG_INFO_IN("build", ...)` et ses voisins) ; `core::setLogLevel(catégorie, niveau)`,
+  `core::configureLog("info,render=trace")`, `runtime::configureLogging` (variable `DEVEX_LOG` puis
+  `--log-level` de l'éditeur et du lecteur) ; couleurs sur un terminal sauf `NO_COLOR`.
+  `detail::buildLogCategory` pour les builds ; `GameCodeBuilder::stepsOf` lit « [n/m] » de Ninja.
+- Ouverture : `GameCodeStatus::step` / `progress` / `lastLine` ; `ToolsState::scenesWaitForCode`
+  retient les scènes tant que le code compile, dialogue `DialogKind::OpeningProject` (*Open Now*).
 - `ApplicationConfig::profileReport` / `devex-editor --profile rapport.txt` : moyenne des zones CPU
   et des passes GPU sur 240 frames une fois la fenêtre au repos (`ToolsOverlay::setProfiling` garde
   le profileur allumé). `RendererStats::keptShadowPasses` : passes d'ombres gardées de la frame

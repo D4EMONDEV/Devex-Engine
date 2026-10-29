@@ -21,6 +21,8 @@ struct DEVEX_API LogEntry
     std::chrono::steady_clock::time_point time;
     // Counts the entries from the first one, never going back: what a reader already has.
     std::uint64_t sequence = 0;
+    // The part of the engine it comes from, as the log filed it ("render", "build"...).
+    std::string category;
 };
 
 // Keeps the most recent log messages for display, from the moment it is created.

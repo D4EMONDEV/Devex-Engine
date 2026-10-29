@@ -399,7 +399,7 @@ void apiLog(int level, const char* message)
 {
     const auto logLevel = static_cast<core::LogLevel>(std::clamp(level, 0, 5));
     // The C# side names its own place, in the stack of its exceptions.
-    core::logMessage(logLevel, message != nullptr ? message : "", std::source_location{});
+    core::logMessage(logLevel, message != nullptr ? message : "", std::source_location{}, "game");
 }
 
 int apiComponentEntities(void* scene, std::size_t typeIndex, const Entity** entities)

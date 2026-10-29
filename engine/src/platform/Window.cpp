@@ -181,7 +181,7 @@ void Window::setIcon(std::span<const std::uint8_t> rgba, std::uint32_t width, st
         const std::string_view name = driver != nullptr ? driver : "";
         if (name == "wayland" || name == "offscreen" || name == "dummy")
         {
-            DEVEX_LOG_DEBUG("The window has the icon of the desktop entry: {}", SDL_GetError());
+            DEVEX_LOG_TRACE("The window has the icon of the desktop entry: {}", SDL_GetError());
         }
         else
         {

@@ -12,6 +12,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace {
 
@@ -76,6 +77,7 @@ private:
 // devex-player <project.dvxproj>: plays a project.
 // devex-player --package <game.dvxpak>: plays an exported game.
 // Without arguments, plays the package named like the executable, next to it: Game.exe plays Game.dvxpak.
+// --log-level <levels> anywhere sets what the log keeps, as the DEVEX_LOG variable does.
 int main(int argc, char** argv)
 {
     devex::runtime::ApplicationConfig config{
@@ -84,15 +86,29 @@ int main(int argc, char** argv)
         .useProjectWindowSettings = true,
     };
     // Arguments come in the system code page, which std::filesystem::path converts.
-    if (argc >= 3 && std::string_view(argv[1]) == "--package")
+    std::vector<std::string_view> arguments;
+    std::string_view logLevels;
+    for (int index = 1; index < argc; ++index)
     {
-        config.package = std::filesystem::path(argv[2]);
+        if (std::string_view(argv[index]) == "--log-level" && index + 1 < argc)
+        {
+            logLevels = argv[++index];
+        }
+        else
+        {
+            arguments.emplace_back(argv[index]);
+        }
     }
-    else if (argc >= 2 && !std::string_view(argv[1]).starts_with("--"))
+    devex::runtime::configureLogging(logLevels);
+    if (arguments.size() >= 2 && arguments[0] == "--package")
     {
-        config.project = std::filesystem::path(argv[1]);
+        config.package = std::filesystem::path(arguments[1]);
     }
-    else if (argc == 1)
+    else if (!arguments.empty() && !arguments[0].starts_with("--"))
+    {
+        config.project = std::filesystem::path(arguments[0]);
+    }
+    else if (arguments.empty())
     {
         std::filesystem::path package = std::filesystem::path(argv[0]).stem();
         package += devex::asset::packageExtension;
@@ -100,7 +116,7 @@ int main(int argc, char** argv)
     }
     else
     {
-        std::fputs("usage: devex-player [<project.dvxproj> | --package <game.dvxpak>]\n", stderr);
+        std::fputs("usage: devex-player [<project.dvxproj> | --package <game.dvxpak>] [--log-level <levels>]\n", stderr);
         return 2;
     }
 
