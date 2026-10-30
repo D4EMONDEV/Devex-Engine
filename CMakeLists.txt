@@ -3,6 +3,7 @@ cmake_minimum_required(VERSION 3.25)
 option(DEVEX_BUILD_EDITOR "Build the Devex editor" ON)
 option(DEVEX_BUILD_PLAYER "Build the Devex player, which runs projects outside the editor" ON)
 option(DEVEX_BUILD_TESTS "Build Devex unit tests" ON)
+option(DEVEX_BUILD_FUZZERS "Build the Clang libFuzzer targets for file readers" OFF)
 option(DEVEX_WARNINGS_AS_ERRORS "Treat compiler warnings as errors for Devex targets" OFF)
 
 # Dependencies come from vcpkg in manifest mode: the toolchain must be known before project().
@@ -62,6 +63,9 @@ include(DevexBranding)
 
 add_subdirectory(shaders)
 add_subdirectory(engine)
+if(DEVEX_BUILD_FUZZERS)
+    add_subdirectory(tests/fuzz)
+endif()
 add_subdirectory(tools/bindgen)
 if(DEVEX_DOTNET)
     add_subdirectory(managed)

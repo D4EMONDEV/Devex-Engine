@@ -4,6 +4,7 @@
 
 #include <devex/core/Error.hpp>
 
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -21,6 +22,9 @@
 // Values are booleans, integers, real numbers, strings, or calls such as vec3(...) whose
 // arguments are values. A section header and a property each fit on one line.
 namespace devex::serialization {
+
+// Bounds the parser's recursion and the depth of the resulting value tree.
+inline constexpr std::size_t maxTextNesting = 64;
 
 struct TextValue;
 

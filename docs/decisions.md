@@ -588,7 +588,12 @@ Format texte commun à tous les `.dvx*` (`Devex::Serialization`) : des sections
 `[type clé=valeur …]` suivies de lignes `clé = valeur`, commentaires `#`. Les valeurs sont
 des booléens, entiers, réels (écrits sous leur forme la plus courte qui relit la même
 valeur), chaînes avec échappements, ou appels comme `vec3(0, 1, 0)`. Une en-tête et une
-propriété tiennent chacune sur une ligne ; les erreurs donnent ligne et colonne.
+propriété tiennent chacune sur une ligne ; les erreurs donnent ligne et colonne. Les appels
+imbriqués sont limités à 64 niveaux pour borner la pile et la profondeur des valeurs conservées.
+Les champs `float` refusent les nombres non finis ou hors de leur plage avant conversion, y compris
+dans les vecteurs et quaternions ; les extrêmes finis s'écrivent avec assez de chiffres pour se
+relire. Les attributs des sommets, les boîtes, les poids et la pose de liaison des maillages doivent
+être finis.
 
 Scène (`.dvxscene`, format 1) :
 
@@ -4349,6 +4354,15 @@ jeu (le `SystemContext`, un monde, un composant) l'est aussi au C#, dans le mêm
   à plusieurs fréquences d'images, et construisent le projet CMake montré avec le paquet du moteur.
   Les pseudo-codes explicatifs sont signalés comme tels ; la documentation ne donne plus de gains
   ECS/OOP sans mesure.
+- **Lecteurs face aux fichiers corrompus** : les tests `corrupt` refusent tous les préfixes tronqués
+  d'un terrain et d'un maillage, les compteurs démesurés et les nombres invalides ; 512 mutations
+  déterministes par lecteur vérifient aussi les terrains, maillages et scènes dans chaque build de
+  CI. Une entrée acceptée doit pouvoir être écrite puis relue. Le preset Linux `linux-fuzz` ajoute
+  trois cibles libFuzzer, avec les lecteurs instrumentés par la couverture, ASan et UBSan. Les
+  corpus de départ utilisent les encodeurs binaires du moteur et quelques scènes textuelles,
+  et restent dans le build ; les scènes gardent
+  leurs préfabs non résolus, sans lire le disque. Les campagnes longues sont facultatives, et
+  chaque défaut reproduit rejoint les tests ordinaires ; commandes dans [fuzzing.md](fuzzing.md).
 - **Tests `[gpu]` sur lavapipe** : sous Linux, ils tournent sur lavapipe, le Vulkan de Mesa qui
   dessine sur le processeur (`mesa-vulkan-drivers`, choisi par `VK_DRIVER_FILES`), dans des
   fenêtres sans écran : le pilote vidéo `offscreen` de SDL (`SDL_VIDEO_DRIVER=offscreen`) donne à

@@ -87,6 +87,11 @@ public:
 
     void readBytes(std::span<std::byte> destination) noexcept
     {
+        // Empty arrays have no storage; even a zero-length memcpy needs non-null pointers.
+        if (destination.empty())
+        {
+            return;
+        }
         if (m_failed || destination.size() > remaining())
         {
             m_failed = true;

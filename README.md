@@ -314,6 +314,11 @@ de démarrage sont compilés avec les tests, avec les avertissements traités co
 demande le SDK .NET 10). La cible `devex_documentation_examples` les compile seuls ; le label
 CTest `documentation` vérifie le projet CMake documenté et leur comportement sans GPU.
 
+Les lecteurs de terrains, de maillages cuits et de scènes sont aussi éprouvés sur des fichiers
+corrompus et par des mutations déterministes à chaque build de CI (label `corrupt`). Le preset
+`linux-fuzz` ajoute trois cibles libFuzzer avec ASan et UBSan pour les campagnes longues sans GPU :
+voir [docs/fuzzing.md](docs/fuzzing.md).
+
 ## Télécharger le moteur
 
 Chaque exécution de la CI garde 30 jours le moteur en Release, prêt à lancer : dans l'onglet

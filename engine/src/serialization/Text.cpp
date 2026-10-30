@@ -193,7 +193,7 @@ private:
         return {};
     }
 
-    [[nodiscard]] core::Result<TextValue> parseValue()
+    [[nodiscard]] core::Result<TextValue> parseValue(std::size_t depth = 0)
     {
         const char first = peek();
         if (first == '"')
@@ -217,12 +217,16 @@ private:
                 m_column = start;
                 return error(std::format("unknown value '{}'", name));
             }
-            return parseCall(name);
+            if (depth >= maxTextNesting)
+            {
+                return error("values are nested too deeply");
+            }
+            return parseCall(name, depth);
         }
         return error("expected a value");
     }
 
-    [[nodiscard]] core::Result<TextValue> parseCall(std::string_view name)
+    [[nodiscard]] core::Result<TextValue> parseCall(std::string_view name, std::size_t depth)
     {
         TextCall call{std::string(name), {}};
         ++m_column; // '('
@@ -235,7 +239,7 @@ private:
         while (true)
         {
             skipSpaces();
-            core::Result<TextValue> argument = parseValue();
+            core::Result<TextValue> argument = parseValue(depth + 1);
             if (!argument)
             {
                 return argument;
@@ -388,7 +392,15 @@ void appendValue(std::string& output, const TextValue& value)
             else if constexpr (std::is_same_v<Alternative, double>)
             {
                 DEVEX_ASSERT_MSG(std::isfinite(alternative), "the text format has no infinities");
-                std::format_to(std::back_inserter(output), "{}", alternative);
+                if (alternative == 0.0 && std::signbit(alternative))
+                {
+                    // "-0" would be read as integer zero, losing the floating-point sign.
+                    output += "-0.0";
+                }
+                else
+                {
+                    std::format_to(std::back_inserter(output), "{}", alternative);
+                }
             }
             else if constexpr (std::is_same_v<Alternative, std::string>)
             {

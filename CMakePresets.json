@@ -64,6 +64,20 @@
             }
         },
         {
+            "name": "linux-fuzz",
+            "displayName": "Linux file-reader fuzzing (Clang)",
+            "inherits": "linux-debug",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+                "CMAKE_C_COMPILER": "clang-21",
+                "CMAKE_CXX_COMPILER": "clang++-21",
+                "DEVEX_BUILD_FUZZERS": "ON",
+                "DEVEX_BUILD_TESTS": "OFF",
+                "DEVEX_BUILD_EDITOR": "OFF",
+                "DEVEX_BUILD_PLAYER": "OFF"
+            }
+        },
+        {
             "name": "macos-debug",
             "displayName": "macOS Debug",
             "generator": "Ninja",
@@ -95,6 +109,11 @@
         {
             "name": "build-linux-release",
             "configurePreset": "linux-release"
+        },
+        {
+            "name": "build-linux-fuzz",
+            "configurePreset": "linux-fuzz",
+            "targets": ["devex_fuzzers"]
         },
         {
             "name": "build-macos-debug",

@@ -28,6 +28,11 @@ endfunction()
 
 add_subdirectory(documentation)
 
+devex_add_tests(file_readers
+    SOURCES fuzz/ReaderTests.cpp
+    LIBRARIES Devex::Engine
+)
+
 devex_add_tests(core
     SOURCES
         core/AssertTests.cpp

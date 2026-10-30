@@ -2,6 +2,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <cmath>
 #include <string>
 
 using namespace devex::serialization;
@@ -87,4 +88,39 @@ TEST_CASE("Written documents read back identically", "[serialization][text]")
     {
         CHECK(reread->sections[0].properties[index].value == section.properties[index].value);
     }
+}
+
+TEST_CASE("Nested text calls stop before they can exhaust the stack", "[serialization][text][corrupt]")
+{
+    const auto nested = [](std::size_t depth) {
+        std::string text = "[data]\nvalue = ";
+        for (std::size_t index = 0; index < depth; ++index)
+        {
+            text += "list(";
+        }
+        return text + "0" + std::string(depth, ')') + "\n";
+    };
+    const auto deepest = parseText(nested(maxTextNesting));
+    REQUIRE(deepest.has_value());
+    CHECK(parseText(writeText(*deepest)).has_value());
+    for (const std::size_t depth : {maxTextNesting + 1, std::size_t{20000}})
+    {
+        const auto rejected = parseText(nested(depth));
+        REQUIRE_FALSE(rejected.has_value());
+        CHECK(rejected.error().code == devex::core::ErrorCode::Parse);
+        CHECK(rejected.error().message.find("nested too deeply") != std::string::npos);
+    }
+}
+
+TEST_CASE("Negative floating-point zero keeps its sign when written and read",
+          "[serialization][text][corrupt]")
+{
+    const auto document = parseText("[data]\nvalue = -0.0\n");
+    REQUIRE(document.has_value());
+    const auto restored = parseText(writeText(*document));
+    REQUIRE(restored.has_value());
+    const auto number = asNumber(restored->sections[0].properties[0].value);
+    REQUIRE(number.has_value());
+    CHECK(*number == 0.0);
+    CHECK(std::signbit(*number));
 }

@@ -3,11 +3,28 @@
 #include <mikktspace.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 #include <string_view>
 #include <unordered_map>
 
 namespace devex::asset {
+namespace {
+
+template <typename Vector>
+[[nodiscard]] bool finiteVector(const Vector& vector) noexcept
+{
+    for (int index = 0; index < vector.length(); ++index)
+    {
+        if (!std::isfinite(vector[index]))
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+} // namespace
 
 math::Aabb computeBounds(const MeshData& mesh) noexcept
 {
@@ -34,6 +51,20 @@ core::Result<void> validate(const MeshData& mesh)
     {
         return core::makeError(core::ErrorCode::InvalidArgument,
                                "{} indices do not form whole triangles", mesh.indices.size());
+    }
+    for (const Vertex& vertex : mesh.vertices)
+    {
+        if (!finiteVector(vertex.position) || !finiteVector(vertex.normal) ||
+            !finiteVector(vertex.uv) || !finiteVector(vertex.tangent))
+        {
+            return core::makeError(core::ErrorCode::InvalidArgument,
+                                   "the mesh has a non-finite vertex attribute");
+        }
+    }
+    if (!finiteVector(mesh.bounds.min) || !finiteVector(mesh.bounds.max))
+    {
+        return core::makeError(core::ErrorCode::InvalidArgument,
+                               "the mesh has non-finite bounds");
     }
     const auto outOfRange = std::ranges::find_if(mesh.indices, [&mesh](std::uint32_t index) {
         return index >= mesh.vertices.size();
@@ -69,6 +100,11 @@ core::Result<void> validate(const MeshData& mesh)
     }
     for (const VertexSkin& skin : mesh.skin)
     {
+        if (!finiteVector(skin.weights))
+        {
+            return core::makeError(core::ErrorCode::InvalidArgument,
+                                   "the mesh has non-finite skinning weights");
+        }
         const auto missing = std::ranges::find_if(skin.joints, [&mesh](std::uint16_t joint) {
             return joint >= mesh.inverseBind.size();
         });
@@ -77,6 +113,17 @@ core::Result<void> validate(const MeshData& mesh)
             return core::makeError(core::ErrorCode::InvalidArgument,
                                    "joint {} refers past the {} joints of the bind pose", *missing,
                                    mesh.inverseBind.size());
+        }
+    }
+    for (const math::Mat4& matrix : mesh.inverseBind)
+    {
+        for (int column = 0; column < matrix.length(); ++column)
+        {
+            if (!finiteVector(matrix[column]))
+            {
+                return core::makeError(core::ErrorCode::InvalidArgument,
+                                       "the mesh has a non-finite bind pose");
+            }
         }
     }
     return {};

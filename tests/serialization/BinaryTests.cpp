@@ -46,3 +46,27 @@ TEST_CASE("Reading past the end fails without huge allocations", "[serialization
     CHECK(truncated.read<std::uint32_t>() == 0);
     CHECK(truncated.failed());
 }
+
+TEST_CASE("Empty binary reads do not require storage or reset a failed reader",
+          "[serialization][binary][corrupt]")
+{
+    BinaryReader empty(std::span<const std::byte>{});
+    empty.readBytes({});
+    CHECK_FALSE(empty.failed());
+    CHECK(empty.offset() == 0);
+
+    BinaryWriter writer;
+    writer.writeArray(std::span<const std::uint32_t>{});
+    writer.write(std::uint32_t{42});
+    const auto bytes = writer.take();
+    BinaryReader reader(bytes);
+    CHECK(reader.readArray<std::uint32_t>().empty());
+    CHECK_FALSE(reader.failed());
+    CHECK(reader.read<std::uint32_t>() == 42);
+    static_cast<void>(reader.read<std::uint32_t>());
+    REQUIRE(reader.failed());
+    const auto offset = reader.offset();
+    reader.readBytes({});
+    CHECK(reader.failed());
+    CHECK(reader.offset() == offset);
+}

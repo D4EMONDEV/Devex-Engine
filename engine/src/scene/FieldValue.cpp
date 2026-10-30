@@ -5,6 +5,7 @@
 
 #include <array>
 #include <charconv>
+#include <cmath>
 #include <format>
 #include <cstdint>
 #include <limits>
@@ -19,6 +20,12 @@ namespace {
 using serialization::TextCall;
 using serialization::TextValue;
 
+[[nodiscard]] bool fitsFloat(double value) noexcept
+{
+    return std::isfinite(value) && value >= std::numeric_limits<float>::lowest() &&
+           value <= std::numeric_limits<float>::max();
+}
+
 // Returns the double closest to the shortest decimal form of the float, so that files show 0.1
 // rather than 0.10000000149011612 while still reading back to the same float.
 [[nodiscard]] double shortestDouble(float value) noexcept
@@ -27,7 +34,8 @@ using serialization::TextValue;
     const auto [end, status] = std::to_chars(text.data(), text.data() + text.size(), value);
     double result = value;
     std::from_chars(text.data(), end, result);
-    return result;
+    // The shortest decimal of FLT_MAX rounds back to it, but exceeds its exact double value.
+    return fitsFloat(result) ? result : static_cast<double>(value);
 }
 
 [[nodiscard]] TextValue numbers(std::string name, std::span<const float> components)
@@ -53,9 +61,10 @@ using serialization::TextValue;
     for (std::size_t index = 0; index < components.size(); ++index)
     {
         const std::optional<double> number = serialization::asNumber(call->arguments[index]);
-        if (!number)
+        if (!number || !fitsFloat(*number))
         {
-            return core::makeError(core::ErrorCode::Parse, "{}() arguments must be numbers", name);
+            return core::makeError(core::ErrorCode::Parse,
+                                   "{}() arguments must be finite numbers in the float range", name);
         }
         components[index] = static_cast<float>(*number);
     }
@@ -175,9 +184,10 @@ core::Result<void> readFieldValue(reflection::ValueKind kind, const TextValue& v
     }
     case ValueKind::Float: {
         const std::optional<double> number = serialization::asNumber(value);
-        if (!number)
+        if (!number || !fitsFloat(*number))
         {
-            return core::makeError(core::ErrorCode::Parse, "expected a number");
+            return core::makeError(core::ErrorCode::Parse,
+                                   "expected a finite number in the float range");
         }
         *static_cast<float*>(address) = static_cast<float>(*number);
         return {};

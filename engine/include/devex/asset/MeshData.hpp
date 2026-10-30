@@ -65,7 +65,8 @@ struct DEVEX_API MeshData
 [[nodiscard]] DEVEX_API bool isSkinned(const MeshData& mesh) noexcept;
 
 // Checks that the mesh has triangles, that every index refers to an existing vertex and that
-// submeshes cover whole triangles inside the index buffer.
+// submeshes cover whole triangles inside the index buffer, and that its attributes, bounds,
+// skinning weights and bind pose are finite.
 [[nodiscard]] DEVEX_API core::Result<void> validate(const MeshData& mesh);
 
 // The submeshes of the mesh, with the implicit one when the list is empty.
