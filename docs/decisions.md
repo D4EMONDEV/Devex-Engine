@@ -4336,6 +4336,19 @@ jeu (le `SystemContext`, un monde, un composant) l'est aussi au C#, dans le mêm
   d'abord `ctest --label-exclude gpu`, puis, sous Linux, les tests `[gpu]` (rendu, éditeur) à part.
   Les machines de GitHub n'ont pas de GPU : sous Windows, ces tests restent à lancer sur les
   machines des développeurs.
+- **Exemples de documentation** : `tests/documentation` extrait les blocs complets des sections 5
+  et 6 de `KNOWLEDGE.md` par leurs balises `devex-example`. Ils sont compilés dans le build des tests
+  (`devex_documentation_examples`) : quatre modules C++ avec les avertissements traités comme erreurs,
+  cinq exemples C# et les quatre scripts du guide de démarrage contre les vues de ce build, avec
+  nullabilité et avertissements traités comme erreurs lorsque le SDK .NET 10 est installé. Les
+  scripts téléchargeables du guide doivent aussi être identiques à ses blocs de code. Modifier
+  les documents relance ces vérifications ; les diagnostics renvoient aux lignes de `KNOWLEDGE.md`.
+  Un bloc attendu absent, dupliqué ou mal fermé fait échouer la configuration. Les tests du label
+  `documentation` chargent
+  les modules, vérifient les particules expirées, le saut 2D, la quête après ramassage et la caméra
+  à plusieurs fréquences d'images, et construisent le projet CMake montré avec le paquet du moteur.
+  Les pseudo-codes explicatifs sont signalés comme tels ; la documentation ne donne plus de gains
+  ECS/OOP sans mesure.
 - **Tests `[gpu]` sur lavapipe** : sous Linux, ils tournent sur lavapipe, le Vulkan de Mesa qui
   dessine sur le processeur (`mesa-vulkan-drivers`, choisi par `VK_DRIVER_FILES`), dans des
   fenêtres sans écran : le pilote vidéo `offscreen` de SDL (`SDL_VIDEO_DRIVER=offscreen`) donne à

@@ -26,6 +26,8 @@ function(devex_add_tests module)
     )
 endfunction()
 
+add_subdirectory(documentation)
+
 devex_add_tests(core
     SOURCES
         core/AssertTests.cpp

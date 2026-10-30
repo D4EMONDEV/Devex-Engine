@@ -309,6 +309,11 @@ dépôt. Sous Linux, les tests marqués `[gpu]` y tournent sur lavapipe, et le b
 le moteur empaqueté, est joué dans une Ubuntu 24.04 vierge ; sous Windows, ils se lancent
 localement avec `ctest`.
 
+Les exemples complets des sections 5 et 6 de [KNOWLEDGE.md](KNOWLEDGE.md) et les scripts du guide
+de démarrage sont compilés avec les tests, avec les avertissements traités comme erreurs (le C#
+demande le SDK .NET 10). La cible `devex_documentation_examples` les compile seuls ; le label
+CTest `documentation` vérifie le projet CMake documenté et leur comportement sans GPU.
+
 ## Télécharger le moteur
 
 Chaque exécution de la CI garde 30 jours le moteur en Release, prêt à lancer : dans l'onglet

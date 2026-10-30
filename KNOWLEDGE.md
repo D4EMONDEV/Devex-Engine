@@ -29,7 +29,7 @@
 5. [Tutoriels Pratiques](#5-tutoriels-pratiques)
    - [5.1. Création d'un Projet de Base](#51-création-dun-projet-de-base)
    - [5.2. Projet 2D - Plateformer Simple](#52-projet-2d---plateformer-simple)
-   - [5.3. Projet 3D - Jeu de Course](#53-projet-3d---jeu-de-course)
+   - [5.3. Projet 3D - Véhicule Arcade](#53-projet-3d---véhicule-arcade)
    - [5.4. Système ECS Expliqué en Profondeur](#54-système-ecs-expliqué-en-profondeur)
 6. [Exemples de Code](#6-exemples-de-code)
    - [6.1. Exemples C++](#61-exemples-c)
@@ -905,110 +905,91 @@ public static unsafe class Input
 
 ## 5. Tutoriels Pratiques
 
+Les exemples complets de cette section et de la section 6 sont extraits de ce document et compilés
+avec le moteur par la cible `devex_documentation_examples`, incluse dans le build des tests.
+Le C++ est vérifié avec les avertissements traités comme erreurs ; le C# l'est aussi, avec la
+nullabilité activée, quand le SDK .NET 10 est disponible. Les quatre scripts du
+[guide de démarrage](docs/guide-demarrage-2d-3d.md) sont compilés en même temps.
+Les blocs marqués « pseudo-code » servent uniquement à expliquer une idée.
+
 ### 5.1. Création d'un Projet de Base
 
 #### 5.1.1. Structure de Projet Minimale
 
-```
+Créer le projet dans le gestionnaire de projets de l'éditeur. Il crée le fichier `.dvxproj` et les
+dossiers du projet. Le code du jeu va dans `code/`, où le C++ et le C# peuvent cohabiter :
+
+```text
 MonJeu/
-├── CMakeLists.txt          # Configuration CMake pour le module de jeu
-├── src/
-│   └── MonJeuModule.cpp    # Point d'entrée du module de jeu C++
-├── csharp/
-│   └── GameCode/
-│       ├── MonJeu.csproj   # Projet C#
-│       └── Components/
-│           └── Player.cs   # Composants C#
-└── assets/                 # Ressources du jeu
-    └── scenes/             # Scènes
-        └── main.scene      # Scène principale
+├── MonJeu.dvxproj
+├── code/
+│   ├── CMakeLists.txt
+│   ├── PlayerModule.cpp
+│   └── PlayerController2D.cs
+└── assets/
+    └── scenes/
+        └── main.dvxscene
 ```
+
+L'éditeur produit le projet .NET des fichiers `.cs` et compile le module C++ avec le même
+compilateur et la même configuration que le moteur. Il fournit `Devex_DIR` à CMake.
+Dans les réglages du projet, créer une action `Move` de type Vector et une action `Jump` de type
+Button, avec les touches ou les sticks choisis. Les exemples de déplacement ci-dessous les lisent.
 
 #### 5.1.2. CMakeLists.txt pour un Module de Jeu C++
 
+<!-- devex-example: CMakeLists.txt -->
 ```cmake
-cmake_minimum_required(VERSION 3.20)
+cmake_minimum_required(VERSION 3.25)
 project(MonJeu LANGUAGES CXX)
 
-# Trouver le package Devex Engine
-find_package(devex CONFIG REQUIRED)
-
-# Créer un module de jeu
-add_library(monjeu_game MODULE
-    src/MonJeuModule.cpp
-)
-
-# Lier avec le moteur
-target_link_libraries(monjeu_game PRIVATE devex::engine)
-
-# Exporter les symboles (nécessaire pour les modules)
-set_target_properties(monjeu_game PROPERTIES
-    WINDOWS_EXPORT_ALL_SYMBOLS TRUE
-    CXX_VISIBILITY_PRESET hidden
-    VISIBILITY_INLINES_HIDDEN ON
-)
-
-# Copier le module dans le bon emplacement
-install(TARGETS monjeu_game
-    LIBRARY DESTINATION ${DEVEX_GAMES_DIR}
-)
+find_package(Devex CONFIG REQUIRED)
+devex_add_game_module(SOURCES PlayerModule.cpp)
 ```
 
-#### 5.1.3. Point d'Entrée C++ (MonJeuModule.cpp)
+`devex_add_game_module` lie `Devex::Engine`, choisit le standard C++ du moteur et produit
+`Game.dll` ou `libGame.so` dans `bin/`. Le module exporte son point d'entrée avec
+`DEVEX_GAME_MODULE` ; il n'a pas besoin d'exporter tous ses symboles.
 
+#### 5.1.3. Point d'Entrée C++ (PlayerModule.cpp)
+
+Ce système déplace horizontalement les entités qui portent `Transform` et `PlayerController`.
+Leur transformation est locale : cet exemple convient à des entités à la racine de la scène.
+
+<!-- devex-example: PlayerModule.cpp -->
 ```cpp
-// Inclure les en-têtes du moteur
 #include <devex/runtime/Game.hpp>
-#include <devex/scene/ComponentRegistry.hpp>
 #include <devex/scene/Components.hpp>
 
-// Définir un composant personnalisé
 struct PlayerController
 {
     float speed = 5.0f;
-    float jumpForce = 10.0f;
-    bool grounded = false;
 };
+DEVEX_DECLARE_REFLECTION(PlayerController);
 
-// Déclarer la réflexion du composant
-DEVEX_DECLARE_ENGINE_REFLECTION(PlayerController);
-
-// Définir la réflexion
 DEVEX_REFLECT(PlayerController)
 {
     type.field("speed", &PlayerController::speed);
-    type.field("jumpForce", &PlayerController::jumpForce);
-    type.field("grounded", &PlayerController::grounded);
 }
 
-// Système pour mettre à jour le joueur
 void updatePlayer(devex::runtime::SystemContext& context)
 {
-    auto& scene = context.scene;
-    auto view = scene.view<devex::scene::Transform, PlayerController>();
-    
-    for (auto [entity, transform, controller] : view)
+    if (context.actions == nullptr)
     {
-        // Déplacement horizontal
-        float move = context.input.axis("Horizontal");
-        transform.position.x += move * controller.speed * context.delta.value();
-        
-        // Saut
-        if (context.input.buttonDown("Jump") && controller.grounded)
-        {
-            // Logique de saut (simplifiée)
-            controller.grounded = false;
-        }
+        return;
+    }
+    const float horizontal = context.actions->vector("Move").x;
+    const float seconds = static_cast<float>(context.delta.count());
+    for (auto [entity, transform, controller] :
+         context.scene.view<devex::scene::Transform, PlayerController>())
+    {
+        transform.position.x += horizontal * controller.speed * seconds;
     }
 }
 
-// Définir le module de jeu
 DEVEX_GAME_MODULE(game)
 {
-    // Enregistrer les composants
     game.component<PlayerController>();
-    
-    // Enregistrer les systèmes
     game.system("UpdatePlayer", devex::runtime::SystemPhase::Update, &updatePlayer);
 }
 ```
@@ -1017,67 +998,41 @@ DEVEX_GAME_MODULE(game)
 
 #### 5.2.1. Architecture d'un Jeu 2D
 
-**Composants nécessaires :**
-- `Transform` (built-in) : Position, rotation, scale
-- `RigidBody2D` (built-in) : Corps physique 2D
-- `BoxCollider2D` (built-in) : Collision boîte 2D
-- `SpriteRenderer` (built-in) : Rendu de sprite
-- `PlayerController2D` (custom) : Contrôle du joueur
+Le joueur porte un `Transform`, un `CharacterController2D` et le script `PlayerController2D`.
+Le contrôleur gère sa capsule, le sol, la gravité et les déplacements. Les objets dynamiques à
+pousser utilisent `RigidBody2D` et un collider ; les sols statiques ont un `BoxCollider2D` ou un
+`TilemapCollider2D`. Le visuel du joueur peut être un enfant avec `SpriteRenderer`.
+
+Les vues C# des composants natifs, comme `CharacterController2D`, sont des `ref struct` : on les
+obtient pendant l'appel qui les utilise, sans les conserver dans les champs d'une classe.
 
 #### 5.2.2. Composant PlayerController2D (C#)
 
+<!-- devex-example: PlayerController2D.cs -->
 ```csharp
 using Devex;
 
 public class PlayerController2D : Component
 {
-    [Hidden] // Ne pas sauvegarder dans la scène
-    public float Speed => 5.0f;
-    
-    [Hidden]
-    public float JumpForce => 12.0f;
-    
-    private RigidBody2DView _body;
-    private bool _jumping = false;
-    
-    public override void Start()
-    {
-        // Obtenir le RigidBody2D de l'entité
-        if (Entity.Has<RigidBody2DView>()) {
-            _body = Entity.Get<RigidBody2DView>();
-        }
-    }
-    
+    public float Speed = 5.0f;
+    public float JumpSpeed = 7.0f;
+
     public override void Update(float delta)
     {
-        if (_body == null) return;
-        
-        // Déplacement horizontal
-        float move = Input.ActionAxis("Horizontal");
-        
-        // Appliquer la vitesse
-        var velocity = _body.LinearVelocity;
-        velocity.X = move * Speed;
-        _body.LinearVelocity = velocity;
-        
-        // Saut
-        if (Input.WasActionPressed("Jump") && _body.Grounded)
-        {
-            velocity.Y = JumpForce;
-            _body.LinearVelocity = velocity;
-            _jumping = true;
-        }
-        
-        // Réinitialiser l'état de saut lorsque le joueur touche le sol
-        if (_body.Grounded && _jumping)
-        {
-            _jumping = false;
-        }
+        if (!Entity.TryGet<CharacterController2D>(out var controller))
+            return;
+
+        Vec2 velocity = controller.Velocity;
+        velocity.X = Input.ActionVector("Move").X * Speed;
+        if (controller.Grounded && Input.WasActionPressed("Jump"))
+            velocity.Y = JumpSpeed;
+
+        // La physique applique la gravité et le pas de temps.
+        controller.Velocity = velocity;
     }
-    
+
     public override void OnCollisionEnter(Entity other)
     {
-        // Gérer les collisions
         Log.Info($"Collision avec {other.Name}");
     }
 }
@@ -1085,172 +1040,94 @@ public class PlayerController2D : Component
 
 #### 5.2.3. Configuration de la Scène 2D
 
-**Fichier de scène (conceptuel) :**
-```
-[scene kind="TwoD"]
+Dans une scène 2D, créer un joueur à la racine, à la position `(0, 2, 0)`, puis lui ajouter
+`CharacterController2D` et `PlayerController2D`. Ajouter un enfant avec `SpriteRenderer` pour
+l'image du personnage. Créer un sol avec un `BoxCollider2D` de taille `(10, 1)` ; un collider sans
+corps physique est statique. Ajouter une caméra orthographique qui regarde vers -Z.
+Le [guide de démarrage 2D](docs/guide-demarrage-2d-3d.md) détaille ces opérations et les entrées.
 
-[entity name="Player"]
-[component type="Transform"]
-position = 0, 2, 0
-
-[component type="RigidBody2D"]
-type = dynamic
-mass = 1.0
-gravityScale = 1.0
-
-[component type="BoxCollider2D"]
-size = 0.8, 1.6
-
-[component type="SpriteRenderer"]
-sprite = asset("player_sprite")
-sortingLayer = "Player"
-order = 0
-
-[component type="PlayerController2D"]
-
-[entity name="Ground"]
-[component type="Transform"]
-position = 0, -1, 0
-scale = 10, 1, 1
-
-[component type="RigidBody2D"]
-type = static
-
-[component type="BoxCollider2D"]
-size = 10, 1
-
-[component type="SpriteRenderer"]
-sprite = asset("ground_sprite")
-tileMode = true
-size = 10, 1
-```
-
-### 5.3. Projet 3D - Jeu de Course
+### 5.3. Projet 3D - Véhicule Arcade
 
 #### 5.3.1. Composants Clés pour un Jeu 3D
 
-**Composants built-in :**
-- `Transform` : Position, rotation, scale en 3D
-- `MeshRenderer` : Rendu de maillage 3D
-- `RigidBody` : Corps physique 3D
-- `BoxCollider` / `SphereCollider` / `MeshCollider` : Collisions 3D
-- `Camera` : Caméra 3D
-- `CharacterController` : Contrôleur de personnage 3D
+`Transform`, `MeshRenderer` et `Camera` décrivent la scène visible. Pour les collisions, choisir
+un `RigidBody` avec ses colliders, ou un `CharacterController` qui possède sa propre capsule.
+L'exemple ci-dessous utilise un `RigidBody` dynamique avec un `BoxCollider` pour un déplacement
+arcade : il ne simule ni roues ni suspension. Verrouiller ses rotations X et Z pour qu'il reste
+debout. L'entité est à la racine et son avant est -Z, comme celui du moteur.
 
 #### 5.3.2. Composant CarController (C#)
 
+<!-- devex-example: CarController.cs -->
 ```csharp
 using Devex;
 
 public class CarController : Component
 {
     public float Speed = 20.0f;
-    public float RotationSpeed = 2.0f;
-    public float MaxSteerAngle = 30.0f;
-    
-    private CharacterControllerView _character;
-    
-    public override void Start()
-    {
-        if (Entity.Has<CharacterControllerView>()) {
-            _character = Entity.Get<CharacterControllerView>();
-        }
-    }
-    
+    [Angle] public float RotationSpeed = 2.0f;
+
     public override void Update(float delta)
     {
-        if (_character == null) return;
-        
-        // Input
-        float move = Input.ActionAxis("Vertical");
-        float steer = Input.ActionAxis("Horizontal");
-        
-        // Calcul de la direction
-        float currentSpeed = move * Speed;
-        float steerAngle = steer * MaxSteerAngle * MathF.PI / 180.0f;
-        
-        // Calcul du mouvement
-        var direction = Entity.Transform.Rotation * new Vec3(0, 0, 1);
-        direction = MathTypes.RotateY(direction, steerAngle);
-        
-        // Déplacement
-        var velocity = direction * currentSpeed;
-        velocity.Y = _character.Velocity.Y; // Garder la vitesse verticale
-        
-        _character.Velocity = velocity;
-    }
-}
+        if (!Entity.TryGet<RigidBody>(out var body))
+            return;
 
-// Classe utilitaire pour les rotations
-public static class MathTypes
-{
-    public static Vec3 RotateY(Vec3 vector, float angle)
-    {
-        float cos = MathF.Cos(angle);
-        float sin = MathF.Sin(angle);
-        return new Vec3(
-            vector.X * cos + vector.Z * sin,
-            vector.Y,
-            vector.X * -sin + vector.Z * cos
-        );
+        Vec2 move = Input.ActionVector("Move");
+        Transform.Rotation = Quat.AngleAxis(-move.X * RotationSpeed * delta, Vec3.Up)
+            * Transform.Rotation;
+
+        Vec3 velocity = (Transform.Rotation * Vec3.Forward) * (move.Y * Speed);
+        velocity.Y = body.LinearVelocity.Y;
+        body.LinearVelocity = velocity;
     }
 }
 ```
 
 ### 5.4. Système ECS Expliqué en Profondeur
 
-#### 5.4.1. Pourquoi ECS ?
+Un ECS range les composants d'un même type dans un tableau contigu. Une vue parcourt les entités
+qui possèdent les types demandés ; les systèmes modifient leurs données, puis le renderer en
+extrait ce qu'il doit dessiner. Un `MeshRenderer` est une donnée, sans méthode `Draw()`.
 
-**Problèmes de l'OOP traditionnelle :**
-```cpp
-// OOP : Mauvais pour la performance
-class GameObject {
-    Transform* transform;
-    Renderer* renderer;
-    Collider* collider;
-    // ... 50 autres pointeurs
-};
+**Pseudo-code de comparaison, indépendant de l'API du moteur :**
 
-// Accès mémoire : Cache misses fréquents
-for (auto* obj : gameObjects) {
-    if (obj->renderer) obj->renderer->Draw(); // Saut aléatoire en mémoire
-}
+```text
+Objets : suivre le pointeur de chaque objet, puis celui de son composant.
+ECS    : parcourir les composants d'une vue et lire leurs données.
 ```
 
-**ECS : Solution optimisée :**
-```cpp
-// ECS : Données contiguës
-for (auto [entity, renderer] : scene.view<Renderer>()) {
-    renderer.Draw(); // Accès séquentiel, cache-friendly
-}
-```
-
-#### 5.4.2. Benchmark Performance
-
-| Opération | OOP | ECS | Gain |
-|-----------|-----|-----|------|
-| Itération sur les renderables | 10ms | 0.5ms | **20x plus rapide** |
-| Mise à jour des transformations | 8ms | 1ms | *
+Le système de la section 5.1 montre une vraie vue. Il n'existe pas ici de mesure comparative
+ECS/OOP : les performances mesurées du moteur, avec leurs conditions de mesure, sont dans
+[docs/performances.md](docs/performances.md).
 
 ---
 
 ## 6. Exemples de Code
 
+Les exemples C++ ci-dessous sont des modules de jeu indépendants : chacun déclare son propre
+`DEVEX_GAME_MODULE`. Pour les réunir dans un jeu, garder un seul point d'entrée qui enregistre
+leurs composants et leurs systèmes.
+
 ### 6.1. Exemples C++
 
 #### 6.1.1. Système de Gravité Personnalisée
 
+Les corps concernés sont dynamiques, avec `gravityScale = 0` pour que la gravité du projet ne
+s'ajoute pas à celle du volume. La direction de `gravity` est exprimée dans le monde ; le rayon
+est en mètres. Les transformations mondiales sont mises à jour avant de mesurer les distances.
+
+<!-- devex-example: GravityModule.cpp -->
 ```cpp
 #include <devex/runtime/Game.hpp>
-#include <devex/scene/Scene.hpp>
 #include <devex/scene/Components.hpp>
+#include <devex/scene/PhysicsComponents.hpp>
 
 struct GravityVolume
 {
-    devex::math::Vec3 gravity = {0.0f, -9.81f, 0.0f};
+    devex::math::Vec3 gravity{0.0f, -9.81f, 0.0f};
     float radius = 10.0f;
 };
-DEVEX_DECLARE_ENGINE_REFLECTION(GravityVolume);
+DEVEX_DECLARE_REFLECTION(GravityVolume);
 
 DEVEX_REFLECT(GravityVolume)
 {
@@ -1261,24 +1138,20 @@ DEVEX_REFLECT(GravityVolume)
 void applyGravity(devex::runtime::SystemContext& context)
 {
     auto& scene = context.scene;
-    auto gravityView = scene.view<devex::scene::Transform, GravityVolume>();
-    auto rigidBodyView = scene.view<devex::scene::Transform, devex::scene::RigidBody>();
-    
-    for (auto [gravityEntity, gravityTransform, volume] : gravityView)
+    scene.updateTransforms();
+    const float seconds = static_cast<float>(context.delta.count());
+    for (auto [volumeEntity, volumeTransform, volume] :
+         scene.view<devex::scene::WorldTransform, GravityVolume>())
     {
-        devex::math::Vec3 gravityPosition = gravityTransform.matrix() * devex::math::Vec4(0, 0, 0, 1);
-        
-        for (auto [bodyEntity, bodyTransform, body] : rigidBodyView)
+        const devex::math::Vec3 center{volumeTransform.matrix[3]};
+        for (auto [bodyEntity, bodyTransform, body] :
+             scene.view<devex::scene::WorldTransform, devex::scene::RigidBody>())
         {
-            devex::math::Vec3 bodyPosition = bodyTransform.matrix() * devex::math::Vec4(0, 0, 0, 1);
-            devex::math::Vec3 toBody = bodyPosition - gravityPosition;
-            float distance = devex::math::length(toBody);
-            
-            if (distance < volume.radius)
+            const devex::math::Vec3 position{bodyTransform.matrix[3]};
+            if (body.type == devex::scene::BodyType::Dynamic &&
+                devex::math::length(position - center) < volume.radius)
             {
-                // Appliquer la gravité personnalisée
-                devex::math::Vec3 gravityDir = toBody / distance;
-                body.linearVelocity += volume.gravity * context.delta.value();
+                body.linearVelocity += volume.gravity * seconds;
             }
         }
     }
@@ -1293,76 +1166,85 @@ DEVEX_GAME_MODULE(game)
 
 #### 6.1.2. Système de Particules Personnalisé
 
+Ces particules sont des entités d'exemple, sans rendu ; pour des effets visibles, utiliser
+`ParticleEmitter` et les services de `ParticleWorld` décrits en section 9.5. Les entités expirées
+sont détruites après le parcours : détruire un élément pendant l'itération invaliderait la vue.
+
+<!-- devex-example: FireParticlesModule.cpp -->
 ```cpp
-#include <devex/particles/ParticleWorld.hpp>
 #include <devex/runtime/Game.hpp>
+#include <devex/scene/Components.hpp>
+
+#include <vector>
 
 struct FireParticle
 {
-    devex::math::Vec3 velocity;
-    devex::math::Vec3 color;
+    devex::math::Vec3 velocity{0.0f, 1.0f, 0.0f};
     float lifetime = 1.0f;
-    float size = 0.1f;
 };
+DEVEX_DECLARE_REFLECTION(FireParticle);
+
+DEVEX_REFLECT(FireParticle)
+{
+    type.field("velocity", &FireParticle::velocity);
+    type.field("lifetime", &FireParticle::lifetime);
+}
 
 void updateFireParticles(devex::runtime::SystemContext& context)
 {
-    if (!context.particles) return;
-    
-    auto& scene = context.scene;
-    auto view = scene.view<FireParticle>();
-    
-    for (auto [entity, particle] : view)
+    const float seconds = static_cast<float>(context.delta.count());
+    std::vector<devex::scene::Entity> expired;
+    for (auto [entity, transform, particle] :
+         context.scene.view<devex::scene::Transform, FireParticle>())
     {
-        // Mettre à jour la position
-        auto* transform = scene.tryGet<devex::scene::Transform>(entity);
-        if (transform)
+        transform.position += particle.velocity * seconds;
+        particle.lifetime -= seconds;
+        if (particle.lifetime <= 0.0f)
         {
-            transform->position += particle.velocity * context.delta.value();
+            expired.push_back(entity);
         }
-        
-        // Mettre à jour la durée de vie
-        particle.lifetime -= context.delta.value();
-        
-        if (particle.lifetime <= 0)
-        {
-            scene.destroyEntity(entity);
-        }
+    }
+    for (const devex::scene::Entity entity : expired)
+    {
+        context.scene.destroyEntity(entity);
     }
 }
 
-void spawnFireParticle(devex::scene::Scene& scene, devex::math::Vec3 position)
+void spawnFireParticle(devex::scene::Scene& scene, devex::math::Vec3 position,
+                       devex::math::Vec3 velocity)
 {
-    auto entity = scene.createEntity("FireParticle");
-    scene.add<devex::scene::Transform>(entity, devex::scene::Transform{.position = position});
-    scene.add<FireParticle>(entity, FireParticle{
-        .velocity = devex::math::Vec3(
-            (rand() / (float)RAND_MAX) * 2.0f - 1.0f,
-            (rand() / (float)RAND_MAX) * 2.0f,
-            (rand() / (float)RAND_MAX) * 2.0f - 1.0f
-        ),
-        .color = devex::math::Vec3(1.0f, 0.5f, 0.1f),
-        .lifetime = 0.5f + (rand() / (float)RAND_MAX) * 0.5f,
-        .size = 0.05f + (rand() / (float)RAND_MAX) * 0.1f
-    });
+    const auto entity = scene.createEntity("FireParticle");
+    scene.add<devex::scene::Transform>(entity).position = position;
+    scene.add<FireParticle>(entity).velocity = velocity;
+}
+
+DEVEX_GAME_MODULE(game)
+{
+    game.component<FireParticle>();
+    game.system("FireParticles", devex::runtime::SystemPhase::Update, &updateFireParticles);
 }
 ```
 
 #### 6.1.3. Système de Dialogue
 
+Appeler `startDialogue` depuis le jeu pour ouvrir un dialogue. L'action `Jump` passe à la ligne
+suivante une seule fois par appui ; une liste vide ne démarre pas de dialogue.
+
+<!-- devex-example: DialogueModule.cpp -->
 ```cpp
 #include <devex/runtime/Game.hpp>
-#include <devex/scene/Scene.hpp>
+
+#include <cstdint>
 #include <string>
 #include <vector>
 
 struct Dialogue
 {
     std::vector<std::string> lines;
-    int currentLine = 0;
+    std::uint32_t currentLine = 0;
     bool isActive = false;
 };
-DEVEX_DECLARE_ENGINE_REFLECTION(Dialogue);
+DEVEX_DECLARE_REFLECTION(Dialogue);
 
 DEVEX_REFLECT(Dialogue)
 {
@@ -1371,38 +1253,39 @@ DEVEX_REFLECT(Dialogue)
     type.field("isActive", &Dialogue::isActive);
 }
 
-void startDialogue(devex::scene::Scene& scene, devex::scene::Entity entity, const std::vector<std::string>& lines)
+void startDialogue(devex::scene::Scene& scene, devex::scene::Entity entity,
+                   const std::vector<std::string>& lines)
 {
     auto* dialogue = scene.tryGet<Dialogue>(entity);
-    if (!dialogue)
+    if (dialogue == nullptr)
     {
         dialogue = &scene.add<Dialogue>(entity);
     }
     dialogue->lines = lines;
     dialogue->currentLine = 0;
-    dialogue->isActive = true;
+    dialogue->isActive = !lines.empty();
 }
 
 void updateDialogue(devex::runtime::SystemContext& context)
 {
-    auto& scene = context.scene;
-    auto view = scene.view<Dialogue>();
-    
-    for (auto [entity, dialogue] : view)
+    if (context.actions == nullptr || !context.actions->wasPressed("Jump"))
     {
-        if (!dialogue.isActive) continue;
-        
-        // Passer à la ligne suivante avec Espace
-        if (context.input.buttonDown("Jump"))
+        return;
+    }
+    for (auto [entity, dialogue] : context.scene.view<Dialogue>())
+    {
+        if (dialogue.isActive)
         {
-            dialogue.currentLine++;
-            
-            if (dialogue.currentLine >= dialogue.lines.size())
-            {
-                dialogue.isActive = false;
-            }
+            ++dialogue.currentLine;
+            dialogue.isActive = dialogue.currentLine < dialogue.lines.size();
         }
     }
+}
+
+DEVEX_GAME_MODULE(game)
+{
+    game.component<Dialogue>();
+    game.system("Dialogue", devex::runtime::SystemPhase::Update, &updateDialogue);
 }
 ```
 
@@ -1410,50 +1293,47 @@ void updateDialogue(devex::runtime::SystemContext& context)
 
 #### 6.2.1. Système de Quête Simple
 
+Ajouter `PlayerInventory` et `Quest` au joueur, et `Collectible` à un objet doté d'un collider
+Trigger. L'inventaire garde l'identifiant de l'objet avant de le détruire : la quête peut donc se
+terminer même lorsque l'entité ramassée n'existe plus.
+
+<!-- devex-example: Quest.cs -->
 ```csharp
+using System.Collections.Generic;
 using Devex;
 
 public class Quest : Component
 {
     public string Title = "Quête";
-    public string Description = "Trouver l'objet";
+    public string TargetItem = "key";
     public bool IsCompleted = false;
     public bool IsActive = true;
-    
-    public Entity TargetEntity;
-    
+
     public override void Update(float delta)
     {
-        if (!IsActive || IsCompleted) return;
-        
-        // Vérifier si le joueur a trouvé l'objet
-        if (TargetEntity.IsAlive && 
-            Entity.Has<PlayerController>() && 
-            TargetEntity.Has<Collectible>()){
-            
-            var player = Entity.Get<PlayerController>();
-            var collectible = TargetEntity.Get<Collectible>();
-            
-            if (player.HasCollected(TargetEntity))
-            {
-                IsCompleted = true;
-                Log.Info($"Quête '{Title}' terminée !");
-            }
+        if (!IsActive || IsCompleted)
+            return;
+
+        var inventory = Entity.Get<PlayerInventory>();
+        if (inventory != null && inventory.CollectedItems.Contains(TargetItem))
+        {
+            IsCompleted = true;
+            Log.Info($"Quête '{Title}' terminée !");
         }
     }
 }
 
-public class PlayerController : Component
+public class PlayerInventory : Component
 {
-    public List<Entity> CollectedItems = new();
-    
-    public bool HasCollected(Entity item) => CollectedItems.Contains(item);
-    
+    public List<string> CollectedItems = new();
+
     public override void OnTriggerEnter(Entity other)
     {
-        if (other.Has<Collectible>())
+        var collectible = other.Get<Collectible>();
+        if (collectible != null)
         {
-            CollectedItems.Add(other);
+            if (!CollectedItems.Contains(collectible.ItemId))
+                CollectedItems.Add(collectible.ItemId);
             other.Destroy();
         }
     }
@@ -1461,93 +1341,83 @@ public class PlayerController : Component
 
 public class Collectible : Component
 {
-    public string ItemName = "Objet";
+    public string ItemId = "key";
 }
 ```
 
 #### 6.2.2. Système de Caméra Suiveuse
 
+Ajouter ce script à une caméra à la racine, sans parent, et choisir sa cible dans l'inspecteur.
+Le suivi a lieu dans `LateUpdate`, après l'interpolation de la physique. Le lissage tient compte
+du temps écoulé, et la rotation regarde vers la cible selon la convention -Z du moteur.
+
+<!-- devex-example: FollowCamera.cs -->
 ```csharp
+using System;
 using Devex;
 
 public class FollowCamera : Component
 {
     public Entity Target;
-    public Vec3 Offset = new Vec3(0, 2, -5);
+    public Vec3 Offset = new(0.0f, 2.0f, 5.0f);
     public float SmoothSpeed = 5.0f;
-    
-    private CameraView _camera;
-    
-    public override void Start()
-    {
-        if (Entity.Has<CameraView>()) {
-            _camera = Entity.Get<CameraView>();
-        }
-    }
-    
-    public override void Update(float delta)
-    {
-        if (_camera == null || !Target.IsAlive) return;
-        
-        var targetPosition = Target.WorldPosition;
-        var desiredPosition = targetPosition + Offset;
-        
-        // Interpolation douce
-        var currentPosition = Entity.WorldPosition;
-        var newPosition = Vec3.Lerp(currentPosition, desiredPosition, SmoothSpeed * delta);
-        
-        Entity.Transform.Position = newPosition;
-        
-        // Regarder la cible
-        var direction = (targetPosition - newPosition).Normalized();
-        Entity.Transform.Rotation = Quat.LookRotation(direction, Vec3.Up);
-    }
-}
 
-// Extension pour Vec3
-public static class Vec3Extensions
-{
-    public static Vec3 Lerp(Vec3 a, Vec3 b, float t)
+    public override void LateUpdate(float delta)
     {
-        return new Vec3(
-            a.X + (b.X - a.X) * t,
-            a.Y + (b.Y - a.Y) * t,
-            a.Z + (b.Z - a.Z) * t
-        );
-    }
-    
-    public static Vec3 Normalized(this Vec3 v)
-    {
-        float length = MathF.Sqrt(v.X * v.X + v.Y * v.Y + v.Z * v.Z);
-        return length > 0 ? new Vec3(v.X / length, v.Y / length, v.Z / length) : Vec3.Zero;
+        if (!Target.IsAlive || !Target.HasTransform)
+            return;
+
+        Vec3 target = Target.WorldPosition;
+        Vec3 desired = target + Offset;
+        float amount = 1.0f - MathF.Exp(-MathF.Max(0.0f, SmoothSpeed) * delta);
+        Transform.Position += (desired - Transform.Position) * amount;
+
+        Vec3 direction = target - Transform.Position;
+        if (direction.Length > 0.0001f)
+        {
+            float yaw = MathF.Atan2(-direction.X, -direction.Z);
+            float pitch = MathF.Atan2(direction.Y,
+                MathF.Sqrt(direction.X * direction.X + direction.Z * direction.Z));
+            Transform.Rotation = Quat.AngleAxis(yaw, Vec3.Up)
+                * Quat.AngleAxis(pitch, Vec3.Right);
+        }
     }
 }
 ```
 
 #### 6.2.3. Système de Santé et Dégâts
 
+Les propriétés calculées n'ont pas besoin de `[Hidden]` : seuls les champs publics sont
+sauvegardés et affichés par la réflexion. Un dégât négatif ne soigne pas le personnage, et une
+santé maximale nulle donne un pourcentage nul.
+
+<!-- devex-example: Health.cs -->
 ```csharp
+using System;
 using Devex;
 
 public class Health : Component
 {
     public float Current = 100.0f;
     public float Max = 100.0f;
-    
-    [Hidden]
-    public bool IsAlive => Current > 0;
-    
-    [Hidden]
-    public float Percentage => Current / Max;
-    
+
+    public bool IsAlive => Current > 0.0f;
+    public float Percentage => Max > 0.0f ? Math.Clamp(Current / Max, 0.0f, 1.0f) : 0.0f;
+
     public void TakeDamage(float amount)
     {
-        Current -= amount;
-        if (Current <= 0)
+        if (amount <= 0.0f || !IsAlive)
+            return;
+
+        Current = MathF.Max(0.0f, Current - amount);
+        if (!IsAlive)
         {
-            Current = 0;
-            OnDeath();
-       
+            Log.Info($"{Entity.Name} est mort.");
+            DestroyEntity();
+        }
+    }
+}
+```
 
 ---
 
