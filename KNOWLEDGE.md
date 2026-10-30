@@ -8,50 +8,59 @@
 ## 📖 Table des Matières
 
 1. [Introduction et Architecture Générale](#1-introduction-et-architecture-générale)
+   - [1.1. Overview du Moteur Devex Engine](#11-overview-du-moteur-devex-engine)
+   - [1.2. Architecture Logicielle](#12-architecture-logicielle)
+   - [1.3. Structure des Dossiers](#13-structure-des-dossiers)
+   - [1.4. Concepts Fondamentaux](#14-concepts-fondamentaux)
 2. [Système ECS (Entity-Component-System)](#2-système-ecs-entity-component-system)
+   - [2.1. Concepts de Base](#21-concepts-de-base)
+   - [2.2. Avantages de cette Architecture](#22-avantages-de-cette-architecture)
+   - [2.3. Comparaison ECS vs OOP Traditionnelle](#23-comparaison-ecs-vs-oop-traditionnelle)
+   - [2.4. Pattern d'Utilisation Typique](#24-pattern-dutilisation-typique)
 3. [API C++ Complète](#3-api-c-complète)
    - [3.1. Système de Scène et Entités](#31-système-de-scène-et-entités)
-   - [3.2. Composants du Moteur](#32-composants-du-moteur)
-   - [3.3. Mathématiques](#33-mathématiques)
-   - [3.4. Physique 3D](#34-physique-3d)
-   - [3.5. Physique 2D](#35-physique-2d)
-   - [3.6. Audio](#36-audio)
-   - [3.7. Animation](#37-animation)
-   - [3.8. Particules](#38-particules)
-   - [3.9. Navigation](#39-navigation)
-   - [3.10. Rendu](#310-rendu)
-   - [3.11. Assets et Ressources](#311-assets-et-ressources)
-   - [3.12. UI et Interface](#312-ui-et-interface)
-   - [3.13. Runtime et Systèmes de Jeu](#313-runtime-et-systèmes-de-jeu)
-   - [3.14. Plateforme](#314-plateforme)
-   - [3.15. Core et Utilitaires](#315-core-et-utilitaires)
-   - [3.16. Sérialisation](#316-sérialisation)
-   - [3.17. Réflexion](#317-réflexion)
 4. [API C# Complète](#4-api-c-complète)
    - [4.1. Système de Scène et Entités](#41-système-de-scène-et-entités)
    - [4.2. Composants C#](#42-composants-c)
-   - [4.3. Systèmes de Jeu](#43-systèmes-de-jeu)
-   - [4.4. Mathématiques](#44-mathématiques)
-   - [4.5. Input](#45-input)
-   - [4.6. Coroutines](#46-coroutines)
-   - [4.7. Tweens](#47-tweens)
-   - [4.8. Services](#48-services)
-   - [4.9. Sauvegardes](#49-sauvegardes)
-   - [4.10. Interopération](#410-interopération)
+   - [4.3. Accès aux Composants](#43-accès-aux-composants)
+   - [4.4. Systèmes de Jeu et Runtime](#44-systèmes-de-jeu-et-runtime)
+   - [4.5. Mathématiques](#45-mathématiques)
+   - [4.6. Input (Entrées)](#46-input-entrées)
 5. [Tutoriels Pratiques](#5-tutoriels-pratiques)
    - [5.1. Création d'un Projet de Base](#51-création-dun-projet-de-base)
    - [5.2. Projet 2D - Plateformer Simple](#52-projet-2d---plateformer-simple)
    - [5.3. Projet 3D - Jeu de Course](#53-projet-3d---jeu-de-course)
-   - [5.4. Système ECS Expliqué](#54-système-ecs-expliqué)
-   - [5.5. Communication entre C++ et C#](#55-communication-entre-c-et-c)
+   - [5.4. Système ECS Expliqué en Profondeur](#54-système-ecs-expliqué-en-profondeur)
 6. [Exemples de Code](#6-exemples-de-code)
    - [6.1. Exemples C++](#61-exemples-c)
    - [6.2. Exemples C#](#62-exemples-c)
 7. [Références Techniques](#7-références-techniques)
-   - [7.1. Types de Données](#71-types-de-données)
+   - [7.1. Types de Données et Conventions](#71-types-de-données-et-conventions)
    - [7.2. Conventions de Codage](#72-conventions-de-codage)
    - [7.3. Gestion de la Mémoire](#73-gestion-de-la-mémoire)
 8. [Index des Classes et Fonctions](#8-index-des-classes-et-fonctions)
+   - [8.1. Index par Module C++](#81-index-par-module-c)
+9. [API C++ Complète - Modules Avancés](#9-api-c-complète---modules-avancés)
+   - [9.1. Assets et Gestion des Ressources](#91-assets-et-gestion-des-ressources)
+   - [9.2. UI et Interface Utilisateur](#92-ui-et-interface-utilisateur)
+   - [9.3. Animation](#93-animation)
+   - [9.4. Navigation](#94-navigation)
+   - [9.5. Particules](#95-particules)
+   - [9.6. Audio](#96-audio)
+   - [9.7. Rendu Vulkan](#97-rendu-vulkan)
+10. [API C# Complète - Services et Systèmes Avancés](#10-api-c-complète---services-et-systèmes-avancés)
+   - [10.1. Services (`Devex`, `Services.cs`)](#101-services-devex-servicescs)
+   - [10.2. Coroutines et Tweens](#102-coroutines-et-tweens)
+   - [10.3. Sauvegardes et réglages (`Saves.cs`)](#103-sauvegardes-et-réglages-savescs)
+   - [10.4. Entrées et actions (`Input.cs`)](#104-entrées-et-actions-inputcs)
+   - [10.5. Interopération](#105-interopération)
+11. [Conclusion et Résumé Final](#11-conclusion-et-résumé-final)
+   - [11.1. Résumé de la Documentation](#111-résumé-de-la-documentation)
+   - [11.2. Statistiques de la Documentation](#112-statistiques-de-la-documentation)
+   - [11.3. Architecture Complète du Moteur](#113-architecture-complète-du-moteur)
+   - [11.4. Flow de Développement Recommandé](#114-flow-de-développement-recommandé)
+   - [11.5. Bonnes Pratiques de Développement](#115-bonnes-pratiques-de-développement)
+   - [11.6. Patterns de Conception Recommandés](#116-patterns-de-conception-recommandés)
 
 ---
 
@@ -246,7 +255,7 @@ public class PlayerController : Component
     public override void Update(float delta)
     {
         // Logique de déplacement
-        var input = Input.Axis("Horizontal");
+        var input = Input.ActionAxis("Horizontal");
         Entity.Transform.Position.X += input * Speed * delta;
     }
 }
@@ -833,33 +842,61 @@ public struct AssetId { /* Identifiant d'asset */ }
 
 ### 4.6. Input (Entrées)
 
+Les touches (`Key`, dans `Key.cs`), la souris, et surtout les **actions** du projet (Project
+Settings > Input), que les contextes activent et que le joueur peut réassigner :
+
 ```csharp
-public static class Input
+// A mouse button, as the engine numbers them.
+public enum MouseButton
 {
-    // Axes et boutons
-    public static float Axis(string name);
-    public static bool Button(string name);
-    public static bool ButtonDown(string name);
-    public static bool ButtonUp(string name);
-    
-    // Souris
-    public static Vec2 MousePosition;
-    public static Vec2 MouseDelta;
-    public static float MouseScrollDelta;
-    public static bool MouseButton(int button);
-    
-    // Clavier
-    public static bool Key(Key key);
-    public static bool KeyDown(Key key);
-    public static bool KeyUp(Key key);
+    Left = 0,
+    Middle = 1,
+    Right = 2,
+    X1 = 3,
+    X2 = 4,
 }
 
-public enum Key
+// Keyboard and mouse of the current frame. "Pressed" is true only on the frame of the press.
+public static unsafe class Input
 {
-    Unknown, Space, Apostrophe, Comma, Minus, Period, Slash,
-    // ... toutes les touches du clavier
-    MouseLeft, MouseRight, MouseMiddle, // Boutons souris
-    // ... etc
+    public static bool IsKeyDown(Key key);
+    public static bool WasKeyPressed(Key key);
+    public static bool IsMouseButtonDown(MouseButton button);
+    public static bool WasMouseButtonPressed(MouseButton button);
+    // How far the mouse moved since the previous frame, in pixels.
+    public static Vec2 MouseDelta { get; }
+    // Where the mouse is in the window, in pixels.
+    public static Vec2 MousePosition { get; }
+    // A captured mouse is hidden and reports unbounded motion, as a first-person camera needs.
+    public static bool MouseCaptured { get; set; }
+    // A button held down; an axis or a vector pushed at least halfway.
+    public static bool IsActionDown(string action);
+    // During the frame the action went down. Read it from Update rather than FixedUpdate.
+    public static bool WasActionPressed(string action);
+    // During the frame the action went up.
+    public static bool WasActionReleased(string action);
+    // From -1 to 1 for an axis, 0 or 1 for a button, 0 for a vector.
+    public static float ActionAxis(string action);
+    // A direction of length 1 at most, with Y up; an axis along X; zero for a button.
+    public static Vec2 ActionVector(string action);
+    // Turns a context of actions on or off, such as the actions of the game while a menu is open:
+    // the actions of a context that is off read as released. Contexts start as the project says,
+    // and keep their state from scene to scene.
+    public static void SetContextActive(string context, bool active);
+    public static bool IsContextActive(string context);
+    // How many bindings the action has, in the order of the project settings.
+    public static int BindingCount(string action);
+    // What to show for a binding: the key as the keyboard prints it, or the name of the button.
+    public static string BindingLabel(string action, int binding);
+    // Waits for the next key or button the player presses and binds it to the action, in place of
+    // one of its bindings: a keyboard binding takes a key or a mouse button, a gamepad one a
+    // gamepad button. Escape gives up. The bindings are saved for the next games.
+    public static void ListenForBinding(string action, int binding);
+    // Whether a binding waits for a key.
+    public static bool IsListeningForBinding { get; }
+    public static void StopListeningForBinding();
+    // Every binding back to those of the project settings.
+    public static void ResetBindings();
 }
 ```
 
@@ -1016,7 +1053,7 @@ public class PlayerController2D : Component
         if (_body == null) return;
         
         // Déplacement horizontal
-        float move = Input.Axis("Horizontal");
+        float move = Input.ActionAxis("Horizontal");
         
         // Appliquer la vitesse
         var velocity = _body.LinearVelocity;
@@ -1024,7 +1061,7 @@ public class PlayerController2D : Component
         _body.LinearVelocity = velocity;
         
         // Saut
-        if (Input.ButtonDown("Jump") && _body.Grounded)
+        if (Input.WasActionPressed("Jump") && _body.Grounded)
         {
             velocity.Y = JumpForce;
             _body.LinearVelocity = velocity;
@@ -1041,7 +1078,7 @@ public class PlayerController2D : Component
     public override void OnCollisionEnter(Entity other)
     {
         // Gérer les collisions
-        Debug.Log($"Collision avec {other.Name}");
+        Log.Info($"Collision avec {other.Name}");
     }
 }
 ```
@@ -1125,8 +1162,8 @@ public class CarController : Component
         if (_character == null) return;
         
         // Input
-        float move = Input.Axis("Vertical");
-        float steer = Input.Axis("Horizontal");
+        float move = Input.ActionAxis("Vertical");
+        float steer = Input.ActionAxis("Horizontal");
         
         // Calcul de la direction
         float currentSpeed = move * Speed;
@@ -1400,7 +1437,7 @@ public class Quest : Component
             if (player.HasCollected(TargetEntity))
             {
                 IsCompleted = true;
-                Debug.Log($"Quête '{Title}' terminée !");
+                Log.Info($"Quête '{Title}' terminée !");
             }
         }
     }
@@ -1727,21 +1764,29 @@ public class Health : Component
 - `ComponentRegistry` : Registre des types de composants
 
 #### Components Module
-- `Transform` : Position, rotation, scale
-- `WorldTransform` : Transformation mondiale
-- `MeshRenderer` : Rendu de maillage
-- `Camera` : Caméra
-- `DirectionalLight` : Lumière directionnelle
-- `PointLight` : Lumière ponctuelle
-- `SpotLight` : Lumière spot
-- `Environment` : Environnement
-- `RigidBody` : Corps physique 3D
-- `BoxCollider` / `SphereCollider` / `CapsuleCollider` / `CylinderCollider` / `MeshCollider`
-- `CharacterController` : Contrôleur de personnage 3D
-- `RigidBody2D` : Corps physique 2D
-- `BoxCollider2D` / `CircleCollider2D` / `CapsuleCollider2D` / `PolygonCollider2D` / `TilemapCollider2D`
-- `CharacterController2D` : Contrôleur de personnage 2D
-- `SpriteRenderer` : Re
+
+Les 79 composants du moteur, par domaine (les jeux en ajoutent en C++ et en C#) :
+
+- **3D** : `Transform` (et `WorldTransform`, calculée), `MeshRenderer`, `SkinnedMeshRenderer`,
+  `Camera`, `DirectionalLight`, `PointLight`, `SpotLight`, `Environment`, `Atmosphere`, `Fog`,
+  `PostProcessVolume`, `Terrain`, `ReflectionProbe`, `LightProbeVolume`
+- **Physique 3D** : `RigidBody`, `BoxCollider`, `SphereCollider`, `CapsuleCollider`,
+  `CylinderCollider`, `MeshCollider`, `CharacterController`, `HingeJoint`, `SliderJoint`,
+  `DistanceJoint`, `FixedJoint`
+- **2D** : `SpriteRenderer`, `SpriteAnimator`, `Tilemap`, `PointLight2D`, `DirectionalLight2D`,
+  `LightOccluder2D`, `CanvasModulate`
+- **Physique 2D** : `RigidBody2D`, `BoxCollider2D`, `CircleCollider2D`, `CapsuleCollider2D`,
+  `PolygonCollider2D`, `TilemapCollider2D`, `CharacterController2D`, `HingeJoint2D`,
+  `SliderJoint2D`, `DistanceJoint2D`, `FixedJoint2D`
+- **Audio** : `AudioSource`, `AudioListener`
+- **Animation** : `Animator`, `Tweener`
+- **Particules** : `ParticleEmitter`, `TrailRenderer`
+- **Navigation** : `NavMeshSurface`, `NavMeshAgent`, `NavMeshObstacle`
+- **Interface** : `Canvas`, `UiRect`, `UiImage`, `UiText`, `UiButton`, `UiLayout`, `UiInput`,
+  `UiScroll`, `UiSlider`, `UiToggle`, `UiBinding`, `UiPopup`, `UiContextMenu`, `UiTooltip`,
+  `UiDropdown`, `UiSplitter`, `UiFoldout`, `UiVirtualList`, `UiTable`, `UiTableRow`,
+  `UiDragSource`, `UiDropTarget`, `UiNumberField`, `UiColorPicker`, `UiPlot`, `UiLine`,
+  `UiTextArea`
 
 ---
 
@@ -2549,14 +2594,30 @@ namespace devex::audio {
 
 #### 9.7.1. Architecture de Rendu
 
-Le système de rendu de Devex Engine utilise **Vulkan** comme backend principal avec les caractéristiques suivantes :
+Le renderer (`devex/render/Renderer.hpp`, implémenté par `VulkanRenderer`) dessine un `RenderWorld`
+que le runtime remplit à chaque frame. Vulkan 1.4, chargé par volk, mémoire par VMA, shaders Slang :
 
-- **Render Graph** : Graphique de rendu pour l'optimisation
-- **Pipeline State Objects** : Gestion efficace des états de pipeline
-- **Descriptor Sets** : Organisation des ressources shader
-- **Command Buffers** : Enregistrement et exécution des commandes
-- **Swap Chain** : Gestion du double/triple buffering
-- **Synchronisation** : Synchronisation GPU/CPU optimisée
+- **Render graph** : chaque frame déclare ses passes et les images qu'elles lisent et écrivent ; le
+  graphe pose les barrières des images et mesure chaque passe par des timestamps GPU (panneau
+  Profiler, `devex-editor --profile`).
+- **Sans état de sommets** : les shaders lisent sommets, matériaux et données de scène par les
+  adresses des buffers (vertex pulling) ; les textures sont dans un tableau sans liaison fixe
+  (descriptor indexing). Deux frames en vol, chacune avec ses propres buffers.
+- **Forward+ en clusters** avec une prépasse (profondeur, mouvement, normales), occlusion
+  ambiante, anticrénelage temporel, bloom, profondeur de champ, flou de mouvement, étalonnage et
+  tonemapping (AgX, PBR Neutral, ACES), mélangés par les `PostProcessVolume`.
+- **Culling sur le GPU** (jalon 85) : une passe compute (`shaders/cull.slang`) teste les instances
+  des matériaux standard dans la caméra, les cascades, les vues des lumières locales et le
+  picking ; chaque passe les dessine par lots (même sous-maillage, même matériau) en dessin
+  indirect (`shaders/instanced.slang`). Shaders des projets, transparence et maillages animés
+  restent cullés et dessinés par le CPU. Mesures : `docs/performances.md`.
+- **Ombres** : quatre cascades pour le soleil et un atlas de 4096² pour les lumières locales,
+  gardés d'une frame à l'autre tant que ce qui les dessine ne change pas.
+- **Ciel et lumière** : atmosphère physique (`AtmosphereRenderer`), brouillard de hauteur, ciel HDR
+  préfiltré (`EnvironmentBaker`), sondes de réflexion et volumes d'irradiance cuits.
+- **Terrains** : blocs à niveau de détail continu et herbe (`shaders/terrain.slang`).
+- **Mémoire** : les buffers écrits par le CPU chaque frame vont en mémoire vidéo quand la carte le
+  permet ; ceux que le CPU relit gardent une mémoire en cache (`BufferConfig::hostReads`).
 
 **Classes principales :**
 - `Renderer` : Rendeur principal
@@ -2564,443 +2625,915 @@ Le système de rendu de Devex Engine utilise **Vulkan** comme backend principal 
 - `RenderWorld` : Monde de rendu avec toutes les entités visibles (dont `reflectionProbes`, et
   les `views` dont les vues `radiance` capturent la lumière en nits pour la cuisson des sondes)
 - `EnvironmentBaker` : Préfiltrage GGX du ciel et des sondes de réflexion (`bakeProbe`)
+- `AtmosphereRenderer` : Tables de l'atmosphère et lumière du ciel
 - `CubeMaps` : Orientation des faces de cube (`cubeFaceView`, `cubeFaceDirection`)
 - `SphericalHarmonics` : Éclairement d'ordre 2 projeté d'un cube et évalué pour une normale
   (`projectIrradiance`, `evaluateIrradiance`)
+- `Frustum` (`devex/render/Culling.hpp`) : Tronc de vue et test des boîtes, sur le CPU
 - `RenderGraph` : Graphique de passe de rendu
-- `Pipeline` : Pipeline graphique
+- `Pipeline` : Pipeline graphique ou compute
 - `Device` : Appareil Vulkan
 - `Instance` : Instance Vulkan
 - `Swapchain` : Chaîne d'échange
 - `Commands` : Gestion des commandes
-- `Memory` : Gestion de la mémoire GPU
+- `Memory` : Gestion de la mémoire GPU (`Allocator`, `Buffer`, `Image`)
 - `DescriptorSets` : Jeu de descripteurs
-
 
 ---
 
 ## 10. API C# Complète - Services et Systèmes Avancés
 
-### 10.1. Services (`Devex.Services`)
+Les déclarations ci-dessous sont tirées des sources de `managed/Devex.Managed` (corps des méthodes
+retirés, commentaires gardés) : elles disent exactement ce que le C# d'un jeu peut appeler. Le
+tableau *Parité du C# et du C++* de `docs/decisions.md` dit ce qui correspond à chacune côté C++.
 
-Le fichier `Services.cs` fournit l'accès à tous les systèmes du moteur depuis C#.
+### 10.1. Services (`Devex`, `Services.cs`)
 
-#### 10.1.1. Physics Service
+Le jeu, le temps, la fenêtre, les assets et leurs données, les terrains, les préfabs, la physique 3D
+et 2D, la navigation, l'audio, les matériaux, l'animation, les tilemaps, les particules et
+l'interface.
 
 ```csharp
-// Dans: managed/Devex.Managed/Services.cs
-
-public static class Physics
+// The game as a whole: quitting it and changing its scene.
+public static unsafe class Game
 {
-    // Contacts physiques de la frame courante
-    public static ReadOnlySpan<Contact> Contacts => ContactArray;
-    
-    // Raycast 3D
-    public static bool Raycast(Vec3 origin, Vec3 direction, float maxDistance, out RaycastHit hit);
-    public static bool Raycast(Vec3 origin, Vec3 direction, float maxDistance, int layerMask, out RaycastHit hit);
-    public static bool Raycast(Vec3 origin, Vec3 direction, float maxDistance, int layerMask, Entity ignore, out RaycastHit hit);
-    
-    // Overlap detection
-    public static int OverlapSphere(Vec3 center, float radius, Entity[] results);
-    public static int OverlapSphere(Vec3 center, float radius, int layerMask, Entity[] results);
-    
-    // Sphere cast
-    public static bool SphereCast(Vec3 origin, float radius, Vec3 direction, float maxDistance, out RaycastHit hit);
+    // Ends the game: the player quits, and the editor stops playing.
+    public static void Quit();
+    // Replaces the scene once the updates of the frame are done; the new scene starts over.
+    public static void LoadScene(AssetId scene);
+    // Replaces the scene by its path, such as "res://assets/scenes/arena.dvxscene".
+    public static void LoadScene(string path);
+    // Loads a scene in the background: what it shows loads while this scene goes on, then it replaces
+    // this one. LoadingProgress says how far it is, for a loading screen.
+    public static void LoadSceneInBackground(AssetId scene);
+    // Loads a scene in the background by its path.
+    public static void LoadSceneInBackground(string path);
+    // Whether a scene is loading in the background.
+    public static bool IsLoadingScene { get; }
+    // How much of the scene loading in the background is ready, from 0 to 1; 0 when none is.
+    public static float LoadingProgress { get; }
 }
 
-public struct Contact
+// Time of the game.
+public static class Time
 {
-    public Entity First;
-    public Entity Second;
-    public bool Trigger;
-    public ContactPhase Phase;
-    
-    public bool Involves(Entity entity);
-    public Entity Other(Entity entity);
+    // Seconds since the previous frame during Update, the fixed step during FixedUpdate.
+    public static float Delta { get; internal set; }
+    // Seconds of game time since the scene started.
+    public static double Elapsed { get; internal set; }
+    // Frames since the scene started.
+    public static long Frame { get; internal set; }
 }
 
-public struct RaycastHit
+// The window the game draws in.
+public static unsafe class Screen
 {
+    // Its size in pixels.
+    public static Vec2 Size { get; }
+    // Resizes the window, in the coordinates of the window (which differ from pixels on a display
+    // scaled by the system), first putting it back to its normal state.
+    public static void SetSize(int width, int height);
+    // The words in the title bar of the window.
+    public static void SetTitle(string title);
+    // Borderless over the whole display. PlayerSettings.Fullscreen does the same and keeps the choice
+    // of the player for the next time the game starts.
+    public static bool Fullscreen { get; set; }
+    public static bool IsMaximized { get; }
+    public static bool IsMinimized { get; }
+    // The scale the system gives the display of the window: 1.5 at 150 %.
+    public static float DisplayScale { get; }
+    public static void Maximize();
+    // Leaves the maximized or minimized state.
+    public static void Restore();
+    // Centers the window on its display.
+    public static void Center();
+}
+
+// The assets of the game, which fields refer to by AssetId.
+public static unsafe class Assets
+{
+    // The asset of a source file, such as "res://assets/prefabs/crate.dvxscene"; null when there is none.
+    // An exported game only has the assets its scenes need and those of the folders the project always
+    // exports: assets found by path belong in those folders, or in a field of a component.
+    public static AssetId? Find(string path);
+    // Starts loading an asset without using it, so that it is ready when it is shown: meshes, textures
+    // and materials load in the background.
+    public static void Preload(AssetId asset);
+    // Whether the asset is loaded and, for what is drawn, on the GPU.
+    public static bool IsReady(AssetId asset);
+    // The name of the asset, as FileSystem shows it; null for an asset the game does not have.
+    public static string? NameOf(AssetId asset);
+    // The type of the asset: "mesh", "texture", "material", "scene", "audio"...; null for none.
+    public static string? TypeOf(AssetId asset);
+}
+
+// The curves drawn by hand in the editor, read as tweens read them.
+public static unsafe class Curves
+{
+    // The value of the curve at a time; 0 for a curve that cannot be loaded.
+    public static float Evaluate(AssetId curve, float time);
+}
+
+public struct MeshVertex
+{
+    public Vec3 Position;
+    public Vec3 Normal;
+    // Texture coordinates, with the origin at the top-left corner.
+    public Vec2 Uv;
+    // The direction of increasing U; W is the sign of the bitangent.
+    public Vec4 Tangent;
+}
+
+// The triangles of meshes, read as mesh colliders and the navigation read them.
+public static unsafe class Meshes
+{
+    // The vertices of a mesh, copied; empty when it cannot be loaded.
+    public static MeshVertex[] Vertices(AssetId mesh);
+    // The indices of its triangles, three by three, copied.
+    public static uint[] Indices(AssetId mesh);
+    // The box around its vertices, in the space of the mesh; false when it cannot be loaded.
+    public static bool Bounds(AssetId mesh, out Vec3 min, out Vec3 max);
+}
+
+// The images of the game.
+public static unsafe class Textures
+{
+    // Its width and height in pixels, once it is loaded; zero before.
+    public static Vec2 Size(AssetId texture);
+}
+
+// The sprites cut from textures.
+public static unsafe class Sprites
+{
+    // Its width and height in meters, as it is drawn; zero for a sprite that cannot be loaded.
+    public static Vec2 Size(AssetId sprite);
+    // The point it stands on, from (0, 0) at its bottom-left corner to (1, 1) at its top-right one.
+    public static Vec2 Pivot(AssetId sprite);
+}
+
+public struct TerrainHit
+{
+    public Vec3 Point;
+    public Vec3 Normal;
+    public float Distance;
+}
+
+// The ground of the terrains of the scene: its height under a point, which way it faces, its holes,
+// and where a ray meets it. Without a terrain entity, every terrain of the scene is looked at.
+public static unsafe class Terrains
+{
+    // The height in the world of the ground above or below a point; false outside it, or over a hole.
+    public static bool HeightAt(Vec3 point, out float height, Entity terrain = default);
+    // Which way the ground faces there.
+    public static bool NormalAt(Vec3 point, out Vec3 normal, Entity terrain = default);
+    // Whether the ground has a hole there, which nothing stands on.
+    public static bool IsHole(Vec3 point, Entity terrain = default);
+    // Where a ray first meets the ground within the distance, passing through its holes.
+    public static bool Raycast(Vec3 origin, Vec3 direction, float maxDistance, out TerrainHit hit, Entity terrain = default);
+}
+
+// Prefabs placed by the game while it plays.
+public static unsafe class Prefabs
+{
+    // A new instance of the prefab, under a parent or at the root; None when it cannot be loaded.
+    public static Entity Instantiate(AssetId prefab, Entity parent = default);
+    // A new instance of the prefab, placed at a position of its parent (of the world at the root).
+    public static Entity Instantiate(AssetId prefab, Vec3 position, Entity parent = default);
+}
+
+public struct RayHit
+{
+    // The entity of the body hit: the entity of its RigidBody, or of its collider.
     public Entity Entity;
     public Vec3 Point;
     public Vec3 Normal;
     public float Distance;
 }
 
-public enum ContactPhase { Begin, End }
-```
-
-#### 10.1.2. Time Service
-
-```csharp
-public static class Time
+// Whether two bodies started or stopped touching.
+public enum ContactPhase
 {
-    // Temps écoulé depuis le démarrage (en secondes)
-    public static float Elapsed { get; internal set; }
-    
-    // Temps écoulé depuis la frame précédente (en secondes)
-    public static float Delta { get; internal set; }
-    
-    // Numéro de la frame actuelle
-    public static int Frame { get; internal set; }
-    
-    // Facteur de temps (pour ralentir/accélérer le jeu)
-    public static float TimeScale { get; set; } = 1.0f;
-    
-    // Temps fixe (pour la physique)
-    public static float FixedDelta { get; internal set; } = 1.0f / 50.0f;
-    
-    // Méthodes utilitaires
-    public static float RealTimeSinceStartup();
-    public static float UnscaledTime();
+    Begin = 0,
+    End = 1,
 }
-```
 
-#### 10.1.3. Debug Service
-
-```csharp
-public static class Debug
+public readonly struct Contact
 {
-    public static void Log(string message);
-    public static void LogWarning(string message);
-    public static void LogError(string message);
-    public static void Assert(bool condition, string message = "");
-    public static void DrawLine(Vec3 start, Vec3 end, Vec4 color, float duration = 0);
-    public static void DrawRay(Vec3 start, Vec3 direction, Vec4 color, float duration = 0);
-    public static void DrawSphere(Vec3 center, float radius, Vec4 color, float duration = 0);
-    public static void DrawBox(Vec3 center, Vec3 size, Vec4 color, float duration = 0);
+    public bool Involves(Entity entity);
+    // The entity touching the given one.
+    public Entity Other(Entity entity);
 }
-```
 
-#### 10.1.4. Input Service (C#)
-
-```csharp
-public static class Input
+public readonly struct JointBreak
 {
-    // Axes virtuels
-    public static float GetAxis(string name);
-    public static float GetAxisRaw(string name);
-    
-    // Boutons virtuels
-    public static bool GetButton(string name);
-    public static bool GetButtonDown(string name);
-    public static bool GetButtonUp(string name);
-    
-    // Souris
-    public static Vec2 MousePosition { get; }
-    public static Vec2 MouseDelta { get; }
-    public static float MouseScrollDelta { get; }
-    public static bool GetMouseButton(int button);
-    public static bool GetMouseButtonDown(int button);
-    public static bool GetMouseButtonUp(int button);
-    
-    // Clavier
-    public static bool GetKey(Key key);
-    public static bool GetKeyDown(Key key);
-    public static bool GetKeyUp(Key key);
-    
-    // Tactile (si disponible)
-    public static bool MultiTouchEnabled { get; }
-    public static int TouchCount { get; }
-    public static Vec2 GetTouchPosition(int index);
-    public static bool GetTouchDown(int index);
-    public static bool GetTouchUp(int index);
+    public readonly Entity Joint;
+    public readonly Entity BodyA;
+    public readonly Entity BodyB;
+}
+
+// The simulation of the scene: queries, forces, and the contacts of the frame.
+public static unsafe class Physics
+{
+    // A mask of every collision layer.
+    public const uint AllLayers = 0xFFFF;
+    // The closest body along a ray, among the layers of the mask, ignoring the bodies of an entity.
+    public static bool Raycast(Vec3 origin, Vec3 direction, float maxDistance, out RayHit hit, uint layers = AllLayers, Entity ignore = default);
+    // The first body a sphere moving along the direction touches.
+    public static bool SphereCast(Vec3 origin, float radius, Vec3 direction, float maxDistance, out RayHit hit, uint layers = AllLayers, Entity ignore = default);
+    // The closest solid body along a ray, passing through triggers, as particles bounce off what they meet.
+    public static bool RaycastSolid(Vec3 origin, Vec3 direction, float maxDistance, out RayHit hit, uint layers = AllLayers);
+    // The entities whose bodies intersect a sphere, each once.
+    public static Entity[] OverlapSphere(Vec3 center, float radius, uint layers = AllLayers, Entity ignore = default);
+    // A force on the dynamic body of the entity during the next step, in world space.
+    public static void AddForce(Entity entity, Vec3 force);
+    public static void AddTorque(Entity entity, Vec3 torque);
+    // Changes the velocity of the dynamic body of the entity at once.
+    public static void AddImpulse(Entity entity, Vec3 impulse);
+    public static void AddImpulseAt(Entity entity, Vec3 impulse, Vec3 point);
+    // The contacts that began or ended during the physics steps of the frame, seen during Update: those
+    // of 3D bodies, then those of 2D bodies.
+    public static ReadOnlySpan<Contact> Contacts { get; }
+    // The joints, of 3D and 2D physics, that broke past their force or torque during the physics steps
+    // of the frame, seen during Update. A broken joint stays broken until its component changes.
+    public static ReadOnlySpan<JointBreak> BrokenJoints { get; }
+}
+
+// The navigation of the scene: NavMeshAgent components walk the navigation mesh of its
+// NavMeshSurface to the destinations given here, and paths along it are found on demand.
+public static unsafe class Navigation
+{
+    // Sends an agent to the point of the navigation mesh closest to a destination; false when the
+    // destination is far from the mesh.
+    public static bool SetDestination(Entity agent, Vec3 destination);
+    // Stops the agent where it is.
+    public static void Stop(Entity agent);
+    // Whether the agent walks to a destination; false once it arrived.
+    public static bool HasDestination(Entity agent);
+    // How far the agent still has to walk along its path.
+    public static float RemainingDistance(Entity agent);
+    // The corners of the shortest path along the navigation mesh; empty when there is none.
+    public static Vec3[] FindPath(Vec3 from, Vec3 to);
+    // The point of the navigation mesh closest to a point, within a distance.
+    public static bool SamplePosition(Vec3 point, float maxDistance, out Vec3 position);
+    // Walks a straight line along the navigation mesh; true when it leaves the mesh, at the position given.
+    public static bool Raycast(Vec3 from, Vec3 to, out Vec3 position, out Vec3 normal);
+}
+
+public struct RayHit2D
+{
+    // The entity of the body hit: the entity of its RigidBody2D, or of its collider.
+    public Entity Entity;
+    public Vec2 Point;
+    public Vec2 Normal;
+    public float Distance;
+}
+
+// The 2D simulation of the scene, in the XY plane: queries and forces. Its contacts come with the
+// others in Physics.Contacts, and reach OnCollisionEnter and OnTriggerEnter alike.
+public static unsafe class Physics2D
+{
+    // The closest 2D body along a ray, among the layers of the mask, through triggers, ignoring the
+    // bodies of an entity.
+    public static bool Raycast(Vec2 origin, Vec2 direction, float maxDistance, out RayHit2D hit, uint layers = Physics.AllLayers, Entity ignore = default);
+    // The entities whose 2D bodies, triggers included, overlap a circle, each once.
+    public static Entity[] OverlapCircle(Vec2 center, float radius, uint layers = Physics.AllLayers, Entity ignore = default);
+    // A force on the dynamic 2D body of the entity during the next step.
+    public static void AddForce(Entity entity, Vec2 force);
+    // A torque around Z on the dynamic 2D body of the entity during the next step.
+    public static void AddTorque(Entity entity, float torque);
+    // Changes the velocity of the dynamic 2D body of the entity at once.
+    public static void AddImpulse(Entity entity, Vec2 impulse);
+}
+
+// The sounds of the game: those of the AudioSource components of entities, sounds played once, and
+// the volumes of the audio groups of the project.
+public static unsafe class Audio
+{
+    // The name of the volume of every group together.
+    public const string Master = "Master";
+    // Plays the clip of the AudioSource of the entity from its start.
+    public static void Play(Entity entity);
+    public static void Stop(Entity entity);
+    public static void Pause(Entity entity);
+    // Goes on from where Pause stopped.
+    public static void Resume(Entity entity);
+    public static bool IsPlaying(Entity entity);
+    // The length of a clip in seconds; 0 for a clip that cannot be loaded.
+    public static double ClipLength(AssetId clip);
+    // Plays a clip once at a position of the world, in an audio group.
+    public static void PlayOneShot(AssetId clip, Vec3 position, float volume = 1.0f, uint group = 0);
+    // Plays a clip once, everywhere at the same volume, as music or the sounds of an interface.
+    public static void PlayOneShot(AssetId clip, float volume = 1.0f, uint group = 0);
+    // The volume of an audio group of the project, or of all of them with Master.
+    public static float GetGroupVolume(string group);
+    // Changes the volume of an audio group until the game ends, as a settings menu does: 1 leaves the
+    // sounds as they are, 0 silences them.
+    public static void SetGroupVolume(string group, float volume);
+}
+
+// The uniforms of the materials drawn by shaders of the project, changed while the game runs, as
+// Godot's set_shader_parameter: every object drawn with the material changes. Its file keeps its
+// values, which come back when the editor stops playing. Instance uniforms are given by each object,
+// with InstanceShaderParameters.
+public static unsafe class Materials
+{
+    public static void SetShaderParameter(AssetId material, string name, float value);
+    public static void SetShaderParameter(AssetId material, string name, Vec2 value);
+    public static void SetShaderParameter(AssetId material, string name, Vec3 value);
+    public static void SetShaderParameter(AssetId material, string name, Vec4 value);
+    public static void SetShaderParameter(AssetId material, string name, int value);
+    public static void SetShaderParameter(AssetId material, string name, bool value);
+    // Gives a texture uniform of the material another texture of the project.
+    public static void SetShaderParameter(AssetId material, string name, AssetId texture);
+    // The value of a uniform of the material, in as many components as it has: the one it was given,
+    // else the default of its shader.
+    public static Vec4 GetShaderParameter(AssetId material, string name);
+}
+
+// The instance uniforms of the shader an object draws with, as Godot's set_instance_shader_parameter:
+// its renderer (MeshRenderer, SkinnedMeshRenderer, SpriteRenderer, Tilemap) gives them its own values,
+// the flash of one enemy that was hit, and the objects that give none keep the defaults of the
+// shader. Tweens reach them as "SpriteRenderer.instance_shader_parameters/flash".
+public static unsafe class InstanceShaderParameters
+{
+    public static void SetInstanceShaderParameter(this Entity entity, string name, float value);
+    public static void SetInstanceShaderParameter(this Entity entity, string name, Vec2 value);
+    public static void SetInstanceShaderParameter(this Entity entity, string name, Vec3 value);
+    public static void SetInstanceShaderParameter(this Entity entity, string name, Vec4 value);
+    public static void SetInstanceShaderParameter(this Entity entity, string name, int value);
+    public static void SetInstanceShaderParameter(this Entity entity, string name, bool value);
+    // The value the object gives the uniform, else the default of its shader.
+    public static Vec4 GetInstanceShaderParameter(this Entity entity, string name);
+    // Lets the object take the default of the shader again.
+    public static void ResetInstanceShaderParameter(this Entity entity, string name);
+}
+
+// The animations of the game: the clips the Animator components play on the bones of their entity.
+// An event an animation played past: the entity of its Animator or SpriteAnimator, and the name the animation gives it.
+public readonly record struct AnimationEvent(Entity Entity, string Name);
+{
+    // The events the animations played past this frame, in the order they came: those of the clips
+    // of Animators, set in the import settings of their model, and of the frames of SpriteAnimators,
+    // set in their .dvxframes. They also reach the OnAnimationEvent of the components of the entity.
+    public static AnimationEvent[] Events { get; }
+    // Plays a clip on the animator of the entity, crossfading over fade seconds; a negative fade
+    // takes the blend time of the Animator. The clip becomes the one the Animator holds.
+    public static void Play(Entity entity, AssetId clip, float fade = -1.0f);
+    // Plays the clip the Animator already holds, from its start.
+    public static void Play(Entity entity);
+    public static void Stop(Entity entity);
+    public static void Pause(Entity entity);
+    // Goes on from where Pause stopped.
+    public static void Resume(Entity entity);
+    public static bool IsPlaying(Entity entity);
+    // Seconds into the clip that plays.
+    public static float GetTime(Entity entity);
+    // Jumps to a time of the clip and poses the bones there.
+    public static void SetTime(Entity entity, float seconds);
+    // Sets a float parameter of the state machine of the Animator of the entity.
+    public static void SetFloat(Entity entity, string parameter, float value);
+    public static void SetInteger(Entity entity, string parameter, int value);
+    public static void SetBool(Entity entity, string parameter, bool value);
+    // Sets a trigger, which the transition it lets through resets.
+    public static void SetTrigger(Entity entity, string parameter);
+    public static void ResetTrigger(Entity entity, string parameter);
+    // A parameter of the state machine; bools and triggers read as 0 or 1.
+    public static float GetFloat(Entity entity, string parameter);
+    public static int GetInteger(Entity entity, string parameter);
+    public static bool GetBool(Entity entity, string parameter);
+    // The state the state machine of the entity is in; empty without a controller.
+    public static string GetState(Entity entity);
+    // The state a layer of the state machine is in; empty without that layer.
+    public static string GetState(Entity entity, string layer);
+    // Whether the state machine of the entity is in a state.
+    public static bool IsInState(Entity entity, string state);
+    // Whether a layer of the state machine of the entity is in a state.
+    public static bool IsInState(Entity entity, string state, string layer);
+    // How far into its state the state machine is: 1 at its end, more for a state that loops.
+    public static float GetStateTime(Entity entity);
+    // How far into its state a layer of the state machine is.
+    public static float GetStateTime(Entity entity, string layer);
+    // Sets how much of the pose of a layer of the state machine shows, from 0 to 1, in place of the
+    // weight its controller gives it: an arm that aims only while the character holds a weapon. The
+    // weight parameter of the layer, when it names one, still multiplies it.
+    public static void SetLayerWeight(Entity entity, string layer, float weight);
+    // The weight code or the controller gives a layer; 0 for a layer neither knows.
+    public static float GetLayerWeight(Entity entity, string layer);
+}
+
+// Frame by frame animation of sprites: the SpriteAnimator components, which show the frames of an
+// animation of their sprite frames on the SpriteRenderer of their entity.
+public static class SpriteAnimations
+{
+    // Plays an animation by name. Another animation starts from its first frame; the one already
+    // playing goes on, so that this can be called every frame; one that ended starts again.
+    public static void Play(this SpriteAnimator animator, string animation);
+}
+
+// What a tile is to the game, as its tileset says.
+public enum TileCollision
+{
+    // Walked through.
+    None,
+    // Solid on every side: ground, walls.
+    Full,
+    // Holds up what lands on it from above, lets through what comes from below.
+    Top,
+}
+
+// The Tilemap components of the scene: grids of cells painted with the tiles of a tileset. Cell
+// (x, y) covers [x, x + 1) by [y, y + 1) cells from the origin of its entity, y up.
+public static unsafe class Tilemaps
+{
+    // The flags of a cell that mirror its tile, above its identifier.
+    public const int FlipX = 0x4000;
+    public const int FlipY = 0x8000;
+    // The tile of a cell, its identifier in the tileset; 0 for none.
+    public static int GetTile(Entity tilemap, int x, int y);
+    // Paints a cell with a tile of the tileset, mirrored or not; 0 empties it.
+    public static void SetTile(Entity tilemap, int x, int y, int tile, bool flipX = false, bool flipY = false);
+    // The cell under a point of the world.
+    public static (int X, int Y) CellAt(Entity tilemap, Vec3 point);
+    // The middle of a cell, in the world.
+    public static Vec3 CellCenter(Entity tilemap, int x, int y);
+    // How the tile of a cell collides, None for an empty cell.
+    public static TileCollision GetCollision(Entity tilemap, int x, int y);
+    // What the tileset tells the game of the tile of a cell, such as "water"; empty for none.
+    public static string GetData(Entity tilemap, int x, int y);
+    // The terrain set of the tile of a cell and the terrain of its middle, as its tileset names
+    // them; (-1, -1) for an empty cell or a tile outside the terrains.
+    public static (int Set, int Terrain) GetTerrain(Entity tilemap, int x, int y);
+    // The terrain set and the terrain of that name in the tileset of the tilemap; (-1, -1) when none has it.
+    public static (int Set, int Terrain) FindTerrain(Entity tilemap, string name);
+    // Paints cells with a terrain of a terrain set, or empties them with -1: each cell takes the tile
+    // that matches the cells around it, which change their tiles to match in turn, as the Terrain
+    // brush of the editor paints.
+    public static void SetTerrain(Entity tilemap, ReadOnlySpan<(int X, int Y)> cells, int set, int terrain);
+    public static void SetTerrain(Entity tilemap, int x, int y, int set, int terrain);
+    // The same along a path: each cell joins only the one before it and the one after it, in the
+    // order given, as a road or a river does.
+    public static void SetTerrainPath(Entity tilemap, ReadOnlySpan<(int X, int Y)> cells, int set, int terrain);
+}
+
+// The particles of the game: the ParticleEmitter components of the scene, which emit by themselves
+// when they play on start, and which code plays, stops and bursts.
+public static unsafe class Particles
+{
+    // Emits again from the start of a cycle, with its burst.
+    public static void Play(Entity emitter);
+    // Stops emitting; the particles alive finish their life, or vanish with clear.
+    public static void Stop(Entity emitter, bool clear = false);
+    // Holds the emitter and its particles where they are.
+    public static void Pause(Entity emitter);
+    public static void Resume(Entity emitter);
+    // Emits particles at once, whether the emitter plays or not: sparks where a ball lands.
+    public static void Emit(Entity emitter, int count);
+    // While it emits, or particles it emitted are alive.
+    public static bool IsPlaying(Entity emitter);
+    // The particles alive.
+    public static int Count(Entity emitter);
+    // What pulls every particle down, times the gravity of its emitter: (0, -9.81, 0) at first.
+    public static Vec3 Gravity { get; set; }
+}
+
+// The interface of the game: the canvases of the scene, what the player clicked this frame, and
+// where the focus sits for the keyboard and the pad.
+public static unsafe class Ui
+{
+    // Whether a button carrying this action was clicked during this frame. As many buttons as
+    // needed may share an action: any of them answers.
+    public static bool WasClicked(string action);
+    // Whether that very button was clicked during this frame.
+    public static bool WasClicked(Entity entity);
+    // Whether a slider carrying this action was moved, or a toggle carrying it turned over,
+    // during this frame. The value itself is read from the component of the element.
+    public static bool WasChanged(string action);
+    // Whether a field carrying this action was ended with Enter during this frame. What was
+    // typed is the text of the UiText of the field.
+    public static bool WasSubmitted(string action);
+    // The field being typed into, or an invalid entity.
+    public static Entity EditedField { get; }
+    // Whether the player asked to go back this frame: Escape, or the east button.
+    public static bool WasCancelled();
+    // The button under the pointer, or an invalid entity.
+    public static Entity Hovered { get; }
+    // The button the keyboard and the pad act on, or an invalid entity.
+    public static Entity Focused { get; set; }
+    // Whether the pointer rests on the interface, which a game reads before acting on a click of
+    // its own.
+    public static bool PointerOverInterface { get; }
+    // Whether a button carrying this action was clicked twice in a row, quickly, during this
+    // frame. The second click also counts as a click.
+    public static bool WasDoubleClicked(string action);
+    // Whether that very button was clicked twice in a row, quickly, during this frame.
+    public static bool WasDoubleClicked(Entity entity);
+    // Opens a popup (UiPopup) where its anchors put it.
+    public static void OpenPopup(Entity popup);
+    // Opens a popup with its top left corner at a point of the screen, in pixels.
+    public static void OpenPopup(Entity popup, Vec2 at);
+    // Closes a popup. Menus close by themselves; a modal stays until it is closed.
+    public static void ClosePopup(Entity popup);
+    // Whether a popup is open.
+    public static bool IsPopupOpen(Entity popup);
+    // The element whose UiContextMenu opened the last context menu, such as the row of a list,
+    // which the entries of the menu act on.
+    public static Entity ContextTarget { get; }
+    // The value of a plot (UiPlot) the pointer is over, from 0: the bar under it, or the point of
+    // the line nearest across; -1 when the pointer is elsewhere.
+    public static int PlotValueAt(Entity plot);
+    // Whether something was dropped during this frame on a drop target (UiDropTarget) carrying
+    // this action. What was dropped is in Dropped.
+    public static bool WasDropped(string action);
+    // Whether something was dropped on that very target during this frame.
+    public static bool WasDropped(Entity target);
+    // The last drop of this frame, or null when nothing was dropped.
+    public static UiDrop? Dropped { get; }
+    // The drag source (UiDragSource) the pointer carries, or an invalid entity.
+    public static Entity Carried { get; }
+    // Colours runs of the text of an area (UiTextArea): the words of a language, the names of a
+    // log. Positions count characters of its text, as string.IndexOf does; the letters out
+    // of every run keep the colour of the UiText. The runs stay until the next call and do not
+    // follow the text when it changes: a script gives them again then, for the lines in view
+    // (VisibleTextLines) when the text is long.
+    public static void SetTextColors(Entity area, ReadOnlySpan<UiTextSpan> spans);
+    // Runs drawn behind the letters of an area, such as what a search found, which stay until the
+    // next call.
+    public static void SetTextHighlights(Entity area, ReadOnlySpan<UiTextSpan> highlights);
+    // Lines an area marks at their left and underlines, such as an error, which stay until the
+    // next call.
+    public static void SetTextMarks(Entity area, ReadOnlySpan<UiTextLineMark> marks);
+    // The first line an area shows, from 0, and how many it shows: the ones worth colouring.
+    // Nothing before the area was first laid out.
+    public static (int First, int Count) VisibleTextLines(Entity area);
+}
+
+// What a drop target took: the drag source it came from, the target, the type and data of the
+// source, and where it was let go in the target, from (0, 0) at its top left corner to (1, 1).
+public readonly record struct UiDrop(Entity Source, Entity Target, string Type, string Data, Vec2 At);
+{
 }
 ```
 
 ### 10.2. Coroutines et Tweens
 
-#### 10.2.1. Coroutines (`Devex.Coroutines`)
+#### 10.2.1. Coroutines (`Coroutines.cs`)
 
 ```csharp
-// Dans: managed/Devex.Managed/Coroutines.cs
-
-public static class Coroutines
+public sealed class Coroutine
 {
-    // Démarrer une coroutine
-    public static Coroutine Start(IEnumerator routine);
-    
-    // Arrêter une coroutine
-    public static void Stop(Coroutine coroutine);
-    public static void StopAll();
-    
-    // Attendre
-    public static IEnumerator WaitForSeconds(float seconds);
-    public static IEnumerator WaitForEndOfFrame();
-    public static IEnumerator WaitWhile(Func<bool> predicate);
-    public static IEnumerator WaitUntil(Func<bool> predicate);
-    public static IEnumerator WaitForFixedUpdate();
-    
-    // Exécution
-    internal static void Update(float delta);
-    internal static void Clear();
-    
-    // Contexte
-    internal static SynchronizationContext Context { get; } = new();
-    internal static Component CurrentOwner { get; set; }
-}
-
-public class Coroutine : IEnumerable
-{
-    public bool IsDone { get; }
+    // It reached its end, failed, or was stopped.
+    public bool IsDone { get; private set; }
+    // It was stopped, or ended with its component or the scene, before its end.
+    public bool IsStopped { get; private set; }
+    // Ends it where it waits. Coroutines that await it go on.
     public void Stop();
-    
-    public IEnumerator GetEnumerator();
+    // Awaiting a coroutine waits for its end, and throws what it failed with.
+    public CoroutineAwaiter GetAwaiter();
+}
+
+// What awaiting a coroutine gives.
+public readonly struct CoroutineAwaiter : ICriticalNotifyCompletion, IEngineAwaiter
+{
+    public bool IsCompleted { get; }
+    public void GetResult();
+    public void OnCompleted(Action continuation);
+    public void UnsafeOnCompleted(Action continuation);
+}
+
+// The waits of coroutines, which any async method of the game may await too: it then goes on in the
+// Update of the frame the wait ends in.
+public static class Wait
+{
+    // Seconds of game time.
+    public static WaitAwaiter Seconds(float seconds);
+    // The next frame.
+    public static WaitAwaiter NextFrame();
+    // Until the condition holds, asked once per frame.
+    public static WaitAwaiter Until(Func<bool> condition);
+    // As long as the condition holds, asked once per frame.
+    public static WaitAwaiter While(Func<bool> condition);
+}
+
+// What awaiting a wait or a tween gives.
+public readonly struct WaitAwaiter : ICriticalNotifyCompletion, IEngineAwaiter
+{
+    public WaitAwaiter GetAwaiter();
+    public bool IsCompleted { get; }
+    public void GetResult();
+    public void OnCompleted(Action continuation);
+    public void UnsafeOnCompleted(Action continuation);
+}
+
+public struct CoroutineMethodBuilder
+{
+    public static CoroutineMethodBuilder Create();
+    public Coroutine Task { get; }
+    // Runs at once, until the first wait.
+    public void Start<TStateMachine>(ref TStateMachine stateMachine) where TStateMachine : IAsyncStateMachine
+    public void SetStateMachine(IAsyncStateMachine stateMachine);
+    public void SetResult();
+    public void SetException(Exception exception);
+    public void AwaitOnCompleted<TAwaiter, TStateMachine>(ref TAwaiter awaiter, ref TStateMachine stateMachine);
+    public void AwaitUnsafeOnCompleted<TAwaiter, TStateMachine>(ref TAwaiter awaiter, ref TStateMachine stateMachine);
 }
 ```
 
-**Utilisation des Coroutines :**
-```csharp
-public class Enemy : Component
-{
-    public override void Start()
-    {
-        Coroutines.Start(AttackRoutine());
-    }
-    
-    private IEnumerator AttackRoutine()
-    {
-        while (true)
-        {
-            yield return Coroutines.WaitForSeconds(2.0f);
-            Attack();
-            yield return Coroutines.WaitForSeconds(0.5f);
-        }
-    }
-    
-    private void Attack()
-    {
-        // Logique d'attaque
-    }
-}
-```
-
-#### 10.2.2. Tweens (`Devex.Tweens`)
+#### 10.2.2. Tweens (`Tweens.cs`)
 
 ```csharp
-// Dans: managed/Devex.Managed/Tweens.cs
-
-public static class Tweens
+// How a tween moves between its ends, as the Tweener component's ease names them.
+public enum Ease
 {
-    // Créer un tween
-    public static Tween To(float from, float to, float duration, Action<float> onUpdate);
-    public static Tween To(Func<float> getValue, Action<float> setValue, float to, float duration);
-    
-    // Créer un tween avec easing
-    public static Tween To(float from, float to, float duration, Action<float> onUpdate, Func<float, float> ease);
-    
-    // Tweens vectoriels
-    public static Tween To(Vec3 from, Vec3 to, float duration, Action<Vec3> onUpdate);
-    public static Tween To(Func<Vec3> getValue, Action<Vec3> setValue, Vec3 to, float duration);
-    
-    // Tweens de quaternion
-    public static Tween To(Quat from, Quat to, float duration, Action<Quat> onUpdate);
-    
-    // Tweens de couleur
-    public static Tween To(Vec4 from, Vec4 to, float duration, Action<Vec4> onUpdate);
-    
-    // Contrôle
-    public static void Kill(Tween tween);
-    public static void KillAll();
-    public static void PauseAll();
-    public static void ResumeAll();
-    
-    // Fonctions d'easing
-    public static float Linear(float t);
-    public static float EaseInQuad(float t);
-    public static float EaseOutQuad(float t);
-    public static float EaseInOutQuad(float t);
-    public static float EaseInCubic(float t);
-    public static float EaseOutCubic(float t);
-    public static float EaseInOutCubic(float t);
-    public static float EaseInSine(float t);
-    public static float EaseOutSine(float t);
-    public static float EaseInOutSine(float t);
-    // ... et beaucoup d'autres
+    Linear,
+    InQuad,
+    OutQuad,
+    InOutQuad,
+    InCubic,
+    OutCubic,
+    InOutCubic,
+    InSine,
+    OutSine,
+    InOutSine,
+    InExpo,
+    OutExpo,
+    InOutExpo,
+    InBack,
+    OutBack,
+    InOutBack,
+    InElastic,
+    OutElastic,
+    InOutElastic,
+    InBounce,
+    OutBounce,
+    InOutBounce,
 }
 
-public class Tween
+// What a tween does once it reaches its end.
+public enum TweenLoop
 {
-    public void OnComplete(Action callback);
-    public void OnUpdate(Action<float> callback);
+    // It ends.
+    None,
+    // It starts over from its start.
+    Restart,
+    // It goes back to its start, then forth again.
+    PingPong,
+}
+
+// A tween: a field of a component of an entity, from one value to another over some time. The field
+// holds a number, a vector, a color or a rotation, which is given in degrees around x, y and z.
+// <code>
+// new TweenSpec(door, "Transform.position", new Vec3(0, 3, 0), 1.5f) { Relative = true, Ease = Ease.InOutSine }.Play();
+// </code>
+public struct TweenSpec
+{
+    public Entity Entity;
+    // "Component.field": "Transform.position", "UiRect.opacity", "UiImage.color", "PointLight.intensity".
+    public string Field;
+    // As many components as the field has: X for a number, XYZ for a position, all four for a color.
+    public Vec4 To;
+    // The start; null starts from the value the field has once the delay is over.
+    public Vec4? From;
+    // To is added to the start rather than reached.
+    public bool Relative;
+    // In seconds.
+    public float Duration;
+    public float Delay;
+    public Ease Ease;
+    // A curve asset drawn in the editor, which replaces the ease when set.
+    public AssetId Curve;
+    public TweenLoop Loop;
+    // How many times it plays again once over, with a loop; -1 without end.
+    public int Repeats;
+    public TweenSpec(Entity entity, string field, Vec4 to, float duration);
+    public TweenSpec(Entity entity, string field, Vec3 to, float duration);
+    public TweenSpec(Entity entity, string field, Vec2 to, float duration);
+    public TweenSpec(Entity entity, string field, float to, float duration);
+    // Plays it; throws when the entity lacks the component or the field cannot be animated.
+    public readonly TweenHandle Play();
+}
+
+// A tween or a sequence that plays: what stops it, and what a coroutine awaits.
+// <code>await Tween.Fade(panel, 0.0f, 0.3f);</code>
+public readonly unsafe struct TweenHandle : IEquatable<TweenHandle>
+{
+    // While it plays, waits for its delay or is paused.
+    public bool IsPlaying { get; }
+    // Stops it where it is, or, with complete, at its end.
+    public void Kill(bool complete = false);
     public void Pause();
+    // Goes on from where Pause held it.
     public void Resume();
-    public void Kill();
-    public void Restart();
-    
-    public bool IsActive { get; }
-    public bool IsPaused { get; }
+    // Awaiting a tween waits for its end, within a coroutine or any async method.
+    public WaitAwaiter GetAwaiter();
+    public bool Equals(TweenHandle other);
+    public override bool Equals(object? other);
+    public override int GetHashCode();
+    public static bool operator ==(TweenHandle left, TweenHandle right);
+    public static bool operator !=(TweenHandle left, TweenHandle right);
+}
+
+// Tweens that play one step after the other; the tweens of a step play together.
+// <code>
+// await new TweenSequence()
+// .Append(new TweenSpec(label, "UiRect.opacity", 1.0f, 0.2f))
+// .AppendInterval(1.5f)
+// .Append(new TweenSpec(label, "UiRect.opacity", 0.0f, 0.4f))
+// .Play();
+// </code>
+public sealed class TweenSequence
+{
+    // A step of its own, after the others.
+    public TweenSequence Append(TweenSpec tween);
+    // Plays with the last step, or in a first step.
+    public TweenSequence Join(TweenSpec tween);
+    // A wait after the last step.
+    public TweenSequence AppendInterval(float seconds);
+    // Plays it; the handle ends with its last step.
+    public unsafe TweenHandle Play();
+}
+
+// The tweens of the game: fields of components that go from one value to another over some time,
+// written each frame before the interface is laid out. A tween ends with its entity.
+public static unsafe class Tween
+{
+    // Plays a tween; throws when the entity lacks the component or the field cannot be animated.
+    public static TweenHandle Play(in TweenSpec tween);
+    // Tweens any field that holds a number.
+    public static TweenHandle To(Entity entity, string field, float to, float duration, Ease ease = Ease.OutQuad);
+    // Tweens any field that holds a vector, a color or a rotation.
+    public static TweenHandle To(Entity entity, string field, Vec4 to, float duration, Ease ease = Ease.OutQuad);
+    // Moves the entity to a position, relative to its parent.
+    public static TweenHandle Move(Entity entity, Vec3 position, float duration, Ease ease = Ease.OutQuad);
+    // Moves the entity by an offset.
+    public static TweenHandle MoveBy(Entity entity, Vec3 offset, float duration, Ease ease = Ease.OutQuad);
+    // Turns the entity to a rotation, in degrees around x, y and z.
+    public static TweenHandle Rotate(Entity entity, Vec3 degrees, float duration, Ease ease = Ease.OutQuad);
+    public static TweenHandle Scale(Entity entity, Vec3 scale, float duration, Ease ease = Ease.OutQuad);
+    // Fades an element of the interface, and those inside it.
+    public static TweenHandle Fade(Entity entity, float opacity, float duration, Ease ease = Ease.OutQuad);
+    // Starts the Tweener of the entity, which does not start by itself without Play On Start.
+    public static TweenHandle PlayTweener(Entity entity);
 }
 ```
 
-**Utilisation des Tweens :**
-```csharp
-public class SmoothCamera : Component
-{
-    public Entity Target;
-    public float SmoothTime = 0.3f;
-    
-    private Tween _moveTween;
-    private Tween _rotateTween;
-    
-    public override void Update(float delta)
-    {
-        if (Target.IsAlive)
-        {
-            var targetPos = Target.WorldPosition;
-            var targetRot = Target.Transform.Rotation;
-            
-            _moveTween = Tweens.To(
-                Entity.Transform.Position,
-                v => Entity.Transform.Position = v,
-                targetPos,
-                SmoothTime
-           
-
-### 10.3. Sauvegardes (`Devex.Saves`)
+### 10.3. Sauvegardes et réglages (`Saves.cs`)
 
 ```csharp
-// Dans: managed/Devex.Managed/Saves.cs
-
-public static class Saves
+// A save as a list of saves shows it.
+public sealed class SaveSlot
 {
-    // Répertoire des sauvegardes
-    public static string Directory { get; set; } = "saves";
-    
-    // Sauvegarder une scène
-    public static void SaveScene(string slot, Scene scene);
-    public static void SaveScene(string slot);
-    
-    // Charger une scène
-    public static bool LoadScene(string slot, out Scene scene);
-    public static bool LoadScene(string slot);
-    
-    // Vérifier l'existence
-    public static bool HasSave(string slot);
-    public static string[] ListSaves();
-    
-    // Supprimer une sauvegarde
-    public static void DeleteSave(string slot);
-    
-    // Métadonnées
-    public static string GetSavePreview(string slot);
-    public static DateTime GetSaveTime(string slot);
-    
-    // Gestion interne
-    internal static void Forget();
-    internal static void SetSlot(string slot);
+    public required string Name { get; init; }
+    // What the game called it when saving: "Chapter 2", the name of a place.
+    public required string Label { get; init; }
+    // When it was written, in the local time of the machine.
+    public required DateTime Time { get; init; }
+    // Seconds played until then.
+    public required double PlayTime { get; init; }
+    public required AssetId Scene { get; init; }
+    public required string SceneName { get; init; }
+    // The version the game gave what it saved.
+    public required int Version { get; init; }
+    // Whether loading it brings back the scene it saved.
+    public required bool HasScene { get; init; }
+    public required bool HasThumbnail { get; init; }
+    // The picture of the save as a texture a UiImage shows, or an invalid asset while there is none.
+    public AssetId Thumbnail { get; }
+}
+
+// The saves of the game, in the folder of the player. A save is an object of the game, whose public
+// fields are written as those of a component are, with the scene that plays and a picture of it:
+// <code>
+// public class Progress { public int Level; public List&lt;string&gt; Items = []; }
+// Saves.Save("1", progress, label: "Level 2");
+// Progress? loaded = Saves.Load&lt;Progress&gt;("1");
+// </code>
+// Loading a save that kept its scene puts that scene back at the end of the frame; its Start runs
+// with RestoredSlot set, to leave alone what the save brought back. Fields the object no
+// longer has are skipped and new ones keep their defaults, so that older saves still load.
+public static unsafe class Saves
+{
+    // Writes the object into the slot, keeping the save it held beside it.
+    // <param name="slot">Letters, digits, spaces, dashes, dots and underscores: "1", "auto", "quick".</param>
+    // <param name="data">An object whose public fields are saved as those of a component are.</param>
+    // <param name="label">Shown in the list of saves: "Chapter 2", the name of a place.</param>
+    // <param name="scene">Keeps the scene as it plays, which loading brings back.</param>
+    // <param name="thumbnail">Keeps a picture of the next frame, without the interface.</param>
+    // <param name="version">The version of what the game saves, to convert older saves once it changes.</param>
+    public static void Save<T>(string slot, T data, string label = "", bool scene = true, bool thumbnail = true, int version = 0);
+    // Reads the save of the slot, or null when it has none. With restoreScene, the scene it
+    // kept replaces the one that plays at the end of the frame, and the time played carries on from it.
+    public static T? Load<T>(string slot, bool restoreScene = true) where T : class, new();
+    // Every save, the most recent first.
+    public static SaveSlot[] List();
+    // The save of the slot, or null when it has none.
+    public static SaveSlot? Find(string slot);
+    public static bool Exists(string slot);
+    // Removes the save of the slot, its picture and the save it kept.
+    public static void Delete(string slot);
+    // The slot the scene that plays came back from, while its Start runs; null otherwise.
+    public static string? RestoredSlot { get; }
+    // Seconds played, carried on from the save loaded last.
+    public static double PlayTime { get; }
+    // The picture of the save as a texture a UiImage shows, or an invalid asset while there is none.
+    public static AssetId Thumbnail(string slot);
+}
+
+// What the player chose, kept from one game to the next in the folder of the player: the volumes, the
+// window, and the values the game keeps by name, such as a language or the sensitivity of the mouse.
+// The engine applies the volumes at once, full screen outside the editor, and vertical sync from the
+// next launch.
+public static unsafe class PlayerSettings
+{
+    // Full screen, or the window; the window as it is while the player has not chosen.
+    public static bool Fullscreen { get; set; }
+    // Waits for the display between frames; takes effect from the next launch of the game.
+    public static bool VSync { get; set; }
+    // The volume the player chose for an audio group, or for every sound with Audio.Master: 1 by default.
+    public static float GetVolume(string group);
+    // Sets the volume the player chose, from 0 to 1; it multiplies the volumes the game sets.
+    public static void SetVolume(string group, float volume);
+    public static bool GetBool(string key, bool fallback = false);
+    public static int GetInt(string key, int fallback = 0);
+    public static float GetFloat(string key, float fallback = 0.0f);
+    public static string GetString(string key, string fallback = "");
+    public static void SetBool(string key, bool value);
+    public static void SetInt(string key, int value);
+    public static void SetFloat(string key, float value);
+    public static void SetString(string key, string value);
+    public static bool Has(string key);
+    public static void Remove(string key);
 }
 ```
 
-### 10.4. Input Actions (C#)
+### 10.4. Entrées et actions (`Input.cs`)
 
 ```csharp
-// Dans: managed/Devex.Managed/Services.cs
-
-public static class InputActions
+// A mouse button, as the engine numbers them.
+public enum MouseButton
 {
-    // Configuration des actions
-    public static void SetActionValue(string action, float value);
-    public static float GetActionValue(string action);
-    
-    // Configuration des contextes
-    public static void ActivateContext(string context);
-    public static void DeactivateContext(string context);
+    Left = 0,
+    Middle = 1,
+    Right = 2,
+    X1 = 3,
+    X2 = 4,
+}
+
+// Keyboard and mouse of the current frame. "Pressed" is true only on the frame of the press.
+public static unsafe class Input
+{
+    public static bool IsKeyDown(Key key);
+    public static bool WasKeyPressed(Key key);
+    public static bool IsMouseButtonDown(MouseButton button);
+    public static bool WasMouseButtonPressed(MouseButton button);
+    // How far the mouse moved since the previous frame, in pixels.
+    public static Vec2 MouseDelta { get; }
+    // Where the mouse is in the window, in pixels.
+    public static Vec2 MousePosition { get; }
+    // A captured mouse is hidden and reports unbounded motion, as a first-person camera needs.
+    public static bool MouseCaptured { get; set; }
+    // A button held down; an axis or a vector pushed at least halfway.
+    public static bool IsActionDown(string action);
+    // During the frame the action went down. Read it from Update rather than FixedUpdate.
+    public static bool WasActionPressed(string action);
+    // During the frame the action went up.
+    public static bool WasActionReleased(string action);
+    // From -1 to 1 for an axis, 0 or 1 for a button, 0 for a vector.
+    public static float ActionAxis(string action);
+    // A direction of length 1 at most, with Y up; an axis along X; zero for a button.
+    public static Vec2 ActionVector(string action);
+    // Turns a context of actions on or off, such as the actions of the game while a menu is open:
+    // the actions of a context that is off read as released. Contexts start as the project says,
+    // and keep their state from scene to scene.
+    public static void SetContextActive(string context, bool active);
     public static bool IsContextActive(string context);
+    // How many bindings the action has, in the order of the project settings.
+    public static int BindingCount(string action);
+    // What to show for a binding: the key as the keyboard prints it, or the name of the button.
+    public static string BindingLabel(string action, int binding);
+    // Waits for the next key or button the player presses and binds it to the action, in place of
+    // one of its bindings: a keyboard binding takes a key or a mouse button, a gamepad one a
+    // gamepad button. Escape gives up. The bindings are saved for the next games.
+    public static void ListenForBinding(string action, int binding);
+    // Whether a binding waits for a key.
+    public static bool IsListeningForBinding { get; }
+    public static void StopListeningForBinding();
+    // Every binding back to those of the project settings.
+    public static void ResetBindings();
 }
 ```
 
-### 10.5. Interopération (`Devex.Bootstrap`)
+### 10.5. Interopération
 
-Le fichier `Bootstrap.cs` contient toutes les déclarations P/Invoke pour l'interopérabilité entre C# et C++.
-
-```csharp
-// Dans: managed/Devex.Managed/Interop.cs
-
-public static unsafe class Bootstrap
-{
-    // Initialisation
-    [DllImport("devex_engine")]
-    public static extern int InitializeNative(string appName, string organization);
-    
-    [DllImport("devex_engine")]
-    public static extern void ShutdownNative();
-    
-    // Gestion des scènes
-    [DllImport("devex_engine")]
-    public static extern IntPtr NativeSceneCreate();
-    
-    [DllImport("devex_engine")]
-    public static extern void NativeSceneDestroy(IntPtr scene);
-    
-    // Gestion des entités
-    [DllImport("devex_engine")]
-    public static extern Entity NativeCreateEntity(IntPtr scene, byte* name);
-    
-    [DllImport("devex_engine")]
-    public static extern void NativeDestroyEntity(IntPtr scene, Entity entity);
-    
-    // Transformations
-    [DllImport("devex_engine")]
-    public static extern void* NativeTransformOf(IntPtr scene, Entity entity);
-    
-    [DllImport("devex_engine")]
-    public static extern float* NativeWorldPositionOf(IntPtr scene, Entity entity);
-    
-    // Composants
-    [DllImport("devex_engine")]
-    public static extern void* NativeFindComponent(IntPtr scene, nuint typeIndex, Entity entity);
-    
-    [DllImport("devex_engine")]
-    public static extern void* NativeAddComponent(IntPtr scene, nuint typeIndex, Entity entity);
-    
-    [DllImport("devex_engine")]
-    public static extern void NativeRemoveComponent(IntPtr scene, nuint typeIndex, Entity entity);
-    
-    // Entrées
-    [DllImport("devex_engine")]
-    public static extern float InputAxis(string name);
-    
-    [DllImport("devex_engine")]
-    public static extern bool InputButton(string name);
-    
-    [DllImport("devex_engine")]
-    public static extern bool InputButtonDown(string name);
-    
-    [DllImport("devex_engine")]
-    public static extern bool InputButtonUp(string name);
-    
-    // Souris
-    [DllImport("devex_engine")]
-    public static extern float MouseX();
-    
-    [DllImport("devex_engine")]
-    public static extern float MouseY();
-    
-    [DllImport("devex_engine")]
-    public static extern float MouseDeltaX();
-    
-    [DllImport("devex_engine")]
-    public static extern float MouseDeltaY();
-    
-    [DllImport("devex_engine")]
-    public static extern float MouseScrollDelta();
-    
-    [DllImport("devex_engine")]
-    public static extern bool MouseButton(int button);
-    
-    // Clavier
-    [DllImport("devex_engine")]
-    public static extern bool KeyDown(int key);
-    
-    [DllImport("devex_engine")]
-    public static extern bool KeyPressed(int key);
-    
-    [DllImport("devex_engine")]
-    public static extern bool KeyReleased(int key);
-}
-```
-
+Le C# n'appelle pas le moteur par `DllImport` : au démarrage du runtime .NET hébergé, le moteur
+appelle le point d'entrée de `Devex.Managed` avec un `BootstrapArguments` (`Interop.cs`) qui porte
+une **table de pointeurs de fonctions** (`NativeApi`, des `delegate* unmanaged<...>`), remplie côté
+C++ dans `engine/src/runtime/ManagedGame.cpp`, et reçoit en retour la table des fonctions managées.
+Les deux tables ont le même ordre des deux côtés : une nouvelle fonction s'ajoute **à la fin** de
+`NativeApi` dans `ManagedGame.cpp` et dans `Interop.cs`, et `bootstrapVersion` (C++) et
+`Bootstrap.Version` (C#) augmentent ensemble (26 aujourd'hui) ; un runtime d'une autre version est
+refusé au chargement. Les composants passent par leur mémoire même : le C# lit et écrit les champs
+des composants du moteur à leur place dans les pools de la scène, d'après une disposition que le
+moteur hache (`ComponentLayoutHash`) pour refuser un assemblage compilé contre une autre.
 
 ---
 
@@ -3008,20 +3541,19 @@ public static unsafe class Bootstrap
 
 ### 11.1. Résumé de la Documentation
 
-Ce fichier **KNOWLEDGE.md** représente une **documentation exhaustive et complète** de toutes les APIs **C++** et **C#** du **Devex Engine**. Avec plus de **3000 lignes** de documentation détaillée, il couvre tous les aspects du moteur, depuis les concepts de base jusqu'aux fonctionnalités avancées.
+Ce fichier présente les API **C++** et **C#** du **Devex Engine**, des concepts de base jusqu'aux
+modules avancés, avec des tutoriels et des exemples. Les références de la section 10 (et de 4.6)
+sont tirées des sources C# ; les choix et leur raison sont dans `docs/decisions.md`, les mesures
+dans `docs/performances.md`.
 
 ### 11.2. Statistiques de la Documentation
 
-| Catégorie | Nombre | Description |
-|----------|--------|-------------|
-| **Modules C++ documentés** | 15+ | Scene, Components, Math, Physics, Audio, etc. |
-| **Classes C++ documentées** | 100+ | Toutes les classes principales du moteur |
-| **Structures C++ documentées** | 200+ | Toutes les structures de données |
-| **Fonctions C++ documentées** | 500+ | Toutes les fonctions publiques |
-| **Classes C# documentées** | 50+ | Entity, Component, GameRuntime, etc. |
-| **Méthodes C# documentées** | 300+ | Toutes les méthodes publiques |
-| **Exemples de code** | 20+ | Exemples complets en C++ et C# |
-| **Tutoriels** | 5+ | Projets 2D, 3D, ECS, Interop, etc. |
+| Catégorie | Nombre | Où |
+|----------|--------|-----|
+| **Composants du moteur** | 79 | index 8.1 |
+| **Services C#** (classes statiques de `Services.cs`) | 20 | section 10.1 |
+| **Fonctions natives offertes au C#** | 217 | table `NativeApi`, section 10.5 |
+| **Jalons livrés** | 85 | `docs/decisions.md`, *Jalons* |
 
 ### 11.3. Architecture Complète du Moteur
 
@@ -3165,7 +3697,7 @@ public class Enemy : Component
     private void UpdateIdle(float delta)
     {
         // Logique d'attente
-        if (Target.IsAlive && Vector3.Distance(Entity.WorldPosition, Target.WorldPosition) < 10)
+        if (Target.IsAlive && (Entity.WorldPosition - Target.WorldPosition).Length < 10)
         {
             CurrentState = State.Chase;
         }
