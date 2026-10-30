@@ -934,13 +934,21 @@ TEST_CASE("The lens blurs what stands away from the focus, and what moves while 
                 }
             }
             REQUIRE_FALSE(shown.empty());
-            // Along the middle row: the pixels between the black of the sky and the light of the cube.
-            int between = 0;
+            // Along the middle row: the pixels between the black of the sky and the light of the cube,
+            // from a tenth to nine tenths of the way, the rise by which the sharpness of an edge is
+            // measured. Fixed bounds would fall on the ramp of a blurred edge, where GPUs round a step
+            // apart.
             const std::size_t row = std::size_t{120} * width * 4;
+            int light = 0;
+            for (std::uint32_t pixel = 0; pixel < width; ++pixel)
+            {
+                light = std::max<int>(light, shown[row + pixel * 4 + 1]);
+            }
+            int between = 0;
             for (std::uint32_t pixel = 0; pixel < width; ++pixel)
             {
                 const int value = shown[row + pixel * 4 + 1];
-                between += value > 40 && value < 190 ? 1 : 0;
+                between += value * 10 > light && value * 10 < light * 9 ? 1 : 0;
             }
             return between;
         };
