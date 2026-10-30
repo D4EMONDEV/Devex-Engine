@@ -79,12 +79,44 @@ Détail de la série 2, en millisecondes par image :
 
 ### Bureau : i7-14700KF et RTX 4060 8 Go (Windows)
 
-*À mesurer.* Attendu : la RTX 4060 dessine bien plus vite que l'Iris Xe, donc sur l'ancien chemin
-c'est le CPU qui la faisait attendre ; le culling sur GPU devrait y gagner nettement plus que sur le
-portable. Les buffers que le CPU écrit chaque image sont maintenant placés en mémoire vidéo quand la
-carte le permet (Resizable BAR), au lieu d'être lus à travers le PCIe.
+Windows 11 Pro, NVIDIA GeForce RTX 4060, pilote 621.01, Vulkan 1.4.357, écran 2560 px à 240 Hz ;
+build Release du 30 octobre 2026 (après `029e161`), présentation FIFO. Deux séries, chacune avec le
+même binaire pour les deux chemins.
 
-| Culling | Image        | Draw calls | CPU qui enregistre la frame | Qui limite   |
-|---------|--------------|-----------:|----------------------------:|--------------|
-| CPU     | *à mesurer*  | 39 994     | *à mesurer*                 | *à mesurer*  |
-| GPU     | *à mesurer*  | 48         | *à mesurer*                 | *à mesurer*  |
+| Série | Culling | Image  | Draw calls | CPU qui enregistre la frame | Qui limite             |
+|-------|---------|--------|-----------:|----------------------------:|------------------------|
+| 1     | CPU     | 7,4 ms | 39 994     | 6,6 ms                      | le CPU                 |
+| 1     | GPU     | 6,1 ms | 48         | 1,9 ms                      | ni l'un ni l'autre     |
+| 2     | CPU     | 7,4 ms | 39 994     | 6,6 ms                      | le CPU                 |
+| 2     | GPU     | 6,2 ms | 48         | 1,9 ms                      | ni l'un ni l'autre     |
+
+Détail de la série 1, en millisecondes par image :
+
+| Partie                         | Culling CPU | Culling GPU |
+|--------------------------------|------------:|------------:|
+| CPU : enregistrer et soumettre | 6,58        | 1,91        |
+| CPU : dont culling             | 0,02        | 1,01        |
+| CPU : lumières                 | 0,48        | 0,49        |
+| CPU : attente du GPU           | 0,00        | 3,33        |
+| GPU : culling (compute)        | —           | 0,04        |
+| GPU : prépasse                 | 1,62        | 1,45        |
+| GPU : ombrage de la scène      | 1,72        | 1,81        |
+| GPU : cascades d'ombres        | 0,24        | 0,24        |
+| GPU : anticrénelage            | 0,10        | 0,10        |
+| GPU : occlusion ambiante       | 0,06        | 0,06        |
+| GPU : bloom                    | 0,04        | 0,04        |
+| GPU : tonemapping              | 0,03        | 0,03        |
+
+**Ce qu'on en tire** :
+
+- Les passes de la RTX 4060 tiennent en 3,8 ms, environ 4,5 fois moins que sur l'Iris Xe : sur
+  l'ancien chemin, c'est bien le CPU qui la fait attendre, avec 6,6 ms pour enregistrer près de
+  40 000 dessins.
+- Le culling sur GPU divise ce temps du CPU par 3,5 (1,9 ms), mais l'image ne passe que de 7,4 à
+  6,1 ms (−18 %) : le CPU n'a qu'environ 2,5 ms de travail et le GPU 3,8 ms, le reste est de
+  l'attente (3,3 ms d'attente du GPU). Ni l'un ni l'autre ne limite donc l'image ; l'attente vient
+  vraisemblablement de la présentation en FIFO de la fenêtre cachée, qui n'a pas été mesurée à
+  part. Une mesure sans synchronisation verticale dirait le vrai plafond de ce chemin.
+- Contrairement au portable, la prépasse est plus rapide avec le culling sur GPU (1,45 contre
+  1,62 ms) ; l'ombrage de la scène est un peu plus lent (1,81 contre 1,72 ms).
+- Le culling sur GPU ne coûte que 0,04 ms au GPU, mais 1,0 ms au CPU, qui prépare ses données.
