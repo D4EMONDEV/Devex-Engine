@@ -3,6 +3,8 @@
 #include <DetourAlloc.h>
 #include <DetourCommon.h>
 #include <DetourNavMeshBuilder.h>
+#include <Recast.h>
+#include <RecastAlloc.h>
 
 #include <zstd.h>
 
@@ -42,6 +44,107 @@ dtStatus ZstdCompressor::decompress(const unsigned char* compressed, int compres
     return DT_SUCCESS;
 }
 
+namespace {
+
+template <typename T>
+[[nodiscard]] T* allocate(std::size_t count)
+{
+    return static_cast<T*>(rcAlloc(count * sizeof(T), RC_ALLOC_TEMP));
+}
+
+// A tile-cache layer retains its floor heights even though its polygons only keep their contours.
+// Reconstruct a single-span compact field to let Recast restore the height detail inside them.
+[[nodiscard]] bool heightDetail(const dtNavMeshCreateParams& params, const dtTileCacheLayer& layer,
+                                 rcPolyMeshDetail& detail)
+{
+    const auto mesh = std::unique_ptr<rcPolyMesh, decltype(&rcFreePolyMesh)>(rcAllocPolyMesh(), &rcFreePolyMesh);
+    const auto field = std::unique_ptr<rcCompactHeightfield, decltype(&rcFreeCompactHeightfield)>(
+        rcAllocCompactHeightfield(), &rcFreeCompactHeightfield);
+    if (!mesh || !field)
+    {
+        return false;
+    }
+    mesh->nverts = params.vertCount;
+    mesh->npolys = params.polyCount;
+    mesh->maxpolys = params.polyCount;
+    mesh->nvp = params.nvp;
+    mesh->cs = params.cs;
+    mesh->ch = params.ch;
+    mesh->maxEdgeError = 1.3f;
+    dtVcopy(mesh->bmin, params.bmin);
+    dtVcopy(mesh->bmax, params.bmax);
+    mesh->verts = allocate<unsigned short>(static_cast<std::size_t>(params.vertCount) * 3);
+    mesh->polys = allocate<unsigned short>(static_cast<std::size_t>(params.polyCount) * params.nvp * 2);
+    mesh->regs = allocate<unsigned short>(static_cast<std::size_t>(params.polyCount));
+    if (mesh->verts == nullptr || mesh->polys == nullptr || mesh->regs == nullptr)
+    {
+        return false;
+    }
+    std::copy_n(params.verts, static_cast<std::size_t>(params.vertCount) * 3, mesh->verts);
+    std::copy_n(params.polys, static_cast<std::size_t>(params.polyCount) * params.nvp * 2, mesh->polys);
+    std::fill_n(mesh->regs, params.polyCount, static_cast<unsigned short>(1));
+
+    field->width = layer.header->width;
+    field->height = layer.header->height;
+    field->cs = params.cs;
+    field->ch = params.ch;
+    field->maxRegions = 1;
+    dtVcopy(field->bmin, params.bmin);
+    dtVcopy(field->bmax, params.bmax);
+    const std::size_t cells = static_cast<std::size_t>(field->width) * field->height;
+    field->cells = allocate<rcCompactCell>(cells);
+    field->spans = allocate<rcCompactSpan>(cells);
+    field->areas = allocate<unsigned char>(cells);
+    if (field->cells == nullptr || field->spans == nullptr || field->areas == nullptr)
+    {
+        return false;
+    }
+    for (std::size_t index = 0; index < cells; ++index)
+    {
+        rcCompactCell& cell = field->cells[index];
+        cell.index = static_cast<unsigned int>(field->spanCount) & 0xffffffu;
+        cell.count = 0;
+        if (layer.heights[index] != 0xff && layer.areas[index] != DT_TILECACHE_NULL_AREA)
+        {
+            cell.count = 1;
+            rcCompactSpan& span = field->spans[field->spanCount];
+            span.y = layer.heights[index];
+            span.reg = 1;
+            span.con = 0xffffffu;
+            span.h = 255;
+            field->areas[field->spanCount] = RC_WALKABLE_AREA;
+            ++field->spanCount;
+        }
+    }
+    for (int z = 0; z < field->height; ++z)
+    {
+        for (int x = 0; x < field->width; ++x)
+        {
+            const auto index = static_cast<std::size_t>(z * field->width + x);
+            const rcCompactCell& cell = field->cells[index];
+            if (cell.count == 0)
+            {
+                continue;
+            }
+            for (int direction = 0; direction < 4; ++direction)
+            {
+                const int nx = x + rcGetDirOffsetX(direction);
+                const int nz = z + rcGetDirOffsetY(direction);
+                if ((layer.cons[index] & (1 << direction)) != 0 && nx >= 0 && nx < field->width &&
+                    nz >= 0 && nz < field->height && field->cells[nz * field->width + nx].count != 0)
+                {
+                    rcSetCon(field->spans[cell.index], direction, 0);
+                }
+            }
+        }
+    }
+    rcContext context(false);
+    return field->spanCount > 0 && rcBuildPolyMeshDetail(&context, *mesh, *field, params.cs * 2.0f,
+                                                        params.ch, detail);
+}
+
+} // namespace
+
 void WalkableProcess::process(dtNavMeshCreateParams* params, unsigned char* polyAreas, unsigned short* polyFlags)
 {
     for (int polygon = 0; polygon < params->polyCount; ++polygon)
@@ -56,6 +159,36 @@ void WalkableProcess::process(dtNavMeshCreateParams* params, unsigned char* poly
             polyFlags[polygon] = 0;
         }
     }
+    if (cache == nullptr || params->polyCount == 0)
+    {
+        return;
+    }
+    dtCompressedTile* const tile = cache->getTileAt(params->tileX, params->tileY, params->tileLayer);
+    dtTileCacheAlloc allocator;
+    dtTileCacheLayer* raw = nullptr;
+    if (tile == nullptr || dtStatusFailed(dtDecompressTileCacheLayer(&allocator, cache->getCompressor(),
+                                                                    tile->data, tile->dataSize, &raw)))
+    {
+        detailFailed = true;
+        return;
+    }
+    const auto release = [&allocator](dtTileCacheLayer* layer) { dtFreeTileCacheLayer(&allocator, layer); };
+    const std::unique_ptr<dtTileCacheLayer, decltype(release)> layer(raw, release);
+    const auto detail = std::unique_ptr<rcPolyMeshDetail, decltype(&rcFreePolyMeshDetail)>(
+        rcAllocPolyMeshDetail(), &rcFreePolyMeshDetail);
+    if (!detail || !heightDetail(*params, *layer, *detail))
+    {
+        detailFailed = true;
+        return;
+    }
+    m_detailMeshes.assign(detail->meshes, detail->meshes + static_cast<std::size_t>(detail->nmeshes) * 4);
+    m_detailVertices.assign(detail->verts, detail->verts + static_cast<std::size_t>(detail->nverts) * 3);
+    m_detailTriangles.assign(detail->tris, detail->tris + static_cast<std::size_t>(detail->ntris) * 4);
+    params->detailMeshes = m_detailMeshes.data();
+    params->detailVerts = m_detailVertices.data();
+    params->detailVertsCount = detail->nverts;
+    params->detailTris = m_detailTriangles.data();
+    params->detailTriCount = detail->ntris;
 }
 
 core::Result<std::unique_ptr<TileCache>> TileCache::create(const asset::NavMeshData& navMesh, int maxObstacles)
@@ -84,6 +217,7 @@ core::Result<std::unique_ptr<TileCache>> TileCache::create(const asset::NavMeshD
     {
         return core::makeError(core::ErrorCode::InvalidState, "the tile cache of the navigation mesh could not be made");
     }
+    cache->m_process.cache = cache->m_tileCache;
 
     // Polygon references share 22 bits between the tile and the polygon.
     const int tileBits = std::min(static_cast<int>(dtIlog2(dtNextPow2(static_cast<unsigned int>(layers * 2)))), 14);
@@ -120,6 +254,10 @@ core::Result<std::unique_ptr<TileCache>> TileCache::create(const asset::NavMeshD
         for (int x = 0; x < navMesh.tilesX; ++x)
         {
             static_cast<void>(cache->m_tileCache->buildNavMeshTilesAt(x, z, cache->m_navMesh));
+            if (cache->m_process.detailFailed)
+            {
+                return core::makeError(core::ErrorCode::OutOfMemory, "the height detail of the navigation mesh cannot be made");
+            }
         }
     }
     return cache;

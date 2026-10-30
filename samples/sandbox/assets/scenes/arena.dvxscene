@@ -930,6 +930,15 @@ cell_size = 0.15
 cell_height = 0.1
 tile_size = 48
 
+[entity uuid="06bf82a8-dfbb-5bb2-a7cc-12257f5342cb" name="Hill robot"]
+prefab = asset("90d51d28-3c50-5ae8-9f40-64818777f26c")
+
+[override type="Transform"]
+position = vec3(26, 0, 6)
+
+[override type="RobotGuide"]
+patrol = vec3(28, 8, 0)
+
 [entity uuid="d04d7fc9-b95f-5bf3-9df7-60e08c35531f" name="Drone 1"]
 
 [component type="Transform"]

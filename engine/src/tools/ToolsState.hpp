@@ -1196,7 +1196,7 @@ struct DEVEX_API NavMeshSummary
     bool stale = false;
 };
 [[nodiscard]] DEVEX_API NavMeshSummary navMeshSummary(ToolsState& state, const scene::NavMeshSurface& surface);
-// Bakes the navigation mesh of the surface again from the colliders of the scene, next to the scene
+// Bakes the navigation mesh again from static colliders and current terrain maps, next to the scene
 // file, or forgets it, each as one undoable step; state.navMeshBakeStatus says how it went.
 DEVEX_API void bakeNavMesh(ToolsState& state, scene::Scene& scene, scene::Entity entity);
 DEVEX_API void clearNavMesh(ToolsState& state, scene::Scene& scene, scene::Entity entity);

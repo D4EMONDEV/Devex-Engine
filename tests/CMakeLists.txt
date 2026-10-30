@@ -192,6 +192,7 @@ target_compile_definitions(devex_platform_tests
 devex_add_tests(navigation
     SOURCES
         navigation/NavigationTests.cpp
+        navigation/TerrainNavigationTests.cpp
     LIBRARIES
         Devex::Engine
 )

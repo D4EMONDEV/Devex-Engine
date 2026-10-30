@@ -1,13 +1,83 @@
 #include "tools/ToolsState.hpp"
 
+#include <devex/asset/Artifact.hpp>
+#include <devex/asset/import/AssetDatabase.hpp>
+#include <devex/core/File.hpp>
+#include <devex/core/JobSystem.hpp>
 #include <devex/scene/Components.hpp>
+#include <devex/scene/NavigationComponents.hpp>
+#include <devex/scene/SceneSerializer.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
+#include <filesystem>
 #include <memory>
 
 using namespace devex;
 using namespace devex::tools::detail;
+
+TEST_CASE("The editor bakes current terrain edits into an undoable navigation asset",
+          "[tools][terrain][navigation][gpu]")
+{
+    struct TemporaryFolder
+    {
+        std::filesystem::path path = std::filesystem::temp_directory_path() /
+            ("devex-terrain-navigation-" + core::Uuid::generate().toString());
+        ~TemporaryFolder()
+        {
+            std::error_code ignored;
+            std::filesystem::remove_all(path, ignored);
+        }
+    } folder;
+    const auto project = asset::createProject(folder.path, "Terrain Navigation");
+    REQUIRE(project.has_value());
+    const auto scenePath = project->assetsDirectory() / "test.dvxscene";
+    REQUIRE(core::writeTextFile(scenePath, "[scene format=1]\n"));
+    core::JobSystem jobs(1);
+    auto database = asset::AssetDatabase::open(*project, jobs, {.watchFiles = false});
+    REQUIRE(database.has_value());
+    (*database)->waitForImports();
+    auto platform = platform::Platform::create();
+    REQUIRE(platform.has_value());
+    auto window = platform->createWindow({.width = 320, .height = 240, .vulkan = true, .hidden = true});
+    REQUIRE(window.has_value());
+    auto renderer = render::Renderer::create(*platform, *window, {.validation = true});
+    REQUIRE(renderer.has_value());
+
+    // The maps in memory have been sculpted; there is no terrain file to read them back from.
+    auto maps = asset::makeFlatTerrain(33, 3.0f);
+    const auto data = asset::AssetId::generate();
+    ToolsState state(*platform, *window, *renderer, tools::ToolsMode::Editor);
+    state.database = database->get();
+    state.scenePath = scenePath;
+    state.terrains = std::make_shared<tools::TerrainAccess>(tools::TerrainAccess{
+        .maps = [&](asset::AssetId id) { return id == data ? &maps : nullptr; }});
+    scene::Scene scene;
+    const auto ground = scene.createEntity("Ground");
+    scene.add<scene::Transform>(ground).position = {10.0f, 2.0f, -20.0f};
+    scene.add<scene::Terrain>(ground, scene::Terrain{.data = data, .size = 32.0f});
+    const auto surface = scene.createEntity("Navigation");
+    scene.add<scene::NavMeshSurface>(surface);
+
+    // Bake updates transforms and uses the same maps as the terrain brush.
+    bakeNavMesh(state, scene, surface);
+    INFO(state.navMeshBakeStatus);
+    REQUIRE_FALSE(state.navMeshBakeFailed);
+    REQUIRE(state.pendingCommand != nullptr);
+    REQUIRE(state.history.execute(scene, std::move(state.pendingCommand)));
+    CHECK(scene.get<scene::NavMeshSurface>(surface).navMesh.isValid());
+    const auto bytes = core::readBinaryFile(scenePath.parent_path() / "test.dvxnavmesh");
+    REQUIRE(bytes.has_value());
+    const auto baked = asset::decodeNavMesh(*bytes);
+    REQUIRE(baked.has_value());
+    CHECK(baked->origin == math::Vec3(10.0f, 5.0f, -20.0f));
+    CHECK(baked->triangles == 32 * 32 * 2);
+    REQUIRE(state.history.undo(scene));
+    CHECK_FALSE(scene.get<scene::NavMeshSurface>(surface).navMesh.isValid());
+    REQUIRE(state.history.redo(scene));
+    CHECK(scene.get<scene::NavMeshSurface>(surface).navMesh.isValid());
+}
 
 TEST_CASE("The brushes of the editor sculpt the terrain under the mouse, a stroke at a time", "[tools][terrain][gpu]")
 {

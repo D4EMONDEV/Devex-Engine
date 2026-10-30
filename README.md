@@ -92,7 +92,8 @@ captures de l'éditeur, scènes de base, entrées, scripts C#, animations, colli
   personnages « move and slide » (pentes, marches, corniches, plateformes mobiles, poussée),
   requêtes, forces et contacts, partagés avec le C#, et les mêmes articulations qu'en 3D ;
 - `Devex::Navigation` : Recast & Detour, maillage de navigation cuit depuis les colliders statiques
-  (`.dvxnavmesh`, tuiles compressées), agents `NavMeshAgent` qui marchent en foule en s'évitant,
+  et les terrains, avec leurs reliefs et leurs trous (`.dvxnavmesh`, tuiles compressées),
+  agents `NavMeshAgent` qui marchent en foule en s'évitant,
   obstacles `NavMeshObstacle` qui découpent le maillage pendant le jeu, chemins, échantillonnage
   et rayons le long du maillage, partagés avec le C# ;
 - `Devex::Audio` : miniaudio, sons spatialisés ou 2D, sources et écouteur dans la scène (sinon la
@@ -181,7 +182,8 @@ captures de l'éditeur, scènes de base, entrées, scripts C#, animations, colli
   lumières 2D et occulteurs dessinés dans la vue, masques en boutons numérotés,
   formes de la physique 2D
   dessinées dans la vue, cuisson du maillage de navigation depuis l'inspecteur et son dessin dans
-  la vue avec les agents, les obstacles et les chemins,
+  la vue avec les agents, les obstacles et les chemins ; la cuisson lit les hauteurs et les trous
+  du terrain en cours de sculpture,
   volumes du projet, icônes et distances des sources audio, panneau Animation
   avec piste temporelle et images clés, panneau Animator (graphe de nœuds des machines à états,
   suivi en direct pendant le jeu), panneau Shader Graph (une fonction par onglet, nœuds ajoutés
@@ -235,7 +237,8 @@ captures de l'éditeur, scènes de base, entrées, scripts C#, animations, colli
   brouillard, et T maintenu fait avancer l'heure (Maj+T la recule) jusqu'au coucher du soleil ; le
   regard du joueur a un flou de mouvement, et sur le belvédère un volume de post-traitement
   réchauffe l'image et fait la mise au point sur ce qu'il regarde ; des collines herbeuses aux
-  sommets enneigés l'entourent, un terrain à sculpter et peindre dans l'éditeur ;
+  sommets enneigés l'entourent, un terrain à sculpter et peindre dans l'éditeur, sur lequel un
+  second robot monte et redescend la colline à l'est de l'arène (`assets/prefabs/robot.dvxscene`) ;
   Tab passe à la scène `platformer`, un jeu de plateformes en pixel art (un chevalier animé qui
   court, au bruit de ses pas, et saute sur un niveau de tuiles simulé par la physique 2D, dont une
   île flottante

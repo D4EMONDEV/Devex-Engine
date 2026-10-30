@@ -2359,6 +2359,30 @@ namespace devex::navigation {
 - `NavMeshAgent` : Agent de navigation
 - `NavMeshObstacle` : Obstacle dynamique
 
+#### 9.4.3. Cuire les terrains
+
+Dans l'inspecteur d'une `NavMeshSurface`, **Bake** rassemble les colliders statiques et les
+`Terrain` dont `collision` est activé. Il lit les cartes de terrain courantes, y compris la
+sculpture et les trous pas encore enregistrés. Après un changement du terrain, recuire le
+maillage avant de jouer ; les agents C++ et C# l'utilisent ensuite de la même manière.
+
+En C++, la surcharge `navigation::bakeNavMesh(scene, meshes, terrains, settings)` reçoit une
+`MeshSource` et une `TerrainSource` ; chacune renvoie les données d'un asset, ou `nullptr` si
+elles ne sont pas disponibles. Appeler `scene.updateTransforms()` avant la cuisson et garder
+les cartes valides jusqu'à son retour. La surcharge prenant une `NavGeometry` reste disponible
+pour les triangles construits par le jeu.
+
+Comme pour la physique, le terrain part de sa position mondiale vers +X et +Z sur `Terrain.size` ;
+sa rotation et son échelle ne changent pas ses hauteurs. Les trous et la diagonale des triangles
+suivent Jolt. La pente maximale et le rayon de l'agent retirent les zones où il ne peut pas passer.
+La cuisson ne développe que les lignes du terrain touchant la tuile en cours, sans créer un
+maillage de triangles de toute la carte en mémoire.
+
+Les couches compressées gardent le relief ; au chargement et après le déplacement d'un obstacle,
+le détail des hauteurs est reconstruit pour les requêtes, les agents et le dessin dans la vue.
+Le format `.dvxnavmesh` reste le même. Dans le sandbox, **Hill robot**, à l'est de l'arène,
+patrouille depuis le bas de la colline jusqu'à environ huit mètres de hauteur.
+
 
 ### 9.5. Particules
 
@@ -3423,7 +3447,7 @@ dans `docs/performances.md`.
 | **Composants du moteur** | 79 | index 8.1 |
 | **Services C#** (classes statiques de `Services.cs`) | 20 | section 10.1 |
 | **Fonctions natives offertes au C#** | 217 | table `NativeApi`, section 10.5 |
-| **Jalons livrés** | 85 | `docs/decisions.md`, *Jalons* |
+| **Jalons livrés** | 86 | `docs/decisions.md`, *Jalons* |
 
 ### 11.3. Architecture Complète du Moteur
 

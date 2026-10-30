@@ -13,6 +13,7 @@
 #include <devex/core/Error.hpp>
 
 #include <memory>
+#include <vector>
 
 namespace devex::navigation::detail {
 
@@ -30,6 +31,15 @@ struct ZstdCompressor final : dtTileCacheCompressor
 struct WalkableProcess final : dtTileCacheMeshProcess
 {
     void process(dtNavMeshCreateParams* params, unsigned char* polyAreas, unsigned short* polyFlags) override;
+
+    dtTileCache* cache = nullptr;
+    bool detailFailed = false;
+
+private:
+    // Kept until Detour has copied the parameters returned by process().
+    std::vector<unsigned int> m_detailMeshes;
+    std::vector<float> m_detailVertices;
+    std::vector<unsigned char> m_detailTriangles;
 };
 
 inline constexpr unsigned short walkableFlag = 1;

@@ -64,7 +64,7 @@ void addCylinder(std::vector<OverlayVertex>& lines, math::Vec3 base, float radiu
     return path.stem().string();
 }
 
-// Bakes the navigation mesh of a surface from the colliders of the scene, writes it next to the scene
+// Bakes the navigation mesh of a surface from static colliders and terrains, writes it next to the scene
 // and points the surface at it, as one undoable step.
 void bake(ToolsState& state, scene::Scene& scene, scene::Entity entity)
 {
@@ -75,9 +75,11 @@ void bake(ToolsState& state, scene::Scene& scene, scene::Entity entity)
         return;
     }
     const auto started = std::chrono::steady_clock::now();
+    scene.updateTransforms();
     const scene::NavMeshSurface& surface = scene.get<scene::NavMeshSurface>(entity);
-    const navigation::NavGeometry geometry = navigation::collectGeometry(scene, state.meshes);
-    const core::Result<asset::NavMeshData> baked = navigation::bakeNavMesh(geometry, navigation::buildSettingsOf(surface));
+    const navigation::TerrainSource terrains = state.terrains != nullptr ? state.terrains->maps : navigation::TerrainSource{};
+    const core::Result<asset::NavMeshData> baked =
+        navigation::bakeNavMesh(scene, state.meshes, terrains, navigation::buildSettingsOf(surface));
     if (!baked)
     {
         state.navMeshBakeStatus = std::format("Not baked: {}", baked.error().message);
@@ -114,7 +116,7 @@ void bake(ToolsState& state, scene::Scene& scene, scene::Entity entity)
     }
     const auto milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - started).count();
     state.navMeshBakeStatus = std::format("Baked in {} ms from {} triangles: {} tiles, {} layers, {} KB, in {}.", milliseconds,
-                                          geometry.triangleCount(), baked->tilesX * baked->tilesZ, baked->layers.size(),
+                                          baked->triangles, baked->tilesX * baked->tilesZ, baked->layers.size(),
                                           (asset::encodeNavMesh(*baked).size() + 1023) / 1024, resource);
     state.navMeshBakeFailed = false;
     state.navMeshDrawn.reset();

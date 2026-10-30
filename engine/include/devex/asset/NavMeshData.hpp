@@ -10,7 +10,7 @@
 #include <string_view>
 #include <vector>
 
-// Navigation meshes: where agents walk, baked from the static colliders of a scene by the editor.
+// Navigation meshes: where agents walk, baked from the static colliders and terrains of a scene.
 namespace devex::asset {
 
 // A navigation mesh baked for a scene: a binary file, the same bytes as its cooked asset.

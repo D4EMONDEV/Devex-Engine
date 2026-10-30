@@ -1,5 +1,6 @@
 #include "TileCache.hpp"
 
+#include <devex/asset/TerrainMaps.hpp>
 #include <devex/navigation/NavMeshBuilder.hpp>
 #include <devex/scene/Components.hpp>
 #include <devex/scene/NavigationComponents.hpp>
@@ -7,14 +8,17 @@
 #include <devex/scene/Scene.hpp>
 
 #include <DetourAlloc.h>
+#include <DetourCommon.h>
 #include <DetourNavMeshBuilder.h>
 #include <Recast.h>
 
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <limits>
 #include <memory>
 #include <numbers>
+#include <span>
 
 namespace devex::navigation {
 namespace {
@@ -22,6 +26,164 @@ namespace {
 using scene::Entity;
 
 constexpr int polygonSides = 12;
+
+struct TerrainGround
+{
+    const asset::TerrainMaps* maps = nullptr;
+    math::Vec3 origin{0.0f};
+    float size = 0.0f;
+    math::Aabb bounds;
+    std::uint64_t triangles = 0;
+};
+
+// Jolt splits a cell along (x,z)--(x+1,z+1). A missing diagonal sample removes both
+// triangles; either other missing corner removes just the triangle that uses it.
+[[nodiscard]] unsigned terrainTrianglesAt(const asset::TerrainMaps& maps, std::uint32_t x, std::uint32_t z)
+{
+    const std::size_t first = std::size_t{z} * maps.resolution + x;
+    const std::size_t below = first + maps.resolution;
+    if (maps.holes[first] > 127 || maps.holes[below + 1] > 127)
+    {
+        return 0;
+    }
+    return (maps.holes[below] <= 127 ? 1u : 0u) | (maps.holes[first + 1] <= 127 ? 2u : 0u);
+}
+
+[[nodiscard]] core::Result<std::vector<TerrainGround>> terrainGrounds(const scene::Scene& scene,
+                                                                     const TerrainSource& source)
+{
+    std::vector<TerrainGround> grounds;
+    if (!source)
+    {
+        return grounds;
+    }
+    for (auto [entity, terrain] : scene.view<scene::Terrain>())
+    {
+        if (!terrain.collision || !terrain.data.isValid())
+        {
+            continue;
+        }
+        const asset::TerrainMaps* const maps = source(terrain.data);
+        if (maps == nullptr)
+        {
+            continue;
+        }
+        if (const auto valid = asset::validate(*maps); !valid)
+        {
+            return core::makeError(core::ErrorCode::InvalidArgument, "terrain '{}': {}",
+                                   scene.name(entity), valid.error().message);
+        }
+        const auto* const world = scene.tryGet<scene::WorldTransform>(entity);
+        TerrainGround ground{.maps = maps,
+                             .origin = world != nullptr ? math::Vec3(world->matrix[3]) : math::Vec3{0.0f},
+                             .size = terrain.size};
+        if (!std::isfinite(terrain.size) || terrain.size <= 0.0f ||
+            terrain.size / static_cast<float>(maps->resolution - 1) <= 0.0f ||
+            !std::isfinite(ground.origin.x) || !std::isfinite(ground.origin.y) || !std::isfinite(ground.origin.z))
+        {
+            return core::makeError(core::ErrorCode::InvalidArgument,
+                                   "terrain '{}' has an invalid size or position", scene.name(entity));
+        }
+        const auto [low, high] = std::minmax_element(maps->heights.begin(), maps->heights.end());
+        ground.bounds = {ground.origin + math::Vec3{0.0f, *low, 0.0f},
+                         ground.origin + math::Vec3{terrain.size, *high, terrain.size}};
+        const std::uint32_t cells = maps->resolution - 1;
+        if (std::ranges::none_of(maps->holes, [](std::uint8_t hole) { return hole > 127; }))
+        {
+            ground.triangles = std::uint64_t{cells} * cells * 2;
+        }
+        else
+        {
+            for (std::uint32_t z = 0; z < cells; ++z)
+            {
+                for (std::uint32_t x = 0; x < cells; ++x)
+                {
+                    const unsigned mask = terrainTrianglesAt(*maps, x, z);
+                    ground.triangles += (mask & 1u) + ((mask >> 1) & 1u);
+                }
+            }
+        }
+        if (ground.triangles > 0)
+        {
+            grounds.push_back(ground);
+        }
+    }
+    return grounds;
+}
+
+// Only two rows of samples are expanded at a time, even when one tile covers a whole terrain.
+[[nodiscard]] core::Result<bool> rasterizeTerrain(rcContext& context, const rcConfig& config,
+                                                 const TerrainGround& ground, rcHeightfield& heightfield)
+{
+    if (ground.bounds.min.x > config.bmax[0] || ground.bounds.max.x < config.bmin[0] ||
+        ground.bounds.min.z > config.bmax[2] || ground.bounds.max.z < config.bmin[2])
+    {
+        return false;
+    }
+    const asset::TerrainMaps& maps = *ground.maps;
+    const std::uint32_t cells = maps.resolution - 1;
+    const float spacing = ground.size / static_cast<float>(cells);
+    const auto cell = [cells, spacing](float offset, bool end) {
+        const float coordinate = end ? std::ceil(offset / spacing) : std::floor(offset / spacing);
+        return static_cast<std::uint32_t>(std::clamp(coordinate, 0.0f, static_cast<float>(cells)));
+    };
+    const auto firstX = cell(config.bmin[0] - ground.origin.x, false);
+    const auto lastX = cell(config.bmax[0] - ground.origin.x, true);
+    const auto firstZ = cell(config.bmin[2] - ground.origin.z, false);
+    const auto lastZ = cell(config.bmax[2] - ground.origin.z, true);
+    if (firstX >= lastX || firstZ >= lastZ)
+    {
+        return false;
+    }
+    const int row = static_cast<int>(lastX - firstX + 1);
+    std::vector<float> vertices(static_cast<std::size_t>(row) * 6);
+    std::vector<int> triangles;
+    triangles.reserve(static_cast<std::size_t>(row - 1) * 6);
+    std::vector<unsigned char> areas;
+    bool rasterized = false;
+    for (std::uint32_t z = firstZ; z < lastZ; ++z)
+    {
+        for (std::uint32_t side = 0; side < 2; ++side)
+        {
+            for (std::uint32_t x = firstX; x <= lastX; ++x)
+            {
+                const std::size_t vertex = (std::size_t{side} * static_cast<std::size_t>(row) + x - firstX) * 3;
+                vertices[vertex] = ground.origin.x + static_cast<float>(x) * spacing;
+                vertices[vertex + 1] = ground.origin.y + maps.heights[std::size_t{z + side} * maps.resolution + x];
+                vertices[vertex + 2] = ground.origin.z + static_cast<float>(z + side) * spacing;
+            }
+        }
+        triangles.clear();
+        for (std::uint32_t x = firstX; x < lastX; ++x)
+        {
+            const unsigned mask = terrainTrianglesAt(maps, x, z);
+            const int top = static_cast<int>(x - firstX);
+            if ((mask & 1u) != 0)
+            {
+                triangles.insert(triangles.end(), {top, top + row, top + row + 1});
+            }
+            if ((mask & 2u) != 0)
+            {
+                triangles.insert(triangles.end(), {top, top + row + 1, top + 1});
+            }
+        }
+        if (triangles.empty())
+        {
+            continue;
+        }
+        const int count = static_cast<int>(triangles.size() / 3);
+        areas.assign(static_cast<std::size_t>(count), 0);
+        rcMarkWalkableTriangles(&context, config.walkableSlopeAngle, vertices.data(), row * 2,
+                               triangles.data(), count, areas.data());
+        if (!rcRasterizeTriangles(&context, vertices.data(), row * 2, triangles.data(), areas.data(),
+                                 count, heightfield, config.walkableClimb))
+        {
+            return core::makeError(core::ErrorCode::OutOfMemory, "the terrain cannot be cut into voxels");
+        }
+        rasterized = true;
+    }
+    return rasterized;
+}
 
 // Adds a triangle facing away from the inside of its shape, as Recast finds the ground from the
 // winding of triangles.
@@ -97,7 +259,8 @@ void addRings(NavGeometry& geometry, const std::vector<std::vector<math::Vec3>>&
 // the agent, and cut into layers that do not overlap in height.
 [[nodiscard]] core::Result<void> rasterizeTile(rcContext& context, const rcConfig& base, const std::vector<float>& vertices,
                                                const std::vector<int>& triangles,
-                                               const std::vector<std::array<float, 4>>& triangleBounds, int tileX, int tileZ,
+                                               const std::vector<std::array<float, 4>>& triangleBounds,
+                                               std::span<const TerrainGround> terrains, int tileX, int tileZ,
                                                detail::ZstdCompressor& compressor, std::vector<std::vector<std::byte>>& layers)
 {
     rcConfig config = base;
@@ -124,18 +287,31 @@ void addRings(NavGeometry& geometry, const std::vector<std::vector<math::Vec3>>&
                                triangles.begin() + static_cast<std::ptrdiff_t>(triangle * 3 + 3));
         }
     }
-    if (overlapping.empty())
+    bool rasterized = !overlapping.empty();
+    if (!overlapping.empty())
+    {
+        const int count = static_cast<int>(overlapping.size() / 3);
+        std::vector<unsigned char> areas(static_cast<std::size_t>(count), 0);
+        const int vertexCount = static_cast<int>(vertices.size() / 3);
+        rcMarkWalkableTriangles(&context, config.walkableSlopeAngle, vertices.data(), vertexCount, overlapping.data(), count, areas.data());
+        if (!rcRasterizeTriangles(&context, vertices.data(), vertexCount, overlapping.data(), areas.data(), count, *heightfield,
+                                  config.walkableClimb))
+        {
+            return core::makeError(core::ErrorCode::OutOfMemory, "the scenery of a tile cannot be cut into voxels");
+        }
+    }
+    for (const TerrainGround& terrain : terrains)
+    {
+        const auto added = rasterizeTerrain(context, config, terrain, *heightfield);
+        if (!added)
+        {
+            return std::unexpected(added.error());
+        }
+        rasterized = rasterized || *added;
+    }
+    if (!rasterized)
     {
         return {};
-    }
-    const int count = static_cast<int>(overlapping.size() / 3);
-    std::vector<unsigned char> areas(static_cast<std::size_t>(count), 0);
-    const int vertexCount = static_cast<int>(vertices.size() / 3);
-    rcMarkWalkableTriangles(&context, config.walkableSlopeAngle, vertices.data(), vertexCount, overlapping.data(), count, areas.data());
-    if (!rcRasterizeTriangles(&context, vertices.data(), vertexCount, overlapping.data(), areas.data(), count, *heightfield,
-                              config.walkableClimb))
-    {
-        return core::makeError(core::ErrorCode::OutOfMemory, "the scenery of a tile cannot be cut into voxels");
     }
     rcFilterLowHangingWalkableObstacles(&context, config.walkableClimb, *heightfield);
     rcFilterLedgeSpans(&context, config.walkableHeight, config.walkableClimb, *heightfield);
@@ -294,16 +470,29 @@ asset::NavMeshBuildSettings buildSettingsOf(const scene::NavMeshSurface& surface
     };
 }
 
-core::Result<asset::NavMeshData> bakeNavMesh(const NavGeometry& geometry, const asset::NavMeshBuildSettings& settings)
+namespace {
+
+[[nodiscard]] core::Result<asset::NavMeshData> bake(const NavGeometry& geometry,
+                                                  std::span<const TerrainGround> terrains,
+                                                  const asset::NavMeshBuildSettings& settings)
 {
-    asset::NavMeshData navMesh{.settings = settings, .triangles = static_cast<std::uint32_t>(geometry.triangleCount())};
+    std::uint64_t triangleCount = geometry.triangleCount();
+    for (const TerrainGround& terrain : terrains)
+    {
+        triangleCount += terrain.triangles;
+    }
+    if (triangleCount > std::numeric_limits<std::uint32_t>::max())
+    {
+        return core::makeError(core::ErrorCode::InvalidArgument, "the scene has too many triangles to bake");
+    }
+    asset::NavMeshData navMesh{.settings = settings, .triangles = static_cast<std::uint32_t>(triangleCount)};
     if (core::Result<void> valid = asset::validate(navMesh); !valid)
     {
         return std::unexpected(valid.error());
     }
-    if (geometry.indices.size() < 3)
+    if (triangleCount == 0)
     {
-        return core::makeError(core::ErrorCode::InvalidArgument, "the scene has no collider that stays put for agents to walk on");
+        return core::makeError(core::ErrorCode::InvalidArgument, "the scene has no static ground for agents to walk on");
     }
     std::vector<float> vertices;
     vertices.reserve(geometry.vertices.size() * 3);
@@ -346,7 +535,27 @@ core::Result<asset::NavMeshData> bakeNavMesh(const NavGeometry& geometry, const 
     {
         return core::makeError(core::ErrorCode::InvalidArgument, "tiles of {} voxels are too large for agents this wide", config.tileSize);
     }
-    rcCalcBounds(vertices.data(), static_cast<int>(geometry.vertices.size()), config.bmin, config.bmax);
+    math::Aabb bounds;
+    for (const math::Vec3 vertex : geometry.vertices)
+    {
+        bounds.add(vertex);
+    }
+    for (const TerrainGround& terrain : terrains)
+    {
+        bounds.add(terrain.bounds.min);
+        bounds.add(terrain.bounds.max);
+    }
+    for (int axis = 0; axis < 3; ++axis)
+    {
+        config.bmin[axis] = bounds.min[axis];
+        config.bmax[axis] = bounds.max[axis];
+        const double extent = static_cast<double>(bounds.max[axis]) - bounds.min[axis];
+        const double cell = axis == 1 ? config.ch : config.cs;
+        if (!std::isfinite(extent) || extent < 0.0 || extent / cell > std::numeric_limits<int>::max() / 2)
+        {
+            return core::makeError(core::ErrorCode::InvalidArgument, "the scene is too large for these navigation voxels");
+        }
+    }
     int cellsX = 0;
     int cellsZ = 0;
     rcCalcGridSize(config.bmin, config.bmax, config.cs, &cellsX, &cellsZ);
@@ -365,7 +574,8 @@ core::Result<asset::NavMeshData> bakeNavMesh(const NavGeometry& geometry, const 
     {
         for (int x = 0; x < navMesh.tilesX; ++x)
         {
-            if (core::Result<void> tile = rasterizeTile(context, config, vertices, triangles, triangleBounds, x, z, compressor, navMesh.layers);
+            if (core::Result<void> tile = rasterizeTile(context, config, vertices, triangles, triangleBounds, terrains,
+                                                       x, z, compressor, navMesh.layers);
                 !tile)
             {
                 return std::unexpected(tile.error());
@@ -374,9 +584,85 @@ core::Result<asset::NavMeshData> bakeNavMesh(const NavGeometry& geometry, const 
     }
     if (navMesh.layers.empty())
     {
-        return core::makeError(core::ErrorCode::InvalidArgument, "agents of this size fit nowhere on the colliders of the scene");
+        return core::makeError(core::ErrorCode::InvalidArgument, "agents of this size fit nowhere on the ground of the scene");
     }
     return navMesh;
+}
+
+// The detail triangles follow the ground inside polygons whose contours alone may look flat.
+void appendPolygonLines(const dtMeshTile& tile, int polygon, NavMeshLines& lines)
+{
+    const dtPoly& poly = tile.polys[polygon];
+    const dtPolyDetail& detail = tile.detailMeshes[polygon];
+    const auto vertex = [&](unsigned char index) {
+        return index < poly.vertCount ? &tile.verts[poly.verts[index] * 3]
+                                      : &tile.detailVerts[(detail.vertBase + index - poly.vertCount) * 3];
+    };
+    for (int triangle = 0; triangle < detail.triCount; ++triangle)
+    {
+        const unsigned char* const indices = &tile.detailTris[(detail.triBase + triangle) * 4];
+        for (int edge = 0; edge < 3; ++edge)
+        {
+            const int next = (edge + 1) % 3;
+            const float* const from = vertex(indices[edge]);
+            const float* const to = vertex(indices[next]);
+            std::vector<math::Vec3>* list = &lines.inner;
+            if ((dtGetDetailTriEdgeFlags(indices[3], edge) & DT_DETAIL_EDGE_BOUNDARY) != 0)
+            {
+                // Match the segment to its polygon edge in XZ; the heights may bend between corners.
+                for (int side = 0; side < poly.vertCount; ++side)
+                {
+                    const float* const a = &tile.verts[poly.verts[side] * 3];
+                    const float* const b = &tile.verts[poly.verts[(side + 1) % poly.vertCount] * 3];
+                    float along = 0.0f;
+                    constexpr float tolerance = 0.01f * 0.01f;
+                    if (dtDistancePtSegSqr2D(from, a, b, along) > tolerance ||
+                        dtDistancePtSegSqr2D(to, a, b, along) > tolerance)
+                    {
+                        continue;
+                    }
+                    const unsigned short neighbour = poly.neis[side];
+                    if (neighbour == 0)
+                    {
+                        list = &lines.borders;
+                    }
+                    else if ((neighbour & DT_EXT_LINK) == 0 && static_cast<int>(neighbour) - 1 < polygon)
+                    {
+                        list = nullptr;
+                    }
+                    break;
+                }
+            }
+            else if (indices[edge] > indices[next])
+            {
+                // A shared triangle edge once, in increasing vertex order.
+                continue;
+            }
+            if (list != nullptr)
+            {
+                list->push_back({from[0], from[1], from[2]});
+                list->push_back({to[0], to[1], to[2]});
+            }
+        }
+    }
+}
+
+} // namespace
+
+core::Result<asset::NavMeshData> bakeNavMesh(const NavGeometry& geometry, const asset::NavMeshBuildSettings& settings)
+{
+    return bake(geometry, {}, settings);
+}
+
+core::Result<asset::NavMeshData> bakeNavMesh(const scene::Scene& scene, const MeshSource& meshes,
+                                          const TerrainSource& terrains, const asset::NavMeshBuildSettings& settings)
+{
+    const auto grounds = terrainGrounds(scene, terrains);
+    if (!grounds)
+    {
+        return std::unexpected(grounds.error());
+    }
+    return bake(collectGeometry(scene, meshes), *grounds, settings);
 }
 
 core::Result<NavMeshLines> navMeshLines(const asset::NavMeshData& navMesh)
@@ -403,21 +689,7 @@ core::Result<NavMeshLines> navMeshLines(const asset::NavMeshData& navMesh)
                 continue;
             }
             ++lines.polygons;
-            for (int edge = 0; edge < poly.vertCount; ++edge)
-            {
-                const float* const from = &tile->verts[poly.verts[edge] * 3];
-                const float* const to = &tile->verts[poly.verts[(edge + 1) % poly.vertCount] * 3];
-                // An edge between two polygons once, from the polygon with the lower index.
-                const unsigned short neighbour = poly.neis[edge];
-                const bool border = neighbour == 0;
-                if (!border && (neighbour & DT_EXT_LINK) == 0 && static_cast<int>(neighbour) - 1 < polygon)
-                {
-                    continue;
-                }
-                std::vector<math::Vec3>& list = border ? lines.borders : lines.inner;
-                list.push_back({from[0], from[1], from[2]});
-                list.push_back({to[0], to[1], to[2]});
-            }
+            appendPolygonLines(*tile, polygon, lines);
         }
     }
     return lines;

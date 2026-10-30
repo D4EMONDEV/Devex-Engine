@@ -13,8 +13,8 @@
 // Navigation components: where agents walk, the agents, and what they walk around.
 namespace devex::scene {
 
-// Where agents walk: the navigation mesh the editor bakes from the static colliders of the scene,
-// for agents of the size given here. Bake it again when the scenery changes.
+// Where agents walk: the navigation mesh the editor bakes from static colliders and collidable
+// terrains, for agents of the size given here. Bake it again when the scenery changes.
 struct DEVEX_API NavMeshSurface
 {
     // The baked navigation mesh, a .dvxnavmesh next to the scene.

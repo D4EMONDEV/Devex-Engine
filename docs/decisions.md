@@ -58,7 +58,7 @@ mais seulement explicitement ici : le code suit ce document, pas l'inverse.
 | Collisions des tuiles    | `TilemapCollider2D` : rectangles fusionnés et corniches du tileset |
 | Personnages 2D           | `CharacterController2D` « move and slide » sur le mover de Box2D   |
 | Navigation               | Recast & Detour (zlib), module `Navigation`, foule de DetourCrowd  |
-| Maillage de navigation   | Asset `.dvxnavmesh` cuit dans l'éditeur depuis les colliders statiques |
+| Maillage de navigation   | Asset `.dvxnavmesh` cuit dans l'éditeur depuis les colliders statiques et les terrains |
 | Agents                   | Composant `NavMeshAgent`, destinations données par le code         |
 | Obstacles mobiles        | `NavMeshObstacle` (boîte, cylindre) découpe les tuiles pendant le jeu |
 | Clavier                  | `Key` = position physique (WASD devient ZQSD en AZERTY)            |
@@ -2552,12 +2552,24 @@ Jalon 65, comme les `Joint3D` et `Joint2D` de Godot :
   statique, ni déclencheurs ni personnages ; boîtes et maillages exacts (`MeshCollider`, par son
   maillage), sphères, capsules et cylindres à 12 côtés, triangles tournés vers l'extérieur. Ce que
   le joueur heurte est ce que les agents contournent.
+- **Terrains** : ceux dont `collision` est activé, depuis leurs cartes de hauteurs et de trous
+  courantes, y compris la sculpture pas encore enregistrée dans l'éditeur. Ils partent de leur
+  position mondiale vers +X et +Z sur `Terrain.size`, sans leur rotation ni leur échelle, comme
+  le rendu et la physique. La diagonale de chaque cellule et les triangles retirés autour d'un
+  échantillon troué suivent Jolt. La surcharge `bakeNavMesh(scene, meshes, terrains, settings)`
+  garde les colliders et les terrains dans le même champ de hauteur ; elle ne développe que
+  deux lignes d'échantillons à la fois, sur la portion couverte par la tuile et sa bordure,
+  sans maillage global du terrain, même en résolution 4097².
 - **Cuisson** : par tuiles de Recast (hauteur de champ, surfaces praticables, filtres des
   obstacles bas, des corniches et des passages trop bas, érosion du rayon de l'agent), jusqu'aux
   **couches** de chaque tuile, compressées par zstd, que l'asset garde avec les réglages et les
   bornes. Au chargement, DetourTileCache fait des couches le maillage de polygones de chaque tuile
   (bits de tuiles et de polygones calculés au plus juste) ; un obstacle ne reconstruit que les
-  tuiles qu'il touche.
+  tuiles qu'il touche. Les couches conservent les hauteurs à l'intérieur des polygones : un
+  champ compact reconstruit depuis chaque couche permet à Recast de refaire le détail des
+  hauteurs au chargement et après le découpage par un obstacle. Les agents, les requêtes et
+  les arêtes dessinées suivent ainsi les bosses à l'intérieur des contours simplifiés.
+  Aucun changement du format `.dvxnavmesh` ni de l'API des jeux.
 - **Asset** : `.dvxnavmesh`, un fichier binaire écrit par l'éditeur à côté de la scène (importeur
   `navmesh`, type `NavMesh`) : un maillage qu'on régénère, pas un fichier qu'on écrit à la main.
   L'importeur le lit, le vérifie et le garde tel quel ; l'export le copie comme les autres.
@@ -2591,7 +2603,9 @@ Jalon 65, comme les `Joint3D` et `Joint2D` de Godot :
 - **Bac à sable** : dans l'arène, le robot patrouille par son `NavMeshAgent` (le code ne donne plus
   que ses destinations ; sa machine à états mélange la marche par la vitesse réelle de l'agent),
   deux drones suivent le joueur (`code/Follower.cs`) en se contournant, la porte fermée et les
-  caisses (le préfab) découpent le maillage pendant qu'elles bougent.
+  caisses (le préfab) découpent le maillage pendant qu'elles bougent. Un second robot, instance
+  du préfab `assets/prefabs/robot.dvxscene`, monte et redescend la colline à l'est de l'arène,
+  de (26, 0, 6) vers (54, 8, 6) ; le maillage livré est recuit avec le terrain.
 
 ### Culling et ombres locales
 
@@ -4927,6 +4941,12 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     lots en dessin indirect (40 000 → 48 draw calls sur une scène de 20 000 objets, 16,6 → 2,4 ms
     de CPU par frame sur l'Iris Xe, image identique ; mesures dans `docs/performances.md`) ; buffers écrits par le CPU placés en mémoire vidéo
     quand la carte le permet ; banc de mesure `Renderer stress benchmark`.
+86. ✅ **Navigation des terrains** — cuisson des hauteurs et des trous avec les colliders
+    statiques, par bandes dans chaque tuile, sans développer un maillage global ; cartes
+    sculptées courantes dans l'éditeur ; détail des hauteurs conservé pour les agents, les
+    requêtes et le dessin, y compris après le passage d'un obstacle ; robot du sandbox qui
+    patrouille sur la colline. Tests des pentes, trous, changements de tuile, positions mondiales,
+    hauteurs face à Jolt, obstacles, cartes en haute résolution et cuisson annulable de l'éditeur.
 
 Ensuite, sans ordre figé : à choisir dans les pistes ci-dessous.
 
@@ -4957,7 +4977,7 @@ Ensuite, sans ordre figé : à choisir dans les pistes ci-dessous.
 - **Navigation, la suite** : liens hors maillage (sauts, échelles, *NavMeshLink*), zones et coûts
   de passage, plusieurs tailles d'agents (plusieurs surfaces actives à la fois), cuisson pendant le
   jeu et tuiles recuites autour d'un changement, cuisson sur un worker avec sa progression,
-  géométrie des maillages rendus et des terrains comme source, obstacles qui ne découpent pas
+  géométrie des maillages rendus comme source, obstacles qui ne découpent pas
   (évitement seul), agents portés par les plateformes mobiles, root motion qui conduit l'agent,
   essai d'un chemin dans l'éditeur hors jeu, cuisson automatique à l'enregistrement.
 - **Préfabs** : retirer un composant ou une entité du préfab dans une instance, variantes
