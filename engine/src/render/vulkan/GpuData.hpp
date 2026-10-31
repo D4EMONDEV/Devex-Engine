@@ -332,11 +332,55 @@ struct GpuInstance
     // The views it is culled in: cullCamera, cullShadows.
     std::uint32_t flags = 0;
     std::uint32_t padding = 0;
+    VkDeviceAddress skinnedVertices = 0;
+    VkDeviceAddress skinnedBounds = 0;
 };
 
 inline constexpr std::uint32_t cullCamera = 1;
 inline constexpr std::uint32_t cullShadows = 2;
 inline constexpr std::uint32_t cullSeed = 4;
+inline constexpr std::uint32_t cullSkinned = 8;
+
+// Prepared world-space attributes, shared by every pass. Positions retain their homogeneous W.
+struct GpuSkinnedVertex
+{
+    math::Vec4 position{0.0f};
+    math::Vec4 previous{0.0f};
+    math::Vec3 normal{0.0f};
+    float padding = 0.0f;
+    math::Vec4 tangent{0.0f};
+};
+
+struct GpuSkinBounds
+{
+    math::Vec3 min{0.0f};
+    float padding0 = 0.0f;
+    math::Vec3 max{0.0f};
+    float padding1 = 0.0f;
+};
+
+struct GpuSkinJob
+{
+    VkDeviceAddress vertices = 0;
+    VkDeviceAddress skin = 0;
+    VkDeviceAddress bones = 0;
+    VkDeviceAddress previousBones = 0;
+    VkDeviceAddress output = 0;
+    VkDeviceAddress bounds = 0;
+    math::Mat4 world{1.0f};
+    math::Mat4 previousWorld{1.0f};
+    std::uint32_t vertexCount = 0;
+    std::uint32_t padding0 = 0;
+    std::uint32_t padding1 = 0;
+    std::uint32_t padding2 = 0;
+};
+
+struct SkinningPushConstants
+{
+    VkDeviceAddress jobs = 0;
+    std::uint32_t jobCount = 0;
+    std::uint32_t dispatchWidth = 0;
+};
 
 // A view the instances are culled in: the planes they must stand in front of, and the instances
 // it keeps.
@@ -728,7 +772,14 @@ static_assert(offsetof(GpuSprite, instanceParameters) == 160);
 static_assert(sizeof(SpritePushConstants) == 64);
 static_assert(sizeof(GpuLight2D) == 80);
 static_assert(sizeof(LuminancePushConstants) == 16);
-static_assert(sizeof(GpuInstance) == 176);
+static_assert(sizeof(GpuInstance) == 192);
+static_assert(offsetof(GpuInstance, skinnedVertices) == 176);
+static_assert(sizeof(GpuSkinnedVertex) == 64);
+static_assert(sizeof(GpuSkinBounds) == 32);
+static_assert(sizeof(GpuSkinJob) == 192);
+static_assert(offsetof(GpuSkinJob, world) == 48);
+static_assert(offsetof(GpuSkinJob, vertexCount) == 176);
+static_assert(sizeof(SkinningPushConstants) == 16);
 static_assert(offsetof(GpuInstance, boundsMin) == 128);
 static_assert(offsetof(GpuInstance, boundsMax) == 144);
 static_assert(offsetof(GpuInstance, vertices) == 160);

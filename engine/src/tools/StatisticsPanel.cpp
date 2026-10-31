@@ -57,6 +57,8 @@ const std::array measures{
     Measure{"GPU Instances Tested", &Monitors::gpuTested, &count},
     Measure{"GPU Outside Frustum", &Monitors::gpuFrustumCulled, &count},
     Measure{"GPU Occluded Instances", &Monitors::gpuOccluded, &count},
+    Measure{"GPU Skinned Poses", &Monitors::gpuSkinnedPoses, &count},
+    Measure{"GPU Skinned Vertices", &Monitors::gpuSkinnedVertices, &count},
     Measure{"GPU Memory", &Monitors::gpuMemory, &megabytes},
     Measure{"Uploads", &Monitors::uploads, &megabytes},
     Measure{"Entities", &Monitors::entities, &count},
@@ -114,6 +116,8 @@ void recordMonitors(ToolsState& state, const scene::Scene& scene, core::Duration
     monitors.gpuTested.record(static_cast<float>(stats.gpuInstancesTested));
     monitors.gpuFrustumCulled.record(static_cast<float>(stats.gpuFrustumCulled));
     monitors.gpuOccluded.record(static_cast<float>(stats.gpuOccludedInstances));
+    monitors.gpuSkinnedPoses.record(static_cast<float>(stats.gpuSkinnedPoses));
+    monitors.gpuSkinnedVertices.record(static_cast<float>(stats.gpuSkinnedVertices));
     monitors.gpuMemory.record(static_cast<float>(static_cast<double>(stats.gpuMemoryUsage) / bytesPerMegabyte));
     monitors.uploads.record(static_cast<float>(static_cast<double>(stats.uploadedBytes) / bytesPerMegabyte));
     monitors.entities.record(static_cast<float>(scene.entityCount()));

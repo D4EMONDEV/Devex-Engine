@@ -41,11 +41,8 @@ ConstantBuffer<OcclusionData> occlusion;
 
 bool hidden(GpuInstance instance)
 {
-    if (any(instance.boundsMin > instance.boundsMax)) return false;
-    const float3 center = (instance.boundsMin + instance.boundsMax) * 0.5;
-    const float3 halfSize = (instance.boundsMax - instance.boundsMin) * 0.5;
-    const float3 worldCenter = mul(instance.world, float4(center, 1.0)).xyz;
-    const float3 worldHalf = mul(abs(float3x3(instance.world)), halfSize);
+    float3 worldCenter, worldHalf;
+    if (!instanceBounds(instance, worldCenter, worldHalf)) return false;
     float2 low = float2(1.0);
     float2 high = float2(-1.0);
     float closest = 0.0;

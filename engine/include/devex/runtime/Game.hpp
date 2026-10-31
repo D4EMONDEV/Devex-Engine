@@ -52,7 +52,8 @@ class CoroutineScheduler;
 // frame kept. 25: UiToggle gained the colour of its tick. 26: the atmosphere and the fog:
 // RenderWorld, RenderSun and DirectionalLight gained what they need. 30: RendererStats gained the
 // main camera's GPU visibility counts; RendererConfig its occlusion.
-inline constexpr std::uint32_t gameApiVersion = 30;
+// 31: RendererConfig and RendererStats gained compute skinning and its counters.
+inline constexpr std::uint32_t gameApiVersion = 31;
 
 enum class SystemPhase : std::uint8_t
 {

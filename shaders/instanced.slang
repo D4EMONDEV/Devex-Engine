@@ -13,7 +13,10 @@ ConstantBuffer<InstancedData> data;
 SurfaceVertex sceneVertex(uint vertexIndex : SV_VertexID, uint slot : SV_VulkanInstanceID)
 {
     GpuInstance instance;
-    return surfaceVertex(instanceDraw(data, slot, instance), vertexIndex);
+    const DrawData draw = instanceDraw(data, slot, instance);
+    if ((instance.flags & cullSkinned) != 0)
+        return posedSurfaceVertex(draw, instance.skinnedVertices[vertexIndex], vertexIndex);
+    return surfaceVertex(draw, vertexIndex);
 }
 
 [shader("fragment")]
@@ -27,6 +30,8 @@ DepthVertex prepassVertex(uint vertexIndex : SV_VertexID, uint slot : SV_VulkanI
 {
     GpuInstance instance;
     const DrawData draw = instanceDraw(data, slot, instance);
+    if ((instance.flags & cullSkinned) != 0)
+        return posedDepthVertex(draw, instance.skinnedVertices[vertexIndex], vertexIndex);
     return movedDepthVertex(draw, instance.previousWorld, vertexIndex);
 }
 
@@ -40,14 +45,22 @@ DepthTargets prepassFragment(DepthVertex input, bool frontFacing : SV_IsFrontFac
 ShadowVertex shadowVertex(uint vertexIndex : SV_VertexID, uint slot : SV_VulkanInstanceID)
 {
     GpuInstance instance;
-    return viewVertex(instanceDraw(data, slot, instance), data.scene->cascadeViewProjections[data.cascade], vertexIndex);
+    const DrawData draw = instanceDraw(data, slot, instance);
+    const float4x4 viewProjection = data.scene->cascadeViewProjections[data.cascade];
+    if ((instance.flags & cullSkinned) != 0)
+        return posedViewVertex(draw, instance.skinnedVertices[vertexIndex], viewProjection, vertexIndex);
+    return viewVertex(draw, viewProjection, vertexIndex);
 }
 
 [shader("vertex")]
 ShadowVertex localShadowVertex(uint vertexIndex : SV_VertexID, uint slot : SV_VulkanInstanceID)
 {
     GpuInstance instance;
-    return viewVertex(instanceDraw(data, slot, instance), data.scene->shadowViews[data.cascade].viewProjection, vertexIndex);
+    const DrawData draw = instanceDraw(data, slot, instance);
+    const float4x4 viewProjection = data.scene->shadowViews[data.cascade].viewProjection;
+    if ((instance.flags & cullSkinned) != 0)
+        return posedViewVertex(draw, instance.skinnedVertices[vertexIndex], viewProjection, vertexIndex);
+    return viewVertex(draw, viewProjection, vertexIndex);
 }
 
 [shader("fragment")]
@@ -60,7 +73,10 @@ void shadowFragment(ShadowVertex input)
 ShadowVertex pickVertex(uint vertexIndex : SV_VertexID, uint slot : SV_VulkanInstanceID)
 {
     GpuInstance instance;
-    return viewVertex(instanceDraw(data, slot, instance), data.scene->pickViewProjection, vertexIndex);
+    const DrawData draw = instanceDraw(data, slot, instance);
+    if ((instance.flags & cullSkinned) != 0)
+        return posedViewVertex(draw, instance.skinnedVertices[vertexIndex], data.scene->pickViewProjection, vertexIndex);
+    return viewVertex(draw, data.scene->pickViewProjection, vertexIndex);
 }
 
 [shader("fragment")]

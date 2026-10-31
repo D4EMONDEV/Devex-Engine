@@ -168,7 +168,7 @@ mais seulement explicitement ici : le code suit ce document, pas l'inverse.
 | Éditeur d'animator       | Panneau de graphe de nœuds, réglages dans l'inspecteur, annulation propre |
 | Skinning                 | Dans le vertex shader, matrices d'os en buffer par frame          |
 | Écrans de l'éditeur      | 2D, 3D et Script au centre de la barre de menus                    |
-| Culling                  | Tronc de vue sur GPU par compute, dessin indirect par lots         |
+| Culling                  | Frustum et occlusion sur GPU, poses animées en compute, dessins par lots |
 | Boîtes englobantes       | Cuites dans le maillage à l'import, transformées par instance      |
 | Ombres locales           | Un atlas de 4096², tuiles réparties par importance                 |
 | Transparence             | Tri par distance, passe après l'opaque, sans écrire la profondeur  |
@@ -469,7 +469,7 @@ docs/          décisions et documentation
   (approximation de Narkowicz) ou aucun, choisi sur la caméra ; sortie linéaire, encodée sRGB
   par le swapchain. La même passe ajoute le bloom et applique l'étalonnage (voir *Transparence
   et post-traitements*).
-- **Limites actuelles** : occlusion limitée aux instances standard opaques ou découpées sans os,
+- **Limites actuelles** : occlusion limitée aux instances standard opaques ou découpées,
   lumière
   indirecte cuite seulement (sondes et volumes ne suivent pas la scène pendant le jeu),
   transparence triée par instance (deux surfaces qui s'entrecroisent restent
@@ -2623,8 +2623,9 @@ Jalon 65, comme les `Joint3D` et `Joint2D` de Godot :
   au-dessus d'elle, entre le soleil et le sol, projette toujours dedans. La sélection et le picking
   regardent la scène entière, puisqu'ils répondent sur un pixel plutôt que sur une image. Le
   panneau *Statistics* montre le nombre d'instances écartées.
-- **Maillages animés** : la boîte de la pose de repos est agrandie de moitié, faute de connaître la
-  pose du moment sans parcourir les os. Un bras levé très haut peut encore sortir de sa boîte.
+- **Maillages animés** : le chemin standard en compute mesure la boîte des sommets déformés
+  (jalon 88). Le chemin de repli CPU conserve la boîte de repos agrandie de moitié ; un bras levé
+  très haut peut encore sortir de cette approximation.
 - **Ombres locales** : `PointLight::castShadows` et `SpotLight::castShadows` les demandent. Chaque
   frame, les lumières qui en veulent et que la caméra peut voir sont classées par puissance divisée
   par le carré de leur distance ; les plus importantes reçoivent une tuile de 1024², les autres de
@@ -2650,7 +2651,7 @@ Jalon 65, comme les `Joint3D` et `Joint2D` de Godot :
 - **Culling sur GPU** (jalon 85) : mesuré sur une scène de 20 000 objets (3 maillages, 8
   matériaux, 256 lumières, Iris Xe en Release), le CPU passait 17 à 28 ms selon l'état de la
   machine à enregistrer près de 40 000 draw calls, un par instance et par passe, pendant que le GPU
-  attendait. Les instances que les matériaux standard dessinent opaques ou découpées, sans os, sont
+  attendait. Les instances que les matériaux standard dessinent opaques ou découpées sont
   maintenant confiées au GPU : le CPU les range en **lots** (même sous-maillage, même matériau) et
   copie chaque frame un `GpuInstance` par instance (matrices de cette frame et de la précédente,
   boîte du maillage, objet, lot) avec les **vues** de la frame : la caméra (six plans), chaque
@@ -2666,7 +2667,7 @@ Jalon 65, comme les `Joint3D` et `Joint2D` de Godot :
   par fragment rendait ses lectures et l'indexation de ses textures non uniformes, ce qui coûtait
   près de 3 ms de GPU sur l'Iris Xe (prépasse et ombrage).
 - **Ce qui reste au CPU** : les matériaux d'un shader du projet (leurs pipelines et leurs uniforms
-  d'instance), les surfaces transparentes (triées), les maillages animés (os) et le masque de la
+  d'instance), les surfaces transparentes (triées) et le masque de la
   sélection. Les passes du CPU ne parcourent plus que ces instances-là ; les positions de la frame
   précédente sont gardées dans l'ordre de la scène plutôt que dans une table refaite chaque frame.
   `RendererStats::culledInstances` ne compte que ce que le CPU a écarté.
@@ -2698,7 +2699,7 @@ Jalon 65, comme les `Joint3D` et `Joint2D` de Godot :
   profondeur, les normales et le mouvement existants. L'ombrage utilise la liste finale.
 - **Portée et mesures** : seulement les instances opaques ou découpées du chemin GPU standard,
   dès huit instances éligibles (`RendererConfig::gpuOcclusion`, activé par défaut). Les objets
-  transparents, animés par os et les shaders du projet gardent leur chemin CPU. Leurs surfaces
+  transparents et les shaders du projet gardent leur chemin CPU. Leurs surfaces
   opaques et les terrains peuvent néanmoins masquer les instances standard. Les ombres et le
   picking gardent leurs propres listes de frustum. Chaque vue supplémentaire a sa propre
   visibilité. Les états GPU sont copiés vers un buffer lisible par le CPU, invalidé et lu après la
@@ -2714,6 +2715,36 @@ Jalon 65, comme les `Joint3D` et `Joint2D` de Godot :
   la souris l'oriente après capture, Espace monte, Ctrl gauche descend et Maj gauche accélère ;
   les compteurs de *Statistics* montrent ce que les écrans cachent. Le générateur accepte
   `--occlusion-only`. Les temps et commandes sont dans [performances.md](performances.md).
+- **Skinning compute** (jalon 88) : les maillages standard opaques ou découpés animés par os
+  rejoignent les lots GPU. La passe *Skinning* précède le culling : un groupe de 64 threads par pose
+  déforme les sommets avec les mêmes mélanges d'os que les vertex shaders et réduit leurs positions
+  pour mesurer une boîte mondiale de la **pose courante**. Cette boîte remplace l'approximation de
+  la pose de repos dans les frustums et l'occlusion. Les sous-maillages d'un même objet partagent
+  leur résultat si leurs os, transformations et historique concordent ; les dessins anonymes ou
+  incompatibles gardent des préparations séparées. Les positions homogènes, normales par cofacteur
+  et tangentes conservent les échelles non uniformes, miroirs et sommets sans poids du chemin
+  d'origine. Les positions précédentes suivent aussi les os précédents, même si leur rangement
+  dans le buffer ou l'ordre des instances change.
+- **Réutilisation et coût** : chaque sommet préparé occupe 64 octets (deux positions, normale,
+  tangente) ; la pose est réutilisée dans les prépasses, les cascades et ombres locales,
+  l'ombrage et le picking. Les buffers appartiennent au contexte de frame de chaque vue et ne sont
+  réécrits qu'après sa fence. Les barrières couvrent l'import des maillages, la préparation, les
+  lectures compute du culling et les lectures des vertex shaders. Les animations, scripts et
+  matrices d'os restent évalués sur le CPU ; les poses hors de la vue sont aussi préparées pour
+  obtenir leurs limites exactes. Ce travail et cette mémoire peuvent coûter plus que le skinning
+  par dessin pour de petits nombres de sommets ou de personnages : `RendererConfig::gpuSkinning`
+  désactive ce chemin (actif par défaut avec le culling GPU disponible). Les matériaux transparents,
+  shaders des projets et contours de sélection gardent leur chemin par dessin.
+- **Compteurs et démo** : `RendererStats::gpuSkinnedPoses` et `gpuSkinnedVertices` décrivent les
+  poses uniques et sommets préparés pour la caméra principale de la frame courante, sans
+  readback GPU. *Statistics* les affiche à côté de la visibilité de la dernière frame terminée.
+  Les tests comparent le chemin d'origine, le culling GPU sans skinning compute, puis le chemin
+  complet : sous-maillages, poids nuls, échelles miroirs et non uniformes, murs qui s'écartent,
+  caméra, déplacement d'os, changement de leur rangement, picking, ombres locales, contour,
+  anticrénelage temporel, redimensionnement et deuxième vue. Le sandbox ajoute
+  `assets/scenes/skinning.dvxscene` (96 robots qui marchent sur place derrière un écran, caméra libre),
+  générable avec `--skinning-only`. Benchmark : `DEVEX_STRESS_SKINNED=1` (2 000 poses par défaut),
+  `DEVEX_GPU_SKINNING=0` pour comparer et les mêmes options d'occlusion et présentation. API 31.
 - **Mémoire visible par le CPU** : les buffers que le CPU écrit chaque frame pour le GPU sont
   alloués en écriture séquentielle (`VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT`), ce
   qui permet à VMA de les mettre en mémoire vidéo quand le CPU peut y écrire (Resizable BAR des
@@ -4987,6 +5018,10 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     elles redeviennent visibles ; ombres et picking indépendants ; trois compteurs dans
     *Statistics*, tests d'images en mouvement, scène `occlusion.dvxscene` du sandbox et benchmark
     avec ou sans murs, présentation choisie et attentes séparées ; API des jeux 30.
+88. ✅ **Maillages animés en compute** — déformation préparée une fois par pose et vue, réutilisée
+    entre les passes et sous-maillages ; positions précédentes pour le mouvement, limites de la
+    pose courante pour le frustum et l'occlusion GPU ; compteurs dans *Statistics*, comparaisons
+    d'images et de picking, foule de 96 robots dans le sandbox, benchmark animé ; API des jeux 31.
 
 Ensuite, sans ordre figé : à choisir dans les pistes ci-dessous.
 
@@ -5041,8 +5076,8 @@ Ensuite, sans ordre figé : à choisir dans les pistes ci-dessous.
   boucle, arbres 2D directionnels simples, courbes de fondu, aperçu d'un état dans l'éditeur hors
   jeu, états communs à plusieurs contrôleurs (overrides d'Unity), valeurs des paramètres gardées
   dans les sauvegardes.
-- **Animation** : cinématique inverse, morph targets, pré-skinning en compute (colliders et
-  rayons suivant la pose), réutilisation d'un clip entre squelettes différents (retargeting),
+- **Animation** : cinématique inverse, morph targets, colliders et rayons suivant la pose
+  préparée en compute, réutilisation d'un clip entre squelettes différents (retargeting),
   compression des courbes.
 - **Sauvegardes, la suite** : écriture sur un worker pour les grosses scènes, compression et
   signature des fichiers des jeux exportés, sauvegardes dans le nuage des plateformes, état en
@@ -5131,8 +5166,8 @@ Ensuite, sans ordre figé : à choisir dans les pistes ci-dessous.
 - **Autres plateformes de textures** : ASTC ou Basis Universal pour le mobile, produits à l'export.
 - **Culling** : dessin indirect compté (`vkCmdDrawIndexedIndirectCount`) dans un buffer d'indices partagé pour un
   seul dessin par vue, instances gardées sur le GPU d'une frame à l'autre plutôt que recopiées, et
-  hiérarchie spatiale pour les très grandes scènes ; les maillages animés confiés eux aussi au
-  GPU, avec un skinning en compute.
+  hiérarchie spatiale pour les très grandes scènes ; préparation des poses gardée entre vues,
+  skinning différé des personnages hors de tous les frustums, niveaux de détail des squelettes.
 - **Ombres locales** : filtrage plus doux (PCSS), tuiles gardées une à une (aujourd'hui l'atlas est
   gardé entier ou redessiné entier), et ombres des surfaces transparentes.
 - **Réflexions locales** : sondes recapturées pendant le jeu (au chargement, à la demande), plusieurs

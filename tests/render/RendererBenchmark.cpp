@@ -5,6 +5,8 @@
 // DEVEX_STRESS_OBJECTS and DEVEX_STRESS_LIGHTS change how many there are; DEVEX_GPU_CULLING=0 has
 // the CPU cull and draw every instance, to compare. DEVEX_GPU_OCCLUSION=0 disables occlusion alone;
 // DEVEX_PRESENT_MODE=immediate removes the display's pacing; DEVEX_STRESS_OCCLUDERS=1 adds walls.
+// DEVEX_STRESS_SKINNED=1 animates the meshes (2,000 by default); DEVEX_GPU_SKINNING=0 compares
+// their existing individual vertex draws while leaving the static meshes on GPU culling.
 #include <devex/asset/Primitives.hpp>
 #include <devex/core/Profiler.hpp>
 #include <devex/platform/Platform.hpp>
@@ -44,7 +46,8 @@ namespace {
 
 TEST_CASE("Renderer stress benchmark", "[.][benchmark]")
 {
-    const std::uint32_t objects = countFrom("DEVEX_STRESS_OBJECTS", 20000);
+    const bool animated = devex::platform::environmentVariable("DEVEX_STRESS_SKINNED") == "1";
+    const std::uint32_t objects = countFrom("DEVEX_STRESS_OBJECTS", animated ? 2000 : 20000);
     const std::uint32_t lights = countFrom("DEVEX_STRESS_LIGHTS", 256);
     auto platform = devex::platform::Platform::create();
     REQUIRE(platform.has_value());
@@ -52,6 +55,7 @@ TEST_CASE("Renderer stress benchmark", "[.][benchmark]")
     REQUIRE(window.has_value());
     const bool gpuCulling = devex::platform::environmentVariable("DEVEX_GPU_CULLING") != "0";
     const bool gpuOcclusion = devex::platform::environmentVariable("DEVEX_GPU_OCCLUSION") != "0";
+    const bool gpuSkinning = devex::platform::environmentVariable("DEVEX_GPU_SKINNING") != "0";
     const bool walls = devex::platform::environmentVariable("DEVEX_STRESS_OCCLUDERS") == "1";
     const std::string mode = devex::platform::environmentVariable("DEVEX_PRESENT_MODE");
     const auto presentMode = mode == "immediate" ? devex::render::PresentMode::Immediate
@@ -61,14 +65,29 @@ TEST_CASE("Renderer stress benchmark", "[.][benchmark]")
                                                     {.presentMode = presentMode,
                                                      .validation = false,
                                                      .gpuCulling = gpuCulling,
-                                                     .gpuOcclusion = gpuOcclusion});
+                                                     .gpuOcclusion = gpuOcclusion,
+                                                     .gpuSkinning = gpuSkinning});
     REQUIRE(renderer.has_value());
 
     // A few meshes and materials, as a level reuses them.
     std::array<devex::render::MeshHandle, 3> meshes{};
-    meshes[0] = *renderer->createMesh(devex::asset::makeCube());
-    meshes[1] = *renderer->createMesh(devex::asset::makeUvSphere());
-    meshes[2] = *renderer->createMesh(devex::asset::makePlane(1.0f, 4));
+    std::array meshData{devex::asset::makeCube(), devex::asset::makeUvSphere(),
+                        devex::asset::makePlane(1.0f, 4)};
+    for (std::size_t index = 0; index < meshData.size(); ++index)
+    {
+        if (animated)
+        {
+            auto& mesh = meshData[index];
+            mesh.inverseBind.assign(2, devex::math::Mat4{1.0f});
+            for (const auto& vertex : mesh.vertices)
+            {
+                const float weight = std::clamp(vertex.position.y + 0.5f, 0.0f, 1.0f);
+                mesh.skin.push_back(
+                    {.joints = {0, 1, 0, 0}, .weights = {1.0f - weight, weight, 0.0f, 0.0f}});
+            }
+        }
+        meshes[index] = *renderer->createMesh(meshData[index]);
+    }
     std::array<devex::render::MaterialHandle, 8> materials{};
     for (std::size_t index = 0; index < materials.size(); ++index)
     {
@@ -87,11 +106,15 @@ TEST_CASE("Renderer stress benchmark", "[.][benchmark]")
         const float x = static_cast<float>(index % side) * 3.0f;
         const float z = -static_cast<float>(index / side) * 3.0f;
         const float scale = 0.6f + 0.1f * static_cast<float>(index % 5);
-        instances.push_back({.mesh = meshes[index % meshes.size()],
-                             .material = materials[(index / 3) % materials.size()],
-                             .transform = devex::math::scale(devex::math::translate(devex::math::Mat4{1.0f}, {x, scale * 0.5f, z}),
-                                                             devex::math::Vec3{scale}),
-                             .objectId = index + 1});
+        instances.push_back(
+            {.mesh = meshes[index % meshes.size()],
+             .material = materials[(index / 3) % materials.size()],
+             .transform = devex::math::scale(
+                 devex::math::translate(devex::math::Mat4{1.0f}, {x, scale * 0.5f, z}),
+                 devex::math::Vec3{scale}),
+             .firstBone = animated ? index * 2 : 0,
+             .boneCount = animated ? 2u : 0u,
+             .objectId = index + 1});
     }
     std::vector<devex::render::RenderLight> localLights;
     for (std::uint32_t index = 0; index < lights; ++index)
@@ -135,6 +158,18 @@ TEST_CASE("Renderer stress benchmark", "[.][benchmark]")
         world.sun = {.direction = {-0.3f, -1.0f, -0.4f}, .illuminance = devex::math::Vec3{60000.0f}};
         world.environment.intensity = 5000.0f;
         world.meshes = instances;
+        if (animated)
+        {
+            world.boneMatrices.resize(static_cast<std::size_t>(objects) * 2);
+            for (std::uint32_t index = 0; index < objects; ++index)
+            {
+                const float angle = 0.6f * std::sin(time * 3.0f + static_cast<float>(index) * 0.2f);
+                world.boneMatrices[index * 2] = devex::math::rotate(
+                    instances[index].transform, angle, devex::math::Vec3{0, 1, 0});
+                world.boneMatrices[index * 2 + 1] = devex::math::rotate(
+                    instances[index].transform, -angle, devex::math::Vec3{0, 0, 1});
+            }
+        }
         world.lights = localLights;
         REQUIRE(renderer->endFrame());
         devex::core::profiler::endFrame();
@@ -189,6 +224,9 @@ TEST_CASE("Renderer stress benchmark", "[.][benchmark]")
         stats.gpuInstancesTested, stats.gpuFrustumCulled, stats.gpuOccludedInstances);
     std::printf("Profile: %zu CPU frames retained, %zu GPU frames completed\n", history.size(),
                 gpuFrames);
+    std::printf("Animated meshes: %s, GPU skinning: %s, %u poses and %llu vertices prepared\n",
+                animated ? "yes" : "no", gpuSkinning ? "on" : "off", stats.gpuSkinnedPoses,
+                static_cast<unsigned long long>(stats.gpuSkinnedVertices));
     const auto millisecondsOf = [&](std::string_view name)
     {
         double totalMilliseconds = 0.0;

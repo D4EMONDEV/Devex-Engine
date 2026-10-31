@@ -1195,7 +1195,7 @@ TEST_CASE("Instances the camera cannot see are not drawn", "[render][gpu]")
         REQUIRE(platform.has_value());
         auto window = platform->createWindow({.width = 320, .height = 240, .vulkan = true, .hidden = true});
         REQUIRE(window.has_value());
-        // The CPU culls, as it does for the shaders of projects and skinned meshes, and counts what it drops.
+        // The CPU culls, as it does for project shaders, and counts what it drops.
         auto renderer = devex::render::Renderer::create(*platform, *window, {.validation = true, .gpuCulling = false});
         if (!renderer)
         {

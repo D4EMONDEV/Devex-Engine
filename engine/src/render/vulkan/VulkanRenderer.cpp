@@ -237,6 +237,7 @@ VulkanRenderer::VulkanRenderer(platform::Window& window, const RendererConfig& c
     rendererExists.store(true);
     m_gpuCulling = config.gpuCulling && m_device.supportsDrawIndirectFirstInstance();
     m_gpuOcclusion = config.gpuOcclusion;
+    m_gpuSkinning = config.gpuSkinning;
 }
 
 VulkanRenderer::~VulkanRenderer()
@@ -372,6 +373,7 @@ core::Result<MeshHandle> VulkanRenderer::createMesh(const asset::MeshData& mesh)
         .vertices = std::move(*vertexBuffer),
         .indices = std::move(*indexBuffer),
         .skin = std::move(skinBuffer),
+        .jointCount = static_cast<std::uint32_t>(mesh.inverseBind.size()),
     };
     for (const asset::Submesh& submesh : asset::submeshesOf(mesh))
     {
@@ -1847,6 +1849,9 @@ core::Result<void> VulkanRenderer::createScenePipelines()
         createComputePipeline(device, {.shaderPath = m_shaderDirectory / "depth_reduce.spv",
                                        .setLayouts = bothSets,
                                        .pushConstantSize = sizeof(DepthReducePushConstants)});
+    core::Result<Pipeline> skinning =
+        createComputePipeline(device, {.shaderPath = m_shaderDirectory / "skinning.spv",
+                                       .pushConstantSize = sizeof(SkinningPushConstants)});
     core::Result<Pipeline> occlusionCull =
         createComputePipeline(device, {.shaderPath = m_shaderDirectory / "occlusion.spv",
                                        .setLayouts = bothSets,
@@ -2021,6 +2026,7 @@ core::Result<void> VulkanRenderer::createScenePipelines()
                                            &culledPick,
                                            &cull,
                                            &depthReduce,
+                                           &skinning,
                                            &occlusionCull})
     {
         if (!*result)
@@ -2061,6 +2067,7 @@ core::Result<void> VulkanRenderer::createScenePipelines()
     m_culledPickPipeline = std::move(*culledPick);
     m_cullPipeline = std::move(*cull);
     m_depthReducePipeline = std::move(*depthReduce);
+    m_skinningPipeline = std::move(*skinning);
     m_occlusionPipeline = std::move(*occlusionCull);
 
     // A block is a grid of terrainBlockCells cells on a side, its four quarters one after the other,
@@ -3811,7 +3818,14 @@ math::Aabb VulkanRenderer::worldBounds(const MeshInstance& instance) const noexc
 bool VulkanRenderer::isGpuDriven(const MeshInstance& instance) const noexcept
 {
     const GpuMesh* const mesh = m_meshes.find(instance.mesh);
-    if (mesh == nullptr || instance.submesh >= mesh->submeshes.size() || (mesh->skin && instance.boneCount > 0))
+    if (mesh == nullptr || instance.submesh >= mesh->submeshes.size())
+    {
+        return false;
+    }
+    if (mesh->skin && instance.boneCount > 0 &&
+        (!m_gpuSkinning || instance.boneCount < mesh->jointCount ||
+         static_cast<std::size_t>(instance.firstBone) + instance.boneCount >
+             m_world.boneMatrices.size()))
     {
         return false;
     }
@@ -3823,6 +3837,10 @@ bool VulkanRenderer::isGpuDriven(const MeshInstance& instance) const noexcept
 core::Result<void> VulkanRenderer::prepareCulling(FrameContext& frame, bool drawCascades, bool drawAtlas, bool pick)
 {
     readCulling(frame);
+    if (core::Result<void> prepared = prepareSkinning(frame); !prepared)
+    {
+        return prepared;
+    }
     m_gpuDriven.assign(m_world.meshes.size(), 0);
     m_cpuInstances.clear();
     m_cullBatches.clear();
@@ -3867,6 +3885,8 @@ core::Result<void> VulkanRenderer::prepareCulling(FrameContext& frame, bool draw
         ++batchSizes[found->second];
 
         const PreviousInstance* const previous = previousInstance(index);
+        const auto skinJob = m_skinInstances[index];
+        const bool skinned = skinJob != noCullView;
         // An empty box stands for a mesh the culling keeps everywhere.
         const math::Aabb bounds = mesh.bounds.isEmpty() ? math::Aabb{.min = math::Vec3{1.0f}, .max = math::Vec3{-1.0f}} : mesh.bounds;
         m_gpuInstances.push_back({
@@ -3877,11 +3897,13 @@ core::Result<void> VulkanRenderer::prepareCulling(FrameContext& frame, bool draw
             .boundsMax = bounds.max,
             .batch = found->second,
             .vertices = mesh.vertices.deviceAddress(),
-            .flags = cullCamera | cullShadows |
+            .flags = cullCamera | cullShadows | (skinned ? cullSkinned : 0u) |
                      (instance.objectId == 0 ||
                               !std::ranges::binary_search(frame.occludedKeys, instanceKey(instance))
                           ? cullSeed
                           : 0u),
+            .skinnedVertices = skinned ? m_skinJobs[skinJob].output : 0,
+            .skinnedBounds = skinned ? m_skinJobs[skinJob].bounds : 0,
         });
         frame.cullKeys.push_back(instanceKey(instance));
         m_gpuDriven[index] = 1;
@@ -4343,7 +4365,9 @@ std::uint32_t VulkanRenderer::drawMeshes(VkCommandBuffer commandBuffer, VkDevice
             const PrepassPushConstants prepassConstants{
                 .draw = constants,
                 .previousWorld = previous != nullptr ? previous->transform : instance.transform,
-                .previousBones = skinned && previousBones != 0 && previous != nullptr && previous->skinned
+                .previousBones = skinned && previousBones != 0 && previous != nullptr &&
+                                         previous->skinned &&
+                                         previous->boneCount >= mesh->jointCount
                                      ? previousBones + previous->firstBone * sizeof(math::Mat4)
                                      : constants.bones,
             };
@@ -5281,12 +5305,21 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
         vkCmdSetScissor(commands, 0, 1, &scissor);
     };
 
+    if (core::Result<void> uploaded = uploadPreviousBones(frame); !uploaded)
+    {
+        return std::unexpected(uploaded.error());
+    }
     {
         DEVEX_PROFILE_SCOPE("Culling");
         if (core::Result<void> prepared = prepareCulling(frame, drawCascades, drawAtlas, pick); !prepared)
         {
             return std::unexpected(prepared.error());
         }
+    }
+    if (!m_skinJobs.empty())
+    {
+        graph.addPass("Skinning", {},
+                      [&](VkCommandBuffer commands) { recordSkinning(commands, frame); });
     }
     if (m_culledCount > 0)
     {
@@ -5375,10 +5408,6 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
         });
     }
 
-    if (core::Result<void> uploaded = uploadPreviousBones(frame); !uploaded)
-    {
-        return std::unexpected(uploaded.error());
-    }
     const VkDeviceAddress previousBones =
         frame.previousBones ? frame.previousBones->deviceAddress() : 0;
     const auto prepass = [&](VkCommandBuffer commands, bool recover)
@@ -6643,6 +6672,7 @@ void VulkanRenderer::rememberFrame()
         m_previousInstances[index] = {.key = instanceKey(instance),
                                       .transform = instance.transform,
                                       .firstBone = instance.firstBone,
+                                      .boneCount = instance.boneCount,
                                       .skinned = instance.boneCount > 0};
     }
     m_previousIndexed = false;
@@ -6770,6 +6800,8 @@ RendererStats VulkanRenderer::stats() const noexcept
         .gpuInstancesTested = m_lastGpuTested,
         .gpuFrustumCulled = m_lastGpuFrustumCulled,
         .gpuOccludedInstances = m_lastGpuOccluded,
+        .gpuSkinnedPoses = static_cast<std::uint32_t>(m_skinJobs.size()),
+        .gpuSkinnedVertices = m_skinnedVertexCount,
         .meshCount = m_meshes.size(),
         .textureCount = m_textures.size(),
         // The default material is not counted.

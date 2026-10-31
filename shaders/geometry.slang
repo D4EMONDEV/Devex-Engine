@@ -8,6 +8,24 @@ module geometry;
 import common;
 import pbr;
 
+// The compute skinning keeps both positions for motion, and transformed normals and tangents.
+public struct SkinnedVertex
+{
+    public float4 position;
+    public float4 previous;
+    public float3 normal;
+    public float padding;
+    public float4 tangent;
+};
+
+public struct SkinBounds
+{
+    public float3 minimum;
+    public float padding0;
+    public float3 maximum;
+    public float padding1;
+};
+
 // An instance the GPU culls and draws, as the buffer of the frame holds it.
 public struct GpuInstance
 {
@@ -25,7 +43,28 @@ public struct GpuInstance
     // What the culling looks for it in: 1 in the views of the camera, 2 in those of shadows.
     public uint flags;
     public uint padding;
+    public SkinnedVertex* skinnedVertices;
+    public SkinBounds* skinnedBounds;
 };
+
+public static const uint cullSkinned = 8u;
+
+// Static boxes follow the instance; a prepared pose already has a world-space box.
+public bool instanceBounds(GpuInstance instance, out float3 center, out float3 halfSize)
+{
+    if ((instance.flags & cullSkinned) != 0)
+    {
+        const SkinBounds bounds = instance.skinnedBounds[0];
+        center = (bounds.minimum + bounds.maximum) * 0.5;
+        halfSize = (bounds.maximum - bounds.minimum) * 0.5;
+        return all(bounds.minimum <= bounds.maximum);
+    }
+    const float3 localCenter = (instance.boundsMin + instance.boundsMax) * 0.5;
+    const float3 localHalf = (instance.boundsMax - instance.boundsMin) * 0.5;
+    center = mul(instance.world, float4(localCenter, 1.0)).xyz;
+    halfSize = mul(abs(float3x3(instance.world)), localHalf);
+    return all(instance.boundsMin <= instance.boundsMax);
+}
 
 // What the draws of the instances of a batch read: the instances of the frame, and the slots the
 // culling filled for a view, each naming an instance. The material is that of the batch, the same
@@ -98,6 +137,18 @@ public SurfaceVertex surfaceVertex(DrawData draw, uint vertexIndex)
     output.normal = transformNormal(world, vertex.normal);
     output.tangent = float4(mul(float3x3(world), vertex.tangent.xyz), vertex.tangent.w * handedness(world));
     output.uv = float2(vertex.u, vertex.v);
+    return output;
+}
+
+public SurfaceVertex posedSurfaceVertex(DrawData draw, SkinnedVertex vertex, uint vertexIndex)
+{
+    const Vertex source = draw.vertices[vertexIndex];
+    SurfaceVertex output;
+    output.position = mul(draw.scene->viewProjection, vertex.position);
+    output.worldPosition = vertex.position.xyz;
+    output.normal = vertex.normal;
+    output.tangent = vertex.tangent;
+    output.uv = float2(source.u, source.v);
     return output;
 }
 
@@ -178,7 +229,7 @@ public struct DepthVertex
 };
 
 // Where the vertex stood on the previous frame: the same blend of bones, posed as they were.
-float4x4 previousVertexTransform(DrawData draw, float4x4 previousWorld, float4x4* previousBones, uint vertexIndex)
+public float4x4 previousVertexTransform(DrawData draw, float4x4 previousWorld, float4x4* previousBones, uint vertexIndex)
 {
     if (draw.skinned == 0)
     {
@@ -213,6 +264,18 @@ public DepthVertex movedDepthVertex(DrawData draw, float4x4 previousTransform, u
     // Normals transform with the cofactor matrix, as they do when the surface is shaded.
     output.normal = transformNormal(world, vertex.normal);
     output.uv = float2(vertex.u, vertex.v);
+    return output;
+}
+
+public DepthVertex posedDepthVertex(DrawData draw, SkinnedVertex vertex, uint vertexIndex)
+{
+    const Vertex source = draw.vertices[vertexIndex];
+    DepthVertex output;
+    output.position = mul(draw.scene->viewProjection, vertex.position);
+    output.current = mul(draw.scene->unjitteredViewProjection, vertex.position);
+    output.previous = mul(draw.scene->previousViewProjection, vertex.previous);
+    output.normal = vertex.normal;
+    output.uv = float2(source.u, source.v);
     return output;
 }
 
@@ -254,6 +317,17 @@ public ShadowVertex viewVertex(DrawData draw, float4x4 viewProjection, uint vert
     ShadowVertex output;
     output.position = mul(viewProjection, mul(vertexTransform(draw, vertexIndex), float4(vertex.position, 1.0)));
     output.uv = float2(vertex.u, vertex.v);
+    output.objectId = draw.objectId;
+    return output;
+}
+
+public ShadowVertex posedViewVertex(DrawData draw, SkinnedVertex vertex, float4x4 viewProjection,
+                                   uint vertexIndex)
+{
+    const Vertex source = draw.vertices[vertexIndex];
+    ShadowVertex output;
+    output.position = mul(viewProjection, vertex.position);
+    output.uv = float2(source.u, source.v);
     output.objectId = draw.objectId;
     return output;
 }

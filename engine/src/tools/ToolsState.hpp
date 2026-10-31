@@ -297,6 +297,8 @@ struct DEVEX_API Monitors
     MonitorHistory gpuTested;
     MonitorHistory gpuFrustumCulled;
     MonitorHistory gpuOccluded;
+    MonitorHistory gpuSkinnedPoses;
+    MonitorHistory gpuSkinnedVertices;
     // In megabytes: the memory of the GPU the engine takes, and what it sent to the GPU last frame.
     MonitorHistory gpuMemory;
     MonitorHistory uploads;

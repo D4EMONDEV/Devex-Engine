@@ -24,6 +24,8 @@ chaque partie sur le CPU et de chaque passe sur le GPU. Variables d'environnemen
 | `DEVEX_STRESS_OBJECTS` | nombre d'objets (20 000 par défaut)                           |
 | `DEVEX_STRESS_LIGHTS`  | nombre de lumières locales (256 par défaut)                   |
 | `DEVEX_STRESS_FRAMES` | images mesurées après les 60 de chauffe, de 1 à 10 000 (300 par défaut) |
+| `DEVEX_STRESS_SKINNED=1` | anime les trois maillages par deux os, 2 000 objets par défaut |
+| `DEVEX_GPU_SKINNING=0` | garde le skinning des personnages dans leurs dessins individuels |
 
 Le temps total couvre toutes les images mesurées ; le détail des zones porte sur les 300 dernières
 au plus, limite de l'historique du profileur. Le nombre de frames CPU retenues et de frames GPU
@@ -219,3 +221,107 @@ principale, avec quelques frames de décalage. Cliquer dans la vue en Play pour 
 WASD pour voler, Espace/Ctrl gauche pour monter/descendre, Maj gauche pour accélérer. La scène a
 trois écrans opaques et 120 cubes ; passer à côté d'un écran fait réapparaître les cubes dans la
 frame où ils sont visibles.
+
+## Skinning compute et lots animés (jalon 88)
+
+Même i7-14700KF et RTX 4060, Windows 11, pilote 621.01, build Release du 31 octobre 2026,
+validation désactivée, présentation Immediate demandée et obtenue. Deux séries de chaque
+configuration : 60 images de chauffe puis 300 mesurées à 1280 × 720, 256 lumières ; 300 frames CPU
+retenues et 298 frames GPU terminées. Le culling GPU et l'occlusion sont demandés dans les deux
+chemins. Sans skinning compute, les maillages animés gardent le chemin d'origine : le CPU enregistre
+leurs dessins un par un et leurs **vertex shaders GPU** déforment les sommets à chaque passe.
+Les quatre murs, quand présents, sont des instances statiques. Les comparaisons ci-dessous
+mesurent donc le chemin complet (préparation, regroupement et culling des poses), pas seulement
+le déplacement d'un calcul d'un shader à un autre.
+
+La variante animée du benchmark reprend cubes, sphères et plans, chacun avec deux os dont les
+rotations évoluent à chaque image. Le champ de 2 000 objets représente **414 171 sommets** de poses ;
+celui de 20 000 en représente **4 140 171**. Ce sont des maillages de stress, pas des modèles de
+personnages de production.
+
+### 20 000 objets animés
+
+| Série | Scène | Skinning | Image | Passes GPU | CPU enregistrement hors présentation | Draw calls |
+|-------|-------|----------|------:|-----------:|--------------------------------------:|-----------:|
+| 1 | Dégagée | Par dessin | 17,53 ms | 5,40 ms | 8,35 ms | 39 994 |
+| 1 | Dégagée | Compute + lots | 16,77 ms | 8,59 ms | 4,36 ms | 72 |
+| 1 | Murs | Par dessin | 17,52 ms | 5,24 ms | 8,44 ms | 39 996 |
+| 1 | Murs | Compute + lots | 12,86 ms | 4,25 ms | 4,83 ms | 72 |
+| 2 | Dégagée | Par dessin | 17,81 ms | 5,24 ms | 8,68 ms | 39 994 |
+| 2 | Dégagée | Compute + lots | 16,96 ms | 8,61 ms | 4,42 ms | 72 |
+| 2 | Murs | Par dessin | 17,34 ms | 5,26 ms | 8,29 ms | 39 996 |
+| 2 | Murs | Compute + lots | 13,09 ms | 4,32 ms | 4,85 ms | 72 |
+
+Détail de la série 2 derrière les murs, en millisecondes par image :
+
+| Partie | Par dessin | Compute + lots |
+|--------|-----------:|---------------:|
+| CPU : préparation du culling | 0,120 | 3,021 |
+| CPU : dont préparation des poses | 0,005 | 1,355 |
+| CPU : présentation | 6,772 | 6,043 |
+| CPU : attente de la fence du contexte | 0,006 | 0,006 |
+| GPU : préparation des poses | — | 3,486 |
+| GPU : première prépasse | 2,761 | 0,075 |
+| GPU : récupération des objets redevenus visibles | — | 0,005 |
+| GPU : ombrage de la scène | 1,977 | 0,124 |
+| GPU : cascades d'ombres | 0,254 | 0,250 |
+
+18 899 instances sont cachées à la fin sur 20 004, et trois hors du frustum. Le temps de frame
+baisse de **24 à 27 %** derrière les murs et d'environ **4 à 5 %** dans le champ dégagé. Le temps
+CPU d'enregistrement hors présentation baisse de près de moitié dans ce dernier cas, mais le
+travail GPU **augmente** : toutes les poses sont préparées et leurs attributs écrits dans un buffer
+puis relus. Le nombre de draw calls seul ne dit donc pas le temps de frame.
+
+### 2 000 objets animés
+
+| Scène | Par dessin, deux séries | Compute + lots, deux séries |
+|-------|------------------------:|-----------------------------:|
+| Dégagée | 4,17 / 4,17 ms | 4,17 / 4,20 ms |
+| Murs | 4,18 / 4,17 ms | 4,15 / 4,03 ms |
+
+Le CPU enregistre en environ 0,55 à 0,61 ms hors présentation au lieu de 1,00 à 1,01 ms, mais le
+temps total change peu. Le compute prend environ 0,25 ms GPU et sa préparation 0,12 ms CPU.
+Il n'y a **pas de gain de FPS garanti** pour un petit nombre de personnages, un modèle différent ou
+un autre GPU. Sur l'Iris Xe, ce jalon reste **à mesurer**.
+
+### Mémoire et reproduction
+
+Une pose préparée garde 64 octets par sommet, avec positions courante et précédente, normale et
+tangente. Les 4 140 171 sommets du gros essai demandent **265 Mo utiles par contexte de frame** ;
+la croissance géométrique des buffers et les deux frames en vol peuvent réserver environ 1 Go pour
+ces sorties. Les personnages hors du frustum sont aussi préparés afin de mesurer leurs limites
+exactes. `RendererConfig::gpuSkinning=false` permet de garder l'ancien chemin, et les matériaux
+transparents et shaders de projet le gardent déjà. L'évaluation des animations et des matrices
+d'os reste sur le CPU.
+
+Le regroupement des poses réutilise une table contiguë à adressage ouvert, sans allocation de
+nœud par personnage et par frame ; les sous-maillages compatibles réutilisent leurs attributs.
+La zone CPU *Skinning data* et la passe GPU *Skinning* permettent de distinguer les deux coûts.
+
+Depuis la racine du dépôt, PowerShell :
+
+```powershell
+$env:DEVEX_STRESS_SKINNED = "1"
+$env:DEVEX_STRESS_OBJECTS = "20000" # ou 2000 pour le petit essai
+$env:DEVEX_STRESS_LIGHTS = "256"
+$env:DEVEX_STRESS_FRAMES = "300"
+$env:DEVEX_PRESENT_MODE = "immediate"
+$env:DEVEX_GPU_CULLING = "1"
+$env:DEVEX_GPU_OCCLUSION = "1"
+foreach ($walls in 0..1) {
+    foreach ($skinning in 0..1) {
+        $env:DEVEX_STRESS_OCCLUDERS = [string]$walls
+        $env:DEVEX_GPU_SKINNING = [string]$skinning
+        .\out\build\x64-release\bin\devex_render_tests.exe "Renderer stress benchmark"
+    }
+}
+Remove-Item Env:DEVEX_STRESS_SKINNED, Env:DEVEX_STRESS_OBJECTS, Env:DEVEX_STRESS_LIGHTS, Env:DEVEX_STRESS_FRAMES
+Remove-Item Env:DEVEX_PRESENT_MODE, Env:DEVEX_GPU_CULLING, Env:DEVEX_GPU_OCCLUSION
+Remove-Item Env:DEVEX_STRESS_OCCLUDERS, Env:DEVEX_GPU_SKINNING
+```
+
+Le sandbox contient aussi `assets/scenes/skinning.dvxscene` : **96 robots qui marchent sur place**,
+un écran opaque et une caméra libre (mêmes commandes que la scène d'occlusion). Les moniteurs
+*GPU Skinned Poses* et *GPU Skinned Vertices* décrivent la préparation de la vue principale
+courante ; les trois moniteurs de visibilité restent ceux d'une frame GPU terminée. Le
+générateur accepte `python scripts/generate_sample_assets.py --skinning-only`.

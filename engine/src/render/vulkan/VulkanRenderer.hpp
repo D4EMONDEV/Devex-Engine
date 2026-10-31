@@ -237,6 +237,9 @@ private:
         std::optional<Buffer> cullStates;
         std::optional<Buffer> cullReadback;
         std::optional<Buffer> depthPyramid;
+        std::optional<Buffer> skinJobs;
+        std::optional<Buffer> skinnedVertices;
+        std::optional<Buffer> skinnedBounds;
         std::vector<std::uint64_t> cullKeys;
         // Only a hint for which instances seed the next depth prepass. Everything else is retested
         // against the current depth, never rejected from this older visibility alone.
@@ -334,6 +337,7 @@ private:
         std::vector<SubmeshRange> submeshes;
         // Only for a skinned mesh: the joints and weights of its vertices.
         std::optional<Buffer> skin;
+        std::uint32_t jointCount = 0;
         // False until a frame has recorded the copy of its data: it is not drawn before.
         bool ready = false;
     };
@@ -540,6 +544,7 @@ private:
         std::uint64_t key = 0;
         math::Mat4 transform{1.0f};
         std::uint32_t firstBone = 0;
+        std::uint32_t boneCount = 0;
         bool skinned = false;
     };
     // Where the instance at this index of the world stood on the previous frame; none if it was not there.
@@ -549,8 +554,8 @@ private:
     {
         return (static_cast<std::uint64_t>(instance.objectId) << 32) | instance.submesh;
     }
-    // Whether the GPU culls and draws the instance: a mesh without bones, drawn opaque or cut out by
-    // a standard material.
+    // Whether the GPU culls and draws the instance: a standard opaque or cut-out material, and a
+    // static mesh or a pose which the compute skinning can prepare.
     [[nodiscard]] bool isGpuDriven(const MeshInstance& instance) const noexcept;
     // The instances the GPU culls this frame, in batches of the same submesh and material, and the views
     // it culls them in: the camera, the cascades and the local lights drawn, and the pick requested.
@@ -560,6 +565,8 @@ private:
     // Copies the draws of the batches to the GPU and culls the instances in every view.
     void recordCulling(VkCommandBuffer commandBuffer, const FrameContext& frame) const;
     void readCulling(FrameContext& frame);
+    [[nodiscard]] core::Result<void> prepareSkinning(FrameContext& frame);
+    void recordSkinning(VkCommandBuffer commands, const FrameContext& frame) const;
     void recordDepthPyramid(VkCommandBuffer commands, const FrameContext& frame,
                             std::uint32_t frameSlot) const;
     void recordOcclusion(VkCommandBuffer commands, const FrameContext& frame,
@@ -770,6 +777,7 @@ private:
     std::optional<Pipeline> m_localShadowPipeline;
     // The culling of the instances on the GPU, and the passes that draw what it kept.
     std::optional<Pipeline> m_cullPipeline;
+    std::optional<Pipeline> m_skinningPipeline;
     std::optional<Pipeline> m_depthReducePipeline;
     std::optional<Pipeline> m_occlusionPipeline;
     std::optional<Pipeline> m_culledScenePipeline;
@@ -783,6 +791,12 @@ private:
     // possible on the device.
     bool m_gpuCulling = false;
     bool m_gpuOcclusion = false;
+    bool m_gpuSkinning = false;
+    std::vector<GpuSkinJob> m_skinJobs;
+    std::vector<std::uint32_t> m_skinInstances;
+    std::vector<std::uint32_t> m_skinSources;
+    std::vector<std::uint32_t> m_skinLookup;
+    std::uint64_t m_skinnedVertexCount = 0;
     bool m_occlusionActive = false;
     std::uint32_t m_lastGpuTested = 0;
     std::uint32_t m_lastGpuFrustumCulled = 0;

@@ -59,6 +59,9 @@ struct DEVEX_API RendererConfig
     // hidden instances are tested again before drawing, so camera cuts and moving occluders are
     // safe.
     bool gpuOcclusion = true;
+    // Prepares standard skinned meshes once in compute, then culls and draws their instances by
+    // batches. Requires gpuCulling; off keeps skinning in each individual vertex draw.
+    bool gpuSkinning = true;
 };
 
 // What a sampler2D uniform samples while its texture is missing or still loading.
@@ -117,6 +120,9 @@ struct DEVEX_API RendererStats
     std::uint32_t gpuInstancesTested = 0;
     std::uint32_t gpuFrustumCulled = 0;
     std::uint32_t gpuOccludedInstances = 0;
+    // Unique mesh poses prepared in compute for the main view, shared by their submeshes.
+    std::uint32_t gpuSkinnedPoses = 0;
+    std::uint64_t gpuSkinnedVertices = 0;
     std::size_t meshCount = 0;
     std::size_t textureCount = 0;
     std::size_t materialCount = 0;

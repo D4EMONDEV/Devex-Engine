@@ -7,6 +7,7 @@ devex_add_shaders(devex_shaders
         cull.slang
         depth_reduce.slang
         occlusion.slang
+        skinning.slang
         ibl.slang
         instanced.slang
         lens.slang

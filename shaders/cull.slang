@@ -67,13 +67,10 @@ void cullMain(uint3 id : SV_DispatchThreadID)
     }
     // The box in the world: its center moved, its half size turned by the absolute matrix, as the
     // CPU turns it (math::transform).
-    const float3 center = (instance.boundsMin + instance.boundsMax) * 0.5;
-    const float3 half = (instance.boundsMax - instance.boundsMin) * 0.5;
-    const float3 worldCenter = mul(instance.world, float4(center, 1.0)).xyz;
-    const float3x3 linear = float3x3(instance.world);
-    const float3 worldHalf = mul(abs(linear), half);
+    float3 worldCenter, worldHalf;
+    const bool bounded = instanceBounds(instance, worldCenter, worldHalf);
     // An empty box stands for a mesh kept everywhere.
-    const uint planeCount = all(instance.boundsMin <= instance.boundsMax) ? view.planeCount : 0;
+    const uint planeCount = bounded ? view.planeCount : 0;
     for (uint plane = 0; plane < planeCount; ++plane)
     {
         const float4 equation = view.planes[plane];

@@ -60,6 +60,7 @@ captures de l'éditeur, scènes de base, entrées, scripts C#, animations, colli
   render graph, PBR
   forward+ clustered avec prépasse de profondeur, culling par tronc de vue et par occlusion sur le
   GPU (profondeur de la frame courante, dessin indirect par lots,
+  poses des maillages animés préparées en compute et partagées entre les passes,
   [performances mesurées](docs/performances.md)), ombres en cascades pour
   le soleil et en atlas pour les lumières locales, ciel HDR et IBL, atmosphère physique (ciel bleu,
   couchers rouges, soleil teinté par l'air, brume du lointain) et brouillard de hauteur, sondes de
@@ -271,6 +272,11 @@ La scène `assets/scenes/occlusion.dvxscene` du sandbox permet d'observer le cul
 (Maj gauche accélère), cliquer dans la vue pour tourner à la souris. *Statistics* affiche les
 instances testées, hors frustum et cachées ; [les mesures](docs/performances.md) montrent aussi le
 coût lorsque rien ne cache les objets.
+
+`assets/scenes/skinning.dvxscene` reprend ce principe avec **96 robots animés** : leurs poses sont
+préparées sur le GPU, avec leurs positions précédentes pour l'anticrénelage et des boîtes qui
+suivent réellement l'animation. *GPU Skinned Poses* et *GPU Skinned Vertices* dans Statistics
+montrent le travail de préparation ; les scripts et l'évaluation des animations restent sur le CPU.
 
 Le SDK Vulkan fournit `slangc`, qui compile les shaders pendant le build ; le build le copie
 avec ses bibliothèques dans `bin/slang/`, à côté de l'éditeur, qui s'en sert pour compiler les

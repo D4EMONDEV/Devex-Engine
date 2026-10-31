@@ -3,7 +3,7 @@
 Everything is procedural, so the repository needs no third-party art or sound. Run from any
 directory:
 
-    python scripts/generate_sample_assets.py [--audio-only | --occlusion-only]
+    python scripts/generate_sample_assets.py [--audio-only | --occlusion-only | --skinning-only]
 
 Sounds are synthesized as WAV files; the compressed ones (Ogg Vorbis, MP3, FLAC) are encoded with
 ffmpeg when it is on the PATH, and left as they are otherwise.
@@ -16,6 +16,7 @@ import base64
 import json
 import math
 import random
+import re
 import shutil
 import struct
 import subprocess
@@ -846,7 +847,49 @@ def occlusion_scene():
     write(SANDBOX_ASSETS / 'scenes' / 'occlusion.dvxscene', '\n'.join(sections))
 
 
+def skinning_scene():
+    """A crowd of walking robot skeletons, with a screen for pose-aware occlusion."""
+    source = (SANDBOX_ASSETS / 'scenes' / 'occlusion.dvxscene').read_text(encoding='utf-8')
+    blocks = re.split(r'(?=^\[entity )', source, flags=re.MULTILINE)
+    common = [block for block in blocks if not block.startswith('[entity ') or
+              any(f'name="{name}"' in block.splitlines()[0]
+                  for name in ('Sun', 'Sky', 'Camera', 'Ground', 'Screen 1'))]
+    text = '\n'.join(common)
+    for identity in re.findall(r'^\[entity uuid="([^"]+)"', text, re.MULTILINE):
+        text = text.replace(identity, str(uuid.uuid5(uuid.NAMESPACE_URL, 'devex-sandbox/skinning/' + identity)))
+    robot_source = (SANDBOX_ASSETS / 'prefabs' / 'robot.dvxscene').read_text(encoding='utf-8')
+    robot_source = re.sub(r'^\[scene[^\n]*\]\s*', '', robot_source)
+    for component in ('NavMeshAgent', 'RobotGuide'):
+        robot_source = re.sub(r'\[component type="' + component + r'"\][^\[]*', '', robot_source)
+    # Walk is played directly: no navigation agent or gameplay script is needed for this demo.
+    meta = (SANDBOX_ASSETS / 'models' / 'robot.glb.dvxmeta').read_text(encoding='utf-8')
+    walk = re.search(r'\[subasset type="animation" key="Walk" uuid="([^"]+)"\]', meta)
+    if walk is None:
+        raise ValueError('The sandbox robot has no Walk sub-asset')
+    robot_source = robot_source.replace('controller = asset("a6a31931-deb0-5d31-9232-372a3affa9b7")',
+                                        'controller = asset("00000000-0000-0000-0000-000000000000")')
+    robot_source = robot_source.replace('clip = asset("00000000-0000-0000-0000-000000000000")',
+                                        f'clip = asset("{walk.group(1)}")')
+    identities = re.findall(r'^\[entity uuid="([^"]+)"', robot_source, re.MULTILINE)
+    for row in range(8):
+        for column in range(12):
+            index = row * 12 + column
+            instance = robot_source
+            for identity in identities:
+                instance = instance.replace(identity, str(uuid.uuid5(uuid.NAMESPACE_URL,
+                                            f'devex-sandbox/skinning/robot-{index}/{identity}')))
+            instance = instance.replace('name="Robot"', f'name="Robot {index + 1}"', 1)
+            instance = instance.replace('position = vec3(0, 0, 0)',
+                                        f'position = vec3({column * 2.5 - 13.75:g}, 0, {-10 - row * 3:g})', 1)
+            instance = instance.replace('speed = 1\n', f'speed = {0.8 + (index % 5) * 0.1:g}\n', 1)
+            text += '\n' + instance
+    write(SANDBOX_ASSETS / 'scenes' / 'skinning.dvxscene', text)
+
+
 def main():
+    if "--skinning-only" in sys.argv:
+        skinning_scene()
+        return
     if "--occlusion-only" in sys.argv:
         occlusion_scene()
         return
@@ -879,6 +922,7 @@ def main():
     robot(TEST_DATA / "animated" / "robot.glb")
     audio_assets()
     occlusion_scene()
+    skinning_scene()
 
 
 if __name__ == "__main__":
