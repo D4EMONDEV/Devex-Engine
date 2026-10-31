@@ -391,6 +391,7 @@ target_sources(devex_render
         src/render/vulkan/Vulkan.cpp
         src/render/vulkan/Vulkan.hpp
         src/render/vulkan/VulkanRenderer.cpp
+        src/render/vulkan/Occlusion.cpp
         src/render/vulkan/VulkanRenderer.hpp
     PUBLIC
         FILE_SET HEADERS

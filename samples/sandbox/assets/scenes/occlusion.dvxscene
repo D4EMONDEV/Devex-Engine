@@ -1,0 +1,1404 @@
+[scene format=1 kind="3d"]
+
+[entity uuid="a6c91557-a3db-5d22-8fc8-01ab851c37db" name="Sun"]
+
+[component type="Transform"]
+position = vec3(0, 0, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="DirectionalLight"]
+illuminance = 60000
+cast_shadows = true
+shadow_distance = 80
+
+[entity uuid="710c36fb-5719-5fa7-9706-cdf7ba96f49e" name="Sky"]
+
+[component type="Transform"]
+position = vec3(0, 0, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="Environment"]
+color = vec3(0.6, 0.7, 0.9)
+intensity = 5000
+
+[entity uuid="386363c2-6d1e-52c1-a9e7-a2bee5fe0802" name="Camera"]
+
+[component type="Transform"]
+position = vec3(0, 3, 12)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="Camera"]
+primary = true
+near_plane = 0.1
+far_plane = 200
+auto_exposure = false
+ev100 = 14
+antialiasing = "temporal"
+
+[component type="FlyCamera"]
+speed = 8
+fast_speed = 20
+
+[entity uuid="275e90ab-0043-599b-8846-b610543ff8c7" name="Ground"]
+
+[component type="Transform"]
+position = vec3(0, 0, -12)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(60, 1, 60)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000003")
+material = asset("78014e97-7de2-4e27-89db-74abd840010d")
+
+[entity uuid="a1c55fcd-fcb3-5712-8bdc-b93d470180ea" name="Screen 1"]
+
+[component type="Transform"]
+position = vec3(0, 4, -4)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(16, 8, 0.5)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+
+[entity uuid="33c19637-9c97-5560-ab32-f8ff8a8ac291" name="Screen 2"]
+
+[component type="Transform"]
+position = vec3(-11, 4, -18)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(8, 8, 0.5)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+
+[entity uuid="6bc01183-5a29-5fe9-8715-ac35651e11a8" name="Screen 3"]
+
+[component type="Transform"]
+position = vec3(11, 4, -24)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(8, 8, 0.5)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+
+[entity uuid="21484db1-c4ce-562c-b3b6-a2edcac12d42" name="Hidden cube 1"]
+
+[component type="Transform"]
+position = vec3(-11, 0.6, -10)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="6a826a82-398b-5e2c-beb2-67d038c563c3" name="Hidden cube 2"]
+
+[component type="Transform"]
+position = vec3(-9, 0.6, -10)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="14ccff8d-cebe-50bc-aace-caf5f487bed0" name="Hidden cube 3"]
+
+[component type="Transform"]
+position = vec3(-7, 0.6, -10)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="6744fc34-f6a2-5504-8a89-ab2490e1d129" name="Hidden cube 4"]
+
+[component type="Transform"]
+position = vec3(-5, 0.6, -10)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="8e226a55-2b0c-561e-a753-82d7644bb600" name="Hidden cube 5"]
+
+[component type="Transform"]
+position = vec3(-3, 0.6, -10)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="6f1fb1fc-b818-529c-97df-4029a916b5f1" name="Hidden cube 6"]
+
+[component type="Transform"]
+position = vec3(-1, 0.6, -10)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="8d45e9f3-9000-5a70-ab3c-98f3163b9785" name="Hidden cube 7"]
+
+[component type="Transform"]
+position = vec3(1, 0.6, -10)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="21e4d7d1-de19-5808-b4ba-5fd8ef66c81f" name="Hidden cube 8"]
+
+[component type="Transform"]
+position = vec3(3, 0.6, -10)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="b71e29a6-1702-53e8-ab01-e6c885d5be5c" name="Hidden cube 9"]
+
+[component type="Transform"]
+position = vec3(5, 0.6, -10)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="3c50dce2-9ff7-5042-96f8-a77152d95157" name="Hidden cube 10"]
+
+[component type="Transform"]
+position = vec3(7, 0.6, -10)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="f3015453-b855-592c-89b0-75210a6c57fd" name="Hidden cube 11"]
+
+[component type="Transform"]
+position = vec3(9, 0.6, -10)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="d1e4017d-7d22-5a7a-a259-9f5465006193" name="Hidden cube 12"]
+
+[component type="Transform"]
+position = vec3(11, 0.6, -10)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="2acc3010-dc42-5ce7-be1e-a5066d5ffb7e" name="Hidden cube 13"]
+
+[component type="Transform"]
+position = vec3(-11, 0.6, -12)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="d0ddd934-bc00-55bb-99d6-a82366490c5d" name="Hidden cube 14"]
+
+[component type="Transform"]
+position = vec3(-9, 0.6, -12)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="e6f07396-16a3-5b77-9fb2-71a9d17397bd" name="Hidden cube 15"]
+
+[component type="Transform"]
+position = vec3(-7, 0.6, -12)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="9b830dc6-9110-5b1f-89eb-488dda972c85" name="Hidden cube 16"]
+
+[component type="Transform"]
+position = vec3(-5, 0.6, -12)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="5587e3bc-3318-5289-9e87-470281b6cf01" name="Hidden cube 17"]
+
+[component type="Transform"]
+position = vec3(-3, 0.6, -12)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="15bc0d59-f60c-5b21-8c3a-a4e141d722b2" name="Hidden cube 18"]
+
+[component type="Transform"]
+position = vec3(-1, 0.6, -12)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="6affda23-469c-54af-987c-f06c9ea5198e" name="Hidden cube 19"]
+
+[component type="Transform"]
+position = vec3(1, 0.6, -12)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="646d75ee-6fce-59fe-a512-48f6ed8d0f95" name="Hidden cube 20"]
+
+[component type="Transform"]
+position = vec3(3, 0.6, -12)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="c1682452-ba3b-57e8-b4fc-d7b74a1ab980" name="Hidden cube 21"]
+
+[component type="Transform"]
+position = vec3(5, 0.6, -12)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="2bc804f6-8e4b-5959-a394-7691eb1f874f" name="Hidden cube 22"]
+
+[component type="Transform"]
+position = vec3(7, 0.6, -12)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="308bec56-5f13-5c3e-b4e6-2bebc5a784ed" name="Hidden cube 23"]
+
+[component type="Transform"]
+position = vec3(9, 0.6, -12)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="a18b50e3-24e7-5bd8-9cc4-a67bb97e6a00" name="Hidden cube 24"]
+
+[component type="Transform"]
+position = vec3(11, 0.6, -12)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="a19c6666-83a1-55fe-9085-723aaacad862" name="Hidden cube 25"]
+
+[component type="Transform"]
+position = vec3(-11, 0.6, -14)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="235f3e03-ba3b-5286-974c-67fc34338d6a" name="Hidden cube 26"]
+
+[component type="Transform"]
+position = vec3(-9, 0.6, -14)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="1ba87b5b-a826-5075-831c-84693fd35e94" name="Hidden cube 27"]
+
+[component type="Transform"]
+position = vec3(-7, 0.6, -14)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="345fea0e-7007-5673-a376-8b88bab3f59c" name="Hidden cube 28"]
+
+[component type="Transform"]
+position = vec3(-5, 0.6, -14)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="a48622ce-c6a3-5153-aee5-c04c6279067d" name="Hidden cube 29"]
+
+[component type="Transform"]
+position = vec3(-3, 0.6, -14)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="3bb61aee-610c-5f26-86b1-cac90612c295" name="Hidden cube 30"]
+
+[component type="Transform"]
+position = vec3(-1, 0.6, -14)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="8a06d869-337c-5e4d-a6ea-8a635be10539" name="Hidden cube 31"]
+
+[component type="Transform"]
+position = vec3(1, 0.6, -14)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="874933ce-4738-5350-b2f7-27acef8d67d1" name="Hidden cube 32"]
+
+[component type="Transform"]
+position = vec3(3, 0.6, -14)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="d856f61c-d43c-5285-a152-3487092560d6" name="Hidden cube 33"]
+
+[component type="Transform"]
+position = vec3(5, 0.6, -14)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="3da1c0f6-e7d5-52c1-a315-352525a2e49d" name="Hidden cube 34"]
+
+[component type="Transform"]
+position = vec3(7, 0.6, -14)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="aefc61c7-c371-508b-b462-1567b35ce7b4" name="Hidden cube 35"]
+
+[component type="Transform"]
+position = vec3(9, 0.6, -14)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="fddd176b-aa32-5382-9866-fc0f641d81de" name="Hidden cube 36"]
+
+[component type="Transform"]
+position = vec3(11, 0.6, -14)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="986d2d0b-ae41-509b-abe4-2eb9a19f4907" name="Hidden cube 37"]
+
+[component type="Transform"]
+position = vec3(-11, 0.6, -16)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="c5405bc2-ba34-57e0-a1b9-bd6227c7e6ad" name="Hidden cube 38"]
+
+[component type="Transform"]
+position = vec3(-9, 0.6, -16)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="afa548d0-6099-5f24-8c7b-64d6de7b080c" name="Hidden cube 39"]
+
+[component type="Transform"]
+position = vec3(-7, 0.6, -16)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="55d55ca6-c7e2-51fd-9603-2b38ab471c6b" name="Hidden cube 40"]
+
+[component type="Transform"]
+position = vec3(-5, 0.6, -16)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="2b739f64-5b8b-5397-a5d3-179a474fbe14" name="Hidden cube 41"]
+
+[component type="Transform"]
+position = vec3(-3, 0.6, -16)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="671e7710-ed4a-5b5c-be02-066c0c7dd950" name="Hidden cube 42"]
+
+[component type="Transform"]
+position = vec3(-1, 0.6, -16)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="49085f74-a73b-5ad4-93ee-f8a17820a44f" name="Hidden cube 43"]
+
+[component type="Transform"]
+position = vec3(1, 0.6, -16)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="c4dc74dd-c350-5b90-94cd-bbb4683690a4" name="Hidden cube 44"]
+
+[component type="Transform"]
+position = vec3(3, 0.6, -16)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="c482e186-61c9-5cf1-bd0a-02b3a930750c" name="Hidden cube 45"]
+
+[component type="Transform"]
+position = vec3(5, 0.6, -16)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="c4d45362-de1a-507b-b7e2-102f5e632a91" name="Hidden cube 46"]
+
+[component type="Transform"]
+position = vec3(7, 0.6, -16)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="4050f91e-27bd-5493-bb4f-87df37b073e3" name="Hidden cube 47"]
+
+[component type="Transform"]
+position = vec3(9, 0.6, -16)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="dfee7c42-94ca-53c3-b095-2de36ac8cdac" name="Hidden cube 48"]
+
+[component type="Transform"]
+position = vec3(11, 0.6, -16)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="8b2ba78e-f0dc-5425-b2db-d66cb8a8ed84" name="Hidden cube 49"]
+
+[component type="Transform"]
+position = vec3(-11, 0.6, -18)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="276cf612-13da-55e2-9963-7d2b586b76d7" name="Hidden cube 50"]
+
+[component type="Transform"]
+position = vec3(-9, 0.6, -18)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="962ad0af-35c6-5801-9b18-f4fe11290d8e" name="Hidden cube 51"]
+
+[component type="Transform"]
+position = vec3(-7, 0.6, -18)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="48897deb-a4af-56b7-9741-10272d0f6e55" name="Hidden cube 52"]
+
+[component type="Transform"]
+position = vec3(-5, 0.6, -18)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="577cd586-6cc1-5732-8496-790168491f39" name="Hidden cube 53"]
+
+[component type="Transform"]
+position = vec3(-3, 0.6, -18)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="4399dcff-dd4e-5d98-9d1f-c71cc4b2cab0" name="Hidden cube 54"]
+
+[component type="Transform"]
+position = vec3(-1, 0.6, -18)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="b47e2746-531a-54fa-8e31-c4aeab99d9ec" name="Hidden cube 55"]
+
+[component type="Transform"]
+position = vec3(1, 0.6, -18)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="c89ca25d-100d-5c63-868e-6ce7315b525c" name="Hidden cube 56"]
+
+[component type="Transform"]
+position = vec3(3, 0.6, -18)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="a7d3232b-73f0-5117-b4cd-29432ae16556" name="Hidden cube 57"]
+
+[component type="Transform"]
+position = vec3(5, 0.6, -18)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="123e86af-4ac5-5625-bb68-c80c15d2df72" name="Hidden cube 58"]
+
+[component type="Transform"]
+position = vec3(7, 0.6, -18)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="9370be05-4ca0-5c50-b7df-25fb0f29a625" name="Hidden cube 59"]
+
+[component type="Transform"]
+position = vec3(9, 0.6, -18)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="7c128903-53e2-5217-8f2f-1288b5b8cbc3" name="Hidden cube 60"]
+
+[component type="Transform"]
+position = vec3(11, 0.6, -18)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="b596103b-c273-56fb-abce-1d7fa8dc037f" name="Hidden cube 61"]
+
+[component type="Transform"]
+position = vec3(-11, 0.6, -20)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="f80d1dc0-f3ee-5ecf-b835-4b1acbf77a54" name="Hidden cube 62"]
+
+[component type="Transform"]
+position = vec3(-9, 0.6, -20)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="f890ea43-1a4c-53ba-8b92-bc5a3dcdaff2" name="Hidden cube 63"]
+
+[component type="Transform"]
+position = vec3(-7, 0.6, -20)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="6683cedf-b6cd-5e16-8a75-a4a7d6ec11e1" name="Hidden cube 64"]
+
+[component type="Transform"]
+position = vec3(-5, 0.6, -20)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="2c47e029-457d-5220-ad18-a86aac1bf5bd" name="Hidden cube 65"]
+
+[component type="Transform"]
+position = vec3(-3, 0.6, -20)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="6a0e457d-a26c-5714-8e17-2ea85dffa9c5" name="Hidden cube 66"]
+
+[component type="Transform"]
+position = vec3(-1, 0.6, -20)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="93d69988-5149-50fe-8678-a9ef360906d7" name="Hidden cube 67"]
+
+[component type="Transform"]
+position = vec3(1, 0.6, -20)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="69a3ee6a-a52c-582c-93de-a7e338171f6e" name="Hidden cube 68"]
+
+[component type="Transform"]
+position = vec3(3, 0.6, -20)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="1faa0da3-03d0-55ad-9841-00bd21ba1122" name="Hidden cube 69"]
+
+[component type="Transform"]
+position = vec3(5, 0.6, -20)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="5b30d70e-4949-5087-9b9b-425352cca96f" name="Hidden cube 70"]
+
+[component type="Transform"]
+position = vec3(7, 0.6, -20)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="602b6f1c-6ca1-59e1-884e-b5c0a89a04f6" name="Hidden cube 71"]
+
+[component type="Transform"]
+position = vec3(9, 0.6, -20)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="0983caae-fc5b-502c-832b-a572ca77032d" name="Hidden cube 72"]
+
+[component type="Transform"]
+position = vec3(11, 0.6, -20)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="b83bb04a-ff63-56a9-aa11-d2870712ff34" name="Hidden cube 73"]
+
+[component type="Transform"]
+position = vec3(-11, 0.6, -22)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="0e0bd87b-3f7f-5873-b2c4-63b56897a573" name="Hidden cube 74"]
+
+[component type="Transform"]
+position = vec3(-9, 0.6, -22)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="65529ea0-bd5b-59c2-b91d-f33167624ef4" name="Hidden cube 75"]
+
+[component type="Transform"]
+position = vec3(-7, 0.6, -22)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="53fb562d-2793-58e3-87e4-fe6a423dbc7c" name="Hidden cube 76"]
+
+[component type="Transform"]
+position = vec3(-5, 0.6, -22)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="eced5997-68c1-5796-9ddb-5cf9593590dd" name="Hidden cube 77"]
+
+[component type="Transform"]
+position = vec3(-3, 0.6, -22)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="6e19a090-8f4c-5168-a31d-8e06587906ca" name="Hidden cube 78"]
+
+[component type="Transform"]
+position = vec3(-1, 0.6, -22)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="b21d1101-1c13-5999-80b8-5ccbf564182b" name="Hidden cube 79"]
+
+[component type="Transform"]
+position = vec3(1, 0.6, -22)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="b3d09815-801b-525e-875b-e2756aa294b1" name="Hidden cube 80"]
+
+[component type="Transform"]
+position = vec3(3, 0.6, -22)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="a50cb46a-108b-5465-b6dd-a829d49a5f23" name="Hidden cube 81"]
+
+[component type="Transform"]
+position = vec3(5, 0.6, -22)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="e597de6b-9eb8-5959-80cb-bd12c3510cf0" name="Hidden cube 82"]
+
+[component type="Transform"]
+position = vec3(7, 0.6, -22)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="ecbdf39d-44e1-51a7-bc60-70f982d23724" name="Hidden cube 83"]
+
+[component type="Transform"]
+position = vec3(9, 0.6, -22)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="7efd3483-00d0-52cf-9193-621c789808d7" name="Hidden cube 84"]
+
+[component type="Transform"]
+position = vec3(11, 0.6, -22)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="01aa46d7-f845-5f5c-bdc1-2f3b014f1f1b" name="Hidden cube 85"]
+
+[component type="Transform"]
+position = vec3(-11, 0.6, -24)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="82659abe-25c6-5343-b53c-b6251b528eec" name="Hidden cube 86"]
+
+[component type="Transform"]
+position = vec3(-9, 0.6, -24)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="646075dd-2665-5905-993a-d8937c73fc2e" name="Hidden cube 87"]
+
+[component type="Transform"]
+position = vec3(-7, 0.6, -24)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="9c44fe71-c9f7-5d5c-8fef-d8c540a3c1f9" name="Hidden cube 88"]
+
+[component type="Transform"]
+position = vec3(-5, 0.6, -24)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="7398fe8a-2e5d-5c01-b394-4423a04cc4f7" name="Hidden cube 89"]
+
+[component type="Transform"]
+position = vec3(-3, 0.6, -24)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="33f040a4-2430-5342-b475-e22cacb9ed22" name="Hidden cube 90"]
+
+[component type="Transform"]
+position = vec3(-1, 0.6, -24)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="85d242c2-8b98-53d1-a298-1ed3d090ba89" name="Hidden cube 91"]
+
+[component type="Transform"]
+position = vec3(1, 0.6, -24)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="364c28f2-38e9-5023-b003-886ec7320d14" name="Hidden cube 92"]
+
+[component type="Transform"]
+position = vec3(3, 0.6, -24)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="e1561de0-42d0-58ef-9b08-0245812e7b1a" name="Hidden cube 93"]
+
+[component type="Transform"]
+position = vec3(5, 0.6, -24)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="ec1efd5a-065d-591d-bd86-62556f4c05dc" name="Hidden cube 94"]
+
+[component type="Transform"]
+position = vec3(7, 0.6, -24)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="24b611e5-1ae5-5b7f-9865-9ee5eeabcb83" name="Hidden cube 95"]
+
+[component type="Transform"]
+position = vec3(9, 0.6, -24)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="b8f0f731-503b-5081-9c35-ee661191992d" name="Hidden cube 96"]
+
+[component type="Transform"]
+position = vec3(11, 0.6, -24)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="b4f6ec7a-abb7-5962-9b8b-f09d0cb1f11b" name="Hidden cube 97"]
+
+[component type="Transform"]
+position = vec3(-11, 0.6, -26)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="44d0fa55-55ea-5a51-9ab3-a7b894a2a5e5" name="Hidden cube 98"]
+
+[component type="Transform"]
+position = vec3(-9, 0.6, -26)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="bf75ba5c-83ce-5574-9fc1-d5cf3d3b1a22" name="Hidden cube 99"]
+
+[component type="Transform"]
+position = vec3(-7, 0.6, -26)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="c6851195-3944-5829-bb90-72b2b7afef83" name="Hidden cube 100"]
+
+[component type="Transform"]
+position = vec3(-5, 0.6, -26)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="2332e965-4f3f-585b-9377-ea6429cb36c9" name="Hidden cube 101"]
+
+[component type="Transform"]
+position = vec3(-3, 0.6, -26)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="e3c8761b-01cc-592b-b01f-6df4eba47e51" name="Hidden cube 102"]
+
+[component type="Transform"]
+position = vec3(-1, 0.6, -26)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="eabe18fc-6cd1-5f7a-aef5-17b9fe2bcf74" name="Hidden cube 103"]
+
+[component type="Transform"]
+position = vec3(1, 0.6, -26)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="fb309c33-b5e9-554d-bc34-53981add6434" name="Hidden cube 104"]
+
+[component type="Transform"]
+position = vec3(3, 0.6, -26)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="4c68ba20-d731-5b92-9e5b-b383149edbe7" name="Hidden cube 105"]
+
+[component type="Transform"]
+position = vec3(5, 0.6, -26)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="3b73fec0-ce1b-508a-87bf-0d2a63ca0ebc" name="Hidden cube 106"]
+
+[component type="Transform"]
+position = vec3(7, 0.6, -26)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="a29af66c-0feb-5f6d-851f-580b06b005bc" name="Hidden cube 107"]
+
+[component type="Transform"]
+position = vec3(9, 0.6, -26)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="95a864de-c8cc-525b-a9d1-8d50b1969c37" name="Hidden cube 108"]
+
+[component type="Transform"]
+position = vec3(11, 0.6, -26)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="46f6cad8-0025-5b68-baa7-e75aadfa289a" name="Hidden cube 109"]
+
+[component type="Transform"]
+position = vec3(-11, 0.6, -28)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="b6720ced-aff9-535a-9af7-1b7156282b4d" name="Hidden cube 110"]
+
+[component type="Transform"]
+position = vec3(-9, 0.6, -28)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="a29e56cd-3e72-5a33-9cd8-7f36290ad5aa" name="Hidden cube 111"]
+
+[component type="Transform"]
+position = vec3(-7, 0.6, -28)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="d8cf3165-96b0-5091-8919-7b22dc9e49de" name="Hidden cube 112"]
+
+[component type="Transform"]
+position = vec3(-5, 0.6, -28)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="9b14b9cb-0c07-5eab-b7bc-27ffda137ebb" name="Hidden cube 113"]
+
+[component type="Transform"]
+position = vec3(-3, 0.6, -28)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="cd87e466-6549-533e-8602-195f5acfdbdd" name="Hidden cube 114"]
+
+[component type="Transform"]
+position = vec3(-1, 0.6, -28)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="b817fb3d-adab-55b8-b3d6-63dad78653e4" name="Hidden cube 115"]
+
+[component type="Transform"]
+position = vec3(1, 0.6, -28)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="fa4ff631-46a4-580d-bb1a-48d938871278" name="Hidden cube 116"]
+
+[component type="Transform"]
+position = vec3(3, 0.6, -28)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="4bc7cd87-83a7-54e5-8ebd-9fec040f1066" name="Hidden cube 117"]
+
+[component type="Transform"]
+position = vec3(5, 0.6, -28)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="79256aec-bf48-57ed-8234-69749524eaa8" name="Hidden cube 118"]
+
+[component type="Transform"]
+position = vec3(7, 0.6, -28)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="69cbc30d-b60b-5cd3-8ebc-0befcb0df9bc" name="Hidden cube 119"]
+
+[component type="Transform"]
+position = vec3(9, 0.6, -28)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")
+
+[entity uuid="02139565-481d-53b2-9aa5-371883fca2a1" name="Hidden cube 120"]
+
+[component type="Transform"]
+position = vec3(11, 0.6, -28)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1.2, 1.2, 1.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("942b912e-9fc5-485d-8d98-3e83864329d3")

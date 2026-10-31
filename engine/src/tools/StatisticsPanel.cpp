@@ -54,6 +54,9 @@ const std::array measures{
     Measure{"Frame Time", &Monitors::frameTime, &milliseconds, {1000.0f / 60.0f, 1000.0f / 30.0f}},
     Measure{"Draw Calls", &Monitors::drawCalls, &count},
     Measure{"Culled Instances", &Monitors::culled, &count},
+    Measure{"GPU Instances Tested", &Monitors::gpuTested, &count},
+    Measure{"GPU Outside Frustum", &Monitors::gpuFrustumCulled, &count},
+    Measure{"GPU Occluded Instances", &Monitors::gpuOccluded, &count},
     Measure{"GPU Memory", &Monitors::gpuMemory, &megabytes},
     Measure{"Uploads", &Monitors::uploads, &megabytes},
     Measure{"Entities", &Monitors::entities, &count},
@@ -108,6 +111,9 @@ void recordMonitors(ToolsState& state, const scene::Scene& scene, core::Duration
     }
     monitors.drawCalls.record(static_cast<float>(stats.drawCalls));
     monitors.culled.record(static_cast<float>(stats.culledInstances));
+    monitors.gpuTested.record(static_cast<float>(stats.gpuInstancesTested));
+    monitors.gpuFrustumCulled.record(static_cast<float>(stats.gpuFrustumCulled));
+    monitors.gpuOccluded.record(static_cast<float>(stats.gpuOccludedInstances));
     monitors.gpuMemory.record(static_cast<float>(static_cast<double>(stats.gpuMemoryUsage) / bytesPerMegabyte));
     monitors.uploads.record(static_cast<float>(static_cast<double>(stats.uploadedBytes) / bytesPerMegabyte));
     monitors.entities.record(static_cast<float>(scene.entityCount()));

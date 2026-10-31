@@ -236,6 +236,7 @@ VulkanRenderer::VulkanRenderer(platform::Window& window, const RendererConfig& c
 {
     rendererExists.store(true);
     m_gpuCulling = config.gpuCulling && m_device.supportsDrawIndirectFirstInstance();
+    m_gpuOcclusion = config.gpuOcclusion;
 }
 
 VulkanRenderer::~VulkanRenderer()
@@ -1842,6 +1843,15 @@ core::Result<void> VulkanRenderer::createScenePipelines()
                                                                     .pushConstantSize = sizeof(CullPushConstants),
                                                                 });
 
+    core::Result<Pipeline> depthReduce =
+        createComputePipeline(device, {.shaderPath = m_shaderDirectory / "depth_reduce.spv",
+                                       .setLayouts = bothSets,
+                                       .pushConstantSize = sizeof(DepthReducePushConstants)});
+    core::Result<Pipeline> occlusionCull =
+        createComputePipeline(device, {.shaderPath = m_shaderDirectory / "occlusion.spv",
+                                       .setLayouts = bothSets,
+                                       .pushConstantSize = sizeof(OcclusionPushConstants)});
+
     // The sky covers what no geometry wrote, at the infinitely far depth 0.
     core::Result<Pipeline> sky = createGraphicsPipeline(
         device, {
@@ -1978,13 +1988,40 @@ core::Result<void> VulkanRenderer::createScenePipelines()
                                                                       .cullMode = VK_CULL_MODE_NONE,
                                                                   });
 
-    for (core::Result<Pipeline>* result : {&mesh, &doubleSided, &transparent, &transparentDoubleSided,
-                                          &particle, &ribbon, &sprite, &spritePick, &spriteMask,
-                                          &prepass, &prepassDoubleSided, &ambientOcclusion, &shadow,
-                                          &localShadow, &sky, &luminance, &pick, &selectionMask, &terrainPrepass,
-                                          &terrainScene, &terrainShadow, &terrainLocalShadow, &terrainPick, &grass,
-                                          &culledScene, &culledSceneDoubleSided, &culledPrepass, &culledPrepassDoubleSided,
-                                          &culledShadow, &culledLocalShadow, &culledPick, &cull})
+    for (core::Result<Pipeline>* result : {&mesh,
+                                           &doubleSided,
+                                           &transparent,
+                                           &transparentDoubleSided,
+                                           &particle,
+                                           &ribbon,
+                                           &sprite,
+                                           &spritePick,
+                                           &spriteMask,
+                                           &prepass,
+                                           &prepassDoubleSided,
+                                           &ambientOcclusion,
+                                           &shadow,
+                                           &localShadow,
+                                           &sky,
+                                           &luminance,
+                                           &pick,
+                                           &selectionMask,
+                                           &terrainPrepass,
+                                           &terrainScene,
+                                           &terrainShadow,
+                                           &terrainLocalShadow,
+                                           &terrainPick,
+                                           &grass,
+                                           &culledScene,
+                                           &culledSceneDoubleSided,
+                                           &culledPrepass,
+                                           &culledPrepassDoubleSided,
+                                           &culledShadow,
+                                           &culledLocalShadow,
+                                           &culledPick,
+                                           &cull,
+                                           &depthReduce,
+                                           &occlusionCull})
     {
         if (!*result)
         {
@@ -2023,6 +2060,8 @@ core::Result<void> VulkanRenderer::createScenePipelines()
     m_culledLocalShadowPipeline = std::move(*culledLocalShadow);
     m_culledPickPipeline = std::move(*culledPick);
     m_cullPipeline = std::move(*cull);
+    m_depthReducePipeline = std::move(*depthReduce);
+    m_occlusionPipeline = std::move(*occlusionCull);
 
     // A block is a grid of terrainBlockCells cells on a side, its four quarters one after the other,
     // so that a block can draw a quarter of itself where its smaller blocks are not drawn.
@@ -3783,6 +3822,7 @@ bool VulkanRenderer::isGpuDriven(const MeshInstance& instance) const noexcept
 
 core::Result<void> VulkanRenderer::prepareCulling(FrameContext& frame, bool drawCascades, bool drawAtlas, bool pick)
 {
+    readCulling(frame);
     m_gpuDriven.assign(m_world.meshes.size(), 0);
     m_cpuInstances.clear();
     m_cullBatches.clear();
@@ -3792,6 +3832,8 @@ core::Result<void> VulkanRenderer::prepareCulling(FrameContext& frame, bool draw
     m_batchIndices.clear();
     m_culledCount = 0;
     m_cameraCullView = noCullView;
+    m_deferredCullView = noCullView;
+    m_occlusionActive = false;
     m_cascadeCullView = noCullView;
     m_localCullView = noCullView;
     m_pickCullView = noCullView;
@@ -3835,15 +3877,23 @@ core::Result<void> VulkanRenderer::prepareCulling(FrameContext& frame, bool draw
             .boundsMax = bounds.max,
             .batch = found->second,
             .vertices = mesh.vertices.deviceAddress(),
-            .flags = cullCamera | cullShadows,
+            .flags = cullCamera | cullShadows |
+                     (instance.objectId == 0 ||
+                              !std::ranges::binary_search(frame.occludedKeys, instanceKey(instance))
+                          ? cullSeed
+                          : 0u),
         });
+        frame.cullKeys.push_back(instanceKey(instance));
         m_gpuDriven[index] = 1;
     }
     m_culledCount = static_cast<std::uint32_t>(m_gpuInstances.size());
     if (m_culledCount == 0)
     {
+        m_lastGpuTested = m_lastGpuFrustumCulled = m_lastGpuOccluded = 0;
         return {};
     }
+    // On small scenes the extra passes cost more than the geometry they can save.
+    m_occlusionActive = m_gpuOcclusion && m_culledCount >= 8;
 
     const auto addView = [this](const Frustum& frustum, std::uint32_t planeCount, std::uint32_t flags) {
         GpuCullView& view = m_cullViews.emplace_back();
@@ -3877,6 +3927,12 @@ core::Result<void> VulkanRenderer::prepareCulling(FrameContext& frame, bool draw
         addView({}, 0, cullCamera);
     }
 
+    if (m_occlusionActive)
+    {
+        m_deferredCullView = static_cast<std::uint32_t>(m_cullViews.size());
+        addView({}, 0, 0); // Filled only by the second culling, for the recovery prepass.
+    }
+
     // The same draws in every view, which the culling then counts the instances of.
     std::uint32_t firstInstance = 0;
     std::vector<VkDrawIndexedIndirectCommand> draws;
@@ -3901,12 +3957,15 @@ core::Result<void> VulkanRenderer::prepareCulling(FrameContext& frame, bool draw
     const VkDeviceSize commandBytes = m_cullCommands.size() * sizeof(VkDrawIndexedIndirectCommand);
     const VkDeviceSize visibleBytes = VkDeviceSize{m_culledCount} * m_cullViews.size() * sizeof(std::uint32_t);
     for (const auto& [buffer, bytes, usage, hostVisible] :
-         {std::tuple<std::optional<Buffer>*, VkDeviceSize, VkBufferUsageFlags, bool>{&frame.cullInstances, instanceBytes, storage, true},
+         {std::tuple<std::optional<Buffer>*, VkDeviceSize, VkBufferUsageFlags, bool>{
+              &frame.cullInstances, instanceBytes, storage, true},
           {&frame.cullViews, viewBytes, storage, true},
           {&frame.cullCommandUpload, commandBytes, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, true},
           {&frame.cullCommands, commandBytes,
            storage | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, false},
-          {&frame.cullVisible, visibleBytes, storage, false}})
+          {&frame.cullVisible, visibleBytes, storage, false},
+          {&frame.cullStates, m_culledCount * sizeof(std::uint32_t),
+           storage | VK_BUFFER_USAGE_TRANSFER_SRC_BIT, false}})
     {
         if (core::Result<void> ensured = ensureBuffer(*buffer, bytes, usage, hostVisible); !ensured)
         {
@@ -3916,6 +3975,35 @@ core::Result<void> VulkanRenderer::prepareCulling(FrameContext& frame, bool draw
     std::memcpy(frame.cullInstances->mappedBytes().data(), m_gpuInstances.data(), instanceBytes);
     std::memcpy(frame.cullViews->mappedBytes().data(), m_cullViews.data(), viewBytes);
     std::memcpy(frame.cullCommandUpload->mappedBytes().data(), m_cullCommands.data(), commandBytes);
+    const VkDeviceSize readbackBytes = m_culledCount * sizeof(std::uint32_t);
+    if (!frame.cullReadback || frame.cullReadback->size() < readbackBytes)
+    {
+        auto readback =
+            Buffer::create(m_allocator, {.size = std::max<VkDeviceSize>(readbackBytes * 2, 4096),
+                                         .usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                                         .hostVisible = true,
+                                         .hostReads = true});
+        if (!readback)
+            return std::unexpected(readback.error());
+        frame.cullReadback = std::move(*readback);
+    }
+    if (m_occlusionActive)
+    {
+        math::Extent2D level = m_sceneExtent;
+        VkDeviceSize pixels = 0;
+        do
+        {
+            level.width = (level.width + 1) / 2;
+            level.height = (level.height + 1) / 2;
+            pixels += VkDeviceSize{level.width} * level.height;
+        } while (level.width > 1 || level.height > 1);
+        if (core::Result<void> ensured =
+                ensureBuffer(frame.depthPyramid, pixels * sizeof(float), storage, false);
+            !ensured)
+        {
+            return ensured;
+        }
+    }
     return {};
 }
 
@@ -3955,6 +4043,8 @@ void VulkanRenderer::recordCulling(VkCommandBuffer commandBuffer, const FrameCon
         .visible = frame.cullVisible->deviceAddress(),
         .instanceCount = m_culledCount,
         .batchCount = static_cast<std::uint32_t>(m_cullBatches.size()),
+        .seedsOnly = m_occlusionActive ? 1u : 0u,
+        .states = frame.cullStates->deviceAddress(),
     };
     vkCmdPushConstants(commandBuffer, m_cullPipeline->layout(), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(constants), &constants);
     vkCmdDispatch(commandBuffer, (m_culledCount + 63) / 64, static_cast<std::uint32_t>(m_cullViews.size()), 1);
@@ -3974,7 +4064,7 @@ std::uint32_t VulkanRenderer::drawCulled(VkCommandBuffer commandBuffer, const Fr
     switch (pass)
     {
     case MeshPass::Prepass:
-        view = m_cameraCullView;
+        view = cascade == 0 ? m_cameraCullView : m_deferredCullView;
         single = &*m_culledPrepassPipeline;
         doubled = &*m_culledPrepassDoubleSidedPipeline;
         break;
@@ -5291,17 +5381,16 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
     }
     const VkDeviceAddress previousBones =
         frame.previousBones ? frame.previousBones->deviceAddress() : 0;
-    graph.addPass("Prepass",
-                  {{velocity, ImageAccess::ColorAttachment},
-                   {normal, ImageAccess::ColorAttachment},
-                   {depth, ImageAccess::DepthAttachment}},
-                  [&](VkCommandBuffer commands) {
+    const auto prepass = [&](VkCommandBuffer commands, bool recover)
+    {
+        const VkAttachmentLoadOp load =
+            recover ? VK_ATTACHMENT_LOAD_OP_LOAD : VK_ATTACHMENT_LOAD_OP_CLEAR;
         const std::array<VkRenderingAttachmentInfo, 2> colorAttachments{
             VkRenderingAttachmentInfo{
                 .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
                 .imageView = graph.view(velocity),
                 .imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+                .loadOp = load,
                 .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
                 .clearValue = {.color = {.float32 = {0.0f, 0.0f, 0.0f, 0.0f}}},
             },
@@ -5309,7 +5398,7 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
                 .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
                 .imageView = graph.view(normal),
                 .imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+                .loadOp = load,
                 .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
                 .clearValue = {.color = {.float32 = {0.0f, 0.0f, 0.0f, 0.0f}}},
             },
@@ -5318,7 +5407,7 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
             .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
             .imageView = graph.view(depth),
             .imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
-            .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+            .loadOp = load,
             .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
             .clearValue = {.depthStencil = {.depth = 0.0f}},
         };
@@ -5332,12 +5421,39 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
         };
         vkCmdBeginRendering(commands, &renderingInfo);
         setViewport(commands, extent);
-        drawCalls += drawMeshes(commands, sceneData, boneMatrices, MeshPass::Prepass, 0, frameSlot,
-                                previousBones);
-        drawCalls += drawCulled(commands, frame, sceneData, MeshPass::Prepass, 0, frameSlot);
-        drawCalls += drawTerrains(commands, sceneData, MeshPass::Prepass, 0, frameSlot);
+        if (!recover)
+        {
+            drawCalls += drawMeshes(commands, sceneData, boneMatrices, MeshPass::Prepass, 0,
+                                    frameSlot, previousBones);
+            drawCalls += drawTerrains(commands, sceneData, MeshPass::Prepass, 0, frameSlot);
+        }
+        drawCalls +=
+            drawCulled(commands, frame, sceneData, MeshPass::Prepass, recover ? 1u : 0u, frameSlot);
         vkCmdEndRendering(commands);
-    });
+    };
+    graph.addPass("Prepass",
+                  {{velocity, ImageAccess::ColorAttachment},
+                   {normal, ImageAccess::ColorAttachment},
+                   {depth, ImageAccess::DepthAttachment}},
+                  [&](VkCommandBuffer commands) { prepass(commands, false); });
+    if (m_occlusionActive)
+    {
+        graph.addPass("Depth pyramid", {{depth, ImageAccess::ComputeRead}},
+                      [&](VkCommandBuffer commands)
+                      { recordDepthPyramid(commands, frame, frameSlot); });
+        graph.addPass("Occlusion culling", {}, [&](VkCommandBuffer commands)
+                      { recordOcclusion(commands, frame, frameSlot); });
+        graph.addPass("Recover visibility",
+                      {{velocity, ImageAccess::ColorAttachment},
+                       {normal, ImageAccess::ColorAttachment},
+                       {depth, ImageAccess::DepthAttachment}},
+                      [&](VkCommandBuffer commands) { prepass(commands, true); });
+    }
+    if (m_culledCount > 0)
+    {
+        graph.addPass("Visibility results", {},
+                      [&](VkCommandBuffer commands) { recordCullingReadback(commands, frame); });
+    }
 
     if (occluded)
     {
@@ -6651,6 +6767,9 @@ RendererStats VulkanRenderer::stats() const noexcept
     RendererStats stats{
         .drawCalls = m_lastDrawCalls,
         .culledInstances = m_lastCulledInstances,
+        .gpuInstancesTested = m_lastGpuTested,
+        .gpuFrustumCulled = m_lastGpuFrustumCulled,
+        .gpuOccludedInstances = m_lastGpuOccluded,
         .meshCount = m_meshes.size(),
         .textureCount = m_textures.size(),
         // The default material is not counted.

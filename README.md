@@ -58,8 +58,9 @@ captures de l'éditeur, scènes de base, entrées, scripts C#, animations, colli
   Godot (`spatial`, `canvas_item`, `particles`, `sky`, avec `light()`, un ciel qui éclaire la
   scène, des uniforms changés par le code et des `instance uniform` donnés par chaque objet),
   render graph, PBR
-  forward+ clustered avec prépasse de profondeur, culling par tronc de vue sur le GPU (compute et
-  dessin indirect par lots, [performances mesurées](docs/performances.md)), ombres en cascades pour
+  forward+ clustered avec prépasse de profondeur, culling par tronc de vue et par occlusion sur le
+  GPU (profondeur de la frame courante, dessin indirect par lots,
+  [performances mesurées](docs/performances.md)), ombres en cascades pour
   le soleil et en atlas pour les lumières locales, ciel HDR et IBL, atmosphère physique (ciel bleu,
   couchers rouges, soleil teinté par l'air, brume du lointain) et brouillard de hauteur, sondes de
   réflexion cuites dans
@@ -264,6 +265,12 @@ captures de l'éditeur, scènes de base, entrées, scripts C#, animations, colli
   dit par une coroutine C# qui attend ses fondus) que le menu principal reprend avec sa
   miniature, et un HUD, tous habillés
   par le thème `assets/ui/sandbox.dvxtheme` et pilotés par `code/Menu.cs`.
+
+La scène `assets/scenes/occlusion.dvxscene` du sandbox permet d'observer le culling GPU : trois
+écrans cachent un champ de cubes. Ouvrir la scène puis jouer, voler avec WASD, Espace et Ctrl gauche
+(Maj gauche accélère), cliquer dans la vue pour tourner à la souris. *Statistics* affiche les
+instances testées, hors frustum et cachées ; [les mesures](docs/performances.md) montrent aussi le
+coût lorsque rien ne cache les objets.
 
 Le SDK Vulkan fournit `slangc`, qui compile les shaders pendant le build ; le build le copie
 avec ses bibliothèques dans `bin/slang/`, à côté de l'éditeur, qui s'en sert pour compiler les

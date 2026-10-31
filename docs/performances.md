@@ -18,8 +18,19 @@ chaque partie sur le CPU et de chaque passe sur le GPU. Variables d'environnemen
 | Variable               | Effet                                                         |
 |------------------------|---------------------------------------------------------------|
 | `DEVEX_GPU_CULLING=0`  | le CPU culle et dessine chaque instance, comme avant le jalon 85 |
+| `DEVEX_GPU_OCCLUSION=0` | conserve le culling du frustum GPU, désactive seulement l'occlusion |
+| `DEVEX_STRESS_OCCLUDERS=1` | ajoute quatre grands murs opaques devant le champ d'objets |
+| `DEVEX_PRESENT_MODE` | `immediate`, `mailbox` ou `fifo` (défaut) ; le mode obtenu est imprimé |
 | `DEVEX_STRESS_OBJECTS` | nombre d'objets (20 000 par défaut)                           |
 | `DEVEX_STRESS_LIGHTS`  | nombre de lumières locales (256 par défaut)                   |
+| `DEVEX_STRESS_FRAMES` | images mesurées après les 60 de chauffe, de 1 à 10 000 (300 par défaut) |
+
+Le temps total couvre toutes les images mesurées ; le détail des zones porte sur les 300 dernières
+au plus, limite de l'historique du profileur. Le nombre de frames CPU retenues et de frames GPU
+terminées est imprimé. Les attentes de la fence du contexte (*Wait for the GPU*), de l'acquisition
+de l'image et de la présentation sont données à part. Les compteurs GPU de la caméra sont ceux
+d'une frame terminée, relus sans ajouter d'attente. Les zones parentes comprennent leurs enfants :
+additionner toutes les lignes CPU compterait plusieurs fois le même travail.
 
 Sous Windows (PowerShell), depuis le dossier de build Release :
 
@@ -33,6 +44,9 @@ matériaux standard), 256 lumières ponctuelles, le soleil et ses quatre cascade
 dans un coin qui regarde à travers le champ en tournant un peu à chaque image.
 
 ## Culling sur GPU (jalon 85)
+
+Ces mesures précèdent l'occlusion. Pour retrouver le même chemin avec le moteur actuel, mettre
+`DEVEX_GPU_OCCLUSION=0` dans les deux essais.
 
 ### Portable : Intel Iris Xe (Linux)
 
@@ -73,7 +87,7 @@ Détail de la série 2, en millisecondes par image :
   (série 1), elle gagne un quart de son temps.
 - Le GPU fait un peu plus de travail : la passe de culling (0,4 ms), et une prépasse plus lente de
   0,7 ms, parce que les objets ne sont plus dessinés du plus proche au plus loin mais lot par lot.
-  Le culling par occlusion est la suite prévue pour regagner ce temps.
+  Le jalon 87 ajoute le culling par occlusion pour les scènes où les objets se cachent.
 - L'image est identique au pixel près entre les deux chemins (test *The GPU culls and draws the
   instances of standard materials as the CPU does*).
 
@@ -120,3 +134,88 @@ Détail de la série 1, en millisecondes par image :
 - Contrairement au portable, la prépasse est plus rapide avec le culling sur GPU (1,45 contre
   1,62 ms) ; l'ombrage de la scène est un peu plus lent (1,81 contre 1,72 ms).
 - Le culling sur GPU ne coûte que 0,04 ms au GPU, mais 1,0 ms au CPU, qui prépare ses données.
+
+## Occlusion GPU (jalon 87)
+
+i7-14700KF, RTX 4060 8 Go, Windows 11, pilote NVIDIA 621.01, Vulkan 1.4.357. Build Release du
+31 octobre 2026, validation désactivée, présentation **Immediate demandée et obtenue**. Deux séries
+avec le même binaire, 60 images de chauffe puis 300 mesurées à 1280 × 720 ; 300 frames CPU retenues,
+298 frames GPU terminées. Le culling du frustum GPU reste actif dans tous ces essais.
+
+La scène dégagée est celle du jalon 85. L'autre ajoute quatre grands murs opaques au même champ de
+20 000 objets et 256 lumières. La caméra tourne légèrement pendant les deux essais. Les colonnes
+GPU additionnent les durées des passes, pas le temps de présentation.
+
+| Série | Scène | Occlusion | Image | Passes GPU | Draw calls | Instances cachées à la fin |
+|-------|-------|-----------|------:|-----------:|-----------:|--------------------------:|
+| 1 | Dégagée | Non | 7,57 ms | 3,48 ms | 48 | 0 |
+| 1 | Dégagée | Oui | 7,51 ms | 3,51 ms | 72 | 0 |
+| 1 | Murs | Non | 7,64 ms | 3,52 ms | 48 | 0 |
+| 1 | Murs | Oui | 5,03 ms | 0,76 ms | 72 | 18 926 |
+| 2 | Dégagée | Non | 7,47 ms | 3,45 ms | 48 | 0 |
+| 2 | Dégagée | Oui | 7,65 ms | 3,50 ms | 72 | 0 |
+| 2 | Murs | Non | 7,58 ms | 3,52 ms | 48 | 0 |
+| 2 | Murs | Oui | 5,15 ms | 0,75 ms | 72 | 18 926 |
+
+Détail de la série 2 derrière les murs, en millisecondes par image :
+
+| Partie | Sans occlusion | Avec occlusion |
+|--------|---------------:|---------------:|
+| CPU : enregistrer et soumettre, hors présentation | 1,86 | 2,44 |
+| CPU : dont préparation du culling et lecture des résultats | 1,06 | 1,56 |
+| CPU : attente de la fence du contexte | 0,004 | 0,004 |
+| CPU : acquisition de l'image | 0,002 | 0,001 |
+| CPU : présentation | 4,82 | 1,83 |
+| GPU : culling du frustum | 0,028 | 0,027 |
+| GPU : première prépasse | 1,295 | 0,066 |
+| GPU : pyramide de profondeur | — | 0,016 |
+| GPU : test d'occlusion | — | 0,012 |
+| GPU : prépasse de récupération | — | 0,004 |
+| GPU : ombrage de la scène | 1,678 | 0,111 |
+| GPU : cascades d'ombres | 0,246 | 0,246 |
+
+**Ce qu'on en tire** :
+
+- Derrière les murs, 18 926 instances sur 20 004 sont cachées, trois autres hors du frustum. Le
+  temps de frame baisse de **32 à 34 %**, et le travail mesuré des passes GPU d'environ **79 %**.
+  Les ombres gardent les objets qui les projettent et leur coût ne baisse pas.
+- Le nombre de draw calls indirects monte de 48 à 72 : la récupération ajoute une ligne de lots,
+  même quand certains sont vides. Le gain vient des instances qui ne sont plus dessinées dans ces
+  appels, pas d'une baisse du nombre d'appels.
+- Sans obstacle, aucune instance n'est cachée. La pyramide et le test coûtent ensemble environ
+  0,03 ms GPU ; le temps total varie de 7,47 à 7,65 ms. Cette optimisation ne garantit donc pas
+  un gain dans une scène dégagée. Elle est évitée sous huit instances standard éligibles et peut
+  être désactivée par `RendererConfig::gpuOcclusion`.
+- Le CPU fait environ 0,5 ms de préparation supplémentaire lorsqu'il réutilise la liste des objets
+  cachés. Cette liste est un tableau trié réutilisé entre frames, sans allocation par objet.
+- Même en mode Immediate, `vkQueuePresentKHR` prend ici du temps. Les attentes sont maintenant
+  mesurées séparément : le temps total d'une frame n'est ni le temps GPU seul, ni une mesure de la
+  latence entre une entrée et l'écran. Ces chiffres concernent cette machine et cette scène ;
+  l'Iris Xe reste **à mesurer** pour ce jalon.
+
+Pour reproduire les quatre configurations depuis la racine du dépôt, dans PowerShell :
+
+```powershell
+$env:DEVEX_GPU_CULLING = "1"
+$env:DEVEX_PRESENT_MODE = "immediate"
+$env:DEVEX_STRESS_OBJECTS = "20000"
+$env:DEVEX_STRESS_LIGHTS = "256"
+$env:DEVEX_STRESS_FRAMES = "300"
+foreach ($walls in 0..1) {
+    foreach ($occlusion in 0..1) {
+        $env:DEVEX_STRESS_OCCLUDERS = [string]$walls
+        $env:DEVEX_GPU_OCCLUSION = [string]$occlusion
+        .\out\build\x64-release\bin\devex_render_tests.exe "Renderer stress benchmark"
+    }
+}
+Remove-Item Env:DEVEX_GPU_CULLING, Env:DEVEX_GPU_OCCLUSION, Env:DEVEX_PRESENT_MODE
+Remove-Item Env:DEVEX_STRESS_OBJECTS, Env:DEVEX_STRESS_LIGHTS, Env:DEVEX_STRESS_FRAMES, Env:DEVEX_STRESS_OCCLUDERS
+```
+
+Pour l'observer dans l'éditeur, ouvrir `samples/sandbox/Sandbox.dvxproj`, puis
+`assets/scenes/occlusion.dvxscene`. Les moniteurs *GPU Instances Tested*, *GPU Outside Frustum* et
+*GPU Occluded Instances* de Statistics affichent la dernière frame terminée de la caméra
+principale, avec quelques frames de décalage. Cliquer dans la vue en Play pour capturer la souris,
+WASD pour voler, Espace/Ctrl gauche pour monter/descendre, Maj gauche pour accélérer. La scène a
+trois écrans opaques et 120 cubes ; passer à côté d'un écran fait réapparaître les cubes dans la
+frame où ils sont visibles.

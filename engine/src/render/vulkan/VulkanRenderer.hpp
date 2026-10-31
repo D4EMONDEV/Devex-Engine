@@ -23,9 +23,9 @@
 #include <devex/render/RenderWorld.hpp>
 
 #include <array>
-#include <deque>
 #include <chrono>
 #include <cstdint>
+#include <deque>
 #include <filesystem>
 #include <memory>
 #include <optional>
@@ -234,6 +234,13 @@ private:
         std::optional<Buffer> cullCommandUpload;
         std::optional<Buffer> cullCommands;
         std::optional<Buffer> cullVisible;
+        std::optional<Buffer> cullStates;
+        std::optional<Buffer> cullReadback;
+        std::optional<Buffer> depthPyramid;
+        std::vector<std::uint64_t> cullKeys;
+        // Only a hint for which instances seed the next depth prepass. Everything else is retested
+        // against the current depth, never rejected from this older visibility alone.
+        std::vector<std::uint64_t> occludedKeys;
         // The terrains of the frame, the blocks of them it draws and the tiles of their grass.
         std::optional<Buffer> terrains;
         std::optional<Buffer> terrainNodes;
@@ -552,6 +559,12 @@ private:
                                                     bool pick);
     // Copies the draws of the batches to the GPU and culls the instances in every view.
     void recordCulling(VkCommandBuffer commandBuffer, const FrameContext& frame) const;
+    void readCulling(FrameContext& frame);
+    void recordDepthPyramid(VkCommandBuffer commands, const FrameContext& frame,
+                            std::uint32_t frameSlot) const;
+    void recordOcclusion(VkCommandBuffer commands, const FrameContext& frame,
+                         std::uint32_t frameSlot) const;
+    void recordCullingReadback(VkCommandBuffer commands, const FrameContext& frame) const;
     // The batches of the pass, each drawn at once with the instances its view kept.
     std::uint32_t drawCulled(VkCommandBuffer commandBuffer, const FrameContext& frame, VkDeviceAddress sceneData,
                              MeshPass pass, std::uint32_t cascade, std::uint32_t frameSlot) const;
@@ -757,6 +770,8 @@ private:
     std::optional<Pipeline> m_localShadowPipeline;
     // The culling of the instances on the GPU, and the passes that draw what it kept.
     std::optional<Pipeline> m_cullPipeline;
+    std::optional<Pipeline> m_depthReducePipeline;
+    std::optional<Pipeline> m_occlusionPipeline;
     std::optional<Pipeline> m_culledScenePipeline;
     std::optional<Pipeline> m_culledSceneDoubleSidedPipeline;
     std::optional<Pipeline> m_culledPrepassPipeline;
@@ -767,6 +782,11 @@ private:
     // Whether the GPU culls the instances it can draw: asked by RendererConfig::gpuCulling, and
     // possible on the device.
     bool m_gpuCulling = false;
+    bool m_gpuOcclusion = false;
+    bool m_occlusionActive = false;
+    std::uint32_t m_lastGpuTested = 0;
+    std::uint32_t m_lastGpuFrustumCulled = 0;
+    std::uint32_t m_lastGpuOccluded = 0;
     // What the culling of the frame being recorded found: the instances it took from the CPU, its
     // batches, and the row of each of its views, none for a view it does not cull.
     struct CullBatch
@@ -803,6 +823,7 @@ private:
     std::unordered_map<CullBatchKey, std::uint32_t, CullBatchHash> m_batchIndices;
     std::uint32_t m_culledCount = 0;
     std::uint32_t m_cameraCullView = noCullView;
+    std::uint32_t m_deferredCullView = noCullView;
     std::uint32_t m_cascadeCullView = noCullView;
     std::uint32_t m_localCullView = noCullView;
     std::uint32_t m_pickCullView = noCullView;

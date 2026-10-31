@@ -37,8 +37,9 @@ struct CullData
     uint* visible;
     uint instanceCount;
     uint batchCount;
-    uint padding0;
-    uint padding1;
+    uint seedsOnly;
+    uint padding;
+    uint* states;
 };
 
 [[vk::push_constant]]
@@ -56,6 +57,10 @@ void cullMain(uint3 id : SV_DispatchThreadID)
     }
     let instance = cull.instances[index];
     let view = cull.views[viewIndex];
+    if (viewIndex == 0)
+    {
+        cull.states[index] = 0; // Outside the camera's frustum until all planes pass.
+    }
     if ((instance.flags & view.flags) == 0)
     {
         return;
@@ -75,6 +80,14 @@ void cullMain(uint3 id : SV_DispatchThreadID)
         const float distance = dot(equation.xyz, worldCenter) + equation.w;
         const float reach = dot(abs(equation.xyz), worldHalf);
         if (distance + reach < 0.0)
+        {
+            return;
+        }
+    }
+    if (viewIndex == 0)
+    {
+        cull.states[index] = 2; // Visible; the occlusion pass may refine this.
+        if (cull.seedsOnly != 0 && (instance.flags & 4u) == 0)
         {
             return;
         }

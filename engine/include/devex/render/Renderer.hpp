@@ -55,6 +55,10 @@ struct DEVEX_API RendererConfig
     // same mesh, when the device can: the CPU then records a few draws rather than one per instance.
     // Off, or on a device without drawIndirectFirstInstance, the CPU culls and draws each.
     bool gpuCulling = true;
+    // Tests the standard GPU instances against the current frame's hierarchical depth. Previously
+    // hidden instances are tested again before drawing, so camera cuts and moving occluders are
+    // safe.
+    bool gpuOcclusion = true;
 };
 
 // What a sampler2D uniform samples while its texture is missing or still loading.
@@ -109,6 +113,10 @@ struct DEVEX_API RendererStats
     std::uint32_t drawCalls = 0;
     // Instances the frustums dropped, over every pass of the frame.
     std::uint32_t culledInstances = 0;
+    // The main camera's standard GPU instances, read without waiting from a completed frame.
+    std::uint32_t gpuInstancesTested = 0;
+    std::uint32_t gpuFrustumCulled = 0;
+    std::uint32_t gpuOccludedInstances = 0;
     std::size_t meshCount = 0;
     std::size_t textureCount = 0;
     std::size_t materialCount = 0;

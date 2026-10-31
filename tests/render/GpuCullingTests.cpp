@@ -4,6 +4,7 @@
 #include <devex/render/Renderer.hpp>
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include <algorithm>
 #include <array>
@@ -176,4 +177,157 @@ TEST_CASE("The GPU culls and draws the instances of standard materials as the CP
     // The CPU recorded a draw per instance and pass; the GPU path a draw per batch and view.
     INFO("draw calls: " << byCpu.drawCalls << " by the CPU, " << byGpu.drawCalls << " by the GPU");
     CHECK(byGpu.drawCalls < byCpu.drawCalls);
+}
+
+namespace
+{
+
+struct VisibilitySequence
+{
+    std::vector<std::vector<std::uint8_t>> pictures;
+    std::vector<devex::render::RendererStats> stats;
+    std::vector<std::string> errors;
+};
+
+// Capture the exact frames where old visibility becomes wrong: a wall moves away, an instance
+// moves in front of it, the camera cuts, the instance order changes and the viewport is resized.
+VisibilitySequence visibilitySequence(bool occlusion, bool orthographic,
+                                      devex::asset::AlphaMode wallMode)
+{
+    using namespace devex;
+    VisibilitySequence result;
+    const auto sink = core::addLogSink(
+        [&](const core::LogRecord& message)
+        {
+            if (message.level >= core::LogLevel::Error)
+                result.errors.emplace_back(message.message);
+        });
+    {
+        auto platform = platform::Platform::create();
+        REQUIRE(platform);
+        auto window =
+            platform->createWindow({.width = 321, .height = 239, .vulkan = true, .hidden = true});
+        REQUIRE(window);
+        auto renderer = render::Renderer::create(*platform, *window,
+                                                 {.validation = true, .gpuOcclusion = occlusion});
+        REQUIRE(renderer);
+        const auto cube = renderer->createMesh(asset::makeCube());
+        REQUIRE(cube);
+        const auto wall = renderer->createMaterial(
+            {.baseColorFactor = {0.3f, 0.5f, 0.7f,
+                                 wallMode == asset::AlphaMode::Mask    ? 0.0f
+                                 : wallMode == asset::AlphaMode::Blend ? 0.4f
+                                                                       : 1.0f},
+             .alphaMode = wallMode});
+        const auto red = renderer->createMaterial({.baseColorFactor = {0.9f, 0.15f, 0.05f, 1.0f}});
+        std::vector<render::CapturedImage> captures;
+        std::vector<std::uint64_t> requests;
+        for (int frame = 0; frame < 28; ++frame)
+        {
+            platform->pollEvents([](const platform::Event&) {});
+            auto& world = renderer->beginFrame();
+            world.viewport = frame < 20 ? math::Extent2D{321, 239} : math::Extent2D{319, 241};
+            const math::Vec3 eye =
+                frame < 14 ? math::Vec3{0.0f, 0.0f, 8.0f} : math::Vec3{9.0f, 1.0f, 1.0f};
+            world.camera.view =
+                math::lookAt(eye, math::Vec3{0.0f, 0.0f, -8.0f}, math::Vec3{0.0f, 1.0f, 0.0f});
+            world.camera.projection =
+                orthographic ? render::Projection::Orthographic : render::Projection::Perspective;
+            world.camera.orthographicSize = 5.0f;
+            world.camera.antialiasing = render::Antialiasing::None;
+            world.sun = {.direction = {-0.4f, -1.0f, -0.3f}, .illuminance = math::Vec3{30000.0f}};
+            world.environment.intensity = 5000.0f;
+            const float wallX = frame >= 6 && frame < 10 ? 100.0f : 0.0f;
+            world.meshes.push_back(
+                {.mesh = *cube,
+                 .material = wall,
+                 .transform = math::scale(math::translate(math::Mat4{1.0f}, {wallX, 0.0f, -4.0f}),
+                                          {9.0f, 7.0f, 0.5f}),
+                 .objectId = 1});
+            for (std::uint32_t index = 0; index < 24; ++index)
+            {
+                math::Vec3 position{static_cast<float>(index % 6) - 2.5f,
+                                    static_cast<float>(index / 6) - 1.5f, -8.0f};
+                // The same identifier was hidden before; its new pose must be visible immediately.
+                if (index == 0 && frame >= 10)
+                    position = {0.0f, 0.0f, -2.0f};
+                world.meshes.push_back(
+                    {.mesh = *cube,
+                     .material = red,
+                     .transform =
+                         math::scale(math::translate(math::Mat4{1.0f}, position), math::Vec3{0.6f}),
+                     .objectId = 10 + index});
+            }
+            world.meshes.push_back(
+                {.mesh = *cube,
+                 .material = red,
+                 .transform = math::translate(math::Mat4{1.0f}, {0.0f, 0.0f, 40.0f}),
+                 .objectId = 100});
+            if (frame >= 18)
+                std::ranges::reverse(world.meshes);
+            if (frame >= 22)
+            {
+                render::RenderView view;
+                view.id = 7;
+                view.extent = {177, 131};
+                view.camera = world.camera;
+                world.views.push_back(view);
+            }
+            if (frame >= 4 && frame < 24)
+                requests.push_back(
+                    renderer->requestCapture(world.viewport.width, world.viewport.height));
+            REQUIRE(renderer->endFrame());
+            result.stats.push_back(renderer->stats());
+            std::ranges::move(renderer->takeCaptures(), std::back_inserter(captures));
+        }
+        REQUIRE(captures.size() == requests.size());
+        for (const auto request : requests)
+        {
+            const auto found =
+                std::ranges::find(captures, request, &render::CapturedImage::request);
+            REQUIRE(found != captures.end());
+            result.pictures.push_back(std::move(found->rgba));
+        }
+    }
+    core::removeLogSink(sink);
+    return result;
+}
+
+} // namespace
+
+TEST_CASE("GPU occlusion preserves visibility through moving walls camera cuts and resizes",
+          "[render][gpu][occlusion]")
+{
+    const bool orthographic = GENERATE(false, true);
+    const auto wallMode = GENERATE(devex::asset::AlphaMode::Opaque, devex::asset::AlphaMode::Mask,
+                                   devex::asset::AlphaMode::Blend);
+    CAPTURE(orthographic, wallMode);
+    const auto reference = visibilitySequence(false, orthographic, wallMode);
+    const auto culled = visibilitySequence(true, orthographic, wallMode);
+    for (const auto& error : reference.errors)
+        UNSCOPED_INFO(error);
+    for (const auto& error : culled.errors)
+        UNSCOPED_INFO(error);
+    CHECK(reference.errors.empty());
+    CHECK(culled.errors.empty());
+    REQUIRE(culled.pictures.size() == reference.pictures.size());
+    for (std::size_t frame = 0; frame < culled.pictures.size(); ++frame)
+    {
+        INFO("captured frame " << frame + 4);
+        REQUIRE(culled.pictures[frame].size() == reference.pictures[frame].size());
+        std::size_t different = 0;
+        for (std::size_t channel = 0; channel < culled.pictures[frame].size(); ++channel)
+            different += std::abs(int(culled.pictures[frame][channel]) -
+                                  int(reference.pictures[frame][channel])) > 2
+                             ? 1u
+                             : 0u;
+        CHECK(different * 1000 < culled.pictures[frame].size());
+    }
+    CHECK(culled.stats[5].gpuInstancesTested > 0);
+    CHECK(culled.stats[5].gpuFrustumCulled > 0);
+    CHECK(reference.stats[5].gpuOccludedInstances == 0);
+    if (wallMode == devex::asset::AlphaMode::Opaque)
+        CHECK(culled.stats[5].gpuOccludedInstances >= 20);
+    else
+        CHECK(culled.stats[5].gpuOccludedInstances == 0);
 }

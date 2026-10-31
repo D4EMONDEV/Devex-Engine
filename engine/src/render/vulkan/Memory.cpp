@@ -163,6 +163,11 @@ VkDeviceAddress Buffer::deviceAddress() const noexcept
     return m_deviceAddress;
 }
 
+void Buffer::invalidate() const noexcept
+{
+    static_cast<void>(vmaInvalidateAllocation(m_allocator, m_allocation, 0, VK_WHOLE_SIZE));
+}
+
 core::Result<Image> Image::create(const Device& device, const Allocator& allocator,
                                   const ImageConfig& config)
 {

@@ -2133,6 +2133,17 @@ namespace devex::ui {
   (`Device::supportsDrawIndirectFirstInstance`). Mémoire : `BufferConfig::hostReads` pour ce que le
   CPU relit, écriture séquentielle sinon. Mesure : `devex_render_tests "Renderer stress benchmark"`
   en Release (`DEVEX_GPU_CULLING=0` pour comparer).
+- Occlusion GPU (jalon 87) : `Occlusion.cpp`, `shaders/depth_reduce.slang` et
+  `shaders/occlusion.slang`. Deux prépasses : profondeur courante des instances présumées visibles,
+  pyramide reverse-Z conservatrice, test de toutes les instances du frustum, puis récupération des
+  instances redevenues visibles avant l'ombrage. L'ancien résultat, propre à chaque vue et contexte
+  de frame, ne sert qu'à choisir la première prépasse ; ombres et picking restent indépendants.
+  `RendererConfig::gpuOcclusion`, actif dès huit instances éligibles ; `RendererStats::gpuInstancesTested`,
+  `gpuFrustumCulled`, `gpuOccludedInstances` et trois moniteurs dans Statistics (dernière frame
+  terminée, sans attente ajoutée). API des jeux 30. Démo : `assets/scenes/occlusion.dvxscene` dans le
+  sandbox ; régénération : `python scripts/generate_sample_assets.py --occlusion-only`. Benchmark :
+  `DEVEX_GPU_OCCLUSION=0`, `DEVEX_STRESS_OCCLUDERS=1`, `DEVEX_PRESENT_MODE=immediate` et
+  `DEVEX_STRESS_FRAMES` ; attentes de fence, acquisition et présentation imprimées séparément.
 - Terrains : `asset::TerrainMaps` (`devex/asset/TerrainMaps.hpp` : `makeFlatTerrain`,
   `terrainHeight`, `terrainNormal`, `raycastTerrain`, `applyTerrainBrush`, `copyTerrainRegion`),
   `encodeTerrain`/`decodeTerrain`, asset `terrain` (`.dvxterrain`) ; composant `scene::Terrain`
@@ -2505,6 +2516,9 @@ que le runtime remplit à chaque frame. Vulkan 1.4, chargé par volk, mémoire p
   picking ; chaque passe les dessine par lots (même sous-maillage, même matériau) en dessin
   indirect (`shaders/instanced.slang`). Shaders des projets, transparence et maillages animés
   restent cullés et dessinés par le CPU. Mesures : `docs/performances.md`.
+- **Occlusion GPU** (jalon 87) : profondeur courante réduite en pyramide, puis récupération des
+  instances redevenues visibles dans la même frame. Ombres et picking indépendants. Trois
+  compteurs dans Statistics ; `RendererConfig::gpuOcclusion` permet de la désactiver.
 - **Ombres** : quatre cascades pour le soleil et un atlas de 4096² pour les lumières locales,
   gardés d'une frame à l'autre tant que ce qui les dessine ne change pas.
 - **Ciel et lumière** : atmosphère physique (`AtmosphereRenderer`), brouillard de hauteur, ciel HDR

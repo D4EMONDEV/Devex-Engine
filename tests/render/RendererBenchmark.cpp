@@ -3,7 +3,8 @@
 // sees. Hidden, run on demand, in Release, on the machine measured:
 //     devex_render_tests "Renderer stress benchmark"
 // DEVEX_STRESS_OBJECTS and DEVEX_STRESS_LIGHTS change how many there are; DEVEX_GPU_CULLING=0 has
-// the CPU cull and draw every instance, to compare.
+// the CPU cull and draw every instance, to compare. DEVEX_GPU_OCCLUSION=0 disables occlusion alone;
+// DEVEX_PRESENT_MODE=immediate removes the display's pacing; DEVEX_STRESS_OCCLUDERS=1 adds walls.
 #include <devex/asset/Primitives.hpp>
 #include <devex/core/Profiler.hpp>
 #include <devex/platform/Platform.hpp>
@@ -19,6 +20,7 @@
 #include <cstdio>
 #include <map>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace {
@@ -49,7 +51,17 @@ TEST_CASE("Renderer stress benchmark", "[.][benchmark]")
     auto window = platform->createWindow({.width = 1280, .height = 720, .vulkan = true, .hidden = true});
     REQUIRE(window.has_value());
     const bool gpuCulling = devex::platform::environmentVariable("DEVEX_GPU_CULLING") != "0";
-    auto renderer = devex::render::Renderer::create(*platform, *window, {.validation = false, .gpuCulling = gpuCulling});
+    const bool gpuOcclusion = devex::platform::environmentVariable("DEVEX_GPU_OCCLUSION") != "0";
+    const bool walls = devex::platform::environmentVariable("DEVEX_STRESS_OCCLUDERS") == "1";
+    const std::string mode = devex::platform::environmentVariable("DEVEX_PRESENT_MODE");
+    const auto presentMode = mode == "immediate" ? devex::render::PresentMode::Immediate
+                             : mode == "mailbox" ? devex::render::PresentMode::Mailbox
+                                                 : devex::render::PresentMode::Fifo;
+    auto renderer = devex::render::Renderer::create(*platform, *window,
+                                                    {.presentMode = presentMode,
+                                                     .validation = false,
+                                                     .gpuCulling = gpuCulling,
+                                                     .gpuOcclusion = gpuOcclusion});
     REQUIRE(renderer.has_value());
 
     // A few meshes and materials, as a level reuses them.
@@ -91,6 +103,21 @@ TEST_CASE("Renderer stress benchmark", "[.][benchmark]")
                                .range = 8.0f});
     }
     const float extent = static_cast<float>(side) * 3.0f;
+    if (walls)
+    {
+        for (std::uint32_t index = 0; index < 4; ++index)
+        {
+            instances.push_back(
+                {.mesh = meshes[0],
+                 .material = materials[0],
+                 .transform = devex::math::scale(
+                     devex::math::translate(
+                         devex::math::Mat4{1.0f},
+                         {extent * 0.5f, 8.0f, -12.0f - static_cast<float>(index) * extent * 0.2f}),
+                     {extent + 6.0f, 16.0f, 0.5f}),
+                 .objectId = objects + index + 1});
+        }
+    }
     devex::render::RenderCamera camera;
     camera.view = devex::math::lookAt(devex::math::Vec3{-10.0f, 12.0f, 10.0f}, devex::math::Vec3{extent * 0.5f, 0.0f, -extent * 0.5f},
                                       devex::math::Vec3{0.0f, 1.0f, 0.0f});
@@ -118,7 +145,8 @@ TEST_CASE("Renderer stress benchmark", "[.][benchmark]")
         frame(static_cast<float>(index) * 0.016f);
     }
     devex::core::profiler::clear();
-    constexpr int frames = 300;
+    const int frames =
+        static_cast<int>(std::clamp(countFrom("DEVEX_STRESS_FRAMES", 300), 1u, 10000u));
     const auto start = std::chrono::steady_clock::now();
     for (int index = 0; index < frames; ++index)
     {
@@ -131,13 +159,16 @@ TEST_CASE("Renderer stress benchmark", "[.][benchmark]")
     std::map<std::string, double> cpu;
     std::map<std::string, double> gpu;
     std::size_t gpuFrames = 0;
-    for (const auto& kept : devex::core::profiler::history())
+    const auto history = devex::core::profiler::history();
+    const double cpuFrames = static_cast<double>(std::max<std::size_t>(history.size(), 1));
+    for (const auto& kept : history)
     {
         for (const devex::core::ProfileZone& zone : kept->cpu)
         {
             if (zone.thread == 0)
             {
-                cpu[std::string(zone.depth, ' ') + zone.name] += static_cast<double>(zone.end - zone.begin) / 1.0e6 / frames;
+                cpu[std::string(zone.depth, ' ') + zone.name] +=
+                    static_cast<double>(zone.end - zone.begin) / 1.0e6 / cpuFrames;
             }
         }
         gpuFrames += kept->gpu.empty() ? 0 : 1;
@@ -149,6 +180,31 @@ TEST_CASE("Renderer stress benchmark", "[.][benchmark]")
     std::printf("%u objects, %u lights, %d frames at 1280x720, culled by the %s: %.2f ms a frame\n", objects, lights, frames,
                 gpuCulling ? "GPU" : "CPU", total / frames);
     std::printf("%u draw calls, %u instances culled in the last frame\n", stats.drawCalls, stats.culledInstances);
+    std::printf("GPU occlusion: %s, walls: %s, presentation: %s (requested %s), device: %s\n",
+                gpuOcclusion ? "on" : "off", walls ? "yes" : "no",
+                devex::render::toString(renderer->presentMode()).data(),
+                devex::render::toString(presentMode).data(), renderer->gpu().name.c_str());
+    std::printf(
+        "Camera: %u GPU instances tested, %u outside frustum, %u occluded (completed frame)\n",
+        stats.gpuInstancesTested, stats.gpuFrustumCulled, stats.gpuOccludedInstances);
+    std::printf("Profile: %zu CPU frames retained, %zu GPU frames completed\n", history.size(),
+                gpuFrames);
+    const auto millisecondsOf = [&](std::string_view name)
+    {
+        double totalMilliseconds = 0.0;
+        for (const auto& [zone, milliseconds] : cpu)
+        {
+            const auto first = zone.find_first_not_of(' ');
+            if (first != std::string::npos && std::string_view(zone).substr(first) == name)
+            {
+                totalMilliseconds += milliseconds;
+            }
+        }
+        return totalMilliseconds;
+    };
+    std::printf("Waits: frame fence %.3f ms, image acquisition %.3f ms, presentation %.3f ms\n",
+                millisecondsOf("Wait for the GPU"), millisecondsOf("Acquire the image"),
+                millisecondsOf("Present"));
     std::printf("CPU\n");
     std::vector<std::pair<std::string, double>> sorted(cpu.begin(), cpu.end());
     std::ranges::sort(sorted, std::ranges::greater{}, &std::pair<std::string, double>::second);

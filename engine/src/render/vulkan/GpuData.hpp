@@ -336,6 +336,7 @@ struct GpuInstance
 
 inline constexpr std::uint32_t cullCamera = 1;
 inline constexpr std::uint32_t cullShadows = 2;
+inline constexpr std::uint32_t cullSeed = 4;
 
 // A view the instances are culled in: the planes they must stand in front of, and the instances
 // it keeps.
@@ -356,8 +357,39 @@ struct CullPushConstants
     VkDeviceAddress visible = 0;
     std::uint32_t instanceCount = 0;
     std::uint32_t batchCount = 0;
-    std::uint32_t padding0 = 0;
-    std::uint32_t padding1 = 0;
+    std::uint32_t seedsOnly = 0;
+    std::uint32_t padding = 0;
+    VkDeviceAddress states = 0;
+};
+
+// The depth pyramid is a buffer of consecutive levels, each a ceil-halving of the previous one.
+// Its first level reduces the full depth image, and subsequent levels read the preceding range.
+struct DepthReducePushConstants
+{
+    VkDeviceAddress pyramid = 0;
+    std::uint32_t sourceOffset = 0;
+    std::uint32_t targetOffset = 0;
+    std::uint32_t sourceWidth = 0;
+    std::uint32_t sourceHeight = 0;
+    std::uint32_t firstLevel = 0;
+    std::uint32_t padding = 0;
+};
+
+struct OcclusionPushConstants
+{
+    VkDeviceAddress instances = 0;
+    VkDeviceAddress views = 0;
+    VkDeviceAddress commands = 0;
+    VkDeviceAddress visible = 0;
+    VkDeviceAddress states = 0;
+    VkDeviceAddress pyramid = 0;
+    VkDeviceAddress scene = 0;
+    std::uint32_t instanceCount = 0;
+    std::uint32_t batchCount = 0;
+    std::uint32_t deferredView = 0;
+    std::uint32_t width = 0;
+    std::uint32_t height = 0;
+    std::uint32_t padding = 0;
 };
 
 // What the draws of the culled instances read, with the material of their batch.
@@ -703,7 +735,9 @@ static_assert(offsetof(GpuInstance, vertices) == 160);
 static_assert(offsetof(GpuInstance, batch) == 156);
 static_assert(offsetof(GpuInstance, flags) == 168);
 static_assert(sizeof(GpuCullView) == 112);
-static_assert(sizeof(CullPushConstants) == 48);
+static_assert(sizeof(CullPushConstants) == 56);
+static_assert(sizeof(DepthReducePushConstants) == 32);
+static_assert(sizeof(OcclusionPushConstants) == 80);
 static_assert(sizeof(InstancedPushConstants) == 32);
 static_assert(sizeof(VkDrawIndexedIndirectCommand) == 20);
 static_assert(sizeof(BakePushConstants) == 24);

@@ -69,8 +69,10 @@ public:
     [[nodiscard]] std::span<std::byte> mappedBytes() const noexcept;
     // Zero unless the buffer was created with VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT.
     [[nodiscard]] VkDeviceAddress deviceAddress() const noexcept;
+    // Make completed device writes visible when the mapped allocation is not host coherent.
+    void invalidate() const noexcept;
 
-private:
+  private:
     Buffer() = default;
     void destroy() noexcept;
 

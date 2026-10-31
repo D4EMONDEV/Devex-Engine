@@ -5,6 +5,8 @@ devex_add_shaders(devex_shaders
         atmosphere.slang
         bloom.slang
         cull.slang
+        depth_reduce.slang
+        occlusion.slang
         ibl.slang
         instanced.slang
         lens.slang

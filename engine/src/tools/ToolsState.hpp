@@ -294,6 +294,9 @@ struct DEVEX_API Monitors
     MonitorHistory frameTime;
     MonitorHistory drawCalls;
     MonitorHistory culled;
+    MonitorHistory gpuTested;
+    MonitorHistory gpuFrustumCulled;
+    MonitorHistory gpuOccluded;
     // In megabytes: the memory of the GPU the engine takes, and what it sent to the GPU last frame.
     MonitorHistory gpuMemory;
     MonitorHistory uploads;

@@ -469,8 +469,8 @@ docs/          décisions et documentation
   (approximation de Narkowicz) ou aucun, choisi sur la caméra ; sortie linéaire, encodée sRGB
   par le swapchain. La même passe ajoute le bloom et applique l'étalonnage (voir *Transparence
   et post-traitements*).
-- **Limites actuelles** : culling par tronc de vue seulement (rien n'est enlevé parce qu'il est
-  caché derrière autre chose), lumière
+- **Limites actuelles** : occlusion limitée aux instances standard opaques ou découpées sans os,
+  lumière
   indirecte cuite seulement (sondes et volumes ne suivent pas la scène pendant le jeu),
   transparence triée par instance (deux surfaces qui s'entrecroisent restent
   fausses), et traînées possibles derrière un objet très rapide, que l'anticrénelage temporel ne
@@ -2674,11 +2674,46 @@ Jalon 65, comme les `Joint3D` et `Joint2D` de Godot :
   par frame (48 draw calls). Sur l'Iris Xe, le GPU met déjà environ 17 ms à dessiner cette scène :
   la frame passe de 17,4 à 17,2 ms quand le CPU est rapide, et de 24,6 à 18,3 ms quand il l'est
   moins ; elle est maintenant limitée par le GPU. La prépasse y perd 0,7 ms, l'ordre des dessins n'étant plus celui des instances (des
-  lots entiers plutôt que du plus proche au plus loin) ; le culling par occlusion la regagnera. Sur
+  lots entiers plutôt que du plus proche au plus loin) ; le jalon 87 ajoute l'occlusion pour les
+  scènes où les objets se cachent. Sur
   un GPU dédié, bien plus rapide que l'Iris Xe, c'était le CPU qui limitait de loin.
   `devex_render_tests "Renderer stress benchmark"` (caché, en Release) imprime ces mesures ;
   `DEVEX_GPU_CULLING=0` le fait culler par le CPU, `DEVEX_STRESS_OBJECTS` et `DEVEX_STRESS_LIGHTS`
   changent la scène. `RendererConfig::gpuCulling` permet de s'en passer.
+- **Occlusion GPU** (jalon 87) : deux phases sur la **profondeur courante**. Chaque contexte de
+  frame garde, par identifiant d'objet et sous-maillage, la liste des instances cachées de sa
+  dernière frame terminée. Cette liste sert seulement à choisir la première prépasse : les
+  instances présumées visibles, les nouvelles et celles sans identifiant y dessinent leur pose
+  courante, avec les objets restés au CPU et les terrains. L'ancien résultat ne peut donc jamais
+  faire disparaître un objet à lui seul.
+- **Pyramide et récupération** : `shaders/depth_reduce.slang` réduit la profondeur par blocs de
+  2 × 2 jusqu'à un texel, dans un buffer de niveaux contigus, en prenant la valeur la plus éloignée
+  (minimum en reverse-Z). Les dimensions impaires sont arrondies vers le haut. La passe
+  `shaders/occlusion.slang` projette les huit coins de la boîte mondiale conservative, élargit sa
+  couverture d'un pixel et teste au plus quatre texels d'un niveau qui la couvre. Les boîtes qui
+  traversent l'œil ou un plan de projection, les profondeurs invalides et les cas incertains sont
+  gardés. Un objet n'est caché que si sa profondeur la plus proche, avec une marge, est derrière
+  toute cette région. La liste indirecte de la caméra est alors reconstruite ; les objets absents
+  de la première prépasse mais visibles maintenant dessinent une seconde prépasse qui charge la
+  profondeur, les normales et le mouvement existants. L'ombrage utilise la liste finale.
+- **Portée et mesures** : seulement les instances opaques ou découpées du chemin GPU standard,
+  dès huit instances éligibles (`RendererConfig::gpuOcclusion`, activé par défaut). Les objets
+  transparents, animés par os et les shaders du projet gardent leur chemin CPU. Leurs surfaces
+  opaques et les terrains peuvent néanmoins masquer les instances standard. Les ombres et le
+  picking gardent leurs propres listes de frustum. Chaque vue supplémentaire a sa propre
+  visibilité. Les états GPU sont copiés vers un buffer lisible par le CPU, invalidé et lu après la
+  fence habituelle du contexte, sans attendre une frame exprès. `RendererStats::gpuInstancesTested`,
+  `gpuFrustumCulled` et `gpuOccludedInstances`, repris dans *Statistics*, comptent les instances
+  standard de la caméra principale d'une frame terminée ; `culledInstances` garde son ancien sens
+  (instances écartées par le CPU, toutes passes confondues). API des jeux 30.
+- **Vérification et démo** : les images avec et sans occlusion sont comparées sur les frames où
+  un mur s'écarte, un objet avance, la caméra change brusquement, l'ordre des instances change,
+  le viewport est redimensionné et une vue supplémentaire s'ouvre. Perspectives et orthographiques,
+  murs opaques, découpés et transparents, validation Vulkan active. Le sandbox contient
+  `assets/scenes/occlusion.dvxscene` : trois écrans et 120 cubes. En Play, WASD déplace la caméra,
+  la souris l'oriente après capture, Espace monte, Ctrl gauche descend et Maj gauche accélère ;
+  les compteurs de *Statistics* montrent ce que les écrans cachent. Le générateur accepte
+  `--occlusion-only`. Les temps et commandes sont dans [performances.md](performances.md).
 - **Mémoire visible par le CPU** : les buffers que le CPU écrit chaque frame pour le GPU sont
   alloués en écriture séquentielle (`VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT`), ce
   qui permet à VMA de les mettre en mémoire vidéo quand le CPU peut y écrire (Resizable BAR des
@@ -4947,6 +4982,11 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     requêtes et le dessin, y compris après le passage d'un obstacle ; robot du sandbox qui
     patrouille sur la colline. Tests des pentes, trous, changements de tuile, positions mondiales,
     hauteurs face à Jolt, obstacles, cartes en haute résolution et cuisson annulable de l'éditeur.
+87. ✅ **Occlusion GPU** — pyramide de profondeur courante et prépasse de récupération : les
+    instances cachées sont retirées des dessins de la caméra et réapparaissent dans la frame où
+    elles redeviennent visibles ; ombres et picking indépendants ; trois compteurs dans
+    *Statistics*, tests d'images en mouvement, scène `occlusion.dvxscene` du sandbox et benchmark
+    avec ou sans murs, présentation choisie et attentes séparées ; API des jeux 30.
 
 Ensuite, sans ordre figé : à choisir dans les pistes ci-dessous.
 
@@ -5089,8 +5129,7 @@ Ensuite, sans ordre figé : à choisir dans les pistes ci-dessous.
   des images, modèles placés qui suivent leur fichier (préfabs de modèles), options d'import
   des animations (découpage d'une pile en clips, fréquence d'échantillonnage).
 - **Autres plateformes de textures** : ASTC ou Basis Universal pour le mobile, produits à l'export.
-- **Culling** : par occlusion (pyramide de profondeur de la frame précédente, en deux phases),
-  dessin indirect compté (`vkCmdDrawIndexedIndirectCount`) dans un buffer d'indices partagé pour un
+- **Culling** : dessin indirect compté (`vkCmdDrawIndexedIndirectCount`) dans un buffer d'indices partagé pour un
   seul dessin par vue, instances gardées sur le GPU d'une frame à l'autre plutôt que recopiées, et
   hiérarchie spatiale pour les très grandes scènes ; les maillages animés confiés eux aussi au
   GPU, avec un skinning en compute.

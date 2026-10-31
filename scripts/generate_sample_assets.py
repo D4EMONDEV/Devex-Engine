@@ -3,7 +3,7 @@
 Everything is procedural, so the repository needs no third-party art or sound. Run from any
 directory:
 
-    python scripts/generate_sample_assets.py [--audio-only]
+    python scripts/generate_sample_assets.py [--audio-only | --occlusion-only]
 
 Sounds are synthesized as WAV files; the compressed ones (Ogg Vorbis, MP3, FLAC) are encoded with
 ffmpeg when it is on the PATH, and left as they are otherwise.
@@ -21,6 +21,7 @@ import struct
 import subprocess
 import sys
 import tempfile
+import uuid
 import zlib
 from pathlib import Path
 
@@ -804,7 +805,51 @@ def devex_icon_pixel(size):
     return pixel
 
 
+def occlusion_scene():
+    """A fly-through of opaque screens and repeated meshes for the GPU visibility counters."""
+    sections = ['[scene format=1 kind="3d"]', '']
+
+    def entity(name, position=(0, 0, 0), scale=(1, 1, 1), mesh=None, material=None):
+        identity = uuid.uuid5(uuid.NAMESPACE_URL, "devex-sandbox/occlusion/" + name)
+        sections.extend([f'[entity uuid="{identity}" name="{name}"]', '',
+                         '[component type="Transform"]',
+                         'position = vec3({:g}, {:g}, {:g})'.format(*position),
+                         'rotation = quat(0, 0, 0, 1)',
+                         'scale = vec3({:g}, {:g}, {:g})'.format(*scale), ''])
+        if mesh:
+            sections.extend(['[component type="MeshRenderer"]', f'mesh = asset("{mesh}")'])
+            if material:
+                sections.append(f'material = asset("{material}")')
+            sections.append('')
+
+    entity('Sun')
+    sections.extend(['[component type="DirectionalLight"]', 'illuminance = 60000',
+                     'cast_shadows = true', 'shadow_distance = 80', ''])
+    entity('Sky')
+    sections.extend(['[component type="Environment"]', 'color = vec3(0.6, 0.7, 0.9)',
+                     'intensity = 5000', ''])
+    entity('Camera', (0, 3, 12))
+    sections.extend(['[component type="Camera"]', 'primary = true', 'near_plane = 0.1',
+                     'far_plane = 200', 'auto_exposure = false', 'ev100 = 14',
+                     'antialiasing = "temporal"', '', '[component type="FlyCamera"]',
+                     'speed = 8', 'fast_speed = 20', ''])
+    cube = '00000000-0000-0000-0000-000000000001'
+    plane = '00000000-0000-0000-0000-000000000003'
+    entity('Ground', (0, 0, -12), (60, 1, 60), plane, '78014e97-7de2-4e27-89db-74abd840010d')
+    for index, (x, z, width) in enumerate(((0, -4, 16), (-11, -18, 8), (11, -24, 8))):
+        entity(f'Screen {index + 1}', (x, 4, z), (width, 8, 0.5), cube)
+    for row in range(10):
+        for column in range(12):
+            entity(f'Hidden cube {row * 12 + column + 1}',
+                   (column * 2 - 11, 0.6, -10 - row * 2), (1.2, 1.2, 1.2),
+                   cube, '942b912e-9fc5-485d-8d98-3e83864329d3')
+    write(SANDBOX_ASSETS / 'scenes' / 'occlusion.dvxscene', '\n'.join(sections))
+
+
 def main():
+    if "--occlusion-only" in sys.argv:
+        occlusion_scene()
+        return
     if "--audio-only" in sys.argv:
         audio_assets()
         return
@@ -833,6 +878,7 @@ def main():
     robot(SANDBOX_ASSETS / "models" / "robot.glb")
     robot(TEST_DATA / "animated" / "robot.glb")
     audio_assets()
+    occlusion_scene()
 
 
 if __name__ == "__main__":
