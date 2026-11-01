@@ -2715,7 +2715,7 @@ Jalon 65, comme les `Joint3D` et `Joint2D` de Godot :
   la souris l'oriente après capture, Espace monte, Ctrl gauche descend et Maj gauche accélère ;
   les compteurs de *Statistics* montrent ce que les écrans cachent. Le générateur accepte
   `--occlusion-only`. Les temps et commandes sont dans [performances.md](performances.md).
-- **Skinning compute** (jalon 88) : les maillages standard opaques ou découpés animés par os
+- **Skinning compute** (jalons 88–89) : les maillages standard opaques ou découpés animés par os
   rejoignent les lots GPU. La passe *Skinning* précède le culling : un groupe de 64 threads par pose
   déforme les sommets avec les mêmes mélanges d'os que les vertex shaders et réduit leurs positions
   pour mesurer une boîte mondiale de la **pose courante**. Cette boîte remplace l'approximation de
@@ -2725,26 +2725,41 @@ Jalon 65, comme les `Joint3D` et `Joint2D` de Godot :
   et tangentes conservent les échelles non uniformes, miroirs et sommets sans poids du chemin
   d'origine. Les positions précédentes suivent aussi les os précédents, même si leur rangement
   dans le buffer ou l'ordre des instances change.
+- **Poses utiles** : des boîtes des sommets influencés par chaque os sont construites à l'arrivée
+  du maillage, avec une boîte séparée pour les sommets sans poids. Leur union transformée borne
+  ensuite chaque pose avant de déformer ses sommets. Une pose extérieure à la caméra et à toutes
+  les vues d'ombres redessinées est écartée ; une ombre hors écran reste conservée. Le picking
+  garde toutes les poses. Poids signés, matrices non affines ou limites incertaines empêchent ce
+  rejet. La boîte exacte de la pose reste mesurée sur le GPU pour le culling fin et l'occlusion.
 - **Réutilisation et coût** : chaque sommet préparé occupe 64 octets (deux positions, normale,
   tangente) ; la pose est réutilisée dans les prépasses, les cascades et ombres locales,
-  l'ombrage et le picking. Les buffers appartiennent au contexte de frame de chaque vue et ne sont
-  réécrits qu'après sa fence. Les barrières couvrent l'import des maillages, la préparation, les
-  lectures compute du culling et les lectures des vertex shaders. Les animations, scripts et
-  matrices d'os restent évalués sur le CPU ; les poses hors de la vue sont aussi préparées pour
-  obtenir leurs limites exactes. Ce travail et cette mémoire peuvent coûter plus que le skinning
+  l'ombrage et le picking, puis entre les caméras de la même frame si ses données et son historique
+  concordent. Les dessins anonymes restent séparés. Les pages sont communes aux vues d'un contexte
+  de frame et protégées par la fence de sa dernière soumission, même après un échec d'acquisition
+  de la fenêtre principale ; aucune page déjà soumise n'est réallouée dans la frame.
+  Les sorties grandissent de 12,5 % (arrondies à 64 Kio), sont réduites après 30 utilisations sous
+  la moitié de leur capacité et libérées après 120 frames sans utilisation. Les barrières couvrent
+  l'import, la préparation et les lectures compute/vertex, y compris dans les vues suivantes.
+  Les animations, scripts et matrices d'os restent évalués sur le CPU. Le calcul des boîtes ajoute
+  du travail CPU ; ce travail et cette mémoire peuvent coûter plus que le skinning
   par dessin pour de petits nombres de sommets ou de personnages : `RendererConfig::gpuSkinning`
   désactive ce chemin (actif par défaut avec le culling GPU disponible). Les matériaux transparents,
   shaders des projets et contours de sélection gardent leur chemin par dessin.
 - **Compteurs et démo** : `RendererStats::gpuSkinnedPoses` et `gpuSkinnedVertices` décrivent les
-  poses uniques et sommets préparés pour la caméra principale de la frame courante, sans
-  readback GPU. *Statistics* les affiche à côté de la visibilité de la dernière frame terminée.
+  poses uniques et sommets préparés pour toutes les vues de la frame courante, sans readback GPU.
+  `gpuSkinningCulledPoses` et `gpuSkinningReusedPoses` comptent les poses par vue écartées ou
+  réutilisées, sans recompter les sous-maillages ; `gpuSkinningBytes` compte les sorties et limites
+  réservées dans tous les contextes, sans les matrices d'os et jobs. *Statistics* affiche ces
+  valeurs à côté de la visibilité de la dernière frame terminée.
   Les tests comparent le chemin d'origine, le culling GPU sans skinning compute, puis le chemin
   complet : sous-maillages, poids nuls, échelles miroirs et non uniformes, murs qui s'écartent,
   caméra, déplacement d'os, changement de leur rangement, picking, ombres locales, contour,
   anticrénelage temporel, redimensionnement et deuxième vue. Le sandbox ajoute
   `assets/scenes/skinning.dvxscene` (96 robots qui marchent sur place derrière un écran, caméra libre),
   générable avec `--skinning-only`. Benchmark : `DEVEX_STRESS_SKINNED=1` (2 000 poses par défaut),
-  `DEVEX_GPU_SKINNING=0` pour comparer et les mêmes options d'occlusion et présentation. API 31.
+  `DEVEX_GPU_SKINNING=0` pour comparer, `DEVEX_STRESS_VIEWS=0..4` pour les caméras supplémentaires,
+  `DEVEX_STRESS_OFFSCREEN=0..100` pour le pourcentage placé derrière elles, et les mêmes options
+  d'occlusion et présentation. API 32.
 - **Mémoire visible par le CPU** : les buffers que le CPU écrit chaque frame pour le GPU sont
   alloués en écriture séquentielle (`VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT`), ce
   qui permet à VMA de les mettre en mémoire vidéo quand le CPU peut y écrire (Resizable BAR des
@@ -5022,6 +5037,13 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     entre les passes et sous-maillages ; positions précédentes pour le mouvement, limites de la
     pose courante pour le frustum et l'occlusion GPU ; compteurs dans *Statistics*, comparaisons
     d'images et de picking, foule de 96 robots dans le sandbox, benchmark animé ; API des jeux 31.
+89. ✅ **Poses utiles et mémoire du skinning** — boîtes des sommets par os pour borner la pose
+    avant le compute ; poses hors caméra et vues d'ombres redessinées laissées de côté, picking
+    conservateur ; déformations partagées entre les caméras d'une frame, pages communes protégées
+    jusqu'à la dernière soumission, même si l'acquisition de la fenêtre échoue. Allocation avec
+    12,5 % de marge, réduction après une foule et retrait des pages inactives ; compteurs des poses
+    écartées, réutilisées et de la mémoire dans Statistics. Tests des limites, images de plusieurs
+    vues, ombres hors écran, mouvement, picking et baisse de mémoire ; API des jeux 32.
 
 Ensuite, sans ordre figé : à choisir dans les pistes ci-dessous.
 
@@ -5166,8 +5188,9 @@ Ensuite, sans ordre figé : à choisir dans les pistes ci-dessous.
 - **Autres plateformes de textures** : ASTC ou Basis Universal pour le mobile, produits à l'export.
 - **Culling** : dessin indirect compté (`vkCmdDrawIndexedIndirectCount`) dans un buffer d'indices partagé pour un
   seul dessin par vue, instances gardées sur le GPU d'une frame à l'autre plutôt que recopiées, et
-  hiérarchie spatiale pour les très grandes scènes ; préparation des poses gardée entre vues,
-  skinning différé des personnages hors de tous les frustums, niveaux de détail des squelettes.
+  hiérarchie spatiale pour les très grandes scènes ; niveaux de détail des maillages et des
+  squelettes, déformation différée des personnages occultés quand leurs ombres n'en ont pas besoin,
+  budget mémoire explicite et choix adaptatif entre skinning compute et par dessin.
 - **Ombres locales** : filtrage plus doux (PCSS), tuiles gardées une à une (aujourd'hui l'atlas est
   gardé entier ou redessiné entier), et ombres des surfaces transparentes.
 - **Réflexions locales** : sondes recapturées pendant le jeu (au chargement, à la demande), plusieurs

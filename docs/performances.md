@@ -325,3 +325,90 @@ un écran opaque et une caméra libre (mêmes commandes que la scène d'occlusio
 *GPU Skinned Poses* et *GPU Skinned Vertices* décrivent la préparation de la vue principale
 courante ; les trois moniteurs de visibilité restent ceux d'une frame GPU terminée. Le
 générateur accepte `python scripts/generate_sample_assets.py --skinning-only`.
+
+## Poses utiles, vues partagées et mémoire (jalon 89)
+
+Mesures du 1er novembre 2026, sur le même i7-14700KF et la RTX 4060, Windows 11,
+pilote 621.01, build Release sans validation, présentation Immediate demandée et obtenue.
+La référence est `c03a604`, avec le benchmark étendu aux vues supplémentaires. Avant et après :
+60 frames de chauffe puis 300 mesurées, 256 lumières, image principale à 1280 × 720 ;
+les deux vues supplémentaires, quand présentes, sont à 640 × 360. Deux séries par cas,
+sans compilation ni autre test GPU pendant les mesures.
+
+| Scène | Avant, deux séries | Après, deux séries | Mémoire vidéo avant → après |
+|-------|-------------------:|-------------------:|---------------------------:|
+| 20 000 poses, une caméra, dégagé | 16,21 / 18,28 ms | 16,23 / 17,73 ms | 1 319,28 → 877,12 Mio |
+| 20 000 poses, une caméra, murs | 14,58 / 13,58 ms | 14,28 / 14,35 ms | 1 319,28 → 877,12 Mio |
+| 2 000 poses, trois caméras | 7,51 / 7,44 ms | 6,26 / 6,32 ms | 867,85 → 692,50 Mio |
+
+La colonne mémoire est celle du processus rapportée par le budget Vulkan/VMA ; elle comprend
+les autres buffers et images, pas seulement les poses. Les sorties de skinning et leurs limites
+réservent désormais **570 Mio** pour les deux contextes du cas de 20 000 poses, au lieu d'environ
+1 Gio avec le doublement précédent. Les attributs restent à 64 octets par sommet, sans
+quantification supplémentaire : c'est l'allocation qui change.
+
+Dans les scènes à une caméra, presque toutes les poses sont nécessaires à la caméra ou aux
+cascades : la réduction de mémoire est nette, mais ces mesures ne montrent pas de gain de temps
+de frame constant. Borner les poses a aussi un coût CPU : *Skinning data* passe de
+1,49 / 1,70 ms à 3,03 / 3,14 ms dans le cas dégagé à 20 000 poses.
+
+Avec trois caméras, **2 000 poses sont calculées une fois**, puis **4 000 poses de vues sont
+réutilisées**, au lieu de préparer chaque vue séparément. Le temps de frame baisse de **15 à 17 %**
+dans cet essai. Les compteurs de poses et de sommets décrivent maintenant toutes les vues de
+la frame courante ; auparavant ils ne décrivaient que la vue principale.
+
+### Personnages hors des vues utiles
+
+Un essai supplémentaire place 75 % des 20 000 poses loin derrière les caméras et hors des vues
+des ombres : **15 000 poses sont écartées avant le compute**, 5 000 poses / 1 035 171 sommets
+sont préparés. Les sorties réservent **142,62 Mio**, le budget rapporte **450,75 Mio** pour le
+processus ; temps de frame de **10,70 / 10,41 ms**. Il s'agit d'une autre disposition, sans mesure
+avant/après correspondante : ces temps ne se comparent pas directement à ceux du champ dégagé.
+
+Les boîtes par os sont construites à l'arrivée du maillage ; leur union transformée borne
+ensuite chaque pose sans parcourir tous ses sommets. Les sommets sans poids suivent la matrice
+de l'instance. Les poids signés, matrices non affines ou limites incertaines conservent la pose.
+Une ombre hors écran reste un motif de préparation, et une demande de picking conserve toutes
+les poses. Les limites exactes restent calculées sur le GPU pour le culling fin et l'occlusion.
+Les personnages simplement cachés derrière un mur sont toujours préparés s'ils passent ces tests.
+
+### Allocation et vérifications
+
+Chaque contexte de frame possède des pages communes aux vues : une vue écrit une page pour ses
+poses manquantes, les autres en lisent les résultats. Une page soumise n'est plus réallouée
+dans cette frame. Sa dernière fence protège son réemploi, y compris quand seules les vues
+supplémentaires ont été soumises avant un échec d'acquisition du swapchain principal.
+
+Les buffers de sortie grandissent de 12,5 %, arrondis à 64 Kio. Après 30 utilisations sous la
+moitié de leur capacité, ils sont réduits ; les pages inactives sont libérées après 120 frames.
+Le moniteur **Skinning Memory** compte les sorties et limites réservées de tous les contextes,
+sans les matrices d'os ni les jobs. **Skinning Poses Skipped** et **Skinning Poses Reused**
+comptent des poses par vue, sans recompter leurs sous-maillages.
+
+Les tests vérifient les limites face aux sommets déformés, les poids non normalisés et les
+échelles inversées ; ils comparent images, ombres, TAA et picking au chemin par dessin, avec
+des poses éloignées de la matrice de l'instance, plusieurs vues, caméra déplacée, pose qui
+revient dans le champ et liste réordonnée. Un autre test retire une foule, puis les vues, et
+vérifie la réduction, la libération et la réutilisation des allocations. Les mesures sur un
+GPU intégré restent à faire ; l'évaluation des animations et matrices d'os demeure au CPU.
+
+Depuis la racine, les paramètres du benchmark animé restent les mêmes ; pour ces cas :
+
+```powershell
+$env:DEVEX_STRESS_SKINNED = "1"
+$env:DEVEX_STRESS_OBJECTS = "2000" # 20000 pour une seule caméra
+$env:DEVEX_STRESS_LIGHTS = "256"
+$env:DEVEX_STRESS_FRAMES = "300"
+$env:DEVEX_PRESENT_MODE = "immediate"
+$env:DEVEX_GPU_CULLING = "1"
+$env:DEVEX_GPU_OCCLUSION = "1"
+$env:DEVEX_GPU_SKINNING = "1"
+$env:DEVEX_STRESS_VIEWS = "2" # caméras supplémentaires, 0..4
+$env:DEVEX_STRESS_OFFSCREEN = "0" # pourcentage derrière les caméras, 0..100
+$env:DEVEX_STRESS_OCCLUDERS = "0"
+.\out\build\x64-release\bin\devex_render_tests.exe "Renderer stress benchmark"
+Remove-Item Env:DEVEX_STRESS_SKINNED, Env:DEVEX_STRESS_OBJECTS, Env:DEVEX_STRESS_LIGHTS,
+    Env:DEVEX_STRESS_FRAMES, Env:DEVEX_PRESENT_MODE, Env:DEVEX_GPU_CULLING,
+    Env:DEVEX_GPU_OCCLUSION, Env:DEVEX_GPU_SKINNING, Env:DEVEX_STRESS_VIEWS,
+    Env:DEVEX_STRESS_OFFSCREEN, Env:DEVEX_STRESS_OCCLUDERS
+```

@@ -120,9 +120,14 @@ struct DEVEX_API RendererStats
     std::uint32_t gpuInstancesTested = 0;
     std::uint32_t gpuFrustumCulled = 0;
     std::uint32_t gpuOccludedInstances = 0;
-    // Unique mesh poses prepared in compute for the main view, shared by their submeshes.
+    // Unique mesh poses computed across all views of the frame, shared by their submeshes.
     std::uint32_t gpuSkinnedPoses = 0;
     std::uint64_t gpuSkinnedVertices = 0;
+    // Per-view poses skipped before skinning, or reused from an earlier view (not submeshes).
+    std::uint32_t gpuSkinningCulledPoses = 0;
+    std::uint32_t gpuSkinningReusedPoses = 0;
+    // Reserved output and bounds, over all views and frame contexts; excludes meshes and bones.
+    std::uint64_t gpuSkinningBytes = 0;
     std::size_t meshCount = 0;
     std::size_t textureCount = 0;
     std::size_t materialCount = 0;

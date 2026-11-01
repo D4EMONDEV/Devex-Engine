@@ -1,9 +1,10 @@
 #pragma once
 
 #include "../Lighting.hpp"
+#include "../SkinBounds.hpp"
+#include "Atmosphere.hpp"
 #include "DescriptorSets.hpp"
 #include "Device.hpp"
-#include "Atmosphere.hpp"
 #include "EnvironmentBaker.hpp"
 #include "GpuData.hpp"
 #include "Instance.hpp"
@@ -237,9 +238,6 @@ private:
         std::optional<Buffer> cullStates;
         std::optional<Buffer> cullReadback;
         std::optional<Buffer> depthPyramid;
-        std::optional<Buffer> skinJobs;
-        std::optional<Buffer> skinnedVertices;
-        std::optional<Buffer> skinnedBounds;
         std::vector<std::uint64_t> cullKeys;
         // Only a hint for which instances seed the next depth prepass. Everything else is retested
         // against the current depth, never rejected from this older visibility alone.
@@ -338,6 +336,7 @@ private:
         // Only for a skinned mesh: the joints and weights of its vertices.
         std::optional<Buffer> skin;
         std::uint32_t jointCount = 0;
+        detail::SkinBounds skinBounds;
         // False until a frame has recorded the copy of its data: it is not drawn before.
         bool ready = false;
     };
@@ -565,8 +564,10 @@ private:
     // Copies the draws of the batches to the GPU and culls the instances in every view.
     void recordCulling(VkCommandBuffer commandBuffer, const FrameContext& frame) const;
     void readCulling(FrameContext& frame);
-    [[nodiscard]] core::Result<void> prepareSkinning(FrameContext& frame);
-    void recordSkinning(VkCommandBuffer commands, const FrameContext& frame) const;
+    [[nodiscard]] core::Result<void> resetSkinning();
+    [[nodiscard]] core::Result<void> prepareSkinning(FrameContext& frame, bool cascades, bool atlas,
+                                                     bool pick);
+    void recordSkinning(VkCommandBuffer commands) const;
     void recordDepthPyramid(VkCommandBuffer commands, const FrameContext& frame,
                             std::uint32_t frameSlot) const;
     void recordOcclusion(VkCommandBuffer commands, const FrameContext& frame,
@@ -792,11 +793,45 @@ private:
     bool m_gpuCulling = false;
     bool m_gpuOcclusion = false;
     bool m_gpuSkinning = false;
+    // A page is written by one view, then read by any later view of the same frame. Its buffers
+    // never grow after submission. The last submission's fence protects the whole frame's arena,
+    // including when acquiring the main swapchain image failed after drawing extra views.
+    struct SkinPage
+    {
+        std::optional<Buffer> jobs;
+        std::optional<Buffer> vertices;
+        std::optional<Buffer> bounds;
+        std::uint64_t lastUsed = 0;
+        std::uint32_t underused = 0;
+    };
+    struct SkinFrame
+    {
+        std::vector<SkinPage> pages;
+        std::size_t usedPages = 0;
+        VkFence completed = VK_NULL_HANDLE;
+    };
+    struct SkinPose
+    {
+        std::array<std::uint32_t, 6> key{};
+        std::uint32_t previousBone = 0;
+        std::uint32_t lastView = ~std::uint32_t{0};
+        bool needed = false;
+        math::Aabb conservativeBounds;
+        GpuSkinJob job;
+    };
+    std::array<SkinFrame, framesInFlight> m_skinFrames;
+    std::vector<SkinPose> m_skinPoses;
     std::vector<GpuSkinJob> m_skinJobs;
     std::vector<std::uint32_t> m_skinInstances;
-    std::vector<std::uint32_t> m_skinSources;
+    std::vector<std::uint8_t> m_skinNeeded;
+    std::vector<std::uint32_t> m_skinPrepared;
     std::vector<std::uint32_t> m_skinLookup;
+    SkinPage* m_skinPage = nullptr;
+    std::uint32_t m_skinView = 0;
+    std::uint32_t m_skinnedPoseCount = 0;
     std::uint64_t m_skinnedVertexCount = 0;
+    std::uint32_t m_skinCulled = 0;
+    std::uint32_t m_skinReused = 0;
     bool m_occlusionActive = false;
     std::uint32_t m_lastGpuTested = 0;
     std::uint32_t m_lastGpuFrustumCulled = 0;

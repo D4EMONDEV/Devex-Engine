@@ -7,6 +7,7 @@
 #include <catch2/generators/catch_generators.hpp>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <iterator>
@@ -170,9 +171,10 @@ SkinSequence skinSequence(bool gpuCulling, bool gpuSkinning, bool temporal)
             sequence.pictures.push_back(std::move(found->rgba));
         }
         REQUIRE(sequence.picks.size() == 2);
-        CHECK(sequence.stats[5].gpuSkinnedPoses == (gpuCulling && gpuSkinning ? 25u : 0u));
+        CHECK(sequence.stats[5].gpuSkinnedPoses == (gpuCulling && gpuSkinning ? 24u : 0u));
         CHECK(sequence.stats[5].gpuSkinnedVertices ==
-              (gpuCulling && gpuSkinning ? 25 * vertexCount : 0));
+              (gpuCulling && gpuSkinning ? 24 * vertexCount : 0));
+        CHECK(sequence.stats[5].gpuSkinningCulledPoses == (gpuCulling && gpuSkinning ? 1u : 0u));
     }
     core::removeLogSink(sink);
     return sequence;
@@ -216,4 +218,207 @@ TEST_CASE("Compute skinning preserves animated images shadows picking and motion
             CHECK(result.stats[5].drawCalls < reference.stats[5].drawCalls);
         }
     }
+}
+
+namespace
+{
+
+SkinSequence sharedSequence(bool compute)
+{
+    using namespace devex;
+    SkinSequence result;
+    const auto sink = core::addLogSink(
+        [&](const core::LogRecord& message)
+        {
+            if (message.level >= core::LogLevel::Error)
+                result.errors.emplace_back(message.message);
+        });
+    {
+        auto platform = platform::Platform::create();
+        REQUIRE(platform);
+        auto window =
+            platform->createWindow({.width = 256, .height = 192, .vulkan = true, .hidden = true});
+        REQUIRE(window);
+        auto renderer = render::Renderer::create(*platform, *window,
+                                                 {.validation = true, .gpuSkinning = compute});
+        REQUIRE(renderer);
+        auto data = asset::makeCube();
+        data.inverseBind.assign(1, math::Mat4{1});
+        data.skin.assign(data.vertices.size(), {.weights = {1, 0, 0, 0}});
+        // The old vertex path keeps every instance, even when bones leave the instance transform.
+        data.bounds = {.min = math::Vec3{-20000}, .max = math::Vec3{20000}};
+        auto mesh = renderer->createMesh(data);
+        auto ground = renderer->createMesh(asset::makePlane(100.0f));
+        REQUIRE(mesh);
+        REQUIRE(ground);
+        auto material = renderer->createMaterial({.baseColorFactor = {0.8f, 0.2f, 0.1f, 1}});
+        std::vector<render::CapturedImage> images;
+        std::vector<std::uint64_t> requests;
+        for (int frame = 0; frame < 26; ++frame)
+        {
+            platform->pollEvents([](const platform::Event&) {});
+            auto& world = renderer->beginFrame();
+            world.viewport = {256, 192};
+            world.camera.projection = render::Projection::Orthographic;
+            world.camera.orthographicSize = 3;
+            world.camera.farPlane = 40;
+            world.camera.autoExposure = false;
+            world.camera.antialiasing = render::Antialiasing::Temporal;
+            const float cameraX = frame >= 10 && frame < 16 ? 50.0f : 0.0f;
+            world.camera.view =
+                math::lookAt(math::Vec3{cameraX, 5, 10}, math::Vec3{cameraX, 0, 0}, {0, 1, 0});
+            world.sun = {.direction = {-1, -1, -0.2f},
+                         .illuminance = math::Vec3{50000},
+                         .shadowDistance = 30};
+            world.environment.intensity = 3000;
+            world.meshes.push_back({.mesh = *ground, .objectId = 1});
+            const std::array positions{math::Vec3{0, 0.5f, 0}, math::Vec3{50, 0.5f, 0},
+                                       math::Vec3{frame < 16 ? 10000.0f : 1.5f, 0.5f, 0},
+                                       math::Vec3{5, 5, 0}};
+            for (std::uint32_t index = 0; index < positions.size(); ++index)
+            {
+                world.boneMatrices.push_back(
+                    math::rotate(math::translate(math::Mat4{1}, positions[index]),
+                                 float(frame) * 0.07f, {0, 1, 0}));
+                world.meshes.push_back({.mesh = *mesh,
+                                        .material = material,
+                                        .firstBone = index,
+                                        .boneCount = 1,
+                                        .objectId = 10 + index});
+            }
+            if (frame >= 3 && frame < 21)
+            {
+                auto camera = world.camera;
+                camera.view = math::lookAt(math::Vec3{50, 5, 10}, math::Vec3{50, 0, 0}, {0, 1, 0});
+                world.views.push_back({.id = 7, .camera = camera, .extent = {128, 96}});
+                world.views.push_back({.id = 8, .camera = world.camera, .extent = {128, 96}});
+                if (frame < 20)
+                    requests.push_back(renderer->requestViewCapture(7, 128, 96));
+            }
+            if (frame == 8)
+                world.pick =
+                    render::PickRequest{.x = 0, .y = 0, .id = 1, .width = 256, .height = 192};
+            if (frame % 2 == 0)
+                std::ranges::reverse(world.meshes);
+            if (frame < 20)
+                requests.push_back(renderer->requestCapture(256, 192));
+            REQUIRE(renderer->endFrame());
+            result.stats.push_back(renderer->stats());
+            std::ranges::move(renderer->takeCaptures(), std::back_inserter(images));
+            for (auto& pick : renderer->takePickResults())
+            {
+                std::ranges::sort(pick.objectIds);
+                result.picks.push_back(std::move(pick.objectIds));
+            }
+        }
+        REQUIRE(images.size() == requests.size());
+        for (const auto request : requests)
+        {
+            const auto found = std::ranges::find(images, request, &render::CapturedImage::request);
+            REQUIRE(found != images.end());
+            result.pictures.push_back(std::move(found->rgba));
+        }
+    }
+    core::removeLogSink(sink);
+    return result;
+}
+
+} // namespace
+
+TEST_CASE("Views share useful poses and keep offscreen shadow casters", "[render][gpu][skinning]")
+{
+    const auto reference = sharedSequence(false);
+    const auto result = sharedSequence(true);
+    for (const auto& error : result.errors)
+        UNSCOPED_INFO(error);
+    CHECK(reference.errors.empty());
+    CHECK(result.errors.empty());
+    CHECK(result.picks == reference.picks);
+    REQUIRE(result.pictures.size() == reference.pictures.size());
+    for (std::size_t frame = 0; frame < result.pictures.size(); ++frame)
+    {
+        CAPTURE(frame);
+        REQUIRE(result.pictures[frame].size() == reference.pictures[frame].size());
+        std::size_t different = 0;
+        for (std::size_t channel = 0; channel < result.pictures[frame].size(); ++channel)
+            different += std::abs(int(result.pictures[frame][channel]) -
+                                  int(reference.pictures[frame][channel])) > 2
+                             ? 1u
+                             : 0u;
+        CHECK(different * 1000 < result.pictures[frame].size());
+    }
+    CHECK(result.stats[5].gpuSkinnedPoses == 3);
+    CHECK(result.stats[5].gpuSkinningReusedPoses >= 2);
+    CHECK(result.stats[5].gpuSkinningCulledPoses >= 3);
+    CHECK(result.stats[8].gpuSkinnedPoses == 4);  // Picking keeps even the distant pose.
+    CHECK(result.stats[18].gpuSkinnedPoses == 4); // It moves into view in this frame.
+}
+
+TEST_CASE("Skinning output shrinks after a crowd and retires idle views", "[render][gpu][skinning]")
+{
+    using namespace devex;
+    std::vector<std::string> errors;
+    const auto sink = core::addLogSink(
+        [&](const core::LogRecord& message)
+        {
+            if (message.level >= core::LogLevel::Error)
+                errors.emplace_back(message.message);
+        });
+    {
+        auto platform = platform::Platform::create();
+        REQUIRE(platform);
+        auto window =
+            platform->createWindow({.width = 128, .height = 96, .vulkan = true, .hidden = true});
+        REQUIRE(window);
+        auto renderer = render::Renderer::create(*platform, *window, {.validation = true});
+        REQUIRE(renderer);
+        auto data = asset::makeCube();
+        data.inverseBind.assign(1, math::Mat4{1});
+        data.skin.assign(data.vertices.size(), {.weights = {1, 0, 0, 0}});
+        auto mesh = renderer->createMesh(data);
+        REQUIRE(mesh);
+        std::uint64_t peak = 0;
+        for (int frame = 0; frame < 210; ++frame)
+        {
+            platform->pollEvents([](const platform::Event&) {});
+            auto& world = renderer->beginFrame();
+            world.camera.view = math::translate(math::Mat4{1}, {0, 0, -5});
+            world.camera.antialiasing = render::Antialiasing::None;
+            const int count = frame < 6 ? 400 : frame < 76 ? 1 : frame < 205 ? 0 : 1;
+            for (int index = 0; index < count; ++index)
+            {
+                world.boneMatrices.push_back(math::Mat4{1});
+                world.meshes.push_back({.mesh = *mesh,
+                                        .firstBone = std::uint32_t(index),
+                                        .boneCount = 1,
+                                        .objectId = std::uint32_t(index + 1)});
+            }
+            // The second view has no new poses, and therefore allocates no output page.
+            if (frame < 6)
+                world.views.push_back({.id = 1, .camera = world.camera, .extent = {96, 64}});
+            REQUIRE(renderer->endFrame());
+            const auto stats = renderer->stats();
+            if (frame == 5)
+            {
+                peak = stats.gpuSkinningBytes;
+                CHECK(stats.gpuSkinnedPoses == 400);
+                CHECK(stats.gpuSkinningReusedPoses == 400);
+                REQUIRE(peak > 512 * 1024);
+            }
+            if (frame == 75)
+                CHECK(stats.gpuSkinningBytes < peak / 2);
+            if (frame == 204)
+                CHECK(stats.gpuSkinningBytes == 0);
+            if (frame == 209)
+            {
+                CHECK(stats.gpuSkinnedPoses == 1);
+                CHECK(stats.gpuSkinningBytes > 0);
+                CHECK(stats.gpuSkinningBytes < peak / 2);
+            }
+        }
+    }
+    for (const auto& error : errors)
+        UNSCOPED_INFO(error);
+    CHECK(errors.empty());
+    core::removeLogSink(sink);
 }

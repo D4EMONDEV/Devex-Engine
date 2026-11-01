@@ -60,7 +60,8 @@ captures de l'éditeur, scènes de base, entrées, scripts C#, animations, colli
   render graph, PBR
   forward+ clustered avec prépasse de profondeur, culling par tronc de vue et par occlusion sur le
   GPU (profondeur de la frame courante, dessin indirect par lots,
-  poses des maillages animés préparées en compute et partagées entre les passes,
+  poses des maillages animés préparées en compute à la demande et partagées entre les passes et
+  les caméras d'une frame, limites par os pour éviter les calculs hors champ et ombres,
   [performances mesurées](docs/performances.md)), ombres en cascades pour
   le soleil et en atlas pour les lumières locales, ciel HDR et IBL, atmosphère physique (ciel bleu,
   couchers rouges, soleil teinté par l'air, brume du lointain) et brouillard de hauteur, sondes de
@@ -105,8 +106,8 @@ captures de l'éditeur, scènes de base, entrées, scripts C#, animations, colli
   `Animator` qui joue un clip avec fondu croisé ou une machine à états `.dvxanimator` (paramètres,
   transitions conditionnelles, arbres de mélange 1D et 2D, états de sprites, couches en
   remplacement ou en ajout sur les os de leur masque), root motion
-  optionnel, skinning des maillages
-  dans le vertex shader ; tweens de tout champ numérique, vectoriel, de couleur ou de rotation
+  optionnel, skinning des maillages sur le GPU (compute partagé ou vertex shader) ; tweens de tout
+  champ numérique, vectoriel, de couleur ou de rotation
   d'un composant (délai, boucles, aller-retour, séquences), par code ou par le composant
   `Tweener`, avec 22 courbes classiques ou une courbe dessinée (`.dvxcurve`) ; sprites animés
   image par image (`SpriteAnimator` et animations nommées `.dvxframes`) ;

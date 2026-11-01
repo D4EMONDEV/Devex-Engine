@@ -213,6 +213,7 @@ devex_add_tests(render
         render/AtmosphereTests.cpp
         render/CubeMapTests.cpp
         render/CullingTests.cpp
+        render/SkinBoundsTests.cpp
         render/Light2DTests.cpp
         render/LightingTests.cpp
         render/PhotometryTests.cpp

@@ -7,6 +7,8 @@
 // DEVEX_PRESENT_MODE=immediate removes the display's pacing; DEVEX_STRESS_OCCLUDERS=1 adds walls.
 // DEVEX_STRESS_SKINNED=1 animates the meshes (2,000 by default); DEVEX_GPU_SKINNING=0 compares
 // their existing individual vertex draws while leaving the static meshes on GPU culling.
+// DEVEX_STRESS_VIEWS=0..4 adds cameras; DEVEX_STRESS_OFFSCREEN=0..100 puts a percentage behind
+// them.
 #include <devex/asset/Primitives.hpp>
 #include <devex/core/Profiler.hpp>
 #include <devex/platform/Platform.hpp>
@@ -57,6 +59,8 @@ TEST_CASE("Renderer stress benchmark", "[.][benchmark]")
     const bool gpuOcclusion = devex::platform::environmentVariable("DEVEX_GPU_OCCLUSION") != "0";
     const bool gpuSkinning = devex::platform::environmentVariable("DEVEX_GPU_SKINNING") != "0";
     const bool walls = devex::platform::environmentVariable("DEVEX_STRESS_OCCLUDERS") == "1";
+    const auto views = std::min(countFrom("DEVEX_STRESS_VIEWS", 0), 4u);
+    const auto offscreen = std::min(countFrom("DEVEX_STRESS_OFFSCREEN", 0), 100u);
     const std::string mode = devex::platform::environmentVariable("DEVEX_PRESENT_MODE");
     const auto presentMode = mode == "immediate" ? devex::render::PresentMode::Immediate
                              : mode == "mailbox" ? devex::render::PresentMode::Mailbox
@@ -106,11 +110,12 @@ TEST_CASE("Renderer stress benchmark", "[.][benchmark]")
         const float x = static_cast<float>(index % side) * 3.0f;
         const float z = -static_cast<float>(index / side) * 3.0f;
         const float scale = 0.6f + 0.1f * static_cast<float>(index % 5);
+        const float hiddenX = index % 100 < offscreen ? -100000.0f : 0.0f;
         instances.push_back(
             {.mesh = meshes[index % meshes.size()],
              .material = materials[(index / 3) % materials.size()],
              .transform = devex::math::scale(
-                 devex::math::translate(devex::math::Mat4{1.0f}, {x, scale * 0.5f, z}),
+                 devex::math::translate(devex::math::Mat4{1.0f}, {x + hiddenX, scale * 0.5f, z}),
                  devex::math::Vec3{scale}),
              .firstBone = animated ? index * 2 : 0,
              .boneCount = animated ? 2u : 0u,
@@ -171,6 +176,8 @@ TEST_CASE("Renderer stress benchmark", "[.][benchmark]")
             }
         }
         world.lights = localLights;
+        for (std::uint32_t index = 0; index < views; ++index)
+            world.views.push_back({.id = index + 1, .camera = world.camera, .extent = {640, 360}});
         REQUIRE(renderer->endFrame());
         devex::core::profiler::endFrame();
     };
@@ -227,6 +234,11 @@ TEST_CASE("Renderer stress benchmark", "[.][benchmark]")
     std::printf("Animated meshes: %s, GPU skinning: %s, %u poses and %llu vertices prepared\n",
                 animated ? "yes" : "no", gpuSkinning ? "on" : "off", stats.gpuSkinnedPoses,
                 static_cast<unsigned long long>(stats.gpuSkinnedVertices));
+    std::printf("Extra views: %u, offscreen: %u%%, device memory: %.2f MiB\n", views, offscreen,
+                static_cast<double>(stats.gpuMemoryUsage) / (1024.0 * 1024.0));
+    std::printf("Skinning: %u view poses skipped, %u reused, %.2f MiB output reserved\n",
+                stats.gpuSkinningCulledPoses, stats.gpuSkinningReusedPoses,
+                static_cast<double>(stats.gpuSkinningBytes) / (1024.0 * 1024.0));
     const auto millisecondsOf = [&](std::string_view name)
     {
         double totalMilliseconds = 0.0;

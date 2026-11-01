@@ -2144,16 +2144,27 @@ namespace devex::ui {
   sandbox ; régénération : `python scripts/generate_sample_assets.py --occlusion-only`. Benchmark :
   `DEVEX_GPU_OCCLUSION=0`, `DEVEX_STRESS_OCCLUDERS=1`, `DEVEX_PRESENT_MODE=immediate` et
   `DEVEX_STRESS_FRAMES` ; attentes de fence, acquisition et présentation imprimées séparément.
-- Skinning compute (jalon 88) : `Skinning.cpp`, `shaders/skinning.slang`, `GpuSkinJob`,
+- Skinning compute (jalons 88–89) : `Skinning.cpp`, `shaders/skinning.slang`, `GpuSkinJob`,
   `GpuSkinnedVertex` (64 octets : positions homogènes actuelle/précédente, normale et tangente),
   `GpuSkinBounds` (boîte mondiale mesurée par réduction). Une pose compatible est partagée entre
-  sous-maillages, puis entre prépasses, ombres, shading et picking ; buffers propres à chaque vue
-  et contexte de frame. Animation des os toujours au CPU. `RendererConfig::gpuSkinning` (actif par
-  défaut, exige `gpuCulling`), `RendererStats::gpuSkinnedPoses/gpuSkinnedVertices` (frame courante)
-  et moniteurs Statistics ; API des jeux 31. Les shaders des projets, surfaces transparentes et
+  sous-maillages, prépasses, ombres, shading et picking, puis entre caméras de la même frame.
+  `render/SkinBounds.hpp` construit à l'arrivée du mesh les boîtes de ses sommets par os et sans
+  poids ; leur union transformée borne la pose avant le compute (poids positifs, matrices affines,
+  marge numérique ; cas incertains conservés). Une pose hors caméra, cascades redessinées et
+  ombres locales redessinées n'est pas préparée ; le picking conserve toutes les poses.
+  Pages d'outputs communes par contexte de frame, jamais réallouées après soumission dans une
+  frame, protégées par sa dernière fence (y compris acquisition principale échouée). Croissance
+  de 12,5 %, arrondie à 64 Kio ; réduction après 30 utilisations sous la moitié de la capacité,
+  libération des pages inutilisées après 120 frames. Animation des os toujours au CPU.
+  `RendererConfig::gpuSkinning` (actif par défaut, exige `gpuCulling`),
+  `RendererStats::gpuSkinnedPoses/gpuSkinnedVertices` (toutes les vues de la frame courante),
+  `gpuSkinningCulledPoses`, `gpuSkinningReusedPoses` (poses par
+  vue, sans recompter les sous-maillages), `gpuSkinningBytes` (outputs réservés, tous contextes)
+  et moniteurs Statistics ; API des jeux 32. Les shaders des projets, surfaces transparentes et
   masque de contour gardent leur skinning par dessin. Démo `assets/scenes/skinning.dvxscene` du
   sandbox (96 robots, `--skinning-only` dans le générateur) ; benchmark `DEVEX_STRESS_SKINNED=1`
-  et `DEVEX_GPU_SKINNING=0` pour comparer, nombre de sommets et temps *Skinning* imprimés.
+  et `DEVEX_GPU_SKINNING=0` pour comparer, nombre de sommets et temps *Skinning* imprimés ;
+  `DEVEX_STRESS_VIEWS=0..4`, `DEVEX_STRESS_OFFSCREEN=0..100` pour vues et poses hors champ.
 - Terrains : `asset::TerrainMaps` (`devex/asset/TerrainMaps.hpp` : `makeFlatTerrain`,
   `terrainHeight`, `terrainNormal`, `raycastTerrain`, `applyTerrainBrush`, `copyTerrainRegion`),
   `encodeTerrain`/`decodeTerrain`, asset `terrain` (`.dvxterrain`) ; composant `scene::Terrain`
@@ -2525,7 +2536,8 @@ que le runtime remplit à chaque frame. Vulkan 1.4, chargé par volk, mémoire p
   des matériaux standard dans la caméra, les cascades, les vues des lumières locales et le
   picking ; chaque passe les dessine par lots (même sous-maillage, même matériau) en dessin
   indirect (`shaders/instanced.slang`). Les maillages animés standard rejoignent ce chemin au
-  jalon 88, leur pose et leurs limites préparées une fois par vue en compute. Shaders des projets
+  jalon 88, leur pose et leurs limites préparées en compute. Au jalon 89, les poses utiles seules
+  sont préparées, puis partagées entre les vues de la frame. Shaders des projets
   et transparence restent cullés et dessinés par le CPU. Mesures : `docs/performances.md`.
 - **Occlusion GPU** (jalon 87) : profondeur courante réduite en pyramide, puis récupération des
   instances redevenues visibles dans la même frame. Ombres et picking indépendants. Trois

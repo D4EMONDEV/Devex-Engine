@@ -374,6 +374,7 @@ core::Result<MeshHandle> VulkanRenderer::createMesh(const asset::MeshData& mesh)
         .indices = std::move(*indexBuffer),
         .skin = std::move(skinBuffer),
         .jointCount = static_cast<std::uint32_t>(mesh.inverseBind.size()),
+        .skinBounds = detail::SkinBounds::of(mesh),
     };
     for (const asset::Submesh& submesh : asset::submeshesOf(mesh))
     {
@@ -893,6 +894,8 @@ core::Result<void> VulkanRenderer::endFrame()
         DEVEX_VK_TRY(vkWaitForFences, device, 1, &frame.completed, VK_TRUE, noTimeout);
     }
     // The copies of the previous use of this context are done.
+    if (core::Result<void> reset = resetSkinning(); !reset)
+        return reset;
     frame.uploads.clear();
     reportPassTimes(frame);
     readPickResult(frame);
@@ -1041,6 +1044,8 @@ core::Result<void> VulkanRenderer::endFrame()
         .pSignalSemaphoreInfos = &signalInfo,
     };
     DEVEX_VK_TRY(vkQueueSubmit2, m_device.queue(), 1, &submitInfo, frame.completed);
+
+    m_skinFrames[frameSlot].completed = frame.completed;
 
     const VkSwapchainKHR swapchain = m_swapchain->handle();
     const VkPresentInfoKHR presentInfo{
@@ -1383,6 +1388,7 @@ core::Result<void> VulkanRenderer::renderView(ExtraView& view, const RenderView&
     DEVEX_VK_TRY(vkResetFences, device, 1, &frame.completed);
     DEVEX_VK_TRY(vkQueueSubmit2, m_device.queue(), 1, &submitInfo, frame.completed);
     view.drawnFrame = m_frameIndex;
+    m_skinFrames[frameSlot].completed = frame.completed;
     return {};
 }
 
@@ -3837,7 +3843,8 @@ bool VulkanRenderer::isGpuDriven(const MeshInstance& instance) const noexcept
 core::Result<void> VulkanRenderer::prepareCulling(FrameContext& frame, bool drawCascades, bool drawAtlas, bool pick)
 {
     readCulling(frame);
-    if (core::Result<void> prepared = prepareSkinning(frame); !prepared)
+    if (core::Result<void> prepared = prepareSkinning(frame, drawCascades, drawAtlas, pick);
+        !prepared)
     {
         return prepared;
     }
@@ -3886,7 +3893,8 @@ core::Result<void> VulkanRenderer::prepareCulling(FrameContext& frame, bool draw
 
         const PreviousInstance* const previous = previousInstance(index);
         const auto skinJob = m_skinInstances[index];
-        const bool skinned = skinJob != noCullView;
+        const bool skinned = skinJob != noCullView && m_skinNeeded[index] != 0;
+        const bool rejected = skinJob != noCullView && !skinned;
         // An empty box stands for a mesh the culling keeps everywhere.
         const math::Aabb bounds = mesh.bounds.isEmpty() ? math::Aabb{.min = math::Vec3{1.0f}, .max = math::Vec3{-1.0f}} : mesh.bounds;
         m_gpuInstances.push_back({
@@ -3897,13 +3905,15 @@ core::Result<void> VulkanRenderer::prepareCulling(FrameContext& frame, bool draw
             .boundsMax = bounds.max,
             .batch = found->second,
             .vertices = mesh.vertices.deviceAddress(),
-            .flags = cullCamera | cullShadows | (skinned ? cullSkinned : 0u) |
-                     (instance.objectId == 0 ||
-                              !std::ranges::binary_search(frame.occludedKeys, instanceKey(instance))
-                          ? cullSeed
-                          : 0u),
-            .skinnedVertices = skinned ? m_skinJobs[skinJob].output : 0,
-            .skinnedBounds = skinned ? m_skinJobs[skinJob].bounds : 0,
+            .flags = rejected ? 0u
+                              : cullCamera | cullShadows | (skinned ? cullSkinned : 0u) |
+                                    (instance.objectId == 0 ||
+                                             !std::ranges::binary_search(frame.occludedKeys,
+                                                                         instanceKey(instance))
+                                         ? cullSeed
+                                         : 0u),
+            .skinnedVertices = skinned ? m_skinPoses[skinJob].job.output : 0,
+            .skinnedBounds = skinned ? m_skinPoses[skinJob].job.bounds : 0,
         });
         frame.cullKeys.push_back(instanceKey(instance));
         m_gpuDriven[index] = 1;
@@ -5318,8 +5328,7 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
     }
     if (!m_skinJobs.empty())
     {
-        graph.addPass("Skinning", {},
-                      [&](VkCommandBuffer commands) { recordSkinning(commands, frame); });
+        graph.addPass("Skinning", {}, [&](VkCommandBuffer commands) { recordSkinning(commands); });
     }
     if (m_culledCount > 0)
     {
@@ -6800,8 +6809,10 @@ RendererStats VulkanRenderer::stats() const noexcept
         .gpuInstancesTested = m_lastGpuTested,
         .gpuFrustumCulled = m_lastGpuFrustumCulled,
         .gpuOccludedInstances = m_lastGpuOccluded,
-        .gpuSkinnedPoses = static_cast<std::uint32_t>(m_skinJobs.size()),
+        .gpuSkinnedPoses = m_skinnedPoseCount,
         .gpuSkinnedVertices = m_skinnedVertexCount,
+        .gpuSkinningCulledPoses = m_skinCulled,
+        .gpuSkinningReusedPoses = m_skinReused,
         .meshCount = m_meshes.size(),
         .textureCount = m_textures.size(),
         // The default material is not counted.
@@ -6829,6 +6840,10 @@ RendererStats VulkanRenderer::stats() const noexcept
             stats.gpuMemoryBudget += budgets[heap].budget;
         }
     }
+    for (const SkinFrame& frame : m_skinFrames)
+        for (const SkinPage& page : frame.pages)
+            stats.gpuSkinningBytes += (page.vertices ? page.vertices->size() : 0) +
+                                      (page.bounds ? page.bounds->size() : 0);
     return stats;
 }
 
