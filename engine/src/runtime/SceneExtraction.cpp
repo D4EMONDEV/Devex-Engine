@@ -678,8 +678,10 @@ void extractScene(scene::Scene& scene, AssetManager& assets, render::RenderWorld
                 .material = overridden ? override : assets.material(material),
                 .transform = transform.matrix,
                 .objectId = entity.index + 1,
-                .instanceParameters = instanceValues(assets, overridden ? renderer.material : material,
-                                                     renderer.instanceShaderParameters, renderer.instanceShaderValues, world),
+                .instanceParameters = instanceValues(
+                    assets, overridden ? renderer.material : material,
+                    renderer.instanceShaderParameters, renderer.instanceShaderValues, world),
+                .lodBias = renderer.lodBias,
             });
         }
     }
@@ -722,8 +724,10 @@ void extractScene(scene::Scene& scene, AssetManager& assets, render::RenderWorld
                 .firstBone = firstBone,
                 .boneCount = static_cast<std::uint32_t>(data->inverseBind.size()),
                 .objectId = entity.index + 1,
-                .instanceParameters = instanceValues(assets, overridden ? renderer.material : material,
-                                                     renderer.instanceShaderParameters, renderer.instanceShaderValues, world),
+                .instanceParameters = instanceValues(
+                    assets, overridden ? renderer.material : material,
+                    renderer.instanceShaderParameters, renderer.instanceShaderValues, world),
+                .lodBias = renderer.lodBias,
             });
         }
     }

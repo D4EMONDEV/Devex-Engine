@@ -1,0 +1,2358 @@
+[scene format=1 kind="3d"]
+
+
+[entity uuid="0a1fcc36-03ef-5c0b-8c22-3a98e18f5607" name="Sun"]
+
+[component type="Transform"]
+position = vec3(0, 0, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="DirectionalLight"]
+illuminance = 60000
+cast_shadows = true
+shadow_distance = 80
+
+
+[entity uuid="8169db9b-5e7c-5834-9482-e68e58c2098e" name="Sky"]
+
+[component type="Transform"]
+position = vec3(0, 0, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="Environment"]
+color = vec3(0.6, 0.7, 0.9)
+intensity = 5000
+
+
+[entity uuid="0ab8ddab-5824-5caf-bd04-b0a1f78f283d" name="Camera"]
+
+[component type="Transform"]
+position = vec3(0, 3, 12)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="Camera"]
+primary = true
+near_plane = 0.1
+far_plane = 200
+auto_exposure = false
+ev100 = 14
+antialiasing = "temporal"
+
+[component type="FlyCamera"]
+speed = 8
+fast_speed = 20
+
+
+[entity uuid="c04b1ca3-41f1-59a5-8561-9422264dd753" name="Ground"]
+
+[component type="Transform"]
+position = vec3(0, 0, -12)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(60, 1, 60)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000003")
+material = asset("78014e97-7de2-4e27-89db-74abd840010d")
+
+
+[entity uuid="952737c9-b6af-56f7-84c0-3895770ce4a3" name="Screen 1"]
+
+[component type="Transform"]
+position = vec3(0, 4, -4)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(16, 8, 0.5)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+
+
+[entity uuid="bb20d686-285c-50bc-825d-aa2e2dda63ef" name="Robot 1"]
+
+[component type="Transform"]
+position = vec3(-13.75, 0, -10)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="Animator"]
+lod_distance = 15
+lod_frame_rate = 15
+lod_far_distance = 35
+lod_far_frame_rate = 5
+controller = asset("00000000-0000-0000-0000-000000000000")
+clip = asset("905859b5-6eb4-4bd7-9280-c73e4dee07f2")
+speed = 0.8
+loop = true
+play_on_start = true
+blend_time = 0.25
+apply_root_motion = false
+
+[entity uuid="6aa407ce-4341-5240-96f4-0e237158eb5c" name="Hips"]
+parent = "bb20d686-285c-50bc-825d-aa2e2dda63ef"
+
+[component type="Transform"]
+position = vec3(0, 0.95, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="8f1038e8-011a-5ed0-ae20-abca9f253c36" name="Spine"]
+parent = "6aa407ce-4341-5240-96f4-0e237158eb5c"
+
+[component type="Transform"]
+position = vec3(0, 0.1, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="5fa940b3-bd82-58e5-bb9d-02958acd5111" name="Head"]
+parent = "8f1038e8-011a-5ed0-ae20-abca9f253c36"
+
+[component type="Transform"]
+position = vec3(0, 0.52, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="fea42e23-5166-5f57-9320-a9579ab1864a" name="ArmLeft"]
+parent = "8f1038e8-011a-5ed0-ae20-abca9f253c36"
+
+[component type="Transform"]
+position = vec3(0.25, 0.4, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="ea4e8ba9-df5f-5db7-88b7-efac5b43908e" name="ForearmLeft"]
+parent = "fea42e23-5166-5f57-9320-a9579ab1864a"
+
+[component type="Transform"]
+position = vec3(0, -0.32, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="ebc4e914-a81b-5692-8d09-677126803f2b" name="ArmRight"]
+parent = "8f1038e8-011a-5ed0-ae20-abca9f253c36"
+
+[component type="Transform"]
+position = vec3(-0.25, 0.4, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="449ddfe7-4392-52fd-a27c-6add1e4a2c9c" name="ForearmRight"]
+parent = "ebc4e914-a81b-5692-8d09-677126803f2b"
+
+[component type="Transform"]
+position = vec3(0, -0.32, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="7f27ef1e-d946-5402-976e-90e3a1fad43e" name="LegLeft"]
+parent = "6aa407ce-4341-5240-96f4-0e237158eb5c"
+
+[component type="Transform"]
+position = vec3(0.1, -0.12, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="6d34dd8a-be8c-5af4-b911-f0780688a421" name="ShinLeft"]
+parent = "7f27ef1e-d946-5402-976e-90e3a1fad43e"
+
+[component type="Transform"]
+position = vec3(0, -0.42, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="a17ad9a4-1b53-5514-a44d-333750117cae" name="LegRight"]
+parent = "6aa407ce-4341-5240-96f4-0e237158eb5c"
+
+[component type="Transform"]
+position = vec3(-0.1, -0.12, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="3f4c3f95-d490-5c0f-a9da-f04468870a17" name="ShinRight"]
+parent = "a17ad9a4-1b53-5514-a44d-333750117cae"
+
+[component type="Transform"]
+position = vec3(0, -0.42, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="48e2d717-abc2-53d6-abf7-cfeea24d7d54" name="Robot body"]
+parent = "bb20d686-285c-50bc-825d-aa2e2dda63ef"
+
+[component type="Transform"]
+position = vec3(0, 0, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="SkinnedMeshRenderer"]
+mesh = asset("6666e9b6-13db-41d2-84f0-503c34c1760a")
+material = asset("00000000-0000-0000-0000-000000000000")
+bones = list(entity("6aa407ce-4341-5240-96f4-0e237158eb5c"), entity("8f1038e8-011a-5ed0-ae20-abca9f253c36"), entity("5fa940b3-bd82-58e5-bb9d-02958acd5111"), entity("fea42e23-5166-5f57-9320-a9579ab1864a"), entity("ea4e8ba9-df5f-5db7-88b7-efac5b43908e"), entity("ebc4e914-a81b-5692-8d09-677126803f2b"), entity("449ddfe7-4392-52fd-a27c-6add1e4a2c9c"), entity("7f27ef1e-d946-5402-976e-90e3a1fad43e"), entity("6d34dd8a-be8c-5af4-b911-f0780688a421"), entity("a17ad9a4-1b53-5514-a44d-333750117cae"), entity("3f4c3f95-d490-5c0f-a9da-f04468870a17"))
+
+[entity uuid="3e3442bd-7a50-5ded-8119-d0e7c674cced" name="Robot 2"]
+
+[component type="Transform"]
+position = vec3(-11.25, 0, -10)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="Animator"]
+lod_distance = 15
+lod_frame_rate = 15
+lod_far_distance = 35
+lod_far_frame_rate = 5
+controller = asset("00000000-0000-0000-0000-000000000000")
+clip = asset("905859b5-6eb4-4bd7-9280-c73e4dee07f2")
+speed = 0.9
+loop = true
+play_on_start = true
+blend_time = 0.25
+apply_root_motion = false
+
+[entity uuid="f6684378-19bf-5bf3-b992-7920ca95923f" name="Hips"]
+parent = "3e3442bd-7a50-5ded-8119-d0e7c674cced"
+
+[component type="Transform"]
+position = vec3(0, 0.95, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="9aee0991-2cd9-56dc-a2db-e38d39316bdf" name="Spine"]
+parent = "f6684378-19bf-5bf3-b992-7920ca95923f"
+
+[component type="Transform"]
+position = vec3(0, 0.1, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="0465cb84-af80-5642-822b-e6b05d0b89e5" name="Head"]
+parent = "9aee0991-2cd9-56dc-a2db-e38d39316bdf"
+
+[component type="Transform"]
+position = vec3(0, 0.52, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="5d55103b-60ec-564d-b411-639bf02bdc1e" name="ArmLeft"]
+parent = "9aee0991-2cd9-56dc-a2db-e38d39316bdf"
+
+[component type="Transform"]
+position = vec3(0.25, 0.4, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="be30a998-ad47-5d62-abdc-f34a08dee88d" name="ForearmLeft"]
+parent = "5d55103b-60ec-564d-b411-639bf02bdc1e"
+
+[component type="Transform"]
+position = vec3(0, -0.32, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="76bd52d9-9246-5648-8815-8dc30cd82764" name="ArmRight"]
+parent = "9aee0991-2cd9-56dc-a2db-e38d39316bdf"
+
+[component type="Transform"]
+position = vec3(-0.25, 0.4, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="6f3f5d6a-2c3e-52ad-a8dc-01b916c62983" name="ForearmRight"]
+parent = "76bd52d9-9246-5648-8815-8dc30cd82764"
+
+[component type="Transform"]
+position = vec3(0, -0.32, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="63e25c85-f7cc-5159-ae56-c9bb094c4e30" name="LegLeft"]
+parent = "f6684378-19bf-5bf3-b992-7920ca95923f"
+
+[component type="Transform"]
+position = vec3(0.1, -0.12, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="18c17de7-a35d-5675-81f9-00ac864fd1d4" name="ShinLeft"]
+parent = "63e25c85-f7cc-5159-ae56-c9bb094c4e30"
+
+[component type="Transform"]
+position = vec3(0, -0.42, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="0c8b1021-da82-5238-8a15-358402b03f7e" name="LegRight"]
+parent = "f6684378-19bf-5bf3-b992-7920ca95923f"
+
+[component type="Transform"]
+position = vec3(-0.1, -0.12, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="c72e0c1f-834a-5303-b96c-d0211ec47ace" name="ShinRight"]
+parent = "0c8b1021-da82-5238-8a15-358402b03f7e"
+
+[component type="Transform"]
+position = vec3(0, -0.42, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="cca37133-f432-575e-81b5-948127b2fec1" name="Robot body"]
+parent = "3e3442bd-7a50-5ded-8119-d0e7c674cced"
+
+[component type="Transform"]
+position = vec3(0, 0, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="SkinnedMeshRenderer"]
+mesh = asset("6666e9b6-13db-41d2-84f0-503c34c1760a")
+material = asset("00000000-0000-0000-0000-000000000000")
+bones = list(entity("f6684378-19bf-5bf3-b992-7920ca95923f"), entity("9aee0991-2cd9-56dc-a2db-e38d39316bdf"), entity("0465cb84-af80-5642-822b-e6b05d0b89e5"), entity("5d55103b-60ec-564d-b411-639bf02bdc1e"), entity("be30a998-ad47-5d62-abdc-f34a08dee88d"), entity("76bd52d9-9246-5648-8815-8dc30cd82764"), entity("6f3f5d6a-2c3e-52ad-a8dc-01b916c62983"), entity("63e25c85-f7cc-5159-ae56-c9bb094c4e30"), entity("18c17de7-a35d-5675-81f9-00ac864fd1d4"), entity("0c8b1021-da82-5238-8a15-358402b03f7e"), entity("c72e0c1f-834a-5303-b96c-d0211ec47ace"))
+
+[entity uuid="7c5f13d3-ba0d-52ce-a656-8809e04f3f81" name="Robot 3"]
+
+[component type="Transform"]
+position = vec3(-8.75, 0, -10)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="Animator"]
+lod_distance = 15
+lod_frame_rate = 15
+lod_far_distance = 35
+lod_far_frame_rate = 5
+controller = asset("00000000-0000-0000-0000-000000000000")
+clip = asset("905859b5-6eb4-4bd7-9280-c73e4dee07f2")
+speed = 1
+loop = true
+play_on_start = true
+blend_time = 0.25
+apply_root_motion = false
+
+[entity uuid="7a090309-0ebf-509a-9351-0b1af74303aa" name="Hips"]
+parent = "7c5f13d3-ba0d-52ce-a656-8809e04f3f81"
+
+[component type="Transform"]
+position = vec3(0, 0.95, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="0096ded6-12cf-5a37-a84d-6f44bfb58b06" name="Spine"]
+parent = "7a090309-0ebf-509a-9351-0b1af74303aa"
+
+[component type="Transform"]
+position = vec3(0, 0.1, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="bcbf4dbc-d7aa-5013-a061-42bebdf2a9ae" name="Head"]
+parent = "0096ded6-12cf-5a37-a84d-6f44bfb58b06"
+
+[component type="Transform"]
+position = vec3(0, 0.52, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="b68f013f-fddc-5454-a3e3-6c5d6d4bbebb" name="ArmLeft"]
+parent = "0096ded6-12cf-5a37-a84d-6f44bfb58b06"
+
+[component type="Transform"]
+position = vec3(0.25, 0.4, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="ad7b7ec5-0e75-5e64-acfc-cf06d6fbc5bd" name="ForearmLeft"]
+parent = "b68f013f-fddc-5454-a3e3-6c5d6d4bbebb"
+
+[component type="Transform"]
+position = vec3(0, -0.32, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="0b3a7fa1-dc52-555e-894d-fb481c37ac39" name="ArmRight"]
+parent = "0096ded6-12cf-5a37-a84d-6f44bfb58b06"
+
+[component type="Transform"]
+position = vec3(-0.25, 0.4, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="fde0f1a1-8043-5edf-a7e9-310606097e8d" name="ForearmRight"]
+parent = "0b3a7fa1-dc52-555e-894d-fb481c37ac39"
+
+[component type="Transform"]
+position = vec3(0, -0.32, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="a382aa58-a37b-565d-8cb7-578d8c46631e" name="LegLeft"]
+parent = "7a090309-0ebf-509a-9351-0b1af74303aa"
+
+[component type="Transform"]
+position = vec3(0.1, -0.12, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="5a662e80-8c50-5dfc-9355-6397cc8acb42" name="ShinLeft"]
+parent = "a382aa58-a37b-565d-8cb7-578d8c46631e"
+
+[component type="Transform"]
+position = vec3(0, -0.42, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="090db76a-937d-5c65-8546-0dc97b691a99" name="LegRight"]
+parent = "7a090309-0ebf-509a-9351-0b1af74303aa"
+
+[component type="Transform"]
+position = vec3(-0.1, -0.12, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="b4780257-9e1a-5cff-b90c-dad1d4f9638b" name="ShinRight"]
+parent = "090db76a-937d-5c65-8546-0dc97b691a99"
+
+[component type="Transform"]
+position = vec3(0, -0.42, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="69767b6c-34e9-5925-afd0-9211ecb9663b" name="Robot body"]
+parent = "7c5f13d3-ba0d-52ce-a656-8809e04f3f81"
+
+[component type="Transform"]
+position = vec3(0, 0, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="SkinnedMeshRenderer"]
+mesh = asset("6666e9b6-13db-41d2-84f0-503c34c1760a")
+material = asset("00000000-0000-0000-0000-000000000000")
+bones = list(entity("7a090309-0ebf-509a-9351-0b1af74303aa"), entity("0096ded6-12cf-5a37-a84d-6f44bfb58b06"), entity("bcbf4dbc-d7aa-5013-a061-42bebdf2a9ae"), entity("b68f013f-fddc-5454-a3e3-6c5d6d4bbebb"), entity("ad7b7ec5-0e75-5e64-acfc-cf06d6fbc5bd"), entity("0b3a7fa1-dc52-555e-894d-fb481c37ac39"), entity("fde0f1a1-8043-5edf-a7e9-310606097e8d"), entity("a382aa58-a37b-565d-8cb7-578d8c46631e"), entity("5a662e80-8c50-5dfc-9355-6397cc8acb42"), entity("090db76a-937d-5c65-8546-0dc97b691a99"), entity("b4780257-9e1a-5cff-b90c-dad1d4f9638b"))
+
+[entity uuid="0c2cd41d-47de-55cb-9c47-7f0ade7d8c23" name="Robot 4"]
+
+[component type="Transform"]
+position = vec3(-6.25, 0, -10)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="Animator"]
+lod_distance = 15
+lod_frame_rate = 15
+lod_far_distance = 35
+lod_far_frame_rate = 5
+controller = asset("00000000-0000-0000-0000-000000000000")
+clip = asset("905859b5-6eb4-4bd7-9280-c73e4dee07f2")
+speed = 1.1
+loop = true
+play_on_start = true
+blend_time = 0.25
+apply_root_motion = false
+
+[entity uuid="52d0229b-0e8d-5286-8eb6-00a6fc70b464" name="Hips"]
+parent = "0c2cd41d-47de-55cb-9c47-7f0ade7d8c23"
+
+[component type="Transform"]
+position = vec3(0, 0.95, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="24d93c2d-ee8b-5d9e-85f8-30760ac36972" name="Spine"]
+parent = "52d0229b-0e8d-5286-8eb6-00a6fc70b464"
+
+[component type="Transform"]
+position = vec3(0, 0.1, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="3348589a-2277-5b25-89b3-46029fec26fd" name="Head"]
+parent = "24d93c2d-ee8b-5d9e-85f8-30760ac36972"
+
+[component type="Transform"]
+position = vec3(0, 0.52, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="4c3d6119-6007-5b5f-b9e8-16a53ccd3466" name="ArmLeft"]
+parent = "24d93c2d-ee8b-5d9e-85f8-30760ac36972"
+
+[component type="Transform"]
+position = vec3(0.25, 0.4, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="4c547a37-eea0-549d-b014-02d0729f5f33" name="ForearmLeft"]
+parent = "4c3d6119-6007-5b5f-b9e8-16a53ccd3466"
+
+[component type="Transform"]
+position = vec3(0, -0.32, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="7a692c4a-ce3e-5534-b4a1-45da1a9f8de2" name="ArmRight"]
+parent = "24d93c2d-ee8b-5d9e-85f8-30760ac36972"
+
+[component type="Transform"]
+position = vec3(-0.25, 0.4, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="861d4d7b-997d-5bbb-a7b1-3fa129385c50" name="ForearmRight"]
+parent = "7a692c4a-ce3e-5534-b4a1-45da1a9f8de2"
+
+[component type="Transform"]
+position = vec3(0, -0.32, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="c7e49da8-1551-5e90-a71e-4495607a249a" name="LegLeft"]
+parent = "52d0229b-0e8d-5286-8eb6-00a6fc70b464"
+
+[component type="Transform"]
+position = vec3(0.1, -0.12, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="3f7e135f-a5ed-5078-be4b-b9bd101bf332" name="ShinLeft"]
+parent = "c7e49da8-1551-5e90-a71e-4495607a249a"
+
+[component type="Transform"]
+position = vec3(0, -0.42, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="7db99a62-928a-5dbf-8c6a-ad143ada3248" name="LegRight"]
+parent = "52d0229b-0e8d-5286-8eb6-00a6fc70b464"
+
+[component type="Transform"]
+position = vec3(-0.1, -0.12, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="4aa36547-f845-5a8f-b09c-3bbda079b05f" name="ShinRight"]
+parent = "7db99a62-928a-5dbf-8c6a-ad143ada3248"
+
+[component type="Transform"]
+position = vec3(0, -0.42, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="e1f3491d-a1a4-562a-8ba1-fb54d0187b05" name="Robot body"]
+parent = "0c2cd41d-47de-55cb-9c47-7f0ade7d8c23"
+
+[component type="Transform"]
+position = vec3(0, 0, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="SkinnedMeshRenderer"]
+mesh = asset("6666e9b6-13db-41d2-84f0-503c34c1760a")
+material = asset("00000000-0000-0000-0000-000000000000")
+bones = list(entity("52d0229b-0e8d-5286-8eb6-00a6fc70b464"), entity("24d93c2d-ee8b-5d9e-85f8-30760ac36972"), entity("3348589a-2277-5b25-89b3-46029fec26fd"), entity("4c3d6119-6007-5b5f-b9e8-16a53ccd3466"), entity("4c547a37-eea0-549d-b014-02d0729f5f33"), entity("7a692c4a-ce3e-5534-b4a1-45da1a9f8de2"), entity("861d4d7b-997d-5bbb-a7b1-3fa129385c50"), entity("c7e49da8-1551-5e90-a71e-4495607a249a"), entity("3f7e135f-a5ed-5078-be4b-b9bd101bf332"), entity("7db99a62-928a-5dbf-8c6a-ad143ada3248"), entity("4aa36547-f845-5a8f-b09c-3bbda079b05f"))
+
+[entity uuid="9371e5e5-0023-5389-ade3-d8be253082fa" name="Robot 5"]
+
+[component type="Transform"]
+position = vec3(-13.75, 0, -13)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="Animator"]
+lod_distance = 15
+lod_frame_rate = 15
+lod_far_distance = 35
+lod_far_frame_rate = 5
+controller = asset("00000000-0000-0000-0000-000000000000")
+clip = asset("905859b5-6eb4-4bd7-9280-c73e4dee07f2")
+speed = 1.2
+loop = true
+play_on_start = true
+blend_time = 0.25
+apply_root_motion = false
+
+[entity uuid="077b1e1e-4415-5765-9ee3-6793882b3620" name="Hips"]
+parent = "9371e5e5-0023-5389-ade3-d8be253082fa"
+
+[component type="Transform"]
+position = vec3(0, 0.95, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="a41db8f0-8415-5cdb-8983-b7cc0b9092cc" name="Spine"]
+parent = "077b1e1e-4415-5765-9ee3-6793882b3620"
+
+[component type="Transform"]
+position = vec3(0, 0.1, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="8c8dc7b5-04fa-5997-a749-fc3f62d3b662" name="Head"]
+parent = "a41db8f0-8415-5cdb-8983-b7cc0b9092cc"
+
+[component type="Transform"]
+position = vec3(0, 0.52, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="18e80d43-16b0-5f90-bf74-21c6eb7f22b2" name="ArmLeft"]
+parent = "a41db8f0-8415-5cdb-8983-b7cc0b9092cc"
+
+[component type="Transform"]
+position = vec3(0.25, 0.4, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="278c6def-21c1-5e7d-9752-19652055940d" name="ForearmLeft"]
+parent = "18e80d43-16b0-5f90-bf74-21c6eb7f22b2"
+
+[component type="Transform"]
+position = vec3(0, -0.32, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="cc15f0a3-ed32-5fd5-bd6b-7f4b9fa838a2" name="ArmRight"]
+parent = "a41db8f0-8415-5cdb-8983-b7cc0b9092cc"
+
+[component type="Transform"]
+position = vec3(-0.25, 0.4, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="f43ca89d-fb85-56e1-835c-7937daa7721d" name="ForearmRight"]
+parent = "cc15f0a3-ed32-5fd5-bd6b-7f4b9fa838a2"
+
+[component type="Transform"]
+position = vec3(0, -0.32, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="558cf717-e214-5b5b-a143-f97a038757f4" name="LegLeft"]
+parent = "077b1e1e-4415-5765-9ee3-6793882b3620"
+
+[component type="Transform"]
+position = vec3(0.1, -0.12, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="79091069-20fc-5958-ac13-60f749fa1fe5" name="ShinLeft"]
+parent = "558cf717-e214-5b5b-a143-f97a038757f4"
+
+[component type="Transform"]
+position = vec3(0, -0.42, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="85b934a7-1869-53eb-9e3e-c65ebd56b04a" name="LegRight"]
+parent = "077b1e1e-4415-5765-9ee3-6793882b3620"
+
+[component type="Transform"]
+position = vec3(-0.1, -0.12, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="a4cf39fc-6e59-5f66-a2c2-9711a527abed" name="ShinRight"]
+parent = "85b934a7-1869-53eb-9e3e-c65ebd56b04a"
+
+[component type="Transform"]
+position = vec3(0, -0.42, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="71b19c4a-f035-5e11-9032-e3123dc0e43b" name="Robot body"]
+parent = "9371e5e5-0023-5389-ade3-d8be253082fa"
+
+[component type="Transform"]
+position = vec3(0, 0, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="SkinnedMeshRenderer"]
+mesh = asset("6666e9b6-13db-41d2-84f0-503c34c1760a")
+material = asset("00000000-0000-0000-0000-000000000000")
+bones = list(entity("077b1e1e-4415-5765-9ee3-6793882b3620"), entity("a41db8f0-8415-5cdb-8983-b7cc0b9092cc"), entity("8c8dc7b5-04fa-5997-a749-fc3f62d3b662"), entity("18e80d43-16b0-5f90-bf74-21c6eb7f22b2"), entity("278c6def-21c1-5e7d-9752-19652055940d"), entity("cc15f0a3-ed32-5fd5-bd6b-7f4b9fa838a2"), entity("f43ca89d-fb85-56e1-835c-7937daa7721d"), entity("558cf717-e214-5b5b-a143-f97a038757f4"), entity("79091069-20fc-5958-ac13-60f749fa1fe5"), entity("85b934a7-1869-53eb-9e3e-c65ebd56b04a"), entity("a4cf39fc-6e59-5f66-a2c2-9711a527abed"))
+
+[entity uuid="df692a02-a6e2-5218-9ac2-9700bbf87571" name="Robot 6"]
+
+[component type="Transform"]
+position = vec3(-11.25, 0, -13)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="Animator"]
+lod_distance = 15
+lod_frame_rate = 15
+lod_far_distance = 35
+lod_far_frame_rate = 5
+controller = asset("00000000-0000-0000-0000-000000000000")
+clip = asset("905859b5-6eb4-4bd7-9280-c73e4dee07f2")
+speed = 0.8
+loop = true
+play_on_start = true
+blend_time = 0.25
+apply_root_motion = false
+
+[entity uuid="2bc568c0-713d-545b-8984-196f08cdc61e" name="Hips"]
+parent = "df692a02-a6e2-5218-9ac2-9700bbf87571"
+
+[component type="Transform"]
+position = vec3(0, 0.95, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="02fc71ac-b45c-56ee-b3f4-b9b70b72d059" name="Spine"]
+parent = "2bc568c0-713d-545b-8984-196f08cdc61e"
+
+[component type="Transform"]
+position = vec3(0, 0.1, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="4153c5e3-e51b-50b4-a4ba-bd7fd744e8d1" name="Head"]
+parent = "02fc71ac-b45c-56ee-b3f4-b9b70b72d059"
+
+[component type="Transform"]
+position = vec3(0, 0.52, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="56ea53e0-2e0e-5688-a819-b35acd6e3a20" name="ArmLeft"]
+parent = "02fc71ac-b45c-56ee-b3f4-b9b70b72d059"
+
+[component type="Transform"]
+position = vec3(0.25, 0.4, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="c1fbaa1f-a7ef-51cc-bd9c-a905da7945bb" name="ForearmLeft"]
+parent = "56ea53e0-2e0e-5688-a819-b35acd6e3a20"
+
+[component type="Transform"]
+position = vec3(0, -0.32, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="ffe07c27-ea79-5e66-8088-832b31867766" name="ArmRight"]
+parent = "02fc71ac-b45c-56ee-b3f4-b9b70b72d059"
+
+[component type="Transform"]
+position = vec3(-0.25, 0.4, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="8e7e973f-3e17-5c9b-ba0d-b59f172109d0" name="ForearmRight"]
+parent = "ffe07c27-ea79-5e66-8088-832b31867766"
+
+[component type="Transform"]
+position = vec3(0, -0.32, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="d205ace4-d2de-50a8-a13a-ccb3681df47b" name="LegLeft"]
+parent = "2bc568c0-713d-545b-8984-196f08cdc61e"
+
+[component type="Transform"]
+position = vec3(0.1, -0.12, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="61416282-e6e6-5219-ac57-03417a19f0b6" name="ShinLeft"]
+parent = "d205ace4-d2de-50a8-a13a-ccb3681df47b"
+
+[component type="Transform"]
+position = vec3(0, -0.42, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="c53f508e-761a-5175-857c-96110b7ca7da" name="LegRight"]
+parent = "2bc568c0-713d-545b-8984-196f08cdc61e"
+
+[component type="Transform"]
+position = vec3(-0.1, -0.12, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="0ab0fc7f-b430-572c-a036-58135d3c8731" name="ShinRight"]
+parent = "c53f508e-761a-5175-857c-96110b7ca7da"
+
+[component type="Transform"]
+position = vec3(0, -0.42, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="d939d820-99be-5349-b96f-314c42337b03" name="Robot body"]
+parent = "df692a02-a6e2-5218-9ac2-9700bbf87571"
+
+[component type="Transform"]
+position = vec3(0, 0, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="SkinnedMeshRenderer"]
+mesh = asset("6666e9b6-13db-41d2-84f0-503c34c1760a")
+material = asset("00000000-0000-0000-0000-000000000000")
+bones = list(entity("2bc568c0-713d-545b-8984-196f08cdc61e"), entity("02fc71ac-b45c-56ee-b3f4-b9b70b72d059"), entity("4153c5e3-e51b-50b4-a4ba-bd7fd744e8d1"), entity("56ea53e0-2e0e-5688-a819-b35acd6e3a20"), entity("c1fbaa1f-a7ef-51cc-bd9c-a905da7945bb"), entity("ffe07c27-ea79-5e66-8088-832b31867766"), entity("8e7e973f-3e17-5c9b-ba0d-b59f172109d0"), entity("d205ace4-d2de-50a8-a13a-ccb3681df47b"), entity("61416282-e6e6-5219-ac57-03417a19f0b6"), entity("c53f508e-761a-5175-857c-96110b7ca7da"), entity("0ab0fc7f-b430-572c-a036-58135d3c8731"))
+
+[entity uuid="fe812005-ce95-5f08-b577-07089f4d777d" name="Robot 7"]
+
+[component type="Transform"]
+position = vec3(-8.75, 0, -13)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="Animator"]
+lod_distance = 15
+lod_frame_rate = 15
+lod_far_distance = 35
+lod_far_frame_rate = 5
+controller = asset("00000000-0000-0000-0000-000000000000")
+clip = asset("905859b5-6eb4-4bd7-9280-c73e4dee07f2")
+speed = 0.9
+loop = true
+play_on_start = true
+blend_time = 0.25
+apply_root_motion = false
+
+[entity uuid="a7070bbb-a171-5da3-b17e-97e789f15b2c" name="Hips"]
+parent = "fe812005-ce95-5f08-b577-07089f4d777d"
+
+[component type="Transform"]
+position = vec3(0, 0.95, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="dec01c2e-60b3-59f8-b679-fef97b1b3903" name="Spine"]
+parent = "a7070bbb-a171-5da3-b17e-97e789f15b2c"
+
+[component type="Transform"]
+position = vec3(0, 0.1, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="3d3896e7-3f33-5736-9d96-de2c4229705f" name="Head"]
+parent = "dec01c2e-60b3-59f8-b679-fef97b1b3903"
+
+[component type="Transform"]
+position = vec3(0, 0.52, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="e77edb6a-2bc9-5b3e-9617-4be372328d98" name="ArmLeft"]
+parent = "dec01c2e-60b3-59f8-b679-fef97b1b3903"
+
+[component type="Transform"]
+position = vec3(0.25, 0.4, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="1b9005c2-36e9-549f-9240-e750191f25e1" name="ForearmLeft"]
+parent = "e77edb6a-2bc9-5b3e-9617-4be372328d98"
+
+[component type="Transform"]
+position = vec3(0, -0.32, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="b2a94162-0e8a-5404-aeaa-94c472ba8008" name="ArmRight"]
+parent = "dec01c2e-60b3-59f8-b679-fef97b1b3903"
+
+[component type="Transform"]
+position = vec3(-0.25, 0.4, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="04325468-4946-5373-9566-9150f6763792" name="ForearmRight"]
+parent = "b2a94162-0e8a-5404-aeaa-94c472ba8008"
+
+[component type="Transform"]
+position = vec3(0, -0.32, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="158f9c4c-36ae-574c-b8cc-94b0f3b7b4af" name="LegLeft"]
+parent = "a7070bbb-a171-5da3-b17e-97e789f15b2c"
+
+[component type="Transform"]
+position = vec3(0.1, -0.12, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="59a97043-9b69-55b2-ad9b-540c7f7416d7" name="ShinLeft"]
+parent = "158f9c4c-36ae-574c-b8cc-94b0f3b7b4af"
+
+[component type="Transform"]
+position = vec3(0, -0.42, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="adb60391-51b7-5e62-9c1c-3bb05c3107c6" name="LegRight"]
+parent = "a7070bbb-a171-5da3-b17e-97e789f15b2c"
+
+[component type="Transform"]
+position = vec3(-0.1, -0.12, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="99e1fa9a-a22a-5378-99cc-7df495c88d2b" name="ShinRight"]
+parent = "adb60391-51b7-5e62-9c1c-3bb05c3107c6"
+
+[component type="Transform"]
+position = vec3(0, -0.42, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="8bcd2a30-4af3-5cee-9224-6ba49eb74c4f" name="Robot body"]
+parent = "fe812005-ce95-5f08-b577-07089f4d777d"
+
+[component type="Transform"]
+position = vec3(0, 0, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="SkinnedMeshRenderer"]
+mesh = asset("6666e9b6-13db-41d2-84f0-503c34c1760a")
+material = asset("00000000-0000-0000-0000-000000000000")
+bones = list(entity("a7070bbb-a171-5da3-b17e-97e789f15b2c"), entity("dec01c2e-60b3-59f8-b679-fef97b1b3903"), entity("3d3896e7-3f33-5736-9d96-de2c4229705f"), entity("e77edb6a-2bc9-5b3e-9617-4be372328d98"), entity("1b9005c2-36e9-549f-9240-e750191f25e1"), entity("b2a94162-0e8a-5404-aeaa-94c472ba8008"), entity("04325468-4946-5373-9566-9150f6763792"), entity("158f9c4c-36ae-574c-b8cc-94b0f3b7b4af"), entity("59a97043-9b69-55b2-ad9b-540c7f7416d7"), entity("adb60391-51b7-5e62-9c1c-3bb05c3107c6"), entity("99e1fa9a-a22a-5378-99cc-7df495c88d2b"))
+
+[entity uuid="1ea45f5e-68c6-56c8-aaf2-94333c3f75b7" name="Robot 8"]
+
+[component type="Transform"]
+position = vec3(-6.25, 0, -13)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="Animator"]
+lod_distance = 15
+lod_frame_rate = 15
+lod_far_distance = 35
+lod_far_frame_rate = 5
+controller = asset("00000000-0000-0000-0000-000000000000")
+clip = asset("905859b5-6eb4-4bd7-9280-c73e4dee07f2")
+speed = 1
+loop = true
+play_on_start = true
+blend_time = 0.25
+apply_root_motion = false
+
+[entity uuid="c449ae32-8443-5e10-8030-9f5340e4eb4e" name="Hips"]
+parent = "1ea45f5e-68c6-56c8-aaf2-94333c3f75b7"
+
+[component type="Transform"]
+position = vec3(0, 0.95, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="d46d9f77-4351-5c61-8292-3a3bd07a3e04" name="Spine"]
+parent = "c449ae32-8443-5e10-8030-9f5340e4eb4e"
+
+[component type="Transform"]
+position = vec3(0, 0.1, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="80da6018-721c-57b9-8794-da3293cffe15" name="Head"]
+parent = "d46d9f77-4351-5c61-8292-3a3bd07a3e04"
+
+[component type="Transform"]
+position = vec3(0, 0.52, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="b52d32cf-6a7c-5f1d-b912-0e02c551f58f" name="ArmLeft"]
+parent = "d46d9f77-4351-5c61-8292-3a3bd07a3e04"
+
+[component type="Transform"]
+position = vec3(0.25, 0.4, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="581d72bc-587d-5097-beab-db77bbdb122e" name="ForearmLeft"]
+parent = "b52d32cf-6a7c-5f1d-b912-0e02c551f58f"
+
+[component type="Transform"]
+position = vec3(0, -0.32, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="3c021dce-9331-590d-ab68-c9b5b8f7b255" name="ArmRight"]
+parent = "d46d9f77-4351-5c61-8292-3a3bd07a3e04"
+
+[component type="Transform"]
+position = vec3(-0.25, 0.4, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="c1c8a711-2ab0-550e-b041-4a90a0cc7948" name="ForearmRight"]
+parent = "3c021dce-9331-590d-ab68-c9b5b8f7b255"
+
+[component type="Transform"]
+position = vec3(0, -0.32, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="c6c8a750-5116-5c14-a209-d98d15fd709d" name="LegLeft"]
+parent = "c449ae32-8443-5e10-8030-9f5340e4eb4e"
+
+[component type="Transform"]
+position = vec3(0.1, -0.12, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="42c980c7-f2f3-5f15-aef0-b3844044cd5a" name="ShinLeft"]
+parent = "c6c8a750-5116-5c14-a209-d98d15fd709d"
+
+[component type="Transform"]
+position = vec3(0, -0.42, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="94809d5d-1a16-5215-9b77-93f0772f5811" name="LegRight"]
+parent = "c449ae32-8443-5e10-8030-9f5340e4eb4e"
+
+[component type="Transform"]
+position = vec3(-0.1, -0.12, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="06373a7d-8e28-552f-8e56-6a24e8065231" name="ShinRight"]
+parent = "94809d5d-1a16-5215-9b77-93f0772f5811"
+
+[component type="Transform"]
+position = vec3(0, -0.42, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="5a62176a-51fa-5a52-847f-a8fef86bae54" name="Robot body"]
+parent = "1ea45f5e-68c6-56c8-aaf2-94333c3f75b7"
+
+[component type="Transform"]
+position = vec3(0, 0, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="SkinnedMeshRenderer"]
+mesh = asset("6666e9b6-13db-41d2-84f0-503c34c1760a")
+material = asset("00000000-0000-0000-0000-000000000000")
+bones = list(entity("c449ae32-8443-5e10-8030-9f5340e4eb4e"), entity("d46d9f77-4351-5c61-8292-3a3bd07a3e04"), entity("80da6018-721c-57b9-8794-da3293cffe15"), entity("b52d32cf-6a7c-5f1d-b912-0e02c551f58f"), entity("581d72bc-587d-5097-beab-db77bbdb122e"), entity("3c021dce-9331-590d-ab68-c9b5b8f7b255"), entity("c1c8a711-2ab0-550e-b041-4a90a0cc7948"), entity("c6c8a750-5116-5c14-a209-d98d15fd709d"), entity("42c980c7-f2f3-5f15-aef0-b3844044cd5a"), entity("94809d5d-1a16-5215-9b77-93f0772f5811"), entity("06373a7d-8e28-552f-8e56-6a24e8065231"))
+
+[entity uuid="a7504e58-210a-5af0-b45d-85bc640a36fd" name="Robot 9"]
+
+[component type="Transform"]
+position = vec3(-13.75, 0, -16)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="Animator"]
+lod_distance = 15
+lod_frame_rate = 15
+lod_far_distance = 35
+lod_far_frame_rate = 5
+controller = asset("00000000-0000-0000-0000-000000000000")
+clip = asset("905859b5-6eb4-4bd7-9280-c73e4dee07f2")
+speed = 1.1
+loop = true
+play_on_start = true
+blend_time = 0.25
+apply_root_motion = false
+
+[entity uuid="bc52f37e-c84d-5913-a034-a0ea92889bde" name="Hips"]
+parent = "a7504e58-210a-5af0-b45d-85bc640a36fd"
+
+[component type="Transform"]
+position = vec3(0, 0.95, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="b36841df-7732-5323-b3bf-bfd7403f8baf" name="Spine"]
+parent = "bc52f37e-c84d-5913-a034-a0ea92889bde"
+
+[component type="Transform"]
+position = vec3(0, 0.1, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="722c724e-a9c8-5eba-88c0-f81497e312ba" name="Head"]
+parent = "b36841df-7732-5323-b3bf-bfd7403f8baf"
+
+[component type="Transform"]
+position = vec3(0, 0.52, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="c0540e93-a39a-5dec-a0d2-3d36b1fbd1ae" name="ArmLeft"]
+parent = "b36841df-7732-5323-b3bf-bfd7403f8baf"
+
+[component type="Transform"]
+position = vec3(0.25, 0.4, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="327889a0-ee45-5fdb-8a0c-01f629950c27" name="ForearmLeft"]
+parent = "c0540e93-a39a-5dec-a0d2-3d36b1fbd1ae"
+
+[component type="Transform"]
+position = vec3(0, -0.32, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="afdc5941-5ba6-5b30-b51e-e665136da350" name="ArmRight"]
+parent = "b36841df-7732-5323-b3bf-bfd7403f8baf"
+
+[component type="Transform"]
+position = vec3(-0.25, 0.4, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="18e63eaa-135a-59dc-91fd-4432500033c8" name="ForearmRight"]
+parent = "afdc5941-5ba6-5b30-b51e-e665136da350"
+
+[component type="Transform"]
+position = vec3(0, -0.32, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="df70177a-4591-59e3-8d96-b8c8229a69bd" name="LegLeft"]
+parent = "bc52f37e-c84d-5913-a034-a0ea92889bde"
+
+[component type="Transform"]
+position = vec3(0.1, -0.12, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="7a44a72f-ab19-54cd-be6b-731f73435651" name="ShinLeft"]
+parent = "df70177a-4591-59e3-8d96-b8c8229a69bd"
+
+[component type="Transform"]
+position = vec3(0, -0.42, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="364b002a-02b3-5929-b6b1-c8e46b16e19d" name="LegRight"]
+parent = "bc52f37e-c84d-5913-a034-a0ea92889bde"
+
+[component type="Transform"]
+position = vec3(-0.1, -0.12, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="5d6a1066-a2e2-5837-b443-c1b6ad833aab" name="ShinRight"]
+parent = "364b002a-02b3-5929-b6b1-c8e46b16e19d"
+
+[component type="Transform"]
+position = vec3(0, -0.42, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="39ce5de2-8f38-5457-bcbb-9da14eb11031" name="Robot body"]
+parent = "a7504e58-210a-5af0-b45d-85bc640a36fd"
+
+[component type="Transform"]
+position = vec3(0, 0, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="SkinnedMeshRenderer"]
+mesh = asset("6666e9b6-13db-41d2-84f0-503c34c1760a")
+material = asset("00000000-0000-0000-0000-000000000000")
+bones = list(entity("bc52f37e-c84d-5913-a034-a0ea92889bde"), entity("b36841df-7732-5323-b3bf-bfd7403f8baf"), entity("722c724e-a9c8-5eba-88c0-f81497e312ba"), entity("c0540e93-a39a-5dec-a0d2-3d36b1fbd1ae"), entity("327889a0-ee45-5fdb-8a0c-01f629950c27"), entity("afdc5941-5ba6-5b30-b51e-e665136da350"), entity("18e63eaa-135a-59dc-91fd-4432500033c8"), entity("df70177a-4591-59e3-8d96-b8c8229a69bd"), entity("7a44a72f-ab19-54cd-be6b-731f73435651"), entity("364b002a-02b3-5929-b6b1-c8e46b16e19d"), entity("5d6a1066-a2e2-5837-b443-c1b6ad833aab"))
+
+[entity uuid="b7e2af8e-e2cd-5232-b072-f7433341d4f3" name="Robot 10"]
+
+[component type="Transform"]
+position = vec3(-11.25, 0, -16)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="Animator"]
+lod_distance = 15
+lod_frame_rate = 15
+lod_far_distance = 35
+lod_far_frame_rate = 5
+controller = asset("00000000-0000-0000-0000-000000000000")
+clip = asset("905859b5-6eb4-4bd7-9280-c73e4dee07f2")
+speed = 1.2
+loop = true
+play_on_start = true
+blend_time = 0.25
+apply_root_motion = false
+
+[entity uuid="1798056b-cdce-5e5c-8337-bb83e331ffcb" name="Hips"]
+parent = "b7e2af8e-e2cd-5232-b072-f7433341d4f3"
+
+[component type="Transform"]
+position = vec3(0, 0.95, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="391806ef-06b1-5be7-b4c6-112622f51913" name="Spine"]
+parent = "1798056b-cdce-5e5c-8337-bb83e331ffcb"
+
+[component type="Transform"]
+position = vec3(0, 0.1, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="345db9ac-f903-5b79-bca5-99bd33e3547f" name="Head"]
+parent = "391806ef-06b1-5be7-b4c6-112622f51913"
+
+[component type="Transform"]
+position = vec3(0, 0.52, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="ff649f17-9bd2-5d44-8097-8a1ae77ef4e0" name="ArmLeft"]
+parent = "391806ef-06b1-5be7-b4c6-112622f51913"
+
+[component type="Transform"]
+position = vec3(0.25, 0.4, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="a5ccc1fc-4d26-53c3-9f85-9301034d5753" name="ForearmLeft"]
+parent = "ff649f17-9bd2-5d44-8097-8a1ae77ef4e0"
+
+[component type="Transform"]
+position = vec3(0, -0.32, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="f07dc0bf-0948-5584-8980-100423a78920" name="ArmRight"]
+parent = "391806ef-06b1-5be7-b4c6-112622f51913"
+
+[component type="Transform"]
+position = vec3(-0.25, 0.4, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="83892a1a-177c-5285-ab5d-5762c98ef8ec" name="ForearmRight"]
+parent = "f07dc0bf-0948-5584-8980-100423a78920"
+
+[component type="Transform"]
+position = vec3(0, -0.32, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="4bf24c10-52a7-5eac-b4f1-76fc372f5340" name="LegLeft"]
+parent = "1798056b-cdce-5e5c-8337-bb83e331ffcb"
+
+[component type="Transform"]
+position = vec3(0.1, -0.12, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="42f6a1e2-139f-5a3c-9828-b7bb4bb24604" name="ShinLeft"]
+parent = "4bf24c10-52a7-5eac-b4f1-76fc372f5340"
+
+[component type="Transform"]
+position = vec3(0, -0.42, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="dc37ebc0-645c-5bbe-baf3-34ae9808a317" name="LegRight"]
+parent = "1798056b-cdce-5e5c-8337-bb83e331ffcb"
+
+[component type="Transform"]
+position = vec3(-0.1, -0.12, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="c620e60f-8f79-5a3f-a6a2-d4be4866cad1" name="ShinRight"]
+parent = "dc37ebc0-645c-5bbe-baf3-34ae9808a317"
+
+[component type="Transform"]
+position = vec3(0, -0.42, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="1e58f6c1-ed64-5ecb-9379-1ba5c98a5e7e" name="Robot body"]
+parent = "b7e2af8e-e2cd-5232-b072-f7433341d4f3"
+
+[component type="Transform"]
+position = vec3(0, 0, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="SkinnedMeshRenderer"]
+mesh = asset("6666e9b6-13db-41d2-84f0-503c34c1760a")
+material = asset("00000000-0000-0000-0000-000000000000")
+bones = list(entity("1798056b-cdce-5e5c-8337-bb83e331ffcb"), entity("391806ef-06b1-5be7-b4c6-112622f51913"), entity("345db9ac-f903-5b79-bca5-99bd33e3547f"), entity("ff649f17-9bd2-5d44-8097-8a1ae77ef4e0"), entity("a5ccc1fc-4d26-53c3-9f85-9301034d5753"), entity("f07dc0bf-0948-5584-8980-100423a78920"), entity("83892a1a-177c-5285-ab5d-5762c98ef8ec"), entity("4bf24c10-52a7-5eac-b4f1-76fc372f5340"), entity("42f6a1e2-139f-5a3c-9828-b7bb4bb24604"), entity("dc37ebc0-645c-5bbe-baf3-34ae9808a317"), entity("c620e60f-8f79-5a3f-a6a2-d4be4866cad1"))
+
+[entity uuid="c218381c-d558-557c-9544-1b78a6021644" name="Robot 11"]
+
+[component type="Transform"]
+position = vec3(-8.75, 0, -16)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="Animator"]
+lod_distance = 15
+lod_frame_rate = 15
+lod_far_distance = 35
+lod_far_frame_rate = 5
+controller = asset("00000000-0000-0000-0000-000000000000")
+clip = asset("905859b5-6eb4-4bd7-9280-c73e4dee07f2")
+speed = 0.8
+loop = true
+play_on_start = true
+blend_time = 0.25
+apply_root_motion = false
+
+[entity uuid="ae6b8250-d70e-5ca5-b66b-e1a41969ddf5" name="Hips"]
+parent = "c218381c-d558-557c-9544-1b78a6021644"
+
+[component type="Transform"]
+position = vec3(0, 0.95, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="3a3ed9bf-bc4c-5943-8edf-1bf161bb8124" name="Spine"]
+parent = "ae6b8250-d70e-5ca5-b66b-e1a41969ddf5"
+
+[component type="Transform"]
+position = vec3(0, 0.1, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="1f1d5c84-31bc-5d44-81b2-35aba1e1da4d" name="Head"]
+parent = "3a3ed9bf-bc4c-5943-8edf-1bf161bb8124"
+
+[component type="Transform"]
+position = vec3(0, 0.52, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="85d199e8-30d4-5e77-a5a4-46477b68e185" name="ArmLeft"]
+parent = "3a3ed9bf-bc4c-5943-8edf-1bf161bb8124"
+
+[component type="Transform"]
+position = vec3(0.25, 0.4, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="412a1f4e-be5d-5eeb-8272-93777a872218" name="ForearmLeft"]
+parent = "85d199e8-30d4-5e77-a5a4-46477b68e185"
+
+[component type="Transform"]
+position = vec3(0, -0.32, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="25eab434-453c-513b-87d6-3fc6d6a2c5e1" name="ArmRight"]
+parent = "3a3ed9bf-bc4c-5943-8edf-1bf161bb8124"
+
+[component type="Transform"]
+position = vec3(-0.25, 0.4, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="97044d56-1477-5ee5-ba6f-68193ea10c1e" name="ForearmRight"]
+parent = "25eab434-453c-513b-87d6-3fc6d6a2c5e1"
+
+[component type="Transform"]
+position = vec3(0, -0.32, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="64f2abe4-5ba2-5963-b314-09483f080470" name="LegLeft"]
+parent = "ae6b8250-d70e-5ca5-b66b-e1a41969ddf5"
+
+[component type="Transform"]
+position = vec3(0.1, -0.12, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="c5221e2c-e600-5c50-afd4-68119d05f38f" name="ShinLeft"]
+parent = "64f2abe4-5ba2-5963-b314-09483f080470"
+
+[component type="Transform"]
+position = vec3(0, -0.42, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="7f68b581-e974-56c6-935c-041196dde449" name="LegRight"]
+parent = "ae6b8250-d70e-5ca5-b66b-e1a41969ddf5"
+
+[component type="Transform"]
+position = vec3(-0.1, -0.12, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="eda21fbe-ea9d-5381-987e-33c483a5fd45" name="ShinRight"]
+parent = "7f68b581-e974-56c6-935c-041196dde449"
+
+[component type="Transform"]
+position = vec3(0, -0.42, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="d2041749-edf9-5099-9238-1fc87f0af88b" name="Robot body"]
+parent = "c218381c-d558-557c-9544-1b78a6021644"
+
+[component type="Transform"]
+position = vec3(0, 0, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="SkinnedMeshRenderer"]
+mesh = asset("6666e9b6-13db-41d2-84f0-503c34c1760a")
+material = asset("00000000-0000-0000-0000-000000000000")
+bones = list(entity("ae6b8250-d70e-5ca5-b66b-e1a41969ddf5"), entity("3a3ed9bf-bc4c-5943-8edf-1bf161bb8124"), entity("1f1d5c84-31bc-5d44-81b2-35aba1e1da4d"), entity("85d199e8-30d4-5e77-a5a4-46477b68e185"), entity("412a1f4e-be5d-5eeb-8272-93777a872218"), entity("25eab434-453c-513b-87d6-3fc6d6a2c5e1"), entity("97044d56-1477-5ee5-ba6f-68193ea10c1e"), entity("64f2abe4-5ba2-5963-b314-09483f080470"), entity("c5221e2c-e600-5c50-afd4-68119d05f38f"), entity("7f68b581-e974-56c6-935c-041196dde449"), entity("eda21fbe-ea9d-5381-987e-33c483a5fd45"))
+
+[entity uuid="0d2430c5-0997-5883-9803-cfc5c5e15066" name="Robot 12"]
+
+[component type="Transform"]
+position = vec3(-6.25, 0, -16)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="Animator"]
+lod_distance = 15
+lod_frame_rate = 15
+lod_far_distance = 35
+lod_far_frame_rate = 5
+controller = asset("00000000-0000-0000-0000-000000000000")
+clip = asset("905859b5-6eb4-4bd7-9280-c73e4dee07f2")
+speed = 0.9
+loop = true
+play_on_start = true
+blend_time = 0.25
+apply_root_motion = false
+
+[entity uuid="bd588349-b34a-5c3d-8b9a-e6253815052f" name="Hips"]
+parent = "0d2430c5-0997-5883-9803-cfc5c5e15066"
+
+[component type="Transform"]
+position = vec3(0, 0.95, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="beb11511-060e-5668-8bb2-b5596c58a1e9" name="Spine"]
+parent = "bd588349-b34a-5c3d-8b9a-e6253815052f"
+
+[component type="Transform"]
+position = vec3(0, 0.1, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="a89a338b-0dbf-59c7-af6c-7c99fbb4a5b7" name="Head"]
+parent = "beb11511-060e-5668-8bb2-b5596c58a1e9"
+
+[component type="Transform"]
+position = vec3(0, 0.52, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="0a217c41-cd50-5113-89b5-6c73d087463d" name="ArmLeft"]
+parent = "beb11511-060e-5668-8bb2-b5596c58a1e9"
+
+[component type="Transform"]
+position = vec3(0.25, 0.4, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="08ccd645-fb77-578d-9e0f-594007fdf5fb" name="ForearmLeft"]
+parent = "0a217c41-cd50-5113-89b5-6c73d087463d"
+
+[component type="Transform"]
+position = vec3(0, -0.32, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="045c07ed-bca8-5957-8a01-7853414ef822" name="ArmRight"]
+parent = "beb11511-060e-5668-8bb2-b5596c58a1e9"
+
+[component type="Transform"]
+position = vec3(-0.25, 0.4, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="7bdfae5d-287e-55d0-9837-680547e70c76" name="ForearmRight"]
+parent = "045c07ed-bca8-5957-8a01-7853414ef822"
+
+[component type="Transform"]
+position = vec3(0, -0.32, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="b569d653-3c98-5203-b70c-0e21d93a3765" name="LegLeft"]
+parent = "bd588349-b34a-5c3d-8b9a-e6253815052f"
+
+[component type="Transform"]
+position = vec3(0.1, -0.12, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="4c47fc98-c53f-5970-ac1f-388f26e0c419" name="ShinLeft"]
+parent = "b569d653-3c98-5203-b70c-0e21d93a3765"
+
+[component type="Transform"]
+position = vec3(0, -0.42, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="873e4392-5838-5767-9786-3994553f5792" name="LegRight"]
+parent = "bd588349-b34a-5c3d-8b9a-e6253815052f"
+
+[component type="Transform"]
+position = vec3(-0.1, -0.12, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="5ff20c82-964f-57aa-89e5-2bde783e9d45" name="ShinRight"]
+parent = "873e4392-5838-5767-9786-3994553f5792"
+
+[component type="Transform"]
+position = vec3(0, -0.42, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="a2122553-9353-54b6-b133-68d7b0ce2f93" name="Robot body"]
+parent = "0d2430c5-0997-5883-9803-cfc5c5e15066"
+
+[component type="Transform"]
+position = vec3(0, 0, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="SkinnedMeshRenderer"]
+mesh = asset("6666e9b6-13db-41d2-84f0-503c34c1760a")
+material = asset("00000000-0000-0000-0000-000000000000")
+bones = list(entity("bd588349-b34a-5c3d-8b9a-e6253815052f"), entity("beb11511-060e-5668-8bb2-b5596c58a1e9"), entity("a89a338b-0dbf-59c7-af6c-7c99fbb4a5b7"), entity("0a217c41-cd50-5113-89b5-6c73d087463d"), entity("08ccd645-fb77-578d-9e0f-594007fdf5fb"), entity("045c07ed-bca8-5957-8a01-7853414ef822"), entity("7bdfae5d-287e-55d0-9837-680547e70c76"), entity("b569d653-3c98-5203-b70c-0e21d93a3765"), entity("4c47fc98-c53f-5970-ac1f-388f26e0c419"), entity("873e4392-5838-5767-9786-3994553f5792"), entity("5ff20c82-964f-57aa-89e5-2bde783e9d45"))
+
+[entity uuid="a3e75f72-90e2-51d3-a402-17e2d795550c" name="Robot 13"]
+
+[component type="Transform"]
+position = vec3(-13.75, 0, -19)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="Animator"]
+lod_distance = 15
+lod_frame_rate = 15
+lod_far_distance = 35
+lod_far_frame_rate = 5
+controller = asset("00000000-0000-0000-0000-000000000000")
+clip = asset("905859b5-6eb4-4bd7-9280-c73e4dee07f2")
+speed = 1
+loop = true
+play_on_start = true
+blend_time = 0.25
+apply_root_motion = false
+
+[entity uuid="774fa900-6bd2-5dd7-a376-485de03b4ecf" name="Hips"]
+parent = "a3e75f72-90e2-51d3-a402-17e2d795550c"
+
+[component type="Transform"]
+position = vec3(0, 0.95, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="2857fdd4-333e-5ced-aeac-0300daa30aa5" name="Spine"]
+parent = "774fa900-6bd2-5dd7-a376-485de03b4ecf"
+
+[component type="Transform"]
+position = vec3(0, 0.1, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="3d9cdbc8-9528-53d2-a9f6-15aa530fb3ac" name="Head"]
+parent = "2857fdd4-333e-5ced-aeac-0300daa30aa5"
+
+[component type="Transform"]
+position = vec3(0, 0.52, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="dc74c434-e481-5c4c-a84e-fc299d165346" name="ArmLeft"]
+parent = "2857fdd4-333e-5ced-aeac-0300daa30aa5"
+
+[component type="Transform"]
+position = vec3(0.25, 0.4, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="c652ca1b-dd91-58c5-a640-ff8af74d3df3" name="ForearmLeft"]
+parent = "dc74c434-e481-5c4c-a84e-fc299d165346"
+
+[component type="Transform"]
+position = vec3(0, -0.32, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="9821d15d-b147-5ed8-ba27-e9608364b5de" name="ArmRight"]
+parent = "2857fdd4-333e-5ced-aeac-0300daa30aa5"
+
+[component type="Transform"]
+position = vec3(-0.25, 0.4, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="cb8ebcd7-27ca-59f9-9e42-8ad381865d6d" name="ForearmRight"]
+parent = "9821d15d-b147-5ed8-ba27-e9608364b5de"
+
+[component type="Transform"]
+position = vec3(0, -0.32, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="6ae056ba-fc96-50a8-9dcb-1682230c188f" name="LegLeft"]
+parent = "774fa900-6bd2-5dd7-a376-485de03b4ecf"
+
+[component type="Transform"]
+position = vec3(0.1, -0.12, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="0b9d1d0c-5cae-529c-9e5c-69cc04fc2b49" name="ShinLeft"]
+parent = "6ae056ba-fc96-50a8-9dcb-1682230c188f"
+
+[component type="Transform"]
+position = vec3(0, -0.42, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="51bf3a4c-5381-5731-b2e0-8a2b502a0681" name="LegRight"]
+parent = "774fa900-6bd2-5dd7-a376-485de03b4ecf"
+
+[component type="Transform"]
+position = vec3(-0.1, -0.12, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="b7ef1379-ba6c-5b4e-a270-b7cf4c4dead9" name="ShinRight"]
+parent = "51bf3a4c-5381-5731-b2e0-8a2b502a0681"
+
+[component type="Transform"]
+position = vec3(0, -0.42, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="a556479d-5339-5a12-9604-4ea5ab9857a0" name="Robot body"]
+parent = "a3e75f72-90e2-51d3-a402-17e2d795550c"
+
+[component type="Transform"]
+position = vec3(0, 0, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="SkinnedMeshRenderer"]
+mesh = asset("6666e9b6-13db-41d2-84f0-503c34c1760a")
+material = asset("00000000-0000-0000-0000-000000000000")
+bones = list(entity("774fa900-6bd2-5dd7-a376-485de03b4ecf"), entity("2857fdd4-333e-5ced-aeac-0300daa30aa5"), entity("3d9cdbc8-9528-53d2-a9f6-15aa530fb3ac"), entity("dc74c434-e481-5c4c-a84e-fc299d165346"), entity("c652ca1b-dd91-58c5-a640-ff8af74d3df3"), entity("9821d15d-b147-5ed8-ba27-e9608364b5de"), entity("cb8ebcd7-27ca-59f9-9e42-8ad381865d6d"), entity("6ae056ba-fc96-50a8-9dcb-1682230c188f"), entity("0b9d1d0c-5cae-529c-9e5c-69cc04fc2b49"), entity("51bf3a4c-5381-5731-b2e0-8a2b502a0681"), entity("b7ef1379-ba6c-5b4e-a270-b7cf4c4dead9"))
+
+[entity uuid="2546c28b-25f8-5ff2-81a3-8a4d34009ff0" name="Robot 14"]
+
+[component type="Transform"]
+position = vec3(-11.25, 0, -19)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="Animator"]
+lod_distance = 15
+lod_frame_rate = 15
+lod_far_distance = 35
+lod_far_frame_rate = 5
+controller = asset("00000000-0000-0000-0000-000000000000")
+clip = asset("905859b5-6eb4-4bd7-9280-c73e4dee07f2")
+speed = 1.1
+loop = true
+play_on_start = true
+blend_time = 0.25
+apply_root_motion = false
+
+[entity uuid="9a776230-02b7-57c8-b2c4-d1fe2c0892ed" name="Hips"]
+parent = "2546c28b-25f8-5ff2-81a3-8a4d34009ff0"
+
+[component type="Transform"]
+position = vec3(0, 0.95, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="42ea83fa-f324-50c5-872d-406ea4163179" name="Spine"]
+parent = "9a776230-02b7-57c8-b2c4-d1fe2c0892ed"
+
+[component type="Transform"]
+position = vec3(0, 0.1, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="9387fcc1-f510-5c28-8eca-f940996df7c1" name="Head"]
+parent = "42ea83fa-f324-50c5-872d-406ea4163179"
+
+[component type="Transform"]
+position = vec3(0, 0.52, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="6e2fadea-67ef-5bfb-a487-5809783e4287" name="ArmLeft"]
+parent = "42ea83fa-f324-50c5-872d-406ea4163179"
+
+[component type="Transform"]
+position = vec3(0.25, 0.4, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="3e2c049d-a196-5626-a58c-df885d28174c" name="ForearmLeft"]
+parent = "6e2fadea-67ef-5bfb-a487-5809783e4287"
+
+[component type="Transform"]
+position = vec3(0, -0.32, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="8c115585-2d5f-5376-a377-aafd7e41d0b0" name="ArmRight"]
+parent = "42ea83fa-f324-50c5-872d-406ea4163179"
+
+[component type="Transform"]
+position = vec3(-0.25, 0.4, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="e9d51062-a3f3-551b-84bb-9cedb6ac6942" name="ForearmRight"]
+parent = "8c115585-2d5f-5376-a377-aafd7e41d0b0"
+
+[component type="Transform"]
+position = vec3(0, -0.32, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="2747177b-cce6-574f-98be-67cb32965cc5" name="LegLeft"]
+parent = "9a776230-02b7-57c8-b2c4-d1fe2c0892ed"
+
+[component type="Transform"]
+position = vec3(0.1, -0.12, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="22b7fda1-9a5c-5e50-b7f7-284e54a7eb03" name="ShinLeft"]
+parent = "2747177b-cce6-574f-98be-67cb32965cc5"
+
+[component type="Transform"]
+position = vec3(0, -0.42, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="18a0706e-094a-5432-8293-07c87bbd047b" name="LegRight"]
+parent = "9a776230-02b7-57c8-b2c4-d1fe2c0892ed"
+
+[component type="Transform"]
+position = vec3(-0.1, -0.12, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="ba183f0b-2639-53a8-94a0-eca224d5936e" name="ShinRight"]
+parent = "18a0706e-094a-5432-8293-07c87bbd047b"
+
+[component type="Transform"]
+position = vec3(0, -0.42, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="9f8b705b-d7c3-5219-b92b-839944abd61c" name="Robot body"]
+parent = "2546c28b-25f8-5ff2-81a3-8a4d34009ff0"
+
+[component type="Transform"]
+position = vec3(0, 0, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="SkinnedMeshRenderer"]
+mesh = asset("6666e9b6-13db-41d2-84f0-503c34c1760a")
+material = asset("00000000-0000-0000-0000-000000000000")
+bones = list(entity("9a776230-02b7-57c8-b2c4-d1fe2c0892ed"), entity("42ea83fa-f324-50c5-872d-406ea4163179"), entity("9387fcc1-f510-5c28-8eca-f940996df7c1"), entity("6e2fadea-67ef-5bfb-a487-5809783e4287"), entity("3e2c049d-a196-5626-a58c-df885d28174c"), entity("8c115585-2d5f-5376-a377-aafd7e41d0b0"), entity("e9d51062-a3f3-551b-84bb-9cedb6ac6942"), entity("2747177b-cce6-574f-98be-67cb32965cc5"), entity("22b7fda1-9a5c-5e50-b7f7-284e54a7eb03"), entity("18a0706e-094a-5432-8293-07c87bbd047b"), entity("ba183f0b-2639-53a8-94a0-eca224d5936e"))
+
+[entity uuid="2511fb42-f479-538e-a96c-72b7a8a95640" name="Robot 15"]
+
+[component type="Transform"]
+position = vec3(-8.75, 0, -19)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="Animator"]
+lod_distance = 15
+lod_frame_rate = 15
+lod_far_distance = 35
+lod_far_frame_rate = 5
+controller = asset("00000000-0000-0000-0000-000000000000")
+clip = asset("905859b5-6eb4-4bd7-9280-c73e4dee07f2")
+speed = 1.2
+loop = true
+play_on_start = true
+blend_time = 0.25
+apply_root_motion = false
+
+[entity uuid="05126f8d-94c2-535a-90a5-52a932a38ba7" name="Hips"]
+parent = "2511fb42-f479-538e-a96c-72b7a8a95640"
+
+[component type="Transform"]
+position = vec3(0, 0.95, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="81bbffe2-53d5-5b15-a963-0ab9f8334429" name="Spine"]
+parent = "05126f8d-94c2-535a-90a5-52a932a38ba7"
+
+[component type="Transform"]
+position = vec3(0, 0.1, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="689106ef-fc4e-5253-a24a-26e5778eceeb" name="Head"]
+parent = "81bbffe2-53d5-5b15-a963-0ab9f8334429"
+
+[component type="Transform"]
+position = vec3(0, 0.52, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="4d0f5cea-ee61-5a6d-834c-67da84b50cb6" name="ArmLeft"]
+parent = "81bbffe2-53d5-5b15-a963-0ab9f8334429"
+
+[component type="Transform"]
+position = vec3(0.25, 0.4, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="a1df8981-5024-504e-8ce0-9b5b522b46e7" name="ForearmLeft"]
+parent = "4d0f5cea-ee61-5a6d-834c-67da84b50cb6"
+
+[component type="Transform"]
+position = vec3(0, -0.32, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="31ec3663-2b8a-5099-ac30-e6a29789a14e" name="ArmRight"]
+parent = "81bbffe2-53d5-5b15-a963-0ab9f8334429"
+
+[component type="Transform"]
+position = vec3(-0.25, 0.4, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="2ac10d6e-5357-5f33-952d-b0b4fdbe6bb7" name="ForearmRight"]
+parent = "31ec3663-2b8a-5099-ac30-e6a29789a14e"
+
+[component type="Transform"]
+position = vec3(0, -0.32, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="4d5cf5e6-e985-54b2-b73f-55e26cb30de1" name="LegLeft"]
+parent = "05126f8d-94c2-535a-90a5-52a932a38ba7"
+
+[component type="Transform"]
+position = vec3(0.1, -0.12, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="ced86b4d-6ef3-5cfb-8d1a-a035899bfa64" name="ShinLeft"]
+parent = "4d5cf5e6-e985-54b2-b73f-55e26cb30de1"
+
+[component type="Transform"]
+position = vec3(0, -0.42, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="5430b840-b68b-53a1-8203-421e3307d951" name="LegRight"]
+parent = "05126f8d-94c2-535a-90a5-52a932a38ba7"
+
+[component type="Transform"]
+position = vec3(-0.1, -0.12, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="4ecc0013-2f50-5e43-a114-464a9635284d" name="ShinRight"]
+parent = "5430b840-b68b-53a1-8203-421e3307d951"
+
+[component type="Transform"]
+position = vec3(0, -0.42, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="833c8fe8-6946-5722-9567-ac730a1ebf5e" name="Robot body"]
+parent = "2511fb42-f479-538e-a96c-72b7a8a95640"
+
+[component type="Transform"]
+position = vec3(0, 0, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="SkinnedMeshRenderer"]
+mesh = asset("6666e9b6-13db-41d2-84f0-503c34c1760a")
+material = asset("00000000-0000-0000-0000-000000000000")
+bones = list(entity("05126f8d-94c2-535a-90a5-52a932a38ba7"), entity("81bbffe2-53d5-5b15-a963-0ab9f8334429"), entity("689106ef-fc4e-5253-a24a-26e5778eceeb"), entity("4d0f5cea-ee61-5a6d-834c-67da84b50cb6"), entity("a1df8981-5024-504e-8ce0-9b5b522b46e7"), entity("31ec3663-2b8a-5099-ac30-e6a29789a14e"), entity("2ac10d6e-5357-5f33-952d-b0b4fdbe6bb7"), entity("4d5cf5e6-e985-54b2-b73f-55e26cb30de1"), entity("ced86b4d-6ef3-5cfb-8d1a-a035899bfa64"), entity("5430b840-b68b-53a1-8203-421e3307d951"), entity("4ecc0013-2f50-5e43-a114-464a9635284d"))
+
+[entity uuid="9bfa27c2-e925-5ae4-9e92-1650591e2cdf" name="Robot 16"]
+
+[component type="Transform"]
+position = vec3(-6.25, 0, -19)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="Animator"]
+lod_distance = 15
+lod_frame_rate = 15
+lod_far_distance = 35
+lod_far_frame_rate = 5
+controller = asset("00000000-0000-0000-0000-000000000000")
+clip = asset("905859b5-6eb4-4bd7-9280-c73e4dee07f2")
+speed = 0.8
+loop = true
+play_on_start = true
+blend_time = 0.25
+apply_root_motion = false
+
+[entity uuid="99f2c636-7660-5c0b-9a2d-1fe7c740f8f9" name="Hips"]
+parent = "9bfa27c2-e925-5ae4-9e92-1650591e2cdf"
+
+[component type="Transform"]
+position = vec3(0, 0.95, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="ce667c6d-7844-5140-86a6-af74b52080cd" name="Spine"]
+parent = "99f2c636-7660-5c0b-9a2d-1fe7c740f8f9"
+
+[component type="Transform"]
+position = vec3(0, 0.1, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="14776d63-6913-53c8-9acc-d350ef9a04ee" name="Head"]
+parent = "ce667c6d-7844-5140-86a6-af74b52080cd"
+
+[component type="Transform"]
+position = vec3(0, 0.52, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="ada6a5ac-9196-5d2c-8e3c-db039920c186" name="ArmLeft"]
+parent = "ce667c6d-7844-5140-86a6-af74b52080cd"
+
+[component type="Transform"]
+position = vec3(0.25, 0.4, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="e8a9afd0-0d0a-5cdf-858f-4983e273705e" name="ForearmLeft"]
+parent = "ada6a5ac-9196-5d2c-8e3c-db039920c186"
+
+[component type="Transform"]
+position = vec3(0, -0.32, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="56933cb9-43be-52f7-9f50-d9109eaffb56" name="ArmRight"]
+parent = "ce667c6d-7844-5140-86a6-af74b52080cd"
+
+[component type="Transform"]
+position = vec3(-0.25, 0.4, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="cd7beebd-4801-5527-8ed4-ad34a2ad4210" name="ForearmRight"]
+parent = "56933cb9-43be-52f7-9f50-d9109eaffb56"
+
+[component type="Transform"]
+position = vec3(0, -0.32, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="062f4801-e77c-5c6f-aa87-90e1c5f1d4b9" name="LegLeft"]
+parent = "99f2c636-7660-5c0b-9a2d-1fe7c740f8f9"
+
+[component type="Transform"]
+position = vec3(0.1, -0.12, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="d1eaf4b7-73d6-57fe-8f81-c7819af6a88e" name="ShinLeft"]
+parent = "062f4801-e77c-5c6f-aa87-90e1c5f1d4b9"
+
+[component type="Transform"]
+position = vec3(0, -0.42, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="ca5f048e-70ba-5f69-b334-bd46dff5a244" name="LegRight"]
+parent = "99f2c636-7660-5c0b-9a2d-1fe7c740f8f9"
+
+[component type="Transform"]
+position = vec3(-0.1, -0.12, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="4ed75a33-67eb-51fa-bcb5-d3173dc126c3" name="ShinRight"]
+parent = "ca5f048e-70ba-5f69-b334-bd46dff5a244"
+
+[component type="Transform"]
+position = vec3(0, -0.42, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="9dd7555b-b3b8-564b-b097-afa671d11eae" name="Robot body"]
+parent = "9bfa27c2-e925-5ae4-9e92-1650591e2cdf"
+
+[component type="Transform"]
+position = vec3(0, 0, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="SkinnedMeshRenderer"]
+mesh = asset("6666e9b6-13db-41d2-84f0-503c34c1760a")
+material = asset("00000000-0000-0000-0000-000000000000")
+bones = list(entity("99f2c636-7660-5c0b-9a2d-1fe7c740f8f9"), entity("ce667c6d-7844-5140-86a6-af74b52080cd"), entity("14776d63-6913-53c8-9acc-d350ef9a04ee"), entity("ada6a5ac-9196-5d2c-8e3c-db039920c186"), entity("e8a9afd0-0d0a-5cdf-858f-4983e273705e"), entity("56933cb9-43be-52f7-9f50-d9109eaffb56"), entity("cd7beebd-4801-5527-8ed4-ad34a2ad4210"), entity("062f4801-e77c-5c6f-aa87-90e1c5f1d4b9"), entity("d1eaf4b7-73d6-57fe-8f81-c7819af6a88e"), entity("ca5f048e-70ba-5f69-b334-bd46dff5a244"), entity("4ed75a33-67eb-51fa-bcb5-d3173dc126c3"))
+
+[entity uuid="a47d9289-d863-5dac-99d4-eb4bdca27cf1" name="LOD Sphere 1"]
+
+[component type="Transform"]
+position = vec3(-14, 1, -20)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(2, 2, 2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000002")
+lod_bias = 1
+
+[entity uuid="9169d985-5709-586b-940e-22d78f93c874" name="LOD Sphere 2"]
+
+[component type="Transform"]
+position = vec3(-10, 1, -20)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(2, 2, 2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000002")
+lod_bias = 1
+
+[entity uuid="c87bcf3b-931c-5a48-ba17-4e169c72aab3" name="LOD Sphere 3"]
+
+[component type="Transform"]
+position = vec3(-6, 1, -20)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(2, 2, 2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000002")
+lod_bias = 1
+
+[entity uuid="3e6a135c-0068-56b2-abbf-222feaea2014" name="LOD Sphere 4"]
+
+[component type="Transform"]
+position = vec3(-2, 1, -20)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(2, 2, 2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000002")
+lod_bias = 1
+
+[entity uuid="7196522b-33c2-5369-8a1b-28ceea90f28c" name="LOD Sphere 5"]
+
+[component type="Transform"]
+position = vec3(2, 1, -20)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(2, 2, 2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000002")
+lod_bias = 1
+
+[entity uuid="0f42cc8d-0430-55e4-8f90-b577a440c1ee" name="LOD Sphere 6"]
+
+[component type="Transform"]
+position = vec3(6, 1, -20)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(2, 2, 2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000002")
+lod_bias = 1
+
+[entity uuid="aab2f211-f99b-55c5-ba5b-2d846bea0a9d" name="LOD Sphere 7"]
+
+[component type="Transform"]
+position = vec3(10, 1, -20)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(2, 2, 2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000002")
+lod_bias = 1
+
+[entity uuid="eaf085cf-380e-5f59-bb79-81cb22ca8d58" name="LOD Sphere 8"]
+
+[component type="Transform"]
+position = vec3(14, 1, -20)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(2, 2, 2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000002")
+lod_bias = 1
+
+[entity uuid="e5e60715-3bd1-5e2b-a253-17c0d02eefcb" name="LOD Sphere 9"]
+
+[component type="Transform"]
+position = vec3(-14, 1, -35)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(2, 2, 2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000002")
+lod_bias = 1
+
+[entity uuid="b0360128-db32-5095-a205-d3fe006eebf6" name="LOD Sphere 10"]
+
+[component type="Transform"]
+position = vec3(-10, 1, -35)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(2, 2, 2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000002")
+lod_bias = 1
+
+[entity uuid="c78165cc-0f47-5bba-8d1b-d255254b98cb" name="LOD Sphere 11"]
+
+[component type="Transform"]
+position = vec3(-6, 1, -35)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(2, 2, 2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000002")
+lod_bias = 1
+
+[entity uuid="3470d1a1-467a-5b66-a787-6d3a99f6929f" name="LOD Sphere 12"]
+
+[component type="Transform"]
+position = vec3(-2, 1, -35)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(2, 2, 2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000002")
+lod_bias = 1
+
+[entity uuid="fe453d1b-6768-54d0-acbd-a758447bcfa7" name="LOD Sphere 13"]
+
+[component type="Transform"]
+position = vec3(2, 1, -35)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(2, 2, 2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000002")
+lod_bias = 1
+
+[entity uuid="5848f345-4868-5034-9419-f77181d44761" name="LOD Sphere 14"]
+
+[component type="Transform"]
+position = vec3(6, 1, -35)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(2, 2, 2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000002")
+lod_bias = 1
+
+[entity uuid="92c0c92d-0420-58e4-8a32-9c451d351070" name="LOD Sphere 15"]
+
+[component type="Transform"]
+position = vec3(10, 1, -35)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(2, 2, 2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000002")
+lod_bias = 1
+
+[entity uuid="4b3066fd-0320-5b28-a5aa-d1ad1ef40ebb" name="LOD Sphere 16"]
+
+[component type="Transform"]
+position = vec3(14, 1, -35)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(2, 2, 2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000002")
+lod_bias = 1
+
+[entity uuid="07573152-6160-5823-9301-5d019fefed95" name="LOD Sphere 17"]
+
+[component type="Transform"]
+position = vec3(-14, 1, -50)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(2, 2, 2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000002")
+lod_bias = 1
+
+[entity uuid="0d96cbb2-bfc3-5098-9534-22f1c9cdd286" name="LOD Sphere 18"]
+
+[component type="Transform"]
+position = vec3(-10, 1, -50)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(2, 2, 2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000002")
+lod_bias = 1
+
+[entity uuid="4ee0e6c2-b25c-564f-a188-aed64abe716e" name="LOD Sphere 19"]
+
+[component type="Transform"]
+position = vec3(-6, 1, -50)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(2, 2, 2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000002")
+lod_bias = 1
+
+[entity uuid="dd77ddb1-5686-59ad-9d6d-52de04932235" name="LOD Sphere 20"]
+
+[component type="Transform"]
+position = vec3(-2, 1, -50)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(2, 2, 2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000002")
+lod_bias = 1
+
+[entity uuid="2d572115-5d7c-5119-a99b-c7e9f8a24732" name="LOD Sphere 21"]
+
+[component type="Transform"]
+position = vec3(2, 1, -50)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(2, 2, 2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000002")
+lod_bias = 1
+
+[entity uuid="31a575a2-aeba-5225-a28d-276877b4342d" name="LOD Sphere 22"]
+
+[component type="Transform"]
+position = vec3(6, 1, -50)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(2, 2, 2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000002")
+lod_bias = 1
+
+[entity uuid="232c9a67-e493-54f8-8e7a-4cf87fc0a732" name="LOD Sphere 23"]
+
+[component type="Transform"]
+position = vec3(10, 1, -50)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(2, 2, 2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000002")
+lod_bias = 1
+
+[entity uuid="52cbe2c3-a2fb-54e7-8d66-42faa95abd23" name="LOD Sphere 24"]
+
+[component type="Transform"]
+position = vec3(14, 1, -50)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(2, 2, 2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000002")
+lod_bias = 1
+
+[entity uuid="df859a46-31f1-52cc-8358-7818201a3023" name="LOD Sphere 25"]
+
+[component type="Transform"]
+position = vec3(-14, 1, -65)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(2, 2, 2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000002")
+lod_bias = 1
+
+[entity uuid="3eded624-8ec3-54a1-8f8f-91c316cac3cb" name="LOD Sphere 26"]
+
+[component type="Transform"]
+position = vec3(-10, 1, -65)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(2, 2, 2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000002")
+lod_bias = 1
+
+[entity uuid="0a909cd1-2ecb-5e7f-b6c9-cfbba64d0fed" name="LOD Sphere 27"]
+
+[component type="Transform"]
+position = vec3(-6, 1, -65)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(2, 2, 2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000002")
+lod_bias = 1
+
+[entity uuid="bfb30217-5ec8-5be4-93a1-78e7504abf48" name="LOD Sphere 28"]
+
+[component type="Transform"]
+position = vec3(-2, 1, -65)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(2, 2, 2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000002")
+lod_bias = 1
+
+[entity uuid="bfb336ff-01a2-5c1b-9f77-6a02f7e007c0" name="LOD Sphere 29"]
+
+[component type="Transform"]
+position = vec3(2, 1, -65)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(2, 2, 2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000002")
+lod_bias = 1
+
+[entity uuid="2fa88920-e7d9-5cb8-b31e-bfe70e9c0113" name="LOD Sphere 30"]
+
+[component type="Transform"]
+position = vec3(6, 1, -65)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(2, 2, 2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000002")
+lod_bias = 1
+
+[entity uuid="4a4a7b5e-1e65-5738-8261-7251f097d2fd" name="LOD Sphere 31"]
+
+[component type="Transform"]
+position = vec3(10, 1, -65)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(2, 2, 2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000002")
+lod_bias = 1
+
+[entity uuid="794da664-b155-5752-ac89-e5e599cc8209" name="LOD Sphere 32"]
+
+[component type="Transform"]
+position = vec3(14, 1, -65)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(2, 2, 2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000002")
+lod_bias = 1

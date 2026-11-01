@@ -279,6 +279,9 @@ struct AnimationWorld::Implementation
         Entity entity;
         // Set once the first update has seen its Animator.
         bool started = false;
+        bool poseDirty = true;
+        float poseElapsed = 0.0f;
+        std::uint32_t lodTier = 0;
         asset::AssetId clipId;
         std::shared_ptr<const Clip> clip;
         float time = 0.0f;
@@ -340,6 +343,8 @@ struct AnimationWorld::Implementation
     std::vector<JointPose> sampled;
     const Scene* scene = nullptr;
     bool paused = false;
+    std::vector<math::Vec3> viewPositions;
+    AnimationWorld::Stats stats;
     std::unordered_set<std::string> warnings;
 
     [[nodiscard]] Playback* find(Entity entity)
@@ -377,6 +382,7 @@ struct AnimationWorld::Implementation
     // Finds the bones under the animator again, and maps the joints of its clips onto them.
     void bindBones(const Scene& sceneToRead, Playback& playback)
     {
+        playback.poseDirty = true;
         playback.bones.clear();
         playback.boneIndex.clear();
         collectBones(sceneToRead, playback.entity, playback.bones, playback.boneIndex);
@@ -452,6 +458,7 @@ struct AnimationWorld::Implementation
 
     void start(Scene& sceneToRead, Playback& playback, asset::AssetId clip, float fade)
     {
+        playback.poseDirty = true;
         std::shared_ptr<const Clip> loaded = clipOf(clip);
         if (loaded != nullptr && playback.clip != nullptr && fade > 0.0f)
         {
@@ -477,6 +484,56 @@ struct AnimationWorld::Implementation
         {
             bindBones(sceneToRead, playback);
         }
+    }
+
+    bool shouldSample(const Scene& sceneToRead, Playback& playback, const Animator& animator,
+                      float delta)
+    {
+        const auto* transform = sceneToRead.tryGet<scene::WorldTransform>(playback.entity);
+        std::uint32_t tier = 0;
+        float rate = 0;
+        if (!paused && playback.playing && delta > 0 && !animator.applyRootMotion &&
+            animator.lodDistance > 0 && std::isfinite(animator.lodDistance) &&
+            transform != nullptr && !viewPositions.empty())
+        {
+            float distance = std::numeric_limits<float>::max();
+            const auto origin = math::Vec3(transform->matrix[3]);
+            for (const auto viewer : viewPositions)
+                distance = std::min(distance, math::length(viewer - origin));
+            if (distance > animator.lodDistance * (playback.lodTier >= 1 ? 0.9f : 1.1f))
+            {
+                tier = 1;
+                rate = animator.lodFrameRate;
+                const auto far = std::max(animator.lodFarDistance, animator.lodDistance + 0.001f);
+                if (distance > far * (playback.lodTier >= 2 ? 0.9f : 1.1f))
+                {
+                    tier = 2;
+                    rate = animator.lodFarFrameRate;
+                }
+            }
+        }
+        playback.poseElapsed += std::max(delta, 0.0f);
+        const bool changed = tier != playback.lodTier;
+        playback.lodTier = tier;
+        if (changed && tier > 0 && std::isfinite(rate) && rate > 0)
+        {
+            // Spread a crowd's pose ticks instead of evaluating every distant character on
+            // the same frame. Changes of state still sample immediately.
+            const auto phase = (keyOf(playback.entity) * 0x9e3779b97f4a7c15ull) >> 40;
+            playback.poseElapsed = float(phase) / 16777216.0f / rate;
+        }
+        if (!changed && !playback.poseDirty && tier > 0 && std::isfinite(rate) && rate > 0 &&
+            playback.poseElapsed + 0.000001f < 1.0f / rate)
+        {
+            ++stats.heldPoses;
+            return false;
+        }
+        playback.poseElapsed = tier > 0 && rate > 0 && std::isfinite(rate)
+                                   ? std::fmod(playback.poseElapsed, 1.0f / rate)
+                                   : 0.0f;
+        playback.poseDirty = false;
+        ++stats.sampledPoses;
+        return true;
     }
 
     // Advances one animator that plays a clip, and writes the pose of its bones.
@@ -520,6 +577,8 @@ struct AnimationWorld::Implementation
             }
         }
 
+        if (!shouldSample(sceneToWrite, playback, animator, delta))
+            return;
         playback.pose.assign(playback.bones.size(), JointPose{});
         samplePose(*playback.clip, playback.joints, playback.time, playback.pose);
         if (playback.previous != nullptr && playback.fadeRemaining > 0.0f && playback.fadeLength > 0.0f)
@@ -705,6 +764,7 @@ struct AnimationWorld::Implementation
     // Starts a state of a layer from its beginning, and the sprite animation it names.
     void enterState(Scene& sceneToWrite, Playback& playback, std::size_t layer, std::int32_t state)
     {
+        playback.poseDirty = true;
         playback.layers[layer].current = {.state = state};
         if (layer == 0)
         {
@@ -1099,6 +1159,8 @@ struct AnimationWorld::Implementation
             }
         }
 
+        if (!shouldSample(sceneToWrite, playback, animator, delta))
+            return;
         std::vector<std::int32_t> rootJoints;
         layerPose(playback, 0, playback.pose, playback.covered, &rootJoints);
         restFill(playback.pose, playback.covered, playback.rest, playback.driven);
@@ -1239,6 +1301,7 @@ void AnimationWorld::update(scene::Scene& scene, core::Duration delta)
     }
 
     world.events.clear();
+    world.stats = {};
     std::unordered_set<std::uint64_t> seen;
     seen.reserve(world.playbacks.size());
     for ([[maybe_unused]] auto [entity, animator] : scene.view<Animator>())
@@ -1305,6 +1368,13 @@ std::span<const FiredAnimationEvent> AnimationWorld::events() const noexcept
 {
     return m_implementation->events;
 }
+
+void AnimationWorld::setViewPositions(std::span<const math::Vec3> positions)
+{
+    m_implementation->viewPositions.assign(positions.begin(), positions.end());
+}
+
+AnimationWorld::Stats AnimationWorld::stats() const noexcept { return m_implementation->stats; }
 
 void AnimationWorld::play(scene::Scene& scene, scene::Entity entity, asset::AssetId clip, float fade)
 {

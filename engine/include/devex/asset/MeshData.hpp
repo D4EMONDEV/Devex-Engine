@@ -42,6 +42,16 @@ struct DEVEX_API Submesh
 
 // Indexed triangle list in the engine conventions: Y-up, right-handed, counter-clockwise front
 // faces.
+struct DEVEX_API MeshLod
+{
+    std::vector<Vertex> vertices;
+    std::vector<std::uint32_t> indices;
+    std::vector<Submesh> submeshes;
+    std::vector<VertexSkin> skin;
+    // Absolute object-space simplification error, used to choose a level in screen pixels.
+    float error = 0.0f;
+};
+
 struct DEVEX_API MeshData
 {
     std::vector<Vertex> vertices;
@@ -56,6 +66,8 @@ struct DEVEX_API MeshData
     // The box holding every vertex, in the space of the mesh. Computed when the mesh is imported
     // or built; the renderer measures it itself when it arrives empty.
     math::Aabb bounds;
+    // Coarser meshes, with compact vertices and the same materials and joint palette.
+    std::vector<MeshLod> lods;
 };
 
 // The box holding every vertex of the mesh.
@@ -79,5 +91,9 @@ DEVEX_API void computeNormals(MeshData& mesh);
 // triangles whose tangents differ are split, so the vertex count may grow. Indices keep their
 // order, and submeshes stay valid.
 DEVEX_API void computeTangents(MeshData& mesh);
+
+// Builds at most four coarser levels, preserving material boundaries, vertex attributes and skin.
+// Levels that do not reduce geometry are omitted; the original mesh is left unchanged.
+DEVEX_API void generateMeshLods(MeshData& mesh, std::uint32_t levels = 3);
 
 } // namespace devex::asset

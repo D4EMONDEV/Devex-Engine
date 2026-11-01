@@ -41,6 +41,8 @@ core::Result<void> VulkanRenderer::resetSkinning()
     m_skinnedVertexCount = 0;
     m_skinCulled = 0;
     m_skinReused = 0;
+    m_lodInstances = 0;
+    m_lodTrianglesSaved = 0;
     return {};
 }
 

@@ -62,6 +62,8 @@ captures de l'éditeur, scènes de base, entrées, scripts C#, animations, colli
   GPU (profondeur de la frame courante, dessin indirect par lots,
   poses des maillages animés préparées en compute à la demande et partagées entre les passes et
   les caméras d'une frame, limites par os pour éviter les calculs hors champ et ombres,
+  niveaux de détail des maillages générés à l'import et choisis par caméra selon leur erreur en
+  pixels, avec hystérésis,
   [performances mesurées](docs/performances.md)), ombres en cascades pour
   le soleil et en atlas pour les lumières locales, ciel HDR et IBL, atmosphère physique (ciel bleu,
   couchers rouges, soleil teinté par l'air, brume du lointain) et brouillard de hauteur, sondes de
@@ -111,6 +113,9 @@ captures de l'éditeur, scènes de base, entrées, scripts C#, animations, colli
   d'un composant (délai, boucles, aller-retour, séquences), par code ou par le composant
   `Tweener`, avec 22 courbes classiques ou une courbe dessinée (`.dvxcurve`) ; sprites animés
   image par image (`SpriteAnimator` et animations nommées `.dvxframes`) ;
+  Niveaux de détail d'animation optionnels dans `Animator` : poses calculées à 15 ou 5 Hz selon
+  la distance du spectateur le plus proche, temps, transitions et événements gardés à chaque
+  frame ; root motion toujours calculé à chaque frame. Démo `assets/scenes/lods.dvxscene` du sandbox ;
 - `Devex::Particles` : émetteurs `ParticleEmitter` simulés sur les workers (émission par seconde,
   par mètre et en salves, formes, gravité, bruit, courbes sur la vie, collisions avec la physique,
   sous-émetteurs, espace du monde ou local) et traînées des particules et des entités

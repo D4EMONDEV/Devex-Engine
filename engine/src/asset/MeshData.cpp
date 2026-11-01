@@ -126,6 +126,35 @@ core::Result<void> validate(const MeshData& mesh)
             }
         }
     }
+    if (mesh.lods.size() > 4)
+        return core::makeError(core::ErrorCode::InvalidArgument, "a mesh has at most four LODs");
+    float previousError = 0.0f;
+    std::size_t previousIndices = mesh.indices.size();
+    const auto materials = submeshesOf(mesh);
+    for (const MeshLod& lod : mesh.lods)
+    {
+        if (!std::isfinite(lod.error) || lod.error < previousError ||
+            lod.indices.size() >= previousIndices || lod.vertices.size() > mesh.vertices.size() ||
+            lod.skin.empty() != mesh.skin.empty())
+            return core::makeError(core::ErrorCode::InvalidArgument,
+                                   "invalid mesh LOD size or error");
+        MeshData level{.vertices = lod.vertices,
+                       .indices = lod.indices,
+                       .submeshes = lod.submeshes,
+                       .skin = lod.skin,
+                       .inverseBind = mesh.inverseBind};
+        if (auto valid = validate(level); !valid)
+            return valid;
+        const auto parts = submeshesOf(level);
+        if (parts.size() != materials.size())
+            return core::makeError(core::ErrorCode::InvalidArgument, "LOD material count differs");
+        for (std::size_t index = 0; index < parts.size(); ++index)
+            if (parts[index].material != materials[index].material ||
+                parts[index].indexCount > materials[index].indexCount)
+                return core::makeError(core::ErrorCode::InvalidArgument, "LOD material differs");
+        previousError = lod.error;
+        previousIndices = lod.indices.size();
+    }
     return {};
 }
 

@@ -96,6 +96,14 @@ public:
     // sprite animators move on, and animators that are gone are forgotten. Using the world with
     // another scene starts over from that scene.
     void update(scene::Scene& scene, core::Duration delta);
+    // All active viewers; the nearest controls optional Animator LOD. Empty keeps full sampling.
+    void setViewPositions(std::span<const math::Vec3> positions);
+    struct Stats
+    {
+        std::uint32_t sampledPoses = 0;
+        std::uint32_t heldPoses = 0;
+    };
+    [[nodiscard]] Stats stats() const noexcept;
 
     // The events the animations played past during the last update, in the order they came. A clip
     // passes the events from where it was to where it is, around its loop, and backwards when it

@@ -1,3 +1,4 @@
+#include <devex/asset/Artifact.hpp>
 #include <devex/asset/MeshData.hpp>
 #include <devex/asset/Primitives.hpp>
 
@@ -5,14 +6,105 @@
 #include <catch2/generators/catch_generators.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <cstring>
+#include <limits>
 #include <string>
 #include <utility>
 
 using Catch::Matchers::WithinAbs;
 using devex::asset::MeshData;
 using devex::math::Vec3;
+
+TEST_CASE("Mesh LODs reduce geometry while retaining materials and skin", "[asset][lod]")
+{
+    using namespace devex;
+    const bool skinned = GENERATE(false, true);
+    auto mesh = asset::makeUvSphere(1.0f, 32, 16);
+    const auto sourceVertices = mesh.vertices;
+    const auto sourceIndices = mesh.indices;
+    const auto half = static_cast<std::uint32_t>(mesh.indices.size() / 6 * 3);
+    mesh.submeshes = {
+        {.firstIndex = 0, .indexCount = half, .material = asset::AssetId::generate()},
+        {.firstIndex = half, .indexCount = static_cast<std::uint32_t>(mesh.indices.size()) - half}};
+    if (skinned)
+    {
+        mesh.inverseBind.assign(2, math::Mat4{1});
+        for (const auto& vertex : mesh.vertices)
+        {
+            const float weight = std::clamp(vertex.position.y * 0.4f + 0.5f, 0.0f, 1.0f);
+            mesh.skin.push_back({.joints = {0, 1, 0, 0}, .weights = {weight, 1 - weight, 0, 0}});
+        }
+    }
+    asset::generateMeshLods(mesh);
+    REQUIRE(mesh.lods.size() >= 2);
+    REQUIRE(asset::validate(mesh));
+    CHECK(mesh.indices == sourceIndices);
+    CHECK(mesh.vertices.size() == sourceVertices.size());
+    std::size_t previous = mesh.indices.size();
+    float error = 0;
+    for (const auto& lod : mesh.lods)
+    {
+        CHECK(lod.indices.size() < previous);
+        CHECK(lod.vertices.size() < sourceVertices.size());
+        CHECK(lod.error >= error);
+        REQUIRE(lod.submeshes.size() == 2);
+        CHECK(lod.submeshes[0].material == mesh.submeshes[0].material);
+        REQUIRE(lod.skin.size() == (skinned ? lod.vertices.size() : 0));
+        for (std::size_t v = 0; v < lod.vertices.size(); ++v)
+        {
+            const auto& vertex = lod.vertices[v];
+            const auto found =
+                std::ranges::find_if(sourceVertices,
+                                     [&](const auto& original)
+                                     {
+                                         return original.position == vertex.position &&
+                                                original.uv == vertex.uv &&
+                                                original.normal == vertex.normal;
+                                     });
+            REQUIRE(found != sourceVertices.end());
+            if (skinned)
+            {
+                const auto i = std::size_t(found - sourceVertices.begin());
+                CHECK(lod.skin[v].joints == mesh.skin[i].joints);
+                CHECK(lod.skin[v].weights == mesh.skin[i].weights);
+            }
+        }
+        previous = lod.indices.size();
+        error = lod.error;
+    }
+    const auto bytes = asset::encodeMesh(mesh);
+    const auto decoded = asset::decodeMesh(bytes);
+    REQUIRE(decoded);
+    REQUIRE(decoded->lods.size() == mesh.lods.size());
+    for (std::size_t i = 0; i < mesh.lods.size(); ++i)
+    {
+        CHECK(decoded->lods[i].indices == mesh.lods[i].indices);
+        CHECK(decoded->lods[i].error == mesh.lods[i].error);
+        CHECK(decoded->lods[i].vertices.size() == mesh.lods[i].vertices.size());
+    }
+    CHECK_FALSE(asset::decodeMesh(std::span(bytes).first(bytes.size() - 1)));
+    mesh.lods[0].error = std::numeric_limits<float>::quiet_NaN();
+    CHECK_FALSE(asset::validate(mesh));
+}
+
+TEST_CASE("LOD generation can be disabled and invalid level counts fail safely", "[asset][lod]")
+{
+    using namespace devex;
+    auto mesh = asset::makeUvSphere();
+    asset::generateMeshLods(mesh, 0);
+    CHECK(mesh.lods.empty());
+    auto bytes = asset::encodeMesh(mesh);
+    const std::uint32_t count = ~std::uint32_t{0};
+    std::memcpy(bytes.data() + bytes.size() - sizeof(count), &count, sizeof(count));
+    CHECK_FALSE(asset::decodeMesh(bytes));
+    asset::generateMeshLods(mesh);
+    REQUIRE_FALSE(mesh.lods.empty());
+    mesh.lods.front().submeshes.front().material = asset::AssetId::generate();
+    CHECK_FALSE(asset::validate(mesh));
+}
 
 namespace {
 

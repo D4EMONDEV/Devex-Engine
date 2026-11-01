@@ -62,6 +62,8 @@ struct DEVEX_API RendererConfig
     // Prepares standard skinned meshes once in compute, then culls and draws their instances by
     // batches. Requires gpuCulling; off keeps skinning in each individual vertex draw.
     bool gpuSkinning = true;
+    // Maximum projected simplification error in pixels. Zero keeps original geometry.
+    float meshLodError = 1.0f;
 };
 
 // What a sampler2D uniform samples while its texture is missing or still loading.
@@ -128,6 +130,9 @@ struct DEVEX_API RendererStats
     std::uint32_t gpuSkinningReusedPoses = 0;
     // Reserved output and bounds, over all views and frame contexts; excludes meshes and bones.
     std::uint64_t gpuSkinningBytes = 0;
+    // Selected geometry across all views before visibility tests, counting submesh instances.
+    std::uint32_t meshLodInstances = 0;
+    std::uint64_t meshLodTrianglesSaved = 0;
     std::size_t meshCount = 0;
     std::size_t textureCount = 0;
     std::size_t materialCount = 0;

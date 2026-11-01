@@ -7,6 +7,7 @@
 // DEVEX_PRESENT_MODE=immediate removes the display's pacing; DEVEX_STRESS_OCCLUDERS=1 adds walls.
 // DEVEX_STRESS_SKINNED=1 animates the meshes (2,000 by default); DEVEX_GPU_SKINNING=0 compares
 // their existing individual vertex draws while leaving the static meshes on GPU culling.
+// DEVEX_MESH_LOD=1 enables geometry LODs; off by default to retain the earlier benchmarks.
 // DEVEX_STRESS_VIEWS=0..4 adds cameras; DEVEX_STRESS_OFFSCREEN=0..100 puts a percentage behind
 // them.
 #include <devex/asset/Primitives.hpp>
@@ -58,6 +59,7 @@ TEST_CASE("Renderer stress benchmark", "[.][benchmark]")
     const bool gpuCulling = devex::platform::environmentVariable("DEVEX_GPU_CULLING") != "0";
     const bool gpuOcclusion = devex::platform::environmentVariable("DEVEX_GPU_OCCLUSION") != "0";
     const bool gpuSkinning = devex::platform::environmentVariable("DEVEX_GPU_SKINNING") != "0";
+    const bool lods = devex::platform::environmentVariable("DEVEX_MESH_LOD") == "1";
     const bool walls = devex::platform::environmentVariable("DEVEX_STRESS_OCCLUDERS") == "1";
     const auto views = std::min(countFrom("DEVEX_STRESS_VIEWS", 0), 4u);
     const auto offscreen = std::min(countFrom("DEVEX_STRESS_OFFSCREEN", 0), 100u);
@@ -70,7 +72,8 @@ TEST_CASE("Renderer stress benchmark", "[.][benchmark]")
                                                      .validation = false,
                                                      .gpuCulling = gpuCulling,
                                                      .gpuOcclusion = gpuOcclusion,
-                                                     .gpuSkinning = gpuSkinning});
+                                                     .gpuSkinning = gpuSkinning,
+                                                     .meshLodError = lods ? 1.0f : 0.0f});
     REQUIRE(renderer.has_value());
 
     // A few meshes and materials, as a level reuses them.
@@ -90,6 +93,7 @@ TEST_CASE("Renderer stress benchmark", "[.][benchmark]")
                     {.joints = {0, 1, 0, 0}, .weights = {1.0f - weight, weight, 0.0f, 0.0f}});
             }
         }
+        devex::asset::generateMeshLods(meshData[index]);
         meshes[index] = *renderer->createMesh(meshData[index]);
     }
     std::array<devex::render::MaterialHandle, 8> materials{};
@@ -222,6 +226,9 @@ TEST_CASE("Renderer stress benchmark", "[.][benchmark]")
     std::printf("%u objects, %u lights, %d frames at 1280x720, culled by the %s: %.2f ms a frame\n", objects, lights, frames,
                 gpuCulling ? "GPU" : "CPU", total / frames);
     std::printf("%u draw calls, %u instances culled in the last frame\n", stats.drawCalls, stats.culledInstances);
+    std::printf("Mesh LODs: %s, %u instances, %llu potential triangles saved before culling\n",
+                lods ? "on" : "off", stats.meshLodInstances,
+                static_cast<unsigned long long>(stats.meshLodTrianglesSaved));
     std::printf("GPU occlusion: %s, walls: %s, presentation: %s (requested %s), device: %s\n",
                 gpuOcclusion ? "on" : "off", walls ? "yes" : "no",
                 devex::render::toString(renderer->presentMode()).data(),

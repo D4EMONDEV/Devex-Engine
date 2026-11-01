@@ -12,6 +12,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <filesystem>
 #include <memory>
@@ -92,6 +93,120 @@ struct Skeleton
 }
 
 } // namespace
+
+TEST_CASE("Animation LOD holds poses but advances time and every event", "[animation][lod]")
+{
+    using namespace devex;
+    const auto id = AssetId::generate();
+    auto data = slideClip(10, 20);
+    data.events = {{.time = 0.1f, .name = "one"},
+                   {.time = 0.2f, .name = "two"},
+                   {.time = 0.3f, .name = "three"}};
+    const auto clip = clipOf(data);
+    auto reference = makeSkeleton();
+    auto reduced = makeSkeleton();
+    reference.scene.add<Animator>(reference.animator, Animator{.clip = id});
+    reduced.scene.add<Animator>(reduced.animator, Animator{.clip = id,
+                                                           .lodDistance = 10,
+                                                           .lodFrameRate = 10,
+                                                           .lodFarDistance = 100,
+                                                           .lodFarFrameRate = 5});
+    reference.scene.updateTransforms();
+    reduced.scene.updateTransforms();
+    AnimationWorld full([&](AssetId) { return clip; });
+    AnimationWorld lod([&](AssetId) { return clip; });
+    const std::array viewers{math::Vec3{0, 0, 50}};
+    lod.setViewPositions(viewers);
+    std::vector<std::string> expected, actual;
+    std::uint32_t sampled = 0, held = 0;
+    for (int frame = 0; frame < 30; ++frame)
+    {
+        const auto before = reduced.scene.get<Transform>(reduced.root).position;
+        full.update(reference.scene, Duration(1.0 / 60));
+        lod.update(reduced.scene, Duration(1.0 / 60));
+        CHECK(lod.time(reduced.animator) == Catch::Approx(full.time(reference.animator)));
+        sampled += lod.stats().sampledPoses;
+        held += lod.stats().heldPoses;
+        if (lod.stats().heldPoses)
+            CHECK(reduced.scene.get<Transform>(reduced.root).position == before);
+        for (const auto& event : full.events())
+            expected.push_back(event.name);
+        for (const auto& event : lod.events())
+            actual.push_back(event.name);
+    }
+    CHECK(sampled <= 7);
+    CHECK(held >= 23);
+    CHECK(actual == expected);
+    CHECK(actual.size() == 3);
+    const std::array twoViewers{math::Vec3{0, 0, 1000}, math::Vec3{0, 0, 0}};
+    lod.setViewPositions(twoViewers);
+    lod.update(reduced.scene, Duration(1.0 / 60));
+    CHECK(lod.stats().sampledPoses == 1);
+    CHECK(reduced.scene.get<Transform>(reduced.root).position.x ==
+          Catch::Approx(lod.time(reduced.animator) * 2));
+    lod.setViewPositions(viewers);
+    lod.setTime(reduced.scene, reduced.animator, 0.75f);
+    CHECK(reduced.scene.get<Transform>(reduced.root).position.x == Catch::Approx(1.5f));
+}
+
+TEST_CASE("Distant animation ticks are spread across frames", "[animation][lod]")
+{
+    using namespace devex;
+    Scene scene;
+    const auto id = AssetId::generate();
+    const auto clip = clipOf(slideClip(10, 20));
+    for (int index = 0; index < 12; ++index)
+    {
+        const auto root = scene.createEntity("Character");
+        scene.add<Transform>(root);
+        scene.add<Animator>(root, Animator{.clip = id, .lodDistance = 1, .lodFrameRate = 5});
+        const auto bone = scene.createEntity("Root");
+        scene.add<Transform>(bone);
+        REQUIRE(scene.setParent(bone, root));
+    }
+    scene.updateTransforms();
+    AnimationWorld world([&](AssetId) { return clip; });
+    const std::array viewers{math::Vec3{0, 0, 20}};
+    world.setViewPositions(viewers);
+    world.update(scene, Duration(1.0 / 60));
+    CHECK(world.stats().sampledPoses == 12);
+    int framesWithSamples = 0;
+    for (int frame = 0; frame < 12; ++frame)
+    {
+        world.update(scene, Duration(1.0 / 60));
+        CHECK(world.stats().sampledPoses < 6);
+        framesWithSamples += world.stats().sampledPoses > 0 ? 1 : 0;
+    }
+    CHECK(framesWithSamples >= 6);
+}
+
+TEST_CASE("Animation LOD never reduces root motion sampling", "[animation][lod][root-motion]")
+{
+    using namespace devex;
+    const auto id = AssetId::generate();
+    const auto clip = clipOf(slideClip(10, 20));
+    auto reference = makeSkeleton();
+    auto reduced = makeSkeleton();
+    reference.scene.add<Animator>(reference.animator,
+                                  Animator{.clip = id, .applyRootMotion = true});
+    reduced.scene.add<Animator>(
+        reduced.animator,
+        Animator{.clip = id, .applyRootMotion = true, .lodDistance = 1, .lodFrameRate = 1});
+    reference.scene.updateTransforms();
+    reduced.scene.updateTransforms();
+    AnimationWorld full([&](AssetId) { return clip; });
+    AnimationWorld lod([&](AssetId) { return clip; });
+    const std::array viewers{math::Vec3{0, 0, 50}};
+    lod.setViewPositions(viewers);
+    for (int frame = 0; frame < 20; ++frame)
+    {
+        full.update(reference.scene, Duration(0.016));
+        lod.update(reduced.scene, Duration(0.016));
+        CHECK(lod.stats().heldPoses == 0);
+        CHECK(reduced.scene.get<Transform>(reduced.animator).position ==
+              reference.scene.get<Transform>(reference.animator).position);
+    }
+}
 
 TEST_CASE("Clips read their keys at any time and blend together", "[animation][clip]")
 {

@@ -8,6 +8,7 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include <array>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -178,6 +179,42 @@ struct Body
 }
 
 } // namespace
+
+TEST_CASE("Animation LOD takes transitions and triggers without waiting for a pose tick",
+          "[animation][lod]")
+{
+    Clips clips;
+    Rig rig;
+    auto& animator = rig.scene.get<devex::scene::Animator>(rig.character);
+    animator.lodDistance = 1;
+    animator.lodFrameRate = 1;
+    rig.scene.updateTransforms();
+    auto jump = clips.loaded.at(clips.jump)->data();
+    jump.events = {{.time = 0.05f, .name = "jump-event"}};
+    auto loaded = Clip::create(jump);
+    REQUIRE(loaded);
+    clips.loaded[clips.jump] = *loaded;
+    const auto controller = std::make_shared<const AnimatorData>(locomotion(clips));
+    AnimationWorld world(std::ref(clips), [&](AssetId) { return controller; });
+    const std::array viewers{devex::math::Vec3{0, 0, 20}};
+    world.setViewPositions(viewers);
+    world.update(rig.scene, Duration(0.01));
+    world.update(rig.scene, Duration(0.01));
+    CHECK(world.stats().heldPoses == 1);
+    world.setFloat(rig.character, "Speed", 1);
+    world.update(rig.scene, Duration(0.01));
+    CHECK(world.state(rig.character) == "Walk");
+    CHECK(rig.rootX() == Catch::Approx(10));
+    CHECK(world.stats().sampledPoses == 1);
+    world.setTrigger(rig.character, "Jump");
+    world.update(rig.scene, Duration(0.01));
+    CHECK(world.state(rig.character) == "Jump");
+    CHECK(rig.rootX() == Catch::Approx(30));
+    world.update(rig.scene, Duration(0.2));
+    CHECK(world.stats().heldPoses == 1);
+    REQUIRE(world.events().size() == 1);
+    CHECK(world.events()[0].name == "jump-event");
+}
 
 TEST_CASE("State machines start in their entry state and follow their transitions", "[animation][statemachine]")
 {

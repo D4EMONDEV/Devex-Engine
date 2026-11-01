@@ -302,6 +302,10 @@ struct DEVEX_API Monitors
     MonitorHistory gpuSkinningCulled;
     MonitorHistory gpuSkinningReused;
     MonitorHistory gpuSkinningMemory;
+    MonitorHistory meshLods;
+    MonitorHistory lodTrianglesSaved;
+    MonitorHistory animationSampled;
+    MonitorHistory animationHeld;
     // In megabytes: the memory of the GPU the engine takes, and what it sent to the GPU last frame.
     MonitorHistory gpuMemory;
     MonitorHistory uploads;

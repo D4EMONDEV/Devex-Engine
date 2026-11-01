@@ -93,6 +93,10 @@ public:
                                           "positions of their nodes: place them again.");
         }
         m_compressRow = ui.formRow(import, "Compress textures");
+        m_lodsRow = ui.formRow(import, "Generate LODs");
+        m_lods = ui.toggle(m_lodsRow.editor);
+        ui.tooltip(m_lodsRow.editor, "Build compact meshes for distant views. Materials, UVs and "
+                                     "skin weights are preserved.");
         m_compress = ui.toggle(m_compressRow.editor);
         ui.tooltip(m_compressRow.editor, "BC7 and BC5 on the GPU: a quarter of the memory, slower to import");
         m_qualityRow = ui.formRow(import, "Texture quality");
@@ -138,6 +142,8 @@ public:
             ui.scene().get<scene::UiRect>(m_scaleRow.mark).visible = m_settings.waits("scale");
         }
         ui.setToggle(m_compress, m_settings.boolean(state, "compress_textures", true));
+        ui.setToggle(m_lods, m_settings.boolean(state, "generate_lods", true));
+        ui.scene().get<scene::UiRect>(m_lodsRow.mark).visible = m_settings.waits("generate_lods");
         ui.scene().get<scene::UiRect>(m_compressRow.mark).visible = m_settings.waits("compress_textures");
         const std::string quality = m_settings.text(state, "texture_quality", "normal");
         const auto chosen = std::ranges::find_if(qualityChoices, [&](const QualityChoice& choice) { return quality == choice.option; });
@@ -172,6 +178,8 @@ public:
         {
             m_settings.set(state, "compress_textures", ui.scene().get<scene::UiToggle>(m_compress).value);
         }
+        if (world.wasChanged(m_lods))
+            m_settings.set(state, "generate_lods", ui.scene().get<scene::UiToggle>(m_lods).value);
         if (world.wasChanged(m_quality))
         {
             const std::int32_t selected = ui.scene().get<scene::UiDropdown>(m_quality).selected;
@@ -191,6 +199,8 @@ private:
     Entity m_scale;
     FormRow m_compressRow;
     Entity m_compress;
+    FormRow m_lodsRow;
+    Entity m_lods;
     FormRow m_qualityRow;
     Entity m_quality;
     ImportFooter m_footer;

@@ -2165,6 +2165,28 @@ namespace devex::ui {
   sandbox (96 robots, `--skinning-only` dans le générateur) ; benchmark `DEVEX_STRESS_SKINNED=1`
   et `DEVEX_GPU_SKINNING=0` pour comparer, nombre de sommets et temps *Skinning* imprimés ;
   `DEVEX_STRESS_VIEWS=0..4`, `DEVEX_STRESS_OFFSCREEN=0..100` pour vues et poses hors champ.
+- LODs (jalon 90) : `MeshData::lods` / `MeshLod`, `generateMeshLods` (meshoptimizer 1.2),
+  `asset/MeshLods.cpp`, format binaire mesh 5 (réimport automatique), importeurs glTF 4 / FBX 3 /
+  OBJ 2. `generate_lods=true` par défaut, case *Generate LODs* dans Model Inspector puis Reimport.
+  Trois niveaux visés à 50/25/12,5 % des indices, au plus quatre ; sommets compactés, matériaux,
+  attributs des sommets retenus et palette d'os conservés. Bordures de matériaux et changements
+  de palettes verrouillés ; les poids signés ne génèrent pas de niveaux. Sphère intégrée équipée.
+  `vulkan/MeshLods.cpp` choisit par vue selon erreur objet, échelle (os inclus), profondeur et
+  résolution ; orthographique indépendant de la distance. Hystérésis de 10 % avec identités
+  stables, même géométrie pour couleur, ombres, contours et picking. Buffers des niveaux possédés
+  et détruits par le mesh racine. Shaders spatiaux personnalisés : géométrie originale.
+  `RendererConfig::meshLodError=1` pixel (0 désactive), `MeshInstance::lodBias`,
+  `MeshRenderer/SkinnedMeshRenderer.lodBias` (0 force l'original ; >1 autorise plus grossier),
+  `RendererStats::meshLodInstances/meshLodTrianglesSaved` avant visibilité sur toutes les vues,
+  affichés dans Statistics. Animation : `Animator.lodDistance=0` désactive par défaut ;
+  `lodFrameRate=15`, `lodFarDistance=60`, `lodFarFrameRate=5`. `AnimationWorld::setViewPositions`
+  prend tous les spectateurs (vide = plein débit), runtime alimenté par les vues du rendu précédent
+  et la caméra principale courante. Échantillonnage seul différé, horloges et événements par frame,
+  changement d'état/clip et seek immédiats, root motion / pause toujours évalués ; ticks répartis
+  par identité et hystérésis des distances. `AnimationWorld::stats` et moniteurs Sampled/Held.
+  Os et matrices toujours complets, pas de réduction de palette ni d'interpolation des poses tenues.
+  API des jeux 33 ; démo `assets/scenes/lods.dvxscene`, générateur `--lods-only` ;
+  benchmarks `DEVEX_MESH_LOD=0/1` et *Animation LOD stress benchmark* (`DEVEX_ANIMATION_LOD=0/1`).
 - Terrains : `asset::TerrainMaps` (`devex/asset/TerrainMaps.hpp` : `makeFlatTerrain`,
   `terrainHeight`, `terrainNormal`, `raycastTerrain`, `applyTerrainBrush`, `copyTerrainRegion`),
   `encodeTerrain`/`decodeTerrain`, asset `terrain` (`.dvxterrain`) ; composant `scene::Terrain`

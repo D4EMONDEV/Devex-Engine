@@ -96,6 +96,7 @@ devex_add_tests(scene
 devex_add_tests(animation
     SOURCES
         animation/AnimationTests.cpp
+        animation/AnimationBenchmark.cpp
         animation/SpriteAnimationTests.cpp
         animation/StateMachineTests.cpp
         animation/TweenTests.cpp
@@ -220,6 +221,7 @@ devex_add_tests(render
         render/PostProcessTests.cpp
         render/GpuCullingTests.cpp
         render/GpuSkinningTests.cpp
+        render/MeshLodTests.cpp
         render/RendererBenchmark.cpp
         render/RendererTests.cpp
         render/SphericalHarmonicsTests.cpp

@@ -847,7 +847,7 @@ def occlusion_scene():
     write(SANDBOX_ASSETS / 'scenes' / 'occlusion.dvxscene', '\n'.join(sections))
 
 
-def skinning_scene():
+def skinning_scene(lods=False):
     """A crowd of walking robot skeletons, with a screen for pose-aware occlusion."""
     source = (SANDBOX_ASSETS / 'scenes' / 'occlusion.dvxscene').read_text(encoding='utf-8')
     blocks = re.split(r'(?=^\[entity )', source, flags=re.MULTILINE)
@@ -855,8 +855,9 @@ def skinning_scene():
               any(f'name="{name}"' in block.splitlines()[0]
                   for name in ('Sun', 'Sky', 'Camera', 'Ground', 'Screen 1'))]
     text = '\n'.join(common)
+    demo = 'lods' if lods else 'skinning'
     for identity in re.findall(r'^\[entity uuid="([^"]+)"', text, re.MULTILINE):
-        text = text.replace(identity, str(uuid.uuid5(uuid.NAMESPACE_URL, 'devex-sandbox/skinning/' + identity)))
+        text = text.replace(identity, str(uuid.uuid5(uuid.NAMESPACE_URL, f'devex-sandbox/{demo}/' + identity)))
     robot_source = (SANDBOX_ASSETS / 'prefabs' / 'robot.dvxscene').read_text(encoding='utf-8')
     robot_source = re.sub(r'^\[scene[^\n]*\]\s*', '', robot_source)
     for component in ('NavMeshAgent', 'RobotGuide'):
@@ -871,22 +872,42 @@ def skinning_scene():
     robot_source = robot_source.replace('clip = asset("00000000-0000-0000-0000-000000000000")',
                                         f'clip = asset("{walk.group(1)}")')
     identities = re.findall(r'^\[entity uuid="([^"]+)"', robot_source, re.MULTILINE)
-    for row in range(8):
-        for column in range(12):
-            index = row * 12 + column
+    if lods:
+        robot_source = robot_source.replace('[component type="Animator"]',
+            '[component type="Animator"]\nlod_distance = 15\nlod_frame_rate = 15\nlod_far_distance = 35\nlod_far_frame_rate = 5')
+    columns = 4 if lods else 12
+    for row in range(4 if lods else 8):
+        for column in range(columns):
+            index = row * columns + column
             instance = robot_source
             for identity in identities:
                 instance = instance.replace(identity, str(uuid.uuid5(uuid.NAMESPACE_URL,
-                                            f'devex-sandbox/skinning/robot-{index}/{identity}')))
+                                            f'devex-sandbox/{demo}/robot-{index}/{identity}')))
             instance = instance.replace('name="Robot"', f'name="Robot {index + 1}"', 1)
             instance = instance.replace('position = vec3(0, 0, 0)',
                                         f'position = vec3({column * 2.5 - 13.75:g}, 0, {-10 - row * 3:g})', 1)
             instance = instance.replace('speed = 1\n', f'speed = {0.8 + (index % 5) * 0.1:g}\n', 1)
             text += '\n' + instance
-    write(SANDBOX_ASSETS / 'scenes' / 'skinning.dvxscene', text)
+    if lods:
+        for row in range(4):
+            for column in range(8):
+                identity = uuid.uuid5(uuid.NAMESPACE_URL, f'devex-sandbox/lods/sphere-{row}-{column}')
+                text += f'''\n[entity uuid="{identity}" name="LOD Sphere {row * 8 + column + 1}"]
+\n[component type="Transform"]
+position = vec3({column * 4 - 14:g}, 1, {-20 - row * 15:g})
+rotation = quat(0, 0, 0, 1)
+scale = vec3(2, 2, 2)
+\n[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000002")
+lod_bias = 1
+'''
+    write(SANDBOX_ASSETS / 'scenes' / f'{demo}.dvxscene', text)
 
 
 def main():
+    if "--lods-only" in sys.argv:
+        skinning_scene(True)
+        return
     if "--skinning-only" in sys.argv:
         skinning_scene()
         return
@@ -923,6 +944,7 @@ def main():
     audio_assets()
     occlusion_scene()
     skinning_scene()
+    skinning_scene(True)
 
 
 if __name__ == "__main__":

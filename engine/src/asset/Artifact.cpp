@@ -80,9 +80,9 @@ std::uint32_t artifactVersion(AssetType type) noexcept
     switch (type)
     {
     // 2: vertex tangents. 3: skinning weights and bind pose.
-    // 4: the box that holds the mesh.
+    // 4: the box that holds the mesh. 5: compact levels of detail.
     case AssetType::Mesh:
-        return 4;
+        return 5;
     // 2: skins and animations.
     case AssetType::Model:
         return 2;
@@ -167,6 +167,15 @@ std::vector<std::byte> encodeMesh(const MeshData& mesh)
     // An empty box is written as it is: the renderer measures the mesh when it loads it.
     writer.write(mesh.bounds.min);
     writer.write(mesh.bounds.max);
+    writer.write(static_cast<std::uint32_t>(mesh.lods.size()));
+    for (const MeshLod& lod : mesh.lods)
+    {
+        writer.write(lod.error);
+        writer.writeArray(std::span<const Vertex>(lod.vertices));
+        writer.writeArray(std::span<const std::uint32_t>(lod.indices));
+        writer.writeArray(std::span<const VertexSkin>(lod.skin));
+        writer.writeArray(std::span<const Submesh>(lod.submeshes));
+    }
     return writer.take();
 }
 
@@ -197,6 +206,18 @@ core::Result<MeshData> decodeMesh(std::span<const std::byte> bytes)
     mesh.inverseBind = reader.readArray<math::Mat4>();
     mesh.bounds.min = reader.read<math::Vec3>();
     mesh.bounds.max = reader.read<math::Vec3>();
+    const auto lodCount = reader.read<std::uint32_t>();
+    if (lodCount > 4)
+        reader.fail();
+    for (std::uint32_t index = 0; index < lodCount && !reader.failed(); ++index)
+    {
+        MeshLod& lod = mesh.lods.emplace_back();
+        lod.error = reader.read<float>();
+        lod.vertices = reader.readArray<Vertex>();
+        lod.indices = reader.readArray<std::uint32_t>();
+        lod.skin = reader.readArray<VertexSkin>();
+        lod.submeshes = reader.readArray<Submesh>();
+    }
     if (reader.failed())
     {
         return std::unexpected(truncated(AssetType::Mesh));

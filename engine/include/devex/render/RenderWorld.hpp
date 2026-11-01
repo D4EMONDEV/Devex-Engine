@@ -346,6 +346,8 @@ struct DEVEX_API MeshInstance
     // Where the values it gives the instance uniforms of its shader start in
     // RenderWorld::instanceParameters, one for each in the order the shader declares them.
     std::uint32_t instanceParameters = noInstanceParameters;
+    // Multiplies the pixel error budget; zero keeps full detail, larger permits coarser meshes.
+    float lodBias = 1.0f;
 };
 
 // A particle as the renderer draws it: a quad facing the camera, or lying as its batch says.

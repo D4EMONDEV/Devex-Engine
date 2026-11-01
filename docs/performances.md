@@ -5,6 +5,10 @@ refaire et les comparer d'une machine à l'autre. Une mesure qui manque est marq
 
 ## Comment mesurer
 
+Le banc garde les LODs de géométrie désactivés par défaut pour conserver les comparaisons des
+jalons précédents ; `DEVEX_MESH_LOD=1` les active. Le renderer des jeux les utilise par défaut
+pour les maillages qui en possèdent. Les mesures du jalon 90 comparent explicitement les deux.
+
 Le banc de mesure est un test caché, à lancer en **Release** sur la machine mesurée :
 
 ```bash
@@ -411,4 +415,86 @@ Remove-Item Env:DEVEX_STRESS_SKINNED, Env:DEVEX_STRESS_OBJECTS, Env:DEVEX_STRESS
     Env:DEVEX_STRESS_FRAMES, Env:DEVEX_PRESENT_MODE, Env:DEVEX_GPU_CULLING,
     Env:DEVEX_GPU_OCCLUSION, Env:DEVEX_GPU_SKINNING, Env:DEVEX_STRESS_VIEWS,
     Env:DEVEX_STRESS_OFFSCREEN, Env:DEVEX_STRESS_OCCLUDERS
+```
+
+## Niveaux de détail (jalon 90)
+
+Mesures du **1er novembre 2026**, i7-14700KF, RTX 4060, Windows 11 et pilote 621.01,
+Release avec avertissements en erreurs, sans validation. Le benchmark génère les mêmes niveaux
+dans les deux variantes ; `DEVEX_MESH_LOD=0` conserve la géométrie originale, `1` active le choix
+par vue avec le budget par défaut d'un pixel. Même caméra mobile, 256 lumières et paramètres
+de culling, occlusion et skinning ; 60 frames de chauffe puis 300 mesurées, deux séries de
+chaque cas, sans compilation ou autre test concurrent pendant les mesures. Présentation
+Immediate demandée et obtenue, image principale à 1280 × 720, vues supplémentaires à 640 × 360.
+
+| Scène | LOD désactivé, deux séries | LOD actif, deux séries | Mémoire vidéo sans → avec |
+|-------|---------------------------:|----------------------:|--------------------------:|
+| 20 000 poses, dégagé, une vue | 16,74 / 16,95 ms | 15,62 / 15,32 ms | 877,12 → 524,75 Mio |
+| 20 000 poses, murs, une vue | 14,67 / 14,15 ms | 15,12 / 14,97 ms | 877,12 → 524,75 Mio |
+| 2 000 poses, trois vues | 6,24 / 6,25 ms | 6,72 / 6,82 ms | 692,50 → 564,50 Mio |
+
+Dans le gros champ, 13 333 instances de sphères et de plans emploient un niveau, les cubes étant
+déjà trop simples. Les 20 000 poses sont toujours préparées, mais leurs sommets passent de
+**4 140 171 à 1 574 672**, soit **62 % de moins**. Les sorties réservent **217,62 Mio** au lieu de
+570,00 Mio, et le budget vidéo du processus baisse d'environ 40 %. Le temps de frame baisse
+d'environ **7 à 10 %** dans le champ dégagé. Derrière les murs, il augmente en revanche de
+**3 à 6 %** : l'occlusion avait déjà enlevé une grande partie des dessins, et le coût CPU de choix
+des niveaux et des lots supplémentaires dépasse ici le travail GPU économisé.
+
+Dans la seconde série dégagée, la passe GPU *Skinning* passe de 3,051 à 0,768 ms. Les lots
+supplémentaires font en revanche passer les draw calls de 72 à 93 : leur nombre seul ne mesure
+pas le gain. **LOD Triangles Saved** indique 5 331 008 triangles potentiellement évités avant
+culling ; cela ne correspond pas au nombre effectivement rasterisé derrière un mur.
+
+À trois vues et 2 000 objets, les temps augmentent de **8 à 9 %** dans cet essai : le gain GPU
+ne compense pas le choix des niveaux par le CPU. Les résolutions différentes font aussi choisir
+des niveaux différents pour huit poses : 2 008 poses sont préparées au lieu de 2 000, mais
+seulement 159 952 sommets au lieu de 414 171 ; 3 992 poses de vues restent réutilisées.
+Les buffers de sortie réservent 22,50 Mio au lieu de 57,25 Mio. Les niveaux ajoutent eux-mêmes
+du stockage et des buffers de géométrie, et leur sélection coûte du CPU. Les modèles, leurs
+déformations et le matériel peuvent changer ce bilan.
+
+### Échantillonnage des animations sur le CPU
+
+Un banc séparé, *Animation LOD stress benchmark*, mesure `AnimationWorld::update` en Release :
+256 personnages, 64 joints animés chacun, pistes de translation et rotation, clip partagé,
+60 updates de chauffe puis 300 mesurées à un pas simulé de 1/60 s. Les spectateurs sont loin ;
+les animators sans root motion emploient donc 5 Hz quand le LOD est activé.
+
+| Variante | Deux séries, par update | Poses calculées sur 300 updates | Poses tenues |
+|----------|------------------------:|-------------------------------:|-------------:|
+| Chaque frame | 1,316 / 1,320 ms | 76 800 | 0 |
+| LOD à 5 Hz | 0,152 / 0,149 ms | 6 400 | 70 400 |
+
+Le temps de cette mise à jour baisse de **88 à 89 %** ; les calculs sont déphasés par identité
+pour répartir les ticks entre frames. Ce banc n'inclut ni le recalcul des matrices mondiales,
+ni la physique, ni le rendu : ce pourcentage ne décrit pas une hausse équivalente des FPS.
+Il ne réduit pas le nombre d'os ni leurs matrices et n'interpole pas les poses tenues. Les
+événements et transitions avancent chaque frame, les changements de state/clip et seek posent
+immédiatement le squelette ; le root motion conserve le plein débit. Les tests vérifient ces
+comportements et le retour immédiat près d'une caméra.
+
+### Vérifications et reproduction
+
+Les LODs générés sont testés pour les matériaux, poids, attributs des sommets, réduction,
+encodage/décodage et rejets des données invalides. Les images sont comparées au choix explicite
+des mêmes maillages : modèles statiques et animés, perspective et orthographique, mouvements,
+ombres, TAA, contours et picking. Deux vues qui demandent des niveaux différents gardent leurs
+poses distinctes ; l'hystérésis est vérifiée autour du seuil. La scène de démonstration
+`assets/scenes/lods.dvxscene` est générable avec `--lods-only`.
+
+Les 77 tests du renderer passent en Debug ; les régressions LOD/skinning/occlusion passent aussi
+en Release. Les tests sans GPU passent (deux cas de liens symboliques ignorés faute de droits
+Windows). L'export Release d'une copie isolée du sandbox avec la scène LOD réussit, et la
+bibliothèque exportée charge sa dépendance meshoptimizer depuis le dossier autonome.
+Ces mesures ne couvrent pas encore un GPU intégré.
+
+Depuis la racine, reprendre les variables du benchmark animé ci-dessus et alterner
+`$env:DEVEX_MESH_LOD = "0"` / `"1"` avant de lancer `Renderer stress benchmark`.
+Pour le banc CPU seul :
+
+```powershell
+$env:DEVEX_ANIMATION_LOD = "0" # puis "1" pour la seconde variante
+.\out\build\x64-release\bin\devex_animation_tests.exe "Animation LOD stress benchmark"
+Remove-Item Env:DEVEX_ANIMATION_LOD
 ```

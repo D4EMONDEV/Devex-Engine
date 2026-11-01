@@ -1831,13 +1831,24 @@ les assets s'écrivent au fil de leur lecture.
   `play(scene, entity, clip, fondu)`, `stop`, `pause`, `resume`, `isPlaying`, `time` et `setTime`.
   En C#, la classe `Animation` expose les mêmes appels, et `[AssetType("animation")]` limite un
   champ `AssetId` aux clips.
-- **Skinning** : le rendu déforme les sommets **dans le vertex shader**. Chaque instance skinnée
+- **LOD d'animation** (jalon 90) : optionnel dans `Animator`, désactivé avec `lod_distance=0`.
+  Au-delà de cette distance, les poses sont échantillonnées à `lod_frame_rate` (15 Hz par défaut),
+  puis à `lod_far_frame_rate` (5 Hz) après `lod_far_distance` (60 m). Le spectateur le plus proche
+  décide ; hystérésis des distances et ticks déphasés entre personnages. Temps des clips,
+  transitions et événements avancent toujours chaque frame. États et clips changés, seek et
+  retour près d'une caméra posent immédiatement les os ; le root motion garde chaque frame.
+  Les poses intermédiaires sont tenues, les os et matrices ne sont pas supprimés : conserver le
+  plein débit quand des os servent au gameplay. Les vues viennent du rendu précédent et de la
+  caméra principale courante ; un appel direct à `AnimationWorld::setViewPositions` fournit ses
+  propres spectateurs, et une liste vide conserve le plein débit.
+- **Skinning** : le rendu déforme les sommets sur le GPU. Chaque instance skinnée
   publie ses matrices d'os (transformation mondiale de l'os fois sa pose de référence) dans un
   buffer de la frame, dont l'adresse et l'offset voyagent dans les push constants avec les
   attributs de skinning du maillage. Les passes couleur, ombres, sélection et picking partagent la
   même fonction `vertexTransform`, si bien qu'un personnage projette son ombre et se sélectionne
-  dans sa pose. Le calcul est donc refait par passe : pas de pré-skinning en compute pour l'instant,
-  et les colliders ne suivent pas la pose.
+  dans sa pose. Pour les matériaux standard opaques et découpés, les jalons 88–89 préparent les
+  poses utiles en compute et les partagent entre passes et vues ; le vertex shader reste le
+  chemin des shaders personnalisés, transparents et contours. Les colliders ne suivent pas la pose.
 - **Éditeur** : le panneau **Animation** (ancrable, *Editor > Panels > Animation*) montre
   l'`Animator` de l'entité sélectionnée ou de son ancêtre : choix du clip, Play/Pause/Stop, boucle,
   vitesse, et une piste par os avec ses images clés. Hors mode Play, le panneau pose lui-même le
@@ -2767,6 +2778,42 @@ Jalon 65, comme les `Joint3D` et `Joint2D` de Godot :
   mémoire en cache côté CPU (`BufferConfig::hostReads`). Avant, tous étaient en mémoire système,
   que le GPU d'une carte dédiée lit à travers le PCIe. Sur l'Iris Xe, dont la mémoire est partagée,
   rien ne change.
+### Niveaux de détail des maillages
+
+Au jalon 90, les modèles glTF, FBX et OBJ produisent des niveaux simplifiés via
+[meshoptimizer](https://github.com/zeux/meshoptimizer) 1.2. L'option d'import `generate_lods`,
+active par défaut et montrée dans l'inspecteur du modèle, vise trois niveaux à 50, 25 et 12,5 % des
+triangles ; les contraintes de bordures ou d'attributs peuvent arrêter la réduction plus tôt.
+La sphère intégrée en possède aussi. Les matériaux restent dans le même ordre ; les indices et
+sommets de chaque niveau sont compactés, avec UV, normales, tangentes et skin des sommets retenus.
+Les limites des matériaux et changements de palettes de joints sont verrouillés ; les poids
+participent à l'erreur. Les poids signés conservent leur maillage original. La palette et les
+matrices d'os restent identiques. Le format mesh passe à 5, déclenchant le réimport des caches.
+
+Chaque caméra choisit son niveau selon l'erreur objet rapportée, son échelle (celle des os pour
+un mesh animé), la profondeur de sa boîte et la résolution de la vue. Une orthographique dépend
+de son zoom et de sa résolution, pas de la distance. `RendererConfig::meshLodError` donne le budget
+en pixels (1 par défaut), multiplié par `lod_bias` de chaque renderer ; 0 force le détail complet.
+L'hystérésis de 10 % garde le choix précédent près d'un seuil, pour les instances identifiées.
+L'estimation d'échelle reste stable quand l'objet tourne dans le monde, y compris près d'un seuil.
+Ce budget reste un critère de simplification : les déformations extrêmes peuvent amplifier une
+différence, et le biais par objet permet de garder la qualité nécessaire.
+
+Le choix s'applique à toutes les passes de la vue, y compris ombres, sélection et picking ; les
+shaders spatiaux des projets conservent leur géométrie originale. Les vues peuvent choisir des
+niveaux différents : leur cache de poses distingue alors les maillages. Les buffers des niveaux
+appartiennent au mesh original et sont retirés avec lui, après les frames qui les lisent.
+La physique et la navigation continuent d'utiliser le mesh original. Les niveaux supplémentaires
+occupent du disque et des buffers ; ils réduisent la géométrie parcourue et les sorties de skinning
+quand une vue les emploie. Statistics montre les instances utilisant un niveau et les triangles
+potentiellement évités avant visibilité, ainsi que les poses d'animation calculées ou tenues.
+
+Le sandbox contient `assets/scenes/lods.dvxscene` : 16 robots animés avec LOD de fréquence et
+32 sphères à plusieurs distances, caméra libre et compteurs dans Statistics. Le générateur accepte
+`--lods-only`. Les tests vérifient données, skin, formats, images, ombres, picking, TAA, plusieurs
+caméras, orthographiques, hystérésis, temps, événements, transitions et root motion. Mesures et
+commandes dans [performances.md](performances.md) ; API des jeux 33.
+
 ### Sondes de réflexion
 
 - **Composant** : `ReflectionProbe`, comme celui de Godot : une boîte (`size`, centrée sur l'entité
@@ -4564,6 +4611,7 @@ jeu (le `SystemContext`, un monde, un composant) l'est aussi au C#, dans le mêm
 | stb (stb_vorbis)      | décodage Ogg Vorbis  | 16 ✅    |
 | efsw                  | surveillance des fichiers | 6 ✅ |
 | mikktspace            | tangentes            | 7 ✅     |
+| meshoptimizer         | niveaux de détail des maillages | 90 ✅ |
 | joltphysics           | physique             | 11 ✅    |
 | box2d                 | physique 2D          | 37 ✅    |
 | recastnavigation      | navigation           | 39 ✅    |
@@ -5045,6 +5093,12 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     écartées, réutilisées et de la mémoire dans Statistics. Tests des limites, images de plusieurs
     vues, ombres hors écran, mouvement, picking et baisse de mémoire ; API des jeux 32.
 
+90. ✅ **Niveaux de détail** — génération de maillages compacts à l'import, choix par caméra selon
+    l'erreur en pixels avec hystérésis, matériaux et skin conservés, contrôles dans l'inspecteur ;
+    fréquence des poses d'animation selon les spectateurs, temps/événements/transitions conservés,
+    root motion chaque frame et ticks répartis ; statistiques, tests de données et d'images,
+    benchmarks de géométrie et d'animation, scène `lods.dvxscene` ; API des jeux 33.
+
 Ensuite, sans ordre figé : à choisir dans les pistes ci-dessous.
 
 ## Questions ouvertes
@@ -5188,8 +5242,9 @@ Ensuite, sans ordre figé : à choisir dans les pistes ci-dessous.
 - **Autres plateformes de textures** : ASTC ou Basis Universal pour le mobile, produits à l'export.
 - **Culling** : dessin indirect compté (`vkCmdDrawIndexedIndirectCount`) dans un buffer d'indices partagé pour un
   seul dessin par vue, instances gardées sur le GPU d'une frame à l'autre plutôt que recopiées, et
-  hiérarchie spatiale pour les très grandes scènes ; niveaux de détail des maillages et des
-  squelettes, déformation différée des personnages occultés quand leurs ombres n'en ont pas besoin,
+  hiérarchie spatiale pour les très grandes scènes ; réduction du nombre d'os selon le niveau,
+  fondus entre LODs, groupes de niveaux créés par l'artiste, déformation différée des personnages
+  occultés quand leurs ombres n'en ont pas besoin,
   budget mémoire explicite et choix adaptatif entre skinning compute et par dessin.
 - **Ombres locales** : filtrage plus doux (PCSS), tuiles gardées une à une (aujourd'hui l'atlas est
   gardé entier ou redessiné entier), et ombres des surfaces transparentes.

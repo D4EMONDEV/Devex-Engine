@@ -138,7 +138,9 @@ std::optional<MeshData> makeBuiltinMesh(AssetId id)
     }
     if (id == builtin::sphereMesh)
     {
-        return makeUvSphere(0.5f, 48, 24);
+        auto mesh = makeUvSphere(0.5f, 48, 24);
+        generateMeshLods(mesh);
+        return mesh;
     }
     if (id == builtin::planeMesh)
     {

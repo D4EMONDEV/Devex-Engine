@@ -20,6 +20,7 @@ Les scripts complets sont inclus dans ce document et disponibles séparément da
 8. [Sauvegarder, réutiliser et exporter](#8-sauvegarder-réutiliser-et-exporter)
 9. [Résoudre les problèmes courants](#9-résoudre-les-problèmes-courants)
 10. [Référence rapide et limites de cette base](#10-référence-rapide-et-limites-de-cette-base)
+11. [Alléger une scène 3D avec les LODs](#11-alléger-une-scène-3d-avec-les-lods)
 
 ## 1. Préparer Devex et créer un projet
 
@@ -722,3 +723,52 @@ Les exemples peuvent coexister dans le même dossier `code`. Ne pas créer de de
 Pour approfondir l'implémentation correspondant à ce guide : [API des composants C#](../managed/Devex.Managed/Component.cs), [entrées](../managed/Devex.Managed/Input.cs), [services physiques et animations](../managed/Devex.Managed/Services.cs), [composants physiques 2D](../engine/include/devex/scene/Physics2DComponents.hpp), [composants physiques 3D](../engine/include/devex/scene/PhysicsComponents.hpp), [exemple de plateforme Sandbox](../samples/sandbox/code/Platformer.cs) et [joueur 3D C++ de Sandbox](../samples/sandbox/code/Sandbox.cpp).
 
 Les captures documentent l'interface observée ; les valeurs des tableaux définissent les prototypes à construire. La validation de compilation des exemples ne remplace pas les points de contrôle en Play, qui dépendent aussi des composants, références et réglages de la scène.
+
+## 11. Alléger une scène 3D avec les LODs
+
+Complément du **1er novembre 2026**. Un LOD est une version moins détaillée d'un modèle utilisée
+quand son détail prend peu de pixels. Cela concerne les maillages 3D ; les sprites 2D ne changent pas.
+
+### Géométrie des modèles
+
+1. Sélectionner le modèle glTF, FBX ou OBJ dans **FileSystem**.
+2. Dans son inspecteur, activer **Generate LODs**, puis **Reimport** si le réglage a changé.
+3. Placer le modèle normalement : chaque caméra choisit son niveau selon sa taille dans l'image.
+4. Dans le **MeshRenderer** ou **SkinnedMeshRenderer**, ouvrir **Level of Detail**.
+   **LOD Bias = 1** utilise le réglage normal ; **0** garde le modèle complet ; une valeur plus
+   grande autorise des niveaux plus grossiers.
+
+Les matériaux, les UV et les données d'animation des sommets retenus sont conservés. Un modèle
+déjà très simple peut ne produire aucun niveau supplémentaire. La sphère intégrée possède aussi
+des niveaux. Les shaders spatiaux personnalisés conservent la géométrie originale.
+
+Les collisions et la navigation continuent d'utiliser le modèle original. En cas de déformation
+qui rend une simplification trop visible, mettre **LOD Bias = 0** sur l'objet concerné.
+
+### Fréquence des animations éloignées
+
+Dans **Animator > Level of Detail**, la fréquence réduite est optionnelle :
+
+| Réglage | Exemple | Effet |
+| --- | ---: | --- |
+| LOD Distance | 20 | Commence la réduction après environ 20 mètres |
+| LOD Frame Rate | 15 | Calcule la pose à 15 Hz dans cette zone |
+| LOD Far Distance | 60 | Commence la zone lointaine après environ 60 mètres |
+| LOD Far Frame Rate | 5 | Calcule la pose à 5 Hz au loin |
+
+**LOD Distance = 0**, le défaut, garde une pose calculée chaque frame. Le spectateur le plus proche
+décide quand plusieurs vues sont actives. La pose est tenue entre deux calculs ; le temps,
+les transitions et les événements continuent chaque frame. Le root motion garde une pose calculée
+chaque frame. Garder le plein débit pour les personnages dont les os servent aux collisions ou au
+gameplay.
+
+Dans **Statistics**, suivre **Mesh LOD Instances**, **LOD Triangles Saved**,
+**Animation Poses Sampled/Held** et **Skinning Memory**. Les triangles affichés représentent
+la réduction potentielle avant les tests de visibilité. Une baisse de ce compteur ne suffit pas
+à déduire un gain de FPS : comparer aussi le temps de frame en Release.
+
+Pour un exemple prêt à ouvrir : **Sandbox > assets/scenes/lods.dvxscene** contient 16 robots et
+32 sphères à différentes distances. En Play, la caméra libre se déplace avec WASD, Espace monte,
+Ctrl descend, Maj accélère et Échap libère la souris. Les
+[mesures et commandes des benchmarks](performances.md#niveaux-de-détail-jalon-90) décrivent les
+gains et les limites observés.

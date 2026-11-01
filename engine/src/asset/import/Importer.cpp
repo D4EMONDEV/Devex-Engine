@@ -708,12 +708,13 @@ std::span<const Importer> importers()
         },
         Importer{
             .name = "gltf",
-            // 2: tangents. 3: the events of the clips.
-            .version = 3,
+            // 2: tangents. 3: clip events. 4: mesh LODs.
+            .version = 4,
             .mainType = AssetType::Model,
             .extensions = {".gltf", ".glb"},
             .defaultOptions =
                 {
+                    {"generate_lods", TextValue(true)},
                     {"compress_textures", TextValue(true)},
                     {"texture_quality", TextValue(std::string("normal"))},
                 },
@@ -722,12 +723,13 @@ std::span<const Importer> importers()
         },
         Importer{
             .name = "fbx",
-            // 2: the events of the clips.
-            .version = 2,
+            // 2: clip events. 3: mesh LODs.
+            .version = 3,
             .mainType = AssetType::Model,
             .extensions = {".fbx"},
             .defaultOptions =
                 {
+                    {"generate_lods", TextValue(true)},
                     {"scale", TextValue(1.0)},
                     {"compress_textures", TextValue(true)},
                     {"texture_quality", TextValue(std::string("normal"))},
@@ -737,11 +739,12 @@ std::span<const Importer> importers()
         },
         Importer{
             .name = "obj",
-            .version = 1,
+            .version = 2,
             .mainType = AssetType::Model,
             .extensions = {".obj"},
             .defaultOptions =
                 {
+                    {"generate_lods", TextValue(true)},
                     {"scale", TextValue(1.0)},
                     {"compress_textures", TextValue(true)},
                     {"texture_quality", TextValue(std::string("normal"))},
@@ -857,8 +860,8 @@ std::span<const Importer> importers()
         },
         Importer{
             .name = "shader_graph",
-            // Increased whenever the code of the nodes or the Slang modules change. 2: the reflection
-            // probes. 3: the atmosphere and the fog.
+            // Increased whenever the code of the nodes or the Slang modules change. 2: the
+            // reflection probes. 3: the atmosphere and the fog.
             .version = 3,
             .mainType = AssetType::Shader,
             .extensions = {shaderGraphExtension},

@@ -16,8 +16,10 @@ DEVEX_REFLECT(MeshRenderer)
 {
     type.field("mesh", &MeshRenderer::mesh, {.assetType = "mesh"})
         .field("material", &MeshRenderer::material, {.assetType = "material"})
-        .field("instance_shader_parameters", &MeshRenderer::instanceShaderParameters, {.hidden = true})
-        .field("instance_shader_values", &MeshRenderer::instanceShaderValues, {.hidden = true});
+        .field("instance_shader_parameters", &MeshRenderer::instanceShaderParameters,
+               {.hidden = true})
+        .field("instance_shader_values", &MeshRenderer::instanceShaderValues, {.hidden = true})
+        .field("lod_bias", &MeshRenderer::lodBias, {.group = "Level of Detail"});
 }
 
 DEVEX_REFLECT(Camera)

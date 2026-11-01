@@ -29,6 +29,7 @@ struct DEVEX_API SkinnedMeshRenderer
     // keep their defaults. Edited under Instance Shader Parameters, or by setInstanceShaderParameter.
     std::vector<std::string> instanceShaderParameters;
     std::vector<math::Vec4> instanceShaderValues;
+    float lodBias = 1.0f;
 };
 DEVEX_DECLARE_ENGINE_REFLECTION(SkinnedMeshRenderer);
 
@@ -51,6 +52,12 @@ struct DEVEX_API Animator
     // Moves the entity with the root bone of the clip instead of animating it in place. With a
     // CharacterController, the motion is given to it rather than to the Transform.
     bool applyRootMotion = false;
+    // Optional distance-based bone sampling. Zero distance keeps every frame; clip time,
+    // transitions and events always advance. Root-motion animators always sample every frame.
+    float lodDistance = 0.0f;
+    float lodFrameRate = 15.0f;
+    float lodFarDistance = 60.0f;
+    float lodFarFrameRate = 5.0f;
 };
 DEVEX_DECLARE_ENGINE_REFLECTION(Animator);
 

@@ -22,6 +22,7 @@
         "glm",
         "joltphysics",
         "miniaudio",
+        "meshoptimizer",
         "mikktspace",
         "plutosvg",
         "recastnavigation",

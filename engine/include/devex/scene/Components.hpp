@@ -45,6 +45,8 @@ struct DEVEX_API MeshRenderer
     // keep their defaults. Edited under Instance Shader Parameters, or by setInstanceShaderParameter.
     std::vector<std::string> instanceShaderParameters;
     std::vector<math::Vec4> instanceShaderValues;
+    // LOD pixel budget multiplier: zero forces full detail.
+    float lodBias = 1.0f;
 };
 DEVEX_DECLARE_ENGINE_REFLECTION(MeshRenderer);
 

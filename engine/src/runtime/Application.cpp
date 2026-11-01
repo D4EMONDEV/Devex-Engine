@@ -1,22 +1,23 @@
+#include "GameCodeBuilder.hpp"
+#include "ManagedCodeBuilder.hpp"
+#include "ManagedGame.hpp"
+#include <devex/animation/AnimationWorld.hpp>
+#include <devex/animation/SpriteAnimation.hpp>
+#include <devex/animation/TweenWorld.hpp>
 #include <devex/asset/AssetId.hpp>
 #include <devex/asset/Package.hpp>
 #include <devex/asset/Primitives.hpp>
 #include <devex/asset/Project.hpp>
-#include <devex/animation/AnimationWorld.hpp>
-#include <devex/animation/SpriteAnimation.hpp>
-#include <devex/animation/TweenWorld.hpp>
-#include <devex/particles/ParticleWorld.hpp>
 #include <devex/asset/import/TextureProcessing.hpp>
 #include <devex/audio/AudioEngine.hpp>
-#include <devex/core/File.hpp>
-#include <devex/core/Profiler.hpp>
-#include <devex/core/Path.hpp>
 #include <devex/core/Assert.hpp>
 #include <devex/core/BuildInfo.hpp>
+#include <devex/core/File.hpp>
 #include <devex/core/Log.hpp>
-#include "GameCodeBuilder.hpp"
-#include "ManagedCodeBuilder.hpp"
-#include "ManagedGame.hpp"
+#include <devex/core/Path.hpp>
+#include <devex/core/Profiler.hpp>
+#include <devex/particles/ParticleWorld.hpp>
+#include <devex/scene/Components.hpp>
 
 #include <devex/platform/CrashHandler.hpp>
 #include <devex/platform/DesktopEntry.hpp>
@@ -402,6 +403,7 @@ private:
     std::unique_ptr<navigation::NavigationWorld> m_navigation;
     std::unique_ptr<audio::AudioWorld> m_audio;
     std::unique_ptr<animation::AnimationWorld> m_animation;
+    std::vector<math::Vec3> m_animationViews;
     std::unique_ptr<animation::TweenWorld> m_tweens;
     // The particles of the scene shown, the one the editor edits included, which it previews.
     std::unique_ptr<particles::ParticleWorld> m_particles;
@@ -1151,6 +1153,11 @@ void ApplicationRunner::render(bool gameplay)
         DEVEX_PROFILE_SCOPE("Editor overlays");
         m_services.tools->prepareRender(scene, world, m_playState);
     }
+    m_animationViews.clear();
+    m_animationViews.push_back(math::Vec3(math::inverse(world.camera.view)[3]));
+    for (const auto& view : world.views)
+        if (view.extent.width > 0 && view.extent.height > 0)
+            m_animationViews.push_back(math::Vec3(math::inverse(view.camera.view)[3]));
     // The interface is drawn last, over the game and its overlays.
     {
         DEVEX_PROFILE_SCOPE("Interface drawing");
@@ -2677,6 +2684,20 @@ void ApplicationRunner::updateAnimation(std::chrono::nanoseconds frameTime)
     }
     const bool paused = isEditor() && m_playState != tools::PlayState::Playing;
     m_animation->setPaused(paused);
+    // Keep extra views from the preceding render, alongside the primary camera's latest world
+    // transform. The nearest viewer controls optional animation sampling.
+    auto viewers = m_animationViews;
+    for (const auto [entity, transform, camera] :
+         m_application.m_scene->view<scene::WorldTransform, scene::Camera>())
+    {
+        static_cast<void>(entity);
+        if (camera.primary)
+        {
+            viewers.push_back(math::Vec3(transform.matrix[3]));
+            break;
+        }
+    }
+    m_animation->setViewPositions(viewers);
     // Sprites move from frame to frame too, while the game plays.
     m_animation->update(*m_application.m_scene, core::Duration(frameTime));
     // After the clips, so that a tween moves an animated entity as a whole.

@@ -238,6 +238,7 @@ VulkanRenderer::VulkanRenderer(platform::Window& window, const RendererConfig& c
     m_gpuCulling = config.gpuCulling && m_device.supportsDrawIndirectFirstInstance();
     m_gpuOcclusion = config.gpuOcclusion;
     m_gpuSkinning = config.gpuSkinning;
+    m_meshLodError = config.meshLodError;
 }
 
 VulkanRenderer::~VulkanRenderer()
@@ -387,6 +388,27 @@ core::Result<MeshHandle> VulkanRenderer::createMesh(const asset::MeshData& mesh)
                                 .mesh = handle,
                                 .bufferBytes = {vertexBytes, indexBytes, skinBytes}});
     m_pendingUploadBytes += vertexBytes + indexBytes + skinBytes;
+    for (const asset::MeshLod& lod : mesh.lods)
+    {
+        asset::MeshData data{.vertices = lod.vertices,
+                             .indices = lod.indices,
+                             .submeshes = lod.submeshes,
+                             .skin = lod.skin,
+                             .inverseBind = mesh.inverseBind};
+        // CPU fallback culling keeps the original conservative bind box, even when reduction
+        // removed an extreme vertex. Also enclose custom LODs extending beyond the original.
+        data.bounds = m_meshes.find(handle)->bounds;
+        const auto reducedBounds = asset::computeBounds(data);
+        data.bounds.add(reducedBounds.min);
+        data.bounds.add(reducedBounds.max);
+        auto child = createMesh(data);
+        if (!child)
+        {
+            destroyMesh(handle);
+            return std::unexpected(child.error());
+        }
+        m_meshes.find(handle)->lods.push_back({*child, lod.error});
+    }
     return handle;
 }
 
@@ -406,6 +428,8 @@ void VulkanRenderer::destroyMesh(MeshHandle mesh)
 {
     if (std::optional<GpuMesh> removed = m_meshes.remove(mesh))
     {
+        for (const auto& lod : removed->lods)
+            destroyMesh(lod.mesh);
         m_retiredMeshes.push_back({.mesh = std::move(*removed), .retiredAtFrame = m_frameIndex});
     }
 }
@@ -1171,6 +1195,7 @@ void VulkanRenderer::swapViewState(ViewState& state) noexcept
     std::swap(m_historyStates, state.historyStates);
     std::swap(m_historyExtent, state.historyExtent);
     std::swap(m_historyValid, state.historyValid);
+    std::swap(m_previousLods, state.meshLods);
     std::swap(m_previousViewProjection, state.previousViewProjection);
     std::swap(m_ev100, state.ev100);
     std::swap(m_targetEv100, state.targetEv100);
@@ -4944,6 +4969,40 @@ core::Result<void> VulkanRenderer::uploadParticles(FrameContext& frame) const
 core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std::uint32_t frameSlot,
                                                         std::uint32_t imageIndex, bool drawShadows, ExtraView* extraView)
 {
+    // Every pass of this view uses the same level, including picking, shadows and outlines.
+    // Restore the original handles before recording another camera or retaining frame history.
+    m_originalMeshes.clear();
+    m_nextLods.clear();
+    if (m_meshLodError > 0.0f && std::isfinite(m_meshLodError))
+        for (auto& instance : m_world.meshes)
+        {
+            m_originalMeshes.push_back(instance.mesh);
+            const auto selected = chooseMeshLod(instance);
+            const auto* originalMesh = m_meshes.find(instance.mesh);
+            if (instance.objectId != 0 && originalMesh != nullptr && !originalMesh->lods.empty())
+                m_nextLods.push_back({instanceKey(instance), instance.mesh, selected});
+            if (selected != instance.mesh)
+            {
+                const auto& original = m_meshes.find(instance.mesh)->submeshes[instance.submesh];
+                const auto& reduced = m_meshes.find(selected)->submeshes[instance.submesh];
+                ++m_lodInstances;
+                m_lodTrianglesSaved += (original.indexCount - reduced.indexCount) / 3;
+                instance.mesh = selected;
+            }
+        }
+    std::ranges::sort(m_nextLods, {}, &LodChoice::key);
+    struct RestoreMeshes
+    {
+        VulkanRenderer& renderer;
+        RenderWorld& world;
+        const std::vector<MeshHandle>& handles;
+        ~RestoreMeshes()
+        {
+            for (std::size_t i = 0; i < handles.size(); ++i)
+                world.meshes[i].mesh = handles[i];
+            renderer.m_previousLods.swap(renderer.m_nextLods);
+        }
+    } restoreMeshes{*this, m_world, m_originalMeshes};
     const VkCommandBuffer commandBuffer = frame.commandBuffer;
     DEVEX_VK_TRY(vkResetCommandPool, m_device.handle(), frame.commandPool, 0);
     const VkCommandBufferBeginInfo beginInfo{
@@ -6813,6 +6872,8 @@ RendererStats VulkanRenderer::stats() const noexcept
         .gpuSkinnedVertices = m_skinnedVertexCount,
         .gpuSkinningCulledPoses = m_skinCulled,
         .gpuSkinningReusedPoses = m_skinReused,
+        .meshLodInstances = m_lodInstances,
+        .meshLodTrianglesSaved = m_lodTrianglesSaved,
         .meshCount = m_meshes.size(),
         .textureCount = m_textures.size(),
         // The default material is not counted.

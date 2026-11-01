@@ -3,6 +3,7 @@
 // and the most it reached. The measures are recorded every frame, the panel shown or not.
 #include "SettingsUi.hpp"
 
+#include <devex/animation/AnimationWorld.hpp>
 #include <devex/core/Profiler.hpp>
 
 #include <algorithm>
@@ -62,6 +63,10 @@ const std::array measures{
     Measure{"Skinning Poses Skipped", &Monitors::gpuSkinningCulled, &count},
     Measure{"Skinning Poses Reused", &Monitors::gpuSkinningReused, &count},
     Measure{"Skinning Memory", &Monitors::gpuSkinningMemory, &megabytes},
+    Measure{"Mesh LOD Instances", &Monitors::meshLods, &count},
+    Measure{"LOD Triangles Saved", &Monitors::lodTrianglesSaved, &count},
+    Measure{"Animation Poses Sampled", &Monitors::animationSampled, &count},
+    Measure{"Animation Poses Held", &Monitors::animationHeld, &count},
     Measure{"GPU Memory", &Monitors::gpuMemory, &megabytes},
     Measure{"Uploads", &Monitors::uploads, &megabytes},
     Measure{"Entities", &Monitors::entities, &count},
@@ -121,6 +126,12 @@ void recordMonitors(ToolsState& state, const scene::Scene& scene, core::Duration
     monitors.gpuOccluded.record(static_cast<float>(stats.gpuOccludedInstances));
     monitors.gpuSkinnedPoses.record(static_cast<float>(stats.gpuSkinnedPoses));
     monitors.gpuSkinnedVertices.record(static_cast<float>(stats.gpuSkinnedVertices));
+    monitors.meshLods.record(static_cast<float>(stats.meshLodInstances));
+    monitors.lodTrianglesSaved.record(static_cast<float>(stats.meshLodTrianglesSaved));
+    const auto animated = state.animationWorld != nullptr ? state.animationWorld->stats()
+                                                          : animation::AnimationWorld::Stats{};
+    monitors.animationSampled.record(static_cast<float>(animated.sampledPoses));
+    monitors.animationHeld.record(static_cast<float>(animated.heldPoses));
     monitors.gpuSkinningCulled.record(static_cast<float>(stats.gpuSkinningCulledPoses));
     monitors.gpuSkinningReused.record(static_cast<float>(stats.gpuSkinningReusedPoses));
     monitors.gpuSkinningMemory.record(

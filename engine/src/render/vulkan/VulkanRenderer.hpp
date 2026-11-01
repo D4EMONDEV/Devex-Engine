@@ -288,12 +288,19 @@ private:
 
     // What a view carries from one frame to the next. The renderer holds that of the view it records;
     // the others wait here, swapped in while theirs are recorded.
+    struct LodChoice
+    {
+        std::uint64_t key;
+        MeshHandle original;
+        MeshHandle selected;
+    };
     struct ViewState
     {
         std::array<std::optional<Image>, 2> history;
         std::array<ImageState, 2> historyStates{ImageState::Undefined, ImageState::Undefined};
         math::Extent2D historyExtent;
         bool historyValid = false;
+        std::vector<LodChoice> meshLods;
         math::Mat4 previousViewProjection{1.0f};
         float ev100 = 14.0f;
         float targetEv100 = 14.0f;
@@ -328,6 +335,11 @@ private:
 
     struct GpuMesh
     {
+        struct Lod
+        {
+            MeshHandle mesh;
+            float error = 0.0f;
+        };
         // The box holding the mesh, which the culling tests against the views.
         math::Aabb bounds;
         Buffer vertices;
@@ -337,6 +349,7 @@ private:
         std::optional<Buffer> skin;
         std::uint32_t jointCount = 0;
         detail::SkinBounds skinBounds;
+        std::vector<Lod> lods;
         // False until a frame has recorded the copy of its data: it is not drawn before.
         bool ready = false;
     };
@@ -568,6 +581,7 @@ private:
     [[nodiscard]] core::Result<void> prepareSkinning(FrameContext& frame, bool cascades, bool atlas,
                                                      bool pick);
     void recordSkinning(VkCommandBuffer commands) const;
+    [[nodiscard]] MeshHandle chooseMeshLod(const MeshInstance& instance) const;
     void recordDepthPyramid(VkCommandBuffer commands, const FrameContext& frame,
                             std::uint32_t frameSlot) const;
     void recordOcclusion(VkCommandBuffer commands, const FrameContext& frame,
@@ -793,6 +807,12 @@ private:
     bool m_gpuCulling = false;
     bool m_gpuOcclusion = false;
     bool m_gpuSkinning = false;
+    float m_meshLodError = 1.0f;
+    std::vector<MeshHandle> m_originalMeshes;
+    std::vector<LodChoice> m_previousLods;
+    std::vector<LodChoice> m_nextLods;
+    std::uint32_t m_lodInstances = 0;
+    std::uint64_t m_lodTrianglesSaved = 0;
     // A page is written by one view, then read by any later view of the same frame. Its buffers
     // never grow after submission. The last submission's fence protects the whole frame's arena,
     // including when acquiring the main swapchain image failed after drawing extra views.

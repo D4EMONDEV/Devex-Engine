@@ -7,6 +7,7 @@ find_package(Freetype REQUIRED)
 find_package(glm CONFIG REQUIRED)
 find_package(Jolt CONFIG REQUIRED)
 find_package(mikktspace CONFIG REQUIRED)
+find_package(meshoptimizer CONFIG REQUIRED)
 find_package(plutosvg CONFIG REQUIRED)
 find_package(SDL3 CONFIG REQUIRED)
 find_package(volk CONFIG REQUIRED)
@@ -206,6 +207,7 @@ target_sources(devex_asset
         src/asset/Localization.cpp
         src/asset/MaterialData.cpp
         src/asset/MeshData.cpp
+        src/asset/MeshLods.cpp
         src/asset/ModelData.cpp
         src/asset/Package.cpp
         src/asset/Primitives.cpp
@@ -264,6 +266,7 @@ target_link_libraries(devex_asset
     PRIVATE
         Devex::Serialization
         mikktspace::mikktspace
+        meshoptimizer::meshoptimizer
         zstd::libzstd
 )
 set_target_properties(devex_asset PROPERTIES
@@ -393,6 +396,7 @@ target_sources(devex_render
         src/render/vulkan/VulkanRenderer.cpp
         src/render/vulkan/Occlusion.cpp
         src/render/vulkan/Skinning.cpp
+        src/render/vulkan/MeshLods.cpp
         src/render/vulkan/VulkanRenderer.hpp
     PUBLIC
         FILE_SET HEADERS
