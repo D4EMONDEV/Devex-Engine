@@ -327,8 +327,10 @@ public:
             return ui.numbers(row.editor, one, settings).front();
         };
         m_fieldRows.clear();
+        ui.addGroup(ui.sections[m_card], "Coordinates");
         m_time = field("Time", values, "From 0 at the start of the tween to 1 at its end");
         m_value = field("Value", values, "0 at the start value of the tween, 1 at its end value");
+        ui.addGroup(ui.sections[m_card], "Tangents");
         m_in = field("Slope In", slopes, "The slope the curve arrives with");
         m_out = field("Slope Out", slopes, "The slope the curve leaves with");
         m_unselected = ui.note(&ui.sections[m_card], "");

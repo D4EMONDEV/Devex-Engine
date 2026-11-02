@@ -128,6 +128,8 @@ struct DEVEX_API OverlayText
 DEVEX_API void drawOverlayShadow(render::RenderWorld& world, math::Vec2 min, math::Vec2 max, float radius, math::Vec4 color, float spread);
 DEVEX_API void drawOverlayBox(render::RenderWorld& world, math::Vec2 min, math::Vec2 max, math::Vec4 color,
                               float radius = 0.0f);
+DEVEX_API void drawOverlayCheck(render::RenderWorld& world, math::Vec2 min, math::Vec2 max,
+                                math::Vec4 color);
 // Text in a box, in pixels: from its left edge, centred on its height, and cut to it.
 DEVEX_API void drawOverlayText(render::RenderWorld& world, const DrawContext& context, math::Vec2 min, math::Vec2 max,
                                const OverlayText& text);

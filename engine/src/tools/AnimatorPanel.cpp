@@ -1086,11 +1086,13 @@ private:
         const std::array<std::string_view, 1> one{""};
         Section& card = ui.card(kit, "State", EntityIcon{icons::Workflow, themeColors().animation});
         m_card = ui.sections.size() - 1;
+        ui.addGroup(card, "State");
         const FormRow nameRow = ui.formRow(card, "Name");
         m_name = ui.textField(nameRow.editor);
         const FormRow entryRow = ui.formRow(card, "Entry State");
         m_entry = ui.toggle(entryRow.editor);
         ui.tooltip(entryRow.editor, "The state the animator starts in");
+        ui.addGroup(card, "Motion");
         const FormRow motionRow = ui.formRow(card, "Motion");
         m_blend = ui.choice(motionRow.editor, {"Clip", "Blend Tree 1D", "Blend Tree 2D"});
         if (node.blend == AnimatorBlend::None)
@@ -1114,6 +1116,7 @@ private:
         const FormRow spriteRow = ui.formRow(card, "Sprite Animation");
         m_sprite = ui.textField(spriteRow.editor, "none");
         ui.tooltip(spriteRow.editor, "A named animation that the SpriteAnimator of the entity plays in this state");
+        ui.addGroup(card, "Playback");
         const FormRow speedRow = ui.formRow(card, "Speed");
         m_speed = ui.numbers(speedRow.editor, one, {.minValue = -10.0f, .maxValue = 10.0f, .dragSpeed = 0.01f, .decimals = 2}).front();
         const FormRow speedParameterRow = ui.formRow(card, "Speed Parameter");
@@ -1419,10 +1422,12 @@ private:
                                      "text");
         ui.scene().get<scene::UiText>(route).font = EditorUiKit::boldFont();
         Section& card = ui.card(kit, "Transition", EntityIcon{icons::Workflow, themeColors().animation});
+        ui.addGroup(card, "Blending");
         const FormRow durationRow = ui.formRow(card, "Duration");
         m_duration = ui.numbers(durationRow.editor, one, {.minValue = 0.0f, .maxValue = 10.0f, .dragSpeed = 0.01f, .decimals = 2, .format = "{} s"})
                          .front();
         ui.tooltip(durationRow.editor, "Seconds of the crossfade from one state to the other");
+        ui.addGroup(card, "Timing");
         const FormRow exitRow = ui.formRow(card, "Exit Time");
         m_hasExit = ui.toggle(exitRow.editor);
         ui.tooltip(exitRow.editor, "Waits until the state reaches a point of its cycle: 1 is its end");
@@ -1633,6 +1638,7 @@ private:
         const FormRow nameRow = ui.formRow(card, "Name");
         m_name = ui.textField(nameRow.editor);
         ui.tooltip(nameRow.editor, "Code names the layer by it: Animation.SetLayerWeight");
+        ui.addGroup(card, "Blending");
         const FormRow blendingRow = ui.formRow(card, "Blending");
         m_blending = ui.choice(blendingRow.editor, {"Override", "Additive"});
         ui.tooltip(blendingRow.editor, "Override takes the place of the pose below; Additive adds how far its clips move from their first frame");

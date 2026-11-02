@@ -646,6 +646,47 @@ TEST_CASE("The text of a dropdown stands off its left edge and leaves room for i
     CHECK(right.y < 300.0f - 40.0f * (0.45f + 0.28f));
 }
 
+TEST_CASE("Dropdown menus measure long labels once and fit them beside narrow fields",
+          "[ui][world][dropdown]")
+{
+    Scene scene;
+    const auto canvas = scene.createEntity("Canvas");
+    scene.add<Canvas>(canvas, Canvas{.scaleMode = CanvasScaleMode::ConstantPixels});
+    const auto choice = scene.createEntity("Choice");
+    REQUIRE(scene.setParent(choice, canvas));
+    scene.add<UiRect>(choice, UiRect{.anchorMin = {0, 0},
+                                     .anchorMax = {0, 0},
+                                     .offsetMin = {1800, 100},
+                                     .offsetMax = {1880, 125}});
+    scene.add<devex::scene::UiText>(choice, devex::scene::UiText{.size = 20});
+    const std::string label = "A long resource name that should fit in the menu";
+    scene.add<devex::scene::UiDropdown>(choice,
+                                        devex::scene::UiDropdown{.options = {"None", label}});
+    UiWorld world;
+    world.setFonts(&fontRef);
+    world.setDropdownStyle(
+        {.minimumRowHeight = 32, .padding = 5, .fitContents = true, .showSelected = true});
+    world.update(scene, window, {}, frame);
+    world.update(scene, window,
+                 UiInput{.pointer = {1840, 112}, .pointerDown = true, .pointerPressed = true},
+                 frame);
+    world.update(scene, window, UiInput{.pointer = {1840, 112}, .pointerReleased = true}, frame);
+    const auto bounds = world.overBounds(scene);
+    REQUIRE(bounds);
+    const auto width =
+        devex::ui::measureText(bakedFont(), label, devex::ui::TextStyle{.size = 20, .wrap = false})
+            .x;
+    CHECK(bounds->second.x - bounds->first.x >= width + 32 * 0.75f + 10);
+    CHECK(bounds->second.x <= window.x);
+    CHECK(bounds->first.x < 1800);
+    world.update(scene, window,
+                 UiInput{.pointer = bounds->first + Vec2{40, 5 + 32 * 1.5f},
+                         .pointerDown = true,
+                         .pointerPressed = true},
+                 frame);
+    CHECK(scene.get<devex::scene::UiDropdown>(choice).selected == 1);
+}
+
 TEST_CASE("A turned text turns its letters with it", "[ui][world]")
 {
     // How far the letters of a line spread across and down, turned or not.

@@ -837,10 +837,62 @@ dialogues et les onglets partagent des angles discrets et des espacements plus c
 
 ![Préréglage Godot 4 Modern dans les réglages de Devex](images/editor-godot-modern-settings.png)
 
-Dans l'inspecteur, chaque composant a son en-tête repliable, sur un fond commun. À l'intérieur, les sous-sections telles que
+Dans l'inspecteur, chaque composant a un en-tête gris repliable, avec son icône et son nom centrés.
+Les propriétés partagent le fond du panneau. À l'intérieur, les sous-sections telles que
 **Layers**, **Automatic layers** et **Grass** ont un titre gras et un séparateur. Cliquer sur
 leur ligne pour les replier ou déplier. Cela garde une hiérarchie visible sans ajouter de fonds
 derrière chaque groupe de propriétés.
+
+Cette organisation s'applique à tous les composants intégrés qui exposent des propriétés,
+ainsi qu'aux ressources. Les propriétés des groupes sont décalées avec un repère vertical pour
+rendre leur appartenance visible. Chaque groupe se replie indépendamment de son composant.
+
+| Élément inspecté | Exemples de groupes |
+| --- | --- |
+| Camera | Projection, Exposure, Antialiasing, Bloom |
+| Lumières et environnement | Light, Shadows, Atmosphere, Height |
+| Physique 2D et 3D | Shape, Body, Material, Collision, Constraints |
+| Animation et audio | Playback, Root Motion, Spatial, Routing |
+| Interface du jeu | Anchors, Offsets, Typography, Appearance, Interaction |
+| Tilemap et SpriteRenderer | Rendering ou Drawing, Lighting, Material |
+| Matériaux | Albedo, Metallic and Roughness, Normal Map, Emission |
+| Import des images et modèles | Mipmaps, Compression, Filtering, Level of Detail |
+| Courbes, Sprite Frames et Tilesets | Tangents, Playback, Collision and Occlusion, Metadata |
+
+**Paint**, ainsi que **Sculpt and Paint** sur un Terrain, se replient aussi. Pour un fichier
+importé, les boutons d'application restent dans leur propre section **Import Changes**.
+
+Les scripts C# peuvent organiser leurs champs de la même façon avec `[Group("Nom")]` :
+
+```csharp
+using Devex;
+
+public sealed class PlayerSettings : Component
+{
+    [Group("Movement")]
+    public float Speed = 5;
+    public float Acceleration = 20;
+
+    [Group("Jump")]
+    public float JumpHeight = 2;
+}
+```
+
+Un attribut commence un groupe ; les champs suivants y restent jusqu'au prochain `[Group]`.
+Ici, **Movement** contient Speed et Acceleration, puis **Jump** contient JumpHeight. Pour un
+composant C++, utiliser la métadonnée `.group` du premier champ de chaque groupe. Les champs
+de composants personnalisés sans groupe explicite apparaissent sous **Properties**. Ces
+groupes changent la présentation, pas les valeurs ni leur sauvegarde dans la scène.
+
+![Groupes Projection, Exposure et Antialiasing dans l'inspecteur de Camera](images/editor-inspector-all-groups.png)
+
+Les menus déroulants ont des lignes plus hautes que le champ fermé, des marges, un cadre et une
+ombre. Une coche indique le choix enregistré ; le survol indique celui que l'on peut sélectionner.
+La liste s'élargit pour les noms longs et se replace dans la fenêtre près d'un bord. La molette
+parcourt les longues listes ; **↑/↓** et **Entrée** permettent de choisir au clavier, **Échap**
+de fermer sans changer la valeur. Leur taille et leurs couleurs suivent les réglages du thème.
+
+![Menu de choix et sections dépliables dans l'inspecteur](images/editor-inspector-menus.png)
 
 Le champ **Filter Properties**, en haut du panneau, cherche par mots dans les noms des
 composants, des groupes et des propriétés, sans tenir compte de la casse. Par exemple,

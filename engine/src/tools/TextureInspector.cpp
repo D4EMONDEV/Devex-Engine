@@ -172,25 +172,28 @@ public:
         Section& import = ui.card(kit, "Import");
         if (!m_highDynamicRange)
         {
+            ui.addGroup(import, "Source");
             addToggle(ui, import, "Color", "srgb", true, "Colors encoded in sRGB, as images are; off for data such as masks and color tables");
             addToggle(ui, import, "Normal map", "normal_map", false,
                       "Tangent-space normals: only X and Y are kept, and mip levels are normalized again");
         }
+        ui.addGroup(import, "Mipmaps");
         addToggle(ui, import, "Mipmaps", "mipmaps", true,
                   "Smaller copies of the image for far away surfaces: no shimmering, a third more memory");
         if (!m_highDynamicRange)
         {
+            ui.addGroup(import, "Compression");
             addToggle(ui, import, "Compress", "compress", true,
                       "BC7 on the GPU: a quarter of the memory, slower to import. Pixel art keeps its pixels exactly without it.");
             addChoice(ui, import, "Quality", "quality", qualityChoices, "normal");
         }
+        ui.addGroup(import, "Filtering");
         addChoice(ui, import, "Filter", "filter", filterChoices, "linear");
-        Section* last = &import;
 
         if (!m_highDynamicRange)
         {
             Section& sprites = ui.card(kit, "Sprites");
-            last = &sprites;
+            ui.addGroup(sprites, "Slicing");
             addChoice(ui, sprites, "Mode", "sprite_mode", spriteModeChoices, "none");
             if (m_mode != "none")
             {
@@ -207,6 +210,7 @@ public:
                     m_grid = {made[0], made[1]};
                     ui.tooltip(m_gridRow.editor, "How many cells across and down the image is cut into");
                 }
+                ui.addGroup(sprites, "Pivot");
                 m_pivotRow = ui.formRow(sprites, "Pivot");
                 std::vector<std::string> presets;
                 for (const PivotChoice& choice : pivotChoices)
@@ -218,10 +222,12 @@ public:
                 const FormRow custom = ui.formRow(sprites, "");
                 const std::array<std::string_view, 2> axes{"x", "y"};
                 m_pivotNumbers = ui.numbers(custom.editor, axes, {.dragSpeed = 0.01f, .decimals = 2});
+                ui.addGroup(sprites, "Border");
                 m_borderRow = ui.formRow(sprites, "Border");
                 const std::array<std::string_view, 4> sides{"l", "b", "r", "t"};
                 m_border = ui.numbers(m_borderRow.editor, sides, {.minValue = 0.0f, .maxValue = 100000.0f, .step = 1.0f, .dragSpeed = 0.2f, .decimals = 0});
                 ui.tooltip(m_borderRow.editor, "Pixels kept at their size by sliced and tiled sprites: left, bottom, right, top");
+                ui.addGroup(sprites, "Lighting");
                 m_normalRow = ui.formRow(sprites, "Normal Map");
                 m_normal = ui.choice(m_normalRow.editor);
                 const math::Vec4 accent = linearColor(colors.accent);
@@ -231,7 +237,7 @@ public:
                                                "import it with Normal map on");
             }
         }
-        m_footer = importFooter(ui, kit, *last);
+        m_footer = importFooter(ui, kit);
 
         if (!m_highDynamicRange && m_mode != "none")
         {

@@ -51,6 +51,7 @@ struct Section
     scene::Entity header;
     scene::Entity icon;
     scene::Entity title;
+    float titleWidth = 0.0f;
     scene::Entity added;
     PanelButton menu;
     // A component whose code is not loaded: only its header shows.
@@ -63,8 +64,12 @@ struct Section
     bool filtered = false;
     // A composite editor keeps its canvas and Apply controls when any of its properties match.
     bool filterTogether = false;
+    // Actions that apply changes made elsewhere on the page remain with matching properties.
+    bool filterWithPage = false;
     std::vector<Line> lines;
     std::vector<std::string> groups;
+    // Rows built by a custom inspector page inherit its last group, just as reflected fields do.
+    int activeGroup = -1;
     // What some components show under their properties: the style of an element, the controls of
     // an emitter, the navigation mesh of a surface, and the painting of a tilemap.
     std::optional<std::size_t> styleLine;
@@ -145,6 +150,7 @@ struct FormUi : PanelBuilder
     std::unordered_set<std::string> folded;
     // Search temporarily reveals matching sections without changing their saved fold state.
     bool revealFiltered = false;
+    bool centerSectionTitles = false;
     // What a page made outside the content, such as its menus, gone with it.
     std::vector<scene::Entity> pageEntities;
 
@@ -177,6 +183,8 @@ struct FormUi : PanelBuilder
     Section& addSection(EditorUiKit& kit, std::string name, const EntityIcon& look, const scene::ComponentType* type);
     // A full-width foldout with a separator and a prominent title, without another card background.
     int addGroup(Section& section, std::string name);
+    void groupGuide(scene::Entity row);
+    void measureTitles(EditorUiKit& kit);
 
     struct Heading
     {

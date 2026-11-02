@@ -199,8 +199,8 @@ struct TerrainPainterUi
 void addTerrainPainter(InspectorUi& ui, EditorUiKit& kit, Section& section)
 {
     auto painter = std::make_shared<TerrainPainterUi>();
-    const scene::Entity title = ui.note(&section, "Sculpt and Paint", "text");
-    ui.scene().get<scene::UiText>(title).font = EditorUiKit::boldFont();
+    const auto firstLine = section.lines.size();
+    const int group = ui.addGroup(section, "Sculpt and Paint");
     // The tools, in rows of four however narrow the panel.
     const scene::Entity tools = ui.add(section.card, "Tools", rects::wide(ui.line * 2.0f + ui.gap * 3.0f));
     ui.scene().add<scene::UiLayout>(tools, scene::UiLayout{.kind = scene::UiLayoutKind::Grid,
@@ -236,6 +236,8 @@ void addTerrainPainter(InspectorUi& ui, EditorUiKit& kit, Section& section)
     ui.tooltip(painter->create.entity, "Write flat ground for this terrain, about one sample per meter, next to its scene");
     painter->message = ui.note(&section, "", "warning", 2.0f);
     painter->hint = ui.note(&section, "", "dim", 3.0f);
+    for (std::size_t i = firstLine + 1; i < section.lines.size(); ++i)
+        section.lines[i].group = group;
     section.terrainPainter = std::move(painter);
 }
 

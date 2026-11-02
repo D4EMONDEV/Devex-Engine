@@ -4,10 +4,12 @@ using Devex;
 public class Mover : Component
 {
     // In meters per second.
+    [Group("Movement \"2D\"")]
     public float Speed = 2.0f;
 
     public Vec3 Direction = new(1.0f, 0.0f, 0.0f);
 
+    [Group("State")]
     public string Label = "new";
 
     [Angle]

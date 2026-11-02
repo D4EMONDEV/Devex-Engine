@@ -425,16 +425,25 @@ void EditorUiKit::refreshTheme(const ThemeColors& colors)
         values.push_back({"UiInput", "focus_color", written(math::Vec4(colors.accent.x, colors.accent.y, colors.accent.z, 0.9f))});
         return values;
     }());
-    add("dropdown", [&] {
-        std::vector<asset::ThemeOverride> values = clickable(image(written(colors.raised), 4.0f));
-        values.push_back({"UiText", "color", written(colors.text)});
-        values.push_back({"UiDropdown", "list_color", written(colors.popup)});
-        values.push_back({"UiDropdown", "highlight_color", written(math::Vec4(colors.accent.x, colors.accent.y, colors.accent.z, 0.55f))});
-        values.push_back({"UiDropdown", "arrow_color", written(colors.textDim)});
-        values.push_back({"UiDropdown", "list_shadow_color", written(math::Vec4(0.0f, 0.0f, 0.0f, colors.dark ? 0.45f : 0.2f))});
-        values.push_back({"UiDropdown", "list_shadow_size", "10"});
-        return values;
-    }());
+    add("dropdown",
+        [&]
+        {
+            std::vector<asset::ThemeOverride> values =
+                clickable(image(written(colors.field), 3.0f));
+            values.push_back(
+                {"UiImage", "outline_color", written(math::Vec4(mono.x, mono.y, mono.z, 0.08f))});
+            values.push_back({"UiImage", "outline_width", "1"});
+            values.push_back({"UiText", "color", written(colors.text)});
+            values.push_back({"UiDropdown", "list_color", written(colors.popup)});
+            values.push_back(
+                {"UiDropdown", "highlight_color",
+                 written(math::Vec4(colors.accent.x, colors.accent.y, colors.accent.z, 0.25f))});
+            values.push_back({"UiDropdown", "arrow_color", written(colors.text)});
+            values.push_back({"UiDropdown", "list_shadow_color",
+                              written(math::Vec4(0.0f, 0.0f, 0.0f, colors.dark ? 0.45f : 0.2f))});
+            values.push_back({"UiDropdown", "list_shadow_size", "10"});
+            return values;
+        }());
     add("toggle", [&] {
         std::vector<asset::ThemeOverride> values = image(written(colors.field), 3.0f);
         // A hairline edge while off; on, the accent with a white tick, as Godot 4 draws them.
@@ -503,10 +512,11 @@ void EditorUiKit::refreshTheme(const ThemeColors& colors)
     // than the values, numbers the pointer lights and drags, swatches whose colour is the value's,
     // and the mark of a value that differs from its prefab's.
     add("card", image(written(colors.panel), 0.0f));
-    add("card_header", clickable(image(written(mixed(colors.panel, colors.raised, 0.5f)), 4.0f)));
+    add("card_header", clickable(image(written(colors.raised), 3.0f)));
     add("group",
         clickable(image(written(math::Vec4(colors.panel.x, colors.panel.y, colors.panel.z, 0.0f)),
                         0.0f)));
+    add("group_separator", image(written(math::Vec4(mono.x, mono.y, mono.z, 0.12f)), 0.0f));
     add("label", text(mixed(colors.text, colors.textDim, 0.2f)));
     add("number", [&] {
         std::vector<asset::ThemeOverride> values = clickable(image(written(colors.field), 4.0f));
@@ -697,6 +707,7 @@ void UiPanel::update(EditorUiKit& kit, core::Duration delta, float zoom, float h
         using platform::Key;
         const auto stroke = [&](Key key) { return devices.pressed(key, true); };
         const bool editing = m_world.isEditing();
+        const bool choosing = m_world.listedDropdown().isValid();
         // What the system typed, without the keys that steer.
         for (const char letter : devices.typed())
         {
@@ -706,14 +717,15 @@ void UiPanel::update(EditorUiKit& kit, core::Duration delta, float zoom, float h
                 input.typed.push_back(letter);
             }
         }
-        if (m_navigation)
+        if (m_navigation || choosing)
         {
             input.moveX = (stroke(Key::Right) ? 1 : 0) - (stroke(Key::Left) ? 1 : 0);
             input.moveY = (stroke(Key::Down) ? 1 : 0) - (stroke(Key::Up) ? 1 : 0);
         }
-        input.submitPressed = (m_navigation || editing) &&
-                              (devices.pressed(Key::Enter, false) || devices.pressed(Key::KeypadEnter, false) ||
-                               (m_navigation && !editing && devices.pressed(Key::Space, false)));
+        input.submitPressed =
+            (m_navigation || editing || choosing) &&
+            (devices.pressed(Key::Enter, false) || devices.pressed(Key::KeypadEnter, false) ||
+             (m_navigation && !editing && devices.pressed(Key::Space, false)));
         input.cancelPressed = devices.pressed(Key::Escape, false);
         input.backspacePressed = stroke(Key::Backspace);
         input.deletePressed = stroke(Key::Delete);
@@ -1196,6 +1208,16 @@ void PanelBuilder::fitMenu(scene::Entity menu, float width)
 
 void PanelBuilder::styleTooltips(const ThemeColors& colors)
 {
+    panel.world().setDropdownStyle(ui::DropdownStyle{
+        .minimumRowHeight = std::round(font * 2.1f),
+        .minimumWidth = std::round(font * 14.0f),
+        .padding = std::max(std::round(font * 0.2857f), 3.0f),
+        .cornerRadius = 4.0f,
+        .outlineColor =
+            linearColor(math::Vec4(colors.textDim.x, colors.textDim.y, colors.textDim.z, 0.35f)),
+        .outlineWidth = 1.0f,
+        .fitContents = true,
+        .showSelected = true});
     panel.world().setTooltipStyle(ui::TooltipStyle{.background = linearColor(colors.popup),
                                                    .text = linearColor(colors.text),
                                                    .font = EditorUiKit::regularFont(),

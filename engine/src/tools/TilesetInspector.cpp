@@ -324,11 +324,13 @@ public:
             ui.card(kit, "Tile", EntityIcon{icons::Grid, colors.texture});
             m_tileCard = ui.sections.size() - 1;
             Section& card = ui.sections[m_tileCard];
+            ui.addGroup(card, "Sprite");
             const FormRow spriteRow = ui.formRow(card, "Sprite");
             m_sprite = ui.choice(spriteRow.editor);
             const math::Vec4 accent = linearColor(colors.accent);
             ui.scene().add<scene::UiDropTarget>(m_sprite, scene::UiDropTarget{.accepts = {"asset:sprite"},
                                                                               .highlightColor = math::Vec4{accent.x, accent.y, accent.z, 0.35f}});
+            ui.addGroup(card, "Collision and Occlusion");
             const FormRow collisionRow = ui.formRow(card, "Collision");
             std::vector<std::string> labels;
             for (const CollisionChoice& choice : collisionChoices)
@@ -340,6 +342,7 @@ public:
             m_occluder = ui.toggle(occluderRow.editor);
             ui.tooltip(occluderRow.editor, "The whole cell hides the 2D lights, its outline joined to those of the cells around: "
                                            "the lights whose shadow mask meets the occluder mask of the Tilemap");
+            ui.addGroup(card, "Metadata");
             const FormRow dataRow = ui.formRow(card, "Data");
             m_data = ui.textField(dataRow.editor, "water, damage=5...");
             ui.tooltip(dataRow.editor, "Anything the game reads of the tile with Tilemaps.GetData");
@@ -351,6 +354,7 @@ public:
             m_probability =
                 ui.numbers(probabilityRow.editor, one, {.minValue = 0.0f, .maxValue = 1000.0f, .dragSpeed = 0.01f, .decimals = 2}).front();
             ui.tooltip(probabilityRow.editor, "How often terrain brushes choose this tile among those that fit the same place: variants");
+            ui.addGroup(card, "Animation");
             const FormRow fpsRow = ui.formRow(card, "Frames per second");
             m_fps = ui.numbers(fpsRow.editor, one, {.minValue = 0.0f, .maxValue = 120.0f, .dragSpeed = 0.1f, .decimals = 2}).front();
             ui.tooltip(fpsRow.editor, "How fast an animated tile goes through its frames");
@@ -364,6 +368,7 @@ public:
             {
                 ui.scene().get<scene::UiContextMenu>(cell).popup = ui.scene().reference(m_frameMenu);
             }
+            ui.addGroup(card, "Manage Tile");
             const Entity actions = ui.actions(&card);
             m_removeTile = ui.action(kit, actions, Icon::Trash, "Remove Tile");
             ui.tooltip(m_removeTile.entity, "Cells painted with it show nothing until a tile takes its number again");
@@ -537,7 +542,8 @@ private:
         for (std::size_t set = 0; set < tileset.terrainSets.size(); ++set)
         {
             SetRows& rows = m_sets.emplace_back();
-            const FormRow modeRow = ui.formRow(card, std::format("Terrain Set {}", set));
+            ui.addGroup(card, std::format("Terrain Set {}", set));
+            const FormRow modeRow = ui.formRow(card, "Mode");
             rows.mode = ui.choice(modeRow.editor, modes);
             ui.tooltip(modeRow.editor, "Which neighbours the tiles of the set match: sides and corners (47 tiles for a whole terrain), "
                                        "corners only or sides only (16 tiles)");
@@ -575,6 +581,7 @@ private:
             rows.remove = ui.action(kit, actions, Icon::Trash, "Remove Set");
             ui.tooltip(rows.remove.entity, "Remove the terrain set: its tiles stay, without terrains");
         }
+        ui.addGroup(card, "Manage Sets");
         const Entity actions = ui.actions(&card);
         m_addSet = ui.action(kit, actions, Icon::Plus, "Add Terrain Set");
     }

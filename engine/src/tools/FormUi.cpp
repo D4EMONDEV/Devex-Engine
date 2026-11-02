@@ -173,6 +173,7 @@ Section& FormUi::addSection(EditorUiKit& kit, std::string name, const EntityIcon
     Section& section = sections.emplace_back();
     section.type = type;
     section.name = std::move(name);
+    section.titleWidth = kit.textWidth(EditorUiKit::boldFont(), section.name, font);
     section.card = add(content, "Component", wide(headerHeight), "card");
     scene().add<scene::UiImage>(section.card);
     scene().add<scene::UiLayout>(section.card, scene::UiLayout{.kind = scene::UiLayoutKind::Column,
@@ -204,7 +205,8 @@ int FormUi::addGroup(Section& section, std::string name)
 {
     const int group = static_cast<int>(section.groups.size());
     section.groups.push_back(std::move(name));
-    const Entity header = add(section.card, "Group", wide(std::round(line * 1.15f)), "group");
+    section.activeGroup = group;
+    const Entity header = add(section.card, "Group", wide(line), "group");
     scene().add<scene::UiImage>(header);
     scene().add<scene::UiButton>(header);
     scene().add<scene::UiFoldout>(header);
@@ -213,16 +215,36 @@ int FormUi::addGroup(Section& section, std::string name)
                                         .anchorMax = {1.0f, 0.0f},
                                         .offsetMin = {0.0f, 0.0f},
                                         .offsetMax = {0.0f, 1.0f}},
-                                 "guide");
+                                 "group_separator");
     scene().add<scene::UiImage>(separator, scene::UiImage{.raycastTarget = false});
     text(header,
          UiRect{.anchorMin = {0.0f, 0.0f},
                 .anchorMax = {1.0f, 1.0f},
-                .offsetMin = {std::min(line, 28.0f), 2.0f},
+                .offsetMin = {std::min(line, 28.0f), 1.0f},
                 .offsetMax = {-pad, 0.0f}},
          section.groups.back(), "text", true);
     section.lines.push_back(Line{.entity = header, .group = group, .heading = true});
     return group;
+}
+
+void FormUi::groupGuide(Entity row)
+{
+    const auto guide = add(row, "Group Guide",
+                           UiRect{.anchorMin = {0, 0},
+                                  .anchorMax = {0, 1},
+                                  .offsetMin = {font * 0.55f, -gap},
+                                  .offsetMax = {font * 0.55f + 1, 0}},
+                           "guide");
+    scene().add<scene::UiImage>(guide, scene::UiImage{.raycastTarget = false});
+}
+
+void FormUi::measureTitles(EditorUiKit& kit)
+{
+    for (auto& section : sections)
+    {
+        const auto& title = scene().get<scene::UiText>(section.title);
+        section.titleWidth = kit.textWidth(title.font, title.text, title.size);
+    }
 }
 
 FormUi::Heading FormUi::heading(EditorUiKit& kit, IconText glyph, math::Vec4 color, std::string title, std::string subtitle)
@@ -261,9 +283,15 @@ FormRow FormUi::formRow(Section& section, std::string label, float height)
 {
     FormRow made;
     made.row = add(section.card, "Property", wide(height > 0.0f ? height : line));
+    const float indent = font * (section.activeGroup >= 0 ? 1.3f : 0.35f);
+    if (section.activeGroup >= 0)
+        groupGuide(made.row);
     const Entity box = add(made.row, "Label",
-                           UiRect{.anchorMin = {0.0f, 0.0f}, .anchorMax = {0.0f, 1.0f}, .offsetMin = {font * 0.35f, 0.0f},
-                                  .offsetMax = {labelWidth, 0.0f}, .clipChildren = true});
+                           UiRect{.anchorMin = {0.0f, 0.0f},
+                                  .anchorMax = {0.0f, 1.0f},
+                                  .offsetMin = {indent, 0.0f},
+                                  .offsetMax = {labelWidth, 0.0f},
+                                  .clipChildren = true});
     made.label = text(box, whole(), std::move(label), "label");
     made.mark = add(made.row, "Changed",
                     UiRect{.anchorMin = {0.0f, 0.2f}, .anchorMax = {0.0f, 0.8f}, .offsetMin = {0.0f, 0.0f}, .offsetMax = {2.0f, 0.0f},
@@ -272,7 +300,7 @@ FormRow FormUi::formRow(Section& section, std::string label, float height)
     scene().add<scene::UiImage>(made.mark, scene::UiImage{.raycastTarget = false});
     made.editor = add(made.row, "Editor",
                       UiRect{.anchorMin = {0.0f, 0.0f}, .anchorMax = {1.0f, 1.0f}, .offsetMin = {labelWidth, 2.0f}, .offsetMax = {0.0f, -2.0f}});
-    section.lines.push_back(Line{.entity = made.row});
+    section.lines.push_back(Line{.entity = made.row, .group = section.activeGroup});
     formRows.push_back(made);
     return made;
 }
@@ -406,7 +434,7 @@ Entity FormUi::note(Section* section, std::string value, std::string_view style,
     if (section != nullptr)
     {
         scene().get<UiRect>(made).offsetMin.x = font * 0.35f;
-        section->lines.push_back(Line{.entity = made});
+        section->lines.push_back(Line{.entity = made, .group = section->activeGroup});
     }
     return made;
 }
@@ -420,7 +448,7 @@ Entity FormUi::actions(Section* section)
                                                        .align = scene::TextAlign::Left});
     if (section != nullptr)
     {
-        section->lines.push_back(Line{.entity = made});
+        section->lines.push_back(Line{.entity = made, .group = section->activeGroup});
     }
     return made;
 }
@@ -464,7 +492,7 @@ SpriteGrid& FormUi::spriteGrid(EditorUiKit& kit, Section& section, std::unique_p
         const float inset = std::round(size * 0.32f);
         icon(kit, grid->drop, whole(math::Vec4{inset}), Icon::Plus, "icon_dim");
     }
-    section.lines.push_back(Line{.entity = grid->grid});
+    section.lines.push_back(Line{.entity = grid->grid, .group = section.activeGroup});
     grids.push_back(grid.get());
     return *grid;
 }
@@ -544,6 +572,24 @@ void FormUi::layoutCards()
             continue;
         }
         const bool open = !section.locked && (revealFiltered || !folded.contains(section.name));
+        if (section.type != nullptr || centerSectionTitles)
+        {
+            // Component categories center their icon and title together, while the disclosure
+            // arrow and component menu retain their own spaces at the two ends.
+            const float width = std::max(panel.size().x - font * 0.6f - 8.0f, headerHeight * 2);
+            const bool hasIcon = scene().get<UiRect>(section.icon).visible;
+            const float iconSize = hasIcon ? std::round(font * 1.15f) : 0;
+            const float spacing = hasIcon ? std::round(font * 0.4f) : 0;
+            const float titleRoom = std::max(width - headerHeight * 2, iconSize + spacing);
+            const float span = std::min(section.titleWidth + iconSize + spacing, titleRoom);
+            const float left = (width - span) * 0.5f;
+            auto& icon = scene().get<UiRect>(section.icon);
+            icon.offsetMin.x = left;
+            icon.offsetMax.x = left + iconSize;
+            auto& title = scene().get<UiRect>(section.title);
+            title.offsetMin.x = left + iconSize + spacing;
+            title.offsetMax.x = left + span - width;
+        }
         scene().get<scene::UiFoldout>(section.header).expanded = open;
         scene().get<scene::UiFoldout>(section.header).interactable =
             !section.locked && !revealFiltered;

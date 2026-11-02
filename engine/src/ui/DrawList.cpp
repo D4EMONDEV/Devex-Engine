@@ -603,8 +603,23 @@ void drawControls(Builder& builder, const scene::Scene& scene, const DrawContext
     const float height = rect.size().y;
     if (const scene::UiDropdown* const dropdown = scene.tryGet<scene::UiDropdown>(rect.entity))
     {
-        arrow(builder, math::Vec2{rect.max.x - height * 0.45f, rect.min.y + height * 0.5f}, height * 0.28f, false,
-              false, withOpacity(dropdown->arrowColor, rect.opacity));
+        const auto centre = math::Vec2{rect.max.x - height * 0.55f, rect.min.y + height * 0.5f};
+        const float half = height * 0.21f;
+        const auto stroke = [&](math::Vec2 from, math::Vec2 to)
+        {
+            const auto direction = math::normalize(to - from);
+            const auto normal =
+                math::Vec2{-direction.y, direction.x} * std::max(height * 0.035f, 0.75f);
+            auto& draw = builder.batch(render::UiDrawKind::Quad, render::TextureHandle{},
+                                       math::Vec4{0.0f}, 0.0f, 1.0f);
+            builder.quad(
+                draw,
+                std::array<math::Vec2, 4>{from - normal, to - normal, to + normal, from + normal},
+                math::Vec2{0.0f}, math::Vec2{1.0f},
+                withOpacity(dropdown->arrowColor, rect.opacity));
+        };
+        stroke(centre + math::Vec2{-half, -half * 0.4f}, centre + math::Vec2{0, half * 0.6f});
+        stroke(centre + math::Vec2{0, half * 0.6f}, centre + math::Vec2{half, -half * 0.4f});
     }
     if (const scene::UiFoldout* const foldout = scene.tryGet<scene::UiFoldout>(rect.entity))
     {
@@ -1516,6 +1531,15 @@ void drawOverlayBox(render::RenderWorld& world, math::Vec2 min, math::Vec2 max, 
                                          render::TextureHandle{}, math::Vec4{min.x, min.y, max.x, max.y}, radius, 1.0f);
     builder.quad(draw, min, max, math::Vec2{0.0f, 0.0f}, math::Vec2{1.0f, 1.0f}, color);
     std::erase_if(world.uiDraws, [](const render::UiDraw& batch) { return batch.indexCount == 0; });
+}
+
+void drawOverlayCheck(render::RenderWorld& world, math::Vec2 min, math::Vec2 max, math::Vec4 color)
+{
+    Builder builder{.world = world, .clip = math::Vec4{min.x, min.y, max.x, max.y}};
+    auto& draw = builder.batch(render::UiDrawKind::Check, render::TextureHandle{},
+                               math::Vec4{min.x, min.y, max.x, max.y}, 1.0f,
+                               std::max((max.x - min.x) * 0.15f, 1.5f));
+    builder.quad(draw, min, max, math::Vec2{0.0f}, math::Vec2{1.0f}, color);
 }
 
 void drawOverlayText(render::RenderWorld& world, const DrawContext& context, math::Vec2 min, math::Vec2 max,

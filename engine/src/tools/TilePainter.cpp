@@ -294,8 +294,8 @@ struct TilePainterUi
 void addTilePainter(InspectorUi& ui, EditorUiKit& kit, Section& section)
 {
     auto painter = std::make_shared<TilePainterUi>();
-    const scene::Entity title = ui.note(&section, "Paint", "text");
-    ui.scene().get<scene::UiText>(title).font = EditorUiKit::boldFont();
+    const auto firstLine = section.lines.size();
+    const int group = ui.addGroup(section, "Paint");
     // The tools, in rows of three however narrow the panel.
     const scene::Entity tools = ui.add(section.card, "Tools", rects::wide(ui.line * 2.0f + ui.gap * 3.0f));
     ui.scene().add<scene::UiLayout>(tools, scene::UiLayout{.kind = scene::UiLayoutKind::Grid,
@@ -329,6 +329,8 @@ void addTilePainter(InspectorUi& ui, EditorUiKit& kit, Section& section)
     ui.spriteGrid(kit, section, painter->palette, 0, std::round(ui.font * 2.6f), false);
     ui.spriteGrid(kit, section, painter->terrainPalette, 0, std::round(ui.font * 2.6f), false);
     painter->hint = ui.note(&section, "", "dim", 3.0f);
+    for (std::size_t i = firstLine + 1; i < section.lines.size(); ++i)
+        section.lines[i].group = group;
     section.painter = std::move(painter);
 }
 

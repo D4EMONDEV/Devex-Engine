@@ -1133,6 +1133,36 @@ les assets s'écrivent au fil de leur lecture.
   l'interface ; JetBrains Mono reste celle du code. Espacements compacts, fonds de composants
   communs, en-têtes discrets et dialogues à rayon 4. `EditorUiKit::refreshTheme` compare toute
   la palette dérivée : un changement de contraste seul actualise aussi les champs et menus.
+- **Menus et catégories de l'inspecteur** : les listes de choix des outils utilisent
+  `UiWorld::setDropdownStyle` : hauteur minimale d'une ligne de 2,1 em, largeur minimale de 14 em,
+  marges, cadre, ombre et coche indépendante du survol. Le champ fermé prend le fond des champs
+  et un chevron dessiné par deux traits. La largeur des libellés est mesurée à l'ouverture, et
+  la géométrie commune au dessin et aux clics se replace dans la zone des popups ; le nombre de
+  lignes visibles diminue si la fenêtre est trop petite. Les marges ne sélectionnent rien ;
+  molette, flèches, Entrée et Échap restent utilisables, même dans l'inspecteur qui désactive
+  normalement la navigation de focus. Un repère indique la portion d'une longue liste affichée.
+  Les jeux gardent par défaut les dimensions de leur contrôle ; ils peuvent choisir ce style
+  sans ajouter de champs sérialisés à `UiDropdown`. API native du jeu **36** (`UiWorld` agrandi).
+  Les catégories de composants centrent icône et titre sur un fond plus marqué. Les groupes
+  gardent des titres gras, un séparateur et des propriétés en retrait avec un guide vertical.
+  Tous les 78 types intégrés ayant des champs visibles déclarent des groupes adaptés à leur rôle,
+  de Camera et des lumières à la physique 2D/3D, l'animation, l'audio, la navigation et l'interface.
+  Cela ajoute des métadonnées sans réordonner les champs ni modifier les valeurs sérialisées.
+  Tilemap regroupe Rendering/Lighting/Material, SpriteRenderer Drawing/Ordering/Lighting/Material ;
+  les outils Paint, Sculpt and Paint et Baking Tools ont aussi un vrai groupe repliable.
+  L'état de ces groupes utilise les mêmes clés de repli que les autres sous-sections et le filtre
+  les révèle temporairement. Un test parcourt le registre et refuse tout champ intégré visible
+  sans groupe ou tout nom de groupe dupliqué dans son composant.
+  Les pages de ressources partagent ces séparateurs : matériaux (Albedo, Normal Map, etc.),
+  import des images/modèles/audio, courbes, Sprite Frames, Tilesets et contrôleurs d'animation.
+  `FormUi::activeGroup` rattache les lignes suivantes au groupe courant ; les titres de cartes
+  sont mesurés après leurs mises à jour et centrés même sans icône. Les boutons d'import ont une
+  carte **Import Changes** indépendante, conservée avec les propriétés trouvées par le filtre.
+  Les composants personnalisés sans métadonnées utilisent **Properties**. C# expose
+  `[Group("Nom")]` : le champ portant l'attribut ouvre un groupe, les suivants y restent jusqu'au
+  prochain attribut. Le descripteur managé transmet son nom échappé à `DynamicField::group`,
+  recopié dans `FieldInfo` ; API native **37** pour ce changement de structure. Les formats de
+  scène et la table des appels d'interop C# restent inchangés.
 - **Filtre de l'inspecteur** : recherche par mots dans composant/groupe/libellé, avec le même
   comparateur ASCII que FileSystem. Le résultat est recalculé à la saisie ou à la reconstruction
   de la page, et les valeurs numériques transitoires ne sont pas indexées. Les groupes trouvés

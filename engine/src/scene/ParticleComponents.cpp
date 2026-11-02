@@ -63,15 +63,15 @@ DEVEX_REFLECT(ParticleEmitter)
 
 DEVEX_REFLECT(TrailRenderer)
 {
-    type.field("emitting", &TrailRenderer::emitting)
+    type.field("emitting", &TrailRenderer::emitting, {.group = "Trail"})
         .field("time", &TrailRenderer::time)
         .field("min_distance", &TrailRenderer::minDistance)
-        .field("width", &TrailRenderer::width)
+        .field("width", &TrailRenderer::width, {.group = "Appearance"})
         .field("end_width", &TrailRenderer::endWidth)
         .field("color", &TrailRenderer::color, {.color = true})
         .field("end_color", &TrailRenderer::endColor, {.color = true})
         .field("intensity", &TrailRenderer::intensity)
-        .field("texture", &TrailRenderer::texture, {.assetType = "texture"})
+        .field("texture", &TrailRenderer::texture, {.assetType = "texture", .group = "Rendering"})
         .field("blend", &TrailRenderer::blend)
         .field("lit", &TrailRenderer::lit)
         .field("softness", &TrailRenderer::softness);

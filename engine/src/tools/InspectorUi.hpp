@@ -166,15 +166,14 @@ void addTerrainPainter(InspectorUi& ui, EditorUiKit& kit, Section& section);
 void syncTerrainPainter(InspectorUi& ui, ToolsState& state, scene::Scene& edited, scene::Entity entity, Section& section);
 void answerTerrainPainter(InspectorUi& ui, ToolsState& state, Section& section);
 
-// The end of the card of the import options: what waits, and the buttons that apply it or forget
-// it.
+// A separate card for pending import changes and the buttons that apply or forget them.
 struct ImportFooter
 {
     scene::Entity note;
     PanelButton reimport;
     PanelButton revert;
 };
-[[nodiscard]] ImportFooter importFooter(InspectorUi& ui, EditorUiKit& kit, Section& section);
+[[nodiscard]] ImportFooter importFooter(InspectorUi& ui, EditorUiKit& kit);
 void syncImportFooter(InspectorUi& ui, EditorUiKit& kit, const ImportFooter& footer, const ImportSettings& settings);
 void answerImportFooter(InspectorUi& ui, ToolsState& state, const ImportFooter& footer, ImportSettings& settings);
 

@@ -21,7 +21,7 @@ namespace {
 [[nodiscard]] std::shared_ptr<const DynamicComponentLayout> makeLayout(std::string name = "Mover")
 {
     const std::vector<DynamicField> fields{
-        {.name = "speed", .kind = ValueKind::Float, .angle = true},
+        {.name = "speed", .kind = ValueKind::Float, .angle = true, .group = "Movement"},
         {.name = "label", .kind = ValueKind::String},
         {.name = "direction", .kind = ValueKind::Vec3},
         {.name = "enabled", .kind = ValueKind::Bool},
@@ -43,6 +43,8 @@ TEST_CASE("A component type described at runtime lays out its fields", "[scene][
     REQUIRE(type.fields.size() == 5);
     CHECK(type.fields[0].kind == ValueKind::Float);
     CHECK(type.fields[0].angle);
+    CHECK(type.fields[0].group == "Movement");
+    CHECK(type.fields[1].group.empty());
     REQUIRE(type.findField("mode") != nullptr);
     REQUIRE(type.findField("mode")->enumNames.size() == 2);
     CHECK(type.findField("mode")->enumNames[1] == "running");

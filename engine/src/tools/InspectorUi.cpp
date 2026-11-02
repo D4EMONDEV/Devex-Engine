@@ -235,10 +235,7 @@ void writeColor(const reflection::FieldInfo& field, void* address, math::Vec4 co
 
 } // namespace
 
-InspectorUi::InspectorUi()
-    : FormUi(inspectorSurface)
-{
-}
+InspectorUi::InspectorUi() : FormUi(inspectorSurface) { centerSectionTitles = true; }
 
 template <typename Write>
 void InspectorUi::each(const scene::Scene& edited, std::span<const Entity> inspected, const PropertyRow& row, const Write& write)
@@ -365,6 +362,16 @@ void InspectorUi::filterProperties()
                 for (Line& entry : section.lines)
                     entry.filtered = false;
         }
+        const bool pageMatched = std::ranges::any_of(
+            sections, [](const Section& section) { return !section.hidden && !section.filtered; });
+        for (auto& section : sections)
+            if (section.filterWithPage)
+            {
+                section.filtered = revealFiltered && !pageMatched;
+                if (!section.filtered)
+                    for (auto& entry : section.lines)
+                        entry.filtered = false;
+            }
     }
     const bool any = std::ranges::any_of(sections, [](const Section& section)
                                          { return !section.hidden && !section.filtered; });
@@ -504,14 +511,15 @@ void InspectorUi::rebuild(ToolsState& state, EditorUiKit& kit, scene::Scene& edi
         int group = -1;
         for (const reflection::FieldInfo& field : type.type->fields)
         {
-            if (!field.group.empty())
-            {
-                group = addGroup(section, field.group);
-            }
             if (field.hidden || field.runtime)
             {
                 continue;
             }
+            if (!field.group.empty() &&
+                (group < 0 || section.groups[static_cast<std::size_t>(group)] != field.group))
+                group = addGroup(section, field.group);
+            if (group < 0)
+                group = addGroup(section, "Properties");
             addProperty(kit, section, type, field, std::nullopt, group, shared);
             if (!shared && field.list != nullptr)
             {
@@ -528,7 +536,8 @@ void InspectorUi::rebuild(ToolsState& state, EditorUiKit& kit, scene::Scene& edi
         }
         if (!shared && (name == "ParticleEmitter" || name == "NavMeshSurface" || name == "ReflectionProbe" || name == "LightProbeVolume"))
         {
-            addExtras(kit, section, -1);
+            addExtras(kit, section,
+                      addGroup(section, name == "ParticleEmitter" ? "Preview" : "Baking Tools"));
         }
         if (!shared)
         {
@@ -652,7 +661,9 @@ void InspectorUi::addProperty(EditorUiKit& kit, Section& section, const scene::C
     const bool listHeader = field.list != nullptr && !element;
     row.row = add(section.card, "Property", wide(line));
     scene().add<scene::UiContextMenu>(row.row);
-    const float indent = (group >= 0 ? font * 1.0f : font * 0.35f) + (element ? font * 1.0f : 0.0f);
+    const float indent = (group >= 0 ? font * 1.3f : font * 0.35f) + (element ? font * 1.0f : 0.0f);
+    if (group >= 0)
+        groupGuide(row.row);
     row.labelBox = add(row.row, "Label", UiRect{.anchorMin = {0.0f, 0.0f}, .anchorMax = {0.0f, 1.0f}, .offsetMin = {indent, 0.0f},
                                                .offsetMax = {labelWidth, 0.0f}, .clipChildren = true});
     row.label = text(row.labelBox, whole(), element ? std::format("{}", *element) : displayName(field.name), "label");
@@ -978,6 +989,7 @@ void InspectorUi::sync(ToolsState& state, EditorUiKit& kit, scene::Scene& edited
     }
     syncEntityColor(edited, inspected);
     filterProperties();
+    measureTitles(kit);
     layoutCards();
 }
 
@@ -2211,6 +2223,7 @@ void InspectorUi::updatePage(ToolsState& state, EditorUiKit& kit, const scene::S
     labelWidth = std::clamp(std::round(panel.size().x * 0.38f), font * 5.5f, font * 13.0f);
     page->sync(*this, state, kit);
     filterProperties();
+    measureTitles(kit);
     layoutCards();
     filterHadFocus = panel.world().editedField() == propertyFilter;
     panel.update(kit, delta, UiPanel::zoomFor(font));

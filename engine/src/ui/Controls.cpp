@@ -592,36 +592,64 @@ void UiWorld::openDropdown(const scene::Scene& scene, scene::Entity entity)
     const std::size_t first = std::min(static_cast<std::size_t>(std::max(selected - static_cast<std::int32_t>(shown / 2), 0)),
                                        dropdown.options.size() - shown);
     m_dropdown = OpenDropdown{.entity = entity, .highlighted = selected, .first = first};
+    if (m_dropdownStyle.fitContents && m_fonts)
+        if (const auto* text = scene.tryGet<scene::UiText>(entity))
+        {
+            const auto font = m_fonts(text->font.isValid() ? text->font : m_defaultFont);
+            if (font.data != nullptr)
+                for (const auto& option : dropdown.options)
+                    m_dropdown->textWidth =
+                        std::max(m_dropdown->textWidth,
+                                 measureText(*font.data, option,
+                                             TextStyle{.size = text->size, .wrap = false})
+                                     .x);
+        }
+    if (const auto list = dropdownList(scene))
+        m_dropdown->first = std::min(static_cast<std::size_t>(selected) > list->shown / 2
+                                         ? static_cast<std::size_t>(selected) - list->shown / 2
+                                         : 0,
+                                     dropdown.options.size() - list->shown);
 }
 
-bool UiWorld::dropdownList(const scene::Scene& scene, math::Vec2& min, math::Vec2& max, float& item,
-                           std::size_t& shown) const
+std::optional<UiWorld::DropdownLayout> UiWorld::dropdownList(const scene::Scene& scene) const
 {
     if (!m_dropdown || !scene.isAlive(m_dropdown->entity))
     {
-        return false;
+        return std::nullopt;
     }
     const scene::UiDropdown* const dropdown = scene.tryGet<scene::UiDropdown>(m_dropdown->entity);
     const CanvasLayout* const canvas = canvasOf(m_dropdown->entity);
     const LaidOutRect* const rect = canvas != nullptr ? canvas->layout.find(m_dropdown->entity) : nullptr;
     if (dropdown == nullptr || rect == nullptr || dropdown->options.empty())
     {
-        return false;
+        return std::nullopt;
     }
-    // Under the element, as wide as it, one option as tall as it; above it when there is no room.
     const float scale = canvas->layout.scale;
-    item = rect->size().y * scale;
-    shown = std::min(dropdown->options.size(), dropdownRows);
-    const float height = item * static_cast<float>(shown);
     const math::Vec2 areaMin = m_popupArea ? m_popupArea->first : math::Vec2{0.0f};
     const math::Vec2 areaMax = m_popupArea ? m_popupArea->second : m_windowSize;
-    min = math::Vec2{rect->min.x * scale, rect->max.y * scale + 2.0f};
-    if (min.y + height > areaMax.y && rect->min.y * scale - 2.0f - height >= areaMin.y)
-    {
-        min.y = rect->min.y * scale - 2.0f - height;
-    }
-    max = math::Vec2{rect->max.x * scale, min.y + height};
-    return true;
+    const auto room = math::max(areaMax - areaMin, math::Vec2{1.0f});
+    DropdownLayout list;
+    list.padding =
+        std::clamp(m_dropdownStyle.padding * scale, 0.0f, std::max((room.y - 1) * 0.5f, 0.0f));
+    list.item = std::clamp(std::max(rect->size().y, m_dropdownStyle.minimumRowHeight) * scale, 1.0f,
+                           std::max(room.y - list.padding * 2, 1.0f));
+    const auto rows = static_cast<std::size_t>(
+        std::max(std::floor((room.y - list.padding * 2) / list.item), 1.0f));
+    list.shown = std::min({dropdown->options.size(), dropdownRows, rows});
+    const float height = list.item * static_cast<float>(list.shown) + list.padding * 2;
+    const float mark = m_dropdownStyle.showSelected ? list.item * 0.75f : 0.0f;
+    const float measured = m_dropdown->textWidth * scale + mark + list.padding * 2 + 16 * scale;
+    const float width =
+        std::min(std::max({rect->size().x * scale, m_dropdownStyle.minimumWidth * scale,
+                           m_dropdownStyle.fitContents ? measured : 0.0f}),
+                 room.x);
+    list.min = {rect->min.x * scale, rect->max.y * scale + 2 * scale};
+    if (list.min.y + height > areaMax.y && rect->min.y * scale - 2 * scale - height >= areaMin.y)
+        list.min.y = rect->min.y * scale - 2 * scale - height;
+    list.min.x = std::clamp(list.min.x, areaMin.x, std::max(areaMax.x - width, areaMin.x));
+    list.min.y = std::clamp(list.min.y, areaMin.y, std::max(areaMax.y - height, areaMin.y));
+    list.max = list.min + math::Vec2{width, height};
+    return list;
 }
 
 bool UiWorld::updateDropdown(scene::Scene& scene, const UiInput& input)
@@ -630,18 +658,19 @@ bool UiWorld::updateDropdown(scene::Scene& scene, const UiInput& input)
     {
         return false;
     }
-    math::Vec2 min{0.0f};
-    math::Vec2 max{0.0f};
-    float item = 0.0f;
-    std::size_t shown = 0;
+    const auto list = dropdownList(scene);
     scene::UiDropdown* const dropdown =
         scene.isAlive(m_dropdown->entity) ? scene.tryGet<scene::UiDropdown>(m_dropdown->entity) : nullptr;
-    if (dropdown == nullptr || !dropdown->interactable || !dropdownList(scene, min, max, item, shown))
+    if (dropdown == nullptr || !dropdown->interactable || !list)
     {
         m_dropdown.reset();
         return false;
     }
     const std::size_t count = dropdown->options.size();
+    const auto [min, max, item, padding, shown] = *list;
+    m_dropdown->first = std::min(m_dropdown->first, count - shown);
+    m_dropdown->highlighted =
+        std::clamp(m_dropdown->highlighted, 0, static_cast<std::int32_t>(count) - 1);
     const auto choose = [&](std::int32_t option) {
         if (option >= 0 && static_cast<std::size_t>(option) < count && option != dropdown->selected)
         {
@@ -663,12 +692,16 @@ bool UiWorld::updateDropdown(scene::Scene& scene, const UiInput& input)
             std::clamp<std::ptrdiff_t>(static_cast<std::ptrdiff_t>(m_dropdown->first) + step, 0,
                                        static_cast<std::ptrdiff_t>(count - shown)));
     }
-    const bool inside = input.pointer.x >= min.x && input.pointer.x <= max.x && input.pointer.y >= min.y &&
-                        input.pointer.y <= max.y;
-    if (inside && (input.pointerMoved || input.pointerPressed))
+    const bool inMenu = input.pointer.x >= min.x && input.pointer.x < max.x &&
+                        input.pointer.y >= min.y && input.pointer.y < max.y;
+    const bool inside = inMenu && input.pointer.x >= min.x + padding &&
+                        input.pointer.x < max.x - padding && input.pointer.y >= min.y + padding &&
+                        input.pointer.y < max.y - padding;
+    if (inside && (input.pointerMoved || input.pointerPressed || input.wheel != 0))
     {
         m_dropdown->highlighted = static_cast<std::int32_t>(
-            m_dropdown->first + static_cast<std::size_t>((input.pointer.y - min.y) / std::max(item, 1.0f)));
+            m_dropdown->first +
+            static_cast<std::size_t>((input.pointer.y - min.y - padding) / item));
     }
     if (input.moveY != 0)
     {
@@ -690,7 +723,7 @@ bool UiWorld::updateDropdown(scene::Scene& scene, const UiInput& input)
         {
             choose(m_dropdown->highlighted);
         }
-        else
+        else if (!inMenu)
         {
             m_dropdown.reset();
         }
@@ -1053,6 +1086,8 @@ void UiWorld::setTooltipStyle(TooltipStyle style)
 {
     m_tooltipStyle = style;
 }
+
+void UiWorld::setDropdownStyle(DropdownStyle style) { m_dropdownStyle = style; }
 
 void UiWorld::setTooltipsDrawn(bool drawn) noexcept
 {

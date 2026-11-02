@@ -7,14 +7,14 @@ namespace devex::scene {
 
 DEVEX_REFLECT(Transform)
 {
-    type.field("position", &Transform::position)
+    type.field("position", &Transform::position, {.group = "Local Transform"})
         .field("rotation", &Transform::rotation)
         .field("scale", &Transform::scale);
 }
 
 DEVEX_REFLECT(MeshRenderer)
 {
-    type.field("mesh", &MeshRenderer::mesh, {.assetType = "mesh"})
+    type.field("mesh", &MeshRenderer::mesh, {.assetType = "mesh", .group = "Geometry"})
         .field("material", &MeshRenderer::material, {.assetType = "material"})
         .field("instance_shader_parameters", &MeshRenderer::instanceShaderParameters,
                {.hidden = true})
@@ -24,33 +24,34 @@ DEVEX_REFLECT(MeshRenderer)
 
 DEVEX_REFLECT(Camera)
 {
-    type.field("projection", &Camera::projection)
+    type.field("projection", &Camera::projection, {.group = "Projection"})
         .field("vertical_fov", &Camera::verticalFov, {.angle = true})
         .field("orthographic_size", &Camera::orthographicSize)
         .field("near_plane", &Camera::nearPlane)
         .field("far_plane", &Camera::farPlane)
-        .field("primary", &Camera::primary)
-        .field("auto_exposure", &Camera::autoExposure)
+        .field("primary", &Camera::primary, {.group = "Camera"})
+        .field("auto_exposure", &Camera::autoExposure, {.group = "Exposure"})
         .field("ev100", &Camera::ev100)
         .field("exposure_compensation", &Camera::exposureCompensation)
         .field("min_ev100", &Camera::minEv100)
         .field("max_ev100", &Camera::maxEv100)
         .field("adaptation_speed", &Camera::adaptationSpeed)
-        .field("tonemapper", &Camera::tonemapper)
-        .field("antialiasing", &Camera::antialiasing)
-        .field("ambient_occlusion", &Camera::ambientOcclusion)
+        .field("tonemapper", &Camera::tonemapper, {.group = "Tonemapping"})
+        .field("antialiasing", &Camera::antialiasing, {.group = "Antialiasing"})
+        .field("ambient_occlusion", &Camera::ambientOcclusion, {.group = "Ambient Occlusion"})
         .field("ambient_occlusion_radius", &Camera::ambientOcclusionRadius)
-        .field("bloom", &Camera::bloom)
+        .field("bloom", &Camera::bloom, {.group = "Bloom"})
         .field("bloom_threshold", &Camera::bloomThreshold)
-        .field("vignette", &Camera::vignette)
-        .field("grain", &Camera::grain)
-        .field("chromatic_aberration", &Camera::chromaticAberration)
-        .field("color_table", &Camera::colorTable, {.assetType = "texture"})
+        .field("vignette", &Camera::vignette, {.group = "Vignette"})
+        .field("grain", &Camera::grain, {.group = "Grain"})
+        .field("chromatic_aberration", &Camera::chromaticAberration,
+               {.group = "Chromatic Aberration"})
+        .field("color_table", &Camera::colorTable, {.assetType = "texture", .group = "Color Table"})
         .field("depth_of_field", &Camera::depthOfField, {.group = "Lens"})
         .field("focus_distance", &Camera::focusDistance)
         .field("aperture", &Camera::aperture)
         .field("auto_focus", &Camera::autoFocus)
-        .field("motion_blur", &Camera::motionBlur)
+        .field("motion_blur", &Camera::motionBlur, {.group = "Motion Blur"})
         .field("saturation", &Camera::saturation, {.group = "Color grading"})
         .field("contrast", &Camera::contrast)
         .field("color_filter", &Camera::colorFilter, {.color = true})
@@ -60,77 +61,78 @@ DEVEX_REFLECT(Camera)
 
 DEVEX_REFLECT(DirectionalLight)
 {
-    type.field("color", &DirectionalLight::color, {.color = true})
+    type.field("color", &DirectionalLight::color, {.color = true, .group = "Light"})
         .field("temperature", &DirectionalLight::temperature)
         .field("illuminance", &DirectionalLight::illuminance)
-        .field("cast_shadows", &DirectionalLight::castShadows)
+        .field("cast_shadows", &DirectionalLight::castShadows, {.group = "Shadows"})
         .field("shadow_distance", &DirectionalLight::shadowDistance)
-        .field("follow_atmosphere", &DirectionalLight::followAtmosphere);
+        .field("follow_atmosphere", &DirectionalLight::followAtmosphere, {.group = "Atmosphere"});
 }
 
 DEVEX_REFLECT(PointLight)
 {
-    type.field("color", &PointLight::color, {.color = true})
+    type.field("color", &PointLight::color, {.color = true, .group = "Light"})
         .field("temperature", &PointLight::temperature)
         .field("intensity", &PointLight::intensity)
         .field("range", &PointLight::range)
-        .field("cast_shadows", &PointLight::castShadows);
+        .field("cast_shadows", &PointLight::castShadows, {.group = "Shadows"});
 }
 
 DEVEX_REFLECT(SpotLight)
 {
-    type.field("color", &SpotLight::color, {.color = true})
+    type.field("color", &SpotLight::color, {.color = true, .group = "Light"})
         .field("temperature", &SpotLight::temperature)
         .field("intensity", &SpotLight::intensity)
         .field("range", &SpotLight::range)
-        .field("inner_angle", &SpotLight::innerAngle, {.angle = true})
+        .field("inner_angle", &SpotLight::innerAngle, {.angle = true, .group = "Spot"})
         .field("outer_angle", &SpotLight::outerAngle, {.angle = true})
-        .field("cast_shadows", &SpotLight::castShadows);
+        .field("cast_shadows", &SpotLight::castShadows, {.group = "Shadows"});
 }
 
 DEVEX_REFLECT(Environment)
 {
-    type.field("sky", &Environment::sky, {.assetType = "texture"})
+    type.field("sky", &Environment::sky, {.assetType = "texture", .group = "Sky"})
         .field("sky_material", &Environment::skyMaterial, {.assetType = "material"})
-        .field("color", &Environment::color, {.color = true})
+        .field("color", &Environment::color, {.color = true, .group = "Appearance"})
         .field("intensity", &Environment::intensity)
-        .field("rotation", &Environment::rotation, {.angle = true});
+        .field("rotation", &Environment::rotation, {.angle = true, .group = "Orientation"});
 }
 
 DEVEX_REFLECT(Atmosphere)
 {
-    type.field("planet_radius", &Atmosphere::planetRadius)
+    type.field("planet_radius", &Atmosphere::planetRadius, {.group = "Planet"})
         .field("height", &Atmosphere::height)
-        .field("rayleigh_scattering", &Atmosphere::rayleighScattering)
+        .field("rayleigh_scattering", &Atmosphere::rayleighScattering,
+               {.group = "Rayleigh Scattering"})
         .field("rayleigh_height", &Atmosphere::rayleighHeight)
-        .field("mie_scattering", &Atmosphere::mieScattering)
+        .field("mie_scattering", &Atmosphere::mieScattering, {.group = "Mie Scattering"})
         .field("mie_absorption", &Atmosphere::mieAbsorption)
         .field("mie_anisotropy", &Atmosphere::mieAnisotropy)
         .field("mie_height", &Atmosphere::mieHeight)
-        .field("ozone_absorption", &Atmosphere::ozoneAbsorption)
-        .field("ground_albedo", &Atmosphere::groundAlbedo, {.color = true})
-        .field("sun_disk_size", &Atmosphere::sunDiskSize, {.angle = true})
+        .field("ozone_absorption", &Atmosphere::ozoneAbsorption, {.group = "Ozone"})
+        .field("ground_albedo", &Atmosphere::groundAlbedo, {.color = true, .group = "Ground"})
+        .field("sun_disk_size", &Atmosphere::sunDiskSize, {.angle = true, .group = "Sun Disk"})
         .field("sun_disk_intensity", &Atmosphere::sunDiskIntensity)
-        .field("aerial_perspective", &Atmosphere::aerialPerspective)
+        .field("aerial_perspective", &Atmosphere::aerialPerspective, {.group = "Rendering"})
         .field("intensity", &Atmosphere::intensity);
 }
 
 DEVEX_REFLECT(Fog)
 {
-    type.field("color", &Fog::color, {.color = true})
+    type.field("color", &Fog::color, {.color = true, .group = "Fog"})
         .field("density", &Fog::density)
-        .field("height", &Fog::height)
+        .field("height", &Fog::height, {.group = "Height"})
         .field("falloff", &Fog::falloff)
-        .field("start_distance", &Fog::startDistance)
+        .field("start_distance", &Fog::startDistance, {.group = "Distance"})
         .field("max_opacity", &Fog::maxOpacity)
-        .field("sun_scattering", &Fog::sunScattering)
+        .field("sun_scattering", &Fog::sunScattering, {.group = "Sun Scattering"})
         .field("sun_anisotropy", &Fog::sunAnisotropy)
-        .field("sky_blend", &Fog::skyBlend);
+        .field("sky_blend", &Fog::skyBlend, {.group = "Sky"});
 }
 
 DEVEX_REFLECT(PostProcessVolume)
 {
-    type.field("global", &PostProcessVolume::global)
+    type.field("global", &PostProcessVolume::global, {.group = "Volume"})
         .field("size", &PostProcessVolume::size)
         .field("blend_distance", &PostProcessVolume::blendDistance)
         .field("weight", &PostProcessVolume::weight)
@@ -144,18 +146,23 @@ DEVEX_REFLECT(PostProcessVolume)
         .field("vignette", &PostProcessVolume::vignette)
         .field("override_grain", &PostProcessVolume::overrideGrain, {.group = "Grain"})
         .field("grain", &PostProcessVolume::grain)
-        .field("override_chromatic_aberration", &PostProcessVolume::overrideChromaticAberration, {.group = "Chromatic aberration"})
+        .field("override_chromatic_aberration", &PostProcessVolume::overrideChromaticAberration,
+               {.group = "Chromatic aberration"})
         .field("chromatic_aberration", &PostProcessVolume::chromaticAberration)
-        .field("override_ambient_occlusion", &PostProcessVolume::overrideAmbientOcclusion, {.group = "Ambient occlusion"})
+        .field("override_ambient_occlusion", &PostProcessVolume::overrideAmbientOcclusion,
+               {.group = "Ambient occlusion"})
         .field("ambient_occlusion", &PostProcessVolume::ambientOcclusion)
-        .field("override_depth_of_field", &PostProcessVolume::overrideDepthOfField, {.group = "Depth of field"})
+        .field("override_depth_of_field", &PostProcessVolume::overrideDepthOfField,
+               {.group = "Depth of field"})
         .field("depth_of_field", &PostProcessVolume::depthOfField)
         .field("focus_distance", &PostProcessVolume::focusDistance)
         .field("aperture", &PostProcessVolume::aperture)
         .field("auto_focus", &PostProcessVolume::autoFocus)
-        .field("override_motion_blur", &PostProcessVolume::overrideMotionBlur, {.group = "Motion blur"})
+        .field("override_motion_blur", &PostProcessVolume::overrideMotionBlur,
+               {.group = "Motion blur"})
         .field("motion_blur", &PostProcessVolume::motionBlur)
-        .field("override_saturation", &PostProcessVolume::overrideSaturation, {.group = "Color grading"})
+        .field("override_saturation", &PostProcessVolume::overrideSaturation,
+               {.group = "Color grading"})
         .field("saturation", &PostProcessVolume::saturation)
         .field("override_contrast", &PostProcessVolume::overrideContrast)
         .field("contrast", &PostProcessVolume::contrast)
@@ -168,7 +175,7 @@ DEVEX_REFLECT(PostProcessVolume)
 
 DEVEX_REFLECT(Terrain)
 {
-    type.field("data", &Terrain::data, {.assetType = "terrain"})
+    type.field("data", &Terrain::data, {.assetType = "terrain", .group = "Terrain"})
         .field("size", &Terrain::size)
         .field("collision", &Terrain::collision)
         .field("cast_shadows", &Terrain::castShadows)
@@ -188,28 +195,28 @@ DEVEX_REFLECT(Terrain)
         .field("grass_width", &Terrain::grassWidth)
         .field("grass_density", &Terrain::grassDensity)
         .field("grass_distance", &Terrain::grassDistance)
-        .field("wind_strength", &Terrain::windStrength)
+        .field("wind_strength", &Terrain::windStrength, {.group = "Wind"})
         .field("wind_speed", &Terrain::windSpeed);
 }
 
 DEVEX_REFLECT(ReflectionProbe)
 {
-    type.field("size", &ReflectionProbe::size)
+    type.field("size", &ReflectionProbe::size, {.group = "Bounds"})
         .field("capture_offset", &ReflectionProbe::captureOffset)
         .field("blend_distance", &ReflectionProbe::blendDistance)
-        .field("intensity", &ReflectionProbe::intensity)
+        .field("intensity", &ReflectionProbe::intensity, {.group = "Reflection"})
         .field("box_projection", &ReflectionProbe::boxProjection)
-        .field("resolution", &ReflectionProbe::resolution)
+        .field("resolution", &ReflectionProbe::resolution, {.group = "Capture"})
         .field("capture", &ReflectionProbe::capture, {.assetType = "reflection_probe"});
 }
 
 DEVEX_REFLECT(LightProbeVolume)
 {
-    type.field("size", &LightProbeVolume::size)
+    type.field("size", &LightProbeVolume::size, {.group = "Grid"})
         .field("spacing", &LightProbeVolume::spacing)
-        .field("blend_distance", &LightProbeVolume::blendDistance)
+        .field("blend_distance", &LightProbeVolume::blendDistance, {.group = "Lighting"})
         .field("intensity", &LightProbeVolume::intensity)
-        .field("bounces", &LightProbeVolume::bounces)
+        .field("bounces", &LightProbeVolume::bounces, {.group = "Capture"})
         .field("irradiance", &LightProbeVolume::irradiance, {.assetType = "irradiance_volume"});
 }
 

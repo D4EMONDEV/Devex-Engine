@@ -1385,13 +1385,9 @@ std::optional<std::pair<math::Vec2, math::Vec2>> UiWorld::overBounds(const scene
             }
         }
     }
-    math::Vec2 listMin{0.0f};
-    math::Vec2 listMax{0.0f};
-    float item = 0.0f;
-    std::size_t shown = 0;
-    if (m_dropdown && dropdownList(scene, listMin, listMax, item, shown))
+    if (const auto list = dropdownList(scene))
     {
-        cover(listMin, listMax);
+        cover(list->min, list->max);
     }
     return bounds;
 }
@@ -1495,20 +1491,23 @@ void UiWorld::build(const scene::Scene& scene, const DrawContext& context,
     }
 
     // The list of an open dropdown, over every canvas.
-    math::Vec2 listMin{0.0f};
-    math::Vec2 listMax{0.0f};
-    float item = 0.0f;
-    std::size_t shown = 0;
-    if (m_dropdown && dropdownList(scene, listMin, listMax, item, shown))
+    if (const auto layout = dropdownList(scene))
     {
+        const auto [listMin, listMax, item, padding, shown] = *layout;
         render::RenderWorld& list = over != nullptr ? *over : world;
         const scene::UiDropdown& dropdown = scene.get<scene::UiDropdown>(m_dropdown->entity);
         const scene::UiText* const text = scene.tryGet<scene::UiText>(m_dropdown->entity);
         const CanvasLayout* const canvas = canvasOf(m_dropdown->entity);
         const float scale = canvas != nullptr ? canvas->layout.scale : 1.0f;
-        drawOverlayShadow(list, listMin + math::Vec2{0.0f, 2.0f * scale}, listMax + math::Vec2{0.0f, 2.0f * scale}, 4.0f * scale,
+        const float radius = m_dropdownStyle.cornerRadius * scale;
+        drawOverlayShadow(list, listMin + math::Vec2{0.0f, 2.0f * scale},
+                          listMax + math::Vec2{0.0f, 2.0f * scale}, radius,
                           dropdown.listShadowColor, dropdown.listShadowSize * scale);
-        drawOverlayBox(list, listMin, listMax, dropdown.listColor, 4.0f * scale);
+        const float border = std::clamp(m_dropdownStyle.outlineWidth * scale, 0.0f, padding);
+        if (border > 0)
+            drawOverlayBox(list, listMin, listMax, m_dropdownStyle.outlineColor, radius);
+        drawOverlayBox(list, listMin + math::Vec2{border}, listMax - math::Vec2{border},
+                       dropdown.listColor, std::max(radius - border, 0.0f));
         for (std::size_t row = 0; row < shown; ++row)
         {
             const std::size_t option = m_dropdown->first + row;
@@ -1516,18 +1515,45 @@ void UiWorld::build(const scene::Scene& scene, const DrawContext& context,
             {
                 break;
             }
-            const math::Vec2 rowMin{listMin.x, listMin.y + item * static_cast<float>(row)};
-            const math::Vec2 rowMax{listMax.x, rowMin.y + item};
+            const math::Vec2 rowMin{listMin.x + padding,
+                                    listMin.y + padding + item * static_cast<float>(row)};
+            const math::Vec2 rowMax{listMax.x - padding, rowMin.y + item};
             if (static_cast<std::int32_t>(option) == m_dropdown->highlighted)
             {
-                drawOverlayBox(list, rowMin, rowMax, dropdown.highlightColor, 3.0f * scale);
+                drawOverlayBox(list, rowMin, rowMax, dropdown.highlightColor,
+                               std::min(radius, 3.0f * scale));
+            }
+            const float mark = m_dropdownStyle.showSelected ? item * 0.75f : 0.0f;
+            if (m_dropdownStyle.showSelected &&
+                static_cast<std::int32_t>(option) == dropdown.selected)
+            {
+                const math::Vec2 middle{rowMin.x + mark * 0.5f, rowMin.y + item * 0.5f};
+                const float half = item * 0.22f;
+                drawOverlayCheck(list, middle - math::Vec2{half}, middle + math::Vec2{half},
+                                 dropdown.arrowColor);
             }
             const OverlayText label{.text = withTints.translated(dropdown.options[option], text == nullptr || text->translate),
                                     .font = text != nullptr ? text->font : asset::AssetId{},
                                     .size = (text != nullptr ? text->size : 18.0f) * scale,
                                     .color = text != nullptr ? text->color : math::Vec4{1.0f}};
-            drawOverlayText(list, withTints, math::Vec2{rowMin.x + 10.0f * scale, rowMin.y},
-                            math::Vec2{rowMax.x - 6.0f * scale, rowMax.y}, label);
+            drawOverlayText(
+                list, withTints,
+                math::Vec2{rowMin.x + (mark > 0 ? mark + 4 * scale : 10 * scale), rowMin.y},
+                math::Vec2{rowMax.x - 6.0f * scale, rowMax.y}, label);
+        }
+        if (dropdown.options.size() > shown)
+        {
+            const float track = listMax.y - listMin.y - padding * 2;
+            const float thumb =
+                std::max(item * 0.5f, track * static_cast<float>(shown) /
+                                          static_cast<float>(dropdown.options.size()));
+            const float at = (track - thumb) * static_cast<float>(m_dropdown->first) /
+                             static_cast<float>(dropdown.options.size() - shown);
+            const math::Vec2 min{listMax.x - std::max(padding, 3 * scale),
+                                 listMin.y + padding + at};
+            auto color = dropdown.arrowColor;
+            color.a *= 0.6f;
+            drawOverlayBox(list, min, min + math::Vec2{2 * scale, thumb}, color, scale);
         }
     }
 

@@ -213,8 +213,10 @@ core::Result<std::shared_ptr<const DynamicComponentLayout>> DynamicComponentLayo
             .angle = field.angle,
             .physicsLayer = field.physicsLayer,
             .audioGroup = field.audioGroup,
+            .group = field.group,
             .enumSize = enumSize,
-            .access = [offset](void* component) -> void* { return static_cast<std::byte*>(component) + offset; },
+            .access = [offset](void* component) -> void*
+            { return static_cast<std::byte*>(component) + offset; },
             .list = list != nullptr ? list->operations : nullptr,
             .offset = offset,
         };

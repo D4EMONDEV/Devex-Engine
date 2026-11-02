@@ -4,7 +4,7 @@ namespace devex::scene {
 
 DEVEX_REFLECT(HingeJoint)
 {
-    type.field("body_a", &HingeJoint::bodyA)
+    type.field("body_a", &HingeJoint::bodyA, {.group = "Bodies"})
         .field("body_b", &HingeJoint::bodyB)
         .field("collide_connected", &HingeJoint::collideConnected)
         .field("use_limits", &HingeJoint::useLimits, {.group = "Limits"})
@@ -20,7 +20,7 @@ DEVEX_REFLECT(HingeJoint)
 
 DEVEX_REFLECT(SliderJoint)
 {
-    type.field("body_a", &SliderJoint::bodyA)
+    type.field("body_a", &SliderJoint::bodyA, {.group = "Bodies"})
         .field("body_b", &SliderJoint::bodyB)
         .field("collide_connected", &SliderJoint::collideConnected)
         .field("use_limits", &SliderJoint::useLimits, {.group = "Limits"})
@@ -36,10 +36,10 @@ DEVEX_REFLECT(SliderJoint)
 
 DEVEX_REFLECT(DistanceJoint)
 {
-    type.field("body_a", &DistanceJoint::bodyA)
+    type.field("body_a", &DistanceJoint::bodyA, {.group = "Bodies"})
         .field("body_b", &DistanceJoint::bodyB)
         .field("collide_connected", &DistanceJoint::collideConnected)
-        .field("anchor", &DistanceJoint::anchor)
+        .field("anchor", &DistanceJoint::anchor, {.group = "Joint"})
         .field("length", &DistanceJoint::length)
         .field("rope", &DistanceJoint::rope)
         .field("spring", &DistanceJoint::spring, {.group = "Spring"})
@@ -50,7 +50,7 @@ DEVEX_REFLECT(DistanceJoint)
 
 DEVEX_REFLECT(FixedJoint)
 {
-    type.field("body_a", &FixedJoint::bodyA)
+    type.field("body_a", &FixedJoint::bodyA, {.group = "Bodies"})
         .field("body_b", &FixedJoint::bodyB)
         .field("collide_connected", &FixedJoint::collideConnected)
         .field("break_force", &FixedJoint::breakForce, {.group = "Breaking"})
@@ -60,7 +60,7 @@ DEVEX_REFLECT(FixedJoint)
 
 DEVEX_REFLECT(HingeJoint2D)
 {
-    type.field("body_a", &HingeJoint2D::bodyA)
+    type.field("body_a", &HingeJoint2D::bodyA, {.group = "Bodies"})
         .field("body_b", &HingeJoint2D::bodyB)
         .field("collide_connected", &HingeJoint2D::collideConnected)
         .field("use_limits", &HingeJoint2D::useLimits, {.group = "Limits"})
@@ -76,7 +76,7 @@ DEVEX_REFLECT(HingeJoint2D)
 
 DEVEX_REFLECT(SliderJoint2D)
 {
-    type.field("body_a", &SliderJoint2D::bodyA)
+    type.field("body_a", &SliderJoint2D::bodyA, {.group = "Bodies"})
         .field("body_b", &SliderJoint2D::bodyB)
         .field("collide_connected", &SliderJoint2D::collideConnected)
         .field("use_limits", &SliderJoint2D::useLimits, {.group = "Limits"})
@@ -92,10 +92,10 @@ DEVEX_REFLECT(SliderJoint2D)
 
 DEVEX_REFLECT(DistanceJoint2D)
 {
-    type.field("body_a", &DistanceJoint2D::bodyA)
+    type.field("body_a", &DistanceJoint2D::bodyA, {.group = "Bodies"})
         .field("body_b", &DistanceJoint2D::bodyB)
         .field("collide_connected", &DistanceJoint2D::collideConnected)
-        .field("anchor", &DistanceJoint2D::anchor)
+        .field("anchor", &DistanceJoint2D::anchor, {.group = "Joint"})
         .field("length", &DistanceJoint2D::length)
         .field("rope", &DistanceJoint2D::rope)
         .field("spring", &DistanceJoint2D::spring, {.group = "Spring"})
@@ -106,7 +106,7 @@ DEVEX_REFLECT(DistanceJoint2D)
 
 DEVEX_REFLECT(FixedJoint2D)
 {
-    type.field("body_a", &FixedJoint2D::bodyA)
+    type.field("body_a", &FixedJoint2D::bodyA, {.group = "Bodies"})
         .field("body_b", &FixedJoint2D::bodyB)
         .field("collide_connected", &FixedJoint2D::collideConnected)
         .field("break_force", &FixedJoint2D::breakForce, {.group = "Breaking"})

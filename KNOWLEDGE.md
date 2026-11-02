@@ -712,6 +712,9 @@ public sealed class AudioGroupAttribute : Attribute; // uint pour groupe audio
 public sealed class AssetTypeAttribute(string type) : Attribute; // Limite AssetId à un type
 
 [AttributeUsage(AttributeTargets.Field)]
+public sealed class GroupAttribute(string name) : Attribute; // Débute une section repliable de l'inspecteur
+
+[AttributeUsage(AttributeTargets.Field)]
 public sealed class HiddenAttribute : Attribute; // Champ non sauvegardé
 
 [AttributeUsage(AttributeTargets.Method)]
@@ -1012,7 +1015,7 @@ Les contours simples de 3 à 64 points acceptent les formes concaves et l'option
 les coordonnées vont de (0, 0), en bas à gauche de la cellule, à (1, 1), en haut à droite.
 Les copies peintes partagent la forme, avec leurs retournements et leur Cell Size. Les brouillons
 invalides ne remplacent pas la forme enregistrée. Le source `.dvxtileset` est au format 3
-(anciens formats lus), l'artefact Tileset en version 4 et l'API native du jeu en version 35.
+(anciens formats lus), l'artefact Tileset en version 4 et l'API native du jeu en version 37.
 
 Les vues C# des composants natifs, comme `CharacterController2D`, sont des `ref struct` : on les
 obtient pendant l'appel qui les utilise, sans les conserver dans les champs d'une classe.
@@ -2221,6 +2224,29 @@ namespace devex::ui {
   replier/déplier. La recherche ouvre les résultats temporairement sans perdre les groupes
   repliés ; croix ou Échap dans le champ restaure l'affichage. Les libellés sont réévalués à la
   saisie ou à la reconstruction de la page, pas à chaque frame.
+- Menus déroulants de l'éditeur : `UiWorld::setDropdownStyle` donne des lignes de 2,1 em minimum,
+  des marges, un cadre, une coche de sélection et une largeur mesurée à l'ouverture. Le calcul
+  de placement sert au dessin comme aux clics et garde le menu dans sa zone, y compris sur une
+  petite fenêtre. La molette et le clavier parcourent la liste ; les marges ne valident aucun
+  choix. L'inspecteur autorise flèches/Entrée quand une liste est ouverte malgré sa navigation
+  de focus désactivée. `UiDropdown` n'a pas de nouveaux champs sérialisés ; l'API native passe à
+  36 car `UiWorld` conserve ce style et la largeur mesurée. Composants : icône/titre centrés sur
+  un en-tête distinct ; groupes à séparateur et guide vertical.
+- Organisation complète de l'inspecteur : les 78 types intégrés avec des champs visibles ont
+  des groupes explicites, sans changer l'ordre des champs ni leur sérialisation. Caméra,
+  lumières, physique 2D/3D, articulations, animation, audio, navigation, terrain et interface
+  suivent la même présentation. Les pages de matériaux, importeurs, courbes, Sprite Frames,
+  Tilesets et contrôleurs d'animation utilisent les mêmes groupes et titres de cartes centrés.
+  `FormUi::Section::activeGroup` rattache les lignes, notes et actions suivantes au dernier
+  groupe ; `groupGuide` partage le dessin du guide avec les champs natifs. `measureTitles`
+  remesure les titres modifiés via le cache du kit. `Import Changes` est une carte séparée
+  (`filterWithPage`) dont les actions restent accessibles lorsqu'une propriété de l'import
+  correspond au filtre. Les champs non groupés de composants personnalisés ont le repli
+  **Properties**. Les outils Paint/Sculpt and Paint et Baking Tools se replient aussi.
+  C# `[Group("Nom")]` commence un groupe, hérité visuellement par les champs suivants jusqu'au
+  prochain attribut. `GameRuntime.DescribeType` échappe et transmet le nom au champ dynamique ;
+  `DynamicField::group` est copié dans la réflexion. API native **37** pour cette extension de
+  `DynamicField` ; aucune nouvelle case d'interop managée ni nouvelle version de scène.
 - Navigation de l'éditeur : `tools/FileSearch.hpp` et le FileSystem combinent les mots d'une
   recherche dans les chemins, sous-assets et scripts. Ctrl+F, Entrée vers les résultats puis
   activation, Home/End et Page Up/Page Down ; parcourir les scripts ne les ouvre plus.

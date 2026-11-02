@@ -55,7 +55,9 @@ class CoroutineScheduler;
 // 31: RendererConfig and RendererStats gained compute skinning and its counters.
 // 34: RenderWorld gained tool line width and the grid's depth plane.
 // 35: TileData gained custom collision outlines.
-inline constexpr std::uint32_t gameApiVersion = 35;
+// 36: UiWorld gained the appearance and measured layout of dropdown menus.
+// 37: DynamicField gained inspector group metadata for scripted components.
+inline constexpr std::uint32_t gameApiVersion = 37;
 
 enum class SystemPhase : std::uint8_t
 {

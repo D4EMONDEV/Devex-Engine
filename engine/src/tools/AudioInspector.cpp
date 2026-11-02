@@ -146,6 +146,7 @@ public:
         ui.scene().add<scene::UiPlot>(m_wave, std::move(plot));
 
         Section& card = ui.card(kit, "Clip");
+        ui.addGroup(card, "Information");
         const auto fact = [&](const char* name, std::string value) {
             const FormRow line = ui.formRow(card, name);
             ui.text(line.editor, rects::whole(math::Vec4{ui.font * 0.3f, 0.0f, 0.0f, 0.0f}), std::move(value), "text");
@@ -155,6 +156,7 @@ public:
         fact("Sample rate", std::format("{} Hz", clip.sampleRate));
         fact("Duration", std::format("{:.2f} s", clip.seconds()));
         fact("File size", formatSize(state.selectedClipSize));
+        ui.addGroup(card, "Streaming");
         m_loadingRow = ui.formRow(card, "Loading");
         std::vector<std::string> labels;
         for (const LoadingChoice& choice : loadingChoices)
@@ -162,7 +164,7 @@ public:
             labels.emplace_back(choice.label);
         }
         m_loading = ui.choice(m_loadingRow.editor, std::move(labels));
-        m_footer = importFooter(ui, kit, card);
+        m_footer = importFooter(ui, kit);
         ui.note(nullptr, "Play an AudioSource, or a one-shot sound from code.", "dim", 2.0f);
     }
 

@@ -324,6 +324,7 @@ private:
 struct Field
 {
     std::string label;
+    std::string group;
     asset::ShaderParameterType type = asset::ShaderParameterType::Float;
     asset::ShaderHint hint = asset::ShaderHint::None;
     math::Vec3 range{0.0f, 1.0f, 0.0f};
@@ -375,49 +376,63 @@ struct FieldRow
     std::vector<Field> fields;
     fields.push_back({
         .label = "Base Color",
+        .group = "Albedo",
         .type = asset::ShaderParameterType::Float4,
         .hint = asset::ShaderHint::Color,
         .tooltip = "The colour of the surface, and its opacity",
         .get = [](const asset::MaterialData& material) { return material.baseColorFactor; },
-        .set = [](asset::MaterialData& material, math::Vec4 value) { material.baseColorFactor = value; },
+        .set = [](asset::MaterialData& material, math::Vec4 value)
+        { material.baseColorFactor = value; },
     });
     fields.push_back(texture("Base Color Texture", &asset::MaterialData::baseColorTexture, asset::ShaderHint::White,
                              "Multiplies the base colour"));
     fields.push_back(number("Metallic", &asset::MaterialData::metallicFactor, 0.0f, 1.0f, "0 for a dielectric, 1 for a metal"));
+    fields.back().group = "Metallic and Roughness";
     fields.push_back(number("Roughness", &asset::MaterialData::roughnessFactor, 0.0f, 1.0f, "0 for a mirror, 1 for chalk"));
     fields.push_back(texture("Metal & Rough Texture", &asset::MaterialData::metallicRoughnessTexture, asset::ShaderHint::White,
                              "Roughness in green, metalness in blue, multiplying them"));
     fields.push_back(texture("Normal Map", &asset::MaterialData::normalTexture, asset::ShaderHint::Normal,
                              "The relief of the surface, in tangent space"));
+    fields.back().group = "Normal Map";
     fields.push_back(number("Normal Scale", &asset::MaterialData::normalScale, 0.0f, 2.0f, "How deep the relief looks"));
     fields.push_back(texture("Occlusion Texture", &asset::MaterialData::occlusionTexture, asset::ShaderHint::White,
                              "The corners the light reaches less, in red"));
+    fields.back().group = "Ambient Occlusion";
     fields.push_back(number("Occlusion Strength", &asset::MaterialData::occlusionStrength, 0.0f, 1.0f, "How much it darkens"));
     fields.push_back({
         .label = "Emission",
+        .group = "Emission",
         .type = asset::ShaderParameterType::Float3,
         .hint = asset::ShaderHint::Color,
         .tooltip = "The light the surface gives on its own, relative to the exposure",
-        .get = [](const asset::MaterialData& material) { return math::Vec4(material.emissiveFactor, 1.0f); },
-        .set = [](asset::MaterialData& material, math::Vec4 value) { material.emissiveFactor = math::Vec3(value); },
+        .get = [](const asset::MaterialData& material)
+        { return math::Vec4(material.emissiveFactor, 1.0f); },
+        .set = [](asset::MaterialData& material, math::Vec4 value)
+        { material.emissiveFactor = math::Vec3(value); },
     });
     fields.push_back(texture("Emission Texture", &asset::MaterialData::emissiveTexture, asset::ShaderHint::White,
                              "Multiplies the emission"));
     fields.push_back({
         .label = "Transparency",
+        .group = "Transparency",
         .type = asset::ShaderParameterType::Int,
         .options = {"Opaque", "Cut Out", "Blended"},
         .tooltip = "Opaque; cut out below the alpha cutoff; or blended with what is behind",
-        .get = [](const asset::MaterialData& material) { return math::Vec4{static_cast<float>(material.alphaMode), 0.0f, 0.0f, 0.0f}; },
-        .set = [](asset::MaterialData& material, math::Vec4 value) { material.alphaMode = static_cast<asset::AlphaMode>(value.x); },
+        .get = [](const asset::MaterialData& material)
+        { return math::Vec4{static_cast<float>(material.alphaMode), 0.0f, 0.0f, 0.0f}; },
+        .set = [](asset::MaterialData& material, math::Vec4 value)
+        { material.alphaMode = static_cast<asset::AlphaMode>(value.x); },
     });
     fields.push_back(number("Alpha Cutoff", &asset::MaterialData::alphaCutoff, 0.0f, 1.0f, "Cut out: below it, nothing is drawn"));
     fields.push_back({
         .label = "Double Sided",
+        .group = "Geometry",
         .type = asset::ShaderParameterType::Bool,
         .tooltip = "Draws the back faces too, lit as seen from their side",
-        .get = [](const asset::MaterialData& material) { return math::Vec4{material.doubleSided ? 1.0f : 0.0f, 0.0f, 0.0f, 0.0f}; },
-        .set = [](asset::MaterialData& material, math::Vec4 value) { material.doubleSided = value.x != 0.0f; },
+        .get = [](const asset::MaterialData& material)
+        { return math::Vec4{material.doubleSided ? 1.0f : 0.0f, 0.0f, 0.0f, 0.0f}; },
+        .set = [](asset::MaterialData& material, math::Vec4 value)
+        { material.doubleSided = value.x != 0.0f; },
     });
     return fields;
 }
@@ -552,6 +567,8 @@ public:
         static constexpr std::array<std::string_view, 1> one{""};
         for (const Field& field : m_fields)
         {
+            if (!field.group.empty())
+                ui.addGroup(card, field.group);
             FieldRow& made = m_rows.emplace_back();
             made.row = ui.formRow(card, field.label);
             if (!field.tooltip.empty())

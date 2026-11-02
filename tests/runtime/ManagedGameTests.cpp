@@ -257,7 +257,10 @@ TEST_CASE("The C# runtime registers components and runs them", "[runtime][manage
     REQUIRE(mover != nullptr);
     REQUIRE(mover->layout != nullptr);
     REQUIRE(mover->type->fields.size() == 4);
-    CHECK(mover->type->findField("speed") != nullptr);
+    REQUIRE(mover->type->findField("speed") != nullptr);
+    CHECK(mover->type->findField("speed")->group == "Movement \"2D\"");
+    CHECK(mover->type->findField("direction")->group.empty());
+    CHECK(mover->type->findField("label")->group == "State");
     CHECK(mover->type->findField("direction")->kind == devex::reflection::ValueKind::Vec3);
     CHECK(mover->type->findField("label")->kind == devex::reflection::ValueKind::String);
     // The [Angle] attribute reaches the inspector.

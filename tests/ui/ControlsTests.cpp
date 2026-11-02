@@ -6,6 +6,7 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <chrono>
 
 using devex::core::Duration;
@@ -199,6 +200,67 @@ TEST_CASE("A dropdown lists its options and writes the chosen one", "[ui][contro
     screen.update(UiInput{.moveY = -1});
     screen.update(UiInput{.submitPressed = true});
     CHECK(screen.scene.get<devex::scene::UiDropdown>(quality).selected == 1);
+}
+
+TEST_CASE("Roomy dropdown menus keep their padding and selection inside the popup area",
+          "[ui][controls][dropdown]")
+{
+    Screen screen;
+    screen.world.setDropdownStyle({.minimumRowHeight = 32,
+                                   .minimumWidth = 260,
+                                   .padding = 6,
+                                   .outlineColor = {1, 1, 1, 1},
+                                   .outlineWidth = 1,
+                                   .showSelected = true});
+    const auto choice =
+        screen.element({}, {window.x - 110, window.y - 55}, {window.x - 10, window.y - 35});
+    screen.scene.add<UiText>(choice);
+    screen.scene.add<devex::scene::UiDropdown>(
+        choice, devex::scene::UiDropdown{.options = {"Low", "Medium", "High"}, .selected = 1});
+    screen.update();
+    screen.click({window.x - 50, window.y - 45});
+    const auto bounds = screen.world.overBounds(screen.scene);
+    REQUIRE(bounds);
+    CHECK(bounds->second.x <= window.x);
+    CHECK(bounds->second.y <= window.y);
+    CHECK(bounds->second.x - bounds->first.x == Catch::Approx(260));
+    CHECK(bounds->second.y - bounds->first.y == Catch::Approx(3 * 32 + 12));
+    CHECK(bounds->second.y < window.y - 55); // Opens above the field near the bottom.
+
+    devex::render::RenderWorld drawn;
+    screen.world.build(screen.scene, {}, drawn);
+    CHECK(std::ranges::count(drawn.uiDraws, devex::render::UiDrawKind::Check,
+                             &devex::render::UiDraw::kind) == 1);
+    screen.click(bounds->first + Vec2{12, 2}); // The frame cannot select the first row.
+    screen.click(bounds->first + Vec2{2, 6 + 32 * 0.5f});
+    CHECK(screen.world.listedDropdown() == choice);
+    CHECK(screen.scene.get<devex::scene::UiDropdown>(choice).selected == 1);
+    screen.click(bounds->first + Vec2{40, 6 + 32 * 2.5f});
+    CHECK(screen.scene.get<devex::scene::UiDropdown>(choice).selected == 2);
+    CHECK_FALSE(screen.world.listedDropdown().isValid());
+
+    screen.world.setPopupArea({}, {180, 100});
+    screen.scene.get<devex::scene::UiDropdown>(choice).options = {
+        "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12"};
+    screen.click({window.x - 50, window.y - 45});
+    const auto small = screen.world.overBounds(screen.scene);
+    REQUIRE(small);
+    CHECK(small->first.x >= 0);
+    CHECK(small->first.y >= 0);
+    CHECK(small->second.x <= 180);
+    CHECK(small->second.y <= 100);
+    screen.update(UiInput{.moveY = 20});
+    screen.update(UiInput{.submitPressed = true});
+    CHECK(screen.scene.get<devex::scene::UiDropdown>(choice).selected == 12);
+    screen.scene.get<devex::scene::UiDropdown>(choice).selected = 0;
+    screen.click({window.x - 50, window.y - 45});
+    screen.update(UiInput{.pointer = small->first + Vec2{40, 6 + 32 * 0.5f}, .wheel = -4});
+    screen.update(UiInput{.submitPressed = true});
+    CHECK(screen.scene.get<devex::scene::UiDropdown>(choice).selected == 4);
+    screen.click({window.x - 50, window.y - 45});
+    screen.scene.get<devex::scene::UiDropdown>(choice).options = {"Only"};
+    screen.update(UiInput{.submitPressed = true});
+    CHECK(screen.scene.get<devex::scene::UiDropdown>(choice).selected == 0);
 }
 
 TEST_CASE("Menus and dropdown lists go past the image into the area given for popups", "[ui][controls]")

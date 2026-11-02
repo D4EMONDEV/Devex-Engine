@@ -97,6 +97,13 @@ public abstract class Component
     internal bool Started;
 }
 
+/// <summary>Starts a collapsible inspector section. Following fields stay in it until the next Group.</summary>
+[AttributeUsage(AttributeTargets.Field)]
+public sealed class GroupAttribute(string name) : Attribute
+{
+    public string Name { get; } = name;
+}
+
 /// <summary>A float field shown in degrees, whose value is in radians.</summary>
 [AttributeUsage(AttributeTargets.Field)]
 public sealed class AngleAttribute : Attribute;

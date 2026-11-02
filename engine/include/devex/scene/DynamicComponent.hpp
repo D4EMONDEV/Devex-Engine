@@ -33,6 +33,8 @@ struct DEVEX_API DynamicField
     std::vector<std::string> enumNames;
     // A list of values of the kind, stored as the std::vector a C++ component would use.
     bool list = false;
+    // Starts an inspector group; empty continues the previous one, as FieldHints::group does.
+    std::string group;
 };
 
 namespace detail {

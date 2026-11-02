@@ -85,6 +85,7 @@ public:
         m_scale = {};
         if (hasOption(*source, "scale"))
         {
+            ui.addGroup(import, "Transform");
             m_scaleRow = ui.formRow(import, "Scale");
             const std::array<std::string_view, 1> letters{""};
             m_scale = ui.numbers(m_scaleRow.editor, letters, {.minValue = 0.0001f, .maxValue = 100000.0f, .dragSpeed = 0.01f, .decimals = 4})
@@ -92,11 +93,8 @@ public:
             ui.tooltip(m_scaleRow.editor, "Multiplies the size of the model, once converted to meters.\nModels already placed keep the "
                                           "positions of their nodes: place them again.");
         }
+        ui.addGroup(import, "Textures");
         m_compressRow = ui.formRow(import, "Compress textures");
-        m_lodsRow = ui.formRow(import, "Generate LODs");
-        m_lods = ui.toggle(m_lodsRow.editor);
-        ui.tooltip(m_lodsRow.editor, "Build compact meshes for distant views. Materials, UVs and "
-                                     "skin weights are preserved.");
         m_compress = ui.toggle(m_compressRow.editor);
         ui.tooltip(m_compressRow.editor, "BC7 and BC5 on the GPU: a quarter of the memory, slower to import");
         m_qualityRow = ui.formRow(import, "Texture quality");
@@ -106,7 +104,12 @@ public:
             labels.emplace_back(choice.label);
         }
         m_quality = ui.choice(m_qualityRow.editor, std::move(labels));
-        m_footer = importFooter(ui, kit, import);
+        ui.addGroup(import, "Level of Detail");
+        m_lodsRow = ui.formRow(import, "Generate LODs");
+        m_lods = ui.toggle(m_lodsRow.editor);
+        ui.tooltip(m_lodsRow.editor, "Build compact meshes for distant views. Materials, UVs and "
+                                     "skin weights are preserved.");
+        m_footer = importFooter(ui, kit);
     }
 
     void sync(InspectorUi& ui, ToolsState& state, EditorUiKit& kit) override

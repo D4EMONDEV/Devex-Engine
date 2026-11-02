@@ -1101,6 +1101,12 @@ internal static unsafe class GameRuntime
             {
                 text.Append(" audio_group=true");
             }
+            if (field.GetCustomAttribute<GroupAttribute>() is { } group && !string.IsNullOrWhiteSpace(group.Name))
+            {
+                string escaped = group.Name.Trim().Replace("\\", "\\\\").Replace("\"", "\\\"")
+                    .Replace("\r", "\\r").Replace("\n", "\\n").Replace("\t", "\\t");
+                text.Append($" group=\"{escaped}\"");
+            }
             if (field.GetCustomAttribute<AssetTypeAttribute>() is { } asset)
             {
                 text.Append($" asset_type=\"{asset.Type}\"");

@@ -150,10 +150,12 @@ serialization::TextValue vectorValue(const float* values, int count)
     return serialization::makeCall(std::format("vec{}", count), std::move(arguments));
 }
 
-ImportFooter importFooter(InspectorUi& ui, EditorUiKit& kit, Section& section)
+ImportFooter importFooter(InspectorUi& ui, EditorUiKit& kit)
 {
     ImportFooter footer;
-    const Entity row = ui.actions(&section);
+    Section& apply = ui.card(kit, "Import Changes");
+    apply.filterWithPage = true;
+    const Entity row = ui.actions(&apply);
     footer.reimport = ui.action(kit, row, Icon::Refresh, "Reimport", "primary");
     ui.tooltip(footer.reimport.entity, "Imports the file again, with the settings above");
     footer.revert = ui.action(kit, row, Icon::Undo, "Revert");

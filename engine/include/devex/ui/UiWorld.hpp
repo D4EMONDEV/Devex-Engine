@@ -97,6 +97,20 @@ struct DEVEX_API TooltipStyle
     float shadowSize = 0.0f;
 };
 
+// The open choice list, in canvas units. Defaults follow the closed control's size; tools can
+// give menus roomier rows and a selection mark without changing the game's UiDropdown components.
+struct DEVEX_API DropdownStyle
+{
+    float minimumRowHeight = 0.0f;
+    float minimumWidth = 0.0f;
+    float padding = 0.0f;
+    float cornerRadius = 4.0f;
+    math::Vec4 outlineColor{0.0f};
+    float outlineWidth = 0.0f;
+    bool fitContents = false;
+    bool showSelected = false;
+};
+
 // What the pointer carries to the drop targets: a UiDragSource taken away, or what a drag that
 // started outside the interface announced.
 struct DEVEX_API Carried
@@ -186,6 +200,7 @@ public:
     [[nodiscard]] bool wasDoubleClicked(std::string_view action) const;
     [[nodiscard]] bool wasDoubleClicked(scene::Entity entity) const;
     void setTooltipStyle(TooltipStyle style);
+    void setDropdownStyle(DropdownStyle style);
     // Whether the drawing shows the tooltips, inside the image. A tool whose image is too small for
     // them turns it off and shows `shownTooltip` itself, elsewhere.
     void setTooltipsDrawn(bool drawn) noexcept;
@@ -322,6 +337,16 @@ private:
         scene::Entity entity;
         std::int32_t highlighted = -1;
         std::size_t first = 0;
+        float textWidth = 0.0f;
+    };
+
+    struct DropdownLayout
+    {
+        math::Vec2 min{0.0f};
+        math::Vec2 max{0.0f};
+        float item = 0.0f;
+        float padding = 0.0f;
+        std::size_t shown = 0;
     };
 
     struct DEVEX_API Tooltip
@@ -405,8 +430,7 @@ private:
     [[nodiscard]] bool updateDropdown(scene::Scene& scene, const UiInput& input);
     void openDropdown(const scene::Scene& scene, scene::Entity entity);
     // The rectangles of the open dropdown list: the whole list and one option, in pixels.
-    [[nodiscard]] bool dropdownList(const scene::Scene& scene, math::Vec2& min, math::Vec2& max, float& item,
-                                    std::size_t& shown) const;
+    [[nodiscard]] std::optional<DropdownLayout> dropdownList(const scene::Scene& scene) const;
     [[nodiscard]] bool startDrag(scene::Scene& scene, const UiInput& input);
     // Takes a drag source away once the pointer moved far enough from where it was pressed, finds
     // the target under what it carries, and drops it there. Answers whether it holds the pointer.
@@ -496,6 +520,7 @@ private:
     std::optional<OpenDropdown> m_dropdown;
     Tooltip m_tooltip;
     TooltipStyle m_tooltipStyle;
+    DropdownStyle m_dropdownStyle;
     bool m_tooltipsDrawn = true;
 
     // A drag source pressed, and where, until the pointer moves far enough to take it away.

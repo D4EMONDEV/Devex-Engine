@@ -222,9 +222,11 @@ public:
         // The animation chosen: its name, its pace, and whether it loops.
         ui.card(kit, "Animation", EntityIcon{icons::Film, colors.animation});
         m_card = ui.sections.size() - 1;
+        ui.addGroup(ui.sections[m_card], "Identity");
         const FormRow nameRow = ui.formRow(ui.sections[m_card], "Name");
         m_name = ui.textField(nameRow.editor);
         ui.tooltip(nameRow.editor, "The name code plays it by: SpriteAnimator.Animation = \"run\"");
+        ui.addGroup(ui.sections[m_card], "Playback");
         const FormRow fpsRow = ui.formRow(ui.sections[m_card], "Frames per second");
         const std::array<std::string_view, 1> one{""};
         m_fps = ui.numbers(fpsRow.editor, one, {.minValue = 0.1f, .maxValue = 240.0f, .dragSpeed = 0.1f, .decimals = 2}).front();
@@ -233,9 +235,10 @@ public:
         ui.tooltip(loopRow.editor, "Starts again after the last frame; otherwise stops on it");
 
         // The preview plays the animation as the game will.
+        const int previewGroup = ui.addGroup(ui.sections[m_card], "Preview");
         const float size = std::round(ui.font * 7.0f);
         const Entity line = ui.add(ui.sections[m_card].card, "Preview", rects::wide(size));
-        ui.sections[m_card].lines.push_back(Line{.entity = line});
+        ui.sections[m_card].lines.push_back(Line{.entity = line, .group = previewGroup});
         const Entity box = ui.add(line, "Box",
                                   scene::UiRect{.anchorMin = {0.5f, 0.0f}, .anchorMax = {0.5f, 0.0f}, .offsetMin = {-size * 0.5f, 0.0f},
                                                 .offsetMax = {size * 0.5f, size}},

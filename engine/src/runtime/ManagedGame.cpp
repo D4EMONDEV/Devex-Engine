@@ -1843,6 +1843,7 @@ void apiResetBindings()
     }
     const std::string* const values = stringAttribute(section, "values");
     const std::string* const assetType = stringAttribute(section, "asset_type");
+    const std::string* const group = stringAttribute(section, "group");
     return scene::DynamicField{
         .name = *name,
         .kind = *valueKind,
@@ -1853,6 +1854,7 @@ void apiResetBindings()
         .audioGroup = boolAttribute(section, "audio_group"),
         .enumNames = values != nullptr ? splitValues(*values) : std::vector<std::string>{},
         .list = boolAttribute(section, "list"),
+        .group = group != nullptr ? *group : std::string(),
     };
 }
 
