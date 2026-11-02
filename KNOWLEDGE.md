@@ -2,7 +2,7 @@
 
 > **Documentation exhaustive de toutes les APIs C++ et C# du moteur Devex Engine**
 > *Généré automatiquement à partir du code source - Version: 2026-10-04*
-> Éditeur et cohérence temporelle du rendu mis à jour le **2026-11-02** ; voir aussi le
+> Éditeur, thème Godot 4 Modern et cohérence temporelle du rendu mis à jour le **2026-11-02** ; voir aussi le
 > [guide illustré](docs/guide-demarrage-2d-3d.md#12-personnaliser-le-viewport-et-lire-linspecteur).
 
 ---
@@ -2204,6 +2204,14 @@ namespace devex::ui {
   profondeur. `OverlayPushConstants` fait 80 octets ; API des jeux 34. Régressions par captures de
   fenêtre pour la stabilité de la grille, largeur et occlusion. Le test comparatif d'occlusion
   fixe l'exposition : son adaptation dépend du temps réel et rendait le test variable sur lavapipe.
+- Apparence de l'éditeur : préréglage `godot_4` (Godot 4 Modern), Inter normale/grasse pour
+  l'interface, JetBrains Mono pour le code ; préférences existantes préservées, sections de
+  composants à fond commun et en-têtes compacts. `EditorUiKit` compare la palette dérivée entière
+  pour actualiser les contrôles lors d'un changement de contraste seul. L'inspecteur propose
+  **Filter Properties**, une recherche par mots dans composant/groupe/libellé, et tout
+  replier/déplier. La recherche ouvre les résultats temporairement sans perdre les groupes
+  repliés ; croix ou Échap dans le champ restaure l'affichage. Les libellés sont réévalués à la
+  saisie ou à la reconstruction de la page, pas à chaque frame.
 - Navigation de l'éditeur : `tools/FileSearch.hpp` et le FileSystem combinent les mots d'une
   recherche dans les chemins, sous-assets et scripts. Ctrl+F, Entrée vers les résultats puis
   activation, Home/End et Page Up/Page Down ; parcourir les scripts ne les ouvre plus.

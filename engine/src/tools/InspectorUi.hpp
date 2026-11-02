@@ -1,10 +1,10 @@
 #pragma once
 
-// The Inspector, made with the interface of the engine as Godot's is made with its controls. It shows
-// the entities selected, in InspectorUi.cpp, or a page for what else is chosen: an asset of the
-// FileSystem, a code file, or an element of the Animator panel, each page in the file of its kind.
-// Pages are made of the same pieces as the entities, those of the forms of the editor: cards folded
-// from their header, and rows of a label and its controls.
+// The Inspector, made with the interface of the engine as Godot's is made with its controls. It
+// shows the entities selected, in InspectorUi.cpp, or a page for what else is chosen: an asset of
+// the FileSystem, a code file, or an element of the Animator panel, each page in the file of its
+// kind. Pages are made of the same pieces as the entities, those of the forms of the editor: cards
+// folded from their header, and rows of a label and its controls.
 #include "FormUi.hpp"
 #include "ToolsState.hpp"
 
@@ -166,7 +166,8 @@ void addTerrainPainter(InspectorUi& ui, EditorUiKit& kit, Section& section);
 void syncTerrainPainter(InspectorUi& ui, ToolsState& state, scene::Scene& edited, scene::Entity entity, Section& section);
 void answerTerrainPainter(InspectorUi& ui, ToolsState& state, Section& section);
 
-// The end of the card of the import options: what waits, and the buttons that apply it or forget it.
+// The end of the card of the import options: what waits, and the buttons that apply it or forget
+// it.
 struct ImportFooter
 {
     scene::Entity note;
@@ -210,10 +211,21 @@ struct InspectorUi : FormUi
     InspectorUi();
 
     bool built = false;
+    float builtFont = 0.0f;
     std::string signature;
     // The registry the rows were made from: once game code reloads, their types are gone.
     std::uint64_t generation = 0;
     std::vector<core::Uuid> shownEntities;
+
+    scene::Entity propertyFilter;
+    scene::Entity clearFilter;
+    PanelButton collapseAll;
+    PanelButton expandAll;
+    scene::Entity noMatches;
+    std::string filter;
+    bool filterDirty = true;
+    bool filterHadFocus = false;
+    std::string appliedFilter;
 
     // Above the components: the name and the UUID of an entity, or how many are selected.
     scene::Entity nameIcon;
@@ -236,8 +248,8 @@ struct InspectorUi : FormUi
     std::vector<PropertyRow> rows;
     PanelButton addComponent;
 
-    // The menu of a component, the menu that reverts a value to its prefab's, and the row the colour
-    // picker edits.
+    // The menu of a component, the menu that reverts a value to its prefab's, and the row the
+    // colour picker edits.
     scene::Entity componentMenu;
     PanelButton removeComponent;
     std::optional<std::size_t> menuSection;
@@ -262,6 +274,8 @@ struct InspectorUi : FormUi
     std::string pageTarget;
 
     void build(EditorUiKit& kit);
+    void filterProperties();
+    void answerToolbar();
     [[nodiscard]] std::string signatureOf(const scene::Scene& edited, std::span<const scene::Entity> inspected) const;
     // Forgets what the panel shows, the edits under way ending as they stand.
     void clear(ToolsState& state, const scene::Scene& edited);

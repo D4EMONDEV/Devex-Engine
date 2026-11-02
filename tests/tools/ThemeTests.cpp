@@ -44,7 +44,7 @@ TEST_CASE("Invalid theme settings fall back to usable values", "[tools][theme]")
     REQUIRE(document.has_value());
     const ThemeSettings settings = devex::tools::detail::readThemeSettings(document->sections.front());
     const ThemeSettings defaults;
-    CHECK(settings.preset == ThemePreset::Gray);
+    CHECK(settings.preset == ThemePreset::Godot4);
     CHECK(settings.baseColor == defaults.baseColor);
     CHECK(settings.accentColor == defaults.accentColor);
     CHECK(settings.contrast == 1.0f);
@@ -89,6 +89,29 @@ TEST_CASE("Theme colors derive from the base, accent and contrast", "[tools][the
 
 TEST_CASE("Font sizes in points become line heights", "[tools][theme]")
 {
-    CHECK(devex::tools::detail::regularFontPixels(14.0f) == 19.0f);
+    CHECK(devex::tools::detail::regularFontPixels(14.0f) == 17.0f);
     CHECK(devex::tools::detail::monoFontPixels(13.0f) == 17.0f);
+}
+
+TEST_CASE("Modern is the default palette and existing palette choices survive loading",
+          "[tools][theme]")
+{
+    const ThemeSettings defaults;
+    CHECK(defaults.preset == ThemePreset::Godot4);
+    CHECK(defaults.baseColor.r == Catch::Approx(0.161f));
+    CHECK(defaults.accentColor.b == 1.0f);
+    CHECK(defaults.contrast == Catch::Approx(0.3f));
+    for (const ThemePreset preset : devex::tools::detail::themePresets)
+    {
+        ThemeSettings original;
+        original.applyPreset(preset);
+        original.fontSize = 18.0f;
+        const auto restored = devex::tools::detail::readThemeSettings(
+            devex::tools::detail::writeThemeSettings(original));
+        CAPTURE(devex::tools::detail::toString(preset));
+        CHECK(restored.preset == preset);
+        CHECK(restored.baseColor.r == Catch::Approx(original.baseColor.r).margin(1.0 / 255.0));
+        CHECK(restored.contrast == original.contrast);
+        CHECK(restored.fontSize == original.fontSize);
+    }
 }

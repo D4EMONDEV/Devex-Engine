@@ -253,6 +253,7 @@ devex_add_tests(tools
         tools/TerrainPainterTests.cpp
         tools/TextEditorTests.cpp
         tools/ThemeTests.cpp
+        tools/InspectorTests.cpp
         tools/ViewportSettingsTests.cpp
         tools/ScriptSettingsTests.cpp
         tools/ToolsOverlayTests.cpp

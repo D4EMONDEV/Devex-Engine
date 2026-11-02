@@ -280,8 +280,8 @@ void EditorUiKit::bakeFonts()
         }
         font.data = std::make_shared<const asset::FontData>(std::move(*baked));
     };
-    bake("NotoSans-Regular.ttf", m_regular);
-    bake("NotoSans-Bold.ttf", m_bold);
+    bake("Inter-Regular.ttf", m_regular);
+    bake("Inter-Bold.ttf", m_bold);
     bake("JetBrainsMono-Regular.ttf", m_mono);
 }
 
@@ -369,15 +369,11 @@ float EditorUiKit::textWidth(asset::AssetId font, std::string_view text, float s
 
 void EditorUiKit::refreshTheme(const ThemeColors& colors)
 {
-    const auto same = [](math::Vec4 first, math::Vec4 second) {
-        return first.x == second.x && first.y == second.y && first.z == second.z && first.w == second.w;
-    };
-    if (m_theme != nullptr && same(m_themeAccent, colors.accent) && same(m_themePanel, colors.panel))
+    if (m_theme != nullptr && m_themeColors == colors)
     {
         return;
     }
-    m_themeAccent = colors.accent;
-    m_themePanel = colors.panel;
+    m_themeColors = colors;
     const math::Vec4 mono = colors.dark ? math::Vec4(1.0f, 1.0f, 1.0f, 1.0f) : math::Vec4(0.0f, 0.0f, 0.0f, 1.0f);
     // A button lights up under the pointer, and takes the accent while pressed.
     const std::string hover = colors.dark ? "vec4(1.35, 1.35, 1.35, 1)" : "vec4(0.93, 0.93, 0.93, 1)";
@@ -401,8 +397,8 @@ void EditorUiKit::refreshTheme(const ThemeColors& colors)
     add("window", image(written(colors.outer), 0.0f));
     add("panel", image(written(colors.panel), 4.0f));
     add("list", image(written(colors.field), 4.0f));
-    // What stands over the panels, menus and dialogs, keeps a hairline edge and casts a soft shadow,
-    // as in Godot 4.
+    // What stands over the panels, menus and dialogs, keeps a hairline edge and casts a soft
+    // shadow, as in Godot 4.
     const auto raisedOver = [&](std::vector<asset::ThemeOverride> values, float shadow) {
         values.push_back({"UiImage", "outline_color", written(math::Vec4(mono.x, mono.y, mono.z, colors.dark ? 0.08f : 0.12f))});
         values.push_back({"UiImage", "outline_width", "1"});
@@ -417,7 +413,8 @@ void EditorUiKit::refreshTheme(const ThemeColors& colors)
     add("primary", clickable(image(written(colors.accent), 4.0f)));
     add("menu_item", clickable(image(written(colors.popup), 3.0f)));
     add("row", clickable(image(written(colors.field), 3.0f)));
-    add("row_selected", clickable(image(written(mixed(colors.field, colors.accent, 0.32f)), 3.0f)));
+    add("row_selected",
+        clickable(image(written(mixed(colors.field, colors.accent, 0.275f)), 3.0f)));
     add("field", [&] {
         std::vector<asset::ThemeOverride> values = image(written(colors.field), 4.0f);
         values.push_back({"UiText", "color", written(colors.text)});
@@ -479,32 +476,38 @@ void EditorUiKit::refreshTheme(const ThemeColors& colors)
     add("icon_success", {{"UiImage", "color", written(colors.success)}});
     // The palette that creates entities and adds components: a card with rounded corners, lists of
     // soft rows, and pills that name a category.
-    add("dialog", raisedOver(image(written(colors.panel), 10.0f), 20.0f));
-    add("dialog_list", image(written(colors.field), 8.0f));
-    add("dialog_card", image(written(mixed(colors.panel, colors.raised, 0.55f)), 8.0f));
+    add("dialog", raisedOver(image(written(colors.panel), 4.0f), 16.0f));
+    add("dialog_list", image(written(colors.field), 4.0f));
+    add("dialog_card", image(written(mixed(colors.panel, colors.raised, 0.35f)), 4.0f));
     // The colour of the card, so that only the pointer lights it up.
-    add("side", clickable(image(written(colors.panel), 6.0f)));
-    add("side_selected", clickable(image(written(mixed(colors.panel, colors.accent, 0.28f)), 6.0f)));
-    add("soft_row", clickable(image(written(colors.field), 6.0f)));
-    add("soft_row_selected", clickable(image(written(mixed(colors.field, colors.accent, 0.30f)), 6.0f)));
+    add("side", clickable(image(written(colors.panel), 3.0f)));
+    add("side_selected",
+        clickable(image(written(mixed(colors.panel, colors.accent, 0.275f)), 3.0f)));
+    add("soft_row", clickable(image(written(colors.field), 3.0f)));
+    add("soft_row_selected",
+        clickable(image(written(mixed(colors.field, colors.accent, 0.275f)), 3.0f)));
     add("chip", image(written(math::Vec4(colors.accent.x, colors.accent.y, colors.accent.z, 0.18f)), 9.0f));
     // The scene tree: the names of prefab entities, the lines from children to their parent, and
     // where what is dragged would land.
     add("prefab", text(colors.prefab));
     // The buttons at the end of a row take its colour, so that only the pointer shows them.
     add("row_button", clickable(image(written(colors.field), 5.0f)));
-    add("row_button_selected", clickable(image(written(mixed(colors.field, colors.accent, 0.30f)), 5.0f)));
-    add("guide", image(written(math::Vec4(colors.textDim.x, colors.textDim.y, colors.textDim.z, 0.28f)), 0.0f));
+    add("row_button_selected",
+        clickable(image(written(mixed(colors.field, colors.accent, 0.275f)), 3.0f)));
+    add("guide",
+        image(written(math::Vec4(colors.textDim.x, colors.textDim.y, colors.textDim.z, 0.18f)),
+              0.0f));
     add("drop_line", image(written(colors.accent), 1.0f));
     add("drop_into", image(written(math::Vec4(colors.accent.x, colors.accent.y, colors.accent.z, 0.22f)), 6.0f));
-    // The inspector: a card per component under a header that lights up, labels a little dimmer than
-    // the values, numbers the pointer lights and drags, swatches whose colour is the value's, and the
-    // mark of a value that differs from its prefab's.
-    const math::Vec4 card = mixed(colors.panel, colors.raised, 0.35f);
-    add("card", image(written(card), 6.0f));
-    add("card_header", clickable(image(written(mixed(card, colors.raised, 0.55f)), 5.0f)));
-    add("group", clickable(image(written(math::Vec4(card.x, card.y, card.z, 0.0f)), 4.0f)));
-    add("label", text(mixed(colors.text, colors.textDim, 0.45f)));
+    // The inspector: a card per component under a header that lights up, labels a little dimmer
+    // than the values, numbers the pointer lights and drags, swatches whose colour is the value's,
+    // and the mark of a value that differs from its prefab's.
+    add("card", image(written(colors.panel), 0.0f));
+    add("card_header", clickable(image(written(mixed(colors.panel, colors.raised, 0.5f)), 4.0f)));
+    add("group",
+        clickable(image(written(math::Vec4(colors.panel.x, colors.panel.y, colors.panel.z, 0.0f)),
+                        0.0f)));
+    add("label", text(mixed(colors.text, colors.textDim, 0.2f)));
     add("number", [&] {
         std::vector<asset::ThemeOverride> values = clickable(image(written(colors.field), 4.0f));
         values.push_back({"UiText", "color", written(colors.text)});
@@ -516,18 +519,18 @@ void EditorUiKit::refreshTheme(const ThemeColors& colors)
     add("swatch", clickable({{"UiImage", "corner_radius", "4"}}));
     add("tool", clickable(image(written(math::Vec4(colors.raised.x, colors.raised.y, colors.raised.z, 0.6f)), 4.0f)));
     add("mark", image(written(colors.accent), 1.0f));
-    // The frame of the editor: buttons that are clear until the pointer is on them, and tinted while
-    // what they stand for is on; the tabs of the scenes, of which the one shown takes the colour of
-    // the toolbar under it; and the tooltips shown over everything. A clear button has no colour for
-    // the pointer to light, hence a style of its own under it.
+    // The frame of the editor: buttons that are clear until the pointer is on them, and tinted
+    // while what they stand for is on; the tabs of the scenes, of which the one shown takes the
+    // colour of the toolbar under it; and the tooltips shown over everything. A clear button has no
+    // colour for the pointer to light, hence a style of its own under it.
     add("bar_button", clickable(image(written(math::Vec4(mono.x, mono.y, mono.z, 0.0f)), 4.0f)));
     add("bar_hover", clickable(image(written(math::Vec4(mono.x, mono.y, mono.z, 0.10f)), 4.0f)));
     add("bar_selected", clickable(image(written(math::Vec4(colors.accent.x, colors.accent.y, colors.accent.z, 0.28f)), 4.0f)));
-    add("close", clickable(image(written(math::Vec4(mono.x, mono.y, mono.z, 0.0f)), 5.0f)));
-    add("close_hover", clickable(image(written(math::Vec4(mono.x, mono.y, mono.z, 0.14f)), 5.0f)));
+    add("close", clickable(image(written(math::Vec4(mono.x, mono.y, mono.z, 0.0f)), 3.0f)));
+    add("close_hover", clickable(image(written(math::Vec4(mono.x, mono.y, mono.z, 0.14f)), 3.0f)));
     add("tab", clickable(image(written(math::Vec4(mono.x, mono.y, mono.z, 0.0f)), 5.0f)));
     add("tab_hover", clickable(image(written(math::Vec4(mono.x, mono.y, mono.z, 0.06f)), 5.0f)));
-    add("tab_selected", clickable(image(written(colors.panel), 5.0f)));
+    add("tab_selected", clickable(image(written(colors.panel), 4.0f)));
     add("tooltip", raisedOver(image(written(colors.popup), 4.0f), 8.0f));
     // What is selected of a text that is only read.
     add("selection", {{"UiImage", "color", written(math::Vec4(colors.accent.x, colors.accent.y, colors.accent.z, 0.4f))},

@@ -96,7 +96,7 @@ mais seulement explicitement ici : le code suit ce document, pas l'inverse.
 | Composition de l'éditeur | Couche d'interface sur le swapchain, images lues par des lots      |
 | Fenêtres de l'éditeur    | Dock dans la fenêtre principale seulement                          |
 | Thème de l'éditeur       | Inspiré de Godot, dérivé d'une base, d'un accent et d'un contraste |
-| Polices                  | Noto Sans (interface), JetBrains Mono (code), FreeType, distances  |
+| Polices                  | Inter (interface), JetBrains Mono (code), FreeType, distances      |
 | Icônes                   | Lucide (SVG) dessinées en images, colorées par type d'objet        |
 | Scènes ouvertes          | Onglets, chacun avec son historique, sa sélection et sa caméra     |
 | Couleurs de l'interface  | Mélangées en espace d'affichage (vue UNORM de la swapchain)        |
@@ -1125,6 +1125,20 @@ les assets s'écrivent au fil de leur lecture.
   pour une police de 14, une croix centrée d'environ 11 points, un fond au survol et une infobulle ;
   le titre réserve sa place dans une fenêtre. Les dialogues de sauvegarde restent ceux des scènes
   et documents, indépendants du dessin du bouton.
+- **Référence Godot 4 Modern (2 novembre 2026)** : les réglages du Godot local de référence
+  utilisent Modern/Default, base sRGB `(0.161, 0.161, 0.161)`, accent `(0.337, 0.620, 1)` et
+  contraste `0.3`. Le préréglage `godot_4` reprend cette palette et devient le défaut ; les
+  préréglages et couleurs enregistrés restent lisibles. Inter normale/grasse, distribuée sous
+  SIL OFL avec sa provenance dans `third_party/fonts/SOURCES.md`, remplace Noto Sans pour
+  l'interface ; JetBrains Mono reste celle du code. Espacements compacts, fonds de composants
+  communs, en-têtes discrets et dialogues à rayon 4. `EditorUiKit::refreshTheme` compare toute
+  la palette dérivée : un changement de contraste seul actualise aussi les champs et menus.
+- **Filtre de l'inspecteur** : recherche par mots dans composant/groupe/libellé, avec le même
+  comparateur ASCII que FileSystem. Le résultat est recalculé à la saisie ou à la reconstruction
+  de la page, et les valeurs numériques transitoires ne sont pas indexées. Les groupes trouvés
+  s'ouvrent sans modifier `folded` ; effacer ou Échap rétablit ce choix. Deux commandes replient
+  ou déplient toutes les sections et groupes. Le changement de taille de police reconstruit
+  aussi la barre de l'inspecteur. Aucun réglage ni composant du jeu n'est changé par ce filtre.
 - **Entrées** : quand les outils utilisent le clavier ou la souris
   (`Platform::setToolsInputCapture`), les appuis et mouvements de ce périphérique n'atteignent
   plus `Input` (les relâchements si), alors que `Platform::toolsInput` les voit tous ; les
@@ -1148,17 +1162,17 @@ les assets s'écrivent au fil de leur lecture.
 - **Thème** (`src/tools/Theme`) : inspiré de Godot. Tout dérive d'une couleur de base, d'un accent
   et d'un contraste : fond extérieur (barres, espaces entre panneaux, barre d'onglets) plus foncé
   que les panneaux, champs et listes plus foncés encore (plus clairs sur fond noir ou clair),
-  boutons légèrement éclaircis, sélection et onglet actif à l'accent. Préréglages *Gray* (défaut),
-  *Blue gray* (le thème classique de Godot 4), *Black (OLED)* et *Light*. Couleurs d'icônes par
+  boutons légèrement éclaircis, sélection et onglet actif à l'accent. Préréglages *Godot 4 Modern*
+  (défaut), *Gray*, *Blue gray* (le thème classique de Godot 4), *Black (OLED)* et *Light*. Couleurs d'icônes par
   type comme les nœuds de Godot : entités et maillages rouges, lumières jaunes, caméras violettes,
   environnement cyan, code du jeu vert, dossiers bleus, matériaux orange. Arrondis de 4 px,
   lignes d'arbre, onglet actif surligné. L'échelle suit celle de l'écran (`Window::displayScale`)
   ou un réglage, et s'applique entre deux frames, aussi quand la fenêtre change d'écran.
 - **Mesures** (`ThemeMetrics`) : l'espacement du thème de l'éditeur de Godot, une marge de base de
   4 points d'où viennent les autres, multipliée par l'échelle. À 100 % et en 14 points : ligne de
-  texte 19, barre de menus 34 (boutons plats et séparation de la barre du haut de Godot), barre
-  d'état 30, onglets des docks 31, 4 entre les emplacements du dock et à l'intérieur des panneaux,
-  titre des modales 25 avec un bord de 4. Avant, ces tailles venaient du style d'ImGui : 32, 32,
+  texte 17, barre de menus 32 (boutons plats et séparation de la barre du haut de Godot), barre
+  d'état 28, onglets des docks 29, 4 entre les emplacements du dock et à l'intérieur des panneaux,
+  titre des modales 23 avec un bord de 4. Avant, ces tailles venaient du style d'ImGui : 32, 32,
   31, 5, 8 et 37.
 - **Viewport** (`ViewportSettings`, jalon 91) : page dédiée d'Editor Settings, enregistrée dans
   `[viewport]` des réglages utilisateur. Taille des poignées et des icônes, épaisseur des poignées
@@ -1167,11 +1181,11 @@ les assets s'écrivent au fil de leur lecture.
   Defaults* réinitialise la page choisie ; Theme et Display gardent désormais les réglages de
   l'autre. Les sous-sections des composants ont des séparateurs et titres gras, sans cartes
   supplémentaires (`FormUi::addGroup`), y compris les paramètres de shader par instance.
-- **Polices** : Noto Sans (normal et gras) et JetBrains Mono, versionnées dans `third_party/fonts`
+- **Polices** : Inter (normal et gras) et JetBrains Mono, versionnées dans `third_party/fonts`
   (licence SIL OFL) et copiées dans `bin/resources/fonts`, importées comme les polices des jeux
   (atlas de distances). Les tailles se règlent en points comme dans Godot (14 par défaut) ; la
-  ligne entière d'une police mesure sa taille multipliée par sa hauteur de ligne (1,362 pour Noto
-  Sans), ce qui donne l'unité des panneaux : un point de texte à l'échelle de l'interface.
+  ligne entière d'une police mesure sa taille multipliée par sa hauteur de ligne (1,21 pour
+  Inter), ce qui donne l'unité des panneaux : un point de texte à l'échelle de l'interface.
 - **Icônes** (`src/tools/Icons`) : 107 icônes Lucide 1.47.0 (licence ISC, `third_party/lucide`) et le
   logo Devex (`engine/resources/icons/devex.png`), copiés dans `bin/resources/icons`. Chaque icône
   est un caractère de la zone à usage privé (U+E000 et suivants), que les panneaux montrent comme
@@ -3347,7 +3361,7 @@ Jalon 68, comme Godot, en deux portées :
   dessine les siens (ImGui mesure une police à sa ligne entière, Devex UI à son em : sans cette
   correction, les lettres étaient 36 % plus grandes que leurs voisines), si bien qu'il suit
   l'échelle de l'interface. `EditorUiKit` partage entre les panneaux les polices de
-  l'éditeur (Noto Sans normale et grasse, cuites en atlas de distances à 40 pixels), ses icônes
+  l'éditeur (Inter normale et grasse, cuites en atlas de distances à 40 pixels), ses icônes
   (les SVG dessinés en textures blanches que les images teintent) et son **thème**, une liste de
   styles nommés (`panel`, `button`, `primary`, `row_selected`, `field`, `dropdown`...) refaits
   depuis les couleurs de l'éditeur quand elles changent. Les polices, le thème et les icônes ont

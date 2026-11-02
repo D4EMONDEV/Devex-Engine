@@ -811,10 +811,26 @@ visuel : il ne change ni les objets, ni les collisions, ni les pas d'aimantation
 La grille adapte ses subdivisions au zoom ; une petite unité n'impose donc pas d'afficher toutes
 ses lignes au loin. Ces préférences concernent l'éditeur et n'affectent pas le rendu du jeu.
 
-Dans l'inspecteur, chaque composant reste une carte. À l'intérieur, les sous-sections telles que
+Pour retrouver la palette Modern de Godot 4, ouvrir **Editor > Editor Settings > Theme** et
+choisir **Godot 4 Modern**. Elle utilise un fond gris neutre et un accent bleu. Les autres palettes
+restent disponibles ; les préférences existantes ne sont pas remplacées au démarrage. La police
+de l'interface est **Inter** et celle des scripts reste **JetBrains Mono**. Les contrôles, les
+dialogues et les onglets partagent des angles discrets et des espacements plus compacts.
+
+![Préréglage Godot 4 Modern dans les réglages de Devex](images/editor-godot-modern-settings.png)
+
+Dans l'inspecteur, chaque composant a son en-tête repliable, sur un fond commun. À l'intérieur, les sous-sections telles que
 **Layers**, **Automatic layers** et **Grass** ont un titre gras et un séparateur. Cliquer sur
 leur ligne pour les replier ou déplier. Cela garde une hiérarchie visible sans ajouter de fonds
 derrière chaque groupe de propriétés.
+
+Le champ **Filter Properties**, en haut du panneau, cherche par mots dans les noms des
+composants, des groupes et des propriétés, sans tenir compte de la casse. Par exemple,
+`terrain grass` affiche les propriétés de Grass du Terrain ; `position transform` retrouve la
+position du Transform. Les résultats se déplient temporairement. La croix du champ ou **Échap**
+dans le champ efface la recherche et restaure les sections que l'on avait repliées. Les deux
+flèches à droite du filtre permettent de **tout replier** ou **tout déplier**. Elles sont
+désactivées pendant une recherche pour conserver l'état précédent.
 
 Les scènes, les panneaux fermables, les fichiers ouverts dans Devex Script et les fenêtres de
 réglages utilisent une croix centrée avec une zone de clic plus large. Son fond apparaît au

@@ -1,10 +1,12 @@
-// The inspector of entities, made with the interface of the engine as Godot's Inspector is made with
-// its controls: a card per component, folded from its header, and a row per property whose control
-// fits its value. Numbers are dragged sideways or typed, the axes of vectors show in their colours,
-// colours open a picker of the engine, and the fields of assets and entities take what FileSystem and
-// the scene tree drop on them. Several entities show the components they share, with a dash where
-// their values differ; a change goes to all of them, as one step to undo.
+// The inspector of entities, made with the interface of the engine as Godot's Inspector is made
+// with its controls: a card per component, folded from its header, and a row per property whose
+// control fits its value. Numbers are dragged sideways or typed, the axes of vectors show in their
+// colours, colours open a picker of the engine, and the fields of assets and entities take what
+// FileSystem and the scene tree drop on them. Several entities show the components they share, with
+// a dash where their values differ; a change goes to all of them, as one step to undo.
 #include "InspectorUi.hpp"
+
+#include "FileSearch.hpp"
 
 #include <devex/asset/Project.hpp>
 #include <devex/core/Path.hpp>
@@ -253,8 +255,41 @@ void InspectorUi::each(const scene::Scene& edited, std::span<const Entity> inspe
 void InspectorUi::build(EditorUiKit& kit)
 {
     built = true;
+    builtFont = font;
     const Entity root = add({}, "Inspector", whole());
-    buildForm(root, whole());
+    const float toolbarHeight = line + pad * 2.0f;
+    const float buttonSize = closeButtonSize();
+    propertyFilter = searchField(kit, root,
+                                 UiRect{.anchorMin = {0.0f, 0.0f},
+                                        .anchorMax = {1.0f, 0.0f},
+                                        .offsetMin = {pad, pad},
+                                        .offsetMax = {-buttonSize * 2.0f - pad * 3.0f, pad + line}},
+                                 filter, "Filter Properties");
+    scene().get<scene::UiInput>(propertyFilter).padding.x = font * 1.9f;
+    clearFilter = closeButton(kit, propertyFilter,
+                              UiRect{.anchorMin = {1.0f, 0.5f},
+                                     .anchorMax = {1.0f, 0.5f},
+                                     .offsetMin = {-buttonSize, -buttonSize * 0.5f},
+                                     .offsetMax = {0.0f, buttonSize * 0.5f},
+                                     .visible = false},
+                              "Clear property filter");
+    collapseAll = button(kit, root, Icon::ChevronRight, "", "flat", buttonSize, buttonSize);
+    expandAll = button(kit, root, Icon::ChevronDown, "", "flat", buttonSize, buttonSize);
+    for (const auto& [target, right] :
+         {std::pair{collapseAll.entity, pad * 2.0f + buttonSize}, std::pair{expandAll.entity, pad}})
+    {
+        scene().get<UiRect>(target) = UiRect{.anchorMin = {1.0f, 0.0f},
+                                             .anchorMax = {1.0f, 0.0f},
+                                             .offsetMin = {-right - buttonSize, pad},
+                                             .offsetMax = {-right, pad + buttonSize}};
+        scene().get<UiRect>(target).style = "flat";
+    }
+    tooltip(collapseAll.entity, "Collapse all sections");
+    tooltip(expandAll.entity, "Expand all sections");
+    buildForm(root, whole(math::Vec4{0.0f, toolbarHeight, 0.0f, 0.0f}));
+    noMatches = text(root, whole(math::Vec4{pad, toolbarHeight, pad, pad}),
+                     "No matching properties.", "dim", false, scene::TextAlign::Center);
+    scene().get<UiRect>(noMatches).visible = false;
 
     componentMenu = menu("Component menu", font * 14.0f);
     removeComponent = menuItem(kit, componentMenu, Icon::Trash, "Remove Component");
@@ -280,6 +315,90 @@ void InspectorUi::build(EditorUiKit& kit)
         }
         return std::nullopt;
     });
+}
+
+void InspectorUi::filterProperties()
+{
+    filter = scene().get<scene::UiText>(propertyFilter).text;
+    revealFiltered = filter.find_first_not_of(" \t\r\n") != std::string::npos;
+    scene().get<UiRect>(clearFilter).visible = !filter.empty();
+    if (filterDirty || appliedFilter != filter)
+    {
+        if (appliedFilter != filter)
+            scene().get<scene::UiScroll>(scroll).offset = math::Vec2{0.0f};
+        appliedFilter = filter;
+        filterDirty = false;
+        std::unordered_map<std::uint32_t, std::string> labels;
+        for (const PropertyRow& row : rows)
+            labels[row.row.index] = scene().get<scene::UiText>(row.label).text;
+        for (const FormRow& row : formRows)
+            labels[row.row.index] = scene().get<scene::UiText>(row.label).text;
+        for (Section& section : sections)
+        {
+            const bool entireSection = !revealFiltered || matchesFileSearch(section.name, filter);
+            bool matched = entireSection;
+            std::vector<bool> groupsMatched(section.groups.size(), false);
+            for (Line& entry : section.lines)
+            {
+                if (entry.heading)
+                    continue;
+                std::string name = section.name;
+                if (entry.group >= 0)
+                    name += " " + section.groups[static_cast<std::size_t>(entry.group)];
+                // Only labels are searched, keeping transient numeric values out of the results.
+                if (const auto label = labels.find(entry.entity.index); label != labels.end())
+                    name += " " + label->second;
+                entry.filtered = !entireSection && !matchesFileSearch(name, filter);
+                if (!entry.filtered && entry.shown)
+                {
+                    matched = true;
+                    if (entry.group >= 0)
+                        groupsMatched[static_cast<std::size_t>(entry.group)] = true;
+                }
+            }
+            for (Line& entry : section.lines)
+                if (entry.heading)
+                    entry.filtered =
+                        !entireSection && !groupsMatched[static_cast<std::size_t>(entry.group)];
+            section.filtered = revealFiltered && !matched;
+        }
+    }
+    const bool any = std::ranges::any_of(sections, [](const Section& section)
+                                         { return !section.hidden && !section.filtered; });
+    scene().get<UiRect>(noMatches).visible = revealFiltered && !any;
+    enable(collapseAll, !sections.empty() && !revealFiltered);
+    enable(expandAll, !sections.empty() && !revealFiltered);
+    styleCloseButton(clearFilter);
+}
+
+void InspectorUi::answerToolbar()
+{
+    const ui::UiWorld& world = panel.world();
+    if (world.wasClicked(clearFilter) || (filterHadFocus && panel.input().cancelPressed))
+    {
+        scene().get<scene::UiText>(propertyFilter).text.clear();
+        scene().get<scene::UiScroll>(scroll).offset = math::Vec2{0.0f};
+    }
+    const bool collapse = world.wasClicked(collapseAll.entity);
+    if (collapse || world.wasClicked(expandAll.entity))
+    {
+        for (const Section& section : sections)
+        {
+            if (collapse)
+                folded.insert(section.name);
+            else
+                folded.erase(section.name);
+            for (std::size_t index = 0; index < section.groups.size(); ++index)
+            {
+                const std::string key = foldKey(section, static_cast<int>(index));
+                if (collapse)
+                    folded.insert(key);
+                else
+                    folded.erase(key);
+            }
+        }
+        scene().get<scene::UiScroll>(scroll).offset = math::Vec2{0.0f};
+    }
 }
 
 std::string InspectorUi::signatureOf(const scene::Scene& edited, std::span<const Entity> inspected) const
@@ -328,6 +447,7 @@ std::string InspectorUi::signatureOf(const scene::Scene& edited, std::span<const
 
 void InspectorUi::clear(ToolsState& state, const scene::Scene& edited)
 {
+    filterDirty = true;
     // What is under way ends as it stands, before its rows go, unless the types it edits went with
     // the code of the game.
     const bool sameTypes = scene::componentRegistry().generation() == generation;
@@ -434,7 +554,8 @@ void InspectorUi::rebuild(ToolsState& state, EditorUiKit& kit, scene::Scene& edi
                                               EntityIcon{icons::Puzzle, themeColors().gameCode}, nullptr);
                 section.locked = true;
                 scene().get<UiRect>(section.title).style = "dim";
-                tooltip(section.header, "The game code that defines this component is not loaded. It is kept in the scene and comes "
+                tooltip(section.header, "The game code that defines this component is not loaded. "
+                                        "It is kept in the scene and comes "
                                         "back with the code.");
             }
         }
@@ -500,7 +621,8 @@ void InspectorUi::buildTop(EditorUiKit& kit, const scene::Scene& edited, std::sp
     openPrefab = button(kit, actions, Icon::ExternalLink, "Open", "button", 0.0f, line - 2.0f);
     tooltip(openPrefab.entity, "Opens the prefab in a tab; its changes reach every instance once saved");
     revertPrefab = button(kit, actions, Icon::Undo, "Revert All", "button", 0.0f, line - 2.0f);
-    tooltip(revertPrefab.entity, "Reverts every override of the instance except the placement of its root; added entities stay");
+    tooltip(revertPrefab.entity, "Reverts every override of the instance except the placement of "
+                                 "its root; added entities stay");
     makeLocal = button(kit, actions, Icon::Unlink, "Make Local", "button", 0.0f, line - 2.0f);
     tooltip(makeLocal.entity, "Turns the instance into ordinary entities, no longer linked to the prefab");
 }
@@ -669,8 +791,8 @@ void InspectorUi::addExtras(EditorUiKit& kit, Section& section, int group)
     const float iconSize = std::round(font * 1.1f);
     if (section.name == "UiRect")
     {
-        // Under the style of an element: what the style does, or why it does nothing, and the way to
-        // the theme that holds it.
+        // Under the style of an element: what the style does, or why it does nothing, and the way
+        // to the theme that holds it.
         const Entity status = add(section.card, "Style status", wide(line));
         section.styleIcon = icon(kit, status, UiRect{.anchorMin = {0.0f, 0.5f}, .anchorMax = {0.0f, 0.5f}, .offsetMin = {0.0f, -iconSize * 0.5f},
                                                      .offsetMax = {iconSize, iconSize * 0.5f}},
@@ -689,7 +811,8 @@ void InspectorUi::addExtras(EditorUiKit& kit, Section& section, int group)
     }
     if (section.name == "ParticleEmitter")
     {
-        // Plays the emitter again, or stops it, in the scene shown: the preview of the editor, or the game.
+        // Plays the emitter again, or stops it, in the scene shown: the preview of the editor, or
+        // the game.
         const Entity controls = add(section.card, "Particles", wide(line));
         scene().add<scene::UiLayout>(controls, scene::UiLayout{.kind = scene::UiLayoutKind::Row,
                                                                .spacing = font * 0.4f,
@@ -716,7 +839,8 @@ void InspectorUi::addExtras(EditorUiKit& kit, Section& section, int group)
                                                               .padding = {font * 0.35f, 0.0f, 0.0f, 0.0f},
                                                               .align = scene::TextAlign::Left});
         section.bake = button(kit, actions, Icon::Footprints, "Bake", "primary", 0.0f, line - 4.0f);
-        tooltip(section.bake.entity, "Finds where agents fit on the colliders that stay put, and writes the navigation mesh next to the scene");
+        tooltip(section.bake.entity, "Finds where agents fit on the colliders that stay put, and "
+                                     "writes the navigation mesh next to the scene");
         section.clear = button(kit, actions, Icon::Close, "Clear", "button", 0.0f, line - 4.0f);
         section.lines.push_back(Line{.entity = actions, .group = group});
         section.navStatus = text(section.card, wide(std::round(line * 1.6f)), "", "dim");
@@ -754,7 +878,9 @@ void InspectorUi::addExtras(EditorUiKit& kit, Section& section, int group)
                                                               .padding = {font * 0.35f, 0.0f, 0.0f, 0.0f},
                                                               .align = scene::TextAlign::Left});
         section.bakeVolumes = button(kit, actions, Icon::Grid, "Bake", "primary", 0.0f, line - 4.0f);
-        tooltip(section.bakeVolumes.entity, "Captures the light at every probe of every volume of the scene, bounce after bounce, and writes it next to the scene");
+        tooltip(section.bakeVolumes.entity,
+                "Captures the light at every probe of every volume of the scene, bounce after "
+                "bounce, and writes it next to the scene");
         section.lines.push_back(Line{.entity = actions, .group = group});
         section.volumeStatus = text(section.card, wide(std::round(line * 1.6f)), "", "dim");
         scene().get<scene::UiText>(section.volumeStatus).wrap = true;
@@ -813,7 +939,9 @@ void InspectorUi::sync(ToolsState& state, EditorUiKit& kit, scene::Scene& edited
             scene().get<UiRect>(prefabLead).style = prefab.resolved ? "dim" : "error";
             fitText(kit, prefabTitle, name, true);
             fitText(kit, prefabTail, prefab.resolved && active != instance ? std::format("in {}", edited.name(instance)) : std::string{});
-            tooltip(prefabLead, prefab.resolved ? "" : "The prefab cannot be loaded. The instance keeps its overrides until it comes back.");
+            tooltip(prefabLead, prefab.resolved ? ""
+                                                : "The prefab cannot be loaded. The instance keeps "
+                                                  "its overrides until it comes back.");
             const bool unlocked = editing && state.mode == ToolsMode::Editor;
             enable(openPrefab, unlocked);
             enable(revertPrefab, unlocked && prefab.resolved);
@@ -846,6 +974,7 @@ void InspectorUi::sync(ToolsState& state, EditorUiKit& kit, scene::Scene& edited
         syncInstanceRows(edited, active);
     }
     syncEntityColor(edited, inspected);
+    filterProperties();
     layoutCards();
 }
 
@@ -890,7 +1019,8 @@ void InspectorUi::syncRow(const ToolsState& state, const scene::Scene& edited, s
     row.themed = !shared && !row.element && style.sets(row.type->name(), field.name);
     const bool open = !row.themed;
     scene().get<UiRect>(row.editor).opacity = open ? 1.0f : 0.5f;
-    tooltip(row.editor, row.themed ? std::format("Set by the style '{}' of the theme of the canvas.\nChange it in the theme, or leave "
+    tooltip(row.editor, row.themed ? std::format("Set by the style '{}' of the theme of the "
+                                                 "canvas.\nChange it in the theme, or leave "
                                                  "the style to set it here.",
                                                  style.name)
                                    : std::string{});
@@ -1048,8 +1178,8 @@ void InspectorUi::fillChoices(const ToolsState& state, const scene::Scene& edite
     }
     else if (field.kind == ValueKind::UInt32)
     {
-        // The named layers of collision or the groups of sound of the project; the unnamed ones stay
-        // out, but the first layer and the chosen value.
+        // The named layers of collision or the groups of sound of the project; the unnamed ones
+        // stay out, but the first layer and the chosen value.
         const std::uint32_t current = *static_cast<const std::uint32_t*>(address);
         std::vector<std::string> names;
         if (field.physicsLayer)
@@ -1079,8 +1209,8 @@ void InspectorUi::fillChoices(const ToolsState& state, const scene::Scene& edite
     }
     else if (field.kind == ValueKind::String)
     {
-        // The sorting layers of the project, back to front. A name the project does not know stays as
-        // it is, and draws in "Default".
+        // The sorting layers of the project, back to front. A name the project does not know stays
+        // as it is, and draws in "Default".
         const std::string& current = *static_cast<const std::string*>(address);
         const asset::SortingSettings settings = state.database != nullptr ? state.database->project().sorting : asset::SortingSettings{};
         for (const std::string& name : settings.layers)
@@ -1241,8 +1371,8 @@ void InspectorUi::syncExtras(ToolsState& state, EditorUiKit& kit, scene::Scene& 
         }
         else
         {
-            // Short, so that the way to the theme stays in view in a narrow panel; the name of the theme
-            // is in the tooltip.
+            // Short, so that the way to the theme stays in view in a narrow panel; the name of the
+            // theme is in the tooltip.
             glyph.texture = kit.icon(Icon::Palette);
             scene().get<UiRect>(section.styleIcon).style = "icon_accent";
             scene().get<UiRect>(section.styleText).style = "dim";
@@ -1449,7 +1579,8 @@ void InspectorUi::answerRow(ToolsState& state, scene::Scene& edited, std::span<c
             {
                 continue;
             }
-            // A drag is one step once let go; the others follow the active entity in this number only.
+            // A drag is one step once let go; the others follow the active entity in this number
+            // only.
             const float value = scene().get<scene::UiNumberField>(row.numbers[axis]).value;
             beginEdit(edited, inspected, row);
             if (field.kind == ValueKind::Quat)
@@ -1528,8 +1659,8 @@ void InspectorUi::answerRow(ToolsState& state, scene::Scene& edited, std::span<c
         {
             set([&](void* address, bool) { *static_cast<scene::EntityRef*>(address) = row.references[*chosen]; });
         }
-        // An asset dropped from FileSystem, or an entity from the scene tree; the target only lights
-        // up for what the field takes.
+        // An asset dropped from FileSystem, or an entity from the scene tree; the target only
+        // lights up for what the field takes.
         const ui::Drop* const dropped = world.wasDropped(row.control) ? world.dropped() : nullptr;
         const std::optional<core::Uuid> uuid = dropped != nullptr && !row.themed ? core::Uuid::parse(dropped->data) : std::nullopt;
         if (uuid && field.kind == ValueKind::AssetId)
@@ -1606,7 +1737,8 @@ void InspectorUi::answerEntityColor(scene::Scene& edited, std::span<const Entity
         beginEdit(edited, inspected, row);
         each(edited, inspected, row, [&](void* address, bool) { writeColor(field, address, chosen); });
     }
-    // The hexadecimal, read once the field is left; a colour brighter than white keeps its intensity.
+    // The hexadecimal, read once the field is left; a colour brighter than white keeps its
+    // intensity.
     if (world.editedField() == hexField)
     {
         hexTyping = true;
@@ -1876,15 +2008,28 @@ void InspectorUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& edit
     const ThemeColors& colors = themeColors();
     kit.refreshTheme(colors);
     setFont(state.theme.fontSize);
+    if (built && builtFont != font)
+    {
+        filter = scene().get<scene::UiText>(propertyFilter).text;
+        clear(state, edited);
+        std::vector<Entity> children;
+        for (Entity child = scene().firstChild(panel.canvas()); child.isValid();
+             child = scene().nextSibling(child))
+            children.push_back(child);
+        for (const Entity child : children)
+            scene().destroyEntity(child);
+        built = false;
+        signature.clear();
+    }
     if (!built)
     {
         build(kit);
     }
     styleTooltips(colors);
 
-    // What the inspector shows: a state, a transition or a layer of the Animator panel until another
-    // entity or asset is chosen, the entities selected, a code file, an asset, or a word to choose
-    // something.
+    // What the inspector shows: a state, a transition or a layer of the Animator panel until
+    // another entity or asset is chosen, the entities selected, a code file, an asset, or a word to
+    // choose something.
     AnimatorEditor& animator = state.animatorEditor;
     if (animator.inspecting && (state.selection.active() != animator.inspectedEntity || state.selectedAsset != animator.inspectedAsset))
     {
@@ -1997,7 +2142,8 @@ void InspectorUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& edit
         {
             uuids.push_back(edited.uuid(entity));
         }
-        // Another entity starts at the top; the same one keeps its place when its components change.
+        // Another entity starts at the top; the same one keeps its place when its components
+        // change.
         if (uuids != shownEntities)
         {
             scene().get<scene::UiScroll>(scroll).offset = math::Vec2{0.0f};
@@ -2008,7 +2154,9 @@ void InspectorUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& edit
     }
     scene().get<scene::UiScroll>(scroll).speed = line * 3.0f;
     sync(state, kit, edited, inspected);
+    filterHadFocus = panel.world().editedField() == propertyFilter;
     panel.update(kit, delta, UiPanel::zoomFor(font));
+    answerToolbar();
     answer(state, kit, edited, inspected);
 
     // A number shows that it is dragged sideways.
@@ -2059,8 +2207,11 @@ void InspectorUi::updatePage(ToolsState& state, EditorUiKit& kit, const scene::S
     scene().get<scene::UiScroll>(scroll).speed = line * 3.0f;
     labelWidth = std::clamp(std::round(panel.size().x * 0.38f), font * 5.5f, font * 13.0f);
     page->sync(*this, state, kit);
+    filterProperties();
     layoutCards();
+    filterHadFocus = panel.world().editedField() == propertyFilter;
     panel.update(kit, delta, UiPanel::zoomFor(font));
+    answerToolbar();
     answerForm();
     page->answer(*this, state, kit);
 

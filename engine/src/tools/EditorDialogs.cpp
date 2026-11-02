@@ -384,7 +384,7 @@ void EditorDialogsUi::start(DialogKind which, ToolsState& state, EditorUiKit& ki
             {"GLM, fastgltf, ufbx, Basis Universal", "MIT, MIT, MIT, Apache 2.0"},
             {"FreeType", "FreeType License"},
             {"plutosvg", "MIT"},
-            {"Noto Sans, JetBrains Mono", "SIL Open Font License 1.1"},
+            {"Inter, Noto Sans, JetBrains Mono", "SIL Open Font License 1.1"},
             {"Lucide icons", "ISC"},
             {"Slang", "Apache 2.0"},
         }};

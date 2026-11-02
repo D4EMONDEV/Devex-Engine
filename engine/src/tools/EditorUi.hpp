@@ -9,8 +9,8 @@
 #include <devex/asset/FontData.hpp>
 #include <devex/asset/ThemeData.hpp>
 #include <devex/core/Time.hpp>
-#include <devex/render/Renderer.hpp>
 #include <devex/render/RenderWorld.hpp>
+#include <devex/render/Renderer.hpp>
 #include <devex/scene/Scene.hpp>
 #include <devex/scene/UiComponents.hpp>
 #include <devex/ui/GlyphAtlas.hpp>
@@ -27,8 +27,8 @@
 #include <utility>
 #include <vector>
 
-// The panels of the editor made with the interface of the engine, as Godot draws its editor with the
-// nodes its games use.
+// The panels of the editor made with the interface of the engine, as Godot draws its editor with
+// the nodes its games use.
 namespace devex::tools::detail {
 
 // A color of the editor theme, written in sRGB, as the linear color of the interface of the engine.
@@ -37,11 +37,10 @@ namespace devex::tools::detail {
 // The icon a text of one icon writes.
 [[nodiscard]] Icon iconOf(IconText text) noexcept;
 
-// What the panels share: the fonts of the editor baked into atlases of distances, its icons drawn as
-// white textures that the images showing them tint, and its theme as the named styles of a theme of
-// that interface.
-// What the pointer carries from a panel to another, or to the view: a type, the bytes it names, and
-// what it is called.
+// What the panels share: the fonts of the editor baked into atlases of distances, its icons drawn
+// as white textures that the images showing them tint, and its theme as the named styles of a theme
+// of that interface. What the pointer carries from a panel to another, or to the view: a type, the
+// bytes it names, and what it is called.
 struct EditorDrag
 {
     std::string type;
@@ -86,15 +85,16 @@ public:
     // Sends the letters the panels drew at their size this frame to the renderer.
     void flushGlyphs();
 
-    // The textures of the project and the sprites cut from them, which the previews of the panels show.
+    // The textures of the project and the sprites cut from them, which the previews of the panels
+    // show.
     void setAssetImages(std::function<render::TextureHandle(asset::AssetId)> textures,
                         std::function<math::Vec2(asset::AssetId)> sizes,
                         std::function<std::optional<ui::SpriteImage>(asset::AssetId)> sprites);
     // A checkerboard, drawn behind what may be transparent.
     [[nodiscard]] asset::AssetId checker();
 
-    // A tooltip a panel too small for it asks to be shown outside its image, where the pointer rested
-    // on the screen; the layer over the editor shows the last one asked for in the frame.
+    // A tooltip a panel too small for it asks to be shown outside its image, where the pointer
+    // rested on the screen; the layer over the editor shows the last one asked for in the frame.
     struct Tooltip
     {
         std::string text;
@@ -110,13 +110,13 @@ public:
     [[nodiscard]] EditorHosts& hosts() const noexcept;
     [[nodiscard]] const EditorInput& input() const noexcept;
     [[nodiscard]] platform::Platform& platform() const noexcept;
-    // What the pointer carries from a panel, while the button holds it; forgotten the frame after it
-    // is let go.
+    // What the pointer carries from a panel, while the button holds it; forgotten the frame after
+    // it is let go.
     void carry(EditorDrag drag);
     [[nodiscard]] const EditorDrag* carried() const noexcept;
     void forgetCarried() noexcept;
-    // A field that takes what is typed, where it stands on the screen: the input method of the system
-    // opens next to it.
+    // A field that takes what is typed, where it stands on the screen: the input method of the
+    // system opens next to it.
     void requestTextInput(math::Vec2 min, math::Vec2 max) noexcept;
     [[nodiscard]] std::optional<std::pair<math::Vec2, math::Vec2>> takeTextInput() noexcept;
 
@@ -154,11 +154,10 @@ private:
             return std::hash<std::string_view>{}(text);
         }
     };
-    // The widths already measured, by font and size then by text: the panels ask for the same ones at
-    // every frame.
+    // The widths already measured, by font and size then by text: the panels ask for the same ones
+    // at every frame.
     std::unordered_map<std::uint64_t, std::unordered_map<std::string, float, TextHash, std::equal_to<>>> m_widths;
-    math::Vec4 m_themeAccent{-1.0f, 0.0f, 0.0f, 0.0f};
-    math::Vec4 m_themePanel{-1.0f, 0.0f, 0.0f, 0.0f};
+    std::optional<ThemeColors> m_themeColors;
     std::optional<Tooltip> m_tooltip;
     EditorHosts* m_hosts = nullptr;
     const EditorInput* m_input = nullptr;
@@ -179,9 +178,9 @@ struct PanelImagePlacement
 [[nodiscard]] DEVEX_API PanelImagePlacement placePanelImage(math::Vec2 origin, math::Vec2 size, math::Vec2 viewport,
                                                            float pixelsPerPoint) noexcept;
 
-// A panel made with the interface of the engine: a canvas of entities in a scene of its own, which an
-// interface world lays out and answers, drawn into an image that the host around it shows.
-// The panel works in units of the size of the editor's text, so that it follows the interface scale.
+// A panel made with the interface of the engine: a canvas of entities in a scene of its own, which
+// an interface world lays out and answers, drawn into an image that the host around it shows. The
+// panel works in units of the size of the editor's text, so that it follows the interface scale.
 class UiPanel
 {
 public:
@@ -199,17 +198,17 @@ public:
     // What the last update gave the interface world, in units of the panel.
     [[nodiscard]] const ui::UiInput& input() const noexcept;
 
-    // What the drags of the panel become once they leave it: what the other panels and the view take,
-    // or nothing when they stay in the panel.
+    // What the drags of the panel become once they leave it: what the other panels and the view
+    // take, or nothing when they stay in the panel.
     void setDragOut(std::function<std::optional<EditorDrag>(const ui::Carried&)> convert);
     // What the drags of other panels that come over the panel become: the type and data its drop
     // targets read, or nothing for those it does not take.
     void setDragIn(std::function<std::optional<std::pair<std::string, std::string>>(const EditorDrag&)> convert);
-    // Whether the arrows, Enter and Space move the focus between the buttons and press them, as in a
-    // menu; a panel that answers the keys itself, as a tree does, turns it off.
+    // Whether the arrows, Enter and Space move the focus between the buttons and press them, as in
+    // a menu; a panel that answers the keys itself, as a tree does, turns it off.
     void setKeyboardNavigation(bool enabled) noexcept;
-    // Whether the tooltips show outside the image of the panel, in the layer over the editor, as they
-    // do by default: inside, the edge of the panel would cut them.
+    // Whether the tooltips show outside the image of the panel, in the layer over the editor, as
+    // they do by default: inside, the edge of the panel would cut them.
     void setTooltipsOutside(bool outside) noexcept;
     // Whether the open menus and the list of a dropdown go past the edges of the image, as they do
     // by default, or stay inside it.
@@ -227,8 +226,8 @@ public:
     // point of the panel a place of the screen is.
     [[nodiscard]] math::Vec2 screenOf(math::Vec2 units) const noexcept;
     [[nodiscard]] math::Vec2 unitsOf(math::Vec2 screen) const noexcept;
-    // Adds the image of the panel to the frame, over a color, when the last update showed it, and the
-    // image of what stands past its edges.
+    // Adds the image of the panel to the frame, over a color, when the last update showed it, and
+    // the image of what stands past its edges.
     void render(EditorUiKit& kit, render::RenderWorld& world, math::Vec4 background);
 
     // How many pixels a unit takes in a panel whose text is `font` units, its letters as large as
@@ -259,8 +258,8 @@ private:
     std::function<void(ui::UiInput&)> m_filter;
     // Where the last frame was drawn, kept to reuse its storage.
     render::RenderWorld m_scratch;
-    // What stands past the edges of the image: the open menus and the list of a dropdown, drawn into
-    // a surface of their own, from `pixels` of the image of the panel, `size` pixels large.
+    // What stands past the edges of the image: the open menus and the list of a dropdown, drawn
+    // into a surface of their own, from `pixels` of the image of the panel, `size` pixels large.
     struct OverImage
     {
         math::Vec2 pixels{0.0f};
@@ -291,8 +290,8 @@ struct PanelButton
     scene::Entity label;
 };
 
-// The pieces the panels of the editor are made of, as entities of their panel, sized in units of the
-// size of their text.
+// The pieces the panels of the editor are made of, as entities of their panel, sized in units of
+// the size of their text.
 class PanelBuilder
 {
 public:

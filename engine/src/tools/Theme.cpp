@@ -3,21 +3,22 @@
 #include <devex/core/Log.hpp>
 #include <devex/core/Path.hpp>
 #include <devex/scene/AnimationComponents.hpp>
-#include <devex/scene/JointComponents.hpp>
-#include <devex/scene/Light2DComponents.hpp>
-#include <devex/scene/ParticleComponents.hpp>
-#include <devex/scene/SpriteComponents.hpp>
-#include <devex/scene/TilemapComponents.hpp>
-#include <devex/scene/UiComponents.hpp>
 #include <devex/scene/AudioComponents.hpp>
 #include <devex/scene/ComponentRegistry.hpp>
 #include <devex/scene/Components.hpp>
+#include <devex/scene/JointComponents.hpp>
+#include <devex/scene/Light2DComponents.hpp>
 #include <devex/scene/NavigationComponents.hpp>
+#include <devex/scene/ParticleComponents.hpp>
 #include <devex/scene/Physics2DComponents.hpp>
 #include <devex/scene/PhysicsComponents.hpp>
 #include <devex/scene/Prefab.hpp>
 #include <devex/scene/Scene.hpp>
 #include <devex/scene/SceneSerializer.hpp>
+
+#include <devex/scene/SpriteComponents.hpp>
+#include <devex/scene/TilemapComponents.hpp>
+#include <devex/scene/UiComponents.hpp>
 
 #include <algorithm>
 #include <array>
@@ -32,7 +33,7 @@ namespace {
 using serialization::TextValue;
 
 // The whole line of a font, from ascender to descender: the ratio to its em size.
-constexpr float notoSansLineHeight = 1.362f;
+constexpr float interLineHeight = 1.21f;
 constexpr float jetBrainsMonoLineHeight = 1.32f;
 
 ThemeColors g_colors = deriveThemeColors(ThemeSettings{});
@@ -152,6 +153,8 @@ const char* displayName(ThemePreset preset) noexcept
         return "Black (OLED)";
     case ThemePreset::Light:
         return "Light";
+    case ThemePreset::Godot4:
+        return "Godot 4 Modern";
     }
     return "Gray";
 }
@@ -168,6 +171,8 @@ std::string_view toString(ThemePreset preset) noexcept
         return "black";
     case ThemePreset::Light:
         return "light";
+    case ThemePreset::Godot4:
+        return "godot_4";
     }
     return "gray";
 }
@@ -189,6 +194,11 @@ void ThemeSettings::applyPreset(ThemePreset newPreset) noexcept
     preset = newPreset;
     switch (newPreset)
     {
+    case ThemePreset::Godot4:
+        baseColor = {0.161f, 0.161f, 0.161f};
+        accentColor = {0.337f, 0.620f, 1.0f};
+        contrast = 0.3f;
+        break;
     case ThemePreset::Gray:
         baseColor = {0.149f, 0.149f, 0.149f};
         accentColor = {0.310f, 0.584f, 0.918f};
@@ -217,8 +227,9 @@ ThemeSettings readThemeSettings(const serialization::TextSection& section)
     ThemeSettings settings;
     const TextValue* const presetValue = section.findAttribute("preset");
     const std::string* const presetText = presetValue != nullptr ? serialization::asString(*presetValue) : nullptr;
-    settings.applyPreset(presetText != nullptr ? parseThemePreset(*presetText).value_or(ThemePreset::Gray)
-                                               : ThemePreset::Gray);
+    settings.applyPreset(presetText != nullptr
+                             ? parseThemePreset(*presetText).value_or(settings.preset)
+                             : settings.preset);
     settings.baseColor = colorOr(section, "base_color", settings.baseColor);
     settings.accentColor = colorOr(section, "accent_color", settings.accentColor);
     settings.contrast = std::clamp(numberOr(section, "contrast", settings.contrast), -1.0f, 1.0f);
@@ -270,16 +281,18 @@ ThemeColors deriveThemeColors(const ThemeSettings& settings)
     colors.dark = luminance(base) < 0.5f;
     const math::Vec4 mono = colors.dark ? white : black;
     colors.accent = opaque(settings.accentColor);
-    colors.text = mix(mono, base, colors.dark ? 0.18f : 0.12f);
+    colors.text = mix(mono, base, colors.dark ? 0.15f : 0.12f);
     colors.textDim = mix(mono, base, 0.5f);
     colors.panel = base;
-    colors.outer = mix(base, black, contrast * 1.6f);
+    colors.outer = mix(base, black, contrast * 1.7f);
     // On a black base, darker backgrounds do not exist: fields stand out by being lighter.
-    colors.field = colors.dark ? mix(mix(base, black, contrast), mono, luminance(base) < 0.02f ? 0.07f : 0.0f)
+    colors.field = colors.dark ? mix(mix(base, black, contrast * 1.1f), mono,
+                                     luminance(base) < 0.02f ? 0.07f : 0.0f)
                                : mix(base, white, 0.75f);
     colors.border = withAlpha(mono, colors.dark ? 0.09f : 0.14f);
-    colors.raised = mix(colors.panel, mono, colors.dark ? 0.075f : 0.06f);
-    colors.popup = colors.dark ? mix(colors.panel, black, std::max(contrast, 0.0f) * 0.5f) : mix(colors.panel, white, 0.6f);
+    colors.raised = mix(colors.panel, mono, colors.dark ? 0.115f : 0.06f);
+    colors.popup = colors.dark ? mix(colors.panel, black, std::max(contrast, 0.0f) * 1.1f)
+                               : mix(colors.panel, white, 0.6f);
 
     if (colors.dark)
     {
@@ -375,10 +388,7 @@ const ThemeMetrics& themeMetrics() noexcept
     return g_metrics;
 }
 
-float regularFontPixels(float points) noexcept
-{
-    return std::round(points * notoSansLineHeight);
-}
+float regularFontPixels(float points) noexcept { return std::round(points * interLineHeight); }
 
 float monoFontPixels(float points) noexcept
 {

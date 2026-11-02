@@ -44,10 +44,10 @@ FormUi::FormUi(std::uint32_t surface)
 void FormUi::setFont(float size) noexcept
 {
     font = size;
-    line = std::round(font * 1.95f);
-    pad = std::round(font * 0.4f);
+    line = std::round(font * 1.8f);
+    pad = std::round(font * 0.2857f);
     gap = std::max(std::round(font * 0.15f), 1.0f);
-    headerHeight = std::round(font * 2.1f);
+    headerHeight = std::round(font * 2.0f);
 }
 
 void FormUi::buildForm(Entity parent, UiRect rect)
@@ -58,7 +58,7 @@ void FormUi::buildForm(Entity parent, UiRect rect)
                   UiRect{.anchorMin = {0.0f, 0.0f}, .anchorMax = {1.0f, 0.0f}, .offsetMin = {font * 0.3f, font * 0.3f},
                          .offsetMax = {-font * 0.3f - 8.0f, 0.0f}});
     scene().add<scene::UiLayout>(content, scene::UiLayout{.kind = scene::UiLayoutKind::Column,
-                                                          .spacing = font * 0.45f,
+                                                          .spacing = std::round(font * 0.2857f),
                                                           .align = scene::TextAlign::Left});
 }
 
@@ -173,11 +173,11 @@ Section& FormUi::addSection(EditorUiKit& kit, std::string name, const EntityIcon
     Section& section = sections.emplace_back();
     section.type = type;
     section.name = std::move(name);
-    section.card = add(content, "Component", wide(headerHeight + pad * 2.0f), "card");
+    section.card = add(content, "Component", wide(headerHeight), "card");
     scene().add<scene::UiImage>(section.card);
     scene().add<scene::UiLayout>(section.card, scene::UiLayout{.kind = scene::UiLayoutKind::Column,
                                                                .spacing = gap,
-                                                               .padding = math::Vec4{pad},
+                                                               .padding = math::Vec4{0.0f},
                                                                .align = scene::TextAlign::Left});
     section.header = add(section.card, "Header", wide(headerHeight), "card_header");
     scene().add<scene::UiImage>(section.header);
@@ -204,7 +204,7 @@ int FormUi::addGroup(Section& section, std::string name)
 {
     const int group = static_cast<int>(section.groups.size());
     section.groups.push_back(std::move(name));
-    const Entity header = add(section.card, "Group", wide(std::round(line * 1.2f)), "group");
+    const Entity header = add(section.card, "Group", wide(std::round(line * 1.15f)), "group");
     scene().add<scene::UiImage>(header);
     scene().add<scene::UiButton>(header);
     scene().add<scene::UiFoldout>(header);
@@ -515,7 +515,8 @@ void FormUi::layoutCards()
         scene().get<UiRect>(scene().parent(row.label)).offsetMax.x = labelWidth - font * 0.4f;
         scene().get<UiRect>(row.editor).offsetMin.x = labelWidth;
     }
-    // Grids of sprites wrap at the width of their card: as many columns as fit, as many rows as needed.
+    // Grids of sprites wrap at the width of their card: as many columns as fit, as many rows as
+    // needed.
     const float room = std::max(panel.size().x - font * 0.6f - 8.0f - pad * 2.0f - font * 0.35f, 1.0f);
     for (SpriteGrid* grid : grids)
     {
@@ -532,25 +533,29 @@ void FormUi::layoutCards()
                                                      static_cast<float>(rowsNeeded) * (grid->size + spacing) - spacing};
     }
 
-    // The layout skips hidden lines and cards: a card is as tall as its header and the lines it shows.
+    // The layout skips hidden lines and cards: a card is as tall as its header and the lines it
+    // shows.
     for (Section& section : sections)
     {
         UiRect& card = scene().get<UiRect>(section.card);
-        card.visible = !section.hidden;
-        if (section.hidden)
+        card.visible = !section.hidden && !section.filtered;
+        if (!card.visible)
         {
             continue;
         }
-        const bool open = !section.locked && !folded.contains(section.name);
+        const bool open = !section.locked && (revealFiltered || !folded.contains(section.name));
         scene().get<scene::UiFoldout>(section.header).expanded = open;
-        scene().get<scene::UiFoldout>(section.header).interactable = !section.locked;
-        float height = pad * 2.0f + headerHeight;
+        scene().get<scene::UiFoldout>(section.header).interactable =
+            !section.locked && !revealFiltered;
+        float height = headerHeight;
         for (const Line& entry : section.lines)
         {
-            const bool groupOpen = entry.group < 0 || !folded.contains(foldKey(section, entry.group));
+            const bool groupOpen = revealFiltered || entry.group < 0 ||
+                                   !folded.contains(foldKey(section, entry.group));
             if (entry.heading)
             {
                 scene().get<scene::UiFoldout>(entry.entity).expanded = groupOpen;
+                scene().get<scene::UiFoldout>(entry.entity).interactable = !revealFiltered;
             }
             UiRect& rect = scene().get<UiRect>(entry.entity);
             rect.visible = open && entry.shown && !entry.filtered && (entry.heading || groupOpen);
@@ -653,7 +658,8 @@ std::optional<math::Vec4> FormUi::answerColorPopup(math::Vec4 current)
     {
         chosen = scene().get<scene::UiColorPicker>(picker).color;
     }
-    // The hexadecimal, read once the field is left; a colour brighter than white keeps its intensity.
+    // The hexadecimal, read once the field is left; a colour brighter than white keeps its
+    // intensity.
     if (world.editedField() == hexField)
     {
         hexTyping = true;

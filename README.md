@@ -138,7 +138,7 @@ captures de l'éditeur, scènes de base, entrées, scripts C#, animations, colli
   fenêtres d'un outil), zones de texte colorées par morceaux, surlignées et marquées par ligne,
   en C++ comme en C# (`Ui.SetTextColors`), dessin en une passe après le tonemapping ou dans une image à part
   (les panneaux de l'éditeur), survol, clic et focus au clavier comme à la manette ;
-- `Devex::Tools` : interface au thème réglable inspiré de Godot (Noto Sans, JetBrains Mono,
+- `Devex::Tools` : interface au thème réglable inspiré de Godot 4 Modern (Inter, JetBrains Mono,
   icônes Lucide), panneaux rangés par un dock aux emplacements de Godot (onglets glissés d'un
   emplacement à l'autre, gardés avec le projet) : arbre de la scène, inspecteur, FileSystem,
   sortie, statistiques, annulation, en
@@ -151,7 +151,8 @@ captures de l'éditeur, scènes de base, entrées, scripts C#, animations, colli
   fenêtre *Create Entity* / *Add Component* en palette comme le *Create New Node* de Godot
   (composants et préréglages, recherche, catégories, fiche, favoris et récents par projet),
   gestionnaire de projets, arbre de scène (guides fins, entités glissées avant, dans ou après une
-  autre, œil, préfab et code au bout des lignes), inspecteur (cartes repliables, nombres glissés
+  autre, œil, préfab et code au bout des lignes), inspecteur (sections repliables, filtre de
+  propriétés et boutons pour tout replier/déplier, nombres glissés
   ou tapés, vecteurs aux axes colorés, sélecteur de couleur maison, assets et entités lâchés sur
   leurs champs, une page par asset avec ses réglages d'import appliqués par *Reimport* comme dans
   Godot), Editor Settings et Project Settings (sections à gauche et filtre comme dans Godot,
@@ -489,11 +490,13 @@ Dans l'éditeur : clic gauche pour sélectionner, Q / W / E / R pour sélectionn
 ou mettre à l'échelle (Ctrl aimante), clic droit maintenu + ZQSD pour voler, Alt + clic gauche pour
 tourner autour, F pour cadrer, Ctrl+S pour enregistrer la scène, Ctrl+N / Ctrl+W pour ouvrir ou
 fermer un onglet de scène et F5 pour jouer (F8 arrête). Le thème, l'échelle et les polices se
-règlent dans *Editor > Editor Settings*. `devex-editor <projet> --screenshot image.png` écrit une
+règlent dans *Editor > Editor Settings*. Le préréglage **Godot 4 Modern** reprend les gris neutres
+et l'accent bleu du thème Modern ; il est proposé par défaut aux nouvelles préférences. Les
+couleurs et l'échelle déjà enregistrées sont conservées. `devex-editor <projet> --screenshot image.png` écrit une
 image de la fenêtre une fois le projet chargé, puis quitte ; `--profile rapport.txt` y écrit le
 temps moyen d'une frame, zone par zone, sur le CPU et le GPU.
 
-Les polices (Noto Sans, JetBrains Mono : SIL OFL 1.1) et les icônes (Lucide : ISC) de l'éditeur sont
+Les polices (Inter, Noto Sans, JetBrains Mono : SIL OFL 1.1) et les icônes (Lucide : ISC) de l'éditeur sont
 dans `third_party` avec leurs licences, comme ufbx (MIT ou domaine public), qui lit les fichiers FBX
 et OBJ. Les lettres sont dessinées par FreeType (FreeType License), que vcpkg fournit.
 

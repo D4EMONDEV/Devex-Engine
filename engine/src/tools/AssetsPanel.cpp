@@ -624,8 +624,8 @@ void FileSystemUi::addFolder(ToolsState& state, const std::string& name, const s
 
 void FileSystemUi::gather(ToolsState& state)
 {
-    const bool projectChanged = gatheredDatabase != state.database ||
-                                gatheredProject != state.database->project().file;
+    const bool projectChanged =
+        gatheredDatabase != state.database || gatheredProject != state.database->project().file;
     const bool changed = projectChanged || gatheredRevision != state.database->revision();
     if (changed)
     {

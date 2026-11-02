@@ -28,9 +28,12 @@ enum class ThemePreset : std::uint8_t
     // Pure black panels, for OLED displays.
     Black,
     Light,
+    // The neutral dark palette of Godot 4's Modern editor theme.
+    Godot4,
 };
 
-inline constexpr std::array themePresets{ThemePreset::Gray, ThemePreset::BlueGray, ThemePreset::Black,
+inline constexpr std::array themePresets{ThemePreset::Godot4, ThemePreset::Gray,
+                                         ThemePreset::BlueGray, ThemePreset::Black,
                                          ThemePreset::Light};
 
 // "Gray", "Blue gray"... for menus; "gray", "blue_gray"... in settings files.
@@ -41,13 +44,13 @@ inline constexpr std::array themePresets{ThemePreset::Gray, ThemePreset::BlueGra
 // The appearance of the editor, as the user set it. Colors are sRGB, from 0 to 1.
 struct DEVEX_API ThemeSettings
 {
-    ThemePreset preset = ThemePreset::Gray;
+    ThemePreset preset = ThemePreset::Godot4;
     // The color of panels, from which the other surfaces are derived.
-    math::Vec3 baseColor{0.149f, 0.149f, 0.149f};
+    math::Vec3 baseColor{0.161f, 0.161f, 0.161f};
     // Selections, focus and active tabs.
-    math::Vec3 accentColor{0.310f, 0.584f, 0.918f};
+    math::Vec3 accentColor{0.337f, 0.620f, 1.0f};
     // How much darker (or, below zero, lighter) the backgrounds around panels and fields are.
-    float contrast = 0.25f;
+    float contrast = 0.3f;
     // Size of the interface, where 1 is 100 %; 0 follows the scale of the display.
     float interfaceScale = 0.0f;
     // Sizes of the fonts in points, as in text editors, before the interface scale.
@@ -121,6 +124,8 @@ struct DEVEX_API ThemeColors
     math::Vec4 codeNumber{0.0f};
     math::Vec4 codeDirective{0.0f};
     math::Vec4 codePunctuation{0.0f};
+
+    bool operator==(const ThemeColors&) const = default;
 };
 
 [[nodiscard]] DEVEX_API ThemeColors deriveThemeColors(const ThemeSettings& settings);
@@ -132,17 +137,17 @@ struct DEVEX_API ThemeMetrics
     // The interface scale in effect.
     float scale = 1.0f;
     // A line of the regular font, from ascender to descender.
-    float lineHeight = 19.0f;
+    float lineHeight = 17.0f;
     float margin = 4.0f;
-    float menuBarHeight = 34.0f;
-    float statusBarHeight = 30.0f;
+    float menuBarHeight = 32.0f;
+    float statusBarHeight = 28.0f;
     // The strip of tabs above a docked panel.
-    float tabHeight = 31.0f;
+    float tabHeight = 29.0f;
     // Between the places of the dock, and inside the edges of a docked panel.
     float dockGap = 4.0f;
     float panelPadding = 4.0f;
     // The title of a modal window.
-    float titleHeight = 25.0f;
+    float titleHeight = 23.0f;
 };
 
 [[nodiscard]] DEVEX_API ThemeMetrics deriveThemeMetrics(const ThemeSettings& settings, float displayScale) noexcept;

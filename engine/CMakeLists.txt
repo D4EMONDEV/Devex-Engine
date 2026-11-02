@@ -771,7 +771,7 @@ if(NOT DEVEX_DOTNET)
     message(STATUS "The .NET SDK was not found: games of this build can only be written in C++")
 endif()
 
-# Resources of the tools: Noto Sans and JetBrains Mono (SIL Open Font License), Lucide icons (ISC)
+# Resources of the tools: Inter, Noto Sans and JetBrains Mono (SIL Open Font License), Lucide icons (ISC)
 # and the Devex logo, with their licenses.
 file(GLOB DEVEX_FONT_FILES CONFIGURE_DEPENDS "${PROJECT_SOURCE_DIR}/third_party/fonts/*.ttf")
 file(GLOB DEVEX_ICON_FILES CONFIGURE_DEPENDS
@@ -790,6 +790,7 @@ add_custom_command(
     COMMAND "${CMAKE_COMMAND}" -E rm -f "${DEVEX_RESOURCES_DIRECTORY}/icons/devex.svg"
     COMMAND "${CMAKE_COMMAND}" -E copy_if_different
             "${PROJECT_SOURCE_DIR}/third_party/fonts/NotoSans-OFL.txt"
+            "${PROJECT_SOURCE_DIR}/third_party/fonts/Inter-OFL.txt"
             "${PROJECT_SOURCE_DIR}/third_party/fonts/JetBrainsMono-OFL.txt"
             "${DEVEX_RESOURCES_DIRECTORY}/licenses"
     COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${PROJECT_SOURCE_DIR}/third_party/lucide/LICENSE"

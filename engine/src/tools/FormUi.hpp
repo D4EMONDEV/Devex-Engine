@@ -1,9 +1,9 @@
 #pragma once
 
-// The pieces the forms of the editor are made of, as the inspector shows them: cards folded from their
-// header, rows of a label and its controls, notes, lines of buttons, grids of sprites and a colour
-// picker. The inspector, the windows of settings, the export and the dialogs are made of them, as
-// Godot builds its docks and dialogs with the same controls.
+// The pieces the forms of the editor are made of, as the inspector shows them: cards folded from
+// their header, rows of a label and its controls, notes, lines of buttons, grids of sprites and a
+// colour picker. The inspector, the windows of settings, the export and the dialogs are made of
+// them, as Godot builds its docks and dialogs with the same controls.
 #include "EditorUi.hpp"
 
 #include <devex/scene/UiComponents.hpp>
@@ -56,10 +56,11 @@ struct Section
     // A component whose code is not loaded: only its header shows.
     bool locked = false;
     bool fromPrefab = false;
-    // The page of a window of settings the card stands in, -1 outside them; a card another page or a
-    // filter leaves out is hidden.
+    // The page of a window of settings the card stands in, -1 outside them; a card another page or
+    // a filter leaves out is hidden.
     int page = -1;
     bool hidden = false;
+    bool filtered = false;
     std::vector<Line> lines;
     std::vector<std::string> groups;
     // What some components show under their properties: the style of an element, the controls of
@@ -127,10 +128,10 @@ struct FormUi : PanelBuilder
 {
     explicit FormUi(std::uint32_t surface);
 
-    float line = 28.0f;
-    float pad = 6.0f;
+    float line = 25.0f;
+    float pad = 4.0f;
     float gap = 2.0f;
-    float headerHeight = 30.0f;
+    float headerHeight = 28.0f;
     float labelWidth = 120.0f;
 
     scene::Entity scroll;
@@ -140,6 +141,8 @@ struct FormUi : PanelBuilder
     std::vector<SpriteGrid*> grids;
     // The cards and the groups folded, by name.
     std::unordered_set<std::string> folded;
+    // Search temporarily reveals matching sections without changing their saved fold state.
+    bool revealFiltered = false;
     // What a page made outside the content, such as its menus, gone with it.
     std::vector<scene::Entity> pageEntities;
 
@@ -152,8 +155,8 @@ struct FormUi : PanelBuilder
     std::array<scene::Entity, 4> channels{};
     bool hexTyping = false;
 
-    // The field being typed into at the last update, and the one whose edit ended then, with Enter or
-    // a click elsewhere; Escape drops what was typed, and ends nothing.
+    // The field being typed into at the last update, and the one whose edit ended then, with Enter
+    // or a click elsewhere; Escape drops what was typed, and ends nothing.
     scene::Entity editingField;
     scene::Entity endedField;
 
@@ -211,7 +214,8 @@ struct FormUi : PanelBuilder
     void showLine(Section& section, scene::Entity entity, bool shown);
     SpriteGrid& spriteGrid(EditorUiKit& kit, Section& section, std::unique_ptr<SpriteGrid>& grid, std::size_t count, float size,
                            bool dropBox);
-    // Shows as many squares in a grid as asked, making those it lacks; `drops` makes them take sprites.
+    // Shows as many squares in a grid as asked, making those it lacks; `drops` makes them take
+    // sprites.
     void gridCells(SpriteGrid& grid, std::size_t count, bool drops);
     // A menu of the page, gone with it.
     scene::Entity pageMenu(const char* name, float width);
