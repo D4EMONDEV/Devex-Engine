@@ -217,10 +217,7 @@ struct ViewportHeaderUi : PanelBuilder
         return std::round(font * 0.5f);
     }
     // The button that adds a scene, which stays in view at the end of the tabs.
-    [[nodiscard]] float newTabSize() const noexcept
-    {
-        return std::round(font * 1.35f) + 4.0f;
-    }
+    [[nodiscard]] float newTabSize() const noexcept { return closeButtonSize(); }
 
     void build(EditorUiKit& kit);
     void fillTabs(ToolsState& state, EditorUiKit& kit, const ActiveDocument& live, bool editing);
@@ -266,7 +263,15 @@ void ViewportHeaderUi::build(EditorUiKit& kit)
     newTab = add({}, "New", fixed({newTabSize(), newTabSize()}), "bar_button");
     scene().add<scene::UiImage>(newTab);
     scene().add<scene::UiButton>(newTab);
-    icon(kit, newTab, whole(math::Vec4{std::round(newTabSize() * 0.24f)}), Icon::Plus, "icon_dim");
+    // The SVG already has margins: size its canvas like the close glyph instead of padding it
+    // twice.
+    const float plusHalf = std::round(font * 1.6f) * 0.5f;
+    icon(kit, newTab,
+         UiRect{.anchorMin = {0.5f, 0.5f},
+                .anchorMax = {0.5f, 0.5f},
+                .offsetMin = {-plusHalf, -plusHalf},
+                .offsetMax = {plusHalf, plusHalf}},
+         Icon::Plus, "icon_dim");
     tooltip(newTab, "New scene (Ctrl+N)");
 
     // The toolbar, on the colour of the panels, over what the tabs leave under it.
