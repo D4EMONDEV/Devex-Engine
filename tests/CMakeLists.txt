@@ -222,6 +222,7 @@ devex_add_tests(render
         render/GpuCullingTests.cpp
         render/GpuSkinningTests.cpp
         render/MeshLodTests.cpp
+        render/OverlayTests.cpp
         render/RendererBenchmark.cpp
         render/RendererTests.cpp
         render/SphericalHarmonicsTests.cpp
@@ -250,6 +251,7 @@ devex_add_tests(tools
         tools/TerrainPainterTests.cpp
         tools/TextEditorTests.cpp
         tools/ThemeTests.cpp
+        tools/ViewportSettingsTests.cpp
         tools/ScriptSettingsTests.cpp
         tools/ToolsOverlayTests.cpp
         tools/EditorBenchmark.cpp

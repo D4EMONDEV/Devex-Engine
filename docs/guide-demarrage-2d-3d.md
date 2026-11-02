@@ -21,6 +21,7 @@ Les scripts complets sont inclus dans ce document et disponibles séparément da
 9. [Résoudre les problèmes courants](#9-résoudre-les-problèmes-courants)
 10. [Référence rapide et limites de cette base](#10-référence-rapide-et-limites-de-cette-base)
 11. [Alléger une scène 3D avec les LODs](#11-alléger-une-scène-3d-avec-les-lods)
+12. [Personnaliser le viewport et lire l'inspecteur](#12-personnaliser-le-viewport-et-lire-linspecteur)
 
 ## 1. Préparer Devex et créer un projet
 
@@ -772,3 +773,36 @@ Pour un exemple prêt à ouvrir : **Sandbox > assets/scenes/lods.dvxscene** cont
 Ctrl descend, Maj accélère et Échap libère la souris. Les
 [mesures et commandes des benchmarks](performances.md#niveaux-de-détail-jalon-90) décrivent les
 gains et les limites observés.
+
+## 12. Personnaliser le viewport et lire l'inspecteur
+
+Complément du **2 novembre 2026**. Ouvrir **Editor > Editor Settings > Viewport**, ou
+**Settings > Viewport** dans le gestionnaire de projets.
+
+![Réglages du viewport dans Devex, avec le composant Terrain en arrière-plan](images/editor-viewport-settings.png)
+
+| Section | Réglages |
+| --- | --- |
+| Handles and Lines | Taille des poignées, leur épaisseur, largeur des traits et taille des icônes, en pixels du viewport |
+| Grid | Unité de base de la grille, opacité, couleurs des lignes normales et principales |
+| Axes and Hover | Couleurs X/Y/Z et couleur de la poignée survolée ou active |
+| Visibility | Grille, icônes, collisions de toutes les entités, caméras, lumières, audio, physique/articulations et navigation |
+
+**Scene Icons** commande ensemble les icônes des caméras, lumières et sources audio. Les choix
+par catégorie permettent ensuite de ne garder que les repères utiles. **Physics and Joints**
+commande les formes et articulations ; **All Collision Shapes** inclut celles des entités non
+sélectionnées. Les boutons de grille, d'icônes et de collisions au-dessus du viewport utilisent
+les mêmes préférences.
+
+Les réglages s'appliquent immédiatement et sont enregistrés quand l'édition du champ se termine.
+**Reset to Defaults** reprend les valeurs par défaut de la page choisie. Le pas de grille est
+visuel : il ne change ni les objets, ni les collisions, ni les pas d'aimantation des transformations.
+La grille adapte ses subdivisions au zoom ; une petite unité n'impose donc pas d'afficher toutes
+ses lignes au loin. Ces préférences concernent l'éditeur et n'affectent pas le rendu du jeu.
+
+Dans l'inspecteur, chaque composant reste une carte. À l'intérieur, les sous-sections telles que
+**Layers**, **Automatic layers** et **Grass** ont un titre gras et un séparateur. Cliquer sur
+leur ligne pour les replier ou déplier. Cela garde une hiérarchie visible sans ajouter de fonds
+derrière chaque groupe de propriétés.
+
+![Sous-sections Layers, Automatic layers et Grass séparées dans l'inspecteur du terrain](images/editor-inspector-sections.png)

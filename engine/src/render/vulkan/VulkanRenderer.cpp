@@ -36,7 +36,8 @@ constexpr std::uint64_t noTimeout = std::numeric_limits<std::uint64_t>::max();
 // Local lights beyond this distance share the last cluster slice.
 constexpr float clusterFarPlane = 500.0f;
 
-// Scene lines are drawn this much closer in depth, so that lines lying on a surface stay visible.
+// Coplanar grids also need a margin for rasterization precision, especially near the horizon.
+// Ordinary scene lines keep their real depth, so a nearby occluder is not passed through.
 constexpr float sceneLineDepthScale = 1.002f;
 
 // Linear orange, like the selection of most editors.
@@ -2162,12 +2163,12 @@ core::Result<void> VulkanRenderer::createTargetPipelines(VkFormat format)
     // The overlay pass binds the scene depth, which only scene lines test against.
     const GraphicsPipelineConfig overlay{
         .shaderPath = m_shaderDirectory / "overlay.spv",
-        .vertexEntry = "colorVertex",
-        .fragmentEntry = "colorFragment",
+        .vertexEntry = "lineVertex",
+        .fragmentEntry = "lineFragment",
         .pushConstantSize = sizeof(OverlayPushConstants),
         .colorFormat = format,
         .depthFormat = depthFormat,
-        .topology = VK_PRIMITIVE_TOPOLOGY_LINE_LIST,
+        .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
         .alphaBlend = true,
         .cullMode = VK_CULL_MODE_NONE,
         .depthTest = false,
@@ -2178,7 +2179,8 @@ core::Result<void> VulkanRenderer::createTargetPipelines(VkFormat format)
     core::Result<Pipeline> sceneLines = createGraphicsPipeline(device, sceneLineConfig);
     core::Result<Pipeline> overlayLines = createGraphicsPipeline(device, overlay);
     GraphicsPipelineConfig triangleConfig = overlay;
-    triangleConfig.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    triangleConfig.vertexEntry = "colorVertex";
+    triangleConfig.fragmentEntry = "colorFragment";
     core::Result<Pipeline> overlayTriangles = createGraphicsPipeline(device, triangleConfig);
     // The bloom halves the image a few times, then adds the halves back up.
     const GraphicsPipelineConfig bloomConfig{
@@ -6196,10 +6198,18 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
                 .scene = sceneData,
                 .vertices = frame.overlayVertices->deviceAddress(),
                 .outlineColor = outlineColor,
+                .lineWidth = std::isfinite(m_world.lineWidth)
+                                 ? std::clamp(m_world.lineWidth, 0.5f, 6.0f)
+                                 : 1.5f,
+                .viewportWidth = static_cast<float>(extent.width),
+                .viewportHeight = static_cast<float>(extent.height),
+                .jitter = m_jitter,
             };
             // Slang's SV_VertexID does not include the first vertex of a draw: each list gets the
             // address of its own first vertex instead.
-            const auto draw = [&](const Pipeline& pipeline, std::uint32_t first, std::size_t count, float depthScale) {
+            const auto draw = [&](const Pipeline& pipeline, std::uint32_t first, std::size_t count,
+                                  float depthScale, bool lines)
+            {
                 if (count == 0)
                 {
                     return;
@@ -6209,9 +6219,16 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
                 constants.depthScale = depthScale;
                 vkCmdPushConstants(commands, pipeline.layout(), VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                                    0, sizeof(constants), &constants);
-                vkCmdDraw(commands, static_cast<std::uint32_t>(count), 1, 0, 0);
+                vkCmdDraw(commands, static_cast<std::uint32_t>(lines ? (count / 2) * 6 : count), 1,
+                          0, 0);
             };
-            draw(*m_sceneLinePipeline, ranges.sceneLines, m_world.sceneLines.size(), sceneLineDepthScale);
+            constants.depthPlane = m_world.sceneLineDepthPlane;
+            const math::Vec3 planeNormal(m_world.sceneLineDepthPlane);
+            const float lineBias =
+                math::dot(planeNormal, planeNormal) > 0.5f ? sceneLineDepthScale : 1.0f;
+            draw(*m_sceneLinePipeline, ranges.sceneLines, m_world.sceneLines.size(), lineBias,
+                 true);
+            constants.depthPlane = math::Vec4{0.0f};
             if (outlines)
             {
                 vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, m_outlinePipeline->handle());
@@ -6222,8 +6239,10 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
                                    &constants);
                 vkCmdDraw(commands, 3, 1, 0, 0);
             }
-            draw(*m_overlayLinePipeline, ranges.overlayLines, m_world.overlayLines.size(), 1.0f);
-            draw(*m_overlayTrianglePipeline, ranges.overlayTriangles, m_world.overlayTriangles.size(), 1.0f);
+            draw(*m_overlayLinePipeline, ranges.overlayLines, m_world.overlayLines.size(), 1.0f,
+                 true);
+            draw(*m_overlayTrianglePipeline, ranges.overlayTriangles,
+                 m_world.overlayTriangles.size(), 1.0f, false);
             vkCmdEndRendering(commands);
         });
     }

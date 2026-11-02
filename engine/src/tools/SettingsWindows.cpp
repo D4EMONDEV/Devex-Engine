@@ -33,7 +33,11 @@ namespace {
 
 constexpr std::array<std::string_view, 1> single = singleNumber;
 constexpr std::array interfaceScales{0.75f, 1.0f, 1.25f, 1.5f, 1.75f, 2.0f, 2.5f};
-constexpr std::array<std::string_view, 4> editorPages{"Theme", "Display", "Script Editors", "Compilation"};
+constexpr std::array<std::string_view, 5> editorPages{"Theme", "Display", "Viewport",
+                                                      "Script Editors", "Compilation"};
+constexpr std::size_t viewportPage = 2;
+constexpr std::size_t scriptsPage = 3;
+constexpr std::size_t compilationPage = 4;
 constexpr std::array<std::string_view, 8> projectPages{"Application",    "Window", "Physics",   "Collision Layers",
                                                        "Sorting Layers", "Audio",  "Input Map", "Localization"};
 
@@ -329,7 +333,10 @@ struct EditorSettingsUi : SettingsUi
     Button detectEditors;
     Entity detectionStatus;
     Entity automaticCompilation;
-    // The colour the picker edits: 0 the base, 1 the accent.
+    std::array<Entity, viewportNumbers.size()> viewportNumberFields{};
+    std::array<Entity, viewportColors.size()> viewportColorFields{};
+    std::array<Entity, viewportToggles.size()> viewportToggleFields{};
+    // The colour the picker edits: 0 the base, 1 the accent, then the viewport colours.
     std::optional<int> editedColor;
 
     void build(EditorUiKit& kit);
@@ -368,15 +375,64 @@ void EditorSettingsUi::build(EditorUiKit& kit)
     tooltip(updateRow.row, "Draws the editor at every frame, even when nothing changes: for measuring performance");
     note(&performance, "Off, the editor draws only while something moves or the user acts, and rests in between.", "dim", 2.0f);
 
+    Section& handles = pageCard(kit, viewportPage, "Handles and Lines");
+    for (std::size_t i = 0; i < 4; ++i)
+    {
+        const auto& field = viewportNumbers[i];
+        viewportNumberFields[i] = numbers(formRow(handles, std::string(field.label)).editor, single,
+                                          {.minValue = field.minimum,
+                                           .maxValue = field.maximum,
+                                           .dragSpeed = i == 0 || i == 3 ? 0.5f : 0.02f,
+                                           .decimals = i == 0 || i == 3 ? 0 : 1,
+                                           .format = "{} px"})
+                                      .front();
+    }
+    note(&handles,
+         "Sizes are viewport pixels. Handle Size also changes the area used to pick the handles.",
+         "dim", 3.0f);
+    Section& grid = pageCard(kit, viewportPage, "Grid");
+    for (std::size_t i = 4; i < viewportNumbers.size(); ++i)
+    {
+        const auto& field = viewportNumbers[i];
+        viewportNumberFields[i] = numbers(formRow(grid, std::string(field.label)).editor, single,
+                                          {.minValue = field.minimum,
+                                           .maxValue = field.maximum,
+                                           .dragSpeed = 0.01f,
+                                           .decimals = 2})
+                                      .front();
+    }
+    note(&grid,
+         "Grid Unit is in world units. The grid adapts its subdivisions to the zoom in 2D and 3D.",
+         "dim", 3.0f);
+    for (std::size_t i = 4; i < viewportColors.size(); ++i)
+        viewportColorFields[i] =
+            swatch(kit, formRow(grid, std::string(viewportColors[i].label)).editor, false);
+    Section& axes = pageCard(kit, viewportPage, "Axes and Hover");
+    for (std::size_t i = 0; i < 4; ++i)
+        viewportColorFields[i] =
+            swatch(kit, formRow(axes, std::string(viewportColors[i].label)).editor, false);
+    Section& visibility = pageCard(kit, viewportPage, "Visibility");
+    for (std::size_t i = 0; i < viewportToggles.size(); ++i)
+        viewportToggleFields[i] =
+            toggle(formRow(visibility, std::string(viewportToggles[i].label)).editor);
+    note(&visibility,
+         "Scene Icons is the master switch for cameras, lights and audio. Physics shapes otherwise "
+         "show for the selection; All Collision Shapes shows every shape.",
+         "dim", 5.0f);
+    note(&visibility,
+         "These preferences are saved for the editor and do not change the game's rendering or "
+         "physics.",
+         "dim", 3.0f);
+
     constexpr std::array<std::string_view, 3> categories{"C#", "C++", "Devex Files"};
-    Section& detection = pageCard(kit, 2, "Installed Editors");
+    Section& detection = pageCard(kit, scriptsPage, "Installed Editors");
     detectEditors = action(kit, actions(&detection), Icon::Refresh, "Detect Editors");
     detectionStatus = note(&detection, "", "dim", 2.0f);
     for (std::size_t i = 0; i < editors.size(); ++i)
     {
         EditorFields& fields = editors[i];
         fields.section = sections.size();
-        Section& section = pageCard(kit, 2, std::string(categories[i]));
+        Section& section = pageCard(kit, scriptsPage, std::string(categories[i]));
         fields.mode = choice(formRow(section, "Open With").editor);
         fields.pathRow = actions(&section);
         scene().remove<scene::UiLayout>(fields.pathRow);
@@ -400,11 +456,11 @@ void EditorSettingsUi::build(EditorUiKit& kit)
         fields.arguments = textField(fields.argumentsRow);
         tooltip(fields.arguments, "{file}: full file path; {project}: Devex project folder; {project_file}: Game.csproj or CMakeLists.txt; {project_dir}: code folder. Default arguments load the project in recognized IDEs.");
     }
-    Section& help = pageCard(kit, 2, "Opening Files");
+    Section& help = pageCard(kit, scriptsPage, "Opening Files");
     note(&help, "Double-click a script to open it with the chosen editor. Edit in Devex Script always uses the built-in editor.", "dim", 3.0f);
     note(&help, "Devex Files selects the text editor for .dvx files. Scenes and assets keep their visual editors.", "dim", 3.0f);
 
-    Section& compilation = pageCard(kit, 3, "Game Code");
+    Section& compilation = pageCard(kit, compilationPage, "Game Code");
     automaticCompilation = choice(formRow(compilation, "Compilation").editor);
     note(&compilation, "Automatic compiles saved C# and C++ changes, including saves made by external editors.", "dim", 3.0f);
     note(&compilation, "Manual keeps source changes pending until Project > Build Game Code (Ctrl+B). Saving in Devex Script also waits for Ctrl+B.", "dim", 4.0f);
@@ -436,6 +492,7 @@ void EditorSettingsUi::update(ToolsState& state, EditorUiKit& kit, core::Duratio
     labelWidth = std::clamp(std::round((panel.size().x - font * 12.0f) * 0.42f), font * 7.0f, font * 12.0f);
 
     ThemeSettings theme = state.theme;
+    ViewportSettings viewport = state.viewportSettings;
     std::vector<std::string> presets;
     for (const ThemePreset each : themePresets)
     {
@@ -460,6 +517,12 @@ void EditorSettingsUi::update(ToolsState& state, EditorUiKit& kit, core::Duratio
     setNumber(fontSize, theme.fontSize);
     setNumber(codeFontSize, theme.codeFontSize);
     setToggle(updateContinuously, theme.updateContinuously);
+    for (std::size_t i = 0; i < viewportNumbers.size(); ++i)
+        setNumber(viewportNumberFields[i], viewport.*viewportNumbers[i].member);
+    for (std::size_t i = 0; i < viewportColors.size(); ++i)
+        setSwatch(viewportColorFields[i], linearOf(viewport.*viewportColors[i].member), false);
+    for (std::size_t i = 0; i < viewportToggles.size(); ++i)
+        setToggle(viewportToggleFields[i], viewport.*viewportToggles[i].member);
     for (std::size_t i = 0; i < editors.size(); ++i)
     {
         const EditorFields& fields = editors[i];
@@ -508,7 +571,12 @@ void EditorSettingsUi::update(ToolsState& state, EditorUiKit& kit, core::Duratio
     setChoice(automaticCompilation, {"Automatic", "Manual (Ctrl+B)"}, state.scripts.automaticCompilation ? 0 : 1);
     if (editedColor && colorPopupOpen())
     {
-        syncColorPopup(linearOf(*editedColor == 0 ? theme.baseColor : theme.accentColor), false);
+        const math::Vec3 color =
+            *editedColor == 0 ? theme.baseColor
+            : *editedColor == 1
+                ? theme.accentColor
+                : viewport.*viewportColors[static_cast<std::size_t>(*editedColor - 2)].member;
+        syncColorPopup(linearOf(color), false);
     }
 
     applyFilter();
@@ -516,6 +584,19 @@ void EditorSettingsUi::update(ToolsState& state, EditorUiKit& kit, core::Duratio
     panel.update(kit, delta, UiPanel::zoomFor(font));
     answerForm();
     answerFrame();
+
+    for (std::size_t i = 0; i < viewportNumbers.size(); ++i)
+    {
+        if (world.wasChanged(viewportNumberFields[i]))
+            viewport.*viewportNumbers[i].member =
+                scene().get<scene::UiNumberField>(viewportNumberFields[i]).value;
+    }
+    for (std::size_t i = 0; i < viewportToggles.size(); ++i)
+    {
+        if (world.wasChanged(viewportToggleFields[i]))
+            viewport.*viewportToggles[i].member =
+                scene().get<scene::UiToggle>(viewportToggleFields[i]).value;
+    }
 
     ScriptSettings scripts = state.scripts;
     for (std::size_t i = 0; i < editors.size(); ++i)
@@ -584,9 +665,21 @@ void EditorSettingsUi::update(ToolsState& state, EditorUiKit& kit, core::Duratio
         editedColor = world.wasClicked(baseColor) ? 0 : 1;
         openColorPopup(*editedColor == 0 ? baseColor : accentColor);
     }
+    for (std::size_t i = 0; i < viewportColors.size(); ++i)
+    {
+        if (world.wasClicked(viewportColorFields[i]))
+        {
+            editedColor = static_cast<int>(i + 2);
+            openColorPopup(viewportColorFields[i]);
+        }
+    }
     if (editedColor)
     {
-        math::Vec3& edited = *editedColor == 0 ? theme.baseColor : theme.accentColor;
+        math::Vec3& edited =
+            *editedColor == 0 ? theme.baseColor
+            : *editedColor == 1
+                ? theme.accentColor
+                : viewport.*viewportColors[static_cast<std::size_t>(*editedColor - 2)].member;
         if (const std::optional<math::Vec4> chosen = answerColorPopup(linearOf(edited)))
         {
             edited = srgbOf(*chosen);
@@ -619,17 +712,33 @@ void EditorSettingsUi::update(ToolsState& state, EditorUiKit& kit, core::Duratio
     }
     if (world.wasClicked(reset.entity))
     {
-        if (selected == 2)
+        if (selected == viewportPage)
+        {
+            viewport = ViewportSettings{};
+        }
+        else if (selected == scriptsPage)
         {
             scripts.editors = ScriptSettings{}.editors;
         }
-        else if (selected == 3)
+        else if (selected == compilationPage)
         {
             scripts.automaticCompilation = true;
         }
-        else
+        else if (selected == 0)
         {
-            theme = ThemeSettings{};
+            const ThemeSettings defaults;
+            theme.preset = defaults.preset;
+            theme.baseColor = defaults.baseColor;
+            theme.accentColor = defaults.accentColor;
+            theme.contrast = defaults.contrast;
+        }
+        else if (selected == 1)
+        {
+            const ThemeSettings defaults;
+            theme.interfaceScale = defaults.interfaceScale;
+            theme.fontSize = defaults.fontSize;
+            theme.codeFontSize = defaults.codeFontSize;
+            theme.updateContinuously = defaults.updateContinuously;
         }
     }
 
@@ -645,11 +754,18 @@ void EditorSettingsUi::update(ToolsState& state, EditorUiKit& kit, core::Duratio
         state.themeChanged = true;
         state.themeUnsaved = true;
     }
+    if (viewport != state.viewportSettings)
+    {
+        state.viewportSettings = viewport;
+        state.viewportSettingsUnsaved = true;
+    }
     // Saved once a drag ends rather than at every step.
-    if ((state.themeUnsaved || state.scriptSettingsUnsaved) && !world.held().isValid() && !world.isEditing())
+    if ((state.themeUnsaved || state.scriptSettingsUnsaved || state.viewportSettingsUnsaved) &&
+        !world.held().isValid() && !world.isEditing())
     {
         state.themeUnsaved = false;
         state.scriptSettingsUnsaved = false;
+        state.viewportSettingsUnsaved = false;
         saveUserSettings(state);
     }
     numberCursor(state, panel);

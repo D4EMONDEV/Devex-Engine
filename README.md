@@ -182,7 +182,9 @@ captures de l'éditeur, scènes de base, entrées, scripts C#, animations, colli
   *New Script…*, réglages de l'éditeur, aperçu sonore et forme
   d'onde des clips, éditeur de courbes (clés et pentes à déplacer, préréglages, *New Curve*),
   aperçu des particules dans la vue et contrôles de l'émetteur dans l'inspecteur, réglages des
-  composants rangés en sections repliables, grille et gizmos 2D dans l'écran 2D, textures
+  composants rangés en sections repliables à titres et séparateurs visibles, réglages du viewport
+  (taille, épaisseur, couleurs et visibilité des gizmos), grille stable et traits lissés en pixels,
+  grille et gizmos 2D dans l'écran 2D, textures
   découpées en sprites dans l'inspecteur, éditeur des animations
   de sprites, couches de tri du projet, peinture des tuiles dans la vue (pinceau, gomme,
   rectangle, remplissage, pipette, et terrains qui choisissent chaque tuile d'après ses

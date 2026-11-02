@@ -3,10 +3,10 @@
 #include <devex/core/Export.hpp>
 
 #include "CodeArea.hpp"
+#include "EditorCamera.hpp"
 #include "EditorDock.hpp"
 #include "EditorHosts.hpp"
 #include "EditorInput.hpp"
-#include "EditorCamera.hpp"
 #include "EditorView.hpp"
 #include "Gizmo.hpp"
 #include "Icons.hpp"
@@ -16,6 +16,7 @@
 #include "Selection.hpp"
 #include "TextDocument.hpp"
 #include "Theme.hpp"
+#include "ViewportSettings.hpp"
 
 #include <devex/asset/AnimatorData.hpp>
 #include <devex/asset/AssetId.hpp>
@@ -755,6 +756,8 @@ struct DEVEX_API ToolsState
     // Opens the window at the next frame.
     std::optional<CreationRequest> creationRequest;
     ThemeSettings theme;
+    ViewportSettings viewportSettings;
+    bool viewportSettingsUnsaved = false;
     ScriptSettings scripts;
     bool scriptSettingsUnsaved = false;
     // The theme changed and applies before the next frame.
@@ -1029,10 +1032,6 @@ struct DEVEX_API ToolsState
     EditorTool tool = EditorTool::Move;
     // Snapping without holding Ctrl, which then disables it.
     bool snap = false;
-    bool showGrid = true;
-    bool showIcons = true;
-    // The collision shapes of every entity, rather than only those of the selection.
-    bool showColliders = false;
     // The interfaces of a 3D scene over its 3D screen, as the game will draw them.
     bool showInterfaces = true;
     // The kind of the edited scene on the previous frame: the screen follows it when it changes.

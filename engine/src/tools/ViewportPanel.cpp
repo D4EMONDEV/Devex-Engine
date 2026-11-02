@@ -298,6 +298,7 @@ void handleCamera(ToolsState& state, bool hovered, math::Vec2 size, math::Vec2 m
 void handleGizmoAndSelection(ToolsState& state, scene::Scene& scene, const ViewportView& view, math::Vec2 mouse,
                              bool hovered)
 {
+    applyGizmoSettings(state.gizmo, state.viewportSettings);
     if (!state.gizmo.isDragging())
     {
         state.gizmo.mode = state.tool == EditorTool::Rotate ? GizmoMode::Rotate

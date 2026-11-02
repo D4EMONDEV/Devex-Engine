@@ -170,6 +170,8 @@ struct FormUi : PanelBuilder
     // Sets a text and makes its rectangle as wide as it.
     void fitText(EditorUiKit& kit, scene::Entity entity, std::string value, bool bold = false);
     Section& addSection(EditorUiKit& kit, std::string name, const EntityIcon& look, const scene::ComponentType* type);
+    // A full-width foldout with a separator and a prominent title, without another card background.
+    int addGroup(Section& section, std::string name);
 
     struct Heading
     {

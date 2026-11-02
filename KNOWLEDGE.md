@@ -2187,6 +2187,21 @@ namespace devex::ui {
   Os et matrices toujours complets, pas de réduction de palette ni d'interpolation des poses tenues.
   API des jeux 33 ; démo `assets/scenes/lods.dvxscene`, générateur `--lods-only` ;
   benchmarks `DEVEX_MESH_LOD=0/1` et *Animation LOD stress benchmark* (`DEVEX_ANIMATION_LOD=0/1`).
+- Confort de l'éditeur (jalon 91) : `tools/ViewportSettings.hpp/.cpp`, section utilisateur
+  `[viewport]`, page *Viewport* d'Editor Settings. Tailles en pixels du viewport (poignée 90,
+  épaisseur 3, traits 1,5, icônes 22), unité/opacité/couleurs de grille, couleurs X/Y/Z et de survol ;
+  grille/icônes/collisions et catégories caméra, lumière, audio, physique/articulations, navigation.
+  Les boutons de grille/icônes/collisions du viewport utilisent et sauvegardent ces mêmes valeurs.
+  `applyGizmoSettings` donne la même taille au dessin, au picking et au glisser ; les plans vus
+  par la tranche ne capturent plus les clics des axes. `FormUi::addGroup` donne aux sous-sections
+  de l'inspecteur un titre gras et un séparateur, avec un en-tête cliquable sans nouveau fond.
+  `RenderWorld::lineWidth` règle les traits d'outils, élargis en triangles et lissés en pixels dans
+  `shaders/overlay.slang`. `sceneLineDepthPlane` (normale unitaire, distance) adapte la profondeur
+  d'une grille coplanaire au jitter de la scène, en gardant ses positions sans jitter ; la largeur
+  près de l'horizon ne change plus le clipping à chaque image. Les traits ordinaires gardent leur
+  profondeur. `OverlayPushConstants` fait 80 octets ; API des jeux 34. Régressions par captures de
+  fenêtre pour la stabilité de la grille, largeur et occlusion. Le test comparatif d'occlusion
+  fixe l'exposition : son adaptation dépend du temps réel et rendait le test variable sur lavapipe.
 - Terrains : `asset::TerrainMaps` (`devex/asset/TerrainMaps.hpp` : `makeFlatTerrain`,
   `terrainHeight`, `terrainNormal`, `raycastTerrain`, `applyTerrainBrush`, `copyTerrainRegion`),
   `encodeTerrain`/`decodeTerrain`, asset `terrain` (`.dvxterrain`) ; composant `scene::Terrain`

@@ -894,6 +894,8 @@ target_sources(devex_tools
         src/tools/StatisticsPanel.cpp
         src/tools/Theme.cpp
         src/tools/Theme.hpp
+        src/tools/ViewportSettings.cpp
+        src/tools/ViewportSettings.hpp
         src/tools/ToolsOverlay.cpp
         src/tools/ToolsState.hpp
         src/tools/TwoDScreen.cpp

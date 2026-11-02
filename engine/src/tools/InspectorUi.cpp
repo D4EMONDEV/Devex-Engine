@@ -383,16 +383,7 @@ void InspectorUi::rebuild(ToolsState& state, EditorUiKit& kit, scene::Scene& edi
         {
             if (!field.group.empty())
             {
-                section.groups.push_back(field.group);
-                group = static_cast<int>(section.groups.size()) - 1;
-                // The header of a group, folded as the card is.
-                const Entity heading = add(section.card, "Group", wide(std::round(line * 0.95f)), "group");
-                scene().add<scene::UiImage>(heading);
-                scene().add<scene::UiButton>(heading);
-                scene().add<scene::UiFoldout>(heading);
-                text(heading, UiRect{.anchorMin = {0.0f, 0.0f}, .anchorMax = {1.0f, 1.0f}, .offsetMin = {std::min(line, 28.0f), 0.0f}, .offsetMax = {0.0f, 0.0f}},
-                     field.group, "dim", true);
-                section.lines.push_back(Line{.entity = heading, .group = group, .heading = true});
+                group = addGroup(section, field.group);
             }
             if (field.hidden || field.runtime)
             {

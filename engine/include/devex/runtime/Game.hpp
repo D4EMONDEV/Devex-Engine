@@ -53,7 +53,8 @@ class CoroutineScheduler;
 // RenderWorld, RenderSun and DirectionalLight gained what they need. 30: RendererStats gained the
 // main camera's GPU visibility counts; RendererConfig its occlusion.
 // 31: RendererConfig and RendererStats gained compute skinning and its counters.
-inline constexpr std::uint32_t gameApiVersion = 33;
+// 34: RenderWorld gained tool line width and the grid's depth plane.
+inline constexpr std::uint32_t gameApiVersion = 34;
 
 enum class SystemPhase : std::uint8_t
 {

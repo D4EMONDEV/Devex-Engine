@@ -459,9 +459,12 @@ struct OverlayPushConstants
     VkDeviceAddress vertices = 0;
     math::Vec4 outlineColor{1.0f};
     float depthScale = 1.0f;
-    float padding0 = 0.0f;
-    float padding1 = 0.0f;
-    float padding2 = 0.0f;
+    float lineWidth = 1.5f;
+    float viewportWidth = 1.0f;
+    float viewportHeight = 1.0f;
+    math::Vec4 depthPlane{0.0f};
+    math::Vec2 jitter{0.0f};
+    math::Vec2 padding{0.0f};
 };
 
 // One vertex of the interface. Its layout matches UiVertex in shaders/ui.slang.
@@ -763,7 +766,9 @@ static_assert(offsetof(DrawPushConstants, bones) == 104);
 static_assert(sizeof(GpuVertexSkin) == 32);
 static_assert(sizeof(GpuOverlayVertex) == 32);
 static_assert(offsetof(OverlayPushConstants, depthScale) == 32);
-static_assert(sizeof(OverlayPushConstants) == 48);
+static_assert(offsetof(OverlayPushConstants, depthPlane) == 48);
+static_assert(offsetof(OverlayPushConstants, jitter) == 64);
+static_assert(sizeof(OverlayPushConstants) == 80);
 static_assert(sizeof(GpuParticle) == 64);
 static_assert(sizeof(GpuTrailPoint) == 48);
 static_assert(sizeof(ParticlePushConstants) == 64);

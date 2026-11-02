@@ -61,6 +61,11 @@ public:
 
     GizmoMode mode = GizmoMode::Translate;
     GizmoSpace space = GizmoSpace::World;
+    float sizePixels = sizeInPixels;
+    float thicknessPixels = 3.0f;
+    std::array<math::Vec4, 3> axisColors{
+        {{0.78f, 0.05f, 0.05f, 1.0f}, {0.19f, 0.67f, 0.03f, 1.0f}, {0.04f, 0.18f, 0.87f, 1.0f}}};
+    math::Vec4 highlightColor{1.0f, 0.69f, 0.0f, 1.0f};
     // Keeps the handles that stay in the XY plane, for the 2D view: the X and Y axes, their plane,
     // the view handle, and the rotation around Z.
     bool twoD = false;

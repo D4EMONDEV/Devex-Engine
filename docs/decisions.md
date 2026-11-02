@@ -1145,6 +1145,13 @@ les assets s'écrivent au fil de leur lecture.
   d'état 30, onglets des docks 31, 4 entre les emplacements du dock et à l'intérieur des panneaux,
   titre des modales 25 avec un bord de 4. Avant, ces tailles venaient du style d'ImGui : 32, 32,
   31, 5, 8 et 37.
+- **Viewport** (`ViewportSettings`, jalon 91) : page dédiée d'Editor Settings, enregistrée dans
+  `[viewport]` des réglages utilisateur. Taille des poignées et des icônes, épaisseur des poignées
+  et des traits, couleurs des axes et du survol, unité, opacité et couleurs de grille ; visibilité
+  par catégorie. Les boutons de grille, d'icônes et de collisions partagent ces valeurs. *Reset to
+  Defaults* réinitialise la page choisie ; Theme et Display gardent désormais les réglages de
+  l'autre. Les sous-sections des composants ont des séparateurs et titres gras, sans cartes
+  supplémentaires (`FormUi::addGroup`), y compris les paramètres de shader par instance.
 - **Polices** : Noto Sans (normal et gras) et JetBrains Mono, versionnées dans `third_party/fonts`
   (licence SIL OFL) et copiées dans `bin/resources/fonts`, importées comme les polices des jeux
   (atlas de distances). Les tailles se règlent en points comme dans Godot (14 par défaut) ; la
@@ -1304,8 +1311,8 @@ les assets s'écrivent au fil de leur lecture.
   jeu tourne sans être dessiné, ni son interface. Les entités masquées par l'œil restent dessinées
   pendant le jeu, et l'écran de l'autre type ne vide plus la scène : la scène et le jeu tirent leurs
   maillages et leurs sprites des mêmes listes. Les miniatures des sauvegardes prennent l'image du jeu
-  (`ToolsOverlay::gameView`). Le choix du partage et de la forme ne dure que la session, comme ceux de
-  la grille et des icônes.
+  (`ToolsOverlay::gameView`). Le choix du partage, de la forme et de la visibilité des interfaces
+  ne dure que la session ; les préférences de grille, d'icônes et de collisions sont enregistrées.
 - **Sélection** : un clic choisit la lumière ou la caméra dont l'icône est sous la souris (sur
   le CPU), sinon demande au GPU l'objet visible sous le pixel ; les entités sélectionnées et leurs
   descendants sont entourés. Voir *Sélection et édition des entités*.
@@ -1320,6 +1327,15 @@ les assets s'écrivent au fil de leur lecture.
   mètres de haut) qui s'estompe au loin, axes X et Z colorés ; icônes des lumières et des
   caméras, portée des lumières ponctuelles, cône des spots et pyramide de la caméra quand elles
   sont sélectionnées.
+- **Traits des outils** (jalon 91) : chaque segment est élargi en deux triangles à la largeur
+  demandée en pixels, avec une couverture lissée, sans dépendre de `wideLines`. Le clipping est
+  fait avant la division par W. Les outils restent après le resolve temporel, avec une projection
+  sans jitter. Pour une grille au sol, la profondeur est évaluée dans son plan au même rayon que
+  la scène jitterée ; un léger biais couvre la précision de rasterisation. Les coins élargis à
+  l'horizon restent dans la plage de profondeur pour ne pas couper le trait selon l'échantillon.
+  Les autres traits de scène gardent leur profondeur réelle. Tests sur captures d'une caméra
+  immobile, largeur des traits et occultation ; `RenderWorld::lineWidth/sceneLineDepthPlane`,
+  constantes de 80 octets, API des jeux 34.
 - **Barre d'outils du viewport** : sélection seule (Q, sans gizmo), déplacement (W), rotation (E),
   échelle (R), axes locaux ou du monde, aimantation permanente (Ctrl l'inverse), grille, icônes
   des lumières et caméras, cadrage ; à droite, vitesse de vol, EV de la caméra de l'éditeur et
@@ -5099,6 +5115,13 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     root motion chaque frame et ticks répartis ; statistiques, tests de données et d'images,
     benchmarks de géométrie et d'animation, scène `lods.dvxscene` ; API des jeux 33.
 
+91. ✅ **Confort de l'éditeur** — sous-sections de l'inspecteur à séparateurs et titres marqués,
+    page Viewport avec tailles, épaisseurs, couleurs et visibilité sauvegardées ; picking et
+    déplacement cohérents avec la taille choisie, plans vus par la tranche ignorés. Traits lissés
+    en pixels et grille coplanaire stable sous TAA, avec tests de captures et d'occlusion ;
+    comparaison d'occlusion à exposition fixe pour supprimer la dépendance au temps réel en CI ;
+    API des jeux 34.
+
 Ensuite, sans ordre figé : à choisir dans les pistes ci-dessous.
 
 ## Questions ouvertes
@@ -5285,7 +5308,7 @@ Ensuite, sans ordre figé : à choisir dans les pistes ci-dessous.
   (`UiBinding`) montrés hors du jeu, canevas cachés montrés à la demande, gizmos au-dessus de
   l'interface, interfaces placées dans le monde 3D (canevas en espace monde).
 - **Éditeur** : jeu dans un processus séparé, partage et forme du jeu gardés d'une session à
-  l'autre, statistiques par vue, lignes épaisses, pivot au centre de la sélection (mode *Center* de
+  l'autre, statistiques par vue, pivot au centre de la sélection (mode *Center* de
   Unity), listes éditées à plusieurs, entités masquées aussi dans l'écran 2D, entité active ou
   non pour le jeu (`SetActive` de Unity), déplacement au clavier dans l'arbre.
 - **Apparence** : thèmes enregistrables en fichiers, icône de projet choisie par projet, polices

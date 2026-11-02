@@ -9,6 +9,7 @@
 #include <devex/scene/Physics2DComponents.hpp>
 #include <devex/scene/PhysicsComponents.hpp>
 #include <devex/scene/TilemapComponents.hpp>
+#include <devex/ui/Color.hpp>
 
 #include <algorithm>
 #include <array>
@@ -25,12 +26,6 @@ namespace {
 using render::OverlayVertex;
 
 constexpr float twoPi = 2.0f * std::numbers::pi_v<float>;
-constexpr float iconSizeInPixels = 11.0f;
-constexpr math::Vec4 gridColor{0.25f, 0.25f, 0.25f, 0.55f};
-constexpr math::Vec4 gridMajorColor{0.35f, 0.35f, 0.35f, 0.8f};
-constexpr math::Vec4 xAxisColor{0.6f, 0.08f, 0.08f, 0.9f};
-constexpr math::Vec4 zAxisColor{0.06f, 0.14f, 0.6f, 0.9f};
-constexpr math::Vec4 yAxisColor{0.12f, 0.55f, 0.1f, 0.9f};
 constexpr math::Vec4 lightIconColor{1.0f, 0.8f, 0.3f, 0.95f};
 constexpr math::Vec4 cameraIconColor{0.85f, 0.85f, 0.85f, 0.95f};
 constexpr math::Vec4 audioIconColor{0.96f, 0.6f, 0.76f, 0.95f};
@@ -253,8 +248,10 @@ void addColliders2D(const ToolsState& state, scene::Scene& scene, const std::fun
 void addColliders(const ToolsState& state, scene::Scene& scene, const std::unordered_set<std::uint32_t>& selection,
                   const std::unordered_set<std::uint32_t>& hidden, std::vector<OverlayVertex>& lines)
 {
-    const auto shown = [&](scene::Entity entity) {
-        return !hidden.contains(entity.index) && (state.showColliders || selection.contains(entity.index));
+    const auto shown = [&](scene::Entity entity)
+    {
+        return !hidden.contains(entity.index) &&
+               (state.viewportSettings.showColliders || selection.contains(entity.index));
     };
     const auto colorOf = [&](scene::Entity entity, bool trigger) {
         math::Vec4 color = trigger ? triggerColor : colliderColor;
@@ -351,10 +348,25 @@ void addColliders(const ToolsState& state, scene::Scene& scene, const std::unord
 // from high up.
 // The grid of the 2D view, in the XY plane: lines a power of ten apart, fitted to the zoom, with a
 // stronger one every ten.
+std::array<math::Vec4, 5> gridColorsOf(const ViewportSettings& settings)
+{
+    const auto color = [](math::Vec3 rgb, float alpha)
+    { return ui::linearFromSrgb(math::Vec4(rgb, alpha)); };
+    const float axisAlpha = std::min(settings.gridOpacity * 1.6f, 1.0f);
+    return {color(settings.gridColor, settings.gridOpacity),
+            color(settings.gridMajorColor, std::min(settings.gridOpacity * 1.45f, 1.0f)),
+            color(settings.axisX, axisAlpha), color(settings.axisY, axisAlpha),
+            color(settings.axisZ, axisAlpha)};
+}
+
 void addPlaneGrid(const ToolsState& state, std::vector<OverlayVertex>& lines)
 {
+    const auto [gridColor, gridMajorColor, xAxisColor, yAxisColor, zAxisColor] =
+        gridColorsOf(state.viewportSettings);
     const float size = state.camera.orthographicSize();
-    const float spacing = std::pow(10.0f, std::floor(std::log10(std::max(size * 0.4f, 1e-4f))));
+    const float unit = state.viewportSettings.gridSpacing;
+    const float spacing =
+        unit * std::pow(10.0f, std::floor(std::log10(std::max(size * 0.4f / unit, 1e-4f))));
     // Wide enough for a wide viewport.
     const float extent = size * 3.0f;
     const math::Vec3 pivot = state.camera.pivot();
@@ -385,8 +397,12 @@ void addGrid(const ToolsState& state, std::vector<OverlayVertex>& lines)
     }
     const math::Vec3 eye = state.camera.position();
     const float height = std::abs(eye.y);
-    const float spacing = height > 60.0f ? 10.0f : 1.0f;
-    const float extent = std::clamp(height * 6.0f, 30.0f, 600.0f);
+    const auto [gridColor, gridMajorColor, xAxisColor, yAxisColor, zAxisColor] =
+        gridColorsOf(state.viewportSettings);
+    const float unit = state.viewportSettings.gridSpacing;
+    const float spacing =
+        unit * std::pow(10.0f, std::floor(std::log10(std::max(height / (unit * 6.0f), 1.0f))));
+    const float extent = std::clamp(height * 6.0f, 30.0f * spacing, 600.0f * spacing);
     const int count = static_cast<int>(extent / spacing);
     const float centerX = std::round(eye.x / spacing) * spacing;
     const float centerZ = std::round(eye.z / spacing) * spacing;
@@ -421,9 +437,12 @@ void addGrid(const ToolsState& state, std::vector<OverlayVertex>& lines)
     }
 }
 
-void addIcons(scene::Scene& scene, const ViewportView& view, const std::unordered_set<std::uint32_t>& selected,
-              const std::unordered_set<std::uint32_t>& hidden, render::RenderWorld& world)
+void addIcons(scene::Scene& scene, const ViewportView& view,
+              const std::unordered_set<std::uint32_t>& selected,
+              const std::unordered_set<std::uint32_t>& hidden, render::RenderWorld& world,
+              const ViewportSettings& settings)
 {
+    const float iconSizeInPixels = settings.iconSize * 0.5f;
     // Billboards face the camera: its right and up axes are the rows of the view rotation.
     const math::Vec3 right{view.view[0][0], view.view[1][0], view.view[2][0]};
     const math::Vec3 up{view.view[0][1], view.view[1][1], view.view[2][1]};
@@ -431,7 +450,7 @@ void addIcons(scene::Scene& scene, const ViewportView& view, const std::unordere
 
     for ([[maybe_unused]] auto [entity, transform, light] : scene.view<scene::WorldTransform, scene::DirectionalLight>())
     {
-        if (hidden.contains(entity.index))
+        if (!settings.showLights || hidden.contains(entity.index))
         {
             continue;
         }
@@ -450,7 +469,7 @@ void addIcons(scene::Scene& scene, const ViewportView& view, const std::unordere
 
     for ([[maybe_unused]] auto [entity, transform, light] : scene.view<scene::WorldTransform, scene::PointLight>())
     {
-        if (hidden.contains(entity.index))
+        if (!settings.showLights || hidden.contains(entity.index))
         {
             continue;
         }
@@ -474,7 +493,7 @@ void addIcons(scene::Scene& scene, const ViewportView& view, const std::unordere
 
     for ([[maybe_unused]] auto [entity, transform, light] : scene.view<scene::WorldTransform, scene::SpotLight>())
     {
-        if (hidden.contains(entity.index))
+        if (!settings.showLights || hidden.contains(entity.index))
         {
             continue;
         }
@@ -504,7 +523,7 @@ void addIcons(scene::Scene& scene, const ViewportView& view, const std::unordere
     const float aspect = view.size.x / std::max(view.size.y, 1.0f);
     for ([[maybe_unused]] auto [entity, transform, camera] : scene.view<scene::WorldTransform, scene::Camera>())
     {
-        if (hidden.contains(entity.index))
+        if (!settings.showCameras || hidden.contains(entity.index))
         {
             continue;
         }
@@ -543,8 +562,10 @@ void addIcons(scene::Scene& scene, const ViewportView& view, const std::unordere
 
 // The lights of the 2D plane, drawn in it: a point light as a sun with its radius once selected, a
 // directional one with the way its light goes.
-void addLights2D(scene::Scene& scene, const ViewportView& view, const std::unordered_set<std::uint32_t>& selected,
-                 const std::unordered_set<std::uint32_t>& hidden, std::vector<OverlayVertex>& lines)
+void addLights2D(scene::Scene& scene, const ViewportView& view,
+                 const std::unordered_set<std::uint32_t>& selected,
+                 const std::unordered_set<std::uint32_t>& hidden, std::vector<OverlayVertex>& lines,
+                 float iconSizeInPixels)
 {
     const math::Vec3 x{1.0f, 0.0f, 0.0f};
     const math::Vec3 y{0.0f, 1.0f, 0.0f};
@@ -628,8 +649,10 @@ void addOccluders2D(scene::Scene& scene, const std::unordered_set<std::uint32_t>
 // Joints, always shown, brighter when selected: where they tie the bodies, lines to the bodies, and
 // what they let them do: the axis and the limits of a hinge, the travel of a slider, the rod of a
 // distance joint, the square of a weld.
-void addJoints(scene::Scene& scene, const ViewportView& view, const std::unordered_set<std::uint32_t>& selection,
-               const std::unordered_set<std::uint32_t>& hidden, std::vector<OverlayVertex>& lines)
+void addJoints(scene::Scene& scene, const ViewportView& view,
+               const std::unordered_set<std::uint32_t>& selection,
+               const std::unordered_set<std::uint32_t>& hidden, std::vector<OverlayVertex>& lines,
+               float iconSizeInPixels)
 {
     const auto colorOf = [&](scene::Entity entity, bool broken) {
         math::Vec4 color = broken ? math::Vec4{1.0f, 0.3f, 0.25f, 0.95f} : jointColor;
@@ -783,8 +806,10 @@ void addJoints(scene::Scene& scene, const ViewportView& view, const std::unorder
 
 // Speakers for sound sources, with the distances where a selected one starts to fade and stops
 // fading; an ear for the listener.
-void addAudioIcons(scene::Scene& scene, const ViewportView& view, const std::unordered_set<std::uint32_t>& selected,
-                   const std::unordered_set<std::uint32_t>& hidden, std::vector<OverlayVertex>& lines)
+void addAudioIcons(scene::Scene& scene, const ViewportView& view,
+                   const std::unordered_set<std::uint32_t>& selected,
+                   const std::unordered_set<std::uint32_t>& hidden,
+                   std::vector<OverlayVertex>& lines, float iconSizeInPixels)
 {
     const math::Vec3 right{view.view[0][0], view.view[1][0], view.view[2][0]};
     const math::Vec3 up{view.view[0][1], view.view[1][1], view.view[2][1]};
@@ -869,10 +894,14 @@ void collectSubtree(const scene::Scene& scene, scene::Entity entity, std::unorde
 
 void addEditorOverlay(ToolsState& state, scene::Scene& scene, render::RenderWorld& world)
 {
+    world.lineWidth = state.viewportSettings.lineWidth;
+    world.sceneLineDepthPlane = state.camera.isTwoD() ? math::Vec4{0.0f, 0.0f, 1.0f, 0.0f}
+                                                      : math::Vec4{0.0f, 1.0f, 0.0f, 0.0f};
+
     // The screen of the other kind shows nothing of the scene to draw over or to pick: the grid.
     if (screenContent(state.camera.isTwoD(), scene) != ScreenContent::Scene)
     {
-        if (state.showGrid)
+        if (state.viewportSettings.showGrid)
         {
             addGrid(state, world.sceneLines);
         }
@@ -921,20 +950,31 @@ void addEditorOverlay(ToolsState& state, scene::Scene& scene, render::RenderWorl
         });
     }
 
-    if (state.showGrid)
+    if (state.viewportSettings.showGrid)
     {
         addGrid(state, world.sceneLines);
     }
-    if (state.showIcons)
+    if (state.viewportSettings.showIcons)
     {
-        addIcons(scene, view, selected, hidden, world);
-        addLights2D(scene, view, selected, hidden, world.overlayLines);
-        addAudioIcons(scene, view, selected, hidden, world.overlayLines);
+        addIcons(scene, view, selected, hidden, world, state.viewportSettings);
+        if (state.viewportSettings.showLights)
+            addLights2D(scene, view, selected, hidden, world.overlayLines,
+                        state.viewportSettings.iconSize * 0.5f);
+        if (state.viewportSettings.showAudio)
+            addAudioIcons(scene, view, selected, hidden, world.overlayLines,
+                          state.viewportSettings.iconSize * 0.5f);
     }
-    addOccluders2D(scene, selection, hidden, world.overlayLines);
-    addJoints(scene, view, selection, hidden, world.overlayLines);
-    addColliders(state, scene, selection, hidden, world.overlayLines);
-    addNavigationLines(state, scene, selection, state.showColliders, world.overlayLines);
+    if (state.viewportSettings.showLights)
+        addOccluders2D(scene, selection, hidden, world.overlayLines);
+    if (state.viewportSettings.showPhysics)
+    {
+        addJoints(scene, view, selection, hidden, world.overlayLines,
+                  state.viewportSettings.iconSize * 0.5f);
+        addColliders(state, scene, selection, hidden, world.overlayLines);
+    }
+    if (state.viewportSettings.showNavigation)
+        addNavigationLines(state, scene, selection, state.viewportSettings.showColliders,
+                           world.overlayLines);
     addReflectionProbeLines(scene, selection, false, world.overlayLines);
     addIrradianceVolumeLines(scene, selection, world.overlayLines);
     addPostVolumeLines(scene, selection, world.overlayLines);
@@ -963,6 +1003,7 @@ void addEditorOverlay(ToolsState& state, scene::Scene& scene, render::RenderWorl
             transform != nullptr && scene.has<scene::Transform>(active) && state.tool != EditorTool::Select && !painting)
         {
             GizmoGeometry geometry;
+            applyGizmoSettings(state.gizmo, state.viewportSettings);
             state.gizmo.draw(view, transform->matrix, state.hoveredHandle, geometry);
             world.overlayTriangles.insert(world.overlayTriangles.end(), geometry.triangles.begin(), geometry.triangles.end());
             world.overlayLines.insert(world.overlayLines.end(), geometry.lines.begin(), geometry.lines.end());

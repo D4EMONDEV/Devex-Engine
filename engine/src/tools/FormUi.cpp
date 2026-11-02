@@ -200,6 +200,31 @@ Section& FormUi::addSection(EditorUiKit& kit, std::string name, const EntityIcon
     return section;
 }
 
+int FormUi::addGroup(Section& section, std::string name)
+{
+    const int group = static_cast<int>(section.groups.size());
+    section.groups.push_back(std::move(name));
+    const Entity header = add(section.card, "Group", wide(std::round(line * 1.2f)), "group");
+    scene().add<scene::UiImage>(header);
+    scene().add<scene::UiButton>(header);
+    scene().add<scene::UiFoldout>(header);
+    const Entity separator = add(header, "Separator",
+                                 UiRect{.anchorMin = {0.0f, 0.0f},
+                                        .anchorMax = {1.0f, 0.0f},
+                                        .offsetMin = {0.0f, 0.0f},
+                                        .offsetMax = {0.0f, 1.0f}},
+                                 "guide");
+    scene().add<scene::UiImage>(separator, scene::UiImage{.raycastTarget = false});
+    text(header,
+         UiRect{.anchorMin = {0.0f, 0.0f},
+                .anchorMax = {1.0f, 1.0f},
+                .offsetMin = {std::min(line, 28.0f), 2.0f},
+                .offsetMax = {-pad, 0.0f}},
+         section.groups.back(), "text", true);
+    section.lines.push_back(Line{.entity = header, .group = group, .heading = true});
+    return group;
+}
+
 FormUi::Heading FormUi::heading(EditorUiKit& kit, IconText glyph, math::Vec4 color, std::string title, std::string subtitle)
 {
     const float iconSize = std::round(font * 1.3f);

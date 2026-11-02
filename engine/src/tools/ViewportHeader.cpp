@@ -571,9 +571,9 @@ void ViewportHeaderUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene&
         }
         light(space, local);
         light(snap, state.snap);
-        light(grid, state.showGrid);
-        light(iconsShown, state.showIcons);
-        light(colliders, state.showColliders);
+        light(grid, state.viewportSettings.showGrid);
+        light(iconsShown, state.viewportSettings.showIcons);
+        light(colliders, state.viewportSettings.showColliders);
         light(frame, false);
         enable(frame, edited.findEntity(state.selection.active()).isValid());
         scene().get<UiRect>(interfaces.entity).visible = !twoD && edited.kind() == scene::SceneKind::ThreeD;
@@ -661,10 +661,15 @@ void ViewportHeaderUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene&
             }
         };
         turned(snap, state.snap);
-        turned(grid, state.showGrid);
-        turned(iconsShown, state.showIcons);
-        turned(colliders, state.showColliders);
+        turned(grid, state.viewportSettings.showGrid);
+        turned(iconsShown, state.viewportSettings.showIcons);
+        turned(colliders, state.viewportSettings.showColliders);
         turned(interfaces, state.showInterfaces);
+        if (world.wasClicked(grid.entity) || world.wasClicked(iconsShown.entity) ||
+            world.wasClicked(colliders.entity))
+        {
+            saveUserSettings(state);
+        }
         if (world.wasClicked(frame.entity))
         {
             frameSelection(state, edited);

@@ -115,17 +115,10 @@ void InspectorUi::addInstanceParameters(EditorUiKit& kit, ToolsState& state, Sec
         return;
     }
     // A group of the card, folded from its header as those of the fields are.
-    section.groups.emplace_back("Instance Shader Parameters");
-    const int group = static_cast<int>(section.groups.size()) - 1;
-    const Entity heading = add(section.card, "Group", wide(std::round(line * 0.95f)), "group");
-    scene().add<scene::UiImage>(heading);
-    scene().add<scene::UiButton>(heading);
-    scene().add<scene::UiFoldout>(heading);
-    text(heading, UiRect{.anchorMin = {0.0f, 0.0f}, .anchorMax = {1.0f, 1.0f}, .offsetMin = {std::min(line, 28.0f), 0.0f}, .offsetMax = {0.0f, 0.0f}},
-         "Instance Shader Parameters", "dim", true);
-    tooltip(heading, "The instance uniforms of the shader of the material: this object gives them its own values, and "
-                     "the others drawn with the material keep theirs");
-    section.lines.push_back(Line{.entity = heading, .group = group, .heading = true});
+    const int group = addGroup(section, "Instance Shader Parameters");
+    tooltip(section.lines.back().entity, "The instance uniforms of the shader of the material: "
+                                         "this object gives them its own values, and "
+                                         "the others drawn with the material keep theirs");
 
     static constexpr std::array<std::string_view, 4> letters{"X", "Y", "Z", "W"};
     static constexpr std::array<std::string_view, 1> one{""};

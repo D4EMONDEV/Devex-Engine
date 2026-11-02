@@ -1200,6 +1200,10 @@ void loadUserSettings(ToolsState& state, const std::filesystem::path& file)
         {
             state.scripts = readScriptSettings(section);
         }
+        else if (section.type == "viewport")
+        {
+            state.viewportSettings = readViewportSettings(section);
+        }
     }
 }
 
@@ -1211,6 +1215,7 @@ void saveUserSettings(const ToolsState& state)
     }
     serialization::TextDocument document;
     document.sections.push_back(writeThemeSettings(state.theme));
+    document.sections.push_back(writeViewportSettings(state.viewportSettings));
     document.sections.push_back(writeScriptSettings(state.scripts));
     state.projects.write(document);
     std::error_code error;

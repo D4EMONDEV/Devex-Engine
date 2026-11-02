@@ -10,18 +10,11 @@ namespace devex::tools::detail {
 namespace {
 
 constexpr float twoPi = 2.0f * std::numbers::pi_v<float>;
-constexpr int ringSegments = 64;
+constexpr int ringSegments = 96;
 constexpr float viewRingScale = 1.15f;
 constexpr float planeStart = 0.2f;
 constexpr float planeEnd = 0.45f;
 
-// Linear colors, from the sRGB colors editors traditionally give to the axes.
-constexpr math::Vec4 axisColors[3]{
-    {0.78f, 0.05f, 0.05f, 1.0f},
-    {0.19f, 0.67f, 0.03f, 1.0f},
-    {0.04f, 0.18f, 0.87f, 1.0f},
-};
-constexpr math::Vec4 highlightColor{1.0f, 0.69f, 0.0f, 1.0f};
 constexpr math::Vec4 viewColor{0.8f, 0.8f, 0.8f, 1.0f};
 
 [[nodiscard]] int axisIndex(GizmoHandle handle) noexcept
@@ -74,6 +67,13 @@ constexpr std::array<GizmoHandle, 3> planeHandles{GizmoHandle::YZ, GizmoHandle::
 
 [[nodiscard]] bool insideQuad(math::Vec2 point, const std::array<math::Vec2, 4>& corners) noexcept
 {
+    const math::Vec2 a = corners[1] - corners[0];
+    const math::Vec2 b = corners[3] - corners[0];
+    if (std::abs(a.x * b.y - a.y * b.x) < 0.5f)
+    {
+        // An edge-on plane has no visible area and must not steal clicks from its axis.
+        return false;
+    }
     bool positive = false;
     bool negative = false;
     for (std::size_t index = 0; index < corners.size(); ++index)
@@ -108,7 +108,7 @@ void addQuad(GizmoGeometry& geometry, math::Vec3 a, math::Vec3 b, math::Vec3 c, 
 // A tube along a segment, with a few sides.
 void addTube(GizmoGeometry& geometry, math::Vec3 start, math::Vec3 end, float radius, math::Vec4 color)
 {
-    constexpr int sides = 6;
+    constexpr int sides = 12;
     const math::Vec3 axis = math::normalize(end - start);
     const auto [first, second] = perpendicularBasis(axis);
     for (int side = 0; side < sides; ++side)
@@ -213,7 +213,7 @@ GizmoHandle Gizmo::hitTest(const ViewportView& view, const math::Mat4& world, ma
     {
         return GizmoHandle::None;
     }
-    const float size = view.worldSize(center, sizeInPixels);
+    const float size = view.worldSize(center, sizePixels);
     const std::array<math::Vec3, 3> gizmoAxes = axes(world);
 
     GizmoHandle best = GizmoHandle::None;
@@ -296,7 +296,7 @@ GizmoHandle Gizmo::hitTest(const ViewportView& view, const math::Mat4& world, ma
             }
         }
         consider(GizmoHandle::View,
-                 std::abs(math::length(mouse - *centerPixel) - sizeInPixels * viewRingScale));
+                 std::abs(math::length(mouse - *centerPixel) - sizePixels * viewRingScale));
         break;
     }
     }
@@ -317,7 +317,7 @@ void Gizmo::begin(GizmoHandle handle, const ViewportView& view, const math::Mat4
     m_startLocal = local;
     m_startMouse = mouse;
     m_startAxes = axes(world);
-    m_startSize = view.worldSize(math::Vec3(world[3]), sizeInPixels);
+    m_startSize = view.worldSize(math::Vec3(world[3]), sizePixels);
 }
 
 scene::Transform Gizmo::drag(const ViewportView& view, math::Vec2 mouse, bool snap) const
@@ -463,8 +463,8 @@ void Gizmo::draw(const ViewportView& view, const math::Mat4& world, GizmoHandle 
     {
         return;
     }
-    const float size = view.worldSize(center, sizeInPixels);
-    const float thickness = view.worldSize(center, 1.5f);
+    const float size = view.worldSize(center, sizePixels);
+    const float thickness = view.worldSize(center, thicknessPixels * 0.5f);
     const std::array<math::Vec3, 3> gizmoAxes = axes(world);
     const GizmoHandle highlighted = isDragging() ? m_handle : hovered;
     const auto colorOf = [&](GizmoHandle handle, math::Vec4 color) {
@@ -508,7 +508,10 @@ void Gizmo::draw(const ViewportView& view, const math::Mat4& world, GizmoHandle 
             addTube(geometry, center, center + direction * size * 0.78f, thickness, color);
             addCone(geometry, center + direction * size * 0.78f, center + direction * size, size * 0.065f, color);
         }
-        addCube(geometry, center, {view.cameraForward(), math::Vec3{0.0f, 1.0f, 0.0f}, math::Vec3{1.0f, 0.0f, 0.0f}},
+        addCube(geometry, center,
+                {view.cameraForward(),
+                 math::Vec3{view.view[0][1], view.view[1][1], view.view[2][1]},
+                 math::Vec3{view.view[0][0], view.view[1][0], view.view[2][0]}},
                 size * 0.04f, colorOf(GizmoHandle::View, viewColor));
         break;
     }

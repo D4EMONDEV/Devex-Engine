@@ -727,6 +727,12 @@ struct DEVEX_API RenderWorld
     std::vector<OverlayVertex> overlayLines;
     // Triples of vertices drawn as triangles over everything, after the lines.
     std::vector<OverlayVertex> overlayTriangles;
+    // Width of tool lines in viewport pixels. Triangles keep their own geometry.
+    float lineWidth = 1.5f;
+    // Optional plane (unit normal.xyz, distance) for scene lines that lie on a surface, such as the
+    // editor grid. Their depth follows the scene's jittered ray while their colour stays still.
+    // A zero normal keeps ordinary line depth.
+    math::Vec4 sceneLineDepthPlane{0.0f};
     // Answered some frames later by Renderer::takePickResults.
     std::optional<PickRequest> pick;
 
