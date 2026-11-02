@@ -436,7 +436,7 @@ void EditorDockUi::fillTabs(ToolsState& state, EditorUiKit& kit)
         scene().destroyEntity(tab.entity);
     }
     tabs.clear();
-    const float closeSize = std::round(font * 1.2f);
+    const float closeSize = closeButtonSize();
     const float spacing = font * 0.35f;
     for (std::size_t slot = 0; slot < dockSlotCount; ++slot)
     {
@@ -460,11 +460,8 @@ void EditorDockUi::fillTabs(ToolsState& state, EditorUiKit& kit)
             tab.label = text(content, middle({labelWidth, font * 1.6f}), name, "dim");
             if (known->closable)
             {
-                tab.close = add(content, "Close", middle({closeSize, closeSize}), "bar_button");
-                scene().add<scene::UiImage>(tab.close);
-                scene().add<scene::UiButton>(tab.close);
-                icon(kit, tab.close, whole(math::Vec4{std::round(closeSize * 0.2f)}), Icon::Close, "icon_dim");
-                tooltip(tab.close, "Close");
+                tab.close =
+                    closeButton(kit, content, middle({closeSize, closeSize}), "Close " + name);
             }
             tab.overline = add(tab.entity, "Overline",
                                UiRect{.anchorMin = {0.0f, 0.0f}, .anchorMax = {1.0f, 0.0f}, .offsetMin = {5.0f, 0.0f}, .offsetMax = {-5.0f, 2.0f}, .visible = false},
@@ -556,7 +553,7 @@ void EditorDockUi::update(ToolsState& state, EditorUiKit& kit, core::Duration de
         scene().get<UiRect>(tab.overline).visible = front && state.hosts.isFocused(tab.name);
         if (tab.close.isValid())
         {
-            scene().get<UiRect>(tab.close).style = barStyle(world, tab.close, false);
+            styleCloseButton(tab.close);
         }
     }
 

@@ -363,7 +363,7 @@ void ViewportHeaderUi::fillTabs(ToolsState& state, EditorUiKit& kit, const Activ
 
     const float tall = tabsHeight() - tabsTop();
     const float iconSize = std::round(font * 1.1f);
-    const float closeSize = std::round(font * 1.35f);
+    const float closeSize = closeButtonSize();
     const float dot = std::round(font * 0.5f);
     const float spacing = font * 0.45f;
     const float left = std::round(font * 0.75f);
@@ -396,10 +396,8 @@ void ViewportHeaderUi::fillTabs(ToolsState& state, EditorUiKit& kit, const Activ
         }
         if (editing)
         {
-            tab.close = add(content, "Close", middle({closeSize, closeSize}), "bar_button");
-            scene().add<scene::UiImage>(tab.close);
-            scene().add<scene::UiButton>(tab.close);
-            icon(kit, tab.close, whole(math::Vec4{std::round(closeSize * 0.2f)}), Icon::Close, "icon_dim");
+            tab.close =
+                closeButton(kit, content, middle({closeSize, closeSize}), "Close scene (Ctrl+W)");
         }
         tab.overline = add(tab.entity, "Overline",
                            UiRect{.anchorMin = {0.0f, 0.0f}, .anchorMax = {1.0f, 0.0f}, .offsetMin = {5.0f, 0.0f}, .offsetMax = {-5.0f, 2.0f}, .visible = false},
@@ -499,7 +497,7 @@ void ViewportHeaderUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene&
         }
         if (tab.close.isValid())
         {
-            scene().get<UiRect>(tab.close).style = barStyle(world, tab.close, false);
+            styleCloseButton(tab.close);
         }
     }
     // The tabs never leave a hole at their end, and the one that comes to the screen comes into view;

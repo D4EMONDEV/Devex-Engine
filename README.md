@@ -171,7 +171,9 @@ captures de l'éditeur, scènes de base, entrées, scripts C#, animations, colli
   infobulles, modales, listes virtuelles, texte de la sortie choisi et copié à la souris, fichiers
   glissés vers la vue et l'inspecteur, entités lâchées sur un dossier qui deviennent des préfabs,
   fichiers et dossiers créés, supprimés, renommés en place avec F2 et déplacés par un glisser sur un
-  dossier ou *Move To...*, leurs UUID gardés),
+  dossier ou *Move To...*, leurs UUID gardés ; recherche par mots jusque dans les scripts et
+  sous-assets, navigation au clavier, arbre conservé entre les changements),
+  fermetures des fenêtres et des onglets avec une croix centrée et une cible plus large,
   onglets de scènes, viewport et sa
   barre d'outils, scène et jeu côte à côte pendant Play (la partie se change dans la scène, le jeu a
   sa caméra, son interface et la forme choisie), caméra libre, sélection multiple (Ctrl et Maj dans l'arbre, rectangle dans la

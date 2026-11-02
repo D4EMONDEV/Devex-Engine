@@ -125,6 +125,9 @@ public:
     [[nodiscard]] std::vector<AssetInfo> assets(std::optional<AssetType> type = std::nullopt) const override;
     // Sorted by path.
     [[nodiscard]] std::vector<SourceFile> sources() const;
+    // Changes when sources, folders, import status or project settings may have changed.
+    // UI snapshots can keep their sorted tree while this number stays the same.
+    [[nodiscard]] std::uint64_t revision() const noexcept;
     // Sorted res:// paths, including empty asset folders. Updated by refresh and the watcher.
     [[nodiscard]] const std::vector<std::string>& folders() const noexcept;
     // Permanently removes a file or folder below assets/ or code/, including asset metadata.

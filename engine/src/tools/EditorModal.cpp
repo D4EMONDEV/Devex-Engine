@@ -61,12 +61,9 @@ struct ModalLayerUi : PanelBuilder
         frame = add({}, "Frame", UiRect{.anchorMin = {0.0f, 0.0f}, .anchorMax = {0.0f, 0.0f}}, "dialog");
         scene().add<scene::UiImage>(frame);
         title = text(frame, UiRect{.anchorMin = {0.0f, 0.0f}, .anchorMax = {1.0f, 0.0f}}, "", "text", true, scene::TextAlign::Center);
-        close = add(frame, "Close", UiRect{.anchorMin = {1.0f, 0.0f}, .anchorMax = {1.0f, 0.0f}}, "bar_button");
-        scene().add<scene::UiImage>(close);
-        scene().add<scene::UiButton>(close);
-        const float size = std::round(font * 1.35f);
-        icon(kit, close, whole(math::Vec4{std::round(size * 0.2f)}), Icon::Close, "icon_dim");
-        tooltip(close, "Close (Escape)");
+        close =
+            closeButton(kit, frame, UiRect{.anchorMin = {1.0f, 0.0f}, .anchorMax = {1.0f, 0.0f}},
+                        "Close (Escape)");
     }
 
     void update(ToolsState& state, EditorUiKit& kit, std::string_view id, math::Vec2 frameMin, math::Vec2 frameSize, float titleHeight,
@@ -92,18 +89,18 @@ struct ModalLayerUi : PanelBuilder
         framed.offsetMax = framed.offsetMin + math::Vec2{std::round(frameSize.x * unitsPerPoint), std::round(frameSize.y * unitsPerPoint)};
         const float strip = std::round(titleHeight * unitsPerPoint);
         UiRect& titleRect = scene().get<UiRect>(title);
-        titleRect.offsetMin = {0.0f, 0.0f};
-        titleRect.offsetMax = {0.0f, strip};
+        titleRect.offsetMin = {closeButtonSize() + font * 0.4f, 0.0f};
+        titleRect.offsetMax = {-closeButtonSize() - font * 0.4f, strip};
         if (scene::UiText& said = scene().get<scene::UiText>(title); said.text != heading)
         {
             said.text = std::string(heading);
         }
-        const float size = std::round(font * 1.35f);
+        const float size = std::min(closeButtonSize(), strip);
         const float margin = std::round((strip - size) * 0.5f);
         UiRect& closeRect = scene().get<UiRect>(close);
         closeRect.offsetMin = {-margin - size - font * 0.2f, margin};
         closeRect.offsetMax = {-margin - font * 0.2f, margin + size};
-        closeRect.style = barStyle(panel.world(), close, false);
+        styleCloseButton(close);
 
         panel.update(kit, core::Duration(state.input.delta()), zoom);
 

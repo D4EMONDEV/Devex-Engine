@@ -244,8 +244,7 @@ void CreationDialogUi::build(EditorUiKit& kit)
                     "", "dim");
     const Entity corner = add(header, "Corner", UiRect{.anchorMin = {1.0f, 0.0f}, .anchorMax = {1.0f, 1.0f}, .offsetMin = {-line, 0.0f}, .offsetMax = {0.0f, 0.0f}});
     scene().add<scene::UiLayout>(corner, scene::UiLayout{.kind = scene::UiLayoutKind::Row, .align = scene::TextAlign::Right});
-    close = button(kit, corner, Icon::Close, "", "side", line, line);
-    tooltip(close.entity, "Close (Esc)");
+    close.entity = closeButton(kit, corner, middle({line, line}), "Close (Escape)");
 
     search = searchField(kit, root, wide(font * 2.6f), "", "Search components and presets");
 
@@ -700,6 +699,7 @@ void CreationDialogUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene&
     }
     scrollToSelection = false;
 
+    styleCloseButton(close.entity);
     panel.update(kit, delta, UiPanel::zoomFor(font));
 
     // What was asked this frame.

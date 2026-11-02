@@ -316,6 +316,11 @@ public:
     // Changes the label of a button, which keeps its width.
     void relabel(EditorUiKit& kit, const PanelButton& target, std::string_view label);
     void enable(const PanelButton& target, bool enabled);
+    // A close control with a generous hit target and a centered glyph, shared by tabs and windows.
+    [[nodiscard]] float closeButtonSize() const noexcept;
+    scene::Entity closeButton(EditorUiKit& kit, scene::Entity parent, scene::UiRect rect,
+                              std::string hint = "Close");
+    void styleCloseButton(scene::Entity button);
     void tooltip(scene::Entity entity, std::string value);
     scene::Entity field(scene::Entity parent, scene::UiRect rect, std::string value, std::string placeholder,
                         std::string action = {});

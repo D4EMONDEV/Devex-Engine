@@ -511,7 +511,7 @@ void ScriptUi::build(EditorUiKit& kit)
     tooltip(matchCase, "Match case");
     text(findRow, middle({std::ceil(kit.textWidth(EditorUiKit::regularFont(), "Aa", font)) + 2.0f, tall}), "Aa", "text");
     findCount = text(findRow, grow(tall), "", "dim");
-    findClose = toolButton(kit, findRow, Icon::Close, middle({inner, inner}));
+    findClose.entity = closeButton(kit, findRow, middle({inner, inner}), "Close search (Escape)");
     replaceRow = strip("Replace");
     replaceField = field(replaceRow, middle({font * 16.0f, inner}), "", "Replace with");
     replaceOne = button(kit, replaceRow, Icon::Pencil, "Replace", "button", 0.0f, inner);
@@ -522,7 +522,7 @@ void ScriptUi::build(EditorUiKit& kit)
     goField = field(goRow, middle({font * 6.0f, inner}), "", "");
     goButton = button(kit, goRow, Icon::ArrowDownToLine, "Go", "button", 0.0f, inner);
     goCount = text(goRow, grow(tall), "", "dim");
-    goClose = toolButton(kit, goRow, Icon::Close, middle({inner, inner}));
+    goClose.entity = closeButton(kit, goRow, middle({inner, inner}), "Close Go to Line (Escape)");
 
     areas = add(main, "Code", whole(math::Vec4{0.0f, 0.0f, edge * 0.5f, tall}));
     status = text(main, UiRect{.anchorMin = {0.0f, 1.0f}, .anchorMax = {1.0f, 1.0f}, .offsetMin = {edge, -tall}, .offsetMax = {-edge, 0.0f}}, "", "dim");
@@ -606,7 +606,7 @@ void ScriptUi::fillFiles(ToolsState& state, EditorUiKit& kit)
     }
     fileRows.clear();
     const float tall = rowHeight();
-    const float small = std::round(font * 1.3f);
+    const float small = closeButtonSize();
     const float dot = std::round(font * 0.5f);
     for (const TextDocument& document : state.textDocuments)
     {
@@ -628,10 +628,7 @@ void ScriptUi::fillFiles(ToolsState& state, EditorUiKit& kit)
             scene().add<scene::UiImage>(mark, scene::UiImage{.color = linearColor(themeColors().textDim), .cornerRadius = dot * 0.5f, .raycastTarget = false});
         }
         FileRow row{.row = made.entity, .path = document.path};
-        row.close = add(made.entity, "Close", middle({small, small}), "bar_button");
-        scene().add<scene::UiImage>(row.close);
-        scene().add<scene::UiButton>(row.close);
-        icon(kit, row.close, whole(math::Vec4{std::round(small * 0.2f)}), Icon::Close, "icon_dim");
+        row.close = closeButton(kit, made.entity, middle({small, small}), "Close file (Ctrl+W)");
         tooltip(made.entity, core::toUtf8(document.path));
         fileRows.push_back(std::move(row));
     }
@@ -937,7 +934,7 @@ std::optional<PendingAction> ScriptUi::update(ToolsState& state, EditorUiKit& ki
     for (const FileRow& row : fileRows)
     {
         scene().get<UiRect>(row.row).style = document != nullptr && sameTextPath(row.path, document->path) ? "row_selected" : "row";
-        scene().get<UiRect>(row.close).style = barStyle(world, row.close, false);
+        styleCloseButton(row.close);
     }
 
     const bool searching = document != nullptr && edit.showFind;
@@ -1029,6 +1026,8 @@ std::optional<PendingAction> ScriptUi::update(ToolsState& state, EditorUiKit& ki
     const bool typing = area.isValid() && world.editedTextArea() == area;
     showCompletions(state, area, typing);
 
+    styleCloseButton(findClose.entity);
+    styleCloseButton(goClose.entity);
     panel.update(kit, delta, UiPanel::zoomFor(font));
     answerForm();
 

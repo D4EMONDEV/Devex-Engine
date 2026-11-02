@@ -1110,6 +1110,21 @@ les assets s'écrivent au fil de leur lecture.
   *Statistics*. Les panneaux n'ont pas de bouton de fermeture : le menu *Editor > Panels* (ou
   *View* sur l'overlay) les affiche. La disposition du dock est sauvegardée dans chaque projet
   (`.devex/editor.dvx`) ; *Reset Layout* la restaure.
+- **Navigation du FileSystem** : recherche par mots, sans tenir compte de la casse, dans les chemins
+  des assets, les noms des sous-assets et les scripts des dossiers repliés. Ctrl+F prend le champ ;
+  Entrée passe aux résultats, les flèches/Home/End/Page Up/Page Down les parcourent sans ouvrir un
+  script à chaque ligne, Entrée active le fichier. La croix du champ ou Échap rétablit l'arbre et
+  sa position de défilement. Les lignes restent virtualisées. `AssetDatabase::revision()` invalide
+  le cliché des sources et dossiers aux scans, imports et changements du projet ; les images de
+  survol et les sélections réutilisent le tri et l'arbre tant qu'ils sont valides. Les dossiers de
+  code sont revérifiés une fois par seconde pour les changements externes ; créations et
+  déplacements faits dans l'éditeur invalident immédiatement leur cache. `bin`, `obj` et les
+  dossiers cachés sont exclus.
+- **Fermetures de l'éditeur** : scènes, panneaux fermables, réglages, catalogue de création et
+  documents de Devex Script partagent `PanelBuilder::closeButton`. Une cible d'environ 25 points
+  pour une police de 14, une croix centrée d'environ 11 points, un fond au survol et une infobulle ;
+  le titre réserve sa place dans une fenêtre. Les dialogues de sauvegarde restent ceux des scènes
+  et documents, indépendants du dessin du bouton.
 - **Entrées** : quand les outils utilisent le clavier ou la souris
   (`Platform::setToolsInputCapture`), les appuis et mouvements de ce périphérique n'atteignent
   plus `Input` (les relâchements si), alors que `Platform::toolsInput` les voit tous ; les

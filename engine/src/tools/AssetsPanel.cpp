@@ -3,6 +3,7 @@
 // viewport and the properties, or onto its folders to move them there, F2 renames a line in place,
 // and an entity dropped on one of its folders becomes a prefab there.
 #include "EditorUi.hpp"
+#include "FileSearch.hpp"
 #include "ToolsState.hpp"
 
 #include <devex/core/Profiler.hpp>
@@ -297,6 +298,8 @@ struct FileSystemUi : PanelBuilder
     float indent = 16.0f;
 
     Entity filter;
+    Entity clearFilter;
+    Entity searchStatus;
     Entity list;
     Entity scroll;
     Entity lines;
@@ -325,6 +328,20 @@ struct FileSystemUi : PanelBuilder
     std::optional<Node> menuNode;
 
     std::vector<asset::SourceFile> sources;
+    Folder folders;
+    const asset::AssetDatabase* gatheredDatabase = nullptr;
+    std::filesystem::path gatheredProject;
+    std::uint64_t gatheredRevision = ~std::uint64_t{0};
+    std::string gatheredFilter;
+    std::unordered_map<std::string, bool> gatheredExpanded;
+    ThemeSettings gatheredTheme;
+    double nextGather = -1.0;
+    // Search includes collapsed code folders. External changes are polled once a second,
+    // rather than scanning the disk on every frame or every character typed.
+    std::vector<std::filesystem::path> codeSearch;
+    double codeSearchReadAt = -1.0e9;
+    float treeScroll = 0.0f;
+    std::string previousFilter;
     std::vector<Node> nodes;
     std::unordered_map<std::string, bool> expanded;
     std::string selected;
@@ -333,6 +350,13 @@ struct FileSystemUi : PanelBuilder
     std::string renamingExtension;
     std::map<std::filesystem::path, CodeListing> codeListings;
     double clock = 0.0;
+
+    void invalidateCode()
+    {
+        codeListings.clear();
+        codeSearchReadAt = -1.0e9;
+        nextGather = -1.0;
+    }
 
     void build(ToolsState& state, EditorUiKit& kit);
     void gather(ToolsState& state);
@@ -361,11 +385,21 @@ struct FileSystemUi : PanelBuilder
 void FileSystemUi::build(ToolsState& state, EditorUiKit& kit)
 {
     built = true;
+    panel.setKeyboardNavigation(false);
     const Entity root = add({}, "FileSystem", whole());
     scene().add<scene::UiLayout>(root, scene::UiLayout{.kind = scene::UiLayoutKind::Column,
                                                        .spacing = font * 0.4f,
                                                        .align = scene::TextAlign::Left});
     filter = searchField(kit, root, wide(font * 2.0f), state.assetFilter, "Filter Files");
+    const float clearSize = closeButtonSize();
+    clearFilter = closeButton(kit, filter,
+                              UiRect{.anchorMin = {1.0f, 0.5f},
+                                     .anchorMax = {1.0f, 0.5f},
+                                     .offsetMin = {-clearSize - 2.0f, -clearSize * 0.5f},
+                                     .offsetMax = {-2.0f, clearSize * 0.5f}},
+                              "Clear search (Escape)");
+    searchStatus = text(root, wide(font * 1.4f), "", "dim");
+    scene().get<UiRect>(searchStatus).visible = false;
 
     list = add(root, "List", whole(), "list");
     scene().add<scene::UiImage>(list);
@@ -433,7 +467,7 @@ void FileSystemUi::addSource(ToolsState& state, const asset::SourceFile& source,
     Node node{.kind = NodeKind::Source,
               .depth = depth,
               .key = "source:" + source.id.uuid.toString(),
-              .label = wholePath ? source.path : std::string(fileName(source.path)),
+              .label = std::string(fileName(source.path)),
               .icon = assetIcon(source, mainAsset),
               .expandable = children > 0,
               .path = source.path,
@@ -448,6 +482,11 @@ void FileSystemUi::addSource(ToolsState& state, const asset::SourceFile& source,
         {
             node.detail = "startup";
         }
+    }
+    if (wholePath)
+    {
+        const std::string parent = source.path.substr(0, source.path.rfind('/'));
+        node.detail = node.detail.empty() ? parent : node.detail + "  \xC2\xB7  " + parent;
     }
     node.expanded = node.expandable && isOpen(node.key, false);
     const bool open = node.expanded;
@@ -585,19 +624,86 @@ void FileSystemUi::addFolder(ToolsState& state, const std::string& name, const s
 
 void FileSystemUi::gather(ToolsState& state)
 {
+    const bool projectChanged = gatheredDatabase != state.database ||
+                                gatheredProject != state.database->project().file;
+    const bool changed = projectChanged || gatheredRevision != state.database->revision();
+    if (changed)
+    {
+        sources = state.database->sources();
+        folders = buildTree(sources, state.database->folders());
+        gatheredDatabase = state.database;
+        gatheredProject = state.database->project().file;
+        gatheredRevision = state.database->revision();
+    }
+    if (!changed && gatheredFilter == state.assetFilter && gatheredExpanded == expanded &&
+        gatheredTheme == state.theme && clock < nextGather)
+        return;
+    gatheredFilter = state.assetFilter;
+    gatheredExpanded = expanded;
+    gatheredTheme = state.theme;
+    nextGather = clock + codeListingSeconds;
     nodes.clear();
-    sources = state.database->sources();
     if (state.assetFilter.empty())
     {
-        addFolder(state, "res://", std::string(asset::resourceScheme), buildTree(sources, state.database->folders()), 0);
+        addFolder(state, "res://", std::string(asset::resourceScheme), folders, 0);
         return;
     }
-    // A filter lists the matching files with their whole path.
+    // A filter lists matching files and sliced assets, with enough path to tell names apart.
     for (const asset::SourceFile& source : sources)
     {
-        if (containsIgnoringCase(source.path, state.assetFilter))
+        if (matchesFileSearch(source.path, state.assetFilter))
         {
             addSource(state, source, 0, true);
+        }
+        else
+        {
+            for (const asset::AssetId id : source.assets)
+            {
+                const auto* info = state.database->find(id);
+                if (id != source.id && info &&
+                    matchesFileSearch(source.path + "/" + info->name, state.assetFilter))
+                    nodes.push_back(Node{.kind = NodeKind::SubAsset,
+                                         .key = "asset:" + id.uuid.toString(),
+                                         .label = info->name,
+                                         .detail = source.path,
+                                         .icon = subAssetIcon(info->type),
+                                         .path = source.path,
+                                         .asset = id,
+                                         .type = info->type,
+                                         .hasAsset = true});
+            }
+        }
+    }
+    if (projectChanged || clock - codeSearchReadAt >= codeListingSeconds)
+    {
+        codeSearchReadAt = clock;
+        codeSearch.clear();
+        std::error_code error;
+        auto iterator = std::filesystem::recursive_directory_iterator(
+            state.database->project().codeDirectory(),
+            std::filesystem::directory_options::skip_permission_denied, error);
+        for (const auto end = std::filesystem::recursive_directory_iterator{};
+             !error && iterator != end; iterator.increment(error))
+        {
+            const auto name = core::toUtf8(iterator->path().filename());
+            if (name == "bin" || name == "obj" || name.starts_with('.'))
+            {
+                if (iterator->is_directory(error))
+                    iterator.disable_recursion_pending();
+                continue;
+            }
+            if (iterator->is_regular_file(error) && isCodeFile(iterator->path()))
+                codeSearch.push_back(iterator->path());
+        }
+        std::ranges::sort(codeSearch);
+    }
+    for (const auto& file : codeSearch)
+    {
+        const std::string path = state.database->project().resourcePath(file);
+        if (matchesFileSearch(path, state.assetFilter))
+        {
+            addCode(file, false, 0);
+            nodes.back().detail = state.database->project().resourcePath(file.parent_path());
         }
     }
 }
@@ -653,7 +759,12 @@ void FileSystemUi::activate(ToolsState& state, scene::Scene& edited, const Node&
     }
     if (node.kind == NodeKind::CodeFile || node.kind == NodeKind::ProjectFile)
     {
-        if (state.mode != ToolsMode::Editor || scriptEditorFor(state.scripts, node.file).editor != ScriptEditor::Devex)
+        if (state.mode == ToolsMode::Editor &&
+            scriptEditorFor(state.scripts, node.file).editor == ScriptEditor::Devex)
+        {
+            openTextFile(state, node.file);
+        }
+        else
         {
             openInPreferredEditor(state, node.file);
         }
@@ -960,7 +1071,7 @@ void FileSystemUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& edi
                 expanded[folderKey(parent)] = true;
             }
             // Empty directories have no imported asset, and the code tree caches its listings.
-            codeListings.clear();
+            invalidateCode();
             scene().get<scene::UiText>(filter).text.clear();
             selected = folderKey(*path);
             selectAsset(state, {});
@@ -976,7 +1087,7 @@ void FileSystemUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& edi
             }
             // A filter that would hide it gives way.
             std::string& filterText = scene().get<scene::UiText>(filter).text;
-            if (!containsIgnoringCase(resource, filterText))
+            if (!matchesFileSearch(resource, filterText))
             {
                 filterText.clear();
             }
@@ -985,7 +1096,21 @@ void FileSystemUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& edi
         }
     }
     state.assetFilter = scene().get<scene::UiText>(filter).text;
+    if (previousFilter != state.assetFilter)
+    {
+        auto& offset = scene().get<scene::UiScroll>(scroll).offset.y;
+        if (previousFilter.empty())
+            treeScroll = offset;
+        offset = state.assetFilter.empty() ? treeScroll : 0.0f;
+        previousFilter = state.assetFilter;
+    }
     gather(state);
+    scene().get<UiRect>(clearFilter).visible = !state.assetFilter.empty();
+    styleCloseButton(clearFilter);
+    scene().get<UiRect>(searchStatus).visible = !state.assetFilter.empty();
+    scene().get<scene::UiText>(searchStatus).text =
+        std::format("{} result{}{}", nodes.size(), nodes.size() == 1 ? "" : "s",
+                    nodes.empty() ? "" : "  \xC2\xB7  Enter to browse");
 
     // As many rows as the view holds, which show the lines the list will place them at: the first
     // one the scroll leaves in view.
@@ -1060,7 +1185,7 @@ void FileSystemUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& edi
         scene().get<scene::UiFoldout>(row.arrow).expanded = node.expanded;
         scene().get<scene::UiFoldout>(row.arrow).arrowColor = linearColor(colors.textDim);
 
-        const float iconLeft = left + arrow;
+        const float iconLeft = left + (state.assetFilter.empty() || node.expandable ? arrow : 0.0f);
         row.previewSize = previewSize(state, node);
         const bool preview = row.previewSize.x > 0.0f && row.previewSize.y > 0.0f;
         const float shownSize = preview ? thumbnailSize : iconSize;
@@ -1075,7 +1200,10 @@ void FileSystemUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& edi
         scene::UiImage& iconImage = scene().get<scene::UiImage>(row.icon);
         iconImage.texture = preview ? node.asset : kit.icon(iconOf(node.icon.icon));
         iconImage.color = preview ? math::Vec4{1.0f} : linearColor(node.icon.color);
-        tooltip(row.row, preview ? node.label : std::string{});
+        tooltip(row.row, preview              ? node.label
+                         : !node.path.empty() ? node.path
+                         : !node.file.empty() ? state.database->project().resourcePath(node.file)
+                                              : std::string{});
 
         const float labelLeft = iconLeft + thumbnailSize + font * 0.45f;
         const float labelWidth = kit.textWidth(EditorUiKit::regularFont(), node.label, font) + 2.0f;
@@ -1164,7 +1292,26 @@ void FileSystemUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& edi
         world.startEditing(scene(), rows[*renameRow].field, true);
     }
 
+    const bool wasSearching = world.editedField() == filter;
+    const bool hadMenu = world.isPopupOpen(scene(), menu);
     panel.update(kit, delta, UiPanel::zoomFor(font));
+    const bool submittedSearch = world.wasSubmitted(filter);
+    if (world.wasClicked(clearFilter) ||
+        (panel.focused() && !hadMenu && !state.assetFilter.empty() && renaming.empty() &&
+         (wasSearching || !world.isEditing()) && state.input.pressed(platform::Key::Escape, false)))
+    {
+        scene().get<scene::UiText>(filter).text.clear();
+        if (world.wasClicked(clearFilter))
+            world.startEditing(scene(), filter, false);
+    }
+    if (panel.focused() && state.input.chord({.ctrl = true}, 'f'))
+        world.startEditing(scene(), filter, true);
+    if (submittedSearch && !nodes.empty())
+    {
+        choose(state, nodes.front(), false);
+        if (!rows.empty())
+            world.setFocus(scene(), rows.front().row);
+    }
 
     // The preview stands over the editor, so that a narrow dock never cuts it off. It does not
     // catch the mouse, and the usual tooltip delay and drag suppression still apply.
@@ -1247,7 +1394,8 @@ void FileSystemUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& edi
     }
 
     // The keys walk the tree while the panel has them, as they do in Godot's.
-    if (panel.focused() && !world.isEditing() && !world.isPopupOpen(scene(), menu) && !nodes.empty())
+    if (panel.focused() && !world.isEditing() && !submittedSearch && !state.input.ctrl() &&
+        !state.input.alt() && !world.isPopupOpen(scene(), menu) && !nodes.empty())
     {
         const auto current = std::ranges::find(nodes, selected, &Node::key);
         std::size_t index = current != nodes.end() ? static_cast<std::size_t>(current - nodes.begin()) : 0;
@@ -1260,13 +1408,33 @@ void FileSystemUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& edi
         {
             moved = current != nodes.end() && index > 0 ? index - 1 : 0;
         }
+        else if (state.input.pressed(platform::Key::Home, false))
+        {
+            moved = 0;
+        }
+        else if (state.input.pressed(platform::Key::End, false))
+        {
+            moved = nodes.size() - 1;
+        }
+        else if (state.input.pressed(platform::Key::PageUp, true))
+        {
+            const auto page =
+                static_cast<std::size_t>(std::max(1.0f, std::floor(viewHeight / rowHeight) - 1.0f));
+            moved = index > page ? index - page : 0;
+        }
+        else if (state.input.pressed(platform::Key::PageDown, true))
+        {
+            const auto page =
+                static_cast<std::size_t>(std::max(1.0f, std::floor(viewHeight / rowHeight) - 1.0f));
+            moved = std::min(index + page, nodes.size() - 1);
+        }
         else if (current != nodes.end() && state.input.pressed(platform::Key::Right, true) && current->expandable)
         {
             if (!current->expanded)
             {
                 expanded[current->key] = true;
             }
-            else if (index + 1 < nodes.size())
+            else if (index + 1 < nodes.size() && nodes[index + 1].depth > current->depth)
             {
                 moved = index + 1;
             }
@@ -1304,7 +1472,8 @@ void FileSystemUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& edi
         }
         if (moved)
         {
-            choose(state, nodes[*moved]);
+            // Walking past scripts should not open a document for every row.
+            choose(state, nodes[*moved], false);
             // The chosen line stays in view.
             scene::UiScroll& scrolling = scene().get<scene::UiScroll>(scroll);
             const float top = static_cast<float>(*moved) * rowHeight;
@@ -1378,6 +1547,25 @@ bool containsIgnoringCase(std::string_view text, std::string_view part)
                             }).empty();
 }
 
+bool matchesFileSearch(std::string_view path, std::string_view query) noexcept
+{
+    while (!query.empty())
+    {
+        const auto first = query.find_first_not_of(" \t\r\n");
+        if (first == std::string_view::npos)
+            return true;
+        query.remove_prefix(first);
+        const auto end = query.find_first_of(" \t\r\n");
+        const auto word = query.substr(0, end);
+        if (!containsIgnoringCase(path, word))
+            return false;
+        if (end == std::string_view::npos)
+            return true;
+        query.remove_prefix(end);
+    }
+    return true;
+}
+
 void drawAssetsPanel(ToolsState& state, scene::Scene& scene)
 {
     DEVEX_PROFILE_SCOPE("FileSystem");
@@ -1436,7 +1624,7 @@ void fileSystemMoved(ToolsState& state, const std::string& from, const std::stri
             expanded.insert_or_assign(std::move(moved), open);
         }
         ui.expanded = std::move(expanded);
-        ui.codeListings.clear();
+        ui.invalidateCode();
         ui.menuNode.reset();
         ui.renaming.clear();
         std::error_code error;
@@ -1463,7 +1651,8 @@ void refreshFileSystem(ToolsState& state)
 {
     if (state.fileSystemUi)
     {
-        state.fileSystemUi->codeListings.clear();
+        state.fileSystemUi->invalidateCode();
+        state.fileSystemUi->gatheredDatabase = nullptr;
         state.fileSystemUi->menuNode.reset();
         state.fileSystemUi->selected.clear();
     }

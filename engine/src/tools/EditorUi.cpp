@@ -523,6 +523,8 @@ void EditorUiKit::refreshTheme(const ThemeColors& colors)
     add("bar_button", clickable(image(written(math::Vec4(mono.x, mono.y, mono.z, 0.0f)), 4.0f)));
     add("bar_hover", clickable(image(written(math::Vec4(mono.x, mono.y, mono.z, 0.10f)), 4.0f)));
     add("bar_selected", clickable(image(written(math::Vec4(colors.accent.x, colors.accent.y, colors.accent.z, 0.28f)), 4.0f)));
+    add("close", clickable(image(written(math::Vec4(mono.x, mono.y, mono.z, 0.0f)), 5.0f)));
+    add("close_hover", clickable(image(written(math::Vec4(mono.x, mono.y, mono.z, 0.14f)), 5.0f)));
     add("tab", clickable(image(written(math::Vec4(mono.x, mono.y, mono.z, 0.0f)), 5.0f)));
     add("tab_hover", clickable(image(written(math::Vec4(mono.x, mono.y, mono.z, 0.06f)), 5.0f)));
     add("tab_selected", clickable(image(written(colors.panel), 5.0f)));
@@ -998,6 +1000,37 @@ void PanelBuilder::enable(const PanelButton& target, bool enabled)
             scene().get<scene::UiRect>(part).opacity = opacity;
         }
     }
+}
+
+float PanelBuilder::closeButtonSize() const noexcept { return std::round(font * 1.75f); }
+
+scene::Entity PanelBuilder::closeButton(EditorUiKit& kit, scene::Entity parent, scene::UiRect rect,
+                                        std::string hint)
+{
+    const scene::Entity made = add(parent, "Close", rect, "close");
+    scene().add<scene::UiImage>(made);
+    scene().add<scene::UiButton>(made);
+    // The Lucide X occupies half its SVG canvas. Padding that canvas again made the old cross
+    // only five or six pixels wide; keep the canvas almost as large as the button instead.
+    const float half = std::round(font * 1.6f) * 0.5f;
+    icon(kit, made,
+         scene::UiRect{.anchorMin = {0.5f, 0.5f},
+                       .anchorMax = {0.5f, 0.5f},
+                       .offsetMin = {-half, -half},
+                       .offsetMax = {half, half}},
+         Icon::Close, "icon_dim");
+    tooltip(made, std::move(hint));
+    return made;
+}
+
+void PanelBuilder::styleCloseButton(scene::Entity button)
+{
+    const bool highlighted = panel.world().hovered() == button ||
+                             (panel.world().focused() == button && !panel.world().isEditing());
+    scene().get<scene::UiRect>(button).style = highlighted ? "close_hover" : "close";
+    const scene::Entity glyph = scene().firstChild(button);
+    if (glyph.isValid())
+        scene().get<scene::UiRect>(glyph).style = highlighted ? "icon" : "icon_dim";
 }
 
 void PanelBuilder::tooltip(scene::Entity entity, std::string value)

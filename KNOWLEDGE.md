@@ -2204,6 +2204,13 @@ namespace devex::ui {
   profondeur. `OverlayPushConstants` fait 80 octets ; API des jeux 34. Régressions par captures de
   fenêtre pour la stabilité de la grille, largeur et occlusion. Le test comparatif d'occlusion
   fixe l'exposition : son adaptation dépend du temps réel et rendait le test variable sur lavapipe.
+- Navigation de l'éditeur : `tools/FileSearch.hpp` et le FileSystem combinent les mots d'une
+  recherche dans les chemins, sous-assets et scripts. Ctrl+F, Entrée vers les résultats puis
+  activation, Home/End et Page Up/Page Down ; parcourir les scripts ne les ouvre plus.
+  `AssetDatabase::revision()` permet de garder le tri et l'arbre entre deux changements : scans,
+  imports terminés ou relancés, paramètres de projet. Le code externe reste relu une fois par
+  seconde et les lignes restent virtualisées. `PanelBuilder::closeButton` et `styleCloseButton`
+  partagent taille, dessin, survol et infobulles des fermetures des onglets et fenêtres.
 - Cohérence temporelle : `common::worldFromSceneDepth` reconstruit les positions depuis la
   profondeur avec le jitter courant, utilisé aussi pour projeter les points de l'AO. Profondeur de
   champ et particules douces partagent cette reconstruction ; tables d'atmosphère et outils restent

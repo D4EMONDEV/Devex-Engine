@@ -581,6 +581,7 @@ public:
             return std::unexpected(loaded.error());
         }
         m_project = std::move(*loaded);
+        ++m_revision;
         return {};
     }
 
@@ -595,11 +596,13 @@ public:
             return saved;
         }
         m_project = std::move(updated);
+        ++m_revision;
         return {};
     }
 
     void refresh()
     {
+        ++m_revision;
         for (auto& [id, source] : m_sources)
         {
             source.seen = false;
@@ -862,6 +865,8 @@ public:
         });
         return result;
     }
+
+    [[nodiscard]] std::uint64_t revision() const noexcept { return m_revision; }
 
     [[nodiscard]] std::vector<SourceFile> sources() const
     {
@@ -1466,6 +1471,7 @@ private:
 
     void queueImport(Source& source)
     {
+        ++m_revision;
         source.importing = true;
         source.forced = false;
         source.changedWhileImporting = false;
@@ -1514,6 +1520,7 @@ private:
 
     void applyOutcome(SharedState::Outcome outcome)
     {
+        ++m_revision;
         const auto found = m_sources.find(outcome.id);
         if (found == m_sources.end())
         {
@@ -1586,6 +1593,7 @@ private:
 
     void removeSource(AssetId id)
     {
+        ++m_revision;
         const auto found = m_sources.find(id);
         Source& source = found->second;
         DEVEX_LOG_INFO("Removed {}", source.path);
@@ -1638,6 +1646,7 @@ private:
     std::shared_ptr<SharedState> m_shared;
     std::unordered_map<AssetId, Source> m_sources;
     std::vector<std::string> m_folders;
+    std::uint64_t m_revision = 0;
     // Records read at startup whose source has not been scanned yet.
     std::unordered_map<AssetId, ImportRecord> m_records;
     std::unordered_map<AssetId, AssetInfo> m_assets;
@@ -1747,6 +1756,8 @@ std::vector<SourceFile> AssetDatabase::sources() const
 {
     return m_impl->sources();
 }
+
+std::uint64_t AssetDatabase::revision() const noexcept { return m_impl->revision(); }
 
 const std::vector<std::string>& AssetDatabase::folders() const noexcept
 {

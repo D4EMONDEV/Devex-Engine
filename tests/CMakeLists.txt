@@ -242,6 +242,7 @@ devex_add_tests(tools
         tools/CreationCatalogTests.cpp
         tools/EditorDockTests.cpp
         tools/EditorMathTests.cpp
+        tools/FileSearchTests.cpp
         tools/IconsTests.cpp
         tools/LogBufferTests.cpp
         tools/ProjectListTests.cpp

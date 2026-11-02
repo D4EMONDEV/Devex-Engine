@@ -100,6 +100,16 @@ Les fichiers `.dvxmeta` conservent l'identité et les réglages d'import des res
 
 ### Manipulations de base
 
+Dans **FileSystem**, **Ctrl+F** place le curseur dans la recherche. Plusieurs mots peuvent être
+combinés, sans tenir compte des majuscules : `player cs` retrouve un script, `sheet 82` un sprite
+découpé. Les résultats incluent le code des sous-dossiers repliés. Le nombre de résultats reste
+affiché et les noms précèdent leur dossier pour rester lisibles. La croix du champ ou **Échap**
+efface la recherche et rétablit le défilement de l'arbre.
+**Entrée** quitte le champ pour parcourir les résultats. Les flèches déplacent la sélection,
+**Home / End** vont au début ou à la fin, **Page Up / Page Down** avancent d'un écran, puis
+**Entrée** ouvre le fichier choisi. Parcourir les scripts au clavier ne crée plus un onglet
+pour chaque ligne traversée.
+
 - Le bouton **+** du panneau Scene ouvre le catalogue d'entités. **Empty** crée une entité avec un Transform.
 - Sélectionner une entité, puis utiliser **Add Component** dans l'Inspector pour lui ajouter une fonction.
 - Pour créer un enfant, créer l'entité puis la faire glisser sur son parent dans la hiérarchie. **Régler son Transform local après le rattachement**.
@@ -805,6 +815,11 @@ Dans l'inspecteur, chaque composant reste une carte. À l'intérieur, les sous-s
 **Layers**, **Automatic layers** et **Grass** ont un titre gras et un séparateur. Cliquer sur
 leur ligne pour les replier ou déplier. Cela garde une hiérarchie visible sans ajouter de fonds
 derrière chaque groupe de propriétés.
+
+Les scènes, les panneaux fermables, les fichiers ouverts dans Devex Script et les fenêtres de
+réglages utilisent une croix centrée avec une zone de clic plus large. Son fond apparaît au
+survol et son infobulle rappelle l'action. Fermer une scène ou un script modifié conserve le
+dialogue de sauvegarde habituel.
 
 ![Sous-sections Layers, Automatic layers et Grass séparées dans l'inspecteur du terrain](images/editor-inspector-sections.png)
 

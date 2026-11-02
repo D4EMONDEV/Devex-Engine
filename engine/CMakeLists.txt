@@ -857,6 +857,7 @@ target_sources(devex_tools
         src/tools/EditorSession.cpp
         src/tools/EditorUi.cpp
         src/tools/EditorUi.hpp
+        src/tools/FileSearch.hpp
         src/tools/EditorView.cpp
         src/tools/EditorView.hpp
         src/tools/EntityEditing.cpp

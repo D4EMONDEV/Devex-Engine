@@ -84,6 +84,40 @@ private:
 constexpr std::string_view redMaterial = "[material format=1]\nbase_color = vec4(1, 0, 0, 1)\n";
 constexpr std::string_view blueMaterial = "[material format=1]\nbase_color = vec4(0, 0, 1, 1)\n";
 
+TEST_CASE("Database revisions invalidate UI snapshots for imports folders and project settings",
+          "[asset][database][filesystem]")
+{
+    TemporaryProject project;
+    project.write("surface.dvxmat", redMaterial);
+    devex::core::JobSystem jobs(1);
+    auto database = AssetDatabase::open(project.project, jobs, {.watchFiles = false});
+    REQUIRE(database);
+    const auto importing = (*database)->revision();
+    (void)settle(**database);
+    CHECK((*database)->revision() > importing);
+    const auto steady = (*database)->revision();
+    CHECK((*database)->sources().front().status == ImportStatus::Ready);
+    CHECK((*database)->update().empty());
+    CHECK((*database)->revision() == steady);
+
+    std::filesystem::create_directories(project.assets() / "Empty");
+    (*database)->refresh();
+    CHECK((*database)->revision() > steady);
+    CHECK(std::ranges::contains((*database)->folders(), "res://assets/Empty"));
+    const auto folders = (*database)->revision();
+    REQUIRE((*database)->reimport((*database)->sources().front().id));
+    CHECK((*database)->revision() > folders);
+    const auto queued = (*database)->revision();
+    (void)settle(**database);
+    CHECK((*database)->revision() > queued);
+
+    auto settings = (*database)->project();
+    settings.name = "Renamed";
+    const auto beforeSettings = (*database)->revision();
+    REQUIRE((*database)->updateProject(settings));
+    CHECK((*database)->revision() > beforeSettings);
+}
+
 } // namespace
 
 TEST_CASE("New project files stay in their content root and preserve occupied names", "[asset][filesystem]")
