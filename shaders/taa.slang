@@ -13,6 +13,9 @@ struct TaaData
     float historyValid;
     float texelWidth;
     float texelHeight;
+    SceneData* scene;
+    float2 padding;
+    float4x4 previousSkyViewProjection;
 };
 
 [[vk::push_constant]]
@@ -49,6 +52,10 @@ float4 fragmentMain(VertexOutput input) : SV_Target
 {
     const float2 texel = float2(taa.texelWidth, taa.texelHeight);
     const float3 current = weigh(sceneColor.Sample(clampSampler, input.uv).rgb);
+    if (taa.historyValid < 0.5)
+    {
+        return float4(unweigh(current), 1.0);
+    }
 
     // The colors around the pixel say what it could reasonably be this frame.
     float3 lowest = current;
@@ -73,9 +80,22 @@ float4 fragmentMain(VertexOutput input) : SV_Target
         }
     }
 
-    const float2 historyUv = input.uv - closestMotion;
+    float2 historyUv = input.uv - closestMotion;
+    if (closestDepth <= 0.0)
+    {
+        // The sky has no surface velocity or depth. Follow its world direction through the two
+        // sky cameras, including the perspective backdrop used by an orthographic scene camera.
+        const float4 world = mul(taa.scene->skyInverseViewProjection,
+                                 float4(input.uv * 2.0 - 1.0, 1.0, 1.0));
+        const float4 previous = mul(taa.previousSkyViewProjection, float4(world.xyz / world.w, 0.0));
+        if (previous.w <= 1e-6)
+        {
+            return float4(unweigh(current), 1.0);
+        }
+        historyUv = previous.xy / previous.w * 0.5 + 0.5;
+    }
     const bool outside = any(historyUv < 0.0) || any(historyUv > 1.0);
-    if (taa.historyValid < 0.5 || outside)
+    if (outside)
     {
         return float4(unweigh(current), 1.0);
     }

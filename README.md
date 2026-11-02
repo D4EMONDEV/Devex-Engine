@@ -70,7 +70,9 @@ captures de l'éditeur, scènes de base, entrées, scripts C#, animations, colli
   réflexion cuites dans
   l'éditeur (correction de parallaxe, fondu entre sondes), volumes d'irradiance cuits en
   harmoniques sphériques avec plusieurs rebonds de lumière, surfaces transparentes triées,
-  anticrénelage temporel, occlusion ambiante en espace écran, bloom, exposition automatique,
+  anticrénelage temporel (historique du ciel reprojeté, vues reprises et changements brusques
+  d'exposition réinitialisés), occlusion ambiante en espace écran alignée sur la profondeur, bloom,
+  exposition automatique,
   tonemapping AgX, table de couleurs, vignette et grain, profondeur de champ physique avec bokeh,
   flou de mouvement des objets et de la caméra, étalonnage (balance des blancs, filtre, contraste,
   saturation) et volumes de post-traitement qui se fondent selon la place de la caméra, terrains

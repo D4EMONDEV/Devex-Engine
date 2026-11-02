@@ -166,9 +166,8 @@ public float4 shadeParticle(float4 color, float3 worldPosition, float viewDepth,
         if (depth > 0.0)
         {
             const float2 uv = fragmentPosition.xy / float2(scene->viewportWidth, scene->viewportHeight);
-            const float4 clip = float4(uv * 2.0 - 1.0, depth, 1.0);
-            const float4 surface = mul(scene->inverseViewProjection, clip);
-            const float surfaceDepth = -mul(scene->view, float4(surface.xyz / surface.w, 1.0)).z;
+            const float3 surface = worldFromSceneDepth(scene, uv, depth);
+            const float surfaceDepth = -mul(scene->view, float4(surface, 1.0)).z;
             color.a *= saturate((surfaceDepth - viewDepth) / data.softness);
         }
     }

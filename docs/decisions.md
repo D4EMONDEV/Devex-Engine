@@ -370,11 +370,11 @@ docs/          décisions et documentation
 - **Overlay des outils** : lignes et triangles colorés (`RenderWorld::sceneLines`,
   `overlayLines`, `overlayTriangles`) dessinés en mélange alpha après le tonemapping. Les
   lignes de scène sont cachées par les surfaces plus proches : elles testent la profondeur de la
-  scène, et leur profondeur est légèrement avancée pour rester
-  visibles sur les surfaces où elles reposent. Les autres passent devant tout. Les instances
+  scène. La grille coplanaire adapte sa profondeur au jitter du rendu et reçoit un léger biais ;
+  les autres traits gardent leur profondeur réelle. Les overlays passent devant tout. Les instances
   `outlined` sont dessinées dans un masque `R8`, puis un plein écran trace le contour orange des
-  pixels hors masque à moins de deux pixels de lui. Lignes d'un pixel de large : pas encore de
-  lignes épaisses ni anticrénelées.
+  pixels hors masque à moins de deux pixels de lui. Chaque trait est élargi en triangles avec une
+  couverture lissée : largeur réglable en pixels, 1,5 par défaut, sans dépendre de `wideLines`.
 - **Profondeur** : reverse-Z à far plane infini (`math::perspectiveReverseZ`), `D32_SFLOAT`
   effacée à 0 et test `GREATER_OR_EQUAL`. La projection de `Math` garde Y vers le haut ; le
   renderer applique la correction du clip space Vulkan (Y vers le bas).
@@ -1323,8 +1323,9 @@ les assets s'écrivent au fil de leur lecture.
   ou 0,1. Glisser modifie `Transform` en direct ; le relâchement enregistre une seule étape
   annulable, pour toutes les entités déplacées. Parent quelconque : le déplacement passe par
   l'inverse de sa matrice monde.
-- **Icônes et repères** : grille au sol autour de la caméra (tous les mètres, tous les dix
-  mètres de haut) qui s'estompe au loin, axes X et Z colorés ; icônes des lumières et des
+- **Icônes et repères** : grille au sol autour de la caméra, dont les subdivisions s'adaptent
+  au zoom depuis l'unité choisie dans Editor Settings ; elle s'estompe au loin, avec couleurs et
+  opacité réglables et axes colorés. Icônes des lumières et des
   caméras, portée des lumières ponctuelles, cône des spots et pyramide de la caméra quand elles
   sont sélectionnées.
 - **Traits des outils** (jalon 91) : chaque segment est élargi en deux triangles à la largeur
@@ -2980,12 +2981,25 @@ commandes dans [performances.md](performances.md) ; API des jeux 33.
   précédentes ont résolu, retrouvé en suivant le mouvement de chaque pixel. L'historique est borné
   par les couleurs autour du pixel, ce qui empêche un objet qui bouge de traîner son passé ; les
   couleurs sont pondérées par leur luminance, ce qui empêche une étincelle d'entraîner tout le
-  voisinage. Deux images d'historique alternent d'une frame à l'autre.
+  voisinage. Deux images d'historique alternent d'une frame à l'autre. Le ciel n'écrit pas de
+  vitesse : sa direction est reprojetée par les matrices des deux caméras de ciel, également pour
+  le fond perspectif d'une caméra orthographique. Chaque vue garde sa propre matrice précédente.
+  Une vue secondaire absente à la frame précédente repart sans historique, car ses anciens pixels
+  ne correspondent plus aux mouvements ni à la parité des images courantes.
+  Un changement d'exposition de plus d'un quart de stop entre deux frames repart aussi sans
+  historique ; l'adaptation progressive reste lissée. On ne multiplie pas globalement les anciennes
+  couleurs par le rapport d'exposition : sprites et émission sont relatifs à l'exposition, tandis
+  que la lumière physique ne l'est pas.
 - **Occlusion ambiante** : huit points jetés dans l'hémisphère au-dessus de chaque pixel, comparés
   à la profondeur, donnent ce que la surface voit du ciel. Les points changent à chaque frame et le
   TAA fait la moyenne, ce qui suffit sans flou séparé. Le résultat ne multiplie que la lumière
   ambiante, jamais la lumière directe : c'est pour cela qu'il est calculé après la prépasse et
-  avant l'ombrage.
+  avant l'ombrage. La reconstruction des positions et la projection des points suivent le jitter
+  du buffer de profondeur. `worldFromSceneDepth` ajoute ce décalage avant l'inverse stable ; la
+  profondeur de champ et les particules douces utilisent le même calcul. Les tables d'atmosphère,
+  le picking, les contours et les outils gardent leur projection stable.
+  `GpuSceneData` fait 960 octets, `TaaPushConstants` 96 ; les importeurs `shader` et `shader_graph`
+  passent en version 4 pour recompiler les caches qui importent le module partagé.
 - **Bloom** : l'image résolue est seuillée puis halvée cinq fois, chaque niveau filtré en treize
   points, puis rajoutée du plus petit au plus grand avec un filtre en tente. La chaîne entière est
   nommée par un seul descripteur, donc ses images restent dans la disposition générale : c'est la
@@ -5229,12 +5243,11 @@ Ensuite, sans ordre figé : à choisir dans les pistes ci-dessous.
   recherche dans une liste déroulante, aperçu d'un glisser fait d'un élément plutôt que d'une
   étiquette, défilement automatique d'une liste quand on glisse près de son bord, texte en lecture
   seule sélectionnable tout fait (l'Output fait le sien).
-- **Portage de l'éditeur sur l'UI du moteur, la suite** : l'inspecteur (champs de propriétés,
-  sélecteur de couleur, édition de plusieurs entités, inspecteurs d'assets), puis les autres
-  panneaux, le
-  dockspace et les menus de la fenêtre en dernier (voir *Une seule interface, deux usages*) ; des
-  popups qui sortent de la fenêtre de l'éditeur (fenêtres du système, comme chez Godot) ; sélection de plusieurs
-  fichiers dans FileSystem, glissées ensemble, vignettes ; dans la fenêtre de création, les descriptions et les icônes des composants
+- **Confort de l'éditeur, la suite** : le portage sur Devex UI est terminé, y compris l'inspecteur,
+  le dockspace et les menus ; FileSystem montre déjà les miniatures et les aperçus au survol.
+  Restent des popups qui sortent de la fenêtre de l'éditeur (fenêtres du système, comme chez Godot),
+  la sélection de plusieurs fichiers dans FileSystem et leur glisser ensemble ; dans la fenêtre
+  de création, les descriptions et les icônes des composants
   du jeu (tirées des commentaires de leur code), et des préréglages faits de préfabs du projet ; un
   panneau redessiné seulement quand il change ; les polices de l'éditeur
   cuites une fois et gardées en cache plutôt qu'à chaque lancement.

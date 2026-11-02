@@ -300,8 +300,10 @@ private:
         std::array<ImageState, 2> historyStates{ImageState::Undefined, ImageState::Undefined};
         math::Extent2D historyExtent;
         bool historyValid = false;
+        float historyExposure = 1.0f;
         std::vector<LodChoice> meshLods;
         math::Mat4 previousViewProjection{1.0f};
+        math::Mat4 previousSkyViewProjection{1.0f};
         float ev100 = 14.0f;
         float targetEv100 = 14.0f;
         bool exposureInitialized = false;
@@ -742,6 +744,8 @@ private:
     // The view and projection of the previous frame, without its jitter.
     math::Mat4 m_previousViewProjection{1.0f};
     mutable math::Mat4 m_unjitteredViewProjection{1.0f};
+    math::Mat4 m_previousSkyViewProjection{1.0f};
+    mutable math::Mat4 m_skyViewProjection{1.0f};
     // How far the projection of this frame is moved, in clip space.
     math::Vec2 m_jitter{0.0f};
     std::optional<Pipeline> m_shadowPipeline;
@@ -922,6 +926,7 @@ private:
     math::Extent2D m_historyExtent;
     // False until a frame has resolved into the history, and whenever it was just recreated.
     bool m_historyValid = false;
+    float m_historyExposure = 1.0f;
     math::Extent2D m_swapchainWindowPixelSize;
     // The size of the scene image of the frame being recorded.
     math::Extent2D m_sceneExtent;

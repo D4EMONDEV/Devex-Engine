@@ -228,6 +228,7 @@ devex_add_tests(render
         render/SphericalHarmonicsTests.cpp
         render/SelectionTests.cpp
         render/ShaderRenderTests.cpp
+        render/TemporalAlignmentTests.cpp
     LIBRARIES
         Devex::Engine
 )

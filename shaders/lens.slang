@@ -65,8 +65,7 @@ VertexOutput vertexMain(uint vertexIndex : SV_VertexID)
 // Where a pixel of the scene image stands in the world.
 float3 worldPosition(float2 uv, float depth)
 {
-    const float4 world = mul(lens.scene->inverseViewProjection, float4(uv * 2.0 - 1.0, depth, 1.0));
-    return world.xyz / world.w;
+    return worldFromSceneDepth(lens.scene, uv, depth);
 }
 
 // How far in front of the camera a pixel stands, in meters along its axis; very far for the sky.

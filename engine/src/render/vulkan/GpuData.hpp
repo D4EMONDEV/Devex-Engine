@@ -173,6 +173,9 @@ struct GpuSceneData
     VkDeviceAddress atmosphere = 0;
     std::uint32_t atmosphereFlags = 0;
     std::uint32_t padding = 0;
+    // Add to raster NDC before unprojecting depth with inverseViewProjection.
+    math::Vec2 projectionJitter{0.0f};
+    math::Vec2 depthPadding{0.0f};
 };
 
 inline constexpr std::uint32_t atmosphereAir = 1;
@@ -638,6 +641,9 @@ struct TaaPushConstants
     float historyValid = 0.0f;
     float texelWidth = 0.0f;
     float texelHeight = 0.0f;
+    VkDeviceAddress scene = 0;
+    math::Vec2 padding{0.0f};
+    math::Mat4 previousSkyViewProjection{1.0f};
 };
 
 struct BloomPushConstants
@@ -744,7 +750,10 @@ static_assert(offsetof(GpuSceneData, instanceParameters) == 896);
 static_assert(offsetof(GpuSceneData, reflectionProbes) == 904);
 static_assert(offsetof(GpuSceneData, irradianceVolumes) == 920);
 static_assert(offsetof(GpuSceneData, atmosphere) == 928);
-static_assert(sizeof(GpuSceneData) == 944);
+static_assert(offsetof(GpuSceneData, projectionJitter) == 944);
+static_assert(sizeof(GpuSceneData) == 960);
+static_assert(offsetof(TaaPushConstants, previousSkyViewProjection) == 32);
+static_assert(sizeof(TaaPushConstants) == 96);
 static_assert(offsetof(GpuAtmosphere, sunIlluminance) == 64);
 static_assert(offsetof(GpuAtmosphere, fogColor) == 112);
 static_assert(sizeof(GpuAtmosphere) == 160);

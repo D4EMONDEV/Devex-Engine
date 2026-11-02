@@ -215,7 +215,19 @@ public struct SceneData
     public Atmosphere* atmosphere;
     public uint atmosphereFlags;
     public uint atmospherePadding;
+    // Add to raster NDC before unprojecting depth with the stable inverse matrix.
+    public float2 projectionJitter;
+    public float2 depthPadding;
 };
+
+// The depth buffer follows the jittered raster projection; tools and atmospheric tables use the
+// stable inverse. Undo the raster translation before using that inverse for a depth sample.
+public float3 worldFromSceneDepth(SceneData* scene, float2 uv, float depth)
+{
+    const float4 clip = float4(uv * 2.0 - 1.0 + scene->projectionJitter, depth, 1.0);
+    const float4 world = mul(scene->inverseViewProjection, clip);
+    return world.xyz / world.w;
+}
 
 // A normal folded into two numbers on an octahedron, which keeps its precision where it matters.
 public float2 encodeNormal(float3 normal)

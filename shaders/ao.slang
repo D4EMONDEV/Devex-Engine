@@ -40,9 +40,7 @@ VertexOutput vertexMain(uint vertexIndex : SV_VertexID)
 // Where the pixel of a texture coordinate and a depth stands in the world.
 float3 worldPosition(float2 uv, float depth)
 {
-    const float4 clip = float4(uv * 2.0 - 1.0, depth, 1.0);
-    const float4 world = mul(ao.scene->inverseViewProjection, clip);
-    return world.xyz / world.w;
+    return worldFromSceneDepth(ao.scene, uv, depth);
 }
 
 // A number between 0 and 1 that changes with the pixel and the frame, without any pattern.
@@ -88,7 +86,7 @@ float4 fragmentMain(VertexOutput input) : SV_Target
         const float reach = ao.radius * (0.3 + 0.7 * fraction);
         const float3 point = position + direction * reach;
 
-        const float4 clip = mul(ao.scene->unjitteredViewProjection, float4(point, 1.0));
+        const float4 clip = mul(ao.scene->viewProjection, float4(point, 1.0));
         if (clip.w <= 0.0)
         {
             continue;

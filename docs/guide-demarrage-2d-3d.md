@@ -1,6 +1,7 @@
 # Créer ses premiers jeux avec Devex Engine
 
-Guide pratique en français — version du moteur examinée le **5 octobre 2026**.
+Guide pratique en français — base du **5 octobre 2026**, réglages de l'éditeur et stabilité du
+rendu actualisés le **2 novembre 2026**.
 
 Ce document accompagne la création de deux petits prototypes : un personnage de plateforme en **2D**, puis un personnage en **3D** qui marche et saute sur un sol. Les deux utilisent C#, les mêmes actions d'entrée et une caméra de suivi. On part d'un projet neuf, sans modifier Sandbox.
 
@@ -806,3 +807,11 @@ leur ligne pour les replier ou déplier. Cela garde une hiérarchie visible sans
 derrière chaque groupe de propriétés.
 
 ![Sous-sections Layers, Automatic layers et Grass séparées dans l'inspecteur du terrain](images/editor-inspector-sections.png)
+
+La grille, les contours de sélection et les poignées restent stables quand l'anticrénelage
+temporel (**Temporal**) déplace légèrement les échantillons de la scène. Il n'est pas nécessaire
+de couper cet anticrénelage pour utiliser les outils. L'occlusion ambiante suit la profondeur du
+même échantillon et le ciel suit la rotation de la caméra. Une vue de jeu qui réapparaît repart
+avec une image neuve ; un changement brusque d'exposition fait de même pour éviter de conserver
+la luminosité précédente. Ces corrections concernent le rendu du moteur, indépendamment des
+réglages de largeur et de couleur des gizmos.

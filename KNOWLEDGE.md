@@ -2,6 +2,8 @@
 
 > **Documentation exhaustive de toutes les APIs C++ et C# du moteur Devex Engine**
 > *Généré automatiquement à partir du code source - Version: 2026-10-04*
+> Éditeur et cohérence temporelle du rendu mis à jour le **2026-11-02** ; voir aussi le
+> [guide illustré](docs/guide-demarrage-2d-3d.md#12-personnaliser-le-viewport-et-lire-linspecteur).
 
 ---
 
@@ -2202,6 +2204,16 @@ namespace devex::ui {
   profondeur. `OverlayPushConstants` fait 80 octets ; API des jeux 34. Régressions par captures de
   fenêtre pour la stabilité de la grille, largeur et occlusion. Le test comparatif d'occlusion
   fixe l'exposition : son adaptation dépend du temps réel et rendait le test variable sur lavapipe.
+- Cohérence temporelle : `common::worldFromSceneDepth` reconstruit les positions depuis la
+  profondeur avec le jitter courant, utilisé aussi pour projeter les points de l'AO. Profondeur de
+  champ et particules douces partagent cette reconstruction ; tables d'atmosphère et outils restent
+  stables. Chaque vue garde la précédente projection de son ciel ; le TAA suit sa direction, sans
+  translation, y compris avec une caméra orthographique. Après une absence de la vue ou une variation
+  d'exposition de plus d'un quart de stop en une frame, l'historique est rejeté. Une remise à
+  l'échelle globale changerait à tort les sprites et l'émission, qui sont relatifs à l'exposition.
+  `GpuSceneData` : 960 octets ; `TaaPushConstants` : 96 ; importeurs `shader` et `shader_graph` :
+  version 4 pour réimporter les caches concernés. Tests GPU par comparaison d'images dans
+  `TemporalAlignmentTests.cpp`.
 - Terrains : `asset::TerrainMaps` (`devex/asset/TerrainMaps.hpp` : `makeFlatTerrain`,
   `terrainHeight`, `terrainNormal`, `raycastTerrain`, `applyTerrainBrush`, `copyTerrainRegion`),
   `encodeTerrain`/`decodeTerrain`, asset `terrain` (`.dvxterrain`) ; composant `scene::Terrain`

@@ -852,8 +852,8 @@ std::span<const Importer> importers()
         Importer{
             .name = "shader",
             // Increased whenever the generated code or the Slang modules it imports change. 2: the
-            // reflection probes. 3: the atmosphere and the fog.
-            .version = 3,
+            // reflection probes. 3: the atmosphere and the fog. 4: raster-depth reconstruction.
+            .version = 4,
             .mainType = AssetType::Shader,
             .extensions = {shaderExtension},
             .run = &importShaderFile,
@@ -861,8 +861,8 @@ std::span<const Importer> importers()
         Importer{
             .name = "shader_graph",
             // Increased whenever the code of the nodes or the Slang modules change. 2: the
-            // reflection probes. 3: the atmosphere and the fog.
-            .version = 3,
+            // reflection probes. 3: the atmosphere and the fog. 4: raster-depth reconstruction.
+            .version = 4,
             .mainType = AssetType::Shader,
             .extensions = {shaderGraphExtension},
             .run = &importShaderGraphFile,

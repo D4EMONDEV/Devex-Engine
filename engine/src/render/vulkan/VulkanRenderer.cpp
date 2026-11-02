@@ -1042,6 +1042,7 @@ core::Result<void> VulkanRenderer::endFrame()
     m_lastCulledInstances = m_culledInstances;
     m_lastLightCount = static_cast<std::uint32_t>(m_world.lights.size());
     m_historyValid = antialiased;
+    m_historyExposure = frame.exposure;
     rememberFrame();
 
     const VkSemaphore presentSemaphore = m_presentSemaphores[imageIndex];
@@ -1196,8 +1197,10 @@ void VulkanRenderer::swapViewState(ViewState& state) noexcept
     std::swap(m_historyStates, state.historyStates);
     std::swap(m_historyExtent, state.historyExtent);
     std::swap(m_historyValid, state.historyValid);
+    std::swap(m_historyExposure, state.historyExposure);
     std::swap(m_previousLods, state.meshLods);
     std::swap(m_previousViewProjection, state.previousViewProjection);
+    std::swap(m_previousSkyViewProjection, state.previousSkyViewProjection);
     std::swap(m_ev100, state.ev100);
     std::swap(m_targetEv100, state.targetEv100);
     std::swap(m_exposureInitialized, state.exposureInitialized);
@@ -1338,6 +1341,12 @@ core::Result<void> VulkanRenderer::renderView(ExtraView& view, const RenderView&
     swapViewState(view.state);
     ViewScope scope{*this, view, std::exchange(m_world.camera, blendPostVolumes(wanted.camera, m_world.postVolumes)),
                     std::exchange(m_world.viewport, extent), std::nullopt};
+    // Object motion and the history ping-pong refer to the immediately preceding global frame.
+    // A hidden view cannot reuse an older image with those motion vectors or that parity.
+    if (view.drawnFrame == ~std::uint64_t{0} || view.drawnFrame + 1 != m_frameIndex)
+    {
+        m_historyValid = false;
+    }
     // The copies to the GPU of this frame are recorded by the main frame, after the views: a view leaves
     // out what waits for one, as the main frame leaves out what still waits after its own.
     if (!m_pendingUploads.empty())
@@ -1400,7 +1409,9 @@ core::Result<void> VulkanRenderer::renderView(ExtraView& view, const RenderView&
     }
     m_viewDrawCalls += *recorded;
     m_historyValid = m_world.camera.antialiasing == Antialiasing::Temporal;
+    m_historyExposure = frame.exposure;
     m_previousViewProjection = m_unjitteredViewProjection;
+    m_previousSkyViewProjection = m_skyViewProjection;
 
     const VkCommandBufferSubmitInfo commandBufferInfo{
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO,
@@ -3672,6 +3683,7 @@ void VulkanRenderer::writeSceneData(FrameContext& frame,
     scene.unjitteredViewProjection = projection * camera.view;
     scene.previousViewProjection = m_previousViewProjection;
     scene.inverseViewProjection = math::inverse(scene.unjitteredViewProjection);
+    scene.projectionJitter = m_jitter;
     // What the camera keeps of the world, and what each cascade keeps of its casters.
     m_cameraFrustum = frustumOf(scene.unjitteredViewProjection);
     m_unjitteredViewProjection = scene.unjitteredViewProjection;
@@ -3681,7 +3693,8 @@ void VulkanRenderer::writeSceneData(FrameContext& frame,
     RenderCamera skyCamera = camera;
     skyCamera.projection = Projection::Perspective;
     skyCamera.verticalFov = camera.projection == Projection::Orthographic ? math::radians(60.0f) : camera.verticalFov;
-    scene.skyInverseViewProjection = math::inverse(projectionMatrix(skyCamera, aspectRatio) * rotationOnly);
+    m_skyViewProjection = projectionMatrix(skyCamera, aspectRatio) * rotationOnly;
+    scene.skyInverseViewProjection = math::inverse(m_skyViewProjection);
     scene.cameraPosition = math::Vec3(math::inverse(camera.view)[3]);
     m_cameraPosition = scene.cameraPosition;
     scene.exposure = exposureFromEv100(m_ev100);
@@ -5854,11 +5867,20 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
             vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, m_taaPipeline->handle());
             vkCmdBindDescriptorSets(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, m_taaPipeline->layout(),
                                     0, 2, sets.data(), 0, nullptr);
+            // The scene combines physical light and exposure-relative sprites/emission: scaling
+            // old colour by the exposure ratio would change those relative colours. Start fresh
+            // after an abrupt EV change (over a quarter stop), while retaining normal adaptation.
+            constexpr float exposureLimit = 1.1892071f; // 2^(1/4)
+            const float exposureRatio = frame.exposure / m_historyExposure;
+            const bool historyValid = m_historyValid && exposureRatio >= 1.0f / exposureLimit &&
+                                      exposureRatio <= exposureLimit;
             const TaaPushConstants constants{
                 .blend = taaBlend,
-                .historyValid = m_historyValid ? 1.0f : 0.0f,
+                .historyValid = historyValid ? 1.0f : 0.0f,
                 .texelWidth = 1.0f / static_cast<float>(extent.width),
                 .texelHeight = 1.0f / static_cast<float>(extent.height),
+                .scene = frame.sceneData->deviceAddress(),
+                .previousSkyViewProjection = m_previousSkyViewProjection,
             };
             vkCmdPushConstants(commands, m_taaPipeline->layout(),
                                VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
@@ -6751,6 +6773,7 @@ core::Result<void> VulkanRenderer::uploadPreviousBones(FrameContext& frame) cons
 void VulkanRenderer::rememberFrame()
 {
     m_previousViewProjection = m_unjitteredViewProjection;
+    m_previousSkyViewProjection = m_skyViewProjection;
     // Instances that are gone are forgotten, so that the list follows the scene.
     m_previousInstances.resize(m_world.meshes.size());
     for (std::size_t index = 0; index < m_world.meshes.size(); ++index)
