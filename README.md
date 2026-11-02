@@ -88,7 +88,8 @@ captures de l'éditeur, scènes de base, entrées, scripts C#, animations, colli
   dans un budget par image ;
 - `Devex::Scene` : entités à UUID, composants en sparse sets, hiérarchie, `.dvxscene`,
   instanciation de modèles, composants de physique, d'animation et d'interface, cartes de
-  tuiles (`Tilemap`, cellules par blocs, tilesets `.dvxtileset` et leurs terrains), éclairage 2D
+  tuiles (`Tilemap`, cellules par blocs, tilesets `.dvxtileset`, terrains et collisions dessinées
+  par points), éclairage 2D
   (`PointLight2D`, `DirectionalLight2D`, `LightOccluder2D`, `CanvasModulate`), préfabs liés
   (scènes imbriquées avec leurs modifications) ;
 - `Devex::Physics` : simulation Jolt Physics des corps rigides, colliders (primitives, maillages,

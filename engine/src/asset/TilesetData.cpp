@@ -9,10 +9,11 @@
 namespace devex::asset {
 namespace {
 
-constexpr std::array<std::pair<TileCollision, std::string_view>, 3> collisionNames{{
+constexpr std::array<std::pair<TileCollision, std::string_view>, 4> collisionNames{{
     {TileCollision::None, "none"},
     {TileCollision::Full, "full"},
     {TileCollision::Top, "top"},
+    {TileCollision::Polygon, "polygon"},
 }};
 
 constexpr std::array<std::pair<TerrainMode, std::string_view>, 3> modeNames{{
@@ -248,6 +249,19 @@ core::Result<void> validate(const TilesetData& tileset)
     for (std::size_t index = 0; index < tileset.tiles.size(); ++index)
     {
         const TileData& tile = tileset.tiles[index];
+        if (tile.collision > TileCollision::Polygon)
+        {
+            return core::makeError(core::ErrorCode::InvalidArgument,
+                                   "tile {} has an unknown collision mode", tile.id);
+        }
+        if (tile.collision == TileCollision::Polygon || !tile.collisionPoints.empty())
+        {
+            if (auto valid = validateTileCollision(tile.collisionPoints); !valid)
+            {
+                return core::makeError(core::ErrorCode::InvalidArgument, "tile {}: {}", tile.id,
+                                       valid.error().message);
+            }
+        }
         if (tile.id == 0 || tile.id > maxTileId)
         {
             return core::makeError(core::ErrorCode::InvalidArgument, "tile identifiers go from 1 to {}, not {}", maxTileId,

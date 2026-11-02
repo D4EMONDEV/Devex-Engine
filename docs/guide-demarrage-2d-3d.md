@@ -1,7 +1,7 @@
 # Créer ses premiers jeux avec Devex Engine
 
-Guide pratique en français — base du **5 octobre 2026**, réglages de l'éditeur et stabilité du
-rendu actualisés le **2 novembre 2026**.
+Guide pratique en français — base du **5 octobre 2026**, réglages de l'éditeur, collisions 2D et
+stabilité du rendu actualisés le **2 novembre 2026**.
 
 Ce document accompagne la création de deux petits prototypes : un personnage de plateforme en **2D**, puis un personnage en **3D** qui marche et saute sur un sol. Les deux utilisent C#, les mêmes actions d'entrée et une caméra de suivi. On part d'un projet neuf, sans modifier Sandbox.
 
@@ -397,14 +397,32 @@ Le sol rectangulaire précédent suffit pour apprendre. Pour dessiner une carte 
 3. Dans son Inspector, ajouter les sprites de tiles par glisser-déposer.
 4. Sélectionner chaque tile et définir sa **Collision**.
 5. Créer une entité avec **Tilemap**, lui affecter le tileset, puis utiliser les outils de peinture de la vue 2D pour dessiner les cellules.
+6. Ajouter **TilemapCollider2D** à cette même entité pour rendre ces collisions actives. Laisser **Trigger** désactivé pour un sol solide.
 
 | Collision de la tile | Résultat |
 | --- | --- |
 | **None** | Décoration traversable |
 | **Full** | Sol ou mur solide |
 | **Top** | Plateforme traversable depuis le bas, solide par-dessus |
+| **Polygon** | Contour personnalisé : pente, demi-tile ou forme en creux |
 
 Faire correspondre la taille des cellules, les Pixels per unit et l'échelle du personnage. Une tile visible avec Collision = None ne bloque pas le joueur. Éviter de superposer l'ancien Ground et une seconde surface de collision au même endroit : déplacer l'ancien sol hors du niveau ou le retirer une fois la Tilemap vérifiée.
+
+#### Dessiner la collision d'une tile
+
+1. Sélectionner le fichier `.dvxtileset` dans le **FileSystem**, puis la tile dans sa palette **Tiles**.
+2. Dans la carte **Tile**, choisir **Collision > Polygon**. Une nouvelle forme commence par un rectangle couvrant la cellule.
+3. Dans **Collision Shape**, cliquer **Draw**, puis poser les points autour de la partie solide de l'image. Cliquer sur le premier point ou sur **Finish** pour fermer le contour.
+4. Glisser un point pour le déplacer. Cliquer sur une arête pour ajouter un point ; faire un clic droit sur un point pour le supprimer. **Snap to Pixels** aligne les points sur les pixels du sprite.
+5. Cliquer **Apply** pour enregistrer. La collision change sur toutes les copies peintes de cette tile, avec leurs retournements **Flip X/Y**. Activer l'affichage des collisions du viewport pour vérifier le résultat.
+
+**Rectangle** rétablit un rectangle dans le brouillon. Les flèches **Undo/Redo** annulent ou rétablissent les modifications du brouillon ; **Revert** revient à la forme enregistrée. **One Way** permet de traverser la forme par-dessous et d'atterrir dessus, pour une plateforme personnalisée.
+
+Un contour contient **3 à 64 points**, dans les limites de la cellule. Les formes en creux sont acceptées ; les trous et les arêtes qui se croisent ou se touchent ne le sont pas. Les points sont enregistrés entre (0, 0), en bas à gauche, et (1, 1), en haut à droite : **Cell size** et le Transform de la Tilemap déterminent ensuite leur taille dans le monde.
+
+Une forme inachevée ou invalide reste dans le brouillon et ne remplace pas la dernière collision enregistrée. Appliquer les changements avant de sélectionner une autre tile. Changer le mode de collision conserve les points enregistrés pour pouvoir revenir à **Polygon**.
+
+![Édition d'un contour de collision dans le Tileset](images/editor-tile-collision.png)
 
 #### Laisser les terrains choisir les tiles
 
@@ -670,7 +688,7 @@ L'export peut remplacer les fichiers de sa destination. Choisir un dossier consa
 | **Le sprite n'apparaît pas** | Importer la texture en Single ou Grid puis Reimport ; affecter un sprite au SpriteRenderer ; contrôler couleur/alpha, taille, caméra et Z. Pour cette base 2D, Lit est désactivé. |
 | **Le sprite est très grand ou très petit** | Vérifier Pixels per unit. Ajuster Visual plutôt que l'échelle de la racine physique ; vérifier aussi Orthographic size. |
 | **La collision est mal alignée** | Le contrôleur 2D est aux pieds ; régler Radius/Height et le Transform de Visual. Pour les colliders ordinaires, régler Center. Ne pas confondre contour du dessin et forme physique. |
-| **Les tiles sont traversables** | Définir leur Collision dans le Tileset : Full pour les murs/sols, Top pour les plateformes à sens unique. None est décoratif. |
+| **Les tiles sont traversables** | Ajouter TilemapCollider2D à la Tilemap, Trigger désactivé. Définir leur Collision dans le Tileset : Full, Top ou Polygon. Pour un contour personnalisé, fermer le dessin puis cliquer Apply. None est décoratif. |
 | **L'animation reste immobile** | Vérifier Frames, les noms idle/run/jump, Playing et Animate. SpriteAnimator doit être sur la même entité que SpriteRenderer, donc Visual dans ce guide. |
 | **Caméra qui tremble malgré des FPS élevés** | Utiliser CameraFollow en LateUpdate avec Target.WorldPosition, garder la caméra sans parent et retirer les autres scripts qui modifient sa position. Ne pas suivre alternativement une pose physique et une pose interpolée. |
 | **Image pixel art floue** | Vérifier Filter = Nearest et l'échelle. Un zoom non entier peut encore produire des irrégularités ; ce guide ne configure pas un rendu pixel-perfect complet. |

@@ -809,7 +809,7 @@ std::span<const Importer> importers()
         },
         Importer{
             .name = "tileset",
-            .version = 1,
+            .version = 2,
             .mainType = AssetType::Tileset,
             .extensions = {tilesetExtension},
             .run = &importTilesetFile,

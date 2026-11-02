@@ -8,8 +8,8 @@
 namespace devex::asset {
 namespace {
 
-// 2: terrain sets, the terrains of the tiles and their probability.
-constexpr std::int64_t tilesetFormat = 2;
+// 2: terrains. 3: custom collision outlines.
+constexpr std::int64_t tilesetFormat = 3;
 
 [[nodiscard]] std::optional<AssetId> readAsset(const serialization::TextValue& value)
 {
@@ -202,10 +202,44 @@ core::Result<TilesetData> parseTilesetFile(std::string_view text)
             const std::optional<TileCollision> parsed = name != nullptr ? parseTileCollision(*name) : std::nullopt;
             if (!parsed)
             {
-                return core::makeError(core::ErrorCode::Parse, "line {}: collision is \"none\", \"full\" or \"top\"",
-                                       section.line);
+                return core::makeError(
+                    core::ErrorCode::Parse,
+                    "line {}: collision is \"none\", \"full\", \"top\" or \"polygon\"",
+                    section.line);
             }
             tile.collision = *parsed;
+        }
+        if (const auto* points = section.findProperty("collision_points"))
+        {
+            const auto* list = serialization::asCall(*points, "list");
+            if (list == nullptr || list->arguments.size() > maxTileCollisionPoints)
+                return core::makeError(
+                    core::ErrorCode::Parse,
+                    "line {}: collision_points is a list of at most {} vec2 points", section.line,
+                    maxTileCollisionPoints);
+            for (const auto& point : list->arguments)
+            {
+                const auto* vector = serialization::asCall(point, "vec2");
+                if (vector == nullptr || vector->arguments.size() != 2)
+                    return core::makeError(core::ErrorCode::Parse,
+                                           "line {}: a collision point is a vec2(x, y)",
+                                           section.line);
+                const auto x = serialization::asNumber(vector->arguments[0]),
+                           y = serialization::asNumber(vector->arguments[1]);
+                if (!x || !y)
+                    return core::makeError(core::ErrorCode::Parse,
+                                           "line {}: collision coordinates are numbers",
+                                           section.line);
+                tile.collisionPoints.emplace_back(static_cast<float>(*x), static_cast<float>(*y));
+            }
+        }
+        if (const auto* oneWay = section.findAttribute("collision_one_way"))
+        {
+            const auto parsed = serialization::asBool(*oneWay);
+            if (!parsed)
+                return core::makeError(core::ErrorCode::Parse,
+                                       "line {}: collision_one_way is a boolean", section.line);
+            tile.collisionOneWay = *parsed;
         }
         if (const serialization::TextValue* const frames = section.findProperty("frames"))
         {
@@ -289,6 +323,17 @@ std::string writeTilesetFile(const TilesetData& tileset)
         section.attributes.push_back({"id", serialization::TextValue(static_cast<std::int64_t>(tile.id))});
         section.attributes.push_back({"sprite", assetValue(tile.sprite)});
         section.attributes.push_back({"collision", serialization::TextValue(std::string(toString(tile.collision)))});
+        if (tile.collisionOneWay)
+            section.attributes.push_back({"collision_one_way", serialization::TextValue(true)});
+        if (!tile.collisionPoints.empty())
+        {
+            std::vector<serialization::TextValue> points;
+            for (const auto point : tile.collisionPoints)
+                points.push_back(
+                    serialization::makeCall("vec2", {number(point.x), number(point.y)}));
+            section.properties.push_back(
+                {"collision_points", serialization::makeCall("list", std::move(points))});
+        }
         if (tile.occluder)
         {
             section.attributes.push_back({"occluder", serialization::TextValue(true)});

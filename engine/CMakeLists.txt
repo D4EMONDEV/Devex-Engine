@@ -217,6 +217,7 @@ target_sources(devex_asset
         src/asset/SpriteData.cpp
         src/asset/TextureData.cpp
         src/asset/TilesetData.cpp
+        src/asset/TileCollision.cpp
         src/asset/TranslationData.cpp
         src/asset/AnimatorData.cpp
         src/asset/NavMeshData.cpp
@@ -840,6 +841,8 @@ target_sources(devex_tools
         src/tools/TerrainPainter.cpp
         src/tools/TilePainter.cpp
         src/tools/TilesetInspector.cpp
+        src/tools/TileCollisionEditor.cpp
+        src/tools/TileCollisionEditor.hpp
         src/tools/TranslationsPanel.cpp
         src/tools/EditorCamera.cpp
         src/tools/EditorCamera.hpp

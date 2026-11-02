@@ -216,8 +216,11 @@ void addColliders2D(const ToolsState& state, scene::Scene& scene, const std::fun
             continue;
         }
         const math::Vec4 color = colorOf(entity, collider.trigger);
-        const std::vector<physics2d::TileRectangle> rectangles =
-            physics2d::tileRectangles(scene::TileGrid::read(tilemap), [&](std::uint32_t id) {
+        const auto grid = scene::TileGrid::read(tilemap);
+        const std::vector<physics2d::TileRectangle> rectangles = physics2d::tileRectangles(
+            grid,
+            [&](std::uint32_t id)
+            {
                 const asset::TileData* const tile = tileset->find(id);
                 return tile != nullptr ? tile->collision : asset::TileCollision::None;
             });
@@ -227,6 +230,34 @@ void addColliders2D(const ToolsState& state, scene::Scene& scene, const std::fun
             const math::Vec2 high = math::Vec2(rectangle.cell + rectangle.size) * tilemap.cellSize;
             addBox(world.matrix, rectangle.oneWay ? math::Vec2{low.x, high.y - 0.1f * tilemap.cellSize.y} : low, high,
                    rectangle.oneWay && !collider.trigger, color);
+        }
+        if (!std::ranges::any_of(tileset->tiles, [](const asset::TileData& tile)
+                                 { return tile.collision == asset::TileCollision::Polygon; }))
+            continue;
+        for (const auto& cell : grid.cells())
+        {
+            const auto* tile = tileset->find(scene::tileIdOf(cell.value));
+            if (tile == nullptr || tile->collision != asset::TileCollision::Polygon)
+                continue;
+            std::vector<math::Vec3> outline;
+            for (auto point : tile->collisionPoints)
+            {
+                if ((cell.value & scene::tileFlipX) != 0)
+                    point.x = 1.0f - point.x;
+                if ((cell.value & scene::tileFlipY) != 0)
+                    point.y = 1.0f - point.y;
+                outline.push_back(
+                    place(world.matrix, (math::Vec2(cell.cell) + point) * tilemap.cellSize));
+            }
+            if (outline.size() < 3)
+                continue;
+            addLoop(lines, outline, color);
+            if (tile->collisionOneWay && !collider.trigger)
+            {
+                const auto top = std::ranges::max_element(outline, {}, [](const math::Vec3& point)
+                                                          { return point.y; });
+                addOneWayArrow(lines, *top, 0.2f * math::abs(tilemap.cellSize.y), color);
+            }
         }
     }
     // Characters stand upright on their position.

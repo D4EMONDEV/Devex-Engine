@@ -1005,6 +1005,15 @@ Le contrôleur gère sa capsule, le sol, la gravité et les déplacements. Les o
 pousser utilisent `RigidBody2D` et un collider ; les sols statiques ont un `BoxCollider2D` ou un
 `TilemapCollider2D`. Le visuel du joueur peut être un enfant avec `SpriteRenderer`.
 
+Dans le Tileset, **Collision > Polygon** permet de dessiner un contour par points dans la carte
+**Collision Shape** : **Draw**, clics, fermeture au premier point ou **Finish**, puis **Apply**.
+Glisser un sommet le déplace, cliquer une arête en ajoute un, le clic droit le supprime.
+Les contours simples de 3 à 64 points acceptent les formes concaves et l'option **One Way** ;
+les coordonnées vont de (0, 0), en bas à gauche de la cellule, à (1, 1), en haut à droite.
+Les copies peintes partagent la forme, avec leurs retournements et leur Cell Size. Les brouillons
+invalides ne remplacent pas la forme enregistrée. Le source `.dvxtileset` est au format 3
+(anciens formats lus), l'artefact Tileset en version 4 et l'API native du jeu en version 35.
+
 Les vues C# des composants natifs, comme `CharacterController2D`, sont des `ref struct` : on les
 obtient pendant l'appel qui les utilise, sans les conserver dans les champs d'une classe.
 
@@ -3026,7 +3035,7 @@ public static class SpriteAnimations
 }
 
 // What a tile is to the game, as its tileset says.
-public enum TileCollision
+public enum TileCollision : byte
 {
     // Walked through.
     None,
@@ -3034,6 +3043,8 @@ public enum TileCollision
     Full,
     // Holds up what lands on it from above, lets through what comes from below.
     Top,
+    // The tile's custom outline, optionally one-way.
+    Polygon,
 }
 
 // The Tilemap components of the scene: grids of cells painted with the tiles of a tileset. Cell

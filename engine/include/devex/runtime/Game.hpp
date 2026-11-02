@@ -54,7 +54,8 @@ class CoroutineScheduler;
 // main camera's GPU visibility counts; RendererConfig its occlusion.
 // 31: RendererConfig and RendererStats gained compute skinning and its counters.
 // 34: RenderWorld gained tool line width and the grid's depth plane.
-inline constexpr std::uint32_t gameApiVersion = 34;
+// 35: TileData gained custom collision outlines.
+inline constexpr std::uint32_t gameApiVersion = 35;
 
 enum class SystemPhase : std::uint8_t
 {

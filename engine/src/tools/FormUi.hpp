@@ -61,6 +61,8 @@ struct Section
     int page = -1;
     bool hidden = false;
     bool filtered = false;
+    // A composite editor keeps its canvas and Apply controls when any of its properties match.
+    bool filterTogether = false;
     std::vector<Line> lines;
     std::vector<std::string> groups;
     // What some components show under their properties: the style of an element, the controls of

@@ -2,8 +2,13 @@
 #include <devex/asset/TilesetData.hpp>
 #include <devex/asset/import/TilesetFile.hpp>
 
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
+#include <cmath>
+#include <limits>
+#include <numbers>
 #include <string>
 #include <utility>
 
@@ -76,7 +81,7 @@ TEST_CASE("Tilesets survive their files and their cooked form", "[asset][tileset
 {
     const TilesetData tileset = sample();
     const std::string text = devex::asset::writeTilesetFile(tileset);
-    CHECK(text.starts_with("[tileset format=2]"));
+    CHECK(text.starts_with("[tileset format=3]"));
     CHECK(text.find("collision=\"top\"") != std::string::npos);
     CHECK(text.find("data = \"water\"") != std::string::npos);
     const auto parsed = devex::asset::parseTilesetFile(text);
@@ -88,7 +93,7 @@ TEST_CASE("Tilesets survive their files and their cooked form", "[asset][tileset
     CHECK(*decoded == tileset);
 
     CHECK_FALSE(devex::asset::parseTilesetFile("[frames format=1]\n").has_value());
-    CHECK_FALSE(devex::asset::parseTilesetFile("[tileset format=3]\n").has_value());
+    CHECK_FALSE(devex::asset::parseTilesetFile("[tileset format=4]\n").has_value());
     CHECK_FALSE(devex::asset::parseTilesetFile("[tileset format=1]\n\n[tile sprite=asset(\"x\")]\n").has_value());
     CHECK_FALSE(devex::asset::parseTilesetFile("[tileset format=1]\n\n[tile id=1 collision=\"wall\"]\n").has_value());
     CHECK(devex::asset::parseTileCollision("full") == TileCollision::Full);
@@ -100,7 +105,7 @@ TEST_CASE("Tilesets keep their terrain sets and the terrains of their tiles", "[
     const TilesetData tileset = withTerrains();
     REQUIRE(devex::asset::validate(tileset).has_value());
     const std::string text = devex::asset::writeTilesetFile(tileset);
-    CHECK(text.starts_with("[tileset format=2]"));
+    CHECK(text.starts_with("[tileset format=3]"));
     CHECK(text.find("[terrain_set mode=\"sides\" mirror_x=true mirror_y=false]") != std::string::npos);
     CHECK(text.find("[terrain name=\"Dirt\" color=vec4(0.5, 0.3, 0.1, 1)]") != std::string::npos);
     CHECK(text.find("terrain_set=0 terrain=0]") != std::string::npos);
@@ -165,4 +170,115 @@ TEST_CASE("Removing a terrain or a terrain set keeps what the tiles name of the 
     CHECK(tileset.tiles[1].terrainSet == 0);
     CHECK(tileset.findTerrain("Water") == std::pair{0, 0});
     CHECK(devex::asset::validate(tileset).has_value());
+}
+
+TEST_CASE("Custom tile collision outlines survive source files and artifacts",
+          "[asset][tileset][tilecollision]")
+{
+    auto tileset = sample();
+    auto& tile = tileset.tiles.front();
+    tile.collision = TileCollision::Polygon;
+    tile.collisionPoints = {{0, 0}, {1, 0}, {1, 0.4f}, {0.4f, 0.4f}, {0.4f, 1}, {0, 1}};
+    tile.collisionOneWay = true;
+    REQUIRE(devex::asset::validate(tileset));
+    const auto text = devex::asset::writeTilesetFile(tileset);
+    CHECK(text.find("collision_points = list(vec2(") != std::string::npos);
+    CHECK(text.find("collision_one_way=true") != std::string::npos);
+    const auto source = devex::asset::parseTilesetFile(text);
+    REQUIRE(source);
+    CHECK(*source == tileset);
+    const auto cooked = devex::asset::decodeTileset(devex::asset::encodeTileset(tileset));
+    REQUIRE(cooked);
+    CHECK(*cooked == tileset);
+    // Temporarily disabling the collision keeps the authored outline.
+    tile.collision = TileCollision::None;
+    const auto disabled = devex::asset::parseTilesetFile(devex::asset::writeTilesetFile(tileset));
+    REQUIRE(disabled);
+    CHECK(*disabled == tileset);
+    CHECK(devex::asset::parseTileCollision("polygon") == TileCollision::Polygon);
+    CHECK_FALSE(
+        devex::asset::parseTilesetFile("[tileset format=3]\n[tile id=1 collision=\"polygon\"]\n"));
+    CHECK_FALSE(devex::asset::parseTilesetFile(
+        "[tileset format=3]\n[tile id=1]\ncollision_points = list(vec3(0,0,0))\n"));
+}
+
+TEST_CASE("Tile collision outlines reject crossed, degenerate and unbounded shapes",
+          "[asset][tileset][tilecollision]")
+{
+    using devex::math::Vec2;
+    const std::vector<std::vector<Vec2>> invalid{
+        {},
+        {{0, 0}, {1, 1}},
+        {{0, 0}, {1, 0}, {0.5f, 0}},
+        {{0, 0}, {1, 1}, {0, 1}, {1, 0}},
+        {{0, 0}, {1, 0}, {1, 0}, {0, 1}},
+        {{0, 0}, {1, 0}, {0.5f, 0}, {0.5f, 1}, {0, 1}},
+        {{0, 0}, {2, 0}, {0, 1}},
+        {{0, 0}, {1, 0}, {0, -0.1f}},
+        {{0, 0}, {1, 0}, {0, std::numeric_limits<float>::quiet_NaN()}},
+        {{0, 0}, {1, 0}, {0, std::numeric_limits<float>::infinity()}},
+        std::vector<Vec2>(65, {0, 0})};
+    for (std::size_t i = 0; i < invalid.size(); ++i)
+    {
+        CAPTURE(i);
+        CHECK_FALSE(devex::asset::validateTileCollision(invalid[i]));
+        CHECK_FALSE(devex::asset::decomposeTileCollision(invalid[i]));
+    }
+    CHECK(devex::asset::validateTileCollision(
+        std::vector<Vec2>{{0, 0}, {0.5f, 0}, {1, 0}, {1, 1}, {0, 1}}));
+}
+
+TEST_CASE("Concave tile collisions decompose without filling their empty regions",
+          "[asset][tileset][tilecollision]")
+{
+    using devex::math::Vec2;
+    std::vector<Vec2> outline{{0, 0}, {1, 0}, {1, 0.4f}, {0.4f, 0.4f}, {0.4f, 1}, {0, 1}};
+    const auto cross = [](Vec2 a, Vec2 b, Vec2 c)
+    { return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x); };
+    for (int winding = 0; winding < 2; ++winding)
+    {
+        const auto pieces = devex::asset::decomposeTileCollision(outline);
+        REQUIRE(pieces);
+        double area = 0;
+        for (const auto& piece : *pieces)
+        {
+            CHECK(piece.size() >= 3);
+            CHECK(piece.size() <= 8);
+            for (std::size_t i = 0; i < piece.size(); ++i)
+            {
+                CHECK(cross(piece[i], piece[(i + 1) % piece.size()],
+                            piece[(i + 2) % piece.size()]) > 0);
+                area += cross({}, piece[i], piece[(i + 1) % piece.size()]) * 0.5;
+            }
+        }
+        CHECK(area == Catch::Approx(0.64).margin(0.00001));
+        for (int y = 0; y < 12; ++y)
+            for (int x = 0; x < 12; ++x)
+            {
+                const Vec2 p{(static_cast<float>(x) + 0.5f) / 12,
+                             (static_cast<float>(y) + 0.5f) / 12};
+                const bool covered = std::ranges::any_of(
+                    *pieces,
+                    [&](const auto& piece)
+                    {
+                        for (std::size_t i = 0; i < piece.size(); ++i)
+                            if (cross(piece[i], piece[(i + 1) % piece.size()], p) < -0.00001f)
+                                return false;
+                        return true;
+                    });
+                CHECK(covered == (p.x < 0.4f || p.y < 0.4f));
+            }
+        std::ranges::reverse(outline);
+    }
+    std::vector<Vec2> circle;
+    for (int i = 0; i < 32; ++i)
+    {
+        const float angle = static_cast<float>(i) * 2 * std::numbers::pi_v<float> / 32;
+        circle.push_back({0.5f + 0.5f * std::cos(angle), 0.5f + 0.5f * std::sin(angle)});
+    }
+    const auto round = devex::asset::decomposeTileCollision(circle);
+    REQUIRE(round);
+    CHECK(round->size() > 1);
+    for (const auto& part : *round)
+        CHECK(part.size() <= 8);
 }

@@ -104,9 +104,9 @@ std::uint32_t artifactVersion(AssetType type) noexcept
     // 2: the events.
     case AssetType::SpriteFrames:
         return 2;
-    // 2: terrain sets, the terrains of the tiles and their probability. 3: the tiles that occlude.
+    // 2: terrains. 3: the tiles that occlude. 4: custom collision outlines.
     case AssetType::Tileset:
-        return 3;
+        return 4;
     // 2: the normal map.
     case AssetType::Sprite:
         return 2;
@@ -831,6 +831,8 @@ std::vector<std::byte> encodeTileset(const TilesetData& tileset)
         writer.write(tile.terrainBits);
         writer.write(tile.probability);
         writer.write(static_cast<std::uint8_t>(tile.occluder ? 1 : 0));
+        writer.writeArray(std::span<const math::Vec2>(tile.collisionPoints));
+        writer.write(static_cast<std::uint8_t>(tile.collisionOneWay ? 1 : 0));
     }
     return writer.take();
 }
@@ -874,6 +876,8 @@ core::Result<TilesetData> decodeTileset(std::span<const std::byte> bytes)
         tile.terrainBits = reader.read<TerrainBits>();
         tile.probability = reader.read<float>();
         tile.occluder = reader.read<std::uint8_t>() != 0;
+        tile.collisionPoints = reader.readArray<math::Vec2>();
+        tile.collisionOneWay = reader.read<std::uint8_t>() != 0;
         tileset.tiles.push_back(std::move(tile));
     }
     if (reader.failed())
@@ -882,7 +886,7 @@ core::Result<TilesetData> decodeTileset(std::span<const std::byte> bytes)
     }
     for (const TileData& tile : tileset.tiles)
     {
-        if (tile.collision > TileCollision::Top)
+        if (tile.collision > TileCollision::Polygon)
         {
             return std::unexpected(truncated(AssetType::Tileset));
         }

@@ -90,6 +90,18 @@ struct DEVEX_API TileRectangle
 [[nodiscard]] DEVEX_API std::vector<TileRectangle> tileRectangles(
               const scene::TileGrid& grid, const std::function<asset::TileCollision(std::uint32_t tile)>& collisionOf);
 
+struct DEVEX_API TilePolygon
+{
+    // Convex points in grid coordinates, before the tilemap's cell size and transform.
+    std::vector<math::Vec2> points;
+    bool oneWay = false;
+};
+
+// Custom outlines decomposed once per tile type and placed for each cell, with its mirror flags.
+// Full and Top cells keep using tileRectangles, whose adjacent cells can be merged.
+[[nodiscard]] DEVEX_API std::vector<TilePolygon> tilePolygons(const scene::TileGrid& grid,
+                                                              const asset::TilesetData& tileset);
+
 // The tileset a tilemap collider reads; null when it cannot be loaded.
 using TilesetSource = std::function<std::shared_ptr<const asset::TilesetData>(asset::AssetId tileset)>;
 

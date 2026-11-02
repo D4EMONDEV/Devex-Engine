@@ -83,7 +83,8 @@ struct DEVEX_API PolygonCollider2D
 DEVEX_DECLARE_ENGINE_REFLECTION(PolygonCollider2D);
 
 // Collides with the tiles of the Tilemap of its entity, as its tileset says: full tiles merged into
-// rectangles, top tiles into one-way ledges. Rebuilt when the cells or the tileset change.
+// rectangles, top tiles into one-way ledges, and custom outlines into convex pieces. Rebuilt when
+// the cells or the tileset change.
 struct DEVEX_API TilemapCollider2D
 {
     bool trigger = false;

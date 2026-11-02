@@ -55,7 +55,7 @@ mais seulement explicitement ici : le code suit ce document, pas l'inverse.
 | Physique 2D              | Box2D 3.1 (MIT), module `Physics2D`, à côté du monde 3D            |
 | Articulations            | Entités à part comme Godot : charnière, glissière, distance, fixe, cassables |
 | Corps 2D                 | `RigidBody2D` + colliders 2D (boîte, cercle, capsule, polygone)    |
-| Collisions des tuiles    | `TilemapCollider2D` : rectangles fusionnés et corniches du tileset |
+| Collisions des tuiles    | `TilemapCollider2D` : rectangles fusionnés, corniches et polygones par points |
 | Personnages 2D           | `CharacterController2D` « move and slide » sur le mover de Box2D   |
 | Navigation               | Recast & Detour (zlib), module `Navigation`, foule de DetourCrowd  |
 | Maillage de navigation   | Asset `.dvxnavmesh` cuit dans l'éditeur depuis les colliders statiques et les terrains |
@@ -2313,7 +2313,7 @@ Jalon 69, comme les pistes d'appel de méthode de Godot :
 - **Tilesets** (comme le `TileSet` de Godot) : un asset `.dvxtileset` liste ses tuiles, chacune
   avec un numéro stable (les cellules le gardent quand d'autres tuiles sont ajoutées ou
   retirées), un sprite, une **collision** (*none*, *full* : solide de tous côtés, *top* : tient ce
-  qui arrive d'en haut et laisse passer par-dessous), des **images d'animation** avec leur cadence
+  qui arrive d'en haut et laisse passer par-dessous, *polygon* : contour personnalisé), des **images d'animation** avec leur cadence
   (eau, lave, torches), et des **données** libres pour le jeu (`"water"`, `"damage=5"`). Les
   collisions servent au code du jeu et, depuis le jalon 37, à la physique 2D
   (`TilemapCollider2D`).
@@ -2340,6 +2340,23 @@ Jalon 69, comme les pistes d'appel de méthode de Godot :
 - **Code** : C++ par `scene::TileGrid`, `tileAt`, `setTile`, `cellAt`, `cellCenter` et
   `AssetManager::tileset` ; C# par `Tilemaps.GetTile`, `SetTile` (retournée ou non), `CellAt`,
   `CellCenter`, `GetCollision` et `GetData`. L'amorce C# passe à 12.
+- **Collisions par points** : le mode **Polygon** ajoute à `TileData` un contour simple de 3 à
+  64 points normalisés dans la cellule, de (0, 0) en bas à gauche à (1, 1) en haut à droite, et
+  `collisionOneWay`. Les formes concaves sont acceptées, les trous, intersections, contacts entre
+  arêtes non voisines, points hors cellule et surfaces nulles sont refusés. `validateTileCollision`
+  vérifie le contour ; `decomposeTileCollision` le découpe par oreilles, puis fusionne les morceaux
+  convexes jusqu'à huit sommets pour Box2D. Les points de l'auteur sont conservés tels quels.
+  Dans l'Inspector, **Collision Shape** affiche le sprite sur un damier : **Draw**, points posés au
+  clic, fermeture au premier point ou **Finish**, déplacement par glisser, ajout sur une arête et
+  suppression au clic droit. **Snap to Pixels**, **One Way**, **Rectangle**, **Undo/Redo**, **Revert**
+  et **Apply** complètent le brouillon ; seul **Apply**, sur un contour fermé valide, modifie la
+  ressource. Les copies peintes partagent la forme et respectent les retournements de cellule.
+  Un filtre d'inspecteur qui trouve une propriété de cet éditeur conserve la carte entière
+  (`Section::filterTogether`), y compris le dessin et **Apply**.
+  Le fichier source passe au **format 3** (`collision_points = list(vec2(...), ...)`,
+  `collision_one_way`), avec lecture des formats 1 et 2 ; artefact Tileset **4**, importeur **2**.
+  L'API native du jeu passe à **35** car `TileData` change de disposition ; les modules sont
+  reconstruits. C# garde les valeurs 0/1/2 de `None`/`Full`/`Top` et ajoute `Polygon = 3`.
 - **Terrains** (jalon 63, comme ceux de Godot 4) : un tileset a des **ensembles de terrains**,
   chacun dans un mode : *coins et côtés* (47 tuiles pour un terrain complet, coins intérieurs
   compris), *coins* ou *côtés* (16 tuiles). Chaque ensemble a ses terrains, nommés et colorés
@@ -2499,7 +2516,12 @@ Jalon 64, comme l'éclairage 2D de Godot : à part des lumières 3D, qui n'écla
   de même largeur empilées en rectangles ; les tuiles *top* d'une ligne deviennent une corniche d'un
   dixième de cellule en haut des cellules. Les rectangles sont gardés tant que les blocs de la carte
   et le tileset restent les mêmes : peindre pendant le jeu reconstruit le corps. `tileRectangles`
-  est public et testé seul ; l'éditeur dessine les mêmes rectangles.
+  est public et testé seul ; l'éditeur dessine les mêmes rectangles. Les cellules **Polygon** sont
+  exclues de cette fusion : `tilePolygons` décompose une fois chaque type de tile puis place ses
+  morceaux convexes dans les cellules avec leurs retournements. La physique applique Cell Size et
+  le Transform comme aux autres colliders. Le cache garde la référence immuable du tileset pour
+  reconstruire les formes à son rechargement. Le viewport dessine le contour original, sans les
+  arêtes internes de décomposition, et indique les plateformes à sens unique.
 - **Personnage 2D** (`CharacterController2D`, « move and slide » comme Godot, sur le *mover* de
   Box2D 3.1) : une capsule posée sur la position de l'entité (rayon, hauteur), pente et marche
   maximales, échelle de gravité, force de poussée, couche ; `velocity`, `grounded` et
@@ -5229,7 +5251,7 @@ Ensuite, sans ordre figé : à choisir dans les pistes ci-dessous.
 - **Tuiles, la suite** : terrains qui partagent une tuile entre deux ensembles, annulation dans
   l'inspecteur d'un tileset, aperçu du remplissage par terrain, tuiles tournées d'un
   quart de tour, tampons de plusieurs tuiles et palette de morceaux de carte, grilles isométriques
-  et hexagonales, formes de collision par tuile (pentes, demi-tuiles), cartes découpées en morceaux pour le
+  et hexagonales, plusieurs contours et trous de collision par tuile, cartes découpées en morceaux pour le
   culling et l'envoi au GPU gardé d'une image à l'autre, calques de la même carte, tuiles faites de
   préfabs.
 - **Éclairage 2D, la suite** : textures de lumière (formes autres qu'un disque), lumières qui

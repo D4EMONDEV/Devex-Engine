@@ -361,6 +361,9 @@ void InspectorUi::filterProperties()
                     entry.filtered =
                         !entireSection && !groupsMatched[static_cast<std::size_t>(entry.group)];
             section.filtered = revealFiltered && !matched;
+            if (section.filterTogether && matched)
+                for (Line& entry : section.lines)
+                    entry.filtered = false;
         }
     }
     const bool any = std::ranges::any_of(sections, [](const Section& section)

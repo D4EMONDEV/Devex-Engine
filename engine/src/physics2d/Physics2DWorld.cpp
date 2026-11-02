@@ -394,6 +394,9 @@ struct TileCache
 {
     std::uint64_t key = 0;
     std::vector<TileRectangle> rectangles;
+    std::vector<TilePolygon> polygons;
+    // Keep the identity alive until the cache is refreshed, including across asset reloads.
+    std::shared_ptr<const asset::TilesetData> tileset;
 };
 
 // ---- The character mover -----------------------------------------------------------------------
@@ -509,7 +512,7 @@ std::vector<TileRectangle> tileRectangles(const scene::TileGrid& grid,
     for (const scene::TileCell& cell : grid.cells())
     {
         const asset::TileCollision collision = collisionOf(scene::tileIdOf(cell.value));
-        if (collision != asset::TileCollision::None)
+        if (collision == asset::TileCollision::Full || collision == asset::TileCollision::Top)
         {
             cells[{cell.cell.y, cell.cell.x}] = collision;
         }
@@ -574,6 +577,46 @@ std::vector<TileRectangle> tileRectangles(const scene::TileGrid& grid,
         rectangles.push_back(rectangle);
     }
     return rectangles;
+}
+
+std::vector<TilePolygon> tilePolygons(const scene::TileGrid& grid,
+                                      const asset::TilesetData& tileset)
+{
+    std::unordered_map<std::uint32_t, const asset::TileData*> tiles;
+    for (const auto& tile : tileset.tiles)
+        if (tile.collision == asset::TileCollision::Polygon)
+            tiles.emplace(tile.id, &tile);
+    std::unordered_map<std::uint32_t, std::vector<std::vector<math::Vec2>>> pieces;
+    std::vector<TilePolygon> polygons;
+    for (const auto& cell : grid.cells())
+    {
+        const auto tile = tiles.find(scene::tileIdOf(cell.value));
+        if (tile == tiles.end())
+            continue;
+        auto found = pieces.find(tile->first);
+        if (found == pieces.end())
+        {
+            auto shape = asset::decomposeTileCollision(tile->second->collisionPoints);
+            found = pieces
+                        .emplace(tile->first,
+                                 shape ? std::move(*shape) : std::vector<std::vector<math::Vec2>>{})
+                        .first;
+        }
+        for (const auto& piece : found->second)
+        {
+            TilePolygon polygon{.oneWay = tile->second->collisionOneWay};
+            for (auto point : piece)
+            {
+                if ((cell.value & scene::tileFlipX) != 0)
+                    point.x = 1.0f - point.x;
+                if ((cell.value & scene::tileFlipY) != 0)
+                    point.y = 1.0f - point.y;
+                polygon.points.push_back(math::Vec2(cell.cell) + point);
+            }
+            polygons.push_back(std::move(polygon));
+        }
+    }
+    return polygons;
 }
 
 struct Physics2DWorld::Implementation
@@ -763,7 +806,7 @@ struct Physics2DWorld::Implementation
         description.parts.push_back(std::move(part));
     }
 
-    [[nodiscard]] const std::vector<TileRectangle>& rectanglesOf(Entity entity, const scene::Tilemap& tilemap)
+    [[nodiscard]] const TileCache& tileGeometryOf(Entity entity, const scene::Tilemap& tilemap)
     {
         const std::shared_ptr<const asset::TilesetData> tileset =
             config.tilesets && tilemap.tileset.isValid() ? config.tilesets(tilemap.tileset) : nullptr;
@@ -777,13 +820,20 @@ struct Physics2DWorld::Implementation
         if (cache.key != key.value() || cache.key == 0)
         {
             cache.key = key.value();
-            cache.rectangles = tileset == nullptr ? std::vector<TileRectangle>{}
-                                                  : tileRectangles(scene::TileGrid::read(tilemap), [&](std::uint32_t id) {
+            cache.tileset = tileset;
+            const auto grid = scene::TileGrid::read(tilemap);
+            cache.rectangles = tileset == nullptr
+                                   ? std::vector<TileRectangle>{}
+                                   : tileRectangles(grid,
+                                                    [&](std::uint32_t id)
+                                                    {
                                                         const asset::TileData* const tile = tileset->find(id);
                                                         return tile != nullptr ? tile->collision : asset::TileCollision::None;
                                                     });
+            cache.polygons =
+                tileset == nullptr ? std::vector<TilePolygon>{} : tilePolygons(grid, *tileset);
         }
-        return cache.rectangles;
+        return cache;
     }
 
     [[nodiscard]] std::unordered_map<std::uint64_t, BodyDescription> describeBodies(scene::Scene& scene)
@@ -837,7 +887,8 @@ struct Physics2DWorld::Implementation
                 continue;
             }
             const math::Vec2 cell = tilemap->cellSize;
-            for (const TileRectangle& rectangle : rectanglesOf(entity, *tilemap))
+            const TileCache& geometry = tileGeometryOf(entity, *tilemap);
+            for (const TileRectangle& rectangle : geometry.rectangles)
             {
                 const math::Vec2 low = math::Vec2(rectangle.cell) * cell;
                 math::Vec2 high = math::Vec2(rectangle.cell + rectangle.size) * cell;
@@ -846,6 +897,17 @@ struct Physics2DWorld::Implementation
                                   .points = box(rectangle.oneWay ? math::Vec2{low.x, high.y - ledgeThickness * cell.y} : low, high),
                                   .trigger = collider.trigger,
                                   .oneWay = rectangle.oneWay && !collider.trigger});
+            }
+            for (const TilePolygon& polygon : geometry.polygons)
+            {
+                std::vector<math::Vec2> points;
+                for (const auto point : polygon.points)
+                    points.push_back(point * cell);
+                describeCollider(scene, descriptions, entity,
+                                 {.kind = ShapeKind::Polygon,
+                                  .points = std::move(points),
+                                  .trigger = collider.trigger,
+                                  .oneWay = polygon.oneWay && !collider.trigger});
             }
         }
         for ([[maybe_unused]] auto [entity, rigidBody] : scene.view<scene::RigidBody2D>())

@@ -761,3 +761,102 @@ TEST_CASE("2D sliders, distance joints and welds hold bodies, and break past the
               }) == collide);
     }
 }
+
+TEST_CASE("Tile polygons follow cell mirrors and keep custom cells out of rectangle merging",
+          "[physics2d][tilecollision]")
+{
+    devex::asset::TilesetData tiles;
+    tiles.tiles = {{.id = 1, .collision = devex::asset::TileCollision::Polygon}};
+    tiles.tiles[0].collisionPoints = {{0, 0}, {1, 0}, {1, 1}};
+    tiles.tiles[0].collisionOneWay = true;
+    for (const auto flags :
+         {std::uint16_t{0}, devex::scene::tileFlipX, devex::scene::tileFlipY,
+          static_cast<std::uint16_t>(devex::scene::tileFlipX | devex::scene::tileFlipY)})
+    {
+        devex::scene::TileGrid grid;
+        grid.set({-3, 2}, static_cast<std::uint16_t>(1 | flags));
+        CHECK(devex::physics2d::tileRectangles(grid, [](auto)
+                                               { return devex::asset::TileCollision::Polygon; })
+                  .empty());
+        const auto pieces = devex::physics2d::tilePolygons(grid, tiles);
+        REQUIRE(pieces.size() == 1);
+        CHECK(pieces[0].oneWay);
+        for (auto p : tiles.tiles[0].collisionPoints)
+        {
+            if (flags & devex::scene::tileFlipX)
+                p.x = 1 - p.x;
+            if (flags & devex::scene::tileFlipY)
+                p.y = 1 - p.y;
+            CHECK(std::ranges::find(pieces[0].points, p + Vec2{-3, 2}) != pieces[0].points.end());
+        }
+    }
+}
+
+TEST_CASE("Custom tile physics uses the outline, cell size, mirrors and reloaded tileset",
+          "[physics2d][tilecollision]")
+{
+    auto sources = std::make_shared<Tilesets>();
+    const auto id = devex::asset::AssetId::generate();
+    auto data = std::make_shared<devex::asset::TilesetData>();
+    data->tiles = {{.id = 1, .collision = devex::asset::TileCollision::Polygon}};
+    data->tiles[0].collisionPoints = {{0, 0}, {1, 0}, {1, 1}};
+    (*sources)[id] = data;
+    Scene scene;
+    const auto level = scene.createEntity("Slope");
+    scene.add<devex::scene::Transform>(level, devex::scene::Transform{.position = {10, -1, 0}});
+    devex::scene::Tilemap map{.tileset = id, .cellSize = {4, 2}};
+    devex::scene::TileGrid grid;
+    grid.set({0, 0}, 1);
+    grid.write(map);
+    scene.add<devex::scene::Tilemap>(level, map);
+    scene.add<devex::scene::TilemapCollider2D>(level);
+    const auto world = makeWorld({}, sources);
+    simulate(*world, scene, stepSeconds);
+    const auto slope = world->raycast({11, 5}, {0, -1}, 10);
+    REQUIRE(slope);
+    CHECK(slope->entity == level);
+    CHECK(slope->point.y == Catch::Approx(-0.5f).margin(restingMargin));
+    CHECK_FALSE(world->raycast({10.5f, 2}, {0, -1}, 1.5f));
+    grid.set({0, 0}, static_cast<std::uint16_t>(1 | devex::scene::tileFlipX));
+    grid.write(scene.get<devex::scene::Tilemap>(level));
+    simulate(*world, scene, stepSeconds);
+    const auto mirrored = world->raycast({11, 5}, {0, -1}, 10);
+    REQUIRE(mirrored);
+    CHECK(mirrored->point.y == Catch::Approx(0.5f).margin(restingMargin));
+    auto replacement = std::make_shared<devex::asset::TilesetData>(*data);
+    replacement->tiles[0].collisionPoints = {{0, 0}, {1, 0}, {1, 0.25f}, {0, 0.25f}};
+    (*sources)[id] = replacement;
+    simulate(*world, scene, stepSeconds);
+    const auto reloaded = world->raycast({11, 5}, {0, -1}, 10);
+    REQUIRE(reloaded);
+    CHECK(reloaded->point.y == Catch::Approx(-0.5f).margin(restingMargin));
+}
+
+TEST_CASE("A custom one-way tile lets a character rise through and land on it",
+          "[physics2d][tilecollision]")
+{
+    auto sources = std::make_shared<Tilesets>();
+    const auto id = devex::asset::AssetId::generate();
+    auto data = std::make_shared<devex::asset::TilesetData>();
+    data->tiles = {{.id = 1, .collision = devex::asset::TileCollision::Polygon}};
+    data->tiles[0].collisionPoints = {{0, 0.8f}, {1, 0.8f}, {1, 1}, {0, 1}};
+    data->tiles[0].collisionOneWay = true;
+    (*sources)[id] = data;
+    Scene scene;
+    const auto level = scene.createEntity("Ledge");
+    scene.add<devex::scene::Transform>(level);
+    devex::scene::Tilemap map{.tileset = id, .cellSize = {4, 1}};
+    devex::scene::TileGrid grid;
+    grid.set({0, 0}, 1);
+    grid.write(map);
+    scene.add<devex::scene::Tilemap>(level, map);
+    scene.add<devex::scene::TilemapCollider2D>(level);
+    const auto hero = addCharacter(scene, {2, -1});
+    scene.get<devex::scene::CharacterController2D>(hero).velocity.y = 9;
+    const auto world = makeWorld({}, sources);
+    simulate(*world, scene, 0.5);
+    CHECK(positionOf(scene, hero).y > 1.0f);
+    simulate(*world, scene, 2.0);
+    CHECK(positionOf(scene, hero).y == Catch::Approx(1.0f).margin(restingMargin));
+    CHECK(scene.get<devex::scene::CharacterController2D>(hero).grounded);
+}

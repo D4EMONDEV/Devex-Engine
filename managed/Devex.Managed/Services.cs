@@ -931,6 +931,8 @@ public enum TileCollision : byte
     Full,
     /// <summary>Holds up what lands on it from above, lets through what comes from below.</summary>
     Top,
+    /// <summary>A custom collision outline drawn in the tileset editor.</summary>
+    Polygon,
 }
 
 /// <summary>

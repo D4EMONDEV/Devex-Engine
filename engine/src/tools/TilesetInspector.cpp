@@ -3,6 +3,7 @@
 // terrain sets, whose terrains are painted on the middle, the sides and the corners of the tiles of
 // the palette, as Godot paints them. Saved once a change is over.
 #include "InspectorUi.hpp"
+#include "TileCollisionEditor.hpp"
 
 #include <devex/asset/import/TilesetFile.hpp>
 #include <devex/core/File.hpp>
@@ -31,9 +32,13 @@ struct CollisionChoice
 };
 
 constexpr std::array collisionChoices{
-    CollisionChoice{asset::TileCollision::None, "None", "Walked through: grass, decorations, backgrounds"},
+    CollisionChoice{asset::TileCollision::None, "None",
+                    "Walked through: grass, decorations, backgrounds"},
     CollisionChoice{asset::TileCollision::Full, "Full", "Solid on every side: ground, walls"},
-    CollisionChoice{asset::TileCollision::Top, "Top", "Holds up what lands on it, lets through what comes from below: ledges"},
+    CollisionChoice{asset::TileCollision::Top, "Top",
+                    "Holds up what lands on it, lets through what comes from below: ledges"},
+    CollisionChoice{asset::TileCollision::Polygon, "Polygon",
+                    "A custom outline drawn over the tile, including concave shapes"},
 };
 
 struct ModeChoice
@@ -250,9 +255,11 @@ public:
         {
             terrains += std::format("{},", set.terrains.size());
         }
-        return std::format("{}|{}|{}|{}|{}|{}", editor.tileset.tiles.size(), tile != nullptr ? tile->id : 0u,
-                           tile != nullptr ? tile->frames.size() : 0u, editor.error.empty(), terrains,
-                           editor.paintSet != asset::noTerrain);
+        return std::format("{}|{}|{}|{}|{}|{}|{}", editor.tileset.tiles.size(),
+                           tile != nullptr ? tile->id : 0u,
+                           tile != nullptr ? tile->frames.size() : 0u, editor.error.empty(),
+                           terrains, editor.paintSet != asset::noTerrain,
+                           tile != nullptr && tile->collision == asset::TileCollision::Polygon);
     }
 
     void build(InspectorUi& ui, ToolsState& state, EditorUiKit& kit) override
@@ -262,6 +269,8 @@ public:
         m_tiles.reset();
         m_frames.reset();
         m_sprite = {};
+        m_shownTile = 0;
+        m_hasCollisionEditor = false;
         m_zones.clear();
         m_sets.clear();
         const asset::AssetInfo* const info = state.database->find(state.selectedAsset);
@@ -311,6 +320,7 @@ public:
         const asset::TileData* const tile = editor.tileset.find(editor.selectedTile);
         if (tile != nullptr)
         {
+            m_shownTile = tile->id;
             ui.card(kit, "Tile", EntityIcon{icons::Grid, colors.texture});
             m_tileCard = ui.sections.size() - 1;
             Section& card = ui.sections[m_tileCard];
@@ -359,6 +369,13 @@ public:
             ui.tooltip(m_removeTile.entity, "Cells painted with it show nothing until a tile takes its number again");
         }
 
+        if (tile != nullptr && tile->collision == asset::TileCollision::Polygon)
+        {
+            Section& collision =
+                ui.card(kit, "Collision Shape", EntityIcon{icons::Shapes, colors.physics});
+            m_collisionEditor.build(ui, kit, collision, editor.asset, *tile);
+            m_hasCollisionEditor = true;
+        }
         buildTerrains(ui, state, kit);
         ui.note(nullptr, "A Tilemap that names this tileset paints its cells with these tiles: select it, then choose a tool under it in the "
                          "inspector.",
@@ -420,6 +437,8 @@ public:
             ui.tooltip(m_frames->cells[index], std::format("Frame {}: right-click to remove it", index + 1));
         }
         ui.fitMenu(m_frameMenu, ui.font * 10.0f);
+        if (tile->collision == asset::TileCollision::Polygon && m_hasCollisionEditor)
+            m_collisionEditor.sync(ui, state, *tile);
     }
 
     void answer(InspectorUi& ui, ToolsState& state, EditorUiKit&) override
@@ -464,7 +483,13 @@ public:
         }();
         if (tile != nullptr && m_sprite.isValid() && m_frames != nullptr && m_frames->cells.size() == tile->frames.size())
         {
-            answerTile(ui, state, *tile);
+            // The controls of a newly selected tile are rebuilt on the next frame.
+            if (m_shownTile == tile->id)
+            {
+                if (tile->collision == asset::TileCollision::Polygon && m_hasCollisionEditor)
+                    m_dirty = m_collisionEditor.answer(ui, state, *tile) || m_dirty;
+                answerTile(ui, state, *tile);
+            }
         }
         const bool busy = world.held().isValid() || world.isEditing() || m_painting;
         if (m_dirty && !busy)
@@ -805,6 +830,8 @@ private:
             if (selected >= 0 && static_cast<std::size_t>(selected) < collisionChoices.size())
             {
                 tile.collision = collisionChoices[static_cast<std::size_t>(selected)].collision;
+                if (tile.collision == asset::TileCollision::Polygon && tile.collisionPoints.empty())
+                    tile.collisionPoints = {{0, 0}, {1, 0}, {1, 1}, {0, 1}};
                 m_dirty = true;
             }
         }
@@ -879,6 +906,9 @@ private:
     Entity m_sprite;
     std::vector<asset::AssetId> m_sprites;
     Entity m_collision;
+    TileCollisionEditor m_collisionEditor;
+    std::uint32_t m_shownTile = 0;
+    bool m_hasCollisionEditor = false;
     Entity m_occluder;
     Entity m_data;
     bool m_typing = false;

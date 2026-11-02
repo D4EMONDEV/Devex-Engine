@@ -10,6 +10,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -34,6 +35,8 @@ enum class TileCollision : std::uint8_t
     Full = 1,
     // Stands under what lands on it from above, and lets through what comes from below: ledges.
     Top = 2,
+    // A custom outline in the cell, decomposed into convex shapes for physics.
+    Polygon = 3,
 };
 
 [[nodiscard]] DEVEX_API std::string_view toString(TileCollision collision) noexcept;
@@ -106,6 +109,7 @@ struct DEVEX_API TerrainSetData
 // At most this many terrain sets, and terrains in a set.
 inline constexpr std::size_t maxTerrainSets = 64;
 inline constexpr std::size_t maxTerrains = 64;
+inline constexpr std::size_t maxTileCollisionPoints = 64;
 struct DEVEX_API TileData
 {
     // From 1 to maxTileId, kept when tiles are added or removed: cells hold it.
@@ -127,6 +131,12 @@ struct DEVEX_API TileData
     TerrainBits terrainBits = noTerrainBits;
     // How often the terrain brushes choose the tile among those that fit the same place: variants.
     float probability = 1.0f;
+
+    // The custom collision outline, counterclockwise or clockwise, without repeating its first
+    // point. Coordinates span the cell from (0, 0) at the bottom left to (1, 1) at the top right.
+    // Kept when another collision mode is selected, so switching modes does not lose the drawing.
+    std::vector<math::Vec2> collisionPoints;
+    bool collisionOneWay = false;
 
     // The sprite shown at a time, in seconds.
     [[nodiscard]] AssetId spriteAt(double seconds) const noexcept;
@@ -159,6 +169,15 @@ struct DEVEX_API TilesetData
 // Identifiers from 1 to maxTileId, each once, frame rates and probabilities that are not negative,
 // and terrains that exist in the set of their tile.
 [[nodiscard]] DEVEX_API core::Result<void> validate(const TilesetData& tileset);
+
+// A simple outline of 3..64 distinct points, inside the cell, with nonzero area. Concave outlines
+// are supported; crossed edges, overlapping edges and holes are not.
+[[nodiscard]] DEVEX_API core::Result<void>
+validateTileCollision(std::span<const math::Vec2> points);
+// Convex, counterclockwise pieces of at most eight points each, as Box2D needs. Collinear points
+// are omitted from the pieces only; the authored outline is kept unchanged.
+[[nodiscard]] DEVEX_API core::Result<std::vector<std::vector<math::Vec2>>>
+decomposeTileCollision(std::span<const math::Vec2> points);
 
 // Leaves out what a tile names of its terrain set that the mode of the set does not read, and the
 // terrains of a tile outside the sets.
