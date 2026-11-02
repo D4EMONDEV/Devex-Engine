@@ -235,6 +235,9 @@ VisibilitySequence visibilitySequence(bool occlusion, bool orthographic,
                 orthographic ? render::Projection::Orthographic : render::Projection::Perspective;
             world.camera.orthographicSize = 5.0f;
             world.camera.antialiasing = render::Antialiasing::None;
+            // Exposure adapts to wall-clock time, which differs between the two runs (especially
+            // on a software Vulkan device). Compare visibility at the same exposure instead.
+            world.camera.autoExposure = false;
             world.sun = {.direction = {-0.4f, -1.0f, -0.3f}, .illuminance = math::Vec3{30000.0f}};
             world.environment.intensity = 5000.0f;
             const float wallX = frame >= 6 && frame < 10 ? 100.0f : 0.0f;
