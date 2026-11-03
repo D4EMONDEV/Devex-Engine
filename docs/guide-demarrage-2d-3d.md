@@ -63,7 +63,7 @@ Il est possible de conserver les deux prototypes dans le même projet, dans `Lev
 | Zone | Utilité |
 | --- | --- |
 | **Scene** | Les entités de la scène ouverte : joueur, caméra, sol, lumières… |
-| **Viewport** | La vue de travail pour placer les objets. En Play, elle affiche la caméra du jeu. |
+| **Viewport** | La vue de travail pour placer les objets. Play ouvre une fenêtre de jeu séparée ; le mode Inside Editor affiche aussi une vue Game intégrée. |
 | **Inspector** | Les composants et propriétés de l'entité ou de la ressource sélectionnée. |
 | **FileSystem** | Les fichiers du projet : textures, scènes, scripts et ressources. |
 | **Output** | Les messages d'import, de compilation et d'exécution ; commencer ici en cas d'erreur. |
@@ -169,7 +169,7 @@ actions correspondantes. Les poubelles retirent une liaison ou une action entiè
 
 En 2D, le script utilise seulement la composante horizontale de `Move`. En 3D, il utilise les deux composantes. Il faut bien choisir **Vector** : les scripts lisent `Input.ActionVector("Move")`.
 
-Arrêter puis relancer Play après avoir changé l'Input Map. Pendant Play, cliquer dans le viewport pour donner le clavier au jeu.
+Arrêter puis relancer Play après avoir changé l'Input Map. Pendant Play, cliquer dans la fenêtre du jeu pour lui donner le clavier (dans la vue Game en mode Inside Editor).
 
 ### Créer et attacher un script
 
@@ -373,9 +373,15 @@ Une caméra ajoutée avec le préréglage **2D camera** n'est pas nécessairemen
 
 1. Enregistrer la scène et compiler les scripts.
 2. Vérifier **Code ready** et l'absence d'erreur dans Output.
-3. Appuyer sur **F5**, puis cliquer dans la vue du jeu.
+3. Appuyer sur **F5** : une fenêtre de jeu s'ouvre dans son propre processus. Cliquer dedans pour jouer.
 4. Le personnage tombe sur le sol ; Q/D ou A/D le déplacent, Espace le fait sauter.
-5. **F8** arrête le jeu et revient à l'édition.
+5. Revenir dans l'éditeur puis **F8** pour arrêter le jeu, ou fermer sa fenêtre.
+
+L'éditeur reste disponible pendant la partie ; les messages du jeu arrivent dans **Output**.
+Play teste aussi les modifications de scène non enregistrées, sans les écrire dans le fichier.
+**F7** suspend/reprend et **F9** avance d'un pas en pause, depuis la fenêtre de l'éditeur.
+Pour l'inspection en direct avec la vue Game intégrée, choisir **Inside Editor** dans
+**Editor Settings > Compilation > Play > Run Game**. Voir [le lancement et le débogage](editor-play.md).
 
 **Point de contrôle :** le sol doit rester solide, le joueur doit être visible et la caméra doit le suivre. Corriger ces trois points avant d'ajouter l'animation ou les tiles.
 
@@ -612,7 +618,7 @@ ne contourne pas les murs : dans ce premier niveau ouvert, laisser de l'espace d
 
 ### 6.6 Jouer et enrichir la scène
 
-Sauvegarder, compiler puis **F5** et cliquer dans le viewport. ZQSD/WASD déplacent le personnage ; Espace saute. Il doit tomber sur le plan et être bloqué par le cube.
+Sauvegarder, compiler puis **F5** et cliquer dans la fenêtre du jeu. ZQSD/WASD déplacent le personnage ; Espace saute. Il doit tomber sur le plan et être bloqué par le cube.
 
 Ensuite, ajouter quelques **Static box** pour construire un petit parcours. Régler leurs Transform pour modifier position et dimensions. Pour un objet qui tombe ou qu'on peut pousser, utiliser **Rigid box**, qui possède déjà un RigidBody et un collider.
 
@@ -731,7 +737,7 @@ L'export peut remplacer les fichiers de sa destination. Choisir un dossier consa
 | --- | --- |
 | **Écran gris en Play** | Vérifier qu'une caméra est Primary dans la scène jouée. En 2D : position Z = 10, rotation nulle, objets autour de Z = 0, projection orthographique. Vérifier ensuite le champ de vision et les cibles du suivi. La vue d'édition n'est pas la caméra du jeu. |
 | **Le joueur disparaît immédiatement** | Vérifier le collider du sol, Trigger désactivé, dimensions et couches de collision. Le joueur peut simplement tomber hors du champ. |
-| **Le joueur ne bouge pas** | Cliquer dans le viewport ; vérifier Move/Jump, leur casse, le contexte Gameplay actif et Kind = Vector pour Move ; vérifier que le script est attaché au joueur et que la dernière compilation a réussi. |
+| **Le joueur ne bouge pas** | Cliquer dans la fenêtre du jeu (vue Game en mode Inside Editor) ; vérifier Move/Jump, leur casse, le contexte Gameplay actif et Kind = Vector pour Move ; vérifier que le script est attaché au joueur et que la dernière compilation a réussi. |
 | **Le saut ne fonctionne pas** | Jump doit être Button avec Espace. En 2D, le contrôleur doit toucher le sol. En 3D, conserver l'origine aux pieds, Capsule Center.Y = 0.9 et Height = 1.8 pour le rayon du script. |
 | **Le personnage 3D roule ou tombe sur le côté** | Activer les trois Lock rotation du RigidBody. Ne pas lui ajouter en plus un CharacterController. |
 | **Le sprite n'apparaît pas** | Importer la texture en Single ou Grid puis Reimport ; affecter un sprite au SpriteRenderer ; contrôler couleur/alpha, taille, caméra et Z. Pour cette base 2D, Lit est désactivé. |

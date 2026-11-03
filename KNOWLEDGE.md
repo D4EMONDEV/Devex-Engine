@@ -4,6 +4,9 @@
 > *Généré automatiquement à partir du code source - Version: 2026-10-04*
 > Éditeur, thème Godot 4 Modern et cohérence temporelle du rendu mis à jour le **2026-11-02** ; voir aussi le
 > [guide illustré](docs/guide-demarrage-2d-3d.md#12-personnaliser-le-viewport-et-lire-linspecteur).
+> Play ouvre par défaut un processus `devex-player` séparé depuis le **2026-11-03** ; voir
+> [lancement, contrôles et débogage](docs/editor-play.md). L'API native du module est en version **41**
+> (`ApplicationConfig::editorSession`) ; les modules C++ existants doivent être recompilés.
 
 ---
 

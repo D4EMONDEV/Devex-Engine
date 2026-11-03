@@ -5531,6 +5531,37 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
 
 Ensuite, sans ordre figé : à choisir dans les pistes ci-dessous.
 
+## Play dans un processus séparé — 2026-11-03
+
+Play lance par défaut `devex-player`, à côté de l'éditeur, avec le projet et une copie de la
+scène courante sous `.devex/play/<UUID>/`. Les changements non enregistrés sont inclus sans
+modifier la scène source ni la scène de démarrage du projet. L'identifiant de la scène d'origine,
+la langue de test et l'attente éventuelle du débogueur sont transmis dans `session.dvx`.
+
+L'éditeur supervise le processus par deux pipes : commandes courtes sur stdin, états et journaux
+structurés sur stdout. Le texte DVX échappe les messages multilignes et conserve les niveaux et
+catégories. Les lectures sont bornées pour laisser l'interface répondre même à un jeu bavard.
+Pause, reprise, pas physique et Stop agissent sur le lecteur. Stop laisse deux secondes au jeu
+pour fermer normalement, puis termine un processus bloqué. La fermeture du pipe du parent fait
+quitter le lecteur ; la fermeture de l'éditeur ou le changement de projet arrête aussi la partie.
+Une sortie anormale conserve son instantané et ses logs ; une sortie normale nettoie sa session.
+
+Le jeu dispose de ses propres mondes, de .NET et de son rendu. Le débogueur C# cible le PID réel
+de `devex-player` ; l'attente du débogueur retarde Start et la simulation. L'éditeur continue
+d'éditer son document, et son inspecteur et son profiler décrivent toujours ce document et son
+rendu. Le réglage personnel **Compilation > Play > Run Game > Inside Editor** conserve les vues
+Scene/Game et l'inspection du jeu intégré. Les callbacks d'une application C++ personnalisée de
+l'éditeur ne sont exécutés que dans ce mode ; le lecteur exécute le module de jeu du projet.
+
+L'isolation porte sur l'exécution de la partie. L'éditeur charge encore les types C++/C# pour
+son inspecteur : les erreurs dans l'enregistrement natif de ces types ou dans le moteur lui-même
+ne sont pas isolées par ce lancement. Un inspecteur et un profiler distants restent à ajouter.
+
+`ApplicationConfig::editorSession` est réservé au lecteur supervisé ; vide, il garde le
+comportement autonome ou exporté. Ce changement de structure porte l'API native à **41** et
+demande la recompilation des modules C++. Construire `devex_editor` construit aussi
+`devex_player` quand les deux cibles sont activées. Voir [l'utilisation](editor-play.md).
+
 ## Questions ouvertes
 
 À trancher le moment venu, pas avant :
@@ -5542,8 +5573,7 @@ Ensuite, sans ordre figé : à choisir dans les pistes ci-dessous.
   machines sans SDK, édition du code dans l'éditeur, copie limitée aux champs changés entre les
   phases, export vers d'autres plateformes du runtime .NET (Android : NativeAOT ou Mono, après la
   première version en C++, voir *Android*).
-- **Isolation du code du jeu, la suite** : le jeu dans un processus séparé, comme Godot (la garde
-  du jalon 72 ne contient que les plantages du thread principal, hors du code appelé depuis le C#) ;
+- **Isolation du code du jeu, la suite** : inspection et profilage à distance du lecteur ;
   pause du jeu sur la première exception, comme le débogueur de Godot ; rapport d'un plantage
   ouvert à sa ligne dans l'éditeur de code.
 - **Physique** : articulations en rotule et à six degrés de liberté, moteurs vers une position,
@@ -5714,7 +5744,7 @@ Ensuite, sans ordre figé : à choisir dans les pistes ci-dessous.
   repères, sélection des éléments au rectangle, aperçu à plusieurs résolutions, textes liés
   (`UiBinding`) montrés hors du jeu, canevas cachés montrés à la demande, gizmos au-dessus de
   l'interface, interfaces placées dans le monde 3D (canevas en espace monde).
-- **Éditeur** : jeu dans un processus séparé, partage et forme du jeu gardés d'une session à
+- **Éditeur** : partage et forme du jeu intégré gardés d'une session à
   l'autre, statistiques par vue, pivot au centre de la sélection (mode *Center* de
   Unity), listes éditées à plusieurs, entités masquées aussi dans l'écran 2D, entité active ou
   non pour le jeu (`SetActive` de Unity), déplacement au clavier dans l'arbre.

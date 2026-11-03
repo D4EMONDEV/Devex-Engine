@@ -16,7 +16,7 @@ et rendu avec Vulkan. Il est distribué sous licence [MIT](LICENSE).
   chaud par l'éditeur ; le C# atteint ce que le C++ d'un jeu atteint (composants, mondes, fenêtre,
   terrains, données des assets) ;
 - éditeur au style inspiré de Godot : gestionnaire de projets, onglets de scènes, viewport,
-  gizmos et mode Play ; il passe sur l'interface des jeux, pour n'avoir qu'un seul système
+  gizmos et [mode Play dans un processus séparé](docs/editor-play.md) ; il passe sur l'interface des jeux, pour n'avoir qu'un seul système
   d'interface : tous les panneaux, le dock (emplacements, onglets, barres) et les modales le sont,
   l'éditeur lit lui-même le clavier et la souris et décide qui les reçoit, et le renderer compose
   ses images avec le pipeline de cette interface, aux espacements du thème de Godot. Dear ImGui
@@ -177,8 +177,9 @@ captures de l'éditeur, scènes de base, entrées, scripts C#, animations, colli
   sous-assets, navigation au clavier, arbre conservé entre les changements),
   fermetures des fenêtres et des onglets avec une croix centrée et une cible plus large,
   onglets de scènes, viewport et sa
-  barre d'outils, scène et jeu côte à côte pendant Play (la partie se change dans la scène, le jeu a
-  sa caméra, son interface et la forme choisie), caméra libre, sélection multiple (Ctrl et Maj dans l'arbre, rectangle dans la
+  barre d'outils, jeu dans sa propre fenêtre et son propre processus pendant Play (Output, Pause,
+  Stop et débogage pilotés par l'éditeur, scène non enregistrée comprise), option Inside Editor
+  pour les vues Scene/Game et l'inspection en direct, caméra libre, sélection multiple (Ctrl et Maj dans l'arbre, rectangle dans la
   vue), gizmos et inspecteur sur plusieurs entités, copier, coller et dupliquer par le
   presse-papiers, renommage dans l'arbre, entités masquées dans la vue, matériaux glissés sur les
   objets, préfabs (glisser-déposer, valeurs
@@ -509,7 +510,9 @@ qui contient du C# emporte son runtime .NET, sans rien à installer chez le joue
 Dans l'éditeur : clic gauche pour sélectionner, Q / W / E / R pour sélectionner, déplacer, tourner
 ou mettre à l'échelle (Ctrl aimante), clic droit maintenu + ZQSD pour voler, Alt + clic gauche pour
 tourner autour, F pour cadrer, Ctrl+S pour enregistrer la scène, Ctrl+N / Ctrl+W pour ouvrir ou
-fermer un onglet de scène et F5 pour jouer (F8 arrête). Le thème, l'échelle et les polices se
+fermer un onglet de scène et F5 pour jouer dans une fenêtre séparée (F7 suspend, F8 arrête depuis
+l'éditeur). Le choix Separate Process / Inside Editor se trouve dans *Editor Settings > Compilation > Play* ;
+voir [les commandes et le débogage](docs/editor-play.md). Le thème, l'échelle et les polices se
 règlent dans *Editor > Editor Settings*. Le préréglage **Godot 4 Modern** reprend les gris neutres
 et l'accent bleu du thème Modern ; il est proposé par défaut aux nouvelles préférences. Les
 couleurs et l'échelle déjà enregistrées sont conservées. `devex-editor <projet> --screenshot image.png` écrit une
