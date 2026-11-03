@@ -17,12 +17,8 @@ void registerGlobalRoot() { scene::registerComponent<GlobalRoot>(); }
 
 bool hasGlobals(const scene::Scene& scene)
 {
-    for (const auto entry : scene.view<const GlobalRoot>())
-    {
-        static_cast<void>(entry);
-        return true;
-    }
-    return false;
+    const auto roots = scene.view<const GlobalRoot>();
+    return roots.begin() != roots.end();
 }
 
 core::Result<void> startGlobals(scene::Scene& scene, std::span<const asset::GlobalScene> globals,
