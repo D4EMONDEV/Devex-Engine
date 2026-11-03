@@ -4505,7 +4505,10 @@ Jalon 62, comme la localisation de Godot.
   les ouvre) et, en dessous, ce que le fichier ouvert déclare — types, fonctions, ou sections pour
   un fichier `.dvx*` — qui amène à la ligne d'un clic. La lecture des symboles se fait par la forme
   des lignes (mots-clés, parenthèses, fins de ligne) : elle suffit pour naviguer et se trompe sur
-  les mises en forme inhabituelles.
+  les mises en forme inhabituelles. Les filtres raccourcissent leur libellé selon la largeur
+  disponible (puis gardent seulement la loupe si nécessaire), avec une infobulle complète. Les
+  placeholders, le texte saisi, la sélection et le curseur restent coupés aux limites intérieures
+  des champs lors du redimensionnement.
 - **Confort d'édition** : marge des numéros de ligne, surlignage de la ligne courante, **Ctrl+F**
   (recherche, compte des occurrences, sensibilité à la casse, F3 pour la suivante), **Ctrl+H**
   (remplacement, un par un ou tous), **Ctrl+G** (aller à la ligne), **Ctrl+/** (puis **Ctrl+K**, commenter ou

@@ -479,9 +479,11 @@ void ScriptUi::build(EditorUiKit& kit)
     scene().add<scene::UiSplitter>(side, scene::UiSplitter{.vertical = true, .position = std::round(font * 16.0f), .minSize = std::round(font * 6.0f)});
     const auto list = [&](const char* name, const char* placeholder, Entity& filter, Entity& rows) {
         const Entity box = add(side, name, whole(), "list");
+        scene().get<UiRect>(box).clipChildren = true;
         scene().add<scene::UiImage>(box);
         filter = searchField(kit, box, UiRect{.anchorMin = {0.0f, 0.0f}, .anchorMax = {1.0f, 0.0f}, .offsetMin = {4.0f, 4.0f}, .offsetMax = {-4.0f, 4.0f + inner}}, "",
                              placeholder);
+        tooltip(filter, placeholder);
         const Entity scrolled = add(box, "List",
                                     UiRect{.anchorMin = {0.0f, 0.0f}, .anchorMax = {1.0f, 1.0f}, .offsetMin = {0.0f, inner + 8.0f}, .offsetMax = {0.0f, -2.0f}, .clipChildren = true},
                                     "scroll");
@@ -1033,6 +1035,22 @@ std::optional<PendingAction> ScriptUi::update(ToolsState& state, EditorUiKit& ki
 
     // The menus open under their titles, and the pointer on another title goes to its menu.
     const ui::LayoutResult* const layout = world.canvases().empty() ? nullptr : &world.canvases().front().layout;
+    const auto fitFilter = [&](Entity entity, const char* full, const char* compact)
+    {
+        const ui::LaidOutRect* const rect = layout != nullptr ? layout->find(entity) : nullptr;
+        if (rect == nullptr)
+            return;
+        scene::UiInput& field = scene().get<scene::UiInput>(entity);
+        const float available = std::max(rect->size().x - field.padding.x * 2.0f, 0.0f);
+        const char* label =
+            kit.textWidth(EditorUiKit::regularFont(), full, font) <= available      ? full
+            : kit.textWidth(EditorUiKit::regularFont(), compact, font) <= available ? compact
+                                                                                    : "";
+        if (field.placeholder != label)
+            field.placeholder = label;
+    };
+    fitFilter(filesFilter, "Filter Scripts", "Scripts");
+    fitFilter(symbolsFilter, "Filter Methods", "Methods");
     const math::Vec2 mouse = state.input.mouse();
     for (std::size_t index = 0; index < menus.size() && layout != nullptr; ++index)
     {

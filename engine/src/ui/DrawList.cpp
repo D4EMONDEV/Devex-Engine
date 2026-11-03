@@ -1111,6 +1111,18 @@ void drawField(Builder& builder, const DrawContext& context, const LaidOutRect& 
     math::Vec2 boxMin{0.0f};
     math::Vec2 boxMax{0.0f};
     fieldBox(field, rect.min, rect.max, boxMin, boxMax);
+    if (boxMax.x <= boxMin.x || boxMax.y <= boxMin.y)
+    {
+        return;
+    }
+    // Narrow fields keep their placeholder, selection and caret inside the text box. The field's
+    // background and children (such as a search icon) keep their own clipping.
+    const math::Vec4 outer = builder.clip;
+    if (isPlain(rect))
+    {
+        builder.clip = intersectClip(outer, math::Vec4{boxMin.x, boxMin.y, boxMax.x, boxMax.y} *
+                                                builder.scale);
+    }
     // The letters kept from the last frames are placed from the origin, and moved to the box; without
     // a cache they are placed in the box.
     TextLayoutResult placed;
@@ -1149,6 +1161,7 @@ void drawField(Builder& builder, const DrawContext& context, const LaidOutRect& 
                 caret(*stop, math::Vec2{0.0f});
             }
         }
+        builder.clip = outer;
         return;
     }
 
@@ -1168,6 +1181,7 @@ void drawField(Builder& builder, const DrawContext& context, const LaidOutRect& 
             caret(*stop, origin);
         }
     }
+    builder.clip = outer;
 }
 
 } // namespace

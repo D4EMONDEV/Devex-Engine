@@ -816,6 +816,74 @@ TEST_CASE("Texts keep their letters from a drawing to the next until they change
     CHECK(cache.placed() == 6);
 }
 
+TEST_CASE("Resized fields clip their placeholder and editing marks without clipping neighbours",
+          "[ui][world][field][responsive]")
+{
+    Scene scene;
+    const auto canvas = scene.createEntity("Canvas");
+    scene.add<Canvas>(canvas, Canvas{.scaleMode = CanvasScaleMode::ConstantPixels});
+    const auto panel = scene.createEntity("Panel");
+    REQUIRE(scene.setParent(panel, canvas));
+    scene.add<UiRect>(panel, UiRect{.anchorMin = {0, 0},
+                                    .anchorMax = {0, 0},
+                                    .offsetMin = {80, 90},
+                                    .offsetMax = {240, 150},
+                                    .clipChildren = true});
+    const auto field = scene.createEntity("Filter");
+    REQUIRE(scene.setParent(field, panel));
+    scene.add<UiRect>(field, UiRect{.anchorMin = {0, 0},
+                                    .anchorMax = {0, 0},
+                                    .offsetMin = {20, 10},
+                                    .offsetMax = {120, 40}});
+    scene.add<UiImage>(field);
+    scene.add<devex::scene::UiText>(field,
+                                    devex::scene::UiText{.text = "", .size = 20, .wrap = false});
+    scene.add<devex::scene::UiInput>(
+        field,
+        devex::scene::UiInput{.placeholder = "Filter Scripts and Methods", .padding = {8, 4}});
+    const auto neighbour = scene.createEntity("Neighbour");
+    REQUIRE(scene.setParent(neighbour, canvas));
+    scene.add<UiRect>(neighbour, UiRect{.anchorMin = {0, 0},
+                                        .anchorMax = {0, 0},
+                                        .offsetMin = {300, 100},
+                                        .offsetMax = {500, 140}});
+    scene.add<devex::scene::UiText>(
+        neighbour, devex::scene::UiText{.text = "Neighbour", .size = 20, .wrap = false});
+    UiWorld world;
+    world.setFonts(&fontRef);
+    devex::ui::TextCache cache;
+    for (const bool cached : {false, true})
+    {
+        for (const float width : {300.0f, 100.0f, 12.0f})
+        {
+            scene.get<UiRect>(field).offsetMax.x = 20 + width;
+            for (const auto* value : {"", "A long filter query that exceeds the field"})
+            {
+                scene.get<devex::scene::UiText>(field).text = value;
+                world.update(scene, window, {}, frame);
+                world.startEditing(scene, field, true);
+                devex::render::RenderWorld drawn;
+                world.build(scene,
+                            devex::ui::DrawContext{.fonts = &fontRef,
+                                                   .textCache = cached ? &cache : nullptr},
+                            drawn);
+                REQUIRE(drawn.uiDraws.size() >= 2);
+                CHECK(drawn.uiDraws.front().clip == Vec4{80, 90, 240, 150});
+                CHECK(drawn.uiDraws.back().kind == devex::render::UiDrawKind::Text);
+                CHECK(drawn.uiDraws.back().clip == Vec4{0});
+                if (width <= 16)
+                    CHECK(drawn.uiDraws.size() == 2);
+                else
+                {
+                    const Vec4 expected{108, 104, std::min(92 + width, 240.0f), 126};
+                    for (std::size_t i = 1; i + 1 < drawn.uiDraws.size(); ++i)
+                        CHECK(drawn.uiDraws[i].clip == expected);
+                }
+            }
+        }
+    }
+}
+
 TEST_CASE("A tooltip without a font of its own speaks with the font of the interface around it", "[ui][world][controls]")
 {
     Scene scene;
