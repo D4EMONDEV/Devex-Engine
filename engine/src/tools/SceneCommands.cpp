@@ -688,6 +688,36 @@ private:
 
 } // namespace
 
+std::unique_ptr<Command> makeReplaceSceneCommand(std::string before, std::string after,
+                                                 std::string description)
+{
+    class ReplaceScene final : public Command
+    {
+      public:
+        ReplaceScene(std::string before, std::string after, std::string description)
+            : m_before(std::move(before)), m_after(std::move(after)),
+              m_description(std::move(description))
+        {
+        }
+        std::string description() const override { return m_description; }
+        core::Result<void> apply(Scene& scene) override { return restore(scene, m_after); }
+        core::Result<void> revert(Scene& scene) override { return restore(scene, m_before); }
+
+      private:
+        static core::Result<void> restore(Scene& scene, const std::string& text)
+        {
+            auto loaded = scene::loadScene(text);
+            if (!loaded)
+                return std::unexpected(loaded.error());
+            scene = std::move(*loaded);
+            return {};
+        }
+        std::string m_before, m_after, m_description;
+    };
+    return std::make_unique<ReplaceScene>(std::move(before), std::move(after),
+                                          std::move(description));
+}
+
 std::unique_ptr<Command> makeCompositeCommand(std::vector<std::unique_ptr<Command>> commands,
                                               std::string description)
 {

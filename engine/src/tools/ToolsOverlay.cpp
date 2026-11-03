@@ -841,6 +841,15 @@ void ToolsOverlay::setExternalPlayStatus(ExternalPlayStatus status)
     m_state->externalPlay = status;
 }
 
+void ToolsOverlay::setAddonCommands(std::vector<asset::AddonCommand> commands)
+{
+    m_state->addonCommands = std::move(commands);
+}
+void ToolsOverlay::setAddonCommandExecutor(AddonCommandExecutor executor)
+{
+    m_state->addonCommandExecutor = std::move(executor);
+}
+
 void ToolsOverlay::openInPreferredEditor(const std::filesystem::path& file)
 {
     detail::openInPreferredEditor(*m_state, file);

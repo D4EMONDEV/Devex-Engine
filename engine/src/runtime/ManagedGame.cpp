@@ -354,10 +354,11 @@ struct ManagedApi
     void (*runPhase)(void* scene, int phase, float delta);
     void (*applyDefaults)(const char* typeName, void* component);
     int (*isDebuggerAttached)();
+    int (*runEditorCommand)(void* scene, const char* id, const scene::Entity* selection, int count);
 };
 
 // Devex.Managed's Bootstrap.Version: both sides change it with the function tables.
-constexpr int bootstrapVersion = 27;
+constexpr int bootstrapVersion = 28;
 
 struct BootstrapArguments
 {
@@ -2981,6 +2982,7 @@ public:
     NativeApi native{};
     ManagedApi managed{};
     std::vector<std::string> types;
+    std::vector<asset::AddonCommand> editorCommands;
     bool assemblyLoaded = false;
     // A component type outliving this runtime must not call into .NET any more.
     std::shared_ptr<const bool> alive = std::make_shared<const bool>(true);
@@ -3317,6 +3319,14 @@ core::Result<void> ManagedGame::loadAssembly(const std::filesystem::path& assemb
 
     for (const serialization::TextSection& section : document->sections)
     {
+        if (section.type == "editor_command")
+        {
+            const auto* id = stringAttribute(section, "id");
+            const auto* addon = stringAttribute(section, "addon");
+            const auto* name = stringAttribute(section, "name");
+            if (id != nullptr && addon != nullptr && name != nullptr && asset::validAddonId(*addon))
+                m_impl->editorCommands.push_back({*addon, *id, *name});
+        }
         if (section.type == "component")
         {
             registerType();
@@ -3348,6 +3358,7 @@ void ManagedGame::unloadAssembly()
         static_cast<void>(scene::componentRegistry().remove(name));
     }
     m_impl->types.clear();
+    m_impl->editorCommands.clear();
     {
         const platform::CrashGuardBarrier barrier;
         m_impl->managed.unloadGame();
@@ -3380,6 +3391,32 @@ void ManagedGame::runPhase(Frame& frame, SystemPhase phase)
         m_impl->managed.runPhase(frame.scene, phaseWord, static_cast<float>(frame.delta.count()));
     }
     currentFrame() = nullptr;
+}
+
+std::span<const asset::AddonCommand> ManagedGame::editorCommands() const noexcept
+{
+    return m_impl->editorCommands;
+}
+
+core::Result<void> ManagedGame::runEditorCommand(Frame& frame, std::string_view id,
+                                                 std::span<const scene::Entity> selection)
+{
+    if (!m_impl->assemblyLoaded || frame.scene == nullptr ||
+        m_impl->managed.runEditorCommand == nullptr)
+        return core::makeError(core::ErrorCode::InvalidState, "No C# editor commands are loaded");
+    currentFrame() = &frame;
+    int status = -1;
+    {
+        const platform::CrashGuardBarrier barrier;
+        const std::string key(id);
+        status = m_impl->managed.runEditorCommand(frame.scene, key.c_str(), selection.data(),
+                                                  static_cast<int>(selection.size()));
+    }
+    currentFrame() = nullptr;
+    if (status != 0)
+        return core::makeError(core::ErrorCode::InvalidState,
+                               "The addon command failed; its scene changes were discarded");
+    return {};
 }
 
 std::size_t ManagedGame::release(scene::Scene& scene) const

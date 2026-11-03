@@ -1,3 +1,4 @@
+#include <devex/asset/Addon.hpp>
 #include <devex/asset/Project.hpp>
 #include <devex/asset/TranslationData.hpp>
 #include <devex/core/File.hpp>
@@ -560,6 +561,20 @@ core::Result<Project> parseProject(std::string_view text, const std::filesystem:
     }
     if (auto valid = validateGlobals(project.globals); !valid)
         return std::unexpected(valid.error());
+    for (const auto& entry : document->sections)
+    {
+        if (entry.type != "addon")
+            continue;
+        const auto* id = entry.findAttribute("id");
+        const auto* addonId = id != nullptr ? serialization::asString(*id) : nullptr;
+        if (addonId == nullptr || !validAddonId(*addonId) ||
+            std::ranges::find(project.addons, *addonId, &AddonSetting::id) != project.addons.end())
+            return core::makeError(core::ErrorCode::InvalidArgument,
+                                   "Invalid or duplicate addon id");
+        const auto* enabled = entry.findAttribute("enabled");
+        project.addons.push_back(
+            {*addonId, enabled != nullptr && serialization::asBool(*enabled).value_or(false)});
+    }
     return project;
 }
 
@@ -593,6 +608,14 @@ core::Result<void> saveProject(const Project& project)
 {
     if (auto valid = validateGlobals(project.globals); !valid)
         return valid;
+    std::vector<std::string_view> ids;
+    for (const auto& addon : project.addons)
+    {
+        if (!validAddonId(addon.id) || std::ranges::find(ids, addon.id) != ids.end())
+            return core::makeError(core::ErrorCode::InvalidArgument,
+                                   "Invalid or duplicate addon id");
+        ids.push_back(addon.id);
+    }
     return core::writeTextFile(project.file, writeProjectText(project));
 }
 
@@ -609,6 +632,12 @@ std::string writeProjectText(const Project& project)
     }
 
     // Physics settings are written only when they differ from the defaults.
+    for (const auto& addon : project.addons)
+    {
+        auto& entry = document.sections.emplace_back();
+        entry.type = "addon";
+        entry.attributes = {{"id", addon.id}, {"enabled", addon.enabled}};
+    }
     for (const auto& global : project.globals)
     {
         auto& entry = document.sections.emplace_back();

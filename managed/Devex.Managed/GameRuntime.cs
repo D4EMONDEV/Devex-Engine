@@ -13,7 +13,7 @@ namespace Devex;
 /// data as the game: at the start of each phase the runtime copies them into the C# objects, which
 /// the game's code then changes freely, and copies them back at the end of the phase.
 /// </summary>
-internal static unsafe class GameRuntime
+internal static unsafe partial class GameRuntime
 {
     private sealed class GameLoadContext(string path) : AssemblyLoadContext(isCollectible: true)
     {
@@ -103,6 +103,7 @@ internal static unsafe class GameRuntime
         _loadedCopy = Path.GetDirectoryName(copy);
         foreach (Type type in assembly.GetTypes())
         {
+            AddEditorCommands(type);
             AddSystems(type);
             if (type.IsAbstract || !type.IsSubclassOf(typeof(Component)))
             {
@@ -132,7 +133,7 @@ internal static unsafe class GameRuntime
         }
         Systems.Sort((first, second) => first.Order != second.Order ? first.Order.CompareTo(second.Order)
                                                                    : first.Found.CompareTo(second.Found));
-        return DescribeTypes();
+        return DescribeTypes() + DescribeEditorCommands();
     }
 
     /// <summary>Forgets the game assembly and everything it defined, keeping the state of its components.</summary>
@@ -143,6 +144,7 @@ internal static unsafe class GameRuntime
         PreserveInstances();
         Saves.Forget();
         Systems.Clear();
+        EditorTools.Clear();
         Types.Clear();
         TypesByType.Clear();
         Failures.Clear();

@@ -23,6 +23,34 @@ using devex::scene::Transform;
 using devex::serialization::TextValue;
 using devex::tools::CommandHistory;
 
+TEST_CASE("An addon scene edit is one undo step and keeps entity references",
+          "[tools][commands][addon]")
+{
+    Scene scene;
+    const auto entity = scene.createEntity("Before");
+    scene.add<Transform>(entity);
+    const auto id = scene.uuid(entity);
+    const auto before = devex::scene::saveScene(scene);
+    auto edited = scene.clone();
+    edited.setName(entity, "After");
+    edited.get<Transform>(entity).position.x = 3;
+    static_cast<void>(edited.createEntity("Extra"));
+    const auto after = devex::scene::saveScene(edited);
+    CommandHistory history;
+    REQUIRE(
+        history.execute(scene, devex::tools::makeReplaceSceneCommand(before, after, "Addon edit")));
+    CHECK(scene.name(scene.findEntity(id)) == "After");
+    CHECK(scene.entityCount() == 2);
+    REQUIRE(history.undo(scene));
+    CHECK(devex::scene::saveScene(scene) == before);
+    REQUIRE(history.redo(scene));
+    CHECK(devex::scene::saveScene(scene) == after);
+    CHECK(history.nextUndo()->description() == "Addon edit");
+    CHECK_FALSE(
+        history.execute(scene, devex::tools::makeReplaceSceneCommand(after, "broken", "Invalid")));
+    CHECK(devex::scene::saveScene(scene) == after);
+}
+
 namespace {
 
 TextValue vec3(float x, float y, float z)

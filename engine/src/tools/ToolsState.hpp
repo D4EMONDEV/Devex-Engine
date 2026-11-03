@@ -418,6 +418,7 @@ struct DEVEX_API DialogAnswers
     std::optional<std::filesystem::path> saveAsPrefab;
     std::optional<std::filesystem::path> exportFolder;
     std::optional<std::pair<std::size_t, std::filesystem::path>> scriptEditor;
+    std::optional<std::filesystem::path> installAddon;
 };
 
 // What the project manager shows of a project, read from its file.
@@ -967,6 +968,8 @@ struct DEVEX_API ToolsState
     // Editor.
     PlayState playState = PlayState::Editing;
     ExternalPlayStatus externalPlay;
+    std::vector<asset::AddonCommand> addonCommands;
+    ToolsOverlay::AddonCommandExecutor addonCommandExecutor;
     [[nodiscard]] bool gameRunning() const noexcept
     {
         return playState != PlayState::Editing || externalPlay.running;

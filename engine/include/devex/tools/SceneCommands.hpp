@@ -15,6 +15,10 @@
 // registered names, so commands only rely on reflection.
 namespace devex::tools {
 
+// A whole-scene edit made by an addon, kept as text so undo can outlive a code reload.
+[[nodiscard]] DEVEX_API std::unique_ptr<Command>
+makeReplaceSceneCommand(std::string before, std::string after, std::string description);
+
 // Several commands undone and redone as one, such as the two corners a drag moves together. The
 // commands are applied in order and reverted in the opposite one; an empty list is no command.
 [[nodiscard]] DEVEX_API std::unique_ptr<Command> makeCompositeCommand(

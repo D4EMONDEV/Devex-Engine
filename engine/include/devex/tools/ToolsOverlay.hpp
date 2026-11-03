@@ -1,4 +1,5 @@
 #pragma once
+#include <devex/asset/Addon.hpp>
 
 #include <devex/core/Export.hpp>
 
@@ -357,6 +358,10 @@ public:
     [[nodiscard]] bool automaticCodeCompilation() const;
     [[nodiscard]] bool playInSeparateProcess() const;
     void setExternalPlayStatus(ExternalPlayStatus status);
+    void setAddonCommands(std::vector<asset::AddonCommand> commands);
+    using AddonCommandExecutor = std::function<core::Result<void>(scene::Scene&, std::string_view,
+                                                                  std::span<const scene::Entity>)>;
+    void setAddonCommandExecutor(AddonCommandExecutor executor);
     void openInPreferredEditor(const std::filesystem::path& file);
     // Editor only: checks projects when the project manager refreshes its list. The application
     // supplies the check so that the tools do not load game code or depend on the runtime.

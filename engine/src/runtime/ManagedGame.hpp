@@ -2,6 +2,7 @@
 
 #include <devex/core/Export.hpp>
 
+#include <devex/asset/Addon.hpp>
 #include <devex/asset/AssetId.hpp>
 #include <devex/asset/AssetSource.hpp>
 #include <devex/core/Error.hpp>
@@ -96,6 +97,9 @@ public:
 
     // Runs the C# components and systems of the frame's scene for a phase.
     void runPhase(Frame& frame, SystemPhase phase);
+    [[nodiscard]] std::span<const asset::AddonCommand> editorCommands() const noexcept;
+    [[nodiscard]] core::Result<void> runEditorCommand(Frame& frame, std::string_view id,
+                                                      std::span<const scene::Entity> selection);
 
     // Keeps the components of the assembly in the scene as text and destroys their pools, before
     // the assembly is unloaded. Returns the number of components preserved.

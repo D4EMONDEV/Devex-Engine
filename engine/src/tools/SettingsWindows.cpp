@@ -40,9 +40,9 @@ constexpr std::array<std::string_view, 5> editorPages{"Theme", "Display", "Viewp
 constexpr std::size_t viewportPage = 2;
 constexpr std::size_t scriptsPage = 3;
 constexpr std::size_t compilationPage = 4;
-constexpr std::array<std::string_view, 9> projectPages{
+constexpr std::array<std::string_view, 10> projectPages{
     "Application", "Window",    "Physics",      "Collision Layers", "Sorting Layers",
-    "Audio",       "Input Map", "Localization", "Globals"};
+    "Audio",       "Input Map", "Localization", "Globals",          "Addons"};
 
 [[nodiscard]] math::Vec4 linearOf(math::Vec3 srgb)
 {
@@ -62,7 +62,8 @@ constexpr std::array<std::string_view, 9> projectPages{
     return first.name != second.name || first.startupScene != second.startupScene ||
            first.physics != second.physics || first.window != second.window ||
            first.audio != second.audio || first.input != second.input ||
-           first.sorting != second.sorting || first.globals != second.globals;
+           first.sorting != second.sorting || first.globals != second.globals ||
+           first.addons != second.addons;
 }
 
 } // namespace
@@ -220,9 +221,10 @@ void SettingsUi::buildFrame(EditorUiKit& kit, std::span<const std::string_view> 
         scene().add<scene::UiLayout>(strip, scene::UiLayout{.kind = scene::UiLayoutKind::Row,
                                                             .spacing = gap,
                                                             .align = scene::TextAlign::Left});
-        static constexpr std::array titles{"General", "Input Map", "Localization", "Globals"};
+        static constexpr std::array titles{"General", "Input Map", "Localization", "Globals",
+                                           "Addons"};
         static constexpr std::array icons{Icon::Settings, Icon::Keyboard, Icon::Languages,
-                                          Icon::Globe};
+                                          Icon::Globe, Icon::Package};
         tabs.clear();
         for (std::size_t i = 0; i < titles.size(); ++i)
             tabs.push_back(button(kit, strip, icons[i], titles[i], "flat", 0, line));
@@ -258,9 +260,9 @@ void SettingsUi::buildFrame(EditorUiKit& kit, std::span<const std::string_view> 
     scene().add<scene::UiLayout>(list, scene::UiLayout{.kind = scene::UiLayoutKind::Column,
                                                        .spacing = gap,
                                                        .align = scene::TextAlign::Left});
-    static constexpr std::array projectIcons{Icon::Box,      Icon::Monitor,     Icon::Shapes,
-                                             Icon::Layers,   Icon::ArrowUpDown, Icon::Volume,
-                                             Icon::Keyboard, Icon::Languages,   Icon::Globe};
+    static constexpr std::array projectIcons{
+        Icon::Box,    Icon::Monitor,  Icon::Shapes,    Icon::Layers, Icon::ArrowUpDown,
+        Icon::Volume, Icon::Keyboard, Icon::Languages, Icon::Globe,  Icon::Package};
     static constexpr std::array editorIcons{Icon::Palette, Icon::Monitor, Icon::Axis, Icon::Code,
                                             Icon::Hammer};
     for (std::size_t i = 0; i < names.size(); ++i)
@@ -947,6 +949,10 @@ std::string ProjectSettingsUi::signatureOf() const
     }
     text += inputMapSignature(project.input);
     text += std::format("globals:{}|", project.globals.size());
+    text += addonResult;
+    for (const auto& addon : addonPackages)
+        text += addon.id + "|" + addon.name + "|" + addon.version + "|" + addon.author + "|" +
+                addon.license + "|" + addon.description + "|" + addon.error + "|";
     return text;
 }
 
@@ -1113,6 +1119,7 @@ void ProjectSettingsUi::buildCards(ToolsState& state, EditorUiKit& kit)
     buildInputMap(*this, kit, 6);
 
     buildGlobals(kit);
+    buildAddons(kit);
 
     Section& localization = pageCard(kit, 7, "Localization");
     const FormRow fallbackRow = formRow(localization, "Fallback Language");
@@ -1427,6 +1434,7 @@ void ProjectSettingsUi::save(ToolsState& state)
     written.input = project.input;
     written.sorting = project.sorting;
     written.globals = project.globals;
+    written.addons = project.addons;
     if (core::Result<void> updated = state.database->updateProject(written); !updated)
     {
         DEVEX_LOG_ERROR("Cannot save the project: {}", updated.error());
@@ -1463,6 +1471,11 @@ void ProjectSettingsUi::update(ToolsState& state, EditorUiKit& kit, core::Durati
         project = saved;
         dirty = false;
     }
+    if (std::chrono::steady_clock::now() >= nextAddonScan)
+    {
+        addonPackages = asset::installedAddons(saved);
+        nextAddonScan = std::chrono::steady_clock::now() + std::chrono::seconds(1);
+    }
     if (std::string wanted = signatureOf(); wanted != signature)
     {
         clearForm();
@@ -1472,6 +1485,7 @@ void ProjectSettingsUi::update(ToolsState& state, EditorUiKit& kit, core::Durati
     labelWidth = std::clamp(std::round((panel.size().x - font * 12.0f) * 0.34f), font * 7.0f, font * 12.0f);
     sync(state, kit);
     syncGlobals();
+    syncAddons();
     applyFilter();
     filterInputMap(*this);
     measureTitles(kit);
@@ -1481,7 +1495,9 @@ void ProjectSettingsUi::update(ToolsState& state, EditorUiKit& kit, core::Durati
     answerFrame();
     answer(state, kit);
     answerGlobals();
-    dirty = dirty || project.globals != state.database->project().globals;
+    answerAddons(state);
+    dirty = dirty || project.globals != state.database->project().globals ||
+            project.addons != state.database->project().addons;
     save(state);
     scene().get<scene::UiText>(saveStatus).text =
         asset::validateGlobals(project.globals) ? "Changes are saved automatically."

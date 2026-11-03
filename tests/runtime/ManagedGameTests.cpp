@@ -248,6 +248,42 @@ TEST_CASE("The application runs late cameras after interpolation and restores si
     std::filesystem::remove_all(directory);
 }
 
+TEST_CASE("C# addon commands edit a scene without running the game and reload cleanly",
+          "[runtime][managed][addon]")
+{
+    const auto game = startRuntime();
+    REQUIRE(game->editorCommands().size() == 2);
+    CHECK(game->editorCommands()[0].name == "Failure \"with quotes\"");
+    Scene scene;
+    const auto selected = scene.createEntity("Selected");
+    scene.add<devex::scene::Transform>(selected);
+    const auto* mover = devex::scene::componentRegistry().find("Mover");
+    REQUIRE(mover != nullptr);
+    REQUIRE(mover->emplace(scene, selected) != nullptr);
+    auto edited = scene.clone();
+    ManagedGame::Frame frame{.scene = &edited};
+    REQUIRE(game->runEditorCommand(frame, "EditorTools.Move", std::array{selected}));
+    CHECK(edited.get<devex::scene::Transform>(selected).position.x == 2);
+    CHECK(scene.get<devex::scene::Transform>(selected).position.x == 0);
+    CHECK(edited.entityCount() == 2);
+    CHECK(edited.name(selected) == "Selected"); // The game's rename system did not run.
+    CHECK(field<float>(*mover, const_cast<void*>(mover->find(edited, selected)), "speed") == 9);
+    CHECK(field<std::string>(*mover, const_cast<void*>(mover->find(edited, selected)), "label") ==
+          "new"); // Nor did Start.
+    auto rejected = scene.clone();
+    frame.scene = &rejected;
+    CHECK_FALSE(game->runEditorCommand(frame, "EditorTools.Fail", {}));
+    CHECK(scene.entityCount() == 1);
+    CHECK_FALSE(game->runEditorCommand(frame, "Missing", {}));
+    static_cast<void>(game->release(edited));
+    static_cast<void>(game->release(rejected));
+    static_cast<void>(game->release(scene));
+    game->unloadAssembly();
+    CHECK(game->editorCommands().empty());
+    REQUIRE(game->loadAssembly(DEVEX_TEST_MANAGED_GAME));
+    CHECK(game->editorCommands().size() == 2);
+}
+
 TEST_CASE("The C# runtime registers components and runs them", "[runtime][managed]")
 {
     const std::unique_ptr<ManagedGame> game = startRuntime();

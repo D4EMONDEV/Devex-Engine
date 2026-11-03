@@ -216,6 +216,7 @@ target_sources(devex_asset
         src/asset/Package.cpp
         src/asset/Primitives.cpp
         src/asset/Project.cpp
+        src/asset/Addon.cpp
         src/asset/ShaderData.cpp
         src/asset/ShaderGraphData.cpp
         src/asset/SpriteData.cpp
@@ -894,6 +895,7 @@ target_sources(devex_tools
         src/tools/Icons.hpp
         src/tools/InputSettings.cpp
         src/tools/GlobalSettings.cpp
+        src/tools/AddonSettings.cpp
         src/tools/InspectorPages.cpp
         src/tools/InspectorPanel.cpp
         src/tools/InspectorUi.cpp

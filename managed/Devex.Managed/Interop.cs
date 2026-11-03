@@ -258,6 +258,7 @@ internal unsafe struct ManagedApi
     public delegate* unmanaged<void*, int, float, void> RunPhase;
     public delegate* unmanaged<byte*, void*, void> ApplyDefaults;
     public delegate* unmanaged<int> IsDebuggerAttached;
+    public delegate* unmanaged<void*, byte*, Entity*, int, int> RunEditorCommand;
 }
 
 [StructLayout(LayoutKind.Sequential)]
@@ -273,7 +274,7 @@ internal unsafe struct BootstrapArguments
 /// <summary>What the engine calls into: filling the function tables, then the game itself.</summary>
 public static unsafe class Bootstrap
 {
-    internal const int Version = 27;
+    internal const int Version = 28;
 
     internal static NativeApi Native;
     private static byte[]? _description;
@@ -299,7 +300,23 @@ public static unsafe class Bootstrap
         bootstrap->Managed->RunPhase = &RunPhase;
         bootstrap->Managed->ApplyDefaults = &ApplyDefaults;
         bootstrap->Managed->IsDebuggerAttached = &IsDebuggerAttached;
+        bootstrap->Managed->RunEditorCommand = &RunEditorCommand;
         return 0;
+    }
+
+    [UnmanagedCallersOnly]
+    private static int RunEditorCommand(void* scene, byte* id, Entity* selection, int count)
+    {
+        try
+        {
+            return GameRuntime.RunEditorCommand(scene, Utf8.ToString(id) ?? string.Empty,
+                new ReadOnlySpan<Entity>(selection, count).ToArray()) ? 0 : -1;
+        }
+        catch (Exception exception)
+        {
+            Log.Error($"Editor addon command failed: {exception}");
+            return -1;
+        }
     }
 
     [UnmanagedCallersOnly]

@@ -533,6 +533,30 @@ ApplicationRunner::ApplicationRunner(Application& application, const Application
     scene::setPrefabSourceLoader([&assets](asset::AssetId prefab) { return assets.sceneText(prefab); });
     if (isEditor())
     {
+        services.tools->setAddonCommandExecutor(
+            [this](scene::Scene& scene, std::string_view id,
+                   std::span<const scene::Entity> selection) -> core::Result<void>
+            {
+                if (!m_managed || m_playScene || m_services.database == nullptr)
+                    return core::makeError(core::ErrorCode::InvalidState,
+                                           "Editor addon commands are unavailable");
+                const auto commands = m_managed->editorCommands();
+                const auto command = std::ranges::find(commands, id, &asset::AddonCommand::id);
+                const auto& project = m_services.database->project();
+                if (command == commands.end() || !asset::addonEnabled(project, command->addon))
+                    return core::makeError(core::ErrorCode::InvalidState, "The addon is disabled");
+                const auto manifest =
+                    asset::readAddon(project.assetsDirectory() / "addons" / command->addon);
+                if (!manifest || manifest->id != command->addon)
+                    return core::makeError(core::ErrorCode::InvalidState,
+                                           "The addon manifest is invalid");
+                ManagedGame::Frame frame{.scene = &scene,
+                                         .input = &m_services.platform.input(),
+                                         .window = &m_services.window,
+                                         .assets = assetSource(),
+                                         .assetManager = &m_services.assets};
+                return m_managed->runEditorCommand(frame, id, selection);
+            });
         std::vector<tools::EngineBuildChoice> choices;
         for (const EngineBuild& build : findEngineBuilds(services.platform.baseDirectory()))
         {
@@ -544,6 +568,8 @@ ApplicationRunner::ApplicationRunner(Application& application, const Application
 
 ApplicationRunner::~ApplicationRunner()
 {
+    if (isEditor())
+        m_services.tools->setAddonCommandExecutor({});
     // The scenes outlive the runner: they must not keep components of an unloaded module.
     closeGameCode();
     scene::setPrefabSourceLoader({});
@@ -1045,6 +1071,12 @@ void ApplicationRunner::runFrame()
     {
         DEVEX_PROFILE_SCOPE("Game code");
         updateGameCode();
+    }
+    if (isEditor())
+    {
+        const auto commands =
+            m_managed ? m_managed->editorCommands() : std::span<const asset::AddonCommand>{};
+        m_services.tools->setAddonCommands({commands.begin(), commands.end()});
     }
     updateLocalization();
 

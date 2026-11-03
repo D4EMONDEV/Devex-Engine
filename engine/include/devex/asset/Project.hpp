@@ -222,6 +222,14 @@ struct DEVEX_API GlobalScene
 
 [[nodiscard]] DEVEX_API core::Result<void> validateGlobals(std::span<const GlobalScene> globals);
 
+// Enabling an addon's editor tools is personal to this project. Its content remains available.
+struct DEVEX_API AddonSetting
+{
+    std::string id;
+    bool enabled = false;
+    bool operator==(const AddonSetting&) const = default;
+};
+
 // A game project: a .dvxproj file whose directory holds the assets/ folder, the code/ folder of its
 // game module when it has one, and the .devex/ cache of imported data and builds, which is never
 // versioned.
@@ -242,6 +250,7 @@ struct DEVEX_API Project
     InputSettings input;
     LocalizationSettings localization;
     std::vector<GlobalScene> globals;
+    std::vector<AddonSetting> addons;
 
     [[nodiscard]] std::filesystem::path assetsDirectory() const
     {

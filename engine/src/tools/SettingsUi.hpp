@@ -241,6 +241,22 @@ struct ProjectSettingsUi : SettingsUi
     void syncGlobals();
     void answerGlobals();
 
+    std::vector<asset::AddonInfo> addonPackages;
+    struct AddonRow
+    {
+        scene::Entity enabled;
+        PanelButton folder;
+    };
+    std::vector<AddonRow> addonRows;
+    PanelButton installAddon;
+    PanelButton refreshAddons;
+    scene::Entity addonMessage;
+    std::string addonResult;
+    std::chrono::steady_clock::time_point nextAddonScan{};
+    void buildAddons(EditorUiKit& kit);
+    void syncAddons();
+    void answerAddons(ToolsState& state);
+
     void update(ToolsState& state, EditorUiKit& kit, core::Duration delta);
     [[nodiscard]] std::string signatureOf() const;
     void buildCards(ToolsState& state, EditorUiKit& kit);

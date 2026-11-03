@@ -62,7 +62,8 @@ class CoroutineScheduler;
 // scene the Decal component.
 // 40: RenderWorld gained the volumetric fog and its volumes, and the scene the VolumetricFog and
 // FogVolume components.
-inline constexpr std::uint32_t gameApiVersion = 41;
+// 41: ApplicationConfig gained supervised Play. 42: Project gained addon activation settings.
+inline constexpr std::uint32_t gameApiVersion = 42;
 
 enum class SystemPhase : std::uint8_t
 {

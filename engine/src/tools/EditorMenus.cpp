@@ -3,11 +3,12 @@
 #include "SettingsUi.hpp"
 #include "ToolsState.hpp"
 
-#include <devex/core/Profiler.hpp>
 #include <devex/asset/Project.hpp>
 #include <devex/core/BuildInfo.hpp>
 #include <devex/core/Log.hpp>
 #include <devex/core/Path.hpp>
+#include <devex/core/Profiler.hpp>
+#include <devex/scene/SceneSerializer.hpp>
 #include <devex/tools/SceneCommands.hpp>
 
 #include <algorithm>
@@ -226,6 +227,49 @@ void addPanelEntries(ToolsState& state, std::vector<MenuEntry>& entries)
     MenuEntry panels{.icon = Icon::LayoutDashboard, .label = "Panels"};
     addPanelEntries(state, panels.children);
     entries.push_back(std::move(panels));
+    if (state.database != nullptr)
+    {
+        MenuEntry addons{.icon = Icon::Package, .label = "Addon Tools"};
+        const auto installed = asset::installedAddons(state.database->project());
+        for (const auto& addon : installed)
+        {
+            if (!addon.error.empty() || !asset::addonEnabled(state.database->project(), addon.id))
+                continue;
+            for (const auto& command : state.addonCommands)
+            {
+                if (command.addon != addon.id)
+                    continue;
+                addons.children.push_back(
+                    {.label = addon.name + ": " + command.name,
+                     .enabled = state.playState == PlayState::Editing &&
+                                static_cast<bool>(state.addonCommandExecutor),
+                     .action = [command](ToolsState& tools, scene::Scene& edited)
+                     {
+                         if (!tools.addonCommandExecutor)
+                             return;
+                         auto working = edited.clone();
+                         std::vector<Entity> selection;
+                         for (const auto& id : tools.selection.entities())
+                             if (const auto entity = working.findEntity(id); entity.isValid())
+                                 selection.push_back(entity);
+                         if (auto result =
+                                 tools.addonCommandExecutor(working, command.id, selection);
+                             !result)
+                         {
+                             DEVEX_LOG_ERROR("{}: {}", command.name, result.error());
+                             return;
+                         }
+                         const auto before = scene::saveScene(edited);
+                         const auto after = scene::saveScene(working);
+                         if (before != after)
+                             logFailure(tools.history.execute(
+                                 edited, makeReplaceSceneCommand(before, after, command.name)));
+                     }});
+            }
+        }
+        if (!addons.children.empty())
+            entries.push_back(std::move(addons));
+    }
     entries.push_back({.label = "Reset Layout", .action = [](ToolsState& tools, scene::Scene&) { tools.resetLayout = true; }});
     return entries;
 }

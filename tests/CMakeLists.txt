@@ -137,6 +137,7 @@ devex_add_tests(asset
         asset/TerrainMapsTests.cpp
         asset/ArtifactTests.cpp
         asset/AssetDatabaseTests.cpp
+        asset/AddonTests.cpp
         asset/CurveTests.cpp
         asset/FbxImporterTests.cpp
         asset/FontImporterTests.cpp
