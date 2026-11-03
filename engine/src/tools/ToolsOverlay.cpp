@@ -411,7 +411,7 @@ void updateEditor(ToolsState& state, scene::Scene& scene, PlayState playState)
         detail::drawAssetsPanel(state, scene);
     }
     detail::drawSettingsWindow(state);
-    detail::drawProjectSettingsWindow(state);
+    detail::drawProjectSettingsWindow(state, scene);
     detail::drawCreationDialog(state, scene);
     detail::drawExportWindow(state);
     detail::drawDebuggingWindow(state);
@@ -843,6 +843,14 @@ void ToolsOverlay::setExternalPlayStatus(ExternalPlayStatus status)
 
 void ToolsOverlay::setAddonCommands(std::vector<asset::AddonCommand> commands)
 {
+    if (commands == m_state->addonCommands)
+        return;
+    // A command naming no addon would only be missing from the menu: say why.
+    if (m_state->database != nullptr)
+        for (const auto& command : asset::commandsWithoutAddon(m_state->database->project(), commands))
+            DEVEX_LOG_WARNING("The editor command \"{}\" names the addon \"{}\", which this project does not have: "
+                              "check the id in its [EditorCommand]",
+                              command.name, command.addon);
     m_state->addonCommands = std::move(commands);
 }
 void ToolsOverlay::setAddonCommandExecutor(AddonCommandExecutor executor)

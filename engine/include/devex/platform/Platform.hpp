@@ -108,6 +108,8 @@ public:
 
     // Opens a folder in the system's file manager, or a file with its default application.
     [[nodiscard]] core::Result<void> openPath(const std::filesystem::path& path) const;
+    // Opens a web page in the browser of the user.
+    [[nodiscard]] core::Result<void> openUrl(const std::string& url) const;
 
     // Turns typing on for a window: until it is turned off, what the user types arrives in
     // Input::typedText, and the system may show its input method over the window.

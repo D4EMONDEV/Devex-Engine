@@ -968,9 +968,14 @@ core::Result<void> Platform::openPath(const std::filesystem::path& path) const
 {
     std::string url = "file:///" + core::toUtf8(path.lexically_normal());
     std::ranges::replace(url, '\\', '/');
+    return openUrl(url);
+}
+
+core::Result<void> Platform::openUrl(const std::string& url) const
+{
     if (!SDL_OpenURL(url.c_str()))
     {
-        return core::makeError(core::ErrorCode::Platform, "cannot open '{}': {}", core::toUtf8(path), SDL_GetError());
+        return core::makeError(core::ErrorCode::Platform, "cannot open '{}': {}", url, SDL_GetError());
     }
     return {};
 }

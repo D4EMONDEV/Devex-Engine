@@ -1043,9 +1043,9 @@ références aux composants du niveau précédent.
 
 ## 14. Réutiliser du contenu avec des addons
 
-**Project > Project Settings > Addons** installe un dossier contenant `addon.dvxaddon`.
-Ses ressources apparaissent dans `assets/addons/<id>`, ses scripts dans `code/addons/<id>`.
-Après compilation, activer **Editor Tools** pour afficher les commandes C# de l'addon dans
+**Project > Addons...** crée un addon dans le projet (**Create Addon...**) ou en installe un depuis
+un dossier contenant `addon.dvxaddon`. Ses ressources apparaissent dans `assets/addons/<id>`, ses scripts dans `code/addons/<id>`.
+Après compilation, activer **Editor Tools** pour afficher les commandes C# d'un addon installé dans
 **Editor > Addon Tools**. Elles modifient la scène éditée et se défont avec **Ctrl+Z**.
 Le package `samples/addons/scene-tools` du moteur donne un exemple de scène, de composant de jeu
-et de commandes. Voir [la création et l'installation des addons](addons.md).
+et de commandes. La même page exporte, met à jour et désinstalle un addon. Voir [la création et l'installation des addons](addons.md).

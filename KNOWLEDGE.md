@@ -7,7 +7,7 @@
 > Play ouvre par défaut un processus `devex-player` séparé depuis le **2026-11-03** ; voir
 > [lancement, contrôles et débogage](docs/editor-play.md). L'API native du module est en version **42**
 > (`ApplicationConfig::editorSession`, puis `Project::addons`) ; les modules C++ existants doivent être recompilés.
-> Les [addons locaux](docs/addons.md) ajoutent du contenu et des commandes C# à l'éditeur
+> Les [addons locaux](docs/addons.md) se créent, s'installent, s'exportent, se mettent à jour et se désinstallent depuis Project > Addons, et ajoutent du contenu et des commandes C# à l'éditeur
 > (`EditorCommandAttribute`, `EditorContext`), avec activation par projet et historique de scène.
 
 ---

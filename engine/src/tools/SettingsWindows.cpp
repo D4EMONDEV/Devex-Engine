@@ -953,6 +953,8 @@ std::string ProjectSettingsUi::signatureOf() const
     for (const auto& addon : addonPackages)
         text += addon.id + "|" + addon.name + "|" + addon.version + "|" + addon.author + "|" +
                 addon.license + "|" + addon.description + "|" + addon.error + "|";
+    for (const auto& command : addonCommands)
+        text += command.addon + "|" + command.name + "|";
     return text;
 }
 
@@ -1441,8 +1443,10 @@ void ProjectSettingsUi::save(ToolsState& state)
     }
 }
 
-void ProjectSettingsUi::update(ToolsState& state, EditorUiKit& kit, core::Duration delta)
+void ProjectSettingsUi::update(ToolsState& state, EditorUiKit& kit, core::Duration delta, scene::Scene& edited)
 {
+    if (std::exchange(state.openAddonSettings, false))
+        selected = addonsPage;
     const ThemeColors& colors = themeColors();
     kit.refreshTheme(colors);
     setFont(state.theme.fontSize);
@@ -1474,9 +1478,11 @@ void ProjectSettingsUi::update(ToolsState& state, EditorUiKit& kit, core::Durati
     if (std::chrono::steady_clock::now() >= nextAddonScan)
     {
         addonPackages = asset::installedAddons(saved);
+        addonCommands = state.addonCommands;
         nextAddonScan = std::chrono::steady_clock::now() + std::chrono::seconds(1);
     }
-    if (std::string wanted = signatureOf(); wanted != signature)
+    // A window asking about an addon is not swept away by what comes in behind it.
+    if (std::string wanted = signatureOf(); wanted != signature && !addonDialogOpen())
     {
         clearForm();
         buildCards(state, kit);
@@ -1495,7 +1501,7 @@ void ProjectSettingsUi::update(ToolsState& state, EditorUiKit& kit, core::Durati
     answerFrame();
     answer(state, kit);
     answerGlobals();
-    answerAddons(state);
+    answerAddons(state, kit, edited);
     dirty = dirty || project.globals != state.database->project().globals ||
             project.addons != state.database->project().addons;
     save(state);
@@ -1505,7 +1511,7 @@ void ProjectSettingsUi::update(ToolsState& state, EditorUiKit& kit, core::Durati
     numberCursor(state, panel);
 }
 
-void drawProjectSettingsWindow(ToolsState& state)
+void drawProjectSettingsWindow(ToolsState& state, scene::Scene& scene)
 {
     DEVEX_PROFILE_SCOPE("Project Settings");
     if (!state.showProjectSettings || state.database == nullptr)
@@ -1519,7 +1525,7 @@ void drawProjectSettingsWindow(ToolsState& state)
     }
     if (beginFormWindow(state, "Project Settings", &state.showProjectSettings, 72.0f, 43.0f))
     {
-        state.projectSettingsUi->update(state, kit, core::Duration(state.input.delta()));
+        state.projectSettingsUi->update(state, kit, core::Duration(state.input.delta()), scene);
         if (state.projectSettingsUi->closeRequested)
             state.showProjectSettings = false;
         endFormWindow(state);

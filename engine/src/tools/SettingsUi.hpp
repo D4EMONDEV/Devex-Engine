@@ -168,6 +168,9 @@ struct InputMapUi
     std::string lastSearch;
 };
 
+// The section of the project settings that holds the addons.
+inline constexpr std::size_t addonsPage = 9;
+
 // The project settings, edited on a copy of the project written once an edit ends.
 struct ProjectSettingsUi : SettingsUi
 {
@@ -242,22 +245,68 @@ struct ProjectSettingsUi : SettingsUi
     void answerGlobals();
 
     std::vector<asset::AddonInfo> addonPackages;
+    std::vector<asset::AddonCommand> addonCommands;
     struct AddonRow
     {
+        // Only for an addon with commands.
         scene::Entity enabled;
         PanelButton folder;
+        PanelButton exported;
+        PanelButton update;
+        PanelButton remove;
     };
     std::vector<AddonRow> addonRows;
+    PanelButton createAddonButton;
     PanelButton installAddon;
+    PanelButton addonGuide;
     PanelButton refreshAddons;
     scene::Entity addonMessage;
     std::string addonResult;
     std::chrono::steady_clock::time_point nextAddonScan{};
+    // What the window asking about an addon waits to do.
+    enum class AddonAction : std::uint8_t
+    {
+        None,
+        Install,
+        Update,
+        Uninstall,
+    };
+    AddonAction addonAction = AddonAction::None;
+    std::filesystem::path addonSource;
+    // The addon being exported or uninstalled.
+    std::string addonTarget;
+    // The addon whose Update button chose the folder, which must hold it.
+    std::string updatingAddon;
+    scene::Entity addonDialog;
+    scene::Entity addonDialogTitle;
+    scene::Entity addonDialogText;
+    scene::Entity addonDialogWarning;
+    PanelButton addonConfirm;
+    PanelButton addonCancel;
+    scene::Entity addonCreateDialog;
+    scene::Entity draftName;
+    scene::Entity draftId;
+    scene::Entity draftVersion;
+    scene::Entity draftAuthor;
+    scene::Entity draftDescription;
+    scene::Entity draftLicense;
+    scene::Entity draftExample;
+    scene::Entity draftStatus;
+    PanelButton draftConfirm;
+    PanelButton draftCancel;
     void buildAddons(EditorUiKit& kit);
     void syncAddons();
-    void answerAddons(ToolsState& state);
+    [[nodiscard]] bool addonDialogOpen();
+    void addonFinished(ToolsState& state, std::string message);
+    void addonFailed(std::string_view what, const core::Error& error);
+    void askAboutAddon(EditorUiKit& kit, AddonAction action, std::string title, std::string text, std::string warning,
+                       std::string_view confirm);
+    void askAboutPackage(ToolsState& state, EditorUiKit& kit, const std::filesystem::path& source);
+    void uninstallAddon(ToolsState& state, scene::Scene& edited);
+    void answerAddonDialogs(ToolsState& state, scene::Scene& edited);
+    void answerAddons(ToolsState& state, EditorUiKit& kit, scene::Scene& edited);
 
-    void update(ToolsState& state, EditorUiKit& kit, core::Duration delta);
+    void update(ToolsState& state, EditorUiKit& kit, core::Duration delta, scene::Scene& edited);
     [[nodiscard]] std::string signatureOf() const;
     void buildCards(ToolsState& state, EditorUiKit& kit);
     void sync(ToolsState& state, EditorUiKit& kit);

@@ -419,6 +419,7 @@ struct DEVEX_API DialogAnswers
     std::optional<std::filesystem::path> exportFolder;
     std::optional<std::pair<std::size_t, std::filesystem::path>> scriptEditor;
     std::optional<std::filesystem::path> installAddon;
+    std::optional<std::filesystem::path> exportAddon;
 };
 
 // What the project manager shows of a project, read from its file.
@@ -1051,6 +1052,8 @@ struct DEVEX_API ToolsState
     // The document last drawn in the main viewport; a cut discards the previous scene's history.
     std::optional<std::uint64_t> renderedSceneTab;
     bool showProjectSettings = false;
+    // Project Settings opens on its addons.
+    bool openAddonSettings = false;
     // The key pressed since the previous frame, whatever window had the keyboard, and the one of
     // this frame: the input settings bind it by its place, which the letters typed do not tell.
     std::optional<platform::Key> notifiedKey;
@@ -1327,7 +1330,7 @@ DEVEX_API void drawStatusBar(ToolsState& state, const scene::Scene& scene);
 // The windows of settings and the Export window, made with the interface of the engine, each floating
 // over the others while it is open.
 DEVEX_API void drawSettingsWindow(ToolsState& state);
-DEVEX_API void drawProjectSettingsWindow(ToolsState& state);
+DEVEX_API void drawProjectSettingsWindow(ToolsState& state, scene::Scene& scene);
 DEVEX_API void drawExportWindow(ToolsState& state);
 DEVEX_API void renderExportWindow(ToolsState& state, render::RenderWorld& world);
 // The dialogs of the editor: New Script, the unsaved changes an action would drop, and About.

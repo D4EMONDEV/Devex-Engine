@@ -1,5 +1,7 @@
 using Devex;
 
+namespace DevexSceneTools;
+
 public static class SceneTools
 {
     [EditorCommand("devex.scene-tools", "Create Spinning Cube")]

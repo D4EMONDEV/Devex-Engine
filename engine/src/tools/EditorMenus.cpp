@@ -165,6 +165,10 @@ void addHistoryEntries(ToolsState& state, std::vector<MenuEntry>& entries)
     entries.push_back({.icon = Icon::Sliders, .label = "Project Settings...", .action = [](ToolsState& tools, scene::Scene&) {
                            tools.showProjectSettings = true;
                        }});
+    entries.push_back({.icon = Icon::Package, .label = "Addons...", .action = [](ToolsState& tools, scene::Scene&) {
+                           tools.showProjectSettings = true;
+                           tools.openAddonSettings = true;
+                       }});
     entries.push_back({.icon = Icon::Package, .label = "Export Game...", .action = [](ToolsState& tools, scene::Scene&) {
                            tools.showExport = true;
                        }});

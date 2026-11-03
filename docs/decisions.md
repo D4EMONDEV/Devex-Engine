@@ -5587,6 +5587,46 @@ Les fichiers externes qu'une commande écrit ne font pas partie de cette annulat
 Le catalogue en ligne, les archives, les mises à jour, les dépendances, les panneaux personnalisés
 et les plugins natifs autonomes sont des suites de cette base. Voir [l'API et l'exemple](addons.md).
 
+### Le chemin complet des addons (décidé le 3 novembre 2026)
+
+La base s'arrêtait à copier un dossier local : rien ne menait à la documentation, on écrivait le
+manifeste à la main, on ne pouvait ni retirer ni mettre à jour un addon, et rien ne permettait de le
+publier. L'ordre retenu, à la manière de Godot :
+
+1. ✅ **Rendre le local complet** (ci-dessous).
+2. **Empaqueter** : Export Addon en zip, installation depuis un zip, manifeste enrichi (version du
+   moteur, dépendances, catégorie, icône, version comparable). Le moteur n'a pas encore de lecteur de zip.
+3. **Le catalogue** : un onglet AssetLib à côté de 2D, 3D et Script, avec recherche, fiche,
+   téléchargement vérifié par SHA-256 et avertissement si l'addon contient du code. Le moteur n'a pas
+   encore de client HTTP. Hébergement recommandé, à confirmer à cette étape : un dépôt GitHub public
+   tenant un index, les zips restant dans les releases de leurs auteurs, et une publication par pull
+   request vérifiée par la CI. C'est gratuit et sans comptes à gérer ; un vrai site pourra servir le
+   même index le jour où il faudra des notes ou des ventes.
+4. **Étendre l'API** : panneaux, inspecteurs, gizmos, activation et désactivation. À cadrer.
+
+**Étape 1, faite** :
+
+- **Create Addon...** crée l'addon en place, comme le fait Godot sous `res://addons`, avec son
+  manifeste, un README et, au choix, une classe C# de commande ouverte dans Script. Ses outils sont
+  activés d'office, puisqu'on travaille dessus ; ceux d'un addon installé restent désactivés.
+- **Un dossier partagé reste le format de package** tant que le zip n'existe pas : **Export to
+  Folder...** remet le contenu et le code dans la disposition d'un package, ce qui ferme la boucle
+  entre deux projets dès cette étape.
+- **Une seule vérification avant copie**, `previewAddon`, que la fenêtre et `installAddon` ou
+  `updateAddon` partagent : UUID en double avec le projet ou dans le package, `DEVEX_GAME_MODULE`,
+  dossier situé dans le projet. Les noms de composants C# ne sont pas vérifiés ici : il faudrait lire
+  le C# à la main, alors que le chargement du code les signale déjà.
+- **La mise à jour remplace tout ou rien** : l'ancienne version passe dans le dossier de préparation
+  le temps de poser la nouvelle, et revient en cas d'échec. Elle ne fusionne pas les changements
+  locaux, et la fenêtre le dit.
+- **La désinstallation passe par `deleteFileSystemPath`**, comme une suppression dans FileSystem, pour
+  fermer les onglets concernés et tenir la base d'assets à jour. Elle est définitive, comme elle.
+- **La carte ne montre Editor Tools qu'à un addon ayant des commandes**, et les liste. Sans commande,
+  elle dit comment en ajouter une. Une commande dont l'id ne correspond à aucun addon est signalée
+  dans Output plutôt que de manquer sans explication au menu.
+- **Le bouton Guide ouvre la documentation sur GitHub** (`Platform::openUrl`), les fichiers `docs/`
+  n'étant pas livrés avec l'éditeur.
+
 ## Questions ouvertes
 
 À trancher le moment venu, pas avant :
