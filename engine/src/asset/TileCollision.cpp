@@ -74,8 +74,8 @@ void mergePieces(std::vector<std::vector<math::Vec2>>& pieces)
         for (std::size_t second = first + 1; second < pieces.size();)
         {
             bool merged = false;
-            for (std::size_t a = 0; a < pieces[first].size() && !merged; ++a)
-                for (std::size_t b = 0; b < pieces[second].size() && !merged; ++b)
+            for (std::size_t a = 0; !merged && a < pieces[first].size(); ++a)
+                for (std::size_t b = 0; !merged && b < pieces[second].size(); ++b)
                 {
                     const auto& p = pieces[first];
                     const auto& q = pieces[second];
