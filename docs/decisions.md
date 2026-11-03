@@ -4834,9 +4834,19 @@ Les étapes, chacune livrable et testée seule :
    1.3 non ; le device doit en offrir 256. Les GPU de téléphone qui n'en offrent que 128 seront
    refusés : s'ils sont nombreux parmi les appareils visés, la prépasse devra lire ces données dans
    un buffer. À mesurer sur un vrai téléphone à l'étape 2.
-2. **Le moteur compilé pour Android** : triplet vcpkg `arm64-android`, preset CMake avec la
-   chaîne d'outils du NDK, SDL3 pour Android, le lecteur en `libmain.so` ; un job de CI qui le
-   construit (sans appareil pour lancer les tests).
+2. ✅ **Le moteur compilé pour Android** (jalon 93) : preset `android-arm64` (triplet vcpkg
+   `arm64-android`, chaîne d'outils du NDK, Android 10 au minimum, `ANDROID_PLATFORM` 29), sans
+   éditeur ni tests. Le lecteur y devient `libmain.so`, dont SDL appelle `SDL_main` ; SDL, lié en
+   statique, n'est que dans `libdevex-engine.so`, avec ses fonctions JNI. Sans C# sur Android,
+   `devex-bindgen` (qui tourne pendant le build) et le projet managé n'y sont pas construits.
+   basisu, que vcpkg ne construit pas pour Android, ne sert qu'à l'import, fait sur le bureau :
+   sans lui, la compression des textures répond qu'elle n'est pas disponible. Trois adaptations
+   du code : la pile d'un plantage est relevée par l'unwinder du NDK (`backtrace()` n'arrive
+   qu'avec Android 13), l'horloge des fichiers compte en 128 bits, et la libc++ du NDK n'a pas les
+   fuseaux horaires. Le NDK ajoute toujours les informations de débogage : environ 12 Mo de code
+   pour 320 Mo de bibliothèque, que Gradle allégera à l'empaquetage. Le job *Android arm64* de la CI
+   construit le preset avec le NDK r29, avertissements traités comme des erreurs ; rien ne lance
+   encore le moteur sur un téléphone.
 3. **La plateforme Android** : le package lu depuis les assets de l'APK (`PackageReader` ouvre
    aujourd'hui un chemin de fichier ; il passera par un flux de la plateforme, le `.dvxpak` étant
    rangé non compressé), les sauvegardes dans le dossier de l'application, la surface perdue et
@@ -5370,6 +5380,11 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     1.4 dont dépend la prépasse, et refuse à sa création une pipeline qui en demanderait plus. Le
     BC devient facultatif : un GPU sans BC refuse les textures BC une à une. Tests du choix du
     GPU et suite `[gpu]` sous validation en 1.3.
+
+93. ✅ **Moteur pour Android** — deuxième étape d'Android : preset `android-arm64` avec le NDK,
+    lecteur en `libmain.so` appelé par SDL, SDL une seule fois dans le moteur ; sans éditeur,
+    tests, C# ni encodeurs de textures. Pile des plantages par l'unwinder du NDK, horloge des
+    fichiers et fuseaux horaires adaptés à sa libc++. Job de CI *Android arm64*.
 
 Ensuite, sans ordre figé : à choisir dans les pistes ci-dessous.
 

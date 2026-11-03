@@ -334,8 +334,18 @@ cmake --build --preset build-linux-debug
 ctest --preset test-linux-debug --label-exclude gpu
 ```
 
+Pour Android (arm64), le moteur et le lecteur (`libmain.so`) se compilent depuis Windows ou Linux
+avec le NDK d'Android Studio, que désigne `ANDROID_NDK_HOME`. Rien ne les empaquette encore en APK :
+c'est la suite du plan (voir *Android* dans [docs/decisions.md](docs/decisions.md)).
+
+```powershell
+$env:ANDROID_NDK_HOME = "$env:LOCALAPPDATA/Android/Sdk/ndk/<version>"
+cmake --preset android-arm64
+cmake --build --preset build-android-arm64
+```
+
 Chaque push sur `main` ou `ci` est construit et testé par GitHub Actions (Windows et Linux, Debug
-et Release) : voir [.github/workflows/ci.yml](.github/workflows/ci.yml) et l'onglet *Actions* du
+et Release ; Android arm64 construit seulement) : voir [.github/workflows/ci.yml](.github/workflows/ci.yml) et l'onglet *Actions* du
 dépôt. Sous Linux, les tests marqués `[gpu]` y tournent sur lavapipe, et le bac à sable, exporté par
 le moteur empaqueté, est joué dans une Ubuntu 24.04 vierge ; sous Windows, ils se lancent
 localement avec `ctest`.

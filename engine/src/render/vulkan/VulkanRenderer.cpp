@@ -3470,10 +3470,11 @@ core::Result<void> VulkanRenderer::uploadTerrains(FrameContext& frame)
         if (terrain.grassDensity > 0.0f && terrain.grassHeight > 0.0f && terrain.grassDistance > 0.0f &&
             terrain.blockGrass.size() == terrain.blockHeights.size())
         {
-            constexpr float tile = 4.0f;
+            // Static, so that the lambda reads it without a capture, which Clang finds superfluous.
+            static constexpr float tile = 4.0f;
             const float reach = terrain.grassDistance;
             const math::Vec3 local = eye - terrain.origin;
-            const auto firstTile = [tile](float value) { return static_cast<std::int32_t>(std::floor(value / tile)); };
+            const auto firstTile = [](float value) { return static_cast<std::int32_t>(std::floor(value / tile)); };
             const auto full = static_cast<std::uint32_t>(std::clamp(std::round(terrain.grassDensity * tile * tile), 1.0f, 4096.0f));
             std::array<std::vector<GpuTerrainNode>, 3> tiles;
             for (std::int32_t z = firstTile(local.z - reach); z <= firstTile(local.z + reach); ++z)

@@ -8,10 +8,13 @@
 #endif
 #include <stb_image_resize2.h>
 #include <stb_image_write.h>
+// Textures are compressed where projects are imported, on the desktop: phones only read packages.
+#if DEVEX_TEXTURE_ENCODERS
 #include <basisu/encoder/basisu_bc15_spmd.h>
 #include <basisu/encoder/basisu_bc7e_scalar.h>
 #include <basisu/encoder/basisu_enc.h>
 #include <basisu/encoder/basisu_gpu_texture.h>
+#endif
 #if defined(_MSC_VER)
 #pragma warning(pop)
 #endif
@@ -27,6 +30,7 @@
 namespace devex::asset {
 namespace {
 
+#if DEVEX_TEXTURE_ENCODERS
 void initializeEncoders()
 {
     static std::once_flag initialized;
@@ -36,6 +40,7 @@ void initializeEncoders()
         basisu::bc_spmd::init();
     });
 }
+#endif
 
 [[nodiscard]] bool isCancelled(const std::atomic<bool>* cancelled) noexcept
 {
@@ -166,6 +171,7 @@ private:
     return result;
 }
 
+#if DEVEX_TEXTURE_ENCODERS
 // Copies the 4x4 texels of a block, repeating the last row and column of the image when the
 // block extends past it.
 void gatherBlock(const Image& image, std::uint32_t blockX, std::uint32_t blockY,
@@ -249,6 +255,7 @@ void initializeBc7Parameters(bc7e_scalar::bc7e_compress_block_params& parameters
     });
     return mip;
 }
+#endif
 
 [[nodiscard]] std::uint16_t toHalf(float value) noexcept
 {
@@ -474,7 +481,11 @@ core::Result<TextureData> buildTexture(const Image& image, const TextureBuildOpt
     TextureData texture;
     if (options.compress)
     {
+#if DEVEX_TEXTURE_ENCODERS
         initializeEncoders();
+#else
+        return core::makeError(core::ErrorCode::Unsupported, "textures are compressed on the desktop only");
+#endif
         texture.format = options.normalMap ? TextureFormat::Bc5Unorm
                          : srgb            ? TextureFormat::Bc7Srgb
                                            : TextureFormat::Bc7Unorm;
@@ -499,8 +510,10 @@ core::Result<TextureData> buildTexture(const Image& image, const TextureBuildOpt
 
         if (options.compress)
         {
+#if DEVEX_TEXTURE_ENCODERS
             texture.mips.push_back(compressLevel(level, texture.format, options.quality, jobs,
                                                  cancelled));
+#endif
         }
         else
         {
@@ -544,6 +557,7 @@ core::Result<Image> decodeTextureLevel(const TextureData& texture, std::size_t l
         return image;
     }
 
+#if DEVEX_TEXTURE_ENCODERS
     initializeEncoders();
     const basisu::texture_format format = texture.format == TextureFormat::Bc5Unorm
                                               ? basisu::texture_format::cBC5
@@ -579,6 +593,9 @@ core::Result<Image> decodeTextureLevel(const TextureData& texture, std::size_t l
         }
     }
     return image;
+#else
+    return core::makeError(core::ErrorCode::Unsupported, "compressed textures are decoded on the desktop only");
+#endif
 }
 
 } // namespace devex::asset

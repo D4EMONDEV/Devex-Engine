@@ -78,6 +78,23 @@
             }
         },
         {
+            "name": "android-arm64",
+            "displayName": "Android arm64 (NDK)",
+            "description": "Cross-compiles the engine and the player for phones; needs ANDROID_NDK_HOME.",
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/out/build/${presetName}",
+            "installDir": "${sourceDir}/out/install/${presetName}",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "VCPKG_TARGET_TRIPLET": "arm64-android",
+                "VCPKG_CHAINLOAD_TOOLCHAIN_FILE": "$env{ANDROID_NDK_HOME}/build/cmake/android.toolchain.cmake",
+                "ANDROID_ABI": "arm64-v8a",
+                "ANDROID_PLATFORM": "android-29",
+                "DEVEX_BUILD_EDITOR": "OFF",
+                "DEVEX_BUILD_TESTS": "OFF"
+            }
+        },
+        {
             "name": "macos-debug",
             "displayName": "macOS Debug",
             "generator": "Ninja",
@@ -114,6 +131,10 @@
             "name": "build-linux-fuzz",
             "configurePreset": "linux-fuzz",
             "targets": ["devex_fuzzers"]
+        },
+        {
+            "name": "build-android-arm64",
+            "configurePreset": "android-arm64"
         },
         {
             "name": "build-macos-debug",

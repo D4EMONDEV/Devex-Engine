@@ -6,6 +6,11 @@
 #include <devex/platform/Platform.hpp>
 #include <devex/runtime/Application.hpp>
 
+#if defined(__ANDROID__)
+// On Android, the activity of SDL calls SDL_main in libmain.so: this header renames main.
+#include <SDL3/SDL_main.h>
+#endif
+
 #include <cstdio>
 #include <filesystem>
 #include <memory>

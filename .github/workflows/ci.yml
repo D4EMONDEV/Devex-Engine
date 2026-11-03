@@ -379,3 +379,113 @@ jobs:
             out/build/${{ matrix.preset }}/vcpkg-manifest-install.log
             ${{ runner.temp }}/vcpkg/buildtrees/**/*.log
           if-no-files-found: ignore
+
+  android:
+    name: Android arm64
+    # The engine and the player cross-compiled for phones with the NDK. Nothing runs them yet: the
+    # runners have no Android device, and the export to Android comes in a later step.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      VCPKG_DISABLE_METRICS: 1
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+
+      - name: Install the packages of the system
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ninja-build
+
+      # The NDK the engine is developed with, rather than the default one of the runner.
+      - name: Set up the Android NDK
+        id: ndk
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r29
+          add-to-path: false
+
+      # Only slangc is taken from the SDK, to compile the shaders on the runner.
+      - name: Set up the Vulkan SDK
+        uses: jakoch/install-vulkan-sdk-action@v1
+        with:
+          vulkan_version: 1.4.350.0
+          install_runtime: false
+          cache: true
+
+      - name: Set up vcpkg
+        run: |
+          root="$RUNNER_TEMP/vcpkg"
+          archives="$RUNNER_TEMP/vcpkg-archives"
+          git clone --quiet https://github.com/microsoft/vcpkg.git "$root"
+          "$root/bootstrap-vcpkg.sh" -disableMetrics
+          mkdir -p "$archives"
+          echo "VCPKG_ROOT=$root" >> "$GITHUB_ENV"
+          echo "VCPKG_DEFAULT_BINARY_CACHE=$archives" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_HOME=${{ steps.ndk.outputs.ndk-path }}" >> "$GITHUB_ENV"
+
+      - name: Restore the packages vcpkg built
+        id: vcpkg-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ runner.temp }}/vcpkg-archives
+          key: vcpkg-android-arm64-${{ hashFiles('vcpkg.json', 'cmake/vcpkg-ports/**') }}
+          restore-keys: vcpkg-android-arm64-
+
+      - name: Configure
+        id: configure
+        run: cmake --preset android-arm64 -DDEVEX_WARNINGS_AS_ERRORS=ON 2>&1 | tee "$RUNNER_TEMP/configure.log"
+
+      - name: Keep the packages vcpkg built
+        if: steps.vcpkg-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ runner.temp }}/vcpkg-archives
+          key: vcpkg-android-arm64-${{ hashFiles('vcpkg.json', 'cmake/vcpkg-ports/**') }}
+
+      - name: Build
+        id: build
+        run: cmake --build out/build/android-arm64 2>&1 | tee "$RUNNER_TEMP/build.log"
+
+      - name: Show what failed
+        if: failure()
+        env:
+          CONFIGURE: ${{ steps.configure.outcome }}
+          BUILD: ${{ steps.build.outcome }}
+        run: |
+          set +e +o pipefail
+          annotate() {
+            local path="$1" errors="$2" text
+            [ -f "$path" ] || return 0
+            if [ "$errors" = yes ] && grep -qE "error|FAILED|Failed" "$path"; then
+              text=$(grep -E "error|FAILED|Failed" "$path" | head -40 | tail -60)
+            else
+              text=$(tail -60 "$path")
+            fi
+            text=${text//'%'/'%25'}
+            text=${text//$'\r'/'%0D'}
+            text=${text//$'\n'/'%0A'}
+            echo "::error title=$(basename "$path")::$text"
+          }
+          if [ "$CONFIGURE" = failure ]; then
+            annotate "$RUNNER_TEMP/configure.log" no
+            annotate "out/build/android-arm64/vcpkg-manifest-install.log" no
+            port=$(find "$RUNNER_TEMP/vcpkg/buildtrees" -name "*-err.log" -size +0 -printf "%T@ %p\n" 2>/dev/null | sort -n | tail -1 | cut -d' ' -f2-)
+            [ -n "$port" ] && annotate "$port" no
+          fi
+          [ "$BUILD" = failure ] && annotate "$RUNNER_TEMP/build.log" yes
+          true
+
+      - name: Keep the logs
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: logs-android-arm64
+          path: |
+            out/build/android-arm64/vcpkg-manifest-install.log
+            ${{ runner.temp }}/vcpkg/buildtrees/**/*.log
+          if-no-files-found: ignore

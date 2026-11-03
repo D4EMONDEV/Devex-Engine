@@ -25,6 +25,9 @@
 #include <dlfcn.h>
 #include <elf.h>
 #include <execinfo.h>
+#if defined(__ANDROID__)
+#include <unwind.h>
+#endif
 #include <fcntl.h>
 #include <link.h>
 #include <poll.h>
@@ -500,6 +503,41 @@ namespace {
 
 constexpr std::size_t maxFrames = 64;
 
+#if defined(__ANDROID__)
+// Android has backtrace() from Android 13 only: below, the unwinder of the NDK walks the stack.
+struct Unwinding
+{
+    void** next = nullptr;
+    void** end = nullptr;
+};
+
+_Unwind_Reason_Code unwindFrame(_Unwind_Context* context, void* argument)
+{
+    Unwinding& unwinding = *static_cast<Unwinding*>(argument);
+    if (unwinding.next == unwinding.end)
+    {
+        return _URC_END_OF_STACK;
+    }
+    if (const std::uintptr_t address = _Unwind_GetIP(context); address != 0)
+    {
+        *unwinding.next++ = reinterpret_cast<void*>(address);
+    }
+    return _URC_NO_REASON;
+}
+#endif
+
+// The return addresses on the stack of the calling thread, the innermost first.
+int captureCalls(void** addresses, int size)
+{
+#if defined(__ANDROID__)
+    Unwinding unwinding{.next = addresses, .end = addresses + size};
+    _Unwind_Backtrace(unwindFrame, &unwinding);
+    return static_cast<int>(unwinding.next - addresses);
+#else
+    return backtrace(addresses, size);
+#endif
+}
+
 // A call on the stack.
 struct Frame
 {
@@ -846,7 +884,7 @@ void describe(bool fatal, const char* what, const siginfo_t* info, const ucontex
 
     // The report and the frame of the signal come first: the calls start where the fault stopped, or
     // after the report when nothing faulted.
-    const int captured = backtrace(state.addresses.data(), static_cast<int>(state.addresses.size()));
+    const int captured = captureCalls(state.addresses.data(), static_cast<int>(state.addresses.size()));
     const std::size_t count = captured > 0 ? static_cast<std::size_t>(captured) : 0;
     std::size_t first = std::min<std::size_t>(1, count);
     bool fault = false;
@@ -1007,9 +1045,9 @@ void installCrashHandler(CrashReporting reporting)
         state.programBase = program.dli_fbase;
     }
     findAddr2line(state);
-    // The first backtrace loads the unwinder of libgcc, which allocates: not during a crash.
+    // The first capture loads the unwinder of libgcc, which allocates: not during a crash.
     std::array<void*, 4> warm{};
-    static_cast<void>(backtrace(warm.data(), static_cast<int>(warm.size())));
+    static_cast<void>(captureCalls(warm.data(), static_cast<int>(warm.size())));
 
     // Room for the handlers when the thread dies of its stack.
     stack_t stack{};
@@ -1021,7 +1059,8 @@ void installCrashHandler(CrashReporting reporting)
     action = {};
     action.sa_sigaction = &onSignal;
     sigemptyset(&action.sa_mask);
-    action.sa_flags = SA_SIGINFO | SA_ONSTACK | SA_RESETHAND;
+    // Android's SA_RESETHAND is an unsigned constant, glibc's an int.
+    action.sa_flags = static_cast<int>(SA_SIGINFO | SA_ONSTACK | SA_RESETHAND);
     for (const int number : {SIGSEGV, SIGBUS, SIGILL, SIGFPE, SIGABRT, SIGTRAP})
     {
         sigaction(number, &action, nullptr);

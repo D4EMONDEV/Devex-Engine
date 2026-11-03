@@ -11,7 +11,10 @@
         ]
     },
     "dependencies": [
-        "basisu",
+        {
+            "name": "basisu",
+            "platform": "!android"
+        },
         "box2d",
         "efsw",
         "fastgltf",

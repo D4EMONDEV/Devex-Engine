@@ -39,8 +39,13 @@ constexpr std::uint32_t projectManagerSurface = 1;
     {
         return 0;
     }
+    // The libc++ of the Android NDK has no clock_cast, MSVC's file_clock no to_sys.
+#if defined(_LIBCPP_VERSION)
+    const auto system = std::chrono::file_clock::to_sys(time);
+#else
     const auto system = std::chrono::clock_cast<std::chrono::system_clock>(time);
-    return std::chrono::duration_cast<std::chrono::seconds>(system.time_since_epoch()).count();
+#endif
+    return static_cast<std::int64_t>(std::chrono::duration_cast<std::chrono::seconds>(system.time_since_epoch()).count());
 }
 
 [[nodiscard]] std::string formatTime(std::int64_t seconds)
@@ -50,6 +55,8 @@ constexpr std::uint32_t projectManagerSurface = 1;
         return {};
     }
     const std::chrono::sys_seconds time{std::chrono::seconds(seconds)};
+    // The time zones of the standard library are missing from the one of the Android NDK.
+#if __cpp_lib_chrono >= 201907L
     try
     {
         const std::chrono::zoned_time local(std::chrono::current_zone(), time);
@@ -59,6 +66,9 @@ constexpr std::uint32_t projectManagerSurface = 1;
     {
         return std::format("{:%Y-%m-%d %H:%M}", time);
     }
+#else
+    return std::format("{:%Y-%m-%d %H:%M}", time);
+#endif
 }
 
 void refreshProjects(ToolsState& state)

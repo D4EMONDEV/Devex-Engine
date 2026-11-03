@@ -1,4 +1,7 @@
-find_package(basisu CONFIG REQUIRED)
+# The texture encoders run where projects are imported; vcpkg does not build them for Android.
+if(NOT ANDROID)
+    find_package(basisu CONFIG REQUIRED)
+endif()
 find_package(box2d CONFIG REQUIRED)
 find_package(recastnavigation CONFIG REQUIRED)
 find_package(efsw CONFIG REQUIRED)
@@ -340,11 +343,16 @@ target_link_libraries(devex_asset_import
         Devex::Audio
         Devex::Platform
         Devex::Scene
-        basisu::basisu_encoder
         devex_ufbx
         efsw::efsw
         fastgltf::fastgltf
 )
+if(TARGET basisu::basisu_encoder)
+    target_link_libraries(devex_asset_import PRIVATE basisu::basisu_encoder)
+    target_compile_definitions(devex_asset_import PRIVATE DEVEX_TEXTURE_ENCODERS=1)
+else()
+    target_compile_definitions(devex_asset_import PRIVATE DEVEX_TEXTURE_ENCODERS=0)
+endif()
 set_target_properties(devex_asset_import PROPERTIES
     EXPORT_NAME AssetImport
     FOLDER "Engine"
@@ -767,8 +775,13 @@ devex_set_warnings(devex_ui)
 
 # The C# side of the engine is built with the .NET SDK when it is installed (see managed/). Without
 # it, the engine runs games written in C++ only.
-find_program(DEVEX_DOTNET NAMES dotnet)
-if(NOT DEVEX_DOTNET)
+# On Android, the .NET runtime is not hosted yet (see Android in docs/decisions.md).
+if(NOT ANDROID)
+    find_program(DEVEX_DOTNET NAMES dotnet)
+endif()
+if(ANDROID)
+    message(STATUS "Android: games of this build can only be written in C++ for now")
+elseif(NOT DEVEX_DOTNET)
     message(STATUS "The .NET SDK was not found: games of this build can only be written in C++")
 endif()
 

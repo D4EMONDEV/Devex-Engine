@@ -29,6 +29,11 @@ function(devex_set_warnings target)
         if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
             target_compile_options(${target} PRIVATE -Wno-maybe-uninitialized)
         endif()
+        # Clang's -Wconversion also reports changes of signedness, which GCC (in C++) and MSVC
+        # leave out: the same warnings with every compiler, the NDK's included.
+        if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+            target_compile_options(${target} PRIVATE -Wno-sign-conversion)
+        endif()
     endif()
 
     if(DEVEX_WARNINGS_AS_ERRORS)

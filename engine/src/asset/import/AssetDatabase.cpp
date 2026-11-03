@@ -60,7 +60,8 @@ struct FileStamp
     {
         return std::nullopt;
     }
-    return FileStamp{.size = size, .time = time.time_since_epoch().count(), .exists = true};
+    // The clock of files counts in 128-bit integers on Android.
+    return FileStamp{.size = size, .time = static_cast<std::int64_t>(time.time_since_epoch().count()), .exists = true};
 }
 
 // A missing file stamps as absent, so that a dependency appearing later counts as a change.
