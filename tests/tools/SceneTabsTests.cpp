@@ -1,4 +1,5 @@
 #include "tools/SceneTabs.hpp"
+#include "tools/ToolsState.hpp"
 
 #include <devex/scene/Scene.hpp>
 #include <devex/tools/SceneCommands.hpp>
@@ -12,6 +13,18 @@
 using devex::tools::detail::ActiveDocument;
 using devex::tools::detail::SceneDocument;
 using devex::tools::detail::SceneTabs;
+
+TEST_CASE("New 2D and 3D scenes contain no automatically created entities", "[tools][scenetabs]")
+{
+    const auto twoD = devex::tools::detail::makeDefault2DScene();
+    CHECK(twoD.kind() == devex::scene::SceneKind::TwoD);
+    CHECK(twoD.entityCount() == 0);
+    CHECK_FALSE(twoD.firstRoot().isValid());
+    const auto threeD = devex::tools::detail::makeDefaultScene();
+    CHECK(threeD.kind() == devex::scene::SceneKind::ThreeD);
+    CHECK(threeD.entityCount() == 0);
+    CHECK_FALSE(threeD.firstRoot().isValid());
+}
 
 namespace {
 

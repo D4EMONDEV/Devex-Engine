@@ -228,6 +228,9 @@ public:
 
     // Starts a frame with an empty snapshot to fill.
     [[nodiscard]] RenderWorld& beginFrame() noexcept;
+    // A cut to another scene in the main image: discard temporal image/motion history and old
+    // luminance measurements. The first measurement of the new scene sets exposure immediately.
+    void resetSceneHistory() noexcept;
     // Draws and presents the snapshot. Skips the frame while the window has no drawable area.
     [[nodiscard]] core::Result<void> endFrame();
 

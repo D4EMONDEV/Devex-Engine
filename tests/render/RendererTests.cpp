@@ -61,6 +61,52 @@ private:
 
 } // namespace
 
+TEST_CASE("A scene cut forgets old exposure and snaps to its first new measurement",
+          "[render][gpu][scenecut]")
+{
+    using namespace devex;
+    const ErrorCapture capture;
+    {
+        auto platform = platform::Platform::create();
+        REQUIRE(platform);
+        auto window =
+            platform->createWindow({.width = 160, .height = 120, .vulkan = true, .hidden = true});
+        REQUIRE(window);
+        auto renderer = render::Renderer::create(*platform, *window, {.validation = true});
+        REQUIRE(renderer);
+        const auto frame = [&](bool automatic, float ev100)
+        {
+            platform->pollEvents([](const auto&) {});
+            auto& world = renderer->beginFrame();
+            world.camera.autoExposure = automatic;
+            world.camera.ev100 = ev100;
+            // With adaptation stopped, a changed value can only come from the cut's first sample.
+            world.camera.adaptationSpeed = 0;
+            world.camera.bloom = 0;
+            world.environment.intensity = 5000;
+            // An auxiliary view is recorded first and must not consume the main view's reset.
+            world.views.push_back({.id = 77,
+                                   .camera = render::RenderCamera{.adaptationSpeed = 0, .bloom = 0},
+                                   .extent = {64, 48}});
+            REQUIRE(renderer->endFrame());
+            return renderer->stats().ev100;
+        };
+        for (int i = 0; i < 5; ++i)
+            CHECK(frame(false, 14) == Catch::Approx(14));
+        renderer->resetSceneHistory();
+        CHECK(frame(true, 3) == Catch::Approx(3));
+        float measured = 3;
+        for (int i = 0; i < 6; ++i)
+            measured = frame(true, 3);
+        CHECK(std::isfinite(measured));
+        CHECK(measured != Catch::Approx(3));
+        CHECK(frame(true, 3) == Catch::Approx(measured));
+        renderer->resetSceneHistory();
+        CHECK(frame(true, 7) == Catch::Approx(7)); // No readback from the prior scene leaks in.
+    }
+    CHECK(capture.errors().empty());
+}
+
 TEST_CASE("The renderer presents frames without validation errors", "[render][gpu]")
 {
     const ErrorCapture capture;

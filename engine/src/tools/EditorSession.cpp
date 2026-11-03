@@ -544,34 +544,8 @@ void requestCreatePreset(ToolsState& state, core::Uuid parent, const char* name,
 
 scene::Scene makeDefaultScene()
 {
-    const math::Vec3 up{0.0f, 1.0f, 0.0f};
-    const math::Vec3 right{1.0f, 0.0f, 0.0f};
     scene::Scene result;
-
-    const scene::Entity sun = result.createEntity("Sun");
-    result.add<scene::Transform>(sun, scene::Transform{
-                                          .rotation = math::angleAxis(math::radians(35.0f), up) *
-                                                      math::angleAxis(math::radians(-50.0f), right),
-                                      });
-    result.add<scene::DirectionalLight>(sun);
-
-    const scene::Entity sky = result.createEntity("Sky");
-    result.add<scene::Environment>(sky, scene::Environment{.color = {0.45f, 0.62f, 1.0f}, .intensity = 12000.0f});
-
-    const scene::Entity camera = result.createEntity("Camera");
-    result.add<scene::Transform>(camera, scene::Transform{
-                                             .position = {0.0f, 1.5f, 6.0f},
-                                             .rotation = math::angleAxis(math::radians(-8.0f), right),
-                                         });
-    result.add<scene::Camera>(camera);
-
-    const scene::Entity ground = result.createEntity("Ground");
-    result.add<scene::Transform>(ground, scene::Transform{.scale = {20.0f, 1.0f, 20.0f}});
-    result.add<scene::MeshRenderer>(ground, scene::MeshRenderer{.mesh = asset::builtin::planeMesh});
-
-    const scene::Entity cube = result.createEntity("Cube");
-    result.add<scene::Transform>(cube, scene::Transform{.position = {0.0f, 0.5f, 0.0f}});
-    result.add<scene::MeshRenderer>(cube, scene::MeshRenderer{.mesh = asset::builtin::cubeMesh});
+    result.setKind(scene::SceneKind::ThreeD);
     return result;
 }
 
@@ -579,14 +553,6 @@ scene::Scene makeDefault2DScene()
 {
     scene::Scene result;
     result.setKind(scene::SceneKind::TwoD);
-    // In front of the XY plane, framing ten meters, with the colours of the sprites kept as drawn.
-    const scene::Entity camera = result.createEntity("Camera");
-    result.add<scene::Transform>(camera, scene::Transform{.position = {0.0f, 0.0f, 10.0f}});
-    result.add<scene::Camera>(camera, scene::Camera{.projection = scene::Projection::Orthographic,
-                                                    .tonemapper = scene::Tonemapper::None,
-                                                    .antialiasing = scene::Antialiasing::None,
-                                                    .ambientOcclusion = 0.0f,
-                                                    .bloom = 0.0f});
     return result;
 }
 

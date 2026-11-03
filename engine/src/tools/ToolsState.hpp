@@ -1036,6 +1036,8 @@ struct DEVEX_API ToolsState
     bool showInterfaces = true;
     // The kind of the edited scene on the previous frame: the screen follows it when it changes.
     std::optional<scene::SceneKind> shownSceneKind;
+    // The document last drawn in the main viewport; a cut discards the previous scene's history.
+    std::optional<std::uint64_t> renderedSceneTab;
     bool showProjectSettings = false;
     // The key pressed since the previous frame, whatever window had the keyboard, and the one of
     // this frame: the input settings bind it by its place, which the letters typed do not tell.
@@ -1329,9 +1331,8 @@ DEVEX_API void saveUserSettings(const ToolsState& state);
 DEVEX_API void saveEditorSettings(ToolsState& state);
 
 // Scene tabs.
-// A small lit scene to start from: a sun, a sky, a camera, a ground and a cube.
+// Empty scenes of each kind; entities are added explicitly through the creation catalog.
 [[nodiscard]] DEVEX_API scene::Scene makeDefaultScene();
-// A 2D scene holding a 2D camera.
 [[nodiscard]] DEVEX_API scene::Scene makeDefault2DScene();
 [[nodiscard]] DEVEX_API ActiveDocument activeDocument(ToolsState& state, scene::Scene& scene) noexcept;
 // The name shown for a tab: its file name, or "[unsaved]".

@@ -155,6 +155,12 @@ RenderWorld& Renderer::beginFrame() noexcept
     return m_implementation->beginFrame();
 }
 
+void Renderer::resetSceneHistory() noexcept
+{
+    DEVEX_ASSERT(m_implementation != nullptr);
+    m_implementation->resetSceneHistory();
+}
+
 core::Result<void> Renderer::endFrame()
 {
     DEVEX_ASSERT(m_implementation != nullptr);

@@ -180,7 +180,10 @@ Créer un script depuis FileSystem ne l'attache pas automatiquement à une entit
 
 ### 4.1 Créer la scène
 
-Choisir **Scene > New 2D Scene**, puis enregistrer dans `res://assets/scenes/Level2D.dvxscene`. La nouvelle scène contient une caméra orthographique. Conserver cette caméra pour le prototype.
+Choisir **Scene > New 2D Scene**, puis enregistrer dans `res://assets/scenes/Level2D.dvxscene`.
+La nouvelle scène est entièrement vide. Dans le **+** du panneau Scene, créer **2D camera**,
+la renommer `Camera`, mettre sa Position à **(0, 0, 10)** et activer **Primary**. Ce préréglage
+ajoute une caméra orthographique avec les effets d'image adaptés aux sprites.
 
 L'objectif est cette hiérarchie :
 
@@ -480,7 +483,11 @@ Un sprite marqué **Unshaded** garde ses couleurs, et les masques (boutons 1 à 
 
 Choisir **Scene > New 3D Scene** et enregistrer sous `res://assets/scenes/Level3D.dvxscene`. Utiliser l'espace **3D**.
 
-La scène de base contient une caméra, une lumière directionnelle, un environnement, un sol visuel et un cube. Conserver la lumière et l'environnement pour commencer : ils permettent de voir les objets avec le rendu 3D. Le sol et le cube de démonstration ne reçoivent pas automatiquement des collisions.
+La nouvelle scène est entièrement vide. Avec le **+** de Scene, ajouter une **Directional light**
+nommée `Sun`, un **Environment** nommé `Sky`, puis une **Camera** avec **Primary** activé.
+Pour commencer, régler la rotation du soleil à environ **(-50°, 35°, 0°)**, la couleur du ciel à
+un bleu clair et son intensité à **12000**. Ajouter ensuite un **Plane** nommé `Ground` et un
+**Cube**. Leurs collisions seront ajoutées dans les étapes suivantes.
 
 Dans ce parcours, on utilise un **RigidBody dynamique et une CapsuleCollider** pour contrôler un personnage en C#. Le moteur dispose aussi de `CharacterController` 3D, utilisé notamment par le joueur C++ de Sandbox. Dans la version examinée, ses champs de vitesse et de contact au sol ne sont pas exposés à C# ; copier l'API du contrôleur 2D ne fonctionnerait donc pas. Le corps dynamique ci-dessous fournit une base simple réellement accessible en C#.
 
@@ -488,7 +495,7 @@ La hiérarchie visée :
 
 ```text
 Sun                     DirectionalLight
-Sky                     SkyEnvironment
+Sky                     Environment
 Camera                  Camera, CameraFollow
 Ground                  MeshRenderer, BoxCollider
 Cube                    MeshRenderer, BoxCollider
@@ -496,11 +503,12 @@ Player                  RigidBody, CapsuleCollider, PlayerMovement3D
 └── Visual              MeshRenderer (cube de test)
 ```
 
-Tous les objets placés possèdent aussi un Transform. Le nom exact de l'entité d'environnement peut différer ; conserver celle générée par la nouvelle scène.
+Tous les objets placés possèdent aussi un Transform. L'environnement apparaît comme Environment
+dans le catalogue de création.
 
 ### 6.2 Rendre le sol solide
 
-Le préréglage de nouvelle scène utilise un plan de taille agrandie. Pour ce sol :
+Sélectionner le Plane créé, nommé `Ground`, puis le régler ainsi :
 
 | Élément | Réglage |
 | --- | --- |
@@ -583,7 +591,9 @@ Réutiliser **CameraFollow.cs** : ne pas créer une deuxième classe du même no
 | CameraFollow Target | Player |
 | CameraFollow Offset | (0, 3, 7) |
 
-La caméra se trouve derrière le personnage, côté +Z, et regarde légèrement vers le bas. Garder pour l'instant l'exposition et l'éclairage de la scène 3D générée. Cette caméra ne contourne pas les murs : dans ce premier niveau ouvert, laisser de l'espace derrière le joueur.
+La caméra se trouve derrière le personnage, côté +Z, et regarde légèrement vers le bas. Garder
+pour l'instant l'exposition et l'éclairage configurés dans les étapes précédentes. Cette caméra
+ne contourne pas les murs : dans ce premier niveau ouvert, laisser de l'espace derrière le joueur.
 
 ### 6.6 Jouer et enrichir la scène
 

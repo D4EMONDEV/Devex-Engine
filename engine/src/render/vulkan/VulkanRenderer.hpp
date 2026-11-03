@@ -82,6 +82,7 @@ public:
     void destroyShader(ShaderHandle shader);
 
     [[nodiscard]] RenderWorld& beginFrame() noexcept;
+    void resetSceneHistory() noexcept;
     [[nodiscard]] core::Result<void> endFrame();
     [[nodiscard]] std::vector<PickResult> takePickResults();
     // Of the main image, or of the view of that id.
@@ -307,6 +308,7 @@ private:
         float ev100 = 14.0f;
         float targetEv100 = 14.0f;
         bool exposureInitialized = false;
+        bool snapExposure = false;
         std::chrono::steady_clock::time_point lastExposureUpdate;
     };
 
@@ -1015,6 +1017,7 @@ private:
     float m_ev100 = 14.0f;
     float m_targetEv100 = 14.0f;
     bool m_exposureInitialized = false;
+    bool m_snapExposure = false;
     std::chrono::steady_clock::time_point m_lastExposureUpdate;
     std::vector<PickResult> m_pickResults;
     struct CaptureRequest

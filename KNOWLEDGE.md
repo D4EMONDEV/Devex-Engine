@@ -2247,6 +2247,12 @@ namespace devex::ui {
   prochain attribut. `GameRuntime.DescribeType` échappe et transmet le nom au champ dynamique ;
   `DynamicField::group` est copié dans la réflexion. API native **37** pour cette extension de
   `DynamicField` ; aucune nouvelle case d'interop managée ni nouvelle version de scène.
+- Scènes de l'éditeur (2026-11-03) : `makeDefaultScene` et `makeDefault2DScene` ne créent aucune
+  entité, y compris pour le premier document d'un projet. Le catalogue conserve les préréglages
+  pour ajouter volontairement caméra, soleil, sol, etc. `ToolsOverlay::prepareRender` suit l'ID
+  stable de l'onglet affiché et appelle `Renderer::resetSceneHistory` lors d'un changement : TAA,
+  mouvement et mesures de luminance de l'ancien document sont oubliés ; la première mesure du
+  nouveau fixe directement l'exposition. Le flag snap est propre à chaque vue du renderer.
 - Palette Tilemap (2026-11-03) : `tools/TileAtlasPalette` affiche la texture source entière dans
   Paint > Tiles sans compacter ni déplacer ses sprites. Sélection par rectangles en pixels,
   sources multiples, zoom à la molette centré sur le pointeur, déplacement milieu/droit, Fit et

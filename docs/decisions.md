@@ -1086,6 +1086,21 @@ les assets s'écrivent au fil de leur lecture.
   faisaient varier le fond clair/foncé. Le style field garde son fond sans modifier ces couleurs
   de bouton. La régression compare aussi ce fond pendant plusieurs clics.
 
+### Nouvelles scènes vides et changements de document immédiats
+
+- Les scènes 2D et 3D commencent sans entité. Leur type reste enregistré pour ouvrir le bon
+  écran ; les caméras et les éléments de démonstration ne sont plus ajoutés automatiquement.
+  Cela s'applique aussi à la scène de départ créée avec un projet. Les préréglages du catalogue
+  restent disponibles pour construire volontairement sa scène.
+- Le viewport suit l'identifiant stable de l'onglet actif, y compris lors d'une fermeture ou
+  d'un changement de projet. À chaque changement, `Renderer::resetSceneHistory` invalide le
+  TAA et le mouvement antérieurs, ainsi que toutes les mesures de luminance en attente de
+  l'image principale. La première mesure de la nouvelle scène fixe son exposition directement,
+  puis l'adaptation normale reprend. Le flag est échangé avec ViewState afin qu'une vue de jeu
+  ou une capture de probe ne consomme pas la remise à zéro du viewport.
+- Un test GPU d'exposition vérifie l'absence de mesure de l'ancienne scène et le passage direct
+  à la première mesure de la nouvelle, même avec la vitesse d'adaptation à zéro.
+
 ### Sauvegardes et réglages du joueur
 
 - **Dossier du joueur** : ce que le joueur garde va dans `%APPDATA%\<jeu>` (le nom du projet ;
@@ -2347,8 +2362,8 @@ Jalon 69, comme les pistes d'appel de méthode de Godot :
   est **2D** ou **3D** (`scene::SceneKind`), écrit dans son en-tête : `[scene format=1 kind="2d"]`.
   Une scène écrite avant le type est classée à la lecture (`scene::inferSceneKind`) : 2D si sa
   caméra principale (ou sa première) est orthographique, ou, sans caméra, si elle dessine sprites,
-  tuiles ou interfaces et aucun maillage ; 3D sinon. *Scene > New 2D Scene* (une caméra 2D) et
-  *New 3D Scene* (soleil, ciel, caméra, sol, cube) ; Ctrl+N et le bouton + d'onglet créent une
+  tuiles ou interfaces et aucun maillage ; 3D sinon. *Scene > New 2D Scene* et *New 3D Scene*
+  créent depuis le 2026-11-03 des scènes entièrement vides ; Ctrl+N et le bouton + d'onglet créent une
   scène du type de l'écran montré. *Scene > Scene Kind* change le type, avec son annulation.
 - **Écrans 2D et 3D** (comme Godot) : une scène se voit dans l'écran de son type, qui s'ouvre avec
   elle. L'écran de l'autre type reste cliquable mais ne montre **rien** de la scène : un ciel

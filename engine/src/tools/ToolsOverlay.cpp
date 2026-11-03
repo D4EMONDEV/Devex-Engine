@@ -707,6 +707,13 @@ void ToolsOverlay::prepareRender(scene::Scene& scene, render::RenderWorld& world
     {
         return;
     }
+    const auto activeTab = state.tabs.active();
+    const auto document = activeTab ? std::optional{state.tabs.id(*activeTab)} : std::nullopt;
+    if (state.renderedSceneTab != document)
+    {
+        state.renderer.resetSceneHistory();
+        state.renderedSceneTab = document;
+    }
     // A hidden viewport still renders, at a size too small to cost anything.
     world.viewport = state.viewportPixels.width > 0 ? state.viewportPixels : math::Extent2D{16, 16};
     // While it plays, the game is drawn through its camera into a view of its own, with its interface,

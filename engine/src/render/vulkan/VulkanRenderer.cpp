@@ -885,6 +885,20 @@ std::uint32_t VulkanRenderer::materialIndex(MaterialHandle material) const noexc
     return m_materials.contains(material) ? material.index : m_defaultMaterial.index;
 }
 
+void VulkanRenderer::resetSceneHistory() noexcept
+{
+    m_historyValid = false;
+    m_exposureInitialized = false;
+    m_snapExposure = true;
+    m_previousInstances.clear();
+    m_previousIndices.clear();
+    m_previousIndexed = false;
+    m_previousBoneMatrices.clear();
+    m_previousLods.clear();
+    for (auto& frame : m_frames)
+        frame.luminanceMeasured = false;
+}
+
 RenderWorld& VulkanRenderer::beginFrame() noexcept
 {
     m_world.reset();
@@ -1204,6 +1218,7 @@ void VulkanRenderer::swapViewState(ViewState& state) noexcept
     std::swap(m_ev100, state.ev100);
     std::swap(m_targetEv100, state.targetEv100);
     std::swap(m_exposureInitialized, state.exposureInitialized);
+    std::swap(m_snapExposure, state.snapExposure);
     std::swap(m_lastExposureUpdate, state.lastExposureUpdate);
 }
 
@@ -2929,6 +2944,7 @@ void VulkanRenderer::updateExposure(FrameContext& frame)
         m_ev100 = camera.ev100 - camera.exposureCompensation;
         m_targetEv100 = m_ev100;
         m_exposureInitialized = true;
+        m_snapExposure = false;
         frame.luminanceMeasured = false;
         return;
     }
@@ -2953,6 +2969,11 @@ void VulkanRenderer::updateExposure(FrameContext& frame)
         {
             m_targetEv100 = std::clamp(ev100FromAverageLuminance(average) - camera.exposureCompensation,
                                        camera.minEv100, camera.maxEv100);
+            if (m_snapExposure)
+            {
+                m_ev100 = m_targetEv100;
+                m_snapExposure = false;
+            }
         }
         frame.luminanceMeasured = false;
     }
