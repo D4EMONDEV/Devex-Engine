@@ -126,6 +126,7 @@ std::string_view fileName(std::string_view path) noexcept
 }
 
 // The escape sequences of the console: the level, then its message.
+#ifndef __ANDROID__
 [[nodiscard]] std::string_view levelColor(LogLevel level) noexcept
 {
     switch (level)
@@ -164,6 +165,8 @@ std::string_view fileName(std::string_view path) noexcept
     }
     return "";
 }
+
+#endif
 
 class Logger
 {
