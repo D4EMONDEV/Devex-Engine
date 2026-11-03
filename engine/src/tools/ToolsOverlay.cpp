@@ -835,6 +835,12 @@ bool ToolsOverlay::automaticCodeCompilation() const
     return m_state->scripts.automaticCompilation;
 }
 
+bool ToolsOverlay::playInSeparateProcess() const { return m_state->scripts.separateProcess; }
+void ToolsOverlay::setExternalPlayStatus(ExternalPlayStatus status)
+{
+    m_state->externalPlay = status;
+}
+
 void ToolsOverlay::openInPreferredEditor(const std::filesystem::path& file)
 {
     detail::openInPreferredEditor(*m_state, file);

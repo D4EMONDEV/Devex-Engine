@@ -293,6 +293,7 @@ devex_set_warnings(devex_test_plain_library)
 # The dummy SDL video driver lets the main loop run without a display.
 devex_add_tests(runtime
     SOURCES
+        runtime/EditorPlayTests.cpp
         runtime/ApplicationTests.cpp
         runtime/GlobalScenesTests.cpp
         runtime/AssetMemoryTests.cpp
@@ -334,6 +335,13 @@ if(DEVEX_DOTNET)
     target_compile_definitions(devex_runtime_tests PRIVATE DEVEX_TEST_MANAGED_GAME="${DEVEX_TEST_GAME_DIRECTORY}/TestGame.dll")
 endif()
 target_include_directories(devex_runtime_tests PRIVATE "${PROJECT_SOURCE_DIR}/engine/src")
+
+add_executable(devex_test_play_process runtime/PlayProcessFixture.cpp)
+target_link_libraries(devex_test_play_process PRIVATE Devex::Engine)
+devex_set_warnings(devex_test_play_process)
+set_target_properties(devex_test_play_process PROPERTIES FOLDER "Tests")
+add_dependencies(devex_runtime_tests devex_test_play_process)
+target_compile_definitions(devex_runtime_tests PRIVATE DEVEX_TEST_PLAY_PROCESS="$<TARGET_FILE:devex_test_play_process>")
 target_compile_definitions(devex_runtime_tests
     PRIVATE DEVEX_TEST_GAME_MODULE="$<TARGET_FILE:devex_test_game_module>"
             DEVEX_TEST_PLAIN_LIBRARY="$<TARGET_FILE:devex_test_plain_library>"

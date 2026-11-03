@@ -969,6 +969,8 @@ add_library(Devex::Runtime ALIAS devex_runtime)
 target_sources(devex_runtime
     PRIVATE
         src/runtime/Application.cpp
+        src/runtime/EditorPlay.cpp
+        src/runtime/EditorPlay.hpp
         src/runtime/GlobalScenes.cpp
         src/runtime/GlobalScenes.hpp
         src/runtime/AssetManager.cpp

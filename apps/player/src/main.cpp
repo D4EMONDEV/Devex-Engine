@@ -25,19 +25,24 @@ namespace {
 // the startup scene, with the game code.
 class Player final : public devex::runtime::Application
 {
-public:
+  public:
+    explicit Player(bool editorSession = false) : m_editorSession(editorSession) {}
     devex::core::Result<void> onStartup() override
     {
+        if (m_editorSession)
+            return {}; // The runtime loaded the unsaved editor snapshot before startup.
         const devex::asset::AssetSource* const source = assetSource();
         if (source == nullptr)
         {
-            return devex::core::makeError(devex::core::ErrorCode::NotFound, "there is no game to play");
+            return devex::core::makeError(devex::core::ErrorCode::NotFound,
+                                          "there is no game to play");
         }
         const devex::asset::Project& settings = source->project();
         const std::optional<devex::asset::AssetId> startup = startupScene(*source);
         if (!startup)
         {
-            return devex::core::makeError(devex::core::ErrorCode::NotFound, "{} has no scene to play", settings.name);
+            return devex::core::makeError(devex::core::ErrorCode::NotFound,
+                                          "{} has no scene to play", settings.name);
         }
         if (devex::core::Result<void> loaded = loadScene(*startup); !loaded)
         {
@@ -47,15 +52,18 @@ public:
         return {};
     }
 
-private:
+  private:
+    bool m_editorSession = false;
     // The startup scene of the game, or its first scene.
-    [[nodiscard]] static std::optional<devex::asset::AssetId> startupScene(const devex::asset::AssetSource& source)
+    [[nodiscard]] static std::optional<devex::asset::AssetId>
+    startupScene(const devex::asset::AssetSource& source)
     {
         if (const std::string& startup = source.project().startupScene; !startup.empty())
         {
             return source.findByPath(startup);
         }
-        const std::vector<devex::asset::AssetInfo> scenes = source.assets(devex::asset::AssetType::Scene);
+        const std::vector<devex::asset::AssetInfo> scenes =
+            source.assets(devex::asset::AssetType::Scene);
         return scenes.empty() ? std::nullopt : std::optional(scenes.front().id);
     }
 };
@@ -65,6 +73,8 @@ private:
 [[nodiscard]] std::filesystem::path logDirectory(const devex::runtime::ApplicationConfig& config,
                                                  std::string_view executable)
 {
+    if (!config.editorSession.empty())
+        return config.editorSession / "logs";
     if (!config.project.empty())
     {
         std::error_code error;
@@ -95,7 +105,17 @@ int main(int argc, char** argv)
     std::string_view logLevels;
     for (int index = 1; index < argc; ++index)
     {
-        if (std::string_view(argv[index]) == "--log-level" && index + 1 < argc)
+        if (std::string_view(argv[index]) == "--editor-session")
+        {
+            if (index + 1 >= argc)
+            {
+                std::fputs("--editor-session needs its session directory\n", stderr);
+                return 2;
+            }
+            config.editorSession = std::filesystem::path(argv[++index]);
+            config.enableTools = false;
+        }
+        else if (std::string_view(argv[index]) == "--log-level" && index + 1 < argc)
         {
             logLevels = argv[++index];
         }
@@ -149,9 +169,11 @@ int main(int argc, char** argv)
             fatal = record.message;
         }
     });
-    const int result = devex::runtime::run<Player>(config);
+    Player player(!config.editorSession.empty());
+    const int result = devex::runtime::run(player, config);
     devex::core::removeLogSink(fatalSink);
-    if (result != 0 && !fatal.empty() && devex::platform::isWindowedApplication())
+    if (result != 0 && !fatal.empty() && config.editorSession.empty() &&
+        devex::platform::isWindowedApplication())
     {
         std::string message = fatal;
         if (log)

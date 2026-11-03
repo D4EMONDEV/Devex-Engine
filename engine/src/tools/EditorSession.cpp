@@ -1411,8 +1411,13 @@ void updateWindowTitle(ToolsState& state, const scene::Scene& /*scene*/)
     std::string title = "Devex - Project Manager";
     if (state.database != nullptr)
     {
-        const char* const play = state.playState == PlayState::Playing ? " [Playing]"
-                                 : state.playState == PlayState::Paused ? " [Paused]"
+        const char* const play = state.externalPlay.running
+                                     ? (state.externalPlay.stopping   ? " [Stopping Game]"
+                                        : state.externalPlay.starting ? " [Starting Game]"
+                                        : state.externalPlay.paused   ? " [Game Paused]"
+                                                                      : " [Game Running]")
+                                 : state.playState == PlayState::Playing ? " [Playing]"
+                                 : state.playState == PlayState::Paused  ? " [Paused]"
                                                                          : "";
         const bool modified = state.history.stateId() != state.savedState && state.playState == PlayState::Editing;
         title = std::format("{}{} - {} - Devex Editor{}", tabName(state.scenePath), modified ? "*" : "",

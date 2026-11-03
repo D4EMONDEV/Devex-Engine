@@ -127,8 +127,12 @@ void DebuggingUi::build(EditorUiKit& kit)
     process = text(processRow, middle({font * 16.0f, line}), "", "text", true);
     copy = action(kit, processRow, Icon::Copy, "Copy Process Id");
     note(&attach, "Attach the debugger of your code editor to this process, for .NET code:", "dim");
-    note(&attach, "•  Visual Studio: Debug > Attach to Process (Ctrl+Alt+P), devex-editor.exe, code type Managed (.NET Core, .NET 5+).", "text", 2.0f);
-    note(&attach, "•  Rider: Run > Attach to Process, devex-editor.", "text");
+    note(&attach,
+         "•  Visual Studio: Debug > Attach to Process (Ctrl+Alt+P), the process shown above, code "
+         "type Managed (.NET Core, .NET 5+).",
+         "text", 2.0f);
+    note(&attach, "•  Rider: Run > Attach to Process, using the process id shown above.", "text",
+         2.0f);
     note(&attach, "•  VS Code with C# Dev Kit: .NET: Attach to a .NET 5+ or .NET Core process.", "text", 2.0f);
     note(&attach, "Breakpoints follow the code as the editor builds and reloads it.", "dim");
 }
@@ -166,7 +170,15 @@ void DebuggingUi::update(ToolsState& state, EditorUiKit& kit, core::Duration del
     scene().get<scene::UiImage>(statusIcon).texture = kit.icon(glyph);
     scene().get<scene::UiImage>(statusIcon).color = linearColor(color);
     scene().get<scene::UiText>(statusText).text = message;
-    scene().get<scene::UiText>(process).text = std::format("devex-editor, process {}", debugger.processId);
+    const bool separate = state.externalPlay.running ||
+                          (state.playState == PlayState::Editing && state.scripts.separateProcess);
+    scene().get<scene::UiText>(process).text =
+        separate && !state.externalPlay.running
+            ? "Start Play for the game PID"
+            : std::format("{}, process {}",
+                          state.externalPlay.running ? "devex-player" : "devex-editor",
+                          debugger.processId);
+    enable(copy, !separate || state.externalPlay.running);
     scene().get<scene::UiToggle>(wait).value = state.waitForDebugger;
     scene().get<UiRect>(stopWaiting.entity).visible = debugger.waiting;
     layoutCards();

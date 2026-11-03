@@ -1,3 +1,4 @@
+#include "EditorPlay.hpp"
 #include "GameCodeBuilder.hpp"
 #include "GlobalScenes.hpp"
 #include "ManagedCodeBuilder.hpp"
@@ -280,6 +281,9 @@ private:
     void render(bool gameplay);
     void handleEditorRequests(tools::EditorRequests requests);
     void startPlaying();
+    void startExternalPlay(bool waitForDebugger);
+    void updatePlayerControl();
+    [[nodiscard]] bool gameplayPaused() const noexcept;
     // Starts Play once a C# debugger attaches, and tells the editor about the debugger.
     void updateDebugger();
     void stopPlaying();
@@ -394,6 +398,8 @@ private:
     bool m_inFrame = false;
     int m_exitCode = EXIT_SUCCESS;
     tools::PlayState m_playState = tools::PlayState::Editing;
+    PlayProcess m_externalPlay;
+    std::unique_ptr<EditorPlayClient> m_editorClient;
     // The copy of the scene that plays in the editor.
     std::optional<scene::Scene> m_playScene;
     bool m_stepRequested = false;
@@ -515,6 +521,11 @@ ApplicationRunner::ApplicationRunner(Application& application, const Application
     m_application.m_interpolationAlpha = 0.0;
     m_application.m_quitRequested = false;
     m_application.m_editor = isEditor();
+    if (!config.editorSession.empty() && !isEditor())
+    {
+        m_editorClient = std::make_unique<EditorPlayClient>(config.editorSession);
+        m_playState = tools::PlayState::Playing;
+    }
     m_application.m_playing = !isEditor();
     m_application.m_stopRequested = false;
     AssetManager& assets = services.assets;
@@ -761,6 +772,8 @@ void ApplicationRunner::chooseLanguage()
     updateLocalization();
     const asset::AssetSource* const source = assetSource();
     std::vector<std::string> wanted;
+    if (m_editorClient && !m_editorClient->language().empty())
+        wanted.push_back(m_editorClient->language());
     if (isEditor() && source != nullptr && !source->project().localization.testLanguage.empty())
     {
         wanted.push_back(source->project().localization.testLanguage);
@@ -809,6 +822,17 @@ int ApplicationRunner::execute()
     }
     // Game components are registered before the application or the editor opens a scene.
     openGameCode();
+    if (m_editorClient)
+    {
+        auto snapshot = m_editorClient->readSnapshot();
+        if (!snapshot)
+        {
+            DEVEX_LOG_FATAL("Cannot load the editor play snapshot: {}", snapshot.error());
+            return EXIT_FAILURE;
+        }
+        *m_application.m_scene = std::move(*snapshot);
+        m_sceneAsset = m_editorClient->source();
+    }
     if (core::Result<void> started = m_application.onStartup(); !started)
     {
         DEVEX_LOG_FATAL("Application startup failed: {}", started.error());
@@ -828,9 +852,19 @@ int ApplicationRunner::execute()
         createInput();
         createGameData();
         chooseLanguage();
-        m_gameStarted = true;
-        runSystems(SystemPhase::Start, core::Duration::zero());
-        loadRequestedScene();
+        const bool waiting = m_editorClient && m_editorClient->waitForDebugger() && m_managed &&
+                             m_managed->hasAssembly() && !m_managed->isDebuggerAttached();
+        m_gameStarted = !waiting;
+        if (!waiting)
+        {
+            runSystems(SystemPhase::Start, core::Duration::zero());
+            loadRequestedScene();
+        }
+        else
+            m_playState = tools::PlayState::Paused;
+        if (m_editorClient)
+            m_editorClient->report(m_managed && m_managed->hasAssembly(),
+                                   m_managed && m_managed->isDebuggerAttached(), waiting);
     }
 
     m_services.platform.setLiveRedrawCallback([this] {
@@ -881,6 +915,7 @@ int ApplicationRunner::execute()
         core::profiler::endFrame();
     }
 
+    m_externalPlay.shutdown();
     if (m_playScene)
     {
         stopPlayingSafely();
@@ -984,6 +1019,12 @@ void ApplicationRunner::requestClose()
 void ApplicationRunner::runFrame()
 {
     m_inFrame = true;
+    updatePlayerControl();
+    if (m_application.m_quitRequested)
+    {
+        m_inFrame = false;
+        return;
+    }
 
     const Clock::time_point frameStart = Clock::now();
     const std::chrono::nanoseconds frameTime = frameStart - m_previousFrame;
@@ -1041,8 +1082,14 @@ void ApplicationRunner::runFrame()
     }
     else
     {
-        runGameplay(frameTime);
-        updateFrameWorlds(frameTime, true, frameTime);
+        std::optional<std::chrono::nanoseconds> gameplayTime;
+        if (!gameplayPaused())
+            gameplayTime = frameTime;
+        else if (m_gameStarted && std::exchange(m_stepRequested, false))
+            gameplayTime = m_timestep.step();
+        if (gameplayTime)
+            runGameplay(*gameplayTime);
+        updateFrameWorlds(frameTime, true, gameplayTime);
         if (canRender && !m_application.m_quitRequested)
         {
             if (m_services.tools != nullptr)
@@ -1070,7 +1117,7 @@ void ApplicationRunner::updateFrameWorlds(std::chrono::nanoseconds frameTime, bo
                                          std::optional<std::chrono::nanoseconds> gameplayTime)
 {
     // Animated tiles play in the editor too, and hold while the game is paused.
-    if (!(isEditor() && m_playScene && m_playState != tools::PlayState::Playing))
+    if (!((m_playScene || m_editorClient) && gameplayPaused()))
     {
         m_tileClock += std::chrono::duration<double>(frameTime).count();
     }
@@ -1300,9 +1347,15 @@ void ApplicationRunner::handleEditorRequests(tools::EditorRequests requests)
     {
         createScript(*requests.newScript);
     }
-    if (requests.play && !m_playScene && m_services.database != nullptr)
+    if (requests.play && !m_playScene && !m_externalPlay.status().running &&
+        m_services.database != nullptr)
     {
-        if (requests.waitForDebugger && m_managed && m_managed->hasAssembly() && !m_managed->isDebuggerAttached())
+        if (m_services.tools->playInSeparateProcess())
+        {
+            startExternalPlay(requests.waitForDebugger);
+        }
+        else if (requests.waitForDebugger && m_managed && m_managed->hasAssembly() &&
+                 !m_managed->isDebuggerAttached())
         {
             m_waitingForDebugger = true;
             DEVEX_LOG_INFO("Waiting for a C# debugger to attach to process {} before playing",
@@ -1312,6 +1365,10 @@ void ApplicationRunner::handleEditorRequests(tools::EditorRequests requests)
         {
             startPlaying();
         }
+    }
+    else if (requests.stop && m_externalPlay.status().running)
+    {
+        m_externalPlay.stop();
     }
     else if (requests.stop && m_waitingForDebugger)
     {
@@ -1326,6 +1383,10 @@ void ApplicationRunner::handleEditorRequests(tools::EditorRequests requests)
     {
         m_playState = m_playState == tools::PlayState::Paused ? tools::PlayState::Playing : tools::PlayState::Paused;
     }
+    if (requests.togglePause && m_externalPlay.status().running)
+        m_externalPlay.pause(!m_externalPlay.pauseRequested());
+    if (requests.step && m_externalPlay.status().running && m_externalPlay.status().paused)
+        m_externalPlay.step();
     if (requests.step && m_playState == tools::PlayState::Paused)
     {
         m_stepRequested = true;
@@ -1334,6 +1395,15 @@ void ApplicationRunner::handleEditorRequests(tools::EditorRequests requests)
 
 void ApplicationRunner::updateDebugger()
 {
+    if (m_externalPlay.status().running)
+    {
+        const auto& state = m_externalPlay.status();
+        m_services.tools->setDebuggerStatus({.available = state.debuggerAvailable,
+                                             .attached = state.debuggerAttached,
+                                             .waiting = state.waitingForDebugger,
+                                             .processId = state.processId});
+        return;
+    }
     const bool available = m_managed && m_managed->hasAssembly();
     const bool attached = available && m_managed->isDebuggerAttached();
     if (m_waitingForDebugger && (!available || attached || m_playScene))
@@ -1398,6 +1468,72 @@ void ApplicationRunner::startPlaying()
     {
         stopAfterCrash(*crash);
     }
+}
+
+void ApplicationRunner::startExternalPlay(bool waitForDebugger)
+{
+    const auto status = gameCodeStatus();
+    if (status.state == tools::GameCodeStatus::State::Building ||
+        status.state == tools::GameCodeStatus::State::Failed)
+    {
+        DEVEX_LOG_WARNING("Cannot play yet: {}", status.message);
+        return;
+    }
+    if (m_services.database->pendingImports() != 0)
+    {
+        DEVEX_LOG_WARNING("Wait for the assets to finish importing before playing");
+        return;
+    }
+    const auto& project = m_services.database->project();
+    const auto resource = project.resourcePath(m_services.tools->scenePath());
+    const auto source = resource.empty()
+                            ? asset::AssetId{}
+                            : m_services.database->findByPath(resource).value_or(asset::AssetId{});
+#ifdef _WIN32
+    const auto player = m_services.platform.baseDirectory() / "devex-player.exe";
+#else
+    const auto player = m_services.platform.baseDirectory() / "devex-player";
+#endif
+    if (auto started =
+            m_externalPlay.start(project, m_services.scene, source, player, waitForDebugger);
+        !started)
+        DEVEX_LOG_ERROR("Cannot start the game process: {}", started.error());
+    m_services.tools->setExternalPlayStatus(m_externalPlay.status());
+}
+
+bool ApplicationRunner::gameplayPaused() const noexcept
+{
+    return (isEditor() || m_editorClient != nullptr) && m_playState != tools::PlayState::Playing;
+}
+
+void ApplicationRunner::updatePlayerControl()
+{
+    if (isEditor())
+    {
+        m_externalPlay.update();
+        m_services.tools->setExternalPlayStatus(m_externalPlay.status());
+    }
+    if (!m_editorClient)
+        return;
+    m_editorClient->update();
+    if (m_editorClient->stopped())
+    {
+        m_application.m_quitRequested = true;
+        return;
+    }
+    const bool available = m_managed && m_managed->hasAssembly();
+    const bool attached = available && m_managed->isDebuggerAttached();
+    if (!m_gameStarted && (!available || attached))
+    {
+        m_gameStarted = true;
+        runSystems(SystemPhase::Start, core::Duration::zero());
+        loadRequestedScene();
+        m_timestep = FixedTimestep::fromRate(m_fixedUpdateRate);
+    }
+    m_playState = !m_gameStarted || m_editorClient->paused() ? tools::PlayState::Paused
+                                                             : tools::PlayState::Playing;
+    m_stepRequested = m_editorClient->takeStep();
+    m_editorClient->report(available, attached, !m_gameStarted);
 }
 
 void ApplicationRunner::stopPlaying()
@@ -1522,6 +1658,7 @@ void ApplicationRunner::abandonPlay()
 
 void ApplicationRunner::closeProject()
 {
+    m_externalPlay.shutdown();
     if (m_playScene)
     {
         stopPlayingSafely();
@@ -1602,6 +1739,7 @@ void ApplicationRunner::handleAssetEvents(asset::AssetDatabase& database)
 
 void ApplicationRunner::switchProject(const std::filesystem::path& projectFile)
 {
+    m_externalPlay.shutdown();
     closeProject();
 
     core::Result<std::unique_ptr<asset::AssetDatabase>> opened = openProject(projectFile, m_services.jobs, m_watchAssets, "the project manager");
@@ -2573,7 +2711,7 @@ void ApplicationRunner::updateUi(std::chrono::nanoseconds frameTime)
     }
 
     const platform::Input& input = m_services.platform.input();
-    const bool playing = !isEditor() || m_playState == tools::PlayState::Playing;
+    const bool playing = !gameplayPaused();
     ui::UiInput uiInput{.pointer = pointer};
     if (playing && pointerAvailable)
     {
@@ -2782,7 +2920,7 @@ void ApplicationRunner::updateAnimation(std::chrono::nanoseconds frameTime)
     {
         return;
     }
-    const bool paused = isEditor() && m_playState != tools::PlayState::Playing;
+    const bool paused = gameplayPaused();
     m_animation->setPaused(paused);
     // Keep extra views from the preceding render, alongside the primary camera's latest world
     // transform. The nearest viewer controls optional animation sampling.
@@ -2811,7 +2949,7 @@ void ApplicationRunner::updateAnimation(std::chrono::nanoseconds frameTime)
 void ApplicationRunner::updateParticles(std::chrono::nanoseconds frameTime)
 {
     // The editor previews the emitters of the scene it edits; a paused game holds its own.
-    m_particles->setPaused(isEditor() && m_playScene && m_playState != tools::PlayState::Playing);
+    m_particles->setPaused((m_playScene || m_editorClient) && gameplayPaused());
     if (physics::PhysicsWorld* const physics = m_physics.get())
     {
         m_particles->setGravity(physics->settings().gravity);
@@ -2858,7 +2996,7 @@ void ApplicationRunner::updateAudio(std::chrono::nanoseconds frameTime)
     {
         return;
     }
-    const bool paused = isEditor() && m_playState != tools::PlayState::Playing;
+    const bool paused = gameplayPaused();
     m_audio->setPaused(paused);
     if (!paused)
     {

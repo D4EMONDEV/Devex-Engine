@@ -102,6 +102,31 @@ TEST_CASE("Processes need a program", "[platform][process]")
     CHECK_FALSE(devex::platform::Process::start({}).has_value());
 }
 
+TEST_CASE("A supervised process accepts commands and tolerates a closed command pipe",
+          "[platform][process][interactive]")
+{
+#ifdef _WIN32
+    const std::vector<std::string> command{"cmd.exe", "/d", "/v:on", "/c",
+                                           "set /p reply=& echo !reply!"};
+#else
+    const std::vector<std::string> command{"/bin/sh", "-c",
+                                           "IFS= read -r reply; printf '%s\\n' \"$reply\""};
+#endif
+    auto process = devex::platform::Process::startInteractive(command);
+    REQUIRE(process);
+    CHECK(process->id() != 0);
+    CHECK(process->id() != devex::platform::currentProcessId());
+    CHECK_FALSE(process->sendLine("one\ntwo"));
+    REQUIRE(process->sendLine("hello from the editor"));
+    int code = -1;
+    const auto lines = readUntilExit(*process, code);
+    REQUIRE(code == 0);
+    REQUIRE(lines.size() == 1);
+    CHECK(lines.front() == "hello from the editor");
+    // On POSIX a broken pipe would otherwise send SIGPIPE to the editor itself.
+    CHECK_FALSE(process->sendLine("after exit"));
+}
+
 TEST_CASE("The folder of the player is found without being made", "[platform][user]")
 {
     const std::string game = "Devex test " + devex::core::Uuid::generate().toString();

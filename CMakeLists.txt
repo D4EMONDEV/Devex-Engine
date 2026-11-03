@@ -90,6 +90,11 @@ endif()
 
 include(DevexInstall)
 
+# The default editor Play command supervises the standalone player beside it.
+if(TARGET devex_editor AND TARGET devex_player)
+    add_dependencies(devex_editor devex_player)
+endif()
+
 if(DEVEX_BUILD_TESTS)
     include(CTest)
     if(BUILD_TESTING)

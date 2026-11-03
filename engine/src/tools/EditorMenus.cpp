@@ -470,7 +470,7 @@ void MenuBarUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& edited
     }
     styleTooltips(colors);
     const bool editor = builtMode == ToolsMode::Editor;
-    const bool editing = state.playState == PlayState::Editing;
+    const bool editing = !state.gameRunning();
     const std::optional<std::size_t> open = editorMenuOwner(state);
 
     for (std::size_t index = 0; index < titles.size(); ++index)
@@ -527,7 +527,7 @@ void MenuBarUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& edited
     if (world.wasClicked(play[0].entity) && editing && codeReady)
     {
         state.requests.play = true;
-        if (state.mainScreen == MainScreen::Script)
+        if (!state.scripts.separateProcess && state.mainScreen == MainScreen::Script)
         {
             setMainScreen(state, state.camera.isTwoD() ? MainScreen::TwoD : MainScreen::ThreeD);
         }
@@ -540,7 +540,7 @@ void MenuBarUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& edited
     {
         state.requests.stop = true;
     }
-    if (world.wasClicked(play[3].entity) && state.playState == PlayState::Paused)
+    if (world.wasClicked(play[3].entity) && state.gamePaused())
     {
         state.requests.step = true;
     }
@@ -552,7 +552,7 @@ void MenuBarUi::sync(ToolsState& state, EditorUiKit& kit)
     const ThemeColors& colors = themeColors();
     MenuBarUi& bar = *this;
     scene::Scene& scene = bar.scene();
-    const bool editing = state.playState == PlayState::Editing;
+    const bool editing = !state.gameRunning();
     scene.get<scene::UiText>(bar.project).text = state.database != nullptr ? state.database->project().name : std::string{};
 
     const std::array<MainScreen, 3> shown{MainScreen::TwoD, MainScreen::ThreeD, MainScreen::Script};
@@ -599,11 +599,18 @@ void MenuBarUi::sync(ToolsState& state, EditorUiKit& kit)
 
     // Play, pause, stop and step, each lit or dimmed as the game stands.
     const bool codeReady = status.state == GameCodeStatus::State::None || status.state == GameCodeStatus::State::Ready;
-    const bool paused = state.playState == PlayState::Paused;
-    const std::array<bool, 4> enabled{editing && codeReady, !editing, !editing, paused};
+    const bool paused = state.gamePaused();
+    const bool controllable = !state.externalPlay.running ||
+                              (!state.externalPlay.starting && !state.externalPlay.stopping &&
+                               !state.externalPlay.waitingForDebugger);
+    const std::array<bool, 4> enabled{editing && codeReady, !editing && controllable, !editing,
+                                      paused && controllable};
     const std::array<bool, 4> lit{!editing, paused, false, false};
-    const std::array<const char*, 4> hints{codeReady ? "Play the scene (F5)" : "Wait for the game code to build successfully before playing",
-                                           "Pause (F7)", "Stop (F8)", "Step one fixed update (F9)"};
+    const std::array<const char*, 4> hints{
+        codeReady ? (state.scripts.separateProcess ? "Play the scene in a separate process (F5)"
+                                                   : "Play the scene inside the editor (F5)")
+                  : "Wait for the game code to build successfully before playing",
+        "Pause (F7)", "Stop (F8)", "Step one fixed update (F9)"};
     for (std::size_t index = 0; index < bar.play.size(); ++index)
     {
         scene.get<UiRect>(bar.play[index].entity).style = barStyle(panel.world(), bar.play[index].entity, lit[index]);
@@ -612,6 +619,11 @@ void MenuBarUi::sync(ToolsState& state, EditorUiKit& kit)
         scene.get<UiRect>(bar.play[index].icon).style = lit[index] ? "icon_accent" : "icon";
         bar.tooltip(bar.play[index].entity, hints[index]);
     }
+    if (state.externalPlay.running)
+        bar.tooltip(
+            bar.play[0].entity,
+            std::format("Game process {}. The editor remains available; Stop (F8) closes the game.",
+                        state.externalPlay.processId));
 }
 
 void drawEditorMenus(ToolsState& state, scene::Scene& scene)
@@ -795,6 +807,7 @@ void handleEditorShortcuts(ToolsState& state, scene::Scene& scene)
         return;
     }
     const bool editing = state.playState == PlayState::Editing;
+    const bool running = state.gameRunning();
     // Shortcuts without Ctrl or Alt leave the keys to a field being typed into, the F keys aside.
     const auto pressed = [&state](KeyModifiers modifiers, auto key) {
         if constexpr (std::is_same_v<decltype(key), char>)
@@ -808,23 +821,27 @@ void handleEditorShortcuts(ToolsState& state, scene::Scene& scene)
     };
     if (pressed(KeyModifiers{.ctrl = true}, 'p'))
     {
-        (editing ? state.requests.play : state.requests.stop) = true;
+        (!running ? state.requests.play : state.requests.stop) = true;
     }
-    if (pressed(KeyModifiers{}, platform::Key::F5) && editing)
+    if (pressed(KeyModifiers{}, platform::Key::F5) && !running)
     {
         state.requests.play = true;
-        showSceneScreen(state, scene);
+        if (!state.scripts.separateProcess)
+            showSceneScreen(state, scene);
     }
-    if ((pressed(KeyModifiers{.ctrl = true, .shift = true}, 'p') || pressed(KeyModifiers{}, platform::Key::F7)) && !editing)
+    if ((pressed(KeyModifiers{.ctrl = true, .shift = true}, 'p') ||
+         pressed(KeyModifiers{}, platform::Key::F7)) &&
+        running)
     {
         state.requests.togglePause = true;
     }
-    if (pressed(KeyModifiers{}, platform::Key::F8) && !editing)
+    if (pressed(KeyModifiers{}, platform::Key::F8) && running)
     {
         state.requests.stop = true;
     }
-    if ((pressed(KeyModifiers{.ctrl = true, .alt = true}, 'p') || pressed(KeyModifiers{}, platform::Key::F9)) &&
-        state.playState == PlayState::Paused)
+    if ((pressed(KeyModifiers{.ctrl = true, .alt = true}, 'p') ||
+         pressed(KeyModifiers{}, platform::Key::F9)) &&
+        state.gamePaused())
     {
         state.requests.step = true;
     }

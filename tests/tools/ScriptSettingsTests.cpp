@@ -20,6 +20,7 @@ TEST_CASE("Script editor preferences survive serialization independently for eac
 {
     ScriptSettings settings;
     settings.automaticCompilation = false;
+    settings.separateProcess = false;
     settings.editors[0] = {ScriptEditor::Custom, "C:/Program Files/Editor/rider64.exe", "\"{project}\" \"{file}\""};
     settings.editors[1].editor = ScriptEditor::System;
     settings.editors[2].editor = ScriptEditor::Devex;

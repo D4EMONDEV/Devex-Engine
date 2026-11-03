@@ -966,6 +966,15 @@ struct DEVEX_API ToolsState
 
     // Editor.
     PlayState playState = PlayState::Editing;
+    ExternalPlayStatus externalPlay;
+    [[nodiscard]] bool gameRunning() const noexcept
+    {
+        return playState != PlayState::Editing || externalPlay.running;
+    }
+    [[nodiscard]] bool gamePaused() const noexcept
+    {
+        return externalPlay.running ? externalPlay.paused : playState == PlayState::Paused;
+    }
     EditorRequests requests;
     GameCodeStatus gameCode;
     std::function<ProjectCodeStatus(const asset::Project&)> projectCodeStatus;

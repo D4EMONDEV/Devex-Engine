@@ -54,9 +54,9 @@ struct DEVEX_API ApplicationConfig
     // F1. Requires rendering.
     bool enableTools = core::assertsEnabled;
     // Runs the application inside the editor: the scene is edited in a viewport and saved as
-    // project scenes, and the application's updates only run in Play mode, on a copy of the scene
-    // that Stop throws away. Without a project, the editor opens on its welcome screen. Requires
-    // rendering; the tools come with it.
+    // project scenes. Play launches devex-player by default; Inside Editor runs the application's
+    // updates on a copy that Stop throws away. Without a project, the editor opens on its welcome
+    // screen. Requires rendering; the tools come with it.
     bool editor = false;
     // Loads the game module of the project (its code/ folder, built into .devex/code/<configuration>/bin),
     // runs its systems while the game plays, and loads new builds as they appear. The editor
@@ -95,6 +95,9 @@ struct DEVEX_API ApplicationConfig
     // frames once the assets are loaded and drawn, before the application quits (after the picture,
     // with both): where the time of a frame goes, on the machine it runs on.
     std::filesystem::path profileReport;
+    // Internal editor play session: loads its unsaved scene snapshot and accepts parent commands.
+    // Empty for an independent player or an exported game.
+    std::filesystem::path editorSession;
 };
 
 namespace detail {
@@ -106,9 +109,10 @@ class ApplicationRunner;
 // scene transforms and physics interpolation, runs LateUpdate game systems, then renders the scene.
 // Engine services are available from onStartup to onShutdown, not in the constructor.
 //
-// Inside the editor, onStartup and onShutdown run as usual, but the updates and onRender only run
-// in Play mode, between onPlayStarted and onPlayStopped, and scene() then returns the copy of the
-// edited scene that plays. Entities keep their handles in the copy.
+// Inside the editor, onStartup and onShutdown run as usual. With Inside Editor selected, updates
+// and onRender run between onPlayStarted and onPlayStopped on a copy of the edited scene; entities
+// keep their handles. Separate Process runs the project's game module in devex-player instead:
+// callbacks on this editor Application do not cross the process boundary.
 class DEVEX_API Application
 {
 public:
@@ -150,12 +154,12 @@ public:
     {
     }
 
-    // Editor only: called when Play starts, once scene() returns the copy that plays.
+    // Inside Editor only: called when Play starts, once scene() returns the copy that plays.
     virtual void onPlayStarted()
     {
     }
 
-    // Editor only: called when Play stops, while scene() still returns the copy that played.
+    // Inside Editor only: called when Play stops, while scene() still returns the copy that played.
     virtual void onPlayStopped()
     {
     }

@@ -76,6 +76,19 @@ enum class PlayState : std::uint8_t
     Paused,
 };
 
+// A supervised player owns its simulation and window; the editor keeps editing its own scene.
+struct DEVEX_API ExternalPlayStatus
+{
+    bool running = false;
+    bool starting = false;
+    bool paused = false;
+    bool stopping = false;
+    bool debuggerAvailable = false;
+    bool debuggerAttached = false;
+    bool waitingForDebugger = false;
+    std::uint32_t processId = 0;
+};
+
 // The windows and dialogs of the editor its menus open.
 enum class EditorWindow : std::uint8_t
 {
@@ -342,6 +355,8 @@ public:
     // may have damaged the editor and offers to save the scenes.
     void reportGameCrash(std::string report);
     [[nodiscard]] bool automaticCodeCompilation() const;
+    [[nodiscard]] bool playInSeparateProcess() const;
+    void setExternalPlayStatus(ExternalPlayStatus status);
     void openInPreferredEditor(const std::filesystem::path& file);
     // Editor only: checks projects when the project manager refreshes its list. The application
     // supplies the check so that the tools do not load game code or depend on the runtime.

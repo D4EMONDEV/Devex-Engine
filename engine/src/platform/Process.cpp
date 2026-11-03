@@ -12,9 +12,14 @@
 #define NOMINMAX
 #include <windows.h>
 #else
+#include <csignal>
+#include <poll.h>
+#include <pthread.h>
 #include <unistd.h>
 #endif
 
+#include <algorithm>
+#include <cerrno>
 #include <utility>
 
 namespace devex::platform {
@@ -85,8 +90,9 @@ namespace {
     return line;
 }
 
-[[nodiscard]] core::Result<SDL_Process*> createProcess(std::span<const std::string> arguments,
-                                                     const std::filesystem::path& workingDirectory, bool captureOutput)
+[[nodiscard]] core::Result<SDL_Process*>
+createProcess(std::span<const std::string> arguments, const std::filesystem::path& workingDirectory,
+              bool captureOutput, bool interactive = false)
 {
     if (arguments.empty())
     {
@@ -104,6 +110,9 @@ namespace {
     SDL_SetNumberProperty(properties, SDL_PROP_PROCESS_CREATE_STDOUT_NUMBER,
                           captureOutput ? SDL_PROCESS_STDIO_APP : SDL_PROCESS_STDIO_NULL);
     SDL_SetBooleanProperty(properties, SDL_PROP_PROCESS_CREATE_STDERR_TO_STDOUT_BOOLEAN, true);
+    if (interactive)
+        SDL_SetNumberProperty(properties, SDL_PROP_PROCESS_CREATE_STDIN_NUMBER,
+                              SDL_PROCESS_STDIO_APP);
     const std::string directory = core::toUtf8(workingDirectory);
     if (!directory.empty())
     {
@@ -140,6 +149,132 @@ core::Result<void> Process::launch(std::span<const std::string> arguments, const
     // Destroying the object that tracks the process leaves the process running.
     SDL_DestroyProcess(*process);
     return {};
+}
+
+core::Result<Process> Process::startInteractive(std::span<const std::string> arguments,
+                                                const std::filesystem::path& workingDirectory)
+{
+    const auto process = createProcess(arguments, workingDirectory, true, true);
+    if (!process)
+        return std::unexpected(process.error());
+    return Process(*process);
+}
+
+std::uint32_t Process::id() const noexcept
+{
+    return m_process != nullptr
+               ? static_cast<std::uint32_t>(SDL_GetNumberProperty(
+                     SDL_GetProcessProperties(static_cast<SDL_Process*>(m_process)),
+                     SDL_PROP_PROCESS_PID_NUMBER, 0))
+               : 0;
+}
+
+core::Result<void> Process::sendLine(std::string_view line)
+{
+    if (line.size() > 1024 || line.find_first_of("\r\n") != std::string_view::npos)
+        return core::makeError(core::ErrorCode::InvalidArgument,
+                               "a process command must fit on one short line");
+    SDL_IOStream* const input =
+        m_process != nullptr ? SDL_GetProcessInput(static_cast<SDL_Process*>(m_process)) : nullptr;
+    const std::string command = std::string(line) + '\n';
+    if (input == nullptr)
+        return core::makeError(core::ErrorCode::Platform, "the process has no command pipe");
+#ifndef _WIN32
+    // A child may crash between checking its state and writing. A broken pipe must not kill its
+    // supervisor with SIGPIPE. Mask it on this thread only, preserving any already pending signal.
+    sigset_t signals{}, previous{}, pending{};
+    sigemptyset(&signals);
+    sigaddset(&signals, SIGPIPE);
+    if (pthread_sigmask(SIG_BLOCK, &signals, &previous) != 0)
+        return core::makeError(core::ErrorCode::Platform,
+                               "cannot protect the process command pipe");
+    sigpending(&pending);
+    const bool alreadyPending = sigismember(&pending, SIGPIPE) == 1;
+#endif
+    const bool written = SDL_WriteIO(input, command.data(), command.size()) == command.size();
+#ifndef _WIN32
+    if (!written && !alreadyPending)
+    {
+        sigpending(&pending);
+        if (sigismember(&pending, SIGPIPE) == 1)
+        {
+            int consumed = 0;
+            static_cast<void>(sigwait(&signals, &consumed));
+        }
+    }
+    pthread_sigmask(SIG_SETMASK, &previous, nullptr);
+#endif
+    if (!written)
+        return core::makeError(core::ErrorCode::Platform, "cannot send the process command: {}",
+                               SDL_GetError());
+    return {};
+}
+
+std::vector<std::string> ProcessInput::readLines()
+{
+    // A bounded read leaves time for the game even when its controller sends many commands.
+    char buffer[4096];
+    for (int batch = 0; !m_closed && batch < 16; ++batch)
+    {
+        std::size_t count = 0;
+#ifdef _WIN32
+        const HANDLE input = GetStdHandle(STD_INPUT_HANDLE);
+        DWORD available = 0, read = 0;
+        if (input == nullptr || input == INVALID_HANDLE_VALUE ||
+            GetFileType(input) != FILE_TYPE_PIPE ||
+            !PeekNamedPipe(input, nullptr, 0, nullptr, &available, nullptr))
+        {
+            m_closed = true;
+            break;
+        }
+        if (available == 0)
+            break;
+        if (!ReadFile(input, buffer, std::min<DWORD>(available, sizeof(buffer)), &read, nullptr))
+        {
+            m_closed = true;
+            break;
+        }
+        count = read;
+#else
+        pollfd input{STDIN_FILENO, POLLIN, 0};
+        const int ready = poll(&input, 1, 0);
+        if (ready < 0 && errno == EINTR)
+            continue;
+        if (isatty(STDIN_FILENO) || ready < 0 || (input.revents & (POLLERR | POLLNVAL)))
+        {
+            m_closed = true;
+            break;
+        }
+        if (!(input.revents & (POLLIN | POLLHUP)))
+            break;
+        const auto read = ::read(STDIN_FILENO, buffer, sizeof(buffer));
+        if (read < 0 && errno == EINTR)
+            continue;
+        if (read <= 0)
+        {
+            m_closed = true;
+            break;
+        }
+        count = static_cast<std::size_t>(read);
+#endif
+        m_pending.append(buffer, count);
+        if (m_pending.size() > 65536)
+        {
+            m_closed = true;
+            break;
+        }
+    }
+    std::vector<std::string> lines;
+    for (auto newline = m_pending.find('\n'); newline != std::string::npos;
+         newline = m_pending.find('\n'))
+    {
+        std::string line = m_pending.substr(0, newline);
+        m_pending.erase(0, newline + 1);
+        if (!line.empty() && line.back() == '\r')
+            line.pop_back();
+        lines.push_back(std::move(line));
+    }
+    return lines;
 }
 
 Process::Process(void* process) noexcept
@@ -193,7 +328,7 @@ std::vector<std::string> Process::readLines()
     // The output stream does not block: it returns what the pipe holds.
     SDL_IOStream* const output = SDL_GetProcessOutput(static_cast<SDL_Process*>(m_process));
     char buffer[4096];
-    while (output != nullptr)
+    for (int batch = 0; output != nullptr && batch < 16; ++batch)
     {
         const std::size_t read = SDL_ReadIO(output, buffer, sizeof(buffer));
         if (read == 0)
@@ -215,6 +350,8 @@ std::vector<std::string> Process::readLines()
         start = newline + 1;
     }
     m_pending.erase(0, start);
+    if (m_pending.size() > 256 * 1024)
+        lines.push_back(toUtf8Line(std::exchange(m_pending, {})) + " [long process output split]");
     if (m_exitCode && !m_pending.empty())
     {
         lines.push_back(toUtf8Line(std::exchange(m_pending, {})));

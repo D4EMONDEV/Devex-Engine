@@ -65,6 +65,8 @@ ScriptSettings readScriptSettings(const serialization::TextSection& section)
     {
         settings.automaticCompilation = serialization::asBool(*value).value_or(true);
     }
+    if (const auto* value = section.findAttribute("separate_process"))
+        settings.separateProcess = serialization::asBool(*value).value_or(true);
     return settings;
 }
 
@@ -81,6 +83,7 @@ serialization::TextSection writeScriptSettings(const ScriptSettings& settings)
         section.attributes.push_back({prefix + "_arguments", choice.arguments});
     }
     section.attributes.push_back({"automatic_compilation", settings.automaticCompilation});
+    section.attributes.push_back({"separate_process", settings.separateProcess});
     return section;
 }
 

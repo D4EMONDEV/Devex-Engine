@@ -450,6 +450,7 @@ struct EditorSettingsUi : SettingsUi
     Button detectEditors;
     Entity detectionStatus;
     Entity automaticCompilation;
+    Entity playMode;
     std::array<Entity, viewportNumbers.size()> viewportNumberFields{};
     std::array<Entity, viewportColors.size()> viewportColorFields{};
     std::array<Entity, viewportToggles.size()> viewportToggleFields{};
@@ -582,6 +583,16 @@ void EditorSettingsUi::build(EditorUiKit& kit)
     note(&compilation, "Automatic compiles saved C# and C++ changes, including saves made by external editors.", "dim", 3.0f);
     note(&compilation, "Manual keeps source changes pending until Project > Build Game Code (Ctrl+B). Saving in Devex Script also waits for Ctrl+B.", "dim", 4.0f);
     note(&compilation, "Missing or outdated code is still built when opening a project. Successful builds reload the code; failed builds keep the previous version.", "dim", 4.0f);
+    Section& play = pageCard(kit, compilationPage, "Play");
+    playMode = choice(formRow(play, "Run Game").editor);
+    note(&play,
+         "Separate Process opens the current scene in its own game window. A game crash leaves the "
+         "editor running. Pause, Stop and Step control that process.",
+         "dim", 4.0f);
+    note(&play,
+         "Inside Editor keeps the embedded game view and live inspection. Play uses a temporary "
+         "scene copy in either mode, including unsaved changes.",
+         "dim", 4.0f);
 }
 
 void EditorSettingsUi::update(ToolsState& state, EditorUiKit& kit, core::Duration delta)
@@ -686,6 +697,8 @@ void EditorSettingsUi::update(ToolsState& state, EditorUiKit& kit, core::Duratio
     scene().get<scene::UiText>(detectionStatus).text = installedEditors.empty() ? "No supported IDE found. You can choose a custom executable below." :
         std::format("{} installed editors found. Choose one for each file type below.", installedEditors.size());
     setChoice(automaticCompilation, {"Automatic", "Manual (Ctrl+B)"}, state.scripts.automaticCompilation ? 0 : 1);
+    setChoice(playMode, {"Separate Process", "Inside Editor"},
+              state.scripts.separateProcess ? 0 : 1);
     if (editedColor && colorPopupOpen())
     {
         const math::Vec3 color =
@@ -768,6 +781,8 @@ void EditorSettingsUi::update(ToolsState& state, EditorUiKit& kit, core::Duratio
     {
         scripts.automaticCompilation = scene().get<scene::UiDropdown>(automaticCompilation).selected == 0;
     }
+    if (world.wasChanged(playMode))
+        scripts.separateProcess = scene().get<scene::UiDropdown>(playMode).selected == 0;
 
     if (world.wasChanged(preset))
     {
@@ -840,6 +855,7 @@ void EditorSettingsUi::update(ToolsState& state, EditorUiKit& kit, core::Duratio
         else if (selected == compilationPage)
         {
             scripts.automaticCompilation = true;
+            scripts.separateProcess = true;
         }
         else if (selected == 0)
         {

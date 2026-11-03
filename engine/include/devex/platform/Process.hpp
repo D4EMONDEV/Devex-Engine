@@ -28,6 +28,10 @@ public:
     // current one.
     [[nodiscard]] static core::Result<Process> start(std::span<const std::string> arguments,
                                                      const std::filesystem::path& workingDirectory = {});
+    // Like start, with a nonblocking input pipe for short commands to a supervised program.
+    [[nodiscard]] static core::Result<Process>
+    startInteractive(std::span<const std::string> arguments,
+                     const std::filesystem::path& workingDirectory = {});
     // Starts a program that runs on its own, such as a game: its output is discarded and it keeps
     // running when the caller exits.
     [[nodiscard]] static core::Result<void> launch(std::span<const std::string> arguments,
@@ -47,6 +51,8 @@ public:
 
     // The exit code, once the program has ended.
     [[nodiscard]] std::optional<int> exitCode();
+    [[nodiscard]] std::uint32_t id() const noexcept;
+    [[nodiscard]] core::Result<void> sendLine(std::string_view line);
 
     void kill() noexcept;
 
@@ -57,6 +63,18 @@ private:
     void* m_process = nullptr;
     std::string m_pending;
     std::optional<int> m_exitCode;
+};
+
+// The receiving end of a supervised program's standard input. Never reads a terminal or blocks.
+class DEVEX_API ProcessInput
+{
+  public:
+    [[nodiscard]] std::vector<std::string> readLines();
+    [[nodiscard]] bool closed() const noexcept { return m_closed; }
+
+  private:
+    std::string m_pending;
+    bool m_closed = false;
 };
 
 // The identifier of the running process, which debuggers attach to.
