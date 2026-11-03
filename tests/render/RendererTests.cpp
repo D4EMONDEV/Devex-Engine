@@ -18,6 +18,7 @@
 #include <format>
 #include <iterator>
 #include <optional>
+#include <ranges>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -1104,6 +1105,88 @@ TEST_CASE("Volumetric fog veils what lies behind it, and a volume carving it out
                       << fogged[2] << ", carved " << carved[0] << " " << carved[1] << " " << carved[2]);
         CHECK(difference(clear, fogged) > 60);
         CHECK(difference(clear, carved) <= 6);
+    }
+
+    for (const std::string& error : capture.errors())
+    {
+        UNSCOPED_INFO(error);
+    }
+    CHECK(capture.errors().empty());
+}
+
+TEST_CASE("Volumetric fog mixed with the frames before stays steady, far from the origin too", "[render][gpu][fog]")
+{
+    const ErrorCapture capture;
+    {
+        auto platform = devex::platform::Platform::create();
+        REQUIRE(platform.has_value());
+        auto window = platform->createWindow({.width = 320, .height = 240, .vulkan = true, .hidden = true});
+        REQUIRE(window.has_value());
+        auto renderer = devex::render::Renderer::create(*platform, *window, {.validation = true});
+        if (!renderer)
+        {
+            FAIL(std::format("{}", renderer.error()));
+        }
+        auto cube = renderer->createMesh(devex::asset::makeCube());
+        REQUIRE(cube.has_value());
+
+        // A dark cube 8.5 m away and the black sky beside it, through a fog scattering forward towards
+        // the sun, as the editor draws it: away from the origin, where positions round off, and with
+        // temporal antialiasing jittering the view. Every frame is kept, to catch one that flashes.
+        const devex::math::Vec3 camera{40.0f, 6.0f, 55.0f};
+        const auto frames = [&](float temporalAmount, int first, int last) {
+            std::vector<std::uint64_t> requests;
+            std::vector<std::array<int, 2>> found;
+            for (int frame = 0; frame < last + 10 && found.size() < static_cast<std::size_t>(last - first); ++frame)
+            {
+                devex::render::RenderWorld& world = renderer->beginFrame();
+                world.camera.view = devex::math::inverse(devex::math::translate(devex::math::Mat4{1.0f}, camera));
+                world.camera.autoExposure = false;
+                world.camera.ev100 = 15.0f;
+                world.camera.antialiasing = devex::render::Antialiasing::Temporal;
+                world.camera.ambientOcclusion = 0.0f;
+                world.camera.bloom = 0.0f;
+                world.sun = {.direction = {0.0f, -0.5f, -1.0f}, .illuminance = devex::math::Vec3{100000.0f}};
+                world.environment.intensity = 0.0f;
+                world.meshes.push_back({.mesh = *cube,
+                                        .transform = devex::math::scale(devex::math::translate(devex::math::Mat4{1.0f},
+                                                                                               camera + devex::math::Vec3{0.0f, 0.0f, -10.0f}),
+                                                                        devex::math::Vec3{3.0f}),
+                                        .objectId = 1});
+                world.volumetricFog = {.enabled = true, .density = 0.05f, .anisotropy = 0.6f, .temporalAmount = temporalAmount};
+                REQUIRE(renderer->endFrame());
+                if (frame >= first && frame < last)
+                {
+                    requests.push_back(renderer->requestCapture(320, 240));
+                }
+                for (devex::render::CapturedImage& captured : renderer->takeCaptures())
+                {
+                    if (std::ranges::find(requests, captured.request) != requests.end())
+                    {
+                        const auto at = [&](std::size_t x, std::size_t y) { return int{captured.rgba[(y * captured.width + x) * 4]}; };
+                        found.push_back({at(160, 120), at(20, 120)});
+                    }
+                }
+            }
+            REQUIRE(found.size() == static_cast<std::size_t>(last - first));
+            return found;
+        };
+        const auto spread = [](const std::vector<std::array<int, 2>>& found, std::size_t which) {
+            const auto [low, high] = std::ranges::minmax(found | std::views::transform([&](const std::array<int, 2>& each) { return each[which]; }));
+            return high - low;
+        };
+
+        const std::array<int, 2> alone = frames(0.0f, 2, 3).front();
+        // Past the frames in which the history fills, and across the jitter of the slices coming back
+        // near their start, every 34 and 55 frames.
+        const std::vector<std::array<int, 2>> mixed = frames(0.9f, 30, 100);
+        INFO("alone: cube " << alone[0] << ", sky " << alone[1] << "; mixed: cube " << mixed.back()[0] << ", sky " << mixed.back()[1]
+                            << "; spread: cube " << spread(mixed, 0) << ", sky " << spread(mixed, 1));
+        CHECK(alone[0] > 20);
+        CHECK(std::abs(alone[0] - mixed.back()[0]) <= 6);
+        CHECK(std::abs(alone[1] - mixed.back()[1]) <= 6);
+        CHECK(spread(mixed, 0) <= 4);
+        CHECK(spread(mixed, 1) <= 4);
     }
 
     for (const std::string& error : capture.errors())

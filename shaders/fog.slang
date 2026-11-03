@@ -124,7 +124,9 @@ void lightFroxels(uint3 id : SV_DispatchThreadID)
     scattering = max(scattering, float3(0.0));
 
     // The sun through its shadows, the local lights, and the sky lighting the fog evenly.
-    const float3 toCamera = normalize(scene.cameraPosition - position);
+    // Back along the ray rather than from the place: the first slice may be sampled micrometers from
+    // the camera, where rounding turns the direction anywhere and the phase with it.
+    const float3 toCamera = normalize(scene.cameraPosition - viewPoint(scene, uv, 1.0));
     float3 caught = scene.sunIlluminance * sunVisibility(scene, position, viewDistance) *
                     henyeyGreenstein(dot(scene.sunDirection, toCamera), fog.anisotropy);
     caught += localLightsThrough(scene, position, uv, viewDistance, toCamera, fog.anisotropy);
