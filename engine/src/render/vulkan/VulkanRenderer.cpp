@@ -2413,6 +2413,12 @@ core::Result<std::pair<VulkanRenderer::GpuTexture, VulkanRenderer::PendingUpload
     {
         return std::unexpected(valid.error());
     }
+    const bool bc = texture.format == asset::TextureFormat::Bc5Unorm || texture.format == asset::TextureFormat::Bc7Unorm ||
+                    texture.format == asset::TextureFormat::Bc7Srgb;
+    if (bc && !m_device.supportsTextureCompressionBC())
+    {
+        return core::makeError(core::ErrorCode::Unsupported, "the GPU cannot read BC textures");
+    }
 
     const asset::TextureMip& base = texture.mips.front();
     const auto mipLevels = static_cast<std::uint32_t>(texture.mips.size());

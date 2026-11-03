@@ -104,7 +104,14 @@ struct RequiredFeatures
     vkGetPhysicalDeviceProperties(physicalDevice, &properties);
     if (properties.apiVersion < requiredApiVersion)
     {
-        missing = std::format("supports Vulkan {} instead of 1.4", inspection.candidate.info.apiVersion);
+        missing = std::format("supports Vulkan {} instead of 1.{}", inspection.candidate.info.apiVersion,
+                              VK_API_VERSION_MINOR(requiredApiVersion));
+        return inspection;
+    }
+    if (properties.limits.maxPushConstantsSize < requiredPushConstantsSize)
+    {
+        missing = std::format("allows {} bytes of push constants instead of {}",
+                              properties.limits.maxPushConstantsSize, requiredPushConstantsSize);
         return inspection;
     }
 
@@ -145,11 +152,6 @@ struct RequiredFeatures
         supported.features12.shaderSampledImageArrayNonUniformIndexing != VK_TRUE)
     {
         missing = "no descriptor indexing for bindless textures";
-        return inspection;
-    }
-    if (supported.features.features.textureCompressionBC != VK_TRUE)
-    {
-        missing = "no BC texture compression";
         return inspection;
     }
 
@@ -238,10 +240,12 @@ core::Result<Device> Device::create(VkInstance instance, VkSurfaceKHR surface,
     enabled.features12.descriptorBindingSampledImageUpdateAfterBind = VK_TRUE;
     enabled.features12.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
     enabled.features11.shaderDrawParameters = VK_TRUE;
-    enabled.features.features.textureCompressionBC = VK_TRUE;
 
     RequiredFeatures supported;
     vkGetPhysicalDeviceFeatures2(device.m_physicalDevice, &supported.features);
+    // Desktop GPUs read BC textures; phone GPUs do not, and get their textures in another format.
+    enabled.features.features.textureCompressionBC = supported.features.features.textureCompressionBC;
+    device.m_textureCompressionBC = supported.features.features.textureCompressionBC == VK_TRUE;
     enabled.features.features.samplerAnisotropy = supported.features.features.samplerAnisotropy;
     enabled.features.features.depthClamp = supported.features.features.depthClamp;
     device.m_depthClamp = supported.features.features.depthClamp == VK_TRUE;
@@ -308,6 +312,7 @@ Device::Device(Device&& other) noexcept
     , m_maxBindlessTextures(other.m_maxBindlessTextures)
     , m_sampleCounts(other.m_sampleCounts)
     , m_depthClamp(other.m_depthClamp)
+    , m_textureCompressionBC(other.m_textureCompressionBC)
     , m_drawIndirectFirstInstance(other.m_drawIndirectFirstInstance)
     , m_mutableSwapchainFormat(other.m_mutableSwapchainFormat)
 {
@@ -327,6 +332,7 @@ Device& Device::operator=(Device&& other) noexcept
         m_maxBindlessTextures = other.m_maxBindlessTextures;
         m_sampleCounts = other.m_sampleCounts;
         m_depthClamp = other.m_depthClamp;
+        m_textureCompressionBC = other.m_textureCompressionBC;
         m_drawIndirectFirstInstance = other.m_drawIndirectFirstInstance;
         m_mutableSwapchainFormat = other.m_mutableSwapchainFormat;
     }
@@ -397,6 +403,11 @@ VkSampleCountFlagBits Device::sampleCount(std::uint32_t requested) const noexcep
 bool Device::supportsDepthClamp() const noexcept
 {
     return m_depthClamp;
+}
+
+bool Device::supportsTextureCompressionBC() const noexcept
+{
+    return m_textureCompressionBC;
 }
 
 bool Device::supportsDrawIndirectFirstInstance() const noexcept

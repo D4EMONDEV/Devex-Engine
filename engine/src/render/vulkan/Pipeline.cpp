@@ -109,6 +109,12 @@ private:
                                                           std::uint32_t pushConstantSize,
                                                           VkShaderStageFlags stages)
 {
+    if (pushConstantSize > requiredPushConstantsSize)
+    {
+        return core::makeError(core::ErrorCode::InvalidArgument,
+                               "{} bytes of push constants, more than the {} devices are asked for",
+                               pushConstantSize, requiredPushConstantsSize);
+    }
     const VkPushConstantRange pushConstants{
         .stageFlags = stages,
         .offset = 0,

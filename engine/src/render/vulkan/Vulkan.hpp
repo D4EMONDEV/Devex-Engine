@@ -11,12 +11,16 @@
 
 namespace devex::render::vulkan {
 
-// Every Devex device requires this version.
-inline constexpr std::uint32_t requiredApiVersion = VK_API_VERSION_1_4;
-// The Vulkan loader may be older than the drivers: Vulkan 1.4 added commands of devices only, which
-// the engine takes from the driver (volkLoadDevice), and a loader of 1.1 or later accepts any version
-// the application asks for. Ubuntu 24.04 comes with a loader of Vulkan 1.3 and drivers of 1.4.
+// Every Devex device requires this version: the renderer uses nothing of 1.4, which phones rarely
+// offer.
+inline constexpr std::uint32_t requiredApiVersion = VK_API_VERSION_1_3;
+// The Vulkan loader may be older than the drivers: a loader of 1.1 or later accepts any version the
+// application asks for, and the engine takes the commands of devices from the driver
+// (volkLoadDevice).
 inline constexpr std::uint32_t requiredLoaderVersion = VK_API_VERSION_1_3;
+// The push constants of the largest block, the prepass's (200 bytes), fit in what Vulkan 1.4
+// guarantees; 1.3 only guarantees 128, so devices are asked for it.
+inline constexpr std::uint32_t requiredPushConstantsSize = 256;
 
 [[nodiscard]] std::string_view toString(VkResult result) noexcept;
 

@@ -28,7 +28,7 @@ TEST_CASE("The most capable compatible GPU is selected", "[render][selection]")
     const std::array candidates{
         gpu("Software Renderer", GpuType::Cpu),
         gpu("Intel Graphics", GpuType::Integrated),
-        gpu("Old Discrete", GpuType::Discrete, "supports Vulkan 1.2.0 instead of 1.4"),
+        gpu("Old Discrete", GpuType::Discrete, "supports Vulkan 1.2.0 instead of 1.3"),
         gpu("NVIDIA GeForce RTX 4060", GpuType::Discrete),
     };
 
@@ -56,7 +56,7 @@ TEST_CASE("Selection fails with every reason when no GPU is compatible", "[rende
 {
     const std::array candidates{
         gpu("First", GpuType::Discrete, "no VK_KHR_swapchain extension"),
-        gpu("Second", GpuType::Integrated, "supports Vulkan 1.3.0 instead of 1.4"),
+        gpu("Second", GpuType::Integrated, "supports Vulkan 1.2.0 instead of 1.3"),
     };
 
     const auto selected = devex::render::selectGpu(candidates, "");
@@ -65,7 +65,7 @@ TEST_CASE("Selection fails with every reason when no GPU is compatible", "[rende
     CHECK(selected.error().code == devex::core::ErrorCode::Unsupported);
     CHECK(selected.error().message ==
           "no GPU can run Devex (First: no VK_KHR_swapchain extension; "
-          "Second: supports Vulkan 1.3.0 instead of 1.4)");
+          "Second: supports Vulkan 1.2.0 instead of 1.3)");
     CHECK_FALSE(devex::render::selectGpu({}, "").has_value());
 }
 

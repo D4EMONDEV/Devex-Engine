@@ -273,12 +273,15 @@ docs/          décisions et documentation
 
 ### Rendu
 
-- **Vulkan 1.4** : dynamic rendering, synchronization2, descriptor indexing et push
-  descriptors sans extension optionnelle. Aucun `VkRenderPass` legacy. C'est le pilote du GPU qui
-  doit offrir 1.4 ; le chargeur Vulkan peut s'arrêter à 1.3 (`requiredLoaderVersion`) : 1.4 n'a
-  ajouté que des commandes de device, que le moteur prend au pilote (`volkLoadDevice`), et un
-  chargeur 1.1 ou plus récent accepte toute version demandée. Le chargeur d'Ubuntu 24.04
-  (`libvulkan1` 1.3.275) faisait refuser tous les jeux, alors que Mesa y offre Vulkan 1.4.
+- **Vulkan 1.3** (1.4 jusqu'au jalon 92, voir *Android*) : dynamic rendering, synchronization2 et
+  descriptor indexing sans extension optionnelle. Aucun `VkRenderPass` legacy. Le moteur
+  n'utilise rien de propre à la 1.4, sauf une limite : la prépasse passe 200 octets de push
+  constants, que la 1.4 garantit (256) et la 1.3 non (128). Le device doit donc offrir 256 octets
+  (`requiredPushConstantsSize`), comme tous les GPU de bureau ; une pipeline qui en demanderait
+  plus échoue à sa création. Le BC est facultatif : un GPU qui ne le lit pas refuse les textures
+  BC, une à une. Le chargeur Vulkan peut être plus ancien que le pilote (`requiredLoaderVersion`) :
+  le moteur prend les commandes du device au pilote (`volkLoadDevice`), et un chargeur 1.1 ou plus
+  récent accepte toute version demandée.
 - **volk** charge Vulkan, **VMA** gère la mémoire GPU, des wrappers RAII minces maison
   encapsulent les objets Vulkan.
 - Couche de validation Khronos active hors Release, **validation de synchronisation
@@ -289,7 +292,7 @@ docs/          décisions et documentation
   un thread de rendu dédié pourra consommer ces instantanés sans changer l'API.
 - **Présentation** : FIFO (VSync) par défaut ; Mailbox ou Immediate sur demande, avec
   repli sur FIFO si l'écran ne les propose pas.
-- **GPU** : un GPU compatible (Vulkan 1.4, swapchain, dynamic rendering, synchronization2,
+- **GPU** : un GPU compatible (Vulkan 1.3, 256 octets de push constants, swapchain, dynamic rendering, synchronization2,
   buffer device address, shader draw parameters, une file qui dessine et présente) est choisi par ordre discret > intégré > virtuel >
   CPU, ou par nom via `preferredGpu`. Un seul `Renderer` existe à la fois (volk charge les
   fonctions du device globalement).
@@ -388,8 +391,8 @@ docs/          décisions et documentation
   `SV_VertexID` ne compte pas le premier sommet du dessin : un dessin qui commence au milieu
   d'un buffer reçoit l'adresse de ce premier sommet.
 - **Données GPU** : vertex pulling. Les shaders lisent sommets et données de scène via des
-  *buffer device addresses* passées en push constants (112 octets pour un dessin, 184 pour la
-  prépasse qui ajoute la place précédente de l'instance ; Vulkan 1.4 en garantit 256) ; pas de
+  *buffer device addresses* passées en push constants (128 octets pour un dessin, 200 pour la
+  prépasse qui ajoute la place précédente de l'instance ; 256 sont exigés du device) ; pas de
   vertex input state. Sommets de 48 octets : position, normale, UV et
   tangente. Les dispositions mémoire C++ et Slang sont
   vérifiées par `static_assert` (`src/render/vulkan/GpuData.hpp`). Le descriptor set
@@ -781,7 +784,7 @@ les assets s'écrivent au fil de leur lecture.
 - **Ce qu'un jeu Linux demande au système** : il ne lie que la glibc, `libm`, `libgcc_s` et
   `libstdc++` de GCC 14 (`GLIBCXX_3.4.32`, Ubuntu 24.04 ou plus récent). Le reste est chargé au
   lancement s'il est là : le chargeur Vulkan (`libvulkan1`, 1.3 ou plus récent) et un pilote
-  Vulkan 1.4, indispensables ;
+  Vulkan 1.3, indispensables ;
   Wayland ou X11 et leurs extensions, libdecor, le son (PulseAudio, PipeWire, ALSA, JACK), tous
   présents sur un bureau. Le .NET livré se passe d'ICU (`InvariantGlobalization`) ; il ne lui manque
   que `liblttng-ust`, que son traceur facultatif cherche. La glibc est la limite : un binaire
@@ -4825,8 +4828,12 @@ le bureau. Ce qui suit est le plan ; chaque étape le précise en l'implémentan
 
 Les étapes, chacune livrable et testée seule :
 
-1. **Vulkan 1.3 et BC facultatif**, sur le bureau : abaisser `requiredApiVersion`, n'exiger
-   `textureCompressionBC` que pour un package qui en contient, mettre à jour le README.
+1. ✅ **Vulkan 1.3 et BC facultatif**, sur le bureau (jalon 92) : `requiredApiVersion` abaissé,
+   `textureCompressionBC` activée seulement si le GPU l'offre, une texture BC refusée sinon. Un
+   risque est apparu : la prépasse passe 200 octets de push constants, que la 1.4 garantit et la
+   1.3 non ; le device doit en offrir 256. Les GPU de téléphone qui n'en offrent que 128 seront
+   refusés : s'ils sont nombreux parmi les appareils visés, la prépasse devra lire ces données dans
+   un buffer. À mesurer sur un vrai téléphone à l'étape 2.
 2. **Le moteur compilé pour Android** : triplet vcpkg `arm64-android`, preset CMake avec la
    chaîne d'outils du NDK, SDL3 pour Android, le lecteur en `libmain.so` ; un job de CI qui le
    construit (sans appareil pour lancer les tests).
@@ -5357,6 +5364,12 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     en pixels et grille coplanaire stable sous TAA, avec tests de captures et d'occlusion ;
     comparaison d'occlusion à exposition fixe pour supprimer la dépendance au temps réel en CI ;
     API des jeux 34.
+
+92. ✅ **Vulkan 1.3** — première étape d'Android : le moteur demande Vulkan 1.3 au lieu de 1.4,
+    dont il n'utilisait aucune fonction ; il exige 256 octets de push constants, la limite de la
+    1.4 dont dépend la prépasse, et refuse à sa création une pipeline qui en demanderait plus. Le
+    BC devient facultatif : un GPU sans BC refuse les textures BC une à une. Tests du choix du
+    GPU et suite `[gpu]` sous validation en 1.3.
 
 Ensuite, sans ordre figé : à choisir dans les pistes ci-dessous.
 

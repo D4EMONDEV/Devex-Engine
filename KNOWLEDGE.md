@@ -2667,7 +2667,7 @@ namespace devex::audio {
 #### 9.7.1. Architecture de Rendu
 
 Le renderer (`devex/render/Renderer.hpp`, implémenté par `VulkanRenderer`) dessine un `RenderWorld`
-que le runtime remplit à chaque frame. Vulkan 1.4, chargé par volk, mémoire par VMA, shaders Slang :
+que le runtime remplit à chaque frame. Vulkan 1.3, chargé par volk, mémoire par VMA, shaders Slang :
 
 - **Render graph** : chaque frame déclare ses passes et les images qu'elles lisent et écrivent ; le
   graphe pose les barrières des images et mesure chaque passe par des timestamps GPU (panneau
