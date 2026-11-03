@@ -14,7 +14,8 @@ mais seulement explicitement ici : le code suit ce document, pas l'inverse.
 | Modèle de scène          | Hybride : entités + composants visibles, stockage ECS contigu      |
 | Fenêtre / entrées        | SDL3                                                               |
 | Bureaux Linux            | SDL3 avec libdecor et les extensions X11, entrée `.desktop`        |
-| Graphique                | Vulkan 1.4 minimum, API C + volk + VMA, sans RHI pour l'instant    |
+| Android                  | Export arm64 par Gradle, textures ASTC, C++ d'abord (C# ensuite)    |
+| Graphique                | Vulkan 1.3 minimum, API C + volk + VMA, sans RHI pour l'instant    |
 | Shaders                  | Slang → SPIR-V                                                     |
 | Architecture de rendu    | Forward+ clustered avec prépasse, PBR métal-rugosité (GGX)         |
 | Gameplay                 | C++ (DLL rechargeable) et C# (.NET hébergé), au choix, ensemble    |
@@ -4796,6 +4797,56 @@ jeu (le `SystemContext`, un monde, un composant) l'est aussi au C#, dans le mêm
   d'icône à lui : l'export ne tente plus de la lui donner.
 - **Plantages** : voir *Journal et plantages*.
 
+### Android
+
+Décidé le 3 novembre 2026, avant tout code : les jeux s'exportent vers Android, l'éditeur reste sur
+le bureau. Ce qui suit est le plan ; chaque étape le précise en l'implémentant.
+
+- **Rendu** : le même renderer, avec **Vulkan 1.3** comme minimum, sur le bureau aussi. Le code
+  exigeait 1.4 (`requiredApiVersion` dans `Vulkan.hpp`) sans utiliser aucune fonction propre à la
+  1.4 : les fonctionnalités activées sont de la 1.2 et de la 1.3 (`synchronization2`,
+  `dynamicRendering`, `bufferDeviceAddress`, l'indexation des descripteurs,
+  `shaderDrawParameters`). Seule `textureCompressionBC`, exigée aujourd'hui, devient facultative :
+  les GPU de téléphone ne la lisent pas. Le manifeste déclare `android.hardware.vulkan.version`
+  1.3 (`0x403000`), pour que le Play Store écarte les appareils trop anciens. Pas de second
+  renderer « mobile » pour l'instant ; les effets lourds (TAA, occlusion ambiante, objectif, bloom)
+  devront pouvoir se couper dans les réglages du projet.
+- **Textures** : l'export Android recompresse les textures, cuites en BC7 (couleurs) et BC5
+  (normales), en **ASTC 4×4** avec astcenc, l'encodeur d'ARM (port vcpkg à vérifier). ASTC LDR est
+  disponible sur les GPU Android ; le package du bureau ne change pas.
+- **C#** : pas dans la première version. Le C# est hébergé par hostfxr (`ManagedGame.cpp`), qui
+  n'existe pas sur Android, et le code managé s'appuie sur la réflexion. L'export Android commence
+  par le moteur et les modules C++, compilés avec le NDK ; le C# vient ensuite, par NativeAOT ou
+  Mono, à trancher à ce moment-là (voir *Questions ouvertes*).
+- **Construction** : l'éditeur génère un **projet Gradle** dans le cache du projet et appelle
+  Gradle. Il faut Android Studio (SDK, NDK, JDK) sur la machine ; en échange, le manifeste, la
+  signature, l'APK et l'AAB du Play Store passent par les outils standard. Une seule ABI,
+  `arm64-v8a`.
+
+Les étapes, chacune livrable et testée seule :
+
+1. **Vulkan 1.3 et BC facultatif**, sur le bureau : abaisser `requiredApiVersion`, n'exiger
+   `textureCompressionBC` que pour un package qui en contient, mettre à jour le README.
+2. **Le moteur compilé pour Android** : triplet vcpkg `arm64-android`, preset CMake avec la
+   chaîne d'outils du NDK, SDL3 pour Android, le lecteur en `libmain.so` ; un job de CI qui le
+   construit (sans appareil pour lancer les tests).
+3. **La plateforme Android** : le package lu depuis les assets de l'APK (`PackageReader` ouvre
+   aujourd'hui un chemin de fichier ; il passera par un flux de la plateforme, le `.dvxpak` étant
+   rangé non compressé), les sauvegardes dans le dossier de l'application, la surface perdue et
+   retrouvée quand le jeu passe en arrière-plan, le toucher et le bouton retour reliés aux actions
+   du projet.
+4. **La cuisson Android** : textures en ASTC, et le SPIR-V des shaders des projets dans le package
+   (l'appareil n'a pas `slangc`).
+5. **L'export dans l'éditeur** : la cible Android dans la fenêtre d'export, le projet Gradle généré
+   (nom, identifiant, icône, orientation, Vulkan 1.3), la signature (clé de débogage créée
+   automatiquement, clé de publication choisie à l'export), APK et AAB, et l'installation sur un
+   appareil branché par `adb`.
+6. **Les modules C++ des jeux** compilés avec le NDK pour l'export. Un projet qui contient du C#
+   est refusé avec un message clair tant que le C# n'est pas pris en charge.
+
+Plus tard : le C#, un préréglage de qualité mobile, des commandes tactiles à l'écran, `x86_64`
+pour l'émulateur. Le Web demanderait un rendu WebGPU, donc un autre renderer : hors de ce plan.
+
 ### Dépendances prévues (vcpkg)
 
 | Bibliothèque          | Usage                | Jalon    |
@@ -5318,7 +5369,8 @@ Ensuite, sans ordre figé : à choisir dans les pistes ci-dessous.
 - **C#** : listes de structures et dictionnaires, champs de type composant (`public Door Door;`),
   systèmes C++ appelant du code C#, bouton Debug qui lance l'IDE, `dotnet` embarqué pour les
   machines sans SDK, édition du code dans l'éditeur, copie limitée aux champs changés entre les
-  phases, export vers d'autres plateformes du runtime .NET.
+  phases, export vers d'autres plateformes du runtime .NET (Android : NativeAOT ou Mono, après la
+  première version en C++, voir *Android*).
 - **Isolation du code du jeu, la suite** : le jeu dans un processus séparé, comme Godot (la garde
   du jalon 72 ne contient que les plantages du thread principal, hors du code appelé depuis le C#) ;
   pause du jeu sur la première exception, comme le débogueur de Godot ; rapport d'un plantage
