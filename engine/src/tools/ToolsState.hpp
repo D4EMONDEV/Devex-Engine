@@ -1239,6 +1239,9 @@ DEVEX_API void receiveVolumeFaces(ToolsState& state, std::vector<render::Capture
 // The boxes of the irradiance volumes shown, and their probes, as lines of the overlay.
 DEVEX_API void addIrradianceVolumeLines(scene::Scene& scene, const std::unordered_set<std::uint32_t>& shown,
                                         std::vector<render::OverlayVertex>& lines);
+// The boxes of the decals shown, with an arrow along the -Y they project along, as lines of the overlay.
+DEVEX_API void addDecalLines(scene::Scene& scene, const std::unordered_set<std::uint32_t>& shown,
+                             std::vector<render::OverlayVertex>& lines);
 // The boxes of the post-process volumes shown, and how far around them they blend, as lines of the
 // overlay; a global volume has none.
 DEVEX_API void addPostVolumeLines(scene::Scene& scene, const std::unordered_set<std::uint32_t>& shown,

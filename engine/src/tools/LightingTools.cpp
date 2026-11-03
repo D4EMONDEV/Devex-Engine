@@ -710,6 +710,26 @@ void addPostVolumeLines(scene::Scene& scene, const std::unordered_set<std::uint3
     }
 }
 
+void addDecalLines(scene::Scene& scene, const std::unordered_set<std::uint32_t>& shown, std::vector<render::OverlayVertex>& lines)
+{
+    for ([[maybe_unused]] auto [entity, transform, decal] : scene.view<scene::WorldTransform, scene::Decal>())
+    {
+        if (!shown.contains(entity.index))
+        {
+            continue;
+        }
+        const math::Vec3 half = math::max(decal.size, math::Vec3{0.0f}) * 0.5f;
+        addBox(lines, transform.matrix, half, boxColor);
+        // An arrow from the top of the box to its bottom: the way its textures are projected.
+        const auto point = [&transform](math::Vec3 local) { return math::Vec3(transform.matrix * math::Vec4(local, 1.0f)); };
+        const math::Vec3 tip = point({0.0f, -half.y, 0.0f});
+        addLine(lines, point({0.0f, half.y, 0.0f}), tip, boxColor);
+        const float barb = std::min(half.x, half.z) * 0.25f;
+        addLine(lines, tip, point({barb, -half.y + barb, 0.0f}), boxColor);
+        addLine(lines, tip, point({-barb, -half.y + barb, 0.0f}), boxColor);
+    }
+}
+
 void addIrradianceVolumeLines(scene::Scene& scene, const std::unordered_set<std::uint32_t>& shown, std::vector<render::OverlayVertex>& lines)
 {
     for ([[maybe_unused]] auto [entity, transform, volume] : scene.view<scene::WorldTransform, scene::LightProbeVolume>())

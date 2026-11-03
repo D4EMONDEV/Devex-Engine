@@ -3264,6 +3264,74 @@ core::Result<void> VulkanRenderer::uploadLights(FrameContext& frame, float aspec
     std::memcpy(frame.clusters->mappedBytes().data(), m_clusters.clusters.data(), clusterBytes);
     std::memcpy(frame.clusterLights->mappedBytes().data(), m_clusters.lightIndices.data(),
                 m_clusters.lightIndices.size() * sizeof(std::uint32_t));
+    return uploadDecals(frame, grid, aspectRatio);
+}
+
+core::Result<void> VulkanRenderer::uploadDecals(FrameContext& frame, const ClusterGrid& grid, float aspectRatio)
+{
+    // A texture still waiting for its copy leaves its part of the surface as it is.
+    const auto slotOf = [this](TextureHandle texture) {
+        const GpuTexture* const found = m_textures.find(texture);
+        return found != nullptr && found->ready ? found->slot : noDecalTexture;
+    };
+    m_gpuDecals.clear();
+    m_decalSpheres.clear();
+    for (const RenderDecal& decal : m_world.decals)
+    {
+        // The box from -1 to 1 along its axes: the transform of the decal, scaled to half its size.
+        const math::Mat4 boxToWorld = decal.transform * math::scale(math::Mat4{1.0f}, decal.size * 0.5f);
+        if (std::abs(glm::determinant(boxToWorld)) < 1e-12f)
+        {
+            continue;
+        }
+        const auto axis = [&decal](int column) {
+            const math::Vec3 direction = math::Vec3(decal.transform[column]);
+            const float length = math::length(direction);
+            return math::Vec4(length > 0.0f ? direction / length : direction, 0.0f);
+        };
+        m_gpuDecals.push_back({
+            .worldToDecal = math::inverse(boxToWorld),
+            .axisX = axis(0),
+            .axisZ = axis(2),
+            .axisY = axis(1),
+            .modulate = decal.modulate,
+            .albedoTexture = slotOf(decal.albedo),
+            .normalTexture = slotOf(decal.normal),
+            .ormTexture = slotOf(decal.orm),
+            .emissionTexture = slotOf(decal.emission),
+            .albedoMix = decal.albedoMix,
+            .emissionEnergy = decal.emissionEnergy,
+            .normalFade = decal.normalFade,
+            .upperFade = decal.upperFade,
+            .lowerFade = decal.lowerFade,
+            .fadeBegin = decal.fadeBegin,
+            .fadeLength = decal.fadeLength,
+        });
+        m_decalSpheres.push_back(decalSphere(decal));
+    }
+    {
+        DEVEX_PROFILE_SCOPE("Decal clusters");
+        assignSpheresToClusters(grid, m_world.camera.view, ViewVolume::of(m_world.camera, aspectRatio), m_decalSpheres,
+                                m_decalClusters);
+    }
+
+    const VkDeviceSize decalBytes = std::max<std::size_t>(m_gpuDecals.size(), 1) * sizeof(GpuDecal);
+    const VkDeviceSize clusterBytes = m_decalClusters.clusters.size() * sizeof(GpuCluster);
+    const VkDeviceSize indexBytes = std::max<std::size_t>(m_decalClusters.lightIndices.size(), 1) * sizeof(std::uint32_t);
+    for (const auto& [buffer, bytes] :
+         {std::pair<std::optional<Buffer>*, VkDeviceSize>{&frame.decals, decalBytes},
+          {&frame.decalClusters, clusterBytes},
+          {&frame.clusterDecals, indexBytes}})
+    {
+        if (core::Result<void> ensured = ensureHostBuffer(*buffer, bytes); !ensured)
+        {
+            return ensured;
+        }
+    }
+    std::memcpy(frame.decals->mappedBytes().data(), m_gpuDecals.data(), m_gpuDecals.size() * sizeof(GpuDecal));
+    std::memcpy(frame.decalClusters->mappedBytes().data(), m_decalClusters.clusters.data(), clusterBytes);
+    std::memcpy(frame.clusterDecals->mappedBytes().data(), m_decalClusters.lightIndices.data(),
+                m_decalClusters.lightIndices.size() * sizeof(std::uint32_t));
     return {};
 }
 
@@ -3836,6 +3904,10 @@ void VulkanRenderer::writeSceneData(FrameContext& frame,
     scene.lights = frame.lights->deviceAddress();
     scene.clusters = frame.clusters->deviceAddress();
     scene.clusterLights = frame.clusterLights->deviceAddress();
+    scene.decals = frame.decals->deviceAddress();
+    scene.decalClusters = frame.decalClusters->deviceAddress();
+    scene.clusterDecals = frame.clusterDecals->deviceAddress();
+    scene.decalCount = static_cast<std::uint32_t>(m_gpuDecals.size());
     if (frame.pickRequest)
     {
         // Selection follows the stable editor view, including at the edges of outlined objects.

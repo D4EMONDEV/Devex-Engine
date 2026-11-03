@@ -52,6 +52,17 @@ size = vec3(1, 1, 1)
 center = vec3(0, -0.5, 0)
 trigger = false
 
+[entity uuid="3d6c1f2a-8e47-4b90-9c15-7a2e5d8b4f61" name="Logo decal"]
+
+[component type="Transform"]
+position = vec3(0, 0, 4.5)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="Decal"]
+size = vec3(2.5, 1, 2.5)
+albedo = asset("a0b10371-4bc1-4dc2-8fd8-ba5676e805fb")
+
 [entity uuid="5f0b7d2e-9c41-4b8a-a3e6-2d71c84f9b10" name="Hills"]
 
 [component type="Transform"]

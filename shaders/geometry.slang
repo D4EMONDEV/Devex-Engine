@@ -152,6 +152,93 @@ public SurfaceVertex posedSurfaceVertex(DrawData draw, SkinnedVertex vertex, uin
     return output;
 }
 
+// What the decals change of a surface before it is lit.
+struct DecalLayer
+{
+    float3 baseColor;
+    float3 normal;
+    float metallic;
+    float roughness;
+    float occlusion;
+    float3 emission;
+};
+
+// Lays the decals of the cluster of the pixel on its material, in their order, as Godot's decals:
+// each covers by its albedo's alpha, faded towards the top and the bottom of its box, on surfaces
+// turning away from it and far from the camera.
+void applyDecals(SceneData* scene, float3 position, float3 facing, float2 fragmentCoordinate, float viewDistance,
+                 inout DecalLayer layer)
+{
+    if (scene->decalCount == 0)
+    {
+        return;
+    }
+    const uint tileX = min(uint(fragmentCoordinate.x / scene->viewportWidth * scene->clusterCountX), scene->clusterCountX - 1);
+    const uint tileY = min(uint(fragmentCoordinate.y / scene->viewportHeight * scene->clusterCountY), scene->clusterCountY - 1);
+    const float slice = floor(log2(max(viewDistance, 1e-4)) * scene->clusterSliceScale + scene->clusterSliceBias);
+    const uint sliceIndex = uint(clamp(slice, 0.0, float(scene->clusterCountZ - 1)));
+    const Cluster cluster = scene->decalClusters[(sliceIndex * scene->clusterCountY + tileY) * scene->clusterCountX + tileX];
+
+    // The slopes of the position, taken before the loop where neighbouring pixels may part.
+    const float3 positionDx = ddx(position);
+    const float3 positionDy = ddy(position);
+    for (uint entry = 0; entry < cluster.count; ++entry)
+    {
+        const Decal decal = scene->decals[scene->clusterDecals[cluster.offset + entry]];
+        const float3 local = mul(decal.worldToDecal, float4(position, 1.0)).xyz;
+        if (any(abs(local) > 1.0))
+        {
+            continue;
+        }
+
+        float fade = decal.modulate.a * pow(1.0 - abs(local.y), local.y > 0.0 ? decal.upperFade : decal.lowerFade);
+        if (decal.normalFade > 0.0)
+        {
+            fade *= smoothstep(decal.normalFade, 1.0, dot(facing, decal.axisY.xyz) * 0.5 + 0.5);
+        }
+        if (decal.fadeLength > 0.0)
+        {
+            fade *= saturate((decal.fadeBegin + decal.fadeLength - viewDistance) / decal.fadeLength);
+        }
+        if (fade <= 0.0)
+        {
+            continue;
+        }
+
+        // Its textures across X and Z, with slopes taken in its box, so that its edges do not pick
+        // the smallest mips.
+        const float2 uv = local.xz * 0.5 + 0.5;
+        const float2 uvDx = mul((float3x3)decal.worldToDecal, positionDx).xz * 0.5;
+        const float2 uvDy = mul((float3x3)decal.worldToDecal, positionDy).xz * 0.5;
+        float coverage = fade;
+        if (decal.albedoTexture != noDecalTexture)
+        {
+            const float4 albedo = sampleTextureGrad(decal.albedoTexture, uv, uvDx, uvDy);
+            coverage = albedo.a * fade;
+            layer.baseColor = lerp(layer.baseColor, albedo.rgb * decal.modulate.rgb, coverage * decal.albedoMix);
+        }
+        if (decal.normalTexture != noDecalTexture)
+        {
+            const float2 tilt = sampleTextureGrad(decal.normalTexture, uv, uvDx, uvDy).rg * 2.0 - 1.0;
+            const float3 decalNormal =
+                decal.axisX.xyz * tilt.x + decal.axisZ.xyz * tilt.y + decal.axisY.xyz * sqrt(saturate(1.0 - dot(tilt, tilt)));
+            layer.normal = normalize(lerp(layer.normal, decalNormal, coverage));
+        }
+        if (decal.ormTexture != noDecalTexture)
+        {
+            const float3 orm = sampleTextureGrad(decal.ormTexture, uv, uvDx, uvDy).rgb;
+            layer.occlusion = lerp(layer.occlusion, orm.r, coverage);
+            layer.roughness = clamp(lerp(layer.roughness, orm.g, coverage), 0.045, 1.0);
+            layer.metallic = lerp(layer.metallic, orm.b, coverage);
+        }
+        if (decal.emissionTexture != noDecalTexture)
+        {
+            layer.emission += sampleTextureGrad(decal.emissionTexture, uv, uvDx, uvDy).rgb * decal.modulate.rgb *
+                              decal.emissionEnergy * fade;
+        }
+    }
+}
+
 public float4 surfaceFragment(SceneData* scene, uint materialIndex, SurfaceVertex input, bool frontFacing)
 {
     let material = scene->materials[materialIndex];
@@ -169,6 +256,8 @@ public float4 surfaceFragment(SceneData* scene, uint materialIndex, SurfaceVerte
     {
         normal = -normal;
     }
+    // Which way the surface itself faces, before its normal map: decals fade by it.
+    const float3 facing = normal;
 
     // Tangent-space normal maps store X and Y; Z is reconstructed.
     const float2 encoded = sampleTexture(material.normalTexture, input.uv).rg * 2.0 - 1.0;
@@ -183,33 +272,40 @@ public float4 surfaceFragment(SceneData* scene, uint materialIndex, SurfaceVerte
     }
 
     const float4 metallicRoughness = sampleTexture(material.metallicRoughnessTexture, input.uv);
-    const float metallic = saturate(material.metallicFactor * metallicRoughness.b);
-    // Very low roughness makes highlights too small to sample: clamp it.
-    const float roughness = clamp(material.roughnessFactor * metallicRoughness.g, 0.045, 1.0);
-    float occlusion = lerp(1.0, sampleTexture(material.occlusionTexture, input.uv).r, material.occlusionStrength);
-    // What the screen measured of the corners the surface sits in, which the pass before drew.
-    const float2 screenUv = input.position.xy / float2(scene->viewportWidth, scene->viewportHeight);
-    occlusion *= ambientOcclusionTexture.Sample(clampSampler, screenUv).r;
-
     const float3 toCamera = scene->cameraPosition - input.worldPosition;
     const float viewDistance = -mul(scene->view, float4(input.worldPosition, 1.0)).z;
 
+    // The material, then the decals laid on it before the light falls on them.
+    DecalLayer layer;
+    layer.baseColor = baseColor.rgb;
+    layer.normal = normal;
+    layer.metallic = saturate(material.metallicFactor * metallicRoughness.b);
+    // Very low roughness makes highlights too small to sample: clamp it.
+    layer.roughness = clamp(material.roughnessFactor * metallicRoughness.g, 0.045, 1.0);
+    layer.occlusion = lerp(1.0, sampleTexture(material.occlusionTexture, input.uv).r, material.occlusionStrength);
+    // Emission is relative to the exposure: an emissive color of 1 shows as white-ish on screen,
+    // whatever the lighting.
+    layer.emission = material.emissiveFactor * sampleTexture(material.emissiveTexture, input.uv).rgb;
+    applyDecals(scene, input.worldPosition, facing, input.position.xy, viewDistance, layer);
+
+    // What the screen measured of the corners the surface sits in, which the pass before drew.
+    const float2 screenUv = input.position.xy / float2(scene->viewportWidth, scene->viewportHeight);
+    const float occlusion = layer.occlusion * ambientOcclusionTexture.Sample(clampSampler, screenUv).r;
+
     Surface surface;
     surface.position = input.worldPosition;
-    surface.normal = normal;
+    surface.normal = layer.normal;
     surface.view = normalize(toCamera);
-    surface.diffuseColor = baseColor.rgb * (1.0 - metallic);
-    surface.f0 = lerp(float3(0.04), baseColor.rgb, metallic);
-    surface.roughness = roughness;
-    surface.alpha = roughness * roughness;
+    surface.diffuseColor = layer.baseColor * (1.0 - layer.metallic);
+    surface.f0 = lerp(float3(0.04), layer.baseColor, layer.metallic);
+    surface.roughness = layer.roughness;
+    surface.alpha = layer.roughness * layer.roughness;
     surface.occlusion = occlusion;
     surface.viewDistance = viewDistance;
     surface.fragmentCoordinate = input.position.xy;
 
     const float3 luminance = shadeSurface(scene, surface) * scene->exposure;
-    // Emission is relative to the exposure: an emissive color of 1 shows as white-ish on screen,
-    // whatever the lighting.
-    const float3 emission = material.emissiveFactor * sampleTexture(material.emissiveTexture, input.uv).rgb;
+    const float3 emission = layer.emission;
     // A blended surface lets (1 - alpha) of what is behind it through; everything else covers it.
     const float alpha = material.alphaMode == alphaModeBlend ? saturate(baseColor.a) : 1.0;
     // Hazed by the air and veiled by the fog between it and the camera.

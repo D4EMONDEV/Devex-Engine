@@ -144,6 +144,40 @@ TEST_CASE("Extraction copies the atmosphere and the fog, and tells the sun to fo
     CHECK_FALSE(world.sun.followAtmosphere);
 }
 
+TEST_CASE("Extraction copies the decals with their box and their fades", "[runtime][extraction][decal]")
+{
+    devex::runtime::AssetManager assets(nullptr, nullptr);
+    Scene scene;
+    const Entity near = scene.createEntity("Near");
+    scene.add<Transform>(near, Transform{.position = {1.0f, 2.0f, 3.0f}});
+    scene.add<devex::scene::Decal>(near, devex::scene::Decal{.size = {4.0f, 1.0f, 2.0f}, .modulate = {1.0f, 0.5f, 0.5f, 0.75f},
+                                                             .albedoMix = 0.5f, .normalFade = 0.4f, .upperFade = 0.0f});
+    const Entity far = scene.createEntity("Far");
+    scene.add<Transform>(far);
+    scene.add<devex::scene::Decal>(far, devex::scene::Decal{.distanceFade = true, .distanceFadeBegin = 20.0f,
+                                                            .distanceFadeLength = 5.0f});
+    scene.updateTransforms();
+    devex::render::RenderWorld world;
+    devex::runtime::extractScene(scene, assets, world);
+
+    REQUIRE(world.decals.size() == 2);
+    // In the order of the components, which is not the order the entities were made in.
+    const bool nearFirst = world.decals[0].transform[3].x == 1.0f;
+    const devex::render::RenderDecal& first = world.decals[nearFirst ? 0 : 1];
+    const devex::render::RenderDecal& second = world.decals[nearFirst ? 1 : 0];
+    CHECK(devex::math::Vec3(first.transform[3]) == devex::math::Vec3{1.0f, 2.0f, 3.0f});
+    CHECK(first.size == devex::math::Vec3{4.0f, 1.0f, 2.0f});
+    CHECK(first.modulate.w == 0.75f);
+    CHECK(first.albedoMix == 0.5f);
+    CHECK(first.normalFade == 0.4f);
+    CHECK(first.upperFade == 0.0f);
+    // Without textures, nothing to lay; without a distance fade, kept at any distance.
+    CHECK_FALSE(first.albedo.isValid());
+    CHECK(first.fadeLength == 0.0f);
+    CHECK(second.fadeBegin == 20.0f);
+    CHECK(second.fadeLength == 5.0f);
+}
+
 TEST_CASE("Extraction copies the lens and the grading of the camera, and the post-process volumes by priority", "[runtime][extraction][post]")
 {
     devex::runtime::AssetManager assets(nullptr, nullptr);

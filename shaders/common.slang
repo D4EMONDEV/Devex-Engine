@@ -48,6 +48,34 @@ public struct Material
     public uint parameterOffset;
 };
 
+// The texture slot a decal does not have.
+public static const uint noDecalTexture = 0xFFFFFFFF;
+
+// A box projecting its textures onto the surfaces it holds, along its -Y (render::RenderDecal).
+public struct Decal
+{
+    // From the world into its box: X and Z from -1 to 1 across it, Y from -1 at its bottom to 1 at
+    // its top, the side it projects from.
+    public float4x4 worldToDecal;
+    // Its axes in the world, normalized: its normal map tilts along X and Z, and faces Y.
+    public float4 axisX;
+    public float4 axisZ;
+    public float4 axisY;
+    public float4 modulate;
+    public uint albedoTexture;
+    public uint normalTexture;
+    public uint ormTexture;
+    public uint emissionTexture;
+    public float albedoMix;
+    public float emissionEnergy;
+    public float normalFade;
+    public float upperFade;
+    public float lowerFade;
+    public float fadeBegin;
+    public float fadeLength;
+    public float padding;
+};
+
 public struct Light
 {
     public float3 position;
@@ -218,6 +246,12 @@ public struct SceneData
     // Add to raster NDC before unprojecting depth with the stable inverse matrix.
     public float2 projectionJitter;
     public float2 depthPadding;
+    // The decals, and for every cluster the range of clusterDecals listing those touching it.
+    public Decal* decals;
+    public Cluster* decalClusters;
+    public uint* clusterDecals;
+    public uint decalCount;
+    public uint decalPadding;
 };
 
 // The depth buffer follows the jittered raster projection; tools and atmospheric tables use the

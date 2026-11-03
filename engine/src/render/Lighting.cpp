@@ -115,6 +115,29 @@ ShadowCascades computeShadowCascades(const math::Mat4& cameraWorld, const ViewVo
 void assignLightsToClusters(const ClusterGrid& grid, const math::Mat4& view, const ViewVolume& volume,
                             std::span<const RenderLight> lights, LightClusters& result)
 {
+    std::vector<ClusterSphere> spheres;
+    spheres.reserve(lights.size());
+    for (const RenderLight& light : lights)
+    {
+        spheres.push_back({light.position, light.range});
+    }
+    assignSpheresToClusters(grid, view, volume, spheres, result);
+}
+
+ClusterSphere decalSphere(const RenderDecal& decal) noexcept
+{
+    // The half axes of the box in the world: its farthest corner, sheared or not, sets the radius.
+    const math::Vec3 halfX = math::Vec3(decal.transform[0]) * (decal.size.x * 0.5f);
+    const math::Vec3 halfY = math::Vec3(decal.transform[1]) * (decal.size.y * 0.5f);
+    const math::Vec3 halfZ = math::Vec3(decal.transform[2]) * (decal.size.z * 0.5f);
+    const float radius = std::max({math::length(halfX + halfY + halfZ), math::length(halfX + halfY - halfZ),
+                                   math::length(halfX - halfY + halfZ), math::length(-halfX + halfY + halfZ)});
+    return {math::Vec3(decal.transform[3]), radius};
+}
+
+void assignSpheresToClusters(const ClusterGrid& grid, const math::Mat4& view, const ViewVolume& volume,
+                             std::span<const ClusterSphere> lights, LightClusters& result)
+{
     const std::uint32_t clusterCount = grid.tilesX * grid.tilesY * grid.slices;
     result.clusters.assign(clusterCount, ClusterRange{});
     result.lightIndices.clear();
@@ -136,9 +159,9 @@ void assignLightsToClusters(const ClusterGrid& grid, const math::Mat4& view, con
     std::vector<std::vector<std::uint32_t>> perCluster(clusterCount);
     for (std::uint32_t lightIndex = 0; lightIndex < lights.size(); ++lightIndex)
     {
-        const RenderLight& light = lights[lightIndex];
-        const math::Vec3 center = math::Vec3(view * math::Vec4(light.position, 1.0f));
-        const float radius = light.range;
+        const ClusterSphere& light = lights[lightIndex];
+        const math::Vec3 center = math::Vec3(view * math::Vec4(light.center, 1.0f));
+        const float radius = light.radius;
         const float distance = -center.z;
         if (distance + radius < grid.nearPlane)
         {

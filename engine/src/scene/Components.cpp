@@ -130,6 +130,24 @@ DEVEX_REFLECT(Fog)
         .field("sky_blend", &Fog::skyBlend, {.group = "Sky"});
 }
 
+DEVEX_REFLECT(Decal)
+{
+    type.field("size", &Decal::size, {.group = "Decal"})
+        .field("albedo", &Decal::albedo, {.assetType = "texture", .group = "Textures"})
+        .field("normal", &Decal::normal, {.assetType = "texture"})
+        .field("orm", &Decal::orm, {.assetType = "texture"})
+        .field("emission", &Decal::emission, {.assetType = "texture"})
+        .field("modulate", &Decal::modulate, {.color = true, .group = "Parameters"})
+        .field("albedo_mix", &Decal::albedoMix)
+        .field("emission_energy", &Decal::emissionEnergy)
+        .field("normal_fade", &Decal::normalFade)
+        .field("upper_fade", &Decal::upperFade, {.group = "Vertical Fade"})
+        .field("lower_fade", &Decal::lowerFade)
+        .field("distance_fade", &Decal::distanceFade, {.group = "Distance Fade"})
+        .field("distance_fade_begin", &Decal::distanceFadeBegin)
+        .field("distance_fade_length", &Decal::distanceFadeLength);
+}
+
 DEVEX_REFLECT(PostProcessVolume)
 {
     type.field("global", &PostProcessVolume::global, {.group = "Volume"})

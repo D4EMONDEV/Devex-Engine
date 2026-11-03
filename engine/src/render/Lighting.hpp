@@ -87,9 +87,23 @@ struct DEVEX_API LightClusters
     float sliceBias = 0.0f;
 };
 
+// What a cluster can hold: a light's sphere of influence, or the sphere around a decal's box.
+struct DEVEX_API ClusterSphere
+{
+    math::Vec3 center{0.0f};
+    float radius = 0.0f;
+};
+
+// Lists, for every cluster of the view frustum, the spheres that touch it, by their index.
+DEVEX_API void assignSpheresToClusters(const ClusterGrid& grid, const math::Mat4& view, const ViewVolume& volume,
+                                       std::span<const ClusterSphere> spheres, LightClusters& result);
+
 // Lists, for every cluster of the view frustum, the lights whose sphere of influence touches it.
 DEVEX_API void assignLightsToClusters(const ClusterGrid& grid, const math::Mat4& view, const ViewVolume& volume,
                                       std::span<const RenderLight> lights, LightClusters& result);
+
+// The sphere around the box of a decal, which the clusters it touches list.
+[[nodiscard]] DEVEX_API ClusterSphere decalSphere(const RenderDecal& decal) noexcept;
 // The same for a perspective camera.
 DEVEX_API void assignLightsToClusters(const ClusterGrid& grid, const math::Mat4& view, float verticalFov,
                                       float aspectRatio, std::span<const RenderLight> lights,

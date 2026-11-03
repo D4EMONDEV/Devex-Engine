@@ -928,6 +928,111 @@ TEST_CASE("An atmosphere draws a blue sky by day and a red horizon at sunset", "
     CHECK(capture.errors().empty());
 }
 
+TEST_CASE("A decal colors the surface it projects onto, and only inside its box", "[render][gpu][decal]")
+{
+    const ErrorCapture capture;
+    {
+        auto platform = devex::platform::Platform::create();
+        REQUIRE(platform.has_value());
+        auto window = platform->createWindow({.width = 320, .height = 240, .vulkan = true, .hidden = true});
+        REQUIRE(window.has_value());
+        auto renderer = devex::render::Renderer::create(*platform, *window, {.validation = true});
+        if (!renderer)
+        {
+            FAIL(std::format("{}", renderer.error()));
+        }
+        auto cube = renderer->createMesh(devex::asset::makeCube());
+        REQUIRE(cube.has_value());
+        // A red texture, fully covering.
+        devex::asset::TextureData red{.format = devex::asset::TextureFormat::Rgba8Srgb};
+        red.mips.push_back({.width = 4, .height = 4, .bytes = {}});
+        for (int texel = 0; texel < 16; ++texel)
+        {
+            red.mips.front().bytes.insert(red.mips.front().bytes.end(), {std::byte{255}, std::byte{0}, std::byte{0}, std::byte{255}});
+        }
+        auto texture = renderer->createTexture(red);
+        REQUIRE(texture.has_value());
+
+        // A white cube 3 m wide whose face looks at the camera from 8.5 m, lit by the sun from above
+        // the camera, so that its highlight does not fall in the middle; with a decal, a box of 1 m on
+        // that face projecting along -Z.
+        const auto shown = [&](bool withDecal) {
+            std::uint64_t request = 0;
+            std::vector<std::uint8_t> image;
+            std::uint32_t width = 0;
+            for (int frame = 0; frame < 10 && image.empty(); ++frame)
+            {
+                devex::render::RenderWorld& world = renderer->beginFrame();
+                world.camera.autoExposure = false;
+                // Two stops darker than daylight: a lit red keeps its colour instead of turning white
+                // in the tonemapping, as very bright colours do.
+                world.camera.ev100 = 15.0f;
+                world.camera.antialiasing = devex::render::Antialiasing::None;
+                world.camera.ambientOcclusion = 0.0f;
+                world.camera.bloom = 0.0f;
+                world.sun = {.direction = {0.0f, -0.5f, -1.0f}, .illuminance = devex::math::Vec3{100000.0f}};
+                world.environment.intensity = 0.0f;
+                world.meshes.push_back({.mesh = *cube,
+                                        .transform = devex::math::scale(devex::math::translate(devex::math::Mat4{1.0f}, {0.0f, 0.0f, -10.0f}),
+                                                                        devex::math::Vec3{3.0f}),
+                                        .objectId = 1});
+                if (withDecal)
+                {
+                    // Its +Y turned towards the camera, so that it projects into the face.
+                    world.decals.push_back({
+                        .transform = devex::math::rotate(devex::math::translate(devex::math::Mat4{1.0f}, {0.0f, 0.0f, -8.5f}),
+                                                         devex::math::radians(90.0f), devex::math::Vec3{1.0f, 0.0f, 0.0f}),
+                        .size = {1.0f, 1.0f, 1.0f},
+                        .albedo = *texture,
+                        .upperFade = 0.0f,
+                        .lowerFade = 0.0f,
+                    });
+                }
+                REQUIRE(renderer->endFrame());
+                if (frame == 5)
+                {
+                    request = renderer->requestCapture(320, 240);
+                }
+                for (devex::render::CapturedImage& captured : renderer->takeCaptures())
+                {
+                    if (captured.request == request)
+                    {
+                        width = captured.width;
+                        image = std::move(captured.rgba);
+                    }
+                }
+            }
+            REQUIRE_FALSE(image.empty());
+            return std::pair{std::move(image), width};
+        };
+        const auto pixel = [](const std::pair<std::vector<std::uint8_t>, std::uint32_t>& image, std::uint32_t x, std::uint32_t y) {
+            const std::size_t at = (std::size_t{y} * image.second + x) * 4;
+            return std::array<int, 3>{image.first[at], image.first[at + 1], image.first[at + 2]};
+        };
+        const auto plain = shown(false);
+        const auto decal = shown(true);
+        // The middle of the face turns red; a point of the face 1 m aside, outside the box, does not change.
+        const std::array<int, 3> before = pixel(plain, 160, 120);
+        const std::array<int, 3> after = pixel(decal, 160, 120);
+        INFO("before " << before[0] << " " << before[1] << " " << before[2] << ", after " << after[0] << " " << after[1]
+                       << " " << after[2]);
+        CHECK(before[0] > 100);
+        CHECK(std::abs(before[0] - before[1]) < 10);
+        // Green and blue keep only the white highlight of the sun, raised by the sRGB encoding.
+        CHECK(after[0] > before[0]);
+        CHECK(after[1] < before[1] / 2);
+        CHECK(after[1] < after[0] / 2);
+        CHECK(after[2] < before[2] / 2);
+        CHECK(pixel(decal, 186, 120) == pixel(plain, 186, 120));
+    }
+
+    for (const std::string& error : capture.errors())
+    {
+        UNSCOPED_INFO(error);
+    }
+    CHECK(capture.errors().empty());
+}
+
 TEST_CASE("The lens blurs what stands away from the focus, and what moves while the shutter is open", "[render][gpu][lens]")
 {
     const ErrorCapture capture;

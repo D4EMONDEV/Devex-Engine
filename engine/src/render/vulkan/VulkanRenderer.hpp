@@ -225,6 +225,10 @@ private:
         std::optional<Buffer> shadows2D;
         std::optional<Buffer> clusters;
         std::optional<Buffer> clusterLights;
+        // The decals, and the clusters that list them, as for the lights.
+        std::optional<Buffer> decals;
+        std::optional<Buffer> decalClusters;
+        std::optional<Buffer> clusterDecals;
         // The reflection probes the frame reflects, the smallest first, and its irradiance volumes.
         std::optional<Buffer> reflectionProbes;
         std::optional<Buffer> irradianceVolumes;
@@ -515,6 +519,8 @@ private:
     [[nodiscard]] const GpuShader* skyShader() const noexcept;
     void updateExposure(FrameContext& frame);
     [[nodiscard]] core::Result<void> uploadLights(FrameContext& frame, float aspectRatio);
+    // The decals of the frame and the clusters that list them, after the lights, on the same grid.
+    [[nodiscard]] core::Result<void> uploadDecals(FrameContext& frame, const ClusterGrid& grid, float aspectRatio);
     void writeSceneData(FrameContext& frame, const std::optional<ShadowCascades>& cascades) const noexcept;
     // The air and the fog of the frame into its buffer and the scene data, with what they were made of.
     void writeAtmosphere(FrameContext& frame, GpuSceneData& scene) const noexcept;
@@ -1017,6 +1023,9 @@ private:
     RenderWorld m_world;
     LightClusters m_clusters;
     std::vector<GpuLight> m_gpuLights;
+    LightClusters m_decalClusters;
+    std::vector<GpuDecal> m_gpuDecals;
+    std::vector<ClusterSphere> m_decalSpheres;
     std::optional<ShadowCascades> m_cascades;
     std::vector<float> m_luminanceSamples;
     float m_ev100 = 14.0f;

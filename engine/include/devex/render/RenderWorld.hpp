@@ -185,6 +185,32 @@ struct DEVEX_API RenderLight
     bool castShadows = false;
 };
 
+// A box that projects its textures onto the surfaces it holds, along its -Y, before they are lit.
+// See scene::Decal.
+struct DEVEX_API RenderDecal
+{
+    // The box in the world: `size` across, centred on the origin of this transform.
+    math::Mat4 transform{1.0f};
+    math::Vec3 size{2.0f};
+    // Invalid textures leave their part of the surface as it is.
+    TextureHandle albedo;
+    TextureHandle normal;
+    TextureHandle orm;
+    TextureHandle emission;
+    // Tints the albedo and the emission; its alpha scales the whole decal.
+    math::Vec4 modulate{1.0f};
+    float albedoMix = 1.0f;
+    float emissionEnergy = 1.0f;
+    // Above 0, it fades on surfaces turning away from its projection, as Godot's.
+    float normalFade = 0.0f;
+    // The exponents of its fades from the middle of the box towards its top and its bottom.
+    float upperFade = 0.3f;
+    float lowerFade = 0.3f;
+    // From fadeBegin meters from the camera, it fades out over fadeLength; 0 keeps it at any distance.
+    float fadeBegin = 0.0f;
+    float fadeLength = 0.0f;
+};
+
 struct DEVEX_API RenderEnvironment
 {
     // An equirectangular high dynamic range texture; invalid for a uniform sky of `color`.
@@ -686,6 +712,8 @@ struct DEVEX_API RenderWorld
     RenderCamera camera;
     RenderSun sun;
     std::vector<RenderLight> lights;
+    // Applied in this order: a later decal covers an earlier one.
+    std::vector<RenderDecal> decals;
     RenderEnvironment environment;
     RenderAtmosphere atmosphere;
     RenderFog fog;
@@ -754,6 +782,8 @@ struct DEVEX_API RenderWorld
     void reset() noexcept
     {
         std::vector<RenderLight> lightStorage = std::move(lights);
+        std::vector<RenderDecal> decalStorage = std::move(decals);
+        decalStorage.clear();
         std::vector<RenderReflectionProbe> probeStorage = std::move(reflectionProbes);
         probeStorage.clear();
         std::vector<RenderIrradianceVolume> volumeStorage = std::move(irradianceVolumes);
@@ -799,6 +829,7 @@ struct DEVEX_API RenderWorld
         overlayTriangleStorage.clear();
         *this = RenderWorld{};
         lights = std::move(lightStorage);
+        decals = std::move(decalStorage);
         reflectionProbes = std::move(probeStorage);
         irradianceVolumes = std::move(volumeStorage);
         meshes = std::move(meshStorage);

@@ -176,6 +176,42 @@ struct GpuSceneData
     // Add to raster NDC before unprojecting depth with inverseViewProjection.
     math::Vec2 projectionJitter{0.0f};
     math::Vec2 depthPadding{0.0f};
+    // The decals of the frame, and for every cluster the range of `clusterDecals` that indexes those
+    // touching it, laid out as the clusters of the lights.
+    VkDeviceAddress decals = 0;
+    VkDeviceAddress decalClusters = 0;
+    VkDeviceAddress clusterDecals = 0;
+    std::uint32_t decalCount = 0;
+    std::uint32_t decalPadding = 0;
+};
+
+// The value of a texture slot that a decal does not have.
+inline constexpr std::uint32_t noDecalTexture = 0xFFFFFFFFu;
+
+// A decal of the frame, as shaders/common.slang reads it.
+struct GpuDecal
+{
+    // From the world into its box: X and Z from -1 to 1 across it, Y from -1 at its bottom to 1 at
+    // its top, the side it projects from.
+    math::Mat4 worldToDecal{1.0f};
+    // Its X and Z in the world, normalized, along which its normal map tilts; and its Y, towards
+    // which it faces.
+    math::Vec4 axisX{1.0f, 0.0f, 0.0f, 0.0f};
+    math::Vec4 axisZ{0.0f, 0.0f, 1.0f, 0.0f};
+    math::Vec4 axisY{0.0f, 1.0f, 0.0f, 0.0f};
+    math::Vec4 modulate{1.0f};
+    std::uint32_t albedoTexture = noDecalTexture;
+    std::uint32_t normalTexture = noDecalTexture;
+    std::uint32_t ormTexture = noDecalTexture;
+    std::uint32_t emissionTexture = noDecalTexture;
+    float albedoMix = 1.0f;
+    float emissionEnergy = 1.0f;
+    float normalFade = 0.0f;
+    float upperFade = 0.3f;
+    float lowerFade = 0.3f;
+    float fadeBegin = 0.0f;
+    float fadeLength = 0.0f;
+    float padding = 0.0f;
 };
 
 inline constexpr std::uint32_t atmosphereAir = 1;
@@ -751,7 +787,12 @@ static_assert(offsetof(GpuSceneData, reflectionProbes) == 904);
 static_assert(offsetof(GpuSceneData, irradianceVolumes) == 920);
 static_assert(offsetof(GpuSceneData, atmosphere) == 928);
 static_assert(offsetof(GpuSceneData, projectionJitter) == 944);
-static_assert(sizeof(GpuSceneData) == 960);
+static_assert(offsetof(GpuSceneData, decals) == 960);
+static_assert(offsetof(GpuSceneData, decalCount) == 984);
+static_assert(sizeof(GpuSceneData) == 992);
+static_assert(offsetof(GpuDecal, modulate) == 112);
+static_assert(offsetof(GpuDecal, albedoMix) == 144);
+static_assert(sizeof(GpuDecal) == 176);
 static_assert(offsetof(TaaPushConstants, previousSkyViewProjection) == 32);
 static_assert(sizeof(TaaPushConstants) == 96);
 static_assert(offsetof(GpuAtmosphere, sunIlluminance) == 64);

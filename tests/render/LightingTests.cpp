@@ -59,6 +59,34 @@ TEST_CASE("Each shadow cascade contains its slice of the camera frustum", "[rend
     CHECK(cascades.texelSizes[0] < cascades.texelSizes[3]);
 }
 
+TEST_CASE("Decals reach the clusters the sphere around their box touches", "[render][lighting]")
+{
+    // A box 2 m across and 1 m deep, turned a quarter around Y and doubled by its scale.
+    const Mat4 placed = devex::math::translate(Mat4{1.0f}, {0.0f, 0.0f, -10.0f});
+    const devex::render::RenderDecal decal{
+        .transform = devex::math::scale(devex::math::rotate(placed, devex::math::radians(90.0f), Vec3{0.0f, 1.0f, 0.0f}),
+                                        Vec3{2.0f}),
+        .size = {2.0f, 1.0f, 2.0f},
+    };
+    const devex::render::ClusterSphere sphere = devex::render::decalSphere(decal);
+    CHECK_THAT(sphere.center.z, WithinRel(-10.0f, 1e-5f));
+    // Half axes of 2, 1 and 2 meters: its corners are 3 m from its center.
+    CHECK_THAT(sphere.radius, WithinRel(3.0f, 1e-4f));
+
+    const devex::render::ClusterGrid grid;
+    devex::render::LightClusters clusters;
+    const std::array spheres{sphere};
+    devex::render::assignSpheresToClusters(grid, Mat4{1.0f},
+                                           devex::render::ViewVolume::perspective(devex::math::radians(60.0f), 16.0f / 9.0f),
+                                           spheres, clusters);
+    const auto slice = static_cast<std::uint32_t>(std::floor(std::log2(10.0f) * clusters.sliceScale + clusters.sliceBias));
+    const devex::render::ClusterRange center =
+        clusters.clusters[(slice * grid.tilesY + grid.tilesY / 2) * grid.tilesX + grid.tilesX / 2];
+    REQUIRE(center.count == 1);
+    CHECK(clusters.lightIndices[center.offset] == 0);
+    CHECK(clusters.clusters.front().count == 0);
+}
+
 TEST_CASE("Lights are assigned to the clusters their range touches", "[render][lighting]")
 {
     const devex::render::ClusterGrid grid;

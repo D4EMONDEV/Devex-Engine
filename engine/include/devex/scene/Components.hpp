@@ -274,6 +274,38 @@ struct DEVEX_API Fog
 };
 DEVEX_DECLARE_ENGINE_REFLECTION(Fog);
 
+// A box that projects its textures onto the surfaces it holds, along its -Y, as Godot's Decal: they
+// change before the light falls on them, and are lit and shaded with them. Scaled by its entity.
+struct DEVEX_API Decal
+{
+    // Meters across X and Z, and along Y, the depth it projects through.
+    math::Vec3 size{2.0f};
+    // The colour laid on the surfaces, its alpha how much it covers.
+    asset::AssetId albedo;
+    // A normal map, in the tangent space of the box: X along its X, Y along its Z.
+    asset::AssetId normal;
+    // Occlusion, roughness and metalness in red, green and blue, as glTF's textures.
+    asset::AssetId orm;
+    asset::AssetId emission;
+    // Tints the albedo and the emission; its alpha scales the whole decal.
+    math::Vec4 modulate{1.0f};
+    // How much of the colour it replaces, from 0 (only the other textures) to 1.
+    float albedoMix = 1.0f;
+    float emissionEnergy = 1.0f;
+    // Fades it on surfaces turning away from its projection, as Godot's: 0 keeps it on all of them,
+    // towards 1 only on those facing it.
+    float normalFade = 0.0f;
+    // How it fades from the middle of the box towards its top and its bottom: 0 not at all, higher
+    // more and sooner (the exponent of Godot's fade curves).
+    float upperFade = 0.3f;
+    float lowerFade = 0.3f;
+    // Fades it out from `distanceFadeBegin` meters from the camera, over `distanceFadeLength`.
+    bool distanceFade = false;
+    float distanceFadeBegin = 40.0f;
+    float distanceFadeLength = 10.0f;
+};
+DEVEX_DECLARE_ENGINE_REFLECTION(Decal);
+
 // Settings of the image that take the place of the camera's where the camera stands in its box,
 // fading in over the blend distance around it, as Unreal's PostProcessVolume and Unity's Volume: a
 // cave greyer and bluer, a hall warmer. A global one acts everywhere. Each setting it changes has an

@@ -1660,11 +1660,11 @@ public class Health : Component
 
 #### Components Module
 
-Les 79 composants du moteur, par domaine (les jeux en ajoutent en C++ et en C#) :
+Les 80 composants du moteur, par domaine (les jeux en ajoutent en C++ et en C#) :
 
 - **3D** : `Transform` (et `WorldTransform`, calculée), `MeshRenderer`, `SkinnedMeshRenderer`,
   `Camera`, `DirectionalLight`, `PointLight`, `SpotLight`, `Environment`, `Atmosphere`, `Fog`,
-  `PostProcessVolume`, `Terrain`, `ReflectionProbe`, `LightProbeVolume`
+  `Decal`, `PostProcessVolume`, `Terrain`, `ReflectionProbe`, `LightProbeVolume`
 - **Physique 3D** : `RigidBody`, `BoxCollider`, `SphereCollider`, `CapsuleCollider`,
   `CylinderCollider`, `MeshCollider`, `CharacterController`, `HingeJoint`, `SliderJoint`,
   `DistanceJoint`, `FixedJoint`
@@ -2134,6 +2134,11 @@ namespace devex::ui {
   `DirectionalLight::followAtmosphere` teinte le soleil par l'air (`render::atmosphereTransmittance`
   sur CPU). Côté renderer : `RenderWorld::atmosphere` / `fog`, `AtmosphereRenderer` (tables et
   cubemaps, `shaders/atmosphere.slang`), `applyAtmosphere` dans `common.slang`.
+- `Decal` (composant) : boîte (`size`) qui projette `albedo`, `normal`, `orm` et `emission` le long de
+  son -Y sur les surfaces qu'elle contient, avant l'éclairage, comme le `Decal` de Godot ; `modulate`,
+  `albedo_mix`, `emission_energy`, fondus `normal_fade`, `upper_fade` / `lower_fade` (exposants) et
+  `distance_fade`. Côté renderer : `RenderWorld::decals`, rangés dans les grappes des lumières
+  (`assignSpheresToClusters`, `decalSphere`), appliqués par `applyDecals` dans `geometry.slang`.
 - `Camera` : `depth_of_field`, `focus_distance`, `aperture` (nombre f), `auto_focus`,
   `motion_blur` (part d'obturation), `saturation`, `contrast`, `color_filter`, `temperature`,
   `tint`. `PostProcessVolume` (composant) : `global` ou boîte `size` + `blend_distance`, `weight`,

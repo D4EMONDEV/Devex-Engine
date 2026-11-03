@@ -3114,6 +3114,53 @@ commandes dans [performances.md](performances.md) ; API des jeux 33.
   lumière et la brume suivent, du midi au crépuscule. Sa course part de la direction où le soleil
   était cuit, si bien que la sonde et le volume de la salle aux miroirs restent justes à cette
   heure-là (ils ne suivent pas l'heure : il faudrait les recuire).
+
+### Decals et brouillard volumétrique
+
+Décidé le 3 novembre 2026, avant tout code, en suivant Godot 4. Ce qui suit est le plan ; chaque
+partie le précise en l'implémentant.
+
+- **Decals, dans les grappes** : un decal est une boîte qui projette ses textures sur ce qu'elle
+  contient, le long de son -Y comme le `Decal` de Godot. Les decals sont rangés dans les mêmes
+  grappes que les lumières (Forward+), et le shader de la scène les applique à la couleur, à la
+  normale, à l'ORM et à l'émission de la surface **avant l'éclairage** : un decal est éclairé et
+  ombré comme elle. Les textures sont lues en bindless, sans atlas, avec des dérivées prises dans
+  l'espace de la boîte, pour ne pas voir les bords des mips. Ni passe ni image de plus ; seuls les
+  matériaux standard les reçoivent d'abord, les shaders des projets ensuite. Écarté : les decals en
+  espace écran après la prépasse, qui auraient demandé une passe et trois images de plus par frame.
+- **Composant `Decal`** : taille de la boîte, textures de couleur, de normale, d'ORM et d'émission,
+  part de la couleur (`albedo_mix`), teinte, énergie de l'émission, fondus en haut et en bas de la
+  projection et selon l'angle de la surface (`normal_fade`), fondu à distance, couches qui le
+  reçoivent.
+- **Brouillard volumétrique, en froxels** : une grille 3D alignée sur la vue (de l'ordre de
+  160 × 90 × 64, plus fine près de la caméra), remplie à chaque frame en compute : densité, couleur et
+  émission du brouillard global et des volumes locaux, puis éclairage par le soleil avec ses
+  cascades d'ombres (les rayons de lumière), par les lumières des grappes et par le ciel ; lissée
+  d'une frame à l'autre (reprojection temporelle) ; intégrée de l'avant vers l'arrière. Les surfaces
+  opaques et transparentes et le ciel la lisent là où `applyAtmosphere` applique déjà la brume et le
+  `Fog`. Visé : environ 1 ms sur un GPU moyen. Écartés : le raymarching par pixel (plus coûteux, mal
+  adapté aux transparents) et les volumes analytiques sans ombres.
+- **Composants, comme Godot** : `VolumetricFog` porte les réglages globaux (densité, couleur,
+  émission, anisotropie, longueur couverte, répartition des tranches, part du ciel, reprojection),
+  comme la section *Volumetric Fog* de l'`Environment` de Godot ; le `Fog` de hauteur actuel reste et
+  peut s'y ajouter. `FogVolume` ajoute ou retire du brouillard localement : boîte, ellipsoïde ou
+  partout, densité (négative pour creuser), couleur, émission, fondu des bords.
+- **Ordre** : les decals d'abord, puis le brouillard volumétrique, chacun avec ses tests, son
+  inspecteur, son gizmo dans la vue et sa place dans le bac à sable. Plus tard : les shaders des
+  projets pour les decals et pour les volumes de brouillard, comme les *fog shaders* de Godot.
+- ✅ **Les decals, faits** (jalon 96) : `RenderWorld::decals`, extraits des `Decal` ; le renderer
+  les range dans les grappes par la sphère qui passe par le coin le plus loin de leur boîte
+  (`decalSphere`, `assignSpheresToClusters`, que `assignLightsToClusters` utilise aussi), en listes à
+  part, et `SceneData` porte leurs adresses (`GpuDecal`, 176 octets). Dans `surfaceFragment`, le
+  matériau devient une couche (`DecalLayer`) que `applyDecals` modifie avant que la `Surface` soit
+  éclairée ; la couverture d'un decal est l'alpha de sa couleur multiplié par ses fondus. Les fondus
+  reprennent les formules de Godot : `upper_fade` et `lower_fade` sont les exposants d'une courbe
+  depuis le milieu de la boîte, `normal_fade` un `smoothstep` sur le produit scalaire ramené de 0 à 1 ;
+  le fondu à distance se fait par pixel. Sans couches de rendu en 3D, un decal se pose sur toutes
+  les surfaces ; les shaders des projets ne le reçoivent pas encore. L'inspecteur vient de la
+  réflexion ; la vue montre sa boîte et une flèche le long de sa projection. Le bac à sable pose le
+  logo de Devex sur le sol de l'arène.
+
 ### Transparence et post-traitements
 
 - **Passes** : une frame dessine maintenant la **prépasse** (profondeur, mouvement et normales),
@@ -5453,6 +5500,11 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     des textures BC à l'export par basisu (UASTC puis ASTC) avec un cache dans `.devex/android`,
     `--platform android` à l'export en ligne de commande, ASTC activé et vérifié par le renderer.
     Test de la conversion (couleurs et normales) ; à voir encore sur un vrai téléphone.
+
+96. ✅ **Decals** — le composant `Decal`, comme celui de Godot : une boîte qui projette couleur,
+    normale, ORM et émission le long de son -Y, rangée dans les grappes des lumières et appliquée
+    avant l'éclairage ; fondus haut, bas, d'angle et de distance ; gizmo et catalogue de création ;
+    tests des grappes, de l'extraction et d'un decal sur un cube ; API des jeux 39.
 
 Ensuite, sans ordre figé : à choisir dans les pistes ci-dessous.
 

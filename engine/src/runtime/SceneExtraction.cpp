@@ -480,6 +480,28 @@ void extractScene(scene::Scene& scene, AssetManager& assets, render::RenderWorld
             .castShadows = light.castShadows,
         });
     }
+    for ([[maybe_unused]] auto [entity, transform, decal] : scene.view<scene::WorldTransform, scene::Decal>())
+    {
+        const auto texture = [&assets](asset::AssetId id) {
+            return id.isValid() ? assets.texture(id) : render::TextureHandle{};
+        };
+        world.decals.push_back({
+            .transform = transform.matrix,
+            .size = decal.size,
+            .albedo = texture(decal.albedo),
+            .normal = texture(decal.normal),
+            .orm = texture(decal.orm),
+            .emission = texture(decal.emission),
+            .modulate = decal.modulate,
+            .albedoMix = decal.albedoMix,
+            .emissionEnergy = decal.emissionEnergy,
+            .normalFade = decal.normalFade,
+            .upperFade = decal.upperFade,
+            .lowerFade = decal.lowerFade,
+            .fadeBegin = decal.distanceFade ? decal.distanceFadeBegin : 0.0f,
+            .fadeLength = decal.distanceFade ? std::max(decal.distanceFadeLength, 0.0f) : 0.0f,
+        });
+    }
 
     const auto environments = scene.view<scene::Environment>();
     if (const auto first = environments.begin(); first != environments.end())

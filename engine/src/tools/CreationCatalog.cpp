@@ -44,6 +44,8 @@ constexpr std::array engineComponents{
     ComponentInfo{"Atmosphere", "Atmosphere", Category::ThreeD,
                   "The air of a planet lit by the sun: the sky, its light on the scene, and the haze of what is far away."},
     ComponentInfo{"Fog", "Fog", Category::ThreeD, "Fog thickening towards the ground, lit by the sky and the sun."},
+    ComponentInfo{"Decal", "Decal", Category::ThreeD,
+                  "Textures projected from a box onto the surfaces inside it, along its -Y, and lit with them."},
     ComponentInfo{"PostProcessVolume", "Post-process volume", Category::ThreeD,
                   "Settings of the image that take the place of the camera's inside its box, fading in around it."},
     ComponentInfo{"Terrain", "Terrain", Category::ThreeD,
