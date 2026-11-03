@@ -306,6 +306,61 @@ struct DEVEX_API Decal
 };
 DEVEX_DECLARE_ENGINE_REFLECTION(Decal);
 
+// Fog that fills the air around the camera and catches the light, as the Volumetric Fog of Godot's
+// Environment: the sun shines through it in shafts past what casts shadows, local lights glow in
+// it. It reaches `length` meters from the camera, beyond which the Fog of the scene takes over. The
+// renderer uses the first one; FogVolume adds or removes fog here and there.
+struct DEVEX_API VolumetricFog
+{
+    // How much light it stops per meter, everywhere.
+    float density = 0.05f;
+    // The share of the light it stops that it sends on, for red, green and blue.
+    math::Vec3 albedo{1.0f};
+    // Light it gives by itself, in nits per meter of fog, as a glowing mist.
+    math::Vec3 emission{0.0f};
+    float emissionEnergy = 1.0f;
+    // Where the light it scatters goes: 0 evenly, towards 1 on along the light, below 0 back.
+    float anisotropy = 0.2f;
+    // How far from the camera it is computed, in meters, and how its slices crowd near the camera
+    // (1 evenly, higher closer).
+    float length = 64.0f;
+    float detailSpread = 2.0f;
+    // How much the light of the sky lights it, from 0, as Godot's ambient_inject.
+    float ambientInject = 0.0f;
+    // How much of it veils the sky, from 0 to 1, as Godot's sky_affect.
+    float skyAffect = 1.0f;
+    // Mixes each frame with the previous ones, which smooths its noise; 0 keeps every frame alone.
+    bool temporalReprojection = true;
+    float temporalAmount = 0.9f;
+};
+DEVEX_DECLARE_ENGINE_REFLECTION(VolumetricFog);
+
+enum class FogVolumeShape : std::uint8_t
+{
+    Box,
+    Ellipsoid,
+    // Everywhere, to change the fog of the whole scene.
+    World,
+};
+
+// Fog added in a box or an ellipsoid, or taken away with a negative density, as Godot's FogVolume.
+// Seen only where a VolumetricFog is computed. Scaled by its entity.
+struct DEVEX_API FogVolume
+{
+    FogVolumeShape shape = FogVolumeShape::Box;
+    // Meters along the axes of its entity, centred on it.
+    math::Vec3 size{2.0f};
+    // Added to the density of the VolumetricFog; negative carves it out.
+    float density = 1.0f;
+    math::Vec3 albedo{1.0f};
+    math::Vec3 emission{0.0f};
+    // Thins it out going up from its centre, by e every 1/heightFalloff meters; 0 keeps it even.
+    float heightFalloff = 0.0f;
+    // The share of its size over which it fades at its edges.
+    float edgeFade = 0.1f;
+};
+DEVEX_DECLARE_ENGINE_REFLECTION(FogVolume);
+
 // Settings of the image that take the place of the camera's where the camera stands in its box,
 // fading in over the blend distance around it, as Unreal's PostProcessVolume and Unity's Volume: a
 // cave greyer and bluer, a hall warmer. A global one acts everywhere. Each setting it changes has an
@@ -471,6 +526,12 @@ template <>
 struct devex::reflection::EnumNames<devex::scene::Antialiasing>
 {
     static constexpr std::array<std::string_view, 2> names{"none", "temporal"};
+};
+
+template <>
+struct devex::reflection::EnumNames<devex::scene::FogVolumeShape>
+{
+    static constexpr std::array<std::string_view, 3> names{"box", "ellipsoid", "world"};
 };
 
 template <>

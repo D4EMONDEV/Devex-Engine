@@ -3160,6 +3160,22 @@ partie le précise en l'implémentant.
   les surfaces ; les shaders des projets ne le reçoivent pas encore. L'inspecteur vient de la
   réflexion ; la vue montre sa boîte et une flèche le long de sa projection. Le bac à sable pose le
   logo de Devex sur le sol de l'arène.
+- ✅ **Le brouillard volumétrique, fait** (jalon 97) : `VolumetricFogRenderer` tient trois images de
+  160 × 90 en 64 couches (des tableaux 2D, le moteur n'ayant pas d'images 3D ; RGBA16F) : deux qui
+  alternent pour la reprojection, et l'intégrée, liée au jeu global (liaison 13). Deux passes compute
+  (`shaders/fog.slang`), dans la passe « Volumetric fog » du graphe, après les ombres et avant la
+  scène : `lightFroxels` assemble la densité, la diffusion et l'émission du brouillard et des
+  volumes, éclaire par le soleil à travers ses cascades, par les lumières des grappes (sans leurs
+  ombres) et par le ciel (`ambient_inject`), avec la phase de Henyey-Greenstein, puis mélange avec
+  la frame précédente reprojetée ; `integrateFroxels` intègre chaque colonne de l'avant vers
+  l'arrière, en conservant l'énergie comme Hillaire. Les tranches suivent la distance le long de la
+  vue, `length` × part^`detail_spread` ; chaque frame échantillonne une profondeur différente de
+  ses froxels (suite du nombre d'or), que la reprojection moyenne. `applyAtmosphere` l'applique
+  après la brume et le `Fog`, aux surfaces opaques et transparentes ; le ciel le prend selon
+  `sky_affect`. Seule la vue principale en a : les vues des outils s'en passent. Les réglages
+  reprennent ceux de Godot, dont le sens d'`ambient_inject` (0 par défaut) et de `sky_affect`.
+  Coût mesuré : 0,21 ms de GPU sur une RTX 4060 avec 256 lumières (voir `docs/performances.md`).
+  Le bac à sable voile légèrement l'arène et pose une brume autour de la pyramide de caisses.
 
 ### Transparence et post-traitements
 
@@ -5505,6 +5521,13 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     normale, ORM et émission le long de son -Y, rangée dans les grappes des lumières et appliquée
     avant l'éclairage ; fondus haut, bas, d'angle et de distance ; gizmo et catalogue de création ;
     tests des grappes, de l'extraction et d'un decal sur un cube ; API des jeux 39.
+
+97. ✅ **Brouillard volumétrique** — `VolumetricFog` et `FogVolume`, comme ceux de Godot : froxels de
+    160 × 90 × 64 éclairés par le soleil à travers ses ombres, par les lumières des grappes et par le
+    ciel, reprojetés d'une frame à l'autre et intégrés le long de la vue, appliqués aux surfaces et au
+    ciel ; volumes en boîte, ellipsoïde ou partout, qui ajoutent ou creusent ; gizmo, catalogue,
+    mesure `DEVEX_STRESS_FOG` du banc d'essai (0,21 ms sur une RTX 4060) ; tests de l'extraction et
+    d'un brouillard qui cache un cube puis qu'un volume creuse ; API des jeux 40.
 
 Ensuite, sans ordre figé : à choisir dans les pistes ci-dessous.
 

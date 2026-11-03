@@ -117,6 +117,8 @@ ComponentRegistry& componentRegistry()
         builtins.add<Atmosphere>();
         builtins.add<Fog>();
         builtins.add<Decal>();
+        builtins.add<VolumetricFog>();
+        builtins.add<FogVolume>();
         builtins.add<PostProcessVolume>();
         builtins.add<Terrain>();
         builtins.add<ReflectionProbe>();

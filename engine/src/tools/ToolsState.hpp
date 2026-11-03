@@ -1242,6 +1242,9 @@ DEVEX_API void addIrradianceVolumeLines(scene::Scene& scene, const std::unordere
 // The boxes of the decals shown, with an arrow along the -Y they project along, as lines of the overlay.
 DEVEX_API void addDecalLines(scene::Scene& scene, const std::unordered_set<std::uint32_t>& shown,
                              std::vector<render::OverlayVertex>& lines);
+// The boxes and ellipsoids of the fog volumes shown, as lines of the overlay; one everywhere has none.
+DEVEX_API void addFogVolumeLines(scene::Scene& scene, const std::unordered_set<std::uint32_t>& shown,
+                                 std::vector<render::OverlayVertex>& lines);
 // The boxes of the post-process volumes shown, and how far around them they blend, as lines of the
 // overlay; a global volume has none.
 DEVEX_API void addPostVolumeLines(scene::Scene& scene, const std::unordered_set<std::uint32_t>& shown,

@@ -1230,6 +1230,13 @@ core::Result<bool> VulkanRenderer::prepareScene(FrameContext& frame, bool main)
         }
     }
     {
+        DEVEX_PROFILE_SCOPE("Volumetric fog");
+        if (core::Result<void> fog = uploadVolumetricFog(frame, main); !fog)
+        {
+            return std::unexpected(fog.error());
+        }
+    }
+    {
         DEVEX_PROFILE_SCOPE("Scene data");
         writeSceneData(frame, m_cascades);
     }
@@ -1802,6 +1809,15 @@ core::Result<void> VulkanRenderer::createDefaultResources()
     }
     m_atmosphere = std::move(*atmosphere);
     m_descriptors->setAtmosphere(m_atmosphere->transmittanceView(), m_atmosphere->skyViewView(), m_atmosphere->aerialPerspectiveView());
+
+    core::Result<std::unique_ptr<VolumetricFogRenderer>> volumetricFog =
+        VolumetricFogRenderer::create(m_device, m_allocator, m_upload, *m_descriptors, m_shaderDirectory);
+    if (!volumetricFog)
+    {
+        return std::unexpected(volumetricFog.error());
+    }
+    m_volumetricFog = std::move(*volumetricFog);
+    m_descriptors->setVolumetricFog(m_volumetricFog->integratedView());
 
     // A white sky, tinted and scaled by the environment settings, stands in for sky textures.
     core::Result<EnvironmentMaps> uniform = m_baker->bake(m_whiteTexture->image.view(), 1);
@@ -3335,6 +3351,76 @@ core::Result<void> VulkanRenderer::uploadDecals(FrameContext& frame, const Clust
     return {};
 }
 
+core::Result<void> VulkanRenderer::uploadVolumetricFog(FrameContext& frame, bool main)
+{
+    // Only the main view has the froxels, whose history follows its camera: the views of the tools go
+    // without.
+    const RenderVolumetricFog& settings = m_world.volumetricFog;
+    m_volumetricFogThisFrame = main && settings.enabled;
+    if (!m_volumetricFogThisFrame)
+    {
+        if (main)
+        {
+            m_volumetricFogHistory = false;
+        }
+        return {};
+    }
+
+    std::vector<GpuFogVolume> volumes;
+    volumes.reserve(m_world.fogVolumes.size());
+    for (const RenderFogVolume& volume : m_world.fogVolumes)
+    {
+        // The volume from -1 to 1 along its axes; one flat along an axis holds nothing.
+        const math::Mat4 volumeToWorld = volume.transform * math::scale(math::Mat4{1.0f}, volume.size * 0.5f);
+        if (volume.shape != FogVolumeShape::World && std::abs(glm::determinant(volumeToWorld)) < 1e-12f)
+        {
+            continue;
+        }
+        volumes.push_back({
+            .worldToVolume = volume.shape == FogVolumeShape::World ? math::Mat4{1.0f} : math::inverse(volumeToWorld),
+            .albedo = volume.albedo,
+            .density = volume.density,
+            .emission = volume.emission,
+            .heightFalloff = volume.heightFalloff,
+            .shape = static_cast<std::uint32_t>(volume.shape),
+            .edgeFade = volume.edgeFade,
+            .centerHeight = volume.transform[3].y,
+        });
+    }
+    for (const auto& [buffer, bytes] :
+         {std::pair<std::optional<Buffer>*, VkDeviceSize>{&frame.volumetricFog, sizeof(GpuVolumetricFog)},
+          {&frame.fogVolumes, std::max<std::size_t>(volumes.size(), 1) * sizeof(GpuFogVolume)}})
+    {
+        if (core::Result<void> ensured = ensureHostBuffer(*buffer, bytes); !ensured)
+        {
+            return ensured;
+        }
+    }
+    std::memcpy(frame.fogVolumes->mappedBytes().data(), volumes.data(), volumes.size() * sizeof(GpuFogVolume));
+    // Each frame samples its froxels at another depth, along a sequence that fills them evenly.
+    const float jitter = std::fmod(static_cast<float>(m_frameIndex % 4096) * 0.6180339887f, 1.0f);
+    const GpuVolumetricFog fog{
+        .albedo = settings.albedo,
+        .density = settings.density,
+        .emission = settings.emission,
+        .anisotropy = settings.anisotropy,
+        .length = settings.length,
+        .detailSpread = settings.detailSpread,
+        .skyAffect = settings.skyAffect,
+        .temporalAmount = m_volumetricFogHistory ? settings.temporalAmount : 0.0f,
+        .width = VolumetricFogRenderer::width,
+        .height = VolumetricFogRenderer::height,
+        .depth = VolumetricFogRenderer::depth,
+        .volumeCount = static_cast<std::uint32_t>(volumes.size()),
+        .volumes = frame.fogVolumes->deviceAddress(),
+        .jitter = jitter,
+        .ambientInject = settings.ambientInject,
+    };
+    std::memcpy(frame.volumetricFog->mappedBytes().data(), &fog, sizeof(fog));
+    m_volumetricFogHistory = true;
+    return {};
+}
+
 namespace {
 
 // A box of the frame, a probe's or a volume's: turned with its transform, grown by its scale.
@@ -3914,6 +4000,11 @@ void VulkanRenderer::writeSceneData(FrameContext& frame,
         scene.pickViewProjection = regionSelectionMatrix(extent, frame.pickRect) * scene.unjitteredViewProjection;
     }
     writeAtmosphere(frame, scene);
+    if (m_volumetricFogThisFrame)
+    {
+        scene.atmosphereFlags |= atmosphereVolumetricFog;
+        scene.volumetricFog = frame.volumetricFog->deviceAddress();
+    }
 
     std::memcpy(frame.sceneData->mappedBytes().data(), &scene, sizeof(scene));
 }
@@ -5764,6 +5855,15 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
                                sizeof(constants), &constants);
             vkCmdDraw(commands, 3, 1, 0, 0);
             vkCmdEndRendering(commands);
+        });
+    }
+
+    // The volumetric fog of the main view, lit through the shadows of the sun, before the surfaces
+    // and the sky read it.
+    if (m_volumetricFogThisFrame && extraView == nullptr)
+    {
+        graph.addPass("Volumetric fog", {{shadowMap, ImageAccess::ComputeRead}}, [&](VkCommandBuffer commands) {
+            m_volumetricFog->record(commands, sets[0], sets[1], sceneData, frame.volumetricFog->deviceAddress());
         });
     }
 

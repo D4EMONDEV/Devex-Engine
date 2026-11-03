@@ -178,6 +178,35 @@ TEST_CASE("Extraction copies the decals with their box and their fades", "[runti
     CHECK(second.fadeLength == 5.0f);
 }
 
+TEST_CASE("Extraction copies the volumetric fog and its volumes, which need it", "[runtime][extraction][fog]")
+{
+    devex::runtime::AssetManager assets(nullptr, nullptr);
+    Scene scene;
+    const Entity volume = scene.createEntity("Volume");
+    scene.add<Transform>(volume, Transform{.position = {0.0f, 3.0f, 0.0f}});
+    scene.add<devex::scene::FogVolume>(volume, devex::scene::FogVolume{.shape = devex::scene::FogVolumeShape::Ellipsoid, .density = -2.0f});
+    scene.updateTransforms();
+    devex::render::RenderWorld world;
+    devex::runtime::extractScene(scene, assets, world);
+    // Without a VolumetricFog, no froxels and no volumes.
+    CHECK_FALSE(world.volumetricFog.enabled);
+    CHECK(world.fogVolumes.empty());
+
+    const Entity air = scene.createEntity("Air");
+    scene.add<devex::scene::VolumetricFog>(air, devex::scene::VolumetricFog{.density = 0.02f, .emission = {1.0f, 0.5f, 0.0f},
+                                                                            .emissionEnergy = 2.0f, .temporalReprojection = false});
+    world = devex::render::RenderWorld{};
+    devex::runtime::extractScene(scene, assets, world);
+    CHECK(world.volumetricFog.enabled);
+    CHECK(world.volumetricFog.density == 0.02f);
+    CHECK(world.volumetricFog.emission == devex::math::Vec3{2.0f, 1.0f, 0.0f});
+    CHECK(world.volumetricFog.temporalAmount == 0.0f);
+    REQUIRE(world.fogVolumes.size() == 1);
+    CHECK(world.fogVolumes[0].shape == devex::render::FogVolumeShape::Ellipsoid);
+    CHECK(world.fogVolumes[0].density == -2.0f);
+    CHECK(world.fogVolumes[0].transform[3].y == 3.0f);
+}
+
 TEST_CASE("Extraction copies the lens and the grading of the camera, and the post-process volumes by priority", "[runtime][extraction][post]")
 {
     devex::runtime::AssetManager assets(nullptr, nullptr);

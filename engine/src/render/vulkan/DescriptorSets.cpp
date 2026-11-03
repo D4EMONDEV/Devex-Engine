@@ -107,10 +107,11 @@ core::Result<DescriptorSets> DescriptorSets::create(const Device& device,
         image(atmosphereTransmittanceBinding),
         image(skyViewBinding),
         image(aerialPerspectiveBinding),
+        image(volumetricFogBinding),
     };
-    const std::array<VkDescriptorBindingFlags, 13> globalFlags{
+    const std::array<VkDescriptorBindingFlags, 14> globalFlags{
         updatedInFlight, 0, updatedInFlight, updatedInFlight, updatedInFlight, 0, updatedInFlight, 0, updatedInFlight, updatedInFlight,
-        updatedInFlight, updatedInFlight, updatedInFlight,
+        updatedInFlight, updatedInFlight, updatedInFlight, updatedInFlight,
     };
     const VkDescriptorSetLayoutBindingFlagsCreateInfo globalFlagsInfo{
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO,
@@ -158,7 +159,7 @@ core::Result<DescriptorSets> DescriptorSets::create(const Device& device,
                  &sets.m_frameLayout);
 
     const std::array globalPoolSizes{
-        VkDescriptorPoolSize{.type = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, .descriptorCount = textureCapacity + 7 + probeCapacity},
+        VkDescriptorPoolSize{.type = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, .descriptorCount = textureCapacity + 8 + probeCapacity},
         VkDescriptorPoolSize{.type = VK_DESCRIPTOR_TYPE_SAMPLER, .descriptorCount = 3 + textureCapacity},
     };
     const VkDescriptorPoolCreateInfo globalPoolInfo{
@@ -339,6 +340,11 @@ void DescriptorSets::setAtmosphere(VkImageView transmittance, VkImageView skyVie
     writeImage(m_global, atmosphereTransmittanceBinding, 0, transmittance, VK_IMAGE_LAYOUT_GENERAL);
     writeImage(m_global, skyViewBinding, 0, skyView, VK_IMAGE_LAYOUT_GENERAL);
     writeImage(m_global, aerialPerspectiveBinding, 0, aerialPerspective, VK_IMAGE_LAYOUT_GENERAL);
+}
+
+void DescriptorSets::setVolumetricFog(VkImageView integrated) noexcept
+{
+    writeImage(m_global, volumetricFogBinding, 0, integrated, VK_IMAGE_LAYOUT_GENERAL);
 }
 
 void DescriptorSets::setBrdfLut(VkImageView view) noexcept

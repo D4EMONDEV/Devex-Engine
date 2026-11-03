@@ -60,7 +60,9 @@ class CoroutineScheduler;
 // 38: Project gained ordered global scenes.
 // 39: WindowSettings gained quitting on Android's Back button, RenderWorld its decals, and the
 // scene the Decal component.
-inline constexpr std::uint32_t gameApiVersion = 39;
+// 40: RenderWorld gained the volumetric fog and its volumes, and the scene the VolumetricFog and
+// FogVolume components.
+inline constexpr std::uint32_t gameApiVersion = 40;
 
 enum class SystemPhase : std::uint8_t
 {

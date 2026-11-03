@@ -13,6 +13,7 @@
 #include <chrono>
 #include <cmath>
 #include <format>
+#include <numbers>
 #include <string>
 
 namespace devex::tools::detail {
@@ -727,6 +728,41 @@ void addDecalLines(scene::Scene& scene, const std::unordered_set<std::uint32_t>&
         const float barb = std::min(half.x, half.z) * 0.25f;
         addLine(lines, tip, point({barb, -half.y + barb, 0.0f}), boxColor);
         addLine(lines, tip, point({-barb, -half.y + barb, 0.0f}), boxColor);
+    }
+}
+
+void addFogVolumeLines(scene::Scene& scene, const std::unordered_set<std::uint32_t>& shown, std::vector<render::OverlayVertex>& lines)
+{
+    for ([[maybe_unused]] auto [entity, transform, volume] : scene.view<scene::WorldTransform, scene::FogVolume>())
+    {
+        if (!shown.contains(entity.index) || volume.shape == scene::FogVolumeShape::World)
+        {
+            continue;
+        }
+        const math::Vec3 half = math::max(volume.size, math::Vec3{0.0f}) * 0.5f;
+        if (volume.shape == scene::FogVolumeShape::Box)
+        {
+            addBox(lines, transform.matrix, half, boxColor);
+            continue;
+        }
+        // An ellipsoid: its three great ellipses.
+        constexpr int segments = 48;
+        const auto point = [&transform](math::Vec3 local) { return math::Vec3(transform.matrix * math::Vec4(local, 1.0f)); };
+        for (int plane = 0; plane < 3; ++plane)
+        {
+            for (int segment = 0; segment < segments; ++segment)
+            {
+                const auto at = [&](int index) {
+                    const float angle = 2.0f * std::numbers::pi_v<float> * static_cast<float>(index) / static_cast<float>(segments);
+                    const float c = std::cos(angle);
+                    const float s = std::sin(angle);
+                    return plane == 0   ? math::Vec3{c * half.x, s * half.y, 0.0f}
+                           : plane == 1 ? math::Vec3{c * half.x, 0.0f, s * half.z}
+                                        : math::Vec3{0.0f, c * half.y, s * half.z};
+                };
+                addLine(lines, point(at(segment)), point(at(segment + 1)), boxColor);
+            }
+        }
     }
 }
 

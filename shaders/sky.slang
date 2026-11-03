@@ -55,6 +55,12 @@ float4 fragmentMain(VertexOutput input) : SV_Target
         const float opacity = fogOpacity(scene->atmosphere, scene->cameraPosition, direction, skyFogDistance);
         color = lerp(color, fogLight(scene, direction) * scene->exposure, opacity);
     }
+    // And the volumetric fog, all of it at the end of its slices, as much as it veils the sky.
+    if ((scene->atmosphereFlags & atmosphereVolumetricFog) != 0)
+    {
+        const float3 veiled = applyVolumetricFog(scene, color, scene->cameraPosition + direction * scene->volumetricFog->length * 2.0);
+        color = lerp(color, veiled, scene->volumetricFog->skyAffect);
+    }
     // Half floats end at 65504: the disk of the sun stays below.
     return float4(min(color, float3(60000.0)), 1.0);
 }

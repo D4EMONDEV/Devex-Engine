@@ -37,6 +37,7 @@ public:
     static constexpr std::uint32_t atmosphereTransmittanceBinding = 10;
     static constexpr std::uint32_t skyViewBinding = 11;
     static constexpr std::uint32_t aerialPerspectiveBinding = 12;
+    static constexpr std::uint32_t volumetricFogBinding = 13;
     // Frame set bindings.
     static constexpr std::uint32_t shadowMapBinding = 0;
     static constexpr std::uint32_t shadowSamplerBinding = 1;
@@ -110,6 +111,8 @@ public:
                         VkImageLayout layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) noexcept;
     // The tables of the atmosphere, in the general layout.
     void setAtmosphere(VkImageView transmittance, VkImageView skyView, VkImageView aerialPerspective) noexcept;
+    // The volumetric fog integrated along the view, in the general layout.
+    void setVolumetricFog(VkImageView integrated) noexcept;
     void setBrdfLut(VkImageView view) noexcept;
     // A cube map in the shader read-only layout.
     void setReflectionProbe(std::uint32_t slot, VkImageView view) noexcept;

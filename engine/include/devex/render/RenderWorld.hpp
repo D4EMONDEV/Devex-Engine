@@ -262,6 +262,45 @@ struct DEVEX_API RenderFog
     float skyBlend = 0.5f;
 };
 
+// Fog filling the air around the camera, lit with shadows; see scene::VolumetricFog.
+struct DEVEX_API RenderVolumetricFog
+{
+    bool enabled = false;
+    float density = 0.05f;
+    math::Vec3 albedo{1.0f};
+    // Already multiplied by its energy.
+    math::Vec3 emission{0.0f};
+    float anisotropy = 0.2f;
+    float length = 64.0f;
+    float detailSpread = 2.0f;
+    // How much the light of the sky lights it, and how much it veils the sky.
+    float ambientInject = 0.0f;
+    float skyAffect = 1.0f;
+    // The share of the previous frames kept, 0 for none.
+    float temporalAmount = 0.9f;
+};
+
+enum class FogVolumeShape : std::uint8_t
+{
+    Box,
+    Ellipsoid,
+    World,
+};
+
+// Fog added or carved out locally; see scene::FogVolume.
+struct DEVEX_API RenderFogVolume
+{
+    FogVolumeShape shape = FogVolumeShape::Box;
+    // The volume in the world: `size` across, centred on the origin of this transform.
+    math::Mat4 transform{1.0f};
+    math::Vec3 size{2.0f};
+    float density = 1.0f;
+    math::Vec3 albedo{1.0f};
+    math::Vec3 emission{0.0f};
+    float heightFalloff = 0.0f;
+    float edgeFade = 0.1f;
+};
+
 // The maps of a terrain on the GPU, which the asset manager keeps: its heights (one float a sample),
 // the slopes between them (meters of height per cell along X and Z, in half floats), the shares of
 // layers 0 to 3 and 4 to 7 painted, and its holes and grass (red and green).
@@ -717,6 +756,8 @@ struct DEVEX_API RenderWorld
     RenderEnvironment environment;
     RenderAtmosphere atmosphere;
     RenderFog fog;
+    RenderVolumetricFog volumetricFog;
+    std::vector<RenderFogVolume> fogVolumes;
     // The post-process volumes of the scene, the lowest priority first.
     std::vector<RenderPostVolume> postVolumes;
     std::vector<RenderReflectionProbe> reflectionProbes;
@@ -784,6 +825,8 @@ struct DEVEX_API RenderWorld
         std::vector<RenderLight> lightStorage = std::move(lights);
         std::vector<RenderDecal> decalStorage = std::move(decals);
         decalStorage.clear();
+        std::vector<RenderFogVolume> fogVolumeStorage = std::move(fogVolumes);
+        fogVolumeStorage.clear();
         std::vector<RenderReflectionProbe> probeStorage = std::move(reflectionProbes);
         probeStorage.clear();
         std::vector<RenderIrradianceVolume> volumeStorage = std::move(irradianceVolumes);
@@ -830,6 +873,7 @@ struct DEVEX_API RenderWorld
         *this = RenderWorld{};
         lights = std::move(lightStorage);
         decals = std::move(decalStorage);
+        fogVolumes = std::move(fogVolumeStorage);
         reflectionProbes = std::move(probeStorage);
         irradianceVolumes = std::move(volumeStorage);
         meshes = std::move(meshStorage);

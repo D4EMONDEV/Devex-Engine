@@ -1033,6 +1033,86 @@ TEST_CASE("A decal colors the surface it projects onto, and only inside its box"
     CHECK(capture.errors().empty());
 }
 
+TEST_CASE("Volumetric fog veils what lies behind it, and a volume carving it out clears the view", "[render][gpu][fog]")
+{
+    const ErrorCapture capture;
+    {
+        auto platform = devex::platform::Platform::create();
+        REQUIRE(platform.has_value());
+        auto window = platform->createWindow({.width = 320, .height = 240, .vulkan = true, .hidden = true});
+        REQUIRE(window.has_value());
+        auto renderer = devex::render::Renderer::create(*platform, *window, {.validation = true});
+        if (!renderer)
+        {
+            FAIL(std::format("{}", renderer.error()));
+        }
+        auto cube = renderer->createMesh(devex::asset::makeCube());
+        REQUIRE(cube.has_value());
+
+        // A white cube 8.5 m from the camera, lit by the sun from above it, in front of a black sky.
+        const auto middle = [&](const devex::render::RenderVolumetricFog& fog, const std::vector<devex::render::RenderFogVolume>& volumes) {
+            std::uint64_t request = 0;
+            std::vector<std::uint8_t> image;
+            std::uint32_t width = 0;
+            for (int frame = 0; frame < 10 && image.empty(); ++frame)
+            {
+                devex::render::RenderWorld& world = renderer->beginFrame();
+                world.camera.autoExposure = false;
+                world.camera.ev100 = 15.0f;
+                world.camera.antialiasing = devex::render::Antialiasing::None;
+                world.camera.ambientOcclusion = 0.0f;
+                world.camera.bloom = 0.0f;
+                world.sun = {.direction = {0.0f, -0.5f, -1.0f}, .illuminance = devex::math::Vec3{100000.0f}};
+                world.environment.intensity = 0.0f;
+                world.meshes.push_back({.mesh = *cube,
+                                        .transform = devex::math::scale(devex::math::translate(devex::math::Mat4{1.0f}, {0.0f, 0.0f, -10.0f}),
+                                                                        devex::math::Vec3{3.0f}),
+                                        .objectId = 1});
+                world.volumetricFog = fog;
+                world.fogVolumes = volumes;
+                REQUIRE(renderer->endFrame());
+                if (frame == 5)
+                {
+                    request = renderer->requestCapture(320, 240);
+                }
+                for (devex::render::CapturedImage& captured : renderer->takeCaptures())
+                {
+                    if (captured.request == request)
+                    {
+                        width = captured.width;
+                        image = std::move(captured.rgba);
+                    }
+                }
+            }
+            REQUIRE_FALSE(image.empty());
+            const std::size_t at = (std::size_t{120} * width + 160) * 4;
+            return std::array<int, 3>{image[at], image[at + 1], image[at + 2]};
+        };
+        const auto difference = [](std::array<int, 3> a, std::array<int, 3> b) {
+            return std::abs(a[0] - b[0]) + std::abs(a[1] - b[1]) + std::abs(a[2] - b[2]);
+        };
+
+        // Each frame alone, so that one case does not show through the next.
+        const devex::render::RenderVolumetricFog thick{.enabled = true, .density = 0.6f, .albedo = devex::math::Vec3{0.2f},
+                                                      .anisotropy = 0.0f, .temporalAmount = 0.0f};
+        const std::array<int, 3> clear = middle({}, {});
+        const std::array<int, 3> fogged = middle(thick, {});
+        // Taken away everywhere by a volume of the opposite density: the cube shows as without fog.
+        const std::array<int, 3> carved =
+            middle(thick, {{.shape = devex::render::FogVolumeShape::World, .density = -0.6f}});
+        INFO("clear " << clear[0] << " " << clear[1] << " " << clear[2] << ", fogged " << fogged[0] << " " << fogged[1] << " "
+                      << fogged[2] << ", carved " << carved[0] << " " << carved[1] << " " << carved[2]);
+        CHECK(difference(clear, fogged) > 60);
+        CHECK(difference(clear, carved) <= 6);
+    }
+
+    for (const std::string& error : capture.errors())
+    {
+        UNSCOPED_INFO(error);
+    }
+    CHECK(capture.errors().empty());
+}
+
 TEST_CASE("The lens blurs what stands away from the focus, and what moves while the shutter is open", "[render][gpu][lens]")
 {
     const ErrorCapture capture;

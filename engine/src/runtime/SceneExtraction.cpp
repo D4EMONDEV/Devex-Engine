@@ -644,6 +644,37 @@ void extractScene(scene::Scene& scene, AssetManager& assets, render::RenderWorld
         };
     }
 
+    const auto volumetricFogs = scene.view<scene::VolumetricFog>();
+    if (const auto first = volumetricFogs.begin(); first != volumetricFogs.end())
+    {
+        [[maybe_unused]] const auto [entity, fog] = *first;
+        world.volumetricFog = {
+            .enabled = true,
+            .density = std::max(fog.density, 0.0f),
+            .albedo = fog.albedo,
+            .emission = fog.emission * fog.emissionEnergy,
+            .anisotropy = std::clamp(fog.anisotropy, -0.95f, 0.95f),
+            .length = std::max(fog.length, 1.0f),
+            .detailSpread = std::max(fog.detailSpread, 0.1f),
+            .ambientInject = std::max(fog.ambientInject, 0.0f),
+            .skyAffect = std::clamp(fog.skyAffect, 0.0f, 1.0f),
+            .temporalAmount = fog.temporalReprojection ? std::clamp(fog.temporalAmount, 0.0f, 0.99f) : 0.0f,
+        };
+        for ([[maybe_unused]] auto [volumeEntity, transform, volume] : scene.view<scene::WorldTransform, scene::FogVolume>())
+        {
+            world.fogVolumes.push_back({
+                .shape = static_cast<render::FogVolumeShape>(volume.shape),
+                .transform = transform.matrix,
+                .size = math::max(volume.size, math::Vec3{0.0f}),
+                .density = volume.density,
+                .albedo = volume.albedo,
+                .emission = volume.emission,
+                .heightFalloff = std::max(volume.heightFalloff, 0.0f),
+                .edgeFade = std::clamp(volume.edgeFade, 0.0f, 1.0f),
+            });
+        }
+    }
+
     for ([[maybe_unused]] auto [entity, transform, probe] : scene.view<scene::WorldTransform, scene::ReflectionProbe>())
     {
         const render::ReflectionProbeHandle captured = probe.capture.isValid() ? assets.reflectionProbe(probe.capture) : render::ReflectionProbeHandle{};

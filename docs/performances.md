@@ -30,6 +30,7 @@ chaque partie sur le CPU et de chaque passe sur le GPU. Variables d'environnemen
 | `DEVEX_STRESS_FRAMES` | images mesurées après les 60 de chauffe, de 1 à 10 000 (300 par défaut) |
 | `DEVEX_STRESS_SKINNED=1` | anime les trois maillages par deux os, 2 000 objets par défaut |
 | `DEVEX_GPU_SKINNING=0` | garde le skinning des personnages dans leurs dessins individuels |
+| `DEVEX_STRESS_FOG=1` | remplit l'air de brouillard volumétrique (densité 0,02), éclairé par le soleil et les lumières |
 
 Le temps total couvre toutes les images mesurées ; le détail des zones porte sur les 300 dernières
 au plus, limite de l'historique du profileur. Le nombre de frames CPU retenues et de frames GPU
@@ -498,3 +499,21 @@ $env:DEVEX_ANIMATION_LOD = "0" # puis "1" pour la seconde variante
 .\out\build\x64-release\bin\devex_animation_tests.exe "Animation LOD stress benchmark"
 Remove-Item Env:DEVEX_ANIMATION_LOD
 ```
+
+## Brouillard volumétrique (jalon 97)
+
+Bureau : i7-14700KF et RTX 4060 (Windows 11, pilote 621.01), le 3 novembre 2026, présentation
+`immediate`, banc d'essai lancé avec `DEVEX_STRESS_FOG=1` (densité 0,02, 256 lumières locales, le
+soleil et ses cascades). Build Debug : les temps du CPU n'y valent rien, mais les shaders, et donc
+les temps du GPU, sont ceux du Release.
+
+| Passe du GPU                | Sans brouillard | Avec brouillard |
+|-----------------------------|----------------:|----------------:|
+| Volumetric fog (compute)    | —               | 0,21 ms         |
+| Scene                       | 2,26 ms         | 2,06 à 2,30 ms  |
+| Prepass                     | 2,08 ms         | 1,86 à 2,05 ms  |
+
+**Ce qu'on en tire** : les 921 600 froxels (160 × 90 × 64) éclairés par le soleil à travers ses
+ombres et par les lumières de leurs grappes, puis intégrés, coûtent 0,21 ms, bien sous le 1 ms
+visé ; la scène, qui lit deux couches du brouillard intégré par pixel, ne change pas au-delà des
+écarts d'une mesure à l'autre.

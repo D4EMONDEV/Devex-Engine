@@ -183,6 +183,51 @@ struct GpuSceneData
     VkDeviceAddress clusterDecals = 0;
     std::uint32_t decalCount = 0;
     std::uint32_t decalPadding = 0;
+    // The volumetric fog of the frame, when atmosphereFlags has atmosphereVolumetricFog.
+    VkDeviceAddress volumetricFog = 0;
+    VkDeviceAddress volumetricFogPadding = 0;
+};
+
+// The volumetric fog of the frame, as shaders/fog.slang and common.slang read it.
+struct GpuVolumetricFog
+{
+    math::Vec3 albedo{1.0f};
+    float density = 0.0f;
+    math::Vec3 emission{0.0f};
+    float anisotropy = 0.2f;
+    float length = 64.0f;
+    float detailSpread = 2.0f;
+    float skyAffect = 1.0f;
+    // The share of the reprojected previous frames kept; 0 when there is nothing to reproject.
+    float temporalAmount = 0.0f;
+    // The froxels: across, up, and slices along the view.
+    std::uint32_t width = 0;
+    std::uint32_t height = 0;
+    std::uint32_t depth = 0;
+    std::uint32_t volumeCount = 0;
+    VkDeviceAddress volumes = 0;
+    // Where this frame samples each froxel along the view, from 0 to 1: a sequence the reprojection
+    // averages.
+    float jitter = 0.5f;
+    // How much the light of the sky lights the fog (skyAffect is how much the fog veils the sky).
+    float ambientInject = 0.0f;
+};
+
+// A fog volume of the frame.
+struct GpuFogVolume
+{
+    // From the world into the volume: -1 to 1 along its axes.
+    math::Mat4 worldToVolume{1.0f};
+    math::Vec3 albedo{1.0f};
+    float density = 0.0f;
+    math::Vec3 emission{0.0f};
+    float heightFalloff = 0.0f;
+    // 0 a box, 1 an ellipsoid, 2 everywhere.
+    std::uint32_t shape = 0;
+    float edgeFade = 0.1f;
+    // The height of its centre in the world, from which it thins out going up.
+    float centerHeight = 0.0f;
+    float padding = 0.0f;
 };
 
 // The value of a texture slot that a decal does not have.
@@ -216,6 +261,7 @@ struct GpuDecal
 
 inline constexpr std::uint32_t atmosphereAir = 1;
 inline constexpr std::uint32_t atmosphereFog = 2;
+inline constexpr std::uint32_t atmosphereVolumetricFog = 4;
 
 // The air of the frame, in kilometers and per kilometer, with the sun above it and the camera in it,
 // and the fog, in meters. Read by the sky, by the surfaces it hazes, and by the passes that fill the
@@ -789,7 +835,12 @@ static_assert(offsetof(GpuSceneData, atmosphere) == 928);
 static_assert(offsetof(GpuSceneData, projectionJitter) == 944);
 static_assert(offsetof(GpuSceneData, decals) == 960);
 static_assert(offsetof(GpuSceneData, decalCount) == 984);
-static_assert(sizeof(GpuSceneData) == 992);
+static_assert(offsetof(GpuSceneData, volumetricFog) == 992);
+static_assert(sizeof(GpuSceneData) == 1008);
+static_assert(offsetof(GpuVolumetricFog, width) == 48);
+static_assert(offsetof(GpuVolumetricFog, volumes) == 64);
+static_assert(sizeof(GpuVolumetricFog) == 80);
+static_assert(sizeof(GpuFogVolume) == 112);
 static_assert(offsetof(GpuDecal, modulate) == 112);
 static_assert(offsetof(GpuDecal, albedoMix) == 144);
 static_assert(sizeof(GpuDecal) == 176);

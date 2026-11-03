@@ -148,6 +148,32 @@ DEVEX_REFLECT(Decal)
         .field("distance_fade_length", &Decal::distanceFadeLength);
 }
 
+DEVEX_REFLECT(VolumetricFog)
+{
+    type.field("density", &VolumetricFog::density, {.group = "Fog"})
+        .field("albedo", &VolumetricFog::albedo, {.color = true})
+        .field("emission", &VolumetricFog::emission, {.color = true})
+        .field("emission_energy", &VolumetricFog::emissionEnergy)
+        .field("anisotropy", &VolumetricFog::anisotropy)
+        .field("length", &VolumetricFog::length, {.group = "Extent"})
+        .field("detail_spread", &VolumetricFog::detailSpread)
+        .field("ambient_inject", &VolumetricFog::ambientInject, {.group = "Light"})
+        .field("sky_affect", &VolumetricFog::skyAffect, {.group = "Sky"})
+        .field("temporal_reprojection", &VolumetricFog::temporalReprojection, {.group = "Temporal Reprojection"})
+        .field("temporal_amount", &VolumetricFog::temporalAmount);
+}
+
+DEVEX_REFLECT(FogVolume)
+{
+    type.field("shape", &FogVolume::shape, {.group = "Volume"})
+        .field("size", &FogVolume::size)
+        .field("density", &FogVolume::density, {.group = "Fog"})
+        .field("albedo", &FogVolume::albedo, {.color = true})
+        .field("emission", &FogVolume::emission, {.color = true})
+        .field("height_falloff", &FogVolume::heightFalloff)
+        .field("edge_fade", &FogVolume::edgeFade);
+}
+
 DEVEX_REFLECT(PostProcessVolume)
 {
     type.field("global", &PostProcessVolume::global, {.group = "Volume"})

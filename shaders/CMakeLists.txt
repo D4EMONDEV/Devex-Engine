@@ -6,6 +6,7 @@ devex_add_shaders(devex_shaders
         bloom.slang
         cull.slang
         depth_reduce.slang
+        fog.slang
         occlusion.slang
         skinning.slang
         ibl.slang

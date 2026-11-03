@@ -380,6 +380,8 @@ target_sources(devex_render
         src/render/Selection.hpp
         src/render/vulkan/Atmosphere.cpp
         src/render/vulkan/Atmosphere.hpp
+        src/render/vulkan/VolumetricFog.cpp
+        src/render/vulkan/VolumetricFog.hpp
         src/render/vulkan/Commands.cpp
         src/render/vulkan/Commands.hpp
         src/render/vulkan/DescriptorSets.cpp

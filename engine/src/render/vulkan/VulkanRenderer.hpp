@@ -3,6 +3,7 @@
 #include "../Lighting.hpp"
 #include "../SkinBounds.hpp"
 #include "Atmosphere.hpp"
+#include "VolumetricFog.hpp"
 #include "DescriptorSets.hpp"
 #include "Device.hpp"
 #include "EnvironmentBaker.hpp"
@@ -229,6 +230,9 @@ private:
         std::optional<Buffer> decals;
         std::optional<Buffer> decalClusters;
         std::optional<Buffer> clusterDecals;
+        // The volumetric fog of the main view, and its volumes.
+        std::optional<Buffer> volumetricFog;
+        std::optional<Buffer> fogVolumes;
         // The reflection probes the frame reflects, the smallest first, and its irradiance volumes.
         std::optional<Buffer> reflectionProbes;
         std::optional<Buffer> irradianceVolumes;
@@ -521,6 +525,8 @@ private:
     [[nodiscard]] core::Result<void> uploadLights(FrameContext& frame, float aspectRatio);
     // The decals of the frame and the clusters that list them, after the lights, on the same grid.
     [[nodiscard]] core::Result<void> uploadDecals(FrameContext& frame, const ClusterGrid& grid, float aspectRatio);
+    // The settings and the volumes of the volumetric fog of the main view.
+    [[nodiscard]] core::Result<void> uploadVolumetricFog(FrameContext& frame, bool main);
     void writeSceneData(FrameContext& frame, const std::optional<ShadowCascades>& cascades) const noexcept;
     // The air and the fog of the frame into its buffer and the scene data, with what they were made of.
     void writeAtmosphere(FrameContext& frame, GpuSceneData& scene) const noexcept;
@@ -664,6 +670,11 @@ private:
     // The tables and the light of the sky of an atmosphere; whether a frame drew one, and what its
     // air and its sky were made of.
     std::unique_ptr<AtmosphereRenderer> m_atmosphere;
+    std::unique_ptr<VolumetricFogRenderer> m_volumetricFog;
+    // Whether the previous frame of the main view had volumetric fog, which the next one reprojects,
+    // and whether the frame being prepared draws some.
+    bool m_volumetricFogHistory = false;
+    bool m_volumetricFogThisFrame = false;
     bool m_atmosphereBound = false;
     mutable std::uint64_t m_airKey = 0;
     mutable std::uint64_t m_skyKey = 0;

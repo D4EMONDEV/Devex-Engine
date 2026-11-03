@@ -1660,11 +1660,12 @@ public class Health : Component
 
 #### Components Module
 
-Les 80 composants du moteur, par domaine (les jeux en ajoutent en C++ et en C#) :
+Les 82 composants du moteur, par domaine (les jeux en ajoutent en C++ et en C#) :
 
 - **3D** : `Transform` (et `WorldTransform`, calculée), `MeshRenderer`, `SkinnedMeshRenderer`,
   `Camera`, `DirectionalLight`, `PointLight`, `SpotLight`, `Environment`, `Atmosphere`, `Fog`,
-  `Decal`, `PostProcessVolume`, `Terrain`, `ReflectionProbe`, `LightProbeVolume`
+  `VolumetricFog`, `FogVolume`, `Decal`, `PostProcessVolume`, `Terrain`, `ReflectionProbe`,
+  `LightProbeVolume`
 - **Physique 3D** : `RigidBody`, `BoxCollider`, `SphereCollider`, `CapsuleCollider`,
   `CylinderCollider`, `MeshCollider`, `CharacterController`, `HingeJoint`, `SliderJoint`,
   `DistanceJoint`, `FixedJoint`
@@ -2139,6 +2140,12 @@ namespace devex::ui {
   `albedo_mix`, `emission_energy`, fondus `normal_fade`, `upper_fade` / `lower_fade` (exposants) et
   `distance_fade`. Côté renderer : `RenderWorld::decals`, rangés dans les grappes des lumières
   (`assignSpheresToClusters`, `decalSphere`), appliqués par `applyDecals` dans `geometry.slang`.
+- `VolumetricFog` (composant) : brouillard en froxels autour de la caméra, comme celui de Godot
+  (`density`, `albedo`, `emission`, `anisotropy`, `length`, `detail_spread`, `ambient_inject`,
+  `sky_affect`, reprojection temporelle) ; `FogVolume` en ajoute ou en creuse (`shape` : boîte,
+  ellipsoïde ou partout ; `density` négative pour creuser). Côté renderer :
+  `RenderWorld::volumetricFog` / `fogVolumes`, `VolumetricFogRenderer` (`shaders/fog.slang`),
+  `applyVolumetricFog` dans `common.slang` ; seule la vue principale en a.
 - `Camera` : `depth_of_field`, `focus_distance`, `aperture` (nombre f), `auto_focus`,
   `motion_blur` (part d'obturation), `saturation`, `contrast`, `color_filter`, `temperature`,
   `tint`. `PostProcessVolume` (composant) : `global` ou boîte `size` + `blend_distance`, `weight`,

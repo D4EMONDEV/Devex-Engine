@@ -63,6 +63,28 @@ scale = vec3(1, 1, 1)
 size = vec3(2.5, 1, 2.5)
 albedo = asset("a0b10371-4bc1-4dc2-8fd8-ba5676e805fb")
 
+[entity uuid="8b2e4c71-5d3a-4f96-a0e8-1c7f9d2b6e43" name="Volumetric fog"]
+
+[component type="VolumetricFog"]
+density = 0.006
+anisotropy = 0.6
+ambient_inject = 0.5
+sky_affect = 0.3
+
+[entity uuid="c47a9e15-2b8d-4e63-91f0-6d3e8a5b2c19" name="Mist over the crates"]
+
+[component type="Transform"]
+position = vec3(0, 1, -1)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="FogVolume"]
+shape = "ellipsoid"
+size = vec3(10, 4, 8)
+density = 0.12
+height_falloff = 0.6
+edge_fade = 0.5
+
 [entity uuid="5f0b7d2e-9c41-4b8a-a3e6-2d71c84f9b10" name="Hills"]
 
 [component type="Transform"]

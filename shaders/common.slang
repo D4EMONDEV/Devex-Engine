@@ -10,6 +10,7 @@ public static const uint sunEnabled = 1;
 public static const uint sunCastsShadows = 2;
 public static const uint atmosphereAir = 1;
 public static const uint atmosphereFog = 2;
+public static const uint atmosphereVolumetricFog = 4;
 
 public struct Vertex
 {
@@ -47,6 +48,56 @@ public struct Material
     // numbers each.
     public uint parameterOffset;
 };
+
+// A volume adding or carving out fog (render::RenderFogVolume).
+public struct FogVolume
+{
+    // From the world into the volume: -1 to 1 along its axes.
+    public float4x4 worldToVolume;
+    public float3 albedo;
+    public float density;
+    public float3 emission;
+    public float heightFalloff;
+    // 0 a box, 1 an ellipsoid, 2 everywhere.
+    public uint shape;
+    public float edgeFade;
+    public float centerHeight;
+    public float padding;
+};
+
+// The fog filling the air around the camera, in froxels (render::RenderVolumetricFog).
+public struct VolumetricFog
+{
+    public float3 albedo;
+    public float density;
+    public float3 emission;
+    public float anisotropy;
+    public float length;
+    public float detailSpread;
+    public float skyAffect;
+    public float temporalAmount;
+    public uint width;
+    public uint height;
+    public uint depth;
+    public uint volumeCount;
+    public FogVolume* volumes;
+    public float jitter;
+    // How much the light of the sky lights the fog; skyAffect is how much the fog veils the sky.
+    public float ambientInject;
+};
+
+// The distance along the view of a point a share of the way through the froxels, from 0 at the
+// camera to 1 at the end of the fog: crowded near the camera by its detail spread.
+public float fogSliceDistance(VolumetricFog* fog, float share)
+{
+    return fog.length * pow(saturate(share), fog.detailSpread);
+}
+
+// The other way: how far through the froxels a distance along the view lies, from 0 to 1.
+public float fogSliceShare(VolumetricFog* fog, float distance)
+{
+    return pow(saturate(distance / fog.length), 1.0 / fog.detailSpread);
+}
 
 // The texture slot a decal does not have.
 public static const uint noDecalTexture = 0xFFFFFFFF;
@@ -252,6 +303,10 @@ public struct SceneData
     public uint* clusterDecals;
     public uint decalCount;
     public uint decalPadding;
+    // The volumetric fog, when atmosphereFlags has atmosphereVolumetricFog.
+    public VolumetricFog* volumetricFog;
+    // Two words rather than a 64-bit one, which would ask every shader for Int64.
+    public uint2 volumetricFogPadding;
 };
 
 // The depth buffer follows the jittered raster projection; tools and atmospheric tables use the
@@ -374,6 +429,10 @@ public Texture2D atmosphereTransmittance;
 public Texture2D skyViewTable;
 [[vk::binding(12, 0)]]
 public Texture2DArray aerialPerspective;
+// The volumetric fog integrated from the camera to the far end of each slice: the light it sends
+// towards the camera (rgb, in nits) and the share of what is behind it lets through (a).
+[[vk::binding(13, 0)]]
+public Texture2DArray volumetricFogTable;
 
 // Set 1: images produced earlier in the frame.
 [[vk::binding(0, 1)]]
@@ -649,6 +708,29 @@ public float3 fogLight(SceneData* scene, float3 direction)
 
 // What the air and the fog make of a surface: hazed by the distance, then hidden by the fog. Takes
 // and gives colours already exposed.
+// The volumetric fog between the camera and a point: what it lets through of the point, and the
+// light it sends towards the camera, read in the slice of the view the point lies in. Takes and gives
+// colours already exposed.
+public float3 applyVolumetricFog(SceneData* scene, float3 exposed, float3 position)
+{
+    VolumetricFog* fog = scene.volumetricFog;
+    const float4 clip = mul(scene.unjitteredViewProjection, float4(position, 1.0));
+    const float2 uv = clip.xy / max(clip.w, 1e-6) * 0.5 + 0.5;
+    const float distance = max(-mul(scene.view, float4(position, 1.0)).z, 0.0);
+    // Layer i holds the fog up to the far end of slice i; before the end of the first, it grows from
+    // nothing.
+    const float layer = fogSliceShare(fog, distance) * float(fog.depth) - 1.0;
+    const float lower = clamp(floor(layer), 0.0, float(fog.depth) - 1.0);
+    const float upper = min(lower + 1.0, float(fog.depth) - 1.0);
+    float4 integrated = lerp(volumetricFogTable.SampleLevel(clampSampler, float3(uv, lower), 0.0),
+                             volumetricFogTable.SampleLevel(clampSampler, float3(uv, upper), 0.0), saturate(layer - lower));
+    if (layer < 0.0)
+    {
+        integrated = lerp(float4(0.0, 0.0, 0.0, 1.0), integrated, saturate(layer + 1.0));
+    }
+    return exposed * integrated.a + integrated.rgb * scene.exposure;
+}
+
 public float3 applyAtmosphere(SceneData* scene, float3 exposed, float3 position)
 {
     if (scene.atmosphereFlags == 0)
@@ -667,6 +749,11 @@ public float3 applyAtmosphere(SceneData* scene, float3 exposed, float3 position)
         const float3 direction = offset / max(distance, 1e-4);
         const float opacity = fogOpacity(scene.atmosphere, scene.cameraPosition, direction, distance);
         color = lerp(color, fogLight(scene, direction) * scene.exposure, opacity);
+    }
+    // The volumetric fog lies nearest the camera: it veils the rest.
+    if ((scene.atmosphereFlags & atmosphereVolumetricFog) != 0)
+    {
+        color = applyVolumetricFog(scene, color, position);
     }
     return color;
 }
