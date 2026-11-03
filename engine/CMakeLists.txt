@@ -840,6 +840,8 @@ target_sources(devex_tools
         src/tools/TextureInspector.cpp
         src/tools/TerrainPainter.cpp
         src/tools/TilePainter.cpp
+        src/tools/TileAtlasPalette.cpp
+        src/tools/TileAtlasPalette.hpp
         src/tools/TilesetInspector.cpp
         src/tools/TileCollisionEditor.cpp
         src/tools/TileCollisionEditor.hpp

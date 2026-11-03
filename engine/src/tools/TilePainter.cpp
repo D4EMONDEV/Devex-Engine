@@ -1,4 +1,5 @@
 #include "InspectorUi.hpp"
+#include "TileAtlasPalette.hpp"
 
 #include <devex/scene/ComponentRegistry.hpp>
 #include <devex/scene/FieldValue.hpp>
@@ -283,8 +284,7 @@ struct TilePainterUi
     PanelButton path;
     scene::Entity message;
     scene::Entity hint;
-    std::unique_ptr<SpriteGrid> palette;
-    std::vector<std::uint32_t> tileIds;
+    TileAtlasPalette palette;
     std::unique_ptr<SpriteGrid> terrainPalette;
     // The colour of each terrain, under its tile.
     std::vector<scene::Entity> terrainColors;
@@ -326,7 +326,7 @@ void addTilePainter(InspectorUi& ui, EditorUiKit& kit, Section& section)
     painter->path = ui.action(kit, painter->joins, std::nullopt, "Path");
     ui.tooltip(painter->path.entity, "Each cell of a stroke joins only the one before it and the one after it: roads, rivers");
     painter->message = ui.note(&section, "", "dim", 2.0f);
-    ui.spriteGrid(kit, section, painter->palette, 0, std::round(ui.font * 2.6f), false);
+    painter->palette.build(ui, kit, section);
     ui.spriteGrid(kit, section, painter->terrainPalette, 0, std::round(ui.font * 2.6f), false);
     painter->hint = ui.note(&section, "", "dim", 3.0f);
     for (std::size_t i = firstLine + 1; i < section.lines.size(); ++i)
@@ -364,7 +364,6 @@ void syncTilePainter(InspectorUi& ui, ToolsState& state, EditorUiKit& kit, scene
 
     const std::shared_ptr<const asset::TilesetData> tileset = tilesetOf(state, *tilemap);
     const double seconds = state.input.time();
-    shown.tileIds.clear();
     shown.terrainIds.clear();
     if (!painter.terrains)
     {
@@ -373,7 +372,7 @@ void syncTilePainter(InspectorUi& ui, ToolsState& state, EditorUiKit& kit, scene
                                                             : !tiles           ? "The tileset has no tile yet: add some in its inspector."
                                                                                : "";
         ui.showLine(section, shown.message, !tiles);
-        ui.showLine(section, shown.palette->grid, tiles);
+        shown.palette.show(ui, section, tiles);
         ui.showLine(section, shown.terrainPalette->grid, false);
         if (tiles)
         {
@@ -381,17 +380,7 @@ void syncTilePainter(InspectorUi& ui, ToolsState& state, EditorUiKit& kit, scene
             {
                 painter.tile = tileset->tiles.front().id;
             }
-            ui.gridCells(*shown.palette, tileset->tiles.size(), false);
-            for (std::size_t index = 0; index < tileset->tiles.size(); ++index)
-            {
-                const asset::TileData& tile = tileset->tiles[index];
-                ui.showSprite(shown.palette->images[index], tile.spriteAt(seconds));
-                ui.scene().get<scene::UiRect>(shown.palette->cells[index]).style = tile.id == painter.tile ? "row_selected" : "row";
-                const asset::AssetInfo* const info = state.database != nullptr ? state.database->find(tile.sprite) : nullptr;
-                ui.tooltip(shown.palette->cells[index],
-                           std::format("Tile {}: {}", tile.id, info != nullptr ? info->name : std::string("(no sprite)")));
-                shown.tileIds.push_back(tile.id);
-            }
+            shown.palette.sync(ui, section, state, tileset, painter.tile);
         }
     }
     else
@@ -412,7 +401,7 @@ void syncTilePainter(InspectorUi& ui, ToolsState& state, EditorUiKit& kit, scene
             : !terrains        ? "The tileset has no terrain yet: add a terrain set in its inspector, then paint its terrains on the tiles."
                                : "";
         ui.showLine(section, shown.message, !terrains);
-        ui.showLine(section, shown.palette->grid, false);
+        shown.palette.show(ui, section, false);
         ui.showLine(section, shown.terrainPalette->grid, terrains);
         if (terrains)
         {
@@ -502,13 +491,10 @@ void answerTilePainter(InspectorUi& ui, ToolsState& state, Section& section)
             painter.tool = TileTool::Paint;
         }
     };
-    for (std::size_t index = 0; index < shown.tileIds.size() && index < shown.palette->cells.size(); ++index)
+    if (const auto tile = shown.palette.answer(ui, state))
     {
-        if (world.wasClicked(shown.palette->cells[index]))
-        {
-            painter.tile = shown.tileIds[index];
-            paintWith();
-        }
+        painter.tile = *tile;
+        paintWith();
     }
     for (std::size_t index = 0; index < shown.terrainIds.size() && index < shown.terrainPalette->cells.size(); ++index)
     {

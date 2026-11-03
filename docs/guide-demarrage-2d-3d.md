@@ -408,6 +408,21 @@ Le sol rectangulaire précédent suffit pour apprendre. Pour dessiner une carte 
 5. Créer une entité avec **Tilemap**, lui affecter le tileset, puis utiliser les outils de peinture de la vue 2D pour dessiner les cellules.
 6. Ajouter **TilemapCollider2D** à cette même entité pour rendre ces collisions actives. Laisser **Trigger** désactivé pour un sol solide.
 
+Dans **Tilemap > Paint > Tiles**, la palette montre la planche d'origine en une seule image,
+avec les tiles à leur emplacement exact, y compris les espaces inutilisés. Cliquer directement
+sur une tile pour la choisir, puis peindre dans la vue. Son contour bleu indique la sélection.
+
+- La **molette** zoome autour du pointeur ; les boutons **− / +** font aussi varier le zoom.
+- Un glissement avec le **bouton du milieu ou le bouton droit** déplace la planche.
+- **Fit** remet toute l'image dans le cadre ; **Grid** affiche des repères fins facultatifs.
+- Si le tileset utilise plusieurs images, **Source** permet de changer de planche.
+- La liste **Tile** identifie la sélection et permet de choisir des variantes qui partagent
+  le même rectangle, ou une tile dont le sprite n'est pas disponible.
+
+Les outils **Paint**, **Erase**, **Rectangle**, **Fill**, **Pick**, les retournements **Flip X/Y**
+et l'annulation fonctionnent avec cette palette. **Terrains** conserve son sélecteur de terrains.
+La planche reste fixe pendant la lecture des animations des tiles dans la carte.
+
 | Collision de la tile | Résultat |
 | --- | --- |
 | **None** | Décoration traversable |

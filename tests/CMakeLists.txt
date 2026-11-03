@@ -256,6 +256,7 @@ devex_add_tests(tools
         tools/InspectorTests.cpp
         tools/SettingsUiTests.cpp
         tools/TileCollisionEditorTests.cpp
+        tools/TileAtlasPaletteTests.cpp
         tools/ViewportSettingsTests.cpp
         tools/ScriptSettingsTests.cpp
         tools/ToolsOverlayTests.cpp

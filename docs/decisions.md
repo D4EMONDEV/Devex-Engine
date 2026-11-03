@@ -1061,6 +1061,31 @@ les assets s'écrivent au fil de leur lecture.
   de Project/Editor Settings à 800×600 et 1600×1000. Les poubelles utilisent un canevas SVG entier
   dans une cible plus grande, sans le second padding qui réduisait leur dessin.
 
+### Palette de peinture Tilemap dans l'inspecteur
+
+- La palette Tiles de Paint affiche une texture source entière et conserve les rectangles en
+  pixels des sprites. Elle ne compacte plus les tiles en vignettes séparées : les trous, les
+  marges et les pièces voisines d'une planche restent à leur place. Les sources multiples sont
+  séparées par une liste Source ; les variantes superposées et les sprites indisponibles restent
+  accessibles dans Tile. Une animation utilise une position stable sur la planche, sans déplacer
+  la sélection quand ses frames jouent dans la carte.
+- `TileAtlasPalette` garde le zoom centré sur le pointeur et borne le déplacement milieu/droit.
+  Fit rétablit la vue entière ; Grid ajoute seulement des repères facultatifs, sans boutons ni
+  fonds par tile. Le cadre capture la molette pour éviter de déplacer l'inspecteur en zoomant.
+  Les contours sont des UiLine au-dessus de l'image, lisibles même avec un intérieur transparent.
+- Le cache de sources suit le tileset et la révision des imports, avec une relance différée des
+  métadonnées indisponibles. Une seule image est dessinée par source ; les repères optionnels
+  ne sont créés que pour les régions visibles assez grandes. La résolution du clic respecte les
+  identifiants stables et les bords semi-ouverts ; en cas de recouvrement la plus petite région
+  est prioritaire. Les outils de peinture et leurs commandes d'annulation sont conservés.
+- Des tests vérifient les trous, l'ordre arbitraire des IDs, les sources multiples, variantes et
+  sprites absents, le zoom/pan, puis une régression GPU choisit une tile sur la planche, la peint
+  dans la scène et annule le trait.
+- Le cadre conserve UiButton pour être une cible de survol dans l'UI, mais ses couleurs de
+  survol/appui/désactivation sont blanches et son fadeTime nul. Les tints par défaut du bouton
+  faisaient varier le fond clair/foncé. Le style field garde son fond sans modifier ces couleurs
+  de bouton. La régression compare aussi ce fond pendant plusieurs clics.
+
 ### Sauvegardes et réglages du joueur
 
 - **Dossier du joueur** : ce que le joueur garde va dans `%APPDATA%\<jeu>` (le nom du projet ;

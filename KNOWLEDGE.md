@@ -2247,6 +2247,17 @@ namespace devex::ui {
   prochain attribut. `GameRuntime.DescribeType` échappe et transmet le nom au champ dynamique ;
   `DynamicField::group` est copié dans la réflexion. API native **37** pour cette extension de
   `DynamicField` ; aucune nouvelle case d'interop managée ni nouvelle version de scène.
+- Palette Tilemap (2026-11-03) : `tools/TileAtlasPalette` affiche la texture source entière dans
+  Paint > Tiles sans compacter ni déplacer ses sprites. Sélection par rectangles en pixels,
+  sources multiples, zoom à la molette centré sur le pointeur, déplacement milieu/droit, Fit et
+  repères Grid facultatifs. La liste Tile garde les variantes superposées et les sprites
+  indisponibles accessibles. Le cache suit le tileset et la révision de l'AssetDatabase ; les
+  sprites encore indisponibles sont retentés après 0,5 s. Une source est une seule image UI ;
+  seuls les contours de survol/sélection et les repères visibles ajoutent de la géométrie.
+  Le pinceau et son undo restent ceux de `TilePainter.cpp` ; Terrains n'est pas modifié.
+  Le cadre garde UiButton pour le hit-testing de l'UI, avec tous ses tints à blanc et fadeTime=0 :
+  aucun tint de survol/appui/focus ne change son fond au clic. Le style field ne redéfinit pas
+  les couleurs du bouton.
 - Réglages et Globals : fenêtres Editor/Project Settings agrandies avec navigation à icônes,
   recherche par mots, état vide et bouton Close. Le projet utilise les onglets General, Input Map,
   Localization, Globals ; seuls les réglages généraux gardent leur barre latérale. Le filtre des
