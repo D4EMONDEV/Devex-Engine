@@ -1,0 +1,1 @@
+[addon format=1 id="devex.scene-tools" name="Scene Tools" version="0.1.0" author="Devex" license="MIT" description="A reusable spinning cube and two undoable C# editor commands: create a cube and center the selection."]

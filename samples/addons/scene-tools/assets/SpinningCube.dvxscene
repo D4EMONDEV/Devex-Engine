@@ -1,0 +1,11 @@
+[scene format=1 kind="3d"]
+
+[entity uuid="11b8d14b-0480-4270-8617-e005c0faf338" name="Addon Cube"]
+[component type="Transform"]
+position = vec3(0, 0, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+[component type="AddonSpinner"]
+speed = 1
