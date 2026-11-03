@@ -2,6 +2,7 @@
 // and a card per action with its kind, its context and its bindings. A binding is chosen in the event
 // window, which listens for the next key or gamepad button pressed and lists every key, button, axis
 // and stick by device, with a filter.
+#include "FileSearch.hpp"
 #include "SettingsUi.hpp"
 
 #include <devex/platform/InputSource.hpp>
@@ -138,7 +139,7 @@ void openEventDialog(ProjectSettingsUi& ui, ToolsState& state, EditorUiKit& kit,
     map.directions.assign(allowed.begin(), allowed.end());
     ui.scene().get<scene::UiText>(map.dialogTitle).text =
         std::format("{} of {}", existing ? "Binding" : "New binding", action.name.empty() ? "(unnamed)" : action.name);
-    ui.scene().get<scene::UiText>(map.search).text.clear();
+    ui.scene().get<scene::UiText>(map.eventSearch).text.clear();
     map.lastSearch.clear();
     ui.scene().get<scene::UiScroll>(map.sourceScroll).offset = math::Vec2{0.0f};
 
@@ -202,7 +203,7 @@ void syncEventDialog(ProjectSettingsUi& ui, ToolsState& state)
     scene.get<UiRect>(map.listen).style = map.listening ? "row_selected" : "row";
 
     // The list keeps what holds the filter, and the titles of the devices that keep something.
-    const std::string& wanted = scene.get<scene::UiText>(map.search).text;
+    const std::string& wanted = scene.get<scene::UiText>(map.eventSearch).text;
     if (wanted != map.lastSearch)
     {
         map.lastSearch = wanted;
@@ -272,7 +273,7 @@ void answerEventDialog(ProjectSettingsUi& ui, ToolsState& state)
         return;
     }
     // Typing a filter is not a binding.
-    if (world.editedField() == map.search)
+    if (world.editedField() == map.eventSearch)
     {
         map.listening = false;
     }
@@ -360,50 +361,49 @@ void buildInputMap(ProjectSettingsUi& ui, EditorUiKit& kit, std::size_t page)
     map.contexts.clear();
     map.actions.clear();
     const asset::InputSettings& input = ui.project.input;
-    const float tool = ui.line - 6.0f;
+    const float tool = ui.closeButtonSize();
 
     Section& intro = ui.pageCard(kit, page, "Input Map");
-    ui.note(&intro,
-            "Games read actions rather than keys: Input.IsActionDown(\"Jump\") in C#, context.actions->isDown(\"Jump\") in C++. "
-            "Players may bind them to other keys, which the game keeps for them.",
-            "dim", 3.0f);
-    ui.note(&intro, "Changes apply the next time the game starts.");
-    map.addAction = ui.action(kit, ui.actions(&intro), Icon::Plus, "Add Action");
-
-    Section& contexts = ui.pageCard(kit, page, "Contexts");
-    ui.note(&contexts, "Game code turns contexts on and off; the actions of one that is off read as released.", "dim", 2.0f);
-    const float box = std::round(ui.font * 1.3f);
-    const float word = kit.textWidth(EditorUiKit::regularFont(), "Active at start", ui.font) + 4.0f;
-    const float right = tool + ui.font * 0.6f + box + ui.font * 0.4f + word;
-    for (std::size_t index = 0; index < input.contexts.size(); ++index)
-    {
-        const FormRow row = ui.formRow(contexts, std::format("Context {}", index + 1));
-        InputMapUi::Context made;
-        made.name = ui.field(row.editor, UiRect{.anchorMin = {0.0f, 0.0f}, .anchorMax = {1.0f, 1.0f}, .offsetMin = {0.0f, 0.0f},
-                                                .offsetMax = {-right - ui.font * 0.4f, 0.0f}},
-                             "", "name");
-        made.active = ui.add(row.editor, "Active",
-                             UiRect{.anchorMin = {1.0f, 0.5f}, .anchorMax = {1.0f, 0.5f}, .offsetMin = {-right, -box * 0.5f}, .offsetMax = {-right + box, box * 0.5f}},
-                             "toggle");
-        ui.scene().add<scene::UiImage>(made.active);
-        ui.scene().add<scene::UiToggle>(made.active);
-        ui.scene().add<scene::UiButton>(made.active);
-        ui.tooltip(made.active, "Whether the actions of the context are read when the game starts");
-        ui.text(row.editor, UiRect{.anchorMin = {1.0f, 0.0f}, .anchorMax = {1.0f, 1.0f}, .offsetMin = {-right + box + ui.font * 0.4f, 0.0f},
-                                   .offsetMax = {-tool - ui.font * 0.6f, 0.0f}},
-                "Active at start", "dim");
-        made.remove = ui.toolButton(kit, row.editor, Icon::Trash, rightButton(tool, 0.0f));
-        ui.tooltip(made.remove.entity, "Remove this context: its actions are then always read");
-        map.contexts.push_back(made);
-    }
-    map.addContext = ui.action(kit, ui.actions(&contexts), Icon::Plus, "Add Context");
+    ui.note(&intro, "Create named actions, then bind keys, mouse buttons or gamepad controls.",
+            "dim", 2);
+    const auto filterRow = ui.formRow(intro, "Find Action");
+    map.search = ui.searchField(kit, filterRow.editor, whole(), map.actionQuery,
+                                "Filter by action or input...");
+    const auto newRow = ui.formRow(intro, "New Action");
+    map.newAction = ui.field(newRow.editor,
+                             UiRect{.anchorMin = {0, 0},
+                                    .anchorMax = {1, 1},
+                                    .offsetMin = {0, 0},
+                                    .offsetMax = {-ui.font * 9 - ui.gap, 0}},
+                             "", "Action name");
+    map.addAction =
+        ui.button(kit, newRow.editor, Icon::Plus, "Add", "primary", ui.font * 9, ui.line - 4);
+    placeRight(ui.scene(), map.addAction.entity, 0, ui.font * 9);
+    map.empty = ui.note(&intro, "No actions yet. Add one above to begin.", "dim", 2);
 
     const float directionWidth = std::round(ui.font * 7.5f);
     for (const asset::InputAction& action : input.actions)
     {
         InputMapUi::Action made;
         made.card = ui.sections.size();
-        Section& card = ui.pageCard(kit, page, action.name.empty() ? std::string("(unnamed)") : action.name);
+        const std::string title = action.name.empty() ? std::string("(unnamed)") : action.name;
+        Section& card = ui.pageCard(kit, page, "Input/" + title);
+        ui.scene().get<scene::UiText>(card.title).text = title;
+        if (map.knownActions.insert(card.name).second)
+            ui.folded.insert(card.name);
+        made.add = ui.toolButton(kit, card.header, Icon::Plus, rightButton(tool, tool + ui.gap));
+        made.remove = ui.toolButton(kit, card.header, Icon::Trash, rightButton(tool, 0));
+        ui.tooltip(made.add.entity, "Add a binding to this action");
+        ui.tooltip(made.remove.entity, "Remove this action and its bindings");
+        const float summaryWidth = ui.font * 15;
+        made.summary = ui.text(card.header,
+                               UiRect{.anchorMin = {1, 0},
+                                      .anchorMax = {1, 1},
+                                      .offsetMin = {-tool * 2 - ui.gap * 3 - summaryWidth, 0},
+                                      .offsetMax = {-tool * 2 - ui.gap * 3, 0}},
+                               "", "dim", false, scene::TextAlign::Right);
+        ui.scene().get<UiRect>(card.title).offsetMax.x = -tool * 2 - ui.gap * 4 - summaryWidth;
+        ui.addGroup(card, "Properties");
         made.name = ui.textField(ui.formRow(card, "Name").editor, "name");
         made.warning = ui.note(&card, "", "warning");
         const FormRow kindRow = ui.formRow(card, "Kind");
@@ -419,6 +419,7 @@ void buildInputMap(ProjectSettingsUi& ui, EditorUiKit& kit, std::size_t page)
             made.deadZone = ui.numbers(deadRow.editor, singleNumber, {.minValue = 0.0f, .maxValue = 0.9f, .dragSpeed = 0.005f, .decimals = 2}).front();
             ui.tooltip(deadRow.row, "Below this, the action reads zero; gamepads already ignore small moves of their sticks");
         }
+        ui.addGroup(card, "Bindings");
         for (std::size_t index = 0; index < action.bindings.size(); ++index)
         {
             const FormRow row = ui.formRow(card, "Binding");
@@ -440,9 +441,55 @@ void buildInputMap(ProjectSettingsUi& ui, EditorUiKit& kit, std::size_t page)
             made.bindings.push_back(binding);
         }
         const Entity line = ui.actions(&card);
-        made.add = ui.action(kit, line, Icon::Plus, "Add Binding");
-        made.remove = ui.action(kit, line, Icon::Trash, "Remove Action");
+        const auto add = ui.action(kit, line, Icon::Plus, "Add Binding");
+        // Both the collapsed header and the expanded list can add a binding.
+        ui.scene().setName(add.entity, "Additional Binding");
+        made.addExpanded = add;
         map.actions.push_back(std::move(made));
+    }
+    Section& contexts = ui.pageCard(kit, page, "Input Contexts");
+    ui.note(&contexts,
+            "Game code turns contexts on and off; the actions of one that is off read as released.",
+            "dim", 2.0f);
+    const float box = std::round(ui.font * 1.3f);
+    const float word = kit.textWidth(EditorUiKit::regularFont(), "Active at start", ui.font) + 4.0f;
+    const float right = tool + ui.font * 0.6f + box + ui.font * 0.4f + word;
+    for (std::size_t index = 0; index < input.contexts.size(); ++index)
+    {
+        const FormRow row = ui.formRow(contexts, std::format("Context {}", index + 1));
+        InputMapUi::Context made;
+        made.name = ui.field(row.editor,
+                             UiRect{.anchorMin = {0.0f, 0.0f},
+                                    .anchorMax = {1.0f, 1.0f},
+                                    .offsetMin = {0.0f, 0.0f},
+                                    .offsetMax = {-right - ui.font * 0.4f, 0.0f}},
+                             "", "name");
+        made.active = ui.add(row.editor, "Active",
+                             UiRect{.anchorMin = {1.0f, 0.5f},
+                                    .anchorMax = {1.0f, 0.5f},
+                                    .offsetMin = {-right, -box * 0.5f},
+                                    .offsetMax = {-right + box, box * 0.5f}},
+                             "toggle");
+        ui.scene().add<scene::UiImage>(made.active);
+        ui.scene().add<scene::UiToggle>(made.active);
+        ui.scene().add<scene::UiButton>(made.active);
+        ui.tooltip(made.active, "Whether the actions of the context are read when the game starts");
+        ui.text(row.editor,
+                UiRect{.anchorMin = {1.0f, 0.0f},
+                       .anchorMax = {1.0f, 1.0f},
+                       .offsetMin = {-right + box + ui.font * 0.4f, 0.0f},
+                       .offsetMax = {-tool - ui.font * 0.6f, 0.0f}},
+                "Active at start", "dim");
+        made.remove = ui.toolButton(kit, row.editor, Icon::Trash, rightButton(tool, 0.0f));
+        ui.tooltip(made.remove.entity, "Remove this context: its actions are then always read");
+        map.contexts.push_back(made);
+    }
+    map.addContext = ui.action(kit, ui.actions(&contexts), Icon::Plus, "Add Context");
+
+    if (!map.contextsInitialized)
+    {
+        ui.folded.insert("Input Contexts");
+        map.contextsInitialized = true;
     }
 }
 
@@ -460,7 +507,8 @@ void buildEventDialog(ProjectSettingsUi& ui, EditorUiKit& kit)
     ui.scene().add<scene::UiButton>(map.listen);
     ui.tooltip(map.listen, "While it is lit, the next key or gamepad button pressed is the binding; Esc gives up");
     map.listenText = ui.text(map.listen, whole(math::Vec4{ui.font * 0.8f, 0.0f, ui.font * 0.8f, 0.0f}), "", "text", false, scene::TextAlign::Center);
-    map.search = ui.searchField(kit, map.dialog, wide(ui.line), "", "Filter the keys, buttons and axes");
+    map.eventSearch =
+        ui.searchField(kit, map.dialog, wide(ui.line), "", "Filter the keys, buttons and axes");
     const float buttons = ui.font * 2.0f;
     const float listHeight = size.y - padding * 2.0f - ui.line * 3.0f - listenHeight - buttons - spacing * 5.0f;
     map.sourceScroll = ui.add(map.dialog, "Sources", wide(listHeight), "list");
@@ -540,8 +588,51 @@ void syncInputMap(ProjectSettingsUi& ui, ToolsState& state, EditorUiKit& kit)
             }
         }
         ui.scene().get<scene::UiText>(card.title).text = action.name.empty() ? std::string("(unnamed)") : action.name;
+        ui.scene().get<scene::UiText>(made.summary).text = std::format(
+            "{}  ·  {} {}", kindNames[static_cast<std::size_t>(action.kind)],
+            action.bindings.size(), action.bindings.size() == 1 ? "binding" : "bindings");
     }
+    const auto& proposed = ui.scene().get<scene::UiText>(map.newAction).text;
+    ui.enable(map.addAction,
+              !proposed.empty() && std::ranges::none_of(input.actions, [&](const auto& action)
+                                                        { return action.name == proposed; }));
     syncEventDialog(ui, state);
+}
+
+void filterInputMap(ProjectSettingsUi& ui)
+{
+    auto& map = ui.input;
+    map.actionQuery = ui.scene().get<scene::UiText>(map.search).text;
+    const bool filtering = map.actionQuery.find_first_not_of(" \t\r\n") != std::string::npos;
+    const bool settingsFilter = ui.scene().get<scene::UiText>(ui.filter).text.find_first_not_of(
+                                    " \t\r\n") != std::string::npos;
+    if (settingsFilter)
+        return;
+    ui.revealFiltered = filtering && ui.selected == 6;
+    std::size_t matches = 0;
+    for (std::size_t i = 0; i < map.actions.size(); ++i)
+    {
+        const auto& made = map.actions[i];
+        const auto& action = ui.project.input.actions[i];
+        bool match = true;
+        if (filtering)
+        {
+            std::string terms = action.name + " " + action.context;
+            for (const auto& binding : made.bindings)
+                terms += " " + ui.scene().get<scene::UiText>(binding.input.label).text;
+            match = matchesFileSearch(terms, map.actionQuery);
+        }
+        auto& card = ui.sections[made.card];
+        card.hidden = ui.selected != 6 || !match;
+        matches += match ? 1 : 0;
+    }
+    auto& label = ui.scene().get<scene::UiText>(map.empty);
+    label.text =
+        filtering ? "No actions match this filter." : "No actions yet. Add one above to begin.";
+    for (auto& section : ui.sections)
+        for (auto& line : section.lines)
+            if (line.entity == map.empty)
+                line.shown = matches == 0;
 }
 
 void answerInputMap(ProjectSettingsUi& ui, ToolsState& state, EditorUiKit& kit)
@@ -651,7 +742,7 @@ void answerInputMap(ProjectSettingsUi& ui, ToolsState& state, EditorUiKit& kit)
         {
             action.bindings.erase(action.bindings.begin() + static_cast<std::ptrdiff_t>(*removedBinding));
         }
-        if (world.wasClicked(made.add.entity))
+        if (world.wasClicked(made.add.entity) || world.wasClicked(made.addExpanded.entity))
         {
             opened = EventTarget{.action = index, .binding = action.bindings.size()};
         }
@@ -665,12 +756,19 @@ void answerInputMap(ProjectSettingsUi& ui, ToolsState& state, EditorUiKit& kit)
         input.actions.erase(input.actions.begin() + static_cast<std::ptrdiff_t>(*removedAction));
         opened.reset();
     }
-    if (world.wasClicked(map.addAction.entity))
+    if (world.wasClicked(map.addAction.entity) ||
+        (ui.endedField == map.newAction && state.input.pressed(platform::Key::Enter, false)))
     {
-        input.actions.push_back({
-            .name = std::format("Action {}", input.actions.size() + 1),
-            .context = input.contexts.empty() ? std::string() : input.contexts.front().name,
-        });
+        const auto name = ui.scene().get<scene::UiText>(map.newAction).text;
+        if (!name.empty() && std::ranges::none_of(input.actions, [&](const auto& action)
+                                                  { return action.name == name; }))
+        {
+            input.actions.push_back(
+                {.name = name,
+                 .context = input.contexts.empty() ? std::string() : input.contexts.front().name});
+            map.knownActions.insert("Input/" + name);
+            ui.folded.erase("Input/" + name);
+        }
     }
     answerEventDialog(ui, state);
     if (opened)

@@ -3,11 +3,14 @@
 #include <devex/audio/Clip.hpp>
 #include <devex/core/Uuid.hpp>
 #include <devex/runtime/Application.hpp>
+#include <devex/runtime/Globals.hpp>
 #include <devex/scene/AudioComponents.hpp>
 #include <devex/scene/Components.hpp>
+#include <devex/scene/PhysicsComponents.hpp>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include <cmath>
 #include <cstdint>
@@ -22,7 +25,8 @@ using devex::core::Duration;
 using devex::core::Result;
 using devex::runtime::ApplicationConfig;
 
-namespace {
+namespace
+{
 
 const ApplicationConfig testConfig{
     .title = "Devex tests",
@@ -36,7 +40,7 @@ const ApplicationConfig testConfig{
 // Counts lifecycle calls and quits after a few frames.
 class CountingApplication final : public devex::runtime::Application
 {
-public:
+  public:
     int startups = 0;
     int updates = 0;
     int shutdowns = 0;
@@ -58,15 +62,12 @@ public:
         }
     }
 
-    void onShutdown() override
-    {
-        ++shutdowns;
-    }
+    void onShutdown() override { ++shutdowns; }
 };
 
 class FailingApplication final : public devex::runtime::Application
 {
-public:
+  public:
     int updates = 0;
     int shutdowns = 0;
 
@@ -75,15 +76,9 @@ public:
         return devex::core::makeError(devex::core::ErrorCode::InvalidState, "startup refused");
     }
 
-    void onUpdate(Duration /*frameDelta*/) override
-    {
-        ++updates;
-    }
+    void onUpdate(Duration /*frameDelta*/) override { ++updates; }
 
-    void onShutdown() override
-    {
-        ++shutdowns;
-    }
+    void onShutdown() override { ++shutdowns; }
 };
 
 } // namespace
@@ -91,7 +86,7 @@ public:
 // Checks that the runtime updates scene transforms between onUpdate calls.
 class SceneApplication final : public devex::runtime::Application
 {
-public:
+  public:
     bool worldTransformUpdated = false;
 
     Result<void> onStartup() override
@@ -114,7 +109,7 @@ public:
         }
     }
 
-private:
+  private:
     devex::scene::Entity m_entity;
     int m_updates = 0;
 };
@@ -150,14 +145,17 @@ TEST_CASE("A failed startup stops before the first frame", "[runtime][applicatio
     CHECK(application.shutdowns == 0);
 }
 
-namespace {
+namespace
+{
 
 // Plays the scenes of a package: the first one at startup, the second one after a frame.
 class PackagedApplication final : public devex::runtime::Application
 {
-public:
+  public:
     devex::asset::AssetId first;
     devex::asset::AssetId second;
+    devex::asset::AssetId global;
+    bool globalSurvived = false;
     std::string gameName;
     bool windowFollowedSettings = false;
     std::string startupEntity;
@@ -168,7 +166,8 @@ public:
         const devex::asset::AssetSource* const source = assetSource();
         if (source == nullptr || project() == nullptr || assetDatabase() != nullptr)
         {
-            return devex::core::makeError(devex::core::ErrorCode::InvalidState, "the package is not the asset source");
+            return devex::core::makeError(devex::core::ErrorCode::InvalidState,
+                                          "the package is not the asset source");
         }
         gameName = project()->name;
         windowFollowedSettings = window().size() == devex::math::Extent2D{400, 300};
@@ -184,9 +183,32 @@ public:
     {
         if (++m_updates == 1)
         {
+            const auto state = devex::runtime::findGlobal(scene(), "State");
+            if (global.isValid())
+            {
+                REQUIRE(state.isValid());
+                scene().get<devex::scene::Transform>(state).position.x = 123;
+                const auto obstacle = scene().createEntity("Old level obstacle");
+                scene().add<devex::scene::Transform>(obstacle);
+                scene().add<devex::scene::BoxCollider>(obstacle);
+                scene().updateTransforms();
+                REQUIRE(physics() != nullptr);
+                physics()->step(scene(), Duration(1.0 / 60.0));
+                REQUIRE(physics()->raycast({0, 2, 0}, {0, -1, 0}, 4).has_value());
+            }
             if (loadScene(second))
             {
-                loadedEntity = scene().name(scene().firstRoot());
+                const auto next = global.isValid() ? scene().nextSibling(scene().firstRoot())
+                                                   : scene().firstRoot();
+                loadedEntity = scene().name(next);
+                if (global.isValid())
+                {
+                    globalSurvived = scene().isAlive(state) &&
+                                     devex::runtime::findGlobal(scene(), "State") == state &&
+                                     scene().get<devex::scene::Transform>(state).position.x == 123;
+                    REQUIRE(physics() != nullptr);
+                    CHECK_FALSE(physics()->raycast({0, 2, 0}, {0, -1, 0}, 4).has_value());
+                }
             }
             CHECK_FALSE(loadScene(devex::asset::AssetId::generate()).has_value());
         }
@@ -196,13 +218,14 @@ public:
         }
     }
 
-private:
+  private:
     int m_updates = 0;
 };
 
 [[nodiscard]] std::string sceneWithEntity(std::string_view name)
 {
-    return std::format("[scene format=1]\n\n[entity uuid=\"{}\" name=\"{}\"]\n", devex::core::Uuid::generate(), name);
+    return std::format("[scene format=1]\n\n[entity uuid=\"{}\" name=\"{}\"]\n",
+                       devex::core::Uuid::generate(), name);
 }
 
 } // namespace
@@ -210,23 +233,44 @@ private:
 TEST_CASE("Exported games play the scenes of their package", "[runtime][application]")
 {
     const std::filesystem::path directory =
-        std::filesystem::temp_directory_path() / ("devex-packaged-" + devex::core::Uuid::generate().toString());
+        std::filesystem::temp_directory_path() /
+        ("devex-packaged-" + devex::core::Uuid::generate().toString());
     PackagedApplication application;
     application.first = devex::asset::AssetId::generate();
     application.second = devex::asset::AssetId::generate();
+    const bool withGlobals = GENERATE(false, true);
+    if (withGlobals)
+        application.global = devex::asset::AssetId::generate();
     {
-        devex::core::Result<devex::asset::PackageWriter> writer = devex::asset::PackageWriter::create(directory / "Game.dvxpak");
+        devex::core::Result<devex::asset::PackageWriter> writer =
+            devex::asset::PackageWriter::create(directory / "Game.dvxpak");
         REQUIRE(writer.has_value());
         devex::asset::Project settings{.name = "Packaged game"};
         settings.window.width = 400;
         settings.window.height = 300;
+        if (withGlobals)
+            settings.globals.push_back({"State", "res://assets/State.dvxscene"});
         writer->setProject(settings);
-        REQUIRE(writer->add({.id = application.first, .type = devex::asset::AssetType::Scene, .name = "first",
+        REQUIRE(writer->add({.id = application.first,
+                             .type = devex::asset::AssetType::Scene,
+                             .name = "first",
                              .source = application.first},
-                            "res://assets/first.dvxscene", devex::asset::encodeScene(sceneWithEntity("Start"))));
-        REQUIRE(writer->add({.id = application.second, .type = devex::asset::AssetType::Scene, .name = "second",
+                            "res://assets/first.dvxscene",
+                            devex::asset::encodeScene(sceneWithEntity("Start"))));
+        REQUIRE(writer->add({.id = application.second,
+                             .type = devex::asset::AssetType::Scene,
+                             .name = "second",
                              .source = application.second},
-                            "res://assets/second.dvxscene", devex::asset::encodeScene(sceneWithEntity("Next"))));
+                            "res://assets/second.dvxscene",
+                            devex::asset::encodeScene(sceneWithEntity("Next"))));
+        if (withGlobals)
+            REQUIRE(writer->add({.id = application.global,
+                                 .type = devex::asset::AssetType::Scene,
+                                 .name = "State",
+                                 .source = application.global},
+                                "res://assets/State.dvxscene",
+                                devex::asset::encodeScene(sceneWithEntity("Shared State") +
+                                                          "[component type=\"Transform\"]\n")));
         REQUIRE(writer->finish());
     }
 
@@ -238,6 +282,8 @@ TEST_CASE("Exported games play the scenes of their package", "[runtime][applicat
     CHECK(application.windowFollowedSettings);
     CHECK(application.startupEntity == "Start");
     CHECK(application.loadedEntity == "Next");
+    if (withGlobals)
+        CHECK(application.globalSurvived);
 
     config.package = directory / "Missing.dvxpak";
     PackagedApplication missing;
@@ -255,7 +301,8 @@ TEST_CASE("An application can run again after a previous run", "[runtime][applic
     CHECK(second.updates == 3);
 }
 
-namespace {
+namespace
+{
 
 // Half a second of a 440 Hz sine, as a 16-bit mono WAV file.
 [[nodiscard]] std::vector<std::byte> sineWav()
@@ -263,7 +310,8 @@ namespace {
     constexpr std::uint32_t rate = 22050;
     constexpr std::uint32_t frames = rate / 2;
     std::vector<std::byte> file;
-    const auto put = [&](const void* data, std::size_t size) {
+    const auto put = [&](const void* data, std::size_t size)
+    {
         const auto* const bytes = static_cast<const std::byte*>(data);
         file.insert(file.end(), bytes, bytes + size);
     };
@@ -292,7 +340,7 @@ namespace {
 // Plays a looping sound from startup, then looks at the sounds of the game.
 class SoundApplication final : public devex::runtime::Application
 {
-public:
+  public:
     devex::asset::AssetId clip;
     bool hadAudio = false;
     bool playing = false;
@@ -306,7 +354,8 @@ public:
         m_speaker = scene().createEntity("Speaker");
         scene().add<devex::scene::Transform>(m_speaker);
         scene().add<devex::scene::AudioSource>(
-            m_speaker, devex::scene::AudioSource{.clip = clip, .loop = true, .spatial = false, .group = 1});
+            m_speaker,
+            devex::scene::AudioSource{.clip = clip, .loop = true, .spatial = false, .group = 1});
         return {};
     }
 
@@ -330,21 +379,24 @@ public:
         requestQuit();
     }
 
-private:
+  private:
     devex::scene::Entity m_speaker;
     int m_updates = 0;
 };
 
 } // namespace
 
-TEST_CASE("Games play the sounds of their scene with the audio settings of the project", "[runtime][application][audio]")
+TEST_CASE("Games play the sounds of their scene with the audio settings of the project",
+          "[runtime][application][audio]")
 {
     const std::filesystem::path directory =
-        std::filesystem::temp_directory_path() / ("devex-sound-" + devex::core::Uuid::generate().toString());
+        std::filesystem::temp_directory_path() /
+        ("devex-sound-" + devex::core::Uuid::generate().toString());
     SoundApplication application;
     application.clip = devex::asset::AssetId::generate();
     {
-        devex::core::Result<devex::asset::PackageWriter> writer = devex::asset::PackageWriter::create(directory / "Game.dvxpak");
+        devex::core::Result<devex::asset::PackageWriter> writer =
+            devex::asset::PackageWriter::create(directory / "Game.dvxpak");
         REQUIRE(writer.has_value());
         devex::asset::Project settings{.name = "Sound game"};
         settings.audio.masterVolume = 0.8f;
@@ -363,7 +415,9 @@ TEST_CASE("Games play the sounds of their scene with the audio settings of the p
             .waveform = info->waveform,
             .encoded = std::move(wav),
         };
-        REQUIRE(writer->add({.id = application.clip, .type = devex::asset::AssetType::AudioClip, .name = "tone",
+        REQUIRE(writer->add({.id = application.clip,
+                             .type = devex::asset::AssetType::AudioClip,
+                             .name = "tone",
                              .source = application.clip},
                             "res://assets/tone.wav", devex::asset::encodeAudioClip(clip)));
         REQUIRE(writer->finish());

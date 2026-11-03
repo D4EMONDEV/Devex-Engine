@@ -5,6 +5,7 @@
 #include "SettingsUi.hpp"
 
 #include "EditorModal.hpp"
+#include "FileSearch.hpp"
 
 #include <devex/asset/TranslationData.hpp>
 #include <devex/core/Profiler.hpp>
@@ -20,6 +21,7 @@
 #include <format>
 #include <numbers>
 #include <string>
+#include <unordered_map>
 #include <utility>
 
 namespace devex::tools::detail {
@@ -38,8 +40,9 @@ constexpr std::array<std::string_view, 5> editorPages{"Theme", "Display", "Viewp
 constexpr std::size_t viewportPage = 2;
 constexpr std::size_t scriptsPage = 3;
 constexpr std::size_t compilationPage = 4;
-constexpr std::array<std::string_view, 8> projectPages{"Application",    "Window", "Physics",   "Collision Layers",
-                                                       "Sorting Layers", "Audio",  "Input Map", "Localization"};
+constexpr std::array<std::string_view, 9> projectPages{
+    "Application", "Window",    "Physics",      "Collision Layers", "Sorting Layers",
+    "Audio",       "Input Map", "Localization", "Globals"};
 
 [[nodiscard]] math::Vec4 linearOf(math::Vec3 srgb)
 {
@@ -56,9 +59,10 @@ constexpr std::array<std::string_view, 8> projectPages{"Application",    "Window
 // Whether the settings the window edits differ between two states of the project.
 [[nodiscard]] bool differs(const asset::Project& first, const asset::Project& second)
 {
-    return first.name != second.name || first.startupScene != second.startupScene || first.physics != second.physics ||
-           first.window != second.window || first.audio != second.audio || first.input != second.input ||
-           first.sorting != second.sorting;
+    return first.name != second.name || first.startupScene != second.startupScene ||
+           first.physics != second.physics || first.window != second.window ||
+           first.audio != second.audio || first.input != second.input ||
+           first.sorting != second.sorting || first.globals != second.globals;
 }
 
 } // namespace
@@ -176,7 +180,10 @@ void SettingsUi::clearAll()
     formRows.clear();
     grids.clear();
     pageEntities.clear();
-    top = filter = list = scroll = content = Entity{};
+    top = filter = list = scroll = content = sidebar = heading = noMatches = Entity{};
+    tabs.clear();
+    closeRequested = false;
+    filterDirty = true;
     colorPopup = picker = hexField = channelRow = Entity{};
     channels = {};
     editingField = endedField = Entity{};
@@ -184,35 +191,114 @@ void SettingsUi::clearAll()
     signature.clear();
 }
 
+void SettingsUi::setFont(float size) noexcept
+{
+    FormUi::setFont(size);
+    line = std::round(font * 2.0f);
+    headerHeight = std::round(font * 2.25f);
+}
+
 void SettingsUi::buildFrame(EditorUiKit& kit, std::span<const std::string_view> names)
 {
     built = true;
     builtFont = font;
-    const float margin = std::round(font * 0.6f);
-    const float listWidth = std::round(font * 11.0f);
-    const float below = margin * 2.0f + line;
+    projectTabs = names.size() == projectPages.size();
+    filterDirty = true;
+    const float margin = std::round(font * 0.8f);
+    const float listWidth = std::round(font * 14.0f);
+    const float tabsHeight = projectTabs ? line + margin : 0;
+    const float below = margin * 2 + line + tabsHeight;
+    const float footerHeight = line + margin * 2;
     const Entity root = add({}, "Settings", whole());
-    top = add(root, "Top", UiRect{.anchorMin = {0.0f, 0.0f}, .anchorMax = {1.0f, 0.0f}, .offsetMin = {margin, margin}, .offsetMax = {-margin, margin + line}});
-    filter = searchField(kit, top, UiRect{.anchorMin = {0.0f, 0.0f}, .anchorMax = {0.0f, 1.0f}, .offsetMin = {0.0f, 0.0f}, .offsetMax = {font * 18.0f, 0.0f}},
-                         "", "Filter Settings");
-    tooltip(filter, "Finds a setting by its name, in every section");
-    list = add(root, "Sections",
-               UiRect{.anchorMin = {0.0f, 0.0f}, .anchorMax = {0.0f, 1.0f}, .offsetMin = {margin, below}, .offsetMax = {margin + listWidth, -margin}},
-               "list");
-    scene().add<scene::UiImage>(list);
-    scene().add<scene::UiLayout>(list, scene::UiLayout{.kind = scene::UiLayoutKind::Column,
-                                                       .spacing = 2.0f,
-                                                       .padding = math::Vec4{font * 0.3f},
-                                                       .align = scene::TextAlign::Left});
-    for (const std::string_view name : names)
+    if (projectTabs)
     {
-        pages.push_back(Page{.name = std::string(name),
-                             .button = button(kit, list, std::nullopt, name, "row", -1.0f, std::round(font * 1.9f), scene::TextAlign::Left)});
+        const auto strip = add(root, "Project Sections",
+                               UiRect{.anchorMin = {0, 0},
+                                      .anchorMax = {1, 0},
+                                      .offsetMin = {margin, margin},
+                                      .offsetMax = {-margin, margin + line}});
+        scene().add<scene::UiLayout>(strip, scene::UiLayout{.kind = scene::UiLayoutKind::Row,
+                                                            .spacing = gap,
+                                                            .align = scene::TextAlign::Left});
+        static constexpr std::array titles{"General", "Input Map", "Localization", "Globals"};
+        static constexpr std::array icons{Icon::Settings, Icon::Keyboard, Icon::Languages,
+                                          Icon::Globe};
+        tabs.clear();
+        for (std::size_t i = 0; i < titles.size(); ++i)
+            tabs.push_back(button(kit, strip, icons[i], titles[i], "flat", 0, line));
     }
-    buildForm(root, UiRect{.anchorMin = {0.0f, 0.0f}, .anchorMax = {1.0f, 1.0f}, .offsetMin = {margin + listWidth + font * 0.3f, below - font * 0.3f},
-                           .offsetMax = {-font * 0.1f, 0.0f}});
+    top = add(root, "Top",
+              UiRect{.anchorMin = {0, 0},
+                     .anchorMax = {1, 0},
+                     .offsetMin = {margin, margin + tabsHeight},
+                     .offsetMax = {-margin, margin + tabsHeight + line}});
+    filter = searchField(kit, top,
+                         UiRect{.anchorMin = {0, 0},
+                                .anchorMax = {1, 1},
+                                .offsetMin = {0, 0},
+                                .offsetMax = {projectTabs ? 0 : -font * 16, 0}},
+                         "", "Filter Settings");
+    tooltip(filter, "Search every category by words in a setting or section name");
+    clearSearch = toolButton(kit, filter, Icon::Close, rightButton(closeButtonSize(), 0));
+    tooltip(clearSearch.entity, "Clear the settings filter");
+    scene().get<scene::UiInput>(filter).padding.x = font * 1.9f;
+    sidebar = add(root, "Sections Scroll",
+                  UiRect{.anchorMin = {0, 0},
+                         .anchorMax = {0, 1},
+                         .offsetMin = {margin, below},
+                         .offsetMax = {margin + listWidth, -footerHeight}},
+                  "list");
+    scene().add<scene::UiImage>(sidebar);
+    scene().add<scene::UiScroll>(sidebar);
+    list = add(sidebar, "Sections",
+               UiRect{.anchorMin = {0, 0},
+                      .anchorMax = {1, 0},
+                      .offsetMin = {pad, pad},
+                      .offsetMax = {-pad, pad + static_cast<float>(names.size()) * (line + gap)}});
+    scene().add<scene::UiLayout>(list, scene::UiLayout{.kind = scene::UiLayoutKind::Column,
+                                                       .spacing = gap,
+                                                       .align = scene::TextAlign::Left});
+    static constexpr std::array projectIcons{Icon::Box,      Icon::Monitor,     Icon::Shapes,
+                                             Icon::Layers,   Icon::ArrowUpDown, Icon::Volume,
+                                             Icon::Keyboard, Icon::Languages,   Icon::Globe};
+    static constexpr std::array editorIcons{Icon::Palette, Icon::Monitor, Icon::Axis, Icon::Code,
+                                            Icon::Hammer};
+    for (std::size_t i = 0; i < names.size(); ++i)
+        pages.push_back(
+            Page{.name = std::string(names[i]),
+                 .button = button(kit, list, projectTabs ? projectIcons[i] : editorIcons[i],
+                                  names[i], "row", -1, line, scene::TextAlign::Left)});
+    heading = text(root,
+                   UiRect{.anchorMin = {0, 0},
+                          .anchorMax = {1, 0},
+                          .offsetMin = {margin + listWidth + margin, below},
+                          .offsetMax = {-margin, below + line}},
+                   "", "text", true);
+    buildForm(root, UiRect{.anchorMin = {0, 0},
+                           .anchorMax = {1, 1},
+                           .offsetMin = {margin + listWidth + margin, below + line + gap},
+                           .offsetMax = {-margin, -footerHeight}});
+    noMatches = text(root,
+                     UiRect{.anchorMin = {0, 0},
+                            .anchorMax = {1, 1},
+                            .offsetMin = {margin + listWidth + margin, below + line * 2},
+                            .offsetMax = {-margin, -footerHeight}},
+                     "No matching settings.", "dim", false, scene::TextAlign::Center);
+    scene().get<UiRect>(noMatches).visible = false;
+    const auto footer = add(root, "Footer",
+                            UiRect{.anchorMin = {0, 1},
+                                   .anchorMax = {1, 1},
+                                   .offsetMin = {margin, -footerHeight + margin},
+                                   .offsetMax = {-margin, -margin}});
+    saveStatus = text(footer,
+                      UiRect{.anchorMin = {0, 0},
+                             .anchorMax = {1, 1},
+                             .offsetMin = {0, 0},
+                             .offsetMax = {-font * 9, 0}},
+                      "Changes are saved automatically.", "dim");
+    close = button(kit, footer, {}, "Close", "button", font * 8, line);
+    placeRight(scene(), close.entity, 0, font * 8);
     buildColorPopup();
-    // The keys go to the fields and to what listens for them, not to the buttons.
     panel.setKeyboardNavigation(false);
 }
 
@@ -220,75 +306,106 @@ Section& SettingsUi::pageCard(EditorUiKit& kit, std::size_t page, std::string na
 {
     Section& section = card(kit, std::move(name));
     section.page = static_cast<int>(page);
+    filterDirty = true;
     return section;
 }
 
 void SettingsUi::applyFilter()
 {
-    const std::string wanted = scene().get<scene::UiText>(filter).text;
-    // What a line is called: the label of its row, or its own text.
-    const auto nameOf = [&](Entity entity) -> std::string_view {
-        for (const FormRow& row : formRows)
-        {
-            if (row.row == entity)
-            {
-                return scene().get<scene::UiText>(row.label).text;
-            }
-        }
-        const scene::UiText* const text = scene().tryGet<scene::UiText>(entity);
-        return text != nullptr ? std::string_view(text->text) : std::string_view{};
-    };
-    std::vector<bool> found(pages.size(), false);
-    for (Section& section : sections)
+    const std::string& wanted = scene().get<scene::UiText>(filter).text;
+    const bool searching = wanted.find_first_not_of(" \t\r\n") != std::string::npos;
+    revealFiltered = searching;
+    scene().get<UiRect>(clearSearch.entity).visible = !wanted.empty();
+    if (filterDirty || wanted != appliedFilter || selected != appliedPage)
     {
-        if (section.page < 0 || static_cast<std::size_t>(section.page) >= pages.size())
+        if (wanted != appliedFilter || selected != appliedPage)
+            scene().get<scene::UiScroll>(scroll).offset = math::Vec2{0};
+        appliedFilter = wanted;
+        appliedPage = selected;
+        filterDirty = false;
+        std::unordered_map<std::uint32_t, std::string> labels;
+        for (const auto& row : formRows)
+            labels[row.row.index] = scene().get<scene::UiText>(row.label).text;
+        std::vector<bool> found(pages.size(), false);
+        bool anyFound = false;
+        for (auto& section : sections)
         {
-            continue;
-        }
-        const auto page = static_cast<std::size_t>(section.page);
-        if (wanted.empty())
-        {
-            section.hidden = page != selected;
-            for (Line& entry : section.lines)
+            if (section.page < 0 || static_cast<std::size_t>(section.page) >= pages.size())
+                continue;
+            const auto page = static_cast<std::size_t>(section.page);
+            const bool whole =
+                !searching || matchesFileSearch(pages[page].name + " " + section.name, wanted);
+            bool any = whole;
+            std::vector<bool> groups(section.groups.size(), false);
+            for (auto& entry : section.lines)
             {
-                entry.filtered = false;
+                if (entry.heading)
+                    continue;
+                std::string terms = pages[page].name + " " + section.name;
+                if (entry.group >= 0)
+                    terms += " " + section.groups[static_cast<std::size_t>(entry.group)];
+                if (auto row = labels.find(entry.entity.index); row != labels.end())
+                    terms += " " + row->second;
+                else if (auto* label = scene().tryGet<scene::UiText>(entry.entity))
+                    terms += " " + label->text;
+                entry.filtered = !whole && !matchesFileSearch(terms, wanted);
+                if (!entry.filtered && entry.shown)
+                {
+                    any = true;
+                    if (entry.group >= 0)
+                        groups[static_cast<std::size_t>(entry.group)] = true;
+                }
             }
-            continue;
+            for (auto& entry : section.lines)
+                if (entry.heading)
+                    entry.filtered = !whole && !groups[static_cast<std::size_t>(entry.group)];
+            section.hidden = searching ? !any : page != selected;
+            found[page] = found[page] || any;
+            anyFound = anyFound || !section.hidden;
         }
-        // A card whose name, or whose section's, holds the filter shows whole; others show the
-        // lines whose names hold it.
-        const bool whole = containsIgnoringCase(section.name, wanted) || containsIgnoringCase(pages[page].name, wanted);
-        bool any = whole;
-        for (Line& entry : section.lines)
+        scene().get<UiRect>(noMatches).visible = searching && !anyFound;
+        for (std::size_t i = 0; i < pages.size(); ++i)
         {
-            const std::string_view name = nameOf(entry.entity);
-            entry.filtered = !whole && (name.empty() || !containsIgnoringCase(name, wanted));
-            any |= !entry.filtered && entry.shown;
+            scene().get<UiRect>(pages[i].button.entity).style =
+                !searching && i == selected ? "row_selected" : "row";
+            scene().get<UiRect>(pages[i].button.label).opacity = !searching || found[i] ? 1 : 0.45f;
         }
-        section.hidden = !any;
-        found[page] = found[page] || any;
     }
-    for (std::size_t index = 0; index < pages.size(); ++index)
-    {
-        const Page& page = pages[index];
-        scene().get<UiRect>(page.button.entity).style = wanted.empty() && index == selected ? "row_selected" : "row";
-        // While a filter is typed, the sections without a match fade.
-        scene().get<UiRect>(page.button.label).opacity = wanted.empty() || found[index] ? 1.0f : 0.4f;
-    }
+    const bool showSidebar = !projectTabs || searching || selected < 6;
+    scene().get<UiRect>(sidebar).visible = showSidebar;
+    for (std::size_t i = 0; i < pages.size(); ++i)
+        scene().get<UiRect>(pages[i].button.entity).visible = !projectTabs || searching || i < 6;
+    const float left = font * (showSidebar ? 15.6f : 0.8f);
+    scene().get<UiRect>(scroll).offsetMin.x = left;
+    scene().get<UiRect>(heading).offsetMin.x = left + font * 0.3f;
+    scene().get<UiRect>(noMatches).offsetMin.x = left;
+    scene().get<scene::UiText>(heading).text =
+        searching ? "Search Results"
+                  : (projectTabs && selected < 6 ? "General / " : "") + pages[selected].name;
+    const std::size_t activeTab = selected < 6 ? 0 : selected - 5;
+    for (std::size_t i = 0; i < tabs.size(); ++i)
+        scene().get<UiRect>(tabs[i].entity).style =
+            !searching && i == activeTab ? "row_selected" : "flat";
 }
 
 void SettingsUi::answerFrame()
 {
     const ui::UiWorld& world = panel.world();
-    for (std::size_t index = 0; index < pages.size(); ++index)
+    const auto select = [&](std::size_t page)
     {
-        if (world.wasClicked(pages[index].button.entity))
-        {
-            selected = index;
-            scene().get<scene::UiText>(filter).text.clear();
-            scene().get<scene::UiScroll>(scroll).offset = math::Vec2{0.0f};
-        }
-    }
+        selected = page;
+        scene().get<scene::UiText>(filter).text.clear();
+        filterDirty = true;
+    };
+    for (std::size_t i = 0; i < pages.size(); ++i)
+        if (world.wasClicked(pages[i].button.entity))
+            select(i);
+    for (std::size_t i = 0; i < tabs.size(); ++i)
+        if (world.wasClicked(tabs[i].entity))
+            select(i == 0 ? 0 : i + 5);
+    if (world.wasClicked(clearSearch.entity))
+        scene().get<scene::UiText>(filter).text.clear();
+    closeRequested = world.wasClicked(close.entity);
 }
 
 // ---- Editor Settings ----
@@ -783,9 +900,11 @@ void drawSettingsWindow(ToolsState& state)
     {
         state.editorSettingsUi = std::make_shared<EditorSettingsUi>();
     }
-    if (beginFormWindow(state, settingsWindow, &state.showSettings, 40.0f, 24.0f))
+    if (beginFormWindow(state, settingsWindow, &state.showSettings, 64.0f, 39.0f))
     {
         state.editorSettingsUi->update(state, kit, core::Duration(state.input.delta()));
+        if (state.editorSettingsUi->closeRequested)
+            state.showSettings = false;
         endFormWindow(state);
     }
     if (!state.showSettings && (state.themeUnsaved || state.scriptSettingsUnsaved))
@@ -811,6 +930,7 @@ std::string ProjectSettingsUi::signatureOf() const
         text += index == 0 || !project.physics.layerNames[index].empty() ? '1' : '0';
     }
     text += inputMapSignature(project.input);
+    text += std::format("globals:{}|", project.globals.size());
     return text;
 }
 
@@ -819,7 +939,7 @@ void ProjectSettingsUi::buildCards(ToolsState& state, EditorUiKit& kit)
     static_cast<void>(state);
     const ThemeColors& colors = themeColors();
     const math::Vec4 accent = linearColor(colors.accent);
-    const float tool = line - 6.0f;
+    const float tool = closeButtonSize();
 
     // Application.
     Section& application = pageCard(kit, 0, "Application");
@@ -943,7 +1063,7 @@ void ProjectSettingsUi::buildCards(ToolsState& state, EditorUiKit& kit)
         tooltip(made.up.entity, "Draw behind the layer above");
         made.down = toolButton(kit, row.editor, Icon::ChevronDown, rightButton(tool, tool + gap));
         tooltip(made.down.entity, "Draw in front of the layer below");
-        made.remove = toolButton(kit, row.editor, Icon::Minus, rightButton(tool, 0.0f));
+        made.remove = toolButton(kit, row.editor, Icon::Trash, rightButton(tool, 0.0f));
         tooltip(made.remove.entity, fixed ? "Default is always there" : "Remove the layer");
         enable(made.remove, !fixed);
         sortingRows.push_back(made);
@@ -972,6 +1092,8 @@ void ProjectSettingsUi::buildCards(ToolsState& state, EditorUiKit& kit)
     note(&groups, "Volumes apply at once, and each time the game starts.");
 
     buildInputMap(*this, kit, 6);
+
+    buildGlobals(kit);
 
     Section& localization = pageCard(kit, 7, "Localization");
     const FormRow fallbackRow = formRow(localization, "Fallback Language");
@@ -1249,6 +1371,8 @@ void ProjectSettingsUi::save(ToolsState& state)
     {
         return;
     }
+    if (!asset::validateGlobals(project.globals))
+        return;
     dirty = false;
     const asset::Project& saved = state.database->project();
     if (project.name.empty())
@@ -1278,6 +1402,7 @@ void ProjectSettingsUi::save(ToolsState& state)
     written.audio = project.audio;
     written.input = project.input;
     written.sorting = project.sorting;
+    written.globals = project.globals;
     if (core::Result<void> updated = state.database->updateProject(written); !updated)
     {
         DEVEX_LOG_ERROR("Cannot save the project: {}", updated.error());
@@ -1322,13 +1447,21 @@ void ProjectSettingsUi::update(ToolsState& state, EditorUiKit& kit, core::Durati
     }
     labelWidth = std::clamp(std::round((panel.size().x - font * 12.0f) * 0.34f), font * 7.0f, font * 12.0f);
     sync(state, kit);
+    syncGlobals();
     applyFilter();
+    filterInputMap(*this);
+    measureTitles(kit);
     layoutCards();
     panel.update(kit, delta, UiPanel::zoomFor(font));
     answerForm();
     answerFrame();
     answer(state, kit);
+    answerGlobals();
+    dirty = dirty || project.globals != state.database->project().globals;
     save(state);
+    scene().get<scene::UiText>(saveStatus).text =
+        asset::validateGlobals(project.globals) ? "Changes are saved automatically."
+                                                : "Fix the Globals warning to save your changes.";
     numberCursor(state, panel);
 }
 
@@ -1344,9 +1477,11 @@ void drawProjectSettingsWindow(ToolsState& state)
     {
         state.projectSettingsUi = std::make_shared<ProjectSettingsUi>();
     }
-    if (beginFormWindow(state, "Project Settings", &state.showProjectSettings, 54.0f, 36.0f))
+    if (beginFormWindow(state, "Project Settings", &state.showProjectSettings, 72.0f, 43.0f))
     {
         state.projectSettingsUi->update(state, kit, core::Duration(state.input.delta()));
+        if (state.projectSettingsUi->closeRequested)
+            state.showProjectSettings = false;
         endFormWindow(state);
     }
 }

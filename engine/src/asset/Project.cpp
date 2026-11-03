@@ -542,11 +542,56 @@ core::Result<Project> parseProject(std::string_view text, const std::filesystem:
     readSorting(*document, project.sorting);
     readWindowAndExport(*document, project);
     readInput(*document, project.input);
+    for (const auto& entry : document->sections)
+    {
+        if (entry.type != "global_scene")
+            continue;
+        GlobalScene global;
+        if (const auto* value = entry.findAttribute("name"))
+            if (const auto* globalName = serialization::asString(*value))
+                global.name = *globalName;
+        if (const auto* value = entry.findAttribute("path"))
+            if (const auto* globalPath = serialization::asString(*value))
+                global.path = *globalPath;
+        if (const auto* value = entry.findAttribute("enabled"))
+            global.enabled = serialization::asBool(*value).value_or(true);
+        project.globals.push_back(std::move(global));
+    }
+    if (auto valid = validateGlobals(project.globals); !valid)
+        return std::unexpected(valid.error());
     return project;
+}
+
+core::Result<void> validateGlobals(std::span<const GlobalScene> globals)
+{
+    std::vector<std::string_view> names;
+    for (const auto& global : globals)
+    {
+        const auto letter = [](char c)
+        { return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || c == '_'; };
+        if (global.name.empty() || !letter(global.name.front()) ||
+            !std::ranges::all_of(global.name,
+                                 [&](char c) { return letter(c) || (c >= '0' && c <= '9'); }))
+            return core::makeError(
+                core::ErrorCode::InvalidArgument,
+                "Global names use letters, digits and underscores, and cannot start with a digit");
+        if (std::ranges::find(names, global.name) != names.end())
+            return core::makeError(core::ErrorCode::InvalidArgument, "Another global is named {}",
+                                   global.name);
+        names.push_back(global.name);
+        if (!global.path.starts_with("res://assets/") || !global.path.ends_with(".dvxscene") ||
+            global.path.find("/../") != std::string::npos ||
+            global.path.find('\\') != std::string::npos)
+            return core::makeError(core::ErrorCode::InvalidArgument,
+                                   "Global {} needs a scene under res://assets/", global.name);
+    }
+    return {};
 }
 
 core::Result<void> saveProject(const Project& project)
 {
+    if (auto valid = validateGlobals(project.globals); !valid)
+        return valid;
     return core::writeTextFile(project.file, writeProjectText(project));
 }
 
@@ -563,6 +608,14 @@ std::string writeProjectText(const Project& project)
     }
 
     // Physics settings are written only when they differ from the defaults.
+    for (const auto& global : project.globals)
+    {
+        auto& entry = document.sections.emplace_back();
+        entry.type = "global_scene";
+        entry.attributes.push_back({"name", serialization::TextValue(global.name)});
+        entry.attributes.push_back({"path", serialization::TextValue(global.path)});
+        entry.attributes.push_back({"enabled", serialization::TextValue(global.enabled)});
+    }
     const PhysicsSettings defaults;
     if (project.physics.gravity != defaults.gravity)
     {

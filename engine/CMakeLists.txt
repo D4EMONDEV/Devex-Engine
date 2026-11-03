@@ -875,6 +875,7 @@ target_sources(devex_tools
         src/tools/Icons.cpp
         src/tools/Icons.hpp
         src/tools/InputSettings.cpp
+        src/tools/GlobalSettings.cpp
         src/tools/InspectorPages.cpp
         src/tools/InspectorPanel.cpp
         src/tools/InspectorUi.cpp
@@ -950,6 +951,8 @@ add_library(Devex::Runtime ALIAS devex_runtime)
 target_sources(devex_runtime
     PRIVATE
         src/runtime/Application.cpp
+        src/runtime/GlobalScenes.cpp
+        src/runtime/GlobalScenes.hpp
         src/runtime/AssetManager.cpp
         src/runtime/FixedTimestep.cpp
         src/runtime/Game.cpp

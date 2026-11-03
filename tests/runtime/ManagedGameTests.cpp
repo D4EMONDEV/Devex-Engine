@@ -1,5 +1,6 @@
-#include "runtime/ManagedGame.hpp"
+#include "runtime/GlobalScenes.hpp"
 #include "runtime/ManagedCodeBuilder.hpp"
+#include "runtime/ManagedGame.hpp"
 
 #include <devex/animation/AnimationWorld.hpp>
 #include <devex/animation/TweenWorld.hpp>
@@ -250,7 +251,7 @@ TEST_CASE("The application runs late cameras after interpolation and restores si
 TEST_CASE("The C# runtime registers components and runs them", "[runtime][managed]")
 {
     const std::unique_ptr<ManagedGame> game = startRuntime();
-    CHECK(game->componentTypes().size() == 26);
+    CHECK(game->componentTypes().size() == 27);
 
     devex::scene::ComponentRegistry& registry = devex::scene::componentRegistry();
     const devex::scene::ComponentType* const mover = registry.find("Mover");
@@ -298,6 +299,61 @@ TEST_CASE("The C# runtime registers components and runs them", "[runtime][manage
     game->unloadAssembly();
     CHECK(registry.find("Mover") == nullptr);
     CHECK(devex::scene::saveScene(scene).find("speed = 7") != std::string::npos);
+}
+
+TEST_CASE("Global scripts start before level scripts and can be found after renaming",
+          "[runtime][managed][globals]")
+{
+    const auto game = startRuntime();
+    const auto* probe = devex::scene::componentRegistry().find("AutoloadProbe");
+    REQUIRE(probe != nullptr);
+    devex::runtime::detail::registerGlobalRoot();
+    Scene scene;
+    // Storage order deliberately differs from the hierarchy order.
+    const auto level = scene.createEntity("Level");
+    REQUIRE(probe->emplace(scene, level) != nullptr);
+    const auto global = scene.createEntity("Renamed global");
+    scene.add<devex::runtime::detail::GlobalRoot>(global,
+                                                  devex::runtime::detail::GlobalRoot{"State"});
+    REQUIRE(probe->emplace(scene, global) != nullptr);
+    REQUIRE(scene.setParent(global, {}, level));
+    run(*game, scene, SystemPhase::Start);
+    CHECK(field<int>(*probe, const_cast<void*>(probe->find(scene, global)), "value") == 1);
+    CHECK(field<int>(*probe, const_cast<void*>(probe->find(scene, level)), "value") == 2);
+}
+
+TEST_CASE("Autoload C# objects retain private fields and start only once across levels",
+          "[runtime][managed][globals]")
+{
+    const auto game = startRuntime();
+    auto& registry = devex::scene::componentRegistry();
+    const auto* patrol = registry.find("Patrol");
+    REQUIRE(patrol != nullptr);
+    devex::runtime::detail::registerGlobalRoot();
+    Scene scene;
+    const auto global = scene.createEntity("State");
+    scene.add<devex::runtime::detail::GlobalRoot>(global,
+                                                  devex::runtime::detail::GlobalRoot{"State"});
+    REQUIRE(patrol->emplace(scene, global) != nullptr);
+    run(*game, scene, SystemPhase::Start);
+    run(*game, scene, SystemPhase::Update, 0.1);
+    Scene next;
+    const auto fresh = next.createEntity("New level");
+    REQUIRE(patrol->emplace(next, fresh) != nullptr);
+    const auto freshId = next.uuid(fresh);
+    REQUIRE(devex::runtime::detail::replaceLevelKeepingGlobals(scene, next));
+    ManagedGame::Frame frame{.scene = &scene, .keepInstances = true};
+    game->runPhase(frame, SystemPhase::Start);
+    run(*game, scene, SystemPhase::Update, 0.1);
+    auto* state = const_cast<void*>(patrol->find(scene, global));
+    REQUIRE(state != nullptr);
+    CHECK(field<std::vector<std::string>>(*patrol, state, "words").back() == "update 2, start 1");
+    const auto added = scene.findEntity(freshId);
+    REQUIRE(added.isValid());
+    auto* component = const_cast<void*>(patrol->find(scene, added));
+    REQUIRE(component != nullptr);
+    CHECK(field<std::vector<std::string>>(*patrol, component, "words").back() ==
+          "update 1, start 1");
 }
 
 TEST_CASE("C# components, systems and zones of the game show in the profiler", "[runtime][managed][profiler]")

@@ -1,4 +1,5 @@
 #include "GameCodeBuilder.hpp"
+#include "GlobalScenes.hpp"
 #include "ManagedCodeBuilder.hpp"
 #include "ManagedGame.hpp"
 #include <devex/animation/AnimationWorld.hpp>
@@ -228,7 +229,9 @@ public:
     [[nodiscard]] core::Result<void> loadScene(asset::AssetId sceneAsset);
     [[nodiscard]] core::Result<scene::Scene> readScene(asset::AssetId sceneAsset);
     // Replaces the scene, restarting the game's worlds and systems when it plays.
-    void replaceScene(scene::Scene loaded, asset::AssetId sceneAsset);
+    [[nodiscard]] core::Result<void> replaceScene(scene::Scene loaded, asset::AssetId sceneAsset,
+                                                  bool restoring = false);
+    [[nodiscard]] core::Result<void> startGlobalScenes(scene::Scene& scene);
     void loadSceneInBackground(asset::AssetId sceneAsset);
     // Replaces the scene with the one loading in the background once what it shows is ready.
     void updateBackgroundScene();
@@ -316,7 +319,7 @@ private:
     void loadManagedAssembly();
     void unloadManagedAssembly();
     void updateManagedCode();
-    void runSystems(SystemPhase phase, core::Duration delta);
+    void runSystems(SystemPhase phase, core::Duration delta, bool keepManagedInstances = false);
     // The physics world lives while gameplay runs: from startup outside the editor, during Play in it.
     void createPhysics();
     void destroyPhysics();
@@ -512,6 +515,7 @@ ApplicationRunner::ApplicationRunner(Application& application, const Application
     m_application.m_playing = !isEditor();
     m_application.m_stopRequested = false;
     AssetManager& assets = services.assets;
+    registerGlobalRoot();
     scene::setPrefabSourceLoader([&assets](asset::AssetId prefab) { return assets.sceneText(prefab); });
     if (isEditor())
     {
@@ -606,7 +610,8 @@ void ApplicationRunner::updateBackgroundScene()
     }
     BackgroundScene background = std::move(*m_backgroundScene);
     m_backgroundScene.reset();
-    replaceScene(std::move(background.scene), background.asset);
+    if (auto replaced = replaceScene(std::move(background.scene), background.asset); !replaced)
+        DEVEX_LOG_ERROR("Cannot replace the level: {}", replaced.error());
 }
 
 std::optional<float> ApplicationRunner::sceneLoadingProgress() const noexcept
@@ -621,23 +626,58 @@ core::Result<void> ApplicationRunner::loadScene(asset::AssetId sceneAsset)
     {
         return std::unexpected(loaded.error());
     }
-    replaceScene(std::move(*loaded), sceneAsset);
-    return {};
+    return replaceScene(std::move(*loaded), sceneAsset);
 }
 
-void ApplicationRunner::replaceScene(scene::Scene loaded, asset::AssetId sceneAsset)
+core::Result<void> ApplicationRunner::startGlobalScenes(scene::Scene& scene)
+{
+    const auto* source = assetSource();
+    if (source == nullptr)
+        return {};
+    return startGlobals(
+        scene, source->project().globals,
+        [source](scene::Scene& target, const std::string& path) -> core::Result<scene::Entity>
+        {
+            const auto id = source->findByPath(path);
+            const auto* info = id ? source->find(*id) : nullptr;
+            if (info == nullptr || info->type != asset::AssetType::Scene)
+                return core::makeError(core::ErrorCode::NotFound, "The scene {} is not imported",
+                                       path);
+            return scene::instantiatePrefab(target, *id);
+        });
+}
+
+core::Result<void> ApplicationRunner::replaceScene(scene::Scene loaded, asset::AssetId sceneAsset,
+                                                   bool restoring)
 {
     const bool restart = m_gameStarted;
-    m_coroutines.clear();
-    m_particles->clear();
-    if (restart)
+    const bool keepGlobals = restart && !restoring && hasGlobals(*m_application.m_scene);
+    if (keepGlobals)
     {
-        destroyUi();
-        destroyAnimation();
-        destroyAudio();
-        destroyPhysics();
+        if (auto replaced = replaceLevelKeepingGlobals(*m_application.m_scene, loaded); !replaced)
+        {
+            return std::unexpected(replaced.error());
+        }
     }
-    *m_application.m_scene = std::move(loaded);
+    else if (restart)
+    {
+        if (auto globals = startGlobalScenes(loaded); !globals)
+            return std::unexpected(globals.error());
+    }
+    // Native coroutine frames may borrow level component memory.
+    m_coroutines.clear();
+    if (!keepGlobals)
+    {
+        m_particles->clear();
+        if (restart)
+        {
+            destroyUi();
+            destroyAnimation();
+            destroyAudio();
+            destroyPhysics();
+        }
+        *m_application.m_scene = std::move(loaded);
+    }
     m_sceneAsset = sceneAsset;
     if (m_saves)
     {
@@ -650,12 +690,20 @@ void ApplicationRunner::replaceScene(scene::Scene loaded, asset::AssetId sceneAs
     DEVEX_LOG_INFO("Loaded scene {}", info != nullptr ? info->name : sceneAsset.uuid.toString());
     if (restart)
     {
+        // Queries in the new level must not see bodies from the previous level.
+        // Global transforms and velocities remain in their scene components.
+        if (keepGlobals)
+            destroyPhysics();
         createPhysics();
-        createAudio();
-        createAnimation();
-        createUi();
-        runSystems(SystemPhase::Start, core::Duration::zero());
+        if (!keepGlobals)
+        {
+            createAudio();
+            createAnimation();
+            createUi();
+        }
+        runSystems(SystemPhase::Start, core::Duration::zero(), keepGlobals);
     }
+    return {};
 }
 
 bool ApplicationRunner::isEditor() const noexcept
@@ -765,6 +813,11 @@ int ApplicationRunner::execute()
     }
     if (!isEditor())
     {
+        if (auto globals = startGlobalScenes(*m_application.m_scene); !globals)
+        {
+            DEVEX_LOG_FATAL("Cannot load globals: {}", globals.error());
+            return EXIT_FAILURE;
+        }
         createPhysics();
         createAudio();
         createAnimation();
@@ -1282,6 +1335,13 @@ void ApplicationRunner::startPlaying()
     }
     m_playScene.emplace(m_services.scene.clone());
     m_application.m_scene = &*m_playScene;
+    if (auto globals = startGlobalScenes(*m_application.m_scene); !globals)
+    {
+        DEVEX_LOG_ERROR("Cannot play: {}", globals.error());
+        m_application.m_scene = &m_services.scene;
+        m_playScene.reset();
+        return;
+    }
     m_particles->clear();
     m_application.m_playing = true;
     m_application.m_stopRequested = false;
@@ -1834,7 +1894,8 @@ void ApplicationRunner::updateGameCode()
     }
 }
 
-void ApplicationRunner::runSystems(SystemPhase phase, core::Duration delta)
+void ApplicationRunner::runSystems(SystemPhase phase, core::Duration delta,
+                                   bool keepManagedInstances)
 {
     if (!m_game && (!m_managed || !m_managed->hasAssembly()))
     {
@@ -1896,6 +1957,7 @@ void ApplicationRunner::runSystems(SystemPhase phase, core::Duration delta)
             .assetManager = &m_services.assets,
             .loadingScene = context.loadingScene,
             .loadingProgress = context.loadingScene.isValid() ? context.loadingProgress : -1.0f,
+            .keepInstances = keepManagedInstances,
         };
         m_managed->runPhase(frame, phase);
         context.quitRequested = context.quitRequested || frame.quitRequested;
@@ -2248,7 +2310,8 @@ void ApplicationRunner::updateGameData()
         }
         // Start systems see where the scene comes from, to leave alone what the save brought back.
         m_saves->setRestoredSlot(restore->slot);
-        replaceScene(std::move(*restored), restore->scene);
+        if (auto replaced = replaceScene(std::move(*restored), restore->scene, true); !replaced)
+            DEVEX_LOG_ERROR("Cannot restore the scene: {}", replaced.error());
         if (m_saves)
         {
             m_saves->setRestoredSlot({});

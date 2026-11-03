@@ -23,6 +23,7 @@ Les scripts complets sont inclus dans ce document et disponibles séparément da
 10. [Référence rapide et limites de cette base](#10-référence-rapide-et-limites-de-cette-base)
 11. [Alléger une scène 3D avec les LODs](#11-alléger-une-scène-3d-avec-les-lods)
 12. [Personnaliser le viewport et lire l'inspecteur](#12-personnaliser-le-viewport-et-lire-linspecteur)
+13. [Soigner les réglages et utiliser Globals](#13-soigner-les-réglages-et-utiliser-globals)
 
 ## 1. Préparer Devex et créer un projet
 
@@ -140,14 +141,22 @@ Avec Rider et ses sauvegardes automatiques, le mode **Manual** est pratique : te
 
 ### Créer les actions d'entrée
 
-Ouvrir **Project > Project Settings… > Input Map**. Créer un contexte **Gameplay** et cocher **Active at start**. Ajouter ces deux actions, avec exactement cette casse :
+Ouvrir **Project > Project Settings…**, puis l'onglet **Input Map** en haut. Le contexte
+**Gameplay** existe par défaut ; la section repliable **Input Contexts**, sous les actions,
+permet de vérifier **Active at start** et d'en créer d'autres. Saisir chaque nom dans
+**New Action**, puis cliquer **Add** ou appuyer sur Entrée. Déplier ensuite l'action pour
+choisir son **Kind** et son **Context** dans **Properties**. Utiliser exactement cette casse :
 
 | Action | Kind | Context | Liaisons clavier | Manette facultative |
 | --- | --- | --- | --- | --- |
 | `Move` | **Vector** | Gameplay | Up : Z sur AZERTY / W sur QWERTY ; Down : S ; Left : Q / A ; Right : D | Left Stick, Whole stick |
 | `Jump` | **Button** | Gameplay | Espace | South |
 
-Pour chaque touche : **Add Binding**, choisir la source clavier, activer l'écoute de la touche puis appuyer sur la touche voulue. Pour `Move`, choisir aussi la direction **Up**, **Down**, **Left** ou **Right** de chaque liaison.
+Pour chaque touche : cliquer sur le **+** de l'action ou sur **Add Binding**, choisir la source
+clavier, activer l'écoute de la touche puis appuyer sur la touche voulue. Pour `Move`, choisir
+aussi la direction **Up**, **Down**, **Left** ou **Right** de chaque liaison. La recherche
+**Find Action** accepte le nom d'une action ou d'une touche ; elle révèle temporairement les
+actions correspondantes. Les poubelles retirent une liaison ou une action entière selon leur ligne.
 
 ![Input Map avec Move configuré](images/guide-demarrage/05-input-map.jpg)
 
@@ -916,3 +925,72 @@ même échantillon et le ciel suit la rotation de la caméra. Une vue de jeu qui
 avec une image neuve ; un changement brusque d'exposition fait de même pour éviter de conserver
 la luminosité précédente. Ces corrections concernent le rendu du moteur, indépendamment des
 réglages de largeur et de couleur des gizmos.
+
+## 13. Soigner les réglages et utiliser Globals
+
+**Project Settings** sépare les réglages généraux, **Input Map**, **Localization** et **Globals**
+en onglets. **General** conserve les catégories à gauche : Application, Window, Physics, Collision
+Layers, Sorting Layers et Audio. La fenêtre est plus large et s'adapte aux petits écrans.
+**Editor Settings** reprend la navigation avec icônes, la recherche et le bouton **Close** en bas.
+Les champs et les commandes de suppression ont des zones de clic plus grandes.
+
+**Filter Settings** cherche par mots dans toutes les catégories et révèle temporairement les
+groupes repliés. Le bouton de suppression du filtre rétablit la catégorie et ses replis. Les
+résultats sont recalculés lorsqu'une recherche ou la page change, et non à chaque image.
+
+### Garder une scène entre les niveaux
+
+Un **Global**, aussi appelé Autoload, est une scène instanciée au lancement du jeu. Ses entités
+et leurs scripts restent en vie pendant les changements de niveau, en 2D comme en 3D. C'est utile
+pour le score, l'inventaire, la musique ou une interface commune. Ses ressources restent chargées :
+cela évite de recréer ces services à chaque niveau, mais ne rend pas automatiquement le jeu plus rapide.
+
+1. Créer une scène dédiée avec une entité racine, par exemple **GameState**.
+2. Créer un script C# `GameState.cs` et l'attacher à cette racine :
+
+   ```csharp
+   using Devex;
+
+   public sealed class GameState : Component
+   {
+       public int Coins;
+   }
+   ```
+
+3. Enregistrer la scène, par exemple dans `res://assets/globals/GameState.dvxscene`.
+4. Ouvrir **Project > Project Settings > Globals**. Dans **Add Global**, saisir **GameState**,
+   choisir cette scène puis cliquer **Add**. Le nom doit être unique et contenir des lettres,
+   chiffres ou `_`, sans commencer par un chiffre.
+5. Garder la case d'activation cochée. Les flèches ordonnent le chargement, de haut en bas ; la
+   poubelle retire uniquement l'entrée de la liste.
+6. Lancer Play. Depuis un autre script :
+
+   ```csharp
+   GameState? state = Globals.Find("GameState").Get<GameState>();
+   if (state != null)
+       state.Coins += 1;
+   ```
+
+`Globals.Find` retourne l'entité racine, ou `Entity.None` si le global n'est pas présent. La
+recherche utilise le nom de l'entrée du projet, même si le jeu renomme l'entité. Avec une scène
+qui contient plusieurs racines, Devex les place sous une racine commune ; attacher le script à
+une racine unique dans la scène source simplifie donc l'accès à son composant.
+
+Changer ensuite de niveau avec `Game.LoadScene(...)` ou `Game.LoadSceneInBackground(...)` :
+la valeur de Coins reste la même. Les objets C# conservent aussi leurs champs privés et leur
+méthode `Start()` n'est pas rappelée. Au démarrage, les scripts des globals démarrent dans l'ordre
+du projet, avant ceux du niveau. Les sons des globals continuent avec le même monde audio.
+La physique et la navigation sont recréées au changement de niveau ; les positions et vitesses
+des globals sont conservées dans leurs composants.
+
+Arrêter Play détruit les instances du jeu ; le prochain lancement repart des scènes sources.
+Les globals ne sont pas ajoutés aux scènes que l'on édite. Modifier la liste prend effet au
+prochain Play. Une sauvegarde qui contient la scène inclut ses globals ; restaurer cet instantané
+recrée le monde et redémarre ses composants, sans ajouter de deuxième copie des globals.
+
+Les scènes globales activées et leurs dépendances sont incluses automatiquement dans l'export.
+En C++, inclure `devex/runtime/Globals.hpp` et utiliser `runtime::findGlobal(context.scene,
+"GameState")`. Les systèmes C++ de phase Start restent des systèmes de démarrage du niveau :
+garder dans un composant l'indication qu'un service global est déjà initialisé si nécessaire.
+Les coroutines C++ sont annulées au changement de niveau, car elles peuvent conserver des
+références aux composants du niveau précédent.

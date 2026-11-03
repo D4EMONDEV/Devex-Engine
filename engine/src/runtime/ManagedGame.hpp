@@ -66,6 +66,8 @@ public:
         // The scene loading in the background, and how far; -1 when none is.
         asset::AssetId loadingScene;
         float loadingProgress = -1.0f;
+        // A level change in the same world preserves autoload C# objects and their Start state.
+        bool keepInstances = false;
         // Set by the game.
         bool quitRequested = false;
         asset::AssetId sceneToLoad;

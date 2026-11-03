@@ -1015,7 +1015,7 @@ Les contours simples de 3 à 64 points acceptent les formes concaves et l'option
 les coordonnées vont de (0, 0), en bas à gauche de la cellule, à (1, 1), en haut à droite.
 Les copies peintes partagent la forme, avec leurs retournements et leur Cell Size. Les brouillons
 invalides ne remplacent pas la forme enregistrée. Le source `.dvxtileset` est au format 3
-(anciens formats lus), l'artefact Tileset en version 4 et l'API native du jeu en version 37.
+(anciens formats lus), l'artefact Tileset en version 4 et l'API native du jeu en version 38.
 
 Les vues C# des composants natifs, comme `CharacterController2D`, sont des `ref struct` : on les
 obtient pendant l'appel qui les utilise, sans les conserver dans les champs d'une classe.
@@ -2247,6 +2247,25 @@ namespace devex::ui {
   prochain attribut. `GameRuntime.DescribeType` échappe et transmet le nom au champ dynamique ;
   `DynamicField::group` est copié dans la réflexion. API native **37** pour cette extension de
   `DynamicField` ; aucune nouvelle case d'interop managée ni nouvelle version de scène.
+- Réglages et Globals : fenêtres Editor/Project Settings agrandies avec navigation à icônes,
+  recherche par mots, état vide et bouton Close. Le projet utilise les onglets General, Input Map,
+  Localization, Globals ; seuls les réglages généraux gardent leur barre latérale. Le filtre des
+  réglages indexe les libellés en une passe et conserve son résultat jusqu'à une modification.
+  Input Map : création par nom, actions repliées avec résumé type/nombre de liaisons, ajout et
+  suppression dans leur en-tête, groupes Properties/Bindings, recherche par action ou touche,
+  contextes facultatifs en bas. `FormUi::toolButton` garde le canevas SVG entier pour les poubelles.
+  `asset::GlobalScene` et `Project::globals` : entrées ordonnées `[global_scene name=... path=...
+  enabled=...]`, validation des noms uniques et chemins de scène. Instanciation avant Play/Start,
+  racines runtime `GlobalRoot` conservées lors des changements de niveau ; seul le niveau est
+  recréé. Les mondes audio/animation/UI restent vivants ; physique et navigation sont recréées
+  pour éliminer les corps du niveau précédent, les transforms/vitesses des globals restant dans
+  leurs composants. Le marqueur est sérialisé avec
+  les snapshots pour éviter une duplication ; restaurer un snapshot recrée le monde normalement.
+  Les globals activés sont des racines de l'export. C# `Globals.Find(name)` / C++
+  `runtime::findGlobal(scene, name)` ; `Scene.Roots` / `FirstRoot`. Le démarrage C# suit la
+  hiérarchie des globals avant le niveau ; changement de niveau avec globals : instances privées
+  et état Started conservés. Flags privés 0x100/0x200 du mot de phase. Les coroutines C++ sont
+  annulées, car elles peuvent emprunter de la mémoire du niveau. API native **38**, bootstrap **27**.
 - Navigation de l'éditeur : `tools/FileSearch.hpp` et le FileSystem combinent les mots d'une
   recherche dans les chemins, sous-assets et scripts. Ctrl+F, Entrée vers les résultats puis
   activation, Home/End et Page Up/Page Down ; parcourir les scripts ne les ouvre plus.
@@ -3562,7 +3581,7 @@ une **table de pointeurs de fonctions** (`NativeApi`, des `delegate* unmanaged<.
 C++ dans `engine/src/runtime/ManagedGame.cpp`, et reçoit en retour la table des fonctions managées.
 Les deux tables ont le même ordre des deux côtés : une nouvelle fonction s'ajoute **à la fin** de
 `NativeApi` dans `ManagedGame.cpp` et dans `Interop.cs`, et `bootstrapVersion` (C++) et
-`Bootstrap.Version` (C#) augmentent ensemble (26 aujourd'hui) ; un runtime d'une autre version est
+`Bootstrap.Version` (C#) augmentent ensemble (27 aujourd'hui) ; un runtime d'une autre version est
 refusé au chargement. Les composants passent par leur mémoire même : le C# lit et écrit les champs
 des composants du moteur à leur place dans les pools de la scène, d'après une disposition que le
 moteur hache (`ComponentLayoutHash`) pour refuser un assemblage compilé contre une autre.

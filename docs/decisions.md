@@ -1018,12 +1018,48 @@ les assets s'écrivent au fil de leur lecture.
   exporté ; `ApplicationConfig::userDirectory` le remplace), écrit dès qu'elles changent et relu
   au lancement ; celles que le projet n'a plus sont ignorées. Un jeu sans action n'y crée rien.
   Jouer dans l'éditeur et le jeu exporté partagent donc les liaisons du joueur.
-- **Éditeur** : la page Input liste les contextes (actif au départ ou non), puis les actions
-  dépliables : nom, genre, contexte, zone morte, liaisons choisies dans une liste filtrable par
+- **Éditeur** : l'onglet Input Map crée les actions par nom, par Add ou Entrée, et les présente
+  repliées avec leur type et leur nombre de liaisons. Recherche par nom d'action ou touche,
+  commandes d'ajout/suppression dans l'en-tête, propriétés et liaisons regroupées ; contextes
+  facultatifs en bas. Les actions dépliables montrent nom, genre, contexte, zone morte et liaisons
+  choisies dans une liste filtrable par
   appareil (les touches sous leur nom sur ce clavier, « Z (W) » en AZERTY) ou par écoute de la
   prochaine touche ou du prochain bouton de manette. Les changements s'appliquent au prochain
   lancement du jeu. Le bac à sable joue Move, Look, Jump, Run et Fly par actions, coupe
   « Gameplay » tant qu'un menu est ouvert, et son écran de réglages réaffecte Sauter.
+
+### Globals / Autoloads (2 novembre 2026)
+
+- `Project::globals` contient des scènes nommées, ordonnées et activables. Le source `.dvxproj`
+  garde une section `[global_scene name="GameState" path="res://assets/globals/State.dvxscene"
+  enabled=true]` par entrée, au format de projet 1. Noms identifiants uniques, chemins de scène
+  sous `res://assets/` ; la validation est partagée par le lecteur, la sauvegarde et l'éditeur.
+- Le runtime instancie les globals comme des scènes imbriquées avant le démarrage du jeu, dans
+  Play et dans le lecteur. Le marqueur interne `GlobalRoot` identifie leur nom indépendamment du
+  nom affiché de l'entité. C++ `runtime::findGlobal`, C# `Globals.Find` retournent cette racine.
+  Un global peut porter des scripts C# ou des composants C++ ; il n'est pas injecté dans le
+  document édité. Stop puis Play repart des sources. Les globals ne sont pas des ressources
+  chargées paresseusement : leurs entités et ressources restent présentes pendant le jeu.
+- Au changement de niveau, les racines globales et leurs descendants gardent leurs handles et
+  composants ; seul le niveau est remplacé. Les UUID du niveau sont vérifiés contre ceux des
+  globals avant toute destruction. Audio, animation et interface conservent leurs mondes.
+  Physique et navigation sont recréées pour que les requêtes du nouveau niveau ne rencontrent
+  aucun corps du précédent ; les transforms et vitesses des globals restent dans leurs composants.
+  Les objets C# existants gardent leurs champs privés et Started ; les nouveaux composants
+  démarrent normalement. Au premier Start, la hiérarchie ordonne aussi les démarrages entre types
+  C# : globals de haut en bas, puis niveau. Les systèmes C++ Start restent exécutés par niveau ;
+  les coroutines C++ sont annulées parce qu'elles peuvent emprunter de la mémoire du niveau.
+- Un snapshot garde `GlobalRoot`. Restaurer une sauvegarde recrée le monde normalement et adopte
+  les globals du snapshot au lieu de les instancier deux fois. Le plan d'export ajoute les
+  globals activés à ses racines de dépendances, en conservant le niveau de démarrage en premier.
+  API native 38 pour `Project` agrandi ; bootstrap managé 27 pour FirstRoot et FindGlobal.
+- Les fenêtres de réglages sont plus spacieuses, avec navigation à icônes, catégories à onglets
+  dans Project Settings et bouton Close. La recherche par mots se recalcule aux changements,
+  indexe les libellés en une passe et révèle temporairement les replis. Les contrôles du formulaire
+  déclarent leurs deux ancres et leurs décalages : les valeurs par défaut de UiRect centrent
+  l'élément et ne conviennent pas à une barre en haut. Une régression GPU vérifie la disposition
+  de Project/Editor Settings à 800×600 et 1600×1000. Les poubelles utilisent un canevas SVG entier
+  dans une cible plus grande, sans le second padding qui réduisait leur dessin.
 
 ### Sauvegardes et réglages du joueur
 

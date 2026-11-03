@@ -210,7 +210,8 @@ captures de l'éditeur, scènes de base, entrées, scripts C#, animations, colli
   code du jeu arrête la partie, pas l'éditeur, qui le dit et propose d'enregistrer), modules de jeu
   (composants et systèmes rechargeables à chaud), code C# sur .NET hébergé (composants, systèmes,
   compilation et rechargement à chaud), chargement des maillages et textures en arrière-plan,
-  préchargement, changement de scène immédiat ou en arrière-plan avec progression, actions
+  préchargement, changement de scène immédiat ou en arrière-plan avec progression, scènes
+  globales persistantes configurables dans Project Settings, actions
   d'entrée du projet (boutons, axes, vecteurs, contextes, réaffectation gardée pour le joueur),
   sauvegardes dans le dossier du joueur (objets réfléchis, scène restaurée, miniature), réglages
   du joueur gardés (volumes, fenêtre, valeurs du jeu), coroutines C++20 (`co_await` du temps, des

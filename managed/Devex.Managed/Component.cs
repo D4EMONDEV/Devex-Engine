@@ -204,6 +204,18 @@ public sealed unsafe class Scene
 
     public Entity Parent(Entity entity) => Bootstrap.Native.Parent(_scene, entity);
 
+    public Entity FirstRoot => Bootstrap.Native.FirstRoot(_scene);
+
+    /// <summary>The root entities in hierarchy order; autoloads precede the current level.</summary>
+    public IEnumerable<Entity> Roots
+    {
+        get
+        {
+            for (Entity root = FirstRoot; root.IsValid; root = NextSibling(root))
+                yield return root;
+        }
+    }
+
     public Entity FirstChild(Entity entity) => Bootstrap.Native.FirstChild(_scene, entity);
 
     public Entity NextSibling(Entity entity) => Bootstrap.Native.NextSibling(_scene, entity);

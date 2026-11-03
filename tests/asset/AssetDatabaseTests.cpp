@@ -375,6 +375,33 @@ TEST_CASE("Moving project content keeps identifiers, imports and the paths of th
     CHECK(reloaded->startupScene == moved->path);
 }
 
+TEST_CASE("Autoload scenes follow FileSystem file and folder moves",
+          "[asset][database][filesystem][globals]")
+{
+    TemporaryProject project;
+    project.write("Globals/State.dvxscene",
+                  "[scene format=1]\n[entity uuid=\"2ac185db-df99-46c4-8fbe-3610b9a2e3b7\" "
+                  "name=\"State\"]\n");
+    devex::core::JobSystem jobs(1);
+    auto database = AssetDatabase::open(project.project, jobs, {.watchFiles = false});
+    REQUIRE(database);
+    static_cast<void>(settle(**database));
+    auto settings = (*database)->project();
+    settings.globals = {{"State", "res://assets/Globals/State.dvxscene"},
+                        {"Disabled", "res://assets/Globals/Music.dvxscene", false}};
+    REQUIRE((*database)->updateProject(settings));
+    REQUIRE((*database)->movePath("res://assets/Globals/State.dvxscene", "res://assets/Globals",
+                                  "GameState.dvxscene"));
+    CHECK((*database)->project().globals[0].path == "res://assets/Globals/GameState.dvxscene");
+    REQUIRE((*database)->movePath("res://assets/Globals", "res://assets", "Shared"));
+    const auto& globals = (*database)->project().globals;
+    CHECK(globals[0].path == "res://assets/Shared/GameState.dvxscene");
+    CHECK(globals[1].path == "res://assets/Shared/Music.dvxscene");
+    const auto reloaded = devex::asset::loadProject(project.project.file);
+    REQUIRE(reloaded);
+    CHECK(reloaded->globals == globals);
+}
+
 TEST_CASE("Moving content refuses used names, its own folders and the other content root", "[asset][database][filesystem]")
 {
     TemporaryProject project;

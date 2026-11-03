@@ -35,6 +35,8 @@ internal unsafe struct NativeApi
     public delegate* unmanaged<void*, Entity, byte*> EntityName;
     public delegate* unmanaged<void*, Entity, byte*, void> SetEntityName;
     public delegate* unmanaged<void*, byte*, Entity> FindEntity;
+    public delegate* unmanaged<void*, Entity> FirstRoot;
+    public delegate* unmanaged<void*, byte*, Entity> FindGlobal;
     public delegate* unmanaged<void*, Entity, Entity> Parent;
     public delegate* unmanaged<void*, Entity, Entity> FirstChild;
     public delegate* unmanaged<void*, Entity, Entity> NextSibling;
@@ -271,7 +273,7 @@ internal unsafe struct BootstrapArguments
 /// <summary>What the engine calls into: filling the function tables, then the game itself.</summary>
 public static unsafe class Bootstrap
 {
-    internal const int Version = 26;
+    internal const int Version = 27;
 
     internal static NativeApi Native;
     private static byte[]? _description;
@@ -367,7 +369,7 @@ public static unsafe class Bootstrap
     {
         try
         {
-            GameRuntime.RunPhase(scene, (SystemPhase)phase, delta);
+            GameRuntime.RunPhase(scene, (SystemPhase)(phase & 0xff), delta, (phase & 0x100) != 0, (phase & 0x200) != 0);
         }
         catch (Exception exception)
         {

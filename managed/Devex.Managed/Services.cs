@@ -39,6 +39,17 @@ public static unsafe class Game
     public static float LoadingProgress => MathF.Max(Bootstrap.Native.SceneLoadingProgress(), 0.0f);
 }
 
+/// <summary>Named scenes that stay alive across level changes.</summary>
+public static unsafe class Globals
+{
+    /// <summary>The root entity of an enabled autoload, or Entity.None.</summary>
+    public static Entity Find(string name)
+    {
+        using var text = new Utf8Buffer(name);
+        return Bootstrap.Native.FindGlobal(Scene.Current.Pointer, text.Pointer);
+    }
+}
+
 /// <summary>Time of the game.</summary>
 public static class Time
 {

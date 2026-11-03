@@ -350,7 +350,7 @@ std::vector<CreationEntry> creationCatalog(const scene::ComponentRegistry& regis
     // The components of the game, written in its code.
     for (const scene::ComponentType& type : registry.types())
     {
-        if (engineComponent(type.name()) != nullptr)
+        if (engineComponent(type.name()) != nullptr || type.name() == "GlobalRoot")
         {
             continue;
         }

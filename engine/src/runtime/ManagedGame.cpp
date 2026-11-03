@@ -1,4 +1,6 @@
 #include "ManagedGame.hpp"
+#include "GlobalScenes.hpp"
+#include <devex/runtime/Globals.hpp>
 
 #include <devex/asset/AssetId.hpp>
 #include <devex/asset/Localization.hpp>
@@ -124,6 +126,8 @@ struct NativeApi
     const char* (*entityName)(void* scene, Entity entity);
     void (*setEntityName)(void* scene, Entity entity, const char* name);
     Entity (*findEntity)(void* scene, const char* name);
+    Entity (*firstRoot)(void* scene);
+    Entity (*findGlobal)(void* scene, const char* name);
     Entity (*parent)(void* scene, Entity entity);
     Entity (*firstChild)(void* scene, Entity entity);
     Entity (*nextSibling)(void* scene, Entity entity);
@@ -353,7 +357,7 @@ struct ManagedApi
 };
 
 // Devex.Managed's Bootstrap.Version: both sides change it with the function tables.
-constexpr int bootstrapVersion = 26;
+constexpr int bootstrapVersion = 27;
 
 struct BootstrapArguments
 {
@@ -654,6 +658,16 @@ Entity apiFindEntity(void* scene, const char* name)
 Entity apiParent(void* scene, Entity entity)
 {
     return scene != nullptr && toScene(scene)->isAlive(entity) ? toScene(scene)->parent(entity) : Entity{};
+}
+
+Entity apiFirstRoot(void* scene)
+{
+    return scene != nullptr ? toScene(scene)->firstRoot() : Entity{};
+}
+Entity apiFindGlobal(void* scene, const char* name)
+{
+    return scene != nullptr && name != nullptr ? runtime::findGlobal(*toScene(scene), name)
+                                               : Entity{};
 }
 
 Entity apiFirstChild(void* scene, Entity entity)
@@ -2758,6 +2772,8 @@ int apiRaycastSolid(const math::Vec3* origin, const math::Vec3* direction, float
         .entityName = &apiEntityName,
         .setEntityName = &apiSetEntityName,
         .findEntity = &apiFindEntity,
+        .firstRoot = &apiFirstRoot,
+        .findGlobal = &apiFindGlobal,
         .parent = &apiParent,
         .firstChild = &apiFirstChild,
         .nextSibling = &apiNextSibling,
@@ -3358,7 +3374,10 @@ void ManagedGame::runPhase(Frame& frame, SystemPhase phase)
     currentFrame() = &frame;
     {
         const platform::CrashGuardBarrier barrier;
-        m_impl->managed.runPhase(frame.scene, static_cast<int>(phase), static_cast<float>(frame.delta.count()));
+        // A private flag in the existing phase word keeps the bootstrap function table unchanged.
+        const int phaseWord = static_cast<int>(phase) | (frame.keepInstances ? 0x100 : 0) |
+                              (phase == SystemPhase::Start && hasGlobals(*frame.scene) ? 0x200 : 0);
+        m_impl->managed.runPhase(frame.scene, phaseWord, static_cast<float>(frame.delta.count()));
     }
     currentFrame() = nullptr;
 }

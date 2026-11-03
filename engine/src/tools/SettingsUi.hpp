@@ -16,6 +16,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -67,6 +68,19 @@ struct SettingsUi : FormUi
     scene::Entity top;
     scene::Entity filter;
     scene::Entity list;
+    scene::Entity sidebar;
+    scene::Entity heading;
+    scene::Entity noMatches;
+    scene::Entity saveStatus;
+    std::vector<PanelButton> tabs;
+    PanelButton close;
+    PanelButton clearSearch;
+    bool closeRequested = false;
+    bool filterDirty = true;
+    std::string appliedFilter;
+    std::size_t appliedPage = static_cast<std::size_t>(-1);
+    bool projectTabs = false;
+    void setFont(float size) noexcept;
 
     // Forgets everything, to make the window again at another size of text.
     void clearAll();
@@ -115,8 +129,10 @@ struct InputMapUi
         scene::Entity kind;
         scene::Entity context;
         scene::Entity deadZone;
+        scene::Entity summary;
         std::vector<Binding> bindings;
         PanelButton add;
+        PanelButton addExpanded;
         PanelButton remove;
     };
 
@@ -124,13 +140,19 @@ struct InputMapUi
     PanelButton addContext;
     std::vector<Action> actions;
     PanelButton addAction;
+    scene::Entity newAction;
+    scene::Entity search;
+    scene::Entity empty;
+    std::unordered_set<std::string> knownActions;
+    bool contextsInitialized = false;
+    std::string actionQuery;
 
     // The event window: what it listens for and shows, the list it chooses from, and the direction.
     scene::Entity dialog;
     scene::Entity dialogTitle;
     scene::Entity listen;
     scene::Entity listenText;
-    scene::Entity search;
+    scene::Entity eventSearch;
     scene::Entity sourceScroll;
     scene::Entity sourceList;
     std::vector<std::pair<platform::InputSource, PanelButton>> sources;
@@ -197,6 +219,26 @@ struct ProjectSettingsUi : SettingsUi
     std::array<scene::Entity, asset::audioGroupCount> groupNames{};
     std::array<scene::Entity, asset::audioGroupCount> groupVolumes{};
     InputMapUi input;
+    struct GlobalRow
+    {
+        scene::Entity name;
+        scene::Entity path;
+        scene::Entity enabled;
+        PanelButton up;
+        PanelButton down;
+        PanelButton remove;
+    };
+    std::vector<GlobalRow> globalRows;
+    std::vector<std::string> globalPaths;
+    PanelButton addGlobal;
+    scene::Entity globalWarning;
+    std::size_t globalCard = 0;
+    scene::Entity globalNewName;
+    scene::Entity globalNewScene;
+    std::string globalCandidate;
+    void buildGlobals(EditorUiKit& kit);
+    void syncGlobals();
+    void answerGlobals();
 
     void update(ToolsState& state, EditorUiKit& kit, core::Duration delta);
     [[nodiscard]] std::string signatureOf() const;
@@ -212,6 +254,7 @@ void buildInputMap(ProjectSettingsUi& ui, EditorUiKit& kit, std::size_t page);
 void buildEventDialog(ProjectSettingsUi& ui, EditorUiKit& kit);
 void syncInputMap(ProjectSettingsUi& ui, ToolsState& state, EditorUiKit& kit);
 void answerInputMap(ProjectSettingsUi& ui, ToolsState& state, EditorUiKit& kit);
+void filterInputMap(ProjectSettingsUi& ui);
 // What the Input Map adds to the signature of the cards.
 [[nodiscard]] std::string inputMapSignature(const asset::InputSettings& input);
 

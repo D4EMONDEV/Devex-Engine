@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -206,6 +207,19 @@ enum class ContentRoot : std::uint8_t
     Code,
 };
 
+// An ordered autoload: instantiated once per play session, before the current level starts.
+// Its entities and attached scripts survive level changes.
+struct DEVEX_API GlobalScene
+{
+    std::string name;
+    std::string path;
+    bool enabled = true;
+
+    bool operator==(const GlobalScene&) const = default;
+};
+
+[[nodiscard]] DEVEX_API core::Result<void> validateGlobals(std::span<const GlobalScene> globals);
+
 // A game project: a .dvxproj file whose directory holds the assets/ folder, the code/ folder of its
 // game module when it has one, and the .devex/ cache of imported data and builds, which is never
 // versioned.
@@ -225,6 +239,7 @@ struct DEVEX_API Project
     ExportSettings exportSettings;
     InputSettings input;
     LocalizationSettings localization;
+    std::vector<GlobalScene> globals;
 
     [[nodiscard]] std::filesystem::path assetsDirectory() const
     {

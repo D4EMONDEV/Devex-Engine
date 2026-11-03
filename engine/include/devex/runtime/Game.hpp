@@ -57,7 +57,8 @@ class CoroutineScheduler;
 // 35: TileData gained custom collision outlines.
 // 36: UiWorld gained the appearance and measured layout of dropdown menus.
 // 37: DynamicField gained inspector group metadata for scripted components.
-inline constexpr std::uint32_t gameApiVersion = 37;
+// 38: Project gained ordered global scenes.
+inline constexpr std::uint32_t gameApiVersion = 38;
 
 enum class SystemPhase : std::uint8_t
 {

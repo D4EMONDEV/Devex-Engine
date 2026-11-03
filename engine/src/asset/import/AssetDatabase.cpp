@@ -1111,6 +1111,8 @@ public:
             }
         };
         follow(project.startupScene);
+        for (auto& global : project.globals)
+            follow(global.path);
         for (std::string& scene : project.exportSettings.scenes)
         {
             follow(scene);

@@ -170,6 +170,12 @@ TEST_CASE("An export packages the scenes and every asset they need", "[runtime][
         "scene");
 
     devex::asset::Project settings = *created;
+    const AssetId global = writeAsset(
+        assets / "globals" / "State.dvxscene",
+        "[scene format=1]\n[entity uuid=\"45dc3dab-771f-41e8-ab49-0f2982dd811d\" name=\"State\"]\n",
+        "scene");
+    settings.globals = {{"State", "res://assets/globals/State.dvxscene"},
+                        {"Disabled", "res://assets/globals/NotImported.dvxscene", false}};
     settings.startupScene = "res://assets/scenes/main.dvxscene";
     settings.exportSettings.includeFolders = {"res://assets/data"};
     settings.window.icon = icon;
@@ -187,7 +193,7 @@ TEST_CASE("An export packages the scenes and every asset they need", "[runtime][
     const EngineBuild engine{.name = "test", .configuration = "Release", .directory = directory.path / "engine"};
     devex::core::Result<devex::runtime::ExportPlan> plan = devex::runtime::planExport(**database, engine);
     REQUIRE(plan.has_value());
-    CHECK(plan->scenes == std::vector{main});
+    CHECK(plan->scenes == std::vector{main, global});
     // Named after the system the game is exported for.
     CHECK(plan->output == (created->root / devex::asset::ExportSettings{}.output).lexically_normal());
     REQUIRE(plan->icon.has_value());
@@ -198,7 +204,7 @@ TEST_CASE("An export packages the scenes and every asset they need", "[runtime][
     const devex::core::Result<devex::runtime::ExportResult> result = devex::runtime::exportGame(
         *plan, [&fractions](const devex::runtime::ExportProgress& progress) { fractions.push_back(progress.fraction); });
     REQUIRE(result.has_value());
-    CHECK(result->assets == 5);
+    CHECK(result->assets == 6);
     CHECK(result->executable.empty());
     REQUIRE_FALSE(fractions.empty());
     CHECK(fractions.back() == 1.0f);
@@ -210,12 +216,13 @@ TEST_CASE("An export packages the scenes and every asset they need", "[runtime][
             devex::asset::PackageReader::open(directory.path / "game" / "Export test.dvxpak");
         REQUIRE(package.has_value());
         const devex::asset::PackageReader& reader = **package;
-        for (const AssetId expected : {main, prefab, used, icon, data})
+        for (const AssetId expected : {main, global, prefab, used, icon, data})
         {
             CHECK(reader.find(expected) != nullptr);
         }
         CHECK(reader.find(unused) == nullptr);
         CHECK(reader.project().name == "Export test");
+        CHECK(reader.project().globals == settings.globals);
         CHECK(reader.findByPath(reader.project().startupScene) == main);
         CHECK(reader.project().exportSettings == devex::asset::ExportSettings{});
         const auto packagedIcon = reader.icon();

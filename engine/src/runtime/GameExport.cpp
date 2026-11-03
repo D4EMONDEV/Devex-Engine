@@ -742,6 +742,17 @@ core::Result<ExportPlan> planExport(const asset::AssetDatabase& database, const 
         }
     }
 
+    for (const auto& global : project.globals)
+    {
+        if (!global.enabled)
+            continue;
+        auto scene = importedScene(global.path);
+        if (!scene)
+            return std::unexpected(scene.error());
+        if (std::ranges::find(plan.scenes, *scene) == plan.scenes.end())
+            plan.scenes.push_back(*scene);
+    }
+
     for (std::string folder : project.exportSettings.includeFolders)
     {
         while (folder.ends_with('/'))

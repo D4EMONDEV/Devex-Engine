@@ -176,7 +176,7 @@ internal static unsafe class GameRuntime
     }
 
     /// <summary>Runs the components and systems of the scene for this phase.</summary>
-    public static void RunPhase(void* scene, SystemPhase phase, float delta)
+    public static void RunPhase(void* scene, SystemPhase phase, float delta, bool keepInstances = false, bool hierarchyStart = false)
     {
         SceneView.Bind(scene);
         _running = true;
@@ -186,7 +186,7 @@ internal static unsafe class GameRuntime
         Coroutines.SetMainThread();
         try
         {
-            if (phase == SystemPhase.Start)
+            if (phase == SystemPhase.Start && !keepInstances)
             {
                 // A new game, or a new scene: every component and coroutine starts over.
                 Coroutines.Clear();
@@ -212,18 +212,7 @@ internal static unsafe class GameRuntime
                 LoadInstances();
             }
             // Start runs before anything else happens to a component.
-            foreach (ComponentTypeInfo info in Types)
-            {
-                using ProfileScope zone = profiling && info.Order.Count > 0 ? Profiler.Scope(info.StartZone) : default;
-                foreach (Entity entity in info.Order)
-                {
-                    if (info.Instances.TryGetValue(entity.Key, out Component? instance) && !instance.Started)
-                    {
-                        instance.Started = true;
-                        Call(info, instance, "Start", static (component, _) => component.Start(), default);
-                    }
-                }
-            }
+            StartInstances(profiling, hierarchyStart);
             if (phase == SystemPhase.Update)
             {
                 DispatchContacts();
@@ -299,6 +288,47 @@ internal static unsafe class GameRuntime
             _running = false;
             SceneView.Bind(null);
             SynchronizationContext.SetSynchronizationContext(previousContext);
+        }
+    }
+
+    private static void StartInstances(bool profiling, bool hierarchyOrder)
+    {
+        List<Entity>? order = null;
+        if (hierarchyOrder)
+        {
+            order = [];
+            void Walk(Entity entity)
+            {
+                order.Add(entity);
+                foreach (Entity child in SceneView.Children(entity))
+                    Walk(child);
+            }
+            foreach (Entity root in SceneView.Roots)
+                Walk(root);
+        }
+        void Start(ComponentTypeInfo info, Entity entity)
+        {
+            if (info.Instances.TryGetValue(entity.Key, out Component? instance) && !instance.Started && entity.IsAlive)
+            {
+                instance.Started = true;
+                Call(info, instance, "Start", static (component, _) => component.Start(), default);
+            }
+        }
+        if (order != null)
+        {
+            // Across component types too: a level may read a differently typed global in Start.
+            foreach (Entity entity in order)
+                foreach (ComponentTypeInfo info in Types)
+                    Start(info, entity);
+        }
+        else
+        {
+            foreach (ComponentTypeInfo info in Types)
+            {
+                using ProfileScope zone = profiling && info.Order.Count > 0 ? Profiler.Scope(info.StartZone) : default;
+                foreach (Entity entity in info.Order)
+                    Start(info, entity);
+            }
         }
     }
 

@@ -151,7 +151,8 @@ Button FormUi::toolButton(EditorUiKit& kit, Entity parent, Icon glyph, UiRect re
     made.entity = add(parent, "Button", rect, "tool");
     scene().add<scene::UiImage>(made.entity);
     scene().add<scene::UiButton>(made.entity);
-    const float inset = std::round((rect.offsetMax.y - rect.offsetMin.y) * 0.2f);
+    // The SVG already has breathing room. Padding it again made row tools hard to see.
+    const float inset = glyph == Icon::Trash ? 0.0f : 1.0f;
     made.icon = icon(kit, made.entity, whole(math::Vec4{inset}), glyph, "icon_dim");
     return made;
 }

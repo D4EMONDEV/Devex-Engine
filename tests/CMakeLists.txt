@@ -254,6 +254,7 @@ devex_add_tests(tools
         tools/TextEditorTests.cpp
         tools/ThemeTests.cpp
         tools/InspectorTests.cpp
+        tools/SettingsUiTests.cpp
         tools/TileCollisionEditorTests.cpp
         tools/ViewportSettingsTests.cpp
         tools/ScriptSettingsTests.cpp
@@ -292,6 +293,7 @@ devex_set_warnings(devex_test_plain_library)
 devex_add_tests(runtime
     SOURCES
         runtime/ApplicationTests.cpp
+        runtime/GlobalScenesTests.cpp
         runtime/AssetMemoryTests.cpp
         runtime/CoroutineTests.cpp
         runtime/FixedTimestepTests.cpp
