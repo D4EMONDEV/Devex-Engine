@@ -117,6 +117,10 @@ enum class Key : std::uint16_t
     NonUsBackslash = 100,
     Application = 101,
 
+    // The Back button of Android, a consumer key of USB (SDL's AC_BACK, past the keys Input
+    // tracks), given a value the keyboard page leaves reserved.
+    Back = 165,
+
     LeftControl = 224,
     LeftShift = 225,
     LeftAlt = 226,

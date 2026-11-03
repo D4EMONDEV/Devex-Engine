@@ -7,7 +7,7 @@
 namespace devex::platform {
 namespace {
 
-constexpr std::array<std::pair<Key, std::string_view>, 106> keyNames{{
+constexpr std::array<std::pair<Key, std::string_view>, 107> keyNames{{
     {Key::A, "A"},
     {Key::B, "B"},
     {Key::C, "C"},
@@ -46,6 +46,7 @@ constexpr std::array<std::pair<Key, std::string_view>, 106> keyNames{{
     {Key::Digit0, "Digit0"},
     {Key::Enter, "Enter"},
     {Key::Escape, "Escape"},
+    {Key::Back, "Back"},
     {Key::Backspace, "Backspace"},
     {Key::Tab, "Tab"},
     {Key::Space, "Space"},

@@ -4871,9 +4871,20 @@ Les étapes, chacune livrable et testée seule :
    - ✅ le journal dans logcat (étiquette `Devex`), les sauvegardes dans le stockage interne ;
    - ✅ les deux variables de garde du gestionnaire de plantages hors du bloc statique de
      stockage des threads (`initial-exec`), que `dlopen` refuse sur Android ;
-   - la surface perdue et retrouvée quand le jeu passe en arrière-plan : aujourd'hui, Vulkan
-     répond `VK_ERROR_SURFACE_LOST_KHR` et le jeu quitte ;
-   - le toucher et le bouton retour reliés aux actions du projet.
+   - ✅ la surface perdue et retrouvée : en arrière-plan, Android détruit la surface et Vulkan
+     répond `VK_ERROR_SURFACE_LOST_KHR`, à l'acquisition ou à la présentation. Le renderer lâche
+     alors la swapchain et la surface, saute les images, et retente chaque image d'en créer une,
+     ce qui réussit au retour au premier plan. Le jeu ne tourne pas entre-temps : SDL bloque sa
+     boucle d'événements et coupe le son tant que l'app est en arrière-plan ;
+   - ✅ **le bouton retour, comme dans Godot** (décidé le 3 novembre 2026) : une touche `Back`
+     (`key:Back` dans les actions, `Key.Back` en C#), qui ferme le jeu quand aucune action ne
+     l'utilise et que le réglage du projet *Android Quit On Back* (`quit_on_back` de `[window]`,
+     écrit seulement quand il est coupé) le permet. Le retour d'Android, l'`AC_BACK` de SDL, est
+     hors des 256 touches que suit `Input` : il prend la valeur 165, que la page clavier USB laisse
+     réservée ;
+   - ✅ **le toucher reste une souris émulée** (décidé le même jour), comme le réglage par défaut de
+     Godot : SDL fait d'un doigt le clic gauche et le pointeur. Le multi-touch et les commandes à
+     l'écran viendront plus tard.
 4. **La cuisson Android** : textures en ASTC, et le SPIR-V des shaders des projets dans le package
    (l'appareil n'a pas `slangc`).
 5. **L'export dans l'éditeur** : la cible Android dans la fenêtre d'export, le projet Gradle généré
@@ -5407,6 +5418,13 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     lecteur en `libmain.so` appelé par SDL, SDL une seule fois dans le moteur ; sans éditeur,
     tests, C# ni encodeurs de textures. Pile des plantages par l'unwinder du NDK, horloge des
     fichiers et fuseaux horaires adaptés à sa libc++. Job de CI *Android arm64*.
+
+94. ✅ **Plateforme Android** — troisième étape d'Android, essayée dans l'émulateur : APK minimal
+    (projet Gradle du lecteur, activité qui étend celle de SDL, libc++ partagée), package projeté
+    dans l'APK, fichiers du moteur extraits, journal dans logcat, sauvegardes dans le stockage
+    interne ; surface perdue en arrière-plan et recréée au retour ; touche `Back` et réglage
+    *Android Quit On Back*, comme dans Godot ; toucher par la souris émulée. Preset
+    `android-x86_64` pour l'émulateur.
 
 Ensuite, sans ordre figé : à choisir dans les pistes ci-dessous.
 

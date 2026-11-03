@@ -90,6 +90,8 @@ struct DEVEX_API WindowSettings
     // On Linux, the exported game lists itself among the applications of the desktop when it
     // starts, where the dock and the window switcher take its name and icon.
     bool desktopEntry = true;
+    // On Android, the Back button quits the game when no input action uses it, as in Godot.
+    bool quitOnBack = true;
 
     bool operator==(const WindowSettings&) const = default;
 };

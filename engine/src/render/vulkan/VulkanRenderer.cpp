@@ -912,6 +912,17 @@ core::Result<void> VulkanRenderer::endFrame()
     {
         return {};
     }
+    if (m_surfaceLost)
+    {
+        if (core::Result<void> restored = restoreSurface(); !restored)
+        {
+            return restored;
+        }
+        if (m_surfaceLost)
+        {
+            return {};
+        }
+    }
 
     if (!m_swapchain || m_swapchainOutdated || windowPixelSize != m_swapchainWindowPixelSize)
     {
@@ -978,6 +989,10 @@ core::Result<void> VulkanRenderer::endFrame()
     {
         m_swapchainOutdated = true;
         return {};
+    }
+    if (acquired == VK_ERROR_SURFACE_LOST_KHR)
+    {
+        return loseSurface();
     }
     if (acquired < VK_SUCCESS)
     {
@@ -1105,12 +1120,45 @@ core::Result<void> VulkanRenderer::endFrame()
     {
         m_swapchainOutdated = true;
     }
+    else if (presented == VK_ERROR_SURFACE_LOST_KHR)
+    {
+        // The frame was submitted all the same: its context is in use.
+        ++m_frameIndex;
+        return loseSurface();
+    }
     else if (presented < VK_SUCCESS)
     {
         return vulkanError("vkQueuePresentKHR", presented);
     }
 
     ++m_frameIndex;
+    return {};
+}
+
+core::Result<void> VulkanRenderer::loseSurface()
+{
+    DEVEX_VK_TRY(vkDeviceWaitIdle, m_device.handle());
+    // The swapchain goes before the surface it presents to.
+    m_swapchain.reset();
+    m_surface = Surface(m_instance.handle(), VK_NULL_HANDLE);
+    m_surfaceLost = true;
+    DEVEX_LOG_INFO("The window lost its surface: drawing waits for it to come back");
+    return {};
+}
+
+core::Result<void> VulkanRenderer::restoreSurface()
+{
+    // Until the window has somewhere to draw again, as an Android app in the background, the
+    // surface cannot be made: the next frames try again.
+    const core::Result<std::uint64_t> handle = m_window.createVulkanSurface(m_instance.handle());
+    if (!handle)
+    {
+        return {};
+    }
+    m_surface = Surface(m_instance.handle(), std::bit_cast<VkSurfaceKHR>(*handle));
+    m_surfaceLost = false;
+    m_swapchainOutdated = true;
+    DEVEX_LOG_INFO("The window has its surface again");
     return {};
 }
 

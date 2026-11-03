@@ -261,6 +261,9 @@ private:
     void handleEvent(const platform::Event& event);
     // Asks to quit, which the editor may postpone to ask about unsaved changes.
     void requestClose();
+    // Whether the Back button of Android quits the game: as in Godot, unless the project turned that
+    // off or one of its input actions reads the Back key.
+    [[nodiscard]] bool quitsOnBack() const;
     // Runs the updates and the rendering of one frame. Also called from the operating system's
     // modal loop while the window is being resized, where events cannot be polled.
     void runFrame();
@@ -943,6 +946,31 @@ void ApplicationRunner::handleEvent(const platform::Event& event)
     {
         requestClose();
     }
+    else if (const auto* back = std::get_if<platform::KeyPressed>(&event);
+             back != nullptr && back->key == platform::Key::Back && !back->repeat && !isEditor() && quitsOnBack())
+    {
+        requestClose();
+    }
+}
+
+bool ApplicationRunner::quitsOnBack() const
+{
+    const asset::AssetSource* const source = assetSource();
+    if (source == nullptr || !source->project().window.quitOnBack)
+    {
+        return false;
+    }
+    for (const asset::InputAction& action : source->project().input.actions)
+    {
+        for (const asset::InputBinding& binding : action.bindings)
+        {
+            if (binding.input == "key:Back")
+            {
+                return false;
+            }
+        }
+    }
+    return true;
 }
 
 void ApplicationRunner::requestClose()

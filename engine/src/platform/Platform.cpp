@@ -97,6 +97,10 @@ bool SDLCALL watchLiveRedraw(void* /*userData*/, SDL_Event* event)
 
 [[nodiscard]] Key toKey(SDL_Scancode scancode) noexcept
 {
+    if (scancode == SDL_SCANCODE_AC_BACK)
+    {
+        return Key::Back;
+    }
     return static_cast<Key>(scancode);
 }
 

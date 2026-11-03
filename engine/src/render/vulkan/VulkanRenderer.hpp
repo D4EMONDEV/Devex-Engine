@@ -479,6 +479,10 @@ private:
     // Pipelines drawing into the swapchain or the viewport image, which share its format.
     [[nodiscard]] core::Result<void> createTargetPipelines(VkFormat format);
     [[nodiscard]] core::Result<void> recreateSwapchain(math::Extent2D windowPixelSize);
+    // The window lost what it presents to, as an Android app sent to the background: the swapchain
+    // and the surface are let go until the window can make a surface again.
+    [[nodiscard]] core::Result<void> loseSurface();
+    [[nodiscard]] core::Result<void> restoreSurface();
     // Copies the texture at once and waits for the copy: for the textures of the renderer itself.
     [[nodiscard]] core::Result<GpuTexture> uploadTexture(const asset::TextureData& texture, std::uint32_t slot);
     // Creates the image and fills a staging buffer with its levels, for a later copy.
@@ -933,6 +937,7 @@ private:
     // The size of the scene image of the frame being recorded.
     math::Extent2D m_sceneExtent;
     bool m_swapchainOutdated = false;
+    bool m_surfaceLost = false;
     std::array<FrameContext, framesInFlight> m_frames{};
     // The views drawn beside the main image, kept by their identifiers from frame to frame.
     std::vector<std::unique_ptr<ExtraView>> m_extraViews;

@@ -106,6 +106,8 @@ public enum Key
     KeypadPeriod = 99,
     NonUsBackslash = 100,
     Application = 101,
+    // The Back button of Android.
+    Back = 165,
     LeftControl = 224,
     LeftShift = 225,
     LeftAlt = 226,

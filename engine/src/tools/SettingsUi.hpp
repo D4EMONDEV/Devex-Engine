@@ -184,6 +184,7 @@ struct ProjectSettingsUi : SettingsUi
     scene::Entity icon;
     std::vector<asset::AssetId> icons;
     scene::Entity desktopEntry;
+    scene::Entity quitOnBack;
     // Window.
     std::vector<scene::Entity> size;
     scene::Entity fullscreen;

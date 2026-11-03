@@ -955,6 +955,9 @@ void ProjectSettingsUi::buildCards(ToolsState& state, EditorUiKit& kit)
     desktopEntry = toggle(desktopRow.editor);
     tooltip(desktopRow.row, "On Linux, the exported game lists itself among the applications when it starts: the dock "
                             "shows its name and icon. The export also gives the entry to install by hand.");
+    const FormRow backRow = formRow(application, "Android Quit On Back");
+    quitOnBack = toggle(backRow.editor);
+    tooltip(backRow.row, "On Android, the Back button quits the game, unless an input action uses the Back key");
 
     // Window.
     Section& window = pageCard(kit, 1, "Window");
@@ -1138,6 +1141,7 @@ void ProjectSettingsUi::sync(ToolsState& state, EditorUiKit& kit)
     setChoice(icon, std::move(textures), chosenIcon != icons.end() ? static_cast<std::int32_t>(chosenIcon - icons.begin()) : -1);
     scene().get<scene::UiDropdown>(icon).placeholder = assetLabel(state, project.window.icon);
     setToggle(desktopEntry, project.window.desktopEntry);
+    setToggle(quitOnBack, project.window.quitOnBack);
 
     // Window and physics.
     setNumber(size[0], static_cast<float>(project.window.width));
@@ -1246,6 +1250,10 @@ void ProjectSettingsUi::answer(ToolsState& state, EditorUiKit& kit)
     if (world.wasChanged(desktopEntry))
     {
         project.window.desktopEntry = scene().get<scene::UiToggle>(desktopEntry).value;
+    }
+    if (world.wasChanged(quitOnBack))
+    {
+        project.window.quitOnBack = scene().get<scene::UiToggle>(quitOnBack).value;
     }
 
     // Window and physics.

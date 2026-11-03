@@ -259,6 +259,7 @@ void readWindowAndExport(const serialization::TextDocument& document, Project& p
             readBool(section, "vsync", window.vsync);
             readUnsigned(section, "max_frame_rate", window.maxFrameRate);
             readBool(section, "desktop_entry", window.desktopEntry);
+            readBool(section, "quit_on_back", window.quitOnBack);
             const serialization::TextValue* const icon = section.findAttribute("icon");
             const serialization::TextCall* const call = icon != nullptr ? serialization::asCall(*icon, "asset") : nullptr;
             const std::string* const uuid =
@@ -680,6 +681,10 @@ std::string writeProjectText(const Project& project)
         if (!settings.desktopEntry)
         {
             window.attributes.push_back({"desktop_entry", serialization::TextValue(false)});
+        }
+        if (!settings.quitOnBack)
+        {
+            window.attributes.push_back({"quit_on_back", serialization::TextValue(false)});
         }
     }
 

@@ -12,6 +12,9 @@ TEST_CASE("Input sources read and write their names", "[platform][input]")
 {
     using devex::platform::InputDevice;
     CHECK(devex::platform::parseInputSource("key:Space") == devex::platform::keySource(Key::Space));
+    // Android's Back button, which game actions can read.
+    CHECK(devex::platform::parseInputSource("key:Back") == devex::platform::keySource(Key::Back));
+    CHECK(devex::platform::toString(devex::platform::keySource(Key::Back)) == "key:Back");
     CHECK(devex::platform::parseInputSource("mouse:Right") == devex::platform::mouseSource(MouseButton::Right));
     CHECK(devex::platform::parseInputSource("pad:South") ==
           devex::platform::gamepadSource(devex::platform::GamepadButton::South));
