@@ -1862,9 +1862,18 @@ void ApplicationRunner::updateGameCode()
     {
         return;
     }
+    const Clock::time_point now = Clock::now();
+    if (!m_gameBuilder && m_loadGameCode && isEditor() && now >= m_nextLibraryCheck &&
+        GameCodeBuilder::hasCode(m_services.database->project()))
+    {
+        // Also discover the first C++ file saved or copied by an external editor.
+        m_gameBuilder.emplace(
+            m_services.database->project(),
+            (m_services.platform.baseDirectory() / ".." / "cmake").lexically_normal());
+        m_openManagedAfterBuild = true;
+    }
     const bool automatic = m_services.tools == nullptr || m_services.tools->automaticCodeCompilation();
     bool reload = m_gameBuilder && m_gameBuilder->update(automatic);
-    const Clock::time_point now = Clock::now();
     if (!reload && m_loadGameCode && now >= m_nextLibraryCheck &&
         (!m_gameBuilder || !m_gameBuilder->pending()))
     {
@@ -2872,7 +2881,7 @@ tools::GameCodeStatus ApplicationRunner::gameCodeStatus() const
 {
     using State = tools::GameCodeStatus::State;
     const asset::Project* const project = m_services.database != nullptr ? &m_services.database->project() : nullptr;
-    const bool cpp = project != nullptr && GameCodeBuilder::hasCode(*project);
+    const bool cpp = m_gameBuilder.has_value() || m_game != nullptr;
     const bool csharp = project != nullptr && ManagedCodeBuilder::hasCode(*project);
     if (!cpp && !csharp)
     {
@@ -2948,6 +2957,12 @@ void ApplicationRunner::createScript(const tools::NewScript& script)
     if (!script.csharp)
     {
         DEVEX_LOG_INFO("Add game.component<{}>(); to the module of the game to use it", script.name);
+        if (!m_gameBuilder)
+        {
+            m_gameBuilder.emplace(
+                project, (m_services.platform.baseDirectory() / ".." / "cmake").lexically_normal());
+            m_openManagedAfterBuild = true;
+        }
     }
     else if (!m_managedBuilder)
     {

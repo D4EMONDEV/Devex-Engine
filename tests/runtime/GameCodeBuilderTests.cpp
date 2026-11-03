@@ -1,6 +1,7 @@
 #include "runtime/GameCodeBuilder.hpp"
 
 #include <devex/asset/Project.hpp>
+#include <devex/core/BuildInfo.hpp>
 #include <devex/core/File.hpp>
 #include <devex/core/Uuid.hpp>
 
@@ -139,6 +140,210 @@ TEST_CASE("New game code gets a CMake project and an example system", "[runtime]
     }
     std::error_code ignored;
     std::filesystem::remove_all(root, ignored);
+}
+
+TEST_CASE("The first C++ script creates its native project without overwriting sources",
+          "[runtime][game][cppproject]")
+{
+    const TemporaryGameProject fixture;
+    std::filesystem::create_directories(fixture.project.codeDirectory() / "Actors");
+    const auto created =
+        GameCodeBuilder::createComponent(fixture.project, "Player", "res://code/Actors");
+    REQUIRE(created);
+    CHECK(GameCodeBuilder::hasCode(fixture.project));
+    const auto cmake =
+        devex::core::readTextFile(fixture.project.codeDirectory() / "CMakeLists.txt");
+    REQUIRE(cmake);
+    CHECK(cmake->contains("CONFIGURE_DEPENDS"));
+    CHECK(cmake->contains("DevexProject.cmake"));
+    CHECK(cmake->contains("CMakeFiles"));
+    const auto module = devex::core::readTextFile(fixture.project.codeDirectory() / "Game.cpp");
+    REQUIRE(module);
+    CHECK(module->contains("DEVEX_GAME_MODULE(game)"));
+    CHECK_FALSE(module->contains("Spinner"));
+    REQUIRE(GameCodeBuilder::prepareProjectFiles(fixture.project, fixture.engineConfig, "Debug"));
+    const auto context = fixture.project.cacheDirectory() / "code/DevexProject.cmake";
+    const auto text = devex::core::readTextFile(context);
+    REQUIRE(text);
+    CHECK(text->contains("Devex_DIR"));
+    CHECK(text->contains("Debug"));
+    const auto sourceText = *devex::core::readTextFile(*created);
+    const auto sourceTime = std::filesystem::last_write_time(*created);
+    const auto cmakeTime =
+        std::filesystem::last_write_time(fixture.project.codeDirectory() / "CMakeLists.txt");
+    const auto contextTime = std::filesystem::last_write_time(context);
+    REQUIRE(GameCodeBuilder::prepareProjectFiles(fixture.project, fixture.engineConfig, "Debug"));
+    CHECK(*devex::core::readTextFile(*created) == sourceText);
+    CHECK(std::filesystem::last_write_time(*created) == sourceTime);
+    CHECK(std::filesystem::last_write_time(fixture.project.codeDirectory() / "CMakeLists.txt") ==
+          cmakeTime);
+    CHECK(std::filesystem::last_write_time(context) == contextTime);
+    REQUIRE(GameCodeBuilder::prepareProjectFiles(fixture.project, fixture.root / "new engine/cmake",
+                                                 "Release"));
+    CHECK(devex::core::readTextFile(context)->contains("new engine/cmake"));
+    CHECK(devex::core::readTextFile(context)->contains("Release"));
+    CHECK(*devex::core::readTextFile(*created) == sourceText);
+    CHECK(*devex::core::readTextFile(fixture.project.codeDirectory() / "Game.cpp") == *module);
+}
+
+TEST_CASE("Native project discovery ignores IDE outputs and leaves C#-only projects alone",
+          "[runtime][game][cppproject]")
+{
+    const TemporaryGameProject fixture;
+    for (const auto directory :
+         {".idea", ".devex", "obj", "bin", "build", "out", "CMakeFiles", "cmake-build-debug"})
+        REQUIRE(devex::core::writeTextFile(fixture.project.codeDirectory() / directory /
+                                               "CompilerId.cpp",
+                                           "// not a game source\n"));
+    REQUIRE(devex::core::writeTextFile(fixture.project.codeDirectory() / "Player.cs",
+                                       "class Player {}\n"));
+    CHECK_FALSE(GameCodeBuilder::hasCode(fixture.project));
+    REQUIRE(GameCodeBuilder::prepareProjectFiles(fixture.project, fixture.engineConfig));
+    CHECK_FALSE(std::filesystem::exists(fixture.project.codeDirectory() / "CMakeLists.txt"));
+    REQUIRE(devex::core::writeTextFile(fixture.project.codeDirectory() / "Actors/Player.cc",
+                                       "// DEVEX_GAME_MODULE(fake)\n"));
+    CHECK(GameCodeBuilder::hasCode(fixture.project));
+    const GameCodeBuilder builder(fixture.project, fixture.engineConfig, "Debug");
+    CHECK(builder.pending());
+    CHECK(std::filesystem::exists(fixture.project.codeDirectory() / "CMakeLists.txt"));
+    CHECK(devex::core::readTextFile(fixture.project.codeDirectory() / "Game.cpp")
+              ->contains("DEVEX_GAME_MODULE(game)"));
+}
+
+TEST_CASE("C++ project setup preserves custom CMake and existing module entry points",
+          "[runtime][game][cppproject]")
+{
+    const TemporaryGameProject fixture;
+    SECTION("An untouched older generated project is updated without changing its source")
+    {
+        REQUIRE(GameCodeBuilder::createCode(fixture.project));
+        const auto source = fixture.project.codeDirectory() / "Game.cpp";
+        const auto original = *devex::core::readTextFile(source);
+        const auto modified = std::filesystem::last_write_time(source);
+        const auto cmake = fixture.project.codeDirectory() / "CMakeLists.txt";
+        REQUIRE(devex::core::writeTextFile(
+            cmake,
+            R"(# The game module of the project, built by the Devex editor whenever a file of this folder changes.
+cmake_minimum_required(VERSION 3.25)
+project(Game LANGUAGES CXX)
+
+find_package(Devex CONFIG REQUIRED)
+
+file(GLOB_RECURSE sources CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/*.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/*.hpp")
+devex_add_game_module(SOURCES ${sources})
+)"));
+        REQUIRE(GameCodeBuilder::prepareProjectFiles(fixture.project, fixture.engineConfig));
+        CHECK(devex::core::readTextFile(cmake)->contains("DevexProject.cmake"));
+        CHECK(*devex::core::readTextFile(source) == original);
+        CHECK(std::filesystem::last_write_time(source) == modified);
+    }
+    SECTION("A custom CMakeLists remains byte-for-byte unchanged")
+    {
+        const std::string custom =
+            "# my build\ncmake_minimum_required(VERSION 3.25)\nproject(Custom)\n";
+        REQUIRE(
+            devex::core::writeTextFile(fixture.project.codeDirectory() / "CMakeLists.txt", custom));
+        REQUIRE(GameCodeBuilder::createComponent(fixture.project, "Player"));
+        REQUIRE(GameCodeBuilder::prepareProjectFiles(fixture.project, fixture.engineConfig));
+        CHECK(*devex::core::readTextFile(fixture.project.codeDirectory() / "CMakeLists.txt") ==
+              custom);
+        CHECK_FALSE(std::filesystem::exists(fixture.project.codeDirectory() / "Game.cpp"));
+    }
+    SECTION("An edited generated CMakeLists is also custom")
+    {
+        REQUIRE(GameCodeBuilder::createCode(fixture.project));
+        const auto file = fixture.project.codeDirectory() / "CMakeLists.txt";
+        const auto custom = *devex::core::readTextFile(file) + "\n# My extra libraries\n";
+        REQUIRE(devex::core::writeTextFile(file, custom));
+        REQUIRE(GameCodeBuilder::prepareProjectFiles(fixture.project, fixture.engineConfig));
+        CHECK(*devex::core::readTextFile(file) == custom);
+    }
+    SECTION("An entry point with another filename is not duplicated")
+    {
+        const std::string main =
+            "#include <devex/runtime/Game.hpp>\nDEVEX_GAME_MODULE(myGame) {}\n";
+        REQUIRE(devex::core::writeTextFile(fixture.project.codeDirectory() / "Main.cc", main));
+        REQUIRE(GameCodeBuilder::prepareProjectFiles(fixture.project, fixture.engineConfig));
+        CHECK_FALSE(std::filesystem::exists(fixture.project.codeDirectory() / "Game.cpp"));
+        CHECK(*devex::core::readTextFile(fixture.project.codeDirectory() / "Main.cc") == main);
+    }
+    SECTION("A component named like Game.cpp does not collide with the generated entry point")
+    {
+        std::string name = "Game";
+        SECTION("The same spelling") {}
+        SECTION("A different case") { name = "game"; }
+        const auto file = GameCodeBuilder::createComponent(fixture.project, name);
+        REQUIRE(file);
+        CHECK(devex::core::readTextFile(*file)->contains("struct " + name));
+        CHECK(devex::core::readTextFile(fixture.project.codeDirectory() / "DevexModule.cpp")
+                  ->contains("DEVEX_GAME_MODULE(game)"));
+    }
+    SECTION("An existing Game.cpp without an entry point is preserved")
+    {
+        const std::string source =
+            "// DEVEX_GAME_MODULE(example)\nconst char* text = \"DEVEX_GAME_MODULE(fake)\";\n";
+        REQUIRE(devex::core::writeTextFile(fixture.project.codeDirectory() / "Game.cpp", source));
+        REQUIRE(GameCodeBuilder::prepareProjectFiles(fixture.project, fixture.engineConfig));
+        CHECK(*devex::core::readTextFile(fixture.project.codeDirectory() / "Game.cpp") == source);
+        CHECK(std::filesystem::exists(fixture.project.codeDirectory() / "DevexModule.cpp"));
+        CHECK_FALSE(GameCodeBuilder::createCode(fixture.project));
+    }
+}
+
+TEST_CASE("Generated CMake tracks added and deleted sources without including IDE caches",
+          "[runtime][game][cppproject][build]")
+{
+    const TemporaryGameProject fixture;
+    REQUIRE(GameCodeBuilder::createComponent(fixture.project, "Player"));
+    REQUIRE(devex::core::writeTextFile(fixture.engineConfig / "DevexConfig.cmake", R"(
+function(devex_add_game_module)
+    cmake_parse_arguments(PARSE_ARGV 0 ARG "" "" "SOURCES")
+    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/sources.txt" "${ARG_SOURCES}")
+    file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/bin")
+    if(WIN32)
+        file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/bin/Game.dll" "fixture module")
+    else()
+        file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/bin/libGame.so" "fixture module")
+    endif()
+    add_custom_target(Game ALL)
+endfunction()
+)"));
+    for (const auto directory :
+         {".idea", "obj", "bin", "build", "out", "CMakeFiles", "cmake-build-debug"})
+        REQUIRE(devex::core::writeTextFile(
+            fixture.project.codeDirectory() / directory / "CompilerId.cpp", "#error cache\n"));
+    GameCodeBuilder builder(fixture.project, fixture.engineConfig, "Debug");
+    REQUIRE(builder.buildAndWait());
+    const auto build =
+        GameCodeBuilder::libraryPath(fixture.project, "Debug").parent_path().parent_path();
+    auto sources = *devex::core::readTextFile(build / "sources.txt");
+    CHECK(sources.contains("Game.cpp"));
+    CHECK(sources.contains("Player.cpp"));
+    CHECK_FALSE(sources.contains("CompilerId.cpp"));
+    REQUIRE(devex::core::writeTextFile(fixture.project.codeDirectory() / "Actors/Enemy.cxx",
+                                       "// new source\n"));
+    REQUIRE(builder.buildAndWait());
+    sources = *devex::core::readTextFile(build / "sources.txt");
+    CHECK(sources.contains("Actors/Enemy.cxx"));
+    REQUIRE(std::filesystem::remove(fixture.project.codeDirectory() / "Player.cpp"));
+    REQUIRE(builder.buildAndWait());
+    sources = *devex::core::readTextFile(build / "sources.txt");
+    CHECK_FALSE(sources.contains("Player.cpp"));
+}
+
+TEST_CASE("A first generated C++ script builds against the running engine package",
+          "[runtime][game][cppproject][build]")
+{
+    const TemporaryGameProject fixture;
+    REQUIRE(GameCodeBuilder::createComponent(fixture.project, "Player"));
+    const auto config =
+        std::filesystem::path(DEVEX_TEST_GAME_MODULE).parent_path().parent_path() / "cmake";
+    REQUIRE(std::filesystem::is_regular_file(config / "DevexConfig.cmake"));
+    GameCodeBuilder builder(fixture.project, config);
+    const auto built = builder.buildAndWait();
+    INFO(builder.message());
+    REQUIRE(built);
+    CHECK(std::filesystem::is_regular_file(GameCodeBuilder::libraryPath(fixture.project)));
 }
 
 TEST_CASE("Game code status distinguishes an initial build from an engine update", "[runtime][game]")

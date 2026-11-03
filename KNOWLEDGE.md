@@ -937,11 +937,22 @@ MonJeu/
 ```
 
 L'éditeur produit le projet .NET des fichiers `.cs` et compile le module C++ avec le même
-compilateur et la même configuration que le moteur. Il fournit `Devex_DIR` à CMake.
+compilateur et la même configuration que le moteur. Le premier script C++ créé prépare
+`code/CMakeLists.txt` et un point d'entrée minimal `Game.cpp` si aucun n'existe. Des sources
+`.cpp`, `.cc` ou `.cxx` déjà présentes sans CMake sont aussi détectées à l'ouverture du projet.
+Les ajouts et suppressions de sources dans les sous-dossiers sont pris en compte par
+`GLOB_RECURSE CONFIGURE_DEPENDS`, en excluant les caches et sorties de compilation des IDE.
+L'éditeur fournit `Devex_DIR` à sa compilation et écrit les valeurs par défaut pour l'IDE dans
+`.devex/code/DevexProject.cmake` (chemin du moteur et configuration). Ce cache est régénérable ;
+`code/CMakeLists.txt` reste avec les sources du jeu. Seules ses versions générées intactes sont
+mises à jour ; les fichiers CMake personnalisés et les sources C++ ne sont pas écrasés.
 Dans les réglages du projet, créer une action `Move` de type Vector et une action `Jump` de type
 Button, avec les touches ou les sticks choisis. Les exemples de déplacement ci-dessous les lisent.
 
 #### 5.1.2. CMakeLists.txt pour un Module de Jeu C++
+
+L'éditeur prépare normalement ce fichier. Voici une variante minimale écrite à la main, dont la
+liste des sources est explicite ; elle reste sous le contrôle du développeur.
 
 <!-- devex-example: CMakeLists.txt -->
 ```cmake

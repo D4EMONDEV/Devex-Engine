@@ -44,6 +44,12 @@ public:
     // The file name of game modules: Game.dll on Windows.
     [[nodiscard]] static std::filesystem::path libraryFileName();
     [[nodiscard]] static bool hasCode(const asset::Project& project);
+    // Creates missing native project files and refreshes Devex-owned ones without replacing a
+    // custom CMakeLists or any existing C++ source. Also supplies IDEs with the engine location.
+    [[nodiscard]] static core::Result<void>
+    prepareProjectFiles(const asset::Project& project,
+                        const std::filesystem::path& devexConfigDirectory,
+                        std::string_view configuration = core::buildType());
 
     // One error or warning of a build, at the place the compiler named.
     struct DEVEX_API Diagnostic

@@ -92,12 +92,17 @@ res://
 │   ├── prefabs/      objets réutilisables
 │   ├── models/       modèles 3D
 │   └── audio/        sons et musiques
-└── code/             scripts C# et projet Game.csproj
+└── code/             scripts C#/C++, Game.csproj et/ou CMakeLists.txt
 ```
 
 `res://` désigne la racine du projet. Les scripts créés par Devex restent dans `res://code/`, éventuellement dans des sous-dossiers.
 
 Les fichiers `.dvxmeta` conservent l'identité et les réglages d'import des ressources : les garder avec les fichiers sources, notamment dans Git. Le dossier `.devex` contient des données générées/cache ; ce n'est pas un emplacement pour écrire les scripts. `Game.csproj` est généré par Devex : ne pas y ajouter manuellement une liste de scripts qui sera écrasée à la prochaine génération.
+
+Pour le C++, Devex crée `code/CMakeLists.txt` au premier script et le conserve avec les sources
+du jeu. Il répare aussi un projet contenant des `.cpp`, `.cc` ou `.cxx` sans ce fichier à son
+ouverture. Le chemin local du moteur destiné à l'IDE est régénéré dans
+`.devex/code/DevexProject.cmake` ; ce cache ne se versionne pas.
 
 ### Manipulations de base
 
@@ -175,6 +180,16 @@ Arrêter puis relancer Play après avoir changé l'Input Map. Pendant Play, cliq
 5. Sélectionner l'entité concernée et ajouter le composant de ce nom via **Add Component**.
 
 Créer un script depuis FileSystem ne l'attache pas automatiquement à une entité. Les champs publics comme `Speed` ou `Target` apparaissent dans l'Inspector après compilation. Pour un champ `Entity`, y glisser l'entité depuis Scene ou utiliser le sélecteur proposé.
+
+Pour un script **C++**, la même commande prépare automatiquement `CMakeLists.txt` et, s'il n'y en
+a pas encore, un point d'entrée minimal `Game.cpp`. Le projet CMake généré découvre les sources
+et en-têtes dans les sous-dossiers de `code/` : ajouter ou supprimer un fichier ne demande pas
+d'éditer sa liste de sources. Les sorties des IDE (`cmake-build-*`, `CMakeFiles`, `build`, `out`,
+`bin`, `obj`) et les dossiers cachés sont exclus. Installer les outils C++ du moteur reste
+nécessaire pour compiler. Les composants et systèmes C++ doivent être enregistrés dans l'unique
+`DEVEX_GAME_MODULE` du projet ; créer un `.cpp` seul ne les enregistre pas. Les versions générées
+intactes du `CMakeLists.txt` sont mises à jour automatiquement ; un fichier personnalisé et les
+sources C++ existantes sont conservés.
 
 ## 4. Construire le premier jeu 2D
 

@@ -4324,7 +4324,17 @@ Jalon 62, comme la localisation de Godot.
   dans l'éditeur). Chaque pas `FixedUpdate` est suivi d'un pas de physique.
 - **Projet** : le dossier `code/` d'un projet est un projet CMake (`find_package(Devex CONFIG)`,
   `devex_add_game_module(SOURCES …)`) ; *Code > Create game code* en crée un avec un composant
-  et un système d'exemple. `Devex_DIR` désigne `cmake/` du dossier de build du moteur ou d'un moteur
+  et un système d'exemple. *Create New > Script > C++* prépare aussi le projet, avec un point
+  d'entrée minimal si aucun n'existe, puis démarre son suivi et sa compilation. Un projet contenant
+  des `.cpp`, `.cc` ou `.cxx` sans CMake est réparé à l'ouverture ; un premier fichier ajouté par
+  un IDE est détecté par le suivi du code. Le CMake généré découvre récursivement les sources et
+  en-têtes avec `CONFIGURE_DEPENDS`, en excluant dossiers cachés, `bin`, `obj`, `build`, `out`,
+  `CMakeFiles` et `cmake-build-*`. Les versions générées intactes du `CMakeLists.txt` sont mises à
+  jour ; les versions personnalisées et toutes les sources existantes sont conservées. Le
+  contexte local pour l'IDE est écrit séparément dans `.devex/code/DevexProject.cmake`, inclus
+  par le projet généré : `Devex_DIR` et la configuration servent de valeurs par défaut, sans
+  remplacer des options CMake explicites. Les écritures identiques ne changent pas les dates des
+  fichiers et ne déclenchent pas de recompilations en boucle. `Devex_DIR` désigne `cmake/` du dossier de build du moteur ou d'un moteur
   installé, où `DevexConfig.cmake` décrit `Devex::Engine` (bibliothèque, en-têtes, GLM, définitions)
   et impose la configuration du moteur ; `devex_add_game_module` vient de `DevexGameModule.cmake`,
   partagé par les deux. Le module est produit dans
@@ -4518,7 +4528,8 @@ Jalon 62, comme la localisation de Godot.
 - **Racine du projet** : `res://` représente le dossier contenant le `.dvxproj`, sans dossier
   physique `res`. FileSystem regroupe le fichier de projet, `assets/` et `code/` sous cette racine.
   Un nouveau projet crée `assets/` et `code/` ; ce dernier reste vide jusqu'à la création du code.
-  Le dossier seul ne déclenche aucune compilation. Le C++ utilise `code/CMakeLists.txt` et le C#
+  Le dossier seul ne déclenche aucune compilation. Le C++ utilise `code/CMakeLists.txt`, préparé
+  au premier script C++ ou à la découverte de sources natives existantes, et le C#
   les `.cs` de `code/` et de ses sous-dossiers ; les fichiers en dehors de `code/` ne participent
   pas automatiquement au gameplay. Les anciens projets sans ce dossier restent utilisables.
 - **Édition des fichiers Devex** : le menu contextuel des assets propose **Edit as Text** et
