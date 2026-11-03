@@ -755,6 +755,42 @@ TEST_CASE("Failed imports keep the previous assets and report the error", "[asse
           devex::math::Vec4{1, 0, 0, 1});
 }
 
+TEST_CASE("An import that failed for a moment is retried when the database opens again", "[asset][database]")
+{
+    TemporaryProject project;
+    project.write("m.dvxmat", redMaterial);
+    devex::core::JobSystem jobs(1);
+    AssetId id;
+    {
+        auto database = AssetDatabase::open(project.project, jobs, {.watchFiles = false});
+        REQUIRE(database.has_value());
+        static_cast<void>(settle(**database));
+        id = *(*database)->findByPath("res://assets/m.dvxmat");
+
+        // The artifact cannot be replaced while the source changes, as a file Windows keeps for
+        // another program: the import fails and records why.
+        const std::filesystem::path artifact = (*database)->artifactPath(id);
+        std::filesystem::remove(artifact);
+        std::filesystem::create_directories(artifact / "held");
+        project.write("m.dvxmat", blueMaterial);
+        (*database)->refresh();
+        static_cast<void>(settle(**database));
+        CHECK((*database)->sourceOf(id)->status == ImportStatus::Failed);
+        std::filesystem::remove_all(artifact);
+    }
+
+    // The source has not changed since: the failure is retried once all the same.
+    auto database = AssetDatabase::open(project.project, jobs, {.watchFiles = false});
+    REQUIRE(database.has_value());
+    static_cast<void>(settle(**database));
+    const auto source = (*database)->sourceOf(id);
+    REQUIRE(source.has_value());
+    CHECK(source->status == ImportStatus::Ready);
+    CHECK(source->error.empty());
+    CHECK(devex::asset::decodeMaterial(*(*database)->loadArtifact(id))->baseColorFactor ==
+          devex::math::Vec4{0, 0, 1, 1});
+}
+
 TEST_CASE("External glTF files are copied into the project with their dependencies",
           "[asset][database]")
 {

@@ -127,9 +127,16 @@ template <class Visit> void visitCodeFiles(const asset::Project& project, Visit 
 [[nodiscard]] core::Result<void> writeIfDifferent(const std::filesystem::path& file,
                                                   std::string_view text)
 {
-    const auto previous = core::readTextFile(file);
-    if (previous && *previous == text)
-        return {};
+    // Line endings aside: a Windows checkout of a versioned project has its generated files in
+    // CRLF, which rewriting would make look changed and would configure CMake again for nothing.
+    if (auto previous = core::readTextFile(file))
+    {
+        std::string expected(text);
+        std::erase(*previous, '\r');
+        std::erase(expected, '\r');
+        if (*previous == expected)
+            return {};
+    }
     return core::writeTextFile(file, text);
 }
 

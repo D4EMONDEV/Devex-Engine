@@ -178,6 +178,16 @@ TEST_CASE("The first C++ script creates its native project without overwriting s
     CHECK(std::filesystem::last_write_time(fixture.project.codeDirectory() / "CMakeLists.txt") ==
           cmakeTime);
     CHECK(std::filesystem::last_write_time(context) == contextTime);
+    // A Windows checkout keeps the generated CMakeLists.txt in CRLF: unchanged all the same.
+    const std::filesystem::path lists = fixture.project.codeDirectory() / "CMakeLists.txt";
+    std::string crlf;
+    for (const char character : *devex::core::readTextFile(lists))
+    {
+        crlf += character == '\n' ? std::string("\r\n") : std::string(1, character);
+    }
+    REQUIRE(devex::core::writeTextFile(lists, crlf));
+    REQUIRE(GameCodeBuilder::prepareProjectFiles(fixture.project, fixture.engineConfig, "Debug"));
+    CHECK(*devex::core::readTextFile(lists) == crlf);
     REQUIRE(GameCodeBuilder::prepareProjectFiles(fixture.project, fixture.root / "new engine/cmake",
                                                  "Release"));
     CHECK(devex::core::readTextFile(context)->contains("new engine/cmake"));

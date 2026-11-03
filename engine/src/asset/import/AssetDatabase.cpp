@@ -1222,6 +1222,8 @@ private:
         bool importing = false;
         bool changedWhileImporting = false;
         bool forced = false;
+        // Its recorded failure was retried since the database opened.
+        bool failureRetried = false;
     };
 
     [[nodiscard]] std::filesystem::path importedDirectory() const
@@ -1461,10 +1463,14 @@ private:
             return true;
         }
 
-        // Failed imports are retried only once something changes.
+        // A failure can come from the moment rather than the source, as a file another program
+        // held on Windows: a failed import is retried once when the database opens, then only
+        // once something changes, so that a broken source is not imported over and over.
         if (!record.error.empty())
         {
-            return false;
+            const bool retry = !source.failureRetried;
+            source.failureRetried = true;
+            return retry;
         }
         std::error_code error;
         return std::ranges::any_of(record.artifacts, [&](const AssetInfo& artifact) {

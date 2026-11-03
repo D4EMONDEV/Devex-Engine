@@ -2,11 +2,25 @@
 #include <devex/core/Path.hpp>
 #include <devex/core/Uuid.hpp>
 
+#include <chrono>
 #include <fstream>
 #include <iterator>
 #include <system_error>
+#include <thread>
 
 namespace devex::core {
+namespace {
+
+#ifdef _WIN32
+// What Windows answers when another handle holds a file without letting it be deleted:
+// ERROR_ACCESS_DENIED or ERROR_SHARING_VIOLATION, depending on how it was opened.
+[[nodiscard]] bool isHeldByAnother(const std::error_code& error) noexcept
+{
+    return error.value() == 5 || error.value() == 32;
+}
+#endif
+
+} // namespace
 
 Result<std::string> readTextFile(const std::filesystem::path& path)
 {
@@ -102,6 +116,18 @@ Result<void> writeFileAtomically(const std::filesystem::path& path, std::span<co
 
     std::error_code error;
     std::filesystem::rename(temporary, path, error);
+#ifdef _WIN32
+    // Windows refuses to replace a file another handle holds, which happens for a moment: an
+    // antivirus or the indexer reading a file just written, or another thread reading the old
+    // contents. Up to a second is waited before giving up, which a file that stays refused, as a
+    // read-only one, costs too.
+    for (int attempt = 0; error && isHeldByAnother(error) && attempt < 20; ++attempt)
+    {
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        error.clear();
+        std::filesystem::rename(temporary, path, error);
+    }
+#endif
     if (error)
     {
         std::error_code ignored;
