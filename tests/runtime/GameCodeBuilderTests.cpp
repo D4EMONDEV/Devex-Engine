@@ -181,7 +181,9 @@ TEST_CASE("The first C++ script creates its native project without overwriting s
     // A Windows checkout keeps the generated CMakeLists.txt in CRLF: unchanged all the same.
     const std::filesystem::path lists = fixture.project.codeDirectory() / "CMakeLists.txt";
     std::string crlf;
-    for (const char character : *devex::core::readTextFile(lists))
+    const auto originalLists = devex::core::readTextFile(lists);
+    REQUIRE(originalLists);
+    for (const char character : *originalLists)
     {
         crlf += character == '\n' ? std::string("\r\n") : std::string(1, character);
     }
