@@ -5562,6 +5562,31 @@ comportement autonome ou exporté. Ce changement de structure porte l'API native
 demande la recompilation des modules C++. Construire `devex_editor` construit aussi
 `devex_player` quand les deux cibles sont activées. Voir [l'utilisation](editor-play.md).
 
+## Addons locaux et commandes d'éditeur — 2026-11-03
+
+Un package est un dossier de sources décrit par `addon.dvxaddon` (format 1 : id stable, nom,
+version, auteur, description et licence). L'installation prépare le package dans un sous-dossier
+unique de `.devex/addon-install`, refuse les liens et les destinations occupées, puis déplace son
+contenu dans `assets/addons/<id>` et son code dans `code/addons/<id>`. Le pipeline d'import et les
+compilateurs existants les prennent en charge, avec leurs `.dvxmeta` et UUID. Le dossier source
+reste intact. Les caches d'IDE et de compilation ne font pas partie du code installé.
+
+Project Settings possède un onglet Addons, qui montre les manifestes invalides et enregistre
+l'activation des outils dans les sections `[addon id="..." enabled=true]` du projet. Le contenu
+et les composants restent disponibles quand ses outils sont désactivés. Ce changement de Project
+porte l'API native à 42 ; le bootstrap .NET passe à 28 pour l'invocation des commandes d'éditeur.
+
+La première API d'extension est `[EditorCommand(id, nom)]` sur une méthode C# publique, statique,
+synchrone et `void(EditorContext)`. Le chargement de l'assembly décrit ses commandes ; seuls les
+addons installés, valides et activés exposent leurs commandes dans Editor > Addon Tools. Elles
+reçoivent une copie de la scène et sa sélection, sans exécuter les phases de jeu. Une réussite
+applique un changement de scène annulable ; une exception abandonne la copie et écrit dans Output.
+Les instantanés d'historique sont du texte, pour ne pas retenir les pools d'un module déchargé.
+Les fichiers externes qu'une commande écrit ne font pas partie de cette annulation.
+
+Le catalogue en ligne, les archives, les mises à jour, les dépendances, les panneaux personnalisés
+et les plugins natifs autonomes sont des suites de cette base. Voir [l'API et l'exemple](addons.md).
+
 ## Questions ouvertes
 
 À trancher le moment venu, pas avant :

@@ -22,6 +22,8 @@ et rendu avec Vulkan. Il est distribué sous licence [MIT](LICENSE).
   ses images avec le pipeline de cette interface, aux espacements du thème de Godot. Dear ImGui
   n'est plus une dépendance. Quand rien ne bouge, l'éditeur se repose : une image à chaque
   événement, ou toutes les 250 ms, comme le mode basse consommation de Godot ;
+- [addons locaux](docs/addons.md) : packages de contenu et de scripts, installation depuis un
+  dossier, outils activés par projet et commandes C# dans l'éditeur avec annuler/rétablir ;
 - traductions comme chez Godot : tables `.csv` (une colonne par langue) éditées dans le panneau
   Translations, textes des interfaces traduits d'eux-mêmes, `Localization.Tr` en C#, langue du
   joueur ou du système, polices qui cuisent les caractères de toutes les langues traduites.

@@ -1040,3 +1040,12 @@ En C++, inclure `devex/runtime/Globals.hpp` et utiliser `runtime::findGlobal(con
 garder dans un composant l'indication qu'un service global est déjà initialisé si nécessaire.
 Les coroutines C++ sont annulées au changement de niveau, car elles peuvent conserver des
 références aux composants du niveau précédent.
+
+## 14. Réutiliser du contenu avec des addons
+
+**Project > Project Settings > Addons** installe un dossier contenant `addon.dvxaddon`.
+Ses ressources apparaissent dans `assets/addons/<id>`, ses scripts dans `code/addons/<id>`.
+Après compilation, activer **Editor Tools** pour afficher les commandes C# de l'addon dans
+**Editor > Addon Tools**. Elles modifient la scène éditée et se défont avec **Ctrl+Z**.
+Le package `samples/addons/scene-tools` du moteur donne un exemple de scène, de composant de jeu
+et de commandes. Voir [la création et l'installation des addons](addons.md).
