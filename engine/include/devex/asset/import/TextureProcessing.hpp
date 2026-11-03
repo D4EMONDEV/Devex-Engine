@@ -86,4 +86,9 @@ struct DEVEX_API TextureBuildOptions
 // 0, and alpha as 255.
 [[nodiscard]] DEVEX_API core::Result<Image> decodeTextureLevel(const TextureData& texture, std::size_t level);
 
+// The texture for the GPUs of Android, which read ASTC and not BC: every level of a BC texture
+// decoded and compressed again in ASTC 4x4, through UASTC; other formats come back as they are.
+[[nodiscard]] DEVEX_API core::Result<TextureData> convertToAstc(const TextureData& texture,
+                                                                core::JobSystem* jobs = nullptr);
+
 } // namespace devex::asset

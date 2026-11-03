@@ -27,6 +27,10 @@ enum class TextureFormat : std::uint8_t
     R8Unorm = 7,
     // One channel of 32-bit floats, such as the heights of a terrain; read without filtering.
     R32Float = 8,
+    // The BC textures of a game exported for Android, whose GPUs read ASTC and not BC: blocks of
+    // 4x4 texels in 16 bytes, normal maps keeping their two channels in red and green.
+    Astc4x4Unorm = 9,
+    Astc4x4Srgb = 10,
 };
 
 [[nodiscard]] DEVEX_API std::string_view toString(TextureFormat format) noexcept;

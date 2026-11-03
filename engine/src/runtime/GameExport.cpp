@@ -6,6 +6,7 @@
 #include <devex/asset/import/TextureProcessing.hpp>
 #include <devex/core/BuildInfo.hpp>
 #include <devex/core/File.hpp>
+#include <devex/core/Hash.hpp>
 #include <devex/core/JobSystem.hpp>
 #include <devex/core/Log.hpp>
 #include <devex/core/Path.hpp>
@@ -451,6 +452,39 @@ void collectAssetIds(const serialization::TextValue& value, std::vector<asset::A
                                platform::desktopEntryText(entry, core::pathFromUtf8(name)));
 }
 #endif
+
+// A texture artifact as Android packages it: its BC levels in ASTC, kept in the cache of the project
+// under the hash of the artifact, so that the next exports only convert what changed.
+[[nodiscard]] core::Result<std::vector<std::byte>> androidTexture(const asset::Project& project, std::span<const std::byte> artifact,
+                                                                  core::JobSystem& jobs)
+{
+    const std::filesystem::path cached =
+        project.cacheDirectory() / "android" / std::format("{:016x}.texture", core::hash64(artifact));
+    if (core::Result<std::vector<std::byte>> kept = core::readBinaryFile(cached))
+    {
+        return kept;
+    }
+    const core::Result<asset::TextureData> texture = asset::decodeTexture(artifact);
+    if (!texture)
+    {
+        return std::unexpected(texture.error());
+    }
+    if (!asset::isBlockCompressed(texture->format))
+    {
+        return std::vector<std::byte>(artifact.begin(), artifact.end());
+    }
+    const core::Result<asset::TextureData> converted = asset::convertToAstc(*texture, &jobs);
+    if (!converted)
+    {
+        return std::unexpected(converted.error());
+    }
+    std::vector<std::byte> bytes = asset::encodeTexture(*converted);
+    if (core::Result<void> written = core::writeFileAtomically(cached, bytes); !written)
+    {
+        DEVEX_LOG_WARNING("The texture converted for Android is not cached: {}", written.error());
+    }
+    return bytes;
+}
 
 } // namespace
 
@@ -956,14 +990,28 @@ core::Result<ExportResult> exportGame(const ExportPlan& plan, const std::functio
         }
     }
 
+    // Converting textures for Android takes every core.
+    std::optional<core::JobSystem> jobs;
+    if (plan.platform == ExportPlatform::Android)
+    {
+        jobs.emplace(0);
+    }
     for (std::size_t index = 0; index < exported.size(); ++index)
     {
         const ExportPlan::Asset& entry = *exported[index];
         report(std::format("Packing {}", entry.info.name), 0.5f + 0.35f * static_cast<float>(index) / static_cast<float>(exported.size()));
-        const core::Result<std::vector<std::byte>> bytes = core::readBinaryFile(entry.artifact);
+        core::Result<std::vector<std::byte>> bytes = core::readBinaryFile(entry.artifact);
         if (!bytes)
         {
             return std::unexpected(bytes.error());
+        }
+        if (plan.platform == ExportPlatform::Android && entry.info.type == asset::AssetType::Texture)
+        {
+            bytes = androidTexture(plan.project, *bytes, *jobs);
+            if (!bytes)
+            {
+                return std::unexpected(core::Error{bytes.error().code, std::format("{}: {}", entry.info.name, bytes.error().message)});
+            }
         }
         if (core::Result<void> added = writer->add(entry.info, entry.path, *bytes); !added)
         {
@@ -1029,8 +1077,8 @@ core::Result<ExportResult> exportGame(const ExportPlan& plan, const std::functio
 
 int exportFromCommandLine(std::span<const std::string_view> arguments, const std::filesystem::path& binDirectory)
 {
-    constexpr std::string_view usage =
-        "usage: devex-editor --export <project.dvxproj> [--output <folder>] [--configuration <Release|Debug>]";
+    constexpr std::string_view usage = "usage: devex-editor --export <project.dvxproj> [--output <folder>] "
+                                       "[--configuration <Release|Debug>] [--platform <desktop|android>]";
     if (arguments.size() < 2 || arguments.front() != "--export")
     {
         DEVEX_LOG_ERROR("{}", usage);
@@ -1038,6 +1086,7 @@ int exportFromCommandLine(std::span<const std::string_view> arguments, const std
     }
     std::optional<std::filesystem::path> output;
     std::optional<std::string> configuration;
+    ExportPlatform platform = ExportPlatform::Desktop;
     for (std::size_t index = 2; index < arguments.size(); ++index)
     {
         if (index + 1 < arguments.size() && arguments[index] == "--output")
@@ -1047,6 +1096,11 @@ int exportFromCommandLine(std::span<const std::string_view> arguments, const std
         else if (index + 1 < arguments.size() && arguments[index] == "--configuration")
         {
             configuration = std::string(arguments[++index]);
+        }
+        else if (index + 1 < arguments.size() && arguments[index] == "--platform" &&
+                 (arguments[index + 1] == "desktop" || arguments[index + 1] == "android"))
+        {
+            platform = arguments[++index] == "android" ? ExportPlatform::Android : ExportPlatform::Desktop;
         }
         else
         {
@@ -1099,6 +1153,10 @@ int exportFromCommandLine(std::span<const std::string_view> arguments, const std
         const std::filesystem::path absolute = std::filesystem::absolute(*output, error);
         plan->output = (error ? *output : absolute).lexically_normal();
     }
+    // For Android, the package alone for now: the APK is made from it by the Gradle project of the
+    // player (see Android in docs/decisions.md).
+    plan->platform = platform;
+    plan->packageOnly = plan->packageOnly || platform == ExportPlatform::Android;
 
     std::string lastStep;
     const core::Result<ExportResult> result = exportGame(*plan, [&lastStep](const ExportProgress& step) {

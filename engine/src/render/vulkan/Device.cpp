@@ -246,6 +246,8 @@ core::Result<Device> Device::create(VkInstance instance, VkSurfaceKHR surface,
     // Desktop GPUs read BC textures; phone GPUs do not, and get their textures in another format.
     enabled.features.features.textureCompressionBC = supported.features.features.textureCompressionBC;
     device.m_textureCompressionBC = supported.features.features.textureCompressionBC == VK_TRUE;
+    enabled.features.features.textureCompressionASTC_LDR = supported.features.features.textureCompressionASTC_LDR;
+    device.m_textureCompressionAstc = supported.features.features.textureCompressionASTC_LDR == VK_TRUE;
     enabled.features.features.samplerAnisotropy = supported.features.features.samplerAnisotropy;
     enabled.features.features.depthClamp = supported.features.features.depthClamp;
     device.m_depthClamp = supported.features.features.depthClamp == VK_TRUE;
@@ -313,6 +315,7 @@ Device::Device(Device&& other) noexcept
     , m_sampleCounts(other.m_sampleCounts)
     , m_depthClamp(other.m_depthClamp)
     , m_textureCompressionBC(other.m_textureCompressionBC)
+    , m_textureCompressionAstc(other.m_textureCompressionAstc)
     , m_drawIndirectFirstInstance(other.m_drawIndirectFirstInstance)
     , m_mutableSwapchainFormat(other.m_mutableSwapchainFormat)
 {
@@ -333,6 +336,7 @@ Device& Device::operator=(Device&& other) noexcept
         m_sampleCounts = other.m_sampleCounts;
         m_depthClamp = other.m_depthClamp;
         m_textureCompressionBC = other.m_textureCompressionBC;
+        m_textureCompressionAstc = other.m_textureCompressionAstc;
         m_drawIndirectFirstInstance = other.m_drawIndirectFirstInstance;
         m_mutableSwapchainFormat = other.m_mutableSwapchainFormat;
     }
@@ -408,6 +412,11 @@ bool Device::supportsDepthClamp() const noexcept
 bool Device::supportsTextureCompressionBC() const noexcept
 {
     return m_textureCompressionBC;
+}
+
+bool Device::supportsTextureCompressionAstc() const noexcept
+{
+    return m_textureCompressionAstc;
 }
 
 bool Device::supportsDrawIndirectFirstInstance() const noexcept

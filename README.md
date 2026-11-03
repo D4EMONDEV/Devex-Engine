@@ -337,13 +337,15 @@ ctest --preset test-linux-debug --label-exclude gpu
 Pour Android, le moteur et le lecteur (`libmain.so`) se compilent depuis Windows ou Linux avec le
 NDK d'Android Studio, que désigne `ANDROID_NDK_HOME` : `android-arm64` pour les téléphones,
 `android-x86_64` pour l'émulateur d'Android Studio. Le build assemble un projet Gradle dans
-`out/build/<preset>/android` ; on y pose le package d'un jeu exporté, puis Gradle fait l'APK. L'export
-depuis l'éditeur est la suite du plan (voir *Android* dans [docs/decisions.md](docs/decisions.md)).
+`out/build/<preset>/android` ; on y pose le package d'un jeu exporté pour Android (ses textures en
+ASTC), puis Gradle fait l'APK. L'export Android depuis la fenêtre de l'éditeur est la suite du plan
+(voir *Android* dans [docs/decisions.md](docs/decisions.md)).
 
 ```powershell
 $env:ANDROID_NDK_HOME = "$env:LOCALAPPDATA/Android/Sdk/ndk/<version>"
 cmake --preset android-x86_64
 cmake --build --preset build-android-x86_64
+out\build\x64-release\bin\devex-editor.exe --export <Jeu>.dvxproj --output <export> --platform android
 copy <export>\<Jeu>.dvxpak out\build\android-x86_64\android\app\src\main\assets\game.dvxpak
 cd out\build\android-x86_64\android
 gradle assembleDebug

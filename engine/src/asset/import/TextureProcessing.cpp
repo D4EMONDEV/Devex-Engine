@@ -14,6 +14,9 @@
 #include <basisu/encoder/basisu_bc7e_scalar.h>
 #include <basisu/encoder/basisu_enc.h>
 #include <basisu/encoder/basisu_gpu_texture.h>
+#include <basisu/encoder/basisu_uastc_enc.h>
+#include <basisu/transcoder/basisu_transcoder.h>
+#include <basisu/transcoder/basisu_transcoder_uastc.h>
 #endif
 #if defined(_MSC_VER)
 #pragma warning(pop)
@@ -36,6 +39,7 @@ void initializeEncoders()
     static std::once_flag initialized;
     std::call_once(initialized, [] {
         basisu::basisu_encoder_init();
+        basist::basisu_transcoder_init();
         bc7e_scalar::bc7e_compress_block_init();
         basisu::bc_spmd::init();
     });
@@ -559,9 +563,10 @@ core::Result<Image> decodeTextureLevel(const TextureData& texture, std::size_t l
 
 #if DEVEX_TEXTURE_ENCODERS
     initializeEncoders();
-    const basisu::texture_format format = texture.format == TextureFormat::Bc5Unorm
-                                              ? basisu::texture_format::cBC5
-                                              : basisu::texture_format::cBC7;
+    const bool astc = texture.format == TextureFormat::Astc4x4Unorm || texture.format == TextureFormat::Astc4x4Srgb;
+    const basisu::texture_format format = texture.format == TextureFormat::Bc5Unorm ? basisu::texture_format::cBC5
+                                          : astc ? basisu::texture_format::cASTC_LDR_4x4
+                                                 : basisu::texture_format::cBC7;
     const std::uint32_t blocksWide = (mip.width + 3) / 4;
     const std::uint32_t blocksHigh = (mip.height + 3) / 4;
     std::array<basisu::color_rgba, 16> pixels{};
@@ -595,6 +600,58 @@ core::Result<Image> decodeTextureLevel(const TextureData& texture, std::size_t l
     return image;
 #else
     return core::makeError(core::ErrorCode::Unsupported, "compressed textures are decoded on the desktop only");
+#endif
+}
+
+core::Result<TextureData> convertToAstc(const TextureData& texture, core::JobSystem* jobs)
+{
+    if (texture.format != TextureFormat::Bc5Unorm && texture.format != TextureFormat::Bc7Unorm &&
+        texture.format != TextureFormat::Bc7Srgb)
+    {
+        return texture;
+    }
+#if DEVEX_TEXTURE_ENCODERS
+    initializeEncoders();
+    TextureData converted = texture;
+    converted.format = texture.format == TextureFormat::Bc7Srgb ? TextureFormat::Astc4x4Srgb : TextureFormat::Astc4x4Unorm;
+    converted.mips.clear();
+    for (std::size_t level = 0; level < texture.mips.size(); ++level)
+    {
+        const core::Result<Image> image = decodeTextureLevel(texture, level);
+        if (!image)
+        {
+            return std::unexpected(image.error());
+        }
+        TextureMip& mip = converted.mips.emplace_back();
+        mip.width = image->width;
+        mip.height = image->height;
+        mip.bytes.resize(mipByteSize(converted.format, mip.width, mip.height));
+        const std::uint32_t blocksWide = (mip.width + 3) / 4;
+        const std::uint32_t blocksHigh = (mip.height + 3) / 4;
+        std::atomic<bool> failed{false};
+        // Each block of 4x4 texels in UASTC first, which converts to ASTC 4x4 without searching again.
+        forEachRow(jobs, blocksHigh, [&](std::size_t row) {
+            std::array<std::uint8_t, 16 * 4> texels{};
+            for (std::uint32_t blockX = 0; blockX < blocksWide; ++blockX)
+            {
+                gatherBlock(*image, blockX, static_cast<std::uint32_t>(row), texels.data());
+                basist::uastc_block block{};
+                basisu::encode_uastc(texels.data(), block);
+                if (!basist::transcode_uastc_to_astc(block, mip.bytes.data() + (row * blocksWide + blockX) * 16))
+                {
+                    failed.store(true, std::memory_order_relaxed);
+                }
+            }
+        });
+        if (failed.load())
+        {
+            return core::makeError(core::ErrorCode::InvalidState, "a block of level {} cannot be written in ASTC", level);
+        }
+    }
+    return converted;
+#else
+    static_cast<void>(jobs);
+    return core::makeError(core::ErrorCode::Unsupported, "textures are compressed on the desktop only");
 #endif
 }
 

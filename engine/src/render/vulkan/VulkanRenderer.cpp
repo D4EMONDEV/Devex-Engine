@@ -71,6 +71,10 @@ static_assert(sizeof(ClusterRange) == sizeof(GpuCluster));
         return VK_FORMAT_R8_UNORM;
     case asset::TextureFormat::R32Float:
         return VK_FORMAT_R32_SFLOAT;
+    case asset::TextureFormat::Astc4x4Unorm:
+        return VK_FORMAT_ASTC_4x4_UNORM_BLOCK;
+    case asset::TextureFormat::Astc4x4Srgb:
+        return VK_FORMAT_ASTC_4x4_SRGB_BLOCK;
     }
     return VK_FORMAT_UNDEFINED;
 }
@@ -2466,6 +2470,11 @@ core::Result<std::pair<VulkanRenderer::GpuTexture, VulkanRenderer::PendingUpload
     if (bc && !m_device.supportsTextureCompressionBC())
     {
         return core::makeError(core::ErrorCode::Unsupported, "the GPU cannot read BC textures");
+    }
+    const bool astc = texture.format == asset::TextureFormat::Astc4x4Unorm || texture.format == asset::TextureFormat::Astc4x4Srgb;
+    if (astc && !m_device.supportsTextureCompressionAstc())
+    {
+        return core::makeError(core::ErrorCode::Unsupported, "the GPU cannot read ASTC textures");
     }
 
     const asset::TextureMip& base = texture.mips.front();

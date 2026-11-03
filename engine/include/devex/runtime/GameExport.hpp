@@ -61,6 +61,14 @@ struct DEVEX_API EngineBuild
 // The file name of the exported executable, from the name of the game, without its extension.
 [[nodiscard]] DEVEX_API std::string executableName(std::string_view gameName);
 
+// What an export is made for. The package of a game for Android has its BC textures in ASTC, which
+// the GPUs of phones read.
+enum class ExportPlatform : std::uint8_t
+{
+    Desktop,
+    Android,
+};
+
 // What an export needs from the asset database, gathered on the thread that owns it. The export
 // itself can then run on another thread.
 struct DEVEX_API ExportPlan
@@ -89,6 +97,7 @@ struct DEVEX_API ExportPlan
     bool managed = false;
     // Writes the package only, without building the code or copying the engine, as tests do.
     bool packageOnly = false;
+    ExportPlatform platform = ExportPlatform::Desktop;
 };
 
 // Fails when the project has no scene, when imports are still running or failed, or when an exported

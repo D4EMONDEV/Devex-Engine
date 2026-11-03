@@ -129,6 +129,48 @@ TEST_CASE("Normal maps compress to BC5 and stay normalized", "[asset][texture]")
     CHECK(std::abs(static_cast<int>(level->rgba[1]) - 128) <= 3);
 }
 
+TEST_CASE("BC textures convert to ASTC for Android with close colors", "[asset][texture]")
+{
+    devex::core::JobSystem jobs(2);
+    const Image image = gradient(37, 20);
+    const auto bc7 = devex::asset::buildTexture(image, TextureBuildOptions{}, &jobs);
+    REQUIRE(bc7.has_value());
+
+    const auto astc = devex::asset::convertToAstc(*bc7, &jobs);
+    REQUIRE(astc.has_value());
+    CHECK(astc->format == TextureFormat::Astc4x4Srgb);
+    CHECK(devex::asset::validate(*astc).has_value());
+    CHECK(astc->mips.size() == bc7->mips.size());
+    const auto decoded = devex::asset::decodeTextureLevel(*astc, 0);
+    REQUIRE(decoded.has_value());
+    // Compressed twice, close to the source all the same.
+    CHECK(psnr(image, *decoded) > 33.0);
+
+    // Normal maps keep their two channels; the textures that are not BC stay as they are.
+    Image normals{.width = 8, .height = 8};
+    for (std::uint32_t texel = 0; texel < 64; ++texel)
+    {
+        normals.rgba.insert(normals.rgba.end(), {200, 90, 218, 255});
+    }
+    const auto bc5 = devex::asset::buildTexture(normals, {.normalMap = true});
+    REQUIRE(bc5.has_value());
+    const auto astcNormals = devex::asset::convertToAstc(*bc5);
+    REQUIRE(astcNormals.has_value());
+    CHECK(astcNormals->format == TextureFormat::Astc4x4Unorm);
+    const auto normal = devex::asset::decodeTextureLevel(*astcNormals, 0);
+    REQUIRE(normal.has_value());
+    CHECK(std::abs(static_cast<int>(normal->rgba[0]) - 200) <= 3);
+    CHECK(std::abs(static_cast<int>(normal->rgba[1]) - 90) <= 3);
+
+    const auto plain = devex::asset::buildTexture(image, {.compress = false});
+    REQUIRE(plain.has_value());
+    const auto unchanged = devex::asset::convertToAstc(*plain);
+    REQUIRE(unchanged.has_value());
+    CHECK(unchanged->format == plain->format);
+    REQUIRE(unchanged->mips.size() == plain->mips.size());
+    CHECK(unchanged->mips.front().bytes == plain->mips.front().bytes);
+}
+
 TEST_CASE("Cancelled texture builds stop with an error", "[asset][texture]")
 {
     const std::atomic<bool> cancelled{true};

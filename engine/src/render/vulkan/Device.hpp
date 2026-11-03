@@ -38,6 +38,8 @@ public:
     [[nodiscard]] bool supportsDepthClamp() const noexcept;
     // BC7 and BC5 textures, which desktop GPUs read and phone GPUs do not.
     [[nodiscard]] bool supportsTextureCompressionBC() const noexcept;
+    // ASTC textures, which phone GPUs read and most desktop GPUs do not.
+    [[nodiscard]] bool supportsTextureCompressionAstc() const noexcept;
     // Indirect draws may start past the first instance, which the draws the GPU culls need.
     [[nodiscard]] bool supportsDrawIndirectFirstInstance() const noexcept;
     // Swapchain images can be viewed in another format than their own (VK_KHR_swapchain_mutable_format).
@@ -57,6 +59,7 @@ private:
     VkSampleCountFlags m_sampleCounts = VK_SAMPLE_COUNT_1_BIT;
     bool m_depthClamp = false;
     bool m_textureCompressionBC = false;
+    bool m_textureCompressionAstc = false;
     bool m_drawIndirectFirstInstance = false;
     bool m_mutableSwapchainFormat = false;
 };

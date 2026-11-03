@@ -4805,6 +4805,13 @@ jeu (le `SystemContext`, un monde, un composant) l'est aussi au C#, dans le mêm
 Décidé le 3 novembre 2026, avant tout code : les jeux s'exportent vers Android, l'éditeur reste sur
 le bureau. Ce qui suit est le plan ; chaque étape le précise en l'implémentant.
 
+**En pause depuis le 3 novembre 2026**, le mobile et le Web passant après le reste du moteur. Les
+étapes 1 à 4 sont faites : un jeu tourne dans l'émulateur, depuis un APK que Gradle construit à la
+main. Restent l'étape 5 (l'export Android dans la fenêtre d'export de l'éditeur : projet Gradle,
+signature, APK et AAB, `adb`) et l'étape 6 (les modules C++ des jeux compilés avec le NDK), puis le
+C#. Rien n'a encore tourné sur un vrai téléphone : il en faut un en 64 bits et en Vulkan 1.3, pour
+les textures ASTC, la limite de push constants et les performances.
+
 - **Rendu** : le même renderer, avec **Vulkan 1.3** comme minimum, sur le bureau aussi. Le code
   exigeait 1.4 (`requiredApiVersion` dans `Vulkan.hpp`) sans utiliser aucune fonction propre à la
   1.4 : les fonctionnalités activées sont de la 1.2 et de la 1.3 (`synchronization2`,
@@ -4815,8 +4822,10 @@ le bureau. Ce qui suit est le plan ; chaque étape le précise en l'implémentan
   renderer « mobile » pour l'instant ; les effets lourds (TAA, occlusion ambiante, objectif, bloom)
   devront pouvoir se couper dans les réglages du projet.
 - **Textures** : l'export Android recompresse les textures, cuites en BC7 (couleurs) et BC5
-  (normales), en **ASTC 4×4** avec astcenc, l'encodeur d'ARM (port vcpkg à vérifier). ASTC LDR est
-  disponible sur les GPU Android ; le package du bureau ne change pas.
+  (normales), en **ASTC 4×4**. ASTC LDR est disponible sur les GPU Android ; le package du bureau ne
+  change pas. Révisé le 3 novembre 2026 : astcenc, l'encodeur d'ARM, n'est pas dans vcpkg ; c'est
+  **basisu**, déjà là pour le BC7, qui encode, et l'ASTC est calculé **à l'export depuis le BC7**
+  plutôt qu'à l'import (voir l'étape 4).
 - **C#** : pas dans la première version. Le C# est hébergé par hostfxr (`ManagedGame.cpp`), qui
   n'existe pas sur Android, et le code managé s'appuie sur la réflexion. L'export Android commence
   par le moteur et les modules C++, compilés avec le NDK ; le C# vient ensuite, par NativeAOT ou
@@ -4885,8 +4894,22 @@ Les étapes, chacune livrable et testée seule :
    - ✅ **le toucher reste une souris émulée** (décidé le même jour), comme le réglage par défaut de
      Godot : SDL fait d'un doigt le clic gauche et le pointeur. Le multi-touch et les commandes à
      l'écran viendront plus tard.
-4. **La cuisson Android** : textures en ASTC, et le SPIR-V des shaders des projets dans le package
-   (l'appareil n'a pas `slangc`).
+4. ✅ **La cuisson Android** (jalon 95) :
+   - les textures BC deviennent **ASTC 4×4** (`TextureFormat::Astc4x4Unorm` et `Astc4x4Srgb`) à
+     l'export pour Android (`ExportPlan::platform`, `devex-editor --export … --platform android`,
+     qui n'écrit encore que le package) : chaque niveau est décodé, chaque bloc encodé en UASTC
+     par basisu puis converti en ASTC (`asset::convertToAstc`). Les normales gardent leurs deux
+     canaux en rouge et vert, sans changer les shaders. Une petite perte vient de la double
+     compression (plus de 33 dB sur le dégradé des tests). Les textures converties sont gardées dans
+     `.devex/android` sous le hachage de leur artefact : le bac à sable s'exporte en 3 s la
+     première fois, en 1 s ensuite ;
+   - le renderer active `textureCompressionASTC_LDR` quand le GPU l'offre et refuse sinon une
+     texture ASTC, une à une, comme le BC ;
+   - les shaders des projets étaient déjà du SPIR-V dans le package : `slangc` les compile à
+     l'import, et l'appareil n'en a pas besoin ;
+   - essayées dans l'émulateur, les textures ASTC s'affichent fausses (caisses grises, terrain en
+     blocs), alors que basisu les décode justes sur le PC. Le GPU du PC ne lit pas l'ASTC :
+     l'émulateur le décode lui-même. Elles restent à voir sur un vrai téléphone.
 5. **L'export dans l'éditeur** : la cible Android dans la fenêtre d'export, le projet Gradle généré
    (nom, identifiant, icône, orientation, Vulkan 1.3), la signature (clé de débogage créée
    automatiquement, clé de publication choisie à l'export), APK et AAB, et l'installation sur un
@@ -5425,6 +5448,11 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     interne ; surface perdue en arrière-plan et recréée au retour ; touche `Back` et réglage
     *Android Quit On Back*, comme dans Godot ; toucher par la souris émulée. Preset
     `android-x86_64` pour l'émulateur.
+
+95. ✅ **Textures ASTC pour Android** — quatrième étape d'Android : formats ASTC 4×4, conversion
+    des textures BC à l'export par basisu (UASTC puis ASTC) avec un cache dans `.devex/android`,
+    `--platform android` à l'export en ligne de commande, ASTC activé et vérifié par le renderer.
+    Test de la conversion (couleurs et normales) ; à voir encore sur un vrai téléphone.
 
 Ensuite, sans ordre figé : à choisir dans les pistes ci-dessous.
 

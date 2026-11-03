@@ -25,6 +25,10 @@ std::string_view toString(TextureFormat format) noexcept
         return "r8";
     case TextureFormat::R32Float:
         return "r32f";
+    case TextureFormat::Astc4x4Unorm:
+        return "astc4x4";
+    case TextureFormat::Astc4x4Srgb:
+        return "astc4x4-srgb";
     }
     return "unknown";
 }
@@ -32,19 +36,22 @@ std::string_view toString(TextureFormat format) noexcept
 bool isBlockCompressed(TextureFormat format) noexcept
 {
     return format == TextureFormat::Bc5Unorm || format == TextureFormat::Bc7Unorm ||
-           format == TextureFormat::Bc7Srgb;
+           format == TextureFormat::Bc7Srgb || format == TextureFormat::Astc4x4Unorm ||
+           format == TextureFormat::Astc4x4Srgb;
 }
 
 bool isSrgb(TextureFormat format) noexcept
 {
-    return format == TextureFormat::Rgba8Srgb || format == TextureFormat::Bc7Srgb;
+    return format == TextureFormat::Rgba8Srgb || format == TextureFormat::Bc7Srgb ||
+           format == TextureFormat::Astc4x4Srgb;
 }
 
 std::size_t mipByteSize(TextureFormat format, std::uint32_t width, std::uint32_t height) noexcept
 {
     if (isBlockCompressed(format))
     {
-        // Every BC format used here stores a 4x4 block in 16 bytes; partial blocks are padded.
+        // Every BC and ASTC format used here stores a 4x4 block in 16 bytes; partial blocks are
+        // padded.
         const std::size_t blocksWide = (static_cast<std::size_t>(width) + 3) / 4;
         const std::size_t blocksHigh = (static_cast<std::size_t>(height) + 3) / 4;
         return blocksWide * blocksHigh * 16;
