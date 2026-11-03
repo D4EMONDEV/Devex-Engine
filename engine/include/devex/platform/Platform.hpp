@@ -3,6 +3,7 @@
 #include <devex/core/Export.hpp>
 
 #include <devex/core/Error.hpp>
+#include <devex/core/MappedFile.hpp>
 #include <devex/platform/Event.hpp>
 #include <devex/platform/Input.hpp>
 #include <devex/platform/Key.hpp>
@@ -161,7 +162,13 @@ private:
 DEVEX_API void sleepPrecise(std::chrono::nanoseconds duration);
 
 // Directory containing the executable, available without a Platform, as for command-line tools.
+// On Android, the folder where the activity extracted the files of the engine.
 [[nodiscard]] DEVEX_API std::filesystem::path executableDirectory();
+
+#if defined(__ANDROID__)
+// Maps a file of the APK's assets, which must be stored uncompressed, such as the package of the game.
+[[nodiscard]] DEVEX_API core::Result<core::MappedFile> mapAndroidAsset(const std::filesystem::path& name);
+#endif
 
 // A folder of the user that can always be written to, for the logs and the saves of an
 // application, created when missing: %APPDATA%\<organization>\<application> on Windows. An empty

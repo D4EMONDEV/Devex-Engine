@@ -4847,11 +4847,33 @@ Les étapes, chacune livrable et testée seule :
    pour 320 Mo de bibliothèque, que Gradle allégera à l'empaquetage. Le job *Android arm64* de la CI
    construit le preset avec le NDK r29, avertissements traités comme des erreurs ; rien ne lance
    encore le moteur sur un téléphone.
-3. **La plateforme Android** : le package lu depuis les assets de l'APK (`PackageReader` ouvre
-   aujourd'hui un chemin de fichier ; il passera par un flux de la plateforme, le `.dvxpak` étant
-   rangé non compressé), les sauvegardes dans le dossier de l'application, la surface perdue et
-   retrouvée quand le jeu passe en arrière-plan, le toucher et le bouton retour reliés aux actions
-   du projet.
+   - ✅ **Un APK minimal, avancé avant l'étape 3** pour la tester sur un appareil (décidé le 3
+     novembre 2026) : le projet Gradle du lecteur, `apps/player/android/` (plugin Android 9.5.0,
+     `minSdk` 29), que le build des presets Android assemble dans `out/build/<preset>/android`
+     avec les bibliothèques, la libc++ partagée et les fichiers du moteur ; un jeu y pose son
+     package en `app/src/main/assets/game.dvxpak`, et `gradle assembleDebug` fait l'APK. Son
+     activité, `DevexActivity`, étend `SDLActivity`, dont les sources Java (SDL 3.4.16) sont dans
+     `third_party/sdl-android`. Le moteur est lié à la **libc++ partagée** (`ANDROID_STL`
+     `c++_shared`), que le NDK exige quand deux bibliothèques s'échangent des types de la
+     bibliothèque standard.
+   - **Les appareils** : le premier téléphone essayé, un Galaxy A13 5G (Mali-G57, Android 14),
+     fait tourner un Android **32 bits** (`armeabi-v7a`) et n'offre que **Vulkan 1.1**, sans
+     `dynamic_rendering` ni `synchronization2`, comme beaucoup de téléphones d'entrée de gamme.
+     Les faire tourner demanderait une compilation 32 bits et un second renderer à render passes :
+     pas maintenant. Le preset `android-x86_64` sert à **l'émulateur** d'Android Studio, dont le
+     Vulkan passe par le GPU du PC ; un vrai téléphone 64 bits en Vulkan 1.3 reste à essayer.
+3. **La plateforme Android** :
+   - ✅ le package lu dans l'APK, projeté où il est rangé, non compressé
+     (`platform::mapAndroidAsset`, `MappedFile::openRegion`, `PackageReader::open` d'une
+     projection) ;
+   - ✅ les fichiers du moteur (shaders, ressources) extraits par l'activité dans `devex/` du
+     stockage interne, une fois par version installée : `executableDirectory()` y mène ;
+   - ✅ le journal dans logcat (étiquette `Devex`), les sauvegardes dans le stockage interne ;
+   - ✅ les deux variables de garde du gestionnaire de plantages hors du bloc statique de
+     stockage des threads (`initial-exec`), que `dlopen` refuse sur Android ;
+   - la surface perdue et retrouvée quand le jeu passe en arrière-plan : aujourd'hui, Vulkan
+     répond `VK_ERROR_SURFACE_LOST_KHR` et le jeu quitte ;
+   - le toucher et le bouton retour reliés aux actions du projet.
 4. **La cuisson Android** : textures en ASTC, et le SPIR-V des shaders des projets dans le package
    (l'appareil n'a pas `slangc`).
 5. **L'export dans l'éditeur** : la cible Android dans la fenêtre d'export, le projet Gradle généré
@@ -4861,8 +4883,8 @@ Les étapes, chacune livrable et testée seule :
 6. **Les modules C++ des jeux** compilés avec le NDK pour l'export. Un projet qui contient du C#
    est refusé avec un message clair tant que le C# n'est pas pris en charge.
 
-Plus tard : le C#, un préréglage de qualité mobile, des commandes tactiles à l'écran, `x86_64`
-pour l'émulateur. Le Web demanderait un rendu WebGPU, donc un autre renderer : hors de ce plan.
+Plus tard : le C#, un préréglage de qualité mobile, des commandes tactiles à l'écran. Le Web
+demanderait un rendu WebGPU, donc un autre renderer : hors de ce plan.
 
 ### Dépendances prévues (vcpkg)
 

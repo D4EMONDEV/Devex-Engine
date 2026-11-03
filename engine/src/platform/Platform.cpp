@@ -15,6 +15,10 @@
 #define NOMINMAX
 #include <windows.h>
 #endif
+#if defined(__ANDROID__)
+#include <android/asset_manager_jni.h>
+#include <jni.h>
+#endif
 
 #include <algorithm>
 #include <array>
@@ -786,9 +790,59 @@ std::filesystem::path Platform::baseDirectory() const
 
 std::filesystem::path executableDirectory()
 {
+#if defined(__ANDROID__)
+    // An app has no folder of its own beside its program: the activity extracts the files of the
+    // engine (shaders, resources) from the APK into devex/ of its internal storage.
+    if (const char* const internal = SDL_GetAndroidInternalStoragePath(); internal != nullptr)
+    {
+        return core::pathFromUtf8(internal) / "devex";
+    }
+#endif
     const char* const basePath = SDL_GetBasePath();
     return basePath != nullptr ? core::pathFromUtf8(basePath) : std::filesystem::current_path();
 }
+
+#if defined(__ANDROID__)
+core::Result<core::MappedFile> mapAndroidAsset(const std::filesystem::path& name)
+{
+    // The asset manager of the activity, kept for the whole run: SDL does not share its own.
+    static AAssetManager* const manager = [] () -> AAssetManager* {
+        auto* const environment = static_cast<JNIEnv*>(SDL_GetAndroidJNIEnv());
+        auto* const activity = static_cast<jobject>(SDL_GetAndroidActivity());
+        if (environment == nullptr || activity == nullptr)
+        {
+            return nullptr;
+        }
+        jclass const type = environment->GetObjectClass(activity);
+        jmethodID const getAssets = environment->GetMethodID(type, "getAssets", "()Landroid/content/res/AssetManager;");
+        jobject const assets = environment->CallObjectMethod(activity, getAssets);
+        AAssetManager* const found = AAssetManager_fromJava(environment, environment->NewGlobalRef(assets));
+        environment->DeleteLocalRef(assets);
+        environment->DeleteLocalRef(type);
+        environment->DeleteLocalRef(activity);
+        return found;
+    }();
+    if (manager == nullptr)
+    {
+        return core::makeError(core::ErrorCode::Platform, "no asset manager: {}", SDL_GetError());
+    }
+    const std::string utf8 = core::toUtf8(name);
+    AAsset* const asset = AAssetManager_open(manager, utf8.c_str(), AASSET_MODE_RANDOM);
+    if (asset == nullptr)
+    {
+        return core::makeError(core::ErrorCode::NotFound, "the APK has no asset '{}'", utf8);
+    }
+    off64_t start = 0;
+    off64_t length = 0;
+    const int descriptor = AAsset_openFileDescriptor64(asset, &start, &length);
+    AAsset_close(asset);
+    if (descriptor < 0)
+    {
+        return core::makeError(core::ErrorCode::Io, "the asset '{}' is compressed in the APK", utf8);
+    }
+    return core::MappedFile::openRegion(descriptor, static_cast<std::uint64_t>(start), static_cast<std::size_t>(length));
+}
+#endif
 
 namespace {
 
@@ -847,6 +901,12 @@ core::Result<std::filesystem::path> userDataLocation(std::string_view organizati
     if (const char* const home = std::getenv("HOME"); home != nullptr && *home != '\0')
     {
         base = std::filesystem::path(home) / "Library" / "Application Support";
+    }
+#elif defined(__ANDROID__)
+    // The internal storage of the app, which only the app reads and which leaves with it.
+    if (const char* const internal = SDL_GetAndroidInternalStoragePath(); internal != nullptr)
+    {
+        base = core::pathFromUtf8(internal);
     }
 #else
     if (const char* const data = std::getenv("XDG_DATA_HOME"); data != nullptr && *data != '\0')

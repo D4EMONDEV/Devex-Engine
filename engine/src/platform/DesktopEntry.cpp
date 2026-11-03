@@ -62,7 +62,7 @@ namespace {
     return quoted;
 }
 
-#ifdef __linux__
+#if defined(__linux__) && !defined(__ANDROID__)
 [[nodiscard]] core::Result<std::filesystem::path> applicationsDirectory()
 {
     if (const char* const data = std::getenv("XDG_DATA_HOME"); data != nullptr && *data != '\0')
@@ -102,7 +102,7 @@ std::string desktopEntryText(const DesktopEntry& entry, const std::filesystem::p
     return text;
 }
 
-#ifdef __linux__
+#if defined(__linux__) && !defined(__ANDROID__)
 core::Result<void> registerDesktopEntry(const DesktopEntry& entry)
 {
     std::error_code error;

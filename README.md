@@ -334,14 +334,20 @@ cmake --build --preset build-linux-debug
 ctest --preset test-linux-debug --label-exclude gpu
 ```
 
-Pour Android (arm64), le moteur et le lecteur (`libmain.so`) se compilent depuis Windows ou Linux
-avec le NDK d'Android Studio, que désigne `ANDROID_NDK_HOME`. Rien ne les empaquette encore en APK :
-c'est la suite du plan (voir *Android* dans [docs/decisions.md](docs/decisions.md)).
+Pour Android, le moteur et le lecteur (`libmain.so`) se compilent depuis Windows ou Linux avec le
+NDK d'Android Studio, que désigne `ANDROID_NDK_HOME` : `android-arm64` pour les téléphones,
+`android-x86_64` pour l'émulateur d'Android Studio. Le build assemble un projet Gradle dans
+`out/build/<preset>/android` ; on y pose le package d'un jeu exporté, puis Gradle fait l'APK. L'export
+depuis l'éditeur est la suite du plan (voir *Android* dans [docs/decisions.md](docs/decisions.md)).
 
 ```powershell
 $env:ANDROID_NDK_HOME = "$env:LOCALAPPDATA/Android/Sdk/ndk/<version>"
-cmake --preset android-arm64
-cmake --build --preset build-android-arm64
+cmake --preset android-x86_64
+cmake --build --preset build-android-x86_64
+copy <export>\<Jeu>.dvxpak out\build\android-x86_64\android\app\src\main\assets\game.dvxpak
+cd out\build\android-x86_64\android
+gradle assembleDebug
+adb install -r app\build\outputs\apk\debug\app-debug.apk
 ```
 
 Chaque push sur `main` ou `ci` est construit et testé par GitHub Actions (Windows et Linux, Debug

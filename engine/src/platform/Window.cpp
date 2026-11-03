@@ -176,10 +176,11 @@ void Window::setIcon(std::span<const std::uint8_t> rgba, std::uint32_t width, st
     if (!SDL_SetWindowIcon(detail::toSdlWindow(m_native), surface))
     {
         // Wayland compositors without the protocol of window icons, as GNOME, show the icon of the
-        // program's desktop entry instead (registerDesktopEntry); windows without a screen have none.
+        // program's desktop entry instead (registerDesktopEntry); windows without a screen have none,
+        // and Android shows the icon of the APK.
         const char* const driver = SDL_GetCurrentVideoDriver();
         const std::string_view name = driver != nullptr ? driver : "";
-        if (name == "wayland" || name == "offscreen" || name == "dummy")
+        if (name == "wayland" || name == "offscreen" || name == "dummy" || name == "android")
         {
             DEVEX_LOG_TRACE("The window has the icon of the desktop entry: {}", SDL_GetError());
         }

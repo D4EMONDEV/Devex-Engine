@@ -115,7 +115,12 @@ int main(int argc, char** argv)
     }
     else if (arguments.empty())
     {
+#if defined(__ANDROID__)
+        // An Android game carries its package among the assets of its APK, under this name.
+        std::filesystem::path package = "game";
+#else
         std::filesystem::path package = std::filesystem::path(argv[0]).stem();
+#endif
         package += devex::asset::packageExtension;
         config.package = package;
     }

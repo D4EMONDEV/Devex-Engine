@@ -141,6 +141,7 @@ target_link_libraries(devex_platform
         SDL3::SDL3
         $<$<PLATFORM_ID:Windows>:dwmapi>
         $<$<PLATFORM_ID:Windows>:dbghelp>
+        $<$<PLATFORM_ID:Android>:android>
 )
 set_target_properties(devex_platform PROPERTIES
     EXPORT_NAME Platform
@@ -1050,6 +1051,10 @@ target_link_libraries(devex_engine
         devex_tools
         devex_ui
 )
+if(ANDROID)
+    # The log goes to logcat.
+    target_link_libraries(devex_engine PRIVATE log)
+endif()
 set_target_properties(devex_engine PROPERTIES
     OUTPUT_NAME "devex-engine"
     EXPORT_NAME Engine

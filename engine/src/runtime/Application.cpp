@@ -3246,9 +3246,20 @@ int run(Application& application, const ApplicationConfig& config)
     std::optional<asset::Project> launchSettings;
     if (!config.package.empty())
     {
+#if defined(__ANDROID__)
+        // On Android, the package stays inside the APK, mapped where it is stored.
+        const std::filesystem::path& packagePath = config.package;
+        core::Result<std::unique_ptr<asset::PackageReader>> opened =
+            config.package.is_absolute()
+                ? asset::PackageReader::open(config.package)
+                : platform::mapAndroidAsset(config.package).and_then([&](core::MappedFile mapped) {
+                      return asset::PackageReader::open(std::move(mapped), config.package);
+                  });
+#else
         const std::filesystem::path packagePath =
             config.package.is_absolute() ? config.package : platform->baseDirectory() / config.package;
         core::Result<std::unique_ptr<asset::PackageReader>> opened = asset::PackageReader::open(packagePath);
+#endif
         if (!opened)
         {
             DEVEX_LOG_FATAL("Cannot open the game: {}", opened.error());

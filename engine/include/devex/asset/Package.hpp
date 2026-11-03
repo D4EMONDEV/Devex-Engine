@@ -110,6 +110,9 @@ class DEVEX_API PackageReader final : public AssetSource
 public:
     // Checks the header and the index; an asset whose data is damaged fails when it is loaded.
     [[nodiscard]] static core::Result<std::unique_ptr<PackageReader>> open(const std::filesystem::path& path);
+    // The same from bytes already mapped, such as a package inside an Android APK; `path` names it.
+    [[nodiscard]] static core::Result<std::unique_ptr<PackageReader>> open(core::MappedFile file,
+                                                                           const std::filesystem::path& path);
 
     [[nodiscard]] const Project& project() const noexcept override;
     [[nodiscard]] const AssetInfo* find(AssetId id) const override;

@@ -219,7 +219,12 @@ core::Result<std::unique_ptr<PackageReader>> PackageReader::open(const std::file
     {
         return std::unexpected(file.error());
     }
-    const std::span<const std::byte> bytes = file->bytes();
+    return open(std::move(*file), path);
+}
+
+core::Result<std::unique_ptr<PackageReader>> PackageReader::open(core::MappedFile file, const std::filesystem::path& path)
+{
+    const std::span<const std::byte> bytes = file.bytes();
     const auto damaged = [&path](std::string_view what) {
         return core::makeError(core::ErrorCode::Parse, "'{}' is not a valid game package: {}", core::toUtf8(path), what);
     };
@@ -311,7 +316,7 @@ core::Result<std::unique_ptr<PackageReader>> PackageReader::open(const std::file
     {
         return damaged("the index is truncated");
     }
-    reader->m_file = std::move(*file);
+    reader->m_file = std::move(file);
     return reader;
 }
 

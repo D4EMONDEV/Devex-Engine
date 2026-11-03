@@ -14,9 +14,36 @@
 #ifndef _WIN32
 #include <unistd.h>
 #endif
+#if defined(__ANDROID__)
+#include <android/log.h>
+#include <format>
+#endif
 
 namespace devex::core {
 namespace {
+
+#if defined(__ANDROID__)
+[[nodiscard]] int androidPriority(LogLevel level) noexcept
+{
+    switch (level)
+    {
+    case LogLevel::Trace:
+        return ANDROID_LOG_VERBOSE;
+    case LogLevel::Debug:
+        return ANDROID_LOG_DEBUG;
+    case LogLevel::Info:
+        return ANDROID_LOG_INFO;
+    case LogLevel::Warning:
+        return ANDROID_LOG_WARN;
+    case LogLevel::Error:
+        return ANDROID_LOG_ERROR;
+    case LogLevel::Fatal:
+    case LogLevel::Off:
+        return ANDROID_LOG_FATAL;
+    }
+    return ANDROID_LOG_INFO;
+}
+#endif
 
 #ifdef NDEBUG
 constexpr LogLevel defaultLogLevel = LogLevel::Info;
@@ -265,6 +292,12 @@ private:
     void writeLine(LogLevel level, std::chrono::steady_clock::time_point time, std::string_view category, std::string_view message,
                    std::string_view place) const
     {
+#if defined(__ANDROID__)
+        // Android keeps no console: the lines go to logcat, which tells the time and the level itself.
+        static_cast<void>(time);
+        const std::string line = std::format("{:<{}} {}{}", category, categoryWidth, message, place);
+        __android_log_write(androidPriority(level), "Devex", line.c_str());
+#else
         const bool isProblem = level >= LogLevel::Warning;
         std::FILE* const stream = isProblem ? stderr : stdout;
         const std::chrono::duration<double> elapsed = time - m_startTime;
@@ -287,6 +320,7 @@ private:
         {
             std::fflush(stream);
         }
+#endif
     }
 
     void writeToConsole(const LogRecord& record)

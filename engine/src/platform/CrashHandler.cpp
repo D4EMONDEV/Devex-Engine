@@ -593,8 +593,15 @@ struct Guard
 };
 
 // Read by the signal handler: in the static block of thread storage, which reading never allocates.
+// Android loads the engine with dlopen, which refuses that block: there, a thread's storage is
+// allocated the first time it is read, possibly in the handler of a thread that never guarded.
+#if defined(__ANDROID__)
+thread_local Guard* activeGuard = nullptr;
+thread_local int guardBarriers = 0;
+#else
 [[gnu::tls_model("initial-exec")]] thread_local Guard* activeGuard = nullptr;
 [[gnu::tls_model("initial-exec")]] thread_local int guardBarriers = 0;
+#endif
 
 [[gnu::format(printf, 1, 2)]] void append(const char* format, ...)
 {

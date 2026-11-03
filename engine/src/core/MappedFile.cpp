@@ -76,6 +76,29 @@ Result<MappedFile> MappedFile::open(const std::filesystem::path& path)
     return mapped;
 }
 
+#ifndef _WIN32
+Result<MappedFile> MappedFile::openRegion(int descriptor, std::uint64_t offset, std::size_t size)
+{
+    MappedFile mapped;
+    mapped.m_descriptor = descriptor;
+    mapped.m_size = size;
+    if (size == 0)
+    {
+        return mapped;
+    }
+    const auto page = static_cast<std::uint64_t>(sysconf(_SC_PAGESIZE));
+    const std::uint64_t start = offset - offset % page;
+    mapped.m_pageOffset = static_cast<std::size_t>(offset - start);
+    void* const view = mmap(nullptr, size + mapped.m_pageOffset, PROT_READ, MAP_PRIVATE, descriptor, static_cast<off_t>(start));
+    if (view == MAP_FAILED)
+    {
+        return makeError(ErrorCode::Io, "cannot map {} bytes at {}", size, offset);
+    }
+    mapped.m_data = static_cast<const std::byte*>(view) + mapped.m_pageOffset;
+    return mapped;
+}
+#endif
+
 MappedFile::MappedFile(MappedFile&& other) noexcept
     : m_data(std::exchange(other.m_data, nullptr))
     , m_size(std::exchange(other.m_size, 0))
@@ -84,6 +107,7 @@ MappedFile::MappedFile(MappedFile&& other) noexcept
     , m_mapping(std::exchange(other.m_mapping, nullptr))
 #else
     , m_descriptor(std::exchange(other.m_descriptor, -1))
+    , m_pageOffset(std::exchange(other.m_pageOffset, 0))
 #endif
 {
 }
@@ -100,6 +124,7 @@ MappedFile& MappedFile::operator=(MappedFile&& other) noexcept
         m_mapping = std::exchange(other.m_mapping, nullptr);
 #else
         m_descriptor = std::exchange(other.m_descriptor, -1);
+        m_pageOffset = std::exchange(other.m_pageOffset, 0);
 #endif
     }
     return *this;
@@ -135,8 +160,9 @@ void MappedFile::close() noexcept
 #else
     if (m_data != nullptr)
     {
-        munmap(const_cast<std::byte*>(m_data), m_size);
+        munmap(const_cast<std::byte*>(m_data - m_pageOffset), m_size + m_pageOffset);
     }
+    m_pageOffset = 0;
     if (m_descriptor >= 0)
     {
         ::close(m_descriptor);
