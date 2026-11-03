@@ -5529,7 +5529,54 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     mesure `DEVEX_STRESS_FOG` du banc d'essai (0,21 ms sur une RTX 4060) ; tests de l'extraction et
     d'un brouillard qui cache un cube puis qu'un volume creuse ; API des jeux 40.
 
+98. ✅ **Réflexions de l'écran (SSR)** — tracées dans le shader des surfaces, dans la profondeur de la
+    prépasse, puis lues dans l'image de la frame précédente, plus floue pour les surfaces plus rugueuses,
+    à la place de ce que les sondes et le ciel reflètent ; verre, terrains, decals et shaders des
+    projets compris ; réglages sur `Camera` et volumes de post-traitement ; panneau poli dans
+    l'arène du bac à sable ; tests d'un sol miroir, rugueux et en verre, avec et sans TAA, et de
+    l'extraction ; mesure `DEVEX_STRESS_SSR` du banc d'essai ; API des jeux 43.
+
 Ensuite, sans ordre figé : à choisir dans les pistes ci-dessous.
+
+## Réflexions de l'écran (SSR) — 2026-11-04
+
+Décidé avec l'utilisateur avant tout code.
+
+- **Tracées dans le shader des surfaces**, dans `screenReflection` (`shaders/pbr.slang`), plutôt que
+  dans une passe à part à demi-résolution ou après la scène comme Godot. Le rendu étant Forward+
+  avec une prépasse, chaque pixel n'est éclairé qu'une fois, avec sa vraie normale et sa vraie
+  rugosité : normal maps, decals, terrains et shaders des projets sont exacts, et les surfaces
+  mélangées, comme le verre, reflètent aussi, ce que Godot ne fait pas. Écartés : une passe à part,
+  qui aurait demandé à la prépasse de lire normal maps et rugosité pour toutes les surfaces en
+  ignorant decals et shaders des projets ; et la méthode de Godot, qui aurait demandé à tous les
+  shaders de surface d'écrire leur spéculaire à part. Le prix : la pleine résolution, sur les seuls
+  pixels qui reflètent, et une image de retard sur ce qui bouge.
+- **Le rayon est un segment du triple coordonnées de texture et profondeur**, où la profondeur est
+  une droite quelle que soit la perspective : la boucle ne lit qu'une profondeur et compare. Ses pas
+  s'élargissent en avançant, pour garder les contacts nets et traverser quand même l'écran ; quatre
+  demi-pas retrouvent ensuite le point exact. Un rayon qui passe trop loin derrière ce qu'il croise,
+  ou qui le prend à revers, continue. Les rayons sur toute la profondeur (Hi-Z) sont une suite
+  possible si le coût l'exige : la pyramide de l'élimination garde le plus loin, pas le plus proche.
+- **La réflexion remplace ce que les sondes et le ciel reflètent**, dans `environmentLight`, avant le
+  Fresnel et l'occlusion : pas de lumière comptée deux fois, et là où le rayon ne trouve rien, le
+  repli est déjà là.
+- **Les surfaces rugueuses lisent une image floutée**, sans bruit : l'image de la frame précédente à
+  demi-taille, avec une chaîne de niveaux, lue selon la largeur du lobe là où le rayon arrive. Elle
+  coupe ce qui est trop brillant (le disque du soleil) pour qu'un flou ne l'étale pas. Au-delà d'une
+  rugosité de 0,7, plus de réflexion, et aucun coût. Écartés : des rayons aléatoires lissés par le TAA,
+  plus réalistes mais bruités sans lui, et des miroirs seulement.
+- **La passe Scene teste la profondeur sans l'écrire**, pour que les surfaces la lisent. La validation
+  de Vulkan regarde ce qu'un shader peut lire, pas ce qu'il lit : c'est vrai aussi SSR coupé. Seule
+  l'herbe écrivait la profondeur là : elle a sa passe, après le ciel, et s'éclaire sans lire l'écran.
+  Elle n'est donc pas reflétée, faute d'être dans la profondeur quand les surfaces la lisent.
+- **Les réglages sont ceux de l'occlusion ambiante**, sur `Camera` et les volumes de post-traitement,
+  plutôt que sur `Environment` comme Godot : `screen_reflections`, une intensité à 0 par défaut comme
+  `ssr_enabled` de Godot, et `screen_reflection_steps`, `_fade_in`, `_fade_out` et `_depth_tolerance`.
+  Les fondus sont les puissances de Godot, mais le rayon parcourt tout l'écran au lieu d'un pixel par
+  pas : `fade_out` vaut 0,5 et non 2. Seule la vue principale reflète, comme pour le brouillard.
+
+Coût mesuré : 0,85 ms sur une RTX 4060 à 720p, presque tout l'écran reflétant (voir
+[les performances](performances.md)).
 
 ## Play dans un processus séparé — 2026-11-03
 
@@ -5774,8 +5821,7 @@ publier. L'ordre retenu, à la manière de Godot :
 - **Ombres locales** : filtrage plus doux (PCSS), tuiles gardées une à une (aujourd'hui l'atlas est
   gardé entier ou redessiné entier), et ombres des surfaces transparentes.
 - **Réflexions locales** : sondes recapturées pendant le jeu (au chargement, à la demande), plusieurs
-  rebonds entre sondes, sondes en clusters pour les grandes scènes, compression BC6H des captures,
-  SSR.
+  rebonds entre sondes, sondes en clusters pour les grandes scènes, compression BC6H des captures.
 - **Lumière indirecte, la suite** : validité des sondes cuites dans un mur (part de faces arrière
   vues), visibilité par profondeur des sondes (comme DDGI), volumes et sondes mis à jour pendant le
   jeu, lightmaps (second jeu d'UV à l'import, dépliage), objets émissifs qui éclairent par la

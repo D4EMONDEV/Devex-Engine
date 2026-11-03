@@ -1196,6 +1196,97 @@ TEST_CASE("Volumetric fog mixed with the frames before stays steady, far from th
     CHECK(capture.errors().empty());
 }
 
+TEST_CASE("Smooth surfaces reflect what the screen shows, and rough ones do not", "[render][gpu][reflections]")
+{
+    const ErrorCapture capture;
+    {
+        auto platform = devex::platform::Platform::create();
+        REQUIRE(platform.has_value());
+        auto window = platform->createWindow({.width = 320, .height = 240, .vulkan = true, .hidden = true});
+        REQUIRE(window.has_value());
+        auto renderer = devex::render::Renderer::create(*platform, *window, {.validation = true});
+        if (!renderer)
+        {
+            FAIL(std::format("{}", renderer.error()));
+        }
+        auto cube = renderer->createMesh(devex::asset::makeCube());
+        REQUIRE(cube.has_value());
+        const devex::render::MaterialHandle red =
+            renderer->createMaterial({.baseColorFactor = {0.0f, 0.0f, 0.0f, 1.0f}, .emissiveFactor = {1.0f, 0.0f, 0.0f}});
+        const devex::render::MaterialHandle mirror = renderer->createMaterial({.metallicFactor = 1.0f, .roughnessFactor = 0.05f});
+        const devex::render::MaterialHandle rough = renderer->createMaterial({.metallicFactor = 1.0f, .roughnessFactor = 0.9f});
+        const devex::render::MaterialHandle glass = renderer->createMaterial(
+            {.baseColorFactor = {1.0f, 1.0f, 1.0f, 0.5f}, .metallicFactor = 1.0f, .roughnessFactor = 0.05f, .alphaMode = devex::asset::AlphaMode::Blend});
+
+        // A red light standing on a floor under no other light, seen from above: only the floor can
+        // show more red than the light itself. Counted some frames in, once a frame has been kept.
+        const auto redPixels = [&](devex::render::MaterialHandle floor, float reflections, devex::render::Antialiasing antialiasing) {
+            std::uint64_t request = 0;
+            std::vector<std::uint8_t> image;
+            for (int frame = 0; frame < 16 && image.empty(); ++frame)
+            {
+                devex::render::RenderWorld& world = renderer->beginFrame();
+                world.camera.view = devex::math::inverse(
+                    devex::math::rotate(devex::math::translate(devex::math::Mat4{1.0f}, {0.0f, 3.0f, 5.0f}), -0.45f, devex::math::Vec3{1.0f, 0.0f, 0.0f}));
+                world.camera.autoExposure = false;
+                world.camera.antialiasing = antialiasing;
+                world.camera.ambientOcclusion = 0.0f;
+                world.camera.bloom = 0.0f;
+                world.camera.screenReflections = reflections;
+                world.environment.intensity = 0.0f;
+                world.meshes.push_back({.mesh = *cube,
+                                        .material = floor,
+                                        .transform = devex::math::scale(devex::math::translate(devex::math::Mat4{1.0f}, {0.0f, -0.5f, -5.0f}),
+                                                                        devex::math::Vec3{30.0f, 1.0f, 30.0f}),
+                                        .objectId = 1});
+                world.meshes.push_back({.mesh = *cube,
+                                        .material = red,
+                                        .transform = devex::math::scale(devex::math::translate(devex::math::Mat4{1.0f}, {0.0f, 0.75f, -1.0f}),
+                                                                        devex::math::Vec3{1.5f}),
+                                        .objectId = 2});
+                REQUIRE(renderer->endFrame());
+                if (frame == 8)
+                {
+                    request = renderer->requestCapture(320, 240);
+                }
+                for (devex::render::CapturedImage& captured : renderer->takeCaptures())
+                {
+                    if (captured.request == request)
+                    {
+                        image = std::move(captured.rgba);
+                    }
+                }
+            }
+            REQUIRE_FALSE(image.empty());
+            int count = 0;
+            for (std::size_t at = 0; at + 3 < image.size(); at += 4)
+            {
+                count += int{image[at]} > std::max(int{image[at + 1]}, int{image[at + 2]}) + 30 ? 1 : 0;
+            }
+            return count;
+        };
+
+        for (const devex::render::Antialiasing antialiasing : {devex::render::Antialiasing::None, devex::render::Antialiasing::Temporal})
+        {
+            const int alone = redPixels(mirror, 0.0f, antialiasing);
+            const int reflected = redPixels(mirror, 1.0f, antialiasing);
+            const int roughFloor = redPixels(rough, 1.0f, antialiasing);
+            const int glassFloor = redPixels(glass, 1.0f, antialiasing);
+            INFO("red pixels: alone " << alone << ", reflected " << reflected << ", on a rough floor " << roughFloor << ", on glass " << glassFloor);
+            CHECK(alone > 500);
+            CHECK(reflected > alone + alone / 4);
+            CHECK(std::abs(roughFloor - alone) <= alone / 20);
+            CHECK(glassFloor > alone + alone / 8);
+        }
+    }
+
+    for (const std::string& error : capture.errors())
+    {
+        UNSCOPED_INFO(error);
+    }
+    CHECK(capture.errors().empty());
+}
+
 TEST_CASE("The lens blurs what stands away from the focus, and what moves while the shutter is open", "[render][gpu][lens]")
 {
     const ErrorCapture capture;

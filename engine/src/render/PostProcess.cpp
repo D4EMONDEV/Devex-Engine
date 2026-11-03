@@ -76,6 +76,10 @@ RenderCamera blendPostVolumes(const RenderCamera& camera, std::span<const Render
         {
             blend(result.ambientOcclusion, settings.ambientOcclusion);
         }
+        if (overrides(PostOverride::ScreenReflections))
+        {
+            blend(result.screenReflections, settings.screenReflections);
+        }
         if (overrides(PostOverride::DepthOfField))
         {
             // Without depth of field so far, the lens is the volume's from the start: the focus does

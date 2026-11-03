@@ -63,7 +63,8 @@ class CoroutineScheduler;
 // 40: RenderWorld gained the volumetric fog and its volumes, and the scene the VolumetricFog and
 // FogVolume components.
 // 41: ApplicationConfig gained supervised Play. 42: Project gained addon activation settings.
-inline constexpr std::uint32_t gameApiVersion = 42;
+// 43: RenderCamera, Camera and PostProcessVolume gained the reflections of the screen.
+inline constexpr std::uint32_t gameApiVersion = 43;
 
 enum class SystemPhase : std::uint8_t
 {

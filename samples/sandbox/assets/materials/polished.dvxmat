@@ -1,0 +1,5 @@
+# Polished metal: smooth enough to show what stands on it, as the reflections of the screen allow.
+[material format=1]
+base_color = vec4(0.62, 0.64, 0.68, 1)
+metallic = 1
+roughness = 0.12

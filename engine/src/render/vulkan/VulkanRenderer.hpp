@@ -3,6 +3,7 @@
 #include "../Lighting.hpp"
 #include "../SkinBounds.hpp"
 #include "Atmosphere.hpp"
+#include "ScreenReflections.hpp"
 #include "VolumetricFog.hpp"
 #include "DescriptorSets.hpp"
 #include "Device.hpp"
@@ -675,6 +676,9 @@ private:
     // and whether the frame being prepared draws some.
     bool m_volumetricFogHistory = false;
     bool m_volumetricFogThisFrame = false;
+    std::unique_ptr<ScreenReflectionRenderer> m_screenReflections;
+    // The main view reflects the screen this frame, and the image it reads is filled.
+    bool m_screenReflectionsThisFrame = false;
     bool m_atmosphereBound = false;
     mutable std::uint64_t m_airKey = 0;
     mutable std::uint64_t m_skyKey = 0;

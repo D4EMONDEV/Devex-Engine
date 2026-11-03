@@ -178,6 +178,35 @@ TEST_CASE("Extraction copies the decals with their box and their fades", "[runti
     CHECK(second.fadeLength == 5.0f);
 }
 
+TEST_CASE("Extraction copies the reflections of the screen, from the camera and from volumes", "[runtime][extraction][reflections]")
+{
+    devex::runtime::AssetManager assets(nullptr, nullptr);
+    Scene scene;
+    const Entity viewer = scene.createEntity("Camera");
+    scene.add<Transform>(viewer);
+    scene.add<devex::scene::Camera>(viewer, devex::scene::Camera{.screenReflections = 0.5f,
+                                                                 .screenReflectionSteps = 32,
+                                                                 .screenReflectionFadeIn = 0.25f,
+                                                                 .screenReflectionFadeOut = 1.5f,
+                                                                 .screenReflectionTolerance = 0.75f});
+    const Entity room = scene.createEntity("Room");
+    scene.add<Transform>(room);
+    scene.add<devex::scene::PostProcessVolume>(room, devex::scene::PostProcessVolume{.global = true,
+                                                                                     .overrideScreenReflections = true,
+                                                                                     .screenReflections = 0.25f});
+    scene.updateTransforms();
+    devex::render::RenderWorld world;
+    devex::runtime::extractScene(scene, assets, world);
+    CHECK(world.camera.screenReflections == 0.5f);
+    CHECK(world.camera.screenReflectionSteps == 32);
+    CHECK(world.camera.screenReflectionFadeIn == 0.25f);
+    CHECK(world.camera.screenReflectionFadeOut == 1.5f);
+    CHECK(world.camera.screenReflectionTolerance == 0.75f);
+    REQUIRE(world.postVolumes.size() == 1);
+    CHECK((world.postVolumes[0].overrides & static_cast<std::uint32_t>(devex::render::PostOverride::ScreenReflections)) != 0);
+    CHECK(world.postVolumes[0].settings.screenReflections == 0.25f);
+}
+
 TEST_CASE("Extraction copies the volumetric fog and its volumes, which need it", "[runtime][extraction][fog]")
 {
     devex::runtime::AssetManager assets(nullptr, nullptr);

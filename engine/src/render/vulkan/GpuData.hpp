@@ -185,7 +185,16 @@ struct GpuSceneData
     std::uint32_t decalPadding = 0;
     // The volumetric fog of the frame, when atmosphereFlags has atmosphereVolumetricFog.
     VkDeviceAddress volumetricFog = 0;
-    VkDeviceAddress volumetricFogPadding = 0;
+    // The reflections of the screen, as shaders/pbr.slang reads them: no steps turn them off.
+    std::uint32_t screenReflectionSteps = 0;
+    std::uint32_t screenReflectionLevels = 1;
+    float screenReflectionIntensity = 0.0f;
+    float screenReflectionFadeIn = 0.0f;
+    float screenReflectionFadeOut = 0.0f;
+    float screenReflectionTolerance = 0.0f;
+    float screenReflectionExposure = 1.0f;
+    std::uint32_t screenReflectionFrame = 0;
+    std::uint32_t screenReflectionPadding[2] = {};
 };
 
 // The volumetric fog of the frame, as shaders/fog.slang and common.slang read it.
@@ -836,7 +845,8 @@ static_assert(offsetof(GpuSceneData, projectionJitter) == 944);
 static_assert(offsetof(GpuSceneData, decals) == 960);
 static_assert(offsetof(GpuSceneData, decalCount) == 984);
 static_assert(offsetof(GpuSceneData, volumetricFog) == 992);
-static_assert(sizeof(GpuSceneData) == 1008);
+static_assert(offsetof(GpuSceneData, screenReflectionSteps) == 1000);
+static_assert(sizeof(GpuSceneData) == 1040);
 static_assert(offsetof(GpuVolumetricFog, width) == 48);
 static_assert(offsetof(GpuVolumetricFog, volumes) == 64);
 static_assert(sizeof(GpuVolumetricFog) == 80);

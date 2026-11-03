@@ -352,7 +352,119 @@ float luminanceOf(float3 color)
 
 // The light of the sky, ambient and reflected; the reflection probes around the surface take the
 // place of the sky in its reflections, and the irradiance volumes in its ambient light.
-public float3 environmentLight(SceneData* scene, Surface surface)
+// Surfaces this rough reflect nothing of the screen; those a little smoother fade towards it.
+static const float screenReflectionRoughness = 0.7;
+// How far a ray goes in meters: enough to leave the screen, or to reach what the view can show.
+static const float screenReflectionReach = 2000.0;
+// How close a ray may come to the camera, where the projection ends.
+static const float screenReflectionNearest = 0.01;
+// How far from the side of the screen a reflection starts fading out, in texture coordinates.
+static const float screenReflectionEdge = 0.08;
+
+// What the screen shows along a ray from a surface: the first thing it meets in the depth of the
+// scene, as the previous frame drew it, and how much of the reflection that is. A depth is a straight
+// line across the screen, whatever the perspective, so a ray is a segment of the texture coordinates
+// and of the depth, walked with steps wider as they go: contacts keep their detail, and the ray still
+// crosses the screen.
+float4 screenReflection(SceneData* scene, Surface surface, float3 direction)
+{
+    if (scene.screenReflectionSteps == 0 || surface.roughness >= screenReflectionRoughness)
+    {
+        return float4(0.0);
+    }
+    const float4 start = mul(scene.viewProjection, float4(surface.position, 1.0));
+    float4 end = mul(scene.viewProjection, float4(surface.position + direction * screenReflectionReach, 1.0));
+    if (end.w < screenReflectionNearest)
+    {
+        end = lerp(start, end, (start.w - screenReflectionNearest) / (start.w - end.w));
+    }
+    const float3 from = float3(start.xy / start.w * 0.5 + 0.5, start.z / start.w);
+    float3 to = float3(end.xy / end.w * 0.5 + 0.5, end.z / end.w);
+
+    // As far as the side of the screen it goes through.
+    const float2 across = to.xy - from.xy;
+    const float2 sides = float2(across.x > 0.0 ? 1.0 - from.x : from.x, across.y > 0.0 ? 1.0 - from.y : from.y);
+    const float2 kept = sides / max(abs(across), float2(1e-6));
+    to = lerp(from, to, saturate(min(kept.x, kept.y)));
+
+    const float2 size = float2(scene.viewportWidth, scene.viewportHeight);
+    const int2 last = int2(size) - 1;
+    const float pixels = length((to.xy - from.xy) * size);
+    if (pixels < 2.0)
+    {
+        return float4(0.0);
+    }
+    const uint count = min(scene.screenReflectionSteps, uint(pixels));
+    // A different start for every pixel and frame, which the antialiasing averages.
+    const float2 noisy = floor(from.xy * size) + 5.588238 * float(scene.screenReflectionFrame % 64);
+    const float jitter = frac(52.9829189 * frac(dot(noisy, float2(0.06711056, 0.00583715))));
+
+    float before = 0.0;
+    for (uint step = 0; step < count; ++step)
+    {
+        const float walked = (float(step) + jitter + 0.5) / float(count);
+        const float along = max(walked * sqrt(walked), 1.5 / pixels);
+        const float3 point = lerp(from, to, along);
+        const float depth = sceneDepth.Load(int3(min(int2(point.xy * size), last), 0)).r;
+        // With reversed depth, what lies nearer than the ray stands between it and the camera. The
+        // margin keeps a surface from meeting itself.
+        if (depth <= point.z * 1.0005)
+        {
+            before = along;
+            continue;
+        }
+
+        // Where it crossed, between this step and the last.
+        float low = before;
+        float high = along;
+        for (uint halving = 0; halving < 4; ++halving)
+        {
+            const float middle = (low + high) * 0.5;
+            const float3 tried = lerp(from, to, middle);
+            if (sceneDepth.Load(int3(min(int2(tried.xy * size), last), 0)).r > tried.z)
+            {
+                high = middle;
+            }
+            else
+            {
+                low = middle;
+            }
+        }
+        const float3 hit = lerp(from, to, high);
+        const int2 pixel = min(int2(hit.xy * size), last);
+        const float hitDepth = sceneDepth.Load(int3(pixel, 0)).r;
+        const float3 world = worldFromSceneDepth(scene, hit.xy, hitDepth);
+        const float behind = length(worldFromSceneDepth(scene, hit.xy, hit.z) - scene.cameraPosition) - length(world - scene.cameraPosition);
+        // The ray passed behind what it crossed, or came at it from behind: it goes on.
+        const float3 facing = decodeNormal(normalTexture.Load(int3(pixel, 0)).rg);
+        if (behind > scene.screenReflectionTolerance || dot(facing, direction) > 0.0)
+        {
+            before = along;
+            continue;
+        }
+
+        const float4 previous = mul(scene.previousViewProjection, float4(world, 1.0));
+        const float2 uv = previous.xy / max(previous.w, 1e-6) * 0.5 + 0.5;
+        if (previous.w <= 0.0 || any(uv < 0.0) || any(uv > 1.0))
+        {
+            return float4(0.0);
+        }
+        // As wide as the lobe of the surface has grown on its way, in pixels of the first level.
+        const float wide = surface.roughness * surface.roughness * high * pixels * 0.5;
+        const float level = min(log2(1.0 + wide), float(scene.screenReflectionLevels - 1));
+        const float3 color = screenReflectionImage.SampleLevel(clampSampler, uv, level).rgb / scene.screenReflectionExposure;
+
+        const float2 margin = min(hit.xy, 1.0 - hit.xy) / screenReflectionEdge;
+        const float grown = (float(step) + 1.0) / float(count);
+        const float fade = pow(grown, scene.screenReflectionFadeIn) * pow(1.0 - grown, scene.screenReflectionFadeOut);
+        const float smooth = 1.0 - smoothstep(screenReflectionRoughness - 0.2, screenReflectionRoughness, surface.roughness);
+        return float4(color, scene.screenReflectionIntensity * smoothstep(0.0, 1.0, saturate(min(margin.x, margin.y))) * fade * smooth);
+    }
+    return float4(0.0);
+}
+
+// `screen` is what the screen reflects there, with how much of the reflection it is.
+public float3 environmentLight(SceneData* scene, Surface surface, float4 screen)
 {
     const float NoV = saturate(dot(surface.normal, surface.view));
     const float3 reflected = reflect(-surface.view, surface.normal);
@@ -374,11 +486,19 @@ public float3 environmentLight(SceneData* scene, Surface surface)
         prefiltered += specularEnvironment.SampleLevel(clampSampler, rotateAroundY(reflected, angle), lod).rgb * sky *
                        (1.0 - probes.a) * darkened;
     }
+    // What the screen shows takes the place of what the probes and the sky would reflect.
+    prefiltered = lerp(prefiltered, screen.rgb, screen.a);
     const float2 brdf = brdfLut.SampleLevel(clampSampler, float2(NoV, surface.roughness), 0.0).rg;
 
     const float3 diffuse = surface.diffuseColor * irradiance;
     const float3 specular = prefiltered * (surface.f0 * brdf.x + brdf.y);
     return (diffuse + specular) * surface.occlusion;
+}
+
+// The light around a surface, with what the screen reflects there.
+public float3 environmentLight(SceneData* scene, Surface surface)
+{
+    return environmentLight(scene, surface, screenReflection(scene, surface, reflect(-surface.view, surface.normal)));
 }
 
 // The luminance the sun and the local lights give the surface through a light model.
@@ -396,4 +516,10 @@ public float3 shadeLights<Model : ILightModel>(SceneData* scene, Surface surface
 public float3 shadeSurface(SceneData* scene, Surface surface)
 {
     return environmentLight(scene, surface) + shadeLights(scene, surface, PhysicalLight());
+}
+
+// The same without reflecting the screen, for what writes the depth as it draws and cannot read it.
+public float3 shadeSurfaceOffScreen(SceneData* scene, Surface surface)
+{
+    return environmentLight(scene, surface, float4(0.0)) + shadeLights(scene, surface, PhysicalLight());
 }

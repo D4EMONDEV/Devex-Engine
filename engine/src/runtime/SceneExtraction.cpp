@@ -412,6 +412,11 @@ void extractScene(scene::Scene& scene, AssetManager& assets, render::RenderWorld
                 .antialiasing = static_cast<render::Antialiasing>(camera.antialiasing),
                 .ambientOcclusion = camera.ambientOcclusion,
                 .ambientOcclusionRadius = camera.ambientOcclusionRadius,
+                .screenReflections = camera.screenReflections,
+                .screenReflectionSteps = camera.screenReflectionSteps,
+                .screenReflectionFadeIn = camera.screenReflectionFadeIn,
+                .screenReflectionFadeOut = camera.screenReflectionFadeOut,
+                .screenReflectionTolerance = camera.screenReflectionTolerance,
                 .bloom = camera.bloom,
                 .bloomThreshold = camera.bloomThreshold,
                 .vignette = camera.vignette,
@@ -601,6 +606,7 @@ void extractScene(scene::Scene& scene, AssetManager& assets, render::RenderWorld
                           bit(volume.overrideVignette, PostOverride::Vignette) | bit(volume.overrideGrain, PostOverride::Grain) |
                           bit(volume.overrideChromaticAberration, PostOverride::ChromaticAberration) |
                           bit(volume.overrideAmbientOcclusion, PostOverride::AmbientOcclusion) |
+                          bit(volume.overrideScreenReflections, PostOverride::ScreenReflections) |
                           bit(volume.overrideDepthOfField, PostOverride::DepthOfField) | bit(volume.overrideMotionBlur, PostOverride::MotionBlur) |
                           bit(volume.overrideSaturation, PostOverride::Saturation) | bit(volume.overrideContrast, PostOverride::Contrast) |
                           bit(volume.overrideColorFilter, PostOverride::ColorFilter) |
@@ -613,6 +619,7 @@ void extractScene(scene::Scene& scene, AssetManager& assets, render::RenderWorld
         settings.grain = volume.grain;
         settings.chromaticAberration = volume.chromaticAberration;
         settings.ambientOcclusion = volume.ambientOcclusion;
+        settings.screenReflections = volume.screenReflections;
         settings.depthOfField = volume.depthOfField ? 1.0f : 0.0f;
         settings.focusDistance = volume.focusDistance;
         settings.aperture = volume.aperture;

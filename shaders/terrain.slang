@@ -582,6 +582,6 @@ float4 grassFragment(GrassOutput input, bool frontFacing : SV_IsFrontFace) : SV_
     surface.occlusion = lerp(0.35, 1.0, input.along) * ambientOcclusionTexture.Sample(clampSampler, screenUv).r;
     surface.viewDistance = -mul(scene->view, float4(input.world, 1.0)).z;
     surface.fragmentCoordinate = input.position.xy;
-    const float3 luminance = shadeSurface(scene, surface) * scene->exposure;
+    const float3 luminance = shadeSurfaceOffScreen(scene, surface) * scene->exposure;
     return float4(applyAtmosphere(scene, luminance, surface.position), 1.0);
 }

@@ -110,6 +110,15 @@ struct DEVEX_API Camera
     float ambientOcclusion = 1.0f;
     // How far, in meters, a surface looks around itself for what hides the sky.
     float ambientOcclusionRadius = 0.5f;
+    // How much of what the screen shows smooth surfaces reflect; 0 turns it off.
+    float screenReflections = 0.0f;
+    // How many steps a ray takes at most: more find thinner things, and cost more.
+    std::int32_t screenReflectionSteps = 64;
+    // How reflections fade in leaving a surface and out towards the end of the ray, as powers.
+    float screenReflectionFadeIn = 0.15f;
+    float screenReflectionFadeOut = 0.5f;
+    // How far behind something a ray may pass, in meters, and still meet it.
+    float screenReflectionTolerance = 0.2f;
     // How much of the halo of very bright things is added back to the image; 0 turns it off.
     float bloom = 0.05f;
     // The brightness, after exposure, a pixel must pass before it glows.
@@ -387,6 +396,8 @@ struct DEVEX_API PostProcessVolume
     float chromaticAberration = 0.0f;
     bool overrideAmbientOcclusion = false;
     float ambientOcclusion = 1.0f;
+    bool overrideScreenReflections = false;
+    float screenReflections = 1.0f;
     bool overrideDepthOfField = false;
     bool depthOfField = true;
     float focusDistance = 10.0f;

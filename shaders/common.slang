@@ -305,8 +305,17 @@ public struct SceneData
     public uint decalPadding;
     // The volumetric fog, when atmosphereFlags has atmosphereVolumetricFog.
     public VolumetricFog* volumetricFog;
-    // Two words rather than a 64-bit one, which would ask every shader for Int64.
-    public uint2 volumetricFogPadding;
+    // The reflections of the screen, which take no steps when there are none: how many a ray takes
+    // at most, the levels of the image they read, and the exposure that image was drawn at.
+    public uint screenReflectionSteps;
+    public uint screenReflectionLevels;
+    public float screenReflectionIntensity;
+    public float screenReflectionFadeIn;
+    public float screenReflectionFadeOut;
+    public float screenReflectionTolerance;
+    public float screenReflectionExposure;
+    public uint screenReflectionFrame;
+    public uint2 screenReflectionPadding;
 };
 
 // The depth buffer follows the jittered raster projection; tools and atmospheric tables use the
@@ -466,6 +475,9 @@ public Texture2D depthTexture;
 // test against it without writing it.
 [[vk::binding(12, 1)]]
 public Texture2D sceneDepth;
+// The scene of the previous frame, smaller and blurrier at every level, which surfaces reflect.
+[[vk::binding(15, 1)]]
+public Texture2D screenReflectionImage;
 // The image the tonemapping reads: what the antialiasing resolved, or the scene as it was drawn.
 [[vk::binding(9, 1)]]
 public Texture2D resolvedTexture;

@@ -31,6 +31,7 @@ chaque partie sur le CPU et de chaque passe sur le GPU. Variables d'environnemen
 | `DEVEX_STRESS_SKINNED=1` | anime les trois maillages par deux os, 2 000 objets par défaut |
 | `DEVEX_GPU_SKINNING=0` | garde le skinning des personnages dans leurs dessins individuels |
 | `DEVEX_STRESS_FOG=1` | remplit l'air de brouillard volumétrique (densité 0,02), éclairé par le soleil et les lumières |
+| `DEVEX_STRESS_SSR=1` | fait refléter l'écran aux surfaces, assez lisses pour la plupart des objets (rugosité de 0,3 à 0,86) |
 
 Le temps total couvre toutes les images mesurées ; le détail des zones porte sur les 300 dernières
 au plus, limite de l'historique du profileur. Le nombre de frames CPU retenues et de frames GPU
@@ -517,3 +518,21 @@ les temps du GPU, sont ceux du Release.
 ombres et par les lumières de leurs grappes, puis intégrés, coûtent 0,21 ms, bien sous le 1 ms
 visé ; la scène, qui lit deux couches du brouillard intégré par pixel, ne change pas au-delà des
 écarts d'une mesure à l'autre.
+
+## Réflexions de l'écran (jalon 98)
+
+Bureau : i7-14700KF et RTX 4060 (Windows 11, pilote 621.01), le 4 novembre 2026, 1280 × 720,
+présentation `FIFO`, banc d'essai lancé avec et sans `DEVEX_STRESS_SSR=1` (64 pas au plus, 20 000
+objets dont la plupart assez lisses pour refléter, 256 lumières). Build Debug : les temps du CPU n'y
+valent rien, mais les shaders, et donc les temps du GPU, sont ceux du Release. Deux séries.
+
+| Passe du GPU       | Sans réflexions | Avec réflexions |
+|--------------------|----------------:|----------------:|
+| Scene              | 2,79 à 2,90 ms  | 3,63 à 3,76 ms  |
+| Screen reflections | —               | 0,05 ms         |
+
+**Ce qu'on en tire** : le coût vient des rayons, tracés dans le shader de chaque pixel qui reflète,
+soit 0,85 ms ici pour presque tout l'écran. Il suit le nombre de pixels, et n'a pas été mesuré
+au-delà de 720p. Baisser `screen_reflection_steps` le réduit d'autant ; les surfaces trop rugueuses
+ne coûtent rien, et préparer l'image reflétée presque rien. Un écran moins couvert de surfaces lisses
+coûte moins : c'est le pire cas, pas le cas courant.

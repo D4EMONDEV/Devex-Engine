@@ -2151,6 +2151,11 @@ namespace devex::ui {
   ellipsoïde ou partout ; `density` négative pour creuser). Côté renderer :
   `RenderWorld::volumetricFog` / `fogVolumes`, `VolumetricFogRenderer` (`shaders/fog.slang`),
   `applyVolumetricFog` dans `common.slang` ; seule la vue principale en a.
+- Réflexions de l'écran (SSR) : `Camera::screenReflections` (0 par défaut, intensité), ses pas, ses
+  fondus et sa tolérance, et `PostProcessVolume` pour l'intensité. `screenReflection` dans
+  `shaders/pbr.slang` trace le rayon dans le shader de la surface, `ScreenReflectionRenderer`
+  (`shaders/reflections.slang`) tient l'image de la frame précédente à demi-taille, avec ses niveaux.
+  La passe Scene teste la profondeur sans l'écrire ; l'herbe a sa passe et ne reflète pas.
 - `Camera` : `depth_of_field`, `focus_distance`, `aperture` (nombre f), `auto_focus`,
   `motion_blur` (part d'obturation), `saturation`, `contrast`, `color_filter`, `temperature`,
   `tint`. `PostProcessVolume` (composant) : `global` ou boîte `size` + `blend_distance`, `weight`,

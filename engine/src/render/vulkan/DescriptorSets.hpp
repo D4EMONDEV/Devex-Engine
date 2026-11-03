@@ -58,6 +58,8 @@ public:
     // general layout (see shaders/lens.slang).
     static constexpr std::uint32_t postSourceBinding = 13;
     static constexpr std::uint32_t postChainBinding = 14;
+    // The scene of the previous frame, which surfaces reflect, in the general layout.
+    static constexpr std::uint32_t screenReflectionBinding = 15;
     static constexpr std::uint32_t postChainLength = 7;
     // How many halvings the bloom is built from.
     static constexpr std::uint32_t bloomLevels = 5;
@@ -80,6 +82,7 @@ public:
         VkImageView localShadowMap = VK_NULL_HANDLE;
         VkImageView postSource = VK_NULL_HANDLE;
         std::array<VkImageView, postChainLength> post{};
+        VkImageView screenReflection = VK_NULL_HANDLE;
 
         [[nodiscard]] bool operator==(const FrameImages&) const noexcept = default;
     };

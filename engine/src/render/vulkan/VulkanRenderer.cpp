@@ -1237,6 +1237,22 @@ core::Result<bool> VulkanRenderer::prepareScene(FrameContext& frame, bool main)
         }
     }
     {
+        // Only the main view reflects the screen: the image follows its camera, and the views of the
+        // tools go without. It waits for a frame to fill it.
+        m_screenReflectionsThisFrame = main && m_world.camera.screenReflections > 0.0f;
+        if (m_screenReflectionsThisFrame)
+        {
+            if (core::Result<void> ensured = m_screenReflections->ensure(m_sceneExtent); !ensured)
+            {
+                return std::unexpected(ensured.error());
+            }
+        }
+        else if (main)
+        {
+            m_screenReflections->forget();
+        }
+    }
+    {
         DEVEX_PROFILE_SCOPE("Scene data");
         writeSceneData(frame, m_cascades);
     }
@@ -1818,6 +1834,14 @@ core::Result<void> VulkanRenderer::createDefaultResources()
     }
     m_volumetricFog = std::move(*volumetricFog);
     m_descriptors->setVolumetricFog(m_volumetricFog->integratedView());
+
+    core::Result<std::unique_ptr<ScreenReflectionRenderer>> screenReflections =
+        ScreenReflectionRenderer::create(m_device, m_allocator, m_upload, *m_descriptors, m_shaderDirectory);
+    if (!screenReflections)
+    {
+        return std::unexpected(screenReflections.error());
+    }
+    m_screenReflections = std::move(*screenReflections);
 
     // A white sky, tinted and scaled by the environment settings, stands in for sky textures.
     core::Result<EnvironmentMaps> uniform = m_baker->bake(m_whiteTexture->image.view(), 1);
@@ -4005,6 +4029,18 @@ void VulkanRenderer::writeSceneData(FrameContext& frame,
         scene.atmosphereFlags |= atmosphereVolumetricFog;
         scene.volumetricFog = frame.volumetricFog->deviceAddress();
     }
+    if (m_screenReflectionsThisFrame && m_screenReflections->filled())
+    {
+        const RenderCamera& settings = m_world.camera;
+        scene.screenReflectionSteps = static_cast<std::uint32_t>(std::clamp(settings.screenReflectionSteps, 1, 512));
+        scene.screenReflectionLevels = m_screenReflections->levels();
+        scene.screenReflectionIntensity = std::clamp(settings.screenReflections, 0.0f, 1.0f);
+        scene.screenReflectionFadeIn = std::max(settings.screenReflectionFadeIn, 0.0f);
+        scene.screenReflectionFadeOut = std::max(settings.screenReflectionFadeOut, 0.0f);
+        scene.screenReflectionTolerance = std::max(settings.screenReflectionTolerance, 0.001f);
+        scene.screenReflectionExposure = m_screenReflections->exposure();
+        scene.screenReflectionFrame = static_cast<std::uint32_t>(m_frameIndex % 4096);
+    }
 
     std::memcpy(frame.sceneData->mappedBytes().data(), &scene, sizeof(scene));
 }
@@ -5606,6 +5642,7 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
         .localShadowMap =
             shadowAtlas ? graph.view(*shadowAtlas) : m_emptyShadowAtlas->view(),
         .postSource = antialiased ? m_history[writeSlot]->view() : graph.view(sceneColor),
+        .screenReflection = m_screenReflections->view(),
     };
     for (std::uint32_t level = 0; level < DescriptorSets::bloomLevels; ++level)
     {
@@ -5867,9 +5904,12 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
         });
     }
 
+    // Surfaces can reflect the screen, which reads the depth while they test it, and the normals.
+    // Among them only the grass writes the depth, in a pass of its own.
     std::vector<std::pair<RenderGraph::ImageId, ImageAccess>> sceneAccesses{
         {sceneColor, ImageAccess::ColorAttachment},
-        {depth, ImageAccess::DepthAttachment},
+        {depth, ImageAccess::DepthReadOnly},
+        {normal, ImageAccess::FragmentRead},
         {shadowMap, ImageAccess::FragmentRead},
     };
     if (localShadows)
@@ -5893,9 +5933,9 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
         const VkRenderingAttachmentInfo depthAttachment{
             .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
             .imageView = graph.view(depth),
-            .imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+            .imageLayout = VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL,
             .loadOp = VK_ATTACHMENT_LOAD_OP_LOAD,
-            .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+            .storeOp = VK_ATTACHMENT_STORE_OP_NONE,
         };
         const VkRenderingInfo renderingInfo{
             .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
@@ -5910,7 +5950,6 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
         drawCalls += drawMeshes(commands, sceneData, boneMatrices, MeshPass::Scene, 0, frameSlot);
         drawCalls += drawCulled(commands, frame, sceneData, MeshPass::Scene, 0, frameSlot);
         drawCalls += drawTerrains(commands, sceneData, MeshPass::Scene, 0, frameSlot);
-        drawCalls += drawGrass(commands, sceneData, frameSlot);
 
         // A sky shader of the project draws the sky in place of the texture; an atmosphere draws its own.
         const GpuShader* const skyShader =
@@ -5927,11 +5966,44 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
         vkCmdEndRendering(commands);
     });
 
+    if (!m_grassTiles.empty())
+    {
+        graph.addPass("Grass", {{sceneColor, ImageAccess::ColorAttachment}, {depth, ImageAccess::DepthAttachment}}, [&](VkCommandBuffer commands) {
+            const VkRenderingAttachmentInfo colorAttachment{
+                .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+                .imageView = graph.view(sceneColor),
+                .imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                .loadOp = VK_ATTACHMENT_LOAD_OP_LOAD,
+                .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+            };
+            const VkRenderingAttachmentInfo depthAttachment{
+                .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+                .imageView = graph.view(depth),
+                .imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+                .loadOp = VK_ATTACHMENT_LOAD_OP_LOAD,
+                .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+            };
+            const VkRenderingInfo renderingInfo{
+                .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
+                .renderArea = {.extent = {extent.width, extent.height}},
+                .layerCount = 1,
+                .colorAttachmentCount = 1,
+                .pColorAttachments = &colorAttachment,
+                .pDepthAttachment = &depthAttachment,
+            };
+            vkCmdBeginRendering(commands, &renderingInfo);
+            setViewport(commands, extent);
+            drawCalls += drawGrass(commands, sceneData, frameSlot);
+            vkCmdEndRendering(commands);
+        });
+    }
+
     // The blended surfaces and the particles come last, over the sky as over everything else. They
     // test the depth without writing it, which lets particles read it to fade into surfaces.
     std::vector<std::pair<RenderGraph::ImageId, ImageAccess>> transparentAccesses{
         {sceneColor, ImageAccess::ColorAttachment},
         {depth, ImageAccess::DepthReadOnly},
+        {normal, ImageAccess::FragmentRead},
         {shadowMap, ImageAccess::FragmentRead},
     };
     if (localShadows)
@@ -5980,6 +6052,13 @@ core::Result<std::uint32_t> VulkanRenderer::recordFrame(FrameContext& frame, std
             };
             vkCmdCopyImageToBuffer(commands, graph.handle(sceneColor), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
                                    frame.radianceReadback->handle(), 1, &copy);
+        });
+    }
+
+    if (m_screenReflectionsThisFrame && extraView == nullptr)
+    {
+        graph.addPass("Screen reflections", {{sceneColor, ImageAccess::ComputeRead}}, [&](VkCommandBuffer commands) {
+            m_screenReflections->record(commands, sets[0], sets[1], frame.exposure);
         });
     }
 

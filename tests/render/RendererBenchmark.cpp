@@ -10,6 +10,7 @@
 // DEVEX_MESH_LOD=1 enables geometry LODs; off by default to retain the earlier benchmarks.
 // DEVEX_STRESS_VIEWS=0..4 adds cameras; DEVEX_STRESS_OFFSCREEN=0..100 puts a percentage behind
 // them. DEVEX_STRESS_FOG=1 fills the air with volumetric fog, lit by the sun and the lights.
+// DEVEX_STRESS_SSR=1 has the surfaces reflect the screen, most of the objects being smooth enough.
 #include <devex/asset/Primitives.hpp>
 #include <devex/core/Profiler.hpp>
 #include <devex/platform/Platform.hpp>
@@ -62,6 +63,7 @@ TEST_CASE("Renderer stress benchmark", "[.][benchmark]")
     const bool lods = devex::platform::environmentVariable("DEVEX_MESH_LOD") == "1";
     const bool walls = devex::platform::environmentVariable("DEVEX_STRESS_OCCLUDERS") == "1";
     const bool fog = devex::platform::environmentVariable("DEVEX_STRESS_FOG") == "1";
+    const bool reflections = devex::platform::environmentVariable("DEVEX_STRESS_SSR") == "1";
     const auto views = std::min(countFrom("DEVEX_STRESS_VIEWS", 0), 4u);
     const auto offscreen = std::min(countFrom("DEVEX_STRESS_OFFSCREEN", 0), 100u);
     const std::string mode = devex::platform::environmentVariable("DEVEX_PRESENT_MODE");
@@ -171,6 +173,7 @@ TEST_CASE("Renderer stress benchmark", "[.][benchmark]")
         {
             world.volumetricFog = {.enabled = true, .density = 0.02f};
         }
+        world.camera.screenReflections = reflections ? 1.0f : 0.0f;
         world.meshes = instances;
         if (animated)
         {

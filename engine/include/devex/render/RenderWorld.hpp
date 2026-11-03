@@ -80,6 +80,15 @@ struct DEVEX_API RenderCamera
     float ambientOcclusion = 1.0f;
     // How far, in meters, a surface looks for what hides it.
     float ambientOcclusionRadius = 0.5f;
+    // How much of what the screen shows smooth surfaces reflect; 0 turns it off.
+    float screenReflections = 0.0f;
+    // How many steps a ray takes at most.
+    std::int32_t screenReflectionSteps = 64;
+    // How reflections fade in leaving a surface and out towards the end of the ray.
+    float screenReflectionFadeIn = 0.15f;
+    float screenReflectionFadeOut = 0.5f;
+    // How far behind something a ray may pass, in meters, and still meet it.
+    float screenReflectionTolerance = 0.2f;
     // How much of the halo of bright things is added to the image; 0 turns it off.
     float bloom = 0.05f;
     // The brightness, after exposure, a pixel must pass before it glows.
@@ -127,6 +136,7 @@ enum class PostOverride : std::uint32_t
     Contrast = 1u << 9,
     ColorFilter = 1u << 10,
     WhiteBalance = 1u << 11,
+    ScreenReflections = 1u << 12,
 };
 
 // Settings that take the place of the camera's where the camera stands in or near the box. See
