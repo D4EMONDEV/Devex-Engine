@@ -3,7 +3,6 @@
 #include <devex/core/File.hpp>
 #include <devex/core/Path.hpp>
 #include <devex/core/Uuid.hpp>
-#include <devex/platform/Platform.hpp>
 #include <devex/platform/Process.hpp>
 
 #include <algorithm>
@@ -79,8 +78,9 @@ namespace
 {
 struct Project
 {
-    std::filesystem::path root =
-        std::filesystem::temp_directory_path() / ("devex-lsp-" + core::Uuid::generate().toString());
+    // Canonical as the paths of the documents are, which a short name such as RUNNER~1 is not.
+    std::filesystem::path root = std::filesystem::weakly_canonical(std::filesystem::temp_directory_path()) /
+                                 ("devex-lsp-" + core::Uuid::generate().toString());
     Project() { std::filesystem::create_directories(root / "code"); }
     ~Project()
     {
@@ -107,8 +107,6 @@ bool until(ScriptLanguageServices& service, const Project& project, const Script
 TEST_CASE("The script client initializes synchronizes unsaved buffers and survives server restarts",
           "[tools][lsp][process]")
 {
-    auto platform = platform::Platform::create();
-    REQUIRE(platform);
     Project project;
     const auto path = project.root / "code/Test.cs";
     REQUIRE(core::writeTextFile(path, "before"));
@@ -177,8 +175,6 @@ TEST_CASE("The script client initializes synchronizes unsaved buffers and surviv
 
 TEST_CASE("Installed clangd understands unsaved C++ buffers", "[.lsp-live][tools][lsp]")
 {
-    auto platform = platform::Platform::create();
-    REQUIRE(platform);
     const auto clangd = detectLanguageServer(1);
     if (clangd.empty())
         SKIP("clangd is not installed");
@@ -212,8 +208,6 @@ TEST_CASE("Installed clangd understands unsaved C++ buffers", "[.lsp-live][tools
 TEST_CASE("Installed C# language servers resolve the Devex API through Game.csproj",
           "[.lsp-live][tools][lsp]")
 {
-    auto platform = platform::Platform::create();
-    REQUIRE(platform);
     const auto bin = std::filesystem::path(DEVEX_TEST_RESOURCES_DIRECTORY).parent_path();
     auto server = detectLanguageServer(0, bin);
     if (server.empty())
