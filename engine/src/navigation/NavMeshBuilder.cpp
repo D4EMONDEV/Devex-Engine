@@ -440,7 +440,7 @@ NavGeometry collectGeometry(const scene::Scene& scene, const MeshSource& meshes)
             geometry.indices.push_back(first + index);
         }
     };
-    for ([[maybe_unused]] auto [entity, solid] : scene.view<scene::CsgResult>())
+    for ([[maybe_unused]] auto [entity, solid] : scene.view<scene::GeneratedMesh>())
     {
         const asset::MeshData* const mesh = solid.collision && solid.mesh.isValid() && meshes ? meshes(solid.mesh) : nullptr;
         if (mesh != nullptr && staysPut(scene, entity, false))

@@ -54,6 +54,8 @@ constexpr std::array engineComponents{
     ComponentInfo{"CsgCylinder", "CSG cylinder", Category::ThreeD, "A cylinder standing up, to add to the block above it or cut out of it."},
     ComponentInfo{"CsgPath", "CSG path", Category::ThreeD, "A flat band along a Path3D, for a road, a rail or a wall."},
     ComponentInfo{"CsgCombiner", "CSG combiner", Category::ThreeD, "Groups what is under it, to add it or cut it out as one."},
+    ComponentInfo{"GridMap", "Grid map", Category::ThreeD,
+                  "Pieces of a palette laid on a 3D grid, painted in the view: rooms, corridors and terrain made of modules, light by the thousand."},
     ComponentInfo{"Decal", "Decal", Category::ThreeD,
                   "Textures projected from a box onto the surfaces inside it, along its -Y, and lit with them."},
     ComponentInfo{"PostProcessVolume", "Post-process volume", Category::ThreeD,

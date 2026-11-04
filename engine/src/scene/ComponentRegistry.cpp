@@ -4,6 +4,7 @@
 #include <devex/scene/ComponentRegistry.hpp>
 #include <devex/scene/Components.hpp>
 #include <devex/scene/CsgComponents.hpp>
+#include <devex/scene/GridMapComponents.hpp>
 #include <devex/scene/NavigationComponents.hpp>
 #include <devex/scene/NetworkComponents.hpp>
 #include <devex/scene/PathComponents.hpp>
@@ -158,6 +159,7 @@ ComponentRegistry& componentRegistry()
         builtins.add<CsgCylinder>();
         builtins.add<CsgPath>();
         builtins.add<CsgCombiner>();
+        builtins.add<GridMap>();
         builtins.add<NavMeshAgent>();
         builtins.add<NavMeshObstacle>();
         builtins.add<AudioSource>();

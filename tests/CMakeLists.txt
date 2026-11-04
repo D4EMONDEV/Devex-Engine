@@ -323,6 +323,7 @@ devex_add_tests(runtime
         runtime/CsgTests.cpp
         runtime/FixedTimestepTests.cpp
         runtime/GameCodeBuilderTests.cpp
+        runtime/GridMapTests.cpp
         runtime/GameExportTests.cpp
         runtime/InputActionsTests.cpp
         runtime/ManagedCodeBuilderTests.cpp

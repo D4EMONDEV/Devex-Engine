@@ -648,6 +648,29 @@ enum class TerrainBrushTool : std::uint8_t
     Grass,
 };
 
+enum class GridTool : std::uint8_t
+{
+    None,
+    Paint,
+    Erase,
+};
+
+// Painting a GridMap in the view: what the Inspector chose, the cell under the mouse, and what the cells were
+// before the stroke, which is what one step of the history goes back to.
+struct DEVEX_API GridEditor
+{
+    GridTool tool = GridTool::None;
+    std::int32_t piece = 0;
+    std::int32_t rotation = 0;
+    std::int32_t floor = 0;
+    std::optional<math::IVec3> hovered;
+    bool stroking = false;
+    // Where the stroke was at the last frame.
+    std::optional<math::IVec3> lastCell;
+    core::Uuid target;
+    serialization::TextValue before;
+};
+
 enum class PathTool : std::uint8_t
 {
     None,
@@ -889,6 +912,7 @@ struct DEVEX_API ToolsState
     TilePainter tilePainter;
     TerrainPainter terrainPainter;
     PathEditor pathEditor;
+    GridEditor gridEditor;
     std::shared_ptr<TerrainAccess> terrains;
     // A file just created, selected once it is imported, as a res:// path.
     std::string assetToSelect;
@@ -1309,6 +1333,10 @@ DEVEX_API bool handleTilePainting(ToolsState& state, scene::Scene& scene, const 
 // Sculpts and paints the selected terrain with the brush of the terrain painter, while a tool is
 // chosen; true when the viewport input went to it.
 DEVEX_API bool handleTerrainPainting(ToolsState& state, scene::Scene& scene, const ViewportView& view, math::Vec2 mouse, bool hovered);
+// The left button in the view while a tool of a GridMap is chosen; true when it takes it from the selection.
+DEVEX_API bool handleGridPainting(ToolsState& state, scene::Scene& scene, const ViewportView& view, math::Vec2 mouse, bool hovered);
+// The cell under the mouse, and the floor around it.
+DEVEX_API void addGridMapOverlay(ToolsState& state, scene::Scene& scene, std::vector<render::OverlayVertex>& lines);
 // The left button in the view while a tool of a Path3D is chosen; true when it takes it from the selection.
 DEVEX_API bool handlePathEditing(ToolsState& state, scene::Scene& scene, const ViewportView& view, math::Vec2 mouse, bool hovered);
 // The curves of a scene, faint unless selected, with the points and handles of those selected.

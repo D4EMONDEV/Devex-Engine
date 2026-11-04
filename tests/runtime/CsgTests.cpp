@@ -28,7 +28,7 @@ using devex::runtime::AssetManager;
 using devex::runtime::CsgWorld;
 using devex::scene::CsgBox;
 using devex::scene::CsgOperation;
-using devex::scene::CsgResult;
+using devex::scene::GeneratedMesh;
 using devex::scene::Entity;
 using devex::scene::Scene;
 using devex::scene::Transform;
@@ -253,7 +253,7 @@ struct World
 
     [[nodiscard]] const MeshData* result(Entity root)
     {
-        const CsgResult* const solid = scene.tryGet<CsgResult>(root);
+        const GeneratedMesh* const solid = scene.tryGet<GeneratedMesh>(root);
         return solid != nullptr && solid->mesh.isValid() ? assets.meshData(solid->mesh) : nullptr;
     }
 };
@@ -269,21 +269,21 @@ TEST_CASE("The root of the shapes of a scene gets one mesh, made again when they
     REQUIRE(world.result(root) != nullptr);
     CHECK(volumeOf(*world.result(root)) == Approx(64.0f - 8.0f));
     // Only the root has a result.
-    CHECK_FALSE(world.scene.has<CsgResult>(door));
-    const AssetId first = world.scene.get<CsgResult>(root).mesh;
+    CHECK_FALSE(world.scene.has<GeneratedMesh>(door));
+    const AssetId first = world.scene.get<GeneratedMesh>(root).mesh;
 
     // Nothing changes: the same mesh.
     world.csg.update(world.scene, world.assets);
-    CHECK(world.scene.get<CsgResult>(root).mesh == first);
+    CHECK(world.scene.get<GeneratedMesh>(root).mesh == first);
     // Moving the solid moves its mesh, which stays.
     world.scene.get<Transform>(root).position = {10.0f, 0.0f, 0.0f};
     world.csg.update(world.scene, world.assets);
-    CHECK(world.scene.get<CsgResult>(root).mesh == first);
+    CHECK(world.scene.get<GeneratedMesh>(root).mesh == first);
 
     // What it is made of changes, by moving a part or by changing it: another mesh, and the old one goes.
     world.scene.get<CsgBox>(door).size.x = 2.0f;
     world.csg.update(world.scene, world.assets);
-    const AssetId second = world.scene.get<CsgResult>(root).mesh;
+    const AssetId second = world.scene.get<GeneratedMesh>(root).mesh;
     CHECK(second != first);
     CHECK(world.assets.meshData(first) == nullptr);
     CHECK(volumeOf(*world.result(root)) == Approx(64.0f - 16.0f));
@@ -298,7 +298,7 @@ TEST_CASE("The root of the shapes of a scene gets one mesh, made again when they
     CHECK(volumeOf(*world.result(root)) == Approx(64.0f));
 
     // And the mesh goes with the last of them.
-    const AssetId last = world.scene.get<CsgResult>(root).mesh;
+    const AssetId last = world.scene.get<GeneratedMesh>(root).mesh;
     world.scene.destroyEntity(root);
     world.csg.update(world.scene, world.assets);
     CHECK(world.assets.meshData(last) == nullptr);
@@ -325,13 +325,13 @@ TEST_CASE("What is a root of shapes depends on what is above it", "[csg]")
     // Moved under a solid, it no longer is one.
     REQUIRE(world.scene.setParent(alone, root));
     world.csg.update(world.scene, world.assets);
-    CHECK_FALSE(world.scene.has<CsgResult>(alone));
+    CHECK_FALSE(world.scene.has<GeneratedMesh>(alone));
     CHECK(volumeOf(*world.result(root)) == Approx(8.0f));
 
     // A shape taken away from an entity leaves nothing behind.
     world.scene.remove<CsgBox>(far);
     world.csg.update(world.scene, world.assets);
-    CHECK_FALSE(world.scene.has<CsgResult>(far));
+    CHECK_FALSE(world.scene.has<GeneratedMesh>(far));
 }
 
 TEST_CASE("A band follows its path, in the space of its root", "[csg]")
@@ -364,7 +364,7 @@ TEST_CASE("A band follows its path, in the space of its root", "[csg]")
     // A child of its path needs no reference, and without one it is nothing.
     band.path = {};
     world.csg.update(world.scene, world.assets);
-    CHECK_FALSE(world.scene.get<CsgResult>(road).mesh.isValid());
+    CHECK_FALSE(world.scene.get<GeneratedMesh>(road).mesh.isValid());
     REQUIRE(world.scene.setParent(road, rail));
     world.csg.update(world.scene, world.assets);
     CHECK(volumeOf(*world.result(road)) == Approx(20.0f));
@@ -410,7 +410,7 @@ TEST_CASE("Shapes are kept with the scene, and what they make comes back", "[csg
     (void)world.shape("Hole", {1.0f, 8.0f, 1.0f}, Vec3{0.0f}, root, CsgOperation::Subtract);
     world.csg.update(world.scene, world.assets);
     const std::string text = devex::scene::saveScene(world.scene);
-    CHECK(text.find("CsgResult") == std::string::npos);
+    CHECK(text.find("GeneratedMesh") == std::string::npos);
     auto loaded = devex::scene::loadScene(text);
     REQUIRE(loaded.has_value());
     CsgWorld again;
@@ -418,5 +418,5 @@ TEST_CASE("Shapes are kept with the scene, and what they make comes back", "[csg
     again.update(*loaded, assets);
     const Entity read = loaded->findEntity(world.scene.uuid(root));
     CHECK_FALSE(loaded->get<CsgBox>(read).collision);
-    CHECK(volumeOf(*assets.meshData(loaded->get<CsgResult>(read).mesh)) == Approx(64.0f - 4.0f));
+    CHECK(volumeOf(*assets.meshData(loaded->get<GeneratedMesh>(read).mesh)) == Approx(64.0f - 4.0f));
 }

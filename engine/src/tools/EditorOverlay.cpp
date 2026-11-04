@@ -1083,6 +1083,7 @@ void addEditorOverlay(ToolsState& state, scene::Scene& scene, render::RenderWorl
     addDecalLines(scene, selection, world.overlayLines);
     addPathOverlay(state, scene, selection, world.overlayLines);
     addCsgLines(scene, selection, world.overlayLines);
+    addGridMapOverlay(state, scene, world.overlayLines);
     addFogVolumeLines(scene, selection, world.overlayLines);
 
     // The selection is outlined, and so is the entity a dragged material would go to.

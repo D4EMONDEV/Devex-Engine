@@ -47,6 +47,7 @@
 #include <format>
 #include <memory>
 #include <devex/runtime/NetworkReplication.hpp>
+#include <devex/scene/GridMapComponents.hpp>
 #include <devex/scene/NetworkComponents.hpp>
 #include <devex/scene/PathComponents.hpp>
 
@@ -294,7 +295,7 @@ TEST_CASE("C# addon commands edit a scene without running the game and reload cl
 TEST_CASE("The C# runtime registers components and runs them", "[runtime][managed]")
 {
     const std::unique_ptr<ManagedGame> game = startRuntime();
-    CHECK(game->componentTypes().size() == 31);
+    CHECK(game->componentTypes().size() == 32);
 
     devex::scene::ComponentRegistry& registry = devex::scene::componentRegistry();
     const devex::scene::ComponentType* const mover = registry.find("Mover");
@@ -1920,4 +1921,29 @@ TEST_CASE("C# code reads a path and changes what follows it", "[runtime][managed
     CHECK(number("closest") == Catch::Approx(3.0f));
     CHECK(number("no_path") == 0.0f);
     CHECK(follower.speed == 7.0f);
+}
+
+TEST_CASE("C# code builds on a grid while it runs", "[runtime][managed]")
+{
+    const auto game = startRuntime();
+    Scene scene;
+    const auto entity = scene.createEntity("Grid");
+    scene.add<devex::scene::Transform>(entity).position = {10.0f, 0.0f, 0.0f};
+    scene.add<devex::scene::WorldTransform>(entity).matrix = scene.get<devex::scene::Transform>(entity).matrix();
+    const auto& grid = scene.add<devex::scene::GridMap>(entity);
+    const auto* const probe = devex::scene::componentRegistry().find("GridProbe");
+    REQUIRE(probe != nullptr);
+    REQUIRE(probe->emplace(scene, entity) != nullptr);
+    ManagedGame::Frame frame{.scene = &scene, .delta = devex::core::Duration(0.016)};
+    game->runPhase(frame, devex::runtime::SystemPhase::Update);
+    game->runPhase(frame, devex::runtime::SystemPhase::Update);
+    const auto number = [&](const char* name) { return field<float>(*probe, const_cast<void*>(probe->find(scene, entity)), name); };
+    CHECK(number("placed") == 3.0f);
+    CHECK(number("empty") == -1.0f);
+    CHECK(number("cell_x") == 2.0f);
+    CHECK(number("position_x") == 13.0f);
+    CHECK(number("removed") == 1.0f);
+    CHECK(number("gone") == 0.0f);
+    REQUIRE(devex::scene::gridCellCount(grid) == 1);
+    CHECK(devex::scene::gridCell(grid, 0).rotation == 1);
 }

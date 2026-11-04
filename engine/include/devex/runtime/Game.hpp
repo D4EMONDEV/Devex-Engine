@@ -79,7 +79,8 @@ class GameRegistry;
 // 47: the scene gained the NetworkSpawner and NetworkSync components.
 // 48: the scene gained the Path3D and PathFollower components.
 // 49: the scene gained the CSG components.
-inline constexpr std::uint32_t gameApiVersion = 49;
+// 50: the scene gained the GridMap component.
+inline constexpr std::uint32_t gameApiVersion = 50;
 
 enum class SystemPhase : std::uint8_t
 {

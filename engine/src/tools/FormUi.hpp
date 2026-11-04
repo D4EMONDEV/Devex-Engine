@@ -29,6 +29,7 @@ namespace devex::tools::detail {
 struct TilePainterUi;
 struct TerrainPainterUi;
 struct PathEditorUi;
+struct GridEditorUi;
 
 // A line of a card under its header: a property, the header of a group, or what a card adds.
 struct Line
@@ -103,6 +104,7 @@ struct Section
     std::shared_ptr<TilePainterUi> painter;
     std::shared_ptr<TerrainPainterUi> terrainPainter;
     std::shared_ptr<PathEditorUi> pathEditor;
+    std::shared_ptr<GridEditorUi> gridEditor;
 };
 
 // A row of a page: a label at the left, and the editor that holds its controls at the right.

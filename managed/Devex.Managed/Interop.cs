@@ -257,6 +257,11 @@ internal unsafe struct NativeApi
     public delegate* unmanaged<void*, Entity, float, Vec3*, void> PathPositionAt;
     public delegate* unmanaged<void*, Entity, float, Vec3*, void> PathDirectionAt;
     public delegate* unmanaged<void*, Entity, Vec3*, float> PathClosestDistance;
+    public delegate* unmanaged<void*, Entity, GridCoordinates*, int, int, void> GridSet;
+    public delegate* unmanaged<void*, Entity, GridCoordinates*, int> GridRemove;
+    public delegate* unmanaged<void*, Entity, GridCoordinates*, int*, int*, int> GridGet;
+    public delegate* unmanaged<void*, Entity, Vec3*, GridCoordinates*, void> GridCellAt;
+    public delegate* unmanaged<void*, Entity, GridCoordinates*, Vec3*, void> GridPositionOf;
 }
 
 /// <summary>An event an animation passed, as the engine gives it: its name lives until the next frame.</summary>
@@ -293,7 +298,7 @@ internal unsafe struct BootstrapArguments
 /// <summary>What the engine calls into: filling the function tables, then the game itself.</summary>
 public static unsafe class Bootstrap
 {
-    internal const int Version = 33;
+    internal const int Version = 34;
 
     internal static NativeApi Native;
     private static byte[]? _description;

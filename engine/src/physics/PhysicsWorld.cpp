@@ -886,7 +886,7 @@ struct PhysicsWorld::Implementation
             describeCollider(scene, descriptions, entity, collider.trigger,
                              {.kind = ShapeKind::Cylinder, .dimensions = {collider.radius, collider.height, 0.0f}, .position = collider.center});
         }
-        for ([[maybe_unused]] auto [entity, solid] : scene.view<scene::CsgResult>())
+        for ([[maybe_unused]] auto [entity, solid] : scene.view<scene::GeneratedMesh>())
         {
             if (solid.collision && solid.mesh.isValid())
             {

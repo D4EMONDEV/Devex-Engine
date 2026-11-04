@@ -334,10 +334,10 @@ void AssetManager::registerMesh(asset::AssetId id, render::MeshHandle mesh,
     m_failed.erase(id);
 }
 
-void AssetManager::addGeneratedMesh(asset::AssetId id, asset::MeshData data)
+void AssetManager::addGeneratedMesh(asset::AssetId id, asset::MeshData data, bool draw)
 {
     releaseMesh(id);
-    if (m_renderer != nullptr)
+    if (m_renderer != nullptr && draw)
     {
         core::Result<render::MeshHandle> handle = m_renderer->createMesh(data);
         if (!handle)

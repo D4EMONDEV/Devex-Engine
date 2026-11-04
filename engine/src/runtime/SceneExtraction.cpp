@@ -748,7 +748,7 @@ void extractScene(scene::Scene& scene, AssetManager& assets, render::RenderWorld
     }
 
     // The solids, whose materials are those of the shapes each part of them comes from.
-    for ([[maybe_unused]] auto [entity, transform, solid] : scene.view<scene::WorldTransform, scene::CsgResult>())
+    for ([[maybe_unused]] auto [entity, transform, solid] : scene.view<scene::WorldTransform, scene::GeneratedMesh>())
     {
         const LoadedMesh* const mesh = solid.mesh.isValid() ? assets.mesh(solid.mesh) : nullptr;
         if (mesh == nullptr)

@@ -544,6 +544,10 @@ void InspectorUi::rebuild(ToolsState& state, EditorUiKit& kit, scene::Scene& edi
         {
             addInstanceParameters(kit, state, section, type, edited, active);
         }
+        if (!shared && name == "GridMap")
+        {
+            addGridMapEditor(*this, kit, section);
+        }
         if (!shared && name == "Path3D")
         {
             addPathEditor(*this, kit, section);
@@ -1431,6 +1435,10 @@ void InspectorUi::syncExtras(ToolsState& state, EditorUiKit& kit, scene::Scene& 
     {
         syncPathEditor(*this, state, edited, active, section);
     }
+    if (section.gridEditor != nullptr)
+    {
+        syncGridMapEditor(*this, state, edited, active, section);
+    }
     if (section.navInfo.isValid())
     {
         const NavMeshSummary summary = navMeshSummary(state, edited.get<scene::NavMeshSurface>(active));
@@ -1981,6 +1989,10 @@ void InspectorUi::answer(ToolsState& state, EditorUiKit& kit, scene::Scene& edit
         if (section.pathEditor != nullptr)
         {
             answerPathEditor(*this, state, section);
+        }
+        if (section.gridEditor != nullptr)
+        {
+            answerGridMapEditor(*this, state, section);
         }
         if (section.styleOpen.entity.isValid() && world.wasClicked(section.styleOpen.entity) && section.themeFile)
         {

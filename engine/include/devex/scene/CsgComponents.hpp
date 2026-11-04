@@ -71,8 +71,8 @@ struct DEVEX_API CsgCombiner
     bool collision = true;
 };
 
-// What the root of a solid is once computed, while the game or the editor runs: not saved, as it comes back.
-struct DEVEX_API CsgResult
+// What the root of a solid or a grid makes while the game or the editor runs: not saved, as it comes back.
+struct DEVEX_API GeneratedMesh
 {
     asset::AssetId mesh;
     bool collision = true;

@@ -88,8 +88,8 @@ public:
                       std::vector<asset::AssetId> submeshMaterials = {});
 
     // A mesh made while the game runs, with what the physics and the navigation read of it: drawn when there
-    // is a renderer, its materials those of its submeshes, and destroyed with removeGeneratedMesh.
-    void addGeneratedMesh(asset::AssetId id, asset::MeshData data);
+    // is a renderer and it says so, its materials those of its submeshes, and destroyed with removeGeneratedMesh.
+    void addGeneratedMesh(asset::AssetId id, asset::MeshData data, bool draw = true);
     void removeGeneratedMesh(asset::AssetId id);
 
     // Null when the mesh is neither registered nor loadable, and while it loads.

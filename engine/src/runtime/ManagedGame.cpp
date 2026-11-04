@@ -1,6 +1,7 @@
 #include "ManagedGame.hpp"
 #include "GlobalScenes.hpp"
 #include <devex/runtime/Globals.hpp>
+#include <devex/scene/GridMapComponents.hpp>
 #include <devex/runtime/NetworkReplication.hpp>
 #include <devex/runtime/PathFollowers.hpp>
 
@@ -364,6 +365,11 @@ struct NativeApi
     void (*pathPositionAt)(void* scene, Entity entity, float distance, math::Vec3* position);
     void (*pathDirectionAt)(void* scene, Entity entity, float distance, math::Vec3* direction);
     float (*pathClosestDistance)(void* scene, Entity entity, const math::Vec3* position);
+    void (*gridSet)(void* scene, Entity entity, const math::IVec3* cell, int piece, int rotation);
+    int (*gridRemove)(void* scene, Entity entity, const math::IVec3* cell);
+    int (*gridGet)(void* scene, Entity entity, const math::IVec3* cell, int* piece, int* rotation);
+    void (*gridCellAt)(void* scene, Entity entity, const math::Vec3* position, math::IVec3* cell);
+    void (*gridPositionOf)(void* scene, Entity entity, const math::IVec3* cell, math::Vec3* position);
 };
 
 // The functions the engine calls, in the order of Devex.Managed's ManagedApi.
@@ -379,7 +385,7 @@ struct ManagedApi
 };
 
 // Devex.Managed's Bootstrap.Version: both sides change it with the function tables.
-constexpr int bootstrapVersion = 33;
+constexpr int bootstrapVersion = 34;
 
 struct BootstrapArguments
 {
@@ -1180,6 +1186,52 @@ void apiPathPositionAt(void* scene, Entity entity, float distance, math::Vec3* p
 void apiPathDirectionAt(void* scene, Entity entity, float distance, math::Vec3* direction)
 {
     *direction = scene != nullptr ? pathDirectionAt(*toScene(scene), entity, distance) : math::Vec3{0.0f, 0.0f, -1.0f};
+}
+
+[[nodiscard]] scene::GridMap* gridOf(void* scene, Entity entity)
+{
+    return scene != nullptr && toScene(scene)->isAlive(entity) ? toScene(scene)->tryGet<scene::GridMap>(entity) : nullptr;
+}
+
+[[nodiscard]] math::Mat4 worldMatrixOf(void* scene, Entity entity)
+{
+    const scene::WorldTransform* const world = toScene(scene)->tryGet<scene::WorldTransform>(entity);
+    return world != nullptr ? world->matrix : math::Mat4{1.0f};
+}
+
+void apiGridSet(void* scene, Entity entity, const math::IVec3* cell, int piece, int rotation)
+{
+    if (scene::GridMap* const grid = gridOf(scene, entity))
+    {
+        scene::setGridCell(*grid, *cell, piece, rotation);
+    }
+}
+
+int apiGridRemove(void* scene, Entity entity, const math::IVec3* cell)
+{
+    scene::GridMap* const grid = gridOf(scene, entity);
+    return grid != nullptr && scene::removeGridCell(*grid, *cell) ? 1 : 0;
+}
+
+int apiGridGet(void* scene, Entity entity, const math::IVec3* cell, int* piece, int* rotation)
+{
+    const scene::GridMap* const grid = gridOf(scene, entity);
+    const std::optional<scene::GridCell> found = grid != nullptr ? scene::findGridCell(*grid, *cell) : std::nullopt;
+    *piece = found ? found->piece : -1;
+    *rotation = found ? found->rotation : 0;
+    return found ? 1 : 0;
+}
+
+void apiGridCellAt(void* scene, Entity entity, const math::Vec3* position, math::IVec3* cell)
+{
+    const scene::GridMap* const grid = gridOf(scene, entity);
+    *cell = grid != nullptr ? scene::gridCellAt(*grid, math::Vec3(math::inverse(worldMatrixOf(scene, entity)) * math::Vec4(*position, 1.0f))) : math::IVec3{0};
+}
+
+void apiGridPositionOf(void* scene, Entity entity, const math::IVec3* cell, math::Vec3* position)
+{
+    const scene::GridMap* const grid = gridOf(scene, entity);
+    *position = grid != nullptr ? math::Vec3(worldMatrixOf(scene, entity) * math::Vec4(scene::gridCellPosition(*grid, *cell), 1.0f)) : math::Vec3{0.0f};
 }
 
 float apiPathClosestDistance(void* scene, Entity entity, const math::Vec3* position)
@@ -3162,6 +3214,11 @@ int apiRaycastSolid(const math::Vec3* origin, const math::Vec3* direction, float
         .pathPositionAt = &apiPathPositionAt,
         .pathDirectionAt = &apiPathDirectionAt,
         .pathClosestDistance = &apiPathClosestDistance,
+        .gridSet = &apiGridSet,
+        .gridRemove = &apiGridRemove,
+        .gridGet = &apiGridGet,
+        .gridCellAt = &apiGridCellAt,
+        .gridPositionOf = &apiGridPositionOf,
     };
 }
 

@@ -477,6 +477,7 @@ target_sources(devex_scene
         src/scene/PhysicsComponents.cpp
         src/scene/Physics2DComponents.cpp
         src/scene/CsgComponents.cpp
+        src/scene/GridMapComponents.cpp
         src/scene/NavigationComponents.cpp
         src/scene/NetworkComponents.cpp
         src/scene/PathComponents.cpp
@@ -510,6 +511,7 @@ target_sources(devex_scene
             include/devex/scene/PhysicsComponents.hpp
             include/devex/scene/Physics2DComponents.hpp
             include/devex/scene/CsgComponents.hpp
+            include/devex/scene/GridMapComponents.hpp
             include/devex/scene/NavigationComponents.hpp
             include/devex/scene/NetworkComponents.hpp
             include/devex/scene/PathComponents.hpp
@@ -977,6 +979,7 @@ target_sources(devex_tools
         src/tools/LogBuffer.cpp
         src/tools/InstanceParametersUi.cpp
         src/tools/NetworkFieldsUi.cpp
+        src/tools/GridMapEditor.cpp
         src/tools/PathEditor.cpp
         src/tools/MaterialInspector.cpp
         src/tools/GraphEditor.cpp
@@ -1063,6 +1066,7 @@ target_sources(devex_runtime
         src/runtime/GameExport.cpp
         src/runtime/GameModule.cpp
         src/runtime/CsgWorld.cpp
+        src/runtime/GridWorld.cpp
         src/runtime/NetworkReplication.cpp
         src/runtime/PathFollowers.cpp
         src/runtime/ComponentViews.cpp
@@ -1086,6 +1090,7 @@ target_sources(devex_runtime
             include/devex/runtime/FixedTimestep.hpp
             include/devex/runtime/Game.hpp
             include/devex/runtime/CsgWorld.hpp
+            include/devex/runtime/GridWorld.hpp
             include/devex/runtime/NetworkReplication.hpp
             include/devex/runtime/PathFollowers.hpp
             include/devex/runtime/GameExport.hpp

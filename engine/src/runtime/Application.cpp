@@ -34,6 +34,7 @@
 #include <devex/runtime/FixedTimestep.hpp>
 #include <devex/runtime/GameExport.hpp>
 #include <devex/runtime/GameModule.hpp>
+#include <devex/runtime/GridWorld.hpp>
 #include <devex/runtime/NetworkReplication.hpp>
 #include <devex/runtime/PathFollowers.hpp>
 #include <devex/scene/AssetReferences.hpp>
@@ -426,6 +427,7 @@ private:
     std::unique_ptr<NetworkReplication> m_replication;
     PathFollowers m_pathFollowers;
     CsgWorld m_csg;
+    GridWorld m_grids;
     std::unique_ptr<animation::AnimationWorld> m_animation;
     std::vector<math::Vec3> m_animationViews;
     std::unique_ptr<animation::TweenWorld> m_tweens;
@@ -1255,8 +1257,9 @@ void ApplicationRunner::runGameplay(std::chrono::nanoseconds frameTime)
         m_multiplayer->poll();
         m_replication->receive(*m_application.m_scene, core::Duration(std::chrono::duration<double>(frameTime).count()));
     }
-    // Before the physics, which collides with the solids.
+    // Before the physics, which collides with the solids and the grids.
     m_csg.update(*m_application.m_scene, m_services.assets);
+    m_grids.update(*m_application.m_scene, m_services.assets);
     // Before the physics, which moves the kinematic bodies among them to where this puts them.
     m_pathFollowers.update(*m_application.m_scene, core::Duration(std::chrono::duration<double>(frameTime).count()), m_multiplayer.get());
     const std::uint32_t steps = m_timestep.advance(frameTime);
@@ -1338,7 +1341,9 @@ void ApplicationRunner::render(bool gameplay)
         DEVEX_PROFILE_SCOPE("Scene extraction");
         // In the editor too, where they change as they are edited.
         m_csg.update(scene, m_services.assets);
+        m_grids.update(scene, m_services.assets);
         extractScene(scene, m_services.assets, world);
+        m_grids.extract(scene, m_services.assets, world);
         const asset::AssetSource* const source = assetSource();
         const asset::SortingSettings sorting = source != nullptr ? source->project().sorting : asset::SortingSettings{};
         extractSprites(scene, m_services.assets, sorting, world);

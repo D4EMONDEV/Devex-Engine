@@ -11,7 +11,7 @@
 namespace devex::runtime {
 
 // Keeps the solids of a scene computed: each root of CSG components gets a mesh of its own, made again when
-// what it is made of changes, in the editor as in the game. Its CsgResult says which, for the renderer,
+// what it is made of changes, in the editor as in the game. Its GeneratedMesh says which, for the renderer,
 // the physics and the navigation, which see a mesh like any other.
 class DEVEX_API CsgWorld
 {

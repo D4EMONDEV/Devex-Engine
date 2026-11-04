@@ -820,7 +820,8 @@ void drawViewportPanel(ToolsState& state, scene::Scene& scene)
         handleCamera(state, hovered, size, mouse);
         // A tile or terrain tool takes the left button from the selection and the gizmo, and the
         // elements of the interfaces take it from the world under them.
-        if (!handleTilePainting(state, scene, view, mouse, hovered) && !handlePathEditing(state, scene, view, mouse, hovered) && !handleTerrainPainting(state, scene, view, mouse, hovered) &&
+        if (!handleTilePainting(state, scene, view, mouse, hovered) && !handlePathEditing(state, scene, view, mouse, hovered) && !handleGridPainting(state, scene, view, mouse, hovered) &&
+            !handleTerrainPainting(state, scene, view, mouse, hovered) &&
             !handleInterfaceEditing(state, scene, hovered))
         {
             handleGizmoAndSelection(state, scene, view, mouse, hovered);

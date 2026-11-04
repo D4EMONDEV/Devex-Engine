@@ -248,10 +248,10 @@ void CsgWorld::update(scene::Scene& scene, AssetManager& assets)
                 assets.addGeneratedMesh(built.mesh, *std::move(mesh));
             }
         }
-        scene::CsgResult* result = scene.tryGet<scene::CsgResult>(root);
+        scene::GeneratedMesh* result = scene.tryGet<scene::GeneratedMesh>(root);
         if (result == nullptr)
         {
-            result = &scene.add<scene::CsgResult>(root);
+            result = &scene.add<scene::GeneratedMesh>(root);
         }
         result->mesh = built.mesh;
         result->collision = collision;
@@ -266,9 +266,9 @@ void CsgWorld::update(scene::Scene& scene, AssetManager& assets)
                 assets.removeGeneratedMesh(entry.second.mesh);
             }
             const Entity gone = scene.findEntity(entry.first);
-            if (scene.isAlive(gone) && scene.has<scene::CsgResult>(gone))
+            if (scene.isAlive(gone) && scene.has<scene::GeneratedMesh>(gone))
             {
-                scene.remove<scene::CsgResult>(gone);
+                scene.remove<scene::GeneratedMesh>(gone);
             }
         }
         return !entry.second.seen;

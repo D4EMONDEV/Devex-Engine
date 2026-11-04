@@ -1,0 +1,89 @@
+[scene format=1 kind="3d"]
+
+[entity uuid="512b3362-0f48-55ab-b074-5105b71618fd" name="Floor"]
+
+[component type="Transform"]
+position = vec3(0, 0, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="bba92c46-d95e-5968-af23-48e2cc039c34" name="Mesh"]
+parent = "512b3362-0f48-55ab-b074-5105b71618fd"
+
+[component type="Transform"]
+position = vec3(0, 0.1, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(2, 0.2, 2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("1d33c123-a5ff-50a6-9192-d19568c5f130")
+
+[component type="BoxCollider"]
+size = vec3(1, 1, 1)
+
+[entity uuid="daaa7415-775f-5aa5-bf46-76a31a006bea" name="Wall"]
+
+[component type="Transform"]
+position = vec3(3, 0, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="4785ce6e-2ce2-5095-915c-797486e6f5f4" name="Mesh"]
+parent = "daaa7415-775f-5aa5-bf46-76a31a006bea"
+
+[component type="Transform"]
+position = vec3(0, 1, -0.9)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(2, 2, 0.2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("576ad271-2890-5687-907e-a283236fea5d")
+
+[component type="BoxCollider"]
+size = vec3(1, 1, 1)
+
+[entity uuid="ae24dd62-a3c6-54a2-97c6-7bad461638e4" name="Pillar"]
+
+[component type="Transform"]
+position = vec3(6, 0, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="c1c6c3fd-c4f9-5488-acd5-f8d5a5f520de" name="Mesh"]
+parent = "ae24dd62-a3c6-54a2-97c6-7bad461638e4"
+
+[component type="Transform"]
+position = vec3(0, 1, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(0.6, 2, 0.6)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("177b4925-264a-464b-a7f4-dd80e79e527c")
+
+[component type="BoxCollider"]
+size = vec3(1, 1, 1)
+
+[entity uuid="8423c4e3-1ad3-5e95-8dfb-7514a8eeba3e" name="Roof"]
+
+[component type="Transform"]
+position = vec3(9, 0, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[entity uuid="19890000-ae40-57a4-9f8e-8cc7dd40ba61" name="Mesh"]
+parent = "8423c4e3-1ad3-5e95-8dfb-7514a8eeba3e"
+
+[component type="Transform"]
+position = vec3(0, 1.9, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(2, 0.2, 2)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000001")
+material = asset("bc2c9cd8-2818-5f6c-853c-675911b628d0")
+
+[component type="BoxCollider"]
+size = vec3(1, 1, 1)

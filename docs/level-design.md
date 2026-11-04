@@ -1,5 +1,43 @@
 # Dessiner un niveau
 
+## La grille
+
+Un **GridMap** pose des pièces sur une grille 3D : des pièces, des couloirs et un décor faits de modules, comme le GridMap de
+Godot. Une pièce n'est pas une entité, ce qui permet d'en poser des milliers.
+
+- **La palette** : une scène ordinaire. Chacune de ses entités du haut est une pièce, avec ses meshes, ceux de ses enfants compris,
+  et ses matières. Sa position dans la palette ne compte pas, ce qui laisse la place de les ranger. Une pièce se pose à sa base, au
+  milieu de sa case : décalez le mesh sur un enfant si son origine est ailleurs.
+- **Les collisions** : une pièce dont l'entité a un collider collide, avec les triangles de son mesh, ou de celui de son
+  `MeshCollider`. La navigation marche dessus. **Collision** les coupe pour toute la grille.
+
+### Peindre
+
+Ajoutez un composant **Grid map** à une entité, choisissez sa **Palette** et sa **Cell Size**, puis un outil sous **Draw in the View** :
+
+- **Paint** : cliquez et glissez dans la vue pour poser la pièce choisie. **Maj** en retire.
+- **Erase** : cliquez et glissez pour retirer des pièces.
+- **Rotate** ou **Espace** : tourne la pièce d'un quart de tour. Un trait montre où elle regarde.
+- **Floor**, ou **[** et **]** dans la vue : l'étage peint.
+
+**Échap** quitte l'outil, et Ctrl+Z annule un trait entier. L'arène du bac à sable en a un exemple : **Bunker**.
+
+### Depuis le code
+
+Pour un jeu où le joueur construit, `Grids` change la grille pendant la partie :
+
+```csharp
+var cell = Grids.CellAt(grid, hit.Position);
+Grids.Set(grid, cell, piece, rotation);
+int there = Grids.PieceAt(grid, cell);   // -1 quand la case est vide
+Grids.Remove(grid, cell);
+Vec3 position = Grids.PositionOf(grid, cell);
+```
+
+En C++ : `scene::setGridCell`, `findGridCell`, `removeGridCell`, `gridCellAt` et `gridCellPosition`. Une pièce ne porte ni script ni
+lumière : ce qui en a besoin reste une entité, posée à `Grids.PositionOf`. La grille n'est pas synchronisée en multijoueur : c'est au
+jeu de faire poser la même pièce à tous, par un appel à distance.
+
 ## Les blocs CSG
 
 Les blocs donnent la forme d'un niveau sans quitter l'éditeur : des formes qui s'ajoutent les unes aux autres, ou qui
