@@ -5580,6 +5580,9 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     mesure `DEVEX_STRESS_FOG` du banc d'essai (0,21 ms sur une RTX 4060) ; tests de l'extraction et
     d'un brouillard qui cache un cube puis qu'un volume creuse ; API des jeux 40.
 
+101. ✅ **Appels à distance** — `[Rpc]` sur une méthode de composant en C#, `game.rpc(...)` en C++, de
+     la forme de Godot : `Rpc(nameof(Hit), 25)`, `RpcId(joueur, nameof(Hit), 25)`. Seule l'autorité de
+     l'entité appelle par défaut, l'hôte vérifie et ne relaie pas ce qu'il refuse. Décisions plus bas.
 100. ✅ **Session multijoueur** — `net::Multiplayer` sur ENet : héberger, rejoindre, quitter, qui est
     là, messages fiables ou non relayés par l'hôte ; en C++ et en C# ; tests à plusieurs joueurs sur la
     boucle locale ; API des jeux 45.
@@ -5619,14 +5622,33 @@ Les étapes, chacune testée et commitée à part :
    messages fiables ou non, que l'hôte fait passer entre clients en garantissant l'expéditeur. Elle vit
    le temps d'une partie : le jeu la lit une fois par image, avant ses pas fixes, et envoie à la fin de
    l'image. `Multiplayer` en C#, `SystemContext::multiplayer` en C++.
-2. **Les appels à distance** : `[Rpc]` en C#, son équivalent en C++, avec leurs arguments et qui a le
-   droit de les appeler.
+2. ✅ **Les appels à distance** (jalon 101) : `[Rpc]` en C#, `GameRegistry::rpc` en C++, avec leurs
+   arguments et qui a le droit de les appeler. Décisions ci-dessous.
 3. **La réplication** : un composant qui fait apparaître les objets chez tous, comme
    `MultiplayerSpawner`, et un qui synchronise leurs champs, comme `MultiplayerSynchronizer`, en passant
    par la réflexion des composants, avec le lissage du côté de ceux qui reçoivent.
 4. **Dans l'éditeur** : lancer plusieurs instances depuis Play, chacune son processus, comme « Run
    Multiple Instances » de Godot.
 5. **Un exemple jouable et la documentation** : deux joueurs dans l'arène du bac à sable.
+
+Les appels à distance, décidés avec l'utilisateur :
+
+- **La forme de Godot en C#** : `[Rpc]` sur une méthode, `Rpc(nameof(Hit), 25)` pour tous,
+  `RpcId(joueur, nameof(Hit), 25)` pour un seul, et une erreur claire dans le journal à l'exécution
+  quand un appel ne correspond pas à la méthode. Écarté : un générateur de code C# qui donnerait des
+  appels typés, comme Unity Netcode, plus sûr mais une pièce de plus à faire tourner à chaque build.
+- **Seule l'autorité appelle par défaut**, l'hôte tant que le jeu ne dit pas autre chose
+  (`Multiplayer.SetAuthority`, le même sur chaque jeu, comme dans Godot) ; `[Rpc(AnyPeer = true)]`
+  ouvre à tous. L'expéditeur refuse et l'explique, et le destinataire revérifie toujours : celui qui
+  triche n'obtient rien, et l'hôte ne relaie pas ce qu'il refuse.
+- **Un seul tableau des méthodes, dans `net::Multiplayer`**, que C++ et C# remplissent
+  (`declareRpc`) : c'est lui qui accepte ou refuse, quels que soient les langages de part et d'autre.
+  Le format des appels est le même des deux côtés (`net/Rpc.cpp`, `RpcCodec` en C#), avec le nom
+  `Type.Method` et l'identifiant de l'entité, le même sur tous les jeux.
+- **`CallLocal` tourne tout de suite dans le langage qui appelle**, comme dans Godot. Vers l'autre
+  langage, l'appel attend la lecture suivante du réseau, une image plus tard, car les composants C#
+  ne sont entre ses mains que pendant ses propres phases. Un nom appartient à un seul langage.
+- Les appels reçus tournent une fois par image, juste avant les systèmes et les composants d'Update.
 
 ## Réflexions de l'écran (SSR) — 2026-11-04
 

@@ -130,6 +130,7 @@ internal static unsafe partial class GameRuntime
             }
             Types.Add(info);
             TypesByType.Add(type, info);
+            AddRpcs(info);
         }
         Systems.Sort((first, second) => first.Order != second.Order ? first.Order.CompareTo(second.Order)
                                                                    : first.Found.CompareTo(second.Found));
@@ -147,6 +148,8 @@ internal static unsafe partial class GameRuntime
         EditorTools.Clear();
         Types.Clear();
         TypesByType.Clear();
+        Rpcs.Clear();
+        _rpcsDeclared = false;
         Failures.Clear();
         if (_context != null)
         {
@@ -198,6 +201,7 @@ internal static unsafe partial class GameRuntime
                 }
                 Preserved.Clear();
                 Multiplayer.ForgetEvents();
+                _rpcsDeclared = false;
                 Time.Elapsed = 0.0;
                 Time.Frame = 0;
             }
@@ -207,6 +211,7 @@ internal static unsafe partial class GameRuntime
                 ++Time.Frame;
             }
             Time.Delta = delta;
+            DeclareRpcs();
 
             // Each type of component and each system is a zone of the profiler, when it measures.
             bool profiling = Profiler.IsEnabled;

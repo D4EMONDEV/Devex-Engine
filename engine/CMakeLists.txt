@@ -608,16 +608,19 @@ add_library(Devex::Net ALIAS devex_net)
 target_sources(devex_net
     PRIVATE
         src/net/Multiplayer.cpp
+        src/net/Rpc.cpp
     PUBLIC
         FILE_SET HEADERS
         BASE_DIRS include
         FILES
             include/devex/net/Multiplayer.hpp
+            include/devex/net/Rpc.hpp
 )
 
 target_link_libraries(devex_net
     PUBLIC
         Devex::Core
+        Devex::Math
     PRIVATE
         unofficial::enet::enet
 )

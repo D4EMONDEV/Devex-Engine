@@ -7,8 +7,11 @@
 #include <algorithm>
 #include <array>
 #include <cstring>
+#include <functional>
+#include <map>
 #include <mutex>
 #include <string>
+#include <unordered_map>
 #include <utility>
 
 namespace devex::net {
@@ -16,7 +19,7 @@ namespace devex::net {
 namespace {
 
 // Refuses players of another version of this protocol, given when they connect.
-constexpr std::uint32_t protocolVersion = 1;
+constexpr std::uint32_t protocolVersion = 2;
 constexpr std::size_t reliableChannel = 0;
 constexpr std::size_t unreliableChannel = 1;
 constexpr std::size_t channelCount = 2;
@@ -33,6 +36,8 @@ enum class Packet : std::uint8_t
     PeerLeft,
     // The number of the sender, which the host fills in, of the receiver, then the message.
     Data,
+    // Likewise, with a remote call for a message.
+    Rpc,
 };
 
 constexpr std::size_t dataHeader = 1 + 2 * sizeof(PeerId);
@@ -48,6 +53,11 @@ void writeNumber(std::vector<std::byte>& bytes, std::uint32_t value)
 {
     return std::to_integer<std::uint32_t>(bytes[0]) | (std::to_integer<std::uint32_t>(bytes[1]) << 8) | (std::to_integer<std::uint32_t>(bytes[2]) << 16) |
            (std::to_integer<std::uint32_t>(bytes[3]) << 24);
+}
+
+[[nodiscard]] constexpr NetworkEvent::Kind eventOf(Packet kind) noexcept
+{
+    return kind == Packet::Rpc ? NetworkEvent::Kind::Rpc : NetworkEvent::Kind::Message;
 }
 
 [[nodiscard]] core::Result<void> initializeEnet()
@@ -90,6 +100,47 @@ struct Multiplayer::Impl
     std::vector<PeerId> peers;
     std::uint32_t maxClients = 0;
     std::vector<NetworkEvent> events;
+    std::map<std::string, RpcPolicy, std::less<>> rpcs;
+    std::unordered_map<core::Uuid, PeerId> authorities;
+    std::vector<std::vector<std::byte>> loopback;
+    PeerId remoteSender = 0;
+
+    [[nodiscard]] const RpcPolicy* policyOf(std::string_view name) const noexcept
+    {
+        const auto found = rpcs.find(name);
+        return found != rpcs.end() ? &found->second : nullptr;
+    }
+
+    [[nodiscard]] PeerId authorityOf(const core::Uuid& entity) const noexcept
+    {
+        const auto found = authorities.find(entity);
+        return found != authorities.end() ? found->second : hostPeer;
+    }
+
+    // Whether a call that arrived may run, or be passed on. The sender has already refused what it knows
+    // it may not call, so that one arriving here is another version of the game, or a cheat.
+    [[nodiscard]] bool accepts(std::span<const std::byte> call, PeerId from) const
+    {
+        const std::optional<RpcHeader> header = decodeRpcHeader(call);
+        if (!header)
+        {
+            DEVEX_LOG_WARNING("Refused a malformed remote call from player {}", from);
+            return false;
+        }
+        const RpcPolicy* const policy = policyOf(header->name);
+        if (policy == nullptr)
+        {
+            DEVEX_LOG_WARNING("Refused the remote call {} from player {}: this game has no such method", header->name, from);
+            return false;
+        }
+        if (!policy->anyPeer && from != authorityOf(header->target))
+        {
+            DEVEX_LOG_WARNING("Refused the remote call {} from player {}: only the authority of the entity, player {}, may call it", header->name, from,
+                           authorityOf(header->target));
+            return false;
+        }
+        return true;
+    }
 
     void close()
     {
@@ -101,6 +152,7 @@ struct Multiplayer::Impl
         server = nullptr;
         clients.clear();
         peers.clear();
+        authorities.clear();
         state = MultiplayerState::Offline;
         hosting = false;
         local = 0;
@@ -165,9 +217,9 @@ struct Multiplayer::Impl
         events.push_back({.kind = NetworkEvent::Kind::PeerLeft, .peer = id});
     }
 
-    // A message from a client: for the host, for another client, or for everyone. The host says who sent
-    // it, whatever the packet claims.
-    void relay(const ENetEvent& event, std::span<const std::byte> bytes, Delivery delivery)
+    // A message or a call from a client: for the host, for another client, or for everyone. The host says
+    // who sent it, whatever the packet claims, and passes on no call it refuses.
+    void relay(const ENetEvent& event, Packet kind, std::span<const std::byte> bytes, Delivery delivery)
     {
         const auto sender = std::ranges::find(clients, event.peer, &Client::connection);
         if (sender == clients.end() || bytes.size() < dataHeader)
@@ -177,15 +229,19 @@ struct Multiplayer::Impl
         const PeerId from = sender->id;
         const PeerId to = readNumber(bytes.data() + 1 + sizeof(PeerId));
         const std::span<const std::byte> message = bytes.subspan(dataHeader);
+        if (kind == Packet::Rpc && !accepts(message, from))
+        {
+            return;
+        }
         if (to == hostPeer || to == everyone)
         {
-            events.push_back({.kind = NetworkEvent::Kind::Message, .peer = from, .bytes = {message.begin(), message.end()}});
+            events.push_back({.kind = eventOf(kind), .peer = from, .bytes = {message.begin(), message.end()}});
         }
         if (to == hostPeer)
         {
             return;
         }
-        std::vector<std::byte> passed{static_cast<std::byte>(Packet::Data)};
+        std::vector<std::byte> passed{static_cast<std::byte>(kind)};
         writeNumber(passed, from);
         writeNumber(passed, to);
         passed.insert(passed.end(), message.begin(), message.end());
@@ -194,6 +250,28 @@ struct Multiplayer::Impl
             if (client.id != from && (to == everyone || client.id == to))
             {
                 sendTo(client.connection, passed, delivery);
+            }
+        }
+    }
+
+    // Sends a packet of the session to one player, to everyone, or to the host.
+    void sendPacket(Packet kind, PeerId to, std::span<const std::byte> bytes, Delivery delivery)
+    {
+        std::vector<std::byte> packet{static_cast<std::byte>(kind)};
+        packet.reserve(dataHeader + bytes.size());
+        writeNumber(packet, local);
+        writeNumber(packet, to);
+        packet.insert(packet.end(), bytes.begin(), bytes.end());
+        if (!hosting)
+        {
+            sendTo(server, packet, delivery);
+            return;
+        }
+        for (const Client& client : clients)
+        {
+            if (to == everyone || client.id == to)
+            {
+                sendTo(client.connection, packet, delivery);
             }
         }
     }
@@ -229,10 +307,14 @@ struct Multiplayer::Impl
             }
             events.push_back({.kind = kind == Packet::PeerJoined ? NetworkEvent::Kind::PeerJoined : NetworkEvent::Kind::PeerLeft, .peer = peer});
         }
-        else if (kind == Packet::Data && bytes.size() >= dataHeader)
+        else if ((kind == Packet::Data || kind == Packet::Rpc) && bytes.size() >= dataHeader)
         {
             const std::span<const std::byte> message = bytes.subspan(dataHeader);
-            events.push_back({.kind = NetworkEvent::Kind::Message, .peer = readNumber(bytes.data() + 1), .bytes = {message.begin(), message.end()}});
+            const PeerId from = readNumber(bytes.data() + 1);
+            if (kind == Packet::Data || accepts(message, from))
+            {
+                events.push_back({.kind = eventOf(kind), .peer = from, .bytes = {message.begin(), message.end()}});
+            }
         }
     }
 };
@@ -326,6 +408,11 @@ void Multiplayer::poll()
 {
     Impl& impl = *m_impl;
     impl.events.clear();
+    for (std::vector<std::byte>& call : impl.loopback)
+    {
+        impl.events.push_back({.kind = NetworkEvent::Kind::Rpc, .peer = caller(), .bytes = std::move(call)});
+    }
+    impl.loopback.clear();
     if (impl.enet == nullptr)
     {
         return;
@@ -345,9 +432,10 @@ void Multiplayer::poll()
             const std::span<const std::byte> bytes(reinterpret_cast<const std::byte*>(event.packet->data), event.packet->dataLength);
             if (impl.hosting)
             {
-                if (!bytes.empty() && static_cast<Packet>(std::to_integer<std::uint8_t>(bytes[0])) == Packet::Data)
+                const auto kind = bytes.empty() ? Packet::Welcome : static_cast<Packet>(std::to_integer<std::uint8_t>(bytes[0]));
+                if (kind == Packet::Data || kind == Packet::Rpc)
                 {
-                    impl.relay(event, bytes, event.channelID == unreliableChannel ? Delivery::Unreliable : Delivery::Reliable);
+                    impl.relay(event, kind, bytes, event.channelID == unreliableChannel ? Delivery::Unreliable : Delivery::Reliable);
                 }
             }
             else
@@ -396,23 +484,7 @@ void Multiplayer::send(PeerId to, std::span<const std::byte> bytes, Delivery del
     {
         return;
     }
-    std::vector<std::byte> packet{static_cast<std::byte>(Packet::Data)};
-    packet.reserve(dataHeader + bytes.size());
-    writeNumber(packet, impl.local);
-    writeNumber(packet, to);
-    packet.insert(packet.end(), bytes.begin(), bytes.end());
-    if (!impl.hosting)
-    {
-        impl.sendTo(impl.server, packet, delivery);
-        return;
-    }
-    for (const Impl::Client& client : impl.clients)
-    {
-        if (to == everyone || client.id == to)
-        {
-            impl.sendTo(client.connection, packet, delivery);
-        }
-    }
+    impl.sendPacket(Packet::Data, to, bytes, delivery);
 }
 
 MultiplayerState Multiplayer::state() const noexcept
@@ -433,6 +505,79 @@ PeerId Multiplayer::localPeer() const noexcept
 std::span<const PeerId> Multiplayer::peers() const noexcept
 {
     return m_impl->peers;
+}
+
+void Multiplayer::declareRpc(std::string name, const RpcPolicy& policy)
+{
+    m_impl->rpcs.insert_or_assign(std::move(name), policy);
+}
+
+bool Multiplayer::sendRpc(PeerId to, std::span<const std::byte> call)
+{
+    Impl& impl = *m_impl;
+    const std::optional<RpcHeader> header = decodeRpcHeader(call);
+    if (!header)
+    {
+        DEVEX_LOG_ERROR("Cannot send a remote call that says nothing of what it is for");
+        return false;
+    }
+    const RpcPolicy* const policy = impl.policyOf(header->name);
+    if (policy == nullptr)
+    {
+        DEVEX_LOG_ERROR("{} cannot be called over the network: it needs [Rpc] in C#, or GameRegistry::rpc in C++", header->name);
+        return false;
+    }
+    if (!policy->anyPeer && !isAuthority(header->target))
+    {
+        DEVEX_LOG_ERROR("Player {} cannot call {}: only the authority of the entity, player {}, may. Say AnyPeer if every player may", impl.local, header->name,
+                        impl.authorityOf(header->target));
+        return false;
+    }
+    const PeerId self = caller();
+    if (impl.state == MultiplayerState::Online && to != self)
+    {
+        impl.sendPacket(Packet::Rpc, to, call, policy->reliable ? Delivery::Reliable : Delivery::Unreliable);
+    }
+    if (to == self && !policy->callLocal)
+    {
+        DEVEX_LOG_WARNING("{} was called for this very player, and does not say CallLocal: it does not run", header->name);
+    }
+    return policy->callLocal && (to == everyone || to == self);
+}
+
+void Multiplayer::loopbackRpc(std::span<const std::byte> call)
+{
+    m_impl->loopback.emplace_back(call.begin(), call.end());
+}
+
+void Multiplayer::setAuthority(const core::Uuid& entity, PeerId peer)
+{
+    m_impl->authorities.insert_or_assign(entity, peer);
+}
+
+PeerId Multiplayer::authority(const core::Uuid& entity) const noexcept
+{
+    return m_impl->authorityOf(entity);
+}
+
+bool Multiplayer::isAuthority(const core::Uuid& entity) const noexcept
+{
+    return m_impl->state != MultiplayerState::Online || m_impl->authorityOf(entity) == m_impl->local;
+}
+
+PeerId Multiplayer::remoteSender() const noexcept
+{
+    return m_impl->remoteSender;
+}
+
+void Multiplayer::setRemoteSender(PeerId peer) noexcept
+{
+    m_impl->remoteSender = peer;
+}
+
+PeerId Multiplayer::caller() const noexcept
+{
+    return m_impl->local != 0 ? m_impl->local : hostPeer;
 }
 
 } // namespace devex::net

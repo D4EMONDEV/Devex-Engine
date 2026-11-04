@@ -318,6 +318,8 @@ private:
     [[nodiscard]] core::Result<void> buildOutdatedGameCode();
     void closeGameCode();
     void loadGameModule();
+    // Tells the network which methods the game code can have called: when either of them comes.
+    void declareGameRpcs();
     void unloadGameModule();
     void updateGameCode();
     // C#: the runtime of the process, then the assembly a project builds from its C# files. With
@@ -2024,6 +2026,7 @@ void ApplicationRunner::loadGameModule()
     }
     m_gameLoadError.clear();
     m_game = std::move(*module);
+    declareGameRpcs();
     std::size_t restored = 0;
     forEachScene([&restored](scene::Scene& scene) { restored += scene::restorePreservedComponents(scene); });
     DEVEX_LOG_INFO("Game code loaded: {} components, {} systems{}", m_game->registry().components().size(),
@@ -2130,6 +2133,18 @@ void ApplicationRunner::updateGameCode()
     }
 }
 
+void ApplicationRunner::declareGameRpcs()
+{
+    if (!m_game || !m_multiplayer)
+    {
+        return;
+    }
+    for (const RpcInfo& rpc : m_game->registry().rpcs())
+    {
+        m_multiplayer->declareRpc(rpc.name, rpc.policy);
+    }
+}
+
 void ApplicationRunner::runSystems(SystemPhase phase, core::Duration delta,
                                    bool keepManagedInstances)
 {
@@ -2151,6 +2166,7 @@ void ApplicationRunner::runSystems(SystemPhase phase, core::Duration delta,
         .navigation = m_navigation.get(),
         .audio = m_audio.get(),
         .multiplayer = m_multiplayer.get(),
+        .game = m_game ? &m_game->registry() : nullptr,
         .animation = m_animation.get(),
         .tweens = m_tweens.get(),
         .coroutines = &m_coroutines,
@@ -2163,6 +2179,11 @@ void ApplicationRunner::runSystems(SystemPhase phase, core::Duration delta,
     };
     if (m_game)
     {
+        // Before the systems, which so see what the others asked for this frame.
+        if (phase == SystemPhase::Update)
+        {
+            m_game->registry().dispatchRpcs(context);
+        }
         m_game->registry().run(phase, context);
     }
     // After the systems, as Unity resumes its coroutines after Update.
@@ -2270,6 +2291,7 @@ void ApplicationRunner::createPhysics()
     m_application.m_navigation = m_navigation.get();
     m_multiplayer = std::make_unique<net::Multiplayer>();
     m_application.m_multiplayer = m_multiplayer.get();
+    declareGameRpcs();
     if (m_services.tools != nullptr)
     {
         m_services.tools->setNavigationWorld(m_navigation.get());

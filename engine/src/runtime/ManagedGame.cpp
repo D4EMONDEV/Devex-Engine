@@ -351,6 +351,12 @@ struct NativeApi
     std::uint32_t (*multiplayerLocalPeer)();
     int (*multiplayerPeers)(std::uint32_t* peers, int capacity);
     int (*multiplayerEvent)(int index, int* kind, std::uint32_t* peer);
+    int (*multiplayerEventBytes)(int index, std::byte* bytes, int capacity);
+    void (*multiplayerDeclareRpc)(const char* name, int flags);
+    int (*multiplayerSendRpc)(std::uint32_t to, const std::byte* bytes, int length);
+    void (*multiplayerLoopbackRpc)(const std::byte* bytes, int length);
+    void (*multiplayerSetAuthority)(const UuidBytes* entity, std::uint32_t peer);
+    std::uint32_t (*multiplayerAuthority)(const UuidBytes* entity);
 };
 
 // The functions the engine calls, in the order of Devex.Managed's ManagedApi.
@@ -366,7 +372,7 @@ struct ManagedApi
 };
 
 // Devex.Managed's Bootstrap.Version: both sides change it with the function tables.
-constexpr int bootstrapVersion = 29;
+constexpr int bootstrapVersion = 30;
 
 struct BootstrapArguments
 {
@@ -1097,6 +1103,56 @@ int apiMultiplayerEvent(int index, int* kind, std::uint32_t* peer)
     *kind = static_cast<int>(event.kind);
     *peer = event.peer;
     return 1;
+}
+
+// The size of what an event carries, which it copies as far as there is room.
+int apiMultiplayerEventBytes(int index, std::byte* bytes, int capacity)
+{
+    if (multiplayer() == nullptr || index < 0 || std::cmp_greater_equal(index, multiplayer()->events().size()))
+    {
+        return 0;
+    }
+    const std::vector<std::byte>& carried = multiplayer()->events()[static_cast<std::size_t>(index)].bytes;
+    if (bytes != nullptr && capacity > 0)
+    {
+        std::ranges::copy_n(carried.begin(), static_cast<std::ptrdiff_t>(std::min(carried.size(), static_cast<std::size_t>(capacity))), bytes);
+    }
+    return static_cast<int>(carried.size());
+}
+
+// 1 any player may call, 2 it also runs on the game that calls, 4 it arrives for sure: DeclareRpcs in Rpc.cs.
+void apiMultiplayerDeclareRpc(const char* name, int flags)
+{
+    if (multiplayer() != nullptr)
+    {
+        multiplayer()->declareRpc(name, {.anyPeer = (flags & 1) != 0, .callLocal = (flags & 2) != 0, .reliable = (flags & 4) != 0});
+    }
+}
+
+int apiMultiplayerSendRpc(std::uint32_t to, const std::byte* bytes, int length)
+{
+    return multiplayer() != nullptr && multiplayer()->sendRpc(to, std::span(bytes, static_cast<std::size_t>(length))) ? 1 : 0;
+}
+
+void apiMultiplayerLoopbackRpc(const std::byte* bytes, int length)
+{
+    if (multiplayer() != nullptr)
+    {
+        multiplayer()->loopbackRpc(std::span(bytes, static_cast<std::size_t>(length)));
+    }
+}
+
+void apiMultiplayerSetAuthority(const UuidBytes* entity, std::uint32_t peer)
+{
+    if (multiplayer() != nullptr)
+    {
+        multiplayer()->setAuthority(toUuid(entity), peer);
+    }
+}
+
+std::uint32_t apiMultiplayerAuthority(const UuidBytes* entity)
+{
+    return multiplayer() != nullptr ? multiplayer()->authority(toUuid(entity)) : net::hostPeer;
 }
 
 [[nodiscard]] audio::AudioWorld* audioWorld() noexcept
@@ -3063,6 +3119,12 @@ int apiRaycastSolid(const math::Vec3* origin, const math::Vec3* direction, float
         .multiplayerLocalPeer = &apiMultiplayerLocalPeer,
         .multiplayerPeers = &apiMultiplayerPeers,
         .multiplayerEvent = &apiMultiplayerEvent,
+        .multiplayerEventBytes = &apiMultiplayerEventBytes,
+        .multiplayerDeclareRpc = &apiMultiplayerDeclareRpc,
+        .multiplayerSendRpc = &apiMultiplayerSendRpc,
+        .multiplayerLoopbackRpc = &apiMultiplayerLoopbackRpc,
+        .multiplayerSetAuthority = &apiMultiplayerSetAuthority,
+        .multiplayerAuthority = &apiMultiplayerAuthority,
     };
 }
 

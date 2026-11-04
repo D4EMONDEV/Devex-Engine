@@ -23,9 +23,16 @@
 #include <devex/scene/Scene.hpp>
 #include <devex/ui/UiWorld.hpp>
 
+#include <array>
 #include <cstdint>
+#include <functional>
+#include <optional>
 #include <span>
 #include <string>
+#include <string_view>
+#include <tuple>
+#include <type_traits>
+#include <utility>
 #include <vector>
 
 // Game code: components that hold the state of a game and systems that update it, compiled into a
@@ -35,6 +42,7 @@
 namespace devex::runtime {
 
 class CoroutineScheduler;
+class GameRegistry;
 
 // Changes whenever game modules must be rebuilt to load: modules built for another version are
 // refused. 9: ComponentType gained findMutable, which modules fill in when they register a type.
@@ -67,7 +75,8 @@ class CoroutineScheduler;
 // 43: RenderCamera, Camera and PostProcessVolume gained the reflections of the screen.
 // 44: ExportSettings, in Project, gained the export for Android.
 // 45: SystemContext gained the network of the game.
-inline constexpr std::uint32_t gameApiVersion = 45;
+// 46: SystemContext gained the game code that runs, and GameRegistry its remote calls.
+inline constexpr std::uint32_t gameApiVersion = 46;
 
 enum class SystemPhase : std::uint8_t
 {
@@ -113,6 +122,8 @@ struct DEVEX_API SystemContext
     audio::AudioWorld* audio = nullptr;
     // The network of the game: hosting or joining a session, and who is in it. Null outside a game.
     net::Multiplayer* multiplayer = nullptr;
+    // What the game code of this module declared, which remote calls run. Null outside a game.
+    const GameRegistry* game = nullptr;
     // The animations of the scene: the clips its Animator components play. Null when the
     // application runs without animation.
     animation::AnimationWorld* animation = nullptr;
@@ -155,6 +166,63 @@ struct DEVEX_API SystemInfo
     SystemFunction function = nullptr;
 };
 
+// A method other players can call. It says false when the arguments are not those it takes.
+struct DEVEX_API RpcInfo
+{
+    std::string name;
+    net::RpcPolicy policy;
+    std::function<bool(SystemContext& context, scene::Entity entity, std::span<const net::RpcValue> arguments)> function;
+};
+
+namespace detail {
+
+// What a call carries for a value of the game: an entity goes as its identifier, the same everywhere.
+template <typename T>
+[[nodiscard]] net::RpcValue rpcArgument(SystemContext& context, const T& value)
+{
+    if constexpr (std::is_same_v<T, scene::Entity>)
+    {
+        return net::RpcValue(context.scene.uuid(value));
+    }
+    else
+    {
+        return net::toRpcValue(value);
+    }
+}
+
+template <typename T>
+[[nodiscard]] std::optional<T> rpcParameter(SystemContext& context, const net::RpcValue& value)
+{
+    if constexpr (std::is_same_v<T, scene::Entity>)
+    {
+        const std::optional<core::Uuid> uuid = net::fromRpcValue<core::Uuid>(value);
+        return uuid ? std::optional<T>(context.scene.findEntity(*uuid)) : std::nullopt;
+    }
+    else
+    {
+        return net::fromRpcValue<T>(value);
+    }
+}
+
+template <typename... Args, std::size_t... Indices>
+[[nodiscard]] bool runRpcFunction(void (*function)(SystemContext&, scene::Entity, Args...), SystemContext& context, scene::Entity entity,
+                                  std::span<const net::RpcValue> arguments, std::index_sequence<Indices...>)
+{
+    if (arguments.size() != sizeof...(Args))
+    {
+        return false;
+    }
+    [[maybe_unused]] std::tuple<std::optional<std::decay_t<Args>>...> values{rpcParameter<std::decay_t<Args>>(context, arguments[Indices])...};
+    if (!(std::get<Indices>(values).has_value() && ...))
+    {
+        return false;
+    }
+    function(context, entity, std::move(*std::get<Indices>(values))...);
+    return true;
+}
+
+} // namespace detail
+
 // What a game module declares when it is loaded: its components and its systems.
 class DEVEX_API GameRegistry
 {
@@ -169,6 +237,32 @@ public:
 
     void system(std::string name, SystemPhase phase, SystemFunction function, int order = 0);
 
+    // A function other players can call by this name for an entity, with rpc or rpcId below, "Type.Method"
+    // being what C# names its own. It takes the context, the entity, then what the call carries:
+    // booleans, numbers, enums, strings, vectors, quaternions, entities and identifiers, bytes.
+    //
+    //     void hit(SystemContext& context, scene::Entity entity, int damage);
+    //     game.rpc("Player.Hit", &hit);
+    //     game.rpc("Player.Say", &say, {.anyPeer = true});
+    //
+    // A name belongs to one language of the game: declared in both, C++ runs it on the game that calls.
+    template <typename... Args>
+    void rpc(std::string name, void (*function)(SystemContext&, scene::Entity, Args...), net::RpcPolicy policy = {})
+    {
+        addRpc({.name = std::move(name), .policy = policy, .function = [function](SystemContext& context, scene::Entity entity, std::span<const net::RpcValue> arguments) {
+                    return detail::runRpcFunction<Args...>(function, context, entity, arguments, std::index_sequence_for<Args...>{});
+                }});
+    }
+
+    void addRpc(RpcInfo rpc);
+    [[nodiscard]] std::span<const RpcInfo> rpcs() const noexcept;
+    [[nodiscard]] const RpcInfo* findRpc(std::string_view name) const noexcept;
+
+    // Runs a remote call of this game code on its entity, as called by a player.
+    void runRpc(SystemContext& context, const net::RpcCall& call, net::PeerId sender) const;
+    // Runs the remote calls that arrived for this game code; those of C# are for C#.
+    void dispatchRpcs(SystemContext& context) const;
+
     // The names of the registered component types.
     [[nodiscard]] std::span<const std::string> components() const noexcept;
     // By phase, then order, then registration.
@@ -180,7 +274,27 @@ public:
 private:
     std::vector<std::string> m_components;
     std::vector<SystemInfo> m_systems;
+    std::vector<RpcInfo> m_rpcs;
 };
+
+// Calls a remote method of an entity for one player, or for everyone with net::everyone. Refused with a
+// reason in the log when the policy of the method does not allow it. Out of a session, it only runs here,
+// when it says callLocal.
+DEVEX_API void sendRpc(SystemContext& context, net::PeerId to, scene::Entity target, std::string_view name, std::span<const net::RpcValue> arguments);
+
+// As Godot's rpc_id and rpc: rpc(context, entity, "Player.Hit", 25).
+template <typename... Args>
+void rpcId(SystemContext& context, net::PeerId to, scene::Entity target, std::string_view name, const Args&... arguments)
+{
+    const std::array<net::RpcValue, sizeof...(Args)> values{detail::rpcArgument(context, arguments)...};
+    sendRpc(context, to, target, name, values);
+}
+
+template <typename... Args>
+void rpc(SystemContext& context, scene::Entity target, std::string_view name, const Args&... arguments)
+{
+    rpcId(context, net::everyone, target, name, arguments...);
+}
 
 } // namespace devex::runtime
 

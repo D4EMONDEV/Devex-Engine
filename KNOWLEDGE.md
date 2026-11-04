@@ -2153,6 +2153,10 @@ namespace devex::ui {
   `applyVolumetricFog` dans `common.slang` ; seule la vue principale en a.
 - Multijoueur : `net::Multiplayer` (`engine/src/net`, ENet), `SystemContext::multiplayer`, `Application::multiplayer()`,
   `Multiplayer` en C# (`managed/Devex.Managed/Multiplayer.cs`). Plan et étapes dans `docs/decisions.md`.
+- Appels à distance : `net/Rpc.hpp` (valeurs, format, `RpcPolicy`), `Multiplayer::declareRpc`, `sendRpc`,
+  `setAuthority`, `remoteSender` ; en C++ `GameRegistry::rpc`, `runtime::rpc`, `runtime::rpcId`
+  (`runtime/Game.hpp`), lancés par `dispatchRpcs` avant les systèmes d'Update ; en C# `[Rpc]`,
+  `Component.Rpc`, `RpcId`, `IsAuthority` (`managed/Devex.Managed/Rpc.cs`, `RpcCodec` suit `net/Rpc.cpp`).
 - Export Android : `exportAndroid` (`runtime/AndroidExport.cpp`), appelé par `exportGame` ; réglages dans
   `ExportSettings::android` et clé dans `.devex/android-signing.dvx` (`asset::readAndroidSigning`) ;
   `findAndroidBuilds`, `findAndroidTools`, `GameCodeBuilder::buildForAndroid` ; le projet Gradle de

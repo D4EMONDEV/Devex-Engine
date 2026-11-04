@@ -47,6 +47,7 @@
 #include <format>
 #include <memory>
 #include <chrono>
+#include <functional>
 #include <string>
 #include <thread>
 #include <string_view>
@@ -289,7 +290,7 @@ TEST_CASE("C# addon commands edit a scene without running the game and reload cl
 TEST_CASE("The C# runtime registers components and runs them", "[runtime][managed]")
 {
     const std::unique_ptr<ManagedGame> game = startRuntime();
-    CHECK(game->componentTypes().size() == 28);
+    CHECK(game->componentTypes().size() == 29);
 
     devex::scene::ComponentRegistry& registry = devex::scene::componentRegistry();
     const devex::scene::ComponentType* const mover = registry.find("Mover");
@@ -1673,3 +1674,171 @@ TEST_CASE("C# code hosts a session and hears who comes and goes", "[runtime][man
     CHECK(number("peers") == 0.0f);
 }
 
+TEST_CASE("C# remote methods run when called, and call the other players", "[runtime][managed][net]")
+{
+    const auto game = startRuntime();
+    Scene scene;
+    const auto entity = scene.createEntity("Probe");
+    scene.add<devex::scene::Transform>(entity);
+    const auto* probe = devex::scene::componentRegistry().find("RpcProbe");
+    REQUIRE(probe != nullptr);
+    REQUIRE(probe->emplace(scene, entity) != nullptr);
+    devex::net::Multiplayer session;
+    const devex::core::Uuid uuid = scene.uuid(entity);
+    const auto number = [&](const char* name) -> float& { return field<float>(*probe, const_cast<void*>(probe->find(scene, entity)), name); };
+    const auto run = [&] {
+        ManagedGame::Frame frame{.scene = &scene, .delta = devex::core::Duration(0.016), .multiplayer = &session};
+        game->runPhase(frame, devex::runtime::SystemPhase::Update);
+    };
+    const auto update = [&] {
+        session.poll();
+        run();
+    };
+    update();
+    update();
+    REQUIRE(number("hosted") == 1.0f);
+    CHECK(number("authority_here") == 1.0f);
+
+    // A client written in C++, whose calls C# reads, and the reverse. It claims that Hit is open to all,
+    // as a cheat would, which leaves the host to refuse it.
+    devex::net::Multiplayer client;
+    client.declareRpc("RpcProbe.Hit", {.anyPeer = true});
+    client.declareRpc("RpcProbe.Local", {});
+    client.declareRpc("RpcProbe.Say", {.anyPeer = true});
+    client.declareRpc("RpcProbe.Everything", {.anyPeer = true});
+    REQUIRE(client.join("127.0.0.1", 47396));
+    for (int frame = 0; frame < 1000 && (client.state() != devex::net::MultiplayerState::Online || session.peers().empty()); ++frame)
+    {
+        client.poll();
+        update();
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    }
+    REQUIRE(client.state() == devex::net::MultiplayerState::Online);
+    REQUIRE_FALSE(session.peers().empty());
+
+    const auto bytes = [&](std::string name, std::vector<devex::net::RpcValue> arguments) {
+        auto encoded = devex::net::encodeRpc({.target = uuid, .name = std::move(name), .arguments = std::move(arguments)});
+        REQUIRE(encoded.has_value());
+        return *std::move(encoded);
+    };
+    const auto waitFor = [&](const std::function<bool()>& done) {
+        for (int frame = 0; frame < 1000 && !done(); ++frame)
+        {
+            client.poll();
+            update();
+            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        }
+        return done();
+    };
+
+    // From the client: refused without authority, and what does not match a private method's parameters.
+    CHECK_FALSE(client.sendRpc(devex::net::everyone, bytes("RpcProbe.Hit", {devex::net::RpcValue(std::int64_t{5})})));
+    CHECK_FALSE(client.sendRpc(devex::net::everyone, bytes("RpcProbe.Say", {devex::net::RpcValue(std::int64_t{5})})));
+    CHECK_FALSE(client.sendRpc(devex::net::everyone, bytes("RpcProbe.Say", {devex::net::RpcValue(std::string("bonjour"))})));
+    REQUIRE(waitFor([&] { return number("said") != 0.0f; }));
+    CHECK(number("said") == 7.0f);
+    CHECK(number("said_by") == static_cast<float>(client.localPeer()));
+    CHECK(number("hits") == 0.0f);
+
+    // Every type a call carries, from C++ to C#.
+    devex::math::Quat turn(1.0f, 0.0f, 0.0f, 0.0f);
+    CHECK_FALSE(client.sendRpc(
+        devex::net::everyone,
+        bytes("RpcProbe.Everything",
+              {devex::net::RpcValue(true), devex::net::RpcValue(std::int64_t{12}), devex::net::RpcValue(1.5), devex::net::RpcValue(std::string("été")),
+               devex::net::RpcValue(devex::math::Vec2(1.0f, 2.0f)), devex::net::RpcValue(devex::math::Vec3(3.0f, 4.0f, 5.0f)),
+               devex::net::RpcValue(devex::math::Vec4(6.0f, 7.0f, 8.0f, 9.0f)), devex::net::RpcValue(turn), devex::net::RpcValue(uuid),
+               devex::net::RpcValue(std::vector<std::byte>{std::byte{1}, std::byte{2}, std::byte{3}}), devex::net::RpcValue(std::int64_t{2})})));
+    REQUIRE(waitFor([&] { return number("carried") != 0.0f; }));
+    CHECK(number("carried") == 1.0f);
+
+    // From C#, to the client, and not on itself.
+    std::vector<devex::net::RpcCall> heard;
+    const auto listen = [&] {
+        client.poll();
+        for (const devex::net::NetworkEvent& event : client.events())
+        {
+            if (event.kind == devex::net::NetworkEvent::Kind::Rpc)
+            {
+                auto call = devex::net::decodeRpc(event.bytes);
+                REQUIRE(call.has_value());
+                CHECK(event.peer == devex::net::hostPeer);
+                heard.push_back(*std::move(call));
+            }
+        }
+    };
+    const auto commandUntilHeard = [&](float command, std::size_t count) {
+        number("command") = command;
+        for (int frame = 0; frame < 1000 && heard.size() < count; ++frame)
+        {
+            update();
+            listen();
+            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        }
+        return heard.size() >= count;
+    };
+    REQUIRE(commandUntilHeard(1.0f, 1));
+    CHECK(heard[0].target == uuid);
+    CHECK(heard[0].name == "RpcProbe.Hit");
+    REQUIRE(heard[0].arguments.size() == 1);
+    CHECK(std::get<std::int64_t>(heard[0].arguments[0]) == 7);
+    CHECK(number("hits") == 0.0f);
+
+    // What says CallLocal runs at once as well, and says who called; after it, no one did.
+    REQUIRE(commandUntilHeard(2.0f, 2));
+    CHECK(heard[1].name == "RpcProbe.Local");
+    CHECK(number("local_runs") == 1.0f);
+    CHECK(number("local_sender") == 1.0f);
+    CHECK(number("sender_after") == 1.0f);
+
+    // None of what does not match goes out: what comes next is what the client hears. Every type, from
+    // C# to C++, in the format they share.
+    number("command") = 3.0f;
+    update();
+    REQUIRE(commandUntilHeard(4.0f, 3));
+    REQUIRE(heard[2].name == "RpcProbe.Everything");
+    const std::vector<devex::net::RpcValue>& values = heard[2].arguments;
+    REQUIRE(values.size() == 11);
+    CHECK(std::get<bool>(values[0]));
+    CHECK(std::get<std::int64_t>(values[1]) == 12);
+    CHECK(std::get<double>(values[2]) == 1.5);
+    CHECK(std::get<std::string>(values[3]) == "été");
+    CHECK(std::get<devex::math::Vec2>(values[4]) == devex::math::Vec2(1.0f, 2.0f));
+    CHECK(std::get<devex::math::Vec3>(values[5]) == devex::math::Vec3(3.0f, 4.0f, 5.0f));
+    CHECK(std::get<devex::math::Vec4>(values[6]) == devex::math::Vec4(6.0f, 7.0f, 8.0f, 9.0f));
+    CHECK(std::get<devex::math::Quat>(values[7]).w == 1.0f);
+    CHECK(std::get<devex::core::Uuid>(values[8]) == uuid);
+    CHECK(std::get<std::vector<std::byte>>(values[9]).size() == 3);
+    CHECK(std::get<std::int64_t>(values[10]) == 2);
+
+    // A method of C++, called from C#: it reaches the engine with the next poll, from this game.
+    session.declareRpc("RpcProbe.Native", {.anyPeer = true, .callLocal = true});
+    number("command") = 5.0f;
+    run();
+    session.poll();
+    const auto native = std::ranges::find_if(session.events(), [](const devex::net::NetworkEvent& event) { return event.kind == devex::net::NetworkEvent::Kind::Rpc; });
+    REQUIRE(native != session.events().end());
+    CHECK(native->peer == devex::net::hostPeer);
+    CHECK(devex::net::decodeRpcHeader(native->bytes)->name == "RpcProbe.Native");
+
+    // A method of C#, called from C++, likewise.
+    number("said") = 0.0f;
+    session.loopbackRpc(bytes("RpcProbe.Say", {devex::net::RpcValue(std::string("abc"))}));
+    update();
+    CHECK(number("said") == 3.0f);
+    CHECK(number("said_by") == 1.0f);
+
+    // Authority given away: it no longer calls.
+    const std::size_t before = heard.size();
+    number("command") = 6.0f;
+    update();
+    CHECK(number("authority_here") == 0.0f);
+    CHECK(session.authority(uuid) == 5);
+    for (int frame = 0; frame < 20; ++frame)
+    {
+        update();
+        listen();
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    }
+    CHECK(heard.size() == before);
+}

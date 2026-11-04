@@ -26,6 +26,25 @@ public abstract class Component
     /// <summary>The scene the entity lives in.</summary>
     public Scene Scene { get; internal set; } = null!;
 
+    /// <summary>Whether this game decides for the entity: see <see cref="Multiplayer.SetAuthority"/>.</summary>
+    public bool IsAuthority => Multiplayer.IsAuthority(Entity);
+
+    /// <summary>
+    /// Calls a method of this component that says <see cref="RpcAttribute"/>, on the same entity of every
+    /// other player's game: <c>Rpc(nameof(Hit), 25)</c>. A call that its method does not allow, or that
+    /// does not match its parameters, is not sent, with the reason in the log.
+    /// </summary>
+    public void Rpc(string method, params object?[]? arguments)
+    {
+        GameRuntime.SendRpc(this, Multiplayer.Everyone, method, arguments);
+    }
+
+    /// <summary>As <see cref="Rpc"/>, on the game of one player.</summary>
+    public void RpcId(uint peer, string method, params object?[]? arguments)
+    {
+        GameRuntime.SendRpc(this, peer, method, arguments);
+    }
+
     /// <summary>Called once, before the first update of the component.</summary>
     public virtual void Start()
     {

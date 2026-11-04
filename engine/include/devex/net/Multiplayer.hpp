@@ -2,11 +2,14 @@
 
 #include <devex/core/Error.hpp>
 #include <devex/core/Export.hpp>
+#include <devex/core/Uuid.hpp>
+#include <devex/net/Rpc.hpp>
 
 #include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <span>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -48,6 +51,8 @@ struct DEVEX_API NetworkEvent
         PeerJoined,
         PeerLeft,
         Message,
+        // A remote call this game accepted: its bytes are what decodeRpc reads.
+        Rpc,
     };
 
     Kind kind = Kind::Message;
@@ -92,6 +97,31 @@ public:
     [[nodiscard]] PeerId localPeer() const noexcept;
     // The other players of the session.
     [[nodiscard]] std::span<const PeerId> peers() const noexcept;
+
+    // Which methods can be called over the network, by either language of the game. A call for any
+    // other is refused when it arrives, as is one its policy does not allow.
+    void declareRpc(std::string name, const RpcPolicy& policy);
+
+    // Sends what encodeRpc made to one player or to everyone, the policy of the method allowing it.
+    // True when the method also runs on this game: the caller runs it, then, or gives it to loopbackRpc
+    // when its language does not have it. False when refused, with the reason in the log.
+    [[nodiscard]] bool sendRpc(PeerId to, std::span<const std::byte> call);
+    // Gives a call to this game with the next poll.
+    void loopbackRpc(std::span<const std::byte> call);
+
+    // The player that decides for an entity, and alone may call its methods unless they say anyPeer: the
+    // host, unless said otherwise. Every player sets the same, as nothing tells the others. The session
+    // forgets them when it ends, and keeps them when the player leaves.
+    void setAuthority(const core::Uuid& entity, PeerId peer);
+    [[nodiscard]] PeerId authority(const core::Uuid& entity) const noexcept;
+    // Whether this game is that player; always, outside a session, where it is on its own.
+    [[nodiscard]] bool isAuthority(const core::Uuid& entity) const noexcept;
+
+    // Who called the method that is running, set by what runs it; 0 outside of one.
+    [[nodiscard]] PeerId remoteSender() const noexcept;
+    void setRemoteSender(PeerId peer) noexcept;
+    // The number this game calls with: its own, or the host's when it plays alone.
+    [[nodiscard]] PeerId caller() const noexcept;
 
 private:
     struct Impl;

@@ -25,9 +25,13 @@ public static unsafe class Multiplayer
     private const int DisconnectedEvent = 2;
     private const int PeerJoinedEvent = 3;
     private const int PeerLeftEvent = 4;
+    private const int RpcEvent = 6;
 
     /// <summary>The number of the host in every session.</summary>
     public const uint HostPeer = 1;
+
+    /// <summary>As the destination of a call: every other player of the session.</summary>
+    public const uint Everyone = 0;
 
     /// <summary>This game joined the session it was joining; <see cref="LocalPeer"/> is known from now on.</summary>
     public static event Action? Connected;
@@ -97,6 +101,36 @@ public static unsafe class Multiplayer
         }
     }
 
+    /// <summary>Who called the remote method that is running; 0 outside of one.</summary>
+    public static uint RemoteSender { get; internal set; }
+
+    // The number this game calls with: its own, or the host's when it plays alone.
+    internal static uint Caller => LocalPeer != 0 ? LocalPeer : HostPeer;
+
+    /// <summary>
+    /// The player that decides for an entity, and alone may call its methods unless they say
+    /// <see cref="RpcAttribute.AnyPeer"/>: the host, unless said otherwise. Every player sets the same, as
+    /// nothing tells the others. The session forgets them when it ends.
+    /// </summary>
+    public static void SetAuthority(Entity entity, uint peer)
+    {
+        Uuid uuid = entity.Uuid;
+        Bootstrap.Native.MultiplayerSetAuthority(&uuid, peer);
+    }
+
+    /// <summary>The player that decides for an entity.</summary>
+    public static uint AuthorityOf(Entity entity)
+    {
+        Uuid uuid = entity.Uuid;
+        return Bootstrap.Native.MultiplayerAuthority(&uuid);
+    }
+
+    /// <summary>Whether this game decides for an entity; always, outside a session.</summary>
+    public static bool IsAuthority(Entity entity)
+    {
+        return State != MultiplayerState.Online || AuthorityOf(entity) == LocalPeer;
+    }
+
     // Once a frame, when the components are loaded and before their updates, so that what handlers
     // change in them stays. Handlers do not outlive the game that subscribed them: see ForgetEvents.
     internal static void RaiseEvents()
@@ -122,6 +156,9 @@ public static unsafe class Multiplayer
                 case PeerLeftEvent:
                     PeerLeft?.Invoke(peer);
                     break;
+                case RpcEvent:
+                    GameRuntime.ReceiveRpc(index, peer);
+                    break;
             }
         }
     }
@@ -133,5 +170,6 @@ public static unsafe class Multiplayer
         Disconnected = null;
         PeerJoined = null;
         PeerLeft = null;
+        RemoteSender = 0;
     }
 }
