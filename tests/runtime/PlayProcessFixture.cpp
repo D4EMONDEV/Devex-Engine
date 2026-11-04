@@ -3,6 +3,8 @@
 #include <devex/runtime/Application.hpp>
 
 #include <cstdlib>
+#include <format>
+#include <string>
 #include <thread>
 
 namespace
@@ -18,6 +20,7 @@ class PlayerFixture final : public devex::runtime::Application
             const std::string name(scene().name(entity));
             m_hang = m_hang || name == "Hang";
             m_crash = m_crash || name == "Crash";
+            m_ask = m_ask || name == "Ask";
             DEVEX_LOG_INFO_IN("test-player", "Snapshot: {}", name);
         }
         DEVEX_LOG_WARNING_IN("test-player", "A quoted \"message\"\nwith another line");
@@ -31,6 +34,20 @@ class PlayerFixture final : public devex::runtime::Application
     {
         if (m_crash)
             std::_Exit(23); // An abrupt child failure must leave the supervisor alive.
+        // Where this game stands among those Play started together, each time it changes, with what
+        // it was told when its code asked to connect.
+        if (auto* const network = multiplayer(); network != nullptr && network->testInstance() != 0)
+        {
+            const bool asked = m_ask && network->host(1).has_value();
+            const std::string where = std::format("Network instance={} online={} host={} peer={} others={} asked={}", network->testInstance(),
+                                                  network->state() == devex::net::MultiplayerState::Online, network->isHost(), network->localPeer(),
+                                                  network->peers().size(), asked);
+            if (where != m_network)
+            {
+                m_network = where;
+                DEVEX_LOG_INFO_IN("test-player", "{}", where);
+            }
+        }
         if (m_hang)
             std::this_thread::sleep_for(std::chrono::seconds(30));
     }
@@ -38,8 +55,10 @@ class PlayerFixture final : public devex::runtime::Application
 
   private:
     int m_ticks = 0;
+    std::string m_network;
     bool m_hang = false;
     bool m_crash = false;
+    bool m_ask = false;
 };
 } // namespace
 

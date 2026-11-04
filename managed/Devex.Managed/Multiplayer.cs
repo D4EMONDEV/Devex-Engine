@@ -101,6 +101,13 @@ public static unsafe class Multiplayer
         }
     }
 
+    /// <summary>
+    /// Among the games Play starts together in the editor, which one this is, from 1; 0 otherwise. Play
+    /// connects them by itself unless told not to, and then <see cref="Host"/> and <see cref="Join"/> say
+    /// they succeeded without changing anything.
+    /// </summary>
+    public static uint TestInstance => Bootstrap.Native.MultiplayerTestInstance();
+
     /// <summary>Who called the remote method that is running; 0 outside of one.</summary>
     public static uint RemoteSender { get; internal set; }
 

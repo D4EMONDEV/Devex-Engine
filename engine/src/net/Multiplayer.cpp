@@ -111,6 +111,10 @@ struct Multiplayer::Impl
     std::unordered_map<core::Uuid, PeerId> authorities;
     std::vector<std::vector<std::byte>> loopback;
     PeerId remoteSender = 0;
+    std::uint32_t testInstance = 0;
+    bool keepTestSession = false;
+    // The events keepAlive kept for the next poll.
+    bool keptEvents = false;
 
     [[nodiscard]] const RpcPolicy* policyOf(std::string_view name) const noexcept
     {
@@ -388,6 +392,10 @@ Multiplayer::~Multiplayer()
 
 core::Result<void> Multiplayer::host(std::uint16_t port, std::uint32_t maxClients)
 {
+    if (m_impl->state != MultiplayerState::Offline && m_impl->keepTestSession)
+    {
+        return {};
+    }
     if (m_impl->state != MultiplayerState::Offline)
     {
         return core::makeError(core::ErrorCode::InvalidState, "This game is already in a session");
@@ -413,6 +421,10 @@ core::Result<void> Multiplayer::host(std::uint16_t port, std::uint32_t maxClient
 
 core::Result<void> Multiplayer::join(std::string_view address, std::uint16_t port)
 {
+    if (m_impl->state != MultiplayerState::Offline && m_impl->keepTestSession)
+    {
+        return {};
+    }
     if (m_impl->state != MultiplayerState::Offline)
     {
         return core::makeError(core::ErrorCode::InvalidState, "This game is already in a session");
@@ -464,12 +476,27 @@ void Multiplayer::leave()
 void Multiplayer::poll()
 {
     Impl& impl = *m_impl;
-    impl.events.clear();
+    if (!std::exchange(impl.keptEvents, false))
+    {
+        impl.events.clear();
+    }
     for (std::vector<std::byte>& call : impl.loopback)
     {
         impl.events.push_back({.kind = NetworkEvent::Kind::Rpc, .peer = caller(), .bytes = std::move(call)});
     }
     impl.loopback.clear();
+    service();
+}
+
+void Multiplayer::keepAlive()
+{
+    m_impl->keptEvents = true;
+    service();
+}
+
+void Multiplayer::service()
+{
+    Impl& impl = *m_impl;
     if (impl.enet == nullptr)
     {
         return;
@@ -654,6 +681,38 @@ void Multiplayer::setRemoteSender(PeerId peer) noexcept
 PeerId Multiplayer::caller() const noexcept
 {
     return m_impl->local != 0 ? m_impl->local : hostPeer;
+}
+
+void Multiplayer::setTestInstance(std::uint32_t instance) noexcept
+{
+    m_impl->testInstance = instance;
+}
+
+std::uint32_t Multiplayer::testInstance() const noexcept
+{
+    return m_impl->testInstance;
+}
+
+void Multiplayer::keepTestSession() noexcept
+{
+    m_impl->keepTestSession = true;
+}
+
+std::uint16_t findFreePort()
+{
+    if (!initializeEnet())
+    {
+        return 0;
+    }
+    ENetSocket socket = enet_socket_create(ENET_SOCKET_TYPE_DATAGRAM);
+    if (socket == ENET_SOCKET_NULL)
+    {
+        return 0;
+    }
+    ENetAddress address{.host = ENET_HOST_ANY, .port = 0};
+    const bool found = enet_socket_bind(socket, &address) == 0 && enet_socket_get_address(socket, &address) == 0;
+    enet_socket_destroy(socket);
+    return found ? address.port : std::uint16_t{0};
 }
 
 } // namespace devex::net

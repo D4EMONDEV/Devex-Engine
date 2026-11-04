@@ -59,3 +59,22 @@ systèmes du module de jeu du projet.
 Pour une compilation locale, la cible `devex_editor` construit aussi `devex_player` lorsque les
 deux cibles sont activées. Un moteur installé doit garder les deux exécutables ensemble dans
 `bin/`. Lancer le jeu depuis Play ne demande pas de faire un export.
+
+## Tester à plusieurs
+
+La petite flèche à côté de **Play** choisit combien de jeux il lance, de 1 à 4. Chacun a son processus et sa
+fenêtre, et leur titre dit quel joueur ils sont. Le choix est personnel et se garde d'une fois à l'autre.
+
+- Les fenêtres se partagent l'écran de l'éditeur : deux côte à côte, trois ou quatre en grille, même si le
+  projet est en plein écran.
+- **Connect them**, coché par défaut : le premier héberge sur un port libre, et les autres le rejoignent avant
+  leur `Start`. `Multiplayer.Host` et `Multiplayer.Join` réussissent alors sans rien changer, et le code du jeu
+  reste celui de la vraie partie. Décoché, c'est au jeu de se connecter, pour essayer son vrai menu ;
+  `Multiplayer.TestInstance` lui dit lequel il est (1, 2...), et vaut 0 hors de ce mode.
+- **Pause**, **Step** et **Stop** agissent sur tous. Une partie en pause reste dans la session. Fermer une
+  fenêtre n'arrête que ce jeu, et Play se termine avec le dernier. Fermer celui qui héberge déconnecte les autres.
+- **Output** réunit leurs journaux, préfixés par `[Player 2]`. Le débogueur C# vise le premier.
+- À partir de deux joueurs, Play lance toujours des processus séparés, même réglé sur **Inside Editor**.
+
+Chacun démarre quand le précédent est prêt. Tous partagent les sauvegardes et les réglages du joueur, et tous
+jouent le son.

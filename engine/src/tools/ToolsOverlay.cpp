@@ -844,7 +844,9 @@ bool ToolsOverlay::automaticCodeCompilation() const
     return m_state->scripts.automaticCompilation;
 }
 
-bool ToolsOverlay::playInSeparateProcess() const { return m_state->scripts.separateProcess; }
+bool ToolsOverlay::playInSeparateProcess() const { return m_state->scripts.playsSeparately(); }
+std::uint32_t ToolsOverlay::playInstances() const { return m_state->scripts.playInstances; }
+bool ToolsOverlay::connectPlayInstances() const { return m_state->scripts.connectPlayInstances; }
 void ToolsOverlay::setExternalPlayStatus(ExternalPlayStatus status)
 {
     m_state->externalPlay = status;

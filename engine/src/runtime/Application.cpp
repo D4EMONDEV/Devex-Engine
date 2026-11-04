@@ -404,7 +404,7 @@ private:
     bool m_inFrame = false;
     int m_exitCode = EXIT_SUCCESS;
     tools::PlayState m_playState = tools::PlayState::Editing;
-    PlayProcess m_externalPlay;
+    PlayGroup m_externalPlay;
     std::unique_ptr<EditorPlayClient> m_editorClient;
     // The copy of the scene that plays in the editor.
     std::optional<scene::Scene> m_playScene;
@@ -1139,6 +1139,8 @@ void ApplicationRunner::runFrame()
             gameplayTime = m_timestep.step();
         if (gameplayTime)
             runGameplay(*gameplayTime);
+        else if (m_multiplayer)
+            m_multiplayer->keepAlive();
         updateFrameWorlds(frameTime, true, gameplayTime);
         if (canRender && !m_application.m_quitRequested)
         {
@@ -1556,8 +1558,8 @@ void ApplicationRunner::startExternalPlay(bool waitForDebugger)
 #else
     const auto player = m_services.platform.baseDirectory() / "devex-player";
 #endif
-    if (auto started =
-            m_externalPlay.start(project, m_services.scene, source, player, waitForDebugger);
+    if (auto started = m_externalPlay.start(project, m_services.scene, source, player, waitForDebugger, m_services.tools->playInstances(),
+                                            m_services.tools->connectPlayInstances(), m_services.window.usableArea());
         !started)
         DEVEX_LOG_ERROR("Cannot start the game process: {}", started.error());
     m_services.tools->setExternalPlayStatus(m_externalPlay.status());
@@ -2300,6 +2302,10 @@ void ApplicationRunner::createPhysics()
     m_multiplayer = std::make_unique<net::Multiplayer>();
     m_replication = std::make_unique<NetworkReplication>(*m_multiplayer);
     m_application.m_multiplayer = m_multiplayer.get();
+    if (m_editorClient)
+    {
+        m_editorClient->startNetwork(*m_multiplayer);
+    }
     declareGameRpcs();
     if (m_services.tools != nullptr)
     {
@@ -3605,6 +3611,17 @@ int run(Application& application, const ApplicationConfig& config)
         effective.presentMode = vsync ? render::PresentMode::Fifo : render::PresentMode::Immediate;
     }
 
+    // One of the games Play starts together: its part of the screen, in a window that says which it is.
+    std::optional<detail::PlayInstance> instance;
+    if (!config.editorSession.empty())
+    {
+        if (const core::Result<detail::PlaySession> session = detail::readPlaySession(config.editorSession); session && session->instance.count > 1)
+        {
+            instance = session->instance;
+            effective.title = std::format("{} (player {})", effective.title, instance->index);
+            fullscreen = false;
+        }
+    }
     core::Result<platform::Window> window = platform->createWindow({
         .title = effective.title,
         .width = effective.width,
@@ -3617,6 +3634,10 @@ int run(Application& application, const ApplicationConfig& config)
     {
         DEVEX_LOG_FATAL("Cannot create the main window: {}", window.error());
         return EXIT_FAILURE;
+    }
+    if (instance && instance->area)
+    {
+        window->fitInto(*instance->area);
     }
 
     const math::Extent2D pixelSize = window->pixelSize();

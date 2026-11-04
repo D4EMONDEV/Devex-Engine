@@ -5580,6 +5580,8 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     mesure `DEVEX_STRESS_FOG` du banc d'essai (0,21 ms sur une RTX 4060) ; tests de l'extraction et
     d'un brouillard qui cache un cube puis qu'un volume creuse ; API des jeux 40.
 
+103. ✅ **Plusieurs instances depuis Play** — un menu à côté de Play lance 1 à 4 jeux, chacun son processus,
+     côte à côte sur l'écran, connectés entre eux sans code. Pause et Stop agissent sur tous. Décisions plus bas.
 102. ✅ **Réplication** — `NetworkSpawner` et `NetworkSync`, sans code : ce qui est instancié sous l'un
      apparaît chez tous, les champs cochés sur l'autre suivent leur autorité, avec le mouvement lissé.
      L'autorité vient de l'hôte, et ceux qui arrivent en cours de partie reçoivent tout. Décisions plus bas.
@@ -5630,8 +5632,8 @@ Les étapes, chacune testée et commitée à part :
 3. ✅ **La réplication** (jalon 102) : un composant qui fait apparaître les objets chez tous, comme
    `MultiplayerSpawner`, et un qui synchronise leurs champs, comme `MultiplayerSynchronizer`, en passant
    par la réflexion des composants, avec le lissage du côté de ceux qui reçoivent. Décisions ci-dessous.
-4. **Dans l'éditeur** : lancer plusieurs instances depuis Play, chacune son processus, comme « Run
-   Multiple Instances » de Godot.
+4. ✅ **Dans l'éditeur** (jalon 103) : lancer plusieurs instances depuis Play, chacune son processus,
+   comme « Run Multiple Instances » de Godot. Décisions ci-dessous.
 5. **Un exemple jouable et la documentation** : deux joueurs dans l'arène du bac à sable.
 
 Les appels à distance, décidés avec l'utilisateur :
@@ -5679,6 +5681,27 @@ La réplication, décidée avec l'utilisateur :
   joueur en a l'autorité, et suit ce qu'il reçoit en poussant ce qu'il touche.
 - **Pour un client, ce qui est apparu part avec la session.** Le code de changement de scène reste au jeu, par un
   appel à distance par exemple : changer de scène oublie ce que la réplication suivait.
+
+Plusieurs instances depuis Play, décidées avec l'utilisateur :
+
+- **Un menu à côté de Play** : 1 à 4 joueurs, et « Connect them ». Le choix est personnel, avec les autres
+  réglages de Play. Écarté : le ranger dans les réglages de l'éditeur, à ouvrir à chaque changement.
+- **Connectés tout seuls, ce qui se coupe** : la première héberge sur un port libre, les autres la rejoignent
+  avant leur `Start`, et `Host` et `Join` du jeu réussissent sans rien changer : son code reste celui de la
+  vraie partie. Coupé, le jeu se connecte lui-même, pour essayer son vrai menu, et `TestInstance` lui dit
+  laquelle il est. Écarté : comme Godot, au jeu de tout faire, à chaque essai.
+- **Côte à côte** : elles se partagent l'écran de l'éditeur, en fenêtré même si le projet est en plein écran,
+  et leur titre dit quel joueur elles sont. Une seule garde les réglages du projet.
+- **Chacune démarre quand la précédente est prête** : l'hôte est là pour les autres, et elles ne se disputent
+  pas le disque. Toutes les copies de la scène sont faites au clic sur Play, pour jouer la même scène même si
+  on la change pendant que la dernière démarre. Si l'une échoue, les suivantes ne partent pas.
+- **Pause et Stop agissent sur toutes.** Fermer une fenêtre n'arrête que celle-là, Play finit avec la dernière ;
+  fermer l'hôte déconnecte les autres, qui voient `Disconnected`. Les journaux se suivent dans Output, préfixés
+  par `[Player 2]`. Le débogueur C# vise la première.
+- **Plusieurs jeux ne peuvent pas tourner dans l'éditeur** : à partir de deux, Play passe aux processus séparés,
+  même réglé sur Inside Editor.
+- **Une partie en pause reste dans la session** : `keepAlive` répond aux autres et relaie entre eux, en gardant
+  les événements pour la reprise. Sans lui, les autres la croyaient partie au bout de dix secondes.
 
 ## Réflexions de l'écran (SSR) — 2026-11-04
 

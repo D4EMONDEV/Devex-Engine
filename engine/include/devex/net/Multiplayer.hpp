@@ -69,6 +69,9 @@ struct DEVEX_API NetworkEvent
 // address. They only reach each other through the host, which passes their messages on. Nothing here
 // runs by itself: the application polls it once a frame, on the thread of the game, and the events it
 // finds are what game code reads until the next poll.
+// A port of this machine that nothing listens on at the moment, 0 when there is none.
+[[nodiscard]] DEVEX_API std::uint16_t findFreePort();
+
 class DEVEX_API Multiplayer
 {
 public:
@@ -88,6 +91,9 @@ public:
 
     // Reads what arrived, passing on the messages between clients when hosting, and replaces the events.
     void poll();
+    // While the game is paused: answers the others so that they do not take it for gone, and passes on
+    // what is for them, keeping the events for the next poll.
+    void keepAlive();
     // Sends what waits, which otherwise leaves with the next poll.
     void flush();
     [[nodiscard]] std::span<const NetworkEvent> events() const noexcept;
@@ -132,7 +138,16 @@ public:
     // The number this game calls with: its own, or the host's when it plays alone.
     [[nodiscard]] PeerId caller() const noexcept;
 
+    // Among the instances Play starts together in the editor, which one this is, from 1; 0 otherwise.
+    void setTestInstance(std::uint32_t instance) noexcept;
+    [[nodiscard]] std::uint32_t testInstance() const noexcept;
+    // From now on, a game that hosts or joins while it is in a session is told it did, without anything
+    // changing: Play connected these instances, and the code of the game can stay as it is.
+    void keepTestSession() noexcept;
+
 private:
+    void service();
+
     struct Impl;
     std::unique_ptr<Impl> m_impl;
 };

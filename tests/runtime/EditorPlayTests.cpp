@@ -12,6 +12,7 @@
 #include <thread>
 
 using namespace devex;
+using runtime::detail::PlayGroup;
 using runtime::detail::PlayProcess;
 using namespace std::chrono_literals;
 
@@ -50,8 +51,8 @@ struct Fixture
     }
 };
 
-template <class Predicate>
-bool until(PlayProcess& process, Predicate predicate, std::chrono::milliseconds limit = 5s)
+template <class Controller, class Predicate>
+bool until(Controller& process, Predicate predicate, std::chrono::milliseconds limit = 5s)
 {
     const auto end = std::chrono::steady_clock::now() + limit;
     do
@@ -160,4 +161,115 @@ TEST_CASE("A missing standalone player reports a launch error without changing t
     CHECK_FALSE(player.status().running);
     CHECK(scene::saveScene(scene) == before);
     CHECK_FALSE(std::filesystem::exists(fixture.project.cacheDirectory() / "play"));
+}
+
+namespace
+{
+[[nodiscard]] bool logged(const Fixture& fixture, std::string_view text)
+{
+    return std::ranges::any_of(fixture.logs, [&](const auto& log) { return log.second.find(text) != std::string::npos; });
+}
+} // namespace
+
+TEST_CASE("Play starts several games, connected to one another, stopped together", "[runtime][playprocess][net]")
+{
+    Fixture fixture;
+    scene::Scene scene;
+    static_cast<void>(scene.createEntity("Ask"));
+    PlayGroup group;
+    REQUIRE(group.start(fixture.project, scene, {}, DEVEX_TEST_PLAY_PROCESS, false, 3, true, platform::ScreenArea{.width = 1600, .height = 900}));
+    CHECK(group.status().running);
+    CHECK(group.status().starting);
+
+    // Each is in the session as soon as it runs, and the others come. What a game does to host changes
+    // nothing, which it sees as done.
+    REQUIRE(until(group, [&] { return logged(fixture, "[Player 3] Network instance=3 online=true host=false"); }, 30s));
+    REQUIRE(until(group, [&] { return logged(fixture, "[Player 1] Network instance=1 online=true host=true peer=1 others=2 asked=true"); }, 15s));
+    REQUIRE(until(group, [&] { return logged(fixture, "[Player 2] Network instance=2 online=true host=false peer=2 others=2 asked=true"); }, 15s));
+    CHECK(logged(fixture, "[Player 3] Network instance=3 online=true host=false peer=3 others=2 asked=true"));
+    CHECK_FALSE(group.status().starting);
+
+    // Paused and stopped together.
+    group.pause(true);
+    CHECK(group.pauseRequested());
+    REQUIRE(until(group, [&] { return group.status().paused; }));
+    group.pause(false);
+    REQUIRE(until(group, [&] { return !group.status().paused; }));
+    group.stop();
+    REQUIRE(until(group, [&] { return !group.status().running; }, 10s));
+}
+
+TEST_CASE("Play can leave it to the game to connect its instances", "[runtime][playprocess][net]")
+{
+    Fixture fixture;
+    scene::Scene scene;
+    static_cast<void>(scene.createEntity("Arena"));
+    PlayGroup group;
+    REQUIRE(group.start(fixture.project, scene, {}, DEVEX_TEST_PLAY_PROCESS, false, 2, false, platform::ScreenArea{.width = 1600, .height = 900}));
+    // Each knows which it is, and nothing has connected them.
+    REQUIRE(until(group, [&] { return logged(fixture, "[Player 1] Network instance=1 online=false") && logged(fixture, "[Player 2] Network instance=2 online=false"); }, 30s));
+    group.shutdown();
+    CHECK_FALSE(group.status().running);
+}
+
+TEST_CASE("Games that come after a failed one in Play do not start", "[runtime][playprocess][net]")
+{
+    Fixture fixture;
+    scene::Scene scene;
+    // A game that cannot open its project ends before it is ready. A failed game keeps its snapshot, and
+    // the one that never started does not leave one.
+    std::filesystem::remove(fixture.project.file);
+    PlayGroup group;
+    REQUIRE(group.start(fixture.project, scene, {}, DEVEX_TEST_PLAY_PROCESS, false, 2, true, {}));
+    REQUIRE(until(group, [&] { return !group.status().running; }, 30s));
+    const auto snapshots = std::ranges::distance(std::filesystem::directory_iterator(fixture.project.cacheDirectory() / "play"), std::default_sentinel);
+    CHECK(snapshots == 1);
+}
+
+TEST_CASE("A game Play started reads which one it is and where its window goes", "[runtime][playprocess][net]")
+{
+    Fixture fixture;
+    scene::Scene scene;
+    PlayProcess process;
+    const runtime::detail::PlayInstance instance{.index = 2, .count = 4, .port = 47123, .area = platform::ScreenArea{.x = -100, .y = 20, .width = 800, .height = 450}};
+    REQUIRE(process.prepare(fixture.project, scene, {}, true, instance));
+    const auto directory = process.directory();
+    const auto session = runtime::detail::readPlaySession(directory);
+    REQUIRE(session);
+    CHECK(session->waitForDebugger);
+    CHECK(session->instance.index == 2);
+    CHECK(session->instance.count == 4);
+    CHECK(session->instance.port == 47123);
+    REQUIRE(session->instance.area.has_value());
+    CHECK(session->instance.area->x == -100);
+    CHECK(session->instance.area->y == 20);
+    CHECK(session->instance.area->width == 800);
+    CHECK(session->instance.area->height == 450);
+}
+
+TEST_CASE("A prepared game that never starts leaves nothing behind", "[runtime][playprocess]")
+{
+    Fixture fixture;
+    scene::Scene scene;
+    std::filesystem::path directory;
+    {
+        PlayProcess process;
+        REQUIRE(process.prepare(fixture.project, scene, {}, false, {}));
+        directory = process.directory();
+        CHECK(std::filesystem::exists(directory));
+    }
+    CHECK_FALSE(std::filesystem::exists(directory));
+}
+
+TEST_CASE("The games of Play share the screen, side by side or in a grid", "[runtime][playprocess]")
+{
+    const platform::ScreenArea screen{.x = 100, .y = 50, .width = 1600, .height = 900};
+    const auto first = runtime::detail::playWindowArea(screen, 1, 2);
+    const auto second = runtime::detail::playWindowArea(screen, 2, 2);
+    CHECK((first.x == 100 && first.y == 50 && first.width == 800 && first.height == 900));
+    CHECK((second.x == 900 && second.y == 50 && second.width == 800 && second.height == 900));
+    const auto third = runtime::detail::playWindowArea(screen, 3, 3);
+    CHECK((third.x == 100 && third.y == 500 && third.width == 800 && third.height == 450));
+    const auto fourth = runtime::detail::playWindowArea(screen, 4, 4);
+    CHECK((fourth.x == 900 && fourth.y == 500 && fourth.width == 800 && fourth.height == 450));
 }

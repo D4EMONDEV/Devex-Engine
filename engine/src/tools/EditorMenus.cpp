@@ -385,6 +385,9 @@ struct MenuBarUi : PanelBuilder
     Entity codeIcon;
     Entity codeText;
     std::array<Button, 4> play{};
+    // Beside Play: how many games it starts.
+    Button playInstances;
+    Entity playInstancesText;
 
     void build(EditorUiKit& kit, ToolsMode mode);
     void sync(ToolsState& state, EditorUiKit& kit);
@@ -477,6 +480,17 @@ void MenuBarUi::build(EditorUiKit& kit, ToolsMode mode)
             play[index].entity = add(right, "Button", middle({tool, tool}), "bar_button");
             scene().add<scene::UiImage>(play[index].entity);
             scene().add<scene::UiButton>(play[index].entity);
+            if (index == 0)
+            {
+                // Between Play and Pause, a little narrower, with the count when it is more than one.
+                playInstances.entity = add(right, "Button", middle({tool * 1.15f, tool}), "bar_button");
+                scene().add<scene::UiImage>(playInstances.entity);
+                scene().add<scene::UiButton>(playInstances.entity);
+                playInstancesText = text(playInstances.entity, UiRect{.anchorMin = {0.0f, 0.0f}, .anchorMax = {0.5f, 1.0f}}, "", {}, false, scene::TextAlign::Center);
+                playInstances.icon = icon(kit, playInstances.entity,
+                                          UiRect{.anchorMin = {0.5f, 0.5f}, .anchorMax = {0.5f, 0.5f}, .offsetMin = {0.0f, -tool * 0.25f}, .offsetMax = {tool * 0.5f, tool * 0.25f}},
+                                          Icon::ChevronDown, {});
+            }
             play[index].icon = icon(kit, play[index].entity, whole(math::Vec4{std::round(tool * 0.22f)}), glyphs[index], "icon");
         }
     }
@@ -484,6 +498,32 @@ void MenuBarUi::build(EditorUiKit& kit, ToolsMode mode)
     {
         text(right, middle({font * 10.0f, height}), "F1 hides the tools", "dim", false, scene::TextAlign::Right);
     }
+}
+
+// What opens the menu of the instances among the owners of menus: past those of the titles of the bar.
+constexpr std::size_t playInstancesMenuOwner = 900;
+
+[[nodiscard]] std::vector<MenuEntry> playInstancesMenu(const ToolsState& state)
+{
+    std::vector<MenuEntry> entries;
+    for (std::uint32_t count = 1; count <= maxPlayInstances; ++count)
+    {
+        entries.push_back(MenuEntry{.label = count == 1 ? std::string("1 player") : std::format("{} players", count),
+                                    .checked = state.scripts.playInstances == count,
+                                    .action = [count](ToolsState& changed, scene::Scene&) {
+                                        changed.scripts.playInstances = count;
+                                        saveUserSettings(changed);
+                                    }});
+    }
+    entries.push_back(MenuEntry::line());
+    entries.push_back(MenuEntry{.label = "Connect them",
+                                .enabled = state.scripts.playInstances > 1,
+                                .checked = state.scripts.connectPlayInstances,
+                                .action = [](ToolsState& changed, scene::Scene&) {
+                                    changed.scripts.connectPlayInstances = !changed.scripts.connectPlayInstances;
+                                    saveUserSettings(changed);
+                                }});
+    return entries;
 }
 
 std::vector<MenuEntry> MenuBarUi::entriesOf(ToolsState& state, scene::Scene& scene, std::size_t title) const
@@ -575,9 +615,16 @@ void MenuBarUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& edited
     if (world.wasClicked(play[0].entity) && editing && codeReady)
     {
         state.requests.play = true;
-        if (!state.scripts.separateProcess && state.mainScreen == MainScreen::Script)
+        if (!state.scripts.playsSeparately() && state.mainScreen == MainScreen::Script)
         {
             setMainScreen(state, state.camera.isTwoD() ? MainScreen::TwoD : MainScreen::ThreeD);
+        }
+    }
+    if (playInstances.entity.isValid() && world.wasClicked(playInstances.entity) && editing && layout != nullptr)
+    {
+        if (const ui::LaidOutRect* const rect = layout->find(playInstances.entity))
+        {
+            openEditorMenu(state, playInstancesMenu(state), panel.screenOf(math::Vec2{rect->min.x, panel.size().y}), playInstancesMenuOwner);
         }
     }
     if (world.wasClicked(play[1].entity) && !editing)
@@ -655,8 +702,8 @@ void MenuBarUi::sync(ToolsState& state, EditorUiKit& kit)
                                       paused && controllable};
     const std::array<bool, 4> lit{!editing, paused, false, false};
     const std::array<const char*, 4> hints{
-        codeReady ? (state.scripts.separateProcess ? "Play the scene in a separate process (F5)"
-                                                   : "Play the scene inside the editor (F5)")
+        codeReady ? (state.scripts.playsSeparately() ? "Play the scene in a separate process (F5)"
+                                                     : "Play the scene inside the editor (F5)")
                   : "Wait for the game code to build successfully before playing",
         "Pause (F7)", "Stop (F8)", "Step one fixed update (F9)"};
     for (std::size_t index = 0; index < bar.play.size(); ++index)
@@ -666,6 +713,15 @@ void MenuBarUi::sync(ToolsState& state, EditorUiKit& kit)
         bar.enable(bar.play[index], enabled[index] || lit[index]);
         scene.get<UiRect>(bar.play[index].icon).style = lit[index] ? "icon_accent" : "icon";
         bar.tooltip(bar.play[index].entity, hints[index]);
+    }
+    if (bar.playInstances.entity.isValid())
+    {
+        const std::uint32_t count = state.scripts.playInstances;
+        scene.get<UiRect>(bar.playInstances.entity).style = barStyle(panel.world(), bar.playInstances.entity, false);
+        bar.enable(bar.playInstances, editing);
+        scene.get<scene::UiText>(bar.playInstancesText).text = count > 1 ? std::to_string(count) : std::string{};
+        bar.tooltip(bar.playInstances.entity, count > 1 ? std::format("Play starts {} games side by side{}", count, state.scripts.connectPlayInstances ? ", connected to one another" : "")
+                                                        : std::string("How many games Play starts, to test multiplayer"));
     }
     if (state.externalPlay.running)
         bar.tooltip(
@@ -874,7 +930,7 @@ void handleEditorShortcuts(ToolsState& state, scene::Scene& scene)
     if (pressed(KeyModifiers{}, platform::Key::F5) && !running)
     {
         state.requests.play = true;
-        if (!state.scripts.separateProcess)
+        if (!state.scripts.playsSeparately())
             showSceneScreen(state, scene);
     }
     if ((pressed(KeyModifiers{.ctrl = true, .shift = true}, 'p') ||

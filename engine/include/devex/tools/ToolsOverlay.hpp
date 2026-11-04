@@ -357,6 +357,9 @@ public:
     void reportGameCrash(std::string report);
     [[nodiscard]] bool automaticCodeCompilation() const;
     [[nodiscard]] bool playInSeparateProcess() const;
+    // How many games Play starts, and whether they connect to one another by themselves.
+    [[nodiscard]] std::uint32_t playInstances() const;
+    [[nodiscard]] bool connectPlayInstances() const;
     void setExternalPlayStatus(ExternalPlayStatus status);
     void setAddonCommands(std::vector<asset::AddonCommand> commands);
     using AddonCommandExecutor = std::function<core::Result<void>(scene::Scene&, std::string_view,

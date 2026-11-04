@@ -75,6 +75,10 @@ ScriptSettings readScriptSettings(const serialization::TextSection& section)
     }
     if (const auto* value = section.findAttribute("separate_process"))
         settings.separateProcess = serialization::asBool(*value).value_or(true);
+    if (const auto* value = section.findAttribute("play_instances"))
+        settings.playInstances = static_cast<std::uint32_t>(std::clamp<std::int64_t>(serialization::asInteger(*value).value_or(1), 1, maxPlayInstances));
+    if (const auto* value = section.findAttribute("connect_play_instances"))
+        settings.connectPlayInstances = serialization::asBool(*value).value_or(true);
     return settings;
 }
 
@@ -99,6 +103,8 @@ serialization::TextSection writeScriptSettings(const ScriptSettings& settings)
     }
     section.attributes.push_back({"automatic_compilation", settings.automaticCompilation});
     section.attributes.push_back({"separate_process", settings.separateProcess});
+    section.attributes.push_back({"play_instances", std::int64_t{settings.playInstances}});
+    section.attributes.push_back({"connect_play_instances", settings.connectPlayInstances});
     return section;
 }
 

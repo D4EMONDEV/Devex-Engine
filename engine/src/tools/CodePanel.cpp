@@ -171,7 +171,7 @@ void DebuggingUi::update(ToolsState& state, EditorUiKit& kit, core::Duration del
     scene().get<scene::UiImage>(statusIcon).color = linearColor(color);
     scene().get<scene::UiText>(statusText).text = message;
     const bool separate = state.externalPlay.running ||
-                          (state.playState == PlayState::Editing && state.scripts.separateProcess);
+                          (state.playState == PlayState::Editing && state.scripts.playsSeparately());
     scene().get<scene::UiText>(process).text =
         separate && !state.externalPlay.running
             ? "Start Play for the game PID"

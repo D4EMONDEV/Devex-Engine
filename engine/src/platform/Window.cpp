@@ -110,6 +110,33 @@ void Window::setSize(math::Extent2D size)
     SDL_SetWindowSize(window, static_cast<int>(size.width), static_cast<int>(size.height));
 }
 
+ScreenArea Window::usableArea() const
+{
+    DEVEX_ASSERT(m_native != nullptr);
+    SDL_Rect bounds{};
+    if (!SDL_GetDisplayUsableBounds(SDL_GetDisplayForWindow(detail::toSdlWindow(m_native)), &bounds))
+    {
+        return {};
+    }
+    return {.x = bounds.x, .y = bounds.y, .width = static_cast<std::uint32_t>(bounds.w), .height = static_cast<std::uint32_t>(bounds.h)};
+}
+
+void Window::fitInto(const ScreenArea& area)
+{
+    DEVEX_ASSERT(m_native != nullptr);
+    SDL_Window* const window = detail::toSdlWindow(m_native);
+    int top = 0;
+    int left = 0;
+    int bottom = 0;
+    int right = 0;
+    // Not every system tells before the window is shown: without it, the frame goes a little over.
+    static_cast<void>(SDL_GetWindowBordersSize(window, &top, &left, &bottom, &right));
+    SDL_RestoreWindow(window);
+    SDL_SetWindowSize(window, std::max(static_cast<int>(area.width) - left - right, 1), std::max(static_cast<int>(area.height) - top - bottom, 1));
+    SDL_SetWindowPosition(window, area.x + left, area.y + top);
+    SDL_SyncWindow(window);
+}
+
 void Window::center()
 {
     DEVEX_ASSERT(m_native != nullptr);

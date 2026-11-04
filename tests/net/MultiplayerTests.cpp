@@ -427,3 +427,66 @@ TEST_CASE("A remote call says where it runs, to one player or on this game", "[n
     CHECK(client.session.caller() == client.session.localPeer());
     CHECK(host.session.caller() == devex::net::hostPeer);
 }
+
+TEST_CASE("A paused game keeps its place in the session, with what arrived meanwhile", "[net]")
+{
+    const std::uint16_t port = nextPort();
+    Player host;
+    Player client;
+    REQUIRE(host.session.host(port));
+    REQUIRE(client.session.join("127.0.0.1", port));
+    REQUIRE(until({&host, &client}, [&] { return client.session.state() == MultiplayerState::Online && host.session.peers().size() == 1; }));
+
+    // Longer than a silent player is waited for, the host only keeping alive.
+    say(client, devex::net::hostPeer, "pendant la pause");
+    const auto end = std::chrono::steady_clock::now() + std::chrono::seconds(11);
+    while (std::chrono::steady_clock::now() < end)
+    {
+        host.session.keepAlive();
+        client.session.poll();
+        client.session.flush();
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    CHECK(client.session.state() == MultiplayerState::Online);
+    CHECK(host.session.peers().size() == 1);
+
+    // Back to playing, it finds what came.
+    host.session.poll();
+    const auto events = host.session.events();
+    host.events.assign(events.begin(), events.end());
+    CHECK(host.lastMessage(client.session.localPeer()) == "pendant la pause");
+    // And not twice.
+    host.session.poll();
+    CHECK(host.session.events().empty());
+}
+
+TEST_CASE("The instances of Play stay as they are when their game connects", "[net]")
+{
+    const std::uint16_t port = devex::net::findFreePort();
+    REQUIRE(port != 0);
+    Player host;
+    Player client;
+    // A game that is not one of them does not get this: it is told it cannot.
+    REQUIRE(host.session.host(port));
+    CHECK_FALSE(host.session.host(port));
+    CHECK_FALSE(host.session.join("127.0.0.1", port));
+
+    host.session.keepTestSession();
+    host.session.setTestInstance(1);
+    client.session.keepTestSession();
+    client.session.setTestInstance(2);
+    CHECK(host.session.testInstance() == 1);
+    REQUIRE(client.session.join("127.0.0.1", port));
+    REQUIRE(until({&host, &client}, [&] { return client.session.state() == MultiplayerState::Online; }));
+    CHECK(host.session.host(port + 1).has_value());
+    CHECK(host.session.join("127.0.0.1", port + 1).has_value());
+    CHECK(client.session.host(port + 1).has_value());
+    CHECK(client.session.join("127.0.0.1", port + 1).has_value());
+    CHECK(host.session.isHost());
+    CHECK_FALSE(client.session.isHost());
+
+    // After leaving, it connects as any game.
+    client.session.leave();
+    CHECK(client.session.host(devex::net::findFreePort()).has_value());
+    CHECK(client.session.isHost());
+}

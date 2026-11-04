@@ -358,6 +358,7 @@ struct NativeApi
     void (*multiplayerLoopbackRpc)(const std::byte* bytes, int length);
     void (*multiplayerSetAuthority)(void* scene, Entity entity, std::uint32_t peer);
     std::uint32_t (*multiplayerAuthority)(const UuidBytes* entity);
+    std::uint32_t (*multiplayerTestInstance)();
 };
 
 // The functions the engine calls, in the order of Devex.Managed's ManagedApi.
@@ -373,7 +374,7 @@ struct ManagedApi
 };
 
 // Devex.Managed's Bootstrap.Version: both sides change it with the function tables.
-constexpr int bootstrapVersion = 31;
+constexpr int bootstrapVersion = 32;
 
 struct BootstrapArguments
 {
@@ -1154,6 +1155,11 @@ void apiMultiplayerSetAuthority(void* scene, Entity entity, std::uint32_t peer)
 std::uint32_t apiMultiplayerAuthority(const UuidBytes* entity)
 {
     return multiplayer() != nullptr ? multiplayer()->authority(toUuid(entity)) : net::hostPeer;
+}
+
+std::uint32_t apiMultiplayerTestInstance()
+{
+    return multiplayer() != nullptr ? multiplayer()->testInstance() : 0;
 }
 
 [[nodiscard]] audio::AudioWorld* audioWorld() noexcept
@@ -3126,6 +3132,7 @@ int apiRaycastSolid(const math::Vec3* origin, const math::Vec3* direction, float
         .multiplayerLoopbackRpc = &apiMultiplayerLoopbackRpc,
         .multiplayerSetAuthority = &apiMultiplayerSetAuthority,
         .multiplayerAuthority = &apiMultiplayerAuthority,
+        .multiplayerTestInstance = &apiMultiplayerTestInstance,
     };
 }
 

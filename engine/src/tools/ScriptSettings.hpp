@@ -37,6 +37,8 @@ struct LanguageServerSettings
     bool operator==(const LanguageServerSettings&) const = default;
 };
 
+inline constexpr std::uint32_t maxPlayInstances = 4;
+
 // User preferences, independent of the project. The three entries are C#, C++ and Devex text.
 struct ScriptSettings
 {
@@ -44,6 +46,16 @@ struct ScriptSettings
     std::array<LanguageServerSettings, 2> languageServers;
     bool automaticCompilation = true;
     bool separateProcess = true;
+    // How many games Play starts, each with its own process and window, and whether they connect to one
+    // another by themselves: the first hosts and the others join.
+    std::uint32_t playInstances = 1;
+    bool connectPlayInstances = true;
+
+    // Several games cannot all play inside the editor.
+    [[nodiscard]] bool playsSeparately() const noexcept
+    {
+        return separateProcess || playInstances > 1;
+    }
 
     bool operator==(const ScriptSettings&) const = default;
 };

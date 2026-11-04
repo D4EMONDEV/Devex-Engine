@@ -33,6 +33,15 @@ namespace detail {
 struct NativeWindow;
 } // namespace detail
 
+// A part of a display, in the coordinates of windows.
+struct DEVEX_API ScreenArea
+{
+    int x = 0;
+    int y = 0;
+    std::uint32_t width = 0;
+    std::uint32_t height = 0;
+};
+
 // An operating system window, created by Platform::createWindow. It must be destroyed before the
 // Platform that created it.
 class DEVEX_API Window
@@ -61,6 +70,10 @@ public:
     void setSize(math::Extent2D size);
     // Centers the window on its display.
     void center();
+    // What the display it is on leaves to windows, without the task bars and the like.
+    [[nodiscard]] ScreenArea usableArea() const;
+    // Fills a part of a display, its frame included.
+    void fitInto(const ScreenArea& area);
     void maximize();
     // Leaves the maximized or minimized state.
     void restore();
