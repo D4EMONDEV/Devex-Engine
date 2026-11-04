@@ -622,8 +622,13 @@ bool isInsidePrefabInstance(const Scene& scene, Entity entity) noexcept
 
 core::Result<Entity> instantiatePrefab(Scene& scene, asset::AssetId prefab, Entity parent)
 {
+    return instantiatePrefab(scene, prefab, parent, core::Uuid::generate());
+}
+
+core::Result<Entity> instantiatePrefab(Scene& scene, asset::AssetId prefab, Entity parent, core::Uuid instance)
+{
     detail::PrefabStack stack;
-    core::Result<detail::FlatScene> flat = detail::expandPrefab(prefab, core::Uuid::generate(), stack);
+    core::Result<detail::FlatScene> flat = detail::expandPrefab(prefab, instance, stack);
     if (!flat)
     {
         return std::unexpected(flat.error());

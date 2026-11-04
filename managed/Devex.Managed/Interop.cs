@@ -250,7 +250,7 @@ internal unsafe struct NativeApi
     public delegate* unmanaged<byte*, int, void> MultiplayerDeclareRpc;
     public delegate* unmanaged<uint, byte*, int, int> MultiplayerSendRpc;
     public delegate* unmanaged<byte*, int, void> MultiplayerLoopbackRpc;
-    public delegate* unmanaged<Uuid*, uint, void> MultiplayerSetAuthority;
+    public delegate* unmanaged<void*, Entity, uint, void> MultiplayerSetAuthority;
     public delegate* unmanaged<Uuid*, uint> MultiplayerAuthority;
 }
 
@@ -288,7 +288,7 @@ internal unsafe struct BootstrapArguments
 /// <summary>What the engine calls into: filling the function tables, then the game itself.</summary>
 public static unsafe class Bootstrap
 {
-    internal const int Version = 30;
+    internal const int Version = 31;
 
     internal static NativeApi Native;
     private static byte[]? _description;

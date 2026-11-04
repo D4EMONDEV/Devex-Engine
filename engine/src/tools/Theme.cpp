@@ -112,7 +112,7 @@ ThemeMetrics g_metrics = deriveThemeMetrics(ThemeSettings{}, 1.0f);
 
 [[nodiscard]] bool isEngineComponent(std::string_view name) noexcept
 {
-    constexpr std::array<std::string_view, 79> engineComponents{
+    constexpr std::array<std::string_view, 81> engineComponents{
         "Transform",       "MeshRenderer",        "Camera",       "DirectionalLight",
         "PointLight",      "SpotLight",           "Environment",  "Atmosphere", "Fog", "PostProcessVolume", "Terrain", "ReflectionProbe", "LightProbeVolume", "RigidBody",
         "BoxCollider",     "SphereCollider",      "CapsuleCollider", "CylinderCollider",
@@ -124,6 +124,7 @@ ThemeMetrics g_metrics = deriveThemeMetrics(ThemeSettings{}, 1.0f);
         "SpriteRenderer",  "SpriteAnimator",      "Tilemap",      "RigidBody2D",
         "BoxCollider2D",   "CircleCollider2D",    "CapsuleCollider2D", "PolygonCollider2D",
         "TilemapCollider2D", "CharacterController2D", "NavMeshSurface", "NavMeshAgent", "NavMeshObstacle",
+        "NetworkSpawner",  "NetworkSync",
         "UiPopup",         "UiContextMenu",       "UiTooltip",    "UiDropdown",
         "UiSplitter",      "UiFoldout",           "UiVirtualList", "UiTable",
         "UiTableRow",      "UiDragSource",        "UiDropTarget", "UiNumberField",
@@ -677,6 +678,10 @@ EntityIcon componentIcon(std::string_view componentName)
     if (componentName == "NavMeshSurface" || componentName == "NavMeshAgent")
     {
         return {icons::Footprints, colors.physics};
+    }
+    if (componentName == "NetworkSpawner" || componentName == "NetworkSync")
+    {
+        return {icons::Globe, colors.physics};
     }
     if (componentName == "NavMeshObstacle")
     {

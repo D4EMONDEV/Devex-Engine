@@ -158,6 +158,10 @@ constexpr std::array engineComponents{
                   "Moves a field of a component from one value to another over time."},
     ComponentInfo{"ParticleEmitter", "Particles", Category::Effects, "Emits particles: fire, smoke, sparks, rain."},
     ComponentInfo{"TrailRenderer", "Trail", Category::Effects, "Leaves a ribbon behind its entity as it moves."},
+    ComponentInfo{"NetworkSpawner", "Network spawner", Category::Network,
+                  "Every prefab instance placed under this entity by its authority appears on all the players' games, and goes from them when it is destroyed."},
+    ComponentInfo{"NetworkSync", "Network sync", Category::Network,
+                  "The fields of this entity's components that its authority keeps the same on the other players' games, with its movement smoothed."},
     ComponentInfo{"NavMeshSurface", "Navigation surface", Category::Navigation,
                   "Where agents walk, baked from the static colliders around it."},
     ComponentInfo{"NavMeshAgent", "Navigation agent", Category::Navigation,
@@ -234,6 +238,8 @@ std::string_view categoryName(CreationCategory category) noexcept
         return "Effects";
     case Category::Navigation:
         return "Navigation";
+    case Category::Network:
+        return "Network";
     case Category::GameCode:
         return "Game code";
     case Category::Count:

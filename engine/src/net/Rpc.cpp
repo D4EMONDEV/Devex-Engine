@@ -1,5 +1,7 @@
 #include <devex/net/Rpc.hpp>
 
+#include <devex/net/Bytes.hpp>
+
 #include <bit>
 #include <initializer_list>
 
@@ -12,146 +14,60 @@ namespace {
 // its value. Text and bytes start with their length on 4 bytes. The format C# writes too.
 constexpr std::size_t targetSize = 16;
 
-void writeNumber(std::vector<std::byte>& bytes, std::uint64_t value, std::size_t size)
-{
-    for (std::size_t index = 0; index < size; ++index)
-    {
-        bytes.push_back(static_cast<std::byte>(value >> (8 * index)));
-    }
-}
-
-void writeFloats(std::vector<std::byte>& bytes, std::initializer_list<float> values)
+void writeFloats(ByteWriter& writer, std::initializer_list<float> values)
 {
     for (const float value : values)
     {
-        writeNumber(bytes, std::bit_cast<std::uint32_t>(value), sizeof(float));
+        writer.decimal(value);
     }
 }
 
-void writeBytes(std::vector<std::byte>& bytes, std::span<const std::byte> value)
+void writeValue(ByteWriter& writer, const RpcValue& value)
 {
-    writeNumber(bytes, value.size(), sizeof(std::uint32_t));
-    bytes.insert(bytes.end(), value.begin(), value.end());
-}
-
-void writeValue(std::vector<std::byte>& bytes, const RpcValue& value)
-{
-    bytes.push_back(static_cast<std::byte>(value.index()));
+    writer.number(value.index(), 1);
     if (const bool* const flag = std::get_if<bool>(&value))
     {
-        bytes.push_back(static_cast<std::byte>(*flag ? 1 : 0));
+        writer.number(*flag ? 1 : 0, 1);
     }
     else if (const std::int64_t* const whole = std::get_if<std::int64_t>(&value))
     {
-        writeNumber(bytes, static_cast<std::uint64_t>(*whole), sizeof(std::int64_t));
+        writer.number(static_cast<std::uint64_t>(*whole), sizeof(std::int64_t));
     }
     else if (const double* const decimal = std::get_if<double>(&value))
     {
-        writeNumber(bytes, std::bit_cast<std::uint64_t>(*decimal), sizeof(double));
+        writer.wide(*decimal);
     }
     else if (const std::string* const text = std::get_if<std::string>(&value))
     {
-        writeBytes(bytes, std::as_bytes(std::span(*text)));
+        writer.text(*text);
     }
     else if (const math::Vec2* const vec2 = std::get_if<math::Vec2>(&value))
     {
-        writeFloats(bytes, {vec2->x, vec2->y});
+        writeFloats(writer, {vec2->x, vec2->y});
     }
     else if (const math::Vec3* const vec3 = std::get_if<math::Vec3>(&value))
     {
-        writeFloats(bytes, {vec3->x, vec3->y, vec3->z});
+        writeFloats(writer, {vec3->x, vec3->y, vec3->z});
     }
     else if (const math::Vec4* const vec4 = std::get_if<math::Vec4>(&value))
     {
-        writeFloats(bytes, {vec4->x, vec4->y, vec4->z, vec4->w});
+        writeFloats(writer, {vec4->x, vec4->y, vec4->z, vec4->w});
     }
     else if (const math::Quat* const quat = std::get_if<math::Quat>(&value))
     {
-        writeFloats(bytes, {quat->x, quat->y, quat->z, quat->w});
+        writeFloats(writer, {quat->x, quat->y, quat->z, quat->w});
     }
     else if (const core::Uuid* const uuid = std::get_if<core::Uuid>(&value))
     {
-        const std::span<const std::byte> identifier = std::as_bytes(std::span(uuid->bytes()));
-        bytes.insert(bytes.end(), identifier.begin(), identifier.end());
+        writer.uuid(*uuid);
     }
     else if (const std::vector<std::byte>* const raw = std::get_if<std::vector<std::byte>>(&value))
     {
-        writeBytes(bytes, *raw);
+        writer.sized(*raw);
     }
 }
 
-// Reads what comes from the network: past the end, every read gives nothing and it stays failed.
-class Reader
-{
-public:
-    explicit Reader(std::span<const std::byte> bytes)
-        : m_bytes(bytes)
-    {
-    }
-
-    [[nodiscard]] bool failed() const noexcept
-    {
-        return m_failed;
-    }
-
-    [[nodiscard]] std::span<const std::byte> take(std::size_t size) noexcept
-    {
-        if (m_failed || size > m_bytes.size() - m_at)
-        {
-            m_failed = true;
-            return {};
-        }
-        const std::span<const std::byte> taken = m_bytes.subspan(m_at, size);
-        m_at += size;
-        return taken;
-    }
-
-    [[nodiscard]] std::uint64_t number(std::size_t size) noexcept
-    {
-        std::uint64_t value = 0;
-        const std::span<const std::byte> taken = take(size);
-        for (std::size_t index = 0; index < taken.size(); ++index)
-        {
-            value |= std::to_integer<std::uint64_t>(taken[index]) << (8 * index);
-        }
-        return value;
-    }
-
-    [[nodiscard]] float decimal() noexcept
-    {
-        return std::bit_cast<float>(static_cast<std::uint32_t>(number(sizeof(float))));
-    }
-
-    [[nodiscard]] core::Uuid uuid() noexcept
-    {
-        const std::uint64_t high = bigNumber();
-        const std::uint64_t low = bigNumber();
-        return core::Uuid::fromParts(high, low);
-    }
-
-    [[nodiscard]] std::span<const std::byte> sized() noexcept
-    {
-        return take(static_cast<std::size_t>(number(sizeof(std::uint32_t))));
-    }
-
-private:
-    // The identifier keeps its bytes in the order the engine stores them, the first one the highest.
-    [[nodiscard]] std::uint64_t bigNumber() noexcept
-    {
-        std::uint64_t value = 0;
-        for (const std::byte byte : take(sizeof(std::uint64_t)))
-        {
-            value = (value << 8) | std::to_integer<std::uint64_t>(byte);
-        }
-        return value;
-    }
-
-    std::span<const std::byte> m_bytes;
-    std::size_t m_at = 0;
-    bool m_failed = false;
-};
-
-[[nodiscard]] std::optional<RpcValue> readValue(Reader& reader)
+[[nodiscard]] std::optional<RpcValue> readValue(ByteReader& reader)
 {
     const auto type = static_cast<std::size_t>(reader.number(1));
     switch (type)
@@ -206,7 +122,7 @@ private:
     }
 }
 
-[[nodiscard]] std::optional<RpcHeader> readHeader(Reader& reader)
+[[nodiscard]] std::optional<RpcHeader> readHeader(ByteReader& reader)
 {
     const core::Uuid target = reader.uuid();
     const auto length = static_cast<std::size_t>(reader.number(sizeof(std::uint16_t)));
@@ -233,28 +149,27 @@ core::Result<std::vector<std::byte>> encodeRpc(const RpcCall& call)
     }
     std::vector<std::byte> bytes;
     bytes.reserve(targetSize + sizeof(std::uint16_t) + call.name.size() + 1);
-    const std::span<const std::byte> target = std::as_bytes(std::span(call.target.bytes()));
-    bytes.insert(bytes.end(), target.begin(), target.end());
-    writeNumber(bytes, call.name.size(), sizeof(std::uint16_t));
-    const std::span<const std::byte> name = std::as_bytes(std::span(call.name));
-    bytes.insert(bytes.end(), name.begin(), name.end());
-    writeNumber(bytes, call.arguments.size(), 1);
+    ByteWriter writer(bytes);
+    writer.uuid(call.target);
+    writer.number(call.name.size(), sizeof(std::uint16_t));
+    writer.raw(std::as_bytes(std::span(call.name)));
+    writer.number(call.arguments.size(), 1);
     for (const RpcValue& argument : call.arguments)
     {
-        writeValue(bytes, argument);
+        writeValue(writer, argument);
     }
     return bytes;
 }
 
 std::optional<RpcHeader> decodeRpcHeader(std::span<const std::byte> bytes)
 {
-    Reader reader(bytes);
+    ByteReader reader(bytes);
     return readHeader(reader);
 }
 
 core::Result<RpcCall> decodeRpc(std::span<const std::byte> bytes)
 {
-    Reader reader(bytes);
+    ByteReader reader(bytes);
     const std::optional<RpcHeader> header = readHeader(reader);
     if (!header)
     {

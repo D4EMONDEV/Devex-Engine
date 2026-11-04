@@ -135,6 +135,8 @@ struct CardLine
         return Icon::Sparkles;
     case CreationCategory::Navigation:
         return Icon::Footprints;
+    case CreationCategory::Network:
+        return Icon::Globe;
     case CreationCategory::GameCode:
     case CreationCategory::Count:
         break;

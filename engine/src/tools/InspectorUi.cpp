@@ -474,6 +474,7 @@ void InspectorUi::clear(ToolsState& state, const scene::Scene& edited)
     }
     instanceEdit.reset();
     instanceRows.clear();
+    networkRows.clear();
     instanceColorRow.reset();
     generation = scene::componentRegistry().generation();
     ui::UiWorld& world = panel.world();
@@ -542,6 +543,10 @@ void InspectorUi::rebuild(ToolsState& state, EditorUiKit& kit, scene::Scene& edi
         if (!shared)
         {
             addInstanceParameters(kit, state, section, type, edited, active);
+        }
+        if (!shared && name == "NetworkSync")
+        {
+            addNetworkFields(section, edited, active);
         }
         if (!shared && name == "Tilemap")
         {
@@ -986,6 +991,7 @@ void InspectorUi::sync(ToolsState& state, EditorUiKit& kit, scene::Scene& edited
     if (single)
     {
         syncInstanceRows(edited, active);
+        syncNetworkFields(edited, active);
     }
     syncEntityColor(edited, inspected);
     filterProperties();
@@ -1921,6 +1927,7 @@ void InspectorUi::answer(ToolsState& state, EditorUiKit& kit, scene::Scene& edit
     if (inspected.size() == 1)
     {
         answerInstanceRows(state, edited, active);
+        answerNetworkFields(state, edited, active);
     }
     // A drag, a typed number or a colour ends as one step once nothing holds it anymore.
     for (std::size_t index = 0; index < rows.size(); ++index)

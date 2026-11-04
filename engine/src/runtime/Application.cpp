@@ -33,6 +33,7 @@
 #include <devex/runtime/FixedTimestep.hpp>
 #include <devex/runtime/GameExport.hpp>
 #include <devex/runtime/GameModule.hpp>
+#include <devex/runtime/NetworkReplication.hpp>
 #include <devex/scene/AssetReferences.hpp>
 #include <devex/scene/ComponentRegistry.hpp>
 #include <devex/scene/Prefab.hpp>
@@ -420,6 +421,7 @@ private:
     std::unique_ptr<navigation::NavigationWorld> m_navigation;
     std::unique_ptr<audio::AudioWorld> m_audio;
     std::unique_ptr<net::Multiplayer> m_multiplayer;
+    std::unique_ptr<NetworkReplication> m_replication;
     std::unique_ptr<animation::AnimationWorld> m_animation;
     std::vector<math::Vec3> m_animationViews;
     std::unique_ptr<animation::TweenWorld> m_tweens;
@@ -718,6 +720,10 @@ core::Result<void> ApplicationRunner::replaceScene(scene::Scene loaded, asset::A
     }
     // Native coroutine frames may borrow level component memory.
     m_coroutines.clear();
+    if (m_replication)
+    {
+        m_replication->sceneChanged();
+    }
     if (!keepGlobals)
     {
         m_particles->clear();
@@ -1187,6 +1193,7 @@ void ApplicationRunner::updateFrameWorlds(std::chrono::nanoseconds frameTime, bo
         // What this frame's code sent leaves now rather than with the next frame.
         if (m_multiplayer)
         {
+            m_replication->send(*m_application.m_scene, core::Duration(*gameplayTime));
             m_multiplayer->flush();
         }
         // Publish the changed local transforms, preserving interpolation of physics parents.
@@ -1239,6 +1246,7 @@ void ApplicationRunner::runGameplay(std::chrono::nanoseconds frameTime)
     if (m_multiplayer)
     {
         m_multiplayer->poll();
+        m_replication->receive(*m_application.m_scene, core::Duration(std::chrono::duration<double>(frameTime).count()));
     }
     const std::uint32_t steps = m_timestep.advance(frameTime);
     for (std::uint32_t step = 0; step < steps; ++step)
@@ -2290,6 +2298,7 @@ void ApplicationRunner::createPhysics()
     m_navigation = std::move(*navigationWorld);
     m_application.m_navigation = m_navigation.get();
     m_multiplayer = std::make_unique<net::Multiplayer>();
+    m_replication = std::make_unique<NetworkReplication>(*m_multiplayer);
     m_application.m_multiplayer = m_multiplayer.get();
     declareGameRpcs();
     if (m_services.tools != nullptr)
@@ -2312,6 +2321,7 @@ void ApplicationRunner::destroyPhysics()
     m_physics2d.reset();
     m_navigation.reset();
     // Leaves the session of the game that ends.
+    m_replication.reset();
     m_multiplayer.reset();
 }
 

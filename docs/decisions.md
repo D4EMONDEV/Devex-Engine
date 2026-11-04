@@ -5580,6 +5580,9 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     mesure `DEVEX_STRESS_FOG` du banc d'essai (0,21 ms sur une RTX 4060) ; tests de l'extraction et
     d'un brouillard qui cache un cube puis qu'un volume creuse ; API des jeux 40.
 
+102. ✅ **Réplication** — `NetworkSpawner` et `NetworkSync`, sans code : ce qui est instancié sous l'un
+     apparaît chez tous, les champs cochés sur l'autre suivent leur autorité, avec le mouvement lissé.
+     L'autorité vient de l'hôte, et ceux qui arrivent en cours de partie reçoivent tout. Décisions plus bas.
 101. ✅ **Appels à distance** — `[Rpc]` sur une méthode de composant en C#, `game.rpc(...)` en C++, de
      la forme de Godot : `Rpc(nameof(Hit), 25)`, `RpcId(joueur, nameof(Hit), 25)`. Seule l'autorité de
      l'entité appelle par défaut, l'hôte vérifie et ne relaie pas ce qu'il refuse. Décisions plus bas.
@@ -5624,9 +5627,9 @@ Les étapes, chacune testée et commitée à part :
    l'image. `Multiplayer` en C#, `SystemContext::multiplayer` en C++.
 2. ✅ **Les appels à distance** (jalon 101) : `[Rpc]` en C#, `GameRegistry::rpc` en C++, avec leurs
    arguments et qui a le droit de les appeler. Décisions ci-dessous.
-3. **La réplication** : un composant qui fait apparaître les objets chez tous, comme
+3. ✅ **La réplication** (jalon 102) : un composant qui fait apparaître les objets chez tous, comme
    `MultiplayerSpawner`, et un qui synchronise leurs champs, comme `MultiplayerSynchronizer`, en passant
-   par la réflexion des composants, avec le lissage du côté de ceux qui reçoivent.
+   par la réflexion des composants, avec le lissage du côté de ceux qui reçoivent. Décisions ci-dessous.
 4. **Dans l'éditeur** : lancer plusieurs instances depuis Play, chacune son processus, comme « Run
    Multiple Instances » de Godot.
 5. **Un exemple jouable et la documentation** : deux joueurs dans l'arène du bac à sable.
@@ -5638,8 +5641,7 @@ Les appels à distance, décidés avec l'utilisateur :
   quand un appel ne correspond pas à la méthode. Écarté : un générateur de code C# qui donnerait des
   appels typés, comme Unity Netcode, plus sûr mais une pièce de plus à faire tourner à chaque build.
 - **Seule l'autorité appelle par défaut**, l'hôte tant que le jeu ne dit pas autre chose
-  (`Multiplayer.SetAuthority`, le même sur chaque jeu, comme dans Godot) ; `[Rpc(AnyPeer = true)]`
-  ouvre à tous. L'expéditeur refuse et l'explique, et le destinataire revérifie toujours : celui qui
+  (`Multiplayer.SetAuthority`) ; `[Rpc(AnyPeer = true)]` ouvre à tous. L'expéditeur refuse et l'explique, et le destinataire revérifie toujours : celui qui
   triche n'obtient rien, et l'hôte ne relaie pas ce qu'il refuse.
 - **Un seul tableau des méthodes, dans `net::Multiplayer`**, que C++ et C# remplissent
   (`declareRpc`) : c'est lui qui accepte ou refuse, quels que soient les langages de part et d'autre.
@@ -5649,6 +5651,34 @@ Les appels à distance, décidés avec l'utilisateur :
   langage, l'appel attend la lecture suivante du réseau, une image plus tard, car les composants C#
   ne sont entre ses mains que pendant ses propres phases. Un nom appartient à un seul langage.
 - Les appels reçus tournent une fois par image, juste avant les systèmes et les composants d'Update.
+
+La réplication, décidée avec l'utilisateur :
+
+- **Les champs se cochent dans l'inspecteur** : `NetworkSync` liste `Transform.position` ou
+  `Health.value`, et une case par champ des composants de l'entité, C++ ou C#, sans code. Lire et écrire
+  passe par la réflexion : un composant C# a ses champs dans la mémoire native, comme les autres. Écarté :
+  un attribut `[Sync]`, qui n'aurait rien montré dans l'inspecteur.
+- **Les objets apparaissent comme dans Godot** : tout prefab instancié sous un `NetworkSpawner` par son
+  autorité apparaît chez tous, et disparaît chez tous quand il est détruit ; le code d'instanciation est
+  le même qu'en solo. L'identifiant de l'instance voyage, et ceux de ses entités en dérivent : les appels
+  à distance et les champs les retrouvent. Un objet de la scène détruit n'est pas suivi, comme dans Godot :
+  ce qui doit disparaître chez tous passe par un spawner. Écarté : un `Multiplayer.Spawn` explicite.
+- **Le mouvement est lissé avec un léger retard** : on garde ce qui arrive et on affiche 100 ms dans le
+  passé (`smoothing`), en interpolant. Seul le `Transform` l'est : un autre nombre, comme une vie, ne doit
+  pas passer par des valeurs inventées. Pas de prédiction : chacun bouge tout de suite ce qu'il gère.
+- **L'autorité vient de l'hôte, et tous suivent** : `SetAuthority` sur l'hôte part chez les autres, nouveaux
+  venus compris, couvre ce qui est sous l'entité, et un client ne peut pas la changer. C'est plus simple que
+  la règle de Godot, où chaque jeu doit fixer la même : elle s'oublie, surtout pour ceux qui arrivent après.
+  Une entité revient à l'hôte quand son joueur part.
+- **Valeurs non fiables tant qu'elles changent, fiables quand elles s'arrêtent** : tous les champs d'une entité
+  partent ensemble, à `rate` par seconde. Un paquet perdu est remplacé par le suivant, et les dernières valeurs
+  arrivent à coup sûr. Pas de différences champ par champ, qu'un paquet perdu rendrait fausses.
+- **L'hôte contrôle** ce que les clients envoient : il vérifie l'autorité avant d'appliquer et de transmettre.
+  Il garde l'état de la scène, ce qu'il donne à ceux qui arrivent.
+- **Un corps géré ailleurs ne simule pas ici** : un `RigidBody` dynamique passe en cinématique tant qu'un autre
+  joueur en a l'autorité, et suit ce qu'il reçoit en poussant ce qu'il touche.
+- **Pour un client, ce qui est apparu part avec la session.** Le code de changement de scène reste au jeu, par un
+  appel à distance par exemple : changer de scène oublie ce que la réplication suivait.
 
 ## Réflexions de l'écran (SSR) — 2026-11-04
 

@@ -2157,6 +2157,9 @@ namespace devex::ui {
   `setAuthority`, `remoteSender` ; en C++ `GameRegistry::rpc`, `runtime::rpc`, `runtime::rpcId`
   (`runtime/Game.hpp`), lancés par `dispatchRpcs` avant les systèmes d'Update ; en C# `[Rpc]`,
   `Component.Rpc`, `RpcId`, `IsAuthority` (`managed/Devex.Managed/Rpc.cs`, `RpcCodec` suit `net/Rpc.cpp`).
+- Réplication : `scene/NetworkComponents.hpp` (`NetworkSpawner`, `NetworkSync`), `runtime/NetworkReplication`
+  (`receive` après `poll`, `send` avant `flush`), `runtime::setAuthority` ; les cases sont dans
+  `tools/NetworkFieldsUi.cpp` ; `net/Bytes.hpp` écrit et lit ce qui voyage.
 - Export Android : `exportAndroid` (`runtime/AndroidExport.cpp`), appelé par `exportGame` ; réglages dans
   `ExportSettings::android` et clé dans `.devex/android-signing.dvx` (`asset::readAndroidSigning`) ;
   `findAndroidBuilds`, `findAndroidTools`, `GameCodeBuilder::buildForAndroid` ; le projet Gradle de

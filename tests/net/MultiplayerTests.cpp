@@ -353,21 +353,32 @@ TEST_CASE("Only the authority of an entity calls what is not open to all", "[net
     CHECK(callsOf(host, "Door.Open") == 0);
     CHECK(callsOf(other, "Door.Open") == 0);
 
-    // Given to the client on every game, it calls, and the host no longer does.
-    for (Player* player : {&host, &client, &other})
-    {
-        player->session.setAuthority(rpcTarget, clientPeer);
-    }
-    CHECK(client.session.isAuthority(rpcTarget));
+    // A client does not give it, even to itself.
+    client.session.setAuthority(rpcTarget, clientPeer);
+    CHECK_FALSE(client.session.isAuthority(rpcTarget));
+
+    // Given by the host, every game follows: the client calls, and the host no longer does.
+    host.session.setAuthority(rpcTarget, clientPeer);
+    REQUIRE(until({&host, &client, &other}, [&] { return client.session.isAuthority(rpcTarget) && other.session.authority(rpcTarget) == clientPeer; }));
     CHECK_FALSE(host.session.isAuthority(rpcTarget));
     CHECK_FALSE(client.session.sendRpc(devex::net::everyone, encoded("Door.Open")));
     REQUIRE(until({&host, &client, &other}, [&] { return callsOf(other, "Door.Open") == 1; }));
     CHECK_FALSE(host.session.sendRpc(devex::net::everyone, encoded("Door.Open")));
 
-    // A session forgets it when it ends.
+    // Who joins later knows as well.
+    Player late;
+    late.session.declareRpc("Door.Open", {});
+    REQUIRE(late.session.join("127.0.0.1", port));
+    REQUIRE(until({&host, &client, &other, &late}, [&] { return late.session.authority(rpcTarget) == clientPeer; }));
+
+    // A session forgets it when it ends, for the one that left.
     client.session.leave();
     CHECK(client.session.isAuthority(rpcTarget));
     CHECK(client.session.authority(rpcTarget) == devex::net::hostPeer);
+
+    // And for the others, it goes back to the host with the player that left.
+    REQUIRE(until({&host, &other, &late}, [&] { return other.session.authority(rpcTarget) == devex::net::hostPeer && late.session.authority(rpcTarget) == devex::net::hostPeer; }));
+    CHECK(host.session.isAuthority(rpcTarget));
 }
 
 TEST_CASE("A remote call says where it runs, to one player or on this game", "[net]")

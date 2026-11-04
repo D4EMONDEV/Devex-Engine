@@ -53,12 +53,16 @@ struct DEVEX_API NetworkEvent
         Message,
         // A remote call this game accepted: its bytes are what decodeRpc reads.
         Rpc,
+        // For the replication of the runtime, which says what its bytes mean.
+        Replication,
     };
 
     Kind kind = Kind::Message;
     // Who joined, left, or sent the message: the host vouches for it.
     PeerId peer = 0;
     std::vector<std::byte> bytes;
+    // How a message or a call came.
+    Delivery delivery = Delivery::Reliable;
 };
 
 // The network of a game, as a client-server session: a player hosts, and the others join it by its
@@ -109,9 +113,14 @@ public:
     // Gives a call to this game with the next poll.
     void loopbackRpc(std::span<const std::byte> call);
 
+    // To one player, or to everyone, for the replication of the runtime. A client only reaches the host,
+    // which decides what to pass on: it knows what its bytes mean.
+    void sendReplication(PeerId to, std::span<const std::byte> bytes, Delivery delivery);
+
     // The player that decides for an entity, and alone may call its methods unless they say anyPeer: the
-    // host, unless said otherwise. Every player sets the same, as nothing tells the others. The session
-    // forgets them when it ends, and keeps them when the player leaves.
+    // host, unless said otherwise. The host gives it, and every player follows, those who come later
+    // included; a client cannot give it, which is refused with the reason in the log. An entity goes back
+    // to the host when its player leaves, and the session forgets them when it ends.
     void setAuthority(const core::Uuid& entity, PeerId peer);
     [[nodiscard]] PeerId authority(const core::Uuid& entity) const noexcept;
     // Whether this game is that player; always, outside a session, where it is on its own.

@@ -76,7 +76,8 @@ class GameRegistry;
 // 44: ExportSettings, in Project, gained the export for Android.
 // 45: SystemContext gained the network of the game.
 // 46: SystemContext gained the game code that runs, and GameRegistry its remote calls.
-inline constexpr std::uint32_t gameApiVersion = 46;
+// 47: the scene gained the NetworkSpawner and NetworkSync components.
+inline constexpr std::uint32_t gameApiVersion = 47;
 
 enum class SystemPhase : std::uint8_t
 {

@@ -46,6 +46,9 @@
 #include <filesystem>
 #include <format>
 #include <memory>
+#include <devex/runtime/NetworkReplication.hpp>
+#include <devex/scene/NetworkComponents.hpp>
+
 #include <chrono>
 #include <functional>
 #include <string>
@@ -290,7 +293,7 @@ TEST_CASE("C# addon commands edit a scene without running the game and reload cl
 TEST_CASE("The C# runtime registers components and runs them", "[runtime][managed]")
 {
     const std::unique_ptr<ManagedGame> game = startRuntime();
-    CHECK(game->componentTypes().size() == 29);
+    CHECK(game->componentTypes().size() == 30);
 
     devex::scene::ComponentRegistry& registry = devex::scene::componentRegistry();
     const devex::scene::ComponentType* const mover = registry.find("Mover");
@@ -1841,4 +1844,55 @@ TEST_CASE("C# remote methods run when called, and call the other players", "[run
         std::this_thread::sleep_for(std::chrono::milliseconds(2));
     }
     CHECK(heard.size() == before);
+}
+
+TEST_CASE("The fields of a C# component follow, written by its code on one game", "[runtime][managed][net]")
+{
+    const auto game = startRuntime();
+    const auto* const probe = devex::scene::componentRegistry().find("SyncedProbe");
+    REQUIRE(probe != nullptr);
+
+    // The same entity on two games, whose C# only runs on the host.
+    const devex::core::Uuid uuid = devex::core::Uuid::fromParts(0xb1, 0xb2);
+    const auto addTo = [&](Scene& scene) {
+        const auto entity = *scene.createEntity(uuid, "Synced");
+        scene.add<devex::scene::Transform>(entity);
+        REQUIRE(probe->emplace(scene, entity) != nullptr);
+        devex::scene::NetworkSync& sync = scene.add<devex::scene::NetworkSync>(entity);
+        sync.fields = {"SyncedProbe.score", "SyncedProbe.name_given"};
+        sync.rate = 0.0f;
+        return entity;
+    };
+    Scene hostScene;
+    Scene clientScene;
+    const auto hostEntity = addTo(hostScene);
+    const auto clientEntity = addTo(clientScene);
+    devex::net::Multiplayer host;
+    devex::net::Multiplayer client;
+    devex::runtime::NetworkReplication hostReplication(host);
+    devex::runtime::NetworkReplication clientReplication(client);
+    REQUIRE(host.host(47398));
+    REQUIRE(client.join("127.0.0.1", 47398));
+
+    const auto frame = [&] {
+        const devex::core::Duration delta(0.016);
+        host.poll();
+        hostReplication.receive(hostScene, delta);
+        ManagedGame::Frame managed{.scene = &hostScene, .delta = delta, .multiplayer = &host};
+        game->runPhase(managed, devex::runtime::SystemPhase::Update);
+        hostReplication.send(hostScene, delta);
+        host.flush();
+        client.poll();
+        clientReplication.receive(clientScene, delta);
+        client.flush();
+    };
+    float* const score = &field<float>(*probe, const_cast<void*>(probe->find(clientScene, clientEntity)), "score");
+    for (int step = 0; step < 2000 && *score < 3.0f; ++step)
+    {
+        frame();
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    CHECK(*score >= 3.0f);
+    CHECK(field<std::string>(*probe, const_cast<void*>(probe->find(clientScene, clientEntity)), "name_given") == "du C#");
+    CHECK(hostScene.isAlive(hostEntity));
 }

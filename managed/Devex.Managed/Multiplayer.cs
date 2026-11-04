@@ -108,14 +108,14 @@ public static unsafe class Multiplayer
     internal static uint Caller => LocalPeer != 0 ? LocalPeer : HostPeer;
 
     /// <summary>
-    /// The player that decides for an entity, and alone may call its methods unless they say
-    /// <see cref="RpcAttribute.AnyPeer"/>: the host, unless said otherwise. Every player sets the same, as
-    /// nothing tells the others. The session forgets them when it ends.
+    /// The player that decides for an entity and what is under it, and alone may call its methods unless
+    /// they say <see cref="RpcAttribute.AnyPeer"/>: the host, unless said otherwise. The host gives it, and
+    /// every player follows, those who come later included; a client cannot give it. An entity goes back to
+    /// the host when its player leaves, and the session forgets them when it ends.
     /// </summary>
     public static void SetAuthority(Entity entity, uint peer)
     {
-        Uuid uuid = entity.Uuid;
-        Bootstrap.Native.MultiplayerSetAuthority(&uuid, peer);
+        Bootstrap.Native.MultiplayerSetAuthority(GameRuntime.CurrentScene.Pointer, entity, peer);
     }
 
     /// <summary>The player that decides for an entity.</summary>

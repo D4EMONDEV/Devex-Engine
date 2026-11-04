@@ -88,6 +88,8 @@ DEVEX_API void clearPrefabCache();
 
 // Creates an instance of the prefab with a new UUID, last under parent (a root when invalid).
 [[nodiscard]] DEVEX_API core::Result<Entity> instantiatePrefab(Scene& scene, asset::AssetId prefab, Entity parent = {});
+// Likewise with a given UUID, from which those of its entities derive: the same on every game of a session.
+[[nodiscard]] DEVEX_API core::Result<Entity> instantiatePrefab(Scene& scene, asset::AssetId prefab, Entity parent, core::Uuid instance);
 
 // The prefabs that a scene text instantiates directly.
 [[nodiscard]] DEVEX_API std::vector<asset::AssetId> prefabReferences(std::string_view sceneText);

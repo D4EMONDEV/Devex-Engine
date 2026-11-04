@@ -1,6 +1,7 @@
 #include "ManagedGame.hpp"
 #include "GlobalScenes.hpp"
 #include <devex/runtime/Globals.hpp>
+#include <devex/runtime/NetworkReplication.hpp>
 
 #include <devex/asset/AssetId.hpp>
 #include <devex/asset/Localization.hpp>
@@ -355,7 +356,7 @@ struct NativeApi
     void (*multiplayerDeclareRpc)(const char* name, int flags);
     int (*multiplayerSendRpc)(std::uint32_t to, const std::byte* bytes, int length);
     void (*multiplayerLoopbackRpc)(const std::byte* bytes, int length);
-    void (*multiplayerSetAuthority)(const UuidBytes* entity, std::uint32_t peer);
+    void (*multiplayerSetAuthority)(void* scene, Entity entity, std::uint32_t peer);
     std::uint32_t (*multiplayerAuthority)(const UuidBytes* entity);
 };
 
@@ -372,7 +373,7 @@ struct ManagedApi
 };
 
 // Devex.Managed's Bootstrap.Version: both sides change it with the function tables.
-constexpr int bootstrapVersion = 30;
+constexpr int bootstrapVersion = 31;
 
 struct BootstrapArguments
 {
@@ -1142,11 +1143,11 @@ void apiMultiplayerLoopbackRpc(const std::byte* bytes, int length)
     }
 }
 
-void apiMultiplayerSetAuthority(const UuidBytes* entity, std::uint32_t peer)
+void apiMultiplayerSetAuthority(void* scene, Entity entity, std::uint32_t peer)
 {
-    if (multiplayer() != nullptr)
+    if (multiplayer() != nullptr && scene != nullptr)
     {
-        multiplayer()->setAuthority(toUuid(entity), peer);
+        setAuthority(*toScene(scene), *multiplayer(), entity, peer);
     }
 }
 

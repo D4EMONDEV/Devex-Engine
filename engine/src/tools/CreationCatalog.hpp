@@ -31,6 +31,7 @@ enum class CreationCategory : std::uint8_t
     Animation,
     Effects,
     Navigation,
+    Network,
     GameCode,
     Count,
 };

@@ -185,10 +185,10 @@ TEST_CASE("Remote functions run on the same entity of the other game", "[runtime
     REQUIRE(until(host, client, [] { return !seen.text.empty(); }));
     CHECK(seen.text == "suite");
 
-    // Authority moves to the client on both games.
+    // Authority given to the client by the host, which both games follow.
     seen = {};
     host.session.setAuthority(uuid, clientPeer);
-    client.session.setAuthority(uuid, clientPeer);
+    REQUIRE(until(host, client, [&] { return client.session.isAuthority(uuid); }));
     devex::runtime::rpc(onHost, host.entity, "Player.Hit", 2);
     devex::runtime::rpc(onClient, client.entity, "Player.Hit", 3);
     REQUIRE(until(host, client, [] { return seen.hits != 0; }));

@@ -1,6 +1,7 @@
 #include <devex/net/Multiplayer.hpp>
 
 #include <devex/core/Log.hpp>
+#include <devex/net/Bytes.hpp>
 
 #include <enet/enet.h>
 
@@ -19,7 +20,7 @@ namespace devex::net {
 namespace {
 
 // Refuses players of another version of this protocol, given when they connect.
-constexpr std::uint32_t protocolVersion = 2;
+constexpr std::uint32_t protocolVersion = 3;
 constexpr std::size_t reliableChannel = 0;
 constexpr std::size_t unreliableChannel = 1;
 constexpr std::size_t channelCount = 2;
@@ -38,6 +39,10 @@ enum class Packet : std::uint8_t
     Data,
     // Likewise, with a remote call for a message.
     Rpc,
+    // Host to the clients: an entity, then the player that now decides for it.
+    Authority,
+    // Likewise as Data, for the replication of the runtime.
+    Replication,
 };
 
 constexpr std::size_t dataHeader = 1 + 2 * sizeof(PeerId);
@@ -57,7 +62,9 @@ void writeNumber(std::vector<std::byte>& bytes, std::uint32_t value)
 
 [[nodiscard]] constexpr NetworkEvent::Kind eventOf(Packet kind) noexcept
 {
-    return kind == Packet::Rpc ? NetworkEvent::Kind::Rpc : NetworkEvent::Kind::Message;
+    return kind == Packet::Rpc           ? NetworkEvent::Kind::Rpc
+           : kind == Packet::Replication ? NetworkEvent::Kind::Replication
+                                         : NetworkEvent::Kind::Message;
 }
 
 [[nodiscard]] core::Result<void> initializeEnet()
@@ -115,6 +122,33 @@ struct Multiplayer::Impl
     {
         const auto found = authorities.find(entity);
         return found != authorities.end() ? found->second : hostPeer;
+    }
+
+    // The host is who decides unless said otherwise, so that it need not be kept.
+    void remember(const core::Uuid& entity, PeerId peer)
+    {
+        if (peer == hostPeer)
+        {
+            authorities.erase(entity);
+        }
+        else
+        {
+            authorities.insert_or_assign(entity, peer);
+        }
+    }
+
+    void forgetAuthorityOf(PeerId peer)
+    {
+        std::erase_if(authorities, [peer](const auto& entry) { return entry.second == peer; });
+    }
+
+    [[nodiscard]] static std::vector<std::byte> authorityPacket(const core::Uuid& entity, PeerId peer)
+    {
+        std::vector<std::byte> packet{static_cast<std::byte>(Packet::Authority)};
+        ByteWriter writer(packet);
+        writer.uuid(entity);
+        writer.number(peer, sizeof(PeerId));
+        return packet;
     }
 
     // Whether a call that arrived may run, or be passed on. The sender has already refused what it knows
@@ -197,6 +231,10 @@ struct Multiplayer::Impl
         }
         enet_peer_timeout(event.peer, 0, timeoutMinimum, timeoutMaximum);
         sendTo(event.peer, welcome, Delivery::Reliable);
+        for (const auto& [entity, peer] : authorities)
+        {
+            sendTo(event.peer, authorityPacket(entity, peer), Delivery::Reliable);
+        }
         tellClients(Packet::PeerJoined, id, id);
         clients.push_back({.connection = event.peer, .id = id});
         peers.push_back(id);
@@ -213,6 +251,7 @@ struct Multiplayer::Impl
         const PeerId id = found->id;
         clients.erase(found);
         std::erase(peers, id);
+        forgetAuthorityOf(id);
         tellClients(Packet::PeerLeft, id, id);
         events.push_back({.kind = NetworkEvent::Kind::PeerLeft, .peer = id});
     }
@@ -233,9 +272,14 @@ struct Multiplayer::Impl
         {
             return;
         }
+        if (kind == Packet::Replication)
+        {
+            events.push_back({.kind = eventOf(kind), .peer = from, .bytes = {message.begin(), message.end()}, .delivery = delivery});
+            return;
+        }
         if (to == hostPeer || to == everyone)
         {
-            events.push_back({.kind = eventOf(kind), .peer = from, .bytes = {message.begin(), message.end()}});
+            events.push_back({.kind = eventOf(kind), .peer = from, .bytes = {message.begin(), message.end()}, .delivery = delivery});
         }
         if (to == hostPeer)
         {
@@ -276,7 +320,7 @@ struct Multiplayer::Impl
         }
     }
 
-    void received(std::span<const std::byte> bytes)
+    void received(std::span<const std::byte> bytes, Delivery delivery)
     {
         if (bytes.empty())
         {
@@ -287,6 +331,8 @@ struct Multiplayer::Impl
         {
             local = readNumber(bytes.data() + 1);
             peers.assign(1, hostPeer);
+            // The host decides from now on: it tells what it has decided so far next.
+            authorities.clear();
             for (std::size_t at = 1 + sizeof(PeerId); at + sizeof(PeerId) <= bytes.size(); at += sizeof(PeerId))
             {
                 peers.push_back(readNumber(bytes.data() + at));
@@ -304,16 +350,27 @@ struct Multiplayer::Impl
             else
             {
                 std::erase(peers, peer);
+                forgetAuthorityOf(peer);
             }
             events.push_back({.kind = kind == Packet::PeerJoined ? NetworkEvent::Kind::PeerJoined : NetworkEvent::Kind::PeerLeft, .peer = peer});
         }
-        else if ((kind == Packet::Data || kind == Packet::Rpc) && bytes.size() >= dataHeader)
+        else if ((kind == Packet::Data || kind == Packet::Rpc || kind == Packet::Replication) && bytes.size() >= dataHeader)
         {
             const std::span<const std::byte> message = bytes.subspan(dataHeader);
             const PeerId from = readNumber(bytes.data() + 1);
-            if (kind == Packet::Data || accepts(message, from))
+            if (kind != Packet::Rpc || accepts(message, from))
             {
-                events.push_back({.kind = eventOf(kind), .peer = from, .bytes = {message.begin(), message.end()}});
+                events.push_back({.kind = eventOf(kind), .peer = from, .bytes = {message.begin(), message.end()}, .delivery = delivery});
+            }
+        }
+        else if (kind == Packet::Authority)
+        {
+            ByteReader reader(bytes.subspan(1));
+            const core::Uuid entity = reader.uuid();
+            const auto peer = static_cast<PeerId>(reader.number(sizeof(PeerId)));
+            if (!reader.failed())
+            {
+                remember(entity, peer);
             }
         }
     }
@@ -433,14 +490,14 @@ void Multiplayer::poll()
             if (impl.hosting)
             {
                 const auto kind = bytes.empty() ? Packet::Welcome : static_cast<Packet>(std::to_integer<std::uint8_t>(bytes[0]));
-                if (kind == Packet::Data || kind == Packet::Rpc)
+                if (kind == Packet::Data || kind == Packet::Rpc || kind == Packet::Replication)
                 {
                     impl.relay(event, kind, bytes, event.channelID == unreliableChannel ? Delivery::Unreliable : Delivery::Reliable);
                 }
             }
             else
             {
-                impl.received(bytes);
+                impl.received(bytes, event.channelID == unreliableChannel ? Delivery::Unreliable : Delivery::Reliable);
             }
             enet_packet_destroy(event.packet);
             break;
@@ -550,9 +607,28 @@ void Multiplayer::loopbackRpc(std::span<const std::byte> call)
     m_impl->loopback.emplace_back(call.begin(), call.end());
 }
 
+void Multiplayer::sendReplication(PeerId to, std::span<const std::byte> bytes, Delivery delivery)
+{
+    Impl& impl = *m_impl;
+    if (impl.state == MultiplayerState::Online)
+    {
+        impl.sendPacket(Packet::Replication, impl.hosting ? to : hostPeer, bytes, delivery);
+    }
+}
+
 void Multiplayer::setAuthority(const core::Uuid& entity, PeerId peer)
 {
-    m_impl->authorities.insert_or_assign(entity, peer);
+    Impl& impl = *m_impl;
+    if (impl.state == MultiplayerState::Online && !impl.hosting)
+    {
+        DEVEX_LOG_ERROR("Player {} cannot give the authority of an entity: the host decides", impl.local);
+        return;
+    }
+    impl.remember(entity, peer);
+    for (const Impl::Client& client : impl.clients)
+    {
+        impl.sendTo(client.connection, Impl::authorityPacket(entity, peer), Delivery::Reliable);
+    }
 }
 
 PeerId Multiplayer::authority(const core::Uuid& entity) const noexcept

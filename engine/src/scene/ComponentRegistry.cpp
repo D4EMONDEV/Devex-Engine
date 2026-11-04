@@ -4,6 +4,7 @@
 #include <devex/scene/ComponentRegistry.hpp>
 #include <devex/scene/Components.hpp>
 #include <devex/scene/NavigationComponents.hpp>
+#include <devex/scene/NetworkComponents.hpp>
 #include <devex/scene/Physics2DComponents.hpp>
 #include <devex/scene/PhysicsComponents.hpp>
 #include <devex/scene/JointComponents.hpp>
@@ -146,6 +147,8 @@ ComponentRegistry& componentRegistry()
         builtins.add<DistanceJoint2D>();
         builtins.add<FixedJoint2D>();
         builtins.add<NavMeshSurface>();
+        builtins.add<NetworkSpawner>();
+        builtins.add<NetworkSync>();
         builtins.add<NavMeshAgent>();
         builtins.add<NavMeshObstacle>();
         builtins.add<AudioSource>();

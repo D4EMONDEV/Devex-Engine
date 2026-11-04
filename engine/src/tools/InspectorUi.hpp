@@ -194,6 +194,15 @@ struct InstanceRow
     PanelButton revert;
 };
 
+// A field of an entity that its NetworkSync can keep the same on every player's game.
+struct NetworkFieldRow
+{
+    // As the NetworkSync lists it: "Transform.position".
+    std::string name;
+    FormRow form;
+    scene::Entity control;
+};
+
 // An edit of the instance values of a renderer under way: its two fields when it began, which one
 // step of the history goes back to.
 struct InstanceEdit
@@ -262,6 +271,7 @@ struct InspectorUi : FormUi
     // Instance Shader Parameters; those of the shader of each material, read once from its artifact
     // until an import changes materials or shaders.
     std::vector<InstanceRow> instanceRows;
+    std::vector<NetworkFieldRow> networkRows;
     std::optional<std::size_t> instanceColorRow;
     std::optional<InstanceEdit> instanceEdit;
     std::unordered_map<asset::AssetId, std::vector<asset::ShaderParameter>> instanceUniforms;
@@ -290,6 +300,9 @@ struct InspectorUi : FormUi
     [[nodiscard]] std::string instanceSignature(const ToolsState& state, const scene::Scene& edited, std::span<const scene::Entity> inspected);
     void addInstanceParameters(EditorUiKit& kit, ToolsState& state, Section& section, const scene::ComponentType& type, const scene::Scene& edited,
                                scene::Entity active);
+    void addNetworkFields(Section& section, const scene::Scene& edited, scene::Entity active);
+    void syncNetworkFields(const scene::Scene& edited, scene::Entity active);
+    void answerNetworkFields(ToolsState& state, scene::Scene& edited, scene::Entity active);
     void syncInstanceRows(const scene::Scene& edited, scene::Entity active);
     void answerInstanceRows(ToolsState& state, scene::Scene& edited, scene::Entity active);
     void commitInstanceEdit(ToolsState& state, const scene::Scene& edited);
