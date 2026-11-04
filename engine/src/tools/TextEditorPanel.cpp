@@ -920,7 +920,9 @@ void ScriptUi::fillResults(ToolsState& state, EditorUiKit& kit)
     {
         for (const auto& diagnostic : state.codeDiagnostics)
         {
-            if (state.languageServices && state.languageServices->ready(diagnostic.path))
+            // The server sees only the files that are open: the compiler alone tells about the others.
+            if (state.languageServices && state.languageServices->ready(diagnostic.path) &&
+                findTextDocument(state, diagnostic.path) != nullptr)
                 continue;
             entries.push_back(
                 {{diagnostic.path,
