@@ -5580,6 +5580,8 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     mesure `DEVEX_STRESS_FOG` du banc d'essai (0,21 ms sur une RTX 4060) ; tests de l'extraction et
     d'un brouillard qui cache un cube puis qu'un volume creuse ; API des jeux 40.
 
+105. ✅ **Chemins** — le composant `Path3D`, une courbe de Bézier dessinée dans la vue 3D, et `PathFollower` qui la suit
+     sans code. Première étape du level design, plan ci-dessous.
 104. ✅ **Exemple multijoueur et documentation** — la scène `arena_online` du bac à sable : marcher, sauter et lancer des
      balles à plusieurs, avec un menu pour héberger ou rejoindre, et [docs/multiplayer.md](multiplayer.md). Décisions plus bas.
 103. ✅ **Plusieurs instances depuis Play** — un menu à côté de Play lance 1 à 4 jeux, chacun son processus,
@@ -5607,6 +5609,35 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     l'extraction ; mesure `DEVEX_STRESS_SSR` du banc d'essai ; API des jeux 43.
 
 Ensuite, sans ordre figé : à choisir dans les pistes ci-dessous.
+
+## Outils de level design — plan décidé le 2026-11-04
+
+Décidé avec l'utilisateur avant tout code. Le moteur n'avait que des splines pour interpoler les animations.
+
+Les étapes, chacune testée et commitée à part :
+
+1. ✅ **Les chemins** (jalon 105) : `Path3D` et `PathFollower`, comme le Path3D et le PathFollow3D de Godot. Le nom `Path` seul aurait pris
+   celui de `System.IO.Path` à tous les fichiers C# des jeux.
+2. **Les blocs CSG** : unions, soustractions et intersections de formes pour prototyper un niveau. Les routes et rails
+   extrudés le long d'un chemin viendront avec eux, qui savent produire un maillage.
+3. **La grille** : poser des pièces sur une grille 3D, comme GridMap.
+
+Les choix :
+
+- **Bézier avec poignées**, comme Godot : précis, et ce que l'utilisateur connaît. Écarté : des points seuls avec une
+  courbe Catmull-Rom, plus simple, mais sans autre contrôle de la forme que d'ajouter des points.
+- **Les points et les poignées vivent dans le composant**, dans le repère de l'entité : ils se sauvent avec la scène et
+  passent par l'historique comme tout champ. Ils restent hors de l'inspecteur, où trois nombres par ligne ne tiennent pas.
+- **Trois outils dans l'inspecteur, Move, Add et Remove**, qui prennent le bouton gauche de la vue tant qu'ils sont
+  choisis, comme le terrain. Les points se déplacent à leur hauteur, Ctrl les monte ou les descend, et les poignées restent
+  alignées sauf avec Maj. Cliquer sur le premier point referme la courbe.
+- **`PathFollower` tourne avant la physique**, une fois par image, pour que les corps cinématiques aillent où il les met.
+  En session, ce qui a un `NetworkSync` et un autre joueur pour autorité est laissé à ce joueur.
+- **La courbe se découpe en 24 segments par arc**, gardés tant que le chemin ne change pas, pour une vitesse régulière.
+  C# et le C++ peuvent la lire (`Paths`, `PathCurve`).
+- **Manifold pour le CSG**, par vcpkg, comme Godot depuis la 4.4 : robuste sur les cas limites, contrairement au BSP qu'il a
+  abandonné. **Calculé à la volée**, dans l'éditeur et au chargement du jeu : rien à oublier de recalculer, et un bloc peut
+  changer pendant la partie. Une commande pourra plus tard figer un bloc en mesh.
 
 ## Multijoueur — plan décidé le 2026-11-04
 

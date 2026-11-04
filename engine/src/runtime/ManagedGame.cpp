@@ -2,6 +2,7 @@
 #include "GlobalScenes.hpp"
 #include <devex/runtime/Globals.hpp>
 #include <devex/runtime/NetworkReplication.hpp>
+#include <devex/runtime/PathFollowers.hpp>
 
 #include <devex/asset/AssetId.hpp>
 #include <devex/asset/Localization.hpp>
@@ -359,6 +360,10 @@ struct NativeApi
     void (*multiplayerSetAuthority)(void* scene, Entity entity, std::uint32_t peer);
     std::uint32_t (*multiplayerAuthority)(const UuidBytes* entity);
     std::uint32_t (*multiplayerTestInstance)();
+    float (*pathLength)(void* scene, Entity entity);
+    void (*pathPositionAt)(void* scene, Entity entity, float distance, math::Vec3* position);
+    void (*pathDirectionAt)(void* scene, Entity entity, float distance, math::Vec3* direction);
+    float (*pathClosestDistance)(void* scene, Entity entity, const math::Vec3* position);
 };
 
 // The functions the engine calls, in the order of Devex.Managed's ManagedApi.
@@ -374,7 +379,7 @@ struct ManagedApi
 };
 
 // Devex.Managed's Bootstrap.Version: both sides change it with the function tables.
-constexpr int bootstrapVersion = 32;
+constexpr int bootstrapVersion = 33;
 
 struct BootstrapArguments
 {
@@ -1160,6 +1165,26 @@ std::uint32_t apiMultiplayerAuthority(const UuidBytes* entity)
 std::uint32_t apiMultiplayerTestInstance()
 {
     return multiplayer() != nullptr ? multiplayer()->testInstance() : 0;
+}
+
+float apiPathLength(void* scene, Entity entity)
+{
+    return scene != nullptr ? pathLength(*toScene(scene), entity) : 0.0f;
+}
+
+void apiPathPositionAt(void* scene, Entity entity, float distance, math::Vec3* position)
+{
+    *position = scene != nullptr ? pathPositionAt(*toScene(scene), entity, distance) : math::Vec3{0.0f};
+}
+
+void apiPathDirectionAt(void* scene, Entity entity, float distance, math::Vec3* direction)
+{
+    *direction = scene != nullptr ? pathDirectionAt(*toScene(scene), entity, distance) : math::Vec3{0.0f, 0.0f, -1.0f};
+}
+
+float apiPathClosestDistance(void* scene, Entity entity, const math::Vec3* position)
+{
+    return scene != nullptr ? pathClosestDistance(*toScene(scene), entity, *position) : 0.0f;
 }
 
 [[nodiscard]] audio::AudioWorld* audioWorld() noexcept
@@ -3133,6 +3158,10 @@ int apiRaycastSolid(const math::Vec3* origin, const math::Vec3* direction, float
         .multiplayerSetAuthority = &apiMultiplayerSetAuthority,
         .multiplayerAuthority = &apiMultiplayerAuthority,
         .multiplayerTestInstance = &apiMultiplayerTestInstance,
+        .pathLength = &apiPathLength,
+        .pathPositionAt = &apiPathPositionAt,
+        .pathDirectionAt = &apiPathDirectionAt,
+        .pathClosestDistance = &apiPathClosestDistance,
     };
 }
 

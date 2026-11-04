@@ -195,6 +195,10 @@ struct InstanceRow
 };
 
 // A field of an entity that its NetworkSync can keep the same on every player's game.
+void addPathEditor(InspectorUi& ui, EditorUiKit& kit, Section& section);
+void syncPathEditor(InspectorUi& ui, const ToolsState& state, const scene::Scene& edited, scene::Entity entity, Section& section);
+void answerPathEditor(InspectorUi& ui, ToolsState& state, Section& section);
+
 struct NetworkFieldRow
 {
     // As the NetworkSync lists it: "Transform.position".

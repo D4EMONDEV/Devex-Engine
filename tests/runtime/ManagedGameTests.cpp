@@ -48,6 +48,7 @@
 #include <memory>
 #include <devex/runtime/NetworkReplication.hpp>
 #include <devex/scene/NetworkComponents.hpp>
+#include <devex/scene/PathComponents.hpp>
 
 #include <chrono>
 #include <functional>
@@ -293,7 +294,7 @@ TEST_CASE("C# addon commands edit a scene without running the game and reload cl
 TEST_CASE("The C# runtime registers components and runs them", "[runtime][managed]")
 {
     const std::unique_ptr<ManagedGame> game = startRuntime();
-    CHECK(game->componentTypes().size() == 30);
+    CHECK(game->componentTypes().size() == 31);
 
     devex::scene::ComponentRegistry& registry = devex::scene::componentRegistry();
     const devex::scene::ComponentType* const mover = registry.find("Mover");
@@ -1895,4 +1896,28 @@ TEST_CASE("The fields of a C# component follow, written by its code on one game"
     CHECK(*score >= 3.0f);
     CHECK(field<std::string>(*probe, const_cast<void*>(probe->find(clientScene, clientEntity)), "name_given") == "du C#");
     CHECK(hostScene.isAlive(hostEntity));
+}
+
+TEST_CASE("C# code reads a path and changes what follows it", "[runtime][managed]")
+{
+    const auto game = startRuntime();
+    Scene scene;
+    const auto entity = scene.createEntity("Rail");
+    scene.add<devex::scene::Transform>(entity).position = {0.0f, 1.0f, 0.0f};
+    scene.add<devex::scene::WorldTransform>(entity).matrix = scene.get<devex::scene::Transform>(entity).matrix();
+    scene.add<devex::scene::Path3D>(entity).points = {{0.0f, 0.0f, 0.0f}, {10.0f, 0.0f, 0.0f}};
+    auto& follower = scene.add<devex::scene::PathFollower>(entity);
+    const auto* const probe = devex::scene::componentRegistry().find("PathProbe");
+    REQUIRE(probe != nullptr);
+    REQUIRE(probe->emplace(scene, entity) != nullptr);
+    ManagedGame::Frame frame{.scene = &scene, .delta = devex::core::Duration(0.016)};
+    game->runPhase(frame, devex::runtime::SystemPhase::Update);
+    game->runPhase(frame, devex::runtime::SystemPhase::Update);
+    const auto number = [&](const char* name) { return field<float>(*probe, const_cast<void*>(probe->find(scene, entity)), name); };
+    CHECK(number("length") == Catch::Approx(10.0f));
+    CHECK(number("middle_x") == Catch::Approx(5.0f));
+    CHECK(number("direction_x") == Catch::Approx(1.0f));
+    CHECK(number("closest") == Catch::Approx(3.0f));
+    CHECK(number("no_path") == 0.0f);
+    CHECK(follower.speed == 7.0f);
 }

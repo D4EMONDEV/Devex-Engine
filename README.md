@@ -16,7 +16,7 @@ et rendu avec Vulkan. Il est distribué sous licence [MIT](LICENSE).
   chaud par l'éditeur ; le C# atteint ce que le C++ d'un jeu atteint (composants, mondes, fenêtre,
   terrains, données des assets) ;
 - éditeur au style inspiré de Godot : gestionnaire de projets, onglets de scènes, viewport,
-  gizmos, [multijoueur](docs/multiplayer.md) et [mode Play dans un processus séparé](docs/editor-play.md) ; il passe sur l'interface des jeux, pour n'avoir qu'un seul système
+  gizmos, [chemins](docs/level-design.md), [multijoueur](docs/multiplayer.md) et [mode Play dans un processus séparé](docs/editor-play.md) ; il passe sur l'interface des jeux, pour n'avoir qu'un seul système
   d'interface : tous les panneaux, le dock (emplacements, onglets, barres) et les modales le sont,
   l'éditeur lit lui-même le clavier et la souris et décide qui les reçoit, et le renderer compose
   ses images avec le pipeline de cette interface, aux espacements du thème de Godot. Dear ImGui

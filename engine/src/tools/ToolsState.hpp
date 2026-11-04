@@ -648,6 +648,36 @@ enum class TerrainBrushTool : std::uint8_t
     Grass,
 };
 
+enum class PathTool : std::uint8_t
+{
+    None,
+    Move,
+    Add,
+    Remove,
+};
+
+enum class PathPart : std::uint8_t
+{
+    Point,
+    HandleIn,
+    HandleOut,
+};
+
+// Drawing a Path3D in the view: the tool the Inspector chose, the point in hand, and what the path was
+// before the drag, which is what one step of the history goes back to.
+struct DEVEX_API PathEditor
+{
+    PathTool tool = PathTool::None;
+    std::optional<std::size_t> selected;
+    PathPart part = PathPart::Point;
+    bool dragging = false;
+    core::Uuid target;
+    serialization::TextValue points;
+    serialization::TextValue handlesIn;
+    serialization::TextValue handlesOut;
+    serialization::TextValue closed;
+};
+
 struct DEVEX_API TerrainPainter
 {
     TerrainBrushTool tool = TerrainBrushTool::None;
@@ -858,6 +888,7 @@ struct DEVEX_API ToolsState
     std::uint64_t materialRevision = 0;
     TilePainter tilePainter;
     TerrainPainter terrainPainter;
+    PathEditor pathEditor;
     std::shared_ptr<TerrainAccess> terrains;
     // A file just created, selected once it is imported, as a res:// path.
     std::string assetToSelect;
@@ -1278,6 +1309,10 @@ DEVEX_API bool handleTilePainting(ToolsState& state, scene::Scene& scene, const 
 // Sculpts and paints the selected terrain with the brush of the terrain painter, while a tool is
 // chosen; true when the viewport input went to it.
 DEVEX_API bool handleTerrainPainting(ToolsState& state, scene::Scene& scene, const ViewportView& view, math::Vec2 mouse, bool hovered);
+// The left button in the view while a tool of a Path3D is chosen; true when it takes it from the selection.
+DEVEX_API bool handlePathEditing(ToolsState& state, scene::Scene& scene, const ViewportView& view, math::Vec2 mouse, bool hovered);
+// The curves of a scene, faint unless selected, with the points and handles of those selected.
+DEVEX_API void addPathOverlay(const ToolsState& state, scene::Scene& scene, const std::unordered_set<std::uint32_t>& shown, std::vector<render::OverlayVertex>& lines);
 // The circle of the brush on the ground.
 DEVEX_API void addTerrainPainterOverlay(ToolsState& state, scene::Scene& scene, render::RenderWorld& world);
 // Writes the maps of the terrains of a scene that changed since they were saved to their files.

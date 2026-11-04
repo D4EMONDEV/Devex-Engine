@@ -327,6 +327,7 @@ devex_add_tests(runtime
         runtime/ManagedCodeBuilderTests.cpp
         runtime/ManagedGameTests.cpp
         runtime/NetworkReplicationTests.cpp
+        runtime/PathTests.cpp
         runtime/RemoteCallTests.cpp
         runtime/SaveGamesTests.cpp
         runtime/GameModuleTests.cpp

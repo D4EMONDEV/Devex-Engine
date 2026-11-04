@@ -544,6 +544,10 @@ void InspectorUi::rebuild(ToolsState& state, EditorUiKit& kit, scene::Scene& edi
         {
             addInstanceParameters(kit, state, section, type, edited, active);
         }
+        if (!shared && name == "Path3D")
+        {
+            addPathEditor(*this, kit, section);
+        }
         if (!shared && name == "NetworkSync")
         {
             addNetworkFields(section, edited, active);
@@ -1423,6 +1427,10 @@ void InspectorUi::syncExtras(ToolsState& state, EditorUiKit& kit, scene::Scene& 
     {
         syncTerrainPainter(*this, state, edited, active, section);
     }
+    if (section.pathEditor != nullptr)
+    {
+        syncPathEditor(*this, state, edited, active, section);
+    }
     if (section.navInfo.isValid())
     {
         const NavMeshSummary summary = navMeshSummary(state, edited.get<scene::NavMeshSurface>(active));
@@ -1969,6 +1977,10 @@ void InspectorUi::answer(ToolsState& state, EditorUiKit& kit, scene::Scene& edit
         if (section.terrainPainter != nullptr)
         {
             answerTerrainPainter(*this, state, section);
+        }
+        if (section.pathEditor != nullptr)
+        {
+            answerPathEditor(*this, state, section);
         }
         if (section.styleOpen.entity.isValid() && world.wasClicked(section.styleOpen.entity) && section.themeFile)
         {

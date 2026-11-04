@@ -30,7 +30,7 @@ struct DEVEX_API NetworkSync
     float smoothing = 0.1f;
 };
 
-DEVEX_API void devexReflect(reflection::TypeBuilder<NetworkSpawner>& type);
-DEVEX_API void devexReflect(reflection::TypeBuilder<NetworkSync>& type);
+DEVEX_DECLARE_ENGINE_REFLECTION(NetworkSpawner);
+DEVEX_DECLARE_ENGINE_REFLECTION(NetworkSync);
 
 } // namespace devex::scene

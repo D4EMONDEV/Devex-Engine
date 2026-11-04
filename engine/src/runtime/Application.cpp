@@ -34,6 +34,7 @@
 #include <devex/runtime/GameExport.hpp>
 #include <devex/runtime/GameModule.hpp>
 #include <devex/runtime/NetworkReplication.hpp>
+#include <devex/runtime/PathFollowers.hpp>
 #include <devex/scene/AssetReferences.hpp>
 #include <devex/scene/ComponentRegistry.hpp>
 #include <devex/scene/Prefab.hpp>
@@ -422,6 +423,7 @@ private:
     std::unique_ptr<audio::AudioWorld> m_audio;
     std::unique_ptr<net::Multiplayer> m_multiplayer;
     std::unique_ptr<NetworkReplication> m_replication;
+    PathFollowers m_pathFollowers;
     std::unique_ptr<animation::AnimationWorld> m_animation;
     std::vector<math::Vec3> m_animationViews;
     std::unique_ptr<animation::TweenWorld> m_tweens;
@@ -724,6 +726,7 @@ core::Result<void> ApplicationRunner::replaceScene(scene::Scene loaded, asset::A
     {
         m_replication->sceneChanged();
     }
+    m_pathFollowers.clear();
     if (!keepGlobals)
     {
         m_particles->clear();
@@ -1250,6 +1253,8 @@ void ApplicationRunner::runGameplay(std::chrono::nanoseconds frameTime)
         m_multiplayer->poll();
         m_replication->receive(*m_application.m_scene, core::Duration(std::chrono::duration<double>(frameTime).count()));
     }
+    // Before the physics, which moves the kinematic bodies among them to where this puts them.
+    m_pathFollowers.update(*m_application.m_scene, core::Duration(std::chrono::duration<double>(frameTime).count()), m_multiplayer.get());
     const std::uint32_t steps = m_timestep.advance(frameTime);
     for (std::uint32_t step = 0; step < steps; ++step)
     {
