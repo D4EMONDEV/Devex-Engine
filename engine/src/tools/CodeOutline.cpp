@@ -1,4 +1,5 @@
 #include "CodeOutline.hpp"
+#include "CodeHighlight.hpp"
 
 #include <algorithm>
 #include <array>
@@ -6,11 +7,6 @@
 
 namespace devex::tools::detail {
 namespace {
-
-[[nodiscard]] bool isIdentifierPart(char value) noexcept
-{
-    return std::isalnum(static_cast<unsigned char>(value)) != 0 || value == '_';
-}
 
 [[nodiscard]] std::string_view trimmed(std::string_view line) noexcept
 {

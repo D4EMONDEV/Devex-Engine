@@ -33,12 +33,6 @@ using scene::Entity;
 using scene::Scene;
 using scene::Transform;
 
-// Entities keep their handle in a scene, and a key tells a reused index from the entity that had it.
-[[nodiscard]] std::uint64_t keyOf(Entity entity) noexcept
-{
-    return static_cast<std::uint64_t>(entity.generation) << 32 | entity.index;
-}
-
 // The entities under the animator, by name: the bones a clip can drive. The animator itself is
 // included, so that a clip may drive the root of a model.
 void collectBones(const Scene& scene, Entity entity, std::vector<Entity>& bones,
@@ -349,19 +343,19 @@ struct AnimationWorld::Implementation
 
     [[nodiscard]] Playback* find(Entity entity)
     {
-        const auto found = playbacks.find(keyOf(entity));
+        const auto found = playbacks.find(scene::entityKey(entity));
         return found != playbacks.end() ? &found->second : nullptr;
     }
 
     [[nodiscard]] const Playback* find(Entity entity) const
     {
-        const auto found = playbacks.find(keyOf(entity));
+        const auto found = playbacks.find(scene::entityKey(entity));
         return found != playbacks.end() ? &found->second : nullptr;
     }
 
     [[nodiscard]] Playback& playbackOf(Entity entity)
     {
-        Playback& playback = playbacks[keyOf(entity)];
+        Playback& playback = playbacks[scene::entityKey(entity)];
         playback.entity = entity;
         return playback;
     }
@@ -397,7 +391,7 @@ struct AnimationWorld::Implementation
         playback.rest.clear();
         for (const Entity bone : playback.bones)
         {
-            const auto [found, created] = playback.rests.try_emplace(keyOf(bone));
+            const auto [found, created] = playback.rests.try_emplace(scene::entityKey(bone));
             if (created)
             {
                 const Transform& transform = sceneToRead.get<Transform>(bone);
@@ -519,7 +513,7 @@ struct AnimationWorld::Implementation
         {
             // Spread a crowd's pose ticks instead of evaluating every distant character on
             // the same frame. Changes of state still sample immediately.
-            const auto phase = (keyOf(playback.entity) * 0x9e3779b97f4a7c15ull) >> 40;
+            const auto phase = (scene::entityKey(playback.entity) * 0x9e3779b97f4a7c15ull) >> 40;
             playback.poseElapsed = float(phase) / 16777216.0f / rate;
         }
         if (!changed && !playback.poseDirty && tier > 0 && std::isfinite(rate) && rate > 0 &&
@@ -1306,7 +1300,7 @@ void AnimationWorld::update(scene::Scene& scene, core::Duration delta)
     seen.reserve(world.playbacks.size());
     for ([[maybe_unused]] auto [entity, animator] : scene.view<Animator>())
     {
-        const std::uint64_t key = keyOf(entity);
+        const std::uint64_t key = scene::entityKey(entity);
         seen.insert(key);
         Implementation::Playback& playback = world.playbacks[key];
         const bool created = !playback.started;

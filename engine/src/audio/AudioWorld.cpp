@@ -20,11 +20,6 @@ using detail::Voice;
 using scene::AudioSource;
 using scene::Entity;
 
-[[nodiscard]] std::uint64_t keyOf(Entity entity) noexcept
-{
-    return static_cast<std::uint64_t>(entity.generation) << 32 | entity.index;
-}
-
 [[nodiscard]] ma_attenuation_model attenuationModel(scene::AudioAttenuation attenuation) noexcept
 {
     switch (attenuation)
@@ -182,7 +177,7 @@ void AudioWorld::update(scene::Scene& scene, core::Duration delta)
     std::unordered_set<std::uint64_t> seen;
     for ([[maybe_unused]] auto [entity, source] : scene.view<AudioSource>())
     {
-        const std::uint64_t key = keyOf(entity);
+        const std::uint64_t key = scene::entityKey(entity);
         seen.insert(key);
         const std::optional<math::Mat4> matrix = worldMatrixOf(scene, entity);
         const math::Vec3 position = matrix ? math::Vec3((*matrix)[3]) : math::Vec3{0.0f};
@@ -282,7 +277,7 @@ void AudioWorld::play(scene::Scene& scene, scene::Entity entity)
     }
     Implementation& world = *m_implementation;
     world.useScene(scene);
-    SourceState& state = world.sources[keyOf(entity)];
+    SourceState& state = world.sources[scene::entityKey(entity)];
     state.entity = entity;
     if (!state.placed)
     {
@@ -297,7 +292,7 @@ void AudioWorld::play(scene::Scene& scene, scene::Entity entity)
 
 void AudioWorld::stop(scene::Entity entity)
 {
-    const auto found = m_implementation->sources.find(keyOf(entity));
+    const auto found = m_implementation->sources.find(scene::entityKey(entity));
     if (found != m_implementation->sources.end())
     {
         found->second.voice.reset();
@@ -307,7 +302,7 @@ void AudioWorld::stop(scene::Entity entity)
 
 void AudioWorld::pause(scene::Entity entity)
 {
-    const auto found = m_implementation->sources.find(keyOf(entity));
+    const auto found = m_implementation->sources.find(scene::entityKey(entity));
     if (found != m_implementation->sources.end() && found->second.voice != nullptr && found->second.playing)
     {
         ma_sound_stop(&found->second.voice->sound());
@@ -317,7 +312,7 @@ void AudioWorld::pause(scene::Entity entity)
 
 void AudioWorld::resume(scene::Entity entity)
 {
-    const auto found = m_implementation->sources.find(keyOf(entity));
+    const auto found = m_implementation->sources.find(scene::entityKey(entity));
     if (found != m_implementation->sources.end() && found->second.voice != nullptr && !found->second.playing &&
         !ma_sound_at_end(&found->second.voice->sound()))
     {
@@ -331,7 +326,7 @@ void AudioWorld::resume(scene::Entity entity)
 
 bool AudioWorld::isPlaying(scene::Entity entity) const
 {
-    const auto found = m_implementation->sources.find(keyOf(entity));
+    const auto found = m_implementation->sources.find(scene::entityKey(entity));
     return found != m_implementation->sources.end() && found->second.voice != nullptr && found->second.playing &&
            !ma_sound_at_end(&found->second.voice->sound());
 }

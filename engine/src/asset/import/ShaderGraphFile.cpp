@@ -16,20 +16,14 @@ using serialization::TextValue;
 
 constexpr std::int64_t shaderGraphFormat = 1;
 
-// The shortest text that reads back as the same float.
-[[nodiscard]] TextValue number(float value)
-{
-    return TextValue(std::stod(std::format("{}", value)));
-}
-
 [[nodiscard]] TextValue vector2(math::Vec2 value)
 {
-    return serialization::makeCall("vec2", {number(value.x), number(value.y)});
+    return serialization::makeCall("vec2", {serialization::shortestNumber(value.x), serialization::shortestNumber(value.y)});
 }
 
 [[nodiscard]] TextValue vector4(math::Vec4 value)
 {
-    return serialization::makeCall("vec4", {number(value.x), number(value.y), number(value.z), number(value.w)});
+    return serialization::makeCall("vec4", {serialization::shortestNumber(value.x), serialization::shortestNumber(value.y), serialization::shortestNumber(value.z), serialization::shortestNumber(value.w)});
 }
 
 // Numbers of vec2(...) to vec4(...), a number or a boolean; the components not given are zero.

@@ -51,12 +51,6 @@ constexpr int scanDepth = 6;
     return number ? static_cast<float>(*number) : fallback;
 }
 
-[[nodiscard]] const std::string* stringAttribute(const serialization::TextSection& section, std::string_view key)
-{
-    const TextValue* const value = section.findAttribute(key);
-    return value != nullptr ? serialization::asString(*value) : nullptr;
-}
-
 // The 3D view and the 2D view; the screen follows the kind of the scene.
 void writeCamera(serialization::TextSection& section, const EditorCamera& camera)
 {
@@ -268,12 +262,12 @@ void openProjectScenes(ToolsState& state, scene::Scene& scene)
             std::optional<std::filesystem::path> legacyScene;
             for (const serialization::TextSection& section : settings->sections)
             {
-                const std::string* const path = stringAttribute(section, section.type == "scene" ? "path" : "active_scene");
+                const std::string* const path = serialization::stringAttribute(section, section.type == "scene" ? "path" : "active_scene");
                 if (section.type == "editor")
                 {
                     activePath = path != nullptr ? database.project().absolutePath(*path) : std::nullopt;
                     // Editors before scene tabs remembered one scene.
-                    const std::string* const last = stringAttribute(section, "last_scene");
+                    const std::string* const last = serialization::stringAttribute(section, "last_scene");
                     legacyScene = last != nullptr ? database.project().absolutePath(*last) : std::nullopt;
                 }
                 else if (section.type == "camera")

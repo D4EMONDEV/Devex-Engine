@@ -1,5 +1,6 @@
 #include <devex/asset/import/ShaderFile.hpp>
 #include "CodeCompletion.hpp"
+#include "CodeHighlight.hpp"
 
 #include <devex/reflection/Reflection.hpp>
 #include <devex/scene/ComponentRegistry.hpp>
@@ -42,11 +43,6 @@ constexpr std::array cppApi{
     "DEVEX_REFLECT", "DEVEX_DECLARE_REFLECTION",     "DEVEX_LOG_INFO", "DEVEX_LOG_WARNING",
     "DEVEX_LOG_ERROR", "devex::math", "devex::scene", "devex::runtime",
 };
-
-[[nodiscard]] bool isIdentifierPart(char value) noexcept
-{
-    return std::isalnum(static_cast<unsigned char>(value)) != 0 || value == '_';
-}
 
 [[nodiscard]] char lowered(char value) noexcept
 {

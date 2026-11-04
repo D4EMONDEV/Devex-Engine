@@ -21,11 +21,6 @@ constexpr std::size_t maxRibbonPoints = 256;
 constexpr float prewarmStep = 1.0f / 30.0f;
 constexpr std::size_t maxPrewarmSteps = 600;
 
-[[nodiscard]] std::uint64_t keyOf(scene::Entity entity) noexcept
-{
-    return (static_cast<std::uint64_t>(entity.generation) << 32) | entity.index;
-}
-
 [[nodiscard]] std::uint32_t hash(std::uint32_t value) noexcept
 {
     value ^= value >> 16;
@@ -230,7 +225,7 @@ ParticleWorld::EmitterState* ParticleWorld::state(scene::Scene& scene, scene::En
     {
         return nullptr;
     }
-    std::unique_ptr<EmitterState>& found = m_emitters[keyOf(entity)];
+    std::unique_ptr<EmitterState>& found = m_emitters[scene::entityKey(entity)];
     if (!found)
     {
         found = std::make_unique<EmitterState>();
@@ -258,7 +253,7 @@ void ParticleWorld::update(scene::Scene& scene, core::Duration delta)
     std::vector<EmitterState*> running;
     for ([[maybe_unused]] auto [entity, settings] : scene.view<scene::ParticleEmitter>())
     {
-        const bool fresh = !m_emitters.contains(keyOf(entity));
+        const bool fresh = !m_emitters.contains(scene::entityKey(entity));
         EmitterState* const emitter = state(scene, entity);
         emitter->seen = true;
         emitter->settings = settings;
@@ -313,7 +308,7 @@ void ParticleWorld::update(scene::Scene& scene, core::Duration delta)
     }
     for ([[maybe_unused]] auto [entity, settings, world] : scene.view<scene::TrailRenderer, scene::WorldTransform>())
     {
-        std::unique_ptr<TrailState>& trail = m_trails[keyOf(entity)];
+        std::unique_ptr<TrailState>& trail = m_trails[scene::entityKey(entity)];
         if (!trail)
         {
             trail = std::make_unique<TrailState>();
@@ -670,7 +665,7 @@ void ParticleWorld::play(scene::Scene& scene, scene::Entity entity)
 
 void ParticleWorld::stop(scene::Entity entity, bool clear)
 {
-    const auto found = m_emitters.find(keyOf(entity));
+    const auto found = m_emitters.find(scene::entityKey(entity));
     if (found == m_emitters.end())
     {
         return;
@@ -690,7 +685,7 @@ void ParticleWorld::stop(scene::Entity entity, bool clear)
 
 void ParticleWorld::pause(scene::Entity entity)
 {
-    if (const auto found = m_emitters.find(keyOf(entity)); found != m_emitters.end())
+    if (const auto found = m_emitters.find(scene::entityKey(entity)); found != m_emitters.end())
     {
         found->second->paused = true;
     }
@@ -698,7 +693,7 @@ void ParticleWorld::pause(scene::Entity entity)
 
 void ParticleWorld::resume(scene::Entity entity)
 {
-    if (const auto found = m_emitters.find(keyOf(entity)); found != m_emitters.end())
+    if (const auto found = m_emitters.find(scene::entityKey(entity)); found != m_emitters.end())
     {
         found->second->paused = false;
     }
@@ -714,14 +709,14 @@ void ParticleWorld::emit(scene::Scene& scene, scene::Entity entity, std::int32_t
 
 bool ParticleWorld::isPlaying(scene::Entity entity) const
 {
-    const auto found = m_emitters.find(keyOf(entity));
+    const auto found = m_emitters.find(scene::entityKey(entity));
     return found != m_emitters.end() && (found->second->emitting || !found->second->particles.empty() ||
                                          found->second->pendingEmit > 0);
 }
 
 std::size_t ParticleWorld::particleCount(scene::Entity entity) const
 {
-    const auto found = m_emitters.find(keyOf(entity));
+    const auto found = m_emitters.find(scene::entityKey(entity));
     return found != m_emitters.end() ? found->second->particles.size() : 0;
 }
 

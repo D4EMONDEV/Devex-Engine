@@ -21,6 +21,9 @@ namespace devex::core {
 
 [[nodiscard]] DEVEX_API Result<std::vector<std::byte>> readBinaryFile(const std::filesystem::path& path);
 
+// When the file was last written; the earliest time when it cannot be read, as a file that is missing.
+[[nodiscard]] DEVEX_API std::filesystem::file_time_type lastWriteTime(const std::filesystem::path& path) noexcept;
+
 // Writes the bytes to a temporary file next to the destination, then renames it over the
 // destination: readers see either the previous contents or the new ones, never a partial file.
 [[nodiscard]] DEVEX_API Result<void> writeFileAtomically(const std::filesystem::path& path,

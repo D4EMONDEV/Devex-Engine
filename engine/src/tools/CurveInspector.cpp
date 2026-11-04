@@ -59,13 +59,6 @@ struct CurvePreset
     return curvePresets()[3].curve;
 }
 
-[[nodiscard]] std::filesystem::file_time_type writeTime(const std::filesystem::path& file)
-{
-    std::error_code error;
-    const std::filesystem::file_time_type time = std::filesystem::last_write_time(file, error);
-    return error ? std::filesystem::file_time_type{} : time;
-}
-
 // Reads the curve of the selected asset from its file, when another asset is selected or the file
 // changed outside the editor.
 void loadCurve(ToolsState& state, const asset::SourceFile& source)
@@ -76,7 +69,7 @@ void loadCurve(ToolsState& state, const asset::SourceFile& source)
     {
         return;
     }
-    const std::filesystem::file_time_type time = writeTime(*file);
+    const std::filesystem::file_time_type time = core::lastWriteTime(*file);
     if (editor.asset == state.selectedAsset && editor.file == *file && editor.fileTime == time)
     {
         return;
@@ -117,7 +110,7 @@ void saveCurve(ToolsState& state)
         DEVEX_LOG_ERROR("Cannot save the curve: {}", written.error());
         return;
     }
-    editor.fileTime = writeTime(editor.file);
+    editor.fileTime = core::lastWriteTime(editor.file);
     editor.error.clear();
     if (core::Result<void> queued = state.database->reimport(editor.asset); !queued)
     {

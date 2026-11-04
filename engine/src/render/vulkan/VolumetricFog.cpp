@@ -17,30 +17,6 @@ struct FogPushConstants
     VkDeviceAddress fog = 0;
 };
 
-std::uint32_t groups(std::uint32_t size)
-{
-    return (size + 7) / 8;
-}
-
-// Writes of a pass waited for by the passes that read them, on the GPU and in the frame.
-void barrier(VkCommandBuffer commands, VkPipelineStageFlags2 sourceStages, VkAccessFlags2 sourceAccess, VkPipelineStageFlags2 destinationStages,
-             VkAccessFlags2 destinationAccess)
-{
-    const VkMemoryBarrier2 memory{
-        .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
-        .srcStageMask = sourceStages,
-        .srcAccessMask = sourceAccess,
-        .dstStageMask = destinationStages,
-        .dstAccessMask = destinationAccess,
-    };
-    const VkDependencyInfo dependency{
-        .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-        .memoryBarrierCount = 1,
-        .pMemoryBarriers = &memory,
-    };
-    vkCmdPipelineBarrier2(commands, &dependency);
-}
-
 } // namespace
 
 core::Result<std::unique_ptr<VolumetricFogRenderer>> VolumetricFogRenderer::create(const Device& device, const Allocator& allocator,
@@ -189,7 +165,7 @@ void VolumetricFogRenderer::record(VkCommandBuffer commands, VkDescriptorSet glo
 {
     m_current = 1 - m_current;
     // The frames before may still sample what this one writes.
-    barrier(commands, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, 0, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+    memoryBarrier(commands, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, 0, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
             VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT);
     const FogPushConstants constants{.scene = scene, .fog = fog};
     const auto dispatch = [&](const Pipeline& pipeline, VkDescriptorSet set, std::uint32_t slices) {
@@ -198,14 +174,14 @@ void VolumetricFogRenderer::record(VkCommandBuffer commands, VkDescriptorSet glo
         vkCmdBindDescriptorSets(commands, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline.layout(), 0, static_cast<std::uint32_t>(sets.size()),
                                 sets.data(), 0, nullptr);
         vkCmdPushConstants(commands, pipeline.layout(), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(constants), &constants);
-        vkCmdDispatch(commands, groups(width), groups(height), slices);
+        vkCmdDispatch(commands, computeGroups(width), computeGroups(height), slices);
     };
     dispatch(*m_light, m_lightSets[m_current], depth);
-    barrier(commands, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+    memoryBarrier(commands, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
             VK_ACCESS_2_SHADER_SAMPLED_READ_BIT);
     dispatch(*m_integrate, m_integrateSets[m_current], 1);
     // Sampled by the surfaces and the sky of this frame, and by the lighting of the next.
-    barrier(commands, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
+    memoryBarrier(commands, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
             VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_SAMPLED_READ_BIT);
 }
 

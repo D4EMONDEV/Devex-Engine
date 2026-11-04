@@ -21,24 +21,6 @@ struct ReflectionPushConstants
     std::uint32_t height = 0;
 };
 
-void barrier(VkCommandBuffer commands, VkPipelineStageFlags2 sourceStages, VkAccessFlags2 sourceAccess, VkPipelineStageFlags2 destinationStages,
-             VkAccessFlags2 destinationAccess)
-{
-    const VkMemoryBarrier2 memory{
-        .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
-        .srcStageMask = sourceStages,
-        .srcAccessMask = sourceAccess,
-        .dstStageMask = destinationStages,
-        .dstAccessMask = destinationAccess,
-    };
-    const VkDependencyInfo dependency{
-        .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-        .memoryBarrierCount = 1,
-        .pMemoryBarriers = &memory,
-    };
-    vkCmdPipelineBarrier2(commands, &dependency);
-}
-
 } // namespace
 
 core::Result<std::unique_ptr<ScreenReflectionRenderer>> ScreenReflectionRenderer::create(const Device& device, const Allocator& allocator,
@@ -164,7 +146,7 @@ core::Result<void> ScreenReflectionRenderer::ensure(math::Extent2D sceneExtent)
 void ScreenReflectionRenderer::record(VkCommandBuffer commands, VkDescriptorSet global, VkDescriptorSet frame, float exposure)
 {
     // The surfaces of this frame read what the previous one left.
-    barrier(commands, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, 0, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT);
+    memoryBarrier(commands, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, 0, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT);
     const math::Extent2D extent = m_image->extent();
     vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_COMPUTE, m_shrink->handle());
     const std::array sets{global, frame, m_set};
@@ -172,10 +154,10 @@ void ScreenReflectionRenderer::record(VkCommandBuffer commands, VkDescriptorSet 
                             nullptr);
     const ReflectionPushConstants constants{.width = extent.width, .height = extent.height};
     vkCmdPushConstants(commands, m_shrink->layout(), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(constants), &constants);
-    vkCmdDispatch(commands, (extent.width + 7) / 8, (extent.height + 7) / 8, 1);
+    vkCmdDispatch(commands, computeGroups(extent.width), computeGroups(extent.height), 1);
 
     // Each level from the one before, which is enough of a blur for a surface already rough.
-    barrier(commands, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT, VK_PIPELINE_STAGE_2_BLIT_BIT,
+    memoryBarrier(commands, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT, VK_PIPELINE_STAGE_2_BLIT_BIT,
             VK_ACCESS_2_TRANSFER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT);
     const auto size = [](std::uint32_t pixels, std::uint32_t level) { return static_cast<std::int32_t>(std::max(pixels >> level, 1u)); };
     for (std::uint32_t level = 1; level < m_image->mipLevels(); ++level)
@@ -187,11 +169,11 @@ void ScreenReflectionRenderer::record(VkCommandBuffer commands, VkDescriptorSet 
             .dstOffsets = {{}, {size(extent.width, level), size(extent.height, level), 1}},
         };
         vkCmdBlitImage(commands, m_image->handle(), VK_IMAGE_LAYOUT_GENERAL, m_image->handle(), VK_IMAGE_LAYOUT_GENERAL, 1, &region, VK_FILTER_LINEAR);
-        barrier(commands, VK_PIPELINE_STAGE_2_BLIT_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_2_BLIT_BIT,
+        memoryBarrier(commands, VK_PIPELINE_STAGE_2_BLIT_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_2_BLIT_BIT,
                 VK_ACCESS_2_TRANSFER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT);
     }
     // For the surfaces of the next frame.
-    barrier(commands, VK_PIPELINE_STAGE_2_BLIT_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
+    memoryBarrier(commands, VK_PIPELINE_STAGE_2_BLIT_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
             VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_SAMPLED_READ_BIT);
     m_filled = true;
     m_exposure = exposure;

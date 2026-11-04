@@ -4,6 +4,7 @@
 
 #include <devex/core/Error.hpp>
 
+#include <atomic>
 #include <filesystem>
 #include <optional>
 #include <span>
@@ -18,6 +19,11 @@ namespace devex::platform {
 DEVEX_API void setEnvironmentVariable(std::string_view name, std::string_view value);
 // UTF-8, like the environment inherited by Process. Missing variables return an empty string.
 [[nodiscard]] DEVEX_API std::string environmentVariable(std::string_view name);
+
+// Runs a program to its end, its output going to the log. A failure says `failure`, with the code of
+// the program and its last lines. `cancel`, when given and set, stops it.
+[[nodiscard]] DEVEX_API core::Result<void> runAndLog(const std::vector<std::string>& arguments, const std::filesystem::path& directory,
+                                                     std::string_view failure, const std::atomic<bool>* cancel = nullptr);
 
 // A program run in the background with its output captured and read without blocking, such as a
 // compiler. Standard error is merged into standard output.

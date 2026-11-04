@@ -222,12 +222,6 @@ void readInput(const serialization::TextDocument& document, InputSettings& input
     }
 }
 
-[[nodiscard]] const std::string* stringAttribute(const serialization::TextSection& section, std::string_view key)
-{
-    const serialization::TextValue* const value = section.findAttribute(key);
-    return value != nullptr ? serialization::asString(*value) : nullptr;
-}
-
 void readUnsigned(const serialization::TextSection& section, std::string_view key, std::uint32_t& value)
 {
     const serialization::TextValue* const text = section.findAttribute(key);
@@ -274,11 +268,11 @@ void readWindowAndExport(const serialization::TextDocument& document, Project& p
         }
         else if (section.type == "export")
         {
-            if (const std::string* const output = stringAttribute(section, "output"))
+            if (const std::string* const output = serialization::stringAttribute(section, "output"))
             {
                 project.exportSettings.output = *output;
             }
-            if (const std::string* const configuration = stringAttribute(section, "configuration"))
+            if (const std::string* const configuration = serialization::stringAttribute(section, "configuration"))
             {
                 project.exportSettings.configuration = *configuration;
             }
@@ -287,7 +281,7 @@ void readWindowAndExport(const serialization::TextDocument& document, Project& p
         {
             AndroidExportSettings& android = project.exportSettings.android;
             const auto text = [&](const char* key, std::string& value) {
-                if (const std::string* const found = stringAttribute(section, key))
+                if (const std::string* const found = serialization::stringAttribute(section, key))
                 {
                     value = *found;
                 }
@@ -315,7 +309,7 @@ void readWindowAndExport(const serialization::TextDocument& document, Project& p
         }
         else if (section.type == "export_scene" || section.type == "export_folder")
         {
-            if (const std::string* const path = stringAttribute(section, "path"); path != nullptr && !path->empty())
+            if (const std::string* const path = serialization::stringAttribute(section, "path"); path != nullptr && !path->empty())
             {
                 (section.type == "export_scene" ? project.exportSettings.scenes : project.exportSettings.includeFolders)
                     .push_back(*path);
@@ -323,11 +317,11 @@ void readWindowAndExport(const serialization::TextDocument& document, Project& p
         }
         else if (section.type == "localization")
         {
-            if (const std::string* const fallback = stringAttribute(section, "fallback"); fallback != nullptr && isLanguageCode(*fallback))
+            if (const std::string* const fallback = serialization::stringAttribute(section, "fallback"); fallback != nullptr && isLanguageCode(*fallback))
             {
                 project.localization.fallbackLanguage = normalizeLanguage(*fallback);
             }
-            if (const std::string* const test = stringAttribute(section, "test"); test != nullptr && isLanguageCode(*test))
+            if (const std::string* const test = serialization::stringAttribute(section, "test"); test != nullptr && isLanguageCode(*test))
             {
                 project.localization.testLanguage = normalizeLanguage(*test);
             }
@@ -945,19 +939,19 @@ AndroidSigning readAndroidSigning(const Project& project)
         return signing;
     }
     const serialization::TextSection& section = document->sections.front();
-    if (const std::string* const keystore = stringAttribute(section, "keystore"))
+    if (const std::string* const keystore = serialization::stringAttribute(section, "keystore"))
     {
         signing.keystore = core::pathFromUtf8(*keystore);
     }
-    if (const std::string* const alias = stringAttribute(section, "alias"))
+    if (const std::string* const alias = serialization::stringAttribute(section, "alias"))
     {
         signing.alias = *alias;
     }
-    if (const std::string* const password = stringAttribute(section, "store_password"))
+    if (const std::string* const password = serialization::stringAttribute(section, "store_password"))
     {
         signing.storePassword = *password;
     }
-    if (const std::string* const password = stringAttribute(section, "key_password"))
+    if (const std::string* const password = serialization::stringAttribute(section, "key_password"))
     {
         signing.keyPassword = *password;
     }
@@ -979,6 +973,27 @@ core::Result<void> writeAndroidSigning(const Project& project, const AndroidSign
                           {"store_password", signing.storePassword},
                           {"key_password", signing.keyPassword}};
     return core::writeTextFile(androidSigningFile(project), serialization::writeText(document));
+}
+
+std::string gameFileName(std::string_view name)
+{
+    std::string file;
+    for (const char character : name)
+    {
+        const auto byte = static_cast<unsigned char>(character);
+        const bool forbidden = byte < 0x20 || std::string_view("<>:\"/\\|?*").find(character) != std::string_view::npos;
+        file.push_back(forbidden ? '_' : character);
+    }
+    const auto trimmed = [](char character) { return character == ' ' || character == '.'; };
+    while (!file.empty() && trimmed(file.back()))
+    {
+        file.pop_back();
+    }
+    while (!file.empty() && trimmed(file.front()))
+    {
+        file.erase(file.begin());
+    }
+    return file.empty() ? std::string("Game") : file;
 }
 
 } // namespace devex::asset

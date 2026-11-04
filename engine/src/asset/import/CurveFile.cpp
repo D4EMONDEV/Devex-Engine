@@ -17,12 +17,6 @@ constexpr std::int64_t curveFormat = 1;
     return read ? std::optional(static_cast<float>(*read)) : std::nullopt;
 }
 
-// The shortest text of the float, not of the double it widens to.
-[[nodiscard]] serialization::TextValue shortest(float value)
-{
-    return serialization::TextValue(std::stod(std::format("{}", value)));
-}
-
 } // namespace
 
 core::Result<CurveData> parseCurveFile(std::string_view text)
@@ -76,10 +70,10 @@ std::string writeCurveFile(const CurveData& curve)
     {
         serialization::TextSection& section = document.sections.emplace_back();
         section.type = "key";
-        section.attributes.push_back({"time", shortest(key.time)});
-        section.attributes.push_back({"value", shortest(key.value)});
-        section.attributes.push_back({"in", shortest(key.inTangent)});
-        section.attributes.push_back({"out", shortest(key.outTangent)});
+        section.attributes.push_back({"time", serialization::shortestNumber(key.time)});
+        section.attributes.push_back({"value", serialization::shortestNumber(key.value)});
+        section.attributes.push_back({"in", serialization::shortestNumber(key.inTangent)});
+        section.attributes.push_back({"out", serialization::shortestNumber(key.outTangent)});
     }
     return serialization::writeText(document);
 }

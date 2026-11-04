@@ -30,39 +30,6 @@ namespace {
 
 inline constexpr const char* exportWindow = "Export Game";
 
-// The name of the executable, as the export makes it from the name of the game.
-[[nodiscard]] std::string executableFileName(std::string_view gameName)
-{
-    std::string name;
-    for (const char character : gameName)
-    {
-        const bool forbidden = static_cast<unsigned char>(character) < 0x20 || std::string_view("<>:\"/\\|?*").find(character) != std::string_view::npos;
-        name.push_back(forbidden ? '_' : character);
-    }
-    while (!name.empty() && (name.back() == ' ' || name.back() == '.'))
-    {
-        name.pop_back();
-    }
-    while (!name.empty() && (name.front() == ' ' || name.front() == '.'))
-    {
-        name.erase(name.begin());
-    }
-    return (name.empty() ? std::string("Game") : name) + ".exe";
-}
-
-void showOutputFolderDialog(ToolsState& state)
-{
-    std::weak_ptr<DialogAnswers> answers = state.dialogAnswers;
-    state.platform.showFileDialog(state.window,
-                                  {.type = platform::FileDialogType::OpenFolder, .defaultLocation = state.database->project().root},
-                                  [answers](std::optional<std::filesystem::path> chosen) {
-                                      if (const std::shared_ptr<DialogAnswers> inbox = answers.lock(); inbox && chosen)
-                                      {
-                                          inbox->exportFolder = std::move(chosen);
-                                      }
-                                  });
-}
-
 // Whether the project has C# code, which does not run on Android yet.
 [[nodiscard]] bool hasCSharp(const asset::Project& project)
 {
@@ -314,10 +281,10 @@ void ExportUi::sync(ToolsState& state, EditorUiKit& kit)
     const ThemeColors& colors = themeColors();
     const asset::Project& project = state.database->project();
     const bool android = settings.platform == "android";
-    const std::string executableName = executableFileName(project.name);
+    const std::string gameFile = asset::gameFileName(project.name);
     setChoice(platform, {"Desktop", "Android"}, android ? 1 : 0);
     scene().get<scene::UiText>(executable).text =
-        android ? executableName.substr(0, executableName.size() - 4) + (settings.android.format == "aab" ? ".aab" : ".apk") : executableName;
+        gameFile + (!android ? ".exe" : settings.android.format == "aab" ? ".aab" : ".apk");
     setText(output, android ? settings.android.output : settings.output);
     if (configuration.isValid())
     {
@@ -530,7 +497,7 @@ void ExportUi::answer(ToolsState& state)
     }
     if (world.wasClicked(browse.entity))
     {
-        showOutputFolderDialog(state);
+        showFolderDialog(state, &DialogAnswers::exportFolder, state.database->project().root);
     }
     if (configuration.isValid() && world.wasChanged(configuration))
     {

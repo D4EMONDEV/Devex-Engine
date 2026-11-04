@@ -43,13 +43,6 @@ constexpr std::size_t maxUndo = 200;
 // Points a link is drawn with, as a curve.
 constexpr std::size_t curvePoints = 20;
 
-[[nodiscard]] std::filesystem::file_time_type writeTime(const std::filesystem::path& file)
-{
-    std::error_code error;
-    const std::filesystem::file_time_type time = std::filesystem::last_write_time(file, error);
-    return error ? std::filesystem::file_time_type{} : time;
-}
-
 // Keeps the values and the links of a graph to the ports its nodes have, once a setting changed them.
 void normalize(ShaderGraphData& graph)
 {
@@ -100,7 +93,7 @@ void writeShaderGraph(ToolsState& state)
         return;
     }
     editor.saved = editor.graph;
-    editor.fileTime = writeTime(editor.file);
+    editor.fileTime = core::lastWriteTime(editor.file);
     editor.error.clear();
     if (core::Result<void> queued = state.database->reimport(editor.asset); !queued)
     {
@@ -395,7 +388,7 @@ void loadShaderGraph(ToolsState& state, asset::AssetId id)
     {
         return;
     }
-    const std::filesystem::file_time_type time = writeTime(*file);
+    const std::filesystem::file_time_type time = core::lastWriteTime(*file);
     const bool sameAsset = editor.asset == id;
     if ((sameAsset && editor.file == *file && editor.fileTime == time) || (sameAsset && editor.dragged != 0))
     {

@@ -2,12 +2,18 @@
 
 #include <devex/core/Export.hpp>
 
+#include <cctype>
 #include <cstdint>
 #include <filesystem>
 #include <string_view>
 #include <vector>
 
 namespace devex::tools::detail {
+
+[[nodiscard]] inline bool isIdentifierPart(char value) noexcept
+{
+    return std::isalnum(static_cast<unsigned char>(value)) != 0 || value == '_';
+}
 
 // What the text editor colors a run of characters as.
 enum class TokenKind : std::uint8_t

@@ -124,18 +124,6 @@ void runProject(ToolsState& state, const std::filesystem::path& file)
     DEVEX_LOG_INFO("Running {} in devex-player", core::toUtf8(file.stem()));
 }
 
-void showFolderDialog(ToolsState& state, std::optional<std::filesystem::path> DialogAnswers::*answer)
-{
-    std::weak_ptr<DialogAnswers> answers = state.dialogAnswers;
-    state.platform.showFileDialog(state.window, {.type = platform::FileDialogType::OpenFolder},
-                                  [answers, answer](std::optional<std::filesystem::path> chosen) {
-                                      if (const std::shared_ptr<DialogAnswers> inbox = answers.lock(); inbox && chosen)
-                                      {
-                                          (*inbox).*answer = std::move(chosen);
-                                      }
-                                  });
-}
-
 void showImportDialog(ToolsState& state)
 {
     std::weak_ptr<DialogAnswers> answers = state.dialogAnswers;

@@ -191,42 +191,6 @@ void collectAssetIds(const serialization::TextValue& value, std::vector<asset::A
     return {};
 }
 
-// Runs a program and waits for it, its output going to the log.
-[[nodiscard]] core::Result<void> runAndWait(const std::vector<std::string>& arguments,
-                                            const std::filesystem::path& directory, std::string_view failure)
-{
-    core::Result<platform::Process> process = platform::Process::start(arguments, directory);
-    if (!process)
-    {
-        return core::makeError(process.error().code, "{}: {}", failure, process.error().message);
-    }
-    std::optional<int> exitCode;
-    while (!exitCode)
-    {
-        for (const std::string& line : process->readLines())
-        {
-            if (!line.empty())
-            {
-                DEVEX_LOG_INFO("{}", line);
-            }
-        }
-        exitCode = process->exitCode();
-        std::this_thread::sleep_for(std::chrono::milliseconds(20));
-    }
-    for (const std::string& line : process->readLines())
-    {
-        if (!line.empty())
-        {
-            DEVEX_LOG_INFO("{}", line);
-        }
-    }
-    if (*exitCode != 0)
-    {
-        return core::makeError(core::ErrorCode::InvalidState, "{} (code {})", failure, *exitCode);
-    }
-    return {};
-}
-
 // Publishes .NET next to the game: the runtime, the engine's C# assembly and nothing to install.
 [[nodiscard]] core::Result<void> copyDotnet(const ExportPlan& plan, const std::filesystem::path& scripts)
 {
@@ -530,23 +494,7 @@ std::optional<EngineBuild> findEngineBuild(std::span<const EngineBuild> builds, 
 
 std::string executableName(std::string_view gameName)
 {
-    std::string name;
-    for (const char character : gameName)
-    {
-        const auto byte = static_cast<unsigned char>(character);
-        const bool forbidden = byte < 0x20 || std::string_view("<>:\"/\\|?*").find(character) != std::string_view::npos;
-        name.push_back(forbidden ? '_' : character);
-    }
-    const auto trimmed = [](char character) { return character == ' ' || character == '.'; };
-    while (!name.empty() && trimmed(name.back()))
-    {
-        name.pop_back();
-    }
-    while (!name.empty() && trimmed(name.front()))
-    {
-        name.erase(name.begin());
-    }
-    return name.empty() ? std::string("Game") : name;
+    return asset::gameFileName(gameName);
 }
 
 core::Result<std::vector<asset::AssetId>> assetReferences(asset::AssetType type, std::span<const std::byte> artifact)
@@ -878,7 +826,7 @@ core::Result<ExportResult> exportGame(const ExportPlan& plan, const std::functio
             std::filesystem::path bindgen = plan.engine.binDirectory() / "devex-bindgen";
             bindgen += executableSuffix;
             if (core::Result<void> generatedViews =
-                    runAndWait({core::toUtf8(bindgen), "--game", core::toUtf8(*library),
+                    platform::runAndLog({core::toUtf8(bindgen), "--game", core::toUtf8(*library),
                                 core::toUtf8(generated / "GameComponents.g.cs")},
                                project.root, "cannot generate the C# views of the C++ components");
                 !generatedViews)

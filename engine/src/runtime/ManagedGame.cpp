@@ -1910,12 +1910,6 @@ void apiResetBindings()
     return std::nullopt;
 }
 
-[[nodiscard]] const std::string* stringAttribute(const serialization::TextSection& section, std::string_view key)
-{
-    const serialization::TextValue* const value = section.findAttribute(key);
-    return value != nullptr ? serialization::asString(*value) : nullptr;
-}
-
 [[nodiscard]] bool boolAttribute(const serialization::TextSection& section, std::string_view key)
 {
     const serialization::TextValue* const value = section.findAttribute(key);
@@ -1941,16 +1935,16 @@ void apiResetBindings()
 // A [field] section of the types C# describes.
 [[nodiscard]] std::optional<scene::DynamicField> parseField(const serialization::TextSection& section)
 {
-    const std::string* const name = stringAttribute(section, "name");
-    const std::string* const kind = stringAttribute(section, "kind");
+    const std::string* const name = serialization::stringAttribute(section, "name");
+    const std::string* const kind = serialization::stringAttribute(section, "kind");
     const std::optional<reflection::ValueKind> valueKind = kind != nullptr ? parseKind(*kind) : std::nullopt;
     if (name == nullptr || !valueKind)
     {
         return std::nullopt;
     }
-    const std::string* const values = stringAttribute(section, "values");
-    const std::string* const assetType = stringAttribute(section, "asset_type");
-    const std::string* const group = stringAttribute(section, "group");
+    const std::string* const values = serialization::stringAttribute(section, "values");
+    const std::string* const assetType = serialization::stringAttribute(section, "asset_type");
+    const std::string* const group = serialization::stringAttribute(section, "group");
     return scene::DynamicField{
         .name = *name,
         .kind = *valueKind,
@@ -1989,7 +1983,7 @@ int apiRegisterSaveType(const char* description, std::size_t* offsets, int capac
         DEVEX_LOG_ERROR("A C# save type cannot be read");
         return -1;
     }
-    const std::string* const name = stringAttribute(document->sections.front(), "type");
+    const std::string* const name = serialization::stringAttribute(document->sections.front(), "type");
     std::vector<scene::DynamicField> fields;
     for (const serialization::TextSection& section : document->sections)
     {
@@ -3421,16 +3415,16 @@ core::Result<void> ManagedGame::loadAssembly(const std::filesystem::path& assemb
     {
         if (section.type == "editor_command")
         {
-            const auto* id = stringAttribute(section, "id");
-            const auto* addon = stringAttribute(section, "addon");
-            const auto* name = stringAttribute(section, "name");
+            const auto* id = serialization::stringAttribute(section, "id");
+            const auto* addon = serialization::stringAttribute(section, "addon");
+            const auto* name = serialization::stringAttribute(section, "name");
             if (id != nullptr && addon != nullptr && name != nullptr && asset::validAddonId(*addon))
                 m_impl->editorCommands.push_back({*addon, *id, *name});
         }
         if (section.type == "component")
         {
             registerType();
-            if (const std::string* const name = stringAttribute(section, "type"))
+            if (const std::string* const name = serialization::stringAttribute(section, "type"))
             {
                 typeName = *name;
             }

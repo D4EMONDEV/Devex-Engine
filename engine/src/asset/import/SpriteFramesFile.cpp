@@ -6,28 +6,12 @@
 #include <format>
 #include <optional>
 
+#include "AssetText.hpp"
+
 namespace devex::asset {
 namespace {
 
 constexpr std::int64_t framesFormat = 1;
-
-// The shortest text of the float, not of the double it widens to.
-[[nodiscard]] serialization::TextValue shortest(float value)
-{
-    return serialization::TextValue(std::stod(std::format("{}", value)));
-}
-
-[[nodiscard]] std::optional<AssetId> readAsset(const serialization::TextValue& value)
-{
-    const serialization::TextCall* const call = serialization::asCall(value, "asset");
-    if (call == nullptr || call->arguments.size() != 1)
-    {
-        return std::nullopt;
-    }
-    const std::string* const text = serialization::asString(call->arguments.front());
-    const std::optional<core::Uuid> uuid = text != nullptr ? core::Uuid::parse(*text) : std::nullopt;
-    return uuid ? std::optional(AssetId{*uuid}) : std::nullopt;
-}
 
 } // namespace
 
@@ -115,7 +99,7 @@ std::string writeSpriteFramesFile(const SpriteFramesData& frames)
         serialization::TextSection& section = document.sections.emplace_back();
         section.type = "animation";
         section.attributes.push_back({"name", serialization::TextValue(animation.name)});
-        section.attributes.push_back({"fps", shortest(animation.fps)});
+        section.attributes.push_back({"fps", serialization::shortestNumber(animation.fps)});
         section.attributes.push_back({"loop", serialization::TextValue(animation.loop)});
         std::vector<serialization::TextValue> list;
         list.reserve(animation.frames.size());

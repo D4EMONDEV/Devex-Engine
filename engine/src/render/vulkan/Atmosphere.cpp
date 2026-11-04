@@ -29,33 +29,9 @@ struct AtmospherePushConstants
     std::uint32_t padding = 0;
 };
 
-std::uint32_t groups(std::uint32_t size)
-{
-    return (size + 7) / 8;
-}
-
-// Writes of a pass waited for by the passes that read them, on the GPU and in the frame.
-void barrier(VkCommandBuffer commands, VkPipelineStageFlags2 sourceStages, VkAccessFlags2 sourceAccess, VkPipelineStageFlags2 destinationStages,
-             VkAccessFlags2 destinationAccess)
-{
-    const VkMemoryBarrier2 memory{
-        .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
-        .srcStageMask = sourceStages,
-        .srcAccessMask = sourceAccess,
-        .dstStageMask = destinationStages,
-        .dstAccessMask = destinationAccess,
-    };
-    const VkDependencyInfo dependency{
-        .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-        .memoryBarrierCount = 1,
-        .pMemoryBarriers = &memory,
-    };
-    vkCmdPipelineBarrier2(commands, &dependency);
-}
-
 void computeToCompute(VkCommandBuffer commands)
 {
-    barrier(commands, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+    memoryBarrier(commands, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
             VK_ACCESS_2_SHADER_SAMPLED_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT);
 }
 
@@ -267,7 +243,7 @@ void AtmosphereRenderer::record(VkCommandBuffer commands, VkDescriptorSet global
         return;
     }
     // The frames before may still sample what this one writes.
-    barrier(commands, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, 0, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+    memoryBarrier(commands, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, 0, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
             VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT);
     const auto dispatch = [&](const Pipeline& pipeline, VkDescriptorSet set, const AtmospherePushConstants& constants, std::uint32_t x,
                               std::uint32_t y, std::uint32_t z) {
@@ -282,9 +258,9 @@ void AtmosphereRenderer::record(VkCommandBuffer commands, VkDescriptorSet global
     // The air changed: what it lets through, then the light it scatters many times, which reads it.
     if (m_airKey != airKey)
     {
-        dispatch(*m_transmittance, m_transmittanceSet, constants, groups(transmittanceWidth), groups(transmittanceHeight), 1);
+        dispatch(*m_transmittance, m_transmittanceSet, constants, computeGroups(transmittanceWidth), computeGroups(transmittanceHeight), 1);
         computeToCompute(commands);
-        dispatch(*m_multiScattering, m_multiScatteringSet, constants, groups(multiScatteringSize), groups(multiScatteringSize), 1);
+        dispatch(*m_multiScattering, m_multiScatteringSet, constants, computeGroups(multiScatteringSize), computeGroups(multiScatteringSize), 1);
         computeToCompute(commands);
         m_airKey = airKey;
         m_skyKey.reset();
@@ -293,8 +269,8 @@ void AtmosphereRenderer::record(VkCommandBuffer commands, VkDescriptorSet global
     // The sky and the haze around the camera, which follow it and the sun.
     if (m_viewKey != viewKey)
     {
-        dispatch(*m_skyView, m_skyViewSet, constants, groups(skyViewWidth), groups(skyViewHeight), 1);
-        dispatch(*m_aerialPerspective, m_aerialSet, constants, groups(aerialSize), groups(aerialSize), aerialSize);
+        dispatch(*m_skyView, m_skyViewSet, constants, computeGroups(skyViewWidth), computeGroups(skyViewHeight), 1);
+        dispatch(*m_aerialPerspective, m_aerialSet, constants, computeGroups(aerialSize), computeGroups(aerialSize), aerialSize);
         m_viewKey = viewKey;
     }
     // The light the sky gives the scene, once it changed enough to show.
@@ -303,7 +279,7 @@ void AtmosphereRenderer::record(VkCommandBuffer commands, VkDescriptorSet global
         computeToCompute(commands);
         AtmospherePushConstants cube = constants;
         cube.size = cubeSize;
-        dispatch(*m_skyCube, m_cubeSets[0], cube, groups(cubeSize), groups(cubeSize), 6);
+        dispatch(*m_skyCube, m_cubeSets[0], cube, computeGroups(cubeSize), computeGroups(cubeSize), 6);
         computeToCompute(commands);
         for (std::uint32_t mip = 1; mip < cubeMipCount; ++mip)
         {
@@ -311,16 +287,16 @@ void AtmosphereRenderer::record(VkCommandBuffer commands, VkDescriptorSet global
             level.size = cubeSize >> mip;
             level.roughness = static_cast<float>(mip) / static_cast<float>(cubeMipCount - 1);
             level.sampleCount = 64;
-            dispatch(*m_prefilter, m_cubeSets[mip], level, groups(level.size), groups(level.size), 6);
+            dispatch(*m_prefilter, m_cubeSets[mip], level, computeGroups(level.size), computeGroups(level.size), 6);
         }
         AtmospherePushConstants irradiance = constants;
         irradiance.size = irradianceSize;
         irradiance.sampleCount = 128;
-        dispatch(*m_irradiance, m_irradianceSet, irradiance, groups(irradianceSize), groups(irradianceSize), 6);
+        dispatch(*m_irradiance, m_irradianceSet, irradiance, computeGroups(irradianceSize), computeGroups(irradianceSize), 6);
         m_skyKey = skyKey;
     }
     // Sampled by the surfaces, the sky and the passes of the next frames.
-    barrier(commands, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
+    memoryBarrier(commands, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
             VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_SAMPLED_READ_BIT);
 }
 

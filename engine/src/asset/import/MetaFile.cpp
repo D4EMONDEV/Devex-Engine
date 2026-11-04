@@ -12,15 +12,9 @@ using serialization::TextValue;
 
 constexpr std::int64_t metaFormatVersion = 1;
 
-[[nodiscard]] const std::string* stringAttribute(const TextSection& section, std::string_view key)
-{
-    const TextValue* const value = section.findAttribute(key);
-    return value != nullptr ? serialization::asString(*value) : nullptr;
-}
-
 [[nodiscard]] std::optional<AssetId> idAttribute(const TextSection& section)
 {
-    const std::string* const text = stringAttribute(section, "uuid");
+    const std::string* const text = serialization::stringAttribute(section, "uuid");
     std::optional<core::Uuid> uuid = text != nullptr ? core::Uuid::parse(*text) : std::nullopt;
     if (!uuid || uuid->isNil())
     {
@@ -62,7 +56,7 @@ core::Result<MetaFile> parseMetaFile(std::string_view text)
                                header.line);
     }
     meta.id = *id;
-    const std::string* const importer = stringAttribute(header, "importer");
+    const std::string* const importer = serialization::stringAttribute(header, "importer");
     meta.importer = importer != nullptr ? *importer : std::string();
     meta.options = std::move(header.properties);
 
@@ -74,10 +68,10 @@ core::Result<MetaFile> parseMetaFile(std::string_view text)
             return core::makeError(core::ErrorCode::Parse, "line {}: unexpected [{}] section",
                                    section.line, section.type);
         }
-        const std::string* const typeName = stringAttribute(section, "type");
+        const std::string* const typeName = serialization::stringAttribute(section, "type");
         const std::optional<AssetType> type =
             typeName != nullptr ? parseAssetType(*typeName) : std::nullopt;
-        const std::string* const key = stringAttribute(section, "key");
+        const std::string* const key = serialization::stringAttribute(section, "key");
         const std::optional<AssetId> subId = idAttribute(section);
         if (!type || key == nullptr || !subId)
         {

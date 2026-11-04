@@ -7,6 +7,8 @@
 #include <string>
 #include <vector>
 
+#include "AssetText.hpp"
+
 namespace devex::asset {
 namespace {
 
@@ -16,32 +18,14 @@ using serialization::TextValue;
 // 2: layers.
 constexpr std::int64_t animatorFormat = 2;
 
-// The shortest text that reads back as the same float, rather than the digits of its double.
-[[nodiscard]] TextValue number(float value)
-{
-    return TextValue(std::stod(std::format("{}", value)));
-}
-
 [[nodiscard]] TextValue vector(math::Vec2 value)
 {
-    return serialization::makeCall("vec2", {number(value.x), number(value.y)});
+    return serialization::makeCall("vec2", {serialization::shortestNumber(value.x), serialization::shortestNumber(value.y)});
 }
 
 [[nodiscard]] TextValue assetValue(AssetId id)
 {
     return serialization::makeCall("asset", {TextValue(id.uuid.toString())});
-}
-
-[[nodiscard]] std::optional<AssetId> readAsset(const TextValue& value)
-{
-    const serialization::TextCall* const call = serialization::asCall(value, "asset");
-    if (call == nullptr || call->arguments.size() != 1)
-    {
-        return std::nullopt;
-    }
-    const std::string* const text = serialization::asString(call->arguments.front());
-    const std::optional<core::Uuid> uuid = text != nullptr ? core::Uuid::parse(*text) : std::nullopt;
-    return uuid ? std::optional(AssetId{*uuid}) : std::nullopt;
 }
 
 [[nodiscard]] std::optional<math::Vec2> readVector(const TextValue& value)
@@ -257,7 +241,7 @@ constexpr std::int64_t animatorFormat = 2;
     case AnimatorTest::NotEquals:
         break;
     }
-    return serialization::makeCall(std::string(toString(condition.test)), {parameter, number(condition.value)});
+    return serialization::makeCall(std::string(toString(condition.test)), {parameter, serialization::shortestNumber(condition.value)});
 }
 
 [[nodiscard]] core::Result<AnimatorLayer> readLayer(const TextSection& section)
@@ -320,7 +304,7 @@ void writeGraph(serialization::TextDocument& document, const AnimatorLayer& laye
             for (const AnimatorMotion& motion : state.motions)
             {
                 clips.push_back(assetValue(motion.clip));
-                thresholds.push_back(number(motion.threshold));
+                thresholds.push_back(serialization::shortestNumber(motion.threshold));
                 positions.push_back(vector(motion.position));
             }
             section.properties.push_back({"clips", serialization::makeCall("list", std::move(clips))});
@@ -339,7 +323,7 @@ void writeGraph(serialization::TextDocument& document, const AnimatorLayer& laye
         }
         if (state.speed != 1.0f)
         {
-            section.properties.push_back({"speed", number(state.speed)});
+            section.properties.push_back({"speed", serialization::shortestNumber(state.speed)});
         }
         if (!state.speedParameter.empty())
         {
@@ -360,10 +344,10 @@ void writeGraph(serialization::TextDocument& document, const AnimatorLayer& laye
             section.attributes.push_back({"from", TextValue(transition.from)});
         }
         section.attributes.push_back({"to", TextValue(transition.to)});
-        section.attributes.push_back({"duration", number(transition.duration)});
+        section.attributes.push_back({"duration", serialization::shortestNumber(transition.duration)});
         if (transition.exitTime >= 0.0f)
         {
-            section.properties.push_back({"exit_time", number(transition.exitTime)});
+            section.properties.push_back({"exit_time", serialization::shortestNumber(transition.exitTime)});
         }
         if (!transition.conditions.empty())
         {
@@ -503,7 +487,7 @@ std::string writeAnimatorFile(const AnimatorData& animator)
         switch (parameter.type)
         {
         case AnimatorParameterType::Float:
-            section.attributes.push_back({"default", number(parameter.defaultValue)});
+            section.attributes.push_back({"default", serialization::shortestNumber(parameter.defaultValue)});
             break;
         case AnimatorParameterType::Integer:
             section.attributes.push_back({"default", TextValue(static_cast<std::int64_t>(parameter.defaultValue))});
@@ -525,7 +509,7 @@ std::string writeAnimatorFile(const AnimatorData& animator)
         section.attributes.push_back({"name", TextValue(layer.name)});
         section.attributes.push_back({"entry", TextValue(layer.entry)});
         section.attributes.push_back({"blending", TextValue(std::string(toString(layer.blending)))});
-        section.attributes.push_back({"weight", number(layer.weight)});
+        section.attributes.push_back({"weight", serialization::shortestNumber(layer.weight)});
         if (!layer.weightParameter.empty())
         {
             section.properties.push_back({"weight_parameter", TextValue(layer.weightParameter)});

@@ -307,6 +307,7 @@ target_sources(devex_asset_import
         src/asset/import/GltfImporter.cpp
         src/asset/import/Importer.cpp
         src/asset/import/MaterialFile.cpp
+        src/asset/import/AssetText.hpp
         src/asset/import/MetaFile.cpp
         src/asset/import/ModelImport.cpp
         src/asset/import/ModelImport.hpp

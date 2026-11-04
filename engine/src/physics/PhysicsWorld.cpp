@@ -100,12 +100,6 @@ constexpr float rotationTolerance = 1.0e-6f;
     return result;
 }
 
-// Entities are stored in the user data of bodies.
-[[nodiscard]] std::uint64_t keyOf(Entity entity) noexcept
-{
-    return static_cast<std::uint64_t>(entity.generation) << 32 | entity.index;
-}
-
 [[nodiscard]] Entity entityOf(std::uint64_t key) noexcept
 {
     Entity entity;
@@ -282,7 +276,7 @@ class IgnoreEntityFilter final : public JPH::BodyFilter
 {
 public:
     explicit IgnoreEntityFilter(Entity entity) noexcept
-        : m_key(entity.isValid() ? keyOf(entity) : std::numeric_limits<std::uint64_t>::max())
+        : m_key(entity.isValid() ? scene::entityKey(entity) : std::numeric_limits<std::uint64_t>::max())
     {
     }
 
@@ -719,7 +713,7 @@ struct PhysicsWorld::Implementation
 
     void warnOnce(Entity entity, std::string_view problem, const std::string& message)
     {
-        if (warnings.insert(keyOf(entity) ^ core::hash64(problem)).second)
+        if (warnings.insert(scene::entityKey(entity) ^ core::hash64(problem)).second)
         {
             DEVEX_LOG_WARNING("Physics: {}", message);
         }
@@ -927,7 +921,7 @@ struct PhysicsWorld::Implementation
             return;
         }
         const Entity owner = bodyOwner(scene, entity);
-        const std::uint64_t key = keyOf(owner) * 2 + (trigger ? 1 : 0);
+        const std::uint64_t key = scene::entityKey(owner) * 2 + (trigger ? 1 : 0);
         BodyDescription& description = descriptions[key];
         if (!description.owner.isValid())
         {
@@ -1001,7 +995,7 @@ struct PhysicsWorld::Implementation
         }
         for ([[maybe_unused]] auto [entity, rigidBody] : scene.view<scene::RigidBody>())
         {
-            if (!descriptions.contains(keyOf(entity) * 2) && !descriptions.contains(keyOf(entity) * 2 + 1))
+            if (!descriptions.contains(scene::entityKey(entity) * 2) && !descriptions.contains(scene::entityKey(entity) * 2 + 1))
             {
                 warnOnce(entity, "no collider", std::format("the RigidBody of '{}' has no collider", scene.name(entity)));
             }
@@ -1009,7 +1003,7 @@ struct PhysicsWorld::Implementation
         for (auto& [key, description] : descriptions)
         {
             // Pools change order as components come and go: the colliders of a body keep theirs.
-            std::ranges::sort(description.parts, {}, [](const ShapePart& part) { return keyOf(part.entity); });
+            std::ranges::sort(description.parts, {}, [](const ShapePart& part) { return scene::entityKey(part.entity); });
             description.signature = signatureOf(description);
         }
         return descriptions;
@@ -1033,7 +1027,7 @@ struct PhysicsWorld::Implementation
         const bool moving = motion != JPH::EMotionType::Static;
         JPH::BodyCreationSettings settings(shape, toJoltPosition(description.position), toJolt(description.rotation), motion,
                                            objectLayer(rigidBody.layer, moving));
-        settings.mUserData = keyOf(description.owner);
+        settings.mUserData = scene::entityKey(description.owner);
         settings.mIsSensor = description.sensor;
         // Triggers also notice kinematic and static bodies, such as characters.
         settings.mCollideKinematicVsNonDynamic = description.sensor;
@@ -1227,7 +1221,7 @@ struct PhysicsWorld::Implementation
         }
         for ([[maybe_unused]] auto [entity, controller] : scene.view<scene::CharacterController>())
         {
-            const std::uint64_t key = keyOf(entity);
+            const std::uint64_t key = scene::entityKey(entity);
             Signature signature;
             signature.add(controller.radius);
             signature.add(controller.height);
@@ -1398,7 +1392,7 @@ struct PhysicsWorld::Implementation
     {
         std::unordered_map<std::uint64_t, JointDescription> descriptions;
         const auto add = [&](Entity entity, JointKind kind, const scene::WorldTransform& transform, auto& component) {
-            JointDescription& joint = descriptions[keyOf(entity) * 4 + static_cast<std::uint64_t>(kind)];
+            JointDescription& joint = descriptions[scene::entityKey(entity) * 4 + static_cast<std::uint64_t>(kind)];
             joint.kind = kind;
             joint.frame = transform.matrix;
             joint.bodyA = &component.bodyA;
@@ -1529,7 +1523,7 @@ struct PhysicsWorld::Implementation
             const Entity owner = entityOf(key / 4);
             const auto solid = [&](const scene::EntityRef& reference) -> const BodyRecord* {
                 const Entity entity = reference.isNil() ? Entity{} : scene.resolve(reference);
-                const auto record = entity.isValid() ? bodies.find(keyOf(entity) * 2) : bodies.end();
+                const auto record = entity.isValid() ? bodies.find(scene::entityKey(entity) * 2) : bodies.end();
                 return record != bodies.end() ? &record->second : nullptr;
             };
             const BodyRecord* const bodyA = solid(*description.bodyA);
@@ -1702,7 +1696,7 @@ struct PhysicsWorld::Implementation
 
     [[nodiscard]] const BodyRecord* dynamicBody(Entity entity) const
     {
-        const auto record = bodies.find(keyOf(entity) * 2);
+        const auto record = bodies.find(scene::entityKey(entity) * 2);
         return record != bodies.end() && record->second.type == BodyType::Dynamic ? &record->second : nullptr;
     }
 };

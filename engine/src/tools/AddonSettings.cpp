@@ -21,17 +21,6 @@ constexpr const char* createAction = "create addon";
 // What the window can show of what stops a package.
 constexpr std::size_t shownConflicts = 4;
 
-void chooseFolder(ToolsState& state, std::optional<std::filesystem::path> DialogAnswers::*answer)
-{
-    const std::weak_ptr<DialogAnswers> answers = state.dialogAnswers;
-    state.platform.showFileDialog(state.window, {.type = platform::FileDialogType::OpenFolder},
-                                  [answers, answer](std::optional<std::filesystem::path> chosen)
-                                  {
-                                      if (const auto inbox = answers.lock(); inbox && chosen)
-                                          (*inbox).*answer = std::move(*chosen);
-                                  });
-}
-
 } // namespace
 
 void ProjectSettingsUi::buildAddons(EditorUiKit& kit)
@@ -355,12 +344,12 @@ void ProjectSettingsUi::answerAddons(ToolsState& state, EditorUiKit& kit, scene:
         if (world.wasClicked(addonRows[i].exported.entity))
         {
             addonTarget = addon.id;
-            chooseFolder(state, &DialogAnswers::exportAddon);
+            showFolderDialog(state, &DialogAnswers::exportAddon);
         }
         if (world.wasClicked(addonRows[i].update.entity))
         {
             updatingAddon = addon.id;
-            chooseFolder(state, &DialogAnswers::installAddon);
+            showFolderDialog(state, &DialogAnswers::installAddon);
         }
         if (world.wasClicked(addonRows[i].remove.entity))
         {
@@ -382,7 +371,7 @@ void ProjectSettingsUi::answerAddons(ToolsState& state, EditorUiKit& kit, scene:
     if (world.wasClicked(installAddon.entity))
     {
         updatingAddon.clear();
-        chooseFolder(state, &DialogAnswers::installAddon);
+        showFolderDialog(state, &DialogAnswers::installAddon);
     }
     if (world.wasClicked(createAddonButton.entity))
     {

@@ -32,12 +32,6 @@ struct ParsedSave
     std::string sceneText;
 };
 
-[[nodiscard]] const std::string* stringAttribute(const serialization::TextSection& section, std::string_view key)
-{
-    const serialization::TextValue* const value = section.findAttribute(key);
-    return value != nullptr ? serialization::asString(*value) : nullptr;
-}
-
 [[nodiscard]] core::Result<ParsedSave> parseSave(std::string_view text, std::string_view slot)
 {
     // The header and the data, then the scene as its own file would hold it.
@@ -68,19 +62,19 @@ struct ParsedSave
     SaveSlot& info = parsed.slot;
     info.name = std::string(slot);
     info.hasScene = !parsed.sceneText.empty();
-    if (const std::string* const label = stringAttribute(header, "label"))
+    if (const std::string* const label = serialization::stringAttribute(header, "label"))
     {
         info.label = *label;
     }
-    if (const std::string* const type = stringAttribute(header, "type"))
+    if (const std::string* const type = serialization::stringAttribute(header, "type"))
     {
         info.type = *type;
     }
-    if (const std::string* const sceneName = stringAttribute(header, "scene_name"))
+    if (const std::string* const sceneName = serialization::stringAttribute(header, "scene_name"))
     {
         info.sceneName = *sceneName;
     }
-    if (const std::string* const scene = stringAttribute(header, "scene"))
+    if (const std::string* const scene = serialization::stringAttribute(header, "scene"))
     {
         info.scene = asset::AssetId{core::Uuid::parse(*scene).value_or(core::Uuid{})};
     }

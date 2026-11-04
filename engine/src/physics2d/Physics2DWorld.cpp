@@ -67,12 +67,6 @@ constexpr int layerShift = 8;
     return {value.x, value.y};
 }
 
-// Entities are stored in the user data of bodies.
-[[nodiscard]] std::uint64_t keyOf(Entity entity) noexcept
-{
-    return static_cast<std::uint64_t>(entity.generation) << 32 | entity.index;
-}
-
 [[nodiscard]] Entity entityOf(std::uint64_t key) noexcept
 {
     Entity entity;
@@ -661,7 +655,7 @@ struct Physics2DWorld::Implementation
 
     void warnOnce(Entity entity, std::string_view problem, const std::string& message)
     {
-        if (warnings.insert(keyOf(entity) ^ core::hash64(problem)).second)
+        if (warnings.insert(scene::entityKey(entity) ^ core::hash64(problem)).second)
         {
             DEVEX_LOG_WARNING("{}", message);
         }
@@ -780,7 +774,7 @@ struct Physics2DWorld::Implementation
             return;
         }
         const Entity owner = bodyOwner(scene, entity);
-        BodyDescription& description = descriptions[keyOf(owner)];
+        BodyDescription& description = descriptions[scene::entityKey(owner)];
         if (!description.owner.isValid())
         {
             description.owner = owner;
@@ -816,7 +810,7 @@ struct Physics2DWorld::Implementation
             key.add(core::hash64(block));
         }
         key.add(reinterpret_cast<std::uintptr_t>(tileset.get()));
-        TileCache& cache = tileCaches[keyOf(entity)];
+        TileCache& cache = tileCaches[scene::entityKey(entity)];
         if (cache.key != key.value() || cache.key == 0)
         {
             cache.key = key.value();
@@ -912,7 +906,7 @@ struct Physics2DWorld::Implementation
         }
         for ([[maybe_unused]] auto [entity, rigidBody] : scene.view<scene::RigidBody2D>())
         {
-            if (!descriptions.contains(keyOf(entity)))
+            if (!descriptions.contains(scene::entityKey(entity)))
             {
                 warnOnce(entity, "no collider", std::format("the RigidBody2D of '{}' has no 2D collider", scene.name(entity)));
             }
@@ -920,7 +914,7 @@ struct Physics2DWorld::Implementation
         for (auto& [key, description] : descriptions)
         {
             // Pools change order as components come and go: the colliders of a body keep theirs.
-            std::ranges::stable_sort(description.parts, {}, [](const ShapePart& part) { return keyOf(part.entity); });
+            std::ranges::stable_sort(description.parts, {}, [](const ShapePart& part) { return scene::entityKey(part.entity); });
             description.signature = signatureOf(description);
         }
         return descriptions;
@@ -943,7 +937,7 @@ struct Physics2DWorld::Implementation
         definition.gravityScale = rigidBody.gravityScale;
         definition.fixedRotation = rigidBody.fixedRotation;
         definition.isBullet = rigidBody.continuousCollision;
-        definition.userData = reinterpret_cast<void*>(static_cast<std::uintptr_t>(keyOf(description.owner)));
+        definition.userData = reinterpret_cast<void*>(static_cast<std::uintptr_t>(scene::entityKey(description.owner)));
         const b2BodyId body = b2CreateBody(world, &definition);
 
         // The mass of the body spreads over the area of its solid shapes.
@@ -1121,7 +1115,7 @@ struct Physics2DWorld::Implementation
     {
         std::unordered_map<std::uint64_t, JointDescription> descriptions;
         const auto add = [&](Entity entity, JointKind kind, const scene::WorldTransform& transform, auto& component) {
-            JointDescription& joint = descriptions[keyOf(entity) * 4 + static_cast<std::uint64_t>(kind)];
+            JointDescription& joint = descriptions[scene::entityKey(entity) * 4 + static_cast<std::uint64_t>(kind)];
             joint.kind = kind;
             joint.position = math::Vec2(transform.matrix[3]);
             const math::Vec2 across(transform.matrix[0]);
@@ -1273,7 +1267,7 @@ struct Physics2DWorld::Implementation
             const Entity owner = entityOf(key / 4);
             const auto body = [&](const scene::EntityRef& reference) -> const BodyRecord* {
                 const Entity entity = reference.isNil() ? Entity{} : scene.resolve(reference);
-                const auto record = entity.isValid() ? bodies.find(keyOf(entity)) : bodies.end();
+                const auto record = entity.isValid() ? bodies.find(scene::entityKey(entity)) : bodies.end();
                 return record != bodies.end() ? &record->second : nullptr;
             };
             const BodyRecord* const bodyA = body(*description.bodyA);
@@ -1422,7 +1416,7 @@ struct Physics2DWorld::Implementation
         }
         for ([[maybe_unused]] auto [entity, controller] : scene.view<scene::CharacterController2D>())
         {
-            const std::uint64_t key = keyOf(entity);
+            const std::uint64_t key = scene::entityKey(entity);
             const std::uint32_t layer = clampLayer(controller.layer);
             Signature signature;
             signature.add(controller.radius);
@@ -1767,8 +1761,8 @@ struct Physics2DWorld::Implementation
 
     [[nodiscard]] static std::uint64_t pairOf(const Contact& contact) noexcept
     {
-        const std::uint64_t second = keyOf(contact.second);
-        return core::hash64(std::as_bytes(std::span(&second, 1)), keyOf(contact.first)) ^ (contact.trigger ? 1u : 0u);
+        const std::uint64_t second = scene::entityKey(contact.second);
+        return core::hash64(std::as_bytes(std::span(&second, 1)), scene::entityKey(contact.first)) ^ (contact.trigger ? 1u : 0u);
     }
 
     // Two shapes started touching: the first pair between their entities begins a contact.
@@ -1790,8 +1784,8 @@ struct Physics2DWorld::Implementation
         {
             return;
         }
-        const std::uint64_t keyA = keyOf(ownerA->second);
-        const std::uint64_t keyB = keyOf(ownerB->second);
+        const std::uint64_t keyA = scene::entityKey(ownerA->second);
+        const std::uint64_t keyB = scene::entityKey(ownerB->second);
         const Contact contact{ContactPhase::Begin, entityOf(std::min(keyA, keyB)), entityOf(std::max(keyA, keyB)), trigger};
         if (touches.emplace(shapes, contact).second && ++contactCounts[pairOf(contact)] == 1)
         {
@@ -1844,7 +1838,7 @@ struct Physics2DWorld::Implementation
 
     [[nodiscard]] const BodyRecord* dynamicBody(Entity entity) const
     {
-        const auto record = bodies.find(keyOf(entity));
+        const auto record = bodies.find(scene::entityKey(entity));
         return record != bodies.end() && record->second.type == BodyType::Dynamic ? &record->second : nullptr;
     }
 };

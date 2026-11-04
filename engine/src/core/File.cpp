@@ -137,4 +137,11 @@ Result<void> writeFileAtomically(const std::filesystem::path& path, std::span<co
     return {};
 }
 
+std::filesystem::file_time_type lastWriteTime(const std::filesystem::path& path) noexcept
+{
+    std::error_code error;
+    const std::filesystem::file_time_type time = std::filesystem::last_write_time(path, error);
+    return error ? std::filesystem::file_time_type{} : time;
+}
+
 } // namespace devex::core

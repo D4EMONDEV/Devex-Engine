@@ -1,11 +1,12 @@
+#include <devex/core/Log.hpp>
 #include <devex/core/Path.hpp>
 #include <devex/platform/Process.hpp>
 
 #include <SDL3/SDL_error.h>
 #include <SDL3/SDL_iostream.h>
 #include <SDL3/SDL_process.h>
-#include <SDL3/SDL_stdinc.h>
 #include <SDL3/SDL_properties.h>
+#include <SDL3/SDL_stdinc.h>
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -20,6 +21,9 @@
 
 #include <algorithm>
 #include <cerrno>
+#include <chrono>
+#include <optional>
+#include <thread>
 #include <utility>
 
 namespace devex::platform {
@@ -387,6 +391,55 @@ std::uint32_t currentProcessId() noexcept
 #else
     return static_cast<std::uint32_t>(getpid());
 #endif
+}
+
+core::Result<void> runAndLog(const std::vector<std::string>& arguments, const std::filesystem::path& directory,
+                             std::string_view failure, const std::atomic<bool>* cancel)
+{
+    core::Result<Process> process = Process::start(arguments, directory);
+    if (!process)
+    {
+        return core::makeError(process.error().code, "{}: {}", failure, process.error().message);
+    }
+    constexpr std::size_t keptLines = 6;
+    std::vector<std::string> last;
+    const auto readOutput = [&] {
+        for (std::string& line : process->readLines())
+        {
+            if (!line.empty())
+            {
+                DEVEX_LOG_INFO("{}", line);
+                last.push_back(std::move(line));
+                if (last.size() > keptLines)
+                {
+                    last.erase(last.begin());
+                }
+            }
+        }
+    };
+    std::optional<int> exitCode;
+    while (!exitCode)
+    {
+        readOutput();
+        exitCode = process->exitCode();
+        if (!exitCode && cancel != nullptr && cancel->load())
+        {
+            process->kill();
+            return core::makeError(core::ErrorCode::InvalidState, "Cancelled");
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    }
+    readOutput();
+    if (*exitCode != 0)
+    {
+        std::string detail;
+        for (const std::string& line : last)
+        {
+            detail += "\n" + line;
+        }
+        return core::makeError(core::ErrorCode::Platform, "{} (code {}){}", failure, *exitCode, detail);
+    }
+    return {};
 }
 
 } // namespace devex::platform

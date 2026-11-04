@@ -6,6 +6,7 @@
 #include <devex/core/Log.hpp>
 #include <devex/core/Path.hpp>
 #include <devex/core/Uuid.hpp>
+#include <devex/platform/Process.hpp>
 #include <devex/runtime/Game.hpp>
 
 #include <algorithm>
@@ -19,6 +20,21 @@
 
 namespace devex::runtime::detail {
 namespace {
+
+#ifdef _WIN32
+// How a build script finds the tools of Visual Studio, unless the environment has them. It goes to its
+// :build when they are there, and to its :missing when they are not.
+constexpr std::string_view windowsBuildTools = R"(@echo off
+setlocal
+if defined VCToolsInstallDir goto build
+set "vswhere=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe"
+if not exist "%vswhere%" goto missing
+for /f "usebackq delims=" %%i in (`"%vswhere%" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "vs=%%i"
+if not defined vs goto missing
+call "%vs%\VC\Auxiliary\Build\vcvars64.bat" >nul 2>&1
+if errorlevel 1 exit /b 1
+)";
+#endif
 
 // A file whose change calls for a build of the C++ code: sources, headers and CMake files.
 [[nodiscard]] bool isCppBuildFile(const std::filesystem::path& path)
@@ -422,16 +438,7 @@ core::Result<std::filesystem::path> GameCodeBuilder::buildForAndroid(const asset
     const std::string options = std::format("-G Ninja -DCMAKE_BUILD_TYPE=Release -DANDROID_ABI={} -DANDROID_PLATFORM=android-29 -DANDROID_STL=c++_shared", abi);
 #ifdef _WIN32
     // Visual Studio gives CMake and Ninja; the NDK gives the compiler.
-    const std::string script = std::format(R"(@echo off
-setlocal
-if defined VCToolsInstallDir goto build
-set "vswhere=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe"
-if not exist "%vswhere%" goto missing
-for /f "usebackq delims=" %%i in (`"%vswhere%" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "vs=%%i"
-if not defined vs goto missing
-call "%vs%\VC\Auxiliary\Build\vcvars64.bat" >nul 2>&1
-if errorlevel 1 exit /b 1
-:build
+    const std::string script = std::format(R"({5}:build
 cmake -S "{0}" -B "{1}" {2} "-DDevex_DIR={3}" "-DCMAKE_TOOLCHAIN_FILE={4}"
 if errorlevel 1 exit /b 1
 cmake --build "{1}"
@@ -441,7 +448,7 @@ echo error: building game code needs Visual Studio with its C++ tools, for CMake
 exit /b 1
 )",
                                            core::toUtf8(project.codeDirectory()), core::toUtf8(build), options, core::toUtf8(devexDirectory),
-                                           core::toUtf8(ndk / "build" / "cmake" / "android.toolchain.cmake"));
+                                           core::toUtf8(ndk / "build" / "cmake" / "android.toolchain.cmake"), windowsBuildTools);
     const std::filesystem::path scriptPath = build / "devex-build.cmd";
     const std::vector<std::string> arguments{"cmd.exe", "/d", "/c", core::toUtf8(scriptPath)};
 #else
@@ -465,37 +472,10 @@ exec cmake --build {1}
     {
         return std::unexpected(written.error());
     }
-    core::Result<platform::Process> process = platform::Process::start(arguments, project.codeDirectory());
-    if (!process)
+    if (core::Result<void> built = platform::runAndLog(arguments, project.codeDirectory(), std::format("The game code does not build for {}", abi), cancel);
+        !built)
     {
-        return std::unexpected(process.error());
-    }
-    std::string lastError;
-    std::optional<int> exitCode;
-    while (!exitCode)
-    {
-        for (std::string& line : process->readLines())
-        {
-            if (!line.empty())
-            {
-                DEVEX_LOG_INFO_IN("build", "{}", line);
-                if (line.contains("error"))
-                {
-                    lastError = std::move(line);
-                }
-            }
-        }
-        exitCode = process->exitCode();
-        if (!exitCode && cancel != nullptr && cancel->load())
-        {
-            process->kill();
-            return core::makeError(core::ErrorCode::InvalidState, "The export was cancelled");
-        }
-        std::this_thread::sleep_for(std::chrono::milliseconds(20));
-    }
-    if (*exitCode != 0)
-    {
-        return core::makeError(core::ErrorCode::Platform, "The game code does not build for {}: {}", abi, lastError);
+        return std::unexpected(built.error());
     }
     const std::filesystem::path library = build / "bin" / "libGame.so";
     if (!std::filesystem::exists(library, error))
@@ -786,16 +766,7 @@ void GameCodeBuilder::startBuild()
     const bool configure = !std::filesystem::exists(build / "CMakeCache.txt", error) || !previous ||
                            *previous != m_engineStamp;
 #ifdef _WIN32
-    const std::string script = std::format(R"(@echo off
-setlocal
-if defined VCToolsInstallDir goto build
-set "vswhere=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe"
-if not exist "%vswhere%" goto missing
-for /f "usebackq delims=" %%i in (`"%vswhere%" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "vs=%%i"
-if not defined vs goto missing
-call "%vs%\VC\Auxiliary\Build\vcvars64.bat" >nul 2>&1
-if errorlevel 1 exit /b 1
-:build
+    const std::string script = std::format(R"({5}:build
 if "{4}" == "configure" (
     cmake -S "{1}" -B "{0}" -G Ninja -DCMAKE_BUILD_TYPE={2} "-DDevex_DIR={3}"
     if errorlevel 1 exit /b 1
@@ -807,7 +778,7 @@ echo error: building game code needs Visual Studio with its C++ tools
 exit /b 1
 )",
                                            core::toUtf8(build), core::toUtf8(m_project.codeDirectory()),
-                                           m_configuration, engine, configure ? "configure" : "build");
+                                           m_configuration, engine, configure ? "configure" : "build", windowsBuildTools);
     const std::filesystem::path scriptPath = build / "devex-build.cmd";
     const std::vector<std::string> arguments{"cmd.exe", "/d", "/c", core::toUtf8(scriptPath)};
 #else

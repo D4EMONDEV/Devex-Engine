@@ -21,13 +21,6 @@ namespace {
 using scene::Entity;
 using Button = PanelButton;
 
-[[nodiscard]] std::filesystem::file_time_type writeTime(const std::filesystem::path& file)
-{
-    std::error_code error;
-    const std::filesystem::file_time_type time = std::filesystem::last_write_time(file, error);
-    return error ? std::filesystem::file_time_type{} : time;
-}
-
 // Reads the frames of the selected asset from their file, when another asset is selected or the
 // file changed outside the editor.
 void loadFrames(ToolsState& state, const asset::SourceFile& source)
@@ -38,7 +31,7 @@ void loadFrames(ToolsState& state, const asset::SourceFile& source)
     {
         return;
     }
-    const std::filesystem::file_time_type time = writeTime(*file);
+    const std::filesystem::file_time_type time = core::lastWriteTime(*file);
     if (editor.asset == state.selectedAsset && editor.file == *file && editor.fileTime == time)
     {
         return;
@@ -81,7 +74,7 @@ void saveFrames(ToolsState& state)
         DEVEX_LOG_ERROR("Cannot save the sprite frames: {}", written.error());
         return;
     }
-    editor.fileTime = writeTime(editor.file);
+    editor.fileTime = core::lastWriteTime(editor.file);
     editor.error.clear();
     if (core::Result<void> queued = state.database->reimport(editor.asset); !queued)
     {

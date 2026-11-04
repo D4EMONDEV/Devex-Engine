@@ -95,11 +95,6 @@ constexpr std::array shaderTypeNames{
     return std::isalpha(static_cast<unsigned char>(value)) != 0 || value == '_';
 }
 
-[[nodiscard]] bool isIdentifierPart(char value) noexcept
-{
-    return std::isalnum(static_cast<unsigned char>(value)) != 0 || value == '_';
-}
-
 [[nodiscard]] bool contains(std::span<const char* const> names, std::string_view word) noexcept
 {
     return std::ranges::find(names, word) != names.end();

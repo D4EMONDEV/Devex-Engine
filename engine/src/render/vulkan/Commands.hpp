@@ -2,6 +2,8 @@
 
 #include "Vulkan.hpp"
 
+#include <cstdint>
+
 namespace devex::render::vulkan {
 
 // States an image goes through during a frame. Each state carries the pipeline stages at which it
@@ -45,6 +47,16 @@ enum class ImageState
 // Records a synchronization2 barrier between two states of every level and layer of an image.
 void transitionImage(VkCommandBuffer commandBuffer, VkImage image, ImageState from, ImageState to,
                      VkImageAspectFlags aspect = VK_IMAGE_ASPECT_COLOR_BIT);
+
+// Records a synchronization2 barrier between stages, for memory rather than for one image.
+void memoryBarrier(VkCommandBuffer commandBuffer, VkPipelineStageFlags2 sourceStages, VkAccessFlags2 sourceAccess,
+                   VkPipelineStageFlags2 destinationStages, VkAccessFlags2 destinationAccess);
+
+// The groups a compute shader of 8 threads a side dispatches to cover a size.
+[[nodiscard]] constexpr std::uint32_t computeGroups(std::uint32_t size) noexcept
+{
+    return (size + 7) / 8;
+}
 
 // The aspect of images of the format: depth for depth formats, color otherwise.
 [[nodiscard]] VkImageAspectFlags aspectOf(VkFormat format) noexcept;

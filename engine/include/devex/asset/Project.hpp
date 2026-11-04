@@ -322,6 +322,8 @@ struct DEVEX_API Project
 // the .dvxproj file, followed by optional [physics], [physics_layer], [audio], [audio_group],
 // [sorting_layer], [window], [export], [export_scene], [export_folder], [input_context],
 // [input_action] and [localization] sections.
+// The file name a game is exported under, from its name, without an extension.
+[[nodiscard]] DEVEX_API std::string gameFileName(std::string_view name);
 // Lowercase words joined by dots, each starting with a letter, at least two.
 [[nodiscard]] DEVEX_API bool validAndroidPackage(std::string_view package);
 // "com.devex.<game>", from the name of a game.

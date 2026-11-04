@@ -35,11 +35,6 @@ constexpr float moveTolerance = 0.01f;
 constexpr float obstacleMoveThreshold = 0.1f;
 constexpr float obstacleTurnThreshold = 0.05f;
 
-[[nodiscard]] std::uint64_t keyOf(Entity entity) noexcept
-{
-    return static_cast<std::uint64_t>(entity.generation) << 32 | entity.index;
-}
-
 [[nodiscard]] math::Vec3 fromDetour(const float* value) noexcept
 {
     return {value[0], value[1], value[2]};
@@ -282,7 +277,7 @@ struct NavigationWorld::Implementation
             Signature signature;
             signature.add(component.shape);
             signature.add(half);
-            Obstacle& obstacle = obstacles[keyOf(entity)];
+            Obstacle& obstacle = obstacles[scene::entityKey(entity)];
             obstacle.seen = true;
             const bool moved = math::length(center - obstacle.position) > obstacleMoveThreshold ||
                                std::abs(std::remainder(yaw - obstacle.yaw, 2.0f * std::numbers::pi_v<float>)) > obstacleTurnThreshold;
@@ -384,7 +379,7 @@ struct NavigationWorld::Implementation
         }
         for ([[maybe_unused]] auto [entity, component] : sceneToRead.view<scene::NavMeshAgent>())
         {
-            Agent& agent = agents[keyOf(entity)];
+            Agent& agent = agents[scene::entityKey(entity)];
             agent.entity = entity;
             agent.seen = true;
             const math::Vec3 position(worldOf(sceneToRead, entity)[3]);
@@ -470,7 +465,7 @@ struct NavigationWorld::Implementation
 
     [[nodiscard]] const Agent* find(Entity entity) const
     {
-        const auto found = agents.find(keyOf(entity));
+        const auto found = agents.find(scene::entityKey(entity));
         return found != agents.end() ? &found->second : nullptr;
     }
 
@@ -544,7 +539,7 @@ bool NavigationWorld::setDestination(scene::Entity agent, math::Vec3 destination
             return false;
         }
     }
-    Implementation::Agent& record = world.agents[keyOf(agent)];
+    Implementation::Agent& record = world.agents[scene::entityKey(agent)];
     record.entity = agent;
     record.destination = destination;
     record.pending = true;
@@ -558,7 +553,7 @@ bool NavigationWorld::setDestination(scene::Entity agent, math::Vec3 destination
 void NavigationWorld::stop(scene::Entity agent)
 {
     Implementation& world = *m_implementation;
-    const auto found = world.agents.find(keyOf(agent));
+    const auto found = world.agents.find(scene::entityKey(agent));
     if (found == world.agents.end())
     {
         return;

@@ -5,23 +5,13 @@
 #include <format>
 #include <optional>
 
+#include "AssetText.hpp"
+
 namespace devex::asset {
 namespace {
 
 // 2: terrains. 3: custom collision outlines.
 constexpr std::int64_t tilesetFormat = 3;
-
-[[nodiscard]] std::optional<AssetId> readAsset(const serialization::TextValue& value)
-{
-    const serialization::TextCall* const call = serialization::asCall(value, "asset");
-    if (call == nullptr || call->arguments.size() != 1)
-    {
-        return std::nullopt;
-    }
-    const std::string* const text = serialization::asString(call->arguments.front());
-    const std::optional<core::Uuid> uuid = text != nullptr ? core::Uuid::parse(*text) : std::nullopt;
-    return uuid ? std::optional(AssetId{*uuid}) : std::nullopt;
-}
 
 [[nodiscard]] serialization::TextValue assetValue(AssetId id)
 {
@@ -46,11 +36,6 @@ constexpr std::int64_t tilesetFormat = 3;
         color[index] = static_cast<float>(*number);
     }
     return color;
-}
-
-[[nodiscard]] serialization::TextValue number(float value)
-{
-    return serialization::TextValue(std::stod(std::format("{}", value)));
 }
 
 [[nodiscard]] std::optional<std::int32_t> readTerrain(const serialization::TextValue& value)
@@ -312,8 +297,8 @@ std::string writeTilesetFile(const TilesetData& tileset)
             terrainSection.type = "terrain";
             terrainSection.attributes.push_back({"name", serialization::TextValue(terrain.name)});
             terrainSection.attributes.push_back(
-                {"color", serialization::makeCall("vec4", {number(terrain.color.x), number(terrain.color.y), number(terrain.color.z),
-                                                           number(terrain.color.w)})});
+                {"color", serialization::makeCall("vec4", {serialization::shortestNumber(terrain.color.x), serialization::shortestNumber(terrain.color.y), serialization::shortestNumber(terrain.color.z),
+                                                           serialization::shortestNumber(terrain.color.w)})});
         }
     }
     for (const TileData& tile : tileset.tiles)
@@ -330,7 +315,7 @@ std::string writeTilesetFile(const TilesetData& tileset)
             std::vector<serialization::TextValue> points;
             for (const auto point : tile.collisionPoints)
                 points.push_back(
-                    serialization::makeCall("vec2", {number(point.x), number(point.y)}));
+                    serialization::makeCall("vec2", {serialization::shortestNumber(point.x), serialization::shortestNumber(point.y)}));
             section.properties.push_back(
                 {"collision_points", serialization::makeCall("list", std::move(points))});
         }
@@ -351,7 +336,7 @@ std::string writeTilesetFile(const TilesetData& tileset)
                 frames.push_back(assetValue(frame));
             }
             section.properties.push_back({"frames", serialization::makeCall("list", std::move(frames))});
-            section.properties.push_back({"fps", number(tile.fps)});
+            section.properties.push_back({"fps", serialization::shortestNumber(tile.fps)});
         }
         if (!tile.data.empty())
         {
@@ -368,7 +353,7 @@ std::string writeTilesetFile(const TilesetData& tileset)
         }
         if (tile.probability != 1.0f)
         {
-            section.properties.push_back({"probability", number(tile.probability)});
+            section.properties.push_back({"probability", serialization::shortestNumber(tile.probability)});
         }
     }
     return serialization::writeText(document);

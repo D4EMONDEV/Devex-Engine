@@ -2,30 +2,13 @@
 // every deferred instance is tested against current depth before being left out.
 #include "VulkanRenderer.hpp"
 
+#include "Commands.hpp"
+
 #include <algorithm>
 #include <cstring>
 
 namespace devex::render::vulkan
 {
-namespace
-{
-
-void barrier(VkCommandBuffer commands, VkPipelineStageFlags2 source, VkAccessFlags2 sourceAccess,
-             VkPipelineStageFlags2 target, VkAccessFlags2 targetAccess)
-{
-    const VkMemoryBarrier2 memory{.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
-                                  .srcStageMask = source,
-                                  .srcAccessMask = sourceAccess,
-                                  .dstStageMask = target,
-                                  .dstAccessMask = targetAccess};
-    const VkDependencyInfo dependency{.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-                                      .memoryBarrierCount = 1,
-                                      .pMemoryBarriers = &memory};
-    vkCmdPipelineBarrier2(commands, &dependency);
-}
-
-} // namespace
-
 void VulkanRenderer::readCulling(FrameContext& frame)
 {
     m_lastGpuTested = static_cast<std::uint32_t>(frame.cullKeys.size());
@@ -71,7 +54,7 @@ void VulkanRenderer::recordDepthPyramid(VkCommandBuffer commands, const FrameCon
         vkCmdPushConstants(commands, pipeline.layout(), VK_SHADER_STAGE_COMPUTE_BIT, 0,
                            sizeof(constants), &constants);
         vkCmdDispatch(commands, (width + 7) / 8, (height + 7) / 8, 1);
-        barrier(commands, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+        memoryBarrier(commands, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
                 VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
                 VK_ACCESS_2_SHADER_STORAGE_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT);
         constants.sourceOffset = constants.targetOffset;
@@ -86,7 +69,7 @@ void VulkanRenderer::recordOcclusion(VkCommandBuffer commands, const FrameContex
                                      std::uint32_t frameSlot) const
 {
     // Reset only the camera's row. Shadows retain their own visibility, including hidden casters.
-    barrier(commands,
+    memoryBarrier(commands,
             VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT | VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT |
                 VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
             VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_READ_BIT |
@@ -96,7 +79,7 @@ void VulkanRenderer::recordOcclusion(VkCommandBuffer commands, const FrameContex
     const VkBufferCopy copy{.size = m_cullBatches.size() * sizeof(VkDrawIndexedIndirectCommand)};
     vkCmdCopyBuffer(commands, frame.cullCommandUpload->handle(), frame.cullCommands->handle(), 1,
                     &copy);
-    barrier(commands, VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
+    memoryBarrier(commands, VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
             VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
             VK_ACCESS_2_SHADER_STORAGE_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT);
     const Pipeline& pipeline = *m_occlusionPipeline;
@@ -120,7 +103,7 @@ void VulkanRenderer::recordOcclusion(VkCommandBuffer commands, const FrameContex
     vkCmdPushConstants(commands, pipeline.layout(), VK_SHADER_STAGE_COMPUTE_BIT, 0,
                        sizeof(constants), &constants);
     vkCmdDispatch(commands, (m_culledCount + 63) / 64, 1, 1);
-    barrier(commands, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
+    memoryBarrier(commands, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
             VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT | VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT,
             VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_READ_BIT);
 }
@@ -128,11 +111,11 @@ void VulkanRenderer::recordOcclusion(VkCommandBuffer commands, const FrameContex
 void VulkanRenderer::recordCullingReadback(VkCommandBuffer commands,
                                            const FrameContext& frame) const
 {
-    barrier(commands, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
+    memoryBarrier(commands, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
             VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_READ_BIT);
     const VkBufferCopy copy{.size = m_culledCount * sizeof(std::uint32_t)};
     vkCmdCopyBuffer(commands, frame.cullStates->handle(), frame.cullReadback->handle(), 1, &copy);
-    barrier(commands, VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
+    memoryBarrier(commands, VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
             VK_PIPELINE_STAGE_2_HOST_BIT, VK_ACCESS_2_HOST_READ_BIT);
 }
 

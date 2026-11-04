@@ -42,13 +42,6 @@ constexpr math::Vec2 stateSize{170.0f, 48.0f};
 constexpr math::Vec2 markerSize{110.0f, 30.0f};
 constexpr std::size_t maxUndo = 200;
 
-[[nodiscard]] std::filesystem::file_time_type writeTime(const std::filesystem::path& file)
-{
-    std::error_code error;
-    const std::filesystem::file_time_type time = std::filesystem::last_write_time(file, error);
-    return error ? std::filesystem::file_time_type{} : time;
-}
-
 // The entity whose Animator the panel follows: the selected one, or its closest ancestor with one.
 [[nodiscard]] scene::Entity animatorOf(const scene::Scene& scene, scene::Entity entity)
 {
@@ -428,7 +421,7 @@ void loadAnimator(ToolsState& state, asset::AssetId id)
     {
         return;
     }
-    const std::filesystem::file_time_type time = writeTime(*file);
+    const std::filesystem::file_time_type time = core::lastWriteTime(*file);
     const bool sameAsset = editor.asset == id;
     if ((sameAsset && editor.file == *file && editor.fileTime == time) || (sameAsset && editor.dragged != AnimatorElement::None))
     {
@@ -473,7 +466,7 @@ void writeAnimator(ToolsState& state)
         return;
     }
     editor.saved = editor.animator;
-    editor.fileTime = writeTime(editor.file);
+    editor.fileTime = core::lastWriteTime(editor.file);
     editor.error.clear();
     if (core::Result<void> queued = state.database->reimport(editor.asset); !queued)
     {

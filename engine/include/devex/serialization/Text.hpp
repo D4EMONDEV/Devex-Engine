@@ -54,6 +54,8 @@ struct DEVEX_API TextValue : std::variant<bool, std::int64_t, double, std::strin
 // Formats the value as it appears in a document. Real numbers use the shortest text that
 // reads back to the same double.
 [[nodiscard]] DEVEX_API std::string formatValue(const TextValue& value);
+// The shortest text that reads back as the same float, rather than the digits of the double it widens to.
+[[nodiscard]] DEVEX_API TextValue shortestNumber(float value);
 
 struct DEVEX_API TextProperty
 {
@@ -92,6 +94,9 @@ struct DEVEX_API TextDocument
 
 // One value on its own, as formatValue wrote it. Nothing when the text is not a value.
 [[nodiscard]] DEVEX_API std::optional<TextValue> parseValue(std::string_view text);
+
+// The text of an attribute of a section; null when it is missing or is not a text.
+[[nodiscard]] DEVEX_API const std::string* stringAttribute(const TextSection& section, std::string_view key);
 
 [[nodiscard]] DEVEX_API std::string writeText(const TextDocument& document);
 

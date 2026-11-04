@@ -5,6 +5,7 @@
 #include <cmath>
 #include <format>
 #include <iterator>
+#include <string>
 #include <system_error>
 #include <type_traits>
 
@@ -550,6 +551,17 @@ std::string writeText(const TextDocument& document)
         }
     }
     return output;
+}
+
+TextValue shortestNumber(float value)
+{
+    return TextValue(std::stod(std::format("{}", value)));
+}
+
+const std::string* stringAttribute(const TextSection& section, std::string_view key)
+{
+    const TextValue* const value = section.findAttribute(key);
+    return value != nullptr ? asString(*value) : nullptr;
 }
 
 } // namespace devex::serialization

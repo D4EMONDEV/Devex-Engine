@@ -1333,6 +1333,8 @@ DEVEX_API void drawStatusBar(ToolsState& state, const scene::Scene& scene);
 // over the others while it is open.
 DEVEX_API void drawSettingsWindow(ToolsState& state);
 DEVEX_API void drawProjectSettingsWindow(ToolsState& state, scene::Scene& scene);
+// Asks for a folder, starting from `start` when given, and leaves it in an answer for later frames.
+void showFolderDialog(ToolsState& state, std::optional<std::filesystem::path> DialogAnswers::*answer, std::filesystem::path start = {});
 DEVEX_API void drawExportWindow(ToolsState& state);
 DEVEX_API void renderExportWindow(ToolsState& state, render::RenderWorld& world);
 // The dialogs of the editor: New Script, the unsaved changes an action would drop, and About.

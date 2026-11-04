@@ -208,15 +208,9 @@ void addStamp(std::vector<serialization::TextProperty>& properties, const FileSt
     return FileStamp{static_cast<std::uint64_t>(*sizeValue), *timeValue, *hash, *existsValue};
 }
 
-[[nodiscard]] const std::string* stringAttribute(const TextSection& section, std::string_view key)
-{
-    const TextValue* const value = section.findAttribute(key);
-    return value != nullptr ? serialization::asString(*value) : nullptr;
-}
-
 [[nodiscard]] std::optional<AssetId> idAttribute(const TextSection& section)
 {
-    const std::string* const text = stringAttribute(section, "uuid");
+    const std::string* const text = serialization::stringAttribute(section, "uuid");
     const std::optional<core::Uuid> uuid = text != nullptr ? core::Uuid::parse(*text) : std::nullopt;
     return uuid && !uuid->isNil() ? std::optional(AssetId{*uuid}) : std::nullopt;
 }
@@ -234,8 +228,8 @@ void addStamp(std::vector<serialization::TextProperty>& properties, const FileSt
     const TextValue* const format = header.findAttribute("format");
     const TextValue* const version = header.findAttribute("version");
     const std::optional<AssetId> id = idAttribute(header);
-    const std::string* const path = stringAttribute(header, "path");
-    const std::string* const importer = stringAttribute(header, "importer");
+    const std::string* const path = serialization::stringAttribute(header, "path");
+    const std::string* const importer = serialization::stringAttribute(header, "importer");
     const std::optional<std::uint64_t> settings = parseHex(header.findAttribute("settings"));
     const std::optional<FileStamp> source = readStamp(header);
     if (format == nullptr || serialization::asInteger(*format) != recordFormatVersion ||
@@ -268,10 +262,10 @@ void addStamp(std::vector<serialization::TextProperty>& properties, const FileSt
         if (section.type == "artifact")
         {
             const std::optional<AssetId> artifactId = idAttribute(section);
-            const std::string* const typeName = stringAttribute(section, "type");
+            const std::string* const typeName = serialization::stringAttribute(section, "type");
             const std::optional<AssetType> type =
                 typeName != nullptr ? parseAssetType(*typeName) : std::nullopt;
-            const std::string* const name = stringAttribute(section, "name");
+            const std::string* const name = serialization::stringAttribute(section, "name");
             if (!artifactId || !type || name == nullptr)
             {
                 return std::nullopt;
@@ -280,7 +274,7 @@ void addStamp(std::vector<serialization::TextProperty>& properties, const FileSt
         }
         else if (section.type == "dependency")
         {
-            const std::string* const dependencyPath = stringAttribute(section, "path");
+            const std::string* const dependencyPath = serialization::stringAttribute(section, "path");
             const std::optional<FileStamp> stamp = readStamp(section);
             if (dependencyPath == nullptr || !stamp)
             {

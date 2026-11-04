@@ -112,51 +112,6 @@ constexpr std::string_view programSuffix = "";
     return java;
 }
 
-// Runs a program and waits for it, its output going to the log; a failure gives its last lines.
-[[nodiscard]] core::Result<void> runLogged(const std::vector<std::string>& arguments, const fs::path& directory,
-                                           std::string_view failure, const std::atomic<bool>* cancel)
-{
-    core::Result<platform::Process> process = platform::Process::start(arguments, directory);
-    if (!process)
-    {
-        return core::makeError(process.error().code, "{}: {}", failure, process.error().message);
-    }
-    std::vector<std::string> last;
-    std::optional<int> exitCode;
-    while (!exitCode)
-    {
-        for (std::string& line : process->readLines())
-        {
-            if (!line.empty())
-            {
-                DEVEX_LOG_INFO("{}", line);
-                last.push_back(std::move(line));
-                if (last.size() > 6)
-                {
-                    last.erase(last.begin());
-                }
-            }
-        }
-        exitCode = process->exitCode();
-        if (!exitCode && cancel != nullptr && cancel->load())
-        {
-            process->kill();
-            return core::makeError(core::ErrorCode::InvalidState, "The export was cancelled");
-        }
-        std::this_thread::sleep_for(std::chrono::milliseconds(20));
-    }
-    if (*exitCode != 0)
-    {
-        std::string detail;
-        for (const std::string& line : last)
-        {
-            detail += "\n" + line;
-        }
-        return core::makeError(core::ErrorCode::Platform, "{} (exit code {}){}", failure, *exitCode, detail);
-    }
-    return {};
-}
-
 // A value of a properties file, where a backslash starts an escape.
 [[nodiscard]] std::string propertyValue(std::string_view value)
 {
@@ -422,7 +377,7 @@ core::Result<ExportResult> exportAndroid(const ExportPlan& plan, const std::func
     const std::string_view variant = android.release ? "Release" : "Debug";
     const std::string task = std::format("{}{}", bundle ? "bundle" : "assemble", variant);
     report(std::format("Building the {}: the first time, Gradle downloads what it needs", bundle ? "AAB" : "APK"), 0.72f);
-    if (core::Result<void> built = runLogged({core::toUtf8(tools.java), "-classpath", core::toUtf8(gradle / "gradle" / "wrapper" / "gradle-wrapper.jar"),
+    if (core::Result<void> built = platform::runAndLog({core::toUtf8(tools.java), "-classpath", core::toUtf8(gradle / "gradle" / "wrapper" / "gradle-wrapper.jar"),
                                               "org.gradle.wrapper.GradleWrapperMain", "--no-daemon", "--console=plain", task},
                                              gradle, "Gradle could not build the game", cancel);
         !built)
@@ -447,14 +402,14 @@ core::Result<ExportResult> exportAndroid(const ExportPlan& plan, const std::func
             return core::makeError(core::ErrorCode::InvalidArgument, "An AAB does not install on a device: it goes to the Play Store. Export an APK to try the game");
         }
         report("Installing on the device", 0.95f);
-        if (core::Result<void> installed = runLogged({core::toUtf8(tools.adb), "install", "-r", core::toUtf8(destination)}, gradle,
+        if (core::Result<void> installed = platform::runAndLog({core::toUtf8(tools.adb), "install", "-r", core::toUtf8(destination)}, gradle,
                                                      "Cannot install the game: is a device connected, with USB debugging on?", cancel);
             !installed)
         {
             return std::unexpected(installed.error());
         }
         const std::string packageName = android.package.empty() ? asset::androidPackageFromName(project.name) : android.package;
-        if (core::Result<void> started = runLogged({core::toUtf8(tools.adb), "shell", "am", "start", "-n", std::format("{}/com.devex.player.DevexActivity", packageName)},
+        if (core::Result<void> started = platform::runAndLog({core::toUtf8(tools.adb), "shell", "am", "start", "-n", std::format("{}/com.devex.player.DevexActivity", packageName)},
                                                    gradle, "Cannot start the game on the device", cancel);
             !started)
         {

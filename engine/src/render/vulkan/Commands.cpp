@@ -131,4 +131,22 @@ VkImageAspectFlags aspectOf(VkFormat format) noexcept
     }
 }
 
+void memoryBarrier(VkCommandBuffer commandBuffer, VkPipelineStageFlags2 sourceStages, VkAccessFlags2 sourceAccess,
+                   VkPipelineStageFlags2 destinationStages, VkAccessFlags2 destinationAccess)
+{
+    const VkMemoryBarrier2 memory{
+        .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
+        .srcStageMask = sourceStages,
+        .srcAccessMask = sourceAccess,
+        .dstStageMask = destinationStages,
+        .dstAccessMask = destinationAccess,
+    };
+    const VkDependencyInfo dependency{
+        .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+        .memoryBarrierCount = 1,
+        .pMemoryBarriers = &memory,
+    };
+    vkCmdPipelineBarrier2(commandBuffer, &dependency);
+}
+
 } // namespace devex::render::vulkan

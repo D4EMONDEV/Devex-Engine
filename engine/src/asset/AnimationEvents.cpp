@@ -35,12 +35,6 @@ template <typename Make>
     return {};
 }
 
-// The shortest text of the float, not of the double it widens to.
-[[nodiscard]] TextValue shortest(float value)
-{
-    return TextValue(std::stod(std::format("{}", value)));
-}
-
 } // namespace
 
 core::Result<std::vector<AnimationEvent>> readAnimationEvents(const TextValue& value)
@@ -62,7 +56,7 @@ TextValue writeAnimationEvents(std::span<const AnimationEvent> events)
     std::vector<TextValue> list;
     for (const AnimationEvent& event : events)
     {
-        list.push_back(serialization::makeCall("event", {shortest(event.time), TextValue(event.name)}));
+        list.push_back(serialization::makeCall("event", {serialization::shortestNumber(event.time), TextValue(event.name)}));
     }
     return serialization::makeCall("list", std::move(list));
 }
