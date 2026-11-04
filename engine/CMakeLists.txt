@@ -62,6 +62,7 @@ target_sources(devex_core
             include/devex/core/Path.hpp
             include/devex/core/Profiler.hpp
             include/devex/core/SlotMap.hpp
+            include/devex/core/String.hpp
             include/devex/core/Time.hpp
             include/devex/core/Uuid.hpp
 )
@@ -409,6 +410,7 @@ target_sources(devex_render
         src/render/vulkan/Upload.hpp
         src/render/vulkan/Vulkan.cpp
         src/render/vulkan/Vulkan.hpp
+        src/render/vulkan/FrameGraph.cpp
         src/render/vulkan/VulkanRenderer.cpp
         src/render/vulkan/Occlusion.cpp
         src/render/vulkan/Skinning.cpp
@@ -934,6 +936,7 @@ target_sources(devex_tools
         src/tools/LogBuffer.cpp
         src/tools/InstanceParametersUi.cpp
         src/tools/MaterialInspector.cpp
+        src/tools/GraphEditor.cpp
         src/tools/ShaderGraphPanel.cpp
         src/tools/ModelInspector.cpp
         src/tools/NavigationTools.cpp

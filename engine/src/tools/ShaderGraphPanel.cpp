@@ -39,7 +39,6 @@ constexpr float nodeWidth = 190.0f;
 constexpr float headerHeight = 24.0f;
 constexpr float rowHeight = 20.0f;
 constexpr float portRadius = 5.0f;
-constexpr std::size_t maxUndo = 200;
 // Points a link is drawn with, as a curve.
 constexpr std::size_t curvePoints = 20;
 
@@ -87,30 +86,20 @@ void refreshDiagnostics(ToolsState& state)
 void writeShaderGraph(ToolsState& state)
 {
     ShaderGraphEditor& editor = state.shaderGraphEditor;
-    if (core::Result<void> written = core::writeTextFile(editor.file, asset::writeShaderGraphFile(editor.graph)); !written)
+    if (saveGraphAsset(state, editor.asset, editor.file, asset::writeShaderGraphFile(editor.graph),
+                       editor.fileTime, editor.error))
     {
-        editor.error = std::format("Not saved: {}", written.error().message);
-        return;
-    }
-    editor.saved = editor.graph;
-    editor.fileTime = core::lastWriteTime(editor.file);
-    editor.error.clear();
-    if (core::Result<void> queued = state.database->reimport(editor.asset); !queued)
-    {
-        DEVEX_LOG_WARNING("{}", queued.error());
+        editor.saved = editor.graph;
     }
 }
 
 void undoShaderGraph(ToolsState& state)
 {
     ShaderGraphEditor& editor = state.shaderGraphEditor;
-    if (editor.undo.empty())
+    if (!editor.history.undo(editor.graph))
     {
         return;
     }
-    editor.redo.push_back(editor.graph);
-    editor.graph = std::move(editor.undo.back());
-    editor.undo.pop_back();
     writeShaderGraph(state);
     if (editor.graph.find(editor.selected) == nullptr)
     {
@@ -122,13 +111,10 @@ void undoShaderGraph(ToolsState& state)
 void redoShaderGraph(ToolsState& state)
 {
     ShaderGraphEditor& editor = state.shaderGraphEditor;
-    if (editor.redo.empty())
+    if (!editor.history.redo(editor.graph))
     {
         return;
     }
-    editor.undo.push_back(editor.graph);
-    editor.graph = std::move(editor.redo.back());
-    editor.redo.pop_back();
     writeShaderGraph(state);
     if (editor.graph.find(editor.selected) == nullptr)
     {
@@ -182,22 +168,6 @@ void duplicateSelected(ToolsState& state)
 }
 
 // ---- The graph ----
-
-struct Graph
-{
-    math::Vec2 origin{0.0f};
-    float scale = 1.0f;
-
-    [[nodiscard]] math::Vec2 toArea(math::Vec2 point) const noexcept
-    {
-        return origin + point * scale;
-    }
-
-    [[nodiscard]] math::Vec2 toGraph(math::Vec2 point) const noexcept
-    {
-        return (point - origin) / scale;
-    }
-};
 
 // A node as the graph lays it out, in units of the graph.
 struct NodeBox
@@ -414,8 +384,7 @@ void loadShaderGraph(ToolsState& state, asset::AssetId id)
     editor.saved = editor.graph;
     if (!sameAsset)
     {
-        editor.undo.clear();
-        editor.redo.clear();
+        editor.history.clear();
         editor.selected = 0;
         editor.inspecting = false;
         editor.linkingNode = 0;
@@ -437,12 +406,7 @@ void commitShaderGraph(ToolsState& state)
     {
         return;
     }
-    editor.undo.push_back(editor.saved);
-    if (editor.undo.size() > maxUndo)
-    {
-        editor.undo.erase(editor.undo.begin());
-    }
-    editor.redo.clear();
+    editor.history.record(editor.saved);
     writeShaderGraph(state);
 }
 
@@ -686,42 +650,11 @@ void ShaderGraphUi::showGraph(ToolsState& state)
         editor.pan = areaSize * 0.5f - (low + high) * 0.5f * (editor.zoom * unit);
         editor.frame = false;
     }
-    const Graph view{editor.pan, editor.zoom * unit};
+    const GraphView view{editor.pan, editor.zoom * unit};
 
-    // The grid, a line in two once they come too close.
-    float step = 32.0f * view.scale;
-    while (step < 18.0f)
-    {
-        step *= 2.0f;
-    }
-    const math::Vec4 gridColor = linearColor(math::Vec4(colors.border.x, colors.border.y, colors.border.z, 0.16f));
-    std::size_t linesUsed = 0;
-    const auto gridLine = [&](math::Vec2 from, math::Vec2 to) {
-        if (linesUsed == gridLines.size())
-        {
-            const Entity made = add(gridLayer, "Line", UiRect{.anchorMin = {0.0f, 0.0f}, .anchorMax = {0.0f, 0.0f}});
-            scene().add<scene::UiImage>(made, scene::UiImage{.raycastTarget = false});
-            gridLines.push_back(made);
-        }
-        const Entity shown = gridLines[linesUsed++];
-        UiRect& rect = scene().get<UiRect>(shown);
-        rect.visible = true;
-        rect.offsetMin = from;
-        rect.offsetMax = to;
-        scene().get<scene::UiImage>(shown).color = gridColor;
-    };
-    for (float x = std::fmod(view.origin.x, step); x < areaSize.x && linesUsed < 400; x += step)
-    {
-        gridLine({std::round(x), 0.0f}, {std::round(x) + 1.0f, areaSize.y});
-    }
-    for (float y = std::fmod(view.origin.y, step); y < areaSize.y && linesUsed < 400; y += step)
-    {
-        gridLine({0.0f, std::round(y)}, {areaSize.x, std::round(y) + 1.0f});
-    }
-    for (std::size_t index = linesUsed; index < gridLines.size(); ++index)
-    {
-        scene().get<UiRect>(gridLines[index]).visible = false;
-    }
+    syncGraphGrid(
+        scene(), gridLayer, gridLines, view, areaSize,
+        linearColor(math::Vec4(colors.border.x, colors.border.y, colors.border.z, 0.16f)));
 
     const auto boxOf = [&](std::uint32_t id) -> const NodeBox* {
         const auto found = std::ranges::find(boxes, id, &NodeBox::id);
@@ -908,7 +841,7 @@ void ShaderGraphUi::answerGraph(ToolsState& state, EditorUiKit& kit, const ui::L
     const bool inside = mouse.x >= 0.0f && mouse.y >= 0.0f && mouse.x < areaSize.x && mouse.y < areaSize.y;
     pointed = panel.hovered() && inside;
     const bool hovered = pointed && !menuWasOpen && !menuOpen();
-    const Graph view{editor.pan, editor.zoom * graphUnit()};
+    const GraphView view{editor.pan, editor.zoom * graphUnit()};
     const float unitsPerPoint = panel.unitsOf(math::Vec2(1.0f, 0.0f)).x - panel.unitsOf(math::Vec2(0.0f, 0.0f)).x;
 
     const std::vector<NodeBox> boxes = boxesOf(data, editor.function);
@@ -1187,8 +1120,8 @@ void ShaderGraphUi::update(ToolsState& state, EditorUiKit& kit, core::Duration d
             scene().get<UiRect>(functionTabs[index].entity).style = functions[index] == editor.function ? "primary" : "button";
         }
     }
-    enable(undo, !editor.undo.empty());
-    enable(redo, !editor.redo.empty());
+    enable(undo, editor.history.canUndo());
+    enable(redo, editor.history.canRedo());
     {
         std::string said;
         std::string_view style = "dim";

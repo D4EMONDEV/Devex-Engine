@@ -1,25 +1,14 @@
 #include "CodeOutline.hpp"
 #include "CodeHighlight.hpp"
 
+#include <devex/core/String.hpp>
+
 #include <algorithm>
 #include <array>
 #include <cctype>
 
 namespace devex::tools::detail {
 namespace {
-
-[[nodiscard]] std::string_view trimmed(std::string_view line) noexcept
-{
-    while (!line.empty() && (line.front() == ' ' || line.front() == '\t'))
-    {
-        line.remove_prefix(1);
-    }
-    while (!line.empty() && (line.back() == ' ' || line.back() == '\t' || line.back() == '\r'))
-    {
-        line.remove_suffix(1);
-    }
-    return line;
-}
 
 // The word before a position, such as the name in front of a parenthesis.
 [[nodiscard]] std::string_view wordBefore(std::string_view line, std::size_t position) noexcept
@@ -82,7 +71,7 @@ void readCurly(std::string_view text, bool csharp, std::vector<CodeSymbol>& symb
     {
         const std::size_t stop = text.find('\n', index);
         const std::string_view raw = text.substr(index, (stop == std::string_view::npos ? text.size() : stop) - index);
-        const std::string_view line = trimmed(raw);
+        const std::string_view line = core::trimmed(raw, " \t", " \t\r");
         ++number;
 
         // Comments hold no declarations, and a block comment runs until it closes.
@@ -140,8 +129,9 @@ void readCMake(std::string_view text, std::vector<CodeSymbol>& symbols)
     for (std::size_t index = 0; index <= text.size();)
     {
         const std::size_t stop = text.find('\n', index);
-        const std::string_view line =
-            trimmed(text.substr(index, (stop == std::string_view::npos ? text.size() : stop) - index));
+        const std::string_view line = core::trimmed(
+            text.substr(index, (stop == std::string_view::npos ? text.size() : stop) - index),
+            " \t", " \t\r");
         ++number;
         for (const char* const word : {"function", "macro"})
         {
@@ -177,8 +167,9 @@ void readDevex(std::string_view text, std::vector<CodeSymbol>& symbols)
     for (std::size_t index = 0; index <= text.size();)
     {
         const std::size_t stop = text.find('\n', index);
-        const std::string_view line =
-            trimmed(text.substr(index, (stop == std::string_view::npos ? text.size() : stop) - index));
+        const std::string_view line = core::trimmed(
+            text.substr(index, (stop == std::string_view::npos ? text.size() : stop) - index),
+            " \t", " \t\r");
         ++number;
         if (line.starts_with('[') && line.size() > 1)
         {

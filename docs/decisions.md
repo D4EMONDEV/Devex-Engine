@@ -271,6 +271,27 @@ docs/          décisions et documentation
 
 ## Détails des décisions
 
+### Partage du code et enregistrement des frames
+
+Le nettoyage des petits helpers du 4 novembre 2026 est suivi du découpage des blocs plus longs :
+
+- `render/vulkan/FrameGraph.cpp` conserve l'orchestration de `recordFrame`, la création des images
+  et des étapes distinctes pour les ombres, la profondeur, l'éclairage, la scène, le picking,
+  l'anticrénelage, les effets de lentille, le bloom, le tonemapping, les gizmos et les interfaces.
+  Un contexte `FrameGraph` appartient à un seul appel et reste vivant jusqu'à `RenderGraph::execute`.
+  Les callbacks peuvent référencer ce contexte et le renderer ; les valeurs locales d'une étape
+  doivent être capturées par valeur. Le cache des ombres, les historiques temporels et les images
+  des vues auxiliaires gardent leurs propriétaires et leur ordre d'exécution.
+- `physics/PhysicsScene.hpp` partage entre Jolt et Box2D les signatures des corps, la recherche
+  du corps parent et les transformations de scène. Les formes, contacts et solveurs restent propres
+  à chaque backend. En 2D, la préparation de la pose préserve Z et les rotations hors du plan ;
+  l'écriture du `Transform` relatif au parent et la propagation aux descendants sont communes.
+- `tools/GraphEditor.hpp` et `.cpp` partagent la conversion des coordonnées, la grille réutilisant
+  ses entités, la sauvegarde/réimportation et l'historique de 200 modifications des panneaux Animator
+  et Shader Graph. Chacun conserve sa validation, ses nœuds, sa sélection et son interprétation.
+- `core::trimmed` partage le retrait des espaces sans allocation ; le lecteur des symboles retire
+  aussi les CR de fin de ligne, sans modifier le texte original.
+
 ### Rendu
 
 - **Vulkan 1.3** (1.4 jusqu'au jalon 92, voir *Android*) : dynamic rendering, synchronization2 et

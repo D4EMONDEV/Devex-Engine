@@ -1,5 +1,7 @@
 #pragma once
 
+#include "GraphEditor.hpp"
+
 #include <devex/core/Export.hpp>
 
 #include "CodeArea.hpp"
@@ -517,8 +519,7 @@ struct DEVEX_API AnimatorEditor
     asset::AnimatorData animator;
     // As the file holds it: what an undo step goes back to.
     asset::AnimatorData saved;
-    std::vector<asset::AnimatorData> undo;
-    std::vector<asset::AnimatorData> redo;
+    GraphHistory<asset::AnimatorData> history;
     // Why the file could not be read, or why the last change is not saved.
     std::string error;
     AnimatorElement selected = AnimatorElement::None;
@@ -561,8 +562,7 @@ struct DEVEX_API ShaderGraphEditor
     asset::ShaderGraphData graph;
     // As the file holds it: what an undo step goes back to.
     asset::ShaderGraphData saved;
-    std::vector<asset::ShaderGraphData> undo;
-    std::vector<asset::ShaderGraphData> redo;
+    GraphHistory<asset::ShaderGraphData> history;
     // Why the file could not be read or saved.
     std::string error;
     // The errors and warnings of the last import, which name their nodes, and the import they come from.

@@ -1,6 +1,7 @@
 // What the interface world does for the controls that stand over the others or that the pointer
 // drags: popups and context menus, modals, dropdowns, tooltips, scrollbars, splitters, foldouts,
 // the headers of tables, virtual lists, and what is dragged and dropped.
+#include <devex/core/String.hpp>
 #include <devex/ui/UiWorld.hpp>
 
 #include <devex/scene/Scene.hpp>
@@ -147,19 +148,6 @@ struct FormatParts
         return FormatParts{.before = format};
     }
     return FormatParts{.before = format.substr(0, at), .after = format.substr(at + 2), .hasValue = true};
-}
-
-[[nodiscard]] std::string_view trimmed(std::string_view text) noexcept
-{
-    while (!text.empty() && (text.front() == ' ' || text.front() == '\t'))
-    {
-        text.remove_prefix(1);
-    }
-    while (!text.empty() && (text.back() == ' ' || text.back() == '\t'))
-    {
-        text.remove_suffix(1);
-    }
-    return text;
 }
 
 // The value a number field keeps: on its steps, between its bounds.
@@ -1374,14 +1362,16 @@ void UiWorld::finishNumberEdit(scene::Scene& scene)
     }
     // What the format writes around the value may have been typed as well: 90° is 90.
     const FormatParts parts = splitFormat(number->format);
-    std::string_view typed = trimmed(text->text);
+    std::string_view typed = core::trimmed(text->text);
     if (parts.hasValue)
     {
-        if (const std::string_view before = trimmed(parts.before); !before.empty() && typed.starts_with(before))
+        if (const std::string_view before = core::trimmed(parts.before);
+            !before.empty() && typed.starts_with(before))
         {
             typed.remove_prefix(before.size());
         }
-        if (const std::string_view after = trimmed(parts.after); !after.empty() && typed.ends_with(after))
+        if (const std::string_view after = core::trimmed(parts.after);
+            !after.empty() && typed.ends_with(after))
         {
             typed.remove_suffix(after.size());
         }
@@ -1600,7 +1590,7 @@ std::string formatNumber(double value, std::int32_t decimals)
 
 std::optional<double> evaluateNumber(std::string_view text)
 {
-    text = trimmed(text);
+    text = core::trimmed(text);
     if (text.empty())
     {
         return std::nullopt;

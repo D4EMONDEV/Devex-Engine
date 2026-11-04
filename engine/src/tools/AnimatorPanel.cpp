@@ -40,7 +40,6 @@ constexpr std::uint32_t animatorSurface = 19;
 // The size of nodes in the graph, in units that are pixels at a zoom of 1 with a font of 16 pixels.
 constexpr math::Vec2 stateSize{170.0f, 48.0f};
 constexpr math::Vec2 markerSize{110.0f, 30.0f};
-constexpr std::size_t maxUndo = 200;
 
 // The entity whose Animator the panel follows: the selected one, or its closest ancestor with one.
 [[nodiscard]] scene::Entity animatorOf(const scene::Scene& scene, scene::Entity entity)
@@ -446,8 +445,7 @@ void loadAnimator(ToolsState& state, asset::AssetId id)
     editor.saved = editor.animator;
     if (!sameAsset)
     {
-        editor.undo.clear();
-        editor.redo.clear();
+        editor.history.clear();
         editor.selected = AnimatorElement::None;
         editor.index = -1;
         editor.layer = 0;
@@ -460,17 +458,10 @@ void loadAnimator(ToolsState& state, asset::AssetId id)
 void writeAnimator(ToolsState& state)
 {
     AnimatorEditor& editor = state.animatorEditor;
-    if (core::Result<void> written = core::writeTextFile(editor.file, asset::writeAnimatorFile(editor.animator)); !written)
+    if (saveGraphAsset(state, editor.asset, editor.file, asset::writeAnimatorFile(editor.animator),
+                       editor.fileTime, editor.error))
     {
-        editor.error = std::format("Not saved: {}", written.error().message);
-        return;
-    }
-    editor.saved = editor.animator;
-    editor.fileTime = core::lastWriteTime(editor.file);
-    editor.error.clear();
-    if (core::Result<void> queued = state.database->reimport(editor.asset); !queued)
-    {
-        DEVEX_LOG_WARNING("{}", queued.error());
+        editor.saved = editor.animator;
     }
 }
 
@@ -488,12 +479,7 @@ void commit(ToolsState& state)
         editor.error = std::format("Not saved: {}", valid.error().message);
         return;
     }
-    editor.undo.push_back(editor.saved);
-    if (editor.undo.size() > maxUndo)
-    {
-        editor.undo.erase(editor.undo.begin());
-    }
-    editor.redo.clear();
+    editor.history.record(editor.saved);
     writeAnimator(state);
 }
 
@@ -520,13 +506,10 @@ void clampSelection(AnimatorEditor& editor)
 void undoAnimator(ToolsState& state)
 {
     AnimatorEditor& editor = state.animatorEditor;
-    if (editor.undo.empty())
+    if (!editor.history.undo(editor.animator))
     {
         return;
     }
-    editor.redo.push_back(editor.animator);
-    editor.animator = std::move(editor.undo.back());
-    editor.undo.pop_back();
     writeAnimator(state);
     clampSelection(editor);
 }
@@ -534,13 +517,10 @@ void undoAnimator(ToolsState& state)
 void redoAnimator(ToolsState& state)
 {
     AnimatorEditor& editor = state.animatorEditor;
-    if (editor.redo.empty())
+    if (!editor.history.redo(editor.animator))
     {
         return;
     }
-    editor.undo.push_back(editor.animator);
-    editor.animator = std::move(editor.redo.back());
-    editor.redo.pop_back();
     writeAnimator(state);
     clampSelection(editor);
 }
@@ -646,24 +626,6 @@ void addLayer(ToolsState& state)
 
 // ---- The graph ----
 
-// Where the graph stands in its area: its origin there, in units of the panel, and how many of them
-// one unit of the graph takes.
-struct Graph
-{
-    math::Vec2 origin{0.0f};
-    float scale = 1.0f;
-
-    [[nodiscard]] math::Vec2 toArea(math::Vec2 point) const noexcept
-    {
-        return origin + point * scale;
-    }
-
-    [[nodiscard]] math::Vec2 toGraph(math::Vec2 point) const noexcept
-    {
-        return (point - origin) / scale;
-    }
-};
-
 struct Node
 {
     AnimatorElement element = AnimatorElement::None;
@@ -702,7 +664,7 @@ struct Arrow
 }
 
 // The nodes of a layer, where the graph puts them in its area: Entry, Any State, then its states.
-[[nodiscard]] std::vector<Node> nodesOf(const AnimatorLayer& animator, const Graph& graph)
+[[nodiscard]] std::vector<Node> nodesOf(const AnimatorLayer& animator, const GraphView& graph)
 {
     std::vector<Node> nodes;
     nodes.reserve(animator.states.size() + 2);
@@ -2503,42 +2465,11 @@ void AnimatorUi::showGraph(ToolsState& state, const std::optional<animation::Ani
         editor.pan = areaSize * 0.5f - (low + high) * 0.5f * (editor.zoom * unit);
         editor.frame = false;
     }
-    const Graph view{editor.pan, editor.zoom * unit};
+    const GraphView view{editor.pan, editor.zoom * unit};
 
-    // The grid, a line in two once they come too close.
-    float step = 32.0f * view.scale;
-    while (step < 18.0f)
-    {
-        step *= 2.0f;
-    }
-    const math::Vec4 gridColor = linearColor(math::Vec4(colors.border.x, colors.border.y, colors.border.z, 0.16f));
-    std::size_t linesUsed = 0;
-    const auto gridLine = [&](math::Vec2 from, math::Vec2 to) {
-        if (linesUsed == gridLines.size())
-        {
-            const Entity made = add(gridLayer, "Line", UiRect{.anchorMin = {0.0f, 0.0f}, .anchorMax = {0.0f, 0.0f}});
-            scene().add<scene::UiImage>(made, scene::UiImage{.raycastTarget = false});
-            gridLines.push_back(made);
-        }
-        const Entity shown = gridLines[linesUsed++];
-        UiRect& rect = scene().get<UiRect>(shown);
-        rect.visible = true;
-        rect.offsetMin = from;
-        rect.offsetMax = to;
-        scene().get<scene::UiImage>(shown).color = gridColor;
-    };
-    for (float x = std::fmod(view.origin.x, step); x < areaSize.x && linesUsed < 400; x += step)
-    {
-        gridLine({std::round(x), 0.0f}, {std::round(x) + 1.0f, areaSize.y});
-    }
-    for (float y = std::fmod(view.origin.y, step); y < areaSize.y && linesUsed < 400; y += step)
-    {
-        gridLine({0.0f, std::round(y)}, {areaSize.x, std::round(y) + 1.0f});
-    }
-    for (std::size_t index = linesUsed; index < gridLines.size(); ++index)
-    {
-        scene().get<UiRect>(gridLines[index]).visible = false;
-    }
+    syncGraphGrid(
+        scene(), gridLayer, gridLines, view, areaSize,
+        linearColor(math::Vec4(colors.border.x, colors.border.y, colors.border.z, 0.16f)));
 
     // The links: the one selected in the accent, the one the game takes in green.
     const std::vector<Node> nodes = nodesOf(animator, view);
@@ -2726,7 +2657,7 @@ void AnimatorUi::answerGraph(ToolsState& state, EditorUiKit& kit, const ui::Laid
     pointed = panel.hovered() && inside;
     // A menu takes the pointer while it is open, and the press that closes it.
     const bool hovered = pointed && !menuWasOpen && !menuOpen();
-    const Graph view{editor.pan, editor.zoom * graphUnit()};
+    const GraphView view{editor.pan, editor.zoom * graphUnit()};
     const float unitsPerPoint = panel.unitsOf(math::Vec2(1.0f, 0.0f)).x - panel.unitsOf(math::Vec2(0.0f, 0.0f)).x;
 
     const std::vector<Node> nodes = nodesOf(animator, view);
@@ -3021,8 +2952,8 @@ void AnimatorUi::update(ToolsState& state, EditorUiKit& kit, scene::Scene& edite
     {
         fitText(kit, liveText, std::format("{}: {}", edited.name(followed), liveLayer->state));
     }
-    enable(undo, !editor.undo.empty());
-    enable(redo, !editor.redo.empty());
+    enable(undo, editor.history.canUndo());
+    enable(redo, editor.history.canRedo());
     {
         scene::UiText& shown = scene().get<scene::UiText>(hint);
         const std::string_view said =

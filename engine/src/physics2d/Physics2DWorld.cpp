@@ -1,3 +1,5 @@
+#include "../physics/PhysicsScene.hpp"
+
 #include <devex/physics2d/Physics2DWorld.hpp>
 
 #include <devex/core/Hash.hpp>
@@ -26,6 +28,11 @@
 
 namespace devex::physics2d {
 namespace {
+
+using physics::detail::bodyOwner;
+using physics::detail::Signature;
+using physics::detail::updateDescendants;
+using physics::detail::worldMatrixOf;
 
 using scene::BodyType;
 using scene::Entity;
@@ -113,18 +120,6 @@ constexpr int layerShift = 8;
     return std::abs(std::remainder(first - second, 2.0f * 3.14159265358979f));
 }
 
-[[nodiscard]] math::Mat4 worldMatrixOf(const scene::Scene& scene, Entity entity) noexcept
-{
-    for (Entity current = entity; current.isValid(); current = scene.parent(current))
-    {
-        if (const scene::WorldTransform* const world = scene.tryGet<scene::WorldTransform>(current))
-        {
-            return world->matrix;
-        }
-    }
-    return math::Mat4{1.0f};
-}
-
 // The frame of a body: its position in XY and its angle around Z, without scale.
 [[nodiscard]] math::Mat4 frameOf(math::Vec2 position, float angle) noexcept
 {
@@ -150,31 +145,7 @@ void setWorldPose(scene::Scene& scene, Entity entity, math::Vec2 position, std::
         rotation = math::normalize(math::angleAxis(turn, math::Vec3{0.0f, 0.0f, 1.0f}) * rotation);
     }
     const math::Mat4 target = math::composeTrs({math::Vec3{position, current.translation.z}, rotation, current.scale});
-    const math::Trs relative = math::decomposeTrs(math::inverse(worldMatrixOf(scene, scene.parent(entity))) * target);
-    local->position = relative.translation;
-    if (angle)
-    {
-        local->rotation = math::normalize(relative.rotation);
-    }
-    if (world != nullptr)
-    {
-        world->matrix = target;
-    }
-}
-
-// Recomputes the world transforms below an entity whose world transform changed.
-void updateDescendants(scene::Scene& scene, Entity entity, const math::Mat4& world)
-{
-    for (Entity child = scene.firstChild(entity); child.isValid(); child = scene.nextSibling(child))
-    {
-        const scene::Transform* const local = scene.tryGet<scene::Transform>(child);
-        const math::Mat4 childWorld = local != nullptr ? world * local->matrix() : world;
-        if (scene::WorldTransform* const childTransform = scene.tryGet<scene::WorldTransform>(child))
-        {
-            childTransform->matrix = childWorld;
-        }
-        updateDescendants(scene, child, childWorld);
-    }
+    physics::detail::applyWorldPose(scene, entity, target, angle.has_value());
 }
 
 // ---- Descriptions of bodies --------------------------------------------------------------------
@@ -209,31 +180,6 @@ struct BodyDescription
     std::uint64_t signature = 0;
 };
 
-class Signature
-{
-public:
-    template <typename T>
-    void add(const T& value) noexcept
-    {
-        m_value = core::hash64(std::as_bytes(std::span(&value, 1)), m_value);
-    }
-
-    // Placements come from world matrices, whose rounding changes as a body turns: they count to a
-    // tenth of a millimeter, so that only real changes rebuild the body.
-    void addPlacement(float value) noexcept
-    {
-        add(static_cast<std::int64_t>(std::lround(value * 10000.0f)));
-    }
-
-    [[nodiscard]] std::uint64_t value() const noexcept
-    {
-        return m_value;
-    }
-
-private:
-    std::uint64_t m_value = 0x9E3779B97F4A7C15ull;
-};
-
 [[nodiscard]] std::uint64_t signatureOf(const BodyDescription& description) noexcept
 {
     Signature signature;
@@ -262,19 +208,6 @@ private:
         }
     }
     return signature.value();
-}
-
-// The entity whose body a collider belongs to.
-[[nodiscard]] Entity bodyOwner(const scene::Scene& scene, Entity collider) noexcept
-{
-    for (Entity current = collider; current.isValid(); current = scene.parent(current))
-    {
-        if (scene.has<scene::RigidBody2D>(current))
-        {
-            return current;
-        }
-    }
-    return collider;
 }
 
 [[nodiscard]] float areaOf(const ShapePart& part) noexcept
@@ -773,7 +706,7 @@ struct Physics2DWorld::Implementation
         {
             return;
         }
-        const Entity owner = bodyOwner(scene, entity);
+        const Entity owner = bodyOwner<scene::RigidBody2D>(scene, entity);
         BodyDescription& description = descriptions[scene::entityKey(owner)];
         if (!description.owner.isValid())
         {

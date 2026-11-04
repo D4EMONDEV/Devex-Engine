@@ -1,4 +1,5 @@
 #include <devex/core/Log.hpp>
+#include <devex/core/String.hpp>
 
 #include <algorithm>
 #include <atomic>
@@ -96,19 +97,6 @@ std::string_view fileName(std::string_view path) noexcept
         }
     }
     return std::string_view::npos;
-}
-
-[[nodiscard]] std::string_view trimmed(std::string_view text) noexcept
-{
-    while (!text.empty() && (text.front() == ' ' || text.front() == '\t'))
-    {
-        text.remove_prefix(1);
-    }
-    while (!text.empty() && (text.back() == ' ' || text.back() == '\t'))
-    {
-        text.remove_suffix(1);
-    }
-    return text;
 }
 
 // Colors on a terminal that shows them, as https://no-color.org lets the user refuse; never into a
@@ -493,14 +481,15 @@ std::optional<std::string> configureLog(std::string_view settings)
     while (!settings.empty())
     {
         const std::size_t comma = settings.find(',');
-        const std::string_view item = trimmed(settings.substr(0, comma));
+        const std::string_view item = core::trimmed(settings.substr(0, comma));
         settings = comma == std::string_view::npos ? std::string_view() : settings.substr(comma + 1);
         if (item.empty())
         {
             continue;
         }
         const std::size_t equals = item.find('=');
-        const std::string_view name = trimmed(item.substr(equals == std::string_view::npos ? 0 : equals + 1));
+        const std::string_view name =
+            core::trimmed(item.substr(equals == std::string_view::npos ? 0 : equals + 1));
         const std::optional<LogLevel> level = parseLogLevel(name);
         if (!level)
         {
@@ -511,7 +500,7 @@ std::optional<std::string> configureLog(std::string_view settings)
             all = level;
             continue;
         }
-        const std::string_view category = trimmed(item.substr(0, equals));
+        const std::string_view category = core::trimmed(item.substr(0, equals));
         if (category.empty())
         {
             return std::format("'{}' names no category before its level", item);

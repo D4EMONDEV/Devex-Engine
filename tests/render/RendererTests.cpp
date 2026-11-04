@@ -579,7 +579,8 @@ TEST_CASE("The tools compose the scene image and interface surfaces over the win
             }
             world.toolsDraws.push_back(UiDraw{.source = source, .surface = surface, .firstIndex = firstIndex, .indexCount = 6});
         };
-        for (std::uint64_t frame = 0; frame < 6; ++frame)
+        std::vector<devex::render::CapturedImage> pictures;
+        for (std::uint64_t frame = 0; frame < 8; ++frame)
         {
             devex::render::RenderWorld& world = renderer->beginFrame();
             // The scene image only every other frame: a quad that shows it then shows nothing.
@@ -592,6 +593,10 @@ TEST_CASE("The tools compose the scene image and interface surfaces over the win
                                 UiVertex{.position = {40.0f, 30.0f}}};
             surface.indices = {0, 1, 2};
             surface.draws.push_back(UiDraw{.indexCount = 3});
+            // Exercise the game's interface as well as the editor's off-screen surfaces.
+            world.uiVertices = surface.vertices;
+            world.uiIndices = surface.indices;
+            world.uiDraws = surface.draws;
             world.uiSurfaces.push_back(std::move(surface));
 
             quad(world, {0.0f, 0.0f}, {320.0f, 240.0f}, UiSource::Texture, 0, Vec4{0.05f, 0.05f, 0.05f, 1.0f});
@@ -599,13 +604,30 @@ TEST_CASE("The tools compose the scene image and interface surfaces over the win
             quad(world, {220.0f, 10.0f}, {300.0f, 70.0f}, UiSource::Surface, 7, Vec4{1.0f});
             // A surface that was not drawn this frame shows nothing.
             quad(world, {220.0f, 80.0f}, {300.0f, 140.0f}, UiSource::Surface, 9, Vec4{1.0f});
+            if (frame < 6)
+                static_cast<void>(renderer->requestWindowCapture());
             const devex::core::Result<void> presented = renderer->endFrame();
             if (!presented)
             {
                 FAIL(std::format("frame {}: {}", frame, presented.error()));
             }
+            for (auto& picture : renderer->takeCaptures())
+                pictures.push_back(std::move(picture));
         }
         CHECK(renderer->stats().drawCalls > 0);
+        // The same linear surface colour must reach the display on both frame slots, with and
+        // without a viewport. Deferred callbacks must retain their colour-space flags by value.
+        for (const auto& picture : pictures)
+        {
+            if (picture.rgba.empty())
+                continue; // Some displays do not allow swapchain readback.
+            REQUIRE(picture.width == 320);
+            REQUIRE(picture.height == 240);
+            const std::size_t pixel = (std::size_t{60} * picture.width + 290) * 4;
+            CHECK(std::abs(int(picture.rgba[pixel]) - 89) <= 2);
+            CHECK(std::abs(int(picture.rgba[pixel + 1]) - 124) <= 2);
+            CHECK(std::abs(int(picture.rgba[pixel + 2]) - 149) <= 2);
+        }
     }
 
     for (const std::string& error : capture.errors())

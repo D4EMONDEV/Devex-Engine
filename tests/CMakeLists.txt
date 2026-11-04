@@ -47,6 +47,7 @@ devex_add_tests(core
         core/MappedFileTests.cpp
         core/ProfilerTests.cpp
         core/SlotMapTests.cpp
+        core/StringTests.cpp
         core/UuidTests.cpp
     LIBRARIES
         Devex::Engine
@@ -209,10 +210,13 @@ devex_add_tests(navigation
 devex_add_tests(physics
     SOURCES
         physics/Physics2DWorldTests.cpp
+        physics/PhysicsSceneTests.cpp
         physics/PhysicsWorldTests.cpp
     LIBRARIES
         Devex::Engine
 )
+
+target_include_directories(devex_physics_tests PRIVATE "${PROJECT_SOURCE_DIR}/engine/src")
 
 # Tests tagged [gpu] open a hidden window and need a Vulkan 1.4 GPU.
 # The loading of assets in the background ends on the GPU: its tests are here.
@@ -252,6 +256,7 @@ devex_add_tests(tools
         tools/EditorMathTests.cpp
         tools/FileSearchTests.cpp
         tools/IconsTests.cpp
+        tools/GraphEditorTests.cpp
         tools/LogBufferTests.cpp
         tools/ProjectListTests.cpp
         tools/SceneCommandsTests.cpp

@@ -29,6 +29,8 @@
 #include <Jolt/Physics/PhysicsSystem.h>
 #include <Jolt/RegisterTypes.h>
 
+#include "PhysicsScene.hpp"
+
 #include <devex/core/Hash.hpp>
 #include <devex/core/Log.hpp>
 #include <devex/physics/PhysicsWorld.hpp>
@@ -51,6 +53,11 @@
 
 namespace devex::physics {
 namespace {
+
+using physics::detail::bodyOwner;
+using physics::detail::Signature;
+using physics::detail::updateDescendants;
+using physics::detail::worldMatrixOf;
 
 using scene::BodyType;
 using scene::Entity;
@@ -399,48 +406,6 @@ struct BodyDescription
     std::uint64_t signature = 0;
 };
 
-class Signature
-{
-public:
-    template <typename T>
-    void add(const T& value) noexcept
-    {
-        m_value = core::hash64(std::as_bytes(std::span(&value, 1)), m_value);
-    }
-
-    // Placements are computed from world matrices, whose rounding changes as a body turns: they
-    // count to a tenth of a millimeter, so that only real changes rebuild the body.
-    void addPlacement(math::Vec3 value) noexcept
-    {
-        for (int axis = 0; axis < 3; ++axis)
-        {
-            add(static_cast<std::int64_t>(std::lround(value[axis] * placementSteps)));
-        }
-    }
-
-    void addPlacement(math::Quat rotation) noexcept
-    {
-        // q and -q are the same rotation.
-        if (rotation.w < 0.0f || (rotation.w == 0.0f && (rotation.x < 0.0f || (rotation.x == 0.0f && (rotation.y < 0.0f ||
-                                                                                                    (rotation.y == 0.0f && rotation.z < 0.0f))))))
-        {
-            rotation = -rotation;
-        }
-        addPlacement(math::Vec3(rotation.x, rotation.y, rotation.z));
-        add(static_cast<std::int64_t>(std::lround(rotation.w * placementSteps)));
-    }
-
-    [[nodiscard]] std::uint64_t value() const noexcept
-    {
-        return m_value;
-    }
-
-private:
-    static constexpr float placementSteps = 10000.0f;
-
-    std::uint64_t m_value = 0x9E3779B97F4A7C15ull;
-};
-
 [[nodiscard]] std::uint64_t signatureOf(const BodyDescription& description) noexcept
 {
     Signature signature;
@@ -472,31 +437,6 @@ private:
     return signature.value();
 }
 
-[[nodiscard]] math::Mat4 worldMatrixOf(const scene::Scene& scene, Entity entity) noexcept
-{
-    for (Entity current = entity; current.isValid(); current = scene.parent(current))
-    {
-        if (const scene::WorldTransform* const world = scene.tryGet<scene::WorldTransform>(current))
-        {
-            return world->matrix;
-        }
-    }
-    return math::Mat4{1.0f};
-}
-
-// The entity whose body a collider belongs to.
-[[nodiscard]] Entity bodyOwner(const scene::Scene& scene, Entity collider) noexcept
-{
-    for (Entity current = collider; current.isValid(); current = scene.parent(current))
-    {
-        if (scene.has<scene::RigidBody>(current))
-        {
-            return current;
-        }
-    }
-    return collider;
-}
-
 // Jolt refuses velocities above the limits of a body, which the velocities it wrote back can reach
 // once rounded: they stay just below.
 [[nodiscard]] math::Vec3 limitVelocity(math::Vec3 velocity, float limit) noexcept
@@ -523,31 +463,7 @@ void setWorldPose(scene::Scene& scene, Entity entity, math::Vec3 position, std::
     scene::WorldTransform* const world = scene.tryGet<scene::WorldTransform>(entity);
     const math::Trs current = math::decomposeTrs(world != nullptr ? world->matrix : math::Mat4{1.0f});
     const math::Mat4 target = math::composeTrs({position, rotation.value_or(current.rotation), current.scale});
-    const math::Trs relative = math::decomposeTrs(math::inverse(worldMatrixOf(scene, scene.parent(entity))) * target);
-    local->position = relative.translation;
-    if (rotation)
-    {
-        local->rotation = math::normalize(relative.rotation);
-    }
-    if (world != nullptr)
-    {
-        world->matrix = target;
-    }
-}
-
-// Recomputes the world transforms below an entity whose world transform changed.
-void updateDescendants(scene::Scene& scene, Entity entity, const math::Mat4& world)
-{
-    for (Entity child = scene.firstChild(entity); child.isValid(); child = scene.nextSibling(child))
-    {
-        const scene::Transform* const local = scene.tryGet<scene::Transform>(child);
-        const math::Mat4 childWorld = local != nullptr ? world * local->matrix() : world;
-        if (scene::WorldTransform* const childTransform = scene.tryGet<scene::WorldTransform>(child))
-        {
-            childTransform->matrix = childWorld;
-        }
-        updateDescendants(scene, child, childWorld);
-    }
+    physics::detail::applyWorldPose(scene, entity, target, rotation.has_value());
 }
 
 // ---- Records of simulated objects --------------------------------------------------------------
@@ -920,7 +836,7 @@ struct PhysicsWorld::Implementation
         {
             return;
         }
-        const Entity owner = bodyOwner(scene, entity);
+        const Entity owner = bodyOwner<scene::RigidBody>(scene, entity);
         const std::uint64_t key = scene::entityKey(owner) * 2 + (trigger ? 1 : 0);
         BodyDescription& description = descriptions[key];
         if (!description.owner.isValid())

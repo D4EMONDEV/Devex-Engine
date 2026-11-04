@@ -563,6 +563,31 @@ private:
     [[nodiscard]] core::Result<std::uint32_t> recordFrame(FrameContext& frame, std::uint32_t frameSlot,
                                                           std::uint32_t imageIndex, bool drawShadows,
                                                           ExtraView* extraView = nullptr);
+    struct FrameGraph;
+    core::Result<void> createFrameImages(FrameGraph& view);
+    core::Result<void> prepareFrameGraph(FrameGraph& view, bool drawShadows);
+    void bindFrameImages(FrameGraph& view);
+    void addShadowPasses(FrameGraph& view);
+    void drawDepthPrepass(FrameGraph& view, VkCommandBuffer commands, bool recover);
+    void addDepthPasses(FrameGraph& view);
+    void addLightingPasses(FrameGraph& view);
+    void addScenePasses(FrameGraph& view);
+    void addPickPasses(FrameGraph& view);
+    void addAntialiasingPass(FrameGraph& view);
+    void addLensPasses(FrameGraph& view);
+    void addBloomPasses(FrameGraph& view);
+    void drawTonemap(FrameGraph& view, VkCommandBuffer commands, RenderGraph::ImageId image,
+                     math::Extent2D size);
+    void addTonemapPasses(FrameGraph& view);
+    void addOverlayPass(FrameGraph& view);
+    std::optional<std::uint32_t> interfaceTexture(FrameGraph& view, const UiDraw& uiDraw);
+    void drawInterface(FrameGraph& view, VkCommandBuffer commands, VkImageView imageView,
+                       VkAttachmentLoadOp load, const math::Vec4& clearColor, math::Extent2D size,
+                       std::span<const UiDraw> draws, std::uint32_t indexBase,
+                       const Pipeline& pipeline, bool displaySpace);
+    void addInterfacePasses(FrameGraph& view);
+    void addWindowCapturePass(FrameGraph& view);
+
     // Whether the instance blends with what is behind it, and so belongs to the transparent pass.
     [[nodiscard]] bool isBlended(const MeshInstance& instance) const noexcept;
     // The instances a pass draws, in the order it draws them: those its view can see.
