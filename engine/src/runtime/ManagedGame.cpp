@@ -343,6 +343,14 @@ struct NativeApi
     void (*setParticleGravity)(const math::Vec3* gravity);
     int (*raycastSolid)(const math::Vec3* origin, const math::Vec3* direction, float maxDistance, std::uint32_t layers,
                         physics::RayHit* hit);
+    int (*multiplayerHost)(int port, int maxClients);
+    int (*multiplayerJoin)(const char* address, int port);
+    void (*multiplayerLeave)();
+    int (*multiplayerState)();
+    int (*multiplayerIsHost)();
+    std::uint32_t (*multiplayerLocalPeer)();
+    int (*multiplayerPeers)(std::uint32_t* peers, int capacity);
+    int (*multiplayerEvent)(int index, int* kind, std::uint32_t* peer);
 };
 
 // The functions the engine calls, in the order of Devex.Managed's ManagedApi.
@@ -358,7 +366,7 @@ struct ManagedApi
 };
 
 // Devex.Managed's Bootstrap.Version: both sides change it with the function tables.
-constexpr int bootstrapVersion = 28;
+constexpr int bootstrapVersion = 29;
 
 struct BootstrapArguments
 {
@@ -1005,6 +1013,90 @@ void apiAddImpulse2D(Entity entity, const math::Vec2* impulse)
     {
         physics2dWorld()->addImpulse(entity, *impulse);
     }
+}
+
+[[nodiscard]] net::Multiplayer* multiplayer() noexcept
+{
+    return currentFrame() != nullptr ? currentFrame()->multiplayer : nullptr;
+}
+
+int apiMultiplayerHost(int port, int maxClients)
+{
+    if (multiplayer() == nullptr)
+    {
+        return 0;
+    }
+    const core::Result<void> started = multiplayer()->host(static_cast<std::uint16_t>(port), static_cast<std::uint32_t>(std::max(maxClients, 1)));
+    if (!started)
+    {
+        DEVEX_LOG_ERROR("{}", started.error());
+    }
+    return started ? 1 : 0;
+}
+
+int apiMultiplayerJoin(const char* address, int port)
+{
+    if (multiplayer() == nullptr || address == nullptr)
+    {
+        return 0;
+    }
+    const core::Result<void> started = multiplayer()->join(address, static_cast<std::uint16_t>(port));
+    if (!started)
+    {
+        DEVEX_LOG_ERROR("{}", started.error());
+    }
+    return started ? 1 : 0;
+}
+
+void apiMultiplayerLeave()
+{
+    if (multiplayer() != nullptr)
+    {
+        multiplayer()->leave();
+    }
+}
+
+int apiMultiplayerState()
+{
+    return multiplayer() != nullptr ? static_cast<int>(multiplayer()->state()) : 0;
+}
+
+int apiMultiplayerIsHost()
+{
+    return multiplayer() != nullptr && multiplayer()->isHost() ? 1 : 0;
+}
+
+std::uint32_t apiMultiplayerLocalPeer()
+{
+    return multiplayer() != nullptr ? multiplayer()->localPeer() : 0;
+}
+
+// How many other players there are, those that fit being written.
+int apiMultiplayerPeers(std::uint32_t* peers, int capacity)
+{
+    if (multiplayer() == nullptr)
+    {
+        return 0;
+    }
+    const std::span<const net::PeerId> all = multiplayer()->peers();
+    for (std::size_t index = 0; index < all.size() && std::cmp_less(index, capacity); ++index)
+    {
+        peers[index] = all[index];
+    }
+    return static_cast<int>(all.size());
+}
+
+// An event of this frame, by its place among them; 0 past the last.
+int apiMultiplayerEvent(int index, int* kind, std::uint32_t* peer)
+{
+    if (multiplayer() == nullptr || index < 0 || std::cmp_greater_equal(index, multiplayer()->events().size()))
+    {
+        return 0;
+    }
+    const net::NetworkEvent& event = multiplayer()->events()[static_cast<std::size_t>(index)];
+    *kind = static_cast<int>(event.kind);
+    *peer = event.peer;
+    return 1;
 }
 
 [[nodiscard]] audio::AudioWorld* audioWorld() noexcept
@@ -2969,6 +3061,14 @@ int apiRaycastSolid(const math::Vec3* origin, const math::Vec3* direction, float
         .particleGravity = &apiParticleGravity,
         .setParticleGravity = &apiSetParticleGravity,
         .raycastSolid = &apiRaycastSolid,
+        .multiplayerHost = &apiMultiplayerHost,
+        .multiplayerJoin = &apiMultiplayerJoin,
+        .multiplayerLeave = &apiMultiplayerLeave,
+        .multiplayerState = &apiMultiplayerState,
+        .multiplayerIsHost = &apiMultiplayerIsHost,
+        .multiplayerLocalPeer = &apiMultiplayerLocalPeer,
+        .multiplayerPeers = &apiMultiplayerPeers,
+        .multiplayerEvent = &apiMultiplayerEvent,
     };
 }
 

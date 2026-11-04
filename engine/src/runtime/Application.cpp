@@ -417,6 +417,7 @@ private:
     std::unique_ptr<physics2d::Physics2DWorld> m_physics2d;
     std::unique_ptr<navigation::NavigationWorld> m_navigation;
     std::unique_ptr<audio::AudioWorld> m_audio;
+    std::unique_ptr<net::Multiplayer> m_multiplayer;
     std::unique_ptr<animation::AnimationWorld> m_animation;
     std::vector<math::Vec3> m_animationViews;
     std::unique_ptr<animation::TweenWorld> m_tweens;
@@ -1181,6 +1182,11 @@ void ApplicationRunner::updateFrameWorlds(std::chrono::nanoseconds frameTime, bo
         // Cameras follow the same interpolated poses that the renderer displays. Paused frames do
         // not advance them; a single step uses its gameplay delta, not the editor's wall time.
         runSystems(SystemPhase::LateUpdate, core::Duration(*gameplayTime));
+        // What this frame's code sent leaves now rather than with the next frame.
+        if (m_multiplayer)
+        {
+            m_multiplayer->flush();
+        }
         // Publish the changed local transforms, preserving interpolation of physics parents.
         updateRenderTransforms(interpolate);
     }
@@ -1226,6 +1232,11 @@ void ApplicationRunner::runGameplay(std::chrono::nanoseconds frameTime)
     if (m_saves)
     {
         m_saves->addPlayTime(std::chrono::duration<double>(frameTime).count());
+    }
+    // What arrived, for this frame's code, in its fixed steps as in its updates.
+    if (m_multiplayer)
+    {
+        m_multiplayer->poll();
     }
     const std::uint32_t steps = m_timestep.advance(frameTime);
     for (std::uint32_t step = 0; step < steps; ++step)
@@ -1660,6 +1671,7 @@ void ApplicationRunner::abandonPlay()
     m_application.m_physics = nullptr;
     m_application.m_physics2d = nullptr;
     m_application.m_navigation = nullptr;
+    m_application.m_multiplayer = nullptr;
     m_application.m_audio = nullptr;
     m_application.m_animation = nullptr;
     m_application.m_tweens = nullptr;
@@ -2138,6 +2150,7 @@ void ApplicationRunner::runSystems(SystemPhase phase, core::Duration delta,
         .physics2d = m_physics2d.get(),
         .navigation = m_navigation.get(),
         .audio = m_audio.get(),
+        .multiplayer = m_multiplayer.get(),
         .animation = m_animation.get(),
         .tweens = m_tweens.get(),
         .coroutines = &m_coroutines,
@@ -2169,6 +2182,7 @@ void ApplicationRunner::runSystems(SystemPhase phase, core::Duration delta,
             .physics2d = m_physics2d.get(),
             .navigation = m_navigation.get(),
             .audio = m_audio.get(),
+            .multiplayer = m_multiplayer.get(),
             .animation = m_animation.get(),
             .tweens = m_tweens.get(),
             .particles = m_particles.get(),
@@ -2254,6 +2268,8 @@ void ApplicationRunner::createPhysics()
     }
     m_navigation = std::move(*navigationWorld);
     m_application.m_navigation = m_navigation.get();
+    m_multiplayer = std::make_unique<net::Multiplayer>();
+    m_application.m_multiplayer = m_multiplayer.get();
     if (m_services.tools != nullptr)
     {
         m_services.tools->setNavigationWorld(m_navigation.get());
@@ -2269,9 +2285,12 @@ void ApplicationRunner::destroyPhysics()
     m_application.m_physics = nullptr;
     m_application.m_physics2d = nullptr;
     m_application.m_navigation = nullptr;
+    m_application.m_multiplayer = nullptr;
     m_physics.reset();
     m_physics2d.reset();
     m_navigation.reset();
+    // Leaves the session of the game that ends.
+    m_multiplayer.reset();
 }
 
 void ApplicationRunner::createAudio()
@@ -3373,6 +3392,11 @@ navigation::NavigationWorld* Application::navigation() noexcept
 audio::AudioWorld* Application::audio() noexcept
 {
     return m_audio;
+}
+
+net::Multiplayer* Application::multiplayer() noexcept
+{
+    return m_multiplayer;
 }
 
 animation::AnimationWorld* Application::animation() noexcept

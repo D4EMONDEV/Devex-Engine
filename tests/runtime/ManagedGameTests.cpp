@@ -46,7 +46,9 @@
 #include <filesystem>
 #include <format>
 #include <memory>
+#include <chrono>
 #include <string>
+#include <thread>
 #include <string_view>
 #include <unordered_map>
 #include <vector>
@@ -287,7 +289,7 @@ TEST_CASE("C# addon commands edit a scene without running the game and reload cl
 TEST_CASE("The C# runtime registers components and runs them", "[runtime][managed]")
 {
     const std::unique_ptr<ManagedGame> game = startRuntime();
-    CHECK(game->componentTypes().size() == 27);
+    CHECK(game->componentTypes().size() == 28);
 
     devex::scene::ComponentRegistry& registry = devex::scene::componentRegistry();
     const devex::scene::ComponentType* const mover = registry.find("Mover");
@@ -1620,3 +1622,54 @@ TEST_CASE("C# components play sounds and change the volumes of the groups", "[ru
     game->unloadAssembly();
 }
 #endif
+
+TEST_CASE("C# code hosts a session and hears who comes and goes", "[runtime][managed][net]")
+{
+    const auto game = startRuntime();
+    Scene scene;
+    const auto entity = scene.createEntity("Probe");
+    scene.add<devex::scene::Transform>(entity);
+    const auto* probe = devex::scene::componentRegistry().find("NetworkProbe");
+    REQUIRE(probe != nullptr);
+    REQUIRE(probe->emplace(scene, entity) != nullptr);
+    devex::net::Multiplayer session;
+    const auto number = [&](const char* name) { return field<float>(*probe, const_cast<void*>(probe->find(scene, entity)), name); };
+    const auto update = [&] {
+        session.poll();
+        ManagedGame::Frame frame{.scene = &scene, .delta = devex::core::Duration(0.016), .multiplayer = &session};
+        game->runPhase(frame, devex::runtime::SystemPhase::Update);
+    };
+    update();
+    update();
+    REQUIRE(number("hosted") == 1.0f);
+    CHECK(session.isHost());
+    CHECK(number("is_host") == 1.0f);
+    CHECK(number("online") == 1.0f);
+    CHECK(number("local_peer") == 1.0f);
+    CHECK(number("peers") == 0.0f);
+
+    devex::net::Multiplayer client;
+    REQUIRE(client.join("127.0.0.1", 47395));
+    for (int frame = 0; frame < 1000 && number("joined") == 0.0f; ++frame)
+    {
+        client.poll();
+        update();
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    }
+    REQUIRE(number("joined") != 0.0f);
+    client.poll();
+    CHECK(static_cast<float>(client.localPeer()) == number("joined"));
+    update();
+    CHECK(number("peers") == 1.0f);
+
+    client.leave();
+    for (int frame = 0; frame < 1000 && number("left") == 0.0f; ++frame)
+    {
+        update();
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    }
+    CHECK(number("left") == number("joined"));
+    update();
+    CHECK(number("peers") == 0.0f);
+}
+

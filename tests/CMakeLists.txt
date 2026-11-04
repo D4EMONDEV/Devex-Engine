@@ -191,6 +191,13 @@ target_compile_definitions(devex_platform_tests
     PRIVATE DEVEX_TEST_CRASH_PROBE="$<TARGET_FILE:devex_crash_probe>"
 )
 
+devex_add_tests(net
+    SOURCES
+        net/MultiplayerTests.cpp
+    LIBRARIES
+        Devex::Engine
+)
+
 devex_add_tests(navigation
     SOURCES
         navigation/NavigationTests.cpp

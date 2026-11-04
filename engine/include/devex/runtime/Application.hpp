@@ -9,6 +9,7 @@
 #include <devex/ui/UiWorld.hpp>
 #include <devex/asset/AssetSource.hpp>
 #include <devex/audio/AudioWorld.hpp>
+#include <devex/net/Multiplayer.hpp>
 #include <devex/asset/import/AssetDatabase.hpp>
 #include <devex/core/Error.hpp>
 #include <devex/core/JobSystem.hpp>
@@ -204,6 +205,8 @@ protected:
     [[nodiscard]] navigation::NavigationWorld* navigation() noexcept;
     // The sounds of the scene while gameplay runs; null otherwise, or without audio.
     [[nodiscard]] audio::AudioWorld* audio() noexcept;
+    // The network of the game while gameplay runs; null otherwise.
+    [[nodiscard]] net::Multiplayer* multiplayer() noexcept;
     // The animations of the scene while gameplay runs; null otherwise.
     [[nodiscard]] animation::AnimationWorld* animation() noexcept;
     // The tweens of the scene while gameplay runs; null otherwise.
@@ -242,6 +245,7 @@ private:
     physics::PhysicsWorld* m_physics = nullptr;
     physics2d::Physics2DWorld* m_physics2d = nullptr;
     navigation::NavigationWorld* m_navigation = nullptr;
+    net::Multiplayer* m_multiplayer = nullptr;
     audio::AudioWorld* m_audio = nullptr;
     animation::AnimationWorld* m_animation = nullptr;
     animation::TweenWorld* m_tweens = nullptr;

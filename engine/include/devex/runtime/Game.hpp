@@ -9,6 +9,7 @@
 #include <devex/core/Time.hpp>
 #include <devex/particles/ParticleWorld.hpp>
 #include <devex/navigation/NavigationWorld.hpp>
+#include <devex/net/Multiplayer.hpp>
 #include <devex/physics/PhysicsWorld.hpp>
 #include <devex/physics2d/Physics2DWorld.hpp>
 #include <devex/platform/Input.hpp>
@@ -65,7 +66,8 @@ class CoroutineScheduler;
 // 41: ApplicationConfig gained supervised Play. 42: Project gained addon activation settings.
 // 43: RenderCamera, Camera and PostProcessVolume gained the reflections of the screen.
 // 44: ExportSettings, in Project, gained the export for Android.
-inline constexpr std::uint32_t gameApiVersion = 44;
+// 45: SystemContext gained the network of the game.
+inline constexpr std::uint32_t gameApiVersion = 45;
 
 enum class SystemPhase : std::uint8_t
 {
@@ -109,6 +111,8 @@ struct DEVEX_API SystemContext
     // The sounds of the scene: its AudioSource components, one-shot sounds and the volumes of the
     // groups. Null when the application runs without audio.
     audio::AudioWorld* audio = nullptr;
+    // The network of the game: hosting or joining a session, and who is in it. Null outside a game.
+    net::Multiplayer* multiplayer = nullptr;
     // The animations of the scene: the clips its Animator components play. Null when the
     // application runs without animation.
     animation::AnimationWorld* animation = nullptr;

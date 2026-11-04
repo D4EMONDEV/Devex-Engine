@@ -48,6 +48,7 @@ public:
         navigation::NavigationWorld* navigation = nullptr;
         // Null without audio.
         audio::AudioWorld* audio = nullptr;
+        net::Multiplayer* multiplayer = nullptr;
         animation::AnimationWorld* animation = nullptr;
         animation::TweenWorld* tweens = nullptr;
         particles::ParticleWorld* particles = nullptr;

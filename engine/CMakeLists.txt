@@ -5,6 +5,7 @@ endif()
 find_package(box2d CONFIG REQUIRED)
 find_package(recastnavigation CONFIG REQUIRED)
 find_package(efsw CONFIG REQUIRED)
+find_package(unofficial-enet CONFIG REQUIRED)
 find_package(fastgltf CONFIG REQUIRED)
 find_package(Freetype REQUIRED)
 find_package(glm CONFIG REQUIRED)
@@ -597,6 +598,35 @@ devex_set_warnings(devex_physics2d)
 
 # Navigation: navigation meshes baked with Recast from the colliders of a scene, and the agents and
 # obstacles of the scene on them with Detour.
+add_library(devex_net OBJECT)
+add_library(Devex::Net ALIAS devex_net)
+
+target_sources(devex_net
+    PRIVATE
+        src/net/Multiplayer.cpp
+    PUBLIC
+        FILE_SET HEADERS
+        BASE_DIRS include
+        FILES
+            include/devex/net/Multiplayer.hpp
+)
+
+target_link_libraries(devex_net
+    PUBLIC
+        Devex::Core
+    PRIVATE
+        unofficial::enet::enet
+)
+if(WIN32)
+    # What ENet uses of the system, which its package does not say.
+    target_link_libraries(devex_net PRIVATE ws2_32 winmm)
+endif()
+set_target_properties(devex_net PROPERTIES
+    EXPORT_NAME Net
+    FOLDER "Engine"
+)
+devex_set_warnings(devex_net)
+
 add_library(devex_navigation OBJECT)
 add_library(Devex::Navigation ALIAS devex_navigation)
 
@@ -1021,6 +1051,7 @@ target_link_libraries(devex_runtime
         Devex::Particles
         Devex::Physics
         Devex::Navigation
+        Devex::Net
         Devex::Physics2D
         Devex::Platform
         Devex::Render
@@ -1049,6 +1080,7 @@ target_link_libraries(devex_engine
         devex_particles
         devex_physics
         devex_navigation
+        devex_net
         devex_physics2d
         devex_platform
         devex_reflection
@@ -1071,7 +1103,7 @@ set_target_properties(devex_engine PROPERTIES
 # The library shares what its headers mark DEVEX_API (devex/core/Export.hpp), which its parts
 # export while they are built; everything else imports it.
 foreach(part IN ITEMS devex_animation devex_asset devex_asset_import devex_audio devex_core
-                      devex_particles devex_physics devex_navigation devex_physics2d devex_platform
+                      devex_particles devex_physics devex_navigation devex_net devex_physics2d devex_platform
                       devex_reflection devex_render devex_runtime devex_scene devex_serialization
                       devex_tools devex_ui)
     target_compile_definitions(${part} PRIVATE DEVEX_BUILDING_ENGINE)

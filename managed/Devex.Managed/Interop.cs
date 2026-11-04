@@ -238,6 +238,14 @@ internal unsafe struct NativeApi
     public delegate* unmanaged<Vec3*, void> ParticleGravity;
     public delegate* unmanaged<Vec3*, void> SetParticleGravity;
     public delegate* unmanaged<Vec3*, Vec3*, float, uint, RayHit*, int> RaycastSolid;
+    public delegate* unmanaged<int, int, int> MultiplayerHost;
+    public delegate* unmanaged<byte*, int, int> MultiplayerJoin;
+    public delegate* unmanaged<void> MultiplayerLeave;
+    public delegate* unmanaged<int> MultiplayerState;
+    public delegate* unmanaged<int> MultiplayerIsHost;
+    public delegate* unmanaged<uint> MultiplayerLocalPeer;
+    public delegate* unmanaged<uint*, int, int> MultiplayerPeers;
+    public delegate* unmanaged<int, int*, uint*, int> MultiplayerEvent;
 }
 
 /// <summary>An event an animation passed, as the engine gives it: its name lives until the next frame.</summary>
@@ -274,7 +282,7 @@ internal unsafe struct BootstrapArguments
 /// <summary>What the engine calls into: filling the function tables, then the game itself.</summary>
 public static unsafe class Bootstrap
 {
-    internal const int Version = 28;
+    internal const int Version = 29;
 
     internal static NativeApi Native;
     private static byte[]? _description;

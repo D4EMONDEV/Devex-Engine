@@ -5549,6 +5549,10 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     mesure `DEVEX_STRESS_FOG` du banc d'essai (0,21 ms sur une RTX 4060) ; tests de l'extraction et
     d'un brouillard qui cache un cube puis qu'un volume creuse ; API des jeux 40.
 
+100. ✅ **Session multijoueur** — `net::Multiplayer` sur ENet : héberger, rejoindre, quitter, qui est
+    là, messages fiables ou non relayés par l'hôte ; en C++ et en C# ; tests à plusieurs joueurs sur la
+    boucle locale ; API des jeux 45.
+
 99. ✅ **Export Android dans l'éditeur** — plateforme Android dans la fenêtre d'export et en ligne de
     commande, code C++ compilé avec le NDK pour chaque ABI, APK et AAB par Gradle, clé de débogage ou de
     publication, installation et lancement par `adb`, avertissement pour le C# ; essayé dans l'émulateur
@@ -5562,6 +5566,36 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     l'extraction ; mesure `DEVEX_STRESS_SSR` du banc d'essai ; API des jeux 43.
 
 Ensuite, sans ordre figé : à choisir dans les pistes ci-dessous.
+
+## Multijoueur — plan décidé le 2026-11-04
+
+Décidé avec l'utilisateur avant tout code. Le moteur n'avait aucun code réseau.
+
+- **Le modèle de Godot** : un joueur héberge, ou un serveur dédié, et les autres le rejoignent par son
+  adresse. Le joueur 1 est l'hôte, et chaque objet a une autorité. Sans prédiction au début : un joueur
+  gère son propre personnage et voit les autres lissés. Pour la coop et les parties de 2 à 16 joueurs.
+  Écartés pour l'instant : le serveur avec prédiction, que ce modèle pourra accueillir, et le rollback,
+  qui demanderait une simulation déterministe, physique comprise.
+- **ENet** par vcpkg, comme Godot : UDP, messages fiables et non fiables, et Android. Pas de chiffrement
+  ni de relais pour traverser les box Internet : une connexion par adresse IP ou en réseau local.
+  Écarté : GameNetworkingSockets, plus lourd et plus incertain sur Android.
+- **C++ et C# ensemble**, à chaque étape : le cœur en C++, et C# au fur et à mesure, où est écrite la
+  plupart du gameplay. Sur Android, seul le C++ en profite tant que le C# n'y tourne pas.
+
+Les étapes, chacune testée et commitée à part :
+
+1. ✅ **La session** (jalon 100) : `net::Multiplayer`, héberger, rejoindre, quitter, qui est là, et des
+   messages fiables ou non, que l'hôte fait passer entre clients en garantissant l'expéditeur. Elle vit
+   le temps d'une partie : le jeu la lit une fois par image, avant ses pas fixes, et envoie à la fin de
+   l'image. `Multiplayer` en C#, `SystemContext::multiplayer` en C++.
+2. **Les appels à distance** : `[Rpc]` en C#, son équivalent en C++, avec leurs arguments et qui a le
+   droit de les appeler.
+3. **La réplication** : un composant qui fait apparaître les objets chez tous, comme
+   `MultiplayerSpawner`, et un qui synchronise leurs champs, comme `MultiplayerSynchronizer`, en passant
+   par la réflexion des composants, avec le lissage du côté de ceux qui reçoivent.
+4. **Dans l'éditeur** : lancer plusieurs instances depuis Play, chacune son processus, comme « Run
+   Multiple Instances » de Godot.
+5. **Un exemple jouable et la documentation** : deux joueurs dans l'arène du bac à sable.
 
 ## Réflexions de l'écran (SSR) — 2026-11-04
 

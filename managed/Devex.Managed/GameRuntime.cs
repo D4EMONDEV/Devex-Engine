@@ -197,6 +197,7 @@ internal static unsafe partial class GameRuntime
                     info.Instances.Clear();
                 }
                 Preserved.Clear();
+                Multiplayer.ForgetEvents();
                 Time.Elapsed = 0.0;
                 Time.Frame = 0;
             }
@@ -217,6 +218,7 @@ internal static unsafe partial class GameRuntime
             StartInstances(profiling, hierarchyStart);
             if (phase == SystemPhase.Update)
             {
+                Multiplayer.RaiseEvents();
                 DispatchContacts();
                 DispatchJointBreaks();
             }

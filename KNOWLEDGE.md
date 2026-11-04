@@ -2151,6 +2151,8 @@ namespace devex::ui {
   ellipsoïde ou partout ; `density` négative pour creuser). Côté renderer :
   `RenderWorld::volumetricFog` / `fogVolumes`, `VolumetricFogRenderer` (`shaders/fog.slang`),
   `applyVolumetricFog` dans `common.slang` ; seule la vue principale en a.
+- Multijoueur : `net::Multiplayer` (`engine/src/net`, ENet), `SystemContext::multiplayer`, `Application::multiplayer()`,
+  `Multiplayer` en C# (`managed/Devex.Managed/Multiplayer.cs`). Plan et étapes dans `docs/decisions.md`.
 - Export Android : `exportAndroid` (`runtime/AndroidExport.cpp`), appelé par `exportGame` ; réglages dans
   `ExportSettings::android` et clé dans `.devex/android-signing.dvx` (`asset::readAndroidSigning`) ;
   `findAndroidBuilds`, `findAndroidTools`, `GameCodeBuilder::buildForAndroid` ; le projet Gradle de
