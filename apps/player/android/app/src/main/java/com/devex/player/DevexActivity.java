@@ -27,6 +27,12 @@ public class DevexActivity extends SDLActivity {
         return new String[] {"c++_shared", "devex-engine", "main"};
     }
 
+    // The orientation is the manifest's, which the export sets, rather than SDL's choice from the
+    // size of the window.
+    @Override
+    public void setOrientationBis(int w, int h, boolean resizable, String hint) {
+    }
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         extractEngineFiles();

@@ -23,14 +23,16 @@
     <uses-permission android:name="android.permission.VIBRATE" />
 
     <application
-        android:label="Devex Player"
+        android:label="${gameName}"
+        android:icon="${icon}"
         android:allowBackup="true"
         android:theme="@android:style/Theme.NoTitleBar.Fullscreen"
         android:enableOnBackInvokedCallback="false"
         android:hardwareAccelerated="true">
         <activity
             android:name="com.devex.player.DevexActivity"
-            android:label="Devex Player"
+            android:label="${gameName}"
+            android:screenOrientation="${orientation}"
             android:alwaysRetainTaskState="true"
             android:launchMode="singleInstance"
             android:configChanges="layoutDirection|locale|grammaticalGender|fontScale|fontWeightAdjustment|orientation|uiMode|screenLayout|screenSize|smallestScreenSize|keyboard|keyboardHidden|navigation"

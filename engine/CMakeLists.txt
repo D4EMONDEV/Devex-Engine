@@ -981,6 +981,7 @@ target_sources(devex_runtime
         src/runtime/Game.cpp
         src/runtime/GameCodeBuilder.cpp
         src/runtime/GameCodeBuilder.hpp
+        src/runtime/AndroidExport.cpp
         src/runtime/GameExport.cpp
         src/runtime/GameModule.cpp
         src/runtime/ComponentViews.cpp

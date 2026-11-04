@@ -69,6 +69,31 @@ enum class ExportPlatform : std::uint8_t
     Android,
 };
 
+// A build of the engine for Android, found next to the editor. android/ in its folder holds the Gradle
+// project of the player, with the libraries of its ABI.
+struct DEVEX_API AndroidBuild
+{
+    // "arm64-v8a" or "x86_64".
+    std::string abi;
+    EngineBuild engine;
+};
+
+[[nodiscard]] DEVEX_API std::vector<AndroidBuild> findAndroidBuilds(const std::filesystem::path& binDirectory);
+
+// What building for Android takes, found where it usually is or through the environment.
+struct DEVEX_API AndroidTools
+{
+    std::filesystem::path sdk;
+    std::filesystem::path ndk;
+    std::filesystem::path java;
+    std::filesystem::path adb;
+
+    // What is missing, for a game with C++ code or not; empty when everything is there.
+    [[nodiscard]] std::string problem(bool needsNdk) const;
+};
+
+[[nodiscard]] DEVEX_API AndroidTools findAndroidTools();
+
 // What an export needs from the asset database, gathered on the thread that owns it. The export
 // itself can then run on another thread.
 struct DEVEX_API ExportPlan
@@ -98,6 +123,11 @@ struct DEVEX_API ExportPlan
     // Writes the package only, without building the code or copying the engine, as tests do.
     bool packageOnly = false;
     ExportPlatform platform = ExportPlatform::Desktop;
+    // For Android: the builds of the chosen architectures, and the key of a release.
+    std::vector<AndroidBuild> androidBuilds;
+    asset::AndroidSigning signing;
+    // Whether a package for Android has its BC textures in ASTC.
+    bool androidConvertsTextures = true;
 };
 
 // Fails when the project has no scene, when imports are still running or failed, or when an exported
@@ -138,5 +168,13 @@ struct DEVEX_API ExportResult
 // progress. Returns the exit code of the process.
 [[nodiscard]] DEVEX_API int exportFromCommandLine(std::span<const std::string_view> arguments,
                                                   const std::filesystem::path& binDirectory);
+
+// Fills a plan for an export to Android from the settings of its project.
+[[nodiscard]] DEVEX_API core::Result<void> prepareAndroidExport(ExportPlan& plan, const std::filesystem::path& binDirectory);
+// The settings the Gradle project reads, as a properties file.
+[[nodiscard]] DEVEX_API std::string androidGradleProperties(const ExportPlan& plan, bool hasIcon);
+// Makes the APK or the AAB of a plan prepared for Android; exportGame comes here for one.
+[[nodiscard]] DEVEX_API core::Result<ExportResult> exportAndroid(const ExportPlan& plan, const std::function<void(const ExportProgress&)>& progress,
+                                                                 const std::atomic<bool>* cancel);
 
 } // namespace devex::runtime

@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <array>
+#include <charconv>
 #include <format>
 #include <set>
 #include <string>
@@ -60,6 +61,20 @@ void showOutputFolderDialog(ToolsState& state)
                                           inbox->exportFolder = std::move(chosen);
                                       }
                                   });
+}
+
+// Whether the project has C# code, which does not run on Android yet.
+[[nodiscard]] bool hasCSharp(const asset::Project& project)
+{
+    std::error_code error;
+    for (std::filesystem::recursive_directory_iterator entry(project.codeDirectory(), error), end; !error && entry != end; entry.increment(error))
+    {
+        if (entry->path().extension() == ".cs")
+        {
+            return true;
+        }
+    }
+    return false;
 }
 
 // The folders of the project that hold assets, as res:// paths.
@@ -123,6 +138,23 @@ struct ExportUi : FormUi
     bool dirty = false;
     std::filesystem::path projectFile;
 
+    // The key of an Android game, kept apart from the project.
+    asset::AndroidSigning signing;
+    Entity platform;
+    Entity androidPackage;
+    Entity androidVersionName;
+    Entity androidVersionCode;
+    Entity androidOrientation;
+    Entity androidArm64;
+    Entity androidX86;
+    Entity androidFormat;
+    Entity androidRelease;
+    Entity androidKeystore;
+    Entity androidAlias;
+    Entity androidStorePassword;
+    Entity androidKeyPassword;
+    Entity androidInstall;
+    Entity androidNote;
     Entity executable;
     Entity output;
     Button browse;
@@ -155,8 +187,10 @@ void ExportUi::buildCards(ToolsState& state, EditorUiKit& kit)
     const ThemeColors& colors = themeColors();
     const float tool = line - 6.0f;
 
+    const bool android = settings.platform == "android";
     Section& game = card(kit, "Game");
-    const FormRow executableRow = formRow(game, "Executable");
+    platform = choice(formRow(game, "Platform").editor, {"Desktop", "Android"});
+    const FormRow executableRow = formRow(game, android ? "File" : "Executable");
     executable = text(executableRow.editor, whole(math::Vec4{font * 0.3f, 0.0f, 0.0f, 0.0f}), "", "text");
     tooltip(executableRow.row, "Named after the game: rename it in Project > Project Settings");
     const FormRow outputRow = formRow(game, "Output Folder");
@@ -165,8 +199,43 @@ void ExportUi::buildCards(ToolsState& state, EditorUiKit& kit)
     tooltip(outputRow.row, "Relative to the project folder, or absolute. A previous export there is replaced.");
     browse = toolButton(kit, outputRow.editor, Icon::FolderOpen, rightButton(tool, 0.0f));
     tooltip(browse.entity, "Choose the folder");
-    configuration = choice(formRow(game, "Configuration").editor, {"Release", "Debug"});
+    configuration = android ? Entity{} : choice(formRow(game, "Configuration").editor, {"Release", "Debug"});
     buildNote = note(&game, "", "dim", 2.0f);
+
+    if (android)
+    {
+        Section& phone = card(kit, "Android");
+        const auto password = [&](Entity field) {
+            scene().get<scene::UiInput>(field).password = true;
+            return field;
+        };
+        const FormRow packageRow = formRow(phone, "Package Name");
+        androidPackage = textField(packageRow.editor, asset::androidPackageFromName(state.database->project().name));
+        tooltip(packageRow.row, "The name Android knows the game by: it cannot change once the game is published");
+        androidVersionName = textField(formRow(phone, "Version").editor);
+        const FormRow codeRow = formRow(phone, "Version Code");
+        androidVersionCode = textField(codeRow.editor);
+        tooltip(codeRow.row, "A whole number that grows with each version sent to the Play Store");
+        androidOrientation = choice(formRow(phone, "Orientation").editor, {"Landscape", "Portrait", "Sensor"});
+        androidArm64 = toggle(formRow(phone, "Phones (arm64)").editor);
+        androidX86 = toggle(formRow(phone, "Emulator (x86_64)").editor);
+        androidFormat = choice(formRow(phone, "Format").editor, {"APK, to install directly", "AAB, for the Play Store"});
+        const FormRow installRow = formRow(phone, "Install on Device");
+        androidInstall = toggle(installRow.editor);
+        tooltip(installRow.row, "Installs and starts the APK on the connected device or emulator after exporting it");
+        const FormRow releaseRow = formRow(phone, "Release Key");
+        androidRelease = toggle(releaseRow.editor);
+        tooltip(releaseRow.row, "Signs with your key, as the Play Store asks. Without it, a debug key made by the tools signs the game.");
+        if (settings.android.release)
+        {
+            androidKeystore = textField(formRow(phone, "Keystore File").editor, "The path of the .jks or .keystore file");
+            androidAlias = textField(formRow(phone, "Key Alias").editor);
+            androidStorePassword = password(textField(formRow(phone, "Keystore Password").editor));
+            androidKeyPassword = password(textField(formRow(phone, "Key Password").editor));
+            note(&phone, "These stay on this computer, in .devex/ of the project, in the clear, and out of version control.", "dim", 2.0f);
+        }
+        androidNote = note(&phone, "", "dim", 3.0f);
+    }
 
     Section& list = card(kit, "Scenes");
     scenes.clear();
@@ -244,12 +313,73 @@ void ExportUi::sync(ToolsState& state, EditorUiKit& kit)
 {
     const ThemeColors& colors = themeColors();
     const asset::Project& project = state.database->project();
-    scene().get<scene::UiText>(executable).text = executableFileName(project.name);
-    setText(output, settings.output);
-    setChoice(configuration, {"Release", "Debug"}, settings.configuration == "Debug" ? 1 : 0);
+    const bool android = settings.platform == "android";
+    const std::string executableName = executableFileName(project.name);
+    setChoice(platform, {"Desktop", "Android"}, android ? 1 : 0);
+    scene().get<scene::UiText>(executable).text =
+        android ? executableName.substr(0, executableName.size() - 4) + (settings.android.format == "aab" ? ".aab" : ".apk") : executableName;
+    setText(output, android ? settings.android.output : settings.output);
+    if (configuration.isValid())
+    {
+        setChoice(configuration, {"Release", "Debug"}, settings.configuration == "Debug" ? 1 : 0);
+    }
     const auto build = std::ranges::find_if(state.engineBuilds, [&](const EngineBuildChoice& choice) { return choice.configuration == settings.configuration; });
     scene::UiText& buildText = scene().get<scene::UiText>(buildNote);
-    if (build == state.engineBuilds.end())
+    bool exportable = build != state.engineBuilds.end() && !settings.output.empty();
+    if (android)
+    {
+        const asset::AndroidExportSettings& phone = settings.android;
+        setText(androidPackage, phone.package);
+        setText(androidVersionName, phone.versionName);
+        setText(androidVersionCode, std::to_string(phone.versionCode));
+        setChoice(androidOrientation, {"Landscape", "Portrait", "Sensor"}, phone.orientation == "portrait" ? 1 : phone.orientation == "sensor" ? 2 : 0);
+        setToggle(androidArm64, phone.arm64);
+        setToggle(androidX86, phone.x86_64);
+        setChoice(androidFormat, {"APK, to install directly", "AAB, for the Play Store"}, phone.format == "aab" ? 1 : 0);
+        setToggle(androidInstall, phone.install);
+        setToggle(androidRelease, phone.release);
+        if (androidKeystore.isValid())
+        {
+            setText(androidKeystore, core::toUtf8(signing.keystore));
+            setText(androidAlias, signing.alias);
+            setText(androidStorePassword, signing.storePassword);
+            setText(androidKeyPassword, signing.keyPassword);
+        }
+        const auto hasBuild = [&](std::string_view abi) { return std::ranges::contains(state.androidAbis, abi); };
+        const bool available = (phone.arm64 && hasBuild("arm64-v8a")) || (phone.x86_64 && hasBuild("x86_64"));
+        const std::string package = phone.package.empty() ? asset::androidPackageFromName(project.name) : phone.package;
+        std::string problem;
+        if (!state.androidProblem.empty())
+        {
+            problem = state.androidProblem + ".";
+        }
+        else if (!available)
+        {
+            problem = "There is no Android build of the engine for these architectures: build the preset android-arm64 or android-x86_64 first.";
+        }
+        else if (!asset::validAndroidPackage(package))
+        {
+            problem = package + " is not a valid package name: words joined by dots, such as com.studio.game.";
+        }
+        else if (phone.release && (signing.keystore.empty() || signing.alias.empty()))
+        {
+            problem = "A release needs its keystore file and key alias.";
+        }
+        else if (phone.install && phone.format == "aab")
+        {
+            problem = "An AAB does not install on a device: export an APK to try the game.";
+        }
+        exportable = problem.empty();
+        const bool csharp = hasCSharp(project);
+        scene().get<scene::UiText>(androidNote).text =
+            !problem.empty() ? problem
+            : csharp ? "This project has C# code, which does not run on Android yet: its components will do nothing, and only its C++ code runs."
+                     : (phone.arm64 ? "Textures are converted to ASTC for phones, which takes a while the first time." : "Textures stay in BC, which the emulator reads.");
+        scene().get<UiRect>(androidNote).style = !problem.empty() || csharp ? "warning" : "dim";
+        buildText.text = "The first export downloads Gradle and what it needs, which takes some minutes.";
+        scene().get<UiRect>(buildNote).style = "dim";
+    }
+    else if (build == state.engineBuilds.end())
     {
         buildText.text = std::format("There is no {} build of the engine next to the editor. Build it first, for instance with cmake --build --preset "
                                      "build-x64-{}.",
@@ -295,12 +425,12 @@ void ExportUi::sync(ToolsState& state, EditorUiKit& kit)
     const ExportStatus& status = state.exportStatus;
     const bool running = status.state == ExportStatus::State::Running;
     relabel(kit, exportButton, running ? "Exporting..." : "Export");
-    enable(exportButton, !running && build != state.engineBuilds.end() && !settings.output.empty());
+    enable(exportButton, !running && exportable);
     Section& run = sections[exportCard];
     const bool succeeded = status.state == ExportStatus::State::Succeeded;
     const bool failed = status.state == ExportStatus::State::Failed;
     scene().get<UiRect>(openFolder.entity).visible = succeeded;
-    scene().get<UiRect>(runGame.entity).visible = succeeded;
+    scene().get<UiRect>(runGame.entity).visible = succeeded && !android;
     enable(runGame, !status.executable.empty());
     showLine(run, progressLine, running);
     showLine(run, statusLine, succeeded || failed);
@@ -317,15 +447,92 @@ void ExportUi::sync(ToolsState& state, EditorUiKit& kit)
 void ExportUi::answer(ToolsState& state)
 {
     const ui::UiWorld& world = panel.world();
+    const bool android = settings.platform == "android";
+    const auto typed = [&](Entity field) -> const std::string& { return scene().get<scene::UiText>(field).text; };
     if (endedField.isValid() && endedField == output)
     {
-        settings.output = scene().get<scene::UiText>(output).text;
+        (android ? settings.android.output : settings.output) = typed(output);
+    }
+    if (world.wasChanged(platform))
+    {
+        settings.platform = scene().get<scene::UiDropdown>(platform).selected == 1 ? "android" : "desktop";
+    }
+    if (android)
+    {
+        asset::AndroidExportSettings& phone = settings.android;
+        if (endedField.isValid())
+        {
+            if (endedField == androidPackage)
+            {
+                phone.package = typed(androidPackage);
+            }
+            else if (endedField == androidVersionName)
+            {
+                phone.versionName = typed(androidVersionName);
+            }
+            else if (endedField == androidVersionCode)
+            {
+                std::int32_t code = phone.versionCode;
+                const std::string& text = typed(androidVersionCode);
+                if (std::from_chars(text.data(), text.data() + text.size(), code).ec == std::errc{} && code > 0)
+                {
+                    phone.versionCode = code;
+                }
+            }
+            else if (androidKeystore.isValid())
+            {
+                asset::AndroidSigning changed = signing;
+                if (endedField == androidKeystore)
+                {
+                    changed.keystore = core::pathFromUtf8(typed(androidKeystore));
+                }
+                else if (endedField == androidAlias)
+                {
+                    changed.alias = typed(androidAlias);
+                }
+                else if (endedField == androidStorePassword)
+                {
+                    changed.storePassword = typed(androidStorePassword);
+                }
+                else if (endedField == androidKeyPassword)
+                {
+                    changed.keyPassword = typed(androidKeyPassword);
+                }
+                if (changed != signing)
+                {
+                    signing = std::move(changed);
+                    if (core::Result<void> written = asset::writeAndroidSigning(state.database->project(), signing); !written)
+                    {
+                        DEVEX_LOG_ERROR("Cannot save the key of the game: {}", written.error());
+                    }
+                }
+            }
+        }
+        if (world.wasChanged(androidOrientation))
+        {
+            const std::int32_t selected = scene().get<scene::UiDropdown>(androidOrientation).selected;
+            phone.orientation = selected == 1 ? "portrait" : selected == 2 ? "sensor" : "landscape";
+        }
+        if (world.wasChanged(androidFormat))
+        {
+            phone.format = scene().get<scene::UiDropdown>(androidFormat).selected == 1 ? "aab" : "apk";
+        }
+        const auto answerToggle = [&](Entity toggleEntity, bool& value) {
+            if (world.wasChanged(toggleEntity))
+            {
+                value = scene().get<scene::UiToggle>(toggleEntity).value;
+            }
+        };
+        answerToggle(androidArm64, phone.arm64);
+        answerToggle(androidX86, phone.x86_64);
+        answerToggle(androidInstall, phone.install);
+        answerToggle(androidRelease, phone.release);
     }
     if (world.wasClicked(browse.entity))
     {
         showOutputFolderDialog(state);
     }
-    if (world.wasChanged(configuration))
+    if (configuration.isValid() && world.wasChanged(configuration))
     {
         settings.configuration = scene().get<scene::UiDropdown>(configuration).selected == 1 ? "Debug" : "Release";
     }
@@ -434,6 +641,10 @@ void ExportUi::update(ToolsState& state, EditorUiKit& kit, core::Duration delta)
     const asset::Project& project = state.database->project();
     if (!dirty || projectFile != project.file)
     {
+        if (projectFile != project.file)
+        {
+            signing = asset::readAndroidSigning(project);
+        }
         settings = project.exportSettings;
         projectFile = project.file;
         dirty = false;
@@ -442,10 +653,11 @@ void ExportUi::update(ToolsState& state, EditorUiKit& kit, core::Duration delta)
     {
         // Folders inside the project are kept relative to it, so that the project can move.
         const std::string resource = project.resourcePath(*folder);
-        settings.output = resource.empty() ? core::toUtf8(*folder) : resource.substr(asset::resourceScheme.size());
+        (settings.platform == "android" ? settings.android.output : settings.output) =
+            resource.empty() ? core::toUtf8(*folder) : resource.substr(asset::resourceScheme.size());
         dirty = true;
     }
-    std::string wanted = std::format("{}|{}|", font, settings.includeFolders.size());
+    std::string wanted = std::format("{}|{}|{}|{}|", font, settings.includeFolders.size(), settings.platform, settings.android.release);
     for (const std::string& path : scenePaths(*state.database))
     {
         wanted += path;

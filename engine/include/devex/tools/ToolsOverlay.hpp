@@ -371,6 +371,8 @@ public:
 
     // Editor only: the engine builds that games can be exported with, and the state of the export.
     void setEngineBuilds(std::vector<EngineBuildChoice> builds);
+    // The architectures that games can be exported for on Android, and what is missing to do it.
+    void setAndroidExport(std::vector<std::string> abis, std::string problem);
     void setExportStatus(ExportStatus status);
 
     // Editor only: whether the application may close now. When scenes have unsaved changes, the

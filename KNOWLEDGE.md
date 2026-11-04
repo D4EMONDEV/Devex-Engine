@@ -2151,6 +2151,10 @@ namespace devex::ui {
   ellipsoïde ou partout ; `density` négative pour creuser). Côté renderer :
   `RenderWorld::volumetricFog` / `fogVolumes`, `VolumetricFogRenderer` (`shaders/fog.slang`),
   `applyVolumetricFog` dans `common.slang` ; seule la vue principale en a.
+- Export Android : `exportAndroid` (`runtime/AndroidExport.cpp`), appelé par `exportGame` ; réglages dans
+  `ExportSettings::android` et clé dans `.devex/android-signing.dvx` (`asset::readAndroidSigning`) ;
+  `findAndroidBuilds`, `findAndroidTools`, `GameCodeBuilder::buildForAndroid` ; le projet Gradle de
+  `apps/player/android` lit `devex.properties`.
 - Réflexions de l'écran (SSR) : `Camera::screenReflections` (0 par défaut, intensité), ses pas, ses
   fondus et sa tolérance, et `PostProcessVolume` pour l'intensité. `screenReflection` dans
   `shaders/pbr.slang` trace le rayon dans le shader de la surface, `ScreenReflectionRenderer`

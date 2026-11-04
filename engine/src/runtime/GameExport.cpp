@@ -837,6 +837,10 @@ core::Result<ExportPlan> planExport(const asset::AssetDatabase& database, const 
 core::Result<ExportResult> exportGame(const ExportPlan& plan, const std::function<void(const ExportProgress&)>& progress,
                                      const std::atomic<bool>* cancel)
 {
+    if (plan.platform == ExportPlatform::Android && !plan.packageOnly)
+    {
+        return exportAndroid(plan, progress, cancel);
+    }
     const auto start = std::chrono::steady_clock::now();
     const auto report = [&progress](std::string step, float fraction) {
         if (progress)
@@ -1005,7 +1009,7 @@ core::Result<ExportResult> exportGame(const ExportPlan& plan, const std::functio
         {
             return std::unexpected(bytes.error());
         }
-        if (plan.platform == ExportPlatform::Android && entry.info.type == asset::AssetType::Texture)
+        if (plan.platform == ExportPlatform::Android && plan.androidConvertsTextures && entry.info.type == asset::AssetType::Texture)
         {
             bytes = androidTexture(plan.project, *bytes, *jobs);
             if (!bytes)
@@ -1078,7 +1082,8 @@ core::Result<ExportResult> exportGame(const ExportPlan& plan, const std::functio
 int exportFromCommandLine(std::span<const std::string_view> arguments, const std::filesystem::path& binDirectory)
 {
     constexpr std::string_view usage = "usage: devex-editor --export <project.dvxproj> [--output <folder>] "
-                                       "[--configuration <Release|Debug>] [--platform <desktop|android>]";
+                                       "[--configuration <Release|Debug>] [--platform <desktop|android>] "
+                                       "[--abi <arm64-v8a|x86_64>]... [--format <apk|aab>] [--release] [--install] [--package-only]";
     if (arguments.size() < 2 || arguments.front() != "--export")
     {
         DEVEX_LOG_ERROR("{}", usage);
@@ -1087,6 +1092,11 @@ int exportFromCommandLine(std::span<const std::string_view> arguments, const std
     std::optional<std::filesystem::path> output;
     std::optional<std::string> configuration;
     ExportPlatform platform = ExportPlatform::Desktop;
+    std::vector<std::string> abis;
+    std::optional<std::string> format;
+    bool release = false;
+    bool install = false;
+    bool packageOnly = false;
     for (std::size_t index = 2; index < arguments.size(); ++index)
     {
         if (index + 1 < arguments.size() && arguments[index] == "--output")
@@ -1096,6 +1106,26 @@ int exportFromCommandLine(std::span<const std::string_view> arguments, const std
         else if (index + 1 < arguments.size() && arguments[index] == "--configuration")
         {
             configuration = std::string(arguments[++index]);
+        }
+        else if (index + 1 < arguments.size() && arguments[index] == "--abi")
+        {
+            abis.emplace_back(arguments[++index]);
+        }
+        else if (index + 1 < arguments.size() && arguments[index] == "--format")
+        {
+            format = std::string(arguments[++index]);
+        }
+        else if (arguments[index] == "--release")
+        {
+            release = true;
+        }
+        else if (arguments[index] == "--install")
+        {
+            install = true;
+        }
+        else if (arguments[index] == "--package-only")
+        {
+            packageOnly = true;
         }
         else if (index + 1 < arguments.size() && arguments[index] == "--platform" &&
                  (arguments[index + 1] == "desktop" || arguments[index + 1] == "android"))
@@ -1153,10 +1183,30 @@ int exportFromCommandLine(std::span<const std::string_view> arguments, const std
         const std::filesystem::path absolute = std::filesystem::absolute(*output, error);
         plan->output = (error ? *output : absolute).lexically_normal();
     }
-    // For Android, the package alone for now: the APK is made from it by the Gradle project of the
-    // player (see Android in docs/decisions.md).
     plan->platform = platform;
-    plan->packageOnly = plan->packageOnly || platform == ExportPlatform::Android;
+    plan->packageOnly = plan->packageOnly || packageOnly;
+    if (platform == ExportPlatform::Android && !plan->packageOnly)
+    {
+        asset::AndroidExportSettings& android = plan->project.exportSettings.android;
+        if (!abis.empty())
+        {
+            android.arm64 = std::ranges::contains(abis, "arm64-v8a");
+            android.x86_64 = std::ranges::contains(abis, "x86_64");
+        }
+        android.format = format.value_or(android.format);
+        android.release = android.release || release;
+        android.install = android.install || install;
+        const std::filesystem::path chosen = plan->output;
+        if (core::Result<void> prepared = prepareAndroidExport(*plan, binDirectory); !prepared)
+        {
+            DEVEX_LOG_ERROR("Cannot export {}: {}", project->name, prepared.error());
+            return 1;
+        }
+        if (output)
+        {
+            plan->output = chosen;
+        }
+    }
 
     std::string lastStep;
     const core::Result<ExportResult> result = exportGame(*plan, [&lastStep](const ExportProgress& step) {

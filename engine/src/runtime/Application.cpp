@@ -3,6 +3,9 @@
 #include "GlobalScenes.hpp"
 #include "ManagedCodeBuilder.hpp"
 #include "ManagedGame.hpp"
+#ifdef __ANDROID__
+#include <dlfcn.h>
+#endif
 #include <devex/animation/AnimationWorld.hpp>
 #include <devex/animation/SpriteAnimation.hpp>
 #include <devex/animation/TweenWorld.hpp>
@@ -563,6 +566,12 @@ ApplicationRunner::ApplicationRunner(Application& application, const Application
             choices.push_back({.name = build.name, .configuration = build.configuration});
         }
         services.tools->setEngineBuilds(std::move(choices));
+        std::vector<std::string> androidAbis;
+        for (const AndroidBuild& build : findAndroidBuilds(services.platform.baseDirectory()))
+        {
+            androidAbis.push_back(build.abi);
+        }
+        services.tools->setAndroidExport(std::move(androidAbis), findAndroidTools().problem(false));
     }
 }
 
@@ -1962,9 +1971,17 @@ void ApplicationRunner::loadGameModule()
     const bool packaged = m_services.database == nullptr;
     const asset::Project& project = assetSource()->project();
     // An exported game loads its module in place, since it is never rebuilt while the game runs.
-    const std::filesystem::path library = packaged
-                                              ? m_services.platform.baseDirectory() / GameCodeBuilder::libraryFileName()
-                                              : GameCodeBuilder::libraryPath(project);
+#ifdef __ANDROID__
+    // The libraries of a game are installed together, where the engine's is.
+    static const char engineAddress = 0;
+    Dl_info engineLibrary{};
+    const std::filesystem::path gameDirectory =
+        dladdr(&engineAddress, &engineLibrary) != 0 ? std::filesystem::path(engineLibrary.dli_fname).parent_path() : std::filesystem::path{};
+#else
+    const std::filesystem::path gameDirectory = m_services.platform.baseDirectory();
+#endif
+    const std::filesystem::path library = packaged ? gameDirectory / GameCodeBuilder::libraryFileName()
+                                                   : GameCodeBuilder::libraryPath(project);
     std::error_code error;
     const std::filesystem::file_time_type built = std::filesystem::last_write_time(library, error);
     if (error)
@@ -3200,7 +3217,9 @@ void ApplicationRunner::startExport()
 {
     const asset::Project& project = m_services.database->project();
     const std::vector<EngineBuild> builds = findEngineBuilds(m_services.platform.baseDirectory());
-    const std::optional<EngineBuild> engine = findEngineBuild(builds, project.exportSettings.configuration);
+    const bool android = project.exportSettings.platform == "android";
+    // A plan for Android starts from any build, and takes those of its architectures afterwards.
+    const std::optional<EngineBuild> engine = android ? EngineBuild{} : findEngineBuild(builds, project.exportSettings.configuration);
     if (!engine)
     {
         const std::string message =
@@ -3216,7 +3235,16 @@ void ApplicationRunner::startExport()
         m_services.tools->setExportStatus({.state = tools::ExportStatus::State::Failed, .message = plan.error().message});
         return;
     }
-    DEVEX_LOG_INFO("Exporting {} with the {} engine build to {}", project.name, engine->configuration,
+    if (android)
+    {
+        if (core::Result<void> prepared = prepareAndroidExport(*plan, m_services.platform.baseDirectory()); !prepared)
+        {
+            DEVEX_LOG_ERROR("Cannot export {}: {}", project.name, prepared.error());
+            m_services.tools->setExportStatus({.state = tools::ExportStatus::State::Failed, .message = prepared.error().message});
+            return;
+        }
+    }
+    DEVEX_LOG_INFO("Exporting {} with the {} engine build to {}", project.name, plan->engine.configuration,
                    core::toUtf8(plan->output));
     m_export = std::make_unique<ExportJob>(std::move(*plan));
     m_services.tools->setExportStatus(m_export->status());

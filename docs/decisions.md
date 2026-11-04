@@ -4868,12 +4868,10 @@ jeu (le `SystemContext`, un monde, un composant) l'est aussi au C#, dans le mêm
 Décidé le 3 novembre 2026, avant tout code : les jeux s'exportent vers Android, l'éditeur reste sur
 le bureau. Ce qui suit est le plan ; chaque étape le précise en l'implémentant.
 
-**En pause depuis le 3 novembre 2026**, le mobile et le Web passant après le reste du moteur. Les
-étapes 1 à 4 sont faites : un jeu tourne dans l'émulateur, depuis un APK que Gradle construit à la
-main. Restent l'étape 5 (l'export Android dans la fenêtre d'export de l'éditeur : projet Gradle,
-signature, APK et AAB, `adb`) et l'étape 6 (les modules C++ des jeux compilés avec le NDK), puis le
-C#. Rien n'a encore tourné sur un vrai téléphone : il en faut un en 64 bits et en Vulkan 1.3, pour
-les textures ASTC, la limite de push constants et les performances.
+Mis en pause le 3 novembre 2026, repris le 4. Les étapes 1 à 6 sont faites : un jeu s'exporte depuis
+l'éditeur, avec son code C++, et tourne dans l'émulateur. Reste le C#. Rien n'a encore tourné sur un
+vrai téléphone : il en faut un en 64 bits et en Vulkan 1.3, pour les textures ASTC, la limite de push
+constants et les performances.
 
 - **Rendu** : le même renderer, avec **Vulkan 1.3** comme minimum, sur le bureau aussi. Le code
   exigeait 1.4 (`requiredApiVersion` dans `Vulkan.hpp`) sans utiliser aucune fonction propre à la
@@ -4973,12 +4971,34 @@ Les étapes, chacune livrable et testée seule :
    - essayées dans l'émulateur, les textures ASTC s'affichent fausses (caisses grises, terrain en
      blocs), alors que basisu les décode justes sur le PC. Le GPU du PC ne lit pas l'ASTC :
      l'émulateur le décode lui-même. Elles restent à voir sur un vrai téléphone.
-5. **L'export dans l'éditeur** : la cible Android dans la fenêtre d'export, le projet Gradle généré
-   (nom, identifiant, icône, orientation, Vulkan 1.3), la signature (clé de débogage créée
-   automatiquement, clé de publication choisie à l'export), APK et AAB, et l'installation sur un
-   appareil branché par `adb`.
-6. **Les modules C++ des jeux** compilés avec le NDK pour l'export. Un projet qui contient du C#
-   est refusé avec un message clair tant que le C# n'est pas pris en charge.
+5. ✅ **L'export dans l'éditeur** (jalon 99), précisé le 4 novembre 2026 avec l'utilisateur :
+   - la plateforme se choisit dans la fenêtre d'export, ses réglages (nom de paquet, version,
+     orientation, architectures, format, clé de publication ou non) vivent avec le projet, dans la
+     section `export_android` ;
+   - les builds du moteur pour Android se trouvent à côté de celui de l'éditeur, comme ceux du
+     bureau : `android/` y tient le projet Gradle du lecteur, avec les bibliothèques de son ABI ;
+   - l'export copie ce projet dans `.devex/android/gradle`, le remplit (package, bibliothèques,
+     icône) et lui dit le reste par `devex.properties`, que `build.gradle.kts` lit. Le wrapper de
+     Gradle est versionné ; il est lancé avec le `java` trouvé plutôt que par `gradlew`. Le SDK, le NDK
+     et Java se trouvent par l'environnement ou à leurs emplacements habituels : un réglage de
+     l'éditeur pour les désigner reste à faire ;
+   - **la clé de publication reste sur la machine**, dans `.devex/android-signing.dvx` : chemin, alias et
+     mots de passe, en clair à la demande de l'utilisateur, comme Godot le fait, plutôt que redemandés à
+     chaque export. `.devex/` y reçoit un `.gitignore` qui l'exclut, quel que soit celui du projet. Sans
+     clé de publication, les outils créent et utilisent une clé de débogage ;
+   - **un APK pour le seul x86_64 garde ses textures en BC** : l'émulateur les lit, et décode mal
+     l'ASTC. Avec arm64, elles passent en ASTC ;
+   - **l'installation** est une case de la fenêtre et non un bouton après coup : `adb install` puis
+     `am start`, à la fin de l'export ;
+   - **l'écran** : l'orientation est celle du manifeste, que `DevexActivity` ne laisse pas SDL changer.
+     Le swapchain est créé sans rotation, à la taille de la fenêtre, et le compositeur tourne l'image ;
+     c'est simple, mais moins efficace que de dessiner tourné, à revoir sur un vrai téléphone.
+6. ✅ **Les modules C++ des jeux** (jalon 99), compilés avec le NDK pour chaque ABI, contre le build
+   Android du moteur, dans `.devex/android/code/<abi>` : `GameCodeBuilder::buildForAndroid`. Installés
+   sur le disque (`useLegacyPackaging`), ils sont cherchés à côté de `libdevex-engine.so`.
+   **Un projet qui contient du C# n'est plus refusé**, décision prise avec l'utilisateur : la fenêtre
+   avertit que ses composants C# ne feront rien, et l'export continue, ce qui permet d'essayer un projet
+   mixte comme le bac à sable.
 
 Plus tard : le C#, un préréglage de qualité mobile, des commandes tactiles à l'écran. Le Web
 demanderait un rendu WebGPU, donc un autre renderer : hors de ce plan.
@@ -5528,6 +5548,11 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     ciel ; volumes en boîte, ellipsoïde ou partout, qui ajoutent ou creusent ; gizmo, catalogue,
     mesure `DEVEX_STRESS_FOG` du banc d'essai (0,21 ms sur une RTX 4060) ; tests de l'extraction et
     d'un brouillard qui cache un cube puis qu'un volume creuse ; API des jeux 40.
+
+99. ✅ **Export Android dans l'éditeur** — plateforme Android dans la fenêtre d'export et en ligne de
+    commande, code C++ compilé avec le NDK pour chaque ABI, APK et AAB par Gradle, clé de débogage ou de
+    publication, installation et lancement par `adb`, avertissement pour le C# ; essayé dans l'émulateur
+    sur le bac à sable ; API des jeux 44.
 
 98. ✅ **Réflexions de l'écran (SSR)** — tracées dans le shader des surfaces, dans la profondeur de la
     prépasse, puis lues dans l'image de la frame précédente, plus floue pour les surfaces plus rugueuses,

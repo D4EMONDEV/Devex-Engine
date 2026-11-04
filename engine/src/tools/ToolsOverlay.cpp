@@ -879,6 +879,12 @@ void ToolsOverlay::setDebuggerStatus(DebuggerStatus status)
     m_state->debugger = status;
 }
 
+void ToolsOverlay::setAndroidExport(std::vector<std::string> abis, std::string problem)
+{
+    m_state->androidAbis = std::move(abis);
+    m_state->androidProblem = std::move(problem);
+}
+
 void ToolsOverlay::setEngineBuilds(std::vector<EngineBuildChoice> builds)
 {
     m_state->engineBuilds = std::move(builds);

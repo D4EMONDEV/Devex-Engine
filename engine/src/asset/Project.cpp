@@ -283,6 +283,36 @@ void readWindowAndExport(const serialization::TextDocument& document, Project& p
                 project.exportSettings.configuration = *configuration;
             }
         }
+        else if (section.type == "export_android")
+        {
+            AndroidExportSettings& android = project.exportSettings.android;
+            const auto text = [&](const char* key, std::string& value) {
+                if (const std::string* const found = stringAttribute(section, key))
+                {
+                    value = *found;
+                }
+            };
+            const auto flag = [&](const char* key, bool& value) {
+                if (const serialization::TextValue* const found = section.findAttribute(key))
+                {
+                    value = serialization::asBool(*found).value_or(value);
+                }
+            };
+            text("platform", project.exportSettings.platform);
+            text("output", android.output);
+            text("package", android.package);
+            text("version_name", android.versionName);
+            if (const serialization::TextValue* const code = section.findAttribute("version_code"))
+            {
+                android.versionCode = static_cast<std::int32_t>(serialization::asInteger(*code).value_or(android.versionCode));
+            }
+            text("orientation", android.orientation);
+            flag("arm64", android.arm64);
+            flag("x86_64", android.x86_64);
+            text("format", android.format);
+            flag("release", android.release);
+            flag("install", android.install);
+        }
         else if (section.type == "export_scene" || section.type == "export_folder")
         {
             if (const std::string* const path = stringAttribute(section, "path"); path != nullptr && !path->empty())
@@ -747,6 +777,23 @@ std::string writeProjectText(const Project& project)
         exportSection.attributes.push_back({"output", serialization::TextValue(exportSettings.output)});
         exportSection.attributes.push_back({"configuration", serialization::TextValue(exportSettings.configuration)});
     }
+    if (exportSettings.platform != exportDefaults.platform || exportSettings.android != exportDefaults.android)
+    {
+        const AndroidExportSettings& android = exportSettings.android;
+        serialization::TextSection& entry = document.sections.emplace_back();
+        entry.type = "export_android";
+        entry.attributes = {{"platform", exportSettings.platform},
+                            {"output", android.output},
+                            {"package", android.package},
+                            {"version_name", android.versionName},
+                            {"version_code", std::int64_t{android.versionCode}},
+                            {"orientation", android.orientation},
+                            {"arm64", android.arm64},
+                            {"x86_64", android.x86_64},
+                            {"format", android.format},
+                            {"release", android.release},
+                            {"install", android.install}};
+    }
     for (const std::string& scene : exportSettings.scenes)
     {
         serialization::TextSection& sceneSection = document.sections.emplace_back();
@@ -823,6 +870,115 @@ core::Result<Project> createProject(const std::filesystem::path& directory, std:
         }
     }
     return project;
+}
+
+bool validAndroidPackage(std::string_view package)
+{
+    if (package.find('.') == std::string_view::npos)
+    {
+        return false;
+    }
+    bool start = true;
+    for (const char character : package)
+    {
+        if (character == '.')
+        {
+            if (start)
+            {
+                return false;
+            }
+            start = true;
+            continue;
+        }
+        const bool letter = (character >= 'a' && character <= 'z') || (character >= 'A' && character <= 'Z');
+        const bool other = (character >= '0' && character <= '9') || character == '_';
+        if (start ? !letter : !(letter || other))
+        {
+            return false;
+        }
+        start = false;
+    }
+    return !start;
+}
+
+std::string androidPackageFromName(std::string_view name)
+{
+    std::string word;
+    for (const char character : name)
+    {
+        if ((character >= 'a' && character <= 'z') || (character >= '0' && character <= '9'))
+        {
+            word += character;
+        }
+        else if (character >= 'A' && character <= 'Z')
+        {
+            word += static_cast<char>(character - 'A' + 'a');
+        }
+    }
+    if (word.empty() || (word.front() >= '0' && word.front() <= '9'))
+    {
+        word.insert(0, "game");
+    }
+    return "com.devex." + word;
+}
+
+namespace {
+
+[[nodiscard]] std::filesystem::path androidSigningFile(const Project& project)
+{
+    return project.cacheDirectory() / "android-signing.dvx";
+}
+
+} // namespace
+
+AndroidSigning readAndroidSigning(const Project& project)
+{
+    AndroidSigning signing;
+    const core::Result<std::string> contents = core::readTextFile(androidSigningFile(project));
+    if (!contents)
+    {
+        return signing;
+    }
+    const auto document = serialization::parseText(*contents);
+    if (!document || document->sections.empty())
+    {
+        return signing;
+    }
+    const serialization::TextSection& section = document->sections.front();
+    if (const std::string* const keystore = stringAttribute(section, "keystore"))
+    {
+        signing.keystore = core::pathFromUtf8(*keystore);
+    }
+    if (const std::string* const alias = stringAttribute(section, "alias"))
+    {
+        signing.alias = *alias;
+    }
+    if (const std::string* const password = stringAttribute(section, "store_password"))
+    {
+        signing.storePassword = *password;
+    }
+    if (const std::string* const password = stringAttribute(section, "key_password"))
+    {
+        signing.keyPassword = *password;
+    }
+    return signing;
+}
+
+core::Result<void> writeAndroidSigning(const Project& project, const AndroidSigning& signing)
+{
+    // Whatever the project ignores, its passwords stay out of version control.
+    if (core::Result<void> ignored = core::writeTextFile(project.cacheDirectory() / ".gitignore", "*\n"); !ignored)
+    {
+        return ignored;
+    }
+    serialization::TextDocument document;
+    serialization::TextSection& section = document.sections.emplace_back();
+    section.type = "android_signing";
+    section.attributes = {{"keystore", core::toUtf8(signing.keystore)},
+                          {"alias", signing.alias},
+                          {"store_password", signing.storePassword},
+                          {"key_password", signing.keyPassword}};
+    return core::writeTextFile(androidSigningFile(project), serialization::writeText(document));
 }
 
 } // namespace devex::asset

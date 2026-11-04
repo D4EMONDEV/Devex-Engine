@@ -112,11 +112,21 @@ core::Result<Swapchain> Swapchain::create(const Device& device, VkSurfaceKHR sur
         }
     }
 
+#ifdef __ANDROID__
+    // Android gives the size of the surface in the natural orientation of the screen, and its rotation
+    // apart. Drawing without the rotation, at the size of the window, lets the compositor turn the image.
+    const std::optional<math::Extent2D> surfaceExtent = std::nullopt;
+    const VkSurfaceTransformFlagBitsKHR transform = (capabilities.supportedTransforms & VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR) != 0
+                                                        ? VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR
+                                                        : capabilities.currentTransform;
+#else
     const std::optional<math::Extent2D> surfaceExtent =
         capabilities.currentExtent.width == std::numeric_limits<std::uint32_t>::max()
             ? std::nullopt
             : std::optional<math::Extent2D>(math::Extent2D{capabilities.currentExtent.width,
                                                            capabilities.currentExtent.height});
+    const VkSurfaceTransformFlagBitsKHR transform = capabilities.currentTransform;
+#endif
     const math::Extent2D extent = chooseSwapchainExtent(
         surfaceExtent, {capabilities.minImageExtent.width, capabilities.minImageExtent.height},
         {capabilities.maxImageExtent.width, capabilities.maxImageExtent.height},
@@ -151,7 +161,7 @@ core::Result<Swapchain> Swapchain::create(const Device& device, VkSurfaceKHR sur
         // Copied from too where the surface allows it, for a picture of the window.
         .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | (readable ? VkImageUsageFlags{VK_IMAGE_USAGE_TRANSFER_SRC_BIT} : VkImageUsageFlags{0}),
         .imageSharingMode = VK_SHARING_MODE_EXCLUSIVE,
-        .preTransform = capabilities.currentTransform,
+        .preTransform = transform,
         .compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
         .presentMode = toVulkan(presentMode),
         .clipped = VK_TRUE,

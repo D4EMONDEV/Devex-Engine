@@ -28,6 +28,13 @@
 namespace devex::render::vulkan {
 namespace {
 
+#ifdef __ANDROID__
+// Android says so of a swapchain left for its compositor to turn, which is what ours does.
+constexpr bool suboptimalIsNormal = true;
+#else
+constexpr bool suboptimalIsNormal = false;
+#endif
+
 // volk loads device functions globally, so a second device would replace those of the first.
 std::atomic<bool> rendererExists{false};
 
@@ -1002,7 +1009,7 @@ core::Result<void> VulkanRenderer::endFrame()
     {
         return vulkanError("vkAcquireNextImageKHR", acquired);
     }
-    if (acquired == VK_SUBOPTIMAL_KHR)
+    if (acquired == VK_SUBOPTIMAL_KHR && !suboptimalIsNormal)
     {
         m_swapchainOutdated = true;
     }
@@ -1120,7 +1127,7 @@ core::Result<void> VulkanRenderer::endFrame()
         DEVEX_PROFILE_SCOPE("Present");
         presented = vkQueuePresentKHR(m_device.queue(), &presentInfo);
     }
-    if (presented == VK_ERROR_OUT_OF_DATE_KHR || presented == VK_SUBOPTIMAL_KHR)
+    if (presented == VK_ERROR_OUT_OF_DATE_KHR || (presented == VK_SUBOPTIMAL_KHR && !suboptimalIsNormal))
     {
         m_swapchainOutdated = true;
     }

@@ -64,7 +64,8 @@ class CoroutineScheduler;
 // FogVolume components.
 // 41: ApplicationConfig gained supervised Play. 42: Project gained addon activation settings.
 // 43: RenderCamera, Camera and PostProcessVolume gained the reflections of the screen.
-inline constexpr std::uint32_t gameApiVersion = 43;
+// 44: ExportSettings, in Project, gained the export for Android.
+inline constexpr std::uint32_t gameApiVersion = 44;
 
 enum class SystemPhase : std::uint8_t
 {

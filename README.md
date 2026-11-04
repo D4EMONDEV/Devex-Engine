@@ -339,20 +339,18 @@ ctest --preset test-linux-debug --label-exclude gpu
 
 Pour Android, le moteur et le lecteur (`libmain.so`) se compilent depuis Windows ou Linux avec le
 NDK d'Android Studio, que désigne `ANDROID_NDK_HOME` : `android-arm64` pour les téléphones,
-`android-x86_64` pour l'émulateur d'Android Studio. Le build assemble un projet Gradle dans
-`out/build/<preset>/android` ; on y pose le package d'un jeu exporté pour Android (ses textures en
-ASTC), puis Gradle fait l'APK. L'export Android depuis la fenêtre de l'éditeur est la suite du plan
-(voir *Android* dans [docs/decisions.md](docs/decisions.md)).
+`android-x86_64` pour l'émulateur d'Android Studio. Une fois ces builds faits à côté de celui de
+l'éditeur, **Project > Export Game...** les propose sur la plateforme Android, ou en ligne de commande.
+Gradle fait l'APK ou l'AAB, le code C++ du jeu se compile avec le NDK, et `--install` lance le jeu
+sur l'appareil branché ou l'émulateur. La première fois, Gradle télécharge ce qu'il lui faut. Le C#
+ne tourne pas encore sur Android : la fenêtre le signale (voir *Android* dans
+[docs/decisions.md](docs/decisions.md)).
 
 ```powershell
 $env:ANDROID_NDK_HOME = "$env:LOCALAPPDATA/Android/Sdk/ndk/<version>"
 cmake --preset android-x86_64
 cmake --build --preset build-android-x86_64
-out\build\x64-release\bin\devex-editor.exe --export <Jeu>.dvxproj --output <export> --platform android
-copy <export>\<Jeu>.dvxpak out\build\android-x86_64\android\app\src\main\assets\game.dvxpak
-cd out\build\android-x86_64\android
-gradle assembleDebug
-adb install -r app\build\outputs\apk\debug\app-debug.apk
+out\build\x64-release\bin\devex-editor.exe --export <Jeu>.dvxproj --platform android --abi x86_64 --install
 ```
 
 Chaque push sur `main` ou `ci` est construit et testé par GitHub Actions (Windows et Linux, Debug

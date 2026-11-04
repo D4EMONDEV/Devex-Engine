@@ -43,6 +43,12 @@ public:
                                                            std::string_view configuration = core::buildType());
     // The file name of game modules: Game.dll on Windows.
     [[nodiscard]] static std::filesystem::path libraryFileName();
+    // Builds the module of a game for an Android ABI with the NDK, against an engine build for it, and
+    // says where the library went.
+    [[nodiscard]] static core::Result<std::filesystem::path> buildForAndroid(const asset::Project& project,
+                                                                             const std::filesystem::path& devexDirectory,
+                                                                             const std::filesystem::path& ndk, std::string_view abi,
+                                                                             const std::atomic<bool>* cancel);
     [[nodiscard]] static bool hasCode(const asset::Project& project);
     // Creates missing native project files and refreshes Devex-owned ones without replacing a
     // custom CMakeLists or any existing C++ source. Also supplies IDEs with the engine location.

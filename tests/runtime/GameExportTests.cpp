@@ -248,3 +248,107 @@ TEST_CASE("An export packages the scenes and every asset they need", "[runtime][
     REQUIRE((*database)->updateProject(broken));
     CHECK_FALSE(devex::runtime::planExport(**database, engine).has_value());
 }
+
+TEST_CASE("The export for Android keeps its settings with the project and its key apart", "[runtime][export][android]")
+{
+    const std::filesystem::path root = std::filesystem::temp_directory_path() / ("devex-android-" + devex::core::Uuid::generate().toString());
+    auto project = devex::asset::createProject(root, "Android test");
+    REQUIRE(project);
+    // Nothing is written while the settings are the default ones.
+    REQUIRE(devex::asset::saveProject(*project));
+    CHECK_FALSE(devex::core::readTextFile(project->file)->contains("export_android"));
+
+    project->exportSettings.platform = "android";
+    project->exportSettings.android = {.output = "out/phone",
+                                       .package = "com.studio.game",
+                                       .versionName = "2.1",
+                                       .versionCode = 7,
+                                       .orientation = "portrait",
+                                       .arm64 = false,
+                                       .x86_64 = true,
+                                       .format = "aab",
+                                       .release = true,
+                                       .install = true};
+    REQUIRE(devex::asset::saveProject(*project));
+    const auto loaded = devex::asset::loadProject(project->file);
+    REQUIRE(loaded);
+    CHECK(loaded->exportSettings == project->exportSettings);
+
+    // The key stays out of the project file and out of version control.
+    CHECK(devex::asset::readAndroidSigning(*project) == devex::asset::AndroidSigning{});
+    const devex::asset::AndroidSigning signing{.keystore = root / "key \"store\".jks", .alias = "game", .storePassword = "se\"cret", .keyPassword = "other"};
+    REQUIRE(devex::asset::writeAndroidSigning(*project, signing));
+    CHECK(devex::asset::readAndroidSigning(*project) == signing);
+    CHECK_FALSE(devex::core::readTextFile(project->file)->contains("cret"));
+    CHECK(*devex::core::readTextFile(project->cacheDirectory() / ".gitignore") == "*\n");
+
+    CHECK(devex::asset::validAndroidPackage("com.studio.game_2"));
+    for (const std::string_view wrong : {"game", "com..game", ".com.game", "com.game.", "com.2game", "com.ga me", ""})
+    {
+        CHECK_FALSE(devex::asset::validAndroidPackage(wrong));
+    }
+    CHECK(devex::asset::androidPackageFromName("Mon Jeu 2!") == "com.devex.monjeu2");
+    CHECK(devex::asset::androidPackageFromName("2D") == "com.devex.game2d");
+    CHECK(devex::asset::validAndroidPackage(devex::asset::androidPackageFromName("??")));
+
+    std::error_code ignored;
+    std::filesystem::remove_all(root, ignored);
+}
+
+TEST_CASE("The Android builds of the engine are found next to the editor, and tell Gradle about the game", "[runtime][export][android]")
+{
+    const std::filesystem::path root = std::filesystem::temp_directory_path() / ("devex-android-builds-" + devex::core::Uuid::generate().toString());
+    const auto library = [&](std::string_view build, std::string_view abi) {
+        return root / build / "android" / "app" / "src" / "main" / "jniLibs" / abi / "libdevex-engine.so";
+    };
+    REQUIRE(devex::core::writeTextFile(library("android-arm64", "arm64-v8a"), "library"));
+    REQUIRE(devex::core::writeTextFile(library("android-x86_64", "x86_64"), "library"));
+    REQUIRE(devex::core::writeTextFile(root / "x64-debug" / "bin" / "devex-editor", "editor"));
+    auto project = devex::asset::createProject(root / "game", "Mon Jeu");
+    REQUIRE(project);
+
+    const std::vector<devex::runtime::AndroidBuild> builds = devex::runtime::findAndroidBuilds(root / "x64-debug" / "bin");
+    REQUIRE(builds.size() == 2);
+    CHECK(builds[0].abi == "arm64-v8a");
+    CHECK(builds[1].abi == "x86_64");
+    CHECK(builds[1].engine.cmakeDirectory() == root / "android-x86_64" / "cmake");
+
+    devex::runtime::ExportPlan plan;
+    plan.project = *project;
+    plan.project.root = root / "game";
+    plan.project.exportSettings.android.x86_64 = true;
+    plan.project.exportSettings.android.arm64 = false;
+    REQUIRE(devex::runtime::prepareAndroidExport(plan, root / "x64-debug" / "bin"));
+    REQUIRE(plan.androidBuilds.size() == 1);
+    CHECK(plan.androidBuilds[0].abi == "x86_64");
+    CHECK(plan.platform == devex::runtime::ExportPlatform::Android);
+    CHECK(plan.output == (root / "game" / "export" / "android").lexically_normal());
+
+    std::string text = devex::runtime::androidGradleProperties(plan, false);
+    CHECK(text.contains("applicationId=com.devex.monjeu\n"));
+    CHECK(text.contains("gameName=Mon Jeu\n"));
+    CHECK(text.contains("abis=x86_64\n"));
+    CHECK(text.contains("orientation=sensorLandscape\n"));
+    CHECK(text.contains("icon=@android:drawable/sym_def_app_icon\n"));
+    CHECK_FALSE(text.contains("keystore"));
+
+    // A release needs its key, which then reaches Gradle, with its backslashes kept.
+    plan.project.exportSettings.android.release = true;
+    CHECK_FALSE(devex::runtime::prepareAndroidExport(plan, root / "x64-debug" / "bin"));
+    plan.signing = {.keystore = "key.jks", .alias = "game", .storePassword = "a\\b", .keyPassword = "c"};
+    text = devex::runtime::androidGradleProperties(plan, true);
+    CHECK(text.contains("storePassword=a\\\\b\n"));
+    CHECK(text.contains("keyAlias=game\n"));
+    CHECK(text.contains("icon=@mipmap/ic_launcher\n"));
+
+    // Without a build for the chosen architectures, the export says so.
+    plan.project.exportSettings.android.release = false;
+    plan.project.exportSettings.android.x86_64 = false;
+    const auto none = devex::runtime::prepareAndroidExport(plan, root / "x64-debug" / "bin");
+    REQUIRE_FALSE(none);
+    CHECK(none.error().message.contains("android-arm64"));
+
+    std::error_code ignored;
+    std::filesystem::remove_all(root, ignored);
+}
+

@@ -97,8 +97,48 @@ struct DEVEX_API WindowSettings
 };
 
 // What an export of the game contains, and where it goes.
+// How a game is exported for Android, kept with the project.
+struct DEVEX_API AndroidExportSettings
+{
+    // The folder the APK or the AAB goes to, relative to the project or absolute.
+    std::string output = "export/android";
+    // The name Android knows the game by, such as "com.studio.game"; empty, it comes from the game's.
+    std::string package;
+    std::string versionName = "1.0";
+    // Grows with every version the Play Store receives.
+    std::int32_t versionCode = 1;
+    // "landscape", "portrait" or "sensor".
+    std::string orientation = "landscape";
+    // The architectures: of phones, and of the emulator on a PC.
+    bool arm64 = true;
+    bool x86_64 = false;
+    // "apk", to install directly, or "aab", for the Play Store.
+    std::string format = "apk";
+    // Signed with the key of the game rather than a debug key.
+    bool release = false;
+    // Installs and starts the APK on the connected device after exporting it.
+    bool install = false;
+
+    bool operator==(const AndroidExportSettings&) const = default;
+};
+
+// The key an Android game is signed with, in a file of the project's cache that version control does
+// not see, the passwords in the clear.
+struct DEVEX_API AndroidSigning
+{
+    std::filesystem::path keystore;
+    std::string alias;
+    std::string storePassword;
+    std::string keyPassword;
+
+    bool operator==(const AndroidSigning&) const = default;
+};
+
 struct DEVEX_API ExportSettings
 {
+    // The system the Export window exports for: "desktop" or "android".
+    std::string platform = "desktop";
+    AndroidExportSettings android;
     // Scenes exported with the startup scene, as res:// paths. The scenes, prefabs and other assets
     // that exported scenes refer to are exported with them.
     std::vector<std::string> scenes;
@@ -282,6 +322,14 @@ struct DEVEX_API Project
 // the .dvxproj file, followed by optional [physics], [physics_layer], [audio], [audio_group],
 // [sorting_layer], [window], [export], [export_scene], [export_folder], [input_context],
 // [input_action] and [localization] sections.
+// Lowercase words joined by dots, each starting with a letter, at least two.
+[[nodiscard]] DEVEX_API bool validAndroidPackage(std::string_view package);
+// "com.devex.<game>", from the name of a game.
+[[nodiscard]] DEVEX_API std::string androidPackageFromName(std::string_view name);
+// The key of the game, empty when none was given.
+[[nodiscard]] DEVEX_API AndroidSigning readAndroidSigning(const Project& project);
+[[nodiscard]] DEVEX_API core::Result<void> writeAndroidSigning(const Project& project, const AndroidSigning& signing);
+
 [[nodiscard]] DEVEX_API core::Result<Project> loadProject(const std::filesystem::path& projectFile);
 // The same from the text of a project file, as exported games keep it; projectFile gives the
 // project its root.
