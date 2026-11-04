@@ -5580,6 +5580,8 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     mesure `DEVEX_STRESS_FOG` du banc d'essai (0,21 ms sur une RTX 4060) ; tests de l'extraction et
     d'un brouillard qui cache un cube puis qu'un volume creuse ; API des jeux 40.
 
+106. ✅ **Blocs CSG** — `CsgBox`, `CsgSphere`, `CsgCylinder`, `CsgPath` et `CsgCombiner`, calculés par Manifold à la volée : un seul
+     mesh par solide, avec ses matières, ses collisions et sa navigation. Deuxième étape du level design.
 105. ✅ **Chemins** — le composant `Path3D`, une courbe de Bézier dessinée dans la vue 3D, et `PathFollower` qui la suit
      sans code. Première étape du level design, plan ci-dessous.
 104. ✅ **Exemple multijoueur et documentation** — la scène `arena_online` du bac à sable : marcher, sauter et lancer des
@@ -5618,8 +5620,8 @@ Les étapes, chacune testée et commitée à part :
 
 1. ✅ **Les chemins** (jalon 105) : `Path3D` et `PathFollower`, comme le Path3D et le PathFollow3D de Godot. Le nom `Path` seul aurait pris
    celui de `System.IO.Path` à tous les fichiers C# des jeux.
-2. **Les blocs CSG** : unions, soustractions et intersections de formes pour prototyper un niveau. Les routes et rails
-   extrudés le long d'un chemin viendront avec eux, qui savent produire un maillage.
+2. ✅ **Les blocs CSG** (jalon 106) : unions, soustractions et intersections de formes pour prototyper un niveau, et les routes et
+   rails extrudés le long d'un chemin (`CsgPath`).
 3. **La grille** : poser des pièces sur une grille 3D, comme GridMap.
 
 Les choix :
@@ -5638,6 +5640,13 @@ Les choix :
 - **Manifold pour le CSG**, par vcpkg, comme Godot depuis la 4.4 : robuste sur les cas limites, contrairement au BSP qu'il a
   abandonné. **Calculé à la volée**, dans l'éditeur et au chargement du jeu : rien à oublier de recalculer, et un bloc peut
   changer pendant la partie. Une commande pourra plus tard figer un bloc en mesh.
+- **Un composant par forme**, comme les colliders et les nœuds CSG de Godot, plutôt qu'un seul avec un type : l'inspecteur ne
+  montre que ce qui compte. Ils partagent `operation`, `material` et `collision`.
+- **Le résultat n'est pas un `MeshRenderer` ajouté à la racine**, qui se serait sauvé avec la scène : c'est un composant non
+  enregistré, `CsgResult`, que le rendu, la physique et la navigation lisent. Le mesh change d'identifiant à chaque calcul, ce que la
+  physique voit comme un autre collider.
+- **Les textures se plaquent depuis le côté que regarde la face**, à un mètre par mètre, dans le repère du solide : elles ne glissent
+  pas quand on déplace une forme, et rien n'est à régler pour un prototype.
 
 ## Multijoueur — plan décidé le 2026-11-04
 

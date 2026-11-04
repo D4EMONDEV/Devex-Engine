@@ -320,6 +320,7 @@ devex_add_tests(runtime
         runtime/GlobalScenesTests.cpp
         runtime/AssetMemoryTests.cpp
         runtime/CoroutineTests.cpp
+        runtime/CsgTests.cpp
         runtime/FixedTimestepTests.cpp
         runtime/GameCodeBuilderTests.cpp
         runtime/GameExportTests.cpp

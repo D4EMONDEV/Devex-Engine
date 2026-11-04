@@ -19,6 +19,7 @@
         "efsw",
         "enet",
         "fastgltf",
+        "manifold",
         {
             "name": "freetype",
             "default-features": false

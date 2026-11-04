@@ -29,6 +29,7 @@
 #include <devex/platform/Process.hpp>
 #include <devex/runtime/Application.hpp>
 #include <devex/runtime/ComponentViews.hpp>
+#include <devex/runtime/CsgWorld.hpp>
 #include <devex/runtime/Coroutine.hpp>
 #include <devex/runtime/FixedTimestep.hpp>
 #include <devex/runtime/GameExport.hpp>
@@ -424,6 +425,7 @@ private:
     std::unique_ptr<net::Multiplayer> m_multiplayer;
     std::unique_ptr<NetworkReplication> m_replication;
     PathFollowers m_pathFollowers;
+    CsgWorld m_csg;
     std::unique_ptr<animation::AnimationWorld> m_animation;
     std::vector<math::Vec3> m_animationViews;
     std::unique_ptr<animation::TweenWorld> m_tweens;
@@ -1253,6 +1255,8 @@ void ApplicationRunner::runGameplay(std::chrono::nanoseconds frameTime)
         m_multiplayer->poll();
         m_replication->receive(*m_application.m_scene, core::Duration(std::chrono::duration<double>(frameTime).count()));
     }
+    // Before the physics, which collides with the solids.
+    m_csg.update(*m_application.m_scene, m_services.assets);
     // Before the physics, which moves the kinematic bodies among them to where this puts them.
     m_pathFollowers.update(*m_application.m_scene, core::Duration(std::chrono::duration<double>(frameTime).count()), m_multiplayer.get());
     const std::uint32_t steps = m_timestep.advance(frameTime);
@@ -1332,6 +1336,8 @@ void ApplicationRunner::render(bool gameplay)
     render::RenderWorld& world = renderer->beginFrame();
     {
         DEVEX_PROFILE_SCOPE("Scene extraction");
+        // In the editor too, where they change as they are edited.
+        m_csg.update(scene, m_services.assets);
         extractScene(scene, m_services.assets, world);
         const asset::AssetSource* const source = assetSource();
         const asset::SortingSettings sorting = source != nullptr ? source->project().sorting : asset::SortingSettings{};

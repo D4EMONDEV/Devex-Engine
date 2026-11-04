@@ -1,5 +1,34 @@
 # Dessiner un niveau
 
+## Les blocs CSG
+
+Les blocs donnent la forme d'un niveau sans quitter l'éditeur : des formes qui s'ajoutent les unes aux autres, ou qui
+creusent les autres. Leur résultat est un seul mesh, affiché et solide. Dans l'inspecteur, ajoutez à une entité l'un de ces
+composants, dans la catégorie **3D** :
+
+- **CSG box**, **CSG sphere** et **CSG cylinder** : les formes.
+- **CSG path** : une bande le long d'un `Path3D`, pour une route, un rail ou un mur. Le dessus de la bande est sur la courbe.
+- **CSG combiner** : rien par lui-même, il regroupe ce qui est sous lui, pour l'ajouter ou le creuser d'un coup.
+
+Une entité avec l'un d'eux, sans parent qui en ait un, est la **racine** d'un solide. Ce qui est sous elle s'y applique dans
+l'ordre de la hiérarchie, selon son champ **Operation** :
+
+- **Union** ajoute la forme.
+- **Subtract** la creuse dans ce qui précède : une porte, une fenêtre.
+- **Intersect** ne garde que ce qu'elles partagent.
+
+Une entité sans composant CSG coupe l'arbre : ce qui est sous elle forme un autre solide. Quand une forme est sélectionnée, ou sa
+racine, l'éditeur trace les formes en fil de fer, y compris ce qu'elles ont creusé : en vert ce qui ajoute, en rouge ce qui
+creuse, en jaune ce qui croise.
+
+- **Material** : chaque face garde la matière de la forme dont elle vient, y compris la paroi laissée par un trou. La texture se
+  plaque à un mètre par mètre, droite sur les murs.
+- **Collision**, sur la racine : le solide a un collider, trous compris, et la navigation marche dessus quand il ne bouge pas.
+
+Le résultat se recalcule dès qu'une forme change, dans l'éditeur comme en jeu : `Entity.Get<CsgBox>().Size = taille;` suffit.
+C'est rapide pour des blocs ordinaires, mais à éviter à chaque image sur de grands ensembles. Déplacer la racine ne recalcule
+rien. L'arène du bac à sable en a un exemple : **Arch**, un mur percé d'une porte et d'une fenêtre, et **Rail band**.
+
 ## Les chemins
 
 Un **Path3D** est une courbe dessinée dans la scène : un rail, le trajet d'une patrouille, le mouvement d'une caméra. Un

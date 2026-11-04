@@ -2157,6 +2157,8 @@ namespace devex::ui {
   `setAuthority`, `remoteSender` ; en C++ `GameRegistry::rpc`, `runtime::rpc`, `runtime::rpcId`
   (`runtime/Game.hpp`), lancés par `dispatchRpcs` avant les systèmes d'Update ; en C# `[Rpc]`,
   `Component.Rpc`, `RpcId`, `IsAuthority` (`managed/Devex.Managed/Rpc.cs`, `RpcCodec` suit `net/Rpc.cpp`).
+- Blocs CSG : `scene/CsgComponents.hpp`, `csg/CsgBuilder` (Manifold, sans rien savoir des scènes), `runtime/CsgWorld` (met à jour
+  `CsgResult` sur chaque racine, appelé avant la physique et l'extraction), `AssetManager::addGeneratedMesh`. Guide `docs/level-design.md`.
 - Chemins : `scene/PathComponents.hpp` (`Path3D`, `PathFollower`, `PathCurve`), `runtime/PathFollowers.hpp`, `Paths` en C#,
   l'outil dans la vue `tools/PathEditor.cpp`. Guide `docs/level-design.md`, plan dans `docs/decisions.md`.
 - Exemple multijoueur : `samples/sandbox/assets/scenes/arena_online.dvxscene`, `code/Online.cs`, guide `docs/multiplayer.md`.

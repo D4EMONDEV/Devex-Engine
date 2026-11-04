@@ -112,7 +112,7 @@ ThemeMetrics g_metrics = deriveThemeMetrics(ThemeSettings{}, 1.0f);
 
 [[nodiscard]] bool isEngineComponent(std::string_view name) noexcept
 {
-    constexpr std::array<std::string_view, 83> engineComponents{
+    constexpr std::array<std::string_view, 88> engineComponents{
         "Transform",       "MeshRenderer",        "Camera",       "DirectionalLight",
         "PointLight",      "SpotLight",           "Environment",  "Atmosphere", "Fog", "PostProcessVolume", "Terrain", "ReflectionProbe", "LightProbeVolume", "RigidBody",
         "BoxCollider",     "SphereCollider",      "CapsuleCollider", "CylinderCollider",
@@ -125,6 +125,7 @@ ThemeMetrics g_metrics = deriveThemeMetrics(ThemeSettings{}, 1.0f);
         "BoxCollider2D",   "CircleCollider2D",    "CapsuleCollider2D", "PolygonCollider2D",
         "TilemapCollider2D", "CharacterController2D", "NavMeshSurface", "NavMeshAgent", "NavMeshObstacle",
         "NetworkSpawner",  "NetworkSync",         "Path3D",       "PathFollower",
+        "CsgBox",          "CsgSphere",           "CsgCylinder",  "CsgPath",      "CsgCombiner",
         "UiPopup",         "UiContextMenu",       "UiTooltip",    "UiDropdown",
         "UiSplitter",      "UiFoldout",           "UiVirtualList", "UiTable",
         "UiTableRow",      "UiDragSource",        "UiDropTarget", "UiNumberField",
@@ -678,6 +679,18 @@ EntityIcon componentIcon(std::string_view componentName)
     if (componentName == "NavMeshSurface" || componentName == "NavMeshAgent")
     {
         return {icons::Footprints, colors.physics};
+    }
+    if (componentName == "CsgBox" || componentName == "CsgPath" || componentName == "CsgCombiner")
+    {
+        return {icons::Shapes, colors.physics};
+    }
+    if (componentName == "CsgSphere")
+    {
+        return {icons::Circle, colors.physics};
+    }
+    if (componentName == "CsgCylinder")
+    {
+        return {icons::Cylinder, colors.physics};
     }
     if (componentName == "Path3D" || componentName == "PathFollower")
     {

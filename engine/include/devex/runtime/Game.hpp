@@ -78,7 +78,8 @@ class GameRegistry;
 // 46: SystemContext gained the game code that runs, and GameRegistry its remote calls.
 // 47: the scene gained the NetworkSpawner and NetworkSync components.
 // 48: the scene gained the Path3D and PathFollower components.
-inline constexpr std::uint32_t gameApiVersion = 48;
+// 49: the scene gained the CSG components.
+inline constexpr std::uint32_t gameApiVersion = 49;
 
 enum class SystemPhase : std::uint8_t
 {

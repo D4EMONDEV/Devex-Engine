@@ -87,6 +87,11 @@ public:
     void registerMesh(asset::AssetId id, render::MeshHandle mesh,
                       std::vector<asset::AssetId> submeshMaterials = {});
 
+    // A mesh made while the game runs, with what the physics and the navigation read of it: drawn when there
+    // is a renderer, its materials those of its submeshes, and destroyed with removeGeneratedMesh.
+    void addGeneratedMesh(asset::AssetId id, asset::MeshData data);
+    void removeGeneratedMesh(asset::AssetId id);
+
     // Null when the mesh is neither registered nor loadable, and while it loads.
     [[nodiscard]] const LoadedMesh* mesh(asset::AssetId id);
     // Invalid when the material cannot be loaded. Its textures may still be loading: it uses the

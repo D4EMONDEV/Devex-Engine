@@ -334,6 +334,41 @@ void AssetManager::registerMesh(asset::AssetId id, render::MeshHandle mesh,
     m_failed.erase(id);
 }
 
+void AssetManager::addGeneratedMesh(asset::AssetId id, asset::MeshData data)
+{
+    releaseMesh(id);
+    if (m_renderer != nullptr)
+    {
+        core::Result<render::MeshHandle> handle = m_renderer->createMesh(data);
+        if (!handle)
+        {
+            DEVEX_LOG_ERROR("Cannot make a mesh: {}", handle.error());
+        }
+        else
+        {
+            std::vector<asset::AssetId> materials;
+            materials.reserve(data.submeshes.size());
+            for (const asset::Submesh& submesh : data.submeshes)
+            {
+                materials.push_back(submesh.material);
+            }
+            if (materials.empty())
+            {
+                materials.resize(1);
+            }
+            m_meshes.insert_or_assign(id, OwnedMesh{{*handle, std::move(materials)}, true});
+        }
+    }
+    m_meshData.insert_or_assign(id, std::move(data));
+    m_failed.erase(id);
+}
+
+void AssetManager::removeGeneratedMesh(asset::AssetId id)
+{
+    releaseMesh(id);
+    m_meshData.erase(id);
+}
+
 const LoadedMesh* AssetManager::mesh(asset::AssetId id)
 {
     auto found = m_meshes.find(id);

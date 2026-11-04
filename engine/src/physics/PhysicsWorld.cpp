@@ -35,6 +35,7 @@
 #include <devex/core/Log.hpp>
 #include <devex/physics/PhysicsWorld.hpp>
 #include <devex/scene/Components.hpp>
+#include <devex/scene/CsgComponents.hpp>
 #include <devex/scene/JointComponents.hpp>
 #include <devex/scene/PhysicsComponents.hpp>
 #include <devex/scene/Scene.hpp>
@@ -884,6 +885,13 @@ struct PhysicsWorld::Implementation
         {
             describeCollider(scene, descriptions, entity, collider.trigger,
                              {.kind = ShapeKind::Cylinder, .dimensions = {collider.radius, collider.height, 0.0f}, .position = collider.center});
+        }
+        for ([[maybe_unused]] auto [entity, solid] : scene.view<scene::CsgResult>())
+        {
+            if (solid.collision && solid.mesh.isValid())
+            {
+                describeCollider(scene, descriptions, entity, false, {.kind = ShapeKind::Mesh, .mesh = solid.mesh, .convex = false});
+            }
         }
         for ([[maybe_unused]] auto [entity, collider] : scene.view<scene::MeshCollider>())
         {

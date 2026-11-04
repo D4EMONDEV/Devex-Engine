@@ -1624,3 +1624,66 @@ material = asset("ff4872a7-7bc8-4ffb-900d-0c565be864f0")
 [component type="PathFollower"]
 speed = 3
 end = "ping_pong"
+
+[entity uuid="fa24751f-b449-5b95-a93e-2e6a893cd9b6" name="Arch"]
+
+[component type="Transform"]
+position = vec3(4, 2, -9)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="CsgBox"]
+size = vec3(6, 4, 1)
+material = asset("576ad271-2890-5687-907e-a283236fea5d")
+
+[entity uuid="6dcc9ec3-39cf-5491-afc3-9324bd1f20c5" name="Door"]
+parent = "fa24751f-b449-5b95-a93e-2e6a893cd9b6"
+
+[component type="Transform"]
+position = vec3(0, -1, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="CsgBox"]
+size = vec3(2, 2.2, 2)
+operation = "subtract"
+material = asset("177b4925-264a-464b-a7f4-dd80e79e527c")
+
+[entity uuid="c6802252-6aa7-56c9-8943-412aa70209c5" name="Round window"]
+parent = "fa24751f-b449-5b95-a93e-2e6a893cd9b6"
+
+[component type="Transform"]
+position = vec3(0, 1, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="CsgCylinder"]
+radius = 0.6
+height = 4
+operation = "subtract"
+material = asset("177b4925-264a-464b-a7f4-dd80e79e527c")
+
+[entity uuid="852ebd49-98c8-5a27-aa61-30bd5d1790cc" name="Pillar"]
+parent = "fa24751f-b449-5b95-a93e-2e6a893cd9b6"
+
+[component type="Transform"]
+position = vec3(3, 0.5, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="CsgSphere"]
+radius = 1.2
+material = asset("bc2c9cd8-2818-5f6c-853c-675911b628d0")
+
+[entity uuid="5b01cc5a-535b-5962-b9a6-93fa6f10458d" name="Rail band"]
+
+[component type="Transform"]
+position = vec3(0, 0, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="CsgPath"]
+path = entity("2e2e9665-49e2-5ea7-948c-8bfe3f1f03e3")
+width = 1
+depth = 0.1
+material = asset("bc2c9cd8-2818-5f6c-853c-675911b628d0")

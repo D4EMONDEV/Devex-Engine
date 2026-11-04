@@ -3,6 +3,7 @@
 #include <devex/asset/TerrainMaps.hpp>
 #include <devex/navigation/NavMeshBuilder.hpp>
 #include <devex/scene/Components.hpp>
+#include <devex/scene/CsgComponents.hpp>
 #include <devex/scene/NavigationComponents.hpp>
 #include <devex/scene/PhysicsComponents.hpp>
 #include <devex/scene/Scene.hpp>
@@ -426,6 +427,27 @@ NavGeometry collectGeometry(const scene::Scene& scene, const MeshSource& meshes)
             addRings(geometry, rings, math::Vec3(world * math::Vec4(collider.center, 1.0f)));
         }
     }
+    // The solids, and the meshes that collide, the same way.
+    const auto addMesh = [&](scene::Entity entity, const asset::MeshData& mesh) {
+        const math::Mat4 world = worldOf(entity);
+        const auto first = static_cast<std::uint32_t>(geometry.vertices.size());
+        for (const asset::Vertex& vertex : mesh.vertices)
+        {
+            geometry.vertices.push_back(math::Vec3(world * math::Vec4(vertex.position, 1.0f)));
+        }
+        for (const std::uint32_t index : mesh.indices)
+        {
+            geometry.indices.push_back(first + index);
+        }
+    };
+    for ([[maybe_unused]] auto [entity, solid] : scene.view<scene::CsgResult>())
+    {
+        const asset::MeshData* const mesh = solid.collision && solid.mesh.isValid() && meshes ? meshes(solid.mesh) : nullptr;
+        if (mesh != nullptr && staysPut(scene, entity, false))
+        {
+            addMesh(entity, *mesh);
+        }
+    }
     for ([[maybe_unused]] auto [entity, collider] : scene.view<scene::MeshCollider>())
     {
         if (!staysPut(scene, entity, collider.trigger) || !meshes)
@@ -443,16 +465,7 @@ NavGeometry collectGeometry(const scene::Scene& scene, const MeshSource& meshes)
         {
             continue;
         }
-        const math::Mat4 world = worldOf(entity);
-        const auto first = static_cast<std::uint32_t>(geometry.vertices.size());
-        for (const asset::Vertex& vertex : mesh->vertices)
-        {
-            geometry.vertices.push_back(math::Vec3(world * math::Vec4(vertex.position, 1.0f)));
-        }
-        for (const std::uint32_t index : mesh->indices)
-        {
-            geometry.indices.push_back(first + index);
-        }
+        addMesh(entity, *mesh);
     }
     return geometry;
 }

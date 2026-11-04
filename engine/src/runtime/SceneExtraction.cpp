@@ -3,6 +3,7 @@
 #include <devex/runtime/SceneExtraction.hpp>
 #include <devex/scene/AnimationComponents.hpp>
 #include <devex/scene/Components.hpp>
+#include <devex/scene/CsgComponents.hpp>
 #include <devex/scene/Light2DComponents.hpp>
 #include <devex/scene/SpriteComponents.hpp>
 #include <devex/scene/TilemapComponents.hpp>
@@ -742,6 +743,27 @@ void extractScene(scene::Scene& scene, AssetManager& assets, render::RenderWorld
                     assets, overridden ? renderer.material : material,
                     renderer.instanceShaderParameters, renderer.instanceShaderValues, world),
                 .lodBias = renderer.lodBias,
+            });
+        }
+    }
+
+    // The solids, whose materials are those of the shapes each part of them comes from.
+    for ([[maybe_unused]] auto [entity, transform, solid] : scene.view<scene::WorldTransform, scene::CsgResult>())
+    {
+        const LoadedMesh* const mesh = solid.mesh.isValid() ? assets.mesh(solid.mesh) : nullptr;
+        if (mesh == nullptr)
+        {
+            continue;
+        }
+        for (std::uint32_t submesh = 0; submesh < mesh->submeshMaterials.size(); ++submesh)
+        {
+            const asset::AssetId material = mesh->submeshMaterials[submesh];
+            world.meshes.push_back({
+                .mesh = mesh->handle,
+                .submesh = submesh,
+                .material = material.isValid() ? assets.material(material) : render::MaterialHandle{},
+                .transform = transform.matrix,
+                .objectId = entity.index + 1,
             });
         }
     }

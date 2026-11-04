@@ -6,6 +6,7 @@ find_package(box2d CONFIG REQUIRED)
 find_package(recastnavigation CONFIG REQUIRED)
 find_package(efsw CONFIG REQUIRED)
 find_package(unofficial-enet CONFIG REQUIRED)
+find_package(manifold CONFIG REQUIRED)
 find_package(fastgltf CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 find_package(Freetype REQUIRED)
@@ -475,6 +476,7 @@ target_sources(devex_scene
         src/scene/ModelInstantiation.cpp
         src/scene/PhysicsComponents.cpp
         src/scene/Physics2DComponents.cpp
+        src/scene/CsgComponents.cpp
         src/scene/NavigationComponents.cpp
         src/scene/NetworkComponents.cpp
         src/scene/PathComponents.cpp
@@ -507,6 +509,7 @@ target_sources(devex_scene
             include/devex/scene/ModelInstantiation.hpp
             include/devex/scene/PhysicsComponents.hpp
             include/devex/scene/Physics2DComponents.hpp
+            include/devex/scene/CsgComponents.hpp
             include/devex/scene/NavigationComponents.hpp
             include/devex/scene/NetworkComponents.hpp
             include/devex/scene/PathComponents.hpp
@@ -606,6 +609,33 @@ devex_set_warnings(devex_physics2d)
 
 # Navigation: navigation meshes baked with Recast from the colliders of a scene, and the agents and
 # obstacles of the scene on them with Detour.
+add_library(devex_csg OBJECT)
+add_library(Devex::Csg ALIAS devex_csg)
+
+target_sources(devex_csg
+    PRIVATE
+        src/csg/CsgBuilder.cpp
+    PUBLIC
+        FILE_SET HEADERS
+        BASE_DIRS include
+        FILES
+            include/devex/csg/CsgBuilder.hpp
+)
+
+target_link_libraries(devex_csg
+    PUBLIC
+        Devex::Core
+        Devex::Math
+        Devex::Asset
+    PRIVATE
+        manifold::manifold
+)
+set_target_properties(devex_csg PROPERTIES
+    EXPORT_NAME Csg
+    FOLDER "Engine"
+)
+devex_set_warnings(devex_csg)
+
 add_library(devex_net OBJECT)
 add_library(Devex::Net ALIAS devex_net)
 
@@ -1032,6 +1062,7 @@ target_sources(devex_runtime
         src/runtime/AndroidExport.cpp
         src/runtime/GameExport.cpp
         src/runtime/GameModule.cpp
+        src/runtime/CsgWorld.cpp
         src/runtime/NetworkReplication.cpp
         src/runtime/PathFollowers.cpp
         src/runtime/ComponentViews.cpp
@@ -1054,6 +1085,7 @@ target_sources(devex_runtime
             include/devex/runtime/Coroutine.hpp
             include/devex/runtime/FixedTimestep.hpp
             include/devex/runtime/Game.hpp
+            include/devex/runtime/CsgWorld.hpp
             include/devex/runtime/NetworkReplication.hpp
             include/devex/runtime/PathFollowers.hpp
             include/devex/runtime/GameExport.hpp
@@ -1074,6 +1106,7 @@ target_link_libraries(devex_runtime
         Devex::Physics
         Devex::Navigation
         Devex::Net
+        Devex::Csg
         Devex::Physics2D
         Devex::Platform
         Devex::Render
@@ -1103,6 +1136,7 @@ target_link_libraries(devex_engine
         devex_physics
         devex_navigation
         devex_net
+        devex_csg
         devex_physics2d
         devex_platform
         devex_reflection
@@ -1125,7 +1159,7 @@ set_target_properties(devex_engine PROPERTIES
 # The library shares what its headers mark DEVEX_API (devex/core/Export.hpp), which its parts
 # export while they are built; everything else imports it.
 foreach(part IN ITEMS devex_animation devex_asset devex_asset_import devex_audio devex_core
-                      devex_particles devex_physics devex_navigation devex_net devex_physics2d devex_platform
+                      devex_particles devex_physics devex_navigation devex_net devex_csg devex_physics2d devex_platform
                       devex_reflection devex_render devex_runtime devex_scene devex_serialization
                       devex_tools devex_ui)
     target_compile_definitions(${part} PRIVATE DEVEX_BUILDING_ENGINE)

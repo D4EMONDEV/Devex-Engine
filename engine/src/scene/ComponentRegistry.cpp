@@ -3,6 +3,7 @@
 #include <devex/scene/AudioComponents.hpp>
 #include <devex/scene/ComponentRegistry.hpp>
 #include <devex/scene/Components.hpp>
+#include <devex/scene/CsgComponents.hpp>
 #include <devex/scene/NavigationComponents.hpp>
 #include <devex/scene/NetworkComponents.hpp>
 #include <devex/scene/PathComponents.hpp>
@@ -152,6 +153,11 @@ ComponentRegistry& componentRegistry()
         builtins.add<NetworkSync>();
         builtins.add<Path3D>();
         builtins.add<PathFollower>();
+        builtins.add<CsgBox>();
+        builtins.add<CsgSphere>();
+        builtins.add<CsgCylinder>();
+        builtins.add<CsgPath>();
+        builtins.add<CsgCombiner>();
         builtins.add<NavMeshAgent>();
         builtins.add<NavMeshObstacle>();
         builtins.add<AudioSource>();

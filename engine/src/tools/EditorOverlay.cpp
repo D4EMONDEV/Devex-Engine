@@ -4,6 +4,7 @@
 #include <devex/physics2d/Physics2DWorld.hpp>
 #include <devex/scene/AudioComponents.hpp>
 #include <devex/scene/Components.hpp>
+#include <devex/scene/CsgComponents.hpp>
 #include <devex/scene/JointComponents.hpp>
 #include <devex/scene/Light2DComponents.hpp>
 #include <devex/scene/Physics2DComponents.hpp>
@@ -373,6 +374,76 @@ void addColliders(const ToolsState& state, scene::Scene& scene, const std::unord
 {
     const math::Vec3 direction = math::Mat3(world) * math::Vec3{0.0f, 0.0f, -1.0f};
     return math::length(direction) > 0.0f ? math::normalize(direction) : math::Vec3{0.0f, 0.0f, -1.0f};
+}
+
+// The shapes of the selected solids, which what they cut away would otherwise hide: green what adds, red what
+// cuts, yellow what keeps only where it meets.
+void addCsgLines(scene::Scene& scene, const std::unordered_set<std::uint32_t>& shown, std::vector<render::OverlayVertex>& lines)
+{
+    const auto isShown = [&](scene::Entity entity) {
+        for (; scene.isAlive(entity); entity = scene.parent(entity))
+        {
+            if (shown.contains(entity.index))
+            {
+                return true;
+            }
+        }
+        return false;
+    };
+    const auto colorOf = [](scene::CsgOperation operation) {
+        return operation == scene::CsgOperation::Subtract    ? math::Vec4{1.0f, 0.35f, 0.3f, 1.0f}
+               : operation == scene::CsgOperation::Intersect ? math::Vec4{1.0f, 0.85f, 0.3f, 1.0f}
+                                                             : math::Vec4{0.4f, 0.9f, 0.5f, 1.0f};
+    };
+    const auto point = [](const math::Mat4& matrix, math::Vec3 local) { return math::Vec3(matrix * math::Vec4(local, 1.0f)); };
+    const auto ring = [&](const math::Mat4& matrix, math::Vec3 center, math::Vec3 u, math::Vec3 v, float radius, math::Vec4 color) {
+        addCircle(lines, point(matrix, center), math::Vec3(matrix * math::Vec4(u, 0.0f)),
+                  math::Vec3(matrix * math::Vec4(v, 0.0f)), radius, color, 32);
+    };
+    for ([[maybe_unused]] auto [entity, transform, box] : scene.view<scene::WorldTransform, scene::CsgBox>())
+    {
+        if (isShown(entity))
+        {
+            const math::Vec3 half = box.size * 0.5f;
+            const math::Vec4 color = colorOf(box.operation);
+            for (const float y : {-half.y, half.y})
+            {
+                addLine(lines, point(transform.matrix, {-half.x, y, -half.z}), point(transform.matrix, {half.x, y, -half.z}), color);
+                addLine(lines, point(transform.matrix, {half.x, y, -half.z}), point(transform.matrix, {half.x, y, half.z}), color);
+                addLine(lines, point(transform.matrix, {half.x, y, half.z}), point(transform.matrix, {-half.x, y, half.z}), color);
+                addLine(lines, point(transform.matrix, {-half.x, y, half.z}), point(transform.matrix, {-half.x, y, -half.z}), color);
+            }
+            for (const math::Vec2 corner : {math::Vec2{-half.x, -half.z}, math::Vec2{half.x, -half.z}, math::Vec2{half.x, half.z}, math::Vec2{-half.x, half.z}})
+            {
+                addLine(lines, point(transform.matrix, {corner.x, -half.y, corner.y}), point(transform.matrix, {corner.x, half.y, corner.y}), color);
+            }
+        }
+    }
+    for ([[maybe_unused]] auto [entity, transform, sphere] : scene.view<scene::WorldTransform, scene::CsgSphere>())
+    {
+        if (isShown(entity))
+        {
+            const math::Vec4 color = colorOf(sphere.operation);
+            ring(transform.matrix, {}, {1.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, sphere.radius, color);
+            ring(transform.matrix, {}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, sphere.radius, color);
+            ring(transform.matrix, {}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, sphere.radius, color);
+        }
+    }
+    for ([[maybe_unused]] auto [entity, transform, cylinder] : scene.view<scene::WorldTransform, scene::CsgCylinder>())
+    {
+        if (isShown(entity))
+        {
+            const math::Vec4 color = colorOf(cylinder.operation);
+            const float half = cylinder.height * 0.5f;
+            ring(transform.matrix, {0.0f, half, 0.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, cylinder.radius, color);
+            ring(transform.matrix, {0.0f, -half, 0.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, cylinder.radius, color);
+            for (const math::Vec3 side : {math::Vec3{1.0f, 0.0f, 0.0f}, math::Vec3{-1.0f, 0.0f, 0.0f}, math::Vec3{0.0f, 0.0f, 1.0f}, math::Vec3{0.0f, 0.0f, -1.0f}})
+            {
+                addLine(lines, point(transform.matrix, side * cylinder.radius + math::Vec3{0.0f, half, 0.0f}),
+                        point(transform.matrix, side * cylinder.radius - math::Vec3{0.0f, half, 0.0f}), color);
+            }
+        }
+    }
 }
 
 // Lines on the ground around the camera, fading with distance, every meter or every ten meters
@@ -1011,6 +1082,7 @@ void addEditorOverlay(ToolsState& state, scene::Scene& scene, render::RenderWorl
     addPostVolumeLines(scene, selection, world.overlayLines);
     addDecalLines(scene, selection, world.overlayLines);
     addPathOverlay(state, scene, selection, world.overlayLines);
+    addCsgLines(scene, selection, world.overlayLines);
     addFogVolumeLines(scene, selection, world.overlayLines);
 
     // The selection is outlined, and so is the entity a dragged material would go to.
