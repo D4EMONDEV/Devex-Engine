@@ -2157,6 +2157,7 @@ namespace devex::ui {
   `setAuthority`, `remoteSender` ; en C++ `GameRegistry::rpc`, `runtime::rpc`, `runtime::rpcId`
   (`runtime/Game.hpp`), lancés par `dispatchRpcs` avant les systèmes d'Update ; en C# `[Rpc]`,
   `Component.Rpc`, `RpcId`, `IsAuthority` (`managed/Devex.Managed/Rpc.cs`, `RpcCodec` suit `net/Rpc.cpp`).
+- Exemple multijoueur : `samples/sandbox/assets/scenes/arena_online.dvxscene`, `code/Online.cs`, guide `docs/multiplayer.md`.
 - Instances de Play : `PlayGroup` (`runtime/EditorPlay`), le menu près de Play (`playInstancesMenu`, `tools/EditorMenus.cpp`),
   `ScriptSettings::playInstances`, `EditorPlayClient::startNetwork`, `Multiplayer::keepAlive`, `TestInstance`.
 - Réplication : `scene/NetworkComponents.hpp` (`NetworkSpawner`, `NetworkSync`), `runtime/NetworkReplication`

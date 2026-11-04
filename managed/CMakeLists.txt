@@ -10,8 +10,10 @@ set(DEVEX_MANAGED_GENERATED "${CMAKE_CURRENT_BINARY_DIR}/generated/EngineCompone
 add_custom_command(
     OUTPUT "${DEVEX_MANAGED_GENERATED}"
     COMMAND "${CMAKE_COMMAND}" -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/generated"
-    COMMAND devex_bindgen "${DEVEX_MANAGED_GENERATED}"
-    DEPENDS devex_bindgen
+    COMMAND devex_bindgen "${DEVEX_MANAGED_GENERATED}.new"
+    # Components change in the engine, which relinking leaves out of the tool: only what differs goes on.
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${DEVEX_MANAGED_GENERATED}.new" "${DEVEX_MANAGED_GENERATED}"
+    DEPENDS devex_bindgen "$<TARGET_FILE:Devex::Engine>"
     COMMENT "Generating the C# views of the engine's components"
     VERBATIM
 )

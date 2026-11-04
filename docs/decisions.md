@@ -5580,6 +5580,8 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     mesure `DEVEX_STRESS_FOG` du banc d'essai (0,21 ms sur une RTX 4060) ; tests de l'extraction et
     d'un brouillard qui cache un cube puis qu'un volume creuse ; API des jeux 40.
 
+104. ✅ **Exemple multijoueur et documentation** — la scène `arena_online` du bac à sable : marcher, sauter et lancer des
+     balles à plusieurs, avec un menu pour héberger ou rejoindre, et [docs/multiplayer.md](multiplayer.md). Décisions plus bas.
 103. ✅ **Plusieurs instances depuis Play** — un menu à côté de Play lance 1 à 4 jeux, chacun son processus,
      côte à côte sur l'écran, connectés entre eux sans code. Pause et Stop agissent sur tous. Décisions plus bas.
 102. ✅ **Réplication** — `NetworkSpawner` et `NetworkSync`, sans code : ce qui est instancié sous l'un
@@ -5634,7 +5636,7 @@ Les étapes, chacune testée et commitée à part :
    par la réflexion des composants, avec le lissage du côté de ceux qui reçoivent. Décisions ci-dessous.
 4. ✅ **Dans l'éditeur** (jalon 103) : lancer plusieurs instances depuis Play, chacune son processus,
    comme « Run Multiple Instances » de Godot. Décisions ci-dessous.
-5. **Un exemple jouable et la documentation** : deux joueurs dans l'arène du bac à sable.
+5. ✅ **Un exemple jouable et la documentation** (jalon 104) : deux joueurs dans l'arène du bac à sable.
 
 Les appels à distance, décidés avec l'utilisateur :
 
@@ -5702,6 +5704,24 @@ Plusieurs instances depuis Play, décidées avec l'utilisateur :
   même réglé sur Inside Editor.
 - **Une partie en pause reste dans la session** : `keepAlive` répond aux autres et relaie entre eux, en gardant
   les événements pour la reprise. Sans lui, les autres la croyaient partie au bout de dix secondes.
+
+L'exemple, décidé avec l'utilisateur :
+
+- **Une scène à part**, `arena_online`, copie de l'arène sans le joueur solo ni ce qui vivrait sa vie sur chaque jeu :
+  robots, distributeur, portes à charnières. L'arène reste telle quelle, au prix d'une copie à suivre si elle change.
+- **Marcher, sauter et lancer des balles**, en C#, avec un petit menu pour héberger ou rejoindre : apparition, champs
+  synchronisés, appels à distance et physique y sont tous. Écarté : un score, plus de code sans rien montrer de plus.
+
+Ce que la faire tourner en vrai a trouvé :
+
+- **Dix secondes de silence, c'était trop court** : la première image d'un jeu qui charge sa scène prenait 15 secondes en
+  Debug, et le client était déconnecté. Dans la session, un joueur compte comme parti après 30 secondes, le délai
+  d'ENet (`setSilenceLimit`) ; pour rejoindre, 5 à 10 secondes suffisent à savoir que personne ne répond.
+- **Un personnage géré ailleurs ne marche ni ne tombe ici**, comme un corps : gravité et vitesse à zéro tant qu'un autre en
+  a l'autorité. Et C# n'avait pas accès à la vitesse d'un `CharacterController` 3D, ce qu'il a désormais comme en 2D.
+- **Un composant dont l'entité vient d'être détruite ne reçoit plus d'`Update`**, ce qui arrivait quand le code d'un autre
+  la détruisait plus tôt dans la même phase.
+- **Les vues C# se régénèrent quand le moteur change**, et pas seulement l'outil qui les écrit.
 
 ## Réflexions de l'écran (SSR) — 2026-11-04
 

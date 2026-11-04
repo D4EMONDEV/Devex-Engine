@@ -67,7 +67,9 @@ DEVEX_REFLECT(CharacterController)
         .field("mass", &CharacterController::mass, {.group = "Forces"})
         .field("push_force", &CharacterController::pushForce)
         .field("gravity_scale", &CharacterController::gravityScale)
-        .field("layer", &CharacterController::layer, {.physicsLayer = true, .group = "Collision"});
+        .field("layer", &CharacterController::layer, {.physicsLayer = true, .group = "Collision"})
+        .field("velocity", &CharacterController::velocity, {.runtime = true})
+        .field("grounded", &CharacterController::grounded, {.runtime = true});
 }
 
 } // namespace devex::scene

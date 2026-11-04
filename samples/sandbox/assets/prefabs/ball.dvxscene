@@ -30,3 +30,5 @@ color = vec4(0.6, 0.85, 1, 0.8)
 end_color = vec4(0.3, 0.5, 1, 0)
 intensity = 2
 blend = "additive"
+
+[component type="NetworkSync"]

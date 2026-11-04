@@ -24,9 +24,9 @@ constexpr std::uint32_t protocolVersion = 3;
 constexpr std::size_t reliableChannel = 0;
 constexpr std::size_t unreliableChannel = 1;
 constexpr std::size_t channelCount = 2;
-// How long a silent player is waited for, in milliseconds.
-constexpr enet_uint32 timeoutMinimum = 5000;
-constexpr enet_uint32 timeoutMaximum = 10000;
+// How long a host that does not answer is waited for when joining, in milliseconds.
+constexpr enet_uint32 joinTimeoutMinimum = 5000;
+constexpr enet_uint32 joinTimeoutMaximum = 10000;
 
 // The first byte of every packet.
 enum class Packet : std::uint8_t
@@ -111,6 +111,8 @@ struct Multiplayer::Impl
     std::unordered_map<core::Uuid, PeerId> authorities;
     std::vector<std::vector<std::byte>> loopback;
     PeerId remoteSender = 0;
+    // In the session, a player loading a level does not answer for a while, and is not gone for that.
+    enet_uint32 silenceLimit = 30000;
     std::uint32_t testInstance = 0;
     bool keepTestSession = false;
     // The events keepAlive kept for the next poll.
@@ -233,7 +235,7 @@ struct Multiplayer::Impl
         {
             writeNumber(welcome, other);
         }
-        enet_peer_timeout(event.peer, 0, timeoutMinimum, timeoutMaximum);
+        enet_peer_timeout(event.peer, 0, silenceLimit, silenceLimit);
         sendTo(event.peer, welcome, Delivery::Reliable);
         for (const auto& [entity, peer] : authorities)
         {
@@ -337,6 +339,7 @@ struct Multiplayer::Impl
             peers.assign(1, hostPeer);
             // The host decides from now on: it tells what it has decided so far next.
             authorities.clear();
+            enet_peer_timeout(server, 0, silenceLimit, silenceLimit);
             for (std::size_t at = 1 + sizeof(PeerId); at + sizeof(PeerId) <= bytes.size(); at += sizeof(PeerId))
             {
                 peers.push_back(readNumber(bytes.data() + at));
@@ -449,7 +452,7 @@ core::Result<void> Multiplayer::join(std::string_view address, std::uint16_t por
         m_impl->close();
         return core::makeError(core::ErrorCode::Platform, "Cannot start connecting to {}", address);
     }
-    enet_peer_timeout(m_impl->server, 0, timeoutMinimum, timeoutMaximum);
+    enet_peer_timeout(m_impl->server, 0, joinTimeoutMinimum, joinTimeoutMaximum);
     m_impl->state = MultiplayerState::Connecting;
     return {};
 }
@@ -681,6 +684,11 @@ void Multiplayer::setRemoteSender(PeerId peer) noexcept
 PeerId Multiplayer::caller() const noexcept
 {
     return m_impl->local != 0 ? m_impl->local : hostPeer;
+}
+
+void Multiplayer::setSilenceLimit(std::chrono::milliseconds limit) noexcept
+{
+    m_impl->silenceLimit = static_cast<enet_uint32>(limit.count());
 }
 
 void Multiplayer::setTestInstance(std::uint32_t instance) noexcept

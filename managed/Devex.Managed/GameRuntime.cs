@@ -245,7 +245,8 @@ internal static unsafe partial class GameRuntime
                         : default;
                     foreach (Entity entity in info.Order)
                     {
-                        if (!info.Instances.TryGetValue(entity.Key, out Component? instance))
+                        // Its entity may have gone since the phase began, by the code of another.
+                        if (!info.Instances.TryGetValue(entity.Key, out Component? instance) || !entity.IsAlive)
                         {
                             continue;
                         }

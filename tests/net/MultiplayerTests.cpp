@@ -433,13 +433,15 @@ TEST_CASE("A paused game keeps its place in the session, with what arrived meanw
     const std::uint16_t port = nextPort();
     Player host;
     Player client;
+    host.session.setSilenceLimit(std::chrono::seconds(2));
+    client.session.setSilenceLimit(std::chrono::seconds(2));
     REQUIRE(host.session.host(port));
     REQUIRE(client.session.join("127.0.0.1", port));
     REQUIRE(until({&host, &client}, [&] { return client.session.state() == MultiplayerState::Online && host.session.peers().size() == 1; }));
 
     // Longer than a silent player is waited for, the host only keeping alive.
     say(client, devex::net::hostPeer, "pendant la pause");
-    const auto end = std::chrono::steady_clock::now() + std::chrono::seconds(11);
+    const auto end = std::chrono::steady_clock::now() + std::chrono::seconds(4);
     while (std::chrono::steady_clock::now() < end)
     {
         host.session.keepAlive();
@@ -458,6 +460,37 @@ TEST_CASE("A paused game keeps its place in the session, with what arrived meanw
     // And not twice.
     host.session.poll();
     CHECK(host.session.events().empty());
+
+    // A game that really says nothing for that long counts as gone.
+    const auto silence = std::chrono::steady_clock::now() + std::chrono::seconds(4);
+    while (std::chrono::steady_clock::now() < silence && client.session.state() == MultiplayerState::Online)
+    {
+        client.session.poll();
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    CHECK(client.session.state() == MultiplayerState::Offline);
+}
+
+TEST_CASE("A player loading a level for a while keeps its place in the session", "[net]")
+{
+    const std::uint16_t port = nextPort();
+    Player host;
+    Player client;
+    REQUIRE(host.session.host(port));
+    REQUIRE(client.session.join("127.0.0.1", port));
+    REQUIRE(until({&host, &client}, [&] { return client.session.state() == MultiplayerState::Online && host.session.peers().size() == 1; }));
+
+    // More than joining waits for, the client answering nothing, as when its first frame takes that long.
+    const auto end = std::chrono::steady_clock::now() + std::chrono::seconds(12);
+    while (std::chrono::steady_clock::now() < end)
+    {
+        host.session.poll();
+        host.session.flush();
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    CHECK(host.session.peers().size() == 1);
+    client.session.poll();
+    CHECK(client.session.state() == MultiplayerState::Online);
 }
 
 TEST_CASE("The instances of Play stay as they are when their game connects", "[net]")

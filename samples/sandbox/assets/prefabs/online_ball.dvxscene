@@ -1,0 +1,38 @@
+[scene format=1 kind="3d"]
+
+[entity uuid="b29a0aa0-fd54-5315-b5ba-5d89b6948f6c" name="Ball"]
+
+[component type="Transform"]
+position = vec3(0, 0, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(0.4, 0.4, 0.4)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000002")
+material = asset("91bc3d4f-942c-40be-9398-51eeb3e7cc77")
+
+[component type="RigidBody"]
+type = "dynamic"
+mass = 2
+friction = 0.6
+restitution = 0.35
+continuous_collision = true
+
+[component type="SphereCollider"]
+radius = 0.5
+
+[component type="TrailRenderer"]
+time = 0.35
+min_distance = 0.08
+width = 0.3
+end_width = 0
+color = vec4(0.6, 0.85, 1, 0.8)
+end_color = vec4(0.3, 0.5, 1, 0)
+intensity = 2
+blend = "additive"
+
+[component type="NetworkSync"]
+
+[component type="NetworkSync"]
+
+[component type="OnlineBall"]

@@ -5,6 +5,7 @@
 #include <devex/core/Uuid.hpp>
 #include <devex/net/Rpc.hpp>
 
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -137,6 +138,10 @@ public:
     void setRemoteSender(PeerId peer) noexcept;
     // The number this game calls with: its own, or the host's when it plays alone.
     [[nodiscard]] PeerId caller() const noexcept;
+
+    // How long a player that says nothing is waited for before it counts as gone, 30 seconds by default so
+    // that loading a level does not end its session. For those who join from now on.
+    void setSilenceLimit(std::chrono::milliseconds limit) noexcept;
 
     // Among the instances Play starts together in the editor, which one this is, from 1; 0 otherwise.
     void setTestInstance(std::uint32_t instance) noexcept;

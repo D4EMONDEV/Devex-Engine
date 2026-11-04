@@ -9,6 +9,10 @@ public struct Vec2(float x, float y)
     public float X = x;
     public float Y = y;
 
+    public static Vec2 operator +(Vec2 left, Vec2 right) => new(left.X + right.X, left.Y + right.Y);
+    public static Vec2 operator -(Vec2 left, Vec2 right) => new(left.X - right.X, left.Y - right.Y);
+    public static Vec2 operator *(Vec2 value, float scale) => new(value.X * scale, value.Y * scale);
+
     public override readonly string ToString() => $"({X}, {Y})";
 }
 

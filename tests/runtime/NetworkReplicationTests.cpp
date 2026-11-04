@@ -5,6 +5,7 @@
 #include <devex/scene/Components.hpp>
 #include <devex/scene/EntityRef.hpp>
 #include <devex/scene/NetworkComponents.hpp>
+#include <devex/scene/Physics2DComponents.hpp>
 #include <devex/scene/PhysicsComponents.hpp>
 #include <devex/scene/Prefab.hpp>
 #include <devex/scene/SceneSerializer.hpp>
@@ -431,6 +432,29 @@ TEST_CASE("A body another player has authority over is not simulated here", "[ru
     // And its own again on its own: the host takes it back when the client leaves.
     client.session.leave();
     REQUIRE(until({&host}, [&] { return host.scene.get<devex::scene::RigidBody>(host.synced).type == devex::scene::BodyType::Dynamic; }));
+}
+
+TEST_CASE("A character another player has authority over neither walks nor falls here", "[runtime][net]")
+{
+    Player host;
+    Player client;
+    for (Player* const player : {&host, &client})
+    {
+        auto& character = player->scene.add<devex::scene::CharacterController>(player->synced);
+        character.gravityScale = 2.0f;
+        character.velocity = {1.0f, 0.0f, 0.0f};
+    }
+    connect(host, 47389, {&client});
+    const auto& copy = client.scene.get<devex::scene::CharacterController>(client.synced);
+    REQUIRE(until({&host, &client}, [&] { return copy.gravityScale == 0.0f; }));
+    CHECK(copy.velocity.x == 0.0f);
+    CHECK(host.scene.get<devex::scene::CharacterController>(host.synced).gravityScale == 2.0f);
+    CHECK(host.scene.get<devex::scene::CharacterController>(host.synced).velocity.x == 1.0f);
+
+    // Its own again once the session ends.
+    client.session.leave();
+    client.frame();
+    CHECK(copy.gravityScale == 2.0f);
 }
 
 TEST_CASE("Authority given to an entity covers what is under it", "[runtime][net]")

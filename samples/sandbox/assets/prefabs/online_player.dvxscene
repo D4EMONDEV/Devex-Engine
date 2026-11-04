@@ -1,0 +1,71 @@
+[scene format=1 kind="3d"]
+
+[entity uuid="4b916ba1-5c29-582e-ab63-3c5a7e962748" name="Player"]
+
+[component type="Transform"]
+position = vec3(0, 0, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="CharacterController"]
+radius = 0.35
+height = 1.8
+max_slope = 0.7853982
+step_height = 0.35
+mass = 70
+push_force = 400
+gravity_scale = 1
+layer = 0
+
+[component type="NetworkSync"]
+fields = list("Transform.position", "Transform.rotation", "OnlinePlayer.thrown")
+
+[component type="OnlinePlayer"]
+ball_prefab = asset("12d24bc3-f2dd-56a6-9dac-4391471e189c")
+colors = list(asset("177b4925-264a-464b-a7f4-dd80e79e527c"), asset("bc2c9cd8-2818-5f6c-853c-675911b628d0"), asset("1d33c123-a5ff-50a6-9192-d19568c5f130"), asset("4b8f2d61-9c0e-4a7b-b3d5-18e6f0a9c247"))
+
+[entity uuid="f4c8959b-a0f6-55ba-935d-f7f980869aa6" name="Body"]
+parent = "4b916ba1-5c29-582e-ab63-3c5a7e962748"
+
+[component type="Transform"]
+position = vec3(0, 0.9, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(0.7, 1.8, 0.7)
+
+[component type="MeshRenderer"]
+mesh = asset("00000000-0000-0000-0000-000000000002")
+material = asset("177b4925-264a-464b-a7f4-dd80e79e527c")
+
+[entity uuid="f9df8c2e-262b-5c53-b1da-7acf8031ec0c" name="Eyes"]
+parent = "4b916ba1-5c29-582e-ab63-3c5a7e962748"
+
+[component type="Transform"]
+position = vec3(0, 1.6, 0)
+rotation = quat(0, 0, 0, 1)
+scale = vec3(1, 1, 1)
+
+[component type="Camera"]
+projection = "perspective"
+vertical_fov = 1.2217305
+orthographic_size = 5
+near_plane = 0.05
+far_plane = 1000
+primary = false
+auto_exposure = true
+ev100 = 14
+exposure_compensation = 0
+min_ev100 = -2
+max_ev100 = 18
+adaptation_speed = 1.5
+tonemapper = "agx"
+antialiasing = "temporal"
+ambient_occlusion = 1
+ambient_occlusion_radius = 0.5
+screen_reflections = 1
+bloom = 0.05
+bloom_threshold = 1
+vignette = 0
+grain = 0
+chromatic_aberration = 0
+color_table = asset("00000000-0000-0000-0000-000000000000")
+motion_blur = 0.4

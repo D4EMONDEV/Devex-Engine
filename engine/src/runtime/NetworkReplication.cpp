@@ -77,7 +77,56 @@ struct Tracked
     // A body that the others do not simulate: it follows what they receive, pushing what it meets.
     bool bodyWasDynamic = false;
     bool body2DWasDynamic = false;
+    // Likewise a character, which does not fall here: the gravity it has when it is its own again.
+    std::optional<float> characterGravity;
+    std::optional<float> character2DGravity;
 };
+
+// A dynamic body goes kinematic while another player has authority over it, and back.
+template <typename Body>
+void followBodyOf(scene::Scene& scene, Entity entity, bool moves, bool own, bool& wasDynamic)
+{
+    Body* const body = scene.tryGet<Body>(entity);
+    if (body == nullptr)
+    {
+        return;
+    }
+    if (moves && !own && body->type == scene::BodyType::Dynamic)
+    {
+        body->type = scene::BodyType::Kinematic;
+        wasDynamic = true;
+    }
+    else if (own && wasDynamic)
+    {
+        body->type = scene::BodyType::Dynamic;
+        wasDynamic = false;
+    }
+}
+
+// A character neither walks nor falls while another player has authority over it, and takes up again.
+template <typename Character>
+void followCharacterOf(scene::Scene& scene, Entity entity, bool moves, bool own, std::optional<float>& gravity)
+{
+    Character* const character = scene.tryGet<Character>(entity);
+    if (character == nullptr)
+    {
+        return;
+    }
+    if (moves && !own)
+    {
+        if (!gravity)
+        {
+            gravity = character->gravityScale;
+        }
+        character->gravityScale = 0.0f;
+        character->velocity = {};
+    }
+    else if (own && gravity)
+    {
+        character->gravityScale = *gravity;
+        gravity.reset();
+    }
+}
 
 struct Spawned
 {
@@ -616,32 +665,10 @@ struct NetworkReplication::Impl
     {
         const bool moves = std::ranges::any_of(sync.fields, [](const std::string& field) { return field.starts_with("Transform."); });
         const bool own = multiplayer.isAuthority(uuid);
-        if (scene::RigidBody* const body = scene.tryGet<scene::RigidBody>(entity))
-        {
-            if (moves && !own && body->type == scene::BodyType::Dynamic)
-            {
-                body->type = scene::BodyType::Kinematic;
-                tracking.bodyWasDynamic = true;
-            }
-            else if (own && tracking.bodyWasDynamic)
-            {
-                body->type = scene::BodyType::Dynamic;
-                tracking.bodyWasDynamic = false;
-            }
-        }
-        if (scene::RigidBody2D* const body = scene.tryGet<scene::RigidBody2D>(entity))
-        {
-            if (moves && !own && body->type == scene::BodyType::Dynamic)
-            {
-                body->type = scene::BodyType::Kinematic;
-                tracking.body2DWasDynamic = true;
-            }
-            else if (own && tracking.body2DWasDynamic)
-            {
-                body->type = scene::BodyType::Dynamic;
-                tracking.body2DWasDynamic = false;
-            }
-        }
+        followBodyOf<scene::RigidBody>(scene, entity, moves, own, tracking.bodyWasDynamic);
+        followBodyOf<scene::RigidBody2D>(scene, entity, moves, own, tracking.body2DWasDynamic);
+        followCharacterOf<scene::CharacterController>(scene, entity, moves, own, tracking.characterGravity);
+        followCharacterOf<scene::CharacterController2D>(scene, entity, moves, own, tracking.character2DGravity);
     }
 
     // What the authority of a spawner placed under it, and what it no longer has. Kept when there is no
