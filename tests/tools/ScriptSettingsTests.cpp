@@ -24,6 +24,8 @@ TEST_CASE("Script editor preferences survive serialization independently for eac
     settings.editors[0] = {ScriptEditor::Custom, "C:/Program Files/Editor/rider64.exe", "\"{project}\" \"{file}\""};
     settings.editors[1].editor = ScriptEditor::System;
     settings.editors[2].editor = ScriptEditor::Devex;
+    settings.languageServers[0] = {false, "C:/Language Servers/csharp-ls.exe", "--loglevel debug"};
+    settings.languageServers[1] = {true, "/usr/bin/clangd", "--background-index"};
     const devex::serialization::TextDocument document{{writeScriptSettings(settings)}};
     const auto parsed = devex::serialization::parseText(devex::serialization::writeText(document));
     REQUIRE(parsed);

@@ -190,7 +190,7 @@ mais seulement explicitement ici : le code suit ce document, pas l'inverse.
 | Plantages du jeu en Play | Contenus par une garde : la partie s'arrête, l'éditeur prévient    |
 | Manettes                 | SDL Gamepad, quatre manettes, sticks avec zone morte               |
 | Éditeur de texte         | `UiTextArea` de `Devex::Ui`, couleurs par morceau                  |
-| Autocomplétion           | Mots-clés, noms du moteur et identifiants du fichier              |
+| Autocomplétion           | LSP C#/C++ facultatif ; mots-clés et identifiants en secours      |
 
 ## Architecture cible
 
@@ -4608,8 +4608,18 @@ Jalon 62, comme la localisation de Godot.
   **noms que le moteur connaît** (composants et champs de la réflexion, types de l'API C# ou C++) et
   les identifiants déjà écrits dans le fichier, chacun avec son origine. Les flèches choisissent,
   **Tab** ou **Entrée** insèrent, **Échap** ferme, et un clic prend l'entrée. Le popup s'approprie
-  ces touches le temps qu'il est ouvert, pour ne pas déplacer le curseur en même temps. Il n'y a
-  pas d'analyse sémantique : c'est une aide à la frappe, pas un service de langage.
+  ces touches le temps qu'il est ouvert, pour ne pas déplacer le curseur en même temps. Cette
+  aide locale sert de secours lorsque le service de langage est indisponible.
+- **Services de langage (2026-11-04)** : client LSP stdio facultatif, une session C# et une
+  session C++ par projet, avec csharp-ls et clangd détectés ou un exécutable configuré. Les
+  buffers non sauvegardés sont synchronisés par changements incrémentaux UTF-16 quand le
+  serveur les accepte. Complétion avec éditions et imports, diagnostics versionnés, hover,
+  définitions, références et formatage. Les transferts sont non bloquants et bornés ; un
+  serveur en panne ne relance ni compilation ni sauvegarde. Le contexte C# est Game.csproj,
+  celui de clangd est la base de compilation générée dans `.devex/code/`. Réponses obsolètes
+  ignorées, sessions arrêtées au changement de projet. Le protocole et le client utilisent
+  nlohmann-json pour JSON ; aucun serveur de langage n'est une dépendance de l'exécutable
+  exporté. Détails et raccourcis dans [script-editor.md](script-editor.md).
 - **Erreurs de compilation** : les sorties des compilateurs C++ et C# sont analysées
   (`file(ligne,colonne): error CODE: message`, ainsi que la forme `fichier:ligne:colonne:` de
   clang) et remontées à l'éditeur, qui marque la ligne dans la marge, souligne le code fautif et
@@ -5795,8 +5805,8 @@ publier. L'ordre retenu, à la manière de Godot :
   d'un moteur distribué).
 - **Audio** : streaming depuis le disque, occlusion, réverbération, effets et routage des groupes,
   budget de voix, plusieurs écouteurs, intégration optionnelle de FMOD/Wwise.
-- **Éditeur de texte** : client LSP (clangd, Roslyn) pour une vraie complétion, les diagnostics en
-  direct et l'aller à la définition ; repli de code, multi-curseur, sélection par colonnes,
+- **Éditeur de texte** : étendre le client LSP (clangd, csharp-ls) avec les code actions, le
+  renommage sémantique et les semantic tokens ; repli de code, multi-curseur, sélection par colonnes,
   retour à la ligne automatique, tabulations alignées sur des colonnes plutôt que d'une largeur
   fixe, et recherche dans tout le projet.
 - **Machines à états, la suite** : sous-machines et arbres imbriqués, couches synchronisées (les

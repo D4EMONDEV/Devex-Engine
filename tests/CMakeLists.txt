@@ -1,4 +1,5 @@
 find_package(Catch2 3 CONFIG REQUIRED)
+find_package(nlohmann_json CONFIG REQUIRED)
 include(Catch)
 
 # devex_add_tests(<module> SOURCES <files...> LIBRARIES <targets...> [ENVIRONMENT <VAR=value...>])
@@ -257,6 +258,7 @@ devex_add_tests(tools
         tools/FileSearchTests.cpp
         tools/IconsTests.cpp
         tools/GraphEditorTests.cpp
+        tools/LanguageServerTests.cpp
         tools/LogBufferTests.cpp
         tools/ProjectListTests.cpp
         tools/SceneCommandsTests.cpp
@@ -283,9 +285,16 @@ target_include_directories(devex_tools_tests PRIVATE
     "${PROJECT_SOURCE_DIR}/engine/src"
 )
 target_compile_definitions(devex_tools_tests PRIVATE
+    DEVEX_TEST_LSP_PROBE="$<TARGET_FILE:devex_lsp_probe>"
     DEVEX_TEST_RESOURCES_DIRECTORY="${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/resources"
     DEVEX_TEST_DATA_DIRECTORY="${CMAKE_CURRENT_SOURCE_DIR}/data"
 )
+
+# A deliberately fragmented stdio server for the editor's LSP integration tests.
+add_executable(devex_lsp_probe tools/LspProbe.cpp)
+target_link_libraries(devex_lsp_probe PRIVATE nlohmann_json::nlohmann_json)
+devex_set_warnings(devex_lsp_probe)
+add_dependencies(devex_tools_tests devex_lsp_probe)
 
 # A game module loaded by the runtime tests.
 add_library(devex_test_game_module SHARED runtime/TestGameModule.cpp)

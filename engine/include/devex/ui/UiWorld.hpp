@@ -250,6 +250,8 @@ public:
     [[nodiscard]] std::optional<CaretPlace> textCaretPlace(const scene::Scene& scene, scene::Entity area) const;
     // The line of an area under a point of the image, from 0; -1 outside its text.
     [[nodiscard]] std::int32_t textLineAt(const scene::Scene& scene, scene::Entity area, math::Vec2 point) const;
+    [[nodiscard]] std::optional<std::size_t>
+    textOffsetAt(const scene::Scene& scene, scene::Entity area, math::Vec2 point) const;
     // The area that takes what is typed, if any.
     [[nodiscard]] scene::Entity editedTextArea() const noexcept;
 

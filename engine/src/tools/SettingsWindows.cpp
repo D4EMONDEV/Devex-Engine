@@ -452,6 +452,17 @@ struct EditorSettingsUi : SettingsUi
     Button detectEditors;
     Entity detectionStatus;
     Entity automaticCompilation;
+    struct ServerFields
+    {
+        Entity enabled;
+        Entity executable;
+        Entity arguments;
+        Entity detected;
+    };
+    std::array<ServerFields, 2> servers;
+    std::array<std::filesystem::path, 2> detectedServers;
+    bool serversDetected = false;
+    Button restartServers;
     Entity playMode;
     std::array<Entity, viewportNumbers.size()> viewportNumberFields{};
     std::array<Entity, viewportColors.size()> viewportColorFields{};
@@ -579,6 +590,27 @@ void EditorSettingsUi::build(EditorUiKit& kit)
     Section& help = pageCard(kit, scriptsPage, "Opening Files");
     note(&help, "Double-click a script to open it with the chosen editor. Edit in Devex Script always uses the built-in editor.", "dim", 3.0f);
     note(&help, "Devex Files selects the text editor for .dvx files. Scenes and assets keep their visual editors.", "dim", 3.0f);
+    for (std::size_t i = 0; i < servers.size(); ++i)
+    {
+        Section& language =
+            pageCard(kit, scriptsPage, i == 0 ? "C# Language Server" : "C++ Language Server");
+        auto& fields = servers[i];
+        serversDetected = false;
+        fields.enabled = toggle(formRow(language, "Enabled").editor);
+        fields.executable =
+            textField(formRow(language, "Executable").editor, "Automatic detection when empty");
+        fields.arguments = textField(formRow(language, "Arguments").editor);
+        fields.detected = note(&language, "", "dim", 3.0f);
+        tooltip(fields.executable, "Leave empty to detect csharp-ls or clangd. A custom executable "
+                                   "must speak LSP over standard input/output.");
+    }
+    Section& languageHelp = pageCard(kit, scriptsPage, "Code Intelligence");
+    restartServers = action(kit, actions(&languageHelp), Icon::Refresh, "Restart Language Servers");
+    note(&languageHelp,
+         "Unsaved buffers are analyzed without building the game. Ctrl+Space: completion; F12 or "
+         "Ctrl+click: definition; Shift+F12: references; Ctrl+I: information; Alt+Shift+F: format; "
+         "Ctrl+Shift+M: problems.",
+         "dim", 5.0f);
 
     Section& compilation = pageCard(kit, compilationPage, "Game Code");
     automaticCompilation = choice(formRow(compilation, "Compilation").editor);
@@ -699,8 +731,24 @@ void EditorSettingsUi::update(ToolsState& state, EditorUiKit& kit, core::Duratio
     scene().get<scene::UiText>(detectionStatus).text = installedEditors.empty() ? "No supported IDE found. You can choose a custom executable below." :
         std::format("{} installed editors found. Choose one for each file type below.", installedEditors.size());
     setChoice(automaticCompilation, {"Automatic", "Manual (Ctrl+B)"}, state.scripts.automaticCompilation ? 0 : 1);
+    for (std::size_t i = 0; i < servers.size(); ++i)
+    {
+        const auto& server = state.scripts.languageServers[i];
+        setToggle(servers[i].enabled, server.enabled);
+        setText(servers[i].executable, server.executable);
+        setText(servers[i].arguments, server.arguments);
+        if (!serversDetected)
+            detectedServers[i] = detectLanguageServer(i, state.platform.baseDirectory());
+        const auto& detected = detectedServers[i];
+        scene().get<scene::UiText>(servers[i].detected).text =
+            !server.executable.empty() ? "Using the configured server."
+            : !detected.empty()        ? "Detected: " + core::toUtf8(detected)
+            : i == 0 ? "Install csharp-ls with .NET, or enter its executable path."
+                     : "Install LLVM/clangd, or enter its executable path.";
+    }
     setChoice(playMode, {"Separate Process", "Inside Editor"},
               state.scripts.separateProcess ? 0 : 1);
+    serversDetected = true;
     if (editedColor && colorPopupOpen())
     {
         const math::Vec3 color =
@@ -731,6 +779,23 @@ void EditorSettingsUi::update(ToolsState& state, EditorUiKit& kit, core::Duratio
     }
 
     ScriptSettings scripts = state.scripts;
+    for (std::size_t i = 0; i < servers.size(); ++i)
+    {
+        auto& server = scripts.languageServers[i];
+        if (world.wasChanged(servers[i].enabled))
+            server.enabled = scene().get<scene::UiToggle>(servers[i].enabled).value;
+        if (world.wasChanged(servers[i].executable))
+            server.executable = scene().get<scene::UiText>(servers[i].executable).text;
+        if (world.wasChanged(servers[i].arguments))
+            server.arguments = scene().get<scene::UiText>(servers[i].arguments).text;
+    }
+    if (world.wasClicked(restartServers.entity))
+    {
+        for (std::size_t i = 0; i < servers.size(); ++i)
+            detectedServers[i] = detectLanguageServer(i, state.platform.baseDirectory());
+        if (state.languageServices)
+            state.languageServices->restart();
+    }
     for (std::size_t i = 0; i < editors.size(); ++i)
     {
         EditorFields& fields = editors[i];
@@ -853,6 +918,7 @@ void EditorSettingsUi::update(ToolsState& state, EditorUiKit& kit, core::Duratio
         else if (selected == scriptsPage)
         {
             scripts.editors = ScriptSettings{}.editors;
+            scripts.languageServers = ScriptSettings{}.languageServers;
         }
         else if (selected == compilationPage)
         {

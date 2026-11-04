@@ -7,6 +7,7 @@ find_package(recastnavigation CONFIG REQUIRED)
 find_package(efsw CONFIG REQUIRED)
 find_package(unofficial-enet CONFIG REQUIRED)
 find_package(fastgltf CONFIG REQUIRED)
+find_package(nlohmann_json CONFIG REQUIRED)
 find_package(Freetype REQUIRED)
 find_package(glm CONFIG REQUIRED)
 find_package(Jolt CONFIG REQUIRED)
@@ -869,6 +870,8 @@ target_sources(devex_tools
         src/tools/AudioInspector.cpp
         src/tools/CommandHistory.cpp
         src/tools/CodeArea.cpp
+        src/tools/LspProtocol.cpp
+        src/tools/LanguageServer.cpp
         src/tools/CodeArea.hpp
         src/tools/CodeCompletion.cpp
         src/tools/CodeCompletion.hpp
@@ -975,6 +978,7 @@ target_sources(devex_tools
 )
 
 target_link_libraries(devex_tools
+    PRIVATE nlohmann_json::nlohmann_json
     PUBLIC
         Devex::Ui
         Devex::Animation

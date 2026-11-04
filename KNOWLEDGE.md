@@ -2240,6 +2240,20 @@ namespace devex::ui {
   Os et matrices toujours complets, pas de réduction de palette ni d'interpolation des poses tenues.
   API des jeux 33 ; démo `assets/scenes/lods.dvxscene`, générateur `--lods-only` ;
   benchmarks `DEVEX_MESH_LOD=0/1` et *Animation LOD stress benchmark* (`DEVEX_ANIMATION_LOD=0/1`).
+- Devex Script et LSP (2026-11-04) : `tools/LanguageServer` supervise un processus stdio
+  facultatif par langage/projet (C# csharp-ls, C++ clangd), indépendamment de la compilation
+  du jeu. `LspProtocol` borne et assemble les messages Content-Length, encode les URI file et
+  convertit UTF-8/UTF-16 ; nlohmann-json analyse les messages. `Process::startProtocol`,
+  `readBytes` et `writeBytes` conservent les octets, isolent stderr et acceptent les écritures
+  partielles sans attente. Synchronisation incrémentale des buffers, diagnostics versionnés,
+  complétion avec éditions/imports, hover, définitions, références, formatage ; réponses dont
+  le texte a changé ignorées. `ScriptSettings::languageServers[2]` persiste les champs
+  csharp/cpp_lsp_enabled/executable/arguments ; les sessions sont mises à jour même hors de
+  l'écran Script et arrêtées au changement de projet. UI : Problems cliquable, marques en
+  marge/plages, Ctrl+Space, F12, Shift+F12, Ctrl+I, Alt+Shift+F, Ctrl+Shift+M. La coloration et
+  l'outline restent locaux ; détails d'installation et limites : `docs/script-editor.md`.
+  Les modificateurs d'EditorInput gardent aussi leurs transitions pressées de la frame pour
+  reconnaître un raccourci entièrement pressé puis relâché entre deux images.
 - Confort de l'éditeur (jalon 91) : `tools/ViewportSettings.hpp/.cpp`, section utilisateur
   `[viewport]`, page *Viewport* d'Editor Settings. Tailles en pixels du viewport (poignée 90,
   épaisseur 3, traits 1,5, icônes 22), unité/opacité/couleurs de grille, couleurs X/Y/Z et de survol ;

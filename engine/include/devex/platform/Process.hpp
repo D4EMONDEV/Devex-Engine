@@ -38,6 +38,10 @@ public:
     [[nodiscard]] static core::Result<Process>
     startInteractive(std::span<const std::string> arguments,
                      const std::filesystem::path& workingDirectory = {});
+    // A binary protocol over stdin/stdout. Stderr is separate and discarded, never mixed into it.
+    [[nodiscard]] static core::Result<Process>
+    startProtocol(std::span<const std::string> arguments,
+                  const std::filesystem::path& workingDirectory = {});
     // Starts a program that runs on its own, such as a game: its output is discarded and it keeps
     // running when the caller exits.
     [[nodiscard]] static core::Result<void> launch(std::span<const std::string> arguments,
@@ -54,6 +58,9 @@ public:
     // The lines written since the last call, without their line ends. Once the program has ended,
     // an unfinished last line is returned too.
     [[nodiscard]] std::vector<std::string> readLines();
+    [[nodiscard]] std::string readBytes();
+    // Nonblocking: a short write leaves the remainder for the next poll.
+    [[nodiscard]] core::Result<std::size_t> writeBytes(std::string_view bytes);
 
     // The exit code, once the program has ended.
     [[nodiscard]] std::optional<int> exitCode();

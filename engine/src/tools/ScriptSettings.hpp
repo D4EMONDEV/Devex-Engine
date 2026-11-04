@@ -29,10 +29,19 @@ struct ScriptEditorChoice
     bool operator==(const ScriptEditorChoice&) const = default;
 };
 
+struct LanguageServerSettings
+{
+    bool enabled = true;
+    std::string executable;
+    std::string arguments;
+    bool operator==(const LanguageServerSettings&) const = default;
+};
+
 // User preferences, independent of the project. The three entries are C#, C++ and Devex text.
 struct ScriptSettings
 {
     std::array<ScriptEditorChoice, 3> editors;
+    std::array<LanguageServerSettings, 2> languageServers;
     bool automaticCompilation = true;
     bool separateProcess = true;
 

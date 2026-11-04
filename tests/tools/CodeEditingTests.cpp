@@ -2,10 +2,12 @@
 #include "tools/CodeCompletion.hpp"
 #include "tools/CodeHighlight.hpp"
 #include "tools/CodeOutline.hpp"
+#include "tools/EditorInput.hpp"
 #include "tools/TextDocument.hpp"
 
 #include <devex/core/File.hpp>
 #include <devex/core/Uuid.hpp>
+#include <devex/platform/Input.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -21,6 +23,28 @@ using devex::tools::detail::CompletionItem;
 using devex::tools::detail::HighlightState;
 using devex::tools::detail::Token;
 using devex::tools::detail::TokenKind;
+
+TEST_CASE("Fast script shortcuts keep modifiers pressed and released in the same frame",
+          "[tools][code][input]")
+{
+    using devex::platform::Key;
+    devex::platform::Input input;
+    devex::tools::detail::EditorInput editor;
+    for (const auto key : {Key::LeftControl, Key::RightShift, Key::LeftAlt})
+    {
+        input.setKeyDown(key, true);
+        input.setKeyDown(key, false);
+    }
+    input.setKeyDown(Key::F12, true);
+    input.setKeyDown(Key::F12, false);
+    editor.begin(input, 0.0, 0.016f);
+    CHECK(editor.chord({true, true, true}, Key::F12));
+    input.beginFrame();
+    editor.begin(input, 0.016, 0.016f);
+    CHECK_FALSE(editor.ctrl());
+    CHECK_FALSE(editor.shift());
+    CHECK_FALSE(editor.alt());
+}
 
 namespace {
 

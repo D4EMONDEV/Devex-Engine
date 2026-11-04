@@ -34,6 +34,9 @@ Le détail, l'architecture des modules et les jalons sont dans
 Pour créer un premier jeu, suivre le [guide de démarrage 2D et 3D](docs/guide-demarrage-2d-3d.md) :
 captures de l'éditeur, scènes de base, entrées, scripts C#, animations, collisions et export.
 
+Le [guide de Devex Script](docs/script-editor.md) explique la configuration LSP C#/C++, la
+complétion, les diagnostics en direct, les définitions, les références et le formatage.
+
 ## État actuel
 
 - `Devex::Core` : `Result`/`Error`, journal `DEVEX_LOG_*`, assertions, `SlotMap`, `Uuid`,
@@ -168,7 +171,8 @@ captures de l'éditeur, scènes de base, entrées, scripts C#, animations, colli
   Animation (timeline qui zoome et défile, événements du clip ajoutés, déplacés et nommés),
   Animator (graphe des états, couches et leurs masques choisis sur le squelette, paramètres
   suivis en direct) et Shader Graph (nœuds des shaders visuels à la Godot, liens, annuler et refaire),
-  écran Script (fichiers ouverts, menus File, Edit et Search, recherche, complétion, sur
+  écran Script (fichiers ouverts, menus File, Edit et Search, recherche, services LSP C#/C++,
+  complétion sémantique, diagnostics, définitions, références et formatage, sur
   une zone de texte qui ne place que les lignes en vue), FileSystem et Output déjà écrits
   avec
   `Devex::Ui` (menus contextuels,

@@ -3,6 +3,7 @@
 #include <devex/core/Export.hpp>
 
 #include "CodeHighlight.hpp"
+#include "CodeTextEdit.hpp"
 
 #include <cstddef>
 #include <span>
@@ -19,6 +20,10 @@ struct DEVEX_API CompletionItem
     // Where it comes from, shown beside the name: "keyword", "type", "component", "field" or
     // "in file".
     std::string detail;
+    std::string insertion;
+    int replaceBegin = -1;
+    int replaceEnd = -1;
+    std::vector<CodeTextEdit> additionalEdits;
 
     bool operator==(const CompletionItem&) const = default;
 };

@@ -60,6 +60,14 @@ ScriptSettings readScriptSettings(const serialization::TextSection& section)
         }
         choice.executable = stringOr(section, prefix + "_executable", {});
         choice.arguments = stringOr(section, prefix + "_arguments", choice.arguments);
+        if (i < settings.languageServers.size())
+        {
+            auto& server = settings.languageServers[i];
+            server.executable = stringOr(section, prefix + "_lsp_executable", {});
+            server.arguments = stringOr(section, prefix + "_lsp_arguments", {});
+            if (const auto* enabled = section.findAttribute(prefix + "_lsp_enabled"))
+                server.enabled = serialization::asBool(*enabled).value_or(true);
+        }
     }
     if (const auto* value = section.findAttribute("automatic_compilation"))
     {
@@ -81,6 +89,13 @@ serialization::TextSection writeScriptSettings(const ScriptSettings& settings)
         section.attributes.push_back({prefix + "_editor", std::string(editorKeys[static_cast<std::size_t>(choice.editor)])});
         section.attributes.push_back({prefix + "_executable", choice.executable});
         section.attributes.push_back({prefix + "_arguments", choice.arguments});
+        if (i < settings.languageServers.size())
+        {
+            const auto& server = settings.languageServers[i];
+            section.attributes.push_back({prefix + "_lsp_executable", server.executable});
+            section.attributes.push_back({prefix + "_lsp_arguments", server.arguments});
+            section.attributes.push_back({prefix + "_lsp_enabled", server.enabled});
+        }
     }
     section.attributes.push_back({"automatic_compilation", settings.automaticCompilation});
     section.attributes.push_back({"separate_process", settings.separateProcess});

@@ -151,17 +151,20 @@ bool EditorInput::letterDown(char letter) const noexcept
 
 bool EditorInput::ctrl() const noexcept
 {
-    return keyDown(platform::Key::LeftControl) || keyDown(platform::Key::RightControl);
+    return keyDown(platform::Key::LeftControl) || keyDown(platform::Key::RightControl) ||
+           pressed(platform::Key::LeftControl) || pressed(platform::Key::RightControl);
 }
 
 bool EditorInput::shift() const noexcept
 {
-    return keyDown(platform::Key::LeftShift) || keyDown(platform::Key::RightShift);
+    return keyDown(platform::Key::LeftShift) || keyDown(platform::Key::RightShift) ||
+           pressed(platform::Key::LeftShift) || pressed(platform::Key::RightShift);
 }
 
 bool EditorInput::alt() const noexcept
 {
-    return keyDown(platform::Key::LeftAlt) || keyDown(platform::Key::RightAlt);
+    return keyDown(platform::Key::LeftAlt) || keyDown(platform::Key::RightAlt) ||
+           pressed(platform::Key::LeftAlt) || pressed(platform::Key::RightAlt);
 }
 
 KeyModifiers EditorInput::modifiers() const noexcept

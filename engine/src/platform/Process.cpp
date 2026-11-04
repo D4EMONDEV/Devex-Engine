@@ -96,7 +96,7 @@ namespace {
 
 [[nodiscard]] core::Result<SDL_Process*>
 createProcess(std::span<const std::string> arguments, const std::filesystem::path& workingDirectory,
-              bool captureOutput, bool interactive = false)
+              bool captureOutput, bool interactive = false, bool protocol = false)
 {
     if (arguments.empty())
     {
@@ -114,6 +114,9 @@ createProcess(std::span<const std::string> arguments, const std::filesystem::pat
     SDL_SetNumberProperty(properties, SDL_PROP_PROCESS_CREATE_STDOUT_NUMBER,
                           captureOutput ? SDL_PROCESS_STDIO_APP : SDL_PROCESS_STDIO_NULL);
     SDL_SetBooleanProperty(properties, SDL_PROP_PROCESS_CREATE_STDERR_TO_STDOUT_BOOLEAN, true);
+    if (protocol)
+        SDL_SetNumberProperty(properties, SDL_PROP_PROCESS_CREATE_STDERR_NUMBER,
+                              SDL_PROCESS_STDIO_NULL);
     if (interactive)
         SDL_SetNumberProperty(properties, SDL_PROP_PROCESS_CREATE_STDIN_NUMBER,
                               SDL_PROCESS_STDIO_APP);
@@ -173,14 +176,50 @@ std::uint32_t Process::id() const noexcept
                : 0;
 }
 
+core::Result<Process> Process::startProtocol(std::span<const std::string> arguments,
+                                             const std::filesystem::path& directory)
+{
+    auto process = createProcess(arguments, directory, true, true, true);
+    if (!process)
+        return std::unexpected(process.error());
+    return Process(*process);
+}
+
+std::string Process::readBytes()
+{
+    std::string bytes;
+    auto* output = m_process ? SDL_GetProcessOutput(static_cast<SDL_Process*>(m_process)) : nullptr;
+    char buffer[4096];
+    for (int batch = 0; output != nullptr && batch < 16; ++batch)
+    {
+        const auto read = SDL_ReadIO(output, buffer, sizeof(buffer));
+        if (read == 0)
+            break;
+        bytes.append(buffer, read);
+    }
+    return bytes;
+}
+
 core::Result<void> Process::sendLine(std::string_view line)
 {
     if (line.size() > 1024 || line.find_first_of("\r\n") != std::string_view::npos)
         return core::makeError(core::ErrorCode::InvalidArgument,
                                "a process command must fit on one short line");
-    SDL_IOStream* const input =
-        m_process != nullptr ? SDL_GetProcessInput(static_cast<SDL_Process*>(m_process)) : nullptr;
     const std::string command = std::string(line) + '\n';
+    auto written = writeBytes(command);
+    if (!written)
+        return std::unexpected(written.error());
+    if (*written != command.size())
+        return core::makeError(core::ErrorCode::Platform, "the process command pipe is full");
+    return {};
+}
+
+core::Result<std::size_t> Process::writeBytes(std::string_view command)
+{
+    if (command.empty())
+        return 0;
+    SDL_IOStream* const input =
+        m_process ? SDL_GetProcessInput(static_cast<SDL_Process*>(m_process)) : nullptr;
     if (input == nullptr)
         return core::makeError(core::ErrorCode::Platform, "the process has no command pipe");
 #ifndef _WIN32
@@ -195,7 +234,7 @@ core::Result<void> Process::sendLine(std::string_view line)
     sigpending(&pending);
     const bool alreadyPending = sigismember(&pending, SIGPIPE) == 1;
 #endif
-    const bool written = SDL_WriteIO(input, command.data(), command.size()) == command.size();
+    const std::size_t written = SDL_WriteIO(input, command.data(), command.size());
 #ifndef _WIN32
     if (!written && !alreadyPending)
     {
@@ -208,10 +247,10 @@ core::Result<void> Process::sendLine(std::string_view line)
     }
     pthread_sigmask(SIG_SETMASK, &previous, nullptr);
 #endif
-    if (!written)
+    if (written == 0 && SDL_GetIOStatus(input) != SDL_IO_STATUS_NOT_READY)
         return core::makeError(core::ErrorCode::Platform, "cannot send the process command: {}",
                                SDL_GetError());
-    return {};
+    return written;
 }
 
 std::vector<std::string> ProcessInput::readLines()
@@ -330,17 +369,7 @@ std::vector<std::string> Process::readLines()
         return lines;
     }
     // The output stream does not block: it returns what the pipe holds.
-    SDL_IOStream* const output = SDL_GetProcessOutput(static_cast<SDL_Process*>(m_process));
-    char buffer[4096];
-    for (int batch = 0; output != nullptr && batch < 16; ++batch)
-    {
-        const std::size_t read = SDL_ReadIO(output, buffer, sizeof(buffer));
-        if (read == 0)
-        {
-            break;
-        }
-        m_pending.append(buffer, read);
-    }
+    m_pending += readBytes();
     std::size_t start = 0;
     for (std::size_t newline = m_pending.find('\n'); newline != std::string::npos;
          newline = m_pending.find('\n', start))

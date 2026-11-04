@@ -1024,4 +1024,19 @@ scene::Entity UiWorld::editedTextArea() const noexcept
     return m_areaFocus;
 }
 
+std::optional<std::size_t> UiWorld::textOffsetAt(const scene::Scene& scene, scene::Entity area,
+                                                 math::Vec2 point) const
+{
+    if (textLineAt(scene, area, point) < 0)
+        return std::nullopt;
+    const auto* state = areaState(area);
+    const asset::FontData* font = nullptr;
+    TextAreaMetrics metrics;
+    const LaidOutRect* rect = nullptr;
+    float scale = 1.0f;
+    if (state == nullptr || !areaPlace(scene, area, font, metrics, rect, scale))
+        return std::nullopt;
+    return areaOffsetAt(scene, *state, point / scale);
+}
+
 } // namespace devex::ui

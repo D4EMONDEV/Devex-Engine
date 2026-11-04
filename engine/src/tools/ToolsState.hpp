@@ -1,6 +1,7 @@
 #pragma once
 
 #include "GraphEditor.hpp"
+#include "LanguageServer.hpp"
 
 #include <devex/core/Export.hpp>
 
@@ -823,6 +824,7 @@ struct DEVEX_API ToolsState
     std::vector<TextDocument> textDocuments;
     // What the editor keeps for the document it shows: cursor, search, completions.
     TextEditState textEdit;
+    std::shared_ptr<ScriptLanguageServices> languageServices;
     // The errors and warnings of the last build of the game code, shown in the margin.
     std::vector<CodeDiagnostic> codeDiagnostics;
     // Those of the last import of each shader the text editor showed, by its file; forgotten when

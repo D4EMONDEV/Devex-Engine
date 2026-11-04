@@ -26,6 +26,7 @@
         "glm",
         "joltphysics",
         "miniaudio",
+        "nlohmann-json",
         "meshoptimizer",
         "mikktspace",
         "plutosvg",

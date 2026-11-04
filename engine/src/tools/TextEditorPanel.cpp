@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <array>
 #include <charconv>
+#include <chrono>
 #include <cmath>
 #include <format>
 #include <iterator>
@@ -377,6 +378,31 @@ struct ScriptUi : FormUi
     Entity areas;
     std::vector<OpenText> open;
     Entity status;
+    Button problemsButton;
+    Entity resultsPane;
+    Entity resultsRows;
+    struct ResultRow
+    {
+        Entity entity;
+        LspLocation target;
+    };
+    std::vector<ResultRow> resultRows;
+    std::string resultsKey;
+    bool showResults = false;
+    bool referencesShown = false;
+    std::vector<LspLocation> references;
+    std::optional<LspLocation> jump;
+    std::string languageMessage;
+    std::string completionBuffer;
+    int completionCursor = -1;
+    bool completionRequested = false;
+    std::chrono::steady_clock::time_point completionChanged = std::chrono::steady_clock::now();
+    int hoverOffset = -1;
+    std::string hoverMessage;
+    bool hoverRequested = false;
+    bool hoverAtCaret = false;
+    int hoverRequestCursor = -1;
+    std::chrono::steady_clock::time_point hoverChanged = std::chrono::steady_clock::now();
     Entity message;
     Entity completions;
     std::array<CompletionRow, completionsShown> completionRows{};
@@ -414,6 +440,10 @@ struct ScriptUi : FormUi
     void fillSymbols(ToolsState& state, EditorUiKit& kit);
     void colorLines(ToolsState& state, const TextDocument& document, Entity area);
     void showCompletions(ToolsState& state, Entity area, bool focused);
+    void receiveLanguageReplies(ToolsState& state);
+    void fillResults(ToolsState& state, EditorUiKit& kit);
+    void languageActions(ToolsState& state, EditorUiKit& kit, TextDocument& document, Entity area,
+                         bool typing);
     std::optional<PendingAction> update(ToolsState& state, EditorUiKit& kit, core::Duration delta);
 };
 
@@ -444,6 +474,8 @@ void ScriptUi::build(EditorUiKit& kit)
     // and write in the text; Escape closes it, or the search.
     panel.setInputFilter([this](ui::UiInput& input) {
         keys = Keys{};
+        if (input.wordModifier && input.typed == " ")
+            input.typed.clear();
         if (scene().isAlive(completions) && scene().get<UiRect>(completions).visible)
         {
             keys.move = (input.downPressed ? 1 : 0) - (input.upPressed ? 1 : 0);
@@ -471,6 +503,8 @@ void ScriptUi::build(EditorUiKit& kit)
     }
     add(bar, "Gap", middle({font, 1.0f}));
     pathText = text(bar, grow(tall), "", "dim");
+    problemsButton = button(kit, bar, Icon::Search, "Problems", "bar_button", font * 10.0f, inner);
+    tooltip(problemsButton.entity, "Problems and references (Ctrl+Shift+M)");
 
     // The files and what the one shown declares at the left of a bar that is dragged, the text at its right.
     body = add({}, "Body", whole(math::Vec4{0.0f, barHeight(), 0.0f, 0.0f}));
@@ -530,6 +564,26 @@ void ScriptUi::build(EditorUiKit& kit)
     status = text(main, UiRect{.anchorMin = {0.0f, 1.0f}, .anchorMax = {1.0f, 1.0f}, .offsetMin = {edge, -tall}, .offsetMax = {-edge, 0.0f}}, "", "dim");
     message = text(main, whole(math::Vec4{edge * 2.0f}), "", "dim", false, scene::TextAlign::Center);
     scene().get<scene::UiText>(message).wrap = true;
+    resultsPane = add(main, "Problems and references",
+                      UiRect{.anchorMin = {0.0f, 1.0f},
+                             .anchorMax = {1.0f, 1.0f},
+                             .offsetMin = {0.0f, -tall * 7.0f},
+                             .offsetMax = {0.0f, -tall},
+                             .visible = false,
+                             .clipChildren = true},
+                      "list");
+    scene().add<scene::UiImage>(resultsPane);
+    scene().add<scene::UiScroll>(resultsPane);
+    resultsRows = add(resultsPane, "Results",
+                      UiRect{.anchorMin = {0.0f, 0.0f},
+                             .anchorMax = {1.0f, 0.0f},
+                             .offsetMin = {0.0f, 0.0f},
+                             .offsetMax = {-10.0f, 1.0f}});
+    scene().add<scene::UiLayout>(resultsRows, scene::UiLayout{.kind = scene::UiLayoutKind::Column,
+                                                              .spacing = 1.0f,
+                                                              .align = scene::TextAlign::Left});
+    resultsKey.clear();
+    resultRows.clear();
 
     // The list of completions, over everything, under the cursor.
     completions = add({}, "Completions", fixed({font * 24.0f, tall}), "popup");
@@ -746,6 +800,19 @@ void ScriptUi::colorLines(ToolsState& state, const TextDocument& document, Entit
                              .color = linearColor(math::Vec4(tint.x, tint.y, tint.z, current ? 0.6f : 0.35f))});
         }
     }
+    if (state.languageServices)
+    {
+        for (const auto& diagnostic : state.languageServices->diagnostics(document.path))
+        {
+            if (diagnostic.start.line < static_cast<int>(first) ||
+                diagnostic.start.line >= static_cast<int>(first + count))
+                continue;
+            const auto tint = diagnostic.severity == 1 ? colors.error : colors.warning;
+            found.push_back({.begin = lspOffset(document.text, diagnostic.start),
+                             .end = lspOffset(document.text, diagnostic.end),
+                             .color = linearColor(math::Vec4(tint.x, tint.y, tint.z, 0.16f))});
+        }
+    }
     world.setTextHighlights(scene(), area, std::move(found));
 
     // The diagnostics of the last build of the game code, and those of the last import of a shader,
@@ -754,6 +821,9 @@ void ScriptUi::colorLines(ToolsState& state, const TextDocument& document, Entit
     const std::array<const std::vector<CodeDiagnostic>*, 2> lists{&state.codeDiagnostics, &shaderDiagnosticsOf(state, document.path)};
     for (const std::vector<CodeDiagnostic>* const list : lists)
     {
+        if (list == &state.codeDiagnostics && state.languageServices &&
+            state.languageServices->ready(document.path))
+            continue;
         for (const CodeDiagnostic& diagnostic : *list)
         {
             if (diagnostic.line >= 1 && sameTextPath(diagnostic.path, document.path))
@@ -763,7 +833,258 @@ void ScriptUi::colorLines(ToolsState& state, const TextDocument& document, Entit
             }
         }
     }
+    if (state.languageServices)
+        for (const auto& diagnostic : state.languageServices->diagnostics(document.path))
+            marks.push_back(
+                {.line = static_cast<std::uint32_t>(diagnostic.start.line),
+                 .color = linearColor(diagnostic.severity == 1 ? colors.error : colors.warning)});
     world.setTextMarks(scene(), area, std::move(marks));
+}
+
+void ScriptUi::receiveLanguageReplies(ToolsState& state)
+{
+    if (!state.languageServices)
+        return;
+    for (auto& reply : state.languageServices->takeReplies())
+    {
+        const auto* document = findTextDocument(state, reply.path);
+        if (!document || document->text != reply.text ||
+            !sameTextPath(state.activeText, reply.path))
+            continue;
+        auto& edit = state.textEdit;
+        if (reply.feature == LanguageFeature::Completion)
+        {
+            if (edit.cursor != reply.cursor || edit.path != core::toUtf8(reply.path))
+                continue;
+            edit.completionPrefix = std::string(
+                identifierBefore(reply.text, static_cast<std::size_t>(std::max(reply.cursor, 0))));
+            if (!edit.completionPrefix.empty() && edit.completionPrefix == edit.dismissedPrefix)
+                continue;
+            edit.completions = std::move(reply.completions);
+            edit.completing = !edit.completions.empty();
+            edit.completionIndex = 0;
+        }
+        else if (reply.feature == LanguageFeature::Format && edit.path == core::toUtf8(reply.path))
+        {
+            int caret = edit.cursor;
+            for (const auto& change : reply.edits)
+            {
+                if (caret >= change.end)
+                    caret += static_cast<int>(change.text.size()) - (change.end - change.begin);
+                else if (caret >= change.begin)
+                    caret = change.begin + static_cast<int>(change.text.size());
+            }
+            edit.edits.insert(edit.edits.end(), reply.edits.begin(), reply.edits.end());
+            edit.pendingCursor = std::pair{caret, caret};
+            languageMessage =
+                reply.message.empty() ? "Formatted buffer (Ctrl+Z to undo)" : reply.message;
+        }
+        else if (reply.feature == LanguageFeature::Definition)
+        {
+            if (!reply.locations.empty())
+                jump = reply.locations.front();
+            else
+                languageMessage = reply.message.empty() ? "No definition found" : reply.message;
+        }
+        else if (reply.feature == LanguageFeature::References)
+        {
+            references = std::move(reply.locations);
+            referencesShown = true;
+            showResults = true;
+            resultsKey.clear();
+            languageMessage = std::format("{} references", references.size());
+        }
+        else if (reply.feature == LanguageFeature::Hover && reply.cursor == hoverRequestCursor)
+            hoverMessage = std::move(reply.message);
+    }
+}
+
+void ScriptUi::fillResults(ToolsState& state, EditorUiKit& kit)
+{
+    struct Entry
+    {
+        LspLocation location;
+        std::string label;
+        bool error = false;
+    };
+    std::vector<Entry> entries;
+    if (referencesShown)
+    {
+        for (const auto& reference : references)
+            entries.push_back(
+                {reference,
+                 std::format("{}:{}:{}", core::toUtf8(reference.path.filename()),
+                             reference.position.line + 1, reference.position.character + 1)});
+    }
+    else
+    {
+        for (const auto& diagnostic : state.codeDiagnostics)
+        {
+            if (state.languageServices && state.languageServices->ready(diagnostic.path))
+                continue;
+            entries.push_back(
+                {{diagnostic.path,
+                  {std::max(diagnostic.line - 1, 0), std::max(diagnostic.column - 1, 0)}},
+                 std::format("{}:{}  {}", core::toUtf8(diagnostic.path.filename()), diagnostic.line,
+                             diagnostic.message),
+                 diagnostic.error});
+        }
+        if (state.languageServices)
+            for (const auto& document : state.textDocuments)
+                for (const auto& diagnostic : state.languageServices->diagnostics(document.path))
+                    entries.push_back(
+                        {{document.path, diagnostic.start},
+                         std::format("{}:{}  {}", core::toUtf8(document.path.filename()),
+                                     diagnostic.start.line + 1, diagnostic.message),
+                         diagnostic.severity == 1});
+    }
+    relabel(kit, problemsButton,
+            referencesShown ? "References" : std::format("Problems ({})", entries.size()));
+    scene().get<UiRect>(resultsPane).visible = showResults;
+    scene().get<UiRect>(areas).offsetMax.y = -(showResults ? rowHeight() * 7.0f : rowHeight());
+    if (!showResults)
+        return;
+    std::string signature = referencesShown ? "refs" : "problems";
+    for (const auto& entry : entries)
+        signature += lspUri(entry.location.path) + entry.label +
+                     std::to_string(entry.location.position.character);
+    if (signature == resultsKey)
+        return;
+    resultsKey = std::move(signature);
+    for (const auto& row : resultRows)
+        if (scene().isAlive(row.entity))
+            scene().destroyEntity(row.entity);
+    resultRows.clear();
+    for (const auto& entry : entries)
+    {
+        if (resultRows.size() >= 200)
+            break;
+        const auto made = button(kit, resultsRows, entry.error ? Icon::CircleX : Icon::ChevronRight,
+                                 entry.label, "row", 0.0f, rowHeight(), scene::TextAlign::Left);
+        auto& rect = scene().get<UiRect>(made.entity);
+        rect.anchorMin = {0.0f, 0.0f};
+        rect.anchorMax = {1.0f, 0.0f};
+        rect.offsetMin = {0.0f, 0.0f};
+        rect.offsetMax = {0.0f, rowHeight()};
+        rect.clipChildren = true;
+        tooltip(made.entity, core::toUtf8(entry.location.path) + "\n" + entry.label);
+        resultRows.push_back({made.entity, entry.location});
+    }
+    if (entries.empty())
+    {
+        const Entity made =
+            text(resultsRows, wide(rowHeight()),
+                 referencesShown ? "No references found" : "No problems in open buffers", "dim");
+        resultRows.push_back({made, {}});
+    }
+    scene().get<UiRect>(resultsRows).offsetMax.y =
+        (rowHeight() + 1.0f) * static_cast<float>(resultRows.size());
+}
+
+void ScriptUi::languageActions(ToolsState& state, EditorUiKit& kit, TextDocument& document,
+                               Entity area, bool typing)
+{
+    auto& edit = state.textEdit;
+    auto& services = *state.languageServices;
+    using Key = platform::Key;
+    const auto now = std::chrono::steady_clock::now();
+    const auto ask = [&](LanguageFeature feature, int cursor)
+    {
+        if (!services.request(feature, document, cursor))
+            languageMessage = "This language server is unavailable or does not support that action";
+        else
+            languageMessage.clear();
+    };
+    if (typing && state.input.pressed(Key::F12, false))
+        ask(state.input.shift() ? LanguageFeature::References : LanguageFeature::Definition,
+            edit.cursor);
+    if (typing && state.input.alt() && state.input.shift() && state.input.letterPressed('f'))
+        ask(LanguageFeature::Format, edit.cursor);
+    const bool manual = typing && state.input.ctrl() && state.input.pressed(Key::Space, false);
+    if (completionBuffer != document.text || completionCursor != edit.cursor)
+    {
+        const bool changedText = completionBuffer != document.text;
+        completionBuffer = document.text;
+        completionCursor = edit.cursor;
+        completionChanged = now;
+        completionRequested = !changedText;
+        hoverAtCaret = false;
+        if (services.ready(document.path))
+        {
+            edit.completing = false;
+            edit.completions.clear();
+        }
+    }
+    if (typing && services.ready(document.path) && !edit.completionAccepted)
+    {
+        const auto prefix =
+            identifierBefore(document.text, static_cast<std::size_t>(std::max(edit.cursor, 0)));
+        const char previous =
+            edit.cursor > 0 && edit.cursor <= static_cast<int>(document.text.size())
+                ? document.text[static_cast<std::size_t>(edit.cursor - 1)]
+                : '\0';
+        const bool trigger =
+            prefix.size() >= 2 || previous == '.' || previous == '>' || previous == ':';
+        if (manual || (!completionRequested && trigger &&
+                       now - completionChanged > std::chrono::milliseconds(180) &&
+                       (prefix.empty() || prefix != edit.dismissedPrefix)))
+        {
+            ask(LanguageFeature::Completion, edit.cursor);
+            completionRequested = true;
+        }
+    }
+    else if (typing)
+        updateCompletion(edit, document, languageOf(document.path));
+    if (edit.completing && !edit.completions.empty())
+        return;
+    const auto pointed = panel.hovered()
+                             ? panel.world().textOffsetAt(scene(), area, panel.input().pointer)
+                             : std::nullopt;
+    const int offset = pointed ? static_cast<int>(*pointed) : -1;
+    if (offset != hoverOffset)
+    {
+        hoverOffset = offset;
+        if (!hoverAtCaret)
+        {
+            hoverMessage.clear();
+            hoverRequested = false;
+        }
+        hoverChanged = now;
+    }
+    if (typing && state.input.ctrl() && state.input.letterPressed('i'))
+    {
+        hoverAtCaret = true;
+        hoverRequestCursor = edit.cursor;
+        ask(LanguageFeature::Hover, edit.cursor);
+        hoverRequested = true;
+    }
+    if (pointed && state.input.ctrl() && state.input.clicked(Mouse::Left))
+        ask(LanguageFeature::Definition, offset);
+    if (pointed && !hoverRequested && now - hoverChanged > std::chrono::milliseconds(550))
+    {
+        if (services.ready(document.path))
+        {
+            hoverRequestCursor = offset;
+            ask(LanguageFeature::Hover, offset);
+        }
+        hoverRequested = true;
+    }
+    if (pointed)
+    {
+        const auto pointedLine = lspPosition(document.text, *pointed).line;
+        bool diagnosticShown = false;
+        for (const auto& diagnostic : services.diagnostics(document.path))
+            if (diagnostic.start.line == pointedLine)
+            {
+                kit.showTooltip(diagnostic.message, state.input.mouse());
+                diagnosticShown = true;
+                break;
+            }
+        if (!diagnosticShown && !hoverMessage.empty())
+            kit.showTooltip(hoverMessage, state.input.mouse());
+    }
+    else if (hoverAtCaret && !hoverMessage.empty())
+        kit.showTooltip(hoverMessage, state.input.mouse());
 }
 
 void ScriptUi::showCompletions(ToolsState& state, Entity area, bool focused)
@@ -826,6 +1147,13 @@ void ScriptUi::showCompletions(ToolsState& state, Entity area, bool focused)
 
 std::optional<PendingAction> ScriptUi::update(ToolsState& state, EditorUiKit& kit, core::Duration delta)
 {
+    receiveLanguageReplies(state);
+    if (jump && !jump->path.empty() && !sameTextPath(state.activeText, jump->path))
+    {
+        openTextFile(state, jump->path);
+        if (!sameTextPath(state.activeText, jump->path))
+            jump.reset();
+    }
     const ThemeColors& colors = themeColors();
     kit.refreshTheme(colors);
     if (!built || builtFont != state.theme.fontSize || builtCode != state.theme.codeFontSize)
@@ -874,6 +1202,11 @@ std::optional<PendingAction> ScriptUi::update(ToolsState& state, EditorUiKit& ki
             const bool matchCaseBefore = edit.matchCase;
             edit = TextEditState{};
             edit.path = path;
+            languageMessage.clear();
+            hoverMessage.clear();
+            completionBuffer.clear();
+            completionCursor = -1;
+            completionRequested = false;
             edit.find = std::move(find);
             edit.replace = std::move(replaceWith);
             edit.showFind = showFind;
@@ -915,6 +1248,13 @@ std::optional<PendingAction> ScriptUi::update(ToolsState& state, EditorUiKit& ki
             searchDocument(edit, *document);
         }
         colorLines(state, *document, area);
+        if (jump && sameTextPath(document->path, jump->path))
+        {
+            const int offset = static_cast<int>(lspOffset(document->text, jump->position));
+            edit.pendingCursor = std::pair{offset, offset};
+            focusText = true;
+            jump.reset();
+        }
     }
 
     // The bar, the lists and the strips above the text.
@@ -1020,6 +1360,15 @@ std::optional<PendingAction> ScriptUi::update(ToolsState& state, EditorUiKit& ki
             written.text = std::move(value);
         }
         scene().get<UiRect>(status).style = document->error.empty() ? "dim" : "error";
+        if (document->error.empty() && state.languageServices)
+        {
+            const std::string server = state.languageServices->status(document->path);
+            written.text = std::format("Ln {}, Col {}  |  {}  |  {}{}{}", document->line,
+                                       document->column, toString(language), server,
+                                       languageMessage.empty() ? "" : "  |  ", languageMessage);
+            tooltip(status, server + "\nF12: definition; Shift+F12: references; Ctrl+Space: "
+                                     "completion; Ctrl+I: information; Alt+Shift+F: format");
+        }
         if (std::exchange(focusText, false))
         {
             world.startEditing(scene(), area);
@@ -1027,11 +1376,28 @@ std::optional<PendingAction> ScriptUi::update(ToolsState& state, EditorUiKit& ki
     }
     const bool typing = area.isValid() && world.editedTextArea() == area;
     showCompletions(state, area, typing);
+    fillResults(state, kit);
 
     styleCloseButton(findClose.entity);
     styleCloseButton(goClose.entity);
     panel.update(kit, delta, UiPanel::zoomFor(font));
     answerForm();
+    if (world.wasClicked(problemsButton.entity) ||
+        (panel.focused() && state.input.ctrl() && state.input.shift() &&
+         state.input.letterPressed('m')))
+    {
+        if (referencesShown)
+        {
+            referencesShown = false;
+            showResults = true;
+            resultsKey.clear();
+        }
+        else
+            showResults = !showResults;
+    }
+    for (const auto& row : resultRows)
+        if (world.wasClicked(row.entity) && !row.target.path.empty())
+            jump = row.target;
 
     // The menus open under their titles, and the pointer on another title goes to its menu.
     const ui::LayoutResult* const layout = world.canvases().empty() ? nullptr : &world.canvases().front().layout;
@@ -1237,18 +1603,22 @@ std::optional<PendingAction> ScriptUi::update(ToolsState& state, EditorUiKit& ki
     {
         acceptCompletion(edit);
     }
-    else if (stillTyping)
+    else if (stillTyping && !state.languageServices)
     {
         updateCompletion(edit, *document, language);
     }
-    else
+    else if (!stillTyping)
     {
         edit.completing = false;
     }
+    if (state.languageServices)
+        languageActions(state, kit, *document, area, stillTyping);
 
     // What a line of the last build, or of the last import of a shader, says, next to the pointer on it.
     const std::vector<CodeDiagnostic>& shaderErrors = shaderDiagnosticsOf(state, document->path);
-    if (panel.hovered() && (!state.codeDiagnostics.empty() || !shaderErrors.empty()))
+    if (panel.hovered() &&
+        (!state.languageServices || !state.languageServices->ready(document->path)) &&
+        (!state.codeDiagnostics.empty() || !shaderErrors.empty()))
     {
         const std::int32_t pointed = world.textLineAt(scene(), area, panel.input().pointer);
         bool told = false;

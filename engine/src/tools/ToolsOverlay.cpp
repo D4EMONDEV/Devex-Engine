@@ -601,6 +601,15 @@ std::optional<math::Vec2> ToolsOverlay::gamePointer() const noexcept
 void ToolsOverlay::update(scene::Scene& scene, core::Duration frameDelta, PlayState playState)
 {
     ToolsState& state = *m_state;
+    if (state.mode == ToolsMode::Editor && (state.languageServices || !state.textDocuments.empty()))
+    {
+        if (!state.languageServices)
+            state.languageServices =
+                std::make_shared<detail::ScriptLanguageServices>(state.platform.baseDirectory());
+        state.languageServices->update(state.database ? state.database->project().root
+                                                      : std::filesystem::path{},
+                                       state.scripts, state.textDocuments);
+    }
     state.pressedKey = std::exchange(state.notifiedKey, std::nullopt);
     if (!state.resting)
     {

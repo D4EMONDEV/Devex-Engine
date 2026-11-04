@@ -26,12 +26,7 @@ class TextDocument;
 struct DEVEX_API TextEditState
 {
     // A range of the text replaced by something else.
-    struct DEVEX_API Edit
-    {
-        int begin = 0;
-        int end = 0;
-        std::string text;
-    };
+    using Edit = CodeTextEdit;
 
     std::vector<Edit> edits;
     // Where to leave the cursor once the edits are applied, as a selection.

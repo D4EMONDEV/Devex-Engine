@@ -191,11 +191,26 @@ void acceptCompletion(TextEditState& edit)
     }
     const CompletionItem& item = edit.completions[static_cast<std::size_t>(
         std::clamp(edit.completionIndex, 0, static_cast<int>(edit.completions.size()) - 1))];
-    const int begin = edit.cursor - static_cast<int>(edit.completionPrefix.size());
-    edit.edits.push_back({begin, edit.cursor, item.text});
+    const int begin = item.replaceBegin >= 0
+                          ? item.replaceBegin
+                          : edit.cursor - static_cast<int>(edit.completionPrefix.size());
+    const int end = item.replaceEnd >= 0 ? item.replaceEnd : edit.cursor;
+    if (begin < 0 || end < begin)
+        return;
+    const std::string insertion = item.insertion.empty() ? item.text : item.insertion;
+    std::vector<CodeTextEdit> changes = item.additionalEdits;
+    changes.push_back({begin, end, insertion});
+    std::ranges::sort(changes, [](const auto& a, const auto& b) { return a.begin > b.begin; });
+    for (std::size_t i = 1; i < changes.size(); ++i)
+        if (changes[i].end > changes[i - 1].begin || changes[i].begin == changes[i - 1].begin)
+            return;
+    int caret = begin + static_cast<int>(insertion.size());
+    for (const auto& change : item.additionalEdits)
+        if (change.begin < begin)
+            caret += static_cast<int>(change.text.size()) - (change.end - change.begin);
+    edit.edits.insert(edit.edits.end(), changes.begin(), changes.end());
     edit.dismissedPrefix = item.text;
-    const int end = begin + static_cast<int>(item.text.size());
-    edit.pendingCursor = std::pair{end, end};
+    edit.pendingCursor = std::pair{caret, caret};
     edit.completing = false;
     edit.completions.clear();
 }
