@@ -179,6 +179,8 @@ public:
     [[nodiscard]] const GpuInfo& gpu() const noexcept;
     // The present mode in use, which may differ from the requested one.
     [[nodiscard]] PresentMode presentMode() const noexcept;
+    // Asks for another present mode, from the next frame.
+    void setPresentMode(PresentMode mode);
 
     // Creates the mesh at once; its data reaches the GPU with the next frames, within the upload
     // budget of each (RendererConfig::uploadBytesPerFrame). Until then it is not drawn.

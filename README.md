@@ -24,6 +24,9 @@ et rendu avec Vulkan. Il est distribué sous licence [MIT](LICENSE).
   événement, ou toutes les 250 ms, comme le mode basse consommation de Godot ;
 - [addons locaux](docs/addons.md) : packages de contenu et de scripts, installation depuis un
   dossier, outils activés par projet et commandes C# dans l'éditeur avec annuler/rétablir ;
+- [options du joueur](docs/guide-demarrage-2d-3d.md#options-du-joueur) en C# : fenêtré, sans bords ou plein écran, synchro verticale, limite de FPS, taille de la fenêtre, gardés d'une
+  partie à l'autre, et `Time.Scale` pour mettre le jeu en pause ;
+- [copies de secours](docs/decisions.md#copies-de-secours--décidé-le-2026-11-05) : ce qui n'est pas enregistré est copié, et proposé après un plantage ;
 - [compatibilité des projets](docs/compatibilite.md) : les fichiers des versions passées s'ouvrent,
   un projet dit sa version, prévient et se copie avant d'être repris ;
 - traductions comme chez Godot : tables `.csv` (une colonne par langue) éditées dans le panneau

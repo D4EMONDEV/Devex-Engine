@@ -1453,3 +1453,28 @@ TEST_CASE("A button that leaves the screen loses the focus, and Enter no longer 
     world.update(menu.scene, window, UiInput{.moveY = 1}, frame);
     CHECK(world.focused() == menu.buttons[1]);
 }
+
+TEST_CASE("The keyboard goes to the topmost canvas that has something to press", "[ui][world]")
+{
+    Menu menu(2);
+    // A second canvas over the first, whose button is hidden, as an options screen waits.
+    const Entity overlay = menu.scene.createEntity("Overlay");
+    menu.scene.add<Canvas>(overlay, Canvas{.scaleMode = CanvasScaleMode::ConstantPixels, .sortOrder = 10});
+    const Entity button = menu.scene.createEntity("Hidden");
+    REQUIRE(menu.scene.setParent(button, overlay).has_value());
+    menu.scene.add<UiRect>(button, UiRect{.visible = false});
+    menu.scene.add<UiImage>(button, UiImage{});
+    menu.scene.add<UiButton>(button, UiButton{.action = "hidden"});
+
+    UiWorld world;
+    world.update(menu.scene, window, UiInput{}, frame);
+    world.update(menu.scene, window, UiInput{.moveY = 1}, frame);
+    CHECK(world.focused() == menu.buttons[0]);
+
+    // Shown, it takes the keyboard.
+    menu.scene.get<UiRect>(button).visible = true;
+    world.update(menu.scene, window, UiInput{}, frame);
+    CHECK(world.focused() != button);
+    world.update(menu.scene, window, UiInput{.moveY = 1}, frame);
+    CHECK(world.focused() == button);
+}

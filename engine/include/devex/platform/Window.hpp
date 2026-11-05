@@ -1,5 +1,6 @@
 #pragma once
 
+#include <devex/platform/WindowMode.hpp>
 #include <devex/core/Export.hpp>
 
 #include <devex/core/Error.hpp>
@@ -79,7 +80,10 @@ public:
     void restore();
     // Borderless over the whole display, at the resolution of the desktop.
     void setFullscreen(bool fullscreen);
+    // Over the whole display, borderless or not.
     [[nodiscard]] bool isFullscreen() const noexcept;
+    void setMode(WindowMode mode);
+    [[nodiscard]] WindowMode mode() const noexcept;
     // Matches the title bar drawn by the system to the application's colors, where the system
     // allows it (Windows): dark or light, and a caption color given in sRGB from 0 to 1.
     void setTitleBarColors(bool dark, math::Vec3 caption);
@@ -101,6 +105,8 @@ private:
     void destroy() noexcept;
 
     detail::NativeWindow* m_native = nullptr;
+    // What SDL only knows once the window shows: whether full screen is the display to itself.
+    bool m_tookDisplay = false;
 };
 
 } // namespace devex::platform

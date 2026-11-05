@@ -73,6 +73,10 @@ public:
         // Set by the game.
         // How fast the game runs, which its code changes.
         float* timeScale = nullptr;
+        float framesPerSecond = 0.0f;
+        // What the game starts with, while the player has not chosen.
+        bool configuredVsync = true;
+        std::uint32_t configuredMaxFrameRate = 0;
         bool quitRequested = false;
         asset::AssetId sceneToLoad;
         asset::AssetId sceneToLoadInBackground;

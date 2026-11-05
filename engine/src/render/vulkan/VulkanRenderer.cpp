@@ -291,6 +291,15 @@ PresentMode VulkanRenderer::presentMode() const noexcept
     return m_swapchain ? m_swapchain->presentMode() : m_requestedPresentMode;
 }
 
+void VulkanRenderer::setPresentMode(PresentMode mode)
+{
+    if (mode != m_requestedPresentMode)
+    {
+        m_requestedPresentMode = mode;
+        m_swapchainOutdated = true;
+    }
+}
+
 core::Result<MeshHandle> VulkanRenderer::createMesh(const asset::MeshData& mesh)
 {
     if (core::Result<void> valid = asset::validate(mesh); !valid)

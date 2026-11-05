@@ -236,6 +236,8 @@ protected:
     // keeps answering, and Update still runs, with a delta of 0. Playing again starts from 1.
     void setTimeScale(float scale) noexcept;
     [[nodiscard]] float timeScale() const noexcept;
+    // How many frames the game draws per second, whatever the time scale, averaged over the last moments.
+    [[nodiscard]] float framesPerSecond() const noexcept;
 
 private:
     friend class detail::ApplicationRunner;
@@ -263,6 +265,7 @@ private:
     double m_interpolationAlpha = 0.0;
     bool m_quitRequested = false;
     float m_timeScale = 1.0f;
+    float m_framesPerSecond = 0.0f;
     bool m_editor = false;
     bool m_playing = true;
     bool m_stopRequested = false;

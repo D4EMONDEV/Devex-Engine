@@ -241,21 +241,59 @@ internal unsafe struct NativeSaveSlot
 /// The engine applies the volumes at once, full screen outside the editor, and vertical sync from the
 /// next launch.
 /// </summary>
+public enum WindowMode
+{
+    /// <summary>With its frame, at its size.</summary>
+    Windowed,
+    /// <summary>No frame, over the whole display at the resolution of the desktop: other windows are a click away.</summary>
+    Borderless,
+    /// <summary>The display to itself. Going back to the desktop takes a moment.</summary>
+    Fullscreen,
+}
+
 public static unsafe class PlayerSettings
 {
-    /// <summary>Full screen, or the window; the window as it is while the player has not chosen.</summary>
+    /// <summary>How the window takes the screen; as it is while the player has not chosen.</summary>
+    public static WindowMode WindowMode
+    {
+        get => (WindowMode)Bootstrap.Native.SettingsWindowMode();
+        set => Bootstrap.Native.SetSettingsWindowMode((int)value);
+    }
+
+    /// <summary>Over the whole display, borderless or not, or the window; as it is while the player has not chosen. Choosing it asks for borderless.</summary>
     public static bool Fullscreen
     {
         get => Bootstrap.Native.SettingsFullscreen() != 0;
         set => Bootstrap.Native.SetSettingsFullscreen(value ? 1 : 0);
     }
 
-    /// <summary>Waits for the display between frames; takes effect from the next launch of the game.</summary>
+    /// <summary>Waits for the display between frames: it then sets the rate, at its own refresh rate. What the project says while the player has not chosen.</summary>
     public static bool VSync
     {
         get => Bootstrap.Native.SettingsVsync() != 0;
         set => Bootstrap.Native.SetSettingsVsync(value ? 1 : 0);
     }
+
+    /// <summary>The frames per second the player allows, 0 for no limit, without <see cref="VSync"/>: with it, the display decides. What the project says while they have not chosen.</summary>
+    public static int MaxFrameRate
+    {
+        get => Bootstrap.Native.SettingsMaxFrameRate();
+        set => Bootstrap.Native.SetSettingsMaxFrameRate(value);
+    }
+
+    /// <summary>The size of the window the player chose, out of full screen; zero while they have not chosen.</summary>
+    public static Vec2 WindowSize
+    {
+        get
+        {
+            int* values = stackalloc int[2];
+            Bootstrap.Native.SettingsWindowSize(values);
+            return new Vec2(values[0], values[1]);
+        }
+    }
+
+    /// <summary>Gives the window this size, centered, now and at the next launches.</summary>
+    public static void SetWindowSize(int width, int height) => Bootstrap.Native.SetSettingsWindowSize(width, height);
 
     /// <summary>The volume the player chose for an audio group, or for every sound with <see cref="Audio.Master"/>: 1 by default.</summary>
     public static float GetVolume(string group)

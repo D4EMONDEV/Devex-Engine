@@ -12,13 +12,48 @@ namespace devex::runtime {
 
 std::optional<bool> PlayerSettings::fullscreen() const noexcept
 {
-    return m_fullscreen;
+    return m_windowMode ? std::optional(*m_windowMode != platform::WindowMode::Windowed) : std::nullopt;
 }
 
 void PlayerSettings::setFullscreen(bool fullscreen)
 {
-    m_changed = m_changed || m_fullscreen != fullscreen;
-    m_fullscreen = fullscreen;
+    if (fullscreen != this->fullscreen())
+    {
+        setWindowMode(fullscreen ? platform::WindowMode::Borderless : platform::WindowMode::Windowed);
+    }
+}
+
+std::optional<platform::WindowMode> PlayerSettings::windowMode() const noexcept
+{
+    return m_windowMode;
+}
+
+void PlayerSettings::setWindowMode(platform::WindowMode mode)
+{
+    m_changed = m_changed || m_windowMode != mode;
+    m_windowMode = mode;
+}
+
+std::optional<std::uint32_t> PlayerSettings::maxFrameRate() const noexcept
+{
+    return m_maxFrameRate;
+}
+
+void PlayerSettings::setMaxFrameRate(std::uint32_t framesPerSecond)
+{
+    m_changed = m_changed || m_maxFrameRate != framesPerSecond;
+    m_maxFrameRate = framesPerSecond;
+}
+
+std::optional<math::Extent2D> PlayerSettings::windowSize() const noexcept
+{
+    return m_windowSize;
+}
+
+void PlayerSettings::setWindowSize(math::Extent2D size)
+{
+    m_changed = m_changed || !m_windowSize || m_windowSize->width != size.width || m_windowSize->height != size.height;
+    m_windowSize = size;
 }
 
 std::optional<bool> PlayerSettings::vsync() const noexcept
@@ -148,13 +183,23 @@ std::string PlayerSettings::write() const
     serialization::TextSection& header = document.sections.emplace_back();
     header.type = "settings";
     header.attributes.push_back({"format", serialization::TextValue(std::int64_t{1})});
-    if (m_fullscreen)
+    if (m_windowMode)
     {
-        header.attributes.push_back({"fullscreen", serialization::TextValue(*m_fullscreen)});
+        const std::string_view name = *m_windowMode == platform::WindowMode::Fullscreen ? "fullscreen" : (*m_windowMode == platform::WindowMode::Borderless ? "borderless" : "windowed");
+        header.attributes.push_back({"window_mode", serialization::TextValue(std::string(name))});
     }
     if (m_vsync)
     {
         header.attributes.push_back({"vsync", serialization::TextValue(*m_vsync)});
+    }
+    if (m_maxFrameRate)
+    {
+        header.attributes.push_back({"max_frame_rate", serialization::TextValue(static_cast<std::int64_t>(*m_maxFrameRate))});
+    }
+    if (m_windowSize)
+    {
+        header.attributes.push_back({"window_width", serialization::TextValue(static_cast<std::int64_t>(m_windowSize->width))});
+        header.attributes.push_back({"window_height", serialization::TextValue(static_cast<std::int64_t>(m_windowSize->height))});
     }
     if (m_language)
     {
@@ -187,13 +232,39 @@ void PlayerSettings::read(std::string_view text)
         return;
     }
     const serialization::TextSection& header = document->sections.front();
+    // Before there were three modes, full screen meant what is now borderless.
     if (const serialization::TextValue* const fullscreen = header.findAttribute("fullscreen"))
     {
-        m_fullscreen = serialization::asBool(*fullscreen);
+        if (const std::optional<bool> chosen = serialization::asBool(*fullscreen))
+        {
+            m_windowMode = *chosen ? platform::WindowMode::Borderless : platform::WindowMode::Windowed;
+        }
+    }
+    if (const std::string* const mode = serialization::stringAttribute(header, "window_mode"))
+    {
+        m_windowMode = *mode == "fullscreen" ? platform::WindowMode::Fullscreen : (*mode == "borderless" ? platform::WindowMode::Borderless : platform::WindowMode::Windowed);
     }
     if (const serialization::TextValue* const vsync = header.findAttribute("vsync"))
     {
         m_vsync = serialization::asBool(*vsync);
+    }
+    if (const serialization::TextValue* const rate = header.findAttribute("max_frame_rate"))
+    {
+        if (const std::optional<std::int64_t> value = serialization::asInteger(*rate); value && *value >= 0)
+        {
+            m_maxFrameRate = static_cast<std::uint32_t>(*value);
+        }
+    }
+    const serialization::TextValue* const width = header.findAttribute("window_width");
+    const serialization::TextValue* const height = header.findAttribute("window_height");
+    if (width != nullptr && height != nullptr)
+    {
+        const std::optional<std::int64_t> wide = serialization::asInteger(*width);
+        const std::optional<std::int64_t> high = serialization::asInteger(*height);
+        if (wide && high && *wide > 0 && *high > 0)
+        {
+            m_windowSize = math::Extent2D{static_cast<std::uint32_t>(*wide), static_cast<std::uint32_t>(*high)};
+        }
     }
     if (const serialization::TextValue* const language = header.findAttribute("language"))
     {

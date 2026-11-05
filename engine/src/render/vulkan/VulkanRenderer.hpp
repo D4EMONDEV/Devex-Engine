@@ -58,6 +58,7 @@ public:
 
     [[nodiscard]] const GpuInfo& gpu() const noexcept;
     [[nodiscard]] PresentMode presentMode() const noexcept;
+    void setPresentMode(PresentMode mode);
 
     [[nodiscard]] core::Result<MeshHandle> createMesh(const asset::MeshData& mesh);
     [[nodiscard]] bool isReady(MeshHandle mesh) const noexcept;

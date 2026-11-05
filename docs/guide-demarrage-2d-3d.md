@@ -715,6 +715,23 @@ Sauvegarder régulièrement les scènes et les scripts. Dans un dépôt de jeu, 
 
 Ne pas utiliser le dossier de sortie de l'export comme dossier de travail du projet. Pour partager le guide, conserver aussi ses images et ses exemples.
 
+### Options du joueur
+
+`PlayerSettings` garde les choix du joueur d'une partie à l'autre, et le moteur les applique tout de suite. Tant que le joueur n'a rien choisi, chaque réglage
+dit ce que le projet a décidé dans **Project Settings**.
+
+| Réglage | C# | Ce qu'il fait |
+| --- | --- | --- |
+| Affichage | `PlayerSettings.WindowMode` | `Windowed`, `Borderless` (sans bords, sur tout l'écran à la résolution du bureau) ou `Fullscreen` |
+| Taille de la fenêtre | `PlayerSettings.SetWindowSize(1600, 900)` | En mode fenêtré. `Screen.UsableSize` dit ce que l'écran peut montrer |
+| Synchro verticale | `PlayerSettings.VSync` | Cale les images sur l'écran : 240 FPS sur un écran à 240 Hz, 60 sur un écran à 60 Hz |
+| Limite de FPS | `PlayerSettings.MaxFrameRate` | 0 pour aucune. Sans effet avec la synchro verticale, puisque l'écran décide alors |
+| Compteur de FPS | `Screen.FrameRate` | Les images par seconde, moyennées sur les derniers instants |
+| Volume | `PlayerSettings.SetVolume(Audio.Master, 0.5f)` | De 0 à 1 |
+
+Pour mettre le jeu en pause, `Time.Scale = 0.0f` fige le monde : `Update` continue d'être appelé avec un `Time.Delta` nul, et l'interface répond. `Input.SetContextActive("Gameplay", false)`
+coupe en plus les actions du joueur.
+
 ### Produire un jeu Windows
 
 1. Arrêter Play et sauvegarder les scènes.

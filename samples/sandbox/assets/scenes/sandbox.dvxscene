@@ -1197,7 +1197,7 @@ value = true
 action = "fullscreen"
 
 [component type="UiTooltip"]
-text = "Prend effet au prochain lancement"
+text = "S'applique tout de suite"
 
 [entity uuid="7e1b0a00-0001-4000-9000-000000000070" name="Difficulté"]
 parent = "7e1b0a00-0001-4000-9000-00000000000d"

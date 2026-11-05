@@ -765,6 +765,7 @@ public static class ManagedComponentAccess
     public static T? Get<T>(this Entity entity) where T : Component => 
         GameRuntime.GetInstance(typeof(T), entity) as T;
     
+    public static bool TryGet<T>(this Entity entity, out T? component) where T : Component;
     public static bool Has<T>(this Entity entity) where T : Component => 
         GameRuntime.GetInstance(typeof(T), entity) != null;
     
@@ -2162,6 +2163,9 @@ namespace devex::ui {
   `GeneratedMesh` sur chaque racine, appelé avant la physique et l'extraction), `AssetManager::addGeneratedMesh`. Guide `docs/level-design.md`.
 - Chemins : `scene/PathComponents.hpp` (`Path3D`, `PathFollower`, `PathCurve`), `runtime/PathFollowers.hpp`, `Paths` en C#,
   l'outil dans la vue `tools/PathEditor.cpp`. Guide `docs/level-design.md`, plan dans `docs/decisions.md`.
+- Réglages du joueur : `runtime/PlayerSettings` (`windowMode`, `maxFrameRate`, `windowSize`), appliqués par `ApplicationRunner::applyPlayerSettings`, `platform::WindowMode` et `Window::setMode`,
+  `Renderer::setPresentMode`, `Application::setTimeScale` et `framesPerSecond` ; en C#, `PlayerSettings`, `Time.Scale` et `Screen.FrameRate`. Guide : section *Options du joueur* de `docs/guide-demarrage-2d-3d.md`.
+- Personnage porté : `Physics2DWorld::moveCharacters` retient le point du sol sous les pieds (`CharacterRecord::groundBody`, `groundAnchor`, `groundPoint`) et y va avant le reste du mouvement. En 3D, Jolt suit la vitesse du sol, et le même point sert pour les corps statiques déplacés par le code.
 - Copies de secours : `tools/Autosave.cpp` (`updateAutosave` à la fin de chaque image, `.devex/autosave/index.dvx`), fenêtre `DialogKind::RecoverWork` dans
   `tools/EditorDialogs.cpp`, réglage `ThemeSettings::autosaveMinutes`. Publication : `packaging/windows/devex.iss`, `scripts/prepare_release.ps1`, job `release` de
   `.github/workflows/ci.yml`, `docs/publier-une-version.md`, `CHANGELOG.md`.
@@ -2825,6 +2829,9 @@ public static class Time
     public static double Elapsed { get; internal set; }
     // Frames since the scene started.
     public static long Frame { get; internal set; }
+    // How fast the game runs: 1 normally, in between for slow motion, 0 to hold it for a pause menu. The
+    // interface keeps answering, and Update still runs, with a Delta of 0. It stays through scene changes.
+    public static float Scale { get; set; }
 }
 
 // The window the game draws in.
@@ -2832,13 +2839,17 @@ public static unsafe class Screen
 {
     // Its size in pixels.
     public static Vec2 Size { get; }
+    // How many frames the game draws per second, whatever Time.Scale, averaged over the last moments.
+    public static float FrameRate { get; }
+    // What the display leaves to windows, without the task bars and the like: the sizes it makes sense to offer.
+    public static Vec2 UsableSize { get; }
     // Resizes the window, in the coordinates of the window (which differ from pixels on a display
     // scaled by the system), first putting it back to its normal state.
     public static void SetSize(int width, int height);
     // The words in the title bar of the window.
     public static void SetTitle(string title);
-    // Borderless over the whole display. PlayerSettings.Fullscreen does the same and keeps the choice
-    // of the player for the next time the game starts.
+    // Borderless over the whole display. PlayerSettings.WindowMode chooses between the three ways of showing
+    // the game, and keeps the choice of the player for the next time the game starts.
     public static bool Fullscreen { get; set; }
     public static bool IsMaximized { get; }
     public static bool IsMinimized { get; }
@@ -3582,16 +3593,35 @@ public static unsafe class Saves
     public static AssetId Thumbnail(string slot);
 }
 
+// How the window takes the screen.
+public enum WindowMode
+{
+    // With its frame, at its size.
+    Windowed,
+    // No frame, over the whole display at the resolution of the desktop: other windows are a click away.
+    Borderless,
+    // The display to itself. Going back to the desktop takes a moment.
+    Fullscreen,
+}
+
 // What the player chose, kept from one game to the next in the folder of the player: the volumes, the
 // window, and the values the game keeps by name, such as a language or the sensitivity of the mouse.
-// The engine applies the volumes at once, full screen outside the editor, and vertical sync from the
-// next launch.
+// The engine applies them at once, and outside the editor for what concerns the window and the frame rate.
+// While the player has not chosen, each one says what applies: what the project decided.
 public static unsafe class PlayerSettings
 {
-    // Full screen, or the window; the window as it is while the player has not chosen.
+    // How the window takes the screen.
+    public static WindowMode WindowMode { get; set; }
+    // Over the whole display, borderless or not, or the window. Choosing it asks for borderless.
     public static bool Fullscreen { get; set; }
-    // Waits for the display between frames; takes effect from the next launch of the game.
+    // Waits for the display between frames: it then sets the rate, at its own refresh rate.
     public static bool VSync { get; set; }
+    // The frames per second the player allows, 0 for no limit, without VSync: with it, the display decides.
+    public static int MaxFrameRate { get; set; }
+    // The size of the window the player chose, out of full screen; zero while they have not chosen.
+    public static Vec2 WindowSize { get; }
+    // Gives the window this size, centered, now and at the next launches.
+    public static void SetWindowSize(int width, int height);
     // The volume the player chose for an audio group, or for every sound with Audio.Master: 1 by default.
     public static float GetVolume(string group);
     // Sets the volume the player chose, from 0 to 1; it multiplies the volumes the game sets.

@@ -2869,3 +2869,31 @@ TEST_CASE("2D lights shine on sprites over the tint of the canvas, through norma
     }
     CHECK(capture.errors().empty());
 }
+
+TEST_CASE("The present mode changes while the renderer runs", "[render][gpu][settings]")
+{
+    auto platform = devex::platform::Platform::create();
+    REQUIRE(platform);
+    auto window = platform->createWindow({.width = 320, .height = 240, .vulkan = true, .hidden = true});
+    REQUIRE(window);
+    auto renderer = devex::render::Renderer::create(*platform, *window, {.validation = true});
+    REQUIRE(renderer);
+    const auto frame = [&] {
+        static_cast<void>(renderer->beginFrame());
+        REQUIRE(renderer->endFrame());
+    };
+    frame();
+    CHECK(renderer->presentMode() == devex::render::PresentMode::Fifo);
+
+    // Not every driver has it: Fifo is what it falls back on.
+    renderer->setPresentMode(devex::render::PresentMode::Immediate);
+    frame();
+    frame();
+    const devex::render::PresentMode fast = renderer->presentMode();
+    CHECK((fast == devex::render::PresentMode::Immediate || fast == devex::render::PresentMode::Fifo));
+
+    renderer->setPresentMode(devex::render::PresentMode::Fifo);
+    frame();
+    frame();
+    CHECK(renderer->presentMode() == devex::render::PresentMode::Fifo);
+}

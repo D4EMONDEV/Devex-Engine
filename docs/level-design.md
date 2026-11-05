@@ -97,7 +97,7 @@ Ajoutez un composant **PathFollower** à un enfant du chemin. Il peut aussi êtr
 - **Orient** : il regarde où il va, son -Z le long de la courbe.
 - **Playing** : décoché, il attend. **Stop** le décoche en arrivant.
 
-Une plateforme avec un `RigidBody` cinématique pousse ce qu'elle rencontre. Une caméra enfant d'un `PathFollower` fait un
+Une plateforme avec un `RigidBody` cinématique pousse ce qu'elle rencontre, et porte le personnage debout dessus. Un collider sans corps qu'un script déplace le porte aussi, sans pousser le reste. Une caméra enfant d'un `PathFollower` fait un
 travelling.
 
 ### Depuis le code

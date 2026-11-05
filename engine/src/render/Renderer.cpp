@@ -40,6 +40,12 @@ PresentMode Renderer::presentMode() const noexcept
     return m_implementation->presentMode();
 }
 
+void Renderer::setPresentMode(PresentMode mode)
+{
+    DEVEX_ASSERT(m_implementation != nullptr);
+    m_implementation->setPresentMode(mode);
+}
+
 core::Result<MeshHandle> Renderer::createMesh(const asset::MeshData& mesh)
 {
     DEVEX_ASSERT(m_implementation != nullptr);

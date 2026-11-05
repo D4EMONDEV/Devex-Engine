@@ -1052,9 +1052,14 @@ TEST_CASE("C# code saves objects into slots and keeps the settings of the player
         std::filesystem::temp_directory_path() / ("devex-managed-saves-" + devex::core::Uuid::generate().toString());
     devex::runtime::SaveGames saves(folder);
     devex::runtime::PlayerSettings settings;
-    ManagedGame::Frame frame{.scene = &scene, .saves = &saves, .settings = &settings};
+    // While the player has not chosen, it is what the project says that applies, and that shows.
+    ManagedGame::Frame frame{.scene = &scene, .saves = &saves, .settings = &settings, .configuredVsync = false, .configuredMaxFrameRate = 240};
     game->runPhase(frame, SystemPhase::Update);
 
+    CHECK_FALSE(value("default_v_sync", bool{}));
+    CHECK(value("default_limit", int{}) == 240);
+    CHECK(value("chosen_mode", int{}) == 1);
+    CHECK(settings.windowMode() == devex::platform::WindowMode::Borderless);
     CHECK(value("saved", bool{}));
     CHECK(value("loaded", bool{}));
     CHECK(value("loaded_level", int{}) == 5);
@@ -1070,6 +1075,9 @@ TEST_CASE("C# code saves objects into slots and keeps the settings of the player
     CHECK(value("language", std::string{}) == "fr");
     CHECK(value("difficulty", int{}) == 3);
     CHECK(value("deleted", bool{}));
+    CHECK(value("frame_limit", int{}) == 144);
+    CHECK(value("window_wide", int{}) == 1600);
+    CHECK(settings.maxFrameRate() == 144u);
     CHECK(settings.volume(devex::runtime::PlayerSettings::master) == 0.3f);
     CHECK(settings.stringValue("language", "") == "fr");
     CHECK(settings.integerValue("difficulty", 0) == 3);
@@ -2013,5 +2021,54 @@ TEST_CASE("A time scale of 0 holds the game until it comes back", "[runtime][tim
         .enableAudio = false, .workerThreads = 1, .userDirectory = directory / "user"};
     CHECK(devex::runtime::run(application, config) == EXIT_SUCCESS);
     CHECK(application.frames == 100);
+    std::filesystem::remove_all(directory);
+}
+
+namespace {
+
+class FrameLimitApplication : public devex::runtime::Application
+{
+public:
+    void onUpdate(devex::core::Duration) override
+    {
+        ++frames;
+        if (frames == 5)
+        {
+            playerSettings()->setMaxFrameRate(20);
+        }
+        else if (frames == 10)
+        {
+            limitedFrom = std::chrono::steady_clock::now();
+        }
+        else if (frames == 20)
+        {
+            limited = std::chrono::steady_clock::now() - limitedFrom;
+            measured = framesPerSecond();
+            requestQuit();
+        }
+    }
+
+    int frames = 0;
+    float measured = 0.0f;
+    std::chrono::steady_clock::time_point limitedFrom;
+    std::chrono::steady_clock::duration limited{};
+};
+
+} // namespace
+
+TEST_CASE("The frame limit of the player applies while the game runs, and the rate says so", "[runtime][settings]")
+{
+    const auto directory = std::filesystem::temp_directory_path() / ("devex-limit-" + devex::core::Uuid::generate().toString());
+    FrameLimitApplication application;
+    const devex::runtime::ApplicationConfig config{
+        .title = "Limit test", .width = 320, .height = 240,
+        .fixedUpdateRate = 60, .maxFrameRate = 0, .enableRendering = false,
+        .enableAudio = false, .workerThreads = 1, .userDirectory = directory / "user"};
+    CHECK(devex::runtime::run(application, config) == EXIT_SUCCESS);
+    CHECK(application.frames == 20);
+    // Ten frames at 20 per second take half a second, however fast the machine.
+    CHECK(std::chrono::duration<double>(application.limited).count() > 0.45);
+    CHECK(application.measured > 10.0f);
+    CHECK(application.measured < 40.0f);
     std::filesystem::remove_all(directory);
 }

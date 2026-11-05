@@ -372,6 +372,14 @@ struct NativeApi
     void (*gridPositionOf)(void* scene, Entity entity, const math::IVec3* cell, math::Vec3* position);
     float (*timeScale)();
     void (*setTimeScale)(float scale);
+    int (*settingsMaxFrameRate)();
+    void (*setSettingsMaxFrameRate)(int framesPerSecond);
+    void (*settingsWindowSize)(int* values);
+    void (*setSettingsWindowSize)(int width, int height);
+    void (*windowUsableSize)(float* values);
+    float (*frameRate)();
+    int (*settingsWindowMode)();
+    void (*setSettingsWindowMode)(int mode);
 };
 
 // The functions the engine calls, in the order of Devex.Managed's ManagedApi.
@@ -387,7 +395,7 @@ struct ManagedApi
 };
 
 // Devex.Managed's Bootstrap.Version: both sides change it with the function tables.
-constexpr int bootstrapVersion = 35;
+constexpr int bootstrapVersion = 37;
 
 struct BootstrapArguments
 {
@@ -2318,9 +2326,65 @@ void apiSetSettingsFullscreen(int fullscreen)
     }
 }
 
+int apiSettingsMaxFrameRate()
+{
+    const std::uint32_t configured = currentFrame() != nullptr ? currentFrame()->configuredMaxFrameRate : 0;
+    return static_cast<int>(settings() != nullptr ? settings()->maxFrameRate().value_or(configured) : configured);
+}
+
+void apiSetSettingsMaxFrameRate(int framesPerSecond)
+{
+    if (settings() != nullptr)
+    {
+        settings()->setMaxFrameRate(static_cast<std::uint32_t>(std::max(framesPerSecond, 0)));
+    }
+}
+
+void apiSettingsWindowSize(int* values)
+{
+    const std::optional<math::Extent2D> size = settings() != nullptr ? settings()->windowSize() : std::nullopt;
+    values[0] = size ? static_cast<int>(size->width) : 0;
+    values[1] = size ? static_cast<int>(size->height) : 0;
+}
+
+void apiSetSettingsWindowSize(int width, int height)
+{
+    if (settings() != nullptr && width > 0 && height > 0)
+    {
+        settings()->setWindowSize({static_cast<std::uint32_t>(width), static_cast<std::uint32_t>(height)});
+    }
+}
+
+void apiWindowUsableSize(float* values)
+{
+    const platform::ScreenArea area = window() != nullptr ? window()->usableArea() : platform::ScreenArea{};
+    values[0] = static_cast<float>(area.width);
+    values[1] = static_cast<float>(area.height);
+}
+
+float apiFrameRate()
+{
+    return currentFrame() != nullptr ? currentFrame()->framesPerSecond : 0.0f;
+}
+
+int apiSettingsWindowMode()
+{
+    const std::optional<platform::WindowMode> chosen = settings() != nullptr ? settings()->windowMode() : std::nullopt;
+    return static_cast<int>(chosen.value_or(window() != nullptr ? window()->mode() : platform::WindowMode::Windowed));
+}
+
+void apiSetSettingsWindowMode(int mode)
+{
+    if (settings() != nullptr && mode >= 0 && mode <= static_cast<int>(platform::WindowMode::Fullscreen))
+    {
+        settings()->setWindowMode(static_cast<platform::WindowMode>(mode));
+    }
+}
+
 int apiSettingsVsync()
 {
-    return settings() != nullptr ? (settings()->vsync().value_or(true) ? 1 : 0) : 1;
+    const bool configured = currentFrame() == nullptr || currentFrame()->configuredVsync;
+    return (settings() != nullptr ? settings()->vsync().value_or(configured) : configured) ? 1 : 0;
 }
 
 void apiSetSettingsVsync(int vsync)
@@ -3238,6 +3302,14 @@ int apiRaycastSolid(const math::Vec3* origin, const math::Vec3* direction, float
         .gridPositionOf = &apiGridPositionOf,
         .timeScale = &apiTimeScale,
         .setTimeScale = &apiSetTimeScale,
+        .settingsMaxFrameRate = &apiSettingsMaxFrameRate,
+        .setSettingsMaxFrameRate = &apiSetSettingsMaxFrameRate,
+        .settingsWindowSize = &apiSettingsWindowSize,
+        .setSettingsWindowSize = &apiSetSettingsWindowSize,
+        .windowUsableSize = &apiWindowUsableSize,
+        .frameRate = &apiFrameRate,
+        .settingsWindowMode = &apiSettingsWindowMode,
+        .setSettingsWindowMode = &apiSetSettingsWindowMode,
     };
 }
 

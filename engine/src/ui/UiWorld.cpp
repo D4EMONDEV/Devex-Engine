@@ -752,7 +752,8 @@ void UiWorld::updateNavigation(const scene::Scene& scene, const UiInput& input)
     std::size_t canvasIndex = 0;
     for (std::size_t index = m_canvases.size(); index-- > 0;)
     {
-        if (m_canvases[index].interactive && (!m_modal || m_modal->canvas == index))
+        if (m_canvases[index].interactive && (!m_modal || m_modal->canvas == index) &&
+            std::ranges::any_of(m_canvases[index].layout.rects, [&](const LaidOutRect& rect) { return rect.visible && takesFocus(scene, rect.entity); }))
         {
             canvas = &m_canvases[index];
             canvasIndex = index;

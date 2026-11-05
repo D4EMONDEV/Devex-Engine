@@ -243,6 +243,11 @@ public class ProgressData
 // Saves and loads its progress, lists the saves, and keeps settings.
 public class Archivist : Component
 {
+    public bool DefaultVSync;
+    public int DefaultLimit;
+    public int ChosenMode;
+    public int FrameLimit;
+    public int WindowWide;
     public bool Saved;
     public bool Loaded;
     public int LoadedLevel;
@@ -284,6 +289,14 @@ public class Archivist : Component
         FirstVersion = slots.Length > 0 ? slots[0].Version : -1;
         MissingIsNull = Saves.Load<ProgressData>("nothing") == null;
 
+        DefaultVSync = PlayerSettings.VSync;
+        DefaultLimit = PlayerSettings.MaxFrameRate;
+        PlayerSettings.WindowMode = WindowMode.Borderless;
+        ChosenMode = (int)PlayerSettings.WindowMode;
+        PlayerSettings.MaxFrameRate = 144;
+        PlayerSettings.SetWindowSize(1600, 900);
+        FrameLimit = PlayerSettings.MaxFrameRate;
+        WindowWide = (int)PlayerSettings.WindowSize.X;
         PlayerSettings.SetVolume(Audio.Master, 0.3f);
         MasterVolume = PlayerSettings.GetVolume(Audio.Master);
         PlayerSettings.SetString("language", "fr");

@@ -5580,8 +5580,12 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     mesure `DEVEX_STRESS_FOG` du banc d'essai (0,21 ms sur une RTX 4060) ; tests de l'extraction et
     d'un brouillard qui cache un cube puis qu'un volume creuse ; API des jeux 40.
 
-111. ✅ **Ce que le premier vrai jeu a montré** — `Time.Scale` pour qu'un jeu se mette en pause, `TryGet` sur les composants C#, et un projet jamais ouvert
-     qui démarre sur sa scène. Détails plus bas.
+113. ✅ **Options du joueur** — fenêtré, sans bords ou plein écran, synchro verticale qui s'applique tout de suite et décide alors du rythme, limite de FPS, taille de la fenêtre et compteur, en C#.
+     Détails plus bas.
+112. ✅ **Deuxième vrai jeu, une aventure 3D** — sur une grille et du CSG, avec une plateforme sur chemin, des ennemis sur navmesh et un personnage animé. Un personnage 3D suit aussi un collider déplacé par le code, et une palette d'une
+     seule pièce reste une pièce. Détails plus bas.
+111. ✅ **Ce que le premier vrai jeu a montré** — `Time.Scale` pour qu'un jeu se mette en pause, `TryGet` sur les composants C#, un personnage 2D qui suit ce qui bouge sous ses pieds, un bouton caché qui lâche le focus, et un projet jamais
+     ouvert qui démarre sur sa scène. Détails plus bas.
 110. ✅ **Publication** — un installateur Inno Setup et un zip pour Windows, une archive pour Linux, et une release en brouillon préparée par
      la CI pour un tag `v*`. Décisions plus bas, et [docs/publier-une-version.md](publier-une-version.md).
 109. ✅ **Copies de secours** — ce qui n'est pas enregistré est copié dans `.devex/autosave` toutes les 5 minutes et avant Play, et proposé
@@ -5643,6 +5647,15 @@ Troisième point de la liste pour une 1.0 : faire de vrais petits jeux avec la 0
   navmesh, un personnage animé, des modèles CC0. Tout a tenu du premier coup, y compris la navmesh sur la grille et le CSG et le transport sur la plateforme.
 - **Une palette d'une seule pièce** : une entité du haut avec un enfant passait pour ce qui tient les pièces, et le sol disparaissait sans un mot. Elle reste une pièce quand elle a un mesh.
 - **Le personnage 3D sur un collider déplacé par le code** : comme en 2D, il va où va le point sous ses pieds. Sur ce qui a une vitesse, Jolt le portait déjà, et on le laisse faire.
+- **Le clavier va au canevas du haut qui a de quoi être pressé** : un écran d'options caché, sur son canevas au-dessus, lui prenait le clavier, et le menu dessous ne répondait plus.
+- **Trois façons de montrer un jeu**, `PlayerSettings.WindowMode` : fenêtré, sans bords et plein écran. Ce que le moteur appelait plein écran était déjà sans bords, ce que les anciens fichiers de réglages gardent.
+  Le plein écran prend l'écran à la résolution du bureau : changer la résolution du moniteur demanderait une liste de modes, et personne ne le demande aujourd'hui. `Fullscreen` reste, pour ce qui a été écrit avec.
+- **Avec la synchro verticale, l'écran décide du rythme** : la limite de FPS n'a alors plus d'effet, et l'écran d'options la grise. Écarté : les combiner, utile pour jouer à 30 sur un écran à 60, mais
+  ce que personne n'attend en décochant une case. Sans moteur de rendu, rien n'attend l'écran, et la limite reste.
+- **Les réglages montrent ce qui s'applique** : tant que le joueur n'a pas choisi, `VSync` et `MaxFrameRate` disent ce que le projet a décidé, pas une valeur par défaut qui s'en écarte.
+- **Un écran Options, en C#** : `PlayerSettings.MaxFrameRate` et `SetWindowSize`, `Screen.FrameRate` et `UsableSize`, et `VSync` qui s'applique tout de suite, plus au lancement suivant. Comme le
+  plein écran, ces choix sont gardés avec les réglages du joueur, et l'éditeur n'en tient pas compte pour lui-même. Écarté : un écran d'options fourni par le moteur, car chaque jeu a son style ; celui de
+  ces deux jeux tient dans un fichier C# à copier.
 - **Un robot joue pour de vrai** : un composant temporaire écrit la position du joueur, et un script envoie les touches à la seule fenêtre du jeu. Il a parcouru les deux
   niveaux sans aide, ce qui prouve qu'ils sont faisables. Il ne dit pas s'ils sont amusants : c'est à l'utilisateur de le dire.
 

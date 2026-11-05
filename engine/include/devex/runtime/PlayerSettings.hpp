@@ -1,7 +1,9 @@
 #pragma once
 
+#include <devex/math/Math.hpp>
 #include <devex/core/Export.hpp>
 
+#include <devex/platform/WindowMode.hpp>
 #include <devex/serialization/Text.hpp>
 
 #include <cstdint>
@@ -23,10 +25,19 @@ public:
     static constexpr std::string_view master = "Master";
 
     // Nothing while the player has not chosen, so that the project decides.
+    // Over the whole display, borderless or not. Choosing it asks for borderless, unless the display is already taken.
     [[nodiscard]] std::optional<bool> fullscreen() const noexcept;
     void setFullscreen(bool fullscreen);
+    [[nodiscard]] std::optional<platform::WindowMode> windowMode() const noexcept;
+    void setWindowMode(platform::WindowMode mode);
     [[nodiscard]] std::optional<bool> vsync() const noexcept;
     void setVsync(bool vsync);
+    // The frames per second the player allows, 0 for no limit. With vertical sync, the display decides instead.
+    [[nodiscard]] std::optional<std::uint32_t> maxFrameRate() const noexcept;
+    void setMaxFrameRate(std::uint32_t framesPerSecond);
+    // The size of the window, out of full screen.
+    [[nodiscard]] std::optional<math::Extent2D> windowSize() const noexcept;
+    void setWindowSize(math::Extent2D size);
     // The language the player chose, a code such as "fr"; nothing while they have not chosen, so
     // that the language of the system decides.
     [[nodiscard]] const std::optional<std::string>& language() const noexcept;
@@ -53,8 +64,10 @@ public:
     void read(std::string_view text);
 
 private:
-    std::optional<bool> m_fullscreen;
+    std::optional<platform::WindowMode> m_windowMode;
     std::optional<bool> m_vsync;
+    std::optional<std::uint32_t> m_maxFrameRate;
+    std::optional<math::Extent2D> m_windowSize;
     std::optional<std::string> m_language;
     std::map<std::string, float, std::less<>> m_volumes;
     std::map<std::string, serialization::TextValue, std::less<>> m_values;

@@ -41,7 +41,15 @@ sert à faire de vrais petits jeux et à trouver ce qui manque avant la 1.0.
 
 - `Time.Scale` en C# et `Application::setTimeScale` en C++ : 0 met le jeu en pause et l'interface continue de répondre, entre 0 et 1 il ralentit.
 - `Entity.TryGet` marche aussi sur les composants écrits en C#.
+- Pour un écran d'options en C# : `PlayerSettings.WindowMode` (fenêtré, sans bords, plein écran), `MaxFrameRate` et `SetWindowSize`, `Screen.FrameRate` et `UsableSize`, et `PlayerSettings.VSync` qui s'applique tout de suite. Avec la synchro verticale, l'écran décide du rythme.
 - Les personnages 2D et 3D suivent ce qui bouge sous leurs pieds, même un collider déplacé par un script, et en 2D une plateforme à sens unique qui monte.
+
+**Corrigé en faisant de vrais jeux**
+
+- Un bouton caché gardait le focus du clavier, et Entrée pouvait encore le presser.
+- Un écran caché au-dessus d'un menu lui prenait le clavier.
+- Une palette de grille d'une seule pièce avec un enfant faisait disparaître le sol sans un mot.
+- Un projet ouvert pour la première fois démarre sur sa scène de démarrage.
 
 **Limites connues**
 

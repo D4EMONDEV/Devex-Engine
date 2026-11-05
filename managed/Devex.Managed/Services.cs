@@ -76,6 +76,20 @@ public static class Time
 /// <summary>The window the game draws in.</summary>
 public static unsafe class Screen
 {
+    /// <summary>How many frames the game draws per second, whatever <see cref="Time.Scale"/>, averaged over the last moments.</summary>
+    public static float FrameRate => Bootstrap.Native.FrameRate();
+
+    /// <summary>What the display leaves to windows, without the task bars and the like, in pixels: the sizes it makes sense to offer.</summary>
+    public static Vec2 UsableSize
+    {
+        get
+        {
+            float* values = stackalloc float[2];
+            Bootstrap.Native.WindowUsableSize(values);
+            return new Vec2(values[0], values[1]);
+        }
+    }
+
     /// <summary>Its size in pixels.</summary>
     public static Vec2 Size
     {

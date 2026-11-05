@@ -2,6 +2,7 @@
 #include <devex/core/File.hpp>
 #include <devex/core/Path.hpp>
 #include <devex/core/Uuid.hpp>
+#include <devex/platform/Platform.hpp>
 #include <devex/platform/Process.hpp>
 #include <devex/runtime/PlayerSettings.hpp>
 #include <devex/runtime/SaveGames.hpp>
@@ -230,6 +231,8 @@ TEST_CASE("The settings of the player keep volumes, the window and the values of
     CHECK_FALSE(settings.language().has_value());
     settings.setFullscreen(true);
     settings.setVsync(false);
+    settings.setMaxFrameRate(144);
+    settings.setWindowSize({1600, 900});
     settings.setLanguage("pt_BR");
     settings.setVolume("Master", 0.5f);
     settings.setVolume("Music", 2.0f);
@@ -298,4 +301,88 @@ TEST_CASE("The saves of every version read", "[runtime][format]")
         CHECK(progress->name == "Frozen");
         CHECK(progress->items == std::vector<std::string>{"key", "map"});
     }
+}
+
+TEST_CASE("The frame limit and the window size of the player come back from their file", "[runtime][settings]")
+{
+    PlayerSettings settings;
+    CHECK_FALSE(settings.maxFrameRate().has_value());
+    CHECK_FALSE(settings.windowSize().has_value());
+    settings.setMaxFrameRate(144);
+    settings.setWindowSize({1600, 900});
+    CHECK(settings.takeChanges());
+    settings.setMaxFrameRate(144);
+    settings.setWindowSize({1600, 900});
+    CHECK_FALSE(settings.takeChanges());
+
+    PlayerSettings read;
+    read.read(settings.write());
+    CHECK(read.maxFrameRate() == 144u);
+    REQUIRE(read.windowSize().has_value());
+    CHECK(read.windowSize()->width == 1600u);
+    CHECK(read.windowSize()->height == 900u);
+
+    // No limit is a choice too, unlike nothing chosen.
+    settings.setMaxFrameRate(0);
+    PlayerSettings unlimited;
+    unlimited.read(settings.write());
+    CHECK(unlimited.maxFrameRate() == 0u);
+}
+
+TEST_CASE("The way the player shows the game comes back from its file, and older files still say", "[runtime][settings]")
+{
+    using devex::platform::WindowMode;
+    PlayerSettings settings;
+    CHECK_FALSE(settings.windowMode().has_value());
+    CHECK_FALSE(settings.fullscreen().has_value());
+
+    for (const WindowMode mode : {WindowMode::Windowed, WindowMode::Borderless, WindowMode::Fullscreen})
+    {
+        settings.setWindowMode(mode);
+        PlayerSettings read;
+        read.read(settings.write());
+        CHECK(read.windowMode() == mode);
+        CHECK(read.fullscreen() == (mode != WindowMode::Windowed));
+    }
+
+    // Asking for full screen does not leave the display once it has it.
+    settings.setWindowMode(WindowMode::Fullscreen);
+    settings.setFullscreen(true);
+    CHECK(settings.windowMode() == WindowMode::Fullscreen);
+    settings.setFullscreen(false);
+    CHECK(settings.windowMode() == WindowMode::Windowed);
+    settings.setFullscreen(true);
+    CHECK(settings.windowMode() == WindowMode::Borderless);
+
+    // What full screen meant before there were three modes.
+    PlayerSettings older;
+    older.read("[settings format=1 fullscreen=true]\n");
+    CHECK(older.windowMode() == WindowMode::Borderless);
+    older.read("[settings format=1 fullscreen=false]\n");
+    CHECK(older.windowMode() == WindowMode::Windowed);
+}
+
+TEST_CASE("A window takes the screen in the mode it is asked for", "[platform][window]")
+{
+    using devex::platform::WindowMode;
+    auto platform = devex::platform::Platform::create();
+    REQUIRE(platform);
+    auto window = platform->createWindow({.width = 320, .height = 240, .hidden = true});
+    REQUIRE(window);
+    CHECK(window->mode() == WindowMode::Windowed);
+    CHECK_FALSE(window->isFullscreen());
+
+    window->setMode(WindowMode::Borderless);
+    CHECK(window->mode() == WindowMode::Borderless);
+    CHECK(window->isFullscreen());
+
+    window->setMode(WindowMode::Fullscreen);
+    CHECK(window->mode() == WindowMode::Fullscreen);
+    CHECK(window->isFullscreen());
+
+    // The older way says borderless.
+    window->setFullscreen(true);
+    CHECK(window->mode() == WindowMode::Borderless);
+    window->setFullscreen(false);
+    CHECK(window->mode() == WindowMode::Windowed);
 }

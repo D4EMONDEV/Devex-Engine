@@ -429,6 +429,11 @@ private:
     FixedTimestep m_timestep;
     core::Duration m_fixedDelta;
     std::chrono::nanoseconds m_frameBudget;
+    // What the game starts with, while the player has not chosen.
+    bool m_configuredVsync = true;
+    std::uint32_t m_configuredMaxFrameRate = 0;
+    // The size last given to the window, as the player chose it.
+    std::optional<math::Extent2D> m_appliedWindowSize;
     Clock::time_point m_previousFrame;
     // The last event or frame that moved something, after which the editor rests.
     Clock::time_point m_lastActivity;
@@ -540,6 +545,8 @@ ApplicationRunner::ApplicationRunner(Application& application, const Application
     , m_frameBudget(config.maxFrameRate == 0
                         ? std::chrono::nanoseconds::zero()
                         : std::chrono::nanoseconds(std::chrono::seconds(1)) / config.maxFrameRate)
+    , m_configuredVsync(config.presentMode == render::PresentMode::Fifo)
+    , m_configuredMaxFrameRate(config.maxFrameRate)
     , m_loadGameCode(config.loadGameCode || config.editor)
     , m_enablePhysics(config.enablePhysics)
     , m_userDirectory(config.userDirectory)
@@ -1110,6 +1117,12 @@ void ApplicationRunner::runFrame()
     const Clock::time_point frameStart = Clock::now();
     const std::chrono::nanoseconds frameTime = frameStart - m_previousFrame;
     m_previousFrame = frameStart;
+    // Over about half a second, whatever the rate: a number one can read.
+    if (const float seconds = std::chrono::duration<float>(frameTime).count(); seconds > 0.0f)
+    {
+        const float blend = std::min(seconds * 2.0f, 1.0f);
+        m_application.m_framesPerSecond += (1.0f / seconds - m_application.m_framesPerSecond) * blend;
+    }
 
     // Finished imports replace the assets they changed before anything uses them this frame, and
     // the meshes and textures the workers loaded reach the renderer.
@@ -2238,6 +2251,7 @@ void ApplicationRunner::runSystems(SystemPhase phase, core::Duration delta,
         .delta = delta,
         .interpolationAlpha = m_timestep.alpha(),
         .timeScale = &m_application.m_timeScale,
+        .framesPerSecond = m_application.m_framesPerSecond,
         .loadingScene = m_backgroundScene ? m_backgroundScene->asset : asset::AssetId{},
         .loadingProgress = m_backgroundScene ? m_backgroundScene->progress : 0.0f,
     };
@@ -2282,6 +2296,9 @@ void ApplicationRunner::runSystems(SystemPhase phase, core::Duration delta,
             .loadingProgress = context.loadingScene.isValid() ? context.loadingProgress : -1.0f,
             .keepInstances = keepManagedInstances,
             .timeScale = &m_application.m_timeScale,
+            .framesPerSecond = m_application.m_framesPerSecond,
+            .configuredVsync = m_configuredVsync,
+            .configuredMaxFrameRate = m_configuredMaxFrameRate,
         };
         m_managed->runPhase(frame, phase);
         context.quitRequested = context.quitRequested || frame.quitRequested;
@@ -2599,11 +2616,37 @@ void ApplicationRunner::applyPlayerSettings()
             }
         }
     }
-    // The window of the editor stays as it is; vertical sync applies from the next launch.
-    const std::optional<bool> fullscreen = m_settings->fullscreen();
-    if (!isEditor() && fullscreen && *fullscreen != m_services.window.isFullscreen())
+    // What the editor is made of stays as it is: the player chooses for the game alone.
+    if (isEditor())
     {
-        m_services.window.setFullscreen(*fullscreen);
+        return;
+    }
+    const std::optional<platform::WindowMode> mode = m_settings->windowMode();
+    const bool wasFullscreen = m_services.window.isFullscreen();
+    if (mode && *mode != m_services.window.mode())
+    {
+        m_services.window.setMode(*mode);
+    }
+    // Back out of full screen, the window takes the size the player chose, not the one it had.
+    if (const std::optional<math::Extent2D> size = m_settings->windowSize(); size && !m_services.window.isFullscreen())
+    {
+        const bool changed = !m_appliedWindowSize || m_appliedWindowSize->width != size->width || m_appliedWindowSize->height != size->height;
+        if (changed || wasFullscreen)
+        {
+            m_appliedWindowSize = size;
+            m_services.window.setSize(*size);
+            m_services.window.center();
+        }
+    }
+    const bool vsync = m_settings->vsync().value_or(m_configuredVsync);
+    const std::uint32_t rate = m_settings->maxFrameRate().value_or(m_configuredMaxFrameRate);
+    // With vertical sync, the display sets the rate, and a limit has nothing left to do. Without anything to wait for,
+    // as with no renderer, the limit is all there is.
+    const bool waitsForDisplay = vsync && m_services.renderer != nullptr;
+    m_frameBudget = waitsForDisplay || rate == 0 ? std::chrono::nanoseconds::zero() : std::chrono::nanoseconds(std::chrono::seconds(1)) / rate;
+    if (m_services.renderer != nullptr && m_settings->vsync())
+    {
+        m_services.renderer->setPresentMode(vsync ? render::PresentMode::Fifo : render::PresentMode::Immediate);
     }
 }
 
@@ -3547,6 +3590,11 @@ void Application::setTimeScale(float scale) noexcept
     m_timeScale = std::max(scale, 0.0f);
 }
 
+float Application::framesPerSecond() const noexcept
+{
+    return m_framesPerSecond;
+}
+
 float Application::timeScale() const noexcept
 {
     return m_timeScale;
@@ -3671,6 +3719,12 @@ int run(Application& application, const ApplicationConfig& config)
                 chosen.read(*text);
                 fullscreen = chosen.fullscreen().value_or(fullscreen);
                 vsync = chosen.vsync().value_or(vsync);
+                effective.maxFrameRate = chosen.maxFrameRate().value_or(effective.maxFrameRate);
+                if (const std::optional<math::Extent2D> size = chosen.windowSize())
+                {
+                    effective.width = size->width;
+                    effective.height = size->height;
+                }
             }
         }
         effective.presentMode = vsync ? render::PresentMode::Fifo : render::PresentMode::Immediate;

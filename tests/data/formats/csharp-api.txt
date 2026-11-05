@@ -1012,7 +1012,10 @@ Devex.PlayerSettings: Boolean Fullscreen
 Devex.PlayerSettings: Boolean GetBool(System.String, Boolean)
 Devex.PlayerSettings: Boolean Has(System.String)
 Devex.PlayerSettings: Boolean VSync
+Devex.PlayerSettings: Devex.Vec2 WindowSize
+Devex.PlayerSettings: Devex.WindowMode WindowMode
 Devex.PlayerSettings: Int32 GetInt(System.String, Int32)
+Devex.PlayerSettings: Int32 MaxFrameRate
 Devex.PlayerSettings: Single GetFloat(System.String, Single)
 Devex.PlayerSettings: Single GetVolume(System.String)
 Devex.PlayerSettings: System.String GetString(System.String, System.String)
@@ -1022,6 +1025,7 @@ Devex.PlayerSettings: Void SetFloat(System.String, Single)
 Devex.PlayerSettings: Void SetInt(System.String, Int32)
 Devex.PlayerSettings: Void SetString(System.String, System.String)
 Devex.PlayerSettings: Void SetVolume(System.String, Single)
+Devex.PlayerSettings: Void SetWindowSize(Int32, Int32)
 Devex.PointLight2D: Boolean& Shadows
 Devex.PointLight2D: Devex.PointLight2D At(Void*)
 Devex.PointLight2D: Devex.Vec3& Color
@@ -1215,7 +1219,9 @@ Devex.Screen: Boolean Fullscreen
 Devex.Screen: Boolean IsMaximized
 Devex.Screen: Boolean IsMinimized
 Devex.Screen: Devex.Vec2 Size
+Devex.Screen: Devex.Vec2 UsableSize
 Devex.Screen: Single DisplayScale
+Devex.Screen: Single FrameRate
 Devex.Screen: Void Center()
 Devex.Screen: Void Maximize()
 Devex.Screen: Void Restore()
@@ -1899,6 +1905,9 @@ Devex.WaitAwaiter: Void OnCompleted(System.Action)
 Devex.WaitAwaiter: Void UnsafeOnCompleted(System.Action)
 Devex.WasNamedAttribute: System.String[] Names
 Devex.WasNamedAttribute: Void .ctor(System.String[])
+Devex.WindowMode: Devex.WindowMode Borderless
+Devex.WindowMode: Devex.WindowMode Fullscreen
+Devex.WindowMode: Devex.WindowMode Windowed
 type Devex.AngleAttribute
 type Devex.Animation
 type Devex.AnimationEvent
@@ -2115,3 +2124,4 @@ type Devex.VolumetricFog
 type Devex.Wait
 type Devex.WaitAwaiter
 type Devex.WasNamedAttribute
+type Devex.WindowMode

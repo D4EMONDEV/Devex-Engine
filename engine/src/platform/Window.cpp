@@ -32,6 +32,7 @@ Window::Window(detail::NativeWindow* native) noexcept
 
 Window::Window(Window&& other) noexcept
     : m_native(std::exchange(other.m_native, nullptr))
+    , m_tookDisplay(other.m_tookDisplay)
 {
 }
 
@@ -41,6 +42,7 @@ Window& Window::operator=(Window&& other) noexcept
     {
         destroy();
         m_native = std::exchange(other.m_native, nullptr);
+        m_tookDisplay = other.m_tookDisplay;
     }
     return *this;
 }
@@ -157,8 +159,33 @@ void Window::restore()
 
 void Window::setFullscreen(bool fullscreen)
 {
+    setMode(fullscreen ? WindowMode::Borderless : WindowMode::Windowed);
+}
+
+void Window::setMode(WindowMode mode)
+{
     DEVEX_ASSERT(m_native != nullptr);
-    SDL_SetWindowFullscreen(detail::toSdlWindow(m_native), fullscreen);
+    SDL_Window* const window = detail::toSdlWindow(m_native);
+    m_tookDisplay = mode == WindowMode::Fullscreen;
+    if (mode == WindowMode::Windowed)
+    {
+        SDL_SetWindowFullscreen(window, false);
+        return;
+    }
+    // No mode of its own is what SDL calls borderless; the display's own mode gives it the display, at the same resolution.
+    const SDL_DisplayMode* const display = mode == WindowMode::Fullscreen ? SDL_GetDesktopDisplayMode(SDL_GetDisplayForWindow(window)) : nullptr;
+    SDL_SetWindowFullscreenMode(window, display);
+    SDL_SetWindowFullscreen(window, true);
+}
+
+WindowMode Window::mode() const noexcept
+{
+    DEVEX_ASSERT(m_native != nullptr);
+    if ((SDL_GetWindowFlags(detail::toSdlWindow(m_native)) & SDL_WINDOW_FULLSCREEN) == 0)
+    {
+        return WindowMode::Windowed;
+    }
+    return m_tookDisplay ? WindowMode::Fullscreen : WindowMode::Borderless;
 }
 
 bool Window::isFullscreen() const noexcept
