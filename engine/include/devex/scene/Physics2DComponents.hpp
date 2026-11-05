@@ -93,7 +93,7 @@ DEVEX_DECLARE_ENGINE_REFLECTION(TilemapCollider2D);
 
 // A character moved by game code, "move and slide": a capsule standing on the position of its
 // entity that slides along walls, walks up slopes and small steps, stays on the ground, lands on
-// one-way ledges from above, is carried by what it stands on, and pushes dynamic bodies. Game code
+// one-way ledges from above, is carried by what it stands on, however that moves, and pushes dynamic bodies. Game code
 // sets the velocity each frame; the simulation adds gravity, moves the character, and writes back
 // the velocity it kept and whether it stands on the ground.
 struct DEVEX_API CharacterController2D

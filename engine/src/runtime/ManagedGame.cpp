@@ -370,6 +370,8 @@ struct NativeApi
     int (*gridGet)(void* scene, Entity entity, const math::IVec3* cell, int* piece, int* rotation);
     void (*gridCellAt)(void* scene, Entity entity, const math::Vec3* position, math::IVec3* cell);
     void (*gridPositionOf)(void* scene, Entity entity, const math::IVec3* cell, math::Vec3* position);
+    float (*timeScale)();
+    void (*setTimeScale)(float scale);
 };
 
 // The functions the engine calls, in the order of Devex.Managed's ManagedApi.
@@ -385,7 +387,7 @@ struct ManagedApi
 };
 
 // Devex.Managed's Bootstrap.Version: both sides change it with the function tables.
-constexpr int bootstrapVersion = 34;
+constexpr int bootstrapVersion = 35;
 
 struct BootstrapArguments
 {
@@ -803,6 +805,19 @@ void apiSetMouseCaptured(int captured)
     if (window() != nullptr)
     {
         window()->setMouseCaptured(captured != 0);
+    }
+}
+
+float apiTimeScale()
+{
+    return currentFrame() != nullptr && currentFrame()->timeScale != nullptr ? *currentFrame()->timeScale : 1.0f;
+}
+
+void apiSetTimeScale(float scale)
+{
+    if (currentFrame() != nullptr && currentFrame()->timeScale != nullptr)
+    {
+        *currentFrame()->timeScale = std::max(scale, 0.0f);
     }
 }
 
@@ -3221,6 +3236,8 @@ int apiRaycastSolid(const math::Vec3* origin, const math::Vec3* direction, float
         .gridGet = &apiGridGet,
         .gridCellAt = &apiGridCellAt,
         .gridPositionOf = &apiGridPositionOf,
+        .timeScale = &apiTimeScale,
+        .setTimeScale = &apiSetTimeScale,
     };
 }
 

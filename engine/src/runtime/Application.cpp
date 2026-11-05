@@ -319,6 +319,8 @@ private:
     void startExternalPlay(bool waitForDebugger);
     void updatePlayerControl();
     [[nodiscard]] bool gameplayPaused() const noexcept;
+    // The time of the game in a frame, as fast as the game asked to run.
+    [[nodiscard]] std::chrono::nanoseconds gameTime(std::chrono::nanoseconds frameTime) const noexcept;
     // Starts Play once a C# debugger attaches, and tells the editor about the debugger.
     void updateDebugger();
     void stopPlaying();
@@ -1151,8 +1153,8 @@ void ApplicationRunner::runFrame()
         std::optional<std::chrono::nanoseconds> gameplayTime;
         if (m_playState == tools::PlayState::Playing)
         {
-            gameplayTime = frameTime;
-            runGuardedGameplay(frameTime);
+            gameplayTime = gameTime(frameTime);
+            runGuardedGameplay(*gameplayTime);
         }
         else if (m_playState == tools::PlayState::Paused && std::exchange(m_stepRequested, false))
         {
@@ -1169,7 +1171,7 @@ void ApplicationRunner::runFrame()
     {
         std::optional<std::chrono::nanoseconds> gameplayTime;
         if (!gameplayPaused())
-            gameplayTime = frameTime;
+            gameplayTime = gameTime(frameTime);
         else if (m_gameStarted && std::exchange(m_stepRequested, false))
             gameplayTime = m_timestep.step();
         if (gameplayTime)
@@ -1206,7 +1208,7 @@ void ApplicationRunner::updateFrameWorlds(std::chrono::nanoseconds frameTime, bo
     // Animated tiles play in the editor too, and hold while the game is paused.
     if (!((m_playScene || m_editorClient) && gameplayPaused()))
     {
-        m_tileClock += std::chrono::duration<double>(frameTime).count();
+        m_tileClock += std::chrono::duration<double>(gameTime(frameTime)).count();
     }
     {
         DEVEX_PROFILE_SCOPE("Animation");
@@ -1609,6 +1611,11 @@ void ApplicationRunner::startExternalPlay(bool waitForDebugger)
     m_services.tools->setExternalPlayStatus(m_externalPlay.status());
 }
 
+std::chrono::nanoseconds ApplicationRunner::gameTime(std::chrono::nanoseconds frameTime) const noexcept
+{
+    return std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::duration<double, std::nano>(frameTime) * m_application.m_timeScale);
+}
+
 bool ApplicationRunner::gameplayPaused() const noexcept
 {
     return (isEditor() || m_editorClient != nullptr) && m_playState != tools::PlayState::Playing;
@@ -1658,6 +1665,7 @@ void ApplicationRunner::stopPlaying()
     destroyAudio();
     destroyPhysics();
     m_gameStarted = false;
+    m_application.m_timeScale = 1.0f;
     m_sceneToLoad.reset();
     m_backgroundScene.reset();
     m_application.m_scene = &m_services.scene;
@@ -2229,6 +2237,7 @@ void ApplicationRunner::runSystems(SystemPhase phase, core::Duration delta,
         .ui = m_ui.get(),
         .delta = delta,
         .interpolationAlpha = m_timestep.alpha(),
+        .timeScale = &m_application.m_timeScale,
         .loadingScene = m_backgroundScene ? m_backgroundScene->asset : asset::AssetId{},
         .loadingProgress = m_backgroundScene ? m_backgroundScene->progress : 0.0f,
     };
@@ -2272,6 +2281,7 @@ void ApplicationRunner::runSystems(SystemPhase phase, core::Duration delta,
             .loadingScene = context.loadingScene,
             .loadingProgress = context.loadingScene.isValid() ? context.loadingProgress : -1.0f,
             .keepInstances = keepManagedInstances,
+            .timeScale = &m_application.m_timeScale,
         };
         m_managed->runPhase(frame, phase);
         context.quitRequested = context.quitRequested || frame.quitRequested;
@@ -3088,12 +3098,12 @@ void ApplicationRunner::updateAnimation(std::chrono::nanoseconds frameTime)
     }
     m_animation->setViewPositions(viewers);
     // Sprites move from frame to frame too, while the game plays.
-    m_animation->update(*m_application.m_scene, core::Duration(frameTime));
+    m_animation->update(*m_application.m_scene, core::Duration(gameTime(frameTime)));
     // After the clips, so that a tween moves an animated entity as a whole.
     if (m_tweens)
     {
         m_tweens->setPaused(paused);
-        m_tweens->update(*m_application.m_scene, core::Duration(frameTime));
+        m_tweens->update(*m_application.m_scene, core::Duration(gameTime(frameTime)));
     }
 }
 
@@ -3122,7 +3132,7 @@ void ApplicationRunner::updateParticles(std::chrono::nanoseconds frameTime)
     {
         m_particles->setCollisionQuery({});
     }
-    m_particles->update(*m_application.m_scene, core::Duration(frameTime));
+    m_particles->update(*m_application.m_scene, core::Duration(gameTime(frameTime)));
 }
 
 void ApplicationRunner::applyAudioSettings()
@@ -3530,6 +3540,16 @@ bool Application::isEditor() const noexcept
 bool Application::isPlaying() const noexcept
 {
     return m_playing;
+}
+
+void Application::setTimeScale(float scale) noexcept
+{
+    m_timeScale = std::max(scale, 0.0f);
+}
+
+float Application::timeScale() const noexcept
+{
+    return m_timeScale;
 }
 
 void Application::requestQuit() noexcept

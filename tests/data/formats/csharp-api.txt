@@ -743,6 +743,7 @@ Devex.Log: Void Error(System.String)
 Devex.Log: Void Info(System.String)
 Devex.Log: Void Warning(System.String)
 Devex.ManagedComponentAccess: Boolean Has[T](Devex.Entity)
+Devex.ManagedComponentAccess: Boolean TryGet[T](Devex.Entity, T ByRef)
 Devex.ManagedComponentAccess: T Add[T](Devex.Entity)
 Devex.ManagedComponentAccess: T Get[T](Devex.Entity)
 Devex.ManagedComponentAccess: Void Remove[T](Devex.Entity)
@@ -1387,6 +1388,7 @@ Devex.Tilemaps: Void SetTile(Devex.Entity, Int32, Int32, Int32, Boolean, Boolean
 Devex.Time: Double Elapsed
 Devex.Time: Int64 Frame
 Devex.Time: Single Delta
+Devex.Time: Single Scale
 Devex.TrailRenderer: Boolean& Emitting
 Devex.TrailRenderer: Boolean& Lit
 Devex.TrailRenderer: Devex.AssetId& Texture

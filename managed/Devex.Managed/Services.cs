@@ -61,6 +61,16 @@ public static class Time
 
     /// <summary>Frames since the scene started.</summary>
     public static long Frame { get; internal set; }
+
+    /// <summary>
+    /// How fast the game runs: 1 normally, in between for slow motion, 0 to hold it for a pause menu. The interface
+    /// keeps answering, and Update still runs, with a Delta of 0. It stays through scene changes.
+    /// </summary>
+    public static unsafe float Scale
+    {
+        get => Bootstrap.Native.TimeScale();
+        set => Bootstrap.Native.SetTimeScale(value);
+    }
 }
 
 /// <summary>The window the game draws in.</summary>

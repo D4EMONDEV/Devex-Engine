@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.ComponentModel;
 using Devex.Internal;
 
@@ -27,6 +28,13 @@ public static class ManagedComponentAccess
     public static T? Get<T>(this Entity entity) where T : Component => GameRuntime.GetInstance(typeof(T), entity) as T;
 
     public static bool Has<T>(this Entity entity) where T : Component => GameRuntime.GetInstance(typeof(T), entity) != null;
+
+    /// <summary>The C# component of the entity, when it has one.</summary>
+    public static bool TryGet<T>(this Entity entity, [NotNullWhen(true)] out T? component) where T : Component
+    {
+        component = entity.Get<T>();
+        return component != null;
+    }
 
     /// <summary>Adds the C# component with its default values, or returns the one the entity has.</summary>
     public static T Add<T>(this Entity entity) where T : Component => (T)GameRuntime.AddComponent(typeof(T), entity);

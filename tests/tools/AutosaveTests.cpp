@@ -177,3 +177,40 @@ TEST_CASE("Copies that say what a file already says are not offered", "[tools][a
     removeAutosave(*project);
     CHECK_FALSE(fs::exists(folder));
 }
+
+TEST_CASE("A project opened for the first time starts on its scene, and offers back what a crash left", "[tools][autosave][gpu]")
+{
+    Directory directory;
+    auto project = asset::createProject(directory.path, "Opening test");
+    REQUIRE(project);
+    const fs::path first = directory.path / "assets" / "a.dvxscene";
+    const fs::path startup = directory.path / "assets" / "b.dvxscene";
+    REQUIRE(core::writeTextFile(first, savedScene));
+    REQUIRE(core::writeTextFile(startup, savedScene));
+    project->startupScene = "res://assets/b.dvxscene";
+    REQUIRE(asset::saveProject(*project));
+
+    auto platform = platform::Platform::create();
+    REQUIRE(platform);
+    auto window = platform->createWindow({.width = 800, .height = 600, .vulkan = true, .hidden = true});
+    REQUIRE(window);
+    auto renderer = render::Renderer::create(*platform, *window, {.validation = false});
+    REQUIRE(renderer);
+
+    {
+        Session session(*project, *platform, *window, *renderer);
+        session.state->projectChanged = true;
+        updateEditorSession(*session.state, session.scene);
+        CHECK(session.state->scenePath == startup);
+        CHECK_FALSE(session.state->openRecoverPopup);
+    }
+
+    const fs::path folder = project->cacheDirectory() / "autosave";
+    REQUIRE(core::writeTextFile(folder / "copy.dvxscene", "[scene format=1 kind=\"2d\"]\n"));
+    REQUIRE(core::writeTextFile(folder / "index.dvx", std::format("[autosave format=1]\n\n[copy kind=\"scene\" file=\"copy.dvxscene\" original=\"{}\"]\n", core::toUtf8(startup))));
+    Session session(*project, *platform, *window, *renderer);
+    session.state->projectChanged = true;
+    updateEditorSession(*session.state, session.scene);
+    CHECK(session.state->openRecoverPopup);
+    CHECK(session.state->autosave.recoverable.size() == 1);
+}

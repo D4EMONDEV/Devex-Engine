@@ -1963,3 +1963,55 @@ TEST_CASE("C# code builds on a grid while it runs", "[runtime][managed]")
     REQUIRE(devex::scene::gridCellCount(grid) == 1);
     CHECK(devex::scene::gridCell(grid, 0).rotation == 1);
 }
+
+namespace {
+
+class TimeScaleApplication : public devex::runtime::Application
+{
+public:
+    void onFixedUpdate(devex::core::Duration) override
+    {
+        ++fixedUpdates;
+    }
+
+    void onUpdate(devex::core::Duration) override
+    {
+        ++frames;
+        if (frames == 20)
+        {
+            CHECK(fixedUpdates > 0);
+            setTimeScale(0.0f);
+            CHECK(timeScale() == 0.0f);
+            heldAt = fixedUpdates;
+        }
+        else if (frames == 60)
+        {
+            CHECK(fixedUpdates == heldAt);
+            setTimeScale(1.0f);
+        }
+        else if (frames == 100)
+        {
+            CHECK(fixedUpdates > heldAt);
+            requestQuit();
+        }
+    }
+
+    int frames = 0;
+    int fixedUpdates = 0;
+    int heldAt = 0;
+};
+
+} // namespace
+
+TEST_CASE("A time scale of 0 holds the game until it comes back", "[runtime][time]")
+{
+    const auto directory = std::filesystem::temp_directory_path() / ("devex-time-" + devex::core::Uuid::generate().toString());
+    TimeScaleApplication application;
+    const devex::runtime::ApplicationConfig config{
+        .title = "Time test", .width = 320, .height = 240,
+        .fixedUpdateRate = 60, .maxFrameRate = 120, .enableRendering = false,
+        .enableAudio = false, .workerThreads = 1, .userDirectory = directory / "user"};
+    CHECK(devex::runtime::run(application, config) == EXIT_SUCCESS);
+    CHECK(application.frames == 100);
+    std::filesystem::remove_all(directory);
+}

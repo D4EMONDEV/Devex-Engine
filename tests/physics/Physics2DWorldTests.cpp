@@ -7,6 +7,7 @@
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include <algorithm>
 #include <functional>
@@ -859,4 +860,98 @@ TEST_CASE("A custom one-way tile lets a character rise through and land on it",
     simulate(*world, scene, 2.0);
     CHECK(positionOf(scene, hero).y == Catch::Approx(1.0f).margin(restingMargin));
     CHECK(scene.get<devex::scene::CharacterController2D>(hero).grounded);
+}
+
+TEST_CASE("A 2D character stays on what moves under it, however it moves", "[physics2d][platform]")
+{
+    const bool kinematic = GENERATE(true, false);
+    const bool oneWay = GENERATE(false, true);
+    const Vec2 speed = GENERATE(Vec2{2.0f, 0.0f}, Vec2{-3.0f, 0.0f}, Vec2{0.0f, 1.5f}, Vec2{0.0f, -1.5f}, Vec2{2.0f, 1.5f}, Vec2{2.0f, -1.5f});
+    CAPTURE(kinematic, oneWay, speed.x, speed.y);
+
+    Scene scene;
+    const Entity platform = addBox(scene, "Platform", {0.0f, -0.25f}, {4.0f, 0.5f}, kinematic ? std::optional(BodyType::Kinematic) : std::nullopt);
+    scene.get<devex::scene::BoxCollider2D>(platform).oneWay = oneWay;
+    const Entity hero = addCharacter(scene, {0.5f, 0.5f});
+    const auto world = makeWorld();
+    auto& controller = scene.get<devex::scene::CharacterController2D>(hero);
+    simulate(*world, scene, 0.5);
+    REQUIRE(controller.grounded);
+
+    const Vec2 startHero = positionOf(scene, hero);
+    int frames = 0;
+    bool alwaysGrounded = true;
+    simulate(*world, scene, 1.0, nullptr, [&] {
+        // Game code moves it, as a script or an animation does.
+        scene.get<devex::scene::Transform>(platform).position += Vec3{speed * static_cast<float>(stepSeconds), 0.0f};
+        alwaysGrounded = alwaysGrounded && (frames == 0 || controller.grounded);
+        ++frames;
+    });
+    CHECK(alwaysGrounded);
+    CHECK(controller.grounded);
+    CHECK(positionOf(scene, hero).x == Catch::Approx(startHero.x + speed.x).margin(0.1f));
+    CHECK(positionOf(scene, hero).y == Catch::Approx(startHero.y + speed.y).margin(0.1f));
+    // Carried, not pushed: what it stands on does not change its own velocity.
+    CHECK(controller.velocity.x == Catch::Approx(0.0f).margin(0.01f));
+}
+
+TEST_CASE("A 2D character walks on what moves under it, and leaves it by jumping", "[physics2d][platform]")
+{
+    const bool kinematic = GENERATE(true, false);
+    CAPTURE(kinematic);
+    Scene scene;
+    const Entity platform = addBox(scene, "Platform", {0.0f, -0.25f}, {40.0f, 0.5f}, kinematic ? std::optional(BodyType::Kinematic) : std::nullopt);
+    const Entity hero = addCharacter(scene, {0.0f, 0.5f});
+    const auto world = makeWorld();
+    auto& controller = scene.get<devex::scene::CharacterController2D>(hero);
+    simulate(*world, scene, 0.5);
+    REQUIRE(controller.grounded);
+    const float start = positionOf(scene, hero).x;
+    const auto move = [&] { scene.get<devex::scene::Transform>(platform).position.x += 2.0f * static_cast<float>(stepSeconds); };
+
+    // Its own speed adds to that of the platform.
+    simulate(*world, scene, 1.0, nullptr, [&] {
+        move();
+        controller.velocity.x = 1.0f;
+    });
+    CHECK(positionOf(scene, hero).x == Catch::Approx(start + 3.0f).margin(0.1f));
+
+    // Off the ground, the platform no longer carries it.
+    controller.velocity = {0.0f, 5.0f};
+    const float jumped = positionOf(scene, hero).x;
+    simulate(*world, scene, 0.3, nullptr, [&] { move(); });
+    CHECK_FALSE(controller.grounded);
+    CHECK(positionOf(scene, hero).x == Catch::Approx(jumped).margin(0.05f));
+}
+
+TEST_CASE("Game code that moves a 2D character on a moving platform moves it there", "[physics2d][platform]")
+{
+    Scene scene;
+    const Entity platform = addBox(scene, "Platform", {0.0f, -0.25f}, {40.0f, 0.5f}, BodyType::Kinematic);
+    const Entity hero = addCharacter(scene, {0.0f, 0.5f});
+    const auto world = makeWorld();
+    auto& controller = scene.get<devex::scene::CharacterController2D>(hero);
+    simulate(*world, scene, 0.5);
+    REQUIRE(controller.grounded);
+    simulate(*world, scene, 0.2, nullptr, [&] { scene.get<devex::scene::Transform>(platform).position.x += 2.0f * static_cast<float>(stepSeconds); });
+
+    // A checkpoint, say: it stays there, carried only by what the platform does next.
+    scene.get<devex::scene::Transform>(hero).position.x = 10.0f;
+    simulate(*world, scene, 0.1, nullptr, [&] { scene.get<devex::scene::Transform>(platform).position.x += 2.0f * static_cast<float>(stepSeconds); });
+    CHECK(positionOf(scene, hero).x == Catch::Approx(10.2f).margin(0.1f));
+}
+
+TEST_CASE("A wall stops a 2D character carried against it", "[physics2d][platform]")
+{
+    const bool kinematic = GENERATE(true, false);
+    CAPTURE(kinematic);
+    Scene scene;
+    const Entity platform = addBox(scene, "Platform", {0.0f, -0.25f}, {8.0f, 0.5f}, kinematic ? std::optional(BodyType::Kinematic) : std::nullopt);
+    addBox(scene, "Wall", {2.5f, 2.5f}, {1.0f, 4.0f});
+    const Entity hero = addCharacter(scene, {0.0f, 0.5f});
+    const auto world = makeWorld();
+    simulate(*world, scene, 0.5);
+    simulate(*world, scene, 2.0, nullptr, [&] { scene.get<devex::scene::Transform>(platform).position.x += 2.0f * static_cast<float>(stepSeconds); });
+    const float radius = scene.get<devex::scene::CharacterController2D>(hero).radius;
+    CHECK(positionOf(scene, hero).x <= 2.0f - radius + 0.05f);
 }

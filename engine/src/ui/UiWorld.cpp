@@ -396,6 +396,19 @@ void UiWorld::update(scene::Scene& scene, math::Vec2 windowSize, const UiInput& 
         }
         m_pressed = scene::Entity{};
     }
+    // A button that has left the screen no longer holds the focus: Enter would press what cannot be seen, and the
+    // arrows would set off from where it was.
+    if (m_focused.isValid())
+    {
+        const bool shown = std::ranges::any_of(m_canvases, [this](const CanvasLayout& canvas) {
+            const LaidOutRect* const rect = canvas.layout.find(m_focused);
+            return rect != nullptr && rect->visible;
+        });
+        if (!shown)
+        {
+            m_focused = scene::Entity{};
+        }
+    }
     if (rest.submitPressed && !editing && takesFocus(scene, m_focused))
     {
         click(scene, m_focused);

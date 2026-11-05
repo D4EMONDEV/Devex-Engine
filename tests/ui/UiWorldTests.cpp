@@ -1435,3 +1435,21 @@ TEST_CASE("Texts show their translation unless they ask not to, and fields keep 
     CHECK(letters(drawOne(form, field, plain)) == 4);
     CHECK(letters(drawOne(form, field, translated)) == 8);
 }
+
+TEST_CASE("A button that leaves the screen loses the focus, and Enter no longer presses it", "[ui][world]")
+{
+    Menu menu(3);
+    UiWorld world;
+    world.update(menu.scene, window, UiInput{}, frame);
+    world.update(menu.scene, window, UiInput{.moveY = 1}, frame);
+    REQUIRE(world.focused() == menu.buttons[0]);
+
+    menu.scene.get<UiRect>(menu.buttons[0]).visible = false;
+    world.update(menu.scene, window, UiInput{.submitPressed = true}, frame);
+    CHECK_FALSE(world.wasClicked("entry"));
+    CHECK_FALSE(world.focused().isValid());
+
+    // The arrows start again from the first one that shows.
+    world.update(menu.scene, window, UiInput{.moveY = 1}, frame);
+    CHECK(world.focused() == menu.buttons[1]);
+}

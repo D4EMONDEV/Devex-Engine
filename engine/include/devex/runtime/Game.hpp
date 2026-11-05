@@ -80,7 +80,7 @@ class GameRegistry;
 // 48: the scene gained the Path3D and PathFollower components.
 // 49: the scene gained the CSG components.
 // 50: the scene gained the GridMap component.
-inline constexpr std::uint32_t gameApiVersion = 51;
+inline constexpr std::uint32_t gameApiVersion = 52;
 
 enum class SystemPhase : std::uint8_t
 {
@@ -145,6 +145,8 @@ struct DEVEX_API SystemContext
     core::Duration delta{0.0};
     // Progress towards the next fixed update in [0, 1), during Update.
     double interpolationAlpha = 0.0;
+    // How fast the game runs, which a system may change: see Application::setTimeScale.
+    float* timeScale = nullptr;
     // Set to end the game: the player quits, and the editor stops playing.
     bool quitRequested = false;
     // Set to replace the scene with a scene asset once the updates of the frame are done. The

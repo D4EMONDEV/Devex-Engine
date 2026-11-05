@@ -37,6 +37,12 @@ sert à faire de vrais petits jeux et à trouver ce qui manque avant la 1.0.
 - Les projets disent quelle version les a enregistrés : les plus anciens sont copiés avant d'être repris, et les plus récents demandent confirmation.
 - Les fichiers des versions passées restent lisibles, et des tests le vérifient à chaque changement.
 
+**Nouveau pour les jeux**
+
+- `Time.Scale` en C# et `Application::setTimeScale` en C++ : 0 met le jeu en pause et l'interface continue de répondre, entre 0 et 1 il ralentit.
+- `Entity.TryGet` marche aussi sur les composants écrits en C#.
+- `CharacterController2D` suit ce qui bouge sous ses pieds, même un collider déplacé par un script, et une plateforme à sens unique qui monte.
+
 **Limites connues**
 
 - Testé surtout sur un GPU de bureau NVIDIA. Les GPU intégrés, AMD et Intel restent à essayer.

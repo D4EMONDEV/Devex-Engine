@@ -5580,6 +5580,8 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     mesure `DEVEX_STRESS_FOG` du banc d'essai (0,21 ms sur une RTX 4060) ; tests de l'extraction et
     d'un brouillard qui cache un cube puis qu'un volume creuse ; API des jeux 40.
 
+111. ✅ **Ce que le premier vrai jeu a montré** — `Time.Scale` pour qu'un jeu se mette en pause, `TryGet` sur les composants C#, et un projet jamais ouvert
+     qui démarre sur sa scène. Détails plus bas.
 110. ✅ **Publication** — un installateur Inno Setup et un zip pour Windows, une archive pour Linux, et une release en brouillon préparée par
      la CI pour un tag `v*`. Décisions plus bas, et [docs/publier-une-version.md](publier-une-version.md).
 109. ✅ **Copies de secours** — ce qui n'est pas enregistré est copié dans `.devex/autosave` toutes les 5 minutes et avant Play, et proposé
@@ -5619,6 +5621,26 @@ Chaque jalon se termine par une démo observable dans le projet `samples/sandbox
     l'extraction ; mesure `DEVEX_STRESS_SSR` du banc d'essai ; API des jeux 43.
 
 Ensuite, sans ordre figé : à choisir dans les pistes ci-dessous.
+
+## Ce que le premier vrai jeu a montré — 2026-11-05
+
+Troisième point de la liste pour une 1.0 : faire de vrais petits jeux avec la 0.9. Le premier poursuit le 2DProject de l'utilisateur (hors du dépôt, dans
+`D:\\Devex Projects`) : une plateforme en deux niveaux, avec menu, sauvegarde, ennemis et sons de packs CC0. Le second sera une aventure 3D.
+
+- **`Time.Scale`** : un jeu ne pouvait pas se mettre en pause, et le menu de pause du bac à sable laissait le monde tourner. Écarté : `Game.Paused`, qui aurait
+  arrêté aussi les scripts du menu et demandé de dire lesquels continuent, comme les modes de traitement de Godot. Avec une échelle, tout le code continue
+  de tourner avec un delta de 0, l'interface répond, et le ralenti vient avec. Elle revient à 1 quand Play recommence.
+- **`Entity.TryGet` sur les composants C#** : il n'existait que pour ceux du moteur, ce qui surprend au premier composant de jeu qu'on cherche.
+- **Un bouton caché lâche le focus** : il gardait le focus du clavier, et Entrée le pressait encore sans qu'on le voie. Le robot l'a trouvé en cliquant sur le mauvais bouton
+  après une pause.
+- **La scène de démarrage d'abord** : un projet jamais ouvert ouvrait la première scène trouvée, souvent un prefab.
+- **Un personnage 2D suit ce qui bouge sous ses pieds, quoi qui le bouge.** Il suivait la vitesse d'un corps cinématique, donc ni un collider déplacé par un script ou une
+  animation, et il traversait une plateforme à sens unique qui montait, ses pieds passant sous le dessus avant de la suivre. Il retient maintenant le point du sol sous ses
+  pieds, et va où ce point est allé, avant le reste du mouvement. Écarté : calculer une vitesse aux colliders déplacés, qui garde le retard d'un pas et le problème du sens unique ; et
+  demander un `RigidBody2D` cinématique comme le `AnimatableBody2D` de Godot, qu'on découvre en voyant son personnage glisser. Un mur l'arrête. En l'air, plus rien ne le porte : le
+  jeu garde la main sur sa vitesse, et la vitesse de la plateforme n'est pas ajoutée au saut.
+- **Un robot joue pour de vrai** : un composant temporaire écrit la position du joueur, et un script envoie les touches à la seule fenêtre du jeu. Il a parcouru les deux
+  niveaux sans aide, ce qui prouve qu'ils sont faisables. Il ne dit pas s'ils sont amusants : c'est à l'utilisateur de le dire.
 
 ## Copies de secours — décidé le 2026-11-05
 

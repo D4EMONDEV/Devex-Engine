@@ -71,6 +71,8 @@ public:
         // A level change in the same world preserves autoload C# objects and their Start state.
         bool keepInstances = false;
         // Set by the game.
+        // How fast the game runs, which its code changes.
+        float* timeScale = nullptr;
         bool quitRequested = false;
         asset::AssetId sceneToLoad;
         asset::AssetId sceneToLoadInBackground;

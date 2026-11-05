@@ -232,6 +232,11 @@ protected:
     // Ends the loop after the current frame. Inside the editor, stops playing instead.
     void requestQuit() noexcept;
 
+    // How fast the game runs: 1 normally, in between for slow motion, 0 to hold it for a pause menu. The interface
+    // keeps answering, and Update still runs, with a delta of 0. Playing again starts from 1.
+    void setTimeScale(float scale) noexcept;
+    [[nodiscard]] float timeScale() const noexcept;
+
 private:
     friend class detail::ApplicationRunner;
 
@@ -257,6 +262,7 @@ private:
     asset::Localization* m_localization = nullptr;
     double m_interpolationAlpha = 0.0;
     bool m_quitRequested = false;
+    float m_timeScale = 1.0f;
     bool m_editor = false;
     bool m_playing = true;
     bool m_stopRequested = false;

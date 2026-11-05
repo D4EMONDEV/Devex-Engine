@@ -260,8 +260,11 @@ struct CharacterRecord
     std::uint64_t signature = 0;
     math::Vec2 position{0.0f};
     math::Vec2 previousPosition{0.0f};
-    // The velocity of what the character stands on, which carries it.
-    math::Vec2 groundVelocity{0.0f};
+    // What the character stands on, and its point under the feet at the end of the last move. Where that point has
+    // gone since carries the character, whatever moved it: a body with its speed, or game code that moves a collider.
+    b2BodyId groundBody = b2_nullBodyId;
+    b2Vec2 groundAnchor{0.0f, 0.0f};
+    math::Vec2 groundPoint{0.0f};
     bool seen = false;
 };
 
@@ -1416,6 +1419,13 @@ struct Physics2DWorld::Implementation
         b2World_CollideMover(world, &capsule, filter.ledges, &gatherPlane, &gathering);
     }
 
+    // How far the ground carries the character before a wall or a ceiling stops it.
+    [[nodiscard]] float carryFraction(const scene::CharacterController2D& controller, math::Vec2 feet, math::Vec2 carried, const MoverFilter& filter) const
+    {
+        const b2Capsule capsule = capsuleAt(controller, feet);
+        return b2World_CastMover(world, &capsule, toBox(carried), filter.solids);
+    }
+
     // How far along the translation the capsule goes before it touches something it accepts.
     [[nodiscard]] float sweep(const b2Capsule& capsule, math::Vec2 translation, const MoverFilter& filter) const
     {
@@ -1570,25 +1580,37 @@ struct Physics2DWorld::Implementation
                 continue;
             }
             const std::uint32_t layer = clampLayer(controller->layer);
-            const MoverFilter filter{.self = record.body,
-                                     .solids = moverFilterOf(layer, false),
-                                     .ledges = moverFilterOf(layer, true),
-                                     .feet = record.position.y,
-                                     .walkable = std::cos(std::clamp(controller->maxSlope, 0.0f, 1.5f))};
+            MoverFilter filter{.self = record.body,
+                               .solids = moverFilterOf(layer, false),
+                               .ledges = moverFilterOf(layer, true),
+                               .feet = record.position.y,
+                               .walkable = std::cos(std::clamp(controller->maxSlope, 0.0f, 1.5f))};
 
             math::Vec2 velocity = controller->velocity;
             const bool standing = controller->grounded && velocity.y <= 0.0f;
+            const math::Vec2 before = record.position;
             if (standing)
             {
-                // Standing: gravity does not build up, and the ground carries the character.
+                // Standing: gravity does not build up, and the ground carries the character, before anything else
+                // so that the feet are still on top of it, which is how a one-way ledge tells that it holds them.
                 velocity.y = 0.0f;
+                if (b2Body_IsValid(record.groundBody))
+                {
+                    const math::Vec2 carried = fromBox(b2Body_GetWorldPoint(record.groundBody, record.groundAnchor)) - record.groundPoint;
+                    if (math::length(carried) > 1e-6f)
+                    {
+                        // Walls stop it. What moves up under it does not, as the capsule rises with it.
+                        record.position += carried * carryFraction(*controller, record.position, carried, filter);
+                        filter.feet = record.position.y;
+                    }
+                }
             }
             else
             {
                 velocity += worldGravity * controller->gravityScale * seconds;
-                record.groundVelocity = math::Vec2{0.0f};
             }
-            const math::Vec2 motion = (velocity + record.groundVelocity) * seconds;
+            record.groundBody = b2_nullBodyId;
+            const math::Vec2 motion = velocity * seconds;
             pushed.clear();
             math::Vec2 feet = slide(*controller, record.position, motion, filter, standing, planes, &pushed);
             bool climbed = false;
@@ -1667,18 +1689,15 @@ struct Physics2DWorld::Implementation
             }
             controller->grounded = ground.has_value() && velocity.y <= 1e-3f;
             controller->groundNormal = controller->grounded ? ground->normal : math::Vec2{0.0f, 1.0f};
-            record.groundVelocity = math::Vec2{0.0f};
             if (controller->grounded)
             {
                 velocity.y = std::max(velocity.y, 0.0f);
-                const b2BodyId groundBody = b2Shape_GetBody(ground->shape);
-                if (b2Body_GetType(groundBody) != b2_staticBody)
-                {
-                    record.groundVelocity = fromBox(b2Body_GetWorldPointVelocity(groundBody, toBox(feet)));
-                }
+                record.groundBody = b2Shape_GetBody(ground->shape);
+                record.groundAnchor = b2Body_GetLocalPoint(record.groundBody, toBox(feet));
+                record.groundPoint = feet;
             }
             controller->velocity = velocity;
-            record.previousPosition = record.position;
+            record.previousPosition = before;
             record.position = feet;
             setWorldPose(scene, record.owner, feet, std::nullopt);
             if (const scene::WorldTransform* const worldTransform = scene.tryGet<scene::WorldTransform>(record.owner))

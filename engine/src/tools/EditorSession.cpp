@@ -300,6 +300,20 @@ void openProjectScenes(ToolsState& state, scene::Scene& scene)
 
     if (documents.empty())
     {
+        // The scene the game starts on, as it is what the project is about.
+        const std::optional<std::filesystem::path> startup =
+            database.project().startupScene.empty() ? std::nullopt : database.project().absolutePath(database.project().startupScene);
+        if (startup && std::filesystem::exists(*startup))
+        {
+            if (std::optional<SceneDocument> document = loadDocument(*startup, std::nullopt))
+            {
+                documents.push_back(std::move(*document));
+            }
+        }
+    }
+
+    if (documents.empty())
+    {
         // Scenes still importing count: a project just opened imports in the background.
         for (const asset::SourceFile& source : database.sources())
         {
